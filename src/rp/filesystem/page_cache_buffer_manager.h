@@ -1,0 +1,129 @@
+#pragma once
+#include <cstdint>
+#include <deque>
+#include <experimental/array>
+#include <vector>
+
+#include <seastar/core/aligned_buffer.hh>
+#include <seastar/core/future.hh>
+#include <seastar/core/memory.hh>
+#include <seastar/core/semaphore.hh>
+#include <smf/log.h>
+
+#include <hashing/jump_consistent_hash.h>
+#include <hashing/xx.h>
+// filesystem
+#include "page_cache_result.h"
+
+namespace rp {
+// FIXME(agallego): create a central component for system-wide reservations.
+class page_cache_buffer_manager {
+ public:
+  SMF_DISALLOW_COPY_AND_ASSIGN(page_cache_buffer_manager);
+  constexpr static const int32_t kBufferSize = 1 << 18;
+  using buf_ptr_t = std::unique_ptr<char[], seastar::free_deleter>;
+  struct page_cache_result_dtor {
+    page_cache_result_dtor(char *s, page_cache_buffer_manager *m)
+      : semb(s), mngr(m) {}
+    char *semb;
+    page_cache_buffer_manager *mngr;
+
+    void
+    operator()(page_cache_result *r) {
+      mngr->update_free_list(semb);
+      delete r;
+    }
+  };
+
+  using page_cache_result_ptr =
+    std::unique_ptr<page_cache_result, page_cache_result_dtor>;
+
+  page_cache_buffer_manager(int64_t mem_reserved, int64_t max_limit)
+    : min_memory_reserved(mem_reserved), max_memory_limit(max_limit) {
+    for (int64_t i = 0, max = min_memory_reserved / kBufferSize; i < max; ++i) {
+      grow_by_one();
+      locks_.push_back(seastar::semaphore(1));
+    }
+  }
+
+  const int64_t min_memory_reserved;
+  const int64_t max_memory_limit;
+
+  seastar::future<page_cache_result_ptr>
+  allocate(int32_t begin_page, page_cache_result::priority prio) {
+    if (!free_list_.empty()) {
+      return seastar::make_ready_future<page_cache_result_ptr>(
+        do_allocate(begin_page, prio));
+    }
+    if (total_alloc_bytes() < max_memory_limit) {
+      grow_by_one();
+      return seastar::make_ready_future<page_cache_result_ptr>(
+        do_allocate(begin_page, prio));
+    }
+    return seastar::with_semaphore(no_free_pages_, 1,
+                                   [=] { return allocate(begin_page, prio); });
+  }
+
+  seastar::semaphore &
+  lock(uint32_t file_id, std::pair<int32_t, int32_t> clamp) {
+    uint32_t id = xxhash_32(std::experimental::make_array(file_id, clamp.first));
+    return locks_[jump_consistent_hash(id, locks_.size())];
+  }
+
+  int64_t
+  total_alloc_bytes() const {
+    return buffers_.size() * kBufferSize;
+  }
+  void
+  decrement_buffers() {
+    if (total_alloc_bytes() < min_memory_reserved) {
+      // minimum is reserved
+      return;
+    }
+    if (!free_list_.empty()) {
+      auto front = free_list_.front();
+      free_list_.pop_front();
+      // NOTE: slow - linear.
+      // linear? maybe not too bad? not sure.
+      auto it = std::find_if(buffers_.begin(), buffers_.end(),
+                             [=](auto &buf) { return front == buf.get(); });
+      std::swap(*it, buffers_.back());
+      buffers_.pop_back();
+      return;
+    }
+    // acquire lock as soon as it can & free that buffer
+    // prepare clean up in background future
+    seastar::with_semaphore(no_free_pages_, 1, [=] { decrement_buffers(); });
+  }
+
+ private:
+  friend page_cache_result_dtor;
+  void
+  update_free_list(char *b) {
+    DLOG_THROW_IF(b == nullptr, "Updated a free buffer with null!");
+    free_list_.push_back(b);
+    if (no_free_pages_.waiters() > 0) { no_free_pages_.signal(1); }
+  }
+  page_cache_result_ptr
+  do_allocate(int32_t begin_page, page_cache_result::priority prio) {
+    auto front = free_list_.front();
+    free_list_.pop_front();
+    return page_cache_result_ptr(
+      new page_cache_result(begin_page, {front, kBufferSize}, prio),
+      page_cache_result_dtor(front, this));
+  }
+  void
+  grow_by_one() {
+    buffers_.push_back(
+      seastar::allocate_aligned_buffer<char>(kBufferSize, 4096));
+    free_list_.push_back(buffers_.back().get());
+  }
+
+ private:
+  std::vector<seastar::semaphore> locks_;
+  std::vector<buf_ptr_t> buffers_;
+  std::deque<char *> free_list_;
+  seastar::semaphore no_free_pages_{1};
+};
+
+}  // namespace rp

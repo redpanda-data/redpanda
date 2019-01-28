@@ -1,0 +1,5 @@
+set(RP_PGO "" CACHE STRING  "PGO flags")
+if (RP_PGO)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${RP_PGO}")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${RP_PGO}")
+endif()

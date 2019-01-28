@@ -1,0 +1,34 @@
+include "filesystem/wal.fbs";
+
+namespace rp.chains;
+
+table chain_put_request {
+  chain:       [uint];
+  chain_index: int = -1;
+  producer_id: long;
+  txn_id:      long;
+  /// only supports puts for ONE topic atm. Tx'al cross topic puts need
+  /// more infrastructure.
+  put:        rp.wal_put_request;
+}
+
+table chain_put_reply {
+  put: rp.wal_put_reply;
+}
+
+table chain_get_request {
+  consumer_group_id: long;
+  get: rp.wal_get_request;
+}
+table chain_get_reply {
+  get: rp.wal_get_reply;
+}
+
+/// TODO(agallego) right now the wal write part is sophisticated
+/// we need to introduce a session manager for the reads and the rebalancing
+/// of topics - i.e.: what consumers get what.
+rpc_service chain_replication {
+  put(chain_put_request): chain_put_reply;
+  get(chain_get_request): chain_get_reply;
+}
+

@@ -1,0 +1,7 @@
+include "filesystem/wal.fbs";
+namespace rp;
+
+struct ballot {
+  ballot_id ulong;
+  server_id ulong;
+}

@@ -1,0 +1,217 @@
+namespace rp;
+
+enum wal_compression_type: byte {
+  none,
+  zstd,
+  lz4
+}
+
+/// \brief 192bits / 24bytes
+/// order matters!
+/// flatbuffers pads each field
+/// so make sure that you don't insert random things
+/// in weird grouping
+struct wal_header {
+  /// \brief record time, *not* broker time
+  time_millis: long;
+  /// \brief  xxhash64 xor INT_MAX
+  /// of `key` and `value` *only*
+  checksum:    int;
+  /// \brief size in bytes
+  key_size:    int;
+  /// \brief size in bytes
+  value_size:  int;
+  /// \brief compression of payload
+  compression: wal_compression_type;
+  /// \brief version of the wire format
+  version:     byte;
+  /// \brief used for magic number of 0xcafe
+  /// critical for WAL segment error recovery
+  magic:      short;
+  // The reason for *not* using a flatbuffers table
+  // is that the table is just expensive - up to extra
+  // 12 bytes.
+  //
+  // key:              [ubyte];
+  // value:            [ubyte];
+}
+
+table wal_topic_property {
+  key:   string (key);
+  value: string;
+}
+
+enum wal_put_invalidation_reason:byte {
+  none,
+  server_connection_timeout,
+  client_connection_timeout
+}
+
+table wal_binary_record {
+  /// \brief wal_header + key_payload + value_payload
+  data: [ubyte];
+}
+
+/// brief - the records associated with a partition
+table wal_put_partition_records {
+  partition:   int (key);
+  records:     [wal_binary_record];
+}
+
+/// brief - stores `puts` transactionally
+table wal_put_request {
+  topic: long;
+  ns: long;
+  props: [wal_topic_property];
+  partition_puts: [wal_put_partition_records];
+}
+
+table wal_put_reply_partition_tuple {
+  partition:   int (key);
+  /// \brief the committed offset into the WAL
+  ///  clients can monitor how much disk was consumed by the puts
+  ///  and we need this for cache eviction and management.
+  start_offset: long;
+  end_offset:   long;
+
+}
+enum wal_put_errno:byte {
+  /// \brief - we chillin
+  none,
+
+  /// \brief cannot find partition for topic
+  invalid_ns_topic_partition,
+}
+
+table wal_put_reply {
+  topic: long;
+  ns: long;
+  offsets: [wal_put_reply_partition_tuple];
+  error:   wal_put_errno = none;
+}
+
+
+table wal_get_request {
+  topic: long;
+  ns: long;
+  props: [wal_topic_property];
+  partition:  int;
+  /// \brief will do server side checksum of payload
+  server_validate_payload: bool = true;
+  offset:     long = 0;
+  /// (1 << 31) - 1 Max payload payload by flatbuffers 2GB-1
+  /// we decrease it by 100 bytes so we can stuff headers in there
+  /// plus plenty of room for growth
+  ///
+  /// >>> (2**31)-100
+  /// 2147483548
+  ///
+  /// default is 1MB -> 1024 * 1024
+  max_bytes:  int = 1048576;
+}
+
+enum wal_read_errno:byte {
+  /// \brief - we chillin
+  none,
+
+  /// \brief the offset does not exist
+  invalid_offset,
+
+  /// \brief header for WAL entry is corrupted
+  invalid_header,
+
+  /// brief magic number of header does not match
+  invalid_magic,
+
+  /// brief version missmatch
+  invalid_version,
+
+  /// \brief cannot find partition for topic
+  invalid_ns_topic_partition,
+
+  /// \brief invalid checksum for the payload
+  missmatching_payload_checksum,
+
+  /// \brief the header of the entry says the payload is of size
+  /// and that size does not match with the actual data read
+  /// from the disk
+  missmatching_header_payload_size,
+}
+table wal_get_reply {
+  topic: long;
+  ns: long;
+  next_offset: long;
+  partition:   int;
+  gets:        [wal_binary_record];
+  error:       wal_read_errno = none;
+}
+
+struct wal_partition_stats {
+  partition:         int;
+  log_segment_count: int;
+  start_offset:  long;
+  ending_offset: long;
+}
+table wal_topic_stats {
+  topic: long;
+  ns: long;
+  partitions: [wal_partition_stats];
+}
+table wal_stats {
+  stats: [wal_topic_stats];
+}
+
+
+enum wal_topic_type: ubyte {
+  regular = 0,
+  compaction,
+}
+
+/// \brief internal system only.
+struct wal_topic_create_system_metadata {
+  /// \brief server that intitiated the request
+  source: long;
+}
+table wal_topic_create_request {
+  topic: string;
+  ns: string;
+  props: [wal_topic_property];
+  partitions: int = 16;
+  type: wal_topic_type = regular;
+  smeta: wal_topic_create_system_metadata;
+}
+
+table wal_topic_create_reply {
+  /// TODO(agallego) - respond w/ stats
+}
+
+
+
+
+
+
+
+
+
+/// ----------- internal api below --------------
+
+
+table wal_segment_index_key_entry {
+  hash:   ulong (key);
+  offset: long;
+  key:    [ubyte];
+}
+table wal_segment_index_fragment {
+  /// \brief largest offset w.r.t wal epoch
+  /// needed to do recovery in case we crashed
+  largest_offset: long;
+  /// \brief total bytes of wal_binary_records that
+  /// passed through the indexing function
+  lens_bytes: long;
+
+
+  /// \brief actual keys *sorted*
+  keys: [wal_segment_index_key_entry];
+}
+
+
