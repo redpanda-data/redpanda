@@ -1,0 +1,5 @@
+---
+redpanda:
+  directory: "~/.redpanda"
+  port: 33145
+  ip: "127.0.0.1"

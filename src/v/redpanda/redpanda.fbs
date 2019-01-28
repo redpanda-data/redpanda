@@ -1,0 +1,22 @@
+include "filesystem/wal.fbs";
+include "chain_replication/chain_replication.fbs";
+
+namespace v;
+
+// XXX(agallego) need to wrap creation/deletion of topics
+
+/// 1) Admin api
+/// 2) Producer API - compatible w/ chain_replication.fbs types! make sure
+/// 3) Consumer API
+/// 4)
+rpc_service redpanda_api {
+  /// \brief create a topic
+  /// Uses raft to create the topics and assignments
+  create_topic(v.wal_topic_create_request): v.wal_topic_create_reply;
+
+  /// \brief MUST be compatible w/ the chain replication
+  /// subschema
+  put(v.chains.chain_put_request): v.chains.chain_put_reply;
+  get(v.chains.chain_get_request): v.chains.chain_get_reply;
+
+}
