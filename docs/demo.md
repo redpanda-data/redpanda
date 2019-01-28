@@ -6,7 +6,7 @@ Add `--poll-mode` at the end if you want lower latency (higher cpu usage)
 
 ```sh
 
-./src/rp/bmtl/bmtl  --bmtl-cfg ~/workspace/rp/src/rp/bmtl/sample-cfg.yml --cpuset 0-3 -m 40G
+./src/v/redpanda/redpanda  --redpanda-cfg ~/workspace/rp/src/v/redpanda/sample-cfg.yml --cpuset 0-3 -m 40G
 
 ```
 
@@ -26,7 +26,7 @@ Add `--poll-mode` at the end if you want lower latency (higher cpu usage)
 * Add `--poll-mode` at the end for lower latency.
 
 ```sh
-./src/rp/bmtl/bmtlctl/bmtlctl --key-size 20 --value-size 180 --write-batch-size 1024 --qps 1024 --concurrency 4 --seconds-duration 1 --cpuset 4-7 --rw-balance 1.0 -m20G
+./src/v/redpanda/bamboo/bamboo --key-size 20 --value-size 180 --write-batch-size 1024 --qps 1024 --concurrency 4 --seconds-duration 1 --cpuset 4-7 --rw-balance 1.0 -m20G
 
 ```
 
@@ -50,7 +50,7 @@ With this configuration we can do in 1.1seconds 4'194'304 messages. ~= 4MMqps
 Let's do a sustained load of 10 seconds. (smaller batch of 512 records) (512*1024*4) ~2MMqps (sustained for 10secs)
 
 ```sh
-./src/rp/bmtl/bmtlctl/bmtlctl --key-size 20 --value-size 180 --write-batch-size 512 --qps 1024 --concurrency 4 --seconds-duration 10 --cpuset 4-7 --rw-balance 1.0 -m20G
+./src/v/redpanda/bamboo/bamboo --key-size 20 --value-size 180 --write-batch-size 512 --qps 1024 --concurrency 4 --seconds-duration 10 --cpuset 4-7 --rw-balance 1.0 -m20G
 
 ```
 
@@ -71,7 +71,7 @@ Throughput for 10 secs sustained ~2MMqps
 
 
 ```sh
-./src/rp/bmtl/bmtlctl/bmtlctl --key-size 20 --value-size 180 --write-batch-size 1 --qps 1024 --concurrency 4 --seconds-duration 10 --cpuset 4-7 --rw-balance 1.0 -m20G
+./src/v/redpanda/bamboo/bamboo --key-size 20 --value-size 180 --write-batch-size 1 --qps 1024 --concurrency 4 --seconds-duration 10 --cpuset 4-7 --rw-balance 1.0 -m20G
 
 ```
 
@@ -109,7 +109,7 @@ with *DPDK* you get 10x lower latency for all cases above.
 Show the ~2GB reads per second
 
 ```sh
-./src/rp/bmtl/bmtlctl/bmtlctl --key-size 20 --value-size 180 --write-batch-size 1 --qps 512 --concurrency 4 --seconds-duration 1 --cpuset 4-7 --rw-balance 0.0 -m20G
+./src/v/redpanda/bamboo/bamboo --key-size 20 --value-size 180 --write-batch-size 1 --qps 512 --concurrency 4 --seconds-duration 1 --cpuset 4-7 --rw-balance 0.0 -m20G
 
 ```
 
@@ -148,7 +148,7 @@ That's ~2GB/sec
 
 
 ```sh
-./src/rp/bmtl/bmtlctl/bmtlctl --key-size 20 --value-size 180 --write-batch-size 1 --qps 1 --concurrency 4 --seconds-duration 10 --cpuset 4-7 --rw-balance 0.0 -m20G
+./src/v/redpanda/bamboo/bamboo --key-size 20 --value-size 180 --write-batch-size 1 --qps 1 --concurrency 4 --seconds-duration 10 --cpuset 4-7 --rw-balance 0.0 -m20G
 
 ```
 

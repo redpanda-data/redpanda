@@ -1,0 +1,229 @@
+include "../filesystem/wal.fbs";
+
+namespace v.raft;
+
+struct server_capabilities {
+  min_version: ushort;
+  max_version: ushort;
+}
+
+table server {
+  id:           ulong;
+  address:      string;
+  capabilities: server_capabilities;
+}
+
+table tpidx_configuration_request {
+  /// \brief xxhash64(topic:string, partition:uint32_t)
+  ///
+  tpidx: ulong (key);
+
+  /// The servers in a **stable** configuration, or the **old** servers
+  /// in a transitional configuration
+  nodes:[server];
+
+  /// servers **not present in a stable** configuration, or **new**
+  /// servers in a transitional configuration
+  learners:[server];
+}
+table tpidx_configuration_reply {
+  /// \brief xxhash64(topic:string, partition:uint32_t)
+  ///
+  tpidx: ulong (key);
+}
+
+
+
+table tpidx_entry {
+  /// \brief xxhash64(topic:string, partition:uint32_t)
+  ///
+  tpidx: ulong (key);
+
+
+  /// The term in which the entry was first created
+  term: ulong;
+
+  /// The index for the entry. Used by followers to check they've got
+  /// an entry at the right index. (like kafka-offset?)
+  ///
+  index: ulong;
+
+  ///
+  /// I think this is extra and not needed in the RPC
+  /// number of nano seconds the cluster has had a leader
+  ///
+  nano_leader_time: ulong;
+
+  /// the payload to save
+  put: v.wal_put_request;
+}
+
+
+
+// then you can do std::vector | std::sort() | std::unique()
+
+table tpidx_vote_request {
+  /// \brief xxhash64(topic:string, partition:uint32_t)
+  ///
+  tpidx: ulong (key);
+
+
+  /// \brief request of the caller, so if it re-requests the vote from
+  /// the callee, the server will respond granted
+  /// lookup against configuration
+  server_id: ulong;
+
+  /// \brief caller's term
+  term: ulong;
+
+  /// \brief term of last entry in callers log.
+  /// used to compare completeness
+  last_log_term: ulong;
+
+  /// \brief id of last entry in the caller's log.
+  /// used to compare log completeness
+  last_log_index: ulong;
+}
+table tpidx_vote_reply {
+  /// \brief xxhash64(topic:string, partition:uint32_t)
+  ///
+  tpidx: ulong (key);
+
+
+  /// \brief calee's term, for caller to update itself.
+  term: ulong;
+
+  /// True if the follower granted the candidate it's vote, false otherwise
+  granted: bool;
+
+  /// set to true if the caller's log is as up to date as the recipient's
+  /// - extension on raft. see Diego's phd dissertation, section 9.6
+  /// - "Preventing disruptions when a server rejoins the cluster"
+  log_ok: bool;
+}
+
+table tpidx_append_entries_request {
+  /// \brief xxhash64(topic:string, partition:uint32_t)
+  ///
+  tpidx: ulong (key);
+
+
+  /// id of leader (caller), so the follower can redirect clients
+  server_id: ulong;
+  /// caller's term
+  term: ulong;
+  /// log entries to store or empty for heartbeat
+  entries: [tpidx_entry];
+
+  /// TODO(agallego) - ask about this method on the mailing list
+  ///  -... so why would a request to append entries have the follower
+  /// (me/this server) commit index - maybe used when entries are empty...
+  /// write a more formal description, but basically you can always append
+  /// entries, however advancing the index is the key here
+  ///
+  /// last committed entry that the follower has, so the follower can advance
+  /// it's state machine
+  commit_index: ulong;
+}
+
+table tpidx_append_entries_reply {
+  /// \brief xxhash64(topic:string, partition:uint32_t)
+  ///
+  tpidx: ulong (key);
+
+  /// callee's term, for the caller to upate itself
+  term: ulong;
+  /// true if the entries were added to the log
+  success: bool;
+  /// The recipient's last log index after it applied THIS rpc's changes to the
+  /// log. This is used to speed up finding the correct value for the nextIndex
+  /// with a follower that is far behind a leader
+  last_log_index: ulong;
+
+  /// send back to the leader to inform what code the follower is running
+  /// the range is inclusive between min and max;
+  capabilities: server_capabilities;
+}
+
+table tpidx_install_snapshot_request {
+  /// \brief xxhash64(topic:string, partition:uint32_t)
+  ///
+  tpidx: ulong (key);
+
+
+  /// id of the caller/leader, so the follower can redirect clients
+  server_id: ulong;
+  /// caller's term
+  term: ulong;
+
+  /// the snapshot covers the range [1, lastSnapshotIndex]
+  last_snapshot_index: ulong;
+
+  /// the byte offset where the 'data' belongs in the file. Followers can
+  /// expect this to grow without gaps. They should use this to drop duplicate
+  /// messages/requests
+  byte_offset: ulong;
+
+  /// raw bytes of the snapshot file. This could be partial RPC for snapshot
+  /// see done field
+  data: [ubyte];
+
+  /// true if this is the last chunk for the file and the follower should now
+  /// load the contents; false otherwise
+  done: bool;
+}
+
+table tpidx_install_snapshot_reply {
+  /// \brief xxhash64(topic:string, partition:uint32_t)
+  ///
+  tpidx: ulong (key);
+
+  /// callee's term, for the caller to update itself;
+  term: ulong;
+  /// total number of bytes in the snapshot that the follower has stored, after
+  /// applying the request;
+  bytes_stored: ulong;
+}
+
+/// Service API (multi-raft)
+
+
+table configuration_request {
+  cfgs: [tpidx_configuration_request];
+}
+table configuration_reply {
+  cfgs: [tpidx_configuration_reply];
+}
+table vote_request {
+  votes: [tpidx_vote_request];
+}
+table vote_reply{
+  votes: [tpidx_vote_reply];
+}
+table append_entries_request {
+  appends: [tpidx_append_entries_request];
+}
+table append_entries_reply {
+  appends: [tpidx_append_entries_reply];
+}
+table install_snapshot_request {
+  snapshots: [tpidx_install_snapshot_request];
+}
+table install_snapshot_reply {
+  snapshots: [tpidx_install_snapshot_reply];
+}
+
+
+rpc_service raft_api {
+  /// \brief stores a configuration to be used internally by the consensus
+  configuration_update(configuration_request): configuration_reply;
+
+  /// \brief ask a server for its vote in an election algorithm
+  vote(vote_request): vote_reply;
+
+  /// \brief used to replicate logs to the follower
+  append_entries(append_entries_request): append_entries_reply;
+
+  /// \brief replicate part of a snapshot file to a follower.
+  install_snapshot(install_snapshot_request): install_snapshot_reply;
+}

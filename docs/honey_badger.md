@@ -51,7 +51,7 @@ rp_hbadger_lib(
   NAME rpfs
   SOURCES ${rpfs_sources}
   INCLUDES ${CMAKE_CURRENT_BINARY_DIR}
-  INCLUDES ${PROJECT_SOURCE_DIR}/src/rp
+  INCLUDES ${PROJECT_SOURCE_DIR}/src/v
   COMPILE_OPTIONS -Wall -Werror -fconcepts
   LIBRARIES smf re2
   )

@@ -23,7 +23,7 @@ def generate_options():
         default='INFO',
         help='info,debug, type log levels. i.e: --log=debug')
     parser.add_argument(
-        '--binary', type=str, default='bmtl', help='binary to PGO')
+        '--binary', type=str, default='redpanda', help='binary to PGO')
     parser.add_argument('--type', type=str, help='either generate or use')
 
     return parser
