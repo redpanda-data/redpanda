@@ -107,7 +107,11 @@ struct convert<::v::redpanda_cfg> {
       const char *tilde = ::getenv("HOME");
       rhs.directory = seastar::sstring(tilde) + rhs.directory.substr(1);
     }
-    rhs.directory = std::filesystem::canonical(rhs.directory.c_str()).string();
+    {
+      std::error_code ec;
+      auto p = std::filesystem::canonical(rhs.directory.c_str(), ec);
+      if (!ec) { rhs.directory = p.string(); }
+    }
     return true;
   }
 };
