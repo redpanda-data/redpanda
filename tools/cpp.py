@@ -48,7 +48,7 @@ def get_cpplint():
 
 
 def get_smf_install_deps():
-    _check_bdir()
+    check_bdir()
     deps = "%s/%s" % (RP_BUILD_ROOT, "smf_install_deps.sh")
     if not os.path.exists(deps):
         urllib.request.urlretrieve(INSTALL_DEPS_URL, deps)
