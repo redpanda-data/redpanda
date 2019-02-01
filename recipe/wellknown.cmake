@@ -13,6 +13,12 @@ set (make_command make -j ${build_concurrency_factor})
 
 
 # public api
+cooking_ingredient(re2
+  CMAKE_ARGS
+    -DRE2_BUILD_TESTING=OF
+  EXTERNAL_PROJECT_ARGS
+    URL https://github.com/google/re2/archive/30cad26.zip
+    URL_MD5 26742d17080a64276974e35634729e22)
 
 cooking_ingredient(GSL
   CMAKE_ARGS
