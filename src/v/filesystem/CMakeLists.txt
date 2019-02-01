@@ -1,5 +1,4 @@
 find_package(RE2)
-add_subdirectory(v)
 include(smfc_generator)
 smfc_gen(
     CPP
