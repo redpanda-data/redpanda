@@ -6,7 +6,7 @@ Add `--poll-mode` at the end if you want lower latency (higher cpu usage)
 
 ```sh
 
-./src/v/redpanda/redpanda  --redpanda-cfg ~/workspace/rp/src/v/redpanda/sample-cfg.yml --cpuset 0-3 -m 40G
+./src/v/redpanda/redpanda --redpanda-cfg ~/workspace/v/src/v/redpanda/sample-cfg.yml --cpuset 0-3 -m 40G
 
 ```
 
@@ -26,6 +26,7 @@ Add `--poll-mode` at the end if you want lower latency (higher cpu usage)
 * Add `--poll-mode` at the end for lower latency.
 
 ```sh
+
 ./src/v/redpanda/bamboo/bamboo --key-size 20 --value-size 180 --write-batch-size 1024 --qps 1024 --concurrency 4 --seconds-duration 1 --cpuset 4-7 --rw-balance 1.0 -m20G
 
 ```
