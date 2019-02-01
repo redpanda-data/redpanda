@@ -1,3 +1,5 @@
+find_package(RE2)
+add_subdirectory(v)
 include(smfc_generator)
 smfc_gen(
     CPP
@@ -35,7 +37,7 @@ rp_hbadger_lib(
   INCLUDES ${CMAKE_CURRENT_BINARY_DIR}
   INCLUDES ${PROJECT_SOURCE_DIR}/src/v
   COMPILE_OPTIONS -Wall -Werror -fconcepts -Wno-unused-variable -Wno-error=maybe-uninitialized
-  LIBRARIES ioutil rprandom re2
+  LIBRARIES ioutil rprandom RE2::re2
   )
 
 
