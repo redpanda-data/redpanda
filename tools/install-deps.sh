@@ -4,9 +4,7 @@ set -evx
 function debs() {
     apt-get update
     apt-get install -y \
-            clang \
-            libre2-dev \
-            luajit-dev
+            clang
 }
 function rpms() {
     yumdnf="yum"
@@ -25,9 +23,7 @@ function rpms() {
             ;;
     esac
     ${yumdnf} install -y \
-              clang \
-              re2-devel \
-              luajit-devel
+              clang
 }
 
 
