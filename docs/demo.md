@@ -31,6 +31,22 @@ Add `--poll-mode` at the end if you want lower latency (higher cpu usage)
 
 ```
 
+Run the same workload w/ kafka
+
+```
+# 1. start zookeeper via
+sudo systemctl  start zookeeper
+
+# 2. run the client (bounded - same load as above of 1024)
+time ./bin/kafka-run-class.sh org.apache.kafka.tools.ProducerPerformance --print-metrics --topic test --num-records 4194304  --record-size 200 --throughput -1 --producer-props acks=1 batch.size=1024 bootstrap.servers=localhost:9092
+
+
+# 3. Results w/ kafka 2.1.0 on Feb 4, 2019
+4194304 records sent, 435590.819400 records/sec (83.08 MB/sec), 255.51 ms avg latency, 757.00 ms max latency, 242 ms 50th, 481 ms 95th, 621 ms 99th, 744 ms 99.9th.
+
+```
+
+
 In total this would yield:
 
 ### Throughput
@@ -175,5 +191,16 @@ That's ~2GB/sec
 
 * Allows us to deliver effectively line (NVMe SSD) rate for writes
 * and NIC (tested on DPDK ixgbe10 driver) speeds on reads (2ms tail -slowest- reads)
+
+
+# kafka scripts:
+
+Run the kafka server 
+
+```
+./kakfa/bin/start-server v/tools/kafka/server.properties
+```
+
+Run the client
 
 
