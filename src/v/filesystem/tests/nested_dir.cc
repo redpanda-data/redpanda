@@ -1,6 +1,7 @@
 #include <iostream>
 
 #include <seastar/core/app-template.hh>
+#include <seastar/core/reactor.hh>
 #include <seastar/core/sleep.hh>
 #include <smf/log.h>
 

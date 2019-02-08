@@ -1,3 +1,5 @@
+#include <iostream>
+
 #include <seastar/core/app-template.hh>
 
 #include "page_cache_buffer_manager.h"
