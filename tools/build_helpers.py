@@ -52,8 +52,12 @@ def _configure_build(build_type):
 
 def _invoke_build(build_type):
     _check_build_type(build_type)
-    tpl = Tepmlate("cd $root && ninja -C $root/build/$build_type")
-    shell.run_subprocess("cd %s && ninja -C %s/" % (RP_ROOT, RP_BUILD_ROOT))
+    tpl = Template("cd $root && ninja -C $build_root/$build_type")
+    cmd = tpl.substitute(
+        root=RP_ROOT,
+        build_root=RP_BUILD_ROOT,
+        build_type=build_type.capitalize())
+    shell.run_subprocess(cmd)
     _symlink_compile_commands()
 
 

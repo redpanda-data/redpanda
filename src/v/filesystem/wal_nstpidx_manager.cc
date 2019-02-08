@@ -4,6 +4,7 @@
 #include <ctime>
 #include <utility>
 
+#include <fmt/format.h>
 #include <seastar/core/metrics.hh>
 #include <seastar/core/reactor.hh>
 #include <smf/human_bytes.h>
@@ -253,7 +254,7 @@ print_repaired_files(const seastar::sstring &d, const auto &s) {
   std::vector<seastar::sstring> v;
   v.reserve(s.size());
   for (auto &i : s) {
-    v.push_back(seastar::format("{}", i));
+    v.push_back(fmt::format("{}", i));
   }
   LOG_INFO("{} ({})", d, v);
 }

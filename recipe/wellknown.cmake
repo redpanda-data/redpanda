@@ -81,7 +81,6 @@ cooking_ingredient(bytellhashmap
     )
 
 
-
 # -- below are seastar & smf deps
 cooking_ingredient(smf
   COOKING_RECIPE wellknown
@@ -90,5 +89,5 @@ cooking_ingredient(smf
     -DSMF_BUILD_PROGRAMS=OFF
   EXTERNAL_PROJECT_ARGS
     GIT_REPOSITORY https://github.com/smfrpc/smf.git
-    GIT_TAG 6ec81bc
+    GIT_TAG ae7acfa
     )
