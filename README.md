@@ -5,12 +5,14 @@
 Assuming from the root of the repo:
 
 ```sh
-./tools/build.py --deps=true --build=debug
+./tools/build.py --deps=true --build=release
 ```
 
 That's it!
 
-To do incremental builds, just `cd $ROOT/build/debug && ninja`
+To do incremental builds, just `cd $ROOT/build/Release && ninja <target name>`
+for example: `cd build/Release && ninja redpanda` will build the 
+`redpanda` binary & transitive deps only
 
 
 ## Release 
