@@ -90,5 +90,5 @@ cooking_ingredient(smf
     -DSMF_BUILD_PROGRAMS=OFF
   EXTERNAL_PROJECT_ARGS
     GIT_REPOSITORY https://github.com/smfrpc/smf.git
-    GIT_TAG 4dfa96b
+    GIT_TAG 6ec81bc
     )

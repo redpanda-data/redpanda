@@ -7,12 +7,12 @@ from string import Template
 sys.path.append(os.path.dirname(__file__))
 logger = logging.getLogger('rp')
 
-
 from constants import *
 import git
 import shell
 import fmt
 import cpp
+
 
 def install_deps():
     logger.info("Checking for deps scripts")
@@ -27,9 +27,10 @@ def _check_build_type(build_type):
         raise Exception("Build type is neither release or debug or all")
 
 
-def _symlink_compile_commands(x):
+def _symlink_compile_commands(build_type):
     cpp.check_bdir()
-    src = "%s/%s/compile_commands.json" % (RP_BUILD_ROOT, x)
+    src = "%s/%s/compile_commands.json" % (RP_BUILD_ROOT,
+                                           build_type.capitalize())
     dst = "%s/compile_commands.json" % RP_ROOT
     if os.path.islink(dst): os.unlink(dst)
     os.symlink(src, dst)
@@ -39,25 +40,33 @@ def _configure_build(build_type):
     _check_build_type(build_type)
     cpp.check_bdir()
     logger.info("configuring build %s" % build_type)
-    if build_type in ["debug"]:
-        cmd = "sh %s/cooking.sh -r wellknown -t Debug" % RP_ROOT
-        shell.run_subprocess("cd %s && %s " % (RP_ROOT, cmd))
-    elif build_type in ["release"]:
-        cmd = "sh %s/cooking.sh -r wellknown -t Release" % RP_ROOT
-        shell.run_subprocess("cd %s && %s " % (RP_ROOT, cmd))
+    tpl = Template(
+        "cd $root && sh $root/cooking.sh -r wellknown -t $build_type -d $build_root/$build_type"
+    )
+    cmd = tpl.substitute(
+        root=RP_ROOT,
+        build_root=RP_BUILD_ROOT,
+        build_type=build_type.capitalize())
+    shell.run_subprocess(cmd)
 
 
 def _invoke_build(build_type):
     _check_build_type(build_type)
-    shell.run_subprocess("cd %s && ninja -C %s" % (RP_ROOT, RP_BUILD_ROOT))
+    tpl = Tepmlate("cd $root && ninja -C $root/build/$build_type")
+    shell.run_subprocess("cd %s && ninja -C %s/" % (RP_ROOT, RP_BUILD_ROOT))
+    _symlink_compile_commands()
 
 
 def _invoke_tests(build_type):
     _check_build_type(build_type)
     rp_test_regex = "\".*_rp(unit|bench|int)$\""
-    shell.run_subprocess(
-        "cd %s && ctest -R %s" % (RP_BUILD_ROOT, rp_test_regex))
-
+    tpl = Template(
+        "cd $build_root/$build_type && ctest -R $re"
+    )
+    cmd = tpl.substitute(
+        re=rp_test_regex,
+        build_type=build_type.capitalize())
+    shell.run_subprocess(cmd)
 
 def build(build_type):
     _configure_build(build_type)
