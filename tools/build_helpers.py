@@ -58,7 +58,7 @@ def _invoke_build(build_type):
         build_root=RP_BUILD_ROOT,
         build_type=build_type.capitalize())
     shell.run_subprocess(cmd)
-    _symlink_compile_commands()
+    _symlink_compile_commands(build_type)
 
 
 def _invoke_tests(build_type):
