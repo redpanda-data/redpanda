@@ -68,6 +68,7 @@ def _invoke_tests(build_type):
         "cd $build_root/$build_type && ctest -R $re"
     )
     cmd = tpl.substitute(
+        build_root=RP_BUILD_ROOT,
         re=rp_test_regex,
         build_type=build_type.capitalize())
     shell.run_subprocess(cmd)
