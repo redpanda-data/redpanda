@@ -6,7 +6,7 @@ Add `--poll-mode` at the end if you want lower latency (higher cpu usage)
 
 ```sh
 
-./src/v/redpanda/redpanda --redpanda-cfg ~/workspace/v/src/v/redpanda/sample-cfg.yml --cpuset 0-3 -m 40G
+./src/v/redpanda/redpanda --redpanda-cfg $(git rev-parse --show-toplevel)/src/v/redpanda/sample-cfg.yml --cpuset 0-3 -m 40G
 
 ```
 
