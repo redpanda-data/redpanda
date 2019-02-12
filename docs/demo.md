@@ -44,6 +44,9 @@ time ./bin/kafka-run-class.sh org.apache.kafka.tools.ProducerPerformance --print
 # 3. Results w/ kafka 2.1.0 on Feb 4, 2019
 4194304 records sent, 435590.819400 records/sec (83.08 MB/sec), 255.51 ms avg latency, 757.00 ms max latency, 242 ms 50th, 481 ms 95th, 621 ms 99th, 744 ms 99.9th.
 
+# 4. read 4 GB (times out at times)
+time kafka_2.11-2.1.0/bin/kafka-run-class.sh kafka.tools.ConsumerPerformance --print-metrics --reporting-interval 1000 --topic test --group $(openssl rand -base64 15) --broker-list localhost:9092 --messages 4193040 --num-fetch-threads 4 --show-detailed-stats  --threads 4 --timeout 10000
+
 ```
 
 
