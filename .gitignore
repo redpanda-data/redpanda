@@ -13,9 +13,6 @@
 *.dylib
 *.dll
 
-# Fortran module files
-*.mod
-
 # Compiled Static libraries
 *.lai
 *.la
@@ -178,3 +175,4 @@ venv.bak/
 
 .vscode/
 .cooking_memory
+.idea
