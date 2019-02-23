@@ -2,6 +2,7 @@
 import sys
 import os
 import logging
+import glob
 from string import Template
 
 sys.path.append(os.path.dirname(__file__))
@@ -9,6 +10,7 @@ logger = logging.getLogger('rp')
 
 from constants import *
 import git
+import golang
 import shell
 import fmt
 import cpp
@@ -18,9 +20,13 @@ def install_deps():
     logger.info("Checking for deps scripts")
     cpp.get_smf_install_deps()
     logger.info("installing deps")
+    user_id = shell.run_oneline("id -u")
+
     shell.run_subprocess(
-        "sudo bash %s/%s" % (RP_BUILD_ROOT, "smf_install_deps.sh"))
-    shell.run_subprocess("sudo bash %s/tools/install-deps.sh" % RP_ROOT)
+        "%s bash %s/%s" % ('' if user_id == '0' else 'sudo', RP_BUILD_ROOT,
+                           "smf_install_deps.sh"))
+    shell.run_subprocess("%s bash %s/tools/install-deps.sh" %
+                         ('' if user_id == '0' else 'sudo', RP_ROOT))
 
 
 def _check_build_type(build_type):
@@ -70,7 +76,26 @@ def _invoke_tests(build_type):
     shell.run_subprocess(cmd)
 
 
-def build(build_type):
-    _configure_build(build_type)
-    _invoke_build(build_type)
-    _invoke_tests(build_type)
+def _invoke_build_go_cmds():
+    for cmd_path in glob.glob("%s/*/*.go" % GOLANG_CMDS_ROOT):
+        cmd_dir, cmd_main = os.path.split(cmd_path)
+        _, cmd_name = os.path.split(cmd_dir)
+        logger.info("Building %s...", cmd_name)
+        golang.go_build(cmd_dir, cmd_main,
+                        "%s/%s" % (GOLANG_BUILD_ROOT, cmd_name))
+
+
+def _invoke_go_tests():
+    golang.go_test(GOLANG_ROOT, "./...")
+
+
+def build(build_type, targets):
+    if 'all' in targets or 'go' in targets:
+        _invoke_go_tests()
+        _invoke_build_go_cmds()
+
+    if 'all' in targets or 'cpp' in targets:
+        logger.info("Building Cpp...")
+        _configure_build(build_type)
+        _invoke_build(build_type)
+        _invoke_tests(build_type)

@@ -2,12 +2,24 @@
 
 set -e
 
+function golang_dep() {
+	if [[ "$(which go)" == "" ]]; then
+        echo "golang"
+    else 
+        echo ""
+    fi
+}
+
 function debs() {
     apt-get update
     apt-get install -y \
             ccache \
-            python3-distutils
+            python3-distutils \
+            clang \
+            $(golang_dep) \
+            libudev-dev
 }
+
 function rpms() {
     yumdnf="yum"
     if command -v dnf > /dev/null; then
@@ -26,7 +38,10 @@ function rpms() {
     esac
     ${yumdnf} install -y \
               ccache \
-              python3-distutils-extra
+              python3-distutils-extra \
+              clang \
+              $(golang_dep) \
+              systemd-devel 
 }
 
 

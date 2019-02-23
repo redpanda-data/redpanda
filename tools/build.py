@@ -35,6 +35,11 @@ def generate_options():
         default='debug',
         help='choose of debug|release|none')
     parser.add_argument(
+        '--targets',
+        nargs="*",
+        default='all',
+        help='list of build targets [cpp, go]')
+    parser.add_argument(
         '--files',
         type=str,
         default='incremental',
@@ -64,7 +69,7 @@ def main():
     logger.info("%s" % options)
     root = git.get_git_root(relative=os.path.dirname(__file__))
     if options.deps: install_deps()
-    if options.build and options.build != "none": build(options.build)
+    if options.build and options.build != "none": build(options.build, options.targets)
 
     def _files():
         r = []
@@ -77,6 +82,7 @@ def main():
     changed_files = _files()
     if options.fmt:
         fmt.clangfmt(changed_files)
+        fmt.crlfmt(changed_files)
     if options.tidy:
         fmt.tidy(changed_files)
     if options.cpplint:
