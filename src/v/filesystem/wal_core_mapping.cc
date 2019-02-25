@@ -61,10 +61,10 @@ wal_core_mapping::core_assignment(const wal_put_request *p) {
   };
 
   if (SMF_UNLIKELY(p->partition_puts() == nullptr ||
-                   p->partition_puts()->Length() == 0)) {
+                   p->partition_puts()->size() == 0)) {
     LOG_THROW_IF(p->partition_puts() == nullptr,
                  "null pointer to transactions");
-    LOG_THROW_IF(p->partition_puts()->Length() == 0,
+    LOG_THROW_IF(p->partition_puts()->size() == 0,
                  "There are no partitions available");
     return {};
   }
@@ -78,7 +78,7 @@ wal_core_mapping::core_assignment(const wal_put_request *p) {
     auto &v = m[it->partition()];
     v.partition = it->partition();
     v.runner_core = runner;
-    for (std::size_t i = 0; i < it->records()->Length(); ++i) {
+    for (std::size_t i = 0; i < it->records()->size(); ++i) {
       v.records.push_back(it->records()->Get(i));
     }
   }

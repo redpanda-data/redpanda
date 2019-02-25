@@ -13,6 +13,7 @@ from constants import *
 import shell
 import git
 
+
 def _get_clang_prog(prog):
     """ALL tools for clang should be pinned to one version"""
     ret = shell.run_oneline("which %s" % prog)
@@ -33,8 +34,11 @@ def get_clang_tidy():
     return _get_clang_prog("clang-tidy")
 
 
-def check_bdir():
-    if not os.path.exists(RP_BUILD_ROOT): os.makedirs(RP_BUILD_ROOT)
+def check_bdir(build_type=None):
+    path = RP_BUILD_ROOT
+    if build_type is not None:
+        path = "%s/%s" % (RP_BUILD_ROOT, build_type)
+    if not os.path.exists(path): os.makedirs(path)
 
 
 def get_cpplint():

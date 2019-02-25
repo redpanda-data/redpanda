@@ -29,8 +29,7 @@ def _check_build_type(build_type):
 
 def _symlink_compile_commands(build_type):
     cpp.check_bdir()
-    src = "%s/%s/compile_commands.json" % (RP_BUILD_ROOT,
-                                           build_type.capitalize())
+    src = "%s/%s/compile_commands.json" % (RP_BUILD_ROOT, build_type)
     dst = "%s/compile_commands.json" % RP_ROOT
     if os.path.islink(dst): os.unlink(dst)
     os.symlink(src, dst)
@@ -38,25 +37,25 @@ def _symlink_compile_commands(build_type):
 
 def _configure_build(build_type):
     _check_build_type(build_type)
-    cpp.check_bdir()
+    cpp.check_bdir(build_type)
     logger.info("configuring build %s" % build_type)
     tpl = Template(
-        "cd $root && sh $root/cooking.sh -r wellknown -t $build_type -d $build_root/$build_type"
+        "cd $build_root/$build_type && cmake -GNinja -DCMAKE_BUILD_TYPE=$cmake_type $root"
     )
     cmd = tpl.substitute(
         root=RP_ROOT,
         build_root=RP_BUILD_ROOT,
-        build_type=build_type.capitalize())
+        cmake_type=build_type.capitalize(),
+        build_type=build_type)
     shell.run_subprocess(cmd)
 
 
 def _invoke_build(build_type):
     _check_build_type(build_type)
-    tpl = Template("cd $root && ninja -C $build_root/$build_type")
+    tpl = Template(
+        "cd $build_root/$build_type && ninja -C $build_root/$build_type")
     cmd = tpl.substitute(
-        root=RP_ROOT,
-        build_root=RP_BUILD_ROOT,
-        build_type=build_type.capitalize())
+        root=RP_ROOT, build_root=RP_BUILD_ROOT, build_type=build_type)
     shell.run_subprocess(cmd)
     _symlink_compile_commands(build_type)
 
@@ -64,14 +63,11 @@ def _invoke_build(build_type):
 def _invoke_tests(build_type):
     _check_build_type(build_type)
     rp_test_regex = "\".*_rp(unit|bench|int)$\""
-    tpl = Template(
-        "cd $build_root/$build_type && ctest -R $re"
-    )
+    tpl = Template("cd $build_root/$build_type && ctest -R $re")
     cmd = tpl.substitute(
-        build_root=RP_BUILD_ROOT,
-        re=rp_test_regex,
-        build_type=build_type.capitalize())
+        build_root=RP_BUILD_ROOT, re=rp_test_regex, build_type=build_type)
     shell.run_subprocess(cmd)
+
 
 def build(build_type):
     _configure_build(build_type)
