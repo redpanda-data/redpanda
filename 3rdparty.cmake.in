@@ -4,7 +4,6 @@ project(build-deps NONE)
 cmake_host_system_information(
   RESULT build_concurrency_factor
   QUERY NUMBER_OF_LOGICAL_CORES)
-set(make_command ${CMAKE_MAKE_PROGRAM} -j ${build_concurrency_factor})
 
 set(autotools_flags
   CFLAGS=-I@V_DEPS_INSTALL_DIR@/include
@@ -185,7 +184,7 @@ ExternalProject_Add(lz4
     -DCMAKE_PREFIX_PATH=<INSTALL_DIR>
     -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
     <SOURCE_DIR>/contrib/cmake_unofficial
-  BUILD_COMMAND ${make_command})
+  BUILD_COMMAND ${CMAKE_COMMAND})
 
 ExternalProject_Add(numactl
   URL https://github.com/numactl/numactl/releases/download/v2.0.12/numactl-2.0.12.tar.gz
@@ -319,7 +318,7 @@ ExternalProject_Add(zstd
     -DZSTD_BUILD_SHARED=OFF
     -DZSTD_BUILD_PROGRAMS=OFF
     <SOURCE_DIR>/build/cmake
-  BUILD_COMMAND ${make_command})
+  BUILD_COMMAND ${CMAKE_COMMAND})
 
 ExternalProject_Add(HdrHistogram
   URL https://github.com/HdrHistogram/HdrHistogram_c/archive/7381c1bf78d462917cf31b736d5d9e700bfedb0f.tar.gz
@@ -350,7 +349,7 @@ ExternalProject_Add(xxhash
     -DBUILD_SHARED_LIBS=OFF
     -DBUILD_ENABLE_INLINE_API=ON
     <SOURCE_DIR>/cmake_unofficial
-  BUILD_COMMAND ${make_command})
+  BUILD_COMMAND ${CMAKE_COMMAND})
 
 ExternalProject_Add(gtest
   URL https://github.com/google/googletest/archive/644319b9f06f6ca9bf69fe791be399061044bc3d.tar.gz
@@ -464,7 +463,7 @@ ExternalProject_Add(luajit
   CONFIGURE_COMMAND ""
   BUILD_IN_SOURCE ON
   BUILD_COMMAND ""
-  INSTALL_COMMAND ${make_command} PREFIX=<INSTALL_DIR> install)
+  INSTALL_COMMAND make -j${build_concurrency_factor} PREFIX=<INSTALL_DIR> install)
 
 ExternalProject_Add(sol2
   DEPENDS luajit
