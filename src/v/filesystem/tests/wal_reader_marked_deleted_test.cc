@@ -1,3 +1,4 @@
+#include <seastar/core/sleep.hh>
 #include <seastar/core/app-template.hh>
 #include <seastar/core/distributed.hh>
 #include <seastar/core/lowres_clock.hh>
@@ -80,10 +81,12 @@ main(int args, char **argv, char **env) {
         .then([target_filename](auto sz) {
           auto reader = seastar::make_lw_shared<v::wal_reader_node>(
             0, sz, seastar::lowres_system_clock::now(), target_filename);
-          return reader->open().then([reader] {
-            reader->mark_for_deletion();
-            return reader->close().finally([reader] {});
-          });
+          return reader->open()
+            .then([reader] {
+              reader->mark_for_deletion();
+              return reader->close().finally([reader] {});
+            })
+            .then([] { return seastar::sleep(std::chrono::milliseconds(15)); });
         })
         .then(
           [target_filename] { return seastar::file_exists(target_filename); })
