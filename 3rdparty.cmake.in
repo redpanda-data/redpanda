@@ -425,8 +425,8 @@ ExternalProject_Add(smf
     HdrHistogram
     zstd
     seastar
-  GIT https://github.com/smfrpc/smf.git
-  GIT_TAG 92ff3af
+  URL https://github.com/smfrpc/smf/archive/92ff3af.tar.gz
+  URL_MD5 70ae8d990586d989c9492e0302da0000
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   CMAKE_ARGS
     -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@
