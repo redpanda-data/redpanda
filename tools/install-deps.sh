@@ -5,6 +5,7 @@ set -e
 function debs() {
     apt-get update
     apt-get install -y \
+            ccache \
             python3-distutils
 }
 function rpms() {
@@ -24,6 +25,7 @@ function rpms() {
             ;;
     esac
     ${yumdnf} install -y \
+              ccache \
               python3-distutils-extra
 }
 
