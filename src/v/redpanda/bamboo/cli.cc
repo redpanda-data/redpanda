@@ -19,6 +19,9 @@ cli::cli(const boost::program_options::variables_map *cfg)
                          rand_.next(), rand_.next());
   co.server_side_verify_payload =
     options()["server-side-verify-checksum"].as<bool>();
+  if (auto tpc = options()["partitions-per-topic"].as<int32_t>(); tpc > 0) {
+    co.topic_partitions = tpc;
+  }
   co.enable_detailed_latency_metrics = options()["enable-histogram"].as<bool>();
   if (kRegularTopic == options()["topic-type"].as<seastar::sstring>()) {
     co.topic_type = v::wal_topic_type::wal_topic_type_regular;

@@ -32,8 +32,8 @@ wal_core_mapping::core_assignment(const wal_topic_create_request *p) {
   retval.reserve(assign.size());
   for (auto i = 0u; i < assign.size(); ++i) {
     if (assign[i].empty()) {
-      LOG_WARN("Core `{}` has no partitions. ns: {}, topic: `{}`", i, p->ns(),
-               p->topic());
+      DLOG_TRACE("Core `{}` has no partitions. ns: {}, topic: `{}`", i, p->ns(),
+                 p->topic());
       continue;
     }
     retval.push_back(wal_create_request(p, i, std::move(assign[i])));
