@@ -443,7 +443,7 @@ ExternalProject_Add(luajit
   CONFIGURE_COMMAND ""
   BUILD_IN_SOURCE ON
   BUILD_COMMAND ""
-  INSTALL_COMMAND ${cmake_command} PREFIX=<INSTALL_DIR> install)
+  INSTALL_COMMAND ${make_command} PREFIX=<INSTALL_DIR> install)
 
 ExternalProject_Add(sol2
   DEPENDS luajit
