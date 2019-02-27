@@ -1,17 +1,14 @@
-cmake_minimum_required(VERSION 3.5.1)
+cmake_minimum_required(VERSION 3.7.0)
 project(build-deps NONE)
-
 cmake_host_system_information(
   RESULT build_concurrency_factor
   QUERY NUMBER_OF_LOGICAL_CORES)
-
 set(autotools_flags
   CFLAGS=-I@V_DEPS_INSTALL_DIR@/include
   CXXFLAGS=-I@V_DEPS_INSTALL_DIR@/include
   LDFLAGS=-L@V_DEPS_INSTALL_DIR@/lib)
-
 set(PKG_CONFIG_PATH PKG_CONFIG_PATH=@V_DEPS_INSTALL_DIR@/lib/pkgconfig)
-
+set(make_command make -j ${build_concurrency_factor})
 set(info_dir --infodir=@V_DEPS_INSTALL_DIR@/share/info)
 
 include(ExternalProject)
@@ -59,16 +56,16 @@ ExternalProject_Add(zlib
   CONFIGURE_COMMAND
     <SOURCE_DIR>/configure
     --prefix=<INSTALL_DIR>
-  BUILD_COMMAND make -j${build_concurrency_factor}
-  INSTALL_COMMAND make install)
+  BUILD_COMMAND ${make_command}
+  INSTALL_COMMAND ${make_command} install)
 
 ExternalProject_Add(protobuf
   URL https://github.com/protocolbuffers/protobuf/releases/download/v3.3.0/protobuf-cpp-3.3.0.tar.gz
   URL_MD5 73c28d3044e89782bdc8d9fdcfbb5792
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   CONFIGURE_COMMAND <SOURCE_DIR>/configure --prefix=<INSTALL_DIR> --srcdir=<SOURCE_DIR>
-  BUILD_COMMAND make -j${build_concurrency_factor}
-  INSTALL_COMMAND make install
+  BUILD_COMMAND ${make_command}
+  INSTALL_COMMAND ${make_command} install
   DEPENDS zlib)
 
 # FIXME: this setup seems to cause dpdk to rebuild each time
@@ -97,7 +94,7 @@ ExternalProject_Add(dpdk
   BUILD_COMMAND ""
   INSTALL_COMMAND
    ${CMAKE_COMMAND} -E chdir <SOURCE_DIR>
-   make -j${build_concurrency_factor} ${dpdk_args} install)
+   ${make_command} ${dpdk_args} install)
 
 ExternalProject_Add(c-ares
   URL https://github.com/c-ares/c-ares/archive/cares-1_14_0.tar.gz
@@ -132,8 +129,8 @@ ExternalProject_Add(gmp
     --prefix=<INSTALL_DIR>
     --srcdir=<SOURCE_DIR>
     ${info_dir}/gmp
-  BUILD_COMMAND make -j${build_concurrency_factor}
-  INSTALL_COMMAND make install)
+  BUILD_COMMAND ${make_command}
+  INSTALL_COMMAND ${make_command} install)
 
 ExternalProject_Add(nettle
   URL https://ftp.gnu.org/gnu/nettle/nettle-3.4.tar.gz
@@ -146,8 +143,8 @@ ExternalProject_Add(nettle
     --libdir=<INSTALL_DIR>/lib
     ${info_dir}/nettle
     ${autotools_flags}
-  BUILD_COMMAND make -j${build_concurrency_factor}
-  INSTALL_COMMAND make install
+  BUILD_COMMAND ${make_command}
+  INSTALL_COMMAND ${make_command} install
   DEPENDS gmp)
 
 ExternalProject_Add(gnutls
@@ -166,25 +163,19 @@ ExternalProject_Add(gnutls
     --disable-non-suiteb-curves
     --disable-doc
     ${autotools_flags}
-  BUILD_COMMAND make -j${build_concurrency_factor}
-  INSTALL_COMMAND make install
+  BUILD_COMMAND ${make_command}
+  INSTALL_COMMAND ${make_command} install
   DEPENDS gmp nettle)
 
-# in cmake >= 3.7
-#   use SOURCE_SUBDIR "build/cmake"
-#   instead of CONFIGURE_COMMAND used below
 ExternalProject_Add(lz4
   URL https://github.com/lz4/lz4/archive/v1.8.0.tar.gz
   URL_MD5 6247bf0e955899969d1600ff34baed6b
-  INSTALL_DIR @V_DEPS_INSTALL_DIR@
-  CONFIGURE_COMMAND
-    ${CMAKE_COMMAND}
-    -G ${CMAKE_GENERATOR}
+  INSTALL_DIR   @V_DEPS_INSTALL_DIR@
+  SOURCE_SUBDIR contrib/cmake_unofficial
+  CMAKE_ARGS
     -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@
     -DCMAKE_PREFIX_PATH=<INSTALL_DIR>
-    -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
-    <SOURCE_DIR>/contrib/cmake_unofficial
-  BUILD_COMMAND ${CMAKE_COMMAND})
+    -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>)
 
 ExternalProject_Add(numactl
   URL https://github.com/numactl/numactl/releases/download/v2.0.12/numactl-2.0.12.tar.gz
@@ -194,8 +185,8 @@ ExternalProject_Add(numactl
     <SOURCE_DIR>/configure
     --prefix=<INSTALL_DIR>
     --srcdir=<SOURCE_DIR>
-  BUILD_COMMAND make -j${build_concurrency_factor}
-  INSTALL_COMMAND make install)
+  BUILD_COMMAND ${make_command}
+  INSTALL_COMMAND ${make_command} install)
 
 ExternalProject_Add(libpciaccess
   URL https://www.x.org/releases/individual/lib/libpciaccess-0.13.4.tar.gz
@@ -205,8 +196,8 @@ ExternalProject_Add(libpciaccess
     <SOURCE_DIR>/configure
     --prefix=<INSTALL_DIR>
     --srcdir=<SOURCE_DIR>
-  BUILD_COMMAND make -j${build_concurrency_factor}
-  INSTALL_COMMAND make install)
+  BUILD_COMMAND ${make_command}
+  INSTALL_COMMAND ${make_command} install)
 
 ExternalProject_Add(hwloc
   URL https://download.open-mpi.org/release/hwloc/v1.11/hwloc-1.11.5.tar.gz
@@ -216,8 +207,8 @@ ExternalProject_Add(hwloc
     <SOURCE_DIR>/configure
     --prefix=<INSTALL_DIR>
     --srcdir=<SOURCE_DIR>
-  BUILD_COMMAND make -j${build_concurrency_factor}
-  INSTALL_COMMAND make install
+  BUILD_COMMAND ${make_command}
+  INSTALL_COMMAND ${make_command} install
   DEPENDS numactl libpciaccess)
 
 ExternalProject_Add(xy
@@ -227,8 +218,8 @@ ExternalProject_Add(xy
   CONFIGURE_COMMAND
     <SOURCE_DIR>/configure
     --prefix=<INSTALL_DIR>
-  BUILD_COMMAND make -j${build_concurrency_factor}
-  INSTALL_COMMAND make install)
+  BUILD_COMMAND ${make_command}
+  INSTALL_COMMAND ${make_command} install)
 
 ExternalProject_Add(xml2
   URL https://github.com/GNOME/libxml2/archive/f8a8c1f59db355b46962577e7b74f1a1e8149dc6.tar.gz
@@ -242,8 +233,8 @@ ExternalProject_Add(xml2
       <SOURCE_DIR>/configure
       --without-python
       --prefix=<INSTALL_DIR>
-  BUILD_COMMAND make -j${build_concurrency_factor}
-  INSTALL_COMMAND make install
+  BUILD_COMMAND ${make_command}
+  INSTALL_COMMAND ${make_command} install
   DEPENDS xy zlib)
 
 ExternalProject_Add(cryptopp
@@ -265,8 +256,8 @@ ExternalProject_Add(lksctp-tools
     <SOURCE_DIR>/configure
     --prefix=<INSTALL_DIR>
     --srcdir=<SOURCE_DIR>
-  BUILD_COMMAND make -j${build_concurrency_factor}
-  INSTALL_COMMAND make install)
+  BUILD_COMMAND ${make_command}
+  INSTALL_COMMAND ${make_command} install)
 
 ExternalProject_Add(seastar
   URL https://github.com/scylladb/seastar/archive/f0c0855.tar.gz
@@ -299,16 +290,12 @@ ExternalProject_Add(seastar
     lksctp-tools
     zlib)
 
-# in cmake >= 3.7
-#   use SOURCE_SUBDIR "build/cmake"
-#   instead of CONFIGURE_COMMAND used below
 ExternalProject_Add(zstd
   URL https://github.com/facebook/zstd/archive/470344d33e1d52a2ada75d278466da8d4ee2faf6.tar.gz
   URL_MD5 52368c486e11c0f21990c8f2d4b556f9
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
-  CONFIGURE_COMMAND
-    ${CMAKE_COMMAND}
-    -G ${CMAKE_GENERATOR}
+  SOURCE_SUBDIR  build/cmake
+  CMAKE_ARGS
     -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@
     -DCMAKE_PREFIX_PATH=<INSTALL_DIR>
     -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
@@ -316,9 +303,7 @@ ExternalProject_Add(zstd
     -DZSTD_LEGACY_SUPPORT=OFF
     -DZSTD_BUILD_STATIC=ON
     -DZSTD_BUILD_SHARED=OFF
-    -DZSTD_BUILD_PROGRAMS=OFF
-    <SOURCE_DIR>/build/cmake
-  BUILD_COMMAND ${CMAKE_COMMAND})
+    -DZSTD_BUILD_PROGRAMS=OFF)
 
 ExternalProject_Add(HdrHistogram
   URL https://github.com/HdrHistogram/HdrHistogram_c/archive/7381c1bf78d462917cf31b736d5d9e700bfedb0f.tar.gz
@@ -332,24 +317,19 @@ ExternalProject_Add(HdrHistogram
     -DHDR_HISTOGRAM_BUILD_SHARED=OFF
   DEPENDS zlib)
 
-# in cmake >= 3.7
-#   use SOURCE_SUBDIR "cmake_unofficial"
-#   instead of CONFIGURE_COMMAND used below
 ExternalProject_Add(xxhash
   URL https://github.com/Cyan4973/xxHash/archive/c9970b8ec4155e789f1c3682da923869a496ba9d.tar.gz
   URL_MD5 c1c87865e98f79144814a1d57db47751
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
-  CONFIGURE_COMMAND
-    ${CMAKE_COMMAND}
-    -G ${CMAKE_GENERATOR}
+  SOURCE_SUBDIR  cmake_unofficial
+  CMAKE_ARGS
     -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@
     -DCMAKE_PREFIX_PATH=<INSTALL_DIR>
     -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
     -DBUILD_XXHSUM=OFF
     -DBUILD_SHARED_LIBS=OFF
-    -DBUILD_ENABLE_INLINE_API=ON
-    <SOURCE_DIR>/cmake_unofficial
-  BUILD_COMMAND ${CMAKE_COMMAND})
+    -DBUILD_ENABLE_INLINE_API=ON)
+
 
 ExternalProject_Add(gtest
   URL https://github.com/google/googletest/archive/644319b9f06f6ca9bf69fe791be399061044bc3d.tar.gz
@@ -463,7 +443,7 @@ ExternalProject_Add(luajit
   CONFIGURE_COMMAND ""
   BUILD_IN_SOURCE ON
   BUILD_COMMAND ""
-  INSTALL_COMMAND make -j${build_concurrency_factor} PREFIX=<INSTALL_DIR> install)
+  INSTALL_COMMAND ${cmake_command} PREFIX=<INSTALL_DIR> install)
 
 ExternalProject_Add(sol2
   DEPENDS luajit

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.9) # 3.5 required by seastar
+cmake_minimum_required(VERSION 3.7.0)
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 project(REDPANDA VERSION "0.1.0" LANGUAGES CXX)
 # https://cmake.org/cmake/help/v3.4/policy/CMP0065.html
