@@ -69,45 +69,51 @@ class wal_segment_healer final : public wal_reader_node {
   seastar::future<>
   heal() {
     using stop_t = seastar::stop_iteration;
-    return truncate_to_max_metadata_size().then([this] {
-      if (file_size_ == 0) {
-        exit_recovery_ = true;
-        is_recovered_ = true;
-        return seastar::make_ready_future<>();
-      }
-      return seastar::do_with(
-               create_pager(),
-               [this](wal_disk_pager &p) {
-                 auto const id = global_file_id();
-                 auto pager = std::ref(p);
-                 return seastar::repeat([this, pager, id]() mutable {
-                   DLOG_TRACE("Recovering... file {} offset {}", id,
-                              last_valid_offset_);
-                   if (last_valid_offset_ >= file_size_) {
-                     return seastar::make_ready_future<stop_t>(stop_t::yes);
-                   }
-                   auto idx = std::make_unique<wal_read_reply>(
-                     0 /*ns*/, 0 /*topic*/, 0 /*partition*/,
-                     starting_epoch + last_valid_offset_,
-                     true /*validate offsets*/);
-                   auto ptr = idx.get();
-
-                   return copy_one_record(ptr, pager)
-                     .then([this, idx = std::move(idx)](auto next) {
-                       last_valid_offset_ = idx->next_epoch();
-                       return seastar::make_ready_future<stop_t>(next);
-                     })
-                     .handle_exception([](auto eptr) {
-                       LOG_INFO("Recovering exception...: {}", eptr);
+    return truncate_to_max_metadata_size()
+      .then([this] {
+        if (file_size_ == 0) {
+          exit_recovery_ = true;
+          is_recovered_ = true;
+          return seastar::make_ready_future<>();
+        }
+        return seastar::do_with(
+                 create_pager(),
+                 [this](wal_disk_pager &p) {
+                   auto const id = global_file_id();
+                   auto pager = std::ref(p);
+                   return seastar::repeat([this, pager, id]() mutable {
+                     DLOG_TRACE("Recovering... file {} offset {}", id,
+                                last_valid_offset_);
+                     if (last_valid_offset_ >= file_size_) {
                        return seastar::make_ready_future<stop_t>(stop_t::yes);
-                     });
-                 });
-               })
-        .then([this] {
-          update_recovery_state();
-          return truncate_to_valid_offset();
-        });
-    });
+                     }
+                     auto idx = std::make_unique<wal_read_reply>(
+                       0 /*ns*/, 0 /*topic*/, 0 /*partition*/,
+                       starting_epoch + last_valid_offset_,
+                       true /*validate offsets*/);
+                     auto ptr = idx.get();
+
+                     return copy_one_record(ptr, pager)
+                       .then([this, idx = std::move(idx)](auto next) {
+                         last_valid_offset_ = idx->next_epoch();
+                         return seastar::make_ready_future<stop_t>(next);
+                       })
+                       .handle_exception([](auto eptr) {
+                         LOG_INFO("Recovering exception...: {}", eptr);
+                         return seastar::make_ready_future<stop_t>(stop_t::yes);
+                       });
+                   });
+                 })
+          .then([this] {
+            update_recovery_state();
+            return truncate_to_valid_offset();
+          });
+      })
+      .handle_exception([this](auto eptr) {
+        LOG_ERROR("Failed to recover {} : {}", filename, eptr);
+        is_recovered_ = false;
+        return seastar::make_ready_future<>();
+      });
   }
   bool
   is_recovered() const {

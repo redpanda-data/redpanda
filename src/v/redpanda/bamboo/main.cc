@@ -55,6 +55,9 @@ cli_opts(boost::program_options::options_description_easy_init o) {
   o("rw-balance", po::value<double>()->default_value(0.5),
     "Valid between 0.0 -> 1.0; if 1.0 only do write worload");
 
+  o("partitions-per-topic", po::value<int32_t>()->default_value(-1),
+    "override partitions per topic, for topic creation");
+
   o("partition", po::value<int32_t>()->default_value(-1), "override partition");
 }
 

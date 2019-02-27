@@ -97,7 +97,7 @@ wal_segment_record::extract_from_bin(const char *begin, int32_t sz) {
   std::memcpy(&hdr, begin, kWalHeaderSize);
   auto full_size = wal_segment_record::record_size(hdr);
   LOG_THROW_IF(
-    full_size + kWalHeaderSize != sz,
+    (full_size + kWalHeaderSize) > sz,
     "passed in an incomplete buffer, required: {}, passed in a size of: {}",
     full_size + kWalHeaderSize, sz);
   seastar::temporary_buffer<char> keybuf(hdr.key_size());
