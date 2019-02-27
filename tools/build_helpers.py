@@ -19,7 +19,8 @@ def install_deps():
     cpp.get_smf_install_deps()
     logger.info("installing deps")
     shell.run_subprocess(
-        "sudo sh %s/%s" % (RP_BUILD_ROOT, "smf_install_deps.sh"))
+        "sudo bash %s/%s" % (RP_BUILD_ROOT, "smf_install_deps.sh"))
+    shell.run_subprocess("sudo bash %s/tools/install-deps.sh" % RP_ROOT)
 
 
 def _check_build_type(build_type):

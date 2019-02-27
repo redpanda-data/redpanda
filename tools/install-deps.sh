@@ -1,10 +1,11 @@
 #!/bin/bash
-set -evx
+
+set -e
 
 function debs() {
     apt-get update
     apt-get install -y \
-            clang
+            python3-distutils
 }
 function rpms() {
     yumdnf="yum"
@@ -23,7 +24,7 @@ function rpms() {
             ;;
     esac
     ${yumdnf} install -y \
-              clang
+              python3-distutils-extra
 }
 
 
@@ -42,7 +43,3 @@ case $ID in
         exit 1
         ;;
 esac
-
-toor=$(git rev-parse --show-toplevel)
-. ${toor}/src/third_party/smf/src/third_party/seastar/install-dependencies.sh
-. ${toor}/src/third_party/smf/install-deps.sh
