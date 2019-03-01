@@ -149,9 +149,9 @@ wal_segment_indexer::close() {
 }
 seastar::future<>
 wal_segment_indexer::open() {
-  index_ = std::make_unique<wal_segment>(
-    filename, priority, wopts.max_log_segment_size,
-    wopts.max_bytes_in_writer_cache, wopts.max_writer_concurrency_pages);
+  index_ = std::make_unique<wal_segment>(filename, priority,
+                                         wopts.max_log_segment_size,
+                                         wopts.max_bytes_in_writer_cache);
   return index_->open();
 }
 

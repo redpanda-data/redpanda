@@ -138,7 +138,8 @@ main(int args, char **argv, char **env) {
           LOG_INFO("Sucess Writing Index file: {} index size: {}",
                    index_filename, sz);
           auto reader = seastar::make_lw_shared<v::wal_reader_node>(
-            0, sz, seastar::lowres_system_clock::now(), index_filename);
+            0 /*epoch*/, 0 /*term*/, sz, seastar::lowres_system_clock::now(),
+            index_filename);
           return reader->open()
             .then([reader, writer_size = sz] {
               v::wal_get_requestT r;

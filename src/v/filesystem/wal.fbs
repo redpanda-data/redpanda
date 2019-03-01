@@ -146,19 +146,19 @@ table wal_get_reply {
   error:       wal_read_errno = none;
 }
 
-struct wal_partition_stats {
-  partition:         int;
-  log_segment_count: int;
-  start_offset:  long;
-  ending_offset: long;
+struct wal_segment_stats {
+  term:         long;
+  start_offset: long;
+  end_offset:   long;
 }
-table wal_topic_stats {
-  topic: long;
-  ns: long;
-  partitions: [wal_partition_stats];
+table wal_partition_stats {
+  ns:        long;
+  topic:     long;
+  partition: int;
+  segments:  [wal_segment_stats];
 }
 table wal_stats {
-  stats: [wal_topic_stats];
+  stats: [wal_partition_stats];
 }
 
 
@@ -167,10 +167,13 @@ enum wal_topic_type: ubyte {
   compaction,
 }
 
-/// \brief internal system only.
-struct wal_topic_create_system_metadata {
-  /// \brief server that intitiated the request
-  source: long;
+table wal_topic_create_system_metadata {
+  persisted_ns: long = -1;
+  persisted_topic: long = -1;
+  persisted_partition: int = -1;
+  /// brief if non-empty, create *only* these partitions
+  /// TODO(agallego) - add a test for this
+  partitions_filter: [int];
 }
 table wal_topic_create_request {
   topic: string;
@@ -178,6 +181,9 @@ table wal_topic_create_request {
   props: [wal_topic_property];
   partitions: int = 16;
   type: wal_topic_type = regular;
+  /// TODO(agallego) add size base and time base expiration
+  /// issue: #39
+  /// \brief system internal. do not manipulate at client
   smeta: wal_topic_create_system_metadata;
 }
 

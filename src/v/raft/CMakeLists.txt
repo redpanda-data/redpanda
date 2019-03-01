@@ -8,7 +8,7 @@ smfc_gen(
 
 add_library (raft STATIC
   ${raft_fbs}
-  raft_service.cc
+  raft_log_service.cc
   )
 target_include_directories(raft
   PUBLIC ${CMAKE_CURRENT_BINARY_DIR}

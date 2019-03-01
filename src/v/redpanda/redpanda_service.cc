@@ -20,9 +20,7 @@ redpanda_service::create_topic(
   if (!record) {
     return smf::futurize_status_for_type<wal_topic_create_reply>(400);
   }
-  if (record->smeta() && record->smeta()->source() == 0) {
-    LOG_WARN("Not fully implemented. Missing paxos");
-  }
+  if (record->smeta()) { LOG_WARN("Not fully implemented. Missing paxos"); }
   auto ptr = record.get();
   return seastar::do_with(
            std::move(record), wal_core_mapping::core_assignment(ptr),

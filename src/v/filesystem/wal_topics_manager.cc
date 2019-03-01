@@ -35,6 +35,14 @@ write_partition_metadata(const wal_opts &opts, const wal_create_request &c,
                          int32_t partition) {
 
   std::unique_ptr<wal_topic_create_requestT> props(c.req->UnPack());
+  if (props->smeta == nullptr) {
+    props->smeta = std::make_unique<wal_topic_create_system_metadataT>();
+  }
+  // The values below are needed to merge topics/partitions across WALs
+  props->smeta->persisted_partition = partition;
+  props->smeta->persisted_ns = xxhash_64(props->ns.c_str(), props->ns.size());
+  props->smeta->persisted_topic =
+    xxhash_64(props->topic.c_str(), props->topic.size());
   auto buf =
     smf::native_table_as_buffer<wal_topic_create_request>(*props.get());
 
@@ -56,9 +64,7 @@ write_partition_metadata(const wal_opts &opts, const wal_create_request &c,
       auto filename = metadata_path(opts, ns, topic, partition);
       auto sz = data->data.size();
       auto file = std::make_unique<wal_segment>(
-        filename, priority_manager::get().streaming_write_priority(), sz, sz,
-        1);
-
+        filename, priority_manager::get().streaming_write_priority(), sz, sz);
       auto f = file.get();
       return f->open()
         .then([f, sz, d = std::move(data)]() mutable {
@@ -124,6 +130,8 @@ wal_topics_manager::nstpidx_props(wal_nstpidx idx, seastar::sstring props_dir) {
   }
   seastar::sstring props_filename = props_dir + "/metadata";
   return readfile(props_filename).then([this, props_filename, idx](auto buf) {
+    LOG_THROW_IF(buf.size() == 0, "could not read properties file: {}",
+                 props_filename);
     auto [k, v] = wal_segment_record::extract_from_bin(buf.get(), buf.size());
     LOG_TRACE("Loaded properties: {} ({})", props_filename, idx);
     auto tb = smf::fbs_typed_buf<wal_topic_create_request>(std::move(v));
@@ -186,11 +194,11 @@ wal_topics_manager::close() {
 std::unique_ptr<wal_stats_reply>
 wal_topics_manager::stats() const {
   auto retval = std::make_unique<wal_stats_reply>();
-  // std::for_each(mngrs_.begin(), mngrs_.end(),
-  //               [this, ptr = retval.get()](auto &pm) {
-  //                 wal_nstpidx i(pm.second->topic, pm.second->partition);
-  //                 ptr->stats.insert({std::move(i), pm.second->stats()});
-  //               });
+  auto &ref = retval->stats;
+  for (auto &mpair : mngrs_) {
+    auto &m = mpair.second;
+    ref.emplace(m->idx, std::move(m->stats()));
+  }
   return std::move(retval);
 }
 

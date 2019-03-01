@@ -45,6 +45,7 @@ struct offset_comparator {
   }
 };
 
+wal_nstpidx_manager::~wal_nstpidx_manager() { log_cleanup_timeout_.cancel(); }
 wal_nstpidx_manager::wal_nstpidx_manager(
   wal_opts o, const wal_topic_create_request *create_props, wal_nstpidx id,
   seastar::sstring work_directory)
@@ -66,64 +67,8 @@ wal_nstpidx_manager::wal_nstpidx_manager(
                      sm::description("Number of times, we rolled the log"))});
 
   // set the cleanup callback
-  log_cleanup_timeout_.set_callback([this] {
-    std::vector<std::unique_ptr<wal_reader_node>> to_remove;
-    auto now = seastar::lowres_system_clock::now();
-
-    // must be signed
-    int32_t nodes_size = nodes_.size();
-
-    // start from the front for time based
-    while (nodes_size-- > 0) {
-      auto &n = nodes_.front();
-
-      if (n->filename == writer_->filename()) {
-        // skip active writer
-        // we are at the end of the queue
-        break;
-      }
-
-      auto node_max_time = n->modified_time() + opts.max_retention_period;
-      if (node_max_time < now) {
-        n->mark_for_deletion();
-        auto hrs = std::chrono::duration_cast<std::chrono::hours>(
-                     opts.max_retention_period)
-                     .count();
-        LOG_INFO("Marking node {} for deletion. Last modified time "
-                 "{} expired for policy > {}hours. Current time: {}",
-                 n->filename, n->modified_time(), hrs, now);
-        to_remove.push_back(std::move(nodes_.front()));
-        nodes_.pop_front();
-      }
-    }
-
-    // start from the back for size based
-    nodes_size = nodes_.size();
-    int64_t max_bytes = opts.max_retention_size;
-    while (opts.max_retention_size > 0 && nodes_size-- > 0) {
-      auto &n = nodes_[nodes_size];
-      if (n->filename == writer_->filename()) { continue; }
-      max_bytes -= n->file_size();
-      if (max_bytes <= 0) {
-        LOG_INFO(
-          "Size retention exceeded: {}. Marking following nodes as deleted",
-          smf::human_bytes(opts.max_retention_size));
-        for (auto i = 0; i <= nodes_size; ++i) {
-          to_remove.push_back(std::move(nodes_.front()));
-          nodes_.pop_front();
-          LOG_INFO("Marking node {} as deleted. Size retention policy",
-                   to_remove.back()->filename);
-        }
-      }
-    }
-    if (!to_remove.empty()) {
-      // do in background
-      seastar::do_with(std::move(to_remove), [](auto &vec) {
-        return seastar::do_for_each(vec.begin(), vec.end(),
-                                    [](auto &rdr) { return rdr->close(); });
-      });
-    }
-  });
+  log_cleanup_timeout_.set_callback(
+    [this] { cleanup_timer_cb_log_segments(); });
 
   // add jitter of up to 10seconds
   smf::random r;
@@ -131,7 +76,70 @@ wal_nstpidx_manager::wal_nstpidx_manager(
     std::chrono::hours(1) + std::chrono::milliseconds(r.next() % 10000));
 }
 
-wal_nstpidx_manager::~wal_nstpidx_manager() { log_cleanup_timeout_.cancel(); }
+void
+wal_nstpidx_manager::cleanup_timer_cb_log_segments() {
+  std::vector<std::unique_ptr<wal_reader_node>> to_remove;
+  auto now = seastar::lowres_system_clock::now();
+
+  // must be signed
+  int32_t nodes_size = nodes_.size();
+
+  // start from the front for time based
+  while (nodes_size-- > 0) {
+    auto &n = nodes_.front();
+
+    if (n->filename == writer_->filename()) {
+      // skip active writer
+      // we are at the end of the queue
+      break;
+    }
+
+    auto node_max_time = n->modified_time() + opts.max_retention_period;
+    if (node_max_time < now) {
+      n->mark_for_deletion();
+      auto hrs = std::chrono::duration_cast<std::chrono::hours>(
+                   opts.max_retention_period)
+                   .count();
+      LOG_INFO("Marking node {} for deletion. Last modified time "
+               "{} expired for policy > {}hours. Current time: {}",
+               n->filename, n->modified_time(), hrs, now);
+      to_remove.push_back(std::move(nodes_.front()));
+      nodes_.pop_front();
+    }
+  }
+
+  // start from the back for size based
+  nodes_size = nodes_.size();
+  int64_t max_bytes = opts.max_retention_size;
+  while (opts.max_retention_size > 0 && nodes_size-- > 0) {
+    auto &n = nodes_[nodes_size];
+    if (n->filename == writer_->filename()) { continue; }
+    max_bytes -= n->file_size();
+    if (max_bytes <= 0) {
+      LOG_INFO(
+        "Size retention exceeded: {}. Marking following nodes as deleted",
+        smf::human_bytes(opts.max_retention_size));
+      for (auto i = 0; i <= nodes_size; ++i) {
+        to_remove.push_back(std::move(nodes_.front()));
+        nodes_.pop_front();
+        LOG_INFO("Marking node {} as deleted. Size retention policy",
+                 to_remove.back()->filename);
+      }
+    }
+  }
+  if (!to_remove.empty()) {
+    // do in background
+    seastar::do_with(std::move(to_remove), [](auto &vec) {
+      return seastar::do_for_each(
+        std::move_iterator(vec.begin()), std::move_iterator(vec.end()),
+        [](std::unique_ptr<wal_reader_node> rdr) {
+          auto p = rdr.get();
+          p->mark_for_deletion();
+          return p->close().finally([rdr = std::move(rdr)] {});
+        });
+    });
+  }
+}
 
 wal_nstpidx_manager::wal_nstpidx_manager(wal_nstpidx_manager &&o) noexcept
   : opts(std::move(o.opts)), tprops(o.tprops), idx(std::move(o.idx)),
@@ -210,15 +218,16 @@ wal_nstpidx_manager::get(wal_read_request r) {
 seastar::future<>
 wal_nstpidx_manager::create_log_handle_hook(seastar::sstring filename) {
   prometheus_stats_.log_segment_rolls++;
-  auto starting_epoch =
-    wal_name_extractor_utils::wal_segment_extract_epoch(filename);
+  auto [starting_epoch, term] =
+    wal_name_extractor_utils::wal_segment_extract_epoch_term(filename);
   LOG_THROW_IF(
     !nodes_.empty() && starting_epoch <= nodes_.back()->starting_epoch,
     "Found unordered nodes. Critical order violation. eval epoch: {}. "
     "last known begin epoch: {}. filename: {}",
     starting_epoch, nodes_.back()->starting_epoch, filename);
   auto n = std::make_unique<wal_reader_node>(
-    starting_epoch, 0, seastar::lowres_system_clock::now(), filename);
+    starting_epoch, term, 0 /*size*/, seastar::lowres_system_clock::now(),
+    filename);
   DLOG_DEBUG("Create WAL file: {} ", n->filename);
   nodes_.push_back(std::move(n));
   return nodes_.back()->open();
@@ -241,7 +250,8 @@ wal_nstpidx_manager::segment_size_change_hook(seastar::sstring name,
 wal_writer_node_opts
 wal_nstpidx_manager::default_writer_opts() {
   return wal_writer_node_opts(
-    opts, tprops, work_dir, priority_manager::get().streaming_write_priority(),
+    opts, 0 /*epoch*/, 0 /*term*/, tprops, work_dir,
+    priority_manager::get().streaming_write_priority(),
     wal_writer_node_opts::notify_create_log_handle_t(
       [this](auto s) { return create_log_handle_hook(s); }),
     wal_writer_node_opts::notify_size_change_handle_t(
@@ -268,8 +278,8 @@ wal_nstpidx_manager::open() {
       print_repaired_files(work_dir, repaired);
       for (const auto &i : repaired) {
         auto full_path_file = work_dir + "/" + i.filename;
-        auto n = std::make_unique<wal_reader_node>(i.epoch, i.size, i.modified,
-                                                   full_path_file);
+        auto n = std::make_unique<wal_reader_node>(i.epoch, i.term, i.size,
+                                                   i.modified, full_path_file);
         nodes_.push_back(std::move(n));
       }
       LOG_INFO("{} total nodes: {}, {}-{} ({})", work_dir, nodes_.size(),
@@ -281,7 +291,10 @@ wal_nstpidx_manager::open() {
     })
     .then([this] {
       auto wo = default_writer_opts();
-      if (!nodes_.empty()) { wo.epoch = nodes_.back()->ending_epoch(); }
+      if (!nodes_.empty()) {
+        wo.term = nodes_.back()->term;
+        wo.epoch = nodes_.back()->ending_epoch();
+      }
       writer_ = std::make_unique<wal_writer_node>(std::move(wo));
       return writer_->open();
     });
@@ -300,18 +313,15 @@ wal_nstpidx_manager::close() {
   });
 }
 
-// TODO(agallego) - fix these stats, ask for argument
-std::unique_ptr<wal_partition_stats>
+std::unique_ptr<wal_partition_statsT>
 wal_nstpidx_manager::stats() const {
-  auto p = std::make_unique<wal_partition_stats>();
-  if (!nodes_.empty()) {
-    p->mutate_start_offset(nodes_[0]->starting_epoch);
-    p->mutate_log_segment_count(nodes_.size() + 1);
-  } else {
-    p->mutate_start_offset(0);
-    p->mutate_log_segment_count(1);
+  auto p = std::make_unique<wal_partition_statsT>();
+  for (auto &n : nodes_) {
+    p->segments.emplace_back(n->term, n->starting_epoch, n->ending_epoch());
   }
-  p->mutate_ending_offset(writer_->current_offset());
+  p->ns = tprops->smeta()->persisted_ns();
+  p->topic = tprops->smeta()->persisted_topic();
+  p->partition = tprops->smeta()->persisted_partition();
   return std::move(p);
 }
 

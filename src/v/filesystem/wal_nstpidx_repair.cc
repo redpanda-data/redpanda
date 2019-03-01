@@ -40,7 +40,8 @@ wal_nstpidx_repair::visit(seastar::directory_entry de) {
     return seastar::make_ready_future<>();
   }
 
-  auto epoch = wal_name_extractor_utils::wal_segment_extract_epoch(de.name);
+  auto [epoch, term] =
+    wal_name_extractor_utils::wal_segment_extract_epoch_term(de.name);
   auto full_path = work_dir + "/" + de.name;
 
   return file_size_from_allocated_blocks(full_path).then([=](auto p) mutable {
@@ -53,18 +54,18 @@ wal_nstpidx_repair::visit(seastar::directory_entry de) {
     } else if (block_size >= wal_file_size_aligned()) {
       LOG_INFO("Recovering unsafe log-segment: {}, fallocated-size: {} ",
                block_size, full_path);
-      return recover_failed_wal_file(epoch, st.st_size,
+      return recover_failed_wal_file(epoch, term, st.st_size,
                                      from_timespec(st.st_mtim), full_path)
         .then([=](auto sz) mutable {
           if (sz != 0) {
             st.st_size = sz;
-            files_.insert(wal_nstpidx_repair::item{epoch, st.st_size, de.name,
-                                                   from_timespec(st.st_mtim)});
+            files_.insert(wal_nstpidx_repair::item{
+              epoch, term, st.st_size, de.name, from_timespec(st.st_mtim)});
           }
           return seastar::make_ready_future<>();
         });
     }
-    files_.insert(wal_nstpidx_repair::item{epoch, st.st_size, de.name,
+    files_.insert(wal_nstpidx_repair::item{epoch, term, st.st_size, de.name,
                                            from_timespec(st.st_mtim)});
     return seastar::make_ready_future<>();
   });

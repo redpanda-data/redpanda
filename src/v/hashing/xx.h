@@ -1,6 +1,8 @@
 #pragma once
 #include <cstdint>
+#include <cstring>
 
+#include <smf/log.h>
 #include <smf/macros.h>
 #include <xxhash.h>
 
@@ -86,6 +88,14 @@ template <typename T, std::size_t N,
 inline uint32_t
 xxhash_32(const std::array<T, N> &arr) {
   return xxhash_32(reinterpret_cast<const char *>(&arr[0]), sizeof(T) * N);
+}
+inline uint64_t
+xxhash_64_str(const char *s) {
+  return xxhash_64(DTHROW_IFNULL(s), std::strlen(s));
+}
+inline uint32_t
+xxhash_32_str(const char *s) {
+  return xxhash_32(DTHROW_IFNULL(s), std::strlen(s));
 }
 
 }  // namespace v

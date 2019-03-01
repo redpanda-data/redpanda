@@ -30,33 +30,33 @@ struct wal_writer_node_opts {
 
   SMF_DISALLOW_COPY_AND_ASSIGN(wal_writer_node_opts);
 
-  wal_writer_node_opts(const wal_opts &op,
+  wal_writer_node_opts(const wal_opts &op, int64_t term_id, int64_t epoch,
                        const wal_topic_create_request *create_props,
                        const seastar::sstring &writer_dir,
                        const seastar::io_priority_class &prio,
                        notify_create_log_handle_t cfunc,
                        notify_size_change_handle_t sfunc)
     : wopts(op), tprops(THROW_IFNULL(create_props)),
-      writer_directory(writer_dir), pclass(prio),
+      writer_directory(writer_dir), pclass(prio), epoch(epoch), term(term_id),
       log_segment_create_notify(std::move(cfunc)),
       log_segment_size_notify(std::move(sfunc)) {}
 
   wal_writer_node_opts(wal_writer_node_opts &&o) noexcept
     : wopts(o.wopts), tprops(o.tprops), writer_directory(o.writer_directory),
-      pclass(o.pclass),
+      pclass(o.pclass), epoch(o.epoch), term(o.term),
       log_segment_create_notify(std::move(o.log_segment_create_notify)),
-      log_segment_size_notify(std::move(o.log_segment_size_notify)),
-      epoch(o.epoch) {}
+      log_segment_size_notify(std::move(o.log_segment_size_notify)) {}
 
   const wal_opts &wopts;
   const wal_topic_create_request *tprops;
   const seastar::sstring &writer_directory;
   const seastar::io_priority_class &pclass;
 
+  int64_t epoch;
+  int64_t term;
+
   notify_create_log_handle_t log_segment_create_notify;
   notify_size_change_handle_t log_segment_size_notify;
-
-  int64_t epoch = 0;
 };
 
 /// \brief - given a prefix and an epoch (monotinically increasing counter)
@@ -75,6 +75,11 @@ class wal_writer_node {
 
   /// \brief writes the projection to disk ensuring file size capacity
   seastar::future<std::unique_ptr<wal_write_reply>> append(wal_write_request);
+
+  /// \brief/// \brief forces the log_segment to rotate and start a new
+  /// log segment with <epoch>.<term>.log
+  seastar::future<> set_term(int64_t term);
+
   /// \brief flushes the file before closing
   seastar::future<> close();
   /// \brief opens the file w/ open_flags::rw | open_flags::create |

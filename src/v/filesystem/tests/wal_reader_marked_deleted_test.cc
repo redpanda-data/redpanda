@@ -32,7 +32,7 @@ main(int args, char **argv, char **env) {
       auto &config = app.configuration();
       auto dir = config["write-ahead-log-dir"].as<std::string>();
 
-      const seastar::sstring target_filename = dir + "/0.wal";
+      const seastar::sstring target_filename = dir + "/0.0.wal";
 
       LOG_THROW_IF(dir.empty(), "Empty write-ahead-log-dir");
       LOG_INFO("log_segment test dir: {}", dir);
@@ -50,7 +50,8 @@ main(int args, char **argv, char **env) {
                [](auto &input, auto &wopts) {
                  auto writer = seastar::make_lw_shared<v::wal_writer_node>(
                    v::wal_writer_node_opts(
-                     wopts, input.get_create(), wopts.directory,
+                     wopts, 0 /*epoch*/, 0 /*term*/, input.get_create(),
+                     wopts.directory,
                      v::priority_manager::get().default_priority(),
                      [](auto name) { return seastar::make_ready_future<>(); },
                      [](auto name, auto sz) {
@@ -80,7 +81,8 @@ main(int args, char **argv, char **env) {
         .then([target_filename] { return seastar::file_size(target_filename); })
         .then([target_filename](auto sz) {
           auto reader = seastar::make_lw_shared<v::wal_reader_node>(
-            0, sz, seastar::lowres_system_clock::now(), target_filename);
+            0 /*epoch*/, 0 /*term*/, sz, seastar::lowres_system_clock::now(),
+            target_filename);
           return reader->open()
             .then([reader] {
               reader->mark_for_deletion();

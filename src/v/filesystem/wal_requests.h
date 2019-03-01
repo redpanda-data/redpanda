@@ -271,11 +271,23 @@ class wal_write_reply final {
 };
 
 struct wal_stats_reply {
+  SMF_DISALLOW_COPY_AND_ASSIGN(wal_stats_reply);
   using underlying =
-    ska::bytell_hash_map<wal_nstpidx, std::unique_ptr<wal_partition_stats>>;
+    std::unordered_map<wal_nstpidx, std::unique_ptr<wal_partition_statsT>>;
   using iterator = typename underlying::iterator;
   using const_iterator = typename underlying::const_iterator;
 
+  wal_stats_reply() {}
+  wal_stats_reply(wal_stats_reply &&o) noexcept : stats(std::move(o.stats)) {}
+  wal_stats_reply &
+  operator=(wal_stats_reply &&o) noexcept {
+    if (this != &o) {
+      this->~wal_stats_reply();
+      new (this) wal_stats_reply(std::move(o));
+    }
+    return *this;
+  }
+  ~wal_stats_reply() {}
   iterator
   find(wal_nstpidx p) {
     return stats.find(p);

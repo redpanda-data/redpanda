@@ -1,4 +1,7 @@
 #pragma once
+#include <cpuid.h>
+#include <cstdint>
+
 #include <sstream>
 
 #include <seastar/core/reactor.hh>
@@ -8,7 +11,12 @@
 namespace v {
 namespace syschecks {
 static inline void
+initialize_intrinsics() {
+  __builtin_cpu_init();
+}
+static inline void
 cpu() {
+  // Do not use the macros __SSE4_2__ because we need to detect at runtime
   LOG_THROW_IF(!__builtin_cpu_supports("sse4.2"),
                "sse4.2 support is required to run");
 }

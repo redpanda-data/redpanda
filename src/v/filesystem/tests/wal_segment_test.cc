@@ -99,7 +99,7 @@ write_poem_wal_segment(seastar::sstring base_dir, uint32_t max_appends = 100) {
     base_dir + "/" + segment_name,
     v::priority_manager::get().streaming_write_priority(),
     std::numeric_limits<int32_t>::max() /*max file in bytes*/,
-    1024 * 1024 /*1MB*/, 4 /* concurrency on writes*/);
+    1024 * 1024 /*1MB*/);
   return ws->open()
     .then([ws, max_appends] {
       return seastar::do_for_each(
