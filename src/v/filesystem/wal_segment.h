@@ -13,20 +13,20 @@ namespace v {
 /// \brief modeled after seastar/core/fstream.cc:file_data_sink_impl
 class wal_segment {
  public:
+  static constexpr const int64_t kChunkSize = 4096 * 31;
   class chunk {
    public:
     SMF_DISALLOW_COPY_AND_ASSIGN(chunk);
 
     explicit chunk(const std::size_t alignment)
-      : size(alignment),
-        buf_(seastar::allocate_aligned_buffer<char>(alignment, alignment)) {}
+      : buf_(seastar::allocate_aligned_buffer<char>(kChunkSize, alignment)) {}
     inline bool
     is_full() const {
-      return pos_ == size;
+      return pos_ == kChunkSize;
     }
     inline std::size_t
     space_left() const {
-      return size - pos_;
+      return kChunkSize - pos_;
     }
     inline std::size_t
     pos() const {
@@ -44,8 +44,6 @@ class wal_segment {
       return buf_.get();
     }
 
-    const std::size_t size;
-
    private:
     std::unique_ptr<char[], seastar::free_deleter> buf_;
     std::size_t pos_{0};
@@ -53,8 +51,7 @@ class wal_segment {
 
   SMF_DISALLOW_COPY_AND_ASSIGN(wal_segment);
   wal_segment(seastar::sstring filename, const seastar::io_priority_class &prio,
-              int64_t max_file_size, int32_t max_unflushed_bytes,
-              int32_t concurrent_background_writes);
+              int64_t max_file_size, int32_t max_unflushed_bytes);
   ~wal_segment();
 
   seastar::future<> open();
@@ -63,7 +60,7 @@ class wal_segment {
   seastar::future<> append(const char *buf, const std::size_t n);
   inline int64_t
   current_size() const {
-    auto sz = flushed_pages_ * dma_write_alignment_;
+    auto sz = flushed_pages_ * kChunkSize;
     return std::accumulate(
       chunks_.begin(), chunks_.end(), sz,
       [](auto acc, auto &next) { return acc + next->pos(); });
@@ -73,7 +70,6 @@ class wal_segment {
   const seastar::io_priority_class &pclass;
   const int64_t max_file_size;
   const int32_t max_unflushed_bytes;
-  const int32_t concurrency;
 
  private:
   /// \brief unsafe. use flush()

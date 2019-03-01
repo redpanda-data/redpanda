@@ -3,12 +3,13 @@
 #include <chrono>
 #include <unistd.h>
 
+#include <fmt/format.h>
 #include <seastar/core/align.hh>
 #include <smf/log.h>
 #include <smf/time_utils.h>
 
 #include "ioutil/priority_manager.h"
-// filesystem
+
 #include "file_size_utils.h"
 #include "wal_pretty_print_utils.h"
 #include "wal_reader_node.h"
@@ -33,10 +34,10 @@ wal_file_size_aligned() {
 }
 
 seastar::sstring
-wal_file_name(const seastar::sstring &work_dir, int64_t epoch) {
+wal_file_name(const seastar::sstring &work_dir, int64_t epoch, int64_t term) {
   DLOG_THROW_IF(work_dir[work_dir.size() - 1] == '/',
                 "Work dirrectory cannot end in /");
-  return work_dir + "/" + seastar::to_sstring(epoch) + ".wal";
+  return fmt::format("{}/{}.{}.wal", work_dir, epoch, term);
 }
 
 seastar::future<std::pair<int64_t, struct stat>>
@@ -58,10 +59,10 @@ file_size_from_allocated_blocks(seastar::sstring pathname) {
 
 class wal_segment_healer final : public wal_reader_node {
  public:
-  wal_segment_healer(int64_t epoch, int64_t sz,
+  wal_segment_healer(int64_t epoch, int64_t term, int64_t sz,
                      seastar::lowres_system_clock::time_point modified,
                      seastar::sstring filename)
-    : wal_reader_node(epoch, sz, modified, filename) {
+    : wal_reader_node(epoch, term, sz, modified, filename) {
     file_flags_ = file_flags_ | seastar::open_flags::rw;
   }
   virtual ~wal_segment_healer(){};
@@ -165,10 +166,11 @@ class wal_segment_healer final : public wal_reader_node {
 };  // namespace v
 
 seastar::future<int64_t>
-recover_failed_wal_file(int64_t epoch, int64_t sz,
+recover_failed_wal_file(int64_t epoch, int64_t term, int64_t sz,
                         seastar::lowres_system_clock::time_point modified,
                         seastar::sstring name) {
-  auto n = seastar::make_shared<wal_segment_healer>(epoch, sz, modified, name);
+  auto n =
+    seastar::make_shared<wal_segment_healer>(epoch, term, sz, modified, name);
   return n->open().then([n] {
     return n->heal().then([n] {
       int64_t real_size = 0;

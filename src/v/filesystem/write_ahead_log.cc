@@ -67,6 +67,7 @@ write_ahead_log::create(wal_create_request r) {
   DLOG_THROW_IF(!wal_create_request::is_valid(r), "Invalid wal_create_request");
   switch (r.req->type()) {
   case wal_topic_type::wal_topic_type_compaction:
+    LOG_ERROR("Compaction topics not yet enabled, treating as normal topic");
     // Add to the compaction thread
     break;
   default:

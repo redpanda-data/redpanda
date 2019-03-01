@@ -7,14 +7,12 @@
 #include <smf/macros.h>
 #include <smf/time_utils.h>
 
+#include "constants.h"
 #include "hashing/jump_consistent_hash.h"
 #include "hashing/xx.h"
 #include "wal_generated.h"
 
 namespace v {
-/// \brief useful for failure recovery of invalid log segments
-static constexpr int16_t kWalHeaderMagicNumber = 0xcafe;
-static constexpr int8_t kWalHeaderVersion = 1;
 // stateless compressors
 
 static thread_local auto lz4 = smf::codec::make_unique(

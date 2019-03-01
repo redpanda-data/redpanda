@@ -32,6 +32,8 @@ ExternalProject_Add(boost
     --build-dir=<BINARY_DIR>
     install
     variant=release
+    cflags=-fPIC
+    cxxflags=-fPIC
     link=static
     threading=multi
     hardcode-dll-paths=true
@@ -59,14 +61,18 @@ ExternalProject_Add(zlib
   BUILD_COMMAND ${make_command}
   INSTALL_COMMAND ${make_command} install)
 
+
 ExternalProject_Add(protobuf
-  URL https://github.com/protocolbuffers/protobuf/releases/download/v3.3.0/protobuf-cpp-3.3.0.tar.gz
-  URL_MD5 73c28d3044e89782bdc8d9fdcfbb5792
-  INSTALL_DIR @V_DEPS_INSTALL_DIR@
-  CONFIGURE_COMMAND <SOURCE_DIR>/configure --prefix=<INSTALL_DIR> --srcdir=<SOURCE_DIR>
-  BUILD_COMMAND ${make_command}
-  INSTALL_COMMAND ${make_command} install
-  DEPENDS zlib)
+  DEPENDS zlib
+  URL https://github.com/protocolbuffers/protobuf/archive/v3.7.0.tar.gz
+  URL_MD5 99ab003ca0e98c9dc40edbd60dd43633
+  INSTALL_DIR   @V_DEPS_INSTALL_DIR@
+  SOURCE_SUBDIR cmake
+  CMAKE_ARGS
+    -Dprotobuf_BUILD_TESTS=OFF
+    -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@
+    -DCMAKE_PREFIX_PATH=<INSTALL_DIR>
+    -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>)
 
 # FIXME: this setup seems to cause dpdk to rebuild each time
 set(dpdk_quadruple ${CMAKE_SYSTEM_PROCESSOR}-native-linuxapp-gcc)
@@ -211,13 +217,14 @@ ExternalProject_Add(hwloc
   INSTALL_COMMAND ${make_command} install
   DEPENDS numactl libpciaccess)
 
-ExternalProject_Add(xy
-  URL https://tukaani.org/xz/xz-5.2.4.tar.gz
-  URL_MD5 5ace3264bdd00c65eeec2891346f65e6
+ExternalProject_Add(xz
+  URL https://github.com/xz-mirror/xz/releases/download/v5.2.2/xz-5.2.2.tar.gz
+  URL_MD5 7cf6a8544a7dae8e8106fdf7addfa28c
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   CONFIGURE_COMMAND
-    <SOURCE_DIR>/configure
-    --prefix=<INSTALL_DIR>
+    COMMAND
+      <SOURCE_DIR>/configure
+      --prefix=<INSTALL_DIR>
   BUILD_COMMAND ${make_command}
   INSTALL_COMMAND ${make_command} install)
 
@@ -235,7 +242,7 @@ ExternalProject_Add(xml2
       --prefix=<INSTALL_DIR>
   BUILD_COMMAND ${make_command}
   INSTALL_COMMAND ${make_command} install
-  DEPENDS xy zlib)
+  DEPENDS xz zlib)
 
 ExternalProject_Add(cryptopp
   URL https://github.com/weidai11/cryptopp/archive/CRYPTOPP_5_6_5.tar.gz
@@ -248,8 +255,10 @@ ExternalProject_Add(cryptopp
     -DBUILD_TESTING=OFF)
 
 ExternalProject_Add(lksctp-tools
-  URL https://sourceforge.net/projects/lksctp/files/lksctp-tools/lksctp-tools-1.0.16.tar.gz
-  URL_MD5 708bb0b5a6806ad6e8d13c55b067518e
+  # Note: 1.0.18 has a bug w/ the build/configuration system that does not
+  # produce sctp.h.in -> sctp.h and instead install sctp.h.in
+  URL https://github.com/sctp/lksctp-tools/archive/lksctp-tools-1.0.17.tar.gz
+  URL_MD5 910a4f1d4024d71149b91f50f97eae23
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   PATCH_COMMAND ./bootstrap
   CONFIGURE_COMMAND
@@ -260,8 +269,8 @@ ExternalProject_Add(lksctp-tools
   INSTALL_COMMAND ${make_command} install)
 
 ExternalProject_Add(seastar
-  URL https://github.com/scylladb/seastar/archive/f0c0855.tar.gz
-  URL_MD5 7e9f281d973d8c032b97f3c4f9d7fca8
+  URL https://github.com/scylladb/seastar/archive/05efbce.tar.gz
+  URL_MD5 0f59761981794d549cc579b6a3278a7e
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   CMAKE_ARGS
     -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@
@@ -285,7 +294,7 @@ ExternalProject_Add(seastar
     hwloc
     numactl
     xml2
-    xy
+    xz
     cryptopp
     lksctp-tools
     zlib)
@@ -404,8 +413,8 @@ ExternalProject_Add(smf
     HdrHistogram
     zstd
     seastar
-  URL https://github.com/smfrpc/smf/archive/92ff3af.tar.gz
-  URL_MD5 70ae8d990586d989c9492e0302da0000
+  URL https://github.com/smfrpc/smf/archive/889bac9.tar.gz
+  URL_MD5 52c79b5f1a8e3ed36b0793565b618d7c
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   CMAKE_ARGS
     -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@

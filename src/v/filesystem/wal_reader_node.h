@@ -17,51 +17,52 @@ namespace v {
 class wal_reader_node {
  public:
   SMF_DISALLOW_COPY_AND_ASSIGN(wal_reader_node);
-  wal_reader_node(int64_t starting_file_epoch, int64_t initial_size,
+  wal_reader_node(int64_t starting_file_epoch, int64_t term,
+                  int64_t initial_size,
                   seastar::lowres_system_clock::time_point last_modified,
                   seastar::sstring filename);
   wal_reader_node(wal_reader_node &&) noexcept;
   virtual ~wal_reader_node();
 
   const int64_t starting_epoch;
+  const int64_t term;
   const seastar::sstring filename;
 
   /// \brief flushes, truncates and if marked for deletion
   /// removes the file as well
-  ///
   virtual seastar::future<> close();
+
   /// \brief opens the file & caches stat(2)
-  ///
   virtual seastar::future<> open();
+
   /// \brief fill in the retval ptr with partial data that resides in this
   /// reader for *this* underlying file.
   /// Note: the read request *might* be larger than this file or only cover a
   /// range
-  ///
   virtual seastar::future<> get(wal_read_reply *retval,
                                 wal_read_request r) final;
+
   /// \brief returns the last time this file was modified, usually
   /// a cached value of stat('file').st_mtim
-  ///
   inline virtual seastar::lowres_system_clock::time_point
   modified_time() const final {
     return last_modified_;
   }
+
   /// \brief the file as passed in or modified by \ref update_file_size()
-  ///
   inline virtual int64_t
   file_size() const final {
     return file_size_;
   }
+
   /// \brief returns the max offset this file can handle
-  ///
   inline virtual int64_t
   ending_epoch() const final {
     return starting_epoch + file_size_;
   }
+
   /// \brief marks the file so that upon successful close()
   /// it will also get deleted
-  ///
   virtual void
   mark_for_deletion() final {
     marked_for_delete_ = true;
@@ -75,7 +76,6 @@ class wal_reader_node {
   /// \brief reads exactly *into* \dest_buf
   /// starting at \_offset
   /// and \_size number of bytes
-  ///
   struct read_exactly_req {
     SMF_DISALLOW_COPY_AND_ASSIGN(read_exactly_req);
     read_exactly_req(uint8_t *dest_buf, int64_t rel_offset, int64_t _size)
@@ -94,6 +94,7 @@ class wal_reader_node {
 
     /// \brief relative offset to `starting_epoch` of this file
     const int64_t relative_offset;
+
     /// \brief exact size to copy into @dest_buf
     const int64_t size;
 
@@ -146,10 +147,10 @@ class wal_reader_node {
   global_file_id() const {
     return global_file_id_;
   }
+
   /// \brief needed as a shared ptr in that this file *might*
   /// go out of scope while still fetching a data from the page cache
   /// as we close the log / compact it or remove it.
-  ///
   seastar::lw_shared_ptr<seastar::file> file_ = nullptr;
   int64_t file_size_{0};
   seastar::open_flags file_flags_ = seastar::open_flags::ro;

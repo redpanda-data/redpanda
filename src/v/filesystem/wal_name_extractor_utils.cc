@@ -5,15 +5,18 @@
 
 namespace v {
 
-static const re2::RE2 kEpochExtractor("([[:ascii:]]+[^\\d]+)?(\\d+)\\.wal$");
+static const re2::RE2
+  kEpochExtractor("([[:ascii:]]+[^\\d]+)?(\\d+)\\.(\\d+)\\.wal$");
 static const re2::RE2 kPartitionExtractor("([[:ascii:]]+[^\\d]+)?(\\d+)$");
-int64_t
-wal_name_extractor_utils::wal_segment_extract_epoch(
+
+std::pair<int64_t, int64_t>
+wal_name_extractor_utils::wal_segment_extract_epoch_term(
   const seastar::sstring &filename) {
-  int64_t retval = -1;
+  int64_t epoch = -1;
+  int64_t term = -1;
   re2::RE2::FullMatch(filename.c_str(), kEpochExtractor, (void *)nullptr,
-                      &retval);
-  return retval;
+                      &epoch, &term);
+  return {epoch, term};
 }
 bool
 wal_name_extractor_utils::is_wal_segment(const seastar::sstring &filename) {

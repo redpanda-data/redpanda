@@ -3,20 +3,19 @@ include "../filesystem/wal.fbs";
 namespace v.raft;
 
 struct server_capabilities {
-  min_version: ushort;
-  max_version: ushort;
+  min_version: short;
+  max_version: short;
 }
 
-table server {
-  id:           ulong;
-  address:      string;
+struct server {
+  id:           long;
   capabilities: server_capabilities;
 }
 
-table tpidx_configuration_request {
-  /// \brief xxhash64(topic:string, partition:uint32_t)
-  ///
-  tpidx: ulong (key);
+table configuration_request {
+  ns: long;
+  topic: long;
+  partition: int;
 
   /// The servers in a **stable** configuration, or the **old** servers
   /// in a transitional configuration
@@ -26,34 +25,20 @@ table tpidx_configuration_request {
   /// servers in a transitional configuration
   learners:[server];
 }
-table tpidx_configuration_reply {
-  /// \brief xxhash64(topic:string, partition:uint32_t)
-  ///
-  tpidx: ulong (key);
+table configuration_reply {
 }
 
 
-
-table tpidx_entry {
-  /// \brief xxhash64(topic:string, partition:uint32_t)
-  ///
-  tpidx: ulong (key);
-
-
-  /// The term in which the entry was first created
-  term: ulong;
-
+struct entry_metadata {
+  term:      ulong;
+  server_id: ulong;
+}
+table entry {
+  meta: entry_metadata;
   /// The index for the entry. Used by followers to check they've got
   /// an entry at the right index. (like kafka-offset?)
   ///
   index: ulong;
-
-  ///
-  /// I think this is extra and not needed in the RPC
-  /// number of nano seconds the cluster has had a leader
-  ///
-  nano_leader_time: ulong;
-
   /// the payload to save
   put: v.wal_put_request;
 }
@@ -62,10 +47,10 @@ table tpidx_entry {
 
 // then you can do std::vector | std::sort() | std::unique()
 
-table tpidx_vote_request {
-  /// \brief xxhash64(topic:string, partition:uint32_t)
-  ///
-  tpidx: ulong (key);
+table vote_request {
+  ns: long;
+  topic: long;
+  partition: int;
 
 
   /// \brief request of the caller, so if it re-requests the vote from
@@ -84,10 +69,10 @@ table tpidx_vote_request {
   /// used to compare log completeness
   last_log_index: ulong;
 }
-table tpidx_vote_reply {
-  /// \brief xxhash64(topic:string, partition:uint32_t)
-  ///
-  tpidx: ulong (key);
+table vote_reply {
+  ns: long;
+  topic: long;
+  partition: int;
 
 
   /// \brief calee's term, for caller to update itself.
@@ -102,10 +87,10 @@ table tpidx_vote_reply {
   log_ok: bool;
 }
 
-table tpidx_append_entries_request {
-  /// \brief xxhash64(topic:string, partition:uint32_t)
-  ///
-  tpidx: ulong (key);
+table append_entries_request {
+  ns: long;
+  topic: long;
+  partition: int;
 
 
   /// id of leader (caller), so the follower can redirect clients
@@ -113,7 +98,7 @@ table tpidx_append_entries_request {
   /// caller's term
   term: ulong;
   /// log entries to store or empty for heartbeat
-  entries: [tpidx_entry];
+  entries: [entry];
 
   /// TODO(agallego) - ask about this method on the mailing list
   ///  -... so why would a request to append entries have the follower
@@ -126,26 +111,20 @@ table tpidx_append_entries_request {
   commit_index: ulong;
 }
 
-table tpidx_append_entries_reply {
-  /// \brief xxhash64(topic:string, partition:uint32_t)
-  ///
-  tpidx: ulong (key);
-
+table append_entries_reply {
   /// callee's term, for the caller to upate itself
   term: ulong;
-  /// true if the entries were added to the log
-  success: bool;
   /// The recipient's last log index after it applied THIS rpc's changes to the
   /// log. This is used to speed up finding the correct value for the nextIndex
   /// with a follower that is far behind a leader
   last_log_index: ulong;
 
   /// send back to the leader to inform what code the follower is running
-  /// the range is inclusive between min and max;
+  // the range is inclusive between min and max;
   capabilities: server_capabilities;
 }
 
-table tpidx_install_snapshot_request {
+table install_snapshot_request {
   /// \brief xxhash64(topic:string, partition:uint32_t)
   ///
   tpidx: ulong (key);
@@ -173,10 +152,10 @@ table tpidx_install_snapshot_request {
   done: bool;
 }
 
-table tpidx_install_snapshot_reply {
-  /// \brief xxhash64(topic:string, partition:uint32_t)
-  ///
-  tpidx: ulong (key);
+table install_snapshot_reply {
+  ns: long;
+  topic: long;
+  partition: int;
 
   /// callee's term, for the caller to update itself;
   term: ulong;
@@ -186,32 +165,30 @@ table tpidx_install_snapshot_reply {
 }
 
 /// Service API (multi-raft)
-
-
-table configuration_request {
-  cfgs: [tpidx_configuration_request];
-}
-table configuration_reply {
-  cfgs: [tpidx_configuration_reply];
-}
-table vote_request {
-  votes: [tpidx_vote_request];
-}
-table vote_reply{
-  votes: [tpidx_vote_reply];
-}
-table append_entries_request {
-  appends: [tpidx_append_entries_request];
-}
-table append_entries_reply {
-  appends: [tpidx_append_entries_reply];
-}
-table install_snapshot_request {
-  snapshots: [tpidx_install_snapshot_request];
-}
-table install_snapshot_reply {
-  snapshots: [tpidx_install_snapshot_reply];
-}
+// table configuration_request {
+//   cfgs: [configuration_request];
+// }
+// table configuration_reply {
+//   cfgs: [configuration_reply];
+// }
+// table vote_request {
+//   votes: [vote_request];
+// }
+// table vote_reply{
+//   votes: [vote_reply];
+// }
+// table append_entries_request {
+//   appends: [append_entries_request];
+// }
+// table append_entries_reply {
+//   appends: [append_entries_reply];
+// }
+// table install_snapshot_request {
+//   snapshots: [install_snapshot_request];
+// }
+// table install_snapshot_reply {
+//   snapshots: [install_snapshot_reply];
+// }
 
 
 rpc_service raft_api {
@@ -226,4 +203,33 @@ rpc_service raft_api {
 
   /// \brief replicate part of a snapshot file to a follower.
   install_snapshot(install_snapshot_request): install_snapshot_reply;
+
+
+  /// \brief can only happen in one of the seed servers.
+  create_topic(v.wal_topic_create_request): v.wal_topic_create_reply;
+
+  // TODO(agallego) reply
+  /// \brief an specialized form of append_entries.
+  internal_create_topic(v.wal_topic_create_request): v.wal_topic_create_reply;
+}
+
+
+// -- internal api
+
+enum log_index_topic_key_type:byte {
+  none,
+  configuration,
+  voted_for
+}
+
+struct log_index_topic_key {
+  version: byte;
+  key: log_index_topic_key_type;
+  ns: long;
+  topic: long;
+  partition: int;
+}
+
+struct log_index_voted_for {
+  voted_for: long;
 }

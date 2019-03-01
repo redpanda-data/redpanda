@@ -15,6 +15,7 @@ class wal_nstpidx_repair {
  public:
   struct item {
     int64_t epoch;
+    int64_t term;
     int64_t size;
     seastar::sstring filename;
     seastar::lowres_system_clock::time_point modified;

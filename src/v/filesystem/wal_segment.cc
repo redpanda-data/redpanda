@@ -11,12 +11,17 @@
 
 namespace v {
 
+static constexpr inline int64_t
+chunk_size(int64_t alignment) {
+  // 126.98KB
+  return /*alignment*/ 4096 * 31;
+}
+
 wal_segment::wal_segment(seastar::sstring name,
                          const seastar::io_priority_class &prio,
-                         int64_t max_file_bytes, int32_t unflushed_bytes,
-                         int32_t concurrent_writes)
+                         int64_t max_file_bytes, int32_t unflushed_bytes)
   : filename(name), pclass(prio), max_file_size(max_file_bytes),
-    max_unflushed_bytes(unflushed_bytes), concurrency(concurrent_writes) {
+    max_unflushed_bytes(unflushed_bytes) {
   append_sem_.ensure_space_for_waiters(1);
 }
 
@@ -32,13 +37,18 @@ wal_segment::open() {
     LOG_THROW_IF(filename_exists,
                  "File: {} already exists. Cannot re-open for writes",
                  filename);
-    auto flags = seastar::open_flags::rw | seastar::open_flags::create;
-    return seastar::open_file_dma(filename, flags)
+    auto flags = seastar::open_flags::wo | seastar::open_flags::create;
+    seastar::file_open_options open_opts;
+    // sets xfs extent size
+    // attr.fsx_xflags |= XFS_XFLAG_EXTSIZE;
+    // attr.fsx_extsize = options.extent_allocation_size_hint;
+    open_opts.extent_allocation_size_hint = max_file_size;
+    return seastar::open_file_dma(filename, flags, std::move(open_opts))
       .then([this](seastar::file f) {
         f_ = seastar::make_lw_shared(std::move(f));
         dma_write_alignment_ = f_->disk_write_dma_alignment();
-        auto const max_size = seastar::align_up<int64_t>(
-          max_file_size, f_->disk_write_dma_alignment());
+        auto const max_size =
+          seastar::align_up<int64_t>(max_file_size, dma_write_alignment_);
         DLOG_TRACE("fallocating: {} for log segment",
                    smf::human_bytes(max_size));
         return f_->allocate(0, max_size);
@@ -54,96 +64,91 @@ wal_segment::close() {
       DLOG_TRACE("Truncating at offset: {}", current_size());
       return f_->truncate(current_size());
     })
-    .then([f = f_] { return f->close().finally([f] {}); });
+    .then([this, f = f_] {
+      auto sz = current_size();
+      return f->close().finally([f, sz, name = filename] {
+        if (sz == 0) {
+          LOG_INFO("Removing empty segment: {} ", name);
+          /// launch in the background
+          return seastar::remove_file(name).then_wrapped(
+            [](auto _) { /*ignore*/ });
+        }
+        return seastar::make_ready_future<>();
+      });
+    });
 }
 /// \brief
+// NOTE: using disk_*READ*_dma_alignment is on purpose.
+// it minimizes the wasted IO on the device, up to 40%
+// wasted otherwise
+// auto dsz =
+//   seastar::align_up<int64_t>(p->pos(), f_->disk_read_dma_alignment());
 seastar::future<>
 wal_segment::do_flush() {
   HBADGER(filesystem, wal_segment::do_flush);
-  std::vector<std::unique_ptr<chunk>> to_flush;
-  to_flush.reserve(chunks_.size());
-  for (uint32_t i = 0u, max = chunks_.rbegin()->get()->is_full()
-                                ? chunks_.size()
-                                : chunks_.size() - 1;
-       i < max; ++i) {
-    to_flush.push_back(std::move(chunks_.front()));
-    chunks_.pop_front();
-  }
-  // check if we need to copy last page
-  if (!chunks_.empty()) {
-    auto dst = std::make_unique<chunk>(dma_write_alignment_);
-    auto src = chunks_.rbegin()->get();
-    dst->append(src->data(), src->pos());
-    to_flush.push_back(std::move(dst));
-  }
-  return seastar::do_with(
-    seastar::semaphore(concurrency), std::move(to_flush),
-    [this](auto &limit, auto &pages_to_flush) {
-      using iter_t = decltype(pages_to_flush.begin());
-      return seastar::do_for_each(
-               std::move_iterator<iter_t>(pages_to_flush.begin()),
-               std::move_iterator<iter_t>(pages_to_flush.end()),
-               [this, &limit](auto page) mutable {
-                 return seastar::with_semaphore(
-                   limit, 1, [this, p = std::move(page)]() mutable {
-                     bool is_full = p->is_full();
-                     auto xoffset = flushed_pages_ * dma_write_alignment_;
-                     DLOG_TRACE("dma_offset:{}, page:{}, size:{}", xoffset,
-                                flushed_pages_, p->pos());
-                     DLOG_THROW_IF(
-                       (xoffset & (dma_write_alignment_ - 1)) != 0,
-                       "Start offset is not page aligned. Severe bug");
 
-                     // after the logs
-                     flushed_pages_++;
+  auto verify_fn_gen = [](int64_t expected_write_bytes) {
+    return [=](int64_t real_write_bytes) {
+      DLOG_THROW_IF(expected_write_bytes != real_write_bytes,
+                    "Wrote incorrect number of bytes. Expected:{},  Written:{}",
+                    expected_write_bytes, real_write_bytes);
+      return seastar::make_ready_future<>();
+    };
+  };
+  auto max_waiters = chunks_.size();
+  auto flush_after = seastar::make_lw_shared<seastar::semaphore>(max_waiters);
+  for (int32_t i = 0, max = chunks_.size(); i < max; ++i) {
+    auto const xoffset = flushed_pages_ * kChunkSize;
+    auto const position = chunks_.front()->pos();
+    DLOG_THROW_IF((xoffset & (dma_write_alignment_ - 1)) != 0,
+                  "Start offset is not page aligned. Severe bug");
+    DLOG_TRACE("dma_offset:{}, page:{}, size:{}", xoffset, flushed_pages_,
+               position);
+    auto dsz =
+      seastar::align_up<int64_t>(position, f_->disk_read_dma_alignment());
 
-                     // send in background - safely!!
-                     //
-                     auto dptr = p->data();
-                     auto dsz = dma_write_alignment_;
-                     f_->dma_write(xoffset, dptr, dsz, pclass)
-                       .then([this, is_full, p = std::move(p),
-                              xoffset](int64_t written_bytes) {
-                         DLOG_THROW_IF(
-                           written_bytes != dma_write_alignment_,
-                           "Wrote incorrect number of bytes written: {}",
-                           written_bytes);
-
-                         if (!is_full) {
-                           // Note: this does not need a lock because by this
-                           // time we have already dispatched all writes, since
-                           // this can only be possibly the last write dispatch
-                           flushed_pages_--;
-                         }
-                         return seastar::make_ready_future<>();
-                       });
-                   });
-               })
-        .then([this, &limit] {
-          return limit.wait(concurrency).then([this] { return f_->flush(); });
+    if (!chunks_.front()->is_full()) {
+      auto dptr = chunks_.front()->data();
+      flush_after->wait(1).then(
+        [this, xoffset, dptr, dsz, verify_fn_gen, flush_after] {
+          return f_->dma_write(xoffset, dptr, dsz, pclass)
+            .then(verify_fn_gen(dsz))
+            .finally([flush_after] { flush_after->signal(1); });
         });
-    });
+    } else {
+      auto p = std::move(chunks_.front());
+      chunks_.pop_front();
+      flushed_pages_++;
+      auto dptr = p->data();
+      // Background future
+      flush_after->wait(1).then([this, xoffset, dptr, dsz, p = std::move(p),
+                                 verify_fn_gen, flush_after]() mutable {
+        return f_->dma_write(xoffset, dptr, dsz, pclass)
+          .then(verify_fn_gen(dsz))
+          .finally([p = std::move(p), flush_after] { flush_after->signal(1); });
+      });
+    }
+  }
+  return flush_after->wait(max_waiters).then([this] { return f_->flush(); });
 }
 
 seastar::future<>
 wal_segment::flush() {
   HBADGER(filesystem, wal_segment::flush);
-  if (is_fully_flushed_ || chunks_.empty()) {
+  if (is_fully_flushed_ || chunks_.empty() || bytes_pending_ == 0) {
     return seastar::make_ready_future<>();
   }
-  return seastar::with_semaphore(append_sem_, 1,
-                                 [this] {
-                                   // need to double check
-                                   if (chunks_.empty()) {
-                                     return seastar::make_ready_future<>();
-                                   }
-                                   // do the real flush
-                                   return do_flush();
-                                 })
-    .finally([this] {
+  return seastar::with_semaphore(append_sem_, 1, [this] {
+    // need to double check
+    if (chunks_.empty() || bytes_pending_ == 0) {
+      return seastar::make_ready_future<>();
+    }
+    // do the real flush
+    return do_flush().finally([this] {
       bytes_pending_ = 0;
       is_fully_flushed_ = true;
     });
+  });
 }
 
 seastar::future<>

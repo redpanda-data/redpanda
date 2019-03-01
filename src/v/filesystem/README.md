@@ -130,12 +130,6 @@ to the other cores. See `chain_replication_service.cc` for an example.
   Example: 100 topics; each has 10 partitions.
   You will have `100 X 10 X 1MB = 16GB` of memory used
   just for flushing bytes to disk.
-* `wal_opts::max_writer_concurrency_pages = 4`:
-  When we are asked to flushed the log segments to disk, we do it concurrently.
-  XFS is the only filesystem we tested, it means we ship 4 writes which might happen
-  our of order on the filesystem. This is OK since we `fallocate()` the file size
-  apriori, and guarantee non-overlapping writes to offsets. Our memory is page-byte
-  aligned and we flush full page sizes.
 * `wal_opts::max_log_segment_size = 1GB`:
   We `fallocate()` our log segments to be 1GB by default. User can reconfigure.
   This has several performance benefits as it prevents the filesystem from having to

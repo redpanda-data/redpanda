@@ -51,13 +51,13 @@ wal_writer_node::~wal_writer_node() {
 seastar::future<>
 wal_writer_node::open() {
   HBADGER(filesystem, wal_writer_node::open);
-  const auto name = wal_file_name(opts_.writer_directory, opts_.epoch);
+  const auto name =
+    wal_file_name(opts_.writer_directory, opts_.epoch, opts_.term);
   DLOG_TRACE("Rolling log: {}", name);
   LOG_THROW_IF(!!lease_, "opening new file. Previous file is unclosed");
   lease_ = seastar::make_lw_shared<wal_segment>(
     name, opts_.pclass, opts_.wopts.max_log_segment_size,
-    opts_.wopts.max_bytes_in_writer_cache,
-    opts_.wopts.max_writer_concurrency_pages);
+    opts_.wopts.max_bytes_in_writer_cache);
   return lease_->open().then(
     [this, name] { return opts_.log_segment_create_notify(name); });
 }
@@ -117,6 +117,17 @@ wal_writer_node::close() {
   return seastar::with_semaphore(serialize_writes_, 1, [l = lease_] {
     return l->flush().then([l] { return l->close(); }).finally([l] {});
   });
+}
+
+seastar::future<>
+wal_writer_node::set_term(int64_t term) {
+  LOG_THROW_IF(term >= opts_.term,
+               "Invalid log term. Logic error. Existing term:{}, but wanting "
+               "to set term: {}",
+               opts_.term, term);
+  DLOG_TRACE("Rotating fstream due to set_term()");
+  opts_.term = term;
+  return rotate_fstream();
 }
 seastar::future<>
 wal_writer_node::rotate_fstream() {

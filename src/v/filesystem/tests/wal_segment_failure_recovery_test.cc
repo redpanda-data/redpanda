@@ -136,8 +136,9 @@ main(int args, char **argv, char **env) {
           return v::file_size_from_allocated_blocks(full_path_file);
         })
         .then([full_path_file](auto p) {
-          return v::recover_failed_wal_file(
-            0, p.first, seastar::lowres_system_clock::now(), full_path_file);
+          return v::recover_failed_wal_file(0, p.first, 0 /*term*/,
+                                            seastar::lowres_system_clock::now(),
+                                            full_path_file);
         })
         .then([](auto sz) {
           LOG_THROW_IF(

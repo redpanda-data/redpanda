@@ -35,8 +35,7 @@ def _pgo_gen(options):
     pgo_build = "%s/%s" % (build_root, "pgo_generate")
     if not os.path.exists(pgo_build): os.makedirs(pgo_build)
     cmake_cmd = ("cmake -G Ninja"
-                 " -DCMAKE_BUILD_TYPE=RelWithDebInfo "
-                 " -DSEASTAR_ENABLE_DPDK=ON"
+                 " -DCMAKE_BUILD_TYPE=Release "
                  " -DRP_PGO=-fprofile-generate=%s") % pgo_build
     shell.run_subprocess("cd %s && %s %s " % (pgo_build, cmake_cmd, root))
     shell.run_subprocess("cd %s && ninja %s " % (pgo_build, options.binary))
@@ -52,8 +51,7 @@ def _pgo_use(options):
     #
     cmake_cmd = (
         "cmake -G Ninja"
-        " -DCMAKE_BUILD_TYPE=RelWithDebInfo "
-        " -DSEASTAR_ENABLE_DPDK=ON"
+        " -DCMAKE_BUILD_TYPE=Release "
         " -DRP_PGO=\"-fprofile-use=%s -fprofile-correction\"") % pgo_gen_build
     shell.run_subprocess("cd %s && %s %s " % (pgo_build, cmake_cmd, root))
     shell.run_subprocess("cd %s && ninja %s " % (pgo_build, options.binary))

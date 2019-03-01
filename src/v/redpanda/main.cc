@@ -28,6 +28,8 @@ bool hydrate_cfg(v::redpanda_cfg &c, std::string filename);
 
 int
 main(int argc, char **argv, char **env) {
+  // This is needed for detecting sse4.2 instructions
+  v::syschecks::initialize_intrinsics();
   namespace po = boost::program_options;  // NOLINT
   std::setvbuf(stdout, nullptr, _IOLBF, 1024);
   seastar::distributed<smf::rpc_server> rpc;

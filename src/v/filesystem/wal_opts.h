@@ -13,7 +13,6 @@ struct wal_opts {
     seastar::timer<>::duration flush_period = std::chrono::seconds(10),
     seastar::timer<>::duration max_retention_period = std::chrono::hours(168),
     int64_t max_retention_size = -1 /*infinite*/,
-    int8_t max_writer_concurrency_pages = 4,
     int32_t max_bytes_in_memory_per_writer = 1024 * 1024,
     int64_t max_log_segment_size = wal_file_size_aligned());
   wal_opts(wal_opts &&o) noexcept;
@@ -24,7 +23,6 @@ struct wal_opts {
   const seastar::timer<>::duration writer_flush_period;
   const seastar::timer<>::duration max_retention_period;
   const int64_t max_retention_size;
-  const int8_t max_writer_concurrency_pages;
   const int32_t max_bytes_in_writer_cache;
   const int64_t max_log_segment_size;
 
@@ -32,11 +30,10 @@ struct wal_opts {
     ok,
     invalid_empty_log_directory,
     invalid_log_segment_4096_multiples,
-    invalid_log_segment_size,         // <100MB
-    invalid_writer_cache_size,        // >100MB
-    invalid_writer_concurrent_pages,  // >100MB
-    invalid_retention_period,         // must be >1hr
-    invalid_writer_flush_period,      // min flush period 2ms
+    invalid_log_segment_size,     // <100MB
+    invalid_writer_cache_size,    //
+    invalid_retention_period,     // must be >1hr
+    invalid_writer_flush_period,  // min flush period 2ms
   };
   /// \brief validates the wal_opts
   ///

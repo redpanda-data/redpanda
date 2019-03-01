@@ -24,6 +24,7 @@
 #include "ioutil/priority_manager.h"
 
 // filesystem
+#include "constants.h"
 #include "file_size_utils.h"
 #include "page_cache.h"
 #include "wal_disk_pager.h"
@@ -113,19 +114,20 @@ copy_page_data(wal_reader_node::read_exactly_req &req,
 //
 
 wal_reader_node::wal_reader_node(
-  int64_t epoch, int64_t initial_size,
+  int64_t epoch, int64_t term_id, int64_t initial_size,
   seastar::lowres_system_clock::time_point modified, seastar::sstring name)
   // needed signed for comparisons
-  : starting_epoch(static_cast<int64_t>(epoch)), filename(name),
+  : starting_epoch(epoch), term(term_id), filename(name),
     last_modified_(modified) {
   file_size_ = initial_size;
   number_of_pages_ = round_up(file_size_);
 }
 
 wal_reader_node::wal_reader_node(wal_reader_node &&o) noexcept
-  : starting_epoch(o.starting_epoch), filename(std::move(o.filename)),
-    file_(std::move(o.file_)), file_size_(o.file_size_),
-    file_flags_(o.file_flags_), marked_for_delete_(o.marked_for_delete_),
+  : starting_epoch(o.starting_epoch), term(o.term),
+    filename(std::move(o.filename)), file_(std::move(o.file_)),
+    file_size_(o.file_size_), file_flags_(o.file_flags_),
+    marked_for_delete_(o.marked_for_delete_),
     last_modified_(std::move(o.last_modified_)),
     number_of_pages_(o.number_of_pages_), global_file_id_(o.global_file_id_),
     rgate_(std::move(o.rgate_)) {}

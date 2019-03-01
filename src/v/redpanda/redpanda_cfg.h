@@ -17,15 +17,14 @@ struct redpanda_cfg {
   seastar::sstring ip;
   uint16_t port;
   int32_t retention_period_hrs = 168;
-  int64_t flush_period_ms = 10000;
+  int64_t flush_period_ms = 1000;
   int64_t log_segment_size_bytes = wal_file_size_aligned();
   bool developer_mode = false;
   int64_t retention_size_bytes = -1;
+  // 512KB
+  int32_t bytes_in_memory_per_writer = 1 << 20;
 
-  // Note: the following are not exposed in yet
-  // Please think carefully about exposing them
-  int8_t writer_concurrency_pages = 4;
-  int32_t bytes_in_memory_per_writer = 1024 * 1024;
+  std::vector<seastar::sstring> seed_servers;
 
   inline wal_opts
   wal_cfg() const {
@@ -33,7 +32,6 @@ struct redpanda_cfg {
                       std::chrono::milliseconds(flush_period_ms),
                       std::chrono::hours(retention_period_hrs),
                       retention_size_bytes,
-                      writer_concurrency_pages,
                       bytes_in_memory_per_writer,
                       log_segment_size_bytes};
     auto validation = wal_opts::validate(o);
@@ -127,7 +125,6 @@ operator<<(ostream &o, const ::v::redpanda_cfg &c) {
     << ", log_segment_size_bytes:" << smf::human_bytes(c.log_segment_size_bytes)
     << ", developer_mode:" << c.developer_mode
     << ", retention_size_bytes:" << smf::human_bytes(c.retention_size_bytes)
-    << ", writer_concurrency_pages:" << int32_t(c.writer_concurrency_pages)
     << ", bytes_in_memory_per_writer:"
     << smf::human_bytes(c.bytes_in_memory_per_writer) << "}"
     << "seastar::memory::stats{total_memory:"
