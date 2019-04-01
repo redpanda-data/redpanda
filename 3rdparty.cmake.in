@@ -278,7 +278,7 @@ ExternalProject_Add(seastar
     -DCMAKE_PREFIX_PATH=<INSTALL_DIR>
     -DSeastar_INSTALL=ON
     -DSeastar_DPDK=ON
-    -DSeastar_APPS=OFF
+    -DSeastar_APPS=ON # different from smf; we need iotune built binary
     -DSeastar_DEMOS=OFF
     -DSeastar_DOCS=OFF
     -DSeastar_TESTING=OFF

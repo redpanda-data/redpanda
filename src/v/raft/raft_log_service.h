@@ -5,9 +5,11 @@
 #include "filesystem/wal_nstpidx.h"
 #include "filesystem/write_ahead_log.h"
 
+// raft
 #include "raft.smf.fb.h"
 #include "raft_cfg.h"
 #include "raft_nstpidx_metadata.h"
+#include "raft_client_cache.h"
 
 namespace v {
 
@@ -22,8 +24,10 @@ class raft_log_service final : public raft::raft_api {
 
   /// \brief should be the first method that is called on this object.
   /// it queries the state of the world before starting the log.
-  ///
   seastar::future<> initialize();
+
+  /// \brief stop raft_log_service
+  seastar::future<> stop();
 
   const raft_cfg cfg;
 
@@ -44,6 +48,7 @@ class raft_log_service final : public raft::raft_api {
  private:
   seastar::distributed<write_ahead_log> *data_;
   std::unordered_map<wal_nstpidx, raft_nstpidx_metadata> omap_;
+  raft_client_cache cache_;
 };
 
 }  // namespace v

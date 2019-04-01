@@ -10,7 +10,11 @@ set(CMAKE_VERBOSE_MAKEFILE ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 set(CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS} -v")
 set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -std=gnu++17")
+#ninja  1161.66s user 64.94s system 658% cpu 3:06.18 total
+#ninja  825.41s user 49.15s system 586% cpu 2:29.21 total
 set(CMAKE_CXX_FLAGS_DEBUG "-O0 -gsplit-dwarf -Wl,--gdb-index")
+# do not use split-dwarf on release builds because we would have
+# to ship additional files to remote servers
 set(CMAKE_CXX_FLAGS_RELEASE "-O2 -g -DNDEBUG")
 set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g -DNDEBUG")
 set(CMAKE_CXX_FLAGS_MINSIZEREL "-Os -DNDEBUG")

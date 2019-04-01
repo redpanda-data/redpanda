@@ -27,6 +27,13 @@ TEST(tagged_ptr, increment) {
   ASSERT_EQ(52, tptr.get_tag());
 }
 
+TEST(tagged_ptr, move_ctor) {
+  v::tagged_ptr<const char> uno(kDummyPayload, 42);
+  ASSERT_EQ(kDummyPayload, uno.get_ptr());
+  v::tagged_ptr<const char> dos = std::move(uno);
+  ASSERT_EQ(kDummyPayload, dos.get_ptr());
+}
+
 int
 main(int argc, char **argv) {
   ::testing::InitGoogleTest(&argc, argv);
