@@ -1,7 +1,5 @@
 #pragma once
 
-// taken from boost/lockfree/detail/tagged_ptr_ptrcompression.hpp
-// with modifications for our compiler
 // XXX that for ARM, we can only use 8bits instead of 16bits
 // https://www.kernel.org/doc/Documentation/arm64/tagged-pointers.txt
 
@@ -23,51 +21,24 @@ namespace v {
 
 template <class T>
 class tagged_ptr {
-  using compressed_ptr_t = std::uint64_t;
-
  public:
-  using tag_t = std::uint16_t;
+  using reference = typename std::add_lvalue_reference<T>::type;
 
- private:
-  union cast_unit {
-    compressed_ptr_t value;
-    tag_t tag[4];
-  };
-
-  static constexpr const int kTagIndex = 3;
-  static constexpr const compressed_ptr_t kPtrMask =
-    0xffffffffffffUL;  //(1L<<48L)-1;
-
-  constexpr static T *
-  extract_ptr(volatile compressed_ptr_t const &i) {
-    return (T *)(i & kPtrMask);
-  }
-
-  constexpr static tag_t
-  extract_tag(volatile compressed_ptr_t const &i) {
-    cast_unit cu = {i};
-    return cu.tag[kTagIndex];
-  }
-
-  constexpr static compressed_ptr_t
-  pack_ptr(T *ptr, tag_t tag) {
-    cast_unit ret = {compressed_ptr_t(ptr)};
-    ret.tag[kTagIndex] = tag;
-    return ret.value;
+  constexpr static inline uintptr_t
+  pack_ptr(T *p, uint16_t tag) {
+    uintptr_t ip = reinterpret_cast<uintptr_t>(p);
+    ip |= static_cast<uintptr_t>(tag) << 48;
+    return ip;
   }
 
  public:
-  /** uninitialized constructor */
-  tagged_ptr() noexcept : ptr_(0) {}
-  tagged_ptr(tagged_ptr const &p) = default;
-  explicit tagged_ptr(T *p, tag_t t = 0) : ptr_(pack_ptr(p, t)) {}
-
-  /** unsafe set operation */
-  /* @{ */
-  tagged_ptr &operator=(tagged_ptr const &p) = default;
+  explicit tagged_ptr() noexcept : ptr_(0) {}
+  tagged_ptr(tagged_ptr const &o) : ptr_(o.ptr_) {}
+  tagged_ptr(tagged_ptr &&o) noexcept : ptr_(std::move(o.ptr_)) {}
+  explicit tagged_ptr(T *p, uint16_t t = 0) : ptr_(pack_ptr(p, t)) {}
 
   void
-  set(T *p, tag_t t) {
+  set(T *p, uint16_t t) {
     ptr_ = pack_ptr(p, t);
   }
 
@@ -75,10 +46,7 @@ class tagged_ptr {
   clear() {
     ptr_ = 0;
   }
-  /* @} */
 
-  /** comparing semantics */
-  /* @{ */
   bool
   operator==(volatile tagged_ptr const &p) const {
     return (ptr_ == p.ptr_);
@@ -88,38 +56,28 @@ class tagged_ptr {
   operator!=(volatile tagged_ptr const &p) const {
     return !operator==(p);
   }
-  /* @} */
 
-  /** pointer access */
-  /* @{ */
   T *
   get_ptr() const {
-    return extract_ptr(ptr_);
+    return reinterpret_cast<T *>(ptr_ & ((1ULL << 48) - 1));
   }
 
   void
   set_ptr(T *p) {
-    tag_t tag = get_tag();
+    uint16_t tag = get_tag();
     ptr_ = pack_ptr(p, tag);
   }
-  /* @} */
 
-  /** tag access */
-  /* @{ */
-  tag_t
+  uint16_t
   get_tag() const {
-    return extract_tag(ptr_);
+    return ptr_ >> 48;
   }
 
   void
-  set_tag(tag_t t) {
+  set_tag(uint16_t t) {
     T *p = get_ptr();
     ptr_ = pack_ptr(p, t);
   }
-  /* @} */
-
-  /** smart pointer support  */
-  /* @{ */
 
   // Cannot have a ref to void* - illegal.
   // return just void* in that case.
@@ -137,10 +95,11 @@ class tagged_ptr {
   T *operator->() const { return get_ptr(); }
 
   operator bool(void) const { return get_ptr() != 0; }
-  /* @} */
 
  protected:
-  compressed_ptr_t ptr_;
+  // on x86_64 the most significant 16 bits are clear
+  // store pointer on the least 48 bits
+  uintptr_t ptr_;
 };
 
 }  // namespace v

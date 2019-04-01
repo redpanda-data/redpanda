@@ -227,7 +227,7 @@ raft_log_service::initialize_seed_servers() {
   wal_topic_create_requestT x;
   x.ns = kRedpandaNamespace;
   x.topic = kRedpandaTopicCreationTopic;
-  x.partitions = cfg.seed_server_topic_partitions;
+  x.partitions = cfg.seed_server_meta_topic_partitions;
   x.type = wal_topic_type::wal_topic_type_regular;
 
   auto body = smf::native_table_as_buffer<wal_topic_create_request>(x);
@@ -254,6 +254,10 @@ raft_log_service::initialize_seed_servers() {
   return seastar::make_ready_future<>();
 }
 
+seastar::future<>
+raft_log_service::stop() {
+  return cache_.close();
+}
 /*
 seastar::future<rte<raft::append_entries_reply>>
 raft_log_service::append_entries(rtc<raft::append_entries_request> && rec) {

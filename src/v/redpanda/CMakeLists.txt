@@ -22,7 +22,7 @@ add_executable(redpanda
   ${redpanda_gened}
   main.cc
   )
-target_link_libraries(redpanda PUBLIC redpanda_services)
+target_link_libraries(redpanda PUBLIC redpanda_services raft)
 set_property(TARGET redpanda PROPERTY POSITION_INDEPENDENT_CODE ON)
 
 include(CheckIPOSupported)

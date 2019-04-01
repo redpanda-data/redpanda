@@ -13,6 +13,9 @@
 #include "ioutil/dir_utils.h"
 #include "syschecks/syschecks.h"
 
+// in transition
+#include "raft/raft_log_service.h"
+
 // redpanda
 #include "redpanda_cfg.h"
 #include "redpanda_service.h"
@@ -101,12 +104,12 @@ void
 register_service(smf::rpc_server &s,
                  seastar::distributed<v::write_ahead_log> *log,
                  const v::redpanda_cfg *c) {
-  using srvc = v::redpanda_service;
   using lz4_c_t = smf::lz4_compression_filter;
   using lz4_d_t = smf::lz4_decompression_filter;
   using zstd_d_t = smf::zstd_decompression_filter;
   s.register_outgoing_filter<lz4_c_t>(1 << 21 /*2MB*/);
   s.register_incoming_filter<lz4_d_t>();
   s.register_incoming_filter<zstd_d_t>();
-  s.register_service<srvc>(c, log);
+  s.register_service<v::redpanda_service>(c, log);
+  s.register_service<v::raft_log_service>(c->raft(), log);
 }
