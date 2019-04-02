@@ -25,7 +25,7 @@ def get_git_files():
 
 
 def get_git_changed_files():
-    ret = shell.raw_check_output("cd %s && git diff --name-only " %
+    ret = shell.raw_check_output("cd %s && git diff --name-only --diff-filter=d" %
                                  get_git_root(os.path.dirname(__file__)))
     logger.debug("Files recently changed %s" % ret)
     return list(filter(lambda x: x and len(x) > 0, ret.split("\n")))

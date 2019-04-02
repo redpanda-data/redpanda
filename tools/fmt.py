@@ -2,18 +2,25 @@
 import sys
 import os
 import logging
+import re
 sys.path.append(os.path.dirname(__file__))
 logger = logging.getLogger('rp')
 
 import cpp
+import golang
 import shell
 import git
 import log
+
 
 def _is_clang_fmt_file(filename):
     for ext in [".cc", ".cpp", ".h", ".hpp", ".proto", ".java", ".js"]:
         if filename.endswith(ext): return True
     return False
+
+
+def _is_go_file(filename):
+    return filename.endswith(".go")
 
 
 def _is_clang_tidy_file(filename):
@@ -52,8 +59,17 @@ def clangfmt(files):
             shell.run_subprocess("%s -i %s" % (clang_fmt, f))
 
 
+def crlfmt(files):
+    logger.debug("Running crlfmt")
+    crlfmt = golang.get_crlfmt()
+    for f in files:
+        if _is_go_file(f):
+            shell.run_oneline("%s -w -diff=false -wrap=80 %s" % (crlfmt, f))
+
+
 def main():
     import argparse
+
     def generate_options():
         parser = argparse.ArgumentParser(description='build sys helper')
         parser.add_argument(
@@ -62,7 +78,6 @@ def main():
             default='INFO',
             help='info,debug, type log levels. i.e: --log=debug')
         return parser
-
 
     parser = generate_options()
     options, program_options = parser.parse_known_args()
