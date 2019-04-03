@@ -2,6 +2,7 @@ package os
 
 import (
 	"bytes"
+	"fmt"
 	"os/exec"
 	"strings"
 
@@ -25,10 +26,12 @@ func (*proc) Run(command string, args ...string) ([]string, error) {
 	log.Debugf("Running command '%s' with arguments '%s'", command, args)
 	cmd := exec.Command(command, args...)
 	var out bytes.Buffer
+	var errout bytes.Buffer
 	cmd.Stdout = &out
+	cmd.Stderr = &errout
 	err := cmd.Run()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("err=%s, stderr=%s", err, errout.String())
 	}
 	return strings.Split(out.String(), "\n"), nil
 }

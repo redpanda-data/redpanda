@@ -7,6 +7,7 @@ type HwLoc interface {
 	DistributeRestrict(numberOfElements uint, mask string) ([]string, error)
 	GetNumberOfCores(mask string) (uint, error)
 	GetNumberOfPUs(mask string) (uint, error)
+	GetPhysIntersection(firstMask string, secondMask string) ([]uint, error)
 	CheckIfMaskIsEmpty(mask string) bool
 	IsSupported() bool
 }

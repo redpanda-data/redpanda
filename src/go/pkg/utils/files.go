@@ -2,7 +2,10 @@ package utils
 
 import (
 	"bufio"
+	"crypto/md5"
+	"encoding/hex"
 	"fmt"
+	"io"
 
 	"github.com/spf13/afero"
 )
@@ -67,4 +70,33 @@ func WriteFileLines(fs afero.Fs, lines []string, path string) error {
 		}
 	}
 	return w.Flush()
+}
+
+func FileMd5(fs afero.Fs, filePath string) (string, error) {
+	var returnMD5String string
+	file, err := fs.Open(filePath)
+	if err != nil {
+		return returnMD5String, err
+	}
+	defer file.Close()
+	hash := md5.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return returnMD5String, err
+	}
+	hashInBytes := hash.Sum(nil)
+	returnMD5String = hex.EncodeToString(hashInBytes)
+	return returnMD5String, nil
+}
+
+func BackupFile(fs afero.Fs, filePath string) (string, error) {
+	md5, err := FileMd5(fs, filePath)
+	if err != nil {
+		return "", err
+	}
+	bkFilePath := fmt.Sprintf("%s.vectorized.%s.bk", filePath, md5)
+	err = CopyFile(fs, filePath, bkFilePath)
+	if err != nil {
+		return "", fmt.Errorf("unable to create backup of %s", filePath)
+	}
+	return bkFilePath, nil
 }

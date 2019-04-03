@@ -1,7 +1,6 @@
 package irq
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 	"vectorized/tuners/hwloc"
@@ -19,6 +18,8 @@ type CpuMasks interface {
 	GetDistributionMasks(count uint) ([]string, error)
 	GetNumberOfCores(mask string) (uint, error)
 	GetNumberOfPUs(mask string) (uint, error)
+	GetAllCpusMask() (string, error)
+	GetLogicalCoreIdsFromPhysCore(core uint) ([]uint, error)
 	IsSupported() bool
 }
 
@@ -62,12 +63,12 @@ func (masks *cpuMasks) CpuMaskForComputations(
 		// all available cores
 		computationsMask = cpuMask
 	} else {
-		err = errors.New(fmt.Sprintf("Unsupported mode: '%s'", mode))
+		err = fmt.Errorf("Unsupported mode: '%s'", mode)
 	}
 
 	if masks.hwloc.CheckIfMaskIsEmpty(computationsMask) {
-		err = errors.New(fmt.Sprintf("Bad configuration mode '%s' and cpu-mask value '%s':"+
-			" this results in a zero-mask for 'computations'", mode, cpuMask))
+		err = fmt.Errorf("Bad configuration mode '%s' and cpu-mask value '%s':"+
+			" this results in a zero-mask for 'computations'", mode, cpuMask)
 	}
 	log.Debugf("Computations CPU mask '%s'", computationsMask)
 	return computationsMask, err
@@ -139,6 +140,17 @@ func (masks *cpuMasks) DistributeIRQs(irqs []string, cpuMask string) error {
 func (masks *cpuMasks) GetNumberOfCores(mask string) (uint, error) {
 	return masks.hwloc.GetNumberOfCores(mask)
 }
+
 func (masks *cpuMasks) GetNumberOfPUs(mask string) (uint, error) {
 	return masks.hwloc.GetNumberOfPUs(mask)
+}
+
+func (masks *cpuMasks) GetLogicalCoreIdsFromPhysCore(
+	core uint,
+) ([]uint, error) {
+	return masks.hwloc.GetPhysIntersection("PU", fmt.Sprintf("core:%d", core))
+}
+
+func (masks *cpuMasks) GetAllCpusMask() (string, error) {
+	return masks.hwloc.All()
 }

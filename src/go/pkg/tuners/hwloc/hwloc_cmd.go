@@ -34,7 +34,8 @@ func (hwLocCmd *hwLocCmd) Distribute(numberOfElements uint) ([]string, error) {
 func (hwLocCmd *hwLocCmd) DistributeRestrict(
 	numberOfElements uint, mask string,
 ) ([]string, error) {
-	return hwLocCmd.runDistrib(strconv.Itoa(int(numberOfElements)), "--single", "--restrict", mask)
+	return hwLocCmd.runDistrib(strconv.Itoa(int(numberOfElements)),
+		"--single", "--restrict", mask)
 }
 
 func (hwLocCmd *hwLocCmd) GetNumberOfCores(mask string) (uint, error) {
@@ -45,10 +46,30 @@ func (hwLocCmd *hwLocCmd) GetNumberOfPUs(mask string) (uint, error) {
 	return hwLocCmd.getNumberOf(mask, "PU")
 }
 
+func (hwLocCmd *hwLocCmd) GetPhysIntersection(
+	firstMask string, secondMask string,
+) ([]uint, error) {
+	out, err := hwLocCmd.runCalc("--intersect", firstMask, secondMask,
+		"--physical")
+	if err != nil {
+		return nil, err
+	}
+	indices := []uint{}
+	for _, idx := range strings.Split(out, ",") {
+		intIdx, err := strconv.Atoi(strings.TrimSpace(idx))
+		if err != nil {
+			return nil, err
+		}
+		indices = append(indices, uint(intIdx))
+	}
+	return indices, nil
+}
+
 func (hwLocCmd *hwLocCmd) getNumberOf(
 	mask string, resource string,
 ) (uint, error) {
-	output, err := hwLocCmd.runCalc("--number-of", resource, "machine:0", "--restrict", mask)
+	output, err := hwLocCmd.runCalc("--number-of", resource, "machine:0",
+		"--restrict", mask)
 	count, err := strconv.Atoi(output)
 	return uint(count), err
 }
