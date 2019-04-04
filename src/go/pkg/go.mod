@@ -1,7 +1,9 @@
 module vectorized
 
 require (
+	github.com/BurntSushi/toml v0.3.1 // indirect
 	github.com/google/go-cmp v0.2.0 // indirect
+	github.com/inconshreveable/mousetrap v1.0.0 // indirect
 	github.com/jkeiser/iter v0.0.0-20140714165249-67b94d6149c6 // indirect
 	github.com/jochenvg/go-udev v0.0.0-20171110120927-d6b62d56d37b
 	github.com/lorenzosaino/go-sysctl v0.1.0

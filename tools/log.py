@@ -15,3 +15,7 @@ def set_logger_for_main(level=logging.INFO):
     for h in logging.getLogger().handlers:
         h.setFormatter(formatter)
     logger.setLevel(level)
+
+
+def is_debug():
+    return logger.level == logging.DEBUG
