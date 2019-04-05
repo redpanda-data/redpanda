@@ -58,6 +58,7 @@ ExternalProject_Add(zlib
   CONFIGURE_COMMAND
     <SOURCE_DIR>/configure
     --prefix=<INSTALL_DIR>
+    --libdir=<INSTALL_DIR>/lib
   BUILD_COMMAND ${make_command}
   INSTALL_COMMAND ${make_command} install)
 
@@ -134,6 +135,7 @@ ExternalProject_Add(gmp
     <SOURCE_DIR>/configure
     --prefix=<INSTALL_DIR>
     --srcdir=<SOURCE_DIR>
+    --libdir=<INSTALL_DIR>/lib
     ${info_dir}/gmp
   BUILD_COMMAND ${make_command}
   INSTALL_COMMAND ${make_command} install)
@@ -162,8 +164,10 @@ ExternalProject_Add(gnutls
     <SOURCE_DIR>/configure
     --prefix=<INSTALL_DIR>
     --srcdir=<SOURCE_DIR>
+    --libdir=<INSTALL_DIR>/lib
     --with-included-unistring
     --with-included-libtasn1
+    --without-idn
     --without-p11-kit
     # https://lists.gnupg.org/pipermail/gnutls-help/2016-February/004085.html
     --disable-non-suiteb-curves
