@@ -2,7 +2,9 @@
 
 #include <fmt/format.h>
 #include <seastar/core/app-template.hh>
+#include <seastar/core/reactor.hh> // timer::arm/re-arm here
 #include <seastar/core/sleep.hh>
+#include <seastar/core/timer.hh>
 #include <smf/log.h>
 
 #include "raft_client_cache.h"

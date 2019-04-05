@@ -1,10 +1,10 @@
+#include <chrono>
 #include <iostream>
-
-#include <smf/log.h>
 
 #include <flatbuffers/minireflect.h>
 #include <seastar/core/app-template.hh>
 #include <seastar/core/sleep.hh>
+#include <smf/log.h>
 #include <smf/lz4_filter.h>
 #include <smf/random.h>
 #include <smf/rpc_server.h>

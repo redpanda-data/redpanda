@@ -3,7 +3,9 @@
 #include <chrono>
 #include <type_traits>
 
+#include <seastar/core/reactor.hh>  // timer::arm/re-arm here
 #include <seastar/core/sleep.hh>
+#include <seastar/core/timer.hh>
 
 #include "hashing/xx.h"
 
