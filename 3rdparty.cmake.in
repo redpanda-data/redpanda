@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.7.0)
+cmake_minimum_required(VERSION 3.9.0)
 project(build-deps NONE)
 cmake_host_system_information(
   RESULT build_concurrency_factor
