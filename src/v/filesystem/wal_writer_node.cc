@@ -31,15 +31,14 @@ wal_writer_node::wal_writer_node(wal_writer_node_opts opts)
   flush_timeout_.set_callback([this] {
     if (is_closed_) return;
     if (lease_->current_size() == 0) return;
+    if (is_closed_) return;
+
     // timer<>.set_callback is void - dispatch in background
-    seastar::with_semaphore(serialize_writes_, 1, [this] {
-      if (is_closed_) { return seastar::make_ready_future<>(); }
-      DTRACE_PROBE(rp, wal_writer_node_periodic_flush);
-      return lease_->flush().then([this] {
-        return opts_.log_segment_size_notify(lease_->filename,
-                                             lease_->current_size());
+    DTRACE_PROBE(rp, wal_writer_node_periodic_flush);
+    lease_->flush().then(
+      [this, sz = lease_->current_size(), name = lease_->filename] {
+        return opts_.log_segment_size_notify(name, sz);
       });
-    });
   });
   flush_timeout_.arm_periodic(opts_.wopts.writer_flush_period);
 }
