@@ -1,4 +1,4 @@
-# How to get started
+# How to get started [![build](https://api.shippable.com/projects/5cab6e979bbe6e0007384c8b/badge?branch=master)]()
 
 ## Building Red Panda
 
