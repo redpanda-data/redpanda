@@ -20,6 +20,6 @@ build:
     - apt-get install python3
   ci:
     - |
-      python3 tools/build.py --deps=true --targets=cpp --build=release --log=debug
+      python3 tools/build.py --deps=true --targets=cpp --build=release --log=debug --fmt=false
   advancedReporting: true
 
