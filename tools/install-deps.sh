@@ -1,20 +1,20 @@
 #!/bin/bash
 
-set -e
+set -ex
 
 function golang_dep() {
 	if [[ "$(which go)" == "" ]]; then
         echo "golang"
-    else 
+    else
         echo ""
     fi
 }
 
 function debs() {
-    apt-get update
+    apt-get update -y
     apt-get install -y \
             ccache \
-            python3-distutils \
+            python3-distutils-extra \
             clang \
             $(golang_dep) \
             libudev-dev
@@ -41,7 +41,7 @@ function rpms() {
               python3-distutils-extra \
               clang \
               $(golang_dep) \
-              systemd-devel 
+              systemd-devel
 }
 
 
