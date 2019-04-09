@@ -273,7 +273,7 @@ ExternalProject_Add(lksctp-tools
   INSTALL_COMMAND ${make_command} install)
 
 ExternalProject_Add(seastar
-  URL https://github.com/scylladb/seastar/archive/05efbce.tar.gz
+  URL https://github.com/vectorizedio/seastar/archive/05efbce.tar.gz
   URL_MD5 0f59761981794d549cc579b6a3278a7e
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   CMAKE_ARGS
