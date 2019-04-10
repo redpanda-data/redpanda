@@ -15,6 +15,7 @@ GOLANG_CMDS_ROOT = "%s/cmd" % GOLANG_ROOT
 GOLANG_BUILD_ROOT = "%s/go/bin" % RP_BUILD_ROOT
 GOLANG_COMPLILER_ROOT = "%s/go" % RP_BUILD_ROOT
 GOLANG_VERSION = "1.12.3"
+GOLANG_COMPILER = "%s/%s/go/bin/go" % (GOLANG_COMPLILER_ROOT, GOLANG_VERSION)
 CPPLINT_URL = "https://raw.githubusercontent.com/google/styleguide/gh-pages/cpplint/cpplint.py"
 INSTALL_DEPS_URL = "https://raw.githubusercontent.com/smfrpc/smf/master/install-deps.sh"
 CLANG_SOURCE_VERSION = "7.0.1"

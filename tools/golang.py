@@ -15,11 +15,10 @@ from constants import *
 
 def _go_env():
     e = os.environ.copy()
+    e["GOROOT"] = "%s/../.." % GOLANG_COMPILER
     e["GOPATH"] = GOPATH
     e["GOBIN"] = GOLANG_BUILD_ROOT
     e["CGO_ENABLED"] = "1"
-    e["GOOS"] = "linux"
-    e["GOARCH"] = "amd64"
     return e
 
 
@@ -48,10 +47,8 @@ def get_crlfmt():
 
 
 def _get_go_binary():
-    target_path = _get_golang_path()
-    if not os.path.exists(target_path):
-        _download_go()
-    return "%s/go/bin/go" % target_path
+    if not os.path.exists(GOLANG_COMPILER): _download_go()
+    return GOLANG_COMPILER
 
 
 def _get_golang_path():
