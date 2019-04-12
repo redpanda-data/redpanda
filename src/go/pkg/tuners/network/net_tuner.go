@@ -386,7 +386,6 @@ func (tuner *NetTuner) setupRfs(nic string) {
 func (tuner *NetTuner) enableNTuple(nic string) error {
 	log.Infof("Trying to enable ntuple filtering HW offload for '%s'", nic)
 	features, err := tuner.ethTool.Features(nic)
-	features["ntuple"] = true
 	for featureName := range features {
 		if strings.Contains(featureName, "ntuple") {
 			log.Debugf("Found 'ntuple' feature '%s' in '%s'", featureName, nic)
