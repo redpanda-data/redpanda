@@ -3,11 +3,7 @@
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${script_dir}/base_script.sh"
 
-if [[ "$(git config format.signOff)" != "yes" ]]; then
-    fatal "Please set auto signOff in Git with 'git config format.signOff yes'"
-else 
-    log "Autmatic sign off checked"
-fi
+git config format.signOff yes
 
 if [[ "$(git config user.name)" == "" ]]; then
     fatal "please set user name with 'git config user.name <user_name>'"
