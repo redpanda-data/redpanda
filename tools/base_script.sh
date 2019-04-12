@@ -18,3 +18,8 @@ function fatal {
 function debug {
 	log "\e[1;34m[DEBUG] $@ \e[0m"
 }
+
+function error {
+	log "\e[1;31m[ERROR] $@ \e[0m"
+}
+
