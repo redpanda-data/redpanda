@@ -11,8 +11,8 @@ else
     debug 'User name checked'
 fi
 
-if [[ "$(git config user.email)" == "" ]]; then
-    fatal "Please set user email with 'git config user.email <email>'"
+if [[ "$(git config user.email)" != *"@vectorized.io" ]]; then
+    fatal "Please set user email with 'git config user.email <user>@vectorized.io'"
 else 
     debug "User email checked"
 fi
