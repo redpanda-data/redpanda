@@ -38,7 +38,7 @@ wal_core_mapping::core_assignment(const wal_topic_create_request *p) {
     }
     retval.push_back(wal_create_request(p, i, std::move(assign[i])));
   }
-  return std::move(retval);
+  return retval;
 }
 
 /** \brief map the request to the lcore that is going to handle the put */

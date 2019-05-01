@@ -85,7 +85,7 @@ wal_segment_record::coalesce(const char *key, int32_t key_size, const char *val,
 
   // 4. copy the header
   std::memcpy(retval->data.data(), (char *)&hdr, kWalHeaderSize);
-  return std::move(retval);
+  return retval;
 }
 
 std::pair<seastar::temporary_buffer<char>, seastar::temporary_buffer<char>>

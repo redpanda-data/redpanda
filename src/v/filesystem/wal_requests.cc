@@ -81,7 +81,7 @@ wal_write_reply::release() {
   for (auto &&p : cache_) {
     ret->offsets.push_back(std::move(p.second));
   }
-  return std::move(ret);
+  return ret;
 }
 
 }  // namespace v

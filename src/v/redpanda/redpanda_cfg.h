@@ -43,7 +43,7 @@ struct redpanda_cfg {
     LOG_THROW_IF(validation != wal_opts::validation_status::ok,
                  "Invalid write ahead log settings: {}. opts: {}",
                  static_cast<ut>(validation), o);
-    return std::move(o);
+    return o;
   }
 
   raft_cfg
