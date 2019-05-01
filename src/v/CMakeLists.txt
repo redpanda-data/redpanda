@@ -7,6 +7,7 @@ add_subdirectory(ioutil)
 add_subdirectory(filesystem)
 add_subdirectory(chain_replication)
 add_subdirectory(raft)
+add_subdirectory(utils)
 
 
 # main executables
