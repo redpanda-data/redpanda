@@ -44,7 +44,7 @@ binary_index(uint64_t xorkey, int64_t largest_offset, int64_t lens_bytes,
     key.data(), key.size(), buf.get(), buf.size(),
     wal_compression_type::wal_compression_type_lz4);
 
-  return std::move(ret);
+  return ret;
 }
 
 std::pair<wal_segment_index_key_entryT *, bool>

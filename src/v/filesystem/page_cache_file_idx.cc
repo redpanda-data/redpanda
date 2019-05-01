@@ -70,7 +70,7 @@ page_cache_file_idx::erase(iterator it) {
   page_range_ptr retval = std::move(ranges_.back());
   ranges_.pop_back();  // remove!
   std::stable_sort(ranges_.begin(), ranges_.end(), range_comparator{});
-  return std::move(retval);
+  return retval;
 }
 stdx::optional<page_range_ptr>
 page_cache_file_idx::try_evict() {

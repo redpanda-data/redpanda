@@ -322,7 +322,7 @@ wal_nstpidx_manager::stats() const {
   p->ns = tprops->smeta()->persisted_ns();
   p->topic = tprops->smeta()->persisted_topic();
   p->partition = tprops->smeta()->persisted_partition();
-  return std::move(p);
+  return p;
 }
 
 }  // namespace v

@@ -199,7 +199,7 @@ wal_topics_manager::stats() const {
     auto &m = mpair.second;
     ref.emplace(m->idx, std::move(m->stats()));
   }
-  return std::move(retval);
+  return retval;
 }
 
 }  // namespace v
