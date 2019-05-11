@@ -44,30 +44,31 @@ wal_nstpidx_repair::visit(seastar::directory_entry de) {
     wal_name_extractor_utils::wal_segment_extract_epoch_term(de.name);
   auto full_path = work_dir + "/" + de.name;
 
-  return file_size_from_allocated_blocks(full_path).then([=](auto p) mutable {
-    auto [block_size, st] = p;
-    DLOG_TRACE("{} block size: {} vs aligned: {}", full_path, block_size,
-               wal_file_size_aligned());
-    if (st.st_size == 0) {
-      LOG_INFO("Removing empty log file: {}", full_path);
-      return seastar::remove_file(full_path);
-    } else if (block_size >= wal_file_size_aligned()) {
-      LOG_INFO("Recovering unsafe log-segment: {}, fallocated-size: {} ",
-               block_size, full_path);
-      return recover_failed_wal_file(epoch, term, st.st_size,
-                                     from_timespec(st.st_mtim), full_path)
-        .then([=](auto sz) mutable {
-          if (sz != 0) {
-            st.st_size = sz;
-            files_.insert(wal_nstpidx_repair::item{
-              epoch, term, st.st_size, de.name, from_timespec(st.st_mtim)});
-          }
-          return seastar::make_ready_future<>();
-        });
-    }
-    files_.insert(wal_nstpidx_repair::item{epoch, term, st.st_size, de.name,
-                                           from_timespec(st.st_mtim)});
-    return seastar::make_ready_future<>();
-  });
+  return file_size_from_allocated_blocks(full_path).then(
+    [=, epoch = epoch, term = term](auto p) mutable {
+      auto [block_size, st] = p;
+      DLOG_TRACE("{} block size: {} vs aligned: {}", full_path, block_size,
+                 wal_file_size_aligned());
+      if (st.st_size == 0) {
+        LOG_INFO("Removing empty log file: {}", full_path);
+        return seastar::remove_file(full_path);
+      } else if (block_size >= wal_file_size_aligned()) {
+        LOG_INFO("Recovering unsafe log-segment: {}, fallocated-size: {} ",
+                 block_size, full_path);
+        return recover_failed_wal_file(epoch, term, st.st_size,
+                                       from_timespec(st.st_mtim), full_path)
+          .then([=, st = st](auto sz) mutable {
+            if (sz != 0) {
+              st.st_size = sz;
+              files_.insert(wal_nstpidx_repair::item{
+                epoch, term, st.st_size, de.name, from_timespec(st.st_mtim)});
+            }
+            return seastar::make_ready_future<>();
+          });
+      }
+      files_.insert(wal_nstpidx_repair::item{epoch, term, st.st_size, de.name,
+                                             from_timespec(st.st_mtim)});
+      return seastar::make_ready_future<>();
+    });
 }
 }  // namespace v

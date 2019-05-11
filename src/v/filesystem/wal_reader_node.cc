@@ -251,7 +251,7 @@ wal_reader_node::copy_one_record(wal_read_reply *retval,
                                            roffset + kWalHeaderSize, bodysz),
                           pager);
     })
-    .then([this, ptr, retval, record = std::move(record)](auto iter) mutable {
+    .then([ptr, retval, record = std::move(record)](auto iter) mutable {
       if (iter == stop_t::yes) {
         return seastar::make_ready_future<stop_t>(iter);
       }
@@ -292,7 +292,7 @@ wal_reader_node::copy_exactly(wal_reader_node::read_exactly_req req,
     }
   }
 
-  return seastar::do_with(std::move(req), [pager, this](auto &r) {
+  return seastar::do_with(std::move(req), [pager](auto &r) {
     return seastar::repeat([&r, pager]() mutable {
              if (r.size_left_to_consume() <= 0) {
                return seastar::make_ready_future<stop_t>(stop_t::yes);

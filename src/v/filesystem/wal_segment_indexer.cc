@@ -24,7 +24,7 @@ struct key_hash_functor {
 
 static std::unique_ptr<wal_binary_recordT>
 binary_index(uint64_t xorkey, int64_t largest_offset, int64_t lens_bytes,
-             auto &set) {
+             wal_segment_indexer::wal_segment_index_key_entry_set &set) {
   // record that is going to go in the indexed WAL
   wal_segment_index_fragmentT frag;
   frag.largest_offset = largest_offset;

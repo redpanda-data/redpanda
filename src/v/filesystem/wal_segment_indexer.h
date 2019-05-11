@@ -49,7 +49,8 @@ class wal_segment_indexer {
   /// \brief hash order followed by string order
   struct key_entry_order {
     bool
-    operator()(const auto &lhs, const auto &rhs) const {
+    operator()(const std::unique_ptr<wal_segment_index_key_entryT> &lhs,
+               const std::unique_ptr<wal_segment_index_key_entryT> &rhs) const {
       if (lhs->hash == rhs->hash) {
         if (lhs->key.size() == rhs->key.size()) {
           const char *clhs = reinterpret_cast<const char *>(lhs->key.data());
@@ -62,6 +63,10 @@ class wal_segment_indexer {
     }
   };
 
+ public:
+  using wal_segment_index_key_entry_set =
+    std::set<std::unique_ptr<wal_segment_index_key_entryT>, key_entry_order>;
+
  private:
   bool is_flushed_{true};
   int32_t size_{0};
@@ -71,8 +76,7 @@ class wal_segment_indexer {
   int64_t largest_offset_seen_{0};
   int64_t lens_bytes_{0};
   /// \brief map holding all tvhe keys
-  std::set<std::unique_ptr<wal_segment_index_key_entryT>, key_entry_order>
-    data_;
+  wal_segment_index_key_entry_set data_;
 
   std::unique_ptr<wal_segment> index_ = nullptr;
 };

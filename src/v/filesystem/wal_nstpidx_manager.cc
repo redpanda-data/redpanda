@@ -259,7 +259,7 @@ wal_nstpidx_manager::default_writer_opts() {
 }
 
 static void
-print_repaired_files(const seastar::sstring &d, const auto &s) {
+print_repaired_files(const seastar::sstring &d, const wal_nstpidx_repair::set_t &s) {
   if (s.empty()) return;
   std::vector<seastar::sstring> v;
   v.reserve(s.size());
