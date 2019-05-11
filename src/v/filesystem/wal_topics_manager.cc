@@ -197,7 +197,7 @@ wal_topics_manager::stats() const {
   auto &ref = retval->stats;
   for (auto &mpair : mngrs_) {
     auto &m = mpair.second;
-    ref.emplace(m->idx, std::move(m->stats()));
+    ref.emplace(m->idx, m->stats());
   }
   return retval;
 }
