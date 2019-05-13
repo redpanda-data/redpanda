@@ -42,7 +42,7 @@ qps_load::qps_load(const boost::program_options::variables_map *cfg)
     std::min(double(1.0), std::abs(options()["rw-balance"].as<double>()));
   LOG_INFO("Balance writes vs reads: {}", rw_balance_);
   needle_threshold_ = std::numeric_limits<uint32_t>::max();
-  if (rw_balance_ >= 0.0D && rw_balance_ <= 1.0D) {
+  if (rw_balance_ >= double(0.0) && rw_balance_ <= double(1.0)) {
     needle_threshold_ = static_cast<double>(needle_threshold_) * rw_balance_;
   } else {
     LOG_THROW("Invalid rw_balance:{}", rw_balance_);
@@ -102,7 +102,7 @@ static void
 print_iteration_stats(uint32_t iterno, uint32_t max,
                       seastar::lowres_system_clock::time_point test_start,
                       seastar::lowres_system_clock::time_point method_start,
-                      auto &loaders) {
+                      std::vector<std::unique_ptr<cli>> &loaders) {
   auto now = seastar::lowres_system_clock::now();
   auto method_duration_millis =
     duration_cast<milliseconds>(now - method_start).count();
@@ -165,7 +165,7 @@ qps_load::copy_histogram() const {
     auto p = c->api()->get_histogram();
     *h += *p;
   }
-  return std::move(h);
+  return h;
 }
 seastar::future<>
 qps_load::open() {

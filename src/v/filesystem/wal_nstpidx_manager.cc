@@ -259,7 +259,8 @@ wal_nstpidx_manager::default_writer_opts() {
 }
 
 static void
-print_repaired_files(const seastar::sstring &d, const wal_nstpidx_repair::set_t &s) {
+print_repaired_files(const seastar::sstring &d,
+                     const wal_nstpidx_repair::set_t &s) {
   if (s.empty()) return;
   std::vector<seastar::sstring> v;
   v.reserve(s.size());
@@ -308,7 +309,7 @@ wal_nstpidx_manager::close() {
   };
   return writer_->close().handle_exception(elogger).then([this, elogger] {
     return seastar::do_for_each(nodes_.begin(), nodes_.end(),
-                                [this](auto &b) { return b->close(); })
+                                [](auto &b) { return b->close(); })
       .handle_exception(elogger);
   });
 }

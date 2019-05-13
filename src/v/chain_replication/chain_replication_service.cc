@@ -16,7 +16,7 @@ namespace chains {
 using namespace v;  // NOLINT
 
 void
-validate_puts(auto &fputs) {
+validate_puts(std::vector<wal_write_request> &fputs) {
   for (auto &p : fputs) {
     LOG_THROW_IF(!wal_write_request::is_valid(p), "invalid write request");
   }

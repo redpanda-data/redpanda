@@ -1,6 +1,7 @@
 #include "page_cache.h"
 
 #include <seastar/core/metrics.hh>
+#include <seastar/core/reactor.hh>
 
 #include "hashing/xx.h"
 #include "prometheus/prometheus_sanitize.h"

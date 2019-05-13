@@ -7,7 +7,7 @@
 namespace v {
 
 void
-validate_creates(auto &creates) {
+validate_creates(std::vector<wal_create_request> &creates) {
   for (auto &r : creates) {
     LOG_THROW_IF(!wal_create_request::is_valid(r),
                  "Invalid wal_create_request");

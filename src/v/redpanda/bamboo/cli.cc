@@ -4,6 +4,7 @@
 
 #include <boost/program_options.hpp>
 #include <flatbuffers/minireflect.h>
+#include <seastar/core/reactor.hh>
 #include <smf/human_bytes.h>
 #include <smf/log.h>
 

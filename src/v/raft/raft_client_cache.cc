@@ -74,8 +74,8 @@ to_ms(smf::random &rng, raft_client_cache::backoff b) {
 
 raft_client_cache::raft_client_cache() {}
 raft_client_cache::raft_client_cache(raft_client_cache &&o) noexcept
-  : reconnect_gate_(std::move(o.reconnect_gate_)), prng_(std::move(prng_)),
-    cache_(std::move(cache_)) {}
+  : reconnect_gate_(std::move(o.reconnect_gate_)), prng_(std::move(o.prng_)),
+    cache_(std::move(o.cache_)) {}
 
 typename raft_client_cache::underlying::iterator
 raft_client_cache::find(const seastar::ipv4_addr &n) {
