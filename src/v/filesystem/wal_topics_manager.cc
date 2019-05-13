@@ -60,7 +60,7 @@ write_partition_metadata(const wal_opts &opts, const wal_create_request &c,
   return seastar::smp::submit_to(
            0, [directory] { return dir_utils::create_dir_tree(directory); })
     .then([data = std::move(data), ns = props->ns, topic = props->topic, &opts,
-           &c, partition]() mutable {
+           partition]() mutable {
       auto filename = metadata_path(opts, ns, topic, partition);
       auto sz = data->data.size();
       auto file = std::make_unique<wal_segment>(

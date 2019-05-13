@@ -5,6 +5,7 @@
 
 // For trace only
 #include <flatbuffers/minireflect.h>
+#include <seastar/core/reactor.hh>
 
 #include "filesystem/wal_segment_record.h"
 #include "hashing/jump_consistent_hash.h"

@@ -1,6 +1,7 @@
 #include <iostream>
 
 #include <seastar/core/app-template.hh>
+#include <seastar/core/reactor.hh>
 
 #include "page_cache_buffer_manager.h"
 #include "page_cache_file_idx.h"

@@ -1,5 +1,6 @@
 #include "page_cache_file_idx.h"
 
+#include <seastar/core/reactor.hh>
 #include <smf/log.h>
 
 // filesystem
