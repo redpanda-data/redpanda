@@ -7,6 +7,10 @@ rp_hbadger_lib(
   NAME ioutil
   SOURCES ${ioutil_sources}
   INCLUDES ${PROJECT_SOURCE_DIR}/src/v
-  COMPILE_OPTIONS -Wall -Werror -fconcepts -Wno-unused-variable
+  COMPILE_OPTIONS 
+    -Wall 
+    -Werror 
+    $<$<CXX_COMPILER_ID:Gnu>:-fconcepts> 
+    -Wno-unused-variable
   LIBRARIES smf::smf
   )
