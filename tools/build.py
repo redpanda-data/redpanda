@@ -59,6 +59,10 @@ def generate_options():
         type=distutils.util.strtobool,
         default='true',
         help='format last changed files')
+    parser.add_argument(
+        '--clang',
+        type=str,
+        help='path to clang or `internal` keyword to use clang built internally' )
     return parser
 
 
@@ -69,7 +73,8 @@ def main():
     logger.info("%s" % options)
     root = git.get_git_root(relative=os.path.dirname(__file__))
     if options.deps: install_deps()
-    if options.build and options.build != "none": build(options.build, options.targets)
+    if options.build and options.build != "none":
+        build(options.build, options.targets, options.clang)
 
     def _files():
         r = []

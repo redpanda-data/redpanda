@@ -12,10 +12,17 @@ Assuming from the root of the repo:
 ```
 That's it!
 
+### Using internal LLVM toolchain
+```sh
+./tools/build.py --deps=true --targets=cpp --build=release --clang=internal
+```
+
 ### Incremental CPP builds
 To do incremental builds, just `cd $ROOT/build/Release && ninja <target name>`
 for example: `cd build/Release && ninja redpanda` will build the
  `redpanda` binary & transitive deps only
+
+
 
 ## Building Go code (`rpk`, ..., etc.)
 All Go binaries can be found in `build/go/bin`

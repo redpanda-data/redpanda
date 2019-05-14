@@ -35,7 +35,13 @@ rp_hbadger_lib(
   SOURCES ${rpfs_sources}
   INCLUDES ${CMAKE_CURRENT_BINARY_DIR}
   INCLUDES ${PROJECT_SOURCE_DIR}/src/v
-  COMPILE_OPTIONS -Wall -Werror -fconcepts -Wno-unused-variable -Wno-error=maybe-uninitialized
+  COMPILE_OPTIONS 
+    -Wall 
+    -Werror 
+    $<$<CXX_COMPILER_ID:Gnu>:-fconcepts> 
+    -Wno-unused-variable
+    -Wno-unused-function
+    -Wno-unused-lambda-capture
   LIBRARIES ioutil rprandom RE2::re2
   )
 

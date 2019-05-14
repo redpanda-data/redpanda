@@ -14,6 +14,8 @@ import golang
 import shell
 import fmt
 import cpp
+import clang
+import llvm
 
 
 def install_deps():
@@ -41,19 +43,32 @@ def _symlink_compile_commands(build_type):
     os.symlink(src, dst)
 
 
-def _configure_build(build_type):
+def _configure_build(build_type, clang_opt):
     _check_build_type(build_type)
     cpp.check_bdir(build_type)
     logger.info("configuring build %s" % build_type)
     tpl = Template(
         "cd $build_root/$build_type && cmake -GNinja -DCMAKE_BUILD_TYPE=$cmake_type $root"
     )
+    build_env = os.environ
+    if clang_opt == None:
+        logger.debug(
+            "Clang not defined, building using default system compiler")
+    elif clang_opt == "internal":
+        logger.info("Builing using internal Clang compiler")
+        llvm.get_llvm()
+        llvm.build_llvm()
+        build_env = clang.clang_env_from_path(
+            os.path.join(llvm.get_llvm_install_path(), "bin", "clang"))
+    else:
+        logger.info("Using clang compiler from path `%s`" % clang_opt)
+        build_env = clang.clang_env_from_path(clang_opt)
     cmd = tpl.substitute(
         root=RP_ROOT,
         build_root=RP_BUILD_ROOT,
         cmake_type=build_type.capitalize(),
         build_type=build_type)
-    shell.run_subprocess(cmd)
+    shell.run_subprocess(cmd, build_env)
 
 
 def _invoke_build(build_type):
@@ -88,13 +103,13 @@ def _invoke_go_tests():
     golang.go_test(GOLANG_ROOT, "./...")
 
 
-def build(build_type, targets):
+def build(build_type, targets, clang):
     if 'all' in targets or 'go' in targets:
         _invoke_go_tests()
         _invoke_build_go_cmds()
 
     if 'all' in targets or 'cpp' in targets:
         logger.info("Building Cpp...")
-        _configure_build(build_type)
+        _configure_build(build_type, clang)
         _invoke_build(build_type)
         _invoke_tests(build_type)
