@@ -129,4 +129,6 @@ def build_packages(build_type, packages):
         packaging.relocable_tar_package(tar_path, execs, configs)
         if 'tar' in packages:
             packaging.red_panda_tar(tar_path)
+        if 'rpm' in packages:
+            packaging.red_panda_rpm(tar_path)
         os.remove(tar_path)

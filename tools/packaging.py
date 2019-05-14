@@ -15,6 +15,8 @@ logger = logging.getLogger('rp')
 from constants import *
 from pkg_config import *
 import shell
+import templates
+import fs
 
 thunk = b'''\
 #!/bin/bash
@@ -88,3 +90,39 @@ def red_panda_tar(input_tar):
     tar_name = 'redpanda-%s-%s_%s.tar.gz' % (VERSION, RELEASE, REVISION)
     tar_file = os.path.join(tar_dir, tar_name)
     shutil.copy(input_tar, tar_file)
+
+def _rpm_tree(dest):
+    for dir in ['BUILD', 'BUILDROOT', 'RPMS', 'SOURCES', 'SPECS', 'SRPMS']:
+        os.makedirs("%s/%s" % (dest, dir), exist_ok=True)
+
+
+def _pkg_context():
+    return {
+        "name": REDPANDA_NAME,
+        "version": VERSION,
+        "summary": REDPANDA_DESCRIPTION,
+        "desc": REDPANDA_DESCRIPTION,
+        "release": RELEASE,
+        "license": LICENSE,
+        "revision": REVISION,
+        "codename": CODENAME
+    }
+
+
+def red_panda_rpm(input_tar):
+    logger.info("Creating RPM package")
+    # prepare RPM sources
+    _rpm_tree(_in_dist_root("rpm"))
+    fs.force_link(input_tar, _in_dist_root("rpm/SOURCES/redpanda.tar"))
+    fs.force_symlink(
+        _in_root('packaging/common'), _in_dist_root("rpm/common"))
+    # render templates
+    package_ctx = _pkg_context()
+    package_ctx['source_tar'] = "redpanda.tar"
+    spec_template = _in_root("packaging/rpm/redpanda.spec.mustache")
+    spec = _in_dist_root("rpm/SPECS/redpanda.spec")
+    templates.render_to_file(spec_template, spec, package_ctx)
+    # build RPM
+    shell.run_subprocess('rpmbuild -bb --define \"_topdir %s\" %s' %
+                         (_in_dist_root("rpm"), spec))
+

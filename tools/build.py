@@ -66,7 +66,7 @@ def generate_options():
         help='path to clang or `internal` keyword to use clang built internally' )
     parser.add_argument(
         '--packages',
-        choices=['tar'],  
+        choices=['tar', 'rpm'],  
         nargs='+',
         help='list of packages to create')
     return parser
