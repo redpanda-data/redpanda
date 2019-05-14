@@ -23,3 +23,11 @@ build:
       python3 tools/build.py --deps=true --targets=all --build=release --log=debug --fmt=false
   advancedReporting: true
 
+integrations:
+  notifications:
+    - integrationName: email
+      type: email
+      recipients:
+        - v-dev@vectorized.io
+      on_cancel: never
+      sendFailingSnippet: true
