@@ -14,6 +14,7 @@ import git
 import shell
 import fmt
 import log
+import packaging
 from build_helpers import *
 
 
@@ -63,6 +64,11 @@ def generate_options():
         '--clang',
         type=str,
         help='path to clang or `internal` keyword to use clang built internally' )
+    parser.add_argument(
+        '--packages',
+        choices=['tar'],  
+        nargs='+',
+        help='list of packages to create')
     return parser
 
 
@@ -75,6 +81,7 @@ def main():
     if options.deps: install_deps()
     if options.build and options.build != "none":
         build(options.build, options.targets, options.clang)
+    build_packages(options.build, options.packages)
 
     def _files():
         r = []

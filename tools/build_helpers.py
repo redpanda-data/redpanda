@@ -16,6 +16,7 @@ import fmt
 import cpp
 import clang
 import llvm
+import packaging
 
 
 def install_deps():
@@ -113,3 +114,19 @@ def build(build_type, targets, clang):
         _configure_build(build_type, clang)
         _invoke_build(build_type)
         _invoke_tests(build_type)
+
+def build_packages(build_type, packages):
+    res_type = "release" if build_type == "none" else build_type
+    if packages:
+        execs = [
+            "%s/%s/src/v/redpanda/redpanda" % (RP_BUILD_ROOT, res_type),
+            "%s/go/bin/rpk" % RP_BUILD_ROOT
+        ]
+        configs = [os.path.join(RP_ROOT, "conf/redpanda.yaml")]
+        os.makedirs(RP_DIST_ROOT, exist_ok=True)
+        tar_name = 'redpanda.tar.gz'
+        tar_path = "%s/%s" % (RP_DIST_ROOT, tar_name)
+        packaging.relocable_tar_package(tar_path, execs, configs)
+        if 'tar' in packages:
+            packaging.red_panda_tar(tar_path)
+        os.remove(tar_path)

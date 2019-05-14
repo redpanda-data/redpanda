@@ -18,6 +18,12 @@ def get_git_user():
     return shell.run_oneline("git config user.name")
 
 
+def get_tag_or_ref():
+    head = shell.run_oneline("git rev-parse --short HEAD")
+    tag = shell.run_oneline("git name-rev --tags --name-only %s" % head)
+    return tag if tag != "undefined" else head
+
+
 def get_git_files():
     ret = shell.raw_check_output("cd %s && git ls-files --full-name" %
                                  get_git_root(os.path.dirname(__file__)))
@@ -25,8 +31,9 @@ def get_git_files():
 
 
 def get_git_changed_files():
-    ret = shell.raw_check_output("cd %s && git diff --name-only --diff-filter=d" %
-                                 get_git_root(os.path.dirname(__file__)))
+    ret = shell.raw_check_output(
+        "cd %s && git diff --name-only --diff-filter=d" % get_git_root(
+            os.path.dirname(__file__)))
     logger.debug("Files recently changed %s" % ret)
     return list(filter(lambda x: x and len(x) > 0, ret.split("\n")))
 
