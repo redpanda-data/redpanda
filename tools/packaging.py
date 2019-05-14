@@ -8,6 +8,7 @@ import subprocess
 import io
 import functools
 import shutil
+import glob
 
 sys.path.append(os.path.dirname(__file__))
 logger = logging.getLogger('rp')
@@ -126,3 +127,31 @@ def red_panda_rpm(input_tar):
     shell.run_subprocess('rpmbuild -bb --define \"_topdir %s\" %s' %
                          (_in_dist_root("rpm"), spec))
 
+
+def red_panda_deb(input_tar):
+    logger.info("Creating DEB package")
+    debian_dir = _in_dist_root("debian/redpanda")
+    os.makedirs(debian_dir, exist_ok=True)
+    shutil.rmtree(debian_dir)
+    shutil.copytree(
+        _in_root("packaging/debian/debian"), os.path.join(
+            debian_dir, 'debian'))
+    target_tar_name = "debian/redpanda_%s-%s.orig.tar.gz" % (VERSION, RELEASE)
+    fs.force_link(input_tar, _in_dist_root(target_tar_name))
+    common_path = _in_dist_root("debian/redpanda/common")
+    shutil.copytree(_in_root('packaging/common'), common_path)
+    # render templates
+    package_ctx = _pkg_context()
+    chglog_tmpl = _in_root("packaging/debian/changelog.mustache")
+    control_tmpl = _in_root("packaging/debian/control.mustache")
+    for f in glob.glob(os.path.join(common_path, "systemd", "*")):
+        shutil.copy(f, _in_dist_root("debian/redpanda/debian"))
+    templates.render_to_file(chglog_tmpl,
+                             _in_dist_root("debian/redpanda/debian/changelog"),
+                             package_ctx)
+    templates.render_to_file(control_tmpl,
+                             _in_dist_root("debian/redpanda/debian/control"),
+                             package_ctx)
+    # build DEB
+    shell.raw_check_output("tar -C %s -xpf %s" % (debian_dir, input_tar))
+    shell.run_subprocess('cd %s && debuild -rfakeroot -us -uc -b' % debian_dir)

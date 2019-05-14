@@ -4,11 +4,13 @@ import os
 import logging
 import glob
 from string import Template
+import pystache
 
 sys.path.append(os.path.dirname(__file__))
 logger = logging.getLogger('rp')
 
 from constants import *
+from pkg_config import *
 import git
 import golang
 import shell
@@ -18,6 +20,7 @@ import clang
 import llvm
 import packaging
 
+import packaging
 
 def install_deps():
     logger.info("Checking for deps scripts")
@@ -115,6 +118,7 @@ def build(build_type, targets, clang):
         _invoke_build(build_type)
         _invoke_tests(build_type)
 
+
 def build_packages(build_type, packages):
     res_type = "release" if build_type == "none" else build_type
     if packages:
@@ -129,6 +133,8 @@ def build_packages(build_type, packages):
         packaging.relocable_tar_package(tar_path, execs, configs)
         if 'tar' in packages:
             packaging.red_panda_tar(tar_path)
+        if 'deb' in packages:
+            packaging.red_panda_deb(tar_path)
         if 'rpm' in packages:
             packaging.red_panda_rpm(tar_path)
         os.remove(tar_path)

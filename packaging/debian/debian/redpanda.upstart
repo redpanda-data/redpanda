@@ -1,0 +1,32 @@
+description	"Redpanda: The Fastest Queue In The West"
+
+start on runlevel [2345]
+stop on runlevel [!2345]
+
+umask 022
+
+console log
+
+expect stop
+respawn
+kill timeout 360
+normal exit 0 1 2
+setuid redpanda
+setgid redpanda
+limit core unlimited unlimited
+limit memlock unlimited unlimited
+limit nofile 800000 800000
+limit as unlimited unlimited
+limit nproc 8096 8096
+chdir /var/lib/redpanda
+env HOME=/var/lib/redpanda
+
+script
+    for i in /etc/redpanda.d/*.conf; do
+        if [ "$i" = "/etc/redpanda.d/*.conf" ]; then
+            break
+        fi
+        . "$i"
+    done
+    exec /usr/bin/redpanda $REDPANDA_ARGS $CPUSET $MEM
+end script

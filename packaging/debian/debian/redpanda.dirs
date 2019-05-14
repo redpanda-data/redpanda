@@ -1,0 +1,8 @@
+etc/redpanda
+etc/redpanda.d
+usr/lib/redpanda
+var/lib/redpanda
+var/lib/redpanda/data
+opt/redpanda/lib
+opt/redpanda/libexec
+opt/redpanda/bin

@@ -1,0 +1,33 @@
+#!/usr/bin/make -f
+
+export PYBUILD_DISABLE=1
+jobs := $(shell echo $$DEB_BUILD_OPTIONS | sed -r "s/.*parallel=([0-9]+).*/-j\1/")
+
+override_dh_auto_configure:
+
+override_dh_auto_build:
+
+override_dh_auto_clean:
+
+override_dh_auto_install:
+	dh_auto_install
+	install -d $(CURDIR)/debian/redpanda/usr/bin
+	ln -sf /opt/redpanda/bin/redpanda $(CURDIR)/debian/redpanda/usr/bin/redpanda
+	ln -sf /opt/redpanda/bin/rpk $(CURDIR)/debian/redpanda/usr/bin/rpk
+
+override_dh_installinit:
+	dh_installinit --no-start
+	dh_installinit --no-start redpanda
+
+override_dh_makeshlibs:
+
+override_dh_shlibdeps:
+
+override_dh_fixperms:
+	dh_fixperms
+	chmod -R 755 $(CURDIR)/debian/redpanda/opt/redpanda/lib
+
+override_dh_strip_nondeterminism:
+
+%:
+	dh $@
