@@ -132,9 +132,7 @@ enum wal_read_errno:byte {
   /// \brief invalid checksum for the payload
   missmatching_payload_checksum,
 
-  /// \brief the header of the entry says the payload is of size
-  /// and that size does not match with the actual data read
-  /// from the disk
+  /// \brief the header of the entry says the payload is of size and that size does not match with the actual data read from the disk
   missmatching_header_payload_size,
 }
 table wal_get_reply {
