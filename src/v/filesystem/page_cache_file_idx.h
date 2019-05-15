@@ -1,10 +1,10 @@
 #pragma once
 #include <algorithm>
 #include <vector>
+#include <optional>
 
 #include <seastar/core/memory.hh>
 #include <smf/log.h>
-#include <smf/stdx.h>
 
 // filesystem
 #include "page_cache_buffer_manager.h"
@@ -46,7 +46,7 @@ class page_cache_file_idx {
   }
   void evict_pages(std::set<int32_t> pages);
   /// \brief evicts one page, started at the lowest tag count
-  stdx::optional<page_range_ptr> try_evict();
+  std::optional<page_range_ptr> try_evict();
 
  private:
   iterator as_iterator(const int32_t pageno);
