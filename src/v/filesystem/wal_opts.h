@@ -2,7 +2,6 @@
 
 #include <seastar/core/sstring.hh>
 #include <seastar/core/timer.hh>
-#include <smf/stdx.h>
 
 #include "wal_writer_utils.h"
 
