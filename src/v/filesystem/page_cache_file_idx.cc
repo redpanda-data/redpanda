@@ -73,7 +73,7 @@ page_cache_file_idx::erase(iterator it) {
   std::stable_sort(ranges_.begin(), ranges_.end(), range_comparator{});
   return retval;
 }
-stdx::optional<page_range_ptr>
+std::optional<page_range_ptr>
 page_cache_file_idx::try_evict() {
   std::vector<page_cache_result *> evictable;
   // try finding one that is evictable && low priority & evict it!
@@ -92,7 +92,7 @@ page_cache_file_idx::try_evict() {
   if (lowest_pending_reads != ranges_.end()) {
     return erase(lowest_pending_reads);
   }
-  return stdx::nullopt;
+  return std::nullopt;
 }
 
 }  // namespace v

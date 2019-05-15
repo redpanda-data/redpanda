@@ -286,6 +286,7 @@ ExternalProject_Add(seastar
     -DSeastar_DEMOS=OFF
     -DSeastar_DOCS=OFF
     -DSeastar_TESTING=OFF
+    -DSeastar_STD_OPTIONAL_VARIANT_STRINGVIEW=ON
   DEPENDS
     fmt
     boost
