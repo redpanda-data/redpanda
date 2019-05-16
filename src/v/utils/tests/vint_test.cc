@@ -2,7 +2,7 @@
 
 #include "utils/vint.h"
 
-#include "bytes.h"
+#include "bytes/bytes.h"
 
 #include <boost/test/unit_test.hpp>
 
