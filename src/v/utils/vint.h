@@ -1,6 +1,6 @@
 #pragma once
 
-#include "bytes.h"
+#include "bytes/bytes.h"
 
 #include <cstdint>
 #include <type_traits>
