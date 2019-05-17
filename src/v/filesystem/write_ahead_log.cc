@@ -13,7 +13,6 @@
 #include "wal_name_extractor_utils.h"
 #include "wal_requests.h"
 
-namespace v {
 write_ahead_log::write_ahead_log(wal_opts _opts)
   : opts(std::move(_opts)), tm_(opts) {}
 
@@ -117,4 +116,3 @@ write_ahead_log::close() {
   return tm_.close();
 }
 
-}  // namespace v

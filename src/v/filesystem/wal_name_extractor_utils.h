@@ -4,7 +4,6 @@
 
 #include <seastar/core/sstring.hh>
 
-namespace v {
 struct wal_name_extractor_utils {
   /// \brief extract a int64_t epoch out of a write ahead log name
   static std::pair<int64_t, int64_t>
@@ -25,4 +24,3 @@ struct wal_name_extractor_utils {
   static int32_t wal_partition_dir_extract(const seastar::sstring &filename);
 };
 
-}  // namespace v

@@ -5,7 +5,6 @@
 
 #include "wal_requests.h"
 
-namespace v {
 
 struct wal_core_mapping {
   static uint32_t nstpidx_to_lcore(wal_nstpidx idx);
@@ -24,4 +23,3 @@ struct wal_core_mapping {
   static std::vector<wal_create_request>
   core_assignment(const wal_topic_create_request *p);
 };
-}  // namespace v

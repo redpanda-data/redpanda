@@ -12,7 +12,6 @@
 #include "wal_reader_node.h"
 #include "wal_writer_node.h"
 
-namespace v {
 
 /// \brief manages one active writer and an index to all the readers
 /// for this partition
@@ -80,4 +79,3 @@ class wal_nstpidx_manager {
   seastar::metrics::metric_groups metrics_{};
 };
 
-}  // namespace v

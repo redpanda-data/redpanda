@@ -3,7 +3,6 @@
 #include <seastar/core/reactor.hh>
 #include <seastar/core/sstring.hh>
 
-namespace v {
 
 /// \brief read a full file and returns it in a buf
 ///
@@ -19,4 +18,3 @@ readfile(const seastar::sstring &name) {
     });
 }
 
-}  // namespace v

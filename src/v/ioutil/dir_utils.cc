@@ -5,7 +5,6 @@
 #include <seastar/core/file.hh>
 #include <seastar/core/reactor.hh>
 
-namespace v {
 /// \brief creates directory tree
 seastar::future<>
 dir_utils::create_dir_tree(seastar::sstring name) {
@@ -37,4 +36,3 @@ dir_utils::create_dir_tree(seastar::sstring name) {
                           })
     .then([name, do_create_fn] { return do_create_fn(name); });
 }
-}  // namespace v

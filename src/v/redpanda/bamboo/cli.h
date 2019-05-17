@@ -8,7 +8,6 @@
 // main api
 #include "redpanda/api/client.h"
 
-namespace v {
 class cli {
  public:
   explicit cli(const boost::program_options::variables_map *cfg);
@@ -43,4 +42,3 @@ class cli {
   int32_t partition_pref_;
 };
 
-}  // namespace v

@@ -5,7 +5,6 @@
 
 #include "wal_writer_utils.h"
 
-namespace v {
 struct wal_opts {
   explicit wal_opts(
     seastar::sstring log_directory,
@@ -41,4 +40,3 @@ struct wal_opts {
 
 std::ostream &operator<<(std::ostream &o, const wal_opts &opts);
 
-}  // namespace v

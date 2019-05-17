@@ -6,7 +6,6 @@
 
 #include "wal_generated.h"
 
-namespace v {
 
 struct wal_segment_record {
   /// \brief writes into `wal_binary_recordT`
@@ -47,4 +46,3 @@ struct wal_segment_record {
                    seastar::temporary_buffer<char>>
   extract_from_bin(const char *begin, int32_t sz);
 };
-}  // namespace v

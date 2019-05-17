@@ -5,7 +5,6 @@
 
 #include "wal_name_extractor_utils.h"
 
-namespace v {
 
 bool
 wal_create_request::is_valid(const wal_create_request &r) {
@@ -84,4 +83,3 @@ wal_write_reply::release() {
   return ret;
 }
 
-}  // namespace v

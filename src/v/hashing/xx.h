@@ -6,7 +6,6 @@
 #include <smf/macros.h>
 #include <xxhash.h>
 
-namespace v {
 
 inline uint64_t
 xxhash_64(const char *data, const size_t &length) {
@@ -98,4 +97,3 @@ xxhash_32_str(const char *s) {
   return xxhash_32(DTHROW_IFNULL(s), std::strlen(s));
 }
 
-}  // namespace v

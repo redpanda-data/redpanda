@@ -11,7 +11,6 @@
 #include "raft_nstpidx_metadata.h"
 #include "raft_client_cache.h"
 
-namespace v {
 
 // https://github.com/xingyif/raft
 class raft_log_service final : public raft::raft_api {
@@ -51,4 +50,3 @@ class raft_log_service final : public raft::raft_api {
   raft_client_cache cache_;
 };
 
-}  // namespace v

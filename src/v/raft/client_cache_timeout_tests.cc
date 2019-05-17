@@ -13,7 +13,7 @@ int
 main(int args, char **argv, char **env) {
   std::cout.setf(std::ios::unitbuf);
   LOG_INFO("sizeof tagged ptr {}",
-           sizeof(v::tagged_ptr<v::raft::raft_api_client>));
+           sizeof(tagged_ptr<raft::raft_api_client>));
   seastar::app_template app;
   std::vector<seastar::ipv4_addr> addrs;
   return app.run(args, argv, [&] {
@@ -22,7 +22,7 @@ main(int args, char **argv, char **env) {
       addrs.emplace_back(fmt::format("127.0.0.1:1234{}", i));
     }
     return seastar::do_with(
-             v::raft_client_cache(),
+             raft_client_cache(),
              [&addrs](auto &cache) {
                return seastar::parallel_for_each(
                         addrs.begin(), addrs.end(),

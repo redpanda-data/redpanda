@@ -5,7 +5,6 @@
 #include "hashing/jump_consistent_hash.h"
 #include "hashing/xx.h"
 
-namespace v {
 /// \brief, no worries, this is exactly 8 bytes :)
 ///
 class wal_nstpidx {
@@ -53,18 +52,17 @@ SMF_ALWAYS_INLINE bool
 operator==(const wal_nstpidx &lhs, const wal_nstpidx &rhs) {
   return lhs.id() == rhs.id();
 }
-}  // namespace v
 
 namespace std {
 template <>
-struct hash<v::wal_nstpidx> {
+struct hash<wal_nstpidx> {
   SMF_ALWAYS_INLINE size_t
-  operator()(const v::wal_nstpidx &x) const {
+  operator()(const wal_nstpidx &x) const {
     return hash<uint64_t>()(x.id());
   }
 };
 SMF_ALWAYS_INLINE ostream &
-operator<<(ostream &o, const v::wal_nstpidx &idx) {
+operator<<(ostream &o, const wal_nstpidx &idx) {
   o << "wal_nstpidx{ id=" << idx.id() << " }";
   return o;
 }

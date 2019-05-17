@@ -1,6 +1,5 @@
 #include "murmur.h"
 
-namespace v {
 // adapted from original:
 // https://github.com/aappleby/smhasher/blob/master/src/MurmurHash3.h
 
@@ -378,4 +377,3 @@ murmurhash3_x64_128(const void *key, std::size_t len, void *out,
   ((uint64_t *)out)[1] = h2;
 }
 
-}  // namespace v

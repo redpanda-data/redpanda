@@ -14,7 +14,6 @@
 #include "wal_requests.h"
 #include "wal_topics_manager.h"
 
-namespace v {
 
 /// brief - write ahead log
 class write_ahead_log {
@@ -69,4 +68,3 @@ class write_ahead_log {
   wal_compaction_manager cm_;
 };
 
-}  // namespace v

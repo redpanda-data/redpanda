@@ -1,7 +1,6 @@
 #pragma once
 #include <cstdint>
 
-namespace v {
 /*
  * Fowler / Noll / Vo (FNV) Hash
  *     http://www.isthe.com/chongo/tech/comp/fnv/
@@ -108,4 +107,3 @@ fnv32(const std::array<T, N> &arr) {
   return fnv32_buf(reinterpret_cast<const char *>(&arr[0]), sizeof(T) * N);
 }
 
-}  // namespace v

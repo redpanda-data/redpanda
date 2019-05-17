@@ -10,7 +10,6 @@
 #include <smf/human_bytes.h>
 #include <smf/macros.h>
 
-namespace v {
 class wal_nstpidx_repair {
  public:
   struct item {
@@ -44,11 +43,10 @@ class wal_nstpidx_repair {
   set_t files_;
 };
 
-}  // namespace v
 
 namespace std {
 inline ostream &
-operator<<(ostream &o, const ::v::wal_nstpidx_repair::item &i) {
+operator<<(ostream &o, const wal_nstpidx_repair::item &i) {
   return o << "wal_nstpidx_repair::item{epoch:" << i.epoch
            << ", size:" << smf::human_bytes(i.size) << "(" << i.size
            << "), filename:" << i.filename << "}";

@@ -8,7 +8,6 @@
 #include "wal_generated.h"
 #include "wal_segment_record.h"
 
-using namespace v;  // NOLINT
 
 void
 small_tests() {
@@ -20,13 +19,13 @@ small_tests() {
     // The test!
     // effectively - round trip the encoding decoding
     //
-    auto x = v::wal_segment_record::coalesce(
+    auto x = wal_segment_record::coalesce(
       keyinput.data(), keyinput.size(), valinput.data(), valinput.size(),
       wal_compression_type::wal_compression_type_none);
 
     /// Since we didn't enable compression :)
     LOG_THROW_IF(x->data.size() !=
-                   sizeof(v::wal_header) + keyinput.size() + valinput.size(),
+                   sizeof(wal_header) + keyinput.size() + valinput.size(),
                  "Invalid record size encoding. Got: {}, expected: {}",
                  x->data.size(), keyinput.size() + valinput.size());
 
@@ -64,7 +63,7 @@ compression_tests() {
     auto keyinput = rand.next_alphanum(i);
     auto valinput = rand.next_alphanum(i);
     auto x =
-      v::wal_segment_record::coalesce(keyinput.data(), keyinput.size(),
+      wal_segment_record::coalesce(keyinput.data(), keyinput.size(),
                                       valinput.data(), valinput.size(), ctype);
     auto [kbuf, vbuf] = wal_segment_record::extract_from_bin(
       (const char *)x->data.data(), x->data.size());

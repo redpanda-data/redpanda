@@ -8,14 +8,13 @@
 #include <smf/human_bytes.h>
 #include <smf/log.h>
 
-namespace v {
 static const seastar::sstring kRegularTopic = "regular";
 static const seastar::sstring kCompactionTopic = "compaction";
 
 cli::cli(const boost::program_options::variables_map *cfg)
   : opts(THROW_IFNULL(cfg)) {
   id_ = rand_.next();
-  v::api::client_opts co(options()["namespace"].as<seastar::sstring>(),
+  api::client_opts co(options()["namespace"].as<seastar::sstring>(),
                          options()["topic"].as<seastar::sstring>(),
                          rand_.next(), rand_.next());
   co.server_side_verify_payload =
@@ -25,10 +24,10 @@ cli::cli(const boost::program_options::variables_map *cfg)
   }
   co.enable_detailed_latency_metrics = options()["enable-histogram"].as<bool>();
   if (kRegularTopic == options()["topic-type"].as<seastar::sstring>()) {
-    co.topic_type = v::wal_topic_type::wal_topic_type_regular;
+    co.topic_type = wal_topic_type::wal_topic_type_regular;
   }
   if (kCompactionTopic == options()["topic-type"].as<seastar::sstring>()) {
-    co.topic_type = v::wal_topic_type::wal_topic_type_compaction;
+    co.topic_type = wal_topic_type::wal_topic_type_compaction;
   }
   api_ = std::make_unique<api::client>(std::move(co));
   write_key_sz_ = options()["key-size"].as<int32_t>();
@@ -97,4 +96,3 @@ cli::api() const {
   return api_.get();
 }
 
-}  // namespace v

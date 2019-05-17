@@ -11,7 +11,6 @@
 #include <boost/cstdint.hpp>
 #include <boost/predef.h>
 
-namespace v {
 
 #ifndef BOOST_ARCH_X86_64
 #if !defined(__aarch64__)
@@ -102,4 +101,3 @@ class tagged_ptr {
   uintptr_t ptr_;
 };
 
-}  // namespace v

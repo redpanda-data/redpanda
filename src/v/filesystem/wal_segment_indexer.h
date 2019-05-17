@@ -12,7 +12,6 @@
 #include "wal_requests.h"
 #include "wal_segment.h"
 
-namespace v {
 /// \brief size of total keys we store in memory
 constexpr static const int32_t kMaxPartialIndexKeysSize = 1 << 25; /*32MB*/
 
@@ -81,4 +80,3 @@ class wal_segment_indexer {
   std::unique_ptr<wal_segment> index_ = nullptr;
 };
 
-}  // namespace v

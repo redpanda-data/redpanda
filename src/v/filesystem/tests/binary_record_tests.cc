@@ -10,7 +10,6 @@
 // filesystem
 #include "wal_segment_record.h"
 
-using namespace v;  // NOLINT
 
 /*
   BUGFIX: When flatbuffers reallocs, it copies the bytes incorrectly
@@ -62,7 +61,7 @@ TEST(wal_binary_record_order, small_on_wire_vs_on_mem) {
   auto record_mem = wal_segment_record::coalesce(key.data(), key.size(),
                                                  value.data(), value.size());
   auto body = smf::native_table_as_buffer<wal_binary_record>(*record_mem.get());
-  auto record_wire = smf::fbs_typed_buf<v::wal_binary_record>(std::move(body));
+  auto record_wire = smf::fbs_typed_buf<wal_binary_record>(std::move(body));
 
   std::cout << "Key:\t\t";
   hex_print((uint8_t *)key.data(), key.size());
@@ -83,7 +82,7 @@ TEST(wal_binary_record_order, large_on_wire_vs_on_mem) {
   auto record_mem = wal_segment_record::coalesce(key.data(), key.size(),
                                                  value.data(), value.size());
   auto body = smf::native_table_as_buffer<wal_binary_record>(*record_mem.get());
-  auto record_wire = smf::fbs_typed_buf<v::wal_binary_record>(std::move(body));
+  auto record_wire = smf::fbs_typed_buf<wal_binary_record>(std::move(body));
 
   // std::cout << "Record Mem:\t\t";
   // hex_print(record_mem->data.data(), record_mem->data.size());

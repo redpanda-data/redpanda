@@ -14,7 +14,7 @@ mod_load(uint64_t x, uint32_t n) {
 
 inline uint32_t
 jump_load(uint64_t x, uint32_t n) {
-  return v::jump_consistent_hash(x, n);
+  return jump_consistent_hash(x, n);
 }
 
 static void

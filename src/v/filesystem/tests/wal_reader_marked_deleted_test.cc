@@ -38,21 +38,21 @@ main(int args, char **argv, char **env) {
       LOG_INFO("log_segment test dir: {}", dir);
 
       return seastar::do_with(
-               v::wal_topic_test_input(
+               wal_topic_test_input(
                  "empty_namespace", "dummy_topic",
                  // partitions
                  seastar::smp::count * 2,
                  // type (can be compaction)
-                 v::wal_topic_type::wal_topic_type_regular,
+                 wal_topic_type::wal_topic_type_regular,
                  // map of properties for topic
                  {{"prop-for-topic", "maybe-store-access-keys"}}),
-               v::wal_opts(dir.c_str(), std::chrono::milliseconds(5)),
+               wal_opts(dir.c_str(), std::chrono::milliseconds(5)),
                [](auto &input, auto &wopts) {
-                 auto writer = seastar::make_lw_shared<v::wal_writer_node>(
-                   v::wal_writer_node_opts(
+                 auto writer = seastar::make_lw_shared<wal_writer_node>(
+                   wal_writer_node_opts(
                      wopts, 0 /*epoch*/, 0 /*term*/, input.get_create(),
                      wopts.directory,
-                     v::priority_manager::get().default_priority(),
+                     priority_manager::get().default_priority(),
                      [](auto name) { return seastar::make_ready_future<>(); },
                      [](auto name, auto sz) {
                        return seastar::make_ready_future<>();
@@ -80,7 +80,7 @@ main(int args, char **argv, char **env) {
                })
         .then([target_filename] { return seastar::file_size(target_filename); })
         .then([target_filename](auto sz) {
-          auto reader = seastar::make_lw_shared<v::wal_reader_node>(
+          auto reader = seastar::make_lw_shared<wal_reader_node>(
             0 /*epoch*/, 0 /*term*/, sz, seastar::lowres_system_clock::now(),
             target_filename);
           return reader->open()

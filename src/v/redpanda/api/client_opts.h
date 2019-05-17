@@ -7,7 +7,6 @@
 
 #include "filesystem/wal_generated.h"
 
-namespace v {
 namespace api {
 
 struct client_opts {
@@ -32,12 +31,12 @@ struct client_opts {
   int32_t topic_partitions = 16;
 
   /// \brief can be regular or compaction topic; immutable after creation
-  v::wal_topic_type topic_type = v::wal_topic_type::wal_topic_type_regular;
+  wal_topic_type topic_type = wal_topic_type::wal_topic_type_regular;
 
   /// \brief use this compression type on every record after the
   /// @record_compression_threshold
-  v::wal_compression_type record_compression_type =
-    v::wal_compression_type::wal_compression_type_lz4;
+  wal_compression_type record_compression_type =
+    wal_compression_type::wal_compression_type_lz4;
 
   /// \brief after this threshold we use the @record_compression_type
   /// Only applies to the value. The key is always uncompressed
@@ -70,4 +69,3 @@ struct client_opts {
 };
 
 }  // namespace api
-}  // namespace v

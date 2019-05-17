@@ -8,7 +8,6 @@
 #include <smf/log.h>
 #include <smf/macros.h>
 
-namespace v {
 
 /// \brief modeled after seastar/core/fstream.cc:file_data_sink_impl
 class wal_segment {
@@ -93,4 +92,3 @@ class wal_segment {
   int64_t flushed_pages_{0};
 };
 
-}  // namespace v

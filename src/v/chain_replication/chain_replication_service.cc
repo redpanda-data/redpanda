@@ -11,9 +11,7 @@
 #include "hashing/xx.h"
 #include "smf_specializations.h"
 
-namespace v {
 namespace chains {
-using namespace v;  // NOLINT
 
 void
 validate_puts(std::vector<wal_write_request> &fputs) {
@@ -140,11 +138,11 @@ chain_replication_service::do_get(
 
 seastar::future<smf::rpc_envelope>
 chain_replication_service::raw_get(smf::rpc_recv_context &&c) {
-  using inner_t = v::chains::chain_get_request;
+  using inner_t = chains::chain_get_request;
   using input_t = smf::rpc_recv_typed_context<inner_t>;
   return get(input_t(std::move(c))).then([this](auto x) {
     // uses the chain_replication/smf_specializations.h
-    const v::chains::chain_get_replyT &ref = *x.data;
+    const chains::chain_get_replyT &ref = *x.data;
     x.envelope.letter.body = std::move(smf::native_table_as_buffer(ref));
     x.data = nullptr;
 
@@ -156,4 +154,3 @@ chain_replication_service::raw_get(smf::rpc_recv_context &&c) {
 }
 
 }  // namespace chains
-}  // end namespace v

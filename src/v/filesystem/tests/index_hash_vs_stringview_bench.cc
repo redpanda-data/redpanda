@@ -45,7 +45,7 @@ BM_xxhash(benchmark::State &state) {
   for (auto i = 0; i < state.range(1); ++i) {
     foo f;
     f.k = r.next_str(state.range(0));
-    f.hash = v::xxhash_64(f.k.data(), f.k.size());
+    f.hash = xxhash_64(f.k.data(), f.k.size());
     s.insert(std::move(f));
   }
   auto it = s.begin();
@@ -77,7 +77,7 @@ BM_string(benchmark::State &state) {
   for (auto i = 0; i < state.range(1); ++i) {
     foo f;
     f.k = r.next_str(state.range(0));
-    f.hash = v::xxhash_64(f.k.data(), f.k.size());
+    f.hash = xxhash_64(f.k.data(), f.k.size());
     s.insert(std::move(f));
   }
   auto it = s.begin();

@@ -7,7 +7,6 @@
 #include "filesystem/wal_requests.h"
 #include "raft_generated.h"
 
-namespace v {
 struct raft_follower_index_metadata {
   int64_t next_index = -1;
   int64_t match_index = -1;
@@ -58,4 +57,3 @@ class raft_nstpidx_metadata {
   // key is the server id in the config
   ska::bytell_hash_map<int64_t, raft_nstpidx_metadata> leader_look_aside_table_;
 };
-}  // namespace v

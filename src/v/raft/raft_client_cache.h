@@ -12,7 +12,6 @@
 // raft
 #include "raft.smf.fb.h"
 
-namespace v {
 /// \brief use a tagged pointer and use the upper bits to store
 /// the exponential backoff bucket. This client will
 /// try to reconnect to an ip up to the backoff::max
@@ -90,15 +89,14 @@ operator~(raft_client_cache::bitflags s1) {
   return raft_client_cache::bitflags(~uint8_t(s1));
 }
 
-}  // namespace v
 
 namespace std {
 inline ostream &
-operator<<(ostream &o, ::v::raft_client_cache::bitflags f) {
-  return o << "v::raft_client_cache::bitflags{ " << uint8_t(f) << " }";
+operator<<(ostream &o, raft_client_cache::bitflags f) {
+  return o << "raft_client_cache::bitflags{ " << uint8_t(f) << " }";
 }
 inline ostream &
-operator<<(ostream &o, ::v::raft_client_cache::backoff f) {
-  return o << "v::raft_client_cache::backoff{ " << uint8_t(f) << " }";
+operator<<(ostream &o, raft_client_cache::backoff f) {
+  return o << "raft_client_cache::backoff{ " << uint8_t(f) << " }";
 }
 }  // namespace std

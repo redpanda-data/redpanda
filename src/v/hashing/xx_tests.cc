@@ -5,7 +5,6 @@
 
 #include "xx.h"
 
-using namespace v;  // NOLINT
 
 TEST(xx, incremental_same_as_array) {
   incremental_xxhash64 inc;

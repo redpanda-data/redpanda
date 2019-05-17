@@ -8,7 +8,6 @@
 
 #include <smf/log.h>  // for debug builds
 
-namespace v {
 
 constexpr std::array<std::pair<int32_t, int32_t>, 8192>
 generate_clamp_table() {
@@ -49,4 +48,3 @@ constexpr
                            clamp_comparator{});
 }
 
-}  // namespace v

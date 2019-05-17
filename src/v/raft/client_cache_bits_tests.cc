@@ -6,7 +6,6 @@
 // filesystem
 #include "raft_client_cache.h"
 
-using namespace v;  // NOLINT
 
 TEST(raft_client_cache_bitflags, basic) {
   using bitflags = raft_client_cache::bitflags;

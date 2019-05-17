@@ -30,7 +30,6 @@ operator<<(ostream &o, const ::seastar::lowres_system_clock::time_point &t) {
 }
 }  // namespace std
 
-namespace v {
 struct offset_comparator {
   /// NOTE: make sure that the end is exclusive - use -1 from end
   bool
@@ -326,4 +325,3 @@ wal_nstpidx_manager::stats() const {
   return p;
 }
 
-}  // namespace v

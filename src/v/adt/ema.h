@@ -4,7 +4,6 @@
 #include <memory>
 #include <ostream>
 
-namespace v {
 template <std::size_t Period = 10>
 class ema {
  public:
@@ -47,14 +46,13 @@ class ema {
  private:
   double ema_{0};
 };
-}  // namespace v
 
 namespace std {
 template <std::size_t Period>
 inline std::ostream &
-operator<<(ostream &o, const ::v::ema<Period> &e) {
+operator<<(ostream &o, const ema<Period> &e) {
   auto const orig_precision = o.precision();
-  return o << std::fixed << std::setprecision(3) << "v::ema<" << Period << ">("
+  return o << std::fixed << std::setprecision(3) << "ema<" << Period << ">("
            << e.get() << "ns)" << std::setprecision(orig_precision);
 }
 }  // namespace std

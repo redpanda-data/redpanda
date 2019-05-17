@@ -9,7 +9,6 @@
 // test dir only
 #include "wal_smash.h"
 
-using namespace v;  // NOLINT
 
 int
 main(int args, char **argv, char **env) {

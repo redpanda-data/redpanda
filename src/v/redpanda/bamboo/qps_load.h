@@ -9,7 +9,6 @@
 // bamboo
 #include "cli.h"
 
-namespace v {
 /// \brief the purpose of this class is to launch requests with
 /// fixes for coordinated ommission
 class qps_load {
@@ -43,4 +42,3 @@ class qps_load {
   double rw_balance_ = 0.5;
   uint64_t needle_threshold_;
 };
-}  // namespace v

@@ -8,7 +8,6 @@
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sstring.hh>
 
-namespace v {
 /// \brief alias ::sysconf(_SC_PAGESIZE)
 int64_t system_page_size();
 
@@ -32,4 +31,3 @@ recover_failed_wal_file(int64_t epoch, int64_t term, int64_t sz,
 ///
 seastar::future<std::pair<int64_t, struct stat>>
 file_size_from_allocated_blocks(seastar::sstring file_name);
-}  // namespace v

@@ -31,7 +31,6 @@
 #include "wal_pretty_print_utils.h"
 #include "wal_segment_record.h"
 
-namespace v {
 constexpr const int32_t kReadPageSize = 4096;
 // -- static helper funcs
 //
@@ -366,4 +365,3 @@ wal_reader_node::do_read(wal_read_reply *retval, wal_read_request r) {
     });
 }
 
-}  // namespace v

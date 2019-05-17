@@ -31,7 +31,6 @@
   readers
 */
 
-namespace v {
 /// \brief due to malloc(2) restrictions we can only use the
 /// seastar::memory_reclaimer::sync mode. That is, the allocator
 /// might reclaim memory in the middle of the routine.
@@ -71,4 +70,3 @@ class page_cache final {
   page_cache_stats stats_;
 };
 
-}  // namespace v

@@ -2,7 +2,6 @@
 
 #include <seastar/core/sstring.hh>
 
-namespace v {
 
 struct prometheus_sanitize {
   static seastar::sstring
@@ -14,4 +13,3 @@ struct prometheus_sanitize {
   }
 };
 
-}  // namespace v

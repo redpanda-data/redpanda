@@ -1,6 +1,6 @@
 include "filesystem/wal.fbs";
 
-namespace v.chains;
+namespace chains;
 
 table chain_put_request {
   chain:       [uint];
@@ -9,19 +9,19 @@ table chain_put_request {
   txn_id:      long;
   /// only supports puts for ONE topic atm. Tx'al cross topic puts need
   /// more infrastructure.
-  put:        v.wal_put_request;
+  put:        wal_put_request;
 }
 
 table chain_put_reply {
-  put: v.wal_put_reply;
+  put: wal_put_reply;
 }
 
 table chain_get_request {
   consumer_group_id: long;
-  get: v.wal_get_request;
+  get: wal_get_request;
 }
 table chain_get_reply {
-  get: v.wal_get_reply;
+  get: wal_get_reply;
 }
 
 /// TODO(agallego) right now the wal write part is sophisticated

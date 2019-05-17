@@ -20,25 +20,25 @@
 #include "redpanda_cfg.h"
 #include "redpanda_service.h"
 
-seastar::future<> check_environment(const v::redpanda_cfg &c);
+seastar::future<> check_environment(const redpanda_cfg &c);
 
 void register_service(smf::rpc_server &s,
-                      seastar::distributed<v::write_ahead_log> *log,
-                      const v::redpanda_cfg *c);
+                      seastar::distributed<write_ahead_log> *log,
+                      const redpanda_cfg *c);
 
 void rpc_at_exit(seastar::distributed<smf::rpc_server> &rpc);
-bool hydrate_cfg(v::redpanda_cfg &c, std::string filename);
+bool hydrate_cfg(redpanda_cfg &c, std::string filename);
 
 int
 main(int argc, char **argv, char **env) {
   // This is needed for detecting sse4.2 instructions
-  v::syschecks::initialize_intrinsics();
+  syschecks::initialize_intrinsics();
   namespace po = boost::program_options;  // NOLINT
   std::setvbuf(stdout, nullptr, _IOLBF, 1024);
   seastar::distributed<smf::rpc_server> rpc;
-  seastar::distributed<v::write_ahead_log> log;
+  seastar::distributed<write_ahead_log> log;
   seastar::app_template app;
-  v::redpanda_cfg global_cfg;
+  redpanda_cfg global_cfg;
   app.add_options()("redpanda-cfg", po::value<std::string>(),
                     ".yaml file config for redpanda");
   return app.run_deprecated(argc, argv, [&] {
@@ -58,8 +58,8 @@ main(int argc, char **argv, char **env) {
     LOG_INFO("Configuration: {}", global_cfg);
     return check_environment(global_cfg)
       .then([&log, &global_cfg] { return log.start(global_cfg.wal_cfg()); })
-      .then([&log] { return log.invoke_on_all(&v::write_ahead_log::open); })
-      .then([&log] { return log.invoke_on_all(&v::write_ahead_log::index); })
+      .then([&log] { return log.invoke_on_all(&write_ahead_log::open); })
+      .then([&log] { return log.invoke_on_all(&write_ahead_log::index); })
       .then([&rpc, &global_cfg] { return rpc.start(global_cfg.rpc_cfg()); })
       .then([&rpc, &global_cfg, &log] {
         return rpc.invoke_on_all(
@@ -85,31 +85,31 @@ rpc_at_exit(seastar::distributed<smf::rpc_server> &rpc) {
 }
 
 bool
-hydrate_cfg(v::redpanda_cfg &c, std::string filename) {
+hydrate_cfg(redpanda_cfg &c, std::string filename) {
   YAML::Node config = YAML::LoadFile(filename);
   LOG_TRACE("Read file:\n\n{}\n\n", c);
   if (!config["redpanda"]) { return false; }
-  c = config["redpanda"].as<v::redpanda_cfg>();
+  c = config["redpanda"].as<redpanda_cfg>();
   return true;
 }
 
 seastar::future<>
-check_environment(const v::redpanda_cfg &c) {
-  v::syschecks::cpu();
-  v::syschecks::memory(c.developer_mode);
-  return v::dir_utils::create_dir_tree(c.directory);
+check_environment(const redpanda_cfg &c) {
+  syschecks::cpu();
+  syschecks::memory(c.developer_mode);
+  return dir_utils::create_dir_tree(c.directory);
 }
 
 void
 register_service(smf::rpc_server &s,
-                 seastar::distributed<v::write_ahead_log> *log,
-                 const v::redpanda_cfg *c) {
+                 seastar::distributed<write_ahead_log> *log,
+                 const redpanda_cfg *c) {
   using lz4_c_t = smf::lz4_compression_filter;
   using lz4_d_t = smf::lz4_decompression_filter;
   using zstd_d_t = smf::zstd_decompression_filter;
   s.register_outgoing_filter<lz4_c_t>(1 << 21 /*2MB*/);
   s.register_incoming_filter<lz4_d_t>();
   s.register_incoming_filter<zstd_d_t>();
-  s.register_service<v::redpanda_service>(c, log);
-  s.register_service<v::raft_log_service>(c->raft(), log);
+  s.register_service<redpanda_service>(c, log);
+  s.register_service<raft_log_service>(c->raft(), log);
 }

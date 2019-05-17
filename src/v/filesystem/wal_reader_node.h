@@ -13,7 +13,6 @@
 #include "wal_opts.h"
 #include "wal_requests.h"
 
-namespace v {
 class wal_reader_node {
  public:
   SMF_DISALLOW_COPY_AND_ASSIGN(wal_reader_node);
@@ -169,4 +168,3 @@ class wal_reader_node {
   seastar::gate rgate_;
 };
 
-}  // namespace v

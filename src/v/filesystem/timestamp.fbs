@@ -1,7 +1,6 @@
 // A direct translation from the protobuf timestamp.proto structure
 //
 // https://github.com/google/protobuf/blob/master/src/google/protobuf/timestamp.proto
-namespace v;
 
 
 // A Timestamp represents a point in time independent of any time zone

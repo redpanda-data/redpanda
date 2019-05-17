@@ -7,16 +7,15 @@
 
 #include "wal_segment_record.h"
 
-namespace v {
 
 struct key_hash_functor {
   bool
   operator()(const uint64_t &hash,
-             const std::unique_ptr<v::wal_segment_index_key_entryT> &e) const {
+             const std::unique_ptr<wal_segment_index_key_entryT> &e) const {
     return hash < e->hash;
   }
   bool
-  operator()(const std::unique_ptr<v::wal_segment_index_key_entryT> &e,
+  operator()(const std::unique_ptr<wal_segment_index_key_entryT> &e,
              const uint64_t &hash) const {
     return e->hash < hash;
   }
@@ -53,7 +52,7 @@ wal_segment_indexer::get_or_create(int64_t offset, const wal_binary_record *r) {
   wal_header hdr;
   std::memcpy(&hdr, record_begin, kWalHeaderSize);
   const char *key_begin = record_begin + kWalHeaderSize;
-  auto xx = v::xxhash_64(key_begin, hdr.key_size());
+  auto xx = xxhash_64(key_begin, hdr.key_size());
 
   if (auto it =
         std::lower_bound(data_.begin(), data_.end(), xx, key_hash_functor{});
@@ -155,4 +154,3 @@ wal_segment_indexer::open() {
   return index_->open();
 }
 
-}  // namespace v

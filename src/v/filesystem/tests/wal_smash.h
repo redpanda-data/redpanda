@@ -6,7 +6,6 @@
 
 #include "filesystem/write_ahead_log.h"
 
-namespace v {
 struct wal_smash_opts {
   seastar::sstring topic_namespace;
   int64_t ns_id;
@@ -81,4 +80,3 @@ class wal_smash {
   smf::random rand_;
   wal_smash_stats stats_;
 };
-}  // namespace v

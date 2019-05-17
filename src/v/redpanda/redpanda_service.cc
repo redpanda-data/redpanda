@@ -4,7 +4,6 @@
 
 #include "filesystem/wal_core_mapping.h"
 
-namespace v {
 
 void
 validate_creates(std::vector<wal_create_request> &creates) {
@@ -64,4 +63,3 @@ redpanda_service::create_topic(
     });
 }
 
-}  // end namespace v

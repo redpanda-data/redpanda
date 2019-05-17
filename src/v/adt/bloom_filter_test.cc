@@ -5,7 +5,7 @@
 #include "roaring_bloom_filter.h"
 
 TEST(bloom, basic) {
-  v::roaring_bloom_filter<> bf;
+  roaring_bloom_filter<> bf;
   ASSERT_FALSE(bf.contains("hello"));
   bf.add("hello");
   ASSERT_TRUE(bf.contains("hello"));
@@ -20,7 +20,7 @@ TEST(bloom, worst_case) {
     }
   };
 
-  v::roaring_bloom_filter<uint32_t, 1, blhasher> bf;
+  roaring_bloom_filter<uint32_t, 1, blhasher> bf;
   for (auto i = 0; i < 100000; ++i) {
     bf.add(i);
   }
@@ -34,15 +34,15 @@ TEST(bloom, worst_case) {
 
 TEST(bloom, string_items) {
   struct blhasher {
-    v::bloom_hasher<const char *, v::kDefaultHashingLevels> hr;
-    std::array<uint32_t, v::kDefaultHashingLevels>
+    bloom_hasher<const char *, kDefaultHashingLevels> hr;
+    std::array<uint32_t, kDefaultHashingLevels>
     operator()(const std::string &data) const {
       auto x = data.c_str();
       return hr(x);
     }
   };
 
-  v::roaring_bloom_filter<std::string, v::kDefaultHashingLevels, blhasher> bf;
+  roaring_bloom_filter<std::string, kDefaultHashingLevels, blhasher> bf;
   for (auto i = 0; i < 10000; ++i) {
     bf.add(std::to_string(i * i));
   }

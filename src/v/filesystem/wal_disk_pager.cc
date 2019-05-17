@@ -6,7 +6,6 @@
 // filesystem
 #include "page_cache.h"
 
-namespace v {
 
 wal_disk_pager::wal_disk_pager(page_cache_request r) : req_(r) {}
 
@@ -34,4 +33,3 @@ wal_disk_pager::fetch_next() {
     return seastar::make_ready_future<const page_cache_result *>(lease_.result);
   });
 }
-}  // namespace v

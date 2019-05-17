@@ -1,6 +1,5 @@
 #pragma once
 
-namespace v {
 
 /// google's jump consistent hash
 /// https://arxiv.org/pdf/1406.2294.pdf
@@ -16,4 +15,3 @@ jump_consistent_hash(uint64_t key, uint32_t num_buckets) {
   return static_cast<uint32_t>(b);
 }
 
-}  // namespace v

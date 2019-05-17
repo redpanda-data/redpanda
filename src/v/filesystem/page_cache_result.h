@@ -6,7 +6,6 @@
 #include <smf/log.h>
 #include <smf/macros.h>
 
-namespace v {
 struct page_cache_result {
   enum class priority : int8_t {
     low = 0,
@@ -96,18 +95,17 @@ struct page_cache_result_lease {
   page_cache_result *result = nullptr;
 };
 
-}  // namespace v
 
 namespace std {
 inline ostream &
-operator<<(ostream &o, ::v::page_cache_result::priority p) {
+operator<<(ostream &o, page_cache_result::priority p) {
   seastar::sstring it = "high";
-  if (p == ::v::page_cache_result::priority::low) { it = "low"; }
-  return o << "v::page_cache_result::priority{" << it << "}";
+  if (p == page_cache_result::priority::low) { it = "low"; }
+  return o << "page_cache_result::priority{" << it << "}";
 }
 inline ostream &
-operator<<(ostream &o, const ::v::page_cache_result &r) {
-  return o << "v::page_cache_result{begin_pageno: " << r.begin_pageno
+operator<<(ostream &o, const page_cache_result &r) {
+  return o << "page_cache_result{begin_pageno: " << r.begin_pageno
            << ", end_pageno: " << r.end_pageno()
            << ", data(size): " << r.data.size() << ", prio: " << r.prio
            << ", marked_for_eviction: " << r.marked_for_eviction

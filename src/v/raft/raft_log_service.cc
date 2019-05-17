@@ -7,7 +7,6 @@
 #include "filesystem/wal_core_mapping.h"
 #include "filesystem/wal_segment_record.h"
 
-namespace v {
 using kt = raft::log_index_topic_key_type;
 
 constexpr static const char *kRedpandaNamespace = "_redpanda";
@@ -19,7 +18,7 @@ constexpr static const char *kRedpandaTopicCreationTopic =
 // --- static helpers
 
 static seastar::future<std::unique_ptr<wal_read_reply>>
-raft_configuration_log_read(seastar::distributed<v::write_ahead_log> *log,
+raft_configuration_log_read(seastar::distributed<write_ahead_log> *log,
                             wal_get_requestT get) {
   auto body = smf::native_table_as_buffer<wal_get_request>(get);
   auto tbuf = smf::fbs_typed_buf<wal_get_request>(std::move(body));
@@ -37,7 +36,7 @@ raft_configuration_log_read(seastar::distributed<v::write_ahead_log> *log,
 
 static seastar::future<>
 read_all_raft_configuration_topic(
-  seastar::distributed<v::write_ahead_log> *log, int64_t ns, int64_t topic,
+  seastar::distributed<write_ahead_log> *log, int64_t ns, int64_t topic,
   int64_t start_offset, int64_t end_offset,
   std::function<seastar::future<>(std::unique_ptr<wal_read_reply>)> &&f) {
   return seastar::do_with(
@@ -120,7 +119,7 @@ raft_log_service::raft_cfg_log_process_one(std::unique_ptr<wal_read_reply> r) {
 }
 
 raft_log_service::raft_log_service(
-  raft_cfg opts, seastar::distributed<v::write_ahead_log> *data)
+  raft_cfg opts, seastar::distributed<write_ahead_log> *data)
   : cfg(std::move(opts)), data_(THROW_IFNULL(data)) {}
 
 seastar::future<>
@@ -267,4 +266,3 @@ raft_log_service::append_entries(rtc<raft::append_entries_request> && rec) {
 }
 */
 
-}  // namespace v

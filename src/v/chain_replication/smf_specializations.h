@@ -11,6 +11,6 @@ namespace smf {
 /// To read the default of 1MB of data, there is a *mesured* 80KB of overhead
 /// due to struct padding / alignment / etc from the raw size of in memory data
 seastar::temporary_buffer<char>
-native_table_as_buffer(const v::chains::chain_get_replyT &r);
+native_table_as_buffer(const chains::chain_get_replyT &r);
 
 }  // namespace smf

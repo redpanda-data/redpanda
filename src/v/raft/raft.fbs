@@ -1,6 +1,6 @@
 include "../filesystem/wal.fbs";
 
-namespace v.raft;
+namespace raft;
 
 struct server_capabilities {
   min_version: short;
@@ -40,7 +40,7 @@ table entry {
   ///
   index: ulong;
   /// the payload to save
-  put: v.wal_put_request;
+  put: wal_put_request;
 }
 
 
@@ -206,11 +206,11 @@ rpc_service raft_api {
 
 
   /// \brief can only happen in one of the seed servers.
-  create_topic(v.wal_topic_create_request): v.wal_topic_create_reply;
+  create_topic(wal_topic_create_request): wal_topic_create_reply;
 
   // TODO(agallego) reply
   /// \brief an specialized form of append_entries.
-  internal_create_topic(v.wal_topic_create_request): v.wal_topic_create_reply;
+  internal_create_topic(wal_topic_create_request): wal_topic_create_reply;
 }
 
 

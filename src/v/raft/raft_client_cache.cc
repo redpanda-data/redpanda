@@ -9,7 +9,6 @@
 
 #include "hashing/xx.h"
 
-namespace v {
 using client_t = tagged_ptr<raft::raft_api_client>;
 using opt_client_t = std::optional<raft::raft_api_client *>;
 
@@ -219,4 +218,3 @@ raft_client_cache::~raft_client_cache() {
     delete ptr;
   }
 };
-}  // namespace v

@@ -8,7 +8,6 @@
 #include <smf/human_bytes.h>
 #include <smf/log.h>
 
-namespace v {
 namespace syschecks {
 static inline void
 initialize_intrinsics() {
@@ -49,4 +48,3 @@ memory(bool ignore) {
 }
 
 }  // namespace syschecks
-}  // namespace v

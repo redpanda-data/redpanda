@@ -1,6 +1,5 @@
 #pragma once
 #include <cstdint>
-namespace v {
 /*
  * Thomas Wang 64 bit mix hash function
  */
@@ -52,4 +51,3 @@ twang_32from64(uint64_t key) noexcept {
   return (uint32_t)key;
 }
 
-}  // namespace v

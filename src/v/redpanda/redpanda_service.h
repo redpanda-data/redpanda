@@ -8,11 +8,10 @@
 // redpanda
 #include "redpanda_cfg.h"
 
-namespace v {
 class redpanda_service : public redpanda_api {
  public:
   explicit redpanda_service(const redpanda_cfg *_cfg,
-                            seastar::distributed<v::write_ahead_log> *w)
+                            seastar::distributed<write_ahead_log> *w)
     : cfg(THROW_IFNULL(_cfg)), wal_(THROW_IFNULL(w)),
       cr_(std::make_unique<chains::chain_replication_service>(w)) {}
 
@@ -40,8 +39,7 @@ class redpanda_service : public redpanda_api {
   const redpanda_cfg *cfg;
 
  private:
-  seastar::distributed<v::write_ahead_log> *wal_;
+  seastar::distributed<write_ahead_log> *wal_;
   std::unique_ptr<chains::chain_replication_service> cr_;
 };
 
-}  // end namespace v
