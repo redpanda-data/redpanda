@@ -11,14 +11,13 @@
 // test only
 #include "gen_create_topic_buf.h"
 
-namespace v {
 
 wal_smash::wal_smash(wal_smash_opts opt,
                      seastar::distributed<write_ahead_log> *w)
   : opts_(std::move(opt)), wal_(THROW_IFNULL(w)) {
   opts_.ns_id =
-    v::xxhash_64(opts_.topic_namespace.c_str(), opts_.topic_namespace.size());
-  opts_.topic_id = v::xxhash_64(opts_.topic.c_str(), opts_.topic.size());
+    xxhash_64(opts_.topic_namespace.c_str(), opts_.topic_namespace.size());
+  opts_.topic_id = xxhash_64(opts_.topic.c_str(), opts_.topic.size());
   // TODO(agallego) - when create returns real offsets we should change
   // this logic
   for (int32_t partition = 0; partition < opts_.topic_partitions; ++partition) {
@@ -54,7 +53,7 @@ wal_smash::create(std::vector<int32_t> partitions) {
 seastar::future<std::unique_ptr<wal_write_reply>>
 wal_smash::write_one(int32_t partition) {
   LOG_THROW_IF(partition_offsets_.empty(), "Skipped call to create()");
-  v::wal_put_requestT put;
+  wal_put_requestT put;
   put.topic = opts_.topic_id;
   put.ns = opts_.ns_id;
   for (auto n = 0; n < opts_.write_batch_size; ++n) {
@@ -62,8 +61,8 @@ wal_smash::write_one(int32_t partition) {
     auto v = rand_.next_alphanum(opts_.random_val_bytes);
     auto ctype = (int32_t)v.size() >= opts_.record_compression_value_threshold
                    ? opts_.record_compression_type
-                   : v::wal_compression_type::wal_compression_type_none;
-    auto record = v::wal_segment_record::coalesce(k.data(), k.size(), v.data(),
+                   : wal_compression_type::wal_compression_type_none;
+    auto record = wal_segment_record::coalesce(k.data(), k.size(), v.data(),
                                                   v.size(), ctype);
     stats_.bytes_written += record->data.size();
 
@@ -73,7 +72,7 @@ wal_smash::write_one(int32_t partition) {
       return partition == tpl->partition;
     });
     if (it == puts.end()) {
-      auto ptr = std::make_unique<v::wal_put_partition_recordsT>();
+      auto ptr = std::make_unique<wal_put_partition_recordsT>();
       ptr->partition = partition;
       ptr->records.push_back(std::move(record));
       puts.push_back(std::move(ptr));
@@ -129,4 +128,3 @@ wal_smash::read_one(int32_t opartition) {
       });
   });
 }
-}  // namespace v

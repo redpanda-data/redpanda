@@ -16,7 +16,6 @@
 // test only
 #include "gen_create_topic_buf.h"
 
-namespace v {
 
 class wal_topic_test_input {
  public:
@@ -47,7 +46,7 @@ class wal_topic_test_input {
           rand_.next_alphanum(std::max<uint64_t>(1, rand_.next() % rand_bytes));
         seastar::sstring value =
           rand_.next_str(std::max<uint64_t>(1, rand_.next() % rand_bytes));
-        idx->records.push_back(v::wal_segment_record::coalesce(
+        idx->records.push_back(wal_segment_record::coalesce(
           key.data(), key.size(), value.data(), value.size()));
       }
       ptr->partition_puts.push_back(std::move(idx));
@@ -81,4 +80,3 @@ class wal_topic_test_input {
     nullptr;
 };
 
-}  // namespace v

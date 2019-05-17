@@ -4,7 +4,6 @@
 
 #include <smf/human_bytes.h>
 
-namespace v {
 namespace api {
 struct client_stats {
   uint64_t bytes_sent{0};
@@ -22,12 +21,11 @@ struct client_stats {
   }
 };
 }  // namespace api
-}  // namespace v
 
 namespace std {
 inline ostream &
-operator<<(ostream &o, const v::api::client_stats &s) {
-  o << "v::api::client_stats{bytes_sent:" << smf::human_bytes(s.bytes_sent)
+operator<<(ostream &o, const api::client_stats &s) {
+  o << "api::client_stats{bytes_sent:" << smf::human_bytes(s.bytes_sent)
     << " (" << s.bytes_sent
     << "), bytes_read:" << smf::human_bytes(s.bytes_read) << " ("
     << s.bytes_read << "), read_rpc:" << s.read_rpc

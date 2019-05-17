@@ -7,7 +7,7 @@
 static const char *kDummyPayload = "Let's See about this tagged_ptr";
 
 TEST(tagged_ptr, basic) {
-  v::tagged_ptr<const char> tptr(kDummyPayload, 42);
+  tagged_ptr<const char> tptr(kDummyPayload, 42);
   // equate the ptrs
   ASSERT_EQ(kDummyPayload, tptr.get_ptr());
 
@@ -16,7 +16,7 @@ TEST(tagged_ptr, basic) {
 }
 
 TEST(tagged_ptr, increment) {
-  v::tagged_ptr<const char> tptr(kDummyPayload, 42);
+  tagged_ptr<const char> tptr(kDummyPayload, 42);
   ASSERT_EQ(kDummyPayload, tptr.get_ptr());
   ASSERT_EQ(42, tptr.get_tag());
   for (auto i = 0; i < 10; ++i) {
@@ -28,9 +28,9 @@ TEST(tagged_ptr, increment) {
 }
 
 TEST(tagged_ptr, move_ctor) {
-  v::tagged_ptr<const char> uno(kDummyPayload, 42);
+  tagged_ptr<const char> uno(kDummyPayload, 42);
   ASSERT_EQ(kDummyPayload, uno.get_ptr());
-  v::tagged_ptr<const char> dos = std::move(uno);
+  tagged_ptr<const char> dos = std::move(uno);
   ASSERT_EQ(kDummyPayload, dos.get_ptr());
 }
 

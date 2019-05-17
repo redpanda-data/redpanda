@@ -5,7 +5,6 @@
 #include <pcg_random.hpp>
 #include <smf/macros.h>
 
-namespace v {
 // dumb wrapper around pcg32
 class fast_prng {
  public:
@@ -28,4 +27,3 @@ class fast_prng {
  private:
   pcg32 rng_;
 };
-}  // namespace v

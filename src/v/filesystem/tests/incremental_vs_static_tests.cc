@@ -10,11 +10,11 @@ TEST(xx, incremental_vs_static) {
   smf::random r;
   for (auto i = 0; i < 100; ++i) {
     auto str = r.next_str(255);
-    v::incremental_xxhash64 hx;
+    incremental_xxhash64 hx;
     std::size_t first_half = std::max<std::size_t>(1, r.next() % str.size());
     hx.update(str.data(), first_half);
     hx.update(str.data() + first_half, str.size() - first_half);
-    ASSERT_EQ(v::xxhash_64(str.data(), str.size()), hx.digest());
+    ASSERT_EQ(xxhash_64(str.data(), str.size()), hx.digest());
   }
 }
 

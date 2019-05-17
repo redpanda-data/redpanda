@@ -55,7 +55,7 @@ skip_first_page(seastar::sstring base_dir) {
                      std::memset(buf.get(), '-', alignment);
 
                      f->dma_write(c * alignment, buf.get(), alignment,
-                                  v::priority_manager::get().default_priority())
+                                  priority_manager::get().default_priority())
                        .then([alignment](auto sz) {
                          LOG_THROW_IF(sz != alignment,
                                       "Wrote some garbage size of: {}", sz);
@@ -95,9 +95,9 @@ write_poem_ostream(seastar::sstring base_dir, uint32_t max_appends = 100) {
 
 seastar::future<>
 write_poem_wal_segment(seastar::sstring base_dir, uint32_t max_appends = 100) {
-  auto ws = seastar::make_lw_shared<v::wal_segment>(
+  auto ws = seastar::make_lw_shared<wal_segment>(
     base_dir + "/" + segment_name,
-    v::priority_manager::get().streaming_write_priority(),
+    priority_manager::get().streaming_write_priority(),
     std::numeric_limits<int32_t>::max() /*max file in bytes*/,
     1024 * 1024 /*1MB*/);
   return ws->open()
@@ -144,8 +144,8 @@ main(int args, char **argv, char **env) {
           return write_poem_wal_segment(dir, max_page_comparison);
         })
         .then([dir] {
-          return v::readfile(dir + "/" + ostream_name).then([dir](auto obuf) {
-            return v::readfile(dir + "/" + segment_name)
+          return readfile(dir + "/" + ostream_name).then([dir](auto obuf) {
+            return readfile(dir + "/" + segment_name)
               .then([ostream_buf = std::move(obuf), &dir](auto segment) {
                 LOG_THROW_IF(ostream_buf.size() != segment.size(),
                              "Size of files is not the same. "

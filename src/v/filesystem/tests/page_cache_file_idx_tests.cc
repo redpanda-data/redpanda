@@ -6,7 +6,6 @@
 #include "page_cache_buffer_manager.h"
 #include "page_cache_file_idx.h"
 
-using namespace v;  // NOLINT
 
 seastar::future<>
 tests(page_cache_buffer_manager *mngr_, page_cache_file_idx *idx_) {

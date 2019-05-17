@@ -4,7 +4,6 @@
 #include <smf/macros.h>
 
 /// brief - inspired by the priority manager of scylla
-namespace v {
 class priority_manager {
  public:
   SMF_DISALLOW_COPY_AND_ASSIGN(priority_manager);
@@ -46,4 +45,3 @@ class priority_manager {
   seastar::io_priority_class default_priority_;
 };
 
-}  // namespace v

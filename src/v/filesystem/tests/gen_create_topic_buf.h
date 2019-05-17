@@ -7,7 +7,6 @@
 
 #include "wal_generated.h"
 
-namespace v {
 
 inline smf::fbs_typed_buf<wal_topic_create_request>
 gen_create_topic_buf(
@@ -28,4 +27,3 @@ gen_create_topic_buf(
   auto body = smf::native_table_as_buffer<wal_topic_create_request>(x);
   return smf::fbs_typed_buf<wal_topic_create_request>(std::move(body));
 }
-}  // namespace v

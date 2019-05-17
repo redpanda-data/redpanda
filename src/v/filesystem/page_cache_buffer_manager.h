@@ -15,7 +15,6 @@
 // filesystem
 #include "page_cache_result.h"
 
-namespace v {
 // FIXME(agallego): create a central component for system-wide reservations.
 class page_cache_buffer_manager {
  public:
@@ -127,4 +126,3 @@ class page_cache_buffer_manager {
   seastar::semaphore no_free_pages_{1};
 };
 
-}  // namespace v

@@ -13,7 +13,6 @@
 #include "wal_segment.h"
 #include "wal_writer_utils.h"
 
-namespace v {
 struct wal_writer_node_opts {
   /// \brief callback that users can opt-in
   /// gets called every time we roll a log segment
@@ -128,4 +127,3 @@ class wal_writer_node {
   bool is_closed_{false};
 };
 
-}  // namespace v

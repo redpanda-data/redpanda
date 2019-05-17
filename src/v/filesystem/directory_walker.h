@@ -7,7 +7,6 @@
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sstring.hh>
 
-namespace v {
 
 /// \brief map over all entries of a directory
 ///
@@ -46,4 +45,3 @@ struct directory_walker {
   seastar::subscription<seastar::directory_entry> listing;
 };
 
-}  // namespace v

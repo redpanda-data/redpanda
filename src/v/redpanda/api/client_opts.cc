@@ -2,7 +2,6 @@
 
 #include "hashing/xx.h"
 
-namespace v {
 namespace api {
 
 client_opts::client_opts(seastar::sstring _topic_namespace,
@@ -10,9 +9,8 @@ client_opts::client_opts(seastar::sstring _topic_namespace,
                          int64_t _producer_id)
   : topic_namespace(std::move(_topic_namespace)), topic(std::move(_topic)),
     consumer_group_id(_consumer_group_id), producer_id(_producer_id) {
-  ns_id = v::xxhash_64(topic_namespace.c_str(), topic_namespace.size());
-  topic_id = v::xxhash_64(topic.c_str(), topic.size());
+  ns_id = xxhash_64(topic_namespace.c_str(), topic_namespace.size());
+  topic_id = xxhash_64(topic.c_str(), topic.size());
 }
 
 }  // namespace api
-}  // namespace v

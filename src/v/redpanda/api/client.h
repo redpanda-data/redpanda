@@ -9,7 +9,6 @@
 #include "client_stats.h"
 #include "redpanda.smf.fb.h"
 
-namespace v {
 namespace api {
 
 class client {
@@ -42,7 +41,7 @@ class client {
    private:
     const client_opts &opts;
     seastar::shared_ptr<redpanda_api_client> rpc_;
-    smf::rpc_typed_envelope<v::chains::chain_put_request> data_;
+    smf::rpc_typed_envelope<chains::chain_put_request> data_;
     bool submitted_ = false;
     client_stats *stats_;
   };
@@ -136,4 +135,3 @@ class client {
 };
 
 }  // namespace api
-}  // namespace v

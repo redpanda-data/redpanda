@@ -6,7 +6,6 @@
 // filesystem
 #include "page_cache_result.h"
 
-namespace v {
 using page_range_ptr = page_cache_file_idx::page_range_ptr;
 using iterator = page_cache_file_idx::iterator;
 using set_t = page_cache_file_idx::set_t;
@@ -95,4 +94,3 @@ page_cache_file_idx::try_evict() {
   return std::nullopt;
 }
 
-}  // namespace v

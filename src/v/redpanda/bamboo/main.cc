@@ -64,7 +64,7 @@ cli_opts(boost::program_options::options_description_easy_init o) {
 int
 main(int argc, char **argv, char **env) {
   std::setvbuf(stdout, nullptr, _IOLBF, 1024);
-  seastar::distributed<v::qps_load> runner;
+  seastar::distributed<qps_load> runner;
   seastar::app_template app;
 
   cli_opts(app.add_options());
@@ -72,8 +72,8 @@ main(int argc, char **argv, char **env) {
     seastar::engine().at_exit([&runner] { return runner.stop(); });
     const auto &cfg = app.configuration();
     return runner.start(&cfg)
-      .then([&runner] { return runner.invoke_on_all(&v::qps_load::open); })
-      .then([&runner] { return runner.invoke_on_all(&v::qps_load::drive); })
+      .then([&runner] { return runner.invoke_on_all(&qps_load::open); })
+      .then([&runner] { return runner.invoke_on_all(&qps_load::drive); })
       .then([&runner] {
         return runner
           .map_reduce(smf::unique_histogram_adder(),

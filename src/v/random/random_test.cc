@@ -6,7 +6,7 @@
 #include "fast_prng.h"
 
 TEST(fast_prng, basic_gen_100_unique_rands) {
-  v::fast_prng rng;
+  fast_prng rng;
   std::set<uint32_t> test;
   for (auto i = 0; i < 100; ++i) {
     uint32_t x = rng();

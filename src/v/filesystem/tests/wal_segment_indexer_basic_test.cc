@@ -15,7 +15,6 @@
 // test only
 #include "wal_topic_test_input.h"
 
-using namespace v;  // NOLINT
 // creating a namespace with `-` tests the regexes
 static const seastar::sstring kNS = "empty-ns007";
 // creating a topic with `_` tests the regexes
@@ -28,9 +27,9 @@ add_opts(boost::program_options::options_description_easy_init o) {
 }
 
 void
-print_record(int64_t offset, const v::wal_binary_record *i) {
+print_record(int64_t offset, const wal_binary_record *i) {
   const char *record_begin = reinterpret_cast<const char *>(i->data()->Data());
-  v::wal_header hdr;
+  wal_header hdr;
   std::memcpy(&hdr, record_begin, sizeof(hdr));
   const char *key_begin = record_begin + sizeof(hdr);
   LOG_TRACE("Updating key: {} with offset: {}",
@@ -42,14 +41,14 @@ print_reply(std::vector<uint8_t> &vec) {
                                             smf::compression_level::fastest);
 
   char *record_begin = reinterpret_cast<char *>(vec.data());
-  v::wal_header hdr;
+  wal_header hdr;
   std::memcpy(&hdr, record_begin, sizeof(hdr));
   char *compressed_value_begin = record_begin + sizeof(hdr) + hdr.key_size();
 
   seastar::temporary_buffer<char> idx =
     lz4->uncompress(compressed_value_begin, hdr.value_size());
 
-  auto reply = flatbuffers::GetRoot<v::wal_segment_index_fragment>(idx.get());
+  auto reply = flatbuffers::GetRoot<wal_segment_index_fragment>(idx.get());
 
   for (auto k : *reply->keys()) {
     auto str = seastar::sstring((char *)k->key()->Data(), k->key()->size());
@@ -72,7 +71,7 @@ gen_puts(int32_t batch, int32_t partition, int32_t rand_bytes) {
   for (auto j = 0; j < batch; ++j) {
     seastar::sstring key = rand.next_alphanum(rand_bytes);
     seastar::sstring value = rand.next_str(rand_bytes);
-    idx->records.push_back(v::wal_segment_record::coalesce(
+    idx->records.push_back(wal_segment_record::coalesce(
       key.data(), key.size(), value.data(), value.size()));
   }
   ptr->partition_puts.push_back(std::move(idx));
@@ -100,11 +99,11 @@ main(int args, char **argv, char **env) {
       LOG_INFO("log_segment test dir: {}", dir);
 
       return seastar::do_with(
-               v::wal_opts(dir.c_str(), std::chrono::milliseconds(5)),
+               wal_opts(dir.c_str(), std::chrono::milliseconds(5)),
                [&](auto &wopts) {
-                 auto indexer = seastar::make_lw_shared<v::wal_segment_indexer>(
+                 auto indexer = seastar::make_lw_shared<wal_segment_indexer>(
                    index_filename, wopts,
-                   v::priority_manager::get().default_priority());
+                   priority_manager::get().default_priority());
 
                  return indexer->open()
                    .then([indexer] {
@@ -137,26 +136,26 @@ main(int args, char **argv, char **env) {
         .then([index_filename](int64_t sz) {
           LOG_INFO("Sucess Writing Index file: {} index size: {}",
                    index_filename, sz);
-          auto reader = seastar::make_lw_shared<v::wal_reader_node>(
+          auto reader = seastar::make_lw_shared<wal_reader_node>(
             0 /*epoch*/, 0 /*term*/, sz, seastar::lowres_system_clock::now(),
             index_filename);
           return reader->open()
             .then([reader, writer_size = sz] {
-              v::wal_get_requestT r;
+              wal_get_requestT r;
               r.ns = xxhash_64(kNS.c_str(), kNS.size());
               r.topic = xxhash_64(kTopic.c_str(), kTopic.size());
               r.partition = 0;
               r.offset = 0;  // begin
               r.max_bytes = writer_size;
-              auto readq = smf::fbs_typed_buf<v::wal_get_request>(
-                smf::native_table_as_buffer<v::wal_get_request>(r));
+              auto readq = smf::fbs_typed_buf<wal_get_request>(
+                smf::native_table_as_buffer<wal_get_request>(r));
 
-              auto ret = seastar::make_lw_shared<v::wal_read_reply>(
+              auto ret = seastar::make_lw_shared<wal_read_reply>(
                 r.ns, r.topic, 0, 0, true);
               return seastar::do_with(std::move(readq),
                                       [reader, ret](auto &tbuf) {
                                         auto r =
-                                          v::wal_core_mapping::core_assignment(
+                                          wal_core_mapping::core_assignment(
                                             tbuf.get());
                                         return reader->get(ret.get(), r);
                                       })

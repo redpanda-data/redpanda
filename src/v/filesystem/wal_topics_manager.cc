@@ -17,7 +17,6 @@
 #include "wal_segment.h"
 #include "wal_segment_record.h"
 
-namespace v {
 inline seastar::sstring
 nstpidx_dirname(const wal_opts &o, seastar::sstring ns, seastar::sstring topic,
                 int32_t partition) {
@@ -202,4 +201,3 @@ wal_topics_manager::stats() const {
   return retval;
 }
 
-}  // namespace v

@@ -7,7 +7,7 @@
 namespace smf {  // customization point
 
 seastar::temporary_buffer<char>
-native_table_as_buffer(const v::chains::chain_get_replyT &r) {
+native_table_as_buffer(const chains::chain_get_replyT &r) {
   // reserved the size of type
   // To read the default of 1MB of data, there is a *mesured* 80KB of overhead
   // due to struct padding / alignment / etc from the raw size of in memory data
@@ -27,7 +27,7 @@ native_table_as_buffer(const v::chains::chain_get_replyT &r) {
                                 });
   flatbuffers::FlatBufferBuilder bdr(reserved);
   bdr.ForceDefaults(true);
-  bdr.Finish(v::chains::chain_get_reply::Pack(bdr, &r, nullptr));
+  bdr.Finish(chains::chain_get_reply::Pack(bdr, &r, nullptr));
 
   DLOG_THROW_IF(bdr.GetSize() > reserved,
                 "chains::get reservation failure. Should only allocate once. "

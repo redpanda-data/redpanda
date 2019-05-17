@@ -11,7 +11,6 @@
 #include "hashing/jump_consistent_hash.h"
 #include "hashing/xx.h"
 
-namespace v {
 namespace api {
 
 client::txn::txn(const client_opts &_opts, client_stats *m,
@@ -25,7 +24,7 @@ client::txn::txn(const client_opts &_opts, client_stats *m,
   auto &p = *data_.data.get();
   p.chain_index = 0;
   p.chain = std::move(chain);
-  p.put = std::make_unique<v::wal_put_requestT>();
+  p.put = std::make_unique<wal_put_requestT>();
   p.put->topic = opts.topic_id;
   p.put->ns = opts.ns_id;
 }
@@ -44,16 +43,16 @@ client::txn::stage(const char *key, int32_t key_size, const char *value,
   auto &puts = data_.data->put->partition_puts;
   auto ctype = value_size >= opts.record_compression_value_threshold
                  ? opts.record_compression_type
-                 : v::wal_compression_type::wal_compression_type_none;
+                 : wal_compression_type::wal_compression_type_none;
   auto record =
-    v::wal_segment_record::coalesce(key, key_size, value, value_size, ctype);
+    wal_segment_record::coalesce(key, key_size, value, value_size, ctype);
   stats_->bytes_sent += record->data.size();
   // OK to std::find usually small ~16
   auto it = std::find_if(puts.begin(), puts.end(), [partition](auto &tpl) {
     return partition == tpl->partition;
   });
   if (it == puts.end()) {
-    auto ptr = std::make_unique<v::wal_put_partition_recordsT>();
+    auto ptr = std::make_unique<wal_put_partition_recordsT>();
     ptr->partition = partition;
     ptr->records.push_back(std::move(record));
     puts.push_back(std::move(ptr));
@@ -63,7 +62,7 @@ client::txn::stage(const char *key, int32_t key_size, const char *value,
 }
 /// \brief submits the actual transaction.
 /// invalid after this call
-seastar::future<smf::rpc_recv_typed_context<v::chains::chain_put_reply>>
+seastar::future<smf::rpc_recv_typed_context<chains::chain_put_reply>>
 client::txn::submit() {
   LOG_THROW_IF(submitted_,
                "Transaction already submitted. Can only submit once");
@@ -87,7 +86,7 @@ client::open(seastar::ipv4_addr seed) {
   // register decompression filters
   return rpc_->connect()
     .then([this]() {
-      smf::rpc_typed_envelope<v::wal_topic_create_request> x;
+      smf::rpc_typed_envelope<wal_topic_create_request> x;
       x.data->topic = opts.topic;
       x.data->ns = opts.topic_namespace;
       x.data->partitions = opts.topic_partitions;
@@ -125,7 +124,7 @@ client::consume(int32_t partition_override) {
 }
 seastar::future<smf::rpc_recv_typed_context<chains::chain_get_reply>>
 client::consume_from_partition(int32_t partition) {
-  smf::rpc_typed_envelope<v::chains::chain_get_request> x;
+  smf::rpc_typed_envelope<chains::chain_get_request> x;
   x.data->consumer_group_id = opts.consumer_group_id;
   x.data->get = std::make_unique<wal_get_requestT>();
   x.data->get->topic = opts.topic_id;
@@ -164,4 +163,3 @@ client::create_txn() {
 }
 
 }  // namespace api
-}  // namespace v

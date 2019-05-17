@@ -9,7 +9,6 @@
 #include "hashing/jump_consistent_hash.h"
 #include "redpanda/api/client_stats.h"
 
-namespace v {
 using namespace std::chrono;  // NOLINT
 
 /// \brief used for qps_* methods. need helper struct for args
@@ -187,4 +186,3 @@ qps_load::options() const {
   return *opts;
 }
 
-}  // namespace v

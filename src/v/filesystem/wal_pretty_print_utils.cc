@@ -3,7 +3,6 @@
 #include <flatbuffers/minireflect.h>
 
 namespace std {
-using namespace v;  // NOLINT
 ostream &
 operator<<(ostream &o, const wal_header &h) {
   // Do not convert enum::compression to string if untrusted/uninitialized mem
@@ -34,7 +33,7 @@ operator<<(ostream &o, const wal_get_reply &r) {
 }
 
 ostream &
-operator<<(ostream &o, const v::wal_put_partition_records &r) {
+operator<<(ostream &o, const wal_put_partition_records &r) {
   o << "wal_put_partition_records={partition=" << r.partition() << ", records("
     << r.records()->size() << ")} ";
   return o;
@@ -66,12 +65,12 @@ operator<<(ostream &o, const wal_read_request &r) {
 }
 
 ostream &
-operator<<(ostream &o, const v::wal_binary_record &r) {
+operator<<(ostream &o, const wal_binary_record &r) {
   o << "wal_binary_record={ data(size): " << r.data()->size() << "} ";
   return o;
 }
 ostream &
-operator<<(ostream &o, const v::wal_binary_recordT &r) {
+operator<<(ostream &o, const wal_binary_recordT &r) {
   o << "wal_binary_recordT={ data(size): " << r.data.size() << "} ";
   return o;
 }

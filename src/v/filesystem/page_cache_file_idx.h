@@ -9,7 +9,6 @@
 // filesystem
 #include "page_cache_buffer_manager.h"
 
-namespace v {
 
 class page_cache_file_idx {
  public:
@@ -56,4 +55,3 @@ class page_cache_file_idx {
   set_t ranges_;
 };
 
-}  // namespace v

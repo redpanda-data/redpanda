@@ -9,7 +9,6 @@
 
 #include "hbadger/hbadger.h"
 
-namespace v {
 
 static constexpr inline int64_t
 chunk_size(int64_t alignment) {
@@ -176,4 +175,3 @@ wal_segment::append(const char *buf, const std::size_t origi_sz) {
   return flush();
 }
 
-}  // namespace v

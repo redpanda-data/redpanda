@@ -6,7 +6,6 @@
 #include <sstream>
 #include <string>
 
-namespace v {
 honey_badger::honey_badger() {
   lua_.open_libraries(sol::lib::base, sol::lib::ffi, sol::lib::jit);
   lua_.script_file(kHoneyBadgerScriptName);
@@ -28,12 +27,9 @@ honey_badger::hbadger(const char *filename, int line, const char *module,
   }
 }
 
-}  // namespace v
 
 #else
-namespace v {
 // makes compiler happy
 void
 dummy_badger::d() {}
-}  // namespace v
 #endif

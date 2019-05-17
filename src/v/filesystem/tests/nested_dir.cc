@@ -15,7 +15,7 @@ main(int argc, char **argv, char **env) {
   return app.run(argc, argv, [&] {
     smf::app_run_log_level(seastar::log_level::trace);
     seastar::sstring test = "foo/bar/baz/w00t";
-    return v::dir_utils::create_dir_tree(test).then([test] {
+    return dir_utils::create_dir_tree(test).then([test] {
       return seastar::file_exists(test).then([test](bool exists) {
         LOG_THROW_IF(!exists, "Could not create directory: {}", test);
       });

@@ -1,6 +1,5 @@
 #pragma once
 #include <cstdint>
-namespace v {
 /*
  * Robert Jenkins' reversible 32 bit mix hash function
  */
@@ -50,4 +49,3 @@ jenkins_rev_unmix32(uint32_t key) noexcept {
   return key;
 }
 
-}  // namespace v

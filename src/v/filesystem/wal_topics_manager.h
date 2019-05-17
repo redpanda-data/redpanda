@@ -12,7 +12,6 @@
 #include "wal_opts.h"
 #include "wal_requests.h"
 
-namespace v {
 class wal_topics_manager {
  public:
   using topic_meta_map =
@@ -77,4 +76,3 @@ class wal_topics_manager {
   seastar::semaphore serialize_create_{1};
 };
 
-}  // namespace v

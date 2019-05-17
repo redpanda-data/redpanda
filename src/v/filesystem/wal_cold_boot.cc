@@ -4,7 +4,6 @@
 #include "wal_core_mapping.h"
 #include "wal_name_extractor_utils.h"
 
-namespace v {
 
 seastar::future<wal_cold_boot>
 wal_cold_boot::filesystem_lcore_index(seastar::sstring top_level_dir) {
@@ -74,4 +73,3 @@ wal_cold_boot::visit_partition(seastar::sstring ns, seastar::sstring topic,
   }
   return seastar::make_ready_future<>();
 }
-}  // namespace v

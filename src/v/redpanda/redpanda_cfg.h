@@ -12,7 +12,6 @@
 #include "filesystem/wal_opts.h"
 #include "raft/raft_cfg.h"
 
-namespace v {
 
 struct redpanda_cfg {
   seastar::sstring directory;
@@ -62,7 +61,6 @@ struct redpanda_cfg {
     return o;
   }
 };
-}  // namespace v
 namespace YAML {
 template <>
 struct convert<seastar::sstring> {
@@ -79,8 +77,8 @@ struct convert<seastar::sstring> {
 };
 
 template <>
-struct convert<::v::raft_seed_server> {
-  using type = ::v::raft_seed_server;
+struct convert<raft_seed_server> {
+  using type = raft_seed_server;
   static Node
   encode(const type &rhs) {
     Node node;
@@ -101,9 +99,9 @@ struct convert<::v::raft_seed_server> {
 };
 
 template <>
-struct convert<::v::redpanda_cfg> {
+struct convert<redpanda_cfg> {
   static Node
-  encode(const ::v::redpanda_cfg &rhs) {
+  encode(const redpanda_cfg &rhs) {
     Node node;
     node["directory"] = rhs.directory;
     node["flush_period_ms"] = rhs.flush_period_ms;
@@ -122,7 +120,7 @@ struct convert<::v::redpanda_cfg> {
     return node;
   }
   static bool
-  decode(const Node &node, ::v::redpanda_cfg &rhs) {
+  decode(const Node &node, redpanda_cfg &rhs) {
     // Required fields
     for (auto s : {"directory", "port", "id", "seed_servers"}) {
       if (!node[s]) { return false; }
@@ -161,8 +159,8 @@ struct convert<::v::redpanda_cfg> {
 
 namespace std {
 static inline ostream &
-operator<<(ostream &o, const ::v::redpanda_cfg &c) {
-  o << "v::redpanda_cfg{directory:" << c.directory << ", ip:" << c.ip
+operator<<(ostream &o, const redpanda_cfg &c) {
+  o << "redpanda_cfg{directory:" << c.directory << ", ip:" << c.ip
     << ", port:" << c.port
     << ", retention_period_hrs:" << c.retention_period_hrs
     << ", flush_period_ms:" << c.flush_period_ms

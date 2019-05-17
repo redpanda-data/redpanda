@@ -8,7 +8,6 @@
 
 #include "hashing/murmur.h"
 
-namespace v {
 
 constexpr static const std::size_t kDefaultHashingLevels = 2;
 
@@ -89,4 +88,3 @@ class roaring_bloom_filter {
   uint32_t elems_{0};
 };
 
-}  // namespace v

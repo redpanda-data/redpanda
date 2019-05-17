@@ -20,7 +20,6 @@
 #include "wal_cold_boot.h"
 #include "wal_topic_test_input.h"
 
-using namespace v;  // NOLINT
 
 // creating a namespace with `-` tests the regexes
 static const seastar::sstring kNS = "empty-ns007";
@@ -31,18 +30,18 @@ seastar::future<>
 do_creates(uint32_t core, write_ahead_log &w) {
   return seastar::do_with(
     std::vector<int32_t>{} /*partitions*/,
-    v::wal_topic_test_input(kNS, kTopic,
+    wal_topic_test_input(kNS, kTopic,
                             // partitions
                             16,
                             // type (can be compaction)
-                            v::wal_topic_type::wal_topic_type_regular,
+                            wal_topic_type::wal_topic_type_regular,
                             // map of properties for topic
                             {{"prop-for-topic", "maybe-store-access-keys"}}),
     [&w, core](auto &partitions, auto &input) {
       return seastar::do_with(
                input.create_requests(), std::size_t(0),
                [&w, core, &partitions](auto &creqs, auto &cidx) {
-                 v::wal_create_request c = std::move(creqs[cidx++]);
+                 wal_create_request c = std::move(creqs[cidx++]);
                  while (c.runner_core != core) {
                    c = std::move(creqs[cidx++]);
                  }

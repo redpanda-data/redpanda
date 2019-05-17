@@ -8,7 +8,6 @@
 #include <seastar/core/sstring.hh>
 #include <smf/macros.h>
 
-namespace v {
 // TODO(agallego) - needs a smaller test, bigger tests are hard to fail
 
 struct wal_cold_boot {
@@ -49,4 +48,3 @@ struct wal_cold_boot {
   seastar::future<> visit_partition(seastar::sstring ns, seastar::sstring topic,
                                     seastar::directory_entry de);
 };
-}  // namespace v

@@ -3,7 +3,6 @@
 // filesystem
 #include "page_cache.h"
 
-namespace v {
 class wal_disk_pager {
  public:
   explicit wal_disk_pager(page_cache_request r);
@@ -51,6 +50,4 @@ class wal_disk_pager {
  private:
   page_cache_request req_;
   page_cache_result_lease lease_;
-};  // namespace v
-
-}  // namespace v
+};

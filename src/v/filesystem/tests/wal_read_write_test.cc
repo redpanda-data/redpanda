@@ -19,7 +19,6 @@
 #include "gen_create_topic_buf.h"
 #include "wal_topic_test_input.h"
 
-using namespace v;  // NOLINT
 
 // creating a namespace with `-` tests the regexes
 static const seastar::sstring kNS = "empty-ns007";
@@ -36,11 +35,11 @@ add_opts(boost::program_options::options_description_easy_init o) {
 seastar::future<std::vector<std::unique_ptr<wal_get_requestT>>>
 do_writes(uint32_t core, write_ahead_log &w) {
   return seastar::do_with(
-    v::wal_topic_test_input(kNS, kTopic,
+    wal_topic_test_input(kNS, kTopic,
                             // partitions
                             seastar::smp::count * 2,
                             // type (can be compaction)
-                            v::wal_topic_type::wal_topic_type_regular,
+                            wal_topic_type::wal_topic_type_regular,
                             // map of properties for topic
                             {{"prop-for-topic", "maybe-store-access-keys"}}),
     std::vector<std::unique_ptr<wal_get_requestT>>{},
@@ -48,7 +47,7 @@ do_writes(uint32_t core, write_ahead_log &w) {
       return seastar::do_with(
                input.create_requests(), std::size_t(0),
                [&w, core](auto &creqs, auto &cidx) {
-                 v::wal_create_request c = std::move(creqs[cidx++]);
+                 wal_create_request c = std::move(creqs[cidx++]);
                  while (c.runner_core != core) {
                    c = std::move(creqs[cidx++]);
                  }
@@ -64,7 +63,7 @@ do_writes(uint32_t core, write_ahead_log &w) {
           return seastar::do_with(
                    input.write_requests(), std::size_t(0),
                    [&](auto &wreqs, std::size_t &idx) {
-                     v::wal_write_request write = std::move(wreqs[idx++]);
+                     wal_write_request write = std::move(wreqs[idx++]);
                      while (write.runner_core != core) {
                        write = std::move(wreqs[idx++]);
                      }
@@ -106,7 +105,7 @@ do_reads(uint32_t core, write_ahead_log &w,
         return seastar::do_with(
                  std::move(readq),
                  [&w](smf::fbs_typed_buf<wal_get_request> &tbuf) {
-                   auto r = v::wal_core_mapping::core_assignment(tbuf.get());
+                   auto r = wal_core_mapping::core_assignment(tbuf.get());
                    LOG_INFO("Making get request: {}", r);
                    return w.get(r);
                  })

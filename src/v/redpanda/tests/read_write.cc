@@ -21,7 +21,7 @@ constexpr static const int kMethodIterations = 25;
 constexpr static const int kTopicPartitions = 3;
 
 seastar::future<>
-writes(v::api::client *api) {
+writes(api::client *api) {
   return seastar::do_for_each(
     boost::counting_iterator<int>(0),
     boost::counting_iterator<int>(kMethodIterations), [api](auto i) {
@@ -34,13 +34,13 @@ writes(v::api::client *api) {
         DLOG_TRACE_IF(r, "{}",
                       flatbuffers::FlatBufferToString(
                         (const uint8_t *)r.ctx.value().payload.get(),
-                        v::chains::chain_put_reply::MiniReflectTypeTable()));
+                        chains::chain_put_reply::MiniReflectTypeTable()));
         /*ignore?*/
       });
     });
 }
 seastar::future<>
-reads(v::api::client *api) {
+reads(api::client *api) {
   return seastar::do_for_each(
     boost::counting_iterator<int>(0),
     boost::counting_iterator<int>(kMethodIterations), [api](auto i) {
@@ -48,7 +48,7 @@ reads(v::api::client *api) {
         if (r) {
           for (auto x : *r->get()->gets()) {
             if (x->data() && x->data()->size() != 0) {
-              auto [kbuf, vbuf] = v::wal_segment_record::extract_from_bin(
+              auto [kbuf, vbuf] = wal_segment_record::extract_from_bin(
                 (const char *)x->data()->data(), x->data()->size());
               seastar::sstring k(kbuf.get(), kbuf.size());
               seastar::sstring v(vbuf.get(), vbuf.size());
@@ -67,12 +67,12 @@ reads(v::api::client *api) {
 seastar::future<>
 launch_client_read_write() {
   smf::random rand;
-  v::api::client_opts co("happy-home-namespace", "happy-home-topic",
+  api::client_opts co("happy-home-namespace", "happy-home-topic",
                          rand.next(), rand.next());
   // do multiple calls/don't read too fast !
   co.consumer_max_read_bytes = 38;
   co.topic_partitions = kTopicPartitions;
-  auto api = std::make_unique<v::api::client>(std::move(co));
+  auto api = std::make_unique<api::client>(std::move(co));
   auto ptr = api.get();
   return ptr->open({"127.0.0.1", 33145})
     .then([ptr] { return writes(ptr); })
@@ -94,9 +94,9 @@ main(int argc, char **argv, char **env) {
   // flush every log line
   std::cout.setf(std::ios::unitbuf);
   seastar::distributed<smf::rpc_server> rpc;
-  seastar::distributed<v::write_ahead_log> log;
+  seastar::distributed<write_ahead_log> log;
   seastar::app_template app;
-  v::redpanda_cfg global_cfg;
+  redpanda_cfg global_cfg;
   global_cfg.directory = ".";
   global_cfg.ip = "127.0.0.1";
   global_cfg.port = 33145;
@@ -107,12 +107,12 @@ main(int argc, char **argv, char **env) {
     seastar::engine().at_exit([&rpc] { return rpc.stop(); });
     auto &config = app.configuration();
     return log.start(global_cfg.wal_cfg())
-      .then([&log] { return log.invoke_on_all(&v::write_ahead_log::open); })
-      .then([&log] { return log.invoke_on_all(&v::write_ahead_log::index); })
+      .then([&log] { return log.invoke_on_all(&write_ahead_log::open); })
+      .then([&log] { return log.invoke_on_all(&write_ahead_log::index); })
       .then([&rpc, &global_cfg] { return rpc.start(global_cfg.rpc_cfg()); })
       .then([&rpc, &global_cfg, &log] {
         return rpc.invoke_on_all([&](smf::rpc_server &s) {
-          using srvc = v::redpanda_service;
+          using srvc = redpanda_service;
           using lz4_c_t = smf::lz4_compression_filter;
           using lz4_d_t = smf::lz4_decompression_filter;
           using zstd_d_t = smf::zstd_decompression_filter;

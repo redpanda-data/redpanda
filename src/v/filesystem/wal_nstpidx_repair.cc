@@ -7,7 +7,6 @@
 #include "wal_name_extractor_utils.h"
 #include "wal_writer_utils.h"
 
-namespace v {
 using set_t = wal_nstpidx_repair::set_t;
 static inline seastar::lowres_system_clock::time_point
 from_timespec(const struct timespec &ts) {
@@ -71,4 +70,3 @@ wal_nstpidx_repair::visit(seastar::directory_entry de) {
       return seastar::make_ready_future<>();
     });
 }
-}  // namespace v

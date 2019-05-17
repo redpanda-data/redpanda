@@ -12,7 +12,6 @@
 #include "hashing/xx.h"
 #include "wal_generated.h"
 
-namespace v {
 // stateless compressors
 
 static thread_local auto lz4 = smf::codec::make_unique(
@@ -119,4 +118,3 @@ wal_segment_record::extract_from_bin(const char *begin, int32_t sz) {
   return {std::move(keybuf), std::move(valbuf)};
 }
 
-}  // namespace v

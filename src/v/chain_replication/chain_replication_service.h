@@ -4,12 +4,11 @@
 #include "chain_replication.smf.fb.h"
 #include "filesystem/write_ahead_log.h"
 
-namespace v {
 namespace chains {
 class chain_replication_service : public chain_replication {
  public:
   explicit chain_replication_service(
-    seastar::distributed<v::write_ahead_log> *w)
+    seastar::distributed<write_ahead_log> *w)
     : wal_(THROW_IFNULL(w)) {}
 
   virtual seastar::future<smf::rpc_typed_envelope<chain_put_reply>>
@@ -28,8 +27,7 @@ class chain_replication_service : public chain_replication {
   do_get(smf::rpc_recv_typed_context<chain_get_request> &&);
 
  private:
-  seastar::distributed<v::write_ahead_log> *wal_;
+  seastar::distributed<write_ahead_log> *wal_;
 };
 
 }  // end namespace chains
-}  // end namespace v

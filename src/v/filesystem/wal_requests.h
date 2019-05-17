@@ -23,7 +23,6 @@
 // pointer copy.
 //
 
-namespace v {
 static constexpr std::size_t kWalHeaderSize = sizeof(wal_header);
 
 // create
@@ -296,4 +295,3 @@ struct wal_stats_reply {
   underlying stats;
 };
 
-}  // namespace v

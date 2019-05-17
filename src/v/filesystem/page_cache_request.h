@@ -4,7 +4,6 @@
 
 #include <seastar/core/file.hh>
 
-namespace v {
 struct page_cache_request {
   // required
   uint32_t file_id;
@@ -18,12 +17,11 @@ struct page_cache_request {
   seastar::lw_shared_ptr<seastar::file> fptr;
   const seastar::io_priority_class &pc;
 };
-}  // namespace v
 
 namespace std {
 inline ostream &
-operator<<(ostream &o, const v::page_cache_request &r) {
-  return o << "v::page_cache_request{file_id: " << r.file_id
+operator<<(ostream &o, const page_cache_request &r) {
+  return o << "page_cache_request{file_id: " << r.file_id
            << ", begin_pageno: " << r.begin_pageno
            << ", end_pageno: " << r.end_pageno
            << ", hint_file_last_pageno: " << r.hint_file_last_pageno << "}";

@@ -15,7 +15,6 @@
 #include "wal_reader_node.h"
 #include "wal_segment_record.h"
 
-namespace v {
 
 int64_t
 system_page_size() {
@@ -163,7 +162,7 @@ class wal_segment_healer final : public wal_reader_node {
   int64_t last_valid_offset_{0};
   bool is_recovered_{false};
   bool exit_recovery_{false};
-};  // namespace v
+};
 
 seastar::future<int64_t>
 recover_failed_wal_file(int64_t epoch, int64_t term, int64_t sz,
@@ -201,4 +200,3 @@ recover_failed_wal_file(int64_t epoch, int64_t term, int64_t sz,
   });
 }
 
-}  // namespace v

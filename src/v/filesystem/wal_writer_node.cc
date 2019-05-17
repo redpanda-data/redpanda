@@ -16,7 +16,6 @@
 #include "wal_segment.h"
 #include "wal_writer_utils.h"
 
-namespace v {
 
 inline int64_t
 wal_write_request_size(const wal_write_request &r) {
@@ -149,4 +148,3 @@ wal_writer_node::rotate_fstream() {
     .finally([l] {});
 }
 
-}  // namespace v

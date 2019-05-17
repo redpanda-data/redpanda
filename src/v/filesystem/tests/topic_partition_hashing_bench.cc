@@ -7,7 +7,6 @@
 #include "hashing/jump_consistent_hash.h"
 #include "hashing/xx.h"
 
-using namespace v;  // NOLINT
 
 static uint64_t
 fixed_hash(const std::string &topic, uint32_t partition) {

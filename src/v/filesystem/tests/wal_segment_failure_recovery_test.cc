@@ -18,7 +18,6 @@
 #include "wal_segment_record.h"
 #include "wal_writer_utils.h"
 
-using namespace v;  // NOLINT
 
 static constexpr const char *kTopicName = "failure_recovery_topic_test";
 class put {
@@ -36,7 +35,7 @@ class put {
     idx->partition = partition_;
     idx->records.reserve(batch_size);
     for (auto i = 0; i < batch_size; ++i) {
-      idx->records.push_back(v::wal_segment_record::coalesce(
+      idx->records.push_back(wal_segment_record::coalesce(
         key.data(), key.size(), value.data(), value.size()));
     }
 
@@ -133,10 +132,10 @@ main(int args, char **argv, char **env) {
       const auto full_path_file = dir + "/" + kTopicName;
       return write_via_raw_file(dir)
         .then([full_path_file] {
-          return v::file_size_from_allocated_blocks(full_path_file);
+          return file_size_from_allocated_blocks(full_path_file);
         })
         .then([full_path_file](auto p) {
-          return v::recover_failed_wal_file(0, p.first, 0 /*term*/,
+          return recover_failed_wal_file(0, p.first, 0 /*term*/,
                                             seastar::lowres_system_clock::now(),
                                             full_path_file);
         })

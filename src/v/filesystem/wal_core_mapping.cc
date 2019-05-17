@@ -9,7 +9,6 @@
 
 #include "wal_nstpidx.h"
 
-namespace v {
 
 uint32_t
 wal_core_mapping::nstpidx_to_lcore(wal_nstpidx idx) {
@@ -98,4 +97,3 @@ wal_core_mapping::core_assignment(const wal_put_request *p) {
   return retval;
 }
 
-}  // namespace v

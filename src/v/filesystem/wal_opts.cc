@@ -6,7 +6,6 @@
 #include <seastar/core/align.hh>
 #include <smf/human_bytes.h>
 
-namespace v {
 
 wal_opts::wal_opts(seastar::sstring log,
                    seastar::timer<>::duration flush_period,
@@ -83,4 +82,3 @@ operator<<(std::ostream &o, const wal_opts &opts) {
     << "}";
   return o;
 }
-}  // namespace v

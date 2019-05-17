@@ -3,7 +3,6 @@
 #include <re2/re2.h>
 #include <seastar/core/sstring.hh>
 
-namespace v {
 
 static const re2::RE2
   kEpochExtractor("([[:ascii:]]+[^\\d]+)?(\\d+)\\.(\\d+)\\.wal$");
@@ -46,4 +45,3 @@ wal_name_extractor_utils::wal_partition_dir_extract(
                       &retval);
   return retval;
 }
-}  // namespace v

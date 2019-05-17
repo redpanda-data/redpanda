@@ -1,6 +1,5 @@
 #include "wal_nstpidx.h"
 
-namespace v {
 
 wal_nstpidx
 wal_nstpidx::gen(int64_t ns, int64_t topic, int32_t partition) {
@@ -17,4 +16,3 @@ wal_nstpidx::gen(const seastar::sstring &ns, const seastar::sstring &topic,
                           xxhash_64(topic.data(), topic.size()), partition);
 }
 
-}  // namespace v

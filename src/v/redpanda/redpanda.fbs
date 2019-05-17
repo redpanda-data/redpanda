@@ -1,7 +1,6 @@
 include "filesystem/wal.fbs";
 include "chain_replication/chain_replication.fbs";
 
-namespace v;
 
 // XXX(agallego) need to wrap creation/deletion of topics
 
@@ -12,11 +11,11 @@ namespace v;
 rpc_service redpanda_api {
   /// \brief create a topic
   /// Uses raft to create the topics and assignments
-  create_topic(v.wal_topic_create_request): v.wal_topic_create_reply;
+  create_topic(wal_topic_create_request): wal_topic_create_reply;
 
   /// \brief MUST be compatible w/ the chain replication
   /// subschema
-  put(v.chains.chain_put_request): v.chains.chain_put_reply;
-  get(v.chains.chain_get_request): v.chains.chain_get_reply;
+  put(chains.chain_put_request): chains.chain_put_reply;
+  get(chains.chain_get_request): chains.chain_get_reply;
 
 }

@@ -6,7 +6,6 @@
 // filesystem
 #include "redpanda/redpanda_cfg.h"
 
-using namespace v;  // NOLINT
 
 TEST(redpanda_config, load_minimal) {
   YAML::Node config = YAML::Load("---\n"
@@ -18,7 +17,7 @@ TEST(redpanda_config, load_minimal) {
                                  "  seed_servers:\n"
                                  "    - addr: \"127.0.0.1:33145\"\n"
                                  "      id: 1\n");
-  auto cfg = config["redpanda"].as<v::redpanda_cfg>();
+  auto cfg = config["redpanda"].as<redpanda_cfg>();
   ASSERT_EQ(cfg.id, 1);
   ASSERT_EQ(cfg.min_version, 0);
   ASSERT_EQ(cfg.max_version, 0);
@@ -57,7 +56,7 @@ TEST(redpanda_config, load_full_definition) {
                                  "    - addr: \"127.0.0.2:33145\"\n"
                                  "      id: 2\n"
                                  "");
-  auto cfg = config["redpanda"].as<v::redpanda_cfg>();
+  auto cfg = config["redpanda"].as<redpanda_cfg>();
   ASSERT_EQ(cfg.id, 1);
   ASSERT_EQ(cfg.min_version, 1);
   ASSERT_EQ(cfg.max_version, 2);
