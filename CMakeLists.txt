@@ -22,6 +22,7 @@ set(CMAKE_CXX_FLAGS_MINSIZEREL "-Os -DNDEBUG")
 # options
 option(RP_ENABLE_GOLD_LINKER "Enable -fuse-ld=gold" ON)
 option(V_MANAGE_DEPS "Use our own 3rdparty.cmake.in" ON)
+option (RP_ENABLE_DPDK "Enable DPDK support" OFF)
 
 # linker flags
 if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
