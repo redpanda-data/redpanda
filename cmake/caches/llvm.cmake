@@ -26,7 +26,7 @@ cmake_host_system_information(
     RESULT available_memory
     QUERY TOTAL_PHYSICAL_MEMORY)
 math(EXPR parallel_link_jobs "${available_memory} / 2861")   
-set(LLVM_PARALLEL_LINK_JOBS parallel_link_jobs CACHE STRING "")
+set(LLVM_PARALLEL_LINK_JOBS ${parallel_link_jobs} CACHE STRING "")
 
 set(CLANG_ENABLE_BOOTSTRAP ON CACHE BOOL "")
 # Variables passed to stage2. 
