@@ -30,7 +30,7 @@ class wal_topic_test_input {
     int32_t rand_bytes = max_rand_bytes) {
 
     // create
-    create_ = std::make_unique<smf::fbs_typed_buf<wal_topic_create_request>>(
+    _create = std::make_unique<smf::fbs_typed_buf<wal_topic_create_request>>(
       gen_create_topic_buf(ns, topic, partitions, type, props));
 
     auto ptr = std::make_unique<wal_put_requestT>();
@@ -43,26 +43,26 @@ class wal_topic_test_input {
       idx->records.reserve(max_batch_size_per_partition);
       for (auto j = 0; j < max_batch_size_per_partition; ++j) {
         seastar::sstring key =
-          rand_.next_alphanum(std::max<uint64_t>(1, rand_.next() % rand_bytes));
+          _rand.next_alphanum(std::max<uint64_t>(1, _rand.next() % rand_bytes));
         seastar::sstring value =
-          rand_.next_str(std::max<uint64_t>(1, rand_.next() % rand_bytes));
+          _rand.next_str(std::max<uint64_t>(1, _rand.next() % rand_bytes));
         idx->records.push_back(wal_segment_record::coalesce(
           key.data(), key.size(), value.data(), value.size()));
       }
       ptr->partition_puts.push_back(std::move(idx));
     }
 
-    put_ = std::make_unique<smf::fbs_typed_buf<wal_put_request>>(
+    _put = std::make_unique<smf::fbs_typed_buf<wal_put_request>>(
       smf::native_table_as_buffer<wal_put_request>(*ptr));
   }
 
   inline const wal_topic_create_request *
   get_create() {
-    return create_->get();
+    return _create->get();
   }
   inline const wal_put_request *
   get_put() {
-    return put_->get();
+    return _put->get();
   }
   inline std::vector<wal_write_request>
   write_requests() {
@@ -74,9 +74,9 @@ class wal_topic_test_input {
   }
 
  private:
-  smf::random rand_;
-  std::unique_ptr<smf::fbs_typed_buf<wal_put_request>> put_ = nullptr;
-  std::unique_ptr<smf::fbs_typed_buf<wal_topic_create_request>> create_ =
+  smf::random _rand;
+  std::unique_ptr<smf::fbs_typed_buf<wal_put_request>> _put = nullptr;
+  std::unique_ptr<smf::fbs_typed_buf<wal_topic_create_request>> _create =
     nullptr;
 };
 

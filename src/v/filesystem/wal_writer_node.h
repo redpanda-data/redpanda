@@ -64,7 +64,7 @@ struct wal_writer_node_opts {
 /// than min_compression_size
 ///
 /// Note: the file closes happen concurrently, they simply get scheduled,
-/// however, the fstream_.close() is called after the file has been flushed
+/// however, the _fstream.close() is called after the file has been flushed
 /// to disk, so even during crash we are safe
 ///
 class wal_writer_node {
@@ -89,18 +89,18 @@ class wal_writer_node {
 
   seastar::sstring
   filename() const {
-    if (!lease_) { return ""; }
-    return lease_->filename;
+    if (!_lease) { return ""; }
+    return _lease->filename;
   }
   ~wal_writer_node();
 
   int64_t
   space_left() const {
-    return opts_.wopts.max_log_segment_size - current_size_;
+    return _opts.wopts.max_log_segment_size - current_size_;
   }
   int64_t
   current_offset() const {
-    return opts_.epoch + current_size_;
+    return _opts.epoch + current_size_;
   }
 
  private:
@@ -114,14 +114,14 @@ class wal_writer_node {
   seastar::future<> disk_write(const wal_binary_record *f);
 
  private:
-  wal_writer_node_opts opts_;
+  wal_writer_node_opts _opts;
   int64_t current_size_ = 0;
   // the lease has to be a lw_shared_ptr because the object
   // may go immediately out of existence, before we get a chance to close the
   // file it needs to exist in the background fiber that closes the
   // underlying file
   //
-  seastar::lw_shared_ptr<wal_segment> lease_ = nullptr;
+  seastar::lw_shared_ptr<wal_segment> _lease = nullptr;
   seastar::semaphore serialize_writes_{1};
   seastar::timer<> flush_timeout_;
   bool is_closed_{false};

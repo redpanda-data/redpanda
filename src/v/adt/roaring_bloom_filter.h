@@ -39,7 +39,7 @@ class roaring_bloom_filter {
   contains(T t) const {
     auto arr = Hasher()(t);
     for (auto i = 0; i < Levels; ++i) {
-      if (bmap_.contains(arr[i])) return true;
+      if (_bmap.contains(arr[i])) return true;
     }
     return false;
   }
@@ -48,9 +48,9 @@ class roaring_bloom_filter {
   add(T t) {
     auto arr = Hasher()(t);
     for (auto i = 0; i < Levels; ++i) {
-      bmap_.add(arr[i]);
+      _bmap.add(arr[i]);
     }
-    ++elems_;
+    ++_elems;
   }
 
   double
@@ -66,11 +66,11 @@ class roaring_bloom_filter {
     // To compute the cardinality of the set is to give an
     // incorrect probably of positive error rate.
     //
-    // const double m = bmap_.cardinality();
+    // const double m = _bmap.cardinality();
 
     const double m = std::numeric_limits<int32_t>::max();
     const double k = double(Levels);
-    const double n = double(elems_);
+    const double n = double(_elems);
     const double e_x = std::exp((-k * n) / m);
     const double rate = std::pow(1 - e_x, k);
     return rate;
@@ -78,13 +78,13 @@ class roaring_bloom_filter {
 
   inline uint32_t
   size_in_bytes() const {
-    return bmap_.getSizeInBytes();
+    return _bmap.getSizeInBytes();
   }
 
   SMF_DISALLOW_COPY_AND_ASSIGN(roaring_bloom_filter);
 
  private:
-  Roaring bmap_;
-  uint32_t elems_{0};
+  Roaring _bmap;
+  uint32_t _elems{0};
 };
 

@@ -40,10 +40,10 @@ class client {
 
    private:
     const client_opts &opts;
-    seastar::shared_ptr<redpanda_api_client> rpc_;
-    smf::rpc_typed_envelope<chains::chain_put_request> data_;
-    bool submitted_ = false;
-    client_stats *stats_;
+    seastar::shared_ptr<redpanda_api_client> _rpc;
+    smf::rpc_typed_envelope<chains::chain_put_request> _data;
+    bool _submitted = false;
+    client_stats *_stats;
   };
 
   explicit client(client_opts o);
@@ -81,14 +81,14 @@ class client {
   /// usually you want to have one per l-core via a thread_local tag on the var
   inline bool
   is_histogram_enabled() const {
-    return rpc_->is_histogram_enabled();
+    return _rpc->is_histogram_enabled();
   }
 
   /// \brief pointer to this histogram
   ///
   inline seastar::lw_shared_ptr<smf::histogram>
   get_histogram() {
-    return rpc_->get_histogram();
+    return _rpc->get_histogram();
   }
 
   /// \brief deallocates the histogram
@@ -98,14 +98,14 @@ class client {
   ///
   inline void
   disable_histogram_metrics() {
-    if (rpc_) rpc_->disable_histogram_metrics();
+    if (_rpc) _rpc->disable_histogram_metrics();
   };
 
   /// \brief if metrics == nullptr then it will allocate a new histogram
   ///
   inline void
   enable_histogram_metrics() {
-    if (rpc_) rpc_->enable_histogram_metrics();
+    if (_rpc) _rpc->enable_histogram_metrics();
   };
 
   /// \brief all the environment opts
@@ -116,7 +116,7 @@ class client {
   ///
   inline const client_stats &
   stats() const {
-    return stats_;
+    return _stats;
   }
 
  private:
@@ -124,14 +124,14 @@ class client {
     consume_from_partition(int32_t);
 
  private:
-  seastar::shared_ptr<redpanda_api_client> rpc_;
+  seastar::shared_ptr<redpanda_api_client> _rpc;
   uint64_t producer_txn_id_ = 0;
   struct offset_meta_idx {
     int64_t offset{0};
     seastar::semaphore lock{1};
   };
   ska::bytell_hash_map<int32_t, offset_meta_idx> partition_offsets_{};
-  client_stats stats_;
+  client_stats _stats;
 };
 
 }  // namespace api

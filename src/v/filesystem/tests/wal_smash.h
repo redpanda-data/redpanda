@@ -54,11 +54,11 @@ class wal_smash {
 
   inline const wal_smash_stats &
   stats() const {
-    return stats_;
+    return _stats;
   }
   const wal_smash_opts &
   opts() const {
-    return opts_;
+    return _opts;
   }
   const std::map<int32_t, std::vector<int32_t>> &
   core2partitions() const {
@@ -66,8 +66,8 @@ class wal_smash {
   }
 
  private:
-  wal_smash_opts opts_;
-  seastar::distributed<write_ahead_log> *wal_;
+  wal_smash_opts _opts;
+  seastar::distributed<write_ahead_log> *_wal;
   std::map<int32_t, std::vector<int32_t>> core_to_partitions_;
   struct offset_meta_idx {
     int64_t offset{0};
@@ -77,6 +77,6 @@ class wal_smash {
   // key = partition
   // value = offsets & lock
   std::map<int32_t, offset_meta_idx> partition_offsets_{};
-  smf::random rand_;
-  wal_smash_stats stats_;
+  smf::random _rand;
+  wal_smash_stats _stats;
 };

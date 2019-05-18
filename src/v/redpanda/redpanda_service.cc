@@ -35,7 +35,7 @@ redpanda_service::create_topic(
                         auto const core = r.runner_core;
                         return seastar::smp::submit_to(
                           core, [this, r = std::move(r)]() mutable {
-                            return wal_->local().create(std::move(r));
+                            return _wal->local().create(std::move(r));
                           });
                       },
 

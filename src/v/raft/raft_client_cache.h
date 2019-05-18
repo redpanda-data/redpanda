@@ -72,8 +72,8 @@ class raft_client_cache final {
 
  private:
   seastar::gate reconnect_gate_;
-  smf::random prng_;
-  underlying cache_;
+  smf::random _prng;
+  underlying _cache;
 };
 
 inline raft_client_cache::bitflags

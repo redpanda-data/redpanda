@@ -25,25 +25,25 @@ class incremental_xxhash64 {
   reset() {
     // no need to check for error
     // https://gist.github.com/9ea1c9ad4df3bad8b16e4dea4a18018a
-    XXH64_reset(&state_, 0);
+    XXH64_reset(&_state, 0);
   }
   [[gnu::always_inline]] inline void
   update(const char *src, const std::size_t &sz) {
-    XXH64_update(&state_, src, sz);
+    XXH64_update(&_state, src, sz);
   }
   template <typename T,
             class = typename std::enable_if<std::is_integral<T>::value>::type>
   [[gnu::always_inline]] inline void
   update(T t) {
-    XXH64_update(&state_, (const char *)&t, sizeof(T));
+    XXH64_update(&_state, (const char *)&t, sizeof(T));
   }
   [[gnu::always_inline]] inline uint64_t
   digest() {
-    return XXH64_digest(&state_);
+    return XXH64_digest(&_state);
   }
 
  private:
-  XXH64_state_t state_;
+  XXH64_state_t _state;
 };
 
 class incremental_xxhash32 {
@@ -55,25 +55,25 @@ class incremental_xxhash32 {
   reset() {
     // no need to check for error
     // https://gist.github.com/9ea1c9ad4df3bad8b16e4dea4a18018a
-    XXH32_reset(&state_, 0);
+    XXH32_reset(&_state, 0);
   }
   [[gnu::always_inline]] inline void
   update(const char *src, const std::size_t &sz) {
-    XXH32_update(&state_, src, sz);
+    XXH32_update(&_state, src, sz);
   }
   template <typename T,
             class = typename std::enable_if<std::is_integral<T>::value>::type>
   [[gnu::always_inline]] inline void
   update(T t) {
-    XXH32_update(&state_, (const char *)&t, sizeof(T));
+    XXH32_update(&_state, (const char *)&t, sizeof(T));
   }
   [[gnu::always_inline]] inline uint32_t
   digest() {
-    return XXH32_digest(&state_);
+    return XXH32_digest(&_state);
   }
 
  private:
-  XXH32_state_t state_;
+  XXH32_state_t _state;
 };
 
 template <typename T, std::size_t N,

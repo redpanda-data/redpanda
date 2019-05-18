@@ -68,15 +68,15 @@ class wal_segment_indexer {
 
  private:
   bool is_flushed_{true};
-  int32_t size_{0};
+  int32_t _size{0};
   /// \brief the xor of all the hashes of all the keys
   /// useful for debugging - it becomes the key of the WAL record
   uint64_t xorwalkey{0};
   int64_t largest_offset_seen_{0};
   int64_t lens_bytes_{0};
   /// \brief map holding all tvhe keys
-  wal_segment_index_key_entry_set data_;
+  wal_segment_index_key_entry_set _data;
 
-  std::unique_ptr<wal_segment> index_ = nullptr;
+  std::unique_ptr<wal_segment> _index = nullptr;
 };
 

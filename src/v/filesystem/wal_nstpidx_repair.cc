@@ -28,7 +28,7 @@ wal_nstpidx_repair::repair(seastar::sstring dir) {
                                     return idx->visit(std::move(de));
                                   })
       .then([&indexer] {
-        return seastar::make_ready_future<set_t>(std::move(indexer->files_));
+        return seastar::make_ready_future<set_t>(std::move(indexer->_files));
       });
   });
 };
@@ -59,13 +59,13 @@ wal_nstpidx_repair::visit(seastar::directory_entry de) {
           .then([=, st = st](auto sz) mutable {
             if (sz != 0) {
               st.st_size = sz;
-              files_.insert(wal_nstpidx_repair::item{
+              _files.insert(wal_nstpidx_repair::item{
                 epoch, term, st.st_size, de.name, from_timespec(st.st_mtim)});
             }
             return seastar::make_ready_future<>();
           });
       }
-      files_.insert(wal_nstpidx_repair::item{epoch, term, st.st_size, de.name,
+      _files.insert(wal_nstpidx_repair::item{epoch, term, st.st_size, de.name,
                                              from_timespec(st.st_mtim)});
       return seastar::make_ready_future<>();
     });

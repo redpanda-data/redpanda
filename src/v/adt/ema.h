@@ -32,11 +32,11 @@ class ema {
   // -- main api
   inline void
   record_ema(uint64_t nanos) {
-    ema_ = alpha() * nanos + (one_minus_alpha() * ema_);
+    _ema = alpha() * nanos + (one_minus_alpha() * _ema);
   }
   inline double
   get() const {
-    return ema_;
+    return _ema;
   }
   std::unique_ptr<time_measure>
   measure() {
@@ -44,7 +44,7 @@ class ema {
   }
 
  private:
-  double ema_{0};
+  double _ema{0};
 };
 
 namespace std {

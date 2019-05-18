@@ -26,20 +26,20 @@ wal_write_request_size(const wal_write_request &r) {
 }
 
 wal_writer_node::wal_writer_node(wal_writer_node_opts opts)
-  : opts_(std::move(opts)) {
+  : _opts(std::move(opts)) {
   flush_timeout_.set_callback([this] {
     if (is_closed_) return;
-    if (lease_->current_size() == 0) return;
+    if (_lease->current_size() == 0) return;
     if (is_closed_) return;
 
     // timer<>.set_callback is void - dispatch in background
     DTRACE_PROBE(rp, wal_writer_node_periodic_flush);
-    lease_->flush().then(
-      [this, sz = lease_->current_size(), name = lease_->filename] {
-        return opts_.log_segment_size_notify(name, sz);
+    _lease->flush().then(
+      [this, sz = _lease->current_size(), name = _lease->filename] {
+        return _opts.log_segment_size_notify(name, sz);
       });
   });
-  flush_timeout_.arm_periodic(opts_.wopts.writer_flush_period);
+  flush_timeout_.arm_periodic(_opts.wopts.writer_flush_period);
 }
 wal_writer_node::~wal_writer_node() {
   // done at close() - no need to re cancel:
@@ -50,20 +50,20 @@ seastar::future<>
 wal_writer_node::open() {
   HBADGER(filesystem, wal_writer_node::open);
   const auto name =
-    wal_file_name(opts_.writer_directory, opts_.epoch, opts_.term);
+    wal_file_name(_opts.writer_directory, _opts.epoch, _opts.term);
   DLOG_TRACE("Rolling log: {}", name);
-  LOG_THROW_IF(!!lease_, "opening new file. Previous file is unclosed");
-  lease_ = seastar::make_lw_shared<wal_segment>(
-    name, opts_.pclass, opts_.wopts.max_log_segment_size,
-    opts_.wopts.max_bytes_in_writer_cache);
-  return lease_->open().then(
-    [this, name] { return opts_.log_segment_create_notify(name); });
+  LOG_THROW_IF(!!_lease, "opening new file. Previous file is unclosed");
+  _lease = seastar::make_lw_shared<wal_segment>(
+    name, _opts.pclass, _opts.wopts.max_log_segment_size,
+    _opts.wopts.max_bytes_in_writer_cache);
+  return _lease->open().then(
+    [this, name] { return _opts.log_segment_create_notify(name); });
 }
 seastar::future<>
 wal_writer_node::disk_write(const wal_binary_record *f) {
   HBADGER(filesystem, wal_writer_node::disk_write);
   current_size_ += f->data()->size();
-  return lease_->append((const char *)f->data()->Data(), f->data()->size());
+  return _lease->append((const char *)f->data()->Data(), f->data()->size());
 }
 
 seastar::future<std::unique_ptr<wal_write_reply>>
@@ -112,19 +112,19 @@ wal_writer_node::close() {
   flush_timeout_.cancel();
   // need to make sure the file is not closed in the midst of a write
   //
-  return seastar::with_semaphore(serialize_writes_, 1, [l = lease_] {
+  return seastar::with_semaphore(serialize_writes_, 1, [l = _lease] {
     return l->flush().then([l] { return l->close(); }).finally([l] {});
   });
 }
 
 seastar::future<>
 wal_writer_node::set_term(int64_t term) {
-  LOG_THROW_IF(term >= opts_.term,
+  LOG_THROW_IF(term >= _opts.term,
                "Invalid log term. Logic error. Existing term:{}, but wanting "
                "to set term: {}",
-               opts_.term, term);
+               _opts.term, term);
   DLOG_TRACE("Rotating fstream due to set_term()");
-  opts_.term = term;
+  _opts.term = term;
   return rotate_fstream();
 }
 seastar::future<>
@@ -136,12 +136,12 @@ wal_writer_node::rotate_fstream() {
   // if you call close here. Close ensures that there is no other ongoing
   // operations and it is a public method which needs to serialize access to
   // the internal file.
-  auto l = lease_;
+  auto l = _lease;
   return l->flush()
     .then([l] { return l->close(); })
     .then([this] {
-      lease_ = nullptr;
-      opts_.epoch += current_size_;
+      _lease = nullptr;
+      _opts.epoch += current_size_;
       current_size_ = 0;
       return open();
     })

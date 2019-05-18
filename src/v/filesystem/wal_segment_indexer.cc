@@ -55,8 +55,8 @@ wal_segment_indexer::get_or_create(int64_t offset, const wal_binary_record *r) {
   auto xx = xxhash_64(key_begin, hdr.key_size());
 
   if (auto it =
-        std::lower_bound(data_.begin(), data_.end(), xx, key_hash_functor{});
-      it != data_.end()) {
+        std::lower_bound(_data.begin(), _data.end(), xx, key_hash_functor{});
+      it != _data.end()) {
     const int32_t key_size = it->get()->key.size();
     if (SMF_UNLIKELY(
           (key_size != hdr.key_size() ||
@@ -76,11 +76,11 @@ wal_segment_indexer::get_or_create(int64_t offset, const wal_binary_record *r) {
       tmp->hash = xx;
       tmp->key.resize(hdr.key_size());
       std::memcpy(tmp->key.data(), key_begin, hdr.key_size());
-      it = data_.find(tmp);
-      if (it == data_.end()) {
+      it = _data.find(tmp);
+      if (it == _data.end()) {
         // we didn't find it on the second index
         auto ptr = tmp.get();
-        data_.insert(std::move(tmp));
+        _data.insert(std::move(tmp));
         return {ptr, true};
       }
     }
@@ -94,7 +94,7 @@ wal_segment_indexer::get_or_create(int64_t offset, const wal_binary_record *r) {
   tmp->key.resize(hdr.key_size());
   std::memcpy(tmp->key.data(), key_begin, hdr.key_size());
   auto ptr = tmp.get();
-  data_.insert(std::move(tmp));
+  _data.insert(std::move(tmp));
   return {ptr, true};
 }
 
@@ -104,14 +104,14 @@ wal_segment_indexer::index(int64_t offset, const wal_binary_record *r) {
   largest_offset_seen_ = std::max(offset, largest_offset_seen_);
   auto [ptr, created] = get_or_create(offset, r);
   if (created) {
-    size_ += ptr->key.size();
+    _size += ptr->key.size();
     xorwalkey ^= ptr->hash;
     lens_bytes_ += r->data()->size();
   } else {
     ptr->offset = std::max(ptr->offset, offset);
   }
   // make sure to rotate if we are full
-  if (size_ < kMaxPartialIndexKeysSize) {
+  if (_size < kMaxPartialIndexKeysSize) {
     return seastar::make_ready_future<>();
   }
   return flush_index();
@@ -120,37 +120,37 @@ wal_segment_indexer::index(int64_t offset, const wal_binary_record *r) {
 void
 wal_segment_indexer::reset() {
   // fully reset
-  size_ = 0;
+  _size = 0;
   xorwalkey = 0;
   lens_bytes_ = 0;
-  data_.clear();
+  _data.clear();
 }
 seastar::future<>
 wal_segment_indexer::flush_index() {
   if (is_flushed_) { return seastar::make_ready_future<>(); }
   auto record =
-    binary_index(xorwalkey, largest_offset_seen_, lens_bytes_, data_);
+    binary_index(xorwalkey, largest_offset_seen_, lens_bytes_, _data);
   // after we drain it into tmp vars, we can reset
   reset();
 
   // write the log entry
   auto tmp = record.get();
   auto src = reinterpret_cast<const char *>(tmp->data.data());
-  return index_->append(src, tmp->data.size())
+  return _index->append(src, tmp->data.size())
     .finally([this, r = std::move(record)] { is_flushed_ = true; });
 }
 seastar::future<>
 wal_segment_indexer::close() {
-  if (index_) {
-    return flush_index().then([this] { return index_->close(); });
+  if (_index) {
+    return flush_index().then([this] { return _index->close(); });
   }
   return seastar::make_ready_future<>();
 }
 seastar::future<>
 wal_segment_indexer::open() {
-  index_ = std::make_unique<wal_segment>(filename, priority,
+  _index = std::make_unique<wal_segment>(filename, priority,
                                          wopts.max_log_segment_size,
                                          wopts.max_bytes_in_writer_cache);
-  return index_->open();
+  return _index->open();
 }
 

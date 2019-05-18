@@ -88,7 +88,7 @@ wal_topics_manager::create(wal_create_request r) {
 
              for (int32_t p : cr.partition_assignments) {
                auto idx = wal_nstpidx::gen(ns_str, topic_str, p);
-               if (props_.find(idx) != props_.end()) {
+               if (_props.find(idx) != _props.end()) {
                  return seastar::make_ready_future<>();
                }
              }
@@ -97,7 +97,7 @@ wal_topics_manager::create(wal_create_request r) {
                  // need to double check
                  for (int32_t p : cr.partition_assignments) {
                    auto idx = wal_nstpidx::gen(ns_str, topic_str, p);
-                   if (props_.find(idx) != props_.end()) {
+                   if (_props.find(idx) != _props.end()) {
                      return seastar::make_ready_future<>();
                    }
                  }
@@ -123,8 +123,8 @@ wal_topics_manager::create(wal_create_request r) {
 seastar::future<wal_topic_create_request *>
 wal_topics_manager::nstpidx_props(wal_nstpidx idx, seastar::sstring props_dir) {
   using ptr_t = wal_topic_create_request *;
-  auto it = props_.find(idx);
-  if (it != props_.end()) {
+  auto it = _props.find(idx);
+  if (it != _props.end()) {
     return seastar::make_ready_future<ptr_t>(it->second.get());
   }
   seastar::sstring props_filename = props_dir + "/metadata";
@@ -135,7 +135,7 @@ wal_topics_manager::nstpidx_props(wal_nstpidx idx, seastar::sstring props_dir) {
     LOG_TRACE("Loaded properties: {} ({})", props_filename, idx);
     auto tb = smf::fbs_typed_buf<wal_topic_create_request>(std::move(v));
     auto ptr = tb.get();
-    props_.emplace(idx, std::move(tb));
+    _props.emplace(idx, std::move(tb));
     return seastar::make_ready_future<ptr_t>(ptr);
   });
 }
@@ -144,8 +144,8 @@ seastar::future<>
 wal_topics_manager::open(seastar::sstring ns, seastar::sstring topic,
                          int32_t partition) {
   auto idx = wal_nstpidx::gen(ns, topic, partition);
-  auto it = mngrs_.find(idx);
-  if (it == mngrs_.end()) {
+  auto it = _mngrs.find(idx);
+  if (it == _mngrs.end()) {
     auto workdir = nstpidx_dirname(opts, ns, topic, partition);
     // We can have background fibers doing the reopens
     // That's why we need this semaphore
@@ -153,8 +153,8 @@ wal_topics_manager::open(seastar::sstring ns, seastar::sstring topic,
     return seastar::with_semaphore(
       serialize_open_, 1, [this, workdir, idx]() mutable {
         // need double-checking
-        auto it2 = mngrs_.find(idx);
-        if (it2 != mngrs_.end()) { return seastar::make_ready_future<>(); }
+        auto it2 = _mngrs.find(idx);
+        if (it2 != _mngrs.end()) { return seastar::make_ready_future<>(); }
 
         // open and add to our map
         return nstpidx_props(idx, workdir)
@@ -164,7 +164,7 @@ wal_topics_manager::open(seastar::sstring ns, seastar::sstring topic,
             auto y = x.get();
             return y->open().then([this, x = std::move(x), idx]() mutable {
               DTRACE_PROBE1(rp, wal_topics_manager_open, idx.id());
-              mngrs_.emplace(idx, std::move(x));
+              _mngrs.emplace(idx, std::move(x));
               return seastar::make_ready_future<>();
             });
           });
@@ -176,8 +176,8 @@ wal_topics_manager::open(seastar::sstring ns, seastar::sstring topic,
 seastar::future<wal_nstpidx_manager *>
 wal_topics_manager::get_manager(wal_nstpidx idx) {
   wal_nstpidx_manager *ptr = nullptr;
-  auto it = mngrs_.find(idx);
-  if (SMF_UNLIKELY(it == mngrs_.end())) {
+  auto it = _mngrs.find(idx);
+  if (SMF_UNLIKELY(it == _mngrs.end())) {
     return seastar::make_ready_future<wal_nstpidx_manager *>(nullptr);
   }
   ptr = it->second.get();
@@ -186,7 +186,7 @@ wal_topics_manager::get_manager(wal_nstpidx idx) {
 
 seastar::future<>
 wal_topics_manager::close() {
-  return seastar::do_for_each(mngrs_.begin(), mngrs_.end(),
+  return seastar::do_for_each(_mngrs.begin(), _mngrs.end(),
                               [](auto &pm) { return pm.second->close(); });
 }
 
@@ -194,7 +194,7 @@ std::unique_ptr<wal_stats_reply>
 wal_topics_manager::stats() const {
   auto retval = std::make_unique<wal_stats_reply>();
   auto &ref = retval->stats;
-  for (auto &mpair : mngrs_) {
+  for (auto &mpair : _mngrs) {
     auto &m = mpair.second;
     ref.emplace(m->idx, m->stats());
   }

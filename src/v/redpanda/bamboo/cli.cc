@@ -13,10 +13,10 @@ static const seastar::sstring kCompactionTopic = "compaction";
 
 cli::cli(const boost::program_options::variables_map *cfg)
   : opts(THROW_IFNULL(cfg)) {
-  id_ = rand_.next();
+  _id = _rand.next();
   api::client_opts co(options()["namespace"].as<seastar::sstring>(),
                          options()["topic"].as<seastar::sstring>(),
-                         rand_.next(), rand_.next());
+                         _rand.next(), _rand.next());
   co.server_side_verify_payload =
     options()["server-side-verify-checksum"].as<bool>();
   if (auto tpc = options()["partitions-per-topic"].as<int32_t>(); tpc > 0) {
@@ -29,26 +29,26 @@ cli::cli(const boost::program_options::variables_map *cfg)
   if (kCompactionTopic == options()["topic-type"].as<seastar::sstring>()) {
     co.topic_type = wal_topic_type::wal_topic_type_compaction;
   }
-  api_ = std::make_unique<api::client>(std::move(co));
+  _api = std::make_unique<api::client>(std::move(co));
   write_key_sz_ = options()["key-size"].as<int32_t>();
   write_val_sz_ = options()["value-size"].as<int32_t>();
   write_batch_sz_ = options()["write-batch-size"].as<int32_t>();
   partition_pref_ = options()["partition"].as<int32_t>();
 }
 cli::~cli() {
-  if (api_) {
-    auto &x = api_->stats();
+  if (_api) {
+    auto &x = _api->stats();
     DLOG_TRACE("cli::id({}): bytes_sent: {}, bytes_read: {}, "
                "read_rpc:{}, write_rpc:{}",
-               id_, smf::human_bytes(x.bytes_sent),
+               _id, smf::human_bytes(x.bytes_sent),
                smf::human_bytes(x.bytes_read), x.read_rpc, x.write_rpc);
   }
 }
 seastar::future<>
 cli::one_write() {
-  auto txn = api_->create_txn();
-  auto k = rand_.next_alphanum(write_key_sz_);
-  auto v = rand_.next_alphanum(write_val_sz_);
+  auto txn = _api->create_txn();
+  auto k = _rand.next_alphanum(write_key_sz_);
+  auto v = _rand.next_alphanum(write_val_sz_);
 
   auto min_rot = std::min<std::size_t>(k.size() - 1, 5);
   for (auto n = 0; n < write_batch_sz_; ++n) {
@@ -65,7 +65,7 @@ cli::one_write() {
 }
 seastar::future<>
 cli::one_read() {
-  return api_->consume(partition_pref_).then([](auto r) {
+  return _api->consume(partition_pref_).then([](auto r) {
     DLOG_TRACE_IF(r, "{} {} {}, next_offset: {}", r->get()->ns(),
                   r->get()->topic(), r->get()->partition(),
                   r->get()->next_offset());
@@ -78,11 +78,11 @@ cli::open() {
   auto ip = options()["ip"].as<seastar::sstring>();
   auto port = options()["port"].as<uint16_t>();
   auto addr = seastar::ipv4_addr(ip, port);
-  return api_->open(addr).finally([this] { api_->enable_histogram_metrics(); });
+  return _api->open(addr).finally([this] { _api->enable_histogram_metrics(); });
 }
 seastar::future<>
 cli::stop() {
-  if (api_) { return api_->close(); }
+  if (_api) { return _api->close(); }
   return seastar::make_ready_future<>();
 }
 
@@ -93,6 +93,6 @@ cli::options() const {
 
 api::client *
 cli::api() const {
-  return api_.get();
+  return _api.get();
 }
 

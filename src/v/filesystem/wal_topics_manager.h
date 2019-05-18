@@ -45,7 +45,7 @@ class wal_topics_manager {
   /// useful for compaction thread
   const topic_meta_map &
   props() const {
-    return props_;
+    return _props;
   }
 
   /// \brief closes all of the active topic partition managers
@@ -68,10 +68,10 @@ class wal_topics_manager {
  private:
   /// \brief main workhorse
   ska::bytell_hash_map<wal_nstpidx, std::unique_ptr<wal_nstpidx_manager>>
-    mngrs_;
+    _mngrs;
   /// \brief every topic, olds a set of properties for RBAC and other properties
   /// We store one copy for all partitions and pass a constant pointer to them
-  topic_meta_map props_;
+  topic_meta_map _props;
   seastar::semaphore serialize_open_{1};
   seastar::semaphore serialize_create_{1};
 };

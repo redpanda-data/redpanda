@@ -131,15 +131,15 @@ class wal_segment_healer final : public wal_reader_node {
     int32_t last_page = offset_to_page(file_size_, 4096);
     return wal_disk_pager(
       page_cache_request{global_file_id(), first_page, last_page, last_page,
-                         file_, seastar::default_priority_class()});
+                         _file, seastar::default_priority_class()});
   }
 
   seastar::future<>
   truncate_to_max_metadata_size() {
-    return file_->size().then([this](auto registered_size) {
+    return _file->size().then([this](auto registered_size) {
       file_size_ = registered_size;
       // This case covers a file simply fallocated and *NEVER* written
-      return file_->truncate(registered_size);
+      return _file->truncate(registered_size);
     });
   }
 
@@ -156,7 +156,7 @@ class wal_segment_healer final : public wal_reader_node {
     if (last_valid_offset_ == 0) { return seastar::make_ready_future<>(); }
     file_size_ = last_valid_offset_;
     DLOG_TRACE("Recovered file to offset:{}", last_valid_offset_);
-    return file_->truncate(last_valid_offset_);
+    return _file->truncate(last_valid_offset_);
   }
 
   int64_t last_valid_offset_{0};

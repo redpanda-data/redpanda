@@ -18,34 +18,34 @@ class wal_segment {
     SMF_DISALLOW_COPY_AND_ASSIGN(chunk);
 
     explicit chunk(const std::size_t alignment)
-      : buf_(seastar::allocate_aligned_buffer<char>(kChunkSize, alignment)) {}
+      : _buf(seastar::allocate_aligned_buffer<char>(kChunkSize, alignment)) {}
     inline bool
     is_full() const {
-      return pos_ == kChunkSize;
+      return _pos == kChunkSize;
     }
     inline std::size_t
     space_left() const {
-      return kChunkSize - pos_;
+      return kChunkSize - _pos;
     }
     inline std::size_t
     pos() const {
-      return pos_;
+      return _pos;
     }
     inline std::size_t
     append(const char *src, std::size_t sz) {
       sz = sz > space_left() ? space_left() : sz;
-      std::memcpy(buf_.get() + pos_, src, sz);
-      pos_ += sz;
+      std::memcpy(_buf.get() + _pos, src, sz);
+      _pos += sz;
       return sz;
     }
     inline const char *
     data() const {
-      return buf_.get();
+      return _buf.get();
     }
 
    private:
-    std::unique_ptr<char[], seastar::free_deleter> buf_;
-    std::size_t pos_{0};
+    std::unique_ptr<char[], seastar::free_deleter> _buf;
+    std::size_t _pos{0};
   };
 
   SMF_DISALLOW_COPY_AND_ASSIGN(wal_segment);
@@ -61,7 +61,7 @@ class wal_segment {
   current_size() const {
     auto sz = flushed_pages_ * kChunkSize;
     return std::accumulate(
-      chunks_.begin(), chunks_.end(), sz,
+      _chunks.begin(), _chunks.end(), sz,
       [](auto acc, auto &next) { return acc + next->pos(); });
   }
 
@@ -78,14 +78,14 @@ class wal_segment {
   seastar::future<> do_flush();
 
  private:
-  bool closed_{false};
+  bool _closed{false};
   bool is_fully_flushed_{true};
   int64_t bytes_pending_{0};
   seastar::semaphore append_sem_{1};
 
-  std::deque<std::unique_ptr<chunk>> chunks_;
-  seastar::lw_shared_ptr<seastar::file> f_;
-  // cache of f_->disk_write_dma_alignment()
+  std::deque<std::unique_ptr<chunk>> _chunks;
+  seastar::lw_shared_ptr<seastar::file> _f;
+  // cache of _f->disk_write_dma_alignment()
   int32_t dma_write_alignment_{0};
   // \brief - only modify this variable under the semaphore
   //

@@ -73,21 +73,21 @@ to_ms(smf::random &rng, raft_client_cache::backoff b) {
 
 raft_client_cache::raft_client_cache() {}
 raft_client_cache::raft_client_cache(raft_client_cache &&o) noexcept
-  : reconnect_gate_(std::move(o.reconnect_gate_)), prng_(std::move(o.prng_)),
-    cache_(std::move(o.cache_)) {}
+  : reconnect_gate_(std::move(o.reconnect_gate_)), _prng(std::move(o._prng)),
+    _cache(std::move(o._cache)) {}
 
 typename raft_client_cache::underlying::iterator
 raft_client_cache::find(const seastar::ipv4_addr &n) {
-  return cache_.find(hash(n));
+  return _cache.find(hash(n));
 }
 
 std::tuple<raft_client_cache::bitflags, raft_client_cache::backoff,
            raft::raft_api_client *>
 raft_client_cache::get_or_create(const seastar::ipv4_addr &node) {
   auto it = find(node);
-  if (it == cache_.end()) {
+  if (it == _cache.end()) {
     auto ptr = client_t(new raft::raft_api_client(node), 0);
-    auto [it2, sucess] = cache_.emplace(hash(node), std::move(ptr));
+    auto [it2, sucess] = _cache.emplace(hash(node), std::move(ptr));
     // BUG: gcc8 - shadows variable
     it = it2;
     LOG_THROW_IF(!sucess, "could not emplace tagged ptr for {}", node);
@@ -104,7 +104,7 @@ raft_client_cache::set_flags(raft_client_cache::bitflags f,
   auto failure_int = static_cast<uint8_t>(verify_bitflags(f));
   auto bo_int = static_cast<uint8_t>(verify_backoff(b));
   auto it = find(node);
-  if (it != cache_.end()) {
+  if (it != _cache.end()) {
     uint16_t tag = uint16_t(failure_int) | uint16_t(bo_int >> 8);
     it->second.set_tag(tag);
   }
@@ -116,9 +116,9 @@ raft_client_cache::stage_next_reconnect(const seastar::ipv4_addr &node,
   return seastar::with_gate(
            reconnect_gate_,
            [this, node, b] {
-             auto ms = std::chrono::milliseconds(to_ms(prng_, b));
+             auto ms = std::chrono::milliseconds(to_ms(_prng, b));
              return seastar::sleep(ms).then([this, node, b, ms] {
-               if (auto it = find(node); it == cache_.end()) {
+               if (auto it = find(node); it == _cache.end()) {
                  // got deleted
                  return seastar::make_ready_future<>();
                }
@@ -200,7 +200,7 @@ seastar::future<>
 raft_client_cache::close() {
   return reconnect_gate_.close().then([=] {
     return seastar::parallel_for_each(
-      cache_.begin(), cache_.end(), [this](auto &p) {
+      _cache.begin(), _cache.end(), [this](auto &p) {
         auto ptr = p.second.get_ptr();
         return ptr->stop().finally([this, ptr] {
           set_flags(bitflags::none, backoff::none, ptr->server_addr);
@@ -210,7 +210,7 @@ raft_client_cache::close() {
 }
 
 raft_client_cache::~raft_client_cache() {
-  for (auto &p : cache_) {
+  for (auto &p : _cache) {
     raft::raft_api_client *ptr = p.second.get_ptr();
     DLOG_THROW_IF(p.second.get_tag() != 0,
                   "Fatal logic error. Unclean client shutdown for: {}",

@@ -124,22 +124,22 @@ wal_reader_node::wal_reader_node(
 
 wal_reader_node::wal_reader_node(wal_reader_node &&o) noexcept
   : starting_epoch(o.starting_epoch), term(o.term),
-    filename(std::move(o.filename)), file_(std::move(o.file_)),
+    filename(std::move(o.filename)), _file(std::move(o._file)),
     file_size_(o.file_size_), file_flags_(o.file_flags_),
     marked_for_delete_(o.marked_for_delete_),
     last_modified_(std::move(o.last_modified_)),
     number_of_pages_(o.number_of_pages_), global_file_id_(o.global_file_id_),
-    rgate_(std::move(o.rgate_)) {}
+    _rgate(std::move(o._rgate)) {}
 
 wal_reader_node::~wal_reader_node() {}
 
 seastar::future<>
 wal_reader_node::close() {
-  auto f = file_;
+  auto f = _file;
   auto del = marked_for_delete_;
   auto name = filename;
   auto fileid = global_file_id_;
-  return rgate_.close().then([fileid, f, del, name] {
+  return _rgate.close().then([fileid, f, del, name] {
     return f->close().finally([fileid, f, del, name] {
       if (del) {
         LOG_INFO("Removing file: {}, id:{} from cache", name, fileid);
@@ -157,7 +157,7 @@ seastar::future<>
 wal_reader_node::open_node() {
   return seastar::open_file_dma(filename, file_flags_)
     .then([this](seastar::file ff) {
-      file_ = seastar::make_lw_shared<seastar::file>(std::move(ff));
+      _file = seastar::make_lw_shared<seastar::file>(std::move(ff));
       return seastar::make_ready_future<>();
     });
 }
@@ -171,7 +171,7 @@ wal_reader_node::update_file_size(int64_t newsize) {
   last_modified_ = seastar::lowres_system_clock::now();
   file_size_ = newsize;
 
-  if (file_) {
+  if (_file) {
     std::set<int32_t> pages_to_evict;
     number_of_pages_ = round_up(file_size_);
     for (auto i = old_fs_sz; i < file_size_; i += kReadPageSize) {
@@ -190,7 +190,7 @@ wal_reader_node::open() {
   return open_node().then([this] {
     // must happen after actual read
     update_file_size(file_size_);
-    return file_->stat().then([this](auto stat) {
+    return _file->stat().then([this](auto stat) {
       // https://www.gnu.org/software/libc/manual/html_node/Attribute-Meanings.html
       // inode and device id create a globally unique file id
       global_file_id_ =
@@ -207,7 +207,7 @@ wal_reader_node::get(wal_read_reply *retval, wal_read_request r) {
   auto offset = retval->next_epoch();
   if (offset >= starting_epoch && offset < ending_epoch()) {
     return seastar::with_gate(
-      rgate_, [this, retval, r] { return do_read(retval, std::move(r)); });
+      _rgate, [this, retval, r] { return do_read(retval, std::move(r)); });
   }
   LOG_ERROR_IF(retval->on_disk_size() != 0,
                "{}: Offset out of range. file size: {}, request On disk "
@@ -346,7 +346,7 @@ wal_reader_node::do_read(wal_read_reply *retval, wal_read_request r) {
     wal_disk_pager(page_cache_request{
       global_file_id_, offset_to_page(roffset, kReadPageSize),
       offset_to_page(roffset + remaining_req_size, kReadPageSize),
-      number_of_pages_, file_,
+      number_of_pages_, _file,
       priority_manager::get().streaming_read_priority()}),
     [this, retval, remaining_req_size, max_bytes = r.req->max_bytes(),
      initial_size = retval->on_disk_size()](wal_disk_pager &real_pager) {

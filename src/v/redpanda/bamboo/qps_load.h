@@ -34,11 +34,11 @@ class qps_load {
   seastar::future<> coordinated_omision_reads();
 
  private:
-  std::vector<std::unique_ptr<cli>> loaders_;
+  std::vector<std::unique_ptr<cli>> _loaders;
   seastar::semaphore method_sem_{1};
   seastar::promise<> drive_pr_;
   seastar::timer<> qps_timer_;
-  fast_prng rand_{};
+  fast_prng _rand{};
   double rw_balance_ = 0.5;
   uint64_t needle_threshold_;
 };

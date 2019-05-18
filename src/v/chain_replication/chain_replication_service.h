@@ -9,7 +9,7 @@ class chain_replication_service : public chain_replication {
  public:
   explicit chain_replication_service(
     seastar::distributed<write_ahead_log> *w)
-    : wal_(THROW_IFNULL(w)) {}
+    : _wal(THROW_IFNULL(w)) {}
 
   virtual seastar::future<smf::rpc_typed_envelope<chain_put_reply>>
   put(smf::rpc_recv_typed_context<chain_put_request> &&) final;
@@ -27,7 +27,7 @@ class chain_replication_service : public chain_replication {
   do_get(smf::rpc_recv_typed_context<chain_get_request> &&);
 
  private:
-  seastar::distributed<write_ahead_log> *wal_;
+  seastar::distributed<write_ahead_log> *_wal;
 };
 
 }  // end namespace chains

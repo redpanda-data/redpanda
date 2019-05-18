@@ -13,7 +13,7 @@
 #include "wal_generated.h"
 #include "wal_nstpidx.h"
 
-// TODO(agallego) - rename types to be nstp_{read,write,create}*
+// TODO(agallego) - rename types to be _nstp{read,write,create}*
 
 // Note that the put/get requests are pointers because they typically come from
 // an RPC call. it is the responsibility of the caller to ensure that the
@@ -95,7 +95,7 @@ class wal_read_reply final {
                           int64_t request_offset, bool validate_checksum);
 
   wal_read_reply(wal_read_reply &&o) noexcept
-    : validate_checksum(o.validate_checksum), data_(std::move(o.data_)),
+    : validate_checksum(o.validate_checksum), _data(std::move(o._data)),
       data_size_(o.data_size_) {}
 
   wal_read_reply &
@@ -114,21 +114,21 @@ class wal_read_reply final {
   add_record(std::unique_ptr<wal_binary_recordT> r) {
     LOG_THROW_IF(r->data.empty(), "Cannot add empty records to result");
     data_size_ += r->data.size();
-    data_.next_offset += r->data.size();
-    data_.gets.push_back(std::move(r));
+    _data.next_offset += r->data.size();
+    _data.gets.push_back(std::move(r));
   }
 
   inline const wal_get_replyT &
   reply() const {
-    return data_;
+    return _data;
   }
   inline int64_t
   next_epoch() const {
-    return data_.next_offset;
+    return _data.next_offset;
   }
   inline void
   set_next_offset(int64_t n) {
-    data_.next_offset = n;
+    _data.next_offset = n;
   }
 
   inline int64_t
@@ -138,21 +138,21 @@ class wal_read_reply final {
 
   inline void
   set_error(wal_read_errno e) {
-    data_.error = e;
+    _data.error = e;
   }
   inline bool
   empty() const {
-    return data_.gets.empty();
+    return _data.gets.empty();
   }
   /// \brief destructive op. releases underlying storage
   ///
   inline std::unique_ptr<wal_get_replyT>
   release() {
-    return std::make_unique<wal_get_replyT>(std::move(data_));
+    return std::make_unique<wal_get_replyT>(std::move(_data));
   }
 
  private:
-  wal_get_replyT data_;
+  wal_get_replyT _data;
   int64_t data_size_{0};
 };
 
@@ -214,7 +214,7 @@ class wal_write_reply final {
   SMF_DISALLOW_COPY_AND_ASSIGN(wal_write_reply);
   wal_write_reply(int64_t _ns, int64_t _topic) : ns(_ns), topic(_topic) {}
   wal_write_reply(wal_write_reply &&o) noexcept
-    : ns(o.ns), topic(o.topic), cache_(std::move(o.cache_)) {}
+    : ns(o.ns), topic(o.topic), _cache(std::move(o._cache)) {}
 
   /// \brief a write can be for many partitions. set metadata for one of them
   void set_reply_partition_tuple(int64_t ns, int64_t topic, int32_t partition,
@@ -222,7 +222,7 @@ class wal_write_reply final {
 
   iterator
   find(wal_nstpidx p) {
-    return cache_.find(p);
+    return _cache.find(p);
   }
 
   /// \brief drains the internal cache and moves all elements into this
@@ -231,11 +231,11 @@ class wal_write_reply final {
 
   iterator
   begin() {
-    return cache_.begin();
+    return _cache.begin();
   }
   const_iterator
   begin() const {
-    return cache_.begin();
+    return _cache.begin();
   }
   const_iterator
   cbegin() const {
@@ -243,11 +243,11 @@ class wal_write_reply final {
   }
   iterator
   end() {
-    return cache_.end();
+    return _cache.end();
   }
   const_iterator
   end() const {
-    return cache_.end();
+    return _cache.end();
   }
   const_iterator
   cend() const {
@@ -255,18 +255,18 @@ class wal_write_reply final {
   }
   bool
   empty() const {
-    return cache_.empty();
+    return _cache.empty();
   }
   size_t
   size() const {
-    return cache_.size();
+    return _cache.size();
   }
   const int64_t ns;
   const int64_t topic;
   wal_put_errno err{wal_put_errno_none};
 
  private:
-  underlying cache_{};
+  underlying _cache{};
 };
 
 struct wal_stats_reply {

@@ -7,13 +7,13 @@
 #include <string>
 
 honey_badger::honey_badger() {
-  lua_.open_libraries(sol::lib::base, sol::lib::ffi, sol::lib::jit);
-  lua_.script_file(kHoneyBadgerScriptName);
+  _lua.open_libraries(sol::lib::base, sol::lib::ffi, sol::lib::jit);
+  _lua.script_file(kHoneyBadgerScriptName);
 }
 void
 honey_badger::hbadger(const char *filename, int line, const char *module,
                       const char *func) {
-  auto hfn = lua_["honey_badger_fn"];
+  auto hfn = _lua["honey_badger_fn"];
   auto sol_ret = hfn(filename, line, module, func);
   if (!sol_ret.valid()) { return; }
   std::tuple<bool, int, std::string, std::string> ret;

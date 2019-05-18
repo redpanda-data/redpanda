@@ -43,11 +43,11 @@ wal_read_request::is_valid(const wal_read_request &r) {
 wal_read_reply::wal_read_reply(int64_t ns, int64_t topic, int32_t partition,
                                int64_t request_offset, bool validate_chksm)
   : validate_checksum(validate_chksm) {
-  data_.next_offset = request_offset;
-  data_.partition = partition;
-  data_.ns = ns;
-  data_.topic = topic;
-  data_.error = wal_read_errno::wal_read_errno_none;
+  _data.next_offset = request_offset;
+  _data.partition = partition;
+  _data.ns = ns;
+  _data.topic = topic;
+  _data.error = wal_read_errno::wal_read_errno_none;
 }
 
 void
@@ -58,13 +58,13 @@ wal_write_reply::set_reply_partition_tuple(int64_t ns, int64_t topic,
   DLOG_THROW_IF(topic != this->topic, "missmatching topic");
 
   wal_nstpidx key(ns, topic, partition);
-  auto it = cache_.find(key);
-  if (it == cache_.end()) {
+  auto it = _cache.find(key);
+  if (it == _cache.end()) {
     auto p = std::make_unique<wal_put_reply_partition_tupleT>();
     p->partition = partition;
     p->start_offset = begin;
     p->end_offset = end;
-    cache_.insert({std::move(key), std::move(p)});
+    _cache.insert({std::move(key), std::move(p)});
   } else {
     it->second->start_offset = std::max(it->second->start_offset, begin);
     it->second->end_offset = std::max(it->second->end_offset, end);
@@ -77,7 +77,7 @@ wal_write_reply::release() {
   ret->ns = ns;
   ret->topic = topic;
   ret->error = err;
-  for (auto &&p : cache_) {
+  for (auto &&p : _cache) {
     ret->offsets.push_back(std::move(p.second));
   }
   return ret;

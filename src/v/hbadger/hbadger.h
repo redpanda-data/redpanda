@@ -18,7 +18,7 @@ class honey_badger {
   }
 
  private:
-  sol::state lua_;
+  sol::state _lua;
 };
 #define HBADGER(module, func)                                                  \
   honey_badger::get().hbadger(__FILE__, __LINE__, #module, #func)

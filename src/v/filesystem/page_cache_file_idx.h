@@ -36,12 +36,12 @@ class page_cache_file_idx {
   void
   cache(page_range_ptr p) {
     auto it = as_iterator(p->begin_pageno);
-    LOG_THROW_IF(it != ranges_.end(),
+    LOG_THROW_IF(it != _ranges.end(),
                  "Could not insert page into info table. Have: {}, attempted "
                  "to insert: {}",
                  *it->get(), *p);
-    ranges_.push_back(std::move(p));
-    std::stable_sort(ranges_.begin(), ranges_.end(), range_comparator{});
+    _ranges.push_back(std::move(p));
+    std::stable_sort(_ranges.begin(), _ranges.end(), range_comparator{});
   }
   void evict_pages(std::set<int32_t> pages);
   /// \brief evicts one page, started at the lowest tag count
@@ -52,6 +52,6 @@ class page_cache_file_idx {
 
   ///  \brief erases and updates index
   page_range_ptr erase(iterator it);
-  set_t ranges_;
+  set_t _ranges;
 };
 

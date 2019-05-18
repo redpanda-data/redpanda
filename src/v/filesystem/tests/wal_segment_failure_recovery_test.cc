@@ -23,7 +23,7 @@ static constexpr const char *kTopicName = "failure_recovery_topic_test";
 class put {
  public:
   put() {
-    partition_ = rand_() % std::thread::hardware_concurrency();
+    _partition = _rand() % std::thread::hardware_concurrency();
     seastar::sstring key = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
     seastar::sstring value =
       "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy";
@@ -32,7 +32,7 @@ class put {
     ptr->topic = xxhash_64(kTopicName, std::strlen(kTopicName));
 
     auto idx = std::make_unique<wal_put_partition_recordsT>();
-    idx->partition = partition_;
+    idx->partition = _partition;
     idx->records.reserve(batch_size);
     for (auto i = 0; i < batch_size; ++i) {
       idx->records.push_back(wal_segment_record::coalesce(
@@ -43,13 +43,13 @@ class put {
 
     auto body = smf::native_table_as_buffer<wal_put_request>(*ptr);
     DLOG_INFO("Encoded request is of size: {}", smf::human_bytes(body.size()));
-    orig_ =
+    _orig =
       std::make_unique<smf::fbs_typed_buf<wal_put_request>>(std::move(body));
   }
 
   inline std::vector<wal_write_request>
   get_write_requests(const uint32_t runner_core) {
-    auto p = orig_->get();
+    auto p = _orig->get();
     auto ret = wal_core_mapping::core_assignment(p);
     for (auto &r : ret) {
       auto *x = const_cast<uint32_t *>(&r.runner_core);
@@ -60,7 +60,7 @@ class put {
 
   int32_t
   get_partition() const {
-    return partition_;
+    return _partition;
   }
 
   const int32_t batch_size = 2;
@@ -68,9 +68,9 @@ class put {
   const int32_t value_size = 50;
 
  private:
-  int32_t partition_;
-  fast_prng rand_{};
-  std::unique_ptr<smf::fbs_typed_buf<wal_put_request>> orig_ = nullptr;
+  int32_t _partition;
+  fast_prng _rand{};
+  std::unique_ptr<smf::fbs_typed_buf<wal_put_request>> _orig = nullptr;
 };
 
 seastar::future<>

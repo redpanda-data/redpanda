@@ -14,7 +14,7 @@
 #include "wal_requests.h"
 
 write_ahead_log::write_ahead_log(wal_opts _opts)
-  : opts(std::move(_opts)), tm_(opts) {}
+  : opts(std::move(_opts)), _tm(opts) {}
 
 seastar::future<std::unique_ptr<wal_write_reply>>
 write_ahead_log::append(wal_write_request r) {
@@ -25,7 +25,7 @@ write_ahead_log::append(wal_write_request r) {
                 "Incorrect core assignment");
   DLOG_THROW_IF(!wal_write_request::is_valid(r), "invalid write request");
   DTRACE_PROBE(rp, wal_write);
-  return tm_.get_manager(r.idx).then([r = std::move(r)](auto m) mutable {
+  return _tm.get_manager(r.idx).then([r = std::move(r)](auto m) mutable {
     if (SMF_LIKELY(m != nullptr)) { return m->append(std::move(r)); }
     DLOG_ERROR("append::Invalid namespace/topic/partition tuple. Out of range");
     auto ret = std::make_unique<wal_write_reply>(r.req->ns(), r.req->topic());
@@ -41,7 +41,7 @@ write_ahead_log::get(wal_read_request r) {
   // see chain_replication_service.cc for example
   DLOG_THROW_IF(!wal_read_request::is_valid(r), "invalid read request");
   DTRACE_PROBE(rp, wal_get);
-  return tm_.get_manager(r.idx).then([r = std::move(r)](auto m) mutable {
+  return _tm.get_manager(r.idx).then([r = std::move(r)](auto m) mutable {
     if (SMF_LIKELY(m != nullptr)) { return m->get(std::move(r)); }
     DLOG_ERROR("get::Invalid namespace/topic/partition tuple. Out of range");
     auto retval = std::make_unique<wal_read_reply>(
@@ -55,7 +55,7 @@ write_ahead_log::get(wal_read_request r) {
 
 std::unique_ptr<wal_stats_reply>
 write_ahead_log::stats() const {
-  return tm_.stats();
+  return _tm.stats();
 };
 
 seastar::future<std::unique_ptr<wal_create_reply>>
@@ -72,7 +72,7 @@ write_ahead_log::create(wal_create_request r) {
   default:
     break;
   }
-  return tm_.create(std::move(r));
+  return _tm.create(std::move(r));
 }
 
 seastar::future<>
@@ -89,7 +89,7 @@ write_ahead_log::index() {
                 return seastar::do_for_each(
                   t.second.begin(), t.second.end(),
                   [this, topic = t.first, ns = nsstr](int32_t partition) {
-                    return tm_.open(ns, topic, partition);
+                    return _tm.open(ns, topic, partition);
                   });
               });
           });
@@ -113,6 +113,6 @@ seastar::future<>
 write_ahead_log::close() {
   LOG_INFO("stopping: {}", opts);
   // close all topic managers
-  return tm_.close();
+  return _tm.close();
 }
 

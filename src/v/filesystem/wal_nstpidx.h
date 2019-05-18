@@ -15,10 +15,10 @@ class wal_nstpidx {
 
  public:
   wal_nstpidx(int64_t ns, int64_t topic, int32_t partition)
-    : id_(wal_nstpidx::gen(ns, topic, partition).id()) {}
-  explicit wal_nstpidx(uint64_t x) : id_(x) {}
-  wal_nstpidx(wal_nstpidx &&o) noexcept : id_(o.id_) {}
-  wal_nstpidx(const wal_nstpidx &o) : id_(o.id_) {}
+    : _id(wal_nstpidx::gen(ns, topic, partition).id()) {}
+  explicit wal_nstpidx(uint64_t x) : _id(x) {}
+  wal_nstpidx(wal_nstpidx &&o) noexcept : _id(o._id) {}
+  wal_nstpidx(const wal_nstpidx &o) : _id(o._id) {}
   wal_nstpidx &
   operator=(wal_nstpidx &&o) noexcept {
     if (this != &o) {
@@ -31,18 +31,18 @@ class wal_nstpidx {
 
   SMF_ALWAYS_INLINE uint64_t
   id() const {
-    return id_;
+    return _id;
   }
 
  private:
   friend void swap(wal_nstpidx &x, wal_nstpidx &y);
-  uint64_t id_;
+  uint64_t _id;
 };
 
 /// \brief, helper method for maps/etc
 SMF_ALWAYS_INLINE void
 swap(wal_nstpidx &x, wal_nstpidx &y) {
-  std::swap(x.id_, y.id_);
+  std::swap(x._id, y._id);
 }
 SMF_ALWAYS_INLINE bool
 operator<(const wal_nstpidx &lhs, const wal_nstpidx &rhs) {
