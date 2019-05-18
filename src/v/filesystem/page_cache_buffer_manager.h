@@ -41,7 +41,7 @@ class page_cache_buffer_manager {
     : min_memory_reserved(mem_reserved), max_memory_limit(max_limit) {
     for (int64_t i = 0, max = min_memory_reserved / kBufferSize; i < max; ++i) {
       grow_by_one();
-      locks_.push_back(seastar::semaphore(1));
+      _locks.push_back(seastar::semaphore(1));
     }
   }
 
@@ -67,12 +67,12 @@ class page_cache_buffer_manager {
   lock(uint32_t file_id, std::pair<int32_t, int32_t> clamp) {
     uint32_t id =
       xxhash_32(std::experimental::make_array(file_id, clamp.first));
-    return locks_[jump_consistent_hash(id, locks_.size())];
+    return _locks[jump_consistent_hash(id, _locks.size())];
   }
 
   int64_t
   total_alloc_bytes() const {
-    return buffers_.size() * kBufferSize;
+    return _buffers.size() * kBufferSize;
   }
   void
   decrement_buffers() {
@@ -85,10 +85,10 @@ class page_cache_buffer_manager {
       free_list_.pop_front();
       // NOTE: slow - linear.
       // linear? maybe not too bad? not sure.
-      auto it = std::find_if(buffers_.begin(), buffers_.end(),
+      auto it = std::find_if(_buffers.begin(), _buffers.end(),
                              [=](auto &buf) { return front == buf.get(); });
-      std::swap(*it, buffers_.back());
-      buffers_.pop_back();
+      std::swap(*it, _buffers.back());
+      _buffers.pop_back();
       return;
     }
     // acquire lock as soon as it can & free that buffer
@@ -114,14 +114,14 @@ class page_cache_buffer_manager {
   }
   void
   grow_by_one() {
-    buffers_.push_back(
+    _buffers.push_back(
       seastar::allocate_aligned_buffer<char>(kBufferSize, 4096));
-    free_list_.push_back(buffers_.back().get());
+    free_list_.push_back(_buffers.back().get());
   }
 
  private:
-  std::vector<seastar::semaphore> locks_;
-  std::vector<buf_ptr_t> buffers_;
+  std::vector<seastar::semaphore> _locks;
+  std::vector<buf_ptr_t> _buffers;
   std::deque<char *> free_list_;
   seastar::semaphore no_free_pages_{1};
 };

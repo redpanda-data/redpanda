@@ -150,7 +150,7 @@ class wal_reader_node {
   /// \brief needed as a shared ptr in that this file *might*
   /// go out of scope while still fetching a data from the page cache
   /// as we close the log / compact it or remove it.
-  seastar::lw_shared_ptr<seastar::file> file_ = nullptr;
+  seastar::lw_shared_ptr<seastar::file> _file = nullptr;
   int64_t file_size_{0};
   seastar::open_flags file_flags_ = seastar::open_flags::ro;
 
@@ -165,6 +165,6 @@ class wal_reader_node {
   uint32_t global_file_id_{0};
   /// \brief reader gate, ensures that all reads finish before we exit the
   /// reader!
-  seastar::gate rgate_;
+  seastar::gate _rgate;
 };
 

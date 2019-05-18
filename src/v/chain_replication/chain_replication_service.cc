@@ -46,7 +46,7 @@ chain_replication_service::put(
                         auto const core = r.runner_core;
                         return seastar::smp::submit_to(
                           core, [this, r = std::move(r)]() mutable {
-                            return wal_->local().append(std::move(r));
+                            return _wal->local().append(std::move(r));
                           });
                       },
 
@@ -112,7 +112,7 @@ chain_replication_service::do_get(
              auto core = req.runner_core;
              return seastar::smp::submit_to(
                       core,
-                      [this, req]() mutable { return wal_->local().get(req); })
+                      [this, req]() mutable { return _wal->local().get(req); })
                .then([offset](std::unique_ptr<wal_read_reply> r) {
                  smf::rpc_typed_envelope<chain_get_reply> data{};
                  data.data->get = r->release();

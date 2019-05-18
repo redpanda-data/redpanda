@@ -11,7 +11,7 @@
 
 using namespace std::chrono;  // NOLINT
 
-/// \brief used for qps_* methods. need helper struct for args
+/// \brief used for _qps* methods. need helper struct for args
 struct qpsargs {
   using time_t = seastar::lowres_system_clock::time_point;
   explicit qpsargs(uint32_t seconds) : secs(seconds), secs_sem(seconds) {
@@ -35,7 +35,7 @@ qps_load::qps_load(const boost::program_options::variables_map *cfg)
   : opts(cfg) {
   auto ldrs = options()["concurrency"].as<int32_t>();
   for (auto i = 0; i < ldrs; ++i) {
-    loaders_.push_back(std::make_unique<cli>(cfg));
+    _loaders.push_back(std::make_unique<cli>(cfg));
   }
   rw_balance_ =
     std::min(double(1.0), std::abs(options()["rw-balance"].as<double>()));
@@ -58,8 +58,8 @@ qps_load::coordinated_omision_writes() {
              boost::counting_iterator<int>(qps),
              [this, &limit](auto i) {
                return limit.wait(1).then([this, &limit, i]() {
-                 auto lidx = jump_consistent_hash(i, loaders_.size());
-                 auto ptr = loaders_[lidx].get();
+                 auto lidx = jump_consistent_hash(i, _loaders.size());
+                 auto ptr = _loaders[lidx].get();
                  // Don't return!, launch it in the background
                  ptr->one_write().finally([&limit] { limit.signal(1); });
                  return seastar::make_ready_future<>();
@@ -79,8 +79,8 @@ qps_load::coordinated_omision_reads() {
              boost::counting_iterator<int>(qps),
              [this, &limit](auto i) {
                return limit.wait(1).then([this, &limit, i]() {
-                 auto lidx = jump_consistent_hash(i, loaders_.size());
-                 auto ptr = loaders_[lidx].get();
+                 auto lidx = jump_consistent_hash(i, _loaders.size());
+                 auto ptr = _loaders[lidx].get();
                  // Don't return!, launch it in the background
                  ptr->one_read().finally([&limit] { limit.signal(1); });
                });
@@ -91,7 +91,7 @@ qps_load::coordinated_omision_reads() {
 
 seastar::future<>
 qps_load::coordinated_omision_req() {
-  auto x = rand_();
+  auto x = _rand();
   LOG_INFO("is: {} <= {}", x, needle_threshold_);
   if (x <= needle_threshold_) { return coordinated_omision_writes(); }
   return coordinated_omision_reads();
@@ -140,7 +140,7 @@ qps_load::drive() {
               }
               // pretty print progress
               print_iteration_stats(iterno, args->secs, args->test_start,
-                                    method_start_t, loaders_);
+                                    method_start_t, _loaders);
               // must be last thing
               args->secs_sem.signal(1);
             });
@@ -160,7 +160,7 @@ qps_load::drive() {
 std::unique_ptr<smf::histogram>
 qps_load::copy_histogram() const {
   auto h = smf::histogram::make_unique();
-  for (auto &c : loaders_) {
+  for (auto &c : _loaders) {
     auto p = c->api()->get_histogram();
     *h += *p;
   }
@@ -169,15 +169,15 @@ qps_load::copy_histogram() const {
 seastar::future<>
 qps_load::open() {
   return seastar::with_semaphore(method_sem_, 1, [this] {
-    LOG_INFO("Opening connections: {}", loaders_.size());
-    return seastar::do_for_each(loaders_.begin(), loaders_.end(),
+    LOG_INFO("Opening connections: {}", _loaders.size());
+    return seastar::do_for_each(_loaders.begin(), _loaders.end(),
                                 [](auto &i) { return i->open(); });
   });
 }
 seastar::future<>
 qps_load::stop() {
   return seastar::with_semaphore(method_sem_, 1, [this] {
-    return seastar::do_for_each(loaders_.begin(), loaders_.end(),
+    return seastar::do_for_each(_loaders.begin(), _loaders.end(),
                                 [](auto &i) { return i->stop(); });
   });
 }

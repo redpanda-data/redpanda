@@ -61,12 +61,12 @@ class page_cache final {
   seastar::memory::reclaiming_result reclaim_region();
 
  private:
-  page_cache_buffer_manager mngr_;
-  seastar::memory::reclaimer reclaimer_;
-  fast_prng rng_;
+  page_cache_buffer_manager _mngr;
+  seastar::memory::reclaimer _reclaimer;
+  fast_prng _rng;
   // need random iterator for randomized eviction
-  std::map<uint32_t, std::unique_ptr<page_cache_file_idx>> files_;
-  seastar::metrics::metric_groups metrics_;
-  page_cache_stats stats_;
+  std::map<uint32_t, std::unique_ptr<page_cache_file_idx>> _files;
+  seastar::metrics::metric_groups _metrics;
+  page_cache_stats _stats;
 };
 

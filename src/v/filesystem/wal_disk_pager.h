@@ -12,20 +12,20 @@ class wal_disk_pager {
 
   const page_cache_request &
   request() const {
-    return req_;
+    return _req;
   }
 
   inline const page_cache_result *
   range() const {
-    return lease_.result;
+    return _lease.result;
   }
   inline bool
   is_page_in_result_range(int32_t pageno) const {
-    return lease_ && lease_.result->is_page_in_range(pageno);
+    return _lease && _lease.result->is_page_in_range(pageno);
   }
   inline bool
   is_page_in_request_range(int32_t pageno) const {
-    return pageno >= req_.begin_pageno && pageno <= req_.end_pageno;
+    return pageno >= _req.begin_pageno && pageno <= _req.end_pageno;
   }
   inline bool
   is_page_in_range(int32_t pageno) const {
@@ -36,7 +36,7 @@ class wal_disk_pager {
     DLOG_THROW_IF(!is_page_in_request_range(pageno), "Buggy page: {}", pageno);
     if (is_page_in_result_range(pageno)) {
       return seastar::make_ready_future<const page_cache_result *>(
-        lease_.result);
+        _lease.result);
     }
     // split between hot code and cold code paths
     return fetch_next();
@@ -48,6 +48,6 @@ class wal_disk_pager {
   seastar::future<const page_cache_result *> fetch_next();
 
  private:
-  page_cache_request req_;
-  page_cache_result_lease lease_;
+  page_cache_request _req;
+  page_cache_result_lease _lease;
 };

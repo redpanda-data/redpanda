@@ -64,7 +64,7 @@ class write_ahead_log {
   const wal_opts opts;
 
  private:
-  wal_topics_manager tm_;
-  wal_compaction_manager cm_;
+  wal_topics_manager _tm;
+  wal_compaction_manager _cm;
 };
 

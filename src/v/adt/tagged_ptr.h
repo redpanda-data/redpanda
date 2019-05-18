@@ -31,24 +31,24 @@ class tagged_ptr {
   }
 
  public:
-  explicit tagged_ptr() noexcept : ptr_(0) {}
-  tagged_ptr(tagged_ptr const &o) : ptr_(o.ptr_) {}
-  tagged_ptr(tagged_ptr &&o) noexcept : ptr_(std::move(o.ptr_)) {}
-  explicit tagged_ptr(T *p, uint16_t t = 0) : ptr_(pack_ptr(p, t)) {}
+  explicit tagged_ptr() noexcept : _ptr(0) {}
+  tagged_ptr(tagged_ptr const &o) : _ptr(o._ptr) {}
+  tagged_ptr(tagged_ptr &&o) noexcept : _ptr(std::move(o._ptr)) {}
+  explicit tagged_ptr(T *p, uint16_t t = 0) : _ptr(pack_ptr(p, t)) {}
 
   void
   set(T *p, uint16_t t) {
-    ptr_ = pack_ptr(p, t);
+    _ptr = pack_ptr(p, t);
   }
 
   void
   clear() {
-    ptr_ = 0;
+    _ptr = 0;
   }
 
   bool
   operator==(volatile tagged_ptr const &p) const {
-    return (ptr_ == p.ptr_);
+    return (_ptr == p._ptr);
   }
 
   bool
@@ -58,24 +58,24 @@ class tagged_ptr {
 
   T *
   get_ptr() const {
-    return reinterpret_cast<T *>(ptr_ & ((1ULL << 48) - 1));
+    return reinterpret_cast<T *>(_ptr & ((1ULL << 48) - 1));
   }
 
   void
   set_ptr(T *p) {
     uint16_t tag = get_tag();
-    ptr_ = pack_ptr(p, tag);
+    _ptr = pack_ptr(p, tag);
   }
 
   uint16_t
   get_tag() const {
-    return ptr_ >> 48;
+    return _ptr >> 48;
   }
 
   void
   set_tag(uint16_t t) {
     T *p = get_ptr();
-    ptr_ = pack_ptr(p, t);
+    _ptr = pack_ptr(p, t);
   }
 
   // Cannot have a ref to void* - illegal.
@@ -98,6 +98,6 @@ class tagged_ptr {
  protected:
   // on x86_64 the most significant 16 bits are clear
   // store pointer on the least 48 bits
-  uintptr_t ptr_;
+  uintptr_t _ptr;
 };
 

@@ -25,10 +25,10 @@ struct page_comparator {
 iterator
 page_cache_file_idx::as_iterator(const int32_t pageno) {
   auto it =
-    std::lower_bound(ranges_.begin(), ranges_.end(), pageno, page_comparator{});
-  if (it != ranges_.end()) {
+    std::lower_bound(_ranges.begin(), _ranges.end(), pageno, page_comparator{});
+  if (it != _ranges.end()) {
     // only return if in range.
-    if (!it->get()->is_page_in_range(pageno)) return ranges_.end();
+    if (!it->get()->is_page_in_range(pageno)) return _ranges.end();
   }
   return it;
 }
@@ -36,7 +36,7 @@ page_cache_file_idx::as_iterator(const int32_t pageno) {
 page_cache_result *
 page_cache_file_idx::range(int32_t pageno) {
   auto it = as_iterator(pageno);
-  if (it == ranges_.end()) { return nullptr; }
+  if (it == _ranges.end()) { return nullptr; }
   auto retval = it->get();
   if (retval->marked_for_eviction) { return nullptr; }
   DLOG_THROW_IF(!retval->is_page_in_range(pageno),
@@ -66,29 +66,29 @@ page_cache_file_idx::evict_pages(std::set<int32_t> pages) {
 page_range_ptr
 page_cache_file_idx::erase(iterator it) {
   // return & update database
-  std::swap(*it, ranges_.back());
-  page_range_ptr retval = std::move(ranges_.back());
-  ranges_.pop_back();  // remove!
-  std::stable_sort(ranges_.begin(), ranges_.end(), range_comparator{});
+  std::swap(*it, _ranges.back());
+  page_range_ptr retval = std::move(_ranges.back());
+  _ranges.pop_back();  // remove!
+  std::stable_sort(_ranges.begin(), _ranges.end(), range_comparator{});
   return retval;
 }
 std::optional<page_range_ptr>
 page_cache_file_idx::try_evict() {
   std::vector<page_cache_result *> evictable;
   // try finding one that is evictable && low priority & evict it!
-  auto it = ranges_.begin();
-  auto lowest_pending_reads = ranges_.end();
-  for (; it != ranges_.end(); it++) {
+  auto it = _ranges.begin();
+  auto lowest_pending_reads = _ranges.end();
+  for (; it != _ranges.end(); it++) {
     auto ptr = it->get();
     if (ptr->is_evictable()) {
-      if (lowest_pending_reads == ranges_.end() ||
+      if (lowest_pending_reads == _ranges.end() ||
           ptr->pending_reads < lowest_pending_reads->get()->pending_reads) {
         lowest_pending_reads = it;
       }
       if (ptr->prio == page_cache_result::priority::low) { return erase(it); }
     }
   }
-  if (lowest_pending_reads != ranges_.end()) {
+  if (lowest_pending_reads != _ranges.end()) {
     return erase(lowest_pending_reads);
   }
   return std::nullopt;

@@ -45,8 +45,8 @@ class raft_log_service final : public raft::raft_api {
   }
 
  private:
-  seastar::distributed<write_ahead_log> *data_;
-  std::unordered_map<wal_nstpidx, raft_nstpidx_metadata> omap_;
-  raft_client_cache cache_;
+  seastar::distributed<write_ahead_log> *_data;
+  std::unordered_map<wal_nstpidx, raft_nstpidx_metadata> _omap;
+  raft_client_cache _cache;
 };
 

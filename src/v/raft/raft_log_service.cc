@@ -79,7 +79,7 @@ raft_log_service::raft_cfg_log_process_one(std::unique_ptr<wal_read_reply> r) {
     std::memcpy(&k, kbuf.get(), sizeof(k));
     const auto idx = wal_nstpidx::gen(k.ns(), k.topic(), k.partition());
 
-    if (auto it = omap_.find(idx); it != omap_.end()) {
+    if (auto it = _omap.find(idx); it != _omap.end()) {
       DLOG_INFO("raft cfg recovery ns/topic/partition: {}/{}/{}", k.ns(),
                 k.topic(), k.partition());
 
@@ -120,7 +120,7 @@ raft_log_service::raft_cfg_log_process_one(std::unique_ptr<wal_read_reply> r) {
 
 raft_log_service::raft_log_service(
   raft_cfg opts, seastar::distributed<write_ahead_log> *data)
-  : cfg(std::move(opts)), data_(THROW_IFNULL(data)) {}
+  : cfg(std::move(opts)), _data(THROW_IFNULL(data)) {}
 
 seastar::future<>
 raft_log_service::initialize() {
@@ -139,7 +139,7 @@ raft_log_service::recover_existing_logs() {
   int64_t raft_config_begin_offset = 0;
   int64_t raft_config_end_offset = 0;
 
-  auto data_stats = data_->local().stats();
+  auto data_stats = _data->local().stats();
   for (auto &e : data_stats->stats) {
     auto &partition_stats = e.second;
     auto &segments = partition_stats->segments;
@@ -171,10 +171,10 @@ raft_log_service::recover_existing_logs() {
       partition_stats->partition, segments.back().term(),
       segments.front().start_offset(), segments.back().end_offset());
 
-    omap_.emplace(std::move(e.first), std::move(std::move(m)));
+    _omap.emplace(std::move(e.first), std::move(std::move(m)));
   }
   return read_all_raft_configuration_topic(
-    data_, skip_ns, raft_config_topic_no, raft_config_begin_offset,
+    _data, skip_ns, raft_config_topic_no, raft_config_begin_offset,
     raft_config_end_offset,
     [this](auto reply) { return raft_cfg_log_process_one(std::move(reply)); });
 }
@@ -199,7 +199,7 @@ raft_log_service::initialize_cfg_lookup() {
   return seastar::do_with(
     std::move(tbuf), std::move(req), [this](auto &tbuf, auto &req) {
       auto const core = req.runner_core;
-      return data_->invoke_on(
+      return _data->invoke_on(
         core, [this, r = std::move(req)](auto &local) mutable {
           return local.create(std::move(r)).then([](auto _) {
             LOG_INFO("Sucessful verification for raft cfg: ns/topic: {}/{}",
@@ -239,7 +239,7 @@ raft_log_service::initialize_seed_servers() {
         std::move_iterator<iter_t>(reqs.begin()),
         std::move_iterator<iter_t>(reqs.end()), [this](auto r) {
           auto const core = r.runner_core;
-          return data_->invoke_on(
+          return _data->invoke_on(
             core, [this, r = std::move(r)](auto &local) mutable {
               return local.create(std::move(r)).then([](auto _) {
                 LOG_INFO("Sucessful verification for raft cfg: ns/topic: {}/{}",
@@ -255,7 +255,7 @@ raft_log_service::initialize_seed_servers() {
 
 seastar::future<>
 raft_log_service::stop() {
-  return cache_.close();
+  return _cache.close();
 }
 /*
 seastar::future<rte<raft::append_entries_reply>>

@@ -11,7 +11,7 @@
 
 static const char *kFileName = "fiorito.txt";
 static const std::string segment_name = std::string("wal_segment_") + kFileName;
-static const std::string ostream_name = std::string("ostream_") + kFileName;
+static const std::string ostream_name = std::string("_ostream") + kFileName;
 
 static const char *kPoem = "How do I love thee? Let me count the ways."
                            "I love thee to the depth and breadth and height"

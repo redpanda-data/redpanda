@@ -60,8 +60,8 @@ class wal_nstpidx_manager {
   void cleanup_timer_cb_log_segments();
 
  private:
-  std::unique_ptr<wal_writer_node> writer_ = nullptr;
-  std::deque<std::unique_ptr<wal_reader_node>> nodes_;
+  std::unique_ptr<wal_writer_node> _writer = nullptr;
+  std::deque<std::unique_ptr<wal_reader_node>> _nodes;
   seastar::timer<> log_cleanup_timeout_;
 
  private:
@@ -76,6 +76,6 @@ class wal_nstpidx_manager {
 
   // metrics
   nstpidx_mngr_stats prometheus_stats_;
-  seastar::metrics::metric_groups metrics_{};
+  seastar::metrics::metric_groups _metrics{};
 };
 

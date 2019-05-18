@@ -40,7 +40,7 @@ class wal_nstpidx_repair {
 
  private:
   const seastar::sstring work_dir;
-  set_t files_;
+  set_t _files;
 };
 
 

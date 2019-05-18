@@ -23,37 +23,37 @@ page_cache::get() {
     rounded_limit(0.6, seastar::memory::stats().total_memory()));
   return c;
 }
-page_cache::~page_cache() { DLOG_INFO("{}", stats_); }
+page_cache::~page_cache() { DLOG_INFO("{}", _stats); }
 page_cache::page_cache(int64_t min_reserve, int64_t max_limit)
-  : mngr_(min_reserve, max_limit),
-    reclaimer_([this] { return reclaim_region(); },
+  : _mngr(min_reserve, max_limit),
+    _reclaimer([this] { return reclaim_region(); },
                seastar::memory::reclaimer_scope::sync) {
   // set metrics
   namespace sm = seastar::metrics;
-  metrics_.add_group(
+  _metrics.add_group(
     prometheus_sanitize::metrics_name("page_cache::"),
-    {sm::make_derive("disk_bytes_read", stats_.disk_bytes_read,
+    {sm::make_derive("disk_bytes_read", _stats.disk_bytes_read,
                      sm::description("bytes read from disk")),
-     sm::make_derive("served_bytes", stats_.served_bytes,
+     sm::make_derive("served_bytes", _stats.served_bytes,
                      sm::description("bytes returned to user-space")),
-     sm::make_derive("cache_hit", stats_.cache_hit,
+     sm::make_derive("cache_hit", _stats.cache_hit,
                      sm::description("Number of cache hits")),
-     sm::make_derive("cache_miss", stats_.cache_miss,
+     sm::make_derive("cache_miss", _stats.cache_miss,
                      sm::description("Number of cache misses")),
      sm::make_gauge(
-       "disk_latency_ema", [this] { return stats_.disk_latency.get(); },
+       "disk_latency_ema", [this] { return _stats.disk_latency.get(); },
        sm::description("exponential moving average<10> disk latency")),
      sm::make_derive(
-       "stalls", stats_.stalls,
+       "stalls", _stats.stalls,
        sm::description("Number times we stalled waiting for read"))});
 }
 
 page_cache_file_idx *
 page_cache::index(uint32_t file) {
-  auto it = files_.find(file);
-  if (it == files_.end()) {
+  auto it = _files.find(file);
+  if (it == _files.end()) {
     it =
-      files_.emplace(file, std::make_unique<page_cache_file_idx>(file)).first;
+      _files.emplace(file, std::make_unique<page_cache_file_idx>(file)).first;
   }
   return it->second.get();
 }
@@ -84,20 +84,20 @@ page_cache::cache(uint32_t fileid, page_range_ptr ptr) {
 seastar::future<>
 page_cache::prefetch(page_cache_request r, page_cache_result::priority prio) {
   auto clamp = page_cache_table_clamp_page(r.begin_pageno);
-  return seastar::with_semaphore(mngr_.lock(r.file_id, clamp), 1, [=] {
-    return mngr_.allocate(clamp.first, prio)
+  return seastar::with_semaphore(_mngr.lock(r.file_id, clamp), 1, [=] {
+    return _mngr.allocate(clamp.first, prio)
       .then([this, r, clamp](page_range_ptr range_ptr) {
         if (auto ptr = try_get(r); ptr != nullptr) {
           ptr->pending_reads++;
           return seastar::make_ready_future<>();
         }
-        ++stats_.prefetches;
+        ++_stats.prefetches;
         auto ptr = range_ptr.get();
         const int32_t page_offset = clamp.first * 4096;
         return r.fptr
           ->dma_read(page_offset, ptr->data.data(), ptr->data.size(), r.pc)
           .then([this, r, range_ptr = std::move(range_ptr),
-                 m = stats_.disk_latency.measure()](std::size_t size) mutable {
+                 m = _stats.disk_latency.measure()](std::size_t size) mutable {
             if (SMF_UNLIKELY(size == 0)) {
               LOG_ERROR("Got size 0 when reading page: {}. Usually it means "
                         "you are reading past the end of a physical file. Off "
@@ -105,8 +105,8 @@ page_cache::prefetch(page_cache_request r, page_cache_result::priority prio) {
                         size);
               return seastar::make_ready_future<>();
             }
-            stats_.disk_bytes_read += size;
-            ++stats_.prefetches;
+            _stats.disk_bytes_read += size;
+            ++_stats.prefetches;
             range_ptr->pending_reads++;
             range_ptr->data = {range_ptr->data.data(), int64_t(size)};
             cache(r.file_id, std::move(range_ptr));
@@ -118,9 +118,9 @@ page_cache::prefetch(page_cache_request r, page_cache_result::priority prio) {
 /// used by the wal_reader_node.cc: to remove a file from all caches
 seastar::future<>
 page_cache::remove_file(uint32_t fileid) {
-  auto it = files_.find(fileid);
-  if (it == files_.end()) return seastar::make_ready_future<>();
-  files_.erase(it);
+  auto it = _files.find(fileid);
+  if (it == _files.end()) return seastar::make_ready_future<>();
+  _files.erase(it);
   return seastar::make_ready_future<>();
 }
 
@@ -162,28 +162,28 @@ page_cache::read(page_cache_request r) {
   prefetch_next(r);
 
   if (auto ptr = try_get(r); ptr != nullptr) {
-    ++stats_.cache_hit;
-    stats_.served_bytes += ptr->data.size();
+    ++_stats.cache_hit;
+    _stats.served_bytes += ptr->data.size();
     return seastar::make_ready_future<ret_t>(ptr);
   }
   // not in cache, have to wait for it.
-  ++stats_.cache_miss;
+  ++_stats.cache_miss;
 
   auto clamp = page_cache_table_clamp_page(r.begin_pageno);
-  return seastar::with_semaphore(mngr_.lock(r.file_id, clamp), 1, [=] {
-    return mngr_.allocate(clamp.first, page_cache_result::priority::low)
+  return seastar::with_semaphore(_mngr.lock(r.file_id, clamp), 1, [=] {
+    return _mngr.allocate(clamp.first, page_cache_result::priority::low)
       .then([this, r, clamp](page_range_ptr range_ptr) {
         if (auto ptr = try_get(r); ptr != nullptr) {
-          stats_.served_bytes += ptr->data.size();
+          _stats.served_bytes += ptr->data.size();
           return seastar::make_ready_future<ret_t>(ptr);
         }
-        ++stats_.stalls;
+        ++_stats.stalls;
         auto ptr = range_ptr.get();
         const int32_t page_offset = clamp.first * 4096;
         return r.fptr
           ->dma_read(page_offset, ptr->data.data(), ptr->data.size(), r.pc)
           .then([this, r, ptr, range_ptr = std::move(range_ptr),
-                 m = stats_.disk_latency.measure()](auto size) mutable {
+                 m = _stats.disk_latency.measure()](auto size) mutable {
             if (SMF_UNLIKELY(size == 0)) {
               LOG_ERROR("Got size 0 when reading page: {}. Usually it means "
                         "you are reading past the end of a physical file. Off "
@@ -191,7 +191,7 @@ page_cache::read(page_cache_request r) {
                         size);
               return seastar::make_ready_future<ret_t>(nullptr);
             }
-            stats_.disk_bytes_read += size;
+            _stats.disk_bytes_read += size;
             // Update the span
             range_ptr->data = {range_ptr->data.data(), int64_t(size)};
             cache(r.file_id, std::move(range_ptr));
@@ -204,15 +204,15 @@ page_cache::read(page_cache_request r) {
 /// \brief called during low memory pressure
 seastar::memory::reclaiming_result
 page_cache::reclaim_region() {
-  if (mngr_.total_alloc_bytes() <= mngr_.min_memory_reserved) {
+  if (_mngr.total_alloc_bytes() <= _mngr.min_memory_reserved) {
     // always keep at least 30% of memory used
     return seastar::memory::reclaiming_result::reclaimed_nothing;
   }
-  mngr_.decrement_buffers();
-  auto it = files_.begin();
-  std::advance(it, rng_() % files_.size());
-  for (uint32_t i = 0, max = files_.size(); i < max; ++i) {
-    if (it == files_.end()) { it = files_.begin(); }
+  _mngr.decrement_buffers();
+  auto it = _files.begin();
+  std::advance(it, _rng() % _files.size());
+  for (uint32_t i = 0, max = _files.size(); i < max; ++i) {
+    if (it == _files.end()) { it = _files.begin(); }
     auto opt = it->second->try_evict();
     if (opt) { return seastar::memory::reclaiming_result::reclaimed_something; }
     ++it;
@@ -222,8 +222,8 @@ page_cache::reclaim_region() {
 
 void
 page_cache::evict_pages(uint32_t fileid, std::set<int32_t> pages) {
-  if (files_.empty()) { return; };
-  auto it = files_.find(fileid);
-  if (it == files_.end()) { return; }
+  if (_files.empty()) { return; };
+  auto it = _files.find(fileid);
+  if (it == _files.end()) { return; }
   it->second->evict_pages(std::move(pages));
 }

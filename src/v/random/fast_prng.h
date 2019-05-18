@@ -9,8 +9,8 @@
 class fast_prng {
  public:
   SMF_DISALLOW_COPY_AND_ASSIGN(fast_prng);
-  fast_prng() : rng_(pcg_extras::seed_seq_from<std::random_device>()) {}
-  fast_prng(fast_prng &&o) noexcept : rng_(std::move(o.rng_)) {}
+  fast_prng() : _rng(pcg_extras::seed_seq_from<std::random_device>()) {}
+  fast_prng(fast_prng &&o) noexcept : _rng(std::move(o._rng)) {}
   fast_prng &
   operator=(fast_prng &&o) noexcept {
     if (this != &o) {
@@ -21,9 +21,9 @@ class fast_prng {
   }
   inline uint32_t
   operator()() {
-    return rng_();
+    return _rng();
   }
 
  private:
-  pcg32 rng_;
+  pcg32 _rng;
 };
