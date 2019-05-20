@@ -1,15 +1,16 @@
-#include <iostream>
-#include <utility>
-
-#include <gtest/gtest.h>
 #include <seastar/core/sstring.hh>
+
 #include <smf/fbs_typed_buf.h>
 #include <smf/native_type_utils.h>
 #include <smf/random.h>
 
+#include <gtest/gtest.h>
+
+#include <iostream>
+#include <utility>
+
 // filesystem
 #include "wal_segment_record.h"
-
 
 /*
   BUGFIX: When flatbuffers reallocs, it copies the bytes incorrectly
@@ -47,53 +48,61 @@
 
  */
 
-void
-hex_print(const uint8_t *ptr, uint32_t sz) {
-  for (auto i = 0u; i < sz; ++i) {
-    std::printf(" %x ", ptr[i]);
-  }
-  std::cout << std::endl;
+void hex_print(const uint8_t* ptr, uint32_t sz) {
+    for (auto i = 0u; i < sz; ++i) {
+        std::printf(" %x ", ptr[i]);
+    }
+    std::cout << std::endl;
 }
 
 TEST(wal_binary_record_order, small_on_wire_vs_on_mem) {
-  seastar::sstring key = "foo";
-  seastar::sstring value = "bar";
-  auto record_mem = wal_segment_record::coalesce(key.data(), key.size(),
-                                                 value.data(), value.size());
-  auto body = smf::native_table_as_buffer<wal_binary_record>(*record_mem.get());
-  auto record_wire = smf::fbs_typed_buf<wal_binary_record>(std::move(body));
+    seastar::sstring key = "foo";
+    seastar::sstring value = "bar";
+    auto record_mem = wal_segment_record::coalesce(
+      key.data(), key.size(), value.data(), value.size());
+    auto body = smf::native_table_as_buffer<wal_binary_record>(
+      *record_mem.get());
+    auto record_wire = smf::fbs_typed_buf<wal_binary_record>(std::move(body));
 
-  std::cout << "Key:\t\t";
-  hex_print((uint8_t *)key.data(), key.size());
-  std::cout << "Value:\t\t";
-  hex_print((uint8_t *)value.data(), value.size());
-  std::cout << "Record Mem:\t\t";
-  hex_print(record_mem->data.data(), record_mem->data.size());
-  std::cout << "Record Wrie:\t";
-  hex_print(record_wire->data()->Data(), record_wire->data()->size());
-  ASSERT_TRUE(std::memcmp(record_mem->data.data(), record_wire->data()->Data(),
-                          record_wire->data()->size()) == 0);
+    std::cout << "Key:\t\t";
+    hex_print((uint8_t*)key.data(), key.size());
+    std::cout << "Value:\t\t";
+    hex_print((uint8_t*)value.data(), value.size());
+    std::cout << "Record Mem:\t\t";
+    hex_print(record_mem->data.data(), record_mem->data.size());
+    std::cout << "Record Wrie:\t";
+    hex_print(record_wire->data()->Data(), record_wire->data()->size());
+    ASSERT_TRUE(
+      std::memcmp(
+        record_mem->data.data(),
+        record_wire->data()->Data(),
+        record_wire->data()->size())
+      == 0);
 }
 
 TEST(wal_binary_record_order, large_on_wire_vs_on_mem) {
-  smf::random r;
-  seastar::sstring key = r.next_alphanum(1024 * 1024);
-  seastar::sstring value = r.next_alphanum(1024 * 1024);
-  auto record_mem = wal_segment_record::coalesce(key.data(), key.size(),
-                                                 value.data(), value.size());
-  auto body = smf::native_table_as_buffer<wal_binary_record>(*record_mem.get());
-  auto record_wire = smf::fbs_typed_buf<wal_binary_record>(std::move(body));
+    smf::random r;
+    seastar::sstring key = r.next_alphanum(1024 * 1024);
+    seastar::sstring value = r.next_alphanum(1024 * 1024);
+    auto record_mem = wal_segment_record::coalesce(
+      key.data(), key.size(), value.data(), value.size());
+    auto body = smf::native_table_as_buffer<wal_binary_record>(
+      *record_mem.get());
+    auto record_wire = smf::fbs_typed_buf<wal_binary_record>(std::move(body));
 
-  // std::cout << "Record Mem:\t\t";
-  // hex_print(record_mem->data.data(), record_mem->data.size());
-  // std::cout << "Record Wrie:\t";
-  // hex_print(record_wire->data()->Data(), record_wire->data()->size());
-  ASSERT_TRUE(std::memcmp(record_mem->data.data(), record_wire->data()->Data(),
-                          record_wire->data()->size()) == 0);
+    // std::cout << "Record Mem:\t\t";
+    // hex_print(record_mem->data.data(), record_mem->data.size());
+    // std::cout << "Record Wrie:\t";
+    // hex_print(record_wire->data()->Data(), record_wire->data()->size());
+    ASSERT_TRUE(
+      std::memcmp(
+        record_mem->data.data(),
+        record_wire->data()->Data(),
+        record_wire->data()->size())
+      == 0);
 }
 
-int
-main(int argc, char **argv) {
-  ::testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
+int main(int argc, char** argv) {
+    ::testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
 }

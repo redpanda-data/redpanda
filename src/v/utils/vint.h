@@ -19,14 +19,16 @@ public:
     static constexpr UValueType encode_zigzag(ValueType n) noexcept {
         // The right shift has to be arithmetic and not logical.
         return (static_cast<UValueType>(n) << 1)
-            ^ static_cast<UValueType>(n >> std::numeric_limits<ValueType>::digits);
+               ^ static_cast<UValueType>(
+                 n >> std::numeric_limits<ValueType>::digits);
     }
 
     static constexpr ValueType decode_zigzag(UValueType n) noexcept {
         return static_cast<std::make_signed_t<ValueType>>((n >> 1) ^ -(n & 1));
     }
 
-    static vint_size_type serialize(ValueType value, bytes::iterator out) noexcept {
+    static vint_size_type
+    serialize(ValueType value, bytes::iterator out) noexcept {
         auto encode = encode_zigzag(value);
         vint_size_type size = 1;
         while (encode >= more_bytes) {
@@ -55,7 +57,7 @@ public:
     }
 };
 
-}
+} // namespace internal
 
 using vint = internal::vint_base<int32_t>;
 using vlong = internal::vint_base<int64_t>;

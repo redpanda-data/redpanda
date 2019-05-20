@@ -58,7 +58,7 @@ local function err(code, msg)
 end
 
 -- Codes -----------------------------------------------------------------------
-local sqlconstants = {} -- SQLITE_* and OPEN_* declarations.
+local sqlconstants = {} -- _SQLITE* and _OPEN* declarations.
 local codes = {
   [0] = "OK", "ERROR", "INTERNAL", "PERM", "ABORT", "BUSY", "LOCKED", "NOMEM",
   "READONLY", "INTERRUPT", "IOERR", "CORRUPT", "NOTFOUND", "FULL", "CANTOPEN",
@@ -92,16 +92,16 @@ do
   }
 
   local t = sqlconstants
-  local pre = "static const int32_t SQLITE_"
+  local pre = "static const int32_t _SQLITE"
   for i=0,26    do t[#t+1] = pre..codes[i].."="..i..";\n" end
   for i=100,101 do t[#t+1] = pre..codes[i].."="..i..";\n" end
   for i=1,5     do t[#t+1] = pre..types[i].."="..i..";\n" end
-  pre = pre.."OPEN_"
+  pre = pre.."_OPEN"
   for k,v in pairs(opens) do t[#t+1] = pre..k.."="..bit.tobit(v)..";\n" end
 end
 
 -- Cdef ------------------------------------------------------------------------
--- SQLITE_*, OPEN_*
+-- _SQLITE*, _OPEN*
 ffi.cdef(table.concat(sqlconstants))
 
 -- sqlite3*, ljsqlite3_*
