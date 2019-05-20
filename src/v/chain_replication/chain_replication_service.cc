@@ -37,14 +37,14 @@ chain_replication_service::put(
         (const uint8_t*)record.ctx.value().payload.get(),
         chain_put_request::MiniReflectTypeTable()));
     auto ptr = record.get();
-    do_with(
+    return seastar::do_with(
       std::move(record),
       wal_core_mapping::core_assignment(ptr->put()),
       [this](auto& r, auto& fsputs) mutable {
           validate_puts(fsputs);
 
           using iter_t = typename std::vector<wal_write_request>::iterator;
-          map_reduce(
+          return seastar::map_reduce(
             // for-all
             std::move_iterator<iter_t>(fsputs.begin()),
             std::move_iterator<iter_t>(fsputs.end()),
