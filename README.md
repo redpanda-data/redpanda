@@ -18,8 +18,8 @@ That's it!
 ```
 
 ### Incremental CPP builds
-To do incremental builds, just `cd $ROOT/build/Release && ninja <target name>`
-for example: `cd build/Release && ninja redpanda` will build the
+To do incremental builds, just `cd $ROOT/build/release && ninja <target name>`
+for example: `cd build/release && ninja redpanda` will build the
  `redpanda` binary & transitive deps only
 
 
@@ -31,6 +31,5 @@ All Go binaries can be found in `build/go/bin`
 ```
 
 ## Contributing
-Also, before submitting a patch:
-* Please squash all your commits into 1 change
+* [See our contributing guide](CONTRIBUTING.md)
 * Run: `./tools/build.py --build=release --fmt=all --log=DEBUG`
