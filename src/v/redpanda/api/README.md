@@ -16,15 +16,15 @@ but there are no `data races` as such.
  
     // asume *one* api for push-pull
     
-    api_ = std::make_unique<api::client>(std::move(co));
+    _api = std::make_unique<api::client>(std::move(co));
 ```
 
 ```cpp
 
-auto txn = api_ -> create_txn();
+auto txn = _api->create_txn();
 for (auto n = 0u; n < batch; ++n) {
-  auto k = rand_.next_alphanum(kz);
-  auto v = rand_.next_str(vz);
+  auto k = _rand.next_alphanum(kz);
+  auto v = _rand.next_str(vz);
   txn.stage(k.data(), k.size(), v.data(), v.size());
 }
 return txn.submit().then([](auto r) { ... });
@@ -41,7 +41,7 @@ Each topic partition gets load balanced in a jump_consistent_hash fashion.
 seastar::future<>
 consumer_forever_example() {
   return seastar::keep_doing([this] {
-    return api_->consume().then([](auto r) {
+    return _api->consume().then([](auto r) {
       // process your reply! :)
     });
   });
