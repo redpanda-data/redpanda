@@ -26,8 +26,8 @@ def install_deps():
     shell.run_subprocess("%s bash %s/tools/install-deps.sh" % (sudo, RP_ROOT))
     cpp.get_smf_install_deps()
     logger.info("installing deps")
-    shell.run_subprocess("%s CI=%s bash %s/%s" % (sudo, ci, RP_BUILD_ROOT,
-                                                  "smf_install_deps.sh"))
+    shell.run_subprocess("%s CI=%s bash %s/%s" %
+                         (sudo, ci, RP_BUILD_ROOT, "smf_install_deps.sh"))
 
 
 def _check_build_type(build_type):
@@ -48,7 +48,8 @@ def _configure_build(build_type, clang_opt):
     cpp.check_bdir(build_type)
     logger.info("configuring build %s" % build_type)
     tpl = Template(
-        "cd $build_root/$build_type && cmake -GNinja -DCMAKE_BUILD_TYPE=$cmake_type $root"
+        "cd $root && cmake -GNinja -DCMAKE_BUILD_TYPE=$cmake_type "
+        "-B$build_root/$build_type -H$root"
     )
     build_env = os.environ
     if clang_opt == None:
@@ -63,11 +64,10 @@ def _configure_build(build_type, clang_opt):
     else:
         logger.info("Using clang compiler from path `%s`" % clang_opt)
         build_env = clang.clang_env_from_path(clang_opt)
-    cmd = tpl.substitute(
-        root=RP_ROOT,
-        build_root=RP_BUILD_ROOT,
-        cmake_type=build_type.capitalize(),
-        build_type=build_type)
+    cmd = tpl.substitute(root=RP_ROOT,
+                         build_root=RP_BUILD_ROOT,
+                         cmake_type=build_type.capitalize(),
+                         build_type=build_type)
     shell.run_subprocess(cmd, build_env)
 
 
@@ -75,8 +75,9 @@ def _invoke_build(build_type):
     _check_build_type(build_type)
     tpl = Template(
         "cd $build_root/$build_type && ninja -C $build_root/$build_type")
-    cmd = tpl.substitute(
-        root=RP_ROOT, build_root=RP_BUILD_ROOT, build_type=build_type)
+    cmd = tpl.substitute(root=RP_ROOT,
+                         build_root=RP_BUILD_ROOT,
+                         build_type=build_type)
     shell.run_subprocess(cmd)
     _symlink_compile_commands(build_type)
 
@@ -85,8 +86,9 @@ def _invoke_tests(build_type):
     _check_build_type(build_type)
     rp_test_regex = "\".*_rp(unit|bench|int)$\""
     tpl = Template("cd $build_root/$build_type && ctest -R $re")
-    cmd = tpl.substitute(
-        build_root=RP_BUILD_ROOT, re=rp_test_regex, build_type=build_type)
+    cmd = tpl.substitute(build_root=RP_BUILD_ROOT,
+                         re=rp_test_regex,
+                         build_type=build_type)
     shell.run_subprocess(cmd)
 
 
