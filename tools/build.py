@@ -23,7 +23,8 @@ def generate_options():
         '--log',
         type=str,
         default='INFO',
-        help='info,debug, type log levels. i.e: --log=debug')
+        choices=['INFO', 'DEBUG'],
+        help='INFO,DEBUG, type log levels. i.e: --log DEBUG')
     parser.add_argument(
         '--deps',
         type=distutils.util.strtobool,
@@ -33,16 +34,19 @@ def generate_options():
         '--build',
         type=str,
         default='debug',
+        choices=['debug', 'release', 'none'],
         help='choose of debug|release|none')
     parser.add_argument(
         '--targets',
         nargs="*",
         default='all',
+        choices=['all', 'cpp', 'go'],
         help='list of build targets [cpp, go]')
     parser.add_argument(
         '--files',
         type=str,
         default='incremental',
+        choices=['all', 'incremental'],
         help='files to format and to tidy: all | incremental')
     parser.add_argument(
         '--tidy',
