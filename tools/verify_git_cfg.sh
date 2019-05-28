@@ -17,6 +17,11 @@ if [[ "$(git config user.email)" != *"@vectorized.io" ]]; then
     verified=false
 fi
 
+if [[ "$(git config sendemail.smtpuser)" != *"@vectorized.io" ]]; then
+    error "Please sendemail with 'git config sendemail.smtpuser <user>@vectorized.io'"
+    verified=false
+fi
+
 if $verified; then
     log "Git config successfully verified"
 fi
