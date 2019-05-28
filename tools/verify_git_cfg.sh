@@ -5,7 +5,7 @@ verified=true
 source "${script_dir}/base_script.sh"
 
 git config format.signOff yes
-git config diff.orderfile .gitorderfile
+git config diff.orderfile "${script_dir}/../.gitorderfile"
 
 if [[ "$(git config user.name)" == "" ]]; then
     error "please set user name with 'git config user.name <user_name>'"
