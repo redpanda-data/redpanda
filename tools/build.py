@@ -21,9 +21,13 @@ def generate_options():
     parser = argparse.ArgumentParser(description='build sys helper')
     parser.add_argument(
         '--log',
-        type=str,
-        default='INFO',
-        help='info,debug, type log levels. i.e: --log=debug')
+        type=str.lower,
+        default='info',
+        choices=['critical', 'error', 'warning', 'info', 'debug'],
+        help=
+        'log level, one of ' \
+        '[critical, error, warning, info, debug] i.e: --log debug'
+    )
     parser.add_argument(
         '--deps',
         type=distutils.util.strtobool,
@@ -31,18 +35,22 @@ def generate_options():
         help='install 3rd party dependencies')
     parser.add_argument(
         '--build',
-        type=str,
+        type=str.lower,
         default='debug',
+        choices=['debug', 'release', 'none'],
         help='choose of debug|release|none')
     parser.add_argument(
         '--targets',
+        type=str.lower,
         nargs="*",
         default='all',
+        choices=['all', 'cpp', 'go'],
         help='list of build targets [cpp, go]')
     parser.add_argument(
         '--files',
-        type=str,
+        type=str.lower,
         default='incremental',
+        choices=['all', 'incremental'],
         help='files to format and to tidy: all | incremental')
     parser.add_argument(
         '--tidy',
