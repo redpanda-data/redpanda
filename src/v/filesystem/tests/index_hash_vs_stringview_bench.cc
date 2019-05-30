@@ -3,7 +3,6 @@
 #include <smf/random.h>
 
 #include <benchmark/benchmark.h>
-#include <experimental/string_view>
 
 #include <set>
 

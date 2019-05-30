@@ -6,7 +6,6 @@
 
 #include <smf/log.h>
 
-#include <experimental/array>
 #include <hashing/jump_consistent_hash.h>
 #include <hashing/xx.h>
 
@@ -70,7 +69,7 @@ public:
     seastar::semaphore&
     lock(uint32_t file_id, std::pair<int32_t, int32_t> clamp) {
         uint32_t id = xxhash_32(
-          std::experimental::make_array(file_id, clamp.first));
+          std::array{static_cast<int32_t>(file_id), clamp.first});
         return _locks[jump_consistent_hash(id, _locks.size())];
     }
 
