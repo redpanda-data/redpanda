@@ -23,22 +23,37 @@ set(CMAKE_CXX_FLAGS_MINSIZEREL "-Os -DNDEBUG")
 option(RP_ENABLE_GOLD_LINKER "Enable -fuse-ld=gold" ON)
 option(V_MANAGE_DEPS "Use our own 3rdparty.cmake.in" ON)
 option (RP_ENABLE_DPDK "Enable DPDK support" OFF)
-
-# linker flags
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+# compiler specific options
 if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
-    set(LINKER "-fuse-ld=lld")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unused-lambda-capture -Wno-unused-command-line-argument")
-    set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -std=gnu++17")
+    if (RP_ENABLE_GOLD_LINKER)
+        message(FATAL_ERROR 
+        "Gold linker is not supported by Clang, disable RP_ENABLE_GOLD_LINKER")
+    endif() 
+    set(BASE_LD_FLAGS_LIST
+        -stdlib=libc++
+        -fuse-ld=lld 
+        -lc++fs 
+        -lc++experimental)
+    set(BASE_CXX_FLAGS_LIST
+        -Wno-unused-lambda-capture
+        -Wno-unused-command-line-argument
+        -D_LIBCPP_ENABLE_CXX17_REMOVED_AUTO_PTR 
+        -DSEASTAR_USE_STD_OPTIONAL_VARIANT_STRINGVIEW
+        -I${CMAKE_CURRENT_BINARY_DIR}/v_deps_install/include/c++/v1
+        -stdlib=libc++)
 elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
-    set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -std=gnu++17")
     if(RP_ENABLE_GOLD_LINKER)
-        set(LINKER "-fuse-ld=gold")
+        set(BASE_LD_FLAGS_LIST -fuse-ld=gold)
     endif()
 endif()
 
-set(CMAKE_EXE_LINKER_FLAGS "${LINKER}")
-set(CMAKE_SHARED_LINKER_FLAGS "${LINKER}")
-set(CMAKE_MODULE_LINKER_FLAGS "${LINKER}")
+# join flag lists
+string(JOIN " " BASE_CXX_FLAGS ${BASE_CXX_FLAGS_LIST})
+string(JOIN " " BASE_LD_FLAGS ${BASE_LD_FLAGS_LIST})
+
+set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} ${BASE_CXX_FLAGS}")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo" CACHE STRING
@@ -69,6 +84,16 @@ if(V_MANAGE_DEPS)
   endif()
   # wire up dependency search paths.
   list(APPEND CMAKE_PREFIX_PATH "${V_DEPS_INSTALL_DIR}")
+  set(BASE_LD_FLAGS "${BASE_LD_FLAGS} -L${V_DEPS_INSTALL_DIR}/lib")
+endif()
+
+set(CMAKE_EXE_LINKER_FLAGS "${BASE_LD_FLAGS}")
+set(CMAKE_SHARED_LINKER_FLAGS "${BASE_LD_FLAGS}")
+set(CMAKE_MODULE_LINKER_FLAGS "${BASE_LD_FLAGS}")
+
+# Look for libc++ only if we are using Clang
+if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
+    find_package(LibCxx)
 endif()
 
 # add code

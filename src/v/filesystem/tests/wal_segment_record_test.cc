@@ -1,3 +1,5 @@
+#include <iostream>
+
 #include "wal_generated.h"
 #include "wal_segment_record.h"
 

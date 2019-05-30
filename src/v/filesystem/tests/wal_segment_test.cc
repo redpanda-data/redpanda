@@ -1,3 +1,5 @@
+#include <iostream>
+
 #include "ioutil/priority_manager.h"
 #include "ioutil/readfile.h"
 #include "wal_segment.h"
