@@ -28,7 +28,7 @@ if (@CMAKE_CXX_COMPILER_ID@ MATCHES "Clang")
     set(boost_user_config_jam "using clang : : @CMAKE_CXX_COMPILER@ $<SEMICOLON>")
     set(default_depends libcxx)
     # Luajit settings
-    set(luajit_c_compiler CC=$ENV{CC})    
+    set(luajit_c_compiler CC=$ENV{CC})
     ExternalProject_Add(libcxxabi
         SOURCE_DIR @CMAKE_BINARY_DIR@/../llvm/llvm-src/libcxxabi
         INSTALL_DIR @V_DEPS_INSTALL_DIR@
@@ -112,7 +112,7 @@ ExternalProject_Add(fmt
   URL https://github.com/fmtlib/fmt/archive/9e554999ce02cf86fcdfe74fe740c4fe3f5a56d5.tar.gz
   URL_MD5 e2869a5032a6cc35b4d14008b6125ed9
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
-  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND} 
+  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   DEPENDS ${default_depends}
   CMAKE_ARGS
     ${common_cmake_args}
@@ -207,7 +207,7 @@ ExternalProject_Add(gmp
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   DEPENDS ${default_depends}
   CONFIGURE_COMMAND
-    ${CMAKE_COMMAND} -E env ${build_env} 
+    ${CMAKE_COMMAND} -E env ${build_env}
     <SOURCE_DIR>/configure
     --prefix=<INSTALL_DIR>
     --srcdir=<SOURCE_DIR>
@@ -221,7 +221,7 @@ ExternalProject_Add(nettle
   URL_MD5 dc0f13028264992f58e67b4e8915f53d
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   CONFIGURE_COMMAND
-    ${CMAKE_COMMAND} -E env ${build_env} 
+    ${CMAKE_COMMAND} -E env ${build_env}
     <SOURCE_DIR>/configure
     --prefix=<INSTALL_DIR>
     --srcdir=<SOURCE_DIR>
@@ -259,7 +259,7 @@ ExternalProject_Add(lz4
   DEPENDS ${default_depends}
   INSTALL_DIR   @V_DEPS_INSTALL_DIR@
   SOURCE_SUBDIR contrib/cmake_unofficial
-  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND} 
+  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
     ${common_cmake_args})
 
@@ -269,7 +269,7 @@ ExternalProject_Add(numactl
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   DEPENDS ${default_depends}
   CONFIGURE_COMMAND
-    ${CMAKE_COMMAND} -E env ${build_env} 
+    ${CMAKE_COMMAND} -E env ${build_env}
     <SOURCE_DIR>/configure
     --prefix=<INSTALL_DIR>
     --srcdir=<SOURCE_DIR>
@@ -282,7 +282,7 @@ ExternalProject_Add(libpciaccess
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   DEPENDS ${default_depends}
   CONFIGURE_COMMAND
-    ${CMAKE_COMMAND} -E env ${build_env} 
+    ${CMAKE_COMMAND} -E env ${build_env}
     <SOURCE_DIR>/configure
     --prefix=<INSTALL_DIR>
     --srcdir=<SOURCE_DIR>
@@ -308,7 +308,7 @@ ExternalProject_Add(xz
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   DEPENDS ${default_depends}
   CONFIGURE_COMMAND
-    ${CMAKE_COMMAND} -E env ${build_env} 
+    ${CMAKE_COMMAND} -E env ${build_env}
     <SOURCE_DIR>/configure
     --prefix=<INSTALL_DIR>
   BUILD_COMMAND ${make_command}
@@ -324,7 +324,7 @@ ExternalProject_Add(xml2
       ${CMAKE_COMMAND} -E env ${build_env}
         NOCONFIGURE=true ./autogen.sh
     COMMAND
-    ${CMAKE_COMMAND} -E env ${build_env} 
+    ${CMAKE_COMMAND} -E env ${build_env}
       <SOURCE_DIR>/configure
       --without-python
       --with-zlib=@V_DEPS_INSTALL_DIR@/lib
@@ -353,7 +353,7 @@ ExternalProject_Add(lksctp-tools
   PATCH_COMMAND ./bootstrap
   DEPENDS ${default_depends}
   CONFIGURE_COMMAND
-    ${CMAKE_COMMAND} -E env ${build_env} 
+    ${CMAKE_COMMAND} -E env ${build_env}
     <SOURCE_DIR>/configure
     --prefix=<INSTALL_DIR>
     --srcdir=<SOURCE_DIR>

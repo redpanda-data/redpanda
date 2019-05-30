@@ -28,18 +28,18 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # compiler specific options
 if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
     if (RP_ENABLE_GOLD_LINKER)
-        message(FATAL_ERROR 
+        message(FATAL_ERROR
         "Gold linker is not supported by Clang, disable RP_ENABLE_GOLD_LINKER")
-    endif() 
+    endif()
     set(BASE_LD_FLAGS_LIST
         -stdlib=libc++
-        -fuse-ld=lld 
-        -lc++fs 
+        -fuse-ld=lld
+        -lc++fs
         -lc++experimental)
     set(BASE_CXX_FLAGS_LIST
         -Wno-unused-lambda-capture
         -Wno-unused-command-line-argument
-        -D_LIBCPP_ENABLE_CXX17_REMOVED_AUTO_PTR 
+        -D_LIBCPP_ENABLE_CXX17_REMOVED_AUTO_PTR
         -DSEASTAR_USE_STD_OPTIONAL_VARIANT_STRINGVIEW
         -I${CMAKE_CURRENT_BINARY_DIR}/v_deps_install/include/c++/v1
         -stdlib=libc++)
