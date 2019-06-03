@@ -49,6 +49,7 @@ install -m755 lib/* -Dt "%{buildroot}/opt/redpanda/lib"
 install -m644 %{_topdir}/common/systemd/redpanda.service -Dt "%{buildroot}%{_prefix}/lib/systemd/system"
 install -m644 %{_topdir}/common/redpanda.d/*.conf -Dt "%{buildroot}/etc/redpanda.d"
 install -m644 %{_topdir}/common/sysconfig/redpanda -Dt "%{buildroot}/etc/sysconfig"
+install -m644 %{_topdir}/common/sysctl.d/*  -Dt "%{buildroot}%{_prefix}/lib/sysctl.d"
 # use cp to preserve the symbolic links
 cp -P libexec/redpanda "%{buildroot}/opt/redpanda/libexec"
 cp -P libexec/rpk "%{buildroot}/opt/redpanda/libexec"
@@ -73,12 +74,16 @@ ln -srf "%{buildroot}/opt/redpanda/bin/rpk" "%{buildroot}%{_prefix}/bin/rpk"
 %{_bindir}/redpanda
 %{_bindir}/rpk
 %{_prefix}/lib/systemd/system/redpanda.service
+%{_prefix}/lib/sysctl.d/99-redpanda-sched.conf
+%{_prefix}/lib/sysctl.d/99-redpanda-aio.conf
 %ghost /etc/systemd/system/redpanda.service.d/
 
 %ldconfig_scriptlets
 
 %post
 %systemd_post redpanda.service
+/usr/lib/systemd/systemd-sysctl 99-redpanda-sched.conf >/dev/null 2>&1 || :
+/usr/lib/systemd/systemd-sysctl 99-redpanda-aio.conf >/dev/null 2>&1 || :
 
 %preun 
 %systemd_preun redpanda.service
