@@ -4,7 +4,6 @@ import os
 import logging
 import glob
 from string import Template
-import pystache
 
 sys.path.append(os.path.dirname(__file__))
 logger = logging.getLogger('rp')
