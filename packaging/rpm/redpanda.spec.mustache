@@ -48,6 +48,7 @@ install -m755 libexec/*.bin -Dt "%{buildroot}/opt/redpanda/libexec"
 install -m755 lib/* -Dt "%{buildroot}/opt/redpanda/lib"
 install -m644 %{_topdir}/common/systemd/redpanda.service -Dt "%{buildroot}%{_prefix}/lib/systemd/system"
 install -m644 %{_topdir}/common/redpanda.d/*.conf -Dt "%{buildroot}/etc/redpanda.d"
+install -m644 %{_topdir}/common/sysconfig/redpanda -Dt "%{buildroot}/etc/sysconfig"
 # use cp to preserve the symbolic links
 cp -P libexec/redpanda "%{buildroot}/opt/redpanda/libexec"
 cp -P libexec/rpk "%{buildroot}/opt/redpanda/libexec"
@@ -60,6 +61,7 @@ ln -srf "%{buildroot}/opt/redpanda/bin/rpk" "%{buildroot}%{_prefix}/bin/rpk"
 %defattr(-,root,root)
 %attr(0755,root,root) %dir %{_sysconfdir}/redpanda
 %config(noreplace) %{_sysconfdir}/redpanda/redpanda.yaml
+%config(noreplace) %{_sysconfdir}/sysconfig/redpanda
 %attr(0755,root,root) %dir %{_sysconfdir}/redpanda.d
 %config(noreplace) %{_sysconfdir}/redpanda.d/*.conf
 %attr(0755,redpanda,redpanda) %dir %{_sharedstatedir}/redpanda/

@@ -22,6 +22,7 @@ chdir /var/lib/redpanda
 env HOME=/var/lib/redpanda
 
 script
+    . /etc/default/redpanda
     for i in /etc/redpanda.d/*.conf; do
         if [ "$i" = "/etc/redpanda.d/*.conf" ]; then
             break
