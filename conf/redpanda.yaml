@@ -1,0 +1,15 @@
+---
+# Redpanda Queue configuration file
+redpanda:
+  # Data directory where all the files will be stored. 
+  # This directory MUST resides on xfs partion.
+  directory: "/var/lib/redpanda/data"
+  
+  # Redpanda server
+  port: 33145
+  ip: "127.0.0.1"
+  id: 1
+  # Raft configuration
+  seed_servers:
+    - addr: "127.0.0.1:33145"
+      id: 1
