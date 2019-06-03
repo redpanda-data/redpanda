@@ -1,0 +1,5 @@
+conf/redpanda.yaml etc/redpanda
+common/redpanda.d/*.conf etc/redpanda.d
+bin/* opt/redpanda/bin
+lib/* opt/redpanda/lib
+libexec/* opt/redpanda/libexec

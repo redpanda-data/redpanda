@@ -1,0 +1,94 @@
+Name:       {{name}}
+Version:    {{version}}
+Summary:    {{summary}}
+Release:    {{release}}
+License:    {{license}}
+URL:        https://vectorized.io
+Source0:    {{source_tar}}
+
+AutoReqProv:    no
+
+%description
+{{desc}}
+%prep
+
+%global _debugsource_template %{nil}
+%global debug_package %{nil}
+%global _debuginfo_subpackages %{nil}
+%global _build_id_links alldebug
+%setup -c
+
+
+%pre
+getent group redpanda || /usr/sbin/groupadd redpanda 2> /dev/null || :
+getent passwd redpanda || /usr/sbin/useradd -g redpanda -s /sbin/nologin -r -d %{_sharedstatedir}/redpanda redpanda 2> /dev/null || :
+
+
+
+%install
+rm -rf "%{buildroot}"
+# directory tree
+install -m 0755 -d "%{buildroot}%{_prefix}"
+install -m 0755 -d "%{buildroot}%{_prefix}/bin"
+install -m 0755 -d "%{buildroot}%{_prefix}/lib/systemd/system"
+install -m 0755 -d "%{buildroot}/etc"
+install -m 0755 -d "%{buildroot}/etc/redpanda"
+install -m 0755 -d "%{buildroot}/etc/redpanda.d"
+
+install -m 0755  -d "%{buildroot}/opt/redpanda/bin"
+install -m 0755  -d "%{buildroot}/opt/redpanda/lib"
+install -m 0755  -d "%{buildroot}/opt/redpanda/libexec"
+install -m 0755  -d "%{buildroot}/opt/redpanda/libexec"
+
+install -m755 -d "%{buildroot}"/var/lib/redpanda/
+install -m755 -d "%{buildroot}"/var/lib/redpanda/data
+# install files
+install -m755 bin/* -Dt "%{buildroot}/opt/redpanda/bin"
+install -m755 libexec/*.bin -Dt "%{buildroot}/opt/redpanda/libexec"
+install -m755 lib/* -Dt "%{buildroot}/opt/redpanda/lib"
+install -m644 %{_topdir}/common/systemd/redpanda.service -Dt "%{buildroot}%{_prefix}/lib/systemd/system"
+install -m644 %{_topdir}/common/redpanda.d/*.conf -Dt "%{buildroot}/etc/redpanda.d"
+# use cp to preserve the symbolic links
+cp -P libexec/redpanda "%{buildroot}/opt/redpanda/libexec"
+cp -P libexec/rpk "%{buildroot}/opt/redpanda/libexec"
+install -m644 conf/redpanda.yaml -Dt "%{buildroot}/etc/redpanda"
+# bin links
+ln -srf "%{buildroot}/opt/redpanda/bin/redpanda" "%{buildroot}%{_prefix}/bin/redpanda"
+ln -srf "%{buildroot}/opt/redpanda/bin/rpk" "%{buildroot}%{_prefix}/bin/rpk"
+
+%files
+%defattr(-,root,root)
+%attr(0755,root,root) %dir %{_sysconfdir}/redpanda
+%config(noreplace) %{_sysconfdir}/redpanda/redpanda.yaml
+%attr(0755,root,root) %dir %{_sysconfdir}/redpanda.d
+%config(noreplace) %{_sysconfdir}/redpanda.d/*.conf
+%attr(0755,redpanda,redpanda) %dir %{_sharedstatedir}/redpanda/
+%attr(0755,redpanda,redpanda) %dir %{_sharedstatedir}/redpanda/data
+
+/opt/redpanda/bin/*
+/opt/redpanda/lib/*
+/opt/redpanda/libexec/*
+%{_bindir}/redpanda
+%{_bindir}/rpk
+%{_prefix}/lib/systemd/system/redpanda.service
+%ghost /etc/systemd/system/redpanda.service.d/
+
+%ldconfig_scriptlets
+
+%post
+%systemd_post redpanda.service
+
+%preun 
+%systemd_preun redpanda.service
+
+%postun
+%systemd_postun
+
+%posttrans
+ln -sfT /etc/redpanda /var/lib/redpanda/conf
+
+%clean
+#rm -rf "%{buildroot}"
+
+%changelog
+# let's skip this for now

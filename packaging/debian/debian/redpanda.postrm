@@ -1,0 +1,9 @@
+#!/bin/sh
+
+set -e
+
+case "$1" in
+    purge|remove)
+        rm -rf /etc/systemd/system/redpanda.service.d/
+        ;;
+esac

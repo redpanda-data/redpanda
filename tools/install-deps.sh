@@ -17,7 +17,8 @@ function debs() {
             python3-distutils-extra \
             clang \
             $(golang_dep) \
-            libudev-dev
+            libudev-dev \
+            pigz
 }
 
 function rpms() {
@@ -41,7 +42,8 @@ function rpms() {
               python3-distutils-extra \
               clang \
               $(golang_dep) \
-              systemd-devel
+              systemd-devel \ 
+              pigz
 }
 
 

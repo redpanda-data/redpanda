@@ -1,0 +1,25 @@
+[Unit]
+Description=Redpanda Queue
+After=local-fs.target network-online.target
+Requires=local-fs.target network-online.target
+
+[Service]
+PermissionsStartOnly=true
+Type=simple
+LimitMEMLOCK=infinity
+LimitNOFILE=800000
+LimitAS=infinity
+LimitNPROC=8096
+EnvironmentFile=/etc/redpanda.d/*.conf
+ExecStart=/usr/bin/redpanda $REDPANDA_ARGS
+TimeoutStartSec=900
+KillMode=process
+Restart=on-abnormal
+User=redpanda
+OOMScoreAdjust=-950
+StandardOutput=syslog
+StandardError=syslog
+SyslogLevelPrefix=false
+
+[Install]
+WantedBy=multi-user.target
