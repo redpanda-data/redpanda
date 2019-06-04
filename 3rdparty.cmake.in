@@ -19,7 +19,6 @@ if (@CMAKE_CXX_COMPILER_ID@ MATCHES "Clang")
     set(boost_link_flags linkflags=-fuse-ld=lld)
     set(boost_cxx_flags cxxflags=-std=gnu++14)
     set(boost_user_config_jam "using clang : : @CMAKE_CXX_COMPILER@ $<SEMICOLON>")
-    set(seastar_cxx_flags -DSeastar_CXX_FLAGS=-Wno-everything)
 elseif (@CMAKE_CXX_COMPILER_ID@ STREQUAL "GNU")
     set(toolset gcc)
     set(build_env
@@ -330,7 +329,7 @@ ExternalProject_Add(seastar
     -DSeastar_INSTALL=ON
     -DSeastar_DPDK=@RP_ENABLE_DPDK@
     -DSeastar_APPS=ON # different from smf; we need iotune built binary
-    ${seastar_cxx_flags}
+    -DSeastar_CXX_FLAGS=-Wno-error # turn off -Werror -Wall for our builds
     -DSeastar_DEMOS=OFF
     -DSeastar_DOCS=OFF
     -DSeastar_TESTING=OFF
