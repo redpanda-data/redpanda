@@ -1,0 +1,10 @@
+#!/bin/bash
+
+CMD=${1}
+TIMESTAMP=`date --date @${2} +%F-%T`
+PID=$3
+COREDUMP_PATH="/var/lib/redpanda/coredump"
+
+logger -p user.err "Saving ${CMD} coredump to ${COREDUMP_PATH}/core.${CMD}-${TIMESTAMP}-${PID}"
+mkdir -p ${COREDUMP_PATH}
+cat - > ${COREDUMP_PATH}/core.${CMD}-${TIMESTAMP}-${PID}
