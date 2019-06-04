@@ -5,7 +5,6 @@
 #include <seastar/net/socket_defs.hh> // ipv4
 
 #include <smf/random.h>
-#include <smf/stdx.h>
 
 #include <cstdint>
 #include <unordered_map>
@@ -47,7 +46,7 @@ public:
         max = wait_1800_sec
     };
 
-    explicit raft_client_cache();
+    raft_client_cache();
     raft_client_cache(raft_client_cache&& o) noexcept;
     ~raft_client_cache();
 
