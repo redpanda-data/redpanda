@@ -108,15 +108,15 @@ func (g *grub) MakeConfig() error {
 		return err
 	}
 	for _, file := range []string{
-		"/boot/grub2/g.cfg",
-		"/boot/efi/EFI/fedora/g.cfg"} {
+		"/boot/grub2/grub.cfg",
+		"/boot/efi/EFI/fedora/grub.cfg"} {
 		if utils.FileExists(g.fs, file) {
-			log.Debugf("Found 'g.cfg' in %s", file)
+			log.Debugf("Found 'grub.cfg' in %s", file)
 			_, err := g.proc.Run("grub2-mkconfig", "-o", file)
 			return err
 		}
 	}
-	return fmt.Errorf("Unable to find g.cfg")
+	return fmt.Errorf("Unable to find grub.cfg")
 }
 
 func matchAndSplitCmdOptions(optLine string) []string {
