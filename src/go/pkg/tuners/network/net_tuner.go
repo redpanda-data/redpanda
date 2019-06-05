@@ -2,6 +2,7 @@ package network
 
 import (
 	"fmt"
+	"net"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -135,7 +136,19 @@ func (tuner *NetTuner) CheckIfSupported() (supported bool, reason string) {
 		return false, "Unable to calculate CPU masks " +
 			"required for IRQs tuner. Please install 'hwloc'"
 	}
-	return true, ""
+	if tuner.nic == "" {
+		return false, "'nic' paramter is required for Network Tuner"
+	}
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return false, err.Error()
+	}
+	for _, iface := range ifaces {
+		if tuner.nic == iface.Name {
+			return true, ""
+		}
+	}
+	return false, fmt.Sprintf("Interface '%s' not found", tuner.nic)
 }
 
 func (tuner *NetTuner) getAllIRQs() []string {
