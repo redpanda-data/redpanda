@@ -12,10 +12,8 @@ logger = logging.getLogger('rp')
 
 import git
 import shell
-import fmt
 import log
-import packaging
-from build_helpers import *
+import dependencies
 
 
 def generate_options():
@@ -86,10 +84,15 @@ def main():
     log.set_logger_for_main(getattr(logging, options.log.upper()))
     logger.info("%s" % options)
     root = git.get_git_root(relative=os.path.dirname(__file__))
-    if options.deps: install_deps()
+    if options.deps: dependencies.install_deps()
+    
+    # Importing packanges that requires dependencies installed by our script
+    import build_helpers
+    import fmt
+
     if options.build and options.build != "none":
-        build(options.build, options.targets, options.clang)
-    build_packages(options.build, options.packages)
+        build_helpers.build(options.build, options.targets, options.clang)
+    build_helpers.build_packages(options.build, options.packages)
 
     def _files():
         r = []
