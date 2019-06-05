@@ -39,10 +39,8 @@ func (balanceService *balanceService) BanIRQsAndRestart(
 		return nil
 	}
 
-	running, err := balanceService.proc.IsRunning("irqbalance")
-	if err != nil {
-		return err
-	}
+	running := balanceService.proc.IsRunning("irqbalance")
+
 	if !running {
 		log.Info("'irqbalance' process is not running")
 		return nil

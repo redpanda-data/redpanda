@@ -12,7 +12,7 @@ import (
 type procMock struct {
 	os.Proc
 	run       func(command string, args ...string) ([]string, error)
-	isRunning func(processName string) (bool, error)
+	isRunning func(processName string) bool
 }
 
 func (procMock *procMock) Run(
@@ -21,14 +21,14 @@ func (procMock *procMock) Run(
 	return procMock.run(command, args...)
 }
 
-func (procMock *procMock) IsRunning(processName string) (bool, error) {
+func (procMock *procMock) IsRunning(processName string) bool {
 	return procMock.isRunning(processName)
 }
 
 func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 
-	running := func(processName string) (b bool, e error) {
-		return true, nil
+	running := func(processName string) bool {
+		return true
 	}
 
 	type fields struct {

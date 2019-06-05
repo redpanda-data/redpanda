@@ -11,7 +11,7 @@ import (
 
 type Proc interface {
 	Run(command string, args ...string) ([]string, error)
-	IsRunning(processName string) (bool, error)
+	IsRunning(processName string) bool
 }
 
 func NewProc() Proc {
@@ -36,10 +36,10 @@ func (*proc) Run(command string, args ...string) ([]string, error) {
 	return strings.Split(out.String(), "\n"), nil
 }
 
-func (proc *proc) IsRunning(processName string) (bool, error) {
+func (proc *proc) IsRunning(processName string) bool {
 	lines, err := proc.Run("ps", "--no-headers", "-C", processName)
 	if err != nil {
-		return false, err
+		return false
 	}
-	return len(lines) > 0, nil
+	return len(lines) > 0
 }
