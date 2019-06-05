@@ -4,7 +4,6 @@ import os
 import sys
 import logging
 import argparse
-import distutils.util
 
 # add tools dir
 sys.path.append(os.path.dirname(__file__))
@@ -29,7 +28,7 @@ def generate_options():
     )
     parser.add_argument(
         '--deps',
-        type=distutils.util.strtobool,
+        type=_str2bool,
         default='false',
         help='install 3rd party dependencies')
     parser.add_argument(
@@ -53,17 +52,17 @@ def generate_options():
         help='files to format and to tidy: all | incremental')
     parser.add_argument(
         '--tidy',
-        type=distutils.util.strtobool,
+        type=_str2bool,
         default='false',
         help='run formatter with clang-tidy')
     parser.add_argument(
         '--cpplint',
-        type=distutils.util.strtobool,
+        type=_str2bool,
         default='true',
         help='run formatter with cpplint')
     parser.add_argument(
         '--fmt',
-        type=distutils.util.strtobool,
+        type=_str2bool,
         default='true',
         help='format last changed files')
     parser.add_argument(
@@ -77,6 +76,15 @@ def generate_options():
         help='list of packages to create')
     return parser
 
+def _str2bool(v):
+    if isinstance(v, bool):
+       return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
 
 def main():
     parser = generate_options()
