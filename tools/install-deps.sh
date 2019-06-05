@@ -2,21 +2,12 @@
 
 set -ex
 
-function golang_dep() {
-	if [[ "$(which go)" == "" ]]; then
-        echo "golang"
-    else
-        echo ""
-    fi
-}
-
 function debs() {
     apt-get update -y
     apt-get install -y \
             ccache \
             python3-distutils-extra \
             clang \
-            $(golang_dep) \
             libudev-dev \
             pigz
 }
@@ -41,7 +32,6 @@ function rpms() {
               ccache \
               python3-distutils-extra \
               clang \
-              $(golang_dep) \
               systemd-devel \ 
               pigz
 }
