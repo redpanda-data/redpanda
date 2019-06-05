@@ -18,6 +18,7 @@ set(LLVM_ENABLE_PROJECTS compiler-rt clang lld CACHE STRING "")
 set(LLVM_ENABLE_LTO OFF CACHE BOOL "")
 set(LLVM_USE_LINKER gold CACHE STRING "")
 set(LLVM_BUILD_TOOLS OFF CACHE BOOL "")
+set(LLVM_CCACHE_BUILD ON CACHE BOOL "")
 
 # Linking LLVM binaries need lots of memory.
 # In order to make it possible on commodity hardware it is critical
