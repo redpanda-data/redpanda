@@ -10,8 +10,14 @@ LimitMEMLOCK=infinity
 LimitNOFILE=800000
 LimitAS=infinity
 LimitNPROC=8096
+{{#debian}}
+EnvironmentFile=/etc/default/redpanda
+{{/debian}}
+{{#redhat}}
+EnvironmentFile=/etc/sysconfig/redpanda 
+{{/redhat}}
 EnvironmentFile=/etc/redpanda.d/*.conf
-ExecStart=/usr/bin/redpanda $REDPANDA_ARGS
+ExecStart=/usr/bin/redpanda $REDPANDA_ARGS $IO $CPUSET
 TimeoutStartSec=900
 KillMode=process
 Restart=on-abnormal

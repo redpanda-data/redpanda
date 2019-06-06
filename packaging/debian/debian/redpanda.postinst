@@ -23,3 +23,7 @@ if [ "$1" = configure ]; then
 fi
 
 ln -sfT /etc/redpanda /var/lib/redpanda/conf
+
+sysctl -p/usr/lib/sysctl.d/99-redpanda-sched.conf || :
+sysctl -p/usr/lib/sysctl.d/99-redpanda-aio.conf || :
+sysctl -p/usr/lib/sysctl.d/99-redpanda-coredump.conf || :

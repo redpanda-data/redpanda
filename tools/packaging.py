@@ -92,6 +92,7 @@ def red_panda_tar(input_tar):
     tar_file = os.path.join(tar_dir, tar_name)
     shutil.copy(input_tar, tar_file)
 
+
 def _rpm_tree(dest):
     for dir in ['BUILD', 'BUILDROOT', 'RPMS', 'SOURCES', 'SPECS', 'SRPMS']:
         os.makedirs("%s/%s" % (dest, dir), exist_ok=True)
@@ -113,19 +114,24 @@ def _pkg_context():
 def red_panda_rpm(input_tar):
     logger.info("Creating RPM package")
     # prepare RPM sources
+    rpm_tree_root = _in_dist_root("rpm")
+    shutil.rmtree(rpm_tree_root, ignore_errors=True)
     _rpm_tree(_in_dist_root("rpm"))
     fs.force_link(input_tar, _in_dist_root("rpm/SOURCES/redpanda.tar"))
-    fs.force_symlink(
-        _in_root('packaging/common'), _in_dist_root("rpm/common"))
+    shutil.copytree(
+        _in_root('packaging/common'),
+        _in_dist_root("rpm/common"),
+        ignore=_is_template)
     # render templates
     package_ctx = _pkg_context()
     package_ctx['source_tar'] = "redpanda.tar"
     spec_template = _in_root("packaging/rpm/redpanda.spec.mustache")
     spec = _in_dist_root("rpm/SPECS/redpanda.spec")
     templates.render_to_file(spec_template, spec, package_ctx)
+    _render_service_template(_in_dist_root("rpm/common"), {'redhat': True})
     # build RPM
     shell.run_subprocess('rpmbuild -bb --define \"_topdir %s\" %s' %
-                         (_in_dist_root("rpm"), spec))
+                         (rpm_tree_root, spec))
 
 
 def red_panda_deb(input_tar):
@@ -139,11 +145,14 @@ def red_panda_deb(input_tar):
     target_tar_name = "debian/redpanda_%s-%s.orig.tar.gz" % (VERSION, RELEASE)
     fs.force_link(input_tar, _in_dist_root(target_tar_name))
     common_path = _in_dist_root("debian/redpanda/common")
-    shutil.copytree(_in_root('packaging/common'), common_path)
+    shutil.copytree(
+        _in_root('packaging/common'), common_path, ignore=_is_template)
+
     # render templates
     package_ctx = _pkg_context()
     chglog_tmpl = _in_root("packaging/debian/changelog.mustache")
     control_tmpl = _in_root("packaging/debian/control.mustache")
+    _render_service_template(common_path, {"debian": True})
     for f in glob.glob(os.path.join(common_path, "systemd", "*")):
         shutil.copy(f, _in_dist_root("debian/redpanda/debian"))
     templates.render_to_file(chglog_tmpl,
@@ -155,3 +164,14 @@ def red_panda_deb(input_tar):
     # build DEB
     shell.raw_check_output("tar -C %s -xpf %s" % (debian_dir, input_tar))
     shell.run_subprocess('cd %s && debuild -rfakeroot -us -uc -b' % debian_dir)
+
+
+def _is_template(source, files):
+    return filter(lambda f: f.endswith(".mustache"), files)
+
+
+def _render_service_template(dest_path, ctx):
+    templ_path = _in_root('packaging/common/systemd/redpanda.service.mustache')
+    templates.render_to_file(
+        templ_path, os.path.join(dest_path, "systemd", "redpanda.service"),
+        ctx)

@@ -3,6 +3,7 @@ etc/redpanda.d
 usr/lib/redpanda
 var/lib/redpanda
 var/lib/redpanda/data
+var/lib/redpanda/coredump
 opt/redpanda/lib
 opt/redpanda/libexec
 opt/redpanda/bin

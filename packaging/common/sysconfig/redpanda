@@ -1,0 +1,1 @@
+REDPANDA_ARGS=--redpanda-cfg /etc/redpanda/redpanda.yaml
