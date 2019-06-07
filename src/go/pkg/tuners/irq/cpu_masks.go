@@ -127,7 +127,7 @@ func (masks *cpuMasks) DistributeIRQs(irqs []string, cpuMask string) error {
 	if err != nil {
 		return err
 	}
-	log.Infof("Distributing IRQs '%s' over cpu masks '%s'", irqsDistribution, cpuMask)
+	log.Infof("Distributing IRQs '%s' over cpu masks '%s'", irqs, irqsDistribution)
 	for i, mask := range irqsDistribution {
 		err := masks.SetMask(fmt.Sprintf("/proc/irq/%s/smp_affinity", irqs[i]), mask)
 		if err != nil {
