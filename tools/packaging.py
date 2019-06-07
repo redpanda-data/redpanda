@@ -27,7 +27,8 @@ basename="$(basename "$command")"
 directory="$(dirname "$command")/.."
 ldso="$directory/libexec/$basename"
 realexe="$directory/libexec/$basename.bin"
-LD_LIBRARY_PATH="$directory/lib" exec -a "$0" "$ldso" "$realexe" "$@"
+binpath="$directory/bin"
+LD_LIBRARY_PATH="$directory/lib" PATH="${binpath}:${PATH}" exec -a "$0" "$ldso" "$realexe" "$@"
 '''
 
 

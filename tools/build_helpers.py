@@ -114,7 +114,9 @@ def build_packages(build_type, packages):
             "%s/%s/src/v/redpanda/redpanda" % (RP_BUILD_ROOT, res_type),
             "%s/%s/v_deps_build/seastar-prefix/src/seastar-build/apps/iotune/iotune"
             % (RP_BUILD_ROOT, res_type),
-            "%s/go/bin/rpk" % RP_BUILD_ROOT
+            "%s/go/bin/rpk" % RP_BUILD_ROOT,
+            "%s/%s/v_deps_install/bin/hwloc-calc" % (RP_BUILD_ROOT, res_type),
+            "%s/%s/v_deps_install/bin/hwloc-distrib" % (RP_BUILD_ROOT, res_type),
         ]
         configs = [os.path.join(RP_ROOT, "conf/redpanda.yaml")]
         os.makedirs(RP_DIST_ROOT, exist_ok=True)

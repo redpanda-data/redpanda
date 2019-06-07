@@ -57,6 +57,8 @@ install -m644 %{_topdir}/common/sysctl.d/*  -Dt "%{buildroot}%{_prefix}/lib/sysc
 cp -P libexec/redpanda "%{buildroot}/opt/redpanda/libexec"
 cp -P libexec/rpk "%{buildroot}/opt/redpanda/libexec"
 cp -P libexec/iotune "%{buildroot}/opt/redpanda/libexec"
+cp -P libexec/hwloc-calc "%{buildroot}/opt/redpanda/libexec"
+cp -P libexec/hwloc-distrib "%{buildroot}/opt/redpanda/libexec"
 install -m644 conf/redpanda.yaml -Dt "%{buildroot}/etc/redpanda"
 # bin links
 ln -srf "%{buildroot}/opt/redpanda/bin/redpanda" "%{buildroot}%{_prefix}/bin/redpanda"
