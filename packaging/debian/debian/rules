@@ -14,6 +14,7 @@ override_dh_auto_install:
 	install -d $(CURDIR)/debian/redpanda/usr/bin
 	ln -sf /opt/redpanda/bin/redpanda $(CURDIR)/debian/redpanda/usr/bin/redpanda
 	ln -sf /opt/redpanda/bin/rpk $(CURDIR)/debian/redpanda/usr/bin/rpk
+	ln -sf /opt/redpanda/bin/iotune $(CURDIR)/debian/redpanda/usr/bin/iotune
 
 override_dh_installinit:
 	dh_installinit --no-start

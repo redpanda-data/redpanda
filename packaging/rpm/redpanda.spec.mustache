@@ -56,10 +56,12 @@ install -m644 %{_topdir}/common/sysctl.d/*  -Dt "%{buildroot}%{_prefix}/lib/sysc
 # use cp to preserve the symbolic links
 cp -P libexec/redpanda "%{buildroot}/opt/redpanda/libexec"
 cp -P libexec/rpk "%{buildroot}/opt/redpanda/libexec"
+cp -P libexec/iotune "%{buildroot}/opt/redpanda/libexec"
 install -m644 conf/redpanda.yaml -Dt "%{buildroot}/etc/redpanda"
 # bin links
 ln -srf "%{buildroot}/opt/redpanda/bin/redpanda" "%{buildroot}%{_prefix}/bin/redpanda"
 ln -srf "%{buildroot}/opt/redpanda/bin/rpk" "%{buildroot}%{_prefix}/bin/rpk"
+ln -srf "%{buildroot}/opt/redpanda/bin/iotune" "%{buildroot}%{_prefix}/bin/iotune"
 # scripts
 install -m755 %{_topdir}/common/scripts/* -Dt "%{buildroot}/%{_prefix}/lib/redpanda"
 %files
@@ -78,6 +80,7 @@ install -m755 %{_topdir}/common/scripts/* -Dt "%{buildroot}/%{_prefix}/lib/redpa
 /opt/redpanda/libexec/*
 %{_bindir}/redpanda
 %{_bindir}/rpk
+%{_bindir}/iotune
 %{_prefix}/lib/systemd/system/redpanda.service
 %{_prefix}/lib/sysctl.d/99-redpanda-sched.conf
 %{_prefix}/lib/sysctl.d/99-redpanda-aio.conf

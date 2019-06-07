@@ -112,6 +112,8 @@ def build_packages(build_type, packages):
     if packages:
         execs = [
             "%s/%s/src/v/redpanda/redpanda" % (RP_BUILD_ROOT, res_type),
+            "%s/%s/v_deps_build/seastar-prefix/src/seastar-build/apps/iotune/iotune"
+            % (RP_BUILD_ROOT, res_type),
             "%s/go/bin/rpk" % RP_BUILD_ROOT
         ]
         configs = [os.path.join(RP_ROOT, "conf/redpanda.yaml")]
