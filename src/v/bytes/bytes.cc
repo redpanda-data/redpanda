@@ -1,4 +1,4 @@
-#include "bytes.h"
+#include "bytes/bytes.h"
 
 seastar::sstring to_hex(bytes_view b) {
     static char digits[] = "0123456789abcdef";
