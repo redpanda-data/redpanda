@@ -12,6 +12,8 @@
 
 namespace kafka::requests {
 
+extern seastar::logger kreq_log;
+
 class request_context {
 public:
     request_context(
@@ -34,5 +36,11 @@ private:
     fragmented_temporary_buffer _request;
     request_reader _reader;
 };
+
+class response;
+using response_ptr = seastar::foreign_ptr<std::unique_ptr<response>>;
+
+// Executes the API call identified by the specified request_context.
+seastar::future<response_ptr> process_request(request_context&);
 
 } // namespace kafka::requests
