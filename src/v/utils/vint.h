@@ -7,6 +7,8 @@
 
 using vint_size_type = bytes::size_type;
 
+static constexpr size_t max_vint_length = 9;
+
 namespace internal {
 
 template<typename ValueType>
@@ -16,6 +18,8 @@ class vint_base final {
     static constexpr uint8_t more_bytes = 128;
 
 public:
+    using value_type = ValueType;
+
     static constexpr UValueType encode_zigzag(ValueType n) noexcept {
         // The right shift has to be arithmetic and not logical.
         return (static_cast<UValueType>(n) << 1)
