@@ -7,3 +7,5 @@ target_link_libraries(bytes
   PUBLIC
   Seastar::seastar
   )
+
+add_subdirectory(tests)
