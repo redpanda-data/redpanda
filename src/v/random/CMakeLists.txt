@@ -1,5 +1,6 @@
 find_package (GTest REQUIRED CONFIG)
 find_package(smf)
+find_package(Boost REQUIRED)
 
 add_library(rprandom INTERFACE)
 target_include_directories(rprandom
