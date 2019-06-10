@@ -12,6 +12,8 @@
 #include <smf/unique_histogram_adder.h>
 #include <smf/zstd_filter.h>
 
+#include <fmt/format.h>
+
 #include <iostream>
 
 // in transition
@@ -28,7 +30,7 @@ void register_service(
   seastar::distributed<write_ahead_log>* log,
   const redpanda_cfg* c);
 
-void rpc_at_exit(seastar::distributed<smf::rpc_server>& rpc);
+void rpc_at_exit(seastar::distributed<smf::rpc_server>& rpc, seastar::sstring);
 bool hydrate_cfg(redpanda_cfg& c, std::string filename);
 
 int main(int argc, char** argv, char** env) {
@@ -50,7 +52,7 @@ int main(int argc, char** argv, char** env) {
         std::cout.setf(std::ios::unitbuf);
         smf::app_run_log_level(seastar::log_level::trace);
 #endif
-        rpc_at_exit(rpc);
+
         seastar::engine().at_exit([&log] { return log.stop(); });
         auto&& config = app.configuration();
         LOG_THROW_IF(
@@ -60,6 +62,7 @@ int main(int argc, char** argv, char** env) {
           "Could not find `redpanda` section in: {}",
           config["redpanda-cfg"].as<std::string>());
         LOG_INFO("Configuration: {}", global_cfg);
+        rpc_at_exit(rpc, global_cfg.directory);
         return check_environment(global_cfg)
           .then([&log, &global_cfg] { return log.start(global_cfg.wal_cfg()); })
           .then([&log] { return log.invoke_on_all(&write_ahead_log::open); })
@@ -75,15 +78,18 @@ int main(int argc, char** argv, char** env) {
     return 0;
 }
 
-void rpc_at_exit(seastar::distributed<smf::rpc_server>& rpc) {
+void rpc_at_exit(
+  seastar::distributed<smf::rpc_server>& rpc, seastar::sstring directory) {
     seastar::engine().at_exit([&rpc] { return rpc.stop(); });
-    seastar::engine().at_exit([&rpc] {
+    seastar::engine().at_exit([&rpc, directory] {
         return rpc
           .map_reduce(
             smf::unique_histogram_adder(), &smf::rpc_server::copy_histogram)
-          .then([](auto h) {
+          .then([directory](auto h) {
+              const seastar::sstring histogram_dir = fmt::format(
+                "{}/redpanda.latencies.hgrm", directory);
               return smf::histogram_seastar_utils::write(
-                "redpanda.latencies.hgrm", std::move(h));
+                histogram_dir, std::move(h));
           });
     });
 }
