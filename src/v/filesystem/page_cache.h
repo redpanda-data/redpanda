@@ -2,7 +2,6 @@
 #include <seastar/core/sstring.hh>
 
 #include <boost/intrusive/list.hpp>
-#include <experimental/array>
 
 #include <array>
 #include <chrono>

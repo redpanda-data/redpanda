@@ -6,46 +6,90 @@ cmake_host_system_information(
 set(make_command make -j ${build_concurrency_factor})
 set(info_dir --infodir=@V_DEPS_INSTALL_DIR@/share/info)
 include(ExternalProject)
+
+set(cxx_flags "@BASE_CXX_FLAGS@")
+set(ld_flags "@BASE_LD_FLAGS@")
+set(default_depends "")
+set(luajit_c_compiler "")
+set(boost_link_flags "")
+set(boost_cxx_flags "")
+set(common_cmake_args 
+    -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@ 
+    -DCMAKE_PREFIX_PATH=@V_DEPS_INSTALL_DIR@ 
+    -DCMAKE_INSTALL_PREFIX=@V_DEPS_INSTALL_DIR@ 
+    -DCMAKE_INSTALL_RPATH=@V_DEPS_INSTALL_DIR@/lib 
+    -DCMAKE_SKIP_BUILD_RPATH=OFF
+    -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON)
+
 if (@CMAKE_CXX_COMPILER_ID@ MATCHES "Clang")
     set(toolset clang)
-    set(build_env 
-        CFLAGS=-I@V_DEPS_INSTALL_DIR@/include
-        CXXFLAGS=-I@V_DEPS_INSTALL_DIR@/include
-        LDFLAGS=-L@V_DEPS_INSTALL_DIR@/lib\ -fuse-ld=lld
-        PKG_CONFIG_PATH=@V_DEPS_INSTALL_DIR@/lib/pkgconfig)
     set(dpdk_compiler clang)
-    set(luajit_c_compiler CC=$ENV{CC})
-    set(cmake_build_env LDFLAGS=-fuse-ld=lld)
-    set(boost_link_flags linkflags=-fuse-ld=lld)
-    set(boost_cxx_flags cxxflags=-std=gnu++14)
+    # Boost build user config
     set(boost_user_config_jam "using clang : : @CMAKE_CXX_COMPILER@ $<SEMICOLON>")
+    set(default_depends libcxx)
+    # Luajit settings
+    set(luajit_c_compiler CC=$ENV{CC})
+    ExternalProject_Add(libcxxabi
+        SOURCE_DIR @CMAKE_BINARY_DIR@/../llvm/llvm-src/libcxxabi
+        INSTALL_DIR @V_DEPS_INSTALL_DIR@
+        CMAKE_ARGS
+            ${common_cmake_args}
+            -DLLVM_PATH=@CMAKE_BINARY_DIR@/../llvm/llvm-src/llvm
+            -DLIBCXXABI_LIBCXX_PATH=@CMAKE_BINARY_DIR@/../llvm/llvm-src/libcxx)
+    ExternalProject_Add(libcxx
+        SOURCE_DIR @CMAKE_BINARY_DIR@/../llvm/llvm-src/libcxx
+        INSTALL_DIR @V_DEPS_INSTALL_DIR@
+        CMAKE_ARGS
+            ${common_cmake_args}
+            -DLLVM_PATH=@CMAKE_BINARY_DIR@/../llvm/llvm-src/llvm
+            -DLIBCXX_CXX_ABI=libcxxabi
+            -DLIBCXX_CXX_ABI_INCLUDE_PATHS=@CMAKE_BINARY_DIR@/../llvm/llvm-src/libcxxabi/include
+            -DLIBCXX_CXX_ABI_LIBRARY_PATH=@V_DEPS_INSTALL_DIR@/lib
+            DEPENDS libcxxabi)
 elseif (@CMAKE_CXX_COMPILER_ID@ STREQUAL "GNU")
     set(toolset gcc)
-    set(build_env
-        PKG_CONFIG_PATH=@V_DEPS_INSTALL_DIR@/lib/pkgconfig
-        CFLAGS=-I@V_DEPS_INSTALL_DIR@/include
-        CPPFLAGS=-I@V_DEPS_INSTALL_DIR@/include
-        LDFLAGS=-L@V_DEPS_INSTALL_DIR@/lib\ @LINKER@
-    )
-    set(cmake_build_env LDFLAGS=@LINKER@)
+    # Boost build user config
     set(boost_user_config_jam "using gcc : : @CMAKE_CXX_COMPILER@ : $<SEMICOLON>")
+endif()
+
+# CMake build environment
+set(cmake_build_env LDFLAGS=${ld_flags}\ -L@V_DEPS_INSTALL_DIR@/lib\ -L@V_DEPS_INSTALL_DIR@/lib64
+                    CXXFLAGS=-std=gnu++17\ ${cxx_flags})
+# CRYPTOPP does not build with C++17
+set(cryptopp_build_env LDFLAGS=${ld_flags}\ -L@V_DEPS_INSTALL_DIR@/lib\ -L@V_DEPS_INSTALL_DIR@/lib64
+                       CXXFLAGS=${cxx_flags})
+
+# Build environment for autotools
+set(build_env
+    CFLAGS=-I@V_DEPS_INSTALL_DIR@/include
+    CXXFLAGS=${cxx_flags}\ -I@V_DEPS_INSTALL_DIR@/include
+    LDFLAGS=${ld_flags}\ -L@V_DEPS_INSTALL_DIR@/lib\ -L@V_DEPS_INSTALL_DIR@/lib64
+    PKG_CONFIG_PATH=@V_DEPS_INSTALL_DIR@/lib/pkgconfig)
+
+# Boost settings
+if(ld_flags)
+    set(boost_link_flags linkflags=${ld_flags}\ -L@V_DEPS_INSTALL_DIR@/lib\ -L@V_DEPS_INSTALL_DIR@/lib64)
+endif()
+if(cxx_flags)
+    set(boost_cxx_flags cxxflags=${cxx_flags})
 endif()
 
 ExternalProject_Add(boost
   # The 1.67.0 release has a bug in Boost Lockfree around a missing header.
-  URL https://dl.bintray.com/boostorg/release/1.64.0/source/boost_1_64_0.tar.gz
-  URL_MD5 319c6ffbbeccc366f14bb68767a6db79
+  URL https://dl.bintray.com/boostorg/release/1.70.0/source/boost_1_70_0.tar.gz
+  URL_MD5 fea771fe8176828fabf9c09242ee8c26
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   PATCH_COMMAND
     ./bootstrap.sh
     --prefix=@V_DEPS_INSTALL_DIR@
     --with-libraries=atomic,chrono,date_time,filesystem,program_options,system,test,thread
     &&
-    echo 
+    echo
     "${boost_user_config_jam}"
-    > <SOURCE_DIR>/tools/build/src/user-config.jam 
+    > <SOURCE_DIR>/tools/build/src/user-config.jam
   CONFIGURE_COMMAND ""
   BUILD_COMMAND ""
+  DEPENDS ${default_depends}
   INSTALL_COMMAND
     ${CMAKE_COMMAND} -E chdir <SOURCE_DIR>
     ./b2
@@ -57,7 +101,7 @@ ExternalProject_Add(boost
     variant=release
     cflags=-fPIC
     cxxflags=-fPIC
-    link=shared
+    link=shared,static
     ${boost_cxx_flags}
     ${boost_link_flags}
     threading=multi
@@ -68,11 +112,10 @@ ExternalProject_Add(fmt
   URL https://github.com/fmtlib/fmt/archive/9e554999ce02cf86fcdfe74fe740c4fe3f5a56d5.tar.gz
   URL_MD5 e2869a5032a6cc35b4d14008b6125ed9
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
-  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND} 
+  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
+  DEPENDS ${default_depends}
   CMAKE_ARGS
-    -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@
-    -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
-    -DCMAKE_PREFIX_PATH=<INSTALL_DIR>
+    ${common_cmake_args}
     -DFMT_INSTALL=ON
     -DFMT_DOC=OFF
     -DFMT_TEST=OFF)
@@ -81,6 +124,7 @@ ExternalProject_Add(zlib
   URL https://zlib.net/zlib-1.2.11.tar.gz
   URL_MD5 1c9f62f0778697a09d36121ead88e08e
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
+  DEPENDS ${default_depends}
   CONFIGURE_COMMAND
     ${CMAKE_COMMAND} -E env ${build_env}
     <SOURCE_DIR>/configure
@@ -90,17 +134,15 @@ ExternalProject_Add(zlib
   INSTALL_COMMAND ${make_command} install)
 
 ExternalProject_Add(protobuf
-  DEPENDS zlib
+  DEPENDS zlib ${default_depends}
   URL https://github.com/protocolbuffers/protobuf/archive/v3.7.0.tar.gz
   URL_MD5 99ab003ca0e98c9dc40edbd60dd43633
   INSTALL_DIR   @V_DEPS_INSTALL_DIR@
-  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND} 
+  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   SOURCE_SUBDIR cmake
   CMAKE_ARGS
     -Dprotobuf_BUILD_TESTS=OFF
-    -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@
-    -DCMAKE_PREFIX_PATH=<INSTALL_DIR>
-    -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>)
+    ${common_cmake_args})
 
 if(@RP_ENABLE_DPDK@)
     set(dpdk_quadruple ${CMAKE_SYSTEM_PROCESSOR}-native-linuxapp-${toolset})
@@ -115,7 +157,7 @@ if(@RP_ENABLE_DPDK@)
       URL https://github.com/scylladb/dpdk/archive/a1774652fbbb1fe7c0ff392d5e66de60a0154df6.tar.gz
       URL_MD5 2af337f9ed29955362845808d6cdaa3e
       INSTALL_DIR @V_DEPS_INSTALL_DIR@
-    
+      DEPENDS ${default_depends}
       PATCH_COMMAND
 
       CONFIGURE_COMMAND
@@ -139,24 +181,22 @@ endif()
 ExternalProject_Add(c-ares
   URL https://github.com/c-ares/c-ares/archive/cares-1_14_0.tar.gz
   URL_MD5 79dcc4f2adaff431920755d9cafc9933
+  DEPENDS ${default_depends}
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
     -DCARES_VERSION="1.14.0"
-    -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@
-    -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
-    -DCMAKE_PREFIX_PATH=<INSTALL_DIR>
+    ${common_cmake_args}
     -DCARES_INSTALL=ON)
 
 ExternalProject_Add(yaml-cpp
   URL https://github.com/jbeder/yaml-cpp/archive/yaml-cpp-0.6.0.tar.gz
   URL_MD5 8adc0ae6c2698a61ab086606cc7cf562
+  DEPENDS ${default_depends}
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
-    -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@
-    -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
-    -DCMAKE_PREFIX_PATH=<INSTALL_DIR>
+    ${common_cmake_args}
     -DYAML_CPP_BUILD_TOOLS=OFF
     -DYAML_CPP_BUILD_TESTS=OFF
     -DBUILD_SHARED_LIBS=OFF)
@@ -165,8 +205,9 @@ ExternalProject_Add(gmp
   URL https://gmplib.org/download/gmp/gmp-6.1.2.tar.bz2
   URL_MD5 8ddbb26dc3bd4e2302984debba1406a5
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
+  DEPENDS ${default_depends}
   CONFIGURE_COMMAND
-    ${CMAKE_COMMAND} -E env ${build_env} 
+    ${CMAKE_COMMAND} -E env ${build_env}
     <SOURCE_DIR>/configure
     --prefix=<INSTALL_DIR>
     --srcdir=<SOURCE_DIR>
@@ -180,7 +221,7 @@ ExternalProject_Add(nettle
   URL_MD5 dc0f13028264992f58e67b4e8915f53d
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   CONFIGURE_COMMAND
-    ${CMAKE_COMMAND} -E env ${build_env} 
+    ${CMAKE_COMMAND} -E env ${build_env}
     <SOURCE_DIR>/configure
     --prefix=<INSTALL_DIR>
     --srcdir=<SOURCE_DIR>
@@ -188,7 +229,7 @@ ExternalProject_Add(nettle
     ${info_dir}/nettle
   BUILD_COMMAND ${make_command}
   INSTALL_COMMAND ${make_command} install
-  DEPENDS gmp)
+  DEPENDS gmp ${default_depends})
 
 ExternalProject_Add(gnutls
   URL https://www.gnupg.org/ftp/gcrypt/gnutls/v3.5/gnutls-3.5.18.tar.xz
@@ -210,25 +251,25 @@ ExternalProject_Add(gnutls
     ${build_env}
   BUILD_COMMAND ${make_command}
   INSTALL_COMMAND ${make_command} install
-  DEPENDS gmp nettle)
+  DEPENDS gmp nettle ${default_depends})
 
 ExternalProject_Add(lz4
   URL https://github.com/lz4/lz4/archive/v1.8.3.tar.gz
   URL_MD5 d5ce78f7b1b76002bbfffa6f78a5fc4e
+  DEPENDS ${default_depends}
   INSTALL_DIR   @V_DEPS_INSTALL_DIR@
   SOURCE_SUBDIR contrib/cmake_unofficial
-  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND} 
+  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
-    -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@
-    -DCMAKE_PREFIX_PATH=<INSTALL_DIR>
-    -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>)
+    ${common_cmake_args})
 
 ExternalProject_Add(numactl
   URL https://github.com/numactl/numactl/releases/download/v2.0.12/numactl-2.0.12.tar.gz
   URL_MD5 2ba9777d78bfd7d408a387e53bc33ebc
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
+  DEPENDS ${default_depends}
   CONFIGURE_COMMAND
-    ${CMAKE_COMMAND} -E env ${build_env} 
+    ${CMAKE_COMMAND} -E env ${build_env}
     <SOURCE_DIR>/configure
     --prefix=<INSTALL_DIR>
     --srcdir=<SOURCE_DIR>
@@ -239,8 +280,9 @@ ExternalProject_Add(libpciaccess
   URL https://www.x.org/releases/individual/lib/libpciaccess-0.13.4.tar.gz
   URL_MD5 cc1fad87da60682af1d5fa43a5da45a4
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
+  DEPENDS ${default_depends}
   CONFIGURE_COMMAND
-    ${CMAKE_COMMAND} -E env ${build_env} 
+    ${CMAKE_COMMAND} -E env ${build_env}
     <SOURCE_DIR>/configure
     --prefix=<INSTALL_DIR>
     --srcdir=<SOURCE_DIR>
@@ -252,20 +294,21 @@ ExternalProject_Add(hwloc
   URL_MD5 8f5fe6a9be2eb478409ad5e640b2d3ba
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   CONFIGURE_COMMAND
-    ${CMAKE_COMMAND} -E env ${build_env} 
+    ${CMAKE_COMMAND} -E env ${build_env}
     <SOURCE_DIR>/configure
     --prefix=<INSTALL_DIR>
     --srcdir=<SOURCE_DIR>
   BUILD_COMMAND ${make_command}
   INSTALL_COMMAND ${make_command} install
-  DEPENDS numactl libpciaccess)
+  DEPENDS ${default_depends} numactl libpciaccess)
 
 ExternalProject_Add(xz
   URL https://github.com/xz-mirror/xz/releases/download/v5.2.2/xz-5.2.2.tar.gz
   URL_MD5 7cf6a8544a7dae8e8106fdf7addfa28c
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
+  DEPENDS ${default_depends}
   CONFIGURE_COMMAND
-    ${CMAKE_COMMAND} -E env ${build_env}    
+    ${CMAKE_COMMAND} -E env ${build_env}
     <SOURCE_DIR>/configure
     --prefix=<INSTALL_DIR>
   BUILD_COMMAND ${make_command}
@@ -281,7 +324,7 @@ ExternalProject_Add(xml2
       ${CMAKE_COMMAND} -E env ${build_env}
         NOCONFIGURE=true ./autogen.sh
     COMMAND
-    ${CMAKE_COMMAND} -E env ${build_env} 
+    ${CMAKE_COMMAND} -E env ${build_env}
       <SOURCE_DIR>/configure
       --without-python
       --with-zlib=@V_DEPS_INSTALL_DIR@/lib
@@ -289,17 +332,16 @@ ExternalProject_Add(xml2
       --prefix=<INSTALL_DIR>
   BUILD_COMMAND ${make_command}
   INSTALL_COMMAND ${make_command} install
-  DEPENDS xz zlib)
+  DEPENDS ${default_depends} xz zlib)
 
 ExternalProject_Add(cryptopp
   URL https://github.com/weidai11/cryptopp/archive/CRYPTOPP_5_6_5.tar.gz
   URL_MD5 88224d9c0322f63aa1fb5b8ae78170f0
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
-  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
+  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cryptopp_build_env} ${CMAKE_COMMAND}
+  DEPENDS ${default_depends}
   CMAKE_ARGS
-    -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@
-    -DCMAKE_PREFIX_PATH=<INSTALL_DIR>
-    -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+    ${common_cmake_args}
     -DBUILD_TESTING=OFF)
 
 ExternalProject_Add(lksctp-tools
@@ -309,8 +351,9 @@ ExternalProject_Add(lksctp-tools
   URL_MD5 910a4f1d4024d71149b91f50f97eae23
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   PATCH_COMMAND ./bootstrap
+  DEPENDS ${default_depends}
   CONFIGURE_COMMAND
-    ${CMAKE_COMMAND} -E env ${build_env} 
+    ${CMAKE_COMMAND} -E env ${build_env}
     <SOURCE_DIR>/configure
     --prefix=<INSTALL_DIR>
     --srcdir=<SOURCE_DIR>
@@ -323,19 +366,17 @@ ExternalProject_Add(seastar
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
-    -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@
-    -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
-    -DCMAKE_PREFIX_PATH=<INSTALL_DIR>
+    ${common_cmake_args}
     -DSeastar_INSTALL=ON
     -DSeastar_DPDK=@RP_ENABLE_DPDK@
     -DSeastar_APPS=ON # different from smf; we need iotune built binary
-    -DSeastar_CXX_FLAGS=-Wno-error # turn off -Werror -Wall for our builds
     -DSeastar_DEMOS=OFF
     -DSeastar_DOCS=OFF
     -DSeastar_TESTING=OFF
     -DSeastar_STD_OPTIONAL_VARIANT_STRINGVIEW=ON
     -DSeastar_CXX_DIALECT=c++17
   DEPENDS
+    ${default_depends}
     fmt
     boost
     protobuf
@@ -358,10 +399,9 @@ ExternalProject_Add(zstd
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   SOURCE_SUBDIR  build/cmake
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
+  DEPENDS ${default_depends}
   CMAKE_ARGS
-    -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@
-    -DCMAKE_PREFIX_PATH=<INSTALL_DIR>
-    -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+    ${common_cmake_args}
     -DZSTD_MULTITHREAD_SUPPORT=OFF
     -DZSTD_LEGACY_SUPPORT=OFF
     -DZSTD_BUILD_STATIC=ON
@@ -374,23 +414,20 @@ ExternalProject_Add(HdrHistogram
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
-    -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@
-    -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
-    -DCMAKE_PREFIX_PATH=<INSTALL_DIR>
+    ${common_cmake_args}
     -DHDR_HISTOGRAM_BUILD_PROGRAMS=OFF
     -DHDR_HISTOGRAM_BUILD_SHARED=OFF
-  DEPENDS zlib)
+  DEPENDS zlib ${default_depends})
 
 ExternalProject_Add(xxhash
   URL https://github.com/Cyan4973/xxHash/archive/c9970b8ec4155e789f1c3682da923869a496ba9d.tar.gz
   URL_MD5 c1c87865e98f79144814a1d57db47751
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
+  DEPENDS ${default_depends}
   SOURCE_SUBDIR  cmake_unofficial
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
-    -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@
-    -DCMAKE_PREFIX_PATH=<INSTALL_DIR>
-    -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+    ${common_cmake_args}
     -DBUILD_XXHSUM=OFF
     -DBUILD_SHARED_LIBS=OFF
     -DBUILD_ENABLE_INLINE_API=ON)
@@ -399,21 +436,19 @@ ExternalProject_Add(gtest
   URL https://github.com/google/googletest/archive/644319b9f06f6ca9bf69fe791be399061044bc3d.tar.gz
   URL_MD5 e4cfcbe80bf32cb8caa8a7666ebc206c
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
+  DEPENDS ${default_depends}
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
-    -DCMAKE_PREFIX_PATH=<INSTALL_DIR>
-    -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@
-    -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>)
+    ${common_cmake_args})
 
 ExternalProject_Add(gflags
   URL https://github.com/gflags/gflags/archive/1005485222e8b0feff822c5723ddcaa5abadc01a.tar.gz
   URL_MD5 25582b81561bb2f1d2c05e05b4b566a8
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
+  DEPENDS ${default_depends}
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
-    -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@
-    -DCMAKE_PREFIX_PATH=<INSTALL_DIR>
-    -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+    ${common_cmake_args}
     -DBUILD_SHARED_LIBS=OFF
     -DBUILD_STATIC_LIBS=ON
     -DBUILD_gflags_LIB=ON
@@ -426,12 +461,10 @@ ExternalProject_Add(glog
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
-    -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@
-    -DCMAKE_PREFIX_PATH=<INSTALL_DIR>
-    -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+    ${common_cmake_args}
     -DBUILD_SHARED_LIBS=OFF
     -DWITH_GFLAGS=ON
-  DEPENDS gflags)
+  DEPENDS gflags ${default_depends})
 
 ExternalProject_Add(googlebenchmark
   URL https://github.com/google/benchmark/archive/eec9a8e4976a397988c15e5a4b71a542375a2240.tar.gz
@@ -439,23 +472,26 @@ ExternalProject_Add(googlebenchmark
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
-    -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@
-    -DCMAKE_PREFIX_PATH=<INSTALL_DIR>
-    -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+    ${common_cmake_args}
+    -DCMAKE_CROSSCOMPILING=1
+    -DRUN_HAVE_STD_REGEX=0
+    -DRUN_HAVE_POSIX_REGEX=0
     -DBENCHMARK_ENABLE_GTEST_TESTS=OFF
     -DBENCHMARK_ENABLE_TESTING=OFF
-  DEPENDS gflags)
+  DEPENDS gflags ${default_depends})
 
 # note about master
 ExternalProject_Add(flatbuffers
   URL https://github.com/google/flatbuffers/archive/bc7ede8fb3a754a04e507992d5514b528270ee06.tar.gz
   URL_MD5 e424cde3f805ebd36895d049d1611d40
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
+  DEPENDS ${default_depends}
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
-    -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@
-    -DCMAKE_PREFIX_PATH=<INSTALL_DIR>
-    -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+    ${common_cmake_args}
+    -DCMAKE_SKIP_BUILD_RPATH=OFF
+    -DCMAKE_BUILD_WITH_INSTALL_RPATH=TRUE
+    -DCMAKE_INSTALL_RPATH=@V_DEPS_INSTALL_DIR@/lib
     -DFLATBUFFERS_INSTALL=ON
     -DFLATBUFFERS_BUILD_FLATC=ON
     -DFLATBUFFERS_BUILD_TESTS=OFF
@@ -464,6 +500,7 @@ ExternalProject_Add(flatbuffers
 # -- below are seastar & smf deps
 ExternalProject_Add(smf
   DEPENDS
+    ${default_depends}
     flatbuffers
     googlebenchmark
     glog
@@ -478,35 +515,30 @@ ExternalProject_Add(smf
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
-    -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@
-    -DCMAKE_PREFIX_PATH=<INSTALL_DIR>
-    -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
-    -DCMAKE_INSTALL_RPATH_USE_LINK_PATH=ON
+    ${common_cmake_args}
     -DSMF_MANAGE_DEPS=OFF
     -DSMF_ENABLE_TESTS=OFF
     -DSMF_BUILD_PROGRAMS=OFF)
 
 # public api
 ExternalProject_Add(re2
-  URL https://github.com/google/re2/archive/30cad26.zip
-  URL_MD5 26742d17080a64276974e35634729e22
+  URL https://github.com/google/re2/archive/cd23be7.tar.gz
+  URL_MD5 108f464b31bf1d14b0176900968fb74d
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
+  DEPENDS ${default_depends}
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
-    -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@
-    -DCMAKE_PREFIX_PATH=<INSTALL_DIR>
-    -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+    ${common_cmake_args}
     -DRE2_BUILD_TESTING=OFF)
 
 ExternalProject_Add(GSL
   URL https://github.com/Microsoft/GSL/archive/0f68d13.tar.gz
   URL_MD5 d5cc382eadc5f757416d44d91d0222cf
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
+  DEPENDS ${default_depends}
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
-    -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@
-    -DCMAKE_PREFIX_PATH=<INSTALL_DIR>
-    -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+    ${common_cmake_args}
     -DGSL_TEST=OFF)
 
 ExternalProject_Add(luajit
@@ -515,19 +547,18 @@ ExternalProject_Add(luajit
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   CONFIGURE_COMMAND ""
   BUILD_IN_SOURCE ON
+  DEPENDS ${default_depends}
   BUILD_COMMAND ""
   INSTALL_COMMAND ${make_command} ${luajit_c_compiler} ${cmake_build_env} PREFIX=<INSTALL_DIR> install)
 
 ExternalProject_Add(sol2
-  DEPENDS luajit
+  DEPENDS luajit ${default_depends}
   URL https://github.com/ThePhD/sol2/archive/248fd71.tar.gz
   URL_MD5 920d266cd552d97bc588fca91aabeef5
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
-    -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@
-    -DCMAKE_PREFIX_PATH=<INSTALL_DIR>
-    -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+    ${common_cmake_args}
     -DSINGLE=ON
     -DLUA_VERSION="luajit-2.1")
 
@@ -535,11 +566,10 @@ ExternalProject_Add(croaring
   URL https://github.com/RoaringBitmap/CRoaring/archive/6154187.tar.gz
   URL_MD5 e64f4712d4b1235bd009279f4485b044
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
+  DEPENDS ${default_depends}
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
-    -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@
-    -DCMAKE_PREFIX_PATH=<INSTALL_DIR>
-    -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+    ${common_cmake_args}
     -DENABLE_ROARING_TESTS=OFF
     -DROARING_BUILD_STATIC=ON
     -DROARING_DISABLE_NATIVE=ON)
