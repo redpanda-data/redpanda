@@ -1,5 +1,3 @@
-#include <iostream>
-
 #include "wal_generated.h"
 #include "wal_segment_record.h"
 
@@ -9,6 +7,8 @@
 
 #include <smf/log.h>
 #include <smf/random.h>
+
+#include <iostream>
 
 void small_tests() {
     smf::random rand;
