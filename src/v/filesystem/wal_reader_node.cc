@@ -15,7 +15,6 @@
 #include <smf/log.h>
 #include <smf/macros.h>
 
-#include <experimental/array>
 #include <gsl/span>
 
 #include <cstddef>
@@ -214,8 +213,7 @@ seastar::future<> wal_reader_node::open() {
         return _file->stat().then([this](auto stat) {
             // https://www.gnu.org/software/libc/manual/html_node/Attribute-Meanings.html
             // inode and device id create a globally unique file id
-            global_file_id_ = xxhash_32(
-              std::experimental::make_array(stat.st_ino, stat.st_dev));
+            global_file_id_ = xxhash_32(std::array{stat.st_ino, stat.st_dev});
             DLOG_TRACE(
               "{}: inode: {}, device: {}, file_id: {}",
               filename,

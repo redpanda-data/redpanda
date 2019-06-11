@@ -5,7 +5,7 @@ target_include_directories(rphashing
   PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${PROJECT_SOURCE_DIR}/src/v)
-target_link_libraries(rphashing PUBLIC xxHash::xxhash)
+target_link_libraries(rphashing PUBLIC xxHash::xxhash $<TARGET_NAME_IF_EXISTS:Libcxx::libcxx>)
 target_compile_definitions(rphashing PUBLIC -DXXH_PRIVATE_API)
 
 rp_test(

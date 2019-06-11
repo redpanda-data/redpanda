@@ -224,10 +224,6 @@ seastar::future<> raft_client_cache::close() {
 raft_client_cache::~raft_client_cache() {
     for (auto& p : _cache) {
         raft::raft_api_client* ptr = p.second.get_ptr();
-        DLOG_THROW_IF(
-          p.second.get_tag() != 0,
-          "Fatal logic error. Unclean client shutdown for: {}",
-          ptr->server_addr);
         delete ptr;
     }
 };
