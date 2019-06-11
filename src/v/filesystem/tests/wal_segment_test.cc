@@ -1,5 +1,3 @@
-#include <iostream>
-
 #include "ioutil/priority_manager.h"
 #include "ioutil/readfile.h"
 #include "wal_segment.h"
@@ -10,6 +8,8 @@
 #include <seastar/core/sstring.hh>
 
 #include <smf/log.h>
+
+#include <iostream>
 
 static const char* kFileName = "fiorito.txt";
 static const std::string segment_name = std::string("wal_segment_") + kFileName;
