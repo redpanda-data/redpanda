@@ -17,3 +17,12 @@ rp_test(
   DEFINITIONS SEASTAR_TESTING_MAIN
   ARGS "-- -c 1"
 )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME remote_test
+  SOURCES remote_test.cc
+  LIBRARIES Seastar::seastar_testing
+  DEFINITIONS SEASTAR_TESTING_MAIN
+  ARGS "-- -c 2"
+)
