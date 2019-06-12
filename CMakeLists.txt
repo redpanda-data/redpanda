@@ -18,6 +18,8 @@ set(CMAKE_CXX_FLAGS_DEBUG "-O0 -gsplit-dwarf -Wl,--gdb-index")
 set(CMAKE_CXX_FLAGS_RELEASE "-O2 -g -DNDEBUG")
 set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g -DNDEBUG")
 set(CMAKE_CXX_FLAGS_MINSIZEREL "-Os -DNDEBUG")
+set(Boost_USE_STATIC_LIBS OFF CACHE BOOL "")
+set(Boost_NO_BOOST_CMAKE ON CACHE BOOL "")
 
 # options
 option(RP_ENABLE_GOLD_LINKER "Enable -fuse-ld=gold" ON)

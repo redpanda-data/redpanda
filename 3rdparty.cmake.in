@@ -101,7 +101,7 @@ ExternalProject_Add(boost
     variant=release
     cflags=-fPIC
     cxxflags=-fPIC
-    link=shared,static
+    link=shared
     ${boost_cxx_flags}
     ${boost_link_flags}
     threading=multi
@@ -367,6 +367,8 @@ ExternalProject_Add(seastar
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
     ${common_cmake_args}
+    -DBoost_USE_STATIC_LIBS:BOOL=OFF
+    -DBoost_NO_BOOST_CMAKE:BOOL=ON
     -DSeastar_INSTALL=ON
     -DSeastar_DPDK=@RP_ENABLE_DPDK@
     -DSeastar_APPS=ON # different from smf; we need iotune built binary
@@ -516,6 +518,8 @@ ExternalProject_Add(smf
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
     ${common_cmake_args}
+    -DBoost_USE_STATIC_LIBS:BOOL=OFF
+    -DBoost_NO_BOOST_CMAKE:BOOL=ON
     -DSMF_MANAGE_DEPS=OFF
     -DSMF_ENABLE_TESTS=OFF
     -DSMF_BUILD_PROGRAMS=OFF)
