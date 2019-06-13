@@ -19,11 +19,10 @@
 #include <smf/macros.h>
 
 #include <bytell_hash_map.hpp>
-// filesystem
-#include "page_cache_buffer_manager.h"
-#include "page_cache_file_idx.h"
-#include "page_cache_request.h"
-#include "page_cache_stats.h"
+#include "filesystem/page_cache_buffer_manager.h"
+#include "filesystem/page_cache_file_idx.h"
+#include "filesystem/page_cache_request.h"
+#include "filesystem/page_cache_stats.h"
 
 /*
   XXX: Add admissions controller.

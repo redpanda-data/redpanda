@@ -1,6 +1,6 @@
 #pragma once
 
-#include "wal_writer_utils.h"
+#include "filesystem/wal_writer_utils.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/core/timer.hh>

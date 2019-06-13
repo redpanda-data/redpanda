@@ -3,10 +3,9 @@
 #include <bytell_hash_map.hpp>
 #include <string>
 
-// local to api
-#include "client_opts.h"
-#include "client_stats.h"
-#include "redpanda.smf.fb.h"
+#include "redpanda/api/client_opts.h"
+#include "redpanda/api/client_stats.h"
+#include "redpanda/api/redpanda.smf.fb.h"
 
 namespace api {
 

@@ -1,4 +1,4 @@
-#include "wal_pretty_print_utils.h"
+#include "filesystem/wal_pretty_print_utils.h"
 
 #include <flatbuffers/minireflect.h>
 

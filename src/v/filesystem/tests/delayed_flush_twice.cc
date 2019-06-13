@@ -7,8 +7,7 @@
 
 #include <chrono>
 
-// test dir only
-#include "wal_smash.h"
+#include "filesystem/tests/wal_smash.h"
 
 int main(int args, char** argv, char** env) {
     std::cout.setf(std::ios::unitbuf);

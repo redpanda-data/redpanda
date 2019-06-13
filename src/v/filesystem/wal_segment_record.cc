@@ -1,9 +1,9 @@
-#include "wal_segment_record.h"
+#include "filesystem/wal_segment_record.h"
 
-#include "constants.h"
+#include "filesystem/constants.h"
 #include "hashing/jump_consistent_hash.h"
 #include "hashing/xx.h"
-#include "wal_generated.h"
+#include "filesystem/wal_generated.h"
 
 #include <smf/compression.h>
 #include <smf/log.h>

@@ -1,7 +1,7 @@
 #pragma once
-#include "wal_core_mapping.h"
-#include "wal_generated.h"
-#include "wal_segment_record.h"
+#include "filesystem/wal_core_mapping.h"
+#include "filesystem/wal_generated.h"
+#include "filesystem/wal_segment_record.h"
 
 #include <smf/fbs_typed_buf.h>
 #include <smf/human_bytes.h>
@@ -13,8 +13,7 @@
 #include <thread>
 #include <unordered_map>
 
-// test only
-#include "gen_create_topic_buf.h"
+#include "filesystem/tests/gen_create_topic_buf.h"
 
 class wal_topic_test_input {
 public:

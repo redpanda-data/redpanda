@@ -1,4 +1,4 @@
-#include "fast_prng.h"
+#include "random/fast_prng.h"
 
 #include <gtest/gtest.h>
 

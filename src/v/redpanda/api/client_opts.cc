@@ -1,4 +1,4 @@
-#include "client_opts.h"
+#include "redpanda/api/client_opts.h"
 
 #include "hashing/xx.h"
 

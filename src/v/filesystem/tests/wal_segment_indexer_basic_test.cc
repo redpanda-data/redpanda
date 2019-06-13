@@ -1,9 +1,9 @@
 #include "ioutil/priority_manager.h"
-#include "wal_generated.h"
-#include "wal_opts.h"
-#include "wal_reader_node.h"
-#include "wal_requests.h"
-#include "wal_segment_indexer.h"
+#include "filesystem/wal_generated.h"
+#include "filesystem/wal_opts.h"
+#include "filesystem/wal_reader_node.h"
+#include "filesystem/wal_requests.h"
+#include "filesystem/wal_segment_indexer.h"
 
 #include <seastar/core/app-template.hh>
 #include <seastar/core/distributed.hh>
@@ -13,8 +13,7 @@
 #include <smf/compression.h>
 #include <smf/log.h>
 
-// test only
-#include "wal_topic_test_input.h"
+#include "filesystem/tests/wal_topic_test_input.h"
 
 // creating a namespace with `-` tests the regexes
 static const seastar::sstring kNS = "empty-ns007";

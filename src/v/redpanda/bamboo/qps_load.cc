@@ -1,4 +1,4 @@
-#include "qps_load.h"
+#include "redpanda/bamboo/qps_load.h"
 
 #include "hashing/jump_consistent_hash.h"
 #include "redpanda/api/client_stats.h"

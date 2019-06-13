@@ -5,10 +5,8 @@
 
 #include <boost/program_options.hpp>
 
-// rp
 #include "random/fast_prng.h"
-// bamboo
-#include "cli.h"
+#include "redpanda/bamboo/cli.h"
 
 /// \brief the purpose of this class is to launch requests with
 /// fixes for coordinated ommission

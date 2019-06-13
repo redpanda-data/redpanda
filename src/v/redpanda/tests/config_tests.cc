@@ -3,7 +3,6 @@
 #include <iostream>
 #include <utility>
 
-// filesystem
 #include "redpanda/redpanda_cfg.h"
 
 TEST(redpanda_config, load_minimal) {

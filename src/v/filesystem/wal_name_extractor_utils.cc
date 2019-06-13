@@ -1,4 +1,4 @@
-#include "wal_name_extractor_utils.h"
+#include "filesystem/wal_name_extractor_utils.h"
 
 #include <seastar/core/sstring.hh>
 

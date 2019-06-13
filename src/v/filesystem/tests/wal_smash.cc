@@ -8,8 +8,7 @@
 #include <smf/fbs_typed_buf.h>
 #include <smf/native_type_utils.h>
 
-// test only
-#include "gen_create_topic_buf.h"
+#include "filesystem/tests/gen_create_topic_buf.h"
 
 wal_smash::wal_smash(
   wal_smash_opts opt, seastar::distributed<write_ahead_log>* w)

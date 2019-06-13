@@ -1,8 +1,8 @@
-#include "wal_cold_boot.h"
+#include "filesystem/wal_cold_boot.h"
 
-#include "directory_walker.h"
-#include "wal_core_mapping.h"
-#include "wal_name_extractor_utils.h"
+#include "filesystem/directory_walker.h"
+#include "filesystem/wal_core_mapping.h"
+#include "filesystem/wal_name_extractor_utils.h"
 
 seastar::future<wal_cold_boot>
 wal_cold_boot::filesystem_lcore_index(seastar::sstring top_level_dir) {

@@ -1,5 +1,5 @@
-#include "wal_generated.h"
-#include "wal_segment_record.h"
+#include "filesystem/wal_generated.h"
+#include "filesystem/wal_segment_record.h"
 
 #include <seastar/core/app-template.hh>
 #include <seastar/core/distributed.hh>

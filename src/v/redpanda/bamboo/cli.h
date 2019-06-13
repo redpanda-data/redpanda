@@ -6,7 +6,6 @@
 
 #include <memory>
 
-// main api
 #include "redpanda/api/client.h"
 
 class cli {

@@ -1,4 +1,4 @@
-#include "chain_replication_service.h"
+#include "chain_replication/chain_replication_service.h"
 
 #include "filesystem/wal_core_mapping.h"
 #include "filesystem/wal_pretty_print_utils.h"

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "wal_generated.h"
+#include "filesystem/wal_generated.h"
 
 #include <seastar/core/sstring.hh>
 

@@ -1,4 +1,4 @@
-#include "client.h"
+#include "redpanda/api/client.h"
 
 #include <smf/lz4_filter.h>
 #include <smf/zstd_filter.h>

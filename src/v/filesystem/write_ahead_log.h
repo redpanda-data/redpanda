@@ -1,9 +1,9 @@
 #pragma once
 
-#include "wal_compaction_manager.h"
-#include "wal_opts.h"
-#include "wal_requests.h"
-#include "wal_topics_manager.h"
+#include "filesystem/wal_compaction_manager.h"
+#include "filesystem/wal_opts.h"
+#include "filesystem/wal_requests.h"
+#include "filesystem/wal_topics_manager.h"
 
 #include <seastar/core/distributed.hh>
 #include <seastar/core/future.hh>

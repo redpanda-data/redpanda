@@ -1,5 +1,5 @@
-#include "page_cache_buffer_manager.h"
-#include "page_cache_file_idx.h"
+#include "filesystem/page_cache_buffer_manager.h"
+#include "filesystem/page_cache_file_idx.h"
 
 #include <seastar/core/app-template.hh>
 #include <seastar/core/reactor.hh>

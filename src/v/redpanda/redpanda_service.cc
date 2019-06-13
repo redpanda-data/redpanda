@@ -1,4 +1,4 @@
-#include "redpanda_service.h"
+#include "redpanda/redpanda_service.h"
 
 #include "filesystem/wal_core_mapping.h"
 

@@ -1,4 +1,4 @@
-#include "wal_nstpidx_manager.h"
+#include "filesystem/wal_nstpidx_manager.h"
 
 #include "hashing/jump_consistent_hash.h"
 #include "hashing/xx.h"
@@ -18,10 +18,9 @@
 #include <ctime>
 #include <utility>
 
-// filesystem
-#include "wal_name_extractor_utils.h"
-#include "wal_nstpidx_repair.h"
-#include "wal_pretty_print_utils.h"
+#include "filesystem/wal_name_extractor_utils.h"
+#include "filesystem/wal_nstpidx_repair.h"
+#include "filesystem/wal_pretty_print_utils.h"
 
 namespace std {
 ostream&

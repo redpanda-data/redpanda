@@ -1,4 +1,4 @@
-#include "smf_specializations.h"
+#include "chain_replication/smf_specializations.h"
 
 #include <smf/log.h>
 

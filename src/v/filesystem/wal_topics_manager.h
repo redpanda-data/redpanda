@@ -1,9 +1,9 @@
 #pragma once
 
-#include "wal_nstpidx.h"
-#include "wal_nstpidx_manager.h"
-#include "wal_opts.h"
-#include "wal_requests.h"
+#include "filesystem/wal_nstpidx.h"
+#include "filesystem/wal_nstpidx_manager.h"
+#include "filesystem/wal_opts.h"
+#include "filesystem/wal_requests.h"
 
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sstring.hh>

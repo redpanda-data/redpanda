@@ -19,9 +19,8 @@
 // in transition
 #include "raft/raft_log_service.h"
 
-// redpanda
-#include "redpanda_cfg.h"
-#include "redpanda_service.h"
+#include "redpanda/redpanda_cfg.h"
+#include "redpanda/redpanda_service.h"
 
 seastar::future<> check_environment(const redpanda_cfg& c);
 
