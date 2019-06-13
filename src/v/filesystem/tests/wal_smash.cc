@@ -1,5 +1,6 @@
 #include "wal_smash.h"
 
+#include "filesystem/tests/gen_create_topic_buf.h"
 #include "filesystem/wal_core_mapping.h"
 #include "filesystem/wal_segment_record.h"
 #include "hashing/jump_consistent_hash.h"
@@ -7,8 +8,6 @@
 
 #include <smf/fbs_typed_buf.h>
 #include <smf/native_type_utils.h>
-
-#include "filesystem/tests/gen_create_topic_buf.h"
 
 wal_smash::wal_smash(
   wal_smash_opts opt, seastar::distributed<write_ahead_log>* w)

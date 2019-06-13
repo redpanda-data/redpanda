@@ -1,9 +1,9 @@
+#include "redpanda/redpanda_cfg.h"
+
 #include <gtest/gtest.h>
 
 #include <iostream>
 #include <utility>
-
-#include "redpanda/redpanda_cfg.h"
 
 TEST(redpanda_config, load_minimal) {
     YAML::Node config = YAML::Load("---\n"

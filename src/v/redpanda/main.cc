@@ -18,7 +18,6 @@
 
 // in transition
 #include "raft/raft_log_service.h"
-
 #include "redpanda/redpanda_cfg.h"
 #include "redpanda/redpanda_service.h"
 

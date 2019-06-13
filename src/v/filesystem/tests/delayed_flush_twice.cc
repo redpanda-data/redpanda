@@ -1,3 +1,5 @@
+#include "filesystem/tests/wal_smash.h"
+
 #include <seastar/core/app-template.hh>
 #include <seastar/core/distributed.hh>
 #include <seastar/core/sleep.hh>
@@ -6,8 +8,6 @@
 #include <smf/log.h>
 
 #include <chrono>
-
-#include "filesystem/tests/wal_smash.h"
 
 int main(int args, char** argv, char** env) {
     std::cout.setf(std::ios::unitbuf);

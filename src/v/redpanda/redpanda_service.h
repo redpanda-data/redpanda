@@ -2,10 +2,9 @@
 #include "chain_replication/chain_replication_service.h"
 #include "filesystem/write_ahead_log.h"
 #include "redpanda/redpanda.smf.fb.h"
+#include "redpanda/redpanda_cfg.h"
 
 #include <smf/log.h>
-
-#include "redpanda/redpanda_cfg.h"
 
 class redpanda_service : public redpanda_api {
 public:

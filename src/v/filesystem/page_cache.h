@@ -9,6 +9,10 @@
 #include <map>
 #include <vector>
 // sstring must come before metrics
+#include "filesystem/page_cache_buffer_manager.h"
+#include "filesystem/page_cache_file_idx.h"
+#include "filesystem/page_cache_request.h"
+#include "filesystem/page_cache_stats.h"
 #include "random/fast_prng.h"
 
 #include <seastar/core/align.hh>
@@ -19,10 +23,6 @@
 #include <smf/macros.h>
 
 #include <bytell_hash_map.hpp>
-#include "filesystem/page_cache_buffer_manager.h"
-#include "filesystem/page_cache_file_idx.h"
-#include "filesystem/page_cache_request.h"
-#include "filesystem/page_cache_stats.h"
 
 /*
   XXX: Add admissions controller.

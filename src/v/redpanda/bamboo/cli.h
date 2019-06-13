@@ -1,12 +1,12 @@
 #pragma once
 
+#include "redpanda/api/client.h"
+
 #include <smf/random.h>
 
 #include <boost/program_options.hpp>
 
 #include <memory>
-
-#include "redpanda/api/client.h"
 
 class cli {
 public:

@@ -1,4 +1,7 @@
 #include "filesystem/wal_segment_record.h"
+#include "redpanda/api/client.h"
+#include "redpanda/redpanda_cfg.h"
+#include "redpanda/redpanda_service.h"
 
 #include <seastar/core/app-template.hh>
 #include <seastar/core/sleep.hh>
@@ -13,9 +16,6 @@
 
 #include <chrono>
 #include <iostream>
-#include "redpanda/redpanda_cfg.h"
-#include "redpanda/redpanda_service.h"
-#include "redpanda/api/client.h"
 
 constexpr static const int kMethodIterations = 25;
 constexpr static const int kTopicPartitions = 3;
