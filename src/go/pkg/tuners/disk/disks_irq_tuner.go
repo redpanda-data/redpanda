@@ -111,7 +111,7 @@ func (tuner *disksIRQsTuner) getDefaultMode() (irq.Mode, error) {
 
 func (tuner *disksIRQsTuner) Tune() error {
 	var err error
-	tuner.baseCPUMask, err = tuner.cpuMasks.DefaultCpuMask(tuner.baseCPUMask)
+	tuner.baseCPUMask, err = tuner.cpuMasks.BaseCpuMask(tuner.baseCPUMask)
 	tuner.mode, err = tuner.getDefaultMode()
 	if err != nil {
 		return err

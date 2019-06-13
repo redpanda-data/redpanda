@@ -23,6 +23,11 @@ func NewHwLocCmd(proc os.Proc) HwLoc {
 func (hwLocCmd *hwLocCmd) All() (string, error) {
 	return hwLocCmd.runCalc("all")
 }
+
+func (hwLocCmd *hwLocCmd) CalcSingle(mask string) (string, error) {
+	return hwLocCmd.runCalc(mask)
+}
+
 func (hwLocCmd *hwLocCmd) Calc(mask string, location string) (string, error) {
 	return hwLocCmd.runCalc(mask, location)
 }

@@ -10,7 +10,7 @@ import (
 )
 
 type CpuMasks interface {
-	DefaultCpuMask(cpuMask string) (string, error)
+	BaseCpuMask(cpuMask string) (string, error)
 	CpuMaskForComputations(mode Mode, cpuMask string) (string, error)
 	CpuMaskForIRQs(mode Mode, cpuMask string) (string, error)
 	SetMask(path string, mask string) error
@@ -36,11 +36,12 @@ type cpuMasks struct {
 	fs    afero.Fs
 }
 
-func (masks *cpuMasks) DefaultCpuMask(cpuMask string) (string, error) {
+func (masks *cpuMasks) BaseCpuMask(cpuMask string) (string, error) {
 	if cpuMask == "all" {
 		return masks.hwloc.All()
 	}
-	return cpuMask, nil
+
+	return masks.hwloc.CalcSingle(cpuMask)
 }
 
 func (masks *cpuMasks) IsSupported() bool {

@@ -2,6 +2,7 @@ package hwloc
 
 type HwLoc interface {
 	All() (string, error)
+	CalcSingle(mask string) (string, error)
 	Calc(mask string, location string) (string, error)
 	Distribute(numberOfElements uint) ([]string, error)
 	DistributeRestrict(numberOfElements uint, mask string) ([]string, error)

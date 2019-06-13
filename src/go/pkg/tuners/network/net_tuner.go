@@ -78,7 +78,7 @@ func (tuner *NetTuner) Tune() error {
 	tuner.nicIsHWIface = tuner.checkNicIsHWIface(tuner.nic)
 
 	tuner.mode, err = tuner.getDefaultMode()
-	tuner.baseCpuMask, err = tuner.cpuMasks.DefaultCpuMask(tuner.baseCpuMask)
+	tuner.baseCpuMask, err = tuner.cpuMasks.BaseCpuMask(tuner.baseCpuMask)
 	tuner.procFileLines, err = tuner.irqProcFile.GetIRQProcFileLinesMap()
 	if err != nil {
 		return err
