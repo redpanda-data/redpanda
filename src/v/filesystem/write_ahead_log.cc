@@ -2,10 +2,10 @@
 
 #include "ioutil/dir_utils.h"
 #include "syschecks/syschecks.h"
-#include "wal_cold_boot.h"
-#include "wal_core_mapping.h"
-#include "wal_name_extractor_utils.h"
-#include "wal_requests.h"
+#include "filesystem/wal_cold_boot.h"
+#include "filesystem/wal_core_mapping.h"
+#include "filesystem/wal_name_extractor_utils.h"
+#include "filesystem/wal_requests.h"
 
 #include <smf/log.h>
 

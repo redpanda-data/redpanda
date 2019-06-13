@@ -1,4 +1,4 @@
-#include "wal_opts.h"
+#include "filesystem/wal_opts.h"
 
 #include <seastar/core/align.hh>
 

@@ -1,11 +1,11 @@
 #include <chrono>
 #include <set>
-// seastar
-#include "wal_core_mapping.h"
-#include "wal_opts.h"
-#include "wal_pretty_print_utils.h"
-#include "wal_requests.h"
-#include "write_ahead_log.h"
+
+#include "filesystem/wal_core_mapping.h"
+#include "filesystem/wal_opts.h"
+#include "filesystem/wal_pretty_print_utils.h"
+#include "filesystem/wal_requests.h"
+#include "filesystem/write_ahead_log.h"
 
 #include <seastar/core/app-template.hh>
 #include <seastar/core/distributed.hh>
@@ -17,10 +17,9 @@
 
 #include <flatbuffers/minireflect.h>
 
-// test dir only
-#include "gen_create_topic_buf.h"
-#include "wal_cold_boot.h"
-#include "wal_topic_test_input.h"
+#include "filesystem/tests/gen_create_topic_buf.h"
+#include "filesystem/wal_cold_boot.h"
+#include "filesystem/tests/wal_topic_test_input.h"
 
 // creating a namespace with `-` tests the regexes
 static const seastar::sstring kNS = "empty-ns007";

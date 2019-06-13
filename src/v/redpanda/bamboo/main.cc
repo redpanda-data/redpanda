@@ -8,9 +8,8 @@
 #include <iostream>
 #include <limits>
 
-// bamboo
-#include "cli.h"
-#include "qps_load.h"
+#include "redpanda/bamboo/cli.h"
+#include "redpanda/bamboo/qps_load.h"
 
 void cli_opts(boost::program_options::options_description_easy_init o) {
     namespace po = boost::program_options;

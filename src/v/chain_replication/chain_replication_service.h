@@ -1,5 +1,5 @@
 #pragma once
-#include "chain_replication.smf.fb.h"
+#include "chain_replication/chain_replication.smf.fb.h"
 #include "filesystem/write_ahead_log.h"
 
 #include <smf/log.h>

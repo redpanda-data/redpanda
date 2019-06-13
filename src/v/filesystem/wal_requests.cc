@@ -1,8 +1,8 @@
-#include "wal_requests.h"
+#include "filesystem/wal_requests.h"
 
 #include "hashing/jump_consistent_hash.h"
 #include "hashing/xx.h"
-#include "wal_name_extractor_utils.h"
+#include "filesystem/wal_name_extractor_utils.h"
 
 bool wal_create_request::is_valid(const wal_create_request& r) {
     try {

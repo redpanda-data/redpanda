@@ -1,8 +1,8 @@
 #pragma once
-#include "wal_disk_pager.h"
-#include "wal_generated.h"
-#include "wal_opts.h"
-#include "wal_requests.h"
+#include "filesystem/wal_disk_pager.h"
+#include "filesystem/wal_generated.h"
+#include "filesystem/wal_opts.h"
+#include "filesystem/wal_requests.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>

@@ -9,8 +9,7 @@
 #include <iostream>
 #include <utility>
 
-// filesystem
-#include "wal_segment_record.h"
+#include "filesystem/wal_segment_record.h"
 
 /*
   BUGFIX: When flatbuffers reallocs, it copies the bytes incorrectly

@@ -1,4 +1,4 @@
-#include "wal_nstpidx.h"
+#include "filesystem/wal_nstpidx.h"
 
 wal_nstpidx wal_nstpidx::gen(int64_t ns, int64_t topic, int32_t partition) {
     incremental_xxhash64 inc;

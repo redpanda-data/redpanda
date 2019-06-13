@@ -1,5 +1,5 @@
 #pragma once
-#include "wal_requests.h"
+#include "filesystem/wal_requests.h"
 
 #include <seastar/core/sstring.hh>
 

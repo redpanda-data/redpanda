@@ -1,6 +1,6 @@
-#include "wal_segment_indexer.h"
+#include "filesystem/wal_segment_indexer.h"
 
-#include "wal_segment_record.h"
+#include "filesystem/wal_segment_record.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/core/temporary_buffer.hh>

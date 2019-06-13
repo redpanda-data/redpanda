@@ -1,11 +1,10 @@
-#include "wal_disk_pager.h"
+#include "filesystem/wal_disk_pager.h"
 
 #include <seastar/core/prefetch.hh>
 
 #include <smf/log.h>
 
-// filesystem
-#include "page_cache.h"
+#include "filesystem/page_cache.h"
 
 wal_disk_pager::wal_disk_pager(page_cache_request r)
   : _req(r) {

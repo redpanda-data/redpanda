@@ -13,7 +13,7 @@ add_library(redpanda_api
   )
 target_link_libraries (redpanda_api PUBLIC rpchains)
 target_include_directories(redpanda_api
-  PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/..
+  PUBLIC ${CMAKE_BINARY_DIR}/src/v
   PUBLIC ${CMAKE_SOURCE_DIR}/src/v
   )
 

@@ -3,8 +3,8 @@
 #include "hashing/jump_consistent_hash.h"
 #include "hashing/xx.h"
 #include "hbadger/hbadger.h"
-#include "wal_segment.h"
-#include "wal_writer_utils.h"
+#include "filesystem/wal_segment.h"
+#include "filesystem/wal_writer_utils.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/core/fstream.hh>

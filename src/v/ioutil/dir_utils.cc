@@ -1,4 +1,4 @@
-#include "dir_utils.h"
+#include "ioutil/dir_utils.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/core/reactor.hh>

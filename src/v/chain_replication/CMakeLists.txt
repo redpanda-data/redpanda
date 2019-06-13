@@ -14,11 +14,7 @@ add_library (rpchains STATIC
 target_link_libraries (rpchains
   PUBLIC rpfs)
 target_include_directories(rpchains
-  PUBLIC ${CMAKE_CURRENT_BINARY_DIR}
-  PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/..
-  # hack - needed because transitively, we include
-  # generated files from this module
-  PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/../filesystem
+  PUBLIC ${CMAKE_BINARY_DIR}/src/v
   PUBLIC ${CMAKE_SOURCE_DIR}/src/v
   )
 install(TARGETS rpchains DESTINATION lib)

@@ -1,4 +1,4 @@
-#include "wal_reader_node.h"
+#include "filesystem/wal_reader_node.h"
 
 #include "hashing/jump_consistent_hash.h"
 #include "hashing/xx.h"
@@ -24,13 +24,12 @@
 #include <system_error>
 #include <utility>
 
-// filesystem
-#include "constants.h"
-#include "file_size_utils.h"
-#include "page_cache.h"
-#include "wal_disk_pager.h"
-#include "wal_pretty_print_utils.h"
-#include "wal_segment_record.h"
+#include "filesystem/constants.h"
+#include "filesystem/file_size_utils.h"
+#include "filesystem/page_cache.h"
+#include "filesystem/wal_disk_pager.h"
+#include "filesystem/wal_pretty_print_utils.h"
+#include "filesystem/wal_segment_record.h"
 
 constexpr const int32_t kReadPageSize = 4096;
 // -- static helper funcs

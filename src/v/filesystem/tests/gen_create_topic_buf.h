@@ -1,6 +1,6 @@
 #pragma once
 
-#include "wal_generated.h"
+#include "filesystem/wal_generated.h"
 
 #include <smf/fbs_typed_buf.h>
 #include <smf/native_type_utils.h>

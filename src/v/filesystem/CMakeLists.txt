@@ -33,7 +33,7 @@ rp_hbadger_lib(
   STATIC
   NAME rpfs
   SOURCES ${rpfs_sources}
-  INCLUDES ${CMAKE_CURRENT_BINARY_DIR}
+  INCLUDES ${CMAKE_BINARY_DIR}/src/v
   INCLUDES ${PROJECT_SOURCE_DIR}/src/v
   COMPILE_OPTIONS 
     -Wall 

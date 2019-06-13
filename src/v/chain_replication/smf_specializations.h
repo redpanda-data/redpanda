@@ -1,6 +1,6 @@
 #pragma once
 
-#include "chain_replication.smf.fb.h"
+#include "chain_replication/chain_replication.smf.fb.h"
 
 #include <seastar/core/temporary_buffer.hh>
 

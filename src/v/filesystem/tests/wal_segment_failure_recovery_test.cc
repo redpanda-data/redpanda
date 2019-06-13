@@ -1,10 +1,10 @@
 #include "hashing/xx.h"
 #include "random/fast_prng.h"
-#include "wal_core_mapping.h"
-#include "wal_generated.h"
-#include "wal_segment.h"
-#include "wal_segment_record.h"
-#include "wal_writer_utils.h"
+#include "filesystem/wal_core_mapping.h"
+#include "filesystem/wal_generated.h"
+#include "filesystem/wal_segment.h"
+#include "filesystem/wal_segment_record.h"
+#include "filesystem/wal_writer_utils.h"
 
 #include <seastar/core/align.hh>
 #include <seastar/core/app-template.hh>

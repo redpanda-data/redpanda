@@ -1,4 +1,4 @@
-#include "murmur.h"
+#include "hashing/murmur.h"
 
 // adapted from original:
 // https://github.com/aappleby/smhasher/blob/master/src/MurmurHash3.h

@@ -1,6 +1,6 @@
 #pragma once
-#include "wal_generated.h"
-#include "wal_nstpidx.h"
+#include "filesystem/wal_generated.h"
+#include "filesystem/wal_nstpidx.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/core/shared_ptr.hh>

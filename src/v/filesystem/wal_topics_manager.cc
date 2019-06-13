@@ -3,8 +3,8 @@
 #include "ioutil/dir_utils.h"
 #include "ioutil/priority_manager.h"
 #include "ioutil/readfile.h"
-#include "wal_segment.h"
-#include "wal_segment_record.h"
+#include "filesystem/wal_segment.h"
+#include "filesystem/wal_segment_record.h"
 
 #include <seastar/core/reactor.hh>
 

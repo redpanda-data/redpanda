@@ -13,10 +13,8 @@
 
 #include <chrono>
 #include <iostream>
-// redpanda
 #include "redpanda/redpanda_cfg.h"
 #include "redpanda/redpanda_service.h"
-// main api
 #include "redpanda/api/client.h"
 
 constexpr static const int kMethodIterations = 25;

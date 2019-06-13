@@ -1,6 +1,6 @@
-#include "wal_core_mapping.h"
+#include "filesystem/wal_core_mapping.h"
 
-#include "wal_nstpidx.h"
+#include "filesystem/wal_nstpidx.h"
 
 #include <seastar/core/reactor.hh>
 

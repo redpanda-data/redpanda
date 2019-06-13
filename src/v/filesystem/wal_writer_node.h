@@ -1,10 +1,10 @@
 #pragma once
 
-#include "wal_generated.h"
-#include "wal_opts.h"
-#include "wal_requests.h"
-#include "wal_segment.h"
-#include "wal_writer_utils.h"
+#include "filesystem/wal_generated.h"
+#include "filesystem/wal_opts.h"
+#include "filesystem/wal_requests.h"
+#include "filesystem/wal_segment.h"
+#include "filesystem/wal_writer_utils.h"
 
 #include <seastar/core/fstream.hh>
 #include <seastar/core/semaphore.hh>

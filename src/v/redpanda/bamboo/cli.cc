@@ -1,4 +1,4 @@
-#include "cli.h"
+#include "redpanda/bamboo/cli.h"
 
 #include <seastar/core/reactor.hh>
 

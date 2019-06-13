@@ -1,6 +1,6 @@
 #include "ioutil/priority_manager.h"
 #include "ioutil/readfile.h"
-#include "wal_segment.h"
+#include "filesystem/wal_segment.h"
 
 #include <seastar/core/app-template.hh>
 #include <seastar/core/distributed.hh>
