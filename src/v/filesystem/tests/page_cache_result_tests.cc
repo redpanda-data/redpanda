@@ -1,11 +1,11 @@
+#include "filesystem/page_cache_result.h"
+
 #include <seastar/core/sstring.hh>
 
 #include <gsl/span>
 #include <gtest/gtest.h>
 
 #include <cstring>
-
-#include "filesystem/page_cache_result.h"
 
 TEST(page_cache_result_lease, ref_count_ctor) {
     page_cache_result r(0, gsl::span<char>(), page_cache_result::priority::low);

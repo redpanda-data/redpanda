@@ -2,14 +2,14 @@
 
 #include <seastar/core/reactor.hh>
 // seastar::metrics bug: reactor must come first
+#include "filesystem/wal_reader_node.h"
 #include "filesystem/wal_requests.h"
+#include "filesystem/wal_writer_node.h"
 
 #include <seastar/core/metrics_registration.hh>
 
 #include <smf/log.h>
 #include <smf/macros.h>
-#include "filesystem/wal_reader_node.h"
-#include "filesystem/wal_writer_node.h"
 
 /// \brief manages one active writer and an index to all the readers
 /// for this partition

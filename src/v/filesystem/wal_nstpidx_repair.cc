@@ -1,10 +1,10 @@
 #include "filesystem/wal_nstpidx_repair.h"
 
-#include <smf/log.h>
-
 #include "filesystem/directory_walker.h"
 #include "filesystem/wal_name_extractor_utils.h"
 #include "filesystem/wal_writer_utils.h"
+
+#include <smf/log.h>
 
 using set_t = wal_nstpidx_repair::set_t;
 static inline seastar::lowres_system_clock::time_point

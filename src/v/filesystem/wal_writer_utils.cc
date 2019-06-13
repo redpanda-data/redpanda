@@ -1,10 +1,10 @@
 #include "filesystem/wal_writer_utils.h"
 
 #include "filesystem/file_size_utils.h"
-#include "ioutil/priority_manager.h"
 #include "filesystem/wal_pretty_print_utils.h"
 #include "filesystem/wal_reader_node.h"
 #include "filesystem/wal_segment_record.h"
+#include "ioutil/priority_manager.h"
 
 #include <seastar/core/align.hh>
 

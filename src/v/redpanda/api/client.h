@@ -1,11 +1,11 @@
 #pragma once
 
-#include <bytell_hash_map.hpp>
-#include <string>
-
 #include "redpanda/api/client_opts.h"
 #include "redpanda/api/client_stats.h"
 #include "redpanda/api/redpanda.smf.fb.h"
+
+#include <bytell_hash_map.hpp>
+#include <string>
 
 namespace api {
 

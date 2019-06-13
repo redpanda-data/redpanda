@@ -1,6 +1,6 @@
-#include <chrono>
-#include <set>
-
+#include "filesystem/tests/gen_create_topic_buf.h"
+#include "filesystem/tests/wal_topic_test_input.h"
+#include "filesystem/wal_cold_boot.h"
 #include "filesystem/wal_core_mapping.h"
 #include "filesystem/wal_opts.h"
 #include "filesystem/wal_pretty_print_utils.h"
@@ -17,9 +17,8 @@
 
 #include <flatbuffers/minireflect.h>
 
-#include "filesystem/tests/gen_create_topic_buf.h"
-#include "filesystem/wal_cold_boot.h"
-#include "filesystem/tests/wal_topic_test_input.h"
+#include <chrono>
+#include <set>
 
 // creating a namespace with `-` tests the regexes
 static const seastar::sstring kNS = "empty-ns007";

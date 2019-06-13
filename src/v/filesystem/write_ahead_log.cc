@@ -1,11 +1,11 @@
 #include "write_ahead_log.h"
 
-#include "ioutil/dir_utils.h"
-#include "syschecks/syschecks.h"
 #include "filesystem/wal_cold_boot.h"
 #include "filesystem/wal_core_mapping.h"
 #include "filesystem/wal_name_extractor_utils.h"
 #include "filesystem/wal_requests.h"
+#include "ioutil/dir_utils.h"
+#include "syschecks/syschecks.h"
 
 #include <smf/log.h>
 

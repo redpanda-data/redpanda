@@ -1,5 +1,8 @@
 #include "filesystem/wal_nstpidx_manager.h"
 
+#include "filesystem/wal_name_extractor_utils.h"
+#include "filesystem/wal_nstpidx_repair.h"
+#include "filesystem/wal_pretty_print_utils.h"
 #include "hashing/jump_consistent_hash.h"
 #include "hashing/xx.h"
 #include "ioutil/priority_manager.h"
@@ -17,10 +20,6 @@
 #include <algorithm>
 #include <ctime>
 #include <utility>
-
-#include "filesystem/wal_name_extractor_utils.h"
-#include "filesystem/wal_nstpidx_repair.h"
-#include "filesystem/wal_pretty_print_utils.h"
 
 namespace std {
 ostream&

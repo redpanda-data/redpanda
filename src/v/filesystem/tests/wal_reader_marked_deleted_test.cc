@@ -1,7 +1,8 @@
-#include "ioutil/priority_manager.h"
+#include "filesystem/tests/wal_topic_test_input.h"
 #include "filesystem/wal_opts.h"
 #include "filesystem/wal_reader_node.h"
 #include "filesystem/wal_writer_node.h"
+#include "ioutil/priority_manager.h"
 
 #include <seastar/core/app-template.hh>
 #include <seastar/core/distributed.hh>
@@ -10,8 +11,6 @@
 #include <seastar/core/sstring.hh>
 
 #include <smf/log.h>
-
-#include "filesystem/tests/wal_topic_test_input.h"
 
 void add_opts(boost::program_options::options_description_easy_init o) {
     namespace po = boost::program_options;

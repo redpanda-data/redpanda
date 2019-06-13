@@ -1,3 +1,6 @@
+#include "redpanda/bamboo/cli.h"
+#include "redpanda/bamboo/qps_load.h"
+
 #include <seastar/core/app-template.hh>
 #include <seastar/core/distributed.hh>
 
@@ -7,9 +10,6 @@
 
 #include <iostream>
 #include <limits>
-
-#include "redpanda/bamboo/cli.h"
-#include "redpanda/bamboo/qps_load.h"
 
 void cli_opts(boost::program_options::options_description_easy_init o) {
     namespace po = boost::program_options;

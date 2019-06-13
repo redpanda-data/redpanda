@@ -1,12 +1,12 @@
 #pragma once
 
+#include "random/fast_prng.h"
+#include "redpanda/bamboo/cli.h"
+
 #include <seastar/core/seastar.hh>
 #include <seastar/core/semaphore.hh>
 
 #include <boost/program_options.hpp>
-
-#include "random/fast_prng.h"
-#include "redpanda/bamboo/cli.h"
 
 /// \brief the purpose of this class is to launch requests with
 /// fixes for coordinated ommission

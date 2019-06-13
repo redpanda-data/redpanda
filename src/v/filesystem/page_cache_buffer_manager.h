@@ -1,4 +1,6 @@
 #pragma once
+#include "filesystem/page_cache_result.h"
+
 #include <seastar/core/aligned_buffer.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/memory.hh>
@@ -12,8 +14,6 @@
 #include <cstdint>
 #include <deque>
 #include <vector>
-
-#include "filesystem/page_cache_result.h"
 
 // FIXME(agallego): create a central component for system-wide reservations.
 class page_cache_buffer_manager {

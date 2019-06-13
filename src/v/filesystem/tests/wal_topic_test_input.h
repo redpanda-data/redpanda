@@ -1,4 +1,5 @@
 #pragma once
+#include "filesystem/tests/gen_create_topic_buf.h"
 #include "filesystem/wal_core_mapping.h"
 #include "filesystem/wal_generated.h"
 #include "filesystem/wal_segment_record.h"
@@ -12,8 +13,6 @@
 #include <cstdint>
 #include <thread>
 #include <unordered_map>
-
-#include "filesystem/tests/gen_create_topic_buf.h"
 
 class wal_topic_test_input {
 public:

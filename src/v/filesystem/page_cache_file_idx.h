@@ -1,4 +1,6 @@
 #pragma once
+#include "filesystem/page_cache_buffer_manager.h"
+
 #include <seastar/core/memory.hh>
 
 #include <smf/log.h>
@@ -6,8 +8,6 @@
 #include <algorithm>
 #include <optional>
 #include <vector>
-
-#include "filesystem/page_cache_buffer_manager.h"
 
 class page_cache_file_idx {
 public:

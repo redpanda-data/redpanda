@@ -1,10 +1,10 @@
 #pragma once
 
-#include "hashing/xx.h"
 #include "filesystem/wal_generated.h"
 #include "filesystem/wal_opts.h"
 #include "filesystem/wal_requests.h"
 #include "filesystem/wal_segment.h"
+#include "hashing/xx.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/sstring.hh>

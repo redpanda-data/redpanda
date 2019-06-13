@@ -1,3 +1,5 @@
+#include "filesystem/wal_segment_record.h"
+
 #include <seastar/core/sstring.hh>
 
 #include <smf/fbs_typed_buf.h>
@@ -8,8 +10,6 @@
 
 #include <iostream>
 #include <utility>
-
-#include "filesystem/wal_segment_record.h"
 
 /*
   BUGFIX: When flatbuffers reallocs, it copies the bytes incorrectly
