@@ -101,7 +101,7 @@ func (*hwLocCmd) IsSupported() bool {
 }
 
 func (hwLocCmd *hwLocCmd) runCalc(args ...string) (string, error) {
-	outputLines, err := hwLocCmd.proc.Run("hwloc-calc", args...)
+	outputLines, err := hwLocCmd.proc.RunWithSystemLdPath("hwloc-calc", args...)
 	if err != nil {
 		return "", err
 	}
@@ -110,7 +110,7 @@ func (hwLocCmd *hwLocCmd) runCalc(args ...string) (string, error) {
 
 func (hwLocCmd *hwLocCmd) runDistrib(args ...string) ([]string, error) {
 	var result []string
-	outputLines, err := hwLocCmd.proc.Run("hwloc-distrib", args...)
+	outputLines, err := hwLocCmd.proc.RunWithSystemLdPath("hwloc-distrib", args...)
 	if err != nil {
 		return nil, err
 	}

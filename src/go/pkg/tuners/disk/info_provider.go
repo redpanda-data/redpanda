@@ -63,7 +63,7 @@ func (infoProvider *infoProvider) getDirectoryDevices(
 	}
 
 	var devices []string
-	outputLines, err := infoProvider.proc.Run("df", "-P", path)
+	outputLines, err := infoProvider.proc.RunWithSystemLdPath("df", "-P", path)
 	if err != nil {
 		return nil, err
 	}

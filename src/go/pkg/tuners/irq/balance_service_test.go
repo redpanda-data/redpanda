@@ -15,7 +15,7 @@ type procMock struct {
 	isRunning func(processName string) bool
 }
 
-func (procMock *procMock) Run(
+func (procMock *procMock) RunWithSystemLdPath(
 	command string, args ...string,
 ) ([]string, error) {
 	return procMock.run(command, args...)

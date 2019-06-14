@@ -118,10 +118,10 @@ func (balanceService *balanceService) BanIRQsAndRestart(
 	}
 	if systemd {
 		log.Info("Restarting 'irqbalance' via systemctl...")
-		_, err = balanceService.proc.Run("systemctl", "try-restart", "irqbalance")
+		_, err = balanceService.proc.RunWithSystemLdPath("systemctl", "try-restart", "irqbalance")
 	} else {
 		log.Info("Restarting 'irqbalance' directly (init.d)...")
-		_, err = balanceService.proc.Run("/etc/init.d/irqbalance", "restart")
+		_, err = balanceService.proc.RunWithSystemLdPath("/etc/init.d/irqbalance", "restart")
 	}
 	if err != nil {
 		return err

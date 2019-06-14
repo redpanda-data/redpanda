@@ -104,7 +104,7 @@ func (g *grub) MakeConfig() error {
 	if err == nil {
 		log.Debugf("Running on Ubuntu based system with '%s' available",
 			updateCmd)
-		_, err := g.proc.Run(updateCmd)
+		_, err := g.proc.RunWithSystemLdPath(updateCmd)
 		return err
 	}
 	for _, file := range []string{
@@ -112,7 +112,7 @@ func (g *grub) MakeConfig() error {
 		"/boot/efi/EFI/fedora/grub.cfg"} {
 		if utils.FileExists(g.fs, file) {
 			log.Debugf("Found 'grub.cfg' in %s", file)
-			_, err := g.proc.Run("grub2-mkconfig", "-o", file)
+			_, err := g.proc.RunWithSystemLdPath("grub2-mkconfig", "-o", file)
 			return err
 		}
 	}

@@ -16,7 +16,7 @@ type commands struct {
 }
 
 func (commands *commands) Which(cmd string) (string, error) {
-	out, err := commands.proc.Run("which", cmd)
+	out, err := commands.proc.RunWithSystemLdPath("which", cmd)
 	if err == nil {
 		return out[0], nil
 	}
