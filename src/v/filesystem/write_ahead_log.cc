@@ -29,7 +29,7 @@ write_ahead_log::append(wal_write_request r) {
     DLOG_THROW_IF(!wal_write_request::is_valid(r), "invalid write request");
     DTRACE_PROBE(rp, wal_write);
     return _tm.get_manager(r.idx).then([r = std::move(r)](auto m) mutable {
-        if (SMF_LIKELY(m != nullptr)) {
+        if (__builtin_expect(m != nullptr, true)) {
             return m->append(std::move(r));
         }
         DLOG_ERROR(
@@ -49,7 +49,7 @@ write_ahead_log::get(wal_read_request r) {
     DLOG_THROW_IF(!wal_read_request::is_valid(r), "invalid read request");
     DTRACE_PROBE(rp, wal_get);
     return _tm.get_manager(r.idx).then([r = std::move(r)](auto m) mutable {
-        if (SMF_LIKELY(m != nullptr)) {
+        if (__builtin_expect(m != nullptr, true)) {
             return m->get(std::move(r));
         }
         DLOG_ERROR(
