@@ -45,10 +45,11 @@ def _configure_build(build_type, clang_opt):
     if clang_opt == None:
         logger.debug(
             "Clang not defined, building using default system compiler")
-    elif clang_opt == "internal":
+    elif clang_opt == "internal" or clang_opt == "llvm_bootstrap":
         logger.info("Builing using internal Clang compiler")
         llvm.get_llvm()
-        llvm.build_llvm()
+        bootstrap_build = clang_opt == "llvm_bootstrap"
+        llvm.build_llvm(bootstrap_build)
         args = '-DRP_ENABLE_GOLD_LINKER=OFF'
         build_env = clang.clang_env_from_path(
             os.path.join(llvm.get_llvm_install_path(), "bin", "clang"))
