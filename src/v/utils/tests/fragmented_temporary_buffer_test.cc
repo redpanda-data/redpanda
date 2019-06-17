@@ -373,3 +373,43 @@ SEASTAR_THREAD_TEST_CASE(test_read_exactly_eof) {
     do_test_read_exactly_eof(0);
     do_test_read_exactly_eof(1);
 }
+
+SEASTAR_THREAD_TEST_CASE(test_istream_iterator) {
+    auto linearization_buffer = bytes_ostream();
+    auto test = [&](
+                  bytes_view expected_value1,
+                  bytes_view expected_value2,
+                  fragmented_temporary_buffer& ftb) {
+        auto in = ftb.get_istream();
+        auto it = in.begin();
+        for (auto b : expected_value1) {
+            BOOST_CHECK_EQUAL(b, *it++);
+        }
+        for (auto b : expected_value2) {
+            BOOST_CHECK_EQUAL(b, *it++);
+        }
+        BOOST_TEST_PASSPOINT();
+        BOOST_CHECK_EQUAL(
+          in.read_bytes_view(expected_value1.size(), linearization_buffer),
+          expected_value1);
+        it = in.begin();
+        for (auto b : expected_value2) {
+            BOOST_CHECK_EQUAL(b, *it++);
+        }
+        BOOST_TEST_PASSPOINT();
+        BOOST_CHECK_EQUAL(
+          in.read_bytes_view(expected_value2.size(), linearization_buffer),
+          expected_value2);
+        it = in.begin();
+        BOOST_REQUIRE(in.begin() == in.end());
+    };
+
+    auto [buffers, value1, value2] = get_buffers();
+    for (auto& frag_buffer : buffers) {
+        auto value1_bv = bytes_view(
+          reinterpret_cast<const bytes::value_type*>(&value1), sizeof(value1));
+        auto value2_bv = bytes_view(
+          reinterpret_cast<const bytes::value_type*>(&value2), sizeof(value2));
+        test(value1_bv, value2_bv, frag_buffer);
+    }
+}
