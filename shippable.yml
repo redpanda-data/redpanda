@@ -14,12 +14,16 @@ env:
 
 build:
   pre_ci:
-  - docker build -t fedora:redpanda tools/ci
+  - docker build -t redpanda_ci tools/ci
   pre_ci_boot:
-    image_name: fedora
-    image_tag: redpanda
+    image_name: redpanda_ci
+    image_tag: latest
     pull: false
   ci:
+    - |
+      . /etc/os-release
+      if [[ "${ID}" != "fedora" ]]; then  exit 1; fi
+      echo "Using CI image"
     - |
       python3 tools/build.py --deps=true --targets=all --build=release --log=debug --fmt=false
   advancedReporting: true
