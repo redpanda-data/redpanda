@@ -1,7 +1,4 @@
-language: c
-
-compiler:
-  - gcc
+language: none
 
 branches:
   only:
@@ -17,7 +14,11 @@ env:
 
 build:
   pre_ci:
-    - apt-get install python3
+  - docker build -t fedora:redpanda tools/ci
+  pre_ci_boot:
+    image_name: fedora
+    image_tag: redpanda
+    pull: false
   ci:
     - |
       python3 tools/build.py --deps=true --targets=all --build=release --log=debug --fmt=false
