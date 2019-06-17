@@ -12,6 +12,7 @@
 
 #include <fmt/format.h>
 
+#include <iterator>
 #include <vector>
 
 /// Fragmented buffer consisting of multiple temporary_buffer<char>
@@ -148,6 +149,8 @@ public:
         }
     };
 
+    class iterator;
+
     CONCEPT(
       static_assert(fragmented_temporary_buffer_concepts::ExceptionThrower<
                     default_exception_thrower>);)
@@ -228,6 +231,11 @@ public:
         return bytes_view(reinterpret_cast<const bytes::value_type*>(ptr), n);
     }
 
+    using const_iterator = iterator;
+    // Non-consuming iterator, from this point forward.
+    iterator begin() const noexcept;
+    iterator end() const noexcept;
+
 private:
     vector_type::const_iterator _current;
     const char* _current_position;
@@ -268,3 +276,82 @@ private:
     std::vector<seastar::temporary_buffer<char>> _fragments;
     size_t _left = 0;
 };
+
+class fragmented_temporary_buffer::istream::iterator {
+    void next_fragment() noexcept {
+        _bytes_left -= _current_fragment->size();
+        if (_bytes_left) {
+            ++_current_fragment;
+            _current_position = _current_fragment->begin();
+        } else {
+            _current_position = nullptr;
+        }
+    }
+
+public:
+    // iterator_traits
+    using value_type = char;
+    using pointer = const char*;
+    using reference = const char&;
+    using iterator_category = std::forward_iterator_tag;
+
+    iterator(
+      vector_type::const_iterator fragment,
+      const char* current_position,
+      size_t bytes_left) noexcept
+      : _current_fragment(std::move(fragment))
+      , _current_position(current_position)
+      , _bytes_left(bytes_left) {
+        if (_current_position == _current_fragment->end()) {
+            next_fragment();
+        }
+    }
+
+    struct end_tag {};
+    iterator(end_tag) noexcept {
+    }
+
+    reference operator*() const noexcept {
+        return *_current_position;
+    }
+
+    pointer operator->() const noexcept {
+        return _current_position;
+    }
+
+    iterator& operator++() noexcept {
+        if (++_current_position == _current_fragment->end()) {
+            next_fragment();
+        }
+        return *this;
+    }
+
+    iterator operator++(int) noexcept {
+        auto it = *this;
+        operator++();
+        return it;
+    }
+
+    bool operator==(const iterator& other) const noexcept {
+        return _current_position == other._current_position;
+    }
+
+    bool operator!=(const iterator& other) const noexcept {
+        return !(*this == other);
+    }
+
+private:
+    vector_type::const_iterator _current_fragment;
+    const char* _current_position = nullptr;
+    size_t _bytes_left;
+};
+
+inline fragmented_temporary_buffer::istream::iterator
+fragmented_temporary_buffer::istream::begin() const noexcept {
+    return iterator(_current, _current_position, _bytes_left);
+}
+
+inline fragmented_temporary_buffer::istream::iterator
+fragmented_temporary_buffer::istream::end() const noexcept {
+    return iterator(iterator::end_tag{});
+}
