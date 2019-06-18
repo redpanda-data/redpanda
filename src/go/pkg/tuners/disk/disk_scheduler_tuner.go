@@ -40,11 +40,11 @@ func NewSchedulerTuner(
 	}
 }
 
-func (tuner *SchedulerTuner) Tune() error {
+func (tuner *SchedulerTuner) Tune() tuners.TuneResult {
 	directoryDevices, err := tuner.diskInfoProvider.GetDirectoriesDevices(
 		tuner.directories)
 	if err != nil {
-		return err
+		return tuners.NewTuneError(err)
 	}
 	disksSetMap := map[string]bool{}
 	for _, devices := range directoryDevices {
@@ -58,7 +58,7 @@ func (tuner *SchedulerTuner) Tune() error {
 	disks := utils.GetKeys(disksSetMap)
 	log.Infof("Tuning Schedulers of '%s' disks", disks)
 	tuner.tuneDisks(disks)
-	return nil
+	return tuners.NewTuneResult(false)
 }
 
 func (tuner *SchedulerTuner) CheckIfSupported() (

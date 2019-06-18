@@ -72,7 +72,7 @@ func NewNetTuner(
 		fs: fs}
 }
 
-func (tuner *NetTuner) Tune() error {
+func (tuner *NetTuner) Tune() tuners.TuneResult {
 	var err error
 	tuner.nicIsBondIface = tuner.checkNicIsBondIface(tuner.nic)
 	tuner.nicIsHWIface = tuner.checkNicIsHWIface(tuner.nic)
@@ -81,23 +81,23 @@ func (tuner *NetTuner) Tune() error {
 	tuner.baseCpuMask, err = tuner.cpuMasks.BaseCpuMask(tuner.baseCpuMask)
 	tuner.procFileLines, err = tuner.irqProcFile.GetIRQProcFileLinesMap()
 	if err != nil {
-		return err
+		return tuners.NewTuneError(err)
 	}
 	tuner.computationsCPUMask, err = tuner.cpuMasks.CpuMaskForComputations(tuner.mode, tuner.baseCpuMask)
 	tuner.irqCPUMask, err = tuner.cpuMasks.CpuMaskForIRQs(tuner.mode, tuner.baseCpuMask)
 	if err != nil {
-		return err
+		return tuners.NewTuneError(err)
 	}
 	tuner.deviceIRQs, err = tuner.getDevicesIRQs()
 	if err != nil {
-		return err
+		return tuners.NewTuneError(err)
 	}
 	if !tuner.nicIsBondIface && !tuner.nicIsHWIface {
-		return fmt.Errorf("virtual device '%s' is not supported", tuner.nic)
+		return tuners.NewTuneError(fmt.Errorf("virtual device '%s' is not supported", tuner.nic))
 	}
 	tuner.slaves = tuner.getSlaves(tuner.nic)
 	if err = tuner.irqBalanceService.BanIRQsAndRestart(tuner.getAllIRQs()); err != nil {
-		return err
+		return tuners.NewTuneError(err)
 	}
 	log.WithFields(log.Fields{
 		"Mode":              tuner.mode,
@@ -109,26 +109,26 @@ func (tuner *NetTuner) Tune() error {
 	if tuner.nicIsHWIface {
 
 		if err = tuner.setupHwInface(tuner.nic); err != nil {
-			return err
+			return tuners.NewTuneError(err)
 		}
 	} else {
 		if err = tuner.setupBondingIface(); err != nil {
-			return err
+			return tuners.NewTuneError(err)
 		}
 	}
 	log.Infof("Increasing socket listen() backlog")
 	err = utils.WriteFileLines(tuner.fs,
 		[]string{"4096"}, "/proc/sys/net/core/somaxconn")
 	if err != nil {
-		return err
+		return tuners.NewTuneError(err)
 	}
 	log.Infof("Increase the maximum number of remembered connection requests")
 	err = utils.WriteFileLines(tuner.fs,
 		[]string{"4096"}, "/proc/sys/net/ipv4/tcp_max_syn_backlog")
 	if err != nil {
-		return err
+		return tuners.NewTuneError(err)
 	}
-	return err
+	return tuners.NewTuneResult(false)
 }
 
 func (tuner *NetTuner) CheckIfSupported() (supported bool, reason string) {

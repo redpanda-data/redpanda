@@ -7,6 +7,7 @@ import (
 	"vectorized/tuners/factory"
 	"vectorized/utils"
 
+	"github.com/fatih/color"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
@@ -98,17 +99,26 @@ func tune(
 	factory factory.TunersFactory,
 	params *factory.TunerParams,
 ) error {
+	var rebootRequired = false
 	for _, tunerName := range elementsToTune {
 		tuner := factory.CreateTuner(tunerName, params)
 		if supported, reason := tuner.CheckIfSupported(); supported == true {
 			log.Infof("Running '%s' tuner...", tunerName)
-			err := tuner.Tune()
-			if err != nil {
-				return err
+			result := tuner.Tune()
+			if result.IsFailed() {
+				return result.GetError()
+			}
+			if result.IsRebootRequired() {
+				rebootRequired = true
 			}
 		} else {
 			log.Infof("Tuner '%s' is not supported - %s", tunerName, reason)
 		}
+	}
+	if rebootRequired {
+		red := color.New(color.FgRed).SprintFunc()
+		log.Infof("%s: Reboot system and run 'rpk tune <tuner>' again",
+			red("IMPORTANT"))
 	}
 	return nil
 }

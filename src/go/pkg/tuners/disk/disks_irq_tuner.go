@@ -109,35 +109,35 @@ func (tuner *disksIRQsTuner) getDefaultMode() (irq.Mode, error) {
 	}
 }
 
-func (tuner *disksIRQsTuner) Tune() error {
+func (tuner *disksIRQsTuner) Tune() tuners.TuneResult {
 	var err error
 	tuner.baseCPUMask, err = tuner.cpuMasks.BaseCpuMask(tuner.baseCPUMask)
 	tuner.mode, err = tuner.getDefaultMode()
 	if err != nil {
-		return err
+		return tuners.NewTuneError(err)
 	}
 	tuner.computationsCPUMask, err = tuner.cpuMasks.CpuMaskForComputations(
 		tuner.mode, tuner.baseCPUMask)
 	tuner.irqCPUMask, err = tuner.cpuMasks.CpuMaskForIRQs(
 		tuner.mode, tuner.baseCPUMask)
 	if err != nil {
-		return err
+		return tuners.NewTuneError(err)
 	}
 	tuner.directoryDevice, err = tuner.diskInfoProvider.GetDirectoriesDevices(
 		tuner.directories)
 	if err != nil {
-		return err
+		return tuners.NewTuneError(err)
 	}
 	tuner.deviceIRQs, err = tuner.getDevicesIRQs()
 	if err != nil {
-		return err
+		return tuners.NewTuneError(err)
 	}
 	tuner.diskInfoByType, err = tuner.groupDiskInfoByType()
 	if err != nil {
-		return err
+		return tuners.NewTuneError(err)
 	}
 	if err = tuner.irqBalanceService.BanIRQsAndRestart(tuner.getAllIRQs()); err != nil {
-		return err
+		return tuners.NewTuneError(err)
 	}
 	nonNvmeDisksInfo := tuner.diskInfoByType[nonNvme]
 	nvmeDisksInfo := tuner.diskInfoByType[nvme]
@@ -155,7 +155,7 @@ func (tuner *disksIRQsTuner) Tune() error {
 		log.Infof("Tuning non-Nvme disks %s", nonNvmeDisksInfo.devices)
 		if err := tuner.cpuMasks.DistributeIRQs(
 			nonNvmeDisksInfo.irqs, tuner.irqCPUMask); err != nil {
-			return err
+			return tuners.NewTuneError(err)
 		}
 	} else {
 		log.Infof("No non-Nvme disks to tune")
@@ -165,12 +165,12 @@ func (tuner *disksIRQsTuner) Tune() error {
 		log.Infof("Tuning Nvme disks %s", nvmeDisksInfo.devices)
 		if err := tuner.cpuMasks.DistributeIRQs(nvmeDisksInfo.irqs,
 			tuner.baseCPUMask); err != nil {
-			return err
+			return tuners.NewTuneError(err)
 		}
 	} else {
 		log.Infof("No Nvme disks to tune")
 	}
-	return nil
+	return tuners.NewTuneResult(false)
 }
 
 func (tuner *disksIRQsTuner) getAllIRQs() []string {

@@ -8,7 +8,6 @@ import (
 	"vectorized/tuners/irq"
 	"vectorized/utils"
 
-	"github.com/fatih/color"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 )
@@ -32,36 +31,36 @@ func NewCpuTuner(
 	}
 }
 
-func (tuner *tuner) Tune() error {
+func (tuner *tuner) Tune() tuners.TuneResult {
 	var err error
 	grubUpdated := false
 	log.Info("Running CPU tuner...")
 	allCpusMask, err := tuner.cpuMasks.GetAllCpusMask()
 	if err != nil {
-		return err
+		return tuners.NewTuneError(err)
 	}
 	tuner.cores, err = tuner.cpuMasks.GetNumberOfCores(allCpusMask)
 	tuner.pus, err = tuner.cpuMasks.GetNumberOfPUs(allCpusMask)
 	log.Debugf("Running on system with '%d' cores and '%d' PUs",
 		tuner.cores, tuner.pus)
 	if err != nil {
-		return err
+		return tuners.NewTuneError(err)
 	}
 	if tuner.isHtEnabled() {
 		err = tuner.disableHt()
 	}
 	if err != nil {
-		return err
+		return tuners.NewTuneError(err)
 	}
 	maxCState, err := tuner.getMaxCState()
 	if err != nil {
-		return err
+		return tuners.NewTuneError(err)
 	}
 	if maxCState != 0 {
 		err = tuner.disableCStates()
 		grubUpdated = true
 		if err != nil {
-			return err
+			return tuners.NewTuneError(err)
 		}
 	}
 	pStatesEnabled, err := tuner.checkIfPStateIsEnabled()
@@ -70,7 +69,7 @@ func (tuner *tuner) Tune() error {
 		err = tuner.disablePStates()
 		grubUpdated = true
 		if err != nil {
-			return err
+			return tuners.NewTuneError(err)
 		}
 	} else {
 		err = tuner.setupCPUGovernors()
@@ -78,13 +77,11 @@ func (tuner *tuner) Tune() error {
 	if grubUpdated {
 		err = tuner.grub.MakeConfig()
 		if err != nil {
-			return err
+			return tuners.NewTuneError(err)
 		}
-		red := color.New(color.FgRed).SprintFunc()
-		log.Infof("%s: Reboot system and run 'rpk tune cpu' again",
-			red("IMPORTANT"))
+		return tuners.NewTuneResult(true)
 	}
-	return nil
+	return tuners.NewTuneResult(false)
 }
 
 func (tuner *tuner) CheckIfSupported() (supported bool, reason string) {
