@@ -24,19 +24,22 @@ def get_llvm():
         _download_and_check_llvm_sources()
 
 
-def build_llvm():
+def build_llvm(bootstrap_build):
     os.makedirs(_get_llvm_build_path(), exist_ok=True)
     os.makedirs(get_llvm_install_path(), exist_ok=True)
     cmake_tmpl = 'cd {build_root} && cmake -G Ninja  -C {llvm_cmake_cache} {args} {src_root}/llvm'
-    logger.info("Configuring LLVM bootstrap build....")
+    logger.info("Configuring LLVM build....")
     shell.run_subprocess(
         cmake_tmpl.format(
             build_root=_get_llvm_build_path(),
-            llvm_cmake_cache=_get_llvm_cmake_path(),
+            llvm_cmake_cache=_get_llvm_cmake_path(bootstrap_build),
             args=_join_cmake_args(),
             src_root=_get_llvm_src_path()))
     logger.info("Building LLVM...")
-    ninja_tmpl = 'cd {build_root} && ninja stage2 && ninja stage2-install'
+    if bootstrap_build:
+        ninja_tmpl = 'cd {build_root} && ninja stage2 && ninja stage2-install'
+    else:
+        ninja_tmpl = 'cd {build_root} && ninja && ninja install'
     shell.run_subprocess(ninja_tmpl.format(build_root=_get_llvm_build_path()))
 
 
@@ -81,10 +84,11 @@ def get_llvm_install_path():
     return os.path.join(RP_BUILD_ROOT, 'llvm', 'llvm-bin')
 
 
-def _get_llvm_cmake_path():
+def _get_llvm_cmake_path(bootstrap_build):
     # All the LLVM bootstrap build conifguration can be set in
     # <root>/cmake/llvm.cmake
-    return os.path.join(RP_ROOT, "cmake", "caches", "llvm.cmake")
+    cmake_cache = "llvm-bootstrap.cmake" if bootstrap_build else "llvm.cmake"
+    return os.path.join(RP_ROOT, "cmake", "caches", cmake_cache)
 
 
 def _llvm_cmake_args():
