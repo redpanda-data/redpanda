@@ -9,7 +9,6 @@ import (
 	"vectorized/tuners"
 	"vectorized/utils"
 
-	"github.com/jochenvg/go-udev"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 )
@@ -135,7 +134,7 @@ func (tuner *SchedulerTuner) tuneNoMerges(deviceNode string) bool {
 
 func (tuner *SchedulerTuner) getFeatureFile(
 	deviceNode string, pathCreator func(string) string,
-) (string, *udev.Device) {
+) (string, BlockDevice) {
 	device, err := tuner.diskInfoProvider.GetBlockDeviceFromPath(deviceNode)
 	if err != nil {
 		return "", nil

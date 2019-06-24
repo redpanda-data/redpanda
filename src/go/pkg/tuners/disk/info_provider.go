@@ -7,28 +7,25 @@ import (
 	"vectorized/os"
 	"vectorized/utils"
 
-	"github.com/jochenvg/go-udev"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 )
 
 type InfoProvider interface {
 	GetDirectoriesDevices(directories []string) (map[string][]string, error)
-	GetBlockDeviceFromPath(path string) (*udev.Device, error)
+	GetBlockDeviceFromPath(path string) (BlockDevice, error)
 	GetBlockDeviceSystemPath(devicePath string) (string, error)
 }
 
 type infoProvider struct {
-	udevHandle *udev.Udev
-	proc       os.Proc
-	fs         afero.Fs
+	proc os.Proc
+	fs   afero.Fs
 }
 
 func NewDiskInfoProvider(fs afero.Fs, proc os.Proc) InfoProvider {
 	return &infoProvider{
-		fs:         fs,
-		proc:       proc,
-		udevHandle: &udev.Udev{},
+		fs:   fs,
+		proc: proc,
 	}
 }
 
@@ -76,7 +73,7 @@ func (infoProvider *infoProvider) getDirectoryDevices(
 			}
 			devices = append(devices, directoryDevices...)
 		} else {
-			log.Error("Failed to create a udev device"+
+			log.Error("Failed to create device"+
 				" while 'df -P %s' returns a '%s'",
 				path, devicePath)
 		}
@@ -89,7 +86,7 @@ func (infoProvider *infoProvider) getDirectoryDevices(
 }
 
 func (infoProvider *infoProvider) getPhysDevices(
-	device *udev.Device,
+	device BlockDevice,
 ) ([]string, error) {
 	log.Debugf("Getting physical device from '%s'", device.Syspath())
 	if strings.Contains(device.Syspath(), "virtual") {
@@ -128,7 +125,7 @@ func getDevNumFromDirectory(stat syscall.Stat_t) uint64 {
 
 func (infoProvider *infoProvider) GetBlockDeviceFromPath(
 	path string,
-) (*udev.Device, error) {
+) (BlockDevice, error) {
 	return infoProvider.getBlockDeviceFromPath(path,
 		getDevNumFromDeviceDirectory)
 }
@@ -143,7 +140,7 @@ func (infoProvider *infoProvider) GetBlockDeviceSystemPath(
 
 func (infoProvider *infoProvider) getBlockDeviceFromPath(
 	path string, devNumExtractor func(syscall.Stat_t) uint64,
-) (*udev.Device, error) {
+) (BlockDevice, error) {
 	var stat syscall.Stat_t
 	log.Debugf("Getting block device from path '%s'", path)
 	err := syscall.Stat(path, &stat)
@@ -151,7 +148,5 @@ func (infoProvider *infoProvider) getBlockDeviceFromPath(
 		return nil, err
 	}
 	number := devNumExtractor(stat)
-	devNum := udev.MkDev(int((0xFFFFFFFF00000000&number)>>32), int(number&0xFFFFFFFF))
-	device := infoProvider.udevHandle.NewDeviceFromDevnum('b', devNum)
-	return device, nil
+	return NewDevice(int((0xFFFFFFFF00000000&number)>>32), int(number&0xFFFFFFFF), infoProvider.fs)
 }
