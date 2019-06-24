@@ -24,7 +24,7 @@ func NewTuneError(err error) TuneResult {
 
 func NewTuneResult(rebootRequired bool) TuneResult {
 	return &tuneResult{
-		rebootRequired: true,
+		rebootRequired: rebootRequired,
 	}
 }
 
