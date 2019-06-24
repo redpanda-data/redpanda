@@ -8,7 +8,6 @@ function debs() {
             ccache \
             python3-distutils-extra \
             clang \
-            libudev-dev \
             pigz \
             zlib1g-dev \
             python3-requests \
@@ -39,7 +38,6 @@ function rpms() {
               ccache \
               python3-distutils-extra \
               clang \
-              systemd-devel \
               pigz \
               zlib-devel \
               python3-requests \
