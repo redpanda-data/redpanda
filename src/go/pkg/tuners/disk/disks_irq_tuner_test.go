@@ -4,13 +4,12 @@ import (
 	"testing"
 	"vectorized/tuners/irq"
 
-	"github.com/jochenvg/go-udev"
 	"github.com/stretchr/testify/assert"
 )
 
 type diskInfoProviderMock struct {
 	getDirectoriesDevices    func([]string) (map[string][]string, error)
-	getBlockDeviceFromPath   func(string) (*udev.Device, error)
+	getBlockDeviceFromPath   func(string) (BlockDevice, error)
 	getBlockDeviceSystemPath func(string) (string, error)
 }
 
@@ -22,7 +21,7 @@ func (infoProvider *diskInfoProviderMock) GetDirectoriesDevices(
 
 func (infoProvider *diskInfoProviderMock) GetBlockDeviceFromPath(
 	path string,
-) (*udev.Device, error) {
+) (BlockDevice, error) {
 	return infoProvider.getBlockDeviceFromPath(path)
 }
 
