@@ -296,6 +296,7 @@ ExternalProject_Add(hwloc
   CONFIGURE_COMMAND
     ${CMAKE_COMMAND} -E env ${build_env}
     <SOURCE_DIR>/configure
+    --disable-libudev
     --prefix=<INSTALL_DIR>
     --srcdir=<SOURCE_DIR>
   BUILD_COMMAND ${make_command}
