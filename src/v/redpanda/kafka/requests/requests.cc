@@ -14,11 +14,11 @@ seastar::logger kreq_log("init");
 CONCEPT(
 // A Kafka request.
 template<typename T>
-concept KafkaRequest = requires (T request, request_context& ctx) {
+concept KafkaRequest = requires (T request, request_context& ctx, seastar::smp_service_group g) {
     { T::key } -> api_key;
     { T::min_supported } -> api_version;
     { T::max_supported } -> api_version;
-    { T::process(ctx) } -> seastar::future<response_ptr>;
+    { T::process(ctx, g) } -> seastar::future<response_ptr>;
 };
 )
 // clang-format on
@@ -32,12 +32,13 @@ using make_request_types = type_list<Requests...>;
 
 using request_types = make_request_types<api_versions_request>;
 
-seastar::future<response_ptr> process_request(request_context& ctx) {
+seastar::future<response_ptr>
+process_request(request_context& ctx, seastar::smp_service_group g) {
     // Eventually generate this with meta-classes.
     // Domain probe
     switch (ctx.header().key.value()) {
     case api_versions_request::key.value():
-        return api_versions_request::process(ctx);
+        return api_versions_request::process(ctx, std::move(g));
     };
     throw std::runtime_error(
       fmt::format("Unsupported API {}", ctx.header().key));
@@ -76,8 +77,8 @@ serialize_apis(response_writer& writer, type_list<RequestTypes...>) {
     (do_serialize<RequestTypes>(writer), ...);
 }
 
-seastar::future<response_ptr>
-api_versions_request::process(request_context& ctx) {
+seastar::future<response_ptr> api_versions_request::process(
+  request_context& ctx, seastar::smp_service_group) {
     auto resp = std::make_unique<response>();
     // Unlike other request types, we handle ApiVersion requests
     // with higher versions than supported. We treat such a request
