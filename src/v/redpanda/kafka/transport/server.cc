@@ -21,7 +21,8 @@ using size_type = int32_t;
 kafka_server::kafka_server(probe p, kafka_server_config config) noexcept
   : _probe(std::move(p))
   , _max_request_size(config.max_request_size)
-  , _memory_available(_max_request_size) {
+  , _memory_available(_max_request_size)
+  , _smp_group(std::move(config.smp_group)) {
 }
 
 future<> kafka_server::listen(socket_address server_addr, bool keepalive) {
@@ -209,7 +210,7 @@ void kafka_server::connection::do_process(
        units = std::move(units),
        ready = std::move(ready)]() mutable {
           auto correlation = ctx.header().correlation_id;
-          return requests::process_request(ctx)
+          return requests::process_request(ctx, _server._smp_group)
             .then_wrapped([this,
                            units = std::move(units),
                            ready = std::move(ready),

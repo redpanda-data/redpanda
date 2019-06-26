@@ -5,6 +5,7 @@
 #include "utils/fragmented_temporary_buffer.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/core/reactor.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/util/log.hh>
 
@@ -41,6 +42,7 @@ class response;
 using response_ptr = seastar::foreign_ptr<std::unique_ptr<response>>;
 
 // Executes the API call identified by the specified request_context.
-seastar::future<response_ptr> process_request(request_context&);
+seastar::future<response_ptr>
+process_request(request_context&, seastar::smp_service_group);
 
 } // namespace kafka::requests

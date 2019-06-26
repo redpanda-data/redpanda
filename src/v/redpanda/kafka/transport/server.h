@@ -42,6 +42,7 @@ struct [[gnu::packed]] raw_response_header {
 
 struct kafka_server_config {
     size_t max_request_size;
+    smp_service_group smp_group;
 };
 
 class kafka_server {
@@ -89,6 +90,7 @@ private:
     probe _probe;
     size_t _max_request_size;
     semaphore _memory_available;
+    smp_service_group _smp_group;
     std::vector<server_socket> _listeners;
     boost::intrusive::list<connection> _connections;
     abort_source _as;
