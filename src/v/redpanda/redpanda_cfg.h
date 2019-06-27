@@ -18,6 +18,7 @@ struct redpanda_cfg {
     seastar::sstring directory;
     seastar::sstring ip;
     uint16_t port;
+    uint16_t kafka_transport_port = 9092;
     int32_t retention_period_hrs = 168;
     int64_t flush_period_ms = 1000;
     int64_t log_segment_size_bytes = wal_file_size_aligned();
@@ -148,6 +149,7 @@ struct convert<redpanda_cfg> {
         parse("min_version", rhs.min_version);
         parse("max_version", rhs.max_version);
         parse("seed_servers", rhs.seed_servers);
+        parse("kafka_transport_port", rhs.kafka_transport_port);
         // get full path
         if (rhs.directory[0] == '~') {
             const char* tilde = ::getenv("HOME");
