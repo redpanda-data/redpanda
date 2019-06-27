@@ -4,6 +4,7 @@
 
 #include <seastar/core/app-template.hh>
 #include <seastar/core/prometheus.hh>
+#include <seastar/core/thread.hh>
 
 #include <smf/histogram_seastar_utils.h>
 #include <smf/log.h>
@@ -50,7 +51,7 @@ int main(int argc, char** argv, char** env) {
         std::cout.setf(std::ios::unitbuf);
         smf::app_run_log_level(seastar::log_level::trace);
 #endif
-
+      return seastar::async([&] {
         seastar::engine().at_exit([&log] { return log.stop(); });
         auto&& config = app.configuration();
         LOG_THROW_IF(
@@ -61,17 +62,16 @@ int main(int argc, char** argv, char** env) {
           config["redpanda-cfg"].as<std::string>());
         LOG_INFO("Configuration: {}", global_cfg);
         rpc_at_exit(rpc, global_cfg.directory);
-        return check_environment(global_cfg)
-          .then([&log, &global_cfg] { return log.start(global_cfg.wal_cfg()); })
-          .then([&log] { return log.invoke_on_all(&write_ahead_log::open); })
-          .then([&log] { return log.invoke_on_all(&write_ahead_log::index); })
-          .then([&rpc, &global_cfg] { return rpc.start(global_cfg.rpc_cfg()); })
-          .then([&rpc, &global_cfg, &log] {
-              return rpc.invoke_on_all([&](smf::rpc_server& s) {
-                  register_service(s, &log, &global_cfg);
-              });
-          })
-          .then([&rpc] { return rpc.invoke_on_all(&smf::rpc_server::start); });
+        check_environment(global_cfg).get();
+        log.start(global_cfg.wal_cfg()).get();
+        log.invoke_on_all(&write_ahead_log::open).get();
+        log.invoke_on_all(&write_ahead_log::index).get();
+        rpc.start(global_cfg.rpc_cfg()).get();
+        rpc.invoke_on_all([&](smf::rpc_server& s) {
+          register_service(s, &log, &global_cfg);
+        }).get();
+        rpc.invoke_on_all(&smf::rpc_server::start).get();
+      });
     });
     return 0;
 }
