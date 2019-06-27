@@ -15,12 +15,15 @@
 
 #include <fmt/format.h>
 
+#include <chrono>
 #include <iostream>
 
 // in transition
 #include "raft/raft_log_service.h"
 #include "redpanda/redpanda_cfg.h"
 #include "redpanda/redpanda_service.h"
+
+using namespace std::chrono_literals;
 
 seastar::future<> check_environment(const redpanda_cfg& c);
 
@@ -39,13 +42,17 @@ int main(int argc, char** argv, char** env) {
     std::setvbuf(stdout, nullptr, _IOLBF, 1024);
     seastar::distributed<smf::rpc_server> rpc;
     seastar::distributed<write_ahead_log> log;
-    seastar::app_template app;
+    seastar::app_template::config app_cfg;
+    app_cfg.name = "Redpanda";
+    app_cfg.default_task_quota = 500us;
+    app_cfg.auto_handle_sigint_sigterm = false;
+    seastar::app_template app(std::move(app_cfg));
     redpanda_cfg global_cfg;
     app.add_options()(
       "redpanda-cfg",
       po::value<std::string>(),
       ".yaml file config for redpanda");
-    return app.run_deprecated(argc, argv, [&] {
+    return app.run(argc, argv, [&] {
     // Just being safe
 #ifndef NDEBUG
         std::cout.setf(std::ios::unitbuf);
