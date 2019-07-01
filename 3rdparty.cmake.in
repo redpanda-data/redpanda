@@ -217,9 +217,11 @@ ExternalProject_Add(gmp
   INSTALL_COMMAND ${make_command} install)
 
 ExternalProject_Add(nettle
-  URL https://ftp.gnu.org/gnu/nettle/nettle-3.4.tar.gz
-  URL_MD5 dc0f13028264992f58e67b4e8915f53d
+  URL https://github.com/gnutls/nettle/archive/nettle_3.4_release_20171119.tar.gz
+  URL_MD5 84747a2a1468bf9345e3e94bfb938169
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
+  PATCH_COMMAND
+    <SOURCE_DIR>/.bootstrap
   CONFIGURE_COMMAND
     ${CMAKE_COMMAND} -E env ${build_env}
     <SOURCE_DIR>/configure
