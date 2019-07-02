@@ -59,6 +59,10 @@ public:
         return close();
     }
 
+    const wal_topics_manager& topics_manager() const {
+        return _tm;
+    }
+
     ~write_ahead_log() = default;
     SMF_DISALLOW_COPY_AND_ASSIGN(write_ahead_log);
     const wal_opts opts;
