@@ -18,8 +18,12 @@ static seastar::logger klog("kafka_server");
 
 using size_type = int32_t;
 
-kafka_server::kafka_server(probe p, kafka_server_config config) noexcept
+kafka_server::kafka_server(
+  probe p,
+  seastar::sharded<cluster::metadata_cache>& metadata_cache,
+  kafka_server_config config) noexcept
   : _probe(std::move(p))
+  , _metadata_cache(metadata_cache)
   , _max_request_size(config.max_request_size)
   , _memory_available(_max_request_size)
   , _smp_group(std::move(config.smp_group)) {
@@ -204,6 +208,7 @@ future<> kafka_server::connection::process_request() {
                               fragmented_temporary_buffer buf) mutable {
                           auto ctx
                             = std::make_unique<requests::request_context>(
+                              _server._metadata_cache,
                               std::move(header),
                               std::move(buf));
                           _server._probe.serving_request(*ctx);
