@@ -1,5 +1,6 @@
 #pragma once
 
+#include "cluster/metadata_cache.h"
 #include "redpanda/kafka/transport/probe.h"
 #include "utils/fragmented_temporary_buffer.h"
 
@@ -49,6 +50,7 @@ class kafka_server {
 public:
     kafka_server(
       probe,
+      seastar::sharded<cluster::metadata_cache>&,
       kafka_server_config) noexcept;
     future<> listen(socket_address server_addr, bool keepalive);
     future<> do_accepts(int which, net::inet_address server_addr);
@@ -88,6 +90,7 @@ private:
     future<> do_accepts(int which, bool keepalive);
 
     probe _probe;
+    seastar::sharded<cluster::metadata_cache>& _metadata_cache;
     size_t _max_request_size;
     semaphore _memory_available;
     smp_service_group _smp_group;

@@ -7,4 +7,5 @@ target_link_libraries(transport
   PUBLIC
     Seastar::seastar
     requests
+    cluster
   )
