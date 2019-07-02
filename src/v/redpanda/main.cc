@@ -1,3 +1,4 @@
+#include "cluster/metadata_cache.h"
 #include "filesystem/write_ahead_log.h"
 #include "ioutil/dir_utils.h"
 #include "syschecks/syschecks.h"
@@ -119,6 +120,12 @@ int main(int argc, char** argv, char** env) {
                 register_service(s, &log, &global_cfg);
             }).get();
             rpc.invoke_on_all(&smf::rpc_server::start).get();
+            static seastar::sharded<cluster::metadata_cache> metadata_cache;
+            LOG_INFO("Starting Metadata Cache");
+            metadata_cache.start(std::ref(log)).get();
+            auto stop_metadata_cache = seastar::defer(
+              [] { metadata_cache.stop().get(); });
+
             stop_signal.wait().get();
             LOG_INFO("Stopping...");
         });
