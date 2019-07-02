@@ -21,7 +21,7 @@ add_executable(redpanda
   ${redpanda_gened}
   main.cc
   )
-target_link_libraries(redpanda PUBLIC redpanda_services raft)
+target_link_libraries(redpanda PUBLIC redpanda_services raft transport)
 set_property(TARGET redpanda PROPERTY POSITION_INDEPENDENT_CODE ON)
 
 if(NOT CMAKE_BUILD_TYPE MATCHES Debug)

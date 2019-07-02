@@ -1,6 +1,8 @@
 #include "cluster/metadata_cache.h"
 #include "filesystem/write_ahead_log.h"
 #include "ioutil/dir_utils.h"
+#include "redpanda/kafka/transport/probe.h"
+#include "redpanda/kafka/transport/server.h"
 #include "syschecks/syschecks.h"
 
 #include <seastar/core/app-template.hh>
@@ -10,6 +12,7 @@
 #include <seastar/core/reactor.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/thread.hh>
+#include <seastar/net/socket_defs.hh>
 #include <seastar/util/defer.hh>
 
 #include <smf/histogram_seastar_utils.h>
@@ -125,6 +128,37 @@ int main(int argc, char** argv, char** env) {
             metadata_cache.start(std::ref(log)).get();
             auto stop_metadata_cache = seastar::defer(
               [] { metadata_cache.stop().get(); });
+
+            static seastar::sharded<kafka::transport::kafka_server>
+              kafka_server;
+            seastar::smp_service_group_config
+              storage_proxy_smp_service_group_config;
+            // Assuming less than 1kB per queued request, this limits server
+            // submit_to() queues to 5MB or less.
+            auto kafka_server_smp_group
+              = seastar::create_smp_service_group({5000}).get0();
+            kafka::transport::kafka_server_config server_config = {
+              // FIXME: Add memory manager
+              seastar::memory::stats().total_memory() / 10,
+              std::move(kafka_server_smp_group)};
+            LOG_INFO("Starting Kafka API server");
+            kafka_server
+              .start(
+                kafka::transport::probe(),
+                std::ref(metadata_cache),
+                std::move(server_config))
+              .get();
+            auto addr = seastar::socket_address(seastar::ipv4_addr(
+              global_cfg.ip, global_cfg.kafka_transport_port));
+            kafka_server
+              .invoke_on_all([addr = std::move(addr)](
+                               kafka::transport::kafka_server& server) mutable {
+                  // FIXME: Configure keepalive.
+                  return server.listen(std::move(addr), false);
+              })
+              .get();
+            auto stop_kafka_server = seastar::defer(
+              [] { kafka_server.stop().get(); });
 
             stop_signal.wait().get();
             LOG_INFO("Stopping...");

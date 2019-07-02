@@ -16,7 +16,7 @@
 
 struct redpanda_cfg {
     seastar::sstring directory;
-    seastar::sstring ip;
+    std::string ip;
     uint16_t port;
     uint16_t kafka_transport_port = 9092;
     int32_t retention_period_hrs = 168;
