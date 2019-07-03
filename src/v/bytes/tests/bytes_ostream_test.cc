@@ -180,7 +180,8 @@ BOOST_AUTO_TEST_CASE(test_writing_placeholders) {
 
     auto* ph = buf.write_place_holder(sizeof(int));
     serialize(buf, 2);
-    *ph = 1;
+    auto val = 1;
+    std::copy_n(reinterpret_cast<const char*>(&val), sizeof(int), ph);
 
     auto in = buf.view();
     BOOST_REQUIRE_EQUAL(deserialize(in), 1);
