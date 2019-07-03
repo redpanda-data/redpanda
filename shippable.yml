@@ -26,6 +26,9 @@ build:
       echo "Using CI image"
     - |
       python3 tools/build.py --deps=true --targets=all --build=release --log=debug --fmt=false --clang=internal
+    - |
+      python3 tools/build.py --targets=all --build=debug --log=info --fmt=false --clang=internal
+
   advancedReporting: true
 
 integrations:
