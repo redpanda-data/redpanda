@@ -1,5 +1,6 @@
 add_library (requests STATIC
   requests.cc
+  metadata_request.cc
   )
 target_include_directories(requests PUBLIC ${PROJECT_SOURCE_DIR}/src/v)
 
