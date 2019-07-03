@@ -1,5 +1,6 @@
 #include "redpanda/kafka/requests/api_versions_request.h"
 #include "redpanda/kafka/requests/headers.h"
+#include "redpanda/kafka/requests/metadata_request.h"
 #include "redpanda/kafka/requests/request_context.h"
 #include "utils/to_string.h"
 
@@ -30,7 +31,8 @@ template<typename... Requests>
 CONCEPT(requires(KafkaRequest<Requests>, ...))
 using make_request_types = type_list<Requests...>;
 
-using request_types = make_request_types<api_versions_request>;
+using request_types
+  = make_request_types<api_versions_request, metadata_request>;
 
 seastar::future<response_ptr>
 process_request(request_context& ctx, seastar::smp_service_group g) {
@@ -39,6 +41,8 @@ process_request(request_context& ctx, seastar::smp_service_group g) {
     switch (ctx.header().key.value()) {
     case api_versions_request::key.value():
         return api_versions_request::process(ctx, std::move(g));
+    case metadata_request::key.value():
+        return metadata_request::process(ctx, std::move(g));
     };
     throw std::runtime_error(
       fmt::format("Unsupported API {}", ctx.header().key));
