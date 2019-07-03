@@ -121,7 +121,7 @@ wal_writer_node::append(wal_write_request req) {
 }
 
 seastar::future<> wal_writer_node::do_append(const wal_binary_record* f) {
-    if (SMF_LIKELY(f->data()->size() <= space_left())) {
+    if (__builtin_expect(f->data()->size() <= space_left(), true)) {
         return disk_write(f);
     }
     return rotate_fstream().then([this, f]() mutable { return disk_write(f); });

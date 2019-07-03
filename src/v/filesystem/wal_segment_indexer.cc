@@ -63,13 +63,14 @@ wal_segment_indexer::get_or_create(int64_t offset, const wal_binary_record* r) {
           _data.begin(), _data.end(), xx, key_hash_functor{});
         it != _data.end()) {
         const int32_t key_size = it->get()->key.size();
-        if (SMF_UNLIKELY(
-              (key_size != hdr.key_size()
-               || std::strncmp(
-                    key_begin,
-                    reinterpret_cast<const char*>((*it)->key.data()),
-                    hdr.key_size())
-                    != 0))) {
+        if (__builtin_expect(
+              key_size != hdr.key_size()
+                || std::strncmp(
+                     key_begin,
+                     reinterpret_cast<const char*>((*it)->key.data()),
+                     hdr.key_size())
+                     != 0,
+              false)) {
             // Worst case O(2 * ln N)
             // 1) In this case we pay the cost of 2 lookups. The first one which
             // was

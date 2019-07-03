@@ -61,8 +61,9 @@ wal_core_mapping::core_assignment(const wal_put_request* p) {
         std::vector<const wal_binary_record*> records;
     };
 
-    if (SMF_UNLIKELY(
-          p->partition_puts() == nullptr || p->partition_puts()->size() == 0)) {
+    if (__builtin_expect(
+          p->partition_puts() == nullptr || p->partition_puts()->size() == 0,
+          false)) {
         LOG_THROW_IF(
           p->partition_puts() == nullptr, "null pointer to transactions");
         LOG_THROW_IF(

@@ -113,7 +113,7 @@ page_cache::prefetch(page_cache_request r, page_cache_result::priority prio) {
                        range_ptr = std::move(range_ptr),
                        m = _stats.disk_latency.measure()](
                         std::size_t size) mutable {
-                    if (SMF_UNLIKELY(size == 0)) {
+                    if (__builtin_expect(size == 0, false)) {
                         LOG_ERROR(
                           "Got size 0 when reading page: {}. Usually it means "
                           "you are reading past the end of a physical file. "
@@ -207,7 +207,7 @@ page_cache::read(page_cache_request r) {
                        ptr,
                        range_ptr = std::move(range_ptr),
                        m = _stats.disk_latency.measure()](auto size) mutable {
-                    if (SMF_UNLIKELY(size == 0)) {
+                    if (__builtin_expect(size == 0, false)) {
                         LOG_ERROR(
                           "Got size 0 when reading page: {}. Usually it means "
                           "you are reading past the end of a physical file. "

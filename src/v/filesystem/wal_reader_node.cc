@@ -375,7 +375,7 @@ wal_reader_node::do_read(wal_read_reply* retval, wal_read_request r) {
         return seastar::make_ready_future<>();
     }
     auto remaining_req_size = r.req->max_bytes() - retval->on_disk_size();
-    if (SMF_UNLIKELY(remaining_req_size <= 0)) {
+    if (__builtin_expect(remaining_req_size <= 0, false)) {
         LOG_WARN("Asked to read data but request is already fullfilled");
         return seastar::make_ready_future<>();
     }
