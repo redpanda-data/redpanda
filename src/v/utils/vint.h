@@ -7,6 +7,8 @@
 
 using vint_size_type = bytes::size_type;
 
+static constexpr size_t max_vint_length = 9;
+
 namespace internal {
 
 template<typename ValueType>
@@ -16,6 +18,13 @@ class vint_base final {
     static constexpr uint8_t more_bytes = 128;
 
 public:
+    using value_type = ValueType;
+
+    struct result {
+        ValueType value;
+        vint_size_type bytes_read;
+    };
+
     static constexpr UValueType encode_zigzag(ValueType n) noexcept {
         // The right shift has to be arithmetic and not logical.
         return (static_cast<UValueType>(n) << 1)
@@ -40,10 +49,13 @@ public:
         return size;
     }
 
-    static ValueType deserialize(bytes_view v) noexcept {
+    template<typename Range>
+    static result deserialize(Range&& r) noexcept {
         UValueType result = 0;
         uint8_t shift = 0;
-        for (auto* src = v.begin(); src != v.end(); ++src) {
+        vint_size_type bytes_read = 0;
+        for (auto src = r.begin(); src != r.end(); ++src) {
+            bytes_read++;
             uint64_t byte = *src;
             if (byte & more_bytes) {
                 result |= (byte & (more_bytes - 1)) << shift;
@@ -53,7 +65,7 @@ public:
             }
             shift = std::min(std::numeric_limits<ValueType>::digits, shift + 7);
         }
-        return decode_zigzag(result);
+        return {decode_zigzag(result), bytes_read};
     }
 };
 

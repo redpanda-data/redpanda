@@ -203,7 +203,7 @@ seastar::future<wal_nstpidx_manager*>
 wal_topics_manager::get_manager(wal_nstpidx idx) {
     wal_nstpidx_manager* ptr = nullptr;
     auto it = _mngrs.find(idx);
-    if (SMF_UNLIKELY(it == _mngrs.end())) {
+    if (__builtin_expect(it == _mngrs.end(), false)) {
         return seastar::make_ready_future<wal_nstpidx_manager*>(nullptr);
     }
     ptr = it->second.get();
