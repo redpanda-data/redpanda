@@ -37,11 +37,13 @@ def _configure_build(build_type, clang_opt):
     _check_build_type(build_type)
     cpp.check_bdir(build_type)
     logger.info("configuring build %s" % build_type)
-    args = ''
+    args = []
     tpl = Template(
         "cd $root && cmake -GNinja $args -DCMAKE_BUILD_TYPE=$cmake_type "
         "-B$build_root/$build_type -H$root")
     build_env = os.environ
+    if clang_opt:
+        args.append('-DRP_ENABLE_GOLD_LINKER=OFF')
     if clang_opt == None:
         logger.debug(
             "Clang not defined, building using default system compiler")
@@ -50,7 +52,6 @@ def _configure_build(build_type, clang_opt):
         llvm.get_llvm()
         bootstrap_build = clang_opt == "llvm_bootstrap"
         llvm.build_llvm(bootstrap_build)
-        args = '-DRP_ENABLE_GOLD_LINKER=OFF'
         build_env = clang.clang_env_from_path(
             os.path.join(llvm.get_llvm_install_path(), "bin", "clang"))
     else:
@@ -59,7 +60,7 @@ def _configure_build(build_type, clang_opt):
     cmd = tpl.substitute(
         root=RP_ROOT,
         build_root=RP_BUILD_ROOT,
-        args=args,
+        args=' '.join(args),
         cmake_type=build_type.capitalize(),
         build_type=build_type)
     shell.run_subprocess(cmd, build_env)
