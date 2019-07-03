@@ -44,7 +44,8 @@ if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
         -D_LIBCPP_ENABLE_CXX17_REMOVED_AUTO_PTR
         -DSEASTAR_USE_STD_OPTIONAL_VARIANT_STRINGVIEW
         -I${CMAKE_CURRENT_BINARY_DIR}/v_deps_install/include/c++/v1
-        -stdlib=libc++)
+        --stdlib=libc++
+        -DNO_CONCEPTS)
 elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
     if(RP_ENABLE_GOLD_LINKER)
         set(BASE_LD_FLAGS_LIST -fuse-ld=gold)
