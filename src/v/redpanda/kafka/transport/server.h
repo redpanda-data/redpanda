@@ -20,7 +20,7 @@
 #include <vector>
 
 namespace kafka::requests {
-class request_header;
+struct request_header;
 }
 
 namespace kafka::transport {
