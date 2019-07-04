@@ -103,12 +103,11 @@ func (tuner *SchedulerTuner) tuneOneFeature(
 	if featureFile == "" {
 		return false
 	}
-	pathString := pathCreator(featureFile)
-	log.Debugf("Setting '%s' with value '%s'", pathString, value)
-	err := ioutil.WriteFile(pathString, []byte(value), 0644)
+	log.Debugf("Setting '%s' with value '%s'", featureFile, value)
+	err := ioutil.WriteFile(featureFile, []byte(value), 0644)
 	if err != nil {
 		log.Debugf("Unable to set '%s' in '%s' feature file",
-			value, pathString)
+			value, featureFile)
 		return false
 	}
 	return true
