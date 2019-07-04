@@ -79,7 +79,6 @@ private:
         socket_address _addr;
         input_stream<char> _read_buf;
         output_stream<char> _write_buf;
-        gate _pending_requests_gate;
         fragmented_temporary_buffer::reader _buffer_reader;
         future<> _ready_to_respond = make_ready_future<>();
     };

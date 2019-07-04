@@ -135,12 +135,9 @@ future<> kafka_server::connection::process() {
               klog.error("Failed to process request with {}", e);
           });
       })
-      .finally([this] {
-          return _ready_to_respond.finally([this] {
-              return _pending_requests_gate.close().then(
-                [this] {
-                    return _write_buf.close();
-                });
+      .then([this] {
+          return _ready_to_respond.then([this] {
+              return _write_buf.close();
           });
       });
 }
@@ -211,30 +208,27 @@ future<> kafka_server::connection::process_request() {
 
 void kafka_server::connection::do_process(
   std::unique_ptr<requests::request_context>&& ctx, seastar::semaphore_units<>&& units) {
+    auto correlation = ctx->header().correlation_id;
     auto ready = std::move(_ready_to_respond);
-    ready = with_gate(
-      _pending_requests_gate,
-      [this,
-       ctx = std::move(ctx),
-       units = std::move(units),
-       ready = std::move(ready)]() mutable {
-          auto correlation = ctx->header().correlation_id;
-          return requests::process_request(*ctx, _server._smp_group)
-            .then_wrapped([this,
-                           units = std::move(units),
-                           ready = std::move(ready),
-                           correlation](
-                            future<requests::response_ptr>&& f) mutable {
-                if (f.failed()) {
+    auto f = requests::process_request(*ctx, _server._smp_group);
+    _ready_to_respond = f.then_wrapped(
+            [this,
+             ctx = std::move(ctx),
+             units = std::move(units),
+             ready = std::move(ready),
+             correlation](future<requests::response_ptr>&& f) mutable {
+                try {
+                    auto r = f.get0();
+                    return ready.then(
+                      [this, r = std::move(r), correlation]() mutable {
+                          return write_response(std::move(r), correlation);
+                      });
+                } catch (...) {
                     klog.debug(
                       "Failed to process request: {}", f.get_exception());
                     return std::move(ready);
                 }
-                return ready.then([this, r = f.get0(), correlation]() mutable {
-                    return write_response(std::move(r), correlation);
-                });
             });
-      });
 }
 
 future<size_t> kafka_server::connection::read_size() {
