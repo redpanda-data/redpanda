@@ -25,7 +25,7 @@ build:
       if [[ "${ID}" != "fedora" ]]; then  exit 1; fi
       echo "Using CI image"
     - |
-      python3 tools/build.py --deps=true --targets=all --build=release --log=debug --fmt=false --clang=internal
+      python3 tools/build.py --deps=true --targets=all --build=release --log=debug --fmt=false --clang=internal --packages rpm deb tar
     - |
       python3 tools/build.py --targets=all --build=debug --log=info --fmt=false --clang=internal
 
