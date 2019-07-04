@@ -57,6 +57,9 @@ func NewTuneCommand() *cobra.Command {
 		[]string{}, "List of *data* directories. or places to store data."+
 			" i.e.: '/var/vectorized/redpanda/',"+
 			" usually your XFS filesystem on an NVMe SSD device")
+	command.Flags().BoolVar(&tunerParams.RebootAllowed,
+		"reboot-allowed", false, "If set will allow tuners to tune boot paramters "+
+			" and request system reboot")
 	command.AddCommand(newHelpCommand())
 	return command
 }
@@ -132,13 +135,16 @@ After this tuner execution system CPUs will operate with maximum
 This tuner performs the following operations:
 
 - Disable Hyper Threading
-- Disable Intel P-States 
-- Disable Intel C-States
-- Disable Turbo Boost
 - Sets the ACPI-cpufreq governor to ‘performance’
 
-Important: System needs to be restarted after first run of this tuner. 
-Then the tuner need to be executed after each system reboot.`
+Additionaly if system reboot is allowed:
+- Disable Hyper Threading via Kernel boot parameter
+- Disable Intel P-States
+- Disable Intel C-States
+- Disable Turbo Boost
+
+Important: If '--reboot-allowed' flag is passed as an option, it is required 
+		   to reboot the system after first pass of this tuner`
 
 const netTunerHelp = `
 This tuner distributes the NIC IRQs and queues according to the specified mode. 

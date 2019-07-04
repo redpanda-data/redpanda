@@ -14,20 +14,22 @@ import (
 
 type tuner struct {
 	tuners.Tunable
-	cpuMasks irq.CpuMasks
-	grub     os.Grub
-	cores    uint
-	pus      uint
-	fs       afero.Fs
+	cpuMasks      irq.CpuMasks
+	grub          os.Grub
+	rebootAllowed bool
+	cores         uint
+	pus           uint
+	fs            afero.Fs
 }
 
 func NewCpuTuner(
-	cpuMasks irq.CpuMasks, grub os.Grub, fs afero.Fs,
+	cpuMasks irq.CpuMasks, grub os.Grub, fs afero.Fs, rebootAllowed bool,
 ) tuners.Tunable {
 	return &tuner{
-		cpuMasks: cpuMasks,
-		grub:     grub,
-		fs:       fs,
+		cpuMasks:      cpuMasks,
+		grub:          grub,
+		fs:            fs,
+		rebootAllowed: rebootAllowed,
 	}
 }
 
@@ -46,33 +48,41 @@ func (tuner *tuner) Tune() tuners.TuneResult {
 	if err != nil {
 		return tuners.NewTuneError(err)
 	}
+
 	if tuner.isHtEnabled() {
 		err = tuner.disableHt()
-	}
-	if err != nil {
-		return tuners.NewTuneError(err)
-	}
-	maxCState, err := tuner.getMaxCState()
-	if err != nil {
-		return tuners.NewTuneError(err)
-	}
-	if maxCState != 0 {
-		err = tuner.disableCStates()
-		grubUpdated = true
 		if err != nil {
 			return tuners.NewTuneError(err)
 		}
+		if tuner.rebootAllowed {
+			err = tuner.addNoHtBootOption()
+			if err != nil {
+				return tuners.NewTuneError(err)
+			}
+			grubUpdated = true
+		}
 	}
-	pStatesEnabled, err := tuner.checkIfPStateIsEnabled()
+	if tuner.rebootAllowed {
+		maxCState, err := tuner.getMaxCState()
+		if err != nil {
+			return tuners.NewTuneError(err)
+		}
+		if maxCState != 0 {
+			err = tuner.disableCStates()
+			grubUpdated = true
+			if err != nil {
+				return tuners.NewTuneError(err)
+			}
+		}
+		pStatesEnabled, err := tuner.checkIfPStateIsEnabled()
 
-	if pStatesEnabled {
-		err = tuner.disablePStates()
-		grubUpdated = true
-		if err != nil {
-			return tuners.NewTuneError(err)
+		if pStatesEnabled {
+			err = tuner.disablePStates()
+			grubUpdated = true
+			if err != nil {
+				return tuners.NewTuneError(err)
+			}
 		}
-	} else {
-		err = tuner.setupCPUGovernors()
 	}
 	if grubUpdated {
 		err = tuner.grub.MakeConfig()
@@ -81,6 +91,12 @@ func (tuner *tuner) Tune() tuners.TuneResult {
 		}
 		return tuners.NewTuneResult(true)
 	}
+
+	err = tuner.setupCPUGovernors()
+	if err != nil {
+		return tuners.NewTuneError(err)
+	}
+
 	return tuners.NewTuneResult(false)
 }
 
@@ -116,6 +132,10 @@ func (tuner *tuner) disableHt() error {
 			return err
 		}
 	}
+	return nil
+}
+
+func (tuner *tuner) addNoHtBootOption() error {
 	return tuner.grub.AddCommandLineOptions([]string{"noht"})
 }
 
