@@ -41,7 +41,7 @@ future<> kafka_server::listen(socket_address server_addr, bool keepalive) {
 
     with_gate(_listeners_and_connections, [this, keepalive, server_addr] {
         return do_accepts(_listeners.size() - 1, keepalive);
-    }).discard_result();
+    });
     return make_ready_future<>();
 }
 
@@ -65,9 +65,15 @@ future<> kafka_server::do_accepts(int which, bool keepalive) {
                   _listeners_and_connections,
                   [this, conn = std::move(conn)]() mutable {
                       auto f = conn->process();
-                      return f.handle_exception(
-                        [this, conn = std::move(conn)](std::exception_ptr e) {
-                            klog.debug("Connection error: {}", e);
+                      return f.then_wrapped(
+                        [conn = std::move(conn)](future<>&& f) {
+                            try {
+                                f.get();
+                            } catch (...) {
+                                klog.debug(
+                                  "Connection error: {}",
+                                  std::current_exception());
+                            }
                         });
                   });
                 return stop_iteration::no;
