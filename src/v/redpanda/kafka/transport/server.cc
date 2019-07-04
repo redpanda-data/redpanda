@@ -198,9 +198,10 @@ future<> kafka_server::connection::process_request() {
                            header = std::move(header),
                            units = std::move(units)](
                             fragmented_temporary_buffer buf) mutable {
-                        auto ctx = requests::request_context(
-                          std::move(header), std::move(buf));
-                        _server._probe.serving_request(ctx);
+                        auto ctx = std::make_unique<requests::request_context>(
+                          std::move(header),
+                          std::move(buf));
+                        _server._probe.serving_request(*ctx);
                         do_process(std::move(ctx), std::move(units));
                     });
               });
@@ -209,7 +210,7 @@ future<> kafka_server::connection::process_request() {
 }
 
 void kafka_server::connection::do_process(
-  requests::request_context&& ctx, seastar::semaphore_units<>&& units) {
+  std::unique_ptr<requests::request_context>&& ctx, seastar::semaphore_units<>&& units) {
     auto ready = std::move(_ready_to_respond);
     ready = with_gate(
       _pending_requests_gate,
@@ -217,8 +218,8 @@ void kafka_server::connection::do_process(
        ctx = std::move(ctx),
        units = std::move(units),
        ready = std::move(ready)]() mutable {
-          auto correlation = ctx.header().correlation_id;
-          return requests::process_request(ctx, _server._smp_group)
+          auto correlation = ctx->header().correlation_id;
+          return requests::process_request(*ctx, _server._smp_group)
             .then_wrapped([this,
                            units = std::move(units),
                            ready = std::move(ready),

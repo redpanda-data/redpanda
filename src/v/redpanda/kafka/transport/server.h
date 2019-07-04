@@ -69,7 +69,7 @@ private:
         future<size_t> read_size();
         future<requests::request_header> read_header();
         void
-        do_process(requests::request_context&&, seastar::semaphore_units<>&&);
+        do_process(std::unique_ptr<requests::request_context>&&, seastar::semaphore_units<>&&);
         future<>
         write_response(requests::response_ptr&&, uint16_t correlation_id);
 
