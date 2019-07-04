@@ -131,7 +131,9 @@ future<> kafka_server::connection::process() {
           return _read_buf.eof() || _server._as.abort_requested();
       },
       [this] {
-          return process_request();
+          return process_request().handle_exception([this](std::exception_ptr e) {
+              klog.error("Failed to process request with {}", e);
+          });
       })
       .finally([this] {
           return _ready_to_respond.finally([this] {
