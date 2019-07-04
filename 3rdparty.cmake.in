@@ -528,17 +528,6 @@ ExternalProject_Add(smf
     -DSMF_ENABLE_TESTS=OFF
     -DSMF_BUILD_PROGRAMS=OFF)
 
-# public api
-ExternalProject_Add(re2
-  URL https://github.com/google/re2/archive/cd23be7.tar.gz
-  URL_MD5 108f464b31bf1d14b0176900968fb74d
-  INSTALL_DIR    @V_DEPS_INSTALL_DIR@
-  DEPENDS ${default_depends}
-  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
-  CMAKE_ARGS
-    ${common_cmake_args}
-    -DRE2_BUILD_TESTING=OFF)
-
 ExternalProject_Add(GSL
   URL https://github.com/Microsoft/GSL/archive/0f68d13.tar.gz
   URL_MD5 d5cc382eadc5f757416d44d91d0222cf

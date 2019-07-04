@@ -1,4 +1,3 @@
-find_package(RE2)
 include(smfc_generator)
 smfc_gen(
     CPP
@@ -42,7 +41,7 @@ rp_hbadger_lib(
     -Wno-unused-variable
     -Wno-unused-function
     -Wno-unused-lambda-capture
-  LIBRARIES ioutil rprandom RE2::re2
+  LIBRARIES ioutil rprandom
   )
 
 
