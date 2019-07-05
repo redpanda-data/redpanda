@@ -35,7 +35,7 @@ using request_types = make_request_types<api_versions_request>;
 seastar::future<response_ptr>
 process_request(request_context& ctx, seastar::smp_service_group g) {
     // Eventually generate this with meta-classes.
-    // Domain probe
+    kreq_log.debug("Processing request for {}", ctx.header().key);
     switch (ctx.header().key.value()) {
     case api_versions_request::key.value():
         return api_versions_request::process(ctx, std::move(g));
