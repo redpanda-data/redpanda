@@ -204,10 +204,14 @@ func (tuner *tuner) setupCPUGovernors() error {
 	for i := uint(0); i < tuner.cores; i = i + 1 {
 		policyPath := fmt.Sprintf(
 			"/sys/devices/system/cpu/cpufreq/policy%d/scaling_governor", i)
-		err := utils.WriteFileLines(tuner.fs, []string{"performance"},
-			policyPath)
-		if err != nil {
-			return err
+		if utils.FileExists(tuner.fs, policyPath) {
+			err := utils.WriteFileLines(tuner.fs, []string{"performance"},
+				policyPath)
+			if err != nil {
+				return err
+			}
+		} else {
+			log.Warnf("Unable to set CPU governor policy for CPU %d", i)
 		}
 	}
 	return nil
