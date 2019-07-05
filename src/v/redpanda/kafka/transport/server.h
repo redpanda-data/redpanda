@@ -66,7 +66,7 @@ private:
 
     private:
         future<> process_request();
-        future<size_t> read_size();
+        size_t process_size(temporary_buffer<char>&&);
         future<requests::request_header> read_header();
         void
         do_process(std::unique_ptr<requests::request_context>&&, seastar::semaphore_units<>&&);
