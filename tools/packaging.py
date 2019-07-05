@@ -77,17 +77,13 @@ def relocable_tar_package(dest, execs, configs):
     gzip_process.communicate()
 
 
-def _in_dist_root(path):
-    return os.path.join(RP_DIST_ROOT, path)
-
-
 def _in_root(path):
     return os.path.join(RP_ROOT, path)
 
 
-def red_panda_tar(input_tar):
+def red_panda_tar(input_tar, dest_path):
     logger.info("Creating tarball package")
-    tar_dir = _in_dist_root('tar')
+    tar_dir = os.path.join(dest_path, "tar")
     os.makedirs(tar_dir, exist_ok=True)
     tar_name = 'redpanda-%s-%s_%s.tar.gz' % (VERSION, RELEASE, REVISION)
     tar_file = os.path.join(tar_dir, tar_name)
@@ -112,40 +108,42 @@ def _pkg_context():
     }
 
 
-def red_panda_rpm(input_tar):
+def red_panda_rpm(input_tar, dest_path):
     logger.info("Creating RPM package")
     # prepare RPM sources
-    rpm_tree_root = _in_dist_root("rpm")
+    rpm_tree_root = os.path.join(dest_path, "rpm")
     shutil.rmtree(rpm_tree_root, ignore_errors=True)
-    _rpm_tree(_in_dist_root("rpm"))
-    fs.force_link(input_tar, _in_dist_root("rpm/SOURCES/redpanda.tar"))
+    _rpm_tree(os.path.join(dest_path, "rpm"))
+    fs.force_link(input_tar, os.path.join(dest_path,
+                                          "rpm/SOURCES/redpanda.tar"))
     shutil.copytree(
         _in_root('packaging/common'),
-        _in_dist_root("rpm/common"),
+        os.path.join(dest_path, "rpm/common"),
         ignore=_is_template)
     # render templates
     package_ctx = _pkg_context()
     package_ctx['source_tar'] = "redpanda.tar"
     spec_template = _in_root("packaging/rpm/redpanda.spec.mustache")
-    spec = _in_dist_root("rpm/SPECS/redpanda.spec")
+    spec = os.path.join(dest_path, "rpm/SPECS/redpanda.spec")
     templates.render_to_file(spec_template, spec, package_ctx)
-    _render_service_template(_in_dist_root("rpm/common"), {'redhat': True})
+    _render_service_template(
+        os.path.join(dest_path, "rpm/common"), {'redhat': True})
     # build RPM
-    shell.run_subprocess('rpmbuild -bb --define \"_topdir %s\" %s' %
-                         (rpm_tree_root, spec))
+    shell.run_subprocess(
+        'rpmbuild -bb --define \"_topdir %s\" %s' % (rpm_tree_root, spec))
 
 
-def red_panda_deb(input_tar):
+def red_panda_deb(input_tar, dest_path):
     logger.info("Creating DEB package")
-    debian_dir = _in_dist_root("debian/redpanda")
+    debian_dir = os.path.join(dest_path, "debian/redpanda")
     os.makedirs(debian_dir, exist_ok=True)
     shutil.rmtree(debian_dir)
     shutil.copytree(
         _in_root("packaging/debian/debian"), os.path.join(
             debian_dir, 'debian'))
     target_tar_name = "debian/redpanda_%s-%s.orig.tar.gz" % (VERSION, RELEASE)
-    fs.force_link(input_tar, _in_dist_root(target_tar_name))
-    common_path = _in_dist_root("debian/redpanda/common")
+    fs.force_link(input_tar, os.path.join(dest_path, target_tar_name))
+    common_path = os.path.join(dest_path, "debian/redpanda/common")
     shutil.copytree(
         _in_root('packaging/common'), common_path, ignore=_is_template)
 
@@ -155,13 +153,13 @@ def red_panda_deb(input_tar):
     control_tmpl = _in_root("packaging/debian/control.mustache")
     _render_service_template(common_path, {"debian": True})
     for f in glob.glob(os.path.join(common_path, "systemd", "*")):
-        shutil.copy(f, _in_dist_root("debian/redpanda/debian"))
-    templates.render_to_file(chglog_tmpl,
-                             _in_dist_root("debian/redpanda/debian/changelog"),
-                             package_ctx)
-    templates.render_to_file(control_tmpl,
-                             _in_dist_root("debian/redpanda/debian/control"),
-                             package_ctx)
+        shutil.copy(f, os.path.join(dest_path, "debian/redpanda/debian"))
+    templates.render_to_file(
+        chglog_tmpl, os.path.join(
+            dest_path, "debian/redpanda/debian/changelog"), package_ctx)
+    templates.render_to_file(
+        control_tmpl,
+        os.path.join(dest_path, "debian/redpanda/debian/control"), package_ctx)
     # build DEB
     shell.raw_check_output("tar -C %s -xpf %s" % (debian_dir, input_tar))
     shell.run_subprocess('cd %s && debuild -rfakeroot -us -uc -b' % debian_dir)

@@ -9,7 +9,6 @@ import git
 
 RP_ROOT = git.get_git_root(relative=os.path.dirname(__file__))
 RP_BUILD_ROOT = "%s/build" % RP_ROOT
-RP_DIST_ROOT = "%s/dist" % RP_BUILD_ROOT
 GOPATH = "%s/gopath" % RP_BUILD_ROOT
 GOLANG_ROOT = "%s/src/go/pkg" % RP_ROOT
 GOLANG_CMDS_ROOT = "%s/cmd" % GOLANG_ROOT
