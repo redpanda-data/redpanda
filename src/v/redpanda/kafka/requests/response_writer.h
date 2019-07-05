@@ -7,6 +7,7 @@
 #include "utils/vint.h"
 
 #include <seastar/core/byteorder.hh>
+#include <seastar/core/sstring.hh>
 
 #include <boost/range/numeric.hpp>
 
@@ -90,6 +91,13 @@ public:
             return serialize_int<int16_t>(-1);
         }
         return write(*v);
+    }
+
+    uint32_t write(const std::optional<seastar::sstring>& v) {
+        if (!v) {
+            return serialize_int<int16_t>(-1);
+        }
+        return write(std::string_view(*v));
     }
 
     uint32_t write(bytes_view bv) {
