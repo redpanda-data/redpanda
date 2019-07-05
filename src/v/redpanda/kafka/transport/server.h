@@ -68,8 +68,9 @@ private:
         future<> process_request();
         size_t process_size(temporary_buffer<char>&&);
         future<requests::request_header> read_header();
-        void
-        do_process(std::unique_ptr<requests::request_context>&&, seastar::semaphore_units<>&&);
+        void do_process(
+          std::unique_ptr<requests::request_context>&&,
+          seastar::semaphore_units<>&&);
         future<>
         write_response(requests::response_ptr&&, uint16_t correlation_id);
 

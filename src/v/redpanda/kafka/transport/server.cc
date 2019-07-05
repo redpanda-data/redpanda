@@ -171,83 +171,85 @@ future<> kafka_server::connection::write_response(
 future<> kafka_server::connection::process_request() {
     return _read_buf.read_exactly(sizeof(size_type))
       .then([this](temporary_buffer<char> buf) {
-        if (!buf) {
-          // EOF
-          return make_ready_future<>();
-        }
-        auto size = process_size(std::move(buf));
-        // Allow for extra copies and bookkeeping
-        auto mem_estimate = size * 2 + 8000;
-        if (mem_estimate >= _server._max_request_size) {
-            // TODO: Create error response using the specific API?
-            throw std::runtime_error(fmt::format(
-              "Request size is too large (size: {}; estimate: {}; allowed: {}",
-              size,
-              mem_estimate,
-              _server._max_request_size));
-        }
-        auto fut = get_units(_server._memory_available, mem_estimate);
-        if (_server._memory_available.waiters()) {
-            _server._probe.waiting_for_available_memory();
-        }
-        return fut.then([this, size](semaphore_units<> units) {
-            return read_header().then(
-              [this, size, units = std::move(units)](
-                requests::request_header header) mutable {
-                  auto remaining = size - sizeof(raw_request_header)
-                                   - header.client_id_buffer.size();
-                  _buffer_reader.read_exactly(_read_buf, remaining)
-                    .then([this,
-                           header = std::move(header),
-                           units = std::move(units)](
-                            fragmented_temporary_buffer buf) mutable {
-                        auto ctx = std::make_unique<requests::request_context>(
-                          std::move(header),
-                          std::move(buf));
-                        _server._probe.serving_request(*ctx);
-                        do_process(std::move(ctx), std::move(units));
-                    });
-              });
-        });
-    });
+          if (!buf) {
+              // EOF
+              return make_ready_future<>();
+          }
+          auto size = process_size(std::move(buf));
+          // Allow for extra copies and bookkeeping
+          auto mem_estimate = size * 2 + 8000;
+          if (mem_estimate >= _server._max_request_size) {
+              // TODO: Create error response using the specific API?
+              throw std::runtime_error(fmt::format(
+                "Request size is too large (size: {}; estimate: {}; allowed: "
+                "{}",
+                size,
+                mem_estimate,
+                _server._max_request_size));
+          }
+          auto fut = get_units(_server._memory_available, mem_estimate);
+          if (_server._memory_available.waiters()) {
+              _server._probe.waiting_for_available_memory();
+          }
+          return fut.then([this, size](semaphore_units<> units) {
+              return read_header().then(
+                [this, size, units = std::move(units)](
+                  requests::request_header header) mutable {
+                    auto remaining = size - sizeof(raw_request_header)
+                                     - header.client_id_buffer.size();
+                    _buffer_reader.read_exactly(_read_buf, remaining)
+                      .then([this,
+                             header = std::move(header),
+                             units = std::move(units)](
+                              fragmented_temporary_buffer buf) mutable {
+                          auto ctx
+                            = std::make_unique<requests::request_context>(
+                              std::move(header),
+                              std::move(buf));
+                          _server._probe.serving_request(*ctx);
+                          do_process(std::move(ctx), std::move(units));
+                      });
+                });
+          });
+      });
 }
 
 void kafka_server::connection::do_process(
-  std::unique_ptr<requests::request_context>&& ctx, seastar::semaphore_units<>&& units) {
+  std::unique_ptr<requests::request_context>&& ctx,
+  seastar::semaphore_units<>&& units) {
     auto correlation = ctx->header().correlation_id;
     auto ready = std::move(_ready_to_respond);
     auto f = requests::process_request(*ctx, _server._smp_group);
     _ready_to_respond = f.then_wrapped(
-            [this,
-             ctx = std::move(ctx),
-             units = std::move(units),
-             ready = std::move(ready),
-             correlation](future<requests::response_ptr>&& f) mutable {
-                try {
-                    auto r = f.get0();
-                    return ready.then(
-                      [this, r = std::move(r), correlation]() mutable {
-                          return write_response(std::move(r), correlation);
-                      });
-                } catch (...) {
-                    klog.debug(
-                      "Failed to process request: {}", f.get_exception());
-                    return std::move(ready);
-                }
-            });
+      [this,
+       ctx = std::move(ctx),
+       units = std::move(units),
+       ready = std::move(ready),
+       correlation](future<requests::response_ptr>&& f) mutable {
+          try {
+              auto r = f.get0();
+              return ready.then(
+                [this, r = std::move(r), correlation]() mutable {
+                    return write_response(std::move(r), correlation);
+                });
+          } catch (...) {
+              klog.debug("Failed to process request: {}", f.get_exception());
+              return std::move(ready);
+          }
+      });
 }
 
 size_t kafka_server::connection::process_size(temporary_buffer<char>&& buf) {
-          if (_read_buf.eof()) {
-              return {0};
-          }
-          auto* raw = reinterpret_cast<const size_type*>(buf.get());
-          size_type size = seastar::be_to_cpu(*raw);
-          if (size < 0) {
-              throw std::runtime_error(
-                fmt::format("Invalid request size of {}", size));
-          }
-          return size_t(size);
+    if (_read_buf.eof()) {
+        return {0};
+    }
+    auto* raw = reinterpret_cast<const size_type*>(buf.get());
+    size_type size = seastar::be_to_cpu(*raw);
+    if (size < 0) {
+        throw std::runtime_error(
+          fmt::format("Invalid request size of {}", size));
+    }
+    return {size_t(size)};
 }
 
 future<requests::request_header> kafka_server::connection::read_header() {
