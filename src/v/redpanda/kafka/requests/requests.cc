@@ -8,7 +8,7 @@
 
 namespace kafka::requests {
 
-seastar::logger kreq_log("init");
+seastar::logger kreq_log("kafka api");
 
 // clang-format off
 CONCEPT(
