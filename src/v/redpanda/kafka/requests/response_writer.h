@@ -120,8 +120,8 @@ public:
             writer(elem, *this);
         }
         int32_t size = _out->size_bytes() - start_size;
-        auto* size_ptr = reinterpret_cast<const int32_t*>(&size);
-        std::copy_n(size_ptr, sizeof(size), size_place_holder);
+        auto* in = reinterpret_cast<const bytes_ostream::value_type*>(&size);
+        std::copy_n(in, sizeof(size), size_place_holder);
         return size;
     }
 
