@@ -98,7 +98,7 @@ public:
         return size;
     }
 
-    uint32_t write(bytes_opt bv) {
+    uint32_t write(const bytes_opt& bv) {
         if (!bv) {
             return serialize_int<int32_t>(-1);
         }
