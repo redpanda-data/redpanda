@@ -169,7 +169,13 @@ future<> kafka_server::connection::write_response(
 // processed in the order they are sent and responses will return in that order
 // as well.
 future<> kafka_server::connection::process_request() {
-    return read_size().then([this](size_t size) {
+    return _read_buf.read_exactly(sizeof(size_type))
+      .then([this](temporary_buffer<char> buf) {
+        if (!buf) {
+          // EOF
+          return make_ready_future<>();
+        }
+        auto size = process_size(std::move(buf));
         // Allow for extra copies and bookkeeping
         auto mem_estimate = size * 2 + 8000;
         if (mem_estimate >= _server._max_request_size) {
@@ -231,12 +237,9 @@ void kafka_server::connection::do_process(
             });
 }
 
-future<size_t> kafka_server::connection::read_size() {
-    return _read_buf.read_exactly(sizeof(size_type))
-      .then([this](temporary_buffer<char> buf) {
+size_t kafka_server::connection::process_size(temporary_buffer<char>&& buf) {
           if (_read_buf.eof()) {
-              throw std::runtime_error(
-                fmt::format("Unexpected EOF for request size"));
+              return {0};
           }
           auto* raw = reinterpret_cast<const size_type*>(buf.get());
           size_type size = seastar::be_to_cpu(*raw);
@@ -245,7 +248,6 @@ future<size_t> kafka_server::connection::read_size() {
                 fmt::format("Invalid request size of {}", size));
           }
           return size_t(size);
-      });
 }
 
 future<requests::request_header> kafka_server::connection::read_header() {
