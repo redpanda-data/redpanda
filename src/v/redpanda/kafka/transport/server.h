@@ -33,12 +33,12 @@ using namespace seastar;
 struct [[gnu::packed]] raw_request_header {
     unaligned<uint16_t> api_key;
     unaligned<uint16_t> api_version;
-    unaligned<uint32_t> correlation_id;
+    unaligned<requests::correlation_type> correlation_id;
     unaligned<int16_t> client_id_size;
 };
 
 struct [[gnu::packed]] raw_response_header {
-    unaligned<uint16_t> correlation_id;
+    unaligned<requests::correlation_type> correlation_id;
 };
 
 struct kafka_server_config {
@@ -74,7 +74,7 @@ private:
           std::unique_ptr<requests::request_context>&&,
           seastar::semaphore_units<>&&);
         future<>
-        write_response(requests::response_ptr&&, uint16_t correlation_id);
+        write_response(requests::response_ptr&&, requests::correlation_type);
 
     private:
         kafka_server& _server;
