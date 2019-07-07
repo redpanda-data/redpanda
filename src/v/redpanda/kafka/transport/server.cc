@@ -153,7 +153,7 @@ future<> kafka_server::connection::write_response(
     auto* raw_header = reinterpret_cast<raw_response_header*>(header.begin());
     auto size = size_type(sizeof(raw_response_header) + response->buf().size_bytes());
     raw_header->size = seastar::cpu_to_be(size);
-    raw_header->correlation_id = correlation_id;
+    raw_header->correlation_id = seastar::cpu_to_be(correlation_id);
 
     seastar::scattered_message<char> msg;
     msg.append(std::move(header));
