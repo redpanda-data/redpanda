@@ -28,6 +28,8 @@ namespace kafka::transport {
 
 using namespace seastar;
 
+using size_type = int32_t;
+
 // Fields may not be byte-aligned since we work
 // with the underlying network buffer.
 struct [[gnu::packed]] raw_request_header {
@@ -38,6 +40,7 @@ struct [[gnu::packed]] raw_request_header {
 };
 
 struct [[gnu::packed]] raw_response_header {
+    unaligned<size_type> size;
     unaligned<requests::correlation_type> correlation_id;
 };
 

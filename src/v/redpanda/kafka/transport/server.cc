@@ -16,8 +16,6 @@ namespace kafka::transport {
 
 static seastar::logger klog("kafka_server");
 
-using size_type = int32_t;
-
 kafka_server::kafka_server(
   probe p,
   seastar::sharded<cluster::metadata_cache>& metadata_cache,
@@ -151,10 +149,10 @@ future<> kafka_server::connection::write_response(
   requests::response_ptr&& response, requests::correlation_type correlation_id) {
     seastar::sstring header(
       sstring::initialized_later(),
-      sizeof(size_type) + sizeof(raw_response_header));
-    auto* size_ptr = reinterpret_cast<size_type*>(header.begin());
-    *size_ptr = sizeof(raw_response_header) + response->buf().size_bytes();
-    auto* raw_header = reinterpret_cast<raw_response_header*>(size_ptr + 1);
+      sizeof(raw_response_header));
+    auto* raw_header = reinterpret_cast<raw_response_header*>(header.begin());
+    auto size = size_type(sizeof(raw_response_header) + response->buf().size_bytes());
+    raw_header->size = seastar::cpu_to_be(size);
     raw_header->correlation_id = correlation_id;
 
     seastar::scattered_message<char> msg;
