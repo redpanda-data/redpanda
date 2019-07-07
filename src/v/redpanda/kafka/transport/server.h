@@ -33,8 +33,8 @@ using size_type = int32_t;
 // Fields may not be byte-aligned since we work
 // with the underlying network buffer.
 struct [[gnu::packed]] raw_request_header {
-    unaligned<uint16_t> api_key;
-    unaligned<uint16_t> api_version;
+    unaligned<int16_t> api_key;
+    unaligned<int16_t> api_version;
     unaligned<requests::correlation_type> correlation_id;
     unaligned<int16_t> client_id_size;
 };
