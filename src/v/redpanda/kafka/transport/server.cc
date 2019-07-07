@@ -148,7 +148,7 @@ future<> kafka_server::connection::process() {
 // clang-format on
 
 future<> kafka_server::connection::write_response(
-  requests::response_ptr&& response, uint16_t correlation_id) {
+  requests::response_ptr&& response, requests::correlation_type correlation_id) {
     seastar::sstring header(
       sstring::initialized_later(),
       sizeof(size_type) + sizeof(raw_response_header));
