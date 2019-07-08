@@ -66,10 +66,11 @@ private:
 
     private:
         future<> process_request();
-        future<size_t> read_size();
+        size_t process_size(temporary_buffer<char>&&);
         future<requests::request_header> read_header();
-        void
-        do_process(requests::request_context&&, seastar::semaphore_units<>&&);
+        void do_process(
+          std::unique_ptr<requests::request_context>&&,
+          seastar::semaphore_units<>&&);
         future<>
         write_response(requests::response_ptr&&, uint16_t correlation_id);
 
@@ -79,7 +80,6 @@ private:
         socket_address _addr;
         input_stream<char> _read_buf;
         output_stream<char> _write_buf;
-        gate _pending_requests_gate;
         fragmented_temporary_buffer::reader _buffer_reader;
         future<> _ready_to_respond = make_ready_future<>();
     };
