@@ -1,5 +1,6 @@
 #pragma once
 
+#include "cluster/metadata_cache.h"
 #include "redpanda/kafka/transport/probe.h"
 #include "utils/fragmented_temporary_buffer.h"
 
@@ -27,17 +28,20 @@ namespace kafka::transport {
 
 using namespace seastar;
 
+using size_type = int32_t;
+
 // Fields may not be byte-aligned since we work
 // with the underlying network buffer.
 struct [[gnu::packed]] raw_request_header {
-    unaligned<uint16_t> api_key;
-    unaligned<uint16_t> api_version;
-    unaligned<uint32_t> correlation_id;
+    unaligned<int16_t> api_key;
+    unaligned<int16_t> api_version;
+    unaligned<requests::correlation_type> correlation_id;
     unaligned<int16_t> client_id_size;
 };
 
 struct [[gnu::packed]] raw_response_header {
-    unaligned<uint16_t> correlation_id;
+    unaligned<size_type> size;
+    unaligned<requests::correlation_type> correlation_id;
 };
 
 struct kafka_server_config {
@@ -49,6 +53,7 @@ class kafka_server {
 public:
     kafka_server(
       probe,
+      seastar::sharded<cluster::metadata_cache>&,
       kafka_server_config) noexcept;
     future<> listen(socket_address server_addr, bool keepalive);
     future<> do_accepts(int which, net::inet_address server_addr);
@@ -72,7 +77,7 @@ private:
           std::unique_ptr<requests::request_context>&&,
           seastar::semaphore_units<>&&);
         future<>
-        write_response(requests::response_ptr&&, uint16_t correlation_id);
+        write_response(requests::response_ptr&&, requests::correlation_type);
 
     private:
         kafka_server& _server;
@@ -88,6 +93,7 @@ private:
     future<> do_accepts(int which, bool keepalive);
 
     probe _probe;
+    seastar::sharded<cluster::metadata_cache>& _metadata_cache;
     size_t _max_request_size;
     semaphore _memory_available;
     smp_service_group _smp_group;

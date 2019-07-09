@@ -8,6 +8,8 @@
 
 namespace kafka::requests {
 
+using correlation_type = int32_t;
+
 class api_key final {
 public:
     constexpr explicit api_key(uint16_t value) noexcept
@@ -69,7 +71,7 @@ std::ostream& operator<<(std::ostream&, const api_version&);
 struct request_header {
     api_key key;
     api_version version;
-    uint32_t correlation_id;
+    correlation_type correlation_id;
     seastar::temporary_buffer<char> client_id_buffer;
     std::optional<std::string_view> client_id;
 };
@@ -77,7 +79,7 @@ struct request_header {
 std::ostream& operator<<(std::ostream&, const request_header&);
 
 struct response_header {
-    uint32_t correlation_id;
+    correlation_type correlation_id;
 };
 
 } // namespace kafka::requests

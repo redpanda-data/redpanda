@@ -1,5 +1,6 @@
 #pragma once
 
+#include "cluster/metadata_cache.h"
 #include "redpanda/kafka/requests/headers.h"
 #include "redpanda/kafka/requests/request_reader.h"
 #include "utils/fragmented_temporary_buffer.h"
@@ -18,8 +19,11 @@ extern seastar::logger kreq_log;
 class request_context {
 public:
     request_context(
-      request_header&& header, fragmented_temporary_buffer&& request) noexcept
-      : _header(std::move(header))
+      seastar::sharded<cluster::metadata_cache>& metadata_cache,
+      request_header&& header,
+      fragmented_temporary_buffer&& request) noexcept
+      : _metadata_cache(metadata_cache)
+      , _header(std::move(header))
       , _request(std::move(request))
       , _reader(_request.get_istream()) {
     }
@@ -32,7 +36,12 @@ public:
         return _reader;
     }
 
+    const cluster::metadata_cache& metadata_cache() const {
+        return _metadata_cache.local();
+    }
+
 private:
+    seastar::sharded<cluster::metadata_cache>& _metadata_cache;
     request_header _header;
     fragmented_temporary_buffer _request;
     request_reader _reader;
