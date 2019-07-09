@@ -1,6 +1,5 @@
 #pragma once
 
-#include "cluster/metadata_cache.h"
 #include "redpanda/kafka/transport/probe.h"
 #include "redpanda/kafka/transport/quota_manager.h"
 #include "seastarx.h"
@@ -22,6 +21,10 @@
 #include <cstdint>
 #include <optional>
 #include <vector>
+
+namespace cluster {
+class metadata_cache;
+}
 
 namespace kafka::requests {
 struct request_header;

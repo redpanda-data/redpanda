@@ -1,6 +1,5 @@
 #pragma once
 
-#include "cluster/metadata_cache.h"
 #include "redpanda/kafka/requests/headers.h"
 #include "redpanda/kafka/requests/request_reader.h"
 #include "seastarx.h"
@@ -12,6 +11,10 @@
 #include <seastar/util/log.hh>
 
 #include <memory>
+
+namespace cluster {
+class metadata_cache;
+}
 
 namespace kafka::requests {
 
