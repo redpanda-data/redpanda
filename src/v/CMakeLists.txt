@@ -9,6 +9,7 @@ add_subdirectory(chain_replication)
 add_subdirectory(raft)
 add_subdirectory(utils)
 add_subdirectory(bytes)
+add_subdirectory(cluster)
 
 
 # main executables
