@@ -244,7 +244,7 @@ void kafka_server::connection::do_process(
 
 size_t kafka_server::connection::process_size(temporary_buffer<char>&& buf) {
     if (_read_buf.eof()) {
-        return {0};
+        return 0;
     }
     auto* raw = reinterpret_cast<const size_type*>(buf.get());
     size_type size = seastar::be_to_cpu(*raw);
@@ -252,7 +252,7 @@ size_t kafka_server::connection::process_size(temporary_buffer<char>&& buf) {
         throw std::runtime_error(
           fmt::format("Invalid request size of {}", size));
     }
-    return {size_t(size)};
+    return size_t(size);
 }
 
 future<requests::request_header> kafka_server::connection::read_header() {
