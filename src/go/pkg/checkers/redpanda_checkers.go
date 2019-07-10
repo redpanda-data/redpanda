@@ -27,6 +27,21 @@ func NewDataDirWritableChecker(fs afero.Fs, path string) Checker {
 		})
 }
 
+func NewFreeDiskSpaceChecker(path string) Checker {
+	return NewFloatChecker(
+		"Data partition free space [GB]",
+		false,
+		func(current float64) bool {
+			return current >= 10.0
+		},
+		func() string {
+			return ">= 10"
+		},
+		func() (float64, error) {
+			return system.GetFreeDiskSpaceGB(path)
+		})
+}
+
 func NewMemoryChecker() Checker {
 	return NewIntChecker(
 		"Free memory [MB]",
