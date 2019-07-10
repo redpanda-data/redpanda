@@ -26,3 +26,17 @@ func NewDataDirWritableChecker(fs afero.Fs, path string) Checker {
 			return system.DirectoryIsWriteable(fs, path)
 		})
 }
+
+func NewMemoryChecker() Checker {
+	return NewIntChecker(
+		"Free memory [MB]",
+		true,
+		func(current int) bool {
+			return current >= 2048
+		},
+		func() string {
+			return "2048"
+		},
+		system.GetMemAvailableMB,
+	)
+}
