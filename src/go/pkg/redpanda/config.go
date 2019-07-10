@@ -41,3 +41,14 @@ func ReadConfigFromPath(fs afero.Fs, path string) (*Config, error) {
 	}
 	return configRoot.Redpanda, nil
 }
+
+func CheckConfig(config *Config) bool {
+	if config.Directory == "" ||
+		config.Port == 0 ||
+		config.Ip == "" ||
+		config.Id < 0 ||
+		len(config.SeedServers) == 0 {
+		return false
+	}
+	return true
+}

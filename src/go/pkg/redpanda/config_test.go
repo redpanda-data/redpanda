@@ -163,3 +163,86 @@ func TestWriteConfig(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckConfig(t *testing.T) {
+	type args struct {
+		config *Config
+	}
+	tests := []struct {
+		name string
+		args args
+		want bool
+	}{
+		{
+			name: "shall return true when config is valid",
+			args: args{
+				config: &Config{
+					Directory: "/var/lib/redpanda/data",
+					Port:      33145,
+					Ip:        "127.0.0.1",
+					Id:        1,
+					SeedServers: []*SeedServer{
+						&SeedServer{
+							Address: "127.0.0.1:33145",
+							Id:      1,
+						},
+						&SeedServer{
+							Address: "127.0.0.1:33146",
+							Id:      2,
+						},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "shall return false when config file does not contain data directory setting",
+			args: args{
+				config: &Config{
+					Port: 33145,
+					Ip:   "127.0.0.1",
+					Id:   1,
+					SeedServers: []*SeedServer{
+						&SeedServer{
+							Address: "127.0.0.1:33145",
+							Id:      1,
+						},
+						&SeedServer{
+							Address: "127.0.0.1:33146",
+							Id:      2,
+						},
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "shall return false when id of server is negative",
+			args: args{
+				config: &Config{
+					Port: 33145,
+					Ip:   "127.0.0.1",
+					Id:   -1,
+					SeedServers: []*SeedServer{
+						&SeedServer{
+							Address: "127.0.0.1:33145",
+							Id:      1,
+						},
+						&SeedServer{
+							Address: "127.0.0.1:33146",
+							Id:      2,
+						},
+					},
+				},
+			},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := CheckConfig(tt.args.config); got != tt.want {
+				t.Errorf("CheckConfig() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
