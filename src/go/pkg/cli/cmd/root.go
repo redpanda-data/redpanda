@@ -43,6 +43,7 @@ func init() {
 	cobraRoot.AddCommand(NewSandboxCommand(fs))
 	cobraRoot.AddCommand(NewCheckCommand(fs))
 	cobraRoot.AddCommand(NewIoTuneCmd(fs))
+	cobraRoot.AddCommand(NewStartCommand(fs))
 }
 
 // initConfig reads in config file and ENV variables if set.
