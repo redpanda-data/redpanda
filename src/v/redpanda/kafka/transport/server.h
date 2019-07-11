@@ -2,6 +2,7 @@
 
 #include "cluster/metadata_cache.h"
 #include "redpanda/kafka/transport/probe.h"
+#include "seastarx.h"
 #include "utils/fragmented_temporary_buffer.h"
 
 #include <seastar/core/abort_source.hh>
@@ -53,7 +54,7 @@ class kafka_server {
 public:
     kafka_server(
       probe,
-      seastar::sharded<cluster::metadata_cache>&,
+      sharded<cluster::metadata_cache>&,
       kafka_server_config) noexcept;
     future<> listen(socket_address server_addr, bool keepalive);
     future<> do_accepts(int which, net::inet_address server_addr);
@@ -75,7 +76,7 @@ private:
         future<requests::request_header> read_header();
         void do_process(
           std::unique_ptr<requests::request_context>&&,
-          seastar::semaphore_units<>&&);
+          semaphore_units<>&&);
         future<>
         write_response(requests::response_ptr&&, requests::correlation_type);
 
@@ -93,7 +94,7 @@ private:
     future<> do_accepts(int which, bool keepalive);
 
     probe _probe;
-    seastar::sharded<cluster::metadata_cache>& _metadata_cache;
+    sharded<cluster::metadata_cache>& _metadata_cache;
     size_t _max_request_size;
     semaphore _memory_available;
     smp_service_group _smp_group;

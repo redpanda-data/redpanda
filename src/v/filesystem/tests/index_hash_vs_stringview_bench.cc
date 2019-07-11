@@ -7,7 +7,7 @@
 #include <set>
 
 struct foo {
-    seastar::sstring k;
+    sstring k;
     uint64_t hash;
 };
 bool operator==(const foo& f, uint64_t x) {

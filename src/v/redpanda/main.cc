@@ -42,18 +42,18 @@ class stop_signal {
 
 public:
     stop_signal() {
-        seastar::engine().handle_signal(SIGINT, [this] { signaled(); });
-        seastar::engine().handle_signal(SIGTERM, [this] { signaled(); });
+        engine().handle_signal(SIGINT, [this] { signaled(); });
+        engine().handle_signal(SIGTERM, [this] { signaled(); });
     }
 
     ~stop_signal() {
         // There's no way to unregister a handler yet, so register a no-op
         // handler instead.
-        seastar::engine().handle_signal(SIGINT, [] {});
-        seastar::engine().handle_signal(SIGTERM, [] {});
+        engine().handle_signal(SIGINT, [] {});
+        engine().handle_signal(SIGTERM, [] {});
     }
 
-    seastar::future<> wait() {
+    future<> wait() {
         return _cond.wait([this] { return _caught; });
     }
 
@@ -63,17 +63,17 @@ public:
 
 private:
     bool _caught = false;
-    seastar::condition_variable _cond;
+    condition_variable _cond;
 };
 
-seastar::future<> check_environment(const redpanda_cfg& c);
+future<> check_environment(const redpanda_cfg& c);
 
 void register_service(
   smf::rpc_server& s,
-  seastar::sharded<write_ahead_log>* log,
+  sharded<write_ahead_log>* log,
   const redpanda_cfg* c);
 
-void stop_rpc(seastar::sharded<smf::rpc_server>& rpc, seastar::sstring);
+void stop_rpc(sharded<smf::rpc_server>& rpc, sstring);
 bool hydrate_cfg(redpanda_cfg& c, std::string filename);
 
 int main(int argc, char** argv, char** env) {
@@ -81,11 +81,11 @@ int main(int argc, char** argv, char** env) {
     syschecks::initialize_intrinsics();
     namespace po = boost::program_options; // NOLINT
     std::setvbuf(stdout, nullptr, _IOLBF, 1024);
-    seastar::app_template::config app_cfg;
+    app_template::config app_cfg;
     app_cfg.name = "Redpanda";
     app_cfg.default_task_quota = 500us;
     app_cfg.auto_handle_sigint_sigterm = false;
-    seastar::app_template app(std::move(app_cfg));
+    app_template app(std::move(app_cfg));
     redpanda_cfg global_cfg;
     app.add_options()(
       "redpanda-cfg",
@@ -95,9 +95,9 @@ int main(int argc, char** argv, char** env) {
     // Just being safe
 #ifndef NDEBUG
         std::cout.setf(std::ios::unitbuf);
-        smf::app_run_log_level(seastar::log_level::trace);
+        smf::app_run_log_level(log_level::trace);
 #endif
-        return seastar::async([&] {
+        return async([&] {
             ::stop_signal stop_signal;
             auto&& config = app.configuration();
             LOG_THROW_IF(
@@ -109,37 +109,37 @@ int main(int argc, char** argv, char** env) {
               config["redpanda-cfg"].as<std::string>());
             LOG_INFO("Configuration: {}", global_cfg);
             check_environment(global_cfg).get();
-            static seastar::sharded<write_ahead_log> log;
+            static sharded<write_ahead_log> log;
             log.start(global_cfg.wal_cfg()).get();
-            auto stop_log = seastar::defer([] { log.stop().get(); });
+            auto stop_log = defer([] { log.stop().get(); });
             log.invoke_on_all(&write_ahead_log::open).get();
             log.invoke_on_all(&write_ahead_log::index).get();
-            static seastar::sharded<smf::rpc_server> rpc;
+            static sharded<smf::rpc_server> rpc;
             rpc.start(global_cfg.rpc_cfg()).get();
-            auto stop_rcp = seastar::defer([&] {
+            auto stop_rcp = defer([&] {
               stop_rpc(rpc, global_cfg.directory);
             });
             rpc.invoke_on_all([&](smf::rpc_server& s) {
                 register_service(s, &log, &global_cfg);
             }).get();
             rpc.invoke_on_all(&smf::rpc_server::start).get();
-            static seastar::sharded<cluster::metadata_cache> metadata_cache;
+            static sharded<cluster::metadata_cache> metadata_cache;
             LOG_INFO("Starting Metadata Cache");
             metadata_cache.start(std::ref(log)).get();
-            auto stop_metadata_cache = seastar::defer(
+            auto stop_metadata_cache = defer(
               [] { metadata_cache.stop().get(); });
 
-            static seastar::sharded<kafka::transport::kafka_server>
+            static sharded<kafka::transport::kafka_server>
               kafka_server;
-            seastar::smp_service_group_config
+            smp_service_group_config
               storage_proxy_smp_service_group_config;
             // Assuming less than 1kB per queued request, this limits server
             // submit_to() queues to 5MB or less.
             auto kafka_server_smp_group
-              = seastar::create_smp_service_group({5000}).get0();
+              = create_smp_service_group({5000}).get0();
             kafka::transport::kafka_server_config server_config = {
               // FIXME: Add memory manager
-              seastar::memory::stats().total_memory() / 10,
+              memory::stats().total_memory() / 10,
               std::move(kafka_server_smp_group)};
             LOG_INFO("Starting Kafka API server");
             kafka_server
@@ -148,7 +148,7 @@ int main(int argc, char** argv, char** env) {
                 std::ref(metadata_cache),
                 std::move(server_config))
               .get();
-            auto addr = seastar::socket_address(seastar::ipv4_addr(
+            auto addr = socket_address(ipv4_addr(
               global_cfg.ip, global_cfg.kafka_transport_port));
             kafka_server
               .invoke_on_all([addr = std::move(addr)](
@@ -157,7 +157,7 @@ int main(int argc, char** argv, char** env) {
                   return server.listen(std::move(addr), false);
               })
               .get();
-            auto stop_kafka_server = seastar::defer(
+            auto stop_kafka_server = defer(
               [] { kafka_server.stop().get(); });
 
             stop_signal.wait().get();
@@ -167,15 +167,15 @@ int main(int argc, char** argv, char** env) {
     return 0;
 }
 
-// Called in the context of a seastar::thread.
+// Called in the context of a thread.
 void stop_rpc(
-  seastar::sharded<smf::rpc_server>& rpc, seastar::sstring directory) {
+  sharded<smf::rpc_server>& rpc, sstring directory) {
     auto h = rpc
                .map_reduce(
                  smf::unique_histogram_adder(),
                  &smf::rpc_server::copy_histogram)
                .get0();
-    const seastar::sstring histogram_dir = fmt::format(
+    const sstring histogram_dir = fmt::format(
       "{}/redpanda.latencies.hgrm", directory);
     smf::histogram_seastar_utils::write(histogram_dir, std::move(h)).get();
     rpc.stop().get();
@@ -191,7 +191,7 @@ bool hydrate_cfg(redpanda_cfg& c, std::string filename) {
     return true;
 }
 
-seastar::future<> check_environment(const redpanda_cfg& c) {
+future<> check_environment(const redpanda_cfg& c) {
     syschecks::cpu();
     syschecks::memory(c.developer_mode);
     return dir_utils::create_dir_tree(c.directory);
@@ -199,7 +199,7 @@ seastar::future<> check_environment(const redpanda_cfg& c) {
 
 void register_service(
   smf::rpc_server& s,
-  seastar::sharded<write_ahead_log>* log,
+  sharded<write_ahead_log>* log,
   const redpanda_cfg* c) {
     using lz4_c_t = smf::lz4_compression_filter;
     using lz4_d_t = smf::lz4_decompression_filter;

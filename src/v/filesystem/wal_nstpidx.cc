@@ -8,8 +8,8 @@ wal_nstpidx wal_nstpidx::gen(int64_t ns, int64_t topic, int32_t partition) {
     return wal_nstpidx(inc.digest());
 }
 wal_nstpidx wal_nstpidx::gen(
-  const seastar::sstring& ns,
-  const seastar::sstring& topic,
+  const sstring& ns,
+  const sstring& topic,
   int32_t partition) {
     return wal_nstpidx::gen(
       xxhash_64(ns.data(), ns.size()),

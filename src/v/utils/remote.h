@@ -1,5 +1,7 @@
 #pragma once
 
+#include "seastarx.h"
+
 #include <seastar/core/reactor.hh>
 
 #include <cstdint>
@@ -93,12 +95,12 @@ using naturally_emptyable = std::conditional_t<
 ///
 /// \c remote<> is a move-only object; it cannot be copied.
 ///
-template<typename T, typename E = internal::naturally_emptyable<T>>
+template<typename T, typename E = ::internal::naturally_emptyable<T>>
 class remote final {
 public:
-    explicit remote(T&& v) noexcept(internal::emptyable<T, E>::move_noexcept)
+    explicit remote(T&& v) noexcept(::internal::emptyable<T, E>::move_noexcept)
       : _v(std::move(v))
-      , _origin_cpu(seastar::engine().cpu_id()) {
+      , _origin_cpu(engine().cpu_id()) {
     }
 
     template<typename... Args>
@@ -111,7 +113,7 @@ public:
 
     ~remote() noexcept {
         if (__builtin_expect(
-              _v && _origin_cpu != seastar::engine().cpu_id(), false)) {
+              _v && _origin_cpu != engine().cpu_id(), false)) {
             std::abort();
         }
     }
@@ -125,6 +127,6 @@ public:
     }
 
 private:
-    internal::emptyable<T, E> _v;
-    seastar::shard_id _origin_cpu;
+    ::internal::emptyable<T, E> _v;
+    shard_id _origin_cpu;
 };

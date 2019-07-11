@@ -2,6 +2,7 @@
 
 #include "bytes/bytes.h"
 #include "bytes/bytes_ostream.h"
+#include "seastarx.h"
 #include "utils/concepts-enabled.h"
 #include "utils/fragment_range.h"
 
@@ -17,7 +18,7 @@
 
 /// Fragmented buffer consisting of multiple temporary_buffer<char>
 class fragmented_temporary_buffer {
-    using vector_type = std::vector<seastar::temporary_buffer<char>>;
+    using vector_type = std::vector<temporary_buffer<char>>;
 
 public:
     static constexpr size_t default_fragment_size = 128 * 1024;
@@ -28,7 +29,7 @@ public:
     fragmented_temporary_buffer() = default;
 
     fragmented_temporary_buffer(
-      std::vector<seastar::temporary_buffer<char>> fragments,
+      std::vector<temporary_buffer<char>> fragments,
       size_t size_bytes) noexcept
       : _fragments(std::move(fragments))
       , _size_bytes(size_bytes) {
@@ -250,18 +251,18 @@ fragmented_temporary_buffer::get_istream() const noexcept {
 
 class fragmented_temporary_buffer::reader {
 public:
-    seastar::future<fragmented_temporary_buffer>
-    read_exactly(seastar::input_stream<char>& in, size_t length) {
-        _fragments = std::vector<seastar::temporary_buffer<char>>();
+    future<fragmented_temporary_buffer>
+    read_exactly(input_stream<char>& in, size_t length) {
+        _fragments = std::vector<temporary_buffer<char>>();
         _left = length;
-        return seastar::repeat_until_value([this, length, &in] {
+        return repeat_until_value([this, length, &in] {
             using f_t_b_opt = std::optional<fragmented_temporary_buffer>;
             if (!_left) {
-                return seastar::make_ready_future<f_t_b_opt>(
+                return make_ready_future<f_t_b_opt>(
                   fragmented_temporary_buffer(std::move(_fragments), length));
             }
             return in.read_up_to(_left).then(
-              [this](seastar::temporary_buffer<char> buf) {
+              [this](temporary_buffer<char> buf) {
                   if (buf.empty()) {
                       return f_t_b_opt(fragmented_temporary_buffer());
                   }
@@ -273,7 +274,7 @@ public:
     }
 
 private:
-    std::vector<seastar::temporary_buffer<char>> _fragments;
+    std::vector<temporary_buffer<char>> _fragments;
     size_t _left = 0;
 };
 

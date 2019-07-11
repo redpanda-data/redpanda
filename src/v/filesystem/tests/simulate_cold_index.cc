@@ -21,12 +21,12 @@
 #include <set>
 
 // creating a namespace with `-` tests the regexes
-static const seastar::sstring kNS = "empty-ns007";
+static const sstring kNS = "empty-ns007";
 // creating a topic with `_` tests the regexes
-static const seastar::sstring kTopic = "dummy_topic";
+static const sstring kTopic = "dummy_topic";
 
-seastar::future<> do_creates(uint32_t core, write_ahead_log& w) {
-    return seastar::do_with(
+future<> do_creates(uint32_t core, write_ahead_log& w) {
+    return do_with(
       std::vector<int32_t>{} /*partitions*/,
       wal_topic_test_input(
         kNS,
@@ -38,7 +38,7 @@ seastar::future<> do_creates(uint32_t core, write_ahead_log& w) {
         // map of properties for topic
         {{"prop-for-topic", "maybe-store-access-keys"}}),
       [&w, core](auto& partitions, auto& input) {
-          return seastar::do_with(
+          return do_with(
                    input.create_requests(),
                    std::size_t(0),
                    [&w, core, &partitions](auto& creqs, auto& cidx) {
@@ -57,7 +57,7 @@ seastar::future<> do_creates(uint32_t core, write_ahead_log& w) {
                          std::back_inserter(partitions));
                        return w.create(std::move(c)).then([core](auto r) {
                            LOG_INFO("Topic created on core: {}", core);
-                           return seastar::make_ready_future<>();
+                           return make_ready_future<>();
                        });
                    })
             .then([&partitions] {
@@ -90,19 +90,19 @@ seastar::future<> do_creates(uint32_t core, write_ahead_log& w) {
 
 int main(int args, char** argv, char** env) {
     std::cout.setf(std::ios::unitbuf);
-    seastar::app_template app;
-    seastar::distributed<write_ahead_log> w;
+    app_template app;
+    distributed<write_ahead_log> w;
 
     return app.run(args, argv, [&] {
-        smf::app_run_log_level(seastar::log_level::trace);
-        seastar::engine().at_exit([&] { return w.stop(); });
+        smf::app_run_log_level(log_level::trace);
+        engine().at_exit([&] { return w.stop(); });
 
         return w.start(wal_opts(".", std::chrono::milliseconds(2)))
           .then([&] { return w.invoke_on_all(&write_ahead_log::open); })
           .then([&] { return w.invoke_on_all(&write_ahead_log::index); })
           .then([&] {
               return w.invoke_on_all([](write_ahead_log& w) {
-                  return do_creates(seastar::engine().cpu_id(), w);
+                  return do_creates(engine().cpu_id(), w);
               });
           })
           .then([&] {
@@ -111,6 +111,6 @@ int main(int args, char** argv, char** env) {
               LOG_INFO("The main test is directory walking - on ALL cores");
               return w.invoke_on_all(&write_ahead_log::index);
           })
-          .then([] { return seastar::make_ready_future<int>(0); });
+          .then([] { return make_ready_future<int>(0); });
     });
 }

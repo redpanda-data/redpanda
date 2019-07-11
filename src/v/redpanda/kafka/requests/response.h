@@ -2,6 +2,7 @@
 
 #include "bytes/bytes_ostream.h"
 #include "redpanda/kafka/requests/response_writer.h"
+#include "seastarx.h"
 
 #include <seastar/core/sharded.hh>
 
@@ -28,6 +29,6 @@ private:
     response_writer _writer;
 };
 
-using response_ptr = seastar::foreign_ptr<std::unique_ptr<response>>;
+using response_ptr = foreign_ptr<std::unique_ptr<response>>;
 
 } // namespace kafka::requests

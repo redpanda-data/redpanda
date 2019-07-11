@@ -1,8 +1,10 @@
 #pragma once
+
 #include "filesystem/tests/gen_create_topic_buf.h"
 #include "filesystem/wal_core_mapping.h"
 #include "filesystem/wal_generated.h"
 #include "filesystem/wal_segment_record.h"
+#include "seastarx.h"
 
 #include <smf/fbs_typed_buf.h>
 #include <smf/human_bytes.h>
@@ -20,11 +22,11 @@ public:
       std::numeric_limits<uint8_t>::max());
 
     explicit wal_topic_test_input(
-      seastar::sstring ns,
-      seastar::sstring topic,
+      sstring ns,
+      sstring topic,
       int32_t partitions,
       wal_topic_type type,
-      std::unordered_map<seastar::sstring, seastar::sstring> props,
+      std::unordered_map<sstring, sstring> props,
       int32_t max_batch_size_per_partition = 1,
       int32_t rand_bytes = max_rand_bytes) {
         // create
@@ -41,9 +43,9 @@ public:
             idx->partition = i;
             idx->records.reserve(max_batch_size_per_partition);
             for (auto j = 0; j < max_batch_size_per_partition; ++j) {
-                seastar::sstring key = _rand.next_alphanum(
+                sstring key = _rand.next_alphanum(
                   std::max<uint64_t>(1, _rand.next() % rand_bytes));
-                seastar::sstring value = _rand.next_str(
+                sstring value = _rand.next_str(
                   std::max<uint64_t>(1, _rand.next() % rand_bytes));
                 idx->records.push_back(wal_segment_record::coalesce(
                   key.data(), key.size(), value.data(), value.size()));

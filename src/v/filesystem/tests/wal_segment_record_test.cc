@@ -38,8 +38,8 @@ void small_tests() {
           (const char*)x->data.data(), x->data.size());
 
         // get it in comparable format and test
-        seastar::sstring keyout(kbuf.get(), kbuf.size());
-        seastar::sstring valout(vbuf.get(), vbuf.size());
+        sstring keyout(kbuf.get(), kbuf.size());
+        sstring valout(vbuf.get(), vbuf.size());
 
         // roundtrip assertions :)
         LOG_THROW_IF(
@@ -79,8 +79,8 @@ void compression_tests() {
         auto [kbuf, vbuf] = wal_segment_record::extract_from_bin(
           (const char*)x->data.data(), x->data.size());
         // get it in comparable format and test
-        seastar::sstring keyout(kbuf.get(), kbuf.size());
-        seastar::sstring valout(vbuf.get(), vbuf.size());
+        sstring keyout(kbuf.get(), kbuf.size());
+        sstring valout(vbuf.get(), vbuf.size());
         // roundtrip assertions :)
         LOG_THROW_IF(
           keyinput != keyout,
@@ -98,11 +98,11 @@ void compression_tests() {
 int main(int args, char** argv, char** env) {
     // set only to debug things
     std::cout.setf(std::ios::unitbuf);
-    seastar::app_template app;
+    app_template app;
     return app.run(args, argv, [&] {
-        smf::app_run_log_level(seastar::log_level::trace);
+        smf::app_run_log_level(log_level::trace);
         small_tests();
         compression_tests();
-        return seastar::make_ready_future<int>(0);
+        return make_ready_future<int>(0);
     });
 }

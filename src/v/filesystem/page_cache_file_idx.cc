@@ -7,7 +7,6 @@
 #include <smf/log.h>
 
 using page_range_ptr = page_cache_file_idx::page_range_ptr;
-using iterator = page_cache_file_idx::iterator;
 using set_t = page_cache_file_idx::set_t;
 
 page_cache_file_idx::page_cache_file_idx(uint32_t fileid)
@@ -22,7 +21,7 @@ struct page_comparator {
     }
 };
 
-iterator page_cache_file_idx::as_iterator(const int32_t pageno) {
+page_cache_file_idx::iterator page_cache_file_idx::as_iterator(const int32_t pageno) {
     auto it = std::lower_bound(
       _ranges.begin(), _ranges.end(), pageno, page_comparator{});
     if (it != _ranges.end()) {
@@ -70,7 +69,7 @@ void page_cache_file_idx::evict_pages(std::set<int32_t> pages) {
     }
 }
 
-page_range_ptr page_cache_file_idx::erase(iterator it) {
+page_range_ptr page_cache_file_idx::erase(page_cache_file_idx::iterator it) {
     // return & update database
     std::swap(*it, _ranges.back());
     page_range_ptr retval = std::move(_ranges.back());

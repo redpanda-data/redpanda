@@ -3,6 +3,7 @@
 #include "redpanda/api/client_opts.h"
 #include "redpanda/api/client_stats.h"
 #include "redpanda/api/redpanda.smf.fb.h"
+#include "seastarx.h"
 
 #include <bytell_hash_map.hpp>
 #include <string>
@@ -19,7 +20,7 @@ public:
           client_stats* m,
           int64_t transaction_id,
           std::vector<uint32_t> chain,
-          seastar::shared_ptr<redpanda_api_client> c);
+          shared_ptr<redpanda_api_client> c);
         ~txn() = default;
         txn(txn&& o) noexcept;
 
@@ -41,12 +42,12 @@ public:
         }
         /// \brief submits the actual transaction.
         /// invalid after this call
-        seastar::future<smf::rpc_recv_typed_context<chains::chain_put_reply>>
+        future<smf::rpc_recv_typed_context<chains::chain_put_reply>>
         submit();
 
     private:
         const client_opts& opts;
-        seastar::shared_ptr<redpanda_api_client> _rpc;
+        shared_ptr<redpanda_api_client> _rpc;
         smf::rpc_typed_envelope<chains::chain_put_request> _data;
         bool _submitted = false;
         client_stats* _stats;
@@ -68,15 +69,15 @@ public:
 
     /// \brief opens the connection to the seed server & bootstraps
     ///
-    seastar::future<> open(seastar::ipv4_addr seed);
+    future<> open(ipv4_addr seed);
 
     /// \brief closes the connection of RPC
     ///
-    seastar::future<> close();
+    future<> close();
 
     /// \brief will load balance reads across all shards (topic,partition)
     ///
-    seastar::future<smf::rpc_recv_typed_context<chains::chain_get_reply>>
+    future<smf::rpc_recv_typed_context<chains::chain_get_reply>>
     consume(int32_t partition_override = -1);
 
     /// \brief gives a stage area for a chain-replication put
@@ -93,7 +94,7 @@ public:
 
     /// \brief pointer to this histogram
     ///
-    inline seastar::lw_shared_ptr<smf::histogram> get_histogram() {
+    inline lw_shared_ptr<smf::histogram> get_histogram() {
         return _rpc->get_histogram();
     }
 
@@ -125,15 +126,15 @@ public:
     }
 
 private:
-    seastar::future<smf::rpc_recv_typed_context<chains::chain_get_reply>>
+    future<smf::rpc_recv_typed_context<chains::chain_get_reply>>
       consume_from_partition(int32_t);
 
 private:
-    seastar::shared_ptr<redpanda_api_client> _rpc;
+    shared_ptr<redpanda_api_client> _rpc;
     uint64_t producer_txn_id_ = 0;
     struct offset_meta_idx {
         int64_t offset{0};
-        seastar::semaphore lock{1};
+        semaphore lock{1};
     };
     ska::bytell_hash_map<int32_t, offset_meta_idx> partition_offsets_{};
     client_stats _stats;

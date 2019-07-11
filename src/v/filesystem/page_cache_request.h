@@ -1,4 +1,7 @@
 #pragma once
+
+#include "seastarx.h"
+
 #include <seastar/core/file.hh>
 
 #include <cstdint>
@@ -14,8 +17,8 @@ struct page_cache_request {
     int32_t hint_file_last_pageno;
 
     // how to fetch data
-    seastar::lw_shared_ptr<seastar::file> fptr;
-    const seastar::io_priority_class& pc;
+    lw_shared_ptr<file> fptr;
+    const io_priority_class& pc;
 };
 
 namespace std {

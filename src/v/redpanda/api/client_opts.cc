@@ -5,8 +5,8 @@
 namespace api {
 
 client_opts::client_opts(
-  seastar::sstring _topic_namespace,
-  seastar::sstring _topic,
+  sstring _topic_namespace,
+  sstring _topic,
   int64_t _consumer_group_id,
   int64_t _producer_id)
   : topic_namespace(std::move(_topic_namespace))

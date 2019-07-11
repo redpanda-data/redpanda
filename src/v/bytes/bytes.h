@@ -1,16 +1,18 @@
 #pragma once
 
+#include "seastarx.h"
+
 #include <seastar/core/sstring.hh>
 
 #include <cstdint>
 #include <iosfwd>
 
-using bytes = seastar::basic_sstring<int8_t, uint32_t, 31, false>;
+using bytes = basic_sstring<int8_t, uint32_t, 31, false>;
 using bytes_view = std::basic_string_view<int8_t>;
 using bytes_opt = std::optional<bytes>;
 
-seastar::sstring to_hex(bytes_view b);
-seastar::sstring to_hex(const bytes& b);
+sstring to_hex(bytes_view b);
+sstring to_hex(const bytes& b);
 
 std::ostream& operator<<(std::ostream& os, const bytes& b);
 std::ostream& operator<<(std::ostream& os, const bytes_opt& b);

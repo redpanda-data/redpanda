@@ -12,15 +12,15 @@ using page_range_ptr = page_cache::page_range_ptr;
 
 static inline constexpr int64_t
 rounded_limit(double ratio, int64_t memory_lcore) {
-    return seastar::align_up<int64_t>(
+    return align_up<int64_t>(
       static_cast<int64_t>(ratio * memory_lcore),
       page_cache_buffer_manager::kBufferSize);
 }
 
 page_cache& page_cache::get() {
     static thread_local page_cache c(
-      rounded_limit(0.3, seastar::memory::stats().total_memory()),
-      rounded_limit(0.6, seastar::memory::stats().total_memory()));
+      rounded_limit(0.3, memory::stats().total_memory()),
+      rounded_limit(0.6, memory::stats().total_memory()));
     return c;
 }
 page_cache::~page_cache() {
@@ -30,9 +30,9 @@ page_cache::page_cache(int64_t min_reserve, int64_t max_limit)
   : _mngr(min_reserve, max_limit)
   , _reclaimer(
       [this] { return reclaim_region(); },
-      seastar::memory::reclaimer_scope::sync) {
+      memory::reclaimer_scope::sync) {
     // set metrics
-    namespace sm = seastar::metrics;
+    namespace sm = metrics;
     _metrics.add_group(
       prometheus_sanitize::metrics_name("page_cache::"),
       {sm::make_derive(
@@ -92,15 +92,15 @@ void page_cache::cache(uint32_t fileid, page_range_ptr ptr) {
     index(fileid)->cache(std::move(ptr));
 }
 
-seastar::future<>
+future<>
 page_cache::prefetch(page_cache_request r, page_cache_result::priority prio) {
     auto clamp = page_cache_table_clamp_page(r.begin_pageno);
-    return seastar::with_semaphore(_mngr.lock(r.file_id, clamp), 1, [=] {
+    return with_semaphore(_mngr.lock(r.file_id, clamp), 1, [=] {
         return _mngr.allocate(clamp.first, prio)
           .then([this, r, clamp](page_range_ptr range_ptr) {
               if (auto ptr = try_get(r); ptr != nullptr) {
                   ptr->pending_reads++;
-                  return seastar::make_ready_future<>();
+                  return make_ready_future<>();
               }
               ++_stats.prefetches;
               auto ptr = range_ptr.get();
@@ -120,25 +120,25 @@ page_cache::prefetch(page_cache_request r, page_cache_result::priority prio) {
                           "Off "
                           "by one errors. Check the caller.",
                           size);
-                        return seastar::make_ready_future<>();
+                        return make_ready_future<>();
                     }
                     _stats.disk_bytes_read += size;
                     ++_stats.prefetches;
                     range_ptr->pending_reads++;
                     range_ptr->data = {range_ptr->data.data(), int64_t(size)};
                     cache(r.file_id, std::move(range_ptr));
-                    return seastar::make_ready_future<>();
+                    return make_ready_future<>();
                 });
           });
     });
 }
 /// used by the wal_reader_node.cc: to remove a file from all caches
-seastar::future<> page_cache::remove_file(uint32_t fileid) {
+future<> page_cache::remove_file(uint32_t fileid) {
     auto it = _files.find(fileid);
     if (it == _files.end())
-        return seastar::make_ready_future<>();
+        return make_ready_future<>();
     _files.erase(it);
-    return seastar::make_ready_future<>();
+    return make_ready_future<>();
 }
 
 // ensures that the next set of pages are prefetched
@@ -171,30 +171,30 @@ void page_cache::prefetch_next(page_cache_request r) {
 }
 
 // returns the usable bytes
-seastar::future<page_cache_result_lease>
+future<page_cache_result_lease>
 page_cache::read(page_cache_request r) {
     using ret_t = page_cache_result_lease;
     if (r.begin_pageno > r.end_pageno) {
         LOG_WARN("Asked for more data than request: {}", r);
-        return seastar::make_ready_future<ret_t>(nullptr);
+        return make_ready_future<ret_t>(nullptr);
     }
     prefetch_next(r);
 
     if (auto ptr = try_get(r); ptr != nullptr) {
         ++_stats.cache_hit;
         _stats.served_bytes += ptr->data.size();
-        return seastar::make_ready_future<ret_t>(ptr);
+        return make_ready_future<ret_t>(ptr);
     }
     // not in cache, have to wait for it.
     ++_stats.cache_miss;
 
     auto clamp = page_cache_table_clamp_page(r.begin_pageno);
-    return seastar::with_semaphore(_mngr.lock(r.file_id, clamp), 1, [=] {
+    return with_semaphore(_mngr.lock(r.file_id, clamp), 1, [=] {
         return _mngr.allocate(clamp.first, page_cache_result::priority::low)
           .then([this, r, clamp](page_range_ptr range_ptr) {
               if (auto ptr = try_get(r); ptr != nullptr) {
                   _stats.served_bytes += ptr->data.size();
-                  return seastar::make_ready_future<ret_t>(ptr);
+                  return make_ready_future<ret_t>(ptr);
               }
               ++_stats.stalls;
               auto ptr = range_ptr.get();
@@ -214,23 +214,23 @@ page_cache::read(page_cache_request r) {
                           "Off "
                           "by one errors. Check the caller.",
                           size);
-                        return seastar::make_ready_future<ret_t>(nullptr);
+                        return make_ready_future<ret_t>(nullptr);
                     }
                     _stats.disk_bytes_read += size;
                     // Update the span
                     range_ptr->data = {range_ptr->data.data(), int64_t(size)};
                     cache(r.file_id, std::move(range_ptr));
-                    return seastar::make_ready_future<ret_t>(ptr);
+                    return make_ready_future<ret_t>(ptr);
                 });
           });
     });
 }
 
 /// \brief called during low memory pressure
-seastar::memory::reclaiming_result page_cache::reclaim_region() {
+memory::reclaiming_result page_cache::reclaim_region() {
     if (_mngr.total_alloc_bytes() <= _mngr.min_memory_reserved) {
         // always keep at least 30% of memory used
-        return seastar::memory::reclaiming_result::reclaimed_nothing;
+        return memory::reclaiming_result::reclaimed_nothing;
     }
     _mngr.decrement_buffers();
     auto it = _files.begin();
@@ -241,11 +241,11 @@ seastar::memory::reclaiming_result page_cache::reclaim_region() {
         }
         auto opt = it->second->try_evict();
         if (opt) {
-            return seastar::memory::reclaiming_result::reclaimed_something;
+            return memory::reclaiming_result::reclaimed_something;
         }
         ++it;
     }
-    return seastar::memory::reclaiming_result::reclaimed_nothing;
+    return memory::reclaiming_result::reclaimed_nothing;
 }
 
 void page_cache::evict_pages(uint32_t fileid, std::set<int32_t> pages) {

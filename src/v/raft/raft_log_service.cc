@@ -18,9 +18,9 @@ constexpr static const char* kRedpandaTopicCreationTopic
 
 // --- static helpers
 
-static seastar::future<std::unique_ptr<wal_read_reply>>
+static future<std::unique_ptr<wal_read_reply>>
 raft_configuration_log_read(
-  seastar::distributed<write_ahead_log>* log, wal_get_requestT get) {
+  distributed<write_ahead_log>* log, wal_get_requestT get) {
     auto body = smf::native_table_as_buffer<wal_get_request>(get);
     auto tbuf = smf::fbs_typed_buf<wal_get_request>(std::move(body));
     auto req = wal_core_mapping::core_assignment(tbuf.get());
@@ -28,7 +28,7 @@ raft_configuration_log_read(
     return log->invoke_on(
       req.runner_core,
       [log, tbuf = std::move(tbuf), req = std::move(req)](auto& local) mutable {
-          return seastar::do_with(
+          return do_with(
             std::move(tbuf),
             std::move(req),
             [&local](auto& tbuf, auto& req) mutable {
@@ -37,18 +37,18 @@ raft_configuration_log_read(
       });
 }
 
-static seastar::future<> read_all_raft_configuration_topic(
-  seastar::distributed<write_ahead_log>* log,
+static future<> read_all_raft_configuration_topic(
+  distributed<write_ahead_log>* log,
   int64_t ns,
   int64_t topic,
   int64_t start_offset,
   int64_t end_offset,
-  std::function<seastar::future<>(std::unique_ptr<wal_read_reply>)>&& f) {
-    return seastar::do_with(
+  std::function<future<>(std::unique_ptr<wal_read_reply>)>&& f) {
+    return do_with(
       start_offset,
       end_offset,
       [log, ns, topic, f = std::move(f)](int64_t& begin, const int64_t& end) {
-          return seastar::do_until(
+          return do_until(
             [&begin, end] { return begin >= end; },
             [&begin, log, ns, topic, f = std::move(f)]() mutable {
                 wal_get_requestT get;
@@ -66,7 +66,7 @@ static seastar::future<> read_all_raft_configuration_topic(
       });
 }
 
-seastar::future<>
+future<>
 raft_log_service::raft_cfg_log_process_one(std::unique_ptr<wal_read_reply> r) {
     auto data = r->release();
     LOG_THROW_IF(
@@ -131,22 +131,22 @@ raft_log_service::raft_cfg_log_process_one(std::unique_ptr<wal_read_reply> r) {
             }
         }
     }
-    return seastar::make_ready_future<>();
+    return make_ready_future<>();
 }
 
 raft_log_service::raft_log_service(
-  raft_cfg opts, seastar::distributed<write_ahead_log>* data)
+  raft_cfg opts, distributed<write_ahead_log>* data)
   : cfg(std::move(opts))
   , _data(THROW_IFNULL(data)) {
 }
 
-seastar::future<> raft_log_service::initialize() {
+future<> raft_log_service::initialize() {
     return initialize_cfg_lookup()
       .then([this] { return initialize_seed_servers(); })
       .then([this] { return recover_existing_logs(); });
 }
 
-seastar::future<> raft_log_service::recover_existing_logs() {
+future<> raft_log_service::recover_existing_logs() {
     LOG_TRACE("Discovering persistent raft state");
 
     const int64_t skip_ns = xxhash_64_str(kRedpandaLocalNamespace);
@@ -209,9 +209,9 @@ seastar::future<> raft_log_service::recover_existing_logs() {
       });
 }
 
-seastar::future<> raft_log_service::initialize_cfg_lookup() {
-    if (seastar::engine().cpu_id() != 0) {
-        return seastar::make_ready_future<>();
+future<> raft_log_service::initialize_cfg_lookup() {
+    if (engine().cpu_id() != 0) {
+        return make_ready_future<>();
     }
     LOG_INFO(
       "Verifying raft configuration for ns/topic: {}/{}",
@@ -227,7 +227,7 @@ seastar::future<> raft_log_service::initialize_cfg_lookup() {
     auto body = smf::native_table_as_buffer<wal_topic_create_request>(x);
     auto tbuf = smf::fbs_typed_buf<wal_topic_create_request>(std::move(body));
     auto req = std::move(wal_core_mapping::core_assignment(tbuf.get())[0]);
-    return seastar::do_with(
+    return do_with(
       std::move(tbuf), std::move(req), [this](auto& tbuf, auto& req) {
           auto const core = req.runner_core;
           return _data->invoke_on(
@@ -237,16 +237,16 @@ seastar::future<> raft_log_service::initialize_cfg_lookup() {
                       "Sucessful verification for raft cfg: ns/topic: {}/{}",
                       kRedpandaLocalNamespace,
                       kRaftConfigTopic);
-                    return seastar::make_ready_future<>();
+                    return make_ready_future<>();
                 });
             });
       });
 }
 
-seastar::future<> raft_log_service::initialize_seed_servers() {
-    if (seastar::engine().cpu_id() != 0) {
+future<> raft_log_service::initialize_seed_servers() {
+    if (engine().cpu_id() != 0) {
         // core 0 will do the dispatch to multiple cores later
-        return seastar::make_ready_future<>();
+        return make_ready_future<>();
     }
     if (
       cfg.seeds.end()
@@ -255,7 +255,7 @@ seastar::future<> raft_log_service::initialize_seed_servers() {
          })) {
         LOG_INFO(
           "Server: {}, not a seed servers. skipping seed server setup", cfg.id);
-        return seastar::make_ready_future<>();
+        return make_ready_future<>();
     }
     wal_topic_create_requestT x;
     x.ns = kRedpandaNamespace;
@@ -266,10 +266,10 @@ seastar::future<> raft_log_service::initialize_seed_servers() {
     auto body = smf::native_table_as_buffer<wal_topic_create_request>(x);
     auto tbuf = smf::fbs_typed_buf<wal_topic_create_request>(std::move(body));
     auto reqs = wal_core_mapping::core_assignment(tbuf.get());
-    return seastar::do_with(
+    return do_with(
       std::move(tbuf), std::move(reqs), [this](auto& tbuf, auto& reqs) {
           using iter_t = typename std::decay_t<decltype(reqs)>::iterator;
-          return seastar::do_for_each(
+          return do_for_each(
             std::move_iterator<iter_t>(reqs.begin()),
             std::move_iterator<iter_t>(reqs.end()),
             [this](auto r) {
@@ -282,20 +282,20 @@ seastar::future<> raft_log_service::initialize_seed_servers() {
                             "{}/{}",
                             kRedpandaNamespace,
                             kRedpandaTopicCreationTopic);
-                          return seastar::make_ready_future<>();
+                          return make_ready_future<>();
                       });
                   });
             });
       });
 
-    return seastar::make_ready_future<>();
+    return make_ready_future<>();
 }
 
-seastar::future<> raft_log_service::stop() {
+future<> raft_log_service::stop() {
     return _cache.close();
 }
 /*
-seastar::future<rte<raft::append_entries_reply>>
+future<rte<raft::append_entries_reply>>
 raft_log_service::append_entries(rtc<raft::append_entries_request> && rec) {
 
   // process redirects

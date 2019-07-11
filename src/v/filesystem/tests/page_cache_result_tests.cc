@@ -44,7 +44,7 @@ TEST(page_cache_result_lease, ref_count_move_assignment) {
 }
 
 TEST(page_cache_result, one_total_page) {
-    seastar::sstring payload = "hello world";
+    sstring payload = "hello world";
     page_cache_result r(
       0,
       gsl::span<char>(payload.data(), payload.data()),

@@ -26,11 +26,11 @@ void check_roundtrip_sweep(std::size_t count) {
     auto verify_round_trip = [](Integer value) {
         static bytes encoding_buffer(
           bytes::initialized_later(), max_vint_length);
-        const auto size = internal::vint_base<Integer>::serialize(
+        const auto size = vint_internal::vint_base<Integer>::serialize(
           value, encoding_buffer.begin());
         const auto view = bytes_view(encoding_buffer.data(), size);
         const auto [deserialized, _]
-          = internal::vint_base<Integer>::deserialize(view);
+          = vint_internal::vint_base<Integer>::deserialize(view);
         BOOST_REQUIRE_EQUAL(deserialized, value);
     };
     std::uniform_int_distribution<Integer> distribution;

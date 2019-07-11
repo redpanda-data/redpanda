@@ -55,8 +55,8 @@ void hex_print(const uint8_t* ptr, uint32_t sz) {
 }
 
 TEST(wal_binary_record_order, small_on_wire_vs_on_mem) {
-    seastar::sstring key = "foo";
-    seastar::sstring value = "bar";
+    sstring key = "foo";
+    sstring value = "bar";
     auto record_mem = wal_segment_record::coalesce(
       key.data(), key.size(), value.data(), value.size());
     auto body = smf::native_table_as_buffer<wal_binary_record>(
@@ -81,8 +81,8 @@ TEST(wal_binary_record_order, small_on_wire_vs_on_mem) {
 
 TEST(wal_binary_record_order, large_on_wire_vs_on_mem) {
     smf::random r;
-    seastar::sstring key = r.next_alphanum(1024 * 1024);
-    seastar::sstring value = r.next_alphanum(1024 * 1024);
+    sstring key = r.next_alphanum(1024 * 1024);
+    sstring value = r.next_alphanum(1024 * 1024);
     auto record_mem = wal_segment_record::coalesce(
       key.data(), key.size(), value.data(), value.size());
     auto body = smf::native_table_as_buffer<wal_binary_record>(

@@ -38,9 +38,9 @@ Each topic partition gets load balanced in a jump_consistent_hash fashion.
 
 
 ```cpp 
-seastar::future<>
+future<>
 consumer_forever_example() {
-  return seastar::keep_doing([this] {
+  return keep_doing([this] {
     return _api->consume().then([](auto r) {
       // process your reply! :)
     });

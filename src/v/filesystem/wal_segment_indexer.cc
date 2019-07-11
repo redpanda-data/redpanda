@@ -37,10 +37,10 @@ static std::unique_ptr<wal_binary_recordT> binary_index(
         frag.keys.push_back(std::move(tmp));
     }
 
-    seastar::temporary_buffer<char> buf
+    temporary_buffer<char> buf
       = smf::native_table_as_buffer<wal_segment_index_fragment>(frag);
 
-    seastar::sstring key = seastar::to_sstring(xorkey);
+    sstring key = to_sstring(xorkey);
     auto ret = wal_segment_record::coalesce(
       key.data(),
       key.size(),
@@ -108,7 +108,7 @@ wal_segment_indexer::get_or_create(int64_t offset, const wal_binary_record* r) {
     return {ptr, true};
 }
 
-seastar::future<>
+future<>
 wal_segment_indexer::index(int64_t offset, const wal_binary_record* r) {
     is_flushed_ = false;
     largest_offset_seen_ = std::max(offset, largest_offset_seen_);
@@ -122,7 +122,7 @@ wal_segment_indexer::index(int64_t offset, const wal_binary_record* r) {
     }
     // make sure to rotate if we are full
     if (_size < kMaxPartialIndexKeysSize) {
-        return seastar::make_ready_future<>();
+        return make_ready_future<>();
     }
     return flush_index();
 }
@@ -134,9 +134,9 @@ void wal_segment_indexer::reset() {
     lens_bytes_ = 0;
     _data.clear();
 }
-seastar::future<> wal_segment_indexer::flush_index() {
+future<> wal_segment_indexer::flush_index() {
     if (is_flushed_) {
-        return seastar::make_ready_future<>();
+        return make_ready_future<>();
     }
     auto record = binary_index(
       xorwalkey, largest_offset_seen_, lens_bytes_, _data);
@@ -149,13 +149,13 @@ seastar::future<> wal_segment_indexer::flush_index() {
     return _index->append(src, tmp->data.size())
       .finally([this, r = std::move(record)] { is_flushed_ = true; });
 }
-seastar::future<> wal_segment_indexer::close() {
+future<> wal_segment_indexer::close() {
     if (_index) {
         return flush_index().then([this] { return _index->close(); });
     }
-    return seastar::make_ready_future<>();
+    return make_ready_future<>();
 }
-seastar::future<> wal_segment_indexer::open() {
+future<> wal_segment_indexer::open() {
     _index = std::make_unique<wal_segment>(
       filename,
       priority,

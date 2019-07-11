@@ -2,6 +2,7 @@
 
 #include "filesystem/wal_opts.h"
 #include "raft/raft_cfg.h"
+#include "seastarx.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -15,7 +16,7 @@
 #include <filesystem>
 
 struct redpanda_cfg {
-    seastar::sstring directory;
+    sstring directory;
     std::string ip;
     uint16_t port;
     uint16_t kafka_transport_port = 9092;
@@ -62,17 +63,17 @@ struct redpanda_cfg {
         o.rpc_port = port;
         o.ip = ip;
         o.memory_avail_per_core = static_cast<uint64_t>(
-          0.3 * seastar::memory::stats().total_memory());
+          0.3 * memory::stats().total_memory());
         return o;
     }
 };
 namespace YAML {
 template<>
-struct convert<seastar::sstring> {
-    static Node encode(const seastar::sstring& rhs) {
+struct convert<sstring> {
+    static Node encode(const sstring& rhs) {
         return Node(rhs.c_str());
     }
-    static bool decode(const Node& node, seastar::sstring& rhs) {
+    static bool decode(const Node& node, sstring& rhs) {
         if (!node.IsScalar())
             return false;
         rhs = node.as<std::string>();
@@ -97,7 +98,7 @@ struct convert<raft_seed_server> {
             }
         }
         rhs.id = node["id"].as<int64_t>();
-        rhs.addr = seastar::ipv4_addr(node["addr"].as<std::string>());
+        rhs.addr = ipv4_addr(node["addr"].as<std::string>());
         return true;
     }
 };
@@ -153,7 +154,7 @@ struct convert<redpanda_cfg> {
         // get full path
         if (rhs.directory[0] == '~') {
             const char* tilde = ::getenv("HOME");
-            rhs.directory = seastar::sstring(tilde) + rhs.directory.substr(1);
+            rhs.directory = sstring(tilde) + rhs.directory.substr(1);
         }
         {
             std::error_code ec;
@@ -179,12 +180,12 @@ static inline ostream& operator<<(ostream& o, const redpanda_cfg& c) {
       << ", retention_size_bytes:" << smf::human_bytes(c.retention_size_bytes)
       << ", bytes_in_memory_per_writer:"
       << smf::human_bytes(c.bytes_in_memory_per_writer) << "}"
-      << "seastar::memory::stats{total_memory:"
-      << smf::human_bytes(seastar::memory::stats().total_memory())
+      << "memory::stats{total_memory:"
+      << smf::human_bytes(memory::stats().total_memory())
       << ", allocated_memory: "
-      << smf::human_bytes(seastar::memory::stats().allocated_memory())
+      << smf::human_bytes(memory::stats().allocated_memory())
       << ", free_memory: "
-      << smf::human_bytes(seastar::memory::stats().free_memory()) << "}";
+      << smf::human_bytes(memory::stats().free_memory()) << "}";
     return o;
 }
 } // namespace std

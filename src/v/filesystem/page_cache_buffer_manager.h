@@ -1,5 +1,9 @@
 #pragma once
+
+#include "seastarx.h"
 #include "filesystem/page_cache_result.h"
+#include "hashing/jump_consistent_hash.h"
+#include "hashing/xx.h"
 
 #include <seastar/core/aligned_buffer.hh>
 #include <seastar/core/future.hh>
@@ -7,10 +11,6 @@
 #include <seastar/core/semaphore.hh>
 
 #include <smf/log.h>
-
-#include <hashing/jump_consistent_hash.h>
-#include <hashing/xx.h>
-
 #include <cstdint>
 #include <deque>
 #include <vector>
@@ -20,7 +20,7 @@ class page_cache_buffer_manager {
 public:
     SMF_DISALLOW_COPY_AND_ASSIGN(page_cache_buffer_manager);
     constexpr static const int32_t kBufferSize = 1 << 18;
-    using buf_ptr_t = std::unique_ptr<char[], seastar::free_deleter>;
+    using buf_ptr_t = std::unique_ptr<char[], free_deleter>;
     struct page_cache_result_dtor {
         page_cache_result_dtor(char* s, page_cache_buffer_manager* m)
           : semb(s)
@@ -44,29 +44,29 @@ public:
         for (int64_t i = 0, max = min_memory_reserved / kBufferSize; i < max;
              ++i) {
             grow_by_one();
-            _locks.push_back(seastar::semaphore(1));
+            _locks.push_back(semaphore(1));
         }
     }
 
     const int64_t min_memory_reserved;
     const int64_t max_memory_limit;
 
-    seastar::future<page_cache_result_ptr>
+    future<page_cache_result_ptr>
     allocate(int32_t begin_page, page_cache_result::priority prio) {
         if (!free_list_.empty()) {
-            return seastar::make_ready_future<page_cache_result_ptr>(
+            return make_ready_future<page_cache_result_ptr>(
               do_allocate(begin_page, prio));
         }
         if (total_alloc_bytes() < max_memory_limit) {
             grow_by_one();
-            return seastar::make_ready_future<page_cache_result_ptr>(
+            return make_ready_future<page_cache_result_ptr>(
               do_allocate(begin_page, prio));
         }
-        return seastar::with_semaphore(
+        return with_semaphore(
           no_free_pages_, 1, [=] { return allocate(begin_page, prio); });
     }
 
-    seastar::semaphore&
+    semaphore&
     lock(uint32_t file_id, std::pair<int32_t, int32_t> clamp) {
         uint32_t id = xxhash_32(
           std::array{static_cast<int32_t>(file_id), clamp.first});
@@ -96,7 +96,7 @@ public:
         }
         // acquire lock as soon as it can & free that buffer
         // prepare clean up in background future
-        seastar::with_semaphore(
+        with_semaphore(
           no_free_pages_, 1, [=] { decrement_buffers(); });
     }
 
@@ -119,13 +119,13 @@ private:
     }
     void grow_by_one() {
         _buffers.push_back(
-          seastar::allocate_aligned_buffer<char>(kBufferSize, 4096));
+          allocate_aligned_buffer<char>(kBufferSize, 4096));
         free_list_.push_back(_buffers.back().get());
     }
 
 private:
-    std::vector<seastar::semaphore> _locks;
+    std::vector<semaphore> _locks;
     std::vector<buf_ptr_t> _buffers;
     std::deque<char*> free_list_;
-    seastar::semaphore no_free_pages_{1};
+    semaphore no_free_pages_{1};
 };

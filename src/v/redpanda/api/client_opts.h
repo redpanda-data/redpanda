@@ -1,6 +1,7 @@
 #pragma once
 
 #include "filesystem/wal_generated.h"
+#include "seastarx.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -13,18 +14,18 @@ struct client_opts {
     enum class offset_strategy { stored_offset, begining, latest };
 
     explicit client_opts(
-      seastar::sstring _topic_namespace,
-      seastar::sstring _topic,
+      sstring _topic_namespace,
+      sstring _topic,
       int64_t _consumer_group_id,
       int64_t _producer_id);
     ~client_opts() = default;
 
     /// \brief namespace for topic; immutable after creation
-    seastar::sstring topic_namespace;
+    sstring topic_namespace;
     int64_t ns_id;
 
     /// \brief topic name; immutable after creation
-    seastar::sstring topic;
+    sstring topic;
     int64_t topic_id;
 
     bool server_side_verify_payload = true;
@@ -45,7 +46,7 @@ struct client_opts {
     int32_t record_compression_value_threshold = 512;
 
     /// \brief properties for the topic, immutable after creation
-    ska::bytell_hash_map<seastar::sstring, seastar::sstring> topic_props{};
+    ska::bytell_hash_map<sstring, sstring> topic_props{};
 
     /// \brief falls back on begining if nothing present
     offset_strategy strategy = offset_strategy::stored_offset;

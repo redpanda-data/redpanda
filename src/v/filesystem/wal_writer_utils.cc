@@ -25,30 +25,30 @@ int64_t wal_file_size_aligned() {
     static const constexpr int64_t kDefaultFileSize
       = static_cast<int64_t>(std::numeric_limits<int>::max()) / 2;
 
-    static const int64_t segment_size = seastar::align_up(
+    static const int64_t segment_size = align_up(
       kDefaultFileSize, system_page_size());
     return segment_size;
 }
 
-seastar::sstring
-wal_file_name(const seastar::sstring& work_dir, int64_t epoch, int64_t term) {
+sstring
+wal_file_name(const sstring& work_dir, int64_t epoch, int64_t term) {
     DLOG_THROW_IF(
       work_dir[work_dir.size() - 1] == '/', "Work dirrectory cannot end in /");
     return fmt::format("{}/{}.{}.wal", work_dir, epoch, term);
 }
 
-seastar::future<std::pair<int64_t, struct stat>>
-file_size_from_allocated_blocks(seastar::sstring pathname) {
-    return seastar::open_file_dma(pathname, seastar::open_flags::ro)
-      .then([](seastar::file ff) {
-          auto f = seastar::make_lw_shared<seastar::file>(std::move(ff));
+future<std::pair<int64_t, struct stat>>
+file_size_from_allocated_blocks(sstring pathname) {
+    return open_file_dma(pathname, open_flags::ro)
+      .then([](file ff) {
+          auto f = make_lw_shared<file>(std::move(ff));
           // actually seek to the end of the file vs stat() which returns the
           // fdatasync and not the actual number of blocks allocated
           return f->stat().then([f](auto st) {
               int64_t sz = st.st_blocks * f->disk_read_dma_alignment();
               return f->close().then([f /*kept to ommit finally()*/, sz, st] {
                   std::pair<int64_t, struct stat> p(sz, st);
-                  return seastar::make_ready_future<decltype(p)>(std::move(p));
+                  return make_ready_future<decltype(p)>(std::move(p));
               });
           });
       });
@@ -60,34 +60,34 @@ public:
       int64_t epoch,
       int64_t term,
       int64_t sz,
-      seastar::lowres_system_clock::time_point modified,
-      seastar::sstring filename)
+      lowres_system_clock::time_point modified,
+      sstring filename)
       : wal_reader_node(epoch, term, sz, modified, filename) {
-        file_flags_ = file_flags_ | seastar::open_flags::rw;
+        file_flags_ = file_flags_ | open_flags::rw;
     }
     virtual ~wal_segment_healer(){};
 
-    seastar::future<> heal() {
-        using stop_t = seastar::stop_iteration;
+    future<> heal() {
+        using stop_t = stop_iteration;
         return truncate_to_max_metadata_size()
           .then([this] {
               if (file_size_ == 0) {
                   exit_recovery_ = true;
                   is_recovered_ = true;
-                  return seastar::make_ready_future<>();
+                  return make_ready_future<>();
               }
-              return seastar::do_with(
+              return do_with(
                        create_pager(),
                        [this](wal_disk_pager& p) {
                            auto const id = global_file_id();
                            auto pager = std::ref(p);
-                           return seastar::repeat([this, pager, id]() mutable {
+                           return repeat([this, pager, id]() mutable {
                                DLOG_TRACE(
                                  "Recovering... file {} offset {}",
                                  id,
                                  last_valid_offset_);
                                if (last_valid_offset_ >= file_size_) {
-                                   return seastar::make_ready_future<stop_t>(
+                                   return make_ready_future<stop_t>(
                                      stop_t::yes);
                                }
                                auto idx = std::make_unique<wal_read_reply>(
@@ -101,13 +101,13 @@ public:
                                return copy_one_record(ptr, pager)
                                  .then([this, idx = std::move(idx)](auto next) {
                                      last_valid_offset_ = idx->next_epoch();
-                                     return seastar::make_ready_future<stop_t>(
+                                     return make_ready_future<stop_t>(
                                        next);
                                  })
                                  .handle_exception([](auto eptr) {
                                      LOG_INFO(
                                        "Recovering exception...: {}", eptr);
-                                     return seastar::make_ready_future<stop_t>(
+                                     return make_ready_future<stop_t>(
                                        stop_t::yes);
                                  });
                            });
@@ -120,7 +120,7 @@ public:
           .handle_exception([this](auto eptr) {
               LOG_ERROR("Failed to recover {} : {}", filename, eptr);
               is_recovered_ = false;
-              return seastar::make_ready_future<>();
+              return make_ready_future<>();
           });
     }
     bool is_recovered() const {
@@ -140,10 +140,10 @@ private:
                              last_page,
                              last_page,
                              _file,
-                             seastar::default_priority_class()});
+                             default_priority_class()});
     }
 
-    seastar::future<> truncate_to_max_metadata_size() {
+    future<> truncate_to_max_metadata_size() {
         return _file->size().then([this](auto registered_size) {
             file_size_ = registered_size;
             // This case covers a file simply fallocated and *NEVER* written
@@ -158,9 +158,9 @@ private:
             file_size_ = last_valid_offset_;
         }
     }
-    seastar::future<> truncate_to_valid_offset() {
+    future<> truncate_to_valid_offset() {
         if (last_valid_offset_ == 0) {
-            return seastar::make_ready_future<>();
+            return make_ready_future<>();
         }
         file_size_ = last_valid_offset_;
         DLOG_TRACE("Recovered file to offset:{}", last_valid_offset_);
@@ -172,13 +172,13 @@ private:
     bool exit_recovery_{false};
 };
 
-seastar::future<int64_t> recover_failed_wal_file(
+future<int64_t> recover_failed_wal_file(
   int64_t epoch,
   int64_t term,
   int64_t sz,
-  seastar::lowres_system_clock::time_point modified,
-  seastar::sstring name) {
-    auto n = seastar::make_shared<wal_segment_healer>(
+  lowres_system_clock::time_point modified,
+  sstring name) {
+    auto n = make_lw_shared<wal_segment_healer>(
       epoch, term, sz, modified, name);
     return n->open().then([n] {
         return n->heal().then([n] {
@@ -204,12 +204,12 @@ seastar::future<int64_t> recover_failed_wal_file(
                 if (should_rename) {
                     LOG_INFO(
                       "Renaming file: {} to {}.cannotrecover", name, name);
-                    seastar::rename_file(name, name + ".cannotrecover")
+                    rename_file(name, name + ".cannotrecover")
                       .then([real_size] {
-                          return seastar::make_ready_future<int64_t>(real_size);
+                          return make_ready_future<int64_t>(real_size);
                       });
                 }
-                return seastar::make_ready_future<int64_t>(real_size);
+                return make_ready_future<int64_t>(real_size);
             });
         });
     });

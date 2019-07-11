@@ -15,15 +15,15 @@ using namespace std::chrono; // NOLINT
 
 /// \brief used for _qps* methods. need helper struct for args
 struct qpsargs {
-    using time_t = seastar::lowres_system_clock::time_point;
+    using time_t = lowres_system_clock::time_point;
     explicit qpsargs(uint32_t seconds)
       : secs(seconds)
       , secs_sem(seconds) {
-        test_start = seastar::lowres_system_clock::now();
+        test_start = lowres_system_clock::now();
     }
     const uint32_t secs;
 
-    seastar::semaphore secs_sem;
+    semaphore secs_sem;
 
     uint64_t duration_millis() const {
         return duration_cast<seconds>(test_end - test_start).count();
@@ -52,11 +52,11 @@ qps_load::qps_load(const boost::program_options::variables_map* cfg)
     }
 }
 
-seastar::future<> qps_load::coordinated_omision_writes() {
+future<> qps_load::coordinated_omision_writes() {
     auto qps = options()["qps"].as<int32_t>();
     LOG_INFO("Writing: {}", qps);
-    return seastar::do_with(seastar::semaphore(qps), [this, qps](auto& limit) {
-        return seastar::do_for_each(
+    return do_with(semaphore(qps), [this, qps](auto& limit) {
+        return do_for_each(
                  boost::counting_iterator<int>(0),
                  boost::counting_iterator<int>(qps),
                  [this, &limit](auto i) {
@@ -66,18 +66,18 @@ seastar::future<> qps_load::coordinated_omision_writes() {
                          // Don't return!, launch it in the background
                          ptr->one_write().finally(
                            [&limit] { limit.signal(1); });
-                         return seastar::make_ready_future<>();
+                         return make_ready_future<>();
                      });
                  })
           .then([&limit, qps] { return limit.wait(qps); });
     });
 }
 
-seastar::future<> qps_load::coordinated_omision_reads() {
+future<> qps_load::coordinated_omision_reads() {
     auto qps = options()["qps"].as<int32_t>();
     LOG_INFO("Reading: {}", qps);
-    return seastar::do_with(seastar::semaphore(qps), [this, qps](auto& limit) {
-        return seastar::do_for_each(
+    return do_with(semaphore(qps), [this, qps](auto& limit) {
+        return do_for_each(
                  boost::counting_iterator<int>(0),
                  boost::counting_iterator<int>(qps),
                  [this, &limit](auto i) {
@@ -92,7 +92,7 @@ seastar::future<> qps_load::coordinated_omision_reads() {
     });
 }
 
-seastar::future<> qps_load::coordinated_omision_req() {
+future<> qps_load::coordinated_omision_req() {
     auto x = _rand();
     LOG_INFO("is: {} <= {}", x, needle_threshold_);
     if (x <= needle_threshold_) {
@@ -104,10 +104,10 @@ seastar::future<> qps_load::coordinated_omision_req() {
 static void print_iteration_stats(
   uint32_t iterno,
   uint32_t max,
-  seastar::lowres_system_clock::time_point test_start,
-  seastar::lowres_system_clock::time_point method_start,
+  lowres_system_clock::time_point test_start,
+  lowres_system_clock::time_point method_start,
   std::vector<std::unique_ptr<cli>>& loaders) {
-    auto now = seastar::lowres_system_clock::now();
+    auto now = lowres_system_clock::now();
     auto method_duration_millis
       = duration_cast<milliseconds>(now - method_start).count();
     auto duration = duration_cast<seconds>(now - test_start).count();
@@ -124,9 +124,9 @@ static void print_iteration_stats(
       stats);
 }
 
-seastar::future<> qps_load::drive() {
+future<> qps_load::drive() {
     auto max = options()["seconds-duration"].as<int32_t>();
-    auto args = seastar::make_lw_shared<qpsargs>(max);
+    auto args = make_lw_shared<qpsargs>(max);
 
     return method_sem_.wait(1).then([this, args]() mutable {
         LOG_INFO(
@@ -142,7 +142,7 @@ seastar::future<> qps_load::drive() {
                       qps_timer_.cancel();
                   }
 
-                  auto method_start_t = seastar::lowres_system_clock::now();
+                  auto method_start_t = lowres_system_clock::now();
                   // CANNOT return. It has to launch qps every time-interval
                   //
                   coordinated_omision_req().finally([this,
@@ -151,7 +151,7 @@ seastar::future<> qps_load::drive() {
                                                      method_start_t,
                                                      args]() {
                       if (args->secs_iteration >= args->secs) {
-                          args->test_end = seastar::lowres_system_clock::now();
+                          args->test_end = lowres_system_clock::now();
                       }
                       // pretty print progress
                       print_iteration_stats(
@@ -184,16 +184,16 @@ std::unique_ptr<smf::histogram> qps_load::copy_histogram() const {
     }
     return h;
 }
-seastar::future<> qps_load::open() {
-    return seastar::with_semaphore(method_sem_, 1, [this] {
+future<> qps_load::open() {
+    return with_semaphore(method_sem_, 1, [this] {
         LOG_INFO("Opening connections: {}", _loaders.size());
-        return seastar::do_for_each(
+        return do_for_each(
           _loaders.begin(), _loaders.end(), [](auto& i) { return i->open(); });
     });
 }
-seastar::future<> qps_load::stop() {
-    return seastar::with_semaphore(method_sem_, 1, [this] {
-        return seastar::do_for_each(
+future<> qps_load::stop() {
+    return with_semaphore(method_sem_, 1, [this] {
+        return do_for_each(
           _loaders.begin(), _loaders.end(), [](auto& i) { return i->stop(); });
     });
 }

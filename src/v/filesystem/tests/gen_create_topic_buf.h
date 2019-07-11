@@ -1,5 +1,7 @@
 #pragma once
 
+#include "seastarx.h"
+
 #include "filesystem/wal_generated.h"
 
 #include <smf/fbs_typed_buf.h>
@@ -8,11 +10,11 @@
 #include <unordered_map>
 
 inline smf::fbs_typed_buf<wal_topic_create_request> gen_create_topic_buf(
-  seastar::sstring ns,
-  seastar::sstring topic,
+  sstring ns,
+  sstring topic,
   int32_t partitions,
   wal_topic_type type,
-  std::unordered_map<seastar::sstring, seastar::sstring> props) {
+  std::unordered_map<sstring, sstring> props) {
     wal_topic_create_requestT x;
     x.topic = topic;
     x.ns = ns;

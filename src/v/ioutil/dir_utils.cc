@@ -7,7 +7,7 @@
 
 // clang-format on
 /// \brief creates directory tree
-seastar::future<> dir_utils::create_dir_tree(seastar::sstring name) {
+future<> dir_utils::create_dir_tree(sstring name) {
     std::vector<std::size_t> idxs;
     for (auto i = 1u /* no need to create `/` */; i < name.size(); ++i) {
         if (name[i] == '/') {
@@ -15,14 +15,14 @@ seastar::future<> dir_utils::create_dir_tree(seastar::sstring name) {
         }
     }
 
-    auto do_create_fn = [](seastar::sstring dname) {
-        static thread_local seastar::semaphore dirsem{1};
-        return seastar::with_semaphore(dirsem, 1, [dname] {
-            return seastar::file_exists(dname).then([dname](bool exists) {
+    auto do_create_fn = [](sstring dname) {
+        static thread_local semaphore dirsem{1};
+        return with_semaphore(dirsem, 1, [dname] {
+            return file_exists(dname).then([dname](bool exists) {
                 if (exists) {
-                    return seastar::make_ready_future<>();
+                    return make_ready_future<>();
                 }
-                return seastar::make_directory(dname);
+                return make_directory(dname);
             });
         });
     };
@@ -32,10 +32,10 @@ seastar::future<> dir_utils::create_dir_tree(seastar::sstring name) {
         return do_create_fn(name);
     }
 
-    return seastar::do_with(
+    return do_with(
              std::move(idxs),
              [name, do_create_fn](auto& vec) {
-                 return seastar::do_for_each(
+                 return do_for_each(
                    vec.begin(),
                    vec.end(),
                    [name, do_create_fn](std::size_t idx) {

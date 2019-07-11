@@ -5,6 +5,7 @@
 #include "filesystem/wal_requests.h"
 #include "filesystem/wal_segment.h"
 #include "filesystem/wal_writer_utils.h"
+#include "seastarx.h"
 
 #include <seastar/core/fstream.hh>
 #include <seastar/core/semaphore.hh>
@@ -19,14 +20,14 @@ struct wal_writer_node_opts {
     /// gets called every time we roll a log segment
     ///
     using notify_create_log_handle_t
-      = seastar::noncopyable_function<seastar::future<>(seastar::sstring)>;
+      = noncopyable_function<future<>(sstring)>;
 
     /// \brief callback that users can opt-in to listen to
     /// the name of the file being written to and the latest size flushed
     /// to disk. This callback is only triggered *AFTER* flush() succeeds
     ///
-    using notify_size_change_handle_t = seastar::noncopyable_function<
-      seastar::future<>(seastar::sstring, int64_t)>;
+    using notify_size_change_handle_t = noncopyable_function<
+      future<>(sstring, int64_t)>;
 
     SMF_DISALLOW_COPY_AND_ASSIGN(wal_writer_node_opts);
 
@@ -35,8 +36,8 @@ struct wal_writer_node_opts {
       int64_t term_id,
       int64_t epoch,
       const wal_topic_create_request* create_props,
-      const seastar::sstring& writer_dir,
-      const seastar::io_priority_class& prio,
+      const sstring& writer_dir,
+      const io_priority_class& prio,
       notify_create_log_handle_t cfunc,
       notify_size_change_handle_t sfunc)
       : wopts(op)
@@ -62,8 +63,8 @@ struct wal_writer_node_opts {
 
     const wal_opts& wopts;
     const wal_topic_create_request* tprops;
-    const seastar::sstring& writer_directory;
-    const seastar::io_priority_class& pclass;
+    const sstring& writer_directory;
+    const io_priority_class& pclass;
 
     int64_t epoch;
     int64_t term;
@@ -87,21 +88,21 @@ public:
     SMF_DISALLOW_COPY_AND_ASSIGN(wal_writer_node);
 
     /// \brief writes the projection to disk ensuring file size capacity
-    seastar::future<std::unique_ptr<wal_write_reply>> append(wal_write_request);
+    future<std::unique_ptr<wal_write_reply>> append(wal_write_request);
 
     /// \brief/// \brief forces the log_segment to rotate and start a new
     /// log segment with <epoch>.<term>.log
-    seastar::future<> set_term(int64_t term);
+    future<> set_term(int64_t term);
 
     /// \brief flushes the file before closing
-    seastar::future<> close();
+    future<> close();
     /// \brief opens the file w/ open_flags::rw | open_flags::create |
     ///                          open_flags::truncate
     /// the file should fail if it exists. It should not exist on disk, as
     /// we'll truncate them
-    seastar::future<> open();
+    future<> open();
 
-    seastar::sstring filename() const {
+    sstring filename() const {
         if (!_lease) {
             return "";
         }
@@ -117,14 +118,14 @@ public:
     }
 
 private:
-    seastar::future<> rotate_fstream();
+    future<> rotate_fstream();
     /// \brief 0-copy append to buffer
     /// https://github.com/apache/kafka/blob/fb21209b5ad30001eeace56b3c8ab060e0ceb021/core/src/main/scala/kafka/log/Log.scala
     /// do append has a similar logic as the kafka log.
     /// effectively just check if there is enough space, if not rotate and then
     /// write.
-    seastar::future<> do_append(const wal_binary_record* f);
-    seastar::future<> disk_write(const wal_binary_record* f);
+    future<> do_append(const wal_binary_record* f);
+    future<> disk_write(const wal_binary_record* f);
 
 private:
     wal_writer_node_opts _opts;
@@ -134,8 +135,8 @@ private:
     // file it needs to exist in the background fiber that closes the
     // underlying file
     //
-    seastar::lw_shared_ptr<wal_segment> _lease = nullptr;
-    seastar::semaphore serialize_writes_{1};
-    seastar::timer<> flush_timeout_;
+    lw_shared_ptr<wal_segment> _lease = nullptr;
+    semaphore serialize_writes_{1};
+    timer<> flush_timeout_;
     bool is_closed_{false};
 };

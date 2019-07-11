@@ -9,7 +9,7 @@ using vint_size_type = bytes::size_type;
 
 static constexpr size_t max_vint_length = 9;
 
-namespace internal {
+namespace vint_internal {
 
 template<typename ValueType>
 class vint_base final {
@@ -71,5 +71,5 @@ public:
 
 } // namespace internal
 
-using vint = internal::vint_base<int32_t>;
-using vlong = internal::vint_base<int64_t>;
+using vint = vint_internal::vint_base<int32_t>;
+using vlong = vint_internal::vint_base<int64_t>;

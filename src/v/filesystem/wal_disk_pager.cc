@@ -18,7 +18,7 @@ wal_disk_pager::wal_disk_pager(wal_disk_pager&& o) noexcept
 wal_disk_pager::~wal_disk_pager() {
 }
 
-seastar::future<const page_cache_result*> wal_disk_pager::fetch_next() {
+future<const page_cache_result*> wal_disk_pager::fetch_next() {
     if (_lease && _lease.result) {
         _req.begin_pageno = std::min<int32_t>(
           _lease.result->end_pageno(), _req.end_pageno);
@@ -34,8 +34,8 @@ seastar::future<const page_cache_result*> wal_disk_pager::fetch_next() {
         // ask the prefetcher to start to bring the data for page
         // has ~16-20% ins/sec improvement
         // this has no temporal locality. remove after use via 0
-        seastar::prefetch<const char, 0>(_lease.result->data.data());
-        return seastar::make_ready_future<const page_cache_result*>(
+        prefetch<const char, 0>(_lease.result->data.data());
+        return make_ready_future<const page_cache_result*>(
           _lease.result);
     });
 }

@@ -10,15 +10,15 @@
 
 #include <algorithm>
 
-static const seastar::sstring kRegularTopic = "regular";
-static const seastar::sstring kCompactionTopic = "compaction";
+static const sstring kRegularTopic = "regular";
+static const sstring kCompactionTopic = "compaction";
 
 cli::cli(const boost::program_options::variables_map* cfg)
   : opts(THROW_IFNULL(cfg)) {
     _id = _rand.next();
     api::client_opts co(
-      options()["namespace"].as<seastar::sstring>(),
-      options()["topic"].as<seastar::sstring>(),
+      options()["namespace"].as<sstring>(),
+      options()["topic"].as<sstring>(),
       _rand.next(),
       _rand.next());
     co.server_side_verify_payload
@@ -28,10 +28,10 @@ cli::cli(const boost::program_options::variables_map* cfg)
     }
     co.enable_detailed_latency_metrics
       = options()["enable-histogram"].as<bool>();
-    if (kRegularTopic == options()["topic-type"].as<seastar::sstring>()) {
+    if (kRegularTopic == options()["topic-type"].as<sstring>()) {
         co.topic_type = wal_topic_type::wal_topic_type_regular;
     }
-    if (kCompactionTopic == options()["topic-type"].as<seastar::sstring>()) {
+    if (kCompactionTopic == options()["topic-type"].as<sstring>()) {
         co.topic_type = wal_topic_type::wal_topic_type_compaction;
     }
     _api = std::make_unique<api::client>(std::move(co));
@@ -53,7 +53,7 @@ cli::~cli() {
           x.write_rpc);
     }
 }
-seastar::future<> cli::one_write() {
+future<> cli::one_write() {
     auto txn = _api->create_txn();
     auto k = _rand.next_alphanum(write_key_sz_);
     auto v = _rand.next_alphanum(write_val_sz_);
@@ -73,7 +73,7 @@ seastar::future<> cli::one_write() {
         /*ignore?*/
     });
 }
-seastar::future<> cli::one_read() {
+future<> cli::one_read() {
     return _api->consume(partition_pref_).then([](auto r) {
         DLOG_TRACE_IF(
           r,
@@ -86,18 +86,18 @@ seastar::future<> cli::one_read() {
     });
 }
 
-seastar::future<> cli::open() {
-    auto ip = options()["ip"].as<seastar::sstring>();
+future<> cli::open() {
+    auto ip = options()["ip"].as<sstring>();
     auto port = options()["port"].as<uint16_t>();
-    auto addr = seastar::ipv4_addr(ip, port);
+    auto addr = ipv4_addr(ip, port);
     return _api->open(addr).finally(
       [this] { _api->enable_histogram_metrics(); });
 }
-seastar::future<> cli::stop() {
+future<> cli::stop() {
     if (_api) {
         return _api->close();
     }
-    return seastar::make_ready_future<>();
+    return make_ready_future<>();
 }
 
 const boost::program_options::variables_map& cli::options() const {

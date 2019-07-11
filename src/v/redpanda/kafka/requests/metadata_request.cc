@@ -17,16 +17,16 @@ namespace kafka::requests {
 //  leader_not_available
 //  listener_not_found
 //  replica_not_available
-seastar::future<response_ptr>
-metadata_request::process(request_context& ctx, seastar::smp_service_group g) {
+future<response_ptr>
+metadata_request::process(request_context& ctx, smp_service_group g) {
     if (
       ctx.header().version < min_supported
       || ctx.header().version > max_supported) {
-        return seastar::make_exception_future<response_ptr>(
+        return make_exception_future<response_ptr>(
           std::runtime_error(fmt::format(
             "Unsupported version {} for metadata API", ctx.header().version)));
     }
-    return seastar::async([&ctx] {
+    return async([&ctx] {
         auto topics = ctx.reader().read_array([](request_reader& r) {
             return model::topic_view(r.read_string_view());
         });

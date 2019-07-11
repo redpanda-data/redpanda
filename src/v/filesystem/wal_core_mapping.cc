@@ -12,7 +12,7 @@
 #include <type_traits>
 
 uint32_t wal_core_mapping::nstpidx_to_lcore(wal_nstpidx idx) {
-    return jump_consistent_hash(idx.id(), seastar::smp::count);
+    return jump_consistent_hash(idx.id(), smp::count);
 }
 
 /// \brief core assignment for create requests
@@ -20,7 +20,7 @@ std::vector<wal_create_request>
 wal_core_mapping::core_assignment(const wal_topic_create_request* p) {
     LOG_THROW_IF(p == nullptr, "null create request");
     std::vector<std::vector<int32_t>> assign;
-    assign.resize(seastar::smp::count);
+    assign.resize(smp::count);
 
     for (int32_t i = 0, max = p->partitions(); i < max; ++i) {
         auto idx = wal_nstpidx::gen(p->ns()->c_str(), p->topic()->c_str(), i);
@@ -72,7 +72,7 @@ wal_core_mapping::core_assignment(const wal_put_request* p) {
         return {};
     }
     std::vector<std::unordered_map<uint32_t, assigner>> view;
-    view.resize(seastar::smp::count);
+    view.resize(smp::count);
 
     for (auto it : *(p->partition_puts())) {
         wal_nstpidx idx(p->ns(), p->topic(), it->partition());

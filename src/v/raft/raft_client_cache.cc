@@ -12,7 +12,7 @@
 using client_t = tagged_ptr<raft::raft_api_client>;
 using opt_client_t = std::optional<raft::raft_api_client*>;
 
-static inline uint64_t hash(const seastar::ipv4_addr& node) {
+static inline uint64_t hash(const ipv4_addr& node) {
     std::array<int64_t, 2> arr{node.ip, node.port};
     return xxhash_64(arr);
 }
@@ -81,7 +81,7 @@ raft_client_cache::raft_client_cache(raft_client_cache&& o) noexcept
 }
 
 typename raft_client_cache::underlying::iterator
-raft_client_cache::find(const seastar::ipv4_addr& n) {
+raft_client_cache::find(const ipv4_addr& n) {
     return _cache.find(hash(n));
 }
 
@@ -89,7 +89,7 @@ std::tuple<
   raft_client_cache::bitflags,
   raft_client_cache::backoff,
   raft::raft_api_client*>
-raft_client_cache::get_or_create(const seastar::ipv4_addr& node) {
+raft_client_cache::get_or_create(const ipv4_addr& node) {
     auto it = find(node);
     if (it == _cache.end()) {
         auto ptr = client_t(new raft::raft_api_client(node), 0);
@@ -106,7 +106,7 @@ raft_client_cache::get_or_create(const seastar::ipv4_addr& node) {
 void raft_client_cache::set_flags(
   raft_client_cache::bitflags f,
   raft_client_cache::backoff b,
-  const seastar::ipv4_addr& node) {
+  const ipv4_addr& node) {
     auto failure_int = static_cast<uint8_t>(verify_bitflags(f));
     auto bo_int = static_cast<uint8_t>(verify_backoff(b));
     auto it = find(node);
@@ -116,16 +116,16 @@ void raft_client_cache::set_flags(
     }
 }
 
-seastar::future<> raft_client_cache::stage_next_reconnect(
-  const seastar::ipv4_addr& node, raft_client_cache::backoff b) {
-    return seastar::with_gate(
+future<> raft_client_cache::stage_next_reconnect(
+  const ipv4_addr& node, raft_client_cache::backoff b) {
+    return with_gate(
              reconnect_gate_,
              [this, node, b] {
                  auto ms = std::chrono::milliseconds(to_ms(_prng, b));
-                 return seastar::sleep(ms).then([this, node, b, ms] {
+                 return sleep(ms).then([this, node, b, ms] {
                      if (auto it = find(node); it == _cache.end()) {
                          // got deleted
-                         return seastar::make_ready_future<>();
+                         return make_ready_future<>();
                      }
                      auto [failure, _, ptr] = get_or_create(node);
                      LOG_INFO(
@@ -141,7 +141,7 @@ seastar::future<> raft_client_cache::stage_next_reconnect(
                            failure | bitflags::reached_max_retries,
                            backoff::max,
                            ptr->server_addr);
-                         return seastar::make_ready_future<>();
+                         return make_ready_future<>();
                      }
                      return attempt_reconnect_with_next_backoff(
                               ptr, backoff(next_backoff))
@@ -151,23 +151,23 @@ seastar::future<> raft_client_cache::stage_next_reconnect(
       .handle_exception([node](auto eptr) {
           try {
               std::rethrow_exception(eptr);
-          } catch (const seastar::gate_closed_exception& e) {
+          } catch (const gate_closed_exception& e) {
               LOG_INFO("Ignoring '{}'. Reconnect closed for:{}", eptr, node);
-              return seastar::make_ready_future<>();
+              return make_ready_future<>();
           }
       });
 }
 
-seastar::future<raft::raft_api_client*>
+future<raft::raft_api_client*>
 raft_client_cache::attempt_reconnect_with_next_backoff(
   raft::raft_api_client* ptr, raft_client_cache::backoff b) {
     if (ptr->is_conn_valid()) {
-        return seastar::make_ready_future<raft::raft_api_client*>(ptr);
+        return make_ready_future<raft::raft_api_client*>(ptr);
     }
     return ptr->reconnect()
       .then([this, ptr] {
           set_flags(bitflags::none, backoff::none, ptr->server_addr);
-          return seastar::make_ready_future<raft::raft_api_client*>(ptr);
+          return make_ready_future<raft::raft_api_client*>(ptr);
       })
       .handle_exception([this, ptr, b](auto eptr) {
           LOG_INFO(
@@ -177,21 +177,21 @@ raft_client_cache::attempt_reconnect_with_next_backoff(
           set_flags(bitflags::circuit_breaker, b, ptr->server_addr);
           // dispatch recovery in the background
           stage_next_reconnect(ptr->server_addr, b);
-          return seastar::make_ready_future<raft::raft_api_client*>(nullptr);
+          return make_ready_future<raft::raft_api_client*>(nullptr);
       });
 }
 
 /// \brief returns a *connected* client
-seastar::future<opt_client_t>
-raft_client_cache::get_connection(const seastar::ipv4_addr& node) {
+future<opt_client_t>
+raft_client_cache::get_connection(const ipv4_addr& node) {
     auto [failure, bo, ptr] = get_or_create(node);
     if (failure == bitflags::none) {
         return attempt_reconnect_with_next_backoff(ptr, backoff::wait_1_sec)
           .then([](auto client) {
               if (client == nullptr) {
-                  return seastar::make_ready_future<opt_client_t>();
+                  return make_ready_future<opt_client_t>();
               }
-              return seastar::make_ready_future<opt_client_t>(client);
+              return make_ready_future<opt_client_t>(client);
           });
     }
     if (
@@ -205,13 +205,13 @@ raft_client_cache::get_connection(const seastar::ipv4_addr& node) {
         attempt_reconnect_with_next_backoff(ptr, backoff::wait_1_sec)
           .discard_result();
     }
-    return seastar::make_ready_future<opt_client_t>();
+    return make_ready_future<opt_client_t>();
 }
 
 /// \brief closes all client connectiontags
-seastar::future<> raft_client_cache::close() {
+future<> raft_client_cache::close() {
     return reconnect_gate_.close().then([=] {
-        return seastar::parallel_for_each(
+        return parallel_for_each(
           _cache.begin(), _cache.end(), [this](auto& p) {
               auto ptr = p.second.get_ptr();
               return ptr->stop().finally([this, ptr] {

@@ -5,6 +5,7 @@
 #include "filesystem/wal_requests.h"
 #include "filesystem/wal_segment.h"
 #include "hashing/xx.h"
+#include "seastarx.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/sstring.hh>
@@ -19,9 +20,9 @@ constexpr static const int32_t kMaxPartialIndexKeysSize = 1 << 25; /*32MB*/
 class wal_segment_indexer {
 public:
     wal_segment_indexer(
-      seastar::sstring index_name,
+      sstring index_name,
       const wal_opts& op,
-      const seastar::io_priority_class& prio)
+      const io_priority_class& prio)
       : filename(index_name)
       , wopts(op)
       , priority(prio) {
@@ -32,21 +33,21 @@ public:
     /// \brief main method.
     /// called after *every* successful write
     ///
-    seastar::future<> index(int64_t offset, const wal_binary_record* r);
+    future<> index(int64_t offset, const wal_binary_record* r);
 
     /// \brief close index file
     ///
-    seastar::future<> close();
+    future<> close();
     /// \brief opens index file
     ///
-    seastar::future<> open();
+    future<> open();
 
-    const seastar::sstring filename;
+    const sstring filename;
     const wal_opts& wopts;
-    const seastar::io_priority_class& priority;
+    const io_priority_class& priority;
 
 private:
-    seastar::future<> flush_index();
+    future<> flush_index();
     std::pair<wal_segment_index_key_entryT*, bool>
     get_or_create(int64_t offset, const wal_binary_record* r);
     void reset();

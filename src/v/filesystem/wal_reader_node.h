@@ -1,8 +1,10 @@
 #pragma once
+
 #include "filesystem/wal_disk_pager.h"
 #include "filesystem/wal_generated.h"
 #include "filesystem/wal_opts.h"
 #include "filesystem/wal_requests.h"
+#include "seastarx.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
@@ -20,32 +22,32 @@ public:
       int64_t starting_file_epoch,
       int64_t term,
       int64_t initial_size,
-      seastar::lowres_system_clock::time_point last_modified,
-      seastar::sstring filename);
+      lowres_system_clock::time_point last_modified,
+      sstring filename);
     wal_reader_node(wal_reader_node&&) noexcept;
     virtual ~wal_reader_node();
 
     const int64_t starting_epoch;
     const int64_t term;
-    const seastar::sstring filename;
+    const sstring filename;
 
     /// \brief flushes, truncates and if marked for deletion
     /// removes the file as well
-    virtual seastar::future<> close();
+    virtual future<> close();
 
     /// \brief opens the file & caches stat(2)
-    virtual seastar::future<> open();
+    virtual future<> open();
 
     /// \brief fill in the retval ptr with partial data that resides in this
     /// reader for *this* underlying file.
     /// Note: the read request *might* be larger than this file or only cover a
     /// range
-    virtual seastar::future<>
+    virtual future<>
     get(wal_read_reply* retval, wal_read_request r) final;
 
     /// \brief returns the last time this file was modified, usually
     /// a cached value of stat('file').st_mtim
-    inline virtual seastar::lowres_system_clock::time_point
+    inline virtual lowres_system_clock::time_point
     modified_time() const final {
         return last_modified_;
     }
@@ -117,12 +119,12 @@ public:
     };
 
 private:
-    seastar::future<> open_node();
+    future<> open_node();
     /// \brief - return buffer for offset with size
-    seastar::future<> do_read(wal_read_reply* retval, wal_read_request r);
+    future<> do_read(wal_read_reply* retval, wal_read_request r);
     /// \brief copies into the @read_exactly_req.buf data from the
     /// @wal_disk_pager
-    seastar::future<seastar::stop_iteration>
+    future<stop_iteration>
     copy_exactly(read_exactly_req r, std::reference_wrapper<wal_disk_pager>);
     /// \brief returns the reply's current progress minus this epoch
     int64_t relative_offset(const wal_read_reply* r) const {
@@ -130,7 +132,7 @@ private:
     }
 
 protected:
-    /// \brief used in a seastar::repeat loop
+    /// \brief used in a repeat loop
     /// copies one record from @wal_disk_pager into @retval
     ///
     /// Pipeline:
@@ -138,7 +140,7 @@ protected:
     ///    2. verify header
     ///    3. copy payload
     ///    4. optionally verify payload
-    virtual seastar::future<seastar::stop_iteration> copy_one_record(
+    virtual future<stop_iteration> copy_one_record(
       wal_read_reply* retval, std::reference_wrapper<wal_disk_pager>) final;
 
     inline uint32_t global_file_id() const {
@@ -148,20 +150,20 @@ protected:
     /// \brief needed as a shared ptr in that this file *might*
     /// go out of scope while still fetching a data from the page cache
     /// as we close the log / compact it or remove it.
-    seastar::lw_shared_ptr<seastar::file> _file = nullptr;
+    lw_shared_ptr<file> _file = nullptr;
     int64_t file_size_{0};
-    seastar::open_flags file_flags_ = seastar::open_flags::ro;
+    open_flags file_flags_ = open_flags::ro;
 
 private:
     /// \brief marks file for deletion
     bool marked_for_delete_{false};
     /// \brief last time modified
-    seastar::lowres_system_clock::time_point last_modified_;
+    lowres_system_clock::time_point last_modified_;
     /// \brief file_size_ / 4096
     int32_t number_of_pages_{0};
     /// \brief hash of inode (st_ino) and device id (st_dev)
     uint32_t global_file_id_{0};
     /// \brief reader gate, ensures that all reads finish before we exit the
     /// reader!
-    seastar::gate _rgate;
+    gate _rgate;
 };

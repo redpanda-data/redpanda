@@ -2,6 +2,7 @@
 
 #include "bytes/bytes.h"
 #include "bytes/bytes_ostream.h"
+#include "seastarx.h"
 #include "utils/concepts-enabled.h"
 #include "utils/fragmented_temporary_buffer.h"
 #include "utils/utf8.h"
@@ -30,11 +31,11 @@ class request_reader {
         };
     };
 
-    seastar::sstring do_read_string(int16_t n) {
+    sstring do_read_string(int16_t n) {
         if (n < 0) {
             // FIXME: Kafka errors
         }
-        seastar::sstring s(seastar::sstring::initialized_later(), n);
+        sstring s(sstring::initialized_later(), n);
         _in.read_to(n, s.begin(), exception_thrower());
         validate_utf8(s);
         return s;
@@ -84,19 +85,19 @@ public:
     }
 
     int16_t read_int16() {
-        return seastar::be_to_cpu(_in.read<int16_t>(exception_thrower()));
+        return be_to_cpu(_in.read<int16_t>(exception_thrower()));
     }
 
     int32_t read_int32() {
-        return seastar::be_to_cpu(_in.read<int32_t>(exception_thrower()));
+        return be_to_cpu(_in.read<int32_t>(exception_thrower()));
     }
 
     int64_t read_int64() {
-        return seastar::be_to_cpu(_in.read<int64_t>(exception_thrower()));
+        return be_to_cpu(_in.read<int64_t>(exception_thrower()));
     }
 
     uint32_t read_uint32() {
-        return seastar::be_to_cpu(_in.read<uint32_t>(exception_thrower()));
+        return be_to_cpu(_in.read<uint32_t>(exception_thrower()));
     }
 
     int32_t read_varint() {
@@ -109,7 +110,7 @@ public:
         return res;
     }
 
-    seastar::sstring read_string() {
+    sstring read_string() {
         return do_read_string(read_int16());
     }
 
@@ -117,7 +118,7 @@ public:
         return do_read_string_view(read_int16());
     }
 
-    std::optional<seastar::sstring> read_nullable_string() {
+    std::optional<sstring> read_nullable_string() {
         auto n = read_int16();
         if (n < 0) {
             return std::nullopt;

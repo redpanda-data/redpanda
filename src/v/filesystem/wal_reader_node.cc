@@ -113,7 +113,7 @@ static int64_t copy_page_data(
     std::memcpy(dst, src, step_size);
     // we aren't yet at the end, prefetch the next byte kReadPageSize
     if (ptdf - step_size > 0) {
-        seastar::prefetch<const char, 0>(src + step_size + 1);
+        prefetch<const char, 0>(src + step_size + 1);
     }
     return step_size;
 }
@@ -125,8 +125,8 @@ wal_reader_node::wal_reader_node(
   int64_t epoch,
   int64_t term_id,
   int64_t initial_size,
-  seastar::lowres_system_clock::time_point modified,
-  seastar::sstring name)
+  lowres_system_clock::time_point modified,
+  sstring name)
   // needed signed for comparisons
   : starting_epoch(epoch)
   , term(term_id)
@@ -153,7 +153,7 @@ wal_reader_node::wal_reader_node(wal_reader_node&& o) noexcept
 wal_reader_node::~wal_reader_node() {
 }
 
-seastar::future<> wal_reader_node::close() {
+future<> wal_reader_node::close() {
     auto f = _file;
     auto del = marked_for_delete_;
     auto name = filename;
@@ -164,19 +164,19 @@ seastar::future<> wal_reader_node::close() {
                 LOG_INFO("Removing file: {}, id:{} from cache", name, fileid);
                 page_cache::get().remove_file(fileid).then([name] {
                     LOG_INFO("Removing file from filesystem: {}", name);
-                    return seastar::remove_file(name);
+                    return remove_file(name);
                 });
             }
-            return seastar::make_ready_future<>();
+            return make_ready_future<>();
         });
     });
 }
 
-seastar::future<> wal_reader_node::open_node() {
-    return seastar::open_file_dma(filename, file_flags_)
-      .then([this](seastar::file ff) {
-          _file = seastar::make_lw_shared<seastar::file>(std::move(ff));
-          return seastar::make_ready_future<>();
+future<> wal_reader_node::open_node() {
+    return open_file_dma(filename, file_flags_)
+      .then([this](file ff) {
+          _file = make_lw_shared<file>(std::move(ff));
+          return make_ready_future<>();
       });
 }
 
@@ -186,7 +186,7 @@ void wal_reader_node::update_file_size(int64_t newsize) {
         return;
 
     const auto old_fs_sz = file_size_;
-    last_modified_ = seastar::lowres_system_clock::now();
+    last_modified_ = lowres_system_clock::now();
     file_size_ = newsize;
 
     if (_file) {
@@ -204,7 +204,7 @@ void wal_reader_node::update_file_size(int64_t newsize) {
         }
     }
 }
-seastar::future<> wal_reader_node::open() {
+future<> wal_reader_node::open() {
     return open_node().then([this] {
         // must happen after actual read
         update_file_size(file_size_);
@@ -222,12 +222,12 @@ seastar::future<> wal_reader_node::open() {
     });
 }
 
-seastar::future<>
+future<>
 wal_reader_node::get(wal_read_reply* retval, wal_read_request r) {
     DLOG_THROW_IF(retval == nullptr, "Cannot return data for null");
     auto offset = retval->next_epoch();
     if (offset >= starting_epoch && offset < ending_epoch()) {
-        return seastar::with_gate(
+        return with_gate(
           _rgate, [this, retval, r] { return do_read(retval, std::move(r)); });
     }
     LOG_ERROR_IF(
@@ -241,12 +241,12 @@ wal_reader_node::get(wal_read_reply* retval, wal_read_request r) {
       ending_epoch(),
       starting_epoch);
     retval->set_error(wal_read_errno::wal_read_errno_invalid_offset);
-    return seastar::make_ready_future<>();
+    return make_ready_future<>();
 }
 
-seastar::future<seastar::stop_iteration> wal_reader_node::copy_one_record(
+future<stop_iteration> wal_reader_node::copy_one_record(
   wal_read_reply* retval, std::reference_wrapper<wal_disk_pager> pager) {
-    using stop_t = seastar::stop_iteration;
+    using stop_t = stop_iteration;
 
     auto roffset = relative_offset(retval);
     auto record = std::make_unique<wal_binary_recordT>();
@@ -257,7 +257,7 @@ seastar::future<seastar::stop_iteration> wal_reader_node::copy_one_record(
              read_exactly_req(ptr->data.data(), roffset, kWalHeaderSize), pager)
       .then([this, retval, ptr, pager, roffset](auto iter) {
           if (iter == stop_t::yes) {
-              return seastar::make_ready_future<stop_t>(iter);
+              return make_ready_future<stop_t>(iter);
           }
           // validate header
           auto hdr = wal_header();
@@ -266,7 +266,7 @@ seastar::future<seastar::stop_iteration> wal_reader_node::copy_one_record(
           if (err != wal_read_errno::wal_read_errno_none) {
               retval->set_error(err);
               DLOG_TRACE("Bad header: {}", EnumNamewal_read_errno(err));
-              return seastar::make_ready_future<stop_t>(stop_t::yes);
+              return make_ready_future<stop_t>(stop_t::yes);
           }
           // 2. copy the body
           auto bodysz = wal_segment_record::record_size(hdr);
@@ -280,7 +280,7 @@ seastar::future<seastar::stop_iteration> wal_reader_node::copy_one_record(
       })
       .then([ptr, retval, record = std::move(record)](auto iter) mutable {
           if (iter == stop_t::yes) {
-              return seastar::make_ready_future<stop_t>(iter);
+              return make_ready_future<stop_t>(iter);
           }
           if (retval->validate_checksum) {
               auto hdr = wal_header();
@@ -292,37 +292,37 @@ seastar::future<seastar::stop_iteration> wal_reader_node::copy_one_record(
               if (err != wal_read_errno::wal_read_errno_none) {
                   retval->set_error(err);
                   DLOG_TRACE("Bad payload: {}", EnumNamewal_read_errno(err));
-                  return seastar::make_ready_future<stop_t>(stop_t::yes);
+                  return make_ready_future<stop_t>(stop_t::yes);
               }
           }
           // 4. success
           retval->add_record(std::move(record));
           // keep going!
-          return seastar::make_ready_future<stop_t>(stop_t::no);
+          return make_ready_future<stop_t>(stop_t::no);
       });
 }
 
-seastar::future<seastar::stop_iteration> wal_reader_node::copy_exactly(
+future<stop_iteration> wal_reader_node::copy_exactly(
   wal_reader_node::read_exactly_req req,
   std::reference_wrapper<wal_disk_pager> pager) {
-    using stop_t = seastar::stop_iteration;
+    using stop_t = stop_iteration;
     // check if we can do the fast path - stack copy right now
     auto pno = offset_to_page(req.consume_offset(), kReadPageSize);
     if (pager.get().is_page_in_result_range(pno)) {
         auto copied_bytes = copy_page_data(req, pager.get().range(), pno);
         if (copied_bytes == 0) {
-            return seastar::make_ready_future<stop_t>(stop_t::yes);
+            return make_ready_future<stop_t>(stop_t::yes);
         }
         req.consumed += copied_bytes;
         if (req.size_left_to_consume() <= 0) {
-            return seastar::make_ready_future<stop_t>(stop_t::no);
+            return make_ready_future<stop_t>(stop_t::no);
         }
     }
 
-    return seastar::do_with(std::move(req), [pager](auto& r) {
-        return seastar::repeat([&r, pager]() mutable {
+    return do_with(std::move(req), [pager](auto& r) {
+        return repeat([&r, pager]() mutable {
                    if (r.size_left_to_consume() <= 0) {
-                       return seastar::make_ready_future<stop_t>(stop_t::yes);
+                       return make_ready_future<stop_t>(stop_t::yes);
                    }
                    auto pageno = offset_to_page(
                      r.consume_offset(), kReadPageSize);
@@ -339,11 +339,11 @@ seastar::future<seastar::stop_iteration> wal_reader_node::copy_exactly(
                          pager.get().request());
                        auto copied_bytes = copy_page_data(r, range, pageno);
                        if (copied_bytes == 0) {
-                           return seastar::make_ready_future<stop_t>(
+                           return make_ready_future<stop_t>(
                              stop_t::yes);
                        }
                        r.consumed += copied_bytes;
-                       return seastar::make_ready_future<stop_t>(stop_t::no);
+                       return make_ready_future<stop_t>(stop_t::no);
                    });
                })
           .then([&r] {
@@ -356,14 +356,14 @@ seastar::future<seastar::stop_iteration> wal_reader_node::copy_exactly(
               // we had encountered an error and we couldn't copy what we
               // promised
               if (r.size_left_to_consume() <= 0) {
-                  return seastar::make_ready_future<stop_t>(stop_t::no);
+                  return make_ready_future<stop_t>(stop_t::no);
               }
-              return seastar::make_ready_future<stop_t>(stop_t::yes);
+              return make_ready_future<stop_t>(stop_t::yes);
           });
     });
 }
 
-seastar::future<>
+future<>
 wal_reader_node::do_read(wal_read_reply* retval, wal_read_request r) {
     auto roffset = relative_offset(retval);
     if (roffset < 0) {
@@ -372,17 +372,17 @@ wal_reader_node::do_read(wal_read_reply* retval, wal_read_request r) {
           retval->next_epoch(),
           starting_epoch,
           ending_epoch());
-        return seastar::make_ready_future<>();
+        return make_ready_future<>();
     }
     auto remaining_req_size = r.req->max_bytes() - retval->on_disk_size();
     if (__builtin_expect(remaining_req_size <= 0, false)) {
         LOG_WARN("Asked to read data but request is already fullfilled");
-        return seastar::make_ready_future<>();
+        return make_ready_future<>();
     }
     if (remaining_req_size > file_size_) {
         remaining_req_size -= remaining_req_size % file_size_;
     }
-    return seastar::do_with(
+    return do_with(
       wal_disk_pager(page_cache_request{
         global_file_id_,
         offset_to_page(roffset, kReadPageSize),
@@ -396,15 +396,15 @@ wal_reader_node::do_read(wal_read_reply* retval, wal_read_request r) {
        max_bytes = r.req->max_bytes(),
        initial_size = retval->on_disk_size()](wal_disk_pager& real_pager) {
           std::reference_wrapper<wal_disk_pager> pager(real_pager);
-          return seastar::repeat([=] {
-              using stop_t = seastar::stop_iteration;
+          return repeat([=] {
+              using stop_t = stop_iteration;
               if (retval->on_disk_size() - initial_size >= remaining_req_size) {
-                  return seastar::make_ready_future<stop_t>(stop_t::yes);
+                  return make_ready_future<stop_t>(stop_t::yes);
               }
               if (
                 retval->next_epoch() < starting_epoch
                 || retval->next_epoch() >= ending_epoch()) {
-                  return seastar::make_ready_future<stop_t>(stop_t::yes);
+                  return make_ready_future<stop_t>(stop_t::yes);
               }
               return copy_one_record(retval, pager);
           });

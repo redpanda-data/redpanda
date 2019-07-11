@@ -54,7 +54,7 @@ std::unique_ptr<wal_binary_recordT> wal_segment_record::coalesce(
   wal_compression_type ctype) {
     DTRACE_PROBE(redpanda, wal_segment_record_coalesce);
 
-    seastar::temporary_buffer<char> tmp(0);
+    temporary_buffer<char> tmp(0);
     // 2. copy value - compress if required and reset size
     if (ctype == wal_compression_type::wal_compression_type_lz4) {
         DTRACE_PROBE(redpanda, wal_segment_record_coalesce_lz4);
@@ -91,7 +91,7 @@ std::unique_ptr<wal_binary_recordT> wal_segment_record::coalesce(
     return retval;
 }
 
-std::pair<seastar::temporary_buffer<char>, seastar::temporary_buffer<char>>
+std::pair<temporary_buffer<char>, temporary_buffer<char>>
 wal_segment_record::extract_from_bin(const char* begin, int32_t sz) {
     // copy the key
     wal_header hdr;
@@ -102,12 +102,12 @@ wal_segment_record::extract_from_bin(const char* begin, int32_t sz) {
       "passed in an incomplete buffer, required: {}, passed in a size of: {}",
       full_size + kWalHeaderSize,
       sz);
-    seastar::temporary_buffer<char> keybuf(hdr.key_size());
+    temporary_buffer<char> keybuf(hdr.key_size());
     // copy the key
     std::memcpy(keybuf.get_write(), begin + kWalHeaderSize, keybuf.size());
 
     // copy the value
-    seastar::temporary_buffer<char> valbuf(hdr.value_size());
+    temporary_buffer<char> valbuf(hdr.value_size());
     if (hdr.compression() == wal_compression_type::wal_compression_type_lz4) {
         valbuf = lz4->uncompress(
           begin + kWalHeaderSize + keybuf.size(), hdr.value_size());
