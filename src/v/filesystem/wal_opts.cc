@@ -9,9 +9,9 @@
 #include <iomanip>
 
 wal_opts::wal_opts(
-  seastar::sstring log,
-  seastar::timer<>::duration flush_period,
-  seastar::timer<>::duration retention_period,
+  sstring log,
+  timer<>::duration flush_period,
+  timer<>::duration retention_period,
   int64_t retention_size,
   int32_t max_bytes_in_memory_per_writer,
   int64_t max_segment_size)
@@ -21,7 +21,7 @@ wal_opts::wal_opts(
   , max_retention_size(retention_size)
   , max_bytes_in_writer_cache(max_bytes_in_memory_per_writer)
   , max_log_segment_size(
-      seastar::align_up(max_segment_size, system_page_size())) {
+      align_up(max_segment_size, system_page_size())) {
 }
 
 wal_opts::wal_opts(wal_opts&& o) noexcept

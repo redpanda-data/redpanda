@@ -1,9 +1,11 @@
 #pragma once
 
+#include "seastarx.h"
+
 #include <seastar/core/sstring.hh>
 
 struct prometheus_sanitize {
-    static seastar::sstring metrics_name(seastar::sstring n) {
+    static sstring metrics_name(sstring n) {
         for (auto i = 0u; i < n.size(); ++i) {
             if (!std::isalnum(n[i]))
                 n[i] = '_';

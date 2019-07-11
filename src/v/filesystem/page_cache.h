@@ -1,27 +1,23 @@
 #pragma once
+
+#include "seastarx.h"
 #include <seastar/core/sstring.hh>
-
 #include <boost/intrusive/list.hpp>
-
 #include <array>
 #include <chrono>
 #include <cstdint>
 #include <map>
 #include <vector>
-// sstring must come before metrics
 #include "filesystem/page_cache_buffer_manager.h"
 #include "filesystem/page_cache_file_idx.h"
 #include "filesystem/page_cache_request.h"
 #include "filesystem/page_cache_stats.h"
 #include "random/fast_prng.h"
-
 #include <seastar/core/align.hh>
 #include <seastar/core/file.hh>
 #include <seastar/core/metrics_registration.hh>
 #include <seastar/core/timer.hh>
-
 #include <smf/macros.h>
-
 #include <bytell_hash_map.hpp>
 
 /*
@@ -32,7 +28,7 @@
 */
 
 /// \brief due to malloc(2) restrictions we can only use the
-/// seastar::memory_reclaimer::sync mode. That is, the allocator
+/// memory_reclaimer::sync mode. That is, the allocator
 /// might reclaim memory in the middle of the routine.
 /// We grow on cpu::idle and shrink on memory pressure.
 class page_cache final {
@@ -42,8 +38,8 @@ public:
     static page_cache& get();
 
     void evict_pages(uint32_t fileid, std::set<int32_t> pages);
-    seastar::future<page_cache_result_lease> read(page_cache_request);
-    seastar::future<> remove_file(uint32_t fileid);
+    future<page_cache_result_lease> read(page_cache_request);
+    future<> remove_file(uint32_t fileid);
     ~page_cache();
 
 private:
@@ -54,18 +50,18 @@ private:
     void prefetch_next(page_cache_request current);
     void cache(uint32_t fileid, page_range_ptr data);
     page_cache_file_idx* index(uint32_t file);
-    seastar::future<>
+    future<>
     prefetch(page_cache_request r, page_cache_result::priority prio);
 
     /// \brief called during low memory pressure
-    seastar::memory::reclaiming_result reclaim_region();
+    memory::reclaiming_result reclaim_region();
 
 private:
     page_cache_buffer_manager _mngr;
-    seastar::memory::reclaimer _reclaimer;
+    memory::reclaimer _reclaimer;
     fast_prng _rng;
     // need random iterator for randomized eviction
     std::map<uint32_t, std::unique_ptr<page_cache_file_idx>> _files;
-    seastar::metrics::metric_groups _metrics;
+    metrics::metric_groups _metrics;
     page_cache_stats _stats;
 };

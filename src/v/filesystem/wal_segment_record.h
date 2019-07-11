@@ -1,6 +1,7 @@
 #pragma once
 
 #include "filesystem/wal_generated.h"
+#include "seastarx.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -46,6 +47,6 @@ struct wal_segment_record {
     ///       We expect a pre-validated payload.
     ///
     static std::
-      pair<seastar::temporary_buffer<char>, seastar::temporary_buffer<char>>
+      pair<temporary_buffer<char>, temporary_buffer<char>>
       extract_from_bin(const char* begin, int32_t sz);
 };

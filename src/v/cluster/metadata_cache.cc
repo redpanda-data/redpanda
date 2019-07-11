@@ -6,13 +6,13 @@
 
 namespace cluster {
 
-metadata_cache::metadata_cache(seastar::sharded<write_ahead_log>& log) noexcept
+metadata_cache::metadata_cache(sharded<write_ahead_log>& log) noexcept
   : _log(log) {
 }
 
-seastar::future<std::vector<model::topic_view>>
+future<std::vector<model::topic_view>>
 metadata_cache::all_topics() const {
-    return seastar::async([this] {
+    return async([this] {
         auto topic_set = _log
                            .map_reduce0(
                              [](write_ahead_log& log) {
@@ -39,9 +39,9 @@ metadata_cache::all_topics() const {
     });
 }
 
-seastar::future<std::optional<model::topic_metadata>>
+future<std::optional<model::topic_metadata>>
 metadata_cache::get_topic_metadata(model::topic_view topic) const {
-    return seastar::async([this, topic = std::move(topic)]() mutable {
+    return async([this, topic = std::move(topic)]() mutable {
         auto all_partitions
           = _log
               .map([&](write_ahead_log& log) {

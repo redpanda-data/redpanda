@@ -5,11 +5,11 @@
 
 /// \brief read a full file and returns it in a buf
 ///
-static seastar::future<seastar::temporary_buffer<char>>
-readfile(const seastar::sstring& name) {
-    return seastar::open_file_dma(name, seastar::open_flags::ro)
+static future<temporary_buffer<char>>
+readfile(const sstring& name) {
+    return open_file_dma(name, open_flags::ro)
       .then([](auto fx) {
-          return seastar::do_with(std::move(fx), [](seastar::file& f) {
+          return do_with(std::move(fx), [](file& f) {
               return f.size()
                 .then([&f](uint64_t size) {
                     return f.dma_read_bulk<char>(0, size);

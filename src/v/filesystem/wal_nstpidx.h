@@ -2,6 +2,7 @@
 
 #include "hashing/jump_consistent_hash.h"
 #include "hashing/xx.h"
+#include "seastarx.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -11,8 +12,8 @@ class wal_nstpidx {
 public:
     static wal_nstpidx gen(int64_t ns, int64_t topic, int32_t partition);
     static wal_nstpidx gen(
-      const seastar::sstring& ns,
-      const seastar::sstring& topic,
+      const sstring& ns,
+      const sstring& topic,
       int32_t partition);
 
 public:

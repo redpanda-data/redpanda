@@ -6,14 +6,14 @@
 
 #include <iostream>
 
-seastar::future<>
+future<>
 tests(page_cache_buffer_manager* _mngr, page_cache_file_idx* _idx) {
     LOG_THROW_IF(nullptr != _idx->range(66), "Empty state failed");
 
     return _mngr->allocate(66, page_cache_result::priority::low)
       .then([=](auto range_ptr) {
           _idx->cache(std::move(range_ptr));
-          return seastar::make_ready_future<>();
+          return make_ready_future<>();
       })
       .then([=] {
           LOG_INFO("Basic sanity tests");
@@ -30,14 +30,14 @@ tests(page_cache_buffer_manager* _mngr, page_cache_file_idx* _idx) {
           LOG_THROW_IF(
             _idx->range(66) != nullptr,
             "eviction not working, range should be nil");
-          return seastar::make_ready_future<>();
+          return make_ready_future<>();
       })
       .then([=] {
           LOG_INFO("high priority sanity tests");
           return _mngr->allocate(1401, page_cache_result::priority::high)
             .then([=](auto range_ptr) {
                 _idx->cache(std::move(range_ptr));
-                return seastar::make_ready_future<>();
+                return make_ready_future<>();
             })
             .then([=] {
                 LOG_INFO("Locking/unlocking 1401 page");
@@ -51,7 +51,7 @@ tests(page_cache_buffer_manager* _mngr, page_cache_file_idx* _idx) {
                 x->locks--;
 
                 LOG_THROW_IF(!_idx->try_evict(), "cleanup failed");
-                return seastar::make_ready_future<>();
+                return make_ready_future<>();
             });
       })
       .then([=] {
@@ -59,7 +59,7 @@ tests(page_cache_buffer_manager* _mngr, page_cache_file_idx* _idx) {
           return _mngr->allocate(1401, page_cache_result::priority::high)
             .then([=](auto range_ptr) {
                 _idx->cache(std::move(range_ptr));
-                return seastar::make_ready_future<>();
+                return make_ready_future<>();
             })
             .then([=] {
                 auto x = _idx->range(1401);
@@ -67,19 +67,19 @@ tests(page_cache_buffer_manager* _mngr, page_cache_file_idx* _idx) {
                 LOG_THROW_IF(
                   _idx->range(1401) != nullptr,
                   "should return false for evicted pages in range");
-                return seastar::make_ready_future<>();
+                return make_ready_future<>();
             });
       });
 }
 
 int main(int argc, char** argv) {
     std::cout.setf(std::ios::unitbuf);
-    seastar::app_template app;
+    app_template app;
 
     return app.run(argc, argv, [&] {
-        smf::app_run_log_level(seastar::log_level::trace);
+        smf::app_run_log_level(log_level::trace);
         // 512MB
-        return seastar::do_with(
+        return do_with(
           std::make_unique<page_cache_buffer_manager>(1 << 29, 1 << 29),
           std::make_unique<page_cache_file_idx>(42 /*fileid*/),
           [](auto& _mngr, auto& _idx) mutable {

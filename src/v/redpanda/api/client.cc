@@ -20,7 +20,7 @@ client::txn::txn(
   int64_t transaction_id,
   // ips of the actual chain
   std::vector<uint32_t> chain,
-  seastar::shared_ptr<redpanda_api_client> c)
+  shared_ptr<redpanda_api_client> c)
   : opts(_opts)
   , _rpc(c)
   , _stats(m) {
@@ -70,7 +70,7 @@ void client::txn::stage(
 }
 /// \brief submits the actual transaction.
 /// invalid after this call
-seastar::future<smf::rpc_recv_typed_context<chains::chain_put_reply>>
+future<smf::rpc_recv_typed_context<chains::chain_put_reply>>
 client::txn::submit() {
     LOG_THROW_IF(
       _submitted, "Transaction already submitted. Can only submit once");
@@ -83,12 +83,12 @@ client::client(client_opts o)
   : opts(std::move(o)) {
     partition_offsets_.reserve(opts.topic_partitions);
 }
-seastar::future<> client::open(seastar::ipv4_addr seed) {
+future<> client::open(ipv4_addr seed) {
     LOG_THROW_IF(
       _rpc != nullptr,
       "Tried to re-open an existing connection. "
       "Stopping before creating a resource leak");
-    _rpc = seastar::make_shared<redpanda_api_client>(seed);
+    _rpc = make_shared<redpanda_api_client>(seed);
     _rpc->incoming_filters().push_back(smf::zstd_decompression_filter());
     _rpc->incoming_filters().push_back(smf::lz4_decompression_filter());
     // Compress after 4MB regardless.
@@ -113,27 +113,27 @@ seastar::future<> client::open(seastar::ipv4_addr seed) {
           /// XXX(agallego) - this is where you would parse the chains
           /// and assign locally for this topic/all partitions :)
           /// XXX create should return the latest stats :)
-          return seastar::make_ready_future<>();
+          return make_ready_future<>();
       });
 }
-seastar::future<> client::close() {
+future<> client::close() {
     if (_rpc) {
         return _rpc->stop();
     }
-    return seastar::make_ready_future<>();
+    return make_ready_future<>();
 }
-seastar::future<smf::rpc_recv_typed_context<chains::chain_get_reply>>
+future<smf::rpc_recv_typed_context<chains::chain_get_reply>>
 client::consume(int32_t partition_override) {
     int32_t partition = partition_override >= 0
                           ? partition_override
                           : jump_consistent_hash(
                             _stats.read_rpc++, opts.topic_partitions);
 
-    return seastar::with_semaphore(partition_offsets_[partition].lock, 1, [=] {
+    return with_semaphore(partition_offsets_[partition].lock, 1, [=] {
         return consume_from_partition(partition);
     });
 }
-seastar::future<smf::rpc_recv_typed_context<chains::chain_get_reply>>
+future<smf::rpc_recv_typed_context<chains::chain_get_reply>>
 client::consume_from_partition(int32_t partition) {
     smf::rpc_typed_envelope<chains::chain_get_request> x;
     x.data->consumer_group_id = opts.consumer_group_id;
@@ -164,7 +164,7 @@ client::consume_from_partition(int32_t partition) {
                 offset_ref = std::max(offset_ref, r->get()->next_offset());
             }
         }
-        return seastar::make_ready_future<decltype(r)>(std::move(r));
+        return make_ready_future<decltype(r)>(std::move(r));
     });
 }
 

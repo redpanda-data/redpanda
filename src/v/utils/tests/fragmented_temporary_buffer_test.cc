@@ -33,7 +33,7 @@ get_buffers() {
 
     // Everything in a single buffer
     {
-        std::vector<seastar::temporary_buffer<char>> fragments;
+        std::vector<temporary_buffer<char>> fragments;
         fragments.emplace_back(
           reinterpret_cast<char*>(data.data()), data.size());
         buffers.emplace_back(std::move(fragments), data.size());
@@ -41,7 +41,7 @@ get_buffers() {
 
     // One-byte buffers
     {
-        std::vector<seastar::temporary_buffer<char>> fragments;
+        std::vector<temporary_buffer<char>> fragments;
         for (auto i = 0u; i < data.size(); i++) {
             fragments.emplace_back(reinterpret_cast<char*>(data.data() + i), 1);
         }
@@ -50,7 +50,7 @@ get_buffers() {
 
     // Seven bytes and the rest
     {
-        std::vector<seastar::temporary_buffer<char>> fragments;
+        std::vector<temporary_buffer<char>> fragments;
         fragments.emplace_back(reinterpret_cast<char*>(data.data()), 7);
         fragments.emplace_back(
           reinterpret_cast<char*>(data.data() + 7), data.size() - 7);
@@ -59,7 +59,7 @@ get_buffers() {
 
     // 8 bytes and 2 bytes
     {
-        std::vector<seastar::temporary_buffer<char>> fragments;
+        std::vector<temporary_buffer<char>> fragments;
         fragments.emplace_back(
           reinterpret_cast<char*>(data.data()), sizeof(uint64_t));
         fragments.emplace_back(
@@ -227,25 +227,25 @@ SEASTAR_THREAD_TEST_CASE(test_read_bytes_view) {
 
 namespace {
 
-class memory_data_source final : public seastar::data_source_impl {
+class memory_data_source final : public data_source_impl {
 public:
     explicit memory_data_source(
-      std::vector<seastar::temporary_buffer<char>> buffers)
+      std::vector<temporary_buffer<char>> buffers)
       : _buffers(std::move(buffers))
       , _position(_buffers.begin()) {
     }
 
-    virtual seastar::future<seastar::temporary_buffer<char>> get() override {
+    virtual future<temporary_buffer<char>> get() override {
         if (_position == _buffers.end()) {
-            return seastar::make_ready_future<
-              seastar::temporary_buffer<char>>();
+            return make_ready_future<
+              temporary_buffer<char>>();
         }
-        return seastar::make_ready_future<seastar::temporary_buffer<char>>(
+        return make_ready_future<temporary_buffer<char>>(
           std::move(*_position++));
     }
 
 private:
-    using vector_type = std::vector<seastar::temporary_buffer<char>>;
+    using vector_type = std::vector<temporary_buffer<char>>;
     vector_type _buffers;
     vector_type::iterator _position;
 };
@@ -254,7 +254,7 @@ private:
 
 SEASTAR_THREAD_TEST_CASE(test_read_fragmented_buffer) {
     using tuple_type = std::
-      tuple<std::vector<seastar::temporary_buffer<char>>, bytes, bytes, bytes>;
+      tuple<std::vector<temporary_buffer<char>>, bytes, bytes, bytes>;
 
     auto generate = [](size_t n) {
         auto prefix = random_generators::get_bytes();
@@ -271,7 +271,7 @@ SEASTAR_THREAD_TEST_CASE(test_read_fragmented_buffer) {
         auto src = linear.begin();
         auto left = linear.size();
 
-        std::vector<seastar::temporary_buffer<char>> buffers;
+        std::vector<temporary_buffer<char>> buffers;
         while (left) {
             auto this_size = std::max<size_t>(left / 2, 1);
             buffers.emplace_back(reinterpret_cast<const char*>(src), this_size);
@@ -302,7 +302,7 @@ SEASTAR_THREAD_TEST_CASE(test_read_fragmented_buffer) {
         auto size = expected_data.size();
         auto suffix_size = expected_suffix.size();
 
-        auto in = seastar::input_stream<char>(seastar::data_source(
+        auto in = input_stream<char>(data_source(
           std::make_unique<memory_data_source>(std::move(buffers))));
 
         auto prefix = in.read_exactly(prefix_size).get0();
@@ -357,13 +357,13 @@ SEASTAR_THREAD_TEST_CASE(test_skip) {
 }
 
 static void do_test_read_exactly_eof(size_t input_size) {
-    std::vector<seastar::temporary_buffer<char>> data;
+    std::vector<temporary_buffer<char>> data;
     if (input_size) {
-        data.push_back(seastar::temporary_buffer<char>(input_size));
+        data.push_back(temporary_buffer<char>(input_size));
     }
-    auto ds = seastar::data_source(
+    auto ds = data_source(
       std::make_unique<memory_data_source>(std::move(data)));
-    auto is = seastar::input_stream<char>(std::move(ds));
+    auto is = input_stream<char>(std::move(ds));
     auto reader = fragmented_temporary_buffer::reader();
     auto result = reader.read_exactly(is, input_size + 1).get0();
     BOOST_CHECK_EQUAL(result.size_bytes(), size_t(0));

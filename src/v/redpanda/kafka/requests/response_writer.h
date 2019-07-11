@@ -3,6 +3,7 @@
 #include "bytes/bytes.h"
 #include "bytes/bytes_ostream.h"
 #include "redpanda/kafka/errors/errors.h"
+#include "seastarx.h"
 #include "utils/concepts-enabled.h"
 #include "utils/vint.h"
 
@@ -23,7 +24,7 @@ class response_writer {
             && std::is_integral<IntegerType>::value)
       // clang-format on
       uint32_t serialize_int(IntegerType val) {
-        auto nval = seastar::cpu_to_be(ExplicitIntegerType(val));
+        auto nval = cpu_to_be(ExplicitIntegerType(val));
         _out->write_non_empty(
           reinterpret_cast<const char*>(&nval), sizeof(nval));
         return sizeof(nval);
@@ -93,7 +94,7 @@ public:
         return write(*v);
     }
 
-    uint32_t write(const std::optional<seastar::sstring>& v) {
+    uint32_t write(const std::optional<sstring>& v) {
         if (!v) {
             return serialize_int<int16_t>(-1);
         }

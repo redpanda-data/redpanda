@@ -1,4 +1,7 @@
 #pragma once
+
+#include "seastarx.h"
+
 #include <smf/log.h>
 #include <smf/macros.h>
 
@@ -114,7 +117,7 @@ struct page_cache_result_lease {
 
 namespace std {
 inline ostream& operator<<(ostream& o, page_cache_result::priority p) {
-    seastar::sstring it = "high";
+    sstring it = "high";
     if (p == page_cache_result::priority::low) {
         it = "low";
     }

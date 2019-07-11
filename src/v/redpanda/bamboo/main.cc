@@ -14,7 +14,7 @@
 void cli_opts(boost::program_options::options_description_easy_init o) {
     namespace po = boost::program_options;
     o("ip",
-      po::value<seastar::sstring>()->default_value("127.0.0.1"),
+      po::value<sstring>()->default_value("127.0.0.1"),
       "ip to connect to");
 
     o("port", po::value<uint16_t>()->default_value(33145), "port for service");
@@ -33,14 +33,14 @@ void cli_opts(boost::program_options::options_description_easy_init o) {
 
     o("concurrency",
       po::value<int32_t>()->default_value(3),
-      "number of green threads per real thread (seastar::futures<>)");
+      "number of green threads per real thread (futures<>)");
 
     o("topic",
-      po::value<seastar::sstring>()->default_value("rickenbacker"),
+      po::value<sstring>()->default_value("rickenbacker"),
       "topic name; rickenbacker is a cool bridge in Miami FL.");
 
     o("namespace",
-      po::value<seastar::sstring>()->default_value("nemo"),
+      po::value<sstring>()->default_value("nemo"),
       "namespace name for topic");
 
     o("key-size",
@@ -60,7 +60,7 @@ void cli_opts(boost::program_options::options_description_easy_init o) {
       "checksum the payload before returning to client the data");
 
     o("topic-type",
-      po::value<seastar::sstring>()->default_value("regular"),
+      po::value<sstring>()->default_value("regular"),
       "'regular' or 'compaction'");
 
     o("rw-balance",
@@ -78,12 +78,12 @@ void cli_opts(boost::program_options::options_description_easy_init o) {
 
 int main(int argc, char** argv, char** env) {
     std::setvbuf(stdout, nullptr, _IOLBF, 1024);
-    seastar::distributed<qps_load> runner;
-    seastar::app_template app;
+    distributed<qps_load> runner;
+    app_template app;
 
     cli_opts(app.add_options());
     return app.run(argc, argv, [&runner, &app] {
-        seastar::engine().at_exit([&runner] { return runner.stop(); });
+        engine().at_exit([&runner] { return runner.stop(); });
         const auto& cfg = app.configuration();
         return runner.start(&cfg)
           .then([&runner] { return runner.invoke_on_all(&qps_load::open); })
@@ -99,7 +99,7 @@ int main(int argc, char** argv, char** env) {
                       "bamboo.hgrm", std::move(h));
                 });
           })
-          .then([] { return seastar::make_ready_future<int>(0); });
+          .then([] { return make_ready_future<int>(0); });
     });
     return 0;
 }

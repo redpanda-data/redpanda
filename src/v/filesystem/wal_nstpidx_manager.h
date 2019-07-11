@@ -1,12 +1,12 @@
 #pragma once
 
-#include <seastar/core/reactor.hh>
-// seastar::metrics bug: reactor must come first
 #include "filesystem/wal_reader_node.h"
 #include "filesystem/wal_requests.h"
 #include "filesystem/wal_writer_node.h"
+#include "seastarx.h"
 
 #include <seastar/core/metrics_registration.hh>
+#include <seastar/core/reactor.hh>
 
 #include <smf/log.h>
 #include <smf/macros.h>
@@ -19,21 +19,21 @@ public:
       wal_opts otps,
       const wal_topic_create_request* create_props,
       wal_nstpidx idx,
-      seastar::sstring work_directory);
+      sstring work_directory);
 
     wal_nstpidx_manager(wal_nstpidx_manager&& o) noexcept;
     ~wal_nstpidx_manager();
 
     /// \brief appends write to a log segment
-    seastar::future<std::unique_ptr<wal_write_reply>>
+    future<std::unique_ptr<wal_write_reply>>
     append(wal_write_request r);
 
     /// \brief performs a read on the correct log_segment
-    seastar::future<std::unique_ptr<wal_read_reply>> get(wal_read_request);
+    future<std::unique_ptr<wal_read_reply>> get(wal_read_request);
 
     /// \brief forces the log_segment to rotate and start a new
     /// log segment with <epoch>.<term>.log
-    seastar::future<> set_tem(int64_t term);
+    future<> set_tem(int64_t term);
 
     /// \brief topic-partition stats of offsets
     /// and log segments
@@ -41,10 +41,10 @@ public:
 
     /// \brief opens the directory, and performs eager
     /// indexing
-    seastar::future<> open();
+    future<> open();
 
     /// \brief closes the *ALL* readers and writer
-    seastar::future<> close();
+    future<> close();
 
     SMF_DISALLOW_COPY_AND_ASSIGN(wal_nstpidx_manager);
 
@@ -52,18 +52,18 @@ public:
     const wal_opts opts;
     const wal_topic_create_request* tprops;
     const wal_nstpidx idx;
-    const seastar::sstring work_dir;
+    const sstring work_dir;
 
 private:
     wal_writer_node_opts default_writer_opts();
-    seastar::future<> create_log_handle_hook(seastar::sstring);
-    seastar::future<> segment_size_change_hook(seastar::sstring, int64_t);
+    future<> create_log_handle_hook(sstring);
+    future<> segment_size_change_hook(sstring, int64_t);
     void cleanup_timer_cb_log_segments();
 
 private:
     std::unique_ptr<wal_writer_node> _writer = nullptr;
     std::deque<std::unique_ptr<wal_reader_node>> _nodes;
-    seastar::timer<> log_cleanup_timeout_;
+    timer<> log_cleanup_timeout_;
 
 private:
     struct nstpidx_mngr_stats {
@@ -77,5 +77,5 @@ private:
 
     // metrics
     nstpidx_mngr_stats prometheus_stats_;
-    seastar::metrics::metric_groups _metrics{};
+    metrics::metric_groups _metrics{};
 };

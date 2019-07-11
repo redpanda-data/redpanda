@@ -1,5 +1,7 @@
 #pragma once
 
+#include "seastarx.h"
+
 #include "filesystem/wal_writer_utils.h"
 
 #include <seastar/core/sstring.hh>
@@ -7,9 +9,9 @@
 
 struct wal_opts {
     explicit wal_opts(
-      seastar::sstring log_directory,
-      seastar::timer<>::duration flush_period = std::chrono::seconds(10),
-      seastar::timer<>::duration max_retention_period = std::chrono::hours(168),
+      sstring log_directory,
+      timer<>::duration flush_period = std::chrono::seconds(10),
+      timer<>::duration max_retention_period = std::chrono::hours(168),
       int64_t max_retention_size = -1 /*infinite*/,
       int32_t max_bytes_in_memory_per_writer = 1024 * 1024,
       int64_t max_log_segment_size = wal_file_size_aligned());
@@ -17,9 +19,9 @@ struct wal_opts {
     wal_opts(const wal_opts& o);
 
     /// \brief root dir of the WAL
-    const seastar::sstring directory;
-    const seastar::timer<>::duration writer_flush_period;
-    const seastar::timer<>::duration max_retention_period;
+    const sstring directory;
+    const timer<>::duration writer_flush_period;
+    const timer<>::duration max_retention_period;
     const int64_t max_retention_size;
     const int32_t max_bytes_in_writer_cache;
     const int64_t max_log_segment_size;

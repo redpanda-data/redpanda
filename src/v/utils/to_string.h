@@ -1,5 +1,7 @@
 #pragma once
 
+#include "seastarx.h"
+
 #include <seastar/core/print.hh>
 
 #include <optional>
@@ -10,7 +12,7 @@ namespace std {
 template<typename T>
 std::ostream& operator<<(std::ostream& os, const std::optional<T>& opt) {
     if (opt) {
-        return seastar::fmt_print(os, "{{{}}}", *opt);
+        return fmt_print(os, "{{{}}}", *opt);
     }
     return os << "{}";
 }

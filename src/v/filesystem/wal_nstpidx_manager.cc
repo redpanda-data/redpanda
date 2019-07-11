@@ -23,8 +23,8 @@
 
 namespace std {
 ostream&
-operator<<(ostream& o, const ::seastar::lowres_system_clock::time_point& t) {
-    auto time = seastar::lowres_system_clock::to_time_t(t);
+operator<<(ostream& o, const ::lowres_system_clock::time_point& t) {
+    auto time = lowres_system_clock::to_time_t(t);
     o << std::put_time(std::gmtime(&time), "%F %T %Z");
     return o;
 }
@@ -51,13 +51,13 @@ wal_nstpidx_manager::wal_nstpidx_manager(
   wal_opts o,
   const wal_topic_create_request* create_props,
   wal_nstpidx id,
-  seastar::sstring work_directory)
+  sstring work_directory)
   : opts(std::move(o))
   , tprops(THROW_IFNULL(create_props))
   , idx(id)
   , work_dir(std::move(work_directory)) {
     // set metrics
-    namespace sm = seastar::metrics;
+    namespace sm = metrics;
     _metrics.add_group(
       prometheus_sanitize::metrics_name("wal_nstpidx_manager::" + work_dir),
       {sm::make_derive(
@@ -93,7 +93,7 @@ wal_nstpidx_manager::wal_nstpidx_manager(
 
 void wal_nstpidx_manager::cleanup_timer_cb_log_segments() {
     std::vector<std::unique_ptr<wal_reader_node>> to_remove;
-    auto now = seastar::lowres_system_clock::now();
+    auto now = lowres_system_clock::now();
 
     // must be signed
     int32_t nodes_size = _nodes.size();
@@ -150,8 +150,8 @@ void wal_nstpidx_manager::cleanup_timer_cb_log_segments() {
     }
     if (!to_remove.empty()) {
         // do in background
-        seastar::do_with(std::move(to_remove), [](auto& vec) {
-            return seastar::do_for_each(
+        do_with(std::move(to_remove), [](auto& vec) {
+            return do_for_each(
               std::move_iterator(vec.begin()),
               std::move_iterator(vec.end()),
               [](std::unique_ptr<wal_reader_node> rdr) {
@@ -174,7 +174,7 @@ wal_nstpidx_manager::wal_nstpidx_manager(wal_nstpidx_manager&& o) noexcept
   , _metrics(std::move(o._metrics)) {
 }
 
-seastar::future<std::unique_ptr<wal_write_reply>>
+future<std::unique_ptr<wal_write_reply>>
 wal_nstpidx_manager::append(wal_write_request r) {
     prometheus_stats_.write_reqs++;
     prometheus_stats_.write_bytes += std::accumulate(
@@ -187,7 +187,7 @@ wal_nstpidx_manager::append(wal_write_request r) {
     return _writer->append(std::move(r));
 }
 
-seastar::future<std::unique_ptr<wal_read_reply>>
+future<std::unique_ptr<wal_read_reply>>
 wal_nstpidx_manager::get(wal_read_request r) {
     using retval_t = std::unique_ptr<wal_read_reply>;
 
@@ -200,17 +200,17 @@ wal_nstpidx_manager::get(wal_read_request r) {
       r.req->server_validate_payload());
     if (r.req->max_bytes() <= 0) {
         DLOG_WARN("Received request with zero max_bytes() to read");
-        return seastar::make_ready_future<retval_t>(std::move(retval));
+        return make_ready_future<retval_t>(std::move(retval));
     }
     if (_nodes.empty()) {
-        return seastar::make_ready_future<retval_t>(std::move(retval));
+        return make_ready_future<retval_t>(std::move(retval));
     }
     auto it = std::lower_bound(
       _nodes.begin(), _nodes.end(), retval->next_epoch(), offset_comparator{});
-    return seastar::do_with(
+    return do_with(
       std::move(retval), std::move(it), [this, r](auto& read_result, auto& it) {
           auto retval = read_result.get();
-          return seastar::do_until(
+          return do_until(
                    [this, &it, retval, max_bytes = r.req->max_bytes()] {
                        return it == _nodes.end()
                               || retval->on_disk_size() >= max_bytes
@@ -224,7 +224,7 @@ wal_nstpidx_manager::get(wal_read_request r) {
                          offset < ptr->starting_epoch
                          || offset >= ptr->ending_epoch()) {
                            it = _nodes.end();
-                           return seastar::make_ready_future<>();
+                           return make_ready_future<>();
                        }
                        return ptr->get(retval, r)
                          .finally([&it]() mutable { std::next(it); })
@@ -247,14 +247,14 @@ wal_nstpidx_manager::get(wal_read_request r) {
                   "READER size of retval->reply().gets.size(): {}",
                   read_result->reply().gets.size());
                 prometheus_stats_.read_bytes += read_result->on_disk_size();
-                return seastar::make_ready_future<retval_t>(
+                return make_ready_future<retval_t>(
                   std::move(read_result));
             });
       });
 }
 
-seastar::future<>
-wal_nstpidx_manager::create_log_handle_hook(seastar::sstring filename) {
+future<>
+wal_nstpidx_manager::create_log_handle_hook(sstring filename) {
     prometheus_stats_.log_segment_rolls++;
     auto [starting_epoch, term]
       = wal_name_extractor_utils::wal_segment_extract_epoch_term(filename);
@@ -269,14 +269,14 @@ wal_nstpidx_manager::create_log_handle_hook(seastar::sstring filename) {
       starting_epoch,
       term,
       0 /*size*/,
-      seastar::lowres_system_clock::now(),
+      lowres_system_clock::now(),
       filename);
     DLOG_DEBUG("Create WAL file: {} ", n->filename);
     _nodes.push_back(std::move(n));
     return _nodes.back()->open();
 }
-seastar::future<> wal_nstpidx_manager::segment_size_change_hook(
-  seastar::sstring name, int64_t sz) {
+future<> wal_nstpidx_manager::segment_size_change_hook(
+  sstring name, int64_t sz) {
     DLOG_THROW_IF(
       _nodes.empty(),
       "Failed to update size. Unknown file: {}, size: {}",
@@ -289,12 +289,12 @@ seastar::future<> wal_nstpidx_manager::segment_size_change_hook(
       _nodes.back()->filename);
     auto& reader = _nodes.back();
     if (reader->file_size() == sz) {
-        return seastar::make_ready_future<>();
+        return make_ready_future<>();
     }
 
     DLOG_TRACE("SEGMENT: {} size change update to: {}", name, sz);
     reader->update_file_size(sz);
-    return seastar::make_ready_future<>();
+    return make_ready_future<>();
 }
 wal_writer_node_opts wal_nstpidx_manager::default_writer_opts() {
     return wal_writer_node_opts(
@@ -311,10 +311,10 @@ wal_writer_node_opts wal_nstpidx_manager::default_writer_opts() {
 }
 
 static void print_repaired_files(
-  const seastar::sstring& d, const wal_nstpidx_repair::set_t& s) {
+  const sstring& d, const wal_nstpidx_repair::set_t& s) {
     if (s.empty())
         return;
-    std::vector<seastar::sstring> v;
+    std::vector<sstring> v;
     v.reserve(s.size());
     for (auto& i : s) {
         v.push_back(fmt::format("{}", i));
@@ -322,12 +322,12 @@ static void print_repaired_files(
     LOG_INFO("{} ({})", d, v);
 }
 
-seastar::future<> wal_nstpidx_manager::open() {
+future<> wal_nstpidx_manager::open() {
     LOG_DEBUG("Open: opts={}, work_dir={}", opts, work_dir);
     return wal_nstpidx_repair::repair(work_dir)
       .then([this](auto repaired) {
           if (repaired.empty()) {
-              return seastar::make_ready_future<>();
+              return make_ready_future<>();
           }
           print_repaired_files(work_dir, repaired);
           for (const auto& i : repaired) {
@@ -344,7 +344,7 @@ seastar::future<> wal_nstpidx_manager::open() {
             _nodes.back()->ending_epoch(),
             smf::human_bytes(
               _nodes.back()->ending_epoch() - _nodes.front()->starting_epoch));
-          return seastar::parallel_for_each(
+          return parallel_for_each(
             _nodes.begin(), _nodes.end(), [](auto& n) { return n->open(); });
       })
       .then([this] {
@@ -357,14 +357,14 @@ seastar::future<> wal_nstpidx_manager::open() {
           return _writer->open();
       });
 }
-seastar::future<> wal_nstpidx_manager::close() {
+future<> wal_nstpidx_manager::close() {
     LOG_DEBUG("Close: opts={}, work_dir={}", opts, work_dir);
     auto elogger = [](auto eptr) {
         LOG_ERROR("Ignoring error closing partition manager: {}", eptr);
-        return seastar::make_ready_future<>();
+        return make_ready_future<>();
     };
     return _writer->close().handle_exception(elogger).then([this, elogger] {
-        return seastar::do_for_each(
+        return do_for_each(
                  _nodes.begin(),
                  _nodes.end(),
                  [](auto& b) { return b->close(); })

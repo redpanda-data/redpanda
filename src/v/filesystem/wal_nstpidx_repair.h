@@ -1,4 +1,7 @@
 #pragma once
+
+#include "seastarx.h"
+
 #include <seastar/core/file.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>
@@ -17,8 +20,8 @@ public:
         int64_t epoch;
         int64_t term;
         int64_t size;
-        seastar::sstring filename;
-        seastar::lowres_system_clock::time_point modified;
+        sstring filename;
+        lowres_system_clock::time_point modified;
     };
     struct comparator {
         bool operator()(const item& x, const item& y) const {
@@ -28,20 +31,20 @@ public:
     using set_t = std::set<item, comparator>;
 
     /// \brief main api
-    static seastar::future<set_t> repair(seastar::sstring dir);
+    static future<set_t> repair(sstring dir);
 
     SMF_DISALLOW_COPY_AND_ASSIGN(wal_nstpidx_repair);
 
 private:
-    explicit wal_nstpidx_repair(seastar::sstring workdir)
+    explicit wal_nstpidx_repair(sstring workdir)
       : work_dir(workdir) {
     }
 
     /// \brief callback from directory_walker::walk
-    seastar::future<> visit(seastar::directory_entry de);
+    future<> visit(directory_entry de);
 
 private:
-    const seastar::sstring work_dir;
+    const sstring work_dir;
     set_t _files;
 };
 

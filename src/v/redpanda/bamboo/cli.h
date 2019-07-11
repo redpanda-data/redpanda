@@ -1,6 +1,7 @@
 #pragma once
 
 #include "redpanda/api/client.h"
+#include "seastarx.h"
 
 #include <smf/random.h>
 
@@ -13,13 +14,13 @@ public:
     explicit cli(const boost::program_options::variables_map* cfg);
     ~cli();
 
-    seastar::future<> one_write();
+    future<> one_write();
 
-    seastar::future<> one_read();
+    future<> one_read();
 
-    seastar::future<> open();
+    future<> open();
 
-    seastar::future<> stop();
+    future<> stop();
 
     const boost::program_options::variables_map& options() const;
 

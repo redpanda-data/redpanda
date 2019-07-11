@@ -20,9 +20,9 @@
 #include <set>
 
 // creating a namespace with `-` tests the regexes
-static const seastar::sstring kNS = "empty-ns007";
+static const sstring kNS = "empty-ns007";
 // creating a topic with `_` tests the regexes
-static const seastar::sstring kTopic = "dummy_topic";
+static const sstring kTopic = "dummy_topic";
 
 void add_opts(boost::program_options::options_description_easy_init o) {
     namespace po = boost::program_options;
@@ -31,21 +31,21 @@ void add_opts(boost::program_options::options_description_easy_init o) {
       "log directory");
 }
 
-seastar::future<std::vector<std::unique_ptr<wal_get_requestT>>>
+future<std::vector<std::unique_ptr<wal_get_requestT>>>
 do_writes(uint32_t core, write_ahead_log& w) {
-    return seastar::do_with(
+    return do_with(
       wal_topic_test_input(
         kNS,
         kTopic,
         // partitions
-        seastar::smp::count * 2,
+        smp::count * 2,
         // type (can be compaction)
         wal_topic_type::wal_topic_type_regular,
         // map of properties for topic
         {{"prop-for-topic", "maybe-store-access-keys"}}),
       std::vector<std::unique_ptr<wal_get_requestT>>{},
       [&w, core](auto& input, auto& offsets) {
-          return seastar::do_with(
+          return do_with(
                    input.create_requests(),
                    std::size_t(0),
                    [&w, core](auto& creqs, auto& cidx) {
@@ -61,11 +61,11 @@ do_writes(uint32_t core, write_ahead_log& w) {
 
                        return w.create(std::move(c)).then([core](auto r) {
                            LOG_INFO("Topic created on core: {}", core);
-                           return seastar::make_ready_future<>();
+                           return make_ready_future<>();
                        });
                    })
             .then([&input, &w, &offsets, core] {
-                return seastar::do_with(
+                return do_with(
                          input.write_requests(),
                          std::size_t(0),
                          [&](auto& wreqs, std::size_t& idx) {
@@ -97,24 +97,24 @@ do_writes(uint32_t core, write_ahead_log& w) {
                          })
                   .then([] {
                       // wait for flush period
-                      return seastar::sleep(std::chrono::milliseconds(50));
+                      return sleep(std::chrono::milliseconds(50));
                   });
             })
             .then([&]() mutable { return std::move(offsets); });
       });
 }
 
-seastar::future<> do_reads(
+future<> do_reads(
   uint32_t core,
   write_ahead_log& w,
   std::vector<std::unique_ptr<wal_get_requestT>>&& gets) {
-    return seastar::do_with(std::move(gets), [core, &w](auto& offsets) {
-        return seastar::do_for_each(
+    return do_with(std::move(gets), [core, &w](auto& offsets) {
+        return do_for_each(
           offsets.begin(), offsets.end(), [&](auto& req_ptr) mutable {
               auto readq = smf::fbs_typed_buf<wal_get_request>(
                 smf::native_table_as_buffer<wal_get_request>(*req_ptr));
               // perform the read next!
-              return seastar::do_with(
+              return do_with(
                        std::move(readq),
                        [&w](smf::fbs_typed_buf<wal_get_request>& tbuf) {
                            auto r = wal_core_mapping::core_assignment(
@@ -145,13 +145,13 @@ seastar::future<> do_reads(
                       "gets={}",
                       r->reply().next_offset,
                       r->reply().gets.size());
-                    return seastar::make_ready_future<>();
+                    return make_ready_future<>();
                 });
           });
     });
 }
 
-seastar::future<> do_one_request(uint32_t core, write_ahead_log& w) {
+future<> do_one_request(uint32_t core, write_ahead_log& w) {
     LOG_INFO("Performing work on core: {}", core);
     return do_writes(core, w).then([core, &w](auto&& to_read) {
         return do_reads(core, w, std::move(to_read));
@@ -162,16 +162,16 @@ int main(int args, char** argv, char** env) {
     std::cout.setf(std::ios::unitbuf);
 
     DLOG_DEBUG("About to start the client");
-    seastar::app_template app;
-    seastar::distributed<write_ahead_log> w;
+    app_template app;
+    distributed<write_ahead_log> w;
 
     try {
         add_opts(app.add_options());
 
         return app.run(args, argv, [&] {
-            smf::app_run_log_level(seastar::log_level::trace);
+            smf::app_run_log_level(log_level::trace);
             DLOG_DEBUG("setting up exit hooks");
-            seastar::engine().at_exit([&] { return w.stop(); });
+            engine().at_exit([&] { return w.stop(); });
             DLOG_DEBUG("about to start the wal.h");
             auto& config = app.configuration();
             auto dir = config["write-ahead-log-dir"].as<std::string>();
@@ -179,9 +179,9 @@ int main(int args, char** argv, char** env) {
             return w.start(wal_opts(dir, std::chrono::milliseconds(2)))
               .then([&] { return w.invoke_on_all(&write_ahead_log::open); })
               .then([&] {
-                  return seastar::do_for_each(
+                  return do_for_each(
                     boost::counting_iterator<uint32_t>(0),
-                    boost::counting_iterator<uint32_t>(seastar::smp::count),
+                    boost::counting_iterator<uint32_t>(smp::count),
                     [&](auto core) mutable {
                         return w.invoke_on(
                           core, [core](write_ahead_log& localwal) {
@@ -189,7 +189,7 @@ int main(int args, char** argv, char** env) {
                           });
                     });
               })
-              .then([] { return seastar::make_ready_future<int>(0); });
+              .then([] { return make_ready_future<int>(0); });
         });
     } catch (const std::exception& e) {
         std::cerr << "Fatal exception: " << e.what() << std::endl;

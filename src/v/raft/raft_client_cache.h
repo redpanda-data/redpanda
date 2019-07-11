@@ -1,6 +1,7 @@
 #pragma once
 
 #include "adt/tagged_ptr.h"
+#include "seastarx.h"
 
 #include <seastar/net/socket_defs.hh> // ipv4
 
@@ -51,28 +52,28 @@ public:
     ~raft_client_cache();
 
     /// \brief returns a *connected* client
-    seastar::future<opt_client_t>
-    get_connection(const seastar::ipv4_addr& node);
+    future<opt_client_t>
+    get_connection(const ipv4_addr& node);
 
     /// \brief closes all client connections
-    seastar::future<> close();
+    future<> close();
 
 private:
-    void set_flags(bitflags f, backoff b, const seastar::ipv4_addr& node);
+    void set_flags(bitflags f, backoff b, const ipv4_addr& node);
 
     std::tuple<bitflags, backoff, raft::raft_api_client*>
-    get_or_create(const seastar::ipv4_addr& node);
+    get_or_create(const ipv4_addr& node);
 
-    seastar::future<raft::raft_api_client*>
+    future<raft::raft_api_client*>
     attempt_reconnect_with_next_backoff(raft::raft_api_client*, backoff);
 
-    seastar::future<>
-    stage_next_reconnect(const seastar::ipv4_addr& node, backoff bo);
+    future<>
+    stage_next_reconnect(const ipv4_addr& node, backoff bo);
 
-    typename underlying::iterator find(const seastar::ipv4_addr& n);
+    typename underlying::iterator find(const ipv4_addr& n);
 
 private:
-    seastar::gate reconnect_gate_;
+    gate reconnect_gate_;
     smf::random _prng;
     underlying _cache;
 };

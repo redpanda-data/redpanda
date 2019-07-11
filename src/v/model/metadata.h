@@ -1,6 +1,7 @@
 #pragma once
 
 #include "model/fundamental.h"
+#include "seastarx.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -29,9 +30,9 @@ class broker {
 public:
     broker(
       node_id id,
-      seastar::sstring host,
+      sstring host,
       int32_t port,
-      std::optional<seastar::sstring> rack) noexcept
+      std::optional<sstring> rack) noexcept
       : _id(id)
       , _host(std::move(host))
       , _port(port)
@@ -42,7 +43,7 @@ public:
         return _id;
     }
 
-    const seastar::sstring host() const {
+    const sstring host() const {
         return _host;
     }
 
@@ -50,15 +51,15 @@ public:
         return _port;
     }
 
-    const std::optional<seastar::sstring>& rack() const {
+    const std::optional<sstring>& rack() const {
         return _rack;
     }
 
 private:
     node_id _id;
-    seastar::sstring _host;
+    sstring _host;
     int32_t _port;
-    std::optional<seastar::sstring> _rack;
+    std::optional<sstring> _rack;
 };
 
 class topic_view {
@@ -85,11 +86,11 @@ private:
 
 class topic {
 public:
-    explicit topic(seastar::sstring topic_name) noexcept
+    explicit topic(sstring topic_name) noexcept
       : _topic_name(std::move(topic_name)) {
     }
 
-    const seastar::sstring& name() const {
+    const sstring& name() const {
         return _topic_name;
     }
 
@@ -106,7 +107,7 @@ public:
     }
 
 private:
-    seastar::sstring _topic_name;
+    sstring _topic_name;
 };
 
 struct partition_metadata {
@@ -153,7 +154,7 @@ struct hash<model::topic_view> {
 template<>
 struct hash<model::topic> {
     size_t operator()(model::topic t) const {
-        return hash<seastar::sstring>()(t.name());
+        return hash<sstring>()(t.name());
     }
 };
 

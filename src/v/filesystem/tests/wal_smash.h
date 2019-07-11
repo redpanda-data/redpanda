@@ -1,5 +1,7 @@
 #pragma once
 
+#include "seastarx.h"
+
 #include "filesystem/write_ahead_log.h"
 
 #include <smf/random.h>
@@ -7,9 +9,9 @@
 #include <map>
 
 struct wal_smash_opts {
-    seastar::sstring topic_namespace;
+    sstring topic_namespace;
     int64_t ns_id;
-    seastar::sstring topic;
+    sstring topic;
     int64_t topic_id;
     int32_t topic_partitions = 16;
     wal_topic_type topic_type = wal_topic_type::wal_topic_type_regular;
@@ -19,7 +21,7 @@ struct wal_smash_opts {
     /// Only applies to the value. The key is always uncompressed
     int32_t record_compression_value_threshold = 512;
     /// \brief properties for the topic, immutable after creation
-    std::unordered_map<seastar::sstring, seastar::sstring> topic_props{};
+    std::unordered_map<sstring, sstring> topic_props{};
     /// Set default to 2MB
     int32_t consumer_max_read_bytes = 2048 * 1024;
     int32_t random_key_bytes = 20;
@@ -39,18 +41,18 @@ public:
         uint32_t writes{0};
     };
     explicit wal_smash(
-      wal_smash_opts opt, seastar::distributed<write_ahead_log>* w);
+      wal_smash_opts opt, distributed<write_ahead_log>* w);
     ~wal_smash() = default;
 
-    seastar::future<> stop();
+    future<> stop();
 
-    seastar::future<std::unique_ptr<wal_create_reply>>
+    future<std::unique_ptr<wal_create_reply>>
     create(std::vector<int32_t> partitions);
 
-    seastar::future<std::unique_ptr<wal_write_reply>>
+    future<std::unique_ptr<wal_write_reply>>
     write_one(int32_t partition);
 
-    seastar::future<std::unique_ptr<wal_read_reply>>
+    future<std::unique_ptr<wal_read_reply>>
     read_one(int32_t partition);
 
     inline const wal_smash_stats& stats() const {
@@ -65,11 +67,11 @@ public:
 
 private:
     wal_smash_opts _opts;
-    seastar::distributed<write_ahead_log>* _wal;
+    distributed<write_ahead_log>* _wal;
     std::map<int32_t, std::vector<int32_t>> core_to_partitions_;
     struct offset_meta_idx {
         int64_t offset{0};
-        seastar::semaphore lock{1};
+        semaphore lock{1};
     };
     // must be ordered.
     // key = partition

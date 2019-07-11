@@ -4,6 +4,7 @@
 #include "filesystem/wal_nstpidx_manager.h"
 #include "filesystem/wal_opts.h"
 #include "filesystem/wal_requests.h"
+#include "seastarx.h"
 
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sstring.hh>
@@ -25,17 +26,17 @@ public:
     /// \brief API for explicitly creating a topic.
     /// the request contains a set of partitions assigned to *this* shard
     ///
-    seastar::future<std::unique_ptr<wal_create_reply>>
+    future<std::unique_ptr<wal_create_reply>>
     create(wal_create_request r);
 
     /// \brief opens a topic partition - which means reading the
     /// $root/<ns>/<topic>.<partition>/metadata file
     ///
-    seastar::future<>
-    open(seastar::sstring ns, seastar::sstring topic, int32_t partition);
+    future<>
+    open(sstring ns, sstring topic, int32_t partition);
 
     /// \brief gets the active topic-partition manager
-    seastar::future<wal_nstpidx_manager*> get_manager(wal_nstpidx idx);
+    future<wal_nstpidx_manager*> get_manager(wal_nstpidx idx);
 
     /// \brief return a list of active stats such as
     /// log segment count, start and end offsets. Useful for clients
@@ -50,7 +51,7 @@ public:
 
     /// \brief closes all of the active topic partition managers
     ///
-    seastar::future<> close();
+    future<> close();
 
     /// \brief a copy of the write ahead log properties such as timeouts/log
     /// cleanups, etc
@@ -62,8 +63,8 @@ public:
 private:
     /// \brief *must* exec as a subroutine of open()
     /// for safety
-    seastar::future<wal_topic_create_request*>
-    nstpidx_props(wal_nstpidx idx, seastar::sstring props_dir);
+    future<wal_topic_create_request*>
+    nstpidx_props(wal_nstpidx idx, sstring props_dir);
 
 private:
     /// \brief main workhorse
@@ -73,6 +74,6 @@ private:
     /// properties We store one copy for all partitions and pass a constant
     /// pointer to them
     topic_meta_map _props;
-    seastar::semaphore serialize_open_{1};
-    seastar::semaphore serialize_create_{1};
+    semaphore serialize_open_{1};
+    semaphore serialize_create_{1};
 };

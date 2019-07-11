@@ -1,5 +1,7 @@
 #pragma once
 
+#include "seastarx.h"
+
 #include <seastar/core/temporary_buffer.hh>
 
 #include <cstdint>
@@ -72,7 +74,7 @@ struct request_header {
     api_key key;
     api_version version;
     correlation_type correlation_id;
-    seastar::temporary_buffer<char> client_id_buffer;
+    temporary_buffer<char> client_id_buffer;
     std::optional<std::string_view> client_id;
 };
 

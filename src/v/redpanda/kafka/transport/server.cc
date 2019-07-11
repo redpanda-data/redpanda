@@ -14,11 +14,11 @@
 
 namespace kafka::transport {
 
-static seastar::logger klog("kafka_server");
+static logger klog("kafka_server");
 
 kafka_server::kafka_server(
   probe p,
-  seastar::sharded<cluster::metadata_cache>& metadata_cache,
+  sharded<cluster::metadata_cache>& metadata_cache,
   kafka_server_config config) noexcept
   : _probe(std::move(p))
   , _metadata_cache(metadata_cache)
@@ -147,15 +147,15 @@ future<> kafka_server::connection::process() {
 
 future<> kafka_server::connection::write_response(
   requests::response_ptr&& response, requests::correlation_type correlation_id) {
-    seastar::sstring header(
+    sstring header(
       sstring::initialized_later(),
       sizeof(raw_response_header));
     auto* raw_header = reinterpret_cast<raw_response_header*>(header.begin());
     auto size = size_type(sizeof(raw_response_header) + response->buf().size_bytes());
-    raw_header->size = seastar::cpu_to_be(size);
-    raw_header->correlation_id = seastar::cpu_to_be(correlation_id);
+    raw_header->size = cpu_to_be(size);
+    raw_header->correlation_id = cpu_to_be(correlation_id);
 
-    seastar::scattered_message<char> msg;
+    scattered_message<char> msg;
     msg.append(std::move(header));
     for (auto&& chunk : response->buf()) {
         msg.append_static(
@@ -219,7 +219,7 @@ future<> kafka_server::connection::process_request() {
 
 void kafka_server::connection::do_process(
   std::unique_ptr<requests::request_context>&& ctx,
-  seastar::semaphore_units<>&& units) {
+  semaphore_units<>&& units) {
     auto correlation = ctx->header().correlation_id;
     auto ready = std::move(_ready_to_respond);
     auto f = requests::process_request(*ctx, _server._smp_group);
@@ -247,7 +247,7 @@ size_t kafka_server::connection::process_size(temporary_buffer<char>&& buf) {
         return 0;
     }
     auto* raw = reinterpret_cast<const size_type*>(buf.get());
-    size_type size = seastar::be_to_cpu(*raw);
+    size_type size = be_to_cpu(*raw);
     if (size < 0) {
         throw std::runtime_error(
           fmt::format("Invalid request size of {}", size));
@@ -263,7 +263,7 @@ future<requests::request_header> kafka_server::connection::read_header() {
               throw std::runtime_error(
                 fmt::format("Unexpected EOF for request header"));
           }
-          auto client_id_size = seastar::be_to_cpu(
+          auto client_id_size = be_to_cpu(
             reinterpret_cast<const raw_request_header*>(buf.get())
               ->client_id_size);
           auto make_header =

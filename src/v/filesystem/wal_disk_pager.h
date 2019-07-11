@@ -1,5 +1,7 @@
 #pragma once
 
+#include "seastarx.h"
+
 #include "filesystem/page_cache.h"
 
 class wal_disk_pager {
@@ -25,11 +27,11 @@ public:
     inline bool is_page_in_range(int32_t pageno) const {
         return is_page_in_request_range(pageno);
     }
-    inline seastar::future<const page_cache_result*> fetch(int32_t pageno) {
+    inline future<const page_cache_result*> fetch(int32_t pageno) {
         DLOG_THROW_IF(
           !is_page_in_request_range(pageno), "Buggy page: {}", pageno);
         if (is_page_in_result_range(pageno)) {
-            return seastar::make_ready_future<const page_cache_result*>(
+            return make_ready_future<const page_cache_result*>(
               _lease.result);
         }
         // split between hot code and cold code paths
@@ -39,7 +41,7 @@ public:
 private:
     /// \brief fetches from page cache
     /// usually the cold path
-    seastar::future<const page_cache_result*> fetch_next();
+    future<const page_cache_result*> fetch_next();
 
 private:
     page_cache_request _req;

@@ -30,32 +30,32 @@ static const char* kPoem = "How do I love thee? Let me count the ways."
                            "Smiles, tears, of all my life; and, if God choose,"
                            "I shall but love thee better after death.";
 
-seastar::future<> skip_first_page(seastar::sstring base_dir) {
+future<> skip_first_page(sstring base_dir) {
     // This test is only useful insofar as breaking on systems
     // that do not support sparse files
     //
     return open_file_dma(
              base_dir + "/leFiorito.txt",
-             seastar::open_flags::rw | seastar::open_flags::create
-               | seastar::open_flags::truncate)
-      .then([](seastar::file fx) mutable {
-          auto f = seastar::make_lw_shared<seastar::file>(std::move(fx));
-          return seastar::do_with(seastar::semaphore(4), [f](auto& limit) {
-              return seastar::do_for_each(
+             open_flags::rw | open_flags::create
+               | open_flags::truncate)
+      .then([](file fx) mutable {
+          auto f = make_lw_shared<file>(std::move(fx));
+          return do_with(semaphore(4), [f](auto& limit) {
+              return do_for_each(
                        boost::counting_iterator<uint32_t>(0),
                        boost::counting_iterator<uint32_t>(10),
                        [f, &limit](auto& c) mutable {
                            // ON PURPOSE - testing to see if you can skip the
                            // first page
                            if (c == 0) {
-                               return seastar::make_ready_future<>();
+                               return make_ready_future<>();
                            }
 
                            return limit.wait(1).then([c, f, &limit] {
                                const auto alignment
                                  = f->disk_write_dma_alignment();
-                               std::unique_ptr<char[], seastar::free_deleter>
-                                 buf = seastar::allocate_aligned_buffer<char>(
+                               std::unique_ptr<char[], free_deleter>
+                                 buf = allocate_aligned_buffer<char>(
                                    alignment, alignment);
                                std::memset(buf.get(), '-', alignment);
 
@@ -69,7 +69,7 @@ seastar::future<> skip_first_page(seastar::sstring base_dir) {
                                        sz != alignment,
                                        "Wrote some garbage size of: {}",
                                        sz);
-                                     return seastar::make_ready_future<>();
+                                     return make_ready_future<>();
                                  })
                                  .finally([&limit] { limit.signal(1); });
                            });
@@ -83,16 +83,16 @@ seastar::future<> skip_first_page(seastar::sstring base_dir) {
       });
 }
 
-seastar::future<>
-write_poem_ostream(seastar::sstring base_dir, uint32_t max_appends = 100) {
+future<>
+write_poem_ostream(sstring base_dir, uint32_t max_appends = 100) {
     return open_file_dma(
              base_dir + "/" + ostream_name,
-             seastar::open_flags::rw | seastar::open_flags::create
-               | seastar::open_flags::truncate)
-      .then([max_appends](seastar::file f) mutable {
-          auto fstrm = seastar::make_lw_shared<seastar::output_stream<char>>(
-            seastar::make_file_output_stream(std::move(f)));
-          return seastar::do_for_each(
+             open_flags::rw | open_flags::create
+               | open_flags::truncate)
+      .then([max_appends](file f) mutable {
+          auto fstrm = make_lw_shared<output_stream<char>>(
+            make_file_output_stream(std::move(f)));
+          return do_for_each(
                    boost::counting_iterator<uint32_t>(0),
                    boost::counting_iterator<uint32_t>(max_appends),
                    [fx = fstrm](auto& c) mutable {
@@ -105,16 +105,16 @@ write_poem_ostream(seastar::sstring base_dir, uint32_t max_appends = 100) {
       });
 }
 
-seastar::future<>
-write_poem_wal_segment(seastar::sstring base_dir, uint32_t max_appends = 100) {
-    auto ws = seastar::make_lw_shared<wal_segment>(
+future<>
+write_poem_wal_segment(sstring base_dir, uint32_t max_appends = 100) {
+    auto ws = make_lw_shared<wal_segment>(
       base_dir + "/" + segment_name,
       priority_manager::get().streaming_write_priority(),
       std::numeric_limits<int32_t>::max() /*max file in bytes*/,
       1024 * 1024 /*1MB*/);
     return ws->open()
       .then([ws, max_appends] {
-          return seastar::do_for_each(
+          return do_for_each(
             boost::counting_iterator<uint32_t>(0),
             boost::counting_iterator<uint32_t>(max_appends),
             [ws](auto& c) mutable {
@@ -134,12 +134,12 @@ void add_opts(boost::program_options::options_description_easy_init o) {
 }
 
 int main(int args, char** argv, char** env) {
-    seastar::app_template app;
+    app_template app;
     try {
         add_opts(app.add_options());
 
         return app.run(args, argv, [&] {
-            smf::app_run_log_level(seastar::log_level::trace);
+            smf::app_run_log_level(log_level::trace);
             auto& config = app.configuration();
 
             const uint32_t max_page_comparison
@@ -175,7 +175,7 @@ int main(int args, char** argv, char** env) {
                                 "our wal_segment writes and seastar's "
                                 "ostream<char> do not "
                                 "have identical outputs. severe error");
-                              return seastar::make_ready_future<int>(0);
+                              return make_ready_future<int>(0);
                           });
                     });
               });

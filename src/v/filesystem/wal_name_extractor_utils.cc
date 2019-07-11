@@ -11,7 +11,7 @@ static constexpr const char* partition_extractor_pattern
 
 std::pair<int64_t, int64_t>
 wal_name_extractor_utils::wal_segment_extract_epoch_term(
-  const seastar::sstring& filename) {
+  const sstring& filename) {
     int64_t epoch = -1;
     int64_t term = -1;
     const std::regex re(epoch_extractor_pattern);
@@ -28,7 +28,7 @@ wal_name_extractor_utils::wal_segment_extract_epoch_term(
     return {epoch, term};
 }
 bool wal_name_extractor_utils::is_wal_segment(
-  const seastar::sstring& filename) {
+  const sstring& filename) {
     auto [e, t] = wal_name_extractor_utils::wal_segment_extract_epoch_term(
       filename);
     return e >= 0 && t >= 0;
@@ -40,12 +40,12 @@ bool wal_name_extractor_utils::is_valid_ns_topic_name(const char* filename) {
 }
 
 bool wal_name_extractor_utils::is_valid_partition_name(
-  const seastar::sstring& filename) {
+  const sstring& filename) {
     return wal_name_extractor_utils::wal_partition_dir_extract(filename) >= 0;
 }
 
 int32_t wal_name_extractor_utils::wal_partition_dir_extract(
-  const seastar::sstring& filename) {
+  const sstring& filename) {
     int32_t retval = -1;
     const std::regex re(partition_extractor_pattern);
     std::cmatch base_match;

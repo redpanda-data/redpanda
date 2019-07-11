@@ -51,13 +51,13 @@ wal_writer_node::~wal_writer_node() {
     // flush_timeout_.cancel();
 }
 
-seastar::future<> wal_writer_node::open() {
+future<> wal_writer_node::open() {
     HBADGER(filesystem, wal_writer_node::open);
     const auto name = wal_file_name(
       _opts.writer_directory, _opts.epoch, _opts.term);
     DLOG_TRACE("Rolling log: {}", name);
     LOG_THROW_IF(!!_lease, "opening new file. Previous file is unclosed");
-    _lease = seastar::make_lw_shared<wal_segment>(
+    _lease = make_lw_shared<wal_segment>(
       name,
       _opts.pclass,
       _opts.wopts.max_log_segment_size,
@@ -65,17 +65,17 @@ seastar::future<> wal_writer_node::open() {
     return _lease->open().then(
       [this, name] { return _opts.log_segment_create_notify(name); });
 }
-seastar::future<> wal_writer_node::disk_write(const wal_binary_record* f) {
+future<> wal_writer_node::disk_write(const wal_binary_record* f) {
     HBADGER(filesystem, wal_writer_node::disk_write);
     current_size_ += f->data()->size();
     return _lease->append((const char*)f->data()->Data(), f->data()->size());
 }
 
-seastar::future<std::unique_ptr<wal_write_reply>>
+future<std::unique_ptr<wal_write_reply>>
 wal_writer_node::append(wal_write_request req) {
     DTRACE_PROBE(rp, wal_writer_node_append);
     HBADGER(filesystem, wal_writer_node::append);
-    return seastar::with_semaphore(
+    return with_semaphore(
       serialize_writes_, 1, [this, req = std::move(req)]() mutable {
           const int64_t start_offset = current_offset();
           const int64_t write_size = wal_write_request_size(req);
@@ -83,10 +83,10 @@ wal_writer_node::append(wal_write_request req) {
           const int32_t put_count = req.data.size();
           const int64_t ns = req.req->ns();
           const int64_t topic = req.req->topic();
-          return seastar::do_with(
+          return do_with(
                    std::move(req),
                    [this](auto& r) mutable {
-                       return seastar::do_for_each(
+                       return do_for_each(
                          r.begin(), r.end(), [this](auto i) mutable {
                              return this->do_append(i);
                          });
@@ -114,30 +114,30 @@ wal_writer_node::append(wal_write_request req) {
                   partition,
                   start_offset,
                   start_offset + write_size);
-                return seastar::make_ready_future<decltype(ret)>(
+                return make_ready_future<decltype(ret)>(
                   std::move(ret));
             });
       });
 }
 
-seastar::future<> wal_writer_node::do_append(const wal_binary_record* f) {
+future<> wal_writer_node::do_append(const wal_binary_record* f) {
     if (__builtin_expect(f->data()->size() <= space_left(), true)) {
         return disk_write(f);
     }
     return rotate_fstream().then([this, f]() mutable { return disk_write(f); });
 }
 
-seastar::future<> wal_writer_node::close() {
+future<> wal_writer_node::close() {
     is_closed_ = true;
     flush_timeout_.cancel();
     // need to make sure the file is not closed in the midst of a write
     //
-    return seastar::with_semaphore(serialize_writes_, 1, [l = _lease] {
+    return with_semaphore(serialize_writes_, 1, [l = _lease] {
         return l->flush().then([l] { return l->close(); }).finally([l] {});
     });
 }
 
-seastar::future<> wal_writer_node::set_term(int64_t term) {
+future<> wal_writer_node::set_term(int64_t term) {
     LOG_THROW_IF(
       term >= _opts.term,
       "Invalid log term. Logic error. Existing term:{}, but wanting "
@@ -148,7 +148,7 @@ seastar::future<> wal_writer_node::set_term(int64_t term) {
     _opts.term = term;
     return rotate_fstream();
 }
-seastar::future<> wal_writer_node::rotate_fstream() {
+future<> wal_writer_node::rotate_fstream() {
     DTRACE_PROBE(rp, wal_writer_node_rotation);
     DLOG_INFO("rotating fstream");
     HBADGER(filesystem, wal_writer_node::rotate_fstream);

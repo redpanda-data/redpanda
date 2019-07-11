@@ -10,7 +10,7 @@
 #include <smf/native_type_utils.h>
 
 wal_smash::wal_smash(
-  wal_smash_opts opt, seastar::distributed<write_ahead_log>* w)
+  wal_smash_opts opt, distributed<write_ahead_log>* w)
   : _opts(std::move(opt))
   , _wal(THROW_IFNULL(w)) {
     _opts.ns_id = xxhash_64(
@@ -21,19 +21,19 @@ wal_smash::wal_smash(
     for (int32_t partition = 0; partition < _opts.topic_partitions;
          ++partition) {
         partition_offsets_.emplace(
-          partition, offset_meta_idx{0, seastar::semaphore(1)});
+          partition, offset_meta_idx{0, semaphore(1)});
 
         wal_nstpidx idx(_opts.ns_id, _opts.topic_id, partition);
-        auto core = jump_consistent_hash(idx.id(), seastar::smp::count);
+        auto core = jump_consistent_hash(idx.id(), smp::count);
         core_to_partitions_[core].push_back(partition);
     }
 }
 
-seastar::future<> wal_smash::stop() {
-    return seastar::make_ready_future<>();
+future<> wal_smash::stop() {
+    return make_ready_future<>();
 }
 
-seastar::future<std::unique_ptr<wal_create_reply>>
+future<std::unique_ptr<wal_create_reply>>
 wal_smash::create(std::vector<int32_t> partitions) {
     LOG_THROW_IF(partitions.empty(), "No partitions to create for this core");
     auto tbuf = smf::fbs_typed_buf<wal_topic_create_request>(
@@ -45,8 +45,8 @@ wal_smash::create(std::vector<int32_t> partitions) {
         _opts.topic_props));
 
     wal_create_request create_req(
-      tbuf.get(), seastar::engine().cpu_id(), partitions);
-    return seastar::do_with(
+      tbuf.get(), engine().cpu_id(), partitions);
+    return do_with(
       std::move(tbuf),
       std::move(create_req),
       [this](auto& t, auto& create_req) {
@@ -54,7 +54,7 @@ wal_smash::create(std::vector<int32_t> partitions) {
       });
 }
 
-seastar::future<std::unique_ptr<wal_write_reply>>
+future<std::unique_ptr<wal_write_reply>>
 wal_smash::write_one(int32_t partition) {
     LOG_THROW_IF(partition_offsets_.empty(), "Skipped call to create()");
     wal_put_requestT put;
@@ -89,14 +89,14 @@ wal_smash::write_one(int32_t partition) {
     auto body = smf::native_table_as_buffer<wal_put_request>(put);
     auto tput = smf::fbs_typed_buf<wal_put_request>(std::move(body));
     auto v = wal_core_mapping::core_assignment(tput.get());
-    return seastar::do_with(
+    return do_with(
       std::move(tput), std::move(v), [this](auto& tput, auto& v) mutable {
           _stats.writes++;
           return _wal->local().append(std::move(*v.begin()));
       });
 }
 
-seastar::future<std::unique_ptr<wal_read_reply>>
+future<std::unique_ptr<wal_read_reply>>
 wal_smash::read_one(int32_t opartition) {
     LOG_THROW_IF(partition_offsets_.empty(), "Skipped call to create()");
 
@@ -104,7 +104,7 @@ wal_smash::read_one(int32_t opartition) {
                                 _stats.reads++, partition_offsets_.size())
                                                : opartition;
 
-    return seastar::with_semaphore(partition_offsets_[partition].lock, 1, [=] {
+    return with_semaphore(partition_offsets_[partition].lock, 1, [=] {
         wal_get_requestT get;
         get.topic = _opts.topic_id;
         get.ns = _opts.ns_id;
@@ -115,7 +115,7 @@ wal_smash::read_one(int32_t opartition) {
         auto body = smf::native_table_as_buffer<wal_get_request>(get);
         auto tbuf = smf::fbs_typed_buf<wal_get_request>(std::move(body));
         auto req = wal_core_mapping::core_assignment(tbuf.get());
-        return seastar::do_with(
+        return do_with(
           std::move(tbuf),
           std::move(req),
           [this](auto& tbuf, auto& req) mutable {
@@ -131,7 +131,7 @@ wal_smash::read_one(int32_t opartition) {
                     new_offset,
                     old_offset);
                   partition_offsets_[partition].offset = new_offset;
-                  return seastar::make_ready_future<
+                  return make_ready_future<
                     std::unique_ptr<wal_read_reply>>(std::move(r));
               });
           });

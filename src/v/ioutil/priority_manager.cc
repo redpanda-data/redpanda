@@ -10,13 +10,13 @@ priority_manager& priority_manager::get() {
 
 priority_manager::priority_manager()
   : commitlog_priority_(
-    seastar::engine().register_one_priority_class("commitlog", 1000))
+    engine().register_one_priority_class("commitlog", 1000))
   , compaction_priority_(
-      seastar::engine().register_one_priority_class("compaction", 1000))
+      engine().register_one_priority_class("compaction", 1000))
   , stream_read_priority_(
-      seastar::engine().register_one_priority_class("wal_read", 200))
+      engine().register_one_priority_class("wal_read", 200))
   , stream_write_priority_(
-      seastar::engine().register_one_priority_class("wal_write", 200))
+      engine().register_one_priority_class("wal_write", 200))
   , default_priority_(
-      seastar::engine().register_one_priority_class("defult_priority", 1)) {
+      engine().register_one_priority_class("defult_priority", 1)) {
 }

@@ -11,14 +11,14 @@
 
 int main(int args, char** argv, char** env) {
     std::cout.setf(std::ios::unitbuf);
-    seastar::app_template app;
-    seastar::distributed<write_ahead_log> w;
-    seastar::distributed<wal_smash> smash;
+    app_template app;
+    distributed<write_ahead_log> w;
+    distributed<wal_smash> smash;
 
     return app.run(args, argv, [&] {
-        smf::app_run_log_level(seastar::log_level::trace);
-        seastar::engine().at_exit([&] { return smash.stop(); });
-        seastar::engine().at_exit([&] { return w.stop(); });
+        smf::app_run_log_level(log_level::trace);
+        engine().at_exit([&] { return smash.stop(); });
+        engine().at_exit([&] { return w.stop(); });
 
         return w.start(wal_opts(".", std::chrono::milliseconds(5)))
           .then([&] { return w.invoke_on_all(&write_ahead_log::open); })
@@ -34,7 +34,7 @@ int main(int args, char** argv, char** env) {
               return smash.invoke_on_all([](auto& smasher) {
                   // copy
                   auto vec = smasher.core2partitions()
-                               .find(seastar::engine().cpu_id())
+                               .find(engine().cpu_id())
                                ->second;
                   return smasher.create(vec).then([](auto _) { /*ignore*/ });
               });
@@ -45,8 +45,8 @@ int main(int args, char** argv, char** env) {
                   const int32_t out_of_bounds_partition = 100;
                   wal_nstpidx idx(o.ns_id, o.topic_id, out_of_bounds_partition);
                   auto core = jump_consistent_hash(
-                    idx.id(), seastar::smp::count);
-                  return seastar::smp::submit_to(
+                    idx.id(), smp::count);
+                  return smp::submit_to(
                     core, [&smasher, out_of_bounds_partition] {
                         return smasher.write_one(out_of_bounds_partition)
                           .then([](auto reply) {
@@ -77,8 +77,8 @@ int main(int args, char** argv, char** env) {
                   const int32_t out_of_bounds_partition = 100;
                   wal_nstpidx idx(o.ns_id, o.topic_id, out_of_bounds_partition);
                   auto core = jump_consistent_hash(
-                    idx.id(), seastar::smp::count);
-                  return seastar::smp::submit_to(
+                    idx.id(), smp::count);
+                  return smp::submit_to(
                     core, [&smasher, out_of_bounds_partition] {
                         return smasher.read_one(out_of_bounds_partition)
                           .then([](auto reply) {

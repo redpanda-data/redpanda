@@ -1,5 +1,7 @@
 #pragma once
 
+#include "seastarx.h"
+
 #include <seastar/core/aligned_buffer.hh>
 #include <seastar/core/file.hh>
 #include <seastar/core/sstring.hh>
@@ -19,7 +21,7 @@ public:
 
         explicit chunk(const std::size_t alignment)
           : _buf(
-            seastar::allocate_aligned_buffer<char>(kChunkSize, alignment)) {
+            allocate_aligned_buffer<char>(kChunkSize, alignment)) {
         }
         inline bool is_full() const {
             return _pos == kChunkSize;
@@ -41,22 +43,22 @@ public:
         }
 
     private:
-        std::unique_ptr<char[], seastar::free_deleter> _buf;
+        std::unique_ptr<char[], free_deleter> _buf;
         std::size_t _pos{0};
     };
 
     SMF_DISALLOW_COPY_AND_ASSIGN(wal_segment);
     wal_segment(
-      seastar::sstring filename,
-      const seastar::io_priority_class& prio,
+      sstring filename,
+      const io_priority_class& prio,
       int64_t max_file_size,
       int32_t max_unflushed_bytes);
     ~wal_segment();
 
-    seastar::future<> open();
-    seastar::future<> close();
-    seastar::future<> flush();
-    seastar::future<> append(const char* buf, const std::size_t n);
+    future<> open();
+    future<> close();
+    future<> flush();
+    future<> append(const char* buf, const std::size_t n);
     inline int64_t current_size() const {
         auto sz = flushed_pages_ * kChunkSize;
         return std::accumulate(
@@ -65,8 +67,8 @@ public:
           });
     }
 
-    const seastar::sstring filename;
-    const seastar::io_priority_class& pclass;
+    const sstring filename;
+    const io_priority_class& pclass;
     const int64_t max_file_size;
     const int32_t max_unflushed_bytes;
 
@@ -75,16 +77,16 @@ private:
     /// assumes that we hold the sem/lock for flushing
     /// dequeues all the full pages, and copies the last one!
     ///
-    seastar::future<> do_flush();
+    future<> do_flush();
 
 private:
     bool _closed{false};
     bool is_fully_flushed_{true};
     int64_t bytes_pending_{0};
-    seastar::semaphore append_sem_{1};
+    semaphore append_sem_{1};
 
     std::deque<std::unique_ptr<chunk>> _chunks;
-    seastar::lw_shared_ptr<seastar::file> _f;
+    lw_shared_ptr<file> _f;
     // cache of _f->disk_write_dma_alignment()
     int32_t dma_write_alignment_{0};
     // \brief - only modify this variable under the semaphore

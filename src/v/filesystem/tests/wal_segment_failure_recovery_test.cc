@@ -23,9 +23,9 @@ class put {
 public:
     put() {
         _partition = _rand() % std::thread::hardware_concurrency();
-        seastar::sstring key
+        sstring key
           = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
-        seastar::sstring value
+        sstring value
           = "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy";
 
         auto ptr = std::make_unique<wal_put_requestT>();
@@ -73,21 +73,21 @@ private:
     std::unique_ptr<smf::fbs_typed_buf<wal_put_request>> _orig = nullptr;
 };
 
-seastar::future<> write_via_raw_file(seastar::sstring base_dir) {
+future<> write_via_raw_file(sstring base_dir) {
     static put payload_data{};
 
-    return seastar::open_file_dma(
+    return open_file_dma(
              base_dir + "/" + kTopicName,
-             seastar::open_flags::rw | seastar::open_flags::create
-               | seastar::open_flags::truncate)
-      .then([](seastar::file ff) mutable {
-          auto f = seastar::make_lw_shared<seastar::file>(std::move(ff));
-          auto sz = seastar::align_up<int64_t>(
+             open_flags::rw | open_flags::create
+               | open_flags::truncate)
+      .then([](file ff) mutable {
+          auto f = make_lw_shared<file>(std::move(ff));
+          auto sz = align_up<int64_t>(
             4096 * 2 /*2 pages*/, f->disk_write_dma_alignment());
           return f->allocate(0, sz).then([f] {
               // NOTE MUST: only write one page for this test
 
-              auto buf = seastar::allocate_aligned_buffer<char>(
+              auto buf = allocate_aligned_buffer<char>(
                 f->disk_write_dma_alignment(), f->disk_write_dma_alignment());
               std::size_t idx = 0;
               for (auto& w : payload_data.get_write_requests(0)) {
@@ -120,12 +120,12 @@ void add_opts(boost::program_options::options_description_easy_init o) {
 int main(int args, char** argv, char** env) {
     // set only to debug things
     std::cout.setf(std::ios::unitbuf);
-    seastar::app_template app;
+    app_template app;
     try {
         add_opts(app.add_options());
 
         return app.run(args, argv, [&] {
-            smf::app_run_log_level(seastar::log_level::trace);
+            smf::app_run_log_level(log_level::trace);
             auto& config = app.configuration();
             auto dir = config["write-ahead-log-dir"].as<std::string>();
             LOG_THROW_IF(dir.empty(), "Empty write-ahead-log-dir");
@@ -140,7 +140,7 @@ int main(int args, char** argv, char** env) {
                     0,
                     p.first,
                     0 /*term*/,
-                    seastar::lowres_system_clock::now(),
+                    lowres_system_clock::now(),
                     full_path_file);
               })
               .then([](auto sz) {
@@ -149,7 +149,7 @@ int main(int args, char** argv, char** env) {
                       != ((100 /*key=50bytes, value=50bytes*/ + 24 /*header*/) * 2),
                     "Has to have 2 payloads, bad size: {}",
                     sz);
-                  return seastar::make_ready_future<int>(0);
+                  return make_ready_future<int>(0);
               });
         });
     } catch (const std::exception& e) {
