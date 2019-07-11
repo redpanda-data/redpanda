@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"vectorized/net"
+	"vectorized/redpanda"
 	"vectorized/tuners/factory"
 	"vectorized/utils"
 
@@ -13,20 +15,26 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var fs = afero.OsFs{}
+
 func NewTuneCommand() *cobra.Command {
-	fs := afero.OsFs{}
 	tunerFactory := factory.NewTunersFactory(fs)
 	tunerParams := factory.TunerParams{}
+	var redpandaConfigFile string
 	command := &cobra.Command{
 		Use: "tune <list_of_elements_to_tune>",
 		Short: `Sets the OS parameters to tune system performance
-		available tuners: ` + fmt.Sprintf("%#q", tunerFactory.AvailableTuners()),
+		available tuners: all, ` + fmt.Sprintf("%#q", tunerFactory.AvailableTuners()),
 		Long: "In order to get more information about the tuner run: " +
 			"rpk tune <tuner_name> --help",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) < 1 {
 				return errors.New("requires the list of elements to tune")
 			}
+			if len(args) == 1 && args[0] == "all" {
+				return nil
+			}
+
 			for _, toTune := range strings.Split(args[0], ",") {
 				if !tunerFactory.IsTunerAvailable(toTune) {
 					return fmt.Errorf("invalid element to tune '%s' "+
@@ -37,7 +45,16 @@ func NewTuneCommand() *cobra.Command {
 			return nil
 		},
 		RunE: func(ccmd *cobra.Command, args []string) error {
-			return tune(strings.Split(args[0], ","), tunerFactory, &tunerParams)
+			if !tunerParamsEmpty(&tunerParams) && redpandaConfigFile != "" {
+				return errors.New("Use either tuner params or redpanda config file")
+			}
+			var tuners []string
+			if args[0] == "all" {
+				tuners = tunerFactory.AvailableTuners()
+			} else {
+				tuners = strings.Split(args[0], ",")
+			}
+			return tune(tuners, tunerFactory, &tunerParams, redpandaConfigFile)
 		},
 	}
 	command.Flags().StringVarP(&tunerParams.Mode,
@@ -51,12 +68,18 @@ func NewTuneCommand() *cobra.Command {
 		[]string{}, "Lists of devices to tune f.e. 'sda1'")
 	command.Flags().StringVarP(&tunerParams.Nic,
 		"nic", "n",
-		"eth0", "Network Interface Controller to tune")
+		"", "Network Interface Controller to tune")
 	command.Flags().StringSliceVarP(&tunerParams.Directories,
 		"dirs", "r",
 		[]string{}, "List of *data* directories. or places to store data."+
 			" i.e.: '/var/vectorized/redpanda/',"+
 			" usually your XFS filesystem on an NVMe SSD device")
+	command.Flags().BoolVar(&tunerParams.RebootAllowed,
+		"reboot-allowed", false, "If set will allow tuners to tune boot paramters "+
+			" and request system reboot")
+	command.Flags().StringVar(&redpandaConfigFile,
+		"redpanda-cfg", "", "If set, pointed redpanda config file will be used "+
+			"to populate tuner parameters")
 	command.AddCommand(newHelpCommand())
 	return command
 }
@@ -98,11 +121,33 @@ func tune(
 	elementsToTune []string,
 	factory factory.TunersFactory,
 	params *factory.TunerParams,
+	redpandaConfigFile string,
 ) error {
+
+	if tunerParamsEmpty(params) {
+		var configFile string
+		var err error
+		if redpandaConfigFile != "" {
+			configFile = redpandaConfigFile
+		} else {
+			configFile, err = redpanda.FindConfig(fs)
+			if err != nil {
+				return fmt.Errorf("Unable to find redpanda config file" +
+					" in default locations. Please provide file location " +
+					" manually with --redpanda-cfg or set tuner parameters")
+			}
+		}
+		log.Infof("Tuning using redpanda config file '%s'", configFile)
+		err = fillTunerParamsWithValuesFromConfig(params, configFile)
+		if err != nil {
+			return err
+		}
+	}
 	var rebootRequired = false
 	for _, tunerName := range elementsToTune {
 		tuner := factory.CreateTuner(tunerName, params)
 		if supported, reason := tuner.CheckIfSupported(); supported == true {
+			log.Debugf("Tuner paramters %+v", params)
 			log.Infof("Running '%s' tuner...", tunerName)
 			result := tuner.Tune()
 			if result.IsFailed() {
@@ -123,6 +168,35 @@ func tune(
 	return nil
 }
 
+func tunerParamsEmpty(params *factory.TunerParams) bool {
+	return len(params.Directories) == 0 &&
+		len(params.Disks) == 0 &&
+		params.Nic == ""
+}
+
+func fillTunerParamsWithValuesFromConfig(
+	params *factory.TunerParams, configFile string,
+) error {
+	config, err := redpanda.ReadConfigFromPath(fs, configFile)
+	if err != nil {
+		return err
+	}
+	nics, err := net.GetInterfacesByIp(config.Ip)
+	if err != nil {
+		return err
+	}
+	if len(nics) != 1 {
+		log.Warnf("Unable to determine NIC to tune using redpanda config file." +
+			" Please tune NIC manually")
+	} else {
+		params.Nic = nics[0]
+		log.Infof("Redpanda uses '%s' NIC", params.Nic)
+	}
+	log.Infof("Redpanda data directory '%s'", config.Directory)
+	params.Directories = []string{config.Directory}
+	return nil
+}
+
 const cpuTunerHelp = `
 This tuner optimizes CPU settings to achieve best performance 
 in I/O intensive workloads. It sets the GRUB kernel boot options and CPU governor.
@@ -132,13 +206,16 @@ After this tuner execution system CPUs will operate with maximum
 This tuner performs the following operations:
 
 - Disable Hyper Threading
-- Disable Intel P-States 
-- Disable Intel C-States
-- Disable Turbo Boost
 - Sets the ACPI-cpufreq governor to ‘performance’
 
-Important: System needs to be restarted after first run of this tuner. 
-Then the tuner need to be executed after each system reboot.`
+Additionaly if system reboot is allowed:
+- Disable Hyper Threading via Kernel boot parameter
+- Disable Intel P-States
+- Disable Intel C-States
+- Disable Turbo Boost
+
+Important: If '--reboot-allowed' flag is passed as an option, it is required 
+		   to reboot the system after first pass of this tuner`
 
 const netTunerHelp = `
 This tuner distributes the NIC IRQs and queues according to the specified mode. 

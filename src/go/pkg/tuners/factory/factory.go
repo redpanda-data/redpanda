@@ -15,11 +15,12 @@ import (
 )
 
 type TunerParams struct {
-	Mode        string
-	CpuMask     string
-	Disks       []string
-	Directories []string
-	Nic         string
+	Mode          string
+	CpuMask       string
+	RebootAllowed bool
+	Disks         []string
+	Directories   []string
+	Nic           string
 }
 
 type TunersFactory interface {
@@ -131,5 +132,6 @@ func (factory *tunersFactory) newCpuTuner(params *TunerParams) tuners.Tunable {
 		factory.cpuMasks,
 		factory.grub,
 		factory.fs,
+		params.RebootAllowed,
 	)
 }

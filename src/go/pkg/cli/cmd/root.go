@@ -61,7 +61,7 @@ func (root *CobraRoot) initConfig() {
 	}
 
 	viper.AutomaticEnv() // read in environment variables that match
-
+	viper.SetEnvPrefix("RP")
 	// If a config file is found, read it in.
 	if err := viper.ReadInConfig(); err == nil {
 		log.Println("Using config file:", viper.ConfigFileUsed())
