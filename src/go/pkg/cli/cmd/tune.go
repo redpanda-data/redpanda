@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"vectorized/cli"
 	"vectorized/net"
 	"vectorized/redpanda"
 	"vectorized/tuners/factory"
@@ -124,17 +125,9 @@ func tune(
 ) error {
 
 	if tunerParamsEmpty(params) {
-		var configFile string
-		var err error
-		if redpandaConfigFile != "" {
-			configFile = redpandaConfigFile
-		} else {
-			configFile, err = redpanda.FindConfig(fs)
-			if err != nil {
-				return fmt.Errorf("Unable to find redpanda config file" +
-					" in default locations. Please provide file location " +
-					" manually with --redpanda-cfg or set tuner parameters")
-			}
+		configFile, err := cli.GetOrFindConfig(fs, redpandaConfigFile)
+		if err != nil {
+			return err
 		}
 		log.Infof("Tuning using redpanda config file '%s'", configFile)
 		err = fillTunerParamsWithValuesFromConfig(fs, params, configFile)
