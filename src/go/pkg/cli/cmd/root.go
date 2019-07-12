@@ -27,7 +27,6 @@ var cobraRoot = &CobraRoot{
 
 func Execute() {
 	if err := cobraRoot.Execute(); err != nil {
-		log.Error(err)
 		os.Exit(1)
 	}
 }
