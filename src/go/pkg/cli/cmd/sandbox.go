@@ -13,14 +13,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var fs = afero.NewOsFs()
-
 type sbParams struct {
 	sbDir string
+	fs    afero.Fs
 }
 
-func NewSandboxCommand() *cobra.Command {
-	sbParams := sbParams{}
+func NewSandboxCommand(fs afero.Fs) *cobra.Command {
+	sbParams := sbParams{
+		fs: fs,
+	}
 	command := &cobra.Command{
 		Use:   "sandbox <action>",
 		Short: "Redpanda sandbox",
@@ -192,7 +193,7 @@ func getSandbox(sbParams *sbParams) (sandbox.Sandbox, error) {
 	if err != nil {
 		return nil, err
 	}
-	return sandbox.NewSandbox(fs, sbParams.sbDir, dockerClient), nil
+	return sandbox.NewSandbox(sbParams.fs, sbParams.sbDir, dockerClient), nil
 }
 
 func getDockerClient() (*client.Client, error) {

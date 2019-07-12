@@ -15,9 +15,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var fs = afero.OsFs{}
-
-func NewTuneCommand() *cobra.Command {
+func NewTuneCommand(fs afero.Fs) *cobra.Command {
 	tunerFactory := factory.NewTunersFactory(fs)
 	tunerParams := factory.TunerParams{}
 	var redpandaConfigFile string
@@ -54,7 +52,7 @@ func NewTuneCommand() *cobra.Command {
 			} else {
 				tuners = strings.Split(args[0], ",")
 			}
-			return tune(tuners, tunerFactory, &tunerParams, redpandaConfigFile)
+			return tune(fs, tuners, tunerFactory, &tunerParams, redpandaConfigFile)
 		},
 	}
 	command.Flags().StringVarP(&tunerParams.Mode,
@@ -118,6 +116,7 @@ func newHelpCommand() *cobra.Command {
 }
 
 func tune(
+	fs afero.Fs,
 	elementsToTune []string,
 	factory factory.TunersFactory,
 	params *factory.TunerParams,
@@ -138,7 +137,7 @@ func tune(
 			}
 		}
 		log.Infof("Tuning using redpanda config file '%s'", configFile)
-		err = fillTunerParamsWithValuesFromConfig(params, configFile)
+		err = fillTunerParamsWithValuesFromConfig(fs, params, configFile)
 		if err != nil {
 			return err
 		}
@@ -175,7 +174,7 @@ func tunerParamsEmpty(params *factory.TunerParams) bool {
 }
 
 func fillTunerParamsWithValuesFromConfig(
-	params *factory.TunerParams, configFile string,
+	fs afero.Fs, params *factory.TunerParams, configFile string,
 ) error {
 	config, err := redpanda.ReadConfigFromPath(fs, configFile)
 	if err != nil {

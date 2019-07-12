@@ -5,6 +5,7 @@ import (
 
 	"github.com/mitchellh/go-homedir"
 	log "github.com/sirupsen/logrus"
+	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -38,9 +39,9 @@ func init() {
 		"", "config file (default is $HOME/.rpk.yaml)")
 	cobraRoot.PersistentFlags().BoolVarP(&cobraRoot.verbose, "verbose",
 		"v", false, "enable verbose logging (default false)")
-
-	cobraRoot.AddCommand(NewTuneCommand())
-	cobraRoot.AddCommand(NewSandboxCommand())
+	fs := afero.NewOsFs()
+	cobraRoot.AddCommand(NewTuneCommand(fs))
+	cobraRoot.AddCommand(NewSandboxCommand(fs))
 }
 
 // initConfig reads in config file and ENV variables if set.
