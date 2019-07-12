@@ -1,4 +1,7 @@
 #include "hashing/xx.h"
+#include "seastarx.h"
+
+#include <seastar/core/sstring.hh>
 
 #include <smf/random.h>
 
