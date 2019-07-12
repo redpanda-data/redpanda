@@ -40,6 +40,7 @@ func init() {
 		"v", false, "enable verbose logging (default false)")
 
 	cobraRoot.AddCommand(NewTuneCommand())
+	cobraRoot.AddCommand(NewSandboxCommand())
 }
 
 // initConfig reads in config file and ENV variables if set.
