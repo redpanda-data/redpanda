@@ -27,7 +27,6 @@ var cobraRoot = &CobraRoot{
 
 func Execute() {
 	if err := cobraRoot.Execute(); err != nil {
-		log.Error(err)
 		os.Exit(1)
 	}
 }
@@ -42,6 +41,7 @@ func init() {
 	fs := afero.NewOsFs()
 	cobraRoot.AddCommand(NewTuneCommand(fs))
 	cobraRoot.AddCommand(NewSandboxCommand(fs))
+	cobraRoot.AddCommand(NewCheckCommand(fs))
 }
 
 // initConfig reads in config file and ENV variables if set.
