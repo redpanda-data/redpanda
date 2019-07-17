@@ -44,6 +44,7 @@ func executeCheck(fs afero.Fs, configFileFlag string) error {
 		checkers.NewMemoryChecker(),
 		checkers.NewDataDirWritableChecker(fs, config.Directory),
 		checkers.NewFreeDiskSpaceChecker(config.Directory),
+		checkers.NewFilesystemTypeChecker(fs, config.Directory),
 	}
 	table := tablewriter.NewWriter(os.Stdout)
 	table.SetHeader([]string{

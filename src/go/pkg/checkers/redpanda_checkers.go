@@ -55,3 +55,13 @@ func NewMemoryChecker() Checker {
 		system.GetMemAvailableMB,
 	)
 }
+
+func NewFilesystemTypeChecker(fs afero.Fs, path string) Checker {
+	return NewEqualityChecker(
+		"Data directory filesystem type",
+		false,
+		"xfs",
+		func() (interface{}, error) {
+			return system.GetFilesystemType(fs, path)
+		})
+}
