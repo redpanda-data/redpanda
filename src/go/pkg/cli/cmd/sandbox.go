@@ -7,12 +7,12 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"vectorized/cli/ui"
 	sandbox "vectorized/redpanda/sandbox"
 	"vectorized/redpanda/sandbox/docker"
 
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
-	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh/terminal"
@@ -281,11 +281,7 @@ func getDockerClient() (*client.Client, error) {
 }
 
 func printSandboxState(sbParams *sbParams, state *sandbox.State) {
-	table := tablewriter.NewWriter(os.Stdout)
-	fmt.Println()
-	fmt.Println(os.Executable())
-	fmt.Println("Redpanda sandbox cluster status")
-	fmt.Println()
+	table := ui.NewRpkTable(os.Stdout)
 	table.SetHeader([]string{
 		"Id",
 		"Container IP",
@@ -294,7 +290,6 @@ func printSandboxState(sbParams *sbParams, state *sandbox.State) {
 		"Container ID",
 		"Status",
 	})
-	table.SetRowLine(false)
 	for _, nodeState := range state.NodeStates {
 		table.Append([]string{
 			fmt.Sprint(nodeState.ID),
@@ -305,6 +300,9 @@ func printSandboxState(sbParams *sbParams, state *sandbox.State) {
 			nodeState.Status,
 		})
 	}
+	fmt.Println()
+	fmt.Println("Redpanda sandbox cluster status")
+	fmt.Println()
 	table.Render()
 }
 

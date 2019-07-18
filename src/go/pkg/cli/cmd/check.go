@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"vectorized/checkers"
 	"vectorized/cli"
+	"vectorized/cli/ui"
 	"vectorized/redpanda"
 
-	"github.com/olekukonko/tablewriter"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
@@ -42,7 +42,7 @@ func executeCheck(fs afero.Fs, configFileFlag string) error {
 	}
 	ioConfigFile := redpanda.GetIOConfigPath(filepath.Dir(configFile))
 	checkers := checkers.RedpandaCheckers(fs, ioConfigFile, config)
-	table := tablewriter.NewWriter(os.Stdout)
+	table := ui.NewRpkTable(os.Stdout)
 	table.SetHeader([]string{
 		"Condition",
 		"Required",
@@ -50,7 +50,6 @@ func executeCheck(fs afero.Fs, configFileFlag string) error {
 		"Passed",
 		"Critical",
 	})
-	table.SetAlignment(tablewriter.ALIGN_LEFT)
 	var isOk = true
 	for _, c := range checkers {
 		result := c.Check()
@@ -67,6 +66,9 @@ func executeCheck(fs afero.Fs, configFileFlag string) error {
 			fmt.Sprint(c.IsCritical()),
 		})
 	}
+	fmt.Println()
+	fmt.Println("System check results")
+	fmt.Println()
 	table.Render()
 
 	return nil
