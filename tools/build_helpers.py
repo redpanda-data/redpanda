@@ -57,12 +57,11 @@ def _configure_build(build_type, clang_opt):
     else:
         logger.info("Using clang compiler from path `%s`" % clang_opt)
         build_env = clang.clang_env_from_path(clang_opt)
-    cmd = tpl.substitute(
-        root=RP_ROOT,
-        build_root=RP_BUILD_ROOT,
-        args=' '.join(args),
-        cmake_type=build_type.capitalize(),
-        build_type=build_type)
+    cmd = tpl.substitute(root=RP_ROOT,
+                         build_root=RP_BUILD_ROOT,
+                         args=' '.join(args),
+                         cmake_type=build_type.capitalize(),
+                         build_type=build_type)
     shell.run_subprocess(cmd, build_env)
 
 
@@ -70,8 +69,9 @@ def _invoke_build(build_type):
     _check_build_type(build_type)
     tpl = Template(
         "cd $build_root/$build_type && ninja -C $build_root/$build_type")
-    cmd = tpl.substitute(
-        root=RP_ROOT, build_root=RP_BUILD_ROOT, build_type=build_type)
+    cmd = tpl.substitute(root=RP_ROOT,
+                         build_root=RP_BUILD_ROOT,
+                         build_type=build_type)
     shell.run_subprocess(cmd)
     _symlink_compile_commands(build_type)
 
@@ -80,12 +80,10 @@ def _invoke_tests(build_type):
     _check_build_type(build_type)
     rp_test_regex = "\".*_rp(unit|bench|int)$\""
     tpl = Template("cd $build_root/$build_type && ctest $verbose -R $re")
-    cmd = tpl.substitute(
-        build_root=RP_BUILD_ROOT,
-        re=rp_test_regex,
-        build_type=build_type,
-        verbose = "-V" if os.environ.get("CI") else ""
-    )
+    cmd = tpl.substitute(build_root=RP_BUILD_ROOT,
+                         re=rp_test_regex,
+                         build_type=build_type,
+                         verbose="-V" if os.environ.get("CI") else "")
     shell.run_subprocess(cmd)
 
 
@@ -123,8 +121,8 @@ def build_packages(build_type, packages):
             % (RP_BUILD_ROOT, res_type),
             "%s/go/bin/rpk" % RP_BUILD_ROOT,
             "%s/%s/v_deps_install/bin/hwloc-calc" % (RP_BUILD_ROOT, res_type),
-            "%s/%s/v_deps_install/bin/hwloc-distrib" % (RP_BUILD_ROOT,
-                                                        res_type),
+            "%s/%s/v_deps_install/bin/hwloc-distrib" %
+            (RP_BUILD_ROOT, res_type),
         ]
         dist_path = os.path.join(RP_BUILD_ROOT, res_type, "dist")
         configs = [os.path.join(RP_ROOT, "conf/redpanda.yaml")]
