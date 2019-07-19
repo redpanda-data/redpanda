@@ -1,4 +1,4 @@
-package system
+package filesystem
 
 import (
 	"io"

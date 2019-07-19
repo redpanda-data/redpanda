@@ -3,6 +3,7 @@ package checkers
 import (
 	"vectorized/redpanda"
 	"vectorized/system"
+	"vectorized/system/filesystem"
 
 	"github.com/spf13/afero"
 )
@@ -23,7 +24,7 @@ func NewDataDirWritableChecker(fs afero.Fs, path string) Checker {
 		true,
 		true,
 		func() (interface{}, error) {
-			return system.DirectoryIsWriteable(fs, path)
+			return filesystem.DirectoryIsWriteable(fs, path)
 		})
 }
 
@@ -38,7 +39,7 @@ func NewFreeDiskSpaceChecker(path string) Checker {
 			return ">= 10"
 		},
 		func() (float64, error) {
-			return system.GetFreeDiskSpaceGB(path)
+			return filesystem.GetFreeDiskSpaceGB(path)
 		})
 }
 
@@ -62,7 +63,7 @@ func NewFilesystemTypeChecker(fs afero.Fs, path string) Checker {
 		false,
 		"xfs",
 		func() (interface{}, error) {
-			return system.GetFilesystemType(fs, path)
+			return filesystem.GetFilesystemType(fs, path)
 		})
 }
 
