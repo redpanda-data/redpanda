@@ -45,7 +45,7 @@ func executeCheck(fs afero.Fs, configFileFlag string) error {
 		checkers.NewMemoryChecker(),
 		checkers.NewDataDirWritableChecker(fs, config.Directory),
 		checkers.NewFreeDiskSpaceChecker(config.Directory),
-		checkers.NewFilesystemTypeChecker(fs, config.Directory),
+		checkers.NewFilesystemTypeChecker(config.Directory),
 		checkers.NewIOConfigFileExistanceChecker(fs,
 			redpanda.GetIOConfigPath(filepath.Dir(configFile))),
 	}
