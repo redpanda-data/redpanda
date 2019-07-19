@@ -2,7 +2,11 @@ package cmd
 
 import (
 	"os"
+	"vectorized/cli"
 
+	"golang.org/x/crypto/ssh/terminal"
+
+	"github.com/fatih/color"
 	"github.com/mitchellh/go-homedir"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
@@ -32,6 +36,10 @@ func Execute() {
 }
 
 func init() {
+	if !terminal.IsTerminal(int(os.Stdout.Fd())) {
+		color.NoColor = true
+	}
+	log.SetFormatter(cli.NewRpkLogFormatter())
 	cobra.OnInitialize(cobraRoot.initConfig)
 
 	cobraRoot.PersistentFlags().StringVar(&cobraRoot.cfgFile, "config",
