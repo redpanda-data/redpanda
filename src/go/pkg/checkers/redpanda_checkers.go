@@ -65,3 +65,13 @@ func NewFilesystemTypeChecker(fs afero.Fs, path string) Checker {
 			return system.GetFilesystemType(fs, path)
 		})
 }
+
+func NewIOConfigFileExistanceChecker(
+	fs afero.Fs, filePath string,
+) Checker {
+	return NewFileExistanceChecker(
+		fs,
+		"I/O config file present",
+		false,
+		filePath)
+}
