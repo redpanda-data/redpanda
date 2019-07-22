@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"vectorized/checkers"
 	"vectorized/cli"
 	"vectorized/redpanda"
@@ -45,6 +46,8 @@ func executeCheck(fs afero.Fs, configFileFlag string) error {
 		checkers.NewDataDirWritableChecker(fs, config.Directory),
 		checkers.NewFreeDiskSpaceChecker(config.Directory),
 		checkers.NewFilesystemTypeChecker(fs, config.Directory),
+		checkers.NewIOConfigFileExistanceChecker(fs,
+			redpanda.GetIOConfigPath(filepath.Dir(configFile))),
 	}
 	table := tablewriter.NewWriter(os.Stdout)
 	table.SetHeader([]string{
