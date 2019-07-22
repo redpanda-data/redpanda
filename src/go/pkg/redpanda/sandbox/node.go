@@ -1,7 +1,9 @@
 package sandbox
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"path/filepath"
 	"strconv"
 	"time"
@@ -28,6 +30,7 @@ type Node interface {
 	Restart() error
 	Destroy() error
 	Wipe() error
+	Logs(numberOfLines int, follow bool, timestamps bool) (io.ReadCloser, error)
 	Configure(seedServers []*redpanda.SeedServer) error
 	Create(containerIP string, containerFactory docker.ContainerFactory) error
 	State() (*NodeState, error)
@@ -180,6 +183,27 @@ func (n *node) Wipe() error {
 
 func (n *node) State() (*NodeState, error) {
 	return n.getState()
+}
+
+func (n *node) Logs(
+	numberOfLines int, follow bool, timestamps bool,
+) (io.ReadCloser, error) {
+	containerID, err := n.getContainerID()
+	if err != nil {
+		return nil, err
+	}
+	var tail = "all"
+	if numberOfLines != 0 {
+		tail = fmt.Sprint(numberOfLines)
+	}
+	return n.dockerClient.ContainerLogs(context.Background(), containerID,
+		types.ContainerLogsOptions{
+			Timestamps: timestamps,
+			ShowStderr: true,
+			ShowStdout: true,
+			Follow:     follow,
+			Tail:       tail,
+		})
 }
 
 func (n *node) updateNodeConfig(

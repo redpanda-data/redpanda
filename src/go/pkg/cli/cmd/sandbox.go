@@ -2,15 +2,19 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	sandbox "vectorized/redpanda/sandbox"
 	"vectorized/redpanda/sandbox/docker"
 
 	"github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+	"golang.org/x/crypto/ssh/terminal"
 )
 
 type sbParams struct {
@@ -37,6 +41,7 @@ func NewSandboxCommand(fs afero.Fs) *cobra.Command {
 	command.AddCommand(newWipeCommand(&sbParams))
 	command.AddCommand(newDestroyCommand(&sbParams))
 	command.AddCommand(newStatusCommand(&sbParams))
+	command.AddCommand(newLogsCommands(&sbParams))
 	return command
 }
 
@@ -166,6 +171,69 @@ func newStatusCommand(sbParams *sbParams) *cobra.Command {
 		},
 	}
 	return command
+}
+
+func newLogsCommands(sbParams *sbParams) *cobra.Command {
+	var follow = false
+	var tailFlag string
+	command := newSandboxOrNodeCommand(sbParams,
+		&commandDetails{
+			use:   "logs",
+			short: "Gets logs from sandbox or node",
+			sandboxAction: func(sb sandbox.Sandbox) error {
+				numberOfLines, err := pareseTailFlag(tailFlag)
+				if err != nil {
+					return err
+				}
+				return printSandboxLogs(sb, numberOfLines, follow)
+			},
+			nodeAction: func(sb sandbox.Sandbox, nodeID int) error {
+				numberOfLines, err := pareseTailFlag(tailFlag)
+				if err != nil {
+					return err
+				}
+				return printNodeLogs(sb, nodeID, numberOfLines, follow)
+			},
+		})
+
+	command.Flags().StringVarP(&tailFlag, "tail", "t", "20",
+		"Number of lines to show from the end of the logs")
+	command.Flags().BoolVarP(&follow, "follow", "f", false,
+		"Follow log output")
+
+	return command
+}
+
+func pareseTailFlag(tailFlag string) (int, error) {
+	if tailFlag == "all" {
+		return 0, nil
+	}
+	return strconv.Atoi(tailFlag)
+}
+
+func printNodeLogs(
+	sb sandbox.Sandbox, nodeID int, numberOfLines int, follow bool,
+) error {
+	readCloser, err := sb.LogsNode(nodeID, numberOfLines, follow)
+	if err != nil {
+		return err
+	}
+	defer readCloser.Close()
+	_, err = stdcopy.StdCopy(os.Stdout, os.Stdout, readCloser)
+	return err
+}
+
+func printSandboxLogs(
+	sb sandbox.Sandbox, numberOfLines int, follow bool,
+) error {
+	outToTerminal := terminal.IsTerminal(int(os.Stdout.Fd()))
+	readCloser, err := sb.Logs(numberOfLines, follow, outToTerminal)
+	if err != nil {
+		return err
+	}
+	defer readCloser.Close()
+	_, err = io.Copy(os.Stdout, readCloser)
+	return err
 }
 
 func doWithSandbox(

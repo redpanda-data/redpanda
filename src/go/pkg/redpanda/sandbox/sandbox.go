@@ -1,11 +1,16 @@
 package sandbox
 
 import (
+	"bufio"
+	"container/heap"
 	"errors"
 	"fmt"
+	"io"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
+	"time"
 	"vectorized/redpanda"
 	"vectorized/redpanda/sandbox/docker"
 	"vectorized/redpanda/sandbox/docker/labels"
@@ -15,6 +20,7 @@ import (
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
+	"github.com/fatih/color"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 )
@@ -22,6 +28,17 @@ import (
 const (
 	redpandaNetwork = "redpanda-net"
 )
+
+// colors map that will be used to print node prefix
+var colorsMap = map[int]*color.Color{
+	0: color.New(color.FgBlue),
+	1: color.New(color.FgRed),
+	2: color.New(color.FgGreen),
+	3: color.New(color.FgYellow),
+	4: color.New(color.FgMagenta),
+	5: color.New(color.FgCyan),
+	6: color.New(color.FgWhite),
+}
 
 type Sandbox interface {
 	Create(numberOfNodes int, containerFactory docker.ContainerFactory) error
@@ -31,19 +48,22 @@ type Sandbox interface {
 	Destroy() error
 	WipeRestart() error
 	State() (*State, error)
+	Logs(numberOfEntries int, follow bool, colorOutput bool) (io.ReadCloser, error)
 	AddNode() error
 	RemoveNode(nodeID int) error
 	RestartNode(nodeID int) error
 	WipeRestartNode(nodeID int) error
 	StopNode(nodeID int) error
 	StartNode(nodeID int) error
+	LogsNode(nodeID int, numberOfEntries int, follow bool) (io.ReadCloser, error)
 }
 
 type sandbox struct {
 	Sandbox
-	fs           afero.Fs
-	dockerClient *client.Client
-	sandboxDir   string
+	fs              afero.Fs
+	dockerClient    *client.Client
+	sandboxDir      string
+	logEntryPattern *regexp.Regexp
 }
 
 func NewSandbox(
@@ -53,6 +73,8 @@ func NewSandbox(
 		fs:           fs,
 		sandboxDir:   sandboxDir,
 		dockerClient: dockerClient,
+		logEntryPattern: regexp.MustCompile(
+			"(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{9}Z) (.*)"),
 	}
 }
 
@@ -226,6 +248,126 @@ func (s *sandbox) WipeRestartNode(nodeID int) error {
 		return err
 	}
 	return s.StartNode(nodeID)
+}
+
+func (s *sandbox) LogsNode(
+	nodeID int, numberOfLines int, follow bool,
+) (io.ReadCloser, error) {
+	nodes, err := s.getNodeIDs()
+	if err != nil {
+		return nil, err
+	}
+	if !utils.ContainsInt(nodes, nodeID) {
+		return nil, fmt.Errorf("Sandbox does not contain node %d", nodeID)
+	}
+	node := s.getNode(nodeID)
+	return node.Logs(numberOfLines, follow, false)
+}
+
+func (s *sandbox) Logs(
+	numberOfLines int, follow bool, colorOutput bool,
+) (io.ReadCloser, error) {
+
+	nodeIDs, err := s.getNodeIDs()
+	if err != nil {
+		return nil, err
+	}
+	// single channel per node
+	lineChannels := make(map[int](chan logEntry))
+
+	for _, nodeID := range nodeIDs {
+		node := s.getNode(nodeID)
+		logs, err := node.Logs(numberOfLines, follow, true)
+		if err != nil {
+			return nil, err
+		}
+		lineChannels[nodeID] = make(chan logEntry, 1)
+		// fetch node logs lines in gorutines
+		go s.fetchNodeLogsToChannel(logs, nodeID, lineChannels[nodeID])
+	}
+
+	pipeReader, pipeWriter := io.Pipe()
+	go func() {
+		// use heap to sort k-sorted streams of logs
+		entriesHeap := &logEntriesHeap{}
+		heap.Init(entriesHeap)
+		var nodeID int
+		for len(lineChannels) != 0 {
+			if len(*entriesHeap) > 0 {
+				entry := heap.Pop(entriesHeap).(logEntry)
+				writeLogEntry(pipeWriter, entry, colorOutput)
+				nodeID = entry.nodeID
+				select {
+				case entry, hasMore := <-lineChannels[nodeID]:
+					if hasMore {
+						heap.Push(entriesHeap, entry)
+					} else {
+						delete(lineChannels, nodeID)
+					}
+				case <-time.After(20 * time.Millisecond):
+					continue
+				}
+			} else {
+				// it the heap is empty fill it with one entry from each node
+				for loopNodeID, linesChannel := range lineChannels {
+					select {
+					case entry, hasMore := <-linesChannel:
+						if hasMore {
+							heap.Push(entriesHeap, entry)
+						} else {
+							delete(lineChannels, loopNodeID)
+						}
+					case <-time.After(20 * time.Millisecond):
+						continue
+					}
+				}
+			}
+		}
+		pipeWriter.CloseWithError(io.EOF)
+	}()
+
+	return pipeReader, nil
+}
+
+func (s *sandbox) fetchNodeLogsToChannel(
+	logs io.Reader, nodeID int, channel chan logEntry,
+) {
+	scanner := bufio.NewScanner(logs)
+	// if the lines are there put releated entries to node channell
+	defer close(channel)
+	for scanner.Scan() {
+		//skip docker muxing header
+		line := scanner.Text()[8:]
+		matches := s.logEntryPattern.FindStringSubmatch(line)
+		if matches != nil {
+			ts, err := time.Parse(time.RFC3339Nano, matches[1])
+			if err != nil {
+				panic(err)
+			}
+			logEntry := logEntry{
+				nodeID:    nodeID,
+				line:      matches[2],
+				timestamp: ts,
+			}
+			channel <- logEntry
+		} else {
+			panic(errors.New("Unable to parse log timestamp"))
+		}
+	}
+}
+
+func writeLogEntry(writer io.Writer, entry logEntry, colorOutput bool) {
+	nodeID := entry.nodeID
+	nodePrefix := fmt.Sprintf("node-%d: ", nodeID)
+	if !colorOutput {
+		io.WriteString(writer, nodePrefix)
+	} else {
+		color := colorsMap[nodeID%len(colorsMap)]
+		color.Fprint(writer, nodePrefix)
+	}
+
+	io.WriteString(writer, entry.line)
+	writer.Write([]byte{'\n'})
 }
 
 func (s *sandbox) singleNodeOp(nodeID int, action func(Node) error) error {
