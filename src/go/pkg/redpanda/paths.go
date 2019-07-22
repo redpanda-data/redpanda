@@ -29,6 +29,10 @@ var configPathProviders = []pathProvider{
 	currentDirectoryParents,
 }
 
+func GetIOConfigPath(configFileDirectory string) string {
+	return filepath.Join(configFileDirectory, "io-config.yaml")
+}
+
 func FindConfig(fs afero.Fs) (string, error) {
 	log.Debugf("Looking for redpanda config file")
 
