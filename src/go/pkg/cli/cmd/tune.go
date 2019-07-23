@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 	"vectorized/cli"
-	"vectorized/net"
 	"vectorized/redpanda"
 	"vectorized/tuners/factory"
 	"vectorized/utils"
@@ -119,7 +118,7 @@ func newHelpCommand() *cobra.Command {
 func tune(
 	fs afero.Fs,
 	elementsToTune []string,
-	factory factory.TunersFactory,
+	tunersFactory factory.TunersFactory,
 	params *factory.TunerParams,
 	redpandaConfigFile string,
 ) error {
@@ -129,15 +128,19 @@ func tune(
 		if err != nil {
 			return err
 		}
+		config, err := redpanda.ReadConfigFromPath(fs, configFile)
+		if err != nil {
+			return err
+		}
 		log.Infof("Tuning using redpanda config file '%s'", configFile)
-		err = fillTunerParamsWithValuesFromConfig(fs, params, configFile)
+		err = factory.FillTunerParamsWithValuesFromConfig(params, config)
 		if err != nil {
 			return err
 		}
 	}
 	var rebootRequired = false
 	for _, tunerName := range elementsToTune {
-		tuner := factory.CreateTuner(tunerName, params)
+		tuner := tunersFactory.CreateTuner(tunerName, params)
 		if supported, reason := tuner.CheckIfSupported(); supported == true {
 			log.Debugf("Tuner paramters %+v", params)
 			log.Infof("Running '%s' tuner...", tunerName)
@@ -164,29 +167,6 @@ func tunerParamsEmpty(params *factory.TunerParams) bool {
 	return len(params.Directories) == 0 &&
 		len(params.Disks) == 0 &&
 		params.Nic == ""
-}
-
-func fillTunerParamsWithValuesFromConfig(
-	fs afero.Fs, params *factory.TunerParams, configFile string,
-) error {
-	config, err := redpanda.ReadConfigFromPath(fs, configFile)
-	if err != nil {
-		return err
-	}
-	nics, err := net.GetInterfacesByIp(config.Ip)
-	if err != nil {
-		return err
-	}
-	if len(nics) != 1 {
-		log.Warnf("Unable to determine NIC to tune using redpanda config file." +
-			" Please tune NIC manually")
-	} else {
-		params.Nic = nics[0]
-		log.Infof("Redpanda uses '%s' NIC", params.Nic)
-	}
-	log.Infof("Redpanda data directory '%s'", config.Directory)
-	params.Directories = []string{config.Directory}
-	return nil
 }
 
 const cpuTunerHelp = `

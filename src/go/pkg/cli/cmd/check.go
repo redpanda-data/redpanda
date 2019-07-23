@@ -40,15 +40,8 @@ func executeCheck(fs afero.Fs, configFileFlag string) error {
 	if err != nil {
 		return err
 	}
-	checkers := []checkers.Checker{
-		checkers.NewConfigChecker(config),
-		checkers.NewMemoryChecker(),
-		checkers.NewDataDirWritableChecker(fs, config.Directory),
-		checkers.NewFreeDiskSpaceChecker(config.Directory),
-		checkers.NewFilesystemTypeChecker(config.Directory),
-		checkers.NewIOConfigFileExistanceChecker(fs,
-			redpanda.GetIOConfigPath(filepath.Dir(configFile))),
-	}
+	ioConfigFile := redpanda.GetIOConfigPath(filepath.Dir(configFile))
+	checkers := checkers.RedpandaCheckers(fs, ioConfigFile, config)
 	table := tablewriter.NewWriter(os.Stdout)
 	table.SetHeader([]string{
 		"Condition",

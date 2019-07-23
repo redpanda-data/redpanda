@@ -2,7 +2,9 @@ package factory
 
 import (
 	"runtime"
+	"vectorized/net"
 	"vectorized/os"
+	"vectorized/redpanda"
 	"vectorized/tuners"
 	"vectorized/tuners/cpu"
 	"vectorized/tuners/disk"
@@ -11,6 +13,7 @@ import (
 	"vectorized/tuners/network"
 
 	"github.com/safchain/ethtool"
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 )
 
@@ -134,4 +137,24 @@ func (factory *tunersFactory) newCpuTuner(params *TunerParams) tuners.Tunable {
 		factory.fs,
 		params.RebootAllowed,
 	)
+}
+
+func FillTunerParamsWithValuesFromConfig(
+	params *TunerParams, config *redpanda.Config,
+) error {
+
+	nics, err := net.GetInterfacesByIp(config.Ip)
+	if err != nil {
+		return err
+	}
+	if len(nics) != 1 {
+		log.Warnf("Unable to determine NIC to tune using redpanda config file." +
+			" Please tune NIC manually")
+	} else {
+		params.Nic = nics[0]
+		log.Infof("Redpanda uses '%s' NIC", params.Nic)
+	}
+	log.Infof("Redpanda data directory '%s'", config.Directory)
+	params.Directories = []string{config.Directory}
+	return nil
 }

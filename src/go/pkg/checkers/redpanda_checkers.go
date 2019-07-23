@@ -67,12 +67,23 @@ func NewFilesystemTypeChecker(path string) Checker {
 		})
 }
 
-func NewIOConfigFileExistanceChecker(
-	fs afero.Fs, filePath string,
-) Checker {
+func NewIOConfigFileExistanceChecker(fs afero.Fs, filePath string) Checker {
 	return NewFileExistanceChecker(
 		fs,
 		"I/O config file present",
 		false,
 		filePath)
+}
+
+func RedpandaCheckers(
+	fs afero.Fs, ioConfigFile string, config *redpanda.Config,
+) []Checker {
+	return []Checker{
+		NewConfigChecker(config),
+		NewMemoryChecker(),
+		NewDataDirWritableChecker(fs, config.Directory),
+		NewFreeDiskSpaceChecker(config.Directory),
+		NewFilesystemTypeChecker(config.Directory),
+		NewIOConfigFileExistanceChecker(fs, ioConfigFile),
+	}
 }
