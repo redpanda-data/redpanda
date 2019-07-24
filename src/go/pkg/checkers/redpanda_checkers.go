@@ -75,6 +75,16 @@ func NewIOConfigFileExistanceChecker(fs afero.Fs, filePath string) Checker {
 		filePath)
 }
 
+func NewTransparentHugePagesChecker(fs afero.Fs) Checker {
+	return NewEqualityChecker(
+		"Transparent huge pages active",
+		false,
+		true,
+		func() (interface{}, error) {
+			return system.GetTransparentHugePagesActive(fs)
+		})
+}
+
 func RedpandaCheckers(
 	fs afero.Fs, ioConfigFile string, config *redpanda.Config,
 ) []Checker {
@@ -85,5 +95,6 @@ func RedpandaCheckers(
 		NewFreeDiskSpaceChecker(config.Directory),
 		NewFilesystemTypeChecker(config.Directory),
 		NewIOConfigFileExistanceChecker(fs, ioConfigFile),
+		NewTransparentHugePagesChecker(fs),
 	}
 }

@@ -8,12 +8,28 @@ import (
 	"strings"
 
 	"github.com/docker/go-units"
+	"github.com/spf13/afero"
 )
 
 type MemInfo struct {
 	MemTotal     int64
 	MemFree      int64
 	MemAvailable int64
+}
+
+func GetTransparentHugePagesActive(fs afero.Fs) (bool, error) {
+	options, err := ReadRuntineOptions(fs,
+		"/sys/kernel/mm/transparent_hugepage/enabled")
+
+	if err != nil {
+		return false, err
+	}
+	
+	if options.GetActive() != "never" {
+		return true, nil
+	}
+
+	return false, nil
 }
 
 func GetMemAvailableMB() (int, error) {
