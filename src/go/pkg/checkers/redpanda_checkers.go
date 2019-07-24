@@ -85,6 +85,18 @@ func NewTransparentHugePagesChecker(fs afero.Fs) Checker {
 		})
 }
 
+func NewNTPSyncChecker(fs afero.Fs) Checker {
+	return NewEqualityChecker(
+		"NTP Synced",
+		false,
+		true,
+		func() (interface{}, error) {
+			ntpQuery := system.NewNtpQuery(fs)
+			return ntpQuery.IsNtpSynced()
+		},
+	)
+}
+
 func RedpandaCheckers(
 	fs afero.Fs, ioConfigFile string, config *redpanda.Config,
 ) []Checker {
@@ -96,5 +108,6 @@ func RedpandaCheckers(
 		NewFilesystemTypeChecker(config.Directory),
 		NewIOConfigFileExistanceChecker(fs, ioConfigFile),
 		NewTransparentHugePagesChecker(fs),
+		NewNTPSyncChecker(fs),
 	}
 }
