@@ -60,6 +60,6 @@ func execIoTune(
 	if err := result.GetError(); err != nil {
 		return err
 	}
-	log.Infof("IO configuration file stored '%s'", ioConfigFile)
+	log.Infof("IO configuration file stored as '%s'", ioConfigFile)
 	return nil
 }

@@ -4,14 +4,13 @@ import (
 	"os"
 	"vectorized/cli"
 
-	"golang.org/x/crypto/ssh/terminal"
-
 	"github.com/fatih/color"
 	"github.com/mitchellh/go-homedir"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"golang.org/x/crypto/ssh/terminal"
 )
 
 type CobraRoot struct {
@@ -63,7 +62,7 @@ func (root *CobraRoot) initConfig() {
 		// Find home directory.
 		home, err := homedir.Dir()
 		if err != nil {
-			log.Println(err)
+			log.Error(err)
 			os.Exit(1)
 		}
 
@@ -76,7 +75,7 @@ func (root *CobraRoot) initConfig() {
 	viper.SetEnvPrefix("RP")
 	// If a config file is found, read it in.
 	if err := viper.ReadInConfig(); err == nil {
-		log.Println("Using config file:", viper.ConfigFileUsed())
+		log.Info("Using config file:", viper.ConfigFileUsed())
 	}
 
 	if root.verbose {

@@ -55,7 +55,7 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 				installDirectory,
 				prestart(fs, rpArgs, config, prestartCfg),
 				rpArgs)
-			log.Info("Starting redpanda broker...")
+			log.Info("Starting redpanda...")
 			return launcher.Start()
 		},
 	}
