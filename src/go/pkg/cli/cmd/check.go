@@ -18,7 +18,7 @@ func NewCheckCommand(fs afero.Fs) *cobra.Command {
 	var redpandaConfigFile string
 	command := &cobra.Command{
 		Use:          "check",
-		Short:        "Checks the system for running redpanda",
+		Short:        "Check if system meets redpanda requirements",
 		Long:         "",
 		SilenceUsage: true,
 		RunE: func(ccmd *cobra.Command, args []string) error {
@@ -26,8 +26,8 @@ func NewCheckCommand(fs afero.Fs) *cobra.Command {
 		},
 	}
 	command.Flags().StringVar(&redpandaConfigFile,
-		"redpanda-cfg", "", "Redpanda config file, if not set rpk will try "+
-			"to find the config file in default locations")
+		"redpanda-cfg", "", "Redpanda config file, if not set the file will be "+
+			"searched for in default locations")
 	return command
 }
 
