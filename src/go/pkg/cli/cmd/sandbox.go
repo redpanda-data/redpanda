@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	sandbox "vectorized/redpanda/sandbox"
 	"vectorized/redpanda/sandbox/docker"
 
@@ -47,7 +48,7 @@ func NewSandboxCommand(fs afero.Fs) *cobra.Command {
 
 type createParams struct {
 	numberOfNodes int
-	installDir    string
+	source        string
 }
 
 func newCreateCommand(sbParams *sbParams) *cobra.Command {
@@ -60,17 +61,21 @@ func newCreateCommand(sbParams *sbParams) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			factory := docker.NewGenericContainerFactroy(
-				dockerClient, createParams.installDir)
+			factory, err := getContainerFactoryForSource(sbParams.fs,
+				dockerClient,
+				createParams.source)
+			if err != nil {
+				return err
+			}
 			return doWithSandbox(sbParams, func(c sandbox.Sandbox) error {
 				return c.Create(createParams.numberOfNodes, factory)
 			})
 		},
 	}
-	command.PersistentFlags().StringVar(&createParams.installDir, "install-dir",
+	command.PersistentFlags().StringVar(&createParams.source, "source",
 		filepath.Join(os.Getenv("HOME"), "redpanda"),
-		"If provided sandox nodes will be based on the docker image created with"+
-			"the redpanda installation residing in specified directory")
+		"Source of sandbox redpanda binaries, either redpanda install "+
+			"directory or relocatable tarball package")
 	command.Flags().IntVarP(&createParams.numberOfNodes, "number-of-nodes", "n",
 		1, "Number of nodes in the sandbox sandbox")
 	return command
@@ -301,4 +306,18 @@ func printSandboxState(sbParams *sbParams, state *sandbox.State) {
 		})
 	}
 	table.Render()
+}
+
+func getContainerFactoryForSource(
+	fs afero.Fs, dockerClient *client.Client, source string,
+) (docker.ContainerFactory, error) {
+	if strings.HasSuffix(source, "tar.gz") ||
+		strings.HasSuffix(source, "tar") ||
+		strings.HasSuffix(source, "tar.bz") {
+		return docker.NewTarballContainerFactroy(fs, dockerClient, source), nil
+	} else if filepath.Ext(source) == "" {
+		return docker.NewGenericContainerFactroy(dockerClient, source), nil
+	} else {
+		return nil, fmt.Errorf("Source '%s' not supported", source)
+	}
 }
