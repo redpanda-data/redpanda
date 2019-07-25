@@ -7,7 +7,6 @@ umask 022
 
 console log
 
-expect stop
 respawn
 kill timeout 360
 normal exit 0 1 2
