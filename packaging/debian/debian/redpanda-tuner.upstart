@@ -1,0 +1,25 @@
+description	"Redpanda Tuner"
+
+start on runlevel [2345]
+stop on runlevel [!2345]
+
+umask 022
+
+console log
+
+kill timeout 360
+normal exit 0 1 2
+setuid root
+chdir /var/lib/redpanda
+env HOME=/var/lib/redpanda
+task
+script
+    . /etc/default/redpanda
+    for i in /etc/redpanda.d/*.conf; do
+        if [ "$i" = "/etc/redpanda.d/*.conf" ]; then
+            break
+        fi
+        . "$i"
+    done
+    exec /usr/bin/rpk tune all $CPUSET
+end script
