@@ -7,3 +7,5 @@ case "$1" in
         rm -rf /etc/systemd/system/redpanda.service.d/
         ;;
 esac
+
+#DEBHELPER#
