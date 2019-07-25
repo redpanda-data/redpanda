@@ -142,15 +142,6 @@ func (tuner *disksIRQsTuner) Tune() tuners.TuneResult {
 	nonNvmeDisksInfo := tuner.diskInfoByType[nonNvme]
 	nvmeDisksInfo := tuner.diskInfoByType[nvme]
 
-	log.WithFields(log.Fields{
-		"Mode":              tuner.mode,
-		"Disks":             tuner.devices,
-		"Nvme Disks":        tuner.diskInfoByType[nvme],
-		"non-Nvme Disks":    tuner.diskInfoByType[nonNvme],
-		"IRQs Mask":         tuner.irqCPUMask,
-		"Computations Mask": tuner.computationsCPUMask,
-	}).Info("Tuning Disks")
-
 	if len(nonNvmeDisksInfo.devices) > 0 {
 		log.Infof("Tuning non-Nvme disks %s", nonNvmeDisksInfo.devices)
 		if err := tuner.cpuMasks.DistributeIRQs(

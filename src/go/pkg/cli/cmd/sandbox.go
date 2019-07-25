@@ -7,12 +7,12 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"vectorized/cli/ui"
 	sandbox "vectorized/redpanda/sandbox"
 	"vectorized/redpanda/sandbox/docker"
 
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
-	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh/terminal"
@@ -29,7 +29,7 @@ func NewSandboxCommand(fs afero.Fs) *cobra.Command {
 	}
 	command := &cobra.Command{
 		Use:   "sandbox <action>",
-		Short: "Redpanda sandbox",
+		Short: "Manage redpanda sandbox",
 	}
 	command.PersistentFlags().StringVar(&sbParams.sbDir, "sandbox-dir",
 		filepath.Join(os.Getenv("HOME"), "redpanda/sandbox"),
@@ -55,7 +55,7 @@ func newCreateCommand(sbParams *sbParams) *cobra.Command {
 	createParams := createParams{}
 	command := &cobra.Command{
 		Use:   "create",
-		Short: "Creates redpanda sandbox sandbox",
+		Short: "Create a new sandbox or start existing one",
 		RunE: func(ccmd *cobra.Command, args []string) error {
 			dockerClient, err := getDockerClient()
 			if err != nil {
@@ -76,8 +76,8 @@ func newCreateCommand(sbParams *sbParams) *cobra.Command {
 		filepath.Join(os.Getenv("HOME"), "redpanda"),
 		"Source of sandbox redpanda binaries, either redpanda install "+
 			"directory or relocatable tarball package")
-	command.Flags().IntVarP(&createParams.numberOfNodes, "number-of-nodes", "n",
-		1, "Number of nodes in the sandbox sandbox")
+	command.Flags().IntVarP(&createParams.numberOfNodes, "nodes", "n",
+		1, "Number of sandbox nodes to create")
 	return command
 }
 
@@ -111,7 +111,7 @@ func newStartCommand(sbParams *sbParams) *cobra.Command {
 	return newSandboxOrNodeCommand(sbParams,
 		&commandDetails{
 			use:           "start",
-			short:         "Starts the sandbox or single node within the sandbox",
+			short:         "Start either a single node or whole sandbox",
 			sandboxAction: sandbox.Sandbox.Start,
 			nodeAction:    sandbox.Sandbox.StartNode,
 		})
@@ -121,7 +121,7 @@ func newStopCommand(sbParams *sbParams) *cobra.Command {
 	return newSandboxOrNodeCommand(sbParams,
 		&commandDetails{
 			use:           "stop",
-			short:         "Stops the sandbox or single node within the sandbox",
+			short:         "Stop either a single node or whole sandbox",
 			sandboxAction: sandbox.Sandbox.Stop,
 			nodeAction:    sandbox.Sandbox.StopNode,
 		})
@@ -131,7 +131,7 @@ func newRestartCommand(sbParams *sbParams) *cobra.Command {
 	return newSandboxOrNodeCommand(sbParams,
 		&commandDetails{
 			use:           "restart",
-			short:         "Restarts the sandbox or single node within the sandbox",
+			short:         "Restart either a single node or whole sandbox",
 			sandboxAction: sandbox.Sandbox.Restart,
 			nodeAction:    sandbox.Sandbox.RestartNode,
 		})
@@ -140,8 +140,9 @@ func newRestartCommand(sbParams *sbParams) *cobra.Command {
 func newWipeCommand(sbParams *sbParams) *cobra.Command {
 	return newSandboxOrNodeCommand(sbParams,
 		&commandDetails{
-			use:           "wipe-restart",
-			short:         "Wipes and restarts the sandbox or single node within the sandbox",
+			use: "wipe-restart",
+			short: "Remove data and restart either a single " +
+				"node or whole sandbox",
 			sandboxAction: sandbox.Sandbox.WipeRestart,
 			nodeAction:    sandbox.Sandbox.WipeRestartNode,
 		})
@@ -150,7 +151,7 @@ func newWipeCommand(sbParams *sbParams) *cobra.Command {
 func newDestroyCommand(sbParams *sbParams) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "destroy",
-		Short: "Destroys redpanda sandbox",
+		Short: "Destroy sandbox",
 		RunE: func(ccmd *cobra.Command, args []string) error {
 			return doWithSandbox(sbParams, sandbox.Sandbox.Destroy)
 		},
@@ -161,7 +162,7 @@ func newDestroyCommand(sbParams *sbParams) *cobra.Command {
 func newStatusCommand(sbParams *sbParams) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "status",
-		Short: "Returns sandbox status",
+		Short: "Display sandbox status",
 		RunE: func(ccmd *cobra.Command, args []string) error {
 			sandbox, err := getSandbox(sbParams)
 			if err != nil {
@@ -184,7 +185,7 @@ func newLogsCommands(sbParams *sbParams) *cobra.Command {
 	command := newSandboxOrNodeCommand(sbParams,
 		&commandDetails{
 			use:   "logs",
-			short: "Gets logs from sandbox or node",
+			short: "Fetch the logs of a sandbox or single node",
 			sandboxAction: func(sb sandbox.Sandbox) error {
 				numberOfLines, err := pareseTailFlag(tailFlag)
 				if err != nil {
@@ -281,11 +282,7 @@ func getDockerClient() (*client.Client, error) {
 }
 
 func printSandboxState(sbParams *sbParams, state *sandbox.State) {
-	table := tablewriter.NewWriter(os.Stdout)
-	fmt.Println()
-	fmt.Println(os.Executable())
-	fmt.Println("Redpanda sandbox cluster status")
-	fmt.Println()
+	table := ui.NewRpkTable(os.Stdout)
 	table.SetHeader([]string{
 		"Id",
 		"Container IP",
@@ -294,7 +291,6 @@ func printSandboxState(sbParams *sbParams, state *sandbox.State) {
 		"Container ID",
 		"Status",
 	})
-	table.SetRowLine(false)
 	for _, nodeState := range state.NodeStates {
 		table.Append([]string{
 			fmt.Sprint(nodeState.ID),
@@ -305,6 +301,9 @@ func printSandboxState(sbParams *sbParams, state *sandbox.State) {
 			nodeState.Status,
 		})
 	}
+	fmt.Println()
+	fmt.Println("Redpanda sandbox cluster status")
+	fmt.Println()
 	table.Render()
 }
 

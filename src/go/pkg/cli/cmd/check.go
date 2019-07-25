@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"vectorized/checkers"
 	"vectorized/cli"
+	"vectorized/cli/ui"
 	"vectorized/redpanda"
 
-	"github.com/olekukonko/tablewriter"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
@@ -18,7 +18,7 @@ func NewCheckCommand(fs afero.Fs) *cobra.Command {
 	var redpandaConfigFile string
 	command := &cobra.Command{
 		Use:          "check",
-		Short:        "Checks the system for running redpanda",
+		Short:        "Check if system meets redpanda requirements",
 		Long:         "",
 		SilenceUsage: true,
 		RunE: func(ccmd *cobra.Command, args []string) error {
@@ -26,8 +26,8 @@ func NewCheckCommand(fs afero.Fs) *cobra.Command {
 		},
 	}
 	command.Flags().StringVar(&redpandaConfigFile,
-		"redpanda-cfg", "", "Redpanda config file, if not set rpk will try "+
-			"to find the config file in default locations")
+		"redpanda-cfg", "", "Redpanda config file, if not set the file will be "+
+			"searched for in default locations")
 	return command
 }
 
@@ -42,7 +42,7 @@ func executeCheck(fs afero.Fs, configFileFlag string) error {
 	}
 	ioConfigFile := redpanda.GetIOConfigPath(filepath.Dir(configFile))
 	checkers := checkers.RedpandaCheckers(fs, ioConfigFile, config)
-	table := tablewriter.NewWriter(os.Stdout)
+	table := ui.NewRpkTable(os.Stdout)
 	table.SetHeader([]string{
 		"Condition",
 		"Required",
@@ -50,7 +50,6 @@ func executeCheck(fs afero.Fs, configFileFlag string) error {
 		"Passed",
 		"Critical",
 	})
-	table.SetAlignment(tablewriter.ALIGN_LEFT)
 	var isOk = true
 	for _, c := range checkers {
 		result := c.Check()
@@ -67,6 +66,9 @@ func executeCheck(fs afero.Fs, configFileFlag string) error {
 			fmt.Sprint(c.IsCritical()),
 		})
 	}
+	fmt.Println()
+	fmt.Println("System check results")
+	fmt.Println()
 	table.Render()
 
 	return nil

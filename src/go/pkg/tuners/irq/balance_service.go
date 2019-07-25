@@ -74,7 +74,7 @@ func (balanceService *balanceService) BanIRQsAndRestart(
 			return err
 		}
 	} else {
-		log.Infof("File '%s' already exists - not overwriting.", originalFile)
+		log.Debugf("File '%s' already exists - not overwriting.", originalFile)
 	}
 
 	configLines, err := utils.ReadFileLines(balanceService.fs, configFile)
@@ -117,10 +117,10 @@ func (balanceService *balanceService) BanIRQsAndRestart(
 		return err
 	}
 	if systemd {
-		log.Info("Restarting 'irqbalance' via systemctl...")
+		log.Debug("Restarting 'irqbalance' via systemctl...")
 		_, err = balanceService.proc.RunWithSystemLdPath("systemctl", "try-restart", "irqbalance")
 	} else {
-		log.Info("Restarting 'irqbalance' directly (init.d)...")
+		log.Debug("Restarting 'irqbalance' directly (init.d)...")
 		_, err = balanceService.proc.RunWithSystemLdPath("/etc/init.d/irqbalance", "restart")
 	}
 	if err != nil {
