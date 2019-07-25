@@ -1,7 +1,9 @@
 [Unit]
 Description=Redpanda Queue
-After=local-fs.target network-online.target
+After=local-fs.target network-online.target redpanda-tuner.service
 Requires=local-fs.target network-online.target
+Wants=redpanda-tuner.service
+
 
 [Service]
 PermissionsStartOnly=true

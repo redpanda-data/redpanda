@@ -170,7 +170,13 @@ def _is_template(source, files):
 
 
 def _render_service_template(dest_path, ctx):
-    templ_path = _in_root('packaging/common/systemd/redpanda.service.mustache')
+    redpanda_srvc = _in_root(
+        'packaging/common/systemd/redpanda.service.mustache')
+    tuner_srvc = _in_root(
+        'packaging/common/systemd/redpanda-tuner.service.mustache')
     templates.render_to_file(
-        templ_path, os.path.join(dest_path, "systemd", "redpanda.service"),
+        redpanda_srvc, os.path.join(dest_path, "systemd", "redpanda.service"),
         ctx)
+    templates.render_to_file(
+        tuner_srvc, os.path.join(dest_path, "systemd",
+                                 "redpanda-tuner.service"), ctx)
