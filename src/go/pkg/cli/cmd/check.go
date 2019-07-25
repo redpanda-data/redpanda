@@ -9,6 +9,7 @@ import (
 	"vectorized/cli/ui"
 	"vectorized/redpanda"
 
+	"github.com/fatih/color"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
@@ -47,8 +48,8 @@ func executeCheck(fs afero.Fs, configFileFlag string) error {
 		"Condition",
 		"Required",
 		"Current",
-		"Passed",
 		"Severity",
+		"Passed",
 	})
 	var isOk = true
 	for _, c := range checkersList {
@@ -62,8 +63,8 @@ func executeCheck(fs afero.Fs, configFileFlag string) error {
 			c.GetDesc(),
 			fmt.Sprint(c.GetRequiredAsString()),
 			result.Current,
-			fmt.Sprint(result.IsOk),
 			fmt.Sprint(checkers.SeverityToString(c.GetSeverity())),
+			fmt.Sprint(printResult(c.GetSeverity(), result.IsOk)),
 		})
 	}
 	fmt.Println()
@@ -72,4 +73,18 @@ func executeCheck(fs afero.Fs, configFileFlag string) error {
 	table.Render()
 
 	return nil
+}
+
+func printResult(sev checkers.Severity, isOk bool) string {
+	if isOk {
+		return color.GreenString("%v", isOk)
+	}
+	switch sev {
+	case checkers.Fatal:
+		return color.RedString("%v", isOk)
+	case checkers.Warning:
+		return color.YellowString("%v", isOk)
+	}
+
+	return fmt.Sprint(isOk)
 }
