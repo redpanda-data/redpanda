@@ -28,5 +28,5 @@ script
         fi
         . "$i"
     done
-    exec /usr/bin/redpanda $REDPANDA_ARGS $CPUSET $MEM
+    exec /usr/bin/rpk start $START_ARGS $CPUSET
 end script

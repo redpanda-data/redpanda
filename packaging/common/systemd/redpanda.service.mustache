@@ -17,7 +17,7 @@ EnvironmentFile=/etc/default/redpanda
 EnvironmentFile=/etc/sysconfig/redpanda 
 {{/redhat}}
 EnvironmentFile=/etc/redpanda.d/*.conf
-ExecStart=/usr/bin/redpanda $REDPANDA_ARGS $IO $CPUSET
+ExecStart=/usr/bin/rpk start $START_ARGS $CPUSET
 TimeoutStartSec=900
 KillMode=process
 Restart=on-abnormal
