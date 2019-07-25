@@ -12,7 +12,7 @@ func Test_floatChecker_Check(t *testing.T) {
 		renderRequired func() string
 		getCurrent     func() (float64, error)
 		desc           string
-		isCritical     bool
+		severity       Severity
 	}
 	tests := []struct {
 		name   string
@@ -26,7 +26,7 @@ func Test_floatChecker_Check(t *testing.T) {
 				renderRequired: func() string { return ">= 0.0" },
 				desc:           "Some desc",
 				getCurrent:     func() (float64, error) { return 0.0, nil },
-				isCritical:     false,
+				severity:       Warning,
 			},
 			want: &CheckResult{
 				IsOk:    true,
@@ -41,7 +41,7 @@ func Test_floatChecker_Check(t *testing.T) {
 				renderRequired: func() string { return "0.1" },
 				desc:           "Some desc",
 				getCurrent:     func() (float64, error) { return 1.1, nil },
-				isCritical:     false,
+				severity:       Warning,
 			},
 			want: &CheckResult{
 				IsOk:    false,
@@ -55,7 +55,7 @@ func Test_floatChecker_Check(t *testing.T) {
 				check:          func(c float64) bool { return c < 10.0 },
 				renderRequired: func() string { return "< 10" },
 				getCurrent:     func() (float64, error) { return 0.0, errors.New("err") },
-				isCritical:     false,
+				severity:       Warning,
 			},
 			want: &CheckResult{
 				IsOk: false,
@@ -70,7 +70,7 @@ func Test_floatChecker_Check(t *testing.T) {
 				renderRequired: tt.fields.renderRequired,
 				getCurrent:     tt.fields.getCurrent,
 				desc:           tt.fields.desc,
-				isCritical:     tt.fields.isCritical,
+				severity:       tt.fields.severity,
 			}
 			if got := v.Check(); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("floatChecker.Check() = %v, want %v", got, tt.want)

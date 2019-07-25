@@ -4,7 +4,7 @@ import "strconv"
 
 func NewIntChecker(
 	desc string,
-	isCritical bool,
+	severity Severity,
 	check func(int) bool,
 	renderRequired func() string,
 	getCurrent func() (int, error),
@@ -14,7 +14,7 @@ func NewIntChecker(
 		check:          check,
 		renderRequired: renderRequired,
 		getCurrent:     getCurrent,
-		isCritical:     isCritical,
+		severity:       severity,
 	}
 }
 
@@ -24,15 +24,15 @@ type intChecker struct {
 	check          func(int) bool
 	renderRequired func() string
 	getCurrent     func() (int, error)
-	isCritical     bool
+	severity       Severity
 }
 
 func (c *intChecker) GetDesc() string {
 	return c.desc
 }
 
-func (c *intChecker) IsCritical() bool {
-	return c.isCritical
+func (c *intChecker) GetSeverity() Severity {
+	return c.severity
 }
 
 func (c *intChecker) GetRequiredAsString() string {

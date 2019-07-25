@@ -143,8 +143,8 @@ func tuneAll(fs afero.Fs, cpuSet string, config *redpanda.Config) error {
 }
 
 func check(fs afero.Fs, ioConfigFile string, config *redpanda.Config) error {
-	checkers := checkers.RedpandaCheckers(fs, ioConfigFile, config)
-	for _, checker := range checkers {
+	checkersList := checkers.RedpandaCheckers(fs, ioConfigFile, config)
+	for _, checker := range checkersList {
 		result := checker.Check()
 		if result.Err != nil {
 			return result.Err
@@ -152,7 +152,7 @@ func check(fs afero.Fs, ioConfigFile string, config *redpanda.Config) error {
 		if !result.IsOk {
 			msg := fmt.Sprintf("System check '%s' failed. Required: %v, Current %v",
 				checker.GetDesc(), checker.GetRequiredAsString(), result.Current)
-			if checker.IsCritical() {
+			if checker.GetSeverity() == checkers.Fatal {
 				return fmt.Errorf(msg)
 			}
 			log.Warn(msg)

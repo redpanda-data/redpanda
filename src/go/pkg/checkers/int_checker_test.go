@@ -12,7 +12,7 @@ func Test_intChecker_Check(t *testing.T) {
 		renderRequired func() string
 		getCurrent     func() (int, error)
 		desc           string
-		isCritical     bool
+		severity       Severity
 	}
 	tests := []struct {
 		name   string
@@ -26,7 +26,7 @@ func Test_intChecker_Check(t *testing.T) {
 				renderRequired: func() string { return "0" },
 				desc:           "Some desc",
 				getCurrent:     func() (int, error) { return 0, nil },
-				isCritical:     false,
+				severity:       Warning,
 			},
 			want: &CheckResult{
 				IsOk:    true,
@@ -41,7 +41,7 @@ func Test_intChecker_Check(t *testing.T) {
 				renderRequired: func() string { return "0" },
 				desc:           "Some desc",
 				getCurrent:     func() (int, error) { return 1, nil },
-				isCritical:     false,
+				severity:       Warning,
 			},
 			want: &CheckResult{
 				IsOk:    false,
@@ -55,7 +55,7 @@ func Test_intChecker_Check(t *testing.T) {
 				check:          func(c int) bool { return c == 0 },
 				renderRequired: func() string { return "0" },
 				getCurrent:     func() (int, error) { return 0, errors.New("err") },
-				isCritical:     false,
+				severity:       Warning,
 			},
 			want: &CheckResult{
 				IsOk: false,
@@ -70,7 +70,7 @@ func Test_intChecker_Check(t *testing.T) {
 				renderRequired: tt.fields.renderRequired,
 				getCurrent:     tt.fields.getCurrent,
 				desc:           tt.fields.desc,
-				isCritical:     tt.fields.isCritical,
+				severity:       tt.fields.severity,
 			}
 			if got := v.Check(); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("intChecker.Check() = %v, want %v", got, tt.want)

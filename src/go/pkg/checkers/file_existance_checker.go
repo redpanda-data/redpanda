@@ -7,11 +7,11 @@ import (
 )
 
 func NewFileExistanceChecker(
-	fs afero.Fs, desc string, isCritical bool, filePath string,
+	fs afero.Fs, desc string, severity Severity, filePath string,
 ) Checker {
 	return NewEqualityChecker(
 		desc,
-		isCritical,
+		severity,
 		true,
 		func() (interface{}, error) {
 			return utils.FileExists(fs, filePath), nil

@@ -11,7 +11,7 @@ import (
 func NewConfigChecker(config *redpanda.Config) Checker {
 	return NewEqualityChecker(
 		"Config file valid",
-		true,
+		Fatal,
 		true,
 		func() (interface{}, error) {
 			return redpanda.CheckConfig(config), nil
@@ -21,7 +21,7 @@ func NewConfigChecker(config *redpanda.Config) Checker {
 func NewDataDirWritableChecker(fs afero.Fs, path string) Checker {
 	return NewEqualityChecker(
 		"Data directory is writable",
-		true,
+		Fatal,
 		true,
 		func() (interface{}, error) {
 			return filesystem.DirectoryIsWriteable(fs, path)
@@ -31,7 +31,7 @@ func NewDataDirWritableChecker(fs afero.Fs, path string) Checker {
 func NewFreeDiskSpaceChecker(path string) Checker {
 	return NewFloatChecker(
 		"Data partition free space [GB]",
-		false,
+		Warning,
 		func(current float64) bool {
 			return current >= 10.0
 		},
@@ -46,7 +46,7 @@ func NewFreeDiskSpaceChecker(path string) Checker {
 func NewMemoryChecker() Checker {
 	return NewIntChecker(
 		"Free memory [MB]",
-		true,
+		Warning,
 		func(current int) bool {
 			return current >= 2048
 		},
@@ -60,7 +60,7 @@ func NewMemoryChecker() Checker {
 func NewFilesystemTypeChecker(path string) Checker {
 	return NewEqualityChecker(
 		"Data directory filesystem type",
-		false,
+		Warning,
 		filesystem.Xfs,
 		func() (interface{}, error) {
 			return filesystem.GetFilesystemType(path)
@@ -71,14 +71,14 @@ func NewIOConfigFileExistanceChecker(fs afero.Fs, filePath string) Checker {
 	return NewFileExistanceChecker(
 		fs,
 		"I/O config file present",
-		false,
+		Warning,
 		filePath)
 }
 
 func NewTransparentHugePagesChecker(fs afero.Fs) Checker {
 	return NewEqualityChecker(
 		"Transparent huge pages active",
-		false,
+		Warning,
 		true,
 		func() (interface{}, error) {
 			return system.GetTransparentHugePagesActive(fs)
@@ -88,7 +88,7 @@ func NewTransparentHugePagesChecker(fs afero.Fs) Checker {
 func NewNTPSyncChecker(fs afero.Fs) Checker {
 	return NewEqualityChecker(
 		"NTP Synced",
-		false,
+		Warning,
 		true,
 		func() (interface{}, error) {
 			ntpQuery := system.NewNtpQuery(fs)

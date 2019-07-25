@@ -4,7 +4,7 @@ import "fmt"
 
 func NewFloatChecker(
 	desc string,
-	isCritical bool,
+	severity Severity,
 	check func(float64) bool,
 	renderRequired func() string,
 	getCurrent func() (float64, error),
@@ -14,7 +14,7 @@ func NewFloatChecker(
 		check:          check,
 		renderRequired: renderRequired,
 		getCurrent:     getCurrent,
-		isCritical:     isCritical,
+		severity:       severity,
 	}
 }
 
@@ -24,15 +24,15 @@ type floatChecker struct {
 	check          func(float64) bool
 	renderRequired func() string
 	getCurrent     func() (float64, error)
-	isCritical     bool
+	severity       Severity
 }
 
 func (c *floatChecker) GetDesc() string {
 	return c.desc
 }
 
-func (c *floatChecker) IsCritical() bool {
-	return c.isCritical
+func (c *floatChecker) GetSeverity() Severity {
+	return c.severity
 }
 
 func (c *floatChecker) GetRequiredAsString() string {

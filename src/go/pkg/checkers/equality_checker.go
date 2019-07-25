@@ -10,7 +10,7 @@ import (
 // reflect.DeepEqual to comparte the values
 func NewEqualityChecker(
 	desc string,
-	critical bool,
+	severity Severity,
 	required interface{},
 	getCurrent func() (interface{}, error),
 ) Checker {
@@ -18,14 +18,14 @@ func NewEqualityChecker(
 		desc:       desc,
 		required:   required,
 		getCurrent: getCurrent,
-		isCritical: critical,
+		severity:   severity,
 	}
 }
 
 type equalityChecker struct {
 	Checker
 	desc       string
-	isCritical bool
+	severity   Severity
 	required   interface{}
 	getCurrent func() (interface{}, error)
 }
@@ -34,8 +34,8 @@ func (c *equalityChecker) GetDesc() string {
 	return c.desc
 }
 
-func (c *equalityChecker) IsCritical() bool {
-	return c.isCritical
+func (c *equalityChecker) GetSeverity() Severity {
+	return c.severity
 }
 
 func (c *equalityChecker) GetRequiredAsString() string {

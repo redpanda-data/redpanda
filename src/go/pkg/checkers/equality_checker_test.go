@@ -10,7 +10,7 @@ func Test_equalityChecker_Check(t *testing.T) {
 	type fields struct {
 		getCurrent func() (interface{}, error)
 		desc       string
-		isCritical bool
+		severity   Severity
 		required   interface{}
 	}
 	tests := []struct {
@@ -24,7 +24,7 @@ func Test_equalityChecker_Check(t *testing.T) {
 				desc:       "Some desc",
 				getCurrent: func() (interface{}, error) { return "STR_1", nil },
 				required:   "STR_1",
-				isCritical: false,
+				severity:   Warning,
 			},
 			want: &CheckResult{
 				IsOk:    true,
@@ -38,7 +38,7 @@ func Test_equalityChecker_Check(t *testing.T) {
 				desc:       "Some desc",
 				getCurrent: func() (interface{}, error) { return true, nil },
 				required:   true,
-				isCritical: false,
+				severity:   Warning,
 			},
 			want: &CheckResult{
 				IsOk:    true,
@@ -52,7 +52,7 @@ func Test_equalityChecker_Check(t *testing.T) {
 				desc:       "Some desc",
 				getCurrent: func() (interface{}, error) { return "STR_1", nil },
 				required:   "STR_2",
-				isCritical: false,
+				severity:   Warning,
 			},
 			want: &CheckResult{
 				IsOk:    false,
@@ -65,7 +65,7 @@ func Test_equalityChecker_Check(t *testing.T) {
 			fields: fields{
 				getCurrent: func() (interface{}, error) { return "", errors.New("e") },
 				required:   "STR_2",
-				isCritical: false,
+				severity:   Warning,
 			},
 			want: &CheckResult{
 				IsOk: false,
@@ -77,7 +77,7 @@ func Test_equalityChecker_Check(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			v := NewEqualityChecker(
 				tt.fields.desc,
-				tt.fields.isCritical,
+				tt.fields.severity,
 				tt.fields.required,
 				tt.fields.getCurrent,
 			)
