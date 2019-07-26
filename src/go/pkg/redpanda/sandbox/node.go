@@ -212,7 +212,7 @@ func (n *node) updateNodeConfig(
 	configPath := n.configPath()
 	log.Debugf("Updating node config in %s", configPath)
 	config := redpanda.Config{
-		Directory:   "/rp/data",
+		Directory:   "/opt/redpanda/data",
 		Port:        port,
 		Ip:          address,
 		Id:          id,

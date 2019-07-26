@@ -30,6 +30,7 @@ const dockerFile = `
 FROM fedora:30
 RUN mkdir -p /opt/redpanda
 ADD ./redpanda.tar.gz /opt/redpanda
+RUN rm -rf /opt/redpanda/conf
 
 VOLUME /opt/redpanda/data /opt/redpanda/conf
 CMD ["/opt/redpanda/bin/redpanda", "--redpanda-cfg", "/opt/redpanda/conf/redpanda.yaml"]
@@ -173,13 +174,13 @@ func (f *tarballContainerFactory) CreateNodeContainer(
 		Mounts: []mount.Mount{
 			mount.Mount{
 				Type:     mount.TypeBind,
-				Target:   "/rp/data",
+				Target:   "/opt/redpanda/data",
 				Source:   cfg.DataDir,
 				ReadOnly: false,
 			},
 			mount.Mount{
 				Type:     mount.TypeBind,
-				Target:   "/rp/conf",
+				Target:   "/opt/redpanda/conf",
 				Source:   cfg.ConfDir,
 				ReadOnly: true,
 			},

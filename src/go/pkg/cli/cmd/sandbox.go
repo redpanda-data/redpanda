@@ -72,10 +72,9 @@ func newCreateCommand(sbParams *sbParams) *cobra.Command {
 			})
 		},
 	}
-	command.PersistentFlags().StringVar(&createParams.source, "source",
+	command.Flags().StringVar(&createParams.source, "source",
 		filepath.Join(os.Getenv("HOME"), "redpanda"),
-		"Source of sandbox redpanda binaries, either redpanda install "+
-			"directory or relocatable tarball package")
+		"Source of sandbox redpanda binaries - path to relocatable tarball package")
 	command.Flags().IntVarP(&createParams.numberOfNodes, "nodes", "n",
 		1, "Number of sandbox nodes to create")
 	return command
@@ -314,8 +313,6 @@ func getContainerFactoryForSource(
 		strings.HasSuffix(source, "tar") ||
 		strings.HasSuffix(source, "tar.bz") {
 		return docker.NewTarballContainerFactroy(fs, dockerClient, source), nil
-	} else if filepath.Ext(source) == "" {
-		return docker.NewGenericContainerFactroy(dockerClient, source), nil
 	} else {
 		return nil, fmt.Errorf("Source '%s' not supported", source)
 	}
