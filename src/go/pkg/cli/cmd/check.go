@@ -63,7 +63,7 @@ func executeCheck(fs afero.Fs, configFileFlag string) error {
 			c.GetDesc(),
 			fmt.Sprint(c.GetRequiredAsString()),
 			result.Current,
-			fmt.Sprint(checkers.SeverityToString(c.GetSeverity())),
+			fmt.Sprint(c.GetSeverity()),
 			fmt.Sprint(printResult(c.GetSeverity(), result.IsOk)),
 		})
 	}

@@ -7,7 +7,7 @@ const (
 	Warning
 )
 
-func SeverityToString(s Severity) string {
+func (s Severity) String() string {
 	switch s {
 	case Fatal:
 		return "Fatal"
