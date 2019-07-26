@@ -285,8 +285,10 @@ func printSandboxState(sbParams *sbParams, state *sandbox.State) {
 	table.SetHeader([]string{
 		"Id",
 		"Container IP",
-		"Forwarded RPC Port",
+		"RPC Port (Host)",
 		"RPC Port",
+		"Kafka Port (Host)",
+		"Kafka Port",
 		"Container ID",
 		"Status",
 	})
@@ -296,6 +298,8 @@ func printSandboxState(sbParams *sbParams, state *sandbox.State) {
 			nodeState.ContainerIP,
 			fmt.Sprint(nodeState.HostRPCPort),
 			fmt.Sprint(nodeState.RPCPort),
+			fmt.Sprint(nodeState.HostKafkaPort),
+			fmt.Sprint(nodeState.KafkaPort),
 			fmt.Sprintf("%.12s", nodeState.ContainerID),
 			nodeState.Status,
 		})

@@ -159,10 +159,15 @@ func (f *tarballContainerFactory) CreateNodeContainer(
 	if err != nil {
 		return err
 	}
+	kafkaPort, err := nat.NewPort("tcp", strconv.Itoa(cfg.KafkaPort))
+	if err != nil {
+		return err
+	}
 	containerConfig := container.Config{
 		Image: imageName,
 		ExposedPorts: nat.PortSet{
-			rpcPort: {},
+			rpcPort:   {},
+			kafkaPort: {},
 		},
 		Labels: map[string]string{
 			labels.ClusterID: cfg.ClusterID,
@@ -186,7 +191,8 @@ func (f *tarballContainerFactory) CreateNodeContainer(
 			},
 		},
 		PortBindings: nat.PortMap{
-			rpcPort: []nat.PortBinding{nat.PortBinding{}},
+			rpcPort:   []nat.PortBinding{nat.PortBinding{}},
+			kafkaPort: []nat.PortBinding{nat.PortBinding{}},
 		},
 		CapAdd: []string{"SYS_NICE"},
 	}
