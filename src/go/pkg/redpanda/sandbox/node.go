@@ -30,6 +30,7 @@ type Node interface {
 	Stop() error
 	Restart() error
 	Destroy() error
+	WipeRestart() error
 	Wipe() error
 	Logs(numberOfLines int, follow bool, timestamps bool) (io.ReadCloser, error)
 	Configure(seedServers []*redpanda.SeedServer) error
@@ -176,6 +177,18 @@ func (n *node) Destroy() error {
 	}
 	log.Infof("Node '%s' destroyed", n.nodeDir)
 	return nil
+}
+
+func (n *node) WipeRestart() error {
+	err := n.Stop()
+	if err != nil {
+		return err
+	}
+	err = n.Wipe()
+	if err != nil {
+		return err
+	}
+	return n.Start()
 }
 
 func (n *node) Wipe() error {
