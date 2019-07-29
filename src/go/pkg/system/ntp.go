@@ -4,7 +4,7 @@ import (
 	"errors"
 	"os/exec"
 	"regexp"
-	"vectorized/os"
+	"vectorized/pkg/os"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"

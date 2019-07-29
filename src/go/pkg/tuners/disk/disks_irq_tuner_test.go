@@ -2,7 +2,7 @@ package disk
 
 import (
 	"testing"
-	"vectorized/tuners/irq"
+	"vectorized/pkg/tuners/irq"
 
 	"github.com/stretchr/testify/assert"
 )

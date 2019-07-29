@@ -1,7 +1,7 @@
 package redpanda
 
 import (
-	"vectorized/yaml"
+	"vectorized/pkg/yaml"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"

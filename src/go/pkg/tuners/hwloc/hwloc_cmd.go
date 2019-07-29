@@ -4,7 +4,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
-	"vectorized/os"
+	"vectorized/pkg/os"
 
 	log "github.com/sirupsen/logrus"
 )

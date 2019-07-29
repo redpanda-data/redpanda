@@ -2,8 +2,8 @@ package irq
 
 import (
 	"testing"
-	"vectorized/os"
-	"vectorized/utils"
+	"vectorized/pkg/os"
+	"vectorized/pkg/utils"
 
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"

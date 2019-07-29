@@ -3,7 +3,7 @@ package filesystem
 import (
 	"path/filepath"
 	"syscall"
-	"vectorized/utils"
+	"vectorized/pkg/utils"
 
 	"github.com/docker/go-units"
 	"github.com/spf13/afero"

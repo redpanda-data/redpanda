@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"vectorized/redpanda/sandbox/docker/labels"
-	"vectorized/utils"
+	"vectorized/pkg/redpanda/sandbox/docker/labels"
+	"vectorized/pkg/utils"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"

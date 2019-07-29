@@ -4,7 +4,7 @@ import (
 	"errors"
 	"reflect"
 	"testing"
-	"vectorized/checkers"
+	"vectorized/pkg/checkers"
 )
 
 type checkerMock struct {

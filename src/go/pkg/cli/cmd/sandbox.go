@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"vectorized/cli/ui"
-	sandbox "vectorized/redpanda/sandbox"
-	"vectorized/redpanda/sandbox/docker"
+	"vectorized/pkg/cli/ui"
+	sandbox "vectorized/pkg/redpanda/sandbox"
+	"vectorized/pkg/redpanda/sandbox/docker"
 
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"

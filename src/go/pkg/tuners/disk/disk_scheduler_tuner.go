@@ -6,8 +6,8 @@ import (
 	"path"
 	"strconv"
 	"strings"
-	"vectorized/tuners"
-	"vectorized/utils"
+	"vectorized/pkg/tuners"
+	"vectorized/pkg/utils"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"

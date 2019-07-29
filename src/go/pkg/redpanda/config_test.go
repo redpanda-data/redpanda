@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"vectorized/utils"
+	"vectorized/pkg/utils"
 
 	"github.com/spf13/afero"
 )

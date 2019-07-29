@@ -1,10 +1,10 @@
 package iotune
 
 import (
-	"vectorized/checkers"
-	"vectorized/os"
-	"vectorized/tuners"
-	"vectorized/utils"
+	"vectorized/pkg/checkers"
+	"vectorized/pkg/os"
+	"vectorized/pkg/tuners"
+	"vectorized/pkg/utils"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
