@@ -413,7 +413,7 @@ func (s *sandbox) getNode(nodeID int) Node {
 }
 
 func (s *sandbox) getNodeIDs() ([]int, error) {
-	log.Debugf("Getting sanbox node ids")
+	log.Debugf("Getting sandbox node ids")
 	ctx, cancel := docker.CtxWithDefaultTimeout()
 	defer cancel()
 	containers, err := s.dockerClient.ContainerList(
