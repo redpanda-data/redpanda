@@ -51,11 +51,7 @@ type Sandbox interface {
 	Logs(numberOfEntries int, follow bool, colorOutput bool) (io.ReadCloser, error)
 	AddNode() error
 	RemoveNode(nodeID int) error
-	RestartNode(nodeID int) error
-	WipeRestartNode(nodeID int) error
-	StopNode(nodeID int) error
-	StartNode(nodeID int) error
-	LogsNode(nodeID int, numberOfEntries int, follow bool) (io.ReadCloser, error)
+	Node(nodeID int) (Node, error)
 }
 
 type sandbox struct {
@@ -216,14 +212,15 @@ func (s *sandbox) State() (*State, error) {
 	}, nil
 }
 
-func (s *sandbox) AddNode() error {
-	//TODO: Figure out protocol of adding/remving nodes
-	panic("not implemented")
-}
-
-func (s *sandbox) RemoveNode(nodeID int) error {
-	//TODO: Figure out protocol of adding/remving nodes
-	panic("not implemented")
+func (s *sandbox) Node(nodeID int) (Node, error) {
+	nodes, err := s.getNodeIDs()
+	if err != nil {
+		return nil, err
+	}
+	if !utils.ContainsInt(nodes, nodeID) {
+		return nil, fmt.Errorf("Sandbox does not contain node %d", nodeID)
+	}
+	return s.getNode(nodeID), nil
 }
 
 func (s *sandbox) RestartNode(nodeID int) error {
