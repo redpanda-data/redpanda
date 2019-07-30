@@ -59,6 +59,17 @@ func NewMemoryChecker(fs afero.Fs) Checker {
 	)
 }
 
+func NewSwapChecker(fs afero.Fs) Checker {
+	return NewEqualityChecker(
+		"Swap enabled",
+		Warning,
+		true,
+		func() (interface{}, error) {
+			return system.IsSwapEnabled(fs)
+		},
+	)
+}
+
 func NewFilesystemTypeChecker(path string) Checker {
 	return NewEqualityChecker(
 		"Data directory filesystem type",
@@ -105,6 +116,7 @@ func RedpandaCheckers(
 	return []Checker{
 		NewConfigChecker(config),
 		NewMemoryChecker(fs),
+		NewSwapChecker(fs),
 		NewDataDirWritableChecker(fs, config.Directory),
 		NewFreeDiskSpaceChecker(config.Directory),
 		NewFilesystemTypeChecker(config.Directory),
