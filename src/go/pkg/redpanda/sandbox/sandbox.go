@@ -52,6 +52,7 @@ type Sandbox interface {
 	AddNode() error
 	RemoveNode(nodeID int) error
 	Node(nodeID int) (Node, error)
+	Nodes() ([]Node, error)
 }
 
 type sandbox struct {
@@ -223,28 +224,39 @@ func (s *sandbox) Node(nodeID int) (Node, error) {
 	return s.getNode(nodeID), nil
 }
 
-func (s *sandbox) RestartNode(nodeID int) error {
-	return s.singleNodeOp(nodeID, Node.Restart)
+func (s *sandbox) Nodes() ([]Node, error) {
+	nodeIDs, err := s.getNodeIDs()
+	if err != nil {
+		return nil, err
+	}
+	var nodes []Node
+	for _, nodeID := range nodeIDs {
+		nodes = append(nodes, s.getNode(nodeID))
+	}
+	return nodes, nil
 }
 
-func (s *sandbox) StartNode(nodeID int) error {
-	return s.singleNodeOp(nodeID, Node.Start)
-}
-
-func (s *sandbox) StopNode(nodeID int) error {
-	return s.singleNodeOp(nodeID, Node.Stop)
-}
-
-func (s *sandbox) WipeRestartNode(nodeID int) error {
-	err := s.StopNode(nodeID)
+func (s *sandbox) DoWithNode(nodeID int, action func(Node)) error {
+	node, err := s.Node(nodeID)
 	if err != nil {
 		return err
 	}
-	err = s.getNode(nodeID).Wipe()
+	action(node)
+	return nil
+}
+
+func (s *sandbox) DoWithNodes(action func(Node)) error {
+	nodeIDs, err := s.getNodeIDs()
 	if err != nil {
 		return err
 	}
-	return s.StartNode(nodeID)
+	for _, nodeID := range nodeIDs {
+		err := s.DoWithNode(nodeID, action)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *sandbox) LogsNode(
