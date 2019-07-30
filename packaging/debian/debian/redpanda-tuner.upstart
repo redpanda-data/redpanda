@@ -1,25 +1,18 @@
-description	"Redpanda: The Fastest Queue In The West"
+description	"Redpanda Tuner"
 
-start on stopping redpanda-tuner
+start on runlevel [2345]
 stop on runlevel [!2345]
 
 umask 022
 
 console log
 
-respawn
 kill timeout 360
 normal exit 0 1 2
-setuid redpanda
-setgid redpanda
-limit core unlimited unlimited
-limit memlock unlimited unlimited
-limit nofile 800000 800000
-limit as unlimited unlimited
-limit nproc 8096 8096
+setuid root
 chdir /var/lib/redpanda
 env HOME=/var/lib/redpanda
-
+task
 script
     . /etc/default/redpanda
     for i in /etc/redpanda.d/*.conf; do
@@ -28,5 +21,5 @@ script
         fi
         . "$i"
     done
-    exec /usr/bin/rpk start $START_ARGS $CPUSET
+    exec /usr/bin/rpk tune all $CPUSET
 end script

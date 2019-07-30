@@ -17,8 +17,8 @@ override_dh_auto_install:
 	ln -sf /opt/redpanda/bin/iotune $(CURDIR)/debian/redpanda/usr/bin/iotune
 
 override_dh_installinit:
-	dh_installinit --no-start
-	dh_installinit --no-start redpanda
+	dh_installinit --name=redpanda
+	dh_installinit --name=redpanda-tuner
 
 override_dh_makeshlibs:
 

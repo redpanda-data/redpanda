@@ -5,9 +5,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"syscall"
+	"regexp"
 
 	log "github.com/sirupsen/logrus"
+	"golang.org/x/sys/unix"
 )
 
 type Launcher interface {
@@ -69,7 +70,15 @@ func (l *launcher) Start() error {
 	}
 
 	log.Debugf("Starting '%s' with arguments '%v'", binary, redpandaArgs)
-	return syscall.Exec(binary, redpandaArgs, os.Environ())
+
+	var rpEnv []string
+	ldLibraryPathPattern := regexp.MustCompile("^LD_LIBRARY_PATH=.*$")
+	for _, ev := range os.Environ() {
+		if !ldLibraryPathPattern.MatchString(ev) {
+			rpEnv = append(rpEnv, ev)
+		}
+	}
+	return unix.Exec(binary, redpandaArgs, rpEnv)
 }
 
 func (l *launcher) getBinary() (string, error) {

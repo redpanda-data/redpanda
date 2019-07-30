@@ -1,17 +1,10 @@
 [Unit]
-Description=Redpanda Queue
-After=local-fs.target network-online.target redpanda-tuner.service
+Description=Redpanda Tuner
+After=local-fs.target network-online.target
 Requires=local-fs.target network-online.target
-Wants=redpanda-tuner.service
-
 
 [Service]
-PermissionsStartOnly=true
-Type=simple
-LimitMEMLOCK=infinity
-LimitNOFILE=800000
-LimitAS=infinity
-LimitNPROC=8096
+Type=oneshot
 {{#debian}}
 EnvironmentFile=/etc/default/redpanda
 {{/debian}}
@@ -19,12 +12,11 @@ EnvironmentFile=/etc/default/redpanda
 EnvironmentFile=/etc/sysconfig/redpanda 
 {{/redhat}}
 EnvironmentFile=/etc/redpanda.d/*.conf
-ExecStart=/usr/bin/rpk start $START_ARGS $CPUSET
+ExecStart=/usr/bin/rpk tune all $CPUSET
+RemainAfterExit=true
 TimeoutStartSec=900
-KillMode=process
-Restart=on-abnormal
-User=redpanda
-OOMScoreAdjust=-950
+KillMode=none
+User=root
 StandardOutput=syslog
 StandardError=syslog
 SyslogLevelPrefix=false

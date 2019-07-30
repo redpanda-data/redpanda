@@ -7,6 +7,7 @@ import (
 	"vectorized/cli"
 	"vectorized/redpanda"
 	"vectorized/tuners/factory"
+	"vectorized/tuners/hwloc"
 	"vectorized/utils"
 
 	"github.com/fatih/color"
@@ -19,6 +20,7 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 	tunerFactory := factory.NewTunersFactory(fs)
 	tunerParams := factory.TunerParams{}
 	var redpandaConfigFile string
+	var cpuSet string
 	command := &cobra.Command{
 		Use: "tune <list_of_elements_to_tune>",
 		Short: `Sets the OS parameters to tune system performance
@@ -52,15 +54,21 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 			} else {
 				tuners = strings.Split(args[0], ",")
 			}
+			cpuMask, err := hwloc.TranslateToHwLocCpuSet(cpuSet)
+			if err != nil {
+				return err
+			}
+			tunerParams.CpuMask = cpuMask
 			return tune(fs, tuners, tunerFactory, &tunerParams, redpandaConfigFile)
 		},
 	}
 	command.Flags().StringVarP(&tunerParams.Mode,
 		"mode", "m", "",
 		"Operation Mode: one of: [sq, sq_split, mq]")
-	command.Flags().StringVarP(&tunerParams.CpuMask,
-		"cpu-mask", "c",
-		"all", "CPU Mask (32-bit hexadecimal integer))")
+	command.Flags().StringVar(&cpuSet,
+		"cpu-set",
+		"all", "Set of CPUs for tuner to use in cpuset(7) format "+
+			"if not specified tuner will use all available CPUs")
 	command.Flags().StringSliceVarP(&tunerParams.Disks,
 		"disks", "d",
 		[]string{}, "Lists of devices to tune f.e. 'sda1'")
