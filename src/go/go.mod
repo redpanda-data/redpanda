@@ -9,9 +9,9 @@ require (
 	github.com/docker/go-connections v0.4.0
 	github.com/docker/go-units v0.4.0
 	github.com/fatih/color v1.7.0
+	github.com/gobuffalo/packr v1.30.1
 	github.com/gogo/protobuf v1.2.1 // indirect
 	github.com/gorilla/mux v1.7.3 // indirect
-	github.com/inconshreveable/mousetrap v1.0.0 // indirect
 	github.com/lorenzosaino/go-sysctl v0.1.0
 	github.com/mattn/go-colorable v0.1.1 // indirect
 	github.com/mattn/go-isatty v0.0.7 // indirect
@@ -23,14 +23,14 @@ require (
 	github.com/opencontainers/image-spec v1.0.1 // indirect
 	github.com/pkg/errors v0.8.1 // indirect
 	github.com/safchain/ethtool v0.0.0-20190326074333-42ed695e3de8
-	github.com/sirupsen/logrus v1.4.0
+	github.com/sirupsen/logrus v1.4.2
 	github.com/spf13/afero v1.2.2
-	github.com/spf13/cobra v0.0.3
+	github.com/spf13/cobra v0.0.5
 	github.com/spf13/viper v1.3.2
 	github.com/stretchr/testify v1.3.0
-	golang.org/x/crypto v0.0.0-20190404164418-38d8ce5564a5
+	golang.org/x/crypto v0.0.0-20190621222207-cc06ce4a13d4
 	golang.org/x/net v0.0.0-20190628185345-da137c7871d7 // indirect
-	golang.org/x/sys v0.0.0-20190403152447-81d4e9dc473e
+	golang.org/x/sys v0.0.0-20190515120540-06a5c4944438
 	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4 // indirect
 	google.golang.org/grpc v1.22.0 // indirect
 	gopkg.in/confluentinc/confluent-kafka-go.v1 v1.1.0
