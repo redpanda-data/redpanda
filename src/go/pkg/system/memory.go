@@ -13,6 +13,7 @@ type MemInfo struct {
 	MemTotal       uint64
 	MemFree        uint64
 	CGroupMemLimit uint64
+	SwapTotal      uint64
 }
 
 func GetTransparentHugePagesActive(fs afero.Fs) (bool, error) {
@@ -41,6 +42,14 @@ func GetMemTotalMB(fs afero.Fs) (int, error) {
 	return int(memBytes / units.MiB), nil
 }
 
+func IsSwapEnabled(fs afero.Fs) (bool, error) {
+	memInfo, err := getMemInfo(fs)
+	if err != nil {
+		return false, err
+	}
+	return memInfo.SwapTotal != 0, nil
+}
+
 func getMemInfo(fs afero.Fs) (*MemInfo, error) {
 	var si unix.Sysinfo_t
 	err := unix.Sysinfo(&si)
@@ -52,6 +61,7 @@ func getMemInfo(fs afero.Fs) (*MemInfo, error) {
 		MemTotal:       si.Totalram * uint64(si.Unit),
 		MemFree:        si.Freeram * uint64(si.Unit),
 		CGroupMemLimit: cGroupMemLimit,
+		SwapTotal:      si.Totalswap * uint64(si.Unit),
 	}, nil
 }
 
