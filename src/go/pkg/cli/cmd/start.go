@@ -143,8 +143,8 @@ func tuneAll(fs afero.Fs, cpuSet string, config *redpanda.Config) error {
 }
 
 func check(fs afero.Fs, ioConfigFile string, config *redpanda.Config) error {
-	checkersList := checkers.RedpandaCheckers(fs, ioConfigFile, config)
-	for _, checker := range checkersList {
+	checkersMap := checkers.RedpandaCheckers(fs, ioConfigFile, config)
+	for _, checker := range checkersMap {
 		result := checker.Check()
 		if result.Err != nil {
 			return result.Err
