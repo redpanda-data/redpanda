@@ -43,7 +43,7 @@ func NewFreeDiskSpaceChecker(path string) Checker {
 		})
 }
 
-func NewMemoryChecker() Checker {
+func NewMemoryChecker(fs afero.Fs) Checker {
 	return NewIntChecker(
 		"Free memory [MB]",
 		Warning,
@@ -53,7 +53,9 @@ func NewMemoryChecker() Checker {
 		func() string {
 			return "2048"
 		},
-		system.GetMemTotalMB,
+		func() (int, error) {
+			return system.GetMemTotalMB(fs)
+		},
 	)
 }
 
@@ -102,7 +104,7 @@ func RedpandaCheckers(
 ) []Checker {
 	return []Checker{
 		NewConfigChecker(config),
-		NewMemoryChecker(),
+		NewMemoryChecker(fs),
 		NewDataDirWritableChecker(fs, config.Directory),
 		NewFreeDiskSpaceChecker(config.Directory),
 		NewFilesystemTypeChecker(config.Directory),
