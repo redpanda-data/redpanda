@@ -31,8 +31,8 @@ func (q *ntpQuery) IsNtpSynced() (bool, error) {
 	var inSync bool
 	if _, err := exec.LookPath("timedatectl"); err == nil {
 		inSync, err = q.checkWithTimedateCtl()
-		if err != nil {
-			return false, err
+		if err == nil {
+			return inSync, nil
 		}
 	}
 	if _, err := exec.LookPath("ntpstat"); !inSync && err == nil {
