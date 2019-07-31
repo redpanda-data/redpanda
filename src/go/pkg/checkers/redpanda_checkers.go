@@ -53,7 +53,7 @@ func NewMemoryChecker() Checker {
 		func() string {
 			return "2048"
 		},
-		system.GetMemAvailableMB,
+		system.GetMemTotalMB,
 	)
 }
 

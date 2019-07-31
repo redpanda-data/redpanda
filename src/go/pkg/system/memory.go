@@ -24,7 +24,7 @@ func GetTransparentHugePagesActive(fs afero.Fs) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	
+
 	if options.GetActive() != "never" {
 		return true, nil
 	}
@@ -32,12 +32,12 @@ func GetTransparentHugePagesActive(fs afero.Fs) (bool, error) {
 	return false, nil
 }
 
-func GetMemAvailableMB() (int, error) {
+func GetMemTotalMB() (int, error) {
 	mInfo, err := readMemInfo()
 	if err != nil {
 		return 0, err
 	}
-	return int(mInfo.MemAvailable / units.MiB), nil
+	return int(mInfo.MemTotal / units.MiB), nil
 }
 
 func readMemInfo() (*MemInfo, error) {
