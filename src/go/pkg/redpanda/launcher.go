@@ -23,27 +23,19 @@ type RedpandaArgs struct {
 	LockMemory     bool
 }
 
-func NewLauncher(
-	installDir string, prestartAction func() error, args *RedpandaArgs,
-) Launcher {
+func NewLauncher(installDir string, args *RedpandaArgs) Launcher {
 	return &launcher{
-		installDir:     installDir,
-		prestartAction: prestartAction,
-		args:           args,
+		installDir: installDir,
+		args:       args,
 	}
 }
 
 type launcher struct {
-	prestartAction func() error
-	installDir     string
-	args           *RedpandaArgs
+	installDir string
+	args       *RedpandaArgs
 }
 
 func (l *launcher) Start() error {
-	err := l.prestartAction()
-	if err != nil {
-		return err
-	}
 	binary, err := l.getBinary()
 	if err != nil {
 		return err
