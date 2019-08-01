@@ -111,7 +111,8 @@ func prestart(
 		log.Info("System tune - PASSED")
 	}
 	if prestartCfg.checkEnabled {
-		err := check(fs, args.IoConfigFile, config)
+		checkersMap := checkers.RedpandaCheckers(fs, args.IoConfigFile, config)
+		err := check(checkersMap, checkFailedActions(args))
 		if err != nil {
 			return err
 		}
@@ -158,14 +159,32 @@ func tuneAll(fs afero.Fs, cpuSet string, config *redpanda.Config) error {
 	return nil
 }
 
-func check(fs afero.Fs, ioConfigFile string, config *redpanda.Config) error {
-	checkersMap := checkers.RedpandaCheckers(fs, ioConfigFile, config)
-	for _, checker := range checkersMap {
+type checkFailedAction func(*checkers.CheckResult)
+
+func checkFailedActions(
+	args *redpanda.RedpandaArgs,
+) map[checkers.CheckerID]checkFailedAction {
+	return map[checkers.CheckerID]checkFailedAction{
+		checkers.Swap: func(*checkers.CheckResult) {
+			// Do not set --lock-memory flag when swap is disabled
+			args.LockMemory = false
+		},
+	}
+}
+
+func check(
+	checkersMap map[checkers.CheckerID]checkers.Checker,
+	checkFailedActions map[checkers.CheckerID]checkFailedAction,
+) error {
+	for checkerID, checker := range checkersMap {
 		result := checker.Check()
 		if result.Err != nil {
 			return result.Err
 		}
 		if !result.IsOk {
+			if action, exists := checkFailedActions[checkerID]; exists {
+				action(result)
+			}
 			msg := fmt.Sprintf("System check '%s' failed. Required: %v, Current %v",
 				checker.GetDesc(), checker.GetRequiredAsString(), result.Current)
 			if checker.GetSeverity() == checkers.Fatal {
