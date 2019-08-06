@@ -1,0 +1,49 @@
+#pragma once
+#include "redpanda/config/validation_error.h"
+#include "seastarx.h"
+
+#include <seastar/util/bool_class.hh>
+
+#include <yaml-cpp/yaml.h>
+
+#include <any>
+#include <iostream>
+#include <string>
+
+namespace config {
+
+class config_store;
+using required = bool_class<struct required_tag>;
+
+class base_property {
+public:
+    base_property(
+      config_store& conf,
+      std::string_view name,
+      std::string_view desc,
+      required req);
+
+    const std::string_view& name() const {
+        return _name;
+    }
+    const std::string_view& desc() const {
+        return _desc;
+    }
+
+    const required is_required() const {
+        return _required;
+    }
+
+    virtual void print(std::ostream&) const = 0;
+    virtual void set_value(YAML::Node) = 0;
+    virtual void set_value(std::any) = 0;
+    virtual std::optional<validation_error> validate() const = 0;
+    virtual base_property& operator=(const base_property&) = 0;
+    virtual ~base_property() noexcept = default;
+private:
+    friend std::ostream& operator<<(std::ostream&, const base_property&);
+    std::string_view _name;
+    std::string_view _desc;
+    required _required;
+};
+}; // namespace config
