@@ -107,4 +107,31 @@ private:
     friend class skipping_consumer;
 };
 
+class log_reader : public model::record_batch_reader::impl {
+public:
+    using span = model::record_batch_reader::impl::span;
+
+    // Note: The offset tracker will contain base offsets,
+    //       and will never point to an offset within a
+    //       batch, that is, of an individual record. This
+    //       is because batchs are atomically made visible.
+    log_reader(log_set&, offset_tracker&, log_reader_config) noexcept;
+
+    virtual future<span>
+      do_load_slice(model::timeout_clock::time_point) override;
+
+private:
+    bool is_done();
+
+    using reader_available = bool_class<struct create_reader_tag>;
+
+    reader_available maybe_create_segment_reader();
+
+private:
+    log_segment_selector _selector;
+    offset_tracker& _offset_tracker;
+    log_reader_config _config;
+    std::optional<log_segment_reader> _current_reader;
+};
+
 } // namespace storage
