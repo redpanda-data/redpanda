@@ -135,4 +135,50 @@ log_segment_reader::do_load_slice(model::timeout_clock::time_point timeout) {
     });
 }
 
+log_reader::log_reader(
+  log_set& seg_set, offset_tracker& tracker, log_reader_config config) noexcept
+  : _selector(seg_set)
+  , _offset_tracker(tracker)
+  , _config(std::move(config)) {
+}
+
+future<log_reader::span>
+log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
+    if (is_done()) {
+        return make_ready_future<span>();
+    }
+    return _current_reader->do_load_slice(timeout);
+}
+
+bool log_reader::is_done() {
+    return _end_of_stream || !maybe_create_segment_reader();
+}
+
+log_reader::reader_available log_reader::maybe_create_segment_reader() {
+    if (_current_reader && !_current_reader->end_of_stream()) {
+        return reader_available::yes;
+    }
+    log_segment_ptr seg;
+    if (_current_reader) {
+        auto bytes_read = _current_reader->bytes_read();
+        if (
+          bytes_read >= _config.max_bytes
+          || _current_reader->_over_committed_offset) {
+            _end_of_stream = true;
+            return reader_available::no;
+        }
+        _config.max_bytes -= bytes_read;
+        _config.min_bytes -= std::min(bytes_read, _config.min_bytes);
+        seg = _selector.select(_current_reader->_seg->max_offset());
+    } else {
+        seg = _selector.select(_config.start_offset);
+    }
+    if (!seg) {
+        _end_of_stream = true;
+        return reader_available::no;
+    }
+    _current_reader.emplace(std::move(seg), _offset_tracker, _config);
+    return reader_available::yes;
+}
+
 } // namespace storage
