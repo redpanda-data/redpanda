@@ -1,30 +1,30 @@
 package system
 
 import (
-	"bufio"
-	"io"
-	"os"
 	"strconv"
 	"strings"
 
 	"github.com/docker/go-units"
 	"github.com/spf13/afero"
+	"golang.org/x/sys/unix"
 )
 
 type MemInfo struct {
-	MemTotal     int64
-	MemFree      int64
-	MemAvailable int64
+	MemTotal       uint64
+	MemFree        uint64
+	CGroupMemLimit uint64
+	SwapTotal      uint64
 }
 
 func GetTransparentHugePagesActive(fs afero.Fs) (bool, error) {
+
 	options, err := ReadRuntineOptions(fs,
 		"/sys/kernel/mm/transparent_hugepage/enabled")
 
 	if err != nil {
 		return false, err
 	}
-	
+
 	if options.GetActive() != "never" {
 		return true, nil
 	}
@@ -32,46 +32,56 @@ func GetTransparentHugePagesActive(fs afero.Fs) (bool, error) {
 	return false, nil
 }
 
-func GetMemAvailableMB() (int, error) {
-	mInfo, err := readMemInfo()
+func GetMemTotalMB(fs afero.Fs) (int, error) {
+	mInfo, err := getMemInfo(fs)
 	if err != nil {
 		return 0, err
 	}
-	return int(mInfo.MemAvailable / units.MiB), nil
+
+	memBytes := min(mInfo.MemTotal, mInfo.CGroupMemLimit)
+	return int(memBytes / units.MiB), nil
 }
 
-func readMemInfo() (*MemInfo, error) {
-	file, err := os.Open("/proc/meminfo")
+func IsSwapEnabled(fs afero.Fs) (bool, error) {
+	memInfo, err := getMemInfo(fs)
+	if err != nil {
+		return false, err
+	}
+	return memInfo.SwapTotal != 0, nil
+}
+
+func getMemInfo(fs afero.Fs) (*MemInfo, error) {
+	var si unix.Sysinfo_t
+	err := unix.Sysinfo(&si)
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
-	return parseMemInfo(file)
+	cGroupMemLimit, err := getCgroupMemLimitBytes(fs)
+	return &MemInfo{
+		MemTotal:       si.Totalram * uint64(si.Unit),
+		MemFree:        si.Freeram * uint64(si.Unit),
+		CGroupMemLimit: cGroupMemLimit,
+		SwapTotal:      si.Totalswap * uint64(si.Unit),
+	}, nil
 }
 
-func parseMemInfo(reader io.Reader) (*MemInfo, error) {
-	scanner := bufio.NewScanner(reader)
-	var result = &MemInfo{}
-	for scanner.Scan() {
-		parts := strings.Fields(scanner.Text())
-		if len(parts) < 3 || parts[2] != "kB" {
-			continue
-		}
-
-		size, err := strconv.Atoi(parts[1])
-		if err != nil {
-			continue
-		}
-		bytes := int64(size) * units.KiB
-		switch parts[0] {
-		case "MemTotal:":
-			result.MemTotal = bytes
-		case "MemFree:":
-			result.MemFree = bytes
-		case "MemAvailable:":
-			result.MemAvailable = bytes
-		}
+func getCgroupMemLimitBytes(fs afero.Fs) (uint64, error) {
+	fileContent, err := afero.ReadFile(fs,
+		"/sys/fs/cgroup/memory/memory.limit_in_bytes")
+	if err != nil {
+		return 0, err
 	}
+	limit, err := strconv.ParseUint(
+		strings.TrimSpace(string(fileContent)), 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	return limit, nil
+}
 
-	return result, nil
+func min(a, b uint64) uint64 {
+	if a < b {
+		return a
+	}
+	return b
 }

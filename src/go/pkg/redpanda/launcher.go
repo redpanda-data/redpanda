@@ -20,29 +20,22 @@ type RedpandaArgs struct {
 	CpuSet         string
 	Memory         string
 	IoConfigFile   string
+	LockMemory     bool
 }
 
-func NewLauncher(
-	installDir string, prestartAction func() error, args *RedpandaArgs,
-) Launcher {
+func NewLauncher(installDir string, args *RedpandaArgs) Launcher {
 	return &launcher{
-		installDir:     installDir,
-		prestartAction: prestartAction,
-		args:           args,
+		installDir: installDir,
+		args:       args,
 	}
 }
 
 type launcher struct {
-	prestartAction func() error
-	installDir     string
-	args           *RedpandaArgs
+	installDir string
+	args       *RedpandaArgs
 }
 
 func (l *launcher) Start() error {
-	err := l.prestartAction()
-	if err != nil {
-		return err
-	}
 	binary, err := l.getBinary()
 	if err != nil {
 		return err
@@ -51,24 +44,7 @@ func (l *launcher) Start() error {
 	if l.args.ConfigFilePath == "" {
 		return errors.New("Redpanda config file is required")
 	}
-
-	redpandaArgs := []string{
-		"redpanda",
-		"--redpanda-cfg",
-		l.args.ConfigFilePath,
-	}
-
-	if l.args.CpuSet != "" {
-		redpandaArgs = append(redpandaArgs, "--cpuset", l.args.CpuSet)
-	}
-	if l.args.Memory != "" {
-		redpandaArgs = append(redpandaArgs, "--memory", l.args.Memory)
-	}
-	if l.args.IoConfigFile != "" {
-		redpandaArgs = append(redpandaArgs, "--io-properties-file",
-			l.args.IoConfigFile)
-	}
-
+	redpandaArgs := collectRedpandaArgs(l.args)
 	log.Debugf("Starting '%s' with arguments '%v'", binary, redpandaArgs)
 
 	var rpEnv []string
@@ -87,4 +63,27 @@ func (l *launcher) getBinary() (string, error) {
 		return "", err
 	}
 	return path, nil
+}
+
+func collectRedpandaArgs(args *RedpandaArgs) []string {
+	redpandaArgs := []string{
+		"redpanda",
+		"--redpanda-cfg",
+		args.ConfigFilePath,
+	}
+
+	if args.CpuSet != "" {
+		redpandaArgs = append(redpandaArgs, "--cpuset", args.CpuSet)
+	}
+	if args.Memory != "" {
+		redpandaArgs = append(redpandaArgs, "--memory", args.Memory)
+	}
+	if args.IoConfigFile != "" {
+		redpandaArgs = append(redpandaArgs, "--io-properties-file",
+			args.IoConfigFile)
+	}
+	if args.LockMemory == true {
+		redpandaArgs = append(redpandaArgs, "--lock-memory", "1")
+	}
+	return redpandaArgs
 }

@@ -1,50 +1,22 @@
 package system
 
 import (
-	"io"
-	"reflect"
-	"strings"
 	"testing"
 
-	"github.com/docker/go-units"
+	"github.com/spf13/afero"
+	"github.com/stretchr/testify/assert"
 )
 
-func Test_parseMemInfo(t *testing.T) {
-	type args struct {
-		reader io.Reader
-	}
-	tests := []struct {
-		name    string
-		args    args
-		want    *MemInfo
-		wantErr bool
-	}{
-		{
-			name: "shall parse the correct meminfo file",
-			args: args{
-				reader: strings.NewReader(
-					`MemTotal:       15862140 kB                                                                                                                                                                   
-				 	 MemFree:         1938684 kB                                                                                                                                                                   
-					 MemAvailable:    8933368 kB`),
-			},
-			want: &MemInfo{
-				MemTotal:     15862140 * units.KiB,
-				MemFree:      1938684 * units.KiB,
-				MemAvailable: 8933368 * units.KiB,
-			},
-			wantErr: false,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseMemInfo(tt.args.reader)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("parseMemInfo() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("parseMemInfo() = %v, want %v", got, tt.want)
-			}
-		})
-	}
+func Test_getCgroupMemLimitBytes(t *testing.T) {
+	//shall return correct cgroups mem limit value
+	// given
+	fs := afero.NewMemMapFs()
+	fs.MkdirAll("/sys/fs/cgroup/memory/", 0755)
+	afero.WriteFile(fs, "/sys/fs/cgroup/memory/memory.limit_in_bytes",
+		[]byte("12345687\n"), 0644)
+	// when
+	limit, err := getCgroupMemLimitBytes(fs)
+	// then
+	assert.NoError(t, err)
+	assert.Equal(t, uint64(12345687), limit)
 }

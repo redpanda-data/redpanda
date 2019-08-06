@@ -8,6 +8,20 @@ import (
 	"github.com/spf13/afero"
 )
 
+type CheckerID int
+
+const (
+	ConfigFile = iota
+	DataDirAccess
+	DiskSpace
+	FreeMem
+	Swap
+	FsType
+	IoConfigFile
+	TransparentHugePages
+	NTP
+)
+
 func NewConfigChecker(config *redpanda.Config) Checker {
 	return NewEqualityChecker(
 		"Config file valid",
@@ -43,7 +57,7 @@ func NewFreeDiskSpaceChecker(path string) Checker {
 		})
 }
 
-func NewMemoryChecker() Checker {
+func NewMemoryChecker(fs afero.Fs) Checker {
 	return NewIntChecker(
 		"Free memory [MB]",
 		Warning,
@@ -53,7 +67,20 @@ func NewMemoryChecker() Checker {
 		func() string {
 			return "2048"
 		},
-		system.GetMemAvailableMB,
+		func() (int, error) {
+			return system.GetMemTotalMB(fs)
+		},
+	)
+}
+
+func NewSwapChecker(fs afero.Fs) Checker {
+	return NewEqualityChecker(
+		"Swap enabled",
+		Warning,
+		true,
+		func() (interface{}, error) {
+			return system.IsSwapEnabled(fs)
+		},
 	)
 }
 
@@ -99,15 +126,16 @@ func NewNTPSyncChecker(fs afero.Fs) Checker {
 
 func RedpandaCheckers(
 	fs afero.Fs, ioConfigFile string, config *redpanda.Config,
-) []Checker {
-	return []Checker{
-		NewConfigChecker(config),
-		NewMemoryChecker(),
-		NewDataDirWritableChecker(fs, config.Directory),
-		NewFreeDiskSpaceChecker(config.Directory),
-		NewFilesystemTypeChecker(config.Directory),
-		NewIOConfigFileExistanceChecker(fs, ioConfigFile),
-		NewTransparentHugePagesChecker(fs),
-		NewNTPSyncChecker(fs),
+) map[CheckerID]Checker {
+	return map[CheckerID]Checker{
+		ConfigFile:           NewConfigChecker(config),
+		IoConfigFile:         NewIOConfigFileExistanceChecker(fs, ioConfigFile),
+		FreeMem:              NewMemoryChecker(fs),
+		Swap:                 NewSwapChecker(fs),
+		DataDirAccess:        NewDataDirWritableChecker(fs, config.Directory),
+		DiskSpace:            NewFreeDiskSpaceChecker(config.Directory),
+		FsType:               NewFilesystemTypeChecker(config.Directory),
+		TransparentHugePages: NewTransparentHugePagesChecker(fs),
+		NTP:                  NewNTPSyncChecker(fs),
 	}
 }

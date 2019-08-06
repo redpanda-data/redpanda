@@ -22,14 +22,19 @@ type prestartConfig struct {
 }
 
 func NewStartCommand(fs afero.Fs) *cobra.Command {
-	redpandaArgs := redpanda.RedpandaArgs{}
 	prestartCfg := prestartConfig{}
-	var installDirFlag string
+	var (
+		memoryFlag         string
+		lockMemoryFlag     bool
+		cpuSetFlag         string
+		installDirFlag     string
+		configFilePathFlag string
+	)
 	command := &cobra.Command{
 		Use:   "start",
 		Short: "Start redpanda",
 		RunE: func(ccmd *cobra.Command, args []string) error {
-			configFile, err := cli.GetOrFindConfig(fs, redpandaArgs.ConfigFilePath)
+			configFile, err := cli.GetOrFindConfig(fs, configFilePathFlag)
 			if err != nil {
 				return err
 			}
@@ -47,26 +52,39 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 			}
 			rpArgs := &redpanda.RedpandaArgs{
 				ConfigFilePath: configFile,
-				CpuSet:         redpandaArgs.CpuSet,
-				Memory:         redpandaArgs.Memory,
 				IoConfigFile:   ioConfigFile,
+				LockMemory:     true,
 			}
-			launcher := redpanda.NewLauncher(
-				installDirectory,
-				prestart(fs, rpArgs, config, prestartCfg),
-				rpArgs)
+			err = prestart(fs, rpArgs, config, prestartCfg)
+			if err != nil {
+				return err
+			}
+			// Override all the defaults when flags are explicitly set
+			if ccmd.Flags().Changed("memory") {
+				rpArgs.Memory = memoryFlag
+			}
+			if ccmd.Flags().Changed("cpuset") {
+				rpArgs.CpuSet = cpuSetFlag
+			}
+			if ccmd.Flags().Changed("lock-memory") {
+				rpArgs.LockMemory = lockMemoryFlag
+			}
+
+			launcher := redpanda.NewLauncher(installDirectory, rpArgs)
 			log.Info("Starting redpanda...")
 			return launcher.Start()
 		},
 	}
-	command.Flags().StringVar(&redpandaArgs.ConfigFilePath,
+	command.Flags().StringVar(&configFilePathFlag,
 		"redpanda-cfg", "",
 		" Redpanda config file, if not set the file will be searched for"+
 			"in default locations")
-	command.Flags().StringVar(&redpandaArgs.Memory,
+	command.Flags().StringVar(&memoryFlag,
 		"memory", "", "Amount of memory for redpanda to use, "+
 			"if not specified redpanda will use all available memory")
-	command.Flags().StringVar(&redpandaArgs.CpuSet, "cpuset", "",
+	command.Flags().BoolVar(&lockMemoryFlag,
+		"lock-memory", true, "If set, will prevent redpanda from swapping")
+	command.Flags().StringVar(&cpuSetFlag, "cpuset", "",
 		"Set of CPUs for redpanda to use in cpuset(7) format, "+
 			"if not specified redpanda will use all available CPUs")
 	command.Flags().StringVar(&installDirFlag,
@@ -84,24 +102,23 @@ func prestart(
 	args *redpanda.RedpandaArgs,
 	config *redpanda.Config,
 	prestartCfg prestartConfig,
-) func() error {
-	return func() error {
-		if prestartCfg.tuneEnabled {
-			err := tuneAll(fs, args.CpuSet, config)
-			if err != nil {
-				return err
-			}
-			log.Info("System tune - PASSED")
+) error {
+	if prestartCfg.tuneEnabled {
+		err := tuneAll(fs, args.CpuSet, config)
+		if err != nil {
+			return err
 		}
-		if prestartCfg.checkEnabled {
-			err := check(fs, args.IoConfigFile, config)
-			if err != nil {
-				return err
-			}
-			log.Info("System check - PASSED")
-		}
-		return nil
+		log.Info("System tune - PASSED")
 	}
+	if prestartCfg.checkEnabled {
+		checkersMap := checkers.RedpandaCheckers(fs, args.IoConfigFile, config)
+		err := check(checkersMap, checkFailedActions(args))
+		if err != nil {
+			return err
+		}
+		log.Info("System check - PASSED")
+	}
+	return nil
 }
 
 func tuneAll(fs afero.Fs, cpuSet string, config *redpanda.Config) error {
@@ -142,14 +159,32 @@ func tuneAll(fs afero.Fs, cpuSet string, config *redpanda.Config) error {
 	return nil
 }
 
-func check(fs afero.Fs, ioConfigFile string, config *redpanda.Config) error {
-	checkersList := checkers.RedpandaCheckers(fs, ioConfigFile, config)
-	for _, checker := range checkersList {
+type checkFailedAction func(*checkers.CheckResult)
+
+func checkFailedActions(
+	args *redpanda.RedpandaArgs,
+) map[checkers.CheckerID]checkFailedAction {
+	return map[checkers.CheckerID]checkFailedAction{
+		checkers.Swap: func(*checkers.CheckResult) {
+			// Do not set --lock-memory flag when swap is disabled
+			args.LockMemory = false
+		},
+	}
+}
+
+func check(
+	checkersMap map[checkers.CheckerID]checkers.Checker,
+	checkFailedActions map[checkers.CheckerID]checkFailedAction,
+) error {
+	for checkerID, checker := range checkersMap {
 		result := checker.Check()
 		if result.Err != nil {
 			return result.Err
 		}
 		if !result.IsOk {
+			if action, exists := checkFailedActions[checkerID]; exists {
+				action(result)
+			}
 			msg := fmt.Sprintf("System check '%s' failed. Required: %v, Current %v",
 				checker.GetDesc(), checker.GetRequiredAsString(), result.Current)
 			if checker.GetSeverity() == checkers.Fatal {

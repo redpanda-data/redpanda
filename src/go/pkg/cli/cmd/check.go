@@ -42,7 +42,7 @@ func executeCheck(fs afero.Fs, configFileFlag string) error {
 		return err
 	}
 	ioConfigFile := redpanda.GetIOConfigPath(filepath.Dir(configFile))
-	checkersList := checkers.RedpandaCheckers(fs, ioConfigFile, config)
+	checkersMap := checkers.RedpandaCheckers(fs, ioConfigFile, config)
 	table := ui.NewRpkTable(os.Stdout)
 	table.SetHeader([]string{
 		"Condition",
@@ -52,7 +52,7 @@ func executeCheck(fs afero.Fs, configFileFlag string) error {
 		"Passed",
 	})
 	var isOk = true
-	for _, c := range checkersList {
+	for _, c := range checkersMap {
 		result := c.Check()
 		if result.Err != nil {
 			return result.Err
