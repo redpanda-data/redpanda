@@ -413,3 +413,40 @@ SEASTAR_THREAD_TEST_CASE(test_istream_iterator) {
         test(value1_bv, value2_bv, frag_buffer);
     }
 }
+
+SEASTAR_THREAD_TEST_CASE(test_sharing) {
+    uint64_t value = 0x1234'5678'abcd'ef02ull;
+
+    auto data = bytes(bytes::initialized_later(), sizeof(value));
+    std::copy_n(
+        reinterpret_cast<const int8_t*>(&value), sizeof(value), data.begin());
+
+    std::vector<temporary_buffer<char>> fragments;
+    fragments.emplace_back(
+      reinterpret_cast<char*>(data.data()), 3);
+    fragments.emplace_back(
+      reinterpret_cast<char*>(data.data() + 3), 2);
+    fragments.emplace_back(
+      reinterpret_cast<char*>(data.data() + 5), 3);
+
+    auto ftb = fragmented_temporary_buffer(std::move(fragments), sizeof(value));
+    auto in = ftb.get_istream();
+    BOOST_CHECK_EQUAL(in.bytes_left(), sizeof(value));
+    BOOST_CHECK_EQUAL(in.read<uint64_t>(), value);
+
+    auto shared = ftb.share(0, 2);
+    in = shared.get_istream();
+    BOOST_CHECK_EQUAL(in.bytes_left(), 2);
+    BOOST_CHECK_EQUAL(in.read<uint16_t>(), 0xef02);
+
+    shared = ftb.share(1, 6);
+    in = shared.get_istream();
+    BOOST_CHECK_EQUAL(in.bytes_left(), 6);
+    BOOST_CHECK_EQUAL(in.read<uint16_t>(), 0xcdef);
+    BOOST_CHECK_EQUAL(in.read<uint32_t>(), 0x345678ab);
+
+    shared = ftb.share(7, 1);
+    in = shared.get_istream();
+    BOOST_CHECK_EQUAL(in.bytes_left(), 1);
+    BOOST_CHECK_EQUAL(in.read<uint8_t>(), 0x12);
+}
