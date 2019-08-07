@@ -65,6 +65,26 @@ func TestReadRuntineOptions(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "shall return the option when there is only one string",
+			before: func(fs afero.Fs) {
+				fs.MkdirAll("/proc", 0755)
+				afero.WriteFile(
+					fs, "/proc/test",
+					[]byte("opt1\n"),
+					0644)
+			},
+			args: args{
+				fs:   afero.NewMemMapFs(),
+				path: "/proc/test",
+			},
+			want: &RuntimeOptions{
+				optionsMap: map[string]bool{
+					"opt1": true,
+				},
+			},
+			wantErr: false,
+		},
+		{
 			name: "shall return error when there are more than one line in file",
 			before: func(fs afero.Fs) {
 				fs.MkdirAll("/proc", 0755)
