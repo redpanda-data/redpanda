@@ -111,8 +111,11 @@ func prestart(
 		log.Info("System tune - PASSED")
 	}
 	if prestartCfg.checkEnabled {
-		checkersMap := checkers.RedpandaCheckers(fs, args.IoConfigFile, config)
-		err := check(checkersMap, checkFailedActions(args))
+		checkersMap, err := checkers.RedpandaCheckers(fs, args.IoConfigFile, config)
+		if err != nil {
+			return err
+		}
+		err = check(checkersMap, checkFailedActions(args))
 		if err != nil {
 			return err
 		}
@@ -173,24 +176,26 @@ func checkFailedActions(
 }
 
 func check(
-	checkersMap map[checkers.CheckerID]checkers.Checker,
+	checkersMap map[checkers.CheckerID][]checkers.Checker,
 	checkFailedActions map[checkers.CheckerID]checkFailedAction,
 ) error {
-	for checkerID, checker := range checkersMap {
-		result := checker.Check()
-		if result.Err != nil {
-			return result.Err
-		}
-		if !result.IsOk {
-			if action, exists := checkFailedActions[checkerID]; exists {
-				action(result)
+	for checkerID, checkersSlice := range checkersMap {
+		for _, checker := range checkersSlice {
+			result := checker.Check()
+			if result.Err != nil {
+				return result.Err
 			}
-			msg := fmt.Sprintf("System check '%s' failed. Required: %v, Current %v",
-				checker.GetDesc(), checker.GetRequiredAsString(), result.Current)
-			if checker.GetSeverity() == checkers.Fatal {
-				return fmt.Errorf(msg)
+			if !result.IsOk {
+				if action, exists := checkFailedActions[checkerID]; exists {
+					action(result)
+				}
+				msg := fmt.Sprintf("System check '%s' failed. Required: %v, Current %v",
+					checker.GetDesc(), checker.GetRequiredAsString(), result.Current)
+				if checker.GetSeverity() == checkers.Fatal {
+					return fmt.Errorf(msg)
+				}
+				log.Warn(msg)
 			}
-			log.Warn(msg)
 		}
 	}
 	return nil

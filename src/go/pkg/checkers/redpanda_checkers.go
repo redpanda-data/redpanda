@@ -126,16 +126,16 @@ func NewNTPSyncChecker(fs afero.Fs) Checker {
 
 func RedpandaCheckers(
 	fs afero.Fs, ioConfigFile string, config *redpanda.Config,
-) map[CheckerID]Checker {
-	return map[CheckerID]Checker{
-		ConfigFile:           NewConfigChecker(config),
-		IoConfigFile:         NewIOConfigFileExistanceChecker(fs, ioConfigFile),
-		FreeMem:              NewMemoryChecker(fs),
-		Swap:                 NewSwapChecker(fs),
-		DataDirAccess:        NewDataDirWritableChecker(fs, config.Directory),
-		DiskSpace:            NewFreeDiskSpaceChecker(config.Directory),
-		FsType:               NewFilesystemTypeChecker(config.Directory),
-		TransparentHugePages: NewTransparentHugePagesChecker(fs),
-		NTP:                  NewNTPSyncChecker(fs),
-	}
+) (map[CheckerID][]Checker, error) {
+	return map[CheckerID][]Checker{
+		ConfigFile:           []Checker{NewConfigChecker(config)},
+		IoConfigFile:         []Checker{NewIOConfigFileExistanceChecker(fs, ioConfigFile)},
+		FreeMem:              []Checker{NewMemoryChecker(fs)},
+		Swap:                 []Checker{NewSwapChecker(fs)},
+		DataDirAccess:        []Checker{NewDataDirWritableChecker(fs, config.Directory)},
+		DiskSpace:            []Checker{NewFreeDiskSpaceChecker(config.Directory)},
+		FsType:               []Checker{NewFilesystemTypeChecker(config.Directory)},
+		TransparentHugePages: []Checker{NewTransparentHugePagesChecker(fs)},
+		NTP:                  []Checker{NewNTPSyncChecker(fs)},
+	}, nil
 }

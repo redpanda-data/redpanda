@@ -42,7 +42,10 @@ func executeCheck(fs afero.Fs, configFileFlag string) error {
 		return err
 	}
 	ioConfigFile := redpanda.GetIOConfigPath(filepath.Dir(configFile))
-	checkersMap := checkers.RedpandaCheckers(fs, ioConfigFile, config)
+	checkersMap, err := checkers.RedpandaCheckers(fs, ioConfigFile, config)
+	if err != nil {
+		return err
+	}
 	table := ui.NewRpkTable(os.Stdout)
 	table.SetHeader([]string{
 		"Condition",
@@ -52,20 +55,22 @@ func executeCheck(fs afero.Fs, configFileFlag string) error {
 		"Passed",
 	})
 	var isOk = true
-	for _, c := range checkersMap {
-		result := c.Check()
-		if result.Err != nil {
-			return result.Err
+	for _, checkersSlice := range checkersMap {
+		for _, c := range checkersSlice {
+			result := c.Check()
+			if result.Err != nil {
+				return result.Err
+			}
+			log.Debugf("Checker '%s' result %+v", c.GetDesc(), result)
+			isOk = isOk && result.IsOk
+			table.Append([]string{
+				c.GetDesc(),
+				fmt.Sprint(c.GetRequiredAsString()),
+				result.Current,
+				fmt.Sprint(c.GetSeverity()),
+				fmt.Sprint(printResult(c.GetSeverity(), result.IsOk)),
+			})
 		}
-		log.Debugf("Checker '%s' result %+v", c.GetDesc(), result)
-		isOk = isOk && result.IsOk
-		table.Append([]string{
-			c.GetDesc(),
-			fmt.Sprint(c.GetRequiredAsString()),
-			result.Current,
-			fmt.Sprint(c.GetSeverity()),
-			fmt.Sprint(printResult(c.GetSeverity(), result.IsOk)),
-		})
 	}
 	fmt.Println()
 	fmt.Println("System check results")
