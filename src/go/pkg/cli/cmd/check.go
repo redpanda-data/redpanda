@@ -42,7 +42,7 @@ func executeCheck(fs afero.Fs, configFileFlag string) error {
 		return err
 	}
 	ioConfigFile := redpanda.GetIOConfigPath(filepath.Dir(configFile))
-	checkersMap, err := checkers.RedpandaCheckers(fs, ioConfigFile, config)
+	checkersMap, err := redpanda.RedpandaCheckers(fs, ioConfigFile, config)
 	if err != nil {
 		return err
 	}

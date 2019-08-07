@@ -111,7 +111,7 @@ func prestart(
 		log.Info("System tune - PASSED")
 	}
 	if prestartCfg.checkEnabled {
-		checkersMap, err := checkers.RedpandaCheckers(fs, args.IoConfigFile, config)
+		checkersMap, err := redpanda.RedpandaCheckers(fs, args.IoConfigFile, config)
 		if err != nil {
 			return err
 		}
@@ -166,9 +166,9 @@ type checkFailedAction func(*checkers.CheckResult)
 
 func checkFailedActions(
 	args *redpanda.RedpandaArgs,
-) map[checkers.CheckerID]checkFailedAction {
-	return map[checkers.CheckerID]checkFailedAction{
-		checkers.Swap: func(*checkers.CheckResult) {
+) map[redpanda.CheckerID]checkFailedAction {
+	return map[redpanda.CheckerID]checkFailedAction{
+		redpanda.SwapChecker: func(*checkers.CheckResult) {
 			// Do not set --lock-memory flag when swap is disabled
 			args.LockMemory = false
 		},
@@ -176,8 +176,8 @@ func checkFailedActions(
 }
 
 func check(
-	checkersMap map[checkers.CheckerID][]checkers.Checker,
-	checkFailedActions map[checkers.CheckerID]checkFailedAction,
+	checkersMap map[redpanda.CheckerID][]checkers.Checker,
+	checkFailedActions map[redpanda.CheckerID]checkFailedAction,
 ) error {
 	for checkerID, checkersSlice := range checkersMap {
 		for _, checker := range checkersSlice {
