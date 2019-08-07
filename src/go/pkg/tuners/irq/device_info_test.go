@@ -11,11 +11,11 @@ import (
 
 type mockProcFile struct {
 	ProcFile
-	getIRQProcFileLinesMap func() (map[string]string, error)
+	getIRQProcFileLinesMap func() (map[int]string, error)
 }
 
 func (mockProcFile *mockProcFile) GetIRQProcFileLinesMap() (
-	map[string]string,
+	map[int]string,
 	error,
 ) {
 	return mockProcFile.getIRQProcFileLinesMap()
@@ -35,7 +35,7 @@ func Test_DeviceInfo_GetIRQs(t *testing.T) {
 		fields  fields
 		before  func(fields)
 		args    args
-		want    []string
+		want    []int
 		wantErr bool
 	}{
 		{
@@ -52,7 +52,7 @@ func Test_DeviceInfo_GetIRQs(t *testing.T) {
 			args: args{
 				irqConfigDir: "/irq_config/dev1",
 			},
-			want:    []string{"1", "2", "5", "8"},
+			want:    []int{1, 2, 5, 8},
 			wantErr: false,
 		},
 		{
@@ -67,7 +67,7 @@ func Test_DeviceInfo_GetIRQs(t *testing.T) {
 			args: args{
 				irqConfigDir: "/irq_config/dev1",
 			},
-			want:    []string{"1", "2", "5", "8"},
+			want:    []int{1, 2, 5, 8},
 			wantErr: false,
 		},
 		{
@@ -75,11 +75,11 @@ func Test_DeviceInfo_GetIRQs(t *testing.T) {
 			fields: fields{
 				fs: afero.NewMemMapFs(),
 				procFile: &mockProcFile{
-					getIRQProcFileLinesMap: func() (strings map[string]string, e error) {
-						return map[string]string{
-							"1": "1:     184233          0          0       7985   IO-APIC   1-edge      i8042",
-							"5": "5:          0          0          0          0   IO-APIC   5-edge      drv-virtio-1",
-							"8": "8:          1          0          0          0   IO-APIC   8-edge      rtc0"}, nil
+					getIRQProcFileLinesMap: func() (map[int]string, error) {
+						return map[int]string{
+							1: "1:     184233          0          0       7985   IO-APIC   1-edge      i8042",
+							5: "5:          0          0          0          0   IO-APIC   5-edge      drv-virtio-1",
+							8: "8:          1          0          0          0   IO-APIC   8-edge      rtc0"}, nil
 					},
 				},
 			},
@@ -95,7 +95,7 @@ func Test_DeviceInfo_GetIRQs(t *testing.T) {
 				irqConfigDir:  "/irq_config/dev1",
 				xenDeviceName: "dev1",
 			},
-			want:    []string{"5"},
+			want:    []int{5},
 			wantErr: false,
 		},
 		{
@@ -103,11 +103,11 @@ func Test_DeviceInfo_GetIRQs(t *testing.T) {
 			fields: fields{
 				fs: afero.NewMemMapFs(),
 				procFile: &mockProcFile{
-					getIRQProcFileLinesMap: func() (strings map[string]string, e error) {
-						return map[string]string{
-							"1": "1:     184233          0          0       7985   IO-APIC   1-edge      xen-dev1",
-							"5": "5:          0          0          0          0   IO-APIC   5-edge      drv-virtio-1",
-							"8": "8:          1          0          0          0   IO-APIC   8-edge      rtc0"}, nil
+					getIRQProcFileLinesMap: func() (map[int]string, error) {
+						return map[int]string{
+							1: "1:     184233          0          0       7985   IO-APIC   1-edge      xen-dev1",
+							5: "5:          0          0          0          0   IO-APIC   5-edge      drv-virtio-1",
+							8: "8:          1          0          0          0   IO-APIC   8-edge      rtc0"}, nil
 					},
 				},
 			},
@@ -123,7 +123,7 @@ func Test_DeviceInfo_GetIRQs(t *testing.T) {
 				irqConfigDir:  "/irq_config/dev1",
 				xenDeviceName: "xen-dev1",
 			},
-			want:    []string{"1"},
+			want:    []int{1},
 			wantErr: false,
 		},
 	}

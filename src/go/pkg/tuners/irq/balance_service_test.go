@@ -36,7 +36,7 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 		fs   afero.Fs
 	}
 	type args struct {
-		bannedIRQs []string
+		bannedIRQs []int
 	}
 	tests := []struct {
 		name   string
@@ -60,7 +60,7 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 				fs: afero.NewMemMapFs(),
 			},
 			args: args{
-				bannedIRQs: []string{"5", "12", "15"},
+				bannedIRQs: []int{5, 12, 15},
 			},
 			before: func(fields fields) {
 				_ = utils.WriteFileLines(fields.fs,
@@ -92,7 +92,7 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 				fs: afero.NewMemMapFs(),
 			},
 			args: args{
-				bannedIRQs: []string{"12", "15"},
+				bannedIRQs: []int{12, 15},
 			},
 			before: func(fields fields) {
 				_ = utils.WriteFileLines(fields.fs,
@@ -126,7 +126,7 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 				fs: afero.NewMemMapFs(),
 			},
 			args: args{
-				bannedIRQs: []string{"5", "12", "15"},
+				bannedIRQs: []int{5, 12, 15},
 			},
 			before: func(fields fields) {
 				_ = utils.WriteFileLines(fields.fs,
@@ -162,7 +162,7 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 				fs: afero.NewMemMapFs(),
 			},
 			args: args{
-				bannedIRQs: []string{"5", "12", "15"},
+				bannedIRQs: []int{5, 12, 15},
 			},
 			before: func(fields fields) {
 				_ = utils.WriteFileLines(fields.fs,
@@ -199,7 +199,7 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 				fs: afero.NewMemMapFs(),
 			},
 			args: args{
-				bannedIRQs: []string{"5", "12", "15"},
+				bannedIRQs: []int{5, 12, 15},
 			},
 			before: func(fields fields) {
 				_ = utils.WriteFileLines(fields.fs,

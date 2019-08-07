@@ -30,12 +30,12 @@ type NetTuner struct {
 	irqCPUMask          string
 	nic                 string
 	slaves              []string
-	deviceIRQs          map[string][]string
+	deviceIRQs          map[string][]int
 	nicIsBondIface      bool
 	nicIsHWIface        bool
 	rfsTableSize        uint
 	driverMaxRssQueues  map[string]uint
-	procFileLines       map[string]string
+	procFileLines       map[int]string
 	fs                  afero.Fs
 }
 
@@ -151,14 +151,14 @@ func (tuner *NetTuner) CheckIfSupported() (supported bool, reason string) {
 	return false, fmt.Sprintf("Interface '%s' not found", tuner.nic)
 }
 
-func (tuner *NetTuner) getAllIRQs() []string {
-	irqsSet := map[string]bool{}
+func (tuner *NetTuner) getAllIRQs() []int {
+	irqsSet := map[int]bool{}
 	for _, irqs := range tuner.deviceIRQs {
 		for _, irq := range irqs {
 			irqsSet[irq] = true
 		}
 	}
-	return utils.GetKeys(irqsSet)
+	return utils.GetIntKeys(irqsSet)
 }
 
 func (tuner *NetTuner) getDefaultModeForHwInterface(
@@ -246,8 +246,8 @@ func (tuner *NetTuner) checkNicIsHWIface(nic string) bool {
 	return utils.FileExists(tuner.fs, fmt.Sprintf("/sys/class/net/%s/device", nic))
 }
 
-func (tuner *NetTuner) getDevicesIRQs() (map[string][]string, error) {
-	deviceToIRQsMap := map[string][]string{}
+func (tuner *NetTuner) getDevicesIRQs() (map[string][]int, error) {
+	deviceToIRQsMap := map[string][]int{}
 	var err error
 	if tuner.nicIsBondIface {
 		for _, slave := range tuner.slaves {
@@ -267,7 +267,7 @@ func (tuner *NetTuner) getDevicesIRQs() (map[string][]string, error) {
 	return deviceToIRQsMap, nil
 }
 
-func (tuner *NetTuner) getNicIRQs(device string) ([]string, error) {
+func (tuner *NetTuner) getNicIRQs(device string) ([]int, error) {
 	log.Debugf("Getting NIC '%s' irqs", device)
 	irqs, err := tuner.irqDeviceInfo.GetIRQs(fmt.Sprintf("/sys/class/net/%s/device", device),
 		device)
@@ -275,7 +275,7 @@ func (tuner *NetTuner) getNicIRQs(device string) ([]string, error) {
 		return nil, err
 	}
 	fastPathIRQsPattern := regexp.MustCompile("-TxRx-|-fp-|-Tx-Rx-")
-	var fastPathIRQs []string
+	var fastPathIRQs []int
 	for _, irq := range irqs {
 
 		if fastPathIRQsPattern.MatchString(tuner.procFileLines[irq]) {
@@ -293,7 +293,7 @@ func (tuner *NetTuner) getNicIRQs(device string) ([]string, error) {
 	}
 }
 
-func (tuner *NetTuner) intelIrqToQueueIdx(irq string) uint {
+func (tuner *NetTuner) intelIrqToQueueIdx(irq int) uint {
 	intelFastPathIrqPattern := regexp.MustCompile("-TxRx-(\\d+)")
 	fdirPattern := regexp.MustCompile("fdir-TxRx-\\d+")
 	procLine := tuner.procFileLines[irq]

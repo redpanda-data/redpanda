@@ -14,7 +14,7 @@ type CpuMasks interface {
 	CpuMaskForComputations(mode Mode, cpuMask string) (string, error)
 	CpuMaskForIRQs(mode Mode, cpuMask string) (string, error)
 	SetMask(path string, mask string) error
-	DistributeIRQs(irqs []string, cpuMask string) error
+	DistributeIRQs(irqs []int, cpuMask string) error
 	GetDistributionMasks(count uint) ([]string, error)
 	GetNumberOfCores(mask string) (uint, error)
 	GetNumberOfPUs(mask string) (uint, error)
@@ -120,7 +120,7 @@ func (masks *cpuMasks) GetDistributionMasks(count uint) ([]string, error) {
 	return masks.hwloc.Distribute(count)
 }
 
-func (masks *cpuMasks) DistributeIRQs(irqs []string, cpuMask string) error {
+func (masks *cpuMasks) DistributeIRQs(irqs []int, cpuMask string) error {
 	if len(irqs) == 0 {
 		return nil
 	}
@@ -128,9 +128,9 @@ func (masks *cpuMasks) DistributeIRQs(irqs []string, cpuMask string) error {
 	if err != nil {
 		return err
 	}
-	log.Infof("Distributing IRQs '%s' over cpu masks '%s'", irqs, irqsDistribution)
+	log.Infof("Distributing IRQs '%v' over cpu masks '%s'", irqs, irqsDistribution)
 	for i, mask := range irqsDistribution {
-		err := masks.SetMask(fmt.Sprintf("/proc/irq/%s/smp_affinity", irqs[i]), mask)
+		err := masks.SetMask(fmt.Sprintf("/proc/irq/%d/smp_affinity", irqs[i]), mask)
 		if err != nil {
 			return err
 		}

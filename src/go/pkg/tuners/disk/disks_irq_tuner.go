@@ -21,7 +21,7 @@ const (
 
 type devicesIRQs struct {
 	devices []string
-	irqs    []string
+	irqs    []int
 }
 
 type disksIRQsTuner struct {
@@ -38,7 +38,7 @@ type disksIRQsTuner struct {
 	devices             []string
 	directoryDevice     map[string][]string
 	diskInfoByType      map[diskType]devicesIRQs
-	deviceIRQs          map[string][]string
+	deviceIRQs          map[string][]int
 	numberOfCpus        int
 }
 
@@ -164,18 +164,18 @@ func (tuner *disksIRQsTuner) Tune() tuners.TuneResult {
 	return tuners.NewTuneResult(false)
 }
 
-func (tuner *disksIRQsTuner) getAllIRQs() []string {
-	irqsSet := map[string]bool{}
+func (tuner *disksIRQsTuner) getAllIRQs() []int {
+	irqsSet := map[int]bool{}
 	for _, irqs := range tuner.deviceIRQs {
 		for _, irq := range irqs {
 			irqsSet[irq] = true
 		}
 	}
-	return utils.GetKeys(irqsSet)
+	return utils.GetIntKeys(irqsSet)
 }
 
-func (tuner *disksIRQsTuner) getDevicesIRQs() (map[string][]string, error) {
-	diskIRQs := make(map[string][]string)
+func (tuner *disksIRQsTuner) getDevicesIRQs() (map[string][]int, error) {
+	diskIRQs := make(map[string][]int)
 
 	for _, devices := range tuner.directoryDevice {
 		for _, device := range devices {
@@ -243,9 +243,9 @@ func (tuner *disksIRQsTuner) groupDiskInfoByType() (
 	diskInfoByType := make(map[diskType]devicesIRQs)
 	// using map in order to provide set functionality
 	nvmeDisks := map[string]bool{}
-	nvmeIRQs := map[string]bool{}
+	nvmeIRQs := map[int]bool{}
 	nonNvmeDisks := map[string]bool{}
-	nonNvmeIRQs := map[string]bool{}
+	nonNvmeIRQs := map[int]bool{}
 
 	for device, irqs := range tuner.deviceIRQs {
 		if strings.HasPrefix(device, "nvme") {
@@ -273,13 +273,13 @@ func (tuner *disksIRQsTuner) groupDiskInfoByType() (
 		}
 	}
 	diskInfoByType[nvme] = devicesIRQs{utils.GetKeys(nvmeDisks),
-		utils.GetKeys(nvmeIRQs)}
+		utils.GetIntKeys(nvmeIRQs)}
 	diskInfoByType[nonNvme] = devicesIRQs{utils.GetKeys(nonNvmeDisks),
-		utils.GetKeys(nonNvmeIRQs)}
+		utils.GetIntKeys(nonNvmeIRQs)}
 	return diskInfoByType, nil
 }
 
-func (tuner *disksIRQsTuner) isIRQNvmeFastPathIrq(irq string) (bool, error) {
+func (tuner *disksIRQsTuner) isIRQNvmeFastPathIrq(irq int) (bool, error) {
 	nvmeFastPathQueuePattern := regexp.MustCompile(
 		"(\\s|^)nvme\\d+q(\\d+)(\\s|$)")
 	linesMap, err := tuner.irqProcFile.GetIRQProcFileLinesMap()

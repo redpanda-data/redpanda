@@ -59,11 +59,11 @@ func TestDisksIRQsTuner_getDeviceControllerPath(t *testing.T) {
 
 type mockProcFile struct {
 	irq.ProcFile
-	getIRQProcFileLinesMap func() (map[string]string, error)
+	getIRQProcFileLinesMap func() (map[int]string, error)
 }
 
 func (mockProcFile *mockProcFile) GetIRQProcFileLinesMap() (
-	map[string]string,
+	map[int]string,
 	error,
 ) {
 	return mockProcFile.getIRQProcFileLinesMap()
@@ -80,11 +80,11 @@ func Test_disksIRQsTuner_isIRQNvmeFastPathIrq(t *testing.T) {
 		{
 			name: "Shall return true as device with IRQ 18 is a NVMe device",
 			procFile: &mockProcFile{
-				getIRQProcFileLinesMap: func() (map[string]string, error) {
+				getIRQProcFileLinesMap: func() (map[int]string, error) {
 					procFileLine := "18:          0          0          0         " +
 						" 0          0          0          0         21 " +
 						"IR-PCI-MSI 59244544-edge      nvme0q4"
-					return map[string]string{"18": procFileLine}, nil
+					return map[int]string{18: procFileLine}, nil
 				},
 			},
 			expected: true,
@@ -94,11 +94,11 @@ func Test_disksIRQsTuner_isIRQNvmeFastPathIrq(t *testing.T) {
 			name: "Shall return false as device with IRQ 18 is a NVMe device" +
 				"but queue number is larger than number of cpus",
 			procFile: &mockProcFile{
-				getIRQProcFileLinesMap: func() (map[string]string, error) {
+				getIRQProcFileLinesMap: func() (map[int]string, error) {
 					procFileLine := "18:          0          0          0         " +
 						" 0          0          0          0         21 " +
 						"IR-PCI-MSI 59244544-edge      nvme0q5"
-					return map[string]string{"18": procFileLine}, nil
+					return map[int]string{18: procFileLine}, nil
 				},
 			},
 			expected: false,
@@ -107,11 +107,11 @@ func Test_disksIRQsTuner_isIRQNvmeFastPathIrq(t *testing.T) {
 		{
 			name: "Shall return false as device with IRQ 18 is not NVMe device",
 			procFile: &mockProcFile{
-				getIRQProcFileLinesMap: func() (map[string]string, error) {
+				getIRQProcFileLinesMap: func() (map[int]string, error) {
 					procFileLine := "18:       1178       1469       3467" +
 						"         96         17       3453       5932" +
 						"        331  IR-PCI-MSI 333825-edge      iwlwifi: queue 1"
-					return map[string]string{"18": procFileLine}, nil
+					return map[int]string{18: procFileLine}, nil
 				},
 			},
 			expected: false,
@@ -125,7 +125,7 @@ func Test_disksIRQsTuner_isIRQNvmeFastPathIrq(t *testing.T) {
 				numberOfCpus: test.numCpus,
 			}
 
-			isNVMEIrq, err := diskIRQsTuner.isIRQNvmeFastPathIrq("18")
+			isNVMEIrq, err := diskIRQsTuner.isIRQNvmeFastPathIrq(18)
 			//then
 			assert.Nil(t, err)
 			assert.Equal(t, test.expected, isNVMEIrq)

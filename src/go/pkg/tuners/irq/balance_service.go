@@ -12,7 +12,7 @@ import (
 )
 
 type BalanceService interface {
-	BanIRQsAndRestart(bannedIRQs []string) error
+	BanIRQsAndRestart(bannedIRQs []int) error
 }
 
 func NewBalanceService(fs afero.Fs, proc os.Proc) BalanceService {
@@ -29,12 +29,12 @@ type balanceService struct {
 }
 
 func (balanceService *balanceService) BanIRQsAndRestart(
-	bannedIRQs []string,
+	bannedIRQs []int,
 ) error {
 	optionsKey := "OPTIONS"
 	configFile := "/etc/default/irqbalance"
 	systemd := false
-	log.Infof("Restarting & Configuring 'irqbalance' with banned IRQs '%s'", bannedIRQs)
+	log.Infof("Restarting & Configuring 'irqbalance' with banned IRQs '%v'", bannedIRQs)
 	if len(bannedIRQs) == 0 {
 		return nil
 	}
@@ -62,7 +62,7 @@ func (balanceService *balanceService) BanIRQsAndRestart(
 			systemd = strings.Contains(lines[0], "systemd")
 		} else {
 			log.Error("Unknown system configuration - not restarting irqbalance!")
-			return fmt.Errorf("you have to prevent it from moving IRQs '%s' manually", bannedIRQs)
+			return fmt.Errorf("you have to prevent it from moving IRQs '%v' manually", bannedIRQs)
 		}
 	}
 
@@ -104,9 +104,9 @@ func (balanceService *balanceService) BanIRQsAndRestart(
 
 	for _, irq := range bannedIRQs {
 		bannedParamPattern := regexp.MustCompile(
-			fmt.Sprintf("\\-\\-banirq\\=%s$|\\-\\-banirq\\=%s\\s", irq, irq))
+			fmt.Sprintf("\\-\\-banirq\\=%d$|\\-\\-banirq\\=%d\\s", irq, irq))
 		if !bannedParamPattern.MatchString(newOptions) {
-			newOptions += fmt.Sprintf(" --banirq=%s", irq)
+			newOptions += fmt.Sprintf(" --banirq=%d", irq)
 		}
 	}
 	newOptions += "\""
