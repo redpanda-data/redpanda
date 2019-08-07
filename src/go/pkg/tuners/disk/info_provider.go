@@ -13,6 +13,7 @@ import (
 
 type InfoProvider interface {
 	GetDirectoriesDevices(directories []string) (map[string][]string, error)
+	GetDirectoryDevices(directory string) ([]string, error)
 	GetBlockDeviceFromPath(path string) (BlockDevice, error)
 	GetBlockDeviceSystemPath(devicePath string) (string, error)
 }
@@ -34,7 +35,7 @@ func (infoProvider *infoProvider) GetDirectoriesDevices(
 ) (map[string][]string, error) {
 	dirDevices := make(map[string][]string)
 	for _, directory := range directories {
-		devices, err := infoProvider.getDirectoryDevices(directory)
+		devices, err := infoProvider.GetDirectoryDevices(directory)
 		if err != nil {
 			return nil, err
 		}
@@ -43,7 +44,7 @@ func (infoProvider *infoProvider) GetDirectoriesDevices(
 	return dirDevices, nil
 }
 
-func (infoProvider *infoProvider) getDirectoryDevices(
+func (infoProvider *infoProvider) GetDirectoryDevices(
 	path string,
 ) ([]string, error) {
 	log.Debugf("Collecting info about directory '%s'", path)
@@ -67,7 +68,7 @@ func (infoProvider *infoProvider) getDirectoryDevices(
 	for _, line := range outputLines[1:] {
 		devicePath := strings.Split(line, " ")[0]
 		if !strings.HasPrefix(devicePath, "/dev") {
-			directoryDevices, err := infoProvider.getDirectoryDevices(devicePath)
+			directoryDevices, err := infoProvider.GetDirectoryDevices(devicePath)
 			if err != nil {
 				return nil, err
 			}
