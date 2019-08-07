@@ -108,10 +108,11 @@ func (factory *tunersFactory) newDiskSchedulerTuner(
 	params *TunerParams,
 ) tuners.Tunable {
 	return disk.NewSchedulerTuner(
+		factory.fs,
 		params.Directories,
 		params.Disks,
 		factory.diskInfoProvider,
-		factory.fs)
+	)
 }
 
 func (factory *tunersFactory) newNetworkTuner(
