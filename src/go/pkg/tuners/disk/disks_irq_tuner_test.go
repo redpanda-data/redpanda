@@ -7,48 +7,48 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-type diskInfoProviderMock struct {
+type blockDevicesMock struct {
 	getDirectoriesDevices    func([]string) (map[string][]string, error)
 	getDirectoryDevices      func(string) ([]string, error)
 	getBlockDeviceFromPath   func(string) (BlockDevice, error)
 	getBlockDeviceSystemPath func(string) (string, error)
 }
 
-func (infoProvider *diskInfoProviderMock) GetDirectoriesDevices(
+func (blockDevices *blockDevicesMock) GetDirectoriesDevices(
 	directories []string,
 ) (map[string][]string, error) {
-	return infoProvider.getDirectoriesDevices(directories)
+	return blockDevices.getDirectoriesDevices(directories)
 }
 
-func (infoProvider *diskInfoProviderMock) GetBlockDeviceFromPath(
+func (blockDevices *blockDevicesMock) GetDeviceFromPath(
 	path string,
 ) (BlockDevice, error) {
-	return infoProvider.getBlockDeviceFromPath(path)
+	return blockDevices.getBlockDeviceFromPath(path)
 }
 
-func (infoProvider *diskInfoProviderMock) GetBlockDeviceSystemPath(
+func (blockDevices *blockDevicesMock) GetDeviceSystemPath(
 	path string,
 ) (string, error) {
-	return infoProvider.getBlockDeviceSystemPath(path)
+	return blockDevices.getBlockDeviceSystemPath(path)
 }
 
-func (infoProvider *diskInfoProviderMock) GetDirectoryDevices(
+func (blockDevices *blockDevicesMock) GetDirectoryDevices(
 	path string,
 ) ([]string, error) {
-	return infoProvider.getDirectoryDevices(path)
+	return blockDevices.getDirectoryDevices(path)
 }
 
 func TestDisksIRQsTuner_getDeviceControllerPath(t *testing.T) {
 	//given
-	infoProvider := &diskInfoProviderMock{
+	blockDevices := &blockDevicesMock{
 		getBlockDeviceSystemPath: func(str string) (string, error) {
 			return "/sys/devices/pci0000:00/0000:00:1f." +
 				"2/ata1/host0/target0:0:0/0:0:0:0/block/sda/sda1", nil
 		},
 	}
 	diskIRQsTuner := &disksIRQsTuner{
-		devices:          []string{"sdb1"},
-		diskInfoProvider: infoProvider,
+		devices:      []string{"sdb1"},
+		blockDevices: blockDevices,
 	}
 	//when
 	controllerPath, err := diskIRQsTuner.getDeviceControllerPath("sdb1")

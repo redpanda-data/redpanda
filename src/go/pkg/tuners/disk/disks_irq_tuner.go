@@ -29,7 +29,7 @@ type disksIRQsTuner struct {
 	cpuMasks            irq.CpuMasks
 	irqBalanceService   irq.BalanceService
 	irqProcFile         irq.ProcFile
-	diskInfoProvider    InfoProvider
+	blockDevices        BlockDevices
 	mode                irq.Mode
 	baseCPUMask         string
 	computationsCPUMask string
@@ -51,7 +51,7 @@ func NewDiskIrqTuner(
 	cpuMasks irq.CpuMasks,
 	irqBalanceService irq.BalanceService,
 	irqProcFile irq.ProcFile,
-	diskInfoProvider InfoProvider,
+	blockDevices BlockDevices,
 	numberOfCpus int,
 ) tuners.Tunable {
 	log.Debugf("Creating disk IRQs tuner with mode '%s', cpu mask '%s', directories '%s' and devices '%s'",
@@ -62,7 +62,7 @@ func NewDiskIrqTuner(
 		cpuMasks:          cpuMasks,
 		irqBalanceService: irqBalanceService,
 		irqProcFile:       irqProcFile,
-		diskInfoProvider:  diskInfoProvider,
+		blockDevices:      blockDevices,
 		mode:              mode,
 		baseCPUMask:       cpuMask,
 		directories:       dirs,
@@ -123,7 +123,7 @@ func (tuner *disksIRQsTuner) Tune() tuners.TuneResult {
 	if err != nil {
 		return tuners.NewTuneError(err)
 	}
-	tuner.directoryDevice, err = tuner.diskInfoProvider.GetDirectoriesDevices(
+	tuner.directoryDevice, err = tuner.blockDevices.GetDirectoriesDevices(
 		tuner.directories)
 	if err != nil {
 		return tuners.NewTuneError(err)
@@ -217,7 +217,7 @@ func (tuner *disksIRQsTuner) getDeviceControllerPath(
 ) (string, error) {
 	devicePath := path.Join("/dev", device)
 	log.Debugf("Getting controller path for '%s'", devicePath)
-	devSystemPath, err := tuner.diskInfoProvider.GetBlockDeviceSystemPath(
+	devSystemPath, err := tuner.blockDevices.GetDeviceSystemPath(
 		devicePath)
 	if err != nil {
 		return "", err

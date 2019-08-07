@@ -20,17 +20,17 @@ type SchedulerInfo interface {
 	GetSchedulerFeatureFile(device string) (string, error)
 }
 
-func NewSchedulerInfo(fs afero.Fs, infoProvider InfoProvider) SchedulerInfo {
+func NewSchedulerInfo(fs afero.Fs, blockDevices BlockDevices) SchedulerInfo {
 	return &schedulerInfo{
-		fs:               fs,
-		diskInfoProvider: infoProvider,
+		fs:           fs,
+		blockDevices: blockDevices,
 	}
 }
 
 type schedulerInfo struct {
 	SchedulerInfo
-	fs               afero.Fs
-	diskInfoProvider InfoProvider
+	fs           afero.Fs
+	blockDevices BlockDevices
 }
 
 func (s *schedulerInfo) GetScheduler(device string) (string, error) {
@@ -87,7 +87,7 @@ func (s *schedulerInfo) getSchedulerOptions(
 func (s *schedulerInfo) getQueueFeatureFile(
 	deviceNode string, featureType string,
 ) (string, error) {
-	device, err := s.diskInfoProvider.GetBlockDeviceFromPath(deviceNode)
+	device, err := s.blockDevices.GetDeviceFromPath(deviceNode)
 	if err != nil {
 		log.Error(err.Error())
 		return "", nil

@@ -134,15 +134,15 @@ func RedpandaCheckers(
 	fs afero.Fs, ioConfigFile string, config *Config,
 ) (map[CheckerID][]checkers.Checker, error) {
 	proc := os.NewProc()
-	infoProvider := disk.NewDiskInfoProvider(fs, proc)
-	schedulerInfo := disk.NewSchedulerInfo(fs, infoProvider)
+	blockDevices := disk.NewBlockDevices(fs, proc)
+	schedulerInfo := disk.NewSchedulerInfo(fs, blockDevices)
 	schdulerCheckers, err := disk.NewDirectorySchedulerCheckers(fs,
-		config.Directory, schedulerInfo, infoProvider)
+		config.Directory, schedulerInfo, blockDevices)
 	if err != nil {
 		return nil, err
 	}
 	nomergesCheckers, err := disk.NewDirectoryNomergesCheckers(fs,
-		config.Directory, schedulerInfo, infoProvider)
+		config.Directory, schedulerInfo, blockDevices)
 	if err != nil {
 		return nil, err
 	}

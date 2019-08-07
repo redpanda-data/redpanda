@@ -11,7 +11,7 @@ var noopSchedulerEnabled = "deadline cfq [noop]"
 
 func TestSchedulerInfo_GetScheduler(t *testing.T) {
 	// given
-	infoProvider := &diskInfoProviderMock{
+	blockDevices := &blockDevicesMock{
 		getBlockDeviceFromPath: func(path string) (BlockDevice, error) {
 			return &blockDevice{
 				devnode: "/dev/fake",
@@ -24,7 +24,7 @@ func TestSchedulerInfo_GetScheduler(t *testing.T) {
 	afero.WriteFile(fs,
 		"/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake/queue/scheduler",
 		[]byte(noopSchedulerEnabled), 0644)
-	schedulerInfo := NewSchedulerInfo(fs, infoProvider)
+	schedulerInfo := NewSchedulerInfo(fs, blockDevices)
 	// when
 	scheduler, err := schedulerInfo.GetScheduler("fake")
 	// then
@@ -34,7 +34,7 @@ func TestSchedulerInfo_GetScheduler(t *testing.T) {
 
 func TestSchedulerInfo_GetSupportedScheduler(t *testing.T) {
 	// given
-	infoProvider := &diskInfoProviderMock{
+	blockDevices := &blockDevicesMock{
 		getBlockDeviceFromPath: func(path string) (BlockDevice, error) {
 			return &blockDevice{
 				devnode: "/dev/fake",
@@ -47,7 +47,7 @@ func TestSchedulerInfo_GetSupportedScheduler(t *testing.T) {
 	afero.WriteFile(fs,
 		"/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake/queue/scheduler",
 		[]byte(noopSchedulerEnabled), 0644)
-	schedulerInfo := NewSchedulerInfo(fs, infoProvider)
+	schedulerInfo := NewSchedulerInfo(fs, blockDevices)
 	// when
 	schedulers, err := schedulerInfo.GetSupportedSchedulers("fake")
 	// then
@@ -60,7 +60,7 @@ func TestSchedulerInfo_GetSupportedScheduler(t *testing.T) {
 
 func TestSchedulerInfo_GetNoMerges(t *testing.T) {
 	// given
-	infoProvider := &diskInfoProviderMock{
+	blockDevices := &blockDevicesMock{
 		getBlockDeviceFromPath: func(path string) (BlockDevice, error) {
 			return &blockDevice{
 				devnode: "/dev/fake",
@@ -73,7 +73,7 @@ func TestSchedulerInfo_GetNoMerges(t *testing.T) {
 	afero.WriteFile(fs,
 		"/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake/queue/nomerges",
 		[]byte("2"), 0644)
-	schedulerInfo := NewSchedulerInfo(fs, infoProvider)
+	schedulerInfo := NewSchedulerInfo(fs, blockDevices)
 	// when
 	nomerges, err := schedulerInfo.GetNomerges("fake")
 	// then

@@ -38,7 +38,7 @@ type tunersFactory struct {
 	cpuMasks          irq.CpuMasks
 	irqBalanceService irq.BalanceService
 	irqProcFile       irq.ProcFile
-	diskInfoProvider  disk.InfoProvider
+	blockDevices      disk.BlockDevices
 	proc              os.Proc
 	grub              os.Grub
 	tuners            map[string]func(*tunersFactory, *TunerParams) tuners.Tunable
@@ -60,7 +60,7 @@ func NewTunersFactory(fs afero.Fs) TunersFactory {
 		irqDeviceInfo:     irq.NewDeviceInfo(fs, irqProcFile),
 		cpuMasks:          irq.NewCpuMasks(fs, hwloc.NewHwLocCmd(proc)),
 		irqBalanceService: irq.NewBalanceService(fs, proc),
-		diskInfoProvider:  disk.NewDiskInfoProvider(fs, proc),
+		blockDevices:      disk.NewBlockDevices(fs, proc),
 		grub:              os.NewGrub(os.NewCommands(proc), proc, fs),
 		proc:              proc,
 	}
@@ -100,7 +100,7 @@ func (factory *tunersFactory) newDiskIrqTuner(
 		factory.cpuMasks,
 		factory.irqBalanceService,
 		factory.irqProcFile,
-		factory.diskInfoProvider,
+		factory.blockDevices,
 		runtime.NumCPU(),
 	)
 }
@@ -112,7 +112,7 @@ func (factory *tunersFactory) newDiskSchedulerTuner(
 		factory.fs,
 		params.Directories,
 		params.Disks,
-		factory.diskInfoProvider,
+		factory.blockDevices,
 	)
 }
 
@@ -123,7 +123,7 @@ func (factory *tunersFactory) newDiskNomergesTuner(
 		factory.fs,
 		params.Directories,
 		params.Disks,
-		factory.diskInfoProvider,
+		factory.blockDevices,
 	)
 }
 

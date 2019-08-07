@@ -37,24 +37,24 @@ func tuneNomerges(
 
 type nomergesTuner struct {
 	tuners.Tunable
-	diskInfoProvider InfoProvider
-	directories      []string
-	devices          []string
-	fs               afero.Fs
+	blockDevices BlockDevices
+	directories  []string
+	devices      []string
+	fs           afero.Fs
 }
 
 func NewNomergesTuner(
 	fs afero.Fs,
 	directories []string,
 	devices []string,
-	diskInfoProvider InfoProvider,
+	blockDevices BlockDevices,
 ) tuners.Tunable {
-	schedulerInfo := NewSchedulerInfo(fs, diskInfoProvider)
+	schedulerInfo := NewSchedulerInfo(fs, blockDevices)
 	return NewDiskTuner(
 		fs,
 		directories,
 		devices,
-		diskInfoProvider,
+		blockDevices,
 		func(device string) tuners.Tunable {
 			return NewDeviceNomergesTuner(fs, device, schedulerInfo)
 		},

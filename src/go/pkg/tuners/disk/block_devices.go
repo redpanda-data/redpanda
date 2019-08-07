@@ -11,31 +11,31 @@ import (
 	"github.com/spf13/afero"
 )
 
-type InfoProvider interface {
+type BlockDevices interface {
 	GetDirectoriesDevices(directories []string) (map[string][]string, error)
 	GetDirectoryDevices(directory string) ([]string, error)
-	GetBlockDeviceFromPath(path string) (BlockDevice, error)
-	GetBlockDeviceSystemPath(devicePath string) (string, error)
+	GetDeviceFromPath(path string) (BlockDevice, error)
+	GetDeviceSystemPath(devicePath string) (string, error)
 }
 
-type infoProvider struct {
+type blockDevices struct {
 	proc os.Proc
 	fs   afero.Fs
 }
 
-func NewDiskInfoProvider(fs afero.Fs, proc os.Proc) InfoProvider {
-	return &infoProvider{
+func NewBlockDevices(fs afero.Fs, proc os.Proc) BlockDevices {
+	return &blockDevices{
 		fs:   fs,
 		proc: proc,
 	}
 }
 
-func (infoProvider *infoProvider) GetDirectoriesDevices(
+func (b *blockDevices) GetDirectoriesDevices(
 	directories []string,
 ) (map[string][]string, error) {
 	dirDevices := make(map[string][]string)
 	for _, directory := range directories {
-		devices, err := infoProvider.GetDirectoryDevices(directory)
+		devices, err := b.GetDirectoryDevices(directory)
 		if err != nil {
 			return nil, err
 		}
@@ -44,31 +44,29 @@ func (infoProvider *infoProvider) GetDirectoriesDevices(
 	return dirDevices, nil
 }
 
-func (infoProvider *infoProvider) GetDirectoryDevices(
-	path string,
-) ([]string, error) {
+func (b *blockDevices) GetDirectoryDevices(path string) ([]string, error) {
 	log.Debugf("Collecting info about directory '%s'", path)
-	if !utils.FileExists(infoProvider.fs, path) {
+	if !utils.FileExists(b.fs, path) {
 		// path/to/whatever does not exist
 		return []string{}, nil
 	}
-	device, err := infoProvider.getBlockDeviceFromPath(path, getDevNumFromDirectory)
+	device, err := b.getBlockDeviceFromPath(path, getDevNumFromDirectory)
 	if err != nil {
 		return nil, err
 	}
 	if device != nil {
-		return infoProvider.getPhysDevices(device)
+		return b.getPhysDevices(device)
 	}
 
 	var devices []string
-	outputLines, err := infoProvider.proc.RunWithSystemLdPath("df", "-P", path)
+	outputLines, err := b.proc.RunWithSystemLdPath("df", "-P", path)
 	if err != nil {
 		return nil, err
 	}
 	for _, line := range outputLines[1:] {
 		devicePath := strings.Split(line, " ")[0]
 		if !strings.HasPrefix(devicePath, "/dev") {
-			directoryDevices, err := infoProvider.GetDirectoryDevices(devicePath)
+			directoryDevices, err := b.GetDirectoryDevices(devicePath)
 			if err != nil {
 				return nil, err
 			}
@@ -86,13 +84,11 @@ func (infoProvider *infoProvider) GetDirectoryDevices(
 	return []string{}, nil
 }
 
-func (infoProvider *infoProvider) getPhysDevices(
-	device BlockDevice,
-) ([]string, error) {
+func (b *blockDevices) getPhysDevices(device BlockDevice) ([]string, error) {
 	log.Debugf("Getting physical device from '%s'", device.Syspath())
 	if strings.Contains(device.Syspath(), "virtual") {
 		joinedPath := path.Join(device.Syspath(), "slaves")
-		files, err := afero.ReadDir(infoProvider.fs, joinedPath)
+		files, err := afero.ReadDir(b.fs, joinedPath)
 		if err != nil {
 			return nil, err
 		}
@@ -100,11 +96,11 @@ func (infoProvider *infoProvider) getPhysDevices(
 		for _, deviceDirectory := range files {
 			slavePath := "/dev/" + deviceDirectory.Name()
 			log.Debugf("Dealing with virtual device, checking slave %s", slavePath)
-			deviceFromPath, err := infoProvider.GetBlockDeviceFromPath(slavePath)
+			deviceFromPath, err := b.GetDeviceFromPath(slavePath)
 			if err != nil {
 				return nil, err
 			}
-			devices, err := infoProvider.getPhysDevices(deviceFromPath)
+			devices, err := b.getPhysDevices(deviceFromPath)
 			if err != nil {
 				return nil, err
 			}
@@ -124,22 +120,18 @@ func getDevNumFromDirectory(stat syscall.Stat_t) uint64 {
 	return stat.Dev
 }
 
-func (infoProvider *infoProvider) GetBlockDeviceFromPath(
-	path string,
-) (BlockDevice, error) {
-	return infoProvider.getBlockDeviceFromPath(path,
+func (b *blockDevices) GetDeviceFromPath(path string) (BlockDevice, error) {
+	return b.getBlockDeviceFromPath(path,
 		getDevNumFromDeviceDirectory)
 }
 
-func (infoProvider *infoProvider) GetBlockDeviceSystemPath(
-	path string,
-) (string, error) {
-	device, err := infoProvider.getBlockDeviceFromPath(path,
+func (b *blockDevices) GetDeviceSystemPath(path string) (string, error) {
+	device, err := b.getBlockDeviceFromPath(path,
 		getDevNumFromDeviceDirectory)
 	return device.Syspath(), err
 }
 
-func (infoProvider *infoProvider) getBlockDeviceFromPath(
+func (b *blockDevices) getBlockDeviceFromPath(
 	path string, devNumExtractor func(syscall.Stat_t) uint64,
 ) (BlockDevice, error) {
 	var stat syscall.Stat_t
@@ -149,5 +141,5 @@ func (infoProvider *infoProvider) getBlockDeviceFromPath(
 		return nil, err
 	}
 	number := devNumExtractor(stat)
-	return NewDevice(int((0xFFFFFFFF00000000&number)>>32), int(number&0xFFFFFFFF), infoProvider.fs)
+	return NewDevice(int((0xFFFFFFFF00000000&number)>>32), int(number&0xFFFFFFFF), b.fs)
 }

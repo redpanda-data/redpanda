@@ -10,10 +10,10 @@ import (
 func CreateDirectoryCheckers(
 	fs afero.Fs,
 	dir string,
-	infoProvider InfoProvider,
+	blockDevices BlockDevices,
 	newDeviceChecker func(string) checkers.Checker,
 ) ([]checkers.Checker, error) {
-	devices, err := infoProvider.GetDirectoryDevices(dir)
+	devices, err := blockDevices.GetDirectoryDevices(dir)
 	if err != nil {
 		return nil, err
 	}
@@ -45,12 +45,12 @@ func NewDirectoryNomergesCheckers(
 	fs afero.Fs,
 	dir string,
 	schedulerInfo SchedulerInfo,
-	infoProvider InfoProvider,
+	blockDevices BlockDevices,
 ) ([]checkers.Checker, error) {
 	return CreateDirectoryCheckers(
 		fs,
 		dir,
-		infoProvider,
+		blockDevices,
 		func(device string) checkers.Checker {
 			return NewDeviceNomergesChecker(fs, device, schedulerInfo)
 		},
@@ -81,14 +81,28 @@ func NewDirectorySchedulerCheckers(
 	fs afero.Fs,
 	dir string,
 	schedulerInfo SchedulerInfo,
-	infoProvider InfoProvider,
+	blockDevices BlockDevices,
 ) ([]checkers.Checker, error) {
 	return CreateDirectoryCheckers(
 		fs,
 		dir,
-		infoProvider,
+		blockDevices,
 		func(device string) checkers.Checker {
 			return NewDeviceSchedulerChecker(fs, device, schedulerInfo)
+		},
+	)
+}
+
+func NewDeviceIRQAffinityStaticChecker(
+	fs afero.Fs, device string,
+) checkers.Checker {
+	return checkers.NewEqualityChecker(
+		fmt.Sprintf("Disk %s IRQs affinity static", device),
+		checkers.Warning,
+		true,
+		func() (interface{}, error) {
+
+			return false, nil
 		},
 	)
 }

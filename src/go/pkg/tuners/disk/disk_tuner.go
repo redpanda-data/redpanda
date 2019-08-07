@@ -12,14 +12,14 @@ func NewDiskTuner(
 	fs afero.Fs,
 	directories []string,
 	devices []string,
-	diskInfoProvider InfoProvider,
+	blockDevices BlockDevices,
 	deviceTunerFactory func(string) tuners.Tunable,
 ) tuners.Tunable {
 	return &diskTuner{
 		fs:                 fs,
 		directories:        directories,
 		devices:            devices,
-		diskInfoProvider:   diskInfoProvider,
+		blockDevices:       blockDevices,
 		deviceTunerFactory: deviceTunerFactory,
 	}
 }
@@ -28,7 +28,7 @@ type diskTuner struct {
 	tuners.Tunable
 	fs                 afero.Fs
 	deviceTunerFactory func(string) tuners.Tunable
-	diskInfoProvider   InfoProvider
+	blockDevices       BlockDevices
 	directories        []string
 	devices            []string
 }
@@ -66,7 +66,7 @@ func (tuner *diskTuner) CheckIfSupported() (supported bool, reason string) {
 }
 
 func (tuner *diskTuner) createDeviceTuners() ([]tuners.Tunable, error) {
-	directoryDevices, err := tuner.diskInfoProvider.GetDirectoriesDevices(
+	directoryDevices, err := tuner.blockDevices.GetDirectoriesDevices(
 		tuner.directories)
 	if err != nil {
 		return nil, err
