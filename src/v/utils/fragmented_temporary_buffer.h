@@ -45,6 +45,32 @@ public:
         return !_size_bytes;
     }
 
+
+    fragmented_temporary_buffer share(size_t pos, const size_t len) {
+        std::vector<temporary_buffer<char>> fragments;
+        fragments.reserve(len / default_fragment_size);
+        size_t left = len;
+        for (auto& frag : _fragments) {
+            if (left == 0) {
+                break;
+            }
+            if (pos >= frag.size()) {
+                pos -= frag.size();
+                continue;
+            }
+            size_t left_in_frag = frag.size() - pos;
+            if (left >= left_in_frag) {
+                left -= left_in_frag;
+            } else {
+                left_in_frag = left;
+                left = 0;
+            }
+            fragments.push_back(frag.share(pos, left_in_frag));
+            pos = 0;
+        }
+        return fragmented_temporary_buffer(std::move(fragments), len);
+    }
+
 private:
     vector_type _fragments;
     size_t _size_bytes = 0;
