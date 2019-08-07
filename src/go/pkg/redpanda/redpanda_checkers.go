@@ -1,6 +1,8 @@
 package redpanda
 
 import (
+	"vectorized/pkg/tuners/disk"
+	"vectorized/pkg/os"
 	"vectorized/pkg/checkers"
 	"vectorized/pkg/system"
 	"vectorized/pkg/system/filesystem"
@@ -131,6 +133,19 @@ func NewNTPSyncChecker(fs afero.Fs) checkers.Checker {
 func RedpandaCheckers(
 	fs afero.Fs, ioConfigFile string, config *Config,
 ) (map[CheckerID][]checkers.Checker, error) {
+	proc := os.NewProc()
+	infoProvider := disk.NewDiskInfoProvider(fs, proc)
+	schedulerInfo := disk.NewSchedulerInfo(fs, infoProvider)
+	schdulerCheckers, err := disk.NewDirectorySchedulerCheckers(fs,
+		config.Directory, schedulerInfo, infoProvider)
+	if err != nil {
+		return nil, err
+	}
+	nomergesCheckers, err := disk.NewDirectoryNomergesCheckers(fs,
+		config.Directory, schedulerInfo, infoProvider)
+	if err != nil {
+		return nil, err
+	}
 	return map[CheckerID][]checkers.Checker{
 		ConfigFileChecker:           []checkers.Checker{NewConfigChecker(config)},
 		IoConfigFileChecker:         []checkers.Checker{NewIOConfigFileExistanceChecker(fs, ioConfigFile)},
@@ -141,5 +156,7 @@ func RedpandaCheckers(
 		FsTypeChecker:               []checkers.Checker{NewFilesystemTypeChecker(config.Directory)},
 		TransparentHugePagesChecker: []checkers.Checker{NewTransparentHugePagesChecker(fs)},
 		NtpChecker:                  []checkers.Checker{NewNTPSyncChecker(fs)},
+		SchedulerChecker:            schdulerCheckers,
+		NomergesChecker:             nomergesCheckers,
 	}, nil
 }
