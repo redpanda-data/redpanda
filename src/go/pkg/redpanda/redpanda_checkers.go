@@ -1,11 +1,11 @@
 package redpanda
 
 import (
-	"vectorized/pkg/tuners/disk"
-	"vectorized/pkg/os"
 	"vectorized/pkg/checkers"
+	"vectorized/pkg/os"
 	"vectorized/pkg/system"
 	"vectorized/pkg/system/filesystem"
+	"vectorized/pkg/tuners/disk"
 
 	"github.com/spf13/afero"
 )
