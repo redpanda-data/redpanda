@@ -18,9 +18,9 @@
 
 /// Fragmented buffer consisting of multiple temporary_buffer<char>
 class fragmented_temporary_buffer {
+public:
     using vector_type = std::vector<temporary_buffer<char>>;
 
-public:
     static constexpr size_t default_fragment_size = 128 * 1024;
 
     class istream;
