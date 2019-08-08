@@ -45,6 +45,11 @@ public:
         return !_size_bytes;
     }
 
+    /// \brief r-value only: std::move(obj)->release()
+    vector_type&& release() && {
+        _size_bytes = 0;
+        return std::move(_fragments);
+    }
 
     fragmented_temporary_buffer share(size_t pos, const size_t len) {
         std::vector<temporary_buffer<char>> fragments;
