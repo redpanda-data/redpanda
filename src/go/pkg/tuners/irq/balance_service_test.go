@@ -1,6 +1,7 @@
 package irq
 
 import (
+	"reflect"
 	"testing"
 	"vectorized/pkg/os"
 	"vectorized/pkg/utils"
@@ -23,6 +24,24 @@ func (procMock *procMock) RunWithSystemLdPath(
 
 func (procMock *procMock) IsRunning(processName string) bool {
 	return procMock.isRunning(processName)
+}
+
+type balanceServiceMock struct {
+	BalanceService
+	getBannedIRQs func() ([]int, error)
+	isRunning     bool
+}
+
+func (m *balanceServiceMock) BanIRQsAndRestart(bannedIRQs []int) error {
+	panic("not implemented")
+}
+
+func (m *balanceServiceMock) GetBannedIRQs() ([]int, error) {
+	return m.getBannedIRQs()
+}
+
+func (m *balanceServiceMock) IsRunning() bool {
+	return m.isRunning
 }
 
 func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
@@ -232,6 +251,152 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 			)
 			tt.assert(tt.fields, balanceService.BanIRQsAndRestart(tt.args.bannedIRQs))
 
+		})
+	}
+}
+
+func Test_balanceService_GetBannedIRQs(t *testing.T) {
+	type fields struct {
+		BalanceService BalanceService
+		fs             afero.Fs
+		proc           os.Proc
+		before         func(afero.Fs)
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		want    []int
+		wantErr bool
+	}{
+		{
+			name: "Shall return all banned irq",
+			fields: fields{
+				proc: &procMock{},
+				fs:   afero.NewMemMapFs(),
+				before: func(fs afero.Fs) {
+					_ = utils.WriteFileLines(fs,
+						[]string{"ONE_SHOT=true",
+							"#IRQBALANCE_BANNED_CPUS=",
+							"IRQBALANCE_ARGS=\"--other --banirq=123 --else=12" +
+								"--banirq=34 --banirq=48 --banirq=16\""},
+						"/etc/sysconfig/irqbalance")
+				},
+			},
+			want:    []int{123, 34, 48, 16},
+			wantErr: false,
+		},
+		{
+			name: "Shall return empty list as there are none banned IRQs",
+			fields: fields{
+				proc: &procMock{},
+				fs:   afero.NewMemMapFs(),
+				before: func(fs afero.Fs) {
+					_ = utils.WriteFileLines(fs,
+						[]string{"ONE_SHOT=true",
+							"#IRQBALANCE_BANNED_CPUS=",
+							"IRQBALANCE_ARGS=\"--other --else --third\""},
+						"/etc/sysconfig/irqbalance")
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "Shall return empty list as there are no custom options line",
+			fields: fields{
+				proc: &procMock{},
+				fs:   afero.NewMemMapFs(),
+				before: func(fs afero.Fs) {
+					_ = utils.WriteFileLines(fs,
+						[]string{"ONE_SHOT=true",
+							"#IRQBALANCE_BANNED_CPUS="},
+						"/etc/sysconfig/irqbalance")
+				},
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			balanceService := &balanceService{
+				BalanceService: tt.fields.BalanceService,
+				fs:             tt.fields.fs,
+				proc:           tt.fields.proc,
+			}
+			tt.fields.before(tt.fields.fs)
+			got, err := balanceService.GetBannedIRQs()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("balanceService.GetBannedIRQs() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("balanceService.GetBannedIRQs() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAreIRQsStaticallyAssigned(t *testing.T) {
+	type args struct {
+		irqs           []int
+		balanceService BalanceService
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    bool
+		wantErr bool
+	}{
+		{
+			name: "Shall return true as all requested IRQs are banned",
+			args: args{
+				balanceService: &balanceServiceMock{
+					getBannedIRQs: func() ([]int, error) {
+						return []int{12, 56, 87, 34, 46}, nil
+					},
+					isRunning: true,
+				},
+				irqs: []int{12, 34},
+			},
+			want:    true,
+			wantErr: false,
+		},
+		{
+			name: "Shall return false when some of the requested IRQs are not banned",
+			args: args{
+				balanceService: &balanceServiceMock{
+					getBannedIRQs: func() ([]int, error) {
+						return []int{12, 56, 87, 34, 46}, nil
+					},
+					isRunning: true,
+				},
+				irqs: []int{12, 134},
+			},
+			want:    false,
+			wantErr: false,
+		},
+		{
+			name: "Shall always return true when irqbalance is not running",
+			args: args{
+				balanceService: &balanceServiceMock{
+					isRunning: false,
+				},
+				irqs: []int{12, 134},
+			},
+			want:    true,
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := AreIRQsStaticallyAssigned(tt.args.irqs, tt.args.balanceService)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("AreIRQsStaticallyAssigned() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("AreIRQsStaticallyAssigned() = %v, want %v", got, tt.want)
+			}
 		})
 	}
 }

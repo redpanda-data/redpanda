@@ -6,6 +6,7 @@ import (
 	"vectorized/pkg/system"
 	"vectorized/pkg/system/filesystem"
 	"vectorized/pkg/tuners/disk"
+	"vectorized/pkg/tuners/irq"
 
 	"github.com/spf13/afero"
 )
@@ -24,6 +25,7 @@ const (
 	NtpChecker
 	SchedulerChecker
 	NomergesChecker
+	DiskIRQsAffinityStaticChecker
 )
 
 func NewConfigChecker(config *Config) checkers.Checker {
@@ -148,17 +150,24 @@ func RedpandaCheckers(
 	if err != nil {
 		return nil, err
 	}
+	balanceService := irq.NewBalanceService(fs, proc)
+	dirIRQAffinityStaticChecker, err := disk.NewDirectoryIRQsAffinityStaticChecker(
+		fs, config.Directory, blockDevices, balanceService)
+	if err != nil {
+		return nil, err
+	}
 	return map[CheckerID][]checkers.Checker{
-		ConfigFileChecker:           []checkers.Checker{NewConfigChecker(config)},
-		IoConfigFileChecker:         []checkers.Checker{NewIOConfigFileExistanceChecker(fs, ioConfigFile)},
-		FreeMemChecker:              []checkers.Checker{NewMemoryChecker(fs)},
-		SwapChecker:                 []checkers.Checker{NewSwapChecker(fs)},
-		DataDirAccessChecker:        []checkers.Checker{NewDataDirWritableChecker(fs, config.Directory)},
-		DiskSpaceChecker:            []checkers.Checker{NewFreeDiskSpaceChecker(config.Directory)},
-		FsTypeChecker:               []checkers.Checker{NewFilesystemTypeChecker(config.Directory)},
-		TransparentHugePagesChecker: []checkers.Checker{NewTransparentHugePagesChecker(fs)},
-		NtpChecker:                  []checkers.Checker{NewNTPSyncChecker(fs)},
-		SchedulerChecker:            schdulerCheckers,
-		NomergesChecker:             nomergesCheckers,
+		ConfigFileChecker:             []checkers.Checker{NewConfigChecker(config)},
+		IoConfigFileChecker:           []checkers.Checker{NewIOConfigFileExistanceChecker(fs, ioConfigFile)},
+		FreeMemChecker:                []checkers.Checker{NewMemoryChecker(fs)},
+		SwapChecker:                   []checkers.Checker{NewSwapChecker(fs)},
+		DataDirAccessChecker:          []checkers.Checker{NewDataDirWritableChecker(fs, config.Directory)},
+		DiskSpaceChecker:              []checkers.Checker{NewFreeDiskSpaceChecker(config.Directory)},
+		FsTypeChecker:                 []checkers.Checker{NewFilesystemTypeChecker(config.Directory)},
+		TransparentHugePagesChecker:   []checkers.Checker{NewTransparentHugePagesChecker(fs)},
+		NtpChecker:                    []checkers.Checker{NewNTPSyncChecker(fs)},
+		SchedulerChecker:              schdulerCheckers,
+		NomergesChecker:               nomergesCheckers,
+		DiskIRQsAffinityStaticChecker: []checkers.Checker{dirIRQAffinityStaticChecker},
 	}, nil
 }

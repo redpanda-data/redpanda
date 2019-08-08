@@ -3,6 +3,7 @@ package disk
 import (
 	"fmt"
 	"vectorized/pkg/checkers"
+	"vectorized/pkg/tuners/irq"
 
 	"github.com/spf13/afero"
 )
@@ -93,16 +94,37 @@ func NewDirectorySchedulerCheckers(
 	)
 }
 
-func NewDeviceIRQAffinityStaticChecker(
-	fs afero.Fs, device string,
+func NewDisksIRQAffinityStaticChecker(
+	fs afero.Fs,
+	devices []string,
+	blockDevices BlockDevices,
+	balanceService irq.BalanceService,
 ) checkers.Checker {
 	return checkers.NewEqualityChecker(
-		fmt.Sprintf("Disk %s IRQs affinity static", device),
+		"Disks IRQs affinity static",
 		checkers.Warning,
 		true,
 		func() (interface{}, error) {
-
-			return false, nil
+			IRQsMap, err := blockDevices.GetDevicesIRQs(devices)
+			if err != nil {
+				return false, err
+			}
+			return irq.AreIRQsStaticallyAssigned(
+				irq.GetAllIRQs(IRQsMap), balanceService)
 		},
 	)
+}
+
+func NewDirectoryIRQsAffinityStaticChecker(
+	fs afero.Fs,
+	directory string,
+	blockDevices BlockDevices,
+	balanceService irq.BalanceService,
+) (checkers.Checker, error) {
+	devices, err := blockDevices.GetDirectoryDevices(directory)
+	if err != nil {
+		return nil, err
+	}
+	return NewDisksIRQAffinityStaticChecker(
+		fs, devices, blockDevices, balanceService), nil
 }
