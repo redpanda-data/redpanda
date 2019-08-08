@@ -29,8 +29,7 @@ public:
     fragmented_temporary_buffer() = default;
 
     fragmented_temporary_buffer(
-      std::vector<temporary_buffer<char>> fragments,
-      size_t size_bytes) noexcept
+      std::vector<temporary_buffer<char>> fragments, size_t size_bytes) noexcept
       : _fragments(std::move(fragments))
       , _size_bytes(size_bytes) {
     }
