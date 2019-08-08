@@ -3,6 +3,7 @@ package tuners
 import (
 	"fmt"
 	"vectorized/pkg/checkers"
+	log "github.com/sirupsen/logrus"
 )
 
 func NewCheckedTunable(
@@ -29,12 +30,14 @@ func (t *checkedTunable) CheckIfSupported() (supported bool, reason string) {
 
 func (t *checkedTunable) Tune() TuneResult {
 
+	log.Debugf("Checking '%s'", t.checker.GetDesc())
 	result := t.checker.Check()
 	if result.Err != nil {
 		return NewTuneError(result.Err)
 	}
 
 	if result.IsOk {
+		log.Debugf("Check '%s' passed, skipping tunning", t.checker.GetDesc())
 		return NewTuneResult(false)
 	}
 
