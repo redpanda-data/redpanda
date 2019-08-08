@@ -27,11 +27,23 @@ public:
     class reader;
 
     fragmented_temporary_buffer() = default;
-
     fragmented_temporary_buffer(
       std::vector<temporary_buffer<char>> fragments, size_t size_bytes) noexcept
       : _fragments(std::move(fragments))
       , _size_bytes(size_bytes) {
+    }
+    fragmented_temporary_buffer(const fragmented_temporary_buffer&) = delete;
+    fragmented_temporary_buffer(fragmented_temporary_buffer&& o) noexcept
+      : _fragments(std::move(o._fragments))
+      , _size_bytes(o._size_bytes) {
+    }
+    fragmented_temporary_buffer&
+    operator=(fragmented_temporary_buffer&& o) noexcept {
+        if (this != &o) {
+            this->~fragmented_temporary_buffer();
+            new (this) fragmented_temporary_buffer(std::move(o));
+        }
+        return *this;
     }
 
     istream get_istream() const noexcept;
