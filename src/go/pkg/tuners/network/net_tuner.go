@@ -321,18 +321,33 @@ func (tuner *NetTuner) setupHwInface(nic string) error {
 		}
 		log.Debugf("Number of Rx queues for '%s' = '%d'", nic, numOfRxQueues)
 		log.Infof("Distributing '%s' IRQs handling Rx queues", nic)
-		err = tuner.cpuMasks.DistributeIRQs(allIrqs[0:numOfRxQueues], tuner.irqCPUMask)
+		rxQueuesIRQsDistribution, err := tuner.cpuMasks.GetIRQsDistributionMasks(
+			allIrqs[0:numOfRxQueues], tuner.irqCPUMask)
+		if err != nil {
+			return err
+		}
+		err = tuner.cpuMasks.DistributeIRQs(rxQueuesIRQsDistribution)
 		if err != nil {
 			return err
 		}
 		log.Infof("Distributing rest of '%s' IRQs", nic)
-		err = tuner.cpuMasks.DistributeIRQs(allIrqs[numOfRxQueues:], tuner.irqCPUMask)
+		restIRQsDistribution, err := tuner.cpuMasks.GetIRQsDistributionMasks(
+			allIrqs[numOfRxQueues:], tuner.irqCPUMask)
+		if err != nil {
+			return err
+		}
+		err = tuner.cpuMasks.DistributeIRQs(restIRQsDistribution)
 		if err != nil {
 			return err
 		}
 	} else {
 		log.Infof("Distributing all '%s' IRQs", nic)
-		err := tuner.cpuMasks.DistributeIRQs(allIrqs, tuner.irqCPUMask)
+		allIRQsDistribution, err := tuner.cpuMasks.GetIRQsDistributionMasks(
+			allIrqs, tuner.irqCPUMask)
+		if err != nil {
+			return err
+		}
+		err = tuner.cpuMasks.DistributeIRQs(allIRQsDistribution)
 		if err != nil {
 			return err
 		}

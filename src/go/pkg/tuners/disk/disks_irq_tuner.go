@@ -144,8 +144,13 @@ func (tuner *disksIRQsTuner) Tune() tuners.TuneResult {
 
 	if len(nonNvmeDisksInfo.devices) > 0 {
 		log.Infof("Tuning non-Nvme disks %s", nonNvmeDisksInfo.devices)
-		if err := tuner.cpuMasks.DistributeIRQs(
-			nonNvmeDisksInfo.irqs, tuner.irqCPUMask); err != nil {
+		irqsDistribution, err := tuner.cpuMasks.GetIRQsDistributionMasks(
+			nonNvmeDisksInfo.irqs, tuner.irqCPUMask)
+		if err != nil {
+			return tuners.NewTuneError(err)
+		}
+		err = tuner.cpuMasks.DistributeIRQs(irqsDistribution)
+		if err != nil {
 			return tuners.NewTuneError(err)
 		}
 	} else {
@@ -154,8 +159,13 @@ func (tuner *disksIRQsTuner) Tune() tuners.TuneResult {
 
 	if len(nvmeDisksInfo.devices) > 0 {
 		log.Infof("Tuning Nvme disks %s", nvmeDisksInfo.devices)
-		if err := tuner.cpuMasks.DistributeIRQs(nvmeDisksInfo.irqs,
-			tuner.baseCPUMask); err != nil {
+		irqsDistribution, err := tuner.cpuMasks.GetIRQsDistributionMasks(
+			nonNvmeDisksInfo.irqs, tuner.baseCPUMask)
+		if err != nil {
+			return tuners.NewTuneError(err)
+		}
+		err = tuner.cpuMasks.DistributeIRQs(irqsDistribution)
+		if err != nil {
 			return tuners.NewTuneError(err)
 		}
 	} else {
