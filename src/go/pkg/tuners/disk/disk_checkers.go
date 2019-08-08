@@ -105,12 +105,15 @@ func NewDisksIRQAffinityStaticChecker(
 		checkers.Warning,
 		true,
 		func() (interface{}, error) {
-			IRQsMap, err := blockDevices.GetDevicesIRQs(devices)
+			diskInfoByType, err := blockDevices.GetDiskInfoByType(devices)
 			if err != nil {
 				return false, err
 			}
-			return irq.AreIRQsStaticallyAssigned(
-				irq.GetAllIRQs(IRQsMap), balanceService)
+			var IRQs []int
+			for _, diskInfo := range diskInfoByType {
+				IRQs = append(IRQs, diskInfo.irqs...)
+			}
+			return irq.AreIRQsStaticallyAssigned(IRQs, balanceService)
 		},
 	)
 }

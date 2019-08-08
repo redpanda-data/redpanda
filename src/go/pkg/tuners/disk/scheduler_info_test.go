@@ -12,6 +12,7 @@ type blockDevicesMock struct {
 	getDirectoryDevices      func(string) ([]string, error)
 	getBlockDeviceFromPath   func(string) (BlockDevice, error)
 	getBlockDeviceSystemPath func(string) (string, error)
+	getDiskInfoByType        func([]string) (map[diskType]devicesIRQs, error)
 }
 
 func (m *blockDevicesMock) GetDirectoriesDevices(
@@ -32,20 +33,10 @@ func (m *blockDevicesMock) GetDirectoryDevices(path string) ([]string, error) {
 	return m.getDirectoryDevices(path)
 }
 
-func (m *blockDevicesMock) GetDevicesIRQs(
+func (m *blockDevicesMock) GetDiskInfoByType(
 	devices []string,
-) (map[string][]int, error) {
-	panic("not implemented")
-}
-
-func (m *blockDevicesMock) GetDeviceIRQs(device string) ([]int, error) {
-	panic("not implemented")
-}
-
-func (m *blockDevicesMock) GroupDiskInfoByType(
-	deviceIRQs map[string][]int,
 ) (map[diskType]devicesIRQs, error) {
-	panic("not implemented")
+	return m.getDiskInfoByType(devices)
 }
 
 var noopSchedulerEnabled = "deadline cfq [noop]"

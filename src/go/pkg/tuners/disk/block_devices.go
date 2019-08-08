@@ -15,14 +15,23 @@ import (
 	"github.com/spf13/afero"
 )
 
+type diskType string
+
+const (
+	nonNvme diskType = "non-nvme"
+	nvme    diskType = "nvme"
+)
+
+type devicesIRQs struct {
+	devices []string
+	irqs    []int
+}
 type BlockDevices interface {
 	GetDirectoriesDevices(directories []string) (map[string][]string, error)
 	GetDirectoryDevices(directory string) ([]string, error)
 	GetDeviceFromPath(path string) (BlockDevice, error)
 	GetDeviceSystemPath(devicePath string) (string, error)
-	GetDevicesIRQs(devices []string) (map[string][]int, error)
-	GetDeviceIRQs(device string) ([]int, error)
-	GroupDiskInfoByType(deviceIRQs map[string][]int) (map[diskType]devicesIRQs, error)
+	GetDiskInfoByType(devices []string) (map[diskType]devicesIRQs, error)
 }
 
 type blockDevices struct {
@@ -160,7 +169,7 @@ func (b *blockDevices) getBlockDeviceFromPath(
 	return NewDevice(int((0xFFFFFFFF00000000&number)>>32), int(number&0xFFFFFFFF), b.fs)
 }
 
-func (b *blockDevices) GetDevicesIRQs(
+func (b *blockDevices) getDevicesIRQs(
 	devices []string,
 ) (map[string][]int, error) {
 	diskIRQs := make(map[string][]int)
@@ -168,29 +177,24 @@ func (b *blockDevices) GetDevicesIRQs(
 		if _, exists := diskIRQs[device]; exists {
 			continue
 		}
-		IRQs, err := b.GetDeviceIRQs(device)
+		log.Debugf("Getting '%s' IRQs", device)
+		devicePath := path.Join("/dev", device)
+		devSystemPath, err := b.GetDeviceSystemPath(devicePath)
+		if err != nil {
+			return nil, err
+		}
+		controllerPath, err := b.getDeviceControllerPath(devSystemPath)
+		if err != nil {
+			return nil, err
+		}
+
+		IRQs, err := b.irqDeviceInfo.GetIRQs(controllerPath, "blkif")
 		if err != nil {
 			return nil, err
 		}
 		diskIRQs[device] = IRQs
 	}
 	return diskIRQs, nil
-}
-
-func (b *blockDevices) GetDeviceIRQs(device string) ([]int, error) {
-	log.Debugf("Getting '%s' IRQs", device)
-
-	devicePath := path.Join("/dev", device)
-	devSystemPath, err := b.GetDeviceSystemPath(devicePath)
-	if err != nil {
-		return nil, err
-	}
-	controllerPath, err := b.getDeviceControllerPath(devSystemPath)
-	if err != nil {
-		return nil, err
-	}
-
-	return b.irqDeviceInfo.GetIRQs(controllerPath, "blkif")
 }
 
 func (b *blockDevices) getDeviceControllerPath(
@@ -211,8 +215,8 @@ func (b *blockDevices) getDeviceControllerPath(
 	return path.Join(controllerPathParts...), nil
 }
 
-func (b *blockDevices) GroupDiskInfoByType(
-	deviceIRQs map[string][]int,
+func (b *blockDevices) GetDiskInfoByType(
+	devices []string,
 ) (map[diskType]devicesIRQs, error) {
 	diskInfoByType := make(map[diskType]devicesIRQs)
 	// using map in order to provide set functionality
@@ -220,7 +224,10 @@ func (b *blockDevices) GroupDiskInfoByType(
 	nvmeIRQs := map[int]bool{}
 	nonNvmeDisks := map[string]bool{}
 	nonNvmeIRQs := map[int]bool{}
-
+	deviceIRQs, err := b.getDevicesIRQs(devices)
+	if err != nil {
+		return nil, err
+	}
 	for device, irqs := range deviceIRQs {
 		if strings.HasPrefix(device, "nvme") {
 			nvmeDisks[device] = true

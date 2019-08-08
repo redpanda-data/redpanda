@@ -8,18 +8,6 @@ import (
 	"github.com/spf13/afero"
 )
 
-type diskType string
-
-const (
-	nonNvme diskType = "non-nvme"
-	nvme    diskType = "nvme"
-)
-
-type devicesIRQs struct {
-	devices []string
-	irqs    []int
-}
-
 type disksIRQsTuner struct {
 	fs                afero.Fs
 	irqDeviceInfo     irq.DeviceInfo
@@ -120,11 +108,15 @@ func NewDiskIRQsBalanceServiceTuner(
 	return tuners.NewCheckedTunable(
 		NewDisksIRQAffinityStaticChecker(fs, devices, blockDevices, balanceService),
 		func() tuners.TuneResult {
-			deviceIRQs, err := blockDevices.GetDevicesIRQs(devices)
+			diskInfoByType, err := blockDevices.GetDiskInfoByType(devices)
 			if err != nil {
 				return tuners.NewTuneError(err)
 			}
-			err = balanceService.BanIRQsAndRestart(irq.GetAllIRQs(deviceIRQs))
+			var IRQs []int
+			for _, diskInfo := range diskInfoByType {
+				IRQs = append(IRQs, diskInfo.irqs...)
+			}
+			err = balanceService.BanIRQsAndRestart(IRQs)
 			if err != nil {
 				return tuners.NewTuneError(err)
 			}
@@ -183,11 +175,7 @@ func GetExpectedIRQsDistribution(
 		devices,
 		mode, cpuMask)
 	finalCpuMask, err := cpuMasks.BaseCpuMask(cpuMask)
-	deviceIRQs, err := blockDevices.GetDevicesIRQs(devices)
-	if err != nil {
-		return nil, err
-	}
-	diskInfoByType, err := blockDevices.GroupDiskInfoByType(deviceIRQs)
+	diskInfoByType, err := blockDevices.GetDiskInfoByType(devices)
 	if err != nil {
 		return nil, err
 	}
