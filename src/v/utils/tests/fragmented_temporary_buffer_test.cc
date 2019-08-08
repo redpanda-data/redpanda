@@ -450,3 +450,21 @@ SEASTAR_THREAD_TEST_CASE(test_sharing) {
     BOOST_CHECK_EQUAL(in.bytes_left(), 1);
     BOOST_CHECK_EQUAL(in.read<uint8_t>(), 0x12);
 }
+SEASTAR_THREAD_TEST_CASE(test_release) {
+    uint64_t value = 0x1234'5678'abcd'ef02ull;
+
+    auto data = bytes(bytes::initialized_later(), sizeof(value));
+    std::copy_n(
+        reinterpret_cast<const int8_t*>(&value), sizeof(value), data.begin());
+
+    std::vector<temporary_buffer<char>> fragments;
+    fragments.emplace_back(
+      reinterpret_cast<char*>(data.data()), 3);
+    fragments.emplace_back(
+      reinterpret_cast<char*>(data.data() + 3), 2);
+    fragments.emplace_back(
+      reinterpret_cast<char*>(data.data() + 5), 3);
+
+    auto ftb = fragmented_temporary_buffer(std::move(fragments), sizeof(value));
+    BOOST_CHECK_EQUAL(ftb.release().size(), 3);
+}
