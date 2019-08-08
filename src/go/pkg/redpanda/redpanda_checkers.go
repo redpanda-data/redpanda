@@ -6,6 +6,7 @@ import (
 	"vectorized/pkg/system"
 	"vectorized/pkg/system/filesystem"
 	"vectorized/pkg/tuners/disk"
+	"vectorized/pkg/tuners/hwloc"
 	"vectorized/pkg/tuners/irq"
 
 	"github.com/spf13/afero"
@@ -26,6 +27,7 @@ const (
 	SchedulerChecker
 	NomergesChecker
 	DiskIRQsAffinityStaticChecker
+	DiskIRQsAffinityChecker
 )
 
 func NewConfigChecker(config *Config) checkers.Checker {
@@ -151,6 +153,12 @@ func RedpandaCheckers(
 		return nil, err
 	}
 	balanceService := irq.NewBalanceService(fs, proc)
+	cpuMasks := irq.NewCpuMasks(fs, hwloc.NewHwLocCmd(proc))
+	dirIRQAffinityChecker, err := disk.NewDirectoryIRQAffinityChecker(
+		fs, config.Directory, "all", irq.Default, blockDevices, cpuMasks)
+	if err != nil {
+		return nil, err
+	}
 	dirIRQAffinityStaticChecker, err := disk.NewDirectoryIRQsAffinityStaticChecker(
 		fs, config.Directory, blockDevices, balanceService)
 	if err != nil {
@@ -168,6 +176,7 @@ func RedpandaCheckers(
 		NtpChecker:                    []checkers.Checker{NewNTPSyncChecker(fs)},
 		SchedulerChecker:              schdulerCheckers,
 		NomergesChecker:               nomergesCheckers,
+		DiskIRQsAffinityChecker:       []checkers.Checker{dirIRQAffinityChecker},
 		DiskIRQsAffinityStaticChecker: []checkers.Checker{dirIRQAffinityStaticChecker},
 	}, nil
 }

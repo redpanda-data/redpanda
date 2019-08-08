@@ -128,3 +128,59 @@ func NewDirectoryIRQsAffinityStaticChecker(
 	return NewDisksIRQAffinityStaticChecker(
 		fs, devices, blockDevices, balanceService), nil
 }
+
+func NewDisksIRQAffinityChecker(
+	fs afero.Fs,
+	devices []string,
+	cpuMask string,
+	mode irq.Mode,
+	blockDevices BlockDevices,
+	cpuMasks irq.CpuMasks,
+) checkers.Checker {
+	return checkers.NewEqualityChecker(
+		"Disks IRQs affinity set",
+		checkers.Warning,
+		true,
+		func() (interface{}, error) {
+			expectedDistribution, err := GetExpectedIRQsDistribution(
+				devices,
+				blockDevices,
+				mode,
+				cpuMask,
+				cpuMasks)
+			if err != nil {
+				return false, err
+			}
+			for IRQ, mask := range expectedDistribution {
+				readMask, err := cpuMasks.ReadIRQMask(IRQ)
+				if err != nil {
+					return false, err
+				}
+				eq, err := irq.MasksEqual(mask, readMask)
+				if err != nil {
+					return false, err
+				}
+				if !eq {
+					return false, nil
+				}
+			}
+			return true, nil
+		},
+	)
+}
+
+func NewDirectoryIRQAffinityChecker(
+	fs afero.Fs,
+	directory string,
+	cpuMask string,
+	mode irq.Mode,
+	blockDevices BlockDevices,
+	cpuMasks irq.CpuMasks,
+) (checkers.Checker, error) {
+	devices, err := blockDevices.GetDirectoryDevices(directory)
+	if err != nil {
+		return nil, err
+	}
+	return NewDisksIRQAffinityChecker(
+		fs, devices, cpuMask, mode, blockDevices, cpuMasks), nil
+}

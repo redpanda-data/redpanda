@@ -308,3 +308,91 @@ func (tuner *disksIRQsTuner) isIRQNvmeFastPathIrq(irq int) (bool, error) {
 	}
 	return false, nil
 }
+
+func GetExpectedIRQsDistribution(
+	devices []string,
+	blockDevices BlockDevices,
+	mode irq.Mode,
+	cpuMask string,
+	cpuMasks irq.CpuMasks,
+) (map[int]string, error) {
+	log.Debugf("Getting %v IRQs distribution with mode %s and CPU mask %s",
+		devices,
+		mode, cpuMask)
+	finalCpuMask, err := cpuMasks.BaseCpuMask(cpuMask)
+	deviceIRQs, err := blockDevices.GetDevicesIRQs(devices)
+	if err != nil {
+		return nil, err
+	}
+	diskInfoByType, err := blockDevices.GroupDiskInfoByType(deviceIRQs)
+	if err != nil {
+		return nil, err
+	}
+
+	var effectiveMode irq.Mode
+	if mode != irq.Default {
+		effectiveMode = mode
+	} else {
+		effectiveMode, err = GetDefaultMode(finalCpuMask, diskInfoByType, cpuMasks)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	nonNvmeDisksInfo := diskInfoByType[nonNvme]
+	nvmeDisksInfo := diskInfoByType[nvme]
+	irqCPUMask, err := cpuMasks.CpuMaskForIRQs(effectiveMode, finalCpuMask)
+	if err != nil {
+		return nil, err
+	}
+	devicesIRQsDistribution := make(map[int]string)
+	if len(nonNvmeDisksInfo.devices) > 0 {
+		IRQsDist, err := cpuMasks.GetIRQsDistributionMasks(
+			nonNvmeDisksInfo.irqs, irqCPUMask)
+		if err != nil {
+			return nil, err
+		}
+		for IRQ, mask := range IRQsDist {
+			devicesIRQsDistribution[IRQ] = mask
+		}
+	}
+
+	if len(nvmeDisksInfo.devices) > 0 {
+		IRQsDist, err := cpuMasks.GetIRQsDistributionMasks(
+			nvmeDisksInfo.irqs, finalCpuMask)
+		if err != nil {
+			return nil, err
+		}
+		for IRQ, mask := range IRQsDist {
+			devicesIRQsDistribution[IRQ] = mask
+		}
+	}
+	log.Debugf("Calculated IRQs distribution %v", devicesIRQsDistribution)
+	return devicesIRQsDistribution, nil
+}
+
+func GetDefaultMode(
+	cpuMask string,
+	diskInfoByType map[diskType]devicesIRQs,
+	cpuMasks irq.CpuMasks,
+) (irq.Mode, error) {
+
+	log.Debug("Calculating default mode for Disk IRQs")
+	nonNvmeDiskIRQs := diskInfoByType[nonNvme]
+	if len(nonNvmeDiskIRQs.devices) == 0 {
+		return irq.Mq, nil
+	}
+	numOfCores, err := cpuMasks.GetNumberOfCores(cpuMask)
+	numOfPUs, err := cpuMasks.GetNumberOfPUs(cpuMask)
+	if err != nil {
+		return "", nil
+	}
+	log.Debugf("Considering '%d' cores and '%d' PUs", numOfCores, numOfPUs)
+	if numOfPUs <= 4 {
+		return irq.Mq, nil
+	} else if numOfCores <= 4 {
+		return irq.Sq, nil
+	} else {
+		return irq.SqSplit, nil
+	}
+}
