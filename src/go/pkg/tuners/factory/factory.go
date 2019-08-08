@@ -50,7 +50,7 @@ func NewTunersFactory(fs afero.Fs) TunersFactory {
 	irqDeviceInfo := irq.NewDeviceInfo(fs, irqProcFile)
 	return &tunersFactory{
 		tuners: map[string]func(*tunersFactory, *TunerParams) tuners.Tunable{
-			"disk_irq":       (*tunersFactory).newDiskIrqTuner,
+			"disk_irq":       (*tunersFactory).newDiskIRQTuner,
 			"disk_scheduler": (*tunersFactory).newDiskSchedulerTuner,
 			"disk_nomerges":  (*tunersFactory).newDiskNomergesTuner,
 			"net":            (*tunersFactory).newNetworkTuner,
@@ -88,11 +88,12 @@ func (factory *tunersFactory) CreateTuner(
 	return factory.tuners[tunerName](factory, tunerParams)
 }
 
-func (factory *tunersFactory) newDiskIrqTuner(
+func (factory *tunersFactory) newDiskIRQTuner(
 	params *TunerParams,
 ) tuners.Tunable {
 
-	return disk.NewDiskIrqTuner(
+	return disk.NewDiskIRQTuner(
+		factory.fs,
 		irq.ModeFromString(params.Mode),
 		params.CpuMask,
 		params.Directories,
