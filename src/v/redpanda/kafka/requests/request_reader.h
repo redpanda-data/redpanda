@@ -105,7 +105,7 @@ public:
     }
 
     int64_t read_varlong() {
-        auto [res, bytes_read] = vlong::deserialize(_in);
+        auto [res, bytes_read] = vint::deserialize(_in);
         _in.skip(bytes_read);
         return res;
     }

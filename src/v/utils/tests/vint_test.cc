@@ -21,19 +21,17 @@ std::mt19937 random_generator() {
     return std::mt19937(seed);
 }
 
-template<typename Integer>
 void check_roundtrip_sweep(std::size_t count) {
-    auto verify_round_trip = [](Integer value) {
+    auto verify_round_trip = [](vint::value_type value) {
         static bytes encoding_buffer(
-          bytes::initialized_later(), max_vint_length);
-        const auto size = vint_internal::vint_base<Integer>::serialize(
+          bytes::initialized_later(), vint::max_length);
+        const auto size = vint::serialize(
           value, encoding_buffer.begin());
         const auto view = bytes_view(encoding_buffer.data(), size);
-        const auto [deserialized, _]
-          = vint_internal::vint_base<Integer>::deserialize(view);
+        const auto [deserialized, _] = vint::deserialize(view);
         BOOST_REQUIRE_EQUAL(deserialized, value);
     };
-    std::uniform_int_distribution<Integer> distribution;
+    std::uniform_int_distribution<vint::value_type> distribution;
     auto rng = random_generator();
     for (std::size_t i = 0; i < count; ++i) {
         verify_round_trip(distribution(rng));
@@ -43,9 +41,9 @@ void check_roundtrip_sweep(std::size_t count) {
 } // namespace
 
 BOOST_AUTO_TEST_CASE(sanity_signed_sweep_32) {
-    check_roundtrip_sweep<int32_t>(100'000);
+    check_roundtrip_sweep(100'000);
 }
 
 BOOST_AUTO_TEST_CASE(sanity_signed_sweep_64) {
-    check_roundtrip_sweep<int64_t>(100'000);
+    check_roundtrip_sweep(100'000);
 }

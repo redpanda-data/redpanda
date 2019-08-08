@@ -31,7 +31,7 @@ class response_writer {
 
     template<typename VintType>
     uint32_t serialize_vint(typename VintType::value_type val) {
-        std::array<bytes::value_type, max_vint_length> encoding_buffer;
+        std::array<bytes::value_type, vint::max_length> encoding_buffer;
         const auto size = VintType::serialize(val, encoding_buffer.begin());
         _out->write(
           reinterpret_cast<const char*>(encoding_buffer.data()), size);
@@ -77,7 +77,7 @@ public:
     }
 
     uint32_t write_varlong(int64_t v) {
-        return serialize_vint<vlong>(v);
+        return serialize_vint<vint>(v);
     }
 
     uint32_t write(std::string_view v) {
