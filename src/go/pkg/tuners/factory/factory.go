@@ -47,6 +47,7 @@ type tunersFactory struct {
 func NewTunersFactory(fs afero.Fs) TunersFactory {
 	irqProcFile := irq.NewProcFile(fs)
 	proc := os.NewProc()
+	irqDeviceInfo := irq.NewDeviceInfo(fs, irqProcFile)
 	return &tunersFactory{
 		tuners: map[string]func(*tunersFactory, *TunerParams) tuners.Tunable{
 			"disk_irq":       (*tunersFactory).newDiskIrqTuner,
@@ -57,10 +58,10 @@ func NewTunersFactory(fs afero.Fs) TunersFactory {
 		},
 		fs:                fs,
 		irqProcFile:       irqProcFile,
-		irqDeviceInfo:     irq.NewDeviceInfo(fs, irqProcFile),
+		irqDeviceInfo:     irqDeviceInfo,
 		cpuMasks:          irq.NewCpuMasks(fs, hwloc.NewHwLocCmd(proc)),
 		irqBalanceService: irq.NewBalanceService(fs, proc),
-		blockDevices:      disk.NewBlockDevices(fs, proc),
+		blockDevices:      disk.NewBlockDevices(fs, irqDeviceInfo, irqProcFile, proc),
 		grub:              os.NewGrub(os.NewCommands(proc), proc, fs),
 		proc:              proc,
 	}

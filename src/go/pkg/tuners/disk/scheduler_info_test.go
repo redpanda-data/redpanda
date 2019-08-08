@@ -7,6 +7,47 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+type blockDevicesMock struct {
+	getDirectoriesDevices    func([]string) (map[string][]string, error)
+	getDirectoryDevices      func(string) ([]string, error)
+	getBlockDeviceFromPath   func(string) (BlockDevice, error)
+	getBlockDeviceSystemPath func(string) (string, error)
+}
+
+func (m *blockDevicesMock) GetDirectoriesDevices(
+	directories []string,
+) (map[string][]string, error) {
+	return m.getDirectoriesDevices(directories)
+}
+
+func (m *blockDevicesMock) GetDeviceFromPath(path string) (BlockDevice, error) {
+	return m.getBlockDeviceFromPath(path)
+}
+
+func (m *blockDevicesMock) GetDeviceSystemPath(path string) (string, error) {
+	return m.getBlockDeviceSystemPath(path)
+}
+
+func (m *blockDevicesMock) GetDirectoryDevices(path string) ([]string, error) {
+	return m.getDirectoryDevices(path)
+}
+
+func (m *blockDevicesMock) GetDevicesIRQs(
+	devices []string,
+) (map[string][]int, error) {
+	panic("not implemented")
+}
+
+func (m *blockDevicesMock) GetDeviceIRQs(device string) ([]int, error) {
+	panic("not implemented")
+}
+
+func (m *blockDevicesMock) GroupDiskInfoByType(
+	deviceIRQs map[string][]int,
+) (map[diskType]devicesIRQs, error) {
+	panic("not implemented")
+}
+
 var noopSchedulerEnabled = "deadline cfq [noop]"
 
 func TestSchedulerInfo_GetScheduler(t *testing.T) {
