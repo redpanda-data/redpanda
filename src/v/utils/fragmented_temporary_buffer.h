@@ -18,21 +18,32 @@
 
 /// Fragmented buffer consisting of multiple temporary_buffer<char>
 class fragmented_temporary_buffer {
+public:
     using vector_type = std::vector<temporary_buffer<char>>;
 
-public:
     static constexpr size_t default_fragment_size = 128 * 1024;
 
     class istream;
     class reader;
 
     fragmented_temporary_buffer() = default;
-
     fragmented_temporary_buffer(
-      std::vector<temporary_buffer<char>> fragments,
-      size_t size_bytes) noexcept
+      std::vector<temporary_buffer<char>> fragments, size_t size_bytes) noexcept
       : _fragments(std::move(fragments))
       , _size_bytes(size_bytes) {
+    }
+    fragmented_temporary_buffer(const fragmented_temporary_buffer&) = delete;
+    fragmented_temporary_buffer(fragmented_temporary_buffer&& o) noexcept
+      : _fragments(std::move(o._fragments))
+      , _size_bytes(o._size_bytes) {
+    }
+    fragmented_temporary_buffer&
+    operator=(fragmented_temporary_buffer&& o) noexcept {
+        if (this != &o) {
+            this->~fragmented_temporary_buffer();
+            new (this) fragmented_temporary_buffer(std::move(o));
+        }
+        return *this;
     }
 
     istream get_istream() const noexcept;
@@ -45,6 +56,11 @@ public:
         return !_size_bytes;
     }
 
+    /// \brief r-value only: std::move(obj)->release()
+    vector_type&& release() && {
+        _size_bytes = 0;
+        return std::move(_fragments);
+    }
 
     fragmented_temporary_buffer share(size_t pos, const size_t len) {
         std::vector<temporary_buffer<char>> fragments;
