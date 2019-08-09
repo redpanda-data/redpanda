@@ -25,8 +25,7 @@ class response_writer {
       // clang-format on
       uint32_t serialize_int(IntegerType val) {
         auto nval = cpu_to_be(ExplicitIntegerType(val));
-        _out->write_non_empty(
-          reinterpret_cast<const char*>(&nval), sizeof(nval));
+        _out->write(reinterpret_cast<const char*>(&nval), sizeof(nval));
         return sizeof(nval);
     }
 
@@ -34,7 +33,7 @@ class response_writer {
     uint32_t serialize_vint(typename VintType::value_type val) {
         std::array<bytes::value_type, max_vint_length> encoding_buffer;
         const auto size = VintType::serialize(val, encoding_buffer.begin());
-        _out->write_non_empty(
+        _out->write(
           reinterpret_cast<const char*>(encoding_buffer.data()), size);
         return size;
     }

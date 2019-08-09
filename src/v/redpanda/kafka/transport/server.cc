@@ -159,7 +159,7 @@ future<> kafka_server::connection::write_response(
     msg.append(std::move(header));
     for (auto&& chunk : response->buf()) {
         msg.append_static(
-          reinterpret_cast<const char*>(chunk.data()), chunk.size());
+          reinterpret_cast<const char*>(chunk.get()), chunk.size());
     }
     msg.on_delete([response = std::move(response)] {});
     return _write_buf.write(std::move(msg)).then([this] {
