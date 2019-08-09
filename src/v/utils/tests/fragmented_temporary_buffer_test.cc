@@ -229,16 +229,14 @@ namespace {
 
 class memory_data_source final : public data_source_impl {
 public:
-    explicit memory_data_source(
-      std::vector<temporary_buffer<char>> buffers)
+    explicit memory_data_source(std::vector<temporary_buffer<char>> buffers)
       : _buffers(std::move(buffers))
       , _position(_buffers.begin()) {
     }
 
     virtual future<temporary_buffer<char>> get() override {
         if (_position == _buffers.end()) {
-            return make_ready_future<
-              temporary_buffer<char>>();
+            return make_ready_future<temporary_buffer<char>>();
         }
         return make_ready_future<temporary_buffer<char>>(
           std::move(*_position++));
@@ -253,8 +251,8 @@ private:
 } // namespace
 
 SEASTAR_THREAD_TEST_CASE(test_read_fragmented_buffer) {
-    using tuple_type = std::
-      tuple<std::vector<temporary_buffer<char>>, bytes, bytes, bytes>;
+    using tuple_type
+      = std::tuple<std::vector<temporary_buffer<char>>, bytes, bytes, bytes>;
 
     auto generate = [](size_t n) {
         auto prefix = random_generators::get_bytes();
@@ -419,15 +417,12 @@ SEASTAR_THREAD_TEST_CASE(test_sharing) {
 
     auto data = bytes(bytes::initialized_later(), sizeof(value));
     std::copy_n(
-        reinterpret_cast<const int8_t*>(&value), sizeof(value), data.begin());
+      reinterpret_cast<const int8_t*>(&value), sizeof(value), data.begin());
 
     std::vector<temporary_buffer<char>> fragments;
-    fragments.emplace_back(
-      reinterpret_cast<char*>(data.data()), 3);
-    fragments.emplace_back(
-      reinterpret_cast<char*>(data.data() + 3), 2);
-    fragments.emplace_back(
-      reinterpret_cast<char*>(data.data() + 5), 3);
+    fragments.emplace_back(reinterpret_cast<char*>(data.data()), 3);
+    fragments.emplace_back(reinterpret_cast<char*>(data.data() + 3), 2);
+    fragments.emplace_back(reinterpret_cast<char*>(data.data() + 5), 3);
 
     auto ftb = fragmented_temporary_buffer(std::move(fragments), sizeof(value));
     auto in = ftb.get_istream();
@@ -449,4 +444,19 @@ SEASTAR_THREAD_TEST_CASE(test_sharing) {
     in = shared.get_istream();
     BOOST_CHECK_EQUAL(in.bytes_left(), 1);
     BOOST_CHECK_EQUAL(in.read<uint8_t>(), 0x12);
+}
+SEASTAR_THREAD_TEST_CASE(test_release) {
+    uint64_t value = 0x1234'5678'abcd'ef02ull;
+
+    auto data = bytes(bytes::initialized_later(), sizeof(value));
+    std::copy_n(
+      reinterpret_cast<const int8_t*>(&value), sizeof(value), data.begin());
+
+    std::vector<temporary_buffer<char>> fragments;
+    fragments.emplace_back(reinterpret_cast<char*>(data.data()), 3);
+    fragments.emplace_back(reinterpret_cast<char*>(data.data() + 3), 2);
+    fragments.emplace_back(reinterpret_cast<char*>(data.data() + 5), 3);
+
+    auto ftb = fragmented_temporary_buffer(std::move(fragments), sizeof(value));
+    BOOST_CHECK_EQUAL(ftb.release().size(), 3);
 }
