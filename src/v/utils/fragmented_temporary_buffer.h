@@ -4,7 +4,6 @@
 #include "bytes/bytes_ostream.h"
 #include "seastarx.h"
 #include "utils/concepts-enabled.h"
-#include "utils/fragment_range.h"
 
 #include <seastar/core/future-util.hh>
 #include <seastar/core/iostream.hh>
