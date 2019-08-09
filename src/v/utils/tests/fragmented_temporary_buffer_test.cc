@@ -458,5 +458,5 @@ SEASTAR_THREAD_TEST_CASE(test_release) {
     fragments.emplace_back(reinterpret_cast<char*>(data.data() + 5), 3);
 
     auto ftb = fragmented_temporary_buffer(std::move(fragments), sizeof(value));
-    BOOST_CHECK_EQUAL(ftb.release().size(), 3);
+    BOOST_CHECK_EQUAL(std::move(ftb).release().size(), 3);
 }
