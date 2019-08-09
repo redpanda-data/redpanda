@@ -3,7 +3,6 @@
 #include "bytes/bytes.h"
 #include "seastarx.h"
 #include "utils/concepts-enabled.h"
-#include "utils/fragment_range.h"
 
 #include <seastar/core/simple-stream.hh>
 #include <seastar/core/unaligned.hh>
@@ -238,6 +237,3 @@ private:
     size_t _size = 0;
 };
 
-;
-
-CONCEPT(static_assert(FragmentRange<bytes_ostream>));
