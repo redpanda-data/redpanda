@@ -1,5 +1,6 @@
 # libraries
 add_subdirectory(hbadger)
+add_subdirectory(rpc)
 add_subdirectory(hashing)
 add_subdirectory(adt)
 add_subdirectory(random)
