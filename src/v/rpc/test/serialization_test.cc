@@ -22,6 +22,15 @@ struct complex_custom {
     pod pit;
     fragmented_temporary_buffer oi;
 };
+struct pod_with_vector {
+    pod pit;
+    std::vector<int> v{1, 2, 3};
+};
+struct pod_with_array {
+    pod pit;
+    std::array<int, 3> v{1, 2, 3};
+};
+
 BOOST_AUTO_TEST_CASE(serialize_pod) {
     auto b = bytes_ostream();
     pod it;
@@ -51,4 +60,22 @@ BOOST_AUTO_TEST_CASE(serialize_with_fragmented_buffer) {
       b.size_bytes(),
       55 + sizeof(it.pit)
         + sizeof(int32_t) /*size prefix of fragmented_buffer*/);
+}
+BOOST_AUTO_TEST_CASE(serialize_pod_with_vector) {
+    auto b = bytes_ostream();
+    pod_with_vector it;
+    rpc::serialize(b, it);
+    BOOST_CHECK_EQUAL(
+      b.size_bytes(),
+      sizeof(pod) + (sizeof(int32_t) * 3 /*3 times*/)
+        + sizeof(int32_t) /*prefix size*/);
+}
+BOOST_AUTO_TEST_CASE(serialize_pod_with_array) {
+    auto b = bytes_ostream();
+    pod_with_array it;
+    rpc::serialize(b, it);
+    BOOST_CHECK_EQUAL(
+      b.size_bytes(),
+      sizeof(pod) + (sizeof(int32_t) * 3 /*3 times*/)
+        + sizeof(int32_t) /*prefix size*/);
 }
