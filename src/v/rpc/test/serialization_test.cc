@@ -46,7 +46,7 @@ BOOST_AUTO_TEST_CASE(serialize_with_fragmented_buffer) {
     std::vector<temporary_buffer<char>> v;
     v.emplace_back(temporary_buffer<char>(55));
     it.oi = std::move(fragmented_temporary_buffer(std::move(v), 55));
-    rpc::serialize_packed(b, it);
+    rpc::serialize(b, it);
     BOOST_CHECK_EQUAL(
       b.size_bytes(),
       55 + sizeof(it.pit)
