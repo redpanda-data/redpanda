@@ -2,6 +2,7 @@
 
 #include "bytes/bytes_ostream.h"
 #include "rpc/for_each_field.h"
+#include "rpc/is_std_vector.h"
 #include "seastarx.h"
 #include "utils/fragmented_temporary_buffer.h"
 #include "utils/vint.h"
@@ -17,12 +18,21 @@ namespace rpc {
 /// fields including [[gnu::packed]] and all numeric types
 template<typename T>
 void serialize(bytes_ostream& out, T& t) {
+    constexpr bool is_vector = is_std_vector_v<T>;
     constexpr bool is_fragmented_buffer
       = std::is_same_v<T, fragmented_temporary_buffer>;
     constexpr bool is_standard_layout = std::is_standard_layout_v<T>;
     constexpr bool is_trivially_copyable = std::is_trivially_copyable_v<T>;
 
-    if constexpr (is_fragmented_buffer) {
+    if constexpr (is_vector) {
+        using value_type = typename std::decay_t<T>::value_type;
+        const int32_t sz = t.size();
+        out.write(reinterpret_cast<const char*>(&sz), sizeof(sz));
+        for (value_type& i : t) {
+            serialize<value_type>(out, i);
+        }
+        return;
+    } else if constexpr (is_fragmented_buffer) {
         const int32_t sz = t.size_bytes();
         out.write(reinterpret_cast<const char*>(&sz), sizeof(sz));
         auto vec = std::move(t).release();
@@ -30,8 +40,7 @@ void serialize(bytes_ostream& out, T& t) {
             out.write(std::move(b));
         }
         return;
-    } else if constexpr (
-      !is_fragmented_buffer && is_standard_layout && is_trivially_copyable) {
+    } else if constexpr (is_standard_layout && is_trivially_copyable) {
         // std::is_pod_v is deprecated
         // Deprecating the notion of “plain old data” (POD). It has been
         // replaced with two more nuanced categories of types, “trivial” and
@@ -43,17 +52,17 @@ void serialize(bytes_ostream& out, T& t) {
         constexpr auto sz = sizeof(T);
         out.write(reinterpret_cast<const char*>(&t), sz);
         return;
-    } else if constexpr (!is_fragmented_buffer && is_standard_layout) {
+    } else if constexpr (is_standard_layout) {
         for_each_field(t, [&out](auto& field) {
             serialize<std::decay_t<decltype(field)>>(out, field);
         });
         return;
     }
     throw std::runtime_error(fmt::format(
-      "rpc: no serializer registered. is_fragmented_buffer:{}, is_trivial:{}, "
+      "rpc: no serializer registered. is_vector:{}, is_fragmented_buffer:{}, "
       "is_standard_layout:{}, is_copy_constructible:{}",
+      is_vector,
       is_fragmented_buffer,
-      std::is_trivial_v<T>,
       is_standard_layout,
       is_trivially_copyable));
 }
