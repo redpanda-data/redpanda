@@ -1,6 +1,7 @@
 #include "bytes/bytes.h"
 #include "bytes/bytes_ostream.h"
 #include "random/generators.h"
+#include "utils/memory_data_source.h"
 #include "utils/fragmented_temporary_buffer.h"
 
 #include <seastar/core/temporary_buffer.hh>
@@ -225,30 +226,6 @@ SEASTAR_THREAD_TEST_CASE(test_read_bytes_view) {
     }
 }
 
-namespace {
-
-class memory_data_source final : public data_source_impl {
-public:
-    explicit memory_data_source(std::vector<temporary_buffer<char>> buffers)
-      : _buffers(std::move(buffers))
-      , _position(_buffers.begin()) {
-    }
-
-    virtual future<temporary_buffer<char>> get() override {
-        if (_position == _buffers.end()) {
-            return make_ready_future<temporary_buffer<char>>();
-        }
-        return make_ready_future<temporary_buffer<char>>(
-          std::move(*_position++));
-    }
-
-private:
-    using vector_type = std::vector<temporary_buffer<char>>;
-    vector_type _buffers;
-    vector_type::iterator _position;
-};
-
-} // namespace
 
 SEASTAR_THREAD_TEST_CASE(test_read_fragmented_buffer) {
     using tuple_type
