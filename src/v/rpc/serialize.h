@@ -26,15 +26,15 @@ void serialize(bytes_ostream& out, T& t) {
 
     if constexpr (is_vector) {
         using value_type = typename std::decay_t<T>::value_type;
-        const int32_t sz = t.size();
-        out.write(reinterpret_cast<const char*>(&sz), sizeof(sz));
+        int32_t sz = t.size();
+        serialize<int32_t>(out, sz);
         for (value_type& i : t) {
             serialize<value_type>(out, i);
         }
         return;
     } else if constexpr (is_fragmented_buffer) {
-        const int32_t sz = t.size_bytes();
-        out.write(reinterpret_cast<const char*>(&sz), sizeof(sz));
+        int32_t sz = t.size_bytes();
+        serialize<int32_t>(out, sz);
         auto vec = std::move(t).release();
         for (temporary_buffer<char>& b : vec) {
             out.write(std::move(b));
