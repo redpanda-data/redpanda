@@ -43,18 +43,12 @@ public:
         ~fragment() = default;
         size_t write(const char* src, size_t len) {
             const size_t sz = std::min(len, capacity() - size());
-            std::memcpy(get_current(), src, sz);
+            std::copy_n(src, sz, get_current());
             _len += sz;
             return sz;
         }
         const char* get() const {
             return _buf.get();
-        }
-        char* get_current() {
-            return get_write() + size();
-        }
-        char* get_write() {
-            return _buf.get_write();
         }
         /// \brief simply advances the pointer
         /// returning pointer to originating byte
@@ -63,14 +57,19 @@ public:
             _len += x;
             return tmp;
         }
+        temporary_buffer<char>&& release() && {
+            _buf.trim(_len);
+            return std::move(_buf);
+        }
+
         size_t size() const {
             return _len;
         }
         size_t capacity() const {
             return _buf.size();
         }
-        bool is_full() const {
-            return capacity() == size();
+        bool is_empty() const {
+            return size() == 0;
         }
         bool operator==(const fragment& o) const {
             return _buf == o._buf;
@@ -80,6 +79,9 @@ public:
         }
 
     private:
+        char* get_current() {
+            return _buf.get_write() + _len;
+        }
         temporary_buffer<char> _buf;
         size_t _len;
     };
@@ -145,6 +147,19 @@ public:
     }
 
     [[gnu::always_inline]] void write(temporary_buffer<char> b) {
+        if (current_space_left() <= b.size()) {
+            // we already allocated the space, just copy the data
+            write(b.get(), b.size());
+            return;
+        }
+        if (!_fragments.empty()) {
+            if (_fragments.back().is_empty()) {
+                _fragments.pop_back();
+                const size_t sz = _fragments.empty() ? default_chunk_size
+                                                     : _fragments.back().size();
+                _fragment_capacity = next_alloc_size(sz, sz);
+            }
+        }
         _size += b.size();
         _fragments.emplace_back(std::move(b));
     }
@@ -219,6 +234,10 @@ public:
         _size = 0;
     }
 
+    vector_type&& release() && {
+        return std::move(_fragments);
+    }
+
 private:
     size_t current_space_left() {
         if (_fragments.empty()) {
@@ -228,12 +247,8 @@ private:
         auto& b = _fragments.back();
         return b.capacity() - b.size();
     }
-    value_type* current_ptr() {
-        return _fragments.back().get_current();
-    }
 
     size_t _fragment_capacity;
     vector_type _fragments;
     size_t _size = 0;
 };
-
