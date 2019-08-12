@@ -57,6 +57,11 @@ public:
             _len += x;
             return tmp;
         }
+        temporary_buffer<char>&& release() && {
+            _buf.trim(_len);
+            return std::move(_buf);
+        }
+
         size_t size() const {
             return _len;
         }
@@ -227,6 +232,10 @@ public:
     void clear() {
         _fragments.clear();
         _size = 0;
+    }
+
+    vector_type&& release() && {
+        return std::move(_fragments);
     }
 
 private:
