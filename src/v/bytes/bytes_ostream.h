@@ -63,6 +63,9 @@ public:
         size_t capacity() const {
             return _buf.size();
         }
+        bool is_empty() const {
+            return size() == 0;
+        }
         bool operator==(const fragment& o) const {
             return _buf == o._buf;
         }
@@ -139,6 +142,14 @@ public:
     }
 
     [[gnu::always_inline]] void write(temporary_buffer<char> b) {
+        if (!_fragments.empty()) {
+            if (_fragments.back().is_empty()) {
+                _fragments.pop_back();
+                const size_t sz = _fragments.empty() ? default_chunk_size
+                                                     : _fragments.back().size();
+                _fragment_capacity = next_alloc_size(sz, sz);
+            }
+        }
         _size += b.size();
         _fragments.emplace_back(std::move(b));
     }
