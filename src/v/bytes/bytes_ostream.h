@@ -50,12 +50,6 @@ public:
         const char* get() const {
             return _buf.get();
         }
-        char* get_current() {
-            return get_write() + size();
-        }
-        char* get_write() {
-            return _buf.get_write();
-        }
         /// \brief simply advances the pointer
         /// returning pointer to originating byte
         char* write_place_holder(size_t x) {
@@ -69,9 +63,6 @@ public:
         size_t capacity() const {
             return _buf.size();
         }
-        bool is_full() const {
-            return capacity() == size();
-        }
         bool operator==(const fragment& o) const {
             return _buf == o._buf;
         }
@@ -80,6 +71,9 @@ public:
         }
 
     private:
+        char* get_current() {
+            return _buf.get_write() + _len;
+        }
         temporary_buffer<char> _buf;
         size_t _len;
     };
@@ -228,12 +222,8 @@ private:
         auto& b = _fragments.back();
         return b.capacity() - b.size();
     }
-    value_type* current_ptr() {
-        return _fragments.back().get_current();
-    }
 
     size_t _fragment_capacity;
     vector_type _fragments;
     size_t _size = 0;
 };
-
