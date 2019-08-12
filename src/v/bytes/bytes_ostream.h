@@ -142,6 +142,11 @@ public:
     }
 
     [[gnu::always_inline]] void write(temporary_buffer<char> b) {
+        if (current_space_left() <= b.size()) {
+            // we already allocated the space, just copy the data
+            write(b.get(), b.size());
+            return;
+        }
         if (!_fragments.empty()) {
             if (_fragments.back().is_empty()) {
                 _fragments.pop_back();
