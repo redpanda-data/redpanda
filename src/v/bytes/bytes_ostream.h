@@ -43,7 +43,7 @@ public:
         ~fragment() = default;
         size_t write(const char* src, size_t len) {
             const size_t sz = std::min(len, capacity() - size());
-            std::memcpy(get_current(), src, sz);
+            std::copy_n(src, sz, get_current());
             _len += sz;
             return sz;
         }
