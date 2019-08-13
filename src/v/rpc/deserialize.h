@@ -77,11 +77,11 @@ future<> deserialize(input_stream<char>& in, T& t) {
         auto sem = make_lw_shared<semaphore>(1);
         sem->ensure_space_for_waiters(sz);
         for_each_field(t, [&in, sem](auto& field) {
-            using field_t = std::decay_t<decltype(field)>;
-            sem->wait(1).then([&in, &field, sem]() {
-                return deserialize<field_t>(in, field).then(
-                  [sem] { sem->signal(1); });
-            });
+            return get_units(*sem, 1).then(
+              [&in, &field, sem](semaphore_units<> units) mutable {
+                  return deserialize(in, field).finally(
+                    [units = std::move(units)] {});
+              });
         });
         return sem->wait(1).finally([sem] {});
     }
