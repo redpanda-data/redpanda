@@ -1,7 +1,12 @@
 #pragma once
 
+#include "seastarx.h"
+
+#include <seastar/core/sstring.hh>
+
 #include <cstdint>
 #include <limits>
+#include <string_view>
 
 namespace model {
 
@@ -14,6 +19,8 @@ struct partition {
     }
     const type value = min;
 };
+
+std::ostream& operator<<(std::ostream&, partition);
 
 class topic_view {
 public:
@@ -37,6 +44,8 @@ private:
     std::string_view _topic_name;
 };
 
+std::ostream& operator<<(std::ostream&, topic_view);
+
 struct topic {
     topic() noexcept = default;
     explicit topic(sstring topic_name) noexcept
@@ -58,6 +67,8 @@ struct topic {
     const sstring name;
 };
 
+std::ostream& operator<<(std::ostream&, const topic&);
+
 /// \brief namespace is reserved in c++;  use ns
 struct ns {
     ns() noexcept = default;
@@ -74,5 +85,8 @@ struct ns {
     }
 
     const sstring name;
+
+    friend std::ostream& operator<<(std::ostream&, const ns&);
 };
+
 } // namespace model

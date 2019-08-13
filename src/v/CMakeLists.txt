@@ -10,6 +10,7 @@ add_subdirectory(raft)
 add_subdirectory(utils)
 add_subdirectory(bytes)
 add_subdirectory(cluster)
+add_subdirectory(model)
 
 
 # main executables
