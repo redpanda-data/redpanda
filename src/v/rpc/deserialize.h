@@ -10,6 +10,7 @@
 #include <seastar/core/iostream.hh>
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/core/sstring.hh>
 
 #include <boost/iterator/counting_iterator.hpp>
 #include <fmt/format.h>
@@ -27,23 +28,34 @@ public:
 
 template<typename T>
 future<> deserialize(input_stream<char>& in, T& t) {
+    constexpr bool is_sstring = std::is_same_v<T, sstring>;
     constexpr bool is_vector = is_std_vector_v<T>;
     constexpr bool is_fragmented_buffer
       = std::is_same_v<T, fragmented_temporary_buffer>;
     constexpr bool is_standard_layout = std::is_standard_layout_v<T>;
     constexpr bool is_trivially_copyable = std::is_trivially_copyable_v<T>;
 
-    if constexpr (is_vector) {
+    if constexpr (is_sstring) {
+        auto i = std::make_unique<int32_t>(0);
+        return deserialize<int32_t>(in, *i).then([&in, &t, max = std::move(i)] {
+            return in.read_exactly(*max).then(
+              [&in, &t, sz = *max](temporary_buffer<char> buf) {
+                  if (buf.size() != sz) {
+                      throw deserialize_invalid_argument(buf.size(), sz);
+                  }
+                  t = sstring(sstring::initialized_later(), sz);
+                  std::copy_n(buf.get(), sz, t.data());
+                  return make_ready_future<>();
+              });
+        });
+    } else if constexpr (is_vector) {
         using value_type = typename std::decay_t<T>::value_type;
         auto i = std::make_unique<int32_t>(0);
         return deserialize<int32_t>(in, *i).then([&in, &t, max = std::move(i)] {
             t.resize(*max);
-            return do_for_each(
-              boost::counting_iterator<size_t>(0),
-              boost::counting_iterator<size_t>(*max),
-              [&in, &t](int32_t i) {
-                  return deserialize<value_type>(in, t[i]);
-              });
+            return do_for_each(t, [&in](value_type& i) {
+                return deserialize<value_type>(in, i);
+            });
         });
     } else if constexpr (is_fragmented_buffer) {
         auto i = std::make_unique<int32_t>(0);

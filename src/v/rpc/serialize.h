@@ -8,6 +8,7 @@
 #include "utils/vint.h"
 
 #include <seastar/core/byteorder.hh>
+#include <seastar/core/sstring.hh>
 #include <seastar/core/unaligned.hh>
 
 #include <fmt/format.h>
@@ -18,13 +19,19 @@ namespace rpc {
 /// fields including [[gnu::packed]] and all numeric types
 template<typename T>
 void serialize(bytes_ostream& out, T& t) {
+    constexpr bool is_sstring = std::is_same_v<T, sstring>;
     constexpr bool is_vector = is_std_vector_v<T>;
     constexpr bool is_fragmented_buffer
       = std::is_same_v<T, fragmented_temporary_buffer>;
     constexpr bool is_standard_layout = std::is_standard_layout_v<T>;
     constexpr bool is_trivially_copyable = std::is_trivially_copyable_v<T>;
 
-    if constexpr (is_vector) {
+    if constexpr (is_sstring) {
+        int32_t sz = t.size();
+        serialize<int32_t>(out, sz);
+        out.write(t.data(), t.size());
+        return;
+    } else if constexpr (is_vector) {
         using value_type = typename std::decay_t<T>::value_type;
         int32_t sz = t.size();
         serialize<int32_t>(out, sz);

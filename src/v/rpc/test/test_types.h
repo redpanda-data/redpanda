@@ -3,6 +3,7 @@
 #include "utils/fragmented_temporary_buffer.h"
 
 #include <seastar/core/unaligned.hh>
+#include <seastar/core/sstring.hh>
 
 #include <array>
 #include <cstdint>
@@ -28,4 +29,13 @@ struct pod_with_vector {
 struct pod_with_array {
     pod pit;
     std::array<int, 3> v{1, 2, 3};
+};
+struct kv {
+    sstring k;
+    fragmented_temporary_buffer v;
+};
+struct test_rpc_header {
+    int32_t size = 42;
+    int64_t checksum = 66;
+    std::vector<kv> hdrs;
 };

@@ -74,6 +74,45 @@ SEASTAR_THREAD_TEST_CASE(roundtrip_pod_with_array) {
     rpc::deserialize(in, expected).get();
     BOOST_REQUIRE(rpc::to_tuple(src.pit) == rpc::to_tuple(expected.pit));
     for (size_t i = 0; i < src.v.size(); ++i) {
-      BOOST_REQUIRE_EQUAL(src.v[i], expected.v[i]);
+        BOOST_REQUIRE_EQUAL(src.v[i], expected.v[i]);
     }
+}
+SEASTAR_THREAD_TEST_CASE(roundtrip_sstring_vector) {
+    std::cout.setf(std::ios::unitbuf);
+    auto b = bytes_ostream();
+    test_rpc_header it;
+    std::vector<temporary_buffer<char>> vi;
+    vi.push_back(temporary_buffer<char>(87));
+    kv x;
+    x.k = "foobar";
+    x.v = fragmented_temporary_buffer(std::move(vi), 87);
+    it.hdrs.push_back(std::move(x));
+    rpc::serialize(b, it);
+    const size_t expected_size =
+      /*
+        struct kv {
+        sstring k;              ---------------  sizeof(int32_t) + 6
+        fragmented_temporary_buffer v; --------  sizeof(int32_t) + 87 bytes
+        };
+        struct test_rpc_header {
+        int32_t size = 42;       ---------------- sizeof(int32_t)
+        int64_t checksum = 66;   ---------------- sizeof(int64_t)
+        std::vector<kv> hdrs;    ---------------- sizeof(int32_t)
+        };
+
+        Total:  4 + 6 + 4 + 87 + 4 + 8 + 4 ........  117 bytes
+      */
+      117;
+
+    //  test
+    BOOST_CHECK_EQUAL(b.size_bytes(), expected_size);
+    auto in = rpc::make_input_stream(std::move(b));
+    test_rpc_header expected;
+    // poising values
+    expected.size = 0;
+    expected.checksum = 0;
+    rpc::deserialize(in, expected).get();
+    auto b2 = bytes_ostream();
+    rpc::serialize(b2, expected);
+    BOOST_CHECK_EQUAL(b2.size_bytes(), expected_size);
 }
