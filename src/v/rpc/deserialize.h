@@ -45,7 +45,6 @@ future<> deserialize(input_stream<char>& in, T& t) {
                   }
                   t = sstring(sstring::initialized_later(), sz);
                   std::copy_n(buf.get(), sz, t.data());
-                  return make_ready_future<>();
               });
         });
     } else if constexpr (is_vector) {
@@ -69,7 +68,6 @@ future<> deserialize(input_stream<char>& in, T& t) {
                             b.size_bytes(), sizeof(int32_t));
                       }
                       t = std::move(b);
-                      return make_ready_future<>();
                   });
             });
         });
@@ -82,7 +80,6 @@ future<> deserialize(input_stream<char>& in, T& t) {
                   throw deserialize_invalid_argument(buf.size(), sz);
               }
               std::copy_n(buf.get(), sz, reinterpret_cast<char*>(&t));
-              return make_ready_future<>();
           });
     } else if constexpr (is_standard_layout) {
         constexpr size_t sz = arity<T>();
