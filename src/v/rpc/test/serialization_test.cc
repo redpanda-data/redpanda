@@ -56,3 +56,30 @@ BOOST_AUTO_TEST_CASE(serialize_pod_with_array) {
       sizeof(pod) + (sizeof(int32_t) * 3 /*3 times*/)
         + sizeof(int32_t) /*prefix size*/);
 }
+BOOST_AUTO_TEST_CASE(serialize_sstring_vector) {
+    auto b = bytes_ostream();
+    test_rpc_header it;
+    std::vector<temporary_buffer<char>> vi;
+    vi.push_back(temporary_buffer<char>(87));
+    kv x;
+    x.k = "foobar";
+    x.v = fragmented_temporary_buffer(std::move(vi), 87);
+    it.hdrs.push_back(std::move(x));
+    rpc::serialize(b, it);
+    const size_t expected =
+      /*
+      struct kv {
+         sstring k;              ---------------  sizeof(int32_t) + 6
+         fragmented_temporary_buffer v; --------  sizeof(int32_t) + 87 bytes
+      };
+      struct test_rpc_header {
+        int32_t size = 42;       ---------------- sizeof(int32_t)
+        int64_t checksum = 66;   ---------------- sizeof(int64_t)
+        std::vector<kv> hdrs;    ---------------- sizeof(int32_t)
+      };
+
+      Total:  4 + 6 + 4 + 87 + 4 + 8 + 4 ........  117 bytes
+      */
+      117;
+    BOOST_CHECK_EQUAL(b.size_bytes(), expected);
+}
