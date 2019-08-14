@@ -72,9 +72,9 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 	command.Flags().StringSliceVarP(&tunerParams.Disks,
 		"disks", "d",
 		[]string{}, "Lists of devices to tune f.e. 'sda1'")
-	command.Flags().StringVarP(&tunerParams.Nic,
+	command.Flags().StringSliceVarP(&tunerParams.Nics,
 		"nic", "n",
-		"", "Network Interface Controller to tune")
+		[]string{}, "Network Interface Controllers to tune")
 	command.Flags().StringSliceVarP(&tunerParams.Directories,
 		"dirs", "r",
 		[]string{}, "List of *data* directories. or places to store data."+
@@ -174,7 +174,7 @@ func tune(
 func tunerParamsEmpty(params *factory.TunerParams) bool {
 	return len(params.Directories) == 0 &&
 		len(params.Disks) == 0 &&
-		params.Nic == ""
+		len(params.Nics) == 0
 }
 
 const cpuTunerHelp = `
