@@ -3,7 +3,7 @@ package net
 import (
 	"net"
 	"strings"
-	"vectorized/utils"
+	"vectorized/pkg/utils"
 
 	log "github.com/sirupsen/logrus"
 )

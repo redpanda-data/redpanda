@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
-	"vectorized/utils"
+	"vectorized/pkg/utils"
 
 	"github.com/spf13/afero"
 )

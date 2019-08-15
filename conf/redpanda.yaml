@@ -9,6 +9,10 @@ redpanda:
   port: 33145
   ip: "127.0.0.1"
   id: 1
+  
+  # Kafka transport
+  kafka_transport_port: 9092
+
   # Raft configuration
   seed_servers:
     - addr: "127.0.0.1:33145"

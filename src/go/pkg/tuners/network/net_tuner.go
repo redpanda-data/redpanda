@@ -8,9 +8,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"vectorized/tuners"
-	"vectorized/tuners/irq"
-	"vectorized/utils"
+	"vectorized/pkg/tuners"
+	"vectorized/pkg/tuners/irq"
+	"vectorized/pkg/utils"
 
 	"github.com/lorenzosaino/go-sysctl"
 	"github.com/safchain/ethtool"

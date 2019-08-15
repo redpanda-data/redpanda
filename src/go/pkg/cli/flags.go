@@ -2,7 +2,7 @@ package cli
 
 import (
 	"fmt"
-	"vectorized/redpanda"
+	"vectorized/pkg/redpanda"
 
 	"github.com/spf13/afero"
 )

@@ -1,18 +1,19 @@
 package redpanda
 
 import (
-	"vectorized/yaml"
+	"vectorized/pkg/yaml"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 )
 
 type Config struct {
-	Directory   string
-	Port        int
-	Ip          string
-	Id          int
-	SeedServers []*SeedServer `yaml:"seed_servers"`
+	Directory          string
+	Port               int
+	KafkaTransportPort int `yaml:"kafka_transport_port"`
+	Ip                 string
+	Id                 int
+	SeedServers        []*SeedServer `yaml:"seed_servers"`
 }
 
 type SeedServer struct {
@@ -47,6 +48,7 @@ func CheckConfig(config *Config) bool {
 		config.Port == 0 ||
 		config.Ip == "" ||
 		config.Id < 0 ||
+		config.KafkaTransportPort == 0 ||
 		len(config.SeedServers) == 0 {
 		return false
 	}

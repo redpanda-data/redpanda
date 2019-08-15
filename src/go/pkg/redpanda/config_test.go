@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"vectorized/utils"
+	"vectorized/pkg/utils"
 
 	"github.com/spf13/afero"
 )
@@ -22,6 +22,7 @@ var validConfig = []string{
 	"  port: 33145",
 	"  ip: \"127.0.0.1\"",
 	"  id: 1",
+	"  kafka_transport_port: 9092",
 	"# Raft configuration",
 	"  seed_servers:",
 	"  - addr: \"127.0.0.1:33145\"",
@@ -54,10 +55,11 @@ func TestReadConfigFromPath(t *testing.T) {
 				path: "/etc/redpanda/redpanda.yaml",
 			},
 			want: &Config{
-				Directory: "/var/lib/redpanda/data",
-				Port:      33145,
-				Ip:        "127.0.0.1",
-				Id:        1,
+				Directory:          "/var/lib/redpanda/data",
+				Port:               33145,
+				Ip:                 "127.0.0.1",
+				Id:                 1,
+				KafkaTransportPort: 9092,
 				SeedServers: []*SeedServer{
 					&SeedServer{
 						Address: "127.0.0.1:33145",
@@ -105,10 +107,11 @@ func TestWriteConfig(t *testing.T) {
 				fs:   afero.NewMemMapFs(),
 				path: "/redpanda.yaml",
 				config: &Config{
-					Directory: "/var/lib/redpanda/data",
-					Port:      33145,
-					Ip:        "127.0.0.1",
-					Id:        1,
+					Directory:          "/var/lib/redpanda/data",
+					Port:               33145,
+					Ip:                 "127.0.0.1",
+					Id:                 1,
+					KafkaTransportPort: 9092,
 					SeedServers: []*SeedServer{
 						&SeedServer{
 							Address: "127.0.0.1:33145",
@@ -134,6 +137,7 @@ func TestWriteConfig(t *testing.T) {
 					`redpanda:
   directory: /var/lib/redpanda/data
   port: 33145
+  kafka_transport_port: 9092
   ip: 127.0.0.1
   id: 1
   seed_servers:
@@ -177,10 +181,11 @@ func TestCheckConfig(t *testing.T) {
 			name: "shall return true when config is valid",
 			args: args{
 				config: &Config{
-					Directory: "/var/lib/redpanda/data",
-					Port:      33145,
-					Ip:        "127.0.0.1",
-					Id:        1,
+					Directory:          "/var/lib/redpanda/data",
+					Port:               33145,
+					Ip:                 "127.0.0.1",
+					Id:                 1,
+					KafkaTransportPort: 9092,
 					SeedServers: []*SeedServer{
 						&SeedServer{
 							Address: "127.0.0.1:33145",

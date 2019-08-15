@@ -7,10 +7,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"time"
-	"vectorized/redpanda"
-	"vectorized/redpanda/sandbox/docker"
-	"vectorized/redpanda/sandbox/docker/labels"
-	"vectorized/utils"
+	"vectorized/pkg/redpanda"
+	"vectorized/pkg/redpanda/sandbox/docker"
+	"vectorized/pkg/redpanda/sandbox/docker/labels"
+	"vectorized/pkg/utils"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/filters"
@@ -21,7 +21,8 @@ import (
 )
 
 const (
-	containerRPCPort = 9457
+	containerRPCPort   = 9457
+	containerKafkaPort = 9092
 )
 
 type Node interface {
@@ -29,6 +30,7 @@ type Node interface {
 	Stop() error
 	Restart() error
 	Destroy() error
+	WipeRestart() error
 	Wipe() error
 	Logs(numberOfLines int, follow bool, timestamps bool) (io.ReadCloser, error)
 	Configure(seedServers []*redpanda.SeedServer) error
@@ -75,6 +77,7 @@ func (n *node) Create(
 			DataDir:     n.dataDir(),
 			ConfDir:     n.confDir(),
 			RPCPort:     containerRPCPort,
+			KafkaPort:   containerKafkaPort,
 			NodeID:      n.id,
 			ContainerIP: containerIP,
 			NetworkName: n.networkName,
@@ -176,6 +179,18 @@ func (n *node) Destroy() error {
 	return nil
 }
 
+func (n *node) WipeRestart() error {
+	err := n.Stop()
+	if err != nil {
+		return err
+	}
+	err = n.Wipe()
+	if err != nil {
+		return err
+	}
+	return n.Start()
+}
+
 func (n *node) Wipe() error {
 	log.Infof("Wiping node '%s'", n.nodeDir)
 	return n.fs.RemoveAll(n.dataDir())
@@ -238,29 +253,45 @@ func (n *node) getState() (*NodeState, error) {
 		ipAddress = network.IPAMConfig.IPv4Address
 	}
 
-	internalRPCPort, err := nat.NewPort("tcp", fmt.Sprint(containerRPCPort))
+	hostRPCPort, err := getHostPort(containerRPCPort, containerJSON)
 	if err != nil {
 		return nil, err
 	}
-	var hostRPCPort int
-	if portBindings, exist := containerJSON.NetworkSettings.Ports[internalRPCPort]; exist {
-		if len(portBindings) > 0 {
-			hostRPCPort, err = strconv.Atoi(portBindings[0].HostPort)
-			if err != nil {
-				return nil, err
-			}
-		}
+	hostKafkaPort, err := getHostPort(containerKafkaPort, containerJSON)
+	if err != nil {
+		return nil, err
 	}
 	return &NodeState{
-		Running:     containerJSON.State.Running,
-		Status:      containerJSON.State.Status,
-		NodeDir:     n.nodeDir,
-		ContainerID: containerID,
-		ContainerIP: ipAddress,
-		RPCPort:     containerRPCPort,
-		HostRPCPort: hostRPCPort,
-		ID:          n.id,
+		Running:       containerJSON.State.Running,
+		Status:        containerJSON.State.Status,
+		NodeDir:       n.nodeDir,
+		ContainerID:   containerID,
+		ContainerIP:   ipAddress,
+		RPCPort:       containerRPCPort,
+		KafkaPort:     containerKafkaPort,
+		HostKafkaPort: hostKafkaPort,
+		HostRPCPort:   hostRPCPort,
+		ID:            n.id,
 	}, nil
+}
+
+func getHostPort(
+	containerPort int, containerJSON types.ContainerJSON,
+) (int, error) {
+	natContianerPort, err := nat.NewPort("tcp", fmt.Sprint(containerPort))
+	if err != nil {
+		return 0, err
+	}
+	if portBindings, exist := containerJSON.NetworkSettings.Ports[natContianerPort]; exist {
+		if len(portBindings) > 0 {
+			hostPort, err := strconv.Atoi(portBindings[0].HostPort)
+			if err != nil {
+				return 0, err
+			}
+			return hostPort, nil
+		}
+	}
+	return 0, nil
 }
 
 func (n *node) getContainerID() (string, error) {

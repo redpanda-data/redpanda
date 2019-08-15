@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"testing"
-	"vectorized/utils"
+	"vectorized/pkg/utils"
 
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"

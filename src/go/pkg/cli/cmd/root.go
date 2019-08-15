@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"os"
-	"vectorized/cli"
+	"vectorized/pkg/cli"
 
 	"github.com/fatih/color"
 	"github.com/mitchellh/go-homedir"

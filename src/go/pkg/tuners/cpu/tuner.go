@@ -3,10 +3,10 @@ package cpu
 import (
 	"fmt"
 	"strconv"
-	"vectorized/os"
-	"vectorized/tuners"
-	"vectorized/tuners/irq"
-	"vectorized/utils"
+	"vectorized/pkg/os"
+	"vectorized/pkg/tuners"
+	"vectorized/pkg/tuners/irq"
+	"vectorized/pkg/utils"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"

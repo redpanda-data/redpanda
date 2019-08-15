@@ -7,6 +7,7 @@ type NodeContainerCfg struct {
 	ContainerIP string
 	NetworkName string
 	RPCPort     int
+	KafkaPort   int
 	NodeID      int
 }
 

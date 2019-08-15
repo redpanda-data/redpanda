@@ -3,7 +3,7 @@ package irq
 import (
 	"fmt"
 	"strings"
-	"vectorized/tuners/hwloc"
+	"vectorized/pkg/tuners/hwloc"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"

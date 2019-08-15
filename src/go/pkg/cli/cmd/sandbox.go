@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"vectorized/cli/ui"
-	sandbox "vectorized/redpanda/sandbox"
-	"vectorized/redpanda/sandbox/docker"
+	"vectorized/pkg/cli/ui"
+	sandbox "vectorized/pkg/redpanda/sandbox"
+	"vectorized/pkg/redpanda/sandbox/docker"
 
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
@@ -84,7 +84,7 @@ type commandDetails struct {
 	use           string
 	short         string
 	sandboxAction func(sandbox.Sandbox) error
-	nodeAction    func(sandbox.Sandbox, int) error
+	nodeAction    func(sandbox.Node) error
 }
 
 func newSandboxOrNodeCommand(
@@ -112,7 +112,7 @@ func newStartCommand(sbParams *sbParams) *cobra.Command {
 			use:           "start",
 			short:         "Start either a single node or whole sandbox",
 			sandboxAction: sandbox.Sandbox.Start,
-			nodeAction:    sandbox.Sandbox.StartNode,
+			nodeAction:    sandbox.Node.Start,
 		})
 }
 
@@ -122,7 +122,7 @@ func newStopCommand(sbParams *sbParams) *cobra.Command {
 			use:           "stop",
 			short:         "Stop either a single node or whole sandbox",
 			sandboxAction: sandbox.Sandbox.Stop,
-			nodeAction:    sandbox.Sandbox.StopNode,
+			nodeAction:    sandbox.Node.Stop,
 		})
 }
 
@@ -132,7 +132,7 @@ func newRestartCommand(sbParams *sbParams) *cobra.Command {
 			use:           "restart",
 			short:         "Restart either a single node or whole sandbox",
 			sandboxAction: sandbox.Sandbox.Restart,
-			nodeAction:    sandbox.Sandbox.RestartNode,
+			nodeAction:    sandbox.Node.Restart,
 		})
 }
 
@@ -143,7 +143,7 @@ func newWipeCommand(sbParams *sbParams) *cobra.Command {
 			short: "Remove data and restart either a single " +
 				"node or whole sandbox",
 			sandboxAction: sandbox.Sandbox.WipeRestart,
-			nodeAction:    sandbox.Sandbox.WipeRestartNode,
+			nodeAction:    sandbox.Node.Wipe,
 		})
 }
 
@@ -192,12 +192,12 @@ func newLogsCommands(sbParams *sbParams) *cobra.Command {
 				}
 				return printSandboxLogs(sb, numberOfLines, follow)
 			},
-			nodeAction: func(sb sandbox.Sandbox, nodeID int) error {
+			nodeAction: func(node sandbox.Node) error {
 				numberOfLines, err := pareseTailFlag(tailFlag)
 				if err != nil {
 					return err
 				}
-				return printNodeLogs(sb, nodeID, numberOfLines, follow)
+				return printNodeLogs(node, numberOfLines, follow)
 			},
 		})
 
@@ -216,10 +216,8 @@ func pareseTailFlag(tailFlag string) (int, error) {
 	return strconv.Atoi(tailFlag)
 }
 
-func printNodeLogs(
-	sb sandbox.Sandbox, nodeID int, numberOfLines int, follow bool,
-) error {
-	readCloser, err := sb.LogsNode(nodeID, numberOfLines, follow)
+func printNodeLogs(node sandbox.Node, numberOfLines int, follow bool) error {
+	readCloser, err := node.Logs(numberOfLines, follow, false)
 	if err != nil {
 		return err
 	}
@@ -252,13 +250,17 @@ func doWithSandbox(
 }
 
 func doWithSandboxNode(
-	sbParams *sbParams, nodeID int, action func(sandbox.Sandbox, int) error,
+	sbParams *sbParams, nodeID int, action func(sandbox.Node) error,
 ) error {
 	sandbox, err := getSandbox(sbParams)
 	if err != nil {
 		return err
 	}
-	return action(sandbox, nodeID)
+	node, err := sandbox.Node(nodeID)
+	if err != nil {
+		return err
+	}
+	return action(node)
 }
 
 func getSandbox(sbParams *sbParams) (sandbox.Sandbox, error) {
@@ -285,8 +287,10 @@ func printSandboxState(sbParams *sbParams, state *sandbox.State) {
 	table.SetHeader([]string{
 		"Id",
 		"Container IP",
-		"Forwarded RPC Port",
+		"RPC Port (Host)",
 		"RPC Port",
+		"Kafka Port (Host)",
+		"Kafka Port",
 		"Container ID",
 		"Status",
 	})
@@ -296,6 +300,8 @@ func printSandboxState(sbParams *sbParams, state *sandbox.State) {
 			nodeState.ContainerIP,
 			fmt.Sprint(nodeState.HostRPCPort),
 			fmt.Sprint(nodeState.RPCPort),
+			fmt.Sprint(nodeState.HostKafkaPort),
+			fmt.Sprint(nodeState.KafkaPort),
 			fmt.Sprintf("%.12s", nodeState.ContainerID),
 			nodeState.Status,
 		})

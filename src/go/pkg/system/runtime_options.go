@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-	"vectorized/utils"
+	"vectorized/pkg/utils"
 
 	"github.com/spf13/afero"
 )

@@ -3,7 +3,7 @@ package iotune
 import (
 	"errors"
 	"strconv"
-	"vectorized/os"
+	"vectorized/pkg/os"
 
 	log "github.com/sirupsen/logrus"
 )

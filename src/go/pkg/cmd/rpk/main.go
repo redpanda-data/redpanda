@@ -1,6 +1,6 @@
 package main
 
-import "vectorized/cli/cmd"
+import "vectorized/pkg/cli/cmd"
 
 func main() {
 	cmd.Execute()

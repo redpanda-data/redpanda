@@ -5,9 +5,9 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"vectorized/tuners"
-	"vectorized/tuners/irq"
-	"vectorized/utils"
+	"vectorized/pkg/tuners"
+	"vectorized/pkg/tuners/irq"
+	"vectorized/pkg/utils"
 
 	log "github.com/sirupsen/logrus"
 )

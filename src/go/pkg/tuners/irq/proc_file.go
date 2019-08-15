@@ -2,7 +2,7 @@ package irq
 
 import (
 	"strings"
-	"vectorized/utils"
+	"vectorized/pkg/utils"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"

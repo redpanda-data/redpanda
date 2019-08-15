@@ -2,9 +2,9 @@ package cmd
 
 import (
 	"path/filepath"
-	"vectorized/cli"
-	"vectorized/redpanda"
-	"vectorized/tuners/iotune"
+	"vectorized/pkg/cli"
+	"vectorized/pkg/redpanda"
+	"vectorized/pkg/tuners/iotune"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"

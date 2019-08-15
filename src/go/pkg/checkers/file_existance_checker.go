@@ -1,7 +1,7 @@
 package checkers
 
 import (
-	"vectorized/utils"
+	"vectorized/pkg/utils"
 
 	"github.com/spf13/afero"
 )

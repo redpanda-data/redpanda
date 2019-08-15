@@ -1,9 +1,9 @@
 package checkers
 
 import (
-	"vectorized/redpanda"
-	"vectorized/system"
-	"vectorized/system/filesystem"
+	"vectorized/pkg/redpanda"
+	"vectorized/pkg/system"
+	"vectorized/pkg/system/filesystem"
 
 	"github.com/spf13/afero"
 )

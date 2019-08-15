@@ -2,7 +2,7 @@ package tuners
 
 import (
 	"fmt"
-	"vectorized/checkers"
+	"vectorized/pkg/checkers"
 )
 
 func NewCheckedTunable(
@@ -28,12 +28,12 @@ func (t *checkedTunable) CheckIfSupported() (supported bool, reason string) {
 }
 
 func (t *checkedTunable) Tune() TuneResult {
-	
+
 	result := t.checker.Check()
 	if result.Err != nil {
 		return NewTuneError(result.Err)
 	}
-	
+
 	if result.IsOk {
 		return NewTuneResult(false)
 	}

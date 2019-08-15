@@ -11,10 +11,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"vectorized/redpanda"
-	"vectorized/redpanda/sandbox/docker"
-	"vectorized/redpanda/sandbox/docker/labels"
-	"vectorized/utils"
+	"vectorized/pkg/redpanda"
+	"vectorized/pkg/redpanda/sandbox/docker"
+	"vectorized/pkg/redpanda/sandbox/docker/labels"
+	"vectorized/pkg/utils"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/filters"
@@ -51,11 +51,8 @@ type Sandbox interface {
 	Logs(numberOfEntries int, follow bool, colorOutput bool) (io.ReadCloser, error)
 	AddNode() error
 	RemoveNode(nodeID int) error
-	RestartNode(nodeID int) error
-	WipeRestartNode(nodeID int) error
-	StopNode(nodeID int) error
-	StartNode(nodeID int) error
-	LogsNode(nodeID int, numberOfEntries int, follow bool) (io.ReadCloser, error)
+	Node(nodeID int) (Node, error)
+	Nodes() ([]Node, error)
 }
 
 type sandbox struct {
@@ -216,38 +213,50 @@ func (s *sandbox) State() (*State, error) {
 	}, nil
 }
 
-func (s *sandbox) AddNode() error {
-	//TODO: Figure out protocol of adding/remving nodes
-	panic("not implemented")
+func (s *sandbox) Node(nodeID int) (Node, error) {
+	nodes, err := s.getNodeIDs()
+	if err != nil {
+		return nil, err
+	}
+	if !utils.ContainsInt(nodes, nodeID) {
+		return nil, fmt.Errorf("Sandbox does not contain node %d", nodeID)
+	}
+	return s.getNode(nodeID), nil
 }
 
-func (s *sandbox) RemoveNode(nodeID int) error {
-	//TODO: Figure out protocol of adding/remving nodes
-	panic("not implemented")
+func (s *sandbox) Nodes() ([]Node, error) {
+	nodeIDs, err := s.getNodeIDs()
+	if err != nil {
+		return nil, err
+	}
+	var nodes []Node
+	for _, nodeID := range nodeIDs {
+		nodes = append(nodes, s.getNode(nodeID))
+	}
+	return nodes, nil
 }
 
-func (s *sandbox) RestartNode(nodeID int) error {
-	return s.singleNodeOp(nodeID, Node.Restart)
-}
-
-func (s *sandbox) StartNode(nodeID int) error {
-	return s.singleNodeOp(nodeID, Node.Start)
-}
-
-func (s *sandbox) StopNode(nodeID int) error {
-	return s.singleNodeOp(nodeID, Node.Stop)
-}
-
-func (s *sandbox) WipeRestartNode(nodeID int) error {
-	err := s.StopNode(nodeID)
+func (s *sandbox) DoWithNode(nodeID int, action func(Node)) error {
+	node, err := s.Node(nodeID)
 	if err != nil {
 		return err
 	}
-	err = s.getNode(nodeID).Wipe()
+	action(node)
+	return nil
+}
+
+func (s *sandbox) DoWithNodes(action func(Node)) error {
+	nodeIDs, err := s.getNodeIDs()
 	if err != nil {
 		return err
 	}
-	return s.StartNode(nodeID)
+	for _, nodeID := range nodeIDs {
+		err := s.DoWithNode(nodeID, action)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *sandbox) LogsNode(
@@ -413,7 +422,7 @@ func (s *sandbox) getNode(nodeID int) Node {
 }
 
 func (s *sandbox) getNodeIDs() ([]int, error) {
-	log.Debugf("Getting sanbox node ids")
+	log.Debugf("Getting sandbox node ids")
 	ctx, cancel := docker.CtxWithDefaultTimeout()
 	defer cancel()
 	containers, err := s.dockerClient.ContainerList(

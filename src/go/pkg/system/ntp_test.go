@@ -2,7 +2,7 @@ package system
 
 import (
 	"testing"
-	"vectorized/os"
+	"vectorized/pkg/os"
 )
 
 type procMock struct {
