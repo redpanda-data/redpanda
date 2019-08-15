@@ -24,6 +24,7 @@ func ReadRuntineOptions(fs afero.Fs, path string) (*RuntimeOptions, error) {
 	}
 	activeOptionPattern := regexp.MustCompile("^\\[(.*)\\]$")
 	options := strings.Fields(lines[0])
+
 	for _, opt := range options {
 		matches := activeOptionPattern.FindAllStringSubmatch(opt, -1)
 		if matches != nil {
@@ -31,6 +32,11 @@ func ReadRuntineOptions(fs afero.Fs, path string) (*RuntimeOptions, error) {
 		} else {
 			optionsMap[opt] = false
 		}
+	}
+
+	// if there is only one option it is active
+	if len(options) == 1 {
+		optionsMap[options[0]] = true
 	}
 	return &RuntimeOptions{optionsMap: optionsMap}, nil
 }

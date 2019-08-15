@@ -9,6 +9,7 @@ import (
 
 type diskInfoProviderMock struct {
 	getDirectoriesDevices    func([]string) (map[string][]string, error)
+	getDirectoryDevices      func(string) ([]string, error)
 	getBlockDeviceFromPath   func(string) (BlockDevice, error)
 	getBlockDeviceSystemPath func(string) (string, error)
 }
@@ -29,6 +30,12 @@ func (infoProvider *diskInfoProviderMock) GetBlockDeviceSystemPath(
 	path string,
 ) (string, error) {
 	return infoProvider.getBlockDeviceSystemPath(path)
+}
+
+func (infoProvider *diskInfoProviderMock) GetDirectoryDevices(
+	path string,
+) ([]string, error) {
+	return infoProvider.getDirectoryDevices(path)
 }
 
 func TestDisksIRQsTuner_getDeviceControllerPath(t *testing.T) {

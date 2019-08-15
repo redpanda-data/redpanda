@@ -1,8 +1,8 @@
 package iotune
 
 import (
-	"vectorized/pkg/checkers"
 	"vectorized/pkg/os"
+	"vectorized/pkg/redpanda"
 	"vectorized/pkg/tuners"
 	"vectorized/pkg/utils"
 
@@ -17,7 +17,7 @@ func NewIoTuneTuner(
 	duration int,
 ) tuners.Tunable {
 	return tuners.NewCheckedTunable(
-		checkers.NewIOConfigFileExistanceChecker(fs, ioConfigFile),
+		redpanda.NewIOConfigFileExistanceChecker(fs, ioConfigFile),
 		func() tuners.TuneResult {
 			return tune(evalDirectories, ioConfigFile, duration)
 		},

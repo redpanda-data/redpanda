@@ -49,10 +49,11 @@ func NewTunersFactory(fs afero.Fs) TunersFactory {
 	proc := os.NewProc()
 	return &tunersFactory{
 		tuners: map[string]func(*tunersFactory, *TunerParams) tuners.Tunable{
-			"disk_irq":   (*tunersFactory).newDiskIrqTuner,
-			"disk_sched": (*tunersFactory).newDiskSchedulerTuner,
-			"net":        (*tunersFactory).newNetworkTuner,
-			"cpu":        (*tunersFactory).newCpuTuner,
+			"disk_irq":       (*tunersFactory).newDiskIrqTuner,
+			"disk_scheduler": (*tunersFactory).newDiskSchedulerTuner,
+			"disk_nomerges":  (*tunersFactory).newDiskNomergesTuner,
+			"net":            (*tunersFactory).newNetworkTuner,
+			"cpu":            (*tunersFactory).newCpuTuner,
 		},
 		fs:                fs,
 		irqProcFile:       irqProcFile,
@@ -108,10 +109,22 @@ func (factory *tunersFactory) newDiskSchedulerTuner(
 	params *TunerParams,
 ) tuners.Tunable {
 	return disk.NewSchedulerTuner(
+		factory.fs,
 		params.Directories,
 		params.Disks,
 		factory.diskInfoProvider,
-		factory.fs)
+	)
+}
+
+func (factory *tunersFactory) newDiskNomergesTuner(
+	params *TunerParams,
+) tuners.Tunable {
+	return disk.NewNomergesTuner(
+		factory.fs,
+		params.Directories,
+		params.Disks,
+		factory.diskInfoProvider,
+	)
 }
 
 func (factory *tunersFactory) newNetworkTuner(

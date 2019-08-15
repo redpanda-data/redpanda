@@ -111,8 +111,11 @@ func prestart(
 		log.Info("System tune - PASSED")
 	}
 	if prestartCfg.checkEnabled {
-		checkersMap := checkers.RedpandaCheckers(fs, args.IoConfigFile, config)
-		err := check(checkersMap, checkFailedActions(args))
+		checkersMap, err := redpanda.RedpandaCheckers(fs, args.IoConfigFile, config)
+		if err != nil {
+			return err
+		}
+		err = check(checkersMap, checkFailedActions(args))
 		if err != nil {
 			return err
 		}
@@ -163,9 +166,9 @@ type checkFailedAction func(*checkers.CheckResult)
 
 func checkFailedActions(
 	args *redpanda.RedpandaArgs,
-) map[checkers.CheckerID]checkFailedAction {
-	return map[checkers.CheckerID]checkFailedAction{
-		checkers.Swap: func(*checkers.CheckResult) {
+) map[redpanda.CheckerID]checkFailedAction {
+	return map[redpanda.CheckerID]checkFailedAction{
+		redpanda.SwapChecker: func(*checkers.CheckResult) {
 			// Do not set --lock-memory flag when swap is disabled
 			args.LockMemory = false
 		},
@@ -173,24 +176,26 @@ func checkFailedActions(
 }
 
 func check(
-	checkersMap map[checkers.CheckerID]checkers.Checker,
-	checkFailedActions map[checkers.CheckerID]checkFailedAction,
+	checkersMap map[redpanda.CheckerID][]checkers.Checker,
+	checkFailedActions map[redpanda.CheckerID]checkFailedAction,
 ) error {
-	for checkerID, checker := range checkersMap {
-		result := checker.Check()
-		if result.Err != nil {
-			return result.Err
-		}
-		if !result.IsOk {
-			if action, exists := checkFailedActions[checkerID]; exists {
-				action(result)
+	for checkerID, checkersSlice := range checkersMap {
+		for _, checker := range checkersSlice {
+			result := checker.Check()
+			if result.Err != nil {
+				return result.Err
 			}
-			msg := fmt.Sprintf("System check '%s' failed. Required: %v, Current %v",
-				checker.GetDesc(), checker.GetRequiredAsString(), result.Current)
-			if checker.GetSeverity() == checkers.Fatal {
-				return fmt.Errorf(msg)
+			if !result.IsOk {
+				if action, exists := checkFailedActions[checkerID]; exists {
+					action(result)
+				}
+				msg := fmt.Sprintf("System check '%s' failed. Required: %v, Current %v",
+					checker.GetDesc(), checker.GetRequiredAsString(), result.Current)
+				if checker.GetSeverity() == checkers.Fatal {
+					return fmt.Errorf(msg)
+				}
+				log.Warn(msg)
 			}
-			log.Warn(msg)
 		}
 	}
 	return nil
