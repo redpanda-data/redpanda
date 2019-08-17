@@ -38,7 +38,7 @@ type tunersFactory struct {
 	cpuMasks          irq.CpuMasks
 	irqBalanceService irq.BalanceService
 	irqProcFile       irq.ProcFile
-	diskInfoProvider  disk.InfoProvider
+	blockDevices      disk.BlockDevices
 	proc              os.Proc
 	grub              os.Grub
 	tuners            map[string]func(*tunersFactory, *TunerParams) tuners.Tunable
@@ -47,9 +47,10 @@ type tunersFactory struct {
 func NewTunersFactory(fs afero.Fs) TunersFactory {
 	irqProcFile := irq.NewProcFile(fs)
 	proc := os.NewProc()
+	irqDeviceInfo := irq.NewDeviceInfo(fs, irqProcFile)
 	return &tunersFactory{
 		tuners: map[string]func(*tunersFactory, *TunerParams) tuners.Tunable{
-			"disk_irq":       (*tunersFactory).newDiskIrqTuner,
+			"disk_irq":       (*tunersFactory).newDiskIRQTuner,
 			"disk_scheduler": (*tunersFactory).newDiskSchedulerTuner,
 			"disk_nomerges":  (*tunersFactory).newDiskNomergesTuner,
 			"net":            (*tunersFactory).newNetworkTuner,
@@ -57,10 +58,10 @@ func NewTunersFactory(fs afero.Fs) TunersFactory {
 		},
 		fs:                fs,
 		irqProcFile:       irqProcFile,
-		irqDeviceInfo:     irq.NewDeviceInfo(fs, irqProcFile),
+		irqDeviceInfo:     irqDeviceInfo,
 		cpuMasks:          irq.NewCpuMasks(fs, hwloc.NewHwLocCmd(proc)),
 		irqBalanceService: irq.NewBalanceService(fs, proc),
-		diskInfoProvider:  disk.NewDiskInfoProvider(fs, proc),
+		blockDevices:      disk.NewBlockDevices(fs, irqDeviceInfo, irqProcFile, proc),
 		grub:              os.NewGrub(os.NewCommands(proc), proc, fs),
 		proc:              proc,
 	}
@@ -87,11 +88,12 @@ func (factory *tunersFactory) CreateTuner(
 	return factory.tuners[tunerName](factory, tunerParams)
 }
 
-func (factory *tunersFactory) newDiskIrqTuner(
+func (factory *tunersFactory) newDiskIRQTuner(
 	params *TunerParams,
 ) tuners.Tunable {
 
-	return disk.NewDiskIrqTuner(
+	return disk.NewDiskIRQTuner(
+		factory.fs,
 		irq.ModeFromString(params.Mode),
 		params.CpuMask,
 		params.Directories,
@@ -100,7 +102,7 @@ func (factory *tunersFactory) newDiskIrqTuner(
 		factory.cpuMasks,
 		factory.irqBalanceService,
 		factory.irqProcFile,
-		factory.diskInfoProvider,
+		factory.blockDevices,
 		runtime.NumCPU(),
 	)
 }
@@ -112,7 +114,7 @@ func (factory *tunersFactory) newDiskSchedulerTuner(
 		factory.fs,
 		params.Directories,
 		params.Disks,
-		factory.diskInfoProvider,
+		factory.blockDevices,
 	)
 }
 
@@ -123,7 +125,7 @@ func (factory *tunersFactory) newDiskNomergesTuner(
 		factory.fs,
 		params.Directories,
 		params.Disks,
-		factory.diskInfoProvider,
+		factory.blockDevices,
 	)
 }
 

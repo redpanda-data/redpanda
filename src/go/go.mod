@@ -33,7 +33,7 @@ require (
 	golang.org/x/sys v0.0.0-20190515120540-06a5c4944438
 	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4 // indirect
 	google.golang.org/grpc v1.22.0 // indirect
-	gopkg.in/confluentinc/confluent-kafka-go.v1 v1.1.0
+	gopkg.in/jcmturner/goidentity.v3 v3.0.0 // indirect
 	gopkg.in/yaml.v2 v2.2.2
-	gotest.tools v2.2.0+incompatible
+	gotest.tools v2.2.0+incompatible // indirect
 )

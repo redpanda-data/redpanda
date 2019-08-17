@@ -1,48 +1,29 @@
 package disk
 
 import (
-	"path"
-	"regexp"
-	"strconv"
-	"strings"
 	"vectorized/pkg/tuners"
 	"vectorized/pkg/tuners/irq"
-	"vectorized/pkg/utils"
 
 	log "github.com/sirupsen/logrus"
+	"github.com/spf13/afero"
 )
-
-type diskType string
-
-const (
-	nonNvme diskType = "non-nvme"
-	nvme    diskType = "nvme"
-)
-
-type devicesIRQs struct {
-	devices []string
-	irqs    []string
-}
 
 type disksIRQsTuner struct {
-	irqDeviceInfo       irq.DeviceInfo
-	cpuMasks            irq.CpuMasks
-	irqBalanceService   irq.BalanceService
-	irqProcFile         irq.ProcFile
-	diskInfoProvider    InfoProvider
-	mode                irq.Mode
-	baseCPUMask         string
-	computationsCPUMask string
-	irqCPUMask          string
-	directories         []string
-	devices             []string
-	directoryDevice     map[string][]string
-	diskInfoByType      map[diskType]devicesIRQs
-	deviceIRQs          map[string][]string
-	numberOfCpus        int
+	fs                afero.Fs
+	irqDeviceInfo     irq.DeviceInfo
+	cpuMasks          irq.CpuMasks
+	irqBalanceService irq.BalanceService
+	irqProcFile       irq.ProcFile
+	blockDevices      BlockDevices
+	mode              irq.Mode
+	baseCPUMask       string
+	directories       []string
+	devices           []string
+	numberOfCpus      int
 }
 
-func NewDiskIrqTuner(
+func NewDiskIRQTuner(
+	fs afero.Fs,
 	mode irq.Mode,
 	cpuMask string,
 	dirs []string,
@@ -51,18 +32,19 @@ func NewDiskIrqTuner(
 	cpuMasks irq.CpuMasks,
 	irqBalanceService irq.BalanceService,
 	irqProcFile irq.ProcFile,
-	diskInfoProvider InfoProvider,
+	blockDevices BlockDevices,
 	numberOfCpus int,
 ) tuners.Tunable {
 	log.Debugf("Creating disk IRQs tuner with mode '%s', cpu mask '%s', directories '%s' and devices '%s'",
 		mode, cpuMask, dirs, devices)
 
 	return &disksIRQsTuner{
+		fs:                fs,
 		irqDeviceInfo:     irqDeviceInfo,
 		cpuMasks:          cpuMasks,
 		irqBalanceService: irqBalanceService,
 		irqProcFile:       irqProcFile,
-		diskInfoProvider:  diskInfoProvider,
+		blockDevices:      blockDevices,
 		mode:              mode,
 		baseCPUMask:       cpuMask,
 		directories:       dirs,
@@ -85,17 +67,174 @@ func (tuner *disksIRQsTuner) CheckIfSupported() (
 	return true, ""
 }
 
-func (tuner *disksIRQsTuner) getDefaultMode() (irq.Mode, error) {
-	if tuner.mode != irq.Default {
-		return tuner.mode, nil
+func (tuner *disksIRQsTuner) Tune() tuners.TuneResult {
+	directoryDevices, err := tuner.blockDevices.GetDirectoriesDevices(
+		tuner.directories)
+	if err != nil {
+		return tuners.NewTuneError(err)
 	}
-	log.Debugf("Calculating default mode for Disk IrqTuner")
-	nonNvmeDiskIrqs := tuner.diskInfoByType[nonNvme]
-	if len(nonNvmeDiskIrqs.devices) == 0 {
+
+	var allDevices []string
+	allDevices = append(allDevices, tuner.devices...)
+	for _, devices := range directoryDevices {
+		allDevices = append(allDevices, devices...)
+	}
+	balanceServiceTuner := NewDiskIRQsBalanceServiceTuner(
+		tuner.fs,
+		allDevices,
+		tuner.blockDevices,
+		tuner.irqBalanceService)
+
+	if result := balanceServiceTuner.Tune(); result.IsFailed() {
+		return result
+	}
+	affinityTuner := NewDiskIRQsAffinityTuner(
+		tuner.fs,
+		allDevices,
+		tuner.baseCPUMask,
+		tuner.mode,
+		tuner.blockDevices,
+		tuner.cpuMasks,
+	)
+	return affinityTuner.Tune()
+}
+
+func NewDiskIRQsBalanceServiceTuner(
+	fs afero.Fs,
+	devices []string,
+	blockDevices BlockDevices,
+	balanceService irq.BalanceService,
+) tuners.Tunable {
+	return tuners.NewCheckedTunable(
+		NewDisksIRQAffinityStaticChecker(fs, devices, blockDevices, balanceService),
+		func() tuners.TuneResult {
+			diskInfoByType, err := blockDevices.GetDiskInfoByType(devices)
+			if err != nil {
+				return tuners.NewTuneError(err)
+			}
+			var IRQs []int
+			for _, diskInfo := range diskInfoByType {
+				IRQs = append(IRQs, diskInfo.irqs...)
+			}
+			err = balanceService.BanIRQsAndRestart(IRQs)
+			if err != nil {
+				return tuners.NewTuneError(err)
+			}
+			return tuners.NewTuneResult(false)
+		},
+		func() (bool, string) {
+			return true, ""
+		},
+	)
+}
+
+func NewDiskIRQsAffinityTuner(
+	fs afero.Fs,
+	devices []string,
+	cpuMask string,
+	mode irq.Mode,
+	blockDevices BlockDevices,
+	cpuMasks irq.CpuMasks,
+) tuners.Tunable {
+	return tuners.NewCheckedTunable(
+		NewDisksIRQAffinityChecker(fs, devices, cpuMask, mode, blockDevices, cpuMasks),
+		func() tuners.TuneResult {
+			distribution, err := GetExpectedIRQsDistribution(
+				devices,
+				blockDevices,
+				mode,
+				cpuMask,
+				cpuMasks)
+			if err != nil {
+				return tuners.NewTuneError(err)
+			}
+			err = cpuMasks.DistributeIRQs(distribution)
+			if err != nil {
+				return tuners.NewTuneError(err)
+			}
+			return tuners.NewTuneResult(false)
+		},
+		func() (bool, string) {
+			if !cpuMasks.IsSupported() {
+				return false, "Unable to calculate CPU masks required for IRQs " +
+					"tuner. Please install 'hwloc'"
+			}
+			return true, ""
+		},
+	)
+}
+
+func GetExpectedIRQsDistribution(
+	devices []string,
+	blockDevices BlockDevices,
+	mode irq.Mode,
+	cpuMask string,
+	cpuMasks irq.CpuMasks,
+) (map[int]string, error) {
+	log.Debugf("Getting %v IRQs distribution with mode %s and CPU mask %s",
+		devices,
+		mode, cpuMask)
+	finalCpuMask, err := cpuMasks.BaseCpuMask(cpuMask)
+	diskInfoByType, err := blockDevices.GetDiskInfoByType(devices)
+	if err != nil {
+		return nil, err
+	}
+
+	var effectiveMode irq.Mode
+	if mode != irq.Default {
+		effectiveMode = mode
+	} else {
+		effectiveMode, err = GetDefaultMode(finalCpuMask, diskInfoByType, cpuMasks)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	nonNvmeDisksInfo := diskInfoByType[nonNvme]
+	nvmeDisksInfo := diskInfoByType[nvme]
+	irqCPUMask, err := cpuMasks.CpuMaskForIRQs(effectiveMode, finalCpuMask)
+	if err != nil {
+		return nil, err
+	}
+	devicesIRQsDistribution := make(map[int]string)
+	if len(nonNvmeDisksInfo.devices) > 0 {
+		IRQsDist, err := cpuMasks.GetIRQsDistributionMasks(
+			nonNvmeDisksInfo.irqs, irqCPUMask)
+		if err != nil {
+			return nil, err
+		}
+		for IRQ, mask := range IRQsDist {
+			devicesIRQsDistribution[IRQ] = mask
+		}
+	}
+
+	if len(nvmeDisksInfo.devices) > 0 {
+		IRQsDist, err := cpuMasks.GetIRQsDistributionMasks(
+			nvmeDisksInfo.irqs, finalCpuMask)
+		if err != nil {
+			return nil, err
+		}
+		for IRQ, mask := range IRQsDist {
+			devicesIRQsDistribution[IRQ] = mask
+		}
+	}
+	log.Debugf("Calculated IRQs distribution %v", devicesIRQsDistribution)
+	return devicesIRQsDistribution, nil
+}
+
+func GetDefaultMode(
+	cpuMask string,
+	diskInfoByType map[diskType]devicesIRQs,
+	cpuMasks irq.CpuMasks,
+) (irq.Mode, error) {
+
+	log.Debug("Calculating default mode for Disk IRQs")
+	nonNvmeDiskIRQs := diskInfoByType[nonNvme]
+	if len(nonNvmeDiskIRQs.devices) == 0 {
 		return irq.Mq, nil
 	}
-	numOfCores, err := tuner.cpuMasks.GetNumberOfCores(tuner.baseCPUMask)
-	numOfPUs, err := tuner.cpuMasks.GetNumberOfPUs(tuner.baseCPUMask)
+	numOfCores, err := cpuMasks.GetNumberOfCores(cpuMask)
+	numOfPUs, err := cpuMasks.GetNumberOfPUs(cpuMask)
 	if err != nil {
 		return "", nil
 	}
@@ -107,194 +246,4 @@ func (tuner *disksIRQsTuner) getDefaultMode() (irq.Mode, error) {
 	} else {
 		return irq.SqSplit, nil
 	}
-}
-
-func (tuner *disksIRQsTuner) Tune() tuners.TuneResult {
-	var err error
-	tuner.baseCPUMask, err = tuner.cpuMasks.BaseCpuMask(tuner.baseCPUMask)
-	tuner.mode, err = tuner.getDefaultMode()
-	if err != nil {
-		return tuners.NewTuneError(err)
-	}
-	tuner.computationsCPUMask, err = tuner.cpuMasks.CpuMaskForComputations(
-		tuner.mode, tuner.baseCPUMask)
-	tuner.irqCPUMask, err = tuner.cpuMasks.CpuMaskForIRQs(
-		tuner.mode, tuner.baseCPUMask)
-	if err != nil {
-		return tuners.NewTuneError(err)
-	}
-	tuner.directoryDevice, err = tuner.diskInfoProvider.GetDirectoriesDevices(
-		tuner.directories)
-	if err != nil {
-		return tuners.NewTuneError(err)
-	}
-	tuner.deviceIRQs, err = tuner.getDevicesIRQs()
-	if err != nil {
-		return tuners.NewTuneError(err)
-	}
-	tuner.diskInfoByType, err = tuner.groupDiskInfoByType()
-	if err != nil {
-		return tuners.NewTuneError(err)
-	}
-	if err = tuner.irqBalanceService.BanIRQsAndRestart(tuner.getAllIRQs()); err != nil {
-		return tuners.NewTuneError(err)
-	}
-	nonNvmeDisksInfo := tuner.diskInfoByType[nonNvme]
-	nvmeDisksInfo := tuner.diskInfoByType[nvme]
-
-	if len(nonNvmeDisksInfo.devices) > 0 {
-		log.Infof("Tuning non-Nvme disks %s", nonNvmeDisksInfo.devices)
-		if err := tuner.cpuMasks.DistributeIRQs(
-			nonNvmeDisksInfo.irqs, tuner.irqCPUMask); err != nil {
-			return tuners.NewTuneError(err)
-		}
-	} else {
-		log.Infof("No non-Nvme disks to tune")
-	}
-
-	if len(nvmeDisksInfo.devices) > 0 {
-		log.Infof("Tuning Nvme disks %s", nvmeDisksInfo.devices)
-		if err := tuner.cpuMasks.DistributeIRQs(nvmeDisksInfo.irqs,
-			tuner.baseCPUMask); err != nil {
-			return tuners.NewTuneError(err)
-		}
-	} else {
-		log.Infof("No Nvme disks to tune")
-	}
-	return tuners.NewTuneResult(false)
-}
-
-func (tuner *disksIRQsTuner) getAllIRQs() []string {
-	irqsSet := map[string]bool{}
-	for _, irqs := range tuner.deviceIRQs {
-		for _, irq := range irqs {
-			irqsSet[irq] = true
-		}
-	}
-	return utils.GetKeys(irqsSet)
-}
-
-func (tuner *disksIRQsTuner) getDevicesIRQs() (map[string][]string, error) {
-	diskIRQs := make(map[string][]string)
-
-	for _, devices := range tuner.directoryDevice {
-		for _, device := range devices {
-			if diskIRQs[device] != nil {
-				continue
-			}
-			controllerPath, err := tuner.getDeviceControllerPath(device)
-			if err != nil {
-				return nil, err
-			}
-			interrupts, err := tuner.irqDeviceInfo.GetIRQs(controllerPath,
-				"blkif")
-			if err != nil {
-				return nil, err
-			}
-			diskIRQs[device] = interrupts
-		}
-	}
-	for _, device := range tuner.devices {
-		if diskIRQs[device] != nil {
-			continue
-		}
-		controllerPath, err := tuner.getDeviceControllerPath(device)
-		if err != nil {
-			return nil, err
-		}
-		interrupts, err := tuner.irqDeviceInfo.GetIRQs(controllerPath,
-			"blkif")
-		if err != nil {
-			return nil, err
-		}
-		diskIRQs[device] = interrupts
-	}
-	return diskIRQs, nil
-}
-
-func (tuner *disksIRQsTuner) getDeviceControllerPath(
-	device string,
-) (string, error) {
-	devicePath := path.Join("/dev", device)
-	log.Debugf("Getting controller path for '%s'", devicePath)
-	devSystemPath, err := tuner.diskInfoProvider.GetBlockDeviceSystemPath(
-		devicePath)
-	if err != nil {
-		return "", err
-	}
-	splitSystemPath := strings.Split(devSystemPath, "/")
-	controllerPathParts := append([]string{"/"}, splitSystemPath[0:4]...)
-	pattern, _ := regexp.Compile(
-		"^[0-9ABCDEFabcdef]{4}:[0-9ABCDEFabcdef]{2}:[0-9ABCDEFabcdef]{2}\\.[0-9ABCDEFabcdef]$")
-	for _, systemPathPart := range splitSystemPath[4:] {
-		if pattern.MatchString(systemPathPart) {
-			controllerPathParts = append(controllerPathParts, systemPathPart)
-		} else {
-			break
-		}
-	}
-	return path.Join(controllerPathParts...), nil
-}
-
-func (tuner *disksIRQsTuner) groupDiskInfoByType() (
-	map[diskType]devicesIRQs,
-	error,
-) {
-	diskInfoByType := make(map[diskType]devicesIRQs)
-	// using map in order to provide set functionality
-	nvmeDisks := map[string]bool{}
-	nvmeIRQs := map[string]bool{}
-	nonNvmeDisks := map[string]bool{}
-	nonNvmeIRQs := map[string]bool{}
-
-	for device, irqs := range tuner.deviceIRQs {
-		if strings.HasPrefix(device, "nvme") {
-			nvmeDisks[device] = true
-			for _, singleIrq := range irqs {
-				nvmeIRQs[singleIrq] = true
-			}
-		} else {
-			nonNvmeDisks[device] = true
-			for _, singleIrq := range irqs {
-				nonNvmeIRQs[singleIrq] = true
-			}
-		}
-	}
-
-	if utils.IsAWSi3MetalInstance() {
-		for singleIrq := range nvmeIRQs {
-			isNvmFastPath, err := tuner.isIRQNvmeFastPathIrq(singleIrq)
-			if err != nil {
-				return nil, err
-			}
-			if !isNvmFastPath {
-				delete(nvmeIRQs, singleIrq)
-			}
-		}
-	}
-	diskInfoByType[nvme] = devicesIRQs{utils.GetKeys(nvmeDisks),
-		utils.GetKeys(nvmeIRQs)}
-	diskInfoByType[nonNvme] = devicesIRQs{utils.GetKeys(nonNvmeDisks),
-		utils.GetKeys(nonNvmeIRQs)}
-	return diskInfoByType, nil
-}
-
-func (tuner *disksIRQsTuner) isIRQNvmeFastPathIrq(irq string) (bool, error) {
-	nvmeFastPathQueuePattern := regexp.MustCompile(
-		"(\\s|^)nvme\\d+q(\\d+)(\\s|$)")
-	linesMap, err := tuner.irqProcFile.GetIRQProcFileLinesMap()
-	if err != nil {
-		return false, err
-	}
-	splitProcLine := strings.Split(linesMap[irq], ",")
-	for _, part := range splitProcLine {
-		matches := nvmeFastPathQueuePattern.FindAllStringSubmatch(part, -1)
-		if matches != nil {
-			queueNumber, _ := strconv.ParseInt(matches[0][2], 10, 8)
-			if int(queueNumber) <= tuner.numberOfCpus {
-				return true, nil
-			}
-		}
-	}
-	return false, nil
 }

@@ -2,6 +2,7 @@ package irq
 
 import (
 	"path"
+	"strconv"
 	"strings"
 	"vectorized/pkg/utils"
 
@@ -10,7 +11,7 @@ import (
 )
 
 type DeviceInfo interface {
-	GetIRQs(irqConfigDir string, xenDeviceName string) ([]string, error)
+	GetIRQs(irqConfigDir string, xenDeviceName string) ([]int, error)
 }
 
 func NewDeviceInfo(fs afero.Fs, procFile ProcFile) DeviceInfo {
@@ -28,13 +29,20 @@ type deviceInfo struct {
 
 func (deviceInfo *deviceInfo) GetIRQs(
 	irqConfigDir string, xenDeviceName string,
-) ([]string, error) {
+) ([]int, error) {
 	log.Debugf("Reading IRQs of '%s', with deviceInfo name pattern '%s'", irqConfigDir, xenDeviceName)
 	msiIRQsDirName := path.Join(irqConfigDir, "msi_irqs")
-	var irqs []string
+	var irqs []int
 	if utils.FileExists(deviceInfo.fs, msiIRQsDirName) {
 		log.Debugf("Device '%s' uses MSI IRQs", irqConfigDir)
-		irqs = utils.ListFilesInPath(deviceInfo.fs, msiIRQsDirName)
+		files := utils.ListFilesInPath(deviceInfo.fs, msiIRQsDirName)
+		for _, file := range files {
+			irq, err := strconv.Atoi(file)
+			if err != nil {
+				return nil, err
+			}
+			irqs = append(irqs, irq)
+		}
 	} else {
 		irqFileName := path.Join(irqConfigDir, "irq")
 		if utils.FileExists(deviceInfo.fs, irqFileName) {
@@ -44,7 +52,11 @@ func (deviceInfo *deviceInfo) GetIRQs(
 				return nil, err
 			}
 			for _, rawLine := range lines {
-				irqs = append(irqs, strings.TrimSpace(rawLine))
+				irq, err := strconv.Atoi(strings.TrimSpace(rawLine))
+				if err != nil {
+					return nil, err
+				}
+				irqs = append(irqs, irq)
 			}
 		} else {
 			modAliasFileName := path.Join(irqConfigDir, "modalias")
@@ -74,14 +86,14 @@ func (deviceInfo *deviceInfo) GetIRQs(
 			}
 		}
 	}
-	log.Debugf("DeviceInfo '%s' IRQs '%s'", irqConfigDir, irqs)
+	log.Debugf("DeviceInfo '%s' IRQs '%v'", irqConfigDir, irqs)
 	return irqs, nil
 }
 
 func (deviceInfo *deviceInfo) getIRQsForLinesMatching(
-	pattern string, irqToProcLineMap map[string]string,
-) []string {
-	var irqs []string
+	pattern string, irqToProcLineMap map[int]string,
+) []int {
+	var irqs []int
 	for irq, line := range irqToProcLineMap {
 		if strings.Contains(line, pattern) {
 			irqs = append(irqs, irq)

@@ -1,6 +1,8 @@
 package irq
 
 import (
+	"regexp"
+	"strconv"
 	"strings"
 	"vectorized/pkg/utils"
 
@@ -9,7 +11,7 @@ import (
 )
 
 type ProcFile interface {
-	GetIRQProcFileLinesMap() (map[string]string, error)
+	GetIRQProcFileLinesMap() (map[int]string, error)
 }
 
 func NewProcFile(fs afero.Fs) ProcFile {
@@ -22,19 +24,26 @@ type procFile struct {
 	fs afero.Fs
 }
 
-func (procFile *procFile) GetIRQProcFileLinesMap() (map[string]string, error) {
+func (procFile *procFile) GetIRQProcFileLinesMap() (map[int]string, error) {
 	log.Debugf("Reading '/proc/interrupts' file...")
 	lines, err := utils.ReadFileLines(procFile.fs, "/proc/interrupts")
 	if err != nil {
 		return nil, err
 	}
-	linesByIRQ := make(map[string]string)
+	linesByIRQ := make(map[int]string)
+	irqPattern := regexp.MustCompile("^\\s*\\d+:.*$")
 	for _, line := range lines {
-		irq := strings.TrimSpace(strings.Split(line, ":")[0])
+		if !irqPattern.MatchString(line) {
+			continue
+		}
+		irq, err := strconv.Atoi(strings.TrimSpace(strings.Split(line, ":")[0]))
+		if err != nil {
+			return nil, err
+		}
 		linesByIRQ[irq] = line
 	}
 	for irq, line := range linesByIRQ {
-		log.Tracef("IRQ -> /proc/interrupts %s - %s", irq, line)
+		log.Tracef("IRQ -> /proc/interrupts %d - %s", irq, line)
 	}
 	return linesByIRQ, nil
 }

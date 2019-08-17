@@ -1,134 +1,107 @@
 package disk
 
 import (
+	"reflect"
 	"testing"
 	"vectorized/pkg/tuners/irq"
-
-	"github.com/stretchr/testify/assert"
 )
 
-type diskInfoProviderMock struct {
-	getDirectoriesDevices    func([]string) (map[string][]string, error)
-	getDirectoryDevices      func(string) ([]string, error)
-	getBlockDeviceFromPath   func(string) (BlockDevice, error)
-	getBlockDeviceSystemPath func(string) (string, error)
+type cpuMasksMock struct {
+	irq.CpuMasks
+	baseCpuMask              func(string) (string, error)
+	cpuMaskForIRQs           func(irq.Mode, string) (string, error)
+	getIRQsDistributionMasks func([]int, string) (map[int]string, error)
 }
 
-func (infoProvider *diskInfoProviderMock) GetDirectoriesDevices(
-	directories []string,
-) (map[string][]string, error) {
-	return infoProvider.getDirectoriesDevices(directories)
+func (m *cpuMasksMock) BaseCpuMask(cpuMask string) (string, error) {
+	return m.baseCpuMask(cpuMask)
 }
 
-func (infoProvider *diskInfoProviderMock) GetBlockDeviceFromPath(
-	path string,
-) (BlockDevice, error) {
-	return infoProvider.getBlockDeviceFromPath(path)
+func (m *cpuMasksMock) CpuMaskForIRQs(mode irq.Mode, cpuMask string) (string, error) {
+	return m.cpuMaskForIRQs(mode, cpuMask)
 }
 
-func (infoProvider *diskInfoProviderMock) GetBlockDeviceSystemPath(
-	path string,
-) (string, error) {
-	return infoProvider.getBlockDeviceSystemPath(path)
+func (m *cpuMasksMock) GetIRQsDistributionMasks(IRQs []int, cpuMask string) (map[int]string, error) {
+	return m.getIRQsDistributionMasks(IRQs, cpuMask)
 }
 
-func (infoProvider *diskInfoProviderMock) GetDirectoryDevices(
-	path string,
-) ([]string, error) {
-	return infoProvider.getDirectoryDevices(path)
-}
-
-func TestDisksIRQsTuner_getDeviceControllerPath(t *testing.T) {
-	//given
-	infoProvider := &diskInfoProviderMock{
-		getBlockDeviceSystemPath: func(str string) (string, error) {
-			return "/sys/devices/pci0000:00/0000:00:1f." +
-				"2/ata1/host0/target0:0:0/0:0:0:0/block/sda/sda1", nil
-		},
+func TestGetExpectedIRQsDistribution(t *testing.T) {
+	type args struct {
+		devices      []string
+		mode         irq.Mode
+		cpuMask      string
+		blockDevices BlockDevices
+		cpuMasks     irq.CpuMasks
 	}
-	diskIRQsTuner := &disksIRQsTuner{
-		devices:          []string{"sdb1"},
-		diskInfoProvider: infoProvider,
-	}
-	//when
-	controllerPath, err := diskIRQsTuner.getDeviceControllerPath("sdb1")
-	//then
-	assert.Nil(t, err)
-	assert.Equal(t, "/sys/devices/pci0000:00/0000:00:1f.2", controllerPath)
-}
-
-type mockProcFile struct {
-	irq.ProcFile
-	getIRQProcFileLinesMap func() (map[string]string, error)
-}
-
-func (mockProcFile *mockProcFile) GetIRQProcFileLinesMap() (
-	map[string]string,
-	error,
-) {
-	return mockProcFile.getIRQProcFileLinesMap()
-}
-
-func Test_disksIRQsTuner_isIRQNvmeFastPathIrq(t *testing.T) {
-	//given
-	fields := []struct {
-		name     string
-		procFile irq.ProcFile
-		expected bool
-		numCpus  int
+	tests := []struct {
+		name    string
+		args    args
+		want    map[int]string
+		wantErr bool
 	}{
 		{
-			name: "Shall return true as device with IRQ 18 is a NVMe device",
-			procFile: &mockProcFile{
-				getIRQProcFileLinesMap: func() (map[string]string, error) {
-					procFileLine := "18:          0          0          0         " +
-						" 0          0          0          0         21 " +
-						"IR-PCI-MSI 59244544-edge      nvme0q4"
-					return map[string]string{"18": procFileLine}, nil
+			name: "shall return correct distribution",
+			args: args{
+				devices: []string{"dev1", "dev2"},
+				mode:    irq.Sq,
+				cpuMask: "0xff",
+				blockDevices: &blockDevicesMock{
+					getDiskInfoByType: func([]string) (map[diskType]devicesIRQs, error) {
+						return map[diskType]devicesIRQs{
+							nonNvme: devicesIRQs{
+								devices: []string{"dev1"},
+								irqs:    []int{10},
+							},
+							nvme: devicesIRQs{
+								devices: []string{"dev1"},
+								irqs:    []int{12, 15, 18, 24}},
+						}, nil
+					},
+				},
+				cpuMasks: &cpuMasksMock{
+					baseCpuMask: func(string) (string, error) {
+						return "0x0000000f", nil
+					},
+					cpuMaskForIRQs: func(mode irq.Mode, cpuMask string) (string, error) {
+						return "0x00000001", nil
+					},
+					getIRQsDistributionMasks: func(IRQs []int, cpuMask string) (map[int]string, error) {
+						if cpuMask == "0x00000001" {
+							return map[int]string{
+								10: "0x00000001",
+							}, nil
+						}
+						return map[int]string{
+							12: "0x00000001",
+							15: "0x00000002",
+							18: "0x00000004",
+							24: "0x00000008",
+						}, nil
+					},
 				},
 			},
-			expected: true,
-			numCpus:  8,
+			want: map[int]string{
+				10: "0x00000001",
+				12: "0x00000001",
+				15: "0x00000002",
+				18: "0x00000004",
+				24: "0x00000008",
+			},
+			wantErr: false,
 		},
-		{
-			name: "Shall return false as device with IRQ 18 is a NVMe device" +
-				"but queue number is larger than number of cpus",
-			procFile: &mockProcFile{
-				getIRQProcFileLinesMap: func() (map[string]string, error) {
-					procFileLine := "18:          0          0          0         " +
-						" 0          0          0          0         21 " +
-						"IR-PCI-MSI 59244544-edge      nvme0q5"
-					return map[string]string{"18": procFileLine}, nil
-				},
-			},
-			expected: false,
-			numCpus:  4,
-		},
-		{
-			name: "Shall return false as device with IRQ 18 is not NVMe device",
-			procFile: &mockProcFile{
-				getIRQProcFileLinesMap: func() (map[string]string, error) {
-					procFileLine := "18:       1178       1469       3467" +
-						"         96         17       3453       5932" +
-						"        331  IR-PCI-MSI 333825-edge      iwlwifi: queue 1"
-					return map[string]string{"18": procFileLine}, nil
-				},
-			},
-			expected: false,
-			numCpus:  8,
-		}}
-	for _, test := range fields {
-		t.Run(test.name, func(t *testing.T) {
-			//when
-			diskIRQsTuner := &disksIRQsTuner{
-				irqProcFile:  test.procFile,
-				numberOfCpus: test.numCpus,
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := GetExpectedIRQsDistribution(
+				tt.args.devices, tt.args.blockDevices,
+				tt.args.mode, tt.args.cpuMask, tt.args.cpuMasks)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("GetExpectedIRQsDistribution() error = %v, wantErr %v", err, tt.wantErr)
+				return
 			}
-
-			isNVMEIrq, err := diskIRQsTuner.isIRQNvmeFastPathIrq("18")
-			//then
-			assert.Nil(t, err)
-			assert.Equal(t, test.expected, isNVMEIrq)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("GetExpectedIRQsDistribution() = %v, want %v", got, tt.want)
+			}
 		})
 	}
 }

@@ -71,14 +71,14 @@ func NewSchedulerTuner(
 	fs afero.Fs,
 	directories []string,
 	devices []string,
-	diskInfoProvider InfoProvider,
+	blockDevices BlockDevices,
 ) tuners.Tunable {
-	schedulerInfo := NewSchedulerInfo(fs, diskInfoProvider)
+	schedulerInfo := NewSchedulerInfo(fs, blockDevices)
 	return NewDiskTuner(
 		fs,
 		directories,
 		devices,
-		diskInfoProvider,
+		blockDevices,
 		func(device string) tuners.Tunable {
 			return NewDeviceSchedulerTuner(fs, device, schedulerInfo)
 		},

@@ -1,11 +1,13 @@
 package redpanda
 
 import (
-	"vectorized/pkg/tuners/disk"
-	"vectorized/pkg/os"
 	"vectorized/pkg/checkers"
+	"vectorized/pkg/os"
 	"vectorized/pkg/system"
 	"vectorized/pkg/system/filesystem"
+	"vectorized/pkg/tuners/disk"
+	"vectorized/pkg/tuners/hwloc"
+	"vectorized/pkg/tuners/irq"
 
 	"github.com/spf13/afero"
 )
@@ -24,6 +26,8 @@ const (
 	NtpChecker
 	SchedulerChecker
 	NomergesChecker
+	DiskIRQsAffinityStaticChecker
+	DiskIRQsAffinityChecker
 )
 
 func NewConfigChecker(config *Config) checkers.Checker {
@@ -134,29 +138,45 @@ func RedpandaCheckers(
 	fs afero.Fs, ioConfigFile string, config *Config,
 ) (map[CheckerID][]checkers.Checker, error) {
 	proc := os.NewProc()
-	infoProvider := disk.NewDiskInfoProvider(fs, proc)
-	schedulerInfo := disk.NewSchedulerInfo(fs, infoProvider)
+	irqProcFile := irq.NewProcFile(fs)
+	irqDeviceInfo := irq.NewDeviceInfo(fs, irqProcFile)
+	blockDevices := disk.NewBlockDevices(fs, irqDeviceInfo, irqProcFile, proc)
+	schedulerInfo := disk.NewSchedulerInfo(fs, blockDevices)
 	schdulerCheckers, err := disk.NewDirectorySchedulerCheckers(fs,
-		config.Directory, schedulerInfo, infoProvider)
+		config.Directory, schedulerInfo, blockDevices)
 	if err != nil {
 		return nil, err
 	}
 	nomergesCheckers, err := disk.NewDirectoryNomergesCheckers(fs,
-		config.Directory, schedulerInfo, infoProvider)
+		config.Directory, schedulerInfo, blockDevices)
+	if err != nil {
+		return nil, err
+	}
+	balanceService := irq.NewBalanceService(fs, proc)
+	cpuMasks := irq.NewCpuMasks(fs, hwloc.NewHwLocCmd(proc))
+	dirIRQAffinityChecker, err := disk.NewDirectoryIRQAffinityChecker(
+		fs, config.Directory, "all", irq.Default, blockDevices, cpuMasks)
+	if err != nil {
+		return nil, err
+	}
+	dirIRQAffinityStaticChecker, err := disk.NewDirectoryIRQsAffinityStaticChecker(
+		fs, config.Directory, blockDevices, balanceService)
 	if err != nil {
 		return nil, err
 	}
 	return map[CheckerID][]checkers.Checker{
-		ConfigFileChecker:           []checkers.Checker{NewConfigChecker(config)},
-		IoConfigFileChecker:         []checkers.Checker{NewIOConfigFileExistanceChecker(fs, ioConfigFile)},
-		FreeMemChecker:              []checkers.Checker{NewMemoryChecker(fs)},
-		SwapChecker:                 []checkers.Checker{NewSwapChecker(fs)},
-		DataDirAccessChecker:        []checkers.Checker{NewDataDirWritableChecker(fs, config.Directory)},
-		DiskSpaceChecker:            []checkers.Checker{NewFreeDiskSpaceChecker(config.Directory)},
-		FsTypeChecker:               []checkers.Checker{NewFilesystemTypeChecker(config.Directory)},
-		TransparentHugePagesChecker: []checkers.Checker{NewTransparentHugePagesChecker(fs)},
-		NtpChecker:                  []checkers.Checker{NewNTPSyncChecker(fs)},
-		SchedulerChecker:            schdulerCheckers,
-		NomergesChecker:             nomergesCheckers,
+		ConfigFileChecker:             []checkers.Checker{NewConfigChecker(config)},
+		IoConfigFileChecker:           []checkers.Checker{NewIOConfigFileExistanceChecker(fs, ioConfigFile)},
+		FreeMemChecker:                []checkers.Checker{NewMemoryChecker(fs)},
+		SwapChecker:                   []checkers.Checker{NewSwapChecker(fs)},
+		DataDirAccessChecker:          []checkers.Checker{NewDataDirWritableChecker(fs, config.Directory)},
+		DiskSpaceChecker:              []checkers.Checker{NewFreeDiskSpaceChecker(config.Directory)},
+		FsTypeChecker:                 []checkers.Checker{NewFilesystemTypeChecker(config.Directory)},
+		TransparentHugePagesChecker:   []checkers.Checker{NewTransparentHugePagesChecker(fs)},
+		NtpChecker:                    []checkers.Checker{NewNTPSyncChecker(fs)},
+		SchedulerChecker:              schdulerCheckers,
+		NomergesChecker:               nomergesCheckers,
+		DiskIRQsAffinityChecker:       []checkers.Checker{dirIRQAffinityChecker},
+		DiskIRQsAffinityStaticChecker: []checkers.Checker{dirIRQAffinityStaticChecker},
 	}, nil
 }

@@ -2,6 +2,7 @@ package irq
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"vectorized/pkg/tuners/hwloc"
 
@@ -14,8 +15,11 @@ type CpuMasks interface {
 	CpuMaskForComputations(mode Mode, cpuMask string) (string, error)
 	CpuMaskForIRQs(mode Mode, cpuMask string) (string, error)
 	SetMask(path string, mask string) error
-	DistributeIRQs(irqs []string, cpuMask string) error
+	ReadMask(path string) (string, error)
+	ReadIRQMask(IRQ int) (string, error)
+	DistributeIRQs(irqsDistribution map[int]string) error
 	GetDistributionMasks(count uint) ([]string, error)
+	GetIRQsDistributionMasks(IRQs []int, cpuMask string) (map[int]string, error)
 	GetNumberOfCores(mask string) (uint, error)
 	GetNumberOfPUs(mask string) (uint, error)
 	GetAllCpusMask() (string, error)
@@ -95,7 +99,7 @@ func (masks *cpuMasks) CpuMaskForIRQs(
 		return "", fmt.Errorf("bad configuration mode '%s' and cpu-mask value '%s':"+
 			" this results in a zero-mask for IRQs", mode, cpuMask)
 	}
-	log.Debugf("IQRs CPU mask '%s'", maskForIRQs)
+	log.Debugf("IRQs CPU mask '%s'", maskForIRQs)
 	return maskForIRQs, err
 }
 
@@ -120,22 +124,57 @@ func (masks *cpuMasks) GetDistributionMasks(count uint) ([]string, error) {
 	return masks.hwloc.Distribute(count)
 }
 
-func (masks *cpuMasks) DistributeIRQs(irqs []string, cpuMask string) error {
-	if len(irqs) == 0 {
-		return nil
-	}
-	irqsDistribution, err := masks.hwloc.DistributeRestrict(uint(len(irqs)), cpuMask)
+func (masks *cpuMasks) GetIRQsDistributionMasks(
+	IRQs []int, cpuMask string,
+) (map[int]string, error) {
+	distribMasks, err := masks.hwloc.DistributeRestrict(uint(len(IRQs)), cpuMask)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	log.Infof("Distributing IRQs '%s' over cpu masks '%s'", irqs, irqsDistribution)
-	for i, mask := range irqsDistribution {
-		err := masks.SetMask(fmt.Sprintf("/proc/irq/%s/smp_affinity", irqs[i]), mask)
+	irqsDistribution := make(map[int]string)
+	for i, mask := range distribMasks {
+		irqsDistribution[IRQs[i]] = mask
+	}
+	return irqsDistribution, nil
+}
+
+func (masks *cpuMasks) DistributeIRQs(irqsDistribution map[int]string) error {
+	log.Infof("Distributing IRQs '%v' ", irqsDistribution)
+	for IRQ, mask := range irqsDistribution {
+		err := masks.SetMask(irqAffinityPath(IRQ), mask)
 		if err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func irqAffinityPath(IRQ int) string {
+	return fmt.Sprintf("/proc/irq/%d/smp_affinity", IRQ)
+}
+
+func (masks *cpuMasks) ReadMask(path string) (string, error) {
+	content, err := afero.ReadFile(masks.fs, path)
+	if err != nil {
+		return "", err
+	}
+	rawMask := strings.TrimSpace(string(content))
+
+	rawMask = strings.Replace(rawMask, ",0,", ",,", -1)
+	parts := strings.Split(rawMask, ",")
+	var newMaskParts []string
+	for _, part := range parts {
+		if part != "" {
+			newMaskParts = append(newMaskParts, "0x"+part)
+		} else {
+			newMaskParts = append(newMaskParts, part)
+		}
+	}
+	return strings.Join(newMaskParts, ","), nil
+}
+
+func (masks *cpuMasks) ReadIRQMask(IRQ int) (string, error) {
+	return masks.ReadMask(irqAffinityPath(IRQ))
 }
 
 func (masks *cpuMasks) GetNumberOfCores(mask string) (uint, error) {
@@ -154,4 +193,36 @@ func (masks *cpuMasks) GetLogicalCoreIdsFromPhysCore(
 
 func (masks *cpuMasks) GetAllCpusMask() (string, error) {
 	return masks.hwloc.All()
+}
+
+func MasksEqual(a, b string) (bool, error) {
+	aParts := strings.Split(a, ",")
+	bParts := strings.Split(a, ",")
+
+	if len(aParts) != len(bParts) {
+		return false, nil
+	}
+	for i, aPart := range aParts {
+		bPart := bParts[i]
+		aNumeric, err := parseMask(aPart)
+		if err != nil {
+			return false, err
+		}
+		bNumeric, err := parseMask(bPart)
+		if err != nil {
+			return false, err
+		}
+		if aNumeric != bNumeric {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func parseMask(mask string) (int, error) {
+	if mask == "" {
+		return 0, nil
+	}
+	maskNum, err := strconv.ParseInt(strings.ReplaceAll(mask, "0x", ""), 16, 32)
+	return int(maskNum), err
 }
