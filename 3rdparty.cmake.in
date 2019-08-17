@@ -364,8 +364,8 @@ ExternalProject_Add(lksctp-tools
   INSTALL_COMMAND ${make_command} install)
 
 ExternalProject_Add(seastar
-  URL https://github.com/vectorizedio/seastar/archive/3a27a4e2.tar.gz
-  URL_MD5 4984058d94eb0ee683ca40c3a15c6cb8
+  URL https://github.com/vectorizedio/seastar/archive/afc5bbf5.tar.gz
+  URL_MD5 d851a1f739918d208ff4c08d9906caa5
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
