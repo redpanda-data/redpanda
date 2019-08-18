@@ -45,3 +45,12 @@ rp_test(
   DEFINITIONS SEASTAR_TESTING_MAIN
   ARGS "-- -c 1"
 )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME log_reader_test
+  SOURCES log_reader_test.cc
+  LIBRARIES Seastar::seastar_testing storage
+  DEFINITIONS SEASTAR_TESTING_MAIN
+  ARGS "-- -c 1"
+)
