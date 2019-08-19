@@ -151,7 +151,8 @@ future<> kafka_server::connection::write_response(
       sstring::initialized_later(),
       sizeof(raw_response_header));
     auto* raw_header = reinterpret_cast<raw_response_header*>(header.begin());
-    auto size = size_type(sizeof(raw_response_header) + response->buf().size_bytes());
+    auto size = size_type(
+      sizeof(requests::correlation_type) + response->buf().size_bytes());
     raw_header->size = cpu_to_be(size);
     raw_header->correlation_id = cpu_to_be(correlation_id);
 
