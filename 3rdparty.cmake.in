@@ -516,8 +516,8 @@ ExternalProject_Add(smf
     HdrHistogram
     zstd
     seastar
-  URL https://github.com/smfrpc/smf/archive/0d70214.tar.gz
-  URL_MD5 2d093c55a384a6d64faba309ff86403a
+  URL https://github.com/smfrpc/smf/archive/d44a113.tar.gz
+  URL_MD5 a19af4936d1c13ae919b67d5ac0dd503
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
