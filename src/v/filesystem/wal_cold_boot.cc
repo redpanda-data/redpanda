@@ -4,6 +4,8 @@
 #include "filesystem/wal_name_extractor_utils.h"
 #include "utils/directory_walker.h"
 
+#include <seastar/core/reactor.hh>
+
 future<wal_cold_boot>
 wal_cold_boot::filesystem_lcore_index(sstring top_level_dir) {
     auto x = std::make_unique<wal_cold_boot>(top_level_dir);
