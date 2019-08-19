@@ -1,8 +1,8 @@
 #include "filesystem/wal_cold_boot.h"
 
-#include "filesystem/directory_walker.h"
 #include "filesystem/wal_core_mapping.h"
 #include "filesystem/wal_name_extractor_utils.h"
+#include "utils/directory_walker.h"
 
 future<wal_cold_boot>
 wal_cold_boot::filesystem_lcore_index(sstring top_level_dir) {
