@@ -200,7 +200,7 @@ future<> kafka_server::connection::process_request() {
                   requests::request_header header) mutable {
                     auto remaining = size - sizeof(raw_request_header)
                                      - header.client_id_buffer.size();
-                    _buffer_reader.read_exactly(_read_buf, remaining)
+                    return _buffer_reader.read_exactly(_read_buf, remaining)
                       .then([this,
                              header = std::move(header),
                              units = std::move(units)](
