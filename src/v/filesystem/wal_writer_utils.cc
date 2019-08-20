@@ -204,7 +204,7 @@ future<int64_t> recover_failed_wal_file(
                 if (should_rename) {
                     LOG_INFO(
                       "Renaming file: {} to {}.cannotrecover", name, name);
-                    rename_file(name, name + ".cannotrecover")
+                    (void)rename_file(name, name + ".cannotrecover")
                       .then([real_size] {
                           return make_ready_future<int64_t>(real_size);
                       });

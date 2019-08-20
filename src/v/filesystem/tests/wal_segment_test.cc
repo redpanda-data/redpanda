@@ -59,7 +59,7 @@ future<> skip_first_page(sstring base_dir) {
                                    alignment, alignment);
                                std::memset(buf.get(), '-', alignment);
 
-                               f->dma_write(
+                         (void)f->dma_write(
                                   c * alignment,
                                   buf.get(),
                                   alignment,
