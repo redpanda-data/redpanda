@@ -38,13 +38,7 @@ func (tuner *diskTuner) Tune() tuners.TuneResult {
 	if err != nil {
 		return tuners.NewTuneError(err)
 	}
-	for _, tuner := range tunables {
-		res := tuner.Tune()
-		if res.IsFailed() {
-			return res
-		}
-	}
-	return tuners.NewTuneResult(false)
+	return tuners.NewAggregatedTunable(tunables).Tune()
 }
 
 func (tuner *diskTuner) CheckIfSupported() (supported bool, reason string) {
@@ -56,13 +50,7 @@ func (tuner *diskTuner) CheckIfSupported() (supported bool, reason string) {
 	if err != nil {
 		return false, err.Error()
 	}
-	for _, tuner := range tunables {
-		supported, reason := tuner.CheckIfSupported()
-		if supported == false {
-			return false, reason
-		}
-	}
-	return true, ""
+	return tuners.NewAggregatedTunable(tunables).CheckIfSupported()
 }
 
 func (tuner *diskTuner) createDeviceTuners() ([]tuners.Tunable, error) {
