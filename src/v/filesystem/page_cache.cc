@@ -165,7 +165,7 @@ void page_cache::prefetch_next(page_cache_request r) {
         if (auto range = ptr->range(r.begin_pageno); range) {
             range->prio = prio;
         } else {
-            prefetch(r, prio);
+            (void)prefetch(r, prio);
         }
     }
 }

@@ -19,7 +19,7 @@ inline void for_each_field(T& t, Fn&& fn) {
     } else if constexpr (std::is_scalar_v<T>) {
         fn(t);
     } else {
-        std::apply([&](auto&&... args) { (fn(args), ...); }, to_tuple(t));
+        std::apply([&](auto&&... args) { ((void)fn(args), ...); }, to_tuple(t));
     }
 }
 

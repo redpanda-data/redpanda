@@ -64,7 +64,7 @@ future<> qps_load::coordinated_omision_writes() {
                          auto lidx = jump_consistent_hash(i, _loaders.size());
                          auto ptr = _loaders[lidx].get();
                          // Don't return!, launch it in the background
-                         ptr->one_write().finally(
+                         (void)ptr->one_write().finally(
                            [&limit] { limit.signal(1); });
                          return make_ready_future<>();
                      });
@@ -85,7 +85,7 @@ future<> qps_load::coordinated_omision_reads() {
                          auto lidx = jump_consistent_hash(i, _loaders.size());
                          auto ptr = _loaders[lidx].get();
                          // Don't return!, launch it in the background
-                         ptr->one_read().finally([&limit] { limit.signal(1); });
+                   (void)ptr->one_read().finally([&limit] { limit.signal(1); });
                      });
                  })
           .then([&limit, qps] { return limit.wait(qps); });
@@ -145,7 +145,7 @@ future<> qps_load::drive() {
                   auto method_start_t = lowres_system_clock::now();
                   // CANNOT return. It has to launch qps every time-interval
                   //
-                  coordinated_omision_req().finally([this,
+            (void)coordinated_omision_req().finally([this,
                                                      iterno
                                                      = args->secs_iteration,
                                                      method_start_t,

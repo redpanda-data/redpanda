@@ -96,7 +96,7 @@ public:
         }
         // acquire lock as soon as it can & free that buffer
         // prepare clean up in background future
-        with_semaphore(
+        (void)with_semaphore(
           no_free_pages_, 1, [=] { decrement_buffers(); });
     }
 

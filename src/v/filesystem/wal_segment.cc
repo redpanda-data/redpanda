@@ -113,7 +113,7 @@ future<> wal_segment::do_flush() {
 
         if (!_chunks.front()->is_full()) {
             auto dptr = _chunks.front()->data();
-            flush_after->wait(1).then(
+            (void)flush_after->wait(1).then(
               [this, xoffset, dptr, dsz, verify_fn_gen, flush_after] {
                   return _f->dma_write(xoffset, dptr, dsz, pclass)
                     .then(verify_fn_gen(dsz))
@@ -125,7 +125,7 @@ future<> wal_segment::do_flush() {
             flushed_pages_++;
             auto dptr = p->data();
             // Background future
-            flush_after->wait(1).then([this,
+      (void)flush_after->wait(1).then([this,
                                        xoffset,
                                        dptr,
                                        dsz,

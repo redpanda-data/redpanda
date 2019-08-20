@@ -150,7 +150,7 @@ void wal_nstpidx_manager::cleanup_timer_cb_log_segments() {
     }
     if (!to_remove.empty()) {
         // do in background
-        do_with(std::move(to_remove), [](auto& vec) {
+        (void)do_with(std::move(to_remove), [](auto& vec) {
             return do_for_each(
               std::move_iterator(vec.begin()),
               std::move_iterator(vec.end()),

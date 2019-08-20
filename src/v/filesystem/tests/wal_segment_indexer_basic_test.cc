@@ -202,7 +202,7 @@ int main(int args, char** argv, char** env) {
                               return make_ready_future<>();
                           });
                     })
-                    .then([reader] { reader->close(); })
+                    .then([reader] { (void)reader->close(); })
                     .finally([reader] {});
               })
               .then([] { return make_ready_future<int>(0); });

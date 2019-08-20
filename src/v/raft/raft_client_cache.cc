@@ -176,7 +176,7 @@ raft_client_cache::attempt_reconnect_with_next_backoff(
             ptr->server_addr);
           set_flags(bitflags::circuit_breaker, b, ptr->server_addr);
           // dispatch recovery in the background
-          stage_next_reconnect(ptr->server_addr, b);
+          (void)stage_next_reconnect(ptr->server_addr, b);
           return make_ready_future<raft::raft_api_client*>(nullptr);
       });
 }
@@ -202,7 +202,7 @@ raft_client_cache::get_connection(const ipv4_addr& node) {
           failure & (~bitflags::reached_max_retries), bo, ptr->server_addr);
         LOG_INFO("Starting new retry sequence for {}", ptr->server_addr);
         // launch in background, the new reconnect sequence
-        attempt_reconnect_with_next_backoff(ptr, backoff::wait_1_sec)
+        (void)attempt_reconnect_with_next_backoff(ptr, backoff::wait_1_sec)
           .discard_result();
     }
     return make_ready_future<opt_client_t>();

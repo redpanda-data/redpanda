@@ -39,7 +39,7 @@ wal_writer_node::wal_writer_node(wal_writer_node_opts opts)
 
         // timer<>.set_callback is void - dispatch in background
         DTRACE_PROBE(rp, wal_writer_node_periodic_flush);
-        _lease->flush().then(
+        (void)_lease->flush().then(
           [this, sz = _lease->current_size(), name = _lease->filename] {
               return _opts.log_segment_size_notify(name, sz);
           });

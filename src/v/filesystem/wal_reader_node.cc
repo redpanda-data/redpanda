@@ -162,7 +162,7 @@ future<> wal_reader_node::close() {
         return f->close().finally([fileid, f, del, name] {
             if (del) {
                 LOG_INFO("Removing file: {}, id:{} from cache", name, fileid);
-                page_cache::get().remove_file(fileid).then([name] {
+                (void)page_cache::get().remove_file(fileid).then([name] {
                     LOG_INFO("Removing file from filesystem: {}", name);
                     return remove_file(name);
                 });

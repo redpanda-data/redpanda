@@ -41,7 +41,7 @@ future<> kafka_server::listen(socket_address server_addr, bool keepalive) {
     }
     _listeners.emplace_back(std::move(ss));
 
-    with_gate(_listeners_and_connections, [this, keepalive, server_addr] {
+    (void)with_gate(_listeners_and_connections, [this, keepalive, server_addr] {
         return do_accepts(_listeners.size() - 1, keepalive);
     });
     return make_ready_future<>();
@@ -53,17 +53,17 @@ future<> kafka_server::do_accepts(int which, bool keepalive) {
           .accept()
           .then_wrapped(
             [this, which, keepalive](
-              future<connected_socket, socket_address> f_cs_sa) mutable {
+              future<accept_result> f_ar) mutable {
                 if (_as.abort_requested()) {
-                    f_cs_sa.ignore_ready_future();
+                    f_ar.ignore_ready_future();
                     return stop_iteration::yes;
                 }
-                auto [fd, addr] = f_cs_sa.get();
+                auto [fd, addr] = f_ar.get0();
                 fd.set_nodelay(true);
                 fd.set_keepalive(keepalive);
                 auto conn = std::make_unique<connection>(
                   *this, std::move(fd), std::move(addr));
-                with_gate(
+                (void)with_gate(
                   _listeners_and_connections,
                   [this, conn = std::move(conn)]() mutable {
                       auto f = conn->process();
