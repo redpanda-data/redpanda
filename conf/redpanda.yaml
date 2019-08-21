@@ -3,17 +3,24 @@
 redpanda:
   # Data directory where all the files will be stored. 
   # This directory MUST resides on xfs partion.
-  directory: "/var/lib/redpanda/data"
+  data_directory: "/var/lib/redpanda/data"
+  
+  # Node ID - must be unique for each node
+  node_id: 1
   
   # Redpanda server
-  port: 33145
-  ip: "127.0.0.1"
-  id: 1
+  rpc_server:
+    address: "127.0.0.1"
+    port: 33145
   
   # Kafka transport
-  kafka_transport_port: 9092
+  kafka_api:
+    address: "127.0.0.1"
+    port: 9092
 
   # Raft configuration
   seed_servers:
-    - addr: "127.0.0.1:33145"
-      id: 1
+    - host: 
+        address: "127.0.0.1"
+        port: 33145
+      node_id: 1

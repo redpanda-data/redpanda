@@ -1,5 +1,5 @@
 add_library(redpanda_config
-  redpanda_config.cc
+  configuration.cc
 )
 
 target_link_libraries(config
