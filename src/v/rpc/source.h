@@ -18,21 +18,24 @@ public:
 class default_source final : public source {
 public:
     explicit default_source(input_stream<char>& s)
-      : _source(s) {
+      : _source(std::ref(s)) {
     }
+    default_source(default_source&&) noexcept = default;
+    default_source& operator=(default_source&&) noexcept = default;
+
     future<temporary_buffer<char>> read_exactly(size_t i) final {
-        return _source.read_exactly(i);
+        return _source.get().read_exactly(i);
     }
     future<fragmented_temporary_buffer>
     read_fragmented_temporary_buffer(size_t i) final {
-        return _frag.read_exactly(_source, i);
+        return _frag.read_exactly(_source.get(), i);
     }
 
     default_source(const default_source&) = delete;
     ~default_source() noexcept = default;
 
 private:
-    input_stream<char>& _source;
+    std::reference_wrapper<input_stream<char>> _source;
     fragmented_temporary_buffer::reader _frag;
 };
 
