@@ -23,7 +23,7 @@ type TunerParams struct {
 	RebootAllowed bool
 	Disks         []string
 	Directories   []string
-	Nic           string
+	Nics          []string
 }
 
 type TunersFactory interface {
@@ -132,16 +132,20 @@ func (factory *tunersFactory) newDiskNomergesTuner(
 func (factory *tunersFactory) newNetworkTuner(
 	params *TunerParams,
 ) tuners.Tunable {
+	ethtool, err := ethtool.NewEthtool()
+	if err != nil {
+		panic(err)
+	}
 	return network.NewNetTuner(
 		irq.ModeFromString(params.Mode),
 		params.CpuMask,
-		params.Nic,
+		params.Nics,
 		factory.fs,
 		factory.irqDeviceInfo,
 		factory.cpuMasks,
 		factory.irqBalanceService,
 		factory.irqProcFile,
-		&ethtool.Ethtool{},
+		ethtool,
 	)
 }
 
@@ -157,18 +161,12 @@ func (factory *tunersFactory) newCpuTuner(params *TunerParams) tuners.Tunable {
 func FillTunerParamsWithValuesFromConfig(
 	params *TunerParams, config *redpanda.Config,
 ) error {
-
 	nics, err := net.GetInterfacesByIp(config.Ip)
 	if err != nil {
 		return err
 	}
-	if len(nics) != 1 {
-		log.Warnf("Unable to determine NIC to tune using redpanda config file." +
-			" Please tune NIC manually")
-	} else {
-		params.Nic = nics[0]
-		log.Infof("Redpanda uses '%s' NIC", params.Nic)
-	}
+	params.Nics = nics
+	log.Infof("Redpanda uses '%v' NICs", params.Nics)
 	log.Infof("Redpanda data directory '%s'", config.Directory)
 	params.Directories = []string{config.Directory}
 	return nil

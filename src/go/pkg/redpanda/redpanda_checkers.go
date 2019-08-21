@@ -2,12 +2,14 @@ package redpanda
 
 import (
 	"vectorized/pkg/checkers"
+	"vectorized/pkg/net"
 	"vectorized/pkg/os"
 	"vectorized/pkg/system"
 	"vectorized/pkg/system/filesystem"
 	"vectorized/pkg/tuners/disk"
 	"vectorized/pkg/tuners/hwloc"
 	"vectorized/pkg/tuners/irq"
+	"vectorized/pkg/tuners/network"
 
 	"github.com/spf13/afero"
 )
@@ -28,6 +30,14 @@ const (
 	NomergesChecker
 	DiskIRQsAffinityStaticChecker
 	DiskIRQsAffinityChecker
+	NicIRQsAffinitChecker
+	NicIRQsAffinitStaticChecker
+	NicRfsChecker
+	NicXpsChecker
+	NicRpsChecker
+	RfsTableEntriesChecker
+	ListenBacklogChecker
+	SynBacklogChecker
 )
 
 func NewConfigChecker(config *Config) checkers.Checker {
@@ -164,6 +174,16 @@ func RedpandaCheckers(
 	if err != nil {
 		return nil, err
 	}
+	interfaces, err := net.GetInterfacesByIp(config.Ip)
+	if err != nil {
+		return nil, err
+	}
+	ethtool, err := network.NewEthtoolWrapper()
+	if err != nil {
+		return nil, err
+	}
+	netCheckersFactory := network.NewNetCheckersFactory(
+		fs, irqProcFile, irqDeviceInfo, ethtool, balanceService, cpuMasks)
 	return map[CheckerID][]checkers.Checker{
 		ConfigFileChecker:             []checkers.Checker{NewConfigChecker(config)},
 		IoConfigFileChecker:           []checkers.Checker{NewIOConfigFileExistanceChecker(fs, ioConfigFile)},
@@ -178,5 +198,13 @@ func RedpandaCheckers(
 		NomergesChecker:               nomergesCheckers,
 		DiskIRQsAffinityChecker:       []checkers.Checker{dirIRQAffinityChecker},
 		DiskIRQsAffinityStaticChecker: []checkers.Checker{dirIRQAffinityStaticChecker},
+		SynBacklogChecker:             []checkers.Checker{netCheckersFactory.NewSynBacklogChecker()},
+		ListenBacklogChecker:          []checkers.Checker{netCheckersFactory.NewListenBacklogChecker()},
+		RfsTableEntriesChecker:        []checkers.Checker{netCheckersFactory.NewRfsTableSizeChecker()},
+		NicIRQsAffinitStaticChecker:   []checkers.Checker{netCheckersFactory.NewNicIRQAffinityStaticChecker(interfaces)},
+		NicIRQsAffinitChecker:         netCheckersFactory.NewNicIRQAffinityCheckers(interfaces, irq.Default, "all"),
+		NicRpsChecker:                 netCheckersFactory.NewNicRpsSetCheckers(interfaces, irq.Default, "all"),
+		NicRfsChecker:                 netCheckersFactory.NewNicRfsCheckers(interfaces),
+		NicXpsChecker:                 netCheckersFactory.NewNicXpsCheckers(interfaces),
 	}, nil
 }
