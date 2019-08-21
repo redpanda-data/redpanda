@@ -20,6 +20,7 @@ void add_opts(boost::program_options::options_description_easy_init o) {
 int main(int args, char** argv, char** env) {
     std::cout.setf(std::ios::unitbuf);
     app_template app;
+    config::configuration cfg;
 
     try {
         add_opts(app.add_options());
@@ -34,6 +35,8 @@ int main(int args, char** argv, char** env) {
             LOG_THROW_IF(dir.empty(), "Empty write-ahead-log-dir");
             LOG_INFO("log_segment test dir: {}", dir);
 
+            cfg.data_directory(dir);
+            cfg.writer_flush_period_ms(5);
             return do_with(
                      wal_topic_test_input(
                        "empty_namespace",
@@ -44,7 +47,7 @@ int main(int args, char** argv, char** env) {
                        wal_topic_type::wal_topic_type_regular,
                        // map of properties for topic
                        {{"prop-for-topic", "maybe-store-access-keys"}}),
-                     wal_opts(dir.c_str(), std::chrono::milliseconds(5)),
+                     wal_opts(cfg),
                      [](auto& input, auto& wopts) {
                          auto writer = make_lw_shared<wal_writer_node>(
                            wal_writer_node_opts(
@@ -52,11 +55,9 @@ int main(int args, char** argv, char** env) {
                              0 /*epoch*/,
                              0 /*term*/,
                              input.get_create(),
-                             wopts.directory,
+                             wopts.directory(),
                              priority_manager::get().default_priority(),
-                             [](auto name) {
-                                 return make_ready_future<>();
-                             },
+                             [](auto name) { return make_ready_future<>(); },
                              [](auto name, auto sz) {
                                  return make_ready_future<>();
                              }));
@@ -69,14 +70,12 @@ int main(int args, char** argv, char** env) {
                                           auto w = std::move(reqs[idx++]);
                                           if (w.runner_core != 0) {
                                               // skip writes not for this core
-                                              return 
-                                                make_ready_future<>();
+                                              return make_ready_future<>();
                                           }
 
                                           return writer->append(std::move(w))
                                             .then([&](auto write_reply) {
-                                                return 
-                                                  make_ready_future<>();
+                                                return make_ready_future<>();
                                             });
                                       })
                                .then([writer] {
@@ -84,9 +83,7 @@ int main(int args, char** argv, char** env) {
                                });
                          });
                      })
-              .then([target_filename] {
-                  return file_size(target_filename);
-              })
+              .then([target_filename] { return file_size(target_filename); })
               .then([target_filename](auto sz) {
                   auto reader = make_lw_shared<wal_reader_node>(
                     0 /*epoch*/,
@@ -99,13 +96,9 @@ int main(int args, char** argv, char** env) {
                         reader->mark_for_deletion();
                         return reader->close().finally([reader] {});
                     })
-                    .then([] {
-                        return sleep(std::chrono::milliseconds(15));
-                    });
+                    .then([] { return sleep(std::chrono::milliseconds(15)); });
               })
-              .then([target_filename] {
-                  return file_exists(target_filename);
-              })
+              .then([target_filename] { return file_exists(target_filename); })
               .then([target_filename](bool exists) {
                   LOG_THROW_IF(
                     exists, "Filename: {} should not exist", target_filename);

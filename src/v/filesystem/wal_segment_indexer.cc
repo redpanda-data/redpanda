@@ -159,7 +159,7 @@ future<> wal_segment_indexer::open() {
     _index = std::make_unique<wal_segment>(
       filename,
       priority,
-      wopts.max_log_segment_size,
-      wopts.max_bytes_in_writer_cache);
+      wopts.max_log_segment_size(),
+      wopts.max_bytes_in_writer_cache());
     return _index->open();
 }

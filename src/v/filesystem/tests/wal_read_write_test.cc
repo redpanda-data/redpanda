@@ -164,7 +164,9 @@ int main(int args, char** argv, char** env) {
     DLOG_DEBUG("About to start the client");
     app_template app;
     distributed<write_ahead_log> w;
-
+    config::configuration cfg;
+    cfg.data_directory(".");
+    cfg.writer_flush_period_ms(2);
     try {
         add_opts(app.add_options());
 
@@ -176,7 +178,7 @@ int main(int args, char** argv, char** env) {
             auto& config = app.configuration();
             auto dir = config["write-ahead-log-dir"].as<std::string>();
 
-            return w.start(wal_opts(dir, std::chrono::milliseconds(2)))
+            return w.start(wal_opts(cfg))
               .then([&] { return w.invoke_on_all(&write_ahead_log::open); })
               .then([&] {
                   return do_for_each(

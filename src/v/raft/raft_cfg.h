@@ -1,28 +1,31 @@
 #pragma once
 
 #include "raft_seed_server.h"
+#include "redpanda/config/configuration.h"
 
 #include <cstring>
 
 struct raft_cfg {
-    int64_t id;
-    int16_t min_version;
-    int16_t max_version;
-    /// \brief must be odd number
-    int32_t seed_server_meta_topic_partitions = 7;
-    std::vector<raft_seed_server> seeds;
-};
-
-namespace std {
-static inline ostream& operator<<(ostream& o, const raft_cfg& raft) {
-    o << "raft_cfg{id=" << raft.id << ", min_version=" << raft.min_version
-      << ", max_version=" << raft.max_version
-      << ", seed_server_topic_partitions="
-      << raft.seed_server_meta_topic_partitions << ", seed_servers: ";
-    for (const auto& s : raft.seeds) {
-        o << s;
+    explicit raft_cfg(config::configuration& cfg)
+      : _cfg(cfg) {
     }
-    return o << " }";
-}
 
-} // namespace std
+    const int64_t id() const {
+        return _cfg.get().node_id();
+    }
+    const int16_t min_version() const {
+        return _cfg.get().min_version();
+    }
+    const int16_t max_version() const {
+        return _cfg.get().max_version();
+    }
+    const int32_t seed_server_meta_topic_partitions() const {
+        return _cfg.get().seed_server_meta_topic_partitions();
+    }
+    const std::vector<raft_seed_server>& seeds() const {
+        return _cfg.get().seed_servers();
+    }
+
+private:
+    config::conf_ref _cfg;
+};
