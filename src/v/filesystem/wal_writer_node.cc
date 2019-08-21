@@ -44,7 +44,7 @@ wal_writer_node::wal_writer_node(wal_writer_node_opts opts)
               return _opts.log_segment_size_notify(name, sz);
           });
     });
-    flush_timeout_.arm_periodic(_opts.wopts.writer_flush_period);
+    flush_timeout_.arm_periodic(_opts.wopts.writer_flush_period());
 }
 wal_writer_node::~wal_writer_node() {
     // done at close() - no need to re cancel:
@@ -60,8 +60,8 @@ future<> wal_writer_node::open() {
     _lease = make_lw_shared<wal_segment>(
       name,
       _opts.pclass,
-      _opts.wopts.max_log_segment_size,
-      _opts.wopts.max_bytes_in_writer_cache);
+      _opts.wopts.max_log_segment_size(),
+      _opts.wopts.max_bytes_in_writer_cache());
     return _lease->open().then(
       [this, name] { return _opts.log_segment_create_notify(name); });
 }
@@ -114,8 +114,7 @@ wal_writer_node::append(wal_write_request req) {
                   partition,
                   start_offset,
                   start_offset + write_size);
-                return make_ready_future<decltype(ret)>(
-                  std::move(ret));
+                return make_ready_future<decltype(ret)>(std::move(ret));
             });
       });
 }

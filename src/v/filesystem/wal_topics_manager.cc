@@ -19,18 +19,12 @@
 #include <utility>
 
 inline sstring nstpidx_dirname(
-  const wal_opts& o,
-  sstring ns,
-  sstring topic,
-  int32_t partition) {
-    return fmt::format("{}/{}/{}/{}", o.directory, ns, topic, partition);
+  const wal_opts& o, sstring ns, sstring topic, int32_t partition) {
+    return fmt::format("{}/{}/{}/{}", o.directory(), ns, topic, partition);
 }
 
-inline sstring metadata_path(
-  const wal_opts& o,
-  sstring ns,
-  sstring topic,
-  int32_t partition) {
+inline sstring
+metadata_path(const wal_opts& o, sstring ns, sstring topic, int32_t partition) {
     return fmt::format("{}/metadata", nstpidx_dirname(o, ns, topic, partition));
 }
 
@@ -49,8 +43,7 @@ static future<> write_partition_metadata(
       *props.get());
 
     // TODO(agallego): change this to something more useful
-    sstring key = "created: "
-                           + to_sstring(smf::time_now_millis());
+    sstring key = "created: " + to_sstring(smf::time_now_millis());
 
     auto data = wal_segment_record::coalesce(
       key.data(),
@@ -89,7 +82,7 @@ static future<> write_partition_metadata(
 }
 
 wal_topics_manager::wal_topics_manager(wal_opts o)
-  : opts(o) {
+  : opts(std::move(o)) {
 }
 
 future<std::unique_ptr<wal_create_reply>>
@@ -164,8 +157,8 @@ wal_topics_manager::nstpidx_props(wal_nstpidx idx, sstring props_dir) {
     });
 }
 
-future<> wal_topics_manager::open(
-  sstring ns, sstring topic, int32_t partition) {
+future<>
+wal_topics_manager::open(sstring ns, sstring topic, int32_t partition) {
     auto idx = wal_nstpidx::gen(ns, topic, partition);
     auto it = _mngrs.find(idx);
     if (it == _mngrs.end()) {
@@ -199,8 +192,7 @@ future<> wal_topics_manager::open(
     return make_ready_future<>();
 }
 
-future<wal_nstpidx_manager*>
-wal_topics_manager::get_manager(wal_nstpidx idx) {
+future<wal_nstpidx_manager*> wal_topics_manager::get_manager(wal_nstpidx idx) {
     wal_nstpidx_manager* ptr = nullptr;
     auto it = _mngrs.find(idx);
     if (__builtin_expect(it == _mngrs.end(), false)) {

@@ -1,7 +1,7 @@
 #include "filesystem/wal_segment_record.h"
 #include "redpanda/api/client.h"
-#include "redpanda/redpanda_cfg.h"
 #include "redpanda/redpanda_service.h"
+#include "redpanda/rpc_config.h"
 
 #include <seastar/core/app-template.hh>
 #include <seastar/core/sleep.hh>
@@ -105,21 +105,21 @@ int main(int argc, char** argv, char** env) {
     distributed<smf::rpc_server> rpc;
     distributed<write_ahead_log> log;
     app_template app;
-    redpanda_cfg global_cfg;
-    global_cfg.directory = ".";
-    global_cfg.ip = "127.0.0.1";
-    global_cfg.port = 33145;
-    global_cfg.flush_period_ms = 2; // flush every 2 ms - for this test :)
+    auto rp_config = config::configuration();
+    rp_config.data_directory(".");
+    rp_config.rpc_server(
+      socket_address(seastar::net::inet_address("127.0.0.1"), 33145));
+    rp_config.writer_flush_period_ms(2);
     return app.run(argc, argv, [&] {
         // smf::app_run_log_level(log_level::trace);
         engine().at_exit([&log] { return log.stop(); });
         engine().at_exit([&rpc] { return rpc.stop(); });
         auto& config = app.configuration();
-        return log.start(global_cfg.wal_cfg())
+        return log.start(wal_opts(rp_config))
           .then([&log] { return log.invoke_on_all(&write_ahead_log::open); })
           .then([&log] { return log.invoke_on_all(&write_ahead_log::index); })
-          .then([&rpc, &global_cfg] { return rpc.start(global_cfg.rpc_cfg()); })
-          .then([&rpc, &global_cfg, &log] {
+          .then([&rpc, &rp_config] { return rpc.start(rpc_config(rp_config)); })
+          .then([&rpc, config, &log] {
               return rpc.invoke_on_all([&](smf::rpc_server& s) {
                   using srvc = redpanda_service;
                   using lz4_c_t = smf::lz4_compression_filter;
@@ -128,7 +128,7 @@ int main(int argc, char** argv, char** env) {
                   s.register_outgoing_filter<lz4_c_t>(1024);
                   s.register_incoming_filter<lz4_d_t>();
                   s.register_incoming_filter<zstd_d_t>();
-                  s.register_service<srvc>(&global_cfg, &log);
+                  s.register_service<srvc>(&log);
               });
           })
           .then([&rpc] { return rpc.invoke_on_all(&smf::rpc_server::start); })

@@ -22,8 +22,7 @@
 #include <utility>
 
 namespace std {
-ostream&
-operator<<(ostream& o, const ::lowres_system_clock::time_point& t) {
+ostream& operator<<(ostream& o, const ::lowres_system_clock::time_point& t) {
     auto time = lowres_system_clock::to_time_t(t);
     o << std::put_time(std::gmtime(&time), "%F %T %Z");
     return o;
@@ -108,11 +107,11 @@ void wal_nstpidx_manager::cleanup_timer_cb_log_segments() {
             break;
         }
 
-        auto node_max_time = n->modified_time() + opts.max_retention_period;
+        auto node_max_time = n->modified_time() + opts.max_retention_period();
         if (node_max_time < now) {
             n->mark_for_deletion();
             auto hrs = std::chrono::duration_cast<std::chrono::hours>(
-                         opts.max_retention_period)
+                         opts.max_retention_period())
                          .count();
             LOG_INFO(
               "Marking node {} for deletion. Last modified time "
@@ -128,8 +127,8 @@ void wal_nstpidx_manager::cleanup_timer_cb_log_segments() {
 
     // start from the back for size based
     nodes_size = _nodes.size();
-    int64_t max_bytes = opts.max_retention_size;
-    while (opts.max_retention_size > 0 && nodes_size-- > 0) {
+    int64_t max_bytes = opts.max_retention_size();
+    while (opts.max_retention_size() > 0 && nodes_size-- > 0) {
         auto& n = _nodes[nodes_size];
         if (n->filename == _writer->filename()) {
             continue;
@@ -138,7 +137,7 @@ void wal_nstpidx_manager::cleanup_timer_cb_log_segments() {
         if (max_bytes <= 0) {
             LOG_INFO(
               "Size retention exceeded: {}. Marking following nodes as deleted",
-              smf::human_bytes(opts.max_retention_size));
+              smf::human_bytes(opts.max_retention_size()));
             for (auto i = 0; i <= nodes_size; ++i) {
                 to_remove.push_back(std::move(_nodes.front()));
                 _nodes.pop_front();
@@ -247,14 +246,12 @@ wal_nstpidx_manager::get(wal_read_request r) {
                   "READER size of retval->reply().gets.size(): {}",
                   read_result->reply().gets.size());
                 prometheus_stats_.read_bytes += read_result->on_disk_size();
-                return make_ready_future<retval_t>(
-                  std::move(read_result));
+                return make_ready_future<retval_t>(std::move(read_result));
             });
       });
 }
 
-future<>
-wal_nstpidx_manager::create_log_handle_hook(sstring filename) {
+future<> wal_nstpidx_manager::create_log_handle_hook(sstring filename) {
     prometheus_stats_.log_segment_rolls++;
     auto [starting_epoch, term]
       = wal_name_extractor_utils::wal_segment_extract_epoch_term(filename);
@@ -266,17 +263,13 @@ wal_nstpidx_manager::create_log_handle_hook(sstring filename) {
       _nodes.back()->starting_epoch,
       filename);
     auto n = std::make_unique<wal_reader_node>(
-      starting_epoch,
-      term,
-      0 /*size*/,
-      lowres_system_clock::now(),
-      filename);
+      starting_epoch, term, 0 /*size*/, lowres_system_clock::now(), filename);
     DLOG_DEBUG("Create WAL file: {} ", n->filename);
     _nodes.push_back(std::move(n));
     return _nodes.back()->open();
 }
-future<> wal_nstpidx_manager::segment_size_change_hook(
-  sstring name, int64_t sz) {
+future<>
+wal_nstpidx_manager::segment_size_change_hook(sstring name, int64_t sz) {
     DLOG_THROW_IF(
       _nodes.empty(),
       "Failed to update size. Unknown file: {}, size: {}",
@@ -310,8 +303,8 @@ wal_writer_node_opts wal_nstpidx_manager::default_writer_opts() {
         [this](auto f, auto sz) { return segment_size_change_hook(f, sz); }));
 }
 
-static void print_repaired_files(
-  const sstring& d, const wal_nstpidx_repair::set_t& s) {
+static void
+print_repaired_files(const sstring& d, const wal_nstpidx_repair::set_t& s) {
     if (s.empty())
         return;
     std::vector<sstring> v;

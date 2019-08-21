@@ -41,7 +41,7 @@ rp_hbadger_lib(
     -Wno-unused-variable
     -Wno-unused-function
     -Wno-unused-lambda-capture
-  LIBRARIES ioutil rprandom
+  LIBRARIES ioutil rprandom config
   )
 
 

@@ -18,8 +18,7 @@ constexpr static const char* kRedpandaTopicCreationTopic
 
 // --- static helpers
 
-static future<std::unique_ptr<wal_read_reply>>
-raft_configuration_log_read(
+static future<std::unique_ptr<wal_read_reply>> raft_configuration_log_read(
   distributed<write_ahead_log>* log, wal_get_requestT get) {
     auto body = smf::native_table_as_buffer<wal_get_request>(get);
     auto tbuf = smf::fbs_typed_buf<wal_get_request>(std::move(body));
@@ -249,18 +248,19 @@ future<> raft_log_service::initialize_seed_servers() {
         return make_ready_future<>();
     }
     if (
-      cfg.seeds.end()
-      == std::find_if(cfg.seeds.begin(), cfg.seeds.end(), [this](auto& it) {
-             return it.id == cfg.id;
+      cfg.seeds().end()
+      == std::find_if(cfg.seeds().begin(), cfg.seeds().end(), [this](auto& it) {
+             return it.id == cfg.id();
          })) {
         LOG_INFO(
-          "Server: {}, not a seed servers. skipping seed server setup", cfg.id);
+          "Server: {}, not a seed servers. skipping seed server setup",
+          cfg.id());
         return make_ready_future<>();
     }
     wal_topic_create_requestT x;
     x.ns = kRedpandaNamespace;
     x.topic = kRedpandaTopicCreationTopic;
-    x.partitions = cfg.seed_server_meta_topic_partitions;
+    x.partitions = cfg.seed_server_meta_topic_partitions();
     x.type = wal_topic_type::wal_topic_type_regular;
 
     auto body = smf::native_table_as_buffer<wal_topic_create_request>(x);
