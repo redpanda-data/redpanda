@@ -28,7 +28,7 @@ public:
 };
 
 template<typename T>
-future<> deserialize(source* in, T& t) {
+future<> deserialize(source& in, T& t) {
     constexpr bool is_sstring = std::is_same_v<T, sstring>;
     constexpr bool is_vector = is_std_vector_v<T>;
     constexpr bool is_fragmented_buffer
@@ -38,9 +38,9 @@ future<> deserialize(source* in, T& t) {
 
     if constexpr (is_sstring) {
         auto i = std::make_unique<int32_t>(0);
-        return deserialize<int32_t>(in, *i).then([in, &t, max = std::move(i)] {
-            return in->read_exactly(*max).then(
-              [in, &t, sz = *max](temporary_buffer<char> buf) {
+        return deserialize<int32_t>(in, *i).then([&in, &t, max = std::move(i)] {
+            return in.read_exactly(*max).then(
+              [&in, &t, sz = *max](temporary_buffer<char> buf) {
                   if (buf.size() != sz) {
                       throw deserialize_invalid_argument(buf.size(), sz);
                   }
@@ -51,16 +51,16 @@ future<> deserialize(source* in, T& t) {
     } else if constexpr (is_vector) {
         using value_type = typename std::decay_t<T>::value_type;
         auto i = std::make_unique<int32_t>(0);
-        return deserialize<int32_t>(in, *i).then([in, &t, max = std::move(i)] {
+        return deserialize<int32_t>(in, *i).then([&in, &t, max = std::move(i)] {
             t.resize(*max);
-            return do_for_each(t, [in](value_type& i) {
+            return do_for_each(t, [&in](value_type& i) {
                 return deserialize<value_type>(in, i);
             });
         });
     } else if constexpr (is_fragmented_buffer) {
         auto i = std::make_unique<int32_t>(0);
-        return deserialize<int32_t>(in, *i).then([in, &t, max = std::move(i)] {
-            return in->read_fragmented_temporary_buffer(*max).then(
+        return deserialize<int32_t>(in, *i).then([&in, &t, max = std::move(i)] {
+            return in.read_fragmented_temporary_buffer(*max).then(
               [&t, max = *max](fragmented_temporary_buffer b) {
                   if (max != b.size_bytes()) {
                       throw deserialize_invalid_argument(
@@ -72,8 +72,8 @@ future<> deserialize(source* in, T& t) {
     } else if constexpr (is_standard_layout && is_trivially_copyable) {
         // rever to constexpr
         constexpr const size_t sz = sizeof(T);
-        return in->read_exactly(sz).then(
-          [in, &t, sz](temporary_buffer<char> buf) {
+        return in.read_exactly(sz).then(
+          [&in, &t, sz](temporary_buffer<char> buf) {
               if (buf.size() != sz) {
                   throw deserialize_invalid_argument(buf.size(), sz);
               }
@@ -83,11 +83,10 @@ future<> deserialize(source* in, T& t) {
         constexpr size_t sz = arity<T>();
         auto sem = make_lw_shared<semaphore>(1);
         sem->ensure_space_for_waiters(sz);
-        for_each_field(t, [in, sem](auto& field) {
+        for_each_field(t, [&in, sem](auto& field) {
             return get_units(*sem, 1).then(
-              [in, &field, sem](semaphore_units<> units) mutable {
-                  return deserialize(in, field).finally(
-                    [units = std::move(units)] {});
+              [&in, &field, sem](semaphore_units<> u) mutable {
+                  return deserialize(in, field).finally([u = std::move(u)] {});
               });
         });
         return sem->wait(1).finally([sem] {});
