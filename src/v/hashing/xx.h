@@ -20,6 +20,9 @@ public:
     incremental_xxhash64() {
         reset();
     }
+    incremental_xxhash64(incremental_xxhash64&&) noexcept = default;
+    incremental_xxhash64& operator=(incremental_xxhash64&&) noexcept = default;
+
     [[gnu::always_inline]] inline void reset() {
         // no need to check for error
         // https://gist.github.com/9ea1c9ad4df3bad8b16e4dea4a18018a
@@ -50,8 +53,10 @@ public:
     incremental_xxhash32() {
         reset();
     }
-    [[gnu::always_inline]] inline void reset() {
-        // no need to check for error
+    incremental_xxhash32(incremental_xxhash32&&) noexcept = default;
+    incremental_xxhash32& operator=(incremental_xxhash32&&) noexcept = default;
+
+    [[gnu::always_inline]] inline void reset() { // no need to check for error
         // https://gist.github.com/9ea1c9ad4df3bad8b16e4dea4a18018a
         XXH32_reset(&_state, 0);
     }
