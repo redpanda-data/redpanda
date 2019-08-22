@@ -11,6 +11,7 @@ import (
 	"vectorized/pkg/tuners/hwloc"
 	"vectorized/pkg/tuners/irq"
 	"vectorized/pkg/tuners/network"
+	"vectorized/pkg/tuners/sys"
 
 	"github.com/safchain/ethtool"
 	log "github.com/sirupsen/logrus"
@@ -55,6 +56,7 @@ func NewTunersFactory(fs afero.Fs) TunersFactory {
 			"disk_nomerges":  (*tunersFactory).newDiskNomergesTuner,
 			"net":            (*tunersFactory).newNetworkTuner,
 			"cpu":            (*tunersFactory).newCpuTuner,
+			"aio_events":     (*tunersFactory).newMaxAIOEventsTuner,
 		},
 		fs:                fs,
 		irqProcFile:       irqProcFile,
@@ -156,6 +158,12 @@ func (factory *tunersFactory) newCpuTuner(params *TunerParams) tuners.Tunable {
 		factory.fs,
 		params.RebootAllowed,
 	)
+}
+
+func (factory *tunersFactory) newMaxAIOEventsTuner(
+	params *TunerParams,
+) tuners.Tunable {
+	return sys.NewMaxAIOEventsTuner(factory.fs)
 }
 
 func FillTunerParamsWithValuesFromConfig(

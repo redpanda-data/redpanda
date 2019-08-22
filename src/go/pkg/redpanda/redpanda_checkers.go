@@ -10,6 +10,7 @@ import (
 	"vectorized/pkg/tuners/hwloc"
 	"vectorized/pkg/tuners/irq"
 	"vectorized/pkg/tuners/network"
+	"vectorized/pkg/tuners/sys"
 
 	"github.com/spf13/afero"
 )
@@ -38,6 +39,7 @@ const (
 	RfsTableEntriesChecker
 	ListenBacklogChecker
 	SynBacklogChecker
+	MaxAIOEvents
 )
 
 func NewConfigChecker(config *Config) checkers.Checker {
@@ -206,5 +208,6 @@ func RedpandaCheckers(
 		NicRpsChecker:                 netCheckersFactory.NewNicRpsSetCheckers(interfaces, irq.Default, "all"),
 		NicRfsChecker:                 netCheckersFactory.NewNicRfsCheckers(interfaces),
 		NicXpsChecker:                 netCheckersFactory.NewNicXpsCheckers(interfaces),
+		MaxAIOEvents:                  []checkers.Checker{sys.NewMaxAIOEventsChecker(fs)},
 	}, nil
 }
