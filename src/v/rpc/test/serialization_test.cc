@@ -74,7 +74,7 @@ BOOST_AUTO_TEST_CASE(serialize_sstring_vector) {
       };
       struct test_rpc_header {
         int32_t size = 42;       ---------------- sizeof(int32_t)
-        int64_t checksum = 66;   ---------------- sizeof(int64_t)
+        uint64_t checksum = 66;   ---------------- sizeof(int64_t)
         std::vector<kv> hdrs;    ---------------- sizeof(int32_t)
       };
 

@@ -15,3 +15,19 @@ rp_test(
   DEFINITIONS SEASTAR_TESTING_MAIN
   ARGS "-- -c 1"
 )
+rp_test(
+  UNIT_TEST
+  BINARY_NAME netbuf_tests
+  SOURCES netbuf_tests.cc
+  LIBRARIES Seastar::seastar_testing rpc
+  DEFINITIONS SEASTAR_TESTING_MAIN
+  ARGS "-- -c 1"
+)
+rp_test(
+  UNIT_TEST
+  BINARY_NAME rpcgenerator_cycling
+  SOURCES rpc_gen_cycling_test.cc
+  LIBRARIES Seastar::seastar_testing rpc
+  DEFINITIONS SEASTAR_TESTING_MAIN
+  ARGS "-- -c 1"
+)

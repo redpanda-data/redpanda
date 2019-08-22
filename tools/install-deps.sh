@@ -15,7 +15,8 @@ function debs() {
             devscripts \
             debhelper \
             fakeroot \
-            rpm
+            rpm \
+            python3-jinja2
 }
 
 function rpms() {
@@ -45,7 +46,8 @@ function rpms() {
               devscripts \
               debhelper \
               fakeroot \
-              rpm-build
+              rpm-build \
+              python3-jinja2
 }
 
 
