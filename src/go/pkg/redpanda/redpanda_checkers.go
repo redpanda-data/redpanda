@@ -176,7 +176,7 @@ func RedpandaCheckers(
 	if err != nil {
 		return nil, err
 	}
-	interfaces, err := net.GetInterfacesByIp(config.Ip)
+	interfaces, err := net.GetInterfacesByIps(config.KafkaApi.Address, config.RPCServer.Address)
 	if err != nil {
 		return nil, err
 	}

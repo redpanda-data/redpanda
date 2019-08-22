@@ -8,17 +8,21 @@ import (
 )
 
 type Config struct {
-	Directory          string
-	Port               int
-	KafkaTransportPort int `yaml:"kafka_transport_port"`
-	Ip                 string
-	Id                 int
-	SeedServers        []*SeedServer `yaml:"seed_servers"`
+	Directory   string        `yaml:"data_directory"`
+	RPCServer   SocketAddress `yaml:"rpc_server"`
+	KafkaApi    SocketAddress `yaml:"kafka_api"`
+	Id          int           `yaml:"node_id"`
+	SeedServers []*SeedServer `yaml:"seed_servers"`
+}
+
+type SocketAddress struct {
+	Address string
+	Port    int
 }
 
 type SeedServer struct {
-	Address string `yaml:"addr"`
-	Id      int
+	Host SocketAddress `yaml:"host"`
+	Id   int           `yaml:"node_id"`
 }
 
 type configRoot struct {
@@ -45,10 +49,11 @@ func ReadConfigFromPath(fs afero.Fs, path string) (*Config, error) {
 
 func CheckConfig(config *Config) bool {
 	if config.Directory == "" ||
-		config.Port == 0 ||
-		config.Ip == "" ||
+		config.RPCServer.Port == 0 ||
+		config.RPCServer.Address == "" ||
 		config.Id < 0 ||
-		config.KafkaTransportPort == 0 ||
+		config.KafkaApi.Port == 0 ||
+		config.KafkaApi.Address == "" ||
 		len(config.SeedServers) == 0 {
 		return false
 	}
