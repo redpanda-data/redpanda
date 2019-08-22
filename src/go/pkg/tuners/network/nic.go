@@ -124,7 +124,7 @@ func (n *nic) GetIRQs() ([]int, error) {
 	if err != nil {
 		return nil, err
 	}
-	fastPathIRQsPattern := regexp.MustCompile("-TxRx-|-fp-|-Tx-Rx-")
+	fastPathIRQsPattern := regexp.MustCompile("-TxRx-|-fp-|-Tx-Rx-|mlx\\d+-\\d+@")
 	var fastPathIRQs []int
 	for _, irq := range IRQs {
 		if fastPathIRQsPattern.MatchString(procFileLines[irq]) {
