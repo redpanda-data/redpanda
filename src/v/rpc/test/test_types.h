@@ -36,6 +36,6 @@ struct kv {
 };
 struct test_rpc_header {
     int32_t size = 42;
-    int64_t checksum = 66;
+    uint64_t checksum = 66;
     std::vector<kv> hdrs;
 };
