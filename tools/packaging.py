@@ -123,7 +123,7 @@ def red_panda_rpm(input_tar, dest_path):
     # render templates
     package_ctx = _pkg_context()
     package_ctx['source_tar'] = "redpanda.tar"
-    spec_template = _in_root("packaging/rpm/redpanda.spec.mustache")
+    spec_template = _in_root("packaging/rpm/redpanda.spec.j2")
     spec = os.path.join(dest_path, "rpm/SPECS/redpanda.spec")
     templates.render_to_file(spec_template, spec, package_ctx)
     _render_service_template(
@@ -149,8 +149,8 @@ def red_panda_deb(input_tar, dest_path):
 
     # render templates
     package_ctx = _pkg_context()
-    chglog_tmpl = _in_root("packaging/debian/changelog.mustache")
-    control_tmpl = _in_root("packaging/debian/control.mustache")
+    chglog_tmpl = _in_root("packaging/debian/changelog.j2")
+    control_tmpl = _in_root("packaging/debian/control.j2")
     _render_service_template(common_path, {"debian": True})
     for f in glob.glob(os.path.join(common_path, "systemd", "*")):
         shutil.copy(f, os.path.join(dest_path, "debian/redpanda/debian"))
@@ -166,14 +166,14 @@ def red_panda_deb(input_tar, dest_path):
 
 
 def _is_template(source, files):
-    return filter(lambda f: f.endswith(".mustache"), files)
+    return filter(lambda f: f.endswith(".j2"), files)
 
 
 def _render_service_template(dest_path, ctx):
     redpanda_srvc = _in_root(
-        'packaging/common/systemd/redpanda.service.mustache')
+        'packaging/common/systemd/redpanda.service.j2')
     tuner_srvc = _in_root(
-        'packaging/common/systemd/redpanda-tuner.service.mustache')
+        'packaging/common/systemd/redpanda-tuner.service.j2')
     templates.render_to_file(
         redpanda_srvc, os.path.join(dest_path, "systemd", "redpanda.service"),
         ctx)

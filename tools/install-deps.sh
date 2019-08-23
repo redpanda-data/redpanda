@@ -11,7 +11,6 @@ function debs() {
             pigz \
             zlib1g-dev \
             python3-requests \
-            python3-pystache \
             devscripts \
             debhelper \
             fakeroot \
@@ -42,7 +41,6 @@ function rpms() {
               pigz \
               zlib-devel \
               python3-requests \
-              python3-pystache \
               devscripts \
               debhelper \
               fakeroot \

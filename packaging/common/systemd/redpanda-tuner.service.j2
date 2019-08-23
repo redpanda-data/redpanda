@@ -5,12 +5,12 @@ Requires=local-fs.target network-online.target
 
 [Service]
 Type=oneshot
-{{#debian}}
+{%if debian %}
 EnvironmentFile=/etc/default/redpanda
-{{/debian}}
-{{#redhat}}
+{% endif %}
+{%if redhat %}
 EnvironmentFile=/etc/sysconfig/redpanda 
-{{/redhat}}
+{% endif %}
 EnvironmentFile=/etc/redpanda.d/*.conf
 ExecStart=/usr/bin/rpk tune all $CPUSET
 RemainAfterExit=true
