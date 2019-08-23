@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"vectorized/pkg/checkers"
 	"vectorized/pkg/cli"
 	"vectorized/pkg/cli/ui"
 	"vectorized/pkg/redpanda"
 
 	"github.com/fatih/color"
+	"github.com/olekukonko/tablewriter"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
@@ -30,6 +32,24 @@ func NewCheckCommand(fs afero.Fs) *cobra.Command {
 		"redpanda-cfg", "", "Redpanda config file, if not set the file will be "+
 			"searched for in default locations")
 	return command
+}
+
+type row struct {
+	desc     string
+	required string
+	current  string
+	severity string
+	result   string
+}
+
+func (r row) appendToTable(t *tablewriter.Table) {
+	t.Append([]string{
+		r.desc,
+		r.required,
+		r.current,
+		r.severity,
+		r.result,
+	})
 }
 
 func executeCheck(fs afero.Fs, configFileFlag string) error {
@@ -55,6 +75,8 @@ func executeCheck(fs afero.Fs, configFileFlag string) error {
 		"Passed",
 	})
 	var isOk = true
+
+	var rows []row
 	for _, checkersSlice := range checkersMap {
 		for _, c := range checkersSlice {
 			result := c.Check()
@@ -63,20 +85,24 @@ func executeCheck(fs afero.Fs, configFileFlag string) error {
 			}
 			log.Debugf("Checker '%s' result %+v", c.GetDesc(), result)
 			isOk = isOk && result.IsOk
-			table.Append([]string{
-				c.GetDesc(),
-				fmt.Sprint(c.GetRequiredAsString()),
-				result.Current,
-				fmt.Sprint(c.GetSeverity()),
-				fmt.Sprint(printResult(c.GetSeverity(), result.IsOk)),
+			rows = append(rows, row{
+				desc:     c.GetDesc(),
+				required: fmt.Sprint(c.GetRequiredAsString()),
+				current:  result.Current,
+				severity: fmt.Sprint(c.GetSeverity()),
+				result:   fmt.Sprint(printResult(c.GetSeverity(), result.IsOk)),
 			})
+
 		}
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].desc < rows[j].desc })
+	for _, row := range rows {
+		row.appendToTable(table)
 	}
 	fmt.Println()
 	fmt.Println("System check results")
 	fmt.Println()
 	table.Render()
-
 	return nil
 }
 
