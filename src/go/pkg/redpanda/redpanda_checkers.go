@@ -40,6 +40,7 @@ const (
 	ListenBacklogChecker
 	SynBacklogChecker
 	MaxAIOEvents
+	ClockSource
 )
 
 func NewConfigChecker(config *Config) checkers.Checker {
@@ -209,5 +210,6 @@ func RedpandaCheckers(
 		NicRfsChecker:                 netCheckersFactory.NewNicRfsCheckers(interfaces),
 		NicXpsChecker:                 netCheckersFactory.NewNicXpsCheckers(interfaces),
 		MaxAIOEvents:                  []checkers.Checker{sys.NewMaxAIOEventsChecker(fs)},
+		ClockSource:                   []checkers.Checker{sys.NewClockSourceChecker(fs)},
 	}, nil
 }

@@ -57,6 +57,7 @@ func NewTunersFactory(fs afero.Fs) TunersFactory {
 			"net":            (*tunersFactory).newNetworkTuner,
 			"cpu":            (*tunersFactory).newCpuTuner,
 			"aio_events":     (*tunersFactory).newMaxAIOEventsTuner,
+			"clocksource":    (*tunersFactory).newClockSourceTuner,
 		},
 		fs:                fs,
 		irqProcFile:       irqProcFile,
@@ -164,6 +165,12 @@ func (factory *tunersFactory) newMaxAIOEventsTuner(
 	params *TunerParams,
 ) tuners.Tunable {
 	return sys.NewMaxAIOEventsTuner(factory.fs)
+}
+
+func (factory *tunersFactory) newClockSourceTuner(
+	params *TunerParams,
+) tuners.Tunable {
+	return sys.NewClockSourceTuner(factory.fs)
 }
 
 func FillTunerParamsWithValuesFromConfig(
