@@ -83,9 +83,7 @@ def _str2bool(v):
 
 def main():
     parser = generate_options()
-    options, program_options = parser.parse_known_args()
-    log.set_logger_for_main(getattr(logging, options.log.upper()))
-    options, program_options = parser.parse_known_args()
+    options = parser.parse_args()
     log.set_logger_for_main(getattr(logging, options.log.upper()))
     if os.environ.get("CI") is not None:
         if options.log.upper() == "INFO":
