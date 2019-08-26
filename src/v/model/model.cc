@@ -21,4 +21,18 @@ std::ostream& operator<<(std::ostream& os, const ns& n) {
     return fmt_print(os, "{{namespace: {}}}", n.name);
 }
 
+std::ostream& operator<<(std::ostream& os, topic_partition tp) {
+    return fmt_print(
+      os, "{{topic_partition: {}:{}}}", tp.topic.name, tp.partition);
+}
+
+std::ostream& operator<<(std::ostream& os, namespaced_topic_partition ntp) {
+    return fmt_print(
+      os, "{{namespaced_topic_partition: {}:{}}}", ntp.ns, ntp.tp);
+}
+
+std::ostream& operator<<(std::ostream& os, offset o) {
+    return fmt_print(os, "{{offset: {}}}", o.value());
+}
+
 } // namespace model
