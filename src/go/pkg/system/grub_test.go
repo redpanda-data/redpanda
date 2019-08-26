@@ -1,10 +1,11 @@
-package os
+package system
 
 import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
 	"testing"
+	"vectorized/pkg/os"
 	"vectorized/pkg/utils"
 
 	"github.com/spf13/afero"
@@ -12,7 +13,7 @@ import (
 )
 
 type fields struct {
-	commands Commands
+	commands os.Commands
 	fs       afero.Fs
 	grubCfg  []string
 }

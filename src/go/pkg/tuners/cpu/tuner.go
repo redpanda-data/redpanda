@@ -3,7 +3,7 @@ package cpu
 import (
 	"fmt"
 	"strconv"
-	"vectorized/pkg/os"
+	"vectorized/pkg/system"
 	"vectorized/pkg/tuners"
 	"vectorized/pkg/tuners/irq"
 	"vectorized/pkg/utils"
@@ -15,7 +15,7 @@ import (
 type tuner struct {
 	tuners.Tunable
 	cpuMasks      irq.CpuMasks
-	grub          os.Grub
+	grub          system.Grub
 	rebootAllowed bool
 	cores         uint
 	pus           uint
@@ -23,7 +23,10 @@ type tuner struct {
 }
 
 func NewCpuTuner(
-	cpuMasks irq.CpuMasks, grub os.Grub, fs afero.Fs, rebootAllowed bool,
+	cpuMasks irq.CpuMasks,
+	grub system.Grub,
+	fs afero.Fs,
+	rebootAllowed bool,
 ) tuners.Tunable {
 	return &tuner{
 		cpuMasks:      cpuMasks,

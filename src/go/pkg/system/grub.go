@@ -1,9 +1,10 @@
-package os
+package system
 
 import (
 	"fmt"
 	"regexp"
 	"strings"
+	"vectorized/pkg/os"
 	"vectorized/pkg/utils"
 
 	log "github.com/sirupsen/logrus"
@@ -20,7 +21,7 @@ type Grub interface {
 	CheckVersion() error
 }
 
-func NewGrub(commands Commands, proc Proc, fs afero.Fs) Grub {
+func NewGrub(commands os.Commands, proc os.Proc, fs afero.Fs) Grub {
 	return &grub{
 		commands: commands,
 		proc:     proc,
@@ -29,8 +30,8 @@ func NewGrub(commands Commands, proc Proc, fs afero.Fs) Grub {
 }
 
 type grub struct {
-	commands Commands
-	proc     Proc
+	commands os.Commands
+	proc     os.Proc
 	fs       afero.Fs
 }
 

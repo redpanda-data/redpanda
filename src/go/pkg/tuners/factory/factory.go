@@ -5,6 +5,7 @@ import (
 	"vectorized/pkg/net"
 	"vectorized/pkg/os"
 	"vectorized/pkg/redpanda"
+	"vectorized/pkg/system"
 	"vectorized/pkg/tuners"
 	"vectorized/pkg/tuners/cpu"
 	"vectorized/pkg/tuners/disk"
@@ -41,7 +42,7 @@ type tunersFactory struct {
 	irqProcFile       irq.ProcFile
 	blockDevices      disk.BlockDevices
 	proc              os.Proc
-	grub              os.Grub
+	grub              system.Grub
 	tuners            map[string]func(*tunersFactory, *TunerParams) tuners.Tunable
 }
 
@@ -65,7 +66,7 @@ func NewTunersFactory(fs afero.Fs) TunersFactory {
 		cpuMasks:          irq.NewCpuMasks(fs, hwloc.NewHwLocCmd(proc)),
 		irqBalanceService: irq.NewBalanceService(fs, proc),
 		blockDevices:      disk.NewBlockDevices(fs, irqDeviceInfo, irqProcFile, proc),
-		grub:              os.NewGrub(os.NewCommands(proc), proc, fs),
+		grub:              system.NewGrub(os.NewCommands(proc), proc, fs),
 		proc:              proc,
 	}
 }
