@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"vectorized/pkg/os"
+	"vectorized/pkg/tuners/executors"
+	"vectorized/pkg/tuners/executors/commands"
 	"vectorized/pkg/utils"
 
 	log "github.com/sirupsen/logrus"
@@ -25,17 +27,21 @@ type BalanceService interface {
 	IsRunning() bool
 }
 
-func NewBalanceService(fs afero.Fs, proc os.Proc) BalanceService {
+func NewBalanceService(
+	fs afero.Fs, proc os.Proc, executor executors.Executor,
+) BalanceService {
 	return &balanceService{
-		fs:   fs,
-		proc: proc,
+		fs:       fs,
+		proc:     proc,
+		executor: executor,
 	}
 }
 
 type balanceService struct {
 	BalanceService
-	fs   afero.Fs
-	proc os.Proc
+	fs       afero.Fs
+	proc     os.Proc
+	executor executors.Executor
 }
 
 func (balanceService *balanceService) BanIRQsAndRestart(
@@ -55,15 +61,10 @@ func (balanceService *balanceService) BanIRQsAndRestart(
 	if err != nil {
 		return err
 	}
-	originalFile := fmt.Sprintf("%s.rpk.orig", serviceInfo.configFile)
-	if !utils.FileExists(balanceService.fs, originalFile) {
-		log.Infof("Saving the original irqbalance configuration is in '%s'", originalFile)
-		err := utils.CopyFile(balanceService.fs, serviceInfo.configFile, originalFile)
-		if err != nil {
-			return err
-		}
-	} else {
-		log.Debugf("File '%s' already exists - not overwriting.", originalFile)
+	err = balanceService.executor.Execute(
+		commands.NewBackupFileCmd(balanceService.fs, serviceInfo.configFile))
+	if err != nil {
+		return err
 	}
 
 	configLines, err := utils.ReadFileLines(balanceService.fs, serviceInfo.configFile)
@@ -102,16 +103,22 @@ func (balanceService *balanceService) BanIRQsAndRestart(
 	newOptions += "\""
 
 	newLines = append(newLines, newOptions)
-	err = utils.WriteFileLines(balanceService.fs, newLines, serviceInfo.configFile)
+	err = balanceService.executor.Execute(
+		commands.NewWriteFileLinesCmd(
+			balanceService.fs, serviceInfo.configFile, newLines))
 	if err != nil {
 		return err
 	}
 	if serviceInfo.systemd {
 		log.Debug("Restarting 'irqbalance' via systemctl...")
-		_, err = balanceService.proc.RunWithSystemLdPath("systemctl", "try-restart", "irqbalance")
+		err = balanceService.executor.Execute(
+			commands.NewLaunchCmd(
+				balanceService.proc, "systemctl", "try-restart", "irqbalance"))
 	} else {
 		log.Debug("Restarting 'irqbalance' directly (init.d)...")
-		_, err = balanceService.proc.RunWithSystemLdPath("/etc/init.d/irqbalance", "restart")
+		err = balanceService.executor.Execute(
+			commands.NewLaunchCmd(
+				balanceService.proc, "/etc/init.d/irqbalance", "restart"))
 	}
 	if err != nil {
 		return err

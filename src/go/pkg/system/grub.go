@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"strings"
 	"vectorized/pkg/os"
+	"vectorized/pkg/tuners/executors"
+	"vectorized/pkg/tuners/executors/commands"
 	"vectorized/pkg/utils"
 
 	log "github.com/sirupsen/logrus"
@@ -21,11 +23,17 @@ type Grub interface {
 	CheckVersion() error
 }
 
-func NewGrub(commands os.Commands, proc os.Proc, fs afero.Fs) Grub {
+func NewGrub(
+	commands os.Commands,
+	proc os.Proc,
+	fs afero.Fs,
+	executor executors.Executor,
+) Grub {
 	return &grub{
 		commands: commands,
 		proc:     proc,
 		fs:       fs,
+		executor: executor,
 	}
 }
 
@@ -33,6 +41,7 @@ type grub struct {
 	commands os.Commands
 	proc     os.Proc
 	fs       afero.Fs
+	executor executors.Executor
 }
 
 func (g *grub) CheckVersion() error {
@@ -83,7 +92,8 @@ func (g *grub) AddCommandLineOptions(opt []string) error {
 		}
 	}
 
-	return utils.WriteFileLines(g.fs, linesToWrite, "/etc/default/grub")
+	return g.executor.Execute(
+		commands.NewWriteFileLinesCmd(g.fs, "/etc/default/grub", linesToWrite))
 }
 
 func (g *grub) cmdLineCfgNeedChange(requestedOpts []string) (bool, error) {
@@ -105,7 +115,7 @@ func (g *grub) MakeConfig() error {
 	if err == nil {
 		log.Debugf("Running on Ubuntu based system with '%s' available",
 			updateCmd)
-		_, err := g.proc.RunWithSystemLdPath(updateCmd)
+		err := g.executor.Execute(commands.NewLaunchCmd(g.proc, updateCmd))
 		return err
 	}
 	for _, file := range []string{
@@ -113,7 +123,8 @@ func (g *grub) MakeConfig() error {
 		"/boot/efi/EFI/fedora/grub.cfg"} {
 		if utils.FileExists(g.fs, file) {
 			log.Debugf("Found 'grub.cfg' in %s", file)
-			_, err := g.proc.RunWithSystemLdPath("grub2-mkconfig", "-o", file)
+			err := g.executor.Execute(
+				commands.NewLaunchCmd(g.proc, "grub2-mkconfig", "-o", file))
 			return err
 		}
 	}

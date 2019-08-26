@@ -41,11 +41,14 @@ type netCheckersFactory struct {
 	cpuMasks       irq.CpuMasks
 }
 
-func NewNetCheckersFactory(fs afero.Fs, irqProcFile irq.ProcFile,
+func NewNetCheckersFactory(
+	fs afero.Fs,
+	irqProcFile irq.ProcFile,
 	irqDeviceInfo irq.DeviceInfo,
 	ethtool ethtool.EthtoolWrapper,
 	balanceService irq.BalanceService,
-	cpuMasks irq.CpuMasks) NetCheckersFactory {
+	cpuMasks irq.CpuMasks,
+) NetCheckersFactory {
 	return &netCheckersFactory{
 		fs:             fs,
 		irqProcFile:    irqProcFile,
@@ -57,7 +60,8 @@ func NewNetCheckersFactory(fs afero.Fs, irqProcFile irq.ProcFile,
 }
 
 func (f *netCheckersFactory) NewNicIRQAffinityStaticChecker(
-	interfaces []string) checkers.Checker {
+	interfaces []string,
+) checkers.Checker {
 	return checkers.NewEqualityChecker(
 		"NIC IRQs affinity static",
 		checkers.Warning,
@@ -78,9 +82,8 @@ func (f *netCheckersFactory) NewNicIRQAffinityStaticChecker(
 }
 
 func (f *netCheckersFactory) NewNicIRQAffinityChecker(
-	nic Nic,
-	mode irq.Mode,
-	cpuMask string) checkers.Checker {
+	nic Nic, mode irq.Mode, cpuMask string,
+) checkers.Checker {
 	return checkers.NewEqualityChecker(
 		fmt.Sprintf("NIC %s IRQ affinity set", nic.Name()),
 		checkers.Warning,
@@ -111,9 +114,8 @@ func (f *netCheckersFactory) NewNicIRQAffinityChecker(
 }
 
 func (f *netCheckersFactory) NewNicIRQAffinityCheckers(
-	interfaces []string,
-	mode irq.Mode,
-	cpuMask string) []checkers.Checker {
+	interfaces []string, mode irq.Mode, cpuMask string,
+) []checkers.Checker {
 	return f.forNonVirtualInterfaces(interfaces,
 		func(nic Nic) checkers.Checker {
 			return f.NewNicIRQAffinityChecker(nic, mode, cpuMask)
@@ -121,9 +123,8 @@ func (f *netCheckersFactory) NewNicIRQAffinityCheckers(
 }
 
 func (f *netCheckersFactory) NewNicRpsSetCheckers(
-	interfaces []string,
-	mode irq.Mode,
-	cpuMask string) []checkers.Checker {
+	interfaces []string, mode irq.Mode, cpuMask string,
+) []checkers.Checker {
 	return f.forNonVirtualInterfaces(
 		interfaces,
 		func(nic Nic) checkers.Checker {
@@ -132,9 +133,8 @@ func (f *netCheckersFactory) NewNicRpsSetCheckers(
 }
 
 func (f *netCheckersFactory) NewNicRpsSetChecker(
-	nic Nic,
-	mode irq.Mode,
-	cpuMask string) checkers.Checker {
+	nic Nic, mode irq.Mode, cpuMask string,
+) checkers.Checker {
 	return checkers.NewEqualityChecker(
 		fmt.Sprintf("NIC %s RPS set", nic.Name()),
 		checkers.Warning,
@@ -168,7 +168,9 @@ func (f *netCheckersFactory) NewNicRpsSetChecker(
 	)
 }
 
-func (f *netCheckersFactory) NewNicRfsCheckers(interfaces []string) []checkers.Checker {
+func (f *netCheckersFactory) NewNicRfsCheckers(
+	interfaces []string,
+) []checkers.Checker {
 	return f.forNonVirtualInterfaces(interfaces, f.NewNicRfsChecker)
 }
 
@@ -199,7 +201,9 @@ func (f *netCheckersFactory) NewNicRfsChecker(nic Nic) checkers.Checker {
 	)
 }
 
-func (f *netCheckersFactory) NewNicNTupleCheckers(interfaces []string) []checkers.Checker {
+func (f *netCheckersFactory) NewNicNTupleCheckers(
+	interfaces []string,
+) []checkers.Checker {
 	return f.forNonVirtualInterfaces(interfaces, f.NewNicNTupleChecker)
 }
 
@@ -223,7 +227,9 @@ func (f *netCheckersFactory) NewNicNTupleChecker(nic Nic) checkers.Checker {
 	)
 }
 
-func (f *netCheckersFactory) NewNicXpsCheckers(interfaces []string) []checkers.Checker {
+func (f *netCheckersFactory) NewNicXpsCheckers(
+	interfaces []string,
+) []checkers.Checker {
 	return f.forNonVirtualInterfaces(interfaces, f.NewNicXpsChecker)
 }
 
@@ -332,8 +338,8 @@ func isSet(nic Nic, hwCheckFunction func(Nic) (bool, error)) (bool, error) {
 }
 
 func (f *netCheckersFactory) forNonVirtualInterfaces(
-	interfaces []string,
-	checkerFactory func(Nic) checkers.Checker) []checkers.Checker {
+	interfaces []string, checkerFactory func(Nic) checkers.Checker,
+) []checkers.Checker {
 	var chkrs []checkers.Checker
 	for _, iface := range interfaces {
 		nic := NewNic(f.fs, f.irqProcFile, f.irqDeviceInfo, f.ethtool, iface)

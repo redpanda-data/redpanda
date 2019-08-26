@@ -6,6 +6,8 @@ import (
 	"strings"
 	"vectorized/pkg/checkers"
 	"vectorized/pkg/tuners"
+	"vectorized/pkg/tuners/executors"
+	"vectorized/pkg/tuners/executors/commands"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
@@ -28,17 +30,22 @@ func NewMaxAIOEventsChecker(fs afero.Fs) checkers.Checker {
 	)
 }
 
-func NewMaxAIOEventsTuner(fs afero.Fs) tuners.Tunable {
+func NewMaxAIOEventsTuner(
+	fs afero.Fs, executor executors.Executor,
+) tuners.Tunable {
 	return tuners.NewCheckedTunable(
 		NewMaxAIOEventsChecker(fs),
 		func() tuners.TuneResult {
 
 			log.Debugf("Setting max AIO events to %d", maxAIOEvents)
-			afero.WriteFile(fs, "/proc/sys/fs/aio-max-nr", []byte(fmt.Sprint(maxAIOEvents)), 0644)
+			executor.Execute(
+				commands.NewWriteFileCmd(
+					fs, "/proc/sys/fs/aio-max-nr", fmt.Sprint(maxAIOEvents)))
 			return tuners.NewTuneResult(false)
 		},
 		func() (bool, string) {
 			return true, ""
 		},
+		executor.IsLazy(),
 	)
 }

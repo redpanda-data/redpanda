@@ -2,6 +2,7 @@ package disk
 
 import (
 	"testing"
+	"vectorized/pkg/tuners/executors"
 
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
@@ -19,7 +20,7 @@ func TestDeviceNomergesTuner_Tune(t *testing.T) {
 	}
 	fs := afero.NewMemMapFs()
 	fs.MkdirAll("/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake/queue", 0644)
-	tuner := NewDeviceNomergesTuner(fs, "fake", schedulerInfo)
+	tuner := NewDeviceNomergesTuner(fs, "fake", schedulerInfo, executors.NewDirectExecutor())
 	// when
 	tuner.Tune()
 	// then

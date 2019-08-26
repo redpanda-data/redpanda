@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"vectorized/pkg/tuners/executors"
+	"vectorized/pkg/tuners/executors/commands"
 	"vectorized/pkg/tuners/hwloc"
 
 	log "github.com/sirupsen/logrus"
@@ -27,17 +29,21 @@ type CpuMasks interface {
 	IsSupported() bool
 }
 
-func NewCpuMasks(fs afero.Fs, hwloc hwloc.HwLoc) CpuMasks {
+func NewCpuMasks(
+	fs afero.Fs, hwloc hwloc.HwLoc, executor executors.Executor,
+) CpuMasks {
 	return &cpuMasks{
-		fs:    fs,
-		hwloc: hwloc,
+		fs:       fs,
+		hwloc:    hwloc,
+		executor: executor,
 	}
 }
 
 type cpuMasks struct {
 	CpuMasks
-	hwloc hwloc.HwLoc
-	fs    afero.Fs
+	hwloc    hwloc.HwLoc
+	fs       afero.Fs
+	executor executors.Executor
 }
 
 func (masks *cpuMasks) BaseCpuMask(cpuMask string) (string, error) {
@@ -113,7 +119,8 @@ func (masks *cpuMasks) SetMask(path string, mask string) error {
 	}
 
 	log.Infof("Setting mask '%s' in '%s'", formattedMask, path)
-	err := afero.WriteFile(masks.fs, path, []byte(formattedMask), 0644)
+	err := masks.executor.Execute(
+		commands.NewWriteFileCmd(masks.fs, path, formattedMask))
 	if err != nil {
 		return err
 	}

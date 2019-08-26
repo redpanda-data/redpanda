@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"vectorized/pkg/system"
 	"vectorized/pkg/tuners"
+	"vectorized/pkg/tuners/executors"
+	"vectorized/pkg/tuners/executors/commands"
 	"vectorized/pkg/tuners/irq"
 	"vectorized/pkg/utils"
 
@@ -20,6 +22,7 @@ type tuner struct {
 	cores         uint
 	pus           uint
 	fs            afero.Fs
+	executor      executors.Executor
 }
 
 func NewCpuTuner(
@@ -27,12 +30,14 @@ func NewCpuTuner(
 	grub system.Grub,
 	fs afero.Fs,
 	rebootAllowed bool,
+	executor executors.Executor,
 ) tuners.Tunable {
 	return &tuner{
 		cpuMasks:      cpuMasks,
 		grub:          grub,
 		fs:            fs,
 		rebootAllowed: rebootAllowed,
+		executor:      executor,
 	}
 }
 
@@ -129,8 +134,10 @@ func (tuner *tuner) disableHt() error {
 		}
 		toDisable := coreIds[1]
 		log.Debugf("Disabling virtual core '%d'", toDisable)
-		err = utils.WriteFileLines(tuner.fs, []string{"0"},
-			fmt.Sprintf("/sys/devices/system/cpu/cpu%d/online", toDisable))
+		err = tuner.executor.Execute(
+			commands.NewWriteFileCmd(tuner.fs,
+				fmt.Sprintf("/sys/devices/system/cpu/cpu%d/online", toDisable),
+				"0"))
 		if err != nil {
 			return err
 		}
@@ -196,8 +203,9 @@ func (tuner *tuner) disablePStates() error {
 func (tuner *tuner) setupCPUGovernors() error {
 	log.Debugf("Setting up ACPI based CPU governors")
 	if utils.FileExists(tuner.fs, "/sys/devices/system/cpu/cpufreq/boost") {
-		err := utils.WriteFileLines(tuner.fs, []string{"0"},
-			"/sys/devices/system/cpu/cpufreq/boost")
+		err := tuner.executor.Execute(
+			commands.NewWriteFileCmd(tuner.fs,
+				"/sys/devices/system/cpu/cpufreq/boost", "0"))
 		if err != nil {
 			return err
 		}
@@ -208,8 +216,8 @@ func (tuner *tuner) setupCPUGovernors() error {
 		policyPath := fmt.Sprintf(
 			"/sys/devices/system/cpu/cpufreq/policy%d/scaling_governor", i)
 		if utils.FileExists(tuner.fs, policyPath) {
-			err := utils.WriteFileLines(tuner.fs, []string{"performance"},
-				policyPath)
+			err := tuner.executor.Execute(
+				commands.NewWriteFileCmd(tuner.fs, policyPath, "performance"))
 			if err != nil {
 				return err
 			}
