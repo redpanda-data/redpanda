@@ -97,8 +97,101 @@ struct ns {
     }
 
     const sstring name;
-
-    friend std::ostream& operator<<(std::ostream&, const ns&);
 };
 
+std::ostream& operator<<(std::ostream&, const ns&);
+
+struct topic_partition {
+    model::topic topic;
+    model::partition partition;
+
+    bool operator==(const topic_partition& other) const {
+        return topic == other.topic && partition == other.partition;
+    }
+
+    bool operator!=(const topic_partition& other) const {
+        return !(*this == other);
+    }
+};
+
+std::ostream& operator<<(std::ostream&, topic_partition);
+
+struct namespaced_topic_partition {
+    model::ns ns;
+    topic_partition tp;
+
+    bool operator==(const namespaced_topic_partition& other) const {
+        return ns == other.ns && tp == other.tp;
+    }
+
+    bool operator!=(const namespaced_topic_partition& other) const {
+        return !(*this == other);
+    }
+};
+
+std::ostream& operator<<(std::ostream&, namespaced_topic_partition);
+
+class offset {
+public:
+    offset() noexcept = default;
+
+    explicit offset(uint64_t val) noexcept
+      : _val(val) {
+    }
+
+    uint64_t value() const {
+        return _val;
+    }
+
+    offset operator+(int64_t val) const {
+        return offset(_val + val);
+    }
+
+    offset& operator+=(int64_t val) {
+        _val += val;
+        return *this;
+    }
+
+    bool operator<(const offset& other) const {
+        return _val < other._val;
+    }
+
+    bool operator<=(const offset& other) const {
+        return _val <= other._val;
+    }
+
+    bool operator>(const offset& other) const {
+        return other._val < _val;
+    }
+
+    bool operator>=(const offset& other) const {
+        return other._val <= _val;
+    }
+
+    bool operator==(const offset& other) const {
+        return _val == other._val;
+    }
+
+    bool operator!=(const offset& other) const {
+        return !(*this == other);
+    }
+
+private:
+    uint64_t _val = 0;
+};
+
+std::ostream& operator<<(std::ostream&, offset);
+
 } // namespace model
+
+namespace std {
+
+template<>
+struct hash<model::namespaced_topic_partition> {
+    size_t operator()(model::namespaced_topic_partition ntp) const {
+        return hash<sstring>()(ntp.ns.name) ^ hash<sstring>()(ntp.tp.topic.name)
+               ^ hash<model::partition::type>()(ntp.tp.partition.value);
+    }
+};
+
+} // namespace std
