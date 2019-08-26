@@ -7,6 +7,7 @@ import (
 	"vectorized/pkg/system"
 	"vectorized/pkg/system/filesystem"
 	"vectorized/pkg/tuners/disk"
+	"vectorized/pkg/tuners/ethtool"
 	"vectorized/pkg/tuners/hwloc"
 	"vectorized/pkg/tuners/irq"
 	"vectorized/pkg/tuners/network"
@@ -181,7 +182,7 @@ func RedpandaCheckers(
 	if err != nil {
 		return nil, err
 	}
-	ethtool, err := network.NewEthtoolWrapper()
+	ethtool, err := ethtool.NewEthtoolWrapper()
 	if err != nil {
 		return nil, err
 	}

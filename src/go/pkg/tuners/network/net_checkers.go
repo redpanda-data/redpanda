@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 	"vectorized/pkg/checkers"
+	"vectorized/pkg/tuners/ethtool"
 	"vectorized/pkg/tuners/irq"
 	"vectorized/pkg/utils"
 
@@ -35,14 +36,14 @@ type netCheckersFactory struct {
 	fs             afero.Fs
 	irqProcFile    irq.ProcFile
 	irqDeviceInfo  irq.DeviceInfo
-	ethtool        EthtoolWrapper
+	ethtool        ethtool.EthtoolWrapper
 	balanceService irq.BalanceService
 	cpuMasks       irq.CpuMasks
 }
 
 func NewNetCheckersFactory(fs afero.Fs, irqProcFile irq.ProcFile,
 	irqDeviceInfo irq.DeviceInfo,
-	ethtool EthtoolWrapper,
+	ethtool ethtool.EthtoolWrapper,
 	balanceService irq.BalanceService,
 	cpuMasks irq.CpuMasks) NetCheckersFactory {
 	return &netCheckersFactory{

@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"vectorized/pkg/checkers"
 	"vectorized/pkg/tuners"
+	"vectorized/pkg/tuners/ethtool"
 	"vectorized/pkg/tuners/irq"
 
 	"github.com/lorenzosaino/go-sysctl"
-	"github.com/safchain/ethtool"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 )
@@ -21,7 +21,7 @@ func NewNetTuner(
 	cpuMasks irq.CpuMasks,
 	irqBalanceService irq.BalanceService,
 	irqProcFile irq.ProcFile,
-	ethtool *ethtool.Ethtool,
+	ethtool ethtool.EthtoolWrapper,
 ) tuners.Tunable {
 	factory := NewNetTunersFactory(
 		fs, irqProcFile, irqDeviceInfo, ethtool, irqBalanceService, cpuMasks)
@@ -56,7 +56,7 @@ type netTunersFactory struct {
 	fs              afero.Fs
 	irqProcFile     irq.ProcFile
 	irqDeviceInfo   irq.DeviceInfo
-	ethtool         *ethtool.Ethtool
+	ethtool         ethtool.EthtoolWrapper
 	balanceService  irq.BalanceService
 	cpuMasks        irq.CpuMasks
 	checkersFactory NetCheckersFactory
@@ -66,7 +66,7 @@ func NewNetTunersFactory(
 	fs afero.Fs,
 	irqProcFile irq.ProcFile,
 	irqDeviceInfo irq.DeviceInfo,
-	ethtool *ethtool.Ethtool,
+	ethtool ethtool.EthtoolWrapper,
 	balanceService irq.BalanceService,
 	cpuMasks irq.CpuMasks,
 ) NetTunersFactory {

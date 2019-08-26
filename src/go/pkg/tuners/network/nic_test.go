@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
+	"vectorized/pkg/tuners/ethtool"
 	"vectorized/pkg/tuners/irq"
 
 	"github.com/spf13/afero"
@@ -29,7 +30,7 @@ func (m *deviceInfoMock) GetIRQs(path string, device string) ([]int, error) {
 }
 
 type ethtoolMock struct {
-	EthtoolWrapper
+	ethtool.EthtoolWrapper
 	driverName func(string) (string, error)
 	features   func(string) (map[string]bool, error)
 }
@@ -91,7 +92,7 @@ func Test_nic_GetIRQs(t *testing.T) {
 		fs            afero.Fs
 		irqProcFile   irq.ProcFile
 		irqDeviceInfo irq.DeviceInfo
-		ethtool       EthtoolWrapper
+		ethtool       ethtool.EthtoolWrapper
 		name          string
 	}
 	tests := []struct {
@@ -205,7 +206,7 @@ func Test_nic_GetMaxRxQueueCount(t *testing.T) {
 		fs            afero.Fs
 		irqProcFile   irq.ProcFile
 		irqDeviceInfo irq.DeviceInfo
-		ethtool       EthtoolWrapper
+		ethtool       ethtool.EthtoolWrapper
 		name          string
 	}
 	tests := []struct {
@@ -275,7 +276,7 @@ func Test_nic_GetRxQueueCount(t *testing.T) {
 		fs            afero.Fs
 		irqProcFile   irq.ProcFile
 		irqDeviceInfo irq.DeviceInfo
-		ethtool       EthtoolWrapper
+		ethtool       ethtool.EthtoolWrapper
 		name          string
 		before        func(fs afero.Fs)
 	}
@@ -389,7 +390,7 @@ func Test_nic_GetNTupleStatus(t *testing.T) {
 		fs            afero.Fs
 		irqProcFile   irq.ProcFile
 		irqDeviceInfo irq.DeviceInfo
-		ethtool       EthtoolWrapper
+		ethtool       ethtool.EthtoolWrapper
 		name          string
 	}
 	tests := []struct {
