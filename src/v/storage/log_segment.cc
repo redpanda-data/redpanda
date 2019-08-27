@@ -41,9 +41,13 @@ struct base_offset_ordering {
         return seg1->base_offset() <= seg2->base_offset();
     }
     bool operator()(const log_segment_ptr& seg, model::offset value) const {
-        return value <= seg->base_offset();
+        return seg->max_offset() < value;
     }
 };
+
+log_segment_selector::log_segment_selector(const log_set& set) noexcept
+  : _set(set) {
+}
 
 log_set::log_set(std::vector<log_segment_ptr> segs) noexcept(
   log_set::is_nothrow::value)
@@ -69,5 +73,21 @@ void log_set::pop_last() {
     _segments.pop_back();
 }
 
+log_segment_ptr log_segment_selector::select(model::offset offset) const {
+    if (_iter_gen != _set.iter_gen()) {
+        _current_segment = std::lower_bound(
+          _set.begin(), _set.end(), offset, base_offset_ordering{});
+        _iter_gen = _set.iter_gen();
+    }
+    auto seg = _current_segment;
+    while (seg != _set.end()) {
+        if (offset < (*seg)->max_offset()) {
+            _current_segment = seg;
+            return *seg;
+        }
+        ++seg;
+    }
+    return nullptr;
+}
 
 } // namespace storage

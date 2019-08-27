@@ -158,4 +158,20 @@ private:
     iter_gen_type _generation = 1;
 };
 
+class log_segment_selector {
+public:
+    explicit log_segment_selector(const log_set&) noexcept;
+
+    // Successive calls to `select()' have to pass weakly
+    // monotonic offsets.
+    log_segment_ptr select(model::offset) const;
+
+private:
+    const log_set& _set;
+    // Always valid within an epoch.
+    mutable log_set::const_iterator_type _current_segment;
+    // Detects compactions and iterator invalidations.
+    mutable log_set::iter_gen_type _iter_gen = log_set::invalid_iter_gen;
+};
+
 } // namespace storage
