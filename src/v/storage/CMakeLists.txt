@@ -1,6 +1,7 @@
 add_library(storage STATIC
     logger.cc
-    log_segment.cc)
+    log_segment.cc
+    log_manager.cc)
 
 target_include_directories(storage PUBLIC ${PROJECT_SOURCE_DIR}/src/v)
 
