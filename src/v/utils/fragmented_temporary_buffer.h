@@ -273,6 +273,21 @@ public:
         return bytes_view(reinterpret_cast<const bytes::value_type*>(ptr), n);
     }
 
+    template<typename Consumer>
+    // clang-format off
+    CONCEPT(requires requires(Consumer c, bytes_view bv) {
+        { c(bv) };
+    })
+    // clang-format on
+    void consume(Consumer&& c) {
+        while (_bytes_left) {
+            c(bytes_view(
+              reinterpret_cast<bytes_view::const_pointer>(_current_position),
+              std::distance(_current_position, _current_end)));
+            next_fragment();
+        }
+    }
+
     using const_iterator = iterator;
     // Non-consuming iterator, from this point forward.
     iterator begin() const noexcept;
