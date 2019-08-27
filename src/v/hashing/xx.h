@@ -1,4 +1,7 @@
 #pragma once
+#include "seastarx.h"
+
+#include <seastar/core/sstring.hh>
 
 #include <cstdint>
 #include <cstring>
@@ -28,6 +31,10 @@ public:
     [[gnu::always_inline]] inline void
     update(const char* src, const std::size_t& sz) {
         XXH64_update(&_state, src, sz);
+    }
+    [[gnu::always_inline]] inline void
+    update(const sstring& str) {
+        update(str.data(), str.size());
     }
     template<
       typename T,
