@@ -1,5 +1,6 @@
 #include "model/compression.h"
 #include "model/fundamental.h"
+#include "model/timestamp.h"
 #include "seastarx.h"
 
 #include <seastar/core/print.hh>
@@ -42,6 +43,13 @@ std::ostream& operator<<(std::ostream& os, compression c) {
         break;
     }
     return os << "}";
+}
+
+std::ostream& operator<<(std::ostream& os, timestamp ts) {
+    if (ts != timestamp::missing()) {
+        return fmt_print(os, "{{timestamp: {}}}", ts.value());
+    }
+    return os << "{timestamp: missing}";
 }
 
 std::ostream& operator<<(std::ostream& os, topic_partition tp) {
