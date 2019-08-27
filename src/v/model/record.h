@@ -1,0 +1,268 @@
+#pragma once
+
+#include "model/compression.h"
+#include "model/fundamental.h"
+#include "model/timestamp.h"
+#include "utils/fragmented_temporary_buffer.h"
+
+#include <seastar/util/optimized_optional.hh>
+
+#include <boost/range/numeric.hpp>
+
+#include <bitset>
+#include <cstdint>
+#include <variant>
+#include <vector>
+
+namespace model {
+
+class record {
+public:
+    record() noexcept = default;
+
+    record(
+      size_t size_bytes,
+      int32_t timestamp_delta,
+      int32_t offset_delta,
+      fragmented_temporary_buffer key,
+      fragmented_temporary_buffer value_and_headers) noexcept
+      : _size_bytes(size_bytes)
+      , _timestamp_delta(timestamp_delta)
+      , _offset_delta(offset_delta)
+      , _key(std::move(key))
+      , _value_and_headers(std::move(value_and_headers)) {
+    }
+
+    // Size in bytes of everything except the size_bytes field.
+    size_t size_bytes() const {
+        return _size_bytes;
+    }
+
+    // Used for acquiring units from semaphores limiting
+    // memory resources.
+    size_t memory_usage() const {
+        return sizeof(*this) + _key.size_bytes()
+               + _value_and_headers.size_bytes();
+    }
+
+    int32_t timestamp_delta() const {
+        return _timestamp_delta;
+    }
+
+    int32_t offset_delta() const {
+        return _offset_delta;
+    }
+
+    const fragmented_temporary_buffer& key() const {
+        return _key;
+    }
+
+    const fragmented_temporary_buffer& packed_value_and_headers() const {
+        return _value_and_headers;
+    }
+
+private:
+    size_t _size_bytes;
+    int32_t _timestamp_delta;
+    int32_t _offset_delta;
+    fragmented_temporary_buffer _key;
+    // Already contains the varint encoding of the
+    // value size and of the header size.
+    fragmented_temporary_buffer _value_and_headers;
+};
+
+class record_batch_attributes final {
+public:
+    using value_type = uint16_t;
+
+    record_batch_attributes() noexcept = default;
+
+    explicit record_batch_attributes(int16_t v) noexcept
+      : _attributes(v) {
+    }
+
+    value_type value() const {
+        return static_cast<int16_t>(_attributes.to_ulong());
+    }
+
+    model::compression compression() const {
+        switch (_attributes.to_ulong() & 0x7) {
+        case 0:
+            return compression::none;
+        case 1:
+            return compression::gzip;
+        case 2:
+            return compression::snappy;
+        case 3:
+            return compression::lz4;
+        case 4:
+            return compression::zstd;
+        }
+        throw std::runtime_error("Unknown compression value");
+    }
+
+    model::timestamp_type timestamp_type() const {
+        return _attributes.test(3) ? timestamp_type::append_time
+                                   : timestamp_type::create_time;
+    }
+
+private:
+    // Bits 4 and 5 are used by Kafka and thus reserved.
+    std::bitset<16> _attributes;
+};
+
+struct record_batch_header {
+    // Size of the batch minus this field.
+    size_t size_bytes;
+    offset base_offset;
+    int32_t crc;
+    record_batch_attributes attrs;
+    int32_t last_offset_delta;
+    timestamp first_timestamp;
+    timestamp max_timestamp;
+
+    offset last_offset() const {
+        return base_offset + last_offset_delta;
+    }
+};
+
+class record_batch {
+public:
+    // After moving, compressed_records is guaranteed to be empty().
+    class compressed_records {
+    public:
+        compressed_records(
+          size_t size, fragmented_temporary_buffer data) noexcept
+          : _size(size)
+          , _data(std::move(data)) {
+        }
+
+        compressed_records(compressed_records&& other) noexcept
+          : _size(std::exchange(other._size, 0))
+          , _data(std::move(other._data)) {
+        }
+
+        compressed_records& operator=(compressed_records&& other) noexcept {
+            _size = std::exchange(other._size, 0);
+            _data = std::move(other._data);
+            return *this;
+        }
+
+        size_t size() const {
+            return _size;
+        }
+
+        size_t size_bytes() const {
+            return _data.size_bytes();
+        }
+
+        bool empty() const {
+            return !_size;
+        }
+
+        const fragmented_temporary_buffer& records() const {
+            return _data;
+        }
+
+    private:
+        size_t _size;
+        fragmented_temporary_buffer _data;
+    };
+
+    using uncompressed_records = std::vector<record>;
+    using records_type = std::variant<uncompressed_records, compressed_records>;
+
+    record_batch(record_batch_header header, records_type&& records) noexcept
+      : _header(std::move(header))
+      , _records(std::move(records)) {
+    }
+
+    bool empty() const {
+        return seastar::visit(_records, [](auto& e) { return e.empty(); });
+    }
+
+    bool compressed() const {
+        return std::holds_alternative<compressed_records>(_records);
+    }
+
+    size_t size() const {
+        return seastar::visit(_records, [](auto& e) { return e.size(); });
+    }
+
+    // Size in bytes of the header plus records.
+    size_t size_bytes() const {
+        return _header.size_bytes;
+    }
+
+    size_t memory_usage() const {
+        return sizeof(*this)
+               + seastar::visit(
+                 _records,
+                 [](const compressed_records& records) {
+                     return records.size_bytes();
+                 },
+                 [](const uncompressed_records& records) {
+                     return boost::accumulate(
+                       records, size_t(0), [](size_t usage, const record& r) {
+                           return usage + r.memory_usage();
+                       });
+                 });
+    }
+
+    offset base_offset() const {
+        return _header.base_offset;
+    }
+
+    int32_t crc() const {
+        return _header.crc;
+    }
+
+    record_batch_attributes attributes() const {
+        return _header.attrs;
+    }
+
+    int32_t last_offset_delta() const {
+        return _header.last_offset_delta;
+    }
+
+    timestamp first_timestamp() const {
+        return _header.first_timestamp;
+    }
+
+    timestamp max_timestamp() const {
+        return _header.max_timestamp;
+    }
+
+    offset last_offset() const {
+        return _header.last_offset();
+    }
+
+    // Can only be called if this holds a set of uncompressed records.
+    uncompressed_records::const_iterator begin() const {
+        return std::get<uncompressed_records>(_records).begin();
+    }
+
+    // Can only be called if this holds a set of uncompressed records.
+    uncompressed_records::const_iterator end() const {
+        return std::get<uncompressed_records>(_records).end();
+    }
+
+    // Can only be called if this holds compressed records.
+    const compressed_records& get_compressed_records() const {
+        return std::get<compressed_records>(_records);
+    }
+
+private:
+    record_batch_header _header;
+    records_type _records;
+
+    record_batch() = default;
+    explicit operator bool() const noexcept {
+        return size();
+    }
+    friend class optimized_optional<record_batch>;
+};
+
+using record_batch_opt = optimized_optional<record_batch>;
+
+} // namespace model
