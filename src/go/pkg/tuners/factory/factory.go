@@ -169,7 +169,8 @@ func (factory *tunersFactory) newMaxAIOEventsTuner(
 func FillTunerParamsWithValuesFromConfig(
 	params *TunerParams, config *redpanda.Config,
 ) error {
-	nics, err := net.GetInterfacesByIp(config.Ip)
+	nics, err := net.GetInterfacesByIps(
+		config.KafkaApi.Address, config.RPCServer.Address)
 	if err != nil {
 		return err
 	}

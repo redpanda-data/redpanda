@@ -102,8 +102,11 @@ func (s *sandbox) Create(
 			}
 			nodes = append(nodes, node)
 			seedServer := &redpanda.SeedServer{
-				Id:      i,
-				Address: fmt.Sprintf("%s:%d", nodeIP, containerRPCPort),
+				Id: i,
+				Host: redpanda.SocketAddress{
+					Address: nodeIP,
+					Port:    containerRPCPort,
+				},
 			}
 			seedServers = append(seedServers, seedServer)
 		}

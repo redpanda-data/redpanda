@@ -84,6 +84,7 @@ gen_puts(int32_t batch, int32_t partition, int32_t rand_bytes) {
 int main(int args, char** argv, char** env) {
     std::cout.setf(std::ios::unitbuf);
     app_template app;
+    config::configuration cfg;
 
     try {
         add_opts(app.add_options());
@@ -97,15 +98,15 @@ int main(int args, char** argv, char** env) {
 
             LOG_THROW_IF(dir.empty(), "Empty write-ahead-log-dir");
             LOG_INFO("log_segment test dir: {}", dir);
-
+            cfg.data_directory(dir);
+            cfg.writer_flush_period_ms(5);
             return do_with(
-                     wal_opts(dir.c_str(), std::chrono::milliseconds(5)),
+                     wal_opts(cfg),
                      [&](auto& wopts) {
-                         auto indexer
-                           = make_lw_shared<wal_segment_indexer>(
-                             index_filename,
-                             wopts,
-                             priority_manager::get().default_priority());
+                         auto indexer = make_lw_shared<wal_segment_indexer>(
+                           index_filename,
+                           wopts,
+                           priority_manager::get().default_priority());
 
                          return indexer->open()
                            .then([indexer] {
@@ -142,8 +143,7 @@ int main(int args, char** argv, char** env) {
                                return indexer->close().finally([indexer] {});
                            });
                      })
-              .then(
-                [index_filename] { return file_size(index_filename); })
+              .then([index_filename] { return file_size(index_filename); })
               .then([index_filename](int64_t sz) {
                   LOG_INFO(
                     "Sucess Writing Index file: {} index size: {}",

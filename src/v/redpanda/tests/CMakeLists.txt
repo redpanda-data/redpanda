@@ -7,9 +7,3 @@ rp_test(
   LIBRARIES redpanda_services redpanda_api
   ARGS "-c 1"
 )
-rp_test(
-  UNIT_TEST
-  BINARY_NAME redpanda_config_tests
-  SOURCES config_tests.cc
-  LIBRARIES GTest::gtest rpfs
-)

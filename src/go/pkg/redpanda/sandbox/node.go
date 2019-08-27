@@ -96,7 +96,7 @@ func (n *node) Create(
 
 func (n *node) Configure(seedServers []*redpanda.SeedServer) error {
 	log.Debugf("Configuring node %d", n.id)
-	return n.updateNodeConfig(n.id, "0.0.0.0", containerRPCPort, seedServers)
+	return n.updateNodeConfig(n.id, "0.0.0.0", containerRPCPort, containerKafkaPort, seedServers)
 }
 
 func (n *node) Start() error {
@@ -222,14 +222,24 @@ func (n *node) Logs(
 }
 
 func (n *node) updateNodeConfig(
-	id int, address string, port int, seedServers []*redpanda.SeedServer,
+	id int,
+	address string,
+	rpcPort int,
+	kafkaPort int,
+	seedServers []*redpanda.SeedServer,
 ) error {
 	configPath := n.configPath()
 	log.Debugf("Updating node config in %s", configPath)
 	config := redpanda.Config{
-		Directory:   "/opt/redpanda/data",
-		Port:        port,
-		Ip:          address,
+		Directory: "/opt/redpanda/data",
+		KafkaApi: redpanda.SocketAddress{
+			Port:    rpcPort,
+			Address: address,
+		},
+		RPCServer: redpanda.SocketAddress{
+			Port:    kafkaPort,
+			Address: address,
+		},
 		Id:          id,
 		SeedServers: seedServers,
 	}

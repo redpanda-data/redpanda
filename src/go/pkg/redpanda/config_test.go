@@ -12,23 +12,36 @@ import (
 )
 
 var validConfig = []string{
-	"---",
-	"# Redpanda Queue configuration file",
-	"redpanda:",
-	"# Data directory where all the files will be stored. ",
-	"# This directory MUST resides on xfs partion.",
-	"  directory: \"/var/lib/redpanda/data\"",
-	"# Redpanda server",
-	"  port: 33145",
-	"  ip: \"127.0.0.1\"",
-	"  id: 1",
-	"  kafka_transport_port: 9092",
-	"# Raft configuration",
-	"  seed_servers:",
-	"  - addr: \"127.0.0.1:33145\"",
-	"    id: 1",
-	"  - addr: \"127.0.0.1:33146\"",
-	"    id: 2",
+	"---\n",
+	"# Redpanda Queue configuration file\n",
+	"redpanda:\n",
+	"  # Data directory where all the files will be stored. \n",
+	"  # This directory MUST resides on xfs partion.\n",
+	"  data_directory: /var/lib/redpanda/data\n",
+	"  \n",
+	"  # Node ID - must be unique for each node\n",
+	"  node_id: 1\n",
+	"  \n",
+	"  # Redpanda server\n",
+	"  rpc_server:\n",
+	"    address: 127.0.0.1\n",
+	"    port: 33145\n",
+	"  \n",
+	"  # Kafka transport\n",
+	"  kafka_api:\n",
+	"    address: 127.0.0.1\n",
+	"    port: 9092\n",
+	"\n",
+	"  # Raft configuration\n",
+	"  seed_servers:\n",
+	"    - host: \n",
+	"        address: 127.0.0.1\n",
+	"        port: 33145\n",
+	"      node_id: 1\n",
+	"    - host: \n",
+	"        address: 127.0.0.1\n",
+	"        port: 33146\n",
+	"      node_id: 2\n",
 }
 
 func TestReadConfigFromPath(t *testing.T) {
@@ -55,19 +68,30 @@ func TestReadConfigFromPath(t *testing.T) {
 				path: "/etc/redpanda/redpanda.yaml",
 			},
 			want: &Config{
-				Directory:          "/var/lib/redpanda/data",
-				Port:               33145,
-				Ip:                 "127.0.0.1",
-				Id:                 1,
-				KafkaTransportPort: 9092,
+				Directory: "/var/lib/redpanda/data",
+				RPCServer: SocketAddress{
+					Port:    33145,
+					Address: "127.0.0.1",
+				},
+				Id: 1,
+				KafkaApi: SocketAddress{
+					Port:    9092,
+					Address: "127.0.0.1",
+				},
 				SeedServers: []*SeedServer{
 					&SeedServer{
-						Address: "127.0.0.1:33145",
-						Id:      1,
+						Host: SocketAddress{
+							Port:    33145,
+							Address: "127.0.0.1",
+						},
+						Id: 1,
 					},
 					&SeedServer{
-						Address: "127.0.0.1:33146",
-						Id:      2,
+						Host: SocketAddress{
+							Port:    33146,
+							Address: "127.0.0.1",
+						},
+						Id: 2,
 					},
 				},
 			},
@@ -107,19 +131,30 @@ func TestWriteConfig(t *testing.T) {
 				fs:   afero.NewMemMapFs(),
 				path: "/redpanda.yaml",
 				config: &Config{
-					Directory:          "/var/lib/redpanda/data",
-					Port:               33145,
-					Ip:                 "127.0.0.1",
-					Id:                 1,
-					KafkaTransportPort: 9092,
+					Directory: "/var/lib/redpanda/data",
+					RPCServer: SocketAddress{
+						Port:    33145,
+						Address: "127.0.0.1",
+					},
+					Id: 1,
+					KafkaApi: SocketAddress{
+						Port:    9092,
+						Address: "127.0.0.1",
+					},
 					SeedServers: []*SeedServer{
 						&SeedServer{
-							Address: "127.0.0.1:33145",
-							Id:      1,
+							Host: SocketAddress{
+								Port:    33145,
+								Address: "127.0.0.1",
+							},
+							Id: 1,
 						},
 						&SeedServer{
-							Address: "127.0.0.1:33146",
-							Id:      2,
+							Host: SocketAddress{
+								Port:    33146,
+								Address: "127.0.0.1",
+							},
+							Id: 2,
 						},
 					},
 				},
@@ -135,16 +170,23 @@ func TestWriteConfig(t *testing.T) {
 				actualContent := string(content)
 				expectedContent :=
 					`redpanda:
-  directory: /var/lib/redpanda/data
-  port: 33145
-  kafka_transport_port: 9092
-  ip: 127.0.0.1
-  id: 1
+  data_directory: /var/lib/redpanda/data
+  rpc_server:
+    address: 127.0.0.1
+    port: 33145
+  kafka_api:
+    address: 127.0.0.1
+    port: 9092
+  node_id: 1
   seed_servers:
-  - addr: 127.0.0.1:33145
-    id: 1
-  - addr: 127.0.0.1:33146
-    id: 2
+  - host:
+      address: 127.0.0.1
+      port: 33145
+    node_id: 1
+  - host:
+      address: 127.0.0.1
+      port: 33146
+    node_id: 2
 `
 				if actualContent != expectedContent {
 					return fmt.Errorf("Expected:\n'%s'\n and actual:\n'%s'\n content differs",
@@ -181,19 +223,30 @@ func TestCheckConfig(t *testing.T) {
 			name: "shall return true when config is valid",
 			args: args{
 				config: &Config{
-					Directory:          "/var/lib/redpanda/data",
-					Port:               33145,
-					Ip:                 "127.0.0.1",
-					Id:                 1,
-					KafkaTransportPort: 9092,
+					Directory: "/var/lib/redpanda/data",
+					RPCServer: SocketAddress{
+						Port:    33145,
+						Address: "127.0.0.1",
+					},
+					Id: 1,
+					KafkaApi: SocketAddress{
+						Port:    9092,
+						Address: "127.0.0.1",
+					},
 					SeedServers: []*SeedServer{
 						&SeedServer{
-							Address: "127.0.0.1:33145",
-							Id:      1,
+							Host: SocketAddress{
+								Port:    33145,
+								Address: "127.0.0.1",
+							},
+							Id: 1,
 						},
 						&SeedServer{
-							Address: "127.0.0.1:33146",
-							Id:      2,
+							Host: SocketAddress{
+								Port:    33146,
+								Address: "127.0.0.1",
+							},
+							Id: 1,
 						},
 					},
 				},
@@ -204,17 +257,29 @@ func TestCheckConfig(t *testing.T) {
 			name: "shall return false when config file does not contain data directory setting",
 			args: args{
 				config: &Config{
-					Port: 33145,
-					Ip:   "127.0.0.1",
-					Id:   1,
+					RPCServer: SocketAddress{
+						Port:    33145,
+						Address: "127.0.0.1",
+					},
+					Id: 1,
+					KafkaApi: SocketAddress{
+						Port:    9092,
+						Address: "127.0.0.1",
+					},
 					SeedServers: []*SeedServer{
 						&SeedServer{
-							Address: "127.0.0.1:33145",
-							Id:      1,
+							Host: SocketAddress{
+								Port:    33145,
+								Address: "127.0.0.1",
+							},
+							Id: 1,
 						},
 						&SeedServer{
-							Address: "127.0.0.1:33146",
-							Id:      2,
+							Host: SocketAddress{
+								Port:    33146,
+								Address: "127.0.0.1",
+							},
+							Id: 1,
 						},
 					},
 				},
@@ -225,17 +290,30 @@ func TestCheckConfig(t *testing.T) {
 			name: "shall return false when id of server is negative",
 			args: args{
 				config: &Config{
-					Port: 33145,
-					Ip:   "127.0.0.1",
-					Id:   -1,
+					Directory: "/var/lib/redpanda/data",
+					RPCServer: SocketAddress{
+						Port:    33145,
+						Address: "127.0.0.1",
+					},
+					Id: -1,
+					KafkaApi: SocketAddress{
+						Port:    9092,
+						Address: "127.0.0.1",
+					},
 					SeedServers: []*SeedServer{
 						&SeedServer{
-							Address: "127.0.0.1:33145",
-							Id:      1,
+							Host: SocketAddress{
+								Port:    33145,
+								Address: "127.0.0.1",
+							},
+							Id: 1,
 						},
 						&SeedServer{
-							Address: "127.0.0.1:33146",
-							Id:      2,
+							Host: SocketAddress{
+								Port:    33146,
+								Address: "127.0.0.1",
+							},
+							Id: 1,
 						},
 					},
 				},
