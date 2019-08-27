@@ -36,12 +36,11 @@ private:
     future<> initialize_seed_servers();
     future<> initialize_cfg_lookup();
     future<> recover_existing_logs();
-    future<>
-    raft_cfg_log_process_one(std::unique_ptr<wal_read_reply> r);
+    future<> raft_cfg_log_process_one(std::unique_ptr<wal_read_reply> r);
 
     // request helpers
     bool is_leader(const raft_nstpidx_metadata& n) const {
-        return cfg.id == n.leader_id;
+        return cfg.id() == n.leader_id;
     }
 
 private:

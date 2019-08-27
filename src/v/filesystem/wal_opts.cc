@@ -1,94 +1,23 @@
 #include "filesystem/wal_opts.h"
 
-#include <seastar/core/align.hh>
-
-#include <smf/human_bytes.h>
-
-#include <boost/filesystem.hpp>
-
-#include <iomanip>
-
-wal_opts::wal_opts(
-  sstring log,
-  timer<>::duration flush_period,
-  timer<>::duration retention_period,
-  int64_t retention_size,
-  int32_t max_bytes_in_memory_per_writer,
-  int64_t max_segment_size)
-  : directory(std::move(log))
-  , writer_flush_period(std::move(flush_period))
-  , max_retention_period(std::move(retention_period))
-  , max_retention_size(retention_size)
-  , max_bytes_in_writer_cache(max_bytes_in_memory_per_writer)
-  , max_log_segment_size(
-      align_up(max_segment_size, system_page_size())) {
-}
-
-wal_opts::wal_opts(wal_opts&& o) noexcept
-  : directory(std::move(o.directory))
-  , writer_flush_period(std::move(o.writer_flush_period))
-  , max_retention_period(std::move(o.max_retention_period))
-  , max_retention_size(o.max_retention_size)
-  , max_bytes_in_writer_cache(o.max_bytes_in_writer_cache)
-  , max_log_segment_size(o.max_log_segment_size) {
-}
-
-wal_opts::wal_opts(const wal_opts& o)
-  : directory(o.directory)
-  , writer_flush_period(o.writer_flush_period)
-  , max_retention_period(o.max_retention_period)
-  , max_retention_size(o.max_retention_size)
-  , max_bytes_in_writer_cache(o.max_bytes_in_writer_cache)
-  , max_log_segment_size(o.max_log_segment_size) {
-}
-
-wal_opts::validation_status wal_opts::validate(const wal_opts& o) {
-    if ((o.max_log_segment_size % 4096) != 0) {
-        return validation_status::invalid_log_segment_4096_multiples;
-    }
-    if (o.max_log_segment_size < 10 * 1024 * 1024) {
-        return validation_status::invalid_log_segment_size;
-    }
-    if (o.max_bytes_in_writer_cache > 100 * 1024 * 1024) {
-        return validation_status::invalid_writer_cache_size;
-    }
-    if (
-      std::chrono::duration_cast<std::chrono::hours>(o.max_retention_period)
-        .count()
-      <= 1) {
-        return validation_status::invalid_retention_period;
-    }
-    if (
-      std::chrono::duration_cast<std::chrono::milliseconds>(
-        o.writer_flush_period)
-        .count()
-      <= 1) {
-        return validation_status::invalid_writer_flush_period;
-    }
-    if (o.directory.empty()) {
-        return validation_status::invalid_empty_log_directory;
-    }
-    return validation_status::ok;
-}
-
 std::ostream& operator<<(std::ostream& o, const wal_opts& opts) {
-    o << "wal_opts{directory=" << opts.directory << ", writer_flush_period="
+    o << "wal_opts{directory=" << opts.directory() << ", writer_flush_period="
       << std::chrono::duration_cast<std::chrono::milliseconds>(
-           opts.writer_flush_period)
+           opts.writer_flush_period())
            .count()
       << "ms, max_retention_period="
       << std::chrono::duration_cast<std::chrono::hours>(
-           opts.max_retention_period)
+           opts.max_retention_period())
            .count()
       << "hours, max_retention_size=";
-    if (opts.max_retention_size > 0) {
-        o << smf::human_bytes(opts.max_retention_size);
+    if (opts.max_retention_size() > 0) {
+        o << smf::human_bytes(opts.max_retention_size());
     } else {
-        o << opts.max_retention_size;
+        o << opts.max_retention_size();
     }
     o << ", max_bytes_in_writer_cache="
-      << smf::human_bytes(opts.max_bytes_in_writer_cache)
+      << smf::human_bytes(opts.max_bytes_in_writer_cache())
       << ", max_log_segment_size="
-      << smf::human_bytes(opts.max_log_segment_size) << "}";
+      << smf::human_bytes(opts.max_log_segment_size()) << "}";
     return o;
 }

@@ -10,12 +10,6 @@ rp_test(
 )
 rp_test(
   UNIT_TEST
-  BINARY_NAME wal_opts_validators
-  SOURCES wal_opts_tests.cc
-  LIBRARIES GTest::gtest rpfs
-)
-rp_test(
-  UNIT_TEST
   BINARY_NAME file_size_utils
   SOURCES file_size_utils_test.cc
   LIBRARIES GTest::gtest rpfs

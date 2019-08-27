@@ -1,43 +1,42 @@
 #pragma once
 
-#include "seastarx.h"
-
 #include "filesystem/wal_writer_utils.h"
+#include "redpanda/config/configuration.h"
+#include "seastarx.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/core/timer.hh>
 
+#include <smf/human_bytes.h>
+
 struct wal_opts {
-    explicit wal_opts(
-      sstring log_directory,
-      timer<>::duration flush_period = std::chrono::seconds(10),
-      timer<>::duration max_retention_period = std::chrono::hours(168),
-      int64_t max_retention_size = -1 /*infinite*/,
-      int32_t max_bytes_in_memory_per_writer = 1024 * 1024,
-      int64_t max_log_segment_size = wal_file_size_aligned());
-    wal_opts(wal_opts&& o) noexcept;
-    wal_opts(const wal_opts& o);
+    explicit wal_opts(config::configuration& cfg)
+      : _cfg(cfg){
 
-    /// \brief root dir of the WAL
-    const sstring directory;
-    const timer<>::duration writer_flush_period;
-    const timer<>::duration max_retention_period;
-    const int64_t max_retention_size;
-    const int32_t max_bytes_in_writer_cache;
-    const int64_t max_log_segment_size;
+      };
 
-    enum class validation_status {
-        ok,
-        invalid_empty_log_directory,
-        invalid_log_segment_4096_multiples,
-        invalid_log_segment_size,    // <100MB
-        invalid_writer_cache_size,   //
-        invalid_retention_period,    // must be >1hr
-        invalid_writer_flush_period, // min flush period 2ms
-    };
-    /// \brief validates the wal_opts
-    ///
-    static validation_status validate(const wal_opts&);
+    const sstring& directory() const {
+        return _cfg.get().data_directory();
+    }
+    timer<>::duration writer_flush_period() const {
+        return std::chrono::milliseconds(_cfg.get().writer_flush_period_ms());
+    }
+    timer<>::duration max_retention_period() const {
+        return std::chrono::hours(_cfg.get().max_retention_period_hours());
+    }
+    int64_t max_retention_size() const {
+        return _cfg.get().max_retention_size();
+    }
+    int32_t max_bytes_in_writer_cache() const {
+        return _cfg.get().max_bytes_in_writer_cache();
+    }
+    int64_t max_log_segment_size() const {
+        return align_up(
+          _cfg.get().log_segment_size_bytes(), system_page_size());
+    }
+
+private:
+    config::conf_ref _cfg;
 };
 
 std::ostream& operator<<(std::ostream& o, const wal_opts& opts);

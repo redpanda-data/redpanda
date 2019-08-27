@@ -19,15 +19,14 @@ struct wal_writer_node_opts {
     /// \brief callback that users can opt-in
     /// gets called every time we roll a log segment
     ///
-    using notify_create_log_handle_t
-      = noncopyable_function<future<>(sstring)>;
+    using notify_create_log_handle_t = noncopyable_function<future<>(sstring)>;
 
     /// \brief callback that users can opt-in to listen to
     /// the name of the file being written to and the latest size flushed
     /// to disk. This callback is only triggered *AFTER* flush() succeeds
     ///
-    using notify_size_change_handle_t = noncopyable_function<
-      future<>(sstring, int64_t)>;
+    using notify_size_change_handle_t
+      = noncopyable_function<future<>(sstring, int64_t)>;
 
     SMF_DISALLOW_COPY_AND_ASSIGN(wal_writer_node_opts);
 
@@ -111,7 +110,7 @@ public:
     ~wal_writer_node();
 
     int64_t space_left() const {
-        return _opts.wopts.max_log_segment_size - current_size_;
+        return _opts.wopts.max_log_segment_size() - current_size_;
     }
     int64_t current_offset() const {
         return _opts.epoch + current_size_;

@@ -90,8 +90,8 @@ write_ahead_log::create(wal_create_request r) {
 }
 
 future<> write_ahead_log::index() {
-    LOG_INFO("Cold boot. Indexing directory: `{}`", opts.directory);
-    return wal_cold_boot::filesystem_lcore_index(opts.directory)
+    LOG_INFO("Cold boot. Indexing directory: `{}`", opts.directory());
+    return wal_cold_boot::filesystem_lcore_index(opts.directory())
       .then([this](auto boot) {
           return do_with(std::move(boot), [this](auto& cold_boot) {
               return do_for_each(
@@ -117,7 +117,7 @@ future<> write_ahead_log::index() {
 future<> write_ahead_log::open() {
     LOG_INFO("starting: {}", opts);
     if (engine().cpu_id() == 0) {
-        auto dir = opts.directory;
+        auto dir = opts.directory();
         return dir_utils::create_dir_tree(dir).then([dir] {
             LOG_INFO("Checking `{}` for supported filesystems", dir);
             return syschecks::disk(dir);

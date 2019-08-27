@@ -92,12 +92,13 @@ int main(int args, char** argv, char** env) {
     std::cout.setf(std::ios::unitbuf);
     app_template app;
     distributed<write_ahead_log> w;
-
+    config::configuration cfg;
+    cfg.data_directory(".");
+    cfg.writer_flush_period_ms(2);
     return app.run(args, argv, [&] {
         smf::app_run_log_level(log_level::trace);
         engine().at_exit([&] { return w.stop(); });
-
-        return w.start(wal_opts(".", std::chrono::milliseconds(2)))
+        return w.start(wal_opts(cfg))
           .then([&] { return w.invoke_on_all(&write_ahead_log::open); })
           .then([&] { return w.invoke_on_all(&write_ahead_log::index); })
           .then([&] {
