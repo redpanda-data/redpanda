@@ -20,6 +20,7 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 
 	tunerParams := factory.TunerParams{}
 	var redpandaConfigFile string
+	var outTuneScriptFile string
 	var cpuSet string
 	command := &cobra.Command{
 		Use: "tune <list_of_elements_to_tune>",
@@ -45,7 +46,13 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 			return nil
 		},
 		RunE: func(ccmd *cobra.Command, args []string) error {
-			tunerFactory := factory.NewDirectExecutorTunersFactory(fs)
+			var tunerFactory factory.TunersFactory
+			if outTuneScriptFile != "" {
+				tunerFactory = factory.NewScriptRenderingTunersFactory(
+					fs, outTuneScriptFile)
+			} else {
+				tunerFactory = factory.NewDirectExecutorTunersFactory(fs)
+			}
 			if !tunerParamsEmpty(&tunerParams) && redpandaConfigFile != "" {
 				return errors.New("Use either tuner params or redpanda config file")
 			}
@@ -87,6 +94,9 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 	command.Flags().StringVar(&redpandaConfigFile,
 		"redpanda-cfg", "", "If set, pointed redpanda config file will be used "+
 			"to populate tuner parameters")
+	command.Flags().StringVar(&outTuneScriptFile,
+		"output-script", "", "If set tuners will generate tuning file that "+
+			"can later be used to tune the system")
 	command.AddCommand(newHelpCommand())
 	return command
 }

@@ -65,6 +65,14 @@ func NewDirectExecutorTunersFactory(fs afero.Fs) TunersFactory {
 	return newTunersFactory(fs, irqProcFile, proc, irqDeviceInfo, executor)
 }
 
+func NewScriptRenderingTunersFactory(fs afero.Fs, out string) TunersFactory {
+	irqProcFile := irq.NewProcFile(fs)
+	proc := os.NewProc()
+	irqDeviceInfo := irq.NewDeviceInfo(fs, irqProcFile)
+	executor := executors.NewScriptRenderingExecutor(fs, out)
+	return newTunersFactory(fs, irqProcFile, proc, irqDeviceInfo, executor)
+}
+
 func newTunersFactory(
 	fs afero.Fs,
 	irqProcFile irq.ProcFile,
