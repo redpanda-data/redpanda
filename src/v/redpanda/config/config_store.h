@@ -68,8 +68,8 @@ namespace std {
 template<typename... Types>
 static inline ostream& operator<<(ostream& o, const config::config_store& c) {
     o << "{ ";
-    c.visit_all([&o](const auto& property) { o << property; });
-    o << " }";
+    c.visit_all([&o](const auto& property) { o << property << " "; });
+    o << "}";
     return o;
 }
 } // namespace std
