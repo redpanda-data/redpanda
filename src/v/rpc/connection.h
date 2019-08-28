@@ -15,33 +15,15 @@ public:
     connection(
       boost::intrusive::list<connection>& hook,
       connected_socket f,
-      socket_address a)
-      : addr(std::move(a))
-      , _hook(hook)
-      , _fd(std::move(f))
-      , _in(_fd.input())
-      , _out(_fd.output()) {
-        _hook.get().push_back(*this);
-    }
-    ~connection() {
-        _hook.get().erase(_hook.get().iterator_to(*this));
-    }
+      socket_address a);
+    ~connection();
     connection(const connection&) = delete;
     input_stream<char>& input() {
         return _in;
     }
-    output_stream<char>& output() {
-        return _out;
-    }
-    void shutdown() {
-        try {
-            _fd.shutdown_input();
-            _fd.shutdown_output();
-        } catch (...) {
-            rpclog().debug(
-              "Failed to shutdown conneciton: {}", std::current_exception());
-        }
-    }
+    future<> write(scattered_message<char> msg);
+    void shutdown();
+
     const socket_address addr;
 
 private:
