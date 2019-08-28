@@ -33,6 +33,7 @@ client::client(client_configuration c)
   : cfg(std::move(c))
   , _memory(cfg.max_queued_bytes) {
 }
+
 future<> client::do_connect() {
     // hold invariant of having an always valid dispatch gate
     // and make sure we don't have a live connection already
@@ -48,11 +49,10 @@ future<> client::do_connect() {
         socket_address(sockaddr_in{AF_INET, INADDR_ANY, {0}}),
         transport::TCP)
       .then([this](connected_socket fd) mutable {
-          _fd = std::move(fd);
-          _in = std::move(_fd.input());
-          _out = std::move(_fd.output());
+          _fd = std::make_unique<connected_socket>(std::move(fd));
+          _in = std::move(_fd->input());
+          _out = batched_output_stream(std::move(_fd->output()));
           _correlation_idx = 0;
-          _connected = true;
           // background
           (void)with_gate(_dispatch_gate, [this] {
               return do_reads().then_wrapped([this](future<> f) {
@@ -93,11 +93,11 @@ void client::fail_outstanding_futures() {
     _correlations.clear();
 }
 void client::shutdown() {
-    _connected = false;
     try {
-        if (_in.eof()) {
-            _fd.shutdown_input();
-            _fd.shutdown_output();
+        if (_fd) {
+            _fd->shutdown_input();
+            _fd->shutdown_output();
+            _fd.reset();
         }
     } catch (...) {
         rpclog().debug(
@@ -131,9 +131,11 @@ future<std::unique_ptr<streaming_context>> client::send(netbuf b) {
         // send
         auto view = b.scattered_view();
         view.on_delete([b = std::move(b)] {});
-        return _out.write(std::move(view))
-          .then([this] { return _out.flush(); })
-          .then([fut = std::move(fut)]() mutable { return std::move(fut); });
+        /// background
+        (void)with_gate(_dispatch_gate, [this, v = std::move(view)]() mutable {
+            return _out.write(std::move(v));
+        });
+        return fut;
     });
 }
 
@@ -143,8 +145,7 @@ future<> client::do_reads() {
       [this] {
           return parse_header(_in).then([this](std::optional<header> h) {
               if (!h) {
-                  // likely connection closed
-                  rpclog().info(
+                  rpclog().debug(
                     "could not parse header from server: {}", cfg.server_addr);
                   return make_ready_future<>();
               }
@@ -171,6 +172,15 @@ future<> client::dispatch(header h) {
     _correlations.erase(it);
     pr.set_value(std::move(ctx));
     return fut;
+}
+
+client::~client() {
+    if (is_valid()) {
+        rpclog().error(
+          "connection '{}' is still valid. must call stop() before destroying",
+          cfg.server_addr);
+        std::terminate();
+    }
 }
 
 } // namespace rpc
