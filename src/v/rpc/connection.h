@@ -1,6 +1,7 @@
 #pragma once
 
 #include "rpc/batched_output_stream.h"
+#include "rpc/server_probe.h"
 
 #include <seastar/core/iostream.hh>
 #include <seastar/net/api.hh>
@@ -15,7 +16,8 @@ public:
     connection(
       boost::intrusive::list<connection>& hook,
       connected_socket f,
-      socket_address a);
+      socket_address a,
+      server_probe& p);
     ~connection();
     connection(const connection&) = delete;
     input_stream<char>& input() {
@@ -31,5 +33,6 @@ private:
     connected_socket _fd;
     input_stream<char> _in;
     batched_output_stream _out;
+    server_probe& _probe;
 };
 } // namespace rpc

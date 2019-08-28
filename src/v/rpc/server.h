@@ -51,6 +51,7 @@ private:
     abort_source _as;
     gate _conn_gate;
     hdr_hist _hist;
+    server_probe _probe;
 };
 
 } // namespace rpc

@@ -15,7 +15,7 @@ struct server_context_impl final : streaming_context {
     future<semaphore_units<>> reserve_memory(size_t ask) final {
         auto fut = get_units(_s.get()._memory, ask);
         if (_s.get()._memory.waiters()) {
-            //_s._probe.waiting_for_available_memory();
+            _s.get()._probe.waiting_for_available_memory();
         }
         return fut;
     }
@@ -34,8 +34,10 @@ server::server(server_configuration c)
   : cfg(std::move(c))
   , _memory(cfg.max_service_memory_per_core) {
 }
+
 server::~server() {
 }
+
 void server::start() {
     for (auto addr : cfg.addrs) {
         server_socket ss;
@@ -70,7 +72,8 @@ future<> server::accept(server_socket& s) {
               auto conn = make_lw_shared<connection>(
                 _connections,
                 std::move(ar.connection),
-                std::move(ar.remote_address));
+                std::move(ar.remote_address),
+                _probe);
               (void)with_gate(_conn_gate, [this, conn]() mutable {
                   return continous_method_dispath(conn).then_wrapped(
                     [conn](future<>&& f) {
@@ -99,6 +102,7 @@ future<> server::continous_method_dispath(lw_shared_ptr<connection> conn) {
                 if (!h) {
                     rpclog().debug(
                       "could not parse header from client: {}", conn->addr);
+                    _probe.header_corrupted();
                     return make_ready_future<>();
                 }
                 return dispatch_method_once(std::move(h.value()), conn);
@@ -109,6 +113,7 @@ future<> server::continous_method_dispath(lw_shared_ptr<connection> conn) {
 future<>
 server::dispatch_method_once(header h, lw_shared_ptr<connection> conn) {
     const auto method_id = h.meta;
+    constexpr size_t header_size = sizeof(header);
     auto ctx = make_lw_shared<server_context_impl>(*this, std::move(h));
     auto it = std::find_if(
       _services.begin(),
@@ -117,11 +122,13 @@ server::dispatch_method_once(header h, lw_shared_ptr<connection> conn) {
           return srvc->method_from_id(method_id) != nullptr;
       });
     if (__builtin_expect(it == _services.end(), false)) {
+        _probe.method_not_found();
         throw std::runtime_error(
           fmt::format("received invalid rpc request: {}", h));
     }
     auto fut = ctx->pr.get_future();
     method* m = it->get()->method_from_id(method_id);
+    _probe.add_bytes_recieved(header_size + h.size);
     // background!
     (void)(*m)(conn->input(), *ctx)
       .then([ctx, conn, m = _hist.auto_measure()](netbuf n) mutable {
@@ -130,7 +137,7 @@ server::dispatch_method_once(header h, lw_shared_ptr<connection> conn) {
           view.on_delete([n = std::move(n)] {});
           return conn->write(std::move(view)).finally([m = std::move(m)] {});
       })
-      .finally([conn] {});
+      .finally([& p = _probe, conn] { p.request_completed(); });
     return fut;
 }
 future<> server::stop() {
@@ -139,6 +146,7 @@ future<> server::stop() {
     for (auto&& l : _listeners) {
         l.abort_accept();
     }
+    rpclog().debug("Service probes {}", _probe);
     rpclog().info("Shutting down {} connections", _connections.size());
     _as.request_abort();
     // dispatch the gate first, wait for all connections to drain
