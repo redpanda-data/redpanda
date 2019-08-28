@@ -73,11 +73,13 @@ future<> server::accept(server_socket& s) {
                 std::move(ar.remote_address));
               (void)with_gate(_conn_gate, [this, conn]() mutable {
                   return continous_method_dispath(conn).then_wrapped(
-                    [](future<>&& f) {
+                    [conn](future<>&& f) {
+                        rpclog().debug("closing client: {}", conn->addr);
+                        conn->shutdown();
                         try {
                             f.get();
                         } catch (...) {
-                            rpclog().info(
+                            rpclog().error(
                               "Error dispatching method: {}",
                               std::current_exception());
                         }
@@ -95,8 +97,7 @@ future<> server::continous_method_dispath(lw_shared_ptr<connection> conn) {
           return parse_header(conn->input())
             .then([this, conn](std::optional<header> h) {
                 if (!h) {
-                    // likely connection closed
-                    rpclog().info(
+                    rpclog().debug(
                       "could not parse header from client: {}", conn->addr);
                     return make_ready_future<>();
                 }
@@ -123,27 +124,28 @@ server::dispatch_method_once(header h, lw_shared_ptr<connection> conn) {
     method* m = it->get()->method_from_id(method_id);
     // background!
     (void)(*m)(conn->input(), *ctx)
-      .then([ctx, conn](netbuf n) mutable {
+      .then([ctx, conn, m = _hist.auto_measure()](netbuf n) mutable {
           n.set_correlation_id(ctx->get_header().correlation_id);
           auto view = n.scattered_view();
           view.on_delete([n = std::move(n)] {});
-          return conn->output().write(std::move(view)).then([conn]() mutable {
-              return conn->output().flush();
-          });
+          return conn->write(std::move(view)).finally([m = std::move(m)] {});
       })
       .finally([conn] {});
     return fut;
 }
 future<> server::stop() {
+    rpclog().info("service latencies: {}", _hist);
     rpclog().info("Stopping {} listeners", _listeners.size());
     for (auto&& l : _listeners) {
         l.abort_accept();
     }
     rpclog().info("Shutting down {} connections", _connections.size());
     _as.request_abort();
-    for (auto& conn : _connections) {
-        conn.shutdown();
-    }
-    return _conn_gate.close();
+    // dispatch the gate first, wait for all connections to drain
+    return _conn_gate.close().then([this] {
+        for (auto& c : _connections) {
+            c.shutdown();
+        }
+    });
 }
 } // namespace rpc
