@@ -63,7 +63,13 @@ configuration::configuration()
       "use_scheduling_groups",
       "Manage CPU scheduling",
       required::no,
-      false) {
+      false)
+  , admin(
+      *this,
+      "admin",
+      "Address and port of admin server",
+      required::no,
+      socket_address(inet_addr("127.0.0.1"), 9644)) {
 }
 
 void configuration::read_yaml(const YAML::Node& root_node) {
