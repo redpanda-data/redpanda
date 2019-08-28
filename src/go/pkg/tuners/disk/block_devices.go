@@ -1,6 +1,7 @@
 package disk
 
 import (
+	"fmt"
 	"path"
 	"regexp"
 	"runtime"
@@ -60,6 +61,9 @@ func (b *blockDevices) GetDirectoriesDevices(
 ) (map[string][]string, error) {
 	dirDevices := make(map[string][]string)
 	for _, directory := range directories {
+		if !utils.FileExists(b.fs, directory) {
+			return nil, fmt.Errorf("Directory '%s' does not exists", directory)
+		}
 		devices, err := b.GetDirectoryDevices(directory)
 		if err != nil {
 			return nil, err

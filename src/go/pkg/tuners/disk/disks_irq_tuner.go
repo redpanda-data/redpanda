@@ -2,6 +2,7 @@ package disk
 
 import (
 	"vectorized/pkg/tuners"
+	"vectorized/pkg/tuners/executors"
 	"vectorized/pkg/tuners/irq"
 
 	log "github.com/sirupsen/logrus"
@@ -20,6 +21,7 @@ type disksIRQsTuner struct {
 	directories       []string
 	devices           []string
 	numberOfCpus      int
+	executor          executors.Executor
 }
 
 func NewDiskIRQTuner(
@@ -34,6 +36,7 @@ func NewDiskIRQTuner(
 	irqProcFile irq.ProcFile,
 	blockDevices BlockDevices,
 	numberOfCpus int,
+	executor executors.Executor,
 ) tuners.Tunable {
 	log.Debugf("Creating disk IRQs tuner with mode '%s', cpu mask '%s', directories '%s' and devices '%s'",
 		mode, cpuMask, dirs, devices)
@@ -50,6 +53,7 @@ func NewDiskIRQTuner(
 		directories:       dirs,
 		devices:           devices,
 		numberOfCpus:      numberOfCpus,
+		executor:          executor,
 	}
 }
 
@@ -83,7 +87,8 @@ func (tuner *disksIRQsTuner) Tune() tuners.TuneResult {
 		tuner.fs,
 		allDevices,
 		tuner.blockDevices,
-		tuner.irqBalanceService)
+		tuner.irqBalanceService,
+		tuner.executor)
 
 	if result := balanceServiceTuner.Tune(); result.IsFailed() {
 		return result
@@ -95,6 +100,7 @@ func (tuner *disksIRQsTuner) Tune() tuners.TuneResult {
 		tuner.mode,
 		tuner.blockDevices,
 		tuner.cpuMasks,
+		tuner.executor,
 	)
 	return affinityTuner.Tune()
 }
@@ -104,6 +110,7 @@ func NewDiskIRQsBalanceServiceTuner(
 	devices []string,
 	blockDevices BlockDevices,
 	balanceService irq.BalanceService,
+	executor executors.Executor,
 ) tuners.Tunable {
 	return tuners.NewCheckedTunable(
 		NewDisksIRQAffinityStaticChecker(fs, devices, blockDevices, balanceService),
@@ -125,6 +132,7 @@ func NewDiskIRQsBalanceServiceTuner(
 		func() (bool, string) {
 			return true, ""
 		},
+		executor.IsLazy(),
 	)
 }
 
@@ -135,6 +143,7 @@ func NewDiskIRQsAffinityTuner(
 	mode irq.Mode,
 	blockDevices BlockDevices,
 	cpuMasks irq.CpuMasks,
+	executor executors.Executor,
 ) tuners.Tunable {
 	return tuners.NewCheckedTunable(
 		NewDisksIRQAffinityChecker(fs, devices, cpuMask, mode, blockDevices, cpuMasks),
@@ -161,6 +170,7 @@ func NewDiskIRQsAffinityTuner(
 			}
 			return true, ""
 		},
+		executor.IsLazy(),
 	)
 }
 

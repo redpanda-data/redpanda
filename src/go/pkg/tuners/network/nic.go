@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"vectorized/pkg/tuners/ethtool"
 	"vectorized/pkg/tuners/irq"
 	"vectorized/pkg/utils"
 
@@ -48,7 +49,7 @@ type nic struct {
 	fs            afero.Fs
 	irqProcFile   irq.ProcFile
 	irqDeviceInfo irq.DeviceInfo
-	ethtool       EthtoolWrapper
+	ethtool       ethtool.EthtoolWrapper
 	name          string
 }
 
@@ -56,7 +57,7 @@ func NewNic(
 	fs afero.Fs,
 	irqProcFile irq.ProcFile,
 	irqDeviceInfo irq.DeviceInfo,
-	ethtool EthtoolWrapper,
+	ethtool ethtool.EthtoolWrapper,
 	name string,
 ) Nic {
 	return &nic{

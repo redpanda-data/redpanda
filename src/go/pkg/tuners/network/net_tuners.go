@@ -4,10 +4,11 @@ import (
 	"fmt"
 	"vectorized/pkg/checkers"
 	"vectorized/pkg/tuners"
+	"vectorized/pkg/tuners/ethtool"
+	"vectorized/pkg/tuners/executors"
+	"vectorized/pkg/tuners/executors/commands"
 	"vectorized/pkg/tuners/irq"
 
-	"github.com/lorenzosaino/go-sysctl"
-	"github.com/safchain/ethtool"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 )
@@ -21,10 +22,11 @@ func NewNetTuner(
 	cpuMasks irq.CpuMasks,
 	irqBalanceService irq.BalanceService,
 	irqProcFile irq.ProcFile,
-	ethtool *ethtool.Ethtool,
+	ethtool ethtool.EthtoolWrapper,
+	executor executors.Executor,
 ) tuners.Tunable {
 	factory := NewNetTunersFactory(
-		fs, irqProcFile, irqDeviceInfo, ethtool, irqBalanceService, cpuMasks)
+		fs, irqProcFile, irqDeviceInfo, ethtool, irqBalanceService, cpuMasks, executor)
 	return tuners.NewAggregatedTunable(
 		[]tuners.Tunable{
 			factory.NewNICsBalanceServiceTuner(interfaces),
@@ -56,19 +58,21 @@ type netTunersFactory struct {
 	fs              afero.Fs
 	irqProcFile     irq.ProcFile
 	irqDeviceInfo   irq.DeviceInfo
-	ethtool         *ethtool.Ethtool
+	ethtool         ethtool.EthtoolWrapper
 	balanceService  irq.BalanceService
 	cpuMasks        irq.CpuMasks
 	checkersFactory NetCheckersFactory
+	executor        executors.Executor
 }
 
 func NewNetTunersFactory(
 	fs afero.Fs,
 	irqProcFile irq.ProcFile,
 	irqDeviceInfo irq.DeviceInfo,
-	ethtool *ethtool.Ethtool,
+	ethtool ethtool.EthtoolWrapper,
 	balanceService irq.BalanceService,
 	cpuMasks irq.CpuMasks,
+	executor executors.Executor,
 ) NetTunersFactory {
 	return &netTunersFactory{
 		fs:             fs,
@@ -77,6 +81,7 @@ func NewNetTunersFactory(
 		ethtool:        ethtool,
 		balanceService: balanceService,
 		cpuMasks:       cpuMasks,
+		executor:       executor,
 		checkersFactory: NewNetCheckersFactory(
 			fs, irqProcFile, irqDeviceInfo, ethtool, balanceService, cpuMasks),
 	}
@@ -107,6 +112,7 @@ func (f *netTunersFactory) NewNICsBalanceServiceTuner(
 		func() (bool, string) {
 			return true, ""
 		},
+		f.executor.IsLazy(),
 	)
 }
 
@@ -188,7 +194,7 @@ func (f *netTunersFactory) NewNICsRfsTuner(interfaces []string) tuners.Tunable {
 			}
 			queueLimit := oneRPSQueueLimit(limits)
 			for _, limitFile := range limits {
-				err := writeIntToFile(f.fs, limitFile, queueLimit)
+				err := f.writeIntToFile(limitFile, queueLimit)
 				if err != nil {
 					return tuners.NewTuneError(err)
 				}
@@ -212,7 +218,8 @@ func (f *netTunersFactory) NewNICsNTupleTuner(
 		func(nic Nic) tuners.TuneResult {
 			log.Debugf("Tuning '%s' NTuple", nic.Name())
 			ntupleFeature := map[string]bool{"ntuple": true}
-			err := f.ethtool.Change(nic.Name(), ntupleFeature)
+			err := f.executor.Execute(
+				commands.NewEthtoolChangeCmd(f.ethtool, nic.Name(), ntupleFeature))
 			if err != nil {
 				return tuners.NewTuneError(err)
 			}
@@ -259,7 +266,9 @@ func (f *netTunersFactory) NewRfsTableSizeTuner() tuners.Tunable {
 		f.checkersFactory.NewRfsTableSizeChecker(),
 		func() tuners.TuneResult {
 			log.Debug("Tuning RFS table size")
-			err := sysctl.Set(rfsTableSizeProperty, fmt.Sprint(rfsTableSize))
+			err := f.executor.Execute(
+				commands.NewSysctlSetCmd(
+					rfsTableSizeProperty, fmt.Sprint(rfsTableSize)))
 			if err != nil {
 				return tuners.NewTuneError(err)
 			}
@@ -268,6 +277,7 @@ func (f *netTunersFactory) NewRfsTableSizeTuner() tuners.Tunable {
 		func() (bool, string) {
 			return true, ""
 		},
+		f.executor.IsLazy(),
 	)
 }
 
@@ -276,7 +286,7 @@ func (f *netTunersFactory) NewListenBacklogTuner() tuners.Tunable {
 		f.checkersFactory.NewListenBacklogChecker(),
 		func() tuners.TuneResult {
 			log.Debug("Tuning connections listen backlog size")
-			err := writeIntToFile(f.fs, listenBacklogFile, listenBacklogSize)
+			err := f.writeIntToFile(listenBacklogFile, listenBacklogSize)
 			if err != nil {
 				return tuners.NewTuneError(err)
 			}
@@ -285,6 +295,7 @@ func (f *netTunersFactory) NewListenBacklogTuner() tuners.Tunable {
 		func() (bool, string) {
 			return true, ""
 		},
+		f.executor.IsLazy(),
 	)
 }
 
@@ -293,7 +304,7 @@ func (f *netTunersFactory) NewSynBacklogTuner() tuners.Tunable {
 		f.checkersFactory.NewSynBacklogChecker(),
 		func() tuners.TuneResult {
 			log.Debug("Tuning SYN backlog size")
-			err := writeIntToFile(f.fs, synBacklogFile, synBacklogSize)
+			err := f.writeIntToFile(synBacklogFile, synBacklogSize)
 			if err != nil {
 				return tuners.NewTuneError(err)
 			}
@@ -302,13 +313,13 @@ func (f *netTunersFactory) NewSynBacklogTuner() tuners.Tunable {
 		func() (bool, string) {
 			return true, ""
 		},
+		f.executor.IsLazy(),
 	)
 }
 
-func writeIntToFile(fs afero.Fs, file string, value int) error {
-	return afero.WriteFile(fs, file,
-		[]byte(fmt.Sprintln(value)),
-		0644)
+func (f *netTunersFactory) writeIntToFile(file string, value int) error {
+	return f.executor.Execute(
+		commands.NewWriteFileCmd(f.fs, file, fmt.Sprint(value)))
 }
 
 func (f *netTunersFactory) tuneNonVirtualInterfaces(
@@ -331,6 +342,7 @@ func (f *netTunersFactory) tuneNonVirtualInterfaces(
 				return tuneInterface(nic, tuneAction)
 			},
 			supportedAction,
+			f.executor.IsLazy(),
 		))
 	}
 	return tuners.NewAggregatedTunable(tunables)

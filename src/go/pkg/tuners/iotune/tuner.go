@@ -23,7 +23,8 @@ func NewIoTuneTuner(
 		},
 		func() (bool, string) {
 			return checkIfIoTuneIsSupported(fs)
-		})
+		},
+		false)
 }
 
 func checkIfIoTuneIsSupported(fs afero.Fs) (bool, string) {

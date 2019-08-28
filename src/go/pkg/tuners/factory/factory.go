@@ -5,17 +5,31 @@ import (
 	"vectorized/pkg/net"
 	"vectorized/pkg/os"
 	"vectorized/pkg/redpanda"
+	"vectorized/pkg/system"
 	"vectorized/pkg/tuners"
 	"vectorized/pkg/tuners/cpu"
 	"vectorized/pkg/tuners/disk"
+	"vectorized/pkg/tuners/ethtool"
+	"vectorized/pkg/tuners/executors"
 	"vectorized/pkg/tuners/hwloc"
 	"vectorized/pkg/tuners/irq"
 	"vectorized/pkg/tuners/network"
 	"vectorized/pkg/tuners/sys"
 
-	"github.com/safchain/ethtool"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
+)
+
+var (
+	allTuners = map[string]func(*tunersFactory, *TunerParams) tuners.Tunable{
+		"disk_irq":       (*tunersFactory).newDiskIRQTuner,
+		"disk_scheduler": (*tunersFactory).newDiskSchedulerTuner,
+		"disk_nomerges":  (*tunersFactory).newDiskNomergesTuner,
+		"net":            (*tunersFactory).newNetworkTuner,
+		"cpu":            (*tunersFactory).newCpuTuner,
+		"aio_events":     (*tunersFactory).newMaxAIOEventsTuner,
+		"clocksource":    (*tunersFactory).newClockSourceTuner,
+	}
 )
 
 type TunerParams struct {
@@ -29,8 +43,6 @@ type TunerParams struct {
 
 type TunersFactory interface {
 	CreateTuner(tunerType string, params *TunerParams) tuners.Tunable
-	AvailableTuners() []string
-	IsTunerAvailable(tuner string) bool
 }
 
 type tunersFactory struct {
@@ -41,45 +53,57 @@ type tunersFactory struct {
 	irqProcFile       irq.ProcFile
 	blockDevices      disk.BlockDevices
 	proc              os.Proc
-	grub              os.Grub
-	tuners            map[string]func(*tunersFactory, *TunerParams) tuners.Tunable
+	grub              system.Grub
+	executor          executors.Executor
 }
 
-func NewTunersFactory(fs afero.Fs) TunersFactory {
+func NewDirectExecutorTunersFactory(fs afero.Fs) TunersFactory {
 	irqProcFile := irq.NewProcFile(fs)
 	proc := os.NewProc()
 	irqDeviceInfo := irq.NewDeviceInfo(fs, irqProcFile)
+	executor := executors.NewDirectExecutor()
+	return newTunersFactory(fs, irqProcFile, proc, irqDeviceInfo, executor)
+}
+
+func NewScriptRenderingTunersFactory(fs afero.Fs, out string) TunersFactory {
+	irqProcFile := irq.NewProcFile(fs)
+	proc := os.NewProc()
+	irqDeviceInfo := irq.NewDeviceInfo(fs, irqProcFile)
+	executor := executors.NewScriptRenderingExecutor(fs, out)
+	return newTunersFactory(fs, irqProcFile, proc, irqDeviceInfo, executor)
+}
+
+func newTunersFactory(
+	fs afero.Fs,
+	irqProcFile irq.ProcFile,
+	proc os.Proc,
+	irqDeviceInfo irq.DeviceInfo,
+	executor executors.Executor,
+) TunersFactory {
+
 	return &tunersFactory{
-		tuners: map[string]func(*tunersFactory, *TunerParams) tuners.Tunable{
-			"disk_irq":       (*tunersFactory).newDiskIRQTuner,
-			"disk_scheduler": (*tunersFactory).newDiskSchedulerTuner,
-			"disk_nomerges":  (*tunersFactory).newDiskNomergesTuner,
-			"net":            (*tunersFactory).newNetworkTuner,
-			"cpu":            (*tunersFactory).newCpuTuner,
-			"aio_events":     (*tunersFactory).newMaxAIOEventsTuner,
-			"clocksource":    (*tunersFactory).newClockSourceTuner,
-		},
 		fs:                fs,
 		irqProcFile:       irqProcFile,
 		irqDeviceInfo:     irqDeviceInfo,
-		cpuMasks:          irq.NewCpuMasks(fs, hwloc.NewHwLocCmd(proc)),
-		irqBalanceService: irq.NewBalanceService(fs, proc),
+		cpuMasks:          irq.NewCpuMasks(fs, hwloc.NewHwLocCmd(proc), executor),
+		irqBalanceService: irq.NewBalanceService(fs, proc, executor),
 		blockDevices:      disk.NewBlockDevices(fs, irqDeviceInfo, irqProcFile, proc),
-		grub:              os.NewGrub(os.NewCommands(proc), proc, fs),
+		grub:              system.NewGrub(os.NewCommands(proc), proc, fs, executor),
 		proc:              proc,
+		executor:          executor,
 	}
 }
 
-func (factory *tunersFactory) AvailableTuners() []string {
+func AvailableTuners() []string {
 	var keys []string
-	for key := range factory.tuners {
+	for key := range allTuners {
 		keys = append(keys, key)
 	}
 	return keys
 }
 
-func (factory *tunersFactory) IsTunerAvailable(tuner string) bool {
-	if factory.tuners[tuner] != nil {
+func IsTunerAvailable(tuner string) bool {
+	if allTuners[tuner] != nil {
 		return true
 	}
 	return false
@@ -88,7 +112,7 @@ func (factory *tunersFactory) IsTunerAvailable(tuner string) bool {
 func (factory *tunersFactory) CreateTuner(
 	tunerName string, tunerParams *TunerParams,
 ) tuners.Tunable {
-	return factory.tuners[tunerName](factory, tunerParams)
+	return allTuners[tunerName](factory, tunerParams)
 }
 
 func (factory *tunersFactory) newDiskIRQTuner(
@@ -107,6 +131,7 @@ func (factory *tunersFactory) newDiskIRQTuner(
 		factory.irqProcFile,
 		factory.blockDevices,
 		runtime.NumCPU(),
+		factory.executor,
 	)
 }
 
@@ -118,6 +143,7 @@ func (factory *tunersFactory) newDiskSchedulerTuner(
 		params.Directories,
 		params.Disks,
 		factory.blockDevices,
+		factory.executor,
 	)
 }
 
@@ -129,13 +155,14 @@ func (factory *tunersFactory) newDiskNomergesTuner(
 		params.Directories,
 		params.Disks,
 		factory.blockDevices,
+		factory.executor,
 	)
 }
 
 func (factory *tunersFactory) newNetworkTuner(
 	params *TunerParams,
 ) tuners.Tunable {
-	ethtool, err := ethtool.NewEthtool()
+	ethtool, err := ethtool.NewEthtoolWrapper()
 	if err != nil {
 		panic(err)
 	}
@@ -149,6 +176,7 @@ func (factory *tunersFactory) newNetworkTuner(
 		factory.irqBalanceService,
 		factory.irqProcFile,
 		ethtool,
+		factory.executor,
 	)
 }
 
@@ -158,19 +186,20 @@ func (factory *tunersFactory) newCpuTuner(params *TunerParams) tuners.Tunable {
 		factory.grub,
 		factory.fs,
 		params.RebootAllowed,
+		factory.executor,
 	)
 }
 
 func (factory *tunersFactory) newMaxAIOEventsTuner(
 	params *TunerParams,
 ) tuners.Tunable {
-	return sys.NewMaxAIOEventsTuner(factory.fs)
+	return sys.NewMaxAIOEventsTuner(factory.fs, factory.executor)
 }
 
 func (factory *tunersFactory) newClockSourceTuner(
 	params *TunerParams,
 ) tuners.Tunable {
-	return sys.NewClockSourceTuner(factory.fs)
+	return sys.NewClockSourceTuner(factory.fs, factory.executor)
 }
 
 func FillTunerParamsWithValuesFromConfig(

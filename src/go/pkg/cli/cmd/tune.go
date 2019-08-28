@@ -17,14 +17,15 @@ import (
 )
 
 func NewTuneCommand(fs afero.Fs) *cobra.Command {
-	tunerFactory := factory.NewTunersFactory(fs)
+
 	tunerParams := factory.TunerParams{}
 	var redpandaConfigFile string
+	var outTuneScriptFile string
 	var cpuSet string
 	command := &cobra.Command{
 		Use: "tune <list_of_elements_to_tune>",
 		Short: `Sets the OS parameters to tune system performance
-		available tuners: all, ` + fmt.Sprintf("%#q", tunerFactory.AvailableTuners()),
+		available tuners: all, ` + fmt.Sprintf("%#q", factory.AvailableTuners()),
 		Long: "In order to get more information about the tuner run: " +
 			"rpk tune <tuner_name> --help",
 		Args: func(cmd *cobra.Command, args []string) error {
@@ -36,21 +37,28 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 			}
 
 			for _, toTune := range strings.Split(args[0], ",") {
-				if !tunerFactory.IsTunerAvailable(toTune) {
+				if !factory.IsTunerAvailable(toTune) {
 					return fmt.Errorf("invalid element to tune '%s' "+
 						"only %s are supported",
-						args[0], tunerFactory.AvailableTuners())
+						args[0], factory.AvailableTuners())
 				}
 			}
 			return nil
 		},
 		RunE: func(ccmd *cobra.Command, args []string) error {
+			var tunerFactory factory.TunersFactory
+			if outTuneScriptFile != "" {
+				tunerFactory = factory.NewScriptRenderingTunersFactory(
+					fs, outTuneScriptFile)
+			} else {
+				tunerFactory = factory.NewDirectExecutorTunersFactory(fs)
+			}
 			if !tunerParamsEmpty(&tunerParams) && redpandaConfigFile != "" {
 				return errors.New("Use either tuner params or redpanda config file")
 			}
 			var tuners []string
 			if args[0] == "all" {
-				tuners = tunerFactory.AvailableTuners()
+				tuners = factory.AvailableTuners()
 			} else {
 				tuners = strings.Split(args[0], ",")
 			}
@@ -86,6 +94,9 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 	command.Flags().StringVar(&redpandaConfigFile,
 		"redpanda-cfg", "", "If set, pointed redpanda config file will be used "+
 			"to populate tuner parameters")
+	command.Flags().StringVar(&outTuneScriptFile,
+		"output-script", "", "If set tuners will generate tuning file that "+
+			"can later be used to tune the system")
 	command.AddCommand(newHelpCommand())
 	return command
 }

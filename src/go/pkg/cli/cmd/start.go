@@ -126,7 +126,7 @@ func prestart(
 
 func tuneAll(fs afero.Fs, cpuSet string, config *redpanda.Config) error {
 	params := &factory.TunerParams{}
-	tunerFactory := factory.NewTunersFactory(fs)
+	tunerFactory := factory.NewDirectExecutorTunersFactory(fs)
 	hw := hwloc.NewHwLocCmd(os.NewProc())
 	if cpuSet == "" {
 		cpuMask, err := hw.All()
@@ -147,7 +147,7 @@ func tuneAll(fs afero.Fs, cpuSet string, config *redpanda.Config) error {
 		return err
 	}
 
-	for _, tunerName := range tunerFactory.AvailableTuners() {
+	for _, tunerName := range factory.AvailableTuners() {
 		tuner := tunerFactory.CreateTuner(tunerName, params)
 		if supported, reason := tuner.CheckIfSupported(); supported == true {
 			log.Debugf("Tuner paramters %+v", params)

@@ -2,6 +2,7 @@ package irq
 
 import (
 	"testing"
+	"vectorized/pkg/tuners/executors"
 
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
@@ -10,7 +11,7 @@ import (
 func Test_cpuMasks_ReadMask(t *testing.T) {
 	// given
 	fs := afero.NewMemMapFs()
-	cpuMasks := NewCpuMasks(fs, nil)
+	cpuMasks := NewCpuMasks(fs, nil, executors.NewDirectExecutor())
 	setMask := "0xff0,,0x13"
 	afero.WriteFile(fs, "/test/cpu/0/smp_affinity", []byte{0}, 0644)
 	cpuMasks.SetMask("/test/cpu/0/smp_affinity", setMask)

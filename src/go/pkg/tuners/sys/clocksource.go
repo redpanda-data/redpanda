@@ -5,6 +5,8 @@ import (
 	"strings"
 	"vectorized/pkg/checkers"
 	"vectorized/pkg/tuners"
+	"vectorized/pkg/tuners/executors"
+	"vectorized/pkg/tuners/executors/commands"
 
 	"github.com/spf13/afero"
 )
@@ -27,14 +29,15 @@ func NewClockSourceChecker(fs afero.Fs) checkers.Checker {
 	)
 }
 
-func NewClockSourceTuner(fs afero.Fs) tuners.Tunable {
+func NewClockSourceTuner(
+	fs afero.Fs, executor executors.Executor,
+) tuners.Tunable {
 	return tuners.NewCheckedTunable(
 		NewClockSourceChecker(fs),
 		func() tuners.TuneResult {
-			err := afero.WriteFile(fs,
+			err := executor.Execute(commands.NewWriteFileCmd(fs,
 				"/sys/devices/system/clocksource/clocksource0/current_clocksource",
-				[]byte(prefferedClkSource),
-				0644)
+				prefferedClkSource))
 			if err != nil {
 				return tuners.NewTuneError(err)
 			}
@@ -56,5 +59,6 @@ func NewClockSourceTuner(fs afero.Fs) tuners.Tunable {
 			return false, fmt.Sprintf(
 				"Preffered clocksource '%s' not avaialable", prefferedClkSource)
 		},
+		executor.IsLazy(),
 	)
 }

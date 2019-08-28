@@ -1,8 +1,6 @@
-package network
+package ethtool
 
-import (
-	"github.com/safchain/ethtool"
-)
+import "github.com/safchain/ethtool"
 
 type EthtoolWrapper interface {
 	DriverName(string) (string, error)

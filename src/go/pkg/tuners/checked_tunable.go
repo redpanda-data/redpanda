@@ -3,6 +3,7 @@ package tuners
 import (
 	"fmt"
 	"vectorized/pkg/checkers"
+
 	log "github.com/sirupsen/logrus"
 )
 
@@ -10,18 +11,21 @@ func NewCheckedTunable(
 	checker checkers.Checker,
 	tuneAction func() TuneResult,
 	supportedAction func() (supported bool, reason string),
+	disablePostTuneCheck bool,
 ) Tunable {
 	return &checkedTunable{
-		checker:         checker,
-		tuneAction:      tuneAction,
-		supportedAction: supportedAction,
+		checker:              checker,
+		tuneAction:           tuneAction,
+		supportedAction:      supportedAction,
+		disablePostTuneCheck: disablePostTuneCheck,
 	}
 }
 
 type checkedTunable struct {
-	checker         checkers.Checker
-	tuneAction      func() TuneResult
-	supportedAction func() (supported bool, reason string)
+	checker              checkers.Checker
+	tuneAction           func() TuneResult
+	supportedAction      func() (supported bool, reason string)
+	disablePostTuneCheck bool
 }
 
 func (t *checkedTunable) CheckIfSupported() (supported bool, reason string) {
@@ -45,14 +49,15 @@ func (t *checkedTunable) Tune() TuneResult {
 	if tuneResult.GetError() != nil {
 		return NewTuneError(tuneResult.GetError())
 	}
-
-	postTuneResult := t.checker.Check()
-	if !postTuneResult.IsOk {
-		err := fmt.Errorf("System tuning was not succesfull, "+
-			"check '%s' failed, required: '%s', current '%v'",
-			t.checker.GetDesc(),
-			t.checker.GetRequiredAsString(), result.Current)
-		return NewTuneError(err)
+	if !t.disablePostTuneCheck {
+		postTuneResult := t.checker.Check()
+		if !postTuneResult.IsOk {
+			err := fmt.Errorf("System tuning was not succesfull, "+
+				"check '%s' failed, required: '%s', current '%v'",
+				t.checker.GetDesc(),
+				t.checker.GetRequiredAsString(), result.Current)
+			return NewTuneError(err)
+		}
 	}
 	return tuneResult
 }

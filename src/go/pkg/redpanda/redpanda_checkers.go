@@ -7,6 +7,8 @@ import (
 	"vectorized/pkg/system"
 	"vectorized/pkg/system/filesystem"
 	"vectorized/pkg/tuners/disk"
+	"vectorized/pkg/tuners/ethtool"
+	"vectorized/pkg/tuners/executors"
 	"vectorized/pkg/tuners/hwloc"
 	"vectorized/pkg/tuners/irq"
 	"vectorized/pkg/tuners/network"
@@ -151,6 +153,11 @@ func RedpandaCheckers(
 	fs afero.Fs, ioConfigFile string, config *Config,
 ) (map[CheckerID][]checkers.Checker, error) {
 	proc := os.NewProc()
+	ethtool, err := ethtool.NewEthtoolWrapper()
+	if err != nil {
+		return nil, err
+	}
+	executor := executors.NewDirectExecutor()
 	irqProcFile := irq.NewProcFile(fs)
 	irqDeviceInfo := irq.NewDeviceInfo(fs, irqProcFile)
 	blockDevices := disk.NewBlockDevices(fs, irqDeviceInfo, irqProcFile, proc)
@@ -165,8 +172,8 @@ func RedpandaCheckers(
 	if err != nil {
 		return nil, err
 	}
-	balanceService := irq.NewBalanceService(fs, proc)
-	cpuMasks := irq.NewCpuMasks(fs, hwloc.NewHwLocCmd(proc))
+	balanceService := irq.NewBalanceService(fs, proc, executor)
+	cpuMasks := irq.NewCpuMasks(fs, hwloc.NewHwLocCmd(proc), executor)
 	dirIRQAffinityChecker, err := disk.NewDirectoryIRQAffinityChecker(
 		fs, config.Directory, "all", irq.Default, blockDevices, cpuMasks)
 	if err != nil {
@@ -178,10 +185,6 @@ func RedpandaCheckers(
 		return nil, err
 	}
 	interfaces, err := net.GetInterfacesByIps(config.KafkaApi.Address, config.RPCServer.Address)
-	if err != nil {
-		return nil, err
-	}
-	ethtool, err := network.NewEthtoolWrapper()
 	if err != nil {
 		return nil, err
 	}
