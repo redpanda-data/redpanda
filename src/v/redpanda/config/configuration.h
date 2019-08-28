@@ -29,6 +29,7 @@ struct configuration final : public config_store {
     // Kafka
     property<socket_address> kafka_api;
     property<bool> use_scheduling_groups;
+    property<socket_address> admin;
 
     configuration();
 
