@@ -1,8 +1,11 @@
 #include "rpc/server.h"
 
+#include "prometheus/prometheus_sanitize.h"
 #include "rpc/logger.h"
 #include "rpc/parse_utils.h"
 #include "rpc/types.h"
+
+#include <seastar/core/metrics.hh>
 
 #include <fmt/format.h>
 
@@ -33,6 +36,7 @@ struct server_context_impl final : streaming_context {
 server::server(server_configuration c)
   : cfg(std::move(c))
   , _memory(cfg.max_service_memory_per_core) {
+    setup_metrics();
 }
 
 server::~server() {
@@ -141,7 +145,6 @@ server::dispatch_method_once(header h, lw_shared_ptr<connection> conn) {
     return fut;
 }
 future<> server::stop() {
-    rpclog().info("service latencies: {}", _hist);
     rpclog().info("Stopping {} listeners", _listeners.size());
     for (auto&& l : _listeners) {
         l.abort_accept();
@@ -155,5 +158,69 @@ future<> server::stop() {
             c.shutdown();
         }
     });
+}
+void server::setup_metrics() {
+    namespace sm = metrics;
+    _metrics.add_group(
+      prometheus_sanitize::metrics_name("rpc::"),
+      {sm::make_gauge(
+         "services",
+         [this] { return _services.size(); },
+         sm::description("Number of registered services")),
+       sm::make_gauge(
+         "max_service_mem",
+         [this] { return cfg.max_service_memory_per_core; },
+         sm::description("Maximum amount of memory used by service per core")),
+       sm::make_gauge(
+         "consumed_mem",
+         [this] { return cfg.max_service_memory_per_core - _memory.current(); },
+         sm::description("Amount of memory consumed for requests processing")),
+       sm::make_gauge(
+         "active_connections",
+         [this] { return _probe.get_connections(); },
+         sm::description("Currently active connections")),
+       sm::make_gauge(
+         "connects",
+         [this] { return _probe.get_connects(); },
+         sm::description("Number of accepted connections")),
+       sm::make_derive(
+         "connection_close_errors",
+         [this] { return _probe.get_connection_close_errors(); },
+         sm::description("Number of errors when shutting down the connection")),
+       sm::make_derive(
+         "requests_completed",
+         [this] { return _probe.get_requests_completed(); },
+         sm::description("Number of successfully served requests")),
+       sm::make_derive(
+         "received_bytes",
+         [this] { return _probe.get_in_bytes(); },
+         sm::description(
+           "Number of bytes received from the clients in valid requests")),
+       sm::make_derive(
+         "sent_bytes",
+         [this] { return _probe.get_out_bytes(); },
+         sm::description("Number of bytes sent to clients")),
+       sm::make_derive(
+         "method_not_found_errors",
+         [this] { return _probe.get_method_not_found_errors(); },
+         sm::description("Number of requests with not available RPC method")),
+       sm::make_derive(
+         "corrupted_headers",
+         [this] { return _probe.get_corrupted_headers(); },
+         sm::description("Number of requests with corrupted headeres")),
+       sm::make_derive(
+         "bad_requests",
+         [this] { return _probe.get_bad_requests(); },
+         sm::description("Total number of all bad requests")),
+       sm::make_derive(
+         "requests_blocked_memory",
+         [this] { return _probe.get_requests_blocked_memory(); },
+         sm::description(
+           "Number of requests that have to"
+           "wait for processing beacause of insufficient memory")),
+       sm::make_histogram(
+         "dispatch_handler_latency",
+         [this] { return _hist.seastar_histogram_logform(); },
+         sm::description("Latency of service handler dispatch"))});
 }
 } // namespace rpc
