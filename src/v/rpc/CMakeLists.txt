@@ -4,7 +4,10 @@ add_library (rpc STATIC
   netbuf.cc
   server.cc
   client.cc
+  connection.cc
+  batched_output_stream.cc
   )
 target_include_directories(rpc PUBLIC ${PROJECT_SOURCE_DIR}/src/v)
-target_link_libraries(rpc PUBLIC Seastar::seastar bytes rphashing)
+target_link_libraries(rpc PUBLIC Seastar::seastar bytes rphashing utils)
 add_subdirectory(test)
+add_subdirectory(demo)
