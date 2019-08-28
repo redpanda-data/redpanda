@@ -13,7 +13,7 @@
 #include <memory>
 #include <utility>
 
-namespace internal {
+namespace hist_internal {
 struct hdr_histogram_c_deleter {
     void operator()(void* ptr) {
         ::hdr_histogram* h = reinterpret_cast<hdr_histogram*>(ptr);
@@ -30,7 +30,7 @@ inline hdr_histogram_ptr make_unique_hdr_histogram(
     ::hdr_init(min, max_value, significant_figures, &hist);
     return hdr_histogram_ptr(hist);
 }
-} // namespace internal
+} // namespace hist_internal
 
 // VERY Expensive object. At default granularity is about 185KB
 class hdr_hist {
@@ -86,7 +86,7 @@ public:
       int64_t max_value = 3600000000,
       int64_t min = 1,
       int32_t significant_figures = 3)
-      : _hist(internal::make_unique_hdr_histogram(
+      : _hist(hist_internal::make_unique_hdr_histogram(
         max_value, min, significant_figures)) {
     }
 
@@ -115,7 +115,7 @@ private:
     friend measurement;
 
     boost::intrusive::list<measurement> _probes;
-    internal::hdr_histogram_ptr _hist;
+    hist_internal::hdr_histogram_ptr _hist;
     uint64_t _sample_count{0};
     uint64_t _sample_sum{0};
 };

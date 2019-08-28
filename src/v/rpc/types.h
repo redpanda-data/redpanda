@@ -22,6 +22,8 @@ class netbuf;
 
 using clock_type = lowres_clock;
 using duration_type = typename clock_type::duration;
+using timer_type = timer<clock_type>;
+
 
 struct negotiation_frame {
     int8_t version = 0;

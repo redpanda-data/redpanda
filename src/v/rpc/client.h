@@ -3,6 +3,7 @@
 #include "rpc/netbuf.h"
 #include "rpc/parse_utils.h"
 #include "rpc/types.h"
+#include "rpc/batched_output_stream.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/iostream.hh>
@@ -21,12 +22,12 @@ public:
     using promise_t = promise<std::unique_ptr<streaming_context>>;
     explicit client(client_configuration c);
     client(client&&) noexcept = default;
-    virtual ~client() noexcept = default;
+    virtual ~client();
     future<> connect();
     future<> stop();
     void shutdown();
     [[gnu::always_inline]] bool is_valid() {
-        return _connected && !_in.eof();
+        return _fd && !_in.eof();
     }
     virtual future<std::unique_ptr<streaming_context>> send(netbuf);
 
@@ -45,11 +46,10 @@ private:
 
     semaphore _memory;
     std::unordered_map<uint32_t, promise_t> _correlations;
-    connected_socket _fd;
+    std::unique_ptr<connected_socket> _fd;
     input_stream<char> _in;
-    output_stream<char> _out;
+    batched_output_stream _out;
     gate _dispatch_gate;
-    bool _connected = false;
     uint32_t _correlation_idx{0};
 };
 
