@@ -1,6 +1,6 @@
 #pragma once
 
-#include "rpc/logger.h"
+#include "rpc/batched_output_stream.h"
 
 #include <seastar/core/iostream.hh>
 #include <seastar/net/api.hh>
@@ -30,6 +30,6 @@ private:
     std::reference_wrapper<boost::intrusive::list<connection>> _hook;
     connected_socket _fd;
     input_stream<char> _in;
-    output_stream<char> _out;
+    batched_output_stream _out;
 };
 } // namespace rpc
