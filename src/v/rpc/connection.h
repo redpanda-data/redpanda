@@ -23,13 +23,6 @@ public:
       , _out(_fd.output()) {
         _hook.get().push_back(*this);
     }
-    connection(connection&& o) noexcept
-      : addr(std::move(o.addr))
-      , _hook(std::move(o._hook))
-      , _fd(std::move(o._fd))
-      , _in(std::move(o._in))
-      , _out(std::move(o._out)) {
-    }
     ~connection() {
         _hook.get().erase(_hook.get().iterator_to(*this));
     }
