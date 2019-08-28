@@ -29,7 +29,6 @@ logger lgr{"redpanda::main"};
 #include "raft/raft_log_service.h"
 #include "redpanda/config/configuration.h"
 
-using namespace std::chrono_literals;
 
 class stop_signal {
     void signaled() {
