@@ -4,6 +4,7 @@
 #include "rpc/netbuf.h"
 #include "rpc/service.h"
 #include "rpc/types.h"
+#include "utils/hdr_hist.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
@@ -49,6 +50,7 @@ private:
     boost::intrusive::list<connection> _connections;
     abort_source _as;
     gate _conn_gate;
+    hdr_hist _hist;
 };
 
 } // namespace rpc
