@@ -24,3 +24,7 @@ redpanda:
         address: "127.0.0.1"
         port: 33145
       node_id: 1
+
+  admin:
+    address: "127.0.0.1"
+    port: 9644

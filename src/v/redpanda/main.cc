@@ -4,6 +4,7 @@
 #include "redpanda/kafka/transport/probe.h"
 #include "redpanda/kafka/transport/server.h"
 #include "redpanda/rpc_config.h"
+#include "resource_mgmt/cpu_scheduling.h"
 #include "syschecks/syschecks.h"
 
 #include <seastar/core/app-template.hh>
@@ -13,6 +14,7 @@
 #include <seastar/core/reactor.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/thread.hh>
+#include <seastar/http/httpd.hh>
 #include <seastar/net/socket_defs.hh>
 #include <seastar/util/defer.hh>
 
@@ -27,7 +29,6 @@ logger lgr{"redpanda::main"};
 #include "raft/raft_log_service.h"
 #include "redpanda/config/configuration.h"
 
-using namespace std::chrono_literals;
 
 class stop_signal {
     void signaled() {
@@ -100,6 +101,30 @@ int main(int argc, char** argv, char** env) {
             }
             lgr.info("Configuration: {}", rp_config.local());
             check_environment(rp_config.local()).get();
+
+            scheduling_groups sched_groups;
+            sched_groups.start(rp_config.local()).get();
+
+            // prometheus admin
+            static sharded<http_server> admin;
+            admin.start(sstring("admin")).get();
+            auto stop_admin = defer([] { admin.stop().get(); });
+
+            prometheus::config metrics_conf;
+            metrics_conf.metric_help = "red panda metrics";
+            metrics_conf.prefix = "vectorized";
+            prometheus::add_prometheus_routes(admin, metrics_conf).get();
+
+            with_scheduling_group(sched_groups.admin(), [&] {
+                return admin
+                  .invoke_on_all(
+                    &http_server::listen, rp_config.local().admin())
+                  .handle_exception([](auto ep) {
+                      lgr.error("Exception on http admin server: {}", ep);
+                      return make_exception_future<>(ep);
+                  });
+            }).get();
+
             static sharded<write_ahead_log> log;
             log.start(wal_opts(rp_config.local())).get();
             auto stop_log = defer([] { log.stop().get(); });
