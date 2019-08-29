@@ -28,6 +28,7 @@ struct configuration final : public config_store {
     property<int16_t> max_version;
     // Kafka
     property<socket_address> kafka_api;
+    property<bool> use_scheduling_groups;
 
     configuration();
 
