@@ -57,7 +57,19 @@ configuration::configuration()
       *this, "writer_flush_period_ms", "TBD", required::no, 8000)
   , max_retention_size(*this, "max_retention_size", "TBD", required::no, -1)
   , max_bytes_in_writer_cache(
-      *this, "max_bytes_in_writer_cache", "TBD", required::no, 1024 * 1024) {
+      *this, "max_bytes_in_writer_cache", "TBD", required::no, 1024 * 1024)
+  , use_scheduling_groups(
+      *this,
+      "use_scheduling_groups",
+      "Manage CPU scheduling",
+      required::no,
+      false)
+  , admin(
+      *this,
+      "admin",
+      "Address and port of admin server",
+      required::no,
+      socket_address(inet_addr("127.0.0.1"), 9644)) {
 }
 
 void configuration::read_yaml(const YAML::Node& root_node) {
