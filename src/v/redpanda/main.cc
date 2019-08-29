@@ -16,22 +16,16 @@
 #include <seastar/net/socket_defs.hh>
 #include <seastar/util/defer.hh>
 
-#include <smf/histogram_seastar_utils.h>
-#include <smf/log.h>
-#include <smf/lz4_filter.h>
-#include <smf/rpc_server.h>
-#include <smf/unique_histogram_adder.h>
-#include <smf/zstd_filter.h>
-
 #include <fmt/format.h>
 
 #include <chrono>
 #include <iostream>
 
+logger lgr{"redpanda::main"};
+
 // in transition
 #include "raft/raft_log_service.h"
 #include "redpanda/config/configuration.h"
-#include "redpanda/redpanda_service.h"
 
 using namespace std::chrono_literals;
 
@@ -68,13 +62,6 @@ private:
 };
 
 future<> check_environment(const config::configuration& c);
-
-void register_service(
-  smf::rpc_server& s,
-  sharded<write_ahead_log>* log,
-  sharded<config::configuration>* c);
-
-void stop_rpc(sharded<smf::rpc_server>& rpc, sstring);
 bool hydrate_cfg(sharded<config::configuration>& c, std::string filename);
 
 int main(int argc, char** argv, char** env) {
@@ -95,39 +82,31 @@ int main(int argc, char** argv, char** env) {
     // Just being safe
 #ifndef NDEBUG
         std::cout.setf(std::ios::unitbuf);
-        smf::app_run_log_level(log_level::trace);
 #endif
         return async([&] {
             ::stop_signal stop_signal;
             auto&& config = app.configuration();
-            LOG_THROW_IF(
-              !config.count("redpanda-cfg"), "Missing redpanda-cfg flag");
+            if (!config.count("redpanda-cfg")) {
+                throw std::runtime_error("Missing redpanda-cfg flag");
+            }
             static sharded<config::configuration> rp_config;
             rp_config.start().get();
             auto destroy_config = defer([]() { rp_config.stop().get(); });
-            LOG_THROW_IF(
-              !hydrate_cfg(rp_config, config["redpanda-cfg"].as<std::string>()),
-              "Could not find `redpanda` section in: {}",
-              config["redpanda-cfg"].as<std::string>());
-            LOG_INFO("Configuration: {}", rp_config.local());
+            if (!hydrate_cfg(
+                  rp_config, config["redpanda-cfg"].as<std::string>())) {
+                throw std::runtime_error(fmt::format(
+                  "Could not find `redpanda` section in: {}",
+                  config["redpanda-cfg"].as<std::string>()));
+            }
+            lgr.info("Configuration: {}", rp_config.local());
             check_environment(rp_config.local()).get();
             static sharded<write_ahead_log> log;
             log.start(wal_opts(rp_config.local())).get();
             auto stop_log = defer([] { log.stop().get(); });
             log.invoke_on_all(&write_ahead_log::open).get();
             log.invoke_on_all(&write_ahead_log::index).get();
-            static sharded<smf::rpc_server> rpc;
-            rpc.start(rpc_config(rp_config.local())).get();
-            auto stop_rcp = defer(
-              [&] { stop_rpc(rpc, rp_config.local().data_directory()); });
-            rpc
-              .invoke_on_all([&](smf::rpc_server& s) {
-                  register_service(s, &log, &rp_config);
-              })
-              .get();
-            rpc.invoke_on_all(&smf::rpc_server::start).get();
             static sharded<cluster::metadata_cache> metadata_cache;
-            LOG_INFO("Starting Metadata Cache");
+            lgr.info("Starting Metadata Cache");
             metadata_cache.start(std::ref(log)).get();
             auto stop_metadata_cache = defer(
               [] { metadata_cache.stop().get(); });
@@ -142,7 +121,7 @@ int main(int argc, char** argv, char** env) {
               // FIXME: Add memory manager
               memory::stats().total_memory() / 10,
               std::move(kafka_server_smp_group)};
-            LOG_INFO("Starting Kafka API server");
+            lgr.info("Starting Kafka API server");
             kafka_server
               .start(
                 kafka::transport::probe(),
@@ -159,23 +138,10 @@ int main(int argc, char** argv, char** env) {
             auto stop_kafka_server = defer([] { kafka_server.stop().get(); });
 
             stop_signal.wait().get();
-            LOG_INFO("Stopping...");
+            lgr.info("Stopping...");
         });
     });
     return 0;
-}
-
-// Called in the context of a thread.
-void stop_rpc(sharded<smf::rpc_server>& rpc, sstring directory) {
-    auto h = rpc
-               .map_reduce(
-                 smf::unique_histogram_adder(),
-                 &smf::rpc_server::copy_histogram)
-               .get0();
-    const sstring histogram_dir = fmt::format(
-      "{}/redpanda.latencies.hgrm", directory);
-    smf::histogram_seastar_utils::write(histogram_dir, std::move(h)).get();
-    rpc.stop().get();
 }
 
 bool hydrate_cfg(sharded<config::configuration>& c, std::string filename) {
@@ -198,18 +164,4 @@ future<> check_environment(const config::configuration& c) {
     syschecks::cpu();
     syschecks::memory(c.developer_mode());
     return dir_utils::create_dir_tree(c.data_directory());
-}
-
-void register_service(
-  smf::rpc_server& s,
-  sharded<write_ahead_log>* log,
-  sharded<config::configuration>* c) {
-    using lz4_c_t = smf::lz4_compression_filter;
-    using lz4_d_t = smf::lz4_decompression_filter;
-    using zstd_d_t = smf::zstd_decompression_filter;
-    s.register_outgoing_filter<lz4_c_t>(1 << 21 /*2MB*/);
-    s.register_incoming_filter<lz4_d_t>();
-    s.register_incoming_filter<zstd_d_t>();
-    s.register_service<redpanda_service>(log);
-    s.register_service<raft_log_service>(raft_cfg(c->local()), log);
 }
