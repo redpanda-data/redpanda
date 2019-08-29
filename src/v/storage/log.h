@@ -4,6 +4,7 @@
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "seastarx.h"
+#include "storage/log_reader.h"
 #include "storage/log_segment.h"
 #include "storage/log_segment_appender.h"
 #include "storage/offset_tracker.h"
@@ -38,6 +39,8 @@ public:
     const log_set& segments() const {
         return _segs;
     }
+
+    model::record_batch_reader make_reader(partition_reader_config);
 
     // External synchronization: only one append can be performed at a time.
     future<append_result>
