@@ -94,4 +94,9 @@ log_segment_appender& log::appender() {
     return *_appender;
 }
 
+model::record_batch_reader log::make_reader(partition_reader_config config) {
+    return model::make_record_batch_reader<partition_reader>(
+      _segs, _tracker, std::move(config));
+}
+
 } // namespace storage
