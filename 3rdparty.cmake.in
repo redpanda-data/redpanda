@@ -484,3 +484,17 @@ ExternalProject_Add(json
   BUILD_COMMAND ""
   INSTALL_COMMAND
   COMMAND ${CMAKE_COMMAND} -E copy_directory <SOURCE_DIR>/nlohmann <INSTALL_DIR>/include/nlohmann)
+
+ExternalProject_Add(crc32c
+  URL https://github.com/google/crc32c/archive/fd33bccdf4824716df2552f7addd735264f77872.tar.gz
+  URL_MD5 21c86fb3143fb748a52d11b9fee874de
+  INSTALL_DIR    @V_DEPS_INSTALL_DIR@
+  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
+  DEPENDS ${default_depends}
+  CMAKE_ARGS
+    ${common_cmake_args}
+    -DCRC32C_BUILD_TESTS=0
+    -DCRC32C_BUILD_BENCHMARKS=0
+    -DCRC32C_USE_GLOG=0
+  )
+
