@@ -8,3 +8,5 @@ target_link_libraries(storage PUBLIC
   bytes
   model
   rphashing)
+
+add_subdirectory(tests)
