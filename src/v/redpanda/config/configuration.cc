@@ -45,6 +45,13 @@ configuration::configuration()
       "Address and port of an interface to listen for Kafka API requests",
       required::no,
       socket_address(net::inet_address("127.0.0.1"), 9092))
+  , kafka_api_tls(
+      *this,
+      "kafka_api_tls",
+      "TLS configuration for Kafka API endpoint",
+      required::no,
+      tls_config(),
+      tls_config::validate)
   , use_scheduling_groups(
       *this,
       "use_scheduling_groups",

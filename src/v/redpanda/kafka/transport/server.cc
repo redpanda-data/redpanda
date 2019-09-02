@@ -27,7 +27,10 @@ kafka_server::kafka_server(
   , _max_request_size(config.max_request_size)
   , _memory_available(_max_request_size)
   , _smp_group(std::move(config.smp_group))
-  , _quota_mgr(quota_mgr) {
+  , _quota_mgr(quota_mgr)
+  , _creds(
+      config.credentials ? (*config.credentials).build_server_credentials()
+                         : nullptr) {
 }
 
 future<> kafka_server::listen(socket_address server_addr, bool keepalive) {
@@ -35,7 +38,16 @@ future<> kafka_server::listen(socket_address server_addr, bool keepalive) {
     lo.reuse_address = true;
     server_socket ss;
     try {
-        ss = engine().listen(server_addr, lo);
+        if (!_creds) {
+            ss = engine().listen(server_addr, lo);
+            klog.debug(
+              "Started plaintext Kafka API server listening at {}",
+              server_addr);
+        } else {
+            ss = tls::listen(_creds, engine().listen(server_addr, lo));
+            klog.debug(
+              "Started secured Kafka API server listening at {}", server_addr);
+        }
     } catch (...) {
         return make_exception_future<>(std::runtime_error(fmt::format(
           "KafkaServer error while listening on {} -> {}",

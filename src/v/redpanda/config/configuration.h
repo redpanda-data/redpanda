@@ -30,6 +30,7 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> default_window_sec;
     property<std::chrono::milliseconds> quota_manager_gc_sec;
     property<uint32_t> target_quota_byte_rate;
+    property<tls_config> kafka_api_tls;
 
     configuration();
 
