@@ -45,7 +45,7 @@ future<> client::do_connect() {
     return engine()
       .net()
       .connect(
-        make_ipv4_address(cfg.server_addr),
+        cfg.server_addr,
         socket_address(sockaddr_in{AF_INET, INADDR_ANY, {0}}),
         transport::TCP)
       .then([this](connected_socket fd) mutable {
