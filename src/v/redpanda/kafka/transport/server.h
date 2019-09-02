@@ -15,6 +15,7 @@
 #include <seastar/core/sharded.hh>
 #include <seastar/core/unaligned.hh>
 #include <seastar/net/inet_address.hh>
+#include <seastar/net/tls.hh>
 
 #include <boost/intrusive/list.hpp>
 
@@ -49,6 +50,7 @@ struct [[gnu::packed]] raw_response_header {
 struct kafka_server_config {
     size_t max_request_size;
     smp_service_group smp_group;
+    std::optional<tls::credentials_builder> credentials;
 };
 
 class kafka_server {
@@ -104,6 +106,7 @@ private:
     abort_source _as;
     gate _listeners_and_connections;
     sharded<quota_manager>& _quota_mgr;
+    shared_ptr<tls::server_credentials> _creds;
 };
 
 } // namespace kafka::transport
