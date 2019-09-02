@@ -16,3 +16,11 @@ rp_test(
   LIBRARIES Seastar::seastar_testing config
   DEFINITIONS SEASTAR_TESTING_MAIN
 )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME tls_config_convert_test
+  SOURCES tls_config_convert_test.cc
+  LIBRARIES Seastar::seastar_testing config $<TARGET_NAME_IF_EXISTS:Libcxx::libcxx>
+  DEFINITIONS SEASTAR_TESTING_MAIN
+)

@@ -2,6 +2,7 @@
 
 #include "redpanda/config/config_store.h"
 #include "redpanda/config/seed_server.h"
+#include "redpanda/config/tls_config.h"
 
 #include <seastar/net/inet_address.hh>
 #include <seastar/net/ip.hh>
@@ -68,6 +69,21 @@ struct adl_serializer<std::chrono::milliseconds> {
 namespace config {
 static void to_json(nlohmann::json& j, const seed_server& v) {
     j = {{"node_id", v.id}, {"host", v.addr}};
+}
+
+static void to_json(nlohmann::json& j, const key_cert& v) {
+    j = {{"key_file", v.key_file}, {"cert_file", v.cert_file}};
+}
+
+static void to_json(nlohmann::json& j, const tls_config& v) {
+    j = {{"enabled", v.is_enabled()},
+         {"client_auth", v.get_require_client_auth()}};
+    if (v.get_key_cert_files()) {
+        j["key_cert"] = *(v.get_key_cert_files());
+    }
+    if (v.get_truststore_file()) {
+        j["truststore_file"] = *(v.get_truststore_file());
+    }
 }
 } // namespace config
 
@@ -137,6 +153,56 @@ struct convert<std::chrono::milliseconds> {
             return res;
         }
         rhs = std::chrono::milliseconds(secs);
+        return true;
+    }
+};
+
+template<>
+struct convert<config::tls_config> {
+    static Node encode(const config::tls_config& rhs) {
+        Node node;
+
+        node["enabled"] = rhs.is_enabled();
+        node["require_client_auth"] = rhs.get_require_client_auth();
+
+        if (rhs.get_key_cert_files()) {
+            node["cert_file"] = (*rhs.get_key_cert_files()).key_file;
+            node["key_file"] = (*rhs.get_key_cert_files()).cert_file;
+        }
+
+        if (rhs.get_truststore_file()) {
+            node["truststore_file"] = *rhs.get_truststore_file();
+        }
+
+        return node;
+    }
+
+    static std::optional<sstring>
+    read_optional(const Node& node, const sstring& key) {
+        if (node[key]) {
+            return node[key].as<sstring>();
+        }
+        return std::nullopt;
+    }
+
+    static bool decode(const Node& node, config::tls_config& rhs) {
+        // either both true or both false
+        if (
+          static_cast<bool>(node["key_file"])
+          ^ static_cast<bool>(node["cert_file"])) {
+            return false;
+        }
+
+        auto key_cert = node["key_file"] ? std::make_optional<config::key_cert>(
+                          config::key_cert{node["key_file"].as<sstring>(),
+                                           node["cert_file"].as<sstring>()})
+                                         : std::nullopt;
+        rhs = config::tls_config(
+          node["enabled"] && node["enabled"].as<bool>(),
+          key_cert,
+          read_optional(node, "truststore_file"),
+          node["require_client_auth"]
+            && node["require_client_auth"].as<bool>());
         return true;
     }
 };
