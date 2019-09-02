@@ -7,6 +7,7 @@
 
 #include <seastar/core/do_with.hh>
 #include <seastar/core/future.hh>
+#include <seastar/util/noncopyable_function.hh>
 #include <seastar/util/optimized_optional.hh>
 
 #include <gsl/span>
@@ -161,5 +162,12 @@ record_batch_reader make_record_batch_reader(Args&&... args) {
       std::make_unique<Impl>(std::forward<Args>(args)...));
 }
 
+record_batch_reader
+  make_memory_record_batch_reader(std::vector<model::record_batch>);
+
+// clang-format off
+record_batch_reader
+make_generating_record_batch_reader(noncopyable_function<future<record_batch_opt>()>);
+// clang-format on
 
 } // namespace model
