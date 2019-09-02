@@ -2,6 +2,7 @@
 
 #include <seastar/core/fstream.hh>
 #include <seastar/core/iostream.hh>
+#include <seastar/core/print.hh>
 #include <seastar/core/sstring.hh>
 
 namespace storage {
@@ -33,6 +34,18 @@ log_segment_appender log_segment::data_appender(const io_priority_class& pc) {
     file_output_stream_options options;
     options.io_priority_class = pc;
     return log_segment_appender(_data_file, std::move(options));
+}
+
+std::ostream& operator<<(std::ostream& os, log_segment seg) {
+    return fmt_print(
+      os, "{{log_segment: {}, {}}}", seg.get_filename(), seg.base_offset());
+}
+
+std::ostream& operator<<(std::ostream& os, log_segment_ptr seg) {
+    if (seg) {
+        return os << *seg;
+    }
+    return fmt_print(os, "{{log_segment: null}}");
 }
 
 struct base_offset_ordering {
