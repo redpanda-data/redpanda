@@ -8,3 +8,5 @@ target_link_libraries(model
   PUBLIC
   Seastar::seastar
   )
+
+add_subdirectory(tests)
