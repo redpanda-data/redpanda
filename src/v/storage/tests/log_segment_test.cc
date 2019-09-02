@@ -30,3 +30,48 @@ SEASTAR_THREAD_TEST_CASE(test_read_write) {
     in.close().get();
     log_seg.close().get();
 }
+
+SEASTAR_THREAD_TEST_CASE(log_set_orders_segments) {
+    file f(nullptr);
+    auto log_seg1 = make_lw_shared<log_segment>(
+      "test", f, 0, model::offset(1), 1024);
+    auto log_seg0 = make_lw_shared<log_segment>(
+      "test", f, 0, model::offset(0), 1024);
+    auto log_seg3 = make_lw_shared<log_segment>(
+      "test", f, 0, model::offset(2), 1024);
+
+    log_set segs({log_seg1, log_seg0, log_seg3});
+
+    auto o = model::offset(0);
+    for (auto seg : segs) {
+        BOOST_CHECK_EQUAL(seg->base_offset(), o);
+        o += 1;
+    }
+}
+
+SEASTAR_THREAD_TEST_CASE(log_set_expects_monotonic_adds) {
+    file f(nullptr);
+    auto log_seg1 = make_lw_shared<log_segment>(
+      "test", f, 0, model::offset(1), 1024);
+    auto log_seg0 = make_lw_shared<log_segment>(
+      "test", f, 0, model::offset(0), 1024);
+
+    log_set segs({log_seg1});
+    segs.add(log_seg0);
+
+    BOOST_CHECK_EQUAL(segs.last()->base_offset(), model::offset(0));
+}
+
+SEASTAR_THREAD_TEST_CASE(log_set_invalidates_iterators) {
+    file f(nullptr);
+    auto log_seg = make_lw_shared<log_segment>(
+      "test", f, 0, model::offset(1), 1024);
+    auto other_log_seg = make_lw_shared<log_segment>(
+      "test", f, 0, model::offset(0), 1024);
+
+    log_set segs({log_seg});
+    auto gen = segs.iter_gen();
+    segs.add(other_log_seg);
+
+    BOOST_CHECK_NE(gen, segs.iter_gen());
+}
