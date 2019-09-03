@@ -55,6 +55,7 @@ private:
     hdr_hist _hist;
     server_probe _probe;
     metrics::metric_groups _metrics;
+    shared_ptr<tls::server_credentials> _creds;
 };
 
 } // namespace rpc

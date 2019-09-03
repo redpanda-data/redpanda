@@ -35,7 +35,10 @@ struct server_context_impl final : streaming_context {
 
 server::server(server_configuration c)
   : cfg(std::move(c))
-  , _memory(cfg.max_service_memory_per_core) {
+  , _memory(cfg.max_service_memory_per_core)
+  , _creds(
+      cfg.credentials ? (*cfg.credentials).build_server_credentials()
+                      : nullptr) {
     setup_metrics();
 }
 
@@ -48,7 +51,11 @@ void server::start() {
         try {
             listen_options lo;
             lo.reuse_address = true;
-            ss = engine().listen(addr, lo);
+            if (!_creds) {
+                ss = engine().listen(addr, lo);
+            } else {
+                ss = tls::listen(_creds, engine().listen(addr, lo));
+            }
         } catch (...) {
             throw std::runtime_error(fmt::format(
               "Error attempting to listen on {}: {}",
