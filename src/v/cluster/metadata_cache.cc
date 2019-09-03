@@ -10,8 +10,7 @@ metadata_cache::metadata_cache(sharded<write_ahead_log>& log) noexcept
   : _log(log) {
 }
 
-future<std::vector<model::topic_view>>
-metadata_cache::all_topics() const {
+future<std::vector<model::topic_view>> metadata_cache::all_topics() const {
     return async([this] {
         auto topic_set = _log
                            .map_reduce0(
@@ -41,33 +40,31 @@ metadata_cache::all_topics() const {
 
 future<std::optional<model::topic_metadata>>
 metadata_cache::get_topic_metadata(model::topic_view topic) const {
-    return async([this, topic = std::move(topic)]() mutable {
-        auto all_partitions
-          = _log
-              .map([&](write_ahead_log& log) {
-                  std::vector<model::partition_type> partitions;
-                  for (auto& [_, s] : log.topics_manager().props()) {
-                      if (s->topic()->string_view() == topic.name()) {
-                          partitions.push_back(s->partitions());
-                      }
+    auto ret = std::make_unique<model::topic_metadata>(std::move(topic));
+    auto ptr = ret.get();
+    return _log
+      .map([name = ptr->topic.name()](write_ahead_log& log) {
+          std::vector<model::partition::type> partitions;
+          for (auto& [_, s] : log.topics_manager().props()) {
+              if (s->topic()->string_view() == name) {
+                  for (auto i = 0; i < s->partitions(); ++i) {
+                      partitions.push_back(i);
                   }
-                  return partitions;
-              })
-              .get0();
-        std::optional<model::topic_metadata> metadata;
-        for (auto& shard_partitions : all_partitions) {
-            if (shard_partitions.empty()) {
-                continue;
-            }
-            if (!metadata) {
-                metadata = model::topic_metadata{std::move(topic)};
-            }
-            for (model::partition_type p : shard_partitions) {
-                metadata->partitions.push_back(model::partition_metadata{p});
-            }
-        }
-        return metadata;
-    });
+              }
+          }
+          return partitions;
+      })
+      .then([ret = std::move(ret)](auto all_partitions) mutable {
+          if (all_partitions.empty()) {
+              return std::optional<model::topic_metadata>();
+          }
+          for (auto& vp : all_partitions) {
+              for (auto& p : vp) {
+                  ret->partitions.emplace_back(model::partition(p));
+              }
+          }
+          return std::optional<model::topic_metadata>(std::move(*ret));
+      });
 }
 
 } // namespace cluster

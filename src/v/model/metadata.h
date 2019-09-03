@@ -11,19 +11,14 @@
 #include <vector>
 
 namespace model {
-
-class node_id {
-public:
-    constexpr explicit node_id(int32_t value) noexcept
-      : _value(value) {
+struct node_id {
+    using type = int32_t;
+    static constexpr const type min = std::numeric_limits<type>::min();
+    node_id() noexcept = default;
+    constexpr explicit node_id(type id) noexcept
+      : value(id) {
     }
-
-    int32_t value() const {
-        return _value;
-    }
-
-private:
-    int32_t _value;
+    const type value = min;
 };
 
 class broker {
@@ -62,59 +57,24 @@ private:
     std::optional<sstring> _rack;
 };
 
-class topic_view {
-public:
-    explicit topic_view(std::string_view topic_name) noexcept
-      : _topic_name(topic_name) {
-    }
-
-    std::string_view name() const {
-        return _topic_name;
-    }
-
-    bool operator==(const topic_view& other) const {
-        return _topic_name == other._topic_name;
-    }
-
-    bool operator!=(const topic_view& other) const {
-        return !(*this == other);
-    }
-
-private:
-    std::string_view _topic_name;
-};
-
-class topic {
-public:
-    explicit topic(sstring topic_name) noexcept
-      : _topic_name(std::move(topic_name)) {
-    }
-
-    const sstring& name() const {
-        return _topic_name;
-    }
-
-    topic_view view() const {
-        return topic_view(_topic_name);
-    }
-
-    bool operator==(const topic& other) const {
-        return _topic_name == other._topic_name;
-    }
-
-    bool operator!=(const topic& other) const {
-        return !(*this == other);
-    }
-
-private:
-    sstring _topic_name;
-};
-
 struct partition_metadata {
-    partition_type partition;
+    partition_metadata() noexcept = default;
+    partition_metadata(partition p) noexcept
+      : id(std::move(p)) {
+    }
+    partition_metadata(partition_metadata&&) = default;
+    partition_metadata& operator=(partition_metadata&&) = default;
+
+    partition id;
 };
 
 struct topic_metadata {
+    topic_metadata() noexcept = default;
+    topic_metadata(topic_view v) noexcept
+      : topic(std::move(v)){};
+    topic_metadata(topic_metadata&&) = default;
+    topic_metadata& operator=(topic_metadata&&) = default;
+
     topic_view topic;
     std::vector<partition_metadata> partitions;
 };
@@ -154,7 +114,7 @@ struct hash<model::topic_view> {
 template<>
 struct hash<model::topic> {
     size_t operator()(model::topic t) const {
-        return hash<sstring>()(t.name());
+        return hash<seastar::sstring>()(t.name);
     }
 };
 
