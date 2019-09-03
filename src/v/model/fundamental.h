@@ -76,11 +76,11 @@ struct ns {
       : name(std::move(namespace_name)) {
     }
 
-    bool operator==(const topic& other) const {
+    bool operator==(const ns& other) const {
         return name == other.name;
     }
 
-    bool operator!=(const topic& other) const {
+    bool operator!=(const ns& other) const {
         return !(*this == other);
     }
 
