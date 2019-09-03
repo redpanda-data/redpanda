@@ -31,7 +31,10 @@ struct client_context_impl final : streaming_context {
 
 client::client(client_configuration c)
   : cfg(std::move(c))
-  , _memory(cfg.max_queued_bytes) {
+  , _memory(cfg.max_queued_bytes)
+  , _creds(
+      cfg.credentials ? (*cfg.credentials).build_certificate_credentials()
+                    : nullptr) {
 }
 
 future<> client::do_connect() {
@@ -48,6 +51,12 @@ future<> client::do_connect() {
         cfg.server_addr,
         socket_address(sockaddr_in{AF_INET, INADDR_ANY, {0}}),
         transport::TCP)
+      .then([this](connected_socket fd) mutable {
+          if (_creds) {
+              return tls::wrap_client(_creds, std::move(fd));
+          }
+          return make_ready_future<connected_socket>(std::move(fd));
+      })
       .then([this](connected_socket fd) mutable {
           _fd = std::make_unique<connected_socket>(std::move(fd));
           _in = std::move(_fd->input());

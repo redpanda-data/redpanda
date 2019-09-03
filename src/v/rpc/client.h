@@ -51,6 +51,7 @@ private:
     batched_output_stream _out;
     gate _dispatch_gate;
     uint32_t _correlation_idx{0};
+    shared_ptr<tls::certificate_credentials> _creds;
 };
 
 template<typename Input, typename Output>
