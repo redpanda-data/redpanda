@@ -66,7 +66,7 @@ function (rp_test)
   add_executable(
     ${RP_TEST_BINARY_NAME} "${RP_TEST_SOURCES}")
   target_link_libraries(
-    ${RP_TEST_BINARY_NAME} "${RP_TEST_LIBRARIES}")
+    ${RP_TEST_BINARY_NAME} "${RP_TEST_LIBRARIES}" $<TARGET_NAME_IF_EXISTS:Libcxx::libcxx>)
   add_test (
     NAME ${RP_TEST_BINARY_NAME}
     COMMAND bash -c "${RUNNER} --binary=$<TARGET_FILE:${RP_TEST_BINARY_NAME}> --base_directory=${CMAKE_CURRENT_BINARY_DIR} ${files_to_copy} ${RP_TEST_ARGS} "
