@@ -21,7 +21,7 @@ class client {
 public:
     using promise_t = promise<std::unique_ptr<streaming_context>>;
     explicit client(client_configuration c);
-    client(client&&) noexcept = default;
+    client(client&&) = default;
     virtual ~client();
     future<> connect();
     future<> stop();
