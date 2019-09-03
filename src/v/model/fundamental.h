@@ -12,11 +12,23 @@ namespace model {
 
 struct partition {
     using type = int32_t;
+
     static constexpr const type min = std::numeric_limits<type>::min();
+
     partition() noexcept = default;
+
     constexpr explicit partition(type id) noexcept
       : value(id) {
     }
+
+    bool operator==(partition other) const {
+        return value == other.value;
+    }
+
+    bool operator!=(partition other) const {
+        return !(*this == other);
+    }
+
     const type value = min;
 };
 
