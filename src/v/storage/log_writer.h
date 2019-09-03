@@ -3,12 +3,15 @@
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "seastarx.h"
+#include "storage/log_segment_appender.h"
 
 #include <seastar/core/future.hh>
 
 namespace storage {
 
 class log;
+
+future<> write(log_segment_appender&, const model::record_batch&);
 
 // Log writer interface, which represents a
 // consumer for record_batch_readers. It accepts

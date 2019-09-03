@@ -48,48 +48,49 @@ future<> write(log_segment_appender& out, const model::record& record) {
       .then([&] { return write(out, record.packed_value_and_headers()); });
 }
 
+future<>
+write(log_segment_appender& appender, const model::record_batch& batch) {
+    return write_vint(appender, batch.size_bytes())
+      .then([&appender, &batch] {
+          return write(appender, batch.base_offset().value());
+      })
+      .then([&appender, &batch] { return write(appender, batch.crc()); })
+      .then([&appender, &batch] {
+          return write(appender, batch.attributes().value());
+      })
+      .then([&appender, &batch] {
+          return write(appender, batch.last_offset_delta());
+      })
+      .then([&appender, &batch] {
+          return write(appender, batch.first_timestamp().value());
+      })
+      .then([&appender, &batch] {
+          return write(appender, batch.max_timestamp().value());
+      })
+      .then([&appender, &batch] {
+          // Note that we don't append the unused Kafka fields, but we do
+          // take them into account when calculating the batch checksum.
+          return write(appender, static_cast<int32_t>(batch.size()));
+      })
+      .then([&appender, &batch] {
+          if (batch.compressed()) {
+              return write(appender, batch.get_compressed_records().records());
+          }
+          return do_for_each(batch, [&appender](const model::record& record) {
+              return write(appender, record);
+          });
+      });
+}
+
 future<stop_iteration> default_log_writer::
 operator()(model::record_batch&& batch) {
     return do_with(std::move(batch), [this](model::record_batch& batch) {
-        auto& appender = _log.appender();
-        return write_vint(appender, batch.size_bytes())
-          .then([&appender, &batch] {
-              return write(appender, batch.base_offset().value());
-          })
-          .then([&appender, &batch] { return write(appender, batch.crc()); })
-          .then([&appender, &batch] {
-              return write(appender, batch.attributes().value());
-          })
-          .then([&appender, &batch] {
-              return write(appender, batch.last_offset_delta());
-          })
-          .then([&appender, &batch] {
-              return write(appender, batch.first_timestamp().value());
-          })
-          .then([&appender, &batch] {
-              return write(appender, batch.max_timestamp().value());
-          })
-          .then([&appender, &batch] {
-              // Note that we don't append the unused Kafka fields, but we do
-              // take them into account when calculating the batch checksum.
-              return write(appender, static_cast<int32_t>(batch.size()));
-          })
-          .then([&appender, &batch] {
-              if (batch.compressed()) {
-                  return write(
-                    appender, batch.get_compressed_records().records());
-              }
-              return do_for_each(
-                batch, [&appender](const model::record& record) {
-                    return write(appender, record);
-                });
-          })
-          .then([this, &batch] {
-              _last_offset = batch.last_offset();
-              return _log.maybe_roll(_last_offset).then([] {
-                  return stop_iteration::no;
-              });
-          });
+        return write(_log.appender(), batch).then([this, &batch] {
+            _last_offset = batch.last_offset();
+            return _log.maybe_roll(_last_offset).then([] {
+                return stop_iteration::no;
+            });
+        });
     });
 }
 
