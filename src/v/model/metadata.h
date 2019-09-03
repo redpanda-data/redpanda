@@ -62,19 +62,13 @@ struct partition_metadata {
     partition_metadata(partition p) noexcept
       : id(std::move(p)) {
     }
-    partition_metadata(partition_metadata&&) = default;
-    partition_metadata& operator=(partition_metadata&&) = default;
-
     partition id;
 };
 
 struct topic_metadata {
-    topic_metadata() noexcept = default;
     topic_metadata(topic_view v) noexcept
-      : topic(std::move(v)){};
-    topic_metadata(topic_metadata&&) = default;
-    topic_metadata& operator=(topic_metadata&&) = default;
-
+      : topic(std::move(v)) {
+    }
     topic_view topic;
     std::vector<partition_metadata> partitions;
 };
