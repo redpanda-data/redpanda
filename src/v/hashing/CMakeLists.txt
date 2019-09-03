@@ -1,7 +1,8 @@
 find_package(xxHash REQUIRED)
+find_package(Crc32c REQUIRED)
 add_library (rphashing STATIC murmur.cc)
 target_include_directories(rphashing PUBLIC ${PROJECT_SOURCE_DIR}/src/v)
-target_link_libraries(rphashing PUBLIC xxHash::xxhash)
+target_link_libraries(rphashing PUBLIC xxHash::xxhash Crc32c::crc32c)
 target_compile_definitions(rphashing PUBLIC -DXXH_PRIVATE_API)
 
 rp_test(
