@@ -50,7 +50,7 @@ metadata_request::process(request_context& ctx, smp_service_group g) {
           model::broker(model::node_id(1), "localhost", 9092, std::nullopt)};
         resp->writer().write_array(
           brokers, [&ctx](const model::broker& b, response_writer& rw) {
-              rw.write(b.id().value());
+              rw.write(b.id().value);
               rw.write(std::string_view(b.host()));
               rw.write(b.port());
               if (ctx.header().version > api_version(0)) {
@@ -86,7 +86,7 @@ metadata_request::process(request_context& ctx, smp_service_group g) {
               }
               for (auto& pm : topic_metadata->partitions) {
                   rw.write(errors::error_code::none);
-                  rw.write(pm.partition);
+                  rw.write(pm.id.value);
                   rw.write(int32_t(1)); // The leader.
                   // FIXME: Obtain partition replicas.
                   auto write_replicas = [&] {
