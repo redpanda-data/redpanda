@@ -61,6 +61,17 @@ public:
         return _value_and_headers;
     }
 
+    bool operator==(const record& other) const {
+        return _size_bytes == other._size_bytes
+               && _timestamp_delta == other._timestamp_delta
+               && _offset_delta == other._offset_delta && _key == other._key
+               && _value_and_headers == other._value_and_headers;
+    }
+
+    bool operator!=(const record& other) const {
+        return !(*this == other);
+    }
+
 private:
     size_t _size_bytes;
     int32_t _timestamp_delta;
@@ -106,6 +117,14 @@ public:
                                    : timestamp_type::create_time;
     }
 
+    bool operator==(const record_batch_attributes& other) const {
+        return _attributes == other._attributes;
+    }
+
+    bool operator!=(const record_batch_attributes& other) const {
+        return !(*this == other);
+    }
+
 private:
     // Bits 4 and 5 are used by Kafka and thus reserved.
     std::bitset<16> _attributes;
@@ -123,6 +142,19 @@ struct record_batch_header {
 
     offset last_offset() const {
         return base_offset + last_offset_delta;
+    }
+
+    bool operator==(const record_batch_header& other) const {
+        return size_bytes == other.size_bytes
+               && base_offset == other.base_offset && crc == other.crc
+               && attrs == other.attrs
+               && last_offset_delta == other.last_offset_delta
+               && first_timestamp == other.first_timestamp
+               && max_timestamp == other.max_timestamp;
+    }
+
+    bool operator!=(const record_batch_header& other) const {
+        return !(*this == other);
     }
 };
 
@@ -162,6 +194,14 @@ public:
 
         const fragmented_temporary_buffer& records() const {
             return _data;
+        }
+
+        bool operator==(const compressed_records& other) const {
+            return _size == other._size && _data == other._data;
+        }
+
+        bool operator!=(const compressed_records& other) const {
+            return !(*this == other);
         }
 
     private:
@@ -251,6 +291,16 @@ public:
     const compressed_records& get_compressed_records() const {
         return std::get<compressed_records>(_records);
     }
+
+    bool operator==(const record_batch& other) const {
+        return _header == other._header && _records == other._records;
+    }
+
+    bool operator!=(const record_batch& other) const {
+        return !(*this == other);
+    }
+
+    friend std::ostream& operator<<(std::ostream&, const record_batch&);
 
 private:
     record_batch_header _header;
