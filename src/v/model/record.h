@@ -72,6 +72,8 @@ public:
         return !(*this == other);
     }
 
+    friend std::ostream& operator<<(std::ostream&, const record&);
+
 private:
     size_t _size_bytes;
     int32_t _timestamp_delta;
@@ -125,6 +127,9 @@ public:
         return !(*this == other);
     }
 
+    friend std::ostream&
+    operator<<(std::ostream&, const record_batch_attributes&);
+
 private:
     // Bits 4 and 5 are used by Kafka and thus reserved.
     std::bitset<16> _attributes;
@@ -156,6 +161,8 @@ struct record_batch_header {
     bool operator!=(const record_batch_header& other) const {
         return !(*this == other);
     }
+
+    friend std::ostream& operator<<(std::ostream&, const record_batch_header&);
 };
 
 class record_batch {
@@ -203,6 +210,9 @@ public:
         bool operator!=(const compressed_records& other) const {
             return !(*this == other);
         }
+
+        friend std::ostream&
+        operator<<(std::ostream&, const compressed_records&);
 
     private:
         size_t _size;
