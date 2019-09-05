@@ -66,4 +66,14 @@ std::ostream& operator<<(std::ostream& os, offset o) {
     return fmt_print(os, "{{offset: {}}}", o.value());
 }
 
+std::ostream& operator<<(std::ostream& os, timestamp_type ts) {
+    switch (ts) {
+    case timestamp_type::append_time:
+        return os << "{append_time}";
+    case timestamp_type::create_time:
+        return os << "{create_time}";
+    }
+    throw std::runtime_error("Unknown timestamp type");
+}
+
 } // namespace model

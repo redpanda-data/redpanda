@@ -13,6 +13,8 @@ namespace model {
 
 enum class timestamp_type : uint8_t { create_time, append_time };
 
+std::ostream& operator<<(std::ostream&, timestamp_type);
+
 class timestamp {
 public:
     using value_type = int64_t;
