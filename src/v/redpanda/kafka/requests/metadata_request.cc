@@ -79,6 +79,13 @@ metadata_request::process(request_context& ctx, smp_service_group g) {
               } else {
                   rw.write(errors::error_code::none);
               }
+              // XXX: for testing we build a fake instance of topic
+              // metadata. the kafka-python client throws as exception if a
+              // topic doesn't have at least one partition, so make sure there
+              // is at least one.
+              if (topic_metadata->partitions.empty()) {
+                  topic_metadata->partitions.emplace_back(model::partition(0));
+              }
               rw.write(t.name());
               if (ctx.header().version >= api_version(1)) {
                   // Currently topics are never internal.
