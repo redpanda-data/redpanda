@@ -116,12 +116,17 @@ api_versions_request::process(request_context& ctx, smp_service_group) {
     // versions a server supports when this request is sent, so instead of
     // assuming the lowest supported version, it can use the most recent
     // version and only fallback to the old version when necessary.
+    auto error_code = errors::error_code::none;
     if (ctx.header().version > max_supported) {
-        resp->writer().write(errors::error_code::unsupported_version);
-        return make_ready_future<response_ptr>(std::move(resp));
+        error_code = errors::error_code::unsupported_version;
     }
-    resp->writer().write(errors::error_code::none);
-    serialize_apis(resp->writer(), request_types{});
+    resp->writer().write(error_code);
+    if (error_code == errors::error_code::none) {
+        serialize_apis(resp->writer(), request_types{});
+    } else {
+        resp->writer().write_array(
+          std::vector<char>{}, [](char, response_writer&) {});
+    }
     if (ctx.header().version > v0) {
         resp->writer().write(int32_t(0));
     }
