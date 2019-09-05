@@ -84,7 +84,7 @@ metadata_request::process(request_context& ctx, smp_service_group g) {
                   // Currently topics are never internal.
                   rw.write(false);
               }
-              for (auto& pm : topic_metadata->partitions) {
+              rw.write_array(topic_metadata->partitions, [&ctx](const auto& pm, response_writer& rw) {
                   rw.write(errors::error_code::none);
                   rw.write(pm.id.value);
                   rw.write(int32_t(1)); // The leader.
@@ -104,7 +104,7 @@ metadata_request::process(request_context& ctx, smp_service_group g) {
                         std::vector<int32_t>{},
                         [](int32_t, response_writer&) {});
                   }
-              }
+              });
           });
 
         return response_ptr(std::move(resp));
