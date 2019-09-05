@@ -81,17 +81,29 @@ std::ostream& operator<<(std::ostream& os, const request_header& header) {
     return os << "{no client_id}}";
 }
 
+struct api_support {
+    int16_t key;
+    int16_t min_supported;
+    int16_t max_supported;
+};
+
 template<typename RequestType>
-static void do_serialize(response_writer& writer) {
-    writer.write(RequestType::key.value());
-    writer.write(RequestType::min_supported.value());
-    writer.write(RequestType::max_supported.value());
+static auto make_api_support() {
+    return api_support{RequestType::key.value(),
+                       RequestType::min_supported.value(),
+                       RequestType::max_supported.value()};
 }
 
 template<typename... RequestTypes>
 static void
 serialize_apis(response_writer& writer, type_list<RequestTypes...>) {
-    (do_serialize<RequestTypes>(writer), ...);
+    std::vector<api_support> apis;
+    (apis.push_back(make_api_support<RequestTypes>()), ...);
+    writer.write_array(apis, [](const auto& api, response_writer& wr) {
+        wr.write(api.key);
+        wr.write(api.min_supported);
+        wr.write(api.max_supported);
+    });
 }
 
 future<response_ptr>
