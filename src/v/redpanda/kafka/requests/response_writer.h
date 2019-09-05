@@ -86,6 +86,10 @@ public:
         return size;
     }
 
+    uint32_t write(const sstring& v) {
+        return write(std::string_view(v));
+    }
+
     uint32_t write(std::optional<std::string_view> v) {
         if (!v) {
             return serialize_int<int16_t>(-1);
