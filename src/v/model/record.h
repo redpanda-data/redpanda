@@ -312,6 +312,10 @@ public:
 
     friend std::ostream& operator<<(std::ostream&, const record_batch&);
 
+    uncompressed_records& get_uncompressed_records_for_testing() {
+        return std::get<uncompressed_records>(_records);
+    }
+
 private:
     record_batch_header _header;
     records_type _records;
