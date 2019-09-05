@@ -1,4 +1,5 @@
 #include "redpanda/kafka/requests/api_versions_request.h"
+#include "redpanda/kafka/requests/find_coordinator_request.h"
 #include "redpanda/kafka/requests/headers.h"
 #include "redpanda/kafka/requests/list_groups_request.h"
 #include "redpanda/kafka/requests/metadata_request.h"
@@ -34,6 +35,7 @@ using make_request_types = type_list<Requests...>;
 
 using request_types = make_request_types<
   metadata_request,
+  find_coordinator_request,
   list_groups_request,
   api_versions_request>;
 
@@ -48,6 +50,8 @@ process_request(request_context& ctx, smp_service_group g) {
         return metadata_request::process(ctx, std::move(g));
     case list_groups_request::key.value():
         return list_groups_request::process(ctx, std::move(g));
+    case find_coordinator_request::key.value():
+        return find_coordinator_request::process(ctx, std::move(g));
     };
     throw std::runtime_error(
       fmt::format("Unsupported API {}", ctx.header().key));
