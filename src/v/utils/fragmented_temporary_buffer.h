@@ -86,6 +86,12 @@ public:
         return fragmented_temporary_buffer(std::move(fragments), len);
     }
 
+    bool operator==(const fragmented_temporary_buffer& other) const;
+
+    bool operator!=(const fragmented_temporary_buffer& other) const {
+        return !(*this == other);
+    }
+
 private:
     vector_type _fragments;
     size_t _size_bytes = 0;
@@ -412,3 +418,21 @@ inline fragmented_temporary_buffer::istream::iterator
 fragmented_temporary_buffer::istream::end() const noexcept {
     return iterator(iterator::end_tag{});
 }
+
+// clang-format off
+inline bool fragmented_temporary_buffer::operator==(
+  const fragmented_temporary_buffer& other) const {
+    auto stream = get_istream();
+    auto other_stream = other.get_istream();
+    return _size_bytes == other._size_bytes
+           && std::equal(stream.begin(), stream.end(), other_stream.begin());
+}
+// clang-format on
+
+namespace std {
+using iterator_type = fragmented_temporary_buffer::istream::iterator;
+template<>
+struct iterator_traits<iterator_type> {
+    using value_type = iterator_type::value_type;
+};
+} // namespace std
