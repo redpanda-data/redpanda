@@ -77,6 +77,10 @@ def main():
             type=str,
             default='INFO',
             help='info,debug, type log levels. i.e: --log=debug')
+        parser.add_argument(
+            '--git-files',
+            type=str,
+            help='take file list from git object')
         return parser
 
     parser = generate_options()
@@ -85,11 +89,15 @@ def main():
     logger.info("%s" % options)
     root = git.get_git_root(relative=os.path.dirname(__file__))
 
-    def _files():
-        r = git.get_git_files()
+    def _files(r):
         return list(map(lambda x: "%s/%s" % (root, x), r))
 
-    changed_files = _files()
+    if options.git_files:
+        r = git.get_git_changed_files(options.git_files)
+    else:
+        r = git.get_git_files()
+
+    changed_files = _files(r)
     clangfmt(changed_files)
 
 
