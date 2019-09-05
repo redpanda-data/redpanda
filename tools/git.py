@@ -18,6 +18,10 @@ def get_git_user():
     return shell.run_oneline("git config user.name")
 
 
+def get_git_email():
+    return shell.run_oneline("git config user.email")
+
+
 def get_tag_or_ref():
     head = shell.run_oneline("git rev-parse --short HEAD")
     tag = shell.run_oneline("git name-rev --tags --name-only %s" % head)
