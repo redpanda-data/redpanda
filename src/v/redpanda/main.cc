@@ -26,7 +26,6 @@
 logger lgr{"redpanda::main"};
 
 // in transition
-#include "raft/raft_log_service.h"
 #include "redpanda/config/configuration.h"
 
 
