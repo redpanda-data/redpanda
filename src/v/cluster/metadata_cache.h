@@ -1,6 +1,5 @@
 #pragma once
 
-#include "filesystem/write_ahead_log.h"
 #include "model/metadata.h"
 #include "seastarx.h"
 
@@ -11,10 +10,9 @@
 
 namespace cluster {
 
-// FIXME: Don't implement in terms of the log.
 class metadata_cache {
 public:
-    explicit metadata_cache(sharded<write_ahead_log>&) noexcept;
+    metadata_cache() noexcept = default;
 
     future<> stop() {
         return make_ready_future<>();
@@ -23,9 +21,6 @@ public:
     future<std::vector<model::topic_view>> all_topics() const;
     future<std::optional<model::topic_metadata>>
       get_topic_metadata(model::topic_view) const;
-
-private:
-    sharded<write_ahead_log>& _log;
 };
 
 } // namespace cluster

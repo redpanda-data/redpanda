@@ -1,9 +1,11 @@
 #include "redpanda/kafka/requests/metadata_request.h"
-
+#include "redpanda/kafka/requests/headers.h"
 #include "model/metadata.h"
 #include "redpanda/kafka/errors/errors.h"
 
 #include <seastar/core/thread.hh>
+
+#include <fmt/ostream.h>
 
 #include <string_view>
 

@@ -77,7 +77,7 @@ future<log_segment_ptr> log_manager::make_log_segment(
                     fd = f.get0();
                 } catch (...) {
                     auto ep = std::current_exception();
-                    stlog.error(
+                    stlog().error(
                       "Could not create log segment {}. Found exception: {}",
                       filename,
                       ep);

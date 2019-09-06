@@ -1,6 +1,7 @@
 #pragma once
 
 #include "seastarx.h"
+#include "storage/logger.h"
 #include "syschecks/syschecks.h"
 
 #include <seastar/core/future.hh>
@@ -9,15 +10,15 @@
 
 namespace storage::directories {
 
-static future<> initialize_directory(sstring dir) {
+static future<> initialize(sstring dir) {
     return recursive_touch_directory(dir)
-      .handle_exception([this, dir](std::exception_ptr ep) {
-          stlog.error(
+      .handle_exception([dir](std::exception_ptr ep) {
+          stlog().error(
             "Directory `{}` cannot be initialized. Failed with {}", dir, ep);
           return make_exception_future<>(std::move(ep));
       })
       .then([dir] {
-          stlog.info("Checking `{}` for supported filesystems", dir);
+          stlog().info("Checking `{}` for supported filesystems", dir);
           return syschecks::disk(dir);
       });
 }
