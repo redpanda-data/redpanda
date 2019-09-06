@@ -437,3 +437,33 @@ SEASTAR_THREAD_TEST_CASE(test_release) {
     auto ftb = fragmented_temporary_buffer(std::move(fragments), sizeof(value));
     BOOST_CHECK_EQUAL(std::move(ftb).release().size(), 3);
 }
+
+SEASTAR_THREAD_TEST_CASE(test_consume) {
+    uint64_t value = 0x1234'5678'abcd'ef02ull;
+
+    auto data = bytes(bytes::initialized_later(), sizeof(value));
+    std::copy_n(
+      reinterpret_cast<const int8_t*>(&value), sizeof(value), data.begin());
+
+    std::vector<temporary_buffer<char>> fragments;
+    fragments.emplace_back(reinterpret_cast<char*>(data.data()), 3);
+    fragments.emplace_back(reinterpret_cast<char*>(data.data() + 3), 2);
+    fragments.emplace_back(reinterpret_cast<char*>(data.data() + 5), 3);
+
+    auto ftb = fragmented_temporary_buffer(std::move(fragments), sizeof(value));
+    auto in = ftb.get_istream();
+    BOOST_CHECK_EQUAL(in.read<uint16_t>(), 0xef02);
+
+    // Consume the rest of the stream as a sequence of sequences of bytes.
+    std::vector<bytes_view> remaining;
+    in.consume([&remaining] (bytes_view bv) {
+        remaining.push_back(bv);
+    });
+    BOOST_CHECK_EQUAL(remaining.size(), 3);
+    auto frag = bytes_view(reinterpret_cast<const int8_t*>(&value) + 2, 1);
+    BOOST_CHECK_EQUAL(remaining[0], frag);
+    frag = bytes_view(reinterpret_cast<const int8_t*>(&value) + 3, 2);
+    BOOST_CHECK_EQUAL(remaining[1], frag);
+    frag = bytes_view(reinterpret_cast<const int8_t*>(&value) + 5, 3);
+    BOOST_CHECK_EQUAL(remaining[2], frag);
+}
