@@ -64,16 +64,13 @@ public:
     future<fragmented_temporary_buffer>
     read_fragmented_temporary_buffer(size_t i) final {
         return _frag.read_exactly(_source.get(), i).then([this](ftb b) {
-            const size_t byte_size = b.size_bytes();
-            if (byte_size > 0) {
-                auto vec = std::move(b).release();
-                for (auto& buf : vec) {
-                    _size += buf.size();
-                    _hash.update(buf.get(), buf.size());
-                }
-                return make_ready_future<ftb>(ftb(std::move(vec), byte_size));
-            }
-            return make_ready_future<ftb>(std::move(b));
+            auto istream = b.get_istream();
+            istream.consume([this](bytes_view bv) {
+                _hash.update(
+                  reinterpret_cast<const char*>(bv.data()), bv.size());
+            });
+            _size = b.size_bytes();
+            return std::move(b);
         });
     }
     size_t size_bytes() const {
