@@ -49,7 +49,7 @@ record_batch make_batch(offset o) {
 template<typename... Offsets>
 std::vector<record_batch> make_batches(Offsets... o) {
     std::vector<record_batch> batches;
-    (batches.push_back((std::move(make_batch(o)), ...)));
+    (void)(batches.emplace_back(make_batch(o)), ...);
     return batches;
 }
 
