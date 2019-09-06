@@ -86,6 +86,12 @@ public:
         return fragmented_temporary_buffer(std::move(fragments), len);
     }
 
+    bool operator==(const fragmented_temporary_buffer& other) const;
+
+    bool operator!=(const fragmented_temporary_buffer& other) const {
+        return !(*this == other);
+    }
+
 private:
     vector_type _fragments;
     size_t _size_bytes = 0;
@@ -273,6 +279,21 @@ public:
         return bytes_view(reinterpret_cast<const bytes::value_type*>(ptr), n);
     }
 
+    template<typename Consumer>
+    // clang-format off
+    CONCEPT(requires requires(Consumer c, bytes_view bv) {
+        { c(bv) };
+    })
+    // clang-format on
+    void consume(Consumer&& c) {
+        while (_bytes_left) {
+            c(bytes_view(
+              reinterpret_cast<bytes_view::const_pointer>(_current_position),
+              std::distance(_current_position, _current_end)));
+            next_fragment();
+        }
+    }
+
     using const_iterator = iterator;
     // Non-consuming iterator, from this point forward.
     iterator begin() const noexcept;
@@ -397,3 +418,21 @@ inline fragmented_temporary_buffer::istream::iterator
 fragmented_temporary_buffer::istream::end() const noexcept {
     return iterator(iterator::end_tag{});
 }
+
+// clang-format off
+inline bool fragmented_temporary_buffer::operator==(
+  const fragmented_temporary_buffer& other) const {
+    auto stream = get_istream();
+    auto other_stream = other.get_istream();
+    return _size_bytes == other._size_bytes
+           && std::equal(stream.begin(), stream.end(), other_stream.begin());
+}
+// clang-format on
+
+namespace std {
+using iterator_type = fragmented_temporary_buffer::istream::iterator;
+template<>
+struct iterator_traits<iterator_type> {
+    using value_type = iterator_type::value_type;
+};
+} // namespace std

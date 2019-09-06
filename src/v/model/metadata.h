@@ -6,7 +6,6 @@
 #include <seastar/core/sstring.hh>
 
 #include <optional>
-#include <string_view>
 #include <unordered_set>
 #include <vector>
 
