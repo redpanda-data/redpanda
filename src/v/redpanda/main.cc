@@ -1,9 +1,8 @@
 #include "cluster/metadata_cache.h"
-#include "filesystem/write_ahead_log.h"
-#include "ioutil/dir_utils.h"
 #include "redpanda/kafka/transport/probe.h"
 #include "redpanda/kafka/transport/server.h"
 #include "resource_mgmt/cpu_scheduling.h"
+#include "storage/directories.h"
 #include "syschecks/syschecks.h"
 
 #include <seastar/core/app-template.hh>
@@ -123,14 +122,9 @@ int main(int argc, char** argv, char** env) {
                   });
             }).get();
 
-            static sharded<write_ahead_log> log;
-            log.start(wal_opts(rp_config.local())).get();
-            auto stop_log = defer([] { log.stop().get(); });
-            log.invoke_on_all(&write_ahead_log::open).get();
-            log.invoke_on_all(&write_ahead_log::index).get();
             static sharded<cluster::metadata_cache> metadata_cache;
             lgr.info("Starting Metadata Cache");
-            metadata_cache.start(std::ref(log)).get();
+            metadata_cache.start().get();
             auto stop_metadata_cache = defer(
               [] { metadata_cache.stop().get(); });
 
@@ -186,5 +180,5 @@ bool hydrate_cfg(sharded<config::configuration>& c, std::string filename) {
 future<> check_environment(const config::configuration& c) {
     syschecks::cpu();
     syschecks::memory(c.developer_mode());
-    return dir_utils::create_dir_tree(c.data_directory());
+    return storage::directories::initialize(c.data_directory());
 }

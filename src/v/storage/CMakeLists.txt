@@ -1,5 +1,4 @@
 add_library(storage STATIC
-    logger.cc
     log_segment.cc
     log_manager.cc
     log.cc

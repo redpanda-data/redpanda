@@ -6,6 +6,9 @@
 
 namespace storage {
 
-extern logger stlog;
+inline logger& stlog() {
+    static logger _stlog{"storage"};
+    return _stlog;
+}
 
 }
