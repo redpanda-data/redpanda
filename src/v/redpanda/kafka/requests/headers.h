@@ -14,11 +14,11 @@ using correlation_type = int32_t;
 
 class api_key final {
 public:
-    constexpr explicit api_key(uint16_t value) noexcept
+    constexpr explicit api_key(int16_t value) noexcept
       : _value(value) {
     }
 
-    constexpr uint16_t value() const {
+    constexpr int16_t value() const {
         return _value;
     }
 
@@ -30,18 +30,18 @@ public:
     }
 
 private:
-    uint16_t _value;
+    int16_t _value;
 };
 
 std::ostream& operator<<(std::ostream&, const api_key&);
 
 class api_version final {
 public:
-    constexpr explicit api_version(uint16_t value = 0) noexcept
+    constexpr explicit api_version(int16_t value = 0) noexcept
       : _value(value) {
     }
 
-    constexpr uint16_t value() const {
+    constexpr int16_t value() const {
         return _value;
     }
 
@@ -65,7 +65,7 @@ public:
     }
 
 private:
-    uint16_t _value;
+    int16_t _value;
 };
 
 std::ostream& operator<<(std::ostream&, const api_version&);
