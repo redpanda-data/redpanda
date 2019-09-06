@@ -80,16 +80,11 @@ future<> deserialize(source& in, T& t) {
               std::copy_n(buf.get(), sz, reinterpret_cast<char*>(&t));
           });
     } else if constexpr (is_standard_layout) {
-        constexpr size_t sz = arity<T>();
-        auto sem = make_lw_shared<semaphore>(1);
-        sem->ensure_space_for_waiters(sz);
-        for_each_field(t, [&in, sem](auto& field) {
-            return get_units(*sem, 1).then(
-              [&in, &field, sem](semaphore_units<> u) mutable {
-                  return deserialize(in, field).finally([u = std::move(u)] {});
-              });
+        auto f = make_ready_future<>();
+        for_each_field(t, [&in, &f](auto& field) {
+            f = f.then([&in, &field] { return deserialize(in, field); });
         });
-        return sem->wait(1).finally([sem] {});
+        return f;
     }
     throw std::runtime_error(fmt::format(
       "rpc: no deserializer registered. is_vector:{}, is_fragmented_buffer:{}, "
