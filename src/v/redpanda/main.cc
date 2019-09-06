@@ -3,7 +3,6 @@
 #include "ioutil/dir_utils.h"
 #include "redpanda/kafka/transport/probe.h"
 #include "redpanda/kafka/transport/server.h"
-#include "redpanda/rpc_config.h"
 #include "resource_mgmt/cpu_scheduling.h"
 #include "syschecks/syschecks.h"
 
