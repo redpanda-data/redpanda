@@ -30,10 +30,16 @@ def get_git_files():
     return list(filter(lambda x: x and len(x) > 0, ret.split("\n")))
 
 
-def get_git_changed_files():
-    ret = shell.raw_check_output(
-        "cd %s && git diff --name-only --diff-filter=d" % get_git_root(
-            os.path.dirname(__file__)))
+def get_git_changed_files(obj=None):
+    if obj:
+        ret = shell.raw_check_output(
+            "cd {dir} && git show --name-only --format='' {obj}".format(
+                dir=get_git_root(os.path.dirname(__file__)),
+                obj=obj))
+    else:
+        ret = shell.raw_check_output(
+            "cd %s && git diff --name-only --diff-filter=d" % get_git_root(
+                os.path.dirname(__file__)))
     logger.debug("Files recently changed %s" % ret)
     return list(filter(lambda x: x and len(x) > 0, ret.split("\n")))
 

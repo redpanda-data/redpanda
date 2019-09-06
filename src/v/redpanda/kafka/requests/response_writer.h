@@ -86,6 +86,10 @@ public:
         return size;
     }
 
+    uint32_t write(const sstring& v) {
+        return write(std::string_view(v));
+    }
+
     uint32_t write(std::optional<std::string_view> v) {
         if (!v) {
             return serialize_int<int16_t>(-1);
@@ -122,15 +126,12 @@ public:
     })
     // clang-format on
     uint32_t write_array(const std::vector<T>& v, ElementWriter&& writer) {
-        auto* size_place_holder = _out->write_place_holder(sizeof(int32_t));
         auto start_size = uint32_t(_out->size_bytes());
+        write(int32_t(v.size()));
         for (auto& elem : v) {
             writer(elem, *this);
         }
-        int32_t size = _out->size_bytes() - start_size;
-        auto* in = reinterpret_cast<const bytes_ostream::value_type*>(&size);
-        std::copy_n(in, sizeof(size), size_place_holder);
-        return size;
+        return _out->size_bytes() - start_size;
     }
 
 private:
