@@ -50,10 +50,3 @@ def get_cpplint():
         os.chmod(linter, s.st_mode | stat.S_IEXEC)
     return linter
 
-
-def get_smf_install_deps():
-    check_bdir()
-    deps = "%s/%s" % (RP_BUILD_ROOT, "smf_install_deps.sh")
-    if not os.path.exists(deps):
-        urllib.request.urlretrieve(INSTALL_DEPS_URL, deps)
-    return deps
