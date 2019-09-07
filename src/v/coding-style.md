@@ -74,7 +74,7 @@ absolute path with `""` like this:
 ```
 
 `v` header files are the first block of includes. Then come header files for 
-`seastar`,`smf`, and other libraries. The last block is comprised of standard
+`seastar`, and other libraries. The last block is comprised of standard
 library headers:
 
 ```c++
@@ -82,9 +82,6 @@ library headers:
 
 #include <seastar/core/future.hh>
 #include <seastar/core/sstring.hh>
-
-#include <smf/rpc_envelope.h>
-#include <smf/rpc_server.h>
 
 #include <boost/algorithm/string/join.hpp>
 
