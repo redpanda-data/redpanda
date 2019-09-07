@@ -57,7 +57,7 @@ template<typename Input, typename Output>
 inline future<client_context<Output>>
 client::send_typed(Input r, uint32_t method_id) {
     auto b = rpc::netbuf();
-    b.serialize_type(r);
+    b.serialize_type(std::move(r));
     b.set_service_method_id(method_id);
     return send(std::move(b))
       .then([this](std::unique_ptr<streaming_context> sctx) mutable {
