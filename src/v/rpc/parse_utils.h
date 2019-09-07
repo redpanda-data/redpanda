@@ -7,6 +7,8 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/iostream.hh>
 
+#include <fmt/ostream.h>
+
 #include <memory>
 #include <optional>
 
