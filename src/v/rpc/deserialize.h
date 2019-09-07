@@ -41,7 +41,7 @@ future<> deserialize(source& in, T& t) {
         return deserialize<int32_t>(in, *i).then([&in, &t, max = std::move(i)] {
             return in.read_exactly(*max).then(
               [&in, &t, sz = *max](temporary_buffer<char> buf) {
-                  if (buf.size() != sz) {
+                  if (buf.size() != static_cast<size_t>(sz)) {
                       throw deserialize_invalid_argument(buf.size(), sz);
                   }
                   t = sstring(sstring::initialized_later(), sz);
@@ -62,7 +62,7 @@ future<> deserialize(source& in, T& t) {
         return deserialize<int32_t>(in, *i).then([&in, &t, max = std::move(i)] {
             return in.read_fragmented_temporary_buffer(*max).then(
               [&t, max = *max](fragmented_temporary_buffer b) {
-                  if (max != b.size_bytes()) {
+                  if (static_cast<size_t>(max) != b.size_bytes()) {
                       throw deserialize_invalid_argument(
                         b.size_bytes(), sizeof(int32_t));
                   }
