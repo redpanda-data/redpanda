@@ -8,6 +8,8 @@
 #include "rpc/test/bytes_ostream_utils.h"
 #include "rpc/test/test_types.h"
 
+#include <fmt/ostream.h>
+
 namespace rpc {
 /// \brief expects the inputstream to be prefixed by an rpc::header
 template<typename T>
