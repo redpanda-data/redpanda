@@ -34,7 +34,7 @@ SEASTAR_THREAD_TEST_CASE(netbuf_pod) {
     src.z = 88;
     n.set_correlation_id(42);
     n.set_service_method_id(66);
-    n.serialize_type(src);
+    n.serialize_type(std::move(src));
     // forces the computation of the header
     n.scattered_view();
     auto in = rpc::make_input_stream(std::move(n).release());
