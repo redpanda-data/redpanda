@@ -1,6 +1,6 @@
 #include "utils/hdr_hist.h"
 
-#include <fmt/format.h>
+#include "utils/human.h"
 
 #include <iostream>
 
@@ -104,29 +104,11 @@ hdr_hist::~hdr_hist() {
     }
 }
 
-struct latency_print {
-    latency_print(int64_t x)
-      : value(x) {
-    }
-    int64_t value;
-};
-static inline std::ostream& operator<<(std::ostream& o, latency_print&& l) {
-    static const char* units[] = {"μs", "ms", "secs"};
-    static constexpr double step = 1000;
-    double x = l.value;
-    for (size_t i = 0; i < 3; ++i) {
-        if (x <= step) {
-            return o << fmt::format("{:03.2f}{}", x, units[i]);
-        }
-        x /= step;
-    }
-    return o << x << "uknown_units";
-}
 std::ostream& operator<<(std::ostream& o, const hdr_hist& h) {
-    return o << "{p10=" << latency_print(h.get_value_at(.1))
-             << ",p50=" << latency_print(h.get_value_at(.5))
-             << ",p90=" << latency_print(h.get_value_at(.9))
-             << ",p99=" << latency_print(h.get_value_at(.99))
-             << ",p999=" << latency_print(h.get_value_at(.990))
-             << ",max=" << latency_print(h.get_value_at(1)) << "}";
+    return o << "{p10=" << human::latency(h.get_value_at(.1))
+             << ",p50=" << human::latency(h.get_value_at(.5))
+             << ",p90=" << human::latency(h.get_value_at(.9))
+             << ",p99=" << human::latency(h.get_value_at(.99))
+             << ",p999=" << human::latency(h.get_value_at(.990))
+             << ",max=" << human::latency(h.get_value_at(1)) << "}";
 };
