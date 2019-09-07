@@ -58,7 +58,7 @@ public:
 private:
     output_stream<char> _out;
     size_t _offset = 0;
-    const io_priority_class& _prio;
+    io_priority_class _prio;
 };
 
 } // namespace storage
