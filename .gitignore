@@ -32,7 +32,6 @@ bazel-*
 .vagrant/
 
 .gdb_history
-*.smf.fb.h*
 *_generated.h
 build_debug/
 build_release/
