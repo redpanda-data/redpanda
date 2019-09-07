@@ -2,7 +2,6 @@
 redpanda:
   directory: "~/.redpanda"
 
-  # TODO(SMF) should have an http_addr and rpc_addr
   port: 33145
   ip: "127.0.0.1"
   id: 1
