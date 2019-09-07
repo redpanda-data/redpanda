@@ -27,6 +27,10 @@ struct context {
         model::topic_partition{model::topic("topic"), model::partition(6)}},
       manager,
       log_set({}));
+
+    ~context() {
+        log.close().get();
+    }
 };
 
 log_append_config config() {
@@ -55,7 +59,6 @@ SEASTAR_THREAD_TEST_CASE(test_can_write_single_batch) {
     BOOST_REQUIRE_EQUAL(value + read, file_size);
 
     in.close().get();
-    ctx.log.close().get();
 }
 
 SEASTAR_THREAD_TEST_CASE(test_log_segment_rolling) {
@@ -85,8 +88,6 @@ SEASTAR_THREAD_TEST_CASE(test_log_segment_rolling) {
         auto file_size = seg->stat().get0().st_size;
         BOOST_REQUIRE_EQUAL(0, file_size);
     }
-
-    ctx.log.close().get();
 }
 
 SEASTAR_THREAD_TEST_CASE(test_log_segment_rolling_middle_of_writting) {
@@ -126,6 +127,4 @@ SEASTAR_THREAD_TEST_CASE(test_log_segment_rolling_middle_of_writting) {
         BOOST_REQUIRE_EQUAL(value + read, file_size);
         in.close().get();
     }
-
-    ctx.log.close().get();
 }
