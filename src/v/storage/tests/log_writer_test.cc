@@ -40,7 +40,6 @@ SEASTAR_THREAD_TEST_CASE(test_can_write_single_batch) {
     auto batches = test::make_random_batches(std::vector{model::offset(1)});
     auto reader = model::make_memory_record_batch_reader(std::move(batches));
     ctx.log.append(std::move(reader), config()).get();
-    std::cout << ctx.log.appender().offset() << std::endl;
 
     BOOST_REQUIRE(ctx.log.segments().begin() != ctx.log.segments().end());
     auto seg = *ctx.log.segments().begin();
