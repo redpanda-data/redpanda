@@ -374,7 +374,7 @@ ExternalProject_Add(seastar
     -DBoost_NO_BOOST_CMAKE:BOOL=ON
     -DSeastar_INSTALL=ON
     -DSeastar_DPDK=@RP_ENABLE_DPDK@
-    -DSeastar_APPS=ON # different from smf; we need iotune built binary
+    -DSeastar_APPS=ON
     -DSeastar_DEMOS=OFF
     -DSeastar_DOCS=OFF
     -DSeastar_TESTING=OFF
@@ -447,86 +447,7 @@ ExternalProject_Add(gtest
   CMAKE_ARGS
     ${common_cmake_args})
 
-ExternalProject_Add(gflags
-  URL https://github.com/gflags/gflags/archive/1005485222e8b0feff822c5723ddcaa5abadc01a.tar.gz
-  URL_MD5 25582b81561bb2f1d2c05e05b4b566a8
-  INSTALL_DIR    @V_DEPS_INSTALL_DIR@
-  DEPENDS ${default_depends}
-  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
-  CMAKE_ARGS
-    ${common_cmake_args}
-    -DBUILD_SHARED_LIBS=OFF
-    -DBUILD_STATIC_LIBS=ON
-    -DBUILD_gflags_LIB=ON
-    -DBUILD_TESTING=OFF
-    -DBUILD_PACKAGING=OFF)
-
-ExternalProject_Add(glog
-  URL https://github.com/google/glog/archive/5d46e1bcfc92bf06a9ca3b3f1c5bb1dc024d9ecd.tar.gz
-  URL_MD5 548900b10c18b2b7a43ae8960ec3a777
-  INSTALL_DIR    @V_DEPS_INSTALL_DIR@
-  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
-  CMAKE_ARGS
-    ${common_cmake_args}
-    -DBUILD_SHARED_LIBS=OFF
-    -DWITH_GFLAGS=ON
-  DEPENDS gflags ${default_depends})
-
-ExternalProject_Add(googlebenchmark
-  URL https://github.com/google/benchmark/archive/eec9a8e4976a397988c15e5a4b71a542375a2240.tar.gz
-  URL_MD5 81f6af37a81753cb9d799012b62ae04d
-  INSTALL_DIR    @V_DEPS_INSTALL_DIR@
-  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
-  CMAKE_ARGS
-    ${common_cmake_args}
-    -DCMAKE_CROSSCOMPILING=1
-    -DRUN_HAVE_STD_REGEX=0
-    -DRUN_HAVE_POSIX_REGEX=0
-    -DBENCHMARK_ENABLE_GTEST_TESTS=OFF
-    -DBENCHMARK_ENABLE_TESTING=OFF
-  DEPENDS gflags ${default_depends})
-
-# note about master
-ExternalProject_Add(flatbuffers
-  URL https://github.com/google/flatbuffers/archive/bc7ede8fb3a754a04e507992d5514b528270ee06.tar.gz
-  URL_MD5 e424cde3f805ebd36895d049d1611d40
-  INSTALL_DIR    @V_DEPS_INSTALL_DIR@
-  DEPENDS ${default_depends}
-  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
-  CMAKE_ARGS
-    ${common_cmake_args}
-    -DCMAKE_SKIP_BUILD_RPATH=OFF
-    -DCMAKE_BUILD_WITH_INSTALL_RPATH=TRUE
-    -DCMAKE_INSTALL_RPATH=@V_DEPS_INSTALL_DIR@/lib
-    -DFLATBUFFERS_INSTALL=ON
-    -DFLATBUFFERS_BUILD_FLATC=ON
-    -DFLATBUFFERS_BUILD_TESTS=OFF
-    -DFLATBUFFERS_BUILD_FLATHASH=OFF)
-
-# -- below are seastar & smf deps
-ExternalProject_Add(smf
-  DEPENDS
-    ${default_depends}
-    flatbuffers
-    googlebenchmark
-    glog
-    gflags
-    gtest
-    xxhash
-    HdrHistogram
-    zstd
-    seastar
-  URL https://github.com/smfrpc/smf/archive/d44a113.tar.gz
-  URL_MD5 a19af4936d1c13ae919b67d5ac0dd503
-  INSTALL_DIR    @V_DEPS_INSTALL_DIR@
-  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
-  CMAKE_ARGS
-    ${common_cmake_args}
-    -DBoost_USE_STATIC_LIBS:BOOL=OFF
-    -DBoost_NO_BOOST_CMAKE:BOOL=ON
-    -DSMF_MANAGE_DEPS=OFF
-    -DSMF_ENABLE_TESTS=OFF
-    -DSMF_BUILD_PROGRAMS=OFF)
+# -- below are seastar deps
 
 ExternalProject_Add(GSL
   URL https://github.com/Microsoft/GSL/archive/0f68d13.tar.gz
@@ -537,39 +458,6 @@ ExternalProject_Add(GSL
   CMAKE_ARGS
     ${common_cmake_args}
     -DGSL_TEST=OFF)
-
-ExternalProject_Add(luajit
-  URL https://github.com/LuaJIT/LuaJIT/archive/v2.1.0-beta3.tar.gz
-  URL_MD5 9277838df4f8d50f2aa439fdcc7eae7b
-  INSTALL_DIR    @V_DEPS_INSTALL_DIR@
-  CONFIGURE_COMMAND ""
-  BUILD_IN_SOURCE ON
-  DEPENDS ${default_depends}
-  BUILD_COMMAND ""
-  INSTALL_COMMAND ${make_command} ${luajit_c_compiler} ${cmake_build_env} PREFIX=<INSTALL_DIR> install)
-
-ExternalProject_Add(sol2
-  DEPENDS luajit ${default_depends}
-  URL https://github.com/ThePhD/sol2/archive/248fd71.tar.gz
-  URL_MD5 920d266cd552d97bc588fca91aabeef5
-  INSTALL_DIR    @V_DEPS_INSTALL_DIR@
-  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
-  CMAKE_ARGS
-    ${common_cmake_args}
-    -DSINGLE=ON
-    -DLUA_VERSION="luajit-2.1")
-
-ExternalProject_Add(croaring
-  URL https://github.com/RoaringBitmap/CRoaring/archive/6154187.tar.gz
-  URL_MD5 e64f4712d4b1235bd009279f4485b044
-  INSTALL_DIR    @V_DEPS_INSTALL_DIR@
-  DEPENDS ${default_depends}
-  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
-  CMAKE_ARGS
-    ${common_cmake_args}
-    -DENABLE_ROARING_TESTS=OFF
-    -DROARING_BUILD_STATIC=ON
-    -DROARING_DISABLE_NATIVE=ON)
 
 ExternalProject_Add(pcg
   URL https://github.com/imneme/pcg-cpp/archive/b656278.tar.gz
