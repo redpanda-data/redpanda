@@ -133,6 +133,7 @@ std::ostream& operator<<(std::ostream&, namespaced_topic_partition);
 
 class offset {
 public:
+    using type = uint64_t;
     offset() noexcept = default;
 
     explicit offset(uint64_t val) noexcept
