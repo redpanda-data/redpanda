@@ -31,6 +31,16 @@ public:
       : _file(f) {
     }
 
+    ~file_io_sanitizer() {
+        if (!_closed && _file) {
+            std::cout << "File destroying without being closed!" << std::endl;
+            output_pending_ops();
+        }
+    }
+
+    file_io_sanitizer(file_io_sanitizer&&) = default;
+    file_io_sanitizer& operator=(file_io_sanitizer&&) = default;
+
     virtual future<size_t> write_dma(
       uint64_t pos,
       const void* buffer,
