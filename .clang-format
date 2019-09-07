@@ -18,13 +18,9 @@ Cpp11BracedListStyle: true
 FixNamespaceComments: true
 IncludeBlocks: Regroup
 IncludeCategories:
-  # Seastar and smf header files (with angles)
+  # Seastar files (with angles)
   - Regex:    '^<seastar/'
     Priority: 2
-  # Smf header files (with angles)
-  - Regex:    '^<smf/'
-    Priority: 3
-  # Other libraries
   # Other libraries
   - Regex:    '^<.+/'
     Priority: 4
