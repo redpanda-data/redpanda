@@ -36,7 +36,7 @@ log_segment_appender log_segment::data_appender(const io_priority_class& pc) {
     return log_segment_appender(_data_file, std::move(options));
 }
 
-std::ostream& operator<<(std::ostream& os, log_segment seg) {
+std::ostream& operator<<(std::ostream& os, const log_segment& seg) {
     return fmt_print(
       os, "{{log_segment: {}, {}}}", seg.get_filename(), seg.base_offset());
 }
