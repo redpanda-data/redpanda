@@ -11,13 +11,13 @@
 BOOST_AUTO_TEST_CASE(serialize_pod) {
     auto b = bytes_ostream();
     pod it;
-    rpc::serialize(b, it);
+    rpc::serialize(b, std::move(it));
     BOOST_CHECK_EQUAL(b.size_bytes(), sizeof(it));
 }
 BOOST_AUTO_TEST_CASE(serialize_packed_struct) {
     auto b = bytes_ostream();
     very_packed_pod it;
-    rpc::serialize(b, it);
+    rpc::serialize(b, std::move(it));
     BOOST_CHECK_EQUAL(b.size_bytes(), 3);
 }
 
@@ -32,7 +32,7 @@ BOOST_AUTO_TEST_CASE(serialize_with_fragmented_buffer) {
     std::vector<temporary_buffer<char>> v;
     v.emplace_back(temporary_buffer<char>(55));
     it.oi = std::move(fragmented_temporary_buffer(std::move(v), 55));
-    rpc::serialize(b, it);
+    rpc::serialize(b, std::move(it));
     BOOST_CHECK_EQUAL(
       b.size_bytes(),
       55 + sizeof(it.pit)
@@ -41,7 +41,7 @@ BOOST_AUTO_TEST_CASE(serialize_with_fragmented_buffer) {
 BOOST_AUTO_TEST_CASE(serialize_pod_with_vector) {
     auto b = bytes_ostream();
     pod_with_vector it;
-    rpc::serialize(b, it);
+    rpc::serialize(b, std::move(it));
     BOOST_CHECK_EQUAL(
       b.size_bytes(),
       sizeof(pod) + (sizeof(int32_t) * 3 /*3 times*/)
@@ -50,7 +50,7 @@ BOOST_AUTO_TEST_CASE(serialize_pod_with_vector) {
 BOOST_AUTO_TEST_CASE(serialize_pod_with_array) {
     auto b = bytes_ostream();
     pod_with_array it;
-    rpc::serialize(b, it);
+    rpc::serialize(b, std::move(it));
     BOOST_CHECK_EQUAL(
       b.size_bytes(),
       sizeof(pod) + (sizeof(int32_t) * 3 /*3 times*/)
@@ -65,7 +65,7 @@ BOOST_AUTO_TEST_CASE(serialize_sstring_vector) {
     x.k = "foobar";
     x.v = fragmented_temporary_buffer(std::move(vi), 87);
     it.hdrs.push_back(std::move(x));
-    rpc::serialize(b, it);
+    rpc::serialize(b, std::move(it));
     const size_t expected =
       /*
       struct kv {
