@@ -53,7 +53,7 @@ metadata_request::process(request_context& ctx, smp_service_group g) {
           model::node_id(1), "localhost", 9092, std::nullopt);
         resp->writer().write_array(
           brokers, [&ctx](const model::broker& b, response_writer& rw) {
-              rw.write(b.id().value);
+              rw.write(b.id());
               rw.write(std::string_view(b.host()));
               rw.write(b.port());
               if (ctx.header().version > api_version(0)) {
@@ -94,27 +94,29 @@ metadata_request::process(request_context& ctx, smp_service_group g) {
                   // Currently topics are never internal.
                   rw.write(false);
               }
-              rw.write_array(topic_metadata->partitions, [&ctx](const auto& pm, response_writer& rw) {
-                  rw.write(errors::error_code::none);
-                  rw.write(pm.id.value);
-                  rw.write(int32_t(1)); // The leader.
-                  // FIXME: Obtain partition replicas.
-                  auto write_replicas = [&] {
-                      rw.write_array(
-                        std::vector<int32_t>{1},
-                        [](int32_t replica, response_writer& rw) {
-                            rw.write(replica);
-                        });
-                  };
-                  write_replicas();
-                  write_replicas();
-                  if (ctx.header().version >= api_version(5)) {
-                      // Offline replicas
-                      rw.write_array(
-                        std::vector<int32_t>{},
-                        [](int32_t, response_writer&) {});
-                  }
-              });
+              rw.write_array(
+                topic_metadata->partitions,
+                [&ctx](const auto& pm, response_writer& rw) {
+                    rw.write(errors::error_code::none);
+                    rw.write(pm.id.value);
+                    rw.write(int32_t(1)); // The leader.
+                    // FIXME: Obtain partition replicas.
+                    auto write_replicas = [&] {
+                        rw.write_array(
+                          std::vector<int32_t>{1},
+                          [](int32_t replica, response_writer& rw) {
+                              rw.write(replica);
+                          });
+                    };
+                    write_replicas();
+                    write_replicas();
+                    if (ctx.header().version >= api_version(5)) {
+                        // Offline replicas
+                        rw.write_array(
+                          std::vector<int32_t>{},
+                          [](int32_t, response_writer&) {});
+                    }
+                });
           });
 
         return response_ptr(std::move(resp));
