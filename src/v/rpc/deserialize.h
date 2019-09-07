@@ -2,10 +2,11 @@
 
 #include "rpc/arity.h"
 #include "rpc/for_each_field.h"
-#include "rpc/is_std_vector.h"
+#include "rpc/is_std_helpers.h"
 #include "rpc/source.h"
 #include "seastarx.h"
 #include "utils/fragmented_temporary_buffer.h"
+#include "utils/named_type.h"
 
 #include <seastar/core/byteorder.hh>
 #include <seastar/core/iostream.hh>
@@ -93,6 +94,15 @@ future<> deserialize(source& in, T& t) {
       is_fragmented_buffer,
       is_standard_layout,
       is_trivially_copyable));
+}
+template<
+  typename T,
+  typename Tag,
+  typename U = std::enable_if_t<std::is_arithmetic_v<T>, T>>
+future<> deserialize(source& in, named_type<U, Tag>& r) {
+    using type = U;
+    type& ref = *reinterpret_cast<type*>(&r);
+    return deserialize(in, ref);
 }
 
 } // namespace rpc
