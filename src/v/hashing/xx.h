@@ -1,9 +1,8 @@
 #pragma once
-#include <smf/log.h>
-#include <smf/macros.h>
 
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <xxhash.h>
 
 inline uint64_t xxhash_64(const char* data, const size_t& length) {
@@ -15,8 +14,6 @@ inline uint32_t xxhash_32(const char* data, const size_t& length) {
 
 class incremental_xxhash64 {
 public:
-    SMF_DISALLOW_COPY_AND_ASSIGN(incremental_xxhash64);
-
     incremental_xxhash64() {
         reset();
     }
@@ -48,8 +45,6 @@ private:
 
 class incremental_xxhash32 {
 public:
-    SMF_DISALLOW_COPY_AND_ASSIGN(incremental_xxhash32);
-
     incremental_xxhash32() {
         reset();
     }
@@ -93,8 +88,8 @@ inline uint32_t xxhash_32(const std::array<T, N>& arr) {
     return xxhash_32(reinterpret_cast<const char*>(&arr[0]), sizeof(T) * N);
 }
 inline uint64_t xxhash_64_str(const char* s) {
-    return xxhash_64(DTHROW_IFNULL(s), std::strlen(s));
+    return xxhash_64(s, std::strlen(s));
 }
 inline uint32_t xxhash_32_str(const char* s) {
-    return xxhash_32(DTHROW_IFNULL(s), std::strlen(s));
+    return xxhash_32(s, std::strlen(s));
 }
