@@ -48,8 +48,9 @@ metadata_request::process(request_context& ctx, smp_service_group g) {
             resp->writer().write(int32_t(0));
         }
         // FIXME: Get list of live brokers
-        std::vector<model::broker> brokers = {
-          model::broker(model::node_id(1), "localhost", 9092, std::nullopt)};
+        std::vector<model::broker> brokers;
+        brokers.emplace_back(
+          model::node_id(1), "localhost", 9092, std::nullopt);
         resp->writer().write_array(
           brokers, [&ctx](const model::broker& b, response_writer& rw) {
               rw.write(b.id().value);
