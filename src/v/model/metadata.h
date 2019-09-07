@@ -37,7 +37,7 @@ public:
         return _id;
     }
 
-    const sstring host() const {
+    const sstring& host() const {
         return _host;
     }
 
