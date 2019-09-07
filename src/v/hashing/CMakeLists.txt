@@ -1,5 +1,5 @@
 find_package (GTest REQUIRED CONFIG)
-find_package(xxHash)
+find_package(xxHash REQUIRED)
 add_library (rphashing STATIC murmur.cc)
 target_include_directories(rphashing PUBLIC ${PROJECT_SOURCE_DIR}/src/v)
 target_link_libraries(rphashing PUBLIC xxHash::xxhash)
