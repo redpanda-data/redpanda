@@ -1,4 +1,3 @@
-# adapted form the smfrpc/smf repo
 # I think this is useless. We should just replace it.
 
 file(READ ${Seastar_DPDK_CONFIG_FILE_IN} dpdk_config)
