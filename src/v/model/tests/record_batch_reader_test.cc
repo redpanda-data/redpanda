@@ -68,7 +68,7 @@ SEASTAR_THREAD_TEST_CASE(test_pop) {
       make_batches(offset(1), offset(2), offset(3), offset(4)));
     {
         BOOST_REQUIRE(reader.should_load_slice());
-        reader.load_slice(timeout_clock::now()).get();
+        reader.load_slice(no_timeout).get();
         BOOST_REQUIRE(!reader.should_load_slice());
     }
     {
@@ -100,7 +100,7 @@ SEASTAR_THREAD_TEST_CASE(test_pop_multiple_slices) {
       make_batches(offset(1), offset(2), offset(3), offset(4)));
     {
         BOOST_REQUIRE(reader.should_load_slice());
-        reader.load_slice(timeout_clock::now()).get();
+        reader.load_slice(no_timeout).get();
         BOOST_REQUIRE(!reader.should_load_slice());
     }
     {
@@ -110,36 +110,36 @@ SEASTAR_THREAD_TEST_CASE(test_pop_multiple_slices) {
     }
     {
         BOOST_REQUIRE(reader.should_load_slice());
-        reader.load_slice(timeout_clock::now()).get();
+        reader.load_slice(no_timeout).get();
         auto batch = reader.pop_batch();
         BOOST_CHECK_EQUAL(batch.base_offset(), offset(2));
-        reader.load_slice(timeout_clock::now()).get();
+        reader.load_slice(no_timeout).get();
         reader.pop_batch();
     }
     {
         BOOST_REQUIRE(reader.should_load_slice());
-        reader.load_slice(timeout_clock::now()).get();
+        reader.load_slice(no_timeout).get();
         auto batch = reader.pop_batch();
         BOOST_CHECK_EQUAL(batch.base_offset(), offset(4));
         BOOST_REQUIRE(!reader.end_of_stream());
     }
     {
         BOOST_REQUIRE(reader.should_load_slice());
-        reader.load_slice(timeout_clock::now()).get();
+        reader.load_slice(no_timeout).get();
         BOOST_REQUIRE(!reader.should_load_slice());
         BOOST_REQUIRE(reader.end_of_stream());
     }
 }
 
 void do_test_consume(record_batch_reader reader) {
-    auto batches = reader.consume(consumer(4), timeout_clock::now()).get0();
+    auto batches = reader.consume(consumer(4), no_timeout).get0();
     auto o = offset(1);
     for (auto& batch : batches) {
         BOOST_CHECK_EQUAL(batch.base_offset(), o);
         o += 1;
     }
 
-    batches = reader.consume(consumer(4), timeout_clock::now()).get0();
+    batches = reader.consume(consumer(4), no_timeout).get0();
     BOOST_CHECK_EQUAL(batches.size(), 0);
 }
 
@@ -154,7 +154,7 @@ SEASTAR_THREAD_TEST_CASE(test_consume_multiple_slices) {
 }
 
 void do_test_interrupt_consume(record_batch_reader reader) {
-    auto batches = reader.consume(consumer(2), timeout_clock::now()).get0();
+    auto batches = reader.consume(consumer(2), no_timeout).get0();
     auto o = offset(1);
     for (auto& batch : batches) {
         BOOST_CHECK_EQUAL(batch.base_offset(), o);
@@ -162,21 +162,21 @@ void do_test_interrupt_consume(record_batch_reader reader) {
     }
     BOOST_CHECK_EQUAL(o, offset(3));
 
-    batches = reader.consume(consumer(2), timeout_clock::now()).get0();
+    batches = reader.consume(consumer(2), no_timeout).get0();
     for (auto& batch : batches) {
         BOOST_CHECK_EQUAL(batch.base_offset(), o);
         o += 1;
     }
     BOOST_CHECK_EQUAL(o, offset(5));
 
-    batches = reader.consume(consumer(2), timeout_clock::now()).get0();
+    batches = reader.consume(consumer(2), no_timeout).get0();
     for (auto& batch : batches) {
         BOOST_CHECK_EQUAL(batch.base_offset(), o);
         o += 1;
     }
     BOOST_CHECK_EQUAL(o, offset(6));
 
-    batches = reader.consume(consumer(4), timeout_clock::now()).get0();
+    batches = reader.consume(consumer(4), no_timeout).get0();
     BOOST_CHECK_EQUAL(batches.size(), 0);
 }
 
