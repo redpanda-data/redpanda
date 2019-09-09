@@ -19,6 +19,13 @@ inline logger& checklog() {
 }
 
 static inline void initialize_intrinsics() {
+    // https://gcc.gnu.org/onlinedocs/gcc/x86-Built-in-Functions.html#index-_005f_005fbuiltin_005fcpu_005finit-1
+    //
+    // This built-in function needs to be invoked along with the built-in
+    // functions to check CPU type and features, __builtin_cpu_is and
+    // __builtin_cpu_supports, only when used in a function that is executed
+    // before any constructors are called. The CPU detection code is
+    // automatically executed in a very high priority constructor.
     __builtin_cpu_init();
 }
 static inline void cpu() {
