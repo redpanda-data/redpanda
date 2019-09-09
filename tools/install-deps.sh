@@ -4,7 +4,31 @@ set -ex
 
 function debs() {
     apt-get update -y
+    if [ "${UBUNTU_CODENAME}" == "xenial" ] && [ -n "${CI}" ]; then
+        cmake_version="3.14.0"
+        cmake_full_name="cmake-${cmake_version}-Linux-x86_64.sh"
+        apt-get install -y wget
+        wget https://github.com/Kitware/CMake/releases/download/v${cmake_version}/${cmake_full_name} -O /tmp/${cmake_full_name}
+        chmod +x /tmp/${cmake_full_name}
+        /tmp/${cmake_full_name} --skip-license --prefix=/usr
+    else
+        apt-get install -y cmake
+    fi
+    apt-get install -y build-essential
+    if ! command -v add-apt-repository; then
+        apt-get -y install software-properties-common
+        apt-get update -y
+    fi
     apt-get install -y \
+            build-essential \
+            libtool \
+            m4 \
+            ninja-build \
+            automake \
+            pkg-config \
+            xfslibs-dev \
+            systemtap-sdt-dev \
+            ragel \
             ccache \
             python3-distutils-extra \
             clang \
@@ -34,8 +58,31 @@ function rpms() {
             $SUDO rm -f /etc/yum.repos.d/dl.fedoraproject.org*
             ;;
     esac
+    cmake="cmake"
+    case ${ID} in
+        centos|rhel)
+            MAJOR_VERSION="$(echo "$VERSION_ID" | cut -d. -f1)"
+            if test "$MAJOR_VERSION" = 7 ; then
+                cmake="cmake3"
+            fi
+    esac
+
+
     ${yumdnf} install -y \
+              ${cmake} \
+              gcc-c++ \
+              ninja-build \
+              m4 \
+              libtool \
+              make \
+              ragel \
+              xfsprogs-devel \
+              systemtap-sdt-devel \
+              libasan \
+              libubsan \
+              libatomic \
               ccache \
+              doxygen \
               python3-distutils-extra \
               clang \
               pigz \
