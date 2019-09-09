@@ -2,20 +2,29 @@
 
 #include "bytes/bytes.h"
 #include "bytes/bytes_ostream.h"
+#include "random/fast_prng.h"
 #include "random/generators.h"
-
-#include <smf/random.h>
 
 #include <boost/range/algorithm/for_each.hpp>
 #include <boost/test/unit_test.hpp>
 
 static const constexpr size_t characters_per_append = 10;
-
+static const sstring chars("abcdefghijklmnopqrstuvwxyz"
+                           "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                           "1234567890");
+sstring alnumstring(fast_prng& r, size_t size) {
+    sstring retval;
+    retval.resize(size);
+    for (size_t i = 0; i < size; ++i) {
+        retval[i] = chars[r() % chars.size()];
+    }
+    return retval;
+}
 void append_sequence(bytes_ostream& buf, size_t count) {
-    smf::random r;
+    fast_prng r;
     for (size_t i = 0; i < count; i++) {
-        auto s = r.next_alphanum(characters_per_append); // 10 w/ null char
-        buf.write(s.data(), s.size());
+        auto str = alnumstring(r, characters_per_append);
+        buf.write(str.data(), str.size());
     }
 }
 

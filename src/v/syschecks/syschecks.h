@@ -1,31 +1,38 @@
 #pragma once
 
 #include "seastarx.h"
+#include "utils/human.h"
 
 #include <seastar/core/reactor.hh>
 
-#include <smf/human_bytes.h>
-#include <smf/log.h>
+#include <fmt/ostream.h>
 
 #include <cpuid.h>
 #include <cstdint>
 #include <sstream>
 
 namespace syschecks {
+
+inline logger& checklog() {
+    static logger _syslgr{"syschecks"};
+    return _syslgr;
+}
+
 static inline void initialize_intrinsics() {
     __builtin_cpu_init();
 }
 static inline void cpu() {
     // Do not use the macros __SSE4_2__ because we need to detect at runtime
-    LOG_THROW_IF(
-      !__builtin_cpu_supports("sse4.2"), "sse4.2 support is required to run");
+    if (!__builtin_cpu_supports("sse4.2")) {
+        throw std::runtime_error("sse4.2 support is required to run");
+    }
 }
 
 static inline future<> disk(sstring path) {
     return check_direct_io_support(path).then([path] {
         return file_system_at(path).then([path](auto fs) {
             if (fs != fs_type::xfs) {
-                LOG_ERROR(
+                checklog().error(
                   "Path: `{}' is not on XFS. This is a non-supported setup. "
                   "Expect poor performance.",
                   path);
@@ -40,13 +47,14 @@ static inline void memory(bool ignore) {
     if (shard_mem >= kMinMemory) {
         return;
     }
-
-    std::stringstream ss;
-    ss << "Memory below recommended: `" << smf::human_bytes(kMinMemory)
-       << "'. Actual is: `" << smf::human_bytes(shard_mem) << "'";
-
-    LOG_THROW_IF(!ignore, "{}", ss.str());
-    LOG_ERROR_IF(ignore, "{}", ss.str());
+    std::string line = fmt::format(
+      "Memory: '{}' below recommended: '{}'",
+      human::bytes(kMinMemory),
+      human::bytes(shard_mem));
+    checklog().error(line.c_str());
+    if (!ignore) {
+        throw std::runtime_error(line);
+    }
 }
 
 } // namespace syschecks
