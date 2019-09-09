@@ -129,7 +129,7 @@ void check_batches(
 SEASTAR_THREAD_TEST_CASE(test_can_parse_single_batch) {
     context ctx;
     test_consumer c(0, 0, false);
-    auto batches = test::make_random_batches({model::offset(1)});
+    auto batches = test::make_random_batches(model::offset(1), 1);
     ctx.write(batches, c);
     ctx.parser->consume().get();
     check_batches(c.batches, batches);

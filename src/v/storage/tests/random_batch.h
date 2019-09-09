@@ -104,22 +104,20 @@ model::record_batch make_random_batch(model::offset o) {
 }
 
 std::vector<model::record_batch>
-make_random_batches(std::vector<model::offset> os) {
+make_random_batches(model::offset o, size_t count) { // start offset + count
     std::vector<model::record_batch> ret;
-    for (auto o : os) {
-        ret.push_back(make_random_batch(o));
+    ret.reserve(count);
+    for (size_t i = 0; i < count; i++) {
+        auto b = make_random_batch(o);
+        o = b.last_offset() + 1;
+        ret.push_back(std::move(b));
     }
     return ret;
 }
 
 std::vector<model::record_batch>
 make_random_batches(model::offset o = model::offset(0)) {
-    std::vector<model::offset> os;
-    for (unsigned i = 0; i < low_count_dist(gen); ++i) {
-        os.push_back(o);
-        o += 1;
-    }
-    return test::make_random_batches(std::move(os));
+    return make_random_batches(o, low_count_dist(gen));
 }
 
 } // namespace storage::test
