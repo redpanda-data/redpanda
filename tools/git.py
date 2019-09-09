@@ -10,12 +10,16 @@ import log
 
 
 def get_git_root(relative):
-    return shell.run_oneline(
-        "cd %s && git rev-parse --show-toplevel" % relative)
+    return shell.run_oneline("cd %s && git rev-parse --show-toplevel" %
+                             relative)
 
 
 def get_git_user():
     return shell.run_oneline("git config user.name")
+
+
+def get_git_email():
+    return shell.run_oneline("git config user.email")
 
 
 def get_tag_or_ref():
@@ -30,16 +34,10 @@ def get_git_files():
     return list(filter(lambda x: x and len(x) > 0, ret.split("\n")))
 
 
-def get_git_changed_files(obj=None):
-    if obj:
-        ret = shell.raw_check_output(
-            "cd {dir} && git show --name-only --format='' {obj}".format(
-                dir=get_git_root(os.path.dirname(__file__)),
-                obj=obj))
-    else:
-        ret = shell.raw_check_output(
-            "cd %s && git diff --name-only --diff-filter=d" % get_git_root(
-                os.path.dirname(__file__)))
+def get_git_changed_files():
+    ret = shell.raw_check_output(
+        "cd %s && git diff --name-only --diff-filter=d" %
+        get_git_root(os.path.dirname(__file__)))
     logger.debug("Files recently changed %s" % ret)
     return list(filter(lambda x: x and len(x) > 0, ret.split("\n")))
 
@@ -55,8 +53,10 @@ def main():
             type=str,
             default='INFO',
             help='info,debug, type log levels. i.e: --log=debug')
-        parser.add_argument(
-            '--files', type=str, default='all', help='changed | all')
+        parser.add_argument('--files',
+                            type=str,
+                            default='all',
+                            help='changed | all')
         return parser
 
     parser = _generate_options()

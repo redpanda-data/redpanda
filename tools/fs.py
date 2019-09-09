@@ -1,8 +1,13 @@
+#!/usr/bin/env python3
 import os
-
+import errno
 
 def force_link(src, target):
     _force_link(os.link, src, target)
+
+
+def mkdir_p(path):
+    os.makedirs(path, exist_ok=True)
 
 
 def force_symlink(src, target):
