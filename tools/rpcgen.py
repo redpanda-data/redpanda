@@ -23,6 +23,8 @@ RPC_TEMPLATE = """
 #include "rpc/parse_utils.h"
 #include "rpc/client.h"
 #include "rpc/service.h"
+#include "finjector/hbadger.h"
+#include "random/fast_prng.h"
 #include "seastarx.h"
 
 // extra includes
@@ -31,15 +33,19 @@ RPC_TEMPLATE = """
 {%- endfor %}
 
 #include <seastar/core/reactor.hh>
+#include <seastar/core/sleep.hh>
 #include <seastar/core/scheduling.hh>
 
 #include <functional>
+#include <chrono>
 #include <tuple>
+#include <cstdint>
 
 namespace {{namespace}} {
 
 class {{service_name}}_service : public rpc::service {
 public:
+    class failure_injection;
     class client;
 
     {{service_name}}_service(scheduling_group& sc, smp_service_group& ssg)
@@ -113,8 +119,63 @@ public:
     {%- endfor %}
 };
 
-}
+class {{service_name}}_service::failure_injection final : public finjector::probe {
+public:
+    using type = int8_t;
+    enum class methods: type {
+    {%- for method in methods %}
+        {{method.name}} = 1 << {{loop.index}}{{ "," if not loop.last }}
+    {%- endfor %}
+    };
+    uint64_t id() const {
+        return uint64_t({{id}}){%- for method in methods %}^{{method.id}}{%- endfor %};
+    }
+    int8_t method_for_point(const sstring &point) const final {
+        {%- for method in methods %}
+        if(point == "{{method.name}}") {
+           return type(methods::{{method.name}});
+        }
+        {%- endfor %}
+        return 0;
+    }
+    std::vector<sstring> points() final {
+        std::vector<sstring> retval;
+        retval.reserve({{methods | length}});
+        {%- for method in methods %}
+        retval.push_back("{{method.name}}");
+        {%- endfor %}
+        return retval;
+    }
+    {%- for method in methods %}
+    future<> {{method.name}}() {
+        if(is_enabled()) {
+          return do_{{method.name}}();
+        }
+        return make_ready_future<>();
+    }
+    {%- endfor %}
+private:
+    {%- for method in methods %}
+    [[gnu::noinline]] [[gnu::cold]] future<> do_{{method.name}}() {
+        if (_exception_methods & type(methods::{{method.name}})) {
+          return make_exception_future<>(std::runtime_error(
+            "FailureInjector: "
+            "{{namespace}}::{{service_name}}::{{method.name}}"));
+        }
+        if (_delay_methods & type(methods::{{method.name}})) {
+            return sleep(std::chrono::milliseconds(_prng() % 50));
+        }
+        if (_termination_methods & type(methods::{{method.name}})) {
+            std::terminate();
+        }
+        return make_ready_future<>();
+    }
+    {%- endfor %}
 
+    fast_prng _prng;
+};
+
+} // namespace
 """
 
 

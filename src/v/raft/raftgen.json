@@ -1,0 +1,25 @@
+{
+    "namespace": "raft",
+    "service_name": "raftgen",
+    "includes": [
+        "raft/types.h",
+        "raft/type_serializers.h"
+    ],
+    "methods": [
+        {
+            "name": "vote",
+            "input_type": "vote_request",
+            "output_type": "vote_reply"
+        },
+        {
+            "name": "append_entries",
+            "input_type": "append_entries_request",
+            "output_type": "append_entries_reply"
+        },
+        {
+            "name": "configuration_update",
+            "input_type": "configuration_request",
+            "output_type": "configuration_reply"
+        }
+    ]
+}

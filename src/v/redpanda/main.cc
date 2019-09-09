@@ -17,6 +17,7 @@
 #include <seastar/util/defer.hh>
 
 #include <fmt/format.h>
+#include <fmt/ostream.h>
 
 #include <chrono>
 #include <iostream>
@@ -25,7 +26,6 @@ logger lgr{"redpanda::main"};
 
 // in transition
 #include "redpanda/config/configuration.h"
-
 
 class stop_signal {
     void signaled() {
@@ -163,7 +163,7 @@ int main(int argc, char** argv, char** env) {
 
 bool hydrate_cfg(sharded<config::configuration>& c, std::string filename) {
     YAML::Node config = YAML::LoadFile(filename);
-    LOG_TRACE("Read file:\n\n{}\n\n", config);
+    lgr.info("Read file:\n\n{}\n\n", config);
     auto& local_cfg = c.local();
     local_cfg.read_yaml(config);
     c.invoke_on_others([&local_cfg](auto& cfg) {

@@ -81,7 +81,7 @@ private:
 
 using log_segment_ptr = lw_shared_ptr<log_segment>;
 
-std::ostream& operator<<(std::ostream&, log_segment);
+std::ostream& operator<<(std::ostream&, const log_segment&);
 std::ostream& operator<<(std::ostream&, log_segment_ptr);
 
 /*

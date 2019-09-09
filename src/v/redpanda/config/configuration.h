@@ -1,12 +1,10 @@
 #pragma once
 
-#include "raft/raft_seed_server.h"
+#include "redpanda/config/seed_server.h"
 #include "redpanda/config/config_store.h"
 
 #include <seastar/net/inet_address.hh>
 #include <seastar/net/ip.hh>
-
-#include <smf/rpc_server_args.h>
 
 namespace config {
 struct configuration final : public config_store {
@@ -21,9 +19,9 @@ struct configuration final : public config_store {
     // Network
     property<socket_address> rpc_server;
     // Raft
-    property<int64_t> node_id;
+    property<int32_t> node_id;
     property<int32_t> seed_server_meta_topic_partitions;
-    property<std::vector<raft_seed_server>> seed_servers;
+    property<std::vector<seed_server>> seed_servers;
     property<int16_t> min_version;
     property<int16_t> max_version;
     // Kafka
@@ -41,8 +39,8 @@ using conf_ref = typename std::reference_wrapper<configuration>;
 
 namespace YAML {
 template<>
-struct convert<raft_seed_server> {
-    using type = raft_seed_server;
+struct convert<config::seed_server> {
+    using type = config::seed_server;
     static Node encode(const type& rhs) {
         Node node;
         node["node_id"] = rhs.id;

@@ -46,7 +46,7 @@ struct service::execution_helper {
                 })
                 .then([u = std::move(u), method_id](Output out) mutable {
                     auto b = netbuf();
-                    b.serialize_type(out);
+                    b.serialize_type(std::move(out));
                     b.set_service_method_id(method_id);
                     return make_ready_future<netbuf>(std::move(b));
                 });

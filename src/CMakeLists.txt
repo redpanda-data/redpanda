@@ -1,6 +1,3 @@
-find_package(Seastar)
-find_package(smf)
-find_package(Boost)
-find_package(sol2)
-
+find_package(Seastar REQUIRED)
+find_package(Boost REQUIRED)
 add_subdirectory(v)

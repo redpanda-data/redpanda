@@ -2,6 +2,7 @@
 
 #include "model/fundamental.h"
 #include "seastarx.h"
+#include "utils/named_type.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -10,15 +11,7 @@
 #include <vector>
 
 namespace model {
-struct node_id {
-    using type = int32_t;
-    static constexpr const type min = std::numeric_limits<type>::min();
-    node_id() noexcept = default;
-    constexpr explicit node_id(type id) noexcept
-      : value(id) {
-    }
-    const type value = min;
-};
+using node_id = named_type<int32_t, struct node_id_model_type>;
 
 class broker {
 public:
@@ -27,17 +20,18 @@ public:
       sstring host,
       int32_t port,
       std::optional<sstring> rack) noexcept
-      : _id(id)
+      : _id(std::move(id))
       , _host(std::move(host))
       , _port(port)
       , _rack(rack) {
     }
-
-    node_id id() const {
+    broker(broker&&) noexcept = default;
+    broker& operator=(broker&&) noexcept = default;
+    const node_id& id() const {
         return _id;
     }
 
-    const sstring host() const {
+    const sstring& host() const {
         return _host;
     }
 

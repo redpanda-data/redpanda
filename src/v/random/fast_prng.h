@@ -1,15 +1,11 @@
 #pragma once
 
 #include <random>
-// lib
-#include <smf/macros.h>
-
 #include <pcg_random.hpp>
 
 // dumb wrapper around pcg32
 class fast_prng {
 public:
-    SMF_DISALLOW_COPY_AND_ASSIGN(fast_prng);
     fast_prng()
       : _rng(pcg_extras::seed_seq_from<std::random_device>()) {
     }
@@ -26,7 +22,6 @@ public:
     inline uint32_t operator()() {
         return _rng();
     }
-
 private:
     pcg32 _rng;
 };

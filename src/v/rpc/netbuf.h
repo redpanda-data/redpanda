@@ -22,8 +22,8 @@ public:
     void set_service_method_id(uint32_t);
 
     template<typename T>
-    void serialize_type(T& t) {
-        ::rpc::serialize(_out, t);
+    void serialize_type(T&& t) {
+        ::rpc::serialize(_out, std::forward<T>(t));
     }
 
     bytes_ostream&& release() && {
