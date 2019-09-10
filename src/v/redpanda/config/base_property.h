@@ -4,6 +4,7 @@
 
 #include <seastar/util/bool_class.hh>
 
+#include <nlohmann/json.hpp>
 #include <yaml-cpp/yaml.h>
 
 #include <any>
@@ -34,12 +35,18 @@ public:
         return _required;
     }
 
+    // this serializes the property value. a full configuration serialization is
+    // performed in config_store::to_json where the json object key is taken
+    // from the property name.
+    virtual void to_json(nlohmann::json& j) const = 0;
+
     virtual void print(std::ostream&) const = 0;
     virtual void set_value(YAML::Node) = 0;
     virtual void set_value(std::any) = 0;
     virtual std::optional<validation_error> validate() const = 0;
     virtual base_property& operator=(const base_property&) = 0;
     virtual ~base_property() noexcept = default;
+
 private:
     friend std::ostream& operator<<(std::ostream&, const base_property&);
     std::string_view _name;

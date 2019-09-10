@@ -1,4 +1,5 @@
 #include "cluster/metadata_cache.h"
+#include "redpanda/admin/api-doc/config.json.h"
 #include "redpanda/kafka/transport/probe.h"
 #include "redpanda/kafka/transport/server.h"
 #include "resource_mgmt/cpu_scheduling.h"
@@ -12,12 +13,14 @@
 #include <seastar/core/reactor.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/thread.hh>
+#include <seastar/http/api_docs.hh>
 #include <seastar/http/httpd.hh>
 #include <seastar/net/socket_defs.hh>
 #include <seastar/util/defer.hh>
 
 #include <fmt/format.h>
 #include <fmt/ostream.h>
+#include <nlohmann/json.hpp>
 
 #include <chrono>
 #include <iostream>
@@ -111,6 +114,24 @@ int main(int argc, char** argv, char** env) {
             metrics_conf.metric_help = "red panda metrics";
             metrics_conf.prefix = "vectorized";
             prometheus::add_prometheus_routes(admin, metrics_conf).get();
+
+            if (rp_config.local().enable_admin_api()) {
+                auto rb = make_shared<api_registry_builder20>(
+                  rp_config.local().admin_api_doc_dir(), "/v1");
+                admin
+                  .invoke_on_all([rb](http_server& server) {
+                      rb->set_api_doc(server._routes);
+                      rb->register_api_file(server._routes, "header");
+                      rb->register_api_file(server._routes, "config");
+                      config_json::get_config.set(
+                        server._routes, [](const_req req) {
+                            nlohmann::json jconf;
+                            rp_config.local().to_json(jconf);
+                            return json::json_return_type(jconf.dump());
+                        });
+                  })
+                  .get();
+            }
 
             with_scheduling_group(sched_groups.admin(), [&] {
                 return admin

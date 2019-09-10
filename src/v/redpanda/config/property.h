@@ -43,6 +43,13 @@ public:
         o << name() << ":" << _value;
     }
 
+    // serialize the value. the key is taken from the property name at the
+    // serialization point in config_store::to_json to avoid users from being
+    // forced to consume the property as a json object.
+    void to_json(nlohmann::json& j) const override {
+        j = _value;
+    }
+
     std::optional<validation_error> validate() const override {
         if (auto err = _validator(_value); err) {
             return std::make_optional<validation_error>(name().data(), *err);

@@ -4,6 +4,7 @@
 #include "seastarx.h"
 
 #include <fmt/format.h>
+#include <nlohmann/json.hpp>
 
 #include <any>
 #include <unordered_map>
@@ -54,6 +55,14 @@ public:
             }
         });
         return errors;
+    }
+
+    const void to_json(nlohmann::json& j) const {
+        for (auto const& [name, property] : _properties) {
+            nlohmann::json tmp;
+            property->to_json(tmp);
+            j[std::string(name)] = tmp;
+        }
     }
 
     virtual ~config_store() noexcept = default;

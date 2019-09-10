@@ -62,6 +62,11 @@ YAML::Node valid_cofniguration() {
                       " - two\n"
                       " - three\n");
 }
+
+static void to_json(nlohmann::json& j, const custom_aggregate& v) {
+    j = {{"string_value", v.string_value}, {"int_value", v.int_value}};
+}
+
 } // namespace
 
 namespace std {
@@ -144,4 +149,20 @@ SEASTAR_THREAD_TEST_CASE(validate_invalid_configuration) {
     cfg.read_yaml(valid_cofniguration());
     auto errors = cfg.validate();
     BOOST_TEST(errors.size() == 0);
+}
+
+SEASTAR_THREAD_TEST_CASE(json_serialization) {
+    auto cfg = test_config();
+    cfg.read_yaml(valid_cofniguration());
+
+    // cfg -> json object -> json string
+    nlohmann::json j;
+    cfg.to_json(j);
+    auto jstr = j.dump();
+
+    // json string -> json object
+    auto j2 = nlohmann::json::parse(jstr);
+
+    // test equivalence
+    BOOST_TEST(j2["required_string"] == "test_value_2");
 }

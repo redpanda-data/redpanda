@@ -44,6 +44,7 @@ please keep this up to date with every new library use.
 | croaring        | Apache License 2                          |
 | pcg             | Apache License 2                          |
 | bytellhashmap   | Boost Software License Version 1.0        |
+| nlohmann-json   | MIT                                       |
  
 # Golang deps _used_ in production (exclude all test dependencies)
 
