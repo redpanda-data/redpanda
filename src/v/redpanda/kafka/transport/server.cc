@@ -222,8 +222,8 @@ void kafka_server::connection::do_process(
   std::unique_ptr<requests::request_context>&& ctx,
   semaphore_units<>&& units) {
     auto correlation = ctx->header().correlation_id;
-    auto ready = std::move(_ready_to_respond);
     auto f = requests::process_request(*ctx, _server._smp_group);
+    auto ready = std::move(_ready_to_respond);
     _ready_to_respond = f.then_wrapped(
       [this,
        ctx = std::move(ctx),
