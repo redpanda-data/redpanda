@@ -69,7 +69,15 @@ configuration::configuration()
       "admin",
       "Address and port of admin server",
       required::no,
-      socket_address(inet_addr("127.0.0.1"), 9644)) {
+      socket_address(inet_addr("127.0.0.1"), 9644))
+  , enable_admin_api(
+      *this, "enable_admin_api", "Enable the admin API", required::no, true)
+  , admin_api_doc_dir(
+      *this,
+      "admin_api_doc_dir",
+      "Admin API doc directory",
+      required::no,
+      "/etc/redpanda/admin-api-doc") {
 }
 
 void configuration::read_yaml(const YAML::Node& root_node) {

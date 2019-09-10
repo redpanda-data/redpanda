@@ -47,7 +47,7 @@ def _get_dependencies(binary):
     return libs
 
 
-def relocable_tar_package(dest, execs, configs):
+def relocable_tar_package(dest, execs, configs, admin_api_swag):
     logger.info("Creating relocable tar package %s", dest)
     gzip_process = subprocess.Popen(
         "pigz -f > %s" % dest, shell=True, stdin=subprocess.PIPE)
@@ -73,6 +73,9 @@ def relocable_tar_package(dest, execs, configs):
         ar.add(location, arcname="lib/" + lib)
     for conf in configs:
         ar.add(conf, arcname="conf/%s" % os.path.basename(conf))
+    for swag in admin_api_swag:
+        arcname = "etc/redpanda/admin-api-doc/%s" % os.path.basename(swag)
+        ar.add(swag, arcname=arcname)
     ar.close()
     gzip_process.communicate()
 

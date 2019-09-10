@@ -126,10 +126,11 @@ def build_packages(build_type, packages):
         ]
         dist_path = os.path.join(RP_BUILD_ROOT, res_type, "dist")
         configs = [os.path.join(RP_ROOT, "conf/redpanda.yaml")]
+        admin_api_swag = glob.glob(os.path.join(RP_ROOT, "src/v/redpanda/admin/api-doc/*.json"))
         os.makedirs(dist_path, exist_ok=True)
         tar_name = 'redpanda.tar.gz'
         tar_path = "%s/%s" % (dist_path, tar_name)
-        packaging.relocable_tar_package(tar_path, execs, configs)
+        packaging.relocable_tar_package(tar_path, execs, configs, admin_api_swag)
         if 'tar' in packages:
             packaging.red_panda_tar(tar_path, dist_path)
         if 'deb' in packages:

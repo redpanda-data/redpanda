@@ -99,6 +99,28 @@ if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
     find_package(LibCxx)
 endif()
 
+# from seastar/CMakeLists.txt. unfortunately this snippet doesn't appear to be
+# installed along with the rest of seastar.
+function (seastar_generate_swagger)
+  set (one_value_args TARGET VAR IN_FILE OUT_FILE)
+  cmake_parse_arguments (args "" "${one_value_args}" "" ${ARGN})
+  get_filename_component (out_dir ${args_OUT_FILE} DIRECTORY)
+  set (generator "${V_DEPS_INSTALL_DIR}/bin/seastar-json2code.py")
+
+  add_custom_command (
+    DEPENDS
+      ${args_IN_FILE}
+      ${generator}
+    OUTPUT ${args_OUT_FILE}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${out_dir}
+    COMMAND ${generator} -f ${args_IN_FILE} -o ${args_OUT_FILE})
+
+  add_custom_target (${args_TARGET}
+    DEPENDS ${args_OUT_FILE})
+
+  set (${args_VAR} ${args_OUT_FILE} PARENT_SCOPE)
+endfunction ()
+
 # add code
 include(init_cpack)
 include(ccache)

@@ -35,6 +35,8 @@ install -m 0755 -d "%{buildroot}%{_prefix}/lib/redpanda"
 install -m 0755 -d "%{buildroot}/etc"
 install -m 0755 -d "%{buildroot}/etc/redpanda"
 install -m 0755 -d "%{buildroot}/etc/redpanda.d"
+install -m 0755 -d "%{buildroot}/etc/redpanda/admin-api-doc"
+install -m 0755 -d "%{buildroot}/etc/redpanda/admin-api-doc"
 
 install -m 0755  -d "%{buildroot}/opt/redpanda/bin"
 install -m 0755  -d "%{buildroot}/opt/redpanda/lib"
@@ -61,6 +63,8 @@ cp -P libexec/iotune "%{buildroot}/opt/redpanda/libexec"
 cp -P libexec/hwloc-calc "%{buildroot}/opt/redpanda/libexec"
 cp -P libexec/hwloc-distrib "%{buildroot}/opt/redpanda/libexec"
 install -m644 conf/redpanda.yaml -Dt "%{buildroot}/etc/redpanda"
+install -m644 etc/redpanda/admin-api-doc/config.json -Dt "%{buildroot}/etc/redpanda/admin-api-doc"
+install -m644 etc/redpanda/admin-api-doc/header.json -Dt "%{buildroot}/etc/redpanda/admin-api-doc"
 # bin links
 ln -srf "%{buildroot}/opt/redpanda/bin/redpanda" "%{buildroot}%{_prefix}/bin/redpanda"
 ln -srf "%{buildroot}/opt/redpanda/bin/rpk" "%{buildroot}%{_prefix}/bin/rpk"
@@ -89,6 +93,8 @@ install -m755 %{_topdir}/common/scripts/* -Dt "%{buildroot}/%{_prefix}/lib/redpa
 %{_prefix}/lib/sysctl.d/99-redpanda-sched.conf
 %{_prefix}/lib/sysctl.d/99-redpanda-aio.conf
 %{_prefix}/lib/sysctl.d/99-redpanda-coredump.conf
+/etc/redpanda/admin-api-doc/config.json
+/etc/redpanda/admin-api-doc/header.json
 
 %ldconfig_scriptlets
 

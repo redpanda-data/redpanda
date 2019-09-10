@@ -1,7 +1,7 @@
 #pragma once
 
-#include "redpanda/config/seed_server.h"
 #include "redpanda/config/config_store.h"
+#include "redpanda/config/seed_server.h"
 
 #include <seastar/net/inet_address.hh>
 #include <seastar/net/ip.hh>
@@ -28,6 +28,8 @@ struct configuration final : public config_store {
     property<socket_address> kafka_api;
     property<bool> use_scheduling_groups;
     property<socket_address> admin;
+    property<sstring> admin_api_doc_dir;
+    property<bool> enable_admin_api;
 
     configuration();
 
@@ -35,7 +37,33 @@ struct configuration final : public config_store {
 };
 
 using conf_ref = typename std::reference_wrapper<configuration>;
+
 }; // namespace config
+
+namespace nlohmann {
+template<>
+struct adl_serializer<seastar::sstring> {
+    static void to_json(json& j, const seastar::sstring& v) {
+        j = std::string(v);
+    }
+};
+
+template<>
+struct adl_serializer<seastar::socket_address> {
+    static void to_json(json& j, const seastar::socket_address& v) {
+        // seastar doesn't have a fmt::formatter for inet_address
+        std::ostringstream a;
+        a << v.addr();
+        j = {{"address", a.str()}, {"port", v.port()}};
+    }
+};
+} // namespace nlohmann
+
+namespace config {
+static void to_json(nlohmann::json& j, const seed_server& v) {
+    j = {{"node_id", v.id}, {"host", v.addr}};
+}
+} // namespace config
 
 namespace YAML {
 template<>

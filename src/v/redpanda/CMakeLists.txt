@@ -1,8 +1,16 @@
+seastar_generate_swagger(
+  TARGET  config_swagger
+  VAR config_swagger_file
+  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/admin/api-doc/config.json
+  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/admin/api-doc/config.json.h
+)
+
 add_executable(redpanda
   main.cc
   )
 target_link_libraries(redpanda PUBLIC raft transport config)
 set_property(TARGET redpanda PROPERTY POSITION_INDEPENDENT_CODE ON)
+add_dependencies(redpanda config_swagger)
 
 if(NOT CMAKE_BUILD_TYPE MATCHES Debug)
   include(CheckIPOSupported)

@@ -6,3 +6,5 @@ common/scripts/* usr/lib/redpanda
 bin/* opt/redpanda/bin
 lib/* opt/redpanda/lib
 libexec/* opt/redpanda/libexec
+etc/redpanda/admin-api-doc/config.json
+etc/redpanda/admin-api-doc/header.json

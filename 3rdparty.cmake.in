@@ -474,3 +474,13 @@ ExternalProject_Add(bytellhashmap
   COMMAND ${CMAKE_COMMAND} -E copy <SOURCE_DIR>/bytell_hash_map.hpp <INSTALL_DIR>/include/bytell_hash_map.hpp
   COMMAND ${CMAKE_COMMAND} -E copy <SOURCE_DIR>/flat_hash_map.hpp <INSTALL_DIR>/include/flat_hash_map.hpp
   )
+
+ExternalProject_Add(json
+  URL https://github.com/nlohmann/json/releases/download/v3.7.0/include.zip
+  URL_MD5 482c9cd8b6ba9749e018c3f3664afb36
+  INSTALL_DIR    @V_DEPS_INSTALL_DIR@
+  PATCH_COMMAND ""
+  CONFIGURE_COMMAND ""
+  BUILD_COMMAND ""
+  INSTALL_COMMAND
+  COMMAND ${CMAKE_COMMAND} -E copy_directory <SOURCE_DIR>/nlohmann <INSTALL_DIR>/include/nlohmann)
