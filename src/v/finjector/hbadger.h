@@ -54,7 +54,7 @@ protected:
 class honey_badger {
 public:
     honey_badger() = default;
-    void register_probe(std::string_view, shared_ptr<probe> p);
+    void register_probe(std::string_view, probe* p);
     void deregister_probe(std::string_view);
 
     void set_exception(const sstring& module, const sstring& point);
@@ -64,7 +64,7 @@ public:
     std::unordered_map<sstring, std::vector<sstring>> points() const;
 
 private:
-    std::unordered_map<sstring, shared_ptr<probe>> _probes;
+    std::unordered_map<sstring, probe*> _probes;
 };
 
 honey_badger& shard_local_badger();
