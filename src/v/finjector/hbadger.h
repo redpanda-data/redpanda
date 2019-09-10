@@ -14,7 +14,7 @@ struct probe {
     virtual ~probe() = default;
     virtual uint64_t id() const = 0;
     virtual std::vector<sstring> points() = 0;
-    virtual int8_t method_for_point(const sstring& point) const = 0;
+    virtual int8_t method_for_point(std::string_view point) const = 0;
 
     [[gnu::always_inline]] bool operator()() const {
 #ifndef NDEBUG
@@ -29,16 +29,16 @@ struct probe {
     bool is_enabled() const {
         return operator()();
     }
-    void set_exception(const sstring& point) {
+    void set_exception(std::string_view point) {
         _exception_methods |= method_for_point(point);
     }
-    void set_delay(const sstring& point) {
+    void set_delay(std::string_view point) {
         _delay_methods |= method_for_point(point);
     }
-    void set_termination(const sstring& point) {
+    void set_termination(std::string_view point) {
         _termination_methods |= method_for_point(point);
     }
-    void unset(const sstring& point) {
+    void unset(std::string_view point) {
         const int8_t m = method_for_point(point);
         _exception_methods &= ~m;
         _delay_methods &= ~m;

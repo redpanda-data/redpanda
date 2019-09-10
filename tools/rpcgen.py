@@ -24,6 +24,7 @@ RPC_TEMPLATE = """
 #include "rpc/client.h"
 #include "rpc/service.h"
 #include "finjector/hbadger.h"
+#include "utils/string_switch.h"
 #include "random/fast_prng.h"
 #include "seastarx.h"
 
@@ -130,13 +131,12 @@ public:
     uint64_t id() const {
         return uint64_t({{id}}){%- for method in methods %}^{{method.id}}{%- endfor %};
     }
-    int8_t method_for_point(const sstring &point) const final {
+    type method_for_point(std::string_view point) const final {
+        return string_switch<type>(point)
         {%- for method in methods %}
-        if(point == "{{method.name}}") {
-           return type(methods::{{method.name}});
-        }
+          .match("{{method.name}}", static_cast<type>(methods::{{method.name}}))
         {%- endfor %}
-        return 0;
+          .default_match(0);
     }
     std::vector<sstring> points() final {
         std::vector<sstring> retval;
@@ -156,7 +156,7 @@ public:
     {%- endfor %}
 private:
     {%- for method in methods %}
-    [[gnu::noinline]] [[gnu::cold]] future<> do_{{method.name}}() {
+    [[gnu::noinline]] future<> do_{{method.name}}() {
         if (_exception_methods & type(methods::{{method.name}})) {
           return make_exception_future<>(std::runtime_error(
             "FailureInjector: "
