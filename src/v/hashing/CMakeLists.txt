@@ -1,4 +1,3 @@
-find_package (GTest REQUIRED CONFIG)
 find_package(xxHash REQUIRED)
 add_library (rphashing STATIC murmur.cc)
 target_include_directories(rphashing PUBLIC ${PROJECT_SOURCE_DIR}/src/v)
@@ -9,5 +8,6 @@ rp_test(
   UNIT_TEST
   BINARY_NAME xx_hashes
   SOURCES xx_tests.cc
-  LIBRARIES GTest::gtest rphashing
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LIBRARIES Boost::unit_test_framework rphashing
 )
