@@ -438,15 +438,6 @@ ExternalProject_Add(xxhash
     -DBUILD_SHARED_LIBS=OFF
     -DBUILD_ENABLE_INLINE_API=ON)
 
-ExternalProject_Add(gtest
-  URL https://github.com/google/googletest/archive/644319b9f06f6ca9bf69fe791be399061044bc3d.tar.gz
-  URL_MD5 e4cfcbe80bf32cb8caa8a7666ebc206c
-  INSTALL_DIR    @V_DEPS_INSTALL_DIR@
-  DEPENDS ${default_depends}
-  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
-  CMAKE_ARGS
-    ${common_cmake_args})
-
 # -- below are seastar deps
 
 ExternalProject_Add(GSL
