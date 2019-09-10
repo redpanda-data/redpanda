@@ -105,10 +105,10 @@ hdr_hist::~hdr_hist() {
 }
 
 std::ostream& operator<<(std::ostream& o, const hdr_hist& h) {
-    return o << "{p10=" << human::latency(h.get_value_at(.1))
-             << ",p50=" << human::latency(h.get_value_at(.5))
-             << ",p90=" << human::latency(h.get_value_at(.9))
-             << ",p99=" << human::latency(h.get_value_at(.99))
-             << ",p999=" << human::latency(h.get_value_at(.990))
-             << ",max=" << human::latency(h.get_value_at(1)) << "}";
+    return o << "{p10=" << human::latency{(double)h.get_value_at(.1)}
+             << ",p50=" << human::latency{(double)h.get_value_at(.5)}
+             << ",p90=" << human::latency{(double)h.get_value_at(.9)}
+             << ",p99=" << human::latency{(double)h.get_value_at(.99)}
+             << ",p999=" << human::latency{(double)h.get_value_at(.990)}
+             << ",max=" << human::latency{(double)h.get_value_at(1)} << "}";
 };
