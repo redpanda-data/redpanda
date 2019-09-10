@@ -77,7 +77,31 @@ configuration::configuration()
       "admin_api_doc_dir",
       "Admin API doc directory",
       required::no,
-      "/etc/redpanda/admin-api-doc") {
+      "/etc/redpanda/admin-api-doc")
+  , default_num_windows(
+      *this,
+      "default_num_windows",
+      "Default number of quota tracking windows",
+      required::no,
+      10)
+  , default_window_sec(
+      *this,
+      "default_window_sec",
+      "Default quota tracking window size in milliseconds",
+      required::no,
+      std::chrono::milliseconds(1000))
+  , quota_manager_gc_sec(
+      *this,
+      "quota_manager_gc_sec",
+      "Quota manager GC frequency in milliseconds",
+      required::no,
+      std::chrono::milliseconds(30000))
+  , target_quota_byte_rate(
+      *this,
+      "target_quota_byte_rate",
+      "Target quota byte rate (bytes per second)",
+      required::no,
+      10 << 20) {
 }
 
 void configuration::read_yaml(const YAML::Node& root_node) {

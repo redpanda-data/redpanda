@@ -17,4 +17,9 @@ std::ostream& operator<<(std::ostream& os, const std::optional<T>& opt) {
     return os << "{}";
 }
 
+static std::ostream&
+operator<<(std::ostream& o, const std::chrono::milliseconds& s) {
+    return fmt_print(o, "{}", s.count());
+}
+
 } // namespace std
