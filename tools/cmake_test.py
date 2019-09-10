@@ -35,15 +35,6 @@ class TestRunner():
 
     def _env(self):
         e = os.environ.copy()
-        e["GLOG_logtostderr"] = '1'
-        e["GLOG_v"] = '1'
-        e["GLOG_vmodule"] = ''
-        e["GLOG_logbufsecs"] = '0'
-        e["GLOG_log_dir"] = '.'
-        e["GTEST_COLOR"] = 'no'
-        e["GTEST_SHUFFLE"] = '1'
-        e["GTEST_BREAK_ON_FAILURE"] = '1'
-        e["GTEST_REPEAT"] = '1'
         e["TEST_DIR"] = self._gen_testdir()
         return e
 
