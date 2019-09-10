@@ -2,11 +2,13 @@
 
 namespace finjector {
 
-void honey_badger::register_probe(const sstring& module, shared_ptr<probe> p) {
-    _probes.insert({module, p});
+void honey_badger::register_probe(std::string_view view, shared_ptr<probe> p) {
+    _probes.insert({sstring(view), p});
 }
-void honey_badger::deregister_probe(const sstring& module, uint64_t probe) {
-    if (auto it = _probes.find(module); it != _probes.end()) {
+void honey_badger::deregister_probe(std::string_view view) {
+    sstring module(view);
+    auto it = _probes.find(module);
+    if (it != _probes.end()) {
         _probes.erase(it);
     }
 }
