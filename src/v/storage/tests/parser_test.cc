@@ -22,7 +22,7 @@ public:
     }
 
     virtual skip
-    consume_batch_start(model::record_batch_header header, size_t num_records) {
+    consume_batch_start(model::record_batch_header header, size_t num_records) override {
         _header = std::move(header);
         _num_records = num_records;
         if (_header.attrs.compression() == model::compression::none) {
