@@ -54,8 +54,8 @@ protected:
 class honey_badger {
 public:
     honey_badger() = default;
-    void register_probe(const sstring& module, shared_ptr<probe> p);
-    void deregister_probe(const sstring& module, uint64_t id);
+    void register_probe(std::string_view, shared_ptr<probe> p);
+    void deregister_probe(std::string_view);
 
     void set_exception(const sstring& module, const sstring& point);
     void set_delay(const sstring& module, const sstring& point);
