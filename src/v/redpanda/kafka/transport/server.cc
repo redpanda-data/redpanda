@@ -7,6 +7,7 @@
 
 #include <seastar/core/byteorder.hh>
 #include <seastar/core/scattered_message.hh>
+#include <seastar/core/sleep.hh>
 #include <seastar/net/api.hh>
 #include <seastar/util/log.hh>
 
@@ -19,12 +20,14 @@ static logger klog("kafka_server");
 kafka_server::kafka_server(
   probe p,
   sharded<cluster::metadata_cache>& metadata_cache,
-  kafka_server_config config) noexcept
+  kafka_server_config config,
+  sharded<quota_manager>& quota_mgr) noexcept
   : _probe(std::move(p))
   , _metadata_cache(metadata_cache)
   , _max_request_size(config.max_request_size)
   , _memory_available(_max_request_size)
-  , _smp_group(std::move(config.smp_group)) {
+  , _smp_group(std::move(config.smp_group))
+  , _quota_mgr(quota_mgr) {
 }
 
 future<> kafka_server::listen(socket_address server_addr, bool keepalive) {
@@ -195,20 +198,47 @@ future<> kafka_server::connection::process_request() {
               return read_header().then(
                 [this, size, units = std::move(units)](
                   requests::request_header header) mutable {
-                    auto remaining = size - sizeof(raw_request_header)
-                                     - header.client_id_buffer.size();
-                    return _buffer_reader.read_exactly(_read_buf, remaining)
-                      .then([this,
-                             header = std::move(header),
-                             units = std::move(units)](fragbuf buf) mutable {
-                          auto ctx
-                            = std::make_unique<requests::request_context>(
-                              _server._metadata_cache,
-                              std::move(header),
-                              std::move(buf));
-                          _server._probe.serving_request(*ctx);
-                          do_process(std::move(ctx), std::move(units));
-                      });
+                    // update the throughput tracker for this client using the
+                    // size of the current request and return any computed delay
+                    // to apply for quota throttling.
+                    //
+                    // note that when throttling is first applied the request is
+                    // allowed to pass through and subsequent requests and
+                    // delayed. this is a similar strategy used by kafka: the
+                    // response is important because it allows clients to
+                    // distinguish throttling delays from real delays. delays
+                    // applied to subsequent messages allow backpressure to take
+                    // affect.
+                    auto delay
+                      = _server._quota_mgr.local().record_tp_and_throttle(
+                        header.client_id, size);
+
+                    // apply the throttling delay, if any.
+                    auto throttle_delay = delay.first_violation
+                                            ? make_ready_future<>()
+                                            : seastar::sleep(delay.duration);
+                    return throttle_delay.then([this,
+                                                size,
+                                                header = std::move(header),
+                                                units = std::move(units),
+                                                &delay]() mutable {
+                        auto remaining = size - sizeof(raw_request_header)
+                                         - header.client_id_buffer.size();
+                        return _buffer_reader.read_exactly(_read_buf, remaining)
+                          .then([this,
+                                 header = std::move(header),
+                                 units = std::move(units),
+                                 &delay](fragbuf buf) mutable {
+                              auto ctx
+                                = std::make_unique<requests::request_context>(
+                                  _server._metadata_cache,
+                                  std::move(header),
+                                  std::move(buf),
+                                  delay.duration);
+                              _server._probe.serving_request(*ctx);
+                              do_process(std::move(ctx), std::move(units));
+                          });
+                    });
                 });
           });
       });

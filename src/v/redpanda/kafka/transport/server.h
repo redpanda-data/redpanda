@@ -2,6 +2,7 @@
 
 #include "cluster/metadata_cache.h"
 #include "redpanda/kafka/transport/probe.h"
+#include "redpanda/kafka/transport/quota_manager.h"
 #include "seastarx.h"
 #include "utils/fragbuf.h"
 
@@ -53,7 +54,10 @@ struct kafka_server_config {
 class kafka_server {
 public:
     kafka_server(
-      probe, sharded<cluster::metadata_cache>&, kafka_server_config) noexcept;
+      probe,
+      sharded<cluster::metadata_cache>&,
+      kafka_server_config,
+      sharded<quota_manager>& quota_mgr) noexcept;
     future<> listen(socket_address server_addr, bool keepalive);
     future<> do_accepts(int which, net::inet_address server_addr);
     future<> stop();
@@ -99,6 +103,7 @@ private:
     boost::intrusive::list<connection> _connections;
     abort_source _as;
     gate _listeners_and_connections;
+    sharded<quota_manager>& _quota_mgr;
 };
 
 } // namespace kafka::transport

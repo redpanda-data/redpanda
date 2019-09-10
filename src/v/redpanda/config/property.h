@@ -1,5 +1,6 @@
 #pragma once
 #include "redpanda/config/base_property.h"
+#include "utils/to_string.h"
 
 #include <seastar/util/noncopyable_function.hh>
 

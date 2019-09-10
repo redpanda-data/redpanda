@@ -22,11 +22,13 @@ public:
     request_context(
       sharded<cluster::metadata_cache>& metadata_cache,
       request_header&& header,
-      fragbuf&& request) noexcept
+      fragbuf&& request,
+      lowres_clock::duration throttle_delay) noexcept
       : _metadata_cache(metadata_cache)
       , _header(std::move(header))
       , _request(std::move(request))
-      , _reader(_request.get_istream()) {
+      , _reader(_request.get_istream())
+      , _throttle_delay(throttle_delay) {
     }
 
     const request_header& header() const {
@@ -41,11 +43,18 @@ public:
         return _metadata_cache.local();
     }
 
+    int32_t throttle_delay_ms() const {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(
+                 _throttle_delay)
+          .count();
+    }
+
 private:
     sharded<cluster::metadata_cache>& _metadata_cache;
     request_header _header;
     fragbuf _request;
     request_reader _reader;
+    lowres_clock::duration _throttle_delay;
 };
 
 class response;
