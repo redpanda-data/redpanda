@@ -42,6 +42,10 @@ SEASTAR_THREAD_TEST_CASE(roundtrip_pod_with_checksum) {
     expected.y = -42;
     expected.z = -42;
     rpc::deserialize(rsource, expected).get();
+    auto [x, y, z] = rpc::to_tuple(expected);
+    BOOST_REQUIRE_EQUAL(x, 1);
+    BOOST_REQUIRE_EQUAL(y, 2);
+    BOOST_REQUIRE_EQUAL(z, 3);
     BOOST_REQUIRE_EQUAL(rsource.checksum(), 2937580136870592988);
 }
 SEASTAR_THREAD_TEST_CASE(roundtrip_packed_struct) {
