@@ -19,6 +19,4 @@ service::configuration_update(configuration_request, rpc::streaming_context&) {
     throw std::runtime_error("unimplemented method");
 }
 
-service::~service() {
-}
 } // namespace raft
