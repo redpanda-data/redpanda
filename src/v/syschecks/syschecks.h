@@ -1,10 +1,8 @@
 #pragma once
 
 #include "seastarx.h"
-#include "utils/human.h"
 
-#include <seastar/core/reactor.hh>
-
+#include <fmt/format.h>
 #include <fmt/ostream.h>
 
 #include <cpuid.h>
@@ -54,10 +52,8 @@ static inline void memory(bool ignore) {
     if (shard_mem >= kMinMemory) {
         return;
     }
-    std::string line = fmt::format(
-      "Memory: '{}' below recommended: '{}'",
-      human::bytes(kMinMemory),
-      human::bytes(shard_mem));
+    auto line = fmt::format(
+      "Memory: '{}' below recommended: '{}'", kMinMemory, shard_mem);
     checklog().error(line.c_str());
     if (!ignore) {
         throw std::runtime_error(line);
