@@ -46,7 +46,7 @@ namespace {{namespace}} {
 
 class {{service_name}}_service : public rpc::service {
 public:
-    class failure_injection;
+    class failure_probes;
     class client;
 
     {{service_name}}_service(scheduling_group& sc, smp_service_group& ssg)
@@ -120,9 +120,12 @@ public:
     {%- endfor %}
 };
 
-class {{service_name}}_service::failure_injection final : public finjector::probe {
+class {{service_name}}_service::failure_probes final : public finjector::probe {
 public:
     using type = int8_t;
+
+    static constexpr std::string_view name() { return "{{service_name}}_service::failure_probes"; }
+
     enum class methods: type {
     {%- for method in methods %}
         {{method.name}} = 1 << {{loop.index}}{{ "," if not loop.last }}
