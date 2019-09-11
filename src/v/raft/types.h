@@ -2,6 +2,8 @@
 
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "rpc/deserialize.h"
+#include "rpc/serialize.h"
 #include "utils/fragmented_temporary_buffer.h"
 #include "utils/named_type.h"
 
@@ -75,3 +77,12 @@ struct [[gnu::packed]] vote_reply {
 };
 
 } // namespace raft
+
+namespace rpc {
+template<>
+void serialize(bytes_ostream&, model::broker&&);
+template<>
+future<> deserialize(source&, model::offset&);
+template<>
+future<> deserialize(source&, model::broker&);
+} // namespace rpc
