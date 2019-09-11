@@ -272,7 +272,7 @@ size_t kafka_server::connection::process_size(temporary_buffer<char>&& buf) {
     if (_read_buf.eof()) {
         return 0;
     }
-    auto* raw = reinterpret_cast<const size_type*>(buf.get());
+    auto* raw = unaligned_cast<const size_type*>(buf.get());
     size_type size = be_to_cpu(*raw);
     if (size < 0) {
         throw std::runtime_error(
