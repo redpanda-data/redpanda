@@ -6,7 +6,11 @@ rpcgen(
   INCLUDES ${CMAKE_BINARY_DIR}/src/v
   )
 add_library (raft STATIC
+  type_serializers.cc
   service.cc
+  consensus.cc
+  reconnect_client.cc
+  client_cache.cc
   )
 target_include_directories(raft
   PUBLIC ${PROJECT_SOURCE_DIR}/src/v
