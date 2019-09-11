@@ -49,8 +49,8 @@ public:
     class failure_probes;
     class client;
 
-    {{service_name}}_service(scheduling_group& sc, smp_service_group& ssg)
-       : _sc(std::ref(sc)), _ssg(std::ref(ssg)) {}
+    {{service_name}}_service(scheduling_group sc, smp_service_group ssg)
+       : _sc(sc), _ssg(ssg) {}
 
     {{service_name}}_service({{service_name}}_service&& o) noexcept
       : _sc(std::move(o._sc)), _ssg(std::move(o._ssg)), _methods(std::move(o._methods)) {}
@@ -66,11 +66,11 @@ public:
     virtual ~{{service_name}}_service() noexcept = default;
 
     scheduling_group& get_scheduling_group() override {
-       return _sc.get();
+       return _sc;
     }
 
     smp_service_group& get_smp_service_group() override {
-       return _ssg.get();
+       return _ssg;
     }
 
     rpc::method* method_from_id(uint32_t idx) final {
@@ -97,8 +97,8 @@ public:
     }
     {%- endfor %}
 private:
-    std::reference_wrapper<scheduling_group> _sc;
-    std::reference_wrapper<smp_service_group> _ssg;
+    scheduling_group _sc;
+    smp_service_group _ssg;
     std::array<rpc::method, {{methods|length}}> _methods{%raw %}{{{% endraw %}
       {%- for method in methods %}
       rpc::method([this] (input_stream<char>& in, rpc::streaming_context& ctx) {
