@@ -39,6 +39,10 @@ public:
         return value();
     }
 
+    operator T() const {
+        return value();
+    }
+
     void print(std::ostream& o) const override {
         o << name() << ":" << _value;
     }
