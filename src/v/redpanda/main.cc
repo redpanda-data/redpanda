@@ -1,8 +1,16 @@
 #include "cluster/metadata_cache.h"
+#include "raft/configuration.h"
+#include "raft/consensus.h"
+#include "raft/node_local_controller.h"
+#include "raft/raftgen_service.h"
+#include "raft/service.h"
 #include "redpanda/admin/api-doc/config.json.h"
 #include "redpanda/kafka/transport/probe.h"
 #include "redpanda/kafka/transport/server.h"
 #include "resource_mgmt/cpu_scheduling.h"
+#include "resource_mgmt/memory_groups.h"
+#include "resource_mgmt/smp_groups.h"
+#include "rpc/server.h"
 #include "storage/directories.h"
 #include "syschecks/syschecks.h"
 
@@ -103,7 +111,42 @@ int main(int argc, char** argv, char** env) {
             check_environment(rp_config.local()).get();
 
             scheduling_groups sched_groups;
-            sched_groups.start(rp_config.local()).get();
+            sched_groups.create_groups().get();
+            smp_groups smpgs;
+            smpgs.create_groups().get();
+            rpc::server_configuration rpc_cfg;
+            rpc_cfg.max_service_memory_per_core
+              = memory_groups::rpc_total_memory();
+            rpc_cfg.addrs.push_back(rp_config.local().rpc_server);
+            static sharded<rpc::server> rpc;
+            rpc.start(rpc_cfg).get();
+
+            // raft
+            static sharded<raft::consensus> consensus;
+            static sharded<raft::client_cache> raft_client_cache;
+            raft::configuration raft_cfg(
+              rp_config.local().node_id(),
+              rp_config.local().min_version(),
+              rp_config.local().max_version());
+            raft_client_cache.start().get();
+            consensus.start(raft_cfg, std::ref(raft_client_cache)).get();
+
+            static sharded<raft::node_local_controller> node_local_controller;
+            node_local_controller.start().get();
+
+            rpc
+              .invoke_on_all([&](rpc::server& s) {
+                  s.register_service<raft::service>(
+                    sched_groups.raft_sg(),
+                    smpgs.raft_smp_sg(),
+                    consensus,
+                    node_local_controller);
+              })
+              .get();
+            rpc.invoke_on_all(&rpc::server::start).get();
+            auto stop_rpc = defer([] { rpc.stop().get(); });
+            auto stop_client_cache = defer(
+              [] { raft_client_cache.stop().get(); });
 
             // prometheus admin
             static sharded<http_server> admin;
@@ -133,7 +176,7 @@ int main(int argc, char** argv, char** env) {
                   .get();
             }
 
-            with_scheduling_group(sched_groups.admin(), [&] {
+            with_scheduling_group(sched_groups.admin_sg(), [&] {
                 return admin
                   .invoke_on_all(
                     &http_server::listen, rp_config.local().admin())
@@ -150,15 +193,10 @@ int main(int argc, char** argv, char** env) {
               [] { metadata_cache.stop().get(); });
 
             static sharded<kafka::transport::kafka_server> kafka_server;
-            smp_service_group_config storage_proxy_smp_service_group_config;
-            // Assuming less than 1kB per queued request, this limits server
-            // submit_to() queues to 5MB or less.
-            auto kafka_server_smp_group
-              = create_smp_service_group({5000}).get0();
             kafka::transport::kafka_server_config server_config = {
               // FIXME: Add memory manager
               memory::stats().total_memory() / 10,
-              std::move(kafka_server_smp_group)};
+              smpgs.kafka_smp_sg()};
             lgr.info("Starting Kafka API server");
             kafka_server
               .start(
