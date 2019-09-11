@@ -82,8 +82,8 @@ namespace std {
 template<typename T, typename Tag>
 struct hash<named_type<T, Tag>> {
     using type = ::named_type<T, Tag>;
-    size_t operator()(const type& x) const {
-        return std::hash<T>(x);
+    constexpr size_t operator()(const type& x) const {
+        return std::hash<T>()(x);
     }
 };
 template<typename T, typename Tag>
