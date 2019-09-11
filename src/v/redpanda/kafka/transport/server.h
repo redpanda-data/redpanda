@@ -53,9 +53,7 @@ struct kafka_server_config {
 class kafka_server {
 public:
     kafka_server(
-      probe,
-      sharded<cluster::metadata_cache>&,
-      kafka_server_config) noexcept;
+      probe, sharded<cluster::metadata_cache>&, kafka_server_config) noexcept;
     future<> listen(socket_address server_addr, bool keepalive);
     future<> do_accepts(int which, net::inet_address server_addr);
     future<> stop();
@@ -75,8 +73,7 @@ private:
         size_t process_size(temporary_buffer<char>&&);
         future<requests::request_header> read_header();
         void do_process(
-          std::unique_ptr<requests::request_context>&&,
-          semaphore_units<>&&);
+          std::unique_ptr<requests::request_context>&&, semaphore_units<>&&);
         future<>
         write_response(requests::response_ptr&&, requests::correlation_type);
 
