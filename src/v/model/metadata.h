@@ -6,6 +6,8 @@
 
 #include <seastar/core/sstring.hh>
 
+#include <boost/functional/hash.hpp>
+
 #include <optional>
 #include <unordered_set>
 #include <vector>
@@ -93,15 +95,27 @@ namespace std {
 
 template<>
 struct hash<model::topic_view> {
-    size_t operator()(model::topic_view v) const {
+    size_t operator()(const model::topic_view& v) const {
         return hash<std::string_view>()(v.name());
     }
 };
 
 template<>
 struct hash<model::topic> {
-    size_t operator()(model::topic t) const {
+    size_t operator()(const model::topic& t) const {
         return hash<seastar::sstring>()(t.name);
+    }
+};
+template<>
+struct hash<model::broker> {
+    size_t operator()(const model::broker& b) const {
+        size_t h = 0;
+        boost::hash_combine(h, std::hash<model::node_id>()(b.id()));
+        boost::hash_combine(h, std::hash<seastar::sstring>()(b.host()));
+        boost::hash_combine(h, std::hash<int32_t>()(b.port()));
+        boost::hash_combine(
+          h, std::hash<std::optional<seastar::sstring>>()(b.rack()));
+        return h;
     }
 };
 
