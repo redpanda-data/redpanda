@@ -40,7 +40,7 @@ public:
         return _segs;
     }
 
-    model::record_batch_reader make_reader(partition_reader_config);
+    model::record_batch_reader make_reader(log_reader_config);
 
     // External synchronization: only one append can be performed at a time.
     future<append_result>
