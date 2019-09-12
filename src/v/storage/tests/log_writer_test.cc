@@ -41,7 +41,7 @@ log_append_config config() {
 
 SEASTAR_THREAD_TEST_CASE(test_can_write_single_batch) {
     context ctx(1 * 1024 * 1024);
-    auto batches = test::make_random_batches(std::vector{model::offset(1)});
+    auto batches = test::make_random_batches(model::offset(1), 1);
     auto reader = model::make_memory_record_batch_reader(std::move(batches));
     ctx.log.append(std::move(reader), config()).get();
 
@@ -63,7 +63,7 @@ SEASTAR_THREAD_TEST_CASE(test_can_write_single_batch) {
 
 SEASTAR_THREAD_TEST_CASE(test_log_segment_rolling) {
     context ctx(1024);
-    auto batches = test::make_random_batches(std::vector{model::offset(1)});
+    auto batches = test::make_random_batches(model::offset(1), 1);
     auto reader = model::make_memory_record_batch_reader(std::move(batches));
     ctx.log.append(std::move(reader), config()).get();
 
@@ -92,8 +92,9 @@ SEASTAR_THREAD_TEST_CASE(test_log_segment_rolling) {
 
 SEASTAR_THREAD_TEST_CASE(test_log_segment_rolling_middle_of_writting) {
     context ctx(1024);
-    auto batches = test::make_random_batches(
-      {model::offset(1), model::offset(2)});
+    auto first_offset = model::offset(1);
+    auto batches = test::make_random_batches(first_offset, 2);
+    auto second_offset = batches.back().base_offset();
     auto reader = model::make_memory_record_batch_reader(std::move(batches));
     ctx.log.append(std::move(reader), config()).get();
 
@@ -106,7 +107,7 @@ SEASTAR_THREAD_TEST_CASE(test_log_segment_rolling_middle_of_writting) {
         auto [value, read] = vint::deserialize(buf);
         buf.trim_front(read);
         auto offset = be_to_cpu(*unaligned_cast<uint64_t*>(buf.get()));
-        BOOST_REQUIRE_EQUAL(offset, 1);
+        BOOST_REQUIRE_EQUAL(offset, first_offset.value());
 
         auto file_size = seg->stat().get0().st_size;
         BOOST_REQUIRE_EQUAL(value + read, file_size);
@@ -121,7 +122,7 @@ SEASTAR_THREAD_TEST_CASE(test_log_segment_rolling_middle_of_writting) {
         auto [value, read] = vint::deserialize(buf);
         buf.trim_front(read);
         auto offset = be_to_cpu(*unaligned_cast<uint64_t*>(buf.get()));
-        BOOST_REQUIRE_EQUAL(offset, 2);
+        BOOST_REQUIRE_EQUAL(offset, second_offset.value());
 
         auto file_size = seg->stat().get0().st_size;
         BOOST_REQUIRE_EQUAL(value + read, file_size);

@@ -16,7 +16,6 @@ public:
         return _dirty;
     }
 
-private:
     void update_committed_offset(model::offset new_offset) {
         _committed = new_offset;
     }
@@ -28,8 +27,6 @@ private:
 private:
     model::offset _committed;
     model::offset _dirty;
-
-    friend class log;
 };
 
 } // namespace storage
