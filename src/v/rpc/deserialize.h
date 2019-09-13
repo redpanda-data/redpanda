@@ -87,13 +87,10 @@ future<> deserialize(source& in, T& t) {
         });
         return f;
     }
-    throw std::runtime_error(fmt::format(
-      "rpc: no deserializer registered. is_vector:{}, is_fragmented_buffer:{}, "
-      "is_standard_layout:{}, is_copy_constructible:{}",
-      is_vector,
-      is_fragmented_buffer,
-      is_standard_layout,
-      is_trivially_copyable));
+    static_assert(
+      (is_vector || is_fragmented_buffer || is_standard_layout
+       || is_trivially_copyable),
+      "rpc: no deserializer registered");
 }
 template<
   typename T,
