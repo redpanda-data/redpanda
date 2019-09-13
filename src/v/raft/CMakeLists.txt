@@ -18,3 +18,7 @@ target_include_directories(raft
 target_link_libraries(raft
   storage raft_rpc finjector
   )
+
+
+
+add_subdirectory(tests)
