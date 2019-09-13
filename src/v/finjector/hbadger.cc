@@ -1,24 +1,38 @@
 #include "finjector/hbadger.h"
 
+#include <seastar/util/log.hh>
+
 namespace finjector {
 
-void honey_badger::register_probe(const sstring& module, shared_ptr<probe> p) {
-    _probes.insert({module, p});
+logger log{"fault_injector"};
+
+void honey_badger::register_probe(std::string_view view, probe* p) {
+    if (p && p->is_enabled()) {
+        log.info("Probe registration: {}", view);
+        _probes.insert({sstring(view), p});
+    } else {
+        log.debug("Invalid probe: {}", view);
+    }
 }
-void honey_badger::deregister_probe(const sstring& module, uint64_t probe) {
-    if (auto it = _probes.find(module); it != _probes.end()) {
+void honey_badger::deregister_probe(std::string_view view) {
+    sstring module(view);
+    auto it = _probes.find(module);
+    if (it != _probes.end()) {
+        log.info("Probe deregistration: {}", view);
         _probes.erase(it);
     }
 }
 void honey_badger::set_exception(const sstring& module, const sstring& point) {
     if (auto it = _probes.find(module); it != _probes.end()) {
         auto& [_, p] = *it;
+        log.info("Setting exception probe: {}-{}", module, point);
         p->set_exception(point);
     }
 }
 void honey_badger::set_delay(const sstring& module, const sstring& point) {
     if (auto it = _probes.find(module); it != _probes.end()) {
         auto& [_, p] = *it;
+        log.info("Setting delay probe: {}-{}", module, point);
         p->set_delay(point);
     }
 }
@@ -26,12 +40,14 @@ void honey_badger::set_termination(
   const sstring& module, const sstring& point) {
     if (auto it = _probes.find(module); it != _probes.end()) {
         auto& [_, p] = *it;
+        log.info("Setting termination probe: {}-{}", module, point);
         p->set_termination(point);
     }
 }
 void honey_badger::unset(const sstring& module, const sstring& point) {
     if (auto it = _probes.find(module); it != _probes.end()) {
         auto& [_, p] = *it;
+        log.info("Unsetting probes: {}-{}", module, point);
         p->unset(point);
     }
 }

@@ -2,8 +2,7 @@
     "namespace": "raft",
     "service_name": "raftgen",
     "includes": [
-        "raft/types.h",
-        "raft/type_serializers.h"
+        "raft/types.h"
     ],
     "methods": [
         {

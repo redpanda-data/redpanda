@@ -1,25 +1,21 @@
 #pragma once
 
-#include "redpanda/config/configuration.h"
-
-#include <cstring>
+#include "raft/types.h"
 
 namespace raft {
 struct configuration {
-    explicit configuration(config::configuration& cfg)
-      : _cfg(cfg) {
+    configuration(model::node_id i, int16_t min, int16_t max)
+      : id(std::move(i))
+      , min_version(min)
+      , max_version(max) {
     }
-    model::node_id id() const {
-        return model::node_id(_cfg.get().node_id());
+    configuration(const configuration& o) {
+        id = o.id();
+        min_version = o.min_version;
+        max_version = o.max_version;
     }
-    int16_t min_version() const {
-        return _cfg.get().min_version();
-    }
-    int16_t max_version() const {
-        return _cfg.get().max_version();
-    }
-
-private:
-    config::conf_ref _cfg;
+    model::node_id id;
+    int16_t min_version;
+    int16_t max_version;
 };
 } // namespace raft
