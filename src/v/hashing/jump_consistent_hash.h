@@ -4,7 +4,8 @@
 
 /// google's jump consistent hash
 /// https://arxiv.org/pdf/1406.2294.pdf
-inline uint32_t jump_consistent_hash(uint64_t key, uint32_t num_buckets) {
+constexpr static inline uint32_t
+jump_consistent_hash(uint64_t key, uint32_t num_buckets) {
     int64_t b = -1, j = 0;
     while (j < num_buckets) {
         b = j;

@@ -9,7 +9,7 @@
 #include <boost/intrusive/list.hpp>
 
 #include <chrono>
-#include <hdr_histogram.h>
+#include <hdr/hdr_histogram.h>
 #include <memory>
 #include <utility>
 

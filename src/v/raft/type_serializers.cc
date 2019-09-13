@@ -1,7 +1,6 @@
-#pragma once
-
 #include "raft/types.h"
 #include "rpc/serialize.h"
+#include "rpc/types.h"
 
 namespace rpc {
 
@@ -14,13 +13,13 @@ void serialize(bytes_ostream& out, model::broker&& r) {
 
 // from wire
 template<>
-future<> deserialize(source& in, model::offset& r) {
+inline future<> deserialize(source& in, model::offset& r) {
     using type = model::offset::type;
     type& ref = *reinterpret_cast<type*>(&r);
     return deserialize(in, ref);
 }
 template<>
-future<> deserialize(source& in, model::broker& r) {
+inline future<> deserialize(source& in, model::broker& r) {
     return do_with(
       model::node_id(),
       sstring(),
