@@ -12,6 +12,9 @@
 #include <cstdint>
 
 namespace raft {
+using clock_type = lowres_clock;
+using duration_type = typename clock_type::duration;
+using timer_type = timer<clock_type>;
 
 using group_id = named_type<int64_t, struct raft_group_id_type>;
 using term_id = named_type<int64_t, struct raft_term_id_type>;
