@@ -3,7 +3,7 @@
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
-#include "utils/fragmented_temporary_buffer.h"
+#include "utils/fragbuf.h"
 
 #include <seastar/util/optimized_optional.hh>
 
@@ -24,8 +24,8 @@ public:
       size_t size_bytes,
       int32_t timestamp_delta,
       int32_t offset_delta,
-      fragmented_temporary_buffer key,
-      fragmented_temporary_buffer value_and_headers) noexcept
+      fragbuf key,
+      fragbuf value_and_headers) noexcept
       : _size_bytes(size_bytes)
       , _timestamp_delta(timestamp_delta)
       , _offset_delta(offset_delta)
@@ -53,11 +53,11 @@ public:
         return _offset_delta;
     }
 
-    const fragmented_temporary_buffer& key() const {
+    const fragbuf& key() const {
         return _key;
     }
 
-    const fragmented_temporary_buffer& packed_value_and_headers() const {
+    const fragbuf& packed_value_and_headers() const {
         return _value_and_headers;
     }
 
@@ -78,10 +78,10 @@ private:
     size_t _size_bytes;
     int32_t _timestamp_delta;
     int32_t _offset_delta;
-    fragmented_temporary_buffer _key;
+    fragbuf _key;
     // Already contains the varint encoding of the
     // value size and of the header size.
-    fragmented_temporary_buffer _value_and_headers;
+    fragbuf _value_and_headers;
 };
 
 class record_batch_attributes final {
@@ -170,8 +170,7 @@ public:
     // After moving, compressed_records is guaranteed to be empty().
     class compressed_records {
     public:
-        compressed_records(
-          size_t size, fragmented_temporary_buffer data) noexcept
+        compressed_records(size_t size, fragbuf data) noexcept
           : _size(size)
           , _data(std::move(data)) {
         }
@@ -199,7 +198,7 @@ public:
             return !_size;
         }
 
-        const fragmented_temporary_buffer& records() const {
+        const fragbuf& records() const {
             return _data;
         }
 
@@ -216,7 +215,7 @@ public:
 
     private:
         size_t _size;
-        fragmented_temporary_buffer _data;
+        fragbuf _data;
     };
 
     using uncompressed_records = std::vector<record>;

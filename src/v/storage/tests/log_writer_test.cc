@@ -6,7 +6,7 @@
 #include "storage/log_segment.h"
 #include "storage/log_writer.h"
 #include "storage/tests/random_batch.h"
-#include "utils/fragmented_temporary_buffer.h"
+#include "utils/fragbuf.h"
 
 #include <seastar/core/byteorder.hh>
 #include <seastar/core/thread.hh>

@@ -6,14 +6,14 @@
 #include "rpc/service.h"
 #include "rpc/types.h"
 #include "seastarx.h"
-#include "utils/fragmented_temporary_buffer.h"
+#include "utils/fragbuf.h"
 
 namespace demo {
 struct simple_request {
-    fragmented_temporary_buffer buf;
+    fragbuf buf;
 };
 struct simple_reply {
-    fragmented_temporary_buffer buf;
+    fragbuf buf;
 };
 struct simple_service final : public rpc::service {
     struct client;
@@ -31,7 +31,8 @@ struct simple_service final : public rpc::service {
     }
     future<simple_reply>
     fourty_two(demo::simple_request simple, rpc::streaming_context&) {
-        return make_ready_future<simple_reply>(simple_reply{std::move(simple.buf)});
+        return make_ready_future<simple_reply>(
+          simple_reply{std::move(simple.buf)});
     }
     /// \brief san_francisco -> mount_tamalpais
     inline future<rpc::netbuf>

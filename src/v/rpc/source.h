@@ -1,7 +1,7 @@
 #pragma once
 
 #include "hashing/xx.h"
-#include "utils/fragmented_temporary_buffer.h"
+#include "utils/fragbuf.h"
 
 #include <seastar/core/do_with.hh>
 #include <seastar/core/iostream.hh>
@@ -13,8 +13,8 @@ namespace rpc {
 class source {
 public:
     virtual future<temporary_buffer<char>> read_exactly(size_t) = 0;
-    virtual future<fragmented_temporary_buffer>
-      read_fragmented_temporary_buffer(size_t) = 0;
+    virtual future<fragbuf>
+      read_fragbuf(size_t) = 0;
     virtual ~source() = default;
 };
 
@@ -29,8 +29,8 @@ public:
     future<temporary_buffer<char>> read_exactly(size_t i) final {
         return _source.get().read_exactly(i);
     }
-    future<fragmented_temporary_buffer>
-    read_fragmented_temporary_buffer(size_t i) final {
+    future<fragbuf>
+    read_fragbuf(size_t i) final {
         return _frag.read_exactly(_source.get(), i);
     }
 
@@ -39,12 +39,12 @@ public:
 
 private:
     std::reference_wrapper<input_stream<char>> _source;
-    fragmented_temporary_buffer::reader _frag;
+    fragbuf::reader _frag;
 };
 
 class checksum_source final : public source {
 public:
-    using ftb = fragmented_temporary_buffer;
+    using ftb = fragbuf;
     explicit checksum_source(input_stream<char>& s)
       : _source(std::ref(s)) {
     }
@@ -61,8 +61,8 @@ public:
               return make_ready_future<temporary_buffer<char>>(std::move(b));
           });
     }
-    future<fragmented_temporary_buffer>
-    read_fragmented_temporary_buffer(size_t i) final {
+    future<fragbuf>
+    read_fragbuf(size_t i) final {
         return _frag.read_exactly(_source.get(), i).then([this](ftb b) {
             auto istream = b.get_istream();
             istream.consume([this](bytes_view bv) {

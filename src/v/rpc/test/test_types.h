@@ -1,6 +1,6 @@
 #pragma once
 
-#include "utils/fragmented_temporary_buffer.h"
+#include "utils/fragbuf.h"
 
 #include <seastar/core/unaligned.hh>
 #include <seastar/core/sstring.hh>
@@ -20,7 +20,7 @@ struct [[gnu::packed]] very_packed_pod {
 };
 struct complex_custom {
     pod pit;
-    fragmented_temporary_buffer oi;
+    fragbuf oi;
 };
 struct pod_with_vector {
     pod pit;
@@ -32,7 +32,7 @@ struct pod_with_array {
 };
 struct kv {
     sstring k;
-    fragmented_temporary_buffer v;
+    fragbuf v;
 };
 struct test_rpc_header {
     int32_t size = 42;

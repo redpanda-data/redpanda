@@ -4,7 +4,7 @@
 #include "rpc/for_each_field.h"
 #include "rpc/is_std_helpers.h"
 #include "seastarx.h"
-#include "utils/fragmented_temporary_buffer.h"
+#include "utils/fragbuf.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/byteorder.hh>
@@ -20,8 +20,7 @@ template<typename T>
 void serialize(bytes_ostream& out, T&& t) {
     constexpr bool is_sstring = std::is_same_v<T, sstring>;
     constexpr bool is_vector = is_std_vector_v<T>;
-    constexpr bool is_fragmented_buffer
-      = std::is_same_v<T, fragmented_temporary_buffer>;
+    constexpr bool is_fragmented_buffer = std::is_same_v<T, fragbuf>;
     constexpr bool is_standard_layout = std::is_standard_layout_v<T>;
     constexpr bool is_trivially_copyable = std::is_trivially_copyable_v<T>;
 

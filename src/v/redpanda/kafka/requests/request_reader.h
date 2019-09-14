@@ -4,7 +4,7 @@
 #include "bytes/bytes_ostream.h"
 #include "seastarx.h"
 #include "utils/concepts-enabled.h"
-#include "utils/fragmented_temporary_buffer.h"
+#include "utils/fragbuf.h"
 #include "utils/utf8.h"
 #include "utils/vint.h"
 
@@ -63,7 +63,7 @@ class request_reader {
     }
 
 public:
-    explicit request_reader(fragmented_temporary_buffer::istream in) noexcept
+    explicit request_reader(fragbuf::istream in) noexcept
       : _in(std::move(in)) {
     }
 
@@ -176,7 +176,7 @@ public:
     }
 
 private:
-    fragmented_temporary_buffer::istream _in;
+    fragbuf::istream _in;
     // Buffer into which we linearize a subset of the underlying fragmented
     // buffer, in case the content we're reading spans multiple fragments and
     // we want to return a bytes_view (we can't return one over non-contiguous

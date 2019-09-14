@@ -51,35 +51,33 @@ future<> kafka_server::do_accepts(int which, bool keepalive) {
     return repeat([this, which, keepalive] {
         return _listeners[which]
           .accept()
-          .then_wrapped(
-            [this, which, keepalive](
-              future<accept_result> f_ar) mutable {
-                if (_as.abort_requested()) {
-                    f_ar.ignore_ready_future();
-                    return stop_iteration::yes;
-                }
-                auto [fd, addr] = f_ar.get0();
-                fd.set_nodelay(true);
-                fd.set_keepalive(keepalive);
-                auto conn = std::make_unique<connection>(
-                  *this, std::move(fd), std::move(addr));
-                (void)with_gate(
-                  _listeners_and_connections,
-                  [this, conn = std::move(conn)]() mutable {
-                      auto f = conn->process();
-                      return f.then_wrapped(
-                        [conn = std::move(conn)](future<>&& f) {
-                            try {
-                                f.get();
-                            } catch (...) {
-                                klog.debug(
-                                  "Connection error: {}",
-                                  std::current_exception());
-                            }
-                        });
-                  });
-                return stop_iteration::no;
-            })
+          .then_wrapped([this, which, keepalive](
+                          future<accept_result> f_ar) mutable {
+              if (_as.abort_requested()) {
+                  f_ar.ignore_ready_future();
+                  return stop_iteration::yes;
+              }
+              auto [fd, addr] = f_ar.get0();
+              fd.set_nodelay(true);
+              fd.set_keepalive(keepalive);
+              auto conn = std::make_unique<connection>(
+                *this, std::move(fd), std::move(addr));
+              (void)with_gate(
+                _listeners_and_connections,
+                [this, conn = std::move(conn)]() mutable {
+                    auto f = conn->process();
+                    return f.then_wrapped([conn = std::move(conn)](
+                                            future<>&& f) {
+                        try {
+                            f.get();
+                        } catch (...) {
+                            klog.debug(
+                              "Connection error: {}", std::current_exception());
+                        }
+                    });
+                });
+              return stop_iteration::no;
+          })
           .handle_exception([](std::exception_ptr ep) {
               klog.debug("Accept failed: {}", ep);
               return stop_iteration::no;
@@ -146,10 +144,9 @@ future<> kafka_server::connection::process() {
 // clang-format on
 
 future<> kafka_server::connection::write_response(
-  requests::response_ptr&& response, requests::correlation_type correlation_id) {
-    sstring header(
-      sstring::initialized_later(),
-      sizeof(raw_response_header));
+  requests::response_ptr&& response,
+  requests::correlation_type correlation_id) {
+    sstring header(sstring::initialized_later(), sizeof(raw_response_header));
     auto* raw_header = reinterpret_cast<raw_response_header*>(header.begin());
     auto size = size_type(
       sizeof(requests::correlation_type) + response->buf().size_bytes());
@@ -203,8 +200,7 @@ future<> kafka_server::connection::process_request() {
                     return _buffer_reader.read_exactly(_read_buf, remaining)
                       .then([this,
                              header = std::move(header),
-                             units = std::move(units)](
-                              fragmented_temporary_buffer buf) mutable {
+                             units = std::move(units)](fragbuf buf) mutable {
                           auto ctx
                             = std::make_unique<requests::request_context>(
                               _server._metadata_cache,
@@ -219,8 +215,7 @@ future<> kafka_server::connection::process_request() {
 }
 
 void kafka_server::connection::do_process(
-  std::unique_ptr<requests::request_context>&& ctx,
-  semaphore_units<>&& units) {
+  std::unique_ptr<requests::request_context>&& ctx, semaphore_units<>&& units) {
     auto correlation = ctx->header().correlation_id;
     auto f = requests::process_request(*ctx, _server._smp_group);
     auto ready = std::move(_ready_to_respond);

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "utils/fragmented_temporary_buffer.h"
+#include "utils/fragbuf.h"
 
 #include <seastar/core/fstream.hh>
 #include <seastar/core/iostream.hh>
@@ -29,7 +29,7 @@ public:
         return append(reinterpret_cast<const char*>(s.begin()), s.size());
     }
 
-    future<> append(const fragmented_temporary_buffer& fragmented_buffer) {
+    future<> append(const fragbuf& fragmented_buffer) {
         auto istream = fragmented_buffer.get_istream();
         auto f = make_ready_future<>();
         istream.consume([this, &f](bytes_view bv) {

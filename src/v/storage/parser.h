@@ -3,7 +3,7 @@
 #include "model/record.h"
 #include "seastarx.h"
 #include "storage/exceptions.h"
-#include "utils/fragmented_temporary_buffer.h"
+#include "utils/fragbuf.h"
 #include "utils/vint.h"
 
 #include <seastar/core/byteorder.hh>
@@ -28,14 +28,12 @@ public:
       size_t size_bytes,
       int32_t timestamp_delta,
       int32_t offset_delta,
-      fragmented_temporary_buffer&& key)
+      fragbuf&& key)
       = 0;
 
-    virtual void
-    consume_record_value(fragmented_temporary_buffer&& value_and_headers)
-      = 0;
+    virtual void consume_record_value(fragbuf&& value_and_headers) = 0;
 
-    virtual void consume_compressed_records(fragmented_temporary_buffer&&) = 0;
+    virtual void consume_compressed_records(fragbuf&&) = 0;
 
     virtual stop_iteration consume_batch_end() = 0;
 };

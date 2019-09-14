@@ -4,7 +4,7 @@
 #include "rpc/arity.h"
 #include "rpc/serialize.h"
 #include "rpc/test/test_types.h"
-#include "utils/fragmented_temporary_buffer.h"
+#include "utils/fragbuf.h"
 
 #include <boost/test/included/unit_test.hpp>
 
@@ -31,7 +31,7 @@ BOOST_AUTO_TEST_CASE(serialize_with_fragmented_buffer) {
     complex_custom it;
     std::vector<temporary_buffer<char>> v;
     v.emplace_back(temporary_buffer<char>(55));
-    it.oi = std::move(fragmented_temporary_buffer(std::move(v), 55));
+    it.oi = std::move(fragbuf(std::move(v), 55));
     rpc::serialize(b, std::move(it));
     BOOST_CHECK_EQUAL(
       b.size_bytes(),
@@ -63,14 +63,14 @@ BOOST_AUTO_TEST_CASE(serialize_sstring_vector) {
     vi.push_back(temporary_buffer<char>(87));
     kv x;
     x.k = "foobar";
-    x.v = fragmented_temporary_buffer(std::move(vi), 87);
+    x.v = fragbuf(std::move(vi), 87);
     it.hdrs.push_back(std::move(x));
     rpc::serialize(b, std::move(it));
     const size_t expected =
       /*
       struct kv {
          sstring k;              ---------------  sizeof(int32_t) + 6
-         fragmented_temporary_buffer v; --------  sizeof(int32_t) + 87 bytes
+         fragbuf v; --------  sizeof(int32_t) + 87 bytes
       };
       struct test_rpc_header {
         int32_t size = 42;       ---------------- sizeof(int32_t)

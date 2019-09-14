@@ -4,7 +4,7 @@
 #include "storage/log_segment.h"
 #include "storage/offset_tracker.h"
 #include "storage/parser.h"
-#include "utils/fragmented_temporary_buffer.h"
+#include "utils/fragbuf.h"
 
 #include <seastar/core/io_queue.hh>
 #include <seastar/util/optimized_optional.hh>
@@ -37,12 +37,12 @@ public:
       size_t size_bytes,
       int32_t timestamp_delta,
       int32_t offset_delta,
-      fragmented_temporary_buffer&& key) override;
+      fragbuf&& key) override;
 
-    virtual void consume_record_value(fragmented_temporary_buffer&&) override;
+    virtual void consume_record_value(fragbuf&&) override;
 
     virtual void
-    consume_compressed_records(fragmented_temporary_buffer&&) override;
+    consume_compressed_records(fragbuf&&) override;
 
     virtual stop_iteration consume_batch_end() override;
 
@@ -53,7 +53,7 @@ private:
     size_t _record_size_bytes;
     int32_t _record_timestamp_delta;
     int32_t _record_offset_delta;
-    fragmented_temporary_buffer _record_key;
+    fragbuf _record_key;
     size_t _num_records;
     model::record_batch::records_type _records;
     model::timeout_clock::time_point _timeout;

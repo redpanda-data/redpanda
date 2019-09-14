@@ -5,7 +5,7 @@
 #include "rpc/is_std_helpers.h"
 #include "rpc/source.h"
 #include "seastarx.h"
-#include "utils/fragmented_temporary_buffer.h"
+#include "utils/fragbuf.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/byteorder.hh>
@@ -32,8 +32,7 @@ template<typename T>
 future<> deserialize(source& in, T& t) {
     constexpr bool is_sstring = std::is_same_v<T, sstring>;
     constexpr bool is_vector = is_std_vector_v<T>;
-    constexpr bool is_fragmented_buffer
-      = std::is_same_v<T, fragmented_temporary_buffer>;
+    constexpr bool is_fragmented_buffer = std::is_same_v<T, fragbuf>;
     constexpr bool is_standard_layout = std::is_standard_layout_v<T>;
     constexpr bool is_trivially_copyable = std::is_trivially_copyable_v<T>;
 
@@ -61,14 +60,13 @@ future<> deserialize(source& in, T& t) {
     } else if constexpr (is_fragmented_buffer) {
         auto i = std::make_unique<int32_t>(0);
         return deserialize<int32_t>(in, *i).then([&in, &t, max = std::move(i)] {
-            return in.read_fragmented_temporary_buffer(*max).then(
-              [&t, max = *max](fragmented_temporary_buffer b) {
-                  if (static_cast<size_t>(max) != b.size_bytes()) {
-                      throw deserialize_invalid_argument(
-                        b.size_bytes(), sizeof(int32_t));
-                  }
-                  t = std::move(b);
-              });
+            return in.read_fragbuf(*max).then( [&t, max = *max](fragbuf b) {
+                if (static_cast<size_t>(max) != b.size_bytes()) {
+                    throw deserialize_invalid_argument(
+                      b.size_bytes(), sizeof(int32_t));
+                }
+                t = std::move(b);
+            });
         });
     } else if constexpr (is_standard_layout && is_trivially_copyable) {
         // rever to constexpr
