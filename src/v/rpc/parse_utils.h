@@ -32,10 +32,9 @@ parse_type_wihout_compression(input_stream<char>& in, const header& h) {
     const auto header_checksum = h.checksum;
     return do_with(
       checksum_source(in),
-      T{},
-      [header_size, header_checksum](checksum_source& src, T& t) {
-          return deserialize(src, t)
-            .then([header_size, header_checksum, &src] {
+      [header_size, header_checksum](checksum_source& src) {
+          return deserialize<T>(src).then(
+            [header_size, header_checksum, &src](T t) {
                 const auto got_checksum = src.checksum();
                 if (header_size != src.size_bytes()) {
                     throw deserialize_invalid_argument(
@@ -47,8 +46,8 @@ parse_type_wihout_compression(input_stream<char>& in, const header& h) {
                       got_checksum,
                       header_checksum));
                 }
-            })
-            .then([&t] { return std::move(t); });
+                return std::move(t);
+            });
       });
 }
 template<typename T>

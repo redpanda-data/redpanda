@@ -17,12 +17,7 @@ SEASTAR_THREAD_TEST_CASE(roundtrip_pod) {
     }
     auto in = rpc::make_input_stream(std::move(b));
     auto rsource = rpc::default_source(in);
-    pod expected;
-    // poison the values - after serialization must match `src`
-    expected.x = -42;
-    expected.y = -42;
-    expected.z = -42;
-    rpc::deserialize(rsource, expected).get();
+    auto expected = rpc::deserialize<pod>(rsource).get0();
     auto [x, y, z] = rpc::to_tuple(expected);
     BOOST_REQUIRE_EQUAL(x, 1);
     BOOST_REQUIRE_EQUAL(y, 2);
@@ -36,12 +31,7 @@ SEASTAR_THREAD_TEST_CASE(roundtrip_pod_with_checksum) {
     }
     auto in = rpc::make_input_stream(std::move(b));
     auto rsource = rpc::checksum_source(in);
-    pod expected;
-    // poison the values - after serialization must match `src`
-    expected.x = -42;
-    expected.y = -42;
-    expected.z = -42;
-    rpc::deserialize(rsource, expected).get();
+    auto expected = rpc::deserialize<pod>(rsource).get0();
     auto [x, y, z] = rpc::to_tuple(expected);
     BOOST_REQUIRE_EQUAL(x, 1);
     BOOST_REQUIRE_EQUAL(y, 2);
@@ -56,11 +46,7 @@ SEASTAR_THREAD_TEST_CASE(roundtrip_packed_struct) {
     }
     auto in = rpc::make_input_stream(std::move(b));
     auto rsource = rpc::default_source(in);
-    very_packed_pod expected;
-    // poison the values - after serialization must match `src`
-    expected.x = -42;
-    expected.y = -42;
-    rpc::deserialize(rsource, expected).get();
+    auto expected = rpc::deserialize<very_packed_pod>(rsource).get0();
     auto [x, y] = rpc::to_tuple(expected);
     BOOST_REQUIRE_EQUAL(x, 1);
     BOOST_REQUIRE_EQUAL(y, 2);
@@ -80,8 +66,7 @@ SEASTAR_THREAD_TEST_CASE(roundtrip_with_fragmented_buffer) {
     const size_t src_size = b.size_bytes();
     input_stream<char> in = rpc::make_input_stream(std::move(b));
     auto rsource = rpc::default_source(in);
-    complex_custom expected;
-    rpc::deserialize(rsource, expected).get();
+    auto expected = rpc::deserialize<complex_custom>(rsource).get0();
     BOOST_REQUIRE_EQUAL(55, expected.oi.size_bytes());
 }
 SEASTAR_THREAD_TEST_CASE(roundtrip_pod_with_vector) {
@@ -92,10 +77,7 @@ SEASTAR_THREAD_TEST_CASE(roundtrip_pod_with_vector) {
     }
     auto in = rpc::make_input_stream(std::move(b));
     auto rsource = rpc::default_source(in);
-    pod_with_vector expected;
-    // poison the values - after serialization must match `src`
-    expected.v = {};
-    rpc::deserialize(rsource, expected).get();
+    auto expected = rpc::deserialize<pod_with_vector>(rsource).get0();
     BOOST_REQUIRE_EQUAL(expected.v.size(), 3);
 }
 SEASTAR_THREAD_TEST_CASE(roundtrip_pod_with_array) {
@@ -106,10 +88,7 @@ SEASTAR_THREAD_TEST_CASE(roundtrip_pod_with_array) {
     }
     auto in = rpc::make_input_stream(std::move(b));
     auto rsource = rpc::default_source(in);
-    pod_with_array expected;
-    // poison the values - after serialization must match `src`
-    expected.v = {0, 0, 0};
-    rpc::deserialize(rsource, expected).get();
+    auto expected = rpc::deserialize<pod_with_array>(rsource).get0();
     BOOST_REQUIRE_EQUAL(expected.v.size(), 3);
     for (size_t i = 0; i < expected.v.size(); ++i) {
         BOOST_REQUIRE(expected.v[i] != 0);
@@ -148,11 +127,7 @@ SEASTAR_THREAD_TEST_CASE(roundtrip_fragbuf_vector) {
     BOOST_CHECK_EQUAL(b.size_bytes(), expected_size);
     auto in = rpc::make_input_stream(std::move(b));
     auto rsource = rpc::default_source(in);
-    test_rpc_header expected;
-    // poising values
-    expected.size = 0;
-    expected.checksum = 0;
-    rpc::deserialize(rsource, expected).get();
+    auto expected = rpc::deserialize<test_rpc_header>(rsource).get0();
     auto b2 = bytes_ostream();
     rpc::serialize(b2, std::move(expected));
     BOOST_CHECK_EQUAL(b2.size_bytes(), expected_size);
