@@ -13,25 +13,22 @@ void serialize(bytes_ostream& out, model::broker&& r) {
 
 // from wire
 template<>
-inline future<> deserialize(source& in, model::offset& r) {
+inline future<model::offset> deserialize(source& in) {
     using type = model::offset::type;
-    type& ref = *reinterpret_cast<type*>(&r);
-    return deserialize(in, ref);
+    return deserialize<type>(in).then([] (type v) {
+        return model::offset{std::move(v)};
+    });
 }
 template<>
-inline future<> deserialize(source& in, model::broker& r) {
-    return do_with(
-      model::node_id(),
-      sstring(),
-      int32_t(),
-      [&in, &r](model::node_id& id, sstring& host, int32_t& port) {
-          return rpc::deserialize(in, id)
-            .then([&] { return rpc::deserialize(in, host); })
-            .then([&] { return rpc::deserialize(in, port); })
-            .then([&]() mutable {
-                r = model::broker(std::move(id), std::move(host), port, {});
-            });
-      });
+inline future<model::broker> deserialize(source& in) {
+    struct broker_contents {
+        model::node_id id;
+        sstring host;
+        int32_t port;
+    };
+    return deserialize<broker_contents>(in).then([] (broker_contents res) {
+        return model::broker(std::move(res.id), std::move(res.host), res.port, {});
+    });
 }
 
 } // namespace rpc

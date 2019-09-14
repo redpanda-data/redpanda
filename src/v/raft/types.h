@@ -85,7 +85,7 @@ namespace rpc {
 template<>
 void serialize(bytes_ostream&, model::broker&&);
 template<>
-future<> deserialize(source&, model::offset&);
+future<model::offset> deserialize(source&);
 template<>
-future<> deserialize(source&, model::broker&);
+future<model::broker> deserialize(source&);
 } // namespace rpc

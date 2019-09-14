@@ -5,6 +5,7 @@
 #include "rpc/is_std_helpers.h"
 #include "rpc/source.h"
 #include "seastarx.h"
+#include "utils/copy_range.h"
 #include "utils/fragbuf.h"
 #include "utils/named_type.h"
 
@@ -15,7 +16,10 @@
 #include <seastar/core/sstring.hh>
 
 #include <boost/iterator/counting_iterator.hpp>
+#include <boost/range/irange.hpp>
 #include <fmt/format.h>
+
+#include <vector>
 
 namespace rpc {
 class deserialize_invalid_argument : public std::invalid_argument {
@@ -29,7 +33,7 @@ public:
 };
 
 template<typename T>
-future<> deserialize(source& in, T& t) {
+future<T> deserialize(source& in) {
     constexpr bool is_sstring = std::is_same_v<T, sstring>;
     constexpr bool is_vector = is_std_vector_v<T>;
     constexpr bool is_fragmented_buffer = std::is_same_v<T, fragbuf>;
@@ -37,53 +41,55 @@ future<> deserialize(source& in, T& t) {
     constexpr bool is_trivially_copyable = std::is_trivially_copyable_v<T>;
 
     if constexpr (is_sstring) {
-        auto i = std::make_unique<int32_t>(0);
-        return deserialize<int32_t>(in, *i).then([&in, &t, max = std::move(i)] {
-            return in.read_exactly(*max).then(
-              [&in, &t, sz = *max](temporary_buffer<char> buf) {
+        return deserialize<int32_t>(in).then([&in](int32_t sz) {
+            return in.read_exactly(sz).then(
+              [&in, sz](temporary_buffer<char> buf) {
                   if (buf.size() != static_cast<size_t>(sz)) {
                       throw deserialize_invalid_argument(buf.size(), sz);
                   }
-                  t = sstring(sstring::initialized_later(), sz);
-                  std::copy_n(buf.get(), sz, t.data());
+                  return sstring(buf.get(), sz);
               });
         });
     } else if constexpr (is_vector) {
         using value_type = typename std::decay_t<T>::value_type;
-        auto i = std::make_unique<int32_t>(0);
-        return deserialize<int32_t>(in, *i).then([&in, &t, max = std::move(i)] {
-            t.resize(*max);
-            return do_for_each(t, [&in](value_type& i) {
-                return deserialize<value_type>(in, i);
-            });
+        return deserialize<int32_t>(in).then([&in](int32_t sz) {
+            static thread_local auto r = boost::irange(0, sz);
+            return copy_range<T>(
+              r, [&in](int) { return deserialize<value_type>(in); });
         });
     } else if constexpr (is_fragmented_buffer) {
-        auto i = std::make_unique<int32_t>(0);
-        return deserialize<int32_t>(in, *i).then([&in, &t, max = std::move(i)] {
-            return in.read_fragbuf(*max).then( [&t, max = *max](fragbuf b) {
+        return deserialize<int32_t>(in).then([&in](int32_t max) {
+            return in.read_fragbuf(max).then([max](fragbuf b) {
                 if (static_cast<size_t>(max) != b.size_bytes()) {
                     throw deserialize_invalid_argument(
                       b.size_bytes(), sizeof(int32_t));
                 }
-                t = std::move(b);
+                return std::move(b);
             });
         });
     } else if constexpr (is_standard_layout && is_trivially_copyable) {
-        // rever to constexpr
         constexpr const size_t sz = sizeof(T);
-        return in.read_exactly(sz).then(
-          [&in, &t, sz](temporary_buffer<char> buf) {
-              if (buf.size() != sz) {
-                  throw deserialize_invalid_argument(buf.size(), sz);
-              }
-              std::copy_n(buf.get(), sz, reinterpret_cast<char*>(&t));
-          });
-    } else if constexpr (is_standard_layout) {
-        auto f = make_ready_future<>();
-        for_each_field(t, [&in, &f](auto& field) {
-            f = f.then([&in, &field] { return deserialize(in, field); });
+        return in.read_exactly(sz).then([&in, sz](temporary_buffer<char> buf) {
+            if (buf.size() != sz) {
+                throw deserialize_invalid_argument(buf.size(), sz);
+            }
+            T t{};
+            std::copy_n(buf.get(), sz, reinterpret_cast<char*>(&t));
+            return t;
         });
-        return f;
+    } else if constexpr (is_standard_layout) {
+        return do_with(T{}, [&in](T& t) mutable {
+            auto f = make_ready_future<>();
+            for_each_field(t, [&](auto& field) mutable {
+                f = f.then([&in, &field]() mutable {
+                    return deserialize<std::decay_t<decltype(field)>>(in).then(
+                      [&field](auto value) mutable {
+                          field = std::move(value);
+                      });
+                });
+            });
+            return f.then([&t] { return std::move(t); });
+        });
     }
     static_assert(
       (is_vector || is_fragmented_buffer || is_standard_layout
@@ -94,10 +100,9 @@ template<
   typename T,
   typename Tag,
   typename U = std::enable_if_t<std::is_arithmetic_v<T>, T>>
-future<> deserialize(source& in, named_type<U, Tag>& r) {
-    using type = U;
-    type& ref = *reinterpret_cast<type*>(&r);
-    return deserialize(in, ref);
+future<named_type<U, Tag>> deserialize(source& in) {
+    return deserialize<U>(in).then(
+      [](U u) { return named_type<U, Tag>{std::move(u)}; });
 }
 
 } // namespace rpc
