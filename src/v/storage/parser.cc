@@ -182,7 +182,7 @@ parse_result continuous_batch_parser::do_process(temporary_buffer<char>& data) {
           _record_size,
           _timestamp_delta,
           _offset_delta,
-          fragmented_temporary_buffer(std::exchange(_read_bytes, {}), _64));
+          fragbuf(std::exchange(_read_bytes, {}), _64));
         if (should_skip) {
             if (--_num_records) {
                 _state = state::record_start;
@@ -201,7 +201,7 @@ parse_result continuous_batch_parser::do_process(temporary_buffer<char>& data) {
         }
     }
     case state::record_end: {
-        auto vhs = fragmented_temporary_buffer(
+        auto vhs = fragbuf(
           std::exchange(_read_bytes, {}), _value_and_headers_size);
         _consumer->consume_record_value(std::move(vhs));
         if (--_num_records) {
@@ -218,8 +218,7 @@ parse_result continuous_batch_parser::do_process(temporary_buffer<char>& data) {
         }
     }
     case state::compressed_records_end: {
-        auto record = fragmented_temporary_buffer(
-          std::exchange(_read_bytes, {}), _record_size);
+        auto record = fragbuf(std::exchange(_read_bytes, {}), _record_size);
         _consumer->consume_compressed_records(std::move(record));
     }
     case state::batch_end:

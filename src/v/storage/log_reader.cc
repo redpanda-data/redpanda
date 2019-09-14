@@ -1,6 +1,6 @@
 #include "storage/log_reader.h"
 
-#include "utils/fragmented_temporary_buffer.h"
+#include "utils/fragbuf.h"
 
 namespace storage {
 
@@ -24,7 +24,7 @@ batch_consumer::skip skipping_consumer::consume_record_key(
   size_t size_bytes,
   int32_t timestamp_delta,
   int32_t offset_delta,
-  fragmented_temporary_buffer&& key) {
+  fragbuf&& key) {
     _record_size_bytes = size_bytes;
     _record_timestamp_delta = timestamp_delta;
     _record_offset_delta = offset_delta;
@@ -33,7 +33,7 @@ batch_consumer::skip skipping_consumer::consume_record_key(
 }
 
 void skipping_consumer::consume_record_value(
-  fragmented_temporary_buffer&& value_and_headers) {
+  fragbuf&& value_and_headers) {
     std::get<model::record_batch::uncompressed_records>(_records).emplace_back(
       _record_size_bytes,
       _record_timestamp_delta,
@@ -43,7 +43,7 @@ void skipping_consumer::consume_record_value(
 }
 
 void skipping_consumer::consume_compressed_records(
-  fragmented_temporary_buffer&& records) {
+  fragbuf&& records) {
     _records = model::record_batch::compressed_records(
       _num_records, std::move(records));
 }

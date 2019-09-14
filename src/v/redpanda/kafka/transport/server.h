@@ -3,7 +3,7 @@
 #include "cluster/metadata_cache.h"
 #include "redpanda/kafka/transport/probe.h"
 #include "seastarx.h"
-#include "utils/fragmented_temporary_buffer.h"
+#include "utils/fragbuf.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/execution_stage.hh>
@@ -86,7 +86,7 @@ private:
         socket_address _addr;
         input_stream<char> _read_buf;
         output_stream<char> _write_buf;
-        fragmented_temporary_buffer::reader _buffer_reader;
+        fragbuf::reader _buffer_reader;
         future<> _ready_to_respond = make_ready_future<>();
     };
 

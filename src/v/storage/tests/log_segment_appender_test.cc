@@ -15,7 +15,7 @@ SEASTAR_THREAD_TEST_CASE(test_can_append_ftb) {
     fragments.emplace_back(reinterpret_cast<char*>(data.data()), 3);
     fragments.emplace_back(reinterpret_cast<char*>(data.data() + 3), 2);
     fragments.emplace_back(reinterpret_cast<char*>(data.data() + 5), 3);
-    auto ftb = fragmented_temporary_buffer(std::move(fragments), sizeof(value));
+    auto ftb = fragbuf(std::move(fragments), sizeof(value));
 
     auto f = open_file_dma("test", open_flags::create | open_flags::rw).get0();
     auto appender = log_segment_appender(f, file_output_stream_options());

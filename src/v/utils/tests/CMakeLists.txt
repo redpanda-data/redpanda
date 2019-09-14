@@ -11,8 +11,8 @@ rp_test(
 
 rp_test(
   UNIT_TEST
-  BINARY_NAME fragmented_temporary_buffer_test
-  SOURCES fragmented_temporary_buffer_test.cc
+  BINARY_NAME fragbuf_test
+  SOURCES fragbuf_test.cc
   LIBRARIES Seastar::seastar_testing bytes
   DEFINITIONS SEASTAR_TESTING_MAIN
   ARGS "-- -c 1"

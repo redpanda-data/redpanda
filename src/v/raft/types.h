@@ -4,7 +4,7 @@
 #include "model/metadata.h"
 #include "rpc/deserialize.h"
 #include "rpc/serialize.h"
-#include "utils/fragmented_temporary_buffer.h"
+#include "utils/fragbuf.h"
 #include "utils/named_type.h"
 
 #include <seastar/net/socket_defs.hh>
@@ -43,7 +43,7 @@ struct configuration_reply {};
 struct append_entries_request {
     model::node_id node_id;
     protocol_metadata meta;
-    std::vector<fragmented_temporary_buffer> entries;
+    std::vector<fragbuf> entries;
 };
 
 struct [[gnu::packed]] append_entries_reply {

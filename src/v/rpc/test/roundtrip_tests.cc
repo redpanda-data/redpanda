@@ -74,7 +74,7 @@ SEASTAR_THREAD_TEST_CASE(roundtrip_with_fragmented_buffer) {
         std::vector<temporary_buffer<char>> v;
         v.emplace_back(temporary_buffer<char>(55));
         std::memset(v[0].get_write(), 0, v[0].size());
-        src.oi = std::move(fragmented_temporary_buffer(std::move(v), 55));
+        src.oi = std::move(fragbuf(std::move(v), 55));
         rpc::serialize(b, std::move(src));
     }
     const size_t src_size = b.size_bytes();
@@ -124,7 +124,7 @@ SEASTAR_THREAD_TEST_CASE(roundtrip_fragbuf_vector) {
         vi.push_back(temporary_buffer<char>(87));
         kv x;
         x.k = "foobar";
-        x.v = fragmented_temporary_buffer(std::move(vi), 87);
+        x.v = fragbuf(std::move(vi), 87);
         it.hdrs.push_back(std::move(x));
         rpc::serialize(b, std::move(it));
     }
@@ -132,7 +132,7 @@ SEASTAR_THREAD_TEST_CASE(roundtrip_fragbuf_vector) {
       /*
         struct kv {
         sstring k;              ---------------  sizeof(int32_t) + 6
-        fragmented_temporary_buffer v; --------  sizeof(int32_t) + 87 bytes
+        fragbuf v; --------  sizeof(int32_t) + 87 bytes
         };
         struct test_rpc_header {
         int32_t size = 42;       ---------------- sizeof(int32_t)

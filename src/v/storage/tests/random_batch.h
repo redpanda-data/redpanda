@@ -4,7 +4,7 @@
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "storage/constants.h"
-#include "utils/fragmented_temporary_buffer.h"
+#include "utils/fragbuf.h"
 #include "utils/vint.h"
 
 #include <random>
@@ -60,14 +60,13 @@ temporary_buffer<char> make_buffer(size_t blob_size) {
     return blob;
 }
 
-fragmented_temporary_buffer make_random_ftb(size_t blob_size) {
+fragbuf make_random_ftb(size_t blob_size) {
     auto first_chunk = blob_size / 2;
     auto second_chunk = blob_size - first_chunk;
     std::vector<temporary_buffer<char>> bufs;
     bufs.push_back(make_buffer(first_chunk));
     bufs.push_back(make_buffer(second_chunk));
-    return fragmented_temporary_buffer(
-      std::move(bufs), first_chunk + second_chunk);
+    return fragbuf(std::move(bufs), first_chunk + second_chunk);
 }
 
 model::record make_random_record(unsigned index) {

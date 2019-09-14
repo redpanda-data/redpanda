@@ -6,7 +6,7 @@
 #include "storage/parser.h"
 #include "storage/tests/random_batch.h"
 #include "utils/file_sanitizer.h"
-#include "utils/fragmented_temporary_buffer.h"
+#include "utils/fragbuf.h"
 
 #include <seastar/core/thread.hh>
 #include <seastar/testing/thread_test_case.hh>
@@ -21,8 +21,8 @@ public:
       , _stop_at_batch(stop_at_batch) {
     }
 
-    virtual skip
-    consume_batch_start(model::record_batch_header header, size_t num_records) override {
+    virtual skip consume_batch_start(
+      model::record_batch_header header, size_t num_records) override {
         _header = std::move(header);
         _num_records = num_records;
         if (_header.attrs.compression() == model::compression::none) {
@@ -39,7 +39,7 @@ public:
       size_t size_bytes,
       int32_t timestamp_delta,
       int32_t offset_delta,
-      fragmented_temporary_buffer&& key) override {
+      fragbuf&& key) override {
         if (_record_skips) {
             _record_skips--;
             return skip::yes;
@@ -51,8 +51,7 @@ public:
         return skip::no;
     }
 
-    virtual void consume_record_value(
-      fragmented_temporary_buffer&& value_and_headers) override {
+    virtual void consume_record_value(fragbuf&& value_and_headers) override {
         std::get<model::record_batch::uncompressed_records>(_records)
           .emplace_back(
             _record_size_bytes,
@@ -62,8 +61,7 @@ public:
             std::move(value_and_headers));
     }
 
-    virtual void
-    consume_compressed_records(fragmented_temporary_buffer&& records) override {
+    virtual void consume_compressed_records(fragbuf&& records) override {
         _records = model::record_batch::compressed_records(
           _num_records, std::move(records));
     }
@@ -84,7 +82,7 @@ private:
     size_t _record_size_bytes;
     int32_t _record_timestamp_delta;
     int32_t _record_offset_delta;
-    fragmented_temporary_buffer _record_key;
+    fragbuf _record_key;
     model::record_batch::records_type _records;
 };
 

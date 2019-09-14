@@ -16,7 +16,7 @@
 #include <vector>
 
 /// Fragmented buffer consisting of multiple temporary_buffer<char>
-class fragmented_temporary_buffer {
+class fragbuf {
 public:
     using vector_type = std::vector<temporary_buffer<char>>;
 
@@ -25,22 +25,21 @@ public:
     class istream;
     class reader;
 
-    fragmented_temporary_buffer() = default;
-    fragmented_temporary_buffer(
+    fragbuf() = default;
+    fragbuf(
       std::vector<temporary_buffer<char>> fragments, size_t size_bytes) noexcept
       : _fragments(std::move(fragments))
       , _size_bytes(size_bytes) {
     }
-    fragmented_temporary_buffer(const fragmented_temporary_buffer&) = delete;
-    fragmented_temporary_buffer(fragmented_temporary_buffer&& o) noexcept
+    fragbuf(const fragbuf&) = delete;
+    fragbuf(fragbuf&& o) noexcept
       : _fragments(std::move(o._fragments))
       , _size_bytes(o._size_bytes) {
     }
-    fragmented_temporary_buffer&
-    operator=(fragmented_temporary_buffer&& o) noexcept {
+    fragbuf& operator=(fragbuf&& o) noexcept {
         if (this != &o) {
-            this->~fragmented_temporary_buffer();
-            new (this) fragmented_temporary_buffer(std::move(o));
+            this->~fragbuf();
+            new (this) fragbuf(std::move(o));
         }
         return *this;
     }
@@ -61,7 +60,7 @@ public:
         return std::move(_fragments);
     }
 
-    fragmented_temporary_buffer share(size_t pos, const size_t len) {
+    fragbuf share(size_t pos, const size_t len) {
         std::vector<temporary_buffer<char>> fragments;
         fragments.reserve(len / default_fragment_size);
         size_t left = len;
@@ -83,12 +82,12 @@ public:
             fragments.push_back(frag.share(pos, left_in_frag));
             pos = 0;
         }
-        return fragmented_temporary_buffer(std::move(fragments), len);
+        return fragbuf(std::move(fragments), len);
     }
 
-    bool operator==(const fragmented_temporary_buffer& other) const;
+    bool operator==(const fragbuf& other) const;
 
-    bool operator!=(const fragmented_temporary_buffer& other) const {
+    bool operator!=(const fragbuf& other) const {
         return !(*this == other);
     }
 
@@ -97,7 +96,7 @@ private:
     size_t _size_bytes = 0;
 };
 
-namespace fragmented_temporary_buffer_concepts {
+namespace fragbuf_concepts {
 // clang-format off
 CONCEPT(
 template<typename T>
@@ -106,9 +105,9 @@ concept bool ExceptionThrower = requires(T obj, size_t n) {
 };
 )
 // clang-format on
-} // namespace fragmented_temporary_buffer_concepts
+} // namespace fragbuf_concepts
 
-class fragmented_temporary_buffer::istream {
+class fragbuf::istream {
     void next_fragment() {
         _bytes_left -= _current->size();
         if (_bytes_left) {
@@ -122,8 +121,7 @@ class fragmented_temporary_buffer::istream {
     }
 
     template<typename ExceptionThrower>
-    CONCEPT(requires fragmented_temporary_buffer_concepts::ExceptionThrower<
-            ExceptionThrower>)
+    CONCEPT(requires fragbuf_concepts::ExceptionThrower<ExceptionThrower>)
     void check_out_of_range(ExceptionThrower& exceptions, size_t n) {
         if (__builtin_expect(bytes_left() < n, false)) {
             exceptions.throw_out_of_range(n, bytes_left());
@@ -199,9 +197,8 @@ public:
 
     class iterator;
 
-    CONCEPT(
-      static_assert(fragmented_temporary_buffer_concepts::ExceptionThrower<
-                    default_exception_thrower>);)
+    CONCEPT(static_assert(
+              fragbuf_concepts::ExceptionThrower<default_exception_thrower>);)
 
     istream(const vector_type& fragments, size_t total_size) noexcept
       : _current(fragments.begin())
@@ -224,8 +221,7 @@ public:
     }
 
     template<typename T, typename ExceptionThrower = default_exception_thrower>
-    CONCEPT(requires fragmented_temporary_buffer_concepts::ExceptionThrower<
-            ExceptionThrower>)
+    CONCEPT(requires fragbuf_concepts::ExceptionThrower<ExceptionThrower>)
     T read(ExceptionThrower&& exceptions = default_exception_thrower()) {
         auto new_end = _current_position + sizeof(T);
         if (__builtin_expect(new_end > _current_end, false)) {
@@ -241,8 +237,7 @@ public:
     template<
       typename Output,
       typename ExceptionThrower = default_exception_thrower>
-    CONCEPT(requires fragmented_temporary_buffer_concepts::ExceptionThrower<
-            ExceptionThrower>)
+    CONCEPT(requires fragbuf_concepts::ExceptionThrower<ExceptionThrower>)
     Output read_to(
       size_t n,
       Output out,
@@ -260,8 +255,7 @@ public:
     }
 
     template<typename ExceptionThrower = default_exception_thrower>
-    CONCEPT(requires fragmented_temporary_buffer_concepts::ExceptionThrower<
-            ExceptionThrower>)
+    CONCEPT(requires fragbuf_concepts::ExceptionThrower<ExceptionThrower>)
     bytes_view read_bytes_view(
       size_t n,
       bytes_ostream& linearization_buffer,
@@ -284,8 +278,8 @@ public:
     CONCEPT(requires requires(Consumer c, bytes_view bv) {
         { c(bv) };
     })
-    // clang-format on
-    void consume(Consumer&& c) {
+      // clang-format on
+      void consume(Consumer&& c) {
         while (_bytes_left) {
             c(bytes_view(
               reinterpret_cast<bytes_view::const_pointer>(_current_position),
@@ -306,27 +300,25 @@ private:
     size_t _bytes_left = 0;
 };
 
-inline fragmented_temporary_buffer::istream
-fragmented_temporary_buffer::get_istream() const noexcept {
+inline fragbuf::istream fragbuf::get_istream() const noexcept {
     return istream(_fragments, _size_bytes);
 }
 
-class fragmented_temporary_buffer::reader {
+class fragbuf::reader {
 public:
-    future<fragmented_temporary_buffer>
-    read_exactly(input_stream<char>& in, size_t length) {
+    future<fragbuf> read_exactly(input_stream<char>& in, size_t length) {
         _fragments = std::vector<temporary_buffer<char>>();
         _left = length;
         return repeat_until_value([this, length, &in] {
-            using f_t_b_opt = std::optional<fragmented_temporary_buffer>;
+            using f_t_b_opt = std::optional<fragbuf>;
             if (!_left) {
                 return make_ready_future<f_t_b_opt>(
-                  fragmented_temporary_buffer(std::move(_fragments), length));
+                  fragbuf(std::move(_fragments), length));
             }
             return in.read_up_to(_left).then(
               [this](temporary_buffer<char> buf) {
                   if (buf.empty()) {
-                      return f_t_b_opt(fragmented_temporary_buffer());
+                      return f_t_b_opt(fragbuf());
                   }
                   _left -= buf.size();
                   _fragments.emplace_back(std::move(buf));
@@ -340,7 +332,7 @@ private:
     size_t _left = 0;
 };
 
-class fragmented_temporary_buffer::istream::iterator {
+class fragbuf::istream::iterator {
     void next_fragment() noexcept {
         _bytes_left -= _current_fragment->size();
         if (_bytes_left) {
@@ -409,19 +401,17 @@ private:
     size_t _bytes_left;
 };
 
-inline fragmented_temporary_buffer::istream::iterator
-fragmented_temporary_buffer::istream::begin() const noexcept {
+inline fragbuf::istream::iterator fragbuf::istream::begin() const noexcept {
     return iterator(_current, _current_position, _bytes_left);
 }
 
-inline fragmented_temporary_buffer::istream::iterator
-fragmented_temporary_buffer::istream::end() const noexcept {
+inline fragbuf::istream::iterator fragbuf::istream::end() const noexcept {
     return iterator(iterator::end_tag{});
 }
 
 // clang-format off
-inline bool fragmented_temporary_buffer::operator==(
-  const fragmented_temporary_buffer& other) const {
+inline bool fragbuf::operator==(
+  const fragbuf& other) const {
     auto stream = get_istream();
     auto other_stream = other.get_istream();
     return _size_bytes == other._size_bytes
@@ -430,7 +420,7 @@ inline bool fragmented_temporary_buffer::operator==(
 // clang-format on
 
 namespace std {
-using iterator_type = fragmented_temporary_buffer::istream::iterator;
+using iterator_type = fragbuf::istream::iterator;
 template<>
 struct iterator_traits<iterator_type> {
     using value_type = iterator_type::value_type;
