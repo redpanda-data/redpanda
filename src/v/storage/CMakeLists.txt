@@ -4,7 +4,8 @@ add_library(storage STATIC
     log.cc
     log_writer.cc
     parser.cc
-    log_reader.cc)
+    log_reader.cc
+    log_replayer.cc)
 
 target_include_directories(storage PUBLIC ${PROJECT_SOURCE_DIR}/src/v)
 
