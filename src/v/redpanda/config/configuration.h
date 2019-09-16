@@ -30,6 +30,10 @@ struct configuration final : public config_store {
     property<socket_address> admin;
     property<sstring> admin_api_doc_dir;
     property<bool> enable_admin_api;
+    property<int16_t> default_num_windows;
+    property<std::chrono::milliseconds> default_window_sec;
+    property<std::chrono::milliseconds> quota_manager_gc_sec;
+    property<uint32_t> target_quota_byte_rate;
 
     configuration();
 
@@ -55,6 +59,13 @@ struct adl_serializer<seastar::socket_address> {
         std::ostringstream a;
         a << v.addr();
         j = {{"address", a.str()}, {"port", v.port()}};
+    }
+};
+
+template<>
+struct adl_serializer<std::chrono::milliseconds> {
+    static void to_json(json& j, const std::chrono::milliseconds& v) {
+        j = v.count();
     }
 };
 } // namespace nlohmann
@@ -115,4 +126,24 @@ struct convert<socket_address> {
         return true;
     }
 };
+
+template<>
+struct convert<std::chrono::milliseconds> {
+    using type = std::chrono::milliseconds;
+
+    static Node encode(const type& rhs) {
+        return Node(rhs.count());
+    }
+
+    static bool decode(const Node& node, type& rhs) {
+        type::rep secs;
+        auto res = convert<type::rep>::decode(node, secs);
+        if (!res) {
+            return res;
+        }
+        rhs = std::chrono::milliseconds(secs);
+        return true;
+    }
+};
+
 }; // namespace YAML
