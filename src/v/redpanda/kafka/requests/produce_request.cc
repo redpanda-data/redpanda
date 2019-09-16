@@ -70,7 +70,7 @@ produce_request::process(request_context& ctx, smp_service_group g) {
       });
 
     if (ctx.header().version >= api_version(1)) {
-        resp->writer().write(int32_t(0));
+        resp->writer().write(ctx.throttle_delay_ms());
     }
 
     return make_ready_future<response_ptr>(std::move(resp));

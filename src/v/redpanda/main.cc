@@ -192,6 +192,19 @@ int main(int argc, char** argv, char** env) {
             auto stop_metadata_cache = defer(
               [] { metadata_cache.stop().get(); });
 
+            // metrics and quota management
+            static sharded<kafka::transport::quota_manager> quota_mgr;
+            quota_mgr
+              .start(
+                rp_config.local().default_num_windows(),
+                rp_config.local().default_window_sec(),
+                rp_config.local().target_quota_byte_rate(),
+                rp_config.local().quota_manager_gc_sec())
+              .get();
+            quota_mgr.invoke_on_all([](auto& qm) mutable { return qm.start(); })
+              .get();
+            auto stop_quota_mgr = defer([] { quota_mgr.stop().get(); });
+
             static sharded<kafka::transport::kafka_server> kafka_server;
             kafka::transport::kafka_server_config server_config = {
               // FIXME: Add memory manager
@@ -202,7 +215,8 @@ int main(int argc, char** argv, char** env) {
               .start(
                 kafka::transport::probe(),
                 std::ref(metadata_cache),
-                std::move(server_config))
+                std::move(server_config),
+                std::ref(quota_mgr))
               .get();
             kafka_server
               .invoke_on_all(

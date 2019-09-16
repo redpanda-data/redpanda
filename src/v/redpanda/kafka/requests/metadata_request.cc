@@ -1,7 +1,8 @@
 #include "redpanda/kafka/requests/metadata_request.h"
-#include "redpanda/kafka/requests/headers.h"
+
 #include "model/metadata.h"
 #include "redpanda/kafka/errors/errors.h"
+#include "redpanda/kafka/requests/headers.h"
 
 #include <seastar/core/thread.hh>
 
@@ -77,7 +78,11 @@ metadata_request::process(request_context& ctx, smp_service_group g) {
               auto topic_metadata
                 = ctx.metadata_cache().get_topic_metadata(t).get0();
               if (!topic_metadata) {
-                  rw.write(errors::error_code::unknown_topic_or_partition);
+                  // until we have real metadata management fake the creation of
+                  // the topic in the request to allow the stub to function with
+                  // testing clients.
+                  // rw.write(errors::error_code::unknown_topic_or_partition);
+                  rw.write(errors::error_code::none);
                   topic_metadata.emplace(model::topic_metadata{t});
               } else {
                   rw.write(errors::error_code::none);
