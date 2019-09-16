@@ -21,7 +21,8 @@ struct context {
         unsigned id = 0;
         for (auto& batch : batches) {
             auto fd = open_file_dma(
-                        "test" + id++, open_flags::create | open_flags::rw)
+                        "test" + to_sstring(id++),
+                        open_flags::create | open_flags::rw)
                         .get0();
             fd = file(make_shared(file_io_sanitizer(std::move(fd))));
             auto appender = log_segment_appender(
