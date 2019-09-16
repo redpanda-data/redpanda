@@ -8,6 +8,7 @@
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
+#include <seastar/core/metrics_registration.hh>
 #include <seastar/core/semaphore.hh>
 
 #include <boost/intrusive/list.hpp>
@@ -43,6 +44,7 @@ private:
     future<> continous_method_dispath(lw_shared_ptr<connection>);
     future<> dispatch_method_once(header, lw_shared_ptr<connection>);
     future<> handle_connection(lw_shared_ptr<connection>);
+    void setup_metrics();
 
     semaphore _memory;
     std::vector<std::unique_ptr<service>> _services;
@@ -51,6 +53,8 @@ private:
     abort_source _as;
     gate _conn_gate;
     hdr_hist _hist;
+    server_probe _probe;
+    metrics::metric_groups _metrics;
 };
 
 } // namespace rpc
