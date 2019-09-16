@@ -69,7 +69,7 @@ public:
                 _hash.update(
                   reinterpret_cast<const char*>(bv.data()), bv.size());
             });
-            _size = b.size_bytes();
+            _size += b.size_bytes();
             return std::move(b);
         });
     }
