@@ -8,12 +8,6 @@ configuration::configuration()
     "data_directory",
     "Place where redpanda will keep the data",
     required::yes)
-  , log_segment_size_bytes(
-      *this,
-      "log_segment_size",
-      "Size of single log segment in bytes",
-      required::no,
-      1024 * 1024 * 1024)
   , developer_mode(
       *this,
       "developer_mode",
@@ -51,13 +45,6 @@ configuration::configuration()
       "Address and port of an interface to listen for Kafka API requests",
       required::no,
       socket_address(inet_addr("127.0.0.1"), 9092))
-  , max_retention_period_hours(
-      *this, "max_retention_period_hours", "TBD", required::no, 168)
-  , writer_flush_period_ms(
-      *this, "writer_flush_period_ms", "TBD", required::no, 8000)
-  , max_retention_size(*this, "max_retention_size", "TBD", required::no, -1)
-  , max_bytes_in_writer_cache(
-      *this, "max_bytes_in_writer_cache", "TBD", required::no, 1024 * 1024)
   , use_scheduling_groups(
       *this,
       "use_scheduling_groups",
