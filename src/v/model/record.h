@@ -145,6 +145,7 @@ struct record_batch_header {
     timestamp first_timestamp;
     timestamp max_timestamp;
 
+    record_batch_header() = default;
     offset last_offset() const {
         return base_offset + last_offset_delta;
     }
