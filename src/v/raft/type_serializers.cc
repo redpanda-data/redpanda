@@ -20,14 +20,21 @@ inline future<model::offset> deserialize(source& in) {
     });
 }
 template<>
-inline future<model::broker> deserialize(source& in) {
+future<model::broker> deserialize(source& in) {
     struct broker_contents {
         model::node_id id;
         sstring host;
         int32_t port;
+        std::optional<sstring> rack;
     };
-    return deserialize<broker_contents>(in).then([] (broker_contents res) {
-        return model::broker(std::move(res.id), std::move(res.host), res.port, {});
+    return deserialize<broker_contents>(in).then([](broker_contents res) {
+        return model::broker(
+          std::move(res.id),
+          std::move(res.host),
+          res.port,
+          std::move(res.rack));
+    });
+}
     });
 }
 
