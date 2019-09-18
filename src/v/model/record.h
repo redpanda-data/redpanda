@@ -225,7 +225,17 @@ public:
       : _header(std::move(header))
       , _records(std::move(records)) {
     }
-
+    record_batch(record_batch&& o) noexcept
+      : _header(std::move(o._header))
+      , _records(std::move(o._records)) {
+    }
+    record_batch& operator=(record_batch&& o) noexcept {
+        if (this != &o) {
+            this->~record_batch();
+            new (this) record_batch(std::move(o));
+        }
+        return *this;
+    }
     bool empty() const {
         return seastar::visit(_records, [](auto& e) { return e.empty(); });
     }
