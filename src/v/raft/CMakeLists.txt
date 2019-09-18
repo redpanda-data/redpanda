@@ -7,7 +7,6 @@ rpcgen(
   )
 add_library (raft STATIC
   type_serializers.cc
-  service.cc
   consensus.cc
   reconnect_client.cc
   client_cache.cc
