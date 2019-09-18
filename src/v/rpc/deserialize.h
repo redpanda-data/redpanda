@@ -34,13 +34,26 @@ public:
 
 template<typename T>
 future<T> deserialize(source& in) {
+    constexpr bool is_optional = is_std_optional_v<T>;
     constexpr bool is_sstring = std::is_same_v<T, sstring>;
     constexpr bool is_vector = is_std_vector_v<T>;
     constexpr bool is_fragmented_buffer = std::is_same_v<T, fragbuf>;
     constexpr bool is_standard_layout = std::is_standard_layout_v<T>;
     constexpr bool is_trivially_copyable = std::is_trivially_copyable_v<T>;
 
-    if constexpr (is_sstring) {
+    if constexpr (is_optional) {
+        /// sizeof(bool) is implementation defined, and the standard puts
+        /// notable emphasis on this fact.
+        //  section: §5.3.3/1 of the standard:
+        using value_type = typename std::decay_t<T>::value_type;
+        return deserialize<int8_t>(in).then([&in](int8_t is_set) {
+            if (is_set == 0) {
+                return make_ready_future<T>();
+            }
+            return deserialize<value_type>(in).then(
+              [](value_type t) { return make_ready_future<T>(std::move(t)); });
+        });
+    } else if constexpr (is_sstring) {
         return deserialize<int32_t>(in).then([&in](int32_t sz) {
             return in.read_exactly(sz).then(
               [&in, sz](temporary_buffer<char> buf) {
@@ -92,8 +105,8 @@ future<T> deserialize(source& in) {
         });
     }
     static_assert(
-      (is_vector || is_fragmented_buffer || is_standard_layout
-       || is_trivially_copyable),
+      (is_optional || is_sstring || is_vector || is_fragmented_buffer
+       || (is_standard_layout) || is_trivially_copyable),
       "rpc: no deserializer registered");
 }
 template<
