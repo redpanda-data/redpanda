@@ -10,6 +10,8 @@
 #include <seastar/core/thread.hh>
 #include <seastar/testing/thread_test_case.hh>
 
+#include <redpanda/config/tls_config.h>
+
 // manually generated via:
 // rpcgen.py --service_file test_definitions.json --output_file rpcgen.h
 #include "rpc/test/rpcgen.h"
@@ -58,6 +60,40 @@ SEASTAR_THREAD_TEST_CASE(rpcgen_integration) {
     lgr.info("client stopping");
     cli->stop().get();
     lgr.info("service stopping");
-    sleep(10ms).get();
+    s.stop().get();
+}
+
+SEASTAR_THREAD_TEST_CASE(rpcgen_tls_integration) {
+    std::cout.setf(std::ios::unitbuf);
+    auto ssg = create_smp_service_group({5000}).get0();
+    auto sc = create_scheduling_group("rpc tls scheduling group", 200).get0();
+    auto creds_builder = config::tls_config(
+                           true,
+                           config::key_cert{"redpanda.key", "redpanda.crt"},
+                           "root_certificate_authority.chain_cert",
+                           false)
+                           .get_credentials_builder()
+                           .get0();
+
+    rpc::server_configuration cfg;
+    cfg.max_service_memory_per_core = memory::stats().total_memory() / 10;
+    cfg.addrs.push_back(socket_address(ipv4_addr("127.0.0.1", 11118)));
+    cfg.credentials = creds_builder;
+    rpc::server s(cfg);
+    s.register_service<movistar>(sc, ssg);
+    lgr.info("Registered service, about to start");
+    s.start();
+    lgr.info("started");
+    rpc::client_configuration client_cfg;
+    client_cfg.server_addr = socket_address(ipv4_addr("127.0.0.1", 11118));
+    client_cfg.credentials = creds_builder;
+    auto cli = std::make_unique<movistar::client>(client_cfg);
+    lgr.info("client connecting");
+    cli->connect().get();
+    lgr.info("client calling method");
+    auto ret = cli->ibis_hakka(cycling::san_francisco{66}).get0();
+    lgr.info("client stopping");
+    cli->stop().get();
+    lgr.info("service stopping");
     s.stop().get();
 }

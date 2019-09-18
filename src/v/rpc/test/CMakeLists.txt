@@ -29,5 +29,8 @@ rp_test(
   SOURCES rpc_gen_cycling_test.cc
   LIBRARIES Seastar::seastar_testing rpc
   DEFINITIONS SEASTAR_TESTING_MAIN
+  INPUT_FILES ${CMAKE_CURRENT_SOURCE_DIR}/redpanda.crt
+              ${CMAKE_CURRENT_SOURCE_DIR}/redpanda.key
+              ${CMAKE_CURRENT_SOURCE_DIR}/root_certificate_authority.chain_cert
   ARGS "-- -c 1"
 )
