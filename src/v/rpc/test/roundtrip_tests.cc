@@ -30,7 +30,7 @@ SEASTAR_THREAD_TEST_CASE(roundtrip_pod_with_checksum) {
         rpc::serialize(b, std::move(src));
     }
     auto in = rpc::make_input_stream(std::move(b));
-    auto rsource = rpc::checksum_source(in);
+    auto rsource = rpc::source(in);
     auto expected = rpc::deserialize<pod>(rsource).get0();
     auto [x, y, z] = rpc::to_tuple(expected);
     BOOST_REQUIRE_EQUAL(x, 1);
