@@ -30,25 +30,23 @@ future<T>
 parse_type_wihout_compression(input_stream<char>& in, const header& h) {
     const auto header_size = h.size;
     const auto header_checksum = h.checksum;
-    return do_with(
-      source(in),
-      [header_size, header_checksum](source& src) {
-          return deserialize<T>(src).then(
-            [header_size, header_checksum, &src](T t) {
-                const auto got_checksum = src.checksum();
-                if (header_size != src.size_bytes()) {
-                    throw deserialize_invalid_argument(
-                      src.size_bytes(), header_size);
-                }
-                if (header_checksum != got_checksum) {
-                    throw std::runtime_error(fmt::format(
-                      "invalid rpc checksum. got:{}, expected:{}",
-                      got_checksum,
-                      header_checksum));
-                }
-                return std::move(t);
-            });
-      });
+    return do_with(source(in), [header_size, header_checksum](source& src) {
+        return deserialize<T>(src).then(
+          [header_size, header_checksum, &src](T t) {
+              const auto got_checksum = src.checksum();
+              if (header_size != src.size_bytes()) {
+                  throw deserialize_invalid_argument(
+                    src.size_bytes(), header_size);
+              }
+              if (header_checksum != got_checksum) {
+                  throw std::runtime_error(fmt::format(
+                    "invalid rpc checksum. got:{}, expected:{}",
+                    got_checksum,
+                    header_checksum));
+              }
+              return std::move(t);
+          });
+    });
 }
 template<typename T>
 future<T> parse_type(input_stream<char>& in, const header& h) {
