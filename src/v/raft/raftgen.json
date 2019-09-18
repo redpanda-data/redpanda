@@ -14,11 +14,6 @@
             "name": "append_entries",
             "input_type": "append_entries_request",
             "output_type": "append_entries_reply"
-        },
-        {
-            "name": "configuration_update",
-            "input_type": "configuration_request",
-            "output_type": "configuration_reply"
         }
     ]
 }
