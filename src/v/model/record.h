@@ -298,6 +298,15 @@ public:
     uncompressed_records::const_iterator end() const {
         return std::get<uncompressed_records>(_records).end();
     }
+    // Can only be called if this holds a set of uncompressed records.
+    uncompressed_records::iterator begin() {
+        return std::get<uncompressed_records>(_records).begin();
+    }
+
+    // Can only be called if this holds a set of uncompressed records.
+    uncompressed_records::iterator end() {
+        return std::get<uncompressed_records>(_records).end();
+    }
 
     // Can only be called if this holds compressed records.
     const compressed_records& get_compressed_records() const {
