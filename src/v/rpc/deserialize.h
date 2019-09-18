@@ -65,10 +65,12 @@ future<T> deserialize(source& in) {
         });
     } else if constexpr (is_vector) {
         using value_type = typename std::decay_t<T>::value_type;
-        return deserialize<int32_t>(in).then([&in](int32_t sz) {
-            static thread_local auto r = boost::irange(0, sz);
-            return copy_range<T>(
-              r, [&in](int) { return deserialize<value_type>(in); });
+        return deserialize<int32_t>(in).then([&in](int32_t w) {
+            return do_with(
+              boost::irange(0, static_cast<int>(w)), [&in](auto& r) {
+                  return copy_range<T>(
+                    r, [&in](int) { return deserialize<value_type>(in); });
+              });
         });
     } else if constexpr (is_fragmented_buffer) {
         return deserialize<int32_t>(in).then([&in](int32_t max) {
