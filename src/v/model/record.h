@@ -56,9 +56,15 @@ public:
     const fragbuf& key() const {
         return _key;
     }
+    fragbuf&& release_key() {
+        return std::move(_key);
+    }
 
     const fragbuf& packed_value_and_headers() const {
         return _value_and_headers;
+    }
+    fragbuf&& release_packed_value_and_headers() {
+        return std::move(_value_and_headers);
     }
 
     bool operator==(const record& other) const {
@@ -203,6 +209,11 @@ public:
             return _data;
         }
 
+        fragbuf&& release() && {
+            _size = 0;
+            return std::move(_data);
+        }
+
         bool operator==(const compressed_records& other) const {
             return _size == other._size && _data == other._data;
         }
@@ -323,7 +334,12 @@ public:
     const compressed_records& get_compressed_records() const {
         return std::get<compressed_records>(_records);
     }
-
+    compressed_records&& release() && {
+        return std::move(std::get<compressed_records>(_records));
+    }
+    record_batch_header&& release_header() {
+        return std::move(_header);
+    }
     bool operator==(const record_batch& other) const {
         return _header == other._header && _records == other._records;
     }
