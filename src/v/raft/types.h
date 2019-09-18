@@ -31,11 +31,10 @@ struct [[gnu::packed]] protocol_metadata {
     unaligned<term_id::type> prev_log_term;
 };
 
-struct configuration_request {
-    group_id group;
+struct group_configuration {
     model::node_id node_id;
-    // std::vector<model::broker> nodes;
-    // std::vector<model::broker> learners;
+    std::vector<model::broker> nodes;
+    std::vector<model::broker> learners;
 };
 
 struct configuration_reply {};
