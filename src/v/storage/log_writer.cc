@@ -69,7 +69,7 @@ write(log_segment_appender& appender, const model::record_batch& batch) {
       .then([&appender, &batch] {
           // Note that we don't append the unused Kafka fields, but we do
           // take them into account when calculating the batch checksum.
-          return write(appender, static_cast<int32_t>(batch.size()));
+          return write(appender, batch.size());
       })
       .then([&appender, &batch] {
           if (batch.compressed()) {
