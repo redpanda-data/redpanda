@@ -81,4 +81,9 @@ template<typename T, typename Tag>
 void serialize(bytes_ostream& out, const named_type<T, Tag>& r) {
     serialize(out, r());
 }
+template<typename... T>
+void serialize(bytes_ostream& out, T... args) {
+    (serialize(out, std::move(args)), ...);
+}
+
 } // namespace rpc
