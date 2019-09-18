@@ -31,8 +31,8 @@ parse_type_wihout_compression(input_stream<char>& in, const header& h) {
     const auto header_size = h.size;
     const auto header_checksum = h.checksum;
     return do_with(
-      checksum_source(in),
-      [header_size, header_checksum](checksum_source& src) {
+      source(in),
+      [header_size, header_checksum](source& src) {
           return deserialize<T>(src).then(
             [header_size, header_checksum, &src](T t) {
                 const auto got_checksum = src.checksum();
