@@ -10,12 +10,7 @@ namespace config {
 struct configuration final : public config_store {
     // WAL
     property<sstring> data_directory;
-    property<int64_t> log_segment_size_bytes;
     property<bool> developer_mode;
-    property<int64_t> max_retention_period_hours;
-    property<int64_t> writer_flush_period_ms;
-    property<int64_t> max_retention_size;
-    property<int32_t> max_bytes_in_writer_cache;
     // Network
     property<socket_address> rpc_server;
     // Raft
