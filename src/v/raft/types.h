@@ -38,7 +38,6 @@ struct group_configuration {
     std::vector<model::broker> learners;
 };
 
-struct configuration_reply {};
 class entry {
 public:
     using type = int32_t;
