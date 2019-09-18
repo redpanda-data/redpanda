@@ -21,7 +21,7 @@ public:
     record() noexcept = default;
 
     record(
-      size_t size_bytes,
+      uint32_t size_bytes,
       int32_t timestamp_delta,
       int32_t offset_delta,
       fragbuf key,
@@ -34,13 +34,13 @@ public:
     }
 
     // Size in bytes of everything except the size_bytes field.
-    size_t size_bytes() const {
+    uint32_t size_bytes() const {
         return _size_bytes;
     }
 
     // Used for acquiring units from semaphores limiting
     // memory resources.
-    size_t memory_usage() const {
+    uint32_t memory_usage() const {
         return sizeof(*this) + _key.size_bytes()
                + _value_and_headers.size_bytes();
     }
@@ -75,7 +75,7 @@ public:
     friend std::ostream& operator<<(std::ostream&, const record&);
 
 private:
-    size_t _size_bytes;
+    uint32_t _size_bytes;
     int32_t _timestamp_delta;
     int32_t _offset_delta;
     fragbuf _key;
@@ -137,7 +137,7 @@ private:
 
 struct record_batch_header {
     // Size of the batch minus this field.
-    size_t size_bytes;
+    uint32_t size_bytes;
     offset base_offset;
     int32_t crc;
     record_batch_attributes attrs;
@@ -170,7 +170,7 @@ public:
     // After moving, compressed_records is guaranteed to be empty().
     class compressed_records {
     public:
-        compressed_records(size_t size, fragbuf data) noexcept
+        compressed_records(uint32_t size, fragbuf data) noexcept
           : _size(size)
           , _data(std::move(data)) {
         }
@@ -186,11 +186,11 @@ public:
             return *this;
         }
 
-        size_t size() const {
+        uint32_t size() const {
             return _size;
         }
 
-        size_t size_bytes() const {
+        uint32_t size_bytes() const {
             return _data.size_bytes();
         }
 
@@ -214,7 +214,7 @@ public:
         operator<<(std::ostream&, const compressed_records&);
 
     private:
-        size_t _size;
+        uint32_t _size;
         fragbuf _data;
     };
 
@@ -234,16 +234,17 @@ public:
         return std::holds_alternative<compressed_records>(_records);
     }
 
-    size_t size() const {
-        return seastar::visit(_records, [](auto& e) { return e.size(); });
+    uint32_t size() const {
+        return seastar::visit(
+          _records, [](auto& e) { return static_cast<uint32_t>(e.size()); });
     }
 
     // Size in bytes of the header plus records.
-    size_t size_bytes() const {
+    uint32_t size_bytes() const {
         return _header.size_bytes;
     }
 
-    size_t memory_usage() const {
+    uint32_t memory_usage() const {
         return sizeof(*this)
                + seastar::visit(
                  _records,
@@ -252,7 +253,9 @@ public:
                  },
                  [](const uncompressed_records& records) {
                      return boost::accumulate(
-                       records, size_t(0), [](size_t usage, const record& r) {
+                       records,
+                       uint32_t(0),
+                       [](uint32_t usage, const record& r) {
                            return usage + r.memory_usage();
                        });
                  });
