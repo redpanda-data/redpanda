@@ -7,10 +7,9 @@
 #include <seastar/core/reactor.hh>
 
 namespace raft {
-class node_local_controller {
-public:
-    shard_id shard_for_raft_group(group_id group) {
-        // FIXME(agallego) - needs controller code
+/// \brief contains a lookup table from group_id -> shard
+struct group_shard_table {
+    shard_id shard_for(group_id group) {
         return jump_consistent_hash(group(), smp::count);
     }
 };

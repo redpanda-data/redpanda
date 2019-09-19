@@ -2,6 +2,7 @@
 
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/record_batch_reader.h"
 #include "rpc/deserialize.h"
 #include "rpc/serialize.h"
 #include "utils/fragbuf.h"
@@ -31,19 +32,46 @@ struct [[gnu::packed]] protocol_metadata {
     unaligned<term_id::type> prev_log_term;
 };
 
-struct configuration_request {
-    group_id group;
+struct group_configuration {
     model::node_id node_id;
-    // std::vector<model::broker> nodes;
-    // std::vector<model::broker> learners;
+    std::vector<model::broker> nodes;
+    std::vector<model::broker> learners;
 };
 
-struct configuration_reply {};
+class entry {
+public:
+    using type = int32_t;
+
+    // well known types
+    static constexpr type type_unknown = 0;
+    static constexpr type type_data = 1;
+    static constexpr type type_configuration = 2;
+
+    explicit entry(type t, model::record_batch_reader r)
+      : _t(t)
+      , _rdr(std::move(r)) {
+    }
+    virtual ~entry() = default;
+
+    virtual type entry_type() const {
+        return _t;
+    }
+    virtual model::record_batch_reader& reader() {
+        return _rdr;
+    }
+    virtual future<> on_replicated() {
+        return make_ready_future<>();
+    }
+
+private:
+    type _t;
+    model::record_batch_reader _rdr;
+};
 
 struct append_entries_request {
     model::node_id node_id;
     protocol_metadata meta;
-    std::vector<fragbuf> entries;
+    std::vector<std::unique_ptr<entry>> entries;
 };
 
 struct [[gnu::packed]] append_entries_reply {
@@ -88,4 +116,13 @@ template<>
 future<model::offset> deserialize(source&);
 template<>
 future<model::broker> deserialize(source&);
+template<>
+void serialize(bytes_ostream&, std::unique_ptr<raft::entry>&&);
+template<>
+future<std::unique_ptr<raft::entry>> deserialize(source&);
+template<>
+void serialize(bytes_ostream&, model::record&&);
+template<>
+future<std::unique_ptr<model::record>> deserialize(source&);
+
 } // namespace rpc
