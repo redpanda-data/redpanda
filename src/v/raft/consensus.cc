@@ -6,11 +6,17 @@ consensus::consensus(
   protocol_metadata m,
   group_configuration gcfg,
   storage::log& l,
+  storage::log_append_config::fsync should_fsync,
+  io_priority_class io_priority,
+  model::timeout_clock::duration disk_timeout,
   sharded<client_cache>& clis)
   : _self(std::move(nid))
   , _meta(std::move(m))
   , _conf(std::move(gcfg))
   , _log(l)
+  , _should_fsync(should_fsync)
+  , _io_priority(io_priority)
+  , _disk_timeout(disk_timeout)
   , _clients(clis) {
 }
 
