@@ -18,14 +18,27 @@ namespace rpc {
 /// fields including [[gnu::packed]] and all numeric types
 template<typename T>
 void serialize(bytes_ostream& out, T&& t) {
+    constexpr bool is_optional = is_std_optional_v<T>;
     constexpr bool is_sstring = std::is_same_v<T, sstring>;
     constexpr bool is_vector = is_std_vector_v<T>;
     constexpr bool is_fragmented_buffer = std::is_same_v<T, fragbuf>;
     constexpr bool is_standard_layout = std::is_standard_layout_v<T>;
     constexpr bool is_trivially_copyable = std::is_trivially_copyable_v<T>;
 
-    if constexpr (is_sstring) {
-        serialize<int32_t>(out, t.size());
+    if constexpr (is_optional) {
+        /// sizeof(bool) is implementation defined, and the standard puts
+        /// notable emphasis on this fact.
+        //  section: §5.3.3/1 of the standard:
+        using value_type = typename std::decay_t<T>::value_type;
+        if (t) {
+            serialize<int8_t>(out, 1);
+            serialize<value_type>(out, std::move(t.value()));
+        } else {
+            serialize<int8_t>(out, 0);
+        }
+        return;
+    } else if constexpr (is_sstring) {
+        serialize(out, int32_t(t.size()));
         out.write(t.data(), t.size());
         return;
     } else if constexpr (is_vector) {
@@ -60,12 +73,17 @@ void serialize(bytes_ostream& out, T&& t) {
         return;
     }
     static_assert(
-      (is_vector || is_fragmented_buffer || is_standard_layout
-       || is_trivially_copyable),
+      (is_optional || is_sstring || is_vector || is_fragmented_buffer
+       || (is_standard_layout) || is_trivially_copyable),
       "rpc: no serializer registered");
 }
 template<typename T, typename Tag>
 void serialize(bytes_ostream& out, const named_type<T, Tag>& r) {
     serialize(out, r());
 }
+template<typename... T>
+void serialize(bytes_ostream& out, T... args) {
+    (serialize(out, std::move(args)), ...);
+}
+
 } // namespace rpc

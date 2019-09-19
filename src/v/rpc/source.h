@@ -12,46 +12,13 @@ namespace rpc {
 
 class source {
 public:
-    virtual future<temporary_buffer<char>> read_exactly(size_t) = 0;
-    virtual future<fragbuf>
-      read_fragbuf(size_t) = 0;
-    virtual ~source() = default;
-};
-
-class default_source final : public source {
-public:
-    explicit default_source(input_stream<char>& s)
+    explicit source(input_stream<char>& s)
       : _source(std::ref(s)) {
     }
-    default_source(default_source&&) noexcept = default;
-    default_source& operator=(default_source&&) noexcept = default;
+    source(source&&) noexcept = default;
+    source& operator=(source&&) noexcept = default;
 
-    future<temporary_buffer<char>> read_exactly(size_t i) final {
-        return _source.get().read_exactly(i);
-    }
-    future<fragbuf>
-    read_fragbuf(size_t i) final {
-        return _frag.read_exactly(_source.get(), i);
-    }
-
-    default_source(const default_source&) = delete;
-    ~default_source() noexcept = default;
-
-private:
-    std::reference_wrapper<input_stream<char>> _source;
-    fragbuf::reader _frag;
-};
-
-class checksum_source final : public source {
-public:
-    using ftb = fragbuf;
-    explicit checksum_source(input_stream<char>& s)
-      : _source(std::ref(s)) {
-    }
-    checksum_source(checksum_source&&) noexcept = default;
-    checksum_source& operator=(checksum_source&&) noexcept = default;
-
-    future<temporary_buffer<char>> read_exactly(size_t i) final {
+    future<temporary_buffer<char>> read_exactly(size_t i)  {
         return _source.get().read_exactly(i).then(
           [this](temporary_buffer<char> b) {
               if (b.size() > 0) {
@@ -61,9 +28,8 @@ public:
               return make_ready_future<temporary_buffer<char>>(std::move(b));
           });
     }
-    future<fragbuf>
-    read_fragbuf(size_t i) final {
-        return _frag.read_exactly(_source.get(), i).then([this](ftb b) {
+    future<fragbuf> read_fragbuf(size_t i)  {
+        return _frag.read_exactly(_source.get(), i).then([this](fragbuf b) {
             auto istream = b.get_istream();
             istream.consume([this](bytes_view bv) {
                 _hash.update(
@@ -73,19 +39,37 @@ public:
             return std::move(b);
         });
     }
+    template<typename Consumer>
+    GCC6_CONCEPT(requires InputStreamConsumer<Consumer, char>)
+    future<> consume(Consumer&& c) {
+        return _source.get().consume([this, c = std::forward<Consumer>(c)](
+                                       temporary_buffer<char> b) mutable {
+            size_t sz = b.size();
+            const char* begin = b.get();
+            auto bb = b.share();
+            return c(std::move(b)).finally([=, bb = std::move(bb)] {
+                if (sz == bb.size()) {
+                    return;
+                }
+                size_t delta = sz - bb.size();
+                _hash.update(begin, delta);
+                _size += delta;
+            });
+        });
+    }
     size_t size_bytes() const {
         return _size;
     }
     uint64_t checksum() {
         return _hash.digest();
     }
-    checksum_source(const checksum_source&) = delete;
-    ~checksum_source() noexcept = default;
+    source(const source&) = delete;
+    ~source() noexcept = default;
 
 private:
     std::reference_wrapper<input_stream<char>> _source;
     incremental_xxhash64 _hash;
-    ftb::reader _frag;
+    fragbuf::reader _frag;
     size_t _size = 0;
 };
 

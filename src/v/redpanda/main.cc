@@ -1,8 +1,6 @@
 #include "cluster/metadata_cache.h"
-#include "raft/configuration.h"
-#include "raft/consensus.h"
-#include "raft/node_local_controller.h"
-#include "raft/raftgen_service.h"
+#include "cluster/partition_manager.h"
+#include "raft/group_shard_table.h"
 #include "raft/service.h"
 #include "redpanda/admin/api-doc/config.json.h"
 #include "redpanda/kafka/transport/probe.h"
@@ -114,40 +112,46 @@ int main(int argc, char** argv, char** env) {
             sched_groups.create_groups().get();
             smp_groups smpgs;
             smpgs.create_groups().get();
+
+            // cluster
+            static sharded<raft::client_cache> raft_client_cache;
+            raft_client_cache.start().get();
+            auto stop_client_cache = defer(
+              [] { raft_client_cache.stop().get(); });
+
+            static sharded<raft::group_shard_table> group_shard_table;
+            group_shard_table.start().get();
+            auto stop_group_shard_table = defer(
+              [] { group_shard_table.stop().get(); });
+
+            static sharded<cluster::partition_manager> partition_manager;
+            partition_manager
+              .start(
+                rp_config.local().node_id(),
+                std::ref(group_shard_table),
+                std::ref(raft_client_cache))
+              .get();
+            auto stop_partition_manager = defer(
+              [] { partition_manager.stop().get(); });
+
+            // rpc
             rpc::server_configuration rpc_cfg;
             rpc_cfg.max_service_memory_per_core
               = memory_groups::rpc_total_memory();
             rpc_cfg.addrs.push_back(rp_config.local().rpc_server);
             static sharded<rpc::server> rpc;
             rpc.start(rpc_cfg).get();
-
-            // raft
-            static sharded<raft::consensus> consensus;
-            static sharded<raft::client_cache> raft_client_cache;
-            raft::configuration raft_cfg(
-              rp_config.local().node_id(),
-              rp_config.local().min_version(),
-              rp_config.local().max_version());
-            raft_client_cache.start().get();
-            consensus.start(raft_cfg, std::ref(raft_client_cache)).get();
-
-            static sharded<raft::node_local_controller> node_local_controller;
-            node_local_controller.start().get();
-
+            auto stop_rpc = defer([] { rpc.stop().get(); });
             rpc
               .invoke_on_all([&](rpc::server& s) {
-                  s.register_service<raft::service>(
+                  s.register_service<raft::service<cluster::partition_manager>>(
                     sched_groups.raft_sg(),
                     smpgs.raft_smp_sg(),
-                    consensus,
-                    node_local_controller);
+                    partition_manager,
+                    group_shard_table);
               })
               .get();
             rpc.invoke_on_all(&rpc::server::start).get();
-            auto stop_rpc = defer([] { rpc.stop().get(); });
-            auto stop_client_cache = defer(
-              [] { raft_client_cache.stop().get(); });
-
             // prometheus admin
             static sharded<http_server> admin;
             admin.start(sstring("admin")).get();
@@ -204,7 +208,6 @@ int main(int argc, char** argv, char** env) {
             quota_mgr.invoke_on_all([](auto& qm) mutable { return qm.start(); })
               .get();
             auto stop_quota_mgr = defer([] { quota_mgr.stop().get(); });
-
             static sharded<kafka::transport::kafka_server> kafka_server;
             kafka::transport::kafka_server_config server_config = {
               // FIXME: Add memory manager
