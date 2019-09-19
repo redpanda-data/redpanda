@@ -20,7 +20,7 @@ using log_clock = lowres_clock;
 struct log_append_config {
     using fsync = bool_class<class skip_tag>;
     fsync should_fsync;
-    const io_priority_class& io_priority;
+    io_priority_class io_priority;
     model::timeout_clock::time_point timeout;
 };
 
