@@ -11,7 +11,6 @@ namespace raft {
 /// consensus for one raft group
 class consensus {
 public:
-    struct options {};
     consensus(
       model::node_id,
       protocol_metadata,
