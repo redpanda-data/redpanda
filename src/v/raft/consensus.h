@@ -11,6 +11,7 @@ namespace raft {
 /// consensus for one raft group
 class consensus {
 public:
+    enum class vote_state { follower, candidate, leader };
     consensus(
       model::node_id,
       protocol_metadata,
