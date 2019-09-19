@@ -22,11 +22,18 @@ public:
       model::timeout_clock::duration disk_timeout,
       sharded<client_cache>&);
 
-    future<vote_reply> vote(vote_request);
+    future<vote_reply> vote(vote_request r) {
+        return with_semaphore(_op_sem, 1, [this, r = std::move(r)]() mutable {
+            return do_vote(std::move(r));
+        });
+    }
+    future<append_entries_reply> append_entries(append_entries_request r) {
+        return with_semaphore(_op_sem, 1, [this, r = std::move(r)]() mutable {
+            return do_append_entries(std::move(r));
+        });
+    }
 
-    future<append_entries_reply> append_entries(append_entries_request);
-
-    /// \brief currently dispatches it ASAP since each entry is readly a
+    /// \brief currently dispatches it ASAP since each entry is already a
     /// record_batch; In the future we can batch a little more
     /// before sending down the wire as an optimization
     future<> replicate(std::unique_ptr<entry>);
@@ -44,6 +51,13 @@ public:
     }
 
 private:
+    void step_down();
+    future<vote_reply> do_vote(vote_request);
+    future<append_entries_reply> do_append_entries(append_entries_request);
+    future<std::vector<storage::log::append_result>>
+      disk_append(std::vector<std::unique_ptr<entry>>);
+
+    // args
     model::node_id _self;
     protocol_metadata _meta;
     group_configuration _conf;
