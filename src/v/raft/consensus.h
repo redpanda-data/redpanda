@@ -28,6 +28,10 @@ public:
     /// before sending down the wire as an optimization
     future<> replicate(std::unique_ptr<entry>);
 
+    bool is_leader() const {
+        return _voted_for == _self;
+    }
+
     const protocol_metadata& meta() const {
         return _meta;
     }
