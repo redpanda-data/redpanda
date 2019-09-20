@@ -20,7 +20,7 @@ using log_clock = lowres_clock;
 struct log_append_config {
     using fsync = bool_class<class skip_tag>;
     fsync should_fsync;
-    const io_priority_class& io_priority;
+    io_priority_class io_priority;
     model::timeout_clock::time_point timeout;
 };
 
@@ -50,6 +50,12 @@ public:
     log_segment_appender& appender();
 
     future<> maybe_roll(model::offset);
+    future<> roll(int64_t term) {
+        return make_ready_future<>();
+    }
+    future<> truncate(model::offset, int64_t term) {
+        return make_ready_future<>();
+    }
 
 private:
     future<> new_segment(model::offset, int64_t term, const io_priority_class&);
