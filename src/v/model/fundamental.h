@@ -37,7 +37,7 @@ private:
     std::string_view _topic_name;
 };
 
-std::ostream& operator<<(std::ostream&, topic_view);
+std::ostream& operator<<(std::ostream&, const topic_view&);
 
 struct topic {
     topic() noexcept = default;

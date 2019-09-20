@@ -10,6 +10,7 @@
 
 namespace model {
 
+std::ostream& operator<<(std::ostream& os, const topic_view& t) {
     return fmt_print(os, "{{topic: {}}}", t.name());
 }
 
