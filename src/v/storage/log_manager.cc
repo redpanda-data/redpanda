@@ -34,11 +34,9 @@ static std::filesystem::path make_filename(
   model::term_id term,
   record_version_type version) {
     return format(
-             "{}/{}/{}/{}/{}-{}-{}.log",
+             "{}/{}/{}-{}-{}.log",
              base,
-             ntp.ns,
-             ntp.tp.topic.name,
-             ntp.tp.partition,
+             ntp.path(),
              base_offset.value(),
              term(),
              to_string(version))
