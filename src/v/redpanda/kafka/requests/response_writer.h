@@ -5,6 +5,7 @@
 #include "redpanda/kafka/errors/errors.h"
 #include "seastarx.h"
 #include "utils/concepts-enabled.h"
+#include "utils/fragbuf.h"
 #include "utils/vint.h"
 
 #include <seastar/core/byteorder.hh>
@@ -115,6 +116,16 @@ public:
             return serialize_int<int32_t>(-1);
         }
         return write(bytes_view(*bv));
+    }
+
+    // write bytes directly to output without a length prefix
+    uint32_t write_direct(fragbuf&& f) {
+      auto size = f.size_bytes();
+      auto bufs = std::move(f).release();
+      for (auto& b : bufs) {
+	_out->write(std::move(b));
+      }
+      return size;
     }
 
     // clang-format off
