@@ -77,32 +77,45 @@ std::ostream& operator<<(std::ostream& os, timestamp_type ts) {
 }
 
 std::ostream& operator<<(std::ostream& os, const record& record) {
-    return fmt_print(os,
-        "{{record: size_bytes={}, timestamp_delta={}, "
-        "offset_delta={}, key={} bytes, value_and_headers={} bytes}}",
-        record._size_bytes, record._timestamp_delta, record._offset_delta,
-        record._key.size_bytes(), record._value_and_headers.size_bytes());
+    return fmt_print(
+      os,
+      "{{record: size_bytes={}, timestamp_delta={}, "
+      "offset_delta={}, key={} bytes, value_and_headers={} bytes}}",
+      record._size_bytes,
+      record._timestamp_delta,
+      record._offset_delta,
+      record._key.size_bytes(),
+      record._value_and_headers.size_bytes());
 }
 
-std::ostream& operator<<(std::ostream& os, const record_batch_attributes& attrs) {
-    return fmt_print(
-      os, "{}:{}", attrs.compression(), attrs.timestamp_type());
+std::ostream&
+operator<<(std::ostream& os, const record_batch_attributes& attrs) {
+    return fmt_print(os, "{}:{}", attrs.compression(), attrs.timestamp_type());
 }
 
 std::ostream& operator<<(std::ostream& os, const record_batch_header& header) {
-    return fmt_print(os,
-        "{{header: size_bytes={}, base_offset={}, crc={}, attrs={}, "
-        "last_offset_delta={}, first_timestamp={}, max_timestamp={}}}",
-        header.size_bytes, header.base_offset, header.crc, header.attrs,
-        header.last_offset_delta, header.first_timestamp, header.max_timestamp);
+    return fmt_print(
+      os,
+      "{{header: size_bytes={}, base_offset={}, crc={}, attrs={}, "
+      "last_offset_delta={}, first_timestamp={}, max_timestamp={}}}",
+      header.size_bytes,
+      header.base_offset,
+      header.crc,
+      header.attrs,
+      header.last_offset_delta,
+      header.first_timestamp,
+      header.max_timestamp);
 }
 
-std::ostream& operator<<(std::ostream& os, const record_batch::compressed_records& records) {
-    return fmt_print(os, "{{compressed_records: size_bytes={}}}", records.size_bytes());
+std::ostream&
+operator<<(std::ostream& os, const record_batch::compressed_records& records) {
+    return fmt_print(
+      os, "{{compressed_records: size_bytes={}}}", records.size_bytes());
 }
 
 std::ostream& operator<<(std::ostream& os, const record_batch& batch) {
-    fmt::print(os, "{{record_batch: {}, count={},records=", batch._header, batch.size());
+    fmt::print(
+      os, "{{record_batch: {}, count={},records=", batch._header, batch.size());
     if (batch.compressed()) {
         os << batch.get_compressed_records();
     } else {
