@@ -40,6 +40,9 @@ public:
     size_t max_segment_size() const {
         return _config.max_segment_size;
     }
+    const log_config& config() const {
+        return _config;
+    }
 
 private:
     log_config _config;

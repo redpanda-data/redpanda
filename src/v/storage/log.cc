@@ -4,6 +4,8 @@
 #include "storage/log_writer.h"
 #include "storage/version.h"
 
+#include <fmt/format.h>
+
 namespace storage {
 
 log::log(
@@ -20,6 +22,10 @@ log::log(
     } else {
         _term = 0;
     }
+}
+
+sstring log::base_directory() const {
+    return fmt::format("{}/{}", _manager.config().base_dir, _ntp.path());
 }
 
 future<> log::close() {
@@ -78,12 +84,12 @@ log::append(model::record_batch_reader&& reader, log_append_config config) {
             });
       });
 }
-future<> log::roll(model::term_id t) {
+future<> log::roll(model::offset o, model::term_id t) {
     _term = std::move(t);
     if (!_active_segment) {
         return make_ready_future<>();
     }
-    return do_roll(_appender->offset());
+    return do_roll(o);
 }
 
 future<> log::do_roll(model::offset current_offset) {
@@ -94,7 +100,7 @@ future<> log::do_roll(model::offset current_offset) {
     });
 }
 future<> log::maybe_roll(model::offset current_offset) {
-    if (_appender->offset() < model::offset(_manager.max_segment_size())) {
+    if (_appender->offset() < _manager.max_segment_size()) {
         return make_ready_future<>();
     }
     return do_roll(current_offset);
