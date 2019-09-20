@@ -13,6 +13,8 @@
 
 namespace model {
 
+using term_id = named_type<int64_t, struct model_raft_term_id_type>;
+
 using partition_id = named_type<int32_t, struct model_partition_id_type>;
 
 class topic_view {

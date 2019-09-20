@@ -21,7 +21,7 @@ public:
     log_segment(
       sstring filename,
       file,
-      int64_t term,
+      model::term_id term,
       model::offset base_offset,
       size_t buffer_size) noexcept;
 
@@ -29,8 +29,8 @@ public:
         return _filename;
     }
 
-    int64_t term() const {
-        return _term;
+    model::term_id term() const {
+        return _term();
     }
 
     // Inclusive lower bound offset.
@@ -71,7 +71,7 @@ private:
     sstring _filename;
     file _data_file;
     model::offset _base_offset;
-    int64_t _term;
+    model::term_id _term;
     size_t _buffer_size;
     model::offset _max_offset;
 
