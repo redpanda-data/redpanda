@@ -9,21 +9,11 @@
 #include <boost/test/unit_test.hpp>
 
 static const constexpr size_t characters_per_append = 10;
-static const sstring chars("abcdefghijklmnopqrstuvwxyz"
-                           "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-                           "1234567890");
-sstring alnumstring(fast_prng& r, size_t size) {
-    sstring retval;
-    retval.resize(size);
-    for (size_t i = 0; i < size; ++i) {
-        retval[i] = chars[r() % chars.size()];
-    }
-    return retval;
-}
+
 void append_sequence(bytes_ostream& buf, size_t count) {
-    fast_prng r;
     for (size_t i = 0; i < count; i++) {
-        auto str = alnumstring(r, characters_per_append);
+        auto str = random_generators::gen_alphanum_string(
+          characters_per_append);
         buf.write(str.data(), str.size());
     }
 }
