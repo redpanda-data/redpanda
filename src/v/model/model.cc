@@ -6,13 +6,10 @@
 
 #include <seastar/core/print.hh>
 
+#include <fmt/ostream.h>
+
 namespace model {
 
-std::ostream& operator<<(std::ostream& os, partition p) {
-    return fmt_print(os, "{{partition: {}}}", p.value);
-}
-
-std::ostream& operator<<(std::ostream& os, topic_view t) {
     return fmt_print(os, "{{topic: {}}}", t.name());
 }
 
@@ -53,12 +50,13 @@ std::ostream& operator<<(std::ostream& os, timestamp ts) {
     return os << "{timestamp: missing}";
 }
 
-std::ostream& operator<<(std::ostream& os, topic_partition tp) {
+std::ostream& operator<<(std::ostream& os, const topic_partition& tp) {
     return fmt_print(
       os, "{{topic_partition: {}:{}}}", tp.topic.name, tp.partition);
 }
 
-std::ostream& operator<<(std::ostream& os, namespaced_topic_partition ntp) {
+std::ostream&
+operator<<(std::ostream& os, const namespaced_topic_partition& ntp) {
     return fmt_print(
       os, "{{namespaced_topic_partition: {}:{}}}", ntp.ns, ntp.tp);
 }
