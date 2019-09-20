@@ -87,7 +87,7 @@ struct hash<named_type<T, Tag>> {
     }
 };
 template<typename T, typename Tag>
-ostream& operator<<(ostream& o, const ::named_type<T, Tag>& t) {
+inline ostream& operator<<(ostream& o, const ::named_type<T, Tag>& t) {
 #define __cat_type(underlying, tag) " #underlying::#tag "
     return o << "{" << __cat_type(T, Tag) << "=" << t() << "}";
 };

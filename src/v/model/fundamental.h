@@ -1,8 +1,11 @@
 #pragma once
 
 #include "seastarx.h"
+#include "utils/named_type.h"
 
 #include <seastar/core/sstring.hh>
+
+#include <boost/container_hash/hash.hpp>
 
 #include <cstdint>
 #include <limits>
@@ -10,29 +13,7 @@
 
 namespace model {
 
-struct partition {
-    using type = int32_t;
-
-    static constexpr const type min = std::numeric_limits<type>::min();
-
-    partition() noexcept = default;
-
-    constexpr explicit partition(type id) noexcept
-      : value(id) {
-    }
-
-    bool operator==(partition other) const {
-        return value == other.value;
-    }
-
-    bool operator!=(partition other) const {
-        return !(*this == other);
-    }
-
-    const type value = min;
-};
-
-std::ostream& operator<<(std::ostream&, partition);
+using partition_id = named_type<int32_t, struct model_partition_id_type>;
 
 class topic_view {
 public:
@@ -103,7 +84,7 @@ std::ostream& operator<<(std::ostream&, const ns&);
 
 struct topic_partition {
     model::topic topic;
-    model::partition partition;
+    model::partition_id partition;
 
     bool operator==(const topic_partition& other) const {
         return topic == other.topic && partition == other.partition;
@@ -114,7 +95,7 @@ struct topic_partition {
     }
 };
 
-std::ostream& operator<<(std::ostream&, topic_partition);
+std::ostream& operator<<(std::ostream&, const topic_partition&);
 
 struct namespaced_topic_partition {
     model::ns ns;
@@ -129,7 +110,7 @@ struct namespaced_topic_partition {
     }
 };
 
-std::ostream& operator<<(std::ostream&, namespaced_topic_partition);
+std::ostream& operator<<(std::ostream&, const namespaced_topic_partition&);
 
 class offset {
 public:
@@ -189,9 +170,12 @@ namespace std {
 
 template<>
 struct hash<model::namespaced_topic_partition> {
-    size_t operator()(model::namespaced_topic_partition ntp) const {
-        return hash<sstring>()(ntp.ns.name) ^ hash<sstring>()(ntp.tp.topic.name)
-               ^ hash<model::partition::type>()(ntp.tp.partition.value);
+    size_t operator()(const model::namespaced_topic_partition& ntp) const {
+        size_t h = 0;
+        boost::hash_combine(h, hash<sstring>()(ntp.ns.name));
+        boost::hash_combine(h, hash<sstring>()(ntp.tp.topic.name));
+        boost::hash_combine(h, hash<model::partition_id>()(ntp.tp.partition));
+        return h;
     }
 };
 
