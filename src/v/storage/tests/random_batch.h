@@ -4,6 +4,7 @@
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
+#include "random/generators.h"
 #include "storage/constants.h"
 #include "storage/crc_record.h"
 #include "utils/fragbuf.h"
@@ -17,6 +18,13 @@ namespace internal {
 size_t vint_size(size_t val) {
     std::array<bytes::value_type, vint::max_length> encoding_buffer;
     return vint::serialize(val, encoding_buffer.begin());
+}
+
+temporary_buffer<char> serialize_vint(vint::value_type value) {
+    std::array<bytes::value_type, vint::max_length> encoding_buffer;
+    const auto size = vint::serialize(value, encoding_buffer.begin());
+    return temporary_buffer<char>(
+      reinterpret_cast<const char*>(encoding_buffer.data()), size);
 }
 } // namespace internal
 
@@ -61,6 +69,13 @@ temporary_buffer<char> make_buffer(size_t blob_size) {
     return blob;
 }
 
+temporary_buffer<char> make_buffer_with_vint_size_prefix(size_t size) {
+    auto buf = make_buffer(size + internal::vint_size(size));
+    // overwrite the head of the buffer with the size prefix
+    vint::serialize(size, reinterpret_cast<signed char*>(buf.get_write()));
+    return buf;
+}
+
 fragbuf make_random_ftb(size_t blob_size) {
     auto first_chunk = blob_size / 2;
     auto second_chunk = blob_size - first_chunk;
@@ -70,11 +85,43 @@ fragbuf make_random_ftb(size_t blob_size) {
     return fragbuf(std::move(bufs), first_chunk + second_chunk);
 }
 
+fragbuf make_packed_value_and_headers(size_t size) {
+    std::vector<temporary_buffer<char>> bufs;
+
+    // valueLen: varint
+    // value: byte[]
+    bufs.push_back(make_buffer_with_vint_size_prefix(size));
+
+    // Headers => [Header]
+    // numHeaders: varint
+    int num_headers = low_count_dist(gen);
+    bufs.push_back(internal::serialize_vint(num_headers));
+
+    for (int i = 0; i < num_headers; i++) {
+        // headerKeyLength: varint
+        // headerKey: String
+        sstring key = random_generators::gen_alphanum_string(
+          low_count_dist(gen));
+        bufs.push_back(internal::serialize_vint(key.size()));
+        bufs.push_back(temporary_buffer<char>(
+          reinterpret_cast<const char*>(key.data()), key.size()));
+
+        // headerValueLength: varint
+        // value: byte[]
+        bufs.push_back(make_buffer_with_vint_size_prefix(low_count_dist(gen)));
+    }
+
+    return fragbuf(std::move(bufs));
+}
+
 model::record make_random_record(unsigned index) {
     auto k = make_random_ftb(high_count_dist(gen));
-    auto v = make_random_ftb(high_count_dist(gen));
+    auto v = make_packed_value_and_headers(high_count_dist(gen));
     auto size = internal::vint_size(k.size_bytes()) + k.size_bytes()
                 + v.size_bytes() + internal::vint_size(index) * 2 /* deltas */;
+    // FIXME: adjust for the byte that's going to be added at the storage level.
+    // this should be removed when that change is made.
+    size += sizeof(int8_t);
     return model::record(size, index, index, std::move(k), std::move(v));
 }
 
