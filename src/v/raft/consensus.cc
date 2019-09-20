@@ -83,7 +83,8 @@ consensus::do_append_entries(append_entries_request r) {
           r.meta.term,
           _meta.term);
 
-        return _log.roll(model::term_id(r.meta.term))
+        return _log
+          .roll(model::offset(_meta.commit_index), model::term_id(r.meta.term))
           .then([this, r = std::move(r)]() mutable {
               step_down();
               _meta.term = r.meta.term;

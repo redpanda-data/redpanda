@@ -54,11 +54,13 @@ public:
 
     /// \brief safe even if we have no active appenders
     /// in the case of active appender, it will create a new segment
-    future<> roll(model::term_id);
+    future<> roll(model::offset, model::term_id);
 
     future<> truncate(model::offset, model::term_id) {
         return make_ready_future<>();
     }
+
+    sstring base_directory() const;
 
 private:
     future<>
