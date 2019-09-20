@@ -1,8 +1,38 @@
 #include "raft/consensus.h"
 
 #include "raft/logger.h"
+#include "seastarx.h"
+
+#include <seastar/core/fstream.hh>
 
 namespace raft {
+static inline future<temporary_buffer<char>> readfile(sstring name) {
+    return open_file_dma(std::move(name), open_flags::ro | open_flags::create)
+      .then([](file f) {
+          return f
+            .size() // file is like a shared_ptr
+            .then([f](uint64_t size) mutable {
+                return f.dma_read_bulk<char>(0, size);
+            })
+            .then([f](temporary_buffer<char> b) mutable {
+                return f.close().then(
+                  [f, b = std::move(b)]() mutable { return std::move(b); });
+            });
+      });
+}
+static inline future<> writefile(sstring name, temporary_buffer<char> buf) {
+    return open_file_dma(
+             std::move(name),
+             open_flags::wo | open_flags::create | open_flags::truncate)
+      .then([b = std::move(buf)](file f) mutable {
+          auto out = make_lw_shared<output_stream<char>>(
+            make_file_output_stream(std::move(f)));
+          return out->write(std::move(b))
+            .then([out] { return out->close(); })
+            .finally([out] {});
+      });
+}
+
 consensus::consensus(
   model::node_id nid,
   protocol_metadata m,
@@ -25,7 +55,34 @@ void consensus::step_down() {
     _voted_for = {};
     _vstate = vote_state::follower;
 }
-
+future<> consensus::persist_voted_for(vote_request r) {
+    temporary_buffer<char> buf(sizeof(r));
+    std::copy_n(reinterpret_cast<const char*>(&r), sizeof(r), buf.get_write());
+    return writefile(
+      _log.base_directory() + "/leader.v1.metadata", std::move(buf));
+}
+future<vote_request> consensus::read_last_voted_for() {
+    return readfile(_log.base_directory() + "/leader.v1.metadata")
+      .then([](temporary_buffer<char> buf) {
+          vote_request v;
+          std::memset(reinterpret_cast<void*>(&v), 0, sizeof(v));
+          const size_t max = std::min(sizeof(v), buf.size()); // could be empty
+          std::copy_n(buf.get(), max, reinterpret_cast<char*>(&v));
+          return v;
+      });
+}
+future<> consensus::start() {
+    return with_semaphore(_op_sem, 1, [this] {
+        return read_last_voted_for().then([this](vote_request r) {
+            raftlog().debug(
+              "recovered last leader: {} for term: {}",
+              model::node_id(r.node_id),
+              model::term_id(r.term));
+            _voted_for = model::node_id(r.node_id);
+            _meta.term = r.term;
+        });
+    });
+}
 future<vote_reply> consensus::do_vote(vote_request r) {
     vote_reply reply;
     reply.term = _meta.term;
@@ -56,10 +113,10 @@ future<vote_reply> consensus::do_vote(vote_request r) {
     if (_voted_for() < 0 || (reply.log_ok && r.node_id == _voted_for)) {
         _meta.term = r.term;
         _voted_for = model::node_id(r.node_id);
-        // FIXME(agallego) -  `return persist_voted_configuration()`
-        // need to integrate log replay
         reply.granted = true;
-        return make_ready_future<vote_reply>(std::move(reply));
+        return persist_voted_for(std::move(r)).then([reply = std::move(reply)] {
+            return make_ready_future<vote_reply>(std::move(reply));
+        });
     }
     // vote for the same term, same server_id
     reply.granted = (r.node_id == _voted_for);
