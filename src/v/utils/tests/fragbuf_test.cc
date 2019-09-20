@@ -491,3 +491,17 @@ SEASTAR_THREAD_TEST_CASE(test_consume) {
     frag = bytes_view(reinterpret_cast<const int8_t*>(&value) + 5, 3);
     BOOST_CHECK_EQUAL(remaining[2], frag);
 }
+
+SEASTAR_THREAD_TEST_CASE(test_fragbuf_auto_size_constructor) {
+    std::vector<temporary_buffer<char>> bufs;
+
+    size_t expected = 0;
+    for (int i = 0; i < 5; i++) {
+        const auto size = i * 10;
+        bufs.push_back(temporary_buffer<char>(size));
+        expected += size;
+    }
+
+    auto f = fragbuf(std::move(bufs));
+    BOOST_CHECK_EQUAL(expected, f.size_bytes());
+}
