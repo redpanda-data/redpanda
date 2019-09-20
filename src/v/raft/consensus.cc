@@ -83,11 +83,12 @@ consensus::do_append_entries(append_entries_request r) {
           r.meta.term,
           _meta.term);
 
-        return _log.roll(r.meta.term).then([this, r = std::move(r)]() mutable {
-            step_down();
-            _meta.term = r.meta.term;
-            return append_entries(std::move(r));
-        });
+        return _log.roll(model::term_id(r.meta.term))
+          .then([this, r = std::move(r)]() mutable {
+              step_down();
+              _meta.term = r.meta.term;
+              return append_entries(std::move(r));
+          });
     }
     // raft.pdf: Reply false if log doesn’t contain an entry at
     // prevLogIndex whose term matches prevLogTerm (§5.3)
@@ -119,7 +120,9 @@ consensus::do_append_entries(append_entries_request r) {
           r.meta.prev_log_index,
           _meta.commit_index,
           r.meta.prev_log_index);
-        return _log.truncate(model::offset(r.meta.prev_log_index), r.meta.term)
+        return _log
+          .truncate(
+            model::offset(r.meta.prev_log_index), model::term_id(r.meta.term))
           .then([this, r = std::move(r)]() mutable {
               return do_append_entries(std::move(r));
           });
