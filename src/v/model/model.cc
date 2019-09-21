@@ -115,4 +115,8 @@ std::ostream& operator<<(std::ostream& os, const record_batch& batch) {
     return os;
 }
 
+sstring namespaced_topic_partition::path() const {
+    return fmt::format("{}/{}/{}", ns.name, tp.topic.name, tp.partition());
+}
+
 } // namespace model

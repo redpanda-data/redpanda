@@ -108,6 +108,8 @@ struct namespaced_topic_partition {
     bool operator!=(const namespaced_topic_partition& other) const {
         return !(*this == other);
     }
+
+    sstring path() const;
 };
 
 std::ostream& operator<<(std::ostream&, const namespaced_topic_partition&);
