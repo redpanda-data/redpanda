@@ -22,6 +22,7 @@
 #include <seastar/http/api_docs.hh>
 #include <seastar/http/httpd.hh>
 #include <seastar/net/socket_defs.hh>
+#include <seastar/net/tls.hh>
 #include <seastar/util/defer.hh>
 
 #include <fmt/format.h>
@@ -70,6 +71,8 @@ private:
 
 future<> check_environment(const config::configuration& c);
 bool hydrate_cfg(sharded<config::configuration>& c, std::string filename);
+future<std::optional<tls::credentials_builder>>
+creds_builder_from_config(const config::tls_config&);
 
 int main(int argc, char** argv, char** env) {
     // This is needed for detecting sse4.2 instructions
@@ -209,10 +212,15 @@ int main(int argc, char** argv, char** env) {
               .get();
             auto stop_quota_mgr = defer([] { quota_mgr.stop().get(); });
             static sharded<kafka::transport::kafka_server> kafka_server;
+            auto kafka_creds = rp_config.local()
+                                 .kafka_api_tls()
+                                 .get_credentials_builder()
+                                 .get0();
             kafka::transport::kafka_server_config server_config = {
               // FIXME: Add memory manager
               memory::stats().total_memory() / 10,
-              smpgs.kafka_smp_sg()};
+              smpgs.kafka_smp_sg(),
+              kafka_creds};
             lgr.info("Starting Kafka API server");
             kafka_server
               .start(
