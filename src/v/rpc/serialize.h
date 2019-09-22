@@ -18,6 +18,9 @@ namespace rpc {
 /// fields including [[gnu::packed]] and all numeric types
 template<typename T>
 void serialize(bytes_ostream& out, T&& t) {
+    static_assert(
+      std::is_rvalue_reference_v<decltype(t)>,
+      "Must be an rvalue. Use std::move()");
     constexpr bool is_optional = is_std_optional_v<T>;
     constexpr bool is_sstring = std::is_same_v<T, sstring>;
     constexpr bool is_vector = is_std_vector_v<T>;
@@ -82,7 +85,7 @@ void serialize(bytes_ostream& out, const named_type<T, Tag>& r) {
     serialize(out, r());
 }
 template<typename... T>
-void serialize(bytes_ostream& out, T... args) {
+void serialize(bytes_ostream& out, T&&... args) {
     (serialize(out, std::move(args)), ...);
 }
 
