@@ -5,7 +5,7 @@
 #include "syschecks/syschecks.h"
 
 #include <seastar/core/app-template.hh>
-#include <seastar/core/distributed.hh>
+#include <seastar/core/sharded.hh>
 #include <seastar/core/thread.hh>
 
 #include <string>
@@ -29,7 +29,7 @@ void cli_opts(boost::program_options::options_description_easy_init o) {
 int main(int args, char** argv, char** env) {
     syschecks::initialize_intrinsics();
     std::setvbuf(stdout, nullptr, _IOLBF, 1024);
-    seastar::distributed<rpc::server> serv;
+    seastar::sharded<rpc::server> serv;
     seastar::app_template app;
     cli_opts(app.add_options());
     return app.run_deprecated(args, argv, [&] {
