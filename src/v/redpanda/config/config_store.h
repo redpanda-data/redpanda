@@ -6,8 +6,8 @@
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
 
-#include <any>
 #include <unordered_map>
+#include "utils/to_string.h"
 
 namespace config {
 class config_store {

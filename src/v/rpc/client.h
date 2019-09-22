@@ -21,7 +21,7 @@ class client {
 public:
     using promise_t = promise<std::unique_ptr<streaming_context>>;
     explicit client(client_configuration c);
-    client(client&&) noexcept = default;
+    client(client&&) = default;
     virtual ~client();
     future<> connect();
     future<> stop();
@@ -51,6 +51,7 @@ private:
     batched_output_stream _out;
     gate _dispatch_gate;
     uint32_t _correlation_idx{0};
+    shared_ptr<tls::certificate_credentials> _creds;
 };
 
 template<typename Input, typename Output>

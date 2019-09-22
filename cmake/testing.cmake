@@ -57,11 +57,12 @@ function (rp_test)
     set(HONEY_BADGER_TESTS "${HONEY_BADGER_TESTS} ${RP_TEST_BINARY_NAME}")
   endif()
 
-  set(files_to_copy "")
+  set(files_to_copy_list "")
   foreach(i ${RP_TEST_INPUT_FILES})
-    list(APPEND files_to_copy "--copy_file ${i}")
+    list(APPEND files_to_copy_list "--copy_file ${i}")
   endforeach()
 
+  string(JOIN " " files_to_copy ${files_to_copy_list})
 
   add_executable(
     ${RP_TEST_BINARY_NAME} "${RP_TEST_SOURCES}")

@@ -4,6 +4,7 @@
 
 #include <seastar/core/app-template.hh>
 #include <seastar/core/distributed.hh>
+#include <seastar/core/thread.hh>
 
 #include <string>
 
@@ -22,6 +23,9 @@ void cli_opts(boost::program_options::options_description_easy_init o) {
     o("parallelism",
       po::value<uint32_t>()->default_value(1000),
       "number of TCP connections per core");
+    o("ca-cert",
+      po::value<std::string>()->default_value(""),
+      "CA root certificate");
 }
 
 class client_loadgen {
@@ -75,13 +79,23 @@ int main(int args, char** argv, char** env) {
     sharded<hdr_hist> hist;
     return app.run(args, argv, [&] {
         auto& cfg = app.configuration();
+    return async([&] {
         rpc::client_configuration client_cfg;
-        client_cfg.server_addr = socket_address(
-          ipv4_addr(cfg["ip"].as<std::string>(), cfg["port"].as<uint16_t>()));
+        client_cfg.server_addr = socket_address(ipv4_addr(
+            cfg["ip"].as<std::string>(), cfg["port"].as<uint16_t>()));
+        auto ca_cert = cfg["ca-cert"].as<std::string>();
+        if (ca_cert != "" ) {
+            auto builder = tls::credentials_builder();
+            //builder.set_dh_level(tls::dh_params::level::MEDIUM);
+            lgr.info("Using {} as CA root certificate", ca_cert);
+            builder.set_x509_trust_file(ca_cert, tls::x509_crt_format::PEM)
+                .get0();
+            client_cfg.credentials = std::move(builder);
+        }
         const uint32_t parallelism = cfg["parallelism"].as<uint32_t>();
         const uint32_t concurrency = cfg["concurrency"].as<uint32_t>();
         const uint64_t total_requests = parallelism * concurrency * smp::count;
-        return client
+        client
           .start(concurrency, parallelism, client_cfg, std::ref(hist))
           .then([&hist] { return hist.start(); })
           .then([&client] {
@@ -118,6 +132,7 @@ int main(int args, char** argv, char** env) {
           .then([&client] {
               lgr.info("stopping");
               return client.stop();
-          });
+           }).get();
+    });
     });
 }
