@@ -3,7 +3,7 @@
 #include "utils/hdr_hist.h"
 
 #include <seastar/core/app-template.hh>
-#include <seastar/core/distributed.hh>
+#include <seastar/core/sharded.hh>
 #include <seastar/core/thread.hh>
 
 #include <string>
