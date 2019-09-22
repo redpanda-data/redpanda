@@ -92,7 +92,7 @@ metadata_request::process(request_context& ctx, smp_service_group g) {
               // topic doesn't have at least one partition, so make sure there
               // is at least one.
               if (topic_metadata->partitions.empty()) {
-                  topic_metadata->partitions.emplace_back(model::partition(0));
+                  topic_metadata->partitions.emplace_back(model::partition_id(0));
               }
               rw.write(t.name());
               if (ctx.header().version >= api_version(1)) {
@@ -103,7 +103,7 @@ metadata_request::process(request_context& ctx, smp_service_group g) {
                 topic_metadata->partitions,
                 [&ctx](const auto& pm, response_writer& rw) {
                     rw.write(errors::error_code::none);
-                    rw.write(pm.id.value);
+                    rw.write(pm.id);
                     rw.write(int32_t(1)); // The leader.
                     // FIXME: Obtain partition replicas.
                     auto write_replicas = [&] {

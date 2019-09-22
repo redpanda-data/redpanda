@@ -9,3 +9,10 @@ rp_test(
   DEFINITIONS SEASTAR_TESTING_MAIN
   ARGS "-- -c 1"
 )
+rp_test(
+  UNIT_TEST
+  BINARY_NAME ntp_tests
+  SOURCES ntp_path_test.cc
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LIBRARIES Boost::unit_test_framework model
+)

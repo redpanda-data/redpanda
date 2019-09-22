@@ -31,14 +31,17 @@ public:
     future<> stop();
 
     future<log_segment_ptr> make_log_segment(
-      const model::namespaced_topic_partition& ntp,
-      model::offset base_offset,
-      int64_t term,
+      const model::namespaced_topic_partition&,
+      model::offset,
+      model::term_id,
       record_version_type = record_version_type::v1,
       size_t buffer_size = default_read_buffer_size);
 
     size_t max_segment_size() const {
         return _config.max_segment_size;
+    }
+    const log_config& config() const {
+        return _config;
     }
 
 private:

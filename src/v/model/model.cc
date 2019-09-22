@@ -6,13 +6,11 @@
 
 #include <seastar/core/print.hh>
 
+#include <fmt/ostream.h>
+
 namespace model {
 
-std::ostream& operator<<(std::ostream& os, partition p) {
-    return fmt_print(os, "{{partition: {}}}", p.value);
-}
-
-std::ostream& operator<<(std::ostream& os, topic_view t) {
+std::ostream& operator<<(std::ostream& os, const topic_view& t) {
     return fmt_print(os, "{{topic: {}}}", t.name());
 }
 
@@ -53,12 +51,13 @@ std::ostream& operator<<(std::ostream& os, timestamp ts) {
     return os << "{timestamp: missing}";
 }
 
-std::ostream& operator<<(std::ostream& os, topic_partition tp) {
+std::ostream& operator<<(std::ostream& os, const topic_partition& tp) {
     return fmt_print(
       os, "{{topic_partition: {}:{}}}", tp.topic.name, tp.partition);
 }
 
-std::ostream& operator<<(std::ostream& os, namespaced_topic_partition ntp) {
+std::ostream&
+operator<<(std::ostream& os, const namespaced_topic_partition& ntp) {
     return fmt_print(
       os, "{{namespaced_topic_partition: {}:{}}}", ntp.ns, ntp.tp);
 }
@@ -78,32 +77,45 @@ std::ostream& operator<<(std::ostream& os, timestamp_type ts) {
 }
 
 std::ostream& operator<<(std::ostream& os, const record& record) {
-    return fmt_print(os,
-        "{{record: size_bytes={}, timestamp_delta={}, "
-        "offset_delta={}, key={} bytes, value_and_headers={} bytes}}",
-        record._size_bytes, record._timestamp_delta, record._offset_delta,
-        record._key.size_bytes(), record._value_and_headers.size_bytes());
+    return fmt_print(
+      os,
+      "{{record: size_bytes={}, timestamp_delta={}, "
+      "offset_delta={}, key={} bytes, value_and_headers={} bytes}}",
+      record._size_bytes,
+      record._timestamp_delta,
+      record._offset_delta,
+      record._key.size_bytes(),
+      record._value_and_headers.size_bytes());
 }
 
-std::ostream& operator<<(std::ostream& os, const record_batch_attributes& attrs) {
-    return fmt_print(
-      os, "{}:{}", attrs.compression(), attrs.timestamp_type());
+std::ostream&
+operator<<(std::ostream& os, const record_batch_attributes& attrs) {
+    return fmt_print(os, "{}:{}", attrs.compression(), attrs.timestamp_type());
 }
 
 std::ostream& operator<<(std::ostream& os, const record_batch_header& header) {
-    return fmt_print(os,
-        "{{header: size_bytes={}, base_offset={}, crc={}, attrs={}, "
-        "last_offset_delta={}, first_timestamp={}, max_timestamp={}}}",
-        header.size_bytes, header.base_offset, header.crc, header.attrs,
-        header.last_offset_delta, header.first_timestamp, header.max_timestamp);
+    return fmt_print(
+      os,
+      "{{header: size_bytes={}, base_offset={}, crc={}, attrs={}, "
+      "last_offset_delta={}, first_timestamp={}, max_timestamp={}}}",
+      header.size_bytes,
+      header.base_offset,
+      header.crc,
+      header.attrs,
+      header.last_offset_delta,
+      header.first_timestamp,
+      header.max_timestamp);
 }
 
-std::ostream& operator<<(std::ostream& os, const record_batch::compressed_records& records) {
-    return fmt_print(os, "{{compressed_records: size_bytes={}}}", records.size_bytes());
+std::ostream&
+operator<<(std::ostream& os, const record_batch::compressed_records& records) {
+    return fmt_print(
+      os, "{{compressed_records: size_bytes={}}}", records.size_bytes());
 }
 
 std::ostream& operator<<(std::ostream& os, const record_batch& batch) {
-    fmt::print(os, "{{record_batch: {}, count={},records=", batch._header, batch.size());
+    fmt::print(
+      os, "{{record_batch: {}, count={},records=", batch._header, batch.size());
     if (batch.compressed()) {
         os << batch.get_compressed_records();
     } else {
@@ -115,6 +127,10 @@ std::ostream& operator<<(std::ostream& os, const record_batch& batch) {
     }
     os << "}";
     return os;
+}
+
+sstring namespaced_topic_partition::path() const {
+    return fmt::format("{}/{}/{}", ns.name, tp.topic.name, tp.partition());
 }
 
 } // namespace model

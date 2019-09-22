@@ -24,6 +24,7 @@ struct log_append_config {
     model::timeout_clock::time_point timeout;
 };
 
+/// \brief a non-synchronized log management class.
 class log {
 public:
     struct append_result {
@@ -50,17 +51,27 @@ public:
     log_segment_appender& appender();
 
     future<> maybe_roll(model::offset);
-    future<> roll(int64_t term) {
-        return make_ready_future<>();
-    }
-    future<> truncate(model::offset, int64_t term) {
+
+    /// \brief safe even if we have no active appenders
+    /// in the case of active appender, it will create a new segment
+    future<> roll(model::offset, model::term_id);
+
+    future<> truncate(model::offset, model::term_id) {
         return make_ready_future<>();
     }
 
-private:
-    future<> new_segment(model::offset, int64_t term, const io_priority_class&);
+    sstring base_directory() const;
 
 private:
+    future<>
+    new_segment(model::offset, model::term_id, const io_priority_class&);
+
+    /// \brief forces a flush() on the last segment & rotates given the current
+    /// _term && (offset+1)
+    future<> do_roll(model::offset);
+
+private:
+    model::term_id _term;
     model::namespaced_topic_partition _ntp;
     log_manager& _manager;
     log_set _segs;
