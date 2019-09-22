@@ -24,7 +24,7 @@ struct context {
     storage::log log = storage::log(
       model::namespaced_topic_partition{
         model::ns("ns"),
-        model::topic_partition{model::topic("topic"), model::partition(6)}},
+        model::topic_partition{model::topic("topic"), model::partition_id(6)}},
       manager,
       log_set({}));
 

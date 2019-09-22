@@ -10,12 +10,12 @@ namespace storage {
 log_segment::log_segment(
   sstring filename,
   file data_file,
-  int64_t term,
+  model::term_id term,
   model::offset base_offset,
   size_t buffer_size) noexcept
   : _filename(std::move(filename))
   , _data_file(std::move(data_file))
-  , _term(term)
+  , _term(std::move(term))
   , _base_offset(base_offset)
   , _buffer_size(buffer_size) {
 }

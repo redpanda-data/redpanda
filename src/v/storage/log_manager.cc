@@ -31,16 +31,14 @@ static std::filesystem::path make_filename(
   const sstring& base,
   const model::namespaced_topic_partition& ntp,
   model::offset base_offset,
-  int64_t term,
+  model::term_id term,
   record_version_type version) {
     return format(
-             "{}/{}/{}/{}/{}-{}-{}.log",
+             "{}/{}/{}-{}-{}.log",
              base,
-             ntp.ns,
-             ntp.tp.topic.name,
-             ntp.tp.partition,
+             ntp.path(),
              base_offset.value(),
-             term,
+             term(),
              to_string(version))
       .c_str();
 }
@@ -48,7 +46,7 @@ static std::filesystem::path make_filename(
 future<log_segment_ptr> log_manager::make_log_segment(
   const model::namespaced_topic_partition& ntp,
   model::offset base_offset,
-  int64_t term,
+  model::term_id term,
   record_version_type version,
   size_t buffer_size) {
     auto flags = open_flags::create | open_flags::rw;
@@ -56,7 +54,7 @@ future<log_segment_ptr> log_manager::make_log_segment(
     opts.extent_allocation_size_hint = 32 << 20;
     opts.sloppy_size = true;
     auto filename = make_filename(
-      _config.base_dir, ntp, base_offset, term, version);
+      _config.base_dir, ntp, base_offset, term(), version);
     // FIXME: Should be done by the controller component.
     return recursive_touch_directory(filename.parent_path().c_str())
       .then([this,
@@ -64,7 +62,7 @@ future<log_segment_ptr> log_manager::make_log_segment(
              base_offset,
              flags,
              opts = std::move(opts),
-             term,
+             term = term(),
              buffer_size] {
           return open_file_dma(filename, flags, std::move(opts))
             .then_wrapped([this,

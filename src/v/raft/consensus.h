@@ -22,6 +22,10 @@ public:
       model::timeout_clock::duration disk_timeout,
       sharded<client_cache>&);
 
+    /// \brief must be initial call.
+    /// allow for internal state recovery
+    future<> start();
+
     future<vote_reply> vote(vote_request r) {
         return with_semaphore(_op_sem, 1, [this, r = std::move(r)]() mutable {
             return do_vote(std::move(r));
@@ -51,11 +55,15 @@ public:
     }
 
 private:
+    // all these private functions assume that we are under exclusive operations
+    // via the _op_sem
     void step_down();
     future<vote_reply> do_vote(vote_request);
     future<append_entries_reply> do_append_entries(append_entries_request);
     future<std::vector<storage::log::append_result>>
       disk_append(std::vector<std::unique_ptr<entry>>);
+    future<> persist_voted_for(vote_request);
+    future<vote_request> read_last_voted_for();
 
     // args
     model::node_id _self;
@@ -67,9 +75,8 @@ private:
     model::timeout_clock::duration _disk_timeout;
     sharded<client_cache>& _clients;
 
-    // FIXME(agallego) - needs to integrate with log replay
+    // read at `future<> start()`
     model::node_id _voted_for;
-
     clock_type::time_point _hbeat = clock_type::now();
     vote_state _vstate = vote_state::follower;
     /// \brief all raft operations must happen exclusively since the common case

@@ -26,7 +26,7 @@ public:
     raft::consensus& raft_group() {
         return *_raft;
     }
-    const model::namespaced_topic_partition ntp() const {
+    const model::namespaced_topic_partition& ntp() const {
         return _ntp;
     }
 

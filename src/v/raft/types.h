@@ -18,18 +18,17 @@ using duration_type = typename clock_type::duration;
 using timer_type = timer<clock_type>;
 
 using group_id = named_type<int64_t, struct raft_group_id_type>;
-using term_id = named_type<int64_t, struct raft_term_id_type>;
 
 /// special case. it uses underlying type because it is the most used type
 /// by using the underlying::type we save 8 continuations per deserialization
 struct [[gnu::packed]] protocol_metadata {
     unaligned<group_id::type> group = -1;
     unaligned<model::offset::type> commit_index = 0;
-    unaligned<term_id::type> term = -1;
+    unaligned<model::term_id::type> term = -1;
 
     /// \brief used for completeness
     unaligned<model::offset::type> prev_log_index = 0;
-    unaligned<term_id::type> prev_log_term = -1;
+    unaligned<model::term_id::type> prev_log_term = -1;
 };
 
 struct group_configuration {
@@ -76,7 +75,7 @@ struct append_entries_request {
 
 struct [[gnu::packed]] append_entries_reply {
     /// \brief callee's term, for the caller to upate itself
-    unaligned<term_id::type> term = -1;
+    unaligned<model::term_id::type> term = -1;
     /// \brief The recipient's last log index after it applied changes to
     /// the log. This is used to speed up finding the correct value for the
     /// nextIndex with a follower that is far behind a leader
@@ -91,15 +90,15 @@ struct [[gnu::packed]] vote_request {
     unaligned<model::node_id::type> node_id = 0;
     unaligned<group_id::type> group = -1;
     /// \brief current term
-    unaligned<term_id::type> term = -1;
+    unaligned<model::term_id::type> term = -1;
     /// \brief used to compare completeness
     unaligned<model::offset::type> prev_log_index = 0;
-    unaligned<term_id::type> prev_log_term = -1;
+    unaligned<model::term_id::type> prev_log_term = -1;
 };
 
 struct [[gnu::packed]] vote_reply {
     /// \brief callee's term, for the caller to upate itself
-    unaligned<term_id::type> term = -1;
+    unaligned<model::term_id::type> term = -1;
 
     /// True if the follower granted the candidate it's vote, false otherwise
     unaligned<bool> granted = false;

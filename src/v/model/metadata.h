@@ -54,10 +54,10 @@ private:
 
 struct partition_metadata {
     partition_metadata() noexcept = default;
-    partition_metadata(partition p) noexcept
+    partition_metadata(partition_id p) noexcept
       : id(std::move(p)) {
     }
-    partition id;
+    partition_id id;
 };
 
 struct topic_metadata {
