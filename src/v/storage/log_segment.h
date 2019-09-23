@@ -110,7 +110,7 @@ public:
 
     explicit log_set(std::vector<log_segment_ptr>) noexcept(is_nothrow::value);
 
-    size_t size() {
+    size_t size() const {
         return _segments.size();
     }
 
