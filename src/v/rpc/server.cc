@@ -139,7 +139,7 @@ server::dispatch_method_once(header h, lw_shared_ptr<connection> conn) {
     }
     auto fut = ctx->pr.get_future();
     method* m = it->get()->method_from_id(method_id);
-    _probe.add_bytes_recieved(header_size + h.size);
+    _probe.add_bytes_received(header_size + h.size);
     // background!
     (void)(*m)(conn->input(), *ctx)
       .then([ctx, conn, m = _hist.auto_measure()](netbuf n) mutable {
