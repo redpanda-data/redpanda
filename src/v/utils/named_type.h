@@ -47,6 +47,8 @@ public:
     }
     named_type(named_type&& o) noexcept = default;
     named_type& operator=(named_type&& o) noexcept = default;
+    named_type(named_type& o) noexcept = default;
+    named_type& operator=(named_type& o) noexcept = default;
     bool operator==(const named_type& other) const {
         return _value == other._value;
     }
