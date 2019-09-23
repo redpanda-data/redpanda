@@ -22,7 +22,7 @@ public:
         _out_bytes += sent;
     }
 
-    void add_bytes_recieved(size_t recv) {
+    void add_bytes_received(size_t recv) {
         _in_bytes += recv;
     }
 
