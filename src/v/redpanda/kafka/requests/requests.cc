@@ -47,30 +47,22 @@ future<response_ptr>
 process_request(request_context& ctx, smp_service_group g) {
     // Eventually generate this with meta-classes.
     kreq_log.debug("Processing request for {}", ctx.header().key);
-    switch (ctx.header().key.value()) {
-    case api_versions_request::key.value():
+    switch (ctx.header().key) {
+    case api_versions_request::key:
         return api_versions_request::process(ctx, std::move(g));
-    case metadata_request::key.value():
+    case metadata_request::key:
         return metadata_request::process(ctx, std::move(g));
-    case list_groups_request::key.value():
+    case list_groups_request::key:
         return list_groups_request::process(ctx, std::move(g));
-    case find_coordinator_request::key.value():
+    case find_coordinator_request::key:
         return find_coordinator_request::process(ctx, std::move(g));
-    case offset_fetch_request::key.value():
+    case offset_fetch_request::key:
         return offset_fetch_request::process(ctx, std::move(g));
-    case produce_request::key.value():
+    case produce_request::key:
         return produce_request::process(ctx, std::move(g));
     };
     throw std::runtime_error(
       fmt::format("Unsupported API {}", ctx.header().key));
-}
-
-std::ostream& operator<<(std::ostream& os, const api_key& key) {
-    return fmt_print(os, "{{api_key: {}}}", key.value());
-}
-
-std::ostream& operator<<(std::ostream& os, const api_version& version) {
-    return fmt_print(os, "{{api_version: {}}}", version.value());
 }
 
 std::ostream& operator<<(std::ostream& os, const request_header& header) {
@@ -93,9 +85,9 @@ struct api_support {
 
 template<typename RequestType>
 static auto make_api_support() {
-    return api_support{RequestType::key.value(),
-                       RequestType::min_supported.value(),
-                       RequestType::max_supported.value()};
+    return api_support{RequestType::key,
+                       RequestType::min_supported,
+                       RequestType::max_supported};
 }
 
 template<typename... RequestTypes>
