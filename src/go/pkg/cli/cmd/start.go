@@ -52,8 +52,10 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 			}
 			rpArgs := &redpanda.RedpandaArgs{
 				ConfigFilePath: configFile,
-				IoConfigFile:   ioConfigFile,
-				LockMemory:     true,
+				SeastarFlags: map[string]string{
+					"io-properties-file": ioConfigFile,
+					"lock-memory":        "true",
+				},
 			}
 			err = prestart(fs, rpArgs, config, prestartCfg)
 			if err != nil {
@@ -61,13 +63,13 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 			}
 			// Override all the defaults when flags are explicitly set
 			if ccmd.Flags().Changed("memory") {
-				rpArgs.Memory = memoryFlag
+				rpArgs.SeastarFlags["memory"] = memoryFlag
 			}
 			if ccmd.Flags().Changed("cpuset") {
-				rpArgs.CpuSet = cpuSetFlag
+				rpArgs.SeastarFlags["cpuset"] = cpuSetFlag
 			}
 			if ccmd.Flags().Changed("lock-memory") {
-				rpArgs.LockMemory = lockMemoryFlag
+				rpArgs.SeastarFlags["lock-memory"] = fmt.Sprint(lockMemoryFlag)
 			}
 
 			launcher := redpanda.NewLauncher(installDirectory, rpArgs)
@@ -104,14 +106,15 @@ func prestart(
 	prestartCfg prestartConfig,
 ) error {
 	if prestartCfg.tuneEnabled {
-		err := tuneAll(fs, args.CpuSet, config)
+		err := tuneAll(fs, args.SeastarFlags["cpuset"], config)
 		if err != nil {
 			return err
 		}
 		log.Info("System tune - PASSED")
 	}
 	if prestartCfg.checkEnabled {
-		checkersMap, err := redpanda.RedpandaCheckers(fs, args.IoConfigFile, config)
+		checkersMap, err := redpanda.RedpandaCheckers(fs,
+			args.SeastarFlags["io-properties-file"], config)
 		if err != nil {
 			return err
 		}
@@ -170,7 +173,7 @@ func checkFailedActions(
 	return map[redpanda.CheckerID]checkFailedAction{
 		redpanda.SwapChecker: func(*checkers.CheckResult) {
 			// Do not set --lock-memory flag when swap is disabled
-			args.LockMemory = false
+			args.SeastarFlags["lock-memory"] = "false"
 		},
 	}
 }

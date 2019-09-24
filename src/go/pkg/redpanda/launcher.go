@@ -17,10 +17,7 @@ type Launcher interface {
 
 type RedpandaArgs struct {
 	ConfigFilePath string
-	CpuSet         string
-	Memory         string
-	IoConfigFile   string
-	LockMemory     bool
+	SeastarFlags   map[string]string
 }
 
 func NewLauncher(installDir string, args *RedpandaArgs) Launcher {
@@ -72,18 +69,8 @@ func collectRedpandaArgs(args *RedpandaArgs) []string {
 		args.ConfigFilePath,
 	}
 
-	if args.CpuSet != "" {
-		redpandaArgs = append(redpandaArgs, "--cpuset", args.CpuSet)
-	}
-	if args.Memory != "" {
-		redpandaArgs = append(redpandaArgs, "--memory", args.Memory)
-	}
-	if args.IoConfigFile != "" {
-		redpandaArgs = append(redpandaArgs, "--io-properties-file",
-			args.IoConfigFile)
-	}
-	if args.LockMemory == true {
-		redpandaArgs = append(redpandaArgs, "--lock-memory", "1")
+	for flag, value := range args.SeastarFlags {
+		redpandaArgs = append(redpandaArgs, "--"+flag, value)
 	}
 	return redpandaArgs
 }
