@@ -49,30 +49,30 @@ public:
     named_type& operator=(named_type&& o) noexcept = default;
     named_type(named_type& o) noexcept = default;
     named_type& operator=(named_type& o) noexcept = default;
-    bool operator==(const named_type& other) const {
+    constexpr bool operator==(const named_type& other) const {
         return _value == other._value;
     }
-    bool operator!=(const named_type& other) const {
+    constexpr bool operator!=(const named_type& other) const {
         return _value != other._value;
     }
-    bool operator<(const named_type& other) const {
+    constexpr bool operator<(const named_type& other) const {
         return _value < other._value;
     }
-    bool operator>(const named_type& other) const {
+    constexpr bool operator>(const named_type& other) const {
         return _value > other._value;
     }
-    bool operator<=(const named_type& other) const {
+    constexpr bool operator<=(const named_type& other) const {
         return _value < other._value;
     }
-    bool operator>=(const named_type& other) const {
+    constexpr bool operator>=(const named_type& other) const {
         return _value > other._value;
     }
     // explicit getter
-    type operator()() const {
+    constexpr type operator()() const {
         return _value;
     }
     // implicit conversion operator
-    operator type() const {
+    constexpr operator type() const {
         return _value;
     }
 
