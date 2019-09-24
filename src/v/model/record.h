@@ -354,6 +354,10 @@ public:
         return std::get<uncompressed_records>(_records);
     }
 
+    record_batch_header& get_header_for_testing() {
+        return _header;
+    }
+
 private:
     record_batch_header _header;
     records_type _records;
