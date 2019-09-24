@@ -1,5 +1,6 @@
 #pragma once
 
+#include "rpc/client_probe.h"
 #include "rpc/netbuf.h"
 #include "rpc/parse_utils.h"
 #include "rpc/types.h"
@@ -52,6 +53,7 @@ private:
     gate _dispatch_gate;
     uint32_t _correlation_idx{0};
     shared_ptr<tls::certificate_credentials> _creds;
+    client_probe _probe;
 };
 
 template<typename Input, typename Output>
