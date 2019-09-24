@@ -1,6 +1,7 @@
 #pragma once
 
 #include "seastarx.h"
+#include "utils/named_type.h"
 
 #include <seastar/core/temporary_buffer.hh>
 
@@ -11,64 +12,8 @@
 namespace kafka::requests {
 
 using correlation_type = int32_t;
-
-class api_key final {
-public:
-    constexpr explicit api_key(int16_t value) noexcept
-      : _value(value) {
-    }
-
-    constexpr int16_t value() const {
-        return _value;
-    }
-
-    constexpr bool operator==(const api_key& other) const {
-        return _value == other._value;
-    }
-    constexpr bool operator!=(const api_key& other) const {
-        return _value != other._value;
-    }
-
-private:
-    int16_t _value;
-};
-
-std::ostream& operator<<(std::ostream&, const api_key&);
-
-class api_version final {
-public:
-    constexpr explicit api_version(int16_t value = 0) noexcept
-      : _value(value) {
-    }
-
-    constexpr int16_t value() const {
-        return _value;
-    }
-
-    constexpr bool operator==(const api_version& other) const {
-        return _value == other._value;
-    }
-    constexpr bool operator!=(const api_version& other) const {
-        return _value != other._value;
-    }
-    constexpr bool operator<(const api_version& other) const {
-        return _value < other._value;
-    }
-    constexpr bool operator>(const api_version& other) const {
-        return _value > other._value;
-    }
-    constexpr bool operator<=(const api_version& other) const {
-        return _value <= other._value;
-    }
-    constexpr bool operator>=(const api_version& other) const {
-        return _value >= other._value;
-    }
-
-private:
-    int16_t _value;
-};
-
-std::ostream& operator<<(std::ostream&, const api_version&);
+using api_key = named_type<int16_t, struct kafka_requests_api_key>;
+using api_version = named_type<int16_t, struct kafka_requests_api_version>;
 
 struct request_header {
     api_key key;
