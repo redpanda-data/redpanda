@@ -72,12 +72,14 @@ stop_iteration skipping_consumer::consume_batch_end() {
 log_segment_reader::log_segment_reader(
   log_segment_ptr seg,
   offset_tracker& tracker,
-  log_reader_config config) noexcept
+  log_reader_config config,
+  probe& probe) noexcept
   : model::record_batch_reader::impl()
   , _seg(std::move(seg))
   , _tracker(tracker)
   , _config(std::move(config))
-  , _consumer(skipping_consumer(*this)) {
+  , _consumer(skipping_consumer(*this))
+  , _probe(probe) {
 }
 
 bool log_segment_reader::is_initialized() const {
@@ -119,7 +121,13 @@ log_segment_reader::do_load_slice(model::timeout_clock::time_point timeout) {
     _buffer_size = 0;
     _buffer.clear();
     _consumer.set_timeout(timeout);
-    return _parser->consume().then([this] {
+    return _parser->consume()
+    .handle_exception([this](std::exception_ptr e){ 
+        _probe.batch_parse_error();
+        return make_exception_future<size_t>(e);
+    })
+    .then([this] (size_t bytes_consumed) {
+        _probe.add_bytes_read(bytes_consumed);
         auto f = make_ready_future<>();
         if (_input.eof() || end_of_stream()) {
             _end_of_stream = true;
@@ -129,6 +137,7 @@ log_segment_reader::do_load_slice(model::timeout_clock::time_point timeout) {
             if (_buffer.empty()) {
                 return span();
             }
+            _probe.add_batches_read(int32_t(_buffer.size()));
             return span{&_buffer[0],
                         int32_t(_buffer.size()) - _over_committed_offset};
         });
@@ -136,10 +145,11 @@ log_segment_reader::do_load_slice(model::timeout_clock::time_point timeout) {
 }
 
 log_reader::log_reader(
-  log_set& seg_set, offset_tracker& tracker, log_reader_config config) noexcept
+    log_set& seg_set, offset_tracker& tracker, log_reader_config config, probe& probe) noexcept
   : _selector(seg_set)
   , _offset_tracker(tracker)
-  , _config(std::move(config)) {
+  , _config(std::move(config))
+  , _probe(probe) {
 }
 
 future<log_reader::span>
@@ -177,7 +187,7 @@ log_reader::reader_available log_reader::maybe_create_segment_reader() {
         _end_of_stream = true;
         return reader_available::no;
     }
-    _current_reader.emplace(std::move(seg), _offset_tracker, _config);
+    _current_reader.emplace(std::move(seg), _offset_tracker, _config, _probe);
     return reader_available::yes;
 }
 

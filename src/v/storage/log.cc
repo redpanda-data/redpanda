@@ -111,9 +111,10 @@ log_segment_appender& log::appender() {
     return *_appender;
 }
 
-model::record_batch_reader log::make_reader(log_reader_config config) {
+model::record_batch_reader
+log::make_reader(log_reader_config config) {
     return model::make_record_batch_reader<log_reader>(
-      _segs, _tracker, std::move(config));
+      _segs, _tracker, std::move(config), _probe);
 }
 
 } // namespace storage
