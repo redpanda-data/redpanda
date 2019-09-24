@@ -1,6 +1,7 @@
 #pragma once
 
 #include "model/record_batch_reader.h"
+#include "storage/probe.h"
 #include "storage/log_segment.h"
 #include "storage/offset_tracker.h"
 #include "storage/parser.h"
@@ -67,7 +68,8 @@ public:
     log_segment_reader(
       log_segment_ptr seg,
       offset_tracker& tracker,
-      log_reader_config config) noexcept;
+      log_reader_config config,
+      probe& probe) noexcept;
 
     size_t bytes_read() const {
         return _bytes_read;
@@ -103,6 +105,7 @@ private:
     std::vector<model::record_batch> _buffer;
     size_t _buffer_size = 0;
     bool _over_committed_offset = false;
+    probe& _probe;
 
     friend class skipping_consumer;
 };
@@ -115,7 +118,8 @@ public:
     //       and will never point to an offset within a
     //       batch, that is, of an individual record. This
     //       is because batchs are atomically made visible.
-    log_reader(log_set&, offset_tracker&, log_reader_config) noexcept;
+    log_reader(
+      log_set&, offset_tracker&, log_reader_config, probe&) noexcept;
 
     virtual future<span>
       do_load_slice(model::timeout_clock::time_point) override;
@@ -131,6 +135,7 @@ private:
     log_segment_selector _selector;
     offset_tracker& _offset_tracker;
     log_reader_config _config;
+    probe& _probe;
     std::optional<log_segment_reader> _current_reader;
 };
 
