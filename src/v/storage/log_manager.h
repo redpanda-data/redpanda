@@ -2,6 +2,7 @@
 
 #include "model/fundamental.h"
 #include "seastarx.h"
+#include "storage/log.h"
 #include "storage/log_segment.h"
 #include "storage/version.h"
 
@@ -23,10 +24,13 @@ struct log_config {
 };
 
 class log_manager {
+    using logs_type
+      = std::unordered_map<model::namespaced_topic_partition, log_ptr>;
+
 public:
     log_manager(log_config) noexcept;
 
-    future<> start();
+    future<> load_logs();
 
     future<> stop();
 
@@ -44,8 +48,18 @@ public:
         return _config;
     }
 
+    logs_type& logs() {
+        return _logs;
+    }
+
+private:
+    future<> do_load_logs(
+      sstring path, std::array<sstring, 3> components, unsigned level);
+    future<> load_segments(sstring path, model::namespaced_topic_partition);
+
 private:
     log_config _config;
+    logs_type _logs;
 };
 
 } // namespace storage

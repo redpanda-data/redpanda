@@ -1,9 +1,11 @@
 #pragma once
 
+#include "hashing/crc32c.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "storage/constants.h"
+#include "storage/crc_record.h"
 #include "utils/fragbuf.h"
 #include "utils/vint.h"
 
@@ -44,7 +46,6 @@ make_random_header(model::offset o, model::timestamp ts, size_t num_records) {
     if (bool_dist(gen)) {
         h.attrs = model::record_batch_attributes(4);
     }
-    // FIXME: Calculate crc
     return h;
 }
 
@@ -78,27 +79,39 @@ model::record make_random_record(unsigned index) {
 }
 
 model::record_batch make_random_batch(model::offset o) {
+    crc32 crc;
     auto num_records = low_count_dist(gen);
     auto ts = model::timestamp(timestamp_dist(gen));
     auto header = make_random_header(o, ts, num_records);
+    storage::crc_batch_header(crc, header, num_records);
     auto size = packed_header_size;
     model::record_batch::records_type records;
     if (header.attrs.compression() != model::compression::none) {
         auto blob = make_random_ftb(high_count_dist(gen));
         size += blob.size_bytes();
-        records = model::record_batch::compressed_records(
+        auto cr = model::record_batch::compressed_records(
           num_records, std::move(blob));
+        crc.extend(cr.records());
+        records = std::move(cr);
     } else {
         auto rs = model::record_batch::uncompressed_records();
         for (unsigned i = 0; i < num_records; ++i) {
             auto r = make_random_record(i);
             size += r.size_bytes();
             size += internal::vint_size(r.size_bytes());
+            storage::crc_record_header_and_key(
+              crc,
+              r.size_bytes(),
+              r.timestamp_delta(),
+              r.offset_delta(),
+              r.key());
+            crc.extend(r.packed_value_and_headers());
             rs.push_back(std::move(r));
         }
         records = std::move(rs);
     }
     header.size_bytes = size;
+    header.crc = crc.value();
     return model::record_batch(std::move(header), std::move(records));
 }
 

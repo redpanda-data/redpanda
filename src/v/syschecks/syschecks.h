@@ -2,6 +2,10 @@
 
 #include "seastarx.h"
 
+#include <seastar/core/future.hh>
+#include <seastar/core/memory.hh>
+#include <seastar/core/seastar.hh>
+
 #include <fmt/format.h>
 #include <fmt/ostream.h>
 
