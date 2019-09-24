@@ -24,12 +24,9 @@ log_manager::log_manager(log_config config) noexcept
 }
 
 future<> log_manager::stop() {
-    return parallel_for_each(
-      _logs,
-      [this](
-        std::pair<const model::namespaced_topic_partition, log_ptr>& entry) {
-          return entry.second->close();
-      });
+    return parallel_for_each(_logs, [](logs_type::value_type& entry) {
+        return entry.second->close();
+    });
 }
 
 static std::filesystem::path make_filename(
@@ -211,14 +208,15 @@ future<> log_manager::load_segments(
                 return make_ready_future<>();
             }
 
-            auto [offset, term, version] = std::move(*seg_metadata);
+            auto&& [offset, term, version] = std::move(seg_metadata.value());
             if (version != record_version_type::v1) {
                 return make_ready_future<>();
             }
 
             auto seg_name = path + "/" + seg.name;
             return open_file_dma(seg_name, open_flags::ro)
-              .then([this, &segs, seg_name, offset, term](file fd) mutable {
+              .then([this, &segs, seg_name, offset = offset, term = term](
+                      file fd) mutable {
                   segs.push_back(make_lw_shared<log_segment>(
                     std::move(seg_name),
                     std::move(fd),
