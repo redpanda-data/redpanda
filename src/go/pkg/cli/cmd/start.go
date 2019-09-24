@@ -21,15 +21,26 @@ type prestartConfig struct {
 	checkEnabled bool
 }
 
+type seastarFlags struct {
+	memory           string
+	cpuSet           string
+	ioPropertiesFile string
+	lockMemory       bool
+}
+
 func NewStartCommand(fs afero.Fs) *cobra.Command {
 	prestartCfg := prestartConfig{}
 	var (
-		memoryFlag         string
-		lockMemoryFlag     bool
-		cpuSetFlag         string
-		installDirFlag     string
 		configFilePathFlag string
+		installDirFlag     string
 	)
+	sFlags := seastarFlags{}
+	sFlagsMap := map[string]interface{}{
+		"lock-memory":        sFlags.lockMemory,
+		"io-properties-file": sFlags.ioPropertiesFile,
+		"cpuset":             sFlags.cpuSet,
+		"memory":             sFlags.memory,
+	}
 	command := &cobra.Command{
 		Use:   "start",
 		Short: "Start redpanda",
@@ -62,14 +73,10 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 				return err
 			}
 			// Override all the defaults when flags are explicitly set
-			if ccmd.Flags().Changed("memory") {
-				rpArgs.SeastarFlags["memory"] = memoryFlag
-			}
-			if ccmd.Flags().Changed("cpuset") {
-				rpArgs.SeastarFlags["cpuset"] = cpuSetFlag
-			}
-			if ccmd.Flags().Changed("lock-memory") {
-				rpArgs.SeastarFlags["lock-memory"] = fmt.Sprint(lockMemoryFlag)
+			for flag, val := range sFlagsMap {
+				if ccmd.Flags().Changed(flag) {
+					rpArgs.SeastarFlags[flag] = fmt.Sprint(val)
+				}
 			}
 
 			launcher := redpanda.NewLauncher(installDirectory, rpArgs)
@@ -81,12 +88,12 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 		"redpanda-cfg", "",
 		" Redpanda config file, if not set the file will be searched for"+
 			"in default locations")
-	command.Flags().StringVar(&memoryFlag,
+	command.Flags().StringVar(&sFlags.memory,
 		"memory", "", "Amount of memory for redpanda to use, "+
 			"if not specified redpanda will use all available memory")
-	command.Flags().BoolVar(&lockMemoryFlag,
+	command.Flags().BoolVar(&sFlags.lockMemory,
 		"lock-memory", true, "If set, will prevent redpanda from swapping")
-	command.Flags().StringVar(&cpuSetFlag, "cpuset", "",
+	command.Flags().StringVar(&sFlags.cpuSet, "cpuset", "",
 		"Set of CPUs for redpanda to use in cpuset(7) format, "+
 			"if not specified redpanda will use all available CPUs")
 	command.Flags().StringVar(&installDirFlag,
@@ -96,6 +103,10 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 		"When present will enable tuning before starting redpanda")
 	command.Flags().BoolVar(&prestartCfg.checkEnabled, "check", true,
 		"When set to false will disable system checking before starting redpanda")
+
+	for flag := range sFlagsMap {
+		command.Flag(flag).Hidden = true
+	}
 	return command
 }
 
