@@ -46,6 +46,7 @@ future<> log::new_segment(
           _active_segment = std::move(seg);
           _segs.add(_active_segment);
           _appender.emplace(_active_segment->data_appender(pc));
+          _probe.segment_created();
       });
 }
 

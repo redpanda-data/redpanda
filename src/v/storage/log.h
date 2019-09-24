@@ -8,6 +8,7 @@
 #include "storage/log_segment.h"
 #include "storage/log_segment_appender.h"
 #include "storage/offset_tracker.h"
+#include "storage/probe.h"
 
 #include <optional>
 
@@ -62,6 +63,10 @@ public:
 
     sstring base_directory() const;
 
+    probe& probe() {
+        return _probe;
+    }
+
 private:
     future<>
     new_segment(model::offset, model::term_id, const io_priority_class&);
@@ -78,6 +83,7 @@ private:
     log_segment_ptr _active_segment;
     std::optional<log_segment_appender> _appender;
     offset_tracker _tracker;
+    storage::probe _probe;
 };
 
 using log_ptr = lw_shared_ptr<log>;
