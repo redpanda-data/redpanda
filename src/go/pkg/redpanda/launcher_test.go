@@ -1,6 +1,7 @@
 package redpanda
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 )
@@ -27,7 +28,9 @@ func Test_collectRedpandaArgs(t *testing.T) {
 			name: "shall include memory setting into command line",
 			args: RedpandaArgs{
 				ConfigFilePath: "/etc/redpanda/redpanda.yaml",
-				Memory:         "1G",
+				SeastarFlags: map[string]string{
+					"memory": "1G",
+				},
 			},
 			want: []string{
 				"redpanda",
@@ -41,7 +44,9 @@ func Test_collectRedpandaArgs(t *testing.T) {
 			name: "shall include cpuset setting into command line",
 			args: RedpandaArgs{
 				ConfigFilePath: "/etc/redpanda/redpanda.yaml",
-				CpuSet:         "0-1",
+				SeastarFlags: map[string]string{
+					"cpuset": "0-1",
+				},
 			},
 			want: []string{
 				"redpanda",
@@ -55,7 +60,9 @@ func Test_collectRedpandaArgs(t *testing.T) {
 			name: "shall include io-properties-file setting into command line",
 			args: RedpandaArgs{
 				ConfigFilePath: "/etc/redpanda/redpanda.yaml",
-				IoConfigFile:   "/etc/redpanda/io-config.yaml",
+				SeastarFlags: map[string]string{
+					"io-properties-file": "/etc/redpanda/io-config.yaml",
+				},
 			},
 			want: []string{
 				"redpanda",
@@ -69,14 +76,16 @@ func Test_collectRedpandaArgs(t *testing.T) {
 			name: "shall include memory lock",
 			args: RedpandaArgs{
 				ConfigFilePath: "/etc/redpanda/redpanda.yaml",
-				LockMemory:     true,
+				SeastarFlags: map[string]string{
+					"lock-memory": fmt.Sprint(true),
+				},
 			},
 			want: []string{
 				"redpanda",
 				"--redpanda-cfg",
 				"/etc/redpanda/redpanda.yaml",
 				"--lock-memory",
-				"1",
+				"true",
 			},
 		},
 	}

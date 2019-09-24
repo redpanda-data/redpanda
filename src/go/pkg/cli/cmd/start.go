@@ -21,15 +21,42 @@ type prestartConfig struct {
 	checkEnabled bool
 }
 
+type seastarFlags struct {
+	memory           string
+	cpuSet           string
+	ioPropertiesFile string
+	lockMemory       bool
+	smp              int
+	reserveMemory    string
+	hugepages        string
+	threadAffinity   bool
+	numIoQueues      int
+	maxIoRequests    int
+	ioProperties     string
+	mbind            bool
+}
+
 func NewStartCommand(fs afero.Fs) *cobra.Command {
 	prestartCfg := prestartConfig{}
 	var (
-		memoryFlag         string
-		lockMemoryFlag     bool
-		cpuSetFlag         string
-		installDirFlag     string
 		configFilePathFlag string
+		installDirFlag     string
 	)
+	sFlags := seastarFlags{}
+	sFlagsMap := map[string]interface{}{
+		"lock-memory":        sFlags.lockMemory,
+		"io-properties-file": sFlags.ioPropertiesFile,
+		"cpuset":             sFlags.cpuSet,
+		"memory":             sFlags.memory,
+		"smp":                sFlags.smp,
+		"reserve-memory":     sFlags.reserveMemory,
+		"hugepages":          sFlags.hugepages,
+		"thread-affinity":    sFlags.threadAffinity,
+		"num-io-queues":      sFlags.numIoQueues,
+		"max-io-requests":    sFlags.maxIoRequests,
+		"io-properties":      sFlags.ioProperties,
+		"mbind":              sFlags.mbind,
+	}
 	command := &cobra.Command{
 		Use:   "start",
 		Short: "Start redpanda",
@@ -52,22 +79,20 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 			}
 			rpArgs := &redpanda.RedpandaArgs{
 				ConfigFilePath: configFile,
-				IoConfigFile:   ioConfigFile,
-				LockMemory:     true,
+				SeastarFlags: map[string]string{
+					"io-properties-file": ioConfigFile,
+					"lock-memory":        "true",
+				},
 			}
 			err = prestart(fs, rpArgs, config, prestartCfg)
 			if err != nil {
 				return err
 			}
 			// Override all the defaults when flags are explicitly set
-			if ccmd.Flags().Changed("memory") {
-				rpArgs.Memory = memoryFlag
-			}
-			if ccmd.Flags().Changed("cpuset") {
-				rpArgs.CpuSet = cpuSetFlag
-			}
-			if ccmd.Flags().Changed("lock-memory") {
-				rpArgs.LockMemory = lockMemoryFlag
+			for flag, val := range sFlagsMap {
+				if ccmd.Flags().Changed(flag) {
+					rpArgs.SeastarFlags[flag] = fmt.Sprint(val)
+				}
 			}
 
 			launcher := redpanda.NewLauncher(installDirectory, rpArgs)
@@ -79,12 +104,12 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 		"redpanda-cfg", "",
 		" Redpanda config file, if not set the file will be searched for"+
 			"in default locations")
-	command.Flags().StringVar(&memoryFlag,
+	command.Flags().StringVar(&sFlags.memory,
 		"memory", "", "Amount of memory for redpanda to use, "+
 			"if not specified redpanda will use all available memory")
-	command.Flags().BoolVar(&lockMemoryFlag,
+	command.Flags().BoolVar(&sFlags.lockMemory,
 		"lock-memory", true, "If set, will prevent redpanda from swapping")
-	command.Flags().StringVar(&cpuSetFlag, "cpuset", "",
+	command.Flags().StringVar(&sFlags.cpuSet, "cpuset", "",
 		"Set of CPUs for redpanda to use in cpuset(7) format, "+
 			"if not specified redpanda will use all available CPUs")
 	command.Flags().StringVar(&installDirFlag,
@@ -94,6 +119,27 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 		"When present will enable tuning before starting redpanda")
 	command.Flags().BoolVar(&prestartCfg.checkEnabled, "check", true,
 		"When set to false will disable system checking before starting redpanda")
+	command.Flags().IntVar(&sFlags.smp, "smp", 1, "number of threads (default: one per CPU)")
+	command.Flags().StringVar(&sFlags.reserveMemory, "reserve-memory", "",
+		"memory reserved to OS (if --memory not specified)")
+	command.Flags().StringVar(&sFlags.hugepages, "hugepages", "",
+		"path to accessible hugetlbfs mount (typically /dev/hugepages/something)")
+	command.Flags().BoolVar(&sFlags.threadAffinity, "thread-affinity", true,
+		"pin threads to their cpus (disable for overprovisioning)")
+	command.Flags().IntVar(&sFlags.numIoQueues, "num-io-queues", 0,
+		"Number of IO queues. Each IO unit will be responsible for a fraction "+
+			"of the IO requests. Defaults to the number of threads")
+	command.Flags().IntVar(&sFlags.maxIoRequests, "max-io-requests", 0,
+		"Maximum amount of concurrent requests to be sent to the disk. "+
+			"Defaults to 128 times the number of IO queues")
+	command.Flags().StringVar(&sFlags.ioPropertiesFile, "io-properties-file", "",
+		"path to a YAML file describing the characteristics of the I/O Subsystem")
+	command.Flags().StringVar(&sFlags.ioProperties, "io-properties", "",
+		"a YAML string describing the characteristics of the I/O Subsystem")
+	command.Flags().BoolVar(&sFlags.mbind, "mbind", true, "enable mbind")
+	for flag := range sFlagsMap {
+		command.Flag(flag).Hidden = true
+	}
 	return command
 }
 
@@ -104,14 +150,15 @@ func prestart(
 	prestartCfg prestartConfig,
 ) error {
 	if prestartCfg.tuneEnabled {
-		err := tuneAll(fs, args.CpuSet, config)
+		err := tuneAll(fs, args.SeastarFlags["cpuset"], config)
 		if err != nil {
 			return err
 		}
 		log.Info("System tune - PASSED")
 	}
 	if prestartCfg.checkEnabled {
-		checkersMap, err := redpanda.RedpandaCheckers(fs, args.IoConfigFile, config)
+		checkersMap, err := redpanda.RedpandaCheckers(fs,
+			args.SeastarFlags["io-properties-file"], config)
 		if err != nil {
 			return err
 		}
@@ -170,7 +217,7 @@ func checkFailedActions(
 	return map[redpanda.CheckerID]checkFailedAction{
 		redpanda.SwapChecker: func(*checkers.CheckResult) {
 			// Do not set --lock-memory flag when swap is disabled
-			args.LockMemory = false
+			args.SeastarFlags["lock-memory"] = "false"
 		},
 	}
 }
