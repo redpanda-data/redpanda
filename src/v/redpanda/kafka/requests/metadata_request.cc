@@ -41,8 +41,8 @@ metadata_request::process(request_context&& ctx, smp_service_group g) {
         bool allow_auto_topic_creation = ctx.header().version >= api_version(4)
                                            ? ctx.reader().read_bool()
                                            : false;
-        if (allow_auto_topic_creation) {
-            kreq_log.warn("Automatically creating topics is not yet supported");
+        if (!allow_auto_topic_creation) {
+            kreq_log.warn("Currently, topics can only be auto-created");
         }
 
         auto resp = std::make_unique<response>();
