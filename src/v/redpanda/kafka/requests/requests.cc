@@ -44,6 +44,21 @@ using request_types = make_request_types<
   list_groups_request,
   api_versions_request>;
 
+template<typename Request>
+CONCEPT(requires(KafkaRequest<Request>))
+future<response_ptr> do_process(request_context&& ctx, smp_service_group g) {
+    if (
+      ctx.header().version < Request::min_supported
+      || ctx.header().version > Request::max_supported) {
+        return make_exception_future<response_ptr>(
+          std::runtime_error(fmt::format(
+            "Unsupported version {} for {} API",
+            ctx.header().version,
+            Request::name)));
+    }
+    return Request::process(std::move(ctx), std::move(g));
+}
+
 future<response_ptr>
 process_request(request_context&& ctx, smp_service_group g) {
     // Eventually generate this with meta-classes.
@@ -52,15 +67,16 @@ process_request(request_context&& ctx, smp_service_group g) {
     case api_versions_request::key:
         return api_versions_request::process(std::move(ctx), std::move(g));
     case metadata_request::key:
-        return metadata_request::process(std::move(ctx), std::move(g));
+        return do_process<metadata_request>(std::move(ctx), std::move(g));
     case list_groups_request::key:
-        return list_groups_request::process(std::move(ctx), std::move(g));
+        return do_process<list_groups_request>(std::move(ctx), std::move(g));
     case find_coordinator_request::key:
-        return find_coordinator_request::process(std::move(ctx), std::move(g));
+        return do_process<find_coordinator_request>(
+          std::move(ctx), std::move(g));
     case offset_fetch_request::key:
-        return offset_fetch_request::process(std::move(ctx), std::move(g));
+        return do_process<offset_fetch_request>(std::move(ctx), std::move(g));
     case produce_request::key:
-        return produce_request::process(std::move(ctx), std::move(g));
+        return do_process<produce_request>(std::move(ctx), std::move(g));
     };
     return seastar::make_exception_future<response_ptr>(
       std::runtime_error(fmt::format("Unsupported API {}", ctx.header().key)));
