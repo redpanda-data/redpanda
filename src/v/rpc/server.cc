@@ -169,7 +169,7 @@ future<> server::stop() {
 void server::setup_metrics() {
     namespace sm = metrics;
     _metrics.add_group(
-      prometheus_sanitize::metrics_name("rpc::"),
+      prometheus_sanitize::metrics_name("rpc"),
       {sm::make_gauge(
          "services",
          [this] { return _services.size(); },
