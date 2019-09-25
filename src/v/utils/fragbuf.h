@@ -60,7 +60,7 @@ public:
         return std::move(_fragments);
     }
 
-    fragbuf share(size_t pos, const size_t len) {
+    fragbuf share(size_t pos, const size_t len) const {
         std::vector<temporary_buffer<char>> fragments;
         fragments.reserve(len / default_fragment_size);
         size_t left = len;
@@ -92,7 +92,7 @@ public:
     }
 
 private:
-    vector_type _fragments;
+    mutable vector_type _fragments;
     size_t _size_bytes = 0;
 };
 
