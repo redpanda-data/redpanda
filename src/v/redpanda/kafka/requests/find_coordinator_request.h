@@ -11,6 +11,7 @@ namespace kafka::requests {
 
 class find_coordinator_request final {
 public:
+    static constexpr const char* name = "find coordinator";
     static constexpr api_key key = api_key(10);
     static constexpr api_version min_supported = api_version(0);
     static constexpr api_version max_supported = api_version(2);
