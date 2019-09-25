@@ -12,7 +12,7 @@
 namespace kafka::requests {
 
 future<response_ptr>
-find_coordinator_request::process(request_context& ctx, smp_service_group g) {
+find_coordinator_request::process(request_context&& ctx, smp_service_group g) {
     if (
       ctx.header().version < min_supported
       || ctx.header().version > max_supported) {

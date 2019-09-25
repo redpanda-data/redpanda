@@ -81,8 +81,7 @@ private:
         future<> process_request();
         size_t process_size(temporary_buffer<char>&&);
         future<requests::request_header> read_header();
-        void do_process(
-          std::unique_ptr<requests::request_context>&&, semaphore_units<>&&);
+        void do_process(requests::request_context&&, semaphore_units<>&&);
         future<>
         write_response(requests::response_ptr&&, requests::correlation_type);
 
