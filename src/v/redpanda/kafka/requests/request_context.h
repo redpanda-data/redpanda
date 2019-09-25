@@ -34,6 +34,9 @@ public:
       , _throttle_delay(throttle_delay) {
     }
 
+    request_context(request_context&&) noexcept = default;
+    request_context& operator=(request_context&&) noexcept = default;
+
     const request_header& header() const {
         return _header;
     }
@@ -64,6 +67,6 @@ class response;
 using response_ptr = foreign_ptr<std::unique_ptr<response>>;
 
 // Executes the API call identified by the specified request_context.
-future<response_ptr> process_request(request_context&, smp_service_group);
+future<response_ptr> process_request(request_context&&, smp_service_group);
 
 } // namespace kafka::requests

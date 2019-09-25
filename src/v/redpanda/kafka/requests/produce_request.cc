@@ -26,7 +26,7 @@ struct topic_data {
 //  of a maximum supported produce api version of 2, it went ahead and send a
 //  request with version 3 anyway.
 future<response_ptr>
-produce_request::process(request_context& ctx, smp_service_group g) {
+produce_request::process(request_context&& ctx, smp_service_group g) {
     if (
       ctx.header().version < min_supported
       || ctx.header().version > max_supported) {

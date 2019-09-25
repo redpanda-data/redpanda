@@ -241,13 +241,12 @@ future<> kafka_server::connection::process_request() {
                                  header = std::move(header),
                                  units = std::move(units),
                                  &delay](fragbuf buf) mutable {
-                              auto ctx
-                                = std::make_unique<requests::request_context>(
-                                  _server._metadata_cache,
-                                  std::move(header),
-                                  std::move(buf),
-                                  delay.duration);
-                              _server._probe.serving_request(*ctx);
+                              auto ctx = requests::request_context(
+                                _server._metadata_cache,
+                                std::move(header),
+                                std::move(buf),
+                                delay.duration);
+                              _server._probe.serving_request(ctx);
                               do_process(std::move(ctx), std::move(units));
                           });
                     });
@@ -257,16 +256,13 @@ future<> kafka_server::connection::process_request() {
 }
 
 void kafka_server::connection::do_process(
-  std::unique_ptr<requests::request_context>&& ctx, semaphore_units<>&& units) {
-    auto correlation = ctx->header().correlation_id;
-    auto f = requests::process_request(*ctx, _server._smp_group);
+  requests::request_context&& ctx, semaphore_units<>&& units) {
+    auto correlation = ctx.header().correlation_id;
+    auto f = requests::process_request(std::move(ctx), _server._smp_group);
     auto ready = std::move(_ready_to_respond);
     _ready_to_respond = f.then_wrapped(
-      [this,
-       ctx = std::move(ctx),
-       units = std::move(units),
-       ready = std::move(ready),
-       correlation](future<requests::response_ptr>&& f) mutable {
+      [this, units = std::move(units), ready = std::move(ready), correlation](
+        future<requests::response_ptr>&& f) mutable {
           try {
               auto r = f.get0();
               return ready.then(

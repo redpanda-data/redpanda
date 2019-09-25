@@ -15,7 +15,8 @@ public:
     static constexpr api_version min_supported = api_version(0);
     static constexpr api_version max_supported = api_version(3);
 
-    static future<response_ptr> process(request_context&, smp_service_group);
+    static future<response_ptr>
+    process(request_context&&, seastar::smp_service_group);
 };
 
 } // namespace kafka::requests
