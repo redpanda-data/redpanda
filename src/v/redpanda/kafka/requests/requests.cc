@@ -85,9 +85,8 @@ struct api_support {
 
 template<typename RequestType>
 static auto make_api_support() {
-    return api_support{RequestType::key,
-                       RequestType::min_supported,
-                       RequestType::max_supported};
+    return api_support{
+      RequestType::key, RequestType::min_supported, RequestType::max_supported};
 }
 
 template<typename... RequestTypes>
