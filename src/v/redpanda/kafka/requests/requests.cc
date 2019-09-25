@@ -20,6 +20,7 @@ CONCEPT(
 // A Kafka request.
 template<typename T>
 concept KafkaRequest = requires (T request, request_context&& ctx, smp_service_group g) {
+    { T::name } -> const char*;
     { T::key } -> api_key;
     { T::min_supported } -> api_version;
     { T::max_supported } -> api_version;
