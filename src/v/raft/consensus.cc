@@ -22,6 +22,7 @@ consensus::consensus(
   , _clients(clis) {
 }
 void consensus::step_down() {
+    _probe.step_down();
     _voted_for = {};
     _vstate = vote_state::follower;
 }
@@ -45,7 +46,7 @@ future<> consensus::start() {
 future<vote_reply> consensus::do_vote(vote_request&& r) {
     vote_reply reply;
     reply.term = _meta.term;
-
+    _probe.vote_requested();
     /// set to true if the caller's log is as up to date as the recipient's
     /// - extension on raft. see Diego's phd dissertation, section 9.6
     /// - "Preventing disruptions when a server rejoins the cluster"
@@ -55,6 +56,7 @@ future<vote_reply> consensus::do_vote(vote_request&& r) {
 
     // raft.pdf: reply false if term < currentTerm (§5.1)
     if (r.term < _meta.term) {
+        _probe.vote_request_term_older();
         return make_ready_future<vote_reply>(std::move(reply));
     }
 
@@ -64,6 +66,7 @@ future<vote_reply> consensus::do_vote(vote_request&& r) {
           _meta.group,
           r.term,
           _meta.term);
+        _probe.vote_request_term_newer();
         step_down();
     }
 
@@ -90,8 +93,10 @@ consensus::do_append_entries(append_entries_request&& r) {
     reply.term = _meta.term;
     reply.last_log_index = _meta.commit_index;
     reply.success = false;
+    _probe.append_requested();
     // raft.pdf: Reply false if term < currentTerm (§5.1)
     if (r.meta.term < _meta.term) {
+        _probe.append_request_term_older();
         reply.success = false;
         return make_ready_future<append_entries_reply>(std::move(reply));
     }
@@ -100,7 +105,7 @@ consensus::do_append_entries(append_entries_request&& r) {
           "append_entries request::term:{}  > ours: {}. Setting new term",
           r.meta.term,
           _meta.term);
-
+        _probe.append_request_term_newer();
         return _log
           .roll(model::offset(_meta.commit_index), model::term_id(r.meta.term))
           .then([this, r = std::move(r)]() mutable {
@@ -117,6 +122,7 @@ consensus::do_append_entries(append_entries_request&& r) {
     // For an entry to fit into our log, it must not leave a gap.
     if (r.meta.prev_log_index > _meta.commit_index) {
         raftlog().debug("rejecting append_entries. would leave gap in log");
+        _probe.append_request_log_commited_index_mismatch();
         reply.success = false;
         return make_ready_future<append_entries_reply>(std::move(reply));
     }
@@ -125,6 +131,7 @@ consensus::do_append_entries(append_entries_request&& r) {
     // must come from the same term
     if (r.meta.prev_log_term != _meta.prev_log_term) {
         raftlog().debug("rejecting append_entries missmatching prev_log_term");
+        _probe.append_request_log_term_older();
         reply.success = false;
         return make_ready_future<append_entries_reply>(std::move(reply));
     }
@@ -139,6 +146,7 @@ consensus::do_append_entries(append_entries_request&& r) {
           r.meta.prev_log_index,
           _meta.commit_index,
           r.meta.prev_log_index);
+        _probe.append_request_log_truncate();
         return _log
           .truncate(
             model::offset(r.meta.prev_log_index), model::term_id(r.meta.term))
@@ -153,6 +161,7 @@ consensus::do_append_entries(append_entries_request&& r) {
     // special case heartbeat case
     if (r.entries.empty()) {
         reply.success = true;
+        _probe.append_request_heartbeat();
         return make_ready_future<append_entries_reply>(std::move(reply));
     }
 
@@ -175,6 +184,7 @@ consensus::do_append_entries(append_entries_request&& r) {
               for (auto h : _hooks) {
                   h->abort(begin_offset);
               }
+              _probe.leader_commit_index_mismatch();
               throw std::runtime_error(fmt::format(
                 "Log is now in an inconsistent state. Leader commit_index:{} "
                 "vs. our commit_index:{}, for term:{}",
@@ -200,15 +210,21 @@ consensus::disk_append(std::vector<entry>&& entries) {
              std::move(entries),
              [this](std::vector<entry>& in) {
                  // needs a ref to the range
-                 return copy_range<ret_t>(in, [this](entry& e) {
-                     return _log.append(
-                       std::move(e.reader()),
-                       storage::log_append_config{
-                         // explicit here
-                         storage::log_append_config::fsync::no,
-                         _io_priority,
-                         model::timeout_clock::now() + _disk_timeout});
-                 });
+                 auto no_of_entries = in.size();
+                 return copy_range<ret_t>(
+                   in, [this](entry& e) {
+                       return _log.append(
+                         std::move(e.reader()),
+                         storage::log_append_config{
+                           // explicit here
+                           storage::log_append_config::fsync::no,
+                           _io_priority,
+                           model::timeout_clock::now() + _disk_timeout});
+                    })
+                   .then([this, no_of_entries] (ret_t ret) {
+                       _probe.entries_appended(no_of_entries);
+                       return ret;
+                   });
              })
       .then([this](ret_t ret) {
           if (_should_fsync == storage::log_append_config::fsync::yes) {

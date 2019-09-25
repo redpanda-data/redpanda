@@ -1,6 +1,7 @@
 #pragma once
 
 #include "raft/client_cache.h"
+#include "raft/probe.h"
 #include "seastarx.h"
 #include "storage/log.h"
 
@@ -104,8 +105,8 @@ private:
     /// \brief all raft operations must happen exclusively since the common case
     /// is for the operation to touch the disk
     semaphore _op_sem{1};
-
     std::vector<append_entries_proto_hook*> _hooks;
+    probe _probe;
 };
 
 } // namespace raft
