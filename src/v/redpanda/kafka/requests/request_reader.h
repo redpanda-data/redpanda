@@ -165,6 +165,14 @@ public:
         return do_read_bytes_view(len);
     }
 
+    std::optional<fragbuf> read_fragmented_nullable_bytes() {
+        auto len = read_int32();
+        if (len < 0) {
+            return std::nullopt;
+        }
+        return _in.read_shared(len);
+    }
+
     // clang-format off
     template<typename ElementParser,
              typename T = std::invoke_result_t<ElementParser, request_reader&>>
