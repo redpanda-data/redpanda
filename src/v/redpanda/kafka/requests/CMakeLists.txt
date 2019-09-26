@@ -14,4 +14,6 @@ target_link_libraries(requests
     Seastar::seastar
     bytes
     cluster
+    model
+    storage
   )
