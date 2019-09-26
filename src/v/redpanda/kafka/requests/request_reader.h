@@ -134,6 +134,13 @@ public:
         return {do_read_string_view(read_int16())};
     }
 
+    void skip_nullable_string() {
+        auto n = read_int16();
+        if (n > 0) {
+            _in.skip(n);
+        }
+    }
+
     bytes read_bytes() {
         return do_read_bytes(read_int32());
     }
