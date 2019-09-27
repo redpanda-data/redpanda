@@ -116,54 +116,28 @@ struct ntp {
 
 std::ostream& operator<<(std::ostream&, const ntp&);
 
-class offset {
-public:
-    using type = uint64_t;
-    offset() noexcept = default;
-
-    explicit offset(uint64_t val) noexcept
-      : _val(val) {
+struct offset : named_type<uint64_t, struct model_offset_type> {
+    offset() = default;
+    offset(const type&& t)
+      : named_type<uint64_t, struct model_offset_type>(t) {
     }
-
-    uint64_t value() const {
-        return _val;
-    }
-
-    offset operator+(int64_t val) const {
-        return offset(_val + val);
-    }
-
-    offset& operator+=(int64_t val) {
-        _val += val;
+    type value() const {
         return *this;
     }
 
-    bool operator<(const offset& other) const {
-        return _val < other._val;
+    /// \brief used by the kafka _signed_ integer api
+    offset operator+(int32_t val) const {
+        return _value + static_cast<type>(val);
     }
-
-    bool operator<=(const offset& other) const {
-        return _val <= other._val;
+    /// \brief used by the kafka _signed_ integer api
+    offset operator+(int64_t val) const {
+        return _value + static_cast<type>(val);
     }
-
-    bool operator>(const offset& other) const {
-        return other._val < _val;
+    /// \brief used by the kafka _signed_ integer api
+    offset& operator+=(int64_t val) {
+        _value += static_cast<type>(val);
+        return *this;
     }
-
-    bool operator>=(const offset& other) const {
-        return other._val <= _val;
-    }
-
-    bool operator==(const offset& other) const {
-        return _val == other._val;
-    }
-
-    bool operator!=(const offset& other) const {
-        return !(*this == other);
-    }
-
-private:
-    uint64_t _val = 0;
 };
 
 std::ostream& operator<<(std::ostream&, offset);
