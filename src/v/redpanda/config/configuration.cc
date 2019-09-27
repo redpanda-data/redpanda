@@ -15,6 +15,12 @@ configuration::configuration()
       "production use",
       required::no,
       false)
+  , log_segment_size(
+      *this,
+      "log_segment_size",
+      "How large in bytes should each log segment be (1<<31)",
+      required::no,
+      1 << 31)
   , rpc_server(
       *this,
       "rpc_server",
