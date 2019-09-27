@@ -37,6 +37,7 @@ client::client(
   , _creds(
       cfg.credentials ? (*cfg.credentials).build_certificate_credentials()
                     : nullptr) {
+    setup_metrics(service_name);
 }
 
 future<> client::do_connect() {
@@ -198,6 +199,10 @@ future<> client::dispatch(header h) {
     _correlations.erase(it);
     pr.set_value(std::move(ctx));
     return fut.then([this] { _probe.request_completed(); });
+}
+
+void client::setup_metrics(const std::optional<sstring>& service_name) {
+    _probe.setup_metrics(_metrics, service_name, cfg.server_addr);
 }
 
 client::~client() {
