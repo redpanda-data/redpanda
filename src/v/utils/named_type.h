@@ -1,6 +1,7 @@
 #pragma once
-
 #include <seastar/core/sstring.hh>
+
+#include <boost/type_index.hpp>
 
 #include <cstdint>
 #include <functional> // needed for std::hash
@@ -90,8 +91,10 @@ struct hash<named_type<T, Tag>> {
 };
 template<typename T, typename Tag>
 inline ostream& operator<<(ostream& o, const ::named_type<T, Tag>& t) {
-#define __cat_type(underlying, tag) " #underlying::#tag "
-    return o << "{" << __cat_type(T, Tag) << "=" << t() << "}";
+    using type = ::named_type<T, Tag>;
+    // caching the name has a big compile time impact
+    static const auto name = boost::typeindex::type_id<type>().pretty_name();
+    return o << "{" << name << "=" << t() << "}";
 };
 
 } // namespace std
