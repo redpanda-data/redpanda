@@ -1,6 +1,7 @@
+#include "cluster/controller.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_manager.h"
-#include "raft/group_shard_table.h"
+#include "cluster/shard_table.h"
 #include "raft/service.h"
 #include "redpanda/admin/api-doc/config.json.h"
 #include "redpanda/kafka/transport/probe.h"
@@ -122,20 +123,27 @@ int main(int argc, char** argv, char** env) {
             auto stop_client_cache = defer(
               [] { raft_client_cache.stop().get(); });
 
-            static sharded<raft::group_shard_table> group_shard_table;
-            group_shard_table.start().get();
-            auto stop_group_shard_table = defer(
-              [] { group_shard_table.stop().get(); });
+            static sharded<cluster::shard_table> shard_table;
+            shard_table.start().get();
+            auto stop_shard_table = defer([] { shard_table.stop().get(); });
 
             static sharded<cluster::partition_manager> partition_manager;
             partition_manager
               .start(
                 rp_config.local().node_id(),
-                std::ref(group_shard_table),
+                std::ref(shard_table),
                 std::ref(raft_client_cache))
               .get();
             auto stop_partition_manager = defer(
               [] { partition_manager.stop().get(); });
+
+            static cluster::controller r0(
+              rp_config.local().node_id(),
+              rp_config.local().data_directory(),
+              rp_config.local().log_segment_size(),
+              partition_manager,
+              shard_table);
+            auto stop_controller = defer([] { r0.stop().get(); });
 
             // rpc
             rpc::server_configuration rpc_cfg;
@@ -147,11 +155,13 @@ int main(int argc, char** argv, char** env) {
             auto stop_rpc = defer([] { rpc.stop().get(); });
             rpc
               .invoke_on_all([&](rpc::server& s) {
-                  s.register_service<raft::service<cluster::partition_manager>>(
+                  s.register_service<raft::service<
+                    cluster::partition_manager,
+                    cluster::shard_table>>(
                     sched_groups.raft_sg(),
                     smpgs.raft_smp_sg(),
                     partition_manager,
-                    group_shard_table);
+                    shard_table.local());
               })
               .get();
             rpc.invoke_on_all(&rpc::server::start).get();
