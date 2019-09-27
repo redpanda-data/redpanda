@@ -27,8 +27,6 @@ public:
 
     consensus(
       model::node_id,
-      protocol_metadata,
-      group_configuration,
       storage::log&,
       storage::log_append_config::fsync should_fsync,
       io_priority_class io_priority,
@@ -85,8 +83,6 @@ private:
 
     // args
     model::node_id _self;
-    protocol_metadata _meta;
-    group_configuration _conf;
     storage::log& _log;
     storage::log_append_config::fsync _should_fsync;
     io_priority_class _io_priority;
@@ -95,6 +91,9 @@ private:
 
     // read at `future<> start()`
     model::node_id _voted_for;
+    protocol_metadata _meta;
+    group_configuration _conf;
+
     clock_type::time_point _hbeat = clock_type::now();
     vote_state _vstate = vote_state::follower;
     /// \brief all raft operations must happen exclusively since the common case
