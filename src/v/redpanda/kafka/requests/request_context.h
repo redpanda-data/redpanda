@@ -1,6 +1,5 @@
 #pragma once
 
-#include "cluster/metadata_cache.h"
 #include "redpanda/kafka/requests/headers.h"
 #include "redpanda/kafka/requests/request_reader.h"
 #include "seastarx.h"
@@ -12,6 +11,10 @@
 #include <seastar/util/log.hh>
 
 #include <memory>
+
+namespace cluster {
+class metadata_cache;
+}
 
 namespace kafka::requests {
 
@@ -30,6 +33,9 @@ public:
       , _reader(_request.get_istream())
       , _throttle_delay(throttle_delay) {
     }
+
+    request_context(request_context&&) noexcept = default;
+    request_context& operator=(request_context&&) noexcept = default;
 
     const request_header& header() const {
         return _header;
@@ -61,6 +67,6 @@ class response;
 using response_ptr = foreign_ptr<std::unique_ptr<response>>;
 
 // Executes the API call identified by the specified request_context.
-future<response_ptr> process_request(request_context&, smp_service_group);
+future<response_ptr> process_request(request_context&&, smp_service_group);
 
 } // namespace kafka::requests

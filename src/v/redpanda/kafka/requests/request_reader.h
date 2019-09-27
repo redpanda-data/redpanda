@@ -134,6 +134,13 @@ public:
         return {do_read_string_view(read_int16())};
     }
 
+    void skip_nullable_string() {
+        auto n = read_int16();
+        if (n > 0) {
+            _in.skip(n);
+        }
+    }
+
     bytes read_bytes() {
         return do_read_bytes(read_int32());
     }
@@ -156,6 +163,14 @@ public:
             return std::nullopt;
         }
         return do_read_bytes_view(len);
+    }
+
+    std::optional<fragbuf> read_fragmented_nullable_bytes() {
+        auto len = read_int32();
+        if (len < 0) {
+            return std::nullopt;
+        }
+        return _in.read_shared(len);
     }
 
     // clang-format off
