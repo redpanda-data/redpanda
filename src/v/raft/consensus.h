@@ -68,6 +68,9 @@ public:
     const group_configuration& config() const {
         return _conf;
     }
+    const model::ntp& ntp() const {
+        return _log.ntp();
+    }
 
 private:
     // all these private functions assume that we are under exclusive operations
