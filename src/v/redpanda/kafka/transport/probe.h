@@ -24,9 +24,26 @@ public:
         ++_requests_blocked_memory;
     }
 
-    void serving_request(requests::request_context&) {
-        ++_requests_served;
+    void serving_request(const requests::request_context&) {
         ++_requests_serving;
+    }
+
+    void request_served() {
+        ++_requests_served;
+        --_requests_serving;
+    }
+
+    void request_processing_error() {
+        ++_request_processing_errors;
+        --_requests_serving;
+    }
+
+    void add_bytes_sent(size_t sent) {
+        _bytes_sent += sent;
+    }
+
+    void add_bytes_received(size_t recv) {
+        _bytes_received += recv;
     }
 
     void setup_metrics(metrics::metric_groups& mgs) {
@@ -61,10 +78,13 @@ public:
 
 private:
     uint64_t _requests_served = 0;
+    uint64_t _bytes_received = 0;
+    uint64_t _bytes_sent = 0;
     uint32_t _requests_serving = 0;
+    uint32_t _request_processing_errors = 0;
     uint32_t _requests_blocked_memory = 0;
-    uint64_t _connects = 0;
     uint32_t _connections = 0;
+    uint64_t _connects = 0;
 };
 
 } // namespace kafka::transport
