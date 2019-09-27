@@ -8,6 +8,14 @@
 #include <seastar/core/sharded.hh>
 
 namespace raft {
+struct append_entries_proto_hook {
+    using entries = std::vector<std::unique_ptr<entry>>;
+    virtual ~append_entries_proto_hook() = default;
+    virtual void pre_commit(model::offset begin, const entries&) = 0;
+    virtual void abort(model::offset begin) = 0;
+    virtual void commit(model::offset begin, model::offset committed) = 0;
+};
+
 /// consensus for one raft group
 class consensus {
 public:
@@ -41,6 +49,10 @@ public:
         return with_semaphore(_op_sem, 1, [this, r = std::move(r)]() mutable {
             return do_append_entries(std::move(r));
         });
+    }
+
+    void register_hook(append_entries_proto_hook* fn) {
+        _hooks.push_back(fn);
     }
 
     /// \brief currently dispatches it ASAP since each entry is already a
@@ -89,6 +101,8 @@ private:
     /// \brief all raft operations must happen exclusively since the common case
     /// is for the operation to touch the disk
     semaphore _op_sem{1};
+
+    std::vector<append_entries_proto_hook*> _hooks;
 };
 
 } // namespace raft

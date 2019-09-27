@@ -160,33 +160,41 @@ consensus::do_append_entries(append_entries_request r) {
         return make_ready_future<append_entries_reply>(std::move(reply));
     }
 
-    // FIXME(agallego) - perform side effects based on the raft::entry::type
     // call custom serializers/hooks
+    for (auto h : _hooks) {
+        h->pre_commit(model::offset(_meta.commit_index), r.entries);
+    }
 
     // move the vector and copy the header metadata
     return disk_append(std::move(r.entries))
-      .then(
-        [this, r = std::move(r)](std::vector<storage::log::append_result> ret) {
-            // always update metadata first! to allow next put to truncate log
-            const model::offset::type last_offset
-              = ret.back().last_offset.value();
-            _meta.commit_index = last_offset;
-            _meta.prev_log_term = r.meta.term;
-            if (r.meta.commit_index < last_offset) {
-                step_down();
-                throw std::runtime_error(fmt::format(
-                  "Log is now in an inconsistent state. Leader commit_index:{} "
-                  "vs. our commit_index:{}, for term:{}",
-                  r.meta.commit_index,
-                  _meta.commit_index,
-                  _meta.prev_log_term));
-            }
-            append_entries_reply reply;
-            reply.term = _meta.term;
-            reply.last_log_index = _meta.commit_index;
-            reply.success = true;
-            return make_ready_future<append_entries_reply>(std::move(reply));
-        });
+      .then([this,
+             r = std::move(r)](std::vector<storage::log::append_result> ret) {
+          // always update metadata first! to allow next put to truncate log
+          const model::offset last_offset = ret.back().last_offset;
+          const model::offset begin_offset = model::offset(_meta.commit_index);
+          _meta.commit_index = last_offset;
+          _meta.prev_log_term = r.meta.term;
+          if (r.meta.commit_index < last_offset) {
+              step_down();
+              for (auto h : _hooks) {
+                  h->abort(begin_offset);
+              }
+              throw std::runtime_error(fmt::format(
+                "Log is now in an inconsistent state. Leader commit_index:{} "
+                "vs. our commit_index:{}, for term:{}",
+                r.meta.commit_index,
+                _meta.commit_index,
+                _meta.prev_log_term));
+          }
+          append_entries_reply reply;
+          reply.term = _meta.term;
+          reply.last_log_index = _meta.commit_index;
+          reply.success = true;
+          for (auto h : _hooks) {
+              h->commit(begin_offset, last_offset);
+          }
+          return make_ready_future<append_entries_reply>(std::move(reply));
+      });
 }
 
 future<std::vector<storage::log::append_result>>
