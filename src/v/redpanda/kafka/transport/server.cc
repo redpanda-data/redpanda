@@ -1,11 +1,13 @@
 #include "redpanda/kafka/transport/server.h"
 
+#include "prometheus/prometheus_sanitize.h"
 #include "redpanda/kafka/requests/headers.h"
 #include "redpanda/kafka/requests/request_context.h"
 #include "redpanda/kafka/requests/response.h"
 #include "utils/utf8.h"
 
 #include <seastar/core/byteorder.hh>
+#include <seastar/core/metrics.hh>
 #include <seastar/core/scattered_message.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/net/api.hh>
@@ -31,6 +33,7 @@ kafka_server::kafka_server(
   , _creds(
       config.credentials ? (*config.credentials).build_server_credentials()
                          : nullptr) {
+    _probe.setup_metrics(_metrics);
 }
 
 future<> kafka_server::listen(socket_address server_addr, bool keepalive) {
