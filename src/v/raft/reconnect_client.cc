@@ -17,10 +17,6 @@ has_backoff_expired(rpc::clock_type::time_point stamp, int32_t backoff) {
     auto const secs = ch::duration_cast<ch::seconds>(now - stamp).count();
     return secs < backoff;
 }
-uint32_t static inline next_backoff(uint32_t current_backoff) {
-    return std::max<uint32_t>(300, std::max<uint32_t>(1, current_backoff) << 1);
-}
-
 future<> reconnect_client::stop() {
     _backoff_secs = std::numeric_limits<uint32_t>::max();
     return _dispatch_gate.close().then([this] { return _client.stop(); });
