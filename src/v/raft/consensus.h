@@ -3,7 +3,6 @@
 #include "raft/client_cache.h"
 #include "seastarx.h"
 #include "storage/log.h"
-#include "storage/log_manager.h"
 
 #include <seastar/core/sharded.hh>
 
