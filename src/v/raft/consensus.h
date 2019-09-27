@@ -11,7 +11,13 @@ namespace raft {
 /// consensus for one raft group
 class consensus {
 public:
+    struct voted_for_configuration {
+        model::node_id voted_for;
+        // for term it doesn't make sense to use numeric_limits<>::min
+        model::term_id term = 0;
+    };
     enum class vote_state { follower, candidate, leader };
+
     consensus(
       model::node_id,
       protocol_metadata,
@@ -62,8 +68,9 @@ private:
     future<append_entries_reply> do_append_entries(append_entries_request);
     future<std::vector<storage::log::append_result>>
       disk_append(std::vector<std::unique_ptr<entry>>);
-    future<> persist_voted_for(vote_request);
-    future<vote_request> read_last_voted_for();
+    sstring voted_for_filename() const {
+        return _log.base_directory() + "/voted_for";
+    }
 
     // args
     model::node_id _self;
