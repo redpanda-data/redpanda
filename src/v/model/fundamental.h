@@ -99,22 +99,22 @@ struct topic_partition {
 
 std::ostream& operator<<(std::ostream&, const topic_partition&);
 
-struct namespaced_topic_partition {
+struct ntp {
     model::ns ns;
     topic_partition tp;
 
-    bool operator==(const namespaced_topic_partition& other) const {
+    bool operator==(const ntp& other) const {
         return ns == other.ns && tp == other.tp;
     }
 
-    bool operator!=(const namespaced_topic_partition& other) const {
+    bool operator!=(const ntp& other) const {
         return !(*this == other);
     }
 
     sstring path() const;
 };
 
-std::ostream& operator<<(std::ostream&, const namespaced_topic_partition&);
+std::ostream& operator<<(std::ostream&, const ntp&);
 
 class offset {
 public:
@@ -173,8 +173,8 @@ std::ostream& operator<<(std::ostream&, offset);
 namespace std {
 
 template<>
-struct hash<model::namespaced_topic_partition> {
-    size_t operator()(const model::namespaced_topic_partition& ntp) const {
+struct hash<model::ntp> {
+    size_t operator()(const model::ntp& ntp) const {
         size_t h = 0;
         boost::hash_combine(h, hash<sstring>()(ntp.ns.name));
         boost::hash_combine(h, hash<sstring>()(ntp.tp.topic.name));

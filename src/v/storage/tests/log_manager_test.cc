@@ -40,7 +40,7 @@ SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
     log_manager m(make_config());
     auto stop_manager = defer([&m] { m.stop().get(); });
 
-    auto ntp = model::namespaced_topic_partition{
+    auto ntp = model::ntp{
       model::ns("ns1"),
       model::topic_partition{model::topic("tp1"), model::partition_id(11)}};
     directories::initialize("test_dir/" + ntp.path()).get();
@@ -49,13 +49,13 @@ SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
       = m.make_log_segment(ntp, model::offset(10), model::term_id(1)).get0();
     seg->close().get();
 
-    auto ntp2 = model::namespaced_topic_partition{
+    auto ntp2 = model::ntp{
       model::ns("ns1"),
       model::topic_partition{model::topic("tp1"), model::partition_id(1)}};
     directories::initialize("test_dir/" + ntp2.path()).get();
     // Empty dir
 
-    auto ntp3 = model::namespaced_topic_partition{
+    auto ntp3 = model::ntp{
       model::ns("ns1"),
       model::topic_partition{model::topic("tp2"), model::partition_id(33)}};
     directories::initialize("test_dir/" + ntp3.path()).get();
@@ -64,7 +64,7 @@ SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
     write_batches(seg3);
     seg3->close().get();
 
-    auto ntp4 = model::namespaced_topic_partition{
+    auto ntp4 = model::ntp{
       model::ns("ns2"),
       model::topic_partition{model::topic("tp1"), model::partition_id(50)}};
     directories::initialize("test_dir/" + ntp4.path()).get();
@@ -73,7 +73,10 @@ SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
     write_garbage(seg4);
     seg4->close().get();
 
-    m.load_logs().get();
+    m.manage(ntp).get();
+    m.manage(ntp2).get();
+    m.manage(ntp3).get();
+    m.manage(ntp4).get();
     BOOST_CHECK_EQUAL(4, m.logs().size());
     for (auto& [ntp, log] : m.logs()) {
         BOOST_CHECK_EQUAL(size_t(ntp == ntp3), log->segments().size());

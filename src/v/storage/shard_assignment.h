@@ -9,7 +9,7 @@
 
 namespace storage {
 
-inline shard_id shard_of(const model::namespaced_topic_partition& ntp) {
+inline shard_id shard_of(const model::ntp& ntp) {
     incremental_xxhash64 inc;
     inc.update(ntp.ns.name);
     inc.update(ntp.tp.topic.name);

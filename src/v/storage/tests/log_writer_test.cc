@@ -22,7 +22,7 @@ struct context {
     log_config config;
     log_manager manager = log_manager(config);
     storage::log log = storage::log(
-      model::namespaced_topic_partition{
+      model::ntp{
         model::ns("ns"),
         model::topic_partition{model::topic("topic"), model::partition_id(6)}},
       manager,
