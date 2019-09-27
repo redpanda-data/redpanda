@@ -60,7 +60,7 @@ public:
         return std::move(_fragments);
     }
 
-    fragbuf share(size_t pos, const size_t len) {
+    fragbuf share(size_t pos, const size_t len) const {
         std::vector<temporary_buffer<char>> fragments;
         fragments.reserve(len / default_fragment_size);
         size_t left = len;
@@ -92,7 +92,7 @@ public:
     }
 
 private:
-    vector_type _fragments;
+    mutable vector_type _fragments;
     size_t _size_bytes = 0;
 };
 
@@ -200,11 +200,12 @@ public:
     CONCEPT(static_assert(
               fragbuf_concepts::ExceptionThrower<default_exception_thrower>);)
 
-    istream(const vector_type& fragments, size_t total_size) noexcept
-      : _current(fragments.begin())
-      , _current_position(total_size ? _current->get() : nullptr)
-      , _current_end(total_size ? _current->get() + _current->size() : nullptr)
-      , _bytes_left(total_size) {
+    istream(const fragbuf* fb) noexcept
+      : _fb(fb)
+      , _current(fb->_fragments.begin())
+      , _current_position(fb->size_bytes() ? _current->get() : nullptr)
+      , _current_end(fb->size_bytes() ? _current->get() + _current->size() : nullptr)
+      , _bytes_left(fb->size_bytes()) {
     }
 
     size_t bytes_left() const noexcept {
@@ -288,12 +289,21 @@ public:
         }
     }
 
+    fragbuf read_shared(size_t size) {
+        auto bytes = std::min(size, bytes_left());
+        auto pos = _fb->size_bytes() - bytes_left();
+        auto shared = _fb->share(pos, bytes);
+        skip(bytes);
+        return shared;
+    }
+
     using const_iterator = iterator;
     // Non-consuming iterator, from this point forward.
     iterator begin() const noexcept;
     iterator end() const noexcept;
 
 private:
+    const fragbuf* _fb;
     vector_type::const_iterator _current;
     const char* _current_position;
     const char* _current_end;
@@ -301,7 +311,7 @@ private:
 };
 
 inline fragbuf::istream fragbuf::get_istream() const noexcept {
-    return istream(_fragments, _size_bytes);
+    return istream(this);
 }
 
 class fragbuf::reader {

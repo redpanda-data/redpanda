@@ -4,6 +4,7 @@ add_library (requests STATIC
   list_groups_request.cc
   find_coordinator_request.cc
   offset_fetch_request.cc
+  kafka_batch_adapter.cc
   produce_request.cc
   )
 target_include_directories(requests PUBLIC ${PROJECT_SOURCE_DIR}/src/v)
@@ -13,4 +14,6 @@ target_link_libraries(requests
     Seastar::seastar
     bytes
     cluster
+    model
+    storage
   )

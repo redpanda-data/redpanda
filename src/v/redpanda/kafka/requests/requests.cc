@@ -19,11 +19,12 @@ logger kreq_log("kafka api");
 CONCEPT(
 // A Kafka request.
 template<typename T>
-concept KafkaRequest = requires (T request, request_context& ctx, smp_service_group g) {
+concept KafkaRequest = requires (T request, request_context&& ctx, smp_service_group g) {
+    { T::name } -> const char*;
     { T::key } -> api_key;
     { T::min_supported } -> api_version;
     { T::max_supported } -> api_version;
-    { T::process(ctx, g) } -> future<response_ptr>;
+    { T::process(std::move(ctx), g) } -> future<response_ptr>;
 };
 )
 // clang-format on
@@ -43,26 +44,42 @@ using request_types = make_request_types<
   list_groups_request,
   api_versions_request>;
 
+template<typename Request>
+CONCEPT(requires(KafkaRequest<Request>))
+future<response_ptr> do_process(request_context&& ctx, smp_service_group g) {
+    if (
+      ctx.header().version < Request::min_supported
+      || ctx.header().version > Request::max_supported) {
+        return make_exception_future<response_ptr>(
+          std::runtime_error(fmt::format(
+            "Unsupported version {} for {} API",
+            ctx.header().version,
+            Request::name)));
+    }
+    return Request::process(std::move(ctx), std::move(g));
+}
+
 future<response_ptr>
-process_request(request_context& ctx, smp_service_group g) {
+process_request(request_context&& ctx, smp_service_group g) {
     // Eventually generate this with meta-classes.
     kreq_log.debug("Processing request for {}", ctx.header().key);
     switch (ctx.header().key) {
     case api_versions_request::key:
-        return api_versions_request::process(ctx, std::move(g));
+        return api_versions_request::process(std::move(ctx), std::move(g));
     case metadata_request::key:
-        return metadata_request::process(ctx, std::move(g));
+        return do_process<metadata_request>(std::move(ctx), std::move(g));
     case list_groups_request::key:
-        return list_groups_request::process(ctx, std::move(g));
+        return do_process<list_groups_request>(std::move(ctx), std::move(g));
     case find_coordinator_request::key:
-        return find_coordinator_request::process(ctx, std::move(g));
+        return do_process<find_coordinator_request>(
+          std::move(ctx), std::move(g));
     case offset_fetch_request::key:
-        return offset_fetch_request::process(ctx, std::move(g));
+        return do_process<offset_fetch_request>(std::move(ctx), std::move(g));
     case produce_request::key:
-        return produce_request::process(ctx, std::move(g));
+        return do_process<produce_request>(std::move(ctx), std::move(g));
     };
-    throw std::runtime_error(
-      fmt::format("Unsupported API {}", ctx.header().key));
+    return seastar::make_exception_future<response_ptr>(
+      std::runtime_error(fmt::format("Unsupported API {}", ctx.header().key)));
 }
 
 std::ostream& operator<<(std::ostream& os, const request_header& header) {
@@ -85,9 +102,8 @@ struct api_support {
 
 template<typename RequestType>
 static auto make_api_support() {
-    return api_support{RequestType::key,
-                       RequestType::min_supported,
-                       RequestType::max_supported};
+    return api_support{
+      RequestType::key, RequestType::min_supported, RequestType::max_supported};
 }
 
 template<typename... RequestTypes>
@@ -103,7 +119,7 @@ serialize_apis(response_writer& writer, type_list<RequestTypes...>) {
 }
 
 future<response_ptr>
-api_versions_request::process(request_context& ctx, smp_service_group) {
+api_versions_request::process(request_context&& ctx, smp_service_group) {
     auto resp = std::make_unique<response>();
     // Unlike other request types, we handle ApiVersion requests
     // with higher versions than supported. We treat such a request
