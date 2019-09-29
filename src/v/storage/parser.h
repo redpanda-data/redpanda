@@ -109,8 +109,8 @@ public:
       , _input(&input) {
     }
 
-    future<> consume() {
-        return _input->consume(*this);
+    future<size_t> consume() {
+        return _input->consume(*this).then([this] { return _bytes_consumed; });
     }
 
     // Called by input_stream::consume().
@@ -205,6 +205,7 @@ private:
     int32_t _timestamp_delta;
     int32_t _offset_delta;
     size_t _value_and_headers_size;
+    size_t _bytes_consumed;
 };
 
 using continuous_batch_parser_opt = optimized_optional<continuous_batch_parser>;
