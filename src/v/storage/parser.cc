@@ -15,6 +15,7 @@ future<consumption_result<char>> continuous_batch_parser::
 operator()(temporary_buffer<char> data) {
     auto orig_data_size = data.size();
     auto result = process(data);
+    _bytes_consumed = orig_data_size - data.size();
     return seastar::visit(
       result,
       [this, orig_data_size, &data](stop_iteration stop) {
