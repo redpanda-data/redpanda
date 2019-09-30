@@ -42,7 +42,7 @@ future<> consensus::start() {
           });
     });
 }
-future<vote_reply> consensus::do_vote(vote_request r) {
+future<vote_reply> consensus::do_vote(vote_request&& r) {
     vote_reply reply;
     reply.term = _meta.term;
 
@@ -85,7 +85,7 @@ future<vote_reply> consensus::do_vote(vote_request r) {
 }
 
 future<append_entries_reply>
-consensus::do_append_entries(append_entries_request r) {
+consensus::do_append_entries(append_entries_request&& r) {
     append_entries_reply reply;
     reply.term = _meta.term;
     reply.last_log_index = _meta.commit_index;

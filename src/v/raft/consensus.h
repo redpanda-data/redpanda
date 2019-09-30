@@ -37,12 +37,12 @@ public:
     /// allow for internal state recovery
     future<> start();
 
-    future<vote_reply> vote(vote_request r) {
+    future<vote_reply> vote(vote_request&& r) {
         return with_semaphore(_op_sem, 1, [this, r = std::move(r)]() mutable {
             return do_vote(std::move(r));
         });
     }
-    future<append_entries_reply> append_entries(append_entries_request r) {
+    future<append_entries_reply> append_entries(append_entries_request&& r) {
         return with_semaphore(_op_sem, 1, [this, r = std::move(r)]() mutable {
             return do_append_entries(std::move(r));
         });
@@ -76,8 +76,9 @@ private:
     // all these private functions assume that we are under exclusive operations
     // via the _op_sem
     void step_down();
-    future<vote_reply> do_vote(vote_request);
-    future<append_entries_reply> do_append_entries(append_entries_request);
+    future<vote_reply> do_vote(vote_request&&);
+    future<append_entries_reply> do_append_entries(append_entries_request&&);
+
     future<std::vector<storage::log::append_result>>
       disk_append(std::vector<std::unique_ptr<entry>>);
     sstring voted_for_filename() const {
