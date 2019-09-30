@@ -62,10 +62,10 @@ public:
         return _value > other._value;
     }
     constexpr bool operator<=(const named_type& other) const {
-        return _value < other._value;
+        return _value <= other._value;
     }
     constexpr bool operator>=(const named_type& other) const {
-        return _value > other._value;
+        return _value >= other._value;
     }
     // explicit getter
     constexpr type operator()() const {
