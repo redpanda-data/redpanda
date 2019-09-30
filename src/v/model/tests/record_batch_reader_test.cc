@@ -35,6 +35,7 @@ record_batch_header make_header(offset o) {
     return record_batch_header{1,
                                o,
                                1,
+                               1,
                                record_batch_attributes(),
                                0,
                                model::timestamp(),
