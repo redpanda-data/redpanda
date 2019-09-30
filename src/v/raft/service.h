@@ -47,14 +47,14 @@ public:
     }
 
     [[gnu::always_inline]] future<vote_reply>
-    vote(vote_request&& r, rpc::streaming_context& ctx) {
+    vote(vote_request&& r, rpc::streaming_context& ctx) final {
         return _probe.vote().then([this, r = std::move(r), &ctx]() mutable {
             return do_vote(std::move(r), ctx);
         });
     }
 
-    [[gnu::always_inline]] future<append_entries_reply>
-    append_entries(append_entries_request&& r, rpc::streaming_context& ctx) {
+    [[gnu::always_inline]] future<append_entries_reply> append_entries(
+      append_entries_request&& r, rpc::streaming_context& ctx) final {
         return _probe.append_entries().then(
           [this, r = std::move(r), &ctx]() mutable {
               return do_append_entries(std::move(r), ctx);
