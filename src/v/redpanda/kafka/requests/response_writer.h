@@ -133,6 +133,17 @@ public:
       return size;
     }
 
+    // write bytes_ostream directly to output without a length prefix
+    uint32_t write_direct(bytes_ostream&& buf) {
+        // TODO: this should probably be an bytes_ostream interface
+        auto size = buf.size_bytes();
+        auto bufs = std::move(buf).release();
+        for (auto& b : bufs) {
+            _out->write(std::move(b).release());
+        }
+        return size;
+    }
+
     // clang-format off
     template<typename T, typename ElementWriter>
     CONCEPT(requires requires (ElementWriter writer,
