@@ -141,10 +141,18 @@ private:
     std::bitset<16> _attributes;
 };
 
+using record_batch_type = named_type<int8_t, struct model_record_batch_type>;
+
+static constexpr std::array<record_batch_type, 3> well_known_record_batch_types{
+  record_batch_type()(), // unknown - used for debugging
+  1,                     // raft::data
+  2                      // raft::configuration
+};
 struct record_batch_header {
     // Size of the batch minus this field.
     uint32_t size_bytes;
     offset base_offset;
+    record_batch_type type;
     int32_t crc;
     record_batch_attributes attrs;
     int32_t last_offset_delta;
@@ -286,7 +294,9 @@ public:
     offset base_offset() const {
         return _header.base_offset;
     }
-
+    record_batch_type type() const {
+        return _header.type;
+    }
     int32_t crc() const {
         return _header.crc;
     }
