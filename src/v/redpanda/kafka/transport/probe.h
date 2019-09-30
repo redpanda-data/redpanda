@@ -73,6 +73,18 @@ public:
               "requests_serving",
               [this] { return _requests_serving; },
               sm::description("Requests that are being served now")),
+            sm::make_derive(
+              "bytes_received",
+              [this] { return _bytes_received; },
+              sm::description("Bytes received by Kafka API server")),
+            sm::make_derive(
+              "bytes_sent",
+              [this] { return _bytes_sent; },
+              sm::description("Bytes sent by Kafka API server")),
+            sm::make_derive(
+              "request_processing_errors",
+              [this] { return _request_processing_errors; },
+              sm::description("Total number of requests processing errors")),
           });
     }
 
