@@ -2,6 +2,7 @@
 
 #include "bytes/bytes.h"
 #include "bytes/bytes_ostream.h"
+#include "model/fundamental.h"
 #include "redpanda/kafka/errors/errors.h"
 #include "seastarx.h"
 #include "utils/concepts-enabled.h"
@@ -116,6 +117,10 @@ public:
             return serialize_int<int32_t>(-1);
         }
         return write(bytes_view(*bv));
+    }
+
+    uint32_t write(const model::topic& topic) {
+        return write(topic.name);
     }
 
     // write bytes directly to output without a length prefix
