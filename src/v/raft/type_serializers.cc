@@ -87,37 +87,37 @@ struct rpc_model_reader_consumer {
     bytes_ostream& ref;
 };
 template<>
-void serialize(bytes_ostream& out, std::unique_ptr<raft::entry>&& r) {
-    rpc::serialize(out, r->entry_type());
-    (void)r->reader()
+void serialize(bytes_ostream& out, raft::entry&& r) {
+    rpc::serialize(out, r.entry_type());
+    (void)r.reader()
       .consume(rpc_model_reader_consumer(out), model::no_timeout)
       .get();
 }
 
 template<>
-future<std::unique_ptr<raft::entry>> deserialize(source& in) {
+future<raft::entry> deserialize(source& in) {
     struct e_header {
-        raft::entry::type etype;
+        model::record_batch_type etype;
         model::record_batch_header bhdr;
         uint32_t batch_size;
         int8_t is_compressed;
     };
     return rpc::deserialize<e_header>(in).then([&in](e_header hdr) {
         if (hdr.is_compressed == 1) {
-            return rpc::deserialize<fragbuf>(in).then([hdr = std::move(hdr)](
-                                                        fragbuf f) {
-                auto batch = model::record_batch(
-                  std::move(hdr.bhdr),
-                  model::record_batch::compressed_records(
-                    hdr.batch_size, std::move(f)));
-                std::vector<model::record_batch> batches;
-                batches.reserve(1);
-                batches.push_back(std::move(batch));
-                auto rdr = model::make_memory_record_batch_reader(
-                  std::move(batches));
+            return rpc::deserialize<fragbuf>(in).then(
+              [hdr = std::move(hdr)](fragbuf f) {
+                  auto batch = model::record_batch(
+                    std::move(hdr.bhdr),
+                    model::record_batch::compressed_records(
+                      hdr.batch_size, std::move(f)));
+                  std::vector<model::record_batch> batches;
+                  batches.reserve(1);
+                  batches.push_back(std::move(batch));
+                  auto rdr = model::make_memory_record_batch_reader(
+                    std::move(batches));
 
-                return std::make_unique<raft::entry>(hdr.etype, std::move(rdr));
-            });
+                  return raft::entry(hdr.etype, std::move(rdr));
+              });
         }
         // not compressed
         return do_with(
@@ -135,7 +135,7 @@ future<std::unique_ptr<raft::entry>> deserialize(source& in) {
               batches.push_back(std::move(batch));
               auto rdr = model::make_memory_record_batch_reader(
                 std::move(batches));
-              return std::make_unique<raft::entry>(hdr.etype, std::move(rdr));
+              return raft::entry(hdr.etype, std::move(rdr));
           });
     });
 }

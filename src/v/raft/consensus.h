@@ -8,7 +8,7 @@
 
 namespace raft {
 struct append_entries_proto_hook {
-    using entries = std::vector<std::unique_ptr<entry>>;
+    using entries = std::vector<entry>;
     virtual ~append_entries_proto_hook() = default;
     virtual void pre_commit(model::offset begin, const entries&) = 0;
     virtual void abort(model::offset begin) = 0;
@@ -80,7 +80,8 @@ private:
     future<append_entries_reply> do_append_entries(append_entries_request&&);
 
     future<std::vector<storage::log::append_result>>
-      disk_append(std::vector<std::unique_ptr<entry>>);
+    disk_append(std::vector<entry>&&);
+
     sstring voted_for_filename() const {
         return _log.base_directory() + "/voted_for";
     }

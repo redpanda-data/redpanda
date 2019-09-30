@@ -194,22 +194,21 @@ consensus::do_append_entries(append_entries_request&& r) {
 }
 
 future<std::vector<storage::log::append_result>>
-consensus::disk_append(std::vector<std::unique_ptr<entry>> entries) {
+consensus::disk_append(std::vector<entry>&& entries) {
     using ret_t = std::vector<storage::log::append_result>;
     return do_with(
              std::move(entries),
-             [this](std::vector<std::unique_ptr<entry>>& in) {
+             [this](std::vector<entry>& in) {
                  // needs a ref to the range
-                 return copy_range<ret_t>(
-                   in, [this](std::unique_ptr<entry>& ptr) {
-                       return _log.append(
-                         std::move(ptr->reader()),
-                         storage::log_append_config{
-                           // explicit here
-                           storage::log_append_config::fsync::no,
-                           _io_priority,
-                           model::timeout_clock::now() + _disk_timeout});
-                   });
+                 return copy_range<ret_t>(in, [this](entry& e) {
+                     return _log.append(
+                       std::move(e.reader()),
+                       storage::log_append_config{
+                         // explicit here
+                         storage::log_append_config::fsync::no,
+                         _io_priority,
+                         model::timeout_clock::now() + _disk_timeout});
+                 });
              })
       .then([this](ret_t ret) {
           if (_should_fsync == storage::log_append_config::fsync::yes) {
