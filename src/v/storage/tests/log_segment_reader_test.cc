@@ -16,6 +16,7 @@ using namespace storage;
 struct context {
     log_segment_ptr log_seg;
     offset_tracker tracker;
+    probe prb;
 
     void write(std::vector<model::record_batch>& batches) {
         auto fd
@@ -37,7 +38,7 @@ struct context {
         auto cfg = log_reader_config{
           start, max_bytes, 0, default_priority_class()};
         return model::make_record_batch_reader<log_segment_reader>(
-          log_seg, tracker, std::move(cfg));
+          log_seg, tracker, std::move(cfg), prb);
     }
 
     ~context() {

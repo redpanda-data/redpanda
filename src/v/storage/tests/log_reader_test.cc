@@ -16,7 +16,7 @@ using namespace storage;
 struct context {
     log_set logs = log_set({});
     offset_tracker tracker;
-
+    probe prb;
     void write(std::vector<model::record_batch>& batches) {
         unsigned id = 0;
         for (auto& batch : batches) {
@@ -43,7 +43,7 @@ struct context {
         auto cfg = log_reader_config{
           start, max_bytes, 0, default_priority_class()};
         return model::make_record_batch_reader<log_reader>(
-          logs, tracker, std::move(cfg));
+          logs, tracker, std::move(cfg), prb);
     }
 
     ~context() {
