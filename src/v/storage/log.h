@@ -63,7 +63,7 @@ public:
 
     sstring base_directory() const;
 
-    probe& probe() {
+    probe& get_probe() {
         return _probe;
     }
 

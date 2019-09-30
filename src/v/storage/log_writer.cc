@@ -85,15 +85,17 @@ future<stop_iteration> default_log_writer::
 operator()(model::record_batch&& batch) {
     return do_with(std::move(batch), [this](model::record_batch& batch) {
         auto offset_before = _log.appender().offset();
-        return write(_log.appender(), batch).then([this, &batch, offset_before] {
-            _last_offset = batch.last_offset();
-            return _log.maybe_roll(_last_offset).then([this, offset_before] {
-                _log.probe().add_bytes_written(_log.appender().offset() - offset_before);
-                return stop_iteration::no;
-            });
+        return write(_log.appender(), batch)
+          .then([this, &batch, offset_before] {
+              _last_offset = batch.last_offset();
+              return _log.maybe_roll(_last_offset).then([this, offset_before] {
+                  _log.get_probe().add_bytes_written(
+                    _log.appender().offset() - offset_before);
+                  return stop_iteration::no;
+              });
           })
           .handle_exception([this](std::exception_ptr e) {
-              _log.probe().batch_write_error(e);
+              _log.get_probe().batch_write_error(e);
               return make_exception_future<stop_iteration>(e);
           });
     });
