@@ -34,7 +34,7 @@ public:
         model::offset last_offset;
     };
 
-    log(model::namespaced_topic_partition, log_manager&, log_set) noexcept;
+    log(model::ntp, log_manager&, log_set) noexcept;
 
     future<> close();
 
@@ -62,6 +62,9 @@ public:
     }
 
     sstring base_directory() const;
+    const model::ntp& ntp() const {
+        return _ntp;
+    }
 
     probe& get_probe() {
         return _probe;
@@ -77,7 +80,7 @@ private:
 
 private:
     model::term_id _term;
-    model::namespaced_topic_partition _ntp;
+    model::ntp _ntp;
     log_manager& _manager;
     log_set _segs;
     log_segment_ptr _active_segment;

@@ -99,71 +99,45 @@ struct topic_partition {
 
 std::ostream& operator<<(std::ostream&, const topic_partition&);
 
-struct namespaced_topic_partition {
+struct ntp {
     model::ns ns;
     topic_partition tp;
 
-    bool operator==(const namespaced_topic_partition& other) const {
+    bool operator==(const ntp& other) const {
         return ns == other.ns && tp == other.tp;
     }
 
-    bool operator!=(const namespaced_topic_partition& other) const {
+    bool operator!=(const ntp& other) const {
         return !(*this == other);
     }
 
     sstring path() const;
 };
 
-std::ostream& operator<<(std::ostream&, const namespaced_topic_partition&);
+std::ostream& operator<<(std::ostream&, const ntp&);
 
-class offset {
-public:
-    using type = uint64_t;
-    offset() noexcept = default;
-
-    explicit offset(uint64_t val) noexcept
-      : _val(val) {
+struct offset : named_type<uint64_t, struct model_offset_type> {
+    offset() = default;
+    offset(const type&& t)
+      : named_type<uint64_t, struct model_offset_type>(t) {
     }
-
-    uint64_t value() const {
-        return _val;
-    }
-
-    offset operator+(int64_t val) const {
-        return offset(_val + val);
-    }
-
-    offset& operator+=(int64_t val) {
-        _val += val;
+    type value() const {
         return *this;
     }
 
-    bool operator<(const offset& other) const {
-        return _val < other._val;
+    /// \brief used by the kafka _signed_ integer api
+    offset operator+(int32_t val) const {
+        return _value + static_cast<type>(val);
     }
-
-    bool operator<=(const offset& other) const {
-        return _val <= other._val;
+    /// \brief used by the kafka _signed_ integer api
+    offset operator+(int64_t val) const {
+        return _value + static_cast<type>(val);
     }
-
-    bool operator>(const offset& other) const {
-        return other._val < _val;
+    /// \brief used by the kafka _signed_ integer api
+    offset& operator+=(int64_t val) {
+        _value += static_cast<type>(val);
+        return *this;
     }
-
-    bool operator>=(const offset& other) const {
-        return other._val <= _val;
-    }
-
-    bool operator==(const offset& other) const {
-        return _val == other._val;
-    }
-
-    bool operator!=(const offset& other) const {
-        return !(*this == other);
-    }
-
-private:
-    uint64_t _val = 0;
 };
 
 std::ostream& operator<<(std::ostream&, offset);
@@ -173,8 +147,8 @@ std::ostream& operator<<(std::ostream&, offset);
 namespace std {
 
 template<>
-struct hash<model::namespaced_topic_partition> {
-    size_t operator()(const model::namespaced_topic_partition& ntp) const {
+struct hash<model::ntp> {
+    size_t operator()(const model::ntp& ntp) const {
         size_t h = 0;
         boost::hash_combine(h, hash<sstring>()(ntp.ns.name));
         boost::hash_combine(h, hash<sstring>()(ntp.tp.topic.name));

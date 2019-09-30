@@ -55,7 +55,7 @@ write_replies(std::vector<topic_result> topic_results, int32_t throttle) {
 
 future<partition_result> do_process(
   remote<request_context>& ctx,
-  std::unique_ptr<model::namespaced_topic_partition> ntp,
+  std::unique_ptr<model::ntp> ntp,
   fragbuf batch) {
     auto reader = reader_from_kafka_batch(std::move(batch));
     // TODO: Call into consensus
@@ -67,7 +67,7 @@ future<partition_result> do_process(
 using execution_stage_type = inheriting_concrete_execution_stage<
   future<partition_result>,
   remote<request_context>&,
-  std::unique_ptr<model::namespaced_topic_partition>,
+  std::unique_ptr<model::ntp>,
   fragbuf>;
 
 static thread_local execution_stage_type produce_stage{"produce", &do_process};
@@ -84,9 +84,9 @@ produce_request::process(request_context&& ctx, smp_service_group g) {
               auto topic = rr.read_string_view();
               auto partition_results = rr.read_array(
                 [&](request_reader& rr) mutable {
-                    // FIXME: Introduce namespaced_topic_partition_view,
+                    // FIXME: Introduce ntp_view,
                     // which should be noexcept moveable
-                    auto ntp = model::namespaced_topic_partition{
+                    auto ntp = model::ntp{
                       default_namespace(),
                       model::topic_partition{
                         model::topic(sstring(topic.data(), topic.size())),
@@ -106,7 +106,7 @@ produce_request::process(request_context&& ctx, smp_service_group g) {
                        batch = std::move(*batch)]() mutable {
                           return produce_stage(
                             seastar::ref(remote_ctx),
-                            std::make_unique<model::namespaced_topic_partition>(
+                            std::make_unique<model::ntp>(
                               std::move(ntp)),
                             std::move(batch));
                       });

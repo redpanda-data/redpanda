@@ -9,7 +9,7 @@
 namespace storage {
 
 log::log(
-  model::namespaced_topic_partition ntp,
+  model::ntp ntp,
   log_manager& manager,
   log_set segs) noexcept
   : _ntp(std::move(ntp))

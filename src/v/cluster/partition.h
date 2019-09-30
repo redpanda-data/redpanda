@@ -5,45 +5,39 @@
 namespace cluster {
 class partition {
 public:
-    partition(
-      model::node_id,
-      model::namespaced_topic_partition ntpidx,
-      raft::group_id,
-      sharded<raft::client_cache>& cli)
-      : _ntp(std::move(ntpidx))
-      , _clients(cli) {
+    partition(raft::consensus&& r)
+      : _raft(std::move(r)) {
     }
     raft::group_id group() const {
-        return raft::group_id(_raft->meta().group);
+        return raft::group_id(_raft.meta().group);
+    }
+    future<> start() {
+        return _raft.start();
     }
     future<> replicate(std::unique_ptr<raft::entry> e) {
-        return _raft->replicate(std::move(e));
+        return _raft.replicate(std::move(e));
     }
-    // entry point
-    future<> recover(storage::log_config cfg) {
-        return make_ready_future<>();
+    const model::ntp& ntp() const {
+        return _raft.ntp();
     }
-    raft::consensus& raft_group() {
-        return *_raft;
-    }
-    const model::namespaced_topic_partition& ntp() const {
-        return _ntp;
+
+    /// \brief needs to be exposed for raft/service.h
+    raft::consensus& raft() {
+        return _raft;
     }
 
 private:
-    model::namespaced_topic_partition _ntp;
-    sharded<raft::client_cache>& _clients;
-    std::unique_ptr<raft::consensus> _raft;
+    raft::consensus _raft;
 };
 } // namespace cluster
 namespace std {
 template<>
 struct hash<cluster::partition> {
     size_t operator()(const cluster::partition& x) const {
-        return std::hash<model::namespaced_topic_partition>()(x.ntp());
+        return std::hash<model::ntp>()(x.ntp());
     }
 };
-ostream& operator<<(ostream& o, const cluster::partition& x) {
+inline ostream& operator<<(ostream& o, const cluster::partition& x) {
     return o << "{cluster::partition{" << x.ntp() << "}}";
 }
 } // namespace std
