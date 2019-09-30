@@ -56,10 +56,8 @@ std::ostream& operator<<(std::ostream& os, const topic_partition& tp) {
       os, "{{topic_partition: {}:{}}}", tp.topic.name, tp.partition);
 }
 
-std::ostream&
-operator<<(std::ostream& os, const namespaced_topic_partition& ntp) {
-    return fmt_print(
-      os, "{{namespaced_topic_partition: {}:{}}}", ntp.ns, ntp.tp);
+std::ostream& operator<<(std::ostream& os, const ntp& n) {
+    return fmt_print(os, "{{ntp: {}:{}}}", n.ns, n.tp);
 }
 
 std::ostream& operator<<(std::ostream& os, offset o) {
@@ -129,7 +127,7 @@ std::ostream& operator<<(std::ostream& os, const record_batch& batch) {
     return os;
 }
 
-sstring namespaced_topic_partition::path() const {
+sstring ntp::path() const {
     return fmt::format("{}/{}/{}", ns.name, tp.topic.name, tp.partition());
 }
 

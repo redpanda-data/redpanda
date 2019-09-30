@@ -1,50 +1,20 @@
 #include "raft/consensus.h"
 
+#include "raft/consensus_utils.h"
 #include "raft/logger.h"
 #include "seastarx.h"
 
 #include <seastar/core/fstream.hh>
 
 namespace raft {
-static inline future<temporary_buffer<char>> readfile(sstring name) {
-    return open_file_dma(std::move(name), open_flags::ro | open_flags::create)
-      .then([](file f) {
-          return f
-            .size() // file is like a shared_ptr
-            .then([f](uint64_t size) mutable {
-                return f.dma_read_bulk<char>(0, size);
-            })
-            .then([f](temporary_buffer<char> b) mutable {
-                return f.close().then(
-                  [f, b = std::move(b)]() mutable { return std::move(b); });
-            });
-      });
-}
-static inline future<> writefile(sstring name, temporary_buffer<char> buf) {
-    return open_file_dma(
-             std::move(name),
-             open_flags::wo | open_flags::create | open_flags::truncate)
-      .then([b = std::move(buf)](file f) mutable {
-          auto out = make_lw_shared<output_stream<char>>(
-            make_file_output_stream(std::move(f)));
-          return out->write(std::move(b))
-            .then([out] { return out->close(); })
-            .finally([out] {});
-      });
-}
-
 consensus::consensus(
   model::node_id nid,
-  protocol_metadata m,
-  group_configuration gcfg,
   storage::log& l,
   storage::log_append_config::fsync should_fsync,
   io_priority_class io_priority,
   model::timeout_clock::duration disk_timeout,
   sharded<client_cache>& clis)
   : _self(std::move(nid))
-  , _meta(std::move(m))
-  , _conf(std::move(gcfg))
   , _log(l)
   , _should_fsync(should_fsync)
   , _io_priority(io_priority)
@@ -55,32 +25,21 @@ void consensus::step_down() {
     _voted_for = {};
     _vstate = vote_state::follower;
 }
-future<> consensus::persist_voted_for(vote_request r) {
-    temporary_buffer<char> buf(sizeof(r));
-    std::copy_n(reinterpret_cast<const char*>(&r), sizeof(r), buf.get_write());
-    return writefile(
-      _log.base_directory() + "/leader.v1.metadata", std::move(buf));
-}
-future<vote_request> consensus::read_last_voted_for() {
-    return readfile(_log.base_directory() + "/leader.v1.metadata")
-      .then([](temporary_buffer<char> buf) {
-          vote_request v;
-          std::memset(reinterpret_cast<void*>(&v), 0, sizeof(v));
-          const size_t max = std::min(sizeof(v), buf.size()); // could be empty
-          std::copy_n(buf.get(), max, reinterpret_cast<char*>(&v));
-          return v;
-      });
-}
 future<> consensus::start() {
     return with_semaphore(_op_sem, 1, [this] {
-        return read_last_voted_for().then([this](vote_request r) {
-            raftlog().debug(
-              "recovered last leader: {} for term: {}",
-              model::node_id(r.node_id),
-              model::term_id(r.term));
-            _voted_for = model::node_id(r.node_id);
-            _meta.term = r.term;
-        });
+        // TODO(agallego) - recover _conf & _meta
+        return details::read_voted_for(voted_for_filename())
+          .then([this](voted_for_configuration r) {
+              raftlog().debug(
+                "recovered last leader: {} for term: {}", r.voted_for, r.term);
+              if (_voted_for != r.voted_for) {
+                  // FIXME - look at etcd
+              }
+              _voted_for = r.voted_for;
+              // bug! because we may increase the term while we have this leader
+              // so
+              _meta.term = r.term;
+          });
     });
 }
 future<vote_reply> consensus::do_vote(vote_request r) {
@@ -114,9 +73,11 @@ future<vote_reply> consensus::do_vote(vote_request r) {
         _meta.term = r.term;
         _voted_for = model::node_id(r.node_id);
         reply.granted = true;
-        return persist_voted_for(std::move(r)).then([reply = std::move(reply)] {
-            return make_ready_future<vote_reply>(std::move(reply));
-        });
+        return details::persist_voted_for(
+                 voted_for_filename(), {_voted_for, model::term_id(_meta.term)})
+          .then([reply = std::move(reply)] {
+              return make_ready_future<vote_reply>(std::move(reply));
+          });
     }
     // vote for the same term, same server_id
     reply.granted = (r.node_id == _voted_for);
@@ -195,33 +156,41 @@ consensus::do_append_entries(append_entries_request r) {
         return make_ready_future<append_entries_reply>(std::move(reply));
     }
 
-    // FIXME(agallego) - perform side effects based on the raft::entry::type
     // call custom serializers/hooks
+    for (auto h : _hooks) {
+        h->pre_commit(model::offset(_meta.commit_index), r.entries);
+    }
 
     // move the vector and copy the header metadata
     return disk_append(std::move(r.entries))
-      .then(
-        [this, r = std::move(r)](std::vector<storage::log::append_result> ret) {
-            // always update metadata first! to allow next put to truncate log
-            const model::offset::type last_offset
-              = ret.back().last_offset.value();
-            _meta.commit_index = last_offset;
-            _meta.prev_log_term = r.meta.term;
-            if (r.meta.commit_index < last_offset) {
-                step_down();
-                throw std::runtime_error(fmt::format(
-                  "Log is now in an inconsistent state. Leader commit_index:{} "
-                  "vs. our commit_index:{}, for term:{}",
-                  r.meta.commit_index,
-                  _meta.commit_index,
-                  _meta.prev_log_term));
-            }
-            append_entries_reply reply;
-            reply.term = _meta.term;
-            reply.last_log_index = _meta.commit_index;
-            reply.success = true;
-            return make_ready_future<append_entries_reply>(std::move(reply));
-        });
+      .then([this,
+             r = std::move(r)](std::vector<storage::log::append_result> ret) {
+          // always update metadata first! to allow next put to truncate log
+          const model::offset last_offset = ret.back().last_offset;
+          const model::offset begin_offset = model::offset(_meta.commit_index);
+          _meta.commit_index = last_offset;
+          _meta.prev_log_term = r.meta.term;
+          if (r.meta.commit_index < last_offset) {
+              step_down();
+              for (auto h : _hooks) {
+                  h->abort(begin_offset);
+              }
+              throw std::runtime_error(fmt::format(
+                "Log is now in an inconsistent state. Leader commit_index:{} "
+                "vs. our commit_index:{}, for term:{}",
+                r.meta.commit_index,
+                _meta.commit_index,
+                _meta.prev_log_term));
+          }
+          append_entries_reply reply;
+          reply.term = _meta.term;
+          reply.last_log_index = _meta.commit_index;
+          reply.success = true;
+          for (auto h : _hooks) {
+              h->commit(begin_offset, last_offset);
+          }
+          return make_ready_future<append_entries_reply>(std::move(reply));
+      });
 }
 
 future<std::vector<storage::log::append_result>>

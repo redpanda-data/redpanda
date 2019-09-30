@@ -2,7 +2,6 @@
 
 #include "storage/log_replayer.h"
 #include "storage/logger.h"
-#include "storage/shard_assignment.h"
 #include "utils/directory_walker.h"
 #include "utils/file_sanitizer.h"
 
@@ -29,24 +28,23 @@ future<> log_manager::stop() {
     });
 }
 
-static std::filesystem::path make_filename(
+static sstring make_filename(
   const sstring& base,
-  const model::namespaced_topic_partition& ntp,
-  model::offset base_offset,
-  model::term_id term,
-  record_version_type version) {
+  const model::ntp& ntp,
+  const model::offset& base_offset,
+  const model::term_id& term,
+  const record_version_type& version) {
     return format(
-             "{}/{}/{}-{}-{}.log",
-             base,
-             ntp.path(),
-             base_offset.value(),
-             term(),
-             to_string(version))
-      .c_str();
+      "{}/{}/{}-{}-{}.log",
+      base,
+      ntp.path(),
+      base_offset.value(),
+      term(),
+      to_string(version));
 }
 
 future<log_segment_ptr> log_manager::make_log_segment(
-  const model::namespaced_topic_partition& ntp,
+  const model::ntp& ntp,
   model::offset base_offset,
   model::term_id term,
   record_version_type version,
@@ -56,84 +54,28 @@ future<log_segment_ptr> log_manager::make_log_segment(
     opts.extent_allocation_size_hint = 32 << 20;
     opts.sloppy_size = true;
     auto filename = make_filename(
-      _config.base_dir, ntp, base_offset, term(), version);
-    // FIXME: Should be done by the controller component.
-    return recursive_touch_directory(filename.parent_path().c_str())
-      .then([this,
-             filename = sstring(filename.c_str()),
-             base_offset,
-             flags,
-             opts = std::move(opts),
-             term = term(),
-             buffer_size] {
-          return open_file_dma(filename, flags, std::move(opts))
-            .then_wrapped([this,
-                           filename = std::move(filename),
-                           base_offset,
-                           term,
-                           buffer_size](future<file> f) {
-                file fd;
-                try {
-                    fd = f.get0();
-                } catch (...) {
-                    auto ep = std::current_exception();
-                    stlog().error(
-                      "Could not create log segment {}. Found exception: {}",
-                      filename,
-                      ep);
-                    return make_exception_future<log_segment_ptr>(ep);
-                }
-                if (_config.should_sanitize) {
-                    fd = file(make_shared(file_io_sanitizer(std::move(fd))));
-                }
-                auto ls = make_lw_shared<log_segment>(
-                  filename, fd, term, base_offset, buffer_size);
-                return make_ready_future<log_segment_ptr>(std::move(ls));
-            });
-      });
-}
-
-static bool is_valid_name(const sstring& filename) {
-    // cannot include '.' in the regex to simplify life
-    const std::regex re("^[A-Za-z0-9|-|_]+$");
-    return std::regex_match(filename.data(), re);
-}
-
-future<> log_manager::load_logs() {
-    return do_load_logs(_config.base_dir, {}, 0);
-}
-
-future<> log_manager::do_load_logs(
-  sstring path, std::array<sstring, 3> components, unsigned level) {
-    if (level == components.size()) {
-        try {
-            return load_segments(
-              std::move(path),
-              model::namespaced_topic_partition{
-                model::ns{std::move(components[0])},
-                model::topic_partition{
-                  model::topic{std::move(components[1])},
-                  model::partition_id{
-                    boost::lexical_cast<model::partition_id::type>(
-                      components[2])}}});
-        } catch (const boost::bad_lexical_cast& not_a_log_file) {
-        }
-        return make_ready_future<>();
-    }
-    return directory_walker::walk(
-      path,
-      [this, path, components = std::move(components), level](
-        directory_entry de) {
-          if (!de.type || *de.type != directory_entry_type::directory) {
-              return make_ready_future<>();
-          }
-          if (!is_valid_name(de.name)) {
-              return make_ready_future<>();
-          }
-          auto c = components;
-          c[level] = de.name;
-          return do_load_logs(path + "/" + de.name, std::move(c), level + 1);
-      });
+      _config.base_dir, ntp, base_offset, term, version);
+    return open_file_dma(filename, flags, std::move(opts))
+      .then_wrapped(
+        [this, filename, base_offset, term, buffer_size](future<file> f) {
+            file fd;
+            try {
+                fd = f.get0();
+            } catch (...) {
+                auto ep = std::current_exception();
+                stlog().error(
+                  "Could not create log segment {}. Found exception: {}",
+                  filename,
+                  ep);
+                return make_exception_future<log_segment_ptr>(ep);
+            }
+            if (_config.should_sanitize) {
+                fd = file(make_shared(file_io_sanitizer(std::move(fd))));
+            }
+            auto ls = make_lw_shared<log_segment>(
+              filename, fd, term, base_offset, buffer_size);
+            return make_ready_future<log_segment_ptr>(std::move(ls));
+        });
 }
 
 static std::optional<std::tuple<model::offset, int64_t, record_version_type>>
@@ -187,16 +129,10 @@ void set_max_offsets(log_set& seg_set) {
         }
     }
 }
-
-future<> log_manager::load_segments(
-  sstring path, model::namespaced_topic_partition ntp) {
-    if (engine().cpu_id() != shard_of(ntp)) {
-        return make_ready_future<>();
-    }
-
-    return async([this,
-                  path = std::move(path),
-                  ntp = std::move(ntp)]() mutable {
+future<log_ptr> log_manager::manage(model::ntp ntp) {
+    return async([this, ntp = std::move(ntp)]() mutable {
+        sstring path = fmt::format("{}/{}", _config.base_dir, ntp.path());
+        recursive_touch_directory(path).get();
         std::vector<log_segment_ptr> segs;
         directory_walker::walk(path, [this, path, &segs](directory_entry seg) {
             if (!seg.type || *seg.type != directory_entry_type::regular) {
@@ -205,11 +141,15 @@ future<> log_manager::load_segments(
 
             auto seg_metadata = extract_segment_metadata(seg.name);
             if (!seg_metadata) {
+                stlog().error(
+                  "Could not extract name for segment: {}", seg.name);
                 return make_ready_future<>();
             }
 
             auto&& [offset, term, version] = std::move(seg_metadata.value());
             if (version != record_version_type::v1) {
+                stlog().error(
+                  "Found sement with invalid version: {}", seg.name);
                 return make_ready_future<>();
             }
 
@@ -229,7 +169,9 @@ future<> log_manager::load_segments(
         auto seg_set = log_set(std::move(segs));
         set_max_offsets(seg_set);
         do_recover(seg_set);
-        _logs.emplace(ntp, make_lw_shared<log>(ntp, *this, std::move(seg_set)));
+        auto ptr = make_lw_shared<log>(ntp, *this, std::move(seg_set));
+        _logs.emplace(std::move(ntp), ptr);
+        return ptr;
     });
 }
 

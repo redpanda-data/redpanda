@@ -12,6 +12,7 @@ struct configuration final : public config_store {
     // WAL
     property<sstring> data_directory;
     property<bool> developer_mode;
+    property<uint64_t> log_segment_size;
     // Network
     property<socket_address> rpc_server;
     // Raft

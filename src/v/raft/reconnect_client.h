@@ -15,6 +15,10 @@ public:
             return "rpc client is disconnected";
         }
     };
+    static inline uint32_t next_backoff(uint32_t current_backoff) {
+        return std::min<uint32_t>(
+          300, std::max<uint32_t>(1, current_backoff) << 1);
+    }
 
     reconnect_client(rpc::client_configuration c)
       : _client(std::move(c)) {

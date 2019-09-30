@@ -10,6 +10,7 @@ add_library (raft STATIC
   consensus.cc
   reconnect_client.cc
   client_cache.cc
+  consensus_utils.cc
   )
 target_include_directories(raft
   PUBLIC ${PROJECT_SOURCE_DIR}/src/v

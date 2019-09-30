@@ -1,11 +1,10 @@
-*.py
 *.md
-*.in
 *.txt
+*.py
+*.in
 *.sh
 *.yml
 *.h
 *.cc
-*.lua
 *.go
 *
