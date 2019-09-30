@@ -35,7 +35,6 @@ public:
     }
 
     request_context(request_context&&) noexcept = default;
-    request_context& operator=(request_context&&) noexcept = default;
 
     const request_header& header() const {
         return _header;
