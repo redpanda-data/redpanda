@@ -85,16 +85,16 @@ public:
     }
 
 private:
-    uint64_t _connects = 0;
-    uint64_t _connections = 0;
-    uint64_t _connection_close_error = 0;
     uint64_t _requests_completed = 0;
     uint64_t _in_bytes = 0;
     uint64_t _out_bytes = 0;
-    uint64_t _bad_requests = 0;
-    uint64_t _corrupted_headers = 0;
-    uint64_t _method_not_found_errors = 0;
-    uint64_t _requests_blocked_memory = 0;
+    uint64_t _connects = 0;
+    uint32_t _connections = 0;
+    uint32_t _connection_close_error = 0;
+    uint32_t _bad_requests = 0;
+    uint32_t _corrupted_headers = 0;
+    uint32_t _method_not_found_errors = 0;
+    uint32_t _requests_blocked_memory = 0;
 };
 
 std::ostream& operator<<(std::ostream& o, const server_probe& p);
