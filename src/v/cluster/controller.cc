@@ -43,7 +43,7 @@ controller::stage_hook::stage_hook(controller* self)
   : ptr(self) {
 }
 void controller::stage_hook::pre_commit(
-  model::offset, const std::vector<std::unique_ptr<raft::entry>>&) {
+  model::offset, const std::vector<raft::entry>&) {
     verify_shard();
 }
 void controller::stage_hook::abort(model::offset begin) {

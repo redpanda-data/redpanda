@@ -2,6 +2,10 @@
 
 namespace kafka::requests {
 
+static constexpr model::record_batch_type kafka_record_batch_type() {
+    return model::record_batch_type(1);
+}
+
 struct header_and_kafka_size {
     model::record_batch_header header;
     size_t kafka_size;
@@ -25,13 +29,14 @@ static header_and_kafka_size read_header(fragbuf::istream& in) {
       + sizeof(int32_t)); // producer id, producer epoch, base sequence
     uint32_t size_bytes = batch_length - internal::kafka_header_overhead;
     auto header = model::record_batch_header{size_bytes,
-                                      base_offset,
-                                      crc,
-                                      attrs,
-                                      last_offset_delta,
-                                      first_timestamp,
-                                      max_timestamp};
-                        return {std::move(header), batch_length};
+                                             base_offset,
+                                             kafka_record_batch_type(),
+                                             crc,
+                                             attrs,
+                                             last_offset_delta,
+                                             first_timestamp,
+                                             max_timestamp};
+    return {std::move(header), batch_length};
 }
 
 static model::record_batch::uncompressed_records
@@ -53,7 +58,8 @@ read_records(fragbuf::istream& in, size_t num_records) {
                                       - timestamp_delta_size - offset_delta_size
                                       - key_length - key_length_size;
         rs.emplace_back(
-          length - 1, // FIXME: Remove when we add the attributes byte to the record.
+          length
+            - 1, // FIXME: Remove when we add the attributes byte to the record.
           timestamp_delta,
           offset_delta,
           std::move(key),

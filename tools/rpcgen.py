@@ -87,12 +87,12 @@ public:
     raw_{{method.name}}(input_stream<char>& in, rpc::streaming_context& ctx) {
       auto fapply = execution_helper<{{method.input_type}}, {{method.output_type}}>();
       return fapply.exec(in, ctx, {{method.id}}, [this](
-          {{method.input_type}} t, rpc::streaming_context& ctx) -> future<{{method.output_type}}> {
+          {{method.input_type}}&& t, rpc::streaming_context& ctx) -> future<{{method.output_type}}> {
           return {{method.name}}(std::move(t), ctx);
       });
     }
     virtual future<{{method.output_type}}>
-    {{method.name}}({{method.input_type}}, rpc::streaming_context&) {
+    {{method.name}}({{method.input_type}}&&, rpc::streaming_context&) {
        throw std::runtime_error("unimplemented method");
     }
     {%- endfor %}
@@ -114,7 +114,7 @@ public:
     }
     {%- for method in methods %}
     virtual inline future<rpc::client_context<{{method.output_type}}>>
-    {{method.name}}({{method.input_type}} r) {
+    {{method.name}}({{method.input_type}}&& r) {
        return send_typed<{{method.input_type}}, {{method.output_type}}>(std::move(r), {{method.id}});
     }
     {%- endfor %}
