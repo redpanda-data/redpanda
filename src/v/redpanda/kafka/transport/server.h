@@ -9,6 +9,7 @@
 #include <seastar/core/execution_stage.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
+#include <seastar/core/metrics_registration.hh>
 #include <seastar/core/reactor.hh>
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/sharded.hh>
@@ -109,6 +110,7 @@ private:
     gate _listeners_and_connections;
     sharded<quota_manager>& _quota_mgr;
     shared_ptr<tls::server_credentials> _creds;
+    metrics::metric_groups _metrics;
 };
 
 } // namespace kafka::transport
