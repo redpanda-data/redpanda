@@ -213,7 +213,8 @@ public:
       : _fb(fb)
       , _current(fb->_fragments.begin())
       , _current_position(fb->size_bytes() ? _current->get() : nullptr)
-      , _current_end(fb->size_bytes() ? _current->get() + _current->size() : nullptr)
+      , _current_end(
+          fb->size_bytes() ? _current->get() + _current->size() : nullptr)
       , _bytes_left(fb->size_bytes()) {
     }
 
