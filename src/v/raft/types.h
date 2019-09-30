@@ -37,40 +37,44 @@ struct group_configuration {
     std::vector<model::broker> learners;
 };
 
-class entry {
+/// \brief a *collection* of record_batch. In other words
+/// and array of array. This is done because the majority of
+/// batches will come from the Kafka API which is already batched
+/// Main constraint is that _all_ records and batches must be of the same type
+class entry final {
 public:
-    using type = int32_t;
-
-    // well known types
-    static constexpr type type_unknown = 0;
-    static constexpr type type_data = 1;
-    static constexpr type type_configuration = 2;
-
-    explicit entry(type t, model::record_batch_reader r)
+    explicit entry(model::record_batch_type t, model::record_batch_reader r)
       : _t(t)
       , _rdr(std::move(r)) {
     }
-    virtual ~entry() = default;
-
-    virtual type entry_type() const {
+    ~entry() = default;
+    entry(entry&& o) noexcept
+      : _t(std::move(o._t))
+      , _rdr(std::move(o._rdr)) {
+    }
+    entry& operator=(entry&& o) noexcept {
+        if (this != &o) {
+            this->~entry();
+            new (this) entry(std::move(o));
+        }
+        return *this;
+    }
+    model::record_batch_type entry_type() const {
         return _t;
     }
-    virtual model::record_batch_reader& reader() {
+    model::record_batch_reader& reader() {
         return _rdr;
-    }
-    virtual future<> on_replicated() {
-        return make_ready_future<>();
     }
 
 private:
-    type _t;
+    model::record_batch_type _t;
     model::record_batch_reader _rdr;
 };
 
 struct append_entries_request {
     model::node_id node_id;
     protocol_metadata meta;
-    std::vector<std::unique_ptr<entry>> entries;
+    std::vector<entry> entries;
 };
 
 struct [[gnu::packed]] append_entries_reply {
@@ -119,9 +123,9 @@ future<model::offset> deserialize(source&);
 template<>
 future<model::broker> deserialize(source&);
 template<>
-void serialize(bytes_ostream&, std::unique_ptr<raft::entry>&&);
+void serialize(bytes_ostream&, raft::entry&&);
 template<>
-future<std::unique_ptr<raft::entry>> deserialize(source&);
+future<raft::entry> deserialize(source&);
 template<>
 void serialize(bytes_ostream&, model::record&&);
 template<>
