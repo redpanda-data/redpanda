@@ -34,11 +34,13 @@ public:
     }
     fragbuf(std::vector<temporary_buffer<char>> fragments) noexcept
       : _fragments(std::move(fragments))
-      , _size_bytes(std::reduce(
+      , _size_bytes(std::accumulate(
           _fragments.begin(),
           _fragments.end(),
           size_t(0),
-          [](size_t acc, auto& f) { return acc + f.size(); })) {
+          [](size_t acc, const temporary_buffer<char>& f) {
+              return acc + f.size();
+          })) {
     }
     fragbuf(const fragbuf&) = delete;
     fragbuf(fragbuf&& o) noexcept
