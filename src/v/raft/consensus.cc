@@ -212,16 +212,17 @@ consensus::disk_append(std::vector<entry>&& entries) {
                  // needs a ref to the range
                  auto no_of_entries = in.size();
                  return copy_range<ret_t>(
-                   in, [this](entry& e) {
-                       return _log.append(
-                         std::move(e.reader()),
-                         storage::log_append_config{
-                           // explicit here
-                           storage::log_append_config::fsync::no,
-                           _io_priority,
-                           model::timeout_clock::now() + _disk_timeout});
-                    })
-                   .then([this, no_of_entries] (ret_t ret) {
+                          in,
+                          [this](entry& e) {
+                              return _log.append(
+                                std::move(e.reader()),
+                                storage::log_append_config{
+                                  // explicit here
+                                  storage::log_append_config::fsync::no,
+                                  _io_priority,
+                                  model::timeout_clock::now() + _disk_timeout});
+                          })
+                   .then([this, no_of_entries](ret_t ret) {
                        _probe.entries_appended(no_of_entries);
                        return ret;
                    });
