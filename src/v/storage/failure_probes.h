@@ -38,14 +38,14 @@ public:
 
     future<> roll() {
         if (is_enabled()) {
-            return inject_method_failure(methods::roll, "append");
+            return inject_method_failure(methods::roll, "roll");
         }
         return make_ready_future<>();
     }
 
     future<> truncate() {
         if (is_enabled()) {
-            return inject_method_failure(methods::truncate, "append");
+            return inject_method_failure(methods::truncate, "truncate");
         }
         return make_ready_future<>();
     }
