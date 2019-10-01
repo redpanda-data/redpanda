@@ -109,6 +109,9 @@ public:
       , _input(&input) {
     }
 
+    continuous_batch_parser(continuous_batch_parser&&) = default;
+    continuous_batch_parser& operator=(continuous_batch_parser&&) = default;
+
     future<size_t> consume() {
         return _input->consume(*this).then([this] { return _bytes_consumed; });
     }
