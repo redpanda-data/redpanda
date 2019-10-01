@@ -69,4 +69,50 @@ private:
     }
     fast_prng _prng;
 };
+
+class parser_failure_probes final : public finjector::probe {
+public:
+    using type = int8_t;
+    static constexpr std::string_view name() {
+        return "storage::parser::failure_probes";
+    }
+
+    enum class methods : type { consume = 1 };
+    
+    parser_failure_probes() = default;
+    parser_failure_probes(parser_failure_probes&&) = default;
+    parser_failure_probes& operator=(parser_failure_probes&&) = default;
+
+    type method_for_point(std::string_view point) const final {
+        return point == "consume" ? static_cast<type>(methods::consume) : 0;
+    }
+
+    std::vector<sstring> points() final {
+        return {"consume"};
+    }
+
+    future<> consume() {
+        if (is_enabled()) {
+            return do_consume();
+        }
+        return make_ready_future<>();
+    }
+
+private:
+    [[gnu::noinline]] future<> do_consume() {
+        if (_exception_methods & type(methods::consume)) {
+            return make_exception_future<>(
+              std::runtime_error("FailureInjector: "
+                                 "storage::parser::consume"));
+        }
+        if (_delay_methods & type(methods::consume)) {
+            return sleep(std::chrono::milliseconds(_prng() % 50));
+        }
+        if (_termination_methods & type(methods::consume)) {
+            std::terminate();
+        }
+        return make_ready_future<>();
+    }
+    fast_prng _prng;
 };
+}; // namespace storage
