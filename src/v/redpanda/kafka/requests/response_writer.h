@@ -2,9 +2,11 @@
 
 #include "bytes/bytes.h"
 #include "bytes/bytes_ostream.h"
+#include "model/fundamental.h"
 #include "redpanda/kafka/errors/errors.h"
 #include "seastarx.h"
 #include "utils/concepts-enabled.h"
+#include "utils/fragbuf.h"
 #include "utils/vint.h"
 
 #include <seastar/core/byteorder.hh>
@@ -117,6 +119,31 @@ public:
         return write(bytes_view(*bv));
     }
 
+    uint32_t write(const model::topic& topic) {
+        return write(topic.name);
+    }
+
+    // write bytes directly to output without a length prefix
+    uint32_t write_direct(fragbuf&& f) {
+      auto size = f.size_bytes();
+      auto bufs = std::move(f).release();
+      for (auto& b : bufs) {
+	_out->write(std::move(b));
+      }
+      return size;
+    }
+
+    // write bytes_ostream directly to output without a length prefix
+    uint32_t write_direct(bytes_ostream&& buf) {
+        // TODO: this should probably be an bytes_ostream interface
+        auto size = buf.size_bytes();
+        auto bufs = std::move(buf).release();
+        for (auto& b : bufs) {
+            _out->write(std::move(b).release());
+        }
+        return size;
+    }
+
     // clang-format off
     template<typename T, typename ElementWriter>
     CONCEPT(requires requires (ElementWriter writer,
@@ -132,6 +159,31 @@ public:
             writer(elem, *this);
         }
         return _out->size_bytes() - start_size;
+    }
+
+    // wrap a writer in a kafka bytes array object. the writer should return
+    // true if writing no bytes should result in the encoding as nullable bytes,
+    // and false otherwise.
+    //
+    // clang-format off
+    template<typename ElementWriter>
+    CONCEPT(requires requires (ElementWriter writer,
+                               response_writer& rw) {
+        { writer(rw) } -> bool;
+    })
+    // clang-format on
+    uint32_t write_bytes_wrapped(ElementWriter&& writer) {
+        auto* size_place_holder = _out->write_place_holder(sizeof(int32_t));
+        auto start_size = uint32_t(_out->size_bytes());
+        auto zero_len_is_null = writer(*this);
+        int32_t real_size = _out->size_bytes() - start_size;
+        // enc_size: the size prefix in the serialization
+        int32_t enc_size = real_size > 0 ? real_size
+                                         : (zero_len_is_null ? -1 : 0);
+        auto be_size = cpu_to_be(enc_size);
+        auto* in = reinterpret_cast<const bytes_ostream::value_type*>(&be_size);
+        std::copy_n(in, sizeof(be_size), size_place_holder);
+        return real_size + sizeof(be_size);
     }
 
 private:

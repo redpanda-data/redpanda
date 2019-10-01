@@ -1,6 +1,11 @@
 #pragma once
 
+#include "seastarx.h"
+
+#include <seastar/core/sstring.hh>
+
 #include <boost/range/algorithm/generate.hpp>
+#include <bytes/bytes.h>
 
 #include <iostream>
 #include <random>
@@ -46,6 +51,15 @@ inline bytes get_bytes(size_t n) {
 
 inline bytes get_bytes() {
     return get_bytes(get_int<unsigned>(128 * 1024));
+}
+
+inline sstring gen_alphanum_string(size_t n) {
+    static constexpr char chars[]
+      = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    std::uniform_int_distribution<size_t> dist(0, sizeof(chars) - 1);
+    sstring s(sstring::initialized_later(), n);
+    std::generate_n(s.begin(), n, [&dist] { return chars[dist(gen)]; });
+    return s;
 }
 
 } // namespace random_generators

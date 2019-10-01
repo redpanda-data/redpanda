@@ -13,6 +13,7 @@
 #include <fmt/format.h>
 
 #include <iterator>
+#include <numeric>
 #include <vector>
 
 /// Fragmented buffer consisting of multiple temporary_buffer<char>
@@ -30,6 +31,14 @@ public:
       std::vector<temporary_buffer<char>> fragments, size_t size_bytes) noexcept
       : _fragments(std::move(fragments))
       , _size_bytes(size_bytes) {
+    }
+    fragbuf(std::vector<temporary_buffer<char>> fragments) noexcept
+      : _fragments(std::move(fragments))
+      , _size_bytes(std::reduce(
+          _fragments.begin(),
+          _fragments.end(),
+          size_t(0),
+          [](size_t acc, auto& f) { return acc + f.size(); })) {
     }
     fragbuf(const fragbuf&) = delete;
     fragbuf(fragbuf&& o) noexcept
@@ -204,7 +213,8 @@ public:
       : _fb(fb)
       , _current(fb->_fragments.begin())
       , _current_position(fb->size_bytes() ? _current->get() : nullptr)
-      , _current_end(fb->size_bytes() ? _current->get() + _current->size() : nullptr)
+      , _current_end(
+          fb->size_bytes() ? _current->get() + _current->size() : nullptr)
       , _bytes_left(fb->size_bytes()) {
     }
 

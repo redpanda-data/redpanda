@@ -6,6 +6,8 @@ add_library (requests STATIC
   offset_fetch_request.cc
   kafka_batch_adapter.cc
   produce_request.cc
+  list_offsets_request.cc
+  fetch_request.cc
   )
 target_include_directories(requests PUBLIC ${PROJECT_SOURCE_DIR}/src/v)
 
