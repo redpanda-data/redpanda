@@ -50,6 +50,7 @@ make_random_header(model::offset o, model::timestamp ts, size_t num_records) {
     h.base_offset = o;
     h.last_offset_delta = num_records;
     h.first_timestamp = ts;
+    h.type = 1;
     h.max_timestamp = model::timestamp(ts.value() + num_records);
     if (bool_dist(gen)) {
         h.attrs = model::record_batch_attributes(4);
@@ -119,9 +120,7 @@ model::record make_random_record(unsigned index) {
     auto v = make_packed_value_and_headers(high_count_dist(gen));
     auto size = internal::vint_size(k.size_bytes()) + k.size_bytes()
                 + v.size_bytes() + internal::vint_size(index) * 2 /* deltas */;
-    // FIXME: adjust for the byte that's going to be added at the storage level.
-    // this should be removed when that change is made.
-    size += sizeof(int8_t);
+
     return model::record(size, index, index, std::move(k), std::move(v));
 }
 
