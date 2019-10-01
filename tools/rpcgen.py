@@ -131,9 +131,6 @@ public:
         {{method.name}} = 1 << {{loop.index}}{{ "," if not loop.last }}
     {%- endfor %}
     };
-    uint64_t id() const {
-        return uint64_t({{id}}){%- for method in methods %}^{{method.id}}{%- endfor %};
-    }
     type method_for_point(std::string_view point) const final {
         return string_switch<type>(point)
         {%- for method in methods %}

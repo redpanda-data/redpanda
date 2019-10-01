@@ -12,7 +12,6 @@ namespace finjector {
 struct probe {
     probe() = default;
     virtual ~probe() = default;
-    virtual uint64_t id() const = 0;
     virtual std::vector<sstring> points() = 0;
     virtual int8_t method_for_point(std::string_view point) const = 0;
 
