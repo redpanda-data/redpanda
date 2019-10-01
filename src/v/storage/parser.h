@@ -3,6 +3,7 @@
 #include "model/record.h"
 #include "seastarx.h"
 #include "storage/exceptions.h"
+#include "storage/failure_probes.h"
 #include "utils/fragbuf.h"
 #include "utils/vint.h"
 
@@ -101,19 +102,25 @@ class continuous_batch_parser {
         return _prestate == prestate::none
                && (_state == state::header_done || _state == state::key_done || _state == state::record_end || _state == state::batch_end);
     }
+    using failure_probes = parser_failure_probes;
 
 public:
     continuous_batch_parser(
       batch_consumer& consumer, input_stream<char>& input) noexcept
       : _consumer(&consumer)
       , _input(&input) {
+        finjector::shard_local_badger().register_probe(
+          failure_probes::name(), &_fprobe);
     }
-
     continuous_batch_parser(continuous_batch_parser&&) = default;
     continuous_batch_parser& operator=(continuous_batch_parser&&) = default;
+    ~continuous_batch_parser() {
+        finjector::shard_local_badger().deregister_probe(
+          failure_probes::name());
+    }
 
-    future<size_t> consume() {
-        return _input->consume(*this).then([this] { return _bytes_consumed; });
+    [[gnu::always_inline]] future<size_t> consume() {
+        return _fprobe.consume().then([this] { return do_consume(); });
     }
 
     // Called by input_stream::consume().
@@ -129,6 +136,9 @@ private:
         waiting,
     };
 
+    future<size_t> do_consume() {
+        return _input->consume(*this).then([this] { return _bytes_consumed; });
+    }
     // Read an integer. If the buffer doesn't contain the whole thing,
     // remember what we have in the buffer and continue later by using
     // a "prestate".
@@ -209,6 +219,7 @@ private:
     int32_t _offset_delta;
     size_t _value_and_headers_size;
     size_t _bytes_consumed;
+    failure_probes _fprobe;
 };
 
 using continuous_batch_parser_opt = optimized_optional<continuous_batch_parser>;
