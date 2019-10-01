@@ -51,7 +51,7 @@ future<> log::new_segment(
 }
 
 future<log::append_result>
-log::append(model::record_batch_reader&& reader, log_append_config config) {
+log::do_append(model::record_batch_reader&& reader, log_append_config config) {
     auto f = make_ready_future<>();
     if (__builtin_expect(!_active_segment, false)) {
         // FIXME: We need to persist the last offset somewhere.
@@ -85,7 +85,7 @@ log::append(model::record_batch_reader&& reader, log_append_config config) {
             });
       });
 }
-future<> log::roll(model::offset o, model::term_id t) {
+future<> log::do_roll(model::offset o, model::term_id t) {
     _term = std::move(t);
     if (!_active_segment) {
         return make_ready_future<>();

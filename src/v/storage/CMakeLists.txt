@@ -13,6 +13,7 @@ target_link_libraries(storage PUBLIC
   Seastar::seastar
   bytes
   model
-  rphashing)
+  rphashing
+  finjector)
 
 add_subdirectory(tests)
