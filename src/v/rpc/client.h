@@ -21,7 +21,9 @@ class client_context_impl;
 class client {
 public:
     using promise_t = promise<std::unique_ptr<streaming_context>>;
-    explicit client(client_configuration c);
+    explicit client(
+      client_configuration c,
+      std::optional<sstring> service_name = std::nullopt);
     client(client&&) = default;
     virtual ~client();
     future<> connect();

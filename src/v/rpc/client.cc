@@ -29,7 +29,9 @@ struct client_context_impl final : streaming_context {
     promise<> pr;
 };
 
-client::client(client_configuration c)
+client::client(
+  client_configuration c, 
+  std::optional<sstring> service_name)
   : cfg(std::move(c))
   , _memory(cfg.max_queued_bytes)
   , _creds(
