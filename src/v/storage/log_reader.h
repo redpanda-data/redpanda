@@ -36,6 +36,7 @@ public:
 
     virtual skip consume_record_key(
       size_t size_bytes,
+      model::record_attributes attributes,
       int32_t timestamp_delta,
       int32_t offset_delta,
       fragbuf&& key) override;
@@ -51,6 +52,7 @@ private:
     model::offset _start_offset;
     model::record_batch_header _header;
     size_t _record_size_bytes;
+    model::record_attributes _record_attributes;
     int32_t _record_timestamp_delta;
     int32_t _record_offset_delta;
     fragbuf _record_key;
