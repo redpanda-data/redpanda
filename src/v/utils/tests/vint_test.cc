@@ -3,7 +3,7 @@
 #include "bytes/bytes.h"
 #include "utils/vint.h"
 
-#include <boost/test/included/unit_test.hpp>
+#include <boost/test/unit_test.hpp>
 
 #include <array>
 #include <cstdint>
