@@ -6,7 +6,7 @@
 #include "rpc/test/test_types.h"
 #include "utils/fragbuf.h"
 
-#include <boost/test/included/unit_test.hpp>
+#include <boost/test/unit_test.hpp>
 
 BOOST_AUTO_TEST_CASE(serialize_pod) {
     auto b = bytes_ostream();
