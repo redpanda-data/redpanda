@@ -52,6 +52,16 @@ elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
     endif()
 endif()
 
+# Enable sanitizers for 3rparties when building in debug 
+# to prevent false positivies
+# https://github.com/google/sanitizers/wiki/AddressSanitizerContainerOverflow#false-positives
+
+if ("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
+    list(APPEND BASE_CXX_FLAGS_LIST
+            -fsanitize=undefined
+            -fsanitize=address)
+endif()
+
 # join flag lists
 string(JOIN " " BASE_CXX_FLAGS ${BASE_CXX_FLAGS_LIST})
 string(JOIN " " BASE_LD_FLAGS ${BASE_LD_FLAGS_LIST})
