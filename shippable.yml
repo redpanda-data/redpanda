@@ -11,6 +11,9 @@ git:
 env:
   global:
     - CI: "true"
+    - LC_ALL: "en_US.UTF-8"
+    - LANG: "en_US.UTF-8"
+
 
 build:
   pre_ci:
@@ -25,9 +28,12 @@ build:
       if [[ "${ID}" != "fedora" ]]; then  exit 1; fi
       echo "Using CI image"
     - |
-      python3 tools/build.py --deps=true --targets=all --build=release --log=debug --fmt=false --clang=internal --packages rpm deb tar
+      bash -c 'python3 tools/build.py --deps=true --targets=all \
+              --build=release --log=debug --fmt=false \
+              --clang=internal --packages rpm deb tar'
     - |
-      python3 tools/build.py --targets=all --build=debug --log=info --fmt=false --clang=internal
+      bash -c 'python3 tools/build.py --targets=all --build=debug \
+               --log=info --fmt=false --clang=internal'
 
   advancedReporting: true
 
