@@ -27,6 +27,7 @@ public:
 
     virtual skip consume_record_key(
       size_t size_bytes,
+      model::record_attributes attributes,
       int32_t timestamp_delta,
       int32_t offset_delta,
       fragbuf&& key)
@@ -86,6 +87,7 @@ class continuous_batch_parser {
         header_done,
         record_start,
         record_count,
+        record_attributes,
         timestamp_delta,
         offset_delta,
         key_length,
@@ -215,6 +217,7 @@ private:
     bool _compressed_batch = false;
     size_t _num_records;
     size_t _record_size;
+    model::record_attributes _record_attributes;
     int32_t _timestamp_delta;
     int32_t _offset_delta;
     size_t _value_and_headers_size;

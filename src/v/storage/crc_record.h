@@ -11,6 +11,7 @@ void crc_batch_header(
 void crc_record_header_and_key(
   crc32&,
   size_t size_bytes,
+  const model::record_attributes& attributes,
   int32_t timestamp_delta,
   int32_t offset_delta,
   const fragbuf& key);

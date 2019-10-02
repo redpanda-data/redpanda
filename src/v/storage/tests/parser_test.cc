@@ -37,6 +37,7 @@ public:
 
     virtual skip consume_record_key(
       size_t size_bytes,
+      model::record_attributes attributes,
       int32_t timestamp_delta,
       int32_t offset_delta,
       fragbuf&& key) override {
@@ -45,6 +46,7 @@ public:
             return skip::yes;
         }
         _record_size_bytes = size_bytes;
+        _record_attributes = attributes;
         _record_timestamp_delta = timestamp_delta;
         _record_offset_delta = offset_delta;
         _record_key = std::move(key);
@@ -55,6 +57,7 @@ public:
         std::get<model::record_batch::uncompressed_records>(_records)
           .emplace_back(
             _record_size_bytes,
+            _record_attributes,
             _record_timestamp_delta,
             _record_offset_delta,
             std::move(_record_key),
@@ -80,6 +83,7 @@ private:
     model::record_batch_header _header;
     size_t _num_records;
     size_t _record_size_bytes;
+    model::record_attributes _record_attributes;
     int32_t _record_timestamp_delta;
     int32_t _record_offset_delta;
     fragbuf _record_key;

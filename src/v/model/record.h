@@ -16,17 +16,57 @@
 
 namespace model {
 
+/// \brief Attributes associated with a record.
+///
+/// Record attributes are part of the Kafka record format:
+///
+///   https://kafka.apache.org/documentation/#record
+///
+/// The record attributes in Kafka are unused (as of 3 Oct 2019). However, by
+/// including them here (1) it is easier to manage the translation from the
+/// on-disk record size to that used by kafka, and (2) we may track attributes
+/// for internal message types.
+class record_attributes final {
+public:
+    using value_type = int8_t;
+
+    record_attributes() noexcept = default;
+
+    record_attributes(int8_t v) noexcept
+      : _attributes(v) {
+    }
+
+    value_type value() const {
+        return static_cast<value_type>(_attributes.to_ulong());
+    }
+
+    bool operator==(const record_attributes& other) const {
+        return _attributes == other._attributes;
+    }
+
+    bool operator!=(const record_attributes& other) const {
+        return !(*this == other);
+    }
+
+    friend std::ostream& operator<<(std::ostream&, const record_attributes&);
+
+private:
+    std::bitset<8> _attributes;
+};
+
 class record {
 public:
     record() noexcept = default;
 
     record(
       uint32_t size_bytes,
+      record_attributes attributes,
       int32_t timestamp_delta,
       int32_t offset_delta,
       fragbuf key,
       fragbuf value_and_headers) noexcept
       : _size_bytes(size_bytes)
+      , _attributes(attributes)
       , _timestamp_delta(timestamp_delta)
       , _offset_delta(offset_delta)
       , _key(std::move(key))
@@ -43,6 +83,10 @@ public:
     uint32_t memory_usage() const {
         return sizeof(*this) + _key.size_bytes()
                + _value_and_headers.size_bytes();
+    }
+
+    record_attributes attributes() const {
+        return _attributes;
     }
 
     int32_t timestamp_delta() const {
@@ -82,6 +126,7 @@ public:
 
 private:
     uint32_t _size_bytes;
+    record_attributes _attributes;
     int32_t _timestamp_delta;
     int32_t _offset_delta;
     fragbuf _key;

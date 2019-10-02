@@ -41,6 +41,7 @@ void serialize(bytes_ostream& ref, model::record&& record) {
     rpc::serialize(
       ref,
       record.size_bytes(),
+      record.attributes().value(),
       record.timestamp_delta(),
       record.offset_delta(),
       record.release_key(),
@@ -51,6 +52,7 @@ template<>
 future<model::record> deserialize(source& in) {
     struct simple_record {
         uint32_t size_bytes;
+        model::record_attributes attributes;
         int32_t timestamp_delta;
         int32_t offset_delta;
         fragbuf key;
@@ -59,6 +61,7 @@ future<model::record> deserialize(source& in) {
     return rpc::deserialize<simple_record>(in).then([](simple_record r) {
         return model::record(
           r.size_bytes,
+          r.attributes,
           r.timestamp_delta,
           r.offset_delta,
           std::move(r.key),

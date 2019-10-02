@@ -36,11 +36,8 @@ future<> write(log_segment_appender& out, const fragbuf& buf) {
 
 future<> write(log_segment_appender& out, const model::record& record) {
     return write_vint(out, record.size_bytes())
-      .then([&] {
-          // Note that we don't append the unused Kafka attributes, but we
-          // do take them into account when calculating the batch checksum.
-          return write_vint(out, record.timestamp_delta());
-      })
+      .then([&] { return write(out, record.attributes().value()); })
+      .then([&] { return write_vint(out, record.timestamp_delta()); })
       .then([&] { return write_vint(out, record.offset_delta()); })
       .then([&] { return write_vint(out, record.key().size_bytes()); })
       .then([&] { return write(out, record.key()); })
