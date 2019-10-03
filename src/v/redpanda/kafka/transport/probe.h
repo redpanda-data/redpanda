@@ -24,7 +24,7 @@ public:
         ++_requests_blocked_memory;
     }
 
-    void serving_request(const requests::request_context&) {
+    void serving_request() {
         ++_requests_serving;
     }
 
