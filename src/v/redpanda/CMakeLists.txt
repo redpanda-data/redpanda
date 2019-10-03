@@ -6,7 +6,8 @@ seastar_generate_swagger(
 )
 
 add_executable(redpanda
-  main.cc
+    application.cc
+    main.cc
   )
 target_link_libraries(redpanda PUBLIC raft transport config)
 set_property(TARGET redpanda PROPERTY POSITION_INDEPENDENT_CODE ON)
