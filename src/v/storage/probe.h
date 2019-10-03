@@ -1,5 +1,8 @@
 #pragma once
+#include "model/fundamental.h"
 #include "storage/logger.h"
+
+#include <seastar/core/metrics_registration.hh>
 
 #include <cstdint>
 
@@ -35,6 +38,8 @@ public:
         ++_batch_parse_errors;
     }
 
+    void setup_metrics(const model::ntp&);
+
 private:
     uint64_t _bytes_written = 0;
     uint64_t _batches_written = 0;
@@ -43,5 +48,6 @@ private:
     uint64_t _batches_read = 0;
     uint32_t _batch_parse_errors = 0;
     uint32_t _batch_write_errors = 0;
+    metrics::metric_groups _metrics;
 };
 } // namespace storage

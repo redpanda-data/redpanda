@@ -15,6 +15,7 @@ log::log(
   : _ntp(std::move(ntp))
   , _manager(manager)
   , _segs(std::move(segs)) {
+    _probe.setup_metrics(_ntp);
     if (_segs.size()) {
         _tracker.update_committed_offset(_segs.last()->max_offset());
         _tracker.update_dirty_offset(_segs.last()->max_offset());
