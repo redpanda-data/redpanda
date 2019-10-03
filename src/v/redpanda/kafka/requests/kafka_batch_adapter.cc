@@ -46,7 +46,7 @@ read_records(fragbuf::istream& in, size_t num_records) {
     for (unsigned i = 0; i < num_records; ++i) {
         auto [length, length_size] = vint::deserialize(in);
         in.skip(length_size);
-        in.skip(sizeof(int8_t)); // unused attributes
+        auto attributes = model::record_attributes(in.read<int8_t>());
         auto [timestamp_delta, timestamp_delta_size] = vint::deserialize(in);
         in.skip(timestamp_delta_size);
         auto [offset_delta, offset_delta_size] = vint::deserialize(in);
@@ -58,8 +58,8 @@ read_records(fragbuf::istream& in, size_t num_records) {
                                       - timestamp_delta_size - offset_delta_size
                                       - key_length - key_length_size;
         rs.emplace_back(
-          length
-            - 1, // FIXME: Remove when we add the attributes byte to the record.
+          length,
+          attributes,
           timestamp_delta,
           offset_delta,
           std::move(key),
@@ -80,8 +80,6 @@ model::record_batch_reader reader_from_kafka_batch(fragbuf&& kafka_batch) {
             records = model::record_batch::compressed_records(
               num_records, in.read_shared(records_size));
         } else {
-            // FIXME: Remove when we add the attributes byte to the record.
-            header.size_bytes -= sizeof(int8_t) * num_records;
             records = read_records(in, num_records);
         }
         ret.emplace_back(std::move(header), std::move(records));

@@ -22,28 +22,29 @@ batch_consumer::skip skipping_consumer::consume_batch_start(
 
 batch_consumer::skip skipping_consumer::consume_record_key(
   size_t size_bytes,
+  model::record_attributes attributes,
   int32_t timestamp_delta,
   int32_t offset_delta,
   fragbuf&& key) {
     _record_size_bytes = size_bytes;
+    _record_attributes = attributes;
     _record_timestamp_delta = timestamp_delta;
     _record_offset_delta = offset_delta;
     _record_key = std::move(key);
     return skip::no;
 }
 
-void skipping_consumer::consume_record_value(
-  fragbuf&& value_and_headers) {
+void skipping_consumer::consume_record_value(fragbuf&& value_and_headers) {
     std::get<model::record_batch::uncompressed_records>(_records).emplace_back(
       _record_size_bytes,
+      _record_attributes,
       _record_timestamp_delta,
       _record_offset_delta,
       std::move(_record_key),
       std::move(value_and_headers));
 }
 
-void skipping_consumer::consume_compressed_records(
-  fragbuf&& records) {
+void skipping_consumer::consume_compressed_records(fragbuf&& records) {
     _records = model::record_batch::compressed_records(
       _num_records, std::move(records));
 }
@@ -122,30 +123,33 @@ log_segment_reader::do_load_slice(model::timeout_clock::time_point timeout) {
     _buffer.clear();
     _consumer.set_timeout(timeout);
     return _parser->consume()
-    .handle_exception([this](std::exception_ptr e){ 
-        _probe.batch_parse_error();
-        return make_exception_future<size_t>(e);
-    })
-    .then([this] (size_t bytes_consumed) {
-        _probe.add_bytes_read(bytes_consumed);
-        auto f = make_ready_future<>();
-        if (_input.eof() || end_of_stream()) {
-            _end_of_stream = true;
-            f = _input.close();
-        }
-        return f.then([this] {
-            if (_buffer.empty()) {
-                return span();
-            }
-            _probe.add_batches_read(int32_t(_buffer.size()));
-            return span{&_buffer[0],
-                        int32_t(_buffer.size()) - _over_committed_offset};
-        });
-    });
+      .handle_exception([this](std::exception_ptr e) {
+          _probe.batch_parse_error();
+          return make_exception_future<size_t>(e);
+      })
+      .then([this](size_t bytes_consumed) {
+          _probe.add_bytes_read(bytes_consumed);
+          auto f = make_ready_future<>();
+          if (_input.eof() || end_of_stream()) {
+              _end_of_stream = true;
+              f = _input.close();
+          }
+          return f.then([this] {
+              if (_buffer.empty()) {
+                  return span();
+              }
+              _probe.add_batches_read(int32_t(_buffer.size()));
+              return span{&_buffer[0],
+                          int32_t(_buffer.size()) - _over_committed_offset};
+          });
+      });
 }
 
 log_reader::log_reader(
-    log_set& seg_set, offset_tracker& tracker, log_reader_config config, probe& probe) noexcept
+  log_set& seg_set,
+  offset_tracker& tracker,
+  log_reader_config config,
+  probe& probe) noexcept
   : _selector(seg_set)
   , _offset_tracker(tracker)
   , _config(std::move(config))

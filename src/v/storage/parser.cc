@@ -142,13 +142,21 @@ parse_result continuous_batch_parser::do_process(temporary_buffer<char>& data) {
     }
     case state::record_start: {
         if (read_vint(data) != read_status::ready) {
+            _state = state::record_attributes;
+            break;
+        }
+    }
+    case state::record_attributes: {
+        _record_size = _64;
+        _value_and_headers_size = _64; // adjusted after each step below
+        if (read_int<int8_t>(data) != read_status::ready) {
             _state = state::timestamp_delta;
             break;
         }
     }
     case state::timestamp_delta: {
-        _record_size = _64;
-        _value_and_headers_size = _64;
+        _record_attributes = model::record_attributes(_8);
+        _value_and_headers_size -= sizeof(int8_t);
         if (read_vint(data) != read_status::ready) {
             _state = state::offset_delta;
             break;
@@ -181,6 +189,7 @@ parse_result continuous_batch_parser::do_process(temporary_buffer<char>& data) {
     case state::key_done: {
         auto should_skip = _consumer->consume_record_key(
           _record_size,
+          _record_attributes,
           _timestamp_delta,
           _offset_delta,
           fragbuf(std::exchange(_read_bytes, {}), _64));

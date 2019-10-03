@@ -26,11 +26,12 @@ void crc_batch_header(
 void crc_record_header_and_key(
   crc32& crc,
   size_t size_bytes,
+  const model::record_attributes& attributes,
   int32_t timestamp_delta,
   int32_t offset_delta,
   const fragbuf& key) {
     crc.extend_vint(size_bytes);
-    crc.extend(int8_t(0)); // Unused Kafka record attributes
+    crc.extend(attributes.value());
     crc.extend_vint(timestamp_delta);
     crc.extend_vint(offset_delta);
     crc.extend_vint(key.size_bytes());
@@ -50,11 +51,12 @@ public:
 
     virtual skip consume_record_key(
       size_t size_bytes,
+      model::record_attributes attributes,
       int32_t timestamp_delta,
       int32_t offset_delta,
       fragbuf&& key) override {
         crc_record_header_and_key(
-          _crc, size_bytes, timestamp_delta, offset_delta, key);
+          _crc, size_bytes, attributes, timestamp_delta, offset_delta, key);
         return skip::no;
     }
 
