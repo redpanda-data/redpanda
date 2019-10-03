@@ -137,7 +137,7 @@ private:
 
 class record_batch_attributes final {
 public:
-    using value_type = uint16_t;
+    using value_type = int16_t;
 
     record_batch_attributes() noexcept = default;
 
@@ -146,7 +146,7 @@ public:
     }
 
     value_type value() const {
-        return static_cast<int16_t>(_attributes.to_ulong());
+        return static_cast<value_type>(_attributes.to_ulong());
     }
 
     model::compression compression() const {
