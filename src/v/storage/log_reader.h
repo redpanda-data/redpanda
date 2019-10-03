@@ -1,10 +1,10 @@
 #pragma once
 
 #include "model/record_batch_reader.h"
-#include "storage/probe.h"
 #include "storage/log_segment.h"
 #include "storage/offset_tracker.h"
 #include "storage/parser.h"
+#include "storage/probe.h"
 #include "utils/fragbuf.h"
 
 #include <seastar/core/io_queue.hh>
@@ -42,8 +42,7 @@ public:
 
     virtual void consume_record_value(fragbuf&&) override;
 
-    virtual void
-    consume_compressed_records(fragbuf&&) override;
+    virtual void consume_compressed_records(fragbuf&&) override;
 
     virtual stop_iteration consume_batch_end() override;
 
@@ -118,8 +117,7 @@ public:
     //       and will never point to an offset within a
     //       batch, that is, of an individual record. This
     //       is because batchs are atomically made visible.
-    log_reader(
-      log_set&, offset_tracker&, log_reader_config, probe&) noexcept;
+    log_reader(log_set&, offset_tracker&, log_reader_config, probe&) noexcept;
 
     virtual future<span>
       do_load_slice(model::timeout_clock::time_point) override;
