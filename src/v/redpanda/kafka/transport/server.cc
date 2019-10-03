@@ -250,7 +250,7 @@ future<> kafka_server::connection::process_request() {
                                 std::move(header),
                                 std::move(buf),
                                 delay.duration);
-                              _server._probe.serving_request(ctx);
+                              _server._probe.serving_request();
                               do_process(std::move(ctx), std::move(units));
                           });
                     });
