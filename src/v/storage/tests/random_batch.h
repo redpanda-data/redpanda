@@ -118,10 +118,20 @@ fragbuf make_packed_value_and_headers(size_t size) {
 model::record make_random_record(unsigned index) {
     auto k = make_random_ftb(high_count_dist(gen));
     auto v = make_packed_value_and_headers(high_count_dist(gen));
-    auto size = internal::vint_size(k.size_bytes()) + k.size_bytes()
-                + v.size_bytes() + internal::vint_size(index) * 2 /* deltas */;
+    auto size = internal::vint_size(k.size_bytes()) // size of key-len
+                + k.size_bytes()                    // size of key
+                + v.size_bytes()             // size of value (includes lengths)
+                + internal::vint_size(index) // timestamp delta
+                + internal::vint_size(index) // offset delta
+                + sizeof(int8_t);            // attributes
 
-    return model::record(size, index, index, std::move(k), std::move(v));
+    return model::record(
+      size,
+      model::record_attributes(0),
+      index,
+      index,
+      std::move(k),
+      std::move(v));
 }
 
 model::record_batch make_random_batch(model::offset o) {
@@ -148,6 +158,7 @@ model::record_batch make_random_batch(model::offset o) {
             storage::crc_record_header_and_key(
               crc,
               r.size_bytes(),
+              r.attributes(),
               r.timestamp_delta(),
               r.offset_delta(),
               r.key());

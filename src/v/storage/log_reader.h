@@ -1,10 +1,10 @@
 #pragma once
 
 #include "model/record_batch_reader.h"
-#include "storage/probe.h"
 #include "storage/log_segment.h"
 #include "storage/offset_tracker.h"
 #include "storage/parser.h"
+#include "storage/probe.h"
 #include "utils/fragbuf.h"
 
 #include <seastar/core/io_queue.hh>
@@ -36,14 +36,14 @@ public:
 
     virtual skip consume_record_key(
       size_t size_bytes,
+      model::record_attributes attributes,
       int32_t timestamp_delta,
       int32_t offset_delta,
       fragbuf&& key) override;
 
     virtual void consume_record_value(fragbuf&&) override;
 
-    virtual void
-    consume_compressed_records(fragbuf&&) override;
+    virtual void consume_compressed_records(fragbuf&&) override;
 
     virtual stop_iteration consume_batch_end() override;
 
@@ -52,6 +52,7 @@ private:
     model::offset _start_offset;
     model::record_batch_header _header;
     size_t _record_size_bytes;
+    model::record_attributes _record_attributes;
     int32_t _record_timestamp_delta;
     int32_t _record_offset_delta;
     fragbuf _record_key;
@@ -118,8 +119,7 @@ public:
     //       and will never point to an offset within a
     //       batch, that is, of an individual record. This
     //       is because batchs are atomically made visible.
-    log_reader(
-      log_set&, offset_tracker&, log_reader_config, probe&) noexcept;
+    log_reader(log_set&, offset_tracker&, log_reader_config, probe&) noexcept;
 
     virtual future<span>
       do_load_slice(model::timeout_clock::time_point) override;
