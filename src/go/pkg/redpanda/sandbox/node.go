@@ -233,11 +233,11 @@ func (n *node) updateNodeConfig(
 	config := redpanda.Config{
 		Directory: "/opt/redpanda/data",
 		KafkaApi: redpanda.SocketAddress{
-			Port:    rpcPort,
+			Port:    kafkaPort,
 			Address: address,
 		},
 		RPCServer: redpanda.SocketAddress{
-			Port:    kafkaPort,
+			Port:    rpcPort,
 			Address: address,
 		},
 		Id:          id,

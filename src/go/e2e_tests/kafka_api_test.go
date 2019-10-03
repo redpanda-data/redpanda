@@ -20,6 +20,7 @@ var (
 	brokerType builders.BrokerType
 	tarball    string
 	verbose    bool
+	address    string
 )
 
 func TestMain(m *testing.M) {
@@ -27,6 +28,7 @@ func TestMain(m *testing.M) {
 	brokerTypeStr := flag.String(
 		"broker-type", "redpanda", "One of [kafka, redpanda]")
 	flag.StringVar(&tarball, "tarball", "", "Redpanda tarball path")
+	flag.StringVar(&address, "address", "", "Address of Kafka API endpoint")
 	flag.Parse()
 	if testing.Verbose() {
 		log.SetLevel(log.DebugLevel)
@@ -57,25 +59,31 @@ func createSandbox(nodes int) sandbox.Sandbox {
 }
 
 func Test_SimpleProduceConsume(t *testing.T) {
-	sbox := createSandbox(1)
-	defer sbox.Destroy()
-	kafka.WaitForSandbox(sbox)
+	var factory kafka.ClientFactory
+	if address == "" {
+		sbox := createSandbox(1)
+		defer sbox.Destroy()
+		kafka.WaitForSandbox(sbox)
+		factory = kafka.NewSboxClientFactory(sbox)
+	} else {
+		factory = kafka.NewAddressClientFactory(address)
+	}
 	tests := []struct {
 		name string
-		test func(*testing.T, sandbox.Sandbox)
+		test func(*testing.T)
 	}{
 		{
 			name: "first message published at the topic MUST have an offset 0",
-			test: func(t *testing.T, sandbox sandbox.Sandbox) {
+			test: func(t *testing.T) {
 				//given
-				topic := kafka.CreateRandomTopic(sandbox, 1, 1)
+				topic := kafka.CreateRandomTopic(factory, 1, 1)
 				value := "test message content"
 				//when
-				producer := kafka.CreateProducer(sbox, sarama.NewConfig())
+				producer := factory.NewSyncProducer(sarama.NewConfig())
 				p, off, err := producer.SendMessage(kafka.NewProducerMessage(topic, value))
 				log.Debugf("Produced partition '%d', offset '%d', err '%s'", p, off, err)
 				//then
-				consumer := kafka.CreateConsumer(sbox, sarama.NewConfig())
+				consumer := factory.NewConsumer(sarama.NewConfig())
 				msgs := kafka.ReadMessagesFromTopic(consumer, 2*time.Second, topic)
 				assert.Len(t, msgs, 1, "There should be one message consumed")
 				msg := msgs[0]
@@ -89,18 +97,18 @@ func Test_SimpleProduceConsume(t *testing.T) {
 		},
 		{
 			name: "at the same partition oreder of publish/consume should be the same",
-			test: func(t *testing.T, sandbox sandbox.Sandbox) {
+			test: func(t *testing.T) {
 				//given
-				topic := kafka.CreateRandomTopic(sandbox, 1, 1)
+				topic := kafka.CreateRandomTopic(factory, 1, 1)
 				numberOfMessages := 5
 				//when
-				producer := kafka.CreateProducer(sbox, sarama.NewConfig())
+				producer := factory.NewSyncProducer(sarama.NewConfig())
 				for i := 0; i < numberOfMessages; i++ {
 					p, off, err := producer.SendMessage(kafka.NewProducerMessage(topic, fmt.Sprint(i)))
 					log.Debugf("Produced partition '%d', offset '%d', err '%v'", p, off, err)
 				}
 				//then
-				consumer := kafka.CreateConsumer(sbox, sarama.NewConfig())
+				consumer := factory.NewConsumer(sarama.NewConfig())
 				msgs := kafka.ReadMessagesFromTopic(consumer, 2*time.Second, topic)
 				assert.Len(t, msgs, numberOfMessages)
 				for i, msg := range msgs {
@@ -112,7 +120,7 @@ func Test_SimpleProduceConsume(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.test(t, sbox)
+			tt.test(t)
 		})
 	}
 }
