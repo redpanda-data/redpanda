@@ -10,53 +10,41 @@
 #include <utility>
 
 namespace detail {
-template<typename T>
-struct named_type_is_supported {
-    using type = T;
-    static constexpr bool value = std::is_arithmetic_v<T>;
-};
-template<typename T>
-struct named_type_constant {
-    static constexpr const T min = std::numeric_limits<T>::min();
-};
-template<typename T>
-inline constexpr T named_type_constant_v = named_type_constant<T>::min;
-} // namespace detail
+
+template<typename T, typename Tag, typename IsConstexpr>
+class base_named_type;
+
 template<typename T, typename Tag>
-class named_type {
+class base_named_type<T, Tag, std::true_type> {
 public:
     using type = T;
-    static_assert(
-      detail::named_type_is_supported<T>::value,
-      "T must be a supported min type");
-
-    constexpr named_type() = default;
-    constexpr named_type(const type& v)
+    constexpr base_named_type() = default;
+    constexpr base_named_type(const type& v)
       : _value(v) {
     }
-    constexpr named_type(type&& v)
+    constexpr base_named_type(type&& v)
       : _value(std::move(v)) {
     }
-    named_type(named_type&& o) noexcept = default;
-    named_type& operator=(named_type&& o) noexcept = default;
-    named_type(const named_type& o) noexcept = default;
-    named_type& operator=(const named_type& o) noexcept = default;
-    constexpr bool operator==(const named_type& other) const {
+    base_named_type(base_named_type&& o) noexcept = default;
+    base_named_type& operator=(base_named_type&& o) noexcept = default;
+    base_named_type(const base_named_type& o) noexcept = default;
+    base_named_type& operator=(const base_named_type& o) noexcept = default;
+    constexpr bool operator==(const base_named_type& other) const {
         return _value == other._value;
     }
-    constexpr bool operator!=(const named_type& other) const {
+    constexpr bool operator!=(const base_named_type& other) const {
         return _value != other._value;
     }
-    constexpr bool operator<(const named_type& other) const {
+    constexpr bool operator<(const base_named_type& other) const {
         return _value < other._value;
     }
-    constexpr bool operator>(const named_type& other) const {
+    constexpr bool operator>(const base_named_type& other) const {
         return _value > other._value;
     }
-    constexpr bool operator<=(const named_type& other) const {
+    constexpr bool operator<=(const base_named_type& other) const {
         return _value <= other._value;
     }
-    constexpr bool operator>=(const named_type& other) const {
+    constexpr bool operator>=(const base_named_type& other) const {
         return _value >= other._value;
     }
 
@@ -90,8 +78,82 @@ public:
     }
 
 protected:
-    type _value = detail::named_type_constant_v<T>;
+    type _value = std::numeric_limits<T>::min();
 };
+template<typename T, typename Tag>
+class base_named_type<T, Tag, std::false_type> {
+public:
+    using type = T;
+    base_named_type() = default;
+    base_named_type(const type& v)
+      : _value(v) {
+    }
+    constexpr base_named_type(type&& v)
+      : _value(std::move(v)) {
+    }
+    base_named_type(base_named_type&& o) noexcept = default;
+    base_named_type& operator=(base_named_type&& o) noexcept = default;
+    base_named_type(const base_named_type& o) noexcept = default;
+    base_named_type& operator=(const base_named_type& o) noexcept = default;
+    bool operator==(const base_named_type& other) const {
+        return _value == other._value;
+    }
+    bool operator!=(const base_named_type& other) const {
+        return _value != other._value;
+    }
+    bool operator<(const base_named_type& other) const {
+        return _value < other._value;
+    }
+    bool operator>(const base_named_type& other) const {
+        return _value > other._value;
+    }
+    bool operator<=(const base_named_type& other) const {
+        return _value <= other._value;
+    }
+    bool operator>=(const base_named_type& other) const {
+        return _value >= other._value;
+    }
+
+    // provide overloads for naked type
+    bool operator==(const type& other) const {
+        return _value == other;
+    }
+    bool operator!=(const type& other) const {
+        return _value != other;
+    }
+    bool operator<(const type& other) const {
+        return _value < other;
+    }
+    bool operator>(const type& other) const {
+        return _value > other;
+    }
+    bool operator<=(const type& other) const {
+        return _value <= other;
+    }
+    bool operator>=(const type& other) const {
+        return _value >= other;
+    }
+
+    // explicit getter
+    const type& operator()() const {
+        return _value;
+    }
+    // implicit conversion operator
+    operator const type&() const {
+        return _value;
+    }
+
+protected:
+    type _value;
+};
+
+} // namespace detail
+
+template<typename T, typename Tag>
+using named_type = detail::base_named_type<
+  T,
+  Tag,
+  std::conditional_t<std::is_arithmetic_v<T>, std::true_type, std::false_type>>;
 
 namespace std {
 template<typename T, typename Tag>
