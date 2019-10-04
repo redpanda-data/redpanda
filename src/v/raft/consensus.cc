@@ -90,6 +90,8 @@ future<vote_reply> consensus::do_vote(vote_request&& r) {
 future<append_entries_reply>
 consensus::do_append_entries(append_entries_request&& r) {
     append_entries_reply reply;
+    reply.node_id = _self();
+    reply.group = r.meta.group;
     reply.term = _meta.term;
     reply.last_log_index = _meta.commit_index;
     reply.success = false;
@@ -172,8 +174,8 @@ consensus::do_append_entries(append_entries_request&& r) {
 
     // move the vector and copy the header metadata
     return disk_append(std::move(r.entries))
-      .then([this,
-             r = std::move(r)](std::vector<storage::log::append_result> ret) {
+      .then([this, r = std::move(r), reply = std::move(reply)](
+              std::vector<storage::log::append_result> ret) mutable {
           // always update metadata first! to allow next put to truncate log
           const model::offset last_offset = ret.back().last_offset;
           const model::offset begin_offset = model::offset(_meta.commit_index);
@@ -192,7 +194,6 @@ consensus::do_append_entries(append_entries_request&& r) {
                 _meta.commit_index,
                 _meta.prev_log_term));
           }
-          append_entries_reply reply;
           reply.term = _meta.term;
           reply.last_log_index = _meta.commit_index;
           reply.success = true;
