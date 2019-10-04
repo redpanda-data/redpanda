@@ -14,6 +14,12 @@
             "name": "append_entries",
             "input_type": "append_entries_request",
             "output_type": "append_entries_reply"
+        },
+        {
+            "name": "heartbeat",
+            "input_type": "heartbeat_request",
+            "output_type": "heartbeat_reply"
         }
+
     ]
 }
