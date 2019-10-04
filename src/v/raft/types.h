@@ -16,6 +16,8 @@ namespace raft {
 using clock_type = lowres_clock;
 using duration_type = typename clock_type::duration;
 using timer_type = timer<clock_type>;
+static constexpr clock_type::time_point no_timeout
+  = clock_type::time_point::max();
 
 using group_id = named_type<int64_t, struct raft_group_id_type>;
 
@@ -32,9 +34,15 @@ struct [[gnu::packed]] protocol_metadata {
 };
 
 struct group_configuration {
-    model::node_id node_id;
+    model::node_id leader_id;
     std::vector<model::broker> nodes;
     std::vector<model::broker> learners;
+};
+
+struct follower_index_metadata {
+    model::node_id node_id;
+    model::term_id term;
+    model::offset commit_index;
 };
 
 /// \brief a *collection* of record_batch. In other words
@@ -78,6 +86,9 @@ struct append_entries_request {
 };
 
 struct [[gnu::packed]] append_entries_reply {
+    /// \brief callee's node_id; work-around for batched heartbeats
+    unaligned<model::node_id::type> node_id = -1;
+    unaligned<group_id::type> group = -1;
     /// \brief callee's term, for the caller to upate itself
     unaligned<model::term_id::type> term = -1;
     /// \brief The recipient's last log index after it applied changes to
@@ -86,6 +97,20 @@ struct [[gnu::packed]] append_entries_reply {
     unaligned<model::offset::type> last_log_index = 0;
     /// \brief did the rpc succeed or not
     unaligned<bool> success = false;
+};
+
+/// \brief this is our _biggest_ modification to how raft works
+/// to accomodate for millions of raft groups in a cluster.
+/// internally, the receiving side will simply iterate and dispatch one
+/// at a time, as well as the receiving side will trigger the
+/// individual raft responses one at a time - for example to start replaying the
+/// log at some offset
+struct heartbeat_request {
+    model::node_id node_id;
+    std::vector<protocol_metadata> meta;
+};
+struct heartbeat_reply {
+    std::vector<append_entries_reply> meta;
 };
 
 /// \brief special use of underlying::type to save continuations on the
