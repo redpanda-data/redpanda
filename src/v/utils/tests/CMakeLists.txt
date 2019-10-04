@@ -33,3 +33,10 @@ rp_test(
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES Boost::unit_test_framework
 )
+rp_test(
+  UNIT_TEST
+  BINARY_NAME named_type_test
+  SOURCES named_type_tests.cc
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LIBRARIES Boost::unit_test_framework
+  )

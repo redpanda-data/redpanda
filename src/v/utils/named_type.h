@@ -15,18 +15,9 @@ struct named_type_is_supported {
     using type = T;
     static constexpr bool value = std::is_arithmetic_v<T>;
 };
-template<>
-struct named_type_is_supported<std::string> {
-    using type = std::string;
-    static constexpr bool value = true;
-};
 template<typename T>
 struct named_type_constant {
     static constexpr const T min = std::numeric_limits<T>::min();
-};
-template<>
-struct named_type_constant<seastar::sstring> {
-    static constexpr const char* min = "";
 };
 template<typename T>
 inline constexpr T named_type_constant_v = named_type_constant<T>::min;
@@ -68,6 +59,27 @@ public:
     constexpr bool operator>=(const named_type& other) const {
         return _value >= other._value;
     }
+
+    // provide overloads for naked type
+    constexpr bool operator==(const type& other) const {
+        return _value == other;
+    }
+    constexpr bool operator!=(const type& other) const {
+        return _value != other;
+    }
+    constexpr bool operator<(const type& other) const {
+        return _value < other;
+    }
+    constexpr bool operator>(const type& other) const {
+        return _value > other;
+    }
+    constexpr bool operator<=(const type& other) const {
+        return _value <= other;
+    }
+    constexpr bool operator>=(const type& other) const {
+        return _value >= other;
+    }
+
     // explicit getter
     constexpr type operator()() const {
         return _value;
