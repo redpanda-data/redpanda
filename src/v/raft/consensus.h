@@ -53,11 +53,6 @@ public:
         _hooks.push_back(fn);
     }
 
-    /// \brief currently dispatches it ASAP since each entry is already a
-    /// record_batch; In the future we can batch a little more
-    /// before sending down the wire as an optimization
-    future<> replicate(std::unique_ptr<entry>);
-
     bool is_leader() const {
         return _voted_for == _self;
     }

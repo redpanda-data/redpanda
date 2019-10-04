@@ -237,8 +237,5 @@ consensus::disk_append(std::vector<entry>&& entries) {
           return make_ready_future<ret_t>(std::move(ret));
       });
 }
-future<> consensus::replicate(std::unique_ptr<entry>) {
-    return make_ready_future<>();
-}
 
 } // namespace raft
