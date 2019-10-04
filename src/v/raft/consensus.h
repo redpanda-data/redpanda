@@ -73,6 +73,13 @@ public:
         return _log.ntp();
     }
 
+    clock_type::time_point last_heartbeat() const {
+        return _hbeat;
+    };
+
+    void process_heartbeat(append_entries_reply&&) {
+    }
+
 private:
     // all these private functions assume that we are under exclusive operations
     // via the _op_sem
