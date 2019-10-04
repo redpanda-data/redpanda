@@ -29,7 +29,7 @@ public:
     /// returns an exceptional future of disconnected_client_exception when
     /// remote endpoint is not present
     template<typename Func>
-    futurize_t<std::result_of_t<Func(client_type)>> with_client(Func&& f) {
+    auto with_client(Func&& f) {
         if (_client.is_valid()) {
             return f(_client);
         }
