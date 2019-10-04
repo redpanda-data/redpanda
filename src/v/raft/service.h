@@ -46,6 +46,28 @@ public:
           failure_probes::name());
     }
 
+    [[gnu::always_inline]] future<heartbeat_reply>
+    heartbeat(heartbeat_request&& r, rpc::streaming_context& ctx) final {
+        std::vector<append_entries_request> reqs;
+        reqs.reserve(r.meta.size());
+        for (auto& m : r.meta) {
+            reqs.push_back(append_entries_request{r.node_id, std::move(m), {}});
+        }
+        return do_with(
+                 std::move(reqs),
+                 [this,
+                  &ctx](std::vector<append_entries_request>& reqs) mutable {
+                     return copy_range<std::vector<append_entries_reply>>(
+                       reqs, [this, &ctx](append_entries_request& r) mutable {
+                           return append_entries(std::move(r), ctx);
+                       });
+                 })
+          .then([](std::vector<append_entries_reply> r) {
+              return make_ready_future<heartbeat_reply>(
+                heartbeat_reply{std::move(r)});
+          });
+    }
+
     [[gnu::always_inline]] future<vote_reply>
     vote(vote_request&& r, rpc::streaming_context& ctx) final {
         return _probe.vote().then([this, r = std::move(r), &ctx]() mutable {
