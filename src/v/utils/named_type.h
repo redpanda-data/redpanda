@@ -84,17 +84,26 @@ template<typename T, typename Tag>
 class base_named_type<T, Tag, std::false_type> {
 public:
     using type = T;
+    static constexpr bool move_noexcept
+      = std::is_nothrow_move_constructible<T>::value;
+
     base_named_type() = default;
     base_named_type(const type& v)
       : _value(v) {
     }
-    constexpr base_named_type(type&& v)
+    base_named_type(type&& v)
       : _value(std::move(v)) {
     }
-    base_named_type(base_named_type&& o) noexcept = default;
-    base_named_type& operator=(base_named_type&& o) noexcept = default;
-    base_named_type(const base_named_type& o) noexcept = default;
-    base_named_type& operator=(const base_named_type& o) noexcept = default;
+
+    base_named_type(base_named_type&& o) noexcept(move_noexcept) = default;
+
+    base_named_type& operator=(base_named_type&& o) noexcept(move_noexcept)
+      = default;
+
+    base_named_type(const base_named_type& o) = default;
+
+    base_named_type& operator=(const base_named_type& o) = default;
+
     bool operator==(const base_named_type& other) const {
         return _value == other._value;
     }
