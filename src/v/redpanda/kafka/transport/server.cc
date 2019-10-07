@@ -178,9 +178,10 @@ future<> kafka_server::connection::write_response(
           reinterpret_cast<const char*>(chunk.get()), chunk.size());
     }
     msg.on_delete([response = std::move(response)] {});
-    return _write_buf.write(std::move(msg)).then([this] {
-        return _write_buf.flush();
-    });
+    auto msg_size = msg.size();
+    return _write_buf.write(std::move(msg))
+      .then([this] { return _write_buf.flush(); })
+      .then([this, msg_size] { _server._probe.add_bytes_sent(msg_size); });
 }
 
 // The server guarantees that on a single TCP connection, requests will be
@@ -249,7 +250,7 @@ future<> kafka_server::connection::process_request() {
                                 std::move(header),
                                 std::move(buf),
                                 delay.duration);
-                              _server._probe.serving_request(ctx);
+                              _server._probe.serving_request();
                               do_process(std::move(ctx), std::move(units));
                           });
                     });
@@ -268,11 +269,13 @@ void kafka_server::connection::do_process(
         future<requests::response_ptr>&& f) mutable {
           try {
               auto r = f.get0();
-              return ready.then(
-                [this, r = std::move(r), correlation]() mutable {
+              return ready
+                .then([this, r = std::move(r), correlation]() mutable {
                     return write_response(std::move(r), correlation);
-                });
+                })
+                .then([this] { _server._probe.request_served(); });
           } catch (...) {
+              _server._probe.request_processing_error();
               klog.debug("Failed to process request: {}", f.get_exception());
               return std::move(ready);
           }
