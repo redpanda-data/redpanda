@@ -66,7 +66,11 @@ future<consensus::voted_for_configuration> read_voted_for(sstring filename) {
         if (buf.empty()) {
             return consensus::voted_for_configuration{};
         }
-        auto node = YAML::Load(buf.get());
+        // unfort it uses a std::string override
+        // XXX update when YAML::Load supports string_view()'s
+        // see https://github.com/jbeder/yaml-cpp/issues/765
+        std::string s(buf.get(), buf.size());
+        auto node = YAML::Load(s);
         return node.as<consensus::voted_for_configuration>();
     });
 }
