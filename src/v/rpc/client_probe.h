@@ -1,6 +1,9 @@
 #pragma once
 #include "rpc/logger.h"
 
+#include <seastar/core/metrics_registration.hh>
+#include <seastar/net/socket_defs.hh>
+
 #include <iostream>
 
 namespace rpc {
@@ -66,61 +69,10 @@ public:
         ++_requests_blocked_memory;
     }
 
-    uint64_t get_requests_sent() const {
-        return _requests_sent;
-    }
-
-    uint32_t get_requests_pending() const {
-        return _requests_pending;
-    }
-
-    uint64_t get_requests_completed() const {
-        return _requests_completed;
-    }
-
-    uint32_t get_request_errors() const {
-        return _request_errors;
-    }
-
-    uint64_t get_in_bytes() const {
-        return _in_bytes;
-    }
-
-    uint64_t get_out_bytes() const {
-        return _out_bytes;
-    }
-
-    uint64_t get_connects() const {
-        return _connects;
-    }
-
-    uint32_t get_connections() const {
-        return _connections;
-    }
-
-    uint32_t get_connection_errors() const {
-        return _connection_errors;
-    }
-
-    uint32_t get_read_dispatch_errors() const {
-        return _read_dispatch_errors;
-    }
-
-    uint32_t get_server_correlation_errors() const {
-        return _server_correlation_errors;
-    }
-
-    uint32_t get_client_correlation_errors() const {
-        return _client_correlation_errors;
-    }
-
-    uint32_t get_corrupted_headers() const {
-        return _corrupted_headers;
-    }
-
-    uint32_t get_requests_blocked_memory() const {
-        return _requests_blocked_memory;
-    }
+    void setup_metrics(
+      metrics::metric_groups& mgs,
+      const std::optional<sstring>& service_name,
+      const socket_address& target_addr);
 
 private:
     uint64_t _requests_sent = 0;
@@ -137,27 +89,10 @@ private:
     uint32_t _server_correlation_errors = 0;
     uint32_t _client_correlation_errors = 0;
     uint32_t _requests_blocked_memory = 0;
-};
-}; // namespace rpc
+    metrics::metric_groups _metrics;
 
-namespace std {
-inline ostream& operator<<(ostream& o, const rpc::client_probe& p) {
-    o << "{"
-      << " requests_sent: " << p.get_requests_sent()
-      << ", requests_pending: " << p.get_requests_pending()
-      << ", requests_completed: " << p.get_requests_completed()
-      << ", request_errors: " << p.get_request_errors()
-      << ", in_bytes: " << p.get_in_bytes()
-      << ", out_bytes: " << p.get_out_bytes()
-      << ", connects: " << p.get_connects()
-      << ", connections: " << p.get_connections()
-      << ", connection_errors: " << p.get_connection_errors()
-      << ", read_dispatch_errors: " << p.get_read_dispatch_errors()
-      << ", corrupted_headers: " << p.get_corrupted_headers()
-      << ", server_correlation_errors: " << p.get_server_correlation_errors()
-      << ", client_correlation_errors: " << p.get_client_correlation_errors()
-      << ", requests_blocked_memory: " << p.get_requests_blocked_memory()
-      << " }";
-    return o;
-}
-}; // namespace std
+    friend std::ostream&
+    operator<<(std::ostream& o, const rpc::client_probe& p);
+};
+std::ostream& operator<<(std::ostream& o, const rpc::client_probe& p);
+}; // namespace rpc
