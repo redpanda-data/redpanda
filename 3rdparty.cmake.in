@@ -13,11 +13,11 @@ set(default_depends "")
 set(luajit_c_compiler "")
 set(boost_link_flags "")
 set(boost_cxx_flags "")
-set(common_cmake_args 
-    -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@ 
-    -DCMAKE_PREFIX_PATH=@V_DEPS_INSTALL_DIR@ 
-    -DCMAKE_INSTALL_PREFIX=@V_DEPS_INSTALL_DIR@ 
-    -DCMAKE_INSTALL_RPATH=@V_DEPS_INSTALL_DIR@/lib 
+set(common_cmake_args
+    -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@
+    -DCMAKE_PREFIX_PATH=@V_DEPS_INSTALL_DIR@
+    -DCMAKE_INSTALL_PREFIX=@V_DEPS_INSTALL_DIR@
+    -DCMAKE_INSTALL_RPATH=@V_DEPS_INSTALL_DIR@/lib
     -DCMAKE_SKIP_BUILD_RPATH=OFF
     -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON)
 
