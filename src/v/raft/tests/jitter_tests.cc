@@ -8,9 +8,12 @@
 SEASTAR_THREAD_TEST_CASE(base_jitter_gurantees) {
     raft::timeout_jitter jit(100, 75);
     auto base_ms = jit.base_duration().count();
+    auto low = std::chrono::milliseconds(base_ms);
+    auto high = std::chrono::milliseconds(75);
     BOOST_CHECK_EQUAL(base_ms, 100);
     for (auto i = 0; i < 10; ++i) {
-        raft::duration_type d = jit();
-        BOOST_CHECK(d.count() >= base_ms && d.count() <= base_ms + 75);
+        auto now = raft::clock_type::now();
+        auto next = jit();
+        BOOST_CHECK(next >= now + low && next <= now + low + high);
     }
 }

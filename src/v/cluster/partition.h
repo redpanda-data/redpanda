@@ -15,7 +15,7 @@ public:
         return _raft.start();
     }
     future<> replicate(std::unique_ptr<raft::entry> e) {
-        return _raft.replicate(std::move(e));
+        return make_ready_future<>();
     }
     const model::ntp& ntp() const {
         return _raft.ntp();

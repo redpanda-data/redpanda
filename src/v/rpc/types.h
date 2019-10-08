@@ -70,7 +70,7 @@ struct client_context {
     explicit client_context(header h)
       : hdr(std::move(h)) {
     }
-    const header hdr;
+    header hdr;
     T data;
 };
 

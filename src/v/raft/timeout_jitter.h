@@ -23,9 +23,11 @@ public:
     }
 
     /// \brief adds jitter ammount of milliseconds according to the raft paper
-    duration_type operator()() {
-        return _election_duration
-               + std::chrono::milliseconds(_prng() % _jitter);
+    clock_type::time_point operator()() {
+        using ms = std::chrono::milliseconds;
+        return clock_type::now()
+               + std::chrono::duration_cast<ms>(_election_duration)
+               + ms(_prng() % _jitter);
     }
     duration_type base_duration() const {
         return _election_duration;
