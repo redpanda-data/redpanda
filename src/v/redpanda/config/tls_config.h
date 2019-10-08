@@ -58,7 +58,7 @@ public:
             if (_require_client_auth) {
                 builder->set_client_auth(tls::client_auth::REQUIRE);
             }
-            auto f = make_ready_future<>();
+            auto f = builder->set_system_trust();
             if (_key_cert) {
                 f = f.then([this, builder] {
                     return builder->set_x509_key_file(
