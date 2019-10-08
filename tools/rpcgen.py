@@ -110,7 +110,7 @@ private:
 class {{service_name}}_service::client : public rpc::client {
 public:
     client(rpc::client_configuration c)
-      : rpc::client(std::move(c)) {
+      : rpc::client(std::move(c), "{{service_name}}") {
     }
     {%- for method in methods %}
     virtual inline future<rpc::client_context<{{method.output_type}}>>

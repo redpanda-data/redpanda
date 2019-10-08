@@ -25,13 +25,13 @@ struct movistar final : cycling::team_movistar_service {
       : cycling::team_movistar_service(sc, ssg) {
     }
     future<cycling::mount_tamalpais>
-    ibis_hakka(cycling::san_francisco, rpc::streaming_context&) final {
+    ibis_hakka(cycling::san_francisco&&, rpc::streaming_context&) final {
         lgr.info("Finished calling ibis_hakka");
         return make_ready_future<cycling::mount_tamalpais>(
           cycling::mount_tamalpais{66});
     }
     future<cycling::nairo_quintana>
-    canyon(cycling::ultimate_cf_slx, rpc::streaming_context&) final {
+    canyon(cycling::ultimate_cf_slx&&, rpc::streaming_context&) final {
         lgr.info("Finished calling canyon");
         return make_ready_future<cycling::nairo_quintana>(
           cycling::nairo_quintana{32});

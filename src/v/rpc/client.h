@@ -8,6 +8,7 @@
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/iostream.hh>
+#include <seastar/core/metrics_registration.hh>
 #include <seastar/net/api.hh>
 
 #include <cstdint>
@@ -21,7 +22,9 @@ class client_context_impl;
 class client {
 public:
     using promise_t = promise<std::unique_ptr<streaming_context>>;
-    explicit client(client_configuration c);
+    explicit client(
+      client_configuration c,
+      std::optional<sstring> service_name = std::nullopt);
     client(client&&) = default;
     virtual ~client();
     future<> connect();
@@ -44,6 +47,7 @@ private:
     future<> do_reads();
     future<> dispatch(header);
     void fail_outstanding_futures();
+    void setup_metrics(const std::optional<sstring>&);
 
     semaphore _memory;
     std::unordered_map<uint32_t, promise_t> _correlations;
@@ -54,6 +58,7 @@ private:
     uint32_t _correlation_idx{0};
     shared_ptr<tls::certificate_credentials> _creds;
     client_probe _probe;
+    metrics::metric_groups _metrics;
 };
 
 template<typename Input, typename Output>
