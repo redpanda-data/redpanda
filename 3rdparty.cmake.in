@@ -372,8 +372,9 @@ ExternalProject_Add(seastar
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
     ${common_cmake_args}
-    -DBoost_USE_STATIC_LIBS:BOOL=OFF
-    -DBoost_NO_BOOST_CMAKE:BOOL=ON
+    -DBoost_USE_STATIC_LIBS=OFF
+    -DBoost_NO_BOOST_CMAKE=ON
+    -DBoost_NO_SYSTEM_PATHS=TRUE
     -DSeastar_INSTALL=ON
     -DSeastar_DPDK=@RP_ENABLE_DPDK@
     -DSeastar_APPS=ON
