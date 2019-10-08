@@ -1,47 +1,40 @@
 # How to get started [![build](https://api.shippable.com/projects/5cab6e979bbe6e0007384c8b/badge?branch=master)]()
-## Building `redpanda`/C++
-### Debug
-Assuming from the root of the repo:
-```sh
-./tools/build.py --deps true --targets cpp --build debug
+
+
+## Building 
+
+```
+python3 tools/build.py 
+        --deps=true       \     # [true,false]
+        --targets=all     \     # [cpp,go]
+        --build=release   \     # [release, debug]
+        --log=debug       \     # [info, debug, trace]
+        --fmt=false       \     # [true,false]
+        --clang=internal  \     # [<empty>, internal]
+        --packages rpm deb tar  # [rpm, deb, tar]
+
 ```
 
-### Release
-```sh
-./tools/build.py --deps true --targets cpp --build release
-```
-That's it!
 
-### Using internal LLVM toolchain
-```sh
-./tools/build.py --deps true --targets cpp --build release --clang internal
+## Incremental 
+
+```
+cd  build/release      \  # [debug,release] folders
+    && ninja redpanda     # can be any target, use 'cmake -N' to list 
 ```
 
-### Incremental CPP builds
-To do incremental builds, just `cd $ROOT/build/release && ninja <target name>`
-for example: `cd build/release && ninja redpanda` will build the
- `redpanda` binary & transitive deps only
 
-## Building Go code (`rpk`, ..., etc.)
+## Debugging main build:
 
-All Go binaries can be found in `build/go/bin`
+```
+cmake  -DCMAKE_BUILD_TYPE=Debug  \  # [Debug,Release]
+       -Bbuild/debug             \  # [debug,release] folders
+       -H.                          # assumes you are at the tld 
 
-```sh
-./tools/build.py --deps true --targets go --build release
+make -j8                            # or (($(nproc)-1)) 
 ```
 
-## Creating packages
-
-Currently `tar.gz`, `deb` and `rpm` packages are supported.
-(Assuming that the code was built before)
-
-```sh
-    ./tools/build.py --packages rpm deb tar
-```
-
-`--packages` flags is a list of packages to create.
-Packages can be found in `<root>/build/dist/<package_type>`
 
 ## Contributing
 * [See our contributing guide](CONTRIBUTING.md)
-* Run: `./tools/build.py --build=release --fmt=all --log=DEBUG`
+* Run: `./tools/build.py --build=release --fmt=all`
