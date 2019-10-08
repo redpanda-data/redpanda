@@ -52,23 +52,24 @@ elseif (@CMAKE_CXX_COMPILER_ID@ STREQUAL "GNU")
     set(boost_user_config_jam "using gcc : : @CMAKE_CXX_COMPILER@ : $<SEMICOLON>")
 endif()
 
+set(ENV{PKG_CONFIG_PATH}  @PKG_CONFIG_PATH@)
 # CMake build environment
-set(cmake_build_env LDFLAGS=${ld_flags}\ -L@V_DEPS_INSTALL_DIR@/lib\ -L@V_DEPS_INSTALL_DIR@/lib64
-                    CXXFLAGS=-std=gnu++17\ ${cxx_flags})
+set(cmake_build_env
+  PKG_CONFIG_PATH=@PKG_CONFIG_PATH@
+  LDFLAGS=${ld_flags} CXXFLAGS=-std=gnu++17\ ${cxx_flags})
 # CRYPTOPP does not build with C++17
-set(cryptopp_build_env LDFLAGS=${ld_flags}\ -L@V_DEPS_INSTALL_DIR@/lib\ -L@V_DEPS_INSTALL_DIR@/lib64
-                       CXXFLAGS=${cxx_flags})
+set(cryptopp_build_env LDFLAGS=${ld_flags} CXXFLAGS=${cxx_flags})
 
 # Build environment for autotools
 set(build_env
     CFLAGS=-I@V_DEPS_INSTALL_DIR@/include
-    CXXFLAGS=${cxx_flags}\ -I@V_DEPS_INSTALL_DIR@/include
-    LDFLAGS=${ld_flags}\ -L@V_DEPS_INSTALL_DIR@/lib\ -L@V_DEPS_INSTALL_DIR@/lib64
-    PKG_CONFIG_PATH=@V_DEPS_INSTALL_DIR@/lib/pkgconfig)
+    CXXFLAGS=${cxx_flags}
+    LDFLAGS=${ld_flags}
+    PKG_CONFIG_PATH=@PKG_CONFIG_PATH@)
 
 # Boost settings
 if(ld_flags)
-    set(boost_link_flags linkflags=${ld_flags}\ -L@V_DEPS_INSTALL_DIR@/lib\ -L@V_DEPS_INSTALL_DIR@/lib64)
+    set(boost_link_flags linkflags=${ld_flags})
 endif()
 if(cxx_flags)
     set(boost_cxx_flags cxxflags=${cxx_flags})
