@@ -142,6 +142,7 @@ ExternalProject_Add(protobuf
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   SOURCE_SUBDIR cmake
   CMAKE_ARGS
+    -DProtobuf_USE_STATIC_LIBS=ON
     -Dprotobuf_BUILD_TESTS=OFF
     ${common_cmake_args})
 
