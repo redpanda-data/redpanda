@@ -28,12 +28,22 @@ option (RP_ENABLE_DPDK "Enable DPDK support" OFF)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # compiler specific options
+set(BASE_LD_FLAGS_LIST
+  -L${CMAKE_CURRENT_BINARY_DIR}/v_deps_install/lib
+  -L${CMAKE_CURRENT_BINARY_DIR}/v_deps_install/lib64
+  -I${CMAKE_CURRENT_BINARY_DIR}/v_deps_install/include
+)
+set(PKG_CONFIG_PATH_LIST
+  ${CMAKE_CURRENT_BINARY_DIR}/v_deps_install/lib64/pkgconfig
+  ${CMAKE_CURRENT_BINARY_DIR}/v_deps_install/share/pkgconfig
+  ${CMAKE_CURRENT_BINARY_DIR}/v_deps_install/lib/pkgconfig
+  )
 if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
     if (RP_ENABLE_GOLD_LINKER)
         message(FATAL_ERROR
         "Gold linker is not supported by Clang, disable RP_ENABLE_GOLD_LINKER")
     endif()
-    set(BASE_LD_FLAGS_LIST
+    list(APPEND BASE_LD_FLAGS_LIST
         -stdlib=libc++
         -fuse-ld=lld
         -lc++fs
@@ -65,7 +75,9 @@ endif()
 # join flag lists
 string(JOIN " " BASE_CXX_FLAGS ${BASE_CXX_FLAGS_LIST})
 string(JOIN " " BASE_LD_FLAGS ${BASE_LD_FLAGS_LIST})
-
+string(JOIN ":" PKG_CONFIG_PATH ${PKG_CONFIG_PATH_LIST})
+find_package(PkgConfig REQUIRED)
+set(ENV{PKG_CONFIG_PATH}  "${PKG_CONFIG_PATH}")
 set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} ${BASE_CXX_FLAGS}")
 
 if(NOT CMAKE_BUILD_TYPE)

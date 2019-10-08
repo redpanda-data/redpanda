@@ -13,11 +13,11 @@ set(default_depends "")
 set(luajit_c_compiler "")
 set(boost_link_flags "")
 set(boost_cxx_flags "")
-set(common_cmake_args 
-    -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@ 
-    -DCMAKE_PREFIX_PATH=@V_DEPS_INSTALL_DIR@ 
-    -DCMAKE_INSTALL_PREFIX=@V_DEPS_INSTALL_DIR@ 
-    -DCMAKE_INSTALL_RPATH=@V_DEPS_INSTALL_DIR@/lib 
+set(common_cmake_args
+    -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@
+    -DCMAKE_PREFIX_PATH=@V_DEPS_INSTALL_DIR@
+    -DCMAKE_INSTALL_PREFIX=@V_DEPS_INSTALL_DIR@
+    -DCMAKE_INSTALL_RPATH=@V_DEPS_INSTALL_DIR@/lib
     -DCMAKE_SKIP_BUILD_RPATH=OFF
     -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON)
 
@@ -52,23 +52,24 @@ elseif (@CMAKE_CXX_COMPILER_ID@ STREQUAL "GNU")
     set(boost_user_config_jam "using gcc : : @CMAKE_CXX_COMPILER@ : $<SEMICOLON>")
 endif()
 
+set(ENV{PKG_CONFIG_PATH}  @PKG_CONFIG_PATH@)
 # CMake build environment
-set(cmake_build_env LDFLAGS=${ld_flags}\ -L@V_DEPS_INSTALL_DIR@/lib\ -L@V_DEPS_INSTALL_DIR@/lib64
-                    CXXFLAGS=-std=gnu++17\ ${cxx_flags})
+set(cmake_build_env
+  PKG_CONFIG_PATH=@PKG_CONFIG_PATH@
+  LDFLAGS=${ld_flags} CXXFLAGS=-std=gnu++17\ ${cxx_flags})
 # CRYPTOPP does not build with C++17
-set(cryptopp_build_env LDFLAGS=${ld_flags}\ -L@V_DEPS_INSTALL_DIR@/lib\ -L@V_DEPS_INSTALL_DIR@/lib64
-                       CXXFLAGS=${cxx_flags})
+set(cryptopp_build_env LDFLAGS=${ld_flags} CXXFLAGS=${cxx_flags})
 
 # Build environment for autotools
 set(build_env
     CFLAGS=-I@V_DEPS_INSTALL_DIR@/include
-    CXXFLAGS=${cxx_flags}\ -I@V_DEPS_INSTALL_DIR@/include
-    LDFLAGS=${ld_flags}\ -L@V_DEPS_INSTALL_DIR@/lib\ -L@V_DEPS_INSTALL_DIR@/lib64
-    PKG_CONFIG_PATH=@V_DEPS_INSTALL_DIR@/lib/pkgconfig)
+    CXXFLAGS=${cxx_flags}
+    LDFLAGS=${ld_flags}
+    PKG_CONFIG_PATH=@PKG_CONFIG_PATH@)
 
 # Boost settings
 if(ld_flags)
-    set(boost_link_flags linkflags=${ld_flags}\ -L@V_DEPS_INSTALL_DIR@/lib\ -L@V_DEPS_INSTALL_DIR@/lib64)
+    set(boost_link_flags linkflags=${ld_flags})
 endif()
 if(cxx_flags)
     set(boost_cxx_flags cxxflags=${cxx_flags})
@@ -141,6 +142,7 @@ ExternalProject_Add(protobuf
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   SOURCE_SUBDIR cmake
   CMAKE_ARGS
+    -DProtobuf_USE_STATIC_LIBS=ON
     -Dprotobuf_BUILD_TESTS=OFF
     ${common_cmake_args})
 
@@ -364,14 +366,16 @@ ExternalProject_Add(lksctp-tools
   INSTALL_COMMAND ${make_command} install)
 
 ExternalProject_Add(seastar
-  URL https://github.com/vectorizedio/seastar/archive/20bfd61.tar.gz
-  URL_MD5 03f19ff7ab5946ccfbf3869692291f76
+  URL https://github.com/vectorizedio/seastar/archive/cd38452d.tar.gz
+  URL_MD5 282f28305918ec65017c21719de5b887
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
     ${common_cmake_args}
-    -DBoost_USE_STATIC_LIBS:BOOL=OFF
-    -DBoost_NO_BOOST_CMAKE:BOOL=ON
+    -DBoost_USE_STATIC_LIBS=OFF
+    -DBoost_NO_BOOST_CMAKE=ON
+    -DBoost_NO_SYSTEM_PATHS=TRUE
+    -DProtobuf_USE_STATIC_LIBS=ON
     -DSeastar_INSTALL=ON
     -DSeastar_DPDK=@RP_ENABLE_DPDK@
     -DSeastar_APPS=ON
@@ -379,6 +383,7 @@ ExternalProject_Add(seastar
     -DSeastar_DOCS=OFF
     -DSeastar_TESTING=OFF
     -DSeastar_CXX_FLAGS=-Wno-error
+    -DSeastar_LD_FLAGS=-pthread
     -DSeastar_STD_OPTIONAL_VARIANT_STRINGVIEW=ON
     -DSeastar_CXX_DIALECT=c++17
   DEPENDS
