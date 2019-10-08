@@ -375,6 +375,7 @@ ExternalProject_Add(seastar
     -DBoost_USE_STATIC_LIBS=OFF
     -DBoost_NO_BOOST_CMAKE=ON
     -DBoost_NO_SYSTEM_PATHS=TRUE
+    -DProtobuf_USE_STATIC_LIBS=ON
     -DSeastar_INSTALL=ON
     -DSeastar_DPDK=@RP_ENABLE_DPDK@
     -DSeastar_APPS=ON
