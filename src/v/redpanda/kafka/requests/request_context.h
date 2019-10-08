@@ -1,5 +1,6 @@
 #pragma once
 
+#include "cluster/controller.h"
 #include "redpanda/kafka/groups/group_manager.h"
 #include "redpanda/kafka/groups/group_router.h"
 #include "redpanda/kafka/groups/group_shard_mapper.h"
@@ -25,19 +26,24 @@ using group_router_type = kafka::groups::group_router<
   kafka::groups::group_shard_mapper<cluster::shard_table>>;
 }
 
-namespace kafka::requests {
+namespace kafka {
+class controller_dispatcher;
+}
 
+namespace kafka::requests {
 extern logger kreq_log;
 
 class request_context {
 public:
     request_context(
       sharded<cluster::metadata_cache>& metadata_cache,
+      controller_dispatcher& cntrl_dispatcher,
       request_header&& header,
       fragbuf&& request,
       lowres_clock::duration throttle_delay,
       kafka::group_router_type& group_router) noexcept
       : _metadata_cache(metadata_cache)
+      , _cntrl_dispatcher(cntrl_dispatcher)
       , _header(std::move(header))
       , _request(std::move(request))
       , _reader(_request.get_istream())
@@ -59,6 +65,10 @@ public:
         return _metadata_cache.local();
     }
 
+    controller_dispatcher& cntrl_dispatcher() const {
+        return _cntrl_dispatcher;
+    }
+
     int32_t throttle_delay_ms() const {
         return std::chrono::duration_cast<std::chrono::milliseconds>(
                  _throttle_delay)
@@ -71,6 +81,7 @@ public:
 
 private:
     sharded<cluster::metadata_cache>& _metadata_cache;
+    controller_dispatcher& _cntrl_dispatcher;
     request_header _header;
     fragbuf _request;
     request_reader _reader;
