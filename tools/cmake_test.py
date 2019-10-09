@@ -7,6 +7,7 @@ import tempfile
 import random
 import string
 import shutil
+import atexit
 
 sys.path.append(os.path.dirname(__file__))
 logger = logging.getLogger('rp')
@@ -43,6 +44,8 @@ class TestRunner():
         try:
             env = self._env()
             logger.info("Test dir: %s" % env["TEST_DIR"])
+            if "TEST_DIR" in env:
+                atexit.register(lambda : shutil.rmtree(env["TEST_DIR"]))
             for f in self.copy_files:
                 logger.debug("Copying input file: %s" % f)
                 (src, dst) = f.split("=") if "=" in f else (f,f)
@@ -57,9 +60,6 @@ class TestRunner():
         except Exception as e:
             logger.exception(e)
             raise e
-        if "TEST_DIR" in env:
-            logger.info("Removing: %s" % env["TEST_DIR"])
-            shutil.rmtree(env["TEST_DIR"])
 
 
 def main():
