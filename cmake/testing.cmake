@@ -70,7 +70,7 @@ function (rp_test)
     ${RP_TEST_BINARY_NAME} "${RP_TEST_LIBRARIES}" $<TARGET_NAME_IF_EXISTS:Libcxx::libcxx>)
   add_test (
     NAME ${RP_TEST_BINARY_NAME}
-    COMMAND bash -c "${RUNNER} --binary=$<TARGET_FILE:${RP_TEST_BINARY_NAME}> --base_directory=${CMAKE_CURRENT_BINARY_DIR} ${files_to_copy} ${RP_TEST_ARGS} "
+    COMMAND bash -c "${RUNNER} --binary=$<TARGET_FILE:${RP_TEST_BINARY_NAME}> --base_directory=/dev/shm/vectorized_io/ ${files_to_copy} ${RP_TEST_ARGS} "
     )
 
   if(RP_TEST_TIMEOUT)
