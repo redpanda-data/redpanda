@@ -23,12 +23,18 @@ set(Boost_NO_BOOST_CMAKE ON CACHE BOOL "")
 
 # options
 option(RP_ENABLE_GOLD_LINKER "Enable -fuse-ld=gold" ON)
+set(RP_MARCH
+  "-march=westmere"
+  CACHE STRING
+  "-march override, use -march=armv8-a+crc+crypto or -march=westmere"
+  )
 option(V_MANAGE_DEPS "Use our own 3rdparty.cmake.in" ON)
 option (RP_ENABLE_DPDK "Enable DPDK support" OFF)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # compiler specific options
 set(BASE_LD_FLAGS_LIST
+  ${RP_MARCH}
   -L${CMAKE_CURRENT_BINARY_DIR}/v_deps_install/lib
   -L${CMAKE_CURRENT_BINARY_DIR}/v_deps_install/lib64
   -I${CMAKE_CURRENT_BINARY_DIR}/v_deps_install/include
