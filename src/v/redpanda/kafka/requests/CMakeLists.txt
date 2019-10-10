@@ -12,6 +12,7 @@ add_library (requests STATIC
   heartbeat_request.cc
   leave_group_request.cc
   sync_group_request.cc
+  create_topics_request.cc
   )
 target_include_directories(requests PUBLIC ${PROJECT_SOURCE_DIR}/src/v)
 
