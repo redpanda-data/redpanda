@@ -16,3 +16,10 @@ rp_test(
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES Boost::unit_test_framework model
 )
+rp_test(
+  UNIT_TEST
+  BINARY_NAME compression_lexical_cast_test
+  SOURCES compression_lexical_cast_test.cc
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LIBRARIES Boost::unit_test_framework model
+)
