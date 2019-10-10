@@ -2,6 +2,8 @@
 
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/timeout_clock.h"
+#include "raft/types.h"
 #include "rpc/models.h"
 
 namespace cluster {
@@ -14,6 +16,39 @@ struct partition_assignment {
     raft::group_id group;
     model::ntp ntp;
     model::broker broker;
+};
+
+struct topic_configuration {
+    topic_configuration(model::topic t, uint32_t count, uint16_t rf)
+      : topic(std::move(t))
+      , partition_count(count)
+      , replication_factor(rf) {
+    }
+    model::topic topic;
+    // using signed integer because Kafka protocol defines it as signed int
+    int32_t partition_count;
+    // using signed integer because Kafka protocol defines it as signed int
+    int16_t replication_factor;
+    // topic configuration entries
+    model::compression compression = model::compression::none;
+    model::topic_partition::compaction compaction
+      = model::topic_partition::compaction::no;
+    uint64_t retention_bytes = 0;
+    model::timeout_clock::duration retention = model::max_duration;
+};
+
+enum class topic_error_code : int16_t {
+    no_error,
+    unknown_error,
+    time_out,
+    invalid_partitions,
+    invalid_replication_factor,
+    invalid_config
+};
+
+struct topic_result {
+    model::topic topic;
+    topic_error_code error_code;
 };
 
 } // namespace cluster
