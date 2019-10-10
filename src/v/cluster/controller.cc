@@ -118,6 +118,15 @@ void controller::end_of_stream() {
     clusterlog().info("Finished recovering cluster state");
 }
 
+future<std::vector<topic_result>> controller::create_topics(
+  model::ns ns,
+  std::vector<topic_configuration> topics,
+  model::timeout_clock::time_point timeout) {
+    verify_shard();
+    // FIXME: Replace this stub...
+    return make_ready_future<std::vector<topic_result>>();
+}
+
 // ---- hooks below
 
 controller::stage_hook::stage_hook(controller* self)
