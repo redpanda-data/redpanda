@@ -16,9 +16,11 @@
 - [ ] Invite to stand-up
 - [ ] Team introductions
 - [ ] Schedule 1-1 meetings
-- [ ] Compile `v` @ master
-- [ ] Access to `v-dev` and archives
+- [ ] Fork [`v`](https://github.com/vectorizedio/v)
+   * Compile `v` @ master (see the [readme](../README.md) for instructions)
+- [ ] Access to [`v-dev`](https://groups.google.com/a/vectorized.io/forum/#!forum/v-dev) and archives
 - [ ] [Starter issues on GitHub](https://github.com/vectorizedio/v/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+   * Review the different tags' meaning in the [tag guide](github_tags.md).
 - [ ] [Development process](https://github.com/vectorizedio/v/blob/master/CONTRIBUTING.md)
 
 Be sure to change your notification settings in GitHub for the Vectorized
@@ -31,6 +33,8 @@ Vectorized e-mail address.
 3. Scroll down to the section _Custom routing_
 4. Update the e-mail address for the `vectorizedio` organization by selecting
    your `<you>@vectorized.io` e-mail address.
+5. Follow [this guide](https://help.github.com/en/articles/choosing-the-delivery-method-for-your-notifications)
+   to choose the notification delivery method of your preference.
 
 ## Background reading
 
