@@ -9,6 +9,7 @@ import argparse
 sys.path.append(os.path.dirname(__file__))
 logger = logging.getLogger('rp')
 
+import cli
 import git
 import shell
 import log
@@ -27,7 +28,7 @@ def generate_options():
         '[critical, error, warning, info, debug] i.e: --log debug'
     )
     parser.add_argument('--deps',
-                        type=_str2bool,
+                        type=cli.str2bool,
                         default='false',
                         help='install 3rd party dependencies')
     parser.add_argument('--build',
@@ -47,15 +48,15 @@ def generate_options():
                         choices=['all', 'incremental'],
                         help='files to format and to tidy: all | incremental')
     parser.add_argument('--tidy',
-                        type=_str2bool,
+                        type=cli.str2bool,
                         default='false',
                         help='run formatter with clang-tidy')
     parser.add_argument('--cpplint',
-                        type=_str2bool,
+                        type=cli.str2bool,
                         default='true',
                         help='run formatter with cpplint')
     parser.add_argument('--fmt',
-                        type=_str2bool,
+                        type=cli.str2bool,
                         default='true',
                         help='format last changed files')
     parser.add_argument(
@@ -68,17 +69,6 @@ def generate_options():
                         nargs='+',
                         help='list of packages to create')
     return parser
-
-
-def _str2bool(v):
-    if isinstance(v, bool):
-        return v
-    if v.lower() in ('yes', 'true', 't', 'y', '1'):
-        return True
-    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
-        return False
-    else:
-        raise argparse.ArgumentTypeError('Boolean value expected.')
 
 
 def main():
