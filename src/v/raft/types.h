@@ -3,8 +3,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record_batch_reader.h"
-#include "rpc/deserialize.h"
-#include "rpc/serialize.h"
+#include "rpc/models.h"
 #include "utils/fragbuf.h"
 #include "utils/named_type.h"
 
@@ -142,18 +141,7 @@ struct [[gnu::packed]] vote_reply {
 
 namespace rpc {
 template<>
-void serialize(bytes_ostream&, model::broker&&);
-template<>
-future<model::offset> deserialize(source&);
-template<>
-future<model::broker> deserialize(source&);
-template<>
 void serialize(bytes_ostream&, raft::entry&&);
 template<>
 future<raft::entry> deserialize(source&);
-template<>
-void serialize(bytes_ostream&, model::record&&);
-template<>
-future<std::unique_ptr<model::record>> deserialize(source&);
-
 } // namespace rpc
