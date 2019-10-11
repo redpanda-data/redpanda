@@ -11,9 +11,9 @@ void probe::setup_metrics(const model::ntp& ntp) {
     auto topic_label = sm::label("topic");
     auto partition_label = sm::label("partition");
     std::vector<sm::label_instance> labels = {
-      ns_label(ntp.ns.name),
-      topic_label(ntp.tp.topic),
-      partition_label(ntp.tp.partition),
+      ns_label(ntp.ns()),
+      topic_label(ntp.tp.topic()),
+      partition_label(ntp.tp.partition()),
     };
     _metrics.add_group(
       prometheus_sanitize::metrics_name("storage:log"),

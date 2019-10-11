@@ -11,8 +11,8 @@ namespace storage {
 
 inline shard_id shard_of(const model::ntp& ntp) {
     incremental_xxhash64 inc;
-    inc.update(ntp.ns.name);
-    inc.update(ntp.tp.topic.name);
+    inc.update(ntp.ns());
+    inc.update(ntp.tp.topic());
     auto p = ntp.tp.partition();
     inc.update((const char*)&p, sizeof(model::partition_id::type));
     return jump_consistent_hash(inc.digest(), smp::count);

@@ -120,7 +120,7 @@ public:
     }
 
     uint32_t write(const model::topic& topic) {
-        return write(topic.name);
+        return write(topic);
     }
 
     // write bytes directly to output without a length prefix

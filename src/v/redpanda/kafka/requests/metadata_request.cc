@@ -91,7 +91,7 @@ metadata_request::process(request_context&& ctx, smp_service_group g) {
                   topic_metadata->partitions.emplace_back(
                     model::partition_id(0));
               }
-              rw.write(t.name());
+              rw.write(t());
               if (ctx.header().version >= api_version(1)) {
                   // Currently topics are never internal.
                   rw.write(false);
