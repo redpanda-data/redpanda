@@ -54,13 +54,9 @@ def main():
     options = parser.parse_args()
     log.set_logger_for_main(getattr(logging, options.log.upper()))
     logger.info("%s" % options)
-    logger.info("Git root: %s", get_git_root(os.path.dirname(__file__)))
-    if options.files == 'changed':
-        for x in get_git_changed_files():
-            print(x)
-    if options.files == 'all':
-        for x in get_git_files():
-            print(x)
+
+    if options.files:
+        _list_files(options.files)
 
 
 def _build_parser():
@@ -74,6 +70,16 @@ def _build_parser():
                         default='all',
                         help='changed | all')
     return parser
+
+
+def _list_files(file_set):
+    logger.info("Git root: %s", get_git_root(os.path.dirname(__file__)))
+    if file_set == 'changed':
+        for x in get_git_changed_files():
+            print(x)
+    if file_set == 'all':
+        for x in get_git_files():
+            print(x)
 
 
 if __name__ == '__main__':
