@@ -203,6 +203,9 @@ enum class error_code : int16_t {
     // Consumer group The consumer group has reached its max size. already has
     // the configured maximum number of members.
     group_max_size_reached = 81,
+    // The broker rejected this static consumer since another consumer with the
+    // same group.instance.id has registered with a different member.id.
+    fenced_instance_id = 82,
 };
 
 } // namespace kafka::errors
