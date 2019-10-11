@@ -277,7 +277,8 @@ void kafka_server::connection::do_process(
                 .then([this] { _server._probe.request_served(); });
           } catch (...) {
               _server._probe.request_processing_error();
-              klog.debug("Failed to process request: {}", f.get_exception());
+              klog.debug(
+                "Failed to process request: {}", std::current_exception());
               return std::move(ready);
           }
       });
