@@ -40,7 +40,6 @@ void application::validate_arguments(const po::variables_map& cfg) {
 }
 
 void application::init_env() {
-    syschecks::initialize_intrinsics();
     std::setvbuf(stdout, nullptr, _IOLBF, 1024);
 }
 
