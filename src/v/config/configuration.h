@@ -44,6 +44,10 @@ struct configuration final : public config_store {
     property<uint32_t> target_quota_byte_rate;
     property<std::optional<sstring>> rack;
     property<bool> disable_metrics;
+    property<std::chrono::milliseconds> group_min_session_timeout_ms;
+    property<std::chrono::milliseconds> group_max_session_timeout_ms;
+    property<std::chrono::milliseconds> group_initial_rebalance_delay;
+    property<std::chrono::milliseconds> group_new_member_join_timeout;
 
     configuration();
 
