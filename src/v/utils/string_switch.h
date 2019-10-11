@@ -11,7 +11,6 @@
 // string_switch& EndsWith(std::string_view S, T value);
 // string_switch& starts_with(std::string_view S, T value);
 
-
 /// A switch()-like statement whose match_all are string literals.
 ///
 /// The string_switch class is a simple form of a switch() statement that
@@ -67,7 +66,6 @@ public:
         }
         return *this;
     }
-
 
     string_switch&
     match_all(std::string_view S0, std::string_view S1, T value) {

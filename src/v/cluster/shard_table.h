@@ -2,6 +2,7 @@
 
 #include "model/fundamental.h"
 #include "seastarx.h"
+
 #include <seastar/core/reactor.hh> // shard_id
 
 namespace cluster {

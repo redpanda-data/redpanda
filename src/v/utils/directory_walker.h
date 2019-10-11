@@ -19,8 +19,8 @@ struct directory_walker {
     using walker_type = std::function<future<>(directory_entry)>;
 
     static future<> walk(sstring dirname, walker_type walker_func) {
-        return open_directory(std::move(dirname)).then(
-          [walker_func = std::move(walker_func)](file f) mutable {
+        return open_directory(std::move(dirname))
+          .then([walker_func = std::move(walker_func)](file f) mutable {
               auto s = std::make_unique<subscription<directory_entry>>(
                 f.list_directory(std::move(walker_func)));
               return s->done().finally(

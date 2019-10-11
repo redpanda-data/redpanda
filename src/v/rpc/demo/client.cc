@@ -79,60 +79,61 @@ int main(int args, char** argv, char** env) {
     sharded<hdr_hist> hist;
     return app.run(args, argv, [&] {
         auto& cfg = app.configuration();
-    return async([&] {
-        rpc::client_configuration client_cfg;
-        client_cfg.server_addr = socket_address(ipv4_addr(
-            cfg["ip"].as<std::string>(), cfg["port"].as<uint16_t>()));
-        auto ca_cert = cfg["ca-cert"].as<std::string>();
-        if (ca_cert != "" ) {
-            auto builder = tls::credentials_builder();
-            //builder.set_dh_level(tls::dh_params::level::MEDIUM);
-            lgr.info("Using {} as CA root certificate", ca_cert);
-            builder.set_x509_trust_file(ca_cert, tls::x509_crt_format::PEM)
-                .get0();
-            client_cfg.credentials = std::move(builder);
-        }
-        const uint32_t parallelism = cfg["parallelism"].as<uint32_t>();
-        const uint32_t concurrency = cfg["concurrency"].as<uint32_t>();
-        const uint64_t total_requests = parallelism * concurrency * smp::count;
-        client
-          .start(concurrency, parallelism, client_cfg, std::ref(hist))
-          .then([&hist] { return hist.start(); })
-          .then([&client] {
-              lgr.info("Connecting to server");
-              return client.invoke_on_all(&client_loadgen::connect);
-          })
-          .then([&client, total_requests, parallelism, concurrency] {
-              lgr.info(
-                "executing {} requests. {} per tcp connection ({}) per "
-                "core({})",
-                total_requests,
-                concurrency,
-                parallelism,
-                smp::count);
-              auto b = rpc::clock_type::now();
-              return client.invoke_on_all(&client_loadgen::execute_loadgen)
-                .finally([b, total_requests] {
-                    auto e = rpc::clock_type::now();
-                    double d
-                      = ch::duration_cast<ch::milliseconds>(e - b).count();
-                    d /= 1000.0;
-                    lgr.info(
-                      "{} requests finished in {}secs. qps:{}",
-                      total_requests,
-                      d,
-                      int64_t(total_requests / d));
-                });
-          })
-          .then([&hist] {
-              return hist.invoke_on_all(
-                [](auto& h) { lgr.info("latency: {}", h); });
-          })
-          .then([&hist] { return hist.stop(); })
-          .then([&client] {
-              lgr.info("stopping");
-              return client.stop();
-           }).get();
-    });
+        return async([&] {
+            rpc::client_configuration client_cfg;
+            client_cfg.server_addr = socket_address(ipv4_addr(
+              cfg["ip"].as<std::string>(), cfg["port"].as<uint16_t>()));
+            auto ca_cert = cfg["ca-cert"].as<std::string>();
+            if (ca_cert != "") {
+                auto builder = tls::credentials_builder();
+                // builder.set_dh_level(tls::dh_params::level::MEDIUM);
+                lgr.info("Using {} as CA root certificate", ca_cert);
+                builder.set_x509_trust_file(ca_cert, tls::x509_crt_format::PEM)
+                  .get0();
+                client_cfg.credentials = std::move(builder);
+            }
+            const uint32_t parallelism = cfg["parallelism"].as<uint32_t>();
+            const uint32_t concurrency = cfg["concurrency"].as<uint32_t>();
+            const uint64_t total_requests = parallelism * concurrency
+                                            * smp::count;
+            client.start(concurrency, parallelism, client_cfg, std::ref(hist))
+              .then([&hist] { return hist.start(); })
+              .then([&client] {
+                  lgr.info("Connecting to server");
+                  return client.invoke_on_all(&client_loadgen::connect);
+              })
+              .then([&client, total_requests, parallelism, concurrency] {
+                  lgr.info(
+                    "executing {} requests. {} per tcp connection ({}) per "
+                    "core({})",
+                    total_requests,
+                    concurrency,
+                    parallelism,
+                    smp::count);
+                  auto b = rpc::clock_type::now();
+                  return client.invoke_on_all(&client_loadgen::execute_loadgen)
+                    .finally([b, total_requests] {
+                        auto e = rpc::clock_type::now();
+                        double d
+                          = ch::duration_cast<ch::milliseconds>(e - b).count();
+                        d /= 1000.0;
+                        lgr.info(
+                          "{} requests finished in {}secs. qps:{}",
+                          total_requests,
+                          d,
+                          int64_t(total_requests / d));
+                    });
+              })
+              .then([&hist] {
+                  return hist.invoke_on_all(
+                    [](auto& h) { lgr.info("latency: {}", h); });
+              })
+              .then([&hist] { return hist.stop(); })
+              .then([&client] {
+                  lgr.info("stopping");
+                  return client.stop();
+              })
+              .get();
+        });
     });
 }

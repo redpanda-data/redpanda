@@ -7,9 +7,9 @@
 #include <seastar/core/metrics_types.hh>
 
 #include <boost/intrusive/list.hpp>
+#include <hdr/hdr_histogram.h>
 
 #include <chrono>
-#include <hdr/hdr_histogram.h>
 #include <memory>
 #include <utility>
 

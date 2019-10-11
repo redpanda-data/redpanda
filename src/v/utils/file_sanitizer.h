@@ -162,7 +162,7 @@ private:
     void check_closed() {
         if (_closed) {
             std::cout << "Op performed on closed file, from "
-                         << current_backtrace() << std::endl;
+                      << current_backtrace() << std::endl;
         }
     }
 

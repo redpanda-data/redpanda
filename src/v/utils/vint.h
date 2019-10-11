@@ -33,8 +33,7 @@ private:
     }
 
 public:
-    static size_type
-    serialize(value_type value, bytes::iterator out) noexcept {
+    static size_type serialize(value_type value, bytes::iterator out) noexcept {
         auto encode = encode_zigzag(value);
         size_type size = 1;
         while (encode >= more_bytes) {
@@ -60,7 +59,8 @@ public:
                 result |= byte << shift;
                 break;
             }
-            shift = std::min(std::numeric_limits<value_type>::digits, shift + 7);
+            shift = std::min(
+              std::numeric_limits<value_type>::digits, shift + 7);
         }
         return {decode_zigzag(result), bytes_read};
     }

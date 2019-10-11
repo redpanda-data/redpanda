@@ -106,8 +106,7 @@ produce_request::process(request_context&& ctx, smp_service_group g) {
                        batch = std::move(*batch)]() mutable {
                           return produce_stage(
                             seastar::ref(remote_ctx),
-                            std::make_unique<model::ntp>(
-                              std::move(ntp)),
+                            std::make_unique<model::ntp>(std::move(ntp)),
                             std::move(batch));
                       });
                 });

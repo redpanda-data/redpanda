@@ -112,8 +112,7 @@ public:
     remote& operator=(remote&&) = default;
 
     ~remote() noexcept {
-        if (__builtin_expect(
-              _v && _origin_cpu != engine().cpu_id(), false)) {
+        if (__builtin_expect(_v && _origin_cpu != engine().cpu_id(), false)) {
             std::abort();
         }
     }

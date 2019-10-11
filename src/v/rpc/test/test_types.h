@@ -2,8 +2,8 @@
 
 #include "utils/fragbuf.h"
 
-#include <seastar/core/unaligned.hh>
 #include <seastar/core/sstring.hh>
+#include <seastar/core/unaligned.hh>
 
 #include <array>
 #include <cstdint>

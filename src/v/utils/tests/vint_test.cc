@@ -25,8 +25,7 @@ void check_roundtrip_sweep(std::size_t count) {
     auto verify_round_trip = [](vint::value_type value) {
         static bytes encoding_buffer(
           bytes::initialized_later(), vint::max_length);
-        const auto size = vint::serialize(
-          value, encoding_buffer.begin());
+        const auto size = vint::serialize(value, encoding_buffer.begin());
         const auto view = bytes_view(encoding_buffer.data(), size);
         const auto [deserialized, _] = vint::deserialize(view);
         BOOST_REQUIRE_EQUAL(deserialized, value);

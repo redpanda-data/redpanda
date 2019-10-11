@@ -9,7 +9,6 @@
 namespace rpc {
 class client_probe {
 public:
-
     void request_sent() {
         ++_requests_sent;
         ++_requests_pending;

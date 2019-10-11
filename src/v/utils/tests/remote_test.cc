@@ -42,8 +42,7 @@ struct obj_with_foreign_ptr {
 
 SEASTAR_THREAD_TEST_CASE(test_free_on_right_cpu_with_foreign_ptr) {
     auto p = smp::submit_to(1, [] {
-                 return remote<obj_with_foreign_ptr>(
-                   0, make_foreign("la"));
+                 return remote<obj_with_foreign_ptr>(0, make_foreign("la"));
              }).get0();
     p.get().x += 1;
     smp::submit_to(1, [p = std::move(p)]() mutable {

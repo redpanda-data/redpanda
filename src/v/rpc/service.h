@@ -1,7 +1,7 @@
 #pragma once
 
-#include "rpc/types.h"
 #include "rpc/parse_utils.h"
+#include "rpc/types.h"
 
 #include <seastar/core/reactor.hh>
 #include <seastar/core/scheduling.hh>

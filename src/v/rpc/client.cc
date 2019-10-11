@@ -29,14 +29,12 @@ struct client_context_impl final : streaming_context {
     promise<> pr;
 };
 
-client::client(
-  client_configuration c, 
-  std::optional<sstring> service_name)
+client::client(client_configuration c, std::optional<sstring> service_name)
   : cfg(std::move(c))
   , _memory(cfg.max_queued_bytes)
   , _creds(
       cfg.credentials ? (*cfg.credentials).build_certificate_credentials()
-                    : nullptr) {
+                      : nullptr) {
     setup_metrics(service_name);
 }
 
@@ -181,7 +179,7 @@ future<> client::do_reads() {
 /// - this needs a streaming_context.
 ///
 future<> client::dispatch(header h) {
-    static constexpr auto header_size =  sizeof(header);
+    static constexpr auto header_size = sizeof(header);
     auto it = _correlations.find(h.correlation_id);
     if (it == _correlations.end()) {
         // the background future on connect will fail all outstanding futures

@@ -1,10 +1,10 @@
 #pragma once
 
+#include "rpc/batched_output_stream.h"
 #include "rpc/client_probe.h"
 #include "rpc/netbuf.h"
 #include "rpc/parse_utils.h"
 #include "rpc/types.h"
-#include "rpc/batched_output_stream.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/iostream.hh>
