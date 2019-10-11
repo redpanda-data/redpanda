@@ -12,6 +12,19 @@
 
 #include <chrono>
 
+static inline future<temporary_buffer<char>> read_fully(sstring name) {
+    return open_file_dma(name, open_flags::ro).then([](file f) {
+        return f.size()
+          .then([f](uint64_t size) mutable {
+              return f.dma_read_bulk<char>(0, size);
+          })
+          .then([f](temporary_buffer<char> buf) mutable {
+              return f.close().then(
+                [f, buf = std::move(buf)]() mutable { return std::move(buf); });
+          });
+    });
+}
+
 int application::run(int ac, char** av) {
     init_env();
     app_template app = setup_app_template();
@@ -65,7 +78,10 @@ future<> application::start_service(sharded<Service>& s, Args&&... args) {
 }
 
 void application::hydrate_config(const po::variables_map& cfg) {
-    YAML::Node config = YAML::LoadFile(cfg["redpanda-cfg"].as<std::string>());
+    auto buf = read_fully(cfg["redpanda-cfg"].as<std::string>()).get0();
+    // see https://github.com/jbeder/yaml-cpp/issues/765
+    std::string workaround(buf.get(), buf.size());
+    YAML::Node config = YAML::Load(workaround);
     _log.info("Read file:\n\n{}\n\n", config);
     start_service(_conf).get();
     auto& local_cfg = _conf.local();
