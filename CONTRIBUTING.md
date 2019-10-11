@@ -38,7 +38,7 @@ Also configure git to detect renames and copies to make ``git format-patch`` out
 git config --global diff.renames copies
 ```
 
-Run `tools/verify_git_cfg.sh` to setup the .gitorderfile and
+Run `tools/git.py --check-config=y` to setup the .gitorderfile and
 configure commit messages to always include the "Signed-off-by" tag.
 
 ## Commiting your changes
