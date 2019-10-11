@@ -2,7 +2,9 @@
 
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
+#include "cluster/types.h"
 #include "model/fundamental.h"
+#include "model/record.h"
 #include "seastarx.h"
 #include "storage/log_manager.h"
 
@@ -12,6 +14,8 @@ namespace cluster {
 class controller final {
 public:
     static constexpr shard_id shard = 0;
+    /// \brief used to distinguished log messages
+    static constexpr model::record_batch_type controller_record_batch_type = 3;
 
     controller(
       model::node_id,
@@ -34,6 +38,28 @@ private:
         controller* ptr;
     };
     friend stage_hook;
+
+    struct batch_consumer {
+        batch_consumer(controller* c)
+          : ptr(c) {
+        }
+        future<stop_iteration> operator()(model::record_batch batch) {
+            return ptr->recover_batch(std::move(batch)).then([] {
+                return stop_iteration::no;
+            });
+        }
+        void end_of_stream() {
+            ptr->end_of_stream();
+        }
+        controller* ptr;
+    };
+    friend batch_consumer;
+
+    future<> bootstrap_from_log(storage::log_ptr);
+    future<> recover_batch(model::record_batch);
+    future<> recover_record(model::record);
+    future<> recover_assignment(partition_assignment);
+    void end_of_stream();
 
     model::node_id _self;
     io_priority_class _prio;
