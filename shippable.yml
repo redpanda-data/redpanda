@@ -28,6 +28,10 @@ build:
       if [[ "${ID}" != "fedora" ]]; then  exit 1; fi
       echo "Using CI image"
     - |
+      echo "Checking consistent formatting"
+      bash -c 'python3 tools/fmt.py --log=debug'
+      git diff-index --exit-code --ignore-submodules HEAD
+    - |
       bash -c 'python3 tools/build.py --deps=true --targets=all \
               --build=release --log=debug --fmt=false \
               --clang=internal --packages rpm deb tar'
