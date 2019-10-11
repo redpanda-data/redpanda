@@ -1,7 +1,7 @@
 #pragma once
 
-#include <random>
 #include <pcg_random.hpp>
+#include <random>
 
 // dumb wrapper around pcg32
 class fast_prng {
@@ -22,6 +22,7 @@ public:
     inline uint32_t operator()() {
         return _rng();
     }
+
 private:
     pcg32 _rng;
 };

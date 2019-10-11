@@ -11,4 +11,4 @@ inline logger& stlog() {
     return _stlog;
 }
 
-}
+} // namespace storage

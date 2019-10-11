@@ -18,7 +18,7 @@ public:
     source(source&&) noexcept = default;
     source& operator=(source&&) noexcept = default;
 
-    future<temporary_buffer<char>> read_exactly(size_t i)  {
+    future<temporary_buffer<char>> read_exactly(size_t i) {
         return _source.get().read_exactly(i).then(
           [this](temporary_buffer<char> b) {
               if (b.size() > 0) {
@@ -28,7 +28,7 @@ public:
               return make_ready_future<temporary_buffer<char>>(std::move(b));
           });
     }
-    future<fragbuf> read_fragbuf(size_t i)  {
+    future<fragbuf> read_fragbuf(size_t i) {
         return _frag.read_exactly(_source.get(), i).then([this](fragbuf b) {
             auto istream = b.get_istream();
             istream.consume([this](bytes_view bv) {

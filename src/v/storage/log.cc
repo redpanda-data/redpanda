@@ -8,10 +8,7 @@
 
 namespace storage {
 
-log::log(
-  model::ntp ntp,
-  log_manager& manager,
-  log_set segs) noexcept
+log::log(model::ntp ntp, log_manager& manager, log_set segs) noexcept
   : _ntp(std::move(ntp))
   , _manager(manager)
   , _segs(std::move(segs)) {
@@ -112,8 +109,7 @@ log_segment_appender& log::appender() {
     return *_appender;
 }
 
-model::record_batch_reader
-log::make_reader(log_reader_config config) {
+model::record_batch_reader log::make_reader(log_reader_config config) {
     return model::make_record_batch_reader<log_reader>(
       _segs, _tracker, std::move(config), _probe);
 }

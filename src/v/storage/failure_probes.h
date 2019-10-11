@@ -78,7 +78,7 @@ public:
     }
 
     enum class methods : type { consume = 1 };
-    
+
     parser_failure_probes() = default;
     parser_failure_probes(parser_failure_probes&&) = default;
     parser_failure_probes& operator=(parser_failure_probes&&) = default;

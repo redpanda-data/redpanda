@@ -13,7 +13,7 @@ public:
           .then([this](scheduling_group sg) { _admin = sg; })
           .then([] { return create_scheduling_group("raft", 1000); })
           .then([this](scheduling_group sg) { _raft = sg; })
-          .then([] { return create_scheduling_group("kafka", 1000) ; })
+          .then([] { return create_scheduling_group("kafka", 1000); })
           .then([this](scheduling_group sg) { _kafka = sg; });
     }
 

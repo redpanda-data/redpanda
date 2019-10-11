@@ -32,8 +32,7 @@ public:
     update(const char* src, const std::size_t& sz) {
         XXH64_update(&_state, src, sz);
     }
-    [[gnu::always_inline]] inline void
-    update(const sstring& str) {
+    [[gnu::always_inline]] inline void update(const sstring& str) {
         update(str.data(), str.size());
     }
     template<

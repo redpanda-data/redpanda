@@ -1,4 +1,5 @@
 #include "cluster/metadata_cache.h"
+
 #include "seastarx.h"
 
 #include <seastar/core/thread.hh>

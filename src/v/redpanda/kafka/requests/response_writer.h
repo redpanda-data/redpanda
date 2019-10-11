@@ -125,12 +125,12 @@ public:
 
     // write bytes directly to output without a length prefix
     uint32_t write_direct(fragbuf&& f) {
-      auto size = f.size_bytes();
-      auto bufs = std::move(f).release();
-      for (auto& b : bufs) {
-	_out->write(std::move(b));
-      }
-      return size;
+        auto size = f.size_bytes();
+        auto bufs = std::move(f).release();
+        for (auto& b : bufs) {
+            _out->write(std::move(b));
+        }
+        return size;
     }
 
     // write bytes_ostream directly to output without a length prefix
