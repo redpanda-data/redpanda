@@ -2,6 +2,7 @@
 import sys
 import os
 import logging
+import argparse
 sys.path.append(os.path.dirname(__file__))
 logger = logging.getLogger('rp')
 
@@ -49,23 +50,8 @@ def get_git_changed_files(obj=None):
 
 # tests
 def main():
-    import argparse
-
-    def _generate_options():
-        parser = argparse.ArgumentParser(description='build sys helper')
-        parser.add_argument(
-            '--log',
-            type=str,
-            default='INFO',
-            help='info,debug, type log levels. i.e: --log=debug')
-        parser.add_argument('--files',
-                            type=str,
-                            default='all',
-                            help='changed | all')
-        return parser
-
-    parser = _generate_options()
-    options, program_options = parser.parse_known_args()
+    parser = _build_parser()
+    options = parser.parse_args()
     log.set_logger_for_main(getattr(logging, options.log.upper()))
     logger.info("%s" % options)
     logger.info("Git root: %s", get_git_root(os.path.dirname(__file__)))
@@ -75,6 +61,19 @@ def main():
     if options.files == 'all':
         for x in get_git_files():
             print(x)
+
+
+def _build_parser():
+    parser = argparse.ArgumentParser(description='build sys helper')
+    parser.add_argument('--log',
+                        type=str,
+                        default='INFO',
+                        help='info,debug, type log levels. i.e: --log=debug')
+    parser.add_argument('--files',
+                        type=str,
+                        default='all',
+                        help='changed | all')
+    return parser
 
 
 if __name__ == '__main__':
