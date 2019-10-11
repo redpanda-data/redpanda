@@ -10,18 +10,6 @@
 
 namespace model {
 
-std::ostream& operator<<(std::ostream& os, const topic_view& t) {
-    return fmt_print(os, "{{topic: {}}}", t.name());
-}
-
-std::ostream& operator<<(std::ostream& os, const topic& t) {
-    return fmt_print(os, "{{topic: {}}}", t.name);
-}
-
-std::ostream& operator<<(std::ostream& os, const ns& n) {
-    return fmt_print(os, "{{namespace: {}}}", n.name);
-}
-
 std::ostream& operator<<(std::ostream& os, compression c) {
     os << "{compression: ";
     switch (c) {
@@ -52,8 +40,7 @@ std::ostream& operator<<(std::ostream& os, timestamp ts) {
 }
 
 std::ostream& operator<<(std::ostream& os, const topic_partition& tp) {
-    return fmt_print(
-      os, "{{topic_partition: {}:{}}}", tp.topic.name, tp.partition);
+    return fmt_print(os, "{{topic_partition: {}:{}}}", tp.topic, tp.partition);
 }
 
 std::ostream& operator<<(std::ostream& os, const ntp& n) {
@@ -128,7 +115,7 @@ std::ostream& operator<<(std::ostream& os, const record_batch& batch) {
 }
 
 sstring ntp::path() const {
-    return fmt::format("{}/{}/{}", ns.name, tp.topic.name, tp.partition());
+    return fmt::format("{}/{}/{}", ns(), tp.topic(), tp.partition());
 }
 
 } // namespace model

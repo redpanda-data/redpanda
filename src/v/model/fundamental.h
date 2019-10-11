@@ -17,72 +17,12 @@ using term_id = named_type<int64_t, struct model_raft_term_id_type>;
 
 using partition_id = named_type<int32_t, struct model_partition_id_type>;
 
-class topic_view {
-public:
-    explicit topic_view(std::string_view topic_name) noexcept
-      : _topic_name(topic_name) {
-    }
+using topic_view = named_type<std::string_view, struct model_topic_view_type>;
 
-    std::string_view name() const {
-        return _topic_name;
-    }
-
-    bool operator==(const topic_view& other) const {
-        return _topic_name == other._topic_name;
-    }
-
-    bool operator!=(const topic_view& other) const {
-        return !(*this == other);
-    }
-
-private:
-    std::string_view _topic_name;
-};
-
-std::ostream& operator<<(std::ostream&, const topic_view&);
-
-struct topic {
-    topic() noexcept = default;
-    explicit topic(sstring topic_name) noexcept
-      : name(std::move(topic_name)) {
-    }
-
-    topic_view view() const {
-        return topic_view(name);
-    }
-
-    bool operator==(const topic& other) const {
-        return name == other.name;
-    }
-
-    bool operator!=(const topic& other) const {
-        return !(*this == other);
-    }
-
-    const sstring name;
-};
-
-std::ostream& operator<<(std::ostream&, const topic&);
+using topic = named_type<sstring, struct model_topic_type>;
 
 /// \brief namespace is reserved in c++;  use ns
-struct ns {
-    ns() noexcept = default;
-    explicit ns(sstring namespace_name) noexcept
-      : name(std::move(namespace_name)) {
-    }
-
-    bool operator==(const ns& other) const {
-        return name == other.name;
-    }
-
-    bool operator!=(const ns& other) const {
-        return !(*this == other);
-    }
-
-    const sstring name;
-};
-
-std::ostream& operator<<(std::ostream&, const ns&);
+using ns = named_type<sstring, struct model_ns_type>;
 
 struct topic_partition {
     model::topic topic;
@@ -150,8 +90,8 @@ template<>
 struct hash<model::ntp> {
     size_t operator()(const model::ntp& ntp) const {
         size_t h = 0;
-        boost::hash_combine(h, hash<sstring>()(ntp.ns.name));
-        boost::hash_combine(h, hash<sstring>()(ntp.tp.topic.name));
+        boost::hash_combine(h, hash<sstring>()(ntp.ns));
+        boost::hash_combine(h, hash<sstring>()(ntp.tp.topic));
         boost::hash_combine(h, hash<model::partition_id>()(ntp.tp.partition));
         return h;
     }

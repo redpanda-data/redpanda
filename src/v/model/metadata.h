@@ -71,14 +71,14 @@ struct topic_metadata {
 namespace internal {
 struct hash_by_topic_name {
     size_t operator()(const topic_metadata& tm) const {
-        return std::hash<std::string_view>()(tm.topic.name());
+        return std::hash<std::string_view>()(tm.topic());
     }
 };
 
 struct equals_by_topic_name {
     bool
     operator()(const topic_metadata& tm1, const topic_metadata& tm2) const {
-        return tm1.topic.name() == tm2.topic.name();
+        return tm1.topic == tm2.topic;
     }
 };
 
@@ -92,20 +92,6 @@ using topic_metadata_map = std::unordered_set<
 } // namespace model
 
 namespace std {
-
-template<>
-struct hash<model::topic_view> {
-    size_t operator()(const model::topic_view& v) const {
-        return hash<std::string_view>()(v.name());
-    }
-};
-
-template<>
-struct hash<model::topic> {
-    size_t operator()(const model::topic& t) const {
-        return hash<seastar::sstring>()(t.name);
-    }
-};
 template<>
 struct hash<model::broker> {
     size_t operator()(const model::broker& b) const {
