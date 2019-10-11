@@ -147,6 +147,7 @@ void application::wire_up_services() {
       _conf.local().node_id(),
       _conf.local().data_directory(),
       _conf.local().log_segment_size(),
+      default_priority_class(),
       _partition_manager,
       _shard_table);
 

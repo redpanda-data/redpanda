@@ -17,6 +17,7 @@ public:
       model::node_id,
       sstring basedir,
       size_t max_segment_size,
+      io_priority_class io_priority,
       sharded<partition_manager>&,
       sharded<shard_table>&);
 
@@ -35,6 +36,7 @@ private:
     friend stage_hook;
 
     model::node_id _self;
+    io_priority_class _prio;
     storage::log_manager _mngr;
     std::unique_ptr<partition> _raft0;
     sharded<partition_manager>& _pm;
