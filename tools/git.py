@@ -111,7 +111,7 @@ def _check_git_config():
 
     for rule in invalid_rules:
         logger.error(rule.msg())
-        if rule.exception:
+        if getattr(rule, 'exception', None):
             logger.debug(rule.exception)
 
     if len(invalid_rules) > 0:
@@ -136,7 +136,7 @@ class ValidationRule():
             return False
 
     def err_msg(self):
-        if self.exception:
+        if getattr(self, 'exception', None):
             return 'Command ' + self.exception.cmd + ' failed with return code ' + str(
                 self.exception.returncode)
 
