@@ -18,9 +18,11 @@ controller::controller(
   model::node_id n,
   sstring basedir,
   size_t max_segment_size,
+  io_priority_class prio,
   sharded<partition_manager>& pm,
   sharded<shard_table>& st)
   : _self(std::move(n))
+  , _prio(prio)
   , _mngr(storage::log_config{
       std::move(basedir),
       max_segment_size,
