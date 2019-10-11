@@ -123,7 +123,7 @@ public:
         if (n < 0) {
             return std::nullopt;
         }
-        return {do_read_string(read_int16())};
+        return {do_read_string(n)};
     }
 
     std::optional<std::string_view> read_nullable_string_view() {
@@ -131,7 +131,7 @@ public:
         if (n < 0) {
             return std::nullopt;
         }
-        return {do_read_string_view(read_int16())};
+        return {do_read_string_view(n)};
     }
 
     void skip_nullable_string() {
