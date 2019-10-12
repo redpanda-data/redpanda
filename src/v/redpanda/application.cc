@@ -70,13 +70,6 @@ app_template application::setup_app_template() {
     return app;
 }
 
-template<typename Service, typename... Args>
-future<> application::construct_service(sharded<Service>& s, Args&&... args) {
-    auto f = s.start(std::forward<Args>(args)...);
-    _deferred.emplace_back([&s] { s.stop().get(); });
-    return f;
-}
-
 void application::hydrate_config(const po::variables_map& cfg) {
     auto buf = read_fully(cfg["redpanda-cfg"].as<std::string>()).get0();
     // see https://github.com/jbeder/yaml-cpp/issues/765

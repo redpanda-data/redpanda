@@ -67,7 +67,11 @@ private:
     void wire_up_services();
     void configure_admin_server();
     template<typename Service, typename... Args>
-    future<> construct_service(sharded<Service>& s, Args&&... args);
+    future<> construct_service(sharded<Service>& s, Args&&... args){
+      auto f = s.start(std::forward<Args>(args)...);
+      _deferred.emplace_back([&s] { s.stop().get(); });
+      return f;
+    }
 
     std::unique_ptr<app_template> _app;
     scheduling_groups _scheduling_groups;
