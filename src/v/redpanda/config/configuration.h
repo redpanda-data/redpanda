@@ -1,5 +1,4 @@
 #pragma once
-
 #include "redpanda/config/config_store.h"
 #include "redpanda/config/seed_server.h"
 #include "redpanda/config/tls_config.h"
@@ -7,10 +6,20 @@
 #include <seastar/net/inet_address.hh>
 #include <seastar/net/ip.hh>
 
+#include <cstdlib>
+#include <filesystem>
+
 namespace config {
+struct data_directory_path {
+    std::filesystem::path path;
+    sstring as_sstring() const {
+        return path.c_str();
+    }
+};
+
 struct configuration final : public config_store {
     // WAL
-    property<sstring> data_directory;
+    property<data_directory_path> data_directory;
     property<bool> developer_mode;
     property<uint64_t> log_segment_size;
     // Network
@@ -40,7 +49,13 @@ struct configuration final : public config_store {
 
 using conf_ref = typename std::reference_wrapper<configuration>;
 
-}; // namespace config
+} // namespace config
+
+namespace std {
+inline ostream& operator<<(ostream& o, const config::data_directory_path& p) {
+    return o << "{data_directory=" << p.path << "}";
+}
+} // namespace std
 
 namespace nlohmann {
 template<>
@@ -69,6 +84,10 @@ struct adl_serializer<std::chrono::milliseconds> {
 } // namespace nlohmann
 
 namespace config {
+static void to_json(nlohmann::json& j, const data_directory_path& v) {
+    j["data_directory"] = v.path.c_str();
+}
+
 static void to_json(nlohmann::json& j, const seed_server& v) {
     j = {{"node_id", v.id}, {"host", v.addr}};
 }
@@ -90,6 +109,28 @@ static void to_json(nlohmann::json& j, const tls_config& v) {
 } // namespace config
 
 namespace YAML {
+template<>
+struct convert<config::data_directory_path> {
+    using type = config::data_directory_path;
+    static Node encode(const type& rhs) {
+        Node node;
+        node = rhs.path.c_str();
+        return node;
+    }
+    static bool decode(const Node& node, type& rhs) {
+        auto pstr = node.as<std::string>();
+        if (pstr[0] == '~') {
+            const char* home = std::getenv("HOME");
+            if (!home) {
+                return false;
+            }
+            pstr = fmt::format("{}{}", home, pstr.erase(0, 1));
+        }
+        rhs.path = pstr;
+        return true;
+    }
+};
+
 template<>
 struct convert<config::seed_server> {
     using type = config::seed_server;
