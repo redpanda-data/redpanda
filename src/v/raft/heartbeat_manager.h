@@ -31,6 +31,10 @@ public:
 
     void register_group(lw_shared_ptr<consensus>);
     void deregister_group(raft::group_id);
+    duration_type base_duration() const {
+        return _timeout.base_duration();
+    }
+
     future<> start();
     future<> stop();
 
