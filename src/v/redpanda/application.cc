@@ -195,7 +195,7 @@ void application::wire_up_services() {
       _conf.local().target_quota_byte_rate(),
       _conf.local().quota_manager_gc_sec())
       .get();
-    _quota_mgr.invoke_on_all([](auto& qm) mutable { return qm.start(); }).get();
+    _quota_mgr.invoke_on_all(&kafka::transport::quota_manager::start).get();
 
     // Kafka API
     auto kafka_creds
