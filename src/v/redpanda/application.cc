@@ -99,7 +99,9 @@ void application::hydrate_config(const po::variables_map& cfg) {
 void application::check_environment() {
     syschecks::cpu();
     syschecks::memory(_conf.local().developer_mode());
-    storage::directories::initialize(_conf.local().data_directory()).get();
+    storage::directories::initialize(
+      _conf.local().data_directory().as_sstring())
+      .get();
 }
 
 void application::create_groups() {
@@ -160,7 +162,7 @@ void application::wire_up_services() {
     // controller
     _controller = std::make_unique<cluster::controller>(
       _conf.local().node_id(),
-      _conf.local().data_directory(),
+      _conf.local().data_directory().as_sstring(),
       _conf.local().log_segment_size(),
       default_priority_class(),
       _partition_manager,
