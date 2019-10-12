@@ -165,7 +165,7 @@ void application::wire_up_services() {
       default_priority_class(),
       _partition_manager,
       _shard_table);
-
+    _controller->start().get();
     _deferred.emplace_back([this] { _controller->stop().get(); });
     // rpc
     rpc::server_configuration rpc_cfg;
