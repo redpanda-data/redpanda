@@ -38,6 +38,12 @@ configuration::configuration()
       "Number of partitions in internal raft metadata topic",
       required::no,
       7)
+  , raft_timeout(
+      *this,
+      "raft_timeout",
+      "Milliseconds for raft leader election/heartbeats",
+      required::no,
+      std::chrono::milliseconds(150))
   , seed_servers(
       *this,
       "seed_servers",
