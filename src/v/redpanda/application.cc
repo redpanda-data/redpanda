@@ -12,6 +12,19 @@
 
 #include <chrono>
 
+static inline future<temporary_buffer<char>> read_fully(sstring name) {
+    return open_file_dma(name, open_flags::ro).then([](file f) {
+        return f.size()
+          .then([f](uint64_t size) mutable {
+              return f.dma_read_bulk<char>(0, size);
+          })
+          .then([f](temporary_buffer<char> buf) mutable {
+              return f.close().then(
+                [f, buf = std::move(buf)]() mutable { return std::move(buf); });
+          });
+    });
+}
+
 int application::run(int ac, char** av) {
     init_env();
     app_template app = setup_app_template();
@@ -40,7 +53,6 @@ void application::validate_arguments(const po::variables_map& cfg) {
 }
 
 void application::init_env() {
-    syschecks::initialize_intrinsics();
     std::setvbuf(stdout, nullptr, _IOLBF, 1024);
 }
 
@@ -59,16 +71,19 @@ app_template application::setup_app_template() {
 }
 
 template<typename Service, typename... Args>
-future<> application::start_service(sharded<Service>& s, Args&&... args) {
+future<> application::construct_service(sharded<Service>& s, Args&&... args) {
     auto f = s.start(std::forward<Args>(args)...);
     _deferred.emplace_back([&s] { s.stop().get(); });
     return f;
 }
 
 void application::hydrate_config(const po::variables_map& cfg) {
-    YAML::Node config = YAML::LoadFile(cfg["redpanda-cfg"].as<std::string>());
+    auto buf = read_fully(cfg["redpanda-cfg"].as<std::string>()).get0();
+    // see https://github.com/jbeder/yaml-cpp/issues/765
+    std::string workaround(buf.get(), buf.size());
+    YAML::Node config = YAML::Load(workaround);
     _log.info("Read file:\n\n{}\n\n", config);
-    start_service(_conf).get();
+    construct_service(_conf).get();
     auto& local_cfg = _conf.local();
     local_cfg.read_yaml(config);
     _conf
@@ -84,7 +99,9 @@ void application::hydrate_config(const po::variables_map& cfg) {
 void application::check_environment() {
     syschecks::cpu();
     syschecks::memory(_conf.local().developer_mode());
-    storage::directories::initialize(_conf.local().data_directory()).get();
+    storage::directories::initialize(
+      _conf.local().data_directory().as_sstring())
+      .get();
 }
 
 void application::create_groups() {
@@ -93,7 +110,7 @@ void application::create_groups() {
 }
 
 void application::configure_admin_server() {
-    start_service(_admin, sstring("admin")).get();
+    construct_service(_admin, sstring("admin")).get();
     prometheus::config metrics_conf;
     metrics_conf.metric_help = "redpanda metrics";
     metrics_conf.prefix = "vectorized";
@@ -132,9 +149,9 @@ void application::configure_admin_server() {
 // add additional services in here
 void application::wire_up_services() {
     // cluster
-    start_service(_raft_client_cache).get();
-    start_service(_shard_table).get();
-    start_service(
+    construct_service(_raft_client_cache).get();
+    construct_service(_shard_table).get();
+    construct_service(
       _partition_manager,
       _conf.local().node_id(),
       std::ref(_shard_table),
@@ -145,17 +162,18 @@ void application::wire_up_services() {
     // controller
     _controller = std::make_unique<cluster::controller>(
       _conf.local().node_id(),
-      _conf.local().data_directory(),
+      _conf.local().data_directory().as_sstring(),
       _conf.local().log_segment_size(),
+      default_priority_class(),
       _partition_manager,
       _shard_table);
-
+    _controller->start().get();
     _deferred.emplace_back([this] { _controller->stop().get(); });
     // rpc
     rpc::server_configuration rpc_cfg;
     rpc_cfg.max_service_memory_per_core = memory_groups::rpc_total_memory();
     rpc_cfg.addrs.push_back(_conf.local().rpc_server);
-    start_service(_rpc, rpc_cfg).get();
+    construct_service(_rpc, rpc_cfg).get();
 
     _rpc
       .invoke_on_all([this](rpc::server& s) {
@@ -169,17 +187,17 @@ void application::wire_up_services() {
       .get();
     _rpc.invoke_on_all(&rpc::server::start).get();
     _log.info("Started RPC server listening at {}", _conf.local().rpc_server());
-    start_service(_metadata_cache).get();
+    construct_service(_metadata_cache).get();
 
     // metrics and quota management
-    start_service(
+    construct_service(
       _quota_mgr,
       _conf.local().default_num_windows(),
       _conf.local().default_window_sec(),
       _conf.local().target_quota_byte_rate(),
       _conf.local().quota_manager_gc_sec())
       .get();
-    _quota_mgr.invoke_on_all([](auto& qm) mutable { return qm.start(); }).get();
+    _quota_mgr.invoke_on_all(&kafka::transport::quota_manager::start).get();
 
     // Kafka API
     auto kafka_creds
@@ -189,7 +207,7 @@ void application::wire_up_services() {
       memory::stats().total_memory() / 10,
       _smp_groups.kafka_smp_sg(),
       kafka_creds};
-    start_service(
+    construct_service(
       _kafka_server,
       kafka::transport::probe(),
       std::ref(_metadata_cache),
