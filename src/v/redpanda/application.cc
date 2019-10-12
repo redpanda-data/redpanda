@@ -71,7 +71,7 @@ app_template application::setup_app_template() {
 }
 
 template<typename Service, typename... Args>
-future<> application::start_service(sharded<Service>& s, Args&&... args) {
+future<> application::construct_service(sharded<Service>& s, Args&&... args) {
     auto f = s.start(std::forward<Args>(args)...);
     _deferred.emplace_back([&s] { s.stop().get(); });
     return f;
@@ -83,7 +83,7 @@ void application::hydrate_config(const po::variables_map& cfg) {
     std::string workaround(buf.get(), buf.size());
     YAML::Node config = YAML::Load(workaround);
     _log.info("Read file:\n\n{}\n\n", config);
-    start_service(_conf).get();
+    construct_service(_conf).get();
     auto& local_cfg = _conf.local();
     local_cfg.read_yaml(config);
     _conf
@@ -108,7 +108,7 @@ void application::create_groups() {
 }
 
 void application::configure_admin_server() {
-    start_service(_admin, sstring("admin")).get();
+    construct_service(_admin, sstring("admin")).get();
     prometheus::config metrics_conf;
     metrics_conf.metric_help = "redpanda metrics";
     metrics_conf.prefix = "vectorized";
@@ -147,9 +147,9 @@ void application::configure_admin_server() {
 // add additional services in here
 void application::wire_up_services() {
     // cluster
-    start_service(_raft_client_cache).get();
-    start_service(_shard_table).get();
-    start_service(
+    construct_service(_raft_client_cache).get();
+    construct_service(_shard_table).get();
+    construct_service(
       _partition_manager,
       _conf.local().node_id(),
       std::ref(_shard_table),
@@ -171,7 +171,7 @@ void application::wire_up_services() {
     rpc::server_configuration rpc_cfg;
     rpc_cfg.max_service_memory_per_core = memory_groups::rpc_total_memory();
     rpc_cfg.addrs.push_back(_conf.local().rpc_server);
-    start_service(_rpc, rpc_cfg).get();
+    construct_service(_rpc, rpc_cfg).get();
 
     _rpc
       .invoke_on_all([this](rpc::server& s) {
@@ -185,10 +185,10 @@ void application::wire_up_services() {
       .get();
     _rpc.invoke_on_all(&rpc::server::start).get();
     _log.info("Started RPC server listening at {}", _conf.local().rpc_server());
-    start_service(_metadata_cache).get();
+    construct_service(_metadata_cache).get();
 
     // metrics and quota management
-    start_service(
+    construct_service(
       _quota_mgr,
       _conf.local().default_num_windows(),
       _conf.local().default_window_sec(),
@@ -205,7 +205,7 @@ void application::wire_up_services() {
       memory::stats().total_memory() / 10,
       _smp_groups.kafka_smp_sg(),
       kafka_creds};
-    start_service(
+    construct_service(
       _kafka_server,
       kafka::transport::probe(),
       std::ref(_metadata_cache),
