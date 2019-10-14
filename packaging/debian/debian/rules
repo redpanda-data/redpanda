@@ -17,6 +17,9 @@ override_dh_auto_install:
 	ln -sf /opt/redpanda/bin/iotune $(CURDIR)/debian/redpanda/usr/bin/iotune
 
 override_dh_installinit:
+	# .slice files aren't supported by dh_installinit or dh_installsystemd
+	# (see `man 1 dh_installinit` & `man 1 dh_installsystemd`), so they're
+	# installed in redpanda.install.
 	dh_installinit --name=redpanda
 	dh_installinit --name=redpanda-tuner
 
