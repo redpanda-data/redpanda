@@ -244,7 +244,7 @@ future<> kafka_server::connection::process_request() {
                           .then([this,
                                  header = std::move(header),
                                  units = std::move(units),
-                                 &delay](fragbuf buf) mutable {
+                                 delay = std::move(delay)](fragbuf buf) mutable {
                               auto ctx = requests::request_context(
                                 _server._metadata_cache,
                                 std::move(header),
