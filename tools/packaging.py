@@ -129,7 +129,7 @@ def red_panda_rpm(input_tar, dest_path):
     spec_template = _in_root("packaging/rpm/redpanda.spec.j2")
     spec = os.path.join(dest_path, "rpm/SPECS/redpanda.spec")
     templates.render_to_file(spec_template, spec, package_ctx)
-    _render_service_template(
+    _render_systemd_templates(
         os.path.join(dest_path, "rpm/common"), {'redhat': True})
     # build RPM
     shell.run_subprocess(
@@ -154,7 +154,7 @@ def red_panda_deb(input_tar, dest_path):
     package_ctx = _pkg_context()
     chglog_tmpl = _in_root("packaging/debian/changelog.j2")
     control_tmpl = _in_root("packaging/debian/control.j2")
-    _render_service_template(common_path, {"debian": True})
+    _render_systemd_templates(common_path, {"debian": True})
     for f in glob.glob(os.path.join(common_path, "systemd", "*")):
         shutil.copy(f, os.path.join(dest_path, "debian/redpanda/debian"))
     templates.render_to_file(
@@ -172,7 +172,7 @@ def _is_template(source, files):
     return filter(lambda f: f.endswith(".j2"), files)
 
 
-def _render_service_template(dest_path, ctx):
+def _render_systemd_templates(dest_path, ctx):
     redpanda_slice = _in_root(
         'packaging/common/systemd/redpanda.slice.j2')
     redpanda_srvc = _in_root(
