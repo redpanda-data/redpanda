@@ -1,0 +1,31 @@
+[Unit]
+Description=Slice used to run Redpanda and rpk. Maximum priority for IO and CPU
+Before=slices.target
+
+[Slice]
+# Keep track of how much memory, IO and CPU is being used
+MemoryAccounting=true
+IOAccounting=true
+CPUAccounting=true
+
+# Assigns a weight of 1000 to CPU and IO. The allowed range is 1 - 10000,
+# and the default is 100. This means that when competing with default-weighted
+# processes, systemd will consider redpanda and rpk 10x more important, and prioritize
+# resource scheduling accordingly. For more info see
+# https://www.freedesktop.org/software/systemd/man/systemd.resource-control.html#CPUWeight=weight
+IOWeight=1000
+CPUWeight=1000
+
+MemoryMin=2048M
+
+# Should be zero, but work around for older systemd.
+# See: https://github.com/systemd/systemd/issues/8363
+MemorySwapMax=1
+{%if redhat %}
+# Systemd deprecated settings BlockIOWeight and CPUShares, but they are still used in RHEL7.
+# Newer systemd wants IOWeight and CPUWeight instead. Luckily both newer and older systemd seem to
+# ignore the unwanted option so safest to get both. Using just the old versions would work too but
+# seems less future proof. Using just the new versions does not work at all for RHEL7.
+BlockIOWeight=1000
+CPUShares=1000
+{% endif %}
