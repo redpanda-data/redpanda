@@ -10,12 +10,11 @@ logger = logging.getLogger('rp')
 
 def run_subprocess(cmd, env=os.environ):
     logger.debug("Running command: exec bash -c '%s'" % cmd)
-    proc = subprocess.Popen(
-        "exec bash -c '%s'" % cmd,
-        stdout=sys.stdout,
-        stderr=sys.stderr,
-        env=env,
-        shell=True)
+    proc = subprocess.Popen("exec bash -c '%s'" % cmd,
+                            stdout=sys.stdout,
+                            stderr=sys.stderr,
+                            env=env,
+                            shell=True)
     return_code = 0
     try:
         return_code = proc.wait()
