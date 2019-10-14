@@ -32,3 +32,10 @@ rp_test(
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES Boost::unit_test_framework requests
 )
+
+rp_test(
+  BINARY_NAME topic_result_utils_tests
+  SOURCES topic_result_utils_tests.cc
+  DEFINITIONS SEASTAR_TESTING_MAIN
+  LIBRARIES Boost::unit_test_framework Seastar::seastar_testing requests
+)

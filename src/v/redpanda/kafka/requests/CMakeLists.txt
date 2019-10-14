@@ -22,6 +22,7 @@ target_link_libraries(requests
     cluster
     model
     storage
+    errors
   )
 
 add_subdirectory(tests)
