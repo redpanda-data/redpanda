@@ -29,7 +29,9 @@ def run_subprocess(cmd, env=os.environ):
 
 
 def _cleanup_whitespace(s):
-    return re.sub(r'\s+', '', s)
+    # removes leading and trailing spaces
+    # removes duplicate spaces, i.e.: `foo    bar` == `foo bar`
+    return re.sub(r' +', ' ', s.strip())
 
 
 def raw_check_output(cmd):
