@@ -16,3 +16,11 @@ rp_test(
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES Boost::unit_test_framework requests
 )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME types_conversion_tests
+  SOURCES types_conversion_tests.cc
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LIBRARIES Boost::unit_test_framework requests
+)
