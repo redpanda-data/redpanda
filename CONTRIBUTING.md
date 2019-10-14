@@ -1,5 +1,132 @@
 # Sending Patches
 
+# Overview
+
+## This is how a cover letter should look
+
+```
+[PATCH v2 0/5] Introduced additional Kafka Server probes
+
+Finish Kafka API server probe instrumentation.
+Introduce new probes to monitor number of bytes sent/received
+and number of errors. Additionally optimized size of probe fields.
+
+Changes since v1:
+- Changed commit message to remove ambiguity
+- Removed unused request_ctx parameters
+
+
+remote:
+https://github.com/mmaslankaprv/v/tree/feature/kafka-new-probes
+
+
+```
+
+A few important notes:
+
+* Include one of these when submitting more than 2 patches.
+  See details below on how to generate one
+* Contains a `remote:` tag so the maintainer can pull and merge
+* Contains a `since v1:` that allows the reviewers to focus on the
+  new edits and ensure that their comments were addressed.
+
+## Each individual commit should look like:
+
+```patch
+
+From 25cac57bd9f6c61bb435ecb2f304e1e16684405e Mon Sep 17 00:00:00 2001
+From: Alexander Gallego <alex@vectorized.io>
+Date: Fri, 11 Oct 2019 20:25:00 -0700
+Subject: [PATCH] redpanda/application: start the controller recovery process
+
+Kick off the controller log replay function at the begining of main
+---
+ src/v/redpanda/application.cc | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/v/redpanda/application.cc b/src/v/redpanda/application.cc
+index 32f48577..f750af86 100644
+--- a/src/v/redpanda/application.cc
++++ b/src/v/redpanda/application.cc
+@@ -165,7 +165,7 @@ void application::wire_up_services() {
+       default_priority_class(),
+       _partition_manager,
+       _shard_table);
+-
++    _controller->start().get();
+     _deferred.emplace_back([this] { _controller->stop().get(); });
+     // rpc
+     rpc::server_configuration rpc_cfg;
+
+
+```
+
+A few important notes:
+
+* The subject line is prefixed with `<subsystem>/<component>:`
+  in this case `redpanda/application:`
+* The patch is small, easy to see is correct
+
+## Simple patches (1 file change) with multiple versions
+
+```patch
+
+From 25cac57bd9f6c61bb435ecb2f304e1e16684405e Mon Sep 17 00:00:00 2001
+From: Alexander Gallego <alex@vectorized.io>
+Date: Fri, 11 Oct 2019 20:25:00 -0700
+Subject: [PATCH v2] redpanda/application: start the controller recovery process
+
+Kick off the controller log replay function at the begining of main
+---
+
+Since v1:
+
+* rename method to `start()`
+
+ src/v/redpanda/application.cc | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/v/redpanda/application.cc b/src/v/redpanda/application.cc
+index 32f48577..f750af86 100644
+--- a/src/v/redpanda/application.cc
++++ b/src/v/redpanda/application.cc
+@@ -165,7 +165,7 @@ void application::wire_up_services() {
+       default_priority_class(),
+       _partition_manager,
+       _shard_table);
+-
++    _controller->start().get();
+     _deferred.emplace_back([this] { _controller->stop().get(); });
+     // rpc
+     rpc::server_configuration rpc_cfg;
+
+
+```
+
+A few important notes:
+
+* In addition to the notes on patches above, the version metadata is 
+  below the triple dash `---`
+  
+```
+---
+
+Since v1:
+
+* rename method to `start()`
+
+ src/v/redpanda/application.cc | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+
+```
+
+This metadata is ignored by `git am -m` merges.
+It is important for reviewers and not imporant to git or anyone going forward.
+
+
+# Details
+
 Send your changes as patches to the [mailing list](https://groups.google.com/a/vectorized.io/forum/#!forum/v-dev). 
 We don't accept pull requests on GitHub.
 
@@ -25,6 +152,9 @@ https://www.kernel.org/doc/html/v4.19/process/submitting-patches.html
 
 ## Configuring git
 
+Run `tools/git.py --check-config=y` to setup the .gitorderfile and
+configure commit messages to always include the "Signed-off-by" tag.
+
 Configure your name and email address:
 
 ```
@@ -32,14 +162,12 @@ $ git config user.name "Your Name"
 $ git config user.email "your@vectorized.io"
 ```
 
-Also configure git to detect renames and copies to make ``git format-patch`` output easier to review:
+Also configure git to detect renames and copies to make ``git format-patch`` 
+output easier to review:
 
 ```
 git config --global diff.renames copies
 ```
-
-Run `tools/git.py --check-config=y` to setup the .gitorderfile and
-configure commit messages to always include the "Signed-off-by" tag.
 
 ## Commiting your changes
 
@@ -129,7 +257,7 @@ $ git format-patch -v2 ...
 Add a brief summary of changes in the new version, for example:
 
 ```
-In v3:
+since v3:
     - declared move constructor and move assignment operator as noexcept
     - used std::variant instead of a union
     ...
