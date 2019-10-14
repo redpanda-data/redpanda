@@ -173,18 +173,9 @@ def _is_template(source, files):
 
 
 def _render_systemd_templates(dest_path, ctx):
-    redpanda_slice = _in_root(
-        'packaging/common/systemd/redpanda.slice.j2')
-    redpanda_srvc = _in_root(
-        'packaging/common/systemd/redpanda.service.j2')
-    tuner_srvc = _in_root(
-        'packaging/common/systemd/redpanda-tuner.service.j2')
-    templates.render_to_file(
-        redpanda_slice, os.path.join(dest_path, "systemd", "redpanda.slice"),
-        ctx)
-    templates.render_to_file(
-        redpanda_srvc, os.path.join(dest_path, "systemd", "redpanda.service"),
-        ctx)
-    templates.render_to_file(
-        tuner_srvc, os.path.join(dest_path, "systemd",
-                                 "redpanda-tuner.service"), ctx)
+    root_dir = 'packaging/common/systemd/'
+    jinja_ext = '.j2'
+    files = ['redpanda.slice', 'redpanda.service', 'redpanda-tuner.service']
+    for f in files:
+        tmpl = _in_root(root_dir + f + jinja_ext)
+        templates.render_to_file(tmpl, os.path.join(dest_path, 'systemd', f), ctx)
