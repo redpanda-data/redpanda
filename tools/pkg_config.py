@@ -2,7 +2,7 @@ import git
 
 VENDOR = "Vectorized Inc."
 REDPANDA_NAME = "redpanda"
-REDPANDA_DESCRIPTION = 'Redpanda the fastest queue in the world'
+REDPANDA_DESCRIPTION = 'Redpanda, the fastest queue in the West'
 REDPANDA_CATEGORY = "Applications/Misc"
 REDPANDA_URL = "https://vectorized.io/product"
 LICENSE = 'Proprietary and confidential'
