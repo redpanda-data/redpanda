@@ -88,6 +88,23 @@ func Test_collectRedpandaArgs(t *testing.T) {
 				"true",
 			},
 		},
+		{
+			name: "shall not include the flag with empty value",
+			args: RedpandaArgs{
+				ConfigFilePath: "/etc/redpanda/redpanda.yaml",
+				SeastarFlags: map[string]string{
+					"io-properties-file": "",
+					"lock-memory":        fmt.Sprint(true),
+				},
+			},
+			want: []string{
+				"redpanda",
+				"--redpanda-cfg",
+				"/etc/redpanda/redpanda.yaml",
+				"--lock-memory",
+				"true",
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
