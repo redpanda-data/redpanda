@@ -43,8 +43,21 @@ enum class topic_error_code : int16_t {
     time_out,
     invalid_partitions,
     invalid_replication_factor,
-    invalid_config
+    invalid_config,
+    topic_error_code_min = no_error,
+    topic_error_code_max = invalid_config
 };
+
+constexpr std::string_view topic_error_code_names[] = {
+    [(int16_t)topic_error_code::no_error] = "no_error",
+    [(int16_t)topic_error_code::unknown_error] = "unknown_error",
+    [(int16_t)topic_error_code::time_out] = "time_out",
+    [(int16_t)topic_error_code::invalid_partitions] = "invalid_partitions",
+    [(int16_t)topic_error_code::invalid_replication_factor] = "invalid_replication_factor",
+    [(int16_t)topic_error_code::invalid_config] = "invalid_config"
+};
+
+std::ostream& operator<<(std::ostream&, topic_error_code);
 
 struct topic_result {
     model::topic topic;
