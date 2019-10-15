@@ -9,12 +9,14 @@
 namespace raft {
 consensus::consensus(
   model::node_id nid,
+  timeout_jitter jit,
   storage::log& l,
   storage::log_append_config::fsync should_fsync,
   io_priority_class io_priority,
   model::timeout_clock::duration disk_timeout,
   sharded<client_cache>& clis)
   : _self(std::move(nid))
+  , _jit(std::move(jit))
   , _log(l)
   , _should_fsync(should_fsync)
   , _io_priority(io_priority)

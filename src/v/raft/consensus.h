@@ -2,6 +2,7 @@
 
 #include "raft/client_cache.h"
 #include "raft/probe.h"
+#include "raft/timeout_jitter.h"
 #include "seastarx.h"
 #include "storage/log.h"
 
@@ -28,6 +29,7 @@ public:
 
     consensus(
       model::node_id,
+      timeout_jitter,
       storage::log&,
       storage::log_append_config::fsync should_fsync,
       io_priority_class io_priority,
@@ -91,6 +93,7 @@ private:
 
     // args
     model::node_id _self;
+    timeout_jitter _jit;
     storage::log& _log;
     storage::log_append_config::fsync _should_fsync;
     io_priority_class _io_priority;
