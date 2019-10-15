@@ -189,10 +189,10 @@ private:
 using record_batch_type = named_type<int8_t, struct model_record_batch_type>;
 
 static constexpr std::array<record_batch_type, 4> well_known_record_batch_types{
-  record_batch_type()(), // unknown - used for debugging
-  1,                     // raft::data
-  2,                     // raft::configuration
-  3                      // controller::*
+  record_batch_type(), // unknown - used for debugging
+  record_batch_type(1),  // raft::data
+  record_batch_type(2),  // raft::configuration
+  record_batch_type(3)   // controller::*
 };
 
 struct record_batch_header {

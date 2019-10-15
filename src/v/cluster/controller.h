@@ -15,7 +15,7 @@ class controller final {
 public:
     static constexpr shard_id shard = 0;
     /// \brief used to distinguished log messages
-    static constexpr model::record_batch_type controller_record_batch_type = 3;
+    static constexpr model::record_batch_type controller_record_batch_type{3};
 
     controller(
       model::node_id,

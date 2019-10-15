@@ -23,7 +23,7 @@ public:
     struct voted_for_configuration {
         model::node_id voted_for;
         // for term it doesn't make sense to use numeric_limits<>::min
-        model::term_id term = 0;
+        model::term_id term{0};
     };
     enum class vote_state { follower, candidate, leader };
 

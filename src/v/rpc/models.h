@@ -20,7 +20,9 @@ inline future<model::ntp> deserialize(source& in) {
         model::partition_id::type p;
     };
     return deserialize<_ntp>(in).then([](_ntp n) {
-        return model::ntp{n.ns, model::topic_partition{n.topic, n.p}};
+        return model::ntp{model::ns(n.ns),
+                          model::topic_partition{model::topic(n.topic),
+                                                 model::partition_id(n.p)}};
     });
 }
 

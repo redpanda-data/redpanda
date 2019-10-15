@@ -18,7 +18,7 @@ log::log(model::ntp ntp, log_manager& manager, log_set segs) noexcept
         _tracker.update_dirty_offset(_segs.last()->max_offset());
         _term = _segs.last()->term();
     } else {
-        _term = 0;
+        _term = model::term_id(0);
     }
 }
 
@@ -39,7 +39,7 @@ future<> log::close() {
 
 future<> log::new_segment(
   model::offset o, model::term_id term, const io_priority_class& pc) {
-    return _manager.make_log_segment(_ntp, o, term())
+    return _manager.make_log_segment(_ntp, o, term)
       .then([this, pc](log_segment_ptr seg) {
           _active_segment = std::move(seg);
           _segs.add(_active_segment);
@@ -55,7 +55,7 @@ log::do_append(model::record_batch_reader&& reader, log_append_config config) {
         // FIXME: We need to persist the last offset somewhere.
         auto offset = _segs.size() > 0 ? _segs.last()->max_offset()
                                        : model::offset(0);
-        f = new_segment(offset, _term(), config.io_priority);
+        f = new_segment(offset, _term, config.io_priority);
     }
     return f.then(
       [this, reader = std::move(reader), config = std::move(config)]() mutable {
@@ -95,7 +95,7 @@ future<> log::do_roll(model::offset current_offset) {
     _active_segment->set_last_written_offset(current_offset);
     return _appender->flush().then([this, current_offset] {
         return new_segment(
-          current_offset + 1, _term(), _appender->priority_class());
+          current_offset + 1, _term, _appender->priority_class());
     });
 }
 future<> log::maybe_roll(model::offset current_offset) {

@@ -105,7 +105,11 @@ struct context {
         }
         appender.flush().get();
         log_seg = log_segment(
-          "test", std::move(fd), 0, batches.begin()->base_offset(), 128);
+          "test",
+          std::move(fd),
+          model::term_id(0),
+          batches.begin()->base_offset(),
+          128);
         log_seg->flush().get();
         in = log_seg->data_stream(0, default_priority_class());
         parser = continuous_batch_parser(c, in);

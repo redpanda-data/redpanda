@@ -19,10 +19,10 @@ class base_named_type<T, Tag, std::true_type> {
 public:
     using type = T;
     constexpr base_named_type() = default;
-    constexpr base_named_type(const type& v)
+    constexpr explicit base_named_type(const type& v)
       : _value(v) {
     }
-    constexpr base_named_type(type&& v)
+    constexpr explicit base_named_type(type&& v)
       : _value(std::move(v)) {
     }
     base_named_type(base_named_type&& o) noexcept = default;
@@ -88,10 +88,10 @@ public:
       = std::is_nothrow_move_constructible<T>::value;
 
     base_named_type() = default;
-    base_named_type(const type& v)
+    explicit base_named_type(const type& v)
       : _value(v) {
     }
-    base_named_type(type&& v)
+    explicit base_named_type(type&& v)
       : _value(std::move(v)) {
     }
 
