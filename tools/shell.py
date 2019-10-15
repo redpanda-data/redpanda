@@ -10,12 +10,11 @@ logger = logging.getLogger('rp')
 
 def run_subprocess(cmd, env=os.environ):
     logger.debug("Running command: exec bash -c '%s'" % cmd)
-    proc = subprocess.Popen(
-        "exec bash -c '%s'" % cmd,
-        stdout=sys.stdout,
-        stderr=sys.stderr,
-        env=env,
-        shell=True)
+    proc = subprocess.Popen("exec bash -c '%s'" % cmd,
+                            stdout=sys.stdout,
+                            stderr=sys.stderr,
+                            env=env,
+                            shell=True)
     return_code = 0
     try:
         return_code = proc.wait()
@@ -29,7 +28,9 @@ def run_subprocess(cmd, env=os.environ):
 
 
 def _cleanup_whitespace(s):
-    return re.sub(r'\s+', '', s)
+    # removes leading and trailing spaces
+    # removes duplicate spaces, i.e.: `foo    bar` == `foo bar`
+    return re.sub(r' +', ' ', s.strip())
 
 
 def raw_check_output(cmd):
