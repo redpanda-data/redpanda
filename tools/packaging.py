@@ -49,8 +49,9 @@ def _get_dependencies(binary):
 
 def relocable_tar_package(dest, execs, configs, admin_api_swag):
     logger.info("Creating relocable tar package %s", dest)
-    gzip_process = subprocess.Popen(
-        "pigz -f > %s" % dest, shell=True, stdin=subprocess.PIPE)
+    gzip_process = subprocess.Popen("pigz -f > %s" % dest,
+                                    shell=True,
+                                    stdin=subprocess.PIPE)
     ar = tarfile.open(fileobj=gzip_process.stdin, mode='w|')
     all_libs = {}
     for exe in execs:
@@ -119,21 +120,20 @@ def red_panda_rpm(input_tar, dest_path):
     _rpm_tree(os.path.join(dest_path, "rpm"))
     fs.force_link(input_tar, os.path.join(dest_path,
                                           "rpm/SOURCES/redpanda.tar"))
-    shutil.copytree(
-        _in_root('packaging/common'),
-        os.path.join(dest_path, "rpm/common"),
-        ignore=_is_template)
+    shutil.copytree(_in_root('packaging/common'),
+                    os.path.join(dest_path, "rpm/common"),
+                    ignore=_is_template)
     # render templates
     package_ctx = _pkg_context()
     package_ctx['source_tar'] = "redpanda.tar"
     spec_template = _in_root("packaging/rpm/redpanda.spec.j2")
     spec = os.path.join(dest_path, "rpm/SPECS/redpanda.spec")
     templates.render_to_file(spec_template, spec, package_ctx)
-    _render_service_template(
-        os.path.join(dest_path, "rpm/common"), {'redhat': True})
+    _render_systemd_templates(os.path.join(dest_path, "rpm/common"),
+                              {'redhat': True})
     # build RPM
-    shell.run_subprocess(
-        'rpmbuild -bb --define \"_topdir %s\" %s' % (rpm_tree_root, spec))
+    shell.run_subprocess('rpmbuild -bb --define \"_topdir %s\" %s' %
+                         (rpm_tree_root, spec))
 
 
 def red_panda_deb(input_tar, dest_path):
@@ -141,25 +141,26 @@ def red_panda_deb(input_tar, dest_path):
     debian_dir = os.path.join(dest_path, "debian/redpanda")
     os.makedirs(debian_dir, exist_ok=True)
     shutil.rmtree(debian_dir)
-    shutil.copytree(
-        _in_root("packaging/debian/debian"), os.path.join(
-            debian_dir, 'debian'))
+    shutil.copytree(_in_root("packaging/debian/debian"),
+                    os.path.join(debian_dir, 'debian'))
     target_tar_name = "debian/redpanda_%s-%s.orig.tar.gz" % (VERSION, RELEASE)
     fs.force_link(input_tar, os.path.join(dest_path, target_tar_name))
     common_path = os.path.join(dest_path, "debian/redpanda/common")
-    shutil.copytree(
-        _in_root('packaging/common'), common_path, ignore=_is_template)
+    shutil.copytree(_in_root('packaging/common'),
+                    common_path,
+                    ignore=_is_template)
 
     # render templates
     package_ctx = _pkg_context()
     chglog_tmpl = _in_root("packaging/debian/changelog.j2")
     control_tmpl = _in_root("packaging/debian/control.j2")
-    _render_service_template(common_path, {"debian": True})
+    _render_systemd_templates(common_path, {"debian": True})
     for f in glob.glob(os.path.join(common_path, "systemd", "*")):
         shutil.copy(f, os.path.join(dest_path, "debian/redpanda/debian"))
     templates.render_to_file(
-        chglog_tmpl, os.path.join(
-            dest_path, "debian/redpanda/debian/changelog"), package_ctx)
+        chglog_tmpl, os.path.join(dest_path,
+                                  "debian/redpanda/debian/changelog"),
+        package_ctx)
     templates.render_to_file(
         control_tmpl,
         os.path.join(dest_path, "debian/redpanda/debian/control"), package_ctx)
@@ -172,14 +173,11 @@ def _is_template(source, files):
     return filter(lambda f: f.endswith(".j2"), files)
 
 
-def _render_service_template(dest_path, ctx):
-    redpanda_srvc = _in_root(
-        'packaging/common/systemd/redpanda.service.j2')
-    tuner_srvc = _in_root(
-        'packaging/common/systemd/redpanda-tuner.service.j2')
-    templates.render_to_file(
-        redpanda_srvc, os.path.join(dest_path, "systemd", "redpanda.service"),
-        ctx)
-    templates.render_to_file(
-        tuner_srvc, os.path.join(dest_path, "systemd",
-                                 "redpanda-tuner.service"), ctx)
+def _render_systemd_templates(dest_path, ctx):
+    root_dir = 'packaging/common/systemd/'
+    jinja_ext = '.j2'
+    files = ['redpanda.slice', 'redpanda.service', 'redpanda-tuner.service']
+    for f in files:
+        tmpl = _in_root(root_dir + f + jinja_ext)
+        templates.render_to_file(tmpl, os.path.join(dest_path, 'systemd', f),
+                                 ctx)

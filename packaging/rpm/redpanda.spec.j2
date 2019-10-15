@@ -51,6 +51,7 @@ install -m755 -d "%{buildroot}"/var/lib/redpanda/coredump
 install -m755 bin/* -Dt "%{buildroot}/opt/redpanda/bin"
 install -m755 libexec/*.bin -Dt "%{buildroot}/opt/redpanda/libexec"
 install -m755 lib/* -Dt "%{buildroot}/opt/redpanda/lib"
+install -m644 %{_topdir}/common/systemd/redpanda.slice -Dt "%{buildroot}%{_prefix}/lib/systemd/system"
 install -m644 %{_topdir}/common/systemd/redpanda.service -Dt "%{buildroot}%{_prefix}/lib/systemd/system"
 install -m644 %{_topdir}/common/systemd/redpanda-tuner.service -Dt "%{buildroot}%{_prefix}/lib/systemd/system"
 install -m644 %{_topdir}/common/redpanda.d/*.conf -Dt "%{buildroot}/etc/redpanda.d"
@@ -88,6 +89,7 @@ install -m755 %{_topdir}/common/scripts/* -Dt "%{buildroot}/%{_prefix}/lib/redpa
 %{_bindir}/redpanda
 %{_bindir}/rpk
 %{_bindir}/iotune
+%{_prefix}/lib/systemd/system/redpanda.slice
 %{_prefix}/lib/systemd/system/redpanda.service
 %{_prefix}/lib/systemd/system/redpanda-tuner.service
 %{_prefix}/lib/sysctl.d/99-redpanda-sched.conf
