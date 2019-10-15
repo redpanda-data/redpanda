@@ -159,7 +159,7 @@ void application::wire_up_services() {
 
     // controller
     _controller = std::make_unique<cluster::controller>(
-      _conf.local().node_id(),
+      model::node_id(_conf.local().node_id()),
       _conf.local().data_directory().as_sstring(),
       _conf.local().log_segment_size(),
       _partition_manager,

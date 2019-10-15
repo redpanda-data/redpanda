@@ -9,8 +9,8 @@ using namespace raft; // NOLINT
 
 SEASTAR_THREAD_TEST_CASE(write_and_read_config) {
     consensus::voted_for_configuration cfg;
-    cfg.voted_for = 42;
-    cfg.term = 77;
+    cfg.voted_for = model::node_id(42);
+    cfg.term = model::term_id(77);
     std::cout << "persisting?" << std::endl;
     details::persist_voted_for("./test.yml", cfg).get();
     std::cout << "reading?" << std::endl;

@@ -160,7 +160,7 @@ future<log_ptr> log_manager::manage(model::ntp ntp) {
                   segs.push_back(make_lw_shared<log_segment>(
                     std::move(seg_name),
                     std::move(fd),
-                    term,
+                    model::term_id(term),
                     offset,
                     default_read_buffer_size));
               });

@@ -30,7 +30,11 @@ struct context {
             storage::write(appender, batch).get();
             appender.flush().get();
             auto log_seg = make_lw_shared<log_segment>(
-              "test", std::move(fd), 0, batches.begin()->base_offset(), 128);
+              "test",
+              std::move(fd),
+              model::term_id(0),
+              batches.begin()->base_offset(),
+              128);
             log_seg->flush().get();
             log_seg->set_last_written_offset(batch.last_offset());
             logs.add(log_seg);

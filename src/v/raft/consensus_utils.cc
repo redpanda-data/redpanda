@@ -18,8 +18,9 @@ struct convert<::raft::consensus::voted_for_configuration> {
                 return false;
             }
         }
-        c.voted_for = node["voted_for"].as<model::node_id::type>();
-        c.term = node["term"].as<model::term_id::type>();
+        c.voted_for = model::node_id(
+          node["voted_for"].as<model::node_id::type>());
+        c.term = model::term_id(node["term"].as<model::term_id::type>());
         return true;
     }
 };

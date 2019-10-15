@@ -50,7 +50,7 @@ make_random_header(model::offset o, model::timestamp ts, size_t num_records) {
     h.base_offset = o;
     h.last_offset_delta = num_records;
     h.first_timestamp = ts;
-    h.type = 1;
+    h.type = model::record_batch_type(1);
     h.max_timestamp = model::timestamp(ts.value() + num_records);
     if (bool_dist(gen)) {
         h.attrs = model::record_batch_attributes(4);
