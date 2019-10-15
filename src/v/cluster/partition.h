@@ -5,29 +5,31 @@
 namespace cluster {
 class partition {
 public:
-    partition(raft::consensus&& r)
-      : _raft(std::move(r)) {
+  using consensus_ptr = lw_shared_ptr<raft::consensus>;
+
+    partition(consensus_ptr r)
+      : _raft(r) {
     }
     raft::group_id group() const {
-        return raft::group_id(_raft.meta().group);
+        return raft::group_id(_raft->meta().group);
     }
     future<> start() {
-        return _raft.start();
+        return _raft->start();
     }
-    future<> replicate(std::unique_ptr<raft::entry> e) {
+    future<> replicate(raft::entry) {
         return make_ready_future<>();
     }
     const model::ntp& ntp() const {
-        return _raft.ntp();
+        return _raft->ntp();
     }
 
     /// \brief needs to be exposed for raft/service.h
-    raft::consensus& raft() {
+    consensus_ptr raft() {
         return _raft;
     }
 
 private:
-    raft::consensus _raft;
+    consensus_ptr _raft;
 };
 } // namespace cluster
 namespace std {

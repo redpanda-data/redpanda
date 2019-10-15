@@ -1,6 +1,7 @@
 #include "cluster/controller.h"
 
 #include "cluster/logger.h"
+#include "resource_mgmt/io_priority.h"
 #include "utils/memory_data_source.h"
 
 namespace cluster {
@@ -21,11 +22,9 @@ controller::controller(
   model::node_id n,
   sstring basedir,
   size_t max_segment_size,
-  io_priority_class prio,
   sharded<partition_manager>& pm,
   sharded<shard_table>& st)
   : _self(std::move(n))
-  , _prio(prio)
   , _mngr(storage::log_config{
       std::move(basedir),
       max_segment_size,
@@ -52,7 +51,7 @@ future<> controller::bootstrap_from_log(storage::log_ptr l) {
       .start_offset = model::offset(0), // from begining
       .max_bytes = std::numeric_limits<size_t>::max(),
       .min_bytes = 0, // ok to be empty
-      .prio = _prio};
+      .prio = controller_priority()};
     return do_with(
       l->make_reader(rcfg), [this](model::record_batch_reader& reader) {
           return reader.consume(batch_consumer(this), model::no_timeout);
