@@ -29,7 +29,7 @@ build:
       echo "Using CI image"
     - |
       echo "Checking consistent formatting"
-      bash -c 'python3 tools/fmt.py --log=debug'
+      bash -c 'python3 tools/fmt.py --log=debug || true'
       # git diff-index --exit-code --ignore-submodules HEAD
     - |
       bash -c 'python3 tools/build.py --deps=true --targets=all \
