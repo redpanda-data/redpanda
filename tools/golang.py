@@ -1,11 +1,14 @@
 import os
 import sys
 import logging
-import requests
+import urllib
+import urllib.request
 import io
 import tarfile
+
+sys.path.append(os.path.dirname(__file__))
 logger = logging.getLogger('rp')
-# v's
+# (v)'s
 import shell
 import log
 import system
@@ -85,12 +88,11 @@ def _download_go_freebsd():
 
 
 def _get_golang_tarball(platform, arch):
-    logger.info("Downloading GO version %s for %s - %s" % (GOLANG_VERSION,
-                                                           platform, arch))
-    url = "https://dl.google.com/go/go%s.%s-%s.tar.gz" % (GOLANG_VERSION,
-                                                          platform, arch)
-    resp = requests.get(url)
-    io_bytes = io.BytesIO(resp.content)
+    name = "go%s.%s-%s.tar.gz" %  (GOLANG_VERSION, platform, arch)
+    logger.info("Downloading %s" % name)
+    url = "https://dl.google.com/go/%s" % name
+    handle = urllib.request.urlopen(url)
+    io_bytes = io.BytesIO(handle.read())
     tar = tarfile.open(fileobj=io_bytes, mode='r')
     logger.info("Extracting golang tarball...")
     tar.extractall(path=_get_golang_path())
