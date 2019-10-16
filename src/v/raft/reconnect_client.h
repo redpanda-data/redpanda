@@ -20,7 +20,7 @@ public:
           300, std::max<uint32_t>(1, current_backoff) << 1);
     }
 
-    reconnect_client(rpc::client_configuration c)
+    explicit reconnect_client(rpc::client_configuration c)
       : _client(std::move(c)) {
     }
 

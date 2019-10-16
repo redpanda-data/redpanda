@@ -104,7 +104,8 @@ public:
     }
 
     template<typename... Args>
-    remote(Args... args) noexcept(std::is_nothrow_constructible<T>::value)
+    explicit remote(Args... args) noexcept(
+      std::is_nothrow_constructible<T>::value)
       : remote(T(std::forward<Args>(args)...)) {
     }
 

@@ -11,7 +11,7 @@
 #include <seastar/core/thread.hh>
 #include <seastar/testing/thread_test_case.hh>
 
-using namespace storage;
+using namespace storage; // NOLINT
 
 class test_consumer : public batch_consumer {
 public:

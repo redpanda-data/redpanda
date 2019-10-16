@@ -32,7 +32,7 @@ public:
       : _fragments(std::move(fragments))
       , _size_bytes(size_bytes) {
     }
-    fragbuf(std::vector<temporary_buffer<char>> fragments) noexcept
+    explicit fragbuf(std::vector<temporary_buffer<char>> fragments) noexcept
       : _fragments(std::move(fragments))
       , _size_bytes(std::accumulate(
           _fragments.begin(),
@@ -211,7 +211,7 @@ public:
     CONCEPT(static_assert(
               fragbuf_concepts::ExceptionThrower<default_exception_thrower>);)
 
-    istream(const fragbuf* fb) noexcept
+    explicit istream(const fragbuf* fb) noexcept
       : _fb(fb)
       , _current(fb->_fragments.begin())
       , _current_position(fb->size_bytes() ? _current->get() : nullptr)
@@ -385,7 +385,7 @@ public:
     }
 
     struct end_tag {};
-    iterator(end_tag) noexcept {
+    explicit iterator(end_tag) noexcept {
     }
 
     reference operator*() const noexcept {

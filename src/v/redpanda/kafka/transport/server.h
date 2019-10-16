@@ -33,8 +33,6 @@ struct request_header;
 
 namespace kafka::transport {
 
-using namespace seastar;
-
 using size_type = int32_t;
 
 // Fields may not be byte-aligned since we work

@@ -39,7 +39,7 @@ private:
     friend stage_hook;
 
     struct batch_consumer {
-        batch_consumer(controller* c)
+        explicit batch_consumer(controller* c)
           : ptr(c) {
         }
         future<stop_iteration> operator()(model::record_batch batch) {

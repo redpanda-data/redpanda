@@ -28,7 +28,7 @@ public:
         virtual model::offset end_of_stream() = 0;
     };
 
-    log_writer(std::unique_ptr<impl> impl) noexcept
+    explicit log_writer(std::unique_ptr<impl> impl) noexcept
       : _impl(std::move(impl)) {
     }
 
@@ -50,7 +50,7 @@ private:
 // Serializer for the current batch version.
 class default_log_writer : public log_writer::impl {
 public:
-    default_log_writer(log&) noexcept;
+    explicit default_log_writer(log&) noexcept;
 
     virtual future<stop_iteration> operator()(model::record_batch&&) override;
 

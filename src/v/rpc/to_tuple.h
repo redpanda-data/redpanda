@@ -1,6 +1,6 @@
 #pragma once
 
-// Credits: originally taken from cista.rocks (MIT License)
+// derived from cista.rocks
 
 #include <tuple>
 
@@ -96,4 +96,4 @@ template <typename T> inline auto to_tuple(T &t) {
   }
 }
 
-}
+}  // namespace rpc

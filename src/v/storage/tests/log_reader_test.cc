@@ -11,7 +11,7 @@
 #include <seastar/core/thread.hh>
 #include <seastar/testing/thread_test_case.hh>
 
-using namespace storage;
+using namespace storage; // NOLINT
 
 struct context {
     log_set logs = log_set({});

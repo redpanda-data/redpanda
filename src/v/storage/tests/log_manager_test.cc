@@ -11,7 +11,7 @@
 #include <seastar/testing/thread_test_case.hh>
 #include <seastar/util/defer.hh>
 
-using namespace storage;
+using namespace storage; // NOLINT
 
 void write_garbage(log_segment_ptr seg) {
     auto batches = test::make_random_batches(model::offset(1), 1);

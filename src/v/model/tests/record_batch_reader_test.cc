@@ -6,11 +6,11 @@
 
 #include <vector>
 
-using namespace model;
+using namespace model; // NOLINT
 
 class consumer {
 public:
-    consumer(size_t depth)
+    explicit consumer(size_t depth)
       : _depth(depth) {
     }
 
