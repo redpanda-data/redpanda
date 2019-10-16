@@ -5,7 +5,7 @@
 namespace cluster {
 class partition {
 public:
-  using consensus_ptr = lw_shared_ptr<raft::consensus>;
+    using consensus_ptr = lw_shared_ptr<raft::consensus>;
 
     partition(consensus_ptr r)
       : _raft(r) {
