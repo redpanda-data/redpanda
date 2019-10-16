@@ -109,7 +109,7 @@ private:
 };
 class team_movistar_service::client : public rpc::client {
 public:
-    client(rpc::client_configuration c)
+    explicit client(rpc::client_configuration c)
       : rpc::client(std::move(c), "team_movistar") {
     }
     virtual inline future<rpc::client_context<nairo_quintana>>

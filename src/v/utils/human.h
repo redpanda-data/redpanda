@@ -4,13 +4,13 @@
 /// \brief usage: fmt::format("{}", human::bytes(3234.234));
 namespace human {
 struct bytes {
-    bytes(double x)
+    explicit bytes(double x)
       : value(x) {
     }
     double value;
 };
 struct latency {
-    latency(double x)
+    explicit latency(double x)
       : value(x) {
     }
     double value;

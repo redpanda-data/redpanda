@@ -51,7 +51,7 @@ struct simple_service final : public rpc::service {
       }};
 };
 struct simple_service::client final : public rpc::client {
-    client(rpc::client_configuration c)
+    explicit client(rpc::client_configuration c)
       : rpc::client(std::move(c)) {
     }
     inline future<rpc::client_context<simple_reply>>

@@ -13,7 +13,7 @@
 #include <seastar/core/unaligned.hh>
 #include <seastar/testing/thread_test_case.hh>
 
-using namespace storage;
+using namespace storage; // NOLINT
 
 struct context {
     context(size_t max_segment_size, sstring test_name)

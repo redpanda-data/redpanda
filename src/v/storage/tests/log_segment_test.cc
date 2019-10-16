@@ -4,7 +4,7 @@
 #include <seastar/core/thread.hh>
 #include <seastar/testing/thread_test_case.hh>
 
-using namespace storage;
+using namespace storage; // NOLINT
 
 SEASTAR_THREAD_TEST_CASE(test_read_write) {
     uint64_t value = 0x1234'5678'abcd'ef02ull;

@@ -28,7 +28,7 @@ class log_manager {
 public:
     using logs_type = std::unordered_map<model::ntp, log_ptr>;
 
-    log_manager(log_config) noexcept;
+    explicit log_manager(log_config) noexcept;
 
     future<log_ptr> manage(model::ntp);
 

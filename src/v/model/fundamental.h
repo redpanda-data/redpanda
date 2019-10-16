@@ -58,7 +58,7 @@ std::ostream& operator<<(std::ostream&, const ntp&);
 
 struct offset : named_type<uint64_t, struct model_offset_type> {
     offset() = default;
-    offset(const type&& t)
+    explicit offset(const type&& t)
       : named_type<uint64_t, struct model_offset_type>(t) {
     }
     type value() const {

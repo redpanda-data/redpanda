@@ -13,6 +13,6 @@ shared_ptr<T> make_shared(A&&... a);
 
 } // namespace seastar
 
-using namespace seastar;
+using namespace seastar; // NOLINT
 using seastar::make_shared;
 using seastar::shared_ptr;

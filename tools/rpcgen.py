@@ -109,7 +109,7 @@ private:
 };
 class {{service_name}}_service::client : public rpc::client {
 public:
-    client(rpc::client_configuration c)
+    explicit client(rpc::client_configuration c)
       : rpc::client(std::move(c), "{{service_name}}") {
     }
     {%- for method in methods %}

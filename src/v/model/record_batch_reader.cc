@@ -6,7 +6,7 @@ record_batch_reader
 make_memory_record_batch_reader(std::vector<model::record_batch> batches) {
     class reader final : public record_batch_reader::impl {
     public:
-        reader(std::vector<model::record_batch> batches)
+        explicit reader(std::vector<model::record_batch> batches)
           : _batches(std::move(batches)) {
         }
 
@@ -28,7 +28,7 @@ record_batch_reader make_generating_record_batch_reader(
   noncopyable_function<future<record_batch_opt>()> gen) {
     class reader final : public record_batch_reader::impl {
     public:
-        reader(noncopyable_function<future<record_batch_opt>()> gen)
+        explicit reader(noncopyable_function<future<record_batch_opt>()> gen)
           : _gen(std::move(gen)) {
         }
 
