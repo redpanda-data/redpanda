@@ -241,18 +241,19 @@ future<> kafka_server::connection::process_request() {
                         auto remaining = size - sizeof(raw_request_header)
                                          - header.client_id_buffer.size();
                         return _buffer_reader.read_exactly(_read_buf, remaining)
-                          .then([this,
-                                 header = std::move(header),
-                                 units = std::move(units),
-                                 delay = std::move(delay)](fragbuf buf) mutable {
-                              auto ctx = requests::request_context(
-                                _server._metadata_cache,
-                                std::move(header),
-                                std::move(buf),
-                                delay.duration);
-                              _server._probe.serving_request();
-                              do_process(std::move(ctx), std::move(units));
-                          });
+                          .then(
+                            [this,
+                             header = std::move(header),
+                             units = std::move(units),
+                             delay = std::move(delay)](fragbuf buf) mutable {
+                                auto ctx = requests::request_context(
+                                  _server._metadata_cache,
+                                  std::move(header),
+                                  std::move(buf),
+                                  delay.duration);
+                                _server._probe.serving_request();
+                                do_process(std::move(ctx), std::move(units));
+                            });
                     });
                 });
           });

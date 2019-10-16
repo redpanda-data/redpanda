@@ -56,7 +56,9 @@ def clangfmt(files):
     clang_fmt = cpp.get_clang_format()
     for f in files:
         if _is_clang_fmt_file(f):
-            shell.run_subprocess("%s -i %s" % (clang_fmt, f))
+            shell.run_subprocess(
+                "%s -style=file -fallback-style=none -verbose -i %s" %
+                (clang_fmt, f))
 
 
 def crlfmt(files):
@@ -77,10 +79,9 @@ def main():
             type=str,
             default='INFO',
             help='info,debug, type log levels. i.e: --log=debug')
-        parser.add_argument(
-            '--git-files',
-            type=str,
-            help='take file list from git object')
+        parser.add_argument('--git-files',
+                            type=str,
+                            help='take file list from git object')
         return parser
 
     parser = generate_options()
