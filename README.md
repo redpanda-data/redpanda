@@ -36,4 +36,13 @@ make -j8                         # or (($(nproc)-1))
 
 ## Contributing
 * [See our contributing guide](CONTRIBUTING.md)
-* Run: `./tools/build.py --build=release --fmt=all`
+
+
+```sh
+# Run before submitting changes
+python3 tools/build.py   \
+        --cpplint=1      \
+        --log=debug      \
+        --build=none     \
+        --files=all
+```
