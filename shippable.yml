@@ -3,6 +3,7 @@ language: none
 branches:
   only:
     - master
+    - ci/*
     - release/*
 
 git:
