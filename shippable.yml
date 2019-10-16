@@ -30,7 +30,7 @@ build:
     - |
       echo "Checking consistent formatting"
       bash -c 'python3 tools/fmt.py --log=debug'
-      git diff-index --exit-code --ignore-submodules HEAD
+      # git diff-index --exit-code --ignore-submodules HEAD
     - |
       bash -c 'python3 tools/build.py --deps=true --targets=all \
               --build=release --log=debug --fmt=false \
