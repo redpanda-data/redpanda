@@ -17,11 +17,15 @@ func (m *cpuMasksMock) BaseCpuMask(cpuMask string) (string, error) {
 	return m.baseCpuMask(cpuMask)
 }
 
-func (m *cpuMasksMock) CpuMaskForIRQs(mode irq.Mode, cpuMask string) (string, error) {
+func (m *cpuMasksMock) CpuMaskForIRQs(
+	mode irq.Mode, cpuMask string,
+) (string, error) {
 	return m.cpuMaskForIRQs(mode, cpuMask)
 }
 
-func (m *cpuMasksMock) GetIRQsDistributionMasks(IRQs []int, cpuMask string) (map[int]string, error) {
+func (m *cpuMasksMock) GetIRQsDistributionMasks(
+	IRQs []int, cpuMask string,
+) (map[int]string, error) {
 	return m.getIRQsDistributionMasks(IRQs, cpuMask)
 }
 

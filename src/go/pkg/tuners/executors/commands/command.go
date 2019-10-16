@@ -1,8 +1,6 @@
 package commands
 
-import (
-	"bufio"
-)
+import "bufio"
 
 type Command interface {
 	Execute() error

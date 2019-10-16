@@ -15,7 +15,9 @@ type ethtoolChangeCommand struct {
 	ethtool ethtool.EthtoolWrapper
 }
 
-func NewEthtoolChangeCmd(ethtool ethtool.EthtoolWrapper, intf string, config map[string]bool) Command {
+func NewEthtoolChangeCmd(
+	ethtool ethtool.EthtoolWrapper, intf string, config map[string]bool,
+) Command {
 	return &ethtoolChangeCommand{
 		intf:    intf,
 		config:  config,
