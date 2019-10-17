@@ -1,6 +1,7 @@
 #pragma once
 #include "redpanda/kafka/errors/errors.h"
 #include "redpanda/kafka/requests/join_group_request.h"
+#include "redpanda/kafka/requests/sync_group_request.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>
@@ -41,6 +42,13 @@ public:
         using reply = requests::join_group_response;
         return make_ready_future<reply>(
           reply(request.member_id, kerr::unsupported_version));
+    }
+
+    /// \brief Handle a SyncGroup request
+    future<requests::sync_group_response>
+    sync_group(requests::sync_group_request&& request) {
+        using reply = requests::sync_group_response;
+        return make_ready_future<reply>(reply(kerr::unsupported_version));
     }
 
 private:
