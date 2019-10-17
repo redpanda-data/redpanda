@@ -19,3 +19,5 @@ target_link_libraries(requests
     model
     storage
   )
+
+add_subdirectory(tests)
