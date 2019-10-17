@@ -1,0 +1,7 @@
+# A preset file to enable all redpanda systemd units upon installation
+# See https://www.freedesktop.org/software/systemd/man/systemd.preset.html
+# Systemd evaluates the preset files in lexicographical order, so this
+# file's name should always start with a number less than 99, which
+# is usually associated with 99-default-disable.preset, and prevents
+# enabling any services after it.
+enable redpanda.service
