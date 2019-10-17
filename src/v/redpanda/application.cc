@@ -166,6 +166,18 @@ void application::wire_up_services() {
       _shard_table);
     _controller->start().get();
     _deferred.emplace_back([this] { _controller->stop().get(); });
+
+    // group membership
+    construct_service(_group_manager, std::ref(_partition_manager)).get();
+    construct_service(_group_shard_mapper, std::ref(_shard_table)).get();
+    construct_service(
+      _group_router,
+      _scheduling_groups.kafka_sg(),
+      _smp_groups.kafka_smp_sg(),
+      std::ref(_group_manager),
+      std::ref(_group_shard_mapper))
+      .get();
+
     // rpc
     rpc::server_configuration rpc_cfg;
     rpc_cfg.max_service_memory_per_core = memory_groups::rpc_total_memory();
@@ -209,7 +221,8 @@ void application::wire_up_services() {
       kafka::transport::probe(),
       std::ref(_metadata_cache),
       std::move(server_config),
-      std::ref(_quota_mgr))
+      std::ref(_quota_mgr),
+      std::ref(_group_router))
       .get();
 
     _kafka_server

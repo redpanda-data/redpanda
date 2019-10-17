@@ -1,5 +1,8 @@
 #pragma once
 
+#include "redpanda/kafka/groups/group_manager.h"
+#include "redpanda/kafka/groups/group_router.h"
+#include "redpanda/kafka/groups/group_shard_mapper.h"
 #include "redpanda/kafka/requests/headers.h"
 #include "redpanda/kafka/requests/request_reader.h"
 #include "seastarx.h"
@@ -16,6 +19,12 @@ namespace cluster {
 class metadata_cache;
 }
 
+namespace kafka {
+using group_router_type = kafka::groups::group_router<
+  kafka::groups::group_manager,
+  kafka::groups::group_shard_mapper<cluster::shard_table>>;
+}
+
 namespace kafka::requests {
 
 extern logger kreq_log;
@@ -26,12 +35,14 @@ public:
       sharded<cluster::metadata_cache>& metadata_cache,
       request_header&& header,
       fragbuf&& request,
-      lowres_clock::duration throttle_delay) noexcept
+      lowres_clock::duration throttle_delay,
+      kafka::group_router_type& group_router) noexcept
       : _metadata_cache(metadata_cache)
       , _header(std::move(header))
       , _request(std::move(request))
       , _reader(_request.get_istream())
-      , _throttle_delay(throttle_delay) {
+      , _throttle_delay(throttle_delay)
+      , _group_router(group_router) {
     }
 
     request_context(request_context&&) noexcept = default;
@@ -54,12 +65,17 @@ public:
           .count();
     }
 
+    kafka::group_router_type& groups() {
+        return _group_router;
+    }
+
 private:
     sharded<cluster::metadata_cache>& _metadata_cache;
     request_header _header;
     fragbuf _request;
     request_reader _reader;
     lowres_clock::duration _throttle_delay;
+    kafka::group_router_type& _group_router;
 };
 
 class response;

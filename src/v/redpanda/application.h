@@ -5,6 +5,9 @@
 #include "cluster/partition_manager.h"
 #include "redpanda/admin/api-doc/config.json.h"
 #include "redpanda/config/configuration.h"
+#include "redpanda/kafka/groups/group_manager.h"
+#include "redpanda/kafka/groups/group_router.h"
+#include "redpanda/kafka/groups/group_shard_mapper.h"
 #include "redpanda/kafka/transport/server.h"
 #include "resource_mgmt/cpu_scheduling.h"
 #include "resource_mgmt/memory_groups.h"
@@ -85,6 +88,10 @@ private:
     sharded<raft::client_cache> _raft_client_cache;
     sharded<cluster::shard_table> _shard_table;
     sharded<cluster::partition_manager> _partition_manager;
+    sharded<kafka::groups::group_manager> _group_manager;
+    sharded<kafka::groups::group_shard_mapper<cluster::shard_table>>
+      _group_shard_mapper;
+    sharded<kafka::group_router_type> _group_router;
     sharded<rpc::server> _rpc;
     sharded<http_server> _admin;
     sharded<cluster::metadata_cache> _metadata_cache;
