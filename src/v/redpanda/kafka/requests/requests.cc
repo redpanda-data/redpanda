@@ -2,6 +2,7 @@
 #include "redpanda/kafka/requests/fetch_request.h"
 #include "redpanda/kafka/requests/find_coordinator_request.h"
 #include "redpanda/kafka/requests/headers.h"
+#include "redpanda/kafka/requests/heartbeat_request.h"
 #include "redpanda/kafka/requests/join_group_request.h"
 #include "redpanda/kafka/requests/list_groups_request.h"
 #include "redpanda/kafka/requests/list_offsets_request.h"
@@ -50,6 +51,7 @@ using request_types = make_request_types<
   list_groups_request,
   api_versions_request,
   join_group_request,
+  heartbeat_request,
   sync_group_request>;
 
 template<typename Request>
@@ -91,6 +93,8 @@ process_request(request_context&& ctx, smp_service_group g) {
         return do_process<fetch_request>(std::move(ctx), std::move(g));
     case join_group_request::key:
         return do_process<join_group_request>(std::move(ctx), std::move(g));
+    case heartbeat_request::key:
+        return do_process<heartbeat_request>(std::move(ctx), std::move(g));
     case sync_group_request::key:
         return do_process<sync_group_request>(std::move(ctx), std::move(g));
     };
