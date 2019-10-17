@@ -131,6 +131,9 @@ def red_panda_rpm(input_tar, dest_path):
     templates.render_to_file(spec_template, spec, package_ctx)
     _render_systemd_templates(os.path.join(dest_path, "rpm/common"),
                               {'redhat': True})
+    shutil.copy(
+        os.path.join("packaging", "common", "systemd", "50-redpanda.preset"),
+        os.path.join(dest_path, "systemd"))
     # build RPM
     shell.run_subprocess('rpmbuild -bb --define \"_topdir %s\" %s' %
                          (rpm_tree_root, spec))
