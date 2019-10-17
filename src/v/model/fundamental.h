@@ -67,11 +67,11 @@ struct offset : named_type<uint64_t, struct model_offset_type> {
 
     /// \brief used by the kafka _signed_ integer api
     offset operator+(int32_t val) const {
-        return _value + static_cast<type>(val);
+        return offset(_value + static_cast<type>(val));
     }
     /// \brief used by the kafka _signed_ integer api
     offset operator+(int64_t val) const {
-        return _value + static_cast<type>(val);
+        return offset(_value + static_cast<type>(val));
     }
     /// \brief used by the kafka _signed_ integer api
     offset& operator+=(int64_t val) {
