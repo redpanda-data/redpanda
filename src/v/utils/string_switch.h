@@ -40,7 +40,7 @@ class string_switch {
     std::optional<T> result;
 
 public:
-    explicit string_switch(std::string_view S)
+    constexpr explicit string_switch(std::string_view S)
       : view(S)
       , result() {
     }
@@ -60,24 +60,24 @@ public:
     ~string_switch() = default;
 
     // match-sensitive match matchers
-    string_switch& match(std::string_view S, T value) {
+    constexpr string_switch& match(std::string_view S, T value) {
         if (!result && view == S) {
             result = std::move(value);
         }
         return *this;
     }
 
-    string_switch&
+    constexpr string_switch&
     match_all(std::string_view S0, std::string_view S1, T value) {
         return match(S0, value).match(S1, value);
     }
 
-    string_switch& match_all(
+    constexpr string_switch& match_all(
       std::string_view S0, std::string_view S1, std::string_view S2, T value) {
         return match(S0, value).match_all(S1, S2, value);
     }
 
-    string_switch& match_all(
+    constexpr string_switch& match_all(
       std::string_view S0,
       std::string_view S1,
       std::string_view S2,
@@ -86,7 +86,7 @@ public:
         return match(S0, value).match_all(S1, S2, S3, value);
     }
 
-    string_switch& match_all(
+    constexpr string_switch& match_all(
       std::string_view S0,
       std::string_view S1,
       std::string_view S2,
@@ -96,7 +96,7 @@ public:
         return match(S0, value).match_all(S1, S2, S3, S4, value);
     }
 
-    string_switch& match_all(
+    constexpr string_switch& match_all(
       std::string_view S0,
       std::string_view S1,
       std::string_view S2,
@@ -107,7 +107,7 @@ public:
         return match(S0, value).match_all(S1, S2, S3, S4, S5, value);
     }
 
-    string_switch& match_all(
+    constexpr string_switch& match_all(
       std::string_view S0,
       std::string_view S1,
       std::string_view S2,
@@ -119,7 +119,7 @@ public:
         return match(S0, value).match_all(S1, S2, S3, S4, S5, S6, value);
     }
 
-    string_switch& match_all(
+    constexpr string_switch& match_all(
       std::string_view S0,
       std::string_view S1,
       std::string_view S2,
@@ -132,7 +132,7 @@ public:
         return match(S0, value).match_all(S1, S2, S3, S4, S5, S6, S7, value);
     }
 
-    string_switch& match_all(
+    constexpr string_switch& match_all(
       std::string_view S0,
       std::string_view S1,
       std::string_view S2,
@@ -147,7 +147,7 @@ public:
           S1, S2, S3, S4, S5, S6, S7, S8, value);
     }
 
-    string_switch& match_all(
+    constexpr string_switch& match_all(
       std::string_view S0,
       std::string_view S1,
       std::string_view S2,
@@ -163,13 +163,13 @@ public:
           S1, S2, S3, S4, S5, S6, S7, S8, S9, value);
     }
 
-    R default_match(T value) {
+    constexpr R default_match(T value) {
         if (result)
             return std::move(*result);
         return value;
     }
 
-    operator R() {
+    constexpr operator R() {
         if (!result) {
             throw std::runtime_error("Fell off the end of a string-switch");
         }
