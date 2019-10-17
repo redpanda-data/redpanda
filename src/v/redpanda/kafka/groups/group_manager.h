@@ -1,4 +1,6 @@
 #pragma once
+#include "redpanda/kafka/errors/errors.h"
+#include "redpanda/kafka/requests/join_group_request.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>
@@ -31,7 +33,20 @@ public:
         return make_ready_future<>();
     }
 
+public:
+    /// \brief Handle a JoinGroup request
+    future<requests::join_group_response> join_group(
+      const requests::request_context& ctx,
+      requests::join_group_request&& request) {
+        using reply = requests::join_group_response;
+        return make_ready_future<reply>(
+          reply(request.member_id, kerr::unsupported_version));
+    }
+
 private:
+    // kafka protocol error codes
+    using kerr = errors::error_code;
+
     cluster::partition_manager& _partitions;
 };
 

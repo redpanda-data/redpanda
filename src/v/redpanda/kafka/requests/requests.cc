@@ -2,6 +2,7 @@
 #include "redpanda/kafka/requests/fetch_request.h"
 #include "redpanda/kafka/requests/find_coordinator_request.h"
 #include "redpanda/kafka/requests/headers.h"
+#include "redpanda/kafka/requests/join_group_request.h"
 #include "redpanda/kafka/requests/list_groups_request.h"
 #include "redpanda/kafka/requests/list_offsets_request.h"
 #include "redpanda/kafka/requests/metadata_request.h"
@@ -46,7 +47,8 @@ using request_types = make_request_types<
   offset_fetch_request,
   find_coordinator_request,
   list_groups_request,
-  api_versions_request>;
+  api_versions_request,
+  join_group_request>;
 
 template<typename Request>
 CONCEPT(requires(KafkaRequest<Request>))
@@ -85,6 +87,8 @@ process_request(request_context&& ctx, smp_service_group g) {
         return do_process<list_offsets_request>(std::move(ctx), std::move(g));
     case fetch_request::key:
         return do_process<fetch_request>(std::move(ctx), std::move(g));
+    case join_group_request::key:
+        return do_process<join_group_request>(std::move(ctx), std::move(g));
     };
     return seastar::make_exception_future<response_ptr>(
       std::runtime_error(fmt::format("Unsupported API {}", ctx.header().key)));
