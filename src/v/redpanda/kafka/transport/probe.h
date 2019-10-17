@@ -1,7 +1,6 @@
 #pragma once
 
 #include "prometheus/prometheus_sanitize.h"
-#include "redpanda/kafka/requests/request_context.h"
 
 #include <seastar/core/metrics.hh>
 
