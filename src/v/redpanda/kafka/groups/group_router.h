@@ -1,5 +1,6 @@
 #pragma once
 #include "redpanda/kafka/requests/join_group_request.h"
+#include "redpanda/kafka/requests/sync_group_request.h"
 #include "seastarx.h"
 #include "redpanda/kafka/groups/types.h"
 #include "utils/concepts-enabled.h"
@@ -17,10 +18,14 @@ concept GroupManager =
 requires(
   T m,
   const requests::request_context& ctx,
-  requests::join_group_request&& join_request) {
+  requests::join_group_request&& join_request,
+  requests::sync_group_request&& sync_request) {
 
     { m.join_group(ctx, std::move(join_request)) } ->
         future<requests::join_group_response>;
+
+    { m.sync_group(std::move(sync_request)) } ->
+        future<requests::sync_group_response>;
 };
 
 template<typename T>
@@ -63,6 +68,20 @@ public:
                 _ssg,
                 [&ctx, request = std::move(request)](GroupMgr& m) mutable {
                     return m.join_group(ctx, std::move(request));
+                });
+          });
+    }
+
+    future<requests::sync_group_response>
+    sync_group(requests::sync_group_request&& request) {
+        auto shard = _shards.shard_for(request.group_id);
+        return with_scheduling_group(
+          _sg, [this, shard, request = std::move(request)]() mutable {
+              return _group_manager.invoke_on(
+                shard,
+                _ssg,
+                [request = std::move(request)](GroupMgr& m) mutable {
+                    return m.sync_group(std::move(request));
                 });
           });
     }
