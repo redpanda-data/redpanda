@@ -286,7 +286,9 @@ Fixes #124
 ```
 
 Aside from the commit message of the individual patch that fixes the issue, also
-add the tag to the cover letter (if applicable).
+add the tag to the cover letter (if applicable). See the list of available keywords
+to reference an issue
+[here](https://help.github.com/en/articles/closing-issues-using-keywords).
 
 ## Tools
 
