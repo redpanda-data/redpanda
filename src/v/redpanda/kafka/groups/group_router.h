@@ -1,6 +1,7 @@
 #pragma once
 #include "redpanda/kafka/requests/heartbeat_request.h"
 #include "redpanda/kafka/requests/join_group_request.h"
+#include "redpanda/kafka/requests/leave_group_request.h"
 #include "redpanda/kafka/requests/sync_group_request.h"
 #include "seastarx.h"
 #include "redpanda/kafka/groups/types.h"
@@ -21,7 +22,8 @@ requires(
   const requests::request_context& ctx,
   requests::join_group_request&& join_request,
   requests::sync_group_request&& sync_request,
-  requests::heartbeat_request&& heartbeat_request) {
+  requests::heartbeat_request&& heartbeat_request,
+  requests::leave_group_request&& leave_request) {
 
     { m.join_group(ctx, std::move(join_request)) } ->
         future<requests::join_group_response>;
@@ -31,6 +33,9 @@ requires(
 
     { m.heartbeat(std::move(heartbeat_request)) } ->
         future<requests::heartbeat_response>;
+
+    { m.leave_group(std::move(leave_request)) } ->
+        future<requests::leave_group_response>;
 };
 
 template<typename T>
@@ -101,6 +106,20 @@ public:
                 _ssg,
                 [request = std::move(request)](GroupMgr& m) mutable {
                     return m.heartbeat(std::move(request));
+                });
+          });
+    }
+
+    future<requests::leave_group_response>
+    leave_group(requests::leave_group_request&& request) {
+        auto shard = _shards.shard_for(request.group_id);
+        return with_scheduling_group(
+          _sg, [this, shard, request = std::move(request)]() mutable {
+              return _group_manager.invoke_on(
+                shard,
+                _ssg,
+                [request = std::move(request)](GroupMgr& m) mutable {
+                    return m.leave_group(std::move(request));
                 });
           });
     }

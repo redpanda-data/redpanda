@@ -2,6 +2,7 @@
 #include "redpanda/kafka/errors/errors.h"
 #include "redpanda/kafka/requests/heartbeat_request.h"
 #include "redpanda/kafka/requests/join_group_request.h"
+#include "redpanda/kafka/requests/leave_group_request.h"
 #include "redpanda/kafka/requests/sync_group_request.h"
 #include "seastarx.h"
 
@@ -56,6 +57,13 @@ public:
     future<requests::heartbeat_response>
     heartbeat(requests::heartbeat_request&& request) {
         using reply = requests::heartbeat_response;
+        return make_ready_future<reply>(reply(kerr::unsupported_version));
+    }
+
+    /// \brief Handle a LeaveGroup request
+    future<requests::leave_group_response>
+    leave_group(requests::leave_group_request&& request) {
+        using reply = requests::leave_group_response;
         return make_ready_future<reply>(reply(kerr::unsupported_version));
     }
 
