@@ -51,6 +51,7 @@ install -m755 -d "%{buildroot}"/var/lib/redpanda/coredump
 install -m755 bin/* -Dt "%{buildroot}/opt/redpanda/bin"
 install -m755 libexec/*.bin -Dt "%{buildroot}/opt/redpanda/libexec"
 install -m755 lib/* -Dt "%{buildroot}/opt/redpanda/lib"
+install -m644 %{_topdir}/common/systemd/50-redpanda.preset -Dt "%{buildroot}%{_prefix}/lib/systemd/system-preset"
 install -m644 %{_topdir}/common/systemd/redpanda.slice -Dt "%{buildroot}%{_prefix}/lib/systemd/system"
 install -m644 %{_topdir}/common/systemd/redpanda.service -Dt "%{buildroot}%{_prefix}/lib/systemd/system"
 install -m644 %{_topdir}/common/systemd/redpanda-tuner.service -Dt "%{buildroot}%{_prefix}/lib/systemd/system"
@@ -89,6 +90,7 @@ install -m755 %{_topdir}/common/scripts/* -Dt "%{buildroot}/%{_prefix}/lib/redpa
 %{_bindir}/redpanda
 %{_bindir}/rpk
 %{_bindir}/iotune
+%{_prefix}/lib/systemd/system-preset/50-redpanda.preset
 %{_prefix}/lib/systemd/system/redpanda.slice
 %{_prefix}/lib/systemd/system/redpanda.service
 %{_prefix}/lib/systemd/system/redpanda-tuner.service
@@ -101,13 +103,13 @@ install -m755 %{_topdir}/common/scripts/* -Dt "%{buildroot}/%{_prefix}/lib/redpa
 %ldconfig_scriptlets
 
 %post
-%systemd_post redpanda.service redpanda-tuner.service
+%systemd_post redpanda.slice redpanda.service redpanda-tuner.service
 /usr/lib/systemd/systemd-sysctl 99-redpanda-sched.conf >/dev/null 2>&1 || :
 /usr/lib/systemd/systemd-sysctl 99-redpanda-aio.conf >/dev/null 2>&1 || :
 /usr/lib/systemd/systemd-sysctl 99-redpanda-coredump.conf >/dev/null 2>&1 || :
 
 %preun 
-%systemd_preun redpanda.service redpanda-tuner.service
+%systemd_preun redpanda.slice redpanda.service redpanda-tuner.service
 
 %postun
 %systemd_postun
