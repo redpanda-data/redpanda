@@ -23,13 +23,15 @@ kafka_server::kafka_server(
   probe p,
   sharded<cluster::metadata_cache>& metadata_cache,
   kafka_server_config config,
-  sharded<quota_manager>& quota_mgr) noexcept
+  sharded<quota_manager>& quota_mgr,
+  sharded<group_router_type>& group_router) noexcept
   : _probe(std::move(p))
   , _metadata_cache(metadata_cache)
   , _max_request_size(config.max_request_size)
   , _memory_available(_max_request_size)
   , _smp_group(std::move(config.smp_group))
   , _quota_mgr(quota_mgr)
+  , _group_router(group_router)
   , _creds(
       config.credentials ? (*config.credentials).build_server_credentials()
                          : nullptr) {
@@ -250,7 +252,8 @@ future<> kafka_server::connection::process_request() {
                                   _server._metadata_cache,
                                   std::move(header),
                                   std::move(buf),
-                                  delay.duration);
+                                  delay.duration,
+                                  _server._group_router.local());
                                 _server._probe.serving_request();
                                 do_process(std::move(ctx), std::move(units));
                             });
@@ -277,7 +280,8 @@ void kafka_server::connection::do_process(
                 .then([this] { _server._probe.request_served(); });
           } catch (...) {
               _server._probe.request_processing_error();
-              klog.debug("Failed to process request: {}", f.get_exception());
+              klog.debug(
+                "Failed to process request: {}", std::current_exception());
               return std::move(ready);
           }
       });

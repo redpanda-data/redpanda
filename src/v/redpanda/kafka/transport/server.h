@@ -2,6 +2,8 @@
 
 #include "redpanda/kafka/transport/probe.h"
 #include "redpanda/kafka/transport/quota_manager.h"
+#include "redpanda/kafka/requests/headers.h"
+#include "redpanda/kafka/requests/request_context.h"
 #include "seastarx.h"
 #include "utils/fragbuf.h"
 
@@ -25,10 +27,6 @@
 
 namespace cluster {
 class metadata_cache;
-}
-
-namespace kafka::requests {
-struct request_header;
 }
 
 namespace kafka::transport {
@@ -61,7 +59,8 @@ public:
       probe,
       sharded<cluster::metadata_cache>&,
       kafka_server_config,
-      sharded<quota_manager>& quota_mgr) noexcept;
+      sharded<quota_manager>& quota_mgr,
+      sharded<kafka::group_router_type>& group_router) noexcept;
     future<> listen(socket_address server_addr, bool keepalive);
     future<> do_accepts(int which, net::inet_address server_addr);
     future<> stop();
@@ -109,6 +108,7 @@ private:
     sharded<quota_manager>& _quota_mgr;
     shared_ptr<tls::server_credentials> _creds;
     metrics::metric_groups _metrics;
+    sharded<kafka::group_router_type>& _group_router;
 };
 
 } // namespace kafka::transport
