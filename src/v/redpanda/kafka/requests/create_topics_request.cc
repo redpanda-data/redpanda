@@ -93,6 +93,13 @@ create_topics_request::process(request_context&& ctx, smp_service_group g) {
                 auto valid_range_end = validate_range_duplicates(
                   begin, request.topics.end(), std::back_inserter(results));
 
+                // Validate with validators
+                valid_range_end = validate_requests_range(
+                  begin,
+                  valid_range_end,
+                  std::back_inserter(results),
+                  validators{});
+
                 if (request.validate_only) {
                     // We do not actually create the topics, only validate the
                     // request
