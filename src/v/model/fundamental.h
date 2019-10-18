@@ -4,6 +4,7 @@
 #include "utils/named_type.h"
 
 #include <seastar/core/sstring.hh>
+#include <seastar/util/bool_class.hh>
 
 #include <boost/container_hash/hash.hpp>
 
@@ -25,6 +26,8 @@ using topic = named_type<sstring, struct model_topic_type>;
 using ns = named_type<sstring, struct model_ns_type>;
 
 struct topic_partition {
+    using compaction = bool_class<struct compaction_tag>;
+
     model::topic topic;
     model::partition_id partition;
 
