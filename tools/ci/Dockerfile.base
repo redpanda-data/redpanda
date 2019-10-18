@@ -1,0 +1,16 @@
+FROM fedora@sha256:f4ca3e9814bef8468b59cc3dea90ab52bcb3747057731f7ab7645d923731fed6
+
+# disable all but base repo so we install same version of packages
+RUN rm -f /etc/yum.repos.d/fedora-* && \
+    dnf install -y git which jq glibc-langpack-en && \
+    dnf clean all
+
+ENV LANG=en_US.UTF-8
+ENV LANGUAGE=en_US:en
+ENV LC_ALL=en_US.UTF-8
+
+COPY tools/install-deps.sh /install-deps.sh
+
+RUN /install-deps.sh && \
+    rm /install-deps.sh && \
+    dnf clean all
