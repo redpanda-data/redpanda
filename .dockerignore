@@ -1,0 +1,5 @@
+# ignore everything except toolchain stuff below
+**/*
+
+# os packages
+!tools/install-deps.sh
