@@ -8,6 +8,10 @@ add_library (requests STATIC
   produce_request.cc
   list_offsets_request.cc
   fetch_request.cc
+  join_group_request.cc
+  heartbeat_request.cc
+  leave_group_request.cc
+  sync_group_request.cc
   )
 target_include_directories(requests PUBLIC ${PROJECT_SOURCE_DIR}/src/v)
 

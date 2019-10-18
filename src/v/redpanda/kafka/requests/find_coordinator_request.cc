@@ -31,7 +31,7 @@ find_coordinator_request::process(request_context&& ctx, smp_service_group g) {
     }
     // TODO: return connection for raft group 0 leader
     resp->writer().write(int32_t(0));
-    resp->writer().write("localhost");
+    resp->writer().write(sstring("localhost"));
     resp->writer().write(int32_t(9092));
     return make_ready_future<response_ptr>(std::move(resp));
 }

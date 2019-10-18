@@ -1,6 +1,7 @@
 #pragma once
 
 #include "model/fundamental.h"
+#include "raft/types.h"
 #include "seastarx.h"
 
 #include <seastar/core/reactor.hh> // shard_id
