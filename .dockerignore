@@ -6,3 +6,8 @@
 
 # llvm
 !cmake/caches/llvm.cmake
+
+# external projects
+!CMakeLists.txt
+!3rdparty.cmake.in
+!cmake/FindLibCxx.cmake
