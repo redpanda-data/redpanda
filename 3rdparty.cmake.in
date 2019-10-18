@@ -29,23 +29,32 @@ if (@CMAKE_CXX_COMPILER_ID@ MATCHES "Clang")
     set(default_depends libcxx)
     # Luajit settings
     set(luajit_c_compiler CC=$ENV{CC})
+    ExternalProject_Add(llvm-src
+        URL https://github.com/llvm/llvm-project/archive/llvmorg-8.0.0.tar.gz
+        URL_MD5 56d611480b48aee351c13e113f7722e6
+        CONFIGURE_COMMAND ""
+        BUILD_COMMAND ""
+        INSTALL_COMMAND "")
     ExternalProject_Add(libcxxabi
-        SOURCE_DIR @CMAKE_BINARY_DIR@/../llvm/llvm-src/libcxxabi
+        SOURCE_DIR @V_DEPS_BUILD_DIR@/llvm-src-prefix/src/llvm-src/libcxxabi
         INSTALL_DIR @V_DEPS_INSTALL_DIR@
+        DOWNLOAD_COMMAND ""
+        DEPENDS llvm-src
         CMAKE_ARGS
             ${common_cmake_args}
-            -DLLVM_PATH=@CMAKE_BINARY_DIR@/../llvm/llvm-src/llvm
-            -DLIBCXXABI_LIBCXX_PATH=@CMAKE_BINARY_DIR@/../llvm/llvm-src/libcxx)
+            -DLLVM_PATH=<SOURCE_DIR>/../llvm
+            -DLIBCXXABI_LIBCXX_PATH=<SOURCE_DIR>/../libcxx)
     ExternalProject_Add(libcxx
-        SOURCE_DIR @CMAKE_BINARY_DIR@/../llvm/llvm-src/libcxx
+        SOURCE_DIR  @V_DEPS_BUILD_DIR@/llvm-src-prefix/src/llvm-src/libcxx
+        DOWNLOAD_COMMAND ""
         INSTALL_DIR @V_DEPS_INSTALL_DIR@
         CMAKE_ARGS
             ${common_cmake_args}
-            -DLLVM_PATH=@CMAKE_BINARY_DIR@/../llvm/llvm-src/llvm
+            -DLLVM_PATH=<SOURCE_DIR>/../llvm
             -DLIBCXX_CXX_ABI=libcxxabi
-            -DLIBCXX_CXX_ABI_INCLUDE_PATHS=@CMAKE_BINARY_DIR@/../llvm/llvm-src/libcxxabi/include
+            -DLIBCXX_CXX_ABI_INCLUDE_PATHS=<SOURCE_DIR>/../libcxxabi/include
             -DLIBCXX_CXX_ABI_LIBRARY_PATH=@V_DEPS_INSTALL_DIR@/lib
-            DEPENDS libcxxabi)
+            DEPENDS llvm-src libcxxabi)
 elseif (@CMAKE_CXX_COMPILER_ID@ STREQUAL "GNU")
     set(toolset gcc)
     # Boost build user config
