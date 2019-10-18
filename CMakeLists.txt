@@ -29,21 +29,28 @@ set(RP_MARCH
   "-march override, use -march=armv8-a+crc+crypto or -march=westmere"
   )
 option(V_MANAGE_DEPS "Use our own 3rdparty.cmake.in" ON)
+set(V_DEPS_INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/v_deps_install
+  CACHE STRING "Managed dependencies install directory")
 option (RP_ENABLE_DPDK "Enable DPDK support" OFF)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 # compiler specific options
-set(BASE_LD_FLAGS_LIST
-  ${RP_MARCH}
-  -L${CMAKE_CURRENT_BINARY_DIR}/v_deps_install/lib
-  -L${CMAKE_CURRENT_BINARY_DIR}/v_deps_install/lib64
-  -I${CMAKE_CURRENT_BINARY_DIR}/v_deps_install/include
-)
-set(PKG_CONFIG_PATH_LIST
-  ${CMAKE_CURRENT_BINARY_DIR}/v_deps_install/lib64/pkgconfig
-  ${CMAKE_CURRENT_BINARY_DIR}/v_deps_install/share/pkgconfig
-  ${CMAKE_CURRENT_BINARY_DIR}/v_deps_install/lib/pkgconfig
+set(BASE_LD_FLAGS_LIST ${RP_MARCH})
+
+if (V_MANAGE_DEPS)
+  list(APPEND BASE_LD_FLAGS_LIST
+    -L${V_DEPS_INSTALL_DIR}/lib
+    -L${V_DEPS_INSTALL_DIR}/lib64
+    -I${V_DEPS_INSTALL_DIR}/include
   )
+  set(PKG_CONFIG_PATH_LIST
+    ${V_DEPS_INSTALL_DIR}/lib64/pkgconfig
+    ${V_DEPS_INSTALL_DIR}/share/pkgconfig
+    ${V_DEPS_INSTALL_DIR}/lib/pkgconfig
+  )
+endif()
+
 if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
     if (RP_ENABLE_GOLD_LINKER)
         message(FATAL_ERROR
@@ -54,12 +61,15 @@ if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
         -fuse-ld=lld
         -lc++fs
         -lc++experimental)
+    if (V_MANAGE_DEPS)
+      set(LLVM_LIBCPP_INCLUDE_FLAG "-I${V_DEPS_INSTALL}/include/c++/v1")
+    endif()
     set(BASE_CXX_FLAGS_LIST
         -Wno-unused-lambda-capture
         -Wno-unused-command-line-argument
         -D_LIBCPP_ENABLE_CXX17_REMOVED_AUTO_PTR
         -DSEASTAR_USE_STD_OPTIONAL_VARIANT_STRINGVIEW
-        -I${CMAKE_CURRENT_BINARY_DIR}/v_deps_install/include/c++/v1
+        ${LLVM_LIBCPP_INCLUDE_FLAG}
         --stdlib=libc++
         -DNO_CONCEPTS)
 elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
@@ -99,7 +109,6 @@ if(V_MANAGE_DEPS)
   # disable user package registry ~/.cmake/*
   set(CMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY ON CACHE INTERNAL "" FORCE)
   set(V_DEPS_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/v_deps_build)
-  set(V_DEPS_INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/v_deps_install)
   configure_file(3rdparty.cmake.in ${V_DEPS_BUILD_DIR}/CMakeLists.txt @ONLY)
   execute_process(COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" .
     RESULT_VARIABLE result
