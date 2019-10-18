@@ -56,14 +56,14 @@ def gen_csr(name):
 
 def gen_self_sign_cert(ca, name):
     logger.info("Self signing cert for ca: %s, and csr: %s", ca, name)
-    cmd = "openssl x509 -req -in {name}.csr -CA {ca}.pem -CAkey" \
+    cmd = "openssl x509 -req -days 3650 -in {name}.csr -CA {ca}.pem -CAkey" \
         " {ca}.key -CAcreateserial -out {name}.crt -sha256".format(name=name, ca=ca)
     shell.run_subprocess(cmd)
 
 
 def gen_pem(name):
     logger.info("Generating pem")
-    cmd ="openssl req -x509 -new -nodes -key {name}.key -newkey rsa:2048"\
+    cmd ="openssl req -x509 -days 3650 -new -nodes -key {name}.key -newkey rsa:2048"\
         " -sha256 -out {name}.pem -subj '{subject}'".format(name=name, subject=gen_csr_subject())
     shell.run_subprocess(cmd)
     copyfile("%s.pem" % name, "%s.chain_cert" % name)
