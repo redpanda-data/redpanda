@@ -3,6 +3,7 @@
 #include "model/record.h"
 #include "model/timestamp.h"
 #include "seastarx.h"
+#include "utils/string_switch.h"
 
 #include <seastar/core/print.hh>
 
@@ -116,6 +117,18 @@ std::ostream& operator<<(std::ostream& os, const record_batch& batch) {
 
 sstring ntp::path() const {
     return fmt::format("{}/{}/{}", ns(), tp.topic(), tp.partition());
+}
+
+std::istream& operator>>(std::istream& i, compression& c) {
+    sstring s;
+    i >> s;
+    c = string_switch<compression>(s)
+          .match_all("none", "uncompressed", compression::none)
+          .match("gzip", compression::gzip)
+          .match("snappy", compression::snappy)
+          .match("lz4", compression::lz4)
+          .match("zstd", compression::zstd);
+    return i;
 }
 
 } // namespace model
