@@ -3,3 +3,6 @@
 
 # os packages
 !tools/install-deps.sh
+
+# llvm
+!cmake/caches/llvm.cmake
