@@ -16,6 +16,10 @@ public:
     future<> start() {
         return _raft->start();
     }
+    future<> stop() {
+        return _raft->stop();
+    }
+
     future<> replicate(raft::entry) {
         return make_ready_future<>();
     }
