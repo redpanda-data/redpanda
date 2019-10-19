@@ -1,0 +1,41 @@
+steps:
+- id: 'build base image'
+  name: 'gcr.io/kaniko-project/executor:latest'
+  args: ['--dockerfile=tools/ci/Dockerfile.base',
+         '--destination=gcr.io/$PROJECT_ID/builder-base:$SHORT_SHA',
+         '--cache=true']
+
+- id: 'build clang image'
+  name: 'gcr.io/kaniko-project/executor:latest'
+  args: ['--dockerfile=tools/ci/Dockerfile.clang',
+         '--destination=gcr.io/$PROJECT_ID/builder-clang:$SHORT_SHA',
+         '--cache=true']
+
+- id: 'build 3rdparty image'
+  name: 'gcr.io/kaniko-project/executor:latest'
+  args: ['--dockerfile=tools/ci/Dockerfile.3rdparty',
+         '--destination=gcr.io/$PROJECT_ID/builder:$SHORT_SHA',
+         '--cache=true']
+
+- id: 'configure'
+  name: 'gcr.io/$PROJECT_ID/builder:$SHORT_SHA'
+  args: ['cmake', '-GNinja', '-B./build', '-DCMAKE_BUILD_TYPE=${_BUILD_TYPE}',
+         '-DRP_ENABLE_GOLD_LINKER=OFF', '-DV_MANAGE_DEPS=OFF', '.']
+  env:
+  - 'CC=clang'
+  - 'CXX=clang++'
+
+- id: 'build'
+  name: 'gcr.io/$PROJECT_ID/builder:$SHORT_SHA'
+  entrypoint: '/bin/bash'
+  args: ['-c', 'cd build/ && ninja -C /workspace/build/']
+
+- id: 'test'
+  name: 'gcr.io/$PROJECT_ID/builder:$SHORT_SHA'
+  entrypoint: '/bin/bash'
+  args: ['-c', 'cd build/ && ctest -V']
+
+timeout: 3600s
+
+substitutions:
+  _BUILD_TYPE: Release

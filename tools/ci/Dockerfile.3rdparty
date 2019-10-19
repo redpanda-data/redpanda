@@ -1,0 +1,29 @@
+FROM gcr.io/redpandaci/builder-clang:fedora-30
+
+ARG BUILD_TYPE=Release
+
+COPY 3rdparty.cmake.in /tmp/v/
+COPY CMakeLists.txt /tmp/v/
+COPY cmake/FindLibCxx.cmake /tmp/v/cmake/
+
+RUN export CXX=/usr/local/bin/clang++ && \
+    export CC=/usr/local/bin/clang    && \
+    cd /tmp/v && \
+    cmake \
+      -GNinja \
+      -B/tmp/v/build \
+      -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
+      -DV_DEPS_INSTALL_DIR=/usr/local \
+      -DRP_ENABLE_GOLD_LINKER=OFF \
+      -DV_DEPS_ONLY=ON \
+      /tmp/v && \
+    cd && \
+    rm -rf /tmp/v && \
+    sh -c 'echo "/usr/local/lib" > /etc/ld.so.conf.d/usrlocallib.conf' && \
+    sh -c 'echo "/usr/local/lib64" > /etc/ld.so.conf.d/usrlocallib64.conf' && \
+    ldconfig
+
+# TODO: remove after github.com/vectorizedio/v/issues/191 is fixed
+RUN sed -i \
+      's/  set (_seastar_dep_args_.*)//' \
+      /usr/local/lib64/cmake/Seastar/SeastarDependencies.cmake
