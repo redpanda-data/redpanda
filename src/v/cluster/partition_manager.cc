@@ -20,7 +20,7 @@ partition_manager::partition_manager(
       .base_dir = base_dir,
       .max_segment_size = max_segment_size,
       .should_sanitize = storage::log_config::sanitize_files::no})
-  , _hbeats(raft::timeout_jitter(raft_timeout.count()), clients)
+  , _hbeats(raft_timeout, clients)
   , _shard_table(nlc)
   , _clients(clients) {
 }
