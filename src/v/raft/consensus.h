@@ -28,6 +28,7 @@ public:
     enum class vote_state { follower, candidate, leader };
     using vote_request_ptr = foreign_ptr<std::unique_ptr<vote_request>>;
     using vote_reply_ptr = foreign_ptr<std::unique_ptr<vote_reply>>;
+    using leader_cb_t = noncopyable_function<void(group_id)>;
 
     consensus(
       model::node_id,
@@ -36,7 +37,8 @@ public:
       storage::log_append_config::fsync should_fsync,
       io_priority_class io_priority,
       model::timeout_clock::duration disk_timeout,
-      sharded<client_cache>&);
+      sharded<client_cache>&,
+      leader_cb_t);
 
     /// \brief must be initial call.
     /// allow for internal state recovery
@@ -101,6 +103,7 @@ private:
     io_priority_class _io_priority;
     model::timeout_clock::duration _disk_timeout;
     sharded<client_cache>& _clients;
+    leader_cb_t _leader_notification;
 
     // read at `future<> start()`
     model::node_id _voted_for;

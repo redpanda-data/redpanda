@@ -17,14 +17,17 @@ consensus::consensus(
   storage::log_append_config::fsync should_fsync,
   io_priority_class io_priority,
   model::timeout_clock::duration disk_timeout,
-  sharded<client_cache>& clis)
+  sharded<client_cache>& clis,
+  consensus::leader_cb_t cb)
   : _self(std::move(nid))
   , _jit(std::move(jit))
   , _log(l)
   , _should_fsync(should_fsync)
   , _io_priority(io_priority)
   , _disk_timeout(disk_timeout)
-  , _clients(clis) {
+  , _clients(clis)
+  , _leader_notification(std::move(cb)) {
+    _vote_timeout.set_callback([this] { dispatch_vote(); });
 }
 void consensus::step_down() {
     _probe.step_down();
