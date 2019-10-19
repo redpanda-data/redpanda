@@ -103,7 +103,12 @@ future<> controller::recover_assignment(partition_assignment as) {
           // 2. update partition_manager
           return _pm.invoke_on(
             shard, [this, raft_group, ntp](partition_manager& pm) {
-                return pm.manage(ntp, raft_group);
+                sstring msg = fmt::format(
+                  "recovered: {}, raft group_id: {}", ntp.path(), raft_group);
+                // recover partition in the background
+                (void)pm.manage(ntp, raft_group)
+                  .finally(
+                    [msg = std::move(msg)] { clusterlog().info("{},", msg); });
             });
       });
 }
