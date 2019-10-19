@@ -40,6 +40,190 @@ future<> consensus::stop() {
     return _bg.close();
 }
 
+static future<vote_reply_ptr>
+one_vote(model::node_id node, sharded<client_cache>& cls, vote_request r) {
+    // FIXME #206
+    auto shard = client_cache::shard_for(node);
+    using freq = vote_request_ptr;
+    freq req = make_foreign(std::make_unique<vote_request>(std::move(r)));
+    return smp::submit_to(shard, [node, &cls, r = std::move(req)]() mutable {
+        using fptr = vote_reply_ptr;
+        auto& local = cls.local();
+        if (!local.contains(node)) {
+            return make_exception_future<fptr>(std::runtime_error(fmt::format(
+              "Could not vote(). Node {} not in client_cache", node)));
+        }
+        // local copy of vote
+        return local.get(node)->with_client(
+          [rem = std::move(r)](reconnect_client::client_type& cli) mutable {
+              vote_request r(*rem); // local copy
+              // FIXME: #137
+              return cli.vote(std::move(r))
+                .then([](rpc::client_context<vote_reply> r) {
+                    auto ptr = std::make_unique<vote_reply>(std::move(r.data));
+                    return make_ready_future<fptr>(
+                      make_foreign(std::move(ptr)));
+                });
+          });
+    });
+}
+
+/// state mutation must happen inside `_ops_sem`
+future<> consensus::process_vote_replies(std::vector<vote_reply_ptr> reqs) {
+    if (_vstate != vote_state::candidate) {
+        raftlog().debug(
+          "We are no longer a candidate. Active term:{}", _meta.term);
+        return make_ready_future<>();
+    }
+    const size_t majority = (_conf.nodes.size() / 2) + 1;
+    const size_t votes_granted = std::accumulate(
+      reqs.begin(),
+      reqs.end(),
+      size_t(0),
+      [](size_t acc, const vote_reply_ptr& reply) {
+          if (reply->granted) {
+              ++acc;
+          }
+          return acc;
+      });
+    if (votes_granted < majority) {
+        raftlog().info(
+          "Majority vote failed. Got {}/{} votes, need:{}",
+          votes_granted,
+          _conf.nodes.size(),
+          majority);
+        return make_ready_future<>();
+    }
+    // section vote:5.2.2
+    return with_semaphore(
+             _op_sem,
+             1,
+             [this] {
+                 // race on acquiring lock requiers double check
+                 if (_vstate != vote_state::candidate) {
+                     return make_ready_future<>();
+                 }
+                 raftlog().info("We are the new leader, term:{}", _meta.term);
+                 _vstate = vote_state::leader;
+                 return make_ready_future<>();
+             })
+      .then([this] {
+          // execute callback oustide of critical section
+          _leader_notification(group_id(_meta.group));
+      });
+}
+
+// FIXME need to see if we should inform the learners
+future<std::vector<vote_reply_ptr>>
+consensus::send_vote_requests(clock_type::time_point timeout) {
+    auto sem = make_lw_shared<semaphore>(_conf.nodes.size());
+    auto ret = make_lw_shared<std::vector<vote_reply_ptr>>();
+    ret->reserve(_conf.nodes.size());
+    // force copy
+    const vote_request vreq{_self(),
+                            _meta.group,
+                            _meta.term,
+                            _meta.prev_log_index,
+                            _meta.prev_log_term};
+    // background
+    (void)do_for_each(
+      _conf.nodes.begin(),
+      _conf.nodes.end(),
+      [this, timeout, sem, ret, vreq](const model::broker& b) mutable {
+          model::node_id n = b.id();
+          // ensure 'sem' capture & 'vreq' copy
+          future<> f
+            = one_vote(n, _clients, vreq).then([ret, sem](vote_reply_ptr r) {
+                  ret->push_back(std::move(r));
+              });
+          f = with_semaphore(
+            *sem, 1, [f = std::move(f)]() mutable { return std::move(f); });
+          // background
+          (void)with_timeout(timeout, std::move(f))
+            .handle_exception([n](std::exception_ptr e) {
+                raftlog().info("Node:{} could not vote() - {} ", n, e);
+            });
+      });
+    // wait for safety, or timeout
+    const size_t majority = (_conf.nodes.size() / 2) + 1;
+    return sem->wait(majority).then([ret, sem] {
+        std::vector<vote_reply_ptr> clean;
+        clean.reserve(ret->size());
+        std::move(ret->begin(), ret->end(), clean.begin());
+        ret->clear();
+        return clean;
+    });
+}
+
+future<> consensus::do_dispatch_vote(clock_type::time_point timeout) {
+    // Section 5.2
+    // 1 start election
+    // 1.2 increment term
+    // 1.3 vote for self
+    // 1.4 reset election timer
+    // 1.5 send all votes
+    // 2 if votes from majority become leader
+    // 3 if got append_entries() from new leader, become follower
+    // 4 if election timeout elapses, start new lection
+
+    // 5.2.1
+    _vstate = vote_state::candidate;
+    // 5.2.1.2
+    _meta.term = _meta.term + 1;
+    // 5.2.1.3
+    auto req = vote_request{_self(),
+                            _meta.group,
+                            _meta.term,
+                            _meta.prev_log_index,
+                            _meta.prev_log_term};
+    auto f = do_vote(std::move(req)).then([this](vote_reply r) {
+        if (!r.granted) {
+            // we are under _ops_sem. should never happen
+            return make_exception_future<>(std::runtime_error(fmt::format(
+              "Logic error. Self vote granting failed. term:{}", _meta.term)));
+        }
+        raftlog().debug("self vote granted. term:{}", _meta.term);
+        return make_ready_future<>();
+    });
+
+    // 5.2.1.5 - background
+    (void)send_vote_requests(timeout).then([this](auto replies) {
+        return process_vote_replies(std::move(replies));
+    });
+
+    // exec
+    return std::move(f);
+}
+/// performs no raft-state mutation other than resetting the timer
+/// state manipulation needs to happen under the `_ops_sem`
+/// see do_dispatch_vote()
+void consensus::dispatch_vote() {
+    auto now = clock_type::now();
+    auto expiration = _hbeat + _jit.base_duration();
+    if (now < expiration) {
+        // nothing to do.
+        return;
+    }
+    if (_vstate == vote_state::leader) {
+        return;
+    }
+    if (!_bg.is_closed()) {
+        // 5.2.1.4 - prepare next timeout
+        _vote_timeout.arm(_jit());
+    }
+    // background, acquire lock, transition state
+    (void)with_gate(_bg, [this] {
+        // must be oustside semaphore
+        const auto timeout = clock_type::now() + _jit.base_duration();
+        return with_semaphore(_op_sem, 1, [this, timeout] {
+            return with_timeout(timeout, do_dispatch_vote(timeout))
+              .handle_exception([](std::exception_ptr e) {
+                  raftlog().info("Could not finish vote(): {}", e);
+              });
+            _hbeat = clock_type::now();
+        });
+    });
+}
 future<> consensus::start() {
     return with_semaphore(_op_sem, 1, [this] {
         // TODO(agallego) - recover _conf & _meta

@@ -103,6 +103,15 @@ private:
         return _log.base_directory() + "/voted_for";
     }
 
+    void dispatch_vote();
+
+    future<> do_dispatch_vote(clock_type::time_point);
+
+    future<std::vector<vote_reply_ptr>>
+      send_vote_requests(clock_type::time_point);
+
+    future<> process_vote_replies(std::vector<vote_reply_ptr>);
+
     // args
     model::node_id _self;
     timeout_jitter _jit;
@@ -118,9 +127,12 @@ private:
     protocol_metadata _meta;
     group_configuration _conf;
 
+    /// useful for when we are not the leader
     clock_type::time_point _hbeat = clock_type::now();
+    /// used to keep track if we are a leader, or transitioning
     vote_state _vstate = vote_state::follower;
-    /// \brief all raft operations must happen exclusively since the common case
+    /// used for votes only. heartbeats are done by heartbeat_manager
+    timer_type _vote_timeout;
     /// used to wait for background ops before shutting down
     gate _bg;
 
