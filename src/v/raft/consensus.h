@@ -43,14 +43,23 @@ public:
     /// Initial call. Allow for internal state recovery
     future<> start();
 
+    /// Stop all communications.
+    future<> stop();
+
     future<vote_reply> vote(vote_request&& r) {
-        return with_semaphore(_op_sem, 1, [this, r = std::move(r)]() mutable {
-            return do_vote(std::move(r));
+        return with_gate(_bg, [this, r = std::move(r)]() mutable {
+            return with_semaphore(
+              _op_sem, 1, [this, r = std::move(r)]() mutable {
+                  return do_vote(std::move(r));
+              });
         });
     }
     future<append_entries_reply> append_entries(append_entries_request&& r) {
-        return with_semaphore(_op_sem, 1, [this, r = std::move(r)]() mutable {
-            return do_append_entries(std::move(r));
+        return with_gate(_bg, [this, r = std::move(r)]() mutable {
+            return with_semaphore(
+              _op_sem, 1, [this, r = std::move(r)]() mutable {
+                  return do_append_entries(std::move(r));
+              });
         });
     }
 
@@ -112,6 +121,9 @@ private:
     clock_type::time_point _hbeat = clock_type::now();
     vote_state _vstate = vote_state::follower;
     /// \brief all raft operations must happen exclusively since the common case
+    /// used to wait for background ops before shutting down
+    gate _bg;
+
     /// all raft operations must happen exclusively since the common case
     /// is for the operation to touch the disk
     semaphore _op_sem{1};

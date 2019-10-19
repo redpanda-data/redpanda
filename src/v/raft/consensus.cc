@@ -34,6 +34,12 @@ void consensus::step_down() {
     _voted_for = {};
     _vstate = vote_state::follower;
 }
+
+future<> consensus::stop() {
+    _vote_timeout.cancel();
+    return _bg.close();
+}
+
 future<> consensus::start() {
     return with_semaphore(_op_sem, 1, [this] {
         // TODO(agallego) - recover _conf & _meta
