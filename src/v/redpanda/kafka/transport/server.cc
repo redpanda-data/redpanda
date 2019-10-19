@@ -22,11 +22,13 @@ static logger klog("kafka_server");
 kafka_server::kafka_server(
   probe p,
   sharded<cluster::metadata_cache>& metadata_cache,
+  sharded<controller_dispatcher>& cntrl_dispatcher,
   kafka_server_config config,
   sharded<quota_manager>& quota_mgr,
   sharded<group_router_type>& group_router) noexcept
   : _probe(std::move(p))
   , _metadata_cache(metadata_cache)
+  , _cntrl_dispatcher(cntrl_dispatcher)
   , _max_request_size(config.max_request_size)
   , _memory_available(_max_request_size)
   , _smp_group(std::move(config.smp_group))
@@ -242,7 +244,8 @@ future<> kafka_server::connection::process_request() {
                                                 &delay]() mutable {
                         auto remaining = size - sizeof(raw_request_header)
                                          - header.client_id_buffer.size();
-                        return _buffer_reader.read_exactly(_read_buf, remaining)
+                        return _buffer_reader
+                          .read_exactly(_read_buf, remaining)
                           .then(
                             [this,
                              header = std::move(header),
@@ -250,6 +253,7 @@ future<> kafka_server::connection::process_request() {
                              delay = std::move(delay)](fragbuf buf) mutable {
                                 auto ctx = requests::request_context(
                                   _server._metadata_cache,
+                                  _server._cntrl_dispatcher.local(),
                                   std::move(header),
                                   std::move(buf),
                                   delay.duration,

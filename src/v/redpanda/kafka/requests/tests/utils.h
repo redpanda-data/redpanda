@@ -2,7 +2,7 @@
 #include "bytes/bytes_ostream.h"
 #include "utils/fragbuf.h"
 
-fragbuf copy_to_fragbuf(bytes_ostream& bytes) {
+fragbuf copy_to_fragbuf(const bytes_ostream& bytes) {
     std::vector<temporary_buffer<char>> v;
     std::transform(
       bytes.begin(),

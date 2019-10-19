@@ -208,6 +208,13 @@ void application::wire_up_services() {
       .get();
     _quota_mgr.invoke_on_all(&kafka::transport::quota_manager::start).get();
 
+    construct_service(
+      _cntrl_dispatcher,
+      std::ref(*_controller),
+      _smp_groups.kafka_smp_sg(),
+      _scheduling_groups.kafka_sg())
+      .get();
+
     // Kafka API
     auto kafka_creds
       = _conf.local().kafka_api_tls().get_credentials_builder().get0();
@@ -220,6 +227,7 @@ void application::wire_up_services() {
       _kafka_server,
       kafka::transport::probe(),
       std::ref(_metadata_cache),
+      std::ref(_cntrl_dispatcher),
       std::move(server_config),
       std::ref(_quota_mgr),
       std::ref(_group_router))
