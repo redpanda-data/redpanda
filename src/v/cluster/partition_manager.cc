@@ -42,7 +42,7 @@ future<> partition_manager::manage(model::ntp ntp, raft::group_id group) {
             _self,
             raft::timeout_jitter(
               std::chrono::duration_cast<std::chrono::milliseconds>(
-                _hbeats.base_duration())
+                _hbeats.election_duration())
                 .count()),
             *log,
             _should_fsync,
