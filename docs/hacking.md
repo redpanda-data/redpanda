@@ -64,8 +64,8 @@ locally on your machine (linux/macOS only).
 
 Builds on GCB are triggered automatically by push events to the 
 `vectorizedio/v` repository and its forks. Take a look at the [build 
-pipeline](tools/ci/gcbuild.yml) for more details on what the pipeline 
-does.
+pipeline](../tools/ci/gcbuild.yml) for more details on what the 
+pipeline does.
 
 [gcloud-install]: https://cloud.google.com/sdk/install
 [gcb-local-install]: https://cloud.google.com/cloud-build/docs/build-debug-locally
