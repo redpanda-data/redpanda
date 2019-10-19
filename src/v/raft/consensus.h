@@ -40,8 +40,7 @@ public:
       sharded<client_cache>&,
       leader_cb_t);
 
-    /// \brief must be initial call.
-    /// allow for internal state recovery
+    /// Initial call. Allow for internal state recovery
     future<> start();
 
     future<vote_reply> vote(vote_request&& r) {
@@ -113,8 +112,10 @@ private:
     clock_type::time_point _hbeat = clock_type::now();
     vote_state _vstate = vote_state::follower;
     /// \brief all raft operations must happen exclusively since the common case
+    /// all raft operations must happen exclusively since the common case
     /// is for the operation to touch the disk
     semaphore _op_sem{1};
+    /// used for notifying when commits happened to log
     std::vector<append_entries_proto_hook*> _hooks;
     probe _probe;
 };
