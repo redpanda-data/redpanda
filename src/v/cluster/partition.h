@@ -3,6 +3,10 @@
 #include "raft/consensus.h"
 
 namespace cluster {
+class partition_manager;
+
+/// holds cluster logic that is not raft related
+/// all raft logic is proxied transparently
 class partition {
 public:
     using consensus_ptr = lw_shared_ptr<raft::consensus>;
@@ -27,7 +31,9 @@ public:
         return _raft->ntp();
     }
 
-    /// \brief needs to be exposed for raft/service.h
+private:
+    friend partition_manager;
+
     consensus_ptr raft() {
         return _raft;
     }
