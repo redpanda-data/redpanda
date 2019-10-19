@@ -19,10 +19,6 @@ controller::controller(
   sharded<partition_manager>& pm,
   sharded<shard_table>& st)
   : _self(std::move(n))
-  , _mngr(storage::log_config{
-      std::move(basedir),
-      max_segment_size,
-      /*this is for debug only*/ storage::log_config::sanitize_files::no})
   , _pm(pm)
   , _st(st)
   , _stgh(this) {
@@ -31,7 +27,8 @@ controller::controller(
 future<> controller::start() {
     verify_shard();
     clusterlog().debug("Starting cluster recovery");
-    return _mngr.manage(cluster_ntp()).then([this](storage::log_ptr plog) {
+    return _pm.local().manage(controller::ntp, controller::group).then([this] {
+        auto plog = _pm.local().logs().find(controller::ntp)->second;
         return bootstrap_from_log(plog);
     });
 }
@@ -42,7 +39,7 @@ raft::consensus& controller::raft0() const {
 
 future<> controller::stop() {
     verify_shard();
-    return _mngr.stop();
+    return make_ready_future<>();
 }
 
 future<> controller::bootstrap_from_log(storage::log_ptr l) {

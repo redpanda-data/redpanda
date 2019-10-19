@@ -76,7 +76,6 @@ private:
     raft::consensus& raft0() const;
 
     model::node_id _self;
-    storage::log_manager _mngr;
     sharded<partition_manager>& _pm;
     sharded<shard_table>& _st;
     stage_hook _stgh;
