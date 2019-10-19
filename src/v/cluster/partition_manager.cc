@@ -1,6 +1,9 @@
 #include "cluster/partition_manager.h"
 
+#include "cluster/logger.h"
 #include "resource_mgmt/io_priority.h"
+
+#include <seastar/core/reactor.hh>
 
 namespace cluster {
 
@@ -26,8 +29,17 @@ partition_manager::partition_manager(
 }
 
 future<> partition_manager::stop() {
-    return _mngr.stop();
+    using pair_t = typename decltype(_raft_table)::value_type;
+    return _bg.close()
+      .then([this] {
+          return parallel_for_each(_raft_table, [this](pair_t& pair) {
+              clusterlog().info("Shutting down raft group: {}", pair.first);
+              return pair.second->stop();
+          });
+      })
+      .then([this] { return _mngr.stop(); });
 }
+
 void partition_manager::trigger_leadership_notification(raft::group_id group) {
     auto ptr = _raft_table.find(group)->second;
     for (auto& cb : _notifications) {
