@@ -11,9 +11,13 @@
 namespace raft {
 class timeout_jitter {
 public:
-    explicit timeout_jitter(uint32_t base_timeout_ms, uint32_t jitter = 50)
+    timeout_jitter(uint32_t base_timeout_ms, uint32_t jitter)
       : _jitter(jitter)
       , _election_duration(std::chrono::milliseconds(base_timeout_ms)) {
+    }
+
+    explicit timeout_jitter(uint32_t base_timeout_ms)
+      : timeout_jitter(base_timeout_ms, base_timeout_ms / 2) {
     }
 
     timeout_jitter(timeout_jitter&& o) noexcept
