@@ -28,6 +28,13 @@ partition_manager::partition_manager(
 future<> partition_manager::stop() {
     return _mngr.stop();
 }
+void partition_manager::trigger_leadership_notification(raft::group_id group) {
+    auto ptr = _raft_table.find(group)->second;
+    for (auto& cb : _notifications) {
+        cb(ptr);
+    }
+}
+
 future<> partition_manager::manage(model::ntp ntp, raft::group_id group) {
     return _mngr.manage(std::move(ntp))
       .then([this, group](storage::log_ptr log) {
