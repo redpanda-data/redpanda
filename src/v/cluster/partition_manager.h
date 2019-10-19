@@ -32,6 +32,10 @@ public:
     future<> stop();
     future<> manage(model::ntp, raft::group_id);
 
+    storage::log_manager::logs_type& logs() {
+        return _mngr.logs();
+    }
+
 private:
     model::node_id _self;
     storage::log_append_config::fsync _should_fsync;
