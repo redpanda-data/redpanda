@@ -29,6 +29,7 @@ set(RP_MARCH
   "-march override, use -march=armv8-a+crc+crypto or -march=westmere"
   )
 option(V_MANAGE_DEPS "Use our own 3rdparty.cmake.in" ON)
+option(V_DEPS_ONLY "Only build dependencies" OFF)
 set(V_DEPS_INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/v_deps_install
   CACHE STRING "Managed dependencies install directory")
 option (RP_ENABLE_DPDK "Enable DPDK support" OFF)
@@ -62,7 +63,7 @@ if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
         -lc++fs
         -lc++experimental)
     if (V_MANAGE_DEPS)
-      set(LLVM_LIBCPP_INCLUDE_FLAG "-I${V_DEPS_INSTALL}/include/c++/v1")
+      set(LLVM_LIBCPP_INCLUDE_FLAG "-I${V_DEPS_INSTALL_DIR}/include/c++/v1")
     endif()
     set(BASE_CXX_FLAGS_LIST
         -Wno-unused-lambda-capture
@@ -99,6 +100,11 @@ set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} ${BASE_CXX_FLAGS}")
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo" CACHE STRING
       "Choose: Debug, Release, RelWithDebInfo, MinSizeRel." FORCE)
+endif()
+
+if(V_DEPS_ONLY AND NOT V_MANAGE_DEPS)
+    message(FATAL_ERROR
+    "To build managed dependencies V_MANAGE_DEPS must be enabled")
 endif()
 
 if(V_MANAGE_DEPS)
@@ -142,7 +148,12 @@ function (seastar_generate_swagger)
   set (one_value_args TARGET VAR IN_FILE OUT_FILE)
   cmake_parse_arguments (args "" "${one_value_args}" "" ${ARGN})
   get_filename_component (out_dir ${args_OUT_FILE} DIRECTORY)
-  set (generator "${V_DEPS_INSTALL_DIR}/bin/seastar-json2code.py")
+  if(V_DEPS_ONLY)
+    set (generator "${V_DEPS_INSTALL_DIR}/bin/seastar-json2code.py")
+  else()
+    find_program(GENERATOR "seastar-json2code.py")
+    set (generator "${GENERATOR}")
+  endif()
 
   add_custom_command (
     DEPENDS
@@ -157,6 +168,11 @@ function (seastar_generate_swagger)
 
   set (${args_VAR} ${args_OUT_FILE} PARENT_SCOPE)
 endfunction ()
+
+if(V_DEPS_ONLY)
+  message("Finished building/installing external project dependencies.")
+  return()
+endif()
 
 # add code
 include(init_cpack)
