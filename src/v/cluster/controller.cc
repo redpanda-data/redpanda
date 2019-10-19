@@ -12,12 +12,6 @@ static void verify_shard() {
     }
 }
 
-inline model::ntp cluster_ntp() {
-    return model::ntp{model::ns("redpanda"),
-                      model::topic_partition{model::topic("controller"),
-                                             model::partition_id(0)}};
-}
-
 controller::controller(
   model::node_id n,
   sstring basedir,
