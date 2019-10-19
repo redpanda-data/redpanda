@@ -27,7 +27,7 @@ public:
         return _ntp_table.find(ntp)->second;
     }
     /// \brief raw api for raft/service.h
-    inline raft::consensus& consensus_for(raft::group_id group) {
+    inline raft::consensus& consensus_for(raft::group_id group) const {
         return *(_raft_table.find(group)->second->raft());
     }
 

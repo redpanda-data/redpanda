@@ -35,6 +35,11 @@ future<> controller::start() {
         return bootstrap_from_log(plog);
     });
 }
+
+raft::consensus& controller::raft0() const {
+    return _pm.local().consensus_for(controller::group);
+}
+
 future<> controller::stop() {
     verify_shard();
     return _mngr.stop();
