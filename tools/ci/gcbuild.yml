@@ -39,3 +39,6 @@ timeout: 3600s
 
 substitutions:
   _BUILD_TYPE: Release
+
+options:
+  machineType: 'N1_HIGHCPU_32'
