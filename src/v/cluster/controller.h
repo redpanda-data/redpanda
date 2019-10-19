@@ -27,6 +27,15 @@ public:
     future<> start();
     future<> stop();
 
+    bool is_leader() const {
+        return _raft0->raft()->is_leader();
+    }
+
+    future<std::vector<topic_result>> create_topics(
+      model::ns ns,
+      std::vector<topic_configuration> topics,
+      model::timeout_clock::time_point timeout);
+
 private:
     // stages the pre_commit hooks from raft
     struct stage_hook final : raft::append_entries_proto_hook {

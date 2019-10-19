@@ -1,4 +1,5 @@
 #include "redpanda/kafka/requests/api_versions_request.h"
+#include "redpanda/kafka/requests/create_topics_request.h"
 #include "redpanda/kafka/requests/fetch_request.h"
 #include "redpanda/kafka/requests/find_coordinator_request.h"
 #include "redpanda/kafka/requests/headers.h"
@@ -54,7 +55,9 @@ using request_types = make_request_types<
   join_group_request,
   heartbeat_request,
   leave_group_request,
-  sync_group_request>;
+  sync_group_request,
+  create_topics_request>;
+
 
 template<typename Request>
 CONCEPT(requires(KafkaRequest<Request>))
@@ -101,6 +104,8 @@ process_request(request_context&& ctx, smp_service_group g) {
         return do_process<leave_group_request>(std::move(ctx), std::move(g));
     case sync_group_request::key:
         return do_process<sync_group_request>(std::move(ctx), std::move(g));
+    case create_topics_request::key:
+        return do_process<create_topics_request>(std::move(ctx), std::move(g));
     };
     return seastar::make_exception_future<response_ptr>(
       std::runtime_error(fmt::format("Unsupported API {}", ctx.header().key)));

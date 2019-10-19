@@ -1,9 +1,9 @@
 #pragma once
 
-#include "redpanda/kafka/transport/probe.h"
-#include "redpanda/kafka/transport/quota_manager.h"
 #include "redpanda/kafka/requests/headers.h"
 #include "redpanda/kafka/requests/request_context.h"
+#include "redpanda/kafka/transport/probe.h"
+#include "redpanda/kafka/transport/quota_manager.h"
 #include "seastarx.h"
 #include "utils/fragbuf.h"
 
@@ -27,6 +27,14 @@
 
 namespace cluster {
 class metadata_cache;
+}
+
+namespace kafka::requests {
+struct request_header;
+}
+
+namespace kafka {
+class controller_dispatcher;
 }
 
 namespace kafka::transport {
@@ -58,6 +66,7 @@ public:
     kafka_server(
       probe,
       sharded<cluster::metadata_cache>&,
+      sharded<controller_dispatcher>&,
       kafka_server_config,
       sharded<quota_manager>& quota_mgr,
       sharded<kafka::group_router_type>& group_router) noexcept;
@@ -97,6 +106,7 @@ private:
     future<> do_accepts(int which, bool keepalive);
 
     probe _probe;
+    sharded<controller_dispatcher>& _cntrl_dispatcher;
     sharded<cluster::metadata_cache>& _metadata_cache;
     size_t _max_request_size;
     semaphore _memory_available;

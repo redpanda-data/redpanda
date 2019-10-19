@@ -5,6 +5,7 @@
 #include "cluster/partition_manager.h"
 #include "redpanda/admin/api-doc/config.json.h"
 #include "redpanda/config/configuration.h"
+#include "redpanda/kafka/controller_dispatcher.h"
 #include "redpanda/kafka/groups/group_manager.h"
 #include "redpanda/kafka/groups/group_router.h"
 #include "redpanda/kafka/groups/group_shard_mapper.h"
@@ -96,6 +97,7 @@ private:
     sharded<http_server> _admin;
     sharded<cluster::metadata_cache> _metadata_cache;
     sharded<kafka::transport::quota_manager> _quota_mgr;
+    sharded<kafka::controller_dispatcher> _cntrl_dispatcher;
     sharded<kafka::transport::kafka_server> _kafka_server;
     std::unique_ptr<cluster::controller> _controller;
 };

@@ -1,0 +1,49 @@
+#pragma once
+
+#include "redpanda/kafka/requests/headers.h"
+#include "redpanda/kafka/requests/request_context.h"
+#include "redpanda/kafka/requests/response.h"
+#include "redpanda/kafka/requests/topics/types.h"
+#include "seastarx.h"
+
+#include <seastar/core/future.hh>
+
+#include <unordered_map>
+
+namespace kafka::requests {
+
+class create_topics_request final {
+public:
+    static constexpr const char* name = "create topics";
+    static constexpr api_key key = api_key(19);
+    static constexpr api_version min_supported = api_version(0);
+    static constexpr api_version max_supported = api_version(3);
+
+    static future<response_ptr> process(request_context&&, smp_service_group);
+
+    static response_ptr
+    encode_response(request_context&, std::vector<topic_result> errs);
+
+    struct request {
+        static request decode(request_context&);
+
+        static new_topic_configuration
+        read_topic_configuration(request_reader&);
+
+        static std::vector<partition_assignment>
+        read_partiton_assignments(request_reader&);
+
+        static partition_assignment read_partiton_assignment(request_reader&);
+
+        static model::node_id read_node_id(request_reader&);
+
+        static std::unordered_map<sstring, sstring>
+        read_config(request_reader&);
+
+        std::vector<new_topic_configuration> topics;
+        std::chrono::milliseconds timeout;
+        bool validate_only;
+    };
+};
+
+} // namespace kafka::requests
