@@ -26,6 +26,8 @@ public:
         model::term_id term{0};
     };
     enum class vote_state { follower, candidate, leader };
+    using vote_request_ptr = foreign_ptr<std::unique_ptr<vote_request>>;
+    using vote_reply_ptr = foreign_ptr<std::unique_ptr<vote_reply>>;
 
     consensus(
       model::node_id,
