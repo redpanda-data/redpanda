@@ -33,7 +33,7 @@ public:
     future<> stop();
 
     bool is_leader() const {
-        return _raft0->raft()->is_leader();
+        return raft0().is_leader();
     }
 
     future<std::vector<topic_result>> create_topics(
@@ -73,10 +73,10 @@ private:
     future<> recover_record(model::record);
     future<> recover_assignment(partition_assignment);
     void end_of_stream();
+    raft::consensus& raft0() const;
 
     model::node_id _self;
     storage::log_manager _mngr;
-    std::unique_ptr<partition> _raft0;
     sharded<partition_manager>& _pm;
     sharded<shard_table>& _st;
     stage_hook _stgh;
