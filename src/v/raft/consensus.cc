@@ -7,6 +7,9 @@
 #include <seastar/core/fstream.hh>
 
 namespace raft {
+using vote_request_ptr = consensus::vote_request_ptr;
+using vote_reply_ptr = consensus::vote_reply_ptr;
+
 consensus::consensus(
   model::node_id nid,
   timeout_jitter jit,
