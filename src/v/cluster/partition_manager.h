@@ -51,6 +51,8 @@ private:
 
     storage::log_manager _mngr;
     raft::heartbeat_manager _hbeats;
+    /// used to wait for concurrent recoveries
+    gate _bg;
 
     sharded<cluster::shard_table>& _shard_table;
     sharded<raft::client_cache>& _clients;
