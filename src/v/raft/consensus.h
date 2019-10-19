@@ -56,7 +56,7 @@ public:
     }
 
     bool is_leader() const {
-        return _voted_for == _self;
+        return _vstate == vote_state::leader;
     }
 
     const protocol_metadata& meta() const {
