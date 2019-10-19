@@ -59,8 +59,8 @@ future<> controller::recover_batch(model::record_batch batch) {
     // XXX https://github.com/vectorizedio/v/issues/188
     // we only support decompressed records
     if (batch.compressed()) {
-        throw std::runtime_error(
-          "We cannot process compressed record_batch'es yet, see #188");
+        return make_exception_future<>(std::runtime_error(
+          "We cannot process compressed record_batch'es yet, see #188"));
     }
     return do_with(std::move(batch), [this](model::record_batch& batch) {
         return do_for_each(batch, [this](model::record& rec) {
