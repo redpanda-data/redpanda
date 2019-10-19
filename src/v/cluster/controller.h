@@ -13,9 +13,14 @@ namespace cluster {
 // all ops must belong to shard0
 class controller final {
 public:
-    static constexpr shard_id shard = 0;
+    static constexpr const shard_id shard = 0;
+    static constexpr const raft::group_id group{0};
     /// \brief used to distinguished log messages
     static constexpr model::record_batch_type controller_record_batch_type{3};
+    static inline const model::ntp ntp{
+      model::ns("redpanda"),
+      model::topic_partition{model::topic("controller"),
+                             model::partition_id(0)}};
 
     controller(
       model::node_id,
