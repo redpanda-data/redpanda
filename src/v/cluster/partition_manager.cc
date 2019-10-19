@@ -48,7 +48,8 @@ future<> partition_manager::manage(model::ntp ntp, raft::group_id group) {
             _should_fsync,
             raft_priority(),
             _disk_timeout,
-            _clients);
+            _clients,
+            [this](raft::group_id g) { trigger_leadership_notification(g); });
           auto p = make_lw_shared<partition>(c);
           _ntp_table.emplace(log->ntp(), p);
           _raft_table.emplace(group, p);
