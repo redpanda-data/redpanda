@@ -11,13 +11,13 @@
 namespace raft {
 class timeout_jitter {
 public:
-    timeout_jitter(uint32_t base_timeout_ms, uint32_t jitter)
+    timeout_jitter(duration_type base_timeout, duration_type jitter)
       : _jitter(jitter)
-      , _election_duration(std::chrono::milliseconds(base_timeout_ms)) {
+      , _election_duration(base_timeout) {
     }
 
-    explicit timeout_jitter(uint32_t base_timeout_ms)
-      : timeout_jitter(base_timeout_ms, base_timeout_ms / 2) {
+    explicit timeout_jitter(duration_type base_timeout)
+      : timeout_jitter(base_timeout, base_timeout / 2) {
     }
 
     timeout_jitter(timeout_jitter&& o) noexcept
@@ -26,19 +26,18 @@ public:
       , _prng(std::move(o._prng)) {
     }
 
-    /// \brief adds jitter ammount of milliseconds according to the raft paper
+    /// adds a random amount of jitter time to base_timeout
+    /// mostly used in leader-election type of timeouts
     clock_type::time_point operator()() {
-        using ms = std::chrono::milliseconds;
-        return clock_type::now()
-               + std::chrono::duration_cast<ms>(_election_duration)
-               + ms(_prng() % _jitter);
+        return clock_type::now() + _election_duration
+               + duration_type(_prng() % _jitter.count());
     }
     duration_type base_duration() const {
         return _election_duration;
     }
 
 private:
-    const uint32_t _jitter;
+    duration_type _jitter;
     duration_type _election_duration;
     fast_prng _prng;
 };
