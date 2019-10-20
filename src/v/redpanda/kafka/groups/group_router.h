@@ -1,10 +1,10 @@
 #pragma once
+#include "redpanda/kafka/groups/types.h"
 #include "redpanda/kafka/requests/heartbeat_request.h"
 #include "redpanda/kafka/requests/join_group_request.h"
 #include "redpanda/kafka/requests/leave_group_request.h"
 #include "redpanda/kafka/requests/sync_group_request.h"
 #include "seastarx.h"
-#include "redpanda/kafka/groups/types.h"
 #include "utils/concepts-enabled.h"
 
 #include <seastar/core/reactor.hh>
