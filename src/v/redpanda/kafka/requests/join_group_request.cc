@@ -80,7 +80,7 @@ void join_group_response::encode(const request_context& ctx, response& resp) {
       members,
       [this, version](const member_config& m, response_writer& writer) {
           writer.write(m.member_id());
-          if (version >= api_version(2)) {
+          if (version >= api_version(5)) {
               writer.write(m.group_instance_id);
           }
           writer.write(bytes_view(m.metadata));
