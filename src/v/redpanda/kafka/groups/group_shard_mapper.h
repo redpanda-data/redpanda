@@ -40,8 +40,9 @@ public:
 
     void configure() {
         /// TODO
-        ///  - This needs to be hooked up to the controller some how in order to get an
-        ///  initial configuration (and any updates) of the group metadata topic.
+        ///  - This needs to be hooked up to the controller some how in order to
+        ///  get an initial configuration (and any updates) of the group
+        ///  metadata topic.
     }
 
 private:
