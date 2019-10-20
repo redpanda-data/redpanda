@@ -21,10 +21,10 @@ bool has_node(const Container& c, model::node_id::type needle) {
 }
 
 heartbeat_manager::heartbeat_manager(
-  timeout_jitter jit, sharded<client_cache>& cls)
-  : _timeout(std::move(jit))
+  duration_type timeout, sharded<client_cache>& cls)
+  : _election_duration(timeout)
   , _clients(cls) {
-    _election_timeout.set_callback([this] { dispatch_heartbeats(); });
+    _heartbeat_timer.set_callback([this] { dispatch_heartbeats(); });
 }
 
 future<> heartbeat_manager::do_dispatch_heartbeats(
@@ -42,6 +42,7 @@ future<> heartbeat_manager::do_dispatch_heartbeats(
 
 future<> heartbeat_manager::do_heartbeat(heartbeat_request&& r) {
     auto shard = client_cache::shard_for(r.node_id);
+    // FIXME: #206
     // clang-format off
     return smp::submit_to(shard, [this, r = std::move(r)]() mutable {
         auto& local = _clients.local();
@@ -51,7 +52,7 @@ future<> heartbeat_manager::do_heartbeat(heartbeat_request&& r) {
         }
         return local.get(r.node_id)->with_client(
           [r = std::move(r)](reconnect_client::client_type& cli) mutable {
-              // FIXME: needs to link up with RPC::timeout see #137
+              // FIXME: #137
               return cli.heartbeat(std::move(r));
           });
      }).then([this](rpc::client_context<heartbeat_reply> ctx) {
@@ -84,12 +85,12 @@ void heartbeat_manager::process_reply(heartbeat_reply&& r) {
 }
 
 void heartbeat_manager::dispatch_heartbeats() {
-    clock_type::time_point next_timeout = _timeout();
+    auto next_timeout = clock_type::now() + _election_duration;
     (void)with_gate(_bghbeats, [this, old = _hbeat, next_timeout] {
         return do_dispatch_heartbeats(old, next_timeout);
     });
     if (!_bghbeats.is_closed()) {
-        _election_timeout.arm(next_timeout);
+        _heartbeat_timer.arm(next_timeout);
     }
     // update last
     _hbeat = clock_type::now();
@@ -118,7 +119,7 @@ future<> heartbeat_manager::start() {
     return make_ready_future<>();
 }
 future<> heartbeat_manager::stop() {
-    _election_timeout.cancel();
+    _heartbeat_timer.cancel();
     return _bghbeats.close();
 }
 
