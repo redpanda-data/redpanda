@@ -4,12 +4,19 @@
 #include "redpanda/kafka/errors/errors.h"
 #include "redpanda/kafka/requests/request_context.h"
 #include "utils/remote.h"
+#include "utils/to_string.h"
 
 #include <seastar/util/log.hh>
 
 #include <fmt/ostream.h>
 
 #include <string_view>
+
+namespace kafka {
+std::ostream& operator<<(std::ostream& o, const member_protocol& p) {
+    return fmt_print(o, "{}:{}", p.name, p.metadata.size());
+}
+} // namespace kafka
 
 namespace kafka::requests {
 
@@ -43,7 +50,18 @@ void join_group_request::decode(request_context& ctx) {
 }
 
 std::ostream& operator<<(std::ostream& o, const join_group_request& r) {
-    return o;
+    return fmt_print(
+      o,
+      "group={} member={} group_inst={} proto_type={} timeout={}/{} v{} "
+      "protocols={}",
+      r.group_id,
+      r.member_id,
+      r.group_instance_id,
+      r.protocol_type,
+      r.session_timeout,
+      r.rebalance_timeout,
+      r.version(),
+      r.protocols);
 }
 
 void join_group_response::encode(const request_context& ctx, response& resp) {
@@ -67,6 +85,24 @@ void join_group_response::encode(const request_context& ctx, response& resp) {
           }
           writer.write(bytes_view(m.metadata));
       });
+}
+
+std::ostream&
+operator<<(std::ostream& o, const join_group_response::member_config& m) {
+    return fmt_print(
+      o, "{}:{}:{}", m.member_id, m.group_instance_id, m.metadata.size());
+}
+
+std::ostream& operator<<(std::ostream& o, const join_group_response& r) {
+    return fmt_print(
+      o,
+      "error={} gen={} proto_name={} leader={} member={} members={}",
+      r.error,
+      r.generation_id,
+      r.protocol_name,
+      r.leader_id,
+      r.member_id,
+      r.members);
 }
 
 future<response_ptr>

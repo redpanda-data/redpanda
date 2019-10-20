@@ -82,4 +82,6 @@ struct join_group_response final {
     void encode(const request_context& ctx, response& resp);
 };
 
+std::ostream& operator<<(std::ostream&, const join_group_response&);
+
 } // namespace kafka::requests
