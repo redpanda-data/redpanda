@@ -23,7 +23,7 @@ public:
 
     using leader_cb_t = noncopyable_function<void(lw_shared_ptr<partition>)>;
 
-    inline lw_shared_ptr<partition> get(const model::ntp& ntp) {
+    inline lw_shared_ptr<partition> get(const model::ntp& ntp) const {
         return _ntp_table.find(ntp)->second;
     }
     /// \brief raw api for raft/service.h
