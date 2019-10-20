@@ -38,9 +38,8 @@ public:
 
 public:
     /// \brief Handle a JoinGroup request
-    future<requests::join_group_response> join_group(
-      const requests::request_context& ctx,
-      requests::join_group_request&& request) {
+    future<requests::join_group_response>
+    join_group(requests::join_group_request&& request) {
         using reply = requests::join_group_response;
         return make_ready_future<reply>(
           reply(request.member_id, kerr::unsupported_version));

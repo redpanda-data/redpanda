@@ -74,7 +74,7 @@ join_group_request::process(request_context&& ctx, smp_service_group g) {
           join_group_request request;
           request.decode(ctx);
           return ctx.groups()
-            .join_group(ctx, std::move(request))
+            .join_group(std::move(request))
             .then([&ctx](join_group_response&& reply) {
                 auto resp = std::make_unique<response>();
                 reply.encode(ctx, *resp.get());
