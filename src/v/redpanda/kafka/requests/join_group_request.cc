@@ -38,7 +38,7 @@ void join_group_request::decode(request_context& ctx) {
     protocols = reader.read_array([](request_reader& reader) {
         auto name = kafka::protocol_name(reader.read_string());
         auto metadata = reader.read_bytes();
-        return protocol_config{name, metadata};
+        return member_protocol{name, metadata};
     });
 }
 
