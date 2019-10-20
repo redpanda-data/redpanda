@@ -13,9 +13,14 @@ namespace cluster {
 // all ops must belong to shard0
 class controller final {
 public:
-    static constexpr shard_id shard = 0;
+    static constexpr const shard_id shard = 0;
+    static constexpr const raft::group_id group{0};
     /// \brief used to distinguished log messages
     static constexpr model::record_batch_type controller_record_batch_type{3};
+    static inline const model::ntp ntp{
+      model::ns("redpanda"),
+      model::topic_partition{model::topic("controller"),
+                             model::partition_id(0)}};
 
     controller(
       model::node_id,
@@ -28,7 +33,7 @@ public:
     future<> stop();
 
     bool is_leader() const {
-        return _raft0->raft()->is_leader();
+        return raft0().is_leader();
     }
 
     future<std::vector<topic_result>> create_topics(
@@ -68,10 +73,9 @@ private:
     future<> recover_record(model::record);
     future<> recover_assignment(partition_assignment);
     void end_of_stream();
+    raft::consensus& raft0() const;
 
     model::node_id _self;
-    storage::log_manager _mngr;
-    std::unique_ptr<partition> _raft0;
     sharded<partition_manager>& _pm;
     sharded<shard_table>& _st;
     stage_hook _stgh;

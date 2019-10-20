@@ -2,7 +2,6 @@
 
 #include "raft/client_cache.h"
 #include "raft/consensus.h"
-#include "raft/timeout_jitter.h"
 #include "raft/types.h"
 
 #include <seastar/core/semaphore.hh>
@@ -27,12 +26,12 @@ public:
     using consensus_set_t
       = std::set<consensus_ptr, details::consensus_ptr_by_group_id>;
 
-    explicit heartbeat_manager(timeout_jitter, sharded<client_cache>&);
+    heartbeat_manager(duration_type timeout, sharded<client_cache>&);
 
     void register_group(lw_shared_ptr<consensus>);
     void deregister_group(raft::group_id);
-    duration_type base_duration() const {
-        return _timeout.base_duration();
+    duration_type election_duration() const {
+        return _election_duration;
     }
 
     future<> start();
@@ -52,8 +51,8 @@ private:
     // private members
 
     clock_type::time_point _hbeat = clock_type::now();
-    timeout_jitter _timeout;
-    timer_type _election_timeout;
+    duration_type _election_duration;
+    timer_type _heartbeat_timer;
     /// \brief used to wait for background ops before shutting down
     gate _bghbeats;
 

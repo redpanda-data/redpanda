@@ -12,12 +12,6 @@ static void verify_shard() {
     }
 }
 
-inline model::ntp cluster_ntp() {
-    return model::ntp{model::ns("redpanda"),
-                      model::topic_partition{model::topic("controller"),
-                                             model::partition_id(0)}};
-}
-
 controller::controller(
   model::node_id n,
   sstring basedir,
@@ -25,10 +19,6 @@ controller::controller(
   sharded<partition_manager>& pm,
   sharded<shard_table>& st)
   : _self(std::move(n))
-  , _mngr(storage::log_config{
-      std::move(basedir),
-      max_segment_size,
-      /*this is for debug only*/ storage::log_config::sanitize_files::no})
   , _pm(pm)
   , _st(st)
   , _stgh(this) {
@@ -37,13 +27,19 @@ controller::controller(
 future<> controller::start() {
     verify_shard();
     clusterlog().debug("Starting cluster recovery");
-    return _mngr.manage(cluster_ntp()).then([this](storage::log_ptr plog) {
+    return _pm.local().manage(controller::ntp, controller::group).then([this] {
+        auto plog = _pm.local().logs().find(controller::ntp)->second;
         return bootstrap_from_log(plog);
     });
 }
+
+raft::consensus& controller::raft0() const {
+    return _pm.local().consensus_for(controller::group);
+}
+
 future<> controller::stop() {
     verify_shard();
-    return _mngr.stop();
+    return make_ready_future<>();
 }
 
 future<> controller::bootstrap_from_log(storage::log_ptr l) {
@@ -65,8 +61,8 @@ future<> controller::recover_batch(model::record_batch batch) {
     // XXX https://github.com/vectorizedio/v/issues/188
     // we only support decompressed records
     if (batch.compressed()) {
-        throw std::runtime_error(
-          "We cannot process compressed record_batch'es yet, see #188");
+        return make_exception_future<>(std::runtime_error(
+          "We cannot process compressed record_batch'es yet, see #188"));
     }
     return do_with(std::move(batch), [this](model::record_batch& batch) {
         return do_for_each(batch, [this](model::record& rec) {
@@ -109,7 +105,12 @@ future<> controller::recover_assignment(partition_assignment as) {
           // 2. update partition_manager
           return _pm.invoke_on(
             shard, [this, raft_group, ntp](partition_manager& pm) {
-                return pm.manage(ntp, raft_group);
+                sstring msg = fmt::format(
+                  "recovered: {}, raft group_id: {}", ntp.path(), raft_group);
+                // recover partition in the background
+                (void)pm.manage(ntp, raft_group)
+                  .finally(
+                    [msg = std::move(msg)] { clusterlog().info("{},", msg); });
             });
       });
 }

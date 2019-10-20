@@ -19,10 +19,10 @@ public:
     static inline shard_id shard_for(const model::node_id&);
 
     client_cache() = default;
-    bool contains(model::node_id n) {
+    bool contains(model::node_id n) const {
         return _cache.find(n) != _cache.end();
     }
-    client_type get(model::node_id n) {
+    client_type get(model::node_id n) const {
         return _cache.find(n)->second;
     }
 
