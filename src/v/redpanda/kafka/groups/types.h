@@ -43,4 +43,6 @@ struct member_protocol {
     bytes metadata;
 };
 
+std::ostream& operator<<(std::ostream&, const member_protocol&);
+
 } // namespace kafka
