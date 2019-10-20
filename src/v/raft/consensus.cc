@@ -40,8 +40,8 @@ future<> consensus::stop() {
     return _bg.close();
 }
 
-static future<vote_reply_ptr>
-one_vote(model::node_id node, sharded<client_cache>& cls, vote_request r) {
+static future<vote_reply_ptr> one_vote(
+  model::node_id node, const sharded<client_cache>& cls, vote_request r) {
     // FIXME #206
     auto shard = client_cache::shard_for(node);
     using freq = vote_request_ptr;
