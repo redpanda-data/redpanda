@@ -31,6 +31,10 @@ struct join_group_request final {
     kafka::protocol_type protocol_type;
     std::vector<protocol_config> protocols;
 
+    // extra context from request header
+    api_version version;
+    std::optional<sstring> client_id;
+
     void decode(request_context& ctx);
 };
 
