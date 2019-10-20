@@ -33,9 +33,12 @@ static inline const member_id unknown_member_id("");
 /// An unknown / missing generation id (Kafka protocol specific)
 static inline const generation_id unknown_generation_id(-1);
 
-/// Note that this structure is shared for convenience between the group manager
-/// and Kafka wire protocol. If it changes, make sure it remains compatible.
-struct protocol_config {
+/// \brief A protocol configuration supported by a group member.
+///
+/// NOTE: for efficiency this structure is shared between kafka request
+/// processing and the rest of group membership. if it changes, make sure that
+/// request processing is still correct.
+struct member_protocol {
     protocol_name name;
     bytes metadata;
 };

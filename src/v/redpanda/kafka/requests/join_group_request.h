@@ -29,7 +29,7 @@ struct join_group_request final {
     kafka::member_id member_id;
     std::optional<kafka::group_instance_id> group_instance_id; // >= v5
     kafka::protocol_type protocol_type;
-    std::vector<protocol_config> protocols;
+    std::vector<member_protocol> protocols;
 
     // extra context from request header
     api_version version;
