@@ -15,8 +15,11 @@ namespace kafka::requests {
 
 void join_group_request::decode(request_context& ctx) {
     auto& reader = ctx.reader();
-    auto version = ctx.header().version;
 
+    version = ctx.header().version;
+    if (ctx.header().client_id) {
+        client_id = sstring(*ctx.header().client_id);
+    }
     group_id = kafka::group_id(reader.read_string());
     session_timeout = std::chrono::milliseconds(reader.read_int32());
     if (version >= api_version(1)) {
