@@ -33,6 +33,7 @@ struct configuration final : public config_store {
     property<int16_t> max_version;
     // Kafka
     property<socket_address> kafka_api;
+    property<tls_config> kafka_api_tls;
     property<bool> use_scheduling_groups;
     property<socket_address> admin;
     property<sstring> admin_api_doc_dir;
@@ -41,11 +42,17 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> default_window_sec;
     property<std::chrono::milliseconds> quota_manager_gc_sec;
     property<uint32_t> target_quota_byte_rate;
-    property<tls_config> kafka_api_tls;
 
     configuration();
 
     void read_yaml(const YAML::Node& root_node) override;
+
+    socket_address advertised_kafka_api() {
+        return _advertised_kafka_api().value_or(kafka_api());
+    }
+
+private:
+    property<std::optional<socket_address>> _advertised_kafka_api;
 };
 
 using conf_ref = typename std::reference_wrapper<configuration>;
@@ -80,6 +87,15 @@ template<>
 struct adl_serializer<std::chrono::milliseconds> {
     static void to_json(json& j, const std::chrono::milliseconds& v) {
         j = v.count();
+    }
+};
+
+template<typename T>
+struct adl_serializer<std::optional<T>> {
+    static void to_json(json& j, const std::optional<T>& v) {
+        if (v) {
+            j = *v;
+        }
     }
 };
 } // namespace nlohmann
@@ -247,6 +263,26 @@ struct convert<config::tls_config> {
           read_optional(node, "truststore_file"),
           node["require_client_auth"]
             && node["require_client_auth"].as<bool>());
+        return true;
+    }
+};
+
+template<typename T>
+struct convert<std::optional<T>> {
+    using type = std::optional<T>;
+
+    static Node encode(const type& rhs) {
+        if (rhs) {
+            return Node(*rhs);
+        }
+    }
+
+    static bool decode(const Node& node, type& rhs) {
+        if (node) {
+            rhs = std::make_optional<T>(node.as<T>());
+        } else {
+            rhs = std::nullopt;
+        }
         return true;
     }
 };
