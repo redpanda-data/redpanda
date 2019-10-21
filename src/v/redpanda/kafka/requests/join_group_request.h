@@ -41,6 +41,12 @@ struct join_group_request final {
 std::ostream& operator<<(std::ostream&, const join_group_request&);
 
 struct join_group_response final {
+    struct member_config {
+        kafka::member_id member_id;
+        std::optional<kafka::group_instance_id> group_instance_id; // >= v5
+        bytes metadata;
+    };
+
     std::chrono::milliseconds throttle_time; // >= v2
     errors::error_code error;
     kafka::generation_id generation_id;
