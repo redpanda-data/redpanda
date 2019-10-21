@@ -107,7 +107,13 @@ configuration::configuration()
       "target_quota_byte_rate",
       "Target quota byte rate (bytes per second)",
       required::no,
-      10 << 20) {
+      10 << 20)
+  , _advertised_kafka_api(
+      *this,
+      "advertised_kafka_api",
+      "Address of Kafka API published to the clients",
+      required::no,
+      std::nullopt) {
 }
 
 void configuration::read_yaml(const YAML::Node& root_node) {
