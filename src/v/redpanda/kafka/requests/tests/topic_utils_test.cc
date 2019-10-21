@@ -114,7 +114,7 @@ r_factor_validator>;
 BOOST_AUTO_TEST_CASE(
   shall_fill_vector_with_errors_and_return_iterator_to_end_of_valid_range) {
     auto requests = mixed_requests();
-    std::vector<topic_result> errs;
+    std::vector<topic_op_result> errs;
     auto valid_range_end = validate_requests_range(
       requests.begin(),
       requests.end(),
@@ -140,7 +140,7 @@ BOOST_AUTO_TEST_CASE(
 
 BOOST_AUTO_TEST_CASE(shall_return_no_errors) {
     auto requests = valid_requests();
-    std::vector<topic_result> errs;
+    std::vector<topic_op_result> errs;
     auto valid_range_end = validate_requests_range(
       requests.begin(),
       requests.end(),
@@ -154,7 +154,7 @@ BOOST_AUTO_TEST_CASE(shall_return_no_errors) {
 
 BOOST_AUTO_TEST_CASE(shall_generate_errors_for_duplicated_topics) {
     auto requests = duplicated_requests();
-    std::vector<topic_result> errs;
+    std::vector<topic_op_result> errs;
     auto valid_range_end = validate_range_duplicates(
       requests.begin(), requests.end(), std::back_inserter(errs));
 
@@ -169,7 +169,7 @@ BOOST_AUTO_TEST_CASE(shall_generate_errors_for_duplicated_topics) {
 
 BOOST_AUTO_TEST_CASE(shall_validate_requests_with_all_validators) {
     auto requests = mixed_requests();
-    std::vector<topic_result> errs;
+    std::vector<topic_op_result> errs;
     auto valid_range_end = validate_requests_range(
       requests.begin(),
       requests.end(),
@@ -188,7 +188,7 @@ BOOST_AUTO_TEST_CASE(shall_validate_requests_with_all_validators) {
 
 BOOST_AUTO_TEST_CASE(shall_return_errors_for_all_requests) {
     auto requests = invalid_requests();
-    std::vector<topic_result> errs;
+    std::vector<topic_op_result> errs;
     auto valid_range_end = validate_requests_range(
       requests.begin(),
       requests.end(),
