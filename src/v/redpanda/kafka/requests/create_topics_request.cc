@@ -78,14 +78,14 @@ create_topics_request::process(request_context&& ctx, smp_service_group g) {
             .dispatch_to_controller(
               [](const cluster::controller& c) { return c.is_leader(); })
             .then([&ctx, request = std::move(request)](bool is_leader) mutable {
-                std::vector<topic_result> results;
+                std::vector<topic_op_result> results;
                 auto begin = request.topics.begin();
 
                 // Only allowed on the raft0 leader
                 if (!is_leader) {
                     generate_not_controller_errors(
                       begin, request.topics.end(), std::back_inserter(results));
-                    return make_ready_future<std::vector<topic_result>>(
+                    return make_ready_future<std::vector<topic_op_result>>(
                       std::move(results));
                 }
 
@@ -111,7 +111,7 @@ create_topics_request::process(request_context&& ctx, smp_service_group g) {
                       [](const new_topic_configuration& t) {
                           return generate_successfull_result(t);
                       });
-                    return make_ready_future<std::vector<topic_result>>(
+                    return make_ready_future<std::vector<topic_op_result>>(
                       std::move(results));
                 }
 
@@ -127,11 +127,11 @@ create_topics_request::process(request_context&& ctx, smp_service_group g) {
                           std::vector<cluster::topic_result> c_res) mutable {
                       // Append controller results to validation errors
                       append_cluster_results(c_res, results);
-                      return make_ready_future<std::vector<topic_result>>(
+                      return make_ready_future<std::vector<topic_op_result>>(
                         std::move(results));
                   });
             })
-            .then([&ctx](std::vector<topic_result> errs) {
+            .then([&ctx](std::vector<topic_op_result> errs) {
                 // Encode response bytes
                 return encode_response(ctx, std::move(errs));
             });
@@ -139,7 +139,7 @@ create_topics_request::process(request_context&& ctx, smp_service_group g) {
 }
 
 response_ptr create_topics_request::encode_response(
-  request_context& ctx, std::vector<topic_result> errs) {
+  request_context& ctx, std::vector<topic_op_result> errs) {
     // Throttle time for api_version >= 2
     int32_t throttle_time_ms = -1;
     if (ctx.header().version >= api_version(2)) {

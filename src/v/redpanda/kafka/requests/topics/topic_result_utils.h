@@ -10,7 +10,7 @@ namespace kafka::requests {
 using include_message = bool_class<struct include_message_tag>;
 
 kafka::requests::response_ptr encode_topic_results(
-  const std::vector<topic_result>& errors,
+  const std::vector<topic_op_result>& errors,
   int32_t throttle_time_ms,
   include_message inc_msg = include_message::yes) {
     auto resp = std::make_unique<kafka::requests::response>();
@@ -20,7 +20,7 @@ kafka::requests::response_ptr encode_topic_results(
     }
     // errors
     resp->writer().write_array(
-      errors, [inc_msg](const topic_result& r, response_writer& wr) {
+      errors, [inc_msg](const topic_op_result& r, response_writer& wr) {
           wr.write(r.topic);
           wr.write(r.error_code);
           if (inc_msg) {

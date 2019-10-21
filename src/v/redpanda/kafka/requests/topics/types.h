@@ -11,11 +11,11 @@ namespace kafka::requests {
 /// \brief Type representing Kafka protocol response from
 /// CreateTopics, DeleteTopics and CreatePartitions requests
 /// the types used here match the types used in Kafka protocol specification
-struct topic_result {
+struct topic_op_result {
     model::topic topic;
     errors::error_code error_code;
     std::optional<sstring> err_msg;
-    static topic_result
+    static topic_op_result
     from_cluster_topic_result(const cluster::topic_result& err) {
         return {.topic = err.topic,
                 .error_code = errors::map_topic_error_code(err.error_code)};

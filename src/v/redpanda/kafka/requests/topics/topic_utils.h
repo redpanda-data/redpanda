@@ -24,26 +24,26 @@ concept TopicRequestItem = requires(T item) {
 CONCEPT(
 template<typename Iterator> 
 concept TopicResultIterator = requires (Iterator it) {
-    it = topic_result{};
+    it = topic_op_result{};
 } && std::is_same_v<typename Iterator::iterator_category, std::output_iterator_tag>;
 )
 // clang-format on
 
-/// Generates failed topic_result for single topic request item
+/// Generates failed topic_op_result for single topic request item
 template<typename T>
 CONCEPT(requires TopicRequestItem<T>)
-topic_result
+topic_op_result
   generate_error(T item, errors::error_code code, const sstring& msg) {
-    return topic_result{.topic = model::topic{sstring(item.topic())},
+    return topic_op_result{.topic = model::topic{sstring(item.topic())},
                         .error_code = code,
                         .err_msg = msg};
 }
 
-/// Generates successfull topic_result for single topic request item
+/// Generates successfull topic_op_result for single topic request item
 template<typename T>
 CONCEPT(requires TopicRequestItem<T>)
-topic_result generate_successfull_result(T item) {
-    return topic_result{.topic = model::topic{sstring(item.topic())},
+topic_op_result generate_successfull_result(T item) {
+    return topic_op_result{.topic = model::topic{sstring(item.topic())},
                         .error_code = errors::error_code::none};
 }
 
@@ -102,13 +102,13 @@ Iter validate_requests_range(
 // Kafka protocol error message
 void append_cluster_results(
   const std::vector<cluster::topic_result>& cluster_results,
-  std::vector<topic_result>& kafka_results) {
+  std::vector<topic_op_result>& kafka_results) {
     std::transform(
       cluster_results.begin(),
       cluster_results.end(),
       std::back_inserter(kafka_results),
       [](const cluster::topic_result& res) {
-          return topic_result::from_cluster_topic_result(res);
+          return topic_op_result::from_cluster_topic_result(res);
       });
 }
 

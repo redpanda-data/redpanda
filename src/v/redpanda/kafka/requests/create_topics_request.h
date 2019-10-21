@@ -31,7 +31,7 @@ private:
       unsupported_configuration_entries>;
 
     static response_ptr
-    encode_response(request_context&, std::vector<topic_result> errs);
+    encode_response(request_context&, std::vector<topic_op_result> errs);
 
     struct request {
         static request decode(request_context&);
