@@ -43,12 +43,4 @@ struct member_protocol {
     bytes metadata;
 };
 
-/// Note that this structure is shared for convenience between the group manager
-/// and Kafka wire protocol. If it changes, make sure it remains compatible.
-struct member_config {
-    kafka::member_id member_id;
-    std::optional<kafka::group_instance_id> group_instance_id; // >= v5
-    bytes metadata;
-};
-
 } // namespace kafka
