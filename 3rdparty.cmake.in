@@ -512,3 +512,14 @@ ExternalProject_Add(crc32c
     -DCRC32C_USE_GLOG=0
   )
 
+ExternalProject_Add(roaring
+  URL https://github.com/RoaringBitmap/CRoaring/archive/86de9b5.tar.gz
+  #URL_MD5 e64f4712d4b1235bd009279f4485b044
+  INSTALL_DIR    @V_DEPS_INSTALL_DIR@
+  DEPENDS ${default_depends}
+  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
+  CMAKE_ARGS
+  ${common_cmake_args}
+  -DENABLE_ROARING_TESTS=OFF
+  -DROARING_BUILD_STATIC=ON
+  -DROARING_DISABLE_NATIVE=ON)

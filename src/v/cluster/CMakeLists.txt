@@ -3,6 +3,7 @@ add_library (cluster STATIC
   metadata_cache.cc
   partition_manager.cc
   types.cc
+  partition_allocator.cc
   )
 target_include_directories(cluster PUBLIC ${PROJECT_SOURCE_DIR}/src/v)
 
@@ -10,4 +11,5 @@ target_link_libraries(cluster
   PUBLIC
   Seastar::seastar
   raft
+  Roaring::roaring
   )
