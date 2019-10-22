@@ -2,6 +2,7 @@ package system
 
 import (
 	"testing"
+	"time"
 	"vectorized/pkg/os"
 )
 
@@ -11,7 +12,7 @@ type procMock struct {
 }
 
 func (m *procMock) RunWithSystemLdPath(
-	command string, args ...string,
+	_ time.Duration, command string, args ...string,
 ) ([]string, error) {
 	return m.runFunction(command, args...)
 }

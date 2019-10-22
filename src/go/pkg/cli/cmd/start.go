@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"path/filepath"
+	"time"
 	"vectorized/pkg/checkers"
 	"vectorized/pkg/cli"
 	"vectorized/pkg/os"
@@ -61,6 +62,7 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 		Use:   "start",
 		Short: "Start redpanda",
 		RunE: func(ccmd *cobra.Command, args []string) error {
+			defaultTimeout := time.Duration(10000) * time.Millisecond
 			configFile, err := cli.GetOrFindConfig(fs, configFilePathFlag)
 			if err != nil {
 				return err
@@ -84,7 +86,7 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 					"lock-memory":        "false",
 				},
 			}
-			err = prestart(fs, rpArgs, config, prestartCfg)
+			err = prestart(fs, rpArgs, config, prestartCfg, defaultTimeout)
 			if err != nil {
 				return err
 			}
@@ -148,9 +150,10 @@ func prestart(
 	args *redpanda.RedpandaArgs,
 	config *redpanda.Config,
 	prestartCfg prestartConfig,
+	timeout time.Duration,
 ) error {
 	if prestartCfg.tuneEnabled {
-		err := tuneAll(fs, args.SeastarFlags["cpuset"], config)
+		err := tuneAll(fs, args.SeastarFlags["cpuset"], config, timeout)
 		if err != nil {
 			return err
 		}
@@ -158,7 +161,7 @@ func prestart(
 	}
 	if prestartCfg.checkEnabled {
 		checkersMap, err := redpanda.RedpandaCheckers(fs,
-			args.SeastarFlags["io-properties-file"], config)
+			args.SeastarFlags["io-properties-file"], config, timeout)
 		if err != nil {
 			return err
 		}
@@ -171,10 +174,15 @@ func prestart(
 	return nil
 }
 
-func tuneAll(fs afero.Fs, cpuSet string, config *redpanda.Config) error {
+func tuneAll(
+	fs afero.Fs,
+	cpuSet string,
+	config *redpanda.Config,
+	timeout time.Duration,
+) error {
 	params := &factory.TunerParams{}
-	tunerFactory := factory.NewDirectExecutorTunersFactory(fs)
-	hw := hwloc.NewHwLocCmd(os.NewProc())
+	tunerFactory := factory.NewDirectExecutorTunersFactory(fs, timeout)
+	hw := hwloc.NewHwLocCmd(os.NewProc(), timeout)
 	if cpuSet == "" {
 		cpuMask, err := hw.All()
 		if err != nil {

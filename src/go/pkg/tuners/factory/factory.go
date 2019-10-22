@@ -2,6 +2,7 @@ package factory
 
 import (
 	"runtime"
+	"time"
 	"vectorized/pkg/net"
 	"vectorized/pkg/os"
 	"vectorized/pkg/redpanda"
@@ -57,20 +58,24 @@ type tunersFactory struct {
 	executor          executors.Executor
 }
 
-func NewDirectExecutorTunersFactory(fs afero.Fs) TunersFactory {
+func NewDirectExecutorTunersFactory(
+	fs afero.Fs, timeout time.Duration,
+) TunersFactory {
 	irqProcFile := irq.NewProcFile(fs)
 	proc := os.NewProc()
 	irqDeviceInfo := irq.NewDeviceInfo(fs, irqProcFile)
 	executor := executors.NewDirectExecutor()
-	return newTunersFactory(fs, irqProcFile, proc, irqDeviceInfo, executor)
+	return newTunersFactory(fs, irqProcFile, proc, irqDeviceInfo, executor, timeout)
 }
 
-func NewScriptRenderingTunersFactory(fs afero.Fs, out string) TunersFactory {
+func NewScriptRenderingTunersFactory(
+	fs afero.Fs, out string, timeout time.Duration,
+) TunersFactory {
 	irqProcFile := irq.NewProcFile(fs)
 	proc := os.NewProc()
 	irqDeviceInfo := irq.NewDeviceInfo(fs, irqProcFile)
 	executor := executors.NewScriptRenderingExecutor(fs, out)
-	return newTunersFactory(fs, irqProcFile, proc, irqDeviceInfo, executor)
+	return newTunersFactory(fs, irqProcFile, proc, irqDeviceInfo, executor, timeout)
 }
 
 func newTunersFactory(
@@ -79,16 +84,16 @@ func newTunersFactory(
 	proc os.Proc,
 	irqDeviceInfo irq.DeviceInfo,
 	executor executors.Executor,
+	timeout time.Duration,
 ) TunersFactory {
-
 	return &tunersFactory{
 		fs:                fs,
 		irqProcFile:       irqProcFile,
 		irqDeviceInfo:     irqDeviceInfo,
-		cpuMasks:          irq.NewCpuMasks(fs, hwloc.NewHwLocCmd(proc), executor),
-		irqBalanceService: irq.NewBalanceService(fs, proc, executor),
-		blockDevices:      disk.NewBlockDevices(fs, irqDeviceInfo, irqProcFile, proc),
-		grub:              system.NewGrub(os.NewCommands(proc), proc, fs, executor),
+		cpuMasks:          irq.NewCpuMasks(fs, hwloc.NewHwLocCmd(proc, timeout), executor),
+		irqBalanceService: irq.NewBalanceService(fs, proc, executor, timeout),
+		blockDevices:      disk.NewBlockDevices(fs, irqDeviceInfo, irqProcFile, proc, timeout),
+		grub:              system.NewGrub(os.NewCommands(proc), proc, fs, executor, timeout),
 		proc:              proc,
 		executor:          executor,
 	}

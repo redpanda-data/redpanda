@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 	"vectorized/pkg/os"
 	"vectorized/pkg/tuners/executors"
 	"vectorized/pkg/tuners/executors/commands"
@@ -28,12 +29,14 @@ func NewGrub(
 	proc os.Proc,
 	fs afero.Fs,
 	executor executors.Executor,
+	timeout time.Duration,
 ) Grub {
 	return &grub{
 		commands: commands,
 		proc:     proc,
 		fs:       fs,
 		executor: executor,
+		timeout:  timeout,
 	}
 }
 
@@ -42,11 +45,12 @@ type grub struct {
 	proc     os.Proc
 	fs       afero.Fs
 	executor executors.Executor
+	timeout  time.Duration
 }
 
 func (g *grub) CheckVersion() error {
 	log.Debug("Checking if GRUB is present")
-	_, err := g.commands.Which("grub2-mkconfig")
+	_, err := g.commands.Which("grub2-mkconfig", g.timeout)
 	if err != nil {
 		return fmt.Errorf("Only GRUB 2 is currently supported")
 	}
@@ -111,11 +115,11 @@ func (g *grub) cmdLineCfgNeedChange(requestedOpts []string) (bool, error) {
 
 func (g *grub) MakeConfig() error {
 	log.Info("Updating GRUB configuration")
-	updateCmd, err := g.commands.Which("update-grub")
+	updateCmd, err := g.commands.Which("update-grub", g.timeout)
 	if err == nil {
 		log.Debugf("Running on Ubuntu based system with '%s' available",
 			updateCmd)
-		err := g.executor.Execute(commands.NewLaunchCmd(g.proc, updateCmd))
+		err := g.executor.Execute(commands.NewLaunchCmd(g.proc, g.timeout, updateCmd))
 		return err
 	}
 	for _, file := range []string{
@@ -124,7 +128,7 @@ func (g *grub) MakeConfig() error {
 		if utils.FileExists(g.fs, file) {
 			log.Debugf("Found 'grub.cfg' in %s", file)
 			err := g.executor.Execute(
-				commands.NewLaunchCmd(g.proc, "grub2-mkconfig", "-o", file))
+				commands.NewLaunchCmd(g.proc, g.timeout, "grub2-mkconfig", "-o", file))
 			return err
 		}
 	}

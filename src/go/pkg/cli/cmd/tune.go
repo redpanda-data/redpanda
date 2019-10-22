@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 	"vectorized/pkg/cli"
 	"vectorized/pkg/redpanda"
 	"vectorized/pkg/tuners/factory"
@@ -46,12 +47,13 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 			return nil
 		},
 		RunE: func(ccmd *cobra.Command, args []string) error {
+			defaultTimeout := 10000 * time.Millisecond
 			var tunerFactory factory.TunersFactory
 			if outTuneScriptFile != "" {
 				tunerFactory = factory.NewScriptRenderingTunersFactory(
-					fs, outTuneScriptFile)
+					fs, outTuneScriptFile, defaultTimeout)
 			} else {
-				tunerFactory = factory.NewDirectExecutorTunersFactory(fs)
+				tunerFactory = factory.NewDirectExecutorTunersFactory(fs, defaultTimeout)
 			}
 			if !tunerParamsEmpty(&tunerParams) && redpandaConfigFile != "" {
 				return errors.New("Use either tuner params or redpanda config file")

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"time"
 	"vectorized/pkg/checkers"
 	"vectorized/pkg/cli"
 	"vectorized/pkg/cli/ui"
@@ -25,7 +26,7 @@ func NewCheckCommand(fs afero.Fs) *cobra.Command {
 		Long:         "",
 		SilenceUsage: true,
 		RunE: func(ccmd *cobra.Command, args []string) error {
-			return executeCheck(fs, redpandaConfigFile)
+			return executeCheck(fs, redpandaConfigFile, 2000*time.Millisecond)
 		},
 	}
 	command.Flags().StringVar(&redpandaConfigFile,
@@ -52,7 +53,7 @@ func (r row) appendToTable(t *tablewriter.Table) {
 	})
 }
 
-func executeCheck(fs afero.Fs, configFileFlag string) error {
+func executeCheck(fs afero.Fs, configFileFlag string, timeout time.Duration) error {
 	configFile, err := cli.GetOrFindConfig(fs, configFileFlag)
 	if err != nil {
 		return err
@@ -62,7 +63,7 @@ func executeCheck(fs afero.Fs, configFileFlag string) error {
 		return err
 	}
 	ioConfigFile := redpanda.GetIOConfigPath(filepath.Dir(configFile))
-	checkersMap, err := redpanda.RedpandaCheckers(fs, ioConfigFile, config)
+	checkersMap, err := redpanda.RedpandaCheckers(fs, ioConfigFile, config, timeout)
 	if err != nil {
 		return err
 	}

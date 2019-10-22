@@ -1,6 +1,7 @@
 package iotune
 
 import (
+	"time"
 	"vectorized/pkg/os"
 	"vectorized/pkg/redpanda"
 	"vectorized/pkg/tuners"
@@ -15,11 +16,12 @@ func NewIoTuneTuner(
 	evalDirectories []string,
 	ioConfigFile string,
 	duration int,
+	timeout time.Duration,
 ) tuners.Tunable {
 	return tuners.NewCheckedTunable(
 		redpanda.NewIOConfigFileExistanceChecker(fs, ioConfigFile),
 		func() tuners.TuneResult {
-			return tune(evalDirectories, ioConfigFile, duration)
+			return tune(evalDirectories, ioConfigFile, duration, timeout)
 		},
 		func() (bool, string) {
 			return checkIfIoTuneIsSupported(fs)
@@ -34,10 +36,8 @@ func checkIfIoTuneIsSupported(fs afero.Fs) (bool, string) {
 	return true, ""
 }
 
-func tune(
-	evalDirectories []string, ioConfigFile string, duration int,
-) tuners.TuneResult {
-	ioTune := NewIoTune(os.NewProc())
+func tune(evalDirectories []string, ioConfigFile string, duration int, timeout time.Duration) tuners.TuneResult {
+	ioTune := NewIoTune(os.NewProc(), timeout)
 	args := IoTuneArgs{
 		Dirs:           evalDirectories,
 		Format:         Seastar,

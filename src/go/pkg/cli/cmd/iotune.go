@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"path/filepath"
+	"time"
 	"vectorized/pkg/cli"
 	"vectorized/pkg/redpanda"
 	"vectorized/pkg/tuners/iotune"
@@ -19,6 +20,8 @@ func NewIoTuneCmd(fs afero.Fs) *cobra.Command {
 		Use:   "iotune",
 		Short: "Measure filesystem performance and create IO configuration file",
 		RunE: func(ccmd *cobra.Command, args []string) error {
+			// A default timeout of duration + 50%
+			defaultTimeout := time.Duration(duration+(duration/2)) * time.Second
 			configFile, err := cli.GetOrFindConfig(fs, configFileFlag)
 			if err != nil {
 				return err
@@ -37,7 +40,7 @@ func NewIoTuneCmd(fs afero.Fs) *cobra.Command {
 				evalDirectories = []string{config.Directory}
 			}
 
-			return execIoTune(fs, evalDirectories, ioConfigFile, duration)
+			return execIoTune(fs, evalDirectories, ioConfigFile, duration, defaultTimeout)
 		},
 	}
 
@@ -51,10 +54,8 @@ func NewIoTuneCmd(fs afero.Fs) *cobra.Command {
 	return command
 }
 
-func execIoTune(
-	fs afero.Fs, directories []string, ioConfigFile string, duration int,
-) error {
-	tuner := iotune.NewIoTuneTuner(fs, directories, ioConfigFile, duration)
+func execIoTune(fs afero.Fs, directories []string, ioConfigFile string, duration int, timeout time.Duration) error {
+	tuner := iotune.NewIoTuneTuner(fs, directories, ioConfigFile, duration, timeout)
 	log.Info("Starting iotune...")
 	result := tuner.Tune()
 	if err := result.GetError(); err != nil {

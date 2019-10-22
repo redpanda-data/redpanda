@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 	"vectorized/pkg/os"
 	"vectorized/pkg/tuners/irq"
 	"vectorized/pkg/utils"
@@ -40,6 +41,7 @@ type blockDevices struct {
 	fs            afero.Fs
 	irqDeviceInfo irq.DeviceInfo
 	irqProcFile   irq.ProcFile
+	timeout       time.Duration
 }
 
 func NewBlockDevices(
@@ -47,12 +49,14 @@ func NewBlockDevices(
 	irqDeviceInfo irq.DeviceInfo,
 	irqProcFile irq.ProcFile,
 	proc os.Proc,
+	timeout time.Duration,
 ) BlockDevices {
 	return &blockDevices{
 		fs:            fs,
 		proc:          proc,
 		irqDeviceInfo: irqDeviceInfo,
 		irqProcFile:   irqProcFile,
+		timeout:       timeout,
 	}
 }
 
@@ -88,7 +92,7 @@ func (b *blockDevices) GetDirectoryDevices(path string) ([]string, error) {
 	}
 
 	var devices []string
-	outputLines, err := b.proc.RunWithSystemLdPath("df", "-P", path)
+	outputLines, err := b.proc.RunWithSystemLdPath(b.timeout, "df", "-P", path)
 	if err != nil {
 		return nil, err
 	}

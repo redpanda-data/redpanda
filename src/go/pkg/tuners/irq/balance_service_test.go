@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
+	"time"
 	"vectorized/pkg/os"
 	"vectorized/pkg/tuners/executors"
 	"vectorized/pkg/utils"
@@ -21,12 +22,12 @@ type procMock struct {
 }
 
 func (procMock *procMock) RunWithSystemLdPath(
-	command string, args ...string,
+	_ time.Duration, command string, args ...string,
 ) ([]string, error) {
 	return procMock.run(command, args...)
 }
 
-func (procMock *procMock) IsRunning(processName string) bool {
+func (procMock *procMock) IsRunning(_ time.Duration, processName string) bool {
 	return procMock.isRunning(processName)
 }
 
@@ -269,6 +270,7 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 				tt.fields.fs,
 				tt.fields.proc,
 				executors.NewDirectExecutor(),
+				time.Duration(10)*time.Second,
 			)
 			tt.assert(tt.fields, balanceService.BanIRQsAndRestart(tt.args.bannedIRQs))
 
