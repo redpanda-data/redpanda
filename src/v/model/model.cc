@@ -1,5 +1,6 @@
 #include "model/compression.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "model/record.h"
 #include "model/timestamp.h"
 #include "seastarx.h"
@@ -131,4 +132,11 @@ std::istream& operator>>(std::istream& i, compression& c) {
     return i;
 }
 
+std::ostream& operator<<(std::ostream& o, const model::broker& b) {
+    o << "{" << b.id() << ", " << b.host() << ":" << b.port() << ", ";
+    if (b.rack()) {
+        o << *b.rack();
+    }
+    return o << "}";
+}
 } // namespace model
