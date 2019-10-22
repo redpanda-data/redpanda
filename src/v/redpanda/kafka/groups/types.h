@@ -41,6 +41,10 @@ static inline const generation_id unknown_generation_id(-1);
 struct member_protocol {
     protocol_name name;
     bytes metadata;
+
+    bool operator==(const member_protocol& o) const {
+        return name == o.name && metadata == o.metadata;
+    }
 };
 
 std::ostream& operator<<(std::ostream&, const member_protocol&);
