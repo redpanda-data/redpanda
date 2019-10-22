@@ -82,7 +82,10 @@ func executeCheck(fs afero.Fs, configFileFlag string, timeout time.Duration) err
 		for _, c := range checkersSlice {
 			result := c.Check()
 			if result.Err != nil {
-				return result.Err
+				if c.GetSeverity() == checkers.Fatal {
+					return result.Err
+				}
+				log.Warnf("System check '%s' failed with non-fatal error '%s'", c.GetDesc(), result.Err)
 			}
 			log.Debugf("Checker '%s' result %+v", c.GetDesc(), result)
 			isOk = isOk && result.IsOk

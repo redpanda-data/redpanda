@@ -238,7 +238,10 @@ func check(
 		for _, checker := range checkersSlice {
 			result := checker.Check()
 			if result.Err != nil {
-				return result.Err
+				if checker.GetSeverity() == checkers.Fatal {
+					return result.Err
+				}
+				log.Warnf("System check '%s' failed with non-fatal error '%s'", checker.GetDesc(), result.Err)
 			}
 			if !result.IsOk {
 				if action, exists := checkFailedActions[checkerID]; exists {
