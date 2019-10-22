@@ -1,6 +1,7 @@
 #pragma once
 #include "cluster/types.h"
 #include "model/fundamental.h"
+#include "redpanda/kafka/default_namespace.h"
 #include "redpanda/kafka/errors/errors.h"
 #include "redpanda/kafka/errors/mapping.h"
 
@@ -41,7 +42,10 @@ struct new_topic_configuration {
 
     cluster::topic_configuration to_cluster_type() const {
         cluster::topic_configuration cfg(
-          model::topic{sstring(topic())}, partition_count, replication_factor);
+          default_namespace(),
+          model::topic{sstring(topic())},
+          partition_count,
+          replication_factor);
         if (auto it = config_entries.find("compression.type");
             it != config_entries.end()) {
             cfg.compression = boost::lexical_cast<model::compression>(
