@@ -75,7 +75,6 @@ func executeCheck(fs afero.Fs, configFileFlag string, timeout time.Duration) err
 		"Severity",
 		"Passed",
 	})
-	var isOk = true
 
 	var rows []row
 	for _, checkersSlice := range checkersMap {
@@ -88,7 +87,6 @@ func executeCheck(fs afero.Fs, configFileFlag string, timeout time.Duration) err
 				log.Warnf("System check '%s' failed with non-fatal error '%s'", c.GetDesc(), result.Err)
 			}
 			log.Debugf("Checker '%s' result %+v", c.GetDesc(), result)
-			isOk = isOk && result.IsOk
 			rows = append(rows, row{
 				desc:     c.GetDesc(),
 				required: fmt.Sprint(c.GetRequiredAsString()),
