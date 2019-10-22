@@ -53,6 +53,8 @@ private:
     std::optional<sstring> _rack;
 };
 
+std::ostream& operator<<(std::ostream&, const broker&);
+
 struct partition_metadata {
     partition_metadata() noexcept = default;
     explicit partition_metadata(partition_id p) noexcept
