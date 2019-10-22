@@ -8,6 +8,15 @@
 
 namespace cluster {
 
+struct log_record_key {
+    enum class type : int8_t{
+        partition_assignment,
+        topic_configuration
+    };
+
+    type record_type;
+};
+
 struct partition_assignment {
     /// \brief this is the same as a seastar::shard_id
     /// however, seastar uses unsized-ints (unsigned)
