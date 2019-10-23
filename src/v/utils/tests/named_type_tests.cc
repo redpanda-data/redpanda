@@ -53,3 +53,10 @@ BOOST_AUTO_TEST_CASE(named_type_string_set) {
         BOOST_REQUIRE(foo.find(string_alias(x)) != foo.end());
     }
 }
+
+BOOST_AUTO_TEST_CASE(named_type_prefix_increment) {
+    using t = named_type<int, struct int_t_alias_test_module>;
+    t t0(0);
+    BOOST_TEST(++t0 == 1);
+    BOOST_TEST(++t0 == 2);
+}

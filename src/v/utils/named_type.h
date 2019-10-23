@@ -45,6 +45,9 @@ public:
     constexpr bool operator>=(const base_named_type& other) const {
         return _value >= other._value;
     }
+    constexpr type& operator++() {
+        return ++_value;
+    }
 
     // provide overloads for naked type
     constexpr bool operator==(const type& other) const {
