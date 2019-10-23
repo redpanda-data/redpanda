@@ -89,4 +89,27 @@ void serialize(bytes_ostream& out, T&&... args) {
     (serialize(out, std::move(args)), ...);
 }
 
+// clang-format off
+CONCEPT(
+    template<typename T>
+    concept RPCSerializable = requires (T t, bytes_ostream& out) {
+        rpc::serialize(out, t);
+};)
+// clang-format on
+
+template<typename T>
+CONCEPT(requires RPCSerializable<T>)
+fragbuf serialize(T val) {
+    bytes_ostream out;
+    rpc::serialize(out, std::move(val));
+    fragbuf::vector_type frags;
+    frags.reserve(std::distance(frags.begin(), frags.end()));
+    std::transform(
+      out.begin(),
+      out.end(),
+      std::back_inserter(frags),
+      [](bytes_ostream::fragment& f) { return std::move(f).release(); });
+    return fragbuf(std::move(frags));
+}
+
 } // namespace rpc
