@@ -4,6 +4,7 @@
 #include "redpanda/kafka/requests/request_context.h"
 #include "redpanda/kafka/requests/response.h"
 #include "redpanda/kafka/requests/topics/types.h"
+#include "redpanda/kafka/requests/topics/validators.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>
@@ -21,8 +22,16 @@ public:
 
     static future<response_ptr> process(request_context&&, smp_service_group);
 
+private:
+    using validators = make_validator_types<
+      new_topic_configuration,
+      no_custom_partition_assignment,
+      partition_count_must_be_positive,
+      replication_factor_must_be_positive,
+      unsupported_configuration_entries>;
+
     static response_ptr
-    encode_response(request_context&, std::vector<topic_result> errs);
+    encode_response(request_context&, std::vector<topic_op_result> errs);
 
     struct request {
         static request decode(request_context&);

@@ -7,7 +7,7 @@
 namespace {
 using namespace kafka::requests;
 
-std::vector<topic_result> create_non_empty_response() {
+std::vector<topic_op_result> create_non_empty_response() {
     return {{.topic = model::topic("topic1"),
              .error_code = kafka::errors::error_code::invalid_request,
              .err_msg = std::make_optional<sstring>("Invalid request")},
