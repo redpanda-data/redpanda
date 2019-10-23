@@ -13,6 +13,10 @@
 
 namespace kafka::groups {
 
+static inline const kafka::member_id no_leader("");
+static inline const kafka::generation_id no_generation(-1);
+static inline const kafka::protocol_name no_protocol("");
+
 /// \brief Manages the Kafka group lifecycle.
 class group_manager {
 public:
@@ -38,12 +42,9 @@ public:
 
 public:
     /// \brief Handle a JoinGroup request
-    future<requests::join_group_response> join_group(
-      const requests::request_context& ctx,
-      requests::join_group_request&& request) {
-        using reply = requests::join_group_response;
-        return make_ready_future<reply>(
-          reply(request.member_id, kerr::unsupported_version));
+    future<requests::join_group_response>
+    join_group(requests::join_group_request&& request) {
+        return join_error(request.member_id, kerr::unsupported_version);
     }
 
     /// \brief Handle a SyncGroup request
@@ -65,6 +66,15 @@ public:
     leave_group(requests::leave_group_request&& request) {
         using reply = requests::leave_group_response;
         return make_ready_future<reply>(reply(kerr::unsupported_version));
+    }
+
+private:
+    static future<requests::join_group_response>
+    join_error(kafka::member_id member_id, errors::error_code error) {
+        requests::join_group_response response(
+          error, no_generation, no_protocol, no_leader, std::move(member_id));
+        return make_ready_future<requests::join_group_response>(
+          std::move(response));
     }
 
 private:
