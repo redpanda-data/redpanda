@@ -13,3 +13,4 @@ target_link_libraries(cluster
   raft
   Roaring::roaring
   )
+add_subdirectory(tests)
