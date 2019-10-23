@@ -132,3 +132,25 @@ SEASTAR_THREAD_TEST_CASE(roundtrip_fragbuf_vector) {
     rpc::serialize(b2, std::move(expected));
     BOOST_CHECK_EQUAL(b2.size_bytes(), expected_size);
 }
+
+SEASTAR_THREAD_TEST_CASE(fragbuf_roundtrip_test_pod_with_array) {
+    auto buf = rpc::serialize(pod_with_array());
+    auto res = rpc::deserialize<pod_with_array>(std::move(buf)).get0();
+    BOOST_REQUIRE_EQUAL(res.pit.x, 1);
+    BOOST_REQUIRE_EQUAL(res.pit.y, 2);
+    BOOST_REQUIRE_EQUAL(res.pit.z, 3);
+    BOOST_REQUIRE_EQUAL(res.v[0], 1);
+    BOOST_REQUIRE_EQUAL(res.v[1], 2);
+    BOOST_REQUIRE_EQUAL(res.v[2], 3);
+};
+
+SEASTAR_THREAD_TEST_CASE(fragbuf_roundtrip_test_pod_with_vector) {
+    auto buf = rpc::serialize(pod_with_vector());
+    auto res = rpc::deserialize<pod_with_vector>(std::move(buf)).get0();
+    BOOST_REQUIRE_EQUAL(res.pit.x, 1);
+    BOOST_REQUIRE_EQUAL(res.pit.y, 2);
+    BOOST_REQUIRE_EQUAL(res.pit.z, 3);
+    BOOST_REQUIRE_EQUAL(res.v[0], 1);
+    BOOST_REQUIRE_EQUAL(res.v[1], 2);
+    BOOST_REQUIRE_EQUAL(res.v[2], 3);
+};

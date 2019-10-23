@@ -72,6 +72,7 @@ private:
     future<> recover_batch(model::record_batch);
     future<> recover_record(model::record);
     future<> recover_assignment(partition_assignment);
+    future<> dispatch_record_recovery(log_record_key, fragbuf&&);
     void end_of_stream();
     raft::consensus& raft0() const;
 

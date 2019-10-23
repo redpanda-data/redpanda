@@ -2,7 +2,6 @@
 
 #include "cluster/logger.h"
 #include "resource_mgmt/io_priority.h"
-#include "utils/memory_data_source.h"
 
 namespace cluster {
 static void verify_shard() {
@@ -72,23 +71,33 @@ future<> controller::recover_batch(model::record_batch batch) {
 }
 
 future<> controller::recover_record(model::record r) {
-    auto in = input_stream<char>(
-      data_source(std::make_unique<memory_data_source>(
-        std::move(r).release_packed_value_and_headers().release())));
-    auto src = rpc::source(in);
-    return do_with(
-             std::move(in),
-             std::move(src),
-             [](input_stream<char>& in, rpc::source& src) {
-                 return rpc::deserialize<partition_assignment>(src);
-             })
-      .then([this](partition_assignment as) {
-          return recover_assignment(std::move(as));
+    return rpc::deserialize<log_record_key>(r.release_key())
+      .then([this, v_buf = std::move(r.release_packed_value_and_headers())](
+              log_record_key key) mutable {
+          return dispatch_record_recovery(std::move(key), std::move(v_buf));
       });
+}
+
+future<>
+controller::dispatch_record_recovery(log_record_key key, fragbuf&& v_buf) {
+    switch (key.record_type) {
+    case log_record_key::type::partition_assignment:
+        return rpc::deserialize<partition_assignment>(std::move(v_buf))
+          .then([this](partition_assignment as) {
+              return recover_assignment(std::move(as));
+          });
+    case log_record_key::type::topic_configuration:
+        // FIXME: Update cache with configuration
+        return make_ready_future<>();
+    default:
+        return make_exception_future<>(
+          std::runtime_error("Not supported record type in controller batch"));
+    }
 }
 
 future<> controller::recover_assignment(partition_assignment as) {
     if (as.broker.id() != _self) {
+        // FIXME: Update metadata cache with others partitions assignments
         return make_ready_future<>();
     }
     // the following ops have a dependency on the shard_table *then*
