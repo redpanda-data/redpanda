@@ -2,6 +2,7 @@
 
 #include "seastarx.h"
 
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/print.hh>
 
 #include <optional>
@@ -18,8 +19,8 @@ std::ostream& operator<<(std::ostream& os, const std::optional<T>& opt) {
 }
 
 static std::ostream&
-operator<<(std::ostream& o, const std::chrono::milliseconds& s) {
-    return fmt_print(o, "{}", s.count());
+operator<<(std::ostream& o, const lowres_clock::duration& d) {
+    return fmt_print(o, "{}", d.count());
 }
 
 } // namespace std
