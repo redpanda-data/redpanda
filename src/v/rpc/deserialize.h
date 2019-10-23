@@ -7,6 +7,7 @@
 #include "seastarx.h"
 #include "utils/copy_range.h"
 #include "utils/fragbuf.h"
+#include "utils/memory_data_source.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/byteorder.hh>
@@ -118,6 +119,26 @@ template<
 future<named_type<U, Tag>> deserialize(source& in) {
     return deserialize<U>(in).then(
       [](U u) { return named_type<U, Tag>{std::move(u)}; });
+}
+
+// clang-format off
+CONCEPT(
+    template<typename T>
+    concept RPCDeserializable = requires(rpc::source& src) {
+        { rpc::deserialize<T>(src) } -> future<T>;
+};)
+// clang-format on
+
+template<typename T>
+CONCEPT(requires RPCDeserializable<T>)
+future<T> deserialize(fragbuf&& fb) {
+    auto in = input_stream<char>(data_source(
+      std::make_unique<memory_data_source>(std::move(fb).release())));
+    return do_with(std::move(in), [](input_stream<char>& in) {
+        return do_with(rpc::source(in), [](rpc::source& src) {
+            return rpc::deserialize<T>(src);
+        });
+    });
 }
 
 } // namespace rpc
