@@ -24,3 +24,11 @@ rp_test(
   LIBRARIES Seastar::seastar_testing config $<TARGET_NAME_IF_EXISTS:Libcxx::libcxx>
   DEFINITIONS SEASTAR_TESTING_MAIN
 )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME advertised_kafka_api_test
+  SOURCES advertised_kafka_api_test.cc
+  LIBRARIES Seastar::seastar_testing config
+  DEFINITIONS SEASTAR_TESTING_MAIN
+)
