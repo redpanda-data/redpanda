@@ -132,8 +132,12 @@ future<std::vector<topic_result>> controller::create_topics(
   std::vector<topic_configuration> topics,
   model::timeout_clock::time_point timeout) {
     verify_shard();
-    // FIXME: Replace this stub...
-    return make_ready_future<std::vector<topic_result>>();
+
+future<raft::append_entries_reply>
+controller::raft0_append_entries(std::vector<raft::entry> entries) {
+    return raft0().append_entries({.node_id = _self,
+                                   .meta = raft0().meta(),
+                                   .entries = std::move(entries)});
 }
 
 // ---- hooks below
