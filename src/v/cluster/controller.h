@@ -72,6 +72,7 @@ private:
     future<> recover_record(model::record);
     future<> recover_assignment(partition_assignment);
     future<> dispatch_record_recovery(log_record_key, fragbuf&&);
+    raft::entry create_topic_cfg_entry(const topic_configuration&);
     void end_of_stream();
     raft::consensus& raft0() const;
     future<raft::append_entries_reply>
@@ -83,4 +84,21 @@ private:
     stage_hook _stgh;
 };
 
+// clang-format off
+template<typename T>
+CONCEPT(requires requires(const T& req) {
+    { req.topic } -> model::topic;
+})
+// clang-format on
+std::vector<topic_result> create_topic_results(
+  const std::vector<T>& requests, topic_error_code error_code) {
+    std::vector<topic_result> results;
+    results.reserve(requests.size());
+    std::transform(
+      requests.begin(),
+      requests.end(),
+      std::back_inserter(results),
+      [error_code](const T& r) { return topic_result(r.topic, error_code); });
+    return results;
+}
 } // namespace cluster

@@ -1,8 +1,11 @@
 #include "cluster/controller.h"
 
 #include "cluster/logger.h"
+#include "cluster/simple_batch_builder.h"
+#include "model/record_batch_reader.h"
 #include "resource_mgmt/io_priority.h"
-
+#include "storage/constants.h"
+#include "storage/shard_assignment.h"
 namespace cluster {
 static void verify_shard() {
     if (__builtin_expect(engine().cpu_id() != controller::shard, false)) {
@@ -132,12 +135,75 @@ future<std::vector<topic_result>> controller::create_topics(
   std::vector<topic_configuration> topics,
   model::timeout_clock::time_point timeout) {
     verify_shard();
+    std::vector<raft::entry> entries;
+    entries.reserve(topics.size());
+    std::transform(
+      topics.begin(),
+      topics.end(),
+      std::back_inserter(entries),
+      [this](const topic_configuration& cfg) {
+          return create_topic_cfg_entry(cfg);
+      });
+    // Do append entries to raft0 logs
+    auto f = raft0_append_entries(std::move(entries))
+               .then_wrapped([topics = std::move(topics)](
+                               future<raft::append_entries_reply> f) {
+                   bool success = true;
+                   try {
+                       auto repl = f.get0();
+                       success = repl.success;
+                   } catch (...) {
+                       auto e = std::current_exception();
+                       clusterlog().error(
+                         "An error occurred while "
+                         "appending create topic entries: {}",
+                         e);
+                       success = false;
+                   }
+                   return create_topic_results(
+                     std::move(topics),
+                     success ? topic_error_code::no_error
+                             : topic_error_code::unknown_error);
+               });
+
+    return with_timeout(timeout, std::move(f));
+} // namespace cluster
 
 future<raft::append_entries_reply>
 controller::raft0_append_entries(std::vector<raft::entry> entries) {
     return raft0().append_entries({.node_id = _self,
                                    .meta = raft0().meta(),
                                    .entries = std::move(entries)});
+}
+
+raft::entry controller::create_topic_cfg_entry(const topic_configuration& cfg) {
+    simple_batch_builder builder(controller::controller_record_batch_type);
+    builder.add_kv(
+      log_record_key{.record_type = log_record_key::type::topic_configuration},
+      cfg);
+
+    log_record_key assignment_key = {
+      .record_type = log_record_key::type::partition_assignment};
+    // FIXME: Use assignment manager here...
+    for (int i = 0; i < cfg.partition_count; i++) {
+        model::ntp ntp{
+          .ns = cfg.ns,
+          .tp = {.topic = cfg.topic, .partition = model::partition_id{i}}};
+        for (int j = 0; j < cfg.replication_factor; j++) {
+            builder.add_kv(
+              assignment_key,
+              partition_assignment{.shard = storage::shard_of(ntp),
+                                   .group = raft::group_id(i),
+                                   .ntp = ntp,
+                                   .broker = model::broker(
+                                     _self, "localhost", 9092, std::nullopt)});
+        }
+    }
+    std::vector<model::record_batch> batches;
+    batches.push_back(std::move(builder).build());
+    return raft::entry(
+      controller_record_batch_type,
+      model::make_memory_record_batch_reader(std::move(batches)));
 }
 
 // ---- hooks below
