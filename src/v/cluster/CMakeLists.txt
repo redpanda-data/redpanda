@@ -4,6 +4,7 @@ add_library (cluster STATIC
   partition_manager.cc
   types.cc
   partition_allocator.cc
+  type_serializers.cc
   )
 target_include_directories(cluster PUBLIC ${PROJECT_SOURCE_DIR}/src/v)
 
