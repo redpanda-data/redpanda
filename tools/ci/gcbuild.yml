@@ -1,7 +1,7 @@
 steps:
 - id: 'build builder image'
   name: 'gcr.io/kaniko-project/executor:latest'
-  args: ['--dockerfile=tools/ci/Dockerfile.base',
+  args: ['--dockerfile=tools/ci/Dockerfile',
          '--destination=gcr.io/$PROJECT_ID/builder:$SHORT_SHA',
          '--cache=true']
 
@@ -41,3 +41,11 @@ substitutions:
 
 options:
   machineType: 'N1_HIGHCPU_32'
+
+artifacts:
+  objects:
+    location: 'gs://vectorizedio/rp/${_BUILD_TYPE}/${SHORT_SHA}/'
+    paths:
+    - 'build/dist/tar/*.tar.gz'
+    - 'build/dist/debian/*.deb'
+    - 'build/dist/rpm/RPMS/x86_64/*.rpm'
