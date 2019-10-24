@@ -113,28 +113,16 @@ def build(build_type, targets, clang):
 
 
 def build_packages(build_type, packages):
+    if not packages:
+        return
+
     res_type = "release" if build_type == "none" else build_type
-    if packages:
-        execs = [
-            "%s/%s/src/v/redpanda/redpanda" % (RP_BUILD_ROOT, res_type),
-            "%s/%s/v_deps_build/seastar-prefix/src/seastar-build/apps/iotune/iotune"
-            % (RP_BUILD_ROOT, res_type),
-            "%s/go/bin/rpk" % RP_BUILD_ROOT,
-            "%s/%s/v_deps_install/bin/hwloc-calc" % (RP_BUILD_ROOT, res_type),
-            "%s/%s/v_deps_install/bin/hwloc-distrib" %
-            (RP_BUILD_ROOT, res_type),
-        ]
-        dist_path = os.path.join(RP_BUILD_ROOT, res_type, "dist")
-        configs = [os.path.join(RP_ROOT, "conf/redpanda.yaml")]
-        admin_api_swag = glob.glob(os.path.join(RP_ROOT, "src/v/redpanda/admin/api-doc/*.json"))
-        os.makedirs(dist_path, exist_ok=True)
-        tar_name = 'redpanda.tar.gz'
-        tar_path = "%s/%s" % (dist_path, tar_name)
-        packaging.relocable_tar_package(tar_path, execs, configs, admin_api_swag)
-        if 'tar' in packages:
-            packaging.red_panda_tar(tar_path, dist_path)
-        if 'deb' in packages:
-            packaging.red_panda_deb(tar_path, dist_path)
-        if 'rpm' in packages:
-            packaging.red_panda_rpm(tar_path, dist_path)
-        os.remove(tar_path)
+
+    execs = [
+        "%s/%s/v_deps_build/seastar-prefix/src/seastar-build/apps/iotune/iotune"
+        % (RP_BUILD_ROOT, res_type),
+        "%s/%s/v_deps_install/bin/hwloc-calc" % (RP_BUILD_ROOT, res_type),
+        "%s/%s/v_deps_install/bin/hwloc-distrib" % (RP_BUILD_ROOT, res_type),
+    ]
+
+    packaging.create_packages(packages, build_type=res_type, external=execs)
