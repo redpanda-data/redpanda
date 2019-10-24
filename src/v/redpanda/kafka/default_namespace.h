@@ -1,3 +1,4 @@
+#pragma once
 #include "model/fundamental.h"
 
 namespace kafka {

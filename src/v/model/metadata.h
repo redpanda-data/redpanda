@@ -29,6 +29,7 @@ public:
     }
     broker(broker&&) noexcept = default;
     broker& operator=(broker&&) noexcept = default;
+    broker(const broker&) = default;
     const node_id& id() const {
         return _id;
     }
@@ -51,6 +52,8 @@ private:
     int32_t _port;
     std::optional<sstring> _rack;
 };
+
+std::ostream& operator<<(std::ostream&, const broker&);
 
 struct partition_metadata {
     partition_metadata() noexcept = default;
