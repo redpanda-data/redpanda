@@ -78,7 +78,9 @@ struct topic_result {
 } // namespace cluster
 
 namespace rpc {
+
 template<>
+void serialize(bytes_ostream& out, cluster::topic_configuration&& t);
 
 template<>
 future<cluster::partition_assignment> deserialize(source& in);
