@@ -145,6 +145,8 @@ private:
 
 class record_batch_attributes final {
 public:
+    static constexpr int16_t compression_mask = 0x7;
+    static constexpr int16_t timestamp_type_mask = 0x8;
     using value_type = int16_t;
 
     record_batch_attributes() noexcept = default;
@@ -158,7 +160,7 @@ public:
     }
 
     model::compression compression() const {
-        switch (_attributes.to_ulong() & 0x7) {
+        switch (_attributes.to_ulong() & compression_mask) {
         case 0:
             return compression::none;
         case 1:
@@ -184,6 +186,18 @@ public:
 
     bool operator!=(const record_batch_attributes& other) const {
         return !(*this == other);
+    }
+
+    record_batch_attributes& operator|=(model::compression c) {
+        _attributes |= static_cast<uint8_t>(c)
+                       & record_batch_attributes::compression_mask;
+        return *this;
+    }
+
+    record_batch_attributes& operator|=(model::timestamp_type ts_t) {
+        _attributes |= (static_cast<uint8_t>(ts_t) << 3)
+                       & record_batch_attributes::timestamp_type_mask;
+        return *this;
     }
 
     friend std::ostream&
