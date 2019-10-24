@@ -149,7 +149,7 @@ consensus::send_vote_requests(clock_type::time_point timeout) {
     return sem->wait(majority).then([ret, sem] {
         std::vector<vote_reply_ptr> clean;
         clean.reserve(ret->size());
-        std::move(ret->begin(), ret->end(), clean.begin());
+        std::move(ret->begin(), ret->end(), std::back_inserter(clean));
         ret->clear();
         return clean;
     });
