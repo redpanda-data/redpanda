@@ -19,9 +19,8 @@ model::record_batch simple_batch_builder::build() && {
 
     model::record_batch_header header = {
       .size_bytes = 0,
-      .base_offset = model::offset{},
       .type = _batch_type,
-      .attrs = model::compute_batch_attributes(model::compression::none),
+      .attrs = model::record_batch_attributes{} |= model::compression::none,
       .last_offset_delta = static_cast<int32_t>(_records.size() - 1),
       .first_timestamp = model::timestamp(now_ts),
       .max_timestamp = model::timestamp(now_ts)};
