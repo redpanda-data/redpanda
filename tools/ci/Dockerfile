@@ -53,6 +53,7 @@ RUN export CXX=/usr/local/bin/clang++ && \
       -DRP_ENABLE_GOLD_LINKER=OFF \
       -DV_DEPS_ONLY=ON \
       /tmp/v && \
+    cp build/v_deps_build/seastar-prefix/src/seastar-build/apps/iotune/iotune /usr/local/bin/ && \
     cd && \
     rm -rf /tmp/v && \
     sh -c 'echo "/usr/local/lib" > /etc/ld.so.conf.d/usrlocallib.conf' && \
