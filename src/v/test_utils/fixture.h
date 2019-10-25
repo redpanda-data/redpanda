@@ -10,22 +10,12 @@
 #define __FIXTURE_JOIN_(a, b) a ##_## b
 #define __FIXTURE_JOIN(a, b) __FIXTURE_JOIN_(a, b)
 // clang-format on
-
-#define FIXTURE_TEST(method, class_name)                                       \
-    struct __FIXTURE_JOIN(class_name, method) final                            \
-      : class_name                                                             \
-      , seastar::testing::seastar_test {                                       \
-        const char* get_test_file() override {                                 \
-            return __FILE__;                                                   \
-        }                                                                      \
-        const char* get_name() override {                                      \
-            return #method;                                                    \
-        }                                                                      \
-        seastar::future<> run_test_case() override {                           \
-            return seastar::async([this] { do_run_test_case(); });             \
-        }                                                                      \
-        void do_run_test_case();                                               \
+#define FIXTURE_TEST(method, klass)                                            \
+    struct __FIXTURE_JOIN(klass, method) final : klass {                       \
+        void fixture_test();                                                   \
     };                                                                         \
-    static __FIXTURE_JOIN(class_name, method)                                  \
-      __FIXTURE_JOIN(method, _instance);                                       \
-    void ::__FIXTURE_JOIN(class_name, method)::do_run_test_case()
+    SEASTAR_THREAD_TEST_CASE(method) {                                         \
+        struct __FIXTURE_JOIN(klass, method) _fixture_driver;                  \
+        _fixture_driver.fixture_test();                                        \
+    }                                                                          \
+    void ::__FIXTURE_JOIN(klass, method)::fixture_test()
