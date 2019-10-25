@@ -14,15 +14,15 @@ class response;
 using response_ptr = foreign_ptr<std::unique_ptr<response>>;
 
 struct sync_group_api final {
-    // api
     static constexpr const char* name = "sync group";
     static constexpr api_key key = api_key(14);
     static constexpr api_version min_supported = api_version(0);
     static constexpr api_version max_supported = api_version(3);
 
     static future<response_ptr> process(request_context&&, smp_service_group);
+};
 
-    // request message
+struct sync_group_request final {
     struct member_assignment {
         kafka::member_id member;
         bytes assignment;

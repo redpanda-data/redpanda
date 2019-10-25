@@ -13,7 +13,7 @@
 
 namespace kafka::requests {
 
-void sync_group_api::decode(request_context& ctx) {
+void sync_group_request::decode(request_context& ctx) {
     auto& reader = ctx.reader();
     auto version = ctx.header().version;
 
@@ -49,7 +49,7 @@ sync_group_api::process(request_context&& ctx, smp_service_group g) {
     return do_with(
       remote(std::move(ctx)), [g](remote<request_context>& remote_ctx) {
           auto& ctx = remote_ctx.get();
-          sync_group_api request;
+          sync_group_request request;
           request.decode(ctx);
           return ctx.groups()
             .sync_group(std::move(request))
