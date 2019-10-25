@@ -14,15 +14,15 @@ class response;
 using response_ptr = foreign_ptr<std::unique_ptr<response>>;
 
 struct heartbeat_api final {
-    // api
     static constexpr const char* name = "heartbeat";
     static constexpr api_key key = api_key(12);
     static constexpr api_version min_supported = api_version(0);
     static constexpr api_version max_supported = api_version(3);
 
     static future<response_ptr> process(request_context&&, smp_service_group);
+};
 
-    // request message
+struct heartbeat_request final {
     kafka::group_id group_id;
     kafka::generation_id generation_id;
     kafka::member_id member_id;
