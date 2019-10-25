@@ -74,7 +74,7 @@ BOOST_AUTO_TEST_CASE(assignment) {
 }
 
 BOOST_AUTO_TEST_CASE(protocols) {
-    auto r = requests::join_group_api();
+    auto r = requests::join_group_request();
     r.protocols = test_protos;
 
     auto m = get_member();

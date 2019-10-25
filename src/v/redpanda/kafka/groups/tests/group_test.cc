@@ -351,7 +351,7 @@ BOOST_AUTO_TEST_CASE(select_protocol) {
 BOOST_AUTO_TEST_CASE(supports_protocols) {
     auto g = get();
 
-    requests::join_group_api r;
+    requests::join_group_request r;
 
     // empty group -> request needs protocol type
     r.protocol_type = kafka::protocol_type("");
@@ -503,7 +503,7 @@ BOOST_AUTO_TEST_CASE(leader_rejoined) {
 }
 
 BOOST_AUTO_TEST_CASE(generate_member_id) {
-    requests::join_group_api r;
+    requests::join_group_request r;
 
     r.client_id = sstring("dog");
     r.group_instance_id = std::nullopt;

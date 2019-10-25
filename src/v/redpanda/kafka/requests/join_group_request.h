@@ -14,15 +14,15 @@ class response;
 using response_ptr = foreign_ptr<std::unique_ptr<response>>;
 
 struct join_group_api final {
-    // api
     static constexpr const char* name = "join group";
     static constexpr api_key key = api_key(11);
     static constexpr api_version min_supported = api_version(0);
     static constexpr api_version max_supported = api_version(3);
 
     static future<response_ptr> process(request_context&&, smp_service_group);
+};
 
-    // request message
+struct join_group_request final {
     kafka::group_id group_id;
     std::chrono::milliseconds session_timeout;
     std::chrono::milliseconds rebalance_timeout; // >= v1
@@ -38,7 +38,7 @@ struct join_group_api final {
     void decode(request_context& ctx);
 };
 
-std::ostream& operator<<(std::ostream&, const join_group_api&);
+std::ostream& operator<<(std::ostream&, const join_group_request&);
 
 /*
  * TODO

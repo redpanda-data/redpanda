@@ -19,7 +19,7 @@ template <typename T>
 concept GroupManager =
 requires(
   T m,
-  requests::join_group_api&& join_request,
+  requests::join_group_request&& join_request,
   requests::sync_group_api&& sync_request,
   requests::heartbeat_api&& heartbeat_request,
   requests::leave_group_api&& leave_request) {
@@ -67,7 +67,7 @@ public:
     }
 
     future<requests::join_group_response>
-    join_group(requests::join_group_api&& request) {
+    join_group(requests::join_group_request&& request) {
         auto shard = _shards.shard_for(request.group_id);
         return with_scheduling_group(
           _sg, [this, shard, request = std::move(request)]() mutable {
