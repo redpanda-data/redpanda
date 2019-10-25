@@ -56,7 +56,7 @@ public:
 
     /// \brief Handle a Heartbeat request
     future<requests::heartbeat_response>
-    heartbeat(requests::heartbeat_api&& request) {
+    heartbeat(requests::heartbeat_request&& request) {
         using reply = requests::heartbeat_response;
         return make_ready_future<reply>(reply(kerr::unsupported_version));
     }
