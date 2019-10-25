@@ -105,9 +105,10 @@ struct r_factor_validator {
     }
 };
 
-using test_validators = make_validator_types<test_request,
-partitions_validator,
-r_factor_validator>;
+using test_validators = make_validator_types<
+  test_request,
+  partitions_validator,
+  r_factor_validator>;
 
 } // namespace
 
