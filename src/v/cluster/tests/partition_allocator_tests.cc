@@ -1,29 +1,27 @@
-#define BOOST_TEST_MODULE cluster
-
 #include "cluster/tests/partition_allocator_tester.h"
+#include "test_utils/fixture.h"
 
-#include <boost/test/unit_test.hpp>
+using namespace cluster; // NOLINT
 
-BOOST_FIXTURE_TEST_CASE(register_node, cluster::partition_allocator_tester) {
+FIXTURE_TEST(register_node, partition_allocator_tester) {
     BOOST_REQUIRE_EQUAL(machines().size(), 3);
     BOOST_REQUIRE_EQUAL(highest_group()(), 0);
 }
-BOOST_FIXTURE_TEST_CASE(
-  invalid_allocation, cluster::partition_allocator_tester) {
+FIXTURE_TEST(invalid_allocation, partition_allocator_tester) {
     auto cfg = gen_topic_configuration(1, 1);
     saturate_all_machines();
     BOOST_REQUIRE(std::nullopt == pa.allocate(cfg));
     BOOST_REQUIRE_EQUAL(highest_group()(), 0);
 }
-BOOST_FIXTURE_TEST_CASE(max_allocation, cluster::partition_allocator_tester) {
+FIXTURE_TEST(max_allocation, partition_allocator_tester) {
     // This test performs - 209994 partition assignments
 
-    using ts = cluster::partition_allocator_tester;
+    using ts = partition_allocator_tester;
     const auto max = (ts::cpus_per_node
-                      * cluster::allocation_node::max_allocations_per_core)
-                     - cluster::allocation_node::core0_extra_weight;
+                      * allocation_node::max_allocations_per_core)
+                     - allocation_node::core0_extra_weight;
     auto cfg = gen_topic_configuration(max, ts::max_nodes);
-    std::vector<cluster::partition_assignment> allocs = std::move(
+    std::vector<partition_assignment> allocs = std::move(
       pa.allocate(cfg).value());
 
     BOOST_REQUIRE_EQUAL(max * ts::max_nodes, 209994);
@@ -34,29 +32,26 @@ BOOST_FIXTURE_TEST_CASE(max_allocation, cluster::partition_allocator_tester) {
     auto one_topic_cfg = gen_topic_configuration(1, 1);
     BOOST_REQUIRE(std::nullopt == pa.allocate(one_topic_cfg));
 }
-BOOST_FIXTURE_TEST_CASE(
-  unsatisfyable_diversity_assignment, cluster::partition_allocator_tester) {
-    using ts = cluster::partition_allocator_tester;
+FIXTURE_TEST(unsatisfyable_diversity_assignment, partition_allocator_tester) {
+    using ts = partition_allocator_tester;
     auto cfg = gen_topic_configuration(1, ts::max_nodes + 1);
     auto allocs = pa.allocate(cfg);
     BOOST_REQUIRE(std::nullopt == allocs);
 
     // ensure rollback happened
     const auto max_cluster_capacity
-      = ((ts::cpus_per_node
-          * cluster::allocation_node::max_allocations_per_core)
-         - cluster::allocation_node::core0_extra_weight)
+      = ((ts::cpus_per_node * allocation_node::max_allocations_per_core)
+         - allocation_node::core0_extra_weight)
         * ts::max_nodes;
 
     BOOST_REQUIRE_EQUAL(max_cluster_capacity, cluster_partition_capacity());
     BOOST_REQUIRE_EQUAL(highest_group()(), 0);
 }
-BOOST_FIXTURE_TEST_CASE(
-  partial_assignment, cluster::partition_allocator_tester) {
-    using ts = cluster::partition_allocator_tester;
-    const auto max_partitions
-      = (ts::cpus_per_node * cluster::allocation_node::max_allocations_per_core)
-        - cluster::allocation_node::core0_extra_weight;
+FIXTURE_TEST(partial_assignment, partition_allocator_tester) {
+    using ts = partition_allocator_tester;
+    const auto max_partitions = (ts::cpus_per_node
+                                 * allocation_node::max_allocations_per_core)
+                                - allocation_node::core0_extra_weight;
 
     const auto expected_usage_capacity = (max_partitions * ts::max_nodes) - 3;
 
@@ -75,15 +70,15 @@ BOOST_FIXTURE_TEST_CASE(
     BOOST_REQUIRE_EQUAL(3, cluster_partition_capacity());
     BOOST_REQUIRE_EQUAL(highest_group()(), max_correct_partitions);
 }
-BOOST_FIXTURE_TEST_CASE(max_deallocation, cluster::partition_allocator_tester) {
+FIXTURE_TEST(max_deallocation, partition_allocator_tester) {
     // This test performs - 209994 partition assignments
-    using ts = cluster::partition_allocator_tester;
+    using ts = partition_allocator_tester;
     const auto max = (ts::cpus_per_node
-                      * cluster::allocation_node::max_allocations_per_core)
-                     - cluster::allocation_node::core0_extra_weight;
+                      * allocation_node::max_allocations_per_core)
+                     - allocation_node::core0_extra_weight;
 
     auto cfg = gen_topic_configuration(max, ts::max_nodes);
-    std::vector<cluster::partition_assignment> allocs = std::move(
+    std::vector<partition_assignment> allocs = std::move(
       pa.allocate(cfg).value());
 
     BOOST_REQUIRE_EQUAL(max * ts::max_nodes, 209994);
@@ -106,9 +101,9 @@ BOOST_FIXTURE_TEST_CASE(max_deallocation, cluster::partition_allocator_tester) {
 }
 
 BOOST_AUTO_TEST_CASE(round_robin_load) {
-    cluster::partition_allocator_tester test(5, 10);
+    partition_allocator_tester test(5, 10);
     auto cfg = test.gen_topic_configuration(100, 3);
-    std::vector<cluster::partition_assignment> allocs = std::move(
+    std::vector<partition_assignment> allocs = std::move(
       test.pa.allocate(cfg).value());
     std::map<model::node_id, int> node_assignment;
     for (auto& a : allocs) {
