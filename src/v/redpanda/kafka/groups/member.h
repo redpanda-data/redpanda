@@ -18,7 +18,7 @@
 #include <utility>
 #include <vector>
 
-namespace kafka::groups {
+namespace kafka {
 
 /// \addtogroup kafka-groups
 /// @{
@@ -198,4 +198,4 @@ std::ostream& operator<<(std::ostream&, const group_member&);
 
 /// @}
 
-} // namespace kafka::groups
+} // namespace kafka

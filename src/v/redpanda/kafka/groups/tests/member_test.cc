@@ -9,7 +9,7 @@
 #include <boost/test/unit_test.hpp>
 #include <fmt/ostream.h>
 
-namespace kafka::groups {
+namespace kafka {
 
 static const std::vector<member_protocol> test_protos = {
   {kafka::protocol_name("n0"), "d0"}, {kafka::protocol_name("n1"), "d1"}};
@@ -145,4 +145,4 @@ BOOST_AUTO_TEST_CASE(output) {
     BOOST_TEST(s.find("id={m}") != std::string::npos);
 }
 
-} // namespace kafka::groups
+} // namespace kafka
