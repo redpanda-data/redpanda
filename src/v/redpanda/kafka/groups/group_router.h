@@ -22,7 +22,7 @@ requires(
   requests::join_group_request&& join_request,
   requests::sync_group_api&& sync_request,
   requests::heartbeat_api&& heartbeat_request,
-  requests::leave_group_api&& leave_request) {
+  requests::leave_group_request&& leave_request) {
 
     { m.join_group(std::move(join_request)) } ->
         future<requests::join_group_response>;
@@ -109,7 +109,7 @@ public:
     }
 
     future<requests::leave_group_response>
-    leave_group(requests::leave_group_api&& request) {
+    leave_group(requests::leave_group_request&& request) {
         auto shard = _shards.shard_for(request.group_id);
         return with_scheduling_group(
           _sg, [this, shard, request = std::move(request)]() mutable {
