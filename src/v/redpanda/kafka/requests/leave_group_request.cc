@@ -1,15 +1,8 @@
 #include "redpanda/kafka/requests/leave_group_request.h"
 
-#include "model/metadata.h"
-#include "redpanda/kafka/errors/errors.h"
 #include "redpanda/kafka/requests/request_context.h"
+#include "redpanda/kafka/requests/response.h"
 #include "utils/remote.h"
-
-#include <seastar/util/log.hh>
-
-#include <fmt/ostream.h>
-
-#include <string_view>
 
 namespace kafka {
 
