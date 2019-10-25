@@ -81,7 +81,7 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 				ConfigFilePath: configFile,
 				SeastarFlags: map[string]string{
 					"io-properties-file": ioConfigFile,
-					"lock-memory":        "true",
+					"lock-memory":        "false",
 				},
 			}
 			err = prestart(fs, rpArgs, config, prestartCfg)
@@ -94,7 +94,6 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 					rpArgs.SeastarFlags[flag] = fmt.Sprint(val)
 				}
 			}
-
 			launcher := redpanda.NewLauncher(installDirectory, rpArgs)
 			log.Info("Starting redpanda...")
 			return launcher.Start()
@@ -107,8 +106,9 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 	command.Flags().StringVar(&sFlags.memory,
 		"memory", "", "Amount of memory for redpanda to use, "+
 			"if not specified redpanda will use all available memory")
+	// FIXME: Set to false by default as it triggers a 50+ GB core dump on some machines
 	command.Flags().BoolVar(&sFlags.lockMemory,
-		"lock-memory", true, "If set, will prevent redpanda from swapping")
+		"lock-memory", false, "If set, will prevent redpanda from swapping")
 	command.Flags().StringVar(&sFlags.cpuSet, "cpuset", "",
 		"Set of CPUs for redpanda to use in cpuset(7) format, "+
 			"if not specified redpanda will use all available CPUs")
