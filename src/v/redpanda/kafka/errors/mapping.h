@@ -2,7 +2,7 @@
 #include "cluster/types.h"
 #include "redpanda/kafka/errors/errors.h"
 
-namespace kafka::errors {
+namespace kafka {
 
 static constexpr inline error_code
 map_topic_error_code(cluster::topic_error_code code) {
@@ -24,4 +24,4 @@ map_topic_error_code(cluster::topic_error_code code) {
     }
 }
 
-} // namespace kafka::errors
+} // namespace kafka

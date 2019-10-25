@@ -21,7 +21,7 @@ namespace kafka::requests {
 
 struct partition_result {
     model::partition_id partition;
-    errors::error_code error;
+    error_code error;
     model::offset base_offset;
     model::timestamp log_append_time;
     int64_t log_start_offset;

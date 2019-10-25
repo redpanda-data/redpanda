@@ -17,7 +17,7 @@ list_groups_api::process(request_context&& ctx, smp_service_group g) {
     if (ctx.header().version >= api_version(1)) {
         resp->writer().write(int32_t(0));
     }
-    resp->writer().write(errors::error_code::none);
+    resp->writer().write(error_code::none);
     resp->writer().write_array(
       std::vector<int>{0}, [](int v, response_writer& wr) {
           wr.write("fake_group_id");

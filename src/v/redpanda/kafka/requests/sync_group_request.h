@@ -39,17 +39,17 @@ struct sync_group_request final {
 
 struct sync_group_response final {
     std::chrono::milliseconds throttle_time; // >= v1
-    errors::error_code error;
+    error_code error;
     bytes assignment;
 
     // TODO: throttle will be filled in automatically
     explicit sync_group_response(bytes assignment)
       : throttle_time(0)
-      , error(errors::error_code::none)
+      , error(error_code::none)
       , assignment(assignment) {
     }
 
-    explicit sync_group_response(errors::error_code error)
+    explicit sync_group_response(error_code error)
       : throttle_time(0)
       , error(error) {
     }
