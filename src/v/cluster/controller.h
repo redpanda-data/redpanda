@@ -37,7 +37,6 @@ public:
     }
 
     future<std::vector<topic_result>> create_topics(
-      model::ns ns,
       std::vector<topic_configuration> topics,
       model::timeout_clock::time_point timeout);
 

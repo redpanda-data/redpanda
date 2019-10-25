@@ -129,7 +129,6 @@ void controller::end_of_stream() {
 }
 
 future<std::vector<topic_result>> controller::create_topics(
-  model::ns ns,
   std::vector<topic_configuration> topics,
   model::timeout_clock::time_point timeout) {
     verify_shard();
