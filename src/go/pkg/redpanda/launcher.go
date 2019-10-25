@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
@@ -51,6 +52,7 @@ func (l *launcher) Start() error {
 			rpEnv = append(rpEnv, ev)
 		}
 	}
+	log.Infof("Running:\n%s %s %s", strings.Join(rpEnv, " "), binary, strings.Join(redpandaArgs, " "))
 	return unix.Exec(binary, redpandaArgs, rpEnv)
 }
 
