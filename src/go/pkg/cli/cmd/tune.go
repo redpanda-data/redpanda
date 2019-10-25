@@ -23,6 +23,7 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 	var redpandaConfigFile string
 	var outTuneScriptFile string
 	var cpuSet string
+	var timeoutMs int
 	command := &cobra.Command{
 		Use: "tune <list_of_elements_to_tune>",
 		Short: `Sets the OS parameters to tune system performance
@@ -47,13 +48,13 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 			return nil
 		},
 		RunE: func(ccmd *cobra.Command, args []string) error {
-			defaultTimeout := 10000 * time.Millisecond
 			var tunerFactory factory.TunersFactory
+			timeout := time.Duration(timeoutMs) * time.Millisecond
 			if outTuneScriptFile != "" {
 				tunerFactory = factory.NewScriptRenderingTunersFactory(
-					fs, outTuneScriptFile, defaultTimeout)
+					fs, outTuneScriptFile, timeout)
 			} else {
-				tunerFactory = factory.NewDirectExecutorTunersFactory(fs, defaultTimeout)
+				tunerFactory = factory.NewDirectExecutorTunersFactory(fs, timeout)
 			}
 			if !tunerParamsEmpty(&tunerParams) && redpandaConfigFile != "" {
 				return errors.New("Use either tuner params or redpanda config file")
@@ -99,6 +100,7 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 	command.Flags().StringVar(&outTuneScriptFile,
 		"output-script", "", "If set tuners will generate tuning file that "+
 			"can later be used to tune the system")
+	command.Flags().IntVar(&timeoutMs, "timeout", 10000, "The maximum amount of time (in ms) to wait for the tune processes to complete")
 	command.AddCommand(newHelpCommand())
 	return command
 }
