@@ -6,14 +6,14 @@
 
 BOOST_FIXTURE_TEST_CASE(register_node, cluster::partition_allocator_tester) {
     BOOST_REQUIRE_EQUAL(machines().size(), 3);
-    BOOST_REQUIRE_EQUAL(highest_group(), 0);
+    BOOST_REQUIRE_EQUAL(highest_group()(), 0);
 }
 BOOST_FIXTURE_TEST_CASE(
   invalid_allocation, cluster::partition_allocator_tester) {
     auto cfg = gen_topic_configuration(1, 1);
     saturate_all_machines();
     BOOST_REQUIRE(std::nullopt == pa.allocate(cfg));
-    BOOST_REQUIRE_EQUAL(highest_group(), 0);
+    BOOST_REQUIRE_EQUAL(highest_group()(), 0);
 }
 BOOST_FIXTURE_TEST_CASE(max_allocation, cluster::partition_allocator_tester) {
     // This test performs - 209994 partition assignments
@@ -28,7 +28,7 @@ BOOST_FIXTURE_TEST_CASE(max_allocation, cluster::partition_allocator_tester) {
 
     BOOST_REQUIRE_EQUAL(max * ts::max_nodes, 209994);
     BOOST_REQUIRE_EQUAL(allocs.size(), 209994);
-    BOOST_REQUIRE_EQUAL(highest_group(), max);
+    BOOST_REQUIRE_EQUAL(highest_group()(), max);
 
     // make sure there is no room left after
     auto one_topic_cfg = gen_topic_configuration(1, 1);
@@ -49,7 +49,7 @@ BOOST_FIXTURE_TEST_CASE(
         * ts::max_nodes;
 
     BOOST_REQUIRE_EQUAL(max_cluster_capacity, cluster_partition_capacity());
-    BOOST_REQUIRE_EQUAL(highest_group(), 0);
+    BOOST_REQUIRE_EQUAL(highest_group()(), 0);
 }
 BOOST_FIXTURE_TEST_CASE(
   partial_assignment, cluster::partition_allocator_tester) {
@@ -73,7 +73,7 @@ BOOST_FIXTURE_TEST_CASE(
     BOOST_REQUIRE(std::nullopt == allocs);
 
     BOOST_REQUIRE_EQUAL(3, cluster_partition_capacity());
-    BOOST_REQUIRE_EQUAL(highest_group(), max_correct_partitions);
+    BOOST_REQUIRE_EQUAL(highest_group()(), max_correct_partitions);
 }
 BOOST_FIXTURE_TEST_CASE(max_deallocation, cluster::partition_allocator_tester) {
     // This test performs - 209994 partition assignments
@@ -88,7 +88,7 @@ BOOST_FIXTURE_TEST_CASE(max_deallocation, cluster::partition_allocator_tester) {
 
     BOOST_REQUIRE_EQUAL(max * ts::max_nodes, 209994);
     BOOST_REQUIRE_EQUAL(allocs.size(), 209994);
-    BOOST_REQUIRE_EQUAL(highest_group(), max);
+    BOOST_REQUIRE_EQUAL(highest_group()(), max);
     BOOST_REQUIRE_EQUAL(available_machines().size(), 0);
 
     // make sure there is no room left after
@@ -100,7 +100,7 @@ BOOST_FIXTURE_TEST_CASE(max_deallocation, cluster::partition_allocator_tester) {
         pa.deallocate(as);
     }
 
-    BOOST_REQUIRE_EQUAL(highest_group(), max);
+    BOOST_REQUIRE_EQUAL(highest_group()(), max);
     BOOST_REQUIRE_EQUAL(available_machines().size(), 3);
     BOOST_REQUIRE_EQUAL(cluster_partition_capacity(), 209994);
 }
