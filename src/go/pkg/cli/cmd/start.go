@@ -42,6 +42,7 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 	var (
 		configFilePathFlag string
 		installDirFlag     string
+		timeoutMs          int
 	)
 	sFlags := seastarFlags{}
 	sFlagsMap := map[string]interface{}{
@@ -62,7 +63,6 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 		Use:   "start",
 		Short: "Start redpanda",
 		RunE: func(ccmd *cobra.Command, args []string) error {
-			defaultTimeout := time.Duration(10000) * time.Millisecond
 			configFile, err := cli.GetOrFindConfig(fs, configFilePathFlag)
 			if err != nil {
 				return err
@@ -86,7 +86,7 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 					"lock-memory":        "false",
 				},
 			}
-			err = prestart(fs, rpArgs, config, prestartCfg, defaultTimeout)
+			err = prestart(fs, rpArgs, config, prestartCfg, time.Duration(timeoutMs)*time.Millisecond)
 			if err != nil {
 				return err
 			}
@@ -139,6 +139,7 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 	command.Flags().StringVar(&sFlags.ioProperties, "io-properties", "",
 		"a YAML string describing the characteristics of the I/O Subsystem")
 	command.Flags().BoolVar(&sFlags.mbind, "mbind", true, "enable mbind")
+	command.Flags().IntVar(&timeoutMs, "timeout", 10000, "The maximum amount of time (in ms) to wait for the checks and tune processes to complete")
 	for flag := range sFlagsMap {
 		command.Flag(flag).Hidden = true
 	}
