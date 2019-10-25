@@ -1,24 +1,15 @@
 #include "redpanda/kafka/requests/join_group_request.h"
 
-#include "model/metadata.h"
-#include "redpanda/kafka/errors/errors.h"
 #include "redpanda/kafka/requests/request_context.h"
+#include "redpanda/kafka/requests/response.h"
 #include "utils/remote.h"
 #include "utils/to_string.h"
 
-#include <seastar/util/log.hh>
-
-#include <fmt/ostream.h>
-
-#include <string_view>
-
 namespace kafka {
+
 std::ostream& operator<<(std::ostream& o, const member_protocol& p) {
     return fmt_print(o, "{}:{}", p.name, p.metadata.size());
 }
-} // namespace kafka
-
-namespace kafka {
 
 void join_group_request::decode(request_context& ctx) {
     auto& reader = ctx.reader();
