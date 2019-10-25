@@ -32,27 +32,25 @@ private:
 
     static response_ptr
     encode_response(request_context&, std::vector<topic_op_result> errs);
+};
 
-    struct request {
-        static request decode(request_context&);
+struct create_topics_request {
+    static create_topics_request decode(request_context&);
 
-        static new_topic_configuration
-        read_topic_configuration(request_reader&);
+    static new_topic_configuration read_topic_configuration(request_reader&);
 
-        static std::vector<partition_assignment>
-        read_partiton_assignments(request_reader&);
+    static std::vector<partition_assignment>
+    read_partiton_assignments(request_reader&);
 
-        static partition_assignment read_partiton_assignment(request_reader&);
+    static partition_assignment read_partiton_assignment(request_reader&);
 
-        static model::node_id read_node_id(request_reader&);
+    static model::node_id read_node_id(request_reader&);
 
-        static std::unordered_map<sstring, sstring>
-        read_config(request_reader&);
+    static std::unordered_map<sstring, sstring> read_config(request_reader&);
 
-        std::vector<new_topic_configuration> topics;
-        std::chrono::milliseconds timeout;
-        bool validate_only;
-    };
+    std::vector<new_topic_configuration> topics;
+    std::chrono::milliseconds timeout;
+    bool validate_only;
 };
 
 } // namespace kafka::requests
