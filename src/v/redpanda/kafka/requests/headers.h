@@ -9,7 +9,7 @@
 #include <optional>
 #include <string_view>
 
-namespace kafka::requests {
+namespace kafka {
 
 using correlation_type = int32_t;
 using api_key = named_type<int16_t, struct kafka_requests_api_key>;
@@ -29,4 +29,4 @@ struct response_header {
     correlation_type correlation_id;
 };
 
-} // namespace kafka::requests
+} // namespace kafka

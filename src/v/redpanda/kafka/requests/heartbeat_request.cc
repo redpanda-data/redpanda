@@ -11,7 +11,7 @@
 
 #include <string_view>
 
-namespace kafka::requests {
+namespace kafka {
 
 void heartbeat_request::decode(request_context& ctx) {
     auto& reader = ctx.reader();
@@ -55,4 +55,4 @@ heartbeat_api::process(request_context&& ctx, smp_service_group g) {
       });
 }
 
-} // namespace kafka::requests
+} // namespace kafka

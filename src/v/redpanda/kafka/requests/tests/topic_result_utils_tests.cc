@@ -5,7 +5,7 @@
 #include <seastar/testing/thread_test_case.hh>
 
 namespace {
-using namespace kafka::requests;
+using namespace kafka;
 
 std::vector<topic_op_result> create_non_empty_response() {
     return {{.topic = model::topic("topic1"),

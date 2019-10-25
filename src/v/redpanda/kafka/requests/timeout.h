@@ -1,6 +1,6 @@
 #pragma once
 #include "model/timeout_clock.h"
-namespace kafka::requests {
+namespace kafka {
 
 // converts Kafka timeout expressed in milliseconds to
 // model::timeout_clock::time_point used in redpanda internal apis.
@@ -13,4 +13,4 @@ to_timeout(std::chrono::milliseconds timeout) {
     }
     return model::timeout_clock::now() + timeout;
 }
-}; // namespace kafka::requests
+}; // namespace kafka

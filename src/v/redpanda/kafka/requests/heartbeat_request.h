@@ -7,7 +7,7 @@
 
 #include <seastar/core/future.hh>
 
-namespace kafka::requests {
+namespace kafka {
 
 class request_context;
 class response;
@@ -44,4 +44,4 @@ struct heartbeat_response final {
     void encode(const request_context& ctx, response& resp);
 };
 
-} // namespace kafka::requests
+} // namespace kafka

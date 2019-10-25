@@ -42,39 +42,34 @@ public:
 
 public:
     /// \brief Handle a JoinGroup request
-    future<requests::join_group_response>
-    join_group(requests::join_group_request&& request) {
+    future<join_group_response> join_group(join_group_request&& request) {
         return join_error(request.member_id, error_code::unsupported_version);
     }
 
     /// \brief Handle a SyncGroup request
-    future<requests::sync_group_response>
-    sync_group(requests::sync_group_request&& request) {
-        using reply = requests::sync_group_response;
+    future<sync_group_response> sync_group(sync_group_request&& request) {
+        using reply = sync_group_response;
         return make_ready_future<reply>(reply(error_code::unsupported_version));
     }
 
     /// \brief Handle a Heartbeat request
-    future<requests::heartbeat_response>
-    heartbeat(requests::heartbeat_request&& request) {
-        using reply = requests::heartbeat_response;
+    future<heartbeat_response> heartbeat(heartbeat_request&& request) {
+        using reply = heartbeat_response;
         return make_ready_future<reply>(reply(error_code::unsupported_version));
     }
 
     /// \brief Handle a LeaveGroup request
-    future<requests::leave_group_response>
-    leave_group(requests::leave_group_request&& request) {
-        using reply = requests::leave_group_response;
+    future<leave_group_response> leave_group(leave_group_request&& request) {
+        using reply = leave_group_response;
         return make_ready_future<reply>(reply(error_code::unsupported_version));
     }
 
 private:
-    static future<requests::join_group_response>
+    static future<join_group_response>
     join_error(kafka::member_id member_id, error_code error) {
-        requests::join_group_response response(
+        join_group_response response(
           error, no_generation, no_protocol, no_leader, std::move(member_id));
-        return make_ready_future<requests::join_group_response>(
-          std::move(response));
+        return make_ready_future<join_group_response>(std::move(response));
     }
 
 private:

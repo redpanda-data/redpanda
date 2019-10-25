@@ -17,7 +17,7 @@
 #include <optional>
 #include <string_view>
 
-namespace kafka::requests {
+namespace kafka {
 
 class response_writer {
     template<typename ExplicitIntegerType, typename IntegerType>
@@ -190,4 +190,4 @@ private:
     bytes_ostream* _out;
 };
 
-} // namespace kafka::requests
+} // namespace kafka

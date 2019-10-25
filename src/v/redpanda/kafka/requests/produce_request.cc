@@ -17,7 +17,7 @@
 
 #include <string_view>
 
-namespace kafka::requests {
+namespace kafka {
 
 struct partition_result {
     model::partition_id partition;
@@ -124,4 +124,4 @@ produce_api::process(request_context&& ctx, smp_service_group g) {
       });
 }
 
-} // namespace kafka::requests
+} // namespace kafka

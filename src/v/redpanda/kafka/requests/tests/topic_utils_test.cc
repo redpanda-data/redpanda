@@ -5,7 +5,7 @@
 #include <boost/range/iterator_range.hpp>
 #include <boost/test/unit_test.hpp>
 
-using namespace kafka::requests; // NOLINT
+using namespace kafka; // NOLINT
 namespace {
 struct test_request {
     model::topic_view topic;

@@ -166,12 +166,11 @@ future<> kafka_server::connection::process() {
 // clang-format on
 
 future<> kafka_server::connection::write_response(
-  requests::response_ptr&& response,
-  requests::correlation_type correlation_id) {
+  response_ptr&& response, correlation_type correlation_id) {
     sstring header(sstring::initialized_later(), sizeof(raw_response_header));
     auto* raw_header = reinterpret_cast<raw_response_header*>(header.begin());
     auto size = size_type(
-      sizeof(requests::correlation_type) + response->buf().size_bytes());
+      sizeof(correlation_type) + response->buf().size_bytes());
     raw_header->size = cpu_to_be(size);
     raw_header->correlation_id = cpu_to_be(correlation_id);
 
@@ -217,7 +216,7 @@ future<> kafka_server::connection::process_request() {
           return fut.then([this, size](semaphore_units<> units) {
               return read_header().then(
                 [this, size, units = std::move(units)](
-                  requests::request_header header) mutable {
+                  request_header header) mutable {
                     // update the throughput tracker for this client using the
                     // size of the current request and return any computed delay
                     // to apply for quota throttling.
@@ -251,7 +250,7 @@ future<> kafka_server::connection::process_request() {
                              header = std::move(header),
                              units = std::move(units),
                              delay = std::move(delay)](fragbuf buf) mutable {
-                                auto ctx = requests::request_context(
+                                auto ctx = request_context(
                                   _server._metadata_cache,
                                   _server._cntrl_dispatcher.local(),
                                   std::move(header),
@@ -268,13 +267,13 @@ future<> kafka_server::connection::process_request() {
 }
 
 void kafka_server::connection::do_process(
-  requests::request_context&& ctx, semaphore_units<>&& units) {
+  request_context&& ctx, semaphore_units<>&& units) {
     auto correlation = ctx.header().correlation_id;
-    auto f = requests::process_request(std::move(ctx), _server._smp_group);
+    auto f = ::kafka::process_request(std::move(ctx), _server._smp_group);
     auto ready = std::move(_ready_to_respond);
     _ready_to_respond = f.then_wrapped(
       [this, units = std::move(units), ready = std::move(ready), correlation](
-        future<requests::response_ptr>&& f) mutable {
+        future<response_ptr>&& f) mutable {
           try {
               auto r = f.get0();
               return ready
@@ -304,7 +303,7 @@ size_t kafka_server::connection::process_size(temporary_buffer<char>&& buf) {
     return size_t(size);
 }
 
-future<requests::request_header> kafka_server::connection::read_header() {
+future<request_header> kafka_server::connection::read_header() {
     constexpr int16_t no_client_id = -1;
     return _read_buf.read_exactly(sizeof(raw_request_header))
       .then([this](temporary_buffer<char> buf) {
@@ -315,23 +314,21 @@ future<requests::request_header> kafka_server::connection::read_header() {
           auto client_id_size = be_to_cpu(
             reinterpret_cast<const raw_request_header*>(buf.get())
               ->client_id_size);
-          auto make_header =
-            [buf = std::move(buf)]() -> requests::request_header {
+          auto make_header = [buf = std::move(buf)]() -> request_header {
               auto* raw_header = reinterpret_cast<const raw_request_header*>(
                 buf.get());
-              return requests::request_header{
-                requests::api_key(net::ntoh(raw_header->api_key)),
-                requests::api_version(net::ntoh(raw_header->api_version)),
+              return request_header{
+                api_key(net::ntoh(raw_header->api_key)),
+                api_version(net::ntoh(raw_header->api_version)),
                 net::ntoh(raw_header->correlation_id)};
           };
           if (client_id_size == 0) {
               auto header = make_header();
               header.client_id = std::string_view();
-              return make_ready_future<requests::request_header>(
-                std::move(header));
+              return make_ready_future<request_header>(std::move(header));
           }
           if (client_id_size == no_client_id) {
-              return make_ready_future<requests::request_header>(make_header());
+              return make_ready_future<request_header>(make_header());
           }
           return _read_buf.read_exactly(client_id_size)
             .then([this, make_header = std::move(make_header)](
