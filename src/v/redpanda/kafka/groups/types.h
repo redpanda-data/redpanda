@@ -49,4 +49,6 @@ struct member_protocol {
 
 std::ostream& operator<<(std::ostream&, const member_protocol&);
 
+using assignments_type = std::unordered_map<member_id, bytes>;
+
 } // namespace kafka
