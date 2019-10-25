@@ -63,7 +63,7 @@ public:
 
     /// \brief Handle a LeaveGroup request
     future<requests::leave_group_response>
-    leave_group(requests::leave_group_api&& request) {
+    leave_group(requests::leave_group_request&& request) {
         using reply = requests::leave_group_response;
         return make_ready_future<reply>(reply(kerr::unsupported_version));
     }

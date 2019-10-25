@@ -13,7 +13,7 @@
 
 namespace kafka::requests {
 
-void leave_group_api::decode(request_context& ctx) {
+void leave_group_request::decode(request_context& ctx) {
     auto& reader = ctx.reader();
 
     group_id = kafka::group_id(reader.read_string());
@@ -35,7 +35,7 @@ leave_group_api::process(request_context&& ctx, smp_service_group g) {
     return do_with(
       remote(std::move(ctx)), [g](remote<request_context>& remote_ctx) {
           auto& ctx = remote_ctx.get();
-          leave_group_api request;
+          leave_group_request request;
           request.decode(ctx);
           return ctx.groups()
             .leave_group(std::move(request))
