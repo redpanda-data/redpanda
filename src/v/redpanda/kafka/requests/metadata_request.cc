@@ -77,11 +77,11 @@ metadata_api::process(request_context&& ctx, smp_service_group g) {
                   // until we have real metadata management fake the creation of
                   // the topic in the request to allow the stub to function with
                   // testing clients.
-                  // rw.write(errors::error_code::unknown_topic_or_partition);
-                  rw.write(errors::error_code::leader_not_available);
+                  // rw.write(error_code::unknown_topic_or_partition);
+                  rw.write(error_code::leader_not_available);
                   topic_metadata.emplace(model::topic_metadata{t});
               } else {
-                  rw.write(errors::error_code::none);
+                  rw.write(error_code::none);
               }
               // XXX: for testing we build a fake instance of topic
               // metadata. the kafka-python client throws as exception if a
@@ -99,7 +99,7 @@ metadata_api::process(request_context&& ctx, smp_service_group g) {
               rw.write_array(
                 topic_metadata->partitions,
                 [&ctx](const auto& pm, response_writer& rw) {
-                    rw.write(errors::error_code::none);
+                    rw.write(error_code::none);
                     rw.write(pm.id);
                     rw.write(int32_t(1)); // The leader.
                     // FIXME: Obtain partition replicas.

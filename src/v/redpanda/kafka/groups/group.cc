@@ -288,7 +288,7 @@ void group::finish_joining_members() {
           }
 
           auto reply = requests::join_group_response(
-            errors::error_code::none,
+            error_code::none,
             _generation,
             _protocol.value_or(kafka::protocol_name()),
             _leader.value_or(kafka::member_id()),
@@ -307,7 +307,7 @@ void group::finish_joining_members() {
  * TODO
  * - cancel and re-arm member heartbeat after setting promise value
  */
-void group::finish_syncing_members(errors::error_code error) const {
+void group::finish_syncing_members(error_code error) const {
     std::for_each(
       std::cbegin(_members),
       std::cend(_members),

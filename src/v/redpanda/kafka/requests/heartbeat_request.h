@@ -33,10 +33,10 @@ struct heartbeat_request final {
 
 struct heartbeat_response final {
     std::chrono::milliseconds throttle_time; // >= v1
-    errors::error_code error;
+    error_code error;
 
     // TODO: throttle will be filled in automatically
-    heartbeat_response(errors::error_code error)
+    heartbeat_response(error_code error)
       : throttle_time(0)
       , error(error) {
     }

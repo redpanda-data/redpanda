@@ -27,7 +27,7 @@ static group_member get_member() {
 
 static requests::join_group_response make_join_response() {
     return requests::join_group_response(
-      errors::error_code::none,
+      error_code::none,
       kafka::generation_id(9248282),
       kafka::protocol_name("p"),
       kafka::member_id("m"),

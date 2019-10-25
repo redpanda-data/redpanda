@@ -277,7 +277,7 @@ public:
      * leader has reported member assignments. This method is called by the
      * leader to set the value on the associated promise.
      */
-    void finish_syncing_members(errors::error_code error) const;
+    void finish_syncing_members(error_code error) const;
 
     /**
      * \brief Get the group's associated partition.

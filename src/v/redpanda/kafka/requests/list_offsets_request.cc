@@ -43,7 +43,7 @@ list_offsets_api::process(request_context&& ctx, smp_service_group g) {
             topic.partitions,
             [&ctx](const auto& partition, response_writer& wr) {
                 wr.write(partition.id);
-                wr.write(errors::error_code::none);
+                wr.write(error_code::none);
                 wr.write(int64_t(0));
                 wr.write(int64_t(0));
             });

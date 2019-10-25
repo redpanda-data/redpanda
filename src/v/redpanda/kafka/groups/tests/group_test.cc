@@ -55,7 +55,7 @@ static member_ptr get_member(
 
 static requests::join_group_response join_resp() {
     return requests::join_group_response(
-      errors::error_code::none,
+      error_code::none,
       kafka::generation_id(0),
       kafka::protocol_name("p"),
       kafka::member_id("l"),
@@ -425,10 +425,10 @@ SEASTAR_THREAD_TEST_CASE(finish_syncing) {
     (void)g.add_member(m);
 
     auto f = m->get_sync_response();
-    g.finish_syncing_members(errors::error_code::none);
+    g.finish_syncing_members(error_code::none);
     auto resp = f.get0();
     BOOST_TEST(resp.assignment == bytes("foo"));
-    BOOST_TEST(resp.error == errors::error_code::none);
+    BOOST_TEST(resp.error == error_code::none);
 }
 
 SEASTAR_THREAD_TEST_CASE(finish_joining) {

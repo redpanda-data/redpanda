@@ -52,7 +52,7 @@ struct join_group_response final {
     };
 
     std::chrono::milliseconds throttle_time; // >= v2
-    errors::error_code error;
+    kafka::error_code error;
     kafka::generation_id generation_id;
     kafka::protocol_name protocol_name;
     kafka::member_id leader_id;
@@ -60,7 +60,7 @@ struct join_group_response final {
     std::vector<member_config> members;
 
     join_group_response(
-      errors::error_code error,
+      kafka::error_code error,
       kafka::generation_id generation_id,
       kafka::protocol_name protocol_name,
       kafka::member_id leader_id,

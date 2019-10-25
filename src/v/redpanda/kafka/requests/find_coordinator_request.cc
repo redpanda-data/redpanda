@@ -24,7 +24,7 @@ find_coordinator_api::process(request_context&& ctx, smp_service_group g) {
     if (ctx.header().version >= api_version(1)) {
         resp->writer().write(int32_t(0));
     }
-    resp->writer().write(errors::error_code::none);
+    resp->writer().write(error_code::none);
     if (ctx.header().version >= api_version(1)) {
         std::optional<std::string_view> error_message;
         resp->writer().write(error_message);

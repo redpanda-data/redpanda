@@ -69,8 +69,8 @@ public:
         return serialize_int<uint32_t>(v);
     }
 
-    uint32_t write(kafka::errors::error_code v) {
-        using underlying = std::underlying_type_t<kafka::errors::error_code>;
+    uint32_t write(kafka::error_code v) {
+        using underlying = std::underlying_type_t<kafka::error_code>;
         return serialize_int<underlying>(static_cast<underlying>(v));
     }
 
