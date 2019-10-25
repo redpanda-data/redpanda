@@ -1,8 +1,6 @@
 #pragma once
-
-#include "redpanda/kafka/requests/request_context.h"
-#include "redpanda/kafka/requests/response.h"
-#include "seastarx.h"
+#include "redpanda/kafka/requests/fwd.h"
+#include "redpanda/kafka/types.h"
 
 #include <seastar/core/future.hh>
 

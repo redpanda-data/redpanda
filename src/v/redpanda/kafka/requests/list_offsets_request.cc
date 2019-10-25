@@ -1,13 +1,8 @@
 #include "redpanda/kafka/requests/list_offsets_request.h"
 
-#include "model/metadata.h"
 #include "redpanda/kafka/errors/errors.h"
-
-#include <seastar/util/log.hh>
-
-#include <fmt/ostream.h>
-
-#include <string_view>
+#include "redpanda/kafka/requests/request_context.h"
+#include "redpanda/kafka/requests/response.h"
 
 namespace kafka {
 
