@@ -49,7 +49,7 @@ public:
 
     /// \brief Handle a SyncGroup request
     future<requests::sync_group_response>
-    sync_group(requests::sync_group_api&& request) {
+    sync_group(requests::sync_group_request&& request) {
         using reply = requests::sync_group_response;
         return make_ready_future<reply>(reply(kerr::unsupported_version));
     }
