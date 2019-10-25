@@ -2,6 +2,7 @@
 
 #include "seastarx.h"
 #include "utils/named_type.h"
+#include "redpanda/kafka/types.h"
 
 #include <seastar/core/temporary_buffer.hh>
 
@@ -10,10 +11,6 @@
 #include <string_view>
 
 namespace kafka {
-
-using correlation_type = int32_t;
-using api_key = named_type<int16_t, struct kafka_requests_api_key>;
-using api_version = named_type<int16_t, struct kafka_requests_api_version>;
 
 struct request_header {
     api_key key;
