@@ -89,15 +89,15 @@ private:
     sharded<raft::client_cache> _raft_client_cache;
     sharded<cluster::shard_table> _shard_table;
     sharded<cluster::partition_manager> _partition_manager;
-    sharded<kafka::groups::group_manager> _group_manager;
-    sharded<kafka::groups::group_shard_mapper<cluster::shard_table>>
+    sharded<kafka::group_manager> _group_manager;
+    sharded<kafka::group_shard_mapper<cluster::shard_table>>
       _group_shard_mapper;
     sharded<kafka::group_router_type> _group_router;
     sharded<rpc::server> _rpc;
     sharded<http_server> _admin;
     sharded<cluster::metadata_cache> _metadata_cache;
-    sharded<kafka::transport::quota_manager> _quota_mgr;
+    sharded<kafka::quota_manager> _quota_mgr;
     sharded<kafka::controller_dispatcher> _cntrl_dispatcher;
-    sharded<kafka::transport::kafka_server> _kafka_server;
+    sharded<kafka::kafka_server> _kafka_server;
     std::unique_ptr<cluster::controller> _controller;
 };

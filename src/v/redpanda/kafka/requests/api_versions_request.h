@@ -1,15 +1,14 @@
 #pragma once
 
-#include "redpanda/kafka/requests/headers.h"
 #include "redpanda/kafka/requests/request_context.h"
 #include "redpanda/kafka/requests/response.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>
 
-namespace kafka::requests {
+namespace kafka {
 
-class api_versions_request final {
+class api_versions_api final {
     static constexpr api_version v0 = api_version(0);
 
 public:
@@ -21,4 +20,4 @@ public:
     static future<response_ptr> process(request_context&&, smp_service_group);
 };
 
-} // namespace kafka::requests
+} // namespace kafka

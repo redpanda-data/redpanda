@@ -3,7 +3,6 @@
 #include "cluster/metadata_cache.h"
 #include "model/metadata.h"
 #include "redpanda/kafka/errors/errors.h"
-#include "redpanda/kafka/requests/headers.h"
 
 #include <seastar/core/thread.hh>
 
@@ -11,7 +10,7 @@
 
 #include <string_view>
 
-namespace kafka::requests {
+namespace kafka {
 
 // Possible topic-level error codes:
 //  unknown_topic_or_partition
@@ -23,7 +22,7 @@ namespace kafka::requests {
 //  listener_not_found
 //  replica_not_available
 future<response_ptr>
-metadata_request::process(request_context&& ctx, smp_service_group g) {
+metadata_api::process(request_context&& ctx, smp_service_group g) {
     return async([ctx = std::move(ctx)]() mutable {
         auto topics = ctx.reader().read_array([](request_reader& r) {
             return model::topic_view(r.read_string_view());
@@ -77,11 +76,11 @@ metadata_request::process(request_context&& ctx, smp_service_group g) {
                   // until we have real metadata management fake the creation of
                   // the topic in the request to allow the stub to function with
                   // testing clients.
-                  // rw.write(errors::error_code::unknown_topic_or_partition);
-                  rw.write(errors::error_code::leader_not_available);
+                  // rw.write(error_code::unknown_topic_or_partition);
+                  rw.write(error_code::leader_not_available);
                   topic_metadata.emplace(model::topic_metadata{t});
               } else {
-                  rw.write(errors::error_code::none);
+                  rw.write(error_code::none);
               }
               // XXX: for testing we build a fake instance of topic
               // metadata. the kafka-python client throws as exception if a
@@ -99,7 +98,7 @@ metadata_request::process(request_context&& ctx, smp_service_group g) {
               rw.write_array(
                 topic_metadata->partitions,
                 [&ctx](const auto& pm, response_writer& rw) {
-                    rw.write(errors::error_code::none);
+                    rw.write(error_code::none);
                     rw.write(pm.id);
                     rw.write(int32_t(1)); // The leader.
                     // FIXME: Obtain partition replicas.
@@ -125,4 +124,4 @@ metadata_request::process(request_context&& ctx, smp_service_group g) {
     });
 }
 
-} // namespace kafka::requests
+} // namespace kafka

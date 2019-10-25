@@ -1,28 +1,22 @@
 #pragma once
-
-#include "redpanda/kafka/groups/types.h"
-#include "redpanda/kafka/requests/headers.h"
-#include "redpanda/kafka/requests/response.h"
-#include "seastarx.h"
+#include "redpanda/kafka/errors/errors.h"
+#include "redpanda/kafka/requests/fwd.h"
+#include "redpanda/kafka/types.h"
 
 #include <seastar/core/future.hh>
 
-namespace kafka::requests {
+namespace kafka {
 
-class request_context;
-class response;
-using response_ptr = foreign_ptr<std::unique_ptr<response>>;
-
-struct join_group_request final {
-    // api
+struct join_group_api final {
     static constexpr const char* name = "join group";
     static constexpr api_key key = api_key(11);
     static constexpr api_version min_supported = api_version(0);
     static constexpr api_version max_supported = api_version(3);
 
     static future<response_ptr> process(request_context&&, smp_service_group);
+};
 
-    // request message
+struct join_group_request final {
     kafka::group_id group_id;
     std::chrono::milliseconds session_timeout;
     std::chrono::milliseconds rebalance_timeout; // >= v1
@@ -52,7 +46,7 @@ struct join_group_response final {
     };
 
     std::chrono::milliseconds throttle_time; // >= v2
-    errors::error_code error;
+    kafka::error_code error;
     kafka::generation_id generation_id;
     kafka::protocol_name protocol_name;
     kafka::member_id leader_id;
@@ -60,7 +54,7 @@ struct join_group_response final {
     std::vector<member_config> members;
 
     join_group_response(
-      errors::error_code error,
+      kafka::error_code error,
       kafka::generation_id generation_id,
       kafka::protocol_name protocol_name,
       kafka::member_id leader_id,
@@ -80,4 +74,4 @@ struct join_group_response final {
 
 std::ostream& operator<<(std::ostream&, const join_group_response&);
 
-} // namespace kafka::requests
+} // namespace kafka

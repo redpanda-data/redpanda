@@ -9,10 +9,10 @@
 
 #include <string_view>
 
-namespace kafka::requests {
+namespace kafka {
 
 future<response_ptr>
-find_coordinator_request::process(request_context&& ctx, smp_service_group g) {
+find_coordinator_api::process(request_context&& ctx, smp_service_group g) {
     // request
     auto key = ctx.reader().read_string();
     std::optional<int8_t> key_type;
@@ -24,7 +24,7 @@ find_coordinator_request::process(request_context&& ctx, smp_service_group g) {
     if (ctx.header().version >= api_version(1)) {
         resp->writer().write(int32_t(0));
     }
-    resp->writer().write(errors::error_code::none);
+    resp->writer().write(error_code::none);
     if (ctx.header().version >= api_version(1)) {
         std::optional<std::string_view> error_message;
         resp->writer().write(error_message);
@@ -36,4 +36,4 @@ find_coordinator_request::process(request_context&& ctx, smp_service_group g) {
     return make_ready_future<response_ptr>(std::move(resp));
 }
 
-} // namespace kafka::requests
+} // namespace kafka

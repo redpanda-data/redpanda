@@ -17,11 +17,11 @@
 
 #include <string_view>
 
-namespace kafka::requests {
+namespace kafka {
 
 struct partition_result {
     model::partition_id partition;
-    errors::error_code error;
+    error_code error;
     model::offset base_offset;
     model::timestamp log_append_time;
     int64_t log_start_offset;
@@ -73,7 +73,7 @@ using execution_stage_type = inheriting_concrete_execution_stage<
 static thread_local execution_stage_type produce_stage{"produce", &do_process};
 
 future<response_ptr>
-produce_request::process(request_context&& ctx, smp_service_group g) {
+produce_api::process(request_context&& ctx, smp_service_group g) {
     return do_with(
       remote(std::move(ctx)), [g](remote<request_context>& remote_ctx) {
           auto& ctx = remote_ctx.get();
@@ -124,4 +124,4 @@ produce_request::process(request_context&& ctx, smp_service_group g) {
       });
 }
 
-} // namespace kafka::requests
+} // namespace kafka

@@ -5,7 +5,7 @@
 #include "utils/fragbuf.h"
 #include "utils/vint.h"
 
-namespace kafka::requests {
+namespace kafka {
 
 namespace internal {
 
@@ -35,4 +35,4 @@ constexpr size_t kafka_header_overhead = sizeof(int32_t) + // The batch length
 
 model::record_batch_reader reader_from_kafka_batch(fragbuf&&);
 
-} // namespace kafka::requests
+} // namespace kafka

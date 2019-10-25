@@ -23,11 +23,11 @@
 #include <streambuf>
 #include <utility>
 
-namespace kafka::groups {
+namespace kafka {
 
 logger log("k:groups");
 
-using member_config = requests::join_group_response::member_config;
+using member_config = join_group_response::member_config;
 
 bool group::valid_previous_state(group_state s) const {
     using g = group_state;
@@ -57,7 +57,7 @@ void group::set_state(group_state s) {
     _state = s;
 }
 
-bool group::supports_protocols(const requests::join_group_request& r) {
+bool group::supports_protocols(const join_group_request& r) {
     // first member decides so make sure its defined
     if (in_state(group_state::empty)) {
         return !r.protocol_type().empty() && !r.protocols.empty();
@@ -79,7 +79,7 @@ bool group::supports_protocols(const requests::join_group_request& r) {
       });
 }
 
-future<requests::join_group_response> group::add_member(member_ptr member) {
+future<join_group_response> group::add_member(member_ptr member) {
     if (_members.empty()) {
         _protocol_type = member->protocol_type();
     }
@@ -104,7 +104,7 @@ future<requests::join_group_response> group::add_member(member_ptr member) {
     return member->get_join_response();
 }
 
-future<requests::join_group_response> group::update_member(
+future<join_group_response> group::update_member(
   member_ptr member, std::vector<member_protocol>&& new_protocols) {
     // subtract out old protocols
     member->for_each_protocol(
@@ -120,9 +120,8 @@ future<requests::join_group_response> group::update_member(
         return member->get_join_response();
     }
 
-    return make_exception_future<requests::join_group_response>(
-      std::runtime_error(
-        fmt::format("updating non-joining member {}", member->id())));
+    return make_exception_future<join_group_response>(std::runtime_error(
+      fmt::format("updating non-joining member {}", member->id())));
 }
 
 group::duration_type group::rebalance_timeout() const {
@@ -287,8 +286,8 @@ void group::finish_joining_members() {
               md = member_metadata();
           }
 
-          auto reply = requests::join_group_response(
-            errors::error_code::none,
+          auto reply = join_group_response(
+            error_code::none,
             _generation,
             _protocol.value_or(kafka::protocol_name()),
             _leader.value_or(kafka::member_id()),
@@ -307,7 +306,7 @@ void group::finish_joining_members() {
  * TODO
  * - cancel and re-arm member heartbeat after setting promise value
  */
-void group::finish_syncing_members(errors::error_code error) const {
+void group::finish_syncing_members(error_code error) const {
     std::for_each(
       std::cbegin(_members),
       std::cend(_members),
@@ -316,7 +315,7 @@ void group::finish_syncing_members(errors::error_code error) const {
           if (!member->is_syncing()) {
               return;
           }
-          auto reply = requests::sync_group_response(member->assignment());
+          auto reply = sync_group_response(member->assignment());
           log.debug("set sync response for member {}", member);
           member->set_sync_response(std::move(reply));
       });
@@ -354,8 +353,7 @@ bool group::leader_rejoined() {
     }
 }
 
-kafka::member_id
-group::generate_member_id(const requests::join_group_request& r) {
+kafka::member_id group::generate_member_id(const join_group_request& r) {
     auto client_id = r.client_id ? *r.client_id : "";
     auto id = r.group_instance_id ? (*r.group_instance_id)() : client_id;
     boost::uuids::uuid uuid = boost::uuids::random_generator()();
@@ -394,4 +392,4 @@ std::ostream& operator<<(std::ostream& o, group_state gs) {
     }
 }
 
-} // namespace kafka::groups
+} // namespace kafka

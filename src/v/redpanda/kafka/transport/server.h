@@ -1,6 +1,5 @@
 #pragma once
 
-#include "redpanda/kafka/requests/headers.h"
 #include "redpanda/kafka/requests/request_context.h"
 #include "redpanda/kafka/transport/probe.h"
 #include "redpanda/kafka/transport/quota_manager.h"
@@ -29,7 +28,7 @@ namespace cluster {
 class metadata_cache;
 }
 
-namespace kafka::requests {
+namespace kafka {
 struct request_header;
 }
 
@@ -37,7 +36,7 @@ namespace kafka {
 class controller_dispatcher;
 }
 
-namespace kafka::transport {
+namespace kafka {
 
 using size_type = int32_t;
 
@@ -46,13 +45,13 @@ using size_type = int32_t;
 struct [[gnu::packed]] raw_request_header {
     unaligned<int16_t> api_key;
     unaligned<int16_t> api_version;
-    unaligned<requests::correlation_type> correlation_id;
+    unaligned<correlation_type> correlation_id;
     unaligned<int16_t> client_id_size;
 };
 
 struct [[gnu::packed]] raw_response_header {
     unaligned<size_type> size;
-    unaligned<requests::correlation_type> correlation_id;
+    unaligned<correlation_type> correlation_id;
 };
 
 struct kafka_server_config {
@@ -87,10 +86,9 @@ private:
     private:
         future<> process_request();
         size_t process_size(temporary_buffer<char>&&);
-        future<requests::request_header> read_header();
-        void do_process(requests::request_context&&, semaphore_units<>&&);
-        future<>
-        write_response(requests::response_ptr&&, requests::correlation_type);
+        future<request_header> read_header();
+        void do_process(request_context&&, semaphore_units<>&&);
+        future<> write_response(response_ptr&&, correlation_type);
 
     private:
         kafka_server& _server;
@@ -121,4 +119,4 @@ private:
     sharded<kafka::group_router_type>& _group_router;
 };
 
-} // namespace kafka::transport
+} // namespace kafka

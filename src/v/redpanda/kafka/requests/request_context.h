@@ -4,7 +4,6 @@
 #include "redpanda/kafka/groups/group_manager.h"
 #include "redpanda/kafka/groups/group_router.h"
 #include "redpanda/kafka/groups/group_shard_mapper.h"
-#include "redpanda/kafka/requests/headers.h"
 #include "redpanda/kafka/requests/request_reader.h"
 #include "seastarx.h"
 #include "utils/fragbuf.h"
@@ -21,17 +20,23 @@ class metadata_cache;
 }
 
 namespace kafka {
-using group_router_type = kafka::groups::group_router<
-  kafka::groups::group_manager,
-  kafka::groups::group_shard_mapper<cluster::shard_table>>;
-}
+using group_router_type = kafka::group_router<
+  kafka::group_manager,
+  kafka::group_shard_mapper<cluster::shard_table>>;
 
-namespace kafka {
 class controller_dispatcher;
-}
 
-namespace kafka::requests {
 extern logger kreq_log;
+
+struct request_header {
+    api_key key;
+    api_version version;
+    correlation_type correlation_id;
+    temporary_buffer<char> client_id_buffer;
+    std::optional<std::string_view> client_id;
+};
+
+std::ostream& operator<<(std::ostream&, const request_header&);
 
 class request_context {
 public:
@@ -95,4 +100,4 @@ using response_ptr = foreign_ptr<std::unique_ptr<response>>;
 // Executes the API call identified by the specified request_context.
 future<response_ptr> process_request(request_context&&, smp_service_group);
 
-} // namespace kafka::requests
+} // namespace kafka

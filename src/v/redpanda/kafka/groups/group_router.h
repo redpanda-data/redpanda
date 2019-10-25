@@ -1,9 +1,9 @@
 #pragma once
-#include "redpanda/kafka/groups/types.h"
 #include "redpanda/kafka/requests/heartbeat_request.h"
 #include "redpanda/kafka/requests/join_group_request.h"
 #include "redpanda/kafka/requests/leave_group_request.h"
 #include "redpanda/kafka/requests/sync_group_request.h"
+#include "redpanda/kafka/types.h"
 #include "seastarx.h"
 #include "utils/concepts-enabled.h"
 
@@ -11,7 +11,7 @@
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/sharded.hh>
 
-namespace kafka::groups {
+namespace kafka {
 
 // clang-format off
 CONCEPT(
@@ -19,22 +19,22 @@ template <typename T>
 concept GroupManager =
 requires(
   T m,
-  requests::join_group_request&& join_request,
-  requests::sync_group_request&& sync_request,
-  requests::heartbeat_request&& heartbeat_request,
-  requests::leave_group_request&& leave_request) {
+  join_group_request&& join_request,
+  sync_group_request&& sync_request,
+  heartbeat_request&& heartbeat_request,
+  leave_group_request&& leave_request) {
 
     { m.join_group(std::move(join_request)) } ->
-        future<requests::join_group_response>;
+        future<join_group_response>;
 
     { m.sync_group(std::move(sync_request)) } ->
-        future<requests::sync_group_response>;
+        future<sync_group_response>;
 
     { m.heartbeat(std::move(heartbeat_request)) } ->
-        future<requests::heartbeat_response>;
+        future<heartbeat_response>;
 
     { m.leave_group(std::move(leave_request)) } ->
-        future<requests::leave_group_response>;
+        future<leave_group_response>;
 };
 
 template<typename T>
@@ -66,8 +66,7 @@ public:
       , _shards(shards.local()) {
     }
 
-    future<requests::join_group_response> join_group(
-      requests::join_group_request&& request) {
+    future<join_group_response> join_group(join_group_request&& request) {
         auto shard = _shards.shard_for(request.group_id);
         return with_scheduling_group(
           _sg, [this, shard, request = std::move(request)]() mutable {
@@ -80,8 +79,7 @@ public:
           });
     }
 
-    future<requests::sync_group_response>
-    sync_group(requests::sync_group_request&& request) {
+    future<sync_group_response> sync_group(sync_group_request&& request) {
         auto shard = _shards.shard_for(request.group_id);
         return with_scheduling_group(
           _sg, [this, shard, request = std::move(request)]() mutable {
@@ -94,8 +92,7 @@ public:
           });
     }
 
-    future<requests::heartbeat_response>
-    heartbeat(requests::heartbeat_request&& request) {
+    future<heartbeat_response> heartbeat(heartbeat_request&& request) {
         auto shard = _shards.shard_for(request.group_id);
         return with_scheduling_group(
           _sg, [this, shard, request = std::move(request)]() mutable {
@@ -108,8 +105,7 @@ public:
           });
     }
 
-    future<requests::leave_group_response>
-    leave_group(requests::leave_group_request&& request) {
+    future<leave_group_response> leave_group(leave_group_request&& request) {
         auto shard = _shards.shard_for(request.group_id);
         return with_scheduling_group(
           _sg, [this, shard, request = std::move(request)]() mutable {
@@ -129,4 +125,4 @@ private:
     Shards& _shards;
 };
 
-} // namespace kafka::groups
+} // namespace kafka

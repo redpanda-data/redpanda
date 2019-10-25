@@ -8,7 +8,7 @@
 
 #include <memory>
 
-namespace kafka::requests {
+namespace kafka {
 
 class response {
 public:
@@ -31,4 +31,4 @@ private:
 
 using response_ptr = foreign_ptr<std::unique_ptr<response>>;
 
-} // namespace kafka::requests
+} // namespace kafka

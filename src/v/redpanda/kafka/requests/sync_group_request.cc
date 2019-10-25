@@ -1,17 +1,10 @@
 #include "redpanda/kafka/requests/sync_group_request.h"
 
-#include "model/metadata.h"
-#include "redpanda/kafka/errors/errors.h"
 #include "redpanda/kafka/requests/request_context.h"
+#include "redpanda/kafka/requests/response.h"
 #include "utils/remote.h"
 
-#include <seastar/util/log.hh>
-
-#include <fmt/ostream.h>
-
-#include <string_view>
-
-namespace kafka::requests {
+namespace kafka {
 
 void sync_group_request::decode(request_context& ctx) {
     auto& reader = ctx.reader();
@@ -45,7 +38,7 @@ void sync_group_response::encode(const request_context& ctx, response& resp) {
 }
 
 future<response_ptr>
-sync_group_request::process(request_context&& ctx, smp_service_group g) {
+sync_group_api::process(request_context&& ctx, smp_service_group g) {
     return do_with(
       remote(std::move(ctx)), [g](remote<request_context>& remote_ctx) {
           auto& ctx = remote_ctx.get();
@@ -61,4 +54,4 @@ sync_group_request::process(request_context&& ctx, smp_service_group g) {
       });
 }
 
-} // namespace kafka::requests
+} // namespace kafka

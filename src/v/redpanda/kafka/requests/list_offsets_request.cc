@@ -1,15 +1,10 @@
 #include "redpanda/kafka/requests/list_offsets_request.h"
 
-#include "model/metadata.h"
 #include "redpanda/kafka/errors/errors.h"
+#include "redpanda/kafka/requests/request_context.h"
+#include "redpanda/kafka/requests/response.h"
 
-#include <seastar/util/log.hh>
-
-#include <fmt/ostream.h>
-
-#include <string_view>
-
-namespace kafka::requests {
+namespace kafka {
 
 struct partition {
     int32_t id;
@@ -22,7 +17,7 @@ struct topic {
 };
 
 future<response_ptr>
-list_offsets_request::process(request_context&& ctx, smp_service_group g) {
+list_offsets_api::process(request_context&& ctx, smp_service_group g) {
     auto replica_id = ctx.reader().read_int32();
     auto topics = ctx.reader().read_array([&ctx](request_reader& r) {
         auto name = r.read_string();
@@ -43,7 +38,7 @@ list_offsets_request::process(request_context&& ctx, smp_service_group g) {
             topic.partitions,
             [&ctx](const auto& partition, response_writer& wr) {
                 wr.write(partition.id);
-                wr.write(errors::error_code::none);
+                wr.write(error_code::none);
                 wr.write(int64_t(0));
                 wr.write(int64_t(0));
             });
@@ -52,4 +47,4 @@ list_offsets_request::process(request_context&& ctx, smp_service_group g) {
     return make_ready_future<response_ptr>(std::move(resp));
 }
 
-} // namespace kafka::requests
+} // namespace kafka

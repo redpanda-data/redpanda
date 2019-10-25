@@ -14,7 +14,7 @@
 /// This is a set of functions allowing to easily validate and generate errors
 /// for topic request items.
 
-namespace kafka::requests {
+namespace kafka {
 // clang-format off
 CONCEPT(
 template<typename T> 
@@ -32,11 +32,10 @@ concept TopicResultIterator = requires (Iterator it) {
 /// Generates failed topic_op_result for single topic request item
 template<typename T>
 CONCEPT(requires TopicRequestItem<T>)
-topic_op_result
-  generate_error(T item, errors::error_code code, const sstring& msg) {
+topic_op_result generate_error(T item, error_code code, const sstring& msg) {
     return topic_op_result{.topic = model::topic{sstring(item.topic())},
-                        .error_code = code,
-                        .err_msg = msg};
+                           .error_code = code,
+                           .err_msg = msg};
 }
 
 /// Generates successfull topic_op_result for single topic request item
@@ -44,7 +43,7 @@ template<typename T>
 CONCEPT(requires TopicRequestItem<T>)
 topic_op_result generate_successfull_result(T item) {
     return topic_op_result{.topic = model::topic{sstring(item.topic())},
-                        .error_code = errors::error_code::none};
+                           .error_code = error_code::none};
 }
 
 /// Validates topic requests items in range with predicate,
@@ -64,7 +63,7 @@ Iter validate_requests_range(
   Iter begin,
   Iter end,
   ErrIter out_it,
-  errors::error_code code,
+  error_code code,
   const sstring& error_msg,
   Predicate&& p) {
     auto valid_range_end = std::partition(begin, end, p);
@@ -86,7 +85,8 @@ Iter validate_requests_range(
   Iter begin,
   Iter end,
   ErrIter err_it,
-  validator_type_list<typename Iter::value_type, ValidatorTypes...> validators) {
+  validator_type_list<typename Iter::value_type, ValidatorTypes...>
+    validators) {
     ((end = validate_requests_range(
         begin,
         end,
@@ -156,7 +156,7 @@ Iter validate_range_duplicates(Iter begin, Iter end, ErrIter out_it) {
       begin, end, [&freq](const type& item) { return freq[item.topic] == 1; });
     std::transform(valid_range_end, end, out_it, [](const type& item) {
         return generate_error(
-          item, errors::error_code::invalid_request, "Duplicated topic");
+          item, error_code::invalid_request, "Duplicated topic");
     });
     return valid_range_end;
 }
@@ -172,8 +172,8 @@ void generate_not_controller_errors(Iter begin, Iter end, ErrIter out_it) {
       begin, end, out_it, [](const typename Iter::value_type& item) {
           return generate_error(
             item,
-            errors::error_code::not_controller,
+            error_code::not_controller,
             "Current node is not a cluster controller");
       });
 }
-} // namespace kafka::requests
+} // namespace kafka
