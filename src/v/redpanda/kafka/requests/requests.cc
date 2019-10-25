@@ -2,7 +2,6 @@
 #include "redpanda/kafka/requests/create_topics_request.h"
 #include "redpanda/kafka/requests/fetch_request.h"
 #include "redpanda/kafka/requests/find_coordinator_request.h"
-#include "redpanda/kafka/requests/headers.h"
 #include "redpanda/kafka/requests/heartbeat_request.h"
 #include "redpanda/kafka/requests/join_group_request.h"
 #include "redpanda/kafka/requests/leave_group_request.h"

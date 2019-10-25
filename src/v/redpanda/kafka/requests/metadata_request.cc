@@ -3,7 +3,6 @@
 #include "cluster/metadata_cache.h"
 #include "model/metadata.h"
 #include "redpanda/kafka/errors/errors.h"
-#include "redpanda/kafka/requests/headers.h"
 
 #include <seastar/core/thread.hh>
 

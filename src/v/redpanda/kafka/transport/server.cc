@@ -1,7 +1,6 @@
 #include "redpanda/kafka/transport/server.h"
 
 #include "prometheus/prometheus_sanitize.h"
-#include "redpanda/kafka/requests/headers.h"
 #include "redpanda/kafka/requests/request_context.h"
 #include "redpanda/kafka/requests/response.h"
 #include "utils/utf8.h"

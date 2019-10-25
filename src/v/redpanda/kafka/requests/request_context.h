@@ -4,7 +4,6 @@
 #include "redpanda/kafka/groups/group_manager.h"
 #include "redpanda/kafka/groups/group_router.h"
 #include "redpanda/kafka/groups/group_shard_mapper.h"
-#include "redpanda/kafka/requests/headers.h"
 #include "redpanda/kafka/requests/request_reader.h"
 #include "seastarx.h"
 #include "utils/fragbuf.h"
@@ -28,6 +27,16 @@ using group_router_type = kafka::group_router<
 class controller_dispatcher;
 
 extern logger kreq_log;
+
+struct request_header {
+    api_key key;
+    api_version version;
+    correlation_type correlation_id;
+    temporary_buffer<char> client_id_buffer;
+    std::optional<std::string_view> client_id;
+};
+
+std::ostream& operator<<(std::ostream&, const request_header&);
 
 class request_context {
 public:

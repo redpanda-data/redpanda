@@ -1,6 +1,5 @@
 #pragma once
 
-#include "redpanda/kafka/requests/headers.h"
 #include "redpanda/kafka/requests/request_context.h"
 #include "redpanda/kafka/requests/response.h"
 #include "redpanda/kafka/requests/topics/types.h"
