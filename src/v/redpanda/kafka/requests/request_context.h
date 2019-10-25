@@ -21,9 +21,9 @@ class metadata_cache;
 }
 
 namespace kafka {
-using group_router_type = kafka::groups::group_router<
-  kafka::groups::group_manager,
-  kafka::groups::group_shard_mapper<cluster::shard_table>>;
+using group_router_type = kafka::group_router<
+  kafka::group_manager,
+  kafka::group_shard_mapper<cluster::shard_table>>;
 }
 
 namespace kafka {

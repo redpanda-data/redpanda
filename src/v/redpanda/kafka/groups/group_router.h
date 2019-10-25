@@ -11,7 +11,7 @@
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/sharded.hh>
 
-namespace kafka::groups {
+namespace kafka {
 
 // clang-format off
 CONCEPT(
@@ -129,4 +129,4 @@ private:
     Shards& _shards;
 };
 
-} // namespace kafka::groups
+} // namespace kafka

@@ -10,7 +10,7 @@
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
 
-namespace kafka::groups {
+namespace kafka {
 
 static auto split_member_id(const sstring& m) {
     auto p = m.find("-");
@@ -85,7 +85,7 @@ BOOST_AUTO_TEST_CASE(set_state) {
     BOOST_TEST(g.state() == group_state::preparing_rebalance);
 }
 
-BOOST_AUTO_TEST_CASE(generation) {
+BOOST_AUTO_TEST_CASE(get_generation) {
     auto g = get();
     BOOST_TEST(g.generation() == 0);
 }
@@ -531,4 +531,4 @@ BOOST_AUTO_TEST_CASE(group_state_output) {
     BOOST_TEST(s == "preparing_rebalance");
 }
 
-} // namespace kafka::groups
+} // namespace kafka

@@ -17,7 +17,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace kafka::groups {
+namespace kafka {
 
 /**
  * \defgroup kafka-groups Kafka group membership API
@@ -332,4 +332,4 @@ std::ostream& operator<<(std::ostream&, const group&);
 
 /// @}
 
-} // namespace kafka::groups
+} // namespace kafka

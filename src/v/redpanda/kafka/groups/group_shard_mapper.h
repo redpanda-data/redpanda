@@ -8,7 +8,7 @@
 
 #include <seastar/core/reactor.hh>
 
-namespace kafka::groups {
+namespace kafka {
 
 // clang-format off
 CONCEPT(
@@ -52,4 +52,4 @@ private:
     Shards& _shards;
 };
 
-} // namespace kafka::groups
+} // namespace kafka

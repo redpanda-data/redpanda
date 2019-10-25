@@ -23,7 +23,7 @@
 #include <streambuf>
 #include <utility>
 
-namespace kafka::groups {
+namespace kafka {
 
 logger log("k:groups");
 
@@ -394,4 +394,4 @@ std::ostream& operator<<(std::ostream& o, group_state gs) {
     }
 }
 
-} // namespace kafka::groups
+} // namespace kafka

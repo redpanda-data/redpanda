@@ -11,7 +11,7 @@
 
 #include <cluster/partition_manager.h>
 
-namespace kafka::groups {
+namespace kafka {
 
 static inline const kafka::member_id no_leader("");
 static inline const kafka::generation_id no_generation(-1);
@@ -84,4 +84,4 @@ private:
     cluster::partition_manager& _partitions;
 };
 
-} // namespace kafka::groups
+} // namespace kafka
