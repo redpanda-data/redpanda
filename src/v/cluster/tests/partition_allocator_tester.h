@@ -17,7 +17,7 @@ struct partition_allocator_tester {
               model::node_id(_prng()),
               random_generators::gen_alphanum_string(10),
               _prng(),
-              random_generators::gen_alphanum_string(10));
+              std::nullopt);
             pa.register_node(std::make_unique<allocation_node>(
               std::move(bi), cpus, std::unordered_map<sstring, sstring>()));
         }
