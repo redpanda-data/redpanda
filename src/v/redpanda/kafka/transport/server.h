@@ -37,7 +37,7 @@ namespace kafka {
 class controller_dispatcher;
 }
 
-namespace kafka::transport {
+namespace kafka {
 
 using size_type = int32_t;
 
@@ -121,4 +121,4 @@ private:
     sharded<kafka::group_router_type>& _group_router;
 };
 
-} // namespace kafka::transport
+} // namespace kafka

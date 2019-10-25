@@ -15,7 +15,7 @@
 
 #include <fmt/format.h>
 
-namespace kafka::transport {
+namespace kafka {
 
 static logger klog("kafka_server");
 
@@ -245,8 +245,7 @@ future<> kafka_server::connection::process_request() {
                                                   delay)]() mutable {
                         auto remaining = size - sizeof(raw_request_header)
                                          - header.client_id_buffer.size();
-                        return _buffer_reader
-                          .read_exactly(_read_buf, remaining)
+                        return _buffer_reader.read_exactly(_read_buf, remaining)
                           .then(
                             [this,
                              header = std::move(header),
@@ -352,4 +351,4 @@ future<requests::request_header> kafka_server::connection::read_header() {
       });
 }
 
-} // namespace kafka::transport
+} // namespace kafka

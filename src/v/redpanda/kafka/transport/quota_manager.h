@@ -11,7 +11,7 @@
 #include <string_view>
 #include <unordered_map>
 
-namespace kafka::transport {
+namespace kafka {
 
 // quota_manager tracks quota usage
 //
@@ -151,4 +151,4 @@ private:
     const clock::duration _gc_freq;
 };
 
-} // namespace kafka::transport
+} // namespace kafka

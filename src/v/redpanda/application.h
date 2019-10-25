@@ -96,8 +96,8 @@ private:
     sharded<rpc::server> _rpc;
     sharded<http_server> _admin;
     sharded<cluster::metadata_cache> _metadata_cache;
-    sharded<kafka::transport::quota_manager> _quota_mgr;
+    sharded<kafka::quota_manager> _quota_mgr;
     sharded<kafka::controller_dispatcher> _cntrl_dispatcher;
-    sharded<kafka::transport::kafka_server> _kafka_server;
+    sharded<kafka::kafka_server> _kafka_server;
     std::unique_ptr<cluster::controller> _controller;
 };

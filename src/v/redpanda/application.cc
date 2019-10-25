@@ -206,7 +206,7 @@ void application::wire_up_services() {
       _conf.local().target_quota_byte_rate(),
       _conf.local().quota_manager_gc_sec())
       .get();
-    _quota_mgr.invoke_on_all(&kafka::transport::quota_manager::start).get();
+    _quota_mgr.invoke_on_all(&kafka::quota_manager::start).get();
 
     construct_service(
       _cntrl_dispatcher,
@@ -218,14 +218,14 @@ void application::wire_up_services() {
     // Kafka API
     auto kafka_creds
       = _conf.local().kafka_api_tls().get_credentials_builder().get0();
-    kafka::transport::kafka_server_config server_config = {
+    kafka::kafka_server_config server_config = {
       // FIXME: Add memory manager
       memory::stats().total_memory() / 10,
       _smp_groups.kafka_smp_sg(),
       kafka_creds};
     construct_service(
       _kafka_server,
-      kafka::transport::probe(),
+      kafka::probe(),
       std::ref(_metadata_cache),
       std::ref(_cntrl_dispatcher),
       std::move(server_config),
@@ -234,7 +234,7 @@ void application::wire_up_services() {
       .get();
 
     _kafka_server
-      .invoke_on_all([this](kafka::transport::kafka_server& server) mutable {
+      .invoke_on_all([this](kafka::kafka_server& server) mutable {
           // FIXME: Configure keepalive.
           return server.listen(_conf.local().kafka_api(), false);
       })
