@@ -1,5 +1,5 @@
 #include "redpanda/kafka/groups/member.h"
-#include "redpanda/kafka/groups/types.h"
+#include "redpanda/kafka/types.h"
 #include "seastarx.h"
 #include "utils/to_string.h"
 

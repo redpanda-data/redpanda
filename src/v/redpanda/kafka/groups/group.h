@@ -2,8 +2,8 @@
 #include "model/fundamental.h"
 #include "redpanda/kafka/errors/errors.h"
 #include "redpanda/kafka/groups/member.h"
-#include "redpanda/kafka/groups/types.h"
 #include "redpanda/kafka/requests/join_group_request.h"
+#include "redpanda/kafka/types.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>
