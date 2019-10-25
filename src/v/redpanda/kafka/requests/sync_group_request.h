@@ -1,6 +1,6 @@
 #pragma once
 
-#include "redpanda/kafka/groups/types.h"
+#include "redpanda/kafka/types.h"
 #include "redpanda/kafka/requests/headers.h"
 #include "redpanda/kafka/requests/response.h"
 #include "seastarx.h"

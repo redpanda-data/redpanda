@@ -1,8 +1,8 @@
 #pragma once
 #include "bytes/bytes.h"
-#include "redpanda/kafka/groups/types.h"
 #include "redpanda/kafka/requests/join_group_request.h"
 #include "redpanda/kafka/requests/sync_group_request.h"
+#include "redpanda/kafka/types.h"
 #include "utils/concepts-enabled.h"
 
 #include <seastar/core/future.hh>
