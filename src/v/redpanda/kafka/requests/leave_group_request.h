@@ -1,16 +1,11 @@
 #pragma once
-
+#include "redpanda/kafka/errors/errors.h"
+#include "redpanda/kafka/requests/fwd.h"
 #include "redpanda/kafka/types.h"
-#include "redpanda/kafka/requests/response.h"
-#include "seastarx.h"
 
 #include <seastar/core/future.hh>
 
 namespace kafka {
-
-class request_context;
-class response;
-using response_ptr = foreign_ptr<std::unique_ptr<response>>;
 
 struct leave_group_api final {
     static constexpr const char* name = "leave group";
