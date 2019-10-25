@@ -57,7 +57,7 @@ void group::set_state(group_state s) {
     _state = s;
 }
 
-bool group::supports_protocols(const requests::join_group_api& r) {
+bool group::supports_protocols(const requests::join_group_request& r) {
     // first member decides so make sure its defined
     if (in_state(group_state::empty)) {
         return !r.protocol_type().empty() && !r.protocols.empty();
@@ -354,7 +354,8 @@ bool group::leader_rejoined() {
     }
 }
 
-kafka::member_id group::generate_member_id(const requests::join_group_api& r) {
+kafka::member_id
+group::generate_member_id(const requests::join_group_request& r) {
     auto client_id = r.client_id ? *r.client_id : "";
     auto id = r.group_instance_id ? (*r.group_instance_id)() : client_id;
     boost::uuids::uuid uuid = boost::uuids::random_generator()();

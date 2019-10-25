@@ -20,7 +20,7 @@ std::ostream& operator<<(std::ostream& o, const member_protocol& p) {
 
 namespace kafka::requests {
 
-void join_group_api::decode(request_context& ctx) {
+void join_group_request::decode(request_context& ctx) {
     auto& reader = ctx.reader();
 
     version = ctx.header().version;
@@ -49,7 +49,7 @@ void join_group_api::decode(request_context& ctx) {
     });
 }
 
-std::ostream& operator<<(std::ostream& o, const join_group_api& r) {
+std::ostream& operator<<(std::ostream& o, const join_group_request& r) {
     return fmt_print(
       o,
       "group={} member={} group_inst={} proto_type={} timeout={}/{} v{} "
@@ -110,7 +110,7 @@ join_group_api::process(request_context&& ctx, smp_service_group g) {
     return do_with(
       remote(std::move(ctx)), [g](remote<request_context>& remote_ctx) {
           auto& ctx = remote_ctx.get();
-          join_group_api request;
+          join_group_request request;
           request.decode(ctx);
           return ctx.groups()
             .join_group(std::move(request))

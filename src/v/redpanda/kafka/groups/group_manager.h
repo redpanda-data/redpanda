@@ -43,7 +43,7 @@ public:
 public:
     /// \brief Handle a JoinGroup request
     future<requests::join_group_response>
-    join_group(requests::join_group_api&& request) {
+    join_group(requests::join_group_request&& request) {
         return join_error(request.member_id, kerr::unsupported_version);
     }
 
