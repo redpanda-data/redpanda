@@ -24,13 +24,9 @@ namespace kafka {
 using group_router_type = kafka::group_router<
   kafka::group_manager,
   kafka::group_shard_mapper<cluster::shard_table>>;
-}
 
-namespace kafka {
 class controller_dispatcher;
-}
 
-namespace kafka {
 extern logger kreq_log;
 
 class request_context {
