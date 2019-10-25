@@ -9,7 +9,7 @@
 
 namespace kafka::requests {
 
-class list_groups_request final {
+class list_groups_api final {
 public:
     static constexpr const char* name = "list groups";
     static constexpr api_key key = api_key(16);

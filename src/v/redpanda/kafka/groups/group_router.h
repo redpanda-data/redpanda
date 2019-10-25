@@ -19,10 +19,10 @@ template <typename T>
 concept GroupManager =
 requires(
   T m,
-  requests::join_group_request&& join_request,
-  requests::sync_group_request&& sync_request,
-  requests::heartbeat_request&& heartbeat_request,
-  requests::leave_group_request&& leave_request) {
+  requests::join_group_api&& join_request,
+  requests::sync_group_api&& sync_request,
+  requests::heartbeat_api&& heartbeat_request,
+  requests::leave_group_api&& leave_request) {
 
     { m.join_group(std::move(join_request)) } ->
         future<requests::join_group_response>;
@@ -66,8 +66,8 @@ public:
       , _shards(shards.local()) {
     }
 
-    future<requests::join_group_response> join_group(
-      requests::join_group_request&& request) {
+    future<requests::join_group_response>
+    join_group(requests::join_group_api&& request) {
         auto shard = _shards.shard_for(request.group_id);
         return with_scheduling_group(
           _sg, [this, shard, request = std::move(request)]() mutable {
@@ -81,7 +81,7 @@ public:
     }
 
     future<requests::sync_group_response>
-    sync_group(requests::sync_group_request&& request) {
+    sync_group(requests::sync_group_api&& request) {
         auto shard = _shards.shard_for(request.group_id);
         return with_scheduling_group(
           _sg, [this, shard, request = std::move(request)]() mutable {
@@ -95,7 +95,7 @@ public:
     }
 
     future<requests::heartbeat_response>
-    heartbeat(requests::heartbeat_request&& request) {
+    heartbeat(requests::heartbeat_api&& request) {
         auto shard = _shards.shard_for(request.group_id);
         return with_scheduling_group(
           _sg, [this, shard, request = std::move(request)]() mutable {
@@ -109,7 +109,7 @@ public:
     }
 
     future<requests::leave_group_response>
-    leave_group(requests::leave_group_request&& request) {
+    leave_group(requests::leave_group_api&& request) {
         auto shard = _shards.shard_for(request.group_id);
         return with_scheduling_group(
           _sg, [this, shard, request = std::move(request)]() mutable {

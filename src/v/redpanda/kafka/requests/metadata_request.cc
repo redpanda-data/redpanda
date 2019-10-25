@@ -23,7 +23,7 @@ namespace kafka::requests {
 //  listener_not_found
 //  replica_not_available
 future<response_ptr>
-metadata_request::process(request_context&& ctx, smp_service_group g) {
+metadata_api::process(request_context&& ctx, smp_service_group g) {
     return async([ctx = std::move(ctx)]() mutable {
         auto topics = ctx.reader().read_array([](request_reader& r) {
             return model::topic_view(r.read_string_view());

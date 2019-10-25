@@ -44,20 +44,19 @@ CONCEPT(requires(KafkaRequest<Requests>, ...))
 using make_request_types = type_list<Requests...>;
 
 using request_types = make_request_types<
-  produce_request,
-  fetch_request,
-  list_offsets_request,
-  metadata_request,
-  offset_fetch_request,
-  find_coordinator_request,
-  list_groups_request,
-  api_versions_request,
-  join_group_request,
-  heartbeat_request,
-  leave_group_request,
-  sync_group_request,
-  create_topics_request>;
-
+  produce_api,
+  fetch_api,
+  list_offsets_api,
+  metadata_api,
+  offset_fetch_api,
+  find_coordinator_api,
+  list_groups_api,
+  api_versions_api,
+  join_group_api,
+  heartbeat_api,
+  leave_group_api,
+  sync_group_api,
+  create_topics_api>;
 
 template<typename Request>
 CONCEPT(requires(KafkaRequest<Request>))
@@ -79,33 +78,32 @@ process_request(request_context&& ctx, smp_service_group g) {
     // Eventually generate this with meta-classes.
     kreq_log.debug("Processing request for {}", ctx.header().key);
     switch (ctx.header().key) {
-    case api_versions_request::key:
-        return api_versions_request::process(std::move(ctx), std::move(g));
-    case metadata_request::key:
-        return do_process<metadata_request>(std::move(ctx), std::move(g));
-    case list_groups_request::key:
-        return do_process<list_groups_request>(std::move(ctx), std::move(g));
-    case find_coordinator_request::key:
-        return do_process<find_coordinator_request>(
-          std::move(ctx), std::move(g));
-    case offset_fetch_request::key:
-        return do_process<offset_fetch_request>(std::move(ctx), std::move(g));
-    case produce_request::key:
-        return do_process<produce_request>(std::move(ctx), std::move(g));
-    case list_offsets_request::key:
-        return do_process<list_offsets_request>(std::move(ctx), std::move(g));
-    case fetch_request::key:
-        return do_process<fetch_request>(std::move(ctx), std::move(g));
-    case join_group_request::key:
-        return do_process<join_group_request>(std::move(ctx), std::move(g));
-    case heartbeat_request::key:
-        return do_process<heartbeat_request>(std::move(ctx), std::move(g));
-    case leave_group_request::key:
-        return do_process<leave_group_request>(std::move(ctx), std::move(g));
-    case sync_group_request::key:
-        return do_process<sync_group_request>(std::move(ctx), std::move(g));
-    case create_topics_request::key:
-        return do_process<create_topics_request>(std::move(ctx), std::move(g));
+    case api_versions_api::key:
+        return api_versions_api::process(std::move(ctx), std::move(g));
+    case metadata_api::key:
+        return do_process<metadata_api>(std::move(ctx), std::move(g));
+    case list_groups_api::key:
+        return do_process<list_groups_api>(std::move(ctx), std::move(g));
+    case find_coordinator_api::key:
+        return do_process<find_coordinator_api>(std::move(ctx), std::move(g));
+    case offset_fetch_api::key:
+        return do_process<offset_fetch_api>(std::move(ctx), std::move(g));
+    case produce_api::key:
+        return do_process<produce_api>(std::move(ctx), std::move(g));
+    case list_offsets_api::key:
+        return do_process<list_offsets_api>(std::move(ctx), std::move(g));
+    case fetch_api::key:
+        return do_process<fetch_api>(std::move(ctx), std::move(g));
+    case join_group_api::key:
+        return do_process<join_group_api>(std::move(ctx), std::move(g));
+    case heartbeat_api::key:
+        return do_process<heartbeat_api>(std::move(ctx), std::move(g));
+    case leave_group_api::key:
+        return do_process<leave_group_api>(std::move(ctx), std::move(g));
+    case sync_group_api::key:
+        return do_process<sync_group_api>(std::move(ctx), std::move(g));
+    case create_topics_api::key:
+        return do_process<create_topics_api>(std::move(ctx), std::move(g));
     };
     return seastar::make_exception_future<response_ptr>(
       std::runtime_error(fmt::format("Unsupported API {}", ctx.header().key)));
@@ -148,7 +146,7 @@ serialize_apis(response_writer& writer, type_list<RequestTypes...>) {
 }
 
 future<response_ptr>
-api_versions_request::process(request_context&& ctx, smp_service_group) {
+api_versions_api::process(request_context&& ctx, smp_service_group) {
     auto resp = std::make_unique<response>();
     // Unlike other request types, we handle ApiVersion requests
     // with higher versions than supported. We treat such a request

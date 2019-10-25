@@ -172,7 +172,7 @@ public:
      * specifies at least one protocol that is supported by all members of
      * the group.
      */
-    bool supports_protocols(const requests::join_group_request& r);
+    bool supports_protocols(const requests::join_group_api& r);
 
     /**
      * \brief Add a member to the group.
@@ -307,7 +307,7 @@ public:
      * instance id if it exists, or the client id otherwise.
      */
     static kafka::member_id
-    generate_member_id(const requests::join_group_request& r);
+    generate_member_id(const requests::join_group_api& r);
 
 private:
     using member_map = std::unordered_map<kafka::member_id, member_ptr>;

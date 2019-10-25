@@ -13,7 +13,7 @@
 
 namespace kafka::requests {
 
-void heartbeat_request::decode(request_context& ctx) {
+void heartbeat_api::decode(request_context& ctx) {
     auto& reader = ctx.reader();
     auto version = ctx.header().version;
 
@@ -39,11 +39,11 @@ void heartbeat_response::encode(const request_context& ctx, response& resp) {
 }
 
 future<response_ptr>
-heartbeat_request::process(request_context&& ctx, smp_service_group g) {
+heartbeat_api::process(request_context&& ctx, smp_service_group g) {
     return do_with(
       remote(std::move(ctx)), [g](remote<request_context>& remote_ctx) {
           auto& ctx = remote_ctx.get();
-          heartbeat_request request;
+          heartbeat_api request;
           request.decode(ctx);
           return ctx.groups()
             .heartbeat(std::move(request))

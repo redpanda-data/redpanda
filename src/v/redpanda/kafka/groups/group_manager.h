@@ -43,27 +43,27 @@ public:
 public:
     /// \brief Handle a JoinGroup request
     future<requests::join_group_response>
-    join_group(requests::join_group_request&& request) {
+    join_group(requests::join_group_api&& request) {
         return join_error(request.member_id, kerr::unsupported_version);
     }
 
     /// \brief Handle a SyncGroup request
     future<requests::sync_group_response>
-    sync_group(requests::sync_group_request&& request) {
+    sync_group(requests::sync_group_api&& request) {
         using reply = requests::sync_group_response;
         return make_ready_future<reply>(reply(kerr::unsupported_version));
     }
 
     /// \brief Handle a Heartbeat request
     future<requests::heartbeat_response>
-    heartbeat(requests::heartbeat_request&& request) {
+    heartbeat(requests::heartbeat_api&& request) {
         using reply = requests::heartbeat_response;
         return make_ready_future<reply>(reply(kerr::unsupported_version));
     }
 
     /// \brief Handle a LeaveGroup request
     future<requests::leave_group_response>
-    leave_group(requests::leave_group_request&& request) {
+    leave_group(requests::leave_group_api&& request) {
         using reply = requests::leave_group_response;
         return make_ready_future<reply>(reply(kerr::unsupported_version));
     }

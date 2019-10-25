@@ -13,7 +13,7 @@ class request_context;
 class response;
 using response_ptr = foreign_ptr<std::unique_ptr<response>>;
 
-struct join_group_request final {
+struct join_group_api final {
     // api
     static constexpr const char* name = "join group";
     static constexpr api_key key = api_key(11);
@@ -38,7 +38,7 @@ struct join_group_request final {
     void decode(request_context& ctx);
 };
 
-std::ostream& operator<<(std::ostream&, const join_group_request&);
+std::ostream& operator<<(std::ostream&, const join_group_api&);
 
 /*
  * TODO

@@ -12,7 +12,7 @@
 namespace kafka::requests {
 
 future<response_ptr>
-offset_fetch_request::process(request_context&& ctx, smp_service_group g) {
+offset_fetch_api::process(request_context&& ctx, smp_service_group g) {
     // request
     auto group_id = ctx.reader().read_string();
     auto topics = ctx.reader().read_array([](request_reader& r) {

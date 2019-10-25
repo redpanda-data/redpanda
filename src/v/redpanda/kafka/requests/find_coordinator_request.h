@@ -9,7 +9,7 @@
 
 namespace kafka::requests {
 
-class find_coordinator_request final {
+class find_coordinator_api final {
 public:
     static constexpr const char* name = "find coordinator";
     static constexpr api_key key = api_key(10);

@@ -13,7 +13,7 @@
 
 namespace kafka::requests {
 
-class create_topics_request final {
+class create_topics_api final {
 public:
     static constexpr const char* name = "create topics";
     static constexpr api_key key = api_key(19);

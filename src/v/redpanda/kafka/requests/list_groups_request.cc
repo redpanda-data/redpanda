@@ -12,7 +12,7 @@
 namespace kafka::requests {
 
 future<response_ptr>
-list_groups_request::process(request_context&& ctx, smp_service_group g) {
+list_groups_api::process(request_context&& ctx, smp_service_group g) {
     auto resp = std::make_unique<response>();
     if (ctx.header().version >= api_version(1)) {
         resp->writer().write(int32_t(0));

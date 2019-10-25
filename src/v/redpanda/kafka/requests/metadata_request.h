@@ -9,7 +9,7 @@
 
 namespace kafka::requests {
 
-class metadata_request final {
+class metadata_api final {
 public:
     static constexpr const char* name = "metadata";
     static constexpr api_key key = api_key(3);

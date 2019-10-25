@@ -9,7 +9,7 @@
 
 namespace kafka::requests {
 
-class api_versions_request final {
+class api_versions_api final {
     static constexpr api_version v0 = api_version(0);
 
 public:

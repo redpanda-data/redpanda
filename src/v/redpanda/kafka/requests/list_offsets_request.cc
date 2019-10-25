@@ -22,7 +22,7 @@ struct topic {
 };
 
 future<response_ptr>
-list_offsets_request::process(request_context&& ctx, smp_service_group g) {
+list_offsets_api::process(request_context&& ctx, smp_service_group g) {
     auto replica_id = ctx.reader().read_int32();
     auto topics = ctx.reader().read_array([&ctx](request_reader& r) {
         auto name = r.read_string();

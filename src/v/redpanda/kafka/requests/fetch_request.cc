@@ -101,7 +101,7 @@ struct topic {
 };
 
 future<response_ptr>
-fetch_request::process(request_context&& ctx, smp_service_group g) {
+fetch_api::process(request_context&& ctx, smp_service_group g) {
     // TODO: don't use seastar threads for performance reasons
     return async([ctx = std::move(ctx)]() mutable {
         auto replica_id = ctx.reader().read_int32();
