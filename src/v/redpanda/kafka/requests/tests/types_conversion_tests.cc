@@ -4,7 +4,7 @@
 
 #include <boost/test/unit_test.hpp>
 
-using namespace kafka::requests; // NOLINT
+using namespace kafka; // NOLINT
 
 BOOST_AUTO_TEST_CASE(test_no_additional_options) {
     new_topic_configuration no_options = {.topic = model::topic_view{"test_tp"},

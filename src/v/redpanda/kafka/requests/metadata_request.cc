@@ -11,7 +11,7 @@
 
 #include <string_view>
 
-namespace kafka::requests {
+namespace kafka {
 
 // Possible topic-level error codes:
 //  unknown_topic_or_partition
@@ -125,4 +125,4 @@ metadata_api::process(request_context&& ctx, smp_service_group g) {
     });
 }
 
-} // namespace kafka::requests
+} // namespace kafka

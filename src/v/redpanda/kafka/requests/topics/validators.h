@@ -1,7 +1,7 @@
 #pragma once
 #include "redpanda/kafka/requests/topics/types.h"
 
-namespace kafka::requests {
+namespace kafka {
 // clang-format off
 CONCEPT(
 template<typename Request, typename T>
@@ -64,4 +64,4 @@ struct unsupported_configuration_entries {
     }
 };
 
-} // namespace kafka::requests
+} // namespace kafka

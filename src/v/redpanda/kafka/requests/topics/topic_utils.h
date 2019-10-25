@@ -14,7 +14,7 @@
 /// This is a set of functions allowing to easily validate and generate errors
 /// for topic request items.
 
-namespace kafka::requests {
+namespace kafka {
 // clang-format off
 CONCEPT(
 template<typename T> 
@@ -176,4 +176,4 @@ void generate_not_controller_errors(Iter begin, Iter end, ErrIter out_it) {
             "Current node is not a cluster controller");
       });
 }
-} // namespace kafka::requests
+} // namespace kafka

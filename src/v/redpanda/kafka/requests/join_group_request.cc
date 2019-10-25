@@ -18,7 +18,7 @@ std::ostream& operator<<(std::ostream& o, const member_protocol& p) {
 }
 } // namespace kafka
 
-namespace kafka::requests {
+namespace kafka {
 
 void join_group_request::decode(request_context& ctx) {
     auto& reader = ctx.reader();
@@ -122,4 +122,4 @@ join_group_api::process(request_context&& ctx, smp_service_group g) {
       });
 }
 
-} // namespace kafka::requests
+} // namespace kafka

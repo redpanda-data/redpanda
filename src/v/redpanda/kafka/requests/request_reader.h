@@ -17,7 +17,7 @@
 #include <string_view>
 #include <type_traits>
 
-namespace kafka::requests {
+namespace kafka {
 
 class request_reader {
     struct exception_thrower {
@@ -199,4 +199,4 @@ private:
     bytes_ostream _linearization_buffer;
 };
 
-} // namespace kafka::requests
+} // namespace kafka

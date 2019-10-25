@@ -1,6 +1,6 @@
 #include "redpanda/kafka/requests/kafka_batch_adapter.h"
 
-namespace kafka::requests {
+namespace kafka {
 
 static constexpr model::record_batch_type kafka_record_batch_type() {
     return model::record_batch_type(1);
@@ -87,4 +87,4 @@ model::record_batch_reader reader_from_kafka_batch(fragbuf&& kafka_batch) {
     return model::make_memory_record_batch_reader(std::move(ret));
 }
 
-} // namespace kafka::requests
+} // namespace kafka

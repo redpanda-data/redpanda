@@ -18,7 +18,7 @@
 #include <seastar/core/print.hh>
 #include <seastar/util/log.hh>
 
-namespace kafka::requests {
+namespace kafka {
 
 logger kreq_log("kafka api");
 
@@ -172,4 +172,4 @@ api_versions_api::process(request_context&& ctx, smp_service_group) {
     return make_ready_future<response_ptr>(std::move(resp));
 }
 
-} // namespace kafka::requests
+} // namespace kafka

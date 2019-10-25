@@ -25,8 +25,8 @@ static group_member get_member() {
       test_protos);
 }
 
-static requests::join_group_response make_join_response() {
-    return requests::join_group_response(
+static join_group_response make_join_response() {
+    return join_group_response(
       error_code::none,
       kafka::generation_id(9248282),
       kafka::protocol_name("p"),
@@ -34,8 +34,8 @@ static requests::join_group_response make_join_response() {
       kafka::member_id("m"));
 }
 
-static requests::sync_group_response make_sync_response() {
-    return requests::sync_group_response(bytes("this is some bytes"));
+static sync_group_response make_sync_response() {
+    return sync_group_response(bytes("this is some bytes"));
 }
 
 BOOST_AUTO_TEST_CASE(constructor) {
@@ -74,7 +74,7 @@ BOOST_AUTO_TEST_CASE(assignment) {
 }
 
 BOOST_AUTO_TEST_CASE(protocols) {
-    auto r = requests::join_group_request();
+    auto r = join_group_request();
     r.protocols = test_protos;
 
     auto m = get_member();
@@ -95,7 +95,7 @@ BOOST_AUTO_TEST_CASE(protocols) {
     BOOST_TEST(out == test_protos2);
 }
 
-SEASTAR_THREAD_TEST_CASE(response) {
+SEASTAR_THREAD_TEST_CASE(response_futs) {
     auto m = get_member();
 
     BOOST_TEST(!m.is_joining());

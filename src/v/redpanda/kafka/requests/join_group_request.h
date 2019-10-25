@@ -7,7 +7,7 @@
 
 #include <seastar/core/future.hh>
 
-namespace kafka::requests {
+namespace kafka {
 
 class request_context;
 class response;
@@ -80,4 +80,4 @@ struct join_group_response final {
 
 std::ostream& operator<<(std::ostream&, const join_group_response&);
 
-} // namespace kafka::requests
+} // namespace kafka

@@ -30,7 +30,7 @@ namespace kafka {
 class controller_dispatcher;
 }
 
-namespace kafka::requests {
+namespace kafka {
 extern logger kreq_log;
 
 class request_context {
@@ -95,4 +95,4 @@ using response_ptr = foreign_ptr<std::unique_ptr<response>>;
 // Executes the API call identified by the specified request_context.
 future<response_ptr> process_request(request_context&&, smp_service_group);
 
-} // namespace kafka::requests
+} // namespace kafka

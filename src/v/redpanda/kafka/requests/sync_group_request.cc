@@ -11,7 +11,7 @@
 
 #include <string_view>
 
-namespace kafka::requests {
+namespace kafka {
 
 void sync_group_request::decode(request_context& ctx) {
     auto& reader = ctx.reader();
@@ -61,4 +61,4 @@ sync_group_api::process(request_context&& ctx, smp_service_group g) {
       });
 }
 
-} // namespace kafka::requests
+} // namespace kafka

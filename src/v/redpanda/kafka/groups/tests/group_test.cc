@@ -53,8 +53,8 @@ static member_ptr get_member(
       protos);
 }
 
-static requests::join_group_response join_resp() {
-    return requests::join_group_response(
+static join_group_response join_resp() {
+    return join_group_response(
       error_code::none,
       kafka::generation_id(0),
       kafka::protocol_name("p"),
@@ -306,9 +306,7 @@ BOOST_AUTO_TEST_CASE(member_metadata) {
 
     BOOST_TEST(g.protocol() == "p1");
     auto md = g.member_metadata();
-    std::unordered_map<
-      kafka::member_id,
-      requests::join_group_response::member_config>
+    std::unordered_map<kafka::member_id, join_group_response::member_config>
       conf;
     for (auto& m : md) {
         conf[m.member_id] = m;
@@ -351,7 +349,7 @@ BOOST_AUTO_TEST_CASE(select_protocol) {
 BOOST_AUTO_TEST_CASE(supports_protocols) {
     auto g = get();
 
-    requests::join_group_request r;
+    join_group_request r;
 
     // empty group -> request needs protocol type
     r.protocol_type = kafka::protocol_type("");
@@ -459,9 +457,7 @@ SEASTAR_THREAD_TEST_CASE(finish_joining) {
     // leader gets assignments
     auto resp = f0.get0();
     BOOST_TEST(resp.member_id == "m");
-    std::unordered_map<
-      kafka::member_id,
-      requests::join_group_response::member_config>
+    std::unordered_map<kafka::member_id, join_group_response::member_config>
       conf;
     for (auto& m : resp.members) {
         conf[m.member_id] = m;
@@ -503,7 +499,7 @@ BOOST_AUTO_TEST_CASE(leader_rejoined) {
 }
 
 BOOST_AUTO_TEST_CASE(generate_member_id) {
-    requests::join_group_request r;
+    join_group_request r;
 
     r.client_id = sstring("dog");
     r.group_instance_id = std::nullopt;

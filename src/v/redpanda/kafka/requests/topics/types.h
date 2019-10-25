@@ -7,7 +7,7 @@
 
 #include <boost/lexical_cast.hpp>
 
-namespace kafka::requests {
+namespace kafka {
 
 /// \brief Type representing Kafka protocol response from
 /// CreateTopics, DeleteTopics and CreatePartitions requests
@@ -69,4 +69,4 @@ struct new_topic_configuration {
         return cfg;
     }
 };
-} // namespace kafka::requests
+} // namespace kafka

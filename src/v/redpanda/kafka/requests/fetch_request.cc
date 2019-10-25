@@ -10,7 +10,7 @@
 
 #include <string_view>
 
-namespace kafka::requests {
+namespace kafka {
 
 class kafka_batch_serializer {
 public:
@@ -167,4 +167,4 @@ fetch_api::process(request_context&& ctx, smp_service_group g) {
         return response_ptr(std::move(resp));
     });
 }
-} // namespace kafka::requests
+} // namespace kafka

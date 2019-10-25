@@ -11,7 +11,7 @@
 
 #include <unordered_map>
 
-namespace kafka::requests {
+namespace kafka {
 
 class create_topics_api final {
 public:
@@ -53,4 +53,4 @@ struct create_topics_request {
     bool validate_only;
 };
 
-} // namespace kafka::requests
+} // namespace kafka

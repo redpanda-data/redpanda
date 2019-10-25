@@ -15,7 +15,7 @@
 
 #include <string_view>
 
-namespace kafka::requests {
+namespace kafka {
 
 create_topics_request create_topics_request::decode(request_context& ctx) {
     return create_topics_request{
@@ -25,7 +25,7 @@ create_topics_request create_topics_request::decode(request_context& ctx) {
       .validate_only = ctx.header().version > api_version(0)
                          ? ctx.reader().read_bool()
                          : false};
-} // namespace kafka::requests
+} // namespace kafka
 
 new_topic_configuration
 create_topics_request::read_topic_configuration(request_reader& r) {
@@ -154,4 +154,4 @@ response_ptr create_topics_api::encode_response(
     return encode_topic_results(errs, throttle_time_ms, include_msg);
 }
 
-} // namespace kafka::requests
+} // namespace kafka

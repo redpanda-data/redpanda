@@ -7,7 +7,7 @@
 
 #include <seastar/core/future.hh>
 
-namespace kafka::requests {
+namespace kafka {
 
 class list_groups_api final {
 public:
@@ -19,4 +19,4 @@ public:
     static future<response_ptr> process(request_context&&, smp_service_group);
 };
 
-} // namespace kafka::requests
+} // namespace kafka

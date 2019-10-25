@@ -5,17 +5,17 @@
 #include "utils/to_string.h"
 
 #include <seastar/testing/thread_test_case.hh>
-using namespace kafka::requests; // NOLINT
+using namespace kafka; // NOLINT
 
 template<typename TestType, typename ReadFunc>
 CONCEPT(requires requires(ReadFunc f, request_reader& reader, TestType t){
   {(reader.*f)() == t}->bool})
 void roundtrip_test(TestType val, ReadFunc&& f) {
     bytes_ostream out;
-    kafka::requests::response_writer w(out);
+    kafka::response_writer w(out);
     w.write(val);
     auto fb = copy_to_fragbuf(out);
-    kafka::requests::request_reader r(fb.get_istream());
+    kafka::request_reader r(fb.get_istream());
     BOOST_REQUIRE_EQUAL(val, (r.*f)());
 }
 
