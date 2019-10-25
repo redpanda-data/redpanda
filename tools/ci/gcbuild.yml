@@ -23,7 +23,7 @@ steps:
 - id: 'test cpp'
   name: 'gcr.io/$PROJECT_ID/builder:$SHORT_SHA'
   dir: 'build/'
-  args: ['ctest', '-V']
+  args: ['ctest', '-VV']
 
 - id: 'build,test go'
   name: 'gcr.io/$PROJECT_ID/builder:$SHORT_SHA'
