@@ -1,19 +1,7 @@
 steps:
-- id: 'build base image'
+- id: 'build builder image'
   name: 'gcr.io/kaniko-project/executor:latest'
-  args: ['--dockerfile=tools/ci/Dockerfile.base',
-         '--destination=gcr.io/$PROJECT_ID/builder-base:$SHORT_SHA',
-         '--cache=true']
-
-- id: 'build clang image'
-  name: 'gcr.io/kaniko-project/executor:latest'
-  args: ['--dockerfile=tools/ci/Dockerfile.clang',
-         '--destination=gcr.io/$PROJECT_ID/builder-clang:$SHORT_SHA',
-         '--cache=true']
-
-- id: 'build 3rdparty image'
-  name: 'gcr.io/kaniko-project/executor:latest'
-  args: ['--dockerfile=tools/ci/Dockerfile.3rdparty',
+  args: ['--dockerfile=tools/ci/Dockerfile',
          '--destination=gcr.io/$PROJECT_ID/builder:$SHORT_SHA',
          '--cache=true']
 
@@ -25,15 +13,26 @@ steps:
   - 'CC=clang'
   - 'CXX=clang++'
 
-- id: 'build'
+- id: 'build cpp'
   name: 'gcr.io/$PROJECT_ID/builder:$SHORT_SHA'
-  entrypoint: '/bin/bash'
-  args: ['-c', 'cd build/ && ninja -C /workspace/build/']
+  dir: 'build/'
+  args: ['ninja', '-C', '/workspace/build/']
 
-- id: 'test'
+- id: 'test cpp'
   name: 'gcr.io/$PROJECT_ID/builder:$SHORT_SHA'
-  entrypoint: '/bin/bash'
-  args: ['-c', 'cd build/ && ctest -V']
+  dir: 'build/'
+  args: ['ctest', '-V']
+
+- id: 'build,test go'
+  name: 'gcr.io/$PROJECT_ID/builder:$SHORT_SHA'
+  args: ['tools/build.py', '--targets=go', '--deps=false']
+
+- id: 'package'
+  name: 'gcr.io/$PROJECT_ID/builder:$SHORT_SHA'
+  args: ['tools/packaging.py',
+         '--formats', 'rpm', 'deb', 'tar',
+         '--external', '/usr/local/bin/iotune', '/usr/local/bin/hwloc-calc',
+         '/usr/local/bin/hwloc-distrib']
 
 timeout: 3600s
 
@@ -42,3 +41,11 @@ substitutions:
 
 options:
   machineType: 'N1_HIGHCPU_32'
+
+artifacts:
+  objects:
+    location: 'gs://vectorizedio/rp/${_BUILD_TYPE}/${SHORT_SHA}/'
+    paths:
+    - 'build/dist/tar/*.tar.gz'
+    - 'build/dist/debian/*.deb'
+    - 'build/dist/rpm/RPMS/x86_64/*.rpm'

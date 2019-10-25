@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 import sys
 import os
 import logging
@@ -184,3 +185,52 @@ def _render_systemd_templates(dest_path, ctx):
         tmpl = _in_root(root_dir + f + jinja_ext)
         templates.render_to_file(tmpl, os.path.join(dest_path, 'systemd', f),
                                  ctx)
+
+
+def create_packages(formats,
+                    src_dir=RP_ROOT,
+                    build_dir=RP_BUILD_ROOT,
+                    build_type="",
+                    external=list()):
+    execs = [
+        "%s/%s/src/v/redpanda/redpanda" % (build_dir, build_type),
+        "%s/go/bin/rpk" % build_dir,
+    ]
+    execs.extend(external)
+    dist_path = os.path.join(build_dir, build_type, "dist")
+    configs = [os.path.join(src_dir, "conf/redpanda.yaml")]
+    admin_api_swag = glob.glob(
+        os.path.join(src_dir, "src/v/redpanda/admin/api-doc/*.json"))
+    os.makedirs(dist_path, exist_ok=True)
+    tar_name = 'redpanda.tar.gz'
+    tar_path = "%s/%s" % (dist_path, tar_name)
+    relocable_tar_package(tar_path, execs, configs, admin_api_swag)
+    if 'tar' in formats:
+        red_panda_tar(tar_path, dist_path)
+    if 'deb' in formats:
+        red_panda_deb(tar_path, dist_path)
+    if 'rpm' in formats:
+        red_panda_rpm(tar_path, dist_path)
+    os.remove(tar_path)
+
+
+def main():
+    parser = argparse.ArgumentParser(description='build sys helper')
+    parser.add_argument(
+        '--formats',
+        choices=['tar', 'rpm', 'deb'],
+        nargs='+',
+        help='space-separated list of package formats to create')
+    parser.add_argument(
+        '--external',
+        type=str,
+        default=[],
+        nargs='+',
+        help=('space-separated list of paths to files that are to be included '
+              'in the package'))
+    opts = parser.parse_args()
+    create_packages(formats=opts.formats, external=opts.external)
+
+
+if __name__ == '__main__':
+    main()
