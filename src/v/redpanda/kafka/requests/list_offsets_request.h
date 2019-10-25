@@ -9,7 +9,7 @@
 
 namespace kafka::requests {
 
-class list_offsets_request final {
+class list_offsets_api final {
 public:
     static constexpr const char* name = "list_offsets";
     static constexpr api_key key = api_key(2);

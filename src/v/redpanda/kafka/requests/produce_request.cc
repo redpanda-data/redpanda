@@ -73,7 +73,7 @@ using execution_stage_type = inheriting_concrete_execution_stage<
 static thread_local execution_stage_type produce_stage{"produce", &do_process};
 
 future<response_ptr>
-produce_request::process(request_context&& ctx, smp_service_group g) {
+produce_api::process(request_context&& ctx, smp_service_group g) {
     return do_with(
       remote(std::move(ctx)), [g](remote<request_context>& remote_ctx) {
           auto& ctx = remote_ctx.get();

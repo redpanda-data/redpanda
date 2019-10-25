@@ -13,7 +13,7 @@ class request_context;
 class response;
 using response_ptr = foreign_ptr<std::unique_ptr<response>>;
 
-struct leave_group_request final {
+struct leave_group_api final {
     // api
     static constexpr const char* name = "leave group";
     static constexpr api_key key = api_key(13);

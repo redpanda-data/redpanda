@@ -91,7 +91,7 @@ public:
     }
 
     /// Return true if the request protocols match the member's protocols.
-    bool matching_protocols(const requests::join_group_request& r) const {
+    bool matching_protocols(const requests::join_group_api& r) const {
         return r.protocols == _protocols;
     }
 

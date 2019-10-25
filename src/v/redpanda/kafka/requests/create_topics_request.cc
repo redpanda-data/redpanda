@@ -17,8 +17,8 @@
 
 namespace kafka::requests {
 
-create_topics_request::request
-create_topics_request::request::decode(request_context& ctx) {
+create_topics_api::request
+create_topics_api::request::decode(request_context& ctx) {
     return request{
       .topics = ctx.reader().read_array(&request::read_topic_configuration),
       .timeout = std::chrono::milliseconds(ctx.reader().read_int32()),
@@ -28,7 +28,7 @@ create_topics_request::request::decode(request_context& ctx) {
 } // namespace kafka::requests
 
 new_topic_configuration
-create_topics_request::request::read_topic_configuration(request_reader& r) {
+create_topics_api::request::read_topic_configuration(request_reader& r) {
     return new_topic_configuration{
       .topic = model::topic_view(r.read_string_view()),
       .partition_count = r.read_int32(),
@@ -38,23 +38,23 @@ create_topics_request::request::read_topic_configuration(request_reader& r) {
 }
 
 std::vector<partition_assignment>
-create_topics_request::request::read_partiton_assignments(request_reader& r) {
+create_topics_api::request::read_partiton_assignments(request_reader& r) {
     return r.read_array(&request::read_partiton_assignment);
 }
 
 partition_assignment
-create_topics_request::request::read_partiton_assignment(request_reader& r) {
+create_topics_api::request::read_partiton_assignment(request_reader& r) {
     return partition_assignment{
       .partition = model::partition_id(r.read_int32()),
       .assignments = r.read_array(&request::read_node_id)};
 }
 
-model::node_id create_topics_request::request::read_node_id(request_reader& r) {
+model::node_id create_topics_api::request::read_node_id(request_reader& r) {
     return model::node_id(r.read_int32());
 }
 
 std::unordered_map<sstring, sstring>
-create_topics_request::request::read_config(request_reader& r) {
+create_topics_api::request::read_config(request_reader& r) {
     auto len = r.read_int32();
     std::unordered_map<sstring, sstring> res;
     res.reserve(std::max(0, len));
@@ -69,7 +69,7 @@ create_topics_request::request::read_config(request_reader& r) {
 };
 
 future<response_ptr>
-create_topics_request::process(request_context&& ctx, smp_service_group g) {
+create_topics_api::process(request_context&& ctx, smp_service_group g) {
     auto request = request::decode(ctx);
     return do_with(
       std::move(ctx),
@@ -138,7 +138,7 @@ create_topics_request::process(request_context&& ctx, smp_service_group g) {
       });
 }
 
-response_ptr create_topics_request::encode_response(
+response_ptr create_topics_api::encode_response(
   request_context& ctx, std::vector<topic_op_result> errs) {
     // Throttle time for api_version >= 2
     int32_t throttle_time_ms = -1;

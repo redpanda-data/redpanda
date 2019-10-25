@@ -13,7 +13,7 @@ class request_context;
 class response;
 using response_ptr = foreign_ptr<std::unique_ptr<response>>;
 
-struct sync_group_request final {
+struct sync_group_api final {
     // api
     static constexpr const char* name = "sync group";
     static constexpr api_key key = api_key(14);

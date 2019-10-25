@@ -12,7 +12,7 @@
 namespace kafka::requests {
 
 future<response_ptr>
-find_coordinator_request::process(request_context&& ctx, smp_service_group g) {
+find_coordinator_api::process(request_context&& ctx, smp_service_group g) {
     // request
     auto key = ctx.reader().read_string();
     std::optional<int8_t> key_type;

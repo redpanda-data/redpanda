@@ -9,7 +9,7 @@
 
 namespace kafka::requests {
 
-class produce_request final {
+class produce_api final {
 public:
     static constexpr const char* name = "produce";
     static constexpr api_key key = api_key(0);
