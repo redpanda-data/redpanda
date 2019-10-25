@@ -99,8 +99,8 @@ public:
     /// are up to date, and have the highest known group_id ever assigned
     /// reset to nullptr when no longer leader
     partition_allocator(raft::group_id highest_known_group)
-      : _highest_group(highest_known_group)
-      , _rr(_available_machines.end()) {
+      : _highest_group(highest_known_group) {
+        _rr = _available_machines.end();
     }
     void register_node(ptr n) {
         _machines.push_back(std::move(n));
