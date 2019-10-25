@@ -7,19 +7,19 @@
 
 #include <boost/lexical_cast.hpp>
 
-namespace kafka::requests {
+namespace kafka {
 
 /// \brief Type representing Kafka protocol response from
 /// CreateTopics, DeleteTopics and CreatePartitions requests
 /// the types used here match the types used in Kafka protocol specification
 struct topic_op_result {
     model::topic topic;
-    errors::error_code error_code;
+    error_code error_code;
     std::optional<sstring> err_msg;
     static topic_op_result
     from_cluster_topic_result(const cluster::topic_result& err) {
         return {.topic = err.topic,
-                .error_code = errors::map_topic_error_code(err.error_code)};
+                .error_code = map_topic_error_code(err.error_code)};
     }
 };
 
@@ -69,4 +69,4 @@ struct new_topic_configuration {
         return cfg;
     }
 };
-} // namespace kafka::requests
+} // namespace kafka

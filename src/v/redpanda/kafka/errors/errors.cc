@@ -2,7 +2,8 @@
 
 #include <iostream>
 
-namespace kafka::errors {
+namespace kafka {
+
 std::ostream& operator<<(std::ostream& o, error_code code) {
     o << "{ error_code: ";
     // special case as unknown_server_error = -1
@@ -14,4 +15,5 @@ std::ostream& operator<<(std::ostream& o, error_code code) {
     o << " [" << (int16_t)code << "] }";
     return o;
 }
-} // namespace kafka::errors
+
+} // namespace kafka

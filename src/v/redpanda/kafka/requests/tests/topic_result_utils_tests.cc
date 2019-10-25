@@ -5,20 +5,20 @@
 #include <seastar/testing/thread_test_case.hh>
 
 namespace {
-using namespace kafka::requests;
+using namespace kafka;
 
 std::vector<topic_op_result> create_non_empty_response() {
     return {{.topic = model::topic("topic1"),
-             .error_code = kafka::errors::error_code::invalid_request,
+             .error_code = kafka::error_code::invalid_request,
              .err_msg = std::make_optional<sstring>("Invalid request")},
             {.topic = model::topic("topic2"),
-             .error_code = kafka::errors::error_code::invalid_config,
+             .error_code = kafka::error_code::invalid_config,
              .err_msg = std::nullopt}};
 }
 
 auto read_result(request_reader& r) {
     auto topic = r.read_string();
-    auto err_code = static_cast<kafka::errors::error_code>(r.read_int16());
+    auto err_code = static_cast<kafka::error_code>(r.read_int16());
     auto msg = r.read_nullable_string();
     return std::make_tuple(
       std::move(topic), std::move(err_code), std::move(msg));
@@ -26,7 +26,7 @@ auto read_result(request_reader& r) {
 
 auto read_result_no_msg(request_reader& r) {
     auto topic = r.read_string();
-    auto err_code = static_cast<kafka::errors::error_code>(r.read_int16());
+    auto err_code = static_cast<kafka::error_code>(r.read_int16());
     return std::make_tuple(std::move(topic), std::move(err_code));
 }
 
@@ -54,10 +54,10 @@ SEASTAR_THREAD_TEST_CASE(non_empty_response_no_throttle_time_no_msg) {
     BOOST_CHECK_EQUAL(results.size(), 2);
     BOOST_CHECK_EQUAL(std::get<0>(results[0]), "topic1");
     BOOST_CHECK_EQUAL(
-      std::get<1>(results[0]), kafka::errors::error_code::invalid_request);
+      std::get<1>(results[0]), kafka::error_code::invalid_request);
     BOOST_CHECK_EQUAL(std::get<0>(results[1]), "topic2");
     BOOST_CHECK_EQUAL(
-      std::get<1>(results[1]), kafka::errors::error_code::invalid_config);
+      std::get<1>(results[1]), kafka::error_code::invalid_config);
     BOOST_CHECK_EQUAL(reader.bytes_left(), 0);
 };
 
@@ -74,10 +74,10 @@ SEASTAR_THREAD_TEST_CASE(non_empty_response_throttle_time_no_msg) {
     BOOST_CHECK_EQUAL(results.size(), 2);
     BOOST_CHECK_EQUAL(std::get<0>(results[0]), "topic1");
     BOOST_CHECK_EQUAL(
-      std::get<1>(results[0]), kafka::errors::error_code::invalid_request);
+      std::get<1>(results[0]), kafka::error_code::invalid_request);
     BOOST_CHECK_EQUAL(std::get<0>(results[1]), "topic2");
     BOOST_CHECK_EQUAL(
-      std::get<1>(results[1]), kafka::errors::error_code::invalid_config);
+      std::get<1>(results[1]), kafka::error_code::invalid_config);
     BOOST_CHECK_EQUAL(reader.bytes_left(), 0);
 };
 
@@ -94,11 +94,11 @@ SEASTAR_THREAD_TEST_CASE(non_empty_response_throttle_time_with_msg) {
     BOOST_CHECK_EQUAL(results.size(), 2);
     BOOST_CHECK_EQUAL(std::get<0>(results[0]), "topic1");
     BOOST_CHECK_EQUAL(
-      std::get<1>(results[0]), kafka::errors::error_code::invalid_request);
+      std::get<1>(results[0]), kafka::error_code::invalid_request);
     BOOST_CHECK_EQUAL(*std::get<2>(results[0]), "Invalid request");
     BOOST_CHECK_EQUAL(std::get<0>(results[1]), "topic2");
     BOOST_CHECK_EQUAL(
-      std::get<1>(results[1]), kafka::errors::error_code::invalid_config);
+      std::get<1>(results[1]), kafka::error_code::invalid_config);
     BOOST_CHECK_EQUAL(std::get<2>(results[1]).has_value(), false);
     BOOST_CHECK_EQUAL(reader.bytes_left(), 0);
 };

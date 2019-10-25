@@ -9,6 +9,15 @@
 
 namespace kafka {
 
+/// Kafka API request correlation.
+using correlation_type = int32_t;
+
+/// Kafka API key.
+using api_key = named_type<int16_t, struct kafka_requests_api_key>;
+
+/// Kafka API version.
+using api_version = named_type<int16_t, struct kafka_requests_api_version>;
+
 /// Kafka group identifier.
 using group_id = named_type<sstring, struct kafka_group_id>;
 

@@ -5,7 +5,7 @@
 #include <boost/range/iterator_range.hpp>
 #include <boost/test/unit_test.hpp>
 
-using namespace kafka::requests; // NOLINT
+using namespace kafka; // NOLINT
 namespace {
 struct test_request {
     model::topic_view topic;
@@ -86,8 +86,8 @@ std::vector<test_request> duplicated_requests() {
 }
 
 struct partitions_validator {
-    static constexpr kafka::errors::error_code error_code
-      = kafka::errors::error_code::invalid_partitions;
+    static constexpr kafka::error_code error_code
+      = kafka::error_code::invalid_partitions;
     static constexpr const char* error_message = "Partitions count is invalid";
 
     static bool is_valid(const test_request& r) {
@@ -96,8 +96,8 @@ struct partitions_validator {
 };
 
 struct r_factor_validator {
-    static constexpr kafka::errors::error_code error_code
-      = kafka::errors::error_code::invalid_replication_factor;
+    static constexpr kafka::error_code error_code
+      = kafka::error_code::invalid_replication_factor;
     static constexpr const char* error_message = "RF is invalid";
 
     static bool is_valid(const test_request& r) {
@@ -105,9 +105,10 @@ struct r_factor_validator {
     }
 };
 
-using test_validators = make_validator_types<test_request,
-partitions_validator,
-r_factor_validator>;
+using test_validators = make_validator_types<
+  test_request,
+  partitions_validator,
+  r_factor_validator>;
 
 } // namespace
 
@@ -126,7 +127,7 @@ BOOST_AUTO_TEST_CASE(
     for (auto const& e : errs) {
         BOOST_TEST(
           (int8_t)e.error_code
-          == (int8_t)kafka::errors::error_code::invalid_partitions);
+          == (int8_t)kafka::error_code::invalid_partitions);
         BOOST_REQUIRE_EQUAL(*(e.err_msg), "Partitions count is invalid");
     }
 

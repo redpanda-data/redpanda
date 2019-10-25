@@ -4,7 +4,7 @@
 #include <iosfwd>
 #include <string_view>
 
-namespace kafka::errors {
+namespace kafka {
 
 enum class error_code : int16_t {
     // The server experienced an unexpected error when processing the request.
@@ -297,4 +297,4 @@ constexpr std::string_view error_code_names[] = {
 };
 
 std::ostream& operator<<(std::ostream&, error_code);
-} // namespace kafka::errors
+} // namespace kafka

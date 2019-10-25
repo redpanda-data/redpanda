@@ -2,8 +2,8 @@
 #include "model/fundamental.h"
 #include "redpanda/kafka/errors/errors.h"
 #include "redpanda/kafka/groups/member.h"
-#include "redpanda/kafka/groups/types.h"
 #include "redpanda/kafka/requests/join_group_request.h"
+#include "redpanda/kafka/types.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>
@@ -17,7 +17,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace kafka::groups {
+namespace kafka {
 
 /**
  * \defgroup kafka-groups Kafka group membership API
@@ -172,7 +172,7 @@ public:
      * specifies at least one protocol that is supported by all members of
      * the group.
      */
-    bool supports_protocols(const requests::join_group_request& r);
+    bool supports_protocols(const join_group_request& r);
 
     /**
      * \brief Add a member to the group.
@@ -182,14 +182,14 @@ public:
      *
      * \returns join response promise set at the end of the join phase.
      */
-    future<requests::join_group_response> add_member(member_ptr member);
+    future<join_group_response> add_member(member_ptr member);
 
     /**
      * \brief Update the set of protocols supported by a group member.
      *
      * \returns join response promise set at the end of the join phase.
      */
-    future<requests::join_group_response> update_member(
+    future<join_group_response> update_member(
       member_ptr member, std::vector<member_protocol>&& new_protocols);
 
     /**
@@ -217,8 +217,7 @@ public:
      *
      * Caller must ensure that the group's protocol is set.
      */
-    std::vector<requests::join_group_response::member_config>
-    member_metadata() const;
+    std::vector<join_group_response::member_config> member_metadata() const;
 
     /**
      * \brief Add empty assignments for missing group members.
@@ -277,7 +276,7 @@ public:
      * leader has reported member assignments. This method is called by the
      * leader to set the value on the associated promise.
      */
-    void finish_syncing_members(errors::error_code error) const;
+    void finish_syncing_members(error_code error) const;
 
     /**
      * \brief Get the group's associated partition.
@@ -306,8 +305,7 @@ public:
      * The structure of a member id is "id-{uuid}" where `id` is the group
      * instance id if it exists, or the client id otherwise.
      */
-    static kafka::member_id
-    generate_member_id(const requests::join_group_request& r);
+    static kafka::member_id generate_member_id(const join_group_request& r);
 
 private:
     using member_map = std::unordered_map<kafka::member_id, member_ptr>;
@@ -332,4 +330,4 @@ std::ostream& operator<<(std::ostream&, const group&);
 
 /// @}
 
-} // namespace kafka::groups
+} // namespace kafka

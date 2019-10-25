@@ -18,7 +18,7 @@
 #include <algorithm>
 #include <stdexcept>
 
-namespace kafka::groups {
+namespace kafka {
 
 /*
  * priority ordered search in candidates. if candidates is always small it
@@ -72,4 +72,4 @@ std::ostream& operator<<(std::ostream& o, const group_member& m) {
       m._protocols);
 }
 
-} // namespace kafka::groups
+} // namespace kafka

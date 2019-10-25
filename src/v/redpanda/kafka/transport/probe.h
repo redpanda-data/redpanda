@@ -6,7 +6,7 @@
 
 #include <cstdint>
 
-namespace kafka::transport {
+namespace kafka {
 
 class probe {
 public:
@@ -98,4 +98,4 @@ private:
     uint64_t _connects = 0;
 };
 
-} // namespace kafka::transport
+} // namespace kafka

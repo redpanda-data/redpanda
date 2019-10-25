@@ -1,8 +1,8 @@
 #pragma once
 #include "bytes/bytes.h"
-#include "redpanda/kafka/groups/types.h"
 #include "redpanda/kafka/requests/join_group_request.h"
 #include "redpanda/kafka/requests/sync_group_request.h"
+#include "redpanda/kafka/types.h"
 #include "utils/concepts-enabled.h"
 
 #include <seastar/core/future.hh>
@@ -18,7 +18,7 @@
 #include <utility>
 #include <vector>
 
-namespace kafka::groups {
+namespace kafka {
 
 /// \addtogroup kafka-groups
 /// @{
@@ -91,7 +91,7 @@ public:
     }
 
     /// Return true if the request protocols match the member's protocols.
-    bool matching_protocols(const requests::join_group_request& r) const {
+    bool matching_protocols(const join_group_request& r) const {
         return r.protocols == _protocols;
     }
 
@@ -121,13 +121,13 @@ public:
      *
      * NOTE: the caller must ensure that the member is not already joining.
      */
-    future<requests::join_group_response> get_join_response() {
+    future<join_group_response> get_join_response() {
         _join_promise = std::make_unique<join_promise>();
         return _join_promise->get_future();
     }
 
     /// Fulfill the join promise.
-    void set_join_response(requests::join_group_response&& response) {
+    void set_join_response(join_group_response&& response) {
         auto pr = std::move(_join_promise);
         pr->set_value(std::move(response));
     }
@@ -142,13 +142,13 @@ public:
      *
      * NOTE: the caller must ensure that the member is not already syncing.
      */
-    future<requests::sync_group_response> get_sync_response() {
+    future<sync_group_response> get_sync_response() {
         _sync_promise = std::make_unique<sync_promise>();
         return _sync_promise->get_future();
     }
 
     /// Fulfill the sync promise.
-    void set_sync_response(requests::sync_group_response&& response) {
+    void set_sync_response(sync_group_response&& response) {
         auto pr = std::move(_sync_promise);
         pr->set_value(std::move(response));
     }
@@ -172,8 +172,8 @@ public:
     const bytes& metadata(const kafka::protocol_name& protocol) const;
 
 private:
-    using join_promise = promise<requests::join_group_response>;
-    using sync_promise = promise<requests::sync_group_response>;
+    using join_promise = promise<join_group_response>;
+    using sync_promise = promise<sync_group_response>;
 
     friend std::ostream& operator<<(std::ostream&, const group_member&);
 
@@ -198,4 +198,4 @@ std::ostream& operator<<(std::ostream&, const group_member&);
 
 /// @}
 
-} // namespace kafka::groups
+} // namespace kafka

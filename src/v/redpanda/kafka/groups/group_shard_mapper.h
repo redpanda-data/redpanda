@@ -2,13 +2,13 @@
 #include "hashing/jump_consistent_hash.h"
 #include "hashing/xx.h"
 #include "model/fundamental.h"
-#include "redpanda/kafka/groups/types.h"
+#include "redpanda/kafka/types.h"
 #include "seastarx.h"
 #include "utils/concepts-enabled.h"
 
 #include <seastar/core/reactor.hh>
 
-namespace kafka::groups {
+namespace kafka {
 
 // clang-format off
 CONCEPT(
@@ -52,4 +52,4 @@ private:
     Shards& _shards;
 };
 
-} // namespace kafka::groups
+} // namespace kafka

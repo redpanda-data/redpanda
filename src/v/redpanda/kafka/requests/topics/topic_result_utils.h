@@ -1,19 +1,19 @@
 #pragma once
 #include "model/fundamental.h"
-#include "redpanda/kafka/requests/topics/types.h"
 #include "redpanda/kafka/requests/response.h"
+#include "redpanda/kafka/requests/topics/types.h"
 #include "seastarx.h"
 
 #include <seastar/util/bool_class.hh>
-namespace kafka::requests {
+namespace kafka {
 
 using include_message = bool_class<struct include_message_tag>;
 
-kafka::requests::response_ptr encode_topic_results(
+kafka::response_ptr encode_topic_results(
   const std::vector<topic_op_result>& errors,
   int32_t throttle_time_ms,
   include_message inc_msg = include_message::yes) {
-    auto resp = std::make_unique<kafka::requests::response>();
+    auto resp = std::make_unique<kafka::response>();
     // throttle time
     if (throttle_time_ms >= 0) {
         resp->writer().write(throttle_time_ms);
@@ -29,4 +29,4 @@ kafka::requests::response_ptr encode_topic_results(
       });
     return std::move(resp);
 }
-} // namespace kafka::requests
+} // namespace kafka
