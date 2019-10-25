@@ -22,8 +22,4 @@ struct request_header {
 
 std::ostream& operator<<(std::ostream&, const request_header&);
 
-struct response_header {
-    correlation_type correlation_id;
-};
-
 } // namespace kafka
