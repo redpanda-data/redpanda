@@ -14,12 +14,12 @@ namespace kafka {
 /// the types used here match the types used in Kafka protocol specification
 struct topic_op_result {
     model::topic topic;
-    error_code error_code;
+    error_code ec;
     std::optional<sstring> err_msg;
     static topic_op_result
     from_cluster_topic_result(const cluster::topic_result& err) {
         return {.topic = err.topic,
-                .error_code = map_topic_error_code(err.error_code)};
+                .ec = map_topic_error_code(err.ec)};
     }
 };
 
