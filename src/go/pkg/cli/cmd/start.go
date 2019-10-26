@@ -11,7 +11,6 @@ import (
 	"vectorized/pkg/tuners/factory"
 	"vectorized/pkg/tuners/hwloc"
 	"vectorized/pkg/utils"
-
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
@@ -205,7 +204,7 @@ func tuneAll(
 
 	for _, tunerName := range factory.AvailableTuners() {
 		tuner := tunerFactory.CreateTuner(tunerName, params)
-		if supported, reason := tuner.CheckIfSupported(); supported == true {
+		if supported, reason := tuner.CheckIfSupported(); supported {
 			log.Debugf("Tuner paramters %+v", params)
 			result := tuner.Tune()
 			if result.IsFailed() {
