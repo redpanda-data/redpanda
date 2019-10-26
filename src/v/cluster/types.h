@@ -72,7 +72,7 @@ std::ostream& operator<<(std::ostream&, topic_error_code);
 
 struct topic_result {
     model::topic topic;
-    topic_error_code error_code;
+    topic_error_code ec;
 };
 
 } // namespace cluster

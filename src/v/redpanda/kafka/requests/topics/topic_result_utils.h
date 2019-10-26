@@ -22,7 +22,7 @@ kafka::response_ptr encode_topic_results(
     resp->writer().write_array(
       errors, [inc_msg](const topic_op_result& r, response_writer& wr) {
           wr.write(r.topic);
-          wr.write(r.error_code);
+          wr.write(r.ec);
           if (inc_msg) {
               wr.write(r.err_msg);
           }

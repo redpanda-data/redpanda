@@ -86,7 +86,7 @@ std::vector<test_request> duplicated_requests() {
 }
 
 struct partitions_validator {
-    static constexpr kafka::error_code error_code
+    static constexpr kafka::error_code ec
       = kafka::error_code::invalid_partitions;
     static constexpr const char* error_message = "Partitions count is invalid";
 
@@ -96,7 +96,7 @@ struct partitions_validator {
 };
 
 struct r_factor_validator {
-    static constexpr kafka::error_code error_code
+    static constexpr kafka::error_code ec
       = kafka::error_code::invalid_replication_factor;
     static constexpr const char* error_message = "RF is invalid";
 
@@ -120,13 +120,13 @@ BOOST_AUTO_TEST_CASE(
       requests.begin(),
       requests.end(),
       std::back_inserter(errs),
-      partitions_validator::error_code,
+      partitions_validator::ec,
       partitions_validator::error_message,
       partitions_validator::is_valid);
     BOOST_REQUIRE_EQUAL(errs.size(), 2);
     for (auto const& e : errs) {
         BOOST_TEST(
-          (int8_t)e.error_code
+          (int8_t)e.ec
           == (int8_t)kafka::error_code::invalid_partitions);
         BOOST_REQUIRE_EQUAL(*(e.err_msg), "Partitions count is invalid");
     }
@@ -146,7 +146,7 @@ BOOST_AUTO_TEST_CASE(shall_return_no_errors) {
       requests.begin(),
       requests.end(),
       std::back_inserter(errs),
-      partitions_validator::error_code,
+      partitions_validator::ec,
       partitions_validator::error_message,
       partitions_validator::is_valid);
     BOOST_REQUIRE_EQUAL(errs.size(), 0);

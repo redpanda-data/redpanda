@@ -34,7 +34,7 @@ template<typename T>
 CONCEPT(requires TopicRequestItem<T>)
 topic_op_result generate_error(T item, error_code code, const sstring& msg) {
     return topic_op_result{.topic = model::topic{sstring(item.topic())},
-                           .error_code = code,
+                           .ec = code,
                            .err_msg = msg};
 }
 
@@ -43,7 +43,7 @@ template<typename T>
 CONCEPT(requires TopicRequestItem<T>)
 topic_op_result generate_successfull_result(T item) {
     return topic_op_result{.topic = model::topic{sstring(item.topic())},
-                           .error_code = error_code::none};
+                           .ec = error_code::none};
 }
 
 /// Validates topic requests items in range with predicate,
@@ -91,7 +91,7 @@ Iter validate_requests_range(
         begin,
         end,
         err_it,
-        ValidatorTypes::error_code,
+        ValidatorTypes::ec,
         ValidatorTypes::error_message,
         ValidatorTypes::is_valid)),
      ...);

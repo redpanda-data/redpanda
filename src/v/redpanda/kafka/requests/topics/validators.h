@@ -7,7 +7,7 @@ CONCEPT(
 template<typename Request, typename T>
 concept RequestValidator = requires (T validator, const Request& request) {
     { T::is_valid(request) } -> bool;
-    { T::error_code } -> error_code;
+    { T::ec } -> error_code;
     { T::error_message } -> const char*;
 };)
 // clang-format on
@@ -20,7 +20,7 @@ CONCEPT(requires(RequestValidator<Request, Validators>, ...))
 using make_validator_types = validator_type_list<Request, Validators...>;
 
 struct no_custom_partition_assignment {
-    static constexpr error_code error_code
+    static constexpr error_code ec
       = error_code::invalid_replica_assignment;
     static constexpr const char* error_message
       = "Replica assignment is not supported";
@@ -31,7 +31,7 @@ struct no_custom_partition_assignment {
 };
 
 struct partition_count_must_be_positive {
-    static constexpr error_code error_code = error_code::invalid_partitions;
+    static constexpr error_code ec = error_code::invalid_partitions;
     static constexpr const char* error_message
       = "Partitions count must be greater than 0";
 
@@ -41,7 +41,7 @@ struct partition_count_must_be_positive {
 };
 
 struct replication_factor_must_be_positive {
-    static constexpr error_code error_code
+    static constexpr error_code ec
       = error_code::invalid_replication_factor;
     static constexpr const char* error_message
       = "Replication factor must be greater than 0";
@@ -52,7 +52,7 @@ struct replication_factor_must_be_positive {
 };
 
 struct unsupported_configuration_entries {
-    static constexpr error_code error_code = error_code::invalid_config;
+    static constexpr error_code ec = error_code::invalid_config;
     static constexpr const char* error_message
       = "Not supported configuration entry ";
 
