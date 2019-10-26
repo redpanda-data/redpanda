@@ -64,3 +64,20 @@ RUN export CXX=/usr/local/bin/clang++ && \
 RUN sed -i \
       's/  set (_seastar_dep_args_.*)//' \
       /usr/local/lib64/cmake/Seastar/SeastarDependencies.cmake
+
+#######
+## go
+#######
+ENV GOROOT=/usr/local/go
+ENV GOPATH=/usr/local/gopath
+ENV PATH=$PATH:/usr/local/go/bin
+ENV CGO_ENABLED=1
+
+RUN curl -Ls https://dl.google.com/go/go1.12.3.linux-amd64.tar.gz | tar xzf - -C /usr/local
+
+COPY src/go/go.mod /
+COPY src/go/go.sum /
+
+RUN go mod download && \
+    rm /go.mod && \
+    rm /go.sum
