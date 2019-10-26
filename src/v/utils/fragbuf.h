@@ -379,7 +379,7 @@ public:
       : _current_fragment(std::move(fragment))
       , _current_position(current_position)
       , _bytes_left(bytes_left) {
-        if (_current_position == _current_fragment->end()) {
+        if (_bytes_left > 0 && _current_position == _current_fragment->end()) {
             next_fragment();
         }
     }
@@ -434,10 +434,12 @@ inline fragbuf::istream::iterator fragbuf::istream::end() const noexcept {
 // clang-format off
 inline bool fragbuf::operator==(
   const fragbuf& other) const {
+    if( _size_bytes != other._size_bytes){
+       return false;
+    }
     auto stream = get_istream();
     auto other_stream = other.get_istream();
-    return _size_bytes == other._size_bytes
-           && std::equal(stream.begin(), stream.end(), other_stream.begin());
+    return std::equal(stream.begin(), stream.end(), other_stream.begin());
 }
 // clang-format on
 
