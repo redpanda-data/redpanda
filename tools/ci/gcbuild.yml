@@ -25,9 +25,17 @@ steps:
   dir: 'build/'
   args: ['ctest', '-VV']
 
-- id: 'build,test go'
+- id: 'test go'
   name: 'gcr.io/$PROJECT_ID/builder:$SHORT_SHA'
-  args: ['tools/build.py', '--targets=go', '--deps=false']
+  dir: 'src/go/pkg'
+  args: ['go', 'test', './...']
+
+- id: 'build go exe'
+  name: 'gcr.io/$PROJECT_ID/builder:$SHORT_SHA'
+  dir: 'src/go/pkg'
+  args: ['go', 'install', './...']
+  env:
+  - 'GOBIN=/workspace/build/go/bin'
 
 - id: 'package'
   name: 'gcr.io/$PROJECT_ID/builder:$SHORT_SHA'
