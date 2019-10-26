@@ -12,8 +12,6 @@ steps:
   env:
   - 'CC=clang'
   - 'CXX=clang++'
-  - 'BOOST_TEST_LOG_LEVEL=test_suite'
-  - 'BOOST_TEST_COLOR_OUTPUT=0'
 
 - id: 'build cpp'
   name: 'gcr.io/$PROJECT_ID/builder:$SHORT_SHA'
@@ -24,6 +22,9 @@ steps:
   name: 'gcr.io/$PROJECT_ID/builder:$SHORT_SHA'
   dir: 'build/'
   args: ['ctest', '-VV']
+  env:
+  - 'BOOST_TEST_LOG_LEVEL=test_suite'
+  - 'BOOST_TEST_COLOR_OUTPUT=0'
 
 - id: 'test go'
   name: 'gcr.io/$PROJECT_ID/builder:$SHORT_SHA'
