@@ -110,7 +110,15 @@ public:
     fragbuf&& release_packed_value_and_headers() {
         return std::move(_value_and_headers);
     }
-
+    record share() {
+        return record(
+          _size_bytes,
+          _attributes,
+          _timestamp_delta,
+          _offset_delta,
+          _key.share(0, _key.size_bytes()),
+          _value_and_headers.share(0, _value_and_headers.size_bytes()));
+    }
     bool operator==(const record& other) const {
         return _size_bytes == other._size_bytes
                && _timestamp_delta == other._timestamp_delta
@@ -268,7 +276,10 @@ public:
             _size = 0;
             return std::move(_data);
         }
-
+        compressed_records share() {
+            return compressed_records(
+              _size, _data.share(0, _data.size_bytes()));
+        }
         bool operator==(const compressed_records& other) const {
             return _size == other._size && _data == other._data;
         }
@@ -413,6 +424,25 @@ public:
 
     record_batch_header& get_header_for_testing() {
         return _header;
+    }
+
+    record_batch share() {
+        record_batch_header h = _header;
+        if (compressed()) {
+            return record_batch(
+              h, std::get<compressed_records>(_records).share());
+        }
+        auto& originals = std::get<uncompressed_records>(_records);
+        uncompressed_records r;
+        r.reserve(originals.size());
+        // share all individual records
+        std::transform(
+          originals.begin(),
+          originals.end(),
+          std::back_inserter(r),
+          [](record& rec) { return rec.share(); });
+
+        return record_batch(std::move(h), std::move(r));
     }
 
 private:

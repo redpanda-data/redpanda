@@ -190,3 +190,18 @@ SEASTAR_THREAD_TEST_CASE(test_interrupt_consume_multiple_slices) {
     do_test_interrupt_consume(make_generating_reader(
       make_batches(offset(1), offset(2), offset(3), offset(4), offset(5))));
 }
+SEASTAR_THREAD_TEST_CASE(record_batch_sharing) {
+    auto v1 = make_batches(
+      offset(1), offset(2), offset(3), offset(4), offset(5));
+    decltype(v1) v2;
+    v2.reserve(v1.size());
+    std::transform(
+      v1.begin(), v1.end(), std::back_inserter(v2), [](record_batch& batch) {
+          return batch.share();
+      });
+
+    BOOST_CHECK_EQUAL(v1.size(), v2.size());
+    for (auto i = 0; i < v1.size(); ++i) {
+        BOOST_CHECK(v1[i] == v2[i]);
+    }
+}
