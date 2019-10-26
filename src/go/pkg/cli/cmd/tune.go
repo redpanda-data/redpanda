@@ -164,7 +164,7 @@ func tune(
 	var rebootRequired = false
 	for _, tunerName := range elementsToTune {
 		tuner := tunersFactory.CreateTuner(tunerName, params)
-		if supported, reason := tuner.CheckIfSupported(); supported == true {
+		if supported, reason := tuner.CheckIfSupported(); supported {
 			log.Debugf("Tuner paramters %+v", params)
 			log.Infof("Running '%s' tuner...", tunerName)
 			result := tuner.Tune()
