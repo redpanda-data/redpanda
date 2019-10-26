@@ -11,3 +11,7 @@
 !CMakeLists.txt
 !3rdparty.cmake.in
 !cmake/FindLibCxx.cmake
+
+# go
+!src/go/go.mod
+!src/go/go.sum
