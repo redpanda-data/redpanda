@@ -15,8 +15,8 @@ public:
     explicit source(input_stream<char>& s)
       : _source(std::ref(s)) {
     }
+    source(const source&) = delete;
     source(source&&) noexcept = default;
-    source& operator=(source&&) noexcept = default;
 
     future<temporary_buffer<char>> read_exactly(size_t i) {
         return _source.get().read_exactly(i).then(
@@ -45,8 +45,6 @@ public:
     uint64_t checksum() const {
         return _hash.digest();
     }
-    source(const source&) = delete;
-    ~source() noexcept = default;
 
 private:
     std::reference_wrapper<input_stream<char>> _source;
