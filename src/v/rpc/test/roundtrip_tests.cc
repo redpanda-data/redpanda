@@ -25,10 +25,8 @@ SEASTAR_THREAD_TEST_CASE(roundtrip_pod) {
 }
 SEASTAR_THREAD_TEST_CASE(roundtrip_pod_with_checksum) {
     auto b = bytes_ostream();
-    {
-        pod src;
-        rpc::serialize(b, std::move(src));
-    }
+    auto src = pod{};
+    rpc::serialize(b, std::move(src));
     auto in = rpc::make_input_stream(std::move(b));
     auto rsource = rpc::source(in);
     auto expected = rpc::deserialize<pod>(rsource).get0();
