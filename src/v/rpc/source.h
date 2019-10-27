@@ -42,7 +42,7 @@ public:
     size_t size_bytes() const {
         return _size;
     }
-    uint64_t checksum() {
+    uint64_t checksum() const {
         return _hash.digest();
     }
     source(const source&) = delete;
@@ -50,7 +50,7 @@ public:
 
 private:
     std::reference_wrapper<input_stream<char>> _source;
-    incremental_xxhash64 _hash;
+    mutable incremental_xxhash64 _hash{};
     fragbuf::reader _frag;
     size_t _size = 0;
 };
