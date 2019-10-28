@@ -405,27 +405,23 @@ consensus::do_append_entries(append_entries_request&& r) {
 future<std::vector<storage::log::append_result>>
 consensus::disk_append(std::vector<entry>&& entries) {
     using ret_t = std::vector<storage::log::append_result>;
-    return do_with(
-             std::move(entries),
-             [this](std::vector<entry>& in) {
-                 // needs a ref to the range
-                 auto no_of_entries = in.size();
-                 return copy_range<ret_t>(
-                          in,
-                          [this](entry& e) {
-                              return _log.append(
-                                std::move(e.reader()),
-                                storage::log_append_config{
-                                  // explicit here
-                                  storage::log_append_config::fsync::no,
-                                  _io_priority,
-                                  model::timeout_clock::now() + _disk_timeout});
-                          })
-                   .then([this, no_of_entries](ret_t ret) {
-                       _probe.entries_appended(no_of_entries);
-                       return ret;
-                   });
-             })
+    // clang-format off
+    return do_with(std::move(entries), [this](std::vector<entry>& in) {
+            auto no_of_entries = in.size();
+            auto cfg = storage::log_append_config{
+            // no fsync explicit on a per write, we verify at the end to
+            // batch fsync
+            storage::log_append_config::fsync::no,
+            _io_priority,
+            model::timeout_clock::now() + _disk_timeout};
+            return copy_range<ret_t>(in, [this, cfg](entry& e) {
+                   return _log.append(std::move(e.reader()), cfg);
+            }).then([this, no_of_entries](ret_t ret) {
+                   _probe.entries_appended(no_of_entries);
+                   return ret;
+            });
+      })
+      // clang-format on
       .then([this](ret_t ret) {
           if (_should_fsync == storage::log_append_config::fsync::yes) {
               return _log.appender().flush().then([ret = std::move(ret)] {
