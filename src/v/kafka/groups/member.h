@@ -26,7 +26,8 @@ namespace kafka {
 /// \brief A Kafka group member.
 class group_member {
 public:
-    using duration_type = lowres_clock::duration;
+    using clock_type = lowres_clock;
+    using duration_type = clock_type::duration;
 
     group_member(
       kafka::member_id member_id,
@@ -42,7 +43,8 @@ public:
       , _session_timeout(session_timeout)
       , _rebalance_timeout(rebalance_timeout)
       , _protocol_type(std::move(protocol_type))
-      , _protocols(std::move(protocols)) {}
+      , _protocols(std::move(protocols))
+      , _is_new(false) {}
 
     /// Get the member id.
     const kafka::member_id& id() const { return _id; }
@@ -95,6 +97,9 @@ public:
     void for_each_protocol(ProtocolFn fn) const {
         std::for_each(std::cbegin(_protocols), std::cend(_protocols), fn);
     }
+
+    /// Update the is_new flag.
+    void set_new(bool is_new) { _is_new = is_new; }
 
     /// Check if the member is waiting to join.
     bool is_joining() const { return bool(_join_promise); }
@@ -152,6 +157,23 @@ public:
      */
     const bytes& metadata(const kafka::protocol_name& protocol) const;
 
+    bool should_keep_alive(
+      clock_type::time_point deadline, clock_type::duration new_join_timeout) {
+        if (is_joining()) {
+            return _is_new || (_latest_heartbeat + new_join_timeout) > deadline;
+        }
+
+        if (is_syncing()) {
+            return (_latest_heartbeat + _session_timeout) > deadline;
+        }
+
+        return false;
+    }
+
+    void set_latest_heartbeat(clock_type::time_point t) {
+        _latest_heartbeat = t;
+    }
+
 private:
     using join_promise = promise<join_group_response>;
     using sync_promise = promise<sync_group_response>;
@@ -166,6 +188,8 @@ private:
     kafka::protocol_type _protocol_type;
     bytes _assignment;
     std::vector<member_protocol> _protocols;
+    bool _is_new;
+    clock_type::time_point _latest_heartbeat;
 
     // external shutdown synchronization
     std::unique_ptr<sync_promise> _sync_promise;
