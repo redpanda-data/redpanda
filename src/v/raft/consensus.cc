@@ -103,7 +103,8 @@ future<> consensus::process_vote_replies(std::vector<vote_reply_ptr> reqs) {
                  if (_vstate != vote_state::candidate) {
                      return make_ready_future<>();
                  }
-                 raftlog().info("We are the new leader, term:{}", _meta.term);
+                 raftlog().info(
+                   "We({}) are the new leader, term:{}", _self, _meta.term);
                  _vstate = vote_state::leader;
                  return make_ready_future<>();
              })
