@@ -111,6 +111,7 @@ private:
       send_vote_requests(clock_type::time_point);
 
     future<> process_vote_replies(std::vector<vote_reply_ptr>);
+    future<> replicate_config_as_new_leader();
 
     // args
     model::node_id _self;
