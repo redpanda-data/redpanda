@@ -33,17 +33,7 @@ private:
     }
 
 public:
-    [[gnu::always_inline]] inline static constexpr size_type
-    vint_size(value_type value) {
-        return do_serialize(value, [](int8_t) {});
-    }
-
-    [[gnu::always_inline]] inline static constexpr size_type
-    serialize(value_type value, bytes::iterator out) noexcept {
-        return do_serialize(value, [&out](int8_t value) { *out++ = value; });
-    }
-
-    //clang-format off
+   //clang-format off
     template<typename Consumer>
     CONCEPT(requires requires(Consumer c, int8_t v) { {c(v)}; })
     //clang-format on
@@ -58,6 +48,16 @@ public:
         }
         f(static_cast<int8_t>(encode));
         return size;
+    }
+
+    [[gnu::always_inline]] inline static constexpr size_type
+    vint_size(value_type value) {
+        return do_serialize(value, [](int8_t) {});
+    }
+
+    [[gnu::always_inline]] inline static constexpr size_type
+    serialize(value_type value, bytes::iterator out) noexcept {
+        return do_serialize(value, [&out](int8_t value) { *out++ = value; });
     }
 
     template<typename Range>
