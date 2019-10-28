@@ -120,8 +120,7 @@ create_topics_api::process(request_context&& ctx, smp_service_group g) {
                   .dispatch_to_controller(
                     [to_create = to_cluster_type(begin, valid_range_end),
                      timeout = request.timeout](cluster::controller& c) {
-                        return c.create_topics(
-                          default_namespace(), to_create, to_timeout(timeout));
+                        return c.create_topics(to_create, to_timeout(timeout));
                     })
                   .then([results = std::move(results)](
                           std::vector<cluster::topic_result> c_res) mutable {

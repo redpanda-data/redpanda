@@ -71,6 +71,11 @@ constexpr std::string_view topic_error_code_names[] = {
 std::ostream& operator<<(std::ostream&, topic_error_code);
 
 struct topic_result {
+    topic_result(
+      model::topic t, topic_error_code ec = topic_error_code::no_error)
+      : topic(std::move(t))
+      , ec(ec) {
+    }
     model::topic topic;
     topic_error_code ec;
 };
@@ -78,21 +83,11 @@ struct topic_result {
 } // namespace cluster
 
 namespace rpc {
+
 template<>
-inline future<cluster::partition_assignment> deserialize(source& in) {
-    struct _simple {
-        uint32_t shard;
-        raft::group_id group;
-        model::ntp ntp;
-    };
-    return deserialize<_simple>(in).then([&in](_simple s) {
-        return deserialize<model::broker>(in).then(
-          [s = std::move(s)](model::broker b) {
-              return cluster::partition_assignment{.shard = s.shard,
-                                                   .group = s.group,
-                                                   .ntp = s.ntp,
-                                                   .broker = std::move(b)};
-          });
-    });
-}
+void serialize(bytes_ostream& out, cluster::topic_configuration&& t);
+
+template<>
+future<cluster::partition_assignment> deserialize(source& in);
+
 } // namespace rpc
