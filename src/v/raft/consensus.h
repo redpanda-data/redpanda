@@ -9,14 +9,6 @@
 #include <seastar/core/sharded.hh>
 
 namespace raft {
-struct append_entries_proto_hook {
-    using entries = std::vector<entry>;
-    virtual ~append_entries_proto_hook() = default;
-    virtual void pre_commit(model::offset begin, const entries&) = 0;
-    virtual void abort(model::offset begin) = 0;
-    virtual void commit(model::offset begin, model::offset committed) = 0;
-};
-
 /// consensus for one raft group
 class consensus {
 public:
@@ -29,6 +21,8 @@ public:
     using vote_request_ptr = foreign_ptr<std::unique_ptr<vote_request>>;
     using vote_reply_ptr = foreign_ptr<std::unique_ptr<vote_reply>>;
     using leader_cb_t = noncopyable_function<void(group_id)>;
+    using append_entries_cb_t
+      = noncopyable_function<void(std::vector<entry>&&)>;
 
     consensus(
       model::node_id,
@@ -63,8 +57,12 @@ public:
         });
     }
 
-    void register_hook(append_entries_proto_hook* fn) {
-        _hooks.push_back(fn);
+    void register_hook(append_entries_cb_t fn) {
+        if (_append_entries_notification) {
+            throw std::runtime_error(
+              "Raft entries already has append_entries hook");
+        }
+        _append_entries_notification = std::move(fn);
     }
 
     bool is_leader() const {
@@ -96,6 +94,9 @@ private:
     future<vote_reply> do_vote(vote_request&&);
     future<append_entries_reply> do_append_entries(append_entries_request&&);
 
+    future<append_entries_reply> success_case_append_entries(
+      protocol_metadata sender, std::vector<storage::log::append_result>);
+
     future<std::vector<storage::log::append_result>>
     disk_append(std::vector<entry>&&);
 
@@ -112,6 +113,10 @@ private:
 
     future<> process_vote_replies(std::vector<vote_reply_ptr>);
     future<> replicate_config_as_new_leader();
+
+    /// After we append on disk, we must consume the entries
+    /// to update our leader_id, nodes & learners configuration
+    future<> process_configurations(std::vector<entry>&&);
 
     // args
     model::node_id _self;
@@ -141,7 +146,7 @@ private:
     /// is for the operation to touch the disk
     semaphore _op_sem{1};
     /// used for notifying when commits happened to log
-    std::vector<append_entries_proto_hook*> _hooks;
+    append_entries_cb_t _append_entries_notification;
     probe _probe;
 };
 

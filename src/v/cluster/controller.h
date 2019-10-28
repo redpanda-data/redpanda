@@ -41,16 +41,6 @@ public:
       model::timeout_clock::time_point timeout);
 
 private:
-    // stages the pre_commit hooks from raft
-    struct stage_hook final : raft::append_entries_proto_hook {
-        explicit stage_hook(controller* self);
-        void pre_commit(model::offset begin, const entries&) final;
-        void abort(model::offset begin) final;
-        void commit(model::offset begin, model::offset committed) final;
-        controller* ptr;
-    };
-    friend stage_hook;
-
     struct batch_consumer {
         explicit batch_consumer(controller* c)
           : ptr(c) {
@@ -81,7 +71,6 @@ private:
     model::node_id _self;
     sharded<partition_manager>& _pm;
     sharded<shard_table>& _st;
-    stage_hook _stgh;
 };
 
 // clang-format off
