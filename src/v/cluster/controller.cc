@@ -22,17 +22,24 @@ controller::controller(
   sharded<shard_table>& st)
   : _self(std::move(n))
   , _pm(pm)
-  , _st(st)
-  , _stgh(this) {
+  , _st(st) {
 }
 
 future<> controller::start() {
     verify_shard();
     clusterlog().debug("Starting cluster recovery");
-    return _pm.local().manage(controller::ntp, controller::group).then([this] {
-        auto plog = _pm.local().logs().find(controller::ntp)->second;
-        return bootstrap_from_log(plog);
-    });
+    return _pm.local()
+      .manage(controller::ntp, controller::group)
+      .then([this] {
+          auto plog = _pm.local().logs().find(controller::ntp)->second;
+          return bootstrap_from_log(plog);
+      })
+      .then([this] {
+          raft0().register_hook([this](std::vector<raft::entry>&&) {
+              verify_shard();
+              // TODO update the the caches w/ these entries
+          });
+      });
 }
 
 raft::consensus& controller::raft0() const {
@@ -204,23 +211,6 @@ raft::entry controller::create_topic_cfg_entry(const topic_configuration& cfg) {
     return raft::entry(
       controller_record_batch_type,
       model::make_memory_record_batch_reader(std::move(batches)));
-}
-
-// ---- hooks below
-
-controller::stage_hook::stage_hook(controller* self)
-  : ptr(self) {
-}
-void controller::stage_hook::pre_commit(
-  model::offset, const std::vector<raft::entry>&) {
-    verify_shard();
-}
-void controller::stage_hook::abort(model::offset begin) {
-    verify_shard();
-}
-void controller::stage_hook::commit(
-  model::offset begin, model::offset committed) {
-    verify_shard();
 }
 
 } // namespace cluster
