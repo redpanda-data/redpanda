@@ -14,4 +14,7 @@ persist_voted_for(sstring filename, consensus::voted_for_configuration);
 
 future<consensus::voted_for_configuration> read_voted_for(sstring filename);
 
+future<std::vector<std::vector<raft::entry>>>
+copy_n(std::vector<raft::entry>&&, std::size_t);
+
 } // namespace raft::details

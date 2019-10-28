@@ -76,4 +76,58 @@ future<consensus::voted_for_configuration> read_voted_for(sstring filename) {
     });
 }
 
+future<std::vector<std::vector<raft::entry>>>
+copy_n(std::vector<raft::entry>&& r, std::size_t ncopies) {
+    using T = std::vector<raft::entry>;
+    using ret_t = std::vector<T>;
+    ret_t retval(ncopies);
+    if (ncopies <= 1) {
+        retval[0] = std::move(r);
+        return make_ready_future<ret_t>(std::move(retval));
+    }
+    class consumer_type {
+    public:
+        explicit consumer_type(model::record_batch_type type, ret_t& ref)
+          : _type(type)
+          , _ref(ref) {
+        }
+        future<stop_iteration> operator()(model::record_batch batch) {
+            _staging.push_back(std::move(batch));
+            return make_ready_future<stop_iteration>(stop_iteration::no);
+        }
+        void end_of_stream() {
+            // simply move the last one in
+            for (auto i = 0; i < _ref.size() - 1; ++i) {
+                std::vector<model::record_batch> batch_vec;
+                batch_vec.reserve(_staging.size());
+                std::transform(
+                  _staging.begin(),
+                  _staging.end(),
+                  std::back_inserter(batch_vec),
+                  [](model::record_batch& b) { return b.share(); });
+                _ref[i].push_back(raft::entry(
+                  _type,
+                  model::make_memory_record_batch_reader(
+                    std::move(batch_vec))));
+            }
+            _ref.back().push_back(raft::entry(
+              _type,
+              model::make_memory_record_batch_reader(std::move(_staging))));
+        }
+
+    private:
+        model::record_batch_type _type;
+        std::vector<model::record_batch> _staging;
+        ret_t& _ref;
+    };
+    return do_with(std::move(r), std::move(retval), [](T& src, ret_t& dst) {
+        // clang-format off
+        return do_for_each(src, [&dst](raft::entry& e) {
+            return e.reader().consume(
+                     consumer_type(e.entry_type(), dst), model::no_timeout);
+        }) .then([&dst] { return std::move(dst); });
+        // clang-format on
+    });
+}
+
 } // namespace raft::details
