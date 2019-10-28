@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"path/filepath"
+	"time"
 	"vectorized/pkg/checkers"
 	"vectorized/pkg/cli"
 	"vectorized/pkg/os"
@@ -41,6 +42,7 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 	var (
 		configFilePathFlag string
 		installDirFlag     string
+		timeoutMs          int
 	)
 	sFlags := seastarFlags{}
 	sFlagsMap := map[string]interface{}{
@@ -84,7 +86,7 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 					"lock-memory":        "false",
 				},
 			}
-			err = prestart(fs, rpArgs, config, prestartCfg)
+			err = prestart(fs, rpArgs, config, prestartCfg, time.Duration(timeoutMs)*time.Millisecond)
 			if err != nil {
 				return err
 			}
@@ -137,6 +139,7 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 	command.Flags().StringVar(&sFlags.ioProperties, "io-properties", "",
 		"a YAML string describing the characteristics of the I/O Subsystem")
 	command.Flags().BoolVar(&sFlags.mbind, "mbind", true, "enable mbind")
+	command.Flags().IntVar(&timeoutMs, "timeout", 10000, "The maximum amount of time (in ms) to wait for the checks and tune processes to complete")
 	for flag := range sFlagsMap {
 		command.Flag(flag).Hidden = true
 	}
@@ -148,9 +151,10 @@ func prestart(
 	args *redpanda.RedpandaArgs,
 	config *redpanda.Config,
 	prestartCfg prestartConfig,
+	timeout time.Duration,
 ) error {
 	if prestartCfg.tuneEnabled {
-		err := tuneAll(fs, args.SeastarFlags["cpuset"], config)
+		err := tuneAll(fs, args.SeastarFlags["cpuset"], config, timeout)
 		if err != nil {
 			return err
 		}
@@ -158,7 +162,7 @@ func prestart(
 	}
 	if prestartCfg.checkEnabled {
 		checkersMap, err := redpanda.RedpandaCheckers(fs,
-			args.SeastarFlags["io-properties-file"], config)
+			args.SeastarFlags["io-properties-file"], config, timeout)
 		if err != nil {
 			return err
 		}
@@ -171,10 +175,15 @@ func prestart(
 	return nil
 }
 
-func tuneAll(fs afero.Fs, cpuSet string, config *redpanda.Config) error {
+func tuneAll(
+	fs afero.Fs,
+	cpuSet string,
+	config *redpanda.Config,
+	timeout time.Duration,
+) error {
 	params := &factory.TunerParams{}
-	tunerFactory := factory.NewDirectExecutorTunersFactory(fs)
-	hw := hwloc.NewHwLocCmd(os.NewProc())
+	tunerFactory := factory.NewDirectExecutorTunersFactory(fs, timeout)
+	hw := hwloc.NewHwLocCmd(os.NewProc(), timeout)
 	if cpuSet == "" {
 		cpuMask, err := hw.All()
 		if err != nil {
@@ -196,7 +205,7 @@ func tuneAll(fs afero.Fs, cpuSet string, config *redpanda.Config) error {
 
 	for _, tunerName := range factory.AvailableTuners() {
 		tuner := tunerFactory.CreateTuner(tunerName, params)
-		if supported, reason := tuner.CheckIfSupported(); supported == true {
+		if supported, reason := tuner.CheckIfSupported(); supported {
 			log.Debugf("Tuner paramters %+v", params)
 			result := tuner.Tune()
 			if result.IsFailed() {
@@ -230,7 +239,10 @@ func check(
 		for _, checker := range checkersSlice {
 			result := checker.Check()
 			if result.Err != nil {
-				return result.Err
+				if checker.GetSeverity() == checkers.Fatal {
+					return result.Err
+				}
+				log.Warnf("System check '%s' failed with non-fatal error '%s'", checker.GetDesc(), result.Err)
 			}
 			if !result.IsOk {
 				if action, exists := checkFailedActions[checkerID]; exists {

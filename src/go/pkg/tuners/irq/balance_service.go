@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 	"vectorized/pkg/os"
 	"vectorized/pkg/tuners/executors"
 	"vectorized/pkg/tuners/executors/commands"
@@ -28,12 +29,16 @@ type BalanceService interface {
 }
 
 func NewBalanceService(
-	fs afero.Fs, proc os.Proc, executor executors.Executor,
+	fs afero.Fs,
+	proc os.Proc,
+	executor executors.Executor,
+	timeout time.Duration,
 ) BalanceService {
 	return &balanceService{
 		fs:       fs,
 		proc:     proc,
 		executor: executor,
+		timeout:  timeout,
 	}
 }
 
@@ -42,6 +47,7 @@ type balanceService struct {
 	fs       afero.Fs
 	proc     os.Proc
 	executor executors.Executor
+	timeout  time.Duration
 }
 
 func (balanceService *balanceService) BanIRQsAndRestart(
@@ -113,12 +119,12 @@ func (balanceService *balanceService) BanIRQsAndRestart(
 		log.Debug("Restarting 'irqbalance' via systemctl...")
 		err = balanceService.executor.Execute(
 			commands.NewLaunchCmd(
-				balanceService.proc, "systemctl", "try-restart", "irqbalance"))
+				balanceService.proc, balanceService.timeout, "systemctl", "try-restart", "irqbalance"))
 	} else {
 		log.Debug("Restarting 'irqbalance' directly (init.d)...")
 		err = balanceService.executor.Execute(
 			commands.NewLaunchCmd(
-				balanceService.proc, "/etc/init.d/irqbalance", "restart"))
+				balanceService.proc, balanceService.timeout, "/etc/init.d/irqbalance", "restart"))
 	}
 	if err != nil {
 		return err
@@ -127,7 +133,7 @@ func (balanceService *balanceService) BanIRQsAndRestart(
 }
 
 func (balanceService *balanceService) IsRunning() bool {
-	return balanceService.proc.IsRunning("irqbalance")
+	return balanceService.proc.IsRunning(balanceService.timeout, "irqbalance")
 }
 
 func (balanceService *balanceService) GetBannedIRQs() ([]int, error) {

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"time"
 	"vectorized/pkg/checkers"
 	"vectorized/pkg/cli"
 	"vectorized/pkg/cli/ui"
@@ -18,19 +19,23 @@ import (
 )
 
 func NewCheckCommand(fs afero.Fs) *cobra.Command {
-	var redpandaConfigFile string
+	var (
+		redpandaConfigFile string
+		timeoutMs          int
+	)
 	command := &cobra.Command{
 		Use:          "check",
 		Short:        "Check if system meets redpanda requirements",
 		Long:         "",
 		SilenceUsage: true,
 		RunE: func(ccmd *cobra.Command, args []string) error {
-			return executeCheck(fs, redpandaConfigFile)
+			return executeCheck(fs, redpandaConfigFile, time.Duration(timeoutMs)*time.Millisecond)
 		},
 	}
 	command.Flags().StringVar(&redpandaConfigFile,
 		"redpanda-cfg", "", "Redpanda config file, if not set the file will be "+
 			"searched for in default locations")
+	command.Flags().IntVar(&timeoutMs, "timeout", 2000, "The maximum amount of time (in ms) to wait for the checks and tune processes to complete")
 	return command
 }
 
@@ -52,7 +57,9 @@ func (r row) appendToTable(t *tablewriter.Table) {
 	})
 }
 
-func executeCheck(fs afero.Fs, configFileFlag string) error {
+func executeCheck(
+	fs afero.Fs, configFileFlag string, timeout time.Duration,
+) error {
 	configFile, err := cli.GetOrFindConfig(fs, configFileFlag)
 	if err != nil {
 		return err
@@ -62,7 +69,7 @@ func executeCheck(fs afero.Fs, configFileFlag string) error {
 		return err
 	}
 	ioConfigFile := redpanda.GetIOConfigPath(filepath.Dir(configFile))
-	checkersMap, err := redpanda.RedpandaCheckers(fs, ioConfigFile, config)
+	checkersMap, err := redpanda.RedpandaCheckers(fs, ioConfigFile, config, timeout)
 	if err != nil {
 		return err
 	}
@@ -74,17 +81,18 @@ func executeCheck(fs afero.Fs, configFileFlag string) error {
 		"Severity",
 		"Passed",
 	})
-	var isOk = true
 
 	var rows []row
 	for _, checkersSlice := range checkersMap {
 		for _, c := range checkersSlice {
 			result := c.Check()
 			if result.Err != nil {
-				return result.Err
+				if c.GetSeverity() == checkers.Fatal {
+					return result.Err
+				}
+				log.Warnf("System check '%s' failed with non-fatal error '%s'", c.GetDesc(), result.Err)
 			}
 			log.Debugf("Checker '%s' result %+v", c.GetDesc(), result)
-			isOk = isOk && result.IsOk
 			rows = append(rows, row{
 				desc:     c.GetDesc(),
 				required: fmt.Sprint(c.GetRequiredAsString()),

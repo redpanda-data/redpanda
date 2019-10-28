@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"testing"
+	"time"
 	"vectorized/pkg/os"
 	"vectorized/pkg/tuners/executors"
 	"vectorized/pkg/utils"
@@ -156,7 +157,7 @@ func TestGrubAddCommandLineOptions(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			grub := NewGrub(nil, nil, tt.fields.fs, executors.NewDirectExecutor())
+			grub := NewGrub(nil, nil, tt.fields.fs, executors.NewDirectExecutor(), time.Duration(10)*time.Second)
 			tt.before(tt.fields)
 			if err := grub.AddCommandLineOptions(tt.args.opt); (err != nil) != tt.wantErr {
 				t.Errorf("grub.AddCommandLineOption() error = %v, wantErr %v", err, tt.wantErr)

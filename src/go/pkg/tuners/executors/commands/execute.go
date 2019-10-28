@@ -3,26 +3,31 @@ package commands
 import (
 	"bufio"
 	"fmt"
+	"time"
 	"vectorized/pkg/os"
 )
 
 type executeCommand struct {
 	Command
-	cmd  string
-	args []string
-	proc os.Proc
+	cmd     string
+	args    []string
+	proc    os.Proc
+	timeout time.Duration
 }
 
-func NewLaunchCmd(proc os.Proc, cmd string, args ...string) Command {
+func NewLaunchCmd(
+	proc os.Proc, timeout time.Duration, cmd string, args ...string,
+) Command {
 	return &executeCommand{
-		cmd:  cmd,
-		args: args,
-		proc: proc,
+		cmd:     cmd,
+		args:    args,
+		proc:    proc,
+		timeout: timeout,
 	}
 }
 
 func (c *executeCommand) Execute() error {
-	_, err := c.proc.RunWithSystemLdPath(c.cmd, c.args...)
+	_, err := c.proc.RunWithSystemLdPath(c.timeout, c.cmd, c.args...)
 	return err
 }
 

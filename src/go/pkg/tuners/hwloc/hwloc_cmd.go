@@ -4,6 +4,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 	"vectorized/pkg/os"
 
 	log "github.com/sirupsen/logrus"
@@ -11,12 +12,14 @@ import (
 
 type hwLocCmd struct {
 	HwLoc
-	proc os.Proc
+	proc    os.Proc
+	timeout time.Duration
 }
 
-func NewHwLocCmd(proc os.Proc) HwLoc {
+func NewHwLocCmd(proc os.Proc, timeout time.Duration) HwLoc {
 	return &hwLocCmd{
-		proc: proc,
+		proc:    proc,
+		timeout: timeout,
 	}
 }
 
@@ -101,7 +104,7 @@ func (*hwLocCmd) IsSupported() bool {
 }
 
 func (hwLocCmd *hwLocCmd) runCalc(args ...string) (string, error) {
-	outputLines, err := hwLocCmd.proc.RunWithSystemLdPath("hwloc-calc", args...)
+	outputLines, err := hwLocCmd.proc.RunWithSystemLdPath(hwLocCmd.timeout, "hwloc-calc", args...)
 	if err != nil {
 		return "", err
 	}
@@ -110,7 +113,7 @@ func (hwLocCmd *hwLocCmd) runCalc(args ...string) (string, error) {
 
 func (hwLocCmd *hwLocCmd) runDistrib(args ...string) ([]string, error) {
 	var result []string
-	outputLines, err := hwLocCmd.proc.RunWithSystemLdPath("hwloc-distrib", args...)
+	outputLines, err := hwLocCmd.proc.RunWithSystemLdPath(hwLocCmd.timeout, "hwloc-distrib", args...)
 	if err != nil {
 		return nil, err
 	}

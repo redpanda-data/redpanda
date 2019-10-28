@@ -1,6 +1,7 @@
 package redpanda
 
 import (
+	"time"
 	"vectorized/pkg/checkers"
 	"vectorized/pkg/net"
 	"vectorized/pkg/os"
@@ -137,20 +138,19 @@ func NewTransparentHugePagesChecker(fs afero.Fs) checkers.Checker {
 		})
 }
 
-func NewNTPSyncChecker(fs afero.Fs) checkers.Checker {
+func NewNTPSyncChecker(timeout time.Duration, fs afero.Fs) checkers.Checker {
 	return checkers.NewEqualityChecker(
 		"NTP Synced",
 		checkers.Warning,
 		true,
 		func() (interface{}, error) {
-			ntpQuery := system.NewNtpQuery(fs)
-			return ntpQuery.IsNtpSynced()
+			return system.NewNtpQuery(timeout, fs).IsNtpSynced()
 		},
 	)
 }
 
 func RedpandaCheckers(
-	fs afero.Fs, ioConfigFile string, config *Config,
+	fs afero.Fs, ioConfigFile string, config *Config, timeout time.Duration,
 ) (map[CheckerID][]checkers.Checker, error) {
 	proc := os.NewProc()
 	ethtool, err := ethtool.NewEthtoolWrapper()
@@ -160,7 +160,7 @@ func RedpandaCheckers(
 	executor := executors.NewDirectExecutor()
 	irqProcFile := irq.NewProcFile(fs)
 	irqDeviceInfo := irq.NewDeviceInfo(fs, irqProcFile)
-	blockDevices := disk.NewBlockDevices(fs, irqDeviceInfo, irqProcFile, proc)
+	blockDevices := disk.NewBlockDevices(fs, irqDeviceInfo, irqProcFile, proc, timeout)
 	schedulerInfo := disk.NewSchedulerInfo(fs, blockDevices)
 	schdulerCheckers, err := disk.NewDirectorySchedulerCheckers(fs,
 		config.Directory, schedulerInfo, blockDevices)
@@ -172,8 +172,8 @@ func RedpandaCheckers(
 	if err != nil {
 		return nil, err
 	}
-	balanceService := irq.NewBalanceService(fs, proc, executor)
-	cpuMasks := irq.NewCpuMasks(fs, hwloc.NewHwLocCmd(proc), executor)
+	balanceService := irq.NewBalanceService(fs, proc, executor, timeout)
+	cpuMasks := irq.NewCpuMasks(fs, hwloc.NewHwLocCmd(proc, timeout), executor)
 	dirIRQAffinityChecker, err := disk.NewDirectoryIRQAffinityChecker(
 		fs, config.Directory, "all", irq.Default, blockDevices, cpuMasks)
 	if err != nil {
@@ -199,7 +199,7 @@ func RedpandaCheckers(
 		DiskSpaceChecker:              []checkers.Checker{NewFreeDiskSpaceChecker(config.Directory)},
 		FsTypeChecker:                 []checkers.Checker{NewFilesystemTypeChecker(config.Directory)},
 		TransparentHugePagesChecker:   []checkers.Checker{NewTransparentHugePagesChecker(fs)},
-		NtpChecker:                    []checkers.Checker{NewNTPSyncChecker(fs)},
+		NtpChecker:                    []checkers.Checker{NewNTPSyncChecker(timeout, fs)},
 		SchedulerChecker:              schdulerCheckers,
 		NomergesChecker:               nomergesCheckers,
 		DiskIRQsAffinityChecker:       []checkers.Checker{dirIRQAffinityChecker},

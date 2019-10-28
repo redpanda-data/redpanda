@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 	"vectorized/pkg/cli"
 	"vectorized/pkg/redpanda"
 	"vectorized/pkg/tuners/factory"
@@ -19,9 +20,12 @@ import (
 func NewTuneCommand(fs afero.Fs) *cobra.Command {
 
 	tunerParams := factory.TunerParams{}
-	var redpandaConfigFile string
-	var outTuneScriptFile string
-	var cpuSet string
+	var (
+		redpandaConfigFile string
+		outTuneScriptFile  string
+		cpuSet             string
+		timeoutMs          int
+	)
 	command := &cobra.Command{
 		Use: "tune <list_of_elements_to_tune>",
 		Short: `Sets the OS parameters to tune system performance
@@ -47,11 +51,12 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 		},
 		RunE: func(ccmd *cobra.Command, args []string) error {
 			var tunerFactory factory.TunersFactory
+			timeout := time.Duration(timeoutMs) * time.Millisecond
 			if outTuneScriptFile != "" {
 				tunerFactory = factory.NewScriptRenderingTunersFactory(
-					fs, outTuneScriptFile)
+					fs, outTuneScriptFile, timeout)
 			} else {
-				tunerFactory = factory.NewDirectExecutorTunersFactory(fs)
+				tunerFactory = factory.NewDirectExecutorTunersFactory(fs, timeout)
 			}
 			if !tunerParamsEmpty(&tunerParams) && redpandaConfigFile != "" {
 				return errors.New("Use either tuner params or redpanda config file")
@@ -97,6 +102,7 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 	command.Flags().StringVar(&outTuneScriptFile,
 		"output-script", "", "If set tuners will generate tuning file that "+
 			"can later be used to tune the system")
+	command.Flags().IntVar(&timeoutMs, "timeout", 10000, "The maximum amount of time (in ms) to wait for the tune processes to complete")
 	command.AddCommand(newHelpCommand())
 	return command
 }
@@ -160,7 +166,7 @@ func tune(
 	var rebootRequired = false
 	for _, tunerName := range elementsToTune {
 		tuner := tunersFactory.CreateTuner(tunerName, params)
-		if supported, reason := tuner.CheckIfSupported(); supported == true {
+		if supported, reason := tuner.CheckIfSupported(); supported {
 			log.Debugf("Tuner paramters %+v", params)
 			log.Infof("Running '%s' tuner...", tunerName)
 			result := tuner.Tune()

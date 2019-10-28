@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"math"
 	"path/filepath"
+	"time"
 	"vectorized/pkg/cli"
 	"vectorized/pkg/redpanda"
 	"vectorized/pkg/tuners/iotune"
@@ -12,13 +14,17 @@ import (
 )
 
 func NewIoTuneCmd(fs afero.Fs) *cobra.Command {
-	var configFileFlag string
-	var duration int
-	var directories []string
+	var (
+		configFileFlag string
+		duration       int
+		directories    []string
+		timeoutMs      int
+	)
 	command := &cobra.Command{
 		Use:   "iotune",
 		Short: "Measure filesystem performance and create IO configuration file",
 		RunE: func(ccmd *cobra.Command, args []string) error {
+			totalTimeout := (time.Duration(duration) * time.Second) + (time.Duration(timeoutMs) * time.Millisecond)
 			configFile, err := cli.GetOrFindConfig(fs, configFileFlag)
 			if err != nil {
 				return err
@@ -37,10 +43,9 @@ func NewIoTuneCmd(fs afero.Fs) *cobra.Command {
 				evalDirectories = []string{config.Directory}
 			}
 
-			return execIoTune(fs, evalDirectories, ioConfigFile, duration)
+			return execIoTune(fs, evalDirectories, ioConfigFile, duration, totalTimeout)
 		},
 	}
-
 	command.Flags().StringVar(&configFileFlag,
 		"redpanda-cfg", "", "Redpanda config file, if not set the file "+
 			"will be searched for in default locations")
@@ -48,13 +53,23 @@ func NewIoTuneCmd(fs afero.Fs) *cobra.Command {
 		"directories", nil, "List of directories to evaluate")
 	command.Flags().IntVar(&duration,
 		"duration", 30, "Duration of tests in seconds")
+	command.Flags().IntVar(
+		&timeoutMs,
+		"timeout",
+		math.MaxInt64,
+		"The maximum amount of time (in ms) after --duration to wait for iotune to complete",
+	)
 	return command
 }
 
 func execIoTune(
-	fs afero.Fs, directories []string, ioConfigFile string, duration int,
+	fs afero.Fs,
+	directories []string,
+	ioConfigFile string,
+	duration int,
+	timeout time.Duration,
 ) error {
-	tuner := iotune.NewIoTuneTuner(fs, directories, ioConfigFile, duration)
+	tuner := iotune.NewIoTuneTuner(fs, directories, ioConfigFile, duration, timeout)
 	log.Info("Starting iotune...")
 	result := tuner.Tune()
 	if err := result.GetError(); err != nil {

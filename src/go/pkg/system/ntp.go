@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os/exec"
 	"regexp"
+	"time"
 	"vectorized/pkg/os"
 
 	log "github.com/sirupsen/logrus"
@@ -14,38 +15,37 @@ type NtpQuery interface {
 	IsNtpSynced() (bool, error)
 }
 
-func NewNtpQuery(fs afero.Fs) NtpQuery {
+func NewNtpQuery(timeout time.Duration, fs afero.Fs) NtpQuery {
 	return &ntpQuery{
-		fs:   fs,
-		proc: os.NewProc(),
+		timeout: timeout,
+		fs:      fs,
+		proc:    os.NewProc(),
 	}
 }
 
 type ntpQuery struct {
 	NtpQuery
-	fs   afero.Fs
-	proc os.Proc
+	timeout time.Duration
+	fs      afero.Fs
+	proc    os.Proc
 }
 
 func (q *ntpQuery) IsNtpSynced() (bool, error) {
-	var inSync bool
 	if _, err := exec.LookPath("timedatectl"); err == nil {
-		inSync, err = q.checkWithTimedateCtl()
-		if err == nil {
-			return inSync, nil
-		}
+		return q.checkWithTimedateCtl()
+	} else {
+		return false, err
 	}
-	if _, err := exec.LookPath("ntpstat"); !inSync && err == nil {
-		inSync, err = q.checkWithNtpstat()
-		if err != nil {
-			return false, err
-		}
+	if _, err := exec.LookPath("ntpstat"); err == nil {
+		return q.checkWithNtpstat()
+	} else {
+		return false, err
 	}
-	return inSync, nil
+	return false, nil
 }
 
 func (q *ntpQuery) checkWithTimedateCtl() (bool, error) {
-	output, err := q.proc.RunWithSystemLdPath("timedatectl", "status")
+	output, err := q.proc.RunWithSystemLdPath(q.timeout, "timedatectl", "status")
 	if err != nil {
 		return false, err
 	}
@@ -62,11 +62,11 @@ func (q *ntpQuery) checkWithTimedateCtl() (bool, error) {
 
 func (q *ntpQuery) checkWithNtpstat() (bool, error) {
 	log.Debugf("Checking NTP sync with ntpstat")
-	_, err := q.proc.RunWithSystemLdPath("ntpstat")
+	_, err := q.proc.RunWithSystemLdPath(q.timeout, "ntpstat")
 	// ntpstat exits with status other than 0 when NTP is not synced
 	if err != nil {
 		log.Debugf("ntpstat returned an error '%s'", err.Error())
-		return false, nil
+		return false, err
 	}
 	return true, nil
 }

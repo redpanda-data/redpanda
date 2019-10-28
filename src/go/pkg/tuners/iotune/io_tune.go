@@ -3,6 +3,7 @@ package iotune
 import (
 	"errors"
 	"strconv"
+	"time"
 	"vectorized/pkg/os"
 
 	log "github.com/sirupsen/logrus"
@@ -28,15 +29,17 @@ type IoTune interface {
 	Run(IoTuneArgs) ([]string, error)
 }
 
-func NewIoTune(proc os.Proc) IoTune {
+func NewIoTune(proc os.Proc, timeout time.Duration) IoTune {
 	return &ioTune{
-		proc: proc,
+		proc:    proc,
+		timeout: timeout,
 	}
 }
 
 type ioTune struct {
 	IoTune
-	proc os.Proc
+	proc    os.Proc
+	timeout time.Duration
 }
 
 func (ioTune *ioTune) Run(args IoTuneArgs) ([]string, error) {
@@ -45,7 +48,7 @@ func (ioTune *ioTune) Run(args IoTuneArgs) ([]string, error) {
 		return nil, err
 	}
 	log.Debugf("Running 'iotune' with '%#q'", cmdArgs)
-	return ioTune.proc.RunWithSystemLdPath("iotune", cmdArgs...)
+	return ioTune.proc.RunWithSystemLdPath(ioTune.timeout, "iotune", cmdArgs...)
 }
 
 func ioTuneCommandLineArgs(args IoTuneArgs) ([]string, error) {
