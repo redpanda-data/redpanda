@@ -67,6 +67,12 @@ static future<vote_reply_ptr> one_vote(
           });
     });
 }
+/// we write our configuration synchronously before under the lock
+/// and dispatch all our nodes asynchrnously
+future<> consensus::replicate_config_as_new_leader() {
+    // FIXME
+    return make_ready_future<>();
+}
 
 /// state mutation must happen inside `_ops_sem`
 future<> consensus::process_vote_replies(std::vector<vote_reply_ptr> reqs) {
@@ -106,7 +112,8 @@ future<> consensus::process_vote_replies(std::vector<vote_reply_ptr> reqs) {
                  raftlog().info(
                    "We({}) are the new leader, term:{}", _self, _meta.term);
                  _vstate = vote_state::leader;
-                 return make_ready_future<>();
+                 // update configuration changes and propagate to all clients
+                 return replicate_config_as_new_leader();
              })
       .then([this] {
           // execute callback oustide of critical section
