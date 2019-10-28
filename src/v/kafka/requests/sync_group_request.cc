@@ -3,6 +3,9 @@
 #include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
 #include "utils/remote.h"
+#include "utils/to_string.h"
+
+#include <seastar/core/print.hh>
 
 namespace kafka {
 
@@ -69,6 +72,26 @@ sync_group_api::process(request_context&& ctx, smp_service_group g) {
                 return make_ready_future<response_ptr>(std::move(resp));
             });
       });
+}
+
+std::ostream&
+operator<<(std::ostream& o, const sync_group_request::member_assignment& a) {
+    return fmt_print(o, "{}:{}", a.member, a.assignment.size());
+}
+
+std::ostream& operator<<(std::ostream& o, const sync_group_request& r) {
+    return fmt_print(
+      o,
+      "group={} gen={} member={} group_inst={} assignments={}",
+      r.group_id,
+      r.generation_id,
+      r.member_id,
+      r.group_instance_id,
+      r.assignments);
+}
+
+std::ostream& operator<<(std::ostream& o, const sync_group_response& r) {
+    return fmt_print(o, "error={} assignment={}", r.error, r.assignment.size());
 }
 
 } // namespace kafka
