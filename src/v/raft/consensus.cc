@@ -380,43 +380,63 @@ consensus::do_append_entries(append_entries_request&& r) {
         return make_ready_future<append_entries_reply>(std::move(reply));
     }
 
-    // call custom serializers/hooks
-    for (auto h : _hooks) {
-        h->pre_commit(model::offset(_meta.commit_index), r.entries);
-    }
+    // sucess. copy entries for each subsystem
+    using offsets_ret = std::vector<storage::log::append_result>;
+    using entries_t = std::vector<entry>;
 
-    // move the vector and copy the header metadata
-    return disk_append(std::move(r.entries))
-      .then([this, r = std::move(r), reply = std::move(reply)](
-              std::vector<storage::log::append_result> ret) mutable {
-          // always update metadata first! to allow next put to truncate log
-          const model::offset last_offset = ret.back().last_offset;
-          const model::offset begin_offset = model::offset(_meta.commit_index);
-          _meta.commit_index = last_offset;
-          _meta.prev_log_term = r.meta.term;
-          if (r.meta.commit_index < last_offset) {
-              step_down();
-              for (auto h : _hooks) {
-                  h->abort(begin_offset);
-              }
-              _probe.leader_commit_index_mismatch();
-              throw std::runtime_error(fmt::format(
-                "Log is now in an inconsistent state. Leader commit_index:{} "
-                "vs. our commit_index:{}, for term:{}",
-                r.meta.commit_index,
-                _meta.commit_index,
-                _meta.prev_log_term));
-          }
-          reply.term = _meta.term;
-          reply.last_log_index = _meta.commit_index;
-          reply.success = true;
-          for (auto h : _hooks) {
-              h->commit(begin_offset, last_offset);
-          }
-          return make_ready_future<append_entries_reply>(std::move(reply));
+    const uint32_t entries_copies
+      = 1 + (_append_entries_notification ? 1 : 0)
+        + (has_configuration_entires(r.entries) ? 1 : 0);
+
+    return details::copy_n(std::move(r.entries), 2)
+      .then([this, m = r.meta](std::vector<entries_t> dups) mutable {
+          entries_t&& entries_for_disk = std::move(dups.back());
+          dups.pop_back();
+          return disk_append(std::move(entries_for_disk))
+            .then([this, m = std::move(m)](offsets_ret ofs) mutable {
+                return success_case_append_entries(
+                  std::move(m), std::move(ofs));
+            })
+            .then(
+              [this, dups = std::move(dups)](append_entries_reply r) mutable {
+                  using ret_t = append_entries_reply;
+                  if (!dups.empty() && _append_entries_notification) {
+                      _append_entries_notification(std::move(dups.back()));
+                      dups.pop_back();
+                  }
+                  if (!dups.empty() && has_configuration_entires(dups.back())) {
+                      return process_configurations(std::move(dups.back()))
+                        .then([r = std::move(r)]() mutable {
+                            return make_ready_future<ret_t>(std::move(r));
+                        });
+                  }
+                  return make_ready_future<ret_t>(std::move(r));
+              });
       });
 }
 
+future<> consensus::process_configurations(std::vector<entry>&&) {
+    // FIXME
+    return make_ready_future<>();
+}
+future<append_entries_reply> consensus::success_case_append_entries(
+  protocol_metadata sender,
+  std::vector<storage::log::append_result> disk_results) {
+    // always update metadata first!
+    const model::offset last_offset = disk_results.back().last_offset;
+    const model::offset begin_offset = model::offset(_meta.commit_index);
+    _meta.commit_index = last_offset;
+    _meta.prev_log_term = sender.term;
+
+    append_entries_reply reply;
+    reply.node_id = _self();
+    reply.group = sender.group;
+    reply.term = _meta.term;
+    reply.last_log_index = _meta.commit_index;
+    reply.success = true;
+    return make_ready_future<append_entries_reply>(std::move(reply));
+
+} // namespace raft
 future<std::vector<storage::log::append_result>>
 consensus::disk_append(std::vector<entry>&& entries) {
     using ret_t = std::vector<storage::log::append_result>;
