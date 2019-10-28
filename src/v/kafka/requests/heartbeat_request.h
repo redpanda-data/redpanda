@@ -26,16 +26,19 @@ struct heartbeat_request final {
     void decode(request_context& ctx);
 };
 
+std::ostream& operator<<(std::ostream&, const heartbeat_request&);
+
 struct heartbeat_response final {
     std::chrono::milliseconds throttle_time; // >= v1
     error_code error;
 
-    // TODO: throttle will be filled in automatically
     heartbeat_response(error_code error)
       : throttle_time(0)
       , error(error) {}
 
     void encode(const request_context& ctx, response& resp);
 };
+
+std::ostream& operator<<(std::ostream&, const heartbeat_response&);
 
 } // namespace kafka
