@@ -189,14 +189,19 @@ public:
     }
 
     record_batch_attributes& operator|=(model::compression c) {
-        _attributes |= static_cast<uint8_t>(c)
-                       & record_batch_attributes::compression_mask;
+        // clang-format off
+        _attributes |=
+        static_cast<std::underlying_type_t<model::compression>>(c) 
+            & record_batch_attributes::compression_mask;
+        // clang-format on
         return *this;
     }
 
     record_batch_attributes& operator|=(model::timestamp_type ts_t) {
-        _attributes |= (static_cast<uint8_t>(ts_t) << 3)
-                       & record_batch_attributes::timestamp_type_mask;
+        _attributes
+          |= (static_cast<std::underlying_type_t<model::timestamp_type>>(ts_t)
+              << 3)
+             & record_batch_attributes::timestamp_type_mask;
         return *this;
     }
 
