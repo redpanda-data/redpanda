@@ -15,6 +15,17 @@ type Config struct {
 	SeedServers []*SeedServer `yaml:"seed_servers"`
 }
 
+type RpkConfig struct {
+	TuneNetwork         bool `yaml:"tune_network"`
+	TuneDiskScheduler   bool `yaml:"tune_disk_scheduler"`
+	TuneNomerges        bool `yaml:"tune_disk_nomerges"`
+	TuneDiskIrq         bool `yaml:"tune_disk_irq"`
+	TuneCpu             bool `yaml:"tune_cpu"`
+	TuneAioEvents       bool `yaml:"tune_aio_events"`
+	TuneClocksource     bool `yaml:"tune_clocksource"`
+	EnableMemoryLocking bool `yaml:"enable_memory_locking"`
+}
+
 type SocketAddress struct {
 	Address string
 	Port    int
