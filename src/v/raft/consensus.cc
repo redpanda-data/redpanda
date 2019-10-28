@@ -293,6 +293,13 @@ future<vote_reply> consensus::do_vote(vote_request&& r) {
     return make_ready_future<vote_reply>(std::move(reply));
 }
 
+template<typename Container>
+static inline bool has_configuration_entires(const Container& c) {
+    return std::any_of(std::cbegin(c), std::cend(c), [](const entry& r) {
+        return r.entry_type() == model::record_batch_type{2};
+    });
+}
+
 future<append_entries_reply>
 consensus::do_append_entries(append_entries_request&& r) {
     append_entries_reply reply;
