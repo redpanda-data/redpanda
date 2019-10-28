@@ -32,12 +32,13 @@ struct sync_group_request final {
     void decode(request_context& ctx);
 };
 
+std::ostream& operator<<(std::ostream&, const sync_group_request&);
+
 struct sync_group_response final {
     std::chrono::milliseconds throttle_time; // >= v1
     error_code error;
     bytes assignment;
 
-    // TODO: throttle will be filled in automatically
     explicit sync_group_response(bytes assignment)
       : throttle_time(0)
       , error(error_code::none)
@@ -49,5 +50,7 @@ struct sync_group_response final {
 
     void encode(const request_context& ctx, response& resp);
 };
+
+std::ostream& operator<<(std::ostream&, const sync_group_response&);
 
 } // namespace kafka
