@@ -29,6 +29,7 @@ void check_roundtrip_sweep(std::size_t count) {
         const auto view = bytes_view(encoding_buffer.data(), size);
         const auto [deserialized, _] = vint::deserialize(view);
         BOOST_REQUIRE_EQUAL(deserialized, value);
+        BOOST_REQUIRE_EQUAL(size, vint::vint_size(value));
     };
     std::uniform_int_distribution<vint::value_type> distribution;
     auto rng = random_generator();

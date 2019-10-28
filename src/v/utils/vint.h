@@ -1,6 +1,6 @@
 #pragma once
-
 #include "bytes/bytes.h"
+#include "utils/concepts-enabled.h"
 
 #include <cstdint>
 #include <type_traits>
@@ -33,15 +33,30 @@ private:
     }
 
 public:
-    static size_type serialize(value_type value, bytes::iterator out) noexcept {
+    [[gnu::always_inline]] inline static constexpr size_type
+    vint_size(value_type value) {
+        return do_serialize(value, [](int8_t) {});
+    }
+
+    [[gnu::always_inline]] inline static constexpr size_type
+    serialize(value_type value, bytes::iterator out) noexcept {
+        return do_serialize(value, [&out](int8_t value) { *out++ = value; });
+    }
+
+    //clang-format off
+    template<typename Consumer>
+    CONCEPT(requires requires(Consumer c, int8_t v) { {c(v)}; })
+    //clang-format on
+    static constexpr size_type
+      do_serialize(value_type value, Consumer f) noexcept {
         auto encode = encode_zigzag(value);
         size_type size = 1;
         while (encode >= more_bytes) {
-            *out++ = static_cast<int8_t>(encode | more_bytes);
+            f(static_cast<int8_t>(encode | more_bytes));
             encode >>= 7;
             ++size;
         }
-        *out++ = static_cast<int8_t>(encode);
+        f(static_cast<int8_t>(encode));
         return size;
     }
 
