@@ -319,7 +319,7 @@ consensus::do_append_entries(append_entries_request&& r) {
           .then([this, r = std::move(r)]() mutable {
               step_down();
               _meta.term = r.meta.term;
-              return append_entries(std::move(r));
+              return do_append_entries(std::move(r));
           });
     }
     // raft.pdf: Reply false if log doesn’t contain an entry at
