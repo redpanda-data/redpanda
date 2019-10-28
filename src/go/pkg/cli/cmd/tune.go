@@ -20,10 +20,12 @@ import (
 func NewTuneCommand(fs afero.Fs) *cobra.Command {
 
 	tunerParams := factory.TunerParams{}
-	var redpandaConfigFile string
-	var outTuneScriptFile string
-	var cpuSet string
-	var timeoutMs int
+	var (
+		redpandaConfigFile string
+		outTuneScriptFile  string
+		cpuSet             string
+		timeoutMs          int
+	)
 	command := &cobra.Command{
 		Use: "tune <list_of_elements_to_tune>",
 		Short: `Sets the OS parameters to tune system performance

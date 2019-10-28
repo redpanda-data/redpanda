@@ -15,7 +15,9 @@ type executeCommand struct {
 	timeout time.Duration
 }
 
-func NewLaunchCmd(proc os.Proc, timeout time.Duration, cmd string, args ...string) Command {
+func NewLaunchCmd(
+	proc os.Proc, timeout time.Duration, cmd string, args ...string,
+) Command {
 	return &executeCommand{
 		cmd:     cmd,
 		args:    args,

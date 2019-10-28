@@ -1,8 +1,6 @@
 package os
 
-import (
-	"time"
-)
+import "time"
 
 type Commands interface {
 	Which(cmd string, timeout time.Duration) (string, error)
@@ -19,7 +17,9 @@ type commands struct {
 	proc Proc
 }
 
-func (commands *commands) Which(cmd string, timeout time.Duration) (string, error) {
+func (commands *commands) Which(
+	cmd string, timeout time.Duration,
+) (string, error) {
 	out, err := commands.proc.RunWithSystemLdPath(timeout, "which", cmd)
 	if err == nil {
 		return out[0], nil

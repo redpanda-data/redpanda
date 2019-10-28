@@ -28,7 +28,12 @@ type BalanceService interface {
 	IsRunning() bool
 }
 
-func NewBalanceService(fs afero.Fs, proc os.Proc, executor executors.Executor, timeout time.Duration) BalanceService {
+func NewBalanceService(
+	fs afero.Fs,
+	proc os.Proc,
+	executor executors.Executor,
+	timeout time.Duration,
+) BalanceService {
 	return &balanceService{
 		fs:       fs,
 		proc:     proc,

@@ -53,11 +53,22 @@ func NewIoTuneCmd(fs afero.Fs) *cobra.Command {
 		"directories", nil, "List of directories to evaluate")
 	command.Flags().IntVar(&duration,
 		"duration", 30, "Duration of tests in seconds")
-	command.Flags().IntVar(&timeoutMs, "timeout", math.MaxInt64, "The maximum amount of time (in ms) after --duration to wait for iotune to complete")
+	command.Flags().IntVar(
+		&timeoutMs,
+		"timeout",
+		math.MaxInt64,
+		"The maximum amount of time (in ms) after --duration to wait for iotune to complete",
+	)
 	return command
 }
 
-func execIoTune(fs afero.Fs, directories []string, ioConfigFile string, duration int, timeout time.Duration) error {
+func execIoTune(
+	fs afero.Fs,
+	directories []string,
+	ioConfigFile string,
+	duration int,
+	timeout time.Duration,
+) error {
 	tuner := iotune.NewIoTuneTuner(fs, directories, ioConfigFile, duration, timeout)
 	log.Info("Starting iotune...")
 	result := tuner.Tune()

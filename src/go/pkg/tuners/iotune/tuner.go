@@ -36,7 +36,12 @@ func checkIfIoTuneIsSupported(fs afero.Fs) (bool, string) {
 	return true, ""
 }
 
-func tune(evalDirectories []string, ioConfigFile string, duration int, timeout time.Duration) tuners.TuneResult {
+func tune(
+	evalDirectories []string,
+	ioConfigFile string,
+	duration int,
+	timeout time.Duration,
+) tuners.TuneResult {
 	ioTune := NewIoTune(os.NewProc(), timeout)
 	args := IoTuneArgs{
 		Dirs:           evalDirectories,
