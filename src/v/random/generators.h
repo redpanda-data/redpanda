@@ -24,7 +24,7 @@ inline std::random_device::result_type get_seed() {
 
 } // namespace internal
 
-inline std::default_random_engine gen(internal::get_seed());
+static thread_local std::default_random_engine gen(internal::get_seed());
 
 template<typename T>
 T get_int() {
