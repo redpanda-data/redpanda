@@ -54,16 +54,22 @@ func TestReadConfigFromPath(t *testing.T) {
 	tests := []struct {
 		name    string
 		args    args
-		before  func(afero.Fs, string)
+		before  func(afero.Fs, string) error
 		want    func() *Config
 		wantErr bool
 	}{
 		{
 			name: "shall return config struct field with values from file",
-			before: func(fs afero.Fs, path string) {
-				bs, _ := yaml.Marshal(getValidConfig())
-				fs.MkdirAll(baseDir, 0755)
-				utils.WriteBytes(fs, bs, path)
+			before: func(fs afero.Fs, path string) error {
+				bs, err := yaml.Marshal(getValidConfig())
+				if err != nil {
+					return err
+				}
+				if err = fs.MkdirAll(baseDir, 0755); err != nil {
+					return err
+				}
+				_, err = utils.WriteBytes(fs, bs, path)
+				return err
 			},
 			args: args{
 				fs:   afero.NewMemMapFs(),
@@ -75,7 +81,9 @@ func TestReadConfigFromPath(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.before(tt.args.fs, tt.args.path)
+			if err := tt.before(tt.args.fs, tt.args.path); err != nil {
+				t.Fatalf("got an error while setting up %v: %v", tt.name, err)
+			}
 			got, err := ReadConfigFromPath(tt.args.fs, tt.args.path)
 			want := tt.want()
 			if (err != nil) != tt.wantErr {
