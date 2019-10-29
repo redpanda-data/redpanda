@@ -42,6 +42,16 @@ func getValidConfig() *Config {
 				},
 			},
 		},
+		Rpk: &RpkConfig{
+			TuneNetwork:         true,
+			TuneDiskScheduler:   true,
+			TuneNomerges:        true,
+			TuneDiskIrq:         true,
+			TuneCpu:             true,
+			TuneAioEvents:       true,
+			TuneClocksource:     true,
+			EnableMemoryLocking: true,
+		},
 	}
 }
 

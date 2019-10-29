@@ -9,6 +9,7 @@ import (
 
 type Config struct {
 	Redpanda *RedpandaConfig
+	Rpk      *RpkConfig `yaml:"rpk,omitempty"`
 }
 
 type RedpandaConfig struct {
