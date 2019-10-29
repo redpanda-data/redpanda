@@ -1,4 +1,5 @@
 //#define BOOST_TEST_MODULE kafka group
+#include "config/configuration.h"
 #include "kafka/groups/group.h"
 #include "seastarx.h"
 #include "utils/to_string.h"
@@ -34,7 +35,10 @@ static bool is_uuid(const sstring& uuid) {
  *  - should share some of this common setup with the other tests once we get a
  *  good covering set of scenarios.
  */
-static group get() { return group(kafka::group_id("g"), group_state::empty); }
+static group get() {
+    static config::configuration conf;
+    return group(kafka::group_id("g"), group_state::empty, conf);
+}
 
 static const std::vector<member_protocol> test_protos = {
   {kafka::protocol_name("n0"), "d0"}, {kafka::protocol_name("n1"), "d1"}};
