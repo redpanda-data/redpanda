@@ -13,10 +13,6 @@
 
 namespace kafka {
 
-static inline const kafka::member_id no_leader("");
-static inline const kafka::generation_id no_generation(-1);
-static inline const kafka::protocol_name no_protocol("");
-
 /// \brief Manages the Kafka group lifecycle.
 class group_manager {
 public:
@@ -42,7 +38,8 @@ public:
 public:
     /// \brief Handle a JoinGroup request
     future<join_group_response> join_group(join_group_request&& request) {
-        return join_error(request.member_id, error_code::unsupported_version);
+        return make_join_error(
+          request.member_id, error_code::unsupported_version);
     }
 
     /// \brief Handle a SyncGroup request
@@ -61,14 +58,6 @@ public:
     future<leave_group_response> leave_group(leave_group_request&& request) {
         using reply = leave_group_response;
         return make_ready_future<reply>(reply(error_code::unsupported_version));
-    }
-
-private:
-    static future<join_group_response>
-    join_error(kafka::member_id member_id, error_code error) {
-        join_group_response response(
-          error, no_generation, no_protocol, no_leader, std::move(member_id));
-        return make_ready_future<join_group_response>(std::move(response));
     }
 
 private:
