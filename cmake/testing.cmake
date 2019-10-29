@@ -66,6 +66,9 @@ function (rp_test)
 
   add_executable(
     ${RP_TEST_BINARY_NAME} "${RP_TEST_SOURCES}")
+  if(RP_TEST_UNIT_TEST)
+    target_compile_definitions(${RP_TEST_BINARY_NAME} PUBLIC -DSEASTAR_TESTING_MAIN)
+  endif()
   target_link_libraries(
     ${RP_TEST_BINARY_NAME} "${RP_TEST_LIBRARIES}" $<TARGET_NAME_IF_EXISTS:Libcxx::libcxx>)
   add_test (
