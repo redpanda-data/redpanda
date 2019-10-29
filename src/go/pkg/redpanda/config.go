@@ -19,6 +19,16 @@ type RedpandaConfig struct {
 	SeedServers []*SeedServer `yaml:"seed_servers"`
 }
 
+type SeedServer struct {
+	Host SocketAddress `yaml:"host"`
+	Id   int           `yaml:"node_id"`
+}
+
+type SocketAddress struct {
+	Address string `yaml:"address"`
+	Port    int    `yaml:"port"`
+}
+
 type RpkConfig struct {
 	TuneNetwork         bool `yaml:"tune_network"`
 	TuneDiskScheduler   bool `yaml:"tune_disk_scheduler"`
@@ -28,16 +38,6 @@ type RpkConfig struct {
 	TuneAioEvents       bool `yaml:"tune_aio_events"`
 	TuneClocksource     bool `yaml:"tune_clocksource"`
 	EnableMemoryLocking bool `yaml:"enable_memory_locking"`
-}
-
-type SocketAddress struct {
-	Address string
-	Port    int
-}
-
-type SeedServer struct {
-	Host SocketAddress `yaml:"host"`
-	Id   int           `yaml:"node_id"`
 }
 
 func WriteConfig(config *Config, fs afero.Fs, path string) error {
