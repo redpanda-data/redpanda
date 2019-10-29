@@ -35,7 +35,7 @@ inline std::random_device::result_type get_seed() {
     return seed;
 }
 
-inline std::default_random_engine gen(get_seed());
+static thread_local std::default_random_engine gen(get_seed());
 
 inline std::uniform_int_distribution<int> bool_dist{0, 1};
 inline std::uniform_int_distribution<int> low_count_dist{2, 30};
