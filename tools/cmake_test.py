@@ -7,7 +7,7 @@ import tempfile
 import random
 import string
 import shutil
-import atexit
+from string import Template
 
 sys.path.append(os.path.dirname(__file__))
 logger = logging.getLogger('rp')
@@ -30,40 +30,28 @@ class TestRunner():
         fs.mkdir_p(self.root)
 
     def _gen_alphanum(self, x=16):
-        return ''.join(
-            random.choice(string.ascii_letters + string.digits)
-            for _ in range(x))
+        return ''.join(random.choice(string.ascii_letters) for _ in range(x))
 
     def _gen_testdir(self):
         return tempfile.mkdtemp(suffix=self._gen_alphanum(),
                                 prefix="%s/test." % self.root)
 
-    def _env(self):
-        e = os.environ.copy()
-        e["TEST_DIR"] = self._gen_testdir()
-        return e
-
     def run(self):
-        env = {}
-        try:
-            env = self._env()
-            logger.info("Test dir: %s" % env["TEST_DIR"])
-            if "TEST_DIR" in env:
-                atexit.register(lambda: shutil.rmtree(env["TEST_DIR"]))
-            for f in self.copy_files:
-                logger.debug("Copying input file: %s" % f)
-                (src, dst) = f.split("=") if "=" in f else (f, f)
-                shutil.copy(src,
-                            "%s/%s" % (env["TEST_DIR"], os.path.basename(dst)))
-            for i in range(self.repeat):
-                cmd = "cd %s && %s %s" % (env["TEST_DIR"], self.binary,
-                                          self.test_args)
-                logger.info("Executing test iteration: %s" % i)
-                shell.run_subprocess(cmd, env)
+        test_dir = self._gen_testdir()
+        env = os.environ.copy()
+        env["TEST_DIR"] = test_dir
+        logger.info("Test dir: %s" % test_dir)
+        for f in self.copy_files:
+            logger.debug("Copying input file: %s" % f)
+            (src, dst) = f.split("=") if "=" in f else (f, f)
+            shutil.copy(src, "%s/%s" % (test_dir, os.path.basename(dst)))
 
-        except Exception as e:
-            logger.exception(e)
-            raise e
+        cmd = Template(
+            "(cd $test_dir && $binary $args; e=$$?; "
+            "rm -rf $test_dir; echo \"Test Exit code $$e\"; exit $$e)").substitute(
+                test_dir=test_dir, binary=self.binary, args=self.test_args)
+        logger.info(cmd)
+        os.execle("/bin/bash", "/bin/bash", "-c", cmd, env)
 
 
 def main():

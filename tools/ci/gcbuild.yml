@@ -21,7 +21,8 @@ steps:
 - id: 'test cpp'
   name: 'gcr.io/$PROJECT_ID/builder:$SHORT_SHA'
   dir: 'build/'
-  args: ['ctest', '-VV']
+  args: ['ctest', '-VV', '--force-new-ctest-process',
+        '--schedule-random', '--timeout=600']
   env:
   - 'BOOST_TEST_LOG_LEVEL=test_suite'
   - 'BOOST_TEST_COLOR_OUTPUT=0'

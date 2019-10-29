@@ -4,15 +4,35 @@ ARG LLVM_REF="llvmorg-8.0.0"
 ARG BUILD_TYPE=Release
 
 # disable all but base repo so we install same version of packages
-RUN rm -f /etc/yum.repos.d/fedora-* && \
-    dnf install -y git which jq glibc-langpack-en && \
-    dnf clean all
+RUN rm -f /etc/yum.repos.d/fedora-*
 
-COPY tools/install-deps.sh /install-deps.sh
+RUN dnf install -y  \
+              git \
+              which \
+              jq \
+              glibc-langpack-en \
+              cmake \
+              gcc-c++ \
+              ninja-build \
+              m4 \
+              libtool \
+              make \
+              ragel \
+              xfsprogs-devel \
+              systemtap-sdt-devel \
+              libatomic \
+              ccache \
+              python3-distutils-extra \
+              pigz \
+              zlib-devel \
+              python3-requests \
+              devscripts \
+              debhelper \
+              fakeroot \
+              rpm-build \
+              python3-jinja2
 
-RUN /install-deps.sh && \
-    rm /install-deps.sh && \
-    dnf clean all
+RUN dnf clean all
 
 #######
 ## LLVM

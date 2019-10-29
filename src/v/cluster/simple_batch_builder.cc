@@ -32,9 +32,11 @@ model::record_batch simple_batch_builder::build() && {
           record_size(offset_delta, sr),
           model::record_attributes{},
           0,
-          offset_delta++,
+          offset_delta,
           std::move(sr.key),
           std::move(sr.value));
+        // clang8 warning: unsequenced modification and access to 'offset_delta'
+        ++offset_delta;
 
         storage::crc_record_header_and_key(
           crc,
