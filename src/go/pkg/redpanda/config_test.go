@@ -1,8 +1,6 @@
 package redpanda
 
 import (
-	"errors"
-	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -69,7 +67,7 @@ func TestReadConfigFromPath(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "shall return config struct field with values from file",
+			name: "shall return a config struct filled with values from the file",
 			before: func(fs afero.Fs, path string) error {
 				bs, err := yaml.Marshal(getValidConfig())
 				if err != nil {
@@ -108,63 +106,31 @@ func TestReadConfigFromPath(t *testing.T) {
 }
 
 func TestWriteConfig(t *testing.T) {
+	const path string = "/redpanda.yaml"
 	type args struct {
-		config *Config
+		config func() *Config
 		fs     afero.Fs
 		path   string
 	}
 	tests := []struct {
-		name    string
-		args    args
-		wantErr bool
-		after   func(afero.Fs) error
+		name     string
+		args     args
+		wantErr  bool
+		expected string
 	}{
 		{
-			name: "shall write valid config file",
+			name: "shall write a valid config file without an rpk config object",
 			args: args{
 				fs:   afero.NewMemMapFs(),
-				path: "/redpanda.yaml",
-				config: &Config{
-					Redpanda: &RedpandaConfig{
-						Directory: "/var/lib/redpanda/data",
-						RPCServer: SocketAddress{
-							Port:    33145,
-							Address: "127.0.0.1",
-						},
-						Id: 1,
-						KafkaApi: SocketAddress{
-							Port:    9092,
-							Address: "127.0.0.1",
-						},
-						SeedServers: []*SeedServer{
-							&SeedServer{
-								Host: SocketAddress{
-									Port:    33145,
-									Address: "127.0.0.1",
-								},
-								Id: 1,
-							},
-							&SeedServer{
-								Host: SocketAddress{
-									Port:    33146,
-									Address: "127.0.0.1",
-								},
-								Id: 2,
-							},
-						}},
+				path: path,
+				config: func() *Config {
+					c := getValidConfig()
+					c.Rpk = nil
+					return c
 				},
 			},
-			after: func(fs afero.Fs) error {
-				if !utils.FileExists(fs, "/redpanda.yaml") {
-					return errors.New("File redpanda.yaml must exists")
-				}
-				content, err := afero.ReadFile(fs, "/redpanda.yaml")
-				if err != nil {
-					return err
-				}
-				actualContent := string(content)
-				expectedContent :=
-					`redpanda:
+			wantErr: false,
+			expected: `redpanda:
   data_directory: /var/lib/redpanda/data
   rpc_server:
     address: 127.0.0.1
@@ -182,24 +148,62 @@ func TestWriteConfig(t *testing.T) {
       address: 127.0.0.1
       port: 33146
     node_id: 2
-`
-				if actualContent != expectedContent {
-					return fmt.Errorf("Expected:\n'%s'\n and actual:\n'%s'\n content differs",
-						strings.ReplaceAll(expectedContent, " ", "·"),
-						strings.ReplaceAll(actualContent, " ", "·"))
-				}
-				return nil
+`,
+		},
+		{
+			name: "shall write a valid config file with an rpk config object",
+			args: args{
+				fs:     afero.NewMemMapFs(),
+				path:   path,
+				config: getValidConfig,
 			},
 			wantErr: false,
+			expected: `redpanda:
+  data_directory: /var/lib/redpanda/data
+  rpc_server:
+    address: 127.0.0.1
+    port: 33145
+  kafka_api:
+    address: 127.0.0.1
+    port: 9092
+  node_id: 1
+  seed_servers:
+  - host:
+      address: 127.0.0.1
+      port: 33145
+    node_id: 1
+  - host:
+      address: 127.0.0.1
+      port: 33146
+    node_id: 2
+rpk:
+  tune_network: true
+  tune_disk_scheduler: true
+  tune_disk_nomerges: true
+  tune_disk_irq: true
+  tune_cpu: true
+  tune_aio_events: true
+  tune_clocksource: true
+  enable_memory_locking: true
+`,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := WriteConfig(tt.args.config, tt.args.fs, tt.args.path); (err != nil) != tt.wantErr {
+			if err := WriteConfig(tt.args.config(), tt.args.fs, tt.args.path); (err != nil) != tt.wantErr {
 				t.Errorf("WriteConfig() error = %v, wantErr %v", err, tt.wantErr)
 			}
-			if err := tt.after(tt.args.fs); err != nil {
-				t.Error(err)
+
+			contentBytes, err := afero.ReadFile(tt.args.fs, path)
+			if err != nil {
+				t.Errorf("got an error while reading %v: %v", tt.args.path, err)
+			}
+			content := string(contentBytes)
+			if content != tt.expected {
+				t.Errorf("Expected:\n'%s'\n Got:\n'%s'\n content differs",
+					strings.ReplaceAll(tt.expected, " ", "·"),
+					strings.ReplaceAll(content, " ", "·"),
+				)
 			}
 		})
 	}
