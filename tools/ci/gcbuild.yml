@@ -26,6 +26,7 @@ steps:
   env:
   - 'BOOST_TEST_LOG_LEVEL=test_suite'
   - 'BOOST_TEST_COLOR_OUTPUT=0'
+  - 'BOOST_TEST_CATCH_SYSTEM_ERRORS=no'
 
 - id: 'test go'
   name: 'gcr.io/$PROJECT_ID/builder:$SHORT_SHA'
