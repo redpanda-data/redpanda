@@ -30,6 +30,18 @@ struct sync_group_request final {
 
     void encode(const request_context& ctx, response_writer& writer);
     void decode(request_context& ctx);
+
+    assignments_type member_assignments() && {
+        assignments_type res;
+        res.reserve(assignments.size());
+        std::for_each(
+          std::begin(assignments),
+          std::end(assignments),
+          [&res](member_assignment& a) mutable {
+              res.emplace(std::move(a.member), std::move(a.assignment));
+          });
+        return res;
+    }
 };
 
 std::ostream& operator<<(std::ostream&, const sync_group_request&);
