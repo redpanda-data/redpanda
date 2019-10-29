@@ -44,6 +44,39 @@ var validConfig = []string{
 	"      node_id: 2\n",
 }
 
+func getValidConfig() *Config {
+	return &Config{
+		Redpanda: &RedpandaConfig{
+			Directory: "/var/lib/redpanda/data",
+			RPCServer: SocketAddress{
+				Port:    33145,
+				Address: "127.0.0.1",
+			},
+			Id: 1,
+			KafkaApi: SocketAddress{
+				Port:    9092,
+				Address: "127.0.0.1",
+			},
+			SeedServers: []*SeedServer{
+				&SeedServer{
+					Host: SocketAddress{
+						Port:    33145,
+						Address: "127.0.0.1",
+					},
+					Id: 1,
+				},
+				&SeedServer{
+					Host: SocketAddress{
+						Port:    33146,
+						Address: "127.0.0.1",
+					},
+					Id: 2,
+				},
+			},
+		},
+	}
+}
+
 func TestReadConfigFromPath(t *testing.T) {
 	type args struct {
 		fs   afero.Fs
