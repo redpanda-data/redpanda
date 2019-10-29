@@ -5,7 +5,7 @@ rp_test(
   BINARY_NAME partition_allocator
   SOURCES partition_allocator_tests.cc
   LIBRARIES Seastar::seastar_testing cluster
-  DEFINITIONS SEASTAR_TESTING_MAIN
+
 )
 rp_test(
   BENCHMARK_TEST
@@ -18,5 +18,5 @@ rp_test(
   BINARY_NAME simple_batch_builder_test
   SOURCES simple_batch_builder_test.cc
   LIBRARIES Seastar::seastar_testing cluster
-  DEFINITIONS SEASTAR_TESTING_MAIN
+
 )

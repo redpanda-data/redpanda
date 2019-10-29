@@ -4,7 +4,7 @@ rp_test(
   BINARY_NAME jitter_tests
   SOURCES jitter_tests.cc
   LIBRARIES Seastar::seastar_testing raft
-  DEFINITIONS SEASTAR_TESTING_MAIN
+
   ARGS "-- -c 1"
  )
 rp_test(
@@ -12,7 +12,7 @@ rp_test(
   BINARY_NAME voted_for_config_tests
   SOURCES voted_for_config_tests.cc
   LIBRARIES Seastar::seastar_testing raft
-  DEFINITIONS SEASTAR_TESTING_MAIN
+
   ARGS "-- -c 1"
  )
 rp_test(

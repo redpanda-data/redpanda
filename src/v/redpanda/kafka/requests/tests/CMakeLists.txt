@@ -6,7 +6,7 @@ rp_test(
   BINARY_NAME read_write_roundtrip_test
   SOURCES read_write_roundtrip_test.cc
   LIBRARIES Seastar::seastar_testing requests
-  DEFINITIONS SEASTAR_TESTING_MAIN
+
 )
 
 rp_test(
@@ -34,8 +34,8 @@ rp_test(
 )
 
 rp_test(
+  UNIT_TEST
   BINARY_NAME topic_result_utils_tests
   SOURCES topic_result_utils_tests.cc
-  DEFINITIONS SEASTAR_TESTING_MAIN
-  LIBRARIES Boost::unit_test_framework Seastar::seastar_testing requests
+  LIBRARIES Seastar::seastar_testing requests
 )

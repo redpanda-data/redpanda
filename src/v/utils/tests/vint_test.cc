@@ -1,7 +1,7 @@
-#define BOOST_TEST_MODULE utils
-
 #include "bytes/bytes.h"
 #include "utils/vint.h"
+
+#include <seastar/testing/thread_test_case.hh>
 
 #include <boost/test/unit_test.hpp>
 
@@ -40,10 +40,10 @@ void check_roundtrip_sweep(std::size_t count) {
 
 } // namespace
 
-BOOST_AUTO_TEST_CASE(sanity_signed_sweep_32) {
-    check_roundtrip_sweep(100'000);
+SEASTAR_THREAD_TEST_CASE(sanity_signed_sweep_32) {
+    check_roundtrip_sweep(1000);
 }
 
-BOOST_AUTO_TEST_CASE(sanity_signed_sweep_64) {
-    check_roundtrip_sweep(100'000);
+SEASTAR_THREAD_TEST_CASE(sanity_signed_sweep_64) {
+    check_roundtrip_sweep(1000);
 }
