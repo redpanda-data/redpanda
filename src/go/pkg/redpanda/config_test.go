@@ -211,123 +211,134 @@ rpk:
 
 func TestCheckConfig(t *testing.T) {
 	type args struct {
-		config *Config
+		config func() *Config
 	}
 	tests := []struct {
-		name string
-		args args
-		want bool
+		name     string
+		args     args
+		expected []string
 	}{
 		{
-			name: "shall return true when config is valid",
+			name: "shall return no errors when config is valid",
 			args: args{
-				config: &Config{
-					Redpanda: &RedpandaConfig{
-						Directory: "/var/lib/redpanda/data",
-						RPCServer: SocketAddress{
-							Port:    33145,
-							Address: "127.0.0.1",
-						},
-						Id: 1,
-						KafkaApi: SocketAddress{
-							Port:    9092,
-							Address: "127.0.0.1",
-						},
-						SeedServers: []*SeedServer{
-							&SeedServer{
-								Host: SocketAddress{
-									Port:    33145,
-									Address: "127.0.0.1",
-								},
-								Id: 1,
-							},
-							&SeedServer{
-								Host: SocketAddress{
-									Port:    33146,
-									Address: "127.0.0.1",
-								},
-								Id: 1,
-							},
-						}},
-				},
+				config: getValidConfig,
 			},
-			want: true,
+			expected: []string{},
 		},
 		{
-			name: "shall return false when config file does not contain data directory setting",
+			name: "shall return an error when config file does not contain data directory setting",
 			args: args{
-				config: &Config{
-					Redpanda: &RedpandaConfig{
-						RPCServer: SocketAddress{
-							Port:    33145,
-							Address: "127.0.0.1",
-						},
-						Id: 1,
-						KafkaApi: SocketAddress{
-							Port:    9092,
-							Address: "127.0.0.1",
-						},
-						SeedServers: []*SeedServer{
-							&SeedServer{
-								Host: SocketAddress{
-									Port:    33145,
-									Address: "127.0.0.1",
-								},
-								Id: 1,
-							},
-							&SeedServer{
-								Host: SocketAddress{
-									Port:    33146,
-									Address: "127.0.0.1",
-								},
-								Id: 1,
-							},
-						},
-					},
+				config: func() *Config {
+					c := getValidConfig()
+					c.Redpanda.Directory = ""
+					return c
 				},
 			},
-			want: false,
+			expected: []string{"redpanda.data_directory can't be empty"},
 		},
 		{
-			name: "shall return false when id of server is negative",
+			name: "shall return an error when id of server is negative",
 			args: args{
-				config: &Config{
-					Redpanda: &RedpandaConfig{
-						Directory: "/var/lib/redpanda/data",
-						RPCServer: SocketAddress{
-							Port:    33145,
-							Address: "127.0.0.1",
-						},
-						Id: -1,
-						KafkaApi: SocketAddress{
-							Port:    9092,
-							Address: "127.0.0.1",
-						},
-						SeedServers: []*SeedServer{
-							&SeedServer{
-								Host: SocketAddress{
-									Port:    33145,
-									Address: "127.0.0.1",
-								},
-								Id: 1,
-							},
-							&SeedServer{
-								Host: SocketAddress{
-									Port:    33146,
-									Address: "127.0.0.1",
-								},
-								Id: 1,
-							},
-						}},
+				config: func() *Config {
+					c := getValidConfig()
+					c.Redpanda.Id = -100
+					return c
 				},
 			},
-			want: false,
+			expected: []string{"redpanda.id can't be a negative integer"},
+		},
+		{
+			name: "shall return an error when the RPC server port is 0",
+			args: args{
+				config: func() *Config {
+					c := getValidConfig()
+					c.Redpanda.RPCServer.Port = 0
+					return c
+				},
+			},
+			expected: []string{"redpanda.rpc_server.port can't be 0"},
+		},
+		{
+			name: "shall return an error when the RPC server address is empty",
+			args: args{
+				config: func() *Config {
+					c := getValidConfig()
+					c.Redpanda.RPCServer.Address = ""
+					return c
+				},
+			},
+			expected: []string{"redpanda.rpc_server.address can't be empty"},
+		},
+		{
+			name: "shall return an error when the Kafka API port is 0",
+			args: args{
+				config: func() *Config {
+					c := getValidConfig()
+					c.Redpanda.KafkaApi.Port = 0
+					return c
+				},
+			},
+			expected: []string{"redpanda.kafka_api.port can't be 0"},
+		},
+		{
+			name: "shall return an error when the Kafka API address is empty",
+			args: args{
+				config: func() *Config {
+					c := getValidConfig()
+					c.Redpanda.KafkaApi.Address = ""
+					return c
+				},
+			},
+			expected: []string{"redpanda.kafka_api.address can't be empty"},
+		},
+		{
+			name: "shall return an error when the seed servers list is empty",
+			args: args{
+				config: func() *Config {
+					c := getValidConfig()
+					c.Redpanda.SeedServers = []*SeedServer{}
+					return c
+				},
+			},
+			expected: []string{"redpanda.seed_servers can't be empty"},
+		},
+		{
+			name: "shall return an error when one of the seed servers' address is empty",
+			args: args{
+				config: func() *Config {
+					c := getValidConfig()
+					c.Redpanda.SeedServers[0].Host.Address = ""
+					return c
+				},
+			},
+			expected: []string{"redpanda.seed_servers.0.host.address can't be empty"},
+		},
+		{
+			name: "shall return an error when one of the seed servers' port is 0",
+			args: args{
+				config: func() *Config {
+					c := getValidConfig()
+					c.Redpanda.SeedServers[1].Host.Port = 0
+					return c
+				},
+			},
+			expected: []string{"redpanda.seed_servers.1.host.port can't be 0"},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := CheckConfig(tt.args.config); got != tt.want {
-				t.Errorf("CheckConfig() = %v, want %v", got, tt.want)
+			_, got := CheckConfig(tt.args.config())
+			if len(got) != len(tt.expected) {
+				t.Fatalf("got a different amount of errors than expected: got: %v expected: %v", got, tt.expected)
+			}
+			for _, errMsg := range tt.expected {
+				present := false
+				for _, err := range got {
+					present = present || errMsg == err.Error()
+				}
+				if !present {
+					t.Errorf("expected error msg \"%v\" wasn't among the result error set %v", errMsg, got)
+				}
 			}
 		})
 	}

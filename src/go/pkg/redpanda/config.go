@@ -1,6 +1,7 @@
 package redpanda
 
 import (
+	"fmt"
 	"vectorized/pkg/yaml"
 
 	log "github.com/sirupsen/logrus"
@@ -56,15 +57,52 @@ func ReadConfigFromPath(fs afero.Fs, path string) (*Config, error) {
 	return config, nil
 }
 
-func CheckConfig(config *Config) bool {
-	if config.Redpanda.Directory == "" ||
-		config.Redpanda.RPCServer.Port == 0 ||
-		config.Redpanda.RPCServer.Address == "" ||
-		config.Redpanda.Id < 0 ||
-		config.Redpanda.KafkaApi.Port == 0 ||
-		config.Redpanda.KafkaApi.Address == "" ||
-		len(config.Redpanda.SeedServers) == 0 {
-		return false
+func CheckConfig(config *Config) (bool, []error) {
+	errs := checkRedpandaConfig(config.Redpanda)
+	ok := len(errs) == 0
+	return ok, errs
+}
+
+func checkRedpandaConfig(config *RedpandaConfig) []error {
+	errs := []error{}
+	if config.Directory == "" {
+		errs = append(errs, fmt.Errorf("redpanda.data_directory can't be empty"))
 	}
-	return true
+	if config.Id < 0 {
+		errs = append(errs, fmt.Errorf("redpanda.id can't be a negative integer"))
+	}
+	errs = append(
+		errs,
+		checkSocketAddress(config.RPCServer, "redpanda.rpc_server")...,
+	)
+	errs = append(
+		errs,
+		checkSocketAddress(config.KafkaApi, "redpanda.kafka_api")...,
+	)
+	seedServersPath := "redpanda.seed_servers"
+	if len(config.SeedServers) == 0 {
+		errs = append(errs, fmt.Errorf(seedServersPath+" can't be empty"))
+	} else {
+		for i, seed := range config.SeedServers {
+			errs = append(
+				errs,
+				checkSocketAddress(
+					seed.Host,
+					fmt.Sprintf("%s.%d.host", seedServersPath, i),
+				)...,
+			)
+		}
+	}
+	return errs
+}
+
+func checkSocketAddress(socketAddr SocketAddress, configPath string) []error {
+	errs := []error{}
+	if socketAddr.Port == 0 {
+		errs = append(errs, fmt.Errorf("%s.port can't be 0", configPath))
+	}
+	if socketAddr.Address == "" {
+		errs = append(errs, fmt.Errorf("%s.address can't be empty", configPath))
+	}
+	return errs
 }

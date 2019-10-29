@@ -52,7 +52,8 @@ func NewConfigChecker(config *Config) checkers.Checker {
 		checkers.Fatal,
 		true,
 		func() (interface{}, error) {
-			return CheckConfig(config), nil
+			ok, _ := CheckConfig(config)
+			return ok, nil
 		})
 }
 
