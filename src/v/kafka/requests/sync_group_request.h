@@ -39,9 +39,9 @@ struct sync_group_response final {
     error_code error;
     bytes assignment;
 
-    explicit sync_group_response(bytes assignment)
+    sync_group_response(error_code error, bytes assignment)
       : throttle_time(0)
-      , error(error_code::none)
+      , error(error)
       , assignment(assignment) {}
 
     explicit sync_group_response(error_code error)
@@ -50,6 +50,10 @@ struct sync_group_response final {
 
     void encode(const request_context& ctx, response& resp);
 };
+
+static inline future<sync_group_response> make_sync_error(error_code error) {
+    return make_ready_future<sync_group_response>(error);
+}
 
 std::ostream& operator<<(std::ostream&, const sync_group_response&);
 

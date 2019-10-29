@@ -315,7 +315,8 @@ void group::finish_syncing_members(error_code error) const {
           if (!member->is_syncing()) {
               return;
           }
-          auto reply = sync_group_response(member->assignment());
+          auto reply = sync_group_response(
+            error_code::none, member->assignment());
           log.debug("set sync response for member {}", member);
           member->set_sync_response(std::move(reply));
       });
