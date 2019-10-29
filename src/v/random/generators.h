@@ -18,24 +18,21 @@ namespace internal {
 inline std::random_device::result_type get_seed() {
     std::random_device rd;
     auto seed = rd();
-    std::cout << "random::generators seed = " << seed << "\n";
     return seed;
 }
-
-} // namespace internal
-
 static thread_local std::default_random_engine gen(internal::get_seed());
+} // namespace internal
 
 template<typename T>
 T get_int() {
     std::uniform_int_distribution<T> dist;
-    return dist(gen);
+    return dist(internal::gen);
 }
 
 template<typename T>
 T get_int(T min, T max) {
     std::uniform_int_distribution<T> dist(min, max);
-    return dist(gen);
+    return dist(internal::gen);
 }
 
 template<typename T>
@@ -58,7 +55,8 @@ inline sstring gen_alphanum_string(size_t n) {
       = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     std::uniform_int_distribution<size_t> dist(0, sizeof(chars) - 1);
     sstring s(sstring::initialized_later(), n);
-    std::generate_n(s.begin(), n, [&dist] { return chars[dist(gen)]; });
+    std::generate_n(
+      s.begin(), n, [&dist] { return chars[dist(internal::gen)]; });
     return s;
 }
 
