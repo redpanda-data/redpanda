@@ -39,6 +39,11 @@ struct heartbeat_response final {
     void encode(const request_context& ctx, response& resp);
 };
 
+static inline future<heartbeat_response>
+make_heartbeat_error(error_code error) {
+    return make_ready_future<heartbeat_response>(error);
+}
+
 std::ostream& operator<<(std::ostream&, const heartbeat_response&);
 
 } // namespace kafka
