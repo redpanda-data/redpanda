@@ -9,40 +9,8 @@ import (
 	"vectorized/pkg/utils"
 
 	"github.com/spf13/afero"
+	"gopkg.in/yaml.v2"
 )
-
-var validConfig = []string{
-	"---\n",
-	"# Redpanda Queue configuration file\n",
-	"redpanda:\n",
-	"  # Data directory where all the files will be stored. \n",
-	"  # This directory MUST resides on xfs partion.\n",
-	"  data_directory: /var/lib/redpanda/data\n",
-	"  \n",
-	"  # Node ID - must be unique for each node\n",
-	"  node_id: 1\n",
-	"  \n",
-	"  # Redpanda server\n",
-	"  rpc_server:\n",
-	"    address: 127.0.0.1\n",
-	"    port: 33145\n",
-	"  \n",
-	"  # Kafka transport\n",
-	"  kafka_api:\n",
-	"    address: 127.0.0.1\n",
-	"    port: 9092\n",
-	"\n",
-	"  # Raft configuration\n",
-	"  seed_servers:\n",
-	"    - host: \n",
-	"        address: 127.0.0.1\n",
-	"        port: 33145\n",
-	"      node_id: 1\n",
-	"    - host: \n",
-	"        address: 127.0.0.1\n",
-	"        port: 33146\n",
-	"      node_id: 2\n",
-}
 
 func getValidConfig() *Config {
 	return &Config{
@@ -86,49 +54,21 @@ func TestReadConfigFromPath(t *testing.T) {
 		name    string
 		args    args
 		before  func(afero.Fs)
-		want    *Config
+		want    func() *Config
 		wantErr bool
 	}{
 		{
 			name: "shall return config struct field with values from file",
 			before: func(fs afero.Fs) {
+				bs, _ := yaml.Marshal(getValidConfig())
 				fs.MkdirAll("/etc/redpanda", 0755)
-				utils.WriteFileLines(fs, validConfig,
-					"/etc/redpanda/redpanda.yaml")
+				utils.WriteBytes(fs, bs, "/etc/redpanda/redpanda.yaml")
 			},
 			args: args{
 				fs:   afero.NewMemMapFs(),
 				path: "/etc/redpanda/redpanda.yaml",
 			},
-			want: &Config{
-				Redpanda: &RedpandaConfig{
-					Directory: "/var/lib/redpanda/data",
-					RPCServer: SocketAddress{
-						Port:    33145,
-						Address: "127.0.0.1",
-					},
-					Id: 1,
-					KafkaApi: SocketAddress{
-						Port:    9092,
-						Address: "127.0.0.1",
-					},
-					SeedServers: []*SeedServer{
-						&SeedServer{
-							Host: SocketAddress{
-								Port:    33145,
-								Address: "127.0.0.1",
-							},
-							Id: 1,
-						},
-						&SeedServer{
-							Host: SocketAddress{
-								Port:    33146,
-								Address: "127.0.0.1",
-							},
-							Id: 2,
-						},
-					}},
-			},
+			want:    getValidConfig,
 			wantErr: false,
 		},
 	}
@@ -136,12 +76,13 @@ func TestReadConfigFromPath(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.before(tt.args.fs)
 			got, err := ReadConfigFromPath(tt.args.fs, tt.args.path)
+			want := tt.want()
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ReadConfigFromPath() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("ReadConfigFromPath() = %v, want %v", got, tt.want)
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("ReadConfigFromPath() = %v, want %v", *got, *want)
 			}
 		})
 	}
