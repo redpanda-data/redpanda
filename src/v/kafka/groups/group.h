@@ -1,4 +1,5 @@
 #pragma once
+#include "config/configuration.h"
 #include "kafka/errors.h"
 #include "kafka/groups/member.h"
 #include "kafka/requests/join_group_request.h"
@@ -73,11 +74,12 @@ class group {
 public:
     using duration_type = lowres_clock::duration;
 
-    group(kafka::group_id id, group_state s)
+    group(kafka::group_id id, group_state s, config::configuration& conf)
       : _id(id)
       , _state(s)
       , _generation(0)
-      , _num_members_joining(0) {}
+      , _num_members_joining(0)
+      , _conf(conf) {}
 
     /// Get the group id.
     const kafka::group_id& id() const { return _id; }
@@ -309,6 +311,7 @@ private:
     std::optional<kafka::protocol_type> _protocol_type;
     std::optional<kafka::protocol_name> _protocol;
     std::optional<kafka::member_id> _leader;
+    config::configuration& _conf;
 };
 
 using group_ptr = lw_shared_ptr<group>;
