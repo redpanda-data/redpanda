@@ -9,6 +9,8 @@
 #include "storage/crc_record.h"
 #include "utils/fragbuf.h"
 #include "utils/vint.h"
+// rand utils
+#include "random/generators.h"
 
 #include <random>
 
@@ -28,22 +30,6 @@ temporary_buffer<char> serialize_vint(vint::value_type value) {
 }
 } // namespace internal
 
-inline std::random_device::result_type get_seed() {
-    std::random_device rd;
-    auto seed = rd();
-    std::cout << "storage::random_batch seed = " << seed << "\n";
-    return seed;
-}
-
-static thread_local std::default_random_engine gen(get_seed());
-
-inline std::uniform_int_distribution<int> bool_dist{0, 1};
-inline std::uniform_int_distribution<int> low_count_dist{2, 30};
-inline std::uniform_int_distribution<int> high_count_dist{1024, 4096};
-inline std::uniform_int_distribution<model::timestamp::value_type>
-  timestamp_dist{model::timestamp::min().value(),
-                 model::timestamp::min().value() + 2};
-
 model::record_batch_header
 make_random_header(model::offset o, model::timestamp ts, size_t num_records) {
     model::record_batch_header h;
@@ -52,7 +38,7 @@ make_random_header(model::offset o, model::timestamp ts, size_t num_records) {
     h.first_timestamp = ts;
     h.type = model::record_batch_type(1);
     h.max_timestamp = model::timestamp(ts.value() + num_records);
-    if (bool_dist(gen)) {
+    if (random_generators::get_int(0, 1)) {
         h.attrs = model::record_batch_attributes(4);
     }
     return h;
@@ -95,29 +81,31 @@ fragbuf make_packed_value_and_headers(size_t size) {
 
     // Headers => [Header]
     // numHeaders: varint
-    int num_headers = low_count_dist(gen);
+    int num_headers = random_generators::get_int(2, 30);
     bufs.push_back(internal::serialize_vint(num_headers));
 
     for (int i = 0; i < num_headers; i++) {
         // headerKeyLength: varint
         // headerKey: String
         sstring key = random_generators::gen_alphanum_string(
-          low_count_dist(gen));
+          random_generators::get_int(2, 30));
         bufs.push_back(internal::serialize_vint(key.size()));
         bufs.push_back(temporary_buffer<char>(
           reinterpret_cast<const char*>(key.data()), key.size()));
 
         // headerValueLength: varint
         // value: byte[]
-        bufs.push_back(make_buffer_with_vint_size_prefix(low_count_dist(gen)));
+        bufs.push_back(
+          make_buffer_with_vint_size_prefix(random_generators::get_int(2, 30)));
     }
 
     return fragbuf(std::move(bufs));
 }
 
 model::record make_random_record(unsigned index) {
-    auto k = make_random_ftb(high_count_dist(gen));
-    auto v = make_packed_value_and_headers(high_count_dist(gen));
+    auto k = make_random_ftb(random_generators::get_int(1024, 4096));
+    auto v = make_packed_value_and_headers(
+      random_generators::get_int(1024, 4096));
     auto size = internal::vint_size(k.size_bytes()) // size of key-len
                 + k.size_bytes()                    // size of key
                 + v.size_bytes()             // size of value (includes lengths)
@@ -136,14 +124,16 @@ model::record make_random_record(unsigned index) {
 
 model::record_batch make_random_batch(model::offset o) {
     crc32 crc;
-    auto num_records = low_count_dist(gen);
-    auto ts = model::timestamp(timestamp_dist(gen));
+    auto num_records = random_generators::get_int(2, 30);
+    auto ts = model::timestamp(
+      random_generators::get_int<model::timestamp::value_type>(
+        model::timestamp::min().value(), model::timestamp::min().value() + 2));
     auto header = make_random_header(o, ts, num_records);
     storage::crc_batch_header(crc, header, num_records);
     auto size = packed_header_size;
     model::record_batch::records_type records;
     if (header.attrs.compression() != model::compression::none) {
-        auto blob = make_random_ftb(high_count_dist(gen));
+        auto blob = make_random_ftb(random_generators::get_int(1024, 4096));
         size += blob.size_bytes();
         auto cr = model::record_batch::compressed_records(
           num_records, std::move(blob));
@@ -186,7 +176,7 @@ make_random_batches(model::offset o, size_t count) { // start offset + count
 
 std::vector<model::record_batch>
 make_random_batches(model::offset o = model::offset(0)) {
-    return make_random_batches(o, low_count_dist(gen));
+    return make_random_batches(o, random_generators::get_int(2, 30));
 }
 
 } // namespace storage::test
