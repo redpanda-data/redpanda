@@ -211,13 +211,13 @@ func FillTunerParamsWithValuesFromConfig(
 	params *TunerParams, config *redpanda.Config,
 ) error {
 	nics, err := net.GetInterfacesByIps(
-		config.KafkaApi.Address, config.RPCServer.Address)
+		config.Redpanda.KafkaApi.Address, config.Redpanda.RPCServer.Address)
 	if err != nil {
 		return err
 	}
 	params.Nics = nics
 	log.Infof("Redpanda uses '%v' NICs", params.Nics)
-	log.Infof("Redpanda data directory '%s'", config.Directory)
-	params.Directories = []string{config.Directory}
+	log.Infof("Redpanda data directory '%s'", config.Redpanda.Directory)
+	params.Directories = []string{config.Redpanda.Directory}
 	return nil
 }

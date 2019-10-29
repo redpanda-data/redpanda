@@ -68,32 +68,33 @@ func TestReadConfigFromPath(t *testing.T) {
 				path: "/etc/redpanda/redpanda.yaml",
 			},
 			want: &Config{
-				Directory: "/var/lib/redpanda/data",
-				RPCServer: SocketAddress{
-					Port:    33145,
-					Address: "127.0.0.1",
-				},
-				Id: 1,
-				KafkaApi: SocketAddress{
-					Port:    9092,
-					Address: "127.0.0.1",
-				},
-				SeedServers: []*SeedServer{
-					&SeedServer{
-						Host: SocketAddress{
-							Port:    33145,
-							Address: "127.0.0.1",
-						},
-						Id: 1,
+				Redpanda: &RedpandaConfig{
+					Directory: "/var/lib/redpanda/data",
+					RPCServer: SocketAddress{
+						Port:    33145,
+						Address: "127.0.0.1",
 					},
-					&SeedServer{
-						Host: SocketAddress{
-							Port:    33146,
-							Address: "127.0.0.1",
-						},
-						Id: 2,
+					Id: 1,
+					KafkaApi: SocketAddress{
+						Port:    9092,
+						Address: "127.0.0.1",
 					},
-				},
+					SeedServers: []*SeedServer{
+						&SeedServer{
+							Host: SocketAddress{
+								Port:    33145,
+								Address: "127.0.0.1",
+							},
+							Id: 1,
+						},
+						&SeedServer{
+							Host: SocketAddress{
+								Port:    33146,
+								Address: "127.0.0.1",
+							},
+							Id: 2,
+						},
+					}},
 			},
 			wantErr: false,
 		},
@@ -131,32 +132,33 @@ func TestWriteConfig(t *testing.T) {
 				fs:   afero.NewMemMapFs(),
 				path: "/redpanda.yaml",
 				config: &Config{
-					Directory: "/var/lib/redpanda/data",
-					RPCServer: SocketAddress{
-						Port:    33145,
-						Address: "127.0.0.1",
-					},
-					Id: 1,
-					KafkaApi: SocketAddress{
-						Port:    9092,
-						Address: "127.0.0.1",
-					},
-					SeedServers: []*SeedServer{
-						&SeedServer{
-							Host: SocketAddress{
-								Port:    33145,
-								Address: "127.0.0.1",
-							},
-							Id: 1,
+					Redpanda: &RedpandaConfig{
+						Directory: "/var/lib/redpanda/data",
+						RPCServer: SocketAddress{
+							Port:    33145,
+							Address: "127.0.0.1",
 						},
-						&SeedServer{
-							Host: SocketAddress{
-								Port:    33146,
-								Address: "127.0.0.1",
-							},
-							Id: 2,
+						Id: 1,
+						KafkaApi: SocketAddress{
+							Port:    9092,
+							Address: "127.0.0.1",
 						},
-					},
+						SeedServers: []*SeedServer{
+							&SeedServer{
+								Host: SocketAddress{
+									Port:    33145,
+									Address: "127.0.0.1",
+								},
+								Id: 1,
+							},
+							&SeedServer{
+								Host: SocketAddress{
+									Port:    33146,
+									Address: "127.0.0.1",
+								},
+								Id: 2,
+							},
+						}},
 				},
 			},
 			after: func(fs afero.Fs) error {
@@ -223,32 +225,33 @@ func TestCheckConfig(t *testing.T) {
 			name: "shall return true when config is valid",
 			args: args{
 				config: &Config{
-					Directory: "/var/lib/redpanda/data",
-					RPCServer: SocketAddress{
-						Port:    33145,
-						Address: "127.0.0.1",
-					},
-					Id: 1,
-					KafkaApi: SocketAddress{
-						Port:    9092,
-						Address: "127.0.0.1",
-					},
-					SeedServers: []*SeedServer{
-						&SeedServer{
-							Host: SocketAddress{
-								Port:    33145,
-								Address: "127.0.0.1",
-							},
-							Id: 1,
+					Redpanda: &RedpandaConfig{
+						Directory: "/var/lib/redpanda/data",
+						RPCServer: SocketAddress{
+							Port:    33145,
+							Address: "127.0.0.1",
 						},
-						&SeedServer{
-							Host: SocketAddress{
-								Port:    33146,
-								Address: "127.0.0.1",
-							},
-							Id: 1,
+						Id: 1,
+						KafkaApi: SocketAddress{
+							Port:    9092,
+							Address: "127.0.0.1",
 						},
-					},
+						SeedServers: []*SeedServer{
+							&SeedServer{
+								Host: SocketAddress{
+									Port:    33145,
+									Address: "127.0.0.1",
+								},
+								Id: 1,
+							},
+							&SeedServer{
+								Host: SocketAddress{
+									Port:    33146,
+									Address: "127.0.0.1",
+								},
+								Id: 1,
+							},
+						}},
 				},
 			},
 			want: true,
@@ -257,29 +260,31 @@ func TestCheckConfig(t *testing.T) {
 			name: "shall return false when config file does not contain data directory setting",
 			args: args{
 				config: &Config{
-					RPCServer: SocketAddress{
-						Port:    33145,
-						Address: "127.0.0.1",
-					},
-					Id: 1,
-					KafkaApi: SocketAddress{
-						Port:    9092,
-						Address: "127.0.0.1",
-					},
-					SeedServers: []*SeedServer{
-						&SeedServer{
-							Host: SocketAddress{
-								Port:    33145,
-								Address: "127.0.0.1",
-							},
-							Id: 1,
+					Redpanda: &RedpandaConfig{
+						RPCServer: SocketAddress{
+							Port:    33145,
+							Address: "127.0.0.1",
 						},
-						&SeedServer{
-							Host: SocketAddress{
-								Port:    33146,
-								Address: "127.0.0.1",
+						Id: 1,
+						KafkaApi: SocketAddress{
+							Port:    9092,
+							Address: "127.0.0.1",
+						},
+						SeedServers: []*SeedServer{
+							&SeedServer{
+								Host: SocketAddress{
+									Port:    33145,
+									Address: "127.0.0.1",
+								},
+								Id: 1,
 							},
-							Id: 1,
+							&SeedServer{
+								Host: SocketAddress{
+									Port:    33146,
+									Address: "127.0.0.1",
+								},
+								Id: 1,
+							},
 						},
 					},
 				},
@@ -290,32 +295,33 @@ func TestCheckConfig(t *testing.T) {
 			name: "shall return false when id of server is negative",
 			args: args{
 				config: &Config{
-					Directory: "/var/lib/redpanda/data",
-					RPCServer: SocketAddress{
-						Port:    33145,
-						Address: "127.0.0.1",
-					},
-					Id: -1,
-					KafkaApi: SocketAddress{
-						Port:    9092,
-						Address: "127.0.0.1",
-					},
-					SeedServers: []*SeedServer{
-						&SeedServer{
-							Host: SocketAddress{
-								Port:    33145,
-								Address: "127.0.0.1",
-							},
-							Id: 1,
+					Redpanda: &RedpandaConfig{
+						Directory: "/var/lib/redpanda/data",
+						RPCServer: SocketAddress{
+							Port:    33145,
+							Address: "127.0.0.1",
 						},
-						&SeedServer{
-							Host: SocketAddress{
-								Port:    33146,
-								Address: "127.0.0.1",
-							},
-							Id: 1,
+						Id: -1,
+						KafkaApi: SocketAddress{
+							Port:    9092,
+							Address: "127.0.0.1",
 						},
-					},
+						SeedServers: []*SeedServer{
+							&SeedServer{
+								Host: SocketAddress{
+									Port:    33145,
+									Address: "127.0.0.1",
+								},
+								Id: 1,
+							},
+							&SeedServer{
+								Host: SocketAddress{
+									Port:    33146,
+									Address: "127.0.0.1",
+								},
+								Id: 1,
+							},
+						}},
 				},
 			},
 			want: false,

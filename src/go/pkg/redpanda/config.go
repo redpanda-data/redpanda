@@ -8,6 +8,10 @@ import (
 )
 
 type Config struct {
+	Redpanda *RedpandaConfig
+}
+
+type RedpandaConfig struct {
 	Directory   string        `yaml:"data_directory"`
 	RPCServer   SocketAddress `yaml:"rpc_server"`
 	KafkaApi    SocketAddress `yaml:"kafka_api"`
@@ -36,36 +40,29 @@ type SeedServer struct {
 	Id   int           `yaml:"node_id"`
 }
 
-type configRoot struct {
-	Redpanda *Config
-}
-
 func WriteConfig(config *Config, fs afero.Fs, path string) error {
 	log.Debugf("Writing Redpanda config file to '%s'", path)
-	configRoot := configRoot{
-		Redpanda: config,
-	}
-	return yaml.Persist(fs, configRoot, path)
+	return yaml.Persist(fs, config, path)
 }
 
 func ReadConfigFromPath(fs afero.Fs, path string) (*Config, error) {
 	log.Debugf("Reading Redpanda config file from '%s'", path)
-	configRoot := configRoot{}
-	err := yaml.Read(fs, &configRoot, path)
+	config := &Config{}
+	err := yaml.Read(fs, config, path)
 	if err != nil {
 		return nil, err
 	}
-	return configRoot.Redpanda, nil
+	return config, nil
 }
 
 func CheckConfig(config *Config) bool {
-	if config.Directory == "" ||
-		config.RPCServer.Port == 0 ||
-		config.RPCServer.Address == "" ||
-		config.Id < 0 ||
-		config.KafkaApi.Port == 0 ||
-		config.KafkaApi.Address == "" ||
-		len(config.SeedServers) == 0 {
+	if config.Redpanda.Directory == "" ||
+		config.Redpanda.RPCServer.Port == 0 ||
+		config.Redpanda.RPCServer.Address == "" ||
+		config.Redpanda.Id < 0 ||
+		config.Redpanda.KafkaApi.Port == 0 ||
+		config.Redpanda.KafkaApi.Address == "" ||
+		len(config.Redpanda.SeedServers) == 0 {
 		return false
 	}
 	return true
