@@ -204,6 +204,10 @@ func tuneAll(
 	}
 
 	for _, tunerName := range factory.AvailableTuners() {
+		if !factory.IsTunerEnabled(tunerName, config.Rpk) {
+			log.Infof("Skipping disabled tuner %s", tunerName)
+			continue
+		}
 		tuner := tunerFactory.CreateTuner(tunerName, params)
 		if supported, reason := tuner.CheckIfSupported(); supported {
 			log.Debugf("Tuner paramters %+v", params)
