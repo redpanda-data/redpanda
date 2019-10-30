@@ -3,6 +3,7 @@
 #include "kafka/errors.h"
 #include "kafka/groups/member.h"
 #include "kafka/requests/join_group_request.h"
+#include "kafka/requests/sync_group_request.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "seastarx.h"
@@ -257,15 +258,6 @@ public:
     kafka::protocol_name select_protocol() const;
 
     /**
-     * \brief Fufill syncing members' response promise.
-     *
-     * A syncing member waits on a future that is fulfilled once the group
-     * leader has reported member assignments. This method is called by the
-     * leader to set the value on the associated promise.
-     */
-    void finish_syncing_members(error_code error) const;
-
-    /**
      * \brief Get the group's associated partition.
      *
      * TODO:
@@ -330,6 +322,16 @@ public:
 
     /// Removes a full member and may rebalance.
     void remove_member(member_ptr member);
+
+    /// Handle a group sync request.
+    future<sync_group_response> handle_sync_group(sync_group_request&& r);
+
+    /// Handle sync group in completing rebalance state.
+    future<sync_group_response> sync_group_completing_rebalance(
+      member_ptr member, sync_group_request&& request);
+
+    /// Complete syncing for members.
+    void finish_syncing_members(error_code error);
 
 private:
     using member_map = std::unordered_map<kafka::member_id, member_ptr>;

@@ -1,11 +1,10 @@
-//#define BOOST_TEST_MODULE kafka group
+#define BOOST_TEST_MODULE kafka group
 #include "config/configuration.h"
 #include "kafka/groups/group.h"
 #include "seastarx.h"
 #include "utils/to_string.h"
 
 #include <seastar/core/sstring.hh>
-#include <seastar/testing/thread_test_case.hh>
 
 #include <boost/test/unit_test.hpp>
 #include <boost/uuid/uuid.hpp>
@@ -392,22 +391,6 @@ BOOST_AUTO_TEST_CASE(supports_protocols) {
     r.protocols = std::vector<member_protocol>{
       {kafka::protocol_name("n2"), bytes()}};
     BOOST_TEST(!g.supports_protocols(r));
-}
-
-SEASTAR_THREAD_TEST_CASE(finish_syncing) {
-    auto g = get();
-
-    auto m = get_member();
-    m->set_assignment(bytes("foo"));
-
-    // ignore the join
-    (void)g.add_member(m);
-
-    auto f = m->get_sync_response();
-    g.finish_syncing_members(error_code::none);
-    auto resp = f.get0();
-    BOOST_TEST(resp.assignment == bytes("foo"));
-    BOOST_TEST(resp.error == error_code::none);
 }
 
 BOOST_AUTO_TEST_CASE(leader_rejoined) {

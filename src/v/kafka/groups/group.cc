@@ -250,23 +250,24 @@ kafka::protocol_name group::select_protocol() const {
     return winner->first;
 }
 
-/*
- * TODO
- * - cancel and re-arm member heartbeat after setting promise value
- */
-void group::finish_syncing_members(error_code error) const {
+void group::finish_syncing_members(error_code error) {
     std::for_each(
       std::cbegin(_members),
       std::cend(_members),
-      [](const member_map::value_type& m) {
-          auto& member = m.second;
-          if (!member->is_syncing()) {
-              return;
+      [this, error](const member_map::value_type& m) {
+          auto member = m.second;
+          if (member->is_syncing()) {
+              auto reply = sync_group_response(error, member->assignment());
+              kglog.trace("set sync response for member {}", member);
+              member->set_sync_response(std::move(reply));
+              // <kafka>reset the session timeout for members after propagating
+              // the member's assignment. This is because if any member's
+              // session expired while we were still awaiting either the leader
+              // sync group or the storage callback, its expiration will be
+              // ignored and no future heartbeat expectations will not be
+              // scheduled.</kafka>
+              schedule_next_heartbeat_expiration(member);
           }
-          auto reply = sync_group_response(
-            error_code::none, member->assignment());
-          kglog.trace("set sync response for member {}", member);
-          member->set_sync_response(std::move(reply));
       });
 }
 
@@ -755,6 +756,145 @@ void group::remove_member(member_ptr member) {
     default:
         std::terminate(); // make gcc happy
     }
+}
+
+future<sync_group_response> group::handle_sync_group(sync_group_request&& r) {
+    if (in_state(group_state::dead)) {
+        kglog.trace("group is dead");
+        return make_sync_error(error_code::coordinator_not_available);
+
+    } else if (!contains_member(r.member_id)) {
+        kglog.trace("member not found");
+        return make_sync_error(error_code::unknown_member_id);
+
+    } else if (r.generation_id != generation()) {
+        kglog.trace(
+          "invalid generation request {} != group {}",
+          r.generation_id,
+          generation());
+        return make_sync_error(error_code::illegal_generation);
+    }
+
+    // the two states of interest are `completing rebalance` and `stable`.
+    //
+    // in the stable state all members have assignments. when a member makes
+    // a `sync group` requests on a stable group that member's assignment is
+    // returned immediately.
+    //
+    // when a `sync group` request is made on a group in the `completing
+    // rebalance` state then the requesting member is either the group
+    // leader which will register all member assignments with the group, or
+    // it is a non-leader member which will wait until the leader request
+    // provides the assignments.
+    //
+    // when the leader provides its assignments, it unblocks any members
+    // waiting on assignments, transitions the group into the stable state,
+    // and returns the assignment for itself.
+    switch (state()) {
+    case group_state::empty:
+        kglog.trace("group is in the empty state");
+        return make_sync_error(error_code::unknown_member_id);
+
+    case group_state::preparing_rebalance:
+        kglog.trace("group is in the preparing rebalance state");
+        return make_sync_error(error_code::rebalance_in_progress);
+
+    case group_state::completing_rebalance: {
+        kglog.trace("completing rebalance");
+        auto member = get_member(r.member_id);
+        return sync_group_completing_rebalance(member, std::move(r));
+    }
+
+    case group_state::stable: {
+        kglog.trace("group is stable. returning current assignment");
+        // <kafka>if the group is stable, we just return the current
+        // assignment</kafka>
+        auto member = get_member(r.member_id);
+        schedule_next_heartbeat_expiration(member);
+        return make_ready_future<sync_group_response>(
+          sync_group_response(error_code::none, member->assignment()));
+    }
+
+    case group_state::dead:
+        // checked above
+        [[fallthrough]];
+
+    default:
+        std::terminate(); // make gcc happy
+    }
+}
+
+future<sync_group_response> group::sync_group_completing_rebalance(
+  member_ptr member, sync_group_request&& r) {
+    // this response will be set by the leader when it arrives. the leader also
+    // sets its own response which reduces the special cases in the code, but we
+    // also need to grab the future here before the corresponding promise is
+    // destroyed after its value is set.
+    auto response = member->get_sync_response();
+
+    // wait for the leader to show up and fulfill the promise
+    if (!is_leader(r.member_id)) {
+        kglog.trace("non-leader member waiting for assignment");
+        return response;
+    }
+
+    // construct a member assignment structure that will be persisted to the
+    // underlying metadata topic for group recovery. the mapping is the
+    // assignments in the request plus any missing assignments for group
+    // members.
+    auto assignments = std::move(r).member_assignments();
+    add_missing_assignments(assignments);
+
+    /*
+     * TODO
+     * Package up the member assignments and other group state into this
+     * entry and send it off to be replicated on the group metadata
+     * partition.
+     */
+#if 0
+    raft::entry e(
+      model::record_batch_type(1), model::record_batch_reader(nullptr));
+
+    auto part = _partitions.get(group->ntp());
+    return part->replicate(std::move(e))
+#else
+    auto part = make_ready_future<>();
+    return part
+#endif
+    .then([this,
+           response = std::move(response),
+           expected_generation = generation(),
+           assignments = std::move(assignments)]() mutable {
+        // the group's state changed while waiting for this completion to
+        // run. for example, another member joined. there's nothing to do
+        // now except wait for an update.
+        if (
+          !in_state(group_state::completing_rebalance)
+          || expected_generation != generation()) {
+            return std::move(response);
+        }
+
+        // TODO: this is the error code from raft
+        auto error = error_code::none;
+
+        if (error == error_code::none) {
+            // the group state was successfully persisted:
+            //   - save the member assignments; clients may re-request
+            //   - unblock any clients waiting on their assignment
+            //   - transition the group to the stable state
+            set_assignments(std::move(assignments));
+            finish_syncing_members(error_code::none);
+            set_state(group_state::stable);
+        } else {
+            // an error was encountered persisting the group state:
+            //   - clear all the member assignments
+            //   - propogate error back to waiting clients
+            clear_assignments();
+            finish_syncing_members(error);
+        }
+
+        return std::move(response);
+    });
 }
 
 kafka::member_id group::generate_member_id(const join_group_request& r) {
