@@ -136,19 +136,6 @@ group::duration_type group::rebalance_timeout() const {
     }
 }
 
-void group::remove_unjoined_members() {
-    for (auto it = _members.begin(); it != _members.end();) {
-        if (!it->second->is_joining()) {
-            kglog.trace("removing unjoined member {}", it->first);
-            // TODO: ensure that member heartbeat timers are canceled in
-            // group destructor and in member dtor
-            it = _members.erase(it);
-        } else {
-            it++;
-        }
-    }
-}
-
 std::vector<member_config> group::member_metadata() const {
     if (
       in_state(group_state::dead)
@@ -261,43 +248,6 @@ kafka::protocol_name group::select_protocol() const {
     // is unable to vote on some protocol candidate.
     kglog.trace("selected group protocol {}", winner->first);
     return winner->first;
-}
-
-/*
- * TODO
- *   - after the promise is fulfilled we need to re-arm the member's heartbeat
- *   expiration timer.
- */
-void group::finish_joining_members() {
-    std::for_each(
-      std::cbegin(_members),
-      std::cend(_members),
-      [this](const member_map::value_type& m) mutable {
-          if (!m.second->is_joining()) {
-              return;
-          }
-
-          // leader    -> member metadata
-          // followers -> []
-          std::vector<member_config> md;
-          if (is_leader(m.first)) {
-              md = member_metadata();
-          }
-
-          auto reply = join_group_response(
-            error_code::none,
-            _generation,
-            _protocol.value_or(kafka::protocol_name()),
-            _leader.value_or(kafka::member_id()),
-            m.first,
-            std::move(md));
-
-          kglog.trace(
-            "set join response for member {} reply {}", m.second, reply);
-
-          _num_members_joining--;
-          m.second->set_join_response(std::move(reply));
-      });
 }
 
 /*
