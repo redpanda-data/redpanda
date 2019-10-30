@@ -158,12 +158,15 @@ void application::wire_up_services() {
     _log.info("Partition manager started");
 
     // controller
+    construct_service(_metadata_cache).get();
+
     _controller = std::make_unique<cluster::controller>(
       model::node_id(_conf.local().node_id()),
       _conf.local().data_directory().as_sstring(),
       _conf.local().log_segment_size(),
       _partition_manager,
-      _shard_table);
+      _shard_table,
+      _metadata_cache);
     _controller->start().get();
     _deferred.emplace_back([this] { _controller->stop().get(); });
 
@@ -196,7 +199,6 @@ void application::wire_up_services() {
       .get();
     _rpc.invoke_on_all(&rpc::server::start).get();
     _log.info("Started RPC server listening at {}", _conf.local().rpc_server());
-    construct_service(_metadata_cache).get();
 
     // metrics and quota management
     construct_service(

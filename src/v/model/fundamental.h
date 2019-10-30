@@ -20,7 +20,27 @@ using partition_id = named_type<int32_t, struct model_partition_id_type>;
 
 using topic_view = named_type<std::string_view, struct model_topic_view_type>;
 
-using topic = named_type<sstring, struct model_topic_type>;
+class topic : public named_type<sstring, struct model_topic_type> {
+public:
+    topic()
+      : named_type<sstring, struct model_topic_type>() {
+    }
+    explicit topic(sstring tp)
+      : named_type<sstring, struct model_topic_type>(tp) {
+    }
+
+    topic(model::topic_view view)
+      : named_type<sstring, struct model_topic_type>(sstring(view())) {
+    }
+
+    operator topic_view() {
+        return topic_view(_value);
+    }
+
+    operator topic_view() const {
+        return topic_view(_value);
+    }
+};
 
 /// \brief namespace is reserved in c++;  use ns
 using ns = named_type<sstring, struct model_ns_type>;
@@ -88,6 +108,12 @@ std::ostream& operator<<(std::ostream&, offset);
 } // namespace model
 
 namespace std {
+template<>
+struct hash<model::topic> {
+    size_t operator()(const model::topic& tp) const {
+        return std::hash<sstring>()(tp());
+    }
+};
 
 template<>
 struct hash<model::ntp> {
