@@ -111,6 +111,26 @@ func IsTunerAvailable(tuner string) bool {
 	return allTuners[tuner] != nil
 }
 
+func IsTunerEnabled(tuner string, rpkConfig *redpanda.RpkConfig) bool {
+	switch tuner {
+	case "disk_irq":
+		return rpkConfig.TuneDiskIrq
+	case "disk_scheduler":
+		return rpkConfig.TuneDiskScheduler
+	case "disk_nomerges":
+		return rpkConfig.TuneNomerges
+	case "net":
+		return rpkConfig.TuneNetwork
+	case "cpu":
+		return rpkConfig.TuneCpu
+	case "aio_events":
+		return rpkConfig.TuneAioEvents
+	case "clocksource":
+		return rpkConfig.TuneClocksource
+	}
+	return false
+}
+
 func (factory *tunersFactory) CreateTuner(
 	tunerName string, tunerParams *TunerParams,
 ) tuners.Tunable {

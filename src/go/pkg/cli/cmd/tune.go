@@ -18,7 +18,6 @@ import (
 )
 
 func NewTuneCommand(fs afero.Fs) *cobra.Command {
-
 	tunerParams := factory.TunerParams{}
 	var (
 		redpandaConfigFile string
@@ -49,7 +48,7 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 			}
 			return nil
 		},
-		RunE: func(ccmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			var tunerFactory factory.TunersFactory
 			timeout := time.Duration(timeoutMs) * time.Millisecond
 			if outTuneScriptFile != "" {
@@ -72,7 +71,15 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 				return err
 			}
 			tunerParams.CpuMask = cpuMask
-			return tune(fs, tuners, tunerFactory, &tunerParams, redpandaConfigFile)
+			configFile, err := cli.GetOrFindConfig(fs, redpandaConfigFile)
+			if err != nil {
+				return err
+			}
+			config, err := redpanda.ReadConfigFromPath(fs, configFile)
+			if err != nil {
+				return err
+			}
+			return tune(fs, config, tuners, tunerFactory, &tunerParams)
 		},
 	}
 	command.Flags().StringVarP(&tunerParams.Mode,
@@ -108,7 +115,6 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 }
 
 func newHelpCommand() *cobra.Command {
-
 	tunersHelp := map[string]string{
 		"cpu":        cpuTunerHelp,
 		"disk_irq":   diskIrqTunerHelp,
@@ -142,29 +148,21 @@ func newHelpCommand() *cobra.Command {
 
 func tune(
 	fs afero.Fs,
-	elementsToTune []string,
+	config *redpanda.Config,
+	tunerNames []string,
 	tunersFactory factory.TunersFactory,
 	params *factory.TunerParams,
-	redpandaConfigFile string,
 ) error {
-
-	if tunerParamsEmpty(params) {
-		configFile, err := cli.GetOrFindConfig(fs, redpandaConfigFile)
-		if err != nil {
-			return err
-		}
-		config, err := redpanda.ReadConfigFromPath(fs, configFile)
-		if err != nil {
-			return err
-		}
-		log.Infof("Tuning using redpanda config file '%s'", configFile)
-		err = factory.FillTunerParamsWithValuesFromConfig(params, config)
-		if err != nil {
-			return err
-		}
+	params, err := factory.MergeTunerParamsConfig(params, config)
+	if err != nil {
+		return err
 	}
-	var rebootRequired = false
-	for _, tunerName := range elementsToTune {
+	rebootRequired := false
+	for _, tunerName := range tunerNames {
+		if !factory.IsTunerEnabled(tunerName, config.Rpk) {
+			log.Infof("Skipping disabled tuner %s", tunerName)
+			continue
+		}
 		tuner := tunersFactory.CreateTuner(tunerName, params)
 		if supported, reason := tuner.CheckIfSupported(); supported {
 			log.Debugf("Tuner paramters %+v", params)
@@ -173,9 +171,7 @@ func tune(
 			if result.IsFailed() {
 				return result.GetError()
 			}
-			if result.IsRebootRequired() {
-				rebootRequired = true
-			}
+			rebootRequired = rebootRequired || result.IsRebootRequired()
 		} else {
 			log.Infof("Tuner '%s' is not supported - %s", tunerName, reason)
 		}
