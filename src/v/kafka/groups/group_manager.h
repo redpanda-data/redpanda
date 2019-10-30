@@ -51,10 +51,7 @@ public:
     future<heartbeat_response> heartbeat(heartbeat_request&& request);
 
     /// \brief Handle a LeaveGroup request
-    future<leave_group_response> leave_group(leave_group_request&& request) {
-        using reply = leave_group_response;
-        return make_ready_future<reply>(reply(error_code::unsupported_version));
-    }
+    future<leave_group_response> leave_group(leave_group_request&& request);
 
 public:
     static error_code validate_group_status(group_id group, api_key api);

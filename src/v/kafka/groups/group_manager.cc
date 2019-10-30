@@ -114,6 +114,25 @@ future<heartbeat_response> group_manager::heartbeat(heartbeat_request&& r) {
     return make_heartbeat_error(error_code::unknown_member_id);
 }
 
+future<leave_group_response>
+group_manager::leave_group(leave_group_request&& r) {
+    kglog.trace("leave request {}", r);
+
+    auto error = validate_group_status(r.group_id, leave_group_api::key);
+    if (error != error_code::none) {
+        kglog.trace("invalid group status error={}", error);
+        return make_leave_error(error);
+    }
+
+    auto group = get_group(r.group_id);
+    if (group) {
+        return group->handle_leave_group(std::move(r));
+    } else {
+        kglog.trace("group does not exist");
+        return make_leave_error(error_code::unknown_member_id);
+    }
+}
+
 bool group_manager::valid_group_id(group_id group, api_key api) {
     switch (api) {
     case offset_commit_api::key:
