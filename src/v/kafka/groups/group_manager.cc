@@ -86,6 +86,34 @@ future<sync_group_response> group_manager::sync_group(sync_group_request&& r) {
     }
 }
 
+future<heartbeat_response> group_manager::heartbeat(heartbeat_request&& r) {
+    kglog.trace("heartbeat request {}", r);
+
+    if (r.group_instance_id) {
+        kglog.trace("static group membership is unsupported");
+        return make_heartbeat_error(error_code::unsupported_version);
+    }
+
+    auto error = validate_group_status(r.group_id, heartbeat_api::key);
+    if (error != error_code::none) {
+        kglog.trace("invalid group status {}", error);
+        if (error == error_code::coordinator_load_in_progress) {
+            // <kafka>the group is still loading, so respond just
+            // blindly</kafka>
+            return make_heartbeat_error(error_code::none);
+        }
+        return make_heartbeat_error(error);
+    }
+
+    auto group = get_group(r.group_id);
+    if (group) {
+        return group->handle_heartbeat(std::move(r));
+    }
+
+    kglog.trace("group not found");
+    return make_heartbeat_error(error_code::unknown_member_id);
+}
+
 bool group_manager::valid_group_id(group_id group, api_key api) {
     switch (api) {
     case offset_commit_api::key:
