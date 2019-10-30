@@ -897,6 +897,50 @@ future<sync_group_response> group::sync_group_completing_rebalance(
     });
 }
 
+future<heartbeat_response> group::handle_heartbeat(heartbeat_request&& r) {
+    if (in_state(group_state::dead)) {
+        kglog.trace("group is dead");
+        return make_heartbeat_error(error_code::coordinator_not_available);
+
+    } else if (!contains_member(r.member_id)) {
+        kglog.trace("member not found");
+        return make_heartbeat_error(error_code::unknown_member_id);
+
+    } else if (r.generation_id != generation()) {
+        kglog.trace("generation does not match group");
+        return make_heartbeat_error(error_code::illegal_generation);
+    }
+
+    switch (state()) {
+    case group_state::empty:
+        kglog.trace("group is in the empty state");
+        return make_heartbeat_error(error_code::unknown_member_id);
+
+    case group_state::completing_rebalance:
+        kglog.trace("group is completing rebalance");
+        return make_heartbeat_error(error_code::rebalance_in_progress);
+
+    case group_state::preparing_rebalance: {
+        auto member = get_member(r.member_id);
+        schedule_next_heartbeat_expiration(member);
+        return make_heartbeat_error(error_code::rebalance_in_progress);
+    }
+
+    case group_state::stable: {
+        auto member = get_member(r.member_id);
+        schedule_next_heartbeat_expiration(member);
+        return make_heartbeat_error(error_code::none);
+    }
+
+    case group_state::dead:
+        // checked above
+        [[fallthrough]];
+
+    default:
+        std::terminate(); // mame gcc happy
+    }
+}
+
 kafka::member_id group::generate_member_id(const join_group_request& r) {
     auto client_id = r.client_id ? *r.client_id : "";
     auto id = r.group_instance_id ? (*r.group_instance_id)() : client_id;

@@ -2,6 +2,7 @@
 #include "config/configuration.h"
 #include "kafka/errors.h"
 #include "kafka/groups/member.h"
+#include "kafka/requests/heartbeat_request.h"
 #include "kafka/requests/join_group_request.h"
 #include "kafka/requests/sync_group_request.h"
 #include "kafka/types.h"
@@ -332,6 +333,9 @@ public:
 
     /// Complete syncing for members.
     void finish_syncing_members(error_code error);
+
+    /// Handle a heartbeat request.
+    future<heartbeat_response> handle_heartbeat(heartbeat_request&& r);
 
 private:
     using member_map = std::unordered_map<kafka::member_id, member_ptr>;
