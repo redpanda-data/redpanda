@@ -9,7 +9,6 @@ sys.path.append(os.path.dirname(__file__))
 logger = logging.getLogger('rp')
 
 from constants import *
-from pkg_config import *
 import git
 import golang
 import shell
@@ -118,11 +117,16 @@ def build_packages(build_type, packages):
 
     res_type = "release" if build_type == "none" else build_type
 
+    build_dir = "%s/%s/" % (RP_BUILD_ROOT, res_type)
+
     execs = [
-        "%s/%s/v_deps_build/seastar-prefix/src/seastar-build/apps/iotune/iotune"
-        % (RP_BUILD_ROOT, res_type),
-        "%s/%s/v_deps_install/bin/hwloc-calc" % (RP_BUILD_ROOT, res_type),
-        "%s/%s/v_deps_install/bin/hwloc-distrib" % (RP_BUILD_ROOT, res_type),
+        "%s/v_deps_build/seastar-prefix/src/seastar-build/apps/iotune/iotune" %
+        build_dir,
+        "%s/v_deps_install/bin/hwloc-calc" % build_dir,
+        "%s/v_deps_install/bin/hwloc-distrib" % build_dir,
     ]
 
-    packaging.create_packages(packages, build_type=res_type, external=execs)
+    packaging.create_packages(packages,
+                              build_dir=build_dir,
+                              build_type=res_type,
+                              external=execs)

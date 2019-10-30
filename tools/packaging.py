@@ -215,7 +215,12 @@ def create_packages(formats,
 
 
 def main():
-    parser = argparse.ArgumentParser(description='build sys helper')
+    parser = argparse.ArgumentParser(description='packaging helper')
+    parser.add_argument(
+        '--build-dir',
+        type=str,
+        default=RP_BUILD_ROOT,
+        help='path to folder containing build artifacts')
     parser.add_argument(
         '--formats',
         choices=['tar', 'rpm', 'deb'],
@@ -229,7 +234,9 @@ def main():
         help=('space-separated list of paths to files that are to be included '
               'in the package'))
     opts = parser.parse_args()
-    create_packages(formats=opts.formats, external=opts.external)
+    create_packages(build_dir=opts.build_dir,
+                    formats=opts.formats,
+                    external=opts.external)
 
 
 if __name__ == '__main__':
