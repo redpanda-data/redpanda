@@ -47,12 +47,12 @@ bool group::valid_previous_state(group_state s) const {
     }
 }
 
-void group::set_state(group_state s) {
+group_state group::set_state(group_state s) {
     kglog.trace("group state transition {} -> {}", _state, s);
     if (!valid_previous_state(s)) {
         std::terminate();
     }
-    _state = s;
+    return std::exchange(_state, s);
 }
 
 bool group::supports_protocols(const join_group_request& r) {
