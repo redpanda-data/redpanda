@@ -174,6 +174,10 @@ public:
         _latest_heartbeat = t;
     }
 
+    timer<clock_type>& expire_timer() {
+        return _expire_timer;
+    }
+
 private:
     using join_promise = promise<join_group_response>;
     using sync_promise = promise<sync_group_response>;
@@ -190,6 +194,7 @@ private:
     std::vector<member_protocol> _protocols;
     bool _is_new;
     clock_type::time_point _latest_heartbeat;
+    timer<clock_type> _expire_timer;
 
     // external shutdown synchronization
     std::unique_ptr<sync_promise> _sync_promise;
