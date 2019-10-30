@@ -1,4 +1,5 @@
 #pragma once
+#include "config/configuration.h"
 #include "kafka/errors.h"
 #include "kafka/requests/heartbeat_request.h"
 #include "kafka/requests/join_group_request.h"
@@ -16,8 +17,11 @@ namespace kafka {
 /// \brief Manages the Kafka group lifecycle.
 class group_manager {
 public:
-    group_manager(sharded<cluster::partition_manager>& partitions)
-      : _partitions(partitions.local()) {}
+    group_manager(
+      sharded<cluster::partition_manager>& partitions,
+      config::configuration& conf)
+      : _partitions(partitions.local())
+      , _conf(conf) {}
 
     future<> start() {
         // TODO setup partition manager hooks when this shard becomes a
@@ -62,6 +66,7 @@ public:
 
 private:
     cluster::partition_manager& _partitions;
+    config::configuration& _conf;
 };
 
 } // namespace kafka
