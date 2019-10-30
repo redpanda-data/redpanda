@@ -48,10 +48,7 @@ public:
     future<sync_group_response> sync_group(sync_group_request&& request);
 
     /// \brief Handle a Heartbeat request
-    future<heartbeat_response> heartbeat(heartbeat_request&& request) {
-        using reply = heartbeat_response;
-        return make_ready_future<reply>(reply(error_code::unsupported_version));
-    }
+    future<heartbeat_response> heartbeat(heartbeat_request&& request);
 
     /// \brief Handle a LeaveGroup request
     future<leave_group_response> leave_group(leave_group_request&& request) {
