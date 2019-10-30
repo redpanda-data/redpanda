@@ -90,8 +90,12 @@ public:
     /// Check if the group is in a given state.
     bool in_state(group_state s) const { return _state == s; }
 
-    /// Transition the group to a new state.
-    void set_state(group_state s);
+    /**
+     * \brief Transition the group to a new state.
+     *
+     * Returns the previous state.
+     */
+    group_state set_state(group_state s);
 
     /// Return the generation of the group.
     kafka::generation_id generation() const { return _generation; }
