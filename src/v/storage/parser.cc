@@ -66,6 +66,14 @@ parse_result continuous_batch_parser::process(temporary_buffer<char>& data) {
     return stop_iteration::no;
 }
 
+// a state machine approach to parsing, with the following structure
+// case <current>: {
+//   _header.<previous> = _64 | _32 | _16 | _8; // depending on type
+//   if (read_int<self>(data) != read_status::ready) {
+//     _state = state::<next_type>;
+//     break;
+//   }
+// }
 parse_result continuous_batch_parser::do_process(temporary_buffer<char>& data) {
     switch (_state) {
     case state::batch_start: {
@@ -77,12 +85,21 @@ parse_result continuous_batch_parser::do_process(temporary_buffer<char>& data) {
     case state::base_offset: {
         _header.size_bytes = _64;
         if (read_int<int64_t>(data) != read_status::ready) {
+            _state = state::batch_type;
+            break;
+        }
+    }
+    case state::batch_type: {
+        _header.base_offset = model::offset(_64);
+        if (
+          read_int<model::record_batch_type::type>(data)
+          != read_status::ready) {
             _state = state::crc;
             break;
         }
     }
     case state::crc: {
-        _header.base_offset = model::offset(_64);
+        _header.type = model::record_batch_type(_8);
         if (read_int<int32_t>(data) != read_status::ready) {
             _state = state::attributes;
             break;
