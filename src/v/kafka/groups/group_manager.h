@@ -1,6 +1,7 @@
 #pragma once
 #include "config/configuration.h"
 #include "kafka/errors.h"
+#include "kafka/groups/group.h"
 #include "kafka/requests/heartbeat_request.h"
 #include "kafka/requests/join_group_request.h"
 #include "kafka/requests/leave_group_request.h"
@@ -41,10 +42,7 @@ public:
 
 public:
     /// \brief Handle a JoinGroup request
-    future<join_group_response> join_group(join_group_request&& request) {
-        return make_join_error(
-          request.member_id, error_code::unsupported_version);
-    }
+    future<join_group_response> join_group(join_group_request&& request);
 
     /// \brief Handle a SyncGroup request
     future<sync_group_response> sync_group(sync_group_request&& request) {
@@ -64,9 +62,21 @@ public:
         return make_ready_future<reply>(reply(error_code::unsupported_version));
     }
 
+public:
+    static error_code validate_group_status(group_id group, api_key api);
+    static bool valid_group_id(group_id group, api_key api);
+
 private:
+    group_ptr get_group(group_id group) {
+        if (auto it = _groups.find(group); it != _groups.end()) {
+            return it->second;
+        }
+        return nullptr;
+    }
+
     cluster::partition_manager& _partitions;
     config::configuration& _conf;
+    std::unordered_map<group_id, group_ptr> _groups;
 };
 
 } // namespace kafka
