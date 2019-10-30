@@ -34,10 +34,24 @@ def get_git_sendemail_from():
     return shell.run_oneline('git config sendemail.from')
 
 
-def get_tag_or_ref():
-    head = shell.run_oneline("git rev-parse --short HEAD")
-    tag = shell.run_oneline("git name-rev --tags --name-only %s" % head)
-    return tag if tag != "undefined" else head
+def get_version():
+    # if current commit is the tagged release, git.get_version() returns the
+    # version in X.Y format. If the current commit is NOT a tagged release, but
+    # there is already a tag in the repo, the returned string is:
+    #
+    #   <version>-<count>-<sha>
+    #
+    # where <count> is the number of commits that this commit is ahead of
+    # <version>, while <sha> is its revision ID.
+    #
+    # when no tag exists in any of this commit's ascendants, the returned version
+    # is the short SHA1 of the commit
+    version = shell.run_oneline("git describe --match 'release-*' --tags --always")
+    return version.replace('release-', '')
+
+
+def get_sha():
+    return shell.run_oneline("git rev-parse --short HEAD")
 
 
 def get_git_files():
