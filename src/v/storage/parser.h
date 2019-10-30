@@ -79,6 +79,7 @@ class continuous_batch_parser {
     enum class state {
         batch_start,
         base_offset,
+        batch_type,
         crc,
         attributes,
         last_offset_delta,
