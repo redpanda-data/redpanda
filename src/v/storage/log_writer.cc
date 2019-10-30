@@ -50,6 +50,7 @@ write(log_segment_appender& appender, const model::record_batch& batch) {
       .then([&appender, &batch] {
           return write(appender, batch.base_offset().value());
       })
+      .then([&appender, &batch] { return write(appender, batch.type()()); })
       .then([&appender, &batch] { return write(appender, batch.crc()); })
       .then([&appender, &batch] {
           return write(appender, batch.attributes().value());
