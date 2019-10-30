@@ -44,6 +44,10 @@ private:
 
         fragbuf key;
         fragbuf value;
+
+        uint32_t size_bytes() const {
+            return key.size_bytes() + value.size_bytes();
+        }
     };
 
     uint32_t record_size(int32_t offset_delta, const serialized_record& r);

@@ -19,23 +19,14 @@ controller::controller(
   sstring basedir,
   size_t max_segment_size,
   sharded<partition_manager>& pm,
-  sharded<shard_table>& st,
-  sharded<metadata_cache>& md_cache)
+  sharded<shard_table>& st)
   : _self(std::move(n))
   , _pm(pm)
-  , _st(st)
-  , _md_cache(md_cache) {
+  , _st(st) {
 }
 
 future<> controller::start() {
     verify_shard();
-    _pm.local().register_leadership_notification(
-      [this](lw_shared_ptr<partition> p) {
-          if (p->ntp() == controller::ntp) {
-              verify_shard();
-              leadership_notification();
-          }
-      });
     clusterlog().debug("Starting cluster recovery");
     return _pm.local()
       .manage(controller::ntp, controller::group)
@@ -106,10 +97,8 @@ controller::dispatch_record_recovery(log_record_key key, fragbuf&& v_buf) {
               return recover_assignment(std::move(as));
           });
     case log_record_key::type::topic_configuration:
-        return rpc::deserialize<topic_configuration>(std::move(v_buf))
-          .then([this](topic_configuration t_cfg) {
-              return recover_topic_configuration(std::move(t_cfg));
-          });
+        // FIXME: Update cache with configuration
+        return make_ready_future<>();
     default:
         return make_exception_future<>(
           std::runtime_error("Not supported record type in controller batch"));
@@ -117,21 +106,13 @@ controller::dispatch_record_recovery(log_record_key key, fragbuf&& v_buf) {
 }
 
 future<> controller::recover_assignment(partition_assignment as) {
-    // update highest group id
-    _highest_group_id = std::max(_highest_group_id, as.group);
-
-    auto f = update_cache_with_partitions_assignment(as);
-
-    // if the assignment is not for current broker just update metadata cache
     if (as.broker.id() != _self) {
-        return f;
+        // FIXME: Update metadata cache with others partitions assignments
+        return make_ready_future<>();
     }
     // the following ops have a dependency on the shard_table *then*
     // partition_manager order
 
-    // FIXME: Pass topic configuration to partitions manager
-
-    // (compression, compation, etc)
     // 1. update shard_table: broadcast
     return _st
       .invoke_on_all([shard = as.shard, raft_group = as.group, ntp = as.ntp](
@@ -150,20 +131,7 @@ future<> controller::recover_assignment(partition_assignment as) {
                   .finally(
                     [msg = std::move(msg)] { clusterlog().info("{},", msg); });
             });
-      })
-      .then([f = std::move(f)]() mutable { return std::move(f); });
-}
-
-future<> controller::update_cache_with_partitions_assignment(
-  const partition_assignment& p_as) {
-    return _md_cache.invoke_on_all(
-      [p_as](metadata_cache& md_c) { md_c.update_partition_assignment(p_as); });
-}
-
-future<> controller::recover_topic_configuration(topic_configuration t_cfg) {
-    // broadcast to all caches
-    return _md_cache.invoke_on_all(
-      [tp = t_cfg.topic](metadata_cache& md_c) { md_c.add_topic(tp); });
+      });
 }
 
 void controller::end_of_stream() {
@@ -243,21 +211,6 @@ raft::entry controller::create_topic_cfg_entry(const topic_configuration& cfg) {
     return raft::entry(
       controller_record_batch_type,
       model::make_memory_record_batch_reader(std::move(batches)));
-}
-
-void controller::leadership_notification() {
-    clusterlog().info("Local controller became a leader");
-    // FIXME: Handle the partition assignment manager creation here
-}
-
-void controller::on_raft0_entries_commited(std::vector<raft::entry>&& entries) {
-    (void)do_with(
-      std::move(entries), [this](std::vector<raft::entry>& entries) {
-          return do_for_each(entries, [this](raft::entry& entry) {
-              return entry.reader().consume(
-                batch_consumer(this), model::no_timeout);
-          });
-      });
 }
 
 } // namespace cluster
