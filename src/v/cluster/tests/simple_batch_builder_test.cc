@@ -36,7 +36,7 @@ SEASTAR_THREAD_TEST_CASE(simple_batch_builder_batch_test) {
 
     BOOST_REQUIRE_EQUAL(batch.size(), 4);
     BOOST_REQUIRE_EQUAL(batch.last_offset_delta(), 3);
-    BOOST_REQUIRE_EQUAL(batch.size_bytes(), 98);
+    BOOST_REQUIRE_EQUAL(batch.size_bytes(), 106);
 
     BOOST_REQUIRE_EQUAL(batch.crc(), checksum_batch(batch));
 }
