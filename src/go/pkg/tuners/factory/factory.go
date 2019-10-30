@@ -108,10 +108,7 @@ func AvailableTuners() []string {
 }
 
 func IsTunerAvailable(tuner string) bool {
-	if allTuners[tuner] != nil {
-		return true
-	}
-	return false
+	return allTuners[tuner] != nil
 }
 
 func (factory *tunersFactory) CreateTuner(
@@ -205,6 +202,25 @@ func (factory *tunersFactory) newClockSourceTuner(
 	params *TunerParams,
 ) tuners.Tunable {
 	return sys.NewClockSourceTuner(factory.fs, factory.executor)
+}
+
+func MergeTunerParamsConfig(
+	params *TunerParams, config *redpanda.Config,
+) (*TunerParams, error) {
+	if len(params.Nics) == 0 {
+		nics, err := net.GetInterfacesByIps(
+			config.Redpanda.KafkaApi.Address,
+			config.Redpanda.RPCServer.Address,
+		)
+		if err != nil {
+			return params, err
+		}
+		params.Nics = nics
+	}
+	if len(params.Directories) == 0 {
+		params.Directories = []string{config.Redpanda.Directory}
+	}
+	return params, nil
 }
 
 func FillTunerParamsWithValuesFromConfig(
