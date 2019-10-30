@@ -4,6 +4,7 @@
 #include "kafka/groups/member.h"
 #include "kafka/requests/heartbeat_request.h"
 #include "kafka/requests/join_group_request.h"
+#include "kafka/requests/leave_group_request.h"
 #include "kafka/requests/sync_group_request.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
@@ -336,6 +337,9 @@ public:
 
     /// Handle a heartbeat request.
     future<heartbeat_response> handle_heartbeat(heartbeat_request&& r);
+
+    /// Handle a leave group request.
+    future<leave_group_response> handle_leave_group(leave_group_request&& r);
 
 private:
     using member_map = std::unordered_map<kafka::member_id, member_ptr>;

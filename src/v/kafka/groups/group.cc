@@ -941,6 +941,33 @@ future<heartbeat_response> group::handle_heartbeat(heartbeat_request&& r) {
     }
 }
 
+future<leave_group_response>
+group::handle_leave_group(leave_group_request&& r) {
+    if (in_state(group_state::dead)) {
+        kglog.trace("group is dead");
+        return make_leave_error(error_code::coordinator_not_available);
+
+    } else if (contains_pending_member(r.member_id)) {
+        // <kafka>if a pending member is leaving, it needs to be removed
+        // from the pending list, heartbeat cancelled and if necessary,
+        // prompt a JoinGroup completion.</kafka>
+        kglog.trace("pending member leaving group");
+        remove_pending_member(r.member_id);
+        return make_leave_error(error_code::none);
+
+    } else if (!contains_member(r.member_id)) {
+        kglog.trace("member not found");
+        return make_leave_error(error_code::unknown_member_id);
+
+    } else {
+        kglog.trace("member has left");
+        auto member = get_member(r.member_id);
+        member->expire_timer().cancel();
+        remove_member(member);
+        return make_leave_error(error_code::none);
+    }
+}
+
 kafka::member_id group::generate_member_id(const join_group_request& r) {
     auto client_id = r.client_id ? *r.client_id : "";
     auto id = r.group_instance_id ? (*r.group_instance_id)() : client_id;
