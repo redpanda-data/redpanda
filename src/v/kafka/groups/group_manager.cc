@@ -53,6 +53,39 @@ future<join_group_response> group_manager::join_group(join_group_request&& r) {
     return group->handle_join_group(std::move(r));
 }
 
+future<sync_group_response> group_manager::sync_group(sync_group_request&& r) {
+    kglog.trace("sync request {}", r);
+
+    if (r.group_instance_id) {
+        kglog.trace("static group membership is unsupported");
+        return make_sync_error(error_code::unsupported_version);
+    }
+
+    auto error = validate_group_status(r.group_id, sync_group_api::key);
+    if (error != error_code::none) {
+        kglog.trace("invalid group status {}", error);
+        if (error == error_code::coordinator_load_in_progress) {
+            // <kafka>The coordinator is loading, which means we've lost the
+            // state of the active rebalance and the group will need to start
+            // over at JoinGroup. By returning rebalance in progress, the
+            // consumer will attempt to rejoin without needing to rediscover the
+            // coordinator. Note that we cannot return
+            // COORDINATOR_LOAD_IN_PROGRESS since older clients do not expect
+            // the error.</kafka>
+            return make_sync_error(error_code::rebalance_in_progress);
+        }
+        return make_sync_error(error);
+    }
+
+    auto group = get_group(r.group_id);
+    if (group) {
+        return group->handle_sync_group(std::move(r));
+    } else {
+        kglog.trace("group not found");
+        return make_sync_error(error_code::unknown_member_id);
+    }
+}
+
 bool group_manager::valid_group_id(group_id group, api_key api) {
     switch (api) {
     case offset_commit_api::key:
