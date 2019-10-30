@@ -57,8 +57,12 @@ model::record_batch simple_batch_builder::build() && {
 
 uint32_t simple_batch_builder::record_size(
   int32_t offset_delta, const serialized_record& r) {
-    return sizeof(int8_t) + vint::vint_size(offset_delta) + zero_vint_size
-           + r.size_bytes();
+    return sizeof(int8_t) +                      // attributes
+           vint::vint_size(offset_delta)         // offset_delta
+           + zero_vint_size                      // timestamp delta
+           + r.key.size_bytes()                  // key
+           + vint::vint_size(r.key.size_bytes()) // key size
+           + r.value.size_bytes();               // value
 }
 
 } // namespace cluster

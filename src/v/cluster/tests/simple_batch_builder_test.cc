@@ -35,11 +35,10 @@ SEASTAR_THREAD_TEST_CASE(simple_batch_builder_batch_test) {
 
     BOOST_REQUIRE_EQUAL(batch.size(), 4);
     BOOST_REQUIRE_EQUAL(batch.last_offset_delta(), 3);
-    BOOST_REQUIRE_EQUAL(batch.size_bytes(), 93);
+    BOOST_REQUIRE_EQUAL(batch.size_bytes(), 106);
 
     BOOST_REQUIRE_EQUAL(batch.crc(), checksum_batch(batch));
 }
-
 SEASTAR_THREAD_TEST_CASE(round_trip_test) {
     auto pa_key = cluster::log_record_key{
       cluster::log_record_key::type::partition_assignment};
