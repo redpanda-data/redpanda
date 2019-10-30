@@ -32,11 +32,20 @@ steps:
          '--formats', 'rpm', 'deb', 'tar',
          '--external', '/usr/local/bin/iotune', '/usr/local/bin/hwloc-calc', '/usr/local/bin/hwloc-distrib']
 
+- id: 'publish package'
+  name: 'docker.io/digitalocean/packagecloud'
+  entrypoint: '/bin/bash'
+  args: ['tools/ci/scripts/packagecloud-push.sh']
+  env:
+  - 'TAG_NAME=$TAG_NAME'
+  - 'PACKAGECLOUD_TOKEN=$_PACKAGECLOUD_TOKEN'
+
 timeout: 3600s
 
 substitutions:
   _BUILD_TYPE: release
   _COMPILER: gcc
+  _PACKAGECLOUD_TOKEN: "na"
 
 options:
   machineType: 'N1_HIGHCPU_32'

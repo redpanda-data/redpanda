@@ -55,12 +55,13 @@ locally on your machine (linux/macOS only).
     ```bash
     cloud-build-local \
       --config tools/ci/gcbuild.yml \
-      --substitutions="SHORT_SHA=$(git rev-parse --short HEAD)" \
+      --substitutions=SHORT_SHA="1234567",TAG_NAME="na" \
       --dryrun=false .
     ```
 
     The `SHORT_SHA` variable is needed in order to tag the docker 
-    images associated to the build.
+    images associated to the build, while the `TAG_NAME` variable is 
+    used by the packaging steps.
 
 Builds on GCB are triggered automatically by push events to the 
 `vectorizedio/v` repository and its forks. Take a look at the [build 
