@@ -197,13 +197,6 @@ public:
     duration_type rebalance_timeout() const;
 
     /**
-     * \brief Remove members that have not rejoined the group.
-     *
-     * When a member is removed any pending heartbeat timers will be cancelled.
-     */
-    void remove_unjoined_members();
-
-    /**
      * \brief Return member metadata for the group's selected protocol.
      *
      * This is used at the end of the join phase to generate the group leader's
@@ -254,15 +247,6 @@ public:
      * \throws std::out_of_range if any member fails to cast a vote.
      */
     kafka::protocol_name select_protocol() const;
-
-    /**
-     * \brief Fulfill joining members' response promise.
-     *
-     * Joining members may be delayed waiting for other members to join or to
-     * implement join debouncing for efficiency. This method is called after the
-     * join process completes and generates join responses for each member.
-     */
-    void finish_joining_members();
 
     /**
      * \brief Fufill syncing members' response promise.

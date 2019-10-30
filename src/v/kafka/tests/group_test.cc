@@ -187,27 +187,6 @@ BOOST_AUTO_TEST_CASE(add_member_sets_protocol_type) {
     BOOST_TEST(*g.protocol_type() == "p");
 }
 
-BOOST_AUTO_TEST_CASE(remove_unjoined_members) {
-    auto g = get();
-
-    auto m = get_member();
-    (void)g.add_member(m);
-    BOOST_TEST(g.contains_member(m->id()));
-
-    // member is joining..
-    g.remove_unjoined_members();
-    BOOST_TEST(g.contains_member(m->id()));
-
-    g.set_state(group_state::preparing_rebalance);
-    g.advance_generation();
-
-    g.finish_joining_members();
-    BOOST_TEST(g.contains_member(m->id()));
-
-    g.remove_unjoined_members();
-    BOOST_TEST(!g.contains_member(m->id()));
-}
-
 BOOST_AUTO_TEST_CASE(add_missing_assignments) {
     auto g = get();
 
@@ -429,48 +408,6 @@ SEASTAR_THREAD_TEST_CASE(finish_syncing) {
     auto resp = f.get0();
     BOOST_TEST(resp.assignment == bytes("foo"));
     BOOST_TEST(resp.error == error_code::none);
-}
-
-SEASTAR_THREAD_TEST_CASE(finish_joining) {
-    auto g = get();
-
-    auto protos = std::vector<member_protocol>{
-      {kafka::protocol_name("p0"), bytes()},
-      {kafka::protocol_name("p1"), bytes("foo")},
-      {kafka::protocol_name("p2"), bytes()}};
-    auto m0 = get_member("m", protos);
-
-    protos = std::vector<member_protocol>{
-      {kafka::protocol_name("p1"), bytes("bar")},
-      {kafka::protocol_name("p2"), bytes()},
-      {kafka::protocol_name("p3"), bytes()}};
-    auto m1 = get_member("n", protos);
-
-    auto f0 = g.add_member(m0);
-    auto f1 = g.add_member(m1);
-    g.set_state(group_state::preparing_rebalance);
-    g.advance_generation();
-
-    BOOST_TEST(g.protocol() == "p1");
-    BOOST_TEST(g.leader() == "m");
-
-    g.finish_joining_members();
-
-    // leader gets assignments
-    auto resp = f0.get0();
-    BOOST_TEST(resp.member_id == "m");
-    std::unordered_map<kafka::member_id, join_group_response::member_config>
-      conf;
-    for (auto& m : resp.members) {
-        conf[m.member_id] = m;
-    }
-    BOOST_TEST(conf[kafka::member_id("m")].metadata == bytes("foo"));
-    BOOST_TEST(conf[kafka::member_id("n")].metadata == bytes("bar"));
-
-    // follower
-    resp = f1.get0();
-    BOOST_TEST(resp.member_id == "n");
-    BOOST_TEST(resp.members.empty());
 }
 
 BOOST_AUTO_TEST_CASE(leader_rejoined) {
