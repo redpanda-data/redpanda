@@ -25,8 +25,6 @@
 
 namespace kafka {
 
-logger log("k:groups");
-
 using member_config = join_group_response::member_config;
 
 bool group::valid_previous_state(group_state s) const {

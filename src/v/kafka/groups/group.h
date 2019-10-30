@@ -19,6 +19,8 @@
 
 namespace kafka {
 
+inline logger kglog{"k/group"};
+
 /**
  * \defgroup kafka-groups Kafka group membership API
  *
