@@ -4,9 +4,8 @@ ARG LLVM_REF="llvmorg-8.0.0"
 ARG BUILD_TYPE=Release
 
 # disable all but base repo so we install same version of packages
-RUN rm -f /etc/yum.repos.d/fedora-*
-
-RUN dnf install -y  \
+RUN rm -f /etc/yum.repos.d/fedora-* && \
+    dnf install -y  \
               git \
               which \
               jq \
@@ -30,9 +29,8 @@ RUN dnf install -y  \
               debhelper \
               fakeroot \
               rpm-build \
-              python3-jinja2
-
-RUN dnf clean all
+              python3-jinja2 && \
+    dnf clean all
 
 #######
 ## LLVM
