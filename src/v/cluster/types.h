@@ -17,12 +17,6 @@ struct log_record_key {
     type record_type;
 };
 
-struct partition_replica {
-    model::replica_id id;
-    model::node_id node;
-};
-
-
 struct partition_assignment {
     /// \brief this is the same as a seastar::shard_id
     /// however, seastar uses unsized-ints (unsigned)
@@ -31,37 +25,6 @@ struct partition_assignment {
     raft::group_id group;
     model::ntp ntp;
     model::broker broker;
-    model::replica_id replica;
-
-    partition_replica get_partition_replica() const {
-        return partition_replica{
-            .id = replica, 
-            .node = broker.id()
-        };
-    }
-};
-
-struct partition_metadata_entry {
-    using replicas_t = std::vector<partition_replica>;
-    model::partition_id id;
-    replicas_t replicas;
-    model::node_id leader_node;
-
-    model::partition_metadata as_model_type() const;
-    void update_replicas(partition_replica);
-private:
-    replicas_t::iterator find_replica(model::replica_id r_id);
-};
-
-struct topic_metadata_entry {
-    std::vector<partition_metadata_entry> partitions;
-    
-    void update_partition(model::partition_id, partition_replica);
-    model::topic_metadata as_model_type(model::topic_view) const;
-    std::optional<std::reference_wrapper<partition_metadata_entry>>
-    find_partition(model::partition_id);
-private:
-    void add_new_partition(model::partition_id, partition_replica);
 };
 
 struct topic_configuration {
@@ -117,16 +80,12 @@ struct topic_result {
     topic_error_code ec;
 };
 
-
 } // namespace cluster
 
 namespace rpc {
 
 template<>
 void serialize(bytes_ostream& out, cluster::topic_configuration&& t);
-
-template<>
-future<cluster::topic_configuration> deserialize(source&);
 
 template<>
 future<cluster::partition_assignment> deserialize(source& in);

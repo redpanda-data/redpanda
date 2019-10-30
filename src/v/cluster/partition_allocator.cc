@@ -1,7 +1,5 @@
 #include "cluster/partition_allocator.h"
 
-#include "model/metadata.h"
-
 #include <boost/container_hash/hash.hpp>
 #include <roaring/roaring.hh>
 
@@ -69,9 +67,7 @@ partition_allocator::allocate_replicas(
         partition_assignment as{.shard = cpu,
                                 .group = replicas_group,
                                 .ntp = ntp,
-                                .broker = machine.node(),
-                                .replica = model::replica_id(
-                                  static_cast<model::replica_id::type>(replicas.size()))};
+                                .broker = machine.node()};
         replicas.push_back(std::move(as));
         if (machine.is_full()) {
             _available_machines.erase(_available_machines.iterator_to(machine));

@@ -55,16 +55,12 @@ private:
 
 std::ostream& operator<<(std::ostream&, const broker&);
 
-using replica_id = named_type<uint8_t, struct model_replica_id_type>;
-
 struct partition_metadata {
     partition_metadata() noexcept = default;
     explicit partition_metadata(partition_id p) noexcept
       : id(std::move(p)) {
     }
     partition_id id;
-    std::vector<model::node_id> replicas;
-    model::node_id leader_node;
 };
 
 struct topic_metadata {
