@@ -61,6 +61,7 @@ private:
     future<> recover_batch(model::record_batch);
     future<> recover_record(model::record);
     future<> recover_assignment(partition_assignment);
+    future<> recover_replica(model::ntp, raft::group_id, broker_shard);
     future<> dispatch_record_recovery(log_record_key, fragbuf&&);
     raft::entry create_topic_cfg_entry(const topic_configuration&);
     void end_of_stream();
