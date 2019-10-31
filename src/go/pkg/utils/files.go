@@ -72,6 +72,15 @@ func WriteFileLines(fs afero.Fs, lines []string, path string) error {
 	return w.Flush()
 }
 
+func WriteBytes(fs afero.Fs, bs []byte, path string) (int, error) {
+	file, err := fs.Create(path)
+	if err != nil {
+		return 0, err
+	}
+	defer file.Close()
+	return file.Write(bs)
+}
+
 func FileMd5(fs afero.Fs, filePath string) (string, error) {
 	var returnMD5String string
 	file, err := fs.Open(filePath)

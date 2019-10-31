@@ -1,50 +1,60 @@
 package redpanda
 
 import (
-	"errors"
-	"fmt"
 	"reflect"
 	"strings"
 	"testing"
 	"vectorized/pkg/utils"
 
 	"github.com/spf13/afero"
+	"gopkg.in/yaml.v2"
 )
 
-var validConfig = []string{
-	"---\n",
-	"# Redpanda Queue configuration file\n",
-	"redpanda:\n",
-	"  # Data directory where all the files will be stored. \n",
-	"  # This directory MUST resides on xfs partion.\n",
-	"  data_directory: /var/lib/redpanda/data\n",
-	"  \n",
-	"  # Node ID - must be unique for each node\n",
-	"  node_id: 1\n",
-	"  \n",
-	"  # Redpanda server\n",
-	"  rpc_server:\n",
-	"    address: 127.0.0.1\n",
-	"    port: 33145\n",
-	"  \n",
-	"  # Kafka transport\n",
-	"  kafka_api:\n",
-	"    address: 127.0.0.1\n",
-	"    port: 9092\n",
-	"\n",
-	"  # Raft configuration\n",
-	"  seed_servers:\n",
-	"    - host: \n",
-	"        address: 127.0.0.1\n",
-	"        port: 33145\n",
-	"      node_id: 1\n",
-	"    - host: \n",
-	"        address: 127.0.0.1\n",
-	"        port: 33146\n",
-	"      node_id: 2\n",
+func getValidConfig() *Config {
+	return &Config{
+		Redpanda: &RedpandaConfig{
+			Directory: "/var/lib/redpanda/data",
+			RPCServer: SocketAddress{
+				Port:    33145,
+				Address: "127.0.0.1",
+			},
+			Id: 1,
+			KafkaApi: SocketAddress{
+				Port:    9092,
+				Address: "127.0.0.1",
+			},
+			SeedServers: []*SeedServer{
+				&SeedServer{
+					Host: SocketAddress{
+						Port:    33145,
+						Address: "127.0.0.1",
+					},
+					Id: 1,
+				},
+				&SeedServer{
+					Host: SocketAddress{
+						Port:    33146,
+						Address: "127.0.0.1",
+					},
+					Id: 2,
+				},
+			},
+		},
+		Rpk: &RpkConfig{
+			TuneNetwork:         true,
+			TuneDiskScheduler:   true,
+			TuneNomerges:        true,
+			TuneDiskIrq:         true,
+			TuneCpu:             true,
+			TuneAioEvents:       true,
+			TuneClocksource:     true,
+			EnableMemoryLocking: true,
+		},
+	}
 }
 
 func TestReadConfigFromPath(t *testing.T) {
+	const baseDir string = "/etc/redpanda"
 	type args struct {
 		fs   afero.Fs
 		path string
@@ -52,124 +62,75 @@ func TestReadConfigFromPath(t *testing.T) {
 	tests := []struct {
 		name    string
 		args    args
-		before  func(afero.Fs)
-		want    *Config
+		before  func(afero.Fs, string) error
+		want    func() *Config
 		wantErr bool
 	}{
 		{
-			name: "shall return config struct field with values from file",
-			before: func(fs afero.Fs) {
-				fs.MkdirAll("/etc/redpanda", 0755)
-				utils.WriteFileLines(fs, validConfig,
-					"/etc/redpanda/redpanda.yaml")
+			name: "shall return a config struct filled with values from the file",
+			before: func(fs afero.Fs, path string) error {
+				bs, err := yaml.Marshal(getValidConfig())
+				if err != nil {
+					return err
+				}
+				if err = fs.MkdirAll(baseDir, 0755); err != nil {
+					return err
+				}
+				_, err = utils.WriteBytes(fs, bs, path)
+				return err
 			},
 			args: args{
 				fs:   afero.NewMemMapFs(),
-				path: "/etc/redpanda/redpanda.yaml",
+				path: baseDir + "/redpanda.yaml",
 			},
-			want: &Config{
-				Directory: "/var/lib/redpanda/data",
-				RPCServer: SocketAddress{
-					Port:    33145,
-					Address: "127.0.0.1",
-				},
-				Id: 1,
-				KafkaApi: SocketAddress{
-					Port:    9092,
-					Address: "127.0.0.1",
-				},
-				SeedServers: []*SeedServer{
-					&SeedServer{
-						Host: SocketAddress{
-							Port:    33145,
-							Address: "127.0.0.1",
-						},
-						Id: 1,
-					},
-					&SeedServer{
-						Host: SocketAddress{
-							Port:    33146,
-							Address: "127.0.0.1",
-						},
-						Id: 2,
-					},
-				},
-			},
+			want:    getValidConfig,
 			wantErr: false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.before(tt.args.fs)
+			if err := tt.before(tt.args.fs, tt.args.path); err != nil {
+				t.Fatalf("got an error while setting up %v: %v", tt.name, err)
+			}
 			got, err := ReadConfigFromPath(tt.args.fs, tt.args.path)
+			want := tt.want()
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ReadConfigFromPath() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("ReadConfigFromPath() = %v, want %v", got, tt.want)
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("ReadConfigFromPath() = %v, want %v", *got, *want)
 			}
 		})
 	}
 }
 
 func TestWriteConfig(t *testing.T) {
+	const path string = "/redpanda.yaml"
 	type args struct {
-		config *Config
+		config func() *Config
 		fs     afero.Fs
 		path   string
 	}
 	tests := []struct {
-		name    string
-		args    args
-		wantErr bool
-		after   func(afero.Fs) error
+		name     string
+		args     args
+		wantErr  bool
+		expected string
 	}{
 		{
-			name: "shall write valid config file",
+			name: "shall write a valid config file without an rpk config object",
 			args: args{
 				fs:   afero.NewMemMapFs(),
-				path: "/redpanda.yaml",
-				config: &Config{
-					Directory: "/var/lib/redpanda/data",
-					RPCServer: SocketAddress{
-						Port:    33145,
-						Address: "127.0.0.1",
-					},
-					Id: 1,
-					KafkaApi: SocketAddress{
-						Port:    9092,
-						Address: "127.0.0.1",
-					},
-					SeedServers: []*SeedServer{
-						&SeedServer{
-							Host: SocketAddress{
-								Port:    33145,
-								Address: "127.0.0.1",
-							},
-							Id: 1,
-						},
-						&SeedServer{
-							Host: SocketAddress{
-								Port:    33146,
-								Address: "127.0.0.1",
-							},
-							Id: 2,
-						},
-					},
+				path: path,
+				config: func() *Config {
+					c := getValidConfig()
+					c.Rpk = nil
+					return c
 				},
 			},
-			after: func(fs afero.Fs) error {
-				if !utils.FileExists(fs, "/redpanda.yaml") {
-					return errors.New("File redpanda.yaml must exists")
-				}
-				content, err := afero.ReadFile(fs, "/redpanda.yaml")
-				if err != nil {
-					return err
-				}
-				actualContent := string(content)
-				expectedContent :=
-					`redpanda:
+			wantErr: false,
+			expected: `redpanda:
   data_directory: /var/lib/redpanda/data
   rpc_server:
     address: 127.0.0.1
@@ -187,24 +148,62 @@ func TestWriteConfig(t *testing.T) {
       address: 127.0.0.1
       port: 33146
     node_id: 2
-`
-				if actualContent != expectedContent {
-					return fmt.Errorf("Expected:\n'%s'\n and actual:\n'%s'\n content differs",
-						strings.ReplaceAll(expectedContent, " ", "·"),
-						strings.ReplaceAll(actualContent, " ", "·"))
-				}
-				return nil
+`,
+		},
+		{
+			name: "shall write a valid config file with an rpk config object",
+			args: args{
+				fs:     afero.NewMemMapFs(),
+				path:   path,
+				config: getValidConfig,
 			},
 			wantErr: false,
+			expected: `redpanda:
+  data_directory: /var/lib/redpanda/data
+  rpc_server:
+    address: 127.0.0.1
+    port: 33145
+  kafka_api:
+    address: 127.0.0.1
+    port: 9092
+  node_id: 1
+  seed_servers:
+  - host:
+      address: 127.0.0.1
+      port: 33145
+    node_id: 1
+  - host:
+      address: 127.0.0.1
+      port: 33146
+    node_id: 2
+rpk:
+  tune_network: true
+  tune_disk_scheduler: true
+  tune_disk_nomerges: true
+  tune_disk_irq: true
+  tune_cpu: true
+  tune_aio_events: true
+  tune_clocksource: true
+  enable_memory_locking: true
+`,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := WriteConfig(tt.args.config, tt.args.fs, tt.args.path); (err != nil) != tt.wantErr {
+			if err := WriteConfig(tt.args.config(), tt.args.fs, tt.args.path); (err != nil) != tt.wantErr {
 				t.Errorf("WriteConfig() error = %v, wantErr %v", err, tt.wantErr)
 			}
-			if err := tt.after(tt.args.fs); err != nil {
-				t.Error(err)
+
+			contentBytes, err := afero.ReadFile(tt.args.fs, path)
+			if err != nil {
+				t.Errorf("got an error while reading %v: %v", tt.args.path, err)
+			}
+			content := string(contentBytes)
+			if content != tt.expected {
+				t.Errorf("Expected:\n'%s'\n Got:\n'%s'\n content differs",
+					strings.ReplaceAll(tt.expected, " ", "·"),
+					strings.ReplaceAll(content, " ", "·"),
+				)
 			}
 		})
 	}
@@ -212,119 +211,134 @@ func TestWriteConfig(t *testing.T) {
 
 func TestCheckConfig(t *testing.T) {
 	type args struct {
-		config *Config
+		config func() *Config
 	}
 	tests := []struct {
-		name string
-		args args
-		want bool
+		name     string
+		args     args
+		expected []string
 	}{
 		{
-			name: "shall return true when config is valid",
+			name: "shall return no errors when config is valid",
 			args: args{
-				config: &Config{
-					Directory: "/var/lib/redpanda/data",
-					RPCServer: SocketAddress{
-						Port:    33145,
-						Address: "127.0.0.1",
-					},
-					Id: 1,
-					KafkaApi: SocketAddress{
-						Port:    9092,
-						Address: "127.0.0.1",
-					},
-					SeedServers: []*SeedServer{
-						&SeedServer{
-							Host: SocketAddress{
-								Port:    33145,
-								Address: "127.0.0.1",
-							},
-							Id: 1,
-						},
-						&SeedServer{
-							Host: SocketAddress{
-								Port:    33146,
-								Address: "127.0.0.1",
-							},
-							Id: 1,
-						},
-					},
-				},
+				config: getValidConfig,
 			},
-			want: true,
+			expected: []string{},
 		},
 		{
-			name: "shall return false when config file does not contain data directory setting",
+			name: "shall return an error when config file does not contain data directory setting",
 			args: args{
-				config: &Config{
-					RPCServer: SocketAddress{
-						Port:    33145,
-						Address: "127.0.0.1",
-					},
-					Id: 1,
-					KafkaApi: SocketAddress{
-						Port:    9092,
-						Address: "127.0.0.1",
-					},
-					SeedServers: []*SeedServer{
-						&SeedServer{
-							Host: SocketAddress{
-								Port:    33145,
-								Address: "127.0.0.1",
-							},
-							Id: 1,
-						},
-						&SeedServer{
-							Host: SocketAddress{
-								Port:    33146,
-								Address: "127.0.0.1",
-							},
-							Id: 1,
-						},
-					},
+				config: func() *Config {
+					c := getValidConfig()
+					c.Redpanda.Directory = ""
+					return c
 				},
 			},
-			want: false,
+			expected: []string{"redpanda.data_directory can't be empty"},
 		},
 		{
-			name: "shall return false when id of server is negative",
+			name: "shall return an error when id of server is negative",
 			args: args{
-				config: &Config{
-					Directory: "/var/lib/redpanda/data",
-					RPCServer: SocketAddress{
-						Port:    33145,
-						Address: "127.0.0.1",
-					},
-					Id: -1,
-					KafkaApi: SocketAddress{
-						Port:    9092,
-						Address: "127.0.0.1",
-					},
-					SeedServers: []*SeedServer{
-						&SeedServer{
-							Host: SocketAddress{
-								Port:    33145,
-								Address: "127.0.0.1",
-							},
-							Id: 1,
-						},
-						&SeedServer{
-							Host: SocketAddress{
-								Port:    33146,
-								Address: "127.0.0.1",
-							},
-							Id: 1,
-						},
-					},
+				config: func() *Config {
+					c := getValidConfig()
+					c.Redpanda.Id = -100
+					return c
 				},
 			},
-			want: false,
+			expected: []string{"redpanda.id can't be a negative integer"},
+		},
+		{
+			name: "shall return an error when the RPC server port is 0",
+			args: args{
+				config: func() *Config {
+					c := getValidConfig()
+					c.Redpanda.RPCServer.Port = 0
+					return c
+				},
+			},
+			expected: []string{"redpanda.rpc_server.port can't be 0"},
+		},
+		{
+			name: "shall return an error when the RPC server address is empty",
+			args: args{
+				config: func() *Config {
+					c := getValidConfig()
+					c.Redpanda.RPCServer.Address = ""
+					return c
+				},
+			},
+			expected: []string{"redpanda.rpc_server.address can't be empty"},
+		},
+		{
+			name: "shall return an error when the Kafka API port is 0",
+			args: args{
+				config: func() *Config {
+					c := getValidConfig()
+					c.Redpanda.KafkaApi.Port = 0
+					return c
+				},
+			},
+			expected: []string{"redpanda.kafka_api.port can't be 0"},
+		},
+		{
+			name: "shall return an error when the Kafka API address is empty",
+			args: args{
+				config: func() *Config {
+					c := getValidConfig()
+					c.Redpanda.KafkaApi.Address = ""
+					return c
+				},
+			},
+			expected: []string{"redpanda.kafka_api.address can't be empty"},
+		},
+		{
+			name: "shall return an error when the seed servers list is empty",
+			args: args{
+				config: func() *Config {
+					c := getValidConfig()
+					c.Redpanda.SeedServers = []*SeedServer{}
+					return c
+				},
+			},
+			expected: []string{"redpanda.seed_servers can't be empty"},
+		},
+		{
+			name: "shall return an error when one of the seed servers' address is empty",
+			args: args{
+				config: func() *Config {
+					c := getValidConfig()
+					c.Redpanda.SeedServers[0].Host.Address = ""
+					return c
+				},
+			},
+			expected: []string{"redpanda.seed_servers.0.host.address can't be empty"},
+		},
+		{
+			name: "shall return an error when one of the seed servers' port is 0",
+			args: args{
+				config: func() *Config {
+					c := getValidConfig()
+					c.Redpanda.SeedServers[1].Host.Port = 0
+					return c
+				},
+			},
+			expected: []string{"redpanda.seed_servers.1.host.port can't be 0"},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := CheckConfig(tt.args.config); got != tt.want {
-				t.Errorf("CheckConfig() = %v, want %v", got, tt.want)
+			_, got := CheckConfig(tt.args.config())
+			if len(got) != len(tt.expected) {
+				t.Fatalf("got a different amount of errors than expected: got: %v expected: %v", got, tt.expected)
+			}
+			for _, errMsg := range tt.expected {
+				present := false
+				for _, err := range got {
+					present = present || errMsg == err.Error()
+				}
+				if !present {
+					t.Errorf("expected error msg \"%v\" wasn't among the result error set %v", errMsg, got)
+				}
 			}
 		})
 	}

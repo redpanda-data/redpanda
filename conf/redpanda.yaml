@@ -1,4 +1,3 @@
----
 # Redpanda Queue configuration file
 redpanda:
   # Data directory where all the files will be stored. 
@@ -28,3 +27,14 @@ redpanda:
   admin:
     address: "127.0.0.1"
     port: 9644
+
+rpk:
+  # Available tuners
+  tune_network: true
+  tune_disk_scheduler: true
+  tune_disk_nomerges: true
+  tune_disk_irq: true
+  tune_cpu: true
+  tune_aio_events: true
+  tune_clocksource: true
+  enable_memory_locking: true

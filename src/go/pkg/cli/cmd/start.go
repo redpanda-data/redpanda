@@ -79,11 +79,12 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 			if !utils.FileExists(fs, ioConfigFile) {
 				ioConfigFile = ""
 			}
+			lockMemory := config.Rpk.EnableMemoryLocking || sFlags.lockMemory
 			rpArgs := &redpanda.RedpandaArgs{
 				ConfigFilePath: configFile,
 				SeastarFlags: map[string]string{
 					"io-properties-file": ioConfigFile,
-					"lock-memory":        "false",
+					"lock-memory":        fmt.Sprintf("%t", lockMemory),
 				},
 			}
 			err = prestart(fs, rpArgs, config, prestartCfg, time.Duration(timeoutMs)*time.Millisecond)
@@ -108,7 +109,6 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 	command.Flags().StringVar(&sFlags.memory,
 		"memory", "", "Amount of memory for redpanda to use, "+
 			"if not specified redpanda will use all available memory")
-	// FIXME: Set to false by default as it triggers a 50+ GB core dump on some machines
 	command.Flags().BoolVar(&sFlags.lockMemory,
 		"lock-memory", false, "If set, will prevent redpanda from swapping")
 	command.Flags().StringVar(&sFlags.cpuSet, "cpuset", "",
@@ -204,6 +204,10 @@ func tuneAll(
 	}
 
 	for _, tunerName := range factory.AvailableTuners() {
+		if !factory.IsTunerEnabled(tunerName, config.Rpk) {
+			log.Infof("Skipping disabled tuner %s", tunerName)
+			continue
+		}
 		tuner := tunerFactory.CreateTuner(tunerName, params)
 		if supported, reason := tuner.CheckIfSupported(); supported {
 			log.Debugf("Tuner paramters %+v", params)

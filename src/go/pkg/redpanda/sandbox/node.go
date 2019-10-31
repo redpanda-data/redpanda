@@ -231,17 +231,19 @@ func (n *node) updateNodeConfig(
 	configPath := n.configPath()
 	log.Debugf("Updating node config in %s", configPath)
 	config := redpanda.Config{
-		Directory: "/opt/redpanda/data",
-		KafkaApi: redpanda.SocketAddress{
-			Port:    kafkaPort,
-			Address: address,
+		Redpanda: &redpanda.RedpandaConfig{
+			Directory: "/opt/redpanda/data",
+			KafkaApi: redpanda.SocketAddress{
+				Port:    kafkaPort,
+				Address: address,
+			},
+			RPCServer: redpanda.SocketAddress{
+				Port:    rpcPort,
+				Address: address,
+			},
+			Id:          id,
+			SeedServers: seedServers,
 		},
-		RPCServer: redpanda.SocketAddress{
-			Port:    rpcPort,
-			Address: address,
-		},
-		Id:          id,
-		SeedServers: seedServers,
 	}
 	return redpanda.WriteConfig(&config, n.fs, configPath)
 }

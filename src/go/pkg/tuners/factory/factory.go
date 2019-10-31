@@ -108,8 +108,25 @@ func AvailableTuners() []string {
 }
 
 func IsTunerAvailable(tuner string) bool {
-	if allTuners[tuner] != nil {
-		return true
+	return allTuners[tuner] != nil
+}
+
+func IsTunerEnabled(tuner string, rpkConfig *redpanda.RpkConfig) bool {
+	switch tuner {
+	case "disk_irq":
+		return rpkConfig.TuneDiskIrq
+	case "disk_scheduler":
+		return rpkConfig.TuneDiskScheduler
+	case "disk_nomerges":
+		return rpkConfig.TuneNomerges
+	case "net":
+		return rpkConfig.TuneNetwork
+	case "cpu":
+		return rpkConfig.TuneCpu
+	case "aio_events":
+		return rpkConfig.TuneAioEvents
+	case "clocksource":
+		return rpkConfig.TuneClocksource
 	}
 	return false
 }
@@ -207,17 +224,36 @@ func (factory *tunersFactory) newClockSourceTuner(
 	return sys.NewClockSourceTuner(factory.fs, factory.executor)
 }
 
+func MergeTunerParamsConfig(
+	params *TunerParams, config *redpanda.Config,
+) (*TunerParams, error) {
+	if len(params.Nics) == 0 {
+		nics, err := net.GetInterfacesByIps(
+			config.Redpanda.KafkaApi.Address,
+			config.Redpanda.RPCServer.Address,
+		)
+		if err != nil {
+			return params, err
+		}
+		params.Nics = nics
+	}
+	if len(params.Directories) == 0 {
+		params.Directories = []string{config.Redpanda.Directory}
+	}
+	return params, nil
+}
+
 func FillTunerParamsWithValuesFromConfig(
 	params *TunerParams, config *redpanda.Config,
 ) error {
 	nics, err := net.GetInterfacesByIps(
-		config.KafkaApi.Address, config.RPCServer.Address)
+		config.Redpanda.KafkaApi.Address, config.Redpanda.RPCServer.Address)
 	if err != nil {
 		return err
 	}
 	params.Nics = nics
 	log.Infof("Redpanda uses '%v' NICs", params.Nics)
-	log.Infof("Redpanda data directory '%s'", config.Directory)
-	params.Directories = []string{config.Directory}
+	log.Infof("Redpanda data directory '%s'", config.Redpanda.Directory)
+	params.Directories = []string{config.Redpanda.Directory}
 	return nil
 }

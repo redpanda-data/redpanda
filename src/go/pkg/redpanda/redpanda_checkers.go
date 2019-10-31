@@ -52,7 +52,8 @@ func NewConfigChecker(config *Config) checkers.Checker {
 		checkers.Fatal,
 		true,
 		func() (interface{}, error) {
-			return CheckConfig(config), nil
+			ok, _ := CheckConfig(config)
+			return ok, nil
 		})
 }
 
@@ -163,28 +164,28 @@ func RedpandaCheckers(
 	blockDevices := disk.NewBlockDevices(fs, irqDeviceInfo, irqProcFile, proc, timeout)
 	schedulerInfo := disk.NewSchedulerInfo(fs, blockDevices)
 	schdulerCheckers, err := disk.NewDirectorySchedulerCheckers(fs,
-		config.Directory, schedulerInfo, blockDevices)
+		config.Redpanda.Directory, schedulerInfo, blockDevices)
 	if err != nil {
 		return nil, err
 	}
 	nomergesCheckers, err := disk.NewDirectoryNomergesCheckers(fs,
-		config.Directory, schedulerInfo, blockDevices)
+		config.Redpanda.Directory, schedulerInfo, blockDevices)
 	if err != nil {
 		return nil, err
 	}
 	balanceService := irq.NewBalanceService(fs, proc, executor, timeout)
 	cpuMasks := irq.NewCpuMasks(fs, hwloc.NewHwLocCmd(proc, timeout), executor)
 	dirIRQAffinityChecker, err := disk.NewDirectoryIRQAffinityChecker(
-		fs, config.Directory, "all", irq.Default, blockDevices, cpuMasks)
+		fs, config.Redpanda.Directory, "all", irq.Default, blockDevices, cpuMasks)
 	if err != nil {
 		return nil, err
 	}
 	dirIRQAffinityStaticChecker, err := disk.NewDirectoryIRQsAffinityStaticChecker(
-		fs, config.Directory, blockDevices, balanceService)
+		fs, config.Redpanda.Directory, blockDevices, balanceService)
 	if err != nil {
 		return nil, err
 	}
-	interfaces, err := net.GetInterfacesByIps(config.KafkaApi.Address, config.RPCServer.Address)
+	interfaces, err := net.GetInterfacesByIps(config.Redpanda.KafkaApi.Address, config.Redpanda.RPCServer.Address)
 	if err != nil {
 		return nil, err
 	}
@@ -195,9 +196,9 @@ func RedpandaCheckers(
 		IoConfigFileChecker:           []checkers.Checker{NewIOConfigFileExistanceChecker(fs, ioConfigFile)},
 		FreeMemChecker:                []checkers.Checker{NewMemoryChecker(fs)},
 		SwapChecker:                   []checkers.Checker{NewSwapChecker(fs)},
-		DataDirAccessChecker:          []checkers.Checker{NewDataDirWritableChecker(fs, config.Directory)},
-		DiskSpaceChecker:              []checkers.Checker{NewFreeDiskSpaceChecker(config.Directory)},
-		FsTypeChecker:                 []checkers.Checker{NewFilesystemTypeChecker(config.Directory)},
+		DataDirAccessChecker:          []checkers.Checker{NewDataDirWritableChecker(fs, config.Redpanda.Directory)},
+		DiskSpaceChecker:              []checkers.Checker{NewFreeDiskSpaceChecker(config.Redpanda.Directory)},
+		FsTypeChecker:                 []checkers.Checker{NewFilesystemTypeChecker(config.Redpanda.Directory)},
 		TransparentHugePagesChecker:   []checkers.Checker{NewTransparentHugePagesChecker(fs)},
 		NtpChecker:                    []checkers.Checker{NewNTPSyncChecker(timeout, fs)},
 		SchedulerChecker:              schdulerCheckers,

@@ -40,7 +40,7 @@ func NewIoTuneCmd(fs afero.Fs) *cobra.Command {
 					directories)
 				evalDirectories = directories
 			} else {
-				evalDirectories = []string{config.Directory}
+				evalDirectories = []string{config.Redpanda.Directory}
 			}
 
 			return execIoTune(fs, evalDirectories, ioConfigFile, duration, totalTimeout)
