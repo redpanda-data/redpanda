@@ -7,6 +7,7 @@ template<>
 void serialize(bytes_ostream& out, cluster::topic_configuration&& t) {
     rpc::serialize(
       out,
+      sstring(t.ns),
       sstring(t.topic),
       t.partition_count,
       t.replication_factor,
