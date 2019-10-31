@@ -18,5 +18,11 @@ rp_test(
   BINARY_NAME simple_batch_builder_test
   SOURCES simple_batch_builder_test.cc
   LIBRARIES Seastar::seastar_testing cluster
-
+)
+rp_test(
+  UNIT_TEST
+  BINARY_NAME serialization_rt_test
+  SOURCES serialization_rt_test.cc
+  LIBRARIES Seastar::seastar_testing cluster
+  DEFINITIONS SEASTAR_TESTING_MAIN
 )
