@@ -1,5 +1,6 @@
 #pragma once
 
+#include "cluster/metadata_cache.h"
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
 #include "cluster/types.h"
@@ -27,7 +28,8 @@ public:
       sstring basedir,
       size_t max_segment_size,
       sharded<partition_manager>&,
-      sharded<shard_table>&);
+      sharded<shard_table>&,
+      sharded<metadata_cache>&);
 
     future<> start();
     future<> stop();
@@ -72,6 +74,7 @@ private:
     model::node_id _self;
     sharded<partition_manager>& _pm;
     sharded<shard_table>& _st;
+    sharded<metadata_cache>& _md_cache;
 };
 
 // clang-format off
