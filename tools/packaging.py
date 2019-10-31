@@ -193,7 +193,7 @@ def create_packages(formats,
                     build_type="",
                     external=list()):
     execs = [
-        "%s/%s/src/v/redpanda/redpanda" % (build_dir, build_type),
+        "%s/%s/bin/redpanda" % (build_dir, build_type),
         "%s/go/bin/rpk" % build_dir,
     ]
     execs.extend(external)
