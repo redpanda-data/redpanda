@@ -99,8 +99,10 @@ controller::dispatch_record_recovery(log_record_key key, fragbuf&& v_buf) {
               return recover_assignment(std::move(as));
           });
     case log_record_key::type::topic_configuration:
-        // FIXME: Update cache with configuration
-        return make_ready_future<>();
+        return rpc::deserialize<topic_configuration>(std::move(v_buf))
+          .then([this](topic_configuration t_cfg) {
+              return recover_topic_configuration(std::move(t_cfg));
+          });
     default:
         return make_exception_future<>(
           std::runtime_error("Not supported record type in controller batch"));
@@ -157,6 +159,12 @@ future<> controller::recover_replica(
 
 void controller::end_of_stream() {
     clusterlog().info("Finished recovering cluster state");
+}
+
+future<> controller::recover_topic_configuration(topic_configuration t_cfg) {
+    // broadcast to all caches
+    return _md_cache.invoke_on_all(
+      [tp = t_cfg.topic](metadata_cache& md_c) { md_c.add_topic(tp); });
 }
 
 future<std::vector<topic_result>> controller::create_topics(
