@@ -61,6 +61,8 @@ struct partition_metadata {
       : id(std::move(p)) {
     }
     partition_id id;
+    std::vector<model::node_id> replicas;
+    model::node_id leader_node;
 };
 
 struct topic_metadata {
