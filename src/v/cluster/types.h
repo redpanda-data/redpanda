@@ -17,6 +17,16 @@ struct log_record_key {
     type record_type;
 };
 
+/// type representing single replica assignment it contains the id of a broker 
+/// and id of this broker shard.
+struct broker_shard {
+    model::node_id node_id;
+    /// this is the same as a seastar::shard_id
+    /// however, seastar uses unsized-ints (unsigned)
+    /// and for predictability we need fixed-sized ints
+    uint32_t shard;
+};
+
 struct partition_assignment {
     /// \brief this is the same as a seastar::shard_id
     /// however, seastar uses unsized-ints (unsigned)
