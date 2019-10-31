@@ -127,6 +127,6 @@ def build_packages(build_type, packages):
     ]
 
     packaging.create_packages(packages,
-                              build_dir=build_dir,
+                              build_dir=RP_BUILD_ROOT,
                               build_type=res_type,
                               external=execs)
