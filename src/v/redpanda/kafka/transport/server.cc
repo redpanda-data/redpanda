@@ -196,7 +196,7 @@ future<> kafka_server::connection::process_request() {
               // EOF
               return make_ready_future<>();
           }
-          auto size = process_size(std::move(buf));
+          auto size = process_size(_read_buf, std::move(buf));
           // Allow for extra copies and bookkeeping
           auto mem_estimate = size * 2 + 8000;
           if (mem_estimate >= _server._max_request_size) {
@@ -289,8 +289,9 @@ void kafka_server::connection::do_process(
       });
 }
 
-size_t kafka_server::connection::process_size(temporary_buffer<char>&& buf) {
-    if (_read_buf.eof()) {
+size_t kafka_server::connection::process_size(
+  const input_stream<char>& src, temporary_buffer<char>&& buf) {
+    if (src.eof()) {
         return 0;
     }
     auto* raw = unaligned_cast<const size_type*>(buf.get());

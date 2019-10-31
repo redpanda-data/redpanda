@@ -83,9 +83,11 @@ public:
 
         static future<request_header> read_header(input_stream<char>& src);
 
+        static size_t
+        process_size(const input_stream<char>& src, temporary_buffer<char>&&);
+
     private:
         future<> process_request();
-        size_t process_size(temporary_buffer<char>&&);
         void do_process(request_context&&, semaphore_units<>&&);
         future<> write_response(response_ptr&&, correlation_type);
 
