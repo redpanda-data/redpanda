@@ -91,6 +91,10 @@ struct topic_result {
 } // namespace cluster
 
 namespace rpc {
+    
+// Topic configuration type requires custom ser/des as is has custom constructor
+template<>
+future<cluster::topic_configuration> deserialize(source&);
 
 template<>
 void serialize(bytes_ostream& out, cluster::topic_configuration&& t);
