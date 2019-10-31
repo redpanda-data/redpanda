@@ -43,20 +43,4 @@ future<cluster::topic_configuration> deserialize(rpc::source& in) {
         return std::move(tp_cfg);
     });
 }
-template<>
-future<cluster::partition_assignment> deserialize(source& in) {
-    struct _simple {
-        raft::group_id group;
-        model::ntp ntp;
-    };
-    return deserialize<_simple>(in).then([&in](_simple s) {
-        return deserialize<std::vector<cluster::broker_shard>>(in).then(
-          [s = std::move(s)](std::vector<cluster::broker_shard> replicas) {
-              return cluster::partition_assignment{
-                .group = s.group,
-                .ntp = std::move(s.ntp),
-                .replicas = std::move(replicas)};
-          });
-    });
-}
 } // namespace rpc
