@@ -245,7 +245,7 @@ func (n *node) updateNodeConfig(
 			SeedServers: seedServers,
 		},
 	}
-	return redpanda.WriteConfig(&config, n.fs, configPath)
+	return redpanda.WriteConfig(n.fs, &config, configPath)
 }
 
 func (n *node) getState() (*NodeState, error) {

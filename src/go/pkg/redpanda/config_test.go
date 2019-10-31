@@ -190,7 +190,7 @@ rpk:
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := WriteConfig(tt.args.config(), tt.args.fs, tt.args.path); (err != nil) != tt.wantErr {
+			if err := WriteConfig(tt.args.fs, tt.args.config(), tt.args.path); (err != nil) != tt.wantErr {
 				t.Errorf("WriteConfig() error = %v, wantErr %v", err, tt.wantErr)
 			}
 

@@ -42,7 +42,7 @@ type RpkConfig struct {
 	EnableMemoryLocking bool `yaml:"enable_memory_locking"`
 }
 
-func WriteConfig(config *Config, fs afero.Fs, path string) error {
+func WriteConfig(fs afero.Fs, config *Config, path string) error {
 	log.Debugf("Writing Redpanda config file to '%s'", path)
 	return yaml.Persist(fs, config, path)
 }
