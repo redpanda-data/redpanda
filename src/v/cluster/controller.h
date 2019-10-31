@@ -66,6 +66,8 @@ private:
     future<> recover_replica(model::ntp, raft::group_id, broker_shard);
     future<> recover_topic_configuration(topic_configuration);
     future<> dispatch_record_recovery(log_record_key, fragbuf&&);
+    future<>
+    update_cache_with_partitions_assignment(const partition_assignment&);
     raft::entry create_topic_cfg_entry(const topic_configuration&);
     void end_of_stream();
     raft::consensus& raft0() const;

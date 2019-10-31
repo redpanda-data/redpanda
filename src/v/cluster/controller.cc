@@ -110,17 +110,17 @@ controller::dispatch_record_recovery(log_record_key key, fragbuf&& v_buf) {
 }
 
 future<> controller::recover_assignment(partition_assignment as) {
-    return do_with(
-      std::move(as.replicas),
-      [this, raft_group = as.group, ntp = std::move(as.ntp)](
-        std::vector<broker_shard>& replicas) {
-          return do_for_each(
-            replicas,
-            [this, raft_group, ntp = std::move(ntp)](broker_shard& bs) {
-                return recover_replica(
-                  std::move(ntp), raft_group, std::move(bs));
-            });
-      });
+    return do_with(std::move(as), [this](partition_assignment& as) {
+        return update_cache_with_partitions_assignment(as).then([this, &as] {
+            return do_for_each(
+              as.replicas,
+              [this, raft_group = as.group, ntp = std::move(as.ntp)](
+                broker_shard& bs) {
+                  return recover_replica(
+                    std::move(ntp), raft_group, std::move(bs));
+              });
+        });
+    });
 }
 
 future<> controller::recover_replica(
@@ -159,6 +159,12 @@ future<> controller::recover_replica(
 
 void controller::end_of_stream() {
     clusterlog().info("Finished recovering cluster state");
+}
+
+future<> controller::update_cache_with_partitions_assignment(
+  const partition_assignment& p_as) {
+    return _md_cache.invoke_on_all(
+      [p_as](metadata_cache& md_c) { md_c.update_partition_assignment(p_as); });
 }
 
 future<> controller::recover_topic_configuration(topic_configuration t_cfg) {
