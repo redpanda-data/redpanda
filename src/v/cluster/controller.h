@@ -73,6 +73,7 @@ private:
     raft::consensus& raft0() const;
     future<raft::append_entries_reply>
       raft0_append_entries(std::vector<raft::entry>);
+    void on_raft0_entries_commited(std::vector<raft::entry>&&);
 
     model::node_id _self;
     sharded<partition_manager>& _pm;

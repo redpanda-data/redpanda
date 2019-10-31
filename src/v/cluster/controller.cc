@@ -37,9 +37,9 @@ future<> controller::start() {
           return bootstrap_from_log(plog);
       })
       .then([this] {
-          raft0().register_hook([this](std::vector<raft::entry>&&) {
+          raft0().register_hook([this](std::vector<raft::entry>&& entries) {
               verify_shard();
-              // TODO update the the caches w/ these entries
+              on_raft0_entries_commited(std::move(entries));
           });
       });
 }
@@ -244,6 +244,16 @@ raft::entry controller::create_topic_cfg_entry(const topic_configuration& cfg) {
     return raft::entry(
       controller_record_batch_type,
       model::make_memory_record_batch_reader(std::move(batches)));
+}
+
+void controller::on_raft0_entries_commited(std::vector<raft::entry>&& entries) {
+    (void)do_with(
+      std::move(entries), [this](std::vector<raft::entry>& entries) {
+          return do_for_each(entries, [this](raft::entry& entry) {
+              return entry.reader().consume(
+                batch_consumer(this), model::no_timeout);
+          });
+      });
 }
 
 } // namespace cluster
