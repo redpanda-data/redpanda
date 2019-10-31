@@ -27,14 +27,12 @@ struct broker_shard {
     uint32_t shard;
 };
 
+/// Partition assignment describes an assignment of all replicas for single NTP.
+/// The replicas are hold in vector of broker_shard.
 struct partition_assignment {
-    /// \brief this is the same as a seastar::shard_id
-    /// however, seastar uses unsized-ints (unsigned)
-    /// and for predictability we need fixed-sized ints
-    uint32_t shard;
     raft::group_id group;
     model::ntp ntp;
-    model::broker broker;
+    std::vector<broker_shard> replicas;
 };
 
 struct topic_configuration {

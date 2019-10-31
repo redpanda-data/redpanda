@@ -106,24 +106,43 @@ controller::dispatch_record_recovery(log_record_key key, fragbuf&& v_buf) {
 }
 
 future<> controller::recover_assignment(partition_assignment as) {
-    if (as.broker.id() != _self) {
-        // FIXME: Update metadata cache with others partitions assignments
+    return do_with(
+      std::move(as.replicas),
+      [this, raft_group = as.group, ntp = std::move(as.ntp)](
+        std::vector<broker_shard>& replicas) {
+          return do_for_each(
+            replicas,
+            [this, raft_group, ntp = std::move(ntp)](broker_shard& bs) {
+                return recover_replica(
+                  std::move(ntp), raft_group, std::move(bs));
+            });
+      });
+}
+
+future<> controller::recover_replica(
+  model::ntp ntp, raft::group_id raft_group, broker_shard bs) {
+    // if the assignment is not for current broker just update
+    // metadata cache
+    if (bs.node_id != _self) {
         return make_ready_future<>();
     }
-    // the following ops have a dependency on the shard_table *then*
-    // partition_manager order
+    // the following ops have a dependency on the shard_table
+    // *then* partition_manager order
 
+    // FIXME: Pass topic configuration to partitions manager
+
+    // (compression, compation, etc)
     // 1. update shard_table: broadcast
     return _st
-      .invoke_on_all([shard = as.shard, raft_group = as.group, ntp = as.ntp](
-                       shard_table& s) {
+      .invoke_on_all([ntp, raft_group, shard = bs.shard](shard_table& s) {
           s.insert(ntp, shard);
           s.insert(raft_group, shard);
       })
-      .then([this, shard = as.shard, raft_group = as.group, ntp = as.ntp] {
+      .then([this, shard = bs.shard, raft_group, ntp] {
           // 2. update partition_manager
           return _pm.invoke_on(
-            shard, [this, raft_group, ntp](partition_manager& pm) {
+            shard,
+            [this, raft_group, ntp = std::move(ntp)](partition_manager& pm) {
                 sstring msg = fmt::format(
                   "recovered: {}, raft group_id: {}", ntp.path(), raft_group);
                 // recover partition in the background
@@ -198,15 +217,12 @@ raft::entry controller::create_topic_cfg_entry(const topic_configuration& cfg) {
         model::ntp ntp{
           .ns = cfg.ns,
           .tp = {.topic = cfg.topic, .partition = model::partition_id{i}}};
-        for (int j = 0; j < cfg.replication_factor; j++) {
-            builder.add_kv(
-              assignment_key,
-              partition_assignment{.shard = storage::shard_of(ntp),
-                                   .group = raft::group_id(i),
-                                   .ntp = ntp,
-                                   .broker = model::broker(
-                                     _self, "localhost", 9092, std::nullopt)});
-        }
+        builder.add_kv(
+          assignment_key,
+          partition_assignment{
+            .group = raft::group_id(i),
+            .ntp = ntp,
+            .replicas = {{.node_id = _self, .shard = storage::shard_of(ntp)}}});
     }
     std::vector<model::record_batch> batches;
     batches.push_back(std::move(builder).build());
