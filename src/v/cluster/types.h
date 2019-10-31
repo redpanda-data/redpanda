@@ -98,8 +98,4 @@ future<cluster::topic_configuration> deserialize(source&);
 
 template<>
 void serialize(bytes_ostream& out, cluster::topic_configuration&& t);
-
-template<>
-future<cluster::partition_assignment> deserialize(source& in);
-
 } // namespace rpc
