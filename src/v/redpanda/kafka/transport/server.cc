@@ -213,7 +213,7 @@ future<> kafka_server::connection::process_request() {
               _server._probe.waiting_for_available_memory();
           }
           return fut.then([this, size](semaphore_units<> units) {
-              return read_header().then([this, size, units = std::move(units)](
+              return read_header(_read_buf).then([this, size, units = std::move(units)](
                                           request_header header) mutable {
                   // update the throughput tracker for this client using the
                   // size of the current request and return any computed delay
@@ -300,11 +300,11 @@ size_t kafka_server::connection::process_size(temporary_buffer<char>&& buf) {
     return size_t(size);
 }
 
-future<request_header> kafka_server::connection::read_header() {
+future<request_header> kafka_server::connection::read_header(input_stream<char>& src) {
     constexpr int16_t no_client_id = -1;
-    return _read_buf.read_exactly(sizeof(raw_request_header))
-      .then([this](temporary_buffer<char> buf) {
-          if (_read_buf.eof()) {
+    return src.read_exactly(sizeof(raw_request_header))
+      .then([&src](temporary_buffer<char> buf) {
+          if (src.eof()) {
               throw std::runtime_error(
                 fmt::format("Unexpected EOF for request header"));
           }
@@ -327,10 +327,10 @@ future<request_header> kafka_server::connection::read_header() {
           if (client_id_size == no_client_id) {
               return make_ready_future<request_header>(make_header());
           }
-          return _read_buf.read_exactly(client_id_size)
-            .then([this, make_header = std::move(make_header)](
+          return src.read_exactly(client_id_size)
+            .then([&src, make_header = std::move(make_header)](
                     temporary_buffer<char> buf) {
-                if (_read_buf.eof()) {
+                if (src.eof()) {
                     throw std::runtime_error(
                       fmt::format("Unexpected EOF for client ID"));
                 }
