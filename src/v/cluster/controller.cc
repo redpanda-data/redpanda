@@ -19,10 +19,12 @@ controller::controller(
   sstring basedir,
   size_t max_segment_size,
   sharded<partition_manager>& pm,
-  sharded<shard_table>& st)
+  sharded<shard_table>& st,
+  sharded<metadata_cache>& md_cache)
   : _self(std::move(n))
   , _pm(pm)
-  , _st(st) {
+  , _st(st)
+  , _md_cache(md_cache) {
 }
 
 future<> controller::start() {
