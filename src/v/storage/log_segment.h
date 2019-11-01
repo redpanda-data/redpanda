@@ -147,6 +147,35 @@ public:
         return _segments.end();
     }
 
+    /// very rare. needed when raft needs to truncate un-acknowledged data
+    /// it is also very likely that they are the back sements, and so
+    /// the overhead is likely to be small. This is why our std::find
+    /// starts from the back
+    std::vector<log_segment_ptr>
+    remove(std::vector<sstring> segment_filenames) {
+        std::vector<log_segment_ptr> retval;
+        for (auto& s : segment_filenames) {
+            auto b = _segments.rbegin();
+            auto e = _segments.rend();
+            auto it = std::find_if(b, e, [&s](log_segment_ptr& p) {
+                return p->get_filename() == s;
+            });
+            if (it != e) {
+                retval.push_back(*it);
+                std::iter_swap(it, _segments.end() - 1);
+                _segments.pop_back();
+            }
+        }
+        if (!retval.empty()) {
+            std::stable_sort(
+              _segments.begin(),
+              _segments.end(),
+              [](const log_segment_ptr& a, const log_segment_ptr& b) {
+                  return a->base_offset() < b->base_offset();
+              });
+        }
+        return retval;
+    }
     // On generation changes, the iterators are invalidated.
     iter_gen_type iter_gen() const {
         return _generation;
