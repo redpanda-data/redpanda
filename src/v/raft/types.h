@@ -20,6 +20,9 @@ static constexpr clock_type::time_point no_timeout
 
 using group_id = named_type<int64_t, struct raft_group_id_type>;
 
+static constexpr const model::record_batch_type configuration_batch_type{2};
+static constexpr const model::record_batch_type data_batch_type{1};
+
 /// special case. it uses underlying type because it is the most used type
 /// by using the underlying::type we save 8 continuations per deserialization
 struct [[gnu::packed]] protocol_metadata {
