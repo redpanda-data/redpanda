@@ -40,6 +40,7 @@ int application::run(int ac, char** av) {
             create_groups();
             configure_admin_server();
             wire_up_services();
+            start();
             auto deferred = std::move(_deferred);
             stop_signal.wait().get();
             _log.info("Stopping...");
@@ -168,14 +169,12 @@ void application::wire_up_services() {
       _conf.local().log_segment_size(),
       _partition_manager,
       _shard_table);
-    _controller->start().get();
-    _deferred.emplace_back([this] { _controller->stop().get(); });
 
     // group membership
     construct_service(_group_manager, std::ref(_partition_manager)).get();
     construct_service(_group_shard_mapper, std::ref(_shard_table)).get();
     construct_service(
-      _group_router,
+      group_router,
       _scheduling_groups.kafka_sg(),
       _smp_groups.kafka_smp_sg(),
       std::ref(_group_manager),
@@ -187,6 +186,29 @@ void application::wire_up_services() {
     rpc_cfg.max_service_memory_per_core = memory_groups::rpc_total_memory();
     rpc_cfg.addrs.push_back(_conf.local().rpc_server);
     construct_service(_rpc, rpc_cfg).get();
+
+    construct_service(metadata_cache).get();
+
+    // metrics and quota management
+    construct_service(
+      _quota_mgr,
+      _conf.local().default_num_windows(),
+      _conf.local().default_window_sec(),
+      _conf.local().target_quota_byte_rate(),
+      _conf.local().quota_manager_gc_sec())
+      .get();
+
+    construct_service(
+      cntrl_dispatcher,
+      std::ref(*_controller),
+      _smp_groups.kafka_smp_sg(),
+      _scheduling_groups.kafka_sg())
+      .get();
+}
+
+void application::start() {
+    _controller->start().get();
+    _deferred.emplace_back([this] { _controller->stop().get(); });
 
     _rpc
       .invoke_on_all([this](rpc::server& s) {
@@ -200,24 +222,8 @@ void application::wire_up_services() {
       .get();
     _rpc.invoke_on_all(&rpc::server::start).get();
     _log.info("Started RPC server listening at {}", _conf.local().rpc_server());
-    construct_service(_metadata_cache).get();
 
-    // metrics and quota management
-    construct_service(
-      _quota_mgr,
-      _conf.local().default_num_windows(),
-      _conf.local().default_window_sec(),
-      _conf.local().target_quota_byte_rate(),
-      _conf.local().quota_manager_gc_sec())
-      .get();
     _quota_mgr.invoke_on_all(&kafka::quota_manager::start).get();
-
-    construct_service(
-      _cntrl_dispatcher,
-      std::ref(*_controller),
-      _smp_groups.kafka_smp_sg(),
-      _scheduling_groups.kafka_sg())
-      .get();
 
     // Kafka API
     auto kafka_creds
@@ -227,14 +233,15 @@ void application::wire_up_services() {
       memory::stats().total_memory() / 10,
       _smp_groups.kafka_smp_sg(),
       kafka_creds};
+
     construct_service(
       _kafka_server,
       kafka::probe(),
-      std::ref(_metadata_cache),
-      std::ref(_cntrl_dispatcher),
+      std::ref(metadata_cache),
+      std::ref(cntrl_dispatcher),
       std::move(server_config),
       std::ref(_quota_mgr),
-      std::ref(_group_router))
+      std::ref(group_router))
       .get();
 
     _kafka_server
@@ -243,6 +250,7 @@ void application::wire_up_services() {
           return server.listen(_conf.local().kafka_api(), false);
       })
       .get();
+
     _log.info(
       "Started Kafka API server listening at {}", _conf.local().kafka_api());
 }
