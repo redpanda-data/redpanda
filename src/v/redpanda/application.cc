@@ -29,7 +29,7 @@ int application::run(int ac, char** av) {
     init_env();
     app_template app = setup_app_template();
     return app.run(ac, av, [this, &app] {
-        auto cfg = app.configuration();
+        auto& cfg = app.configuration();
         validate_arguments(cfg);
         return async([this, &cfg] {
             ::stop_signal stop_signal;
