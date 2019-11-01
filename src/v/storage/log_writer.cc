@@ -48,7 +48,7 @@ future<>
 write(log_segment_appender& appender, const model::record_batch& batch) {
     return write_vint(appender, batch.size_bytes())
       .then([&appender, &batch] {
-          return write(appender, batch.base_offset().value());
+          return write(appender, batch.base_offset()());
       })
       .then([&appender, &batch] { return write(appender, batch.type()()); })
       .then([&appender, &batch] { return write(appender, batch.crc()); })
