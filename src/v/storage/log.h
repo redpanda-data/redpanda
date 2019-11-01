@@ -78,6 +78,9 @@ public:
     probe& get_probe() {
         return _probe;
     }
+    model::offset max_offset() const {
+        return _tracker.dirty_offset();
+    }
 
 private:
     future<>
