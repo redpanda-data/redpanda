@@ -28,6 +28,7 @@ struct sync_group_request final {
     std::optional<kafka::group_instance_id> group_instance_id; // >= v3
     std::vector<member_assignment> assignments;
 
+    void encode(const request_context& ctx, response_writer& writer);
     void decode(request_context& ctx);
 };
 
