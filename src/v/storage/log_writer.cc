@@ -11,7 +11,8 @@
 namespace storage {
 
 default_log_writer::default_log_writer(log& log) noexcept
-  : _log(log) {
+  : _log(log)
+  , _last_offset(log.max_offset()) {
 }
 
 template<typename T>
