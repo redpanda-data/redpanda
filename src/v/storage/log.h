@@ -95,9 +95,7 @@ private:
     future<append_result>
     do_append(model::record_batch_reader&&, log_append_config);
 
-    future<> do_truncate(model::offset, model::term_id) {
-        return make_ready_future<>();
-    }
+    future<> do_truncate(model::offset, model::term_id);
 
 private:
     model::term_id _term;
