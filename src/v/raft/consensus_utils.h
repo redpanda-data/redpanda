@@ -1,5 +1,6 @@
 #pragma once
 
+#include "raft/configuration_bootstrap_state.h"
 #include "raft/consensus.h"
 
 #include <seastar/core/sstring.hh>
@@ -22,5 +23,11 @@ future<consensus::voted_for_configuration> read_voted_for(sstring filename);
 /// copy all raft entries into N containers using the record_batch::share()
 future<std::vector<std::vector<raft::entry>>>
 copy_n(std::vector<raft::entry>&&, std::size_t);
+
+/// parses the configuration out of the entry
+future<raft::group_configuration> extract_configuration(raft::entry&&);
+
+/// returns a fully parsed config state from a given storage log
+future<raft::configuration_bootstrap_state> read_bootstrap_state(storage::log&);
 
 } // namespace raft::details
