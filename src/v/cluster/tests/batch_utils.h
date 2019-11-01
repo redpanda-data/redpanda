@@ -1,6 +1,7 @@
 #pragma once
 #include "hashing/crc32c.h"
 #include "model/record.h"
+#include "storage/crc_record.h"
 
 inline int32_t checksum_batch(model::record_batch& batch) {
     crc32 crc;

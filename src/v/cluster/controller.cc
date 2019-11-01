@@ -184,7 +184,9 @@ controller::raft0_append_entries(std::vector<raft::entry> entries) {
 }
 
 raft::entry controller::create_topic_cfg_entry(const topic_configuration& cfg) {
-    simple_batch_builder builder(controller::controller_record_batch_type);
+    simple_batch_builder builder(
+      controller::controller_record_batch_type,
+      model::offset(raft0().meta().commit_index));
     builder.add_kv(
       log_record_key{.record_type = log_record_key::type::topic_configuration},
       cfg);
