@@ -73,8 +73,11 @@ log::do_append(model::record_batch_reader&& reader, log_append_config config) {
                       _tracker.update_dirty_offset(last_offset);
                       _active_segment->set_last_written_offset(last_offset);
                       auto f = make_ready_future<>();
+                      /// fsync, means we fsync _every_ record_batch
+                      /// most API's will want to batch the fsync, at least
+                      /// to the record_batch_reader level
                       if (config.should_fsync) {
-                          f = _appender->flush();
+                          f = flush();
                       }
                       return f.then([this, now, base, last_offset] {
                           return append_result{now, base, last_offset};
