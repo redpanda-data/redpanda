@@ -22,7 +22,8 @@ SEASTAR_THREAD_TEST_CASE(simple_batch_builder_batch_test) {
     auto pa_key = cluster::log_record_key{
       cluster::log_record_key::type::partition_assignment};
     auto batch = std::move(
-                   cluster::simple_batch_builder(model::record_batch_type(3))
+                   cluster::simple_batch_builder(
+                     model::record_batch_type(3), model::offset(0))
                      .add_kv(
                        cluster::log_record_key{
                          cluster::log_record_key::type::topic_configuration},
@@ -43,7 +44,8 @@ SEASTAR_THREAD_TEST_CASE(round_trip_test) {
     auto pa_key = cluster::log_record_key{
       cluster::log_record_key::type::partition_assignment};
     auto batch = std::move(
-                   cluster::simple_batch_builder(model::record_batch_type(3))
+                   cluster::simple_batch_builder(
+                     model::record_batch_type(3), model::offset(0))
                      .add_kv(
                        cluster::log_record_key{
                          cluster::log_record_key::type::topic_configuration},
@@ -63,7 +65,7 @@ SEASTAR_THREAD_TEST_CASE(round_trip_test) {
 
     tests::persist_log_file(base_dir, test_ntp, std::move(batches)).get0();
     auto read = tests::read_log_file(base_dir, test_ntp).get0();
-    
+
     BOOST_REQUIRE_EQUAL(read.size(), 1);
     BOOST_REQUIRE_EQUAL(read[0].last_offset_delta(), 3);
     BOOST_REQUIRE_EQUAL(read[0].crc(), current_crc);
