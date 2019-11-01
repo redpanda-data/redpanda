@@ -36,6 +36,9 @@ struct group_configuration {
     model::node_id leader_id;
     std::vector<model::broker> nodes;
     std::vector<model::broker> learners;
+    group_configuration() = default;
+    group_configuration(group_configuration&&) noexcept = default;
+    group_configuration& operator=(group_configuration&&) noexcept = default;
 };
 
 struct follower_index_metadata {
