@@ -30,17 +30,17 @@ public:
     }
 
     model::term_id term() const {
-        return model::term_id(_term());
+        return _term;
     }
 
     // Inclusive lower bound offset.
     model::offset base_offset() const {
-        return model::offset(_base_offset);
+        return _base_offset;
     }
 
     // Exclusive upper bound offset.
     model::offset max_offset() const {
-        return model::offset(_max_offset);
+        return _max_offset;
     }
 
     void set_last_written_offset(model::offset max_offset) {
