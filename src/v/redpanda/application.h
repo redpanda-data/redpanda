@@ -58,6 +58,7 @@ public:
     int run(int, char**);
 
     void start_config();
+    void create_groups();
     void wire_up_services();
 
     sharded<cluster::metadata_cache> metadata_cache;
@@ -71,7 +72,6 @@ private:
     // All methods are calleds from Seastar thread
     void init_env();
     app_template setup_app_template();
-    void create_groups();
     void validate_arguments(const po::variables_map&);
     void hydrate_config(const po::variables_map&);
     void check_environment();
