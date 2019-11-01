@@ -161,13 +161,6 @@ func prestart(
 	prestartCfg prestartConfig,
 	timeout time.Duration,
 ) error {
-	if prestartCfg.tuneEnabled {
-		err := tuneAll(fs, args.SeastarFlags["cpuset"], config, timeout)
-		if err != nil {
-			return err
-		}
-		log.Info("System tune - PASSED")
-	}
 	if prestartCfg.checkEnabled {
 		checkersMap, err := redpanda.RedpandaCheckers(fs,
 			args.SeastarFlags["io-properties-file"], config, timeout)
@@ -179,6 +172,13 @@ func prestart(
 			return err
 		}
 		log.Info("System check - PASSED")
+	}
+	if prestartCfg.tuneEnabled {
+		err := tuneAll(fs, args.SeastarFlags["cpuset"], config, timeout)
+		if err != nil {
+			return err
+		}
+		log.Info("System tune - PASSED")
 	}
 	return nil
 }
