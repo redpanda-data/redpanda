@@ -40,6 +40,27 @@ void join_group_request::decode(request_context& ctx) {
     });
 }
 
+void join_group_request::encode(
+  const request_context& ctx, response_writer& writer) {
+    auto version = ctx.header().version;
+
+    writer.write(group_id());
+    writer.write(int32_t(session_timeout.count()));
+    if (version >= api_version(1)) {
+        writer.write(int32_t(rebalance_timeout.count()));
+    }
+    writer.write(member_id());
+    if (version >= api_version(5)) {
+        writer.write(group_instance_id);
+    }
+    writer.write(protocol_type());
+    writer.write_array(
+      protocols, [](const member_protocol& p, response_writer& writer) {
+          writer.write(p.name());
+          writer.write(bytes_view(p.metadata));
+      });
+}
+
 std::ostream& operator<<(std::ostream& o, const join_group_request& r) {
     return fmt_print(
       o,

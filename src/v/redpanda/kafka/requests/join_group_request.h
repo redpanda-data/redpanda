@@ -29,6 +29,7 @@ struct join_group_request final {
     api_version version;
     std::optional<sstring> client_id;
 
+    void encode(const request_context& ctx, response_writer& writer);
     void decode(request_context& ctx);
 };
 
