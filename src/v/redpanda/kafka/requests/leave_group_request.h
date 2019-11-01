@@ -20,6 +20,7 @@ struct leave_group_request final {
     kafka::group_id group_id;
     kafka::member_id member_id;
 
+    void encode(const request_context& ctx, response_writer& writer);
     void decode(request_context& ctx);
 };
 

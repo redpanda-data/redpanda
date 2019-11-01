@@ -13,6 +13,12 @@ void leave_group_request::decode(request_context& ctx) {
     member_id = kafka::member_id(reader.read_string());
 }
 
+void leave_group_request::encode(
+  const request_context& ctx, response_writer& writer) {
+    writer.write(group_id());
+    writer.write(member_id());
+}
+
 void leave_group_response::encode(const request_context& ctx, response& resp) {
     auto& writer = resp.writer();
     auto version = ctx.header().version;
