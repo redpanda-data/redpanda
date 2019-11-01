@@ -114,4 +114,52 @@ model::record_batch_reader log::make_reader(log_reader_config config) {
       _segs, _tracker, std::move(config), _probe);
 }
 
+future<> log::do_truncate(model::offset o, model::term_id term) {
+    // 1. update metadata
+    // 2. get a list of segments to drop
+    // 3. perform drop in background for all
+    // 4. synchronize dir-entry
+    // 5. translate offset into disk/filename
+    // 6. truncate the last segment
+    // 7. roll
+
+    // 1.
+    _term = term;
+    _tracker.update_dirty_offset(o);
+    _tracker.update_committed_offset(o);
+
+    // 2.
+    std::vector<sstring> names_to_delete;
+    for (auto s : _segs) {
+        if (s->term() > term) {
+            stlog().info("do_truncate() full file:{}", s->get_filename());
+            names_to_delete.push_back(s->get_filename());
+        }
+    }
+
+    //  3.
+    auto erased = _segs.remove(std::move(names_to_delete));
+    auto f = make_ready_future<>();
+
+    // 4.
+    f = parallel_for_each(erased, [](log_segment_ptr i) {
+        return i->close().then([i] { return remove_file(i->get_filename()); });
+    });
+
+    // 5.
+    f = f.then([d = _manager.config().base_dir] { return sync_directory(d); });
+
+    // 6.
+    // FIXME
+    // missing, find offset in offset_index and truncate at size
+    // _segs.back().truncate(offset_index.get(o))
+    stlog().error(
+      "We cannot truncate a logical offset without an index. rolling "
+      "last segment");
+
+    // 7.
+    f = f.then([this] { return do_roll(); });
+    return f;
+}
+
 } // namespace storage
