@@ -26,6 +26,23 @@ void sync_group_request::decode(request_context& ctx) {
     });
 }
 
+void sync_group_request::encode(
+  const request_context& ctx, response_writer& writer) {
+    auto version = ctx.header().version;
+
+    writer.write(group_id());
+    writer.write(generation_id);
+    writer.write(member_id());
+    if (version >= api_version(3)) {
+        writer.write(group_instance_id);
+    }
+    writer.write_array(
+      assignments, [](const member_assignment& a, response_writer& writer) {
+          writer.write(a.member());
+          writer.write(bytes_view(a.assignment));
+      });
+}
+
 void sync_group_response::encode(const request_context& ctx, response& resp) {
     auto& writer = resp.writer();
     auto version = ctx.header().version;
