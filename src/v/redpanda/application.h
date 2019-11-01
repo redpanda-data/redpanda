@@ -89,7 +89,6 @@ private:
     scheduling_groups _scheduling_groups;
     memory_groups _memory_groups;
     smp_groups _smp_groups;
-    deferred_actions _deferred;
     logger _log{"redpanda::main"};
 
     // sharded services
@@ -105,4 +104,7 @@ private:
     sharded<kafka::quota_manager> _quota_mgr;
     sharded<kafka::kafka_server> _kafka_server;
     std::unique_ptr<cluster::controller> _controller;
+
+    // run these first on destruction
+    deferred_actions _deferred;
 };
