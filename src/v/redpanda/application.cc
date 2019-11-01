@@ -34,6 +34,7 @@ int application::run(int ac, char** av) {
         return async([this, &cfg] {
             ::stop_signal stop_signal;
             // add another steps if needed here
+            start_config();
             hydrate_config(cfg);
             check_environment();
             create_groups();
@@ -70,13 +71,16 @@ app_template application::setup_app_template() {
     return app;
 }
 
+void application::start_config() {
+    construct_service(_conf).get();
+}
+
 void application::hydrate_config(const po::variables_map& cfg) {
     auto buf = read_fully(cfg["redpanda-cfg"].as<std::string>()).get0();
     // see https://github.com/jbeder/yaml-cpp/issues/765
     std::string workaround(buf.get(), buf.size());
     YAML::Node config = YAML::Load(workaround);
     _log.info("Read file:\n\n{}\n\n", config);
-    construct_service(_conf).get();
     auto& local_cfg = _conf.local();
     local_cfg.read_yaml(config);
     _conf

@@ -57,6 +57,8 @@ class application {
 public:
     int run(int, char**);
 
+    void start_config();
+
 private:
     using deferred_actions
       = std::vector<deferred_action<std::function<void()>>>;
