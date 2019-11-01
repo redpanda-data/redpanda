@@ -60,6 +60,8 @@ public:
     log_segment_appender& appender();
 
     future<> maybe_roll(model::offset);
+    /// flushes the _tracker.dirty_offset into _tracker.committed_offset
+    future<> flush();
 
     /// \brief safe even if we have no active appenders
     /// in the case of active appender, it will create a new segment
