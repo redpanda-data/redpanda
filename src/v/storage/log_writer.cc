@@ -96,11 +96,9 @@ operator()(model::record_batch&& batch) {
         return write(_log.appender(), batch)
           .then([this, &batch, offset_before] {
               _last_offset = batch.last_offset();
-              return _log.maybe_roll(_last_offset).then([this, offset_before] {
-                  _log.get_probe().add_bytes_written(
-                    _log.appender().offset() - offset_before);
-                  return stop_iteration::no;
-              });
+              _log.get_probe().add_bytes_written(
+                _log.appender().file_byte_offset() - offset_before);
+              return _log.maybe_roll().then([] { return stop_iteration::no; });
           })
           .handle_exception([this](std::exception_ptr e) {
               _log.get_probe().batch_write_error(e);
