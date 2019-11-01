@@ -52,6 +52,7 @@ future<> partition_manager::manage(model::ntp ntp, raft::group_id group) {
       .then([this, group](storage::log_ptr log) {
           auto c = make_lw_shared<raft::consensus>(
             _self,
+            group,
             raft::timeout_jitter(_hbeats.election_duration()),
             *log,
             _should_fsync,
