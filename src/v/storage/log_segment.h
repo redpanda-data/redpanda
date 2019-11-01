@@ -98,8 +98,10 @@ std::ostream& operator<<(std::ostream&, log_segment_ptr);
  */
 class log_set {
 public:
-    using const_iterator_type = std::vector<log_segment_ptr>::const_iterator;
-    using iterator_type = std::vector<log_segment_ptr>::iterator;
+    using underlying_t = std::vector<log_segment_ptr>;
+    using const_iterator = underlying_t::const_iterator;
+    using const_reverse_iterator = underlying_t::const_reverse_iterator;
+    using iterator = underlying_t::iterator;
 
     using iter_gen_type = uint64_t;
 
@@ -123,19 +125,25 @@ public:
         return _segments.back();
     }
 
-    const_iterator_type begin() const {
+    const_iterator begin() const {
         return _segments.begin();
     }
 
-    const_iterator_type end() const {
+    const_iterator end() const {
         return _segments.end();
     }
+    const_reverse_iterator rbegin() const {
+        return _segments.rbegin();
+    }
+    const_reverse_iterator rend() const {
+        return _segments.rend();
+    }
 
-    iterator_type begin() {
+    iterator begin() {
         return _segments.begin();
     }
 
-    iterator_type end() {
+    iterator end() {
         return _segments.end();
     }
 
@@ -172,7 +180,7 @@ public:
 private:
     const log_set& _set;
     // Always valid within an epoch.
-    mutable log_set::const_iterator_type _current_segment;
+    mutable log_set::const_iterator _current_segment;
     // Detects compactions and iterator invalidations.
     mutable log_set::iter_gen_type _iter_gen = log_set::invalid_iter_gen;
 };
