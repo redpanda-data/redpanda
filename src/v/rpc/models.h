@@ -28,7 +28,8 @@ inline future<model::ntp> deserialize(source& in) {
 
 template<>
 inline void serialize(bytes_ostream& out, model::broker&& r) {
-    rpc::serialize(out, r.id()(), sstring(r.host()), r.port());
+    rpc::serialize(
+      out, r.id(), sstring(r.host()), r.port(), std::optional(r.rack()));
 }
 
 // from wire
