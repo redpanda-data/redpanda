@@ -12,6 +12,7 @@ using vote_reply_ptr = consensus::vote_reply_ptr;
 
 consensus::consensus(
   model::node_id nid,
+  group_id group,
   timeout_jitter jit,
   storage::log& l,
   storage::log_append_config::fsync should_fsync,
@@ -27,6 +28,7 @@ consensus::consensus(
   , _disk_timeout(disk_timeout)
   , _clients(clis)
   , _leader_notification(std::move(cb)) {
+    _meta.group = group();
     _vote_timeout.set_callback([this] { dispatch_vote(); });
 }
 void consensus::step_down() {
