@@ -236,18 +236,25 @@ void consensus::dispatch_vote() {
 }
 future<> consensus::start() {
     return with_semaphore(_op_sem, 1, [this] {
-        // TODO(agallego) - recover _conf & _meta
         return details::read_voted_for(voted_for_filename())
           .then([this](voted_for_configuration r) {
-              raftlog().debug(
-                "recovered last leader: {} for term: {}", r.voted_for, r.term);
-              if (_voted_for != r.voted_for) {
-                  // FIXME - look at etcd
-              }
+              raftlog().info(
+                "group '{}' recovered last leader: {} for term: {}",
+                _meta.group,
+                r.voted_for,
+                r.term);
               _voted_for = r.voted_for;
-              // bug! because we may increase the term while we have this leader
-              // so
               _meta.term = r.term;
+              return details::read_bootstrap_state(_log);
+          })
+          .then([this](configuration_bootstrap_state st) {
+              _meta.commit_index = st.commit_index();
+              _meta.prev_log_index = st.prev_log_index();
+              _meta.prev_log_term = st.prev_log_term();
+              // FIXME(agallego) - how to think about term. seems fine to
+              // ignore: `_meta.term = st.term` - would violate the voted_for
+              //  configuration
+              _conf = std::move(st.release_config());
           });
     });
 }
@@ -324,7 +331,8 @@ consensus::do_append_entries(append_entries_request&& r) {
           _meta.term);
         _probe.append_request_term_newer();
         return _log
-          .roll(model::offset(_meta.commit_index), model::term_id(r.meta.term))
+          .truncate(
+            model::offset(_meta.commit_index), model::term_id(r.meta.term))
           .then([this, r = std::move(r)]() mutable {
               step_down();
               _meta.term = r.meta.term;
@@ -417,9 +425,20 @@ consensus::do_append_entries(append_entries_request&& r) {
       });
 }
 
-future<> consensus::process_configurations(std::vector<entry>&&) {
-    // FIXME
-    return make_ready_future<>();
+future<> consensus::process_configurations(std::vector<entry>&& e) {
+    return do_with(std::move(e), [this](std::vector<entry>& entries) {
+        return do_for_each(entries, [this](entry& e) {
+            if (e.entry_type() == configuration_batch_type) {
+                return details::extract_configuration(std::move(e))
+                  .then([this](group_configuration cfg) mutable {
+                      _conf = std::move(cfg);
+                      raftlog().info(
+                        "group({}) configuration update", _meta.group);
+                  });
+            }
+            return make_ready_future<>();
+        });
+    });
 }
 future<append_entries_reply> consensus::success_case_append_entries(
   protocol_metadata sender,
@@ -442,6 +461,8 @@ future<append_entries_reply> consensus::success_case_append_entries(
 future<std::vector<storage::log::append_result>>
 consensus::disk_append(std::vector<entry>&& entries) {
     using ret_t = std::vector<storage::log::append_result>;
+    // used to detect if we roll the last segment
+    model::offset prev_base_offset = _log.segments().last()->base_offset();
     // clang-format off
     return do_with(std::move(entries), [this](std::vector<entry>& in) {
             auto no_of_entries = in.size();
@@ -459,9 +480,15 @@ consensus::disk_append(std::vector<entry>&& entries) {
             });
       })
       // clang-format on
-      .then([this](ret_t ret) {
-          if (_should_fsync == storage::log_append_config::fsync::yes) {
-              return _log.appender().flush().then([ret = std::move(ret)] {
+      .then([this, prev_base_offset](ret_t ret) {
+          model::offset base_offset = _log.segments().last()->base_offset();
+          if (prev_base_offset != base_offset) {
+              // we rolled a log segment. write current configuration for speedy
+              // recovery in the background
+              // FIXME
+          }
+          if (_should_fsync) {
+              return _log.flush().then([ret = std::move(ret)] {
                   return make_ready_future<ret_t>(std::move(ret));
               });
           }
