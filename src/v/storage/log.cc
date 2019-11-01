@@ -4,6 +4,8 @@
 #include "storage/log_writer.h"
 #include "storage/version.h"
 
+#include <seastar/core/reactor.hh>
+
 #include <fmt/format.h>
 
 namespace storage {
@@ -86,26 +88,26 @@ log::do_append(model::record_batch_reader&& reader, log_append_config config) {
             });
       });
 }
-future<> log::do_roll(model::offset o, model::term_id t) {
-    _term = std::move(t);
-    if (!_active_segment) {
-        return make_ready_future<>();
-    }
-    return do_roll(o);
-}
-
-future<> log::do_roll(model::offset current_offset) {
-    _active_segment->set_last_written_offset(current_offset);
-    return _appender->flush().then([this, current_offset] {
-        return new_segment(
-          current_offset + 1, _term, _appender->priority_class());
+future<> log::flush() {
+    return _appender->flush().then([this] {
+        _tracker.update_committed_offset(_tracker.dirty_offset());
+        _active_segment->set_last_written_offset(_tracker.committed_offset());
     });
 }
-future<> log::maybe_roll(model::offset current_offset) {
-    if (_appender->offset() < _manager.max_segment_size()) {
+future<> log::do_roll() {
+    return flush().then([this] {
+        auto o = model::offset(1) + _tracker.committed_offset();
+        // update all offsets to next
+        _tracker.update_dirty_offset(o);
+        _tracker.update_committed_offset(o);
+        return new_segment(o, _term, _appender->priority_class());
+    });
+}
+future<> log::maybe_roll() {
+    if (_appender->file_byte_offset() < _manager.max_segment_size()) {
         return make_ready_future<>();
     }
-    return do_roll(current_offset);
+    return do_roll();
 }
 
 log_segment_appender& log::appender() {
