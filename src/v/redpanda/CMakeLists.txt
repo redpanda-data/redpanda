@@ -5,11 +5,19 @@ seastar_generate_swagger(
   OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/admin/api-doc/config.json.h
 )
 
+add_library(application STATIC application.cc)
+target_include_directories(application INTERFACE ${PROJECT_SOURCE_DIR}/src/v)
+target_link_libraries(application
+  PUBLIC
+    Seastar::seastar
+    cluster
+    config
+  )
+
 add_executable(redpanda
-    application.cc
     main.cc
   )
-target_link_libraries(redpanda PUBLIC raft transport config)
+target_link_libraries(redpanda PUBLIC application raft transport config)
 set_property(TARGET redpanda PROPERTY POSITION_INDEPENDENT_CODE ON)
 add_dependencies(redpanda config_swagger)
 
