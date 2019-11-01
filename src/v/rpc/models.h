@@ -32,13 +32,6 @@ inline void serialize(bytes_ostream& out, model::broker&& r) {
       out, r.id(), sstring(r.host()), r.port(), std::optional(r.rack()));
 }
 
-// from wire
-template<>
-inline future<model::offset> deserialize(source& in) {
-    using type = model::offset::type;
-    return deserialize<type>(in).then(
-      [](type v) { return model::offset{std::move(v)}; });
-}
 template<>
 inline future<model::broker> deserialize(source& in) {
     struct broker_contents {
