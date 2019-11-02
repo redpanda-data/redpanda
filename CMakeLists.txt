@@ -75,7 +75,7 @@ if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
         -DNO_CONCEPTS)
 elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
     if(RP_ENABLE_GOLD_LINKER)
-        set(BASE_LD_FLAGS_LIST -fuse-ld=gold)
+        list(APPEND BASE_LD_FLAGS_LIST -fuse-ld=gold)
     endif()
 endif()
 

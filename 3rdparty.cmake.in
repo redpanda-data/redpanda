@@ -239,8 +239,6 @@ ExternalProject_Add(nettle
     --prefix=<INSTALL_DIR>
     --srcdir=<SOURCE_DIR>
     --libdir=<INSTALL_DIR>/lib
-    ${info_dir}/nettle
-  BUILD_COMMAND ${make_command}
   INSTALL_COMMAND ${make_command} install
   DEPENDS gmp ${default_depends})
 
