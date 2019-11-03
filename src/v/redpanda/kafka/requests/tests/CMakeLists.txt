@@ -39,3 +39,6 @@ rp_test(
   SOURCES topic_result_utils_tests.cc
   LIBRARIES Seastar::seastar_testing requests
 )
+
+add_executable(kafka_api_serde_tool api_serde_tool.cc)
+target_link_libraries(kafka_api_serde_tool application Seastar::seastar requests transport)
