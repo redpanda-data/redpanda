@@ -49,6 +49,8 @@ func getValidConfig() *Config {
 			TuneAioEvents:       true,
 			TuneClocksource:     true,
 			EnableMemoryLocking: true,
+			TuneCoredump:        true,
+			CoredumpDir:         "/var/lib/redpanda/coredumps",
 		},
 	}
 }
@@ -86,6 +88,7 @@ func TestReadConfigFromPath(t *testing.T) {
 			want:    getValidConfig,
 			wantErr: false,
 		},
+		// TODO: Add tests for when the config file has missing objects
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -185,6 +188,8 @@ rpk:
   tune_aio_events: true
   tune_clocksource: true
   enable_memory_locking: true
+  tune_coredump: true
+  coredump_dir: /var/lib/redpanda/coredumps
 `,
 		},
 	}
@@ -323,6 +328,32 @@ func TestCheckConfig(t *testing.T) {
 				},
 			},
 			expected: []string{"redpanda.seed_servers.1.host.port can't be 0"},
+		},
+		{
+			name: "shall return no errors when tune_coredump is set to false," +
+				"regardless of coredump_dir's value",
+			args: args{
+				config: func() *Config {
+					c := getValidConfig()
+					c.Rpk.TuneCoredump = false
+					c.Rpk.CoredumpDir = ""
+					return c
+				},
+			},
+			expected: []string{},
+		},
+		{
+			name: "shall return an error when tune_coredump is set to true," +
+				"but coredump_dir is empty",
+			args: args{
+				config: func() *Config {
+					c := getValidConfig()
+					c.Rpk.CoredumpDir = ""
+					return c
+				},
+			},
+			expected: []string{"if rpk.tune_coredump is set to true," +
+				"rpk.coredump_dir can't be empty"},
 		},
 	}
 	for _, tt := range tests {

@@ -73,7 +73,7 @@ func executeMode(fs afero.Fs, redpandaConfigFile string, mode string) error {
 
 func setDevelopment(config *redpanda.Config) *redpanda.Config {
 	// Defaults to setting all tuners to false
-	config.Rpk = &redpanda.RpkConfig{}
+	config.Rpk = &redpanda.RpkConfig{CoredumpDir: config.Rpk.CoredumpDir}
 	return config
 }
 
@@ -87,6 +87,7 @@ func setProduction(config *redpanda.Config) *redpanda.Config {
 	rpk.TuneAioEvents = true
 	rpk.TuneClocksource = true
 	rpk.EnableMemoryLocking = true
+	rpk.TuneCoredump = true
 	return config
 }
 

@@ -1,6 +1,7 @@
 package redpanda
 
 import (
+	"errors"
 	"fmt"
 	"vectorized/pkg/yaml"
 
@@ -32,18 +33,20 @@ type SocketAddress struct {
 }
 
 type RpkConfig struct {
-	TuneNetwork         bool `yaml:"tune_network"`
-	TuneDiskScheduler   bool `yaml:"tune_disk_scheduler"`
-	TuneNomerges        bool `yaml:"tune_disk_nomerges"`
-	TuneDiskIrq         bool `yaml:"tune_disk_irq"`
-	TuneCpu             bool `yaml:"tune_cpu"`
-	TuneAioEvents       bool `yaml:"tune_aio_events"`
-	TuneClocksource     bool `yaml:"tune_clocksource"`
-	EnableMemoryLocking bool `yaml:"enable_memory_locking"`
+	TuneNetwork         bool   `yaml:"tune_network"`
+	TuneDiskScheduler   bool   `yaml:"tune_disk_scheduler"`
+	TuneNomerges        bool   `yaml:"tune_disk_nomerges"`
+	TuneDiskIrq         bool   `yaml:"tune_disk_irq"`
+	TuneCpu             bool   `yaml:"tune_cpu"`
+	TuneAioEvents       bool   `yaml:"tune_aio_events"`
+	TuneClocksource     bool   `yaml:"tune_clocksource"`
+	EnableMemoryLocking bool   `yaml:"enable_memory_locking"`
+	TuneCoredump        bool   `yaml:"tune_coredump"`
+	CoredumpDir         string `yaml:"coredump_dir"`
 }
 
 func WriteConfig(fs afero.Fs, config *Config, path string) error {
-	log.Debugf("Writing Redpanda config file to '%s'", path)
+	log.Debugf("Writing redpanda config file to '%s'", path)
 	return yaml.Persist(fs, config, path)
 }
 
@@ -59,6 +62,10 @@ func ReadConfigFromPath(fs afero.Fs, path string) (*Config, error) {
 
 func CheckConfig(config *Config) (bool, []error) {
 	errs := checkRedpandaConfig(config.Redpanda)
+	errs = append(
+		errs,
+		checkRpkConfig(config.Rpk)...,
+	)
 	ok := len(errs) == 0
 	return ok, errs
 }
@@ -103,6 +110,16 @@ func checkSocketAddress(socketAddr SocketAddress, configPath string) []error {
 	}
 	if socketAddr.Address == "" {
 		errs = append(errs, fmt.Errorf("%s.address can't be empty", configPath))
+	}
+	return errs
+}
+
+func checkRpkConfig(rpk *RpkConfig) []error {
+	errs := []error{}
+	if rpk.TuneCoredump && rpk.CoredumpDir == "" {
+		msg := "if rpk.tune_coredump is set to true," +
+			"rpk.coredump_dir can't be empty"
+		errs = append(errs, errors.New(msg))
 	}
 	return errs
 }
