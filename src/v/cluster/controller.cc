@@ -149,8 +149,7 @@ future<> controller::recover_replica(
             [this, raft_group, ntp = std::move(ntp)](partition_manager& pm) {
                 sstring msg = fmt::format(
                   "recovered: {}, raft group_id: {}", ntp.path(), raft_group);
-                // recover partition in the background
-                (void)pm.manage(ntp, raft_group)
+                return pm.manage(ntp, raft_group)
                   .finally(
                     [msg = std::move(msg)] { clusterlog().info("{},", msg); });
             });
