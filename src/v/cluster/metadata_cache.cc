@@ -8,8 +8,8 @@
 
 namespace cluster {
 
-future<std::vector<model::topic_view>> metadata_cache::all_topics() const {
-    return make_ready_future<std::vector<model::topic_view>>();
+future<std::vector<model::topic>> metadata_cache::all_topics() const {
+    return make_ready_future<std::vector<model::topic>>();
 }
 
 future<std::optional<model::topic_metadata>>

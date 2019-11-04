@@ -18,7 +18,7 @@ public:
         return make_ready_future<>();
     }
 
-    future<std::vector<model::topic_view>> all_topics() const;
+    future<std::vector<model::topic>> all_topics() const;
     future<std::optional<model::topic_metadata>>
       get_topic_metadata(model::topic_view) const;
 };
