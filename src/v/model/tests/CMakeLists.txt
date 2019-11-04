@@ -31,3 +31,11 @@ rp_test(
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES Boost::unit_test_framework model
 )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME topic_view_tests
+  SOURCES topic_view_tests.cc
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LIBRARIES Boost::unit_test_framework model
+)
