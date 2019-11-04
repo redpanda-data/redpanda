@@ -18,13 +18,13 @@ func NewIoTuneCmd(fs afero.Fs) *cobra.Command {
 		configFileFlag string
 		duration       int
 		directories    []string
-		timeoutMs      int
+		timeout        time.Duration
 	)
 	command := &cobra.Command{
 		Use:   "iotune",
 		Short: "Measure filesystem performance and create IO configuration file",
 		RunE: func(ccmd *cobra.Command, args []string) error {
-			totalTimeout := (time.Duration(duration) * time.Second) + (time.Duration(timeoutMs) * time.Millisecond)
+			totalTimeout := (time.Duration(duration) * time.Second) + timeout
 			configFile, err := cli.GetOrFindConfig(fs, configFileFlag)
 			if err != nil {
 				return err
@@ -53,11 +53,14 @@ func NewIoTuneCmd(fs afero.Fs) *cobra.Command {
 		"directories", nil, "List of directories to evaluate")
 	command.Flags().IntVar(&duration,
 		"duration", 30, "Duration of tests in seconds")
-	command.Flags().IntVar(
-		&timeoutMs,
+	command.Flags().DurationVar(
+		&timeout,
 		"timeout",
-		math.MaxInt64,
-		"The maximum amount of time (in ms) after --duration to wait for iotune to complete",
+		time.Duration(math.MaxInt64),
+		"The maximum time after --duration to wait for iotune to complete. "+
+			"The value passed is a sequence of decimal numbers, each with optional "+
+			"fraction and a unit suffix, such as '300ms', '1.5s' or '2h45m'. "+
+			"Valid time units are 'ns', 'us' (or 'µs'), 'ms', 's', 'm', 'h'",
 	)
 	return command
 }
