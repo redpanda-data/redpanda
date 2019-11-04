@@ -42,7 +42,7 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 	var (
 		configFilePathFlag string
 		installDirFlag     string
-		timeoutMs          int
+		timeout            time.Duration
 	)
 	sFlags := seastarFlags{}
 	sFlagsMap := map[string]interface{}{
@@ -87,7 +87,7 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 					"lock-memory":        fmt.Sprintf("%t", lockMemory),
 				},
 			}
-			err = prestart(fs, rpArgs, config, prestartCfg, time.Duration(timeoutMs)*time.Millisecond)
+			err = prestart(fs, rpArgs, config, prestartCfg, timeout)
 			if err != nil {
 				return err
 			}
@@ -139,7 +139,15 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 	command.Flags().StringVar(&sFlags.ioProperties, "io-properties", "",
 		"a YAML string describing the characteristics of the I/O Subsystem")
 	command.Flags().BoolVar(&sFlags.mbind, "mbind", true, "enable mbind")
-	command.Flags().IntVar(&timeoutMs, "timeout", 10000, "The maximum amount of time (in ms) to wait for the checks and tune processes to complete")
+	command.Flags().DurationVar(
+		&timeout,
+		"timeout",
+		10000,
+		"The maximum time to wait for the checks and tune processes to complete. "+
+			"The value passed is a sequence of decimal numbers, each with optional "+
+			"fraction and a unit suffix, such as '300ms', '1.5s' or '2h45m'. "+
+			"Valid time units are 'ns', 'us' (or 'µs'), 'ms', 's', 'm', 'h'",
+	)
 	for flag := range sFlagsMap {
 		command.Flag(flag).Hidden = true
 	}
