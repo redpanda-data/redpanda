@@ -57,6 +57,14 @@ class application {
 public:
     int run(int, char**);
 
+    void start_config();
+    void create_groups();
+    void wire_up_services();
+
+    sharded<cluster::metadata_cache> metadata_cache;
+    sharded<kafka::group_router_type> group_router;
+    sharded<kafka::controller_dispatcher> cntrl_dispatcher;
+
 private:
     using deferred_actions
       = std::vector<deferred_action<std::function<void()>>>;
@@ -64,12 +72,12 @@ private:
     // All methods are calleds from Seastar thread
     void init_env();
     app_template setup_app_template();
-    void create_groups();
     void validate_arguments(const po::variables_map&);
     void hydrate_config(const po::variables_map&);
     void check_environment();
-    void wire_up_services();
     void configure_admin_server();
+    void start();
+
     template<typename Service, typename... Args>
     future<> construct_service(sharded<Service>& s, Args&&... args) {
         auto f = s.start(std::forward<Args>(args)...);
@@ -81,7 +89,6 @@ private:
     scheduling_groups _scheduling_groups;
     memory_groups _memory_groups;
     smp_groups _smp_groups;
-    deferred_actions _deferred;
     logger _log{"redpanda::main"};
 
     // sharded services
@@ -92,12 +99,12 @@ private:
     sharded<kafka::group_manager> _group_manager;
     sharded<kafka::group_shard_mapper<cluster::shard_table>>
       _group_shard_mapper;
-    sharded<kafka::group_router_type> _group_router;
     sharded<rpc::server> _rpc;
     sharded<http_server> _admin;
-    sharded<cluster::metadata_cache> _metadata_cache;
     sharded<kafka::quota_manager> _quota_mgr;
-    sharded<kafka::controller_dispatcher> _cntrl_dispatcher;
     sharded<kafka::kafka_server> _kafka_server;
     std::unique_ptr<cluster::controller> _controller;
+
+    // run these first on destruction
+    deferred_actions _deferred;
 };

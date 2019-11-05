@@ -11,6 +11,7 @@ class smp_service_group;
 
 namespace kafka {
 class request_context;
+class response_writer;
 
 class response;
 using response_ptr = foreign_ptr<std::unique_ptr<response>>;

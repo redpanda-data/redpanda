@@ -22,6 +22,7 @@ struct heartbeat_request final {
     kafka::member_id member_id;
     std::optional<kafka::group_instance_id> group_instance_id; // >= v3
 
+    void encode(const request_context& ctx, response_writer& writer);
     void decode(request_context& ctx);
 };
 
