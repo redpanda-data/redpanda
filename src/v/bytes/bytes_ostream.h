@@ -8,43 +8,32 @@
 #include <seastar/core/unaligned.hh>
 
 #include <boost/range/iterator_range.hpp>
+#include <fmt/format.h>
 
-/**
- * Utility for writing data into a buffer when its final size is not known up
- * front.
- *
- * Internally the data is written into a vector of chunks allocated on-demand.
- * No resizing of previously written data happens.
- *
- */
+#include <list>
+
 class bytes_ostream {
 public:
     class fragment {
     public:
-        explicit fragment(temporary_buffer<char> buf)
-          : _buf(std::move(buf)) {
-            _len = _buf.size();
-        }
-        fragment(temporary_buffer<char> buf, size_t len)
+        struct full {};
+        struct empty {};
+        fragment(temporary_buffer<char> buf, full)
           : _buf(std::move(buf))
-          , _len(len) {
+          , _used_bytes(_buf.size()) {
         }
-        fragment(fragment&& o) noexcept
-          : _buf(std::move(o._buf))
-          , _len(o._len) {
+        fragment(temporary_buffer<char> buf, empty)
+          : _buf(std::move(buf))
+          , _used_bytes(0) {
         }
-        fragment& operator=(fragment&& o) noexcept {
-            if (this != &o) {
-                this->~fragment();
-                new (this) fragment(std::move(o));
-            }
-            return *this;
-        }
+        fragment(fragment&& o) noexcept = default;
+        fragment& operator=(fragment&& o) noexcept = default;
         ~fragment() = default;
+
         size_t write(const char* src, size_t len) {
-            const size_t sz = std::min(len, capacity() - size());
+            const size_t sz = std::min(len, available_bytes());
             std::copy_n(src, sz, get_current());
-            _len += sz;
+            _used_bytes += sz;
             return sz;
         }
         const char* get() const {
@@ -54,22 +43,43 @@ public:
         /// returning pointer to originating byte
         char* write_place_holder(size_t x) {
             char* tmp = get_current();
-            _len += x;
+            _used_bytes += x;
             return tmp;
         }
         temporary_buffer<char>&& release() && {
-            _buf.trim(_len);
+            trim();
             return std::move(_buf);
         }
-
-        size_t size() const {
-            return _len;
+        size_t available_bytes() const {
+            return _buf.size() - _used_bytes;
         }
-        size_t capacity() const {
-            return _buf.size();
+        size_t size() const {
+            return _used_bytes;
+        }
+        void trim() {
+            if (_used_bytes == _buf.size()) {
+                return;
+            }
+            _buf.trim(_used_bytes);
+            /*
+            // FIXME: #226
+
+            size_t half = _buf.size() / 2;
+            if (_used_bytes <= half) {
+                // this is an important optimization. often times during RPC
+                // serialization we append some small controll bytes, _right_
+                // before we append a full new chain of iobufs
+
+                temporary_buffer<char> tmp(_used_bytes);
+                std::copy_n(_buf.get(), _used_bytes, tmp.get_write());
+                _buf = std::move(tmp);
+            } else {
+                _buf.trim(_used_bytes);
+            }
+            */
         }
         bool is_empty() const {
-            return size() == 0;
+            return _used_bytes == 0;
         }
         bool operator==(const fragment& o) const {
             return _buf == o._buf;
@@ -80,17 +90,17 @@ public:
 
     private:
         char* get_current() {
-            return _buf.get_write() + _len;
+            return _buf.get_write() + _used_bytes;
         }
         temporary_buffer<char> _buf;
-        size_t _len;
+        size_t _used_bytes;
     };
     static constexpr size_t max_chunk_size = 128 * 1024;
     static constexpr size_t default_chunk_size = 512;
     using value_type = char;
-    using vector_type = std::vector<fragment>;
-    using iterator = typename vector_type::iterator;
-    using const_iterator = typename vector_type::const_iterator;
+    using container_type = std::list<fragment>;
+    using iterator = typename container_type::iterator;
+    using const_iterator = typename container_type::const_iterator;
 
     // Figure out next chunk size.
     //   - must be enough for data_size
@@ -110,30 +120,14 @@ public:
       : bytes_ostream(default_chunk_size) {
     }
 
-    bytes_ostream(bytes_ostream&& o) noexcept
-      : _fragment_capacity(o._fragment_capacity)
-      , _fragments(std::move(o._fragments))
-      , _size(o._size) {
-    }
-
+    bytes_ostream(bytes_ostream&& o) noexcept = default;
     bytes_ostream(const bytes_ostream& o) = delete;
     bytes_ostream& operator=(const bytes_ostream& o) = delete;
-
-    bytes_ostream& operator=(bytes_ostream&& o) noexcept {
-        if (this != &o) {
-            this->~bytes_ostream();
-            new (this) bytes_ostream(std::move(o));
-        }
-        return *this;
-    }
+    bytes_ostream& operator=(bytes_ostream&& o) noexcept = default;
 
     [[gnu::always_inline]] value_type* write_place_holder(size_t size) {
         if (current_space_left() < size) {
-            const size_t sz = next_alloc_size(_fragment_capacity, size);
-            if (sz <= max_chunk_size) {
-                _fragment_capacity = sz;
-            }
-            _fragments.emplace_back(temporary_buffer<char>(sz), 0);
+            create_new_fragment(size);
         }
         _size += size;
         return _fragments.back().write_place_holder(size);
@@ -147,21 +141,21 @@ public:
     }
 
     [[gnu::always_inline]] void write(temporary_buffer<char> b) {
-        if (current_space_left() <= b.size()) {
-            // we already allocated the space, just copy the data
+        if (b.size() <= current_space_left()) {
             write(b.get(), b.size());
             return;
         }
-        if (!_fragments.empty()) {
+        if (current_space_left() > 0) {
             if (_fragments.back().is_empty()) {
                 _fragments.pop_back();
-                const size_t sz = _fragments.empty() ? default_chunk_size
-                                                     : _fragments.back().size();
-                _fragment_capacity = next_alloc_size(sz, sz);
+            } else {
+                // happens when we are merge iobufs
+                _fragments.back().trim();
+                _fragment_capacity = default_chunk_size;
             }
         }
         _size += b.size();
-        _fragments.emplace_back(std::move(b));
+        _fragments.emplace_back(std::move(b), fragment::full{});
     }
 
     [[gnu::always_inline]] void write(const char* ptr, size_t size) {
@@ -176,13 +170,9 @@ public:
         size_t i = 0;
         while (size > 0) {
             if (current_space_left() == 0) {
-                _fragment_capacity = next_alloc_size(
-                  _fragment_capacity, _fragment_capacity);
-                _fragments.emplace_back(
-                  temporary_buffer<char>(_fragment_capacity), 0);
+                create_new_fragment(size);
             }
-            const size_t sz = _fragments.back().write(
-              ptr + i, std::min(size, current_space_left()));
+            const size_t sz = _fragments.back().write(ptr + i, size);
             _size += sz;
             i += sz;
             size -= sz;
@@ -217,12 +207,7 @@ public:
           || _fragments.size() != other._fragments.size()) {
             return false;
         }
-        for (size_t i = 0; i < _fragments.size(); ++i) {
-            if (_fragments[i] != other._fragments[i]) {
-                return false;
-            }
-        }
-        return true;
+        return _fragments == other._fragments;
     }
 
     bool operator!=(const bytes_ostream& other) const {
@@ -230,25 +215,36 @@ public:
     }
 
     void clear() {
+        _fragment_capacity = default_chunk_size;
         _fragments.clear();
         _size = 0;
     }
 
-    vector_type&& release() && {
+    container_type&& release() && {
         return std::move(_fragments);
     }
 
 private:
-    size_t current_space_left() {
+    size_t current_space_left() const {
         if (_fragments.empty()) {
-            _fragments.emplace_back(
-              temporary_buffer<char>(_fragment_capacity), 0);
+            return 0;
         }
         auto& b = _fragments.back();
-        return b.capacity() - b.size();
+        return b.available_bytes();
+    }
+    void create_new_fragment(size_t size) {
+        if (__builtin_expect(current_space_left() != 0, false)) {
+            throw std::runtime_error(fmt::format(
+              "Must utilize full size, before adding new segment. bytes "
+              "left:{}",
+              current_space_left()));
+        }
+        _fragment_capacity = next_alloc_size(_fragment_capacity, size);
+        _fragments.emplace_back(
+          temporary_buffer<char>(_fragment_capacity), fragment::empty{});
     }
 
     size_t _fragment_capacity;
-    vector_type _fragments;
+    container_type _fragments;
     size_t _size = 0;
 };
