@@ -21,6 +21,18 @@ void heartbeat_request::decode(request_context& ctx) {
     }
 }
 
+void heartbeat_request::encode(
+  const request_context& ctx, response_writer& writer) {
+    auto version = ctx.header().version;
+
+    writer.write(group_id());
+    writer.write(generation_id);
+    writer.write(member_id());
+    if (version >= api_version(3)) {
+        writer.write(group_instance_id);
+    }
+}
+
 void heartbeat_response::encode(const request_context& ctx, response& resp) {
     auto& writer = resp.writer();
     auto version = ctx.header().version;
