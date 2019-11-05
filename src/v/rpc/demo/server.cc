@@ -1,6 +1,7 @@
 #include "rpc/server.h"
 
-#include "rpc/demo/types.h"
+#include "rpc/demo/demo_utils.h"
+#include "rpc/demo/simple_service.h"
 #include "seastarx.h"
 #include "syschecks/syschecks.h"
 
@@ -11,6 +12,23 @@
 #include <string>
 
 static logger lgr{"demo server"};
+
+struct service final : demo::simple_service {
+    using demo::simple_service::simple_service;
+    future<demo::simple_reply>
+    put(demo::simple_request&&, rpc::streaming_context&) final {
+        return make_ready_future<demo::simple_reply>(demo::simple_reply{{}});
+    }
+    future<demo::complex_reply>
+    put_complex(demo::complex_request&&, rpc::streaming_context&) final {
+        return make_ready_future<demo::complex_reply>(demo::complex_reply{{}});
+    }
+    future<demo::interspersed_reply> put_interspersed(
+      demo::interspersed_request&&, rpc::streaming_context&) final {
+        return make_ready_future<demo::interspersed_reply>(
+          demo::interspersed_reply{{}});
+    }
+};
 
 void cli_opts(boost::program_options::options_description_easy_init o) {
     namespace po = boost::program_options;
@@ -33,9 +51,20 @@ int main(int args, char** argv, char** env) {
     seastar::app_template app;
     cli_opts(app.add_options());
     return app.run_deprecated(args, argv, [&] {
-        seastar::engine().at_exit([&serv] { return serv.stop(); });
+        seastar::engine().at_exit([&serv] {
+            // clang-format off
+            return do_with(hdr_hist{}, [&serv](hdr_hist& h) {
+                  auto begin = boost::make_counting_iterator(uint32_t(0));
+                  auto end = boost::make_counting_iterator(uint32_t(smp::count));
+                  return do_for_each(begin, end, [&h, &serv](uint32_t i) {
+                              return serv.invoke_on(i, [&h](const rpc::server& s) {
+                                    h += s.histogram();
+                              });
+                     }) .then([&h] { return write_histogram("server.hdr", h); });
+              }).then([&serv] { return serv.stop(); });
+            // clang-format on
+        });
         auto& cfg = app.configuration();
-
         return async([&] {
             rpc::server_configuration scfg;
             scfg.addrs.push_back(socket_address(ipv4_addr(
@@ -51,17 +80,16 @@ int main(int args, char** argv, char** env) {
                   .get();
                 scfg.credentials = std::move(builder);
             }
-            serv.start(scfg)
-              .then([&serv] {
-                  lgr.info("registering service");
-                  return serv.invoke_on_all(
-                    &rpc::server::register_service<demo::simple_service>);
-              })
-              .then([&serv] {
-                  lgr.info("Invoking rpc start on all cores");
-                  return serv.invoke_on_all(&rpc::server::start);
+            serv.start(scfg).get();
+            lgr.info("registering service on all cores");
+            serv
+              .invoke_on_all([](rpc::server& s) {
+                  s.register_service<service>(
+                    default_scheduling_group(), default_smp_service_group());
               })
               .get();
+            lgr.info("Invoking rpc start on all cores");
+            serv.invoke_on_all(&rpc::server::start).get();
         });
     });
 }
