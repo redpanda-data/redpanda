@@ -40,6 +40,8 @@ public:
 /// \brief namespace is reserved in c++;  use ns
 using ns = named_type<sstring, struct model_ns_type>;
 
+using offset = named_type<uint64_t, struct model_offset_type>;
+
 struct topic_partition {
     using compaction = bool_class<struct compaction_tag>;
 
@@ -73,32 +75,6 @@ struct ntp {
 };
 
 std::ostream& operator<<(std::ostream&, const ntp&);
-
-struct offset : named_type<uint64_t, struct model_offset_type> {
-    offset() = default;
-    explicit offset(const type&& t)
-      : named_type<uint64_t, struct model_offset_type>(t) {
-    }
-    type value() const {
-        return *this;
-    }
-
-    /// \brief used by the kafka _signed_ integer api
-    offset operator+(int32_t val) const {
-        return offset(_value + static_cast<type>(val));
-    }
-    /// \brief used by the kafka _signed_ integer api
-    offset operator+(int64_t val) const {
-        return offset(_value + static_cast<type>(val));
-    }
-    /// \brief used by the kafka _signed_ integer api
-    offset& operator+=(int64_t val) {
-        _value += static_cast<type>(val);
-        return *this;
-    }
-};
-
-std::ostream& operator<<(std::ostream&, offset);
 
 } // namespace model
 

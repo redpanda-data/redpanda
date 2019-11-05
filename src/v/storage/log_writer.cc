@@ -11,7 +11,8 @@
 namespace storage {
 
 default_log_writer::default_log_writer(log& log) noexcept
-  : _log(log) {
+  : _log(log)
+  , _last_offset(log.max_offset()) {
 }
 
 template<typename T>
@@ -48,7 +49,7 @@ future<>
 write(log_segment_appender& appender, const model::record_batch& batch) {
     return write_vint(appender, batch.size_bytes())
       .then([&appender, &batch] {
-          return write(appender, batch.base_offset().value());
+          return write(appender, batch.base_offset()());
       })
       .then([&appender, &batch] { return write(appender, batch.type()()); })
       .then([&appender, &batch] { return write(appender, batch.crc()); })
@@ -82,15 +83,22 @@ write(log_segment_appender& appender, const model::record_batch& batch) {
 future<stop_iteration> default_log_writer::
 operator()(model::record_batch&& batch) {
     return do_with(std::move(batch), [this](model::record_batch& batch) {
-        auto offset_before = _log.appender().offset();
+        if (_last_offset > batch.base_offset()) {
+            auto e = std::make_exception_ptr(std::runtime_error(fmt::format(
+              "Attempted to write batch at offset:{}, which violates our "
+              "monotonic offset of: {}",
+              batch.base_offset(),
+              _last_offset)));
+            _log.get_probe().batch_write_error(e);
+            return make_exception_future<stop_iteration>(std::move(e));
+        }
+        auto offset_before = _log.appender().file_byte_offset();
         return write(_log.appender(), batch)
           .then([this, &batch, offset_before] {
               _last_offset = batch.last_offset();
-              return _log.maybe_roll(_last_offset).then([this, offset_before] {
-                  _log.get_probe().add_bytes_written(
-                    _log.appender().offset() - offset_before);
-                  return stop_iteration::no;
-              });
+              _log.get_probe().add_bytes_written(
+                _log.appender().file_byte_offset() - offset_before);
+              return _log.maybe_roll().then([] { return stop_iteration::no; });
           })
           .handle_exception([this](std::exception_ptr e) {
               _log.get_probe().batch_write_error(e);

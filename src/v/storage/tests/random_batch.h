@@ -168,7 +168,7 @@ make_random_batches(model::offset o, size_t count) { // start offset + count
     ret.reserve(count);
     for (size_t i = 0; i < count; i++) {
         auto b = make_random_batch(o);
-        o = b.last_offset() + 1;
+        o = b.last_offset() + model::offset(1);
         ret.push_back(std::move(b));
     }
     return ret;

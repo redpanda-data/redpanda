@@ -111,7 +111,7 @@ SEASTAR_THREAD_TEST_CASE(test_log_segment_rolling_middle_of_writting) {
         auto [value, read] = vint::deserialize(buf);
         buf.trim_front(read);
         auto offset = be_to_cpu(*unaligned_cast<uint64_t*>(buf.get()));
-        BOOST_REQUIRE_EQUAL(offset, first_offset.value());
+        BOOST_REQUIRE_EQUAL(offset, first_offset());
 
         auto file_size = seg->stat().get0().st_size;
         BOOST_REQUIRE_EQUAL(value + read, file_size);
@@ -127,7 +127,7 @@ SEASTAR_THREAD_TEST_CASE(test_log_segment_rolling_middle_of_writting) {
         auto [value, read] = vint::deserialize(buf);
         buf.trim_front(read);
         auto offset = be_to_cpu(*unaligned_cast<uint64_t*>(buf.get()));
-        BOOST_REQUIRE_EQUAL(offset, second_offset.value());
+        BOOST_REQUIRE_EQUAL(offset, second_offset());
 
         auto file_size = seg->stat().get0().st_size;
         BOOST_REQUIRE_EQUAL(value + read, file_size);

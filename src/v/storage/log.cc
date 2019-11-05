@@ -4,6 +4,8 @@
 #include "storage/log_writer.h"
 #include "storage/version.h"
 
+#include <seastar/core/reactor.hh>
+
 #include <fmt/format.h>
 
 namespace storage {
@@ -73,8 +75,11 @@ log::do_append(model::record_batch_reader&& reader, log_append_config config) {
                       _tracker.update_dirty_offset(last_offset);
                       _active_segment->set_last_written_offset(last_offset);
                       auto f = make_ready_future<>();
+                      /// fsync, means we fsync _every_ record_batch
+                      /// most API's will want to batch the fsync, at least
+                      /// to the record_batch_reader level
                       if (config.should_fsync) {
-                          f = _appender->flush();
+                          f = flush();
                       }
                       return f.then([this, now, base, last_offset] {
                           return append_result{now, base, last_offset};
@@ -83,26 +88,26 @@ log::do_append(model::record_batch_reader&& reader, log_append_config config) {
             });
       });
 }
-future<> log::do_roll(model::offset o, model::term_id t) {
-    _term = std::move(t);
-    if (!_active_segment) {
-        return make_ready_future<>();
-    }
-    return do_roll(o);
-}
-
-future<> log::do_roll(model::offset current_offset) {
-    _active_segment->set_last_written_offset(current_offset);
-    return _appender->flush().then([this, current_offset] {
-        return new_segment(
-          current_offset + 1, _term, _appender->priority_class());
+future<> log::flush() {
+    return _appender->flush().then([this] {
+        _tracker.update_committed_offset(_tracker.dirty_offset());
+        _active_segment->set_last_written_offset(_tracker.committed_offset());
     });
 }
-future<> log::maybe_roll(model::offset current_offset) {
-    if (_appender->offset() < _manager.max_segment_size()) {
+future<> log::do_roll() {
+    return flush().then([this] {
+        auto o = model::offset(1) + _tracker.committed_offset();
+        // update all offsets to next
+        _tracker.update_dirty_offset(o);
+        _tracker.update_committed_offset(o);
+        return new_segment(o, _term, _appender->priority_class());
+    });
+}
+future<> log::maybe_roll() {
+    if (_appender->file_byte_offset() < _manager.max_segment_size()) {
         return make_ready_future<>();
     }
-    return do_roll(current_offset);
+    return do_roll();
 }
 
 log_segment_appender& log::appender() {
@@ -112,6 +117,54 @@ log_segment_appender& log::appender() {
 model::record_batch_reader log::make_reader(log_reader_config config) {
     return model::make_record_batch_reader<log_reader>(
       _segs, _tracker, std::move(config), _probe);
+}
+
+future<> log::do_truncate(model::offset o, model::term_id term) {
+    // 1. update metadata
+    // 2. get a list of segments to drop
+    // 3. perform drop in background for all
+    // 4. synchronize dir-entry
+    // 5. translate offset into disk/filename
+    // 6. truncate the last segment
+    // 7. roll
+
+    // 1.
+    _term = term;
+    _tracker.update_dirty_offset(o);
+    _tracker.update_committed_offset(o);
+
+    // 2.
+    std::vector<sstring> names_to_delete;
+    for (auto s : _segs) {
+        if (s->term() > term) {
+            stlog().info("do_truncate() full file:{}", s->get_filename());
+            names_to_delete.push_back(s->get_filename());
+        }
+    }
+
+    //  3.
+    auto erased = _segs.remove(std::move(names_to_delete));
+    auto f = make_ready_future<>();
+
+    // 4.
+    f = parallel_for_each(erased, [](log_segment_ptr i) {
+        return i->close().then([i] { return remove_file(i->get_filename()); });
+    });
+
+    // 5.
+    f = f.then([d = _manager.config().base_dir] { return sync_directory(d); });
+
+    // 6.
+    // FIXME
+    // missing, find offset in offset_index and truncate at size
+    // _segs.back().truncate(offset_index.get(o))
+    stlog().error(
+      "We cannot truncate a logical offset without an index. rolling "
+      "last segment");
+
+    // 7.
+    f = f.then([this] { return do_roll(); });
+    return f;
 }
 
 } // namespace storage

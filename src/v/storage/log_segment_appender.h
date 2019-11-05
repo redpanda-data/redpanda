@@ -47,7 +47,7 @@ public:
         return _out.close();
     }
 
-    uint64_t offset() const {
+    uint64_t file_byte_offset() const {
         return _offset;
     }
 

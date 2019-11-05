@@ -5,7 +5,6 @@ add_library (cluster STATIC
   types.cc
   partition_allocator.cc
   type_serializers.cc
-  simple_batch_builder.cc
   )
 target_include_directories(cluster PUBLIC ${PROJECT_SOURCE_DIR}/src/v)
 

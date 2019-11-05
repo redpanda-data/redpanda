@@ -1,12 +1,22 @@
-#include "cluster/simple_batch_builder.h"
+#include "storage/record_batch_builder.h"
 
-namespace cluster {
+#include "hashing/crc32c.h"
+#include "model/timeout_clock.h"
+#include "storage/constants.h"
+#include "storage/crc_record.h"
 
-simple_batch_builder::simple_batch_builder(model::record_batch_type bt)
-  : _batch_type(bt) {
+namespace storage {
+
+record_batch_builder::record_batch_builder(
+  model::record_batch_type bt, model::offset base_offset)
+  : _batch_type(bt)
+  , _base_offset(base_offset) {
 }
 
-model::record_batch simple_batch_builder::build() && {
+record_batch_builder::~record_batch_builder() {
+}
+
+model::record_batch record_batch_builder::build() && {
     int32_t offset_delta = 0;
     uint32_t batch_size = storage::packed_header_size;
     crc32 crc;
@@ -19,7 +29,9 @@ model::record_batch simple_batch_builder::build() && {
 
     model::record_batch_header header = {
       .size_bytes = 0,
+      .base_offset = _base_offset,
       .type = _batch_type,
+      // .crc computed later
       .attrs = model::record_batch_attributes{} |= model::compression::none,
       .last_offset_delta = static_cast<int32_t>(_records.size() - 1),
       .first_timestamp = model::timestamp(now_ts),
@@ -55,7 +67,7 @@ model::record_batch simple_batch_builder::build() && {
     return model::record_batch(std::move(header), std::move(records));
 }
 
-uint32_t simple_batch_builder::record_size(
+uint32_t record_batch_builder::record_size(
   int32_t offset_delta, const serialized_record& r) {
     return sizeof(int8_t) +                      // attributes
            vint::vint_size(offset_delta)         // offset_delta
@@ -65,4 +77,4 @@ uint32_t simple_batch_builder::record_size(
            + r.value.size_bytes();               // value
 }
 
-} // namespace cluster
+} // namespace storage

@@ -6,7 +6,9 @@ add_library(storage STATIC
     parser.cc
     log_reader.cc
     log_replayer.cc
-    probe.cc)
+    probe.cc
+    record_batch_builder.cc
+    )
 
 target_include_directories(storage PUBLIC ${PROJECT_SOURCE_DIR}/src/v)
 

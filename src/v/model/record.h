@@ -235,7 +235,7 @@ struct record_batch_header {
 
     record_batch_header() = default;
     offset last_offset() const {
-        return base_offset + last_offset_delta;
+        return base_offset + offset(last_offset_delta);
     }
 
     bool operator==(const record_batch_header& other) const {

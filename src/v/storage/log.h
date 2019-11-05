@@ -59,15 +59,10 @@ public:
     // Can only be called after append().
     log_segment_appender& appender();
 
-    future<> maybe_roll(model::offset);
+    /// flushes the _tracker.dirty_offset into _tracker.committed_offset
+    future<> flush();
 
-    /// \brief safe even if we have no active appenders
-    /// in the case of active appender, it will create a new segment
-    [[gnu::always_inline]] future<>
-    roll(model::offset offset, model::term_id term) {
-        return _failure_probes.roll().then(
-          [this, offset, term]() mutable { return do_roll(offset, term); });
-    }
+    future<> maybe_roll();
 
     [[gnu::always_inline]] future<>
     truncate(model::offset offset, model::term_id term) {
@@ -83,23 +78,24 @@ public:
     probe& get_probe() {
         return _probe;
     }
+    model::offset max_offset() const {
+        return _tracker.dirty_offset();
+    }
 
 private:
     future<>
     new_segment(model::offset, model::term_id, const io_priority_class&);
 
     /// \brief forces a flush() on the last segment & rotates given the current
-    /// _term && (offset+1)
-    future<> do_roll(model::offset);
+    /// _term && (tracker.committed_offset+1)
+    future<> do_roll();
 
     future<> do_roll(model::offset, model::term_id);
 
     future<append_result>
     do_append(model::record_batch_reader&&, log_append_config);
 
-    future<> do_truncate(model::offset, model::term_id) {
-        return make_ready_future<>();
-    }
+    future<> do_truncate(model::offset, model::term_id);
 
 private:
     model::term_id _term;

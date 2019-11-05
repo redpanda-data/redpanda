@@ -26,6 +26,7 @@ public:
 
     consensus(
       model::node_id,
+      group_id,
       timeout_jitter,
       storage::log&,
       storage::log_append_config::fsync should_fsync,

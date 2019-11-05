@@ -20,6 +20,9 @@ static constexpr clock_type::time_point no_timeout
 
 using group_id = named_type<int64_t, struct raft_group_id_type>;
 
+static constexpr const model::record_batch_type configuration_batch_type{2};
+static constexpr const model::record_batch_type data_batch_type{1};
+
 /// special case. it uses underlying type because it is the most used type
 /// by using the underlying::type we save 8 continuations per deserialization
 struct [[gnu::packed]] protocol_metadata {
@@ -36,6 +39,9 @@ struct group_configuration {
     model::node_id leader_id;
     std::vector<model::broker> nodes;
     std::vector<model::broker> learners;
+    group_configuration() = default;
+    group_configuration(group_configuration&&) noexcept = default;
+    group_configuration& operator=(group_configuration&&) noexcept = default;
 };
 
 struct follower_index_metadata {

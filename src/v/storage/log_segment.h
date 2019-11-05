@@ -30,17 +30,17 @@ public:
     }
 
     model::term_id term() const {
-        return model::term_id(_term());
+        return _term;
     }
 
     // Inclusive lower bound offset.
     model::offset base_offset() const {
-        return model::offset(_base_offset);
+        return _base_offset;
     }
 
     // Exclusive upper bound offset.
     model::offset max_offset() const {
-        return model::offset(_max_offset);
+        return _max_offset;
     }
 
     void set_last_written_offset(model::offset max_offset) {
@@ -98,8 +98,10 @@ std::ostream& operator<<(std::ostream&, log_segment_ptr);
  */
 class log_set {
 public:
-    using const_iterator_type = std::vector<log_segment_ptr>::const_iterator;
-    using iterator_type = std::vector<log_segment_ptr>::iterator;
+    using underlying_t = std::vector<log_segment_ptr>;
+    using const_iterator = underlying_t::const_iterator;
+    using const_reverse_iterator = underlying_t::const_reverse_iterator;
+    using iterator = underlying_t::iterator;
 
     using iter_gen_type = uint64_t;
 
@@ -123,22 +125,57 @@ public:
         return _segments.back();
     }
 
-    const_iterator_type begin() const {
+    const_iterator begin() const {
         return _segments.begin();
     }
 
-    const_iterator_type end() const {
+    const_iterator end() const {
         return _segments.end();
     }
+    const_reverse_iterator rbegin() const {
+        return _segments.rbegin();
+    }
+    const_reverse_iterator rend() const {
+        return _segments.rend();
+    }
 
-    iterator_type begin() {
+    iterator begin() {
         return _segments.begin();
     }
 
-    iterator_type end() {
+    iterator end() {
         return _segments.end();
     }
 
+    /// very rare. needed when raft needs to truncate un-acknowledged data
+    /// it is also very likely that they are the back sements, and so
+    /// the overhead is likely to be small. This is why our std::find
+    /// starts from the back
+    std::vector<log_segment_ptr>
+    remove(std::vector<sstring> segment_filenames) {
+        std::vector<log_segment_ptr> retval;
+        for (auto& s : segment_filenames) {
+            auto b = _segments.rbegin();
+            auto e = _segments.rend();
+            auto it = std::find_if(b, e, [&s](log_segment_ptr& p) {
+                return p->get_filename() == s;
+            });
+            if (it != e) {
+                retval.push_back(*it);
+                std::iter_swap(it, _segments.end() - 1);
+                _segments.pop_back();
+            }
+        }
+        if (!retval.empty()) {
+            std::stable_sort(
+              _segments.begin(),
+              _segments.end(),
+              [](const log_segment_ptr& a, const log_segment_ptr& b) {
+                  return a->base_offset() < b->base_offset();
+              });
+        }
+        return retval;
+    }
     // On generation changes, the iterators are invalidated.
     iter_gen_type iter_gen() const {
         return _generation;
@@ -172,7 +209,7 @@ public:
 private:
     const log_set& _set;
     // Always valid within an epoch.
-    mutable log_set::const_iterator_type _current_segment;
+    mutable log_set::const_iterator _current_segment;
     // Detects compactions and iterator invalidations.
     mutable log_set::iter_gen_type _iter_gen = log_set::invalid_iter_gen;
 };

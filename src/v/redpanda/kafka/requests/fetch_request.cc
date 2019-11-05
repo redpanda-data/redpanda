@@ -54,7 +54,7 @@ private:
                     + sizeof(int16_t)  // producer epoch
                     + sizeof(int32_t); // base sequence
 
-        _wr.write(int64_t(batch.base_offset().value()));
+        _wr.write(int64_t(batch.base_offset()));
         _wr.write(int32_t(size)); // batch length
         _wr.write(int32_t(0));    // partition leader epoch
         _wr.write(int8_t(2));     // magic
