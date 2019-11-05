@@ -5,6 +5,7 @@
 #include <cstdint>
 // TODO submit sestar patch to add stdint to metrics
 #include <seastar/core/metrics_types.hh>
+#include <seastar/core/temporary_buffer.hh>
 
 #include <boost/intrusive/list.hpp>
 #include <hdr/hdr_histogram.h>
@@ -96,7 +97,8 @@ public:
       , _sample_count(o._sample_count)
       , _sample_sum(o._sample_sum) {
     }
-
+    hdr_hist& operator+=(const hdr_hist& o);
+    temporary_buffer<char> print_classic() const;
     void record(uint64_t value);
     void record_multiple_times(uint64_t value, uint32_t times);
     void record_corrected(uint64_t value, uint64_t interval);
