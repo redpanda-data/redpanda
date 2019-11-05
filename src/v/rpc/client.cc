@@ -35,7 +35,7 @@ client::client(client_configuration c, std::optional<sstring> service_name)
   , _creds(
       cfg.credentials ? (*cfg.credentials).build_certificate_credentials()
                       : nullptr) {
-    setup_metrics(service_name);
+    // setup_metrics(service_name);
 }
 
 future<> client::do_connect() {
