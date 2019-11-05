@@ -148,15 +148,23 @@ future<std::unique_ptr<streaming_context>> client::send(netbuf b) {
         // send
         auto view = b.scattered_view();
         view.on_delete([b = std::move(b)] {});
-        /// background
-        (void)with_gate(_dispatch_gate, [this, v = std::move(view)]() mutable {
-            auto msg_size = v.size();
-            return _out.write(std::move(v)).then([this, msg_size] {
-                _probe.request_sent();
-                _probe.add_bytes_sent(msg_size);
-            });
-        });
-        return fut;
+        const auto sz = view.size();
+        return get_units(_memory, sz)
+          .then([this, v = std::move(view), f = std::move(fut)](
+                  semaphore_units<> units) mutable {
+              /// background
+              (void)with_gate(
+                _dispatch_gate,
+                [this, v = std::move(v), u = std::move(units)]() mutable {
+                    auto msg_size = v.size();
+                    return _out.write(std::move(v))
+                      .then([this, msg_size, u = std::move(u)] {
+                          _probe.request_sent();
+                          _probe.add_bytes_sent(msg_size);
+                      });
+                });
+              return std::move(f);
+          });
     });
 }
 
