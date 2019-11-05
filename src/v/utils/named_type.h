@@ -45,8 +45,25 @@ public:
     constexpr bool operator>=(const base_named_type& other) const {
         return _value >= other._value;
     }
-    constexpr type& operator++() {
-        return ++_value;
+    constexpr base_named_type& operator++() {
+        ++_value;
+        return *this;
+    }
+    constexpr base_named_type operator++(int) {
+        auto copy = *this;
+        ++_value;
+        return copy;
+    }
+    constexpr base_named_type operator+(const base_named_type& val) const {
+        return base_named_type(_value + val()); // not mutable
+    }
+    constexpr base_named_type operator+(const type& val) const {
+        return base_named_type(_value + val); // not mutable
+    }
+
+    base_named_type& operator+=(const type& val) {
+        _value += val;
+        return *this;
     }
 
     // provide overloads for naked type

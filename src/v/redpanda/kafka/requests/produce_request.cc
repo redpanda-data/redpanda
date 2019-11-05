@@ -42,7 +42,7 @@ write_replies(std::vector<topic_result> topic_results, int32_t throttle) {
             tr.results, [](const partition_result& pr, response_writer& rw) {
                 rw.write(pr.partition);
                 rw.write(pr.error);
-                rw.write(int64_t(pr.base_offset.value()));
+                rw.write(int64_t(pr.base_offset()));
                 rw.write(pr.log_append_time.value());
                 rw.write(pr.log_start_offset);
             });

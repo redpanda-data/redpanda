@@ -49,10 +49,6 @@ std::ostream& operator<<(std::ostream& os, const ntp& n) {
     return fmt_print(os, "{{ntp: {}:{}}}", n.ns, n.tp);
 }
 
-std::ostream& operator<<(std::ostream& os, offset o) {
-    return fmt_print(os, "{{offset: {}}}", o.value());
-}
-
 std::ostream& operator<<(std::ostream& os, timestamp_type ts) {
     switch (ts) {
     case timestamp_type::append_time:

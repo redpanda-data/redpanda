@@ -38,7 +38,7 @@ static sstring make_filename(
       "{}/{}/{}-{}-{}.log",
       base,
       ntp.path(),
-      base_offset.value(),
+      base_offset(),
       term(),
       to_string(version));
 }
@@ -104,8 +104,9 @@ static void do_recover(log_set& seg_set) {
     auto replayer = log_replayer(last);
     auto recovered = replayer.recover_in_thread(default_priority_class());
     if (recovered) {
+        // Max offset is exclusive.
         last->set_last_written_offset(
-          *recovered.last_valid_offset() + 1); // Max offset is exclusive.
+          *recovered.last_valid_offset() + model::offset(1));
     } else {
         if (stat.st_size == 0) {
             seg_set.pop_last();

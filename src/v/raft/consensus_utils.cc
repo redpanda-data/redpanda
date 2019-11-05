@@ -1,5 +1,9 @@
 #include "raft/consensus_utils.h"
 
+#include "resource_mgmt/io_priority.h"
+
+#include <seastar/core/thread.hh>
+
 #include <yaml-cpp/yaml.h>
 
 namespace YAML {
@@ -127,6 +131,97 @@ copy_n(std::vector<raft::entry>&& r, std::size_t ncopies) {
                      consumer_type(e.entry_type(), dst), model::no_timeout);
         }) .then([&dst] { return std::move(dst); });
         // clang-format on
+    });
+}
+
+class memory_batch_consumer {
+public:
+    future<stop_iteration> operator()(model::record_batch b) {
+        _result.push_back(std::move(b));
+        return make_ready_future<stop_iteration>(stop_iteration::no);
+    }
+
+    std::vector<model::record_batch> end_of_stream() {
+        return std::move(_result);
+    }
+
+private:
+    std::vector<model::record_batch> _result;
+};
+
+future<configuration_bootstrap_state> read_bootstrap_state(storage::log& log) {
+    return async([&log]() mutable {
+        auto retval = configuration_bootstrap_state{};
+        retval.set_term((*log.segments().rbegin())->term());
+        auto it = log.segments().rbegin();
+        auto end = log.segments().rend();
+        for (; it != end && !retval.is_finished(); it++) {
+            storage::log_reader_config rcfg{
+              .start_offset = (*it)->base_offset(),
+              .max_bytes = std::numeric_limits<size_t>::max(),
+              .min_bytes = 0, // ok to be empty
+              .prio = raft_priority()};
+            auto reader = log.make_reader(rcfg);
+            auto batches = reader
+                             .consume(
+                               memory_batch_consumer(), model::no_timeout)
+                             .get0();
+            for (auto& batch : batches) {
+                retval.process_batch_in_thread(std::move(batch));
+            }
+        }
+        if (it == end) {
+            retval.set_end_of_log();
+        }
+        return retval;
+    });
+}
+
+future<raft::group_configuration> extract_configuration(raft::entry&& e) {
+    using cfg_t = raft::group_configuration;
+    if (__builtin_expect(
+          e.entry_type() != raft::configuration_batch_type, false)) {
+        return make_exception_future<cfg_t>(std::runtime_error(fmt::format(
+          "Configuration parser can only parse configs({}), asked "
+          "to parse: {}",
+          raft::configuration_batch_type,
+          e.entry_type())));
+    }
+    struct consumer {
+        raft::group_configuration* ptr;
+        future<stop_iteration> operator()(model::record_batch b) {
+            if (b.type() != raft::configuration_batch_type) {
+                return make_exception_future<stop_iteration>(
+                  std::runtime_error("Inconsistent batch format for config"));
+            }
+            if (b.compressed()) {
+                return make_exception_future<stop_iteration>(std::runtime_error(
+                  "Compressed configuration records are unsupported"));
+            }
+
+            return do_for_each(
+                     b,
+                     [this](model::record& r) {
+                         cfg_count++;
+                         return rpc::deserialize<cfg_t>(
+                                  r.release_packed_value_and_headers())
+                           .then([this](cfg_t c) { *ptr = std::move(c); });
+                     })
+              .then([] {
+                  return make_ready_future<stop_iteration>(stop_iteration::no);
+              });
+        }
+        void end_of_stream() {
+            if (cfg_count == 0) {
+                throw std::runtime_error("processed no configs");
+            }
+        }
+        uint32_t cfg_count;
+    };
+    return do_with(cfg_t{}, std::move(e), [](cfg_t& cfg, raft::entry& e) {
+        return e.reader()
+          .consume(consumer{&cfg}, model::no_timeout)
+          .then([&cfg] { return std::move(cfg); });
     });
 }
 

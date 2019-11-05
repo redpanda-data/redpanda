@@ -13,6 +13,7 @@ add_library (raft STATIC
   consensus_utils.cc
   heartbeat_manager.cc
   heartbeat_manager_utils.cc
+  configuration_bootstrap_state.cc
   )
 target_include_directories(raft
   PUBLIC ${PROJECT_SOURCE_DIR}/src/v
