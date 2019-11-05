@@ -23,7 +23,7 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 		redpandaConfigFile string
 		outTuneScriptFile  string
 		cpuSet             string
-		timeoutMs          int
+		timeout            time.Duration
 	)
 	command := &cobra.Command{
 		Use: "tune <list_of_elements_to_tune>",
@@ -50,7 +50,6 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 		},
 		RunE: func(_ *cobra.Command, args []string) error {
 			var tunerFactory factory.TunersFactory
-			timeout := time.Duration(timeoutMs) * time.Millisecond
 			if outTuneScriptFile != "" {
 				tunerFactory = factory.NewScriptRenderingTunersFactory(
 					fs, outTuneScriptFile, timeout)
@@ -109,7 +108,15 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 	command.Flags().StringVar(&outTuneScriptFile,
 		"output-script", "", "If set tuners will generate tuning file that "+
 			"can later be used to tune the system")
-	command.Flags().IntVar(&timeoutMs, "timeout", 10000, "The maximum amount of time (in ms) to wait for the tune processes to complete")
+	command.Flags().DurationVar(
+		&timeout,
+		"timeout",
+		10000,
+		"The maximum time to wait for the tune processes to complete. "+
+			"The value passed is a sequence of decimal numbers, each with optional "+
+			"fraction and a unit suffix, such as '300ms', '1.5s' or '2h45m'. "+
+			"Valid time units are 'ns', 'us' (or 'µs'), 'ms', 's', 'm', 'h'",
+	)
 	command.AddCommand(newHelpCommand())
 	return command
 }

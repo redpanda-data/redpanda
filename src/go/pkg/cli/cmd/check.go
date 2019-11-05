@@ -21,7 +21,7 @@ import (
 func NewCheckCommand(fs afero.Fs) *cobra.Command {
 	var (
 		redpandaConfigFile string
-		timeoutMs          int
+		timeout            time.Duration
 	)
 	command := &cobra.Command{
 		Use:          "check",
@@ -29,13 +29,21 @@ func NewCheckCommand(fs afero.Fs) *cobra.Command {
 		Long:         "",
 		SilenceUsage: true,
 		RunE: func(ccmd *cobra.Command, args []string) error {
-			return executeCheck(fs, redpandaConfigFile, time.Duration(timeoutMs)*time.Millisecond)
+			return executeCheck(fs, redpandaConfigFile, timeout)
 		},
 	}
 	command.Flags().StringVar(&redpandaConfigFile,
 		"redpanda-cfg", "", "Redpanda config file, if not set the file will be "+
 			"searched for in default locations")
-	command.Flags().IntVar(&timeoutMs, "timeout", 2000, "The maximum amount of time (in ms) to wait for the checks and tune processes to complete")
+	command.Flags().DurationVar(
+		&timeout,
+		"timeout",
+		2000,
+		"The maximum amount of time to wait for the checks and tune processes to complete. "+
+			"The value passed is a sequence of decimal numbers, each with optional "+
+			"fraction and a unit suffix, such as '300ms', '1.5s' or '2h45m'. "+
+			"Valid time units are 'ns', 'us' (or 'µs'), 'ms', 's', 'm', 'h'",
+	)
 	return command
 }
 
