@@ -32,7 +32,8 @@ def _symlink_compile_commands(build_type):
     os.symlink(src, dst)
 
 
-def _configure_build(build_type, clang_opt):
+def _configure_build(build_type, external, external_only,
+                     external_install_prefix, clang_opt):
     _check_build_type(build_type)
     cpp.check_bdir(build_type)
     logger.info("configuring build %s" % build_type)
@@ -50,12 +51,22 @@ def _configure_build(build_type, clang_opt):
         logger.info("Builing using internal Clang compiler")
         llvm.get_llvm()
         bootstrap_build = clang_opt == "llvm_bootstrap"
-        llvm.build_llvm(bootstrap_build)
-        build_env = clang.clang_env_from_path(
-            os.path.join(llvm.get_llvm_install_path(), "bin", "clang"))
+        llvm.build_llvm(bootstrap_build, external_install_prefix)
+        clang_bin_path = os.path.join(
+            external_install_prefix if external_install_prefix else
+            llvm.get_internal_llvm_install_path(), 'bin', 'clang')
+        build_env = clang.clang_env_from_path(clang_bin_path)
     else:
         logger.info("Using clang compiler from path `%s`" % clang_opt)
         build_env = clang.clang_env_from_path(clang_opt)
+
+    if not external:
+        args.append('-DV_MANAGE_DEPS=OFF')
+    if external_only:
+        args.append('-DV_DEPS_ONLY=ON')
+    if external_install_prefix:
+        args.append('-DV_DEPS_INSTALL_DIR=%s' % external_install_prefix)
+
     cmd = tpl.substitute(root=RP_ROOT,
                          build_root=RP_BUILD_ROOT,
                          args=' '.join(args),
@@ -99,14 +110,18 @@ def _invoke_go_tests():
     golang.go_test(GOLANG_ROOT, "./...")
 
 
-def build(build_type, targets, clang):
+def build(build_type, targets, external, external_only,
+          external_install_prefix, clang):
     if 'all' in targets or 'go' in targets:
         _invoke_go_tests()
         _invoke_build_go_cmds()
 
     if 'all' in targets or 'cpp' in targets:
         logger.info("Building Cpp...")
-        _configure_build(build_type, clang)
+        _configure_build(build_type, external, external_only,
+                         external_install_prefix, clang)
+        if external_only:
+            return
         _invoke_build(build_type)
         _invoke_tests(build_type)
 

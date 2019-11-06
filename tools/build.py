@@ -30,7 +30,7 @@ def generate_options():
     parser.add_argument('--deps',
                         type=cli.str2bool,
                         default='false',
-                        help='install 3rd party dependencies')
+                        help='install OS package dependencies')
     parser.add_argument('--build',
                         type=str.lower,
                         default='debug',
@@ -42,6 +42,24 @@ def generate_options():
                         default='all',
                         choices=['all', 'cpp', 'go'],
                         help='list of build targets [cpp, go]')
+    parser.add_argument(
+        '--external',
+        type=cli.str2bool,
+        default='true',
+        help='build external (3rd party) project dependencies.')
+    parser.add_argument(
+        '--external-only',
+        type=cli.str2bool,
+        default='false',
+        help=('only build external project dependencies, '
+              'without building and testing RP. Ignored if --external=false.'))
+    parser.add_argument(
+        '--external-install-prefix',
+        type=str,
+        default=None,
+        help=('install prefix for external cpp project dependencies. This is '
+              'build/<type>/v_deps_install by default. This flag is ignored '
+              'if --external=false.'))
     parser.add_argument('--files',
                         type=str.lower,
                         default='incremental',
@@ -90,7 +108,9 @@ def main():
     import fmt
 
     if options.build and options.build != "none":
-        build_helpers.build(options.build, options.targets, options.clang)
+        build_helpers.build(options.build, options.targets, options.external,
+                            options.external_only,
+                            options.external_install_prefix, options.clang)
     build_helpers.build_packages(options.build, options.packages)
 
     def _files():
