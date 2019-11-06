@@ -7,6 +7,11 @@ const webhook = new IncomingWebhook(url);
 module.exports.subscribeSlack = (pubSubEvent, context) => {
   const build = eventToBuild(pubSubEvent.data);
 
+  // Skip if manually triggered
+  if (!build.hasOwnProperty('buildTriggerId')) {
+    return;
+  }
+
   // Skip if the current status is not in the status list.
   // Add additional statuses to list if you'd like:
   // QUEUED, WORKING, SUCCESS, FAILURE,
@@ -28,19 +33,28 @@ const eventToBuild = (data) => {
 
 // createSlackMessage creates a message from a build object.
 const createSlackMessage = (build) => {
+  const statusEmoji = {
+    "SUCCESS": ":white_check_mark:",
+    "FAILURE": ":x:",
+    "TIMEOUT": ":hourglass:",
+    "INTERNAL_ERROR": ":skull:"
+  }
+
+  const messageMd = `${statusEmoji[build.status]}  <${build.logUrl} | ${build.id}>
+> Repository: \`${build.source.repoSource.repoName.replace(/_/g, '/')}\`
+> Branch: \`${build.source.repoSource.branchName}\`
+> Commit: \`${build.sourceProvenance.resolvedRepoSource.commitSha.substring(0, 8)}\`
+> Build Type: \`${build.substitutions['_BUILD_TYPE']}\`
+> Compiler: \`${build.substitutions['_COMPILER']}\``
+
   const message = {
-    text: `Build \`${build.id}\``,
-    mrkdwn: true,
-    attachments: [
-      {
-        title: 'Build logs',
-        title_link: build.logUrl,
-        fields: [{
-          title: 'Status',
-          value: build.status
-        }]
-      }
-    ]
-  };
+      "blocks": [{
+          "type": "section",
+          "text": {
+              "type": "mrkdwn",
+              "text": messageMd
+          }
+      }]
+  }
   return message;
 }
