@@ -1,4 +1,5 @@
 #include "redpanda/application.h"
+#include "redpanda/kafka/requests/fetch_request.h"
 #include "redpanda/kafka/requests/heartbeat_request.h"
 #include "redpanda/kafka/requests/join_group_request.h"
 #include "redpanda/kafka/requests/leave_group_request.h"
@@ -133,6 +134,13 @@ static future<> handle_request(sstring output, kafka::request_context&& ctx) {
 
     case kafka::leave_group_api::key: {
         kafka::leave_group_request r;
+        r.decode(ctx);
+        r.encode(ctx, writer);
+        break;
+    }
+
+    case kafka::fetch_api::key: {
+        kafka::fetch_request r;
         r.decode(ctx);
         r.encode(ctx, writer);
         break;
