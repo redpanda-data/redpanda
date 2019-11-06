@@ -19,7 +19,7 @@ add_executable(redpanda
   )
 target_link_libraries(redpanda PUBLIC application raft transport config)
 set_property(TARGET redpanda PROPERTY POSITION_INDEPENDENT_CODE ON)
-add_dependencies(redpanda config_swagger)
+add_dependencies(application config_swagger)
 
 if(NOT CMAKE_BUILD_TYPE MATCHES Debug)
   include(CheckIPOSupported)
