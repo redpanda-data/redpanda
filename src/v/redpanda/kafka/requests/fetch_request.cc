@@ -2,6 +2,7 @@
 
 #include "redpanda/kafka/errors/errors.h"
 #include "storage/tests/random_batch.h"
+#include "utils/to_string.h"
 
 #include <seastar/core/thread.hh>
 #include <seastar/util/log.hh>
@@ -11,6 +12,146 @@
 #include <string_view>
 
 namespace kafka {
+
+void fetch_request::encode(
+  const request_context& ctx, response_writer& writer) {
+    auto version = ctx.header().version;
+
+    writer.write(replica_id());
+    writer.write(int32_t(max_wait_time.count()));
+    writer.write(min_bytes);
+    if (version >= api_version(3)) {
+        writer.write(max_bytes);
+    }
+    if (version >= api_version(4)) {
+        writer.write(isolation_level);
+    }
+    writer.write_array(
+      topics, [version](const topic& t, response_writer& writer) {
+          writer.write(t.name());
+          writer.write_array(
+            t.partitions,
+            [version](const partition& p, response_writer& writer) {
+                writer.write(p.id);
+                writer.write(int64_t(p.fetch_offset));
+                writer.write(p.partition_max_bytes);
+            });
+      });
+}
+
+void fetch_request::decode(request_context& ctx) {
+    auto& reader = ctx.reader();
+    auto version = ctx.header().version;
+
+    replica_id = model::node_id(reader.read_int32());
+    max_wait_time = std::chrono::milliseconds(reader.read_int32());
+    min_bytes = reader.read_int32();
+    if (version >= api_version(3)) {
+        max_bytes = reader.read_int32();
+    }
+    if (version >= api_version(4)) {
+        isolation_level = reader.read_int8();
+    }
+    topics = reader.read_array([](request_reader& reader) {
+        return topic{
+          .name = model::topic(reader.read_string()),
+          .partitions = reader.read_array([](request_reader& reader) {
+              struct partition p;
+              p.id = model::partition_id(reader.read_int32());
+              p.fetch_offset = model::offset(reader.read_int64());
+              p.partition_max_bytes = reader.read_int32();
+              return p;
+          })};
+    });
+}
+
+std::ostream& operator<<(std::ostream& o, const fetch_request::partition& p) {
+    return fmt_print(
+      o, "id {} off {} max {}", p.id, p.fetch_offset, p.partition_max_bytes);
+}
+
+std::ostream& operator<<(std::ostream& o, const fetch_request::topic& t) {
+    return fmt_print(o, "name {} parts {}", t.name, t.partitions);
+}
+
+std::ostream& operator<<(std::ostream& o, const fetch_request& r) {
+    return fmt_print(
+      o,
+      "replica {} max_wait_time {} min_bytes {} max_bytes {} isolation {} "
+      "topics {}",
+      r.replica_id,
+      r.max_wait_time,
+      r.min_bytes,
+      r.max_bytes,
+      r.isolation_level,
+      r.topics);
+}
+
+void fetch_response::encode(const request_context& ctx, response& resp) {
+    auto& writer = resp.writer();
+    auto version = ctx.header().version;
+
+    if (version >= api_version(1)) {
+        writer.write(int32_t(throttle_time.count()));
+    }
+
+    writer.write_array(
+      partitions, [version](partition& p, response_writer& writer) {
+          writer.write(p.name);
+          writer.write_array(
+            p.responses,
+            [version](partition_response& r, response_writer& writer) {
+                writer.write(r.id);
+                writer.write(r.error);
+                writer.write(int64_t(r.high_watermark));
+                if (version >= api_version(4)) {
+                    writer.write(int64_t(r.last_stable_offset));
+                    writer.write_array(
+                      r.aborted_transactions,
+                      [](
+                        const aborted_transaction& t, response_writer& writer) {
+                          writer.write(t.producer_id);
+                          writer.write(int64_t(t.first_offset));
+                      });
+                }
+                writer.write_bytes_wrapped(
+                  [record_set = std::move(r.record_set)](
+                    response_writer& writer) mutable {
+                      writer.write_direct(std::move(record_set));
+                      return false;
+                  });
+            });
+      });
+}
+
+std::ostream&
+operator<<(std::ostream& o, const fetch_response::aborted_transaction& t) {
+    return fmt_print(
+      o, "producer {} first_off {}", t.producer_id, t.first_offset);
+}
+
+std::ostream&
+operator<<(std::ostream& o, const fetch_response::partition_response& p) {
+    return fmt_print(
+      o,
+      "id {} err {} high_water {} last_stable_off {} aborted {} "
+      "record_set_len "
+      "{}",
+      p.id,
+      p.error,
+      p.high_watermark,
+      p.last_stable_offset,
+      p.aborted_transactions,
+      p.record_set.size_bytes());
+}
+
+std::ostream& operator<<(std::ostream& o, const fetch_response::partition& p) {
+    return fmt_print(o, "name {} responses {}", p.name, p.responses);
+}
+
+std::ostream& operator<<(std::ostream& o, const fetch_response& r) {
+    return fmt_print(o, "partitions {}", r.partitions);
+}
 
 class kafka_batch_serializer {
 public:
