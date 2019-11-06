@@ -1,8 +1,10 @@
-# ignore everything except toolchain stuff below
+# ignore everything except toolchain stuff whitelisted below
 **/*
 
-# os packages
+# tools
+!tools/*.py
 !tools/install-deps.sh
+!tools/ci/scripts
 
 # llvm
 !cmake/caches/llvm.cmake
