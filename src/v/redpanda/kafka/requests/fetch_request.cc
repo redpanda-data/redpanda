@@ -189,6 +189,7 @@ private:
         // adjust the batch size to match the kafka wire size
         auto size = batch.size_bytes()
                     - sizeof(model::record_batch_header::base_offset)
+                    - sizeof(model::record_batch_type::type)
                     + sizeof(int32_t)  // partition leader epoch
                     + sizeof(int8_t)   // magic
                     + sizeof(int64_t)  // producer id
