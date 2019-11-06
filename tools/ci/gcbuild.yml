@@ -1,62 +1,50 @@
 steps:
 - id: 'build builder image'
-  name: 'gcr.io/kaniko-project/executor:latest'
-  args: ['--dockerfile=tools/ci/Dockerfile',
-         '--destination=gcr.io/$PROJECT_ID/builder:$SHORT_SHA',
-         '--cache=true']
-
-- id: 'configure'
-  name: 'gcr.io/$PROJECT_ID/builder:$SHORT_SHA'
-  args: ['cmake', '-GNinja', '-B./build', '-DCMAKE_BUILD_TYPE=${_BUILD_TYPE}',
-         '-DRP_ENABLE_GOLD_LINKER=OFF', '-DV_MANAGE_DEPS=OFF', '.']
+  name: 'gcr.io/kaniko-project/executor:debug'
+  entrypoint: '/busybox/sh'
+  args: ['tools/ci/scripts/build-builder.sh']
   env:
-  - 'CC=clang'
-  - 'CXX=clang++'
+  - 'BUILD_TYPE=$_BUILD_TYPE'
+  - 'COMPILER=$_COMPILER'
+  - 'SHORT_SHA=$SHORT_SHA'
+  - 'PROJECT_ID=$PROJECT_ID'
 
-- id: 'build cpp'
-  name: 'gcr.io/$PROJECT_ID/builder:$SHORT_SHA'
-  dir: 'build/'
-  args: ['ninja', '-C', '/workspace/build/']
-
-- id: 'test cpp'
-  name: 'gcr.io/$PROJECT_ID/builder:$SHORT_SHA'
-  dir: 'build/'
-  args: ['ctest', '-VV', '--force-new-ctest-process',
-        '--schedule-random', '--timeout=600']
+- id: 'build and test cpp'
+  name: 'gcr.io/$PROJECT_ID/builder-$_COMPILER-$_BUILD_TYPE:$SHORT_SHA'
+  args: ['tools/ci/scripts/build-and-test-cpp.sh']
   env:
+  - 'BUILD_TYPE=$_BUILD_TYPE'
+  - 'COMPILER=$_COMPILER'
   - 'CI=1'
 
-- id: 'test go'
-  name: 'gcr.io/$PROJECT_ID/builder:$SHORT_SHA'
-  dir: 'src/go/pkg'
-  args: ['go', 'test', './...']
-
-- id: 'build go exe'
-  name: 'gcr.io/$PROJECT_ID/builder:$SHORT_SHA'
-  dir: 'src/go/pkg'
-  args: ['go', 'install', './...']
+- id: 'test and build go'
+  name: 'gcr.io/$PROJECT_ID/builder-$_COMPILER-$_BUILD_TYPE:$SHORT_SHA'
+  args: ['tools/ci/scripts/test-and-build-go.sh']
   env:
   - 'GOBIN=/workspace/build/go/bin'
+  - 'CI=1'
 
 - id: 'package'
-  name: 'gcr.io/$PROJECT_ID/builder:$SHORT_SHA'
+  name: 'gcr.io/$PROJECT_ID/builder-$_COMPILER-$_BUILD_TYPE:$SHORT_SHA'
   args: ['tools/packaging.py',
+         '--build-dir', '/workspace/build/',
+         '--build-type', '$_BUILD_TYPE',
          '--formats', 'rpm', 'deb', 'tar',
-         '--external', '/usr/local/bin/iotune', '/usr/local/bin/hwloc-calc',
-         '/usr/local/bin/hwloc-distrib']
+         '--external', '/usr/local/bin/iotune', '/usr/local/bin/hwloc-calc', '/usr/local/bin/hwloc-distrib']
 
 timeout: 3600s
 
 substitutions:
-  _BUILD_TYPE: Release
+  _BUILD_TYPE: release
+  _COMPILER: gcc
 
 options:
   machineType: 'N1_HIGHCPU_32'
 
 artifacts:
   objects:
-    location: 'gs://vectorizedio/rp/${_BUILD_TYPE}/${SHORT_SHA}/'
+    location: 'gs://vectorizedio/rp/$_BUILD_TYPE/$SHORT_SHA/'
     paths:
-    - 'build/dist/tar/*.tar.gz'
-    - 'build/dist/debian/*.deb'
-    - 'build/dist/rpm/RPMS/x86_64/*.rpm'
+    - 'build/$_BUILD_TYPE/dist/tar/*.tar.gz'
+    - 'build/$_BUILD_TYPE/dist/debian/*.deb'
+    - 'build/$_BUILD_TYPE/dist/rpm/RPMS/x86_64/*.rpm'

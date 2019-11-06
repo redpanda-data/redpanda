@@ -222,6 +222,11 @@ def main():
         default=RP_BUILD_ROOT,
         help='path to folder containing build artifacts')
     parser.add_argument(
+        '--build-type',
+        type=str,
+        default="",
+        help='build type')
+    parser.add_argument(
         '--formats',
         choices=['tar', 'rpm', 'deb'],
         nargs='+',
@@ -235,6 +240,7 @@ def main():
               'in the package'))
     opts = parser.parse_args()
     create_packages(build_dir=opts.build_dir,
+                    build_type=opts.build_type,
                     formats=opts.formats,
                     external=opts.external)
 

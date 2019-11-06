@@ -1,101 +1,47 @@
 FROM fedora@sha256:f4ca3e9814bef8468b59cc3dea90ab52bcb3747057731f7ab7645d923731fed6
 
-ARG LLVM_REF="llvmorg-8.0.0"
-ARG BUILD_TYPE=Release
+ARG BUILD_TYPE=release
+ARG COMPILER=gcc
 
-# disable all but base repo so we install same version of packages
-RUN rm -f /etc/yum.repos.d/fedora-* && \
-    dnf install -y  \
-              git \
-              which \
-              jq \
-              glibc-langpack-en \
-              cmake \
-              gcc-c++ \
-              ninja-build \
-              m4 \
-              libtool \
-              make \
-              ragel \
-              xfsprogs-devel \
-              systemtap-sdt-devel \
-              libatomic \
-              ccache \
-              python3-distutils-extra \
-              pigz \
-              zlib-devel \
-              python3-requests \
-              devscripts \
-              debhelper \
-              fakeroot \
-              rpm-build \
-              python3-jinja2 && \
-    dnf clean all
-
-#######
-## LLVM
-#######
-
-COPY cmake/caches/llvm.cmake /tmp/
-
-RUN curl -Ls https://github.com/llvm/llvm-project/archive/${LLVM_REF}.tar.gz | tar xz -C /tmp/ && \
-    mv /tmp/llvm-project-${LLVM_REF} /tmp/llvm-src/ && \
-    mkdir -p /tmp/llvm-build/cmake/caches/ && \
-    mv /tmp/llvm.cmake /tmp/llvm-build/cmake/caches/ && \
-    cd /tmp/llvm-build && \
-    cmake \
-      -GNinja \
-      -C/tmp/llvm-build/cmake/caches/llvm.cmake \
-      -DCMAKE_INSTALL_PREFIX=/usr/local \
-      /tmp/llvm-src/llvm && \
-    ninja && \
-    ninja install && \
-    rm -rf /tmp/*
-
-#######
-## 3rdparty
-#######
-
-COPY 3rdparty.cmake.in /tmp/v/
-COPY CMakeLists.txt /tmp/v/
-COPY cmake/FindLibCxx.cmake /tmp/v/cmake/
-
-RUN export CXX=/usr/local/bin/clang++ && \
-    export CC=/usr/local/bin/clang    && \
-    cd /tmp/v && \
-    cmake \
-      -GNinja \
-      -B/tmp/v/build \
-      -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
-      -DV_DEPS_INSTALL_DIR=/usr/local \
-      -DRP_ENABLE_GOLD_LINKER=OFF \
-      -DV_DEPS_ONLY=ON \
-      /tmp/v && \
-    cp build/v_deps_build/seastar-prefix/src/seastar-build/apps/iotune/iotune /usr/local/bin/ && \
-    cd && \
-    rm -rf /tmp/v && \
-    sh -c 'echo "/usr/local/lib" > /etc/ld.so.conf.d/usrlocallib.conf' && \
-    sh -c 'echo "/usr/local/lib64" > /etc/ld.so.conf.d/usrlocallib64.conf' && \
-    ldconfig
-
-# TODO: remove after github.com/vectorizedio/v/issues/191 is fixed
-RUN sed -i \
-      's/  set (_seastar_dep_args_.*)//' \
-      /usr/local/lib64/cmake/Seastar/SeastarDependencies.cmake
-
-#######
-## go
-#######
-ENV GOROOT=/usr/local/go
-ENV GOPATH=/usr/local/gopath
-ENV PATH=$PATH:/usr/local/go/bin
-ENV CGO_ENABLED=1
-
+#####
+## go compiler
+#####
+ENV GOROOT=/usr/local/go \
+    GOPATH=/usr/local/gopath \
+    PATH=$PATH:/usr/local/go/bin \
+    CGO_ENABLED=1
 RUN curl -Ls https://dl.google.com/go/go1.12.3.linux-amd64.tar.gz | tar xzf - -C /usr/local
 
-COPY src/go/go.mod /
-COPY src/go/go.sum /
+#####
+## OS package dependencies
+#####
+COPY tools/install-deps.sh /
 
-RUN go mod download && \
-    rm /go.mod && \
-    rm /go.sum
+# removing fedora-* yum repos disables all but base repo
+# so we install same version of packages
+RUN rm -f /etc/yum.repos.d/fedora-* && \
+    /install-deps.sh && \
+    rm /install-deps.sh && \
+    dnf clean all
+
+#####
+## clang/3rdparty
+#####
+COPY 3rdparty.cmake.in CMakeLists.txt /rp/
+COPY cmake/FindLibCxx.cmake /rp/cmake/
+COPY cmake/caches/llvm.cmake /rp/cmake/caches/
+COPY tools/build.py tools/build_helpers.py tools/clang.py tools/cli.py tools/constants.py tools/cpp.py tools/dependencies.py tools/fmt.py tools/fs.py tools/git.py tools/golang.py tools/llvm.py tools/log.py tools/packaging.py tools/pkg_config.py tools/shell.py tools/system.py tools/templates.py /rp/tools/
+COPY tools/ci/scripts/install-external.sh /rp/tools/ci/scripts/
+
+RUN cd /rp && \
+    tools/ci/scripts/install-external.sh && \
+    rm -r /rp
+
+#####
+## go deps
+#####
+COPY src/go/go.mod src/go/go.sum tools/ci/scripts/install-go-deps.sh /rpgo/
+
+RUN cd /rpgo && \
+    ./install-go-deps.sh && \
+    rm -r /rpgo

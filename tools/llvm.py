@@ -24,16 +24,16 @@ def get_llvm():
         _download_and_check_llvm_sources()
 
 
-def build_llvm(bootstrap_build):
+def build_llvm(bootstrap_build, install_prefix):
     os.makedirs(_get_llvm_build_path(), exist_ok=True)
-    os.makedirs(get_llvm_install_path(), exist_ok=True)
+    os.makedirs(get_internal_llvm_install_path(), exist_ok=True)
     cmake_tmpl = 'cd {build_root} && cmake -G Ninja  -C {llvm_cmake_cache} {args} {src_root}/llvm'
     logger.info("Configuring LLVM build....")
     shell.run_subprocess(
         cmake_tmpl.format(
             build_root=_get_llvm_build_path(),
             llvm_cmake_cache=_get_llvm_cmake_path(bootstrap_build),
-            args=_join_cmake_args(),
+            args=_join_cmake_args(install_prefix),
             src_root=_get_llvm_src_path()))
     logger.info("Building LLVM...")
     if bootstrap_build:
@@ -80,7 +80,7 @@ def _get_llvm_build_path():
     return os.path.join(RP_BUILD_ROOT, 'llvm', 'llvm-build')
 
 
-def get_llvm_install_path():
+def get_internal_llvm_install_path():
     return os.path.join(RP_BUILD_ROOT, 'llvm', 'llvm-bin')
 
 
@@ -91,13 +91,14 @@ def _get_llvm_cmake_path(bootstrap_build):
     return os.path.join(RP_ROOT, "cmake", "caches", cmake_cache)
 
 
-def _llvm_cmake_args():
+def _llvm_cmake_args(install_prefix):
     return {
-        'CMAKE_INSTALL_PREFIX': get_llvm_install_path(),
+        'CMAKE_INSTALL_PREFIX':
+        install_prefix if install_prefix else get_internal_llvm_install_path(),
     }
 
 
-def _join_cmake_args():
+def _join_cmake_args(install_prefix):
     return ' '.join(
         map(lambda kv: '-D%s=\"%s\"' % (kv[0], kv[1]),
-            _llvm_cmake_args().items()))
+            _llvm_cmake_args(install_prefix).items()))
