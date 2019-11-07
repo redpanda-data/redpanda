@@ -220,7 +220,7 @@ void consensus::dispatch_vote() {
     }
     // 5.2.1.4 - prepare next timeout
     arm_vote_timeout();
-    
+
     // background, acquire lock, transition state
     (void)with_gate(_bg, [this] {
         // must be oustside semaphore
@@ -466,7 +466,10 @@ future<std::vector<storage::log::append_result>>
 consensus::disk_append(std::vector<entry>&& entries) {
     using ret_t = std::vector<storage::log::append_result>;
     // used to detect if we roll the last segment
-    model::offset prev_base_offset = _log.segments().last()->base_offset();
+    model::offset prev_base_offset = _log.segments().empty()
+                                       ? model::offset(0)
+                                       : _log.segments().last()->base_offset();
+
     // clang-format off
     return do_with(std::move(entries), [this](std::vector<entry>& in) {
             auto no_of_entries = in.size();
