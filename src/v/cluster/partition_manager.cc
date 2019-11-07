@@ -28,6 +28,10 @@ partition_manager::partition_manager(
   , _clients(clients) {
 }
 
+future<> partition_manager::start() {
+    return _hbeats.start();
+}
+
 future<> partition_manager::stop() {
     using pair_t = typename decltype(_raft_table)::value_type;
     return _bg.close()
