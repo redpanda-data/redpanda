@@ -4,7 +4,6 @@
 #include "cluster/simple_batch_builder.h"
 #include "model/record_batch_reader.h"
 #include "resource_mgmt/io_priority.h"
-#include "storage/constants.h"
 #include "storage/shard_assignment.h"
 namespace cluster {
 static void verify_shard() {
@@ -38,19 +37,27 @@ future<> controller::start() {
               leadership_notification();
           }
       });
-    clusterlog().debug("Starting cluster recovery");
-    return _pm.local()
-      .manage(controller::ntp, controller::group)
-      .then([this] {
-          auto plog = _pm.local().logs().find(controller::ntp)->second;
-          return bootstrap_from_log(plog);
+    return _pm
+      .invoke_on_all([](partition_manager& pm) {
+          // start the partition managers first...
+          return pm.start();
       })
       .then([this] {
-          _raft0 = &_pm.local().consensus_for(controller::group);
-          _raft0->register_hook([this](std::vector<raft::entry>&& entries) {
-              verify_shard();
-              on_raft0_entries_commited(std::move(entries));
-          });
+          clusterlog().debug("Starting cluster recovery");
+          return _pm.local()
+            .manage(controller::ntp, controller::group)
+            .then([this] {
+                auto plog = _pm.local().logs().find(controller::ntp)->second;
+                return bootstrap_from_log(plog);
+            })
+            .then([this] {
+                _raft0 = &_pm.local().consensus_for(controller::group);
+                _raft0->register_hook(
+                  [this](std::vector<raft::entry>&& entries) {
+                      verify_shard();
+                      on_raft0_entries_commited(std::move(entries));
+                  });
+            });
       });
 }
 
