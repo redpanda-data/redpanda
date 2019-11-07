@@ -33,6 +33,9 @@ public:
     future<std::optional<model::topic_metadata>>
       get_topic_metadata(model::topic_view) const;
 
+    /// Returns metadata of all topics.
+    std::vector<model::topic_metadata> all_topics_metadata() const;
+
     ///\brief Add empty model::topic_metadata entry to cache
     ///
     /// This api is used when controller is recovering (or is notified)

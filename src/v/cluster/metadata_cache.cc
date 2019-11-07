@@ -23,6 +23,19 @@ metadata_cache::get_topic_metadata(model::topic_view topic) const {
       std::nullopt);
 }
 
+std::vector<model::topic_metadata> metadata_cache::all_topics_metadata() const {
+    std::vector<model::topic_metadata> metadata;
+    std::transform(
+      std::cbegin(_cache),
+      std::cend(_cache),
+      std::back_inserter(metadata),
+      [](const cache_t::value_type& tp_md) {
+          return create_topic_metadata(tp_md);
+      });
+
+    return metadata;
+}
+
 void metadata_cache::add_topic(model::topic_view topic) {
     _cache.emplace(topic, metadata{});
 }
