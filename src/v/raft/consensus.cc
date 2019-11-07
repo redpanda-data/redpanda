@@ -217,10 +217,9 @@ void consensus::dispatch_vote() {
     if (_vstate == vote_state::leader) {
         return;
     }
-    if (!_bg.is_closed()) {
-        // 5.2.1.4 - prepare next timeout
-        _vote_timeout.arm(_jit());
-    }
+    // 5.2.1.4 - prepare next timeout
+    arm_vote_timeout();
+    
     // background, acquire lock, transition state
     (void)with_gate(_bg, [this] {
         // must be oustside semaphore
@@ -255,6 +254,10 @@ future<> consensus::start() {
               // ignore: `_meta.term = st.term` - would violate the voted_for
               //  configuration
               _conf = std::move(st.release_config());
+          })
+          .then([this] {
+              // Arm leader election timeout.
+              arm_vote_timeout();
           });
     });
 }
