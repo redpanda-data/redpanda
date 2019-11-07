@@ -46,6 +46,10 @@ public:
       std::vector<topic_configuration> topics,
       model::timeout_clock::time_point timeout);
 
+    raft::group_id get_highest_group_id() const {
+        return _highest_group_id;
+    }
+
 private:
     struct batch_consumer {
         explicit batch_consumer(controller* c)
@@ -84,6 +88,7 @@ private:
     sharded<shard_table>& _st;
     sharded<metadata_cache>& _md_cache;
     raft::consensus* _raft0;
+    raft::group_id _highest_group_id;
 };
 
 // clang-format off

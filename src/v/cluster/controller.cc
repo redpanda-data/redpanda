@@ -25,7 +25,8 @@ controller::controller(
   , _pm(pm)
   , _st(st)
   , _md_cache(md_cache)
-  , _raft0(nullptr) {
+  , _raft0(nullptr) 
+  , _highest_group_id(0) {
 }
 
 future<> controller::start() {
@@ -115,6 +116,7 @@ controller::dispatch_record_recovery(log_record_key key, iobuf&& v_buf) {
 }
 
 future<> controller::recover_assignment(partition_assignment as) {
+     _highest_group_id = std::max(_highest_group_id, as.group);
     return do_with(std::move(as), [this](partition_assignment& as) {
         return update_cache_with_partitions_assignment(as).then([this, &as] {
             return do_for_each(
