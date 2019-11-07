@@ -30,6 +30,13 @@ controller::controller(
 
 future<> controller::start() {
     verify_shard();
+    _pm.local().register_leadership_notification(
+      [this](lw_shared_ptr<partition> p) {
+          if (p->ntp() == controller::ntp) {
+              verify_shard();
+              leadership_notification();
+          }
+      });
     clusterlog().debug("Starting cluster recovery");
     return _pm.local()
       .manage(controller::ntp, controller::group)
@@ -242,6 +249,10 @@ raft::entry controller::create_topic_cfg_entry(const topic_configuration& cfg) {
     return raft::entry(
       controller_record_batch_type,
       model::make_memory_record_batch_reader(std::move(batches)));
+}
+
+void controller::leadership_notification() {
+    clusterlog().info("Local controller became a leader");
 }
 
 void controller::on_raft0_entries_commited(std::vector<raft::entry>&& entries) {

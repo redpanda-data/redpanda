@@ -74,6 +74,7 @@ private:
     update_cache_with_partitions_assignment(const partition_assignment&);
     raft::entry create_topic_cfg_entry(const topic_configuration&);
     void end_of_stream();
+    void leadership_notification();
     future<raft::append_entries_reply>
       raft0_append_entries(std::vector<raft::entry>);
     void on_raft0_entries_commited(std::vector<raft::entry>&&);
