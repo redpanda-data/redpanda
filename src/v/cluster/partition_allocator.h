@@ -130,7 +130,7 @@ private:
     void rollback(const std::vector<model::broker_shard>& v);
 
     std::optional<std::vector<model::broker_shard>>
-    allocate_replicas(model::ntp, int16_t replication_factor);
+    allocate_replicas(int16_t replication_factor);
 
     [[gnu::always_inline]] inline cil_t::iterator& round_robin_ptr() {
         if (_rr == _available_machines.end()) {

@@ -50,8 +50,7 @@ static bool is_machine_in_replicas(
 }
 
 std::optional<std::vector<model::broker_shard>>
-partition_allocator::allocate_replicas(
-  model::ntp ntp, int16_t replication_factor) {
+partition_allocator::allocate_replicas(int16_t replication_factor) {
     std::vector<model::broker_shard> replicas;
     replicas.reserve(replication_factor);
 
@@ -94,8 +93,7 @@ partition_allocator::allocate(const topic_configuration& cfg) {
           cfg.ns, model::topic_partition{cfg.topic, model::partition_id(i)}};
         // all replicas must belong to the same raft group
         raft::group_id partition_group = raft::group_id(_highest_group() + 1);
-        auto replicas_assignment = allocate_replicas(
-          std::move(ntp), cfg.replication_factor);
+        auto replicas_assignment = allocate_replicas(cfg.replication_factor);
         if (replicas_assignment == std::nullopt) {
             rollback(ret);
             return std::nullopt;
