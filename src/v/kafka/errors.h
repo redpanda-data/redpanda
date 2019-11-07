@@ -314,6 +314,8 @@ map_topic_error_code(cluster::topic_error_code code) {
         return error_code::invalid_replication_factor;
     case cluster::topic_error_code::time_out:
         return error_code::request_timed_out;
+    case cluster::topic_error_code::not_leader_controller:
+        return error_code::not_controller;
     default:
         return error_code::unknown_server_error;
     }

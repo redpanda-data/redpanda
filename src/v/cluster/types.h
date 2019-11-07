@@ -60,8 +60,9 @@ enum class topic_error_code : int16_t {
     invalid_partitions,
     invalid_replication_factor,
     invalid_config,
+    not_leader_controller,
     topic_error_code_min = no_error,
-    topic_error_code_max = invalid_config
+    topic_error_code_max = not_leader_controller,
 };
 
 constexpr std::string_view topic_error_code_names[] = {
@@ -70,7 +71,8 @@ constexpr std::string_view topic_error_code_names[] = {
     [(int16_t)topic_error_code::time_out] = "time_out",
     [(int16_t)topic_error_code::invalid_partitions] = "invalid_partitions",
     [(int16_t)topic_error_code::invalid_replication_factor] = "invalid_replication_factor",
-    [(int16_t)topic_error_code::invalid_config] = "invalid_config"
+    [(int16_t)topic_error_code::invalid_config] = "invalid_config",
+    [(int16_t)topic_error_code::not_leader_controller] = "not_leader_controller"
 };
 
 std::ostream& operator<<(std::ostream&, topic_error_code);
