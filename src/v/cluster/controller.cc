@@ -113,7 +113,7 @@ future<> controller::recover_assignment(partition_assignment as) {
             return do_for_each(
               as.replicas,
               [this, raft_group = as.group, ntp = std::move(as.ntp)](
-                broker_shard& bs) {
+                model::broker_shard& bs) {
                   return recover_replica(
                     std::move(ntp), raft_group, std::move(bs));
               });
@@ -122,7 +122,7 @@ future<> controller::recover_assignment(partition_assignment as) {
 }
 
 future<> controller::recover_replica(
-  model::ntp ntp, raft::group_id raft_group, broker_shard bs) {
+  model::ntp ntp, raft::group_id raft_group, model::broker_shard bs) {
     // if the assignment is not for current broker just update
     // metadata cache
     if (bs.node_id != _self) {

@@ -16,20 +16,20 @@ void partition_allocator::rollback(const std::vector<partition_assignment>& v) {
     }
 }
 
-void partition_allocator::rollback(const std::vector<broker_shard>& v) {
+void partition_allocator::rollback(const std::vector<model::broker_shard>& v) {
     for (auto& bs : v) {
         deallocate(bs);
     }
 }
 
 static inline bool valid_machine_fault_domain_diversity(
-  const std::vector<broker_shard>& replicas) {
+  const std::vector<model::broker_shard>& replicas) {
     model::node_id sentinel = replicas.begin()->node_id;
     const uint32_t unique = std::accumulate(
       replicas.begin(),
       replicas.end(),
       uint32_t(1),
-      [&sentinel](uint32_t acc, const broker_shard& bs) {
+      [&sentinel](uint32_t acc, const model::broker_shard& bs) {
           if (sentinel != bs.node_id) {
               acc += 1;
           }
@@ -39,16 +39,20 @@ static inline bool valid_machine_fault_domain_diversity(
 }
 
 static bool is_machine_in_replicas(
-  const allocation_node& machine, const std::vector<broker_shard>& replicas) {
+  const allocation_node& machine,
+  const std::vector<model::broker_shard>& replicas) {
     return std::any_of(
-      replicas.begin(), replicas.end(), [&machine](const broker_shard& bs) {
+      replicas.begin(),
+      replicas.end(),
+      [&machine](const model::broker_shard& bs) {
           return machine.id() == bs.node_id;
       });
 }
 
-std::optional<std::vector<broker_shard>> partition_allocator::allocate_replicas(
+std::optional<std::vector<model::broker_shard>>
+partition_allocator::allocate_replicas(
   model::ntp ntp, int16_t replication_factor) {
-    std::vector<broker_shard> replicas;
+    std::vector<model::broker_shard> replicas;
     replicas.reserve(replication_factor);
 
     while (replicas.size() < replication_factor) {
@@ -64,7 +68,7 @@ std::optional<std::vector<broker_shard>> partition_allocator::allocate_replicas(
             continue;
         }
         const uint32_t cpu = machine.allocate();
-        broker_shard bs{.node_id = machine.id(), .shard = cpu};
+        model::broker_shard bs{.node_id = machine.id(), .shard = cpu};
         replicas.push_back(std::move(bs));
         if (machine.is_full()) {
             _available_machines.erase(_available_machines.iterator_to(machine));
@@ -106,7 +110,7 @@ partition_allocator::allocate(const topic_configuration& cfg) {
     return ret;
 }
 
-void partition_allocator::deallocate(const broker_shard& bs) {
+void partition_allocator::deallocate(const model::broker_shard& bs) {
     // find in brokers
     auto it = std::find_if(
       _machines.begin(), _machines.end(), [id = bs.node_id](const ptr& n) {
