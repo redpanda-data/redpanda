@@ -46,14 +46,18 @@ public:
       request_header&& header,
       fragbuf&& request,
       lowres_clock::duration throttle_delay,
-      kafka::group_router_type& group_router) noexcept
+      kafka::group_router_type& group_router,
+      cluster::shard_table& shard_table,
+      sharded<cluster::partition_manager>& partition_manager) noexcept
       : _metadata_cache(metadata_cache)
       , _cntrl_dispatcher(cntrl_dispatcher)
       , _header(std::move(header))
       , _request(std::move(request))
       , _reader(_request.get_istream())
       , _throttle_delay(throttle_delay)
-      , _group_router(group_router) {
+      , _group_router(group_router)
+      , _shard_table(shard_table)
+      , _partition_manager(partition_manager) {
     }
 
     request_context(request_context&&) noexcept = default;
@@ -92,6 +96,8 @@ private:
     request_reader _reader;
     lowres_clock::duration _throttle_delay;
     kafka::group_router_type& _group_router;
+    cluster::shard_table& _shard_table;
+    sharded<cluster::partition_manager>& _partition_manager;
 };
 
 class response;
