@@ -72,7 +72,7 @@ struct partition_metadata {
       : id(std::move(p)) {
     }
     partition_id id;
-    std::vector<model::node_id> replicas;
+    std::vector<broker_shard> replicas;
     model::node_id leader_node;
 };
 

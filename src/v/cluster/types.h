@@ -27,15 +27,7 @@ struct partition_assignment {
     model::partition_metadata
     create_partition_metadata() const {
         auto p_md = model::partition_metadata(ntp.tp.partition);
-        p_md.replicas.reserve(replicas.size());
-        std::transform(
-            replicas.begin(),
-            replicas.end(),
-            std::back_inserter(p_md.replicas),
-            [](const model::broker_shard& bs){
-                return bs.node_id;
-            }
-        );
+        p_md.replicas = replicas;;
         return p_md;
     }
 };
