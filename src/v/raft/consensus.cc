@@ -83,7 +83,8 @@ future<> consensus::process_vote_replies(std::vector<vote_reply_ptr> reqs) {
           "We are no longer a candidate. Active term:{}", _meta.term);
         return make_ready_future<>();
     }
-    const size_t majority = (_conf.nodes.size() / 2) + 1;
+    // use (n/2) instead of ((n/2)+1) as we already have self vote
+    const size_t majority = (_conf.nodes.size() / 2);
     const size_t votes_granted = std::accumulate(
       reqs.begin(),
       reqs.end(),
@@ -112,7 +113,10 @@ future<> consensus::process_vote_replies(std::vector<vote_reply_ptr> reqs) {
                      return make_ready_future<>();
                  }
                  raftlog().info(
-                   "We({}) are the new leader, term:{}", _self, _meta.term);
+                   "We({}) are the new leader, term:{}, group {}",
+                   _self,
+                   _meta.term,
+                   _meta.group);
                  _vstate = vote_state::leader;
                  // update configuration changes and propagate to all clients
                  return replicate_config_as_new_leader();
@@ -154,8 +158,8 @@ consensus::send_vote_requests(clock_type::time_point timeout) {
                 raftlog().info("Node:{} could not vote() - {} ", n, e);
             });
       });
-    // wait for safety, or timeout
-    const size_t majority = (_conf.nodes.size() / 2) + 1;
+    // wait for safety, or timeout, do not wait for self vote.
+    const size_t majority = (_conf.nodes.size() / 2);
     return sem->wait(majority).then([ret, sem] {
         std::vector<vote_reply_ptr> clean;
         clean.reserve(ret->size());
@@ -217,10 +221,9 @@ void consensus::dispatch_vote() {
     if (_vstate == vote_state::leader) {
         return;
     }
-    if (!_bg.is_closed()) {
-        // 5.2.1.4 - prepare next timeout
-        _vote_timeout.arm(_jit());
-    }
+    // 5.2.1.4 - prepare next timeout
+    arm_vote_timeout();
+
     // background, acquire lock, transition state
     (void)with_gate(_bg, [this] {
         // must be oustside semaphore
@@ -255,6 +258,10 @@ future<> consensus::start() {
               // ignore: `_meta.term = st.term` - would violate the voted_for
               //  configuration
               _conf = std::move(st.release_config());
+          })
+          .then([this] {
+              // Arm leader election timeout.
+              arm_vote_timeout();
           });
     });
 }
@@ -462,7 +469,10 @@ future<std::vector<storage::log::append_result>>
 consensus::disk_append(std::vector<entry>&& entries) {
     using ret_t = std::vector<storage::log::append_result>;
     // used to detect if we roll the last segment
-    model::offset prev_base_offset = _log.segments().last()->base_offset();
+    model::offset prev_base_offset = _log.segments().empty()
+                                       ? model::offset(0)
+                                       : _log.segments().last()->base_offset();
+
     // clang-format off
     return do_with(std::move(entries), [this](std::vector<entry>& in) {
             auto no_of_entries = in.size();

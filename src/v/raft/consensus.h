@@ -119,6 +119,12 @@ private:
     /// to update our leader_id, nodes & learners configuration
     future<> process_configurations(std::vector<entry>&&);
 
+    void arm_vote_timeout() {
+        if (!_bg.is_closed()) {
+            _vote_timeout.rearm(_jit());
+        }
+    }
+
     // args
     model::node_id _self;
     timeout_jitter _jit;
