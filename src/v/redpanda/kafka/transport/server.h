@@ -68,7 +68,9 @@ public:
       sharded<controller_dispatcher>&,
       kafka_server_config,
       sharded<quota_manager>& quota_mgr,
-      sharded<kafka::group_router_type>& group_router) noexcept;
+      sharded<kafka::group_router_type>& group_router,
+      sharded<cluster::shard_table>& shard_table,
+      sharded<cluster::partition_manager>& partition_manager) noexcept;
     future<> listen(socket_address server_addr, bool keepalive);
     future<> do_accepts(int which, net::inet_address server_addr);
     future<> stop();
@@ -118,6 +120,8 @@ private:
     shared_ptr<tls::server_credentials> _creds;
     metrics::metric_groups _metrics;
     sharded<kafka::group_router_type>& _group_router;
+    sharded<cluster::shard_table>& _shard_table;
+    sharded<cluster::partition_manager>& _partition_manager;
 };
 
 } // namespace kafka

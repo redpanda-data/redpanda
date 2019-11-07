@@ -48,7 +48,9 @@ make_request_context(kafka::request_header&& header, fragbuf&& buf) {
           std::move(header),
           std::move(buf),
           std::chrono::milliseconds(0),
-          app.group_router.local());
+          app.group_router.local(),
+          app.shard_table.local(),
+          app.partition_manager);
 
         return std::move(ctx);
     });
