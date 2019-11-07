@@ -113,7 +113,10 @@ future<> consensus::process_vote_replies(std::vector<vote_reply_ptr> reqs) {
                      return make_ready_future<>();
                  }
                  raftlog().info(
-                   "We({}) are the new leader, term:{}", _self, _meta.term);
+                   "We({}) are the new leader, term:{}, group {}",
+                   _self,
+                   _meta.term,
+                   _meta.group);
                  _vstate = vote_state::leader;
                  // update configuration changes and propagate to all clients
                  return replicate_config_as_new_leader();
