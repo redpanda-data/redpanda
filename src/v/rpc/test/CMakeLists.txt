@@ -34,3 +34,10 @@ rp_test(
               ${CMAKE_CURRENT_SOURCE_DIR}/root_certificate_authority.chain_cert
   ARGS "-- -c 1"
 )
+
+rp_test(
+  BENCHMARK_TEST
+  BINARY_NAME rpc_serialization
+  SOURCES rpc_bench.cc
+  LIBRARIES cluster Seastar::seastar_perf_testing
+)
