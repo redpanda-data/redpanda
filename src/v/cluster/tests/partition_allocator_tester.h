@@ -13,13 +13,10 @@ struct partition_allocator_tester {
       uint32_t nodes = max_nodes, uint32_t cpus = cpus_per_node)
       : pa(raft::group_id(0)) {
         for (auto i = 0; i < nodes; ++i) {
-            model::broker bi(
-              model::node_id(_prng()),
-              random_generators::gen_alphanum_string(10),
-              _prng(),
-              std::nullopt);
             pa.register_node(std::make_unique<allocation_node>(
-              std::move(bi), cpus, std::unordered_map<sstring, sstring>()));
+              model::node_id(_prng()),
+              cpus,
+              std::unordered_map<sstring, sstring>()));
         }
     }
     partition_allocator::underlying_t& machines() {

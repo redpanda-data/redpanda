@@ -20,10 +20,10 @@ public:
     static constexpr const uint32_t max_allocations_per_core = 7000;
 
     allocation_node(
-      model::broker b,
+      model::node_id id,
       uint32_t cpus,
       std::unordered_map<sstring, sstring> labels)
-      : _node(std::move(b))
+      : _id(id)
       , _weights(cpus)
       , _machine_labels(std::move(labels)) {
         // add extra weights to core 0
@@ -32,7 +32,7 @@ public:
                               - core0_extra_weight;
     }
     allocation_node(allocation_node&& o) noexcept
-      : _node(std::move(o._node))
+      : _id(o._id)
       , _weights(std::move(o._weights))
       , _partition_capacity(o._partition_capacity)
       , _machine_labels(std::move(o._machine_labels))
@@ -42,7 +42,7 @@ public:
         return _weights.size();
     }
     model::node_id id() const {
-        return _node.id();
+        return _id;
     }
     uint32_t partition_capacity() const {
         return _partition_capacity;
@@ -72,11 +72,8 @@ private:
     const std::unordered_map<sstring, sstring>& machine_labels() const {
         return _machine_labels;
     }
-    const model::broker& node() const {
-        return _node;
-    }
 
-    model::broker _node;
+    model::node_id _id;
     /// each index is a CPU. A weight is roughly the number of assigments
     std::vector<uint32_t> _weights;
     uint32_t _partition_capacity{0};
