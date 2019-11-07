@@ -122,6 +122,44 @@ void partition_allocator::deallocate(const model::broker_shard& bs) {
     }
 }
 
+void partition_allocator::update_allocation_state(
+  std::vector<model::topic_metadata> metadata) {
+    if (metadata.empty()) {
+        return;
+    }
+
+    std::vector<model::broker_shard> shards;
+    for (auto const& t_md : metadata) {
+        for (auto& p_md : t_md.partitions) {
+            std::move(
+              p_md.replicas.begin(),
+              p_md.replicas.end(),
+              std::back_inserter(shards));
+        }
+    }
+
+    // We can use non stable sort algorithm as we do not need to preserver the
+    // order of shards
+    std::sort(
+      shards.begin(),
+      shards.end(),
+      [](const model::broker_shard& l, const model::broker_shard& r) {
+          return l.node_id > r.node_id;
+      });
+
+    auto it = find_node(std::cbegin(shards)->node_id);
+    for (auto const& bs : shards) {
+        // Thanks to shards being sorted we need to do only
+        //  as many lookups as there are brokers
+        if (it->first != bs.node_id) {
+            it = find_node(bs.node_id);
+        }
+        if (it != _machines.end()) {
+            it->second->allocate(bs.shard);
+        }
+    }
+}
+
 partition_allocator::iterator
 partition_allocator::find_node(model::node_id id) {
     return _machines.find(id);
