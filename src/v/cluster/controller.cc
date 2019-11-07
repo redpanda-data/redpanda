@@ -25,7 +25,7 @@ controller::controller(
   , _pm(pm)
   , _st(st)
   , _md_cache(md_cache)
-  , _raft0(nullptr) 
+  , _raft0(nullptr)
   , _highest_group_id(0) {
 }
 
@@ -116,7 +116,7 @@ controller::dispatch_record_recovery(log_record_key key, iobuf&& v_buf) {
 }
 
 future<> controller::recover_assignment(partition_assignment as) {
-     _highest_group_id = std::max(_highest_group_id, as.group);
+    _highest_group_id = std::max(_highest_group_id, as.group);
     return do_with(std::move(as), [this](partition_assignment& as) {
         return update_cache_with_partitions_assignment(as).then([this, &as] {
             return do_for_each(
@@ -255,6 +255,22 @@ raft::entry controller::create_topic_cfg_entry(const topic_configuration& cfg) {
 
 void controller::leadership_notification() {
     clusterlog().info("Local controller became a leader");
+    create_partition_allocator();
+}
+
+void controller::create_partition_allocator() {
+    _allocator = std::make_unique<partition_allocator>(_highest_group_id);
+
+    _allocator->register_node(
+      std::make_unique<allocation_node>(local_allocation_node()));
+    // _md_cache contains a mirror copy of metadata at each core
+    // so it is sufficient to access core-local copy
+    _allocator->update_allocation_state(
+      _md_cache.local().all_topics_metadata());
+}
+
+allocation_node controller::local_allocation_node() {
+    return allocation_node(_self, smp::count, {});
 }
 
 void controller::on_raft0_entries_commited(std::vector<raft::entry>&& entries) {
