@@ -8,6 +8,7 @@ import (
 	"vectorized/pkg/redpanda"
 	"vectorized/pkg/system"
 	"vectorized/pkg/tuners"
+	"vectorized/pkg/tuners/coredump"
 	"vectorized/pkg/tuners/cpu"
 	"vectorized/pkg/tuners/disk"
 	"vectorized/pkg/tuners/ethtool"
@@ -30,6 +31,7 @@ var (
 		"cpu":            (*tunersFactory).newCpuTuner,
 		"aio_events":     (*tunersFactory).newMaxAIOEventsTuner,
 		"clocksource":    (*tunersFactory).newClockSourceTuner,
+		"coredump":       (*tunersFactory).newCoredumpTuner,
 	}
 )
 
@@ -130,6 +132,8 @@ func IsTunerEnabled(tuner string, rpkConfig *redpanda.RpkConfig) bool {
 		return rpkConfig.TuneAioEvents
 	case "clocksource":
 		return rpkConfig.TuneClocksource
+	case "coredump":
+		return rpkConfig.TuneCoredump
 	}
 	return false
 }
@@ -225,6 +229,12 @@ func (factory *tunersFactory) newClockSourceTuner(
 	params *TunerParams,
 ) tuners.Tunable {
 	return sys.NewClockSourceTuner(factory.fs, factory.executor)
+}
+
+func (factory *tunersFactory) newCoredumpTuner(
+	params *TunerParams,
+) tuners.Tunable {
+	return coredump.NewCoredumpTuner(factory.fs, factory.config, factory.executor)
 }
 
 func MergeTunerParamsConfig(
