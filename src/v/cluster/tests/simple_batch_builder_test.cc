@@ -8,7 +8,7 @@
 #include <boost/test/unit_test.hpp>
 
 cluster::partition_assignment create_test_assignment(uint32_t p, uint16_t rf) {
-    std::vector<cluster::broker_shard> replicas;
+    std::vector<model::broker_shard> replicas;
     for (int i = 0; i < rf; i++) {
         replicas.push_back({.node_id = model::node_id(i), .shard = 0});
     }
