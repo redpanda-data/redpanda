@@ -69,6 +69,10 @@ private:
         _partition_capacity++;
         _weights[core]--;
     }
+    void allocate(uint32_t core) {
+        _weights[core]++;
+        _partition_capacity--;
+    }
     const std::unordered_map<sstring, sstring>& machine_labels() const {
         return _machine_labels;
     }
@@ -114,6 +118,11 @@ public:
 
     /// best effort. Does not throw if we cannot find the old partition
     void deallocate(const model::broker_shard&);
+
+    /// updates the state of allocation, it is used during recovery and
+    /// when processing raft0 committed notifications
+    void update_allocation_state(std::vector<model::topic_metadata>);
+
     ~partition_allocator() {
         _available_machines.clear();
         _rr = _available_machines.end();
