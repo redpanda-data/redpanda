@@ -1,6 +1,7 @@
 #pragma once
 
 #include "cluster/metadata_cache.h"
+#include "cluster/partition_allocator.h"
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
 #include "cluster/types.h"
@@ -79,6 +80,8 @@ private:
     raft::entry create_topic_cfg_entry(const topic_configuration&);
     void end_of_stream();
     void leadership_notification();
+    void create_partition_allocator();
+    allocation_node local_allocation_node();
     future<raft::append_entries_reply>
       raft0_append_entries(std::vector<raft::entry>);
     void on_raft0_entries_commited(std::vector<raft::entry>&&);
@@ -89,6 +92,7 @@ private:
     sharded<metadata_cache>& _md_cache;
     raft::consensus* _raft0;
     raft::group_id _highest_group_id;
+    std::unique_ptr<partition_allocator> _allocator;
 };
 
 // clang-format off
