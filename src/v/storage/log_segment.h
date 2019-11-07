@@ -116,6 +116,10 @@ public:
         return _segments.size();
     }
 
+    bool empty() const {
+        return _segments.empty();
+    }
+
     /// New segments must be monotonically increasing in base offset
     void add(log_segment_ptr);
 
