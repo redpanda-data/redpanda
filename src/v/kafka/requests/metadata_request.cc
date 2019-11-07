@@ -136,12 +136,19 @@ metadata_response::topic metadata_response::topic::make_from_topic_metadata(
       tp_md.partitions.end(),
       std::back_inserter(tp.partitions),
       [](model::partition_metadata& p_md) {
+          std::vector<model::node_id> replicas{};
+          replicas.reserve(p_md.replicas.size());
+          std::transform(
+            std::cbegin(p_md.replicas),
+            std::cend(p_md.replicas),
+            std::back_inserter(replicas),
+            [](const model::broker_shard& bs) { return bs.node_id; });
           metadata_response::partition p;
           p.err_code = error_code::none;
           p.index = p_md.id;
           p.leader = p_md.leader_node;
           p.leader_epoch = 0;
-          p.replica_nodes = std::move(p_md.replicas);
+          p.replica_nodes = std::move(replicas);
           p.offline_replicas = {};
           return p;
       });
