@@ -48,6 +48,7 @@ type TunersFactory interface {
 
 type tunersFactory struct {
 	fs                afero.Fs
+	config            redpanda.Config
 	irqDeviceInfo     irq.DeviceInfo
 	cpuMasks          irq.CpuMasks
 	irqBalanceService irq.BalanceService
@@ -59,27 +60,28 @@ type tunersFactory struct {
 }
 
 func NewDirectExecutorTunersFactory(
-	fs afero.Fs, timeout time.Duration,
+	fs afero.Fs, config redpanda.Config, timeout time.Duration,
 ) TunersFactory {
 	irqProcFile := irq.NewProcFile(fs)
 	proc := os.NewProc()
 	irqDeviceInfo := irq.NewDeviceInfo(fs, irqProcFile)
 	executor := executors.NewDirectExecutor()
-	return newTunersFactory(fs, irqProcFile, proc, irqDeviceInfo, executor, timeout)
+	return newTunersFactory(fs, config, irqProcFile, proc, irqDeviceInfo, executor, timeout)
 }
 
 func NewScriptRenderingTunersFactory(
-	fs afero.Fs, out string, timeout time.Duration,
+	fs afero.Fs, config redpanda.Config, out string, timeout time.Duration,
 ) TunersFactory {
 	irqProcFile := irq.NewProcFile(fs)
 	proc := os.NewProc()
 	irqDeviceInfo := irq.NewDeviceInfo(fs, irqProcFile)
 	executor := executors.NewScriptRenderingExecutor(fs, out)
-	return newTunersFactory(fs, irqProcFile, proc, irqDeviceInfo, executor, timeout)
+	return newTunersFactory(fs, config, irqProcFile, proc, irqDeviceInfo, executor, timeout)
 }
 
 func newTunersFactory(
 	fs afero.Fs,
+	config redpanda.Config,
 	irqProcFile irq.ProcFile,
 	proc os.Proc,
 	irqDeviceInfo irq.DeviceInfo,
@@ -88,6 +90,7 @@ func newTunersFactory(
 ) TunersFactory {
 	return &tunersFactory{
 		fs:                fs,
+		config:            config,
 		irqProcFile:       irqProcFile,
 		irqDeviceInfo:     irqDeviceInfo,
 		cpuMasks:          irq.NewCpuMasks(fs, hwloc.NewHwLocCmd(proc, timeout), executor),

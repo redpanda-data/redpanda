@@ -49,13 +49,6 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 			return nil
 		},
 		RunE: func(_ *cobra.Command, args []string) error {
-			var tunerFactory factory.TunersFactory
-			if outTuneScriptFile != "" {
-				tunerFactory = factory.NewScriptRenderingTunersFactory(
-					fs, outTuneScriptFile, timeout)
-			} else {
-				tunerFactory = factory.NewDirectExecutorTunersFactory(fs, timeout)
-			}
 			if !tunerParamsEmpty(&tunerParams) && redpandaConfigFile != "" {
 				return errors.New("Use either tuner params or redpanda config file")
 			}
@@ -77,6 +70,14 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 			config, err := redpanda.ReadConfigFromPath(fs, configFile)
 			if err != nil {
 				return err
+			}
+			var tunerFactory factory.TunersFactory
+			if outTuneScriptFile != "" {
+				tunerFactory = factory.NewScriptRenderingTunersFactory(
+					fs, *config, outTuneScriptFile, timeout)
+			} else {
+				tunerFactory = factory.NewDirectExecutorTunersFactory(
+					fs, *config, timeout)
 			}
 			return tune(fs, config, tuners, tunerFactory, &tunerParams)
 		},

@@ -190,7 +190,7 @@ func tuneAll(
 	timeout time.Duration,
 ) error {
 	params := &factory.TunerParams{}
-	tunerFactory := factory.NewDirectExecutorTunersFactory(fs, timeout)
+	tunerFactory := factory.NewDirectExecutorTunersFactory(fs, *config, timeout)
 	hw := hwloc.NewHwLocCmd(os.NewProc(), timeout)
 	if cpuSet == "" {
 		cpuMask, err := hw.All()
