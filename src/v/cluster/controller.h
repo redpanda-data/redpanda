@@ -77,7 +77,8 @@ private:
     future<> dispatch_record_recovery(log_record_key, iobuf&&);
     future<>
     update_cache_with_partitions_assignment(const partition_assignment&);
-    raft::entry create_topic_cfg_entry(const topic_configuration&);
+    std::optional<raft::entry>
+    create_topic_cfg_entry(const topic_configuration&);
     void end_of_stream();
     void leadership_notification();
     void create_partition_allocator();
