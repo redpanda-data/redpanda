@@ -2,6 +2,8 @@
 
 #include "utils/human.h"
 
+#include <fmt/format.h>
+
 #include <iostream>
 
 void hdr_hist::record(uint64_t value) {
@@ -20,6 +22,34 @@ void hdr_hist::record_corrected(uint64_t value, uint64_t interval) {
     _sample_count++;
     _sample_sum += value;
     ::hdr_record_corrected_value(_hist.get(), value, interval);
+}
+
+hdr_hist& hdr_hist::operator+=(const hdr_hist& o) {
+    ::hdr_add(_hist.get(), o._hist.get());
+    return *this;
+}
+
+temporary_buffer<char> hdr_hist::print_classic() const {
+    char* buf = nullptr;
+    std::size_t len = 0;
+    FILE* fp = open_memstream(&buf, &len);
+    if (__builtin_expect(fp == nullptr, false)) {
+        throw std::runtime_error("Failed to allocate filestream");
+    }
+    const int p_ret = ::hdr_percentiles_print(
+      _hist.get(),
+      fp,       // File to write to
+      5,        // Granularity of printed values
+      1.0,      // Multiplier for results
+      CLASSIC); // Format CLASSIC/CSV supported.
+    // fflush in order to have len update
+    fflush(fp);
+    fclose(fp);
+    if (p_ret != 0) {
+        throw std::runtime_error(
+          fmt::format("Failed to print histogram: {}", p_ret));
+    }
+    return temporary_buffer<char>(buf, len, make_free_deleter(buf));
 }
 // getters
 int64_t hdr_hist::get_value_at(double percentile) const {
