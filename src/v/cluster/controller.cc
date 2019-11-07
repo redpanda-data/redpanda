@@ -183,15 +183,24 @@ future<std::vector<topic_result>> controller::create_topics(
   std::vector<topic_configuration> topics,
   model::timeout_clock::time_point timeout) {
     verify_shard();
+    if (!is_leader() || _allocator == nullptr) {
+        return make_ready_future<std::vector<topic_result>>(
+          create_topic_results(
+            std::move(topics), topic_error_code::not_leader_controller));
+    }
+    std::vector<topic_result> errors;
     std::vector<raft::entry> entries;
     entries.reserve(topics.size());
-    std::transform(
-      topics.begin(),
-      topics.end(),
-      std::back_inserter(entries),
-      [this](const topic_configuration& cfg) {
-          return create_topic_cfg_entry(cfg);
-      });
+    for (const auto& t_cfg : topics) {
+        auto entry = create_topic_cfg_entry(t_cfg);
+        if (entry) {
+            entries.push_back(std::move(*entry));
+        } else {
+            errors.emplace_back(
+              t_cfg.topic, topic_error_code::invalid_partitions);
+        }
+    }
+
     // Do append entries to raft0 logs
     auto f = raft0_append_entries(std::move(entries))
                .then_wrapped([topics = std::move(topics)](
@@ -212,6 +221,15 @@ future<std::vector<topic_result>> controller::create_topics(
                      std::move(topics),
                      success ? topic_error_code::no_error
                              : topic_error_code::unknown_error);
+               })
+               .then([errors = std::move(errors)](
+                       std::vector<topic_result> results) {
+                   // merge results from both sources
+                   std::move(
+                     std::begin(errors),
+                     std::end(errors),
+                     std::back_inserter(results));
+                   return std::move(results);
                });
 
     return with_timeout(timeout, std::move(f));
@@ -224,7 +242,8 @@ controller::raft0_append_entries(std::vector<raft::entry> entries) {
                                    .entries = std::move(entries)});
 }
 
-raft::entry controller::create_topic_cfg_entry(const topic_configuration& cfg) {
+std::optional<raft::entry>
+controller::create_topic_cfg_entry(const topic_configuration& cfg) {
     simple_batch_builder builder(
       controller::controller_record_batch_type,
       model::offset(_raft0->meta().commit_index));
@@ -232,19 +251,16 @@ raft::entry controller::create_topic_cfg_entry(const topic_configuration& cfg) {
       log_record_key{.record_type = log_record_key::type::topic_configuration},
       cfg);
 
+    auto assignments = _allocator->allocate(cfg);
+    if (!assignments) {
+        clusterlog().error(
+          "Unable to allocate partitions for topic '{}'", cfg.topic());
+        return std::nullopt;
+    }
     log_record_key assignment_key = {
       .record_type = log_record_key::type::partition_assignment};
-    // FIXME: Use assignment manager here...
-    for (int i = 0; i < cfg.partition_count; i++) {
-        model::ntp ntp{
-          .ns = cfg.ns,
-          .tp = {.topic = cfg.topic, .partition = model::partition_id{i}}};
-        builder.add_kv(
-          assignment_key,
-          partition_assignment{
-            .group = raft::group_id(i),
-            .ntp = ntp,
-            .replicas = {{.node_id = _self, .shard = storage::shard_of(ntp)}}});
+    for (auto const p_as : *assignments) {
+        builder.add_kv(assignment_key, p_as);
     }
     std::vector<model::record_batch> batches;
     batches.push_back(std::move(builder).build());
