@@ -83,7 +83,8 @@ future<> consensus::process_vote_replies(std::vector<vote_reply_ptr> reqs) {
           "We are no longer a candidate. Active term:{}", _meta.term);
         return make_ready_future<>();
     }
-    const size_t majority = (_conf.nodes.size() / 2) + 1;
+    // use (n/2) instead of ((n/2)+1) as we already have self vote
+    const size_t majority = (_conf.nodes.size() / 2);
     const size_t votes_granted = std::accumulate(
       reqs.begin(),
       reqs.end(),
@@ -154,8 +155,8 @@ consensus::send_vote_requests(clock_type::time_point timeout) {
                 raftlog().info("Node:{} could not vote() - {} ", n, e);
             });
       });
-    // wait for safety, or timeout
-    const size_t majority = (_conf.nodes.size() / 2) + 1;
+    // wait for safety, or timeout, do not wait for self vote.
+    const size_t majority = (_conf.nodes.size() / 2);
     return sem->wait(majority).then([ret, sem] {
         std::vector<vote_reply_ptr> clean;
         clean.reserve(ret->size());
