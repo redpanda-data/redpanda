@@ -1,5 +1,6 @@
 #pragma once
 
+#include "cluster/metadata_cache.h"
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
 #include "cluster/types.h"
@@ -27,7 +28,8 @@ public:
       sstring basedir,
       size_t max_segment_size,
       sharded<partition_manager>&,
-      sharded<shard_table>&);
+      sharded<shard_table>&,
+      sharded<metadata_cache>&);
 
     future<> start();
     future<> stop();
@@ -61,16 +63,22 @@ private:
     future<> recover_batch(model::record_batch);
     future<> recover_record(model::record);
     future<> recover_assignment(partition_assignment);
+    future<> recover_replica(model::ntp, raft::group_id, broker_shard);
+    future<> recover_topic_configuration(topic_configuration);
     future<> dispatch_record_recovery(log_record_key, fragbuf&&);
+    future<>
+    update_cache_with_partitions_assignment(const partition_assignment&);
     raft::entry create_topic_cfg_entry(const topic_configuration&);
     void end_of_stream();
     raft::consensus& raft0() const;
     future<raft::append_entries_reply>
       raft0_append_entries(std::vector<raft::entry>);
+    void on_raft0_entries_commited(std::vector<raft::entry>&&);
 
     model::node_id _self;
     sharded<partition_manager>& _pm;
     sharded<shard_table>& _st;
+    sharded<metadata_cache>& _md_cache;
 };
 
 // clang-format off

@@ -28,9 +28,10 @@ void configuration_bootstrap_state::process_configuration_in_thread(
 void configuration_bootstrap_state::process_data_offsets_in_thread(
   model::record_batch b) {
     _data_batches_seen++;
-    if (__builtin_expect(b.type() != data_batch_type, false)) {
+    if (__builtin_expect(b.type() == configuration_batch_type, false)) {
         throw std::runtime_error(fmt::format(
-          "Logic error. Asked a data tracker to process an unknown "
+          "Logic error. Asked a data tracker to process "
+          "configuration_batch_type "
           "record_batch_type: {}",
           b.type()));
     }
@@ -59,12 +60,9 @@ void configuration_bootstrap_state::process_batch_in_thread(
     case configuration_batch_type:
         process_configuration_in_thread(std::move(b));
         break;
-    case data_batch_type:
+    default:
         process_data_offsets_in_thread(std::move(b));
         break;
-    default:
-        throw std::runtime_error(fmt::format(
-          "Cannot process model::record_batch_type : {}", b.type()));
     }
 }
 } // namespace raft

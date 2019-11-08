@@ -115,7 +115,7 @@ public:
     allocate(const topic_configuration&);
 
     /// best effort. Does not throw if we cannot find the old partition
-    void deallocate(const partition_assignment&);
+    void deallocate(const broker_shard&);
     ~partition_allocator() {
         _available_machines.clear();
         _rr = _available_machines.end();
@@ -127,8 +127,9 @@ private:
     /// raft-group by distinct raft-group counts
     /// assumes sorted in raft-group order
     void rollback(const std::vector<partition_assignment>& pa);
+    void rollback(const std::vector<broker_shard>& v);
 
-    std::optional<std::vector<partition_assignment>>
+    std::optional<std::vector<broker_shard>>
     allocate_replicas(model::ntp, int16_t replication_factor);
 
     [[gnu::always_inline]] inline cil_t::iterator& round_robin_ptr() {

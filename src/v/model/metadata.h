@@ -61,27 +61,29 @@ struct partition_metadata {
       : id(std::move(p)) {
     }
     partition_id id;
+    std::vector<model::node_id> replicas;
+    model::node_id leader_node;
 };
 
 struct topic_metadata {
-    explicit topic_metadata(topic_view v) noexcept
-      : topic(std::move(v)) {
+    explicit topic_metadata(topic v) noexcept
+      : tp(std::move(v)) {
     }
-    topic_view topic;
+    topic tp;
     std::vector<partition_metadata> partitions;
 };
 
 namespace internal {
 struct hash_by_topic_name {
     size_t operator()(const topic_metadata& tm) const {
-        return std::hash<std::string_view>()(tm.topic());
+        return std::hash<model::topic>()(tm.tp);
     }
 };
 
 struct equals_by_topic_name {
     bool
     operator()(const topic_metadata& tm1, const topic_metadata& tm2) const {
-        return tm1.topic == tm2.topic;
+        return tm1.tp == tm2.tp;
     }
 };
 

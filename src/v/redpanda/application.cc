@@ -163,12 +163,15 @@ void application::wire_up_services() {
     _log.info("Partition manager started");
 
     // controller
+    construct_service(metadata_cache).get();
+
     _controller = std::make_unique<cluster::controller>(
       model::node_id(_conf.local().node_id()),
       _conf.local().data_directory().as_sstring(),
       _conf.local().log_segment_size(),
       _partition_manager,
-      _shard_table);
+      _shard_table,
+      metadata_cache);
 
     // group membership
     construct_service(_group_manager, std::ref(_partition_manager)).get();
@@ -186,8 +189,6 @@ void application::wire_up_services() {
     rpc_cfg.max_service_memory_per_core = memory_groups::rpc_total_memory();
     rpc_cfg.addrs.push_back(_conf.local().rpc_server);
     construct_service(_rpc, rpc_cfg).get();
-
-    construct_service(metadata_cache).get();
 
     // metrics and quota management
     construct_service(

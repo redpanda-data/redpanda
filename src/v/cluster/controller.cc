@@ -19,10 +19,12 @@ controller::controller(
   sstring basedir,
   size_t max_segment_size,
   sharded<partition_manager>& pm,
-  sharded<shard_table>& st)
+  sharded<shard_table>& st,
+  sharded<metadata_cache>& md_cache)
   : _self(std::move(n))
   , _pm(pm)
-  , _st(st) {
+  , _st(st)
+  , _md_cache(md_cache) {
 }
 
 future<> controller::start() {
@@ -35,9 +37,9 @@ future<> controller::start() {
           return bootstrap_from_log(plog);
       })
       .then([this] {
-          raft0().register_hook([this](std::vector<raft::entry>&&) {
+          raft0().register_hook([this](std::vector<raft::entry>&& entries) {
               verify_shard();
-              // TODO update the the caches w/ these entries
+              on_raft0_entries_commited(std::move(entries));
           });
       });
 }
@@ -97,8 +99,10 @@ controller::dispatch_record_recovery(log_record_key key, fragbuf&& v_buf) {
               return recover_assignment(std::move(as));
           });
     case log_record_key::type::topic_configuration:
-        // FIXME: Update cache with configuration
-        return make_ready_future<>();
+        return rpc::deserialize<topic_configuration>(std::move(v_buf))
+          .then([this](topic_configuration t_cfg) {
+              return recover_topic_configuration(std::move(t_cfg));
+          });
     default:
         return make_exception_future<>(
           std::runtime_error("Not supported record type in controller batch"));
@@ -106,28 +110,46 @@ controller::dispatch_record_recovery(log_record_key key, fragbuf&& v_buf) {
 }
 
 future<> controller::recover_assignment(partition_assignment as) {
-    if (as.broker.id() != _self) {
-        // FIXME: Update metadata cache with others partitions assignments
+    return do_with(std::move(as), [this](partition_assignment& as) {
+        return update_cache_with_partitions_assignment(as).then([this, &as] {
+            return do_for_each(
+              as.replicas,
+              [this, raft_group = as.group, ntp = std::move(as.ntp)](
+                broker_shard& bs) {
+                  return recover_replica(
+                    std::move(ntp), raft_group, std::move(bs));
+              });
+        });
+    });
+}
+
+future<> controller::recover_replica(
+  model::ntp ntp, raft::group_id raft_group, broker_shard bs) {
+    // if the assignment is not for current broker just update
+    // metadata cache
+    if (bs.node_id != _self) {
         return make_ready_future<>();
     }
-    // the following ops have a dependency on the shard_table *then*
-    // partition_manager order
+    // the following ops have a dependency on the shard_table
+    // *then* partition_manager order
 
+    // FIXME: Pass topic configuration to partitions manager
+
+    // (compression, compation, etc)
     // 1. update shard_table: broadcast
     return _st
-      .invoke_on_all([shard = as.shard, raft_group = as.group, ntp = as.ntp](
-                       shard_table& s) {
+      .invoke_on_all([ntp, raft_group, shard = bs.shard](shard_table& s) {
           s.insert(ntp, shard);
           s.insert(raft_group, shard);
       })
-      .then([this, shard = as.shard, raft_group = as.group, ntp = as.ntp] {
+      .then([this, shard = bs.shard, raft_group, ntp] {
           // 2. update partition_manager
           return _pm.invoke_on(
-            shard, [this, raft_group, ntp](partition_manager& pm) {
+            shard,
+            [this, raft_group, ntp = std::move(ntp)](partition_manager& pm) {
                 sstring msg = fmt::format(
                   "recovered: {}, raft group_id: {}", ntp.path(), raft_group);
-                // recover partition in the background
-                (void)pm.manage(ntp, raft_group)
+                return pm.manage(ntp, raft_group)
                   .finally(
                     [msg = std::move(msg)] { clusterlog().info("{},", msg); });
             });
@@ -136,6 +158,18 @@ future<> controller::recover_assignment(partition_assignment as) {
 
 void controller::end_of_stream() {
     clusterlog().info("Finished recovering cluster state");
+}
+
+future<> controller::update_cache_with_partitions_assignment(
+  const partition_assignment& p_as) {
+    return _md_cache.invoke_on_all(
+      [p_as](metadata_cache& md_c) { md_c.update_partition_assignment(p_as); });
+}
+
+future<> controller::recover_topic_configuration(topic_configuration t_cfg) {
+    // broadcast to all caches
+    return _md_cache.invoke_on_all(
+      [tp = t_cfg.topic](metadata_cache& md_c) { md_c.add_topic(tp); });
 }
 
 future<std::vector<topic_result>> controller::create_topics(
@@ -198,21 +232,28 @@ raft::entry controller::create_topic_cfg_entry(const topic_configuration& cfg) {
         model::ntp ntp{
           .ns = cfg.ns,
           .tp = {.topic = cfg.topic, .partition = model::partition_id{i}}};
-        for (int j = 0; j < cfg.replication_factor; j++) {
-            builder.add_kv(
-              assignment_key,
-              partition_assignment{.shard = storage::shard_of(ntp),
-                                   .group = raft::group_id(i),
-                                   .ntp = ntp,
-                                   .broker = model::broker(
-                                     _self, "localhost", 9092, std::nullopt)});
-        }
+        builder.add_kv(
+          assignment_key,
+          partition_assignment{
+            .group = raft::group_id(i),
+            .ntp = ntp,
+            .replicas = {{.node_id = _self, .shard = storage::shard_of(ntp)}}});
     }
     std::vector<model::record_batch> batches;
     batches.push_back(std::move(builder).build());
     return raft::entry(
       controller_record_batch_type,
       model::make_memory_record_batch_reader(std::move(batches)));
+}
+
+void controller::on_raft0_entries_commited(std::vector<raft::entry>&& entries) {
+    (void)do_with(
+      std::move(entries), [this](std::vector<raft::entry>& entries) {
+          return do_for_each(entries, [this](raft::entry& entry) {
+              return entry.reader().consume(
+                batch_consumer(this), model::no_timeout);
+          });
+      });
 }
 
 } // namespace cluster
