@@ -137,3 +137,11 @@ FIXTURE_TEST(write_configs, bootstrap_fixture) {
     BOOST_REQUIRE_EQUAL(cfg.data_batches_seen(), 10);
     BOOST_REQUIRE_EQUAL(cfg.config_batches_seen(), 10);
 }
+
+FIXTURE_TEST(empty_log, bootstrap_fixture) {
+    auto cfg = raft::details::read_bootstrap_state(*_log).get0();
+
+    BOOST_REQUIRE(cfg.is_finished());
+    BOOST_REQUIRE_EQUAL(cfg.data_batches_seen(), 0);
+    BOOST_REQUIRE_EQUAL(cfg.config_batches_seen(), 0);
+}
