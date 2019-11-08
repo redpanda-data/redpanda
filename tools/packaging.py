@@ -191,6 +191,7 @@ def create_packages(formats,
                     src_dir=RP_ROOT,
                     build_dir=RP_BUILD_ROOT,
                     build_type="",
+                    clean_old=True,
                     external=list()):
     execs = [
         "%s/%s/bin/redpanda" % (build_dir, build_type),
@@ -198,6 +199,8 @@ def create_packages(formats,
     ]
     execs.extend(external)
     dist_path = os.path.join(build_dir, build_type, "dist")
+    if clean_old:
+        shutil.rmtree(dist_path, ignore_errors=True)
     configs = [os.path.join(src_dir, "conf/redpanda.yaml")]
     admin_api_swag = glob.glob(
         os.path.join(src_dir, "src/v/redpanda/admin/api-doc/*.json"))
@@ -242,6 +245,7 @@ def main():
     create_packages(build_dir=opts.build_dir,
                     build_type=opts.build_type,
                     formats=opts.formats,
+                    clean_old=True,
                     external=opts.external)
 
 
