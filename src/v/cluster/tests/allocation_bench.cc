@@ -20,7 +20,9 @@ PERF_TEST_F(partition_allocator_tester, deallocation_3) {
     perf_tests::do_not_optimize(vals);
     perf_tests::start_measuring_time();
     for (auto& v : vals) {
-        pa.deallocate(v);
+        for (auto& bs : v.replicas) {
+            pa.deallocate(bs);
+        }
     }
     perf_tests::stop_measuring_time();
 }

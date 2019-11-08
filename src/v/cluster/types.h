@@ -17,14 +17,37 @@ struct log_record_key {
     type record_type;
 };
 
-struct partition_assignment {
-    /// \brief this is the same as a seastar::shard_id
+/// type representing single replica assignment it contains the id of a broker 
+/// and id of this broker shard.
+struct broker_shard {
+    model::node_id node_id;
+    /// this is the same as a seastar::shard_id
     /// however, seastar uses unsized-ints (unsigned)
     /// and for predictability we need fixed-sized ints
     uint32_t shard;
+};
+
+/// Partition assignment describes an assignment of all replicas for single NTP.
+/// The replicas are hold in vector of broker_shard.
+struct partition_assignment {
     raft::group_id group;
     model::ntp ntp;
-    model::broker broker;
+    std::vector<broker_shard> replicas;
+
+    model::partition_metadata 
+    create_partition_metadata() const {
+        auto p_md = model::partition_metadata(ntp.tp.partition);
+        p_md.replicas.reserve(replicas.size());
+        std::transform(
+            replicas.begin(),
+            replicas.end(),
+            std::back_inserter(p_md.replicas),
+            [](const broker_shard& bs){
+                return bs.node_id;
+            }
+        );
+        return p_md;
+    }
 };
 
 struct topic_configuration {
@@ -83,11 +106,11 @@ struct topic_result {
 } // namespace cluster
 
 namespace rpc {
+    
+// Topic configuration type requires custom ser/des as is has custom constructor
+template<>
+future<cluster::topic_configuration> deserialize(source&);
 
 template<>
 void serialize(bytes_ostream& out, cluster::topic_configuration&& t);
-
-template<>
-future<cluster::partition_assignment> deserialize(source& in);
-
 } // namespace rpc

@@ -24,9 +24,8 @@ namespace kafka {
 future<response_ptr>
 metadata_api::process(request_context&& ctx, smp_service_group g) {
     return async([ctx = std::move(ctx)]() mutable {
-        auto topics = ctx.reader().read_array([](request_reader& r) {
-            return model::topic_view(r.read_string_view());
-        });
+        auto topics = ctx.reader().read_array(
+          [](request_reader& r) { return model::topic(r.read_string()); });
         if (topics.empty()) {
             topics = ctx.metadata_cache().all_topics().get0();
         }
