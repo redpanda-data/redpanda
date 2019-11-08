@@ -152,7 +152,10 @@ private:
 future<configuration_bootstrap_state> read_bootstrap_state(storage::log& log) {
     return async([&log]() mutable {
         auto retval = configuration_bootstrap_state{};
-        retval.set_term((*log.segments().rbegin())->term());
+        // set term only if there are some segments already
+        if (!log.segments().empty()) {
+            retval.set_term((*log.segments().rbegin())->term());
+        }
         auto it = log.segments().rbegin();
         auto end = log.segments().rend();
         for (; it != end && !retval.is_finished(); it++) {
