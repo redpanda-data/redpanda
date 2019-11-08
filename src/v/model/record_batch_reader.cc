@@ -13,8 +13,7 @@ make_memory_record_batch_reader(std::vector<model::record_batch> batches) {
     protected:
         virtual future<span> do_load_slice(timeout_clock::time_point) override {
             _end_of_stream = true;
-            return make_ready_future<span>(
-              span(&_batches.front(), _batches.size()));
+            return make_ready_future<span>(_batches);
         }
 
     private:
