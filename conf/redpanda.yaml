@@ -38,3 +38,6 @@ rpk:
   tune_aio_events: true
   tune_clocksource: true
   enable_memory_locking: true
+  tune_coredump: true
+
+  coredump_dir: "/var/lib/redpanda/coredump" 

@@ -161,13 +161,6 @@ func prestart(
 	prestartCfg prestartConfig,
 	timeout time.Duration,
 ) error {
-	if prestartCfg.tuneEnabled {
-		err := tuneAll(fs, args.SeastarFlags["cpuset"], config, timeout)
-		if err != nil {
-			return err
-		}
-		log.Info("System tune - PASSED")
-	}
 	if prestartCfg.checkEnabled {
 		checkersMap, err := redpanda.RedpandaCheckers(fs,
 			args.SeastarFlags["io-properties-file"], config, timeout)
@@ -180,6 +173,13 @@ func prestart(
 		}
 		log.Info("System check - PASSED")
 	}
+	if prestartCfg.tuneEnabled {
+		err := tuneAll(fs, args.SeastarFlags["cpuset"], config, timeout)
+		if err != nil {
+			return err
+		}
+		log.Info("System tune - PASSED")
+	}
 	return nil
 }
 
@@ -190,7 +190,7 @@ func tuneAll(
 	timeout time.Duration,
 ) error {
 	params := &factory.TunerParams{}
-	tunerFactory := factory.NewDirectExecutorTunersFactory(fs, timeout)
+	tunerFactory := factory.NewDirectExecutorTunersFactory(fs, *config, timeout)
 	hw := hwloc.NewHwLocCmd(os.NewProc(), timeout)
 	if cpuSet == "" {
 		cpuMask, err := hw.All()

@@ -96,7 +96,6 @@ install -m755 %{_topdir}/common/scripts/* -Dt "%{buildroot}/%{_prefix}/lib/redpa
 %{_prefix}/lib/systemd/system/redpanda-tuner.service
 %{_prefix}/lib/sysctl.d/99-redpanda-sched.conf
 %{_prefix}/lib/sysctl.d/99-redpanda-aio.conf
-%{_prefix}/lib/sysctl.d/99-redpanda-coredump.conf
 /etc/redpanda/admin-api-doc/config.json
 /etc/redpanda/admin-api-doc/header.json
 
@@ -106,7 +105,6 @@ install -m755 %{_topdir}/common/scripts/* -Dt "%{buildroot}/%{_prefix}/lib/redpa
 %systemd_post redpanda.slice redpanda.service redpanda-tuner.service
 /usr/lib/systemd/systemd-sysctl 99-redpanda-sched.conf >/dev/null 2>&1 || :
 /usr/lib/systemd/systemd-sysctl 99-redpanda-aio.conf >/dev/null 2>&1 || :
-/usr/lib/systemd/systemd-sysctl 99-redpanda-coredump.conf >/dev/null 2>&1 || :
 
 %preun 
 %systemd_preun redpanda.slice redpanda.service redpanda-tuner.service

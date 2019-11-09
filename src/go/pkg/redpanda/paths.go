@@ -36,8 +36,8 @@ func GetIOConfigPath(configFileDirectory string) string {
 func FindConfig(fs afero.Fs) (string, error) {
 	log.Debugf("Looking for redpanda config file")
 
-	for _, priovider := range configPathProviders {
-		paths, err := priovider()
+	for _, provider := range configPathProviders {
+		paths, err := provider()
 		if err != nil {
 			return "", err
 		}
