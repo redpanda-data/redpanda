@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import math
 import sys
 import os
 import logging
@@ -78,10 +79,15 @@ def _configure_build(build_type, external, external_only,
 def _invoke_build(build_type):
     _check_build_type(build_type)
     tpl = Template(
-        "cd $build_root/$build_type && ninja -C $build_root/$build_type")
+        "cd $build_root/$build_type && ninja -C $build_root/$build_type -j$num_jobs")
+
+    # assign jobs so that we have 2.0GB/core
+    total_memory = os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES')
+    num_jobs = math.floor(total_memory / (2 * 1024.**3))
     cmd = tpl.substitute(root=RP_ROOT,
                          build_root=RP_BUILD_ROOT,
-                         build_type=build_type)
+                         build_type=build_type,
+                         num_jobs=num_jobs)
     shell.run_subprocess(cmd)
     _symlink_compile_commands(build_type)
 
