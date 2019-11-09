@@ -64,6 +64,8 @@ public:
     sharded<cluster::metadata_cache> metadata_cache;
     sharded<kafka::group_router_type> group_router;
     sharded<kafka::controller_dispatcher> cntrl_dispatcher;
+    sharded<cluster::shard_table> shard_table;
+    sharded<cluster::partition_manager> partition_manager;
 
 private:
     using deferred_actions
@@ -94,8 +96,6 @@ private:
     // sharded services
     sharded<config::configuration> _conf;
     sharded<raft::client_cache> _raft_client_cache;
-    sharded<cluster::shard_table> _shard_table;
-    sharded<cluster::partition_manager> _partition_manager;
     sharded<kafka::group_manager> _group_manager;
     sharded<kafka::group_shard_mapper<cluster::shard_table>>
       _group_shard_mapper;

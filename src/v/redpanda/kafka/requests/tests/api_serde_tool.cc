@@ -1,4 +1,5 @@
 #include "redpanda/application.h"
+#include "redpanda/kafka/requests/fetch_request.h"
 #include "redpanda/kafka/requests/heartbeat_request.h"
 #include "redpanda/kafka/requests/join_group_request.h"
 #include "redpanda/kafka/requests/leave_group_request.h"
@@ -47,7 +48,9 @@ make_request_context(kafka::request_header&& header, fragbuf&& buf) {
           std::move(header),
           std::move(buf),
           std::chrono::milliseconds(0),
-          app.group_router.local());
+          app.group_router.local(),
+          app.shard_table.local(),
+          app.partition_manager);
 
         return std::move(ctx);
     });
@@ -133,6 +136,13 @@ static future<> handle_request(sstring output, kafka::request_context&& ctx) {
 
     case kafka::leave_group_api::key: {
         kafka::leave_group_request r;
+        r.decode(ctx);
+        r.encode(ctx, writer);
+        break;
+    }
+
+    case kafka::fetch_api::key: {
+        kafka::fetch_request r;
         r.decode(ctx);
         r.encode(ctx, writer);
         break;

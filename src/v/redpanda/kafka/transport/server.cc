@@ -24,7 +24,9 @@ kafka_server::kafka_server(
   sharded<controller_dispatcher>& cntrl_dispatcher,
   kafka_server_config config,
   sharded<quota_manager>& quota_mgr,
-  sharded<group_router_type>& group_router) noexcept
+  sharded<group_router_type>& group_router,
+  sharded<cluster::shard_table>& shard_table,
+  sharded<cluster::partition_manager>& partition_manager) noexcept
   : _probe(std::move(p))
   , _metadata_cache(metadata_cache)
   , _cntrl_dispatcher(cntrl_dispatcher)
@@ -33,6 +35,8 @@ kafka_server::kafka_server(
   , _smp_group(std::move(config.smp_group))
   , _quota_mgr(quota_mgr)
   , _group_router(group_router)
+  , _shard_table(shard_table)
+  , _partition_manager(partition_manager)
   , _creds(
       config.credentials ? (*config.credentials).build_server_credentials()
                          : nullptr) {
@@ -255,7 +259,9 @@ future<> kafka_server::connection::process_request() {
                                   std::move(header),
                                   std::move(buf),
                                   delay.duration,
-                                  _server._group_router.local());
+                                  _server._group_router.local(),
+                                  _server._shard_table.local(),
+                                  _server._partition_manager);
                                 _server._probe.serving_request();
                                 do_process(std::move(ctx), std::move(units));
                             });

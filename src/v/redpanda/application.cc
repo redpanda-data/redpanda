@@ -148,16 +148,16 @@ void application::configure_admin_server() {
 void application::wire_up_services() {
     // cluster
     construct_service(_raft_client_cache).get();
-    construct_service(_shard_table).get();
+    construct_service(shard_table).get();
     construct_service(
-      _partition_manager,
+      partition_manager,
       _conf.local().node_id(),
       std::chrono::milliseconds(_conf.local().raft_timeout()),
       _conf.local().data_directory().as_sstring(),
       _conf.local().log_segment_size(),
       storage::log_append_config::fsync::yes,
       std::chrono::seconds(10), // disk timeout
-      std::ref(_shard_table),
+      std::ref(shard_table),
       std::ref(_raft_client_cache))
       .get();
     _log.info("Partition manager started");
@@ -169,13 +169,13 @@ void application::wire_up_services() {
       model::node_id(_conf.local().node_id()),
       _conf.local().data_directory().as_sstring(),
       _conf.local().log_segment_size(),
-      _partition_manager,
-      _shard_table,
+      partition_manager,
+      shard_table,
       metadata_cache);
 
     // group membership
-    construct_service(_group_manager, std::ref(_partition_manager)).get();
-    construct_service(_group_shard_mapper, std::ref(_shard_table)).get();
+    construct_service(_group_manager, std::ref(partition_manager)).get();
+    construct_service(_group_shard_mapper, std::ref(shard_table)).get();
     construct_service(
       group_router,
       _scheduling_groups.kafka_sg(),
@@ -217,8 +217,8 @@ void application::start() {
             raft::service<cluster::partition_manager, cluster::shard_table>>(
             _scheduling_groups.raft_sg(),
             _smp_groups.raft_smp_sg(),
-            _partition_manager,
-            _shard_table.local());
+            partition_manager,
+            shard_table.local());
       })
       .get();
     _rpc.invoke_on_all(&rpc::server::start).get();
@@ -242,7 +242,9 @@ void application::start() {
       std::ref(cntrl_dispatcher),
       std::move(server_config),
       std::ref(_quota_mgr),
-      std::ref(group_router))
+      std::ref(group_router),
+      std::ref(shard_table),
+      std::ref(partition_manager))
       .get();
 
     _kafka_server
