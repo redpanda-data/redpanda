@@ -4,7 +4,6 @@
 #include "model/metadata.h"
 #include "model/record_batch_reader.h"
 #include "rpc/models.h"
-#include "utils/fragbuf.h"
 #include "utils/named_type.h"
 
 #include <seastar/net/socket_defs.hh>
@@ -147,7 +146,7 @@ struct [[gnu::packed]] vote_reply {
 
 namespace rpc {
 template<>
-void serialize(bytes_ostream&, raft::entry&&);
+void serialize(iobuf&, raft::entry&&);
 template<>
 future<raft::entry> deserialize(source&);
 } // namespace rpc

@@ -12,7 +12,6 @@ struct simple_batch_builder final : public storage::record_batch_builder {
     using storage::record_batch_builder::record_batch_builder;
 
     template<typename K, typename V>
-    CONCEPT(requires rpc::RPCSerializable<K>&& rpc::RPCSerializable<V>)
     simple_batch_builder& add_kv(K key, V value) {
         add_raw_kv(
           rpc::serialize(std::move(key)), rpc::serialize(std::move(value)));

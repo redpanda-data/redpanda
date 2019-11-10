@@ -146,8 +146,7 @@ future<std::unique_ptr<streaming_context>> client::send(netbuf b) {
         _correlations.emplace(idx, std::move(item));
 
         // send
-        auto view = b.scattered_view();
-        view.on_delete([b = std::move(b)] {});
+        auto view = std::move(b).as_scattered();
         const auto sz = view.size();
         return get_units(_memory, sz)
           .then([this, v = std::move(view), f = std::move(fut)](

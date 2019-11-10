@@ -5,6 +5,8 @@
 
 #include <seastar/core/byteorder.hh>
 
+#include <boost/range/iterator_range.hpp>
+
 #include <algorithm>
 #include <cstdint>
 #include <stdexcept>
@@ -204,12 +206,19 @@ parse_result continuous_batch_parser::do_process(temporary_buffer<char>& data) {
         }
     }
     case state::key_done: {
+        iobuf buf(std::exchange(_read_bytes, {}));
+        if (__builtin_expect(_64 != buf.size_bytes(), false)) {
+            throw std::runtime_error(fmt::format(
+              "Invalid state, parsing key. Got:{}, expected:{}",
+              buf.size_bytes(),
+              _64));
+        }
         auto should_skip = _consumer->consume_record_key(
           _record_size,
           _record_attributes,
           _timestamp_delta,
           _offset_delta,
-          fragbuf(std::exchange(_read_bytes, {}), _64));
+          std::move(buf));
         if (should_skip) {
             if (--_num_records) {
                 _state = state::record_start;
@@ -228,8 +237,14 @@ parse_result continuous_batch_parser::do_process(temporary_buffer<char>& data) {
         }
     }
     case state::record_end: {
-        auto vhs = fragbuf(
-          std::exchange(_read_bytes, {}), _value_and_headers_size);
+        auto vhs = iobuf(std::exchange(_read_bytes, {}));
+        if (__builtin_expect(
+              vhs.size_bytes() != _value_and_headers_size, false)) {
+            throw std::runtime_error(fmt::format(
+              "Invalid state parsing record_end. Got:{}, expected:{}",
+              vhs.size_bytes(),
+              _value_and_headers_size));
+        }
         _consumer->consume_record_value(std::move(vhs));
         if (--_num_records) {
             _state = state::record_start;
@@ -245,7 +260,14 @@ parse_result continuous_batch_parser::do_process(temporary_buffer<char>& data) {
         }
     }
     case state::compressed_records_end: {
-        auto record = fragbuf(std::exchange(_read_bytes, {}), _record_size);
+        auto record = iobuf(std::exchange(_read_bytes, {}));
+        if (__builtin_expect(record.size_bytes() != _record_size, false)) {
+            throw std::runtime_error(fmt::format(
+              "Invalid state parsing compressed_records_end. Got:{}, "
+              "expected:{}",
+              record.size_bytes(),
+              _record_size));
+        }
         _consumer->consume_compressed_records(std::move(record));
     }
     case state::batch_end:

@@ -11,15 +11,14 @@ SEASTAR_THREAD_TEST_CASE(test_can_append_ftb) {
 
     std::copy_n(
       reinterpret_cast<const int8_t*>(&value), sizeof(value), data.begin());
-    std::vector<temporary_buffer<char>> fragments;
-    fragments.emplace_back(reinterpret_cast<char*>(data.data()), 3);
-    fragments.emplace_back(reinterpret_cast<char*>(data.data() + 3), 2);
-    fragments.emplace_back(reinterpret_cast<char*>(data.data() + 5), 3);
-    auto ftb = fragbuf(std::move(fragments), sizeof(value));
+    iobuf b;
+    b.append(reinterpret_cast<char*>(data.data()), 3);
+    b.append(reinterpret_cast<char*>(data.data() + 3), 2);
+    b.append(reinterpret_cast<char*>(data.data() + 5), 3);
 
     auto f = open_file_dma("test", open_flags::create | open_flags::rw).get0();
     auto appender = log_segment_appender(f, file_output_stream_options());
-    appender.append(ftb).get();
+    appender.append(b).get();
     appender.flush().get();
 
     auto in = make_file_input_stream(f);

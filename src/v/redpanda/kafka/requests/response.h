@@ -1,6 +1,6 @@
 #pragma once
 
-#include "bytes/bytes_ostream.h"
+#include "bytes/iobuf.h"
 #include "redpanda/kafka/requests/response_writer.h"
 #include "seastarx.h"
 
@@ -20,12 +20,16 @@ public:
         return _writer;
     }
 
-    const bytes_ostream& buf() const {
+    const iobuf& buf() const {
         return _buf;
     }
 
+    iobuf release() && {
+        return std::move(_buf);
+    }
+
 private:
-    bytes_ostream _buf;
+    iobuf _buf;
     response_writer _writer;
 };
 

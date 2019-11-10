@@ -1,3 +1,4 @@
+#include "bytes/iobuf.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/record.h"
@@ -6,7 +7,6 @@
 #include "storage/parser.h"
 #include "storage/tests/random_batch.h"
 #include "utils/file_sanitizer.h"
-#include "utils/fragbuf.h"
 
 #include <seastar/core/thread.hh>
 #include <seastar/testing/thread_test_case.hh>
@@ -40,7 +40,7 @@ public:
       model::record_attributes attributes,
       int32_t timestamp_delta,
       int32_t offset_delta,
-      fragbuf&& key) override {
+      iobuf&& key) override {
         if (_record_skips) {
             _record_skips--;
             return skip::yes;
@@ -53,7 +53,7 @@ public:
         return skip::no;
     }
 
-    virtual void consume_record_value(fragbuf&& value_and_headers) override {
+    virtual void consume_record_value(iobuf&& value_and_headers) override {
         std::get<model::record_batch::uncompressed_records>(_records)
           .emplace_back(
             _record_size_bytes,
@@ -64,7 +64,7 @@ public:
             std::move(value_and_headers));
     }
 
-    virtual void consume_compressed_records(fragbuf&& records) override {
+    virtual void consume_compressed_records(iobuf&& records) override {
         _records = model::record_batch::compressed_records(
           _num_records, std::move(records));
     }
@@ -86,7 +86,7 @@ private:
     model::record_attributes _record_attributes;
     int32_t _record_timestamp_delta;
     int32_t _record_offset_delta;
-    fragbuf _record_key;
+    iobuf _record_key;
     model::record_batch::records_type _records;
 };
 

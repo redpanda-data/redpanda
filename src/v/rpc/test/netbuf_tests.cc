@@ -5,7 +5,6 @@
 #include <seastar/testing/thread_test_case.hh>
 
 // utils
-#include "rpc/test/bytes_ostream_utils.h"
 #include "rpc/test/test_types.h"
 
 #include <fmt/ostream.h>
@@ -36,8 +35,8 @@ SEASTAR_THREAD_TEST_CASE(netbuf_pod) {
     n.set_service_method_id(66);
     n.serialize_type(std::move(src));
     // forces the computation of the header
-    n.scattered_view();
-    auto in = rpc::make_input_stream(std::move(n).release());
+    auto bufs = std::move(n).as_scattered().release().release();
+    auto in = make_iobuf_input_stream(iobuf(std::move(bufs)));
     const pod dst = rpc::parse_framed<pod>(in).get0();
     BOOST_REQUIRE_EQUAL(src.x, dst.x);
     BOOST_REQUIRE_EQUAL(src.y, dst.y);

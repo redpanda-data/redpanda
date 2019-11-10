@@ -31,7 +31,7 @@ future<> write_vint(log_segment_appender& out, vint::value_type v) {
       reinterpret_cast<const char*>(encoding_buffer.data()), size);
 }
 
-future<> write(log_segment_appender& out, const fragbuf& buf) {
+future<> write(log_segment_appender& out, const iobuf& buf) {
     return out.append(buf);
 }
 

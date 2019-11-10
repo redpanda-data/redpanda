@@ -7,7 +7,7 @@
 namespace rpc {
 
 struct rpc_model_reader_consumer {
-    explicit rpc_model_reader_consumer(bytes_ostream& oref)
+    explicit rpc_model_reader_consumer(iobuf& oref)
       : ref(oref) {
     }
     future<stop_iteration> operator()(model::record_batch batch) {
@@ -24,10 +24,10 @@ struct rpc_model_reader_consumer {
         return make_ready_future<stop_iteration>(stop_iteration::no);
     }
     void end_of_stream(){};
-    bytes_ostream& ref;
+    iobuf& ref;
 };
 template<>
-void serialize(bytes_ostream& out, raft::entry&& r) {
+void serialize(iobuf& out, raft::entry&& r) {
     rpc::serialize(out, r.entry_type());
     (void)r.reader()
       .consume(rpc_model_reader_consumer(out), model::no_timeout)
@@ -44,8 +44,8 @@ future<raft::entry> deserialize(source& in) {
     };
     return rpc::deserialize<e_header>(in).then([&in](e_header hdr) {
         if (hdr.is_compressed == 1) {
-            return rpc::deserialize<fragbuf>(in).then(
-              [hdr = std::move(hdr)](fragbuf f) {
+            return rpc::deserialize<iobuf>(in).then(
+              [hdr = std::move(hdr)](iobuf f) {
                   auto batch = model::record_batch(
                     std::move(hdr.bhdr),
                     model::record_batch::compressed_records(

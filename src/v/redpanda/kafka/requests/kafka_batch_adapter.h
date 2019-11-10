@@ -1,8 +1,8 @@
 #pragma once
 
+#include "bytes/iobuf.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
-#include "utils/fragbuf.h"
 #include "utils/vint.h"
 
 namespace kafka {
@@ -33,6 +33,6 @@ constexpr size_t kafka_header_overhead = sizeof(int32_t) + // The batch length
 
 } // namespace internal
 
-model::record_batch_reader reader_from_kafka_batch(fragbuf&&);
+model::record_batch_reader reader_from_kafka_batch(iobuf&&);
 
 } // namespace kafka

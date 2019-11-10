@@ -1,7 +1,7 @@
 #pragma once
 
+#include "bytes/iobuf.h"
 #include "hashing/xx.h"
-#include "utils/fragbuf.h"
 
 #include <seastar/core/do_with.hh>
 #include <seastar/core/iostream.hh>
@@ -28,12 +28,12 @@ public:
               return make_ready_future<temporary_buffer<char>>(std::move(b));
           });
     }
-    future<fragbuf> read_fragbuf(size_t i) {
-        return _frag.read_exactly(_source.get(), i).then([this](fragbuf b) {
-            auto istream = b.get_istream();
-            istream.consume([this](bytes_view bv) {
-                _hash.update(
-                  reinterpret_cast<const char*>(bv.data()), bv.size());
+    future<iobuf> read_iobuf(size_t i) {
+        return read_iobuf_exactly(_source.get(), i).then([this](iobuf b) {
+            auto in = iobuf::iterator_consumer(b.cbegin(), b.cend());
+            in.consume(b.size_bytes(), [this](const char* src, size_t sz) {
+                _hash.update(src, sz);
+                return stop_iteration::no;
             });
             _size += b.size_bytes();
             return std::move(b);
@@ -49,7 +49,6 @@ public:
 private:
     std::reference_wrapper<input_stream<char>> _source;
     mutable incremental_xxhash64 _hash{};
-    fragbuf::reader _frag;
     size_t _size = 0;
 };
 

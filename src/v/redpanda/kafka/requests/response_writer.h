@@ -1,12 +1,11 @@
 #pragma once
 
 #include "bytes/bytes.h"
-#include "bytes/bytes_ostream.h"
+#include "bytes/iobuf.h"
 #include "model/fundamental.h"
 #include "redpanda/kafka/errors/errors.h"
 #include "seastarx.h"
 #include "utils/concepts-enabled.h"
-#include "utils/fragbuf.h"
 #include "utils/vint.h"
 
 #include <seastar/core/byteorder.hh>
@@ -27,7 +26,7 @@ class response_writer {
       // clang-format on
       uint32_t serialize_int(IntegerType val) {
         auto nval = cpu_to_be(ExplicitIntegerType(val));
-        _out->write(reinterpret_cast<const char*>(&nval), sizeof(nval));
+        _out->append(reinterpret_cast<const char*>(&nval), sizeof(nval));
         return sizeof(nval);
     }
 
@@ -35,13 +34,13 @@ class response_writer {
     uint32_t serialize_vint(typename VintType::value_type val) {
         std::array<bytes::value_type, vint::max_length> encoding_buffer;
         const auto size = VintType::serialize(val, encoding_buffer.begin());
-        _out->write(
+        _out->append(
           reinterpret_cast<const char*>(encoding_buffer.data()), size);
         return size;
     }
 
 public:
-    explicit response_writer(bytes_ostream& out) noexcept
+    explicit response_writer(iobuf& out) noexcept
       : _out(&out) {
     }
 
@@ -84,7 +83,7 @@ public:
 
     uint32_t write(std::string_view v) {
         auto size = serialize_int<int16_t>(v.size()) + v.size();
-        _out->write(reinterpret_cast<const char*>(v.data()), v.size());
+        _out->append(v.data(), v.size());
         return size;
     }
 
@@ -108,7 +107,7 @@ public:
 
     uint32_t write(bytes_view bv) {
         auto size = serialize_int<int32_t>(bv.size()) + bv.size();
-        _out->write(std::move(bv));
+        _out->append(reinterpret_cast<const char*>(bv.data()), bv.size());
         return size;
     }
 
@@ -124,23 +123,9 @@ public:
     }
 
     // write bytes directly to output without a length prefix
-    uint32_t write_direct(fragbuf&& f) {
+    uint32_t write_direct(iobuf&& f) {
         auto size = f.size_bytes();
-        auto bufs = std::move(f).release();
-        for (auto& b : bufs) {
-            _out->write(std::move(b));
-        }
-        return size;
-    }
-
-    // write bytes_ostream directly to output without a length prefix
-    uint32_t write_direct(bytes_ostream&& buf) {
-        // TODO: this should probably be an bytes_ostream interface
-        auto size = buf.size_bytes();
-        auto bufs = std::move(buf).release();
-        for (auto& b : bufs) {
-            _out->write(std::move(b).release());
-        }
+        _out->append(std::move(f));
         return size;
     }
 
@@ -160,12 +145,11 @@ public:
         }
         return _out->size_bytes() - start_size;
     }
-
     // clang-format off
     template<typename T, typename ElementWriter>
     CONCEPT(
-      requires requires(ElementWriter writer, response_writer& rw, T& elem) {
-          { writer(elem, rw) } -> void;
+          requires requires(ElementWriter writer, response_writer& rw, T& elem) {
+            { writer(elem, rw) } -> void;
     })
     // clang-format on
     uint32_t write_array(std::vector<T>& v, ElementWriter&& writer) {
@@ -189,7 +173,7 @@ public:
     })
     // clang-format on
     uint32_t write_bytes_wrapped(ElementWriter&& writer) {
-        auto* size_place_holder = _out->write_place_holder(sizeof(int32_t));
+        auto ph = _out->reserve(sizeof(int32_t));
         auto start_size = uint32_t(_out->size_bytes());
         auto zero_len_is_null = writer(*this);
         int32_t real_size = _out->size_bytes() - start_size;
@@ -197,13 +181,13 @@ public:
         int32_t enc_size = real_size > 0 ? real_size
                                          : (zero_len_is_null ? -1 : 0);
         auto be_size = cpu_to_be(enc_size);
-        auto* in = reinterpret_cast<const bytes_ostream::value_type*>(&be_size);
-        std::copy_n(in, sizeof(be_size), size_place_holder);
+        auto* in = reinterpret_cast<const char*>(&be_size);
+        ph.write(in, sizeof(be_size));
         return real_size + sizeof(be_size);
     }
 
 private:
-    bytes_ostream* _out;
+    iobuf* _out;
 };
 
 } // namespace kafka

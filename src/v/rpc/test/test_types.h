@@ -1,6 +1,6 @@
 #pragma once
 
-#include "utils/fragbuf.h"
+#include "bytes/iobuf.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/core/unaligned.hh>
@@ -20,7 +20,7 @@ struct [[gnu::packed]] very_packed_pod {
 };
 struct complex_custom {
     pod pit;
-    fragbuf oi;
+    iobuf oi;
 };
 struct pod_with_vector {
     pod pit;
@@ -32,7 +32,7 @@ struct pod_with_array {
 };
 struct kv {
     sstring k;
-    fragbuf v;
+    iobuf v;
 };
 struct test_rpc_header {
     int32_t size = 42;
