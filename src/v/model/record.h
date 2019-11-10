@@ -1,9 +1,9 @@
 #pragma once
 
+#include "bytes/iobuf.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
-#include "utils/fragbuf.h"
 
 #include <seastar/util/optimized_optional.hh>
 
@@ -56,15 +56,15 @@ private:
 
 class record {
 public:
-    record() noexcept = default;
+    record() = default;
 
     record(
       uint32_t size_bytes,
       record_attributes attributes,
       int32_t timestamp_delta,
       int32_t offset_delta,
-      fragbuf key,
-      fragbuf value_and_headers) noexcept
+      iobuf key,
+      iobuf value_and_headers) noexcept
       : _size_bytes(size_bytes)
       , _attributes(attributes)
       , _timestamp_delta(timestamp_delta)
@@ -97,17 +97,17 @@ public:
         return _offset_delta;
     }
 
-    const fragbuf& key() const {
+    const iobuf& key() const {
         return _key;
     }
-    fragbuf&& release_key() {
+    iobuf release_key() {
         return std::move(_key);
     }
 
-    const fragbuf& packed_value_and_headers() const {
+    const iobuf& packed_value_and_headers() const {
         return _value_and_headers;
     }
-    fragbuf&& release_packed_value_and_headers() {
+    iobuf release_packed_value_and_headers() {
         return std::move(_value_and_headers);
     }
     record share() {
@@ -116,8 +116,8 @@ public:
           _attributes,
           _timestamp_delta,
           _offset_delta,
-          _key.share(0, _key.size_bytes()),
-          _value_and_headers.share(0, _value_and_headers.size_bytes()));
+          _key.share(),
+          _value_and_headers.share());
     }
     bool operator==(const record& other) const {
         return _size_bytes == other._size_bytes
@@ -137,10 +137,10 @@ private:
     record_attributes _attributes;
     int32_t _timestamp_delta;
     int32_t _offset_delta;
-    fragbuf _key;
+    iobuf _key;
     // Already contains the varint encoding of the
     // value size and of the header size.
-    fragbuf _value_and_headers;
+    iobuf _value_and_headers;
 };
 
 class record_batch_attributes final {
@@ -259,7 +259,7 @@ public:
     // After moving, compressed_records is guaranteed to be empty().
     class compressed_records {
     public:
-        compressed_records(uint32_t size, fragbuf data) noexcept
+        compressed_records(uint32_t size, iobuf data) noexcept
           : _size(size)
           , _data(std::move(data)) {
         }
@@ -287,17 +287,16 @@ public:
             return !_size;
         }
 
-        const fragbuf& records() const {
+        const iobuf& records() const {
             return _data;
         }
 
-        fragbuf&& release() && {
+        iobuf release() && {
             _size = 0;
             return std::move(_data);
         }
         compressed_records share() {
-            return compressed_records(
-              _size, _data.share(0, _data.size_bytes()));
+            return compressed_records(_size, _data.share());
         }
         bool operator==(const compressed_records& other) const {
             return _size == other._size && _data == other._data;
@@ -312,7 +311,7 @@ public:
 
     private:
         uint32_t _size;
-        fragbuf _data;
+        iobuf _data;
     };
 
     using uncompressed_records = std::vector<record>;

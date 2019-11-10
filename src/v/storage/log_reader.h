@@ -5,7 +5,7 @@
 #include "storage/offset_tracker.h"
 #include "storage/parser.h"
 #include "storage/probe.h"
-#include "utils/fragbuf.h"
+#include "bytes/iobuf.h"
 
 #include <seastar/core/io_queue.hh>
 #include <seastar/util/optimized_optional.hh>
@@ -39,11 +39,11 @@ public:
       model::record_attributes attributes,
       int32_t timestamp_delta,
       int32_t offset_delta,
-      fragbuf&& key) override;
+      iobuf&& key) override;
 
-    virtual void consume_record_value(fragbuf&&) override;
+    virtual void consume_record_value(iobuf&&) override;
 
-    virtual void consume_compressed_records(fragbuf&&) override;
+    virtual void consume_compressed_records(iobuf&&) override;
 
     virtual stop_iteration consume_batch_end() override;
 
@@ -55,7 +55,7 @@ private:
     model::record_attributes _record_attributes;
     int32_t _record_timestamp_delta;
     int32_t _record_offset_delta;
-    fragbuf _record_key;
+    iobuf _record_key;
     size_t _num_records;
     model::record_batch::records_type _records;
     model::timeout_clock::time_point _timeout;

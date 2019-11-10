@@ -1,13 +1,13 @@
 #pragma once
 
-#include "utils/fragbuf.h"
+#include "bytes/iobuf.h"
 
 namespace demo {
 struct simple_request {
-    fragbuf data;
+    iobuf data;
 };
 struct simple_reply {
-    fragbuf data;
+    iobuf data;
 };
 
 struct c1 {
@@ -47,16 +47,16 @@ struct complex_reply {
 
 struct i1 {
     c1 x;
-    fragbuf y;
+    iobuf y;
 };
 struct i2 {
     i1 x;
-    fragbuf y;
+    iobuf y;
 };
 
 struct i3 {
     i2 x;
-    fragbuf y;
+    iobuf y;
 };
 struct interspersed_request {
     struct payload {
@@ -65,8 +65,8 @@ struct interspersed_request {
         i3 _three;
     };
     payload data;
-    fragbuf x;
-    fragbuf y;
+    iobuf x;
+    iobuf y;
 };
 struct interspersed_reply {
     int32_t x{-1};

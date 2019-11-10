@@ -91,7 +91,7 @@ future<> controller::recover_record(model::record r) {
 }
 
 future<>
-controller::dispatch_record_recovery(log_record_key key, fragbuf&& v_buf) {
+controller::dispatch_record_recovery(log_record_key key, iobuf&& v_buf) {
     switch (key.record_type) {
     case log_record_key::type::partition_assignment:
         return rpc::deserialize<partition_assignment>(std::move(v_buf))

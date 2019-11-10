@@ -5,23 +5,11 @@
 namespace rpc {
 
 netbuf::netbuf() {
-    _hdr_ptr = _out.write_place_holder(sizeof(_hdr));
-}
-netbuf::netbuf(netbuf&& o) noexcept
-  : _hdr(std::move(o._hdr))
-  , _out(std::move(o._out))
-  , _hdr_ptr(std::move(o._hdr_ptr)) {
-}
-netbuf& netbuf::operator=(netbuf&& o) noexcept {
-    if (this != &o) {
-        this->~netbuf();
-        new (this) netbuf(std::move(o));
-    }
-    return *this;
+    _hdr_hldr = _out.reserve(sizeof(_hdr));
 }
 /// \brief used to send the bytes down the wire
 /// we re-compute the header-checksum on every call
-scattered_message<char> netbuf::scattered_view() {
+scattered_message<char> netbuf::as_scattered() && {
     constexpr const size_t size_header = sizeof(header);
     if (_hdr.correlation_id == 0 || _hdr.meta == 0) {
         throw std::runtime_error(
@@ -42,7 +30,8 @@ scattered_message<char> netbuf::scattered_view() {
     _hdr.checksum = h.digest();
     _hdr.size = _out.size_bytes() - size_header;
     // update the header
-    std::copy_n(reinterpret_cast<const char*>(&_hdr), size_header, _hdr_ptr);
+    _hdr_hldr.write(reinterpret_cast<const char*>(&_hdr), size_header);
+    msg.on_delete([b = std::move(_out)] {});
     return msg;
 }
 void netbuf::set_correlation_id(uint32_t x) {

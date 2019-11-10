@@ -5,16 +5,14 @@
 #include <seastar/core/thread.hh>
 #include <seastar/testing/thread_test_case.hh>
 
-using namespace raft; // NOLINT
-
 SEASTAR_THREAD_TEST_CASE(write_and_read_voted_for_config) {
-    consensus::voted_for_configuration cfg;
+    raft::consensus::voted_for_configuration cfg;
     cfg.voted_for = model::node_id(42);
     cfg.term = model::term_id(77);
     std::cout << "persisting?" << std::endl;
-    details::persist_voted_for("./test.yml", cfg).get();
+    raft::details::persist_voted_for("./test.yml", cfg).get();
     std::cout << "reading?" << std::endl;
-    auto const cfg_dup = details::read_voted_for("./test.yml").get0();
+    auto const cfg_dup = raft::details::read_voted_for("./test.yml").get0();
     std::cout << "cfg.voted_for " << cfg.voted_for << ", cfg.term " << cfg.term
               << ", dup.voted_for" << cfg_dup.voted_for << ", dup.term "
               << cfg_dup.term << std::endl;
@@ -47,7 +45,7 @@ std::vector<model::record_batch> make_batches(Offsets... o) {
 
 SEASTAR_THREAD_TEST_CASE(clone_entries_utils) {
     static constexpr const size_t sz = 10;
-    std::vector<entry> entries;
+    std::vector<raft::entry> entries;
     entries.reserve(sz);
     for (size_t i = 0; i < sz; ++i) {
         auto reader = model::make_memory_record_batch_reader(make_batches(
@@ -57,7 +55,7 @@ SEASTAR_THREAD_TEST_CASE(clone_entries_utils) {
           model::offset(4)));
         entries.emplace_back(model::record_batch_type(1), std::move(reader));
     }
-    auto v = details::copy_n(std::move(entries), 5).get0();
+    auto v = raft::details::copy_n(std::move(entries), 5).get0();
     for (auto& i : v) {
         BOOST_REQUIRE_EQUAL(i.size(), sz);
     }

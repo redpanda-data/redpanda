@@ -32,19 +32,18 @@ inline future<> write_histogram(sstring filename, const hdr_hist& h) {
 }
 
 namespace demo {
-inline fragbuf rand_frag(std::size_t chunks, std::size_t chunk_size) {
-    std::vector<temporary_buffer<char>> bfs;
-    bfs.reserve(chunks);
+inline iobuf rand_iobuf(std::size_t chunks, std::size_t chunk_size) {
+    iobuf b;
     for (size_t i = 0; i < chunks; ++i) {
-        bfs.push_back(temporary_buffer<char>(chunk_size));
+        b.append(temporary_buffer<char>(chunk_size));
     }
-    return fragbuf(std::move(bfs), chunks * chunk_size);
+    return b;
 }
 
 inline demo::simple_request
 gen_simple_request(size_t data_size, size_t chunk_size) {
     const std::size_t chunks = data_size / chunk_size;
-    return demo::simple_request{.data = rand_frag(chunks, chunk_size)};
+    return demo::simple_request{.data = rand_iobuf(chunks, chunk_size)};
 }
 
 inline interspersed_request
@@ -52,15 +51,15 @@ gen_interspersed_request(size_t data_size, size_t chunk_size) {
     const std::size_t chunks = data_size / chunk_size / 8;
     return interspersed_request{
       .data = interspersed_request::
-        payload{._one = i1{.y = rand_frag(chunks, chunk_size)},
-                ._two = i2{.x = i1{.y = rand_frag(chunks, chunk_size)},
-                           .y = rand_frag(chunks, chunk_size)},
-                ._three = i3{.x = i2{.x = i1{.y = rand_frag(
+        payload{._one = i1{.y = rand_iobuf(chunks, chunk_size)},
+                ._two = i2{.x = i1{.y = rand_iobuf(chunks, chunk_size)},
+                           .y = rand_iobuf(chunks, chunk_size)},
+                ._three = i3{.x = i2{.x = i1{.y = rand_iobuf(
                                                chunks, chunk_size)},
-                                     .y = rand_frag(chunks, chunk_size)},
-                             .y = rand_frag(chunks, chunk_size)}},
-      .x = rand_frag(chunks, chunk_size),
-      .y = rand_frag(chunks, chunk_size)};
+                                     .y = rand_iobuf(chunks, chunk_size)},
+                             .y = rand_iobuf(chunks, chunk_size)}},
+      .x = rand_iobuf(chunks, chunk_size),
+      .y = rand_iobuf(chunks, chunk_size)};
 }
 
 } // namespace demo

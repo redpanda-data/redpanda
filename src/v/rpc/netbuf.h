@@ -1,6 +1,6 @@
 #pragma once
 
-#include "bytes/bytes_ostream.h"
+#include "bytes/iobuf.h"
 #include "rpc/serialize.h"
 #include "rpc/types.h"
 
@@ -9,14 +9,14 @@
 namespace rpc {
 class netbuf {
 public:
-    netbuf();
-    netbuf(netbuf&& o) noexcept;
-    netbuf& operator=(netbuf&& o) noexcept;
+    netbuf() ;
+    netbuf(netbuf&& o) noexcept = default;
+    netbuf& operator=(netbuf&& o) noexcept = default;
     netbuf(const netbuf&) = delete;
 
     /// \brief used to send the bytes down the wire
     /// we re-compute the header-checksum on every call
-    scattered_message<char> scattered_view();
+    scattered_message<char> as_scattered() &&;
 
     void set_correlation_id(uint32_t);
     void set_service_method_id(uint32_t);
@@ -26,17 +26,13 @@ public:
         ::rpc::serialize(_out, std::forward<T>(t));
     }
 
-    bytes_ostream&& release() && {
-        return std::move(_out);
-    }
-
 private:
     size_t payload_size() const {
         return _out.size_bytes() - sizeof(_hdr);
     }
     header _hdr;
-    bytes_ostream _out;
-    char* _hdr_ptr = nullptr;
+    iobuf _out;
+    iobuf::placeholder _hdr_hldr;
 };
 
 } // namespace rpc

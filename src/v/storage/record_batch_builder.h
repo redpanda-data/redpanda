@@ -1,7 +1,7 @@
 #pragma once
+#include "bytes/iobuf.h"
 #include "model/record.h"
 #include "seastarx.h"
-#include "utils/fragbuf.h"
 #include "utils/vint.h"
 
 namespace storage {
@@ -9,7 +9,7 @@ class record_batch_builder {
 public:
     record_batch_builder(model::record_batch_type, model::offset);
 
-    virtual record_batch_builder& add_raw_kv(fragbuf&& key, fragbuf&& value) {
+    virtual record_batch_builder& add_raw_kv(iobuf&& key, iobuf&& value) {
         _records.emplace_back(std::move(key), std::move(value));
         return *this;
     }
@@ -19,13 +19,13 @@ public:
 private:
     static constexpr vint::value_type zero_vint_size = vint::vint_size(0);
     struct serialized_record {
-        serialized_record(fragbuf k, fragbuf v)
+        serialized_record(iobuf k, iobuf v)
           : key(std::move(k))
           , value(std::move(v)) {
         }
 
-        fragbuf key;
-        fragbuf value;
+        iobuf key;
+        iobuf value;
 
         uint32_t size_bytes() const {
             return key.size_bytes() + value.size_bytes();

@@ -1,5 +1,6 @@
 #include "redpanda/kafka/requests/produce_request.h"
 
+#include "bytes/iobuf.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timestamp.h"
@@ -7,7 +8,6 @@
 #include "redpanda/kafka/errors/errors.h"
 #include "redpanda/kafka/requests/kafka_batch_adapter.h"
 #include "storage/shard_assignment.h"
-#include "utils/fragbuf.h"
 #include "utils/remote.h"
 
 #include <seastar/core/execution_stage.hh>
@@ -54,9 +54,7 @@ write_replies(std::vector<topic_result> topic_results, int32_t throttle) {
 }
 
 future<partition_result> do_process(
-  remote<request_context>& ctx,
-  std::unique_ptr<model::ntp> ntp,
-  fragbuf batch) {
+  remote<request_context>& ctx, std::unique_ptr<model::ntp> ntp, iobuf batch) {
     auto reader = reader_from_kafka_batch(std::move(batch));
     // TODO: Call into consensus
     (void)reader;
@@ -68,7 +66,7 @@ using execution_stage_type = inheriting_concrete_execution_stage<
   future<partition_result>,
   remote<request_context>&,
   std::unique_ptr<model::ntp>,
-  fragbuf>;
+  iobuf>;
 
 static thread_local execution_stage_type produce_stage{"produce", &do_process};
 

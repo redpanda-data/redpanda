@@ -1,10 +1,9 @@
 #pragma once
 
-#include "bytes/bytes_ostream.h"
+#include "bytes/iobuf.h"
 #include "rpc/for_each_field.h"
 #include "rpc/is_std_helpers.h"
 #include "seastarx.h"
-#include "utils/fragbuf.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/byteorder.hh>
@@ -17,14 +16,14 @@ namespace rpc {
 /// \brief is_standard_layout && is_trivially_copyable cover _most_!
 /// fields including [[gnu::packed]] and all numeric types
 template<typename T>
-void serialize(bytes_ostream& out, T&& t) {
+void serialize(iobuf& out, T&& t) {
     static_assert(
       std::is_rvalue_reference_v<decltype(t)>,
       "Must be an rvalue. Use std::move()");
     constexpr bool is_optional = is_std_optional_v<T>;
     constexpr bool is_sstring = std::is_same_v<T, sstring>;
     constexpr bool is_vector = is_std_vector_v<T>;
-    constexpr bool is_fragmented_buffer = std::is_same_v<T, fragbuf>;
+    constexpr bool is_iobuf = std::is_same_v<T, iobuf>;
     constexpr bool is_standard_layout = std::is_standard_layout_v<T>;
     constexpr bool is_trivially_copyable = std::is_trivially_copyable_v<T>;
 
@@ -42,7 +41,7 @@ void serialize(bytes_ostream& out, T&& t) {
         return;
     } else if constexpr (is_sstring) {
         serialize(out, int32_t(t.size()));
-        out.write(t.data(), t.size());
+        out.append(t.data(), t.size());
         return;
     } else if constexpr (is_vector) {
         using value_type = typename std::decay_t<T>::value_type;
@@ -51,12 +50,9 @@ void serialize(bytes_ostream& out, T&& t) {
             serialize<value_type>(out, std::move(i));
         }
         return;
-    } else if constexpr (is_fragmented_buffer) {
+    } else if constexpr (is_iobuf) {
         serialize<int32_t>(out, t.size_bytes());
-        auto vec = std::move(t).release();
-        for (temporary_buffer<char>& b : vec) {
-            out.write(std::move(b));
-        }
+        out.append(std::move(t));
         return;
     } else if constexpr (is_standard_layout && is_trivially_copyable) {
         // std::is_pod_v is deprecated
@@ -68,7 +64,7 @@ void serialize(bytes_ostream& out, T&& t) {
         // precision, the notion of “POD” was therefore deprecated. The library
         // trait is_pod has also been deprecated correspondingly.
         constexpr auto sz = sizeof(T);
-        out.write(reinterpret_cast<const char*>(&t), sz);
+        out.append(reinterpret_cast<const char*>(&t), sz);
         return;
     } else if constexpr (is_standard_layout) {
         for_each_field(
@@ -76,40 +72,24 @@ void serialize(bytes_ostream& out, T&& t) {
         return;
     }
     static_assert(
-      (is_optional || is_sstring || is_vector || is_fragmented_buffer
+      (is_optional || is_sstring || is_vector || is_iobuf
        || (is_standard_layout) || is_trivially_copyable),
       "rpc: no serializer registered");
 }
 template<typename T, typename Tag>
-void serialize(bytes_ostream& out, const named_type<T, Tag>& r) {
+void serialize(iobuf& out, const named_type<T, Tag>& r) {
     serialize(out, r());
 }
 template<typename... T>
-void serialize(bytes_ostream& out, T&&... args) {
+void serialize(iobuf& out, T&&... args) {
     (serialize(out, std::move(args)), ...);
 }
 
-// clang-format off
-CONCEPT(
-    template<typename T>
-    concept RPCSerializable = requires (T t, bytes_ostream& out) {
-        rpc::serialize(out, t);
-};)
-// clang-format on
-
 template<typename T>
-CONCEPT(requires RPCSerializable<T>)
-fragbuf serialize(T val) {
-    bytes_ostream out;
-    rpc::serialize(out, std::move(val));
-    fragbuf::vector_type frags;
-    frags.reserve(std::distance(frags.begin(), frags.end()));
-    std::transform(
-      out.begin(),
-      out.end(),
-      std::back_inserter(frags),
-      [](bytes_ostream::fragment& f) { return std::move(f).release(); });
-    return fragbuf(std::move(frags));
+inline iobuf serialize(T&& val) {
+    iobuf out;
+    rpc::serialize(out, std::forward<T>(val));
+    return out;
 }
 
 } // namespace rpc

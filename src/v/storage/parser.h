@@ -4,7 +4,7 @@
 #include "seastarx.h"
 #include "storage/exceptions.h"
 #include "storage/failure_probes.h"
-#include "utils/fragbuf.h"
+#include "bytes/iobuf.h"
 #include "utils/vint.h"
 
 #include <seastar/core/byteorder.hh>
@@ -30,12 +30,12 @@ public:
       model::record_attributes attributes,
       int32_t timestamp_delta,
       int32_t offset_delta,
-      fragbuf&& key)
+      iobuf&& key)
       = 0;
 
-    virtual void consume_record_value(fragbuf&& value_and_headers) = 0;
+    virtual void consume_record_value(iobuf&& value_and_headers) = 0;
 
-    virtual void consume_compressed_records(fragbuf&&) = 0;
+    virtual void consume_compressed_records(iobuf&&) = 0;
 
     virtual stop_iteration consume_batch_end() = 0;
 };

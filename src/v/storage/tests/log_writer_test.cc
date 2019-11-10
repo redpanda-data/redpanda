@@ -1,3 +1,4 @@
+#include "bytes/iobuf.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 #include "storage/constants.h"
@@ -6,7 +7,6 @@
 #include "storage/log_segment.h"
 #include "storage/log_writer.h"
 #include "storage/tests/random_batch.h"
-#include "utils/fragbuf.h"
 
 #include <seastar/core/byteorder.hh>
 #include <seastar/core/thread.hh>
