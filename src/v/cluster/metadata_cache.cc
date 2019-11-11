@@ -2,7 +2,7 @@
 
 namespace cluster {
 
-future<std::vector<model::topic>> metadata_cache::all_topics() const {
+std::vector<model::topic> metadata_cache::all_topics() const {
     std::vector<model::topic> topics;
     topics.reserve(_cache.size());
     std::transform(
@@ -10,17 +10,15 @@ future<std::vector<model::topic>> metadata_cache::all_topics() const {
       std::cend(_cache),
       std::back_inserter(topics),
       [](const cache_t::value_type& t_md) { return t_md.first; });
-    return make_ready_future<std::vector<model::topic>>(std::move(topics));
+    return topics;
 }
 
-future<std::optional<model::topic_metadata>>
+std::optional<model::topic_metadata>
 metadata_cache::get_topic_metadata(model::topic_view topic) const {
     if (auto it = _cache.find(topic); it != std::cend(_cache)) {
-        return make_ready_future<std::optional<model::topic_metadata>>(
-          create_topic_metadata(*it));
+        return create_topic_metadata(*it);
     }
-    return make_ready_future<std::optional<model::topic_metadata>>(
-      std::nullopt);
+    return std::nullopt;
 }
 
 std::vector<model::topic_metadata> metadata_cache::all_topics_metadata() const {

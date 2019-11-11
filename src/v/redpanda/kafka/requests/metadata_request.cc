@@ -27,7 +27,7 @@ metadata_api::process(request_context&& ctx, smp_service_group g) {
         auto topics = ctx.reader().read_array(
           [](request_reader& r) { return model::topic(r.read_string()); });
         if (topics.empty()) {
-            topics = ctx.metadata_cache().all_topics().get0();
+            topics = ctx.metadata_cache().all_topics();
         }
         bool allow_auto_topic_creation = ctx.header().version >= api_version(4)
                                            ? ctx.reader().read_bool()
@@ -69,7 +69,7 @@ metadata_api::process(request_context&& ctx, smp_service_group g) {
           topics, [&ctx](const model::topic_view& t, response_writer& rw) {
               // FIXME: Auto-create topics.
               auto topic_metadata
-                = ctx.metadata_cache().get_topic_metadata(t).get0();
+                = ctx.metadata_cache().get_topic_metadata(t);
               if (!topic_metadata) {
                   // FIXME: Tell the controller to create the topic
                   // until we have real metadata management fake the creation of
