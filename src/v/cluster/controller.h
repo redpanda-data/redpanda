@@ -38,6 +38,10 @@ public:
         return _raft0->is_leader();
     }
 
+    model::node_id get_leader_id() const {
+        return _raft0->config().leader_id;
+    }
+
     future<std::vector<topic_result>> create_topics(
       std::vector<topic_configuration> topics,
       model::timeout_clock::time_point timeout);
