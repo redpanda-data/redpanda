@@ -66,7 +66,7 @@ public:
 
     int64_t read_varlong() {
         auto [val, length_size] = vint::deserialize(_in);
-        _in.skip(val);
+        _in.skip(length_size);
         return val;
     }
 
