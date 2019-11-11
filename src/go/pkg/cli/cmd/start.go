@@ -142,7 +142,7 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 	command.Flags().DurationVar(
 		&timeout,
 		"timeout",
-		10000,
+		10000*time.Millisecond,
 		"The maximum time to wait for the checks and tune processes to complete. "+
 			"The value passed is a sequence of decimal numbers, each with optional "+
 			"fraction and a unit suffix, such as '300ms', '1.5s' or '2h45m'. "+
