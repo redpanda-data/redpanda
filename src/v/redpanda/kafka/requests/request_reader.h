@@ -1,10 +1,9 @@
 #pragma once
 
 #include "bytes/bytes.h"
-#include "bytes/bytes_ostream.h"
+#include "bytes/iobuf.h"
 #include "seastarx.h"
 #include "utils/concepts-enabled.h"
-#include "utils/fragbuf.h"
 #include "utils/utf8.h"
 #include "utils/vint.h"
 
@@ -20,60 +19,21 @@
 namespace kafka {
 
 class request_reader {
-    struct exception_thrower {
-        [[noreturn]] [[gnu::cold]] static void
-        throw_out_of_range(size_t attempted_read, size_t actual_left) {
-            // FIXME: Kafka errors
-            throw std::runtime_error(fmt::format(
-              "Truncated request: expected {} bytes, length is {}",
-              attempted_read,
-              actual_left));
-        };
-    };
-
-    sstring do_read_string(int16_t n) {
-        if (n < 0) {
-            // FIXME: Kafka errors
-        }
-        sstring s(sstring::initialized_later(), n);
-        _in.read_to(n, s.begin(), exception_thrower());
-        validate_utf8(s);
-        return s;
-    }
-
-    std::string_view do_read_string_view(int16_t n) {
-        auto bv = _in.read_bytes_view(
-          n, _linearization_buffer, exception_thrower());
-        auto s = std::string_view(
-          reinterpret_cast<const char*>(bv.data()), bv.size());
-        validate_utf8(s);
-        return s;
-    }
-
-    bytes do_read_bytes(int32_t n) {
-        bytes b(bytes::initialized_later(), n);
-        _in.read_to(n, b.begin(), exception_thrower());
-        return b;
-    }
-
-    bytes_view do_read_bytes_view(int32_t n) {
-        auto bv = _in.read_bytes_view(
-          n, _linearization_buffer, exception_thrower());
-        return bv;
-    }
-
 public:
-    explicit request_reader(fragbuf::istream in) noexcept
-      : _in(std::move(in)) {
+    explicit request_reader(iobuf io) noexcept
+      : _io(std::move(io))
+      , _in(_io.cbegin(), _io.cend())
+      , _original_size(_io.size_bytes()) {
     }
-
     size_t bytes_left() const {
-        return _in.bytes_left();
+        return _original_size - _in.bytes_consumed();
+    }
+    size_t bytes_consumed() const {
+        return _in.bytes_consumed();
     }
 
     bytes_view read_raw_bytes_view(size_t n) {
-        return _in.read_bytes_view(
-          n, _linearization_buffer, exception_thrower());
+        return do_read_bytes_view(n);
     }
 
     bool read_bool() {
@@ -81,23 +41,23 @@ public:
     }
 
     int8_t read_int8() {
-        return _in.read<int8_t>(exception_thrower());
+        return _in.consume_type<int8_t>();
     }
 
     int16_t read_int16() {
-        return be_to_cpu(_in.read<int16_t>(exception_thrower()));
+        return be_to_cpu(_in.consume_type<int16_t>());
     }
 
     int32_t read_int32() {
-        return be_to_cpu(_in.read<int32_t>(exception_thrower()));
+        return be_to_cpu(_in.consume_type<int32_t>());
     }
 
     int64_t read_int64() {
-        return be_to_cpu(_in.read<int64_t>(exception_thrower()));
+        return be_to_cpu(_in.consume_type<int64_t>());
     }
 
     uint32_t read_uint32() {
-        return be_to_cpu(_in.read<uint32_t>(exception_thrower()));
+        return be_to_cpu(_in.consume_type<uint32_t>());
     }
 
     int32_t read_varint() {
@@ -105,9 +65,9 @@ public:
     }
 
     int64_t read_varlong() {
-        auto [res, bytes_read] = vint::deserialize(_in);
-        _in.skip(bytes_read);
-        return res;
+        auto [val, length_size] = vint::deserialize(_in);
+        _in.skip(val);
+        return val;
     }
 
     sstring read_string() {
@@ -165,12 +125,14 @@ public:
         return do_read_bytes_view(len);
     }
 
-    std::optional<fragbuf> read_fragmented_nullable_bytes() {
+    std::optional<iobuf> read_fragmented_nullable_bytes() {
         auto len = read_int32();
         if (len < 0) {
             return std::nullopt;
         }
-        return _in.read_shared(len);
+        auto ret = _io.share(_in.bytes_consumed(), len);
+        _in.skip(len);
+        return ret;
     }
 
     // clang-format off
@@ -191,12 +153,50 @@ public:
     }
 
 private:
-    fragbuf::istream _in;
-    // Buffer into which we linearize a subset of the underlying fragmented
-    // buffer, in case the content we're reading spans multiple fragments and
-    // we want to return a bytes_view (we can't return one over non-contiguous
-    // memory).
-    bytes_ostream _linearization_buffer;
+    sstring do_read_string(int16_t n) {
+        if (__builtin_expect(n < 0, false)) {
+            /// FIXME: maybe return empty string?
+            throw std::out_of_range("Asked to read a negative byte string");
+        }
+        sstring s(sstring::initialized_later(), n);
+        _in.consume_to(n, s.begin());
+        validate_utf8(s);
+        return s;
+    }
+    std::string_view string_view_raw(int64_t n) {
+        if (_in.segment_bytes_left() >= n) {
+            auto ret = std::string_view(_in.begin().get(), n);
+            _in.skip(n);
+            return ret;
+        }
+        auto ph = _io.reserve(n);
+        auto ret = std::string_view(ph.index(), n);
+        _in.consume_to(n, ph);
+        return ret;
+    }
+
+    std::string_view do_read_string_view(int64_t n) {
+        auto s = string_view_raw(n);
+        validate_utf8(s);
+        return s;
+    }
+
+    bytes do_read_bytes(int64_t n) {
+        bytes b(bytes::initialized_later(), n);
+        _in.consume_to(n, b.begin());
+        return b;
+    }
+
+    bytes_view do_read_bytes_view(int64_t n) {
+        auto s = string_view_raw(n);
+        return bytes_view(
+          reinterpret_cast<const bytes_view::value_type*>(s.data()), s.size());
+    }
+
+    iobuf _io;
+    iobuf::iterator_consumer _in;
+    /// needed to compute bytes_left()
+    size_t _original_size;
 };
 
 } // namespace kafka

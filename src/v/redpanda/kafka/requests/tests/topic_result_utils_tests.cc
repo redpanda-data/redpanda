@@ -1,5 +1,4 @@
 #include "redpanda/kafka/requests/request_reader.h"
-#include "redpanda/kafka/requests/tests/utils.h"
 #include "redpanda/kafka/requests/topics/topic_result_utils.h"
 
 #include <seastar/testing/thread_test_case.hh>
@@ -34,8 +33,7 @@ auto read_result_no_msg(request_reader& r) {
 
 SEASTAR_THREAD_TEST_CASE(encode_empty_response_no_throttle_time) {
     auto encoded = encode_topic_results({}, -1, include_message::no);
-    auto fb = copy_to_fragbuf(encoded->buf());
-    request_reader reader(fb.get_istream());
+    request_reader reader(std::move(*encoded).release());
     auto results = reader.read_array(
       [](request_reader& r) { return read_result_no_msg(r); });
 
@@ -46,8 +44,7 @@ SEASTAR_THREAD_TEST_CASE(encode_empty_response_no_throttle_time) {
 SEASTAR_THREAD_TEST_CASE(non_empty_response_no_throttle_time_no_msg) {
     auto encoded = encode_topic_results(
       create_non_empty_response(), -1, include_message::no);
-    auto fb = copy_to_fragbuf(encoded->buf());
-    request_reader reader(fb.get_istream());
+    request_reader reader(std::move(*encoded).release());
     auto results = reader.read_array(
       [](request_reader& r) { return read_result_no_msg(r); });
 
@@ -64,8 +61,7 @@ SEASTAR_THREAD_TEST_CASE(non_empty_response_no_throttle_time_no_msg) {
 SEASTAR_THREAD_TEST_CASE(non_empty_response_throttle_time_no_msg) {
     auto encoded = encode_topic_results(
       create_non_empty_response(), 10, include_message::no);
-    auto fb = copy_to_fragbuf(encoded->buf());
-    request_reader reader(fb.get_istream());
+    request_reader reader(std::move(*encoded).release());
     auto throttle_time = reader.read_int32();
     auto results = reader.read_array(
       [](request_reader& r) { return read_result_no_msg(r); });
@@ -84,8 +80,7 @@ SEASTAR_THREAD_TEST_CASE(non_empty_response_throttle_time_no_msg) {
 SEASTAR_THREAD_TEST_CASE(non_empty_response_throttle_time_with_msg) {
     auto encoded = encode_topic_results(
       create_non_empty_response(), 10, include_message::yes);
-    auto fb = copy_to_fragbuf(encoded->buf());
-    request_reader reader(fb.get_istream());
+    request_reader reader(std::move(*encoded).release());
     auto throttle_time = reader.read_int32();
     auto results = reader.read_array(
       [](request_reader& r) { return read_result(r); });

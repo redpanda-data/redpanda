@@ -1,21 +1,20 @@
 #define BOOST_TEST_MODULE rpc
 
-#include "bytes/bytes_ostream.h"
+#include "bytes/iobuf.h"
 #include "rpc/arity.h"
 #include "rpc/serialize.h"
 #include "rpc/test/test_types.h"
-#include "utils/fragbuf.h"
 
 #include <boost/test/unit_test.hpp>
 
 BOOST_AUTO_TEST_CASE(serialize_pod) {
-    auto b = bytes_ostream();
+    auto b = iobuf();
     pod it;
     rpc::serialize(b, std::move(it));
     BOOST_CHECK_EQUAL(b.size_bytes(), sizeof(it));
 }
 BOOST_AUTO_TEST_CASE(serialize_packed_struct) {
-    auto b = bytes_ostream();
+    auto b = iobuf();
     very_packed_pod it;
     rpc::serialize(b, std::move(it));
     BOOST_CHECK_EQUAL(b.size_bytes(), 3);
@@ -27,11 +26,9 @@ BOOST_AUTO_TEST_CASE(verify_airty) {
     BOOST_CHECK_EQUAL(rpc::arity<very_packed_pod>(), 2);
 }
 BOOST_AUTO_TEST_CASE(serialize_with_fragmented_buffer) {
-    auto b = bytes_ostream();
+    auto b = iobuf();
     complex_custom it;
-    std::vector<temporary_buffer<char>> v;
-    v.emplace_back(temporary_buffer<char>(55));
-    it.oi = std::move(fragbuf(std::move(v), 55));
+    it.oi.append(temporary_buffer<char>(55));
     rpc::serialize(b, std::move(it));
     BOOST_CHECK_EQUAL(
       b.size_bytes(),
@@ -39,7 +36,7 @@ BOOST_AUTO_TEST_CASE(serialize_with_fragmented_buffer) {
         + sizeof(int32_t) /*size prefix of fragmented_buffer*/);
 }
 BOOST_AUTO_TEST_CASE(serialize_pod_with_vector) {
-    auto b = bytes_ostream();
+    auto b = iobuf();
     pod_with_vector it;
     rpc::serialize(b, std::move(it));
     BOOST_CHECK_EQUAL(
@@ -48,7 +45,7 @@ BOOST_AUTO_TEST_CASE(serialize_pod_with_vector) {
         + sizeof(int32_t) /*prefix size*/);
 }
 BOOST_AUTO_TEST_CASE(serialize_pod_with_array) {
-    auto b = bytes_ostream();
+    auto b = iobuf();
     pod_with_array it;
     rpc::serialize(b, std::move(it));
     BOOST_CHECK_EQUAL(
@@ -57,20 +54,18 @@ BOOST_AUTO_TEST_CASE(serialize_pod_with_array) {
         + sizeof(int32_t) /*prefix size*/);
 }
 BOOST_AUTO_TEST_CASE(serialize_sstring_vector) {
-    auto b = bytes_ostream();
+    auto b = iobuf();
     test_rpc_header it;
-    std::vector<temporary_buffer<char>> vi;
-    vi.push_back(temporary_buffer<char>(87));
     kv x;
     x.k = "foobar";
-    x.v = fragbuf(std::move(vi), 87);
+    x.v.append(temporary_buffer<char>(87));
     it.hdrs.push_back(std::move(x));
     rpc::serialize(b, std::move(it));
     const size_t expected =
       /*
       struct kv {
          sstring k;              ---------------  sizeof(int32_t) + 6
-         fragbuf v; --------  sizeof(int32_t) + 87 bytes
+         iobuf v; --------  sizeof(int32_t) + 87 bytes
       };
       struct test_rpc_header {
         int32_t size = 42;       ---------------- sizeof(int32_t)

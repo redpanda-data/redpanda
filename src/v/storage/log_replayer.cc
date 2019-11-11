@@ -29,7 +29,7 @@ void crc_record_header_and_key(
   const model::record_attributes& attributes,
   int32_t timestamp_delta,
   int32_t offset_delta,
-  const fragbuf& key) {
+  const iobuf& key) {
     crc.extend_vint(size_bytes);
     crc.extend(attributes.value());
     crc.extend_vint(timestamp_delta);
@@ -54,17 +54,17 @@ public:
       model::record_attributes attributes,
       int32_t timestamp_delta,
       int32_t offset_delta,
-      fragbuf&& key) override {
+      iobuf&& key) override {
         crc_record_header_and_key(
           _crc, size_bytes, attributes, timestamp_delta, offset_delta, key);
         return skip::no;
     }
 
-    virtual void consume_record_value(fragbuf&& value_and_headers) override {
+    virtual void consume_record_value(iobuf&& value_and_headers) override {
         _crc.extend(value_and_headers);
     }
 
-    virtual void consume_compressed_records(fragbuf&& records) override {
+    virtual void consume_compressed_records(iobuf&& records) override {
         _crc.extend(records);
     }
 

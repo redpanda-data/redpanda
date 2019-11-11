@@ -178,7 +178,7 @@ public:
         return make_ready_future<stop_iteration>(stop_iteration::no);
     }
 
-    bytes_ostream end_of_stream() {
+    iobuf end_of_stream() {
         return std::move(_buf);
     }
 
@@ -221,7 +221,7 @@ private:
     }
 
 private:
-    bytes_ostream _buf;
+    iobuf _buf;
     response_writer _wr;
 };
 
@@ -251,7 +251,7 @@ fetch_api::process(request_context&& ctx, smp_service_group g) {
                       return reader
                         .consume(kafka_batch_serializer(), model::no_timeout)
                         .then(
-                          [r = std::move(r)](bytes_ostream&& batch) mutable {
+                          [r = std::move(r)](iobuf&& batch) mutable {
                               r.record_set = std::move(batch);
                               return std::move(r);
                           });

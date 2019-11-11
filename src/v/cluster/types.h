@@ -17,7 +17,7 @@ struct log_record_key {
     type record_type;
 };
 
-/// type representing single replica assignment it contains the id of a broker 
+/// type representing single replica assignment it contains the id of a broker
 /// and id of this broker shard.
 struct broker_shard {
     model::node_id node_id;
@@ -34,7 +34,7 @@ struct partition_assignment {
     model::ntp ntp;
     std::vector<broker_shard> replicas;
 
-    model::partition_metadata 
+    model::partition_metadata
     create_partition_metadata() const {
         auto p_md = model::partition_metadata(ntp.tp.partition);
         p_md.replicas.reserve(replicas.size());
@@ -106,11 +106,11 @@ struct topic_result {
 } // namespace cluster
 
 namespace rpc {
-    
+
 // Topic configuration type requires custom ser/des as is has custom constructor
 template<>
 future<cluster::topic_configuration> deserialize(source&);
 
 template<>
-void serialize(bytes_ostream& out, cluster::topic_configuration&& t);
+void serialize(iobuf& out, cluster::topic_configuration&& t);
 } // namespace rpc

@@ -51,23 +51,22 @@ struct bootstrap_fixture {
     }
     model::record_batch data_batch() {
         storage::record_batch_builder bldr(raft::data_batch_type, _base_offset);
-        bldr.add_raw_kv(rand_fragbuf(), rand_fragbuf());
+        bldr.add_raw_kv(rand_iobuf(), rand_iobuf());
         ++_base_offset;
         return std::move(bldr).build();
     }
     model::record_batch config_batch() {
         storage::record_batch_builder bldr(
           raft::configuration_batch_type, _base_offset);
-        bldr.add_raw_kv(rand_fragbuf(), rpc::serialize(rand_config()));
+        bldr.add_raw_kv(rand_iobuf(), rpc::serialize(rand_config()));
         ++_base_offset;
         return std::move(bldr).build();
     }
-    fragbuf rand_fragbuf() const {
-        std::vector<temporary_buffer<char>> fragments;
-        fragments.reserve(1);
+    iobuf rand_iobuf() const {
+        iobuf b;
         auto data = random_generators::gen_alphanum_string(100);
-        fragments.emplace_back(data.data(), data.size());
-        return fragbuf(std::move(fragments));
+        b.append(data.data(), data.size());
+        return b;
     }
     raft::group_configuration rand_config() const {
         std::vector<model::broker> nodes;

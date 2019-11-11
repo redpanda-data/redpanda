@@ -39,5 +39,5 @@ rp_test(
   BENCHMARK_TEST
   BINARY_NAME rpc_serialization
   SOURCES rpc_bench.cc
-  LIBRARIES cluster Seastar::seastar_perf_testing
+  LIBRARIES Seastar::seastar_perf_testing rpc
 )

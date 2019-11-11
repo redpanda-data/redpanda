@@ -16,7 +16,7 @@ concept bool ExceptionThrower = requires(T obj) {
 namespace {
 struct default_thrower {
     [[noreturn]] [[gnu::cold]] void conversion_error() {
-        throw std::runtime_error(fmt::format("Cannot decode string as UTF8"));
+        throw std::runtime_error("Cannot decode string as UTF8");
     }
 };
 } // namespace

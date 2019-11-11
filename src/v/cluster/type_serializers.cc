@@ -4,7 +4,7 @@
 
 namespace rpc {
 template<>
-void serialize(bytes_ostream& out, cluster::topic_configuration&& t) {
+void serialize(iobuf& out, cluster::topic_configuration&& t) {
     rpc::serialize(
       out,
       sstring(t.ns),

@@ -14,6 +14,6 @@ void crc_record_header_and_key(
   const model::record_attributes& attributes,
   int32_t timestamp_delta,
   int32_t offset_delta,
-  const fragbuf& key);
+  const iobuf& key);
 
 } // namespace storage
