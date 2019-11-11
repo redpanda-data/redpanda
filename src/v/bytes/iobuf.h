@@ -736,6 +736,10 @@ inline output_stream<char> make_iobuf_output_stream(iobuf io) {
 inline future<iobuf> read_iobuf_exactly(input_stream<char>& in, size_t n) {
     static constexpr auto max_chunk_size
       = iobuf::allocation_size::max_chunk_size;
+    if (n == 0) {
+        return make_ready_future<iobuf>(iobuf());
+    }
+    
     return do_with(iobuf(), n, [&in](iobuf& b, size_t& n) {
         return repeat([&n, &in, &b]() mutable {
                    const auto step = std::min(n, max_chunk_size);
