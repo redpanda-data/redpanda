@@ -17,10 +17,7 @@ RUN curl -Ls https://dl.google.com/go/go1.12.3.linux-amd64.tar.gz | tar xzf - -C
 #####
 COPY tools/install-deps.sh /
 
-# removing fedora-* yum repos disables all but base repo
-# so we install same version of packages
-RUN rm -f /etc/yum.repos.d/fedora-* && \
-    /install-deps.sh && \
+RUN /install-deps.sh && \
     rm /install-deps.sh && \
     dnf clean all
 
