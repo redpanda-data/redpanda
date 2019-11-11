@@ -2,21 +2,11 @@
 
 #include "bytes/bytes.h"
 #include "bytes/iobuf.h"
-#include "random/fast_prng.h"
-#include "random/generators.h"
+#include "bytes/tests/utils.h"
 
 #include <boost/range/algorithm/for_each.hpp>
 #include <boost/test/unit_test.hpp>
 
-static const constexpr size_t characters_per_append = 10;
-
-void append_sequence(iobuf& buf, size_t count) {
-    for (size_t i = 0; i < count; i++) {
-        auto str = random_generators::gen_alphanum_string(
-          characters_per_append);
-        buf.append(str.data(), str.size());
-    }
-}
 
 BOOST_AUTO_TEST_CASE(test_appended_data_is_retained) {
     iobuf buf;
