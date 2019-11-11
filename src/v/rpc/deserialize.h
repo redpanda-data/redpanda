@@ -1,12 +1,12 @@
 #pragma once
 
+#include "bytes/iobuf.h"
 #include "rpc/arity.h"
 #include "rpc/for_each_field.h"
 #include "rpc/is_std_helpers.h"
 #include "rpc/source.h"
 #include "seastarx.h"
 #include "utils/copy_range.h"
-#include "utils/fragbuf.h"
 #include "utils/memory_data_source.h"
 #include "utils/named_type.h"
 
@@ -38,7 +38,7 @@ future<T> deserialize(source& in) {
     constexpr bool is_optional = is_std_optional_v<T>;
     constexpr bool is_sstring = std::is_same_v<T, sstring>;
     constexpr bool is_vector = is_std_vector_v<T>;
-    constexpr bool is_fragmented_buffer = std::is_same_v<T, fragbuf>;
+    constexpr bool is_iobuf = std::is_same_v<T, iobuf>;
     constexpr bool is_standard_layout = std::is_standard_layout_v<T>;
     constexpr bool is_trivially_copyable = std::is_trivially_copyable_v<T>;
 
@@ -73,10 +73,11 @@ future<T> deserialize(source& in) {
                     r, [&in](int) { return deserialize<value_type>(in); });
               });
         });
-    } else if constexpr (is_fragmented_buffer) {
+    } else if constexpr (is_iobuf) {
         return deserialize<int32_t>(in).then([&in](int32_t max) {
-            return in.read_fragbuf(max).then([max](fragbuf b) {
-                if (static_cast<size_t>(max) != b.size_bytes()) {
+            return in.read_iobuf(max).then([max](iobuf b) {
+                if (__builtin_expect(
+                      static_cast<size_t>(max) != b.size_bytes(), false)) {
                     throw deserialize_invalid_argument(
                       b.size_bytes(), sizeof(int32_t));
                 }
@@ -86,7 +87,7 @@ future<T> deserialize(source& in) {
     } else if constexpr (is_standard_layout && is_trivially_copyable) {
         constexpr const size_t sz = sizeof(T);
         return in.read_exactly(sz).then([&in, sz](temporary_buffer<char> buf) {
-            if (buf.size() != sz) {
+            if (__builtin_expect(buf.size() != sz, false)) {
                 throw deserialize_invalid_argument(buf.size(), sz);
             }
             T t{};
@@ -108,7 +109,7 @@ future<T> deserialize(source& in) {
         });
     }
     static_assert(
-      (is_optional || is_sstring || is_vector || is_fragmented_buffer
+      (is_optional || is_sstring || is_vector || is_iobuf
        || (is_standard_layout) || is_trivially_copyable),
       "rpc: no deserializer registered");
 }
@@ -121,19 +122,9 @@ future<named_type<U, Tag>> deserialize(source& in) {
       [](U u) { return named_type<U, Tag>{std::move(u)}; });
 }
 
-// clang-format off
-CONCEPT(
-    template<typename T>
-    concept RPCDeserializable = requires(rpc::source& src) {
-        { rpc::deserialize<T>(src) } -> future<T>;
-};)
-// clang-format on
-
 template<typename T>
-CONCEPT(requires RPCDeserializable<T>)
-future<T> deserialize(fragbuf&& fb) {
-    auto in = input_stream<char>(data_source(
-      std::make_unique<memory_data_source>(std::move(fb).release())));
+future<T> deserialize(iobuf&& fb) {
+    auto in = make_iobuf_input_stream(std::move(fb));
     return do_with(std::move(in), [](input_stream<char>& in) {
         return do_with(rpc::source(in), [](rpc::source& src) {
             return rpc::deserialize<T>(src);

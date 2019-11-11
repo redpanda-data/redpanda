@@ -144,8 +144,7 @@ server::dispatch_method_once(header h, lw_shared_ptr<connection> conn) {
     (void)(*m)(conn->input(), *ctx)
       .then([ctx, conn, m = _hist.auto_measure()](netbuf n) mutable {
           n.set_correlation_id(ctx->get_header().correlation_id);
-          auto view = n.scattered_view();
-          view.on_delete([n = std::move(n)] {});
+          auto view = std::move(n).as_scattered();
           return conn->write(std::move(view)).finally([m = std::move(m)] {});
       })
       .finally([& p = _probe, conn] { p.request_completed(); });

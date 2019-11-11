@@ -4,7 +4,7 @@
 #include "redpanda/kafka/transport/probe.h"
 #include "redpanda/kafka/transport/quota_manager.h"
 #include "seastarx.h"
-#include "utils/fragbuf.h"
+#include "bytes/iobuf.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/execution_stage.hh>
@@ -99,7 +99,6 @@ public:
         socket_address _addr;
         input_stream<char> _read_buf;
         output_stream<char> _write_buf;
-        fragbuf::reader _buffer_reader;
         future<> _ready_to_respond = make_ready_future<>();
     };
 

@@ -247,12 +247,12 @@ future<> kafka_server::connection::process_request() {
                                                   delay)]() mutable {
                         auto remaining = size - sizeof(raw_request_header)
                                          - header.client_id_buffer.size();
-                        return _buffer_reader.read_exactly(_read_buf, remaining)
+                        return read_iobuf_exactly(_read_buf, remaining)
                           .then(
                             [this,
                              header = std::move(header),
                              units = std::move(units),
-                             delay = std::move(delay)](fragbuf buf) mutable {
+                             delay = std::move(delay)](iobuf buf) mutable {
                                 auto ctx = request_context(
                                   _server._metadata_cache,
                                   _server._cntrl_dispatcher.local(),

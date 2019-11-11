@@ -1,6 +1,6 @@
 #include "storage/log_reader.h"
 
-#include "utils/fragbuf.h"
+#include "bytes/iobuf.h"
 
 namespace storage {
 
@@ -25,7 +25,7 @@ batch_consumer::skip skipping_consumer::consume_record_key(
   model::record_attributes attributes,
   int32_t timestamp_delta,
   int32_t offset_delta,
-  fragbuf&& key) {
+  iobuf&& key) {
     _record_size_bytes = size_bytes;
     _record_attributes = attributes;
     _record_timestamp_delta = timestamp_delta;
@@ -34,7 +34,7 @@ batch_consumer::skip skipping_consumer::consume_record_key(
     return skip::no;
 }
 
-void skipping_consumer::consume_record_value(fragbuf&& value_and_headers) {
+void skipping_consumer::consume_record_value(iobuf&& value_and_headers) {
     std::get<model::record_batch::uncompressed_records>(_records).emplace_back(
       _record_size_bytes,
       _record_attributes,
@@ -44,7 +44,7 @@ void skipping_consumer::consume_record_value(fragbuf&& value_and_headers) {
       std::move(value_and_headers));
 }
 
-void skipping_consumer::consume_compressed_records(fragbuf&& records) {
+void skipping_consumer::consume_compressed_records(iobuf&& records) {
     _records = model::record_batch::compressed_records(
       _num_records, std::move(records));
 }

@@ -10,15 +10,6 @@ rp_test(
 
 rp_test(
   UNIT_TEST
-  BINARY_NAME fragbuf_test
-  SOURCES fragbuf_test.cc
-  LIBRARIES Seastar::seastar_testing bytes
-
-  ARGS "-- -c 1"
-)
-
-rp_test(
-  UNIT_TEST
   BINARY_NAME remote_test
   SOURCES remote_test.cc
   LIBRARIES Seastar::seastar_testing

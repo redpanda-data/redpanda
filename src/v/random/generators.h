@@ -40,14 +40,10 @@ T get_int(T max) {
     return get_int<T>(0, max);
 }
 
-inline bytes get_bytes(size_t n) {
+inline bytes get_bytes(size_t n = 128 * 1024) {
     bytes b(bytes::initialized_later(), n);
-    boost::generate(b, [] { return get_int<bytes::value_type>(); });
+    std::generate_n(b.begin(), n, [] { return get_int<bytes::value_type>(); });
     return b;
-}
-
-inline bytes get_bytes() {
-    return get_bytes(get_int<unsigned>(128 * 1024));
 }
 
 inline sstring gen_alphanum_string(size_t n) {

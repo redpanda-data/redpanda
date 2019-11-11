@@ -21,21 +21,16 @@
 static input_stream<char> get_stdin() {
     std::string input{std::istreambuf_iterator<char>(std::cin),
                       std::istreambuf_iterator<char>()};
-
-    std::vector<temporary_buffer<char>> input_bufs;
-    input_bufs.push_back(temporary_buffer<char>(input.data(), input.size()));
-
-    auto ds = data_source(
-      std::make_unique<memory_data_source>(std::move(input_bufs)));
-
-    return input_stream<char>(std::move(ds));
+    iobuf b;
+    b.append(input.data(), input.size());
+    return make_iobuf_input_stream(std::move(b));
 }
 
 /*
  * make a fake request_context from the data on stdin
  */
 static future<kafka::request_context>
-make_request_context(kafka::request_header&& header, fragbuf&& buf) {
+make_request_context(kafka::request_header&& header, iobuf&& buf) {
     return async([header = std::move(header), buf = std::move(buf)]() mutable {
         application app;
         app.start_config();
@@ -78,19 +73,14 @@ static future<kafka::request_context> get_request_context() {
                     /*
                      * read the request body
                      */
-                    return do_with(
-                      fragbuf::reader(),
-                      [&input, remaining, header = std::move(header)](
-                        fragbuf::reader& reader) mutable {
-                          return reader.read_exactly(input, remaining)
-                            .then([header = std::move(header)](
-                                    fragbuf buf) mutable {
-                                /*
-                                 * build the request context
-                                 */
-                                return make_request_context(
-                                  std::move(header), std::move(buf));
-                            });
+
+                    return read_iobuf_exactly(input, remaining)
+                      .then([header = std::move(header)](iobuf buf) mutable {
+                          /*
+                           * build the request context
+                           */
+                          return make_request_context(
+                            std::move(header), std::move(buf));
                       });
                 });
           });
@@ -98,10 +88,10 @@ static future<kafka::request_context> get_request_context() {
 }
 
 static future<> handle_request(sstring output, kafka::request_context&& ctx) {
-    bytes_ostream os;
+    iobuf os;
 
     // reserve a spot for the frame size
-    auto* size_placeholder = os.write_place_holder(sizeof(int32_t));
+    auto ph = os.reserve(sizeof(int32_t));
     auto start_size = os.size_bytes();
 
     // write the header
@@ -156,9 +146,8 @@ static future<> handle_request(sstring output, kafka::request_context&& ctx) {
     // write the frame size into the placeholder
     int32_t total_size = os.size_bytes() - start_size;
     auto be_total_size = cpu_to_be(total_size);
-    auto* raw_size = reinterpret_cast<const bytes_ostream::value_type*>(
-      &be_total_size);
-    std::copy_n(raw_size, sizeof(be_total_size), size_placeholder);
+    auto* raw_size = reinterpret_cast<const char*>(&be_total_size);
+    ph.write(raw_size, sizeof(be_total_size));
 
     // send the full message to the output file
     auto flags = open_flags::wo | open_flags::create | open_flags::truncate;
@@ -166,11 +155,11 @@ static future<> handle_request(sstring output, kafka::request_context&& ctx) {
       .then([os = std::move(os)](file f) mutable {
           auto out = make_lw_shared<output_stream<char>>(
             make_file_output_stream(std::move(f)));
-          return do_with(std::move(os), [out](bytes_ostream& os) {
+          return do_with(std::move(os), [out](iobuf& os) {
               return do_for_each(
                        os.begin(),
                        os.end(),
-                       [out](bytes_ostream::fragment& fragment) {
+                       [out](iobuf::fragment& fragment) {
                            return out->write(fragment.get(), fragment.size());
                        })
                 .then([out] { return out->flush(); })

@@ -55,7 +55,7 @@ struct fetch_response final {
         model::offset high_watermark;
         model::offset last_stable_offset;                      // >= v4
         std::vector<aborted_transaction> aborted_transactions; // >= v4
-        bytes_ostream record_set;
+        iobuf record_set;
     };
 
     struct partition {

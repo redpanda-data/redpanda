@@ -1,6 +1,6 @@
 #pragma once
 
-#include "utils/fragbuf.h"
+#include "bytes/iobuf.h"
 #include "utils/vint.h"
 
 #include <crc32c/crc32c.h>
@@ -13,10 +13,13 @@ public:
         extend(reinterpret_cast<const uint8_t*>(&num), sizeof(T));
     }
 
-    void extend(const fragbuf& buf) {
-        auto istream = buf.get_istream();
-        istream.consume([this](bytes_view bv) {
-            extend(reinterpret_cast<const uint8_t*>(bv.data()), bv.size());
+    /// FIXME: ugh. this imports so much junk into crc. move to util
+    /// use templates and iterators
+    void extend(const iobuf& buf) {
+        auto in = iobuf::iterator_consumer(buf.cbegin(), buf.cend());
+        (void)in.consume(buf.size_bytes(), [this](const char* src, size_t sz) {
+            extend(reinterpret_cast<const uint8_t*>(src), sz);
+            return stop_iteration::no;
         });
     }
 

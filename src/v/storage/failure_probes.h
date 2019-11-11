@@ -5,6 +5,8 @@
 
 #include <seastar/core/sleep.hh>
 
+#include <fmt/format.h>
+
 namespace storage {
 
 class log_failure_probes final : public finjector::probe {

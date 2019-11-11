@@ -1,6 +1,7 @@
 #pragma once
 
-#include "utils/fragbuf.h"
+#include "bytes/bytes.h"
+#include "bytes/iobuf.h"
 
 #include <seastar/core/fstream.hh>
 #include <seastar/core/iostream.hh>
@@ -29,13 +30,19 @@ public:
         return append(reinterpret_cast<const char*>(s.begin()), s.size());
     }
 
-    future<> append(const fragbuf& fragmented_buffer) {
-        auto istream = fragmented_buffer.get_istream();
+    future<> append(const iobuf& io) {
+        auto in = iobuf::iterator_consumer(io.cbegin(), io.cend());
         auto f = make_ready_future<>();
-        istream.consume([this, &f](bytes_view bv) {
-            f = f.then(
-              [this, bv = std::move(bv)] { return append(std::move(bv)); });
-        });
+        auto c = in.consume(
+          io.size_bytes(), [this, &f](const char* src, size_t sz) {
+              f = f.then([this, src, sz] { return append(src, sz); });
+              return stop_iteration::no;
+          });
+        if (__builtin_expect(c != io.size_bytes(), false)) {
+            return make_exception_future<>(
+                     std::runtime_error("could not append data"))
+              .then([f = std::move(f)]() mutable { return std::move(f); });
+        }
         return f;
     }
 

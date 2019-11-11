@@ -8,7 +8,7 @@
 
 namespace rpc {
 template<>
-inline void serialize(bytes_ostream& out, model::ntp&& ntp) {
+inline void serialize(iobuf& out, model::ntp&& ntp) {
     rpc::serialize(
       out, sstring(ntp.ns), sstring(ntp.tp.topic), ntp.tp.partition);
 }
@@ -27,7 +27,7 @@ inline future<model::ntp> deserialize(source& in) {
 }
 
 template<>
-inline void serialize(bytes_ostream& out, model::broker&& r) {
+inline void serialize(iobuf& out, model::broker&& r) {
     rpc::serialize(
       out, r.id(), sstring(r.host()), r.port(), std::optional(r.rack()));
 }
@@ -49,7 +49,7 @@ inline future<model::broker> deserialize(source& in) {
     });
 }
 template<>
-inline void serialize(bytes_ostream& ref, model::record&& record) {
+inline void serialize(iobuf& ref, model::record&& record) {
     rpc::serialize(
       ref,
       record.size_bytes(),
@@ -67,8 +67,8 @@ inline future<model::record> deserialize(source& in) {
         model::record_attributes attributes;
         int32_t timestamp_delta;
         int32_t offset_delta;
-        fragbuf key;
-        fragbuf value_and_headers;
+        iobuf key;
+        iobuf value_and_headers;
     };
     return rpc::deserialize<simple_record>(in).then([](simple_record r) {
         return model::record(

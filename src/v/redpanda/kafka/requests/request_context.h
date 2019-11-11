@@ -1,12 +1,12 @@
 #pragma once
 
+#include "bytes/iobuf.h"
 #include "cluster/controller.h"
 #include "redpanda/kafka/groups/group_manager.h"
 #include "redpanda/kafka/groups/group_router.h"
 #include "redpanda/kafka/groups/group_shard_mapper.h"
 #include "redpanda/kafka/requests/request_reader.h"
 #include "seastarx.h"
-#include "utils/fragbuf.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/reactor.hh>
@@ -44,7 +44,7 @@ public:
       sharded<cluster::metadata_cache>& metadata_cache,
       controller_dispatcher& cntrl_dispatcher,
       request_header&& header,
-      fragbuf&& request,
+      iobuf&& request,
       lowres_clock::duration throttle_delay,
       kafka::group_router_type& group_router,
       cluster::shard_table& shard_table,
@@ -52,8 +52,7 @@ public:
       : _metadata_cache(metadata_cache)
       , _cntrl_dispatcher(cntrl_dispatcher)
       , _header(std::move(header))
-      , _request(std::move(request))
-      , _reader(_request.get_istream())
+      , _reader(std::move(request))
       , _throttle_delay(throttle_delay)
       , _group_router(group_router)
       , _shard_table(shard_table)
@@ -92,7 +91,6 @@ private:
     sharded<cluster::metadata_cache>& _metadata_cache;
     controller_dispatcher& _cntrl_dispatcher;
     request_header _header;
-    fragbuf _request;
     request_reader _reader;
     lowres_clock::duration _throttle_delay;
     kafka::group_router_type& _group_router;
