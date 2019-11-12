@@ -40,21 +40,21 @@ const createSlackMessage = (build) => {
     "INTERNAL_ERROR": ":skull:"
   }
 
-  const messageMd = `${statusEmoji[build.status]}  <${build.logUrl} | ${build.id}>
-> Repository: \`${build.source.repoSource.repoName.replace(/_/g, '/')}\`
-> Branch: \`${build.source.repoSource.branchName}\`
-> Commit: \`${build.sourceProvenance.resolvedRepoSource.commitSha.substring(0, 8)}\`
-> Build Type: \`${build.substitutions['_BUILD_TYPE']}\`
-> Compiler: \`${build.substitutions['_COMPILER']}\``
+  const repo = build.source.repoSource.repoName.replace('github_', '').replace(/_/g, '/');
+  const branch = build.source.repoSource.branchName;
+  const sha = build.sourceProvenance.resolvedRepoSource.commitSha.substring(0, 8);
+  const type = build.substitutions['_BUILD_TYPE'];
+  const cc = build.substitutions['_COMPILER'];
 
   const message = {
       "blocks": [{
           "type": "section",
           "text": {
               "type": "mrkdwn",
-              "text": messageMd
+              "text": `${statusEmoji[build.status]}  <${build.logUrl} | ${repo}/${branch}@${sha}-${cc}-${type}>`
           }
       }]
   }
+
   return message;
 }
