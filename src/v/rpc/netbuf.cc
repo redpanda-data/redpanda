@@ -4,9 +4,17 @@
 
 namespace rpc {
 
-netbuf::netbuf() {
-    _hdr_hldr = _out.reserve(sizeof(_hdr));
+static inline scattered_message<char> iobuf_as_scattered(iobuf b) {
+    scattered_message<char> msg;
+    auto in = iobuf::iterator_consumer(b.cbegin(), b.cend());
+    in.consume(b.size_bytes(), [&msg](const char* src, size_t sz) {
+        msg.append_static(src, sz);
+        return stop_iteration::no;
+    });
+    msg.on_delete([b = std::move(b)] {});
+    return msg;
 }
+
 /// \brief used to send the bytes down the wire
 /// we re-compute the header-checksum on every call
 scattered_message<char> netbuf::as_scattered() && {
@@ -16,23 +24,21 @@ scattered_message<char> netbuf::as_scattered() && {
           "cannot compose scattered view with incomplete header. missing "
           "correlation_id or remote method id");
     }
-    size_t i = 0;
     incremental_xxhash64 h;
-    scattered_message<char> msg;
-    for (const auto& buf : _out) {
-        if (i++ == 0) {
-            h.update(buf.get() + size_header, buf.size() - size_header);
-        } else {
-            h.update(buf.get(), buf.size());
-        }
-        msg.append_static(buf.get(), buf.size());
-    }
+    auto in = iobuf::iterator_consumer(_out.cbegin(), _out.cend());
+    in.consume(_out.size_bytes(), [&h](const char* src, size_t sz) {
+        h.update(src, sz);
+        return stop_iteration::no;
+    });
     _hdr.checksum = h.digest();
-    _hdr.size = _out.size_bytes() - size_header;
+    _hdr.size = _out.size_bytes();
     // update the header
-    _hdr_hldr.write(reinterpret_cast<const char*>(&_hdr), size_header);
-    msg.on_delete([b = std::move(_out)] {});
-    return msg;
+    temporary_buffer<char> hdr_payload(
+      reinterpret_cast<const char*>(&_hdr), size_header);
+    _out.prepend(std::move(hdr_payload));
+
+    // prepare for output
+    return iobuf_as_scattered(std::move(_out));
 }
 void netbuf::set_correlation_id(uint32_t x) {
     _hdr.correlation_id = x;
