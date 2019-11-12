@@ -9,11 +9,6 @@
 namespace rpc {
 class netbuf {
 public:
-    netbuf() ;
-    netbuf(netbuf&& o) noexcept = default;
-    netbuf& operator=(netbuf&& o) noexcept = default;
-    netbuf(const netbuf&) = delete;
-
     /// \brief used to send the bytes down the wire
     /// we re-compute the header-checksum on every call
     scattered_message<char> as_scattered() &&;
@@ -32,7 +27,6 @@ private:
     }
     header _hdr;
     iobuf _out;
-    iobuf::placeholder _hdr_hldr;
 };
 
 } // namespace rpc
