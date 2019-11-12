@@ -5,6 +5,7 @@
 #include "random/fast_prng.h"
 #include "utils/intrusive_list_helpers.h"
 
+#include <boost/container/flat_map.hpp>
 #include <fmt/ostream.h>
 
 #include <vector>
@@ -91,7 +92,7 @@ class partition_allocator {
 public:
     using value_type = allocation_node;
     using ptr = std::unique_ptr<value_type>;
-    using underlying_t = std::vector<ptr>;
+    using underlying_t = boost::container::flat_map<model::node_id, ptr>;
     using iterator = underlying_t::iterator;
     using cil_t = counted_intrusive_list<value_type, &allocation_node::_hook>;
 
@@ -103,8 +104,8 @@ public:
         _rr = _available_machines.end();
     }
     void register_node(ptr n) {
-        _machines.push_back(std::move(n));
-        _available_machines.push_back(*_machines.back());
+        _available_machines.push_back(*n);
+        _machines.emplace(n->id(), std::move(n));
     }
 
     /// best effort placement.
@@ -131,6 +132,7 @@ private:
 
     std::optional<std::vector<model::broker_shard>>
     allocate_replicas(int16_t replication_factor);
+    iterator find_node(model::node_id id);
 
     [[gnu::always_inline]] inline cil_t::iterator& round_robin_ptr() {
         if (_rr == _available_machines.end()) {

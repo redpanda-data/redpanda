@@ -22,7 +22,7 @@ struct partition_allocator_tester {
               std::move(bi), cpus, std::unordered_map<sstring, sstring>()));
         }
     }
-    std::vector<partition_allocator::ptr>& machines() {
+    partition_allocator::underlying_t& machines() {
         return pa._machines;
     }
     partition_allocator::cil_t& available_machines() {
