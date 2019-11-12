@@ -3,15 +3,15 @@
 #include "seastarx.h"
 #include "utils/concepts-enabled.h"
 
-#include <seastar/core/circular_buffer.hh>
-#include <seastar/core/deleter.hh>
 #include <seastar/core/do_with.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/iostream.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/temporary_buffer.hh>
 
+#include <list>
 #include <stdexcept>
+
 /// our iobuf is a fragmented buffer. modeled after
 /// folly::iobufqueue.h - it supports prepend and append, but no
 /// operations in the middle. It provides a forward iterator for
@@ -24,7 +24,7 @@
 class iobuf {
     // Not a lightweight object.
     // 24 bytes for std::list
-    // 8  bytes for _alloc_sz
+    // 8  bytes for _ctrl->alloc_sz
     // 8  bytes for _size_bytes
     // -----------------------
     //
@@ -36,43 +36,32 @@ class iobuf {
 public:
     class allocation_size {
     public:
-        // these numbers are field experience report in scylla from
-        // seastar summit 2019
         static constexpr size_t max_chunk_size = 128 * 1024;
         static constexpr size_t default_chunk_size = 512;
-
-        //   - try to not exceed max_chunk_size
-        //   - must be enough for data_size
-        //   - uses folly::vector of 1.5 growth without using double conversions
-        size_t next_allocation_size(size_t data_size) {
-            size_t next_size = ((_next_alloc_sz * 3) + 1) / 2;
-            next_size = std::min(next_size, max_chunk_size);
-            return _next_alloc_sz = std::max(next_size, data_size);
-        }
-        size_t current_allocation_size() const {
-            return _next_alloc_sz;
-        }
-        void reset() {
-            _next_alloc_sz = default_chunk_size;
-        }
+        size_t next_allocation_size(size_t data_size);
+        size_t current_allocation_size() const;
+        void reset();
 
     private:
         size_t _next_alloc_sz{default_chunk_size};
     };
-
     class fragment;
-    using container = circular_buffer<fragment>;
-    using container_ptr = lw_shared_ptr<container>;
+    using container = std::list<fragment>;
     using iterator = typename container::iterator;
     using const_iterator = typename container::const_iterator;
-    class stable_fragment_iterator;
+    using reverse_iterator = typename container::reverse_iterator;
     class iterator_consumer;
     class byte_iterator;
     class placeholder;
+    struct control {
+        container frags;
+        size_t size{0};
+        allocation_size alloc_sz;
+    };
+    using control_ptr = lw_shared_ptr<control>;
 
-    iobuf();
-    /// constructor used for sharing
-    iobuf(container_ptr, size_t, allocation_size);
+    iobuf() noexcept;
+    iobuf(control_ptr) noexcept;
     ~iobuf() = default;
     iobuf(iobuf&& x) noexcept = default;
     iobuf& operator=(iobuf&& x) noexcept = default;
@@ -88,8 +77,7 @@ public:
       // clang-format on
       >
     iobuf(Range&& r)
-      : _frags(make_lw_shared<iobuf::container>())
-      , _size_bytes(0) {
+      : _ctrl(make_lw_shared<control>()) {
         static_assert(
           std::is_rvalue_reference_v<decltype(r)>,
           "Must be an rvalue. Use std::move()");
@@ -145,9 +133,7 @@ private:
     size_t available_bytes() const;
     void create_new_fragment(size_t);
 
-    container_ptr _frags;
-    size_t _size_bytes{0};
-    allocation_size _alloc_sz;
+    control_ptr _ctrl;
 };
 
 input_stream<char> make_iobuf_input_stream(iobuf);
@@ -251,37 +237,11 @@ private:
     size_t _used_bytes;
 };
 
-class iobuf::stable_fragment_iterator {
-public:
-    stable_fragment_iterator() = default;
-    stable_fragment_iterator(iobuf::container_ptr c, size_t index)
-      : _c(c)
-      , _i(index) {
-    }
-    iobuf::fragment* operator->() {
-        auto& ref = (*_c)[_i];
-        return &ref;
-    }
-    iobuf::fragment& operator*() {
-        return (*_c)[_i];
-    }
-    const iobuf::fragment* operator->() const {
-        auto& ref = (*_c)[_i];
-        return &ref;
-    }
-    const iobuf::fragment& operator*() const {
-        return (*_c)[_i];
-    }
-
-private:
-    iobuf::container_ptr _c;
-    size_t _i;
-};
 class iobuf::placeholder {
 public:
-    using iterator = iobuf::stable_fragment_iterator;
+    using iterator = iobuf::reverse_iterator;
 
-    placeholder() = default;
+    placeholder() noexcept {};
     placeholder(iterator iter, size_t initial_index, size_t max_size_to_write)
       : _iter(iter)
       , _byte_index(initial_index)
@@ -310,8 +270,8 @@ private:
     }
 
     iterator _iter;
-    size_t _byte_index;
-    size_t _remaining_size;
+    size_t _byte_index{0};
+    size_t _remaining_size{0};
 };
 class iobuf::byte_iterator {
 public:
@@ -446,16 +406,16 @@ public:
             if (_frag == _frag_end) {
                 return i;
             }
-            if (!segment_bytes_left()) {
-                _frag++;
-                if (_frag != _frag_end) {
+            const size_t bytes_left = segment_bytes_left();
+            if (bytes_left == 0) {
+                if (++_frag != _frag_end) {
                     _frag_index = _frag->get();
                     _frag_index_end = _frag->get() + _frag->size();
                 }
                 continue;
             }
-            const size_t step = std::min(n - i, segment_bytes_left());
-            stop_iteration stop = f(_frag_index, step);
+            const size_t step = std::min(n - i, bytes_left);
+            const stop_iteration stop = f(_frag_index, step);
             i += step;
             _frag_index += step;
             _bytes_consumed += step;
@@ -492,38 +452,51 @@ private:
     const char* _frag_index_end = nullptr;
     size_t _bytes_consumed{0};
 };
-inline iobuf::iobuf()
-  : _frags(make_lw_shared<iobuf::container>())
-  , _size_bytes(0) {
+
+//   - try to not exceed max_chunk_size
+//   - must be enough for data_size
+//   - uses folly::vector of 1.5 growth without using double conversions
+inline size_t iobuf::allocation_size::next_allocation_size(size_t data_size) {
+    size_t next_size = ((_next_alloc_sz * 3) + 1) / 2;
+    next_size = std::min(next_size, max_chunk_size);
+    return _next_alloc_sz = std::max(next_size, data_size);
+}
+inline size_t iobuf::allocation_size::current_allocation_size() const {
+    return _next_alloc_sz;
+}
+inline void iobuf::allocation_size::reset() {
+    _next_alloc_sz = default_chunk_size;
+}
+
+inline iobuf::iobuf() noexcept
+  : _ctrl(make_lw_shared<iobuf::control>()) {
 }
 /// constructor used for sharing
-inline iobuf::iobuf(iobuf::container_ptr c, size_t sz, allocation_size az)
-  : _frags(c)
-  , _size_bytes(sz)
-  , _alloc_sz(std::move(az)) {
+inline iobuf::iobuf(iobuf::control_ptr c) noexcept
+  : _ctrl(c) {
 }
 
 inline iobuf::iterator iobuf::begin() {
-    return _frags->begin();
+    return _ctrl->frags.begin();
 }
 inline iobuf::iterator iobuf::end() {
-    return _frags->end();
+    return _ctrl->frags.end();
 }
 inline iobuf::const_iterator iobuf::begin() const {
-    return _frags->cbegin();
+    return _ctrl->frags.cbegin();
 }
 inline iobuf::const_iterator iobuf::end() const {
-    return _frags->cend();
+    return _ctrl->frags.cend();
 }
 inline iobuf::const_iterator iobuf::cbegin() const {
-    return _frags->cbegin();
+    return _ctrl->frags.cbegin();
 }
 inline iobuf::const_iterator iobuf::cend() const {
-    return _frags->cend();
+    return _ctrl->frags.cend();
 }
 
 inline bool iobuf::operator==(const iobuf& o) const {
-    if (_size_bytes != o._size_bytes) {
+    if (_ctrl->size != o._ctrl->size) {
         return false;
     }
     auto lhs_begin = iobuf::byte_iterator(cbegin(), cend());
@@ -544,27 +517,29 @@ inline bool iobuf::operator!=(const iobuf& o) const {
     return !(*this == o);
 }
 inline bool iobuf::empty() const {
-    return _frags->empty();
+    return _ctrl->frags.empty();
 }
 inline size_t iobuf::size_bytes() const {
-    return _size_bytes;
+    return _ctrl->size;
 }
 
 inline size_t iobuf::available_bytes() const {
-    if (_frags->empty()) {
+    if (_ctrl->frags.empty()) {
         return 0;
     }
-    return _frags->back().available_bytes();
+    return _ctrl->frags.back().available_bytes();
 }
 
 inline iobuf iobuf::share() {
-    return iobuf(_frags, _size_bytes, _alloc_sz);
+    return iobuf(_ctrl);
 }
 
 inline iobuf iobuf::share(size_t pos, size_t len) {
-    auto c = make_lw_shared<iobuf::container>();
+    auto c = make_lw_shared<iobuf::control>();
+    c->size = len;
+    c->alloc_sz = _ctrl->alloc_sz;
     size_t left = len;
-    for (auto& frag : *_frags) {
+    for (auto& frag : _ctrl->frags) {
         if (left == 0) {
             break;
         }
@@ -579,46 +554,48 @@ inline iobuf iobuf::share(size_t pos, size_t len) {
             left_in_frag = left;
             left = 0;
         }
-        c->emplace_back(frag.share(pos, left_in_frag), fragment::full{});
+        c->frags.emplace_back(frag.share(pos, left_in_frag), fragment::full{});
         pos = 0;
     }
-    return iobuf(c, len, _alloc_sz);
+    return iobuf(c);
 }
 
 inline iobuf iobuf::copy() const {
-    // make sure we pass in our learned allocation strategy _alloc_sz
-    iobuf ret(make_lw_shared<iobuf::container>(), 0, _alloc_sz);
+    // make sure we pass in our learned allocation strategy _ctrl->alloc_sz
+    iobuf ret(make_lw_shared<iobuf::control>());
+    ret._ctrl->alloc_sz = _ctrl->alloc_sz;
     auto in = iobuf::iterator_consumer(cbegin(), cend());
-    in.consume(_size_bytes, [&ret](const char* src, size_t sz) {
+    in.consume(_ctrl->size, [&ret](const char* src, size_t sz) {
         ret.append(src, sz);
         return stop_iteration::no;
     });
     return ret;
 }
 inline void iobuf::create_new_fragment(size_t sz) {
-    auto asz = _alloc_sz.next_allocation_size(sz);
-    _frags->push_back(
+    auto asz = _ctrl->alloc_sz.next_allocation_size(sz);
+    _ctrl->frags.push_back(
       iobuf::fragment(temporary_buffer<char>(asz), iobuf::fragment::empty{}));
 }
 inline iobuf::placeholder iobuf::reserve(size_t sz) {
     if (auto b = available_bytes(); b < sz) {
         if (b > 0) {
-            _frags->back().trim();
+            _ctrl->frags.back().trim();
         }
         create_new_fragment(sz); // make space if not enough
     }
-    _size_bytes += sz;
-    auto it = stable_fragment_iterator(_frags, _frags->size() - 1);
+    _ctrl->size += sz;
+    auto it = _ctrl->frags.rbegin();
     placeholder p(it, it->size(), sz);
     it->reserve(sz);
-    return p;
+    return std::move(p);
+}
 }
 [[gnu::always_inline]] void inline iobuf::append(const char* ptr, size_t size) {
     if (size == 0) {
         return;
     }
     if (__builtin_expect(size <= available_bytes(), true)) {
-        _size_bytes += _frags->back().append(ptr, size);
+        _ctrl->size += _ctrl->frags.back().append(ptr, size);
         return;
     }
     size_t i = 0;
@@ -626,8 +603,8 @@ inline iobuf::placeholder iobuf::reserve(size_t sz) {
         if (available_bytes() == 0) {
             create_new_fragment(size);
         }
-        const size_t sz = _frags->back().append(ptr + i, size);
-        _size_bytes += sz;
+        const size_t sz = _ctrl->frags.back().append(ptr + i, size);
+        _ctrl->size += sz;
         i += sz;
         size -= sz;
     }
@@ -642,16 +619,16 @@ inline iobuf::placeholder iobuf::reserve(size_t sz) {
         return;
     }
     if (available_bytes() > 0) {
-        if (_frags->back().is_empty()) {
-            _frags->pop_back();
+        if (_ctrl->frags.back().is_empty()) {
+            _ctrl->frags.pop_back();
         } else {
             // happens when we are merge iobufs
-            _frags->back().trim();
-            _alloc_sz.reset();
+            _ctrl->frags.back().trim();
+            _ctrl->alloc_sz.reset();
         }
     }
-    _size_bytes += b.size();
-    _frags->emplace_back(std::move(b), iobuf::fragment::full{});
+    _ctrl->size += b.size();
+    _ctrl->frags.emplace_back(std::move(b), iobuf::fragment::full{});
 }
 /// appends the contents of buffer; might pack values into existing space
 inline void iobuf::append(iobuf o) {
@@ -661,14 +638,14 @@ inline void iobuf::append(iobuf o) {
 }
 /// used for iostreams
 inline void iobuf::pop_front() {
-    _size_bytes -= _frags->front().size();
-    _frags->pop_front();
+    _ctrl->size -= _ctrl->frags.front().size();
+    _ctrl->frags.pop_front();
 }
 inline void iobuf::trim_front(size_t n) {
-    while (!_frags->empty()) {
-        auto& f = _frags->front();
+    while (!_ctrl->frags.empty()) {
+        auto& f = _ctrl->frags.front();
         if (f.size() > n) {
-            _size_bytes -= n;
+            _ctrl->size -= n;
             f.trim_front(n);
             return;
         }
