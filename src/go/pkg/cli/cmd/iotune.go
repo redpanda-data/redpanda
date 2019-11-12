@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"math"
 	"path/filepath"
 	"time"
 	"vectorized/pkg/cli"
@@ -24,7 +23,7 @@ func NewIoTuneCmd(fs afero.Fs) *cobra.Command {
 		Use:   "iotune",
 		Short: "Measure filesystem performance and create IO configuration file",
 		RunE: func(ccmd *cobra.Command, args []string) error {
-			totalTimeout := (time.Duration(duration) * time.Second) + timeout
+			timeout += time.Duration(duration) * time.Second
 			configFile, err := cli.GetOrFindConfig(fs, configFileFlag)
 			if err != nil {
 				return err
@@ -43,7 +42,7 @@ func NewIoTuneCmd(fs afero.Fs) *cobra.Command {
 				evalDirectories = []string{config.Redpanda.Directory}
 			}
 
-			return execIoTune(fs, evalDirectories, ioConfigFile, duration, totalTimeout)
+			return execIoTune(fs, evalDirectories, ioConfigFile, duration, timeout)
 		},
 	}
 	command.Flags().StringVar(&configFileFlag,
@@ -56,7 +55,7 @@ func NewIoTuneCmd(fs afero.Fs) *cobra.Command {
 	command.Flags().DurationVar(
 		&timeout,
 		"timeout",
-		time.Duration(math.MaxInt64),
+		1*time.Hour,
 		"The maximum time after --duration to wait for iotune to complete. "+
 			"The value passed is a sequence of decimal numbers, each with optional "+
 			"fraction and a unit suffix, such as '300ms', '1.5s' or '2h45m'. "+
