@@ -13,8 +13,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const maxTimeout = time.Duration(math.MaxInt64)
-
 func NewIoTuneCmd(fs afero.Fs) *cobra.Command {
 	var (
 		configFileFlag string
@@ -26,7 +24,7 @@ func NewIoTuneCmd(fs afero.Fs) *cobra.Command {
 		Use:   "iotune",
 		Short: "Measure filesystem performance and create IO configuration file",
 		RunE: func(ccmd *cobra.Command, args []string) error {
-			timeout = calculateTimeout(timeout, duration)
+			totalTimeout := (time.Duration(duration) * time.Second) + timeout
 			configFile, err := cli.GetOrFindConfig(fs, configFileFlag)
 			if err != nil {
 				return err
@@ -45,7 +43,7 @@ func NewIoTuneCmd(fs afero.Fs) *cobra.Command {
 				evalDirectories = []string{config.Redpanda.Directory}
 			}
 
-			return execIoTune(fs, evalDirectories, ioConfigFile, duration, timeout)
+			return execIoTune(fs, evalDirectories, ioConfigFile, duration, totalTimeout)
 		},
 	}
 	command.Flags().StringVar(&configFileFlag,
@@ -58,7 +56,7 @@ func NewIoTuneCmd(fs afero.Fs) *cobra.Command {
 	command.Flags().DurationVar(
 		&timeout,
 		"timeout",
-		maxTimeout,
+		time.Duration(math.MaxInt64),
 		"The maximum time after --duration to wait for iotune to complete. "+
 			"The value passed is a sequence of decimal numbers, each with optional "+
 			"fraction and a unit suffix, such as '300ms', '1.5s' or '2h45m'. "+
@@ -82,17 +80,4 @@ func execIoTune(
 	}
 	log.Infof("IO configuration file stored as '%s'", ioConfigFile)
 	return nil
-}
-
-func calculateTimeout(timeout time.Duration, duration int) time.Duration {
-	durationSeconds := time.Duration(duration) * time.Second
-	// If the timeout specified is the maximum timeout, return the maximum
-	// timeout.
-	// If adding both the duration (in seconds) and the
-	// timeout makes the value overflow, return the maximum timeout.
-	if (timeout == maxTimeout) || (durationSeconds+timeout) < 1 {
-		return maxTimeout
-	}
-	// Otherwise, return the sum of both
-	return durationSeconds + timeout
 }
