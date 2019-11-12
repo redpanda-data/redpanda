@@ -110,12 +110,9 @@ partition_allocator::allocate(const topic_configuration& cfg) {
 
 void partition_allocator::deallocate(const model::broker_shard& bs) {
     // find in brokers
-    auto it = std::find_if(
-      _machines.begin(), _machines.end(), [id = bs.node_id](const ptr& n) {
-          return id == n->node().id();
-      });
+    auto it = find_node(bs.node_id);
     if (it != _machines.end()) {
-        auto& machine = *it;
+        auto& [id, machine] = *it;
         if (bs.shard < machine->cpus()) {
             machine->deallocate(bs.shard);
             if (!machine->_hook.is_linked()) {
@@ -125,8 +122,13 @@ void partition_allocator::deallocate(const model::broker_shard& bs) {
     }
 }
 
+partition_allocator::iterator
+partition_allocator::find_node(model::node_id id) {
+    return _machines.find(id);
+}
+
 void partition_allocator::test_only_saturate_all_machines() {
-    for (auto& m : _machines) {
+    for (auto& [id, m] : _machines) {
         m->_partition_capacity = 0;
         for (auto& w : m->_weights) {
             w = allocation_node::max_allocations_per_core;
