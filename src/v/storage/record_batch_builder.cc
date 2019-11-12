@@ -39,9 +39,9 @@ model::record_batch record_batch_builder::build() && {
 
     storage::crc_batch_header(crc, header, _records.size());
     for (auto& sr : _records) {
-        // create the record
+        auto rec_sz = record_size(offset_delta, sr);
         auto r = model::record(
-          record_size(offset_delta, sr),
+          rec_sz,
           model::record_attributes{},
           0,
           offset_delta,
