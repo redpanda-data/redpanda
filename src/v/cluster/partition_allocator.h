@@ -83,7 +83,7 @@ private:
     std::unordered_map<sstring, sstring> _machine_labels;
 
     // for partition_allocator
-    safe_intrusive_link_hook _hook;
+    safe_intrusive_list_hook _hook;
 };
 
 struct partition_allocator_tester;
