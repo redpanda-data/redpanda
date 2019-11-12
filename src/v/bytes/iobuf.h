@@ -109,6 +109,8 @@ public:
     void append(temporary_buffer<char>);
     /// appends the contents of buffer; might pack values into existing space
     void append(iobuf);
+    /// prepends the _the buffer_ as iobuf::fragment::full{}
+    void prepend(temporary_buffer<char>);
 
     /// used for iostreams
     void pop_front();
@@ -589,6 +591,10 @@ inline iobuf::placeholder iobuf::reserve(size_t sz) {
     it->reserve(sz);
     return std::move(p);
 }
+
+[[gnu::always_inline]] void inline iobuf::prepend(temporary_buffer<char> b) {
+    _ctrl->size += b.size();
+    _ctrl->frags.emplace_front(std::move(b), iobuf::fragment::full{});
 }
 [[gnu::always_inline]] void inline iobuf::append(const char* ptr, size_t size) {
     if (size == 0) {
