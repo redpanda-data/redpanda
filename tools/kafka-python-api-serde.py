@@ -4,10 +4,11 @@
 #
 import random
 import string
-from kafka.protocol import api, types, group, fetch
+from kafka.protocol import api, types, group, fetch, metadata
 
 request_types = group.JoinGroupRequest + group.SyncGroupRequest + \
-        group.HeartbeatRequest + group.LeaveGroupRequest + fetch.FetchRequest
+        group.HeartbeatRequest + group.LeaveGroupRequest + fetch.FetchRequest + \
+            metadata.MetadataRequest
 
 def random_int32():
     return random.randint(-2**31, 2**31-1)
