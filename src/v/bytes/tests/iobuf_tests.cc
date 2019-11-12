@@ -7,7 +7,6 @@
 #include <boost/range/algorithm/for_each.hpp>
 #include <boost/test/unit_test.hpp>
 
-
 BOOST_AUTO_TEST_CASE(test_appended_data_is_retained) {
     iobuf buf;
     append_sequence(buf, 5);
@@ -200,4 +199,18 @@ BOOST_AUTO_TEST_CASE(not_equal_by_size) {
     a.append("a", 1);
     b.append("b", 1);
     BOOST_CHECK(a != b);
+}
+BOOST_AUTO_TEST_CASE(correct_control_structure_sharing) {
+    auto a = iobuf();
+    a.append("a", 1);
+    auto b = a.share();
+    b.append("b", 1);
+    BOOST_CHECK_EQUAL(a.size_bytes(), b.size_bytes());
+    BOOST_CHECK_EQUAL(a, b);
+}
+BOOST_AUTO_TEST_CASE(test_prepend) {
+    auto a = iobuf();
+    a.append("a", 1);
+    a.prepend(temporary_buffer<char>(1));
+    BOOST_CHECK_EQUAL(a.size_bytes(), 2);
 }
