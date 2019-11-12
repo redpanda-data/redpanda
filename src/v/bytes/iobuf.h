@@ -736,23 +736,24 @@ inline output_stream<char> make_iobuf_output_stream(iobuf io) {
 inline future<iobuf> read_iobuf_exactly(input_stream<char>& in, size_t n) {
     static constexpr auto max_chunk_size
       = iobuf::allocation_size::max_chunk_size;
-    if (n == 0) {
-        return make_ready_future<iobuf>(iobuf());
-    }
-    
     return do_with(iobuf(), n, [&in](iobuf& b, size_t& n) {
-        return repeat([&n, &in, &b]() mutable {
-                   const auto step = std::min(n, max_chunk_size);
-                   return in.read_up_to(step).then(
-                     [&n, &b](temporary_buffer<char> buf) mutable {
-                         if (buf.empty()) {
-                             return stop_iteration::yes;
-                         }
-                         n -= buf.size();
-                         b.append(std::move(buf));
-                         return stop_iteration::no;
-                     });
-               })
+        return do_until(
+                 [&n] { return n == 0; },
+                 [&n, &in, &b] {
+                     const auto step = std::min(n, max_chunk_size);
+                     if (step == 0) {
+                         return make_ready_future<>();
+                     }
+                     return in.read_up_to(step).then(
+                       [&n, &b](temporary_buffer<char> buf) {
+                           if (buf.empty()) {
+                               n = 0;
+                               return;
+                           }
+                           n -= buf.size();
+                           b.append(std::move(buf));
+                       });
+                 })
           .then([&b] { return make_ready_future<iobuf>(std::move(b)); });
     });
 }
