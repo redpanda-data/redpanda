@@ -21,3 +21,4 @@ target_link_libraries(errors
       Seastar::seastar
       cluster
     )
+add_subdirectory(tests)
