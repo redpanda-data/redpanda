@@ -24,7 +24,8 @@ controller::controller(
   : _self(std::move(n))
   , _pm(pm)
   , _st(st)
-  , _md_cache(md_cache) {
+  , _md_cache(md_cache)
+  , _raft0(nullptr) {
 }
 
 future<> controller::start() {
@@ -37,15 +38,12 @@ future<> controller::start() {
           return bootstrap_from_log(plog);
       })
       .then([this] {
-          raft0().register_hook([this](std::vector<raft::entry>&& entries) {
+          _raft0 = &_pm.local().consensus_for(controller::group);
+          _raft0->register_hook([this](std::vector<raft::entry>&& entries) {
               verify_shard();
               on_raft0_entries_commited(std::move(entries));
           });
       });
-}
-
-raft::consensus& controller::raft0() const {
-    return _pm.local().consensus_for(controller::group);
 }
 
 future<> controller::stop() {
@@ -212,15 +210,15 @@ future<std::vector<topic_result>> controller::create_topics(
 
 future<raft::append_entries_reply>
 controller::raft0_append_entries(std::vector<raft::entry> entries) {
-    return raft0().append_entries({.node_id = _self,
-                                   .meta = raft0().meta(),
+    return _raft0->append_entries({.node_id = _self,
+                                   .meta = _raft0->meta(),
                                    .entries = std::move(entries)});
 }
 
 raft::entry controller::create_topic_cfg_entry(const topic_configuration& cfg) {
     simple_batch_builder builder(
       controller::controller_record_batch_type,
-      model::offset(raft0().meta().commit_index));
+      model::offset(_raft0->meta().commit_index));
     builder.add_kv(
       log_record_key{.record_type = log_record_key::type::topic_configuration},
       cfg);
