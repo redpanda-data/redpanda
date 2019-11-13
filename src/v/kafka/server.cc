@@ -1,8 +1,8 @@
-#include "kafka/transport/server.h"
+#include "server.h"
 
-#include "prometheus/prometheus_sanitize.h"
 #include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
+#include "prometheus/prometheus_sanitize.h"
 #include "utils/utf8.h"
 
 #include <seastar/core/byteorder.hh>
