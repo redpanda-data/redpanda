@@ -15,9 +15,7 @@ add_library (raft STATIC
   heartbeat_manager_utils.cc
   configuration_bootstrap_state.cc
   )
-target_include_directories(raft
-  PUBLIC ${PROJECT_SOURCE_DIR}/src/v
-  )
+
 target_link_libraries(raft
   storage raft_rpc finjector
   )

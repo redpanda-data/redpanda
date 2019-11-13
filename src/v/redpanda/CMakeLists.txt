@@ -6,7 +6,6 @@ seastar_generate_swagger(
 )
 
 add_library(application STATIC application.cc)
-target_include_directories(application INTERFACE ${PROJECT_SOURCE_DIR}/src/v)
 target_link_libraries(application
   PUBLIC
     Seastar::seastar
