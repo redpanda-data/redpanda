@@ -1,11 +1,11 @@
 #pragma once
 
+#include "bytes/iobuf.h"
 #include "model/record_batch_reader.h"
 #include "storage/log_segment.h"
 #include "storage/offset_tracker.h"
 #include "storage/parser.h"
 #include "storage/probe.h"
-#include "bytes/iobuf.h"
 
 #include <seastar/core/io_queue.hh>
 #include <seastar/util/optimized_optional.hh>
@@ -71,7 +71,9 @@ public:
       offset_tracker& tracker,
       log_reader_config config,
       probe& probe) noexcept;
-
+    log_segment_reader(log_segment_reader&&) noexcept = default;
+    log_segment_reader(const log_segment_reader&) = delete;
+    log_segment_reader operator=(const log_segment_reader&) = delete;
     size_t bytes_read() const {
         return _bytes_read;
     }

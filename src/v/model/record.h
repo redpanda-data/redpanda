@@ -57,7 +57,10 @@ private:
 class record {
 public:
     record() = default;
-
+    record(record&&) noexcept = default;
+    record& operator=(record&&) noexcept = default;
+    record(const record&) = delete;
+    record operator=(const record&) = delete;
     record(
       uint32_t size_bytes,
       record_attributes attributes,
@@ -263,7 +266,8 @@ public:
           : _size(size)
           , _data(std::move(data)) {
         }
-
+        compressed_records(const compressed_records&) = delete;
+        compressed_records& operator=(const compressed_records&) = delete;
         compressed_records(compressed_records&& other) noexcept
           : _size(std::exchange(other._size, 0))
           , _data(std::move(other._data)) {
@@ -321,6 +325,8 @@ public:
       : _header(std::move(header))
       , _records(std::move(records)) {
     }
+    record_batch(const record_batch& o) = delete;
+    record_batch& operator=(const record_batch&) = delete;
     record_batch(record_batch&& o) noexcept
       : _header(std::move(o._header))
       , _records(std::move(o._records)) {
@@ -447,8 +453,8 @@ public:
     record_batch share() {
         record_batch_header h = _header;
         if (compressed()) {
-            return record_batch(
-              h, std::get<compressed_records>(_records).share());
+            auto& recs = std::get<compressed_records>(_records);
+            return record_batch(h, recs.share());
         }
         auto& originals = std::get<uncompressed_records>(_records);
         uncompressed_records r;
@@ -458,7 +464,7 @@ public:
           originals.begin(),
           originals.end(),
           std::back_inserter(r),
-          [](record& rec) { return rec.share(); });
+          [](record& rec) -> record { return rec.share(); });
 
         return record_batch(std::move(h), std::move(r));
     }
