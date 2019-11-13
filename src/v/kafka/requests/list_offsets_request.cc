@@ -1,6 +1,6 @@
 #include "kafka/requests/list_offsets_request.h"
 
-#include "kafka/errors/errors.h"
+#include "kafka/errors.h"
 #include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
 

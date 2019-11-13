@@ -1,6 +1,6 @@
 #include "kafka/requests/fetch_request.h"
 
-#include "kafka/errors/errors.h"
+#include "kafka/errors.h"
 #include "storage/tests/random_batch.h"
 #include "utils/to_string.h"
 

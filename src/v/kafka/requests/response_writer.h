@@ -3,7 +3,7 @@
 #include "bytes/bytes.h"
 #include "bytes/iobuf.h"
 #include "model/fundamental.h"
-#include "kafka/errors/errors.h"
+#include "kafka/errors.h"
 #include "seastarx.h"
 #include "utils/concepts-enabled.h"
 #include "utils/vint.h"

@@ -5,7 +5,7 @@
 #include "model/metadata.h"
 #include "model/timestamp.h"
 #include "kafka/default_namespace.h"
-#include "kafka/errors/errors.h"
+#include "kafka/errors.h"
 #include "kafka/requests/kafka_batch_adapter.h"
 #include "storage/shard_assignment.h"
 #include "utils/remote.h"
