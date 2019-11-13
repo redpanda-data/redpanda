@@ -1,8 +1,6 @@
 find_package(Boost REQUIRED)
 
 add_library(rprandom INTERFACE)
-target_include_directories(rprandom
-  INTERFACE ${PROJECT_SOURCE_DIR}/src/v)
 
 rp_test(
   UNIT_TEST

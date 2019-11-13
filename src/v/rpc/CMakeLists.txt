@@ -8,7 +8,6 @@ add_library (rpc STATIC
   batched_output_stream.cc
   probes.cc
   )
-target_include_directories(rpc PUBLIC ${PROJECT_SOURCE_DIR}/src/v)
 target_link_libraries(rpc PUBLIC Seastar::seastar bytes rphashing utils)
 add_subdirectory(test)
 add_subdirectory(demo)

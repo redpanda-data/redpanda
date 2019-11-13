@@ -24,8 +24,6 @@ add_library(kafka STATIC
   errors.cc
   server.cc)
 
-target_include_directories(kafka INTERFACE ${PROJECT_SOURCE_DIR}/src/v)
-
 target_link_libraries(kafka
   PUBLIC
     Seastar::seastar
