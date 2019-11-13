@@ -17,12 +17,12 @@
 namespace storage::test {
 
 namespace internal {
-size_t vint_size(size_t val) {
+static size_t vint_size(size_t val) {
     std::array<bytes::value_type, vint::max_length> encoding_buffer;
     return vint::serialize(val, encoding_buffer.begin());
 }
 
-temporary_buffer<char> serialize_vint(vint::value_type value) {
+static temporary_buffer<char> serialize_vint(vint::value_type value) {
     std::array<bytes::value_type, vint::max_length> encoding_buffer;
     const auto size = vint::serialize(value, encoding_buffer.begin());
     return temporary_buffer<char>(
@@ -30,7 +30,7 @@ temporary_buffer<char> serialize_vint(vint::value_type value) {
 }
 } // namespace internal
 
-model::record_batch_header
+static model::record_batch_header
 make_random_header(model::offset o, model::timestamp ts, size_t num_records) {
     model::record_batch_header h;
     h.base_offset = o;
@@ -44,7 +44,7 @@ make_random_header(model::offset o, model::timestamp ts, size_t num_records) {
     return h;
 }
 
-temporary_buffer<char> make_buffer(size_t blob_size) {
+static temporary_buffer<char> make_buffer(size_t blob_size) {
     static thread_local std::
       independent_bits_engine<std::default_random_engine, 8, uint8_t>
         random_bytes;
@@ -56,14 +56,14 @@ temporary_buffer<char> make_buffer(size_t blob_size) {
     return blob;
 }
 
-temporary_buffer<char> make_buffer_with_vint_size_prefix(size_t size) {
+static temporary_buffer<char> make_buffer_with_vint_size_prefix(size_t size) {
     auto buf = make_buffer(size + internal::vint_size(size));
     // overwrite the head of the buffer with the size prefix
     vint::serialize(size, reinterpret_cast<signed char*>(buf.get_write()));
     return buf;
 }
 
-iobuf make_random_ftb(size_t blob_size) {
+static iobuf make_random_ftb(size_t blob_size) {
     auto first_chunk = blob_size / 2;
     auto second_chunk = blob_size - first_chunk;
     iobuf b;
@@ -72,7 +72,7 @@ iobuf make_random_ftb(size_t blob_size) {
     return b;
 }
 
-iobuf make_packed_value_and_headers(size_t size) {
+static iobuf make_packed_value_and_headers(size_t size) {
     std::vector<temporary_buffer<char>> bufs;
 
     // valueLen: varint
@@ -102,7 +102,7 @@ iobuf make_packed_value_and_headers(size_t size) {
     return iobuf(std::move(bufs));
 }
 
-model::record make_random_record(unsigned index) {
+static model::record make_random_record(unsigned index) {
     auto k = make_random_ftb(random_generators::get_int(1024, 4096));
     auto v = make_packed_value_and_headers(
       random_generators::get_int(1024, 4096));
@@ -122,7 +122,7 @@ model::record make_random_record(unsigned index) {
       std::move(v));
 }
 
-model::record_batch make_random_batch(model::offset o) {
+static model::record_batch make_random_batch(model::offset o) {
     crc32 crc;
     auto num_records = random_generators::get_int(2, 30);
     auto ts = model::timestamp(
@@ -162,7 +162,7 @@ model::record_batch make_random_batch(model::offset o) {
     return model::record_batch(std::move(header), std::move(records));
 }
 
-std::vector<model::record_batch>
+static std::vector<model::record_batch>
 make_random_batches(model::offset o, size_t count) { // start offset + count
     std::vector<model::record_batch> ret;
     ret.reserve(count);
@@ -174,7 +174,7 @@ make_random_batches(model::offset o, size_t count) { // start offset + count
     return ret;
 }
 
-std::vector<model::record_batch>
+static std::vector<model::record_batch>
 make_random_batches(model::offset o = model::offset(0)) {
     return make_random_batches(o, random_generators::get_int(2, 30));
 }

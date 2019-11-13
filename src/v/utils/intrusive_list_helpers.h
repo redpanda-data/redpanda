@@ -52,7 +52,7 @@ using intrusive_list = boost::intrusive::list<
 /**
  * A safe-link intrusive list hook.
  */
-using safe_intrusive_link_hook = boost::intrusive::list_member_hook<
+using safe_intrusive_list_hook = boost::intrusive::list_member_hook<
   boost::intrusive::link_mode<boost::intrusive::safe_link>>;
 
 /**
@@ -92,8 +92,8 @@ using safe_intrusive_link_hook = boost::intrusive::list_member_hook<
  * The elements stored in the list must contain an safe_intrusive_link_hook
  * member variable.
  */
-template<typename T, safe_intrusive_link_hook T::*PtrToMember>
+template<typename T, safe_intrusive_list_hook T::*PtrToMember>
 using counted_intrusive_list = boost::intrusive::list<
   T,
-  boost::intrusive::member_hook<T, safe_intrusive_link_hook, PtrToMember>,
+  boost::intrusive::member_hook<T, safe_intrusive_list_hook, PtrToMember>,
   boost::intrusive::constant_time_size<true>>;
