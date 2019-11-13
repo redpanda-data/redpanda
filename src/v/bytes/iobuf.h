@@ -3,10 +3,10 @@
 #include "seastarx.h"
 #include "utils/concepts-enabled.h"
 
+#include <seastar/core/deleter.hh>
 #include <seastar/core/do_with.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/iostream.hh>
-#include <seastar/core/shared_ptr.hh>
 #include <seastar/core/temporary_buffer.hh>
 
 #include <list>
@@ -57,12 +57,19 @@ public:
         size_t size{0};
         allocation_size alloc_sz;
     };
-    using control_ptr = lw_shared_ptr<control>;
+    using control_ptr = control*;
+    struct control_allocation {
+        control_ptr ctrl;
+        deleter del;
+    };
+    static control_allocation allocate_control();
 
-    iobuf() noexcept;
-    iobuf(control_ptr) noexcept;
+    iobuf();
+    iobuf(control_ptr, deleter) noexcept;
     ~iobuf() = default;
     iobuf(iobuf&& x) noexcept = default;
+    iobuf(const iobuf&) = delete;
+    iobuf& operator=(const iobuf&) = delete;
     iobuf& operator=(iobuf&& x) noexcept = default;
 
     /// override to pass in any container of temp bufs
@@ -75,11 +82,13 @@ public:
         Range>
       // clang-format on
       >
-    iobuf(Range&& r)
-      : _ctrl(make_lw_shared<control>()) {
+    iobuf(Range&& r) {
         static_assert(
           std::is_rvalue_reference_v<decltype(r)>,
           "Must be an rvalue. Use std::move()");
+        auto alloc = allocate_control();
+        _ctrl = alloc.ctrl;
+        _deleter = std::move(alloc.del);
         using value_t = typename Range::value_type;
         std::for_each(std::begin(r), std::end(r), [this](value_t& b) {
             append(std::move(b));
@@ -135,6 +144,7 @@ private:
     void create_new_fragment(size_t);
 
     control_ptr _ctrl;
+    deleter _deleter;
 };
 
 input_stream<char> make_iobuf_input_stream(iobuf);
@@ -151,6 +161,11 @@ static void check_out_of_range(size_t sz, size_t capacity) {
 }
 } // namespace details
 
+inline iobuf::control_allocation iobuf::allocate_control() {
+    auto data = std::make_unique<iobuf::control>();
+    iobuf::control_ptr raw = data.get();
+    return control_allocation{raw, make_deleter([data = std::move(data)] {})};
+}
 class iobuf::fragment {
 public:
     struct full {};
@@ -277,6 +292,7 @@ private:
 class iobuf::byte_iterator {
 public:
     // iterator_traits
+    using difference_type = void;
     using value_type = char;
     using pointer = const char*;
     using reference = const char&;
@@ -469,12 +485,15 @@ inline void iobuf::allocation_size::reset() {
     _next_alloc_sz = default_chunk_size;
 }
 
-inline iobuf::iobuf() noexcept
-  : _ctrl(make_lw_shared<iobuf::control>()) {
+inline iobuf::iobuf() {
+    auto alloc = allocate_control();
+    _ctrl = alloc.ctrl;
+    _deleter = std::move(alloc.del);
 }
 /// constructor used for sharing
-inline iobuf::iobuf(iobuf::control_ptr c) noexcept
-  : _ctrl(c) {
+inline iobuf::iobuf(iobuf::control_ptr c, deleter del) noexcept
+  : _ctrl(c)
+  , _deleter(std::move(del)) {
 }
 
 inline iobuf::iterator iobuf::begin() {
@@ -532,11 +551,12 @@ inline size_t iobuf::available_bytes() const {
 }
 
 inline iobuf iobuf::share() {
-    return iobuf(_ctrl);
+    return iobuf(_ctrl, _deleter.share());
 }
 
 inline iobuf iobuf::share(size_t pos, size_t len) {
-    auto c = make_lw_shared<iobuf::control>();
+    auto alloc = allocate_control();
+    auto c = alloc.ctrl;
     c->size = len;
     c->alloc_sz = _ctrl->alloc_sz;
     size_t left = len;
@@ -558,12 +578,13 @@ inline iobuf iobuf::share(size_t pos, size_t len) {
         c->frags.emplace_back(frag.share(pos, left_in_frag), fragment::full{});
         pos = 0;
     }
-    return iobuf(c);
+    return iobuf(c, std::move(alloc.del));
 }
 
 inline iobuf iobuf::copy() const {
     // make sure we pass in our learned allocation strategy _ctrl->alloc_sz
-    iobuf ret(make_lw_shared<iobuf::control>());
+    auto alloc = allocate_control();
+    iobuf ret(alloc.ctrl, std::move(alloc.del));
     ret._ctrl->alloc_sz = _ctrl->alloc_sz;
     auto in = iobuf::iterator_consumer(cbegin(), cend());
     in.consume(_ctrl->size, [&ret](const char* src, size_t sz) {

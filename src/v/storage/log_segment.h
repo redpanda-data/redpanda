@@ -24,7 +24,9 @@ public:
       model::term_id term,
       model::offset base_offset,
       size_t buffer_size) noexcept;
-
+    log_segment(log_segment&&) noexcept = default;
+    log_segment(const log_segment&) = delete;
+    log_segment& operator=(const log_segment&) = delete;
     sstring get_filename() const {
         return _filename;
     }
