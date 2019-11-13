@@ -73,6 +73,8 @@ static future<vote_reply_ptr> one_vote(
 /// and dispatch all our nodes asynchrnously
 future<> consensus::replicate_config_as_new_leader() {
     // FIXME
+    //STUB: stubbed for single node testing
+    _conf.leader_id = _self;
     return make_ready_future<>();
 }
 

@@ -3,6 +3,7 @@
 #include "redpanda/kafka/requests/heartbeat_request.h"
 #include "redpanda/kafka/requests/join_group_request.h"
 #include "redpanda/kafka/requests/leave_group_request.h"
+#include "redpanda/kafka/requests/metadata_request.h"
 #include "redpanda/kafka/requests/request_context.h"
 #include "redpanda/kafka/requests/response_writer.h"
 #include "redpanda/kafka/requests/sync_group_request.h"
@@ -133,6 +134,13 @@ static future<> handle_request(sstring output, kafka::request_context&& ctx) {
 
     case kafka::fetch_api::key: {
         kafka::fetch_request r;
+        r.decode(ctx);
+        r.encode(ctx, writer);
+        break;
+    }
+
+    case kafka::metadata_api::key: {
+        kafka::metadata_request r;
         r.decode(ctx);
         r.encode(ctx, writer);
         break;

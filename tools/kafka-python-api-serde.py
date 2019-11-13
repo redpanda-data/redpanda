@@ -4,10 +4,11 @@
 #
 import random
 import string
-from kafka.protocol import api, types, group, fetch
+from kafka.protocol import api, types, group, fetch, metadata
 
 request_types = group.JoinGroupRequest + group.SyncGroupRequest + \
-        group.HeartbeatRequest + group.LeaveGroupRequest + fetch.FetchRequest
+        group.HeartbeatRequest + group.LeaveGroupRequest + fetch.FetchRequest + \
+            metadata.MetadataRequest
 
 def random_int32():
     return random.randint(-2**31, 2**31-1)
@@ -39,7 +40,11 @@ def random_field_value(field):
         return random.choice((True, False))
 
     elif isinstance(field, types.Array):
-        return tuple(tuple(map(random_field_value, field.array_of.fields))
+        if isinstance(field.array_of, types.Schema):
+            generator = tuple(map(random_field_value, field.array_of.fields))
+        else:
+            generator = random_field_value(field.array_of)
+        return tuple(generator
             for _ in range(random.randint(0, 10)))
 
     raise Exception("unhandled type: {}".format(field))

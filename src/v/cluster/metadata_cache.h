@@ -24,14 +24,17 @@ public:
         return make_ready_future<>();
     }
 
-    /// Returns future containing list of all topics that exists in the cluster.
-    future<std::vector<model::topic>> all_topics() const;
+    /// Returns list of all topics that exists in the cluster.
+    std::vector<model::topic> all_topics() const;
 
     ///\brief Returns metadata of single topic.
     ///
     /// If topic does not exists it returns an empty optional
-    future<std::optional<model::topic_metadata>>
+    std::optional<model::topic_metadata>
       get_topic_metadata(model::topic_view) const;
+
+    /// Returns metadata of all topics.
+    std::vector<model::topic_metadata> all_topics_metadata() const;
 
     ///\brief Add empty model::topic_metadata entry to cache
     ///
