@@ -9,7 +9,7 @@
 #include "kafka/groups/group_manager.h"
 #include "kafka/groups/group_router.h"
 #include "kafka/groups/group_shard_mapper.h"
-#include "kafka/transport/server.h"
+#include "kafka/server.h"
 #include "resource_mgmt/cpu_scheduling.h"
 #include "resource_mgmt/memory_groups.h"
 #include "resource_mgmt/smp_groups.h"

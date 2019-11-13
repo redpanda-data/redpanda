@@ -1,8 +1,8 @@
 #pragma once
 
 #include "kafka/requests/request_context.h"
-#include "kafka/transport/probe.h"
-#include "kafka/transport/quota_manager.h"
+#include "kafka/probe.h"
+#include "kafka/quota_manager.h"
 #include "seastarx.h"
 #include "bytes/iobuf.h"
 
