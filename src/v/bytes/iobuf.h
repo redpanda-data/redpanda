@@ -49,7 +49,6 @@ public:
     using container = std::list<fragment>;
     using iterator = typename container::iterator;
     using const_iterator = typename container::const_iterator;
-    using reverse_iterator = typename container::reverse_iterator;
     class iterator_consumer;
     class byte_iterator;
     class placeholder;
@@ -241,7 +240,7 @@ private:
 
 class iobuf::placeholder {
 public:
-    using iterator = iobuf::reverse_iterator;
+    using iterator = iobuf::iterator;
 
     placeholder() noexcept {};
     placeholder(iterator iter, size_t initial_index, size_t max_size_to_write)
@@ -586,7 +585,7 @@ inline iobuf::placeholder iobuf::reserve(size_t sz) {
         create_new_fragment(sz); // make space if not enough
     }
     _ctrl->size += sz;
-    auto it = _ctrl->frags.rbegin();
+    auto it = std::prev(_ctrl->frags.end());
     placeholder p(it, it->size(), sz);
     it->reserve(sz);
     return std::move(p);
