@@ -11,6 +11,7 @@ add_subdirectory(config)
 add_subdirectory(storage)
 add_subdirectory(raft)
 add_subdirectory(cluster)
+add_subdirectory(kafka)
 
 
 # main executables
