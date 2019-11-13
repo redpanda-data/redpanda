@@ -1,4 +1,4 @@
-#include "kafka/errors/errors.h"
+#include "kafka/errors.h"
 
 #include <iostream>
 

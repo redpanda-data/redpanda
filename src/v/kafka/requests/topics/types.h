@@ -1,9 +1,8 @@
 #pragma once
 #include "cluster/types.h"
-#include "model/fundamental.h"
 #include "kafka/default_namespace.h"
-#include "kafka/errors/errors.h"
-#include "kafka/errors/mapping.h"
+#include "kafka/errors.h"
+#include "model/fundamental.h"
 
 #include <boost/lexical_cast.hpp>
 

@@ -1,6 +1,6 @@
 #pragma once
 #include "model/fundamental.h"
-#include "kafka/errors/errors.h"
+#include "kafka/errors.h"
 #include "kafka/groups/member.h"
 #include "kafka/requests/join_group_request.h"
 #include "kafka/types.h"

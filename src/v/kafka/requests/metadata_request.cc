@@ -3,7 +3,7 @@
 #include "cluster/metadata_cache.h"
 #include "model/metadata.h"
 #include "kafka/controller_dispatcher.h"
-#include "kafka/errors/errors.h"
+#include "kafka/errors.h"
 #include "utils/to_string.h"
 
 #include <seastar/core/thread.hh>

@@ -1,7 +1,7 @@
 #include "kafka/requests/find_coordinator_request.h"
 
 #include "model/metadata.h"
-#include "kafka/errors/errors.h"
+#include "kafka/errors.h"
 
 #include <seastar/util/log.hh>
 

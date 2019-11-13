@@ -1,6 +1,6 @@
 #define BOOST_TEST_MODULE utils
 
-#include "kafka/errors/mapping.h"
+#include "kafka/errors.h"
 
 #include <boost/test/unit_test.hpp>
 

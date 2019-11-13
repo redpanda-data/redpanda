@@ -1,5 +1,5 @@
 #pragma once
-#include "kafka/errors/errors.h"
+#include "kafka/errors.h"
 #include "kafka/requests/heartbeat_request.h"
 #include "kafka/requests/join_group_request.h"
 #include "kafka/requests/leave_group_request.h"
