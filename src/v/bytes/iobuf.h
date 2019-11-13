@@ -278,6 +278,7 @@ private:
 class iobuf::byte_iterator {
 public:
     // iterator_traits
+    using difference_type = void;
     using value_type = char;
     using pointer = const char*;
     using reference = const char&;
