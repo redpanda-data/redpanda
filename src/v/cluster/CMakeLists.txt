@@ -1,3 +1,5 @@
+find_package(Roaring REQUIRED)
+
 add_library (cluster STATIC
   controller.cc
   metadata_cache.cc

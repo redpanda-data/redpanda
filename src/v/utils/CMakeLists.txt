@@ -1,4 +1,3 @@
-find_package(Seastar)
 find_package(Hdrhistogram)
 add_library (utils STATIC
   hdr_hist.cc

@@ -1,4 +1,3 @@
-find_package(Boost REQUIRED)
 
 add_library(rprandom INTERFACE)
 
