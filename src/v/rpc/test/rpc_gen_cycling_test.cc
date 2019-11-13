@@ -1,3 +1,4 @@
+#include "config/tls_config.h"
 #include "rpc/logger.h"
 #include "rpc/netbuf.h"
 #include "rpc/parse_utils.h"
@@ -9,8 +10,6 @@
 #include <seastar/core/sleep.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/testing/thread_test_case.hh>
-
-#include <redpanda/config/tls_config.h>
 
 // manually generated via:
 // rpcgen.py --service_file test_definitions.json --output_file rpcgen.h

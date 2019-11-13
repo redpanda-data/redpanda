@@ -6,7 +6,6 @@ seastar_generate_swagger(
 )
 
 add_library(application STATIC application.cc)
-target_include_directories(application INTERFACE ${PROJECT_SOURCE_DIR}/src/v)
 target_link_libraries(application
   PUBLIC
     Seastar::seastar
@@ -17,7 +16,7 @@ target_link_libraries(application
 add_executable(redpanda
     main.cc
   )
-target_link_libraries(redpanda PUBLIC application raft transport config)
+target_link_libraries(redpanda PUBLIC application raft kafka config)
 set_property(TARGET redpanda PROPERTY POSITION_INDEPENDENT_CODE ON)
 add_dependencies(application config_swagger)
 
@@ -31,5 +30,3 @@ if(NOT CMAKE_BUILD_TYPE MATCHES Debug)
   endif()
 endif()
 install(TARGETS redpanda DESTINATION bin)
-add_subdirectory(kafka)
-add_subdirectory(config)

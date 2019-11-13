@@ -1,3 +1,5 @@
+include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+
 # libraries
 add_subdirectory(finjector)
 add_subdirectory(hashing)
@@ -7,9 +9,11 @@ add_subdirectory(utils)
 add_subdirectory(syschecks)
 add_subdirectory(rpc)
 add_subdirectory(model)
+add_subdirectory(config)
 add_subdirectory(storage)
 add_subdirectory(raft)
 add_subdirectory(cluster)
+add_subdirectory(kafka)
 
 
 # main executables

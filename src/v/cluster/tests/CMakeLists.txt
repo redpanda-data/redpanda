@@ -1,4 +1,3 @@
-find_package(Seastar REQUIRED)
 
 rp_test(
   UNIT_TEST
