@@ -25,5 +25,3 @@ target_link_libraries(requests
     storage
     errors
   )
-
-add_subdirectory(tests)

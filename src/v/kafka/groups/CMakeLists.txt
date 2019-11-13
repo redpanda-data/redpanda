@@ -10,5 +10,3 @@ target_link_libraries(groups
     storage
     requests
   )
-
-add_subdirectory(tests)
