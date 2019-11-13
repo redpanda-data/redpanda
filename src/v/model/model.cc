@@ -12,7 +12,7 @@
 
 namespace model {
 
-std::ostream& operator<<(std::ostream& os, compression c) {
+std::ostream& operator<<(std::ostream& os, const compression &c) {
     os << "{compression: ";
     switch (c) {
     case compression::none:

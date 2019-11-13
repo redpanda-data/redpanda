@@ -1,8 +1,8 @@
-#define BOOST_TEST_MODULE iobuf
-
 #include "bytes/bytes.h"
 #include "bytes/iobuf.h"
 #include "bytes/tests/utils.h"
+
+#include <seastar/testing/thread_test_case.hh>
 
 #include <boost/range/algorithm/for_each.hpp>
 #include <boost/test/unit_test.hpp>
@@ -213,4 +213,18 @@ BOOST_AUTO_TEST_CASE(test_prepend) {
     a.append("a", 1);
     a.prepend(temporary_buffer<char>(1));
     BOOST_CHECK_EQUAL(a.size_bytes(), 2);
+}
+SEASTAR_THREAD_TEST_CASE(iobuf_cross_shard) {
+    // note: run tests w/  > 2 cores for test to exercise
+    auto shard = (engine().cpu_id() + 1) % smp::count;
+    const sstring data("question authority");
+    auto f = smp::submit_to(shard, [data] {
+        iobuf src;
+        src.append(data.data(), data.size());
+        return src;
+    });
+    auto from = f.get0();
+    BOOST_REQUIRE(from.size_bytes() == data.size());
+    auto in = iobuf::iterator_consumer(from.cbegin(), from.cend());
+    std::equal(data.cbegin(), data.cend(), in.begin());
 }
