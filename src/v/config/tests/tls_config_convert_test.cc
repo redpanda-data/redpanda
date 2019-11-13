@@ -1,4 +1,4 @@
-#include "redpanda/config/configuration.h"
+#include "config/configuration.h"
 #include "utils/to_string.h"
 
 #include <seastar/core/thread.hh>

@@ -1,5 +1,5 @@
 #pragma once
-#include "redpanda/config/validation_error.h"
+#include "config/validation_error.h"
 #include "seastarx.h"
 
 #include <seastar/util/bool_class.hh>

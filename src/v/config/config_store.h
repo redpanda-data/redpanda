@@ -1,6 +1,6 @@
 #pragma once
 
-#include "redpanda/config/property.h"
+#include "config/property.h"
 #include "seastarx.h"
 
 #include <fmt/format.h>

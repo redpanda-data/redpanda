@@ -1,7 +1,8 @@
+#include "config/configuration.h"
+
 #include <seastar/core/thread.hh>
 #include <seastar/testing/thread_test_case.hh>
 
-#include <redpanda/config/configuration.h>
 #include <yaml-cpp/yaml.h>
 
 auto ipv4_address_str = "test_addr:\n"

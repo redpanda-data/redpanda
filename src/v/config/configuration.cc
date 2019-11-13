@@ -1,4 +1,4 @@
-#include "redpanda/config/configuration.h"
+#include "config/configuration.h"
 
 namespace config {
 
