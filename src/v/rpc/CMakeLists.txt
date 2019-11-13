@@ -1,4 +1,3 @@
-find_package(Seastar)
 add_library (rpc STATIC
   types.cc
   netbuf.cc

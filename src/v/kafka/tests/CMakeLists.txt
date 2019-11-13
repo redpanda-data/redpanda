@@ -1,4 +1,3 @@
-find_package(Boost REQUIRED)
 
 rp_test(
   UNIT_TEST
