@@ -1,4 +1,4 @@
-#include "redpanda/config/config_store.h"
+#include "config/config_store.h"
 
 #include <seastar/core/thread.hh>
 #include <seastar/testing/thread_test_case.hh>

@@ -4,7 +4,7 @@
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_manager.h"
 #include "redpanda/admin/api-doc/config.json.h"
-#include "redpanda/config/configuration.h"
+#include "config/configuration.h"
 #include "redpanda/kafka/controller_dispatcher.h"
 #include "redpanda/kafka/groups/group_manager.h"
 #include "redpanda/kafka/groups/group_router.h"

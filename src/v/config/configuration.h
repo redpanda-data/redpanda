@@ -1,7 +1,7 @@
 #pragma once
-#include "redpanda/config/config_store.h"
-#include "redpanda/config/seed_server.h"
-#include "redpanda/config/tls_config.h"
+#include "config/config_store.h"
+#include "config/seed_server.h"
+#include "config/tls_config.h"
 
 #include <seastar/net/inet_address.hh>
 #include <seastar/net/ip.hh>

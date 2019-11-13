@@ -1,6 +1,6 @@
-#include "redpanda/config/base_property.h"
+#include "config/base_property.h"
 
-#include "redpanda/config/config_store.h"
+#include "config/config_store.h"
 
 namespace config {
 base_property::base_property(
