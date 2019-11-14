@@ -116,6 +116,32 @@ FIXTURE_TEST(max_deallocation, partition_allocator_tester) {
     BOOST_REQUIRE_EQUAL(cluster_partition_capacity(), 209994);
 }
 
+FIXTURE_TEST(recovery_test, partition_allocator_tester) {
+    using ts = partition_allocator_tester;
+    const auto max = (ts::cpus_per_node
+                      * allocation_node::max_allocations_per_core)
+                     - allocation_node::core0_extra_weight;
+
+    // 100 topics with 12 partitions each replicated on 3 nodes each
+    auto md = create_topic_metadata(100, 12);
+    pa.update_allocation_state(md);
+    // each node in the cluster holds one replica for each partition,
+    // so it has to have topics * partitions shards allocated
+    auto allocated_shards = 100 * 12;
+    // Remaining capacity on node 0
+    BOOST_REQUIRE_EQUAL(
+      max - machines().at(model::node_id(0))->partition_capacity(),
+      allocated_shards);
+    // Remaining capacity on node 1
+    BOOST_REQUIRE_EQUAL(
+      max - machines().at(model::node_id(1))->partition_capacity(),
+      allocated_shards);
+    // Remaining capacity on node 2
+    BOOST_REQUIRE_EQUAL(
+      max - machines().at(model::node_id(2))->partition_capacity(),
+      allocated_shards);
+}
+
 BOOST_AUTO_TEST_CASE(round_robin_load) {
     partition_allocator_tester test(5, 10);
     auto cfg = test.gen_topic_configuration(100, 3);

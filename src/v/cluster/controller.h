@@ -1,6 +1,7 @@
 #pragma once
 
 #include "cluster/metadata_cache.h"
+#include "cluster/partition_allocator.h"
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
 #include "cluster/types.h"
@@ -35,7 +36,7 @@ public:
     future<> stop();
 
     bool is_leader() const {
-        return _raft0->is_leader();
+        return _recovered && _raft0->is_leader();
     }
 
     model::node_id get_leader_id() const {
@@ -45,6 +46,10 @@ public:
     future<std::vector<topic_result>> create_topics(
       std::vector<topic_configuration> topics,
       model::timeout_clock::time_point timeout);
+
+    raft::group_id get_highest_group_id() const {
+        return _highest_group_id;
+    }
 
 private:
     struct batch_consumer {
@@ -67,13 +72,17 @@ private:
     future<> recover_batch(model::record_batch);
     future<> recover_record(model::record);
     future<> recover_assignment(partition_assignment);
-    future<> recover_replica(model::ntp, raft::group_id, broker_shard);
+    future<> recover_replica(model::ntp, raft::group_id, model::broker_shard);
     future<> recover_topic_configuration(topic_configuration);
     future<> dispatch_record_recovery(log_record_key, iobuf&&);
     future<>
     update_cache_with_partitions_assignment(const partition_assignment&);
-    raft::entry create_topic_cfg_entry(const topic_configuration&);
+    std::optional<raft::entry>
+    create_topic_cfg_entry(const topic_configuration&);
     void end_of_stream();
+    void leadership_notification();
+    void create_partition_allocator();
+    allocation_node local_allocation_node();
     future<raft::append_entries_reply>
       raft0_append_entries(std::vector<raft::entry>);
     void on_raft0_entries_commited(std::vector<raft::entry>&&);
@@ -83,6 +92,10 @@ private:
     sharded<shard_table>& _st;
     sharded<metadata_cache>& _md_cache;
     raft::consensus* _raft0;
+    raft::group_id _highest_group_id;
+    bool _recovered = false;
+    bool _leadership_notification_pending = false;
+    std::unique_ptr<partition_allocator> _allocator;
 };
 
 // clang-format off

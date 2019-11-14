@@ -31,6 +31,7 @@ public:
         return *(_raft_table.find(group)->second->raft());
     }
 
+    future<> start();
     future<> stop();
     future<> manage(model::ntp, raft::group_id);
 

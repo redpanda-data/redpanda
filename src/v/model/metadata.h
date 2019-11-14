@@ -55,13 +55,24 @@ private:
 
 std::ostream& operator<<(std::ostream&, const broker&);
 
+
+/// type representing single replica assignment it contains the id of a broker 
+/// and id of this broker shard.
+struct broker_shard {
+    model::node_id node_id;
+    /// this is the same as a seastar::shard_id
+    /// however, seastar uses unsized-ints (unsigned)
+    /// and for predictability we need fixed-sized ints
+    uint32_t shard;
+};
+
 struct partition_metadata {
     partition_metadata() noexcept = default;
     explicit partition_metadata(partition_id p) noexcept
       : id(std::move(p)) {
     }
     partition_id id;
-    std::vector<model::node_id> replicas;
+    std::vector<broker_shard> replicas;
     model::node_id leader_node;
 };
 
