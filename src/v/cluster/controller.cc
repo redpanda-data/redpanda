@@ -57,6 +57,14 @@ future<> controller::start() {
                       verify_shard();
                       on_raft0_entries_commited(std::move(entries));
                   });
+            })
+            .then([this] {
+                clusterlog().info("Finished recovering cluster state");
+                _recovered = true;
+                if (_leadership_notification_pending) {
+                    leadership_notification();
+                    _leadership_notification_pending = false;
+                }
             });
       });
 }
@@ -171,7 +179,6 @@ future<> controller::recover_replica(
 }
 
 void controller::end_of_stream() {
-    clusterlog().info("Finished recovering cluster state");
 }
 
 future<> controller::update_cache_with_partitions_assignment(
@@ -277,6 +284,10 @@ controller::create_topic_cfg_entry(const topic_configuration& cfg) {
 }
 
 void controller::leadership_notification() {
+    if (__builtin_expect(!_recovered, false)) {
+        _leadership_notification_pending = true;
+        return;
+    }
     clusterlog().info("Local controller became a leader");
     create_partition_allocator();
 }
