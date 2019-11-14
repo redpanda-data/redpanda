@@ -36,7 +36,7 @@ public:
     future<> stop();
 
     bool is_leader() const {
-        return _raft0->is_leader();
+        return _recovered && _raft0->is_leader();
     }
 
     model::node_id get_leader_id() const {
@@ -93,6 +93,8 @@ private:
     sharded<metadata_cache>& _md_cache;
     raft::consensus* _raft0;
     raft::group_id _highest_group_id;
+    bool _recovered = false;
+    bool _leadership_notification_pending = false;
     std::unique_ptr<partition_allocator> _allocator;
 };
 
