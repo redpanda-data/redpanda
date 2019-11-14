@@ -17,35 +17,17 @@ struct log_record_key {
     type record_type;
 };
 
-/// type representing single replica assignment it contains the id of a broker
-/// and id of this broker shard.
-struct broker_shard {
-    model::node_id node_id;
-    /// this is the same as a seastar::shard_id
-    /// however, seastar uses unsized-ints (unsigned)
-    /// and for predictability we need fixed-sized ints
-    uint32_t shard;
-};
-
 /// Partition assignment describes an assignment of all replicas for single NTP.
 /// The replicas are hold in vector of broker_shard.
 struct partition_assignment {
     raft::group_id group;
     model::ntp ntp;
-    std::vector<broker_shard> replicas;
+    std::vector<model::broker_shard> replicas;
 
     model::partition_metadata
     create_partition_metadata() const {
         auto p_md = model::partition_metadata(ntp.tp.partition);
-        p_md.replicas.reserve(replicas.size());
-        std::transform(
-            replicas.begin(),
-            replicas.end(),
-            std::back_inserter(p_md.replicas),
-            [](const broker_shard& bs){
-                return bs.node_id;
-            }
-        );
+        p_md.replicas = replicas;;
         return p_md;
     }
 };
@@ -78,8 +60,9 @@ enum class topic_error_code : int16_t {
     invalid_partitions,
     invalid_replication_factor,
     invalid_config,
+    not_leader_controller,
     topic_error_code_min = no_error,
-    topic_error_code_max = invalid_config
+    topic_error_code_max = not_leader_controller,
 };
 
 constexpr std::string_view topic_error_code_names[] = {
@@ -88,7 +71,8 @@ constexpr std::string_view topic_error_code_names[] = {
     [(int16_t)topic_error_code::time_out] = "time_out",
     [(int16_t)topic_error_code::invalid_partitions] = "invalid_partitions",
     [(int16_t)topic_error_code::invalid_replication_factor] = "invalid_replication_factor",
-    [(int16_t)topic_error_code::invalid_config] = "invalid_config"
+    [(int16_t)topic_error_code::invalid_config] = "invalid_config",
+    [(int16_t)topic_error_code::not_leader_controller] = "not_leader_controller"
 };
 
 std::ostream& operator<<(std::ostream&, topic_error_code);

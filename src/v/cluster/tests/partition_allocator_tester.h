@@ -13,16 +13,11 @@ struct partition_allocator_tester {
       uint32_t nodes = max_nodes, uint32_t cpus = cpus_per_node)
       : pa(raft::group_id(0)) {
         for (auto i = 0; i < nodes; ++i) {
-            model::broker bi(
-              model::node_id(_prng()),
-              random_generators::gen_alphanum_string(10),
-              _prng(),
-              std::nullopt);
             pa.register_node(std::make_unique<allocation_node>(
-              std::move(bi), cpus, std::unordered_map<sstring, sstring>()));
+              model::node_id(i), cpus, std::unordered_map<sstring, sstring>()));
         }
     }
-    std::vector<partition_allocator::ptr>& machines() {
+    partition_allocator::underlying_t& machines() {
         return pa._machines;
     }
     partition_allocator::cil_t& available_machines() {
@@ -39,6 +34,28 @@ struct partition_allocator_tester {
           partition_count,
           replication_factor);
     }
+    std::vector<model::topic_metadata>
+    create_topic_metadata(int topics, int partitions) {
+        std::vector<model::topic_metadata> ret;
+        for (int t = 0; t < topics; t++) {
+            model::topic_metadata t_md(
+              model::topic(fmt::format("topic_{}", t)));
+            for (int p = 0; p < partitions; p++) {
+                std::vector<model::broker_shard> replicas;
+                for (int r = 0; r < max_nodes; r++) {
+                    replicas.push_back({model::node_id(r),
+                                        _prng() % cpus_per_node});
+                }
+                model::partition_metadata p_md{model::partition_id(p)};
+                p_md.replicas = std::move(replicas);
+                p_md.leader_node = model::node_id(_prng() % max_nodes);
+                t_md.partitions.push_back(std::move(p_md));
+            }
+            ret.push_back(std::move(t_md));
+        }
+        return ret;
+    }
+
     void saturate_all_machines() {
         pa.test_only_saturate_all_machines();
     }

@@ -4,7 +4,6 @@
 #include "cluster/simple_batch_builder.h"
 #include "model/record_batch_reader.h"
 #include "resource_mgmt/io_priority.h"
-#include "storage/constants.h"
 #include "storage/shard_assignment.h"
 namespace cluster {
 static void verify_shard() {
@@ -25,24 +24,48 @@ controller::controller(
   , _pm(pm)
   , _st(st)
   , _md_cache(md_cache)
-  , _raft0(nullptr) {
+  , _raft0(nullptr)
+  , _highest_group_id(0) {
 }
 
 future<> controller::start() {
     verify_shard();
-    clusterlog().debug("Starting cluster recovery");
-    return _pm.local()
-      .manage(controller::ntp, controller::group)
-      .then([this] {
-          auto plog = _pm.local().logs().find(controller::ntp)->second;
-          return bootstrap_from_log(plog);
+    _pm.local().register_leadership_notification(
+      [this](lw_shared_ptr<partition> p) {
+          if (p->ntp() == controller::ntp) {
+              verify_shard();
+              leadership_notification();
+          }
+      });
+    return _pm
+      .invoke_on_all([](partition_manager& pm) {
+          // start the partition managers first...
+          return pm.start();
       })
       .then([this] {
-          _raft0 = &_pm.local().consensus_for(controller::group);
-          _raft0->register_hook([this](std::vector<raft::entry>&& entries) {
-              verify_shard();
-              on_raft0_entries_commited(std::move(entries));
-          });
+          clusterlog().debug("Starting cluster recovery");
+          return _pm.local()
+            .manage(controller::ntp, controller::group)
+            .then([this] {
+                auto plog = _pm.local().logs().find(controller::ntp)->second;
+                return bootstrap_from_log(plog);
+            })
+            .then([this] {
+                _raft0 = &_pm.local().consensus_for(controller::group);
+                _raft0->register_hook(
+                  [this](std::vector<raft::entry>&& entries) {
+                      verify_shard();
+                      on_raft0_entries_commited(std::move(entries));
+                  });
+            })
+            .then([this] {
+                clusterlog().info("Finished recovering cluster state");
+                _recovered = true;
+                if (_leadership_notification_pending) {
+                    leadership_notification();
+                    _leadership_notification_pending = false;
+                }
+            });
       });
 }
 
@@ -108,12 +131,13 @@ controller::dispatch_record_recovery(log_record_key key, iobuf&& v_buf) {
 }
 
 future<> controller::recover_assignment(partition_assignment as) {
+    _highest_group_id = std::max(_highest_group_id, as.group);
     return do_with(std::move(as), [this](partition_assignment& as) {
         return update_cache_with_partitions_assignment(as).then([this, &as] {
             return do_for_each(
               as.replicas,
               [this, raft_group = as.group, ntp = std::move(as.ntp)](
-                broker_shard& bs) {
+                model::broker_shard& bs) {
                   return recover_replica(
                     std::move(ntp), raft_group, std::move(bs));
               });
@@ -122,7 +146,7 @@ future<> controller::recover_assignment(partition_assignment as) {
 }
 
 future<> controller::recover_replica(
-  model::ntp ntp, raft::group_id raft_group, broker_shard bs) {
+  model::ntp ntp, raft::group_id raft_group, model::broker_shard bs) {
     // if the assignment is not for current broker just update
     // metadata cache
     if (bs.node_id != _self) {
@@ -155,7 +179,6 @@ future<> controller::recover_replica(
 }
 
 void controller::end_of_stream() {
-    clusterlog().info("Finished recovering cluster state");
 }
 
 future<> controller::update_cache_with_partitions_assignment(
@@ -174,15 +197,24 @@ future<std::vector<topic_result>> controller::create_topics(
   std::vector<topic_configuration> topics,
   model::timeout_clock::time_point timeout) {
     verify_shard();
+    if (!is_leader() || _allocator == nullptr) {
+        return make_ready_future<std::vector<topic_result>>(
+          create_topic_results(
+            std::move(topics), topic_error_code::not_leader_controller));
+    }
+    std::vector<topic_result> errors;
     std::vector<raft::entry> entries;
     entries.reserve(topics.size());
-    std::transform(
-      topics.begin(),
-      topics.end(),
-      std::back_inserter(entries),
-      [this](const topic_configuration& cfg) {
-          return create_topic_cfg_entry(cfg);
-      });
+    for (const auto& t_cfg : topics) {
+        auto entry = create_topic_cfg_entry(t_cfg);
+        if (entry) {
+            entries.push_back(std::move(*entry));
+        } else {
+            errors.emplace_back(
+              t_cfg.topic, topic_error_code::invalid_partitions);
+        }
+    }
+
     // Do append entries to raft0 logs
     auto f = raft0_append_entries(std::move(entries))
                .then_wrapped([topics = std::move(topics)](
@@ -203,6 +235,15 @@ future<std::vector<topic_result>> controller::create_topics(
                      std::move(topics),
                      success ? topic_error_code::no_error
                              : topic_error_code::unknown_error);
+               })
+               .then([errors = std::move(errors)](
+                       std::vector<topic_result> results) {
+                   // merge results from both sources
+                   std::move(
+                     std::begin(errors),
+                     std::end(errors),
+                     std::back_inserter(results));
+                   return std::move(results);
                });
 
     return with_timeout(timeout, std::move(f));
@@ -215,7 +256,8 @@ controller::raft0_append_entries(std::vector<raft::entry> entries) {
                                    .entries = std::move(entries)});
 }
 
-raft::entry controller::create_topic_cfg_entry(const topic_configuration& cfg) {
+std::optional<raft::entry>
+controller::create_topic_cfg_entry(const topic_configuration& cfg) {
     simple_batch_builder builder(
       controller::controller_record_batch_type,
       model::offset(_raft0->meta().commit_index));
@@ -223,25 +265,46 @@ raft::entry controller::create_topic_cfg_entry(const topic_configuration& cfg) {
       log_record_key{.record_type = log_record_key::type::topic_configuration},
       cfg);
 
+    auto assignments = _allocator->allocate(cfg);
+    if (!assignments) {
+        clusterlog().error(
+          "Unable to allocate partitions for topic '{}'", cfg.topic());
+        return std::nullopt;
+    }
     log_record_key assignment_key = {
       .record_type = log_record_key::type::partition_assignment};
-    // FIXME: Use assignment manager here...
-    for (int i = 0; i < cfg.partition_count; i++) {
-        model::ntp ntp{
-          .ns = cfg.ns,
-          .tp = {.topic = cfg.topic, .partition = model::partition_id{i}}};
-        builder.add_kv(
-          assignment_key,
-          partition_assignment{
-            .group = raft::group_id(i),
-            .ntp = ntp,
-            .replicas = {{.node_id = _self, .shard = storage::shard_of(ntp)}}});
+    for (auto const p_as : *assignments) {
+        builder.add_kv(assignment_key, p_as);
     }
     std::vector<model::record_batch> batches;
     batches.push_back(std::move(builder).build());
     return raft::entry(
       controller_record_batch_type,
       model::make_memory_record_batch_reader(std::move(batches)));
+}
+
+void controller::leadership_notification() {
+    if (__builtin_expect(!_recovered, false)) {
+        _leadership_notification_pending = true;
+        return;
+    }
+    clusterlog().info("Local controller became a leader");
+    create_partition_allocator();
+}
+
+void controller::create_partition_allocator() {
+    _allocator = std::make_unique<partition_allocator>(_highest_group_id);
+
+    _allocator->register_node(
+      std::make_unique<allocation_node>(local_allocation_node()));
+    // _md_cache contains a mirror copy of metadata at each core
+    // so it is sufficient to access core-local copy
+    _allocator->update_allocation_state(
+      _md_cache.local().all_topics_metadata());
+}
+
+allocation_node controller::local_allocation_node() {
+    return allocation_node(_self, smp::count, {});
 }
 
 void controller::on_raft0_entries_commited(std::vector<raft::entry>&& entries) {

@@ -17,7 +17,7 @@ cluster::partition_assignment create_test_assignment(
       shards_assignment.end(),
       std::back_inserter(p_as.replicas),
       [](const std::pair<uint32_t, uint32_t>& node_shard) {
-          return cluster::broker_shard{
+          return model::broker_shard{
             .node_id = model::node_id(node_shard.first),
             .shard = node_shard.second,
           };

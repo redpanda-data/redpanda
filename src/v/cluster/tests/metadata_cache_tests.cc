@@ -85,8 +85,10 @@ SEASTAR_THREAD_TEST_CASE(test_adding_replica_to_existing_partition) {
     BOOST_REQUIRE_EQUAL(md->partitions.size(), 1);
     BOOST_REQUIRE_EQUAL(md->partitions[0].id, model::partition_id(0));
     BOOST_REQUIRE_EQUAL(md->partitions[0].replicas.size(), 2);
-    BOOST_REQUIRE_EQUAL(md->partitions[0].replicas[0], model::node_id(0));
-    BOOST_REQUIRE_EQUAL(md->partitions[0].replicas[1], model::node_id(1));
+    BOOST_REQUIRE_EQUAL(md->partitions[0].replicas[0].node_id, model::node_id(0));
+    BOOST_REQUIRE_EQUAL(md->partitions[0].replicas[0].shard, 0);
+    BOOST_REQUIRE_EQUAL(md->partitions[0].replicas[1].node_id, model::node_id(1));
+    BOOST_REQUIRE_EQUAL(md->partitions[0].replicas[1].shard, 0);
 }
 
 SEASTAR_THREAD_TEST_CASE(
@@ -120,7 +122,7 @@ SEASTAR_THREAD_TEST_CASE(test_updating_replica_assignment) {
     BOOST_REQUIRE_EQUAL(md->partitions.size(), 1);
     BOOST_REQUIRE_EQUAL(md->partitions[0].id, model::partition_id(0));
     BOOST_REQUIRE_EQUAL(md->partitions[0].replicas.size(), 1);
-    BOOST_REQUIRE_EQUAL(md->partitions[0].replicas[0], model::node_id(20));
+    BOOST_REQUIRE_EQUAL(md->partitions[0].replicas[0].node_id, model::node_id(20));
 }
 
 SEASTAR_THREAD_TEST_CASE(test_updating_partition_leader) {
