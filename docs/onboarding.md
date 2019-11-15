@@ -4,8 +4,12 @@
 
 - [ ] Create gsuite account
 - [ ] Add to GitHub organization
-- [ ] Setup cloud account(s)
-- [ ] Laptop (suggest: fedora workstation)
+  - [ ] Change your email for vectorizedio organization to point to vectorized
+- [ ] [Setup google cloud account](https://console.cloud.google.com/)
+  - [ ] Get added to the `redpandaci` project
+  - [ ] Get added to the `vectorizedio` project
+- [ ] [Setup AWS cloud account](https://vectorizedio.signin.aws.amazon.com/console)
+- [ ] Laptop (strong suggest: fedora:30)
 
 ## Day 1
 
