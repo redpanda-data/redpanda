@@ -15,7 +15,7 @@
 - [ ] Invite to chat rooms
 - [ ] Invite to stand-up
 - [ ] Team introductions
-- [ ] Schedule 1-1 meetings
+- [ ] Schedule 1-1 meetings with all team members and recurring 1-1 with manager
 - [ ] Fork [`v`](https://github.com/vectorizedio/v)
    * Compile `v` @ master (see the [readme](../README.md) for instructions)
 - [ ] Access to [`v-dev`](https://groups.google.com/a/vectorized.io/forum/#!forum/v-dev) and archives
