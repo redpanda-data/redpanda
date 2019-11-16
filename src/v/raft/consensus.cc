@@ -407,7 +407,7 @@ consensus::do_append_entries(append_entries_request&& r) {
       = 1 + (_append_entries_notification ? 1 : 0)
         + (has_configuration_entires(r.entries) ? 1 : 0);
 
-    return details::copy_n(std::move(r.entries), 2)
+    return details::share_n(std::move(r.entries), 2)
       .then([this, m = r.meta](std::vector<entries_t> dups) mutable {
           entries_t entries_for_disk = std::move(dups.back());
           dups.pop_back();
