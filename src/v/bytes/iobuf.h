@@ -148,12 +148,6 @@ private:
     deleter _deleter;
 };
 
-input_stream<char> make_iobuf_input_stream(iobuf);
-output_stream<char> make_iobuf_output_stream(iobuf);
-future<iobuf> read_exactly(input_stream<char>&, size_t);
-
-// -- implementation details below
-
 namespace details {
 static void check_out_of_range(size_t sz, size_t capacity) {
     if (__builtin_expect(sz > capacity, false)) {
