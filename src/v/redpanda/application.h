@@ -3,13 +3,13 @@
 #include "cluster/controller.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_manager.h"
-#include "redpanda/admin/api-doc/config.json.h"
 #include "config/configuration.h"
 #include "kafka/controller_dispatcher.h"
 #include "kafka/groups/group_manager.h"
 #include "kafka/groups/group_router.h"
 #include "kafka/groups/group_shard_mapper.h"
 #include "kafka/server.h"
+#include "redpanda/admin/api-doc/config.json.h"
 #include "resource_mgmt/cpu_scheduling.h"
 #include "resource_mgmt/memory_groups.h"
 #include "resource_mgmt/smp_groups.h"
@@ -57,9 +57,16 @@ class application {
 public:
     int run(int, char**);
 
-    void start_config();
-    void create_groups();
+    void initialize();
+    void propogate_config();
+    void check_environment();
+    void configure_admin_server();
     void wire_up_services();
+    void start();
+
+    sharded<config::configuration>& config() {
+        return _conf;
+    }
 
     sharded<cluster::metadata_cache> metadata_cache;
     sharded<kafka::group_router_type> group_router;
@@ -76,9 +83,6 @@ private:
     app_template setup_app_template();
     void validate_arguments(const po::variables_map&);
     void hydrate_config(const po::variables_map&);
-    void check_environment();
-    void configure_admin_server();
-    void start();
 
     template<typename Service, typename... Args>
     future<> construct_service(sharded<Service>& s, Args&&... args) {

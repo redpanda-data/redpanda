@@ -1,4 +1,3 @@
-#include "redpanda/application.h"
 #include "kafka/requests/fetch_request.h"
 #include "kafka/requests/heartbeat_request.h"
 #include "kafka/requests/join_group_request.h"
@@ -7,6 +6,7 @@
 #include "kafka/requests/request_context.h"
 #include "kafka/requests/response_writer.h"
 #include "kafka/requests/sync_group_request.h"
+#include "redpanda/application.h"
 
 #include <seastar/core/app-template.hh>
 #include <seastar/core/iostream.hh>
@@ -34,8 +34,7 @@ static future<kafka::request_context>
 make_request_context(kafka::request_header&& header, iobuf&& buf) {
     return async([header = std::move(header), buf = std::move(buf)]() mutable {
         application app;
-        app.start_config();
-        app.create_groups();
+        app.initialize();
         app.wire_up_services();
 
         kafka::request_context ctx(

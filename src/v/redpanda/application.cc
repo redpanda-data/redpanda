@@ -33,11 +33,10 @@ int application::run(int ac, char** av) {
         validate_arguments(cfg);
         return async([this, &cfg] {
             ::stop_signal stop_signal;
-            // add another steps if needed here
-            start_config();
+            initialize();
             hydrate_config(cfg);
+            propogate_config();
             check_environment();
-            create_groups();
             configure_admin_server();
             wire_up_services();
             start();
@@ -46,6 +45,12 @@ int application::run(int ac, char** av) {
             _log.info("Stopping...");
         });
     });
+}
+
+void application::initialize() {
+    construct_service(_conf).get();
+    _scheduling_groups.create_groups().get();
+    _smp_groups.create_groups().get();
 }
 
 void application::validate_arguments(const po::variables_map& cfg) {
@@ -72,18 +77,17 @@ app_template application::setup_app_template() {
     return app;
 }
 
-void application::start_config() {
-    construct_service(_conf).get();
-}
-
 void application::hydrate_config(const po::variables_map& cfg) {
     auto buf = read_fully(cfg["redpanda-cfg"].as<std::string>()).get0();
     // see https://github.com/jbeder/yaml-cpp/issues/765
     std::string workaround(buf.get(), buf.size());
     YAML::Node config = YAML::Load(workaround);
     _log.info("Read file:\n\n{}\n\n", config);
+    _conf.local().read_yaml(config);
+}
+
+void application::propogate_config() {
     auto& local_cfg = _conf.local();
-    local_cfg.read_yaml(config);
     _conf
       .invoke_on_others([&local_cfg, this](auto& cfg) {
           // propagate to other shards
@@ -100,11 +104,6 @@ void application::check_environment() {
     storage::directories::initialize(
       _conf.local().data_directory().as_sstring())
       .get();
-}
-
-void application::create_groups() {
-    _scheduling_groups.create_groups().get();
-    _smp_groups.create_groups().get();
 }
 
 void application::configure_admin_server() {
