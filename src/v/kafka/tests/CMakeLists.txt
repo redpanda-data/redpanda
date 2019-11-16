@@ -1,3 +1,4 @@
+find_package(CppKafka CONFIG REQUIRED)
 
 rp_test(
   UNIT_TEST
@@ -60,6 +61,15 @@ rp_test(
   BINARY_NAME topic_result_utils_tests
   SOURCES topic_result_utils_tests.cc
   LIBRARIES Seastar::seastar_testing kafka
+)
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME metadata_test
+  SOURCES metadata_test.cc
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LIBRARIES Seastar::seastar_testing application raft kafka config CppKafka::cppkafka
+  ARGS "-- -c 1"
 )
 
 add_executable(kafka_api_serde_tool api_serde_tool.cc)
