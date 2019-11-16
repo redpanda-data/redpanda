@@ -7,6 +7,7 @@
 #include <seastar/core/do_with.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/iostream.hh>
+#include <seastar/core/smp.hh>
 #include <seastar/core/temporary_buffer.hh>
 
 #include <list>
@@ -146,12 +147,6 @@ private:
     control_ptr _ctrl;
     deleter _deleter;
 };
-
-input_stream<char> make_iobuf_input_stream(iobuf);
-output_stream<char> make_iobuf_output_stream(iobuf);
-future<iobuf> read_exactly(input_stream<char>&, size_t);
-
-// -- implementation details below
 
 namespace details {
 static void check_out_of_range(size_t sz, size_t capacity) {
@@ -759,6 +754,24 @@ inline future<iobuf> read_iobuf_exactly(input_stream<char>& in, size_t n) {
                  })
           .then([&b] { return make_ready_future<iobuf>(std::move(b)); });
     });
+}
+
+inline std::vector<iobuf> iobuf_share_foreign_n(iobuf&& og, size_t n) {
+    const auto shard = this_shard_id();
+    std::vector<iobuf> retval(n);
+    for (auto& frag : og) {
+        auto tmpbuf = std::move(frag).release();
+        char* src = tmpbuf.get_write();
+        const size_t sz = tmpbuf.size();
+        deleter del = tmpbuf.release();
+        for (iobuf& b : retval) {
+            deleter del_i = make_deleter([shard, d = del.share()]() mutable {
+                (void)smp::submit_to(shard, [d = std::move(d)] {});
+            });
+            b.append(temporary_buffer<char>(src, sz, std::move(del_i)));
+        }
+    }
+    return retval;
 }
 
 inline std::ostream& operator<<(std::ostream& o, const iobuf& io) {
