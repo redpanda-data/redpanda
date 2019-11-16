@@ -228,3 +228,30 @@ SEASTAR_THREAD_TEST_CASE(iobuf_cross_shard) {
     auto in = iobuf::iterator_consumer(from.cbegin(), from.cend());
     std::equal(data.cbegin(), data.cend(), in.begin());
 }
+SEASTAR_THREAD_TEST_CASE(iobuf_foreign_copy) {
+    iobuf og;
+    {
+        auto b = random_generators::gen_alphanum_string(1024 * 1024);
+        og.append(b.data(), b.size());
+    }
+    // main tests
+    std::vector<iobuf> bufs = iobuf_share_foreign_n(std::move(og), smp::count);
+    parallel_for_each(
+      boost::irange(shard_id(0), smp::count),
+      [&bufs](shard_id shard) {
+          iobuf io = std::move(bufs[shard]);
+          std::vector<iobuf> nested_bufs = iobuf_share_foreign_n(
+            std::move(io), smp::count);
+
+          // transitive sharing
+          return do_with(std::move(nested_bufs), [](std::vector<iobuf>& bufs) {
+              return parallel_for_each(
+                boost::irange(shard_id(0), smp::count),
+                [&bufs](shard_id shard) {
+                    iobuf io = std::move(bufs[shard]);
+                    return smp::submit_to(shard, [io = std::move(io)] {});
+                });
+          });
+      })
+      .get();
+}
