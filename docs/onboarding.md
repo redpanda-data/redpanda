@@ -10,6 +10,7 @@
   - [ ] Get added to the `vectorizedio` project
 - [ ] [Setup AWS cloud account](https://vectorizedio.signin.aws.amazon.com/console)
 - [ ] Laptop (strong suggest: fedora:30)
+- [ ] [Setup Asana](https://app.asana.com)
 
 ## Day 1
 
