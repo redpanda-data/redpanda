@@ -55,7 +55,7 @@ SEASTAR_THREAD_TEST_CASE(clone_entries_utils) {
           model::offset(4)));
         entries.emplace_back(model::record_batch_type(1), std::move(reader));
     }
-    auto v = raft::details::copy_n(std::move(entries), 5).get0();
+    auto v = raft::details::share_n(std::move(entries), 5).get0();
     for (auto& i : v) {
         BOOST_REQUIRE_EQUAL(i.size(), sz);
     }

@@ -81,7 +81,7 @@ future<consensus::voted_for_configuration> read_voted_for(sstring filename) {
 }
 
 future<std::vector<std::vector<raft::entry>>>
-copy_n(std::vector<raft::entry>&& r, std::size_t ncopies) {
+share_n(std::vector<raft::entry>&& r, std::size_t ncopies) {
     using T = std::vector<raft::entry>;
     using ret_t = std::vector<T>;
     ret_t retval(ncopies);
