@@ -25,7 +25,7 @@ public:
                              model::partition_id(0)}};
 
     controller(
-      model::node_id,
+      model::broker,
       sstring basedir,
       size_t max_segment_size,
       sharded<partition_manager>&,
@@ -87,7 +87,7 @@ private:
       raft0_append_entries(std::vector<raft::entry>);
     void on_raft0_entries_commited(std::vector<raft::entry>&&);
 
-    model::node_id _self;
+    model::broker _self;
     sharded<partition_manager>& _pm;
     sharded<shard_table>& _st;
     sharded<metadata_cache>& _md_cache;
