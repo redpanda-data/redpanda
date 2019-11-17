@@ -85,6 +85,11 @@ public:
         return _hbeat;
     };
 
+
+    std::optional<model::broker> find_in_nodes(model::node_id id);
+    std::optional<model::broker> find_in_learners(model::node_id id);
+    bool contains_machine(model::node_id id);
+
     void process_heartbeat(append_entries_reply&&) {
     }
 
