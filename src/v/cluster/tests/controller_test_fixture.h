@@ -14,7 +14,8 @@ public:
     static constexpr int complex_topic_count{10};
     int complex_partitions_count{0};
     controller_tests_fixture()
-      : _base_dir("test_dir_" + random_generators::gen_alphanum_string(4)) {
+      : _base_dir("test_dir_" + random_generators::gen_alphanum_string(4))
+      , _current_node(model::node_id(1), "localhost", 9092, std::nullopt) {
         _cli_cache.start().get0();
         _md_cache.start().get0();
         st.start().get0();
@@ -22,7 +23,7 @@ public:
         storage::directories::initialize(_base_dir).get0();
         _pm
           .start(
-            _current_node,
+            _current_node.id(),
             1s,
             _base_dir,
             _max_segment_size,
@@ -83,14 +84,14 @@ public:
                                 lrk{lrk::type::partition_assignment},
                                 create_test_assignment(
                                   "topic_1",
-                                  0,                      // partition_id
-                                  {{_current_node(), 0}}, // shards_assignment
-                                  2))                     // group_id
+                                0,                         // partition_id
+                                {{_current_node.id(), 0}}, // shards_assignment
+                                2))                        // group_id
                               // partition 1
                               .add_kv(
                                 lrk{lrk::type::partition_assignment},
                                 create_test_assignment(
-                                  "topic_1", 1, {{_current_node(), 0}}, 3)))
+                                "topic_1", 1, {{_current_node.id(), 0}}, 3)))
                     .build();
         ret.push_back(std::move(b1));
 
@@ -160,7 +161,8 @@ public:
 
             for (int p = 0; p < partitions; p++) {
                 std::vector<std::pair<uint32_t, uint32_t>> replicas;
-                replicas.push_back({_current_node, 0});
+                replicas.push_back({_current_node.id(),
+                                    random_generators::get_int<int16_t>() % smp::count});
                 builder.add_kv(
                   lrk{lrk::type::partition_assignment},
                   create_test_assignment(
@@ -178,10 +180,10 @@ public:
 
 private:
     static constexpr size_t _max_segment_size = 100'000;
-    static constexpr model::node_id _current_node{1};
 
     model::ns _test_ns{"test_ns"};
     sstring _base_dir;
+    model::broker _current_node;
     sharded<raft::client_cache> _cli_cache;
     sharded<cluster::metadata_cache> _md_cache;
     sharded<cluster::shard_table> st;

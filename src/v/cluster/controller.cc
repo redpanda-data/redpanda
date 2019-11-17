@@ -14,7 +14,7 @@ static void verify_shard() {
 }
 
 controller::controller(
-  model::node_id n,
+  model::broker n,
   sstring basedir,
   size_t max_segment_size,
   sharded<partition_manager>& pm,
@@ -149,7 +149,7 @@ future<> controller::recover_replica(
   model::ntp ntp, raft::group_id raft_group, model::broker_shard bs) {
     // if the assignment is not for current broker just update
     // metadata cache
-    if (bs.node_id != _self) {
+    if (bs.node_id != _self.id()) {
         return make_ready_future<>();
     }
     // the following ops have a dependency on the shard_table
@@ -251,7 +251,7 @@ future<std::vector<topic_result>> controller::create_topics(
 
 future<raft::append_entries_reply>
 controller::raft0_append_entries(std::vector<raft::entry> entries) {
-    return _raft0->append_entries({.node_id = _self,
+    return _raft0->append_entries({.node_id = _self.id(),
                                    .meta = _raft0->meta(),
                                    .entries = std::move(entries)});
 }
@@ -304,7 +304,7 @@ void controller::create_partition_allocator() {
 }
 
 allocation_node controller::local_allocation_node() {
-    return allocation_node(_self, smp::count, {});
+    return allocation_node(_self.id(), smp::count, {});
 }
 
 void controller::on_raft0_entries_commited(std::vector<raft::entry>&& entries) {
