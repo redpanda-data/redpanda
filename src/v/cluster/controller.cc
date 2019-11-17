@@ -46,8 +46,9 @@ future<> controller::start() {
           clusterlog.debug("Starting cluster recovery");
           return _pm.local()
             .manage(controller::ntp, controller::group)
-            .then([this] {
+            .then([this](consensus_ptr c) {
                 auto plog = _pm.local().logs().find(controller::ntp)->second;
+                _raft0 = c.get();
                 return bootstrap_from_log(plog);
             })
             .then([this] {
@@ -173,7 +174,9 @@ future<> controller::recover_replica(
                   "recovered: {}, raft group_id: {}", ntp.path(), raft_group);
                 return pm.manage(ntp, raft_group)
                   .then(
-                    [msg = std::move(msg)] { clusterlog.info("{},", msg); });
+                    [msg = std::move(msg)](consensus_ptr) {
+                        clusterlog.info("{},", msg);
+                    });
             });
       });
 }
