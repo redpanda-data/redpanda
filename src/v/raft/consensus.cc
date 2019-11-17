@@ -508,4 +508,16 @@ consensus::disk_append(std::vector<entry>&& entries) {
       });
 }
 
+std::optional<model::broker> consensus::find_in_nodes(model::node_id id) {
+    return details::find_machine(_conf.nodes, id);
+}
+
+std::optional<model::broker> consensus::find_in_learners(model::node_id id) {
+    return details::find_machine(_conf.learners, id);
+}
+
+bool consensus::contains_machine(model::node_id id) {
+    return find_in_nodes(id) || find_in_learners(id);
+}
+
 } // namespace raft
