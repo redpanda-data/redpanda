@@ -6,7 +6,13 @@
 #include "raft/types.h"
 #include "rpc/models.h"
 
+namespace raft {
+    class consensus;
+}
+
 namespace cluster {
+
+using consensus_ptr = lw_shared_ptr<raft::consensus>;
 
 struct log_record_key {
     enum class type : int8_t{
