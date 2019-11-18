@@ -203,8 +203,10 @@ future<> consensus::do_dispatch_vote(clock_type::time_point timeout) {
     });
 
     // 5.2.1.5 - background
-    (void)send_vote_requests(timeout).then([this](auto replies) {
-        return process_vote_replies(std::move(replies));
+    (void)with_gate(_bg, [this, timeout] {
+        return send_vote_requests(timeout).then([this](auto replies) {
+            return process_vote_replies(std::move(replies));
+        });
     });
 
     // exec
