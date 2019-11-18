@@ -86,7 +86,7 @@ future<> consensus::process_vote_replies(std::vector<vote_reply_ptr> reqs) {
         return make_ready_future<>();
     }
     // use (n/2) instead of ((n/2)+1) as we already have self vote
-    const size_t majority = (_conf.nodes.size() / 2);
+    const size_t majority = (_conf.nodes.size() / 2) + 1;
     const size_t votes_granted = std::accumulate(
       reqs.begin(),
       reqs.end(),
@@ -147,11 +147,14 @@ consensus::send_vote_requests(clock_type::time_point timeout) {
       _conf.nodes.end(),
       [this, timeout, sem, ret, vreq](const model::broker& b) mutable {
           model::node_id n = b.id();
+          // send vote request of self vote
+          auto reply_f = (n == _self) ? self_vote(std::move(vreq))
+                                      : one_vote(n, _clients, std::move(vreq));
+
           // ensure 'sem' capture & 'vreq' copy
-          future<> f
-            = one_vote(n, _clients, vreq).then([ret, sem](vote_reply_ptr r) {
-                  ret->push_back(std::move(r));
-              });
+          auto f = reply_f.then(
+            [ret, sem](vote_reply_ptr r) { ret->push_back(std::move(r)); });
+
           f = with_semaphore(
             *sem, 1, [f = std::move(f)]() mutable { return std::move(f); });
           // background
@@ -161,13 +164,29 @@ consensus::send_vote_requests(clock_type::time_point timeout) {
             });
       });
     // wait for safety, or timeout, do not wait for self vote.
-    const size_t majority = (_conf.nodes.size() / 2);
+    const size_t majority = (_conf.nodes.size() / 2) + 1;
     return sem->wait(majority).then([ret, sem] {
         std::vector<vote_reply_ptr> clean;
         clean.reserve(ret->size());
         std::move(ret->begin(), ret->end(), std::back_inserter(clean));
         ret->clear();
         return clean;
+    });
+}
+
+future<vote_reply_ptr> consensus::self_vote(vote_request req) {
+    // 5.2.1.3
+    return do_vote(std::move(req)).then([this](vote_reply r) {
+        if (!r.granted) {
+            // we are under _ops_sem. should never happen
+            return make_exception_future<vote_reply_ptr>(
+              std::runtime_error(fmt::format(
+                "Logic error. Self vote granting failed. term:{}",
+                _meta.term)));
+        }
+        raftlog.debug("self vote granted. term:{}", _meta.term);
+        auto ptr = std::make_unique<vote_reply>(std::move(r));
+        return make_ready_future<vote_reply_ptr>(std::move(ptr));
     });
 }
 
@@ -186,21 +205,6 @@ future<> consensus::do_dispatch_vote(clock_type::time_point timeout) {
     _vstate = vote_state::candidate;
     // 5.2.1.2
     _meta.term = _meta.term + 1;
-    // 5.2.1.3
-    auto req = vote_request{_self(),
-                            _meta.group,
-                            _meta.term,
-                            _meta.prev_log_index,
-                            _meta.prev_log_term};
-    auto f = do_vote(std::move(req)).then([this](vote_reply r) {
-        if (!r.granted) {
-            // we are under _ops_sem. should never happen
-            return make_exception_future<>(std::runtime_error(fmt::format(
-              "Logic error. Self vote granting failed. term:{}", _meta.term)));
-        }
-        raftlog.debug("self vote granted. term:{}", _meta.term);
-        return make_ready_future<>();
-    });
 
     // 5.2.1.5 - background
     (void)with_gate(_bg, [this, timeout] {
@@ -208,9 +212,8 @@ future<> consensus::do_dispatch_vote(clock_type::time_point timeout) {
             return process_vote_replies(std::move(replies));
         });
     });
-
-    // exec
-    return std::move(f);
+    
+    return make_ready_future<>();
 }
 /// performs no raft-state mutation other than resetting the timer
 /// state manipulation needs to happen under the `_ops_sem`

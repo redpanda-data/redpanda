@@ -127,6 +127,8 @@ private:
     future<std::vector<vote_reply_ptr>>
       send_vote_requests(clock_type::time_point);
 
+    future<vote_reply_ptr> self_vote(vote_request);
+
     future<> process_vote_replies(std::vector<vote_reply_ptr>);
     future<> replicate_config_as_new_leader();
 
