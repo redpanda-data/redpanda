@@ -513,3 +513,13 @@ ExternalProject_Add(roaring
   -DENABLE_ROARING_TESTS=OFF
   -DROARING_BUILD_STATIC=ON
   -DROARING_DISABLE_NATIVE=ON)
+
+ExternalProject_Add(alien_thread
+  GIT_REPOSITORY git@github.com:vectorizedio/alien_thread
+  GIT_TAG bdfb56fdad38866a15283f20a171c280cf8d1969
+  INSTALL_DIR @V_DEPS_INSTALL_DIR@
+  PATCH_COMMAND ""
+  CONFIGURE_COMMAND ""
+  BUILD_COMMAND ""
+  INSTALL_COMMAND
+  COMMAND ${CMAKE_COMMAND} -E copy_directory <SOURCE_DIR>/include/v <INSTALL_DIR>/include/v)
