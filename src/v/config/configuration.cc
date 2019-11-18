@@ -26,7 +26,7 @@ configuration::configuration()
       "rpc_server",
       "IpAddress and port for RPC server",
       required::no,
-      socket_address(inet_addr("127.0.0.1"), 33145))
+      socket_address(net::inet_address("127.0.0.1"), 33145))
   , node_id(
       *this,
       "node_id",

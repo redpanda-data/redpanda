@@ -3,14 +3,14 @@
 #include "storage/log_manager.h"
 namespace tests {
 
-storage::log_manager make_log_mgr(sstring base_dir) {
+static storage::log_manager make_log_mgr(sstring base_dir) {
     return storage::log_manager(
       {.base_dir = base_dir,
        .max_segment_size = 1 << 30,
        .should_sanitize = storage::log_config::sanitize_files::yes});
 }
 
-future<> persist_log_file(
+static future<> persist_log_file(
   sstring base_dir,
   model::ntp file_ntp,
   std::vector<model::record_batch> batches) {
@@ -48,7 +48,7 @@ private:
     std::vector<model::record_batch> _batches;
 };
 
-future<std::vector<model::record_batch>>
+static future<std::vector<model::record_batch>>
 read_log_file(sstring base_dir, model::ntp file_ntp) {
     return do_with(
       make_log_mgr(base_dir),
