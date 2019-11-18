@@ -515,8 +515,8 @@ ExternalProject_Add(roaring
   -DROARING_DISABLE_NATIVE=ON)
 
 ExternalProject_Add(alien_thread
-  GIT_REPOSITORY git@github.com:vectorizedio/alien_thread
-  GIT_TAG bdfb56fdad38866a15283f20a171c280cf8d1969
+  URL https://github.com/vectorizedio/alien_thread/archive/bdfb56fdad38866a15283f20a171c280cf8d1969.tar.gz
+  URL_HASH SHA256=28f704566aed21bcc5944b1ad2003ee53cb40e2c424c1c917082d431f50f3911
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   PATCH_COMMAND ""
   CONFIGURE_COMMAND ""
