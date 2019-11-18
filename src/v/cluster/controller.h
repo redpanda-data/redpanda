@@ -86,6 +86,9 @@ private:
     future<raft::append_entries_reply>
       raft0_append_entries(std::vector<raft::entry>);
     void on_raft0_entries_commited(std::vector<raft::entry>&&);
+    future<> dispatch_manage_partition(model::ntp, raft::group_id, uint32_t);
+    future<> manage_partition(partition_manager&, model::ntp, raft::group_id);
+    future<> join_raft_group(raft::consensus&);
 
     model::broker _self;
     sharded<partition_manager>& _pm;
