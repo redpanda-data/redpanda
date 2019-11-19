@@ -7,7 +7,7 @@ import string
 from kafka.protocol import api, types, group, fetch, metadata
 
 request_types = group.JoinGroupRequest + group.SyncGroupRequest + \
-        group.HeartbeatRequest + group.LeaveGroupRequest + fetch.FetchRequest + \
+        group.HeartbeatRequest + group.LeaveGroupRequest + [fetch.FetchRequest_v4] + \
             metadata.MetadataRequest
 
 def random_int32():
