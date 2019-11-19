@@ -36,6 +36,7 @@ deb_distros=(
 )
 
 rpm_distros=(
+  "el/6"
   "el/7"
   "el/8"
   "fedora/30"
