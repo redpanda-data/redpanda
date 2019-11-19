@@ -5,10 +5,5 @@
 #include <seastar/util/log.hh>
 
 namespace storage {
-
-inline logger& stlog() {
-    static logger _stlog{"storage"};
-    return _stlog;
-}
-
+extern logger stlog;
 } // namespace storage

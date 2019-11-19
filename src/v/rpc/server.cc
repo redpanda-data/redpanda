@@ -88,12 +88,12 @@ future<> server::accept(server_socket& s) {
               (void)with_gate(_conn_gate, [this, conn]() mutable {
                   return continous_method_dispath(conn).then_wrapped(
                     [conn](future<>&& f) {
-                        rpclog().debug("closing client: {}", conn->addr);
+                        rpclog.debug("closing client: {}", conn->addr);
                         conn->shutdown();
                         try {
                             f.get();
                         } catch (...) {
-                            rpclog().error(
+                            rpclog.error(
                               "Error dispatching method: {}",
                               std::current_exception());
                         }
@@ -111,7 +111,7 @@ future<> server::continous_method_dispath(lw_shared_ptr<connection> conn) {
           return parse_header(conn->input())
             .then([this, conn](std::optional<header> h) {
                 if (!h) {
-                    rpclog().debug(
+                    rpclog.debug(
                       "could not parse header from client: {}", conn->addr);
                     _probe.header_corrupted();
                     return make_ready_future<>();
@@ -151,12 +151,12 @@ server::dispatch_method_once(header h, lw_shared_ptr<connection> conn) {
     return fut;
 }
 future<> server::stop() {
-    rpclog().info("Stopping {} listeners", _listeners.size());
+    rpclog.info("Stopping {} listeners", _listeners.size());
     for (auto&& l : _listeners) {
         l.abort_accept();
     }
-    rpclog().debug("Service probes {}", _probe);
-    rpclog().info("Shutting down {} connections", _connections.size());
+    rpclog.debug("Service probes {}", _probe);
+    rpclog.info("Shutting down {} connections", _connections.size());
     _as.request_abort();
     // dispatch the gate first, wait for all connections to drain
     return _conn_gate.close().then([this] {

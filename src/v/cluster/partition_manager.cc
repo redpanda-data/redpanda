@@ -37,7 +37,7 @@ future<> partition_manager::stop() {
     return _bg.close()
       .then([this] {
           return parallel_for_each(_raft_table, [this](pair_t& pair) {
-              clusterlog().info("Shutting down raft group: {}", pair.first);
+              clusterlog.info("Shutting down raft group: {}", pair.first);
               return pair.second->stop();
           });
       })
@@ -68,7 +68,7 @@ future<> partition_manager::manage(model::ntp ntp, raft::group_id group) {
           _ntp_table.emplace(log->ntp(), p);
           _raft_table.emplace(group, p);
           return with_gate(_bg, [this, p, c, group] {
-              clusterlog().debug("Recovering raft group: {}", group);
+              clusterlog.debug("Recovering raft group: {}", group);
               return p->start().then([this, c] { _hbeats.register_group(c); });
           });
       });

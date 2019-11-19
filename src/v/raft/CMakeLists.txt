@@ -14,6 +14,7 @@ add_library (raft STATIC
   heartbeat_manager.cc
   heartbeat_manager_utils.cc
   configuration_bootstrap_state.cc
+  logger.cc
   )
 
 target_link_libraries(raft

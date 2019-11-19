@@ -116,7 +116,7 @@ void client::shutdown() {
             _fd.reset();
         }
     } catch (...) {
-        rpclog().debug(
+        rpclog.debug(
           "Failed to shutdown client: {}", std::current_exception());
     }
 }
@@ -173,7 +173,7 @@ future<> client::do_reads() {
       [this] {
           return parse_header(_in).then([this](std::optional<header> h) {
               if (!h) {
-                  rpclog().debug(
+                  rpclog.debug(
                     "could not parse header from server: {}", cfg.server_addr);
                   _probe.header_corrupted();
                   return make_ready_future<>();
@@ -211,9 +211,9 @@ void client::setup_metrics(const std::optional<sstring>& service_name) {
 }
 
 client::~client() {
-    rpclog().debug("RPC Client probes: {}", _probe);
+    rpclog.debug("RPC Client probes: {}", _probe);
     if (is_valid()) {
-        rpclog().error(
+        rpclog.error(
           "connection '{}' is still valid. must call stop() before destroying",
           cfg.server_addr);
         std::terminate();

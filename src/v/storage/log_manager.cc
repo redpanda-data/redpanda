@@ -63,7 +63,7 @@ future<log_segment_ptr> log_manager::make_log_segment(
                 fd = f.get0();
             } catch (...) {
                 auto ep = std::current_exception();
-                stlog().error(
+                stlog.error(
                   "Could not create log segment {}. Found exception: {}",
                   filename,
                   ep);
@@ -142,14 +142,14 @@ future<log_ptr> log_manager::manage(model::ntp ntp) {
 
             auto seg_metadata = extract_segment_metadata(seg.name);
             if (!seg_metadata) {
-                stlog().error(
+                stlog.error(
                   "Could not extract name for segment: {}", seg.name);
                 return make_ready_future<>();
             }
 
             auto&& [offset, term, version] = std::move(seg_metadata.value());
             if (version != record_version_type::v1) {
-                stlog().error(
+                stlog.error(
                   "Found sement with invalid version: {}", seg.name);
                 return make_ready_future<>();
             }

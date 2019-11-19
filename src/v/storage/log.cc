@@ -137,7 +137,7 @@ future<> log::do_truncate(model::offset o, model::term_id term) {
     std::vector<sstring> names_to_delete;
     for (auto s : _segs) {
         if (s->term() > term) {
-            stlog().info("do_truncate() full file:{}", s->get_filename());
+            stlog.info("do_truncate() full file:{}", s->get_filename());
             names_to_delete.push_back(s->get_filename());
         }
     }
@@ -158,7 +158,7 @@ future<> log::do_truncate(model::offset o, model::term_id term) {
     // FIXME
     // missing, find offset in offset_index and truncate at size
     // _segs.back().truncate(offset_index.get(o))
-    stlog().error(
+    stlog.error(
       "We cannot truncate a logical offset without an index. rolling "
       "last segment");
 

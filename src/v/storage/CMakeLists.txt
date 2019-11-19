@@ -8,6 +8,7 @@ add_library(storage STATIC
     log_replayer.cc
     probe.cc
     record_batch_builder.cc
+    logger.cc
     )
 
 target_link_libraries(storage PUBLIC

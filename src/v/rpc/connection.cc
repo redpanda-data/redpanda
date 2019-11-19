@@ -28,7 +28,7 @@ void connection::shutdown() {
         _fd.shutdown_output();
     } catch (...) {
         _probe.connection_close_error();
-        rpclog().debug(
+        rpclog.debug(
           "Failed to shutdown conneciton: {}", std::current_exception());
     }
 }

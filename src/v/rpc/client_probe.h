@@ -42,12 +42,12 @@ public:
     }
 
     void connection_error(std::exception_ptr e) {
-        rpclog().error("Connection error: {}", e);
+        rpclog.error("Connection error: {}", e);
         ++_connection_errors;
     }
 
     void read_dispatch_error(std::exception_ptr e) {
-        rpclog().error("Error dispatching client reads: {}", e);
+        rpclog.error("Error dispatching client reads: {}", e);
         ++_read_dispatch_errors;
     }
 
