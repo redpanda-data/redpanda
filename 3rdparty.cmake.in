@@ -552,3 +552,15 @@ ExternalProject_Add(cppkafka
     -DCPPKAFKA_BOOST_STATIC_LIBS=OFF
     -DCPPKAFKA_DISABLE_EXAMPLES=OFF
     -DCPPKAFKA_DISABLE_TESTS=OFF)
+
+ExternalProject_Add(kafka-python-pex
+  DOWNLOAD_COMMAND ""
+  INSTALL_DIR @V_DEPS_INSTALL_DIR@
+  PATCH_COMMAND ""
+  CONFIGURE_COMMAND ""
+  BUILD_COMMAND ""
+  INSTALL_COMMAND
+    COMMAND ${CMAKE_COMMAND} -E chdir <SOURCE_DIR> python3 -m venv env
+    COMMAND <SOURCE_DIR>/env/bin/pip install pex
+    COMMAND <SOURCE_DIR>/env/bin/pex kafka-python -o <INSTALL_DIR>/bin/kafka-python-env
+)
