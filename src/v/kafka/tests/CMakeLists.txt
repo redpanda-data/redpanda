@@ -72,5 +72,14 @@ rp_test(
   ARGS "-- -c 1"
 )
 
-add_executable(kafka_api_serde_tool api_serde_tool.cc)
-target_link_libraries(kafka_api_serde_tool application Seastar::seastar kafka)
+rp_test(
+  UNIT_TEST
+  BINARY_NAME request_parser_test
+  SOURCES request_parser_test.cc
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LIBRARIES Seastar::seastar_testing application raft kafka config
+  # generate request data as a prepare step. the test and prepare command run in
+  # the same scratch directory so the generated output file writes to pwd.
+  PREPARE_COMMAND "${V_DEPS_INSTALL_DIR}/bin/kafka-python-env ${PROJECT_SOURCE_DIR}/tools/kafka-python-api-serde.py 1000 > requests.bin"
+  ARGS "-- -c 1"
+)
