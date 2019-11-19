@@ -33,7 +33,7 @@ steps:
          '--external', '/usr/local/bin/iotune', '/usr/local/bin/hwloc-calc', '/usr/local/bin/hwloc-distrib']
 
 - id: 'publish package'
-  name: 'docker.io/digitalocean/packagecloud'
+  name: 'gcr.io/$PROJECT_ID/packagecloud'
   entrypoint: '/bin/bash'
   args: ['tools/ci/scripts/packagecloud-push.sh']
   env:
