@@ -40,7 +40,7 @@ func (c *writeFileCommand) Execute() error {
 	} else {
 		mode = info.Mode()
 	}
-	file, err := c.fs.OpenFile(c.path, os.O_CREATE|os.O_TRUNC|os.O_RDWR, mode)
+	file, err := c.fs.OpenFile(c.path, os.O_CREATE|os.O_TRUNC|os.O_RDWR|os.O_SYNC, mode)
 	if err != nil {
 		return err
 	}
@@ -53,7 +53,7 @@ func (c *writeFileCommand) Execute() error {
 	if n != contentLength {
 		return fmt.Errorf("wrote less bytes than expected: %d out of %d", n, contentLength)
 	}
-	return file.Sync()
+	return nil
 }
 
 func (c *writeFileCommand) RenderScript(w *bufio.Writer) error {
