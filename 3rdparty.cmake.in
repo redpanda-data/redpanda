@@ -77,7 +77,7 @@ endif()
 
 ExternalProject_Add(boost
   # The 1.67.0 release has a bug in Boost Lockfree around a missing header.
-  URL https://dl.bintray.com/boostorg/release/1.70.0/source/boost_1_70_0.tar.gz
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/boost_1_70_0.tar.gz
   URL_MD5 fea771fe8176828fabf9c09242ee8c26
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   PATCH_COMMAND
@@ -110,7 +110,7 @@ ExternalProject_Add(boost
     dll-path=@V_DEPS_INSTALL_DIR@/lib)
 
 ExternalProject_Add(fmt
-  URL https://github.com/fmtlib/fmt/archive/9e554999ce02cf86fcdfe74fe740c4fe3f5a56d5.tar.gz
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/fmt-9e55499.tar.gz
   URL_MD5 e2869a5032a6cc35b4d14008b6125ed9
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
@@ -122,7 +122,7 @@ ExternalProject_Add(fmt
     -DFMT_TEST=OFF)
 
 ExternalProject_Add(zlib
-  URL https://zlib.net/zlib-1.2.11.tar.gz
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/zlib-1.2.11.tar.gz
   URL_MD5 1c9f62f0778697a09d36121ead88e08e
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   DEPENDS ${default_depends}
@@ -136,7 +136,7 @@ ExternalProject_Add(zlib
 
 ExternalProject_Add(protobuf
   DEPENDS zlib ${default_depends}
-  URL https://github.com/protocolbuffers/protobuf/archive/v3.7.0.tar.gz
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/protobuf-v3.7.0.tar.gz
   URL_MD5 99ab003ca0e98c9dc40edbd60dd43633
   INSTALL_DIR   @V_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
@@ -156,7 +156,7 @@ if(@RP_ENABLE_DPDK@)
       T=${dpdk_quadruple})
 
     ExternalProject_Add(dpdk
-      URL https://github.com/scylladb/dpdk/archive/a1774652fbbb1fe7c0ff392d5e66de60a0154df6.tar.gz
+      URL https://storage.googleapis.com/vectorizedio-public/dependencies/dpdk-a177465.tar.gz
       URL_MD5 2af337f9ed29955362845808d6cdaa3e
       INSTALL_DIR @V_DEPS_INSTALL_DIR@
       DEPENDS ${default_depends}
@@ -181,7 +181,7 @@ else()
 endif()
 
 ExternalProject_Add(c-ares
-  URL https://github.com/c-ares/c-ares/archive/cares-1_14_0.tar.gz
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/cares-1_14_0.tar.gz
   URL_MD5 79dcc4f2adaff431920755d9cafc9933
   DEPENDS ${default_depends}
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
@@ -192,7 +192,7 @@ ExternalProject_Add(c-ares
     -DCARES_INSTALL=ON)
 
 ExternalProject_Add(yaml-cpp
-  URL https://github.com/jbeder/yaml-cpp/archive/yaml-cpp-0.6.0.tar.gz
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/yaml-cpp-0.6.0.tar.gz
   URL_MD5 8adc0ae6c2698a61ab086606cc7cf562
   DEPENDS ${default_depends}
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
@@ -204,7 +204,7 @@ ExternalProject_Add(yaml-cpp
     -DBUILD_SHARED_LIBS=OFF)
 
 ExternalProject_Add(gmp
-  URL https://gmplib.org/download/gmp/gmp-6.1.2.tar.bz2
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/gmp-6.1.2.tar.bz2
   URL_MD5 8ddbb26dc3bd4e2302984debba1406a5
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   DEPENDS ${default_depends}
@@ -219,7 +219,7 @@ ExternalProject_Add(gmp
   INSTALL_COMMAND ${make_command} install)
 
 ExternalProject_Add(nettle
-  URL https://github.com/gnutls/nettle/archive/nettle_3.4_release_20171119.tar.gz
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/nettle_3.4_release_20171119.tar.gz
   URL_MD5 84747a2a1468bf9345e3e94bfb938169
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   PATCH_COMMAND
@@ -234,7 +234,7 @@ ExternalProject_Add(nettle
   DEPENDS gmp ${default_depends})
 
 ExternalProject_Add(gnutls
-  URL https://www.gnupg.org/ftp/gcrypt/gnutls/v3.5/gnutls-3.5.18.tar.xz
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/gnutls-3.5.18.tar.xz
   URL_MD5 c2d93d305ecbc55939bc2a8ed4a76a3d
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   CONFIGURE_COMMAND
@@ -256,7 +256,7 @@ ExternalProject_Add(gnutls
   DEPENDS gmp nettle ${default_depends})
 
 ExternalProject_Add(lz4
-  URL https://github.com/lz4/lz4/archive/v1.8.3.tar.gz
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/lz4-v1.8.3.tar.gz
   URL_MD5 d5ce78f7b1b76002bbfffa6f78a5fc4e
   DEPENDS ${default_depends}
   INSTALL_DIR   @V_DEPS_INSTALL_DIR@
@@ -266,7 +266,7 @@ ExternalProject_Add(lz4
     ${common_cmake_args})
 
 ExternalProject_Add(numactl
-  URL https://github.com/numactl/numactl/releases/download/v2.0.12/numactl-2.0.12.tar.gz
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/numactl-2.0.12.tar.gz
   URL_MD5 2ba9777d78bfd7d408a387e53bc33ebc
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   DEPENDS ${default_depends}
@@ -279,7 +279,7 @@ ExternalProject_Add(numactl
   INSTALL_COMMAND ${make_command} install)
 
 ExternalProject_Add(libpciaccess
-  URL https://www.x.org/releases/individual/lib/libpciaccess-0.13.4.tar.gz
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/libpciaccess-0.13.4.tar.gz
   URL_MD5 cc1fad87da60682af1d5fa43a5da45a4
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   DEPENDS ${default_depends}
@@ -292,7 +292,7 @@ ExternalProject_Add(libpciaccess
   INSTALL_COMMAND ${make_command} install)
 
 ExternalProject_Add(hwloc
-  URL https://download.open-mpi.org/release/hwloc/v1.11/hwloc-1.11.5.tar.gz
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/hwloc-1.11.5.tar.gz
   URL_MD5 8f5fe6a9be2eb478409ad5e640b2d3ba
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   CONFIGURE_COMMAND
@@ -306,7 +306,7 @@ ExternalProject_Add(hwloc
   DEPENDS ${default_depends} numactl libpciaccess)
 
 ExternalProject_Add(xz
-  URL https://github.com/xz-mirror/xz/releases/download/v5.2.2/xz-5.2.2.tar.gz
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/xz-5.2.2.tar.gz
   URL_MD5 7cf6a8544a7dae8e8106fdf7addfa28c
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   DEPENDS ${default_depends}
@@ -318,7 +318,7 @@ ExternalProject_Add(xz
   INSTALL_COMMAND ${make_command} install)
 
 ExternalProject_Add(xml2
-  URL https://github.com/GNOME/libxml2/archive/f8a8c1f59db355b46962577e7b74f1a1e8149dc6.tar.gz
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/xml2-f8a8c1f.tar.gz
   URL_MD5 8717ac0b233af3ed1e47236afa6e7946
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   CONFIGURE_COMMAND
@@ -338,7 +338,7 @@ ExternalProject_Add(xml2
   DEPENDS ${default_depends} xz zlib)
 
 ExternalProject_Add(cryptopp
-  URL https://github.com/weidai11/cryptopp/archive/CRYPTOPP_5_6_5.tar.gz
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/CRYPTOPP_5_6_5.tar.gz
   URL_MD5 88224d9c0322f63aa1fb5b8ae78170f0
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cryptopp_build_env} ${CMAKE_COMMAND}
@@ -350,7 +350,7 @@ ExternalProject_Add(cryptopp
 ExternalProject_Add(lksctp-tools
   # Note: 1.0.18 has a bug w/ the build/configuration system that does not
   # produce sctp.h.in -> sctp.h and instead install sctp.h.in
-  URL https://github.com/sctp/lksctp-tools/archive/lksctp-tools-1.0.17.tar.gz
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/lksctp-tools-1.0.17.tar.gz
   URL_MD5 910a4f1d4024d71149b91f50f97eae23
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   PATCH_COMMAND ./bootstrap
@@ -364,7 +364,7 @@ ExternalProject_Add(lksctp-tools
   INSTALL_COMMAND ${make_command} install)
 
 ExternalProject_Add(seastar
-  URL https://github.com/vectorizedio/seastar/archive/809b3ef.tar.gz
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/seastar-809b3ef.tar.gz
   URL_MD5 16c1ec5f02168362da104501c79d3da1
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
@@ -404,7 +404,7 @@ ExternalProject_Add(seastar
     zlib)
 
 ExternalProject_Add(zstd
-  URL https://github.com/facebook/zstd/archive/470344d33e1d52a2ada75d278466da8d4ee2faf6.tar.gz
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/zstd-470344d.tar.gz
   URL_MD5 52368c486e11c0f21990c8f2d4b556f9
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   SOURCE_SUBDIR  build/cmake
@@ -419,7 +419,7 @@ ExternalProject_Add(zstd
     -DZSTD_BUILD_PROGRAMS=OFF)
 
 ExternalProject_Add(HdrHistogram
-  URL https://github.com/HdrHistogram/HdrHistogram_c/archive/7381c1bf78d462917cf31b736d5d9e700bfedb0f.tar.gz
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/hdrhistogram-7381c1b.tar.gz
   URL_MD5 7e9776c558fa9385776cb8c1e5ac7d1a
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
@@ -430,7 +430,7 @@ ExternalProject_Add(HdrHistogram
   DEPENDS zlib ${default_depends})
 
 ExternalProject_Add(xxhash
-  URL https://github.com/Cyan4973/xxHash/archive/c9970b8ec4155e789f1c3682da923869a496ba9d.tar.gz
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/xxhash-c9970b8.tar.gz
   URL_MD5 c1c87865e98f79144814a1d57db47751
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   DEPENDS ${default_depends}
@@ -445,7 +445,7 @@ ExternalProject_Add(xxhash
 # -- below are seastar deps
 
 ExternalProject_Add(GSL
-  URL https://github.com/Microsoft/GSL/archive/0f68d13.tar.gz
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/gsl-0f68d13.tar.gz
   URL_MD5 d5cc382eadc5f757416d44d91d0222cf
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   DEPENDS ${default_depends}
@@ -455,7 +455,7 @@ ExternalProject_Add(GSL
     -DGSL_TEST=OFF)
 
 ExternalProject_Add(pcg
-  URL https://github.com/imneme/pcg-cpp/archive/b656278.tar.gz
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/pcg-b656278.tar.gz
   URL_MD5 576a4427f2c63ee15e36b5c88585569c
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   PATCH_COMMAND ""
@@ -468,7 +468,7 @@ ExternalProject_Add(pcg
   )
 
 ExternalProject_Add(bytellhashmap
-  URL https://github.com/skarupke/flat_hash_map/archive/2c46874.tar.gz
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/bytellhashmap-2c46874.tar.gz
   URL_MD5 0ed67930d4b3795d3fb2ab6ac721b66d
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   PATCH_COMMAND ""
@@ -480,7 +480,7 @@ ExternalProject_Add(bytellhashmap
   )
 
 ExternalProject_Add(json
-  URL https://github.com/nlohmann/json/releases/download/v3.7.0/include.zip
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/json-v3.7.0.zip
   URL_MD5 482c9cd8b6ba9749e018c3f3664afb36
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   PATCH_COMMAND ""
@@ -490,7 +490,7 @@ ExternalProject_Add(json
   COMMAND ${CMAKE_COMMAND} -E copy_directory <SOURCE_DIR>/nlohmann <INSTALL_DIR>/include/nlohmann)
 
 ExternalProject_Add(crc32c
-  URL https://github.com/google/crc32c/archive/fd33bccdf4824716df2552f7addd735264f77872.tar.gz
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/crc32c-fd33bcc.tar.gz
   URL_MD5 21c86fb3143fb748a52d11b9fee874de
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
@@ -503,7 +503,7 @@ ExternalProject_Add(crc32c
   )
 
 ExternalProject_Add(roaring
-  URL https://github.com/RoaringBitmap/CRoaring/archive/86de9b5.tar.gz
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/roaring-86de9b5.tar.gz
   #URL_MD5 e64f4712d4b1235bd009279f4485b044
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   DEPENDS ${default_depends}
@@ -515,7 +515,7 @@ ExternalProject_Add(roaring
   -DROARING_DISABLE_NATIVE=ON)
 
 ExternalProject_Add(alien_thread
-  URL https://github.com/vectorizedio/alien_thread/archive/bdfb56fdad38866a15283f20a171c280cf8d1969.tar.gz
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/alien_thread-bdfb56f.tar.gz
   URL_HASH SHA256=28f704566aed21bcc5944b1ad2003ee53cb40e2c424c1c917082d431f50f3911
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   PATCH_COMMAND ""
@@ -525,7 +525,7 @@ ExternalProject_Add(alien_thread
   COMMAND ${CMAKE_COMMAND} -E copy_directory <SOURCE_DIR>/include/v <INSTALL_DIR>/include/v)
 
 ExternalProject_Add(librdkafka
-  URL https://github.com/edenhill/librdkafka/archive/v1.2.2.tar.gz
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/librdkafka-v1.2.2.tar.gz
   URL_HASH SHA256=c5d6eb6ce080431f2996ee7e8e1f4b8f6c61455a1011b922e325e28e88d01b53
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   DEPENDS ${default_depends}
@@ -540,7 +540,7 @@ ExternalProject_Add(librdkafka
     -DRDKAFKA_BUILD_TESTS=OFF)
 
 ExternalProject_Add(cppkafka
-  URL https://github.com/mfontanini/cppkafka/archive/c3b4580fef79fa84c4857d9f61a53f71b92e6140.tar.gz
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/cppkafka-c3b4580.tar.gz
   URL_HASH SHA256=1989ecdab4325cf798db6f33f4ba171ecde46197496dfc1df7ec31a74d313f1d
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   DEPENDS librdkafka
