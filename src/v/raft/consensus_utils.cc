@@ -228,4 +228,13 @@ future<raft::group_configuration> extract_configuration(raft::entry&& e) {
     });
 }
 
+std::optional<model::broker>
+find_machine(const std::vector<model::broker>& v, model::node_id id) {
+    auto it = std::find_if(
+      std::cbegin(v), std::cend(v), [id](const model::broker& b) {
+          return b.id() == id;
+      });
+    return it != std::cend(v) ? std::optional<model::broker>(*it) : std::nullopt;
+}
+
 } // namespace raft::details

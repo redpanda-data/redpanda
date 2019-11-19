@@ -30,4 +30,8 @@ future<raft::group_configuration> extract_configuration(raft::entry&&);
 /// returns a fully parsed config state from a given storage log
 future<raft::configuration_bootstrap_state> read_bootstrap_state(storage::log&);
 
+/// looks up for the broker with request id in a vector of brokers
+std::optional<model::broker>
+find_machine(const std::vector<model::broker>&, model::node_id);
+
 } // namespace raft::details
