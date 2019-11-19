@@ -21,7 +21,7 @@ import templates
 import fs
 
 thunk = b'''\
-#!/bin/bash
+#!/usr/bin/env bash
 
 command="$(readlink -f "$0")"
 basename="$(basename "$command")"
