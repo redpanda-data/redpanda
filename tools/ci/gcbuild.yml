@@ -37,6 +37,7 @@ steps:
   entrypoint: '/bin/bash'
   args: ['tools/ci/scripts/packagecloud-push.sh']
   env:
+  - 'BUILD_TYPE=$_BUILD_TYPE'
   - 'TAG_NAME=$TAG_NAME'
   - 'PACKAGECLOUD_TOKEN=$_PACKAGECLOUD_TOKEN'
 
