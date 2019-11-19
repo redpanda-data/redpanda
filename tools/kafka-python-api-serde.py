@@ -61,9 +61,14 @@ def random_request():
 if __name__ == "__main__":
     import sys
 
-    header, request = random_request()
-    message = b''.join([header.encode(), request.encode()])
-    size = types.Int32.encode(len(message))
-    payload = size + message
+    msg_count = 1
+    if len(sys.argv) > 1:
+        msg_count = int(sys.argv[1])
 
-    sys.stdout.buffer.write(payload)
+    for _ in range(msg_count):
+        header, request = random_request()
+        message = b''.join([header.encode(), request.encode()])
+        size = types.Int32.encode(len(message))
+        payload = size + message
+
+        sys.stdout.buffer.write(payload)
