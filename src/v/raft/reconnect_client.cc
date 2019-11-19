@@ -2,6 +2,8 @@
 
 #include "raft/logger.h"
 
+#include <seastar/net/inet_address.hh>
+
 #include <chrono>
 #include <functional>
 
@@ -35,6 +37,10 @@ future<> reconnect_client::reconnect() {
             return _client.connect().then_wrapped([this](future<> f) {
                 try {
                     f.get();
+                    raftlog.debug(
+                      "Successfully connected to {}:{}",
+                      _client.cfg.server_addr.addr(),
+                      _client.cfg.server_addr.port());
                     _backoff_secs = 0;
                     return make_ready_future<>();
                 } catch (...) {
