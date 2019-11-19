@@ -26,7 +26,7 @@ message(STATUS "RP_ENABLE_HONEY_BADGER_TESTS=${RP_ENABLE_HONEY_BADGER_TESTS}")
 function (rp_test)
   set(options
     INTEGRATION_TEST UNIT_TEST BENCHMARK_TEST HBADGER_TEST)
-  set(oneValueArgs BINARY_NAME TIMEOUT)
+  set(oneValueArgs BINARY_NAME TIMEOUT PREPARE_COMMAND POST_COMMAND)
   set(multiValueArgs
     INCLUDES
     SOURCES
@@ -64,6 +64,16 @@ function (rp_test)
 
   string(JOIN " " files_to_copy ${files_to_copy_list})
 
+  set(prepare_command "")
+  if (RP_TEST_PREPARE_COMMAND)
+      set(prepare_command "--pre='${RP_TEST_PREPARE_COMMAND}'")
+  endif()
+
+  set(post_command "")
+  if (RP_TEST_POST_COMMAND)
+      set(post_command "--post='${RP_TEST_POST_COMMAND}'")
+  endif()
+
   add_executable(
     ${RP_TEST_BINARY_NAME} "${RP_TEST_SOURCES}")
   if(RP_TEST_UNIT_TEST)
@@ -73,7 +83,7 @@ function (rp_test)
     ${RP_TEST_BINARY_NAME} "${RP_TEST_LIBRARIES}" $<TARGET_NAME_IF_EXISTS:Libcxx::libcxx>)
   add_test (
     NAME ${RP_TEST_BINARY_NAME}
-    COMMAND bash -c "${RUNNER} --binary=$<TARGET_FILE:${RP_TEST_BINARY_NAME}> ${files_to_copy} ${RP_TEST_ARGS} "
+    COMMAND bash -c "${RUNNER} --binary=$<TARGET_FILE:${RP_TEST_BINARY_NAME}> ${prepare_command} ${post_command} ${files_to_copy} ${RP_TEST_ARGS} "
     )
 
   if(RP_TEST_TIMEOUT)
