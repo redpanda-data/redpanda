@@ -13,12 +13,12 @@ namespace storage::directories {
 static future<> initialize(sstring dir) {
     return recursive_touch_directory(dir)
       .handle_exception([dir](std::exception_ptr ep) {
-          stlog().error(
+          stlog.error(
             "Directory `{}` cannot be initialized. Failed with {}", dir, ep);
           return make_exception_future<>(std::move(ep));
       })
       .then([dir] {
-          stlog().info("Checking `{}` for supported filesystems", dir);
+          stlog.info("Checking `{}` for supported filesystems", dir);
           return syschecks::disk(dir);
       });
 }

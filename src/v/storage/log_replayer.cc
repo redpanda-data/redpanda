@@ -94,7 +94,7 @@ private:
 // Called in the context of a seastar::thread
 log_replayer::recovered
 log_replayer::recover_in_thread(const io_priority_class& prio) {
-    stlog().debug("Recovering segment {}", _seg->get_filename());
+    stlog.debug("Recovering segment {}", _seg->get_filename());
     auto data_stream = _seg->data_stream(0, prio);
     auto d = defer([&data_stream] { data_stream.close().get(); });
     auto consumer = checksumming_consumer();
@@ -103,10 +103,10 @@ log_replayer::recover_in_thread(const io_priority_class& prio) {
         parser.consume().get();
         return recovered{consumer.recovered(), consumer.last_valid_offset()};
     } catch (const malformed_batch_stream_exception& e) {
-        stlog().debug(
+        stlog.debug(
           "Failed to recover segment {} with {}", _seg->get_filename(), e);
     } catch (...) {
-        stlog().warn(
+        stlog.warn(
           "Failed to recover segment {} with {}",
           _seg->get_filename(),
           std::current_exception());

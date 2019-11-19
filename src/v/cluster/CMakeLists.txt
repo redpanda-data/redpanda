@@ -7,6 +7,7 @@ add_library (cluster STATIC
   types.cc
   partition_allocator.cc
   type_serializers.cc
+  logger.cc
   )
 
 target_link_libraries(cluster

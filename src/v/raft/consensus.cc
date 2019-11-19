@@ -81,7 +81,7 @@ future<> consensus::replicate_config_as_new_leader() {
 /// state mutation must happen inside `_ops_sem`
 future<> consensus::process_vote_replies(std::vector<vote_reply_ptr> reqs) {
     if (_vstate != vote_state::candidate) {
-        raftlog().debug(
+        raftlog.debug(
           "We are no longer a candidate. Active term:{}", _meta.term);
         return make_ready_future<>();
     }
@@ -98,7 +98,7 @@ future<> consensus::process_vote_replies(std::vector<vote_reply_ptr> reqs) {
           return acc;
       });
     if (votes_granted < majority) {
-        raftlog().info(
+        raftlog.info(
           "Majority vote failed. Got {}/{} votes, need:{}",
           votes_granted,
           _conf.nodes.size(),
@@ -114,7 +114,7 @@ future<> consensus::process_vote_replies(std::vector<vote_reply_ptr> reqs) {
                  if (_vstate != vote_state::candidate) {
                      return make_ready_future<>();
                  }
-                 raftlog().info(
+                 raftlog.info(
                    "We({}) are the new leader, term:{}, group {}",
                    _self,
                    _meta.term,
@@ -157,7 +157,7 @@ consensus::send_vote_requests(clock_type::time_point timeout) {
           // background
           (void)with_timeout(timeout, std::move(f))
             .handle_exception([n](std::exception_ptr e) {
-                raftlog().info("Node:{} could not vote() - {} ", n, e);
+                raftlog.info("Node:{} could not vote() - {} ", n, e);
             });
       });
     // wait for safety, or timeout, do not wait for self vote.
@@ -198,7 +198,7 @@ future<> consensus::do_dispatch_vote(clock_type::time_point timeout) {
             return make_exception_future<>(std::runtime_error(fmt::format(
               "Logic error. Self vote granting failed. term:{}", _meta.term)));
         }
-        raftlog().debug("self vote granted. term:{}", _meta.term);
+        raftlog.debug("self vote granted. term:{}", _meta.term);
         return make_ready_future<>();
     });
 
@@ -233,7 +233,7 @@ void consensus::dispatch_vote() {
         return with_semaphore(_op_sem, 1, [this, timeout] {
             return with_timeout(timeout, do_dispatch_vote(timeout))
               .handle_exception([](std::exception_ptr e) {
-                  raftlog().info("Could not finish vote(): {}", e);
+                  raftlog.info("Could not finish vote(): {}", e);
               });
             _hbeat = clock_type::now();
         });
@@ -243,7 +243,7 @@ future<> consensus::start() {
     return with_semaphore(_op_sem, 1, [this] {
         return details::read_voted_for(voted_for_filename())
           .then([this](voted_for_configuration r) {
-              raftlog().info(
+              raftlog.info(
                 "group '{}' recovered last leader: {} for term: {}",
                 _meta.group,
                 r.voted_for,
@@ -285,7 +285,7 @@ future<vote_reply> consensus::do_vote(vote_request&& r) {
     }
 
     if (r.term > _meta.term) {
-        raftlog().info(
+        raftlog.info(
           "{}-group recevied vote with larger term:{} than ours:{}",
           _meta.group,
           r.term,
@@ -334,7 +334,7 @@ consensus::do_append_entries(append_entries_request&& r) {
         return make_ready_future<append_entries_reply>(std::move(reply));
     }
     if (r.meta.term > _meta.term) {
-        raftlog().debug(
+        raftlog.debug(
           "append_entries request::term:{}  > ours: {}. Setting new term",
           r.meta.term,
           _meta.term);
@@ -355,7 +355,7 @@ consensus::do_append_entries(append_entries_request&& r) {
     // section 1
     // For an entry to fit into our log, it must not leave a gap.
     if (r.meta.prev_log_index > _meta.commit_index) {
-        raftlog().debug("rejecting append_entries. would leave gap in log");
+        raftlog.debug("rejecting append_entries. would leave gap in log");
         _probe.append_request_log_commited_index_mismatch();
         reply.success = false;
         return make_ready_future<append_entries_reply>(std::move(reply));
@@ -364,7 +364,7 @@ consensus::do_append_entries(append_entries_request&& r) {
     // section 2
     // must come from the same term
     if (r.meta.prev_log_term != _meta.prev_log_term) {
-        raftlog().debug("rejecting append_entries missmatching prev_log_term");
+        raftlog.debug("rejecting append_entries missmatching prev_log_term");
         _probe.append_request_log_term_older();
         reply.success = false;
         return make_ready_future<append_entries_reply>(std::move(reply));
@@ -373,7 +373,7 @@ consensus::do_append_entries(append_entries_request&& r) {
     // the success case
     // section 3
     if (r.meta.prev_log_index < _meta.commit_index) {
-        raftlog().debug(
+        raftlog.debug(
           "truncate log: request for the same term:{}. Request "
           "offset:{} is earlier than what we have:{}. Truncating to: {}",
           r.meta.term,
@@ -441,7 +441,7 @@ future<> consensus::process_configurations(std::vector<entry>&& e) {
                 return details::extract_configuration(std::move(e))
                   .then([this](group_configuration cfg) mutable {
                       _conf = std::move(cfg);
-                      raftlog().info(
+                      raftlog.info(
                         "group({}) configuration update", _meta.group);
                   });
             }

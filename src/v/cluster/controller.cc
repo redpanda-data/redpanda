@@ -43,7 +43,7 @@ future<> controller::start() {
           return pm.start();
       })
       .then([this] {
-          clusterlog().debug("Starting cluster recovery");
+          clusterlog.debug("Starting cluster recovery");
           return _pm.local()
             .manage(controller::ntp, controller::group)
             .then([this] {
@@ -59,7 +59,7 @@ future<> controller::start() {
                   });
             })
             .then([this] {
-                clusterlog().info("Finished recovering cluster state");
+                clusterlog.info("Finished recovering cluster state");
                 _recovered = true;
                 if (_leadership_notification_pending) {
                     leadership_notification();
@@ -173,7 +173,7 @@ future<> controller::recover_replica(
                   "recovered: {}, raft group_id: {}", ntp.path(), raft_group);
                 return pm.manage(ntp, raft_group)
                   .finally(
-                    [msg = std::move(msg)] { clusterlog().info("{},", msg); });
+                    [msg = std::move(msg)] { clusterlog.info("{},", msg); });
             });
       });
 }
@@ -225,7 +225,7 @@ future<std::vector<topic_result>> controller::create_topics(
                        success = repl.success;
                    } catch (...) {
                        auto e = std::current_exception();
-                       clusterlog().error(
+                       clusterlog.error(
                          "An error occurred while "
                          "appending create topic entries: {}",
                          e);
@@ -267,7 +267,7 @@ controller::create_topic_cfg_entry(const topic_configuration& cfg) {
 
     auto assignments = _allocator->allocate(cfg);
     if (!assignments) {
-        clusterlog().error(
+        clusterlog.error(
           "Unable to allocate partitions for topic '{}'", cfg.topic());
         return std::nullopt;
     }
@@ -288,7 +288,7 @@ void controller::leadership_notification() {
         _leadership_notification_pending = true;
         return;
     }
-    clusterlog().info("Local controller became a leader");
+    clusterlog.info("Local controller became a leader");
     create_partition_allocator();
 }
 

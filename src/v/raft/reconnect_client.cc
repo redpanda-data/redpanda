@@ -39,7 +39,7 @@ future<> reconnect_client::reconnect() {
                     return make_ready_future<>();
                 } catch (...) {
                     _backoff_secs = next_backoff(_backoff_secs);
-                    raftlog().debug(
+                    raftlog.debug(
                       "Error reconnecting: {}", std::current_exception());
                     // keep the exception interface consistent
                     return make_exception_future<>(
