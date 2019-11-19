@@ -528,7 +528,7 @@ ExternalProject_Add(librdkafka
   URL https://storage.googleapis.com/vectorizedio-public/dependencies/librdkafka-v1.2.2.tar.gz
   URL_HASH SHA256=c5d6eb6ce080431f2996ee7e8e1f4b8f6c61455a1011b922e325e28e88d01b53
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
-  DEPENDS ${default_depends}
+  DEPENDS ${default_depends} boost zstd
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
     ${common_cmake_args}
