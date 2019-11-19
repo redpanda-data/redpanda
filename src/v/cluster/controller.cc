@@ -172,7 +172,7 @@ future<> controller::recover_replica(
                 sstring msg = fmt::format(
                   "recovered: {}, raft group_id: {}", ntp.path(), raft_group);
                 return pm.manage(ntp, raft_group)
-                  .finally(
+                  .then(
                     [msg = std::move(msg)] { clusterlog.info("{},", msg); });
             });
       });
