@@ -108,9 +108,10 @@ public:
     explicit record_batch_reader(std::unique_ptr<impl> impl) noexcept
       : _impl(std::move(impl)) {
     }
-    record_batch_reader(record_batch_reader&& o) noexcept
-      : _impl(std::move(o._impl)) {
-    }
+    record_batch_reader(const record_batch_reader&) = delete;
+    record_batch_reader& operator=(const record_batch_reader&) = delete;
+    record_batch_reader(record_batch_reader&&) noexcept = default;
+    record_batch_reader& operator=(record_batch_reader&&) noexcept = default;
 
     future<record_batch_opt> operator()(timeout_clock::time_point timeout) {
         return _impl->operator()(timeout);
