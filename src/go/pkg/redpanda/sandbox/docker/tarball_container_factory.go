@@ -33,7 +33,7 @@ ADD ./redpanda.tar.gz /opt/redpanda
 RUN rm -rf /opt/redpanda/conf
 
 VOLUME /opt/redpanda/data /opt/redpanda/conf
-CMD ["/opt/redpanda/bin/redpanda", "--redpanda-cfg", "/opt/redpanda/conf/redpanda.yaml"]
+CMD ["/opt/redpanda/bin/redpanda", "--redpanda-cfg", "/opt/redpanda/conf/redpanda.yaml", "--default-log-level", "debug" ]
 `
 
 func NewTarballContainerFactroy(
