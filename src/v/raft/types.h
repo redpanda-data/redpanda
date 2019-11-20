@@ -59,18 +59,10 @@ public:
       : _t(t)
       , _rdr(std::move(r)) {
     }
-    ~entry() = default;
-    entry(entry&& o) noexcept
-      : _t(std::move(o._t))
-      , _rdr(std::move(o._rdr)) {
-    }
-    entry& operator=(entry&& o) noexcept {
-        if (this != &o) {
-            this->~entry();
-            new (this) entry(std::move(o));
-        }
-        return *this;
-    }
+    entry(const entry&) = delete;
+    entry& operator=(const entry&) = delete;
+    entry(entry&&) noexcept = default;
+    entry& operator=(entry&&) noexcept = default;
     model::record_batch_type entry_type() const {
         return _t;
     }

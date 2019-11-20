@@ -268,16 +268,8 @@ public:
         }
         compressed_records(const compressed_records&) = delete;
         compressed_records& operator=(const compressed_records&) = delete;
-        compressed_records(compressed_records&& other) noexcept
-          : _size(std::exchange(other._size, 0))
-          , _data(std::move(other._data)) {
-        }
-
-        compressed_records& operator=(compressed_records&& other) noexcept {
-            _size = std::exchange(other._size, 0);
-            _data = std::move(other._data);
-            return *this;
-        }
+        compressed_records(compressed_records&&) noexcept = default;
+        compressed_records& operator=(compressed_records&&) noexcept = default;
 
         uint32_t size() const {
             return _size;
@@ -327,17 +319,9 @@ public:
     }
     record_batch(const record_batch& o) = delete;
     record_batch& operator=(const record_batch&) = delete;
-    record_batch(record_batch&& o) noexcept
-      : _header(std::move(o._header))
-      , _records(std::move(o._records)) {
-    }
-    record_batch& operator=(record_batch&& o) noexcept {
-        if (this != &o) {
-            this->~record_batch();
-            new (this) record_batch(std::move(o));
-        }
-        return *this;
-    }
+    record_batch(record_batch&&) noexcept = default;
+    record_batch& operator=(record_batch&&) noexcept = default;
+
     bool empty() const {
         return seastar::visit(_records, [](auto& e) { return e.empty(); });
     }
