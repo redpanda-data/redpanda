@@ -66,6 +66,7 @@ def generate_keys():
         cmd = "ssh-keygen -t rsa -b 4096 -f %s -C %s" % (output_file, comment)
         if not os.path.exists(output_file): shell.run_subprocess(cmd)
         else: logger.info("File already exists: %s" % output_file)
+    return root
 
 
 def _fprint():
@@ -109,18 +110,17 @@ def fingerprint_keys():
         f.write(json.dumps(fprints, indent=4, sort_keys=True))
 
 
-def symlink_new_keys():
+def symlink_new_keys(latest_dir):
     current = "%s/current" % get_vectorized_keys_path()
     fs.mkdir_p(current)
     logger.info("Executing in directory: %s" % current)
     os.chdir(current)
-    new_keys_folder = get_vectorized_keys_path()
     all_symlink_keys = ["fingerprint"] + list(
         map(lambda x: "%s_key" % x, KEY_TYPES)) + list(
             map(lambda x: "%s_key.pub" % x, KEY_TYPES))
 
     for f in all_symlink_keys:
-        target = "%s/%s" % (new_keys_folder, f)
+        target = "%s/%s" % (latest_dir, f)
         relative_file = os.path.relpath(target, f)[3:]
         fs.force_symlink(relative_file, f)
 
@@ -166,11 +166,11 @@ def main():
         logger.info(json.dumps(_fprint(), indent=4, sort_keys=True))
         return 0
 
-    generate_keys()
+    latest_dir = generate_keys()
     # make sure fingerprints match
     fingerprint_keys()
     # always check the symlinks
-    symlink_new_keys()
+    symlink_new_keys(latest_dir)
     logger.info("Remember:")
     logger.info("1. Use your external key for github & external accounts")
     logger.info("2. Use your internal key for VPN systems")
