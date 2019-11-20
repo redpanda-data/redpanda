@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/user"
 	"strconv"
 	"vectorized/pkg/redpanda/sandbox/docker/labels"
 	"vectorized/pkg/utils"
@@ -163,8 +164,14 @@ func (f *tarballContainerFactory) CreateNodeContainer(
 	if err != nil {
 		return err
 	}
+	user, err := user.Current()
+	if err != nil {
+		return err
+	}
+	
 	containerConfig := container.Config{
 		Image: imageName,
+		User: user.Uid,
 		ExposedPorts: nat.PortSet{
 			rpcPort:   {},
 			kafkaPort: {},
