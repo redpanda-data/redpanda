@@ -58,7 +58,7 @@ def get_key_comment():
 
 
 def generate_keys():
-    root = vectorized_ssh_keys_folder()
+    root = next_vectorized_ssh_keys_folder()
     fs.mkdir_p(root)
     for key_type in KEY_TYPES:
         comment = get_key_comment()
