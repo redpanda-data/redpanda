@@ -1,6 +1,6 @@
 steps:
 - id: 'build builder image'
-  name: 'gcr.io/kaniko-project/executor:debug-v0.13.0'
+  name: 'gcr.io/kaniko-project/executor:v0.13.0'
   entrypoint: '/busybox/sh'
   args: ['tools/ci/scripts/build-builder.sh']
   env:
