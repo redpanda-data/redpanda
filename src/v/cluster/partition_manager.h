@@ -20,7 +20,7 @@ public:
       model::timeout_clock::duration disk_timeout,
       sharded<cluster::shard_table>& nlc,
       sharded<raft::client_cache>& clients);
-
+    
     using leader_cb_t = noncopyable_function<void(lw_shared_ptr<partition>)>;
 
     inline lw_shared_ptr<partition> get(const model::ntp& ntp) const {
@@ -33,7 +33,7 @@ public:
 
     future<> start();
     future<> stop();
-    future<> manage(model::ntp, raft::group_id);
+    future<consensus_ptr> manage(model::ntp, raft::group_id);
 
     void register_leadership_notification(leader_cb_t cb) {
         _notifications.push_back(std::move(cb));

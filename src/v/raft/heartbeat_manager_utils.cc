@@ -28,6 +28,11 @@ heartbeat_manager_utils::requests_for_range(range r) {
     for (auto iter : boost::make_iterator_range(r.first, r.second)) {
         auto& group = iter->config();
         for (auto& n : group.nodes) {
+            // do not send beat to self
+            if (n.id() == iter->config().leader_id) {
+                continue;
+            }
+
             pending_beats[n.id()].push_back(iter->meta());
         }
         for (auto& n : group.learners) {

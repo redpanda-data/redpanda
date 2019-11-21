@@ -1,5 +1,6 @@
 #pragma once
 
+#include "cluster/types.h"
 #include "raft/consensus.h"
 
 namespace cluster {
@@ -9,8 +10,6 @@ class partition_manager;
 /// all raft logic is proxied transparently
 class partition {
 public:
-    using consensus_ptr = lw_shared_ptr<raft::consensus>;
-
     explicit partition(consensus_ptr r)
       : _raft(r) {
     }

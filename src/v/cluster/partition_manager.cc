@@ -51,7 +51,8 @@ void partition_manager::trigger_leadership_notification(raft::group_id group) {
     }
 }
 
-future<> partition_manager::manage(model::ntp ntp, raft::group_id group) {
+future<consensus_ptr>
+partition_manager::manage(model::ntp ntp, raft::group_id group) {
     return _mngr.manage(std::move(ntp))
       .then([this, group](storage::log_ptr log) {
           auto c = make_lw_shared<raft::consensus>(
@@ -69,7 +70,10 @@ future<> partition_manager::manage(model::ntp ntp, raft::group_id group) {
           _raft_table.emplace(group, p);
           return with_gate(_bg, [this, p, c, group] {
               clusterlog.debug("Recovering raft group: {}", group);
-              return p->start().then([this, c] { _hbeats.register_group(c); });
+              return p->start().then([this, c] () mutable {
+                  _hbeats.register_group(c);
+                  return c;
+              });
           });
       });
 }

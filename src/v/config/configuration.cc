@@ -113,6 +113,12 @@ configuration::configuration()
       "advertised_kafka_api",
       "Address of Kafka API published to the clients",
       required::no,
+      std::nullopt)
+  , rack(
+      *this,
+      "rack",
+      "Rack identifier",
+      required::no,
       std::nullopt) {
 }
 

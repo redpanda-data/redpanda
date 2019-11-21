@@ -28,3 +28,11 @@ rp_test(
   LIBRARIES Seastar::seastar_testing raft
   ARGS "-- -c 1"
   )
+  rp_test(
+    UNIT_TEST
+    BINARY_NAME consensus_utils_test
+    SOURCES consensus_utils_test.cc
+    DEFINITIONS BOOST_TEST_DYN_LINK
+    LIBRARIES Boost::unit_test_framework raft
+)
+  
