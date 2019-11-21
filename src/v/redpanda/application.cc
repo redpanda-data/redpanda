@@ -21,6 +21,9 @@ int application::run(int ac, char** av) {
         validate_arguments(cfg);
         return async([this, &cfg] {
             ::stop_signal stop_signal;
+            auto deferred = defer([this] {
+                auto deferred = std::move(_deferred);
+            });
             initialize();
             hydrate_config(cfg);
             propogate_config();
@@ -28,7 +31,6 @@ int application::run(int ac, char** av) {
             configure_admin_server();
             wire_up_services();
             start();
-            auto deferred = std::move(_deferred);
             stop_signal.wait().get();
             _log.info("Stopping...");
         });
