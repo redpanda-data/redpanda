@@ -35,4 +35,9 @@ rp_test(
     DEFINITIONS BOOST_TEST_DYN_LINK
     LIBRARIES Boost::unit_test_framework raft
 )
-  
+rp_test(
+  UNIT_TEST
+  BINARY_NAME foreign_entry_sharing
+  SOURCES foreign_entry_test.cc
+  LIBRARIES Seastar::seastar_testing raft
+  )

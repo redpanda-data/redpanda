@@ -16,16 +16,17 @@
     public:                                                                    \
         void fixture_test();                                                   \
         template<typename... T>                                                \
-        auto info(T&&... t) {                                                  \
-            return _seastar_test_log.info(std::forward<T>(t)...);              \
+        static auto info(T&&... t) {                                           \
+            return g_seastar_test_log.info(std::forward<T>(t)...);             \
         }                                                                      \
         template<typename... T>                                                \
-        auto debug(T&&... t) {                                                 \
-            return _seastar_test_log.debug(std::forward<T>(t)...);             \
+        static auto debug(T&&... t) {                                          \
+            return g_seastar_test_log.debug(std::forward<T>(t)...);            \
         }                                                                      \
                                                                                \
     private:                                                                   \
-        seastar::logger _seastar_test_log{"" #klass "::" #method};             \
+        static inline seastar::logger g_seastar_test_log{"" #klass             \
+                                                         "::" #method};        \
     };                                                                         \
     SEASTAR_THREAD_TEST_CASE(method) {                                         \
         BOOST_TEST_CHECKPOINT("" << #klass << "::" << #method << "()");        \
