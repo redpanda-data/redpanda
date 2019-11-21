@@ -1,18 +1,28 @@
 #!/bin/bash
 set -e
 
+source tools/base_script.sh
+
 if [ -z "$BUILD_TYPE" ]; then
-  echo "ERROR: no BUILD_TYPE variable defined."
-  exit 1
+  fatal "No BUILD_TYPE variable defined."
+fi
+
+if [ -z "$COMPILER" ]; then
+  fatal "No COMPILER variable defined."
+fi
+
+if [ "$COMPILER" != "clang" ] || [ "$BUILD_TYPE" != "release" ]; then
+  log "we only upload clang-release builds to packagecloud, skipping."
+  exit 0
 fi
 
 if [ -z "$TAG_NAME" ]; then
-  echo "No TAG_NAME variable defined, skipping."
+  log "No TAG_NAME variable defined, skipping."
   exit 0
 fi
 
 if [[ "$TAG_NAME" != *"release"* ]]; then
-  echo "Branch $TAG_NAME is not a release branch, skipping."
+  log "Branch $TAG_NAME is not a release branch, skipping."
   exit 0
 fi
 
