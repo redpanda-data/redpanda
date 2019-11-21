@@ -29,7 +29,7 @@ module.exports.subscribeSlack = (pubSubEvent, context) => {
 // eventToBuild transforms pubsub event message to a build object.
 const eventToBuild = (data) => {
   return JSON.parse(Buffer.from(data, 'base64').toString());
-}
+};
 
 // createSlackMessage creates a message from a build object.
 const createSlackMessage = (build) => {
@@ -47,7 +47,7 @@ const createSlackMessage = (build) => {
               "text": `${build.status} <${build.logUrl} | ${repo}/${branch}@${sha}-${cc}-${type}>`
           }
       }]
-  }
+  };
 
   return message;
-}
+};
