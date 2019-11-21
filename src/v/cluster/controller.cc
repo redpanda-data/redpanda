@@ -14,7 +14,7 @@ static void verify_shard() {
 }
 
 controller::controller(
-  model::node_id n,
+  model::broker n,
   sstring basedir,
   size_t max_segment_size,
   sharded<partition_manager>& pm,
@@ -46,18 +46,19 @@ future<> controller::start() {
           clusterlog.debug("Starting cluster recovery");
           return _pm.local()
             .manage(controller::ntp, controller::group)
-            .then([this] {
+            .then([this](consensus_ptr c) {
                 auto plog = _pm.local().logs().find(controller::ntp)->second;
+                _raft0 = c.get();
                 return bootstrap_from_log(plog);
             })
             .then([this] {
-                _raft0 = &_pm.local().consensus_for(controller::group);
                 _raft0->register_hook(
                   [this](std::vector<raft::entry>&& entries) {
                       verify_shard();
                       on_raft0_entries_commited(std::move(entries));
                   });
             })
+            .then([this] { return join_raft_group(*_raft0); })
             .then([this] {
                 clusterlog.info("Finished recovering cluster state");
                 _recovered = true;
@@ -149,7 +150,7 @@ future<> controller::recover_replica(
   model::ntp ntp, raft::group_id raft_group, model::broker_shard bs) {
     // if the assignment is not for current broker just update
     // metadata cache
-    if (bs.node_id != _self) {
+    if (bs.node_id != _self.id()) {
         return make_ready_future<>();
     }
     // the following ops have a dependency on the shard_table
@@ -166,15 +167,27 @@ future<> controller::recover_replica(
       })
       .then([this, shard = bs.shard, raft_group, ntp] {
           // 2. update partition_manager
-          return _pm.invoke_on(
-            shard,
-            [this, raft_group, ntp = std::move(ntp)](partition_manager& pm) {
-                sstring msg = fmt::format(
-                  "recovered: {}, raft group_id: {}", ntp.path(), raft_group);
-                return pm.manage(ntp, raft_group)
-                  .finally(
-                    [msg = std::move(msg)] { clusterlog.info("{},", msg); });
-            });
+          return dispatch_manage_partition(std::move(ntp), raft_group, shard);
+      });
+}
+
+future<> controller::dispatch_manage_partition(
+  model::ntp ntp, raft::group_id raft_group, uint32_t shard) {
+    return _pm.invoke_on(
+      shard, [this, raft_group, ntp = std::move(ntp)](partition_manager& pm) {
+          return manage_partition(pm, std::move(ntp), raft_group);
+      });
+}
+
+future<> controller::manage_partition(
+  partition_manager& pm, model::ntp ntp, raft::group_id raft_group) {
+    return pm.manage(ntp, raft_group)
+      .then([this](consensus_ptr c) {
+          return join_raft_group(*c);
+      })
+      .then([path = ntp.path(), raft_group] {
+          clusterlog.info(
+            "recovered: {}, raft group_id: {}", path, raft_group);
       });
 }
 
@@ -251,7 +264,7 @@ future<std::vector<topic_result>> controller::create_topics(
 
 future<raft::append_entries_reply>
 controller::raft0_append_entries(std::vector<raft::entry> entries) {
-    return _raft0->append_entries({.node_id = _self,
+    return _raft0->append_entries({.node_id = _self.id(),
                                    .meta = _raft0->meta(),
                                    .entries = std::move(entries)});
 }
@@ -304,7 +317,17 @@ void controller::create_partition_allocator() {
 }
 
 allocation_node controller::local_allocation_node() {
-    return allocation_node(_self, smp::count, {});
+    return allocation_node(_self.id(), smp::count, {});
+}
+
+future<> controller::join_raft_group(raft::consensus& c) {
+    // FIXME: Replace this naive join with full fledged join
+    // mechanism. This is stubbed implementation for being able to
+    // test raft
+    if (!c.contains_machine(_self.id())) {
+        return c.update_machines_configuration(_self);
+    }
+    return make_ready_future<>();
 }
 
 void controller::on_raft0_entries_commited(std::vector<raft::entry>&& entries) {

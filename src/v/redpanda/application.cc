@@ -155,7 +155,7 @@ void application::wire_up_services() {
     construct_service(metadata_cache).get();
 
     _controller = std::make_unique<cluster::controller>(
-      model::node_id(_conf.local().node_id()),
+      config::make_self_broker(_conf.local()),
       _conf.local().data_directory().as_sstring(),
       _conf.local().log_segment_size(),
       partition_manager,
