@@ -5,4 +5,5 @@ set -ex
   --build-arg "BUILD_TYPE=$BUILD_TYPE" \
   --build-arg "COMPILER=$COMPILER" \
   --destination=gcr.io/$PROJECT_ID/builder-$COMPILER-$BUILD_TYPE:$SHORT_SHA \
-  --cache=true
+  --cache=true \
+  --cache-ttl=12h
