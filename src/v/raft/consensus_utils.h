@@ -22,10 +22,21 @@ future<consensus::voted_for_configuration> read_voted_for(sstring filename);
 
 /// copy all raft entries into N containers using the record_batch::share()
 future<std::vector<std::vector<raft::entry>>>
-share_n(std::vector<raft::entry>&&, std::size_t);
+  share_n(std::vector<raft::entry>, std::size_t);
+
+/// copy all raft entries into N containers using the record_batch::share()
+/// it also wraps all the iobufs using the iobuf_share_foreign_n() method
+/// which wraps the deallocator w/ a seastar::submit_to() call
+future<std::vector<std::vector<raft::entry>>>
+  foreign_share_n(std::vector<raft::entry>, std::size_t);
+
+/// shares the contents of the entry in memory; should not be used w/ disk
+/// backed record_batch_reader
+future<std::vector<raft::entry>> share_one_entry(
+  raft::entry, const size_t ncopies, const bool use_foreign_iobuf_share);
 
 /// parses the configuration out of the entry
-future<raft::group_configuration> extract_configuration(raft::entry&&);
+future<raft::group_configuration> extract_configuration(raft::entry);
 
 /// returns a fully parsed config state from a given storage log
 future<raft::configuration_bootstrap_state> read_bootstrap_state(storage::log&);
