@@ -21,6 +21,13 @@ int application::run(int ac, char** av) {
         validate_arguments(cfg);
         return async([this, &cfg] {
             ::stop_signal stop_signal;
+            auto deferred = defer([this] {
+                auto deferred = std::move(_deferred);
+                // stop services in reverse order
+                while (!deferred.empty()) {
+                    deferred.pop_back();
+                }
+            });
             initialize();
             hydrate_config(cfg);
             propogate_config();
@@ -28,7 +35,6 @@ int application::run(int ac, char** av) {
             configure_admin_server();
             wire_up_services();
             start();
-            auto deferred = std::move(_deferred);
             stop_signal.wait().get();
             _log.info("Stopping...");
         });
@@ -161,6 +167,7 @@ void application::wire_up_services() {
       partition_manager,
       shard_table,
       metadata_cache);
+    _deferred.emplace_back([this] { _controller->stop().get(); });
 
     // group membership
     construct_service(_group_manager, std::ref(partition_manager)).get();
@@ -198,7 +205,6 @@ void application::wire_up_services() {
 
 void application::start() {
     _controller->start().get();
-    _deferred.emplace_back([this] { _controller->stop().get(); });
 
     _rpc
       .invoke_on_all([this](rpc::server& s) {
