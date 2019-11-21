@@ -101,12 +101,14 @@ install -m755 %{_topdir}/common/scripts/* -Dt "%{buildroot}/%{_prefix}/lib/redpa
 
 %ldconfig_scriptlets
 
+%global __brp_mangle_shebangs_exclude_from save_coredump|hwloc-calc|iotune|redpanda|rpk|hwloc-distrib
+
 %post
 %systemd_post redpanda.slice redpanda.service redpanda-tuner.service
 /usr/lib/systemd/systemd-sysctl 99-redpanda-sched.conf >/dev/null 2>&1 || :
 /usr/lib/systemd/systemd-sysctl 99-redpanda-aio.conf >/dev/null 2>&1 || :
 
-%preun 
+%preun
 %systemd_preun redpanda.slice redpanda.service redpanda-tuner.service
 
 %postun
