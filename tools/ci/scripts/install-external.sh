@@ -9,7 +9,7 @@ fi
 
 # we create a repo to avoid having to COPY .git/ which would
 # invalidate the cache every time we rebuild the image
-git init
+git init .
 git config user.name "Foo Fighter"
 git config user.email "foo@fighter.com"
 git commit --allow-empty -m "I got another confession to make..."
