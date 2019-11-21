@@ -33,13 +33,6 @@ const eventToBuild = (data) => {
 
 // createSlackMessage creates a message from a build object.
 const createSlackMessage = (build) => {
-  const statusEmoji = {
-    "SUCCESS": ":white_check_mark:",
-    "FAILURE": ":x:",
-    "TIMEOUT": ":hourglass:",
-    "INTERNAL_ERROR": ":skull:"
-  }
-
   const repo = build.source.repoSource.repoName.replace('github_', '').replace(/_/g, '/');
   const branch = build.source.repoSource.branchName;
   const sha = build.sourceProvenance.resolvedRepoSource.commitSha.substring(0, 8);
@@ -51,7 +44,7 @@ const createSlackMessage = (build) => {
           "type": "section",
           "text": {
               "type": "mrkdwn",
-              "text": `${statusEmoji[build.status]}  <${build.logUrl} | ${repo}/${branch}@${sha}-${cc}-${type}>`
+              "text": `${build.status} <${build.logUrl} | ${repo}/${branch}@${sha}-${cc}-${type}>`
           }
       }]
   }
