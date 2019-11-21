@@ -141,13 +141,16 @@ server::dispatch_method_once(header h, lw_shared_ptr<connection> conn) {
     method* m = it->get()->method_from_id(method_id);
     _probe.add_bytes_received(header_size + h.size);
     // background!
-    (void)(*m)(conn->input(), *ctx)
-      .then([ctx, conn, m = _hist.auto_measure()](netbuf n) mutable {
-          n.set_correlation_id(ctx->get_header().correlation_id);
-          auto view = std::move(n).as_scattered();
-          return conn->write(std::move(view)).finally([m = std::move(m)] {});
-      })
-      .finally([& p = _probe, conn] { p.request_completed(); });
+    (void)with_gate(_conn_gate, [this, conn, ctx, m]() mutable {
+        return (*m)(conn->input(), *ctx)
+          .then([ctx, conn, m = _hist.auto_measure()](netbuf n) mutable {
+              n.set_correlation_id(ctx->get_header().correlation_id);
+              auto view = std::move(n).as_scattered();
+              return conn->write(std::move(view)).finally([m = std::move(m)] {
+              });
+          })
+          .finally([&p = _probe, conn] { p.request_completed(); });
+    });
     return fut;
 }
 future<> server::stop() {
