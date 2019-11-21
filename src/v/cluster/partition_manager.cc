@@ -35,6 +35,7 @@ future<> partition_manager::start() {
 future<> partition_manager::stop() {
     using pair_t = typename decltype(_raft_table)::value_type;
     return _bg.close()
+      .then([this] { return _hbeats.stop(); })
       .then([this] {
           return parallel_for_each(_raft_table, [this](pair_t& pair) {
               clusterlog.info("Shutting down raft group: {}", pair.first);
