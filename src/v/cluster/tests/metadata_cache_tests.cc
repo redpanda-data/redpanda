@@ -1,6 +1,9 @@
 #include "cluster/metadata_cache.h"
 #include "cluster/tests/utils.h"
 
+#include <seastar/net/api.hh>
+#include <seastar/net/inet_address.hh>
+#include <seastar/net/socket_defs.hh>
 #include <seastar/testing/thread_test_case.hh>
 
 #include <boost/test/unit_test.hpp>
@@ -10,6 +13,17 @@ cluster::metadata_cache create_test_cache() {
     auto tp = model::topic("test_topic");
     cache.add_topic(tp);
     return cache;
+}
+
+model::broker create_test_broker(int32_t id) {
+    return model::broker(
+      model::node_id(id),                    // id
+      unresolved_address("127.0.0.1", 9092), // kafka api address
+      unresolved_address("127.0.0.1", 9999), // rpc address
+      std::nullopt,
+      model::broker_properties{
+        .cores = 8 // cores
+      });
 }
 
 SEASTAR_THREAD_TEST_CASE(test_getting_not_existing_topic_metatadata) {
@@ -139,4 +153,28 @@ SEASTAR_THREAD_TEST_CASE(test_updating_partition_leader) {
     auto md = cache.get_topic_metadata(model::topic("test_topic"));
     BOOST_REQUIRE_EQUAL(md.has_value(), true);
     BOOST_REQUIRE_EQUAL(md->partitions[0].leader_node, model::node_id(1));
+}
+
+SEASTAR_THREAD_TEST_CASE(test_updating_brokers_cache) {
+    auto cache = create_test_cache();
+    cache.update_brokers_cache({
+      create_test_broker(1),
+      create_test_broker(2),
+      create_test_broker(3),
+    });
+    auto brokers = cache.all_brokers();
+    BOOST_REQUIRE_EQUAL(brokers.size(), 3);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_getting_single_broker) {
+    auto cache = create_test_cache();
+    cache.update_brokers_cache({
+      create_test_broker(1),
+      create_test_broker(2),
+      create_test_broker(3),
+    });
+
+    auto broker = cache.get_broker(model::node_id(1));
+    BOOST_REQUIRE_EQUAL(broker.has_value(), true);
+    BOOST_REQUIRE_EQUAL(broker.value()->id(), model::node_id(1));
 }

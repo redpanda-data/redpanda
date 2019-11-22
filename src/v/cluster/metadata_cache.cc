@@ -34,6 +34,36 @@ std::vector<model::topic_metadata> metadata_cache::all_topics_metadata() const {
     return metadata;
 }
 
+std::vector<broker_ptr> metadata_cache::all_brokers() const {
+    std::vector<broker_ptr> brokers;
+    brokers.reserve(_brokers_cache.size());
+    std::transform(
+      std::cbegin(_brokers_cache),
+      std::cend(_brokers_cache),
+      std::back_inserter(brokers),
+      [](const broker_cache_t::value_type& b) { return b.second; });
+
+    return brokers;
+}
+
+/// Returns single broker if exists in cache
+std::optional<broker_ptr> metadata_cache::get_broker(model::node_id id) const {
+    if (auto it = _brokers_cache.find(id); it != _brokers_cache.end()) {
+        return it->second;
+    }
+    return std::nullopt;
+}
+
+/// Updates or add broker to cache
+void metadata_cache::update_brokers_cache(
+  std::vector<model::broker>&& brokers) {
+    _brokers_cache.clear();
+    for (auto& b : brokers) {
+        auto id = b.id();
+        _brokers_cache.emplace(id, seastar::make_lw_shared(std::move(b)));
+    }
+}
+
 void metadata_cache::add_topic(model::topic_view topic) {
     _cache.emplace(topic, metadata{});
 }

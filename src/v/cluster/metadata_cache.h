@@ -6,6 +6,8 @@
 
 #include <seastar/core/future.hh>
 
+#include <boost/container/flat_map.hpp>
+
 #include <unordered_map>
 
 namespace cluster {
@@ -16,10 +18,11 @@ public:
     struct metadata {
         std::vector<model::partition_metadata> partitions;
     };
-
+    using broker_cache_t
+      = boost::container::flat_map<model::node_id, broker_ptr>;
     using cache_t = std::unordered_map<model::topic, metadata>;
 
-    metadata_cache() noexcept = default;
+    metadata_cache() = default;
     future<> stop() { return make_ready_future<>(); }
 
     /// Returns list of all topics that exists in the cluster.
@@ -33,6 +36,17 @@ public:
 
     /// Returns metadata of all topics.
     std::vector<model::topic_metadata> all_topics_metadata() const;
+
+    /// Returns all brokers, returns copy as the content of broker can change
+    std::vector<broker_ptr> all_brokers() const;
+
+    /// Returns single broker if exists in cache,returns copy as the content of
+    /// broker can change
+    std::optional<broker_ptr> get_broker(model::node_id) const;
+
+    /// Constructs the cache from the content of vector containing available
+    /// brokers
+    void update_brokers_cache(std::vector<model::broker>&&);
 
     ///\brief Add empty model::topic_metadata entry to cache
     ///
@@ -59,6 +73,7 @@ public:
       model::topic_view, model::partition_id, model::node_id);
 
 private:
+    broker_cache_t _brokers_cache;
     cache_t _cache;
     cache_t::iterator find_topic_metadata(model::topic_view);
 };
