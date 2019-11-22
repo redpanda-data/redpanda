@@ -324,7 +324,7 @@ future<> controller::join_raft_group(raft::consensus& c) {
     // FIXME: Replace this naive join with full fledged join
     // mechanism. This is stubbed implementation for being able to
     // test raft
-    if (!c.contains_machine(_self.id())) {
+    if (!c.config().contains_machine(_self.id())) {
         return c.update_machines_configuration(_self);
     }
     return make_ready_future<>();

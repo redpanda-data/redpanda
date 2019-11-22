@@ -90,15 +90,11 @@ public:
 
         // STUB: As only one node will join the cluster add it to list to
         //       allow raft to work
-        if (!contains_machine(node.id())) {
+        if (!_conf.contains_machine(node.id())) {
             _conf.nodes.push_back(std::move(node));
         }
         return make_ready_future<>();
     }
-
-    std::optional<model::broker> find_in_nodes(model::node_id id);
-    std::optional<model::broker> find_in_learners(model::node_id id);
-    bool contains_machine(model::node_id id);
 
     void process_heartbeat(append_entries_reply&&) {
     }
