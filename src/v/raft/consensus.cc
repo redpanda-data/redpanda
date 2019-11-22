@@ -7,6 +7,7 @@
 
 #include <seastar/core/fstream.hh>
 
+#include <iterator>
 namespace raft {
 using vote_request_ptr = consensus::vote_request_ptr;
 using vote_reply_ptr = consensus::vote_reply_ptr;
@@ -73,12 +74,12 @@ future<> consensus::replicate(raft::entry&& e) {
         req.meta = _meta;
         req.entries.reserve(1);
         req.entries.push_back(std::move(e));
-        auto stm = std::make_unique<replicate_entries_stm>(this);
-        auto ptr = stm.get();
-        return ptr->replicate(std::move(req)).finally([stm = std::move(stm)] {
-        });
+        auto stm = make_lw_shared<replicate_entries_stm>(
+          this, 3, std::move(req));
+        return stm->apply().finally(
+          [stm] { (void)stm->wait().finally([stm] {}); });
     });
-}
+} // namespace raft
 
 static future<vote_reply_ptr> one_vote(
   model::node_id node, const sharded<client_cache>& cls, vote_request r) {
@@ -444,7 +445,13 @@ consensus::do_append_entries(append_entries_request&& r) {
         _probe.append_request_heartbeat();
         return make_ready_future<append_entries_reply>(std::move(reply));
     }
-
+    // if we have already committed the offset, return success
+    if (r.meta.commit_index == _meta.commit_index) {
+        reply.success = true;
+        // TODO: add probe
+        //_probe.append_request_duplicate_batch();
+        return make_ready_future<append_entries_reply>(std::move(reply));
+    }
     // sucess. copy entries for each subsystem
     using offsets_ret = std::vector<storage::log::append_result>;
     using entries_t = std::vector<entry>;
@@ -501,8 +508,14 @@ future<append_entries_reply> consensus::success_case_append_entries(
     // always update metadata first!
     const model::offset last_offset = disk_results.back().last_offset;
     const model::offset begin_offset = model::offset(_meta.commit_index);
+    if (disk_results.size() == 1) {
+        _meta.prev_log_index = _meta.commit_index;
+        _meta.prev_log_term = _meta.term;
+    } else {
+        _meta.prev_log_index = std::prev(disk_results.end(), 2)->last_offset;
+        _meta.prev_log_term = _meta.term;
+    }
     _meta.commit_index = last_offset;
-    _meta.prev_log_term = sender.term;
 
     append_entries_reply reply;
     reply.node_id = _self();

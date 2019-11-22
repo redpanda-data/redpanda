@@ -92,6 +92,13 @@ private:
 };
 
 struct append_entries_request {
+    append_entries_request() = default;
+    append_entries_request(const append_entries_request&) = delete;
+    append_entries_request& operator=(const append_entries_request&) = delete;
+    append_entries_request(append_entries_request&&) noexcept = default;
+    append_entries_request& operator=(append_entries_request&&) noexcept
+      = default;
+
     model::node_id node_id;
     protocol_metadata meta;
     std::vector<entry> entries;

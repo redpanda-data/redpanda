@@ -23,8 +23,8 @@ public:
         return _raft->stop();
     }
 
-    future<> replicate(raft::entry) {
-        return make_ready_future<>();
+    future<> replicate(raft::entry&& e) {
+        return _raft->replicate(std::move(e));
     }
     const model::ntp& ntp() const {
         return _raft->ntp();
