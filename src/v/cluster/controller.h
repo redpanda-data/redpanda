@@ -92,22 +92,4 @@ private:
     std::unique_ptr<partition_allocator> _allocator;
     seastar::gate _bg;
 };
-
-// clang-format off
-template<typename T>
-CONCEPT(requires requires(const T& req) {
-    { req.topic } -> model::topic;
-})
-// clang-format on
-std::vector<topic_result> create_topic_results(
-  const std::vector<T>& requests, topic_error_code error_code) {
-    std::vector<topic_result> results;
-    results.reserve(requests.size());
-    std::transform(
-      requests.begin(),
-      requests.end(),
-      std::back_inserter(results),
-      [error_code](const T& r) { return topic_result(r.topic, error_code); });
-    return results;
-}
 } // namespace cluster
