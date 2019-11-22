@@ -5,6 +5,8 @@
 #include <iterator>
 
 namespace cluster {
+    
+class metadata_cache;
 /// This method calculates the machine nodes that were updated/added
 /// and removed
 brokers_diff calculate_changed_brokers(
@@ -28,4 +30,7 @@ std::vector<topic_result> create_topic_results(
       [error_code](const T& r) { return topic_result(r.topic, error_code); });
     return results;
 }
+
+std::vector<model::broker> get_replica_set_brokers(
+  const metadata_cache& md_cache, std::vector<model::broker_shard> replicas);
 } // namespace cluster

@@ -1,5 +1,6 @@
 #include "cluster/cluster_utils.h"
 
+#include "cluster/metadata_cache.h"
 #include "cluster/types.h"
 
 namespace cluster {
@@ -31,5 +32,26 @@ brokers_diff calculate_changed_brokers(
       compare_by_id);
 
     return diff;
+}
+
+std::vector<model::broker> get_replica_set_brokers(
+  const metadata_cache& md_cache, std::vector<model::broker_shard> replicas) {
+    std::vector<model::broker> brokers;
+    brokers.reserve(replicas.size());
+    std::transform(
+      std::cbegin(replicas),
+      std::cend(replicas),
+      std::back_inserter(brokers),
+      [&md_cache](model::broker_shard bs) {
+          // executed on target consensus shard
+          // cache.local() is a mirror
+          auto br = md_cache.get_broker(bs.node_id);
+          if (!br) {
+              throw std::runtime_error(
+                fmt::format("Broker {} not found in cache", bs.node_id));
+          }
+          return *(br.value());
+      });
+    return brokers;
 }
 } // namespace cluster

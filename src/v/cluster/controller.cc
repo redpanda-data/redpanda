@@ -168,24 +168,28 @@ future<> controller::recover_assignment(partition_assignment as) {
     _highest_group_id = std::max(_highest_group_id, as.group);
     return do_with(std::move(as), [this](partition_assignment& as) {
         return update_cache_with_partitions_assignment(as).then([this, &as] {
-            return do_for_each(
-              as.replicas,
-              [this, raft_group = as.group, ntp = std::move(as.ntp)](
-                model::broker_shard& bs) {
-                  return recover_replica(
-                    std::move(ntp), raft_group, std::move(bs));
+            auto it = std::find_if(
+              std::cbegin(as.replicas),
+              std::cend(as.replicas),
+              [this](const model::broker_shard& bs) {
+                  return bs.node_id == _self.id();
               });
+
+            if (it == std::cend(as.replicas)) {
+                // This partition in not replicated on current broker
+                return make_ready_future<>();
+            }
+            // Recover replica as it is replicated on current broker
+            return recover_replica(as.ntp, as.group, it->shard, as.replicas);
         });
     });
 }
 
 future<> controller::recover_replica(
-  model::ntp ntp, raft::group_id raft_group, model::broker_shard bs) {
-    // if the assignment is not for current broker just update
-    // metadata cache
-    if (bs.node_id != _self.id()) {
-        return make_ready_future<>();
-    }
+  model::ntp ntp,
+  raft::group_id raft_group,
+  uint32_t shard,
+  std::vector<model::broker_shard> replicas) {
     // the following ops have a dependency on the shard_table
     // *then* partition_manager order
 
@@ -193,26 +197,39 @@ future<> controller::recover_replica(
 
     // (compression, compation, etc)
 
-    return assign_group_to_shard(ntp, raft_group, bs.shard)
-      .then([this, shard = bs.shard, raft_group, ntp] {
+    return assign_group_to_shard(ntp, raft_group, shard)
+      .then([this, shard, raft_group, ntp, replicas = std::move(replicas)] {
           // 2. update partition_manager
-          return dispatch_manage_partition(std::move(ntp), raft_group, shard);
+          return dispatch_manage_partition(
+            std::move(ntp), raft_group, shard, std::move(replicas));
       });
 }
 
 future<> controller::dispatch_manage_partition(
-  model::ntp ntp, raft::group_id raft_group, uint32_t shard) {
+  model::ntp ntp,
+  raft::group_id raft_group,
+  uint32_t shard,
+  std::vector<model::broker_shard> replicas) {
     return _pm.invoke_on(
-      shard, [this, raft_group, ntp = std::move(ntp)](partition_manager& pm) {
-          return manage_partition(pm, std::move(ntp), raft_group);
+      shard,
+      [this, raft_group, ntp = std::move(ntp), replicas = std::move(replicas)](
+        partition_manager& pm) {
+          return manage_partition(
+            pm, std::move(ntp), raft_group, std::move(replicas));
       });
 }
 
 future<> controller::manage_partition(
-  partition_manager& pm, model::ntp ntp, raft::group_id raft_group) {
-    return pm.manage(ntp, raft_group, {_self})
-      .then([this](consensus_ptr c) { return join_raft_group(*c); })
-      .then([path = ntp.path(), raft_group] {
+  partition_manager& pm,
+  model::ntp ntp,
+  raft::group_id raft_group,
+  std::vector<model::broker_shard> replicas) {
+    return pm
+      .manage(
+        ntp,
+        raft_group,
+        get_replica_set_brokers(_md_cache.local(), std::move(replicas)))
+      .then([path = ntp.path(), raft_group](consensus_ptr) {
           clusterlog.info("recovered: {}, raft group_id: {}", path, raft_group);
       });
 }
@@ -335,11 +352,12 @@ void controller::leadership_notification() {
 
 void controller::create_partition_allocator() {
     _allocator = std::make_unique<partition_allocator>(_highest_group_id);
-
-    _allocator->register_node(
-      std::make_unique<allocation_node>(local_allocation_node()));
     // _md_cache contains a mirror copy of metadata at each core
     // so it is sufficient to access core-local copy
+    for (auto b : _md_cache.local().all_brokers()) {
+        _allocator->register_node(std::make_unique<allocation_node>(
+          allocation_node(b->id(), b->properties().cores, {})));
+    }
     _allocator->update_allocation_state(
       _md_cache.local().all_topics_metadata());
 }
@@ -350,10 +368,6 @@ future<> controller::update_brokers_cache(std::vector<model::broker> nodes) {
       [nodes = std::move(nodes)](metadata_cache& c) mutable {
           c.update_brokers_cache(std::move(nodes));
       });
-}
-
-allocation_node controller::local_allocation_node() {
-    return allocation_node(_self.id(), smp::count, {});
 }
 
 future<> controller::join_raft_group(raft::consensus& c) {
