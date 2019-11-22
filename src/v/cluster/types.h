@@ -13,7 +13,7 @@ class consensus;
 namespace cluster {
 
 using consensus_ptr = lw_shared_ptr<raft::consensus>;
-
+using broker_ptr = lw_shared_ptr<model::broker>;
 struct log_record_key {
   enum class type : int8_t { partition_assignment, topic_configuration };
 
