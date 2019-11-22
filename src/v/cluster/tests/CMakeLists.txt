@@ -26,13 +26,12 @@ rp_test(
   DEFINITIONS SEASTAR_TESTING_MAIN
 )
 
-# Waiting for 279
-# rp_test(
-#   UNIT_TEST
-#   BINARY_NAME controller_recovery_test
-#   SOURCES controller_recovery_test.cc
-#   LIBRARIES Seastar::seastar_testing cluster
-# )
+rp_test(
+  UNIT_TEST
+  BINARY_NAME controller_recovery_test
+  SOURCES controller_recovery_test.cc
+  LIBRARIES Seastar::seastar_testing cluster
+)
 rp_test(
   UNIT_TEST
   BINARY_NAME metadata_cache_tests
