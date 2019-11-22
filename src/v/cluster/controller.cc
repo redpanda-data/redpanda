@@ -1,5 +1,6 @@
 #include "cluster/controller.h"
 
+#include "cluster/cluster_utils.h"
 #include "cluster/logger.h"
 #include "cluster/simple_batch_builder.h"
 #include "config/configuration.h"
