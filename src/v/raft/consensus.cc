@@ -2,6 +2,7 @@
 
 #include "raft/consensus_utils.h"
 #include "raft/logger.h"
+#include "raft/replicate_entries_stm.h"
 #include "seastarx.h"
 
 #include <seastar/core/fstream.hh>
@@ -55,6 +56,30 @@ future<> consensus::update_machines_configuration(model::broker node) {
 
 void consensus::process_heartbeat(append_entries_reply&&) {
 }
+
+future<> consensus::replicate(raft::entry&& e) {
+    if (!is_leader()) {
+        return make_exception_future<>(std::runtime_error(fmt::format(
+          "Not the leader(self.node_id:{}, meta:{}). Cannot "
+          "consensus::replicate(entry&&)",
+          _self,
+          _meta.group)));
+    }
+
+    return with_semaphore(_op_sem, 1, [this, e = std::move(e)]() mutable {
+        // entyr point for append_entries_request throughout the system
+        append_entries_request req;
+        req.node_id = _self;
+        req.meta = _meta;
+        req.entries.reserve(1);
+        req.entries.push_back(std::move(e));
+        auto stm = std::make_unique<replicate_entries_stm>(this);
+        auto ptr = stm.get();
+        return ptr->replicate(std::move(req)).finally([stm = std::move(stm)] {
+        });
+    });
+}
+
 static future<vote_reply_ptr> one_vote(
   model::node_id node, const sharded<client_cache>& cls, vote_request r) {
     // FIXME #206
@@ -86,7 +111,7 @@ static future<vote_reply_ptr> one_vote(
 /// and dispatch all our nodes asynchrnously
 future<> consensus::replicate_config_as_new_leader() {
     // FIXME
-    //STUB: stubbed for single node testing
+    // STUB: stubbed for single node testing
     _conf.leader_id = _self;
     return make_ready_future<>();
 }
@@ -225,7 +250,7 @@ future<> consensus::do_dispatch_vote(clock_type::time_point timeout) {
             return process_vote_replies(std::move(replies));
         });
     });
-    
+
     return make_ready_future<>();
 }
 /// performs no raft-state mutation other than resetting the timer

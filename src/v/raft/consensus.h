@@ -9,6 +9,7 @@
 #include <seastar/core/sharded.hh>
 
 namespace raft {
+class replicate_entries_stm;
 /// consensus for one raft group
 class consensus {
 public:
@@ -86,8 +87,11 @@ public:
     };
     future<> update_machines_configuration(model::broker node);
     void process_heartbeat(append_entries_reply&&);
+    future<> replicate(raft::entry&&);
 
 private:
+    friend replicate_entries_stm;
+
     // all these private functions assume that we are under exclusive operations
     // via the _op_sem
     void step_down();
