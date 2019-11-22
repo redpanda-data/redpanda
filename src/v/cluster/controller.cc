@@ -1,6 +1,7 @@
 #include "cluster/controller.h"
 
 #include "cluster/cluster_utils.h"
+#include "cluster/controller_service.h"
 #include "cluster/logger.h"
 #include "cluster/simple_batch_builder.h"
 #include "config/configuration.h"
@@ -469,6 +470,23 @@ future<join_reply> controller::dispatch_join_to_remote(
                 return std::move(ctx.data);
             });
       });
+}
+
+future<> controller::process_join_request(model::broker broker) {
+    verify_shard();
+    clusterlog.info("Processing node '{}' join request", broker.id());
+    // curent node is a leader
+    if (is_leader()) {
+        // Just update raft0 configuration
+        return _raft0->add_group_member(std::move(broker));
+    }
+    // Current node is not the leader have to send an RPC to leader
+    // controller
+    return dispatch_rpc_to_leader([this, broker = std::move(broker)](
+                                    controller_client_protocol& c) mutable {
+               return c.join(join_request(std::move(broker)));
+           })
+      .discard_result();
 }
 
 template<typename Func>

@@ -45,6 +45,8 @@ public:
 
     model::node_id get_leader_id() const { return _raft0->config().leader_id; }
 
+    future<> process_join_request(model::broker broker);
+
     future<std::vector<topic_result>> create_topics(
       std::vector<topic_configuration> topics,
       model::timeout_clock::time_point timeout);
