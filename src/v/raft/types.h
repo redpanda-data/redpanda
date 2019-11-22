@@ -158,3 +158,10 @@ void serialize(iobuf&, raft::entry&&);
 template<>
 future<raft::entry> deserialize(source&);
 } // namespace rpc
+
+static inline std::ostream&
+operator<<(std::ostream& o, const raft::protocol_metadata& m) {
+    return o << "{raft_group:" << m.group << ", commit_index:" << m.commit_index
+             << ", term:" << m.term << ", prev_log_index:" << m.prev_log_index
+             << ", prev_log_term:" << m.prev_log_term << "}";
+}
