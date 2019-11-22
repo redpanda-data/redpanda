@@ -5,56 +5,80 @@
 #include "utils/named_type.h"
 
 #include <seastar/core/sstring.hh>
+#include <seastar/net/socket_defs.hh>
 
+#include <boost/container/flat_map.hpp>
 #include <boost/functional/hash.hpp>
 
 #include <optional>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
 namespace model {
 using node_id = named_type<int32_t, struct node_id_model_type>;
 
+struct broker_properties {
+    uint32_t cores;
+    uint32_t available_memory;
+    uint32_t available_disk;
+    std::vector<sstring> mount_paths;
+    // key=value properties in /etc/redpanda/machine_properties.yaml
+    std::unordered_map<sstring, sstring> etc_props;
+
+    bool operator==(const broker_properties& other) const {
+        return cores == other.cores
+               && available_memory == other.available_memory
+               && available_disk == other.available_disk
+               && mount_paths == other.mount_paths
+               && etc_props == other.etc_props;
+    }
+};
+
 class broker {
 public:
     broker(
       node_id id,
-      sstring host,
-      int32_t port,
-      std::optional<sstring> rack) noexcept
+      socket_address kafka_api_address,
+      socket_address rpc_address,
+      std::optional<sstring> rack,
+      broker_properties props) noexcept
       : _id(std::move(id))
-      , _host(std::move(host))
-      , _port(port)
-      , _rack(rack) {}
+      , _kafka_api_address(std::move(kafka_api_address))
+      , _rpc_address(std::move(rpc_address))
+      , _rack(rack)
+      , _properties(props) {}
     broker(broker&&) noexcept = default;
     broker& operator=(broker&&) noexcept = default;
     broker(const broker&) = default;
     const node_id& id() const { return _id; }
 
-    const sstring& host() const { return _host; }
-
-    int32_t port() const { return _port; }
-
+    const broker_properties& properties() const { return _properties; }
+    const socket_address& kafka_api_address() const {
+        return _kafka_api_address;
+    }
+    const socket_address& rpc_address() const { return _rpc_address; }
     const std::optional<sstring>& rack() const { return _rack; }
 
     inline bool operator==(const model::broker& other) const {
-        return _id == other._id && _host == other._host && _port == other._port
-               && _rack == other._rack;
+        return _id == other._id
+               && _kafka_api_address == other._kafka_api_address
+               && _rpc_address == other._rpc_address && _rack == other._rack
+               && _properties == other._properties;
     }
 
     inline bool operator!=(const model::broker& other) const {
         return !(*this == other);
     }
 
-    bool operator<(const model::broker& other) const {
-        return _id < other._id;
-    }
+    bool operator<(const model::broker& other) const { return _id < other._id; }
 
 private:
     node_id _id;
-    sstring _host;
-    int32_t _port;
+    socket_address _kafka_api_address;
+    socket_address _rpc_address;
     std::optional<sstring> _rack;
+    broker_properties _properties;
 };
 
 std::ostream& operator<<(std::ostream&, const broker&);
@@ -110,12 +134,32 @@ using topic_metadata_map = std::unordered_set<
 
 namespace std {
 template<>
+struct hash<model::broker_properties> {
+    size_t operator()(const model::broker_properties& b) const {
+        size_t h = 0;
+        boost::hash_combine(h, std::hash<uint32_t>()(b.cores));
+        boost::hash_combine(h, std::hash<uint32_t>()(b.available_memory));
+        boost::hash_combine(h, std::hash<uint32_t>()(b.available_disk));
+        for (const auto& path : b.mount_paths) {
+            boost::hash_combine(h, std::hash<seastar::sstring>()(path));
+        }
+        for (const auto& [k, v] : b.etc_props) {
+            boost::hash_combine(h, std::hash<seastar::sstring>()(k));
+            boost::hash_combine(h, std::hash<seastar::sstring>()(v));
+        }
+        return h;
+    }
+};
+template<>
 struct hash<model::broker> {
     size_t operator()(const model::broker& b) const {
         size_t h = 0;
         boost::hash_combine(h, std::hash<model::node_id>()(b.id()));
-        boost::hash_combine(h, std::hash<seastar::sstring>()(b.host()));
-        boost::hash_combine(h, std::hash<int32_t>()(b.port()));
+        boost::hash_combine(
+          h, std::hash<socket_address>()(b.kafka_api_address()));
+        boost::hash_combine(h, std::hash<socket_address>()(b.rpc_address()));
+        boost::hash_combine(
+          h, std::hash<model::broker_properties>()(b.properties()));
         boost::hash_combine(
           h, std::hash<std::optional<seastar::sstring>>()(b.rack()));
         return h;

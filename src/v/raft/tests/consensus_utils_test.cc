@@ -4,7 +4,12 @@
 #include <boost/test/unit_test.hpp>
 
 model::broker test_broker(int32_t id) {
-    return model::broker(model::node_id{id}, "localhost", 9092, std::nullopt);
+    return model::broker(
+      model::node_id{id},
+      socket_address(net::inet_address("127.0.0.1"), 9092),
+      socket_address(net::inet_address("127.0.0.1"), 1234),
+      std::nullopt,
+      model::broker_properties{});
 }
 std::vector<model::broker> test_brokers() {
     return {test_broker(1), test_broker(2), test_broker(3)};

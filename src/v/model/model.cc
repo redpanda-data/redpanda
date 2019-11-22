@@ -5,8 +5,11 @@
 #include "model/timestamp.h"
 #include "seastarx.h"
 #include "utils/string_switch.h"
+#include "utils/to_string.h"
 
 #include <seastar/core/print.hh>
+#include <seastar/net/inet_address.hh>
+#include <seastar/net/ip.hh>
 
 #include <fmt/ostream.h>
 
@@ -128,11 +131,27 @@ std::istream& operator>>(std::istream& i, compression& c) {
     return i;
 }
 
+std::ostream& operator<<(std::ostream& o, const model::broker_properties& b) {
+    return fmt_print(
+      o,
+      "{cores {}, mem_available {}, disk_available {}}",
+      b.cores,
+      b.available_memory,
+      b.available_disk,
+      b.mount_paths,
+      b.etc_props);
+}
+
 std::ostream& operator<<(std::ostream& o, const model::broker& b) {
-    o << "{" << b.id() << ", " << b.host() << ":" << b.port() << ", ";
-    if (b.rack()) {
-        o << *b.rack();
-    }
-    return o << "}";
+    return o;
+    return fmt_print(
+      o,
+      "id: {} kafka_api_address: {} rpc_address: {} rack: {} "
+      "properties: {}",
+      b.id(),
+      b.kafka_api_address(),
+      b.rpc_address(),
+      b.rack(),
+      b.properties());
 }
 } // namespace model

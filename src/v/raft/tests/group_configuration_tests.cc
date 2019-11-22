@@ -4,7 +4,12 @@
 #include <boost/test/unit_test.hpp>
 
 model::broker create_broker(int32_t id) {
-    return model::broker(model::node_id{id}, "localhost", 9002, std::nullopt);
+    return model::broker(
+      model::node_id{id},
+      socket_address(net::inet_address("127.0.0.1"), 9002),
+      socket_address(net::inet_address("127.0.0.1"), 9002),
+      std::nullopt,
+      model::broker_properties{});
 }
 
 BOOST_AUTO_TEST_CASE(should_return_true_as_it_contains_learner) {

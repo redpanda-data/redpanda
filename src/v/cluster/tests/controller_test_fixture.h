@@ -22,7 +22,12 @@ public:
     int complex_partitions_count{0};
     controller_tests_fixture()
       : _base_dir("test_dir_" + random_generators::gen_alphanum_string(4))
-      , _current_node(model::node_id(1), "localhost", 9092, std::nullopt) {
+      , _current_node(
+          model::node_id(1),
+          socket_address(net::inet_address("127.0.0.1"), 9092),
+          socket_address(net::inet_address("127.0.0.1"), 11000),
+          std::nullopt,
+          model::broker_properties{.cores = smp::count}) {
         _cli_cache.start().get0();
         _md_cache.start().get0();
         st.start().get0();
