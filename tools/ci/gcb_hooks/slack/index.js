@@ -33,21 +33,31 @@ const eventToBuild = (data) => {
 
 // createSlackMessage creates a message from a build object.
 const createSlackMessage = (build) => {
-  const repo = build.source.repoSource.repoName.replace('github_', '').replace(/_/g, '/');
-  const branch = build.source.repoSource.branchName;
-  const sha = build.sourceProvenance.resolvedRepoSource.commitSha.substring(0, 8);
-  const type = build.substitutions['_BUILD_TYPE'];
-  const cc = build.substitutions['_COMPILER'];
+    console.log(JSON.stringify(build));
+    let repo, branch, sha;
+    if (build.source && build.source.repoSource) {
+        ({
+            repo,
+            branch
+        } = build.source.repoSource);
+        sha = build.sourceProvenance.resolvedRepoSource.commitSha.substring(0, 8);
+    } else if (build.substitutions) {
+        repo = build.substitutions.REPO_NAME;
+        branch = build.substitutions.BRANCH_NAME;
+        sha = build.substitutions.SHORT_SHA;
+    }
+    const type = build.substitutions._BUILD_TYPE;
+    const cc = build.substitutions._COMPILER;
+    // TODO: Add "thread_ts": sha,
+    const message = {
+        "blocks": [{
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": `${build.status} <${build.logUrl} | ${repo}/${branch}@${sha}-${cc}-${type}>`
+            }
+        }]
+    };
 
-  const message = {
-      "blocks": [{
-          "type": "section",
-          "text": {
-              "type": "mrkdwn",
-              "text": `${build.status} <${build.logUrl} | ${repo}/${branch}@${sha}-${cc}-${type}>`
-          }
-      }]
-  };
-
-  return message;
+    return message;
 };
