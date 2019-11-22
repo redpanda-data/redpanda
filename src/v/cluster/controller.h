@@ -50,7 +50,7 @@ private:
         explicit batch_consumer(controller* c)
           : ptr(c) {}
         future<stop_iteration> operator()(model::record_batch batch) {
-            return ptr->recover_batch(std::move(batch)).then([] {
+            return ptr->process_raft0_batch(std::move(batch)).then([] {
                 return stop_iteration::no;
             });
         }
@@ -61,7 +61,8 @@ private:
     
     future<consensus_ptr> start_raft0();
     future<> bootstrap_from_log(storage::log_ptr);
-    future<> recover_batch(model::record_batch);
+    future<> process_raft0_batch(model::record_batch);
+    future<> process_raft0_cfg_update(model::record);
     future<> recover_record(model::record);
     future<> recover_replica(model::ntp, raft::group_id, model::broker_shard);
     future<> assign_group_to_shard(model::ntp, raft::group_id, uint32_t);
@@ -73,6 +74,7 @@ private:
     create_topic_cfg_entry(const topic_configuration&);
     void end_of_stream();
     void leadership_notification();
+    future<> update_brokers_cache(std::vector<model::broker>);
     void create_partition_allocator();
     allocation_node local_allocation_node();
     void on_raft0_entries_commited(std::vector<raft::entry>&&);

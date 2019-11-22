@@ -47,6 +47,10 @@ future<> controller::start() {
             controller::ntp, controller::group, controller::shard);
       })
       .then([this] {
+          // add current node to brokers cache
+          return update_brokers_cache({_self});
+      })
+      .then([this] {
           clusterlog.debug("Starting cluster recovery");
           return start_raft0()
             .then([this](consensus_ptr c) {
@@ -99,8 +103,9 @@ future<> controller::bootstrap_from_log(storage::log_ptr l) {
       });
 }
 
-future<> controller::recover_batch(model::record_batch batch) {
-    if (batch.type() != controller::controller_record_batch_type) {
+future<> controller::process_raft0_batch(model::record_batch batch) {
+    if (__builtin_expect(batch.type() == raft::data_batch_type, false)) {
+        // we are not intrested in data batches
         return make_ready_future<>();
     }
     // XXX https://github.com/vectorizedio/v/issues/188
@@ -109,11 +114,27 @@ future<> controller::recover_batch(model::record_batch batch) {
         return make_exception_future<>(std::runtime_error(
           "We cannot process compressed record_batch'es yet, see #188"));
     }
-    return do_with(std::move(batch), [this](model::record_batch& batch) {
-        return do_for_each(batch, [this](model::record& rec) {
-            return recover_record(std::move(rec));
-        });
-    });
+
+    if (batch.type() == raft::configuration_batch_type) {
+        return model::consume_records(
+          std::move(batch), [this](model::record rec) mutable {
+              return process_raft0_cfg_update(std::move(rec));
+          });
+    }
+
+    return model::consume_records(
+      std::move(batch), [this](model::record rec) mutable {
+          return recover_record(std::move(rec));
+      });
+}
+
+future<> controller::process_raft0_cfg_update(model::record r) {
+    return rpc::deserialize<raft::group_configuration>(
+             r.share_packed_value_and_headers())
+      .then([this](raft::group_configuration cfg) {
+          clusterlog.debug("Processing new raft-0 configuration");
+          return update_brokers_cache(std::move(cfg.nodes));
+      });
 }
 
 future<> controller::recover_record(model::record r) {
@@ -321,6 +342,14 @@ void controller::create_partition_allocator() {
     // so it is sufficient to access core-local copy
     _allocator->update_allocation_state(
       _md_cache.local().all_topics_metadata());
+}
+
+future<> controller::update_brokers_cache(std::vector<model::broker> nodes) {
+    // broadcast update to all caches
+    return _md_cache.invoke_on_all(
+      [nodes = std::move(nodes)](metadata_cache& c) mutable {
+          c.update_brokers_cache(std::move(nodes));
+      });
 }
 
 allocation_node controller::local_allocation_node() {
