@@ -45,3 +45,10 @@ rp_test(
   LIBRARIES Seastar::seastar_testing cluster
   DEFINITIONS SEASTAR_TESTING_MAIN
 )
+rp_test(
+  UNIT_TEST
+  BINARY_NAME cluster_tests
+  SOURCES cluster_tests.cc
+  LIBRARIES Seastar::seastar_testing application
+  DEFINITIONS SEASTAR_TESTING_MAIN
+)
