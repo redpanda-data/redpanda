@@ -66,6 +66,7 @@ public:
     future<> wait_for_leadership();
 
 private:
+    using seed_iterator = std::vector<config::seed_server>::const_iterator;
     struct batch_consumer {
         explicit batch_consumer(controller* c)
           : ptr(c) {}
@@ -112,7 +113,8 @@ private:
       raft::group_id,
       std::vector<model::broker_shard>);
 
-    future<> join_raft_group(raft::consensus&);
+    future<> dispatch_join_to_seed_server(seed_iterator it);
+    future<> join_raft0();
 
     template<typename Func>
     futurize_t<std::result_of_t<Func(controller_client_protocol&)>>
