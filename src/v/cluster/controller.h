@@ -1,5 +1,6 @@
 #pragma once
 
+#include "cluster/controller_service.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_allocator.h"
 #include "cluster/partition_manager.h"
@@ -110,6 +111,13 @@ private:
       std::vector<model::broker_shard>);
 
     future<> join_raft_group(raft::consensus&);
+
+    template<typename Func>
+    futurize_t<std::result_of_t<Func(controller_client_protocol&)>>
+    dispatch_rpc_to_leader(Func&&);
+
+    future<join_reply>
+    dispatch_join_to_remote(const config::seed_server&, model::broker);
 
     model::broker _self;
     std::vector<config::seed_server> _seed_servers;
