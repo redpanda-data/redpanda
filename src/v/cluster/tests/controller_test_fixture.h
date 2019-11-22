@@ -1,13 +1,19 @@
 #pragma once
 #include "cluster/controller.h"
+#include "cluster/service.h"
 #include "cluster/tests/utils.h"
 #include "config/configuration.h"
 #include "fmt/format.h"
 #include "model/record.h"
+#include "raft/service.h"
 #include "random/generators.h"
+#include "resource_mgmt/memory_groups.h"
+#include "rpc/server.h"
 #include "storage/directories.h"
 #include "test_utils/logs.h"
 #include "utils/unresolved_address.h"
+
+#include <seastar/net/socket_defs.hh>
 
 using lrk = cluster::log_record_key;
 
@@ -58,6 +64,7 @@ public:
 
     ~controller_tests_fixture() {
         _controller->stop().get0();
+        _rpc.stop().get0();
         st.stop().get0();
         _md_cache.stop().get0();
         _cli_cache.stop().get0();
@@ -76,6 +83,30 @@ public:
           std::ref(st),
           std::ref(_md_cache),
           std::ref(_cli_cache));
+
+        rpc::server_configuration rpc_cfg;
+        auto rpc_sa = _current_node.rpc_address().resolve().get0();
+        rpc_cfg.max_service_memory_per_core = memory_groups::rpc_total_memory();
+        rpc_cfg.addrs.push_back(rpc_sa);
+        rpc_cfg.disable_metrics = rpc::metrics_disabled::yes;
+
+        _rpc.start(rpc_cfg).get0();
+        _rpc
+          .invoke_on_all([this](rpc::server& s) {
+              s.register_service<raft::service<
+                cluster::partition_manager,
+                cluster::shard_table>>(
+                default_scheduling_group(),
+                default_smp_service_group(),
+                _pm,
+                st.local());
+              s.register_service<cluster::service>(
+                default_scheduling_group(),
+                default_smp_service_group(),
+                *_controller);
+          })
+          .get();
+        _rpc.invoke_on_all(&rpc::server::start).get();
         return *_controller;
     }
 
@@ -208,6 +239,7 @@ private:
     sharded<cluster::metadata_cache> _md_cache;
     sharded<cluster::shard_table> st;
     sharded<cluster::partition_manager> _pm;
+    sharded<rpc::server> _rpc;
     std::unique_ptr<cluster::controller> _controller;
 };
 // Waits for controller to become a leader it poll every 200ms
