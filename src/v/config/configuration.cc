@@ -119,7 +119,13 @@ configuration::configuration()
       "rack",
       "Rack identifier",
       required::no,
-      std::nullopt) {
+      std::nullopt)
+   , disable_metrics(
+      *this,
+      "disable_metrics",
+      "Disable registering metrics",
+      required::no,
+      false) {
 }
 
 void configuration::read_yaml(const YAML::Node& root_node) {

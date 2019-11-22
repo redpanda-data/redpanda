@@ -1,11 +1,16 @@
 #include "storage/probe.h"
 
+#include "config/configuration.h"
 #include "prometheus/prometheus_sanitize.h"
 
 #include <seastar/core/metrics.hh>
 
 namespace storage {
 void probe::setup_metrics(const model::ntp& ntp) {
+    if (config::shard_local_cfg().disable_metrics()) {
+        return;
+    }
+
     namespace sm = metrics;
     auto ns_label = sm::label("namespace");
     auto topic_label = sm::label("topic");

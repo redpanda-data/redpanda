@@ -44,6 +44,7 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> quota_manager_gc_sec;
     property<uint32_t> target_quota_byte_rate;
     property<std::optional<sstring>> rack;
+    property<bool> disable_metrics;
 
     configuration();
 
