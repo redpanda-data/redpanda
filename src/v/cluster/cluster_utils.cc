@@ -3,7 +3,6 @@
 #include "cluster/logger.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/types.h"
-#include "rpc/connection_cache.h"
 
 namespace cluster {
 brokers_diff calculate_changed_brokers(

@@ -1,14 +1,9 @@
 #pragma once
+#include "cluster/controller_service.h"
 #include "cluster/types.h"
 #include "rpc/connection_cache.h"
 
 #include <seastar/core/sharded.hh>
-
-namespace rpc {
-class connection_cache;
-}
-
-#include <iterator>
 
 namespace cluster {
 
@@ -45,4 +40,46 @@ future<> update_broker_client(
   model::node_id node,
   unresolved_address addr);
 future<> remove_broker_client(sharded<rpc::connection_cache>&, model::node_id);
+
+/// \brief Dispatches controller service RPC requests to the specified
+/// unresolved_address. It uses the connection cached in connection_cache or if
+/// it is unavailable it creates a new one.
+
+// clang-format off
+template<typename Func>
+CONCEPT(requires requires(Func&& f, controller_client_protocol& c) {
+        f(c);
+})
+// clang-format on
+futurize_t<std::result_of_t<Func(controller_client_protocol&)>> dispatch_rpc(
+  sharded<rpc::connection_cache>& cache,
+  model::node_id id,
+  unresolved_address addr,
+  Func&& f) {
+    using ret_t = futurize<std::result_of_t<Func(controller_client_protocol&)>>;
+    using rpc_protocol = controller_client_protocol;
+    return update_broker_client(cache, id, std::move(addr))
+      .then([id, &cache, f = std::forward<Func>(f)]() mutable {
+          auto shard = rpc::connection_cache::shard_for(id);
+          return cache.invoke_on(
+            shard,
+            [id, f = std::forward<Func>(f)](
+              rpc::connection_cache& c_cache) mutable {
+                return c_cache.get(id)->get_connected().then(
+                  [f = std::forward<Func>(f),
+                   id](result<rpc::transport*> r) mutable {
+                      if (!r) {
+                          return ret_t::make_exception_future(
+                            std::runtime_error(
+                              fmt::format("Error connecting node {}", id)));
+                      }
+                      return do_with(
+                        rpc_protocol(*r.value()),
+                        [f = std::forward<Func>(f)](
+                          rpc_protocol& proto) mutable { return f(proto); });
+                  });
+            });
+      });
+}
+
 } // namespace cluster

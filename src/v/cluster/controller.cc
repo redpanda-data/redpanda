@@ -455,4 +455,36 @@ future<> controller::wait_for_leadership() {
     });
 }
 
+future<join_reply> controller::dispatch_join_to_remote(
+  const config::seed_server& target, model::broker joining_node) {
+    clusterlog.info("Sending join request to {} @ {}", target.id, target.addr);
+    return dispatch_rpc(
+      _connection_cache,
+      target.id,
+      target.addr,
+      [joining_node = std::move(joining_node)](
+        controller_client_protocol& c) mutable {
+          return c.join(join_request(std::move(joining_node)))
+            .then([](rpc::client_context<join_reply> ctx) {
+                return std::move(ctx.data);
+            });
+      });
+}
+
+template<typename Func>
+futurize_t<std::result_of_t<Func(controller_client_protocol&)>>
+controller::dispatch_rpc_to_leader(Func&& f) {
+    using ret_t = futurize<std::result_of_t<Func(controller_client_protocol&)>>;
+    auto leader = _raft0->config().find_in_nodes(_raft0->config().leader_id);
+    if (leader == _raft0->config().nodes.end()) {
+        return ret_t::make_exception_future(
+          std::runtime_error("There is no leader controller in cluster"));
+    }
+    // Dispatch request to current leader
+    return dispatch_rpc(
+      _connection_cache,
+      leader->id(),
+      leader->rpc_address(),
+      std::forward<Func>(f));
+}
 } // namespace cluster
