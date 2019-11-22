@@ -50,6 +50,10 @@ struct group_configuration {
         return !learners.empty();
     }
 
+    size_t majority() const {
+        return (nodes.size() / 2) + 1;
+    }
+
     std::optional<model::broker> find_in_nodes(model::node_id id) const;
     std::optional<model::broker> find_in_learners(model::node_id id) const;
     bool contains_machine(model::node_id id) const;
