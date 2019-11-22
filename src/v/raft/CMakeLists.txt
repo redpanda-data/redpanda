@@ -16,6 +16,7 @@ add_library (raft STATIC
   configuration_bootstrap_state.cc
   logger.cc
   types.cc
+  replicate_entries_stm.cc
   )
 
 target_link_libraries(raft
