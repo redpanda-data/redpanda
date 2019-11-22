@@ -1,6 +1,7 @@
 #include "redpanda/application.h"
 
 #include "platform/stop_signal.h"
+#include "cluster/service.h"
 #include "raft/service.h"
 #include "storage/directories.h"
 #include "syschecks/syschecks.h"
@@ -229,6 +230,10 @@ void application::start() {
             _smp_groups.raft_smp_sg(),
             partition_manager,
             shard_table.local());
+          s.register_service<cluster::service>(
+            _scheduling_groups.cluster_sg(),
+            _smp_groups.cluster_smp_sg(),
+            *controller);
       })
       .get();
     auto& conf = config::shard_local_cfg();
