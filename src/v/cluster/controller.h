@@ -5,6 +5,7 @@
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
 #include "cluster/types.h"
+#include "config/seed_server.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "seastarx.h"
@@ -78,6 +79,7 @@ private:
     future<> join_raft_group(raft::consensus&);
 
     model::broker _self;
+    std::vector<config::seed_server> _seed_servers;
     sharded<partition_manager>& _pm;
     sharded<shard_table>& _st;
     sharded<metadata_cache>& _md_cache;
