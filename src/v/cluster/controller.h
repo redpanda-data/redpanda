@@ -63,6 +63,7 @@ private:
     future<> recover_batch(model::record_batch);
     future<> recover_record(model::record);
     future<> recover_replica(model::ntp, raft::group_id, model::broker_shard);
+    future<> assign_group_to_shard(model::ntp, raft::group_id, uint32_t);
     future<> recover_topic_configuration(topic_configuration);
     future<> dispatch_record_recovery(log_record_key, iobuf&&);
     future<>

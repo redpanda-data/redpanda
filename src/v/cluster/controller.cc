@@ -41,6 +41,11 @@ future<> controller::start() {
           return pm.start();
       })
       .then([this] {
+          // add raft0 to shard table
+          return assign_group_to_shard(
+            controller::ntp, controller::group, controller::shard);
+      })
+      .then([this] {
           clusterlog.debug("Starting cluster recovery");
           return _pm.local()
             .manage(controller::ntp, controller::group)
@@ -157,12 +162,8 @@ future<> controller::recover_replica(
     // FIXME: Pass topic configuration to partitions manager
 
     // (compression, compation, etc)
-    // 1. update shard_table: broadcast
-    return _st
-      .invoke_on_all([ntp, raft_group, shard = bs.shard](shard_table& s) {
-          s.insert(ntp, shard);
-          s.insert(raft_group, shard);
-      })
+
+    return assign_group_to_shard(ntp, raft_group, bs.shard)
       .then([this, shard = bs.shard, raft_group, ntp] {
           // 2. update partition_manager
           return dispatch_manage_partition(std::move(ntp), raft_group, shard);
@@ -183,6 +184,16 @@ future<> controller::manage_partition(
       .then([this](consensus_ptr c) { return join_raft_group(*c); })
       .then([path = ntp.path(), raft_group] {
           clusterlog.info("recovered: {}, raft group_id: {}", path, raft_group);
+      });
+}
+
+future<> controller::assign_group_to_shard(
+  model::ntp ntp, raft::group_id raft_group, uint32_t shard) {
+    // 1. update shard_table: broadcast
+    return _st.invoke_on_all(
+      [ntp = std::move(ntp), raft_group, shard](shard_table& s) {
+          s.insert(std::move(ntp), shard);
+          s.insert(raft_group, shard);
       });
 }
 
