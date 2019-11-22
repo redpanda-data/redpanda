@@ -5,11 +5,13 @@
 #include <seastar/net/inet_address.hh>
 #include <seastar/net/socket_defs.hh>
 
+#include <model/metadata.h>
+
 #include <cstdint>
 
 namespace config {
 struct seed_server {
-    int64_t id;
+    model::node_id id;
     socket_address addr;
 };
 } // namespace config

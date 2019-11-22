@@ -130,7 +130,7 @@ static void to_json(nlohmann::json& j, const data_directory_path& v) {
 }
 
 static void to_json(nlohmann::json& j, const seed_server& v) {
-    j = {{"node_id", v.id}, {"host", v.addr}};
+    j = {{"node_id", v.id()}, {"host", v.addr}};
 }
 
 static void to_json(nlohmann::json& j, const key_cert& v) {
@@ -177,7 +177,7 @@ struct convert<config::seed_server> {
     using type = config::seed_server;
     static Node encode(const type& rhs) {
         Node node;
-        node["node_id"] = rhs.id;
+        node["node_id"] = rhs.id();
         node["host"] = rhs.addr;
         return node;
     }
@@ -188,7 +188,7 @@ struct convert<config::seed_server> {
                 return false;
             }
         }
-        rhs.id = node["node_id"].as<int64_t>();
+        rhs.id = model::node_id(node["node_id"].as<int32_t>());
         rhs.addr = node["host"].as<socket_address>();
         return true;
     }

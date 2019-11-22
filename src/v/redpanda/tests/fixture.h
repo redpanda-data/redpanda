@@ -42,7 +42,8 @@ public:
             config.get("node_id").set_value(model::node_id(1));
 
             std::vector<config::seed_server> seed_servers = {
-              {1, socket_address(net::inet_address("127.0.0.1"), 33145)}};
+              {model::node_id(1),
+               socket_address(net::inet_address("127.0.0.1"), 33145)}};
             config.get("seed_servers").set_value(seed_servers);
         }).get0();
     }
