@@ -157,7 +157,12 @@ static model::broker broker_from_arg(sstring peer) {
         throw std::runtime_error(fmt::format("Could not host:{}", parts[1]));
     }
     auto port = boost::lexical_cast<int32_t>(parts[0]);
-    return model::broker(model::node_id(id), host_port[0], port, std::nullopt);
+    return model::broker(
+      model::node_id(id),
+      socket_address(net::inet_address(host_port[0]), port),
+      socket_address(net::inet_address(host_port[0]), port),
+      std::nullopt,
+      model::broker_properties{.cores = smp::count});
 }
 
 static raft::group_configuration
@@ -170,9 +175,16 @@ group_cfg_from_args(const po::variables_map& opts) {
     // add self
     cfg.nodes.push_back(model::broker(
       model::node_id(opts["node-id"].as<int32_t>()),
-      opts["ip"].as<sstring>(),
-      opts["port"].as<uint16_t>(),
-      std::optional<sstring>()));
+      socket_address(
+        net::inet_address(opts["ip"].as<sstring>()),
+        opts["port"].as<uint16_t>()),
+      socket_address(
+        net::inet_address(opts["ip"].as<sstring>()),
+        opts["port"].as<uint16_t>()),
+      std::optional<sstring>(),
+      model::broker_properties{
+        .cores = smp::count,
+      }));
     return cfg;
 }
 
@@ -198,7 +210,8 @@ int main(int args, char** argv, char** env) {
               [&client_cache] { client_cache.stop().get(); });
             rpc::server_configuration scfg;
             scfg.addrs.push_back(socket_address(
-              ipv4_addr(cfg["ip"].as<sstring>(), cfg["port"].as<uint16_t>())));
+              net::inet_address(cfg["ip"].as<sstring>()),
+              cfg["port"].as<uint16_t>()));
             scfg.max_service_memory_per_core = memory::stats().total_memory()
                                                * .7;
             auto key = cfg["key"].as<sstring>();

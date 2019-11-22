@@ -67,11 +67,14 @@ using conf_ref = typename std::reference_wrapper<configuration>;
 
 static inline model::broker make_self_broker(const configuration& cfg) {
     auto kafka_addr = cfg.advertised_kafka_api();
+    auto rpc_addr = cfg.advertised_rpc_api();
     return model::broker(
       model::node_id(cfg.node_id),
-      fmt::format("{}", kafka_addr.addr()),
-      kafka_addr.port(),
-      cfg.rack);
+      kafka_addr,
+      rpc_addr,
+      cfg.rack,
+      // FIXME: Fill broker properties with all the information
+      model::broker_properties{.cores = smp::count});
 }
 
 } // namespace config

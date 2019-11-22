@@ -78,7 +78,7 @@ inline future<socket_address> deserialize(source& in) {
       });
 }
 
-//FIXME: Change to generic unordered map serdes when RPC will work with ADL
+// FIXME: Change to generic unordered map serdes when RPC will work with ADL
 template<>
 inline void serialize(iobuf& out, std::unordered_map<sstring, sstring>&& map) {
     using type = std::vector<std::pair<sstring, sstring>>;
@@ -101,27 +101,72 @@ inline future<std::unordered_map<sstring, sstring>> deserialize(source& in) {
 }
 
 template<>
+inline void serialize(iobuf& out, model::broker_properties&& p) {
+    serialize(
+      out,
+      p.cores,
+      p.available_memory,
+      p.available_disk,
+      std::move(p.mount_paths),
+      std::move(p.etc_props));
+}
+
+template<>
+inline future<model::broker_properties> deserialize(source& in) {
+    struct simple {
+        uint32_t cores;
+        uint32_t available_memory;
+        uint32_t available_disk;
+    };
+    return deserialize<simple>(in).then([&in](simple s) mutable {
+        return deserialize<std::vector<sstring>>(in).then(
+          [&in, s = std::move(s)](std::vector<sstring> m_points) mutable {
+              return deserialize<std::unordered_map<sstring, sstring>>(in).then(
+                [s = std::move(s), m_points = std::move(m_points)](
+                  std::unordered_map<sstring, sstring> props) mutable {
+                    return model::broker_properties{
+                      .cores = s.cores,
+                      .available_memory = s.available_memory,
+                      .available_disk = s.available_disk,
+                      .mount_paths = std::move(m_points),
+                      .etc_props = std::move(props)};
+                });
+          });
+    });
+}
+
+template<>
 inline void serialize(iobuf& out, model::broker&& r) {
     rpc::serialize(
-      out, r.id(), sstring(r.host()), r.port(), std::optional(r.rack()));
+      out,
+      r.id(),
+      socket_address(r.kafka_api_address()),
+      socket_address(r.rpc_address()),
+      std::optional(r.rack()),
+      model::broker_properties(r.properties()));
 }
 
 template<>
 inline future<model::broker> deserialize(source& in) {
     struct broker_contents {
         model::node_id id;
-        sstring host;
-        int32_t port;
+        socket_address kafka_api_addr;
+        socket_address rpc_address;
         std::optional<sstring> rack;
     };
-    return deserialize<broker_contents>(in).then([](broker_contents res) {
-        return model::broker(
-          std::move(res.id),
-          std::move(res.host),
-          res.port,
-          std::move(res.rack));
+    return deserialize<broker_contents>(in).then([&in](broker_contents res) {
+        return deserialize<model::broker_properties>(in).then(
+          [&in, res = std::move(res)](model::broker_properties props) {
+              return model::broker(
+                std::move(res.id),
+                std::move(res.kafka_api_addr),
+                std::move(res.rpc_address),
+                std::move(res.rack),
+                props);
+          });
     });
 }
+
 template<>
 inline void serialize(iobuf& ref, model::record&& record) {
     rpc::serialize(
