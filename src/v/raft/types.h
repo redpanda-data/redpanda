@@ -42,11 +42,11 @@ struct group_configuration {
     group_configuration(group_configuration&&) noexcept = default;
     group_configuration& operator=(group_configuration&&) noexcept = default;
 
-    inline bool has_voters() const {
+    bool has_voters() const {
         return !nodes.empty();
     }
 
-    inline bool has_learners() const {
+    bool has_learners() const {
         return !learners.empty();
     }
 
