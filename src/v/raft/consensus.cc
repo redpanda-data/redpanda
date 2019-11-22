@@ -230,7 +230,10 @@ void consensus::dispatch_vote() {
     }
     // 5.2.1.4 - prepare next timeout
     arm_vote_timeout();
-
+    // do not vote when there are no voters available
+    if (!_conf.has_voters()) {
+        return;
+    }
     // background, acquire lock, transition state
     (void)with_gate(_bg, [this] {
         // must be oustside semaphore
