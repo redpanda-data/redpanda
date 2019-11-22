@@ -1,0 +1,14 @@
+{
+    "namespace": "cluster",
+    "service_name": "controller",
+    "includes": [
+        "cluster/types.h"
+    ],
+    "methods": [
+        {
+            "name": "join",
+            "input_type": "join_request",
+            "output_type": "join_reply"
+        }
+    ]
+}

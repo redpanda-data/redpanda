@@ -43,4 +43,16 @@ future<cluster::topic_configuration> deserialize(rpc::source& in) {
         return std::move(tp_cfg);
     });
 }
+
+template<>
+void serialize(iobuf& out, cluster::join_request&& r) {
+    rpc::serialize(out, std::move(r.node));
+}
+
+template<>
+future<cluster::join_request> deserialize(rpc::source& in) {
+    return deserialize<model::broker>(in).then(
+      [](model::broker b) { return cluster::join_request(std::move(b)); });
+}
+
 } // namespace rpc

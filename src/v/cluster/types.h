@@ -20,6 +20,18 @@ struct log_record_key {
   type record_type;
 };
 
+/// Join request sent by node to join raft-0
+struct join_request {
+    explicit join_request(model::broker b)
+        : node(std::move(b)){
+    }
+    model::broker node;
+};
+
+struct join_reply {
+    bool success;
+};
+
 /// Partition assignment describes an assignment of all replicas for single NTP.
 /// The replicas are hold in vector of broker_shard.
 struct partition_assignment {
@@ -101,4 +113,7 @@ namespace rpc {
 template <> future<cluster::topic_configuration> deserialize(source &);
 
 template <> void serialize(iobuf &out, cluster::topic_configuration &&t);
+
+template <> future<cluster::join_request> deserialize(source &);
+template <> void serialize(iobuf &out, cluster::join_request &&t);
 }  // namespace rpc
