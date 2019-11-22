@@ -42,6 +42,19 @@ future<> consensus::stop() {
     return _bg.close();
 }
 
+future<> consensus::update_machines_configuration(model::broker node) {
+    // FIXME: Add node to followers if it does not exists yet.
+
+    // STUB: As only one node will join the cluster add it to list to
+    //       allow raft to work
+    if (!_conf.contains_machine(node.id())) {
+        _conf.nodes.push_back(std::move(node));
+    }
+    return make_ready_future<>();
+}
+
+void consensus::process_heartbeat(append_entries_reply&&) {
+}
 static future<vote_reply_ptr> one_vote(
   model::node_id node, const sharded<client_cache>& cls, vote_request r) {
     // FIXME #206
