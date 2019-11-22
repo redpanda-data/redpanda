@@ -52,8 +52,13 @@ struct configuration final : public config_store {
         return _advertised_kafka_api().value_or(kafka_api());
     }
 
+    socket_address advertised_rpc_api() const {
+        return _advertised_rpc_api().value_or(rpc_server());
+    }
+
 private:
     property<std::optional<socket_address>> _advertised_kafka_api;
+    property<std::optional<socket_address>> _advertised_rpc_api;
 };
 
 configuration& shard_local_cfg();
