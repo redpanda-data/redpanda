@@ -19,6 +19,7 @@ controller::controller(
   sharded<shard_table>& st,
   sharded<metadata_cache>& md_cache)
   : _self(config::make_self_broker(config::shard_local_cfg()))
+  , _seed_servers(config::shard_local_cfg().seed_servers())
   , _pm(pm)
   , _st(st)
   , _md_cache(md_cache)
