@@ -64,7 +64,9 @@ private:
     future<> process_raft0_batch(model::record_batch);
     future<> process_raft0_cfg_update(model::record);
     future<> recover_record(model::record);
-    future<> recover_replica(model::ntp, raft::group_id, model::broker_shard);
+    future<> recover_replica(
+      model::ntp, raft::group_id, uint32_t, std::vector<model::broker_shard>);
+
     future<> assign_group_to_shard(model::ntp, raft::group_id, uint32_t);
     future<> recover_topic_configuration(topic_configuration);
     future<> dispatch_record_recovery(log_record_key, iobuf&&);
@@ -78,8 +80,16 @@ private:
     void create_partition_allocator();
     allocation_node local_allocation_node();
     void on_raft0_entries_commited(std::vector<raft::entry>&&);
-    future<> dispatch_manage_partition(model::ntp, raft::group_id, uint32_t);
-    future<> manage_partition(partition_manager&, model::ntp, raft::group_id);
+
+    future<> dispatch_manage_partition(
+      model::ntp, raft::group_id, uint32_t, std::vector<model::broker_shard>);
+
+    future<> manage_partition(
+      partition_manager&,
+      model::ntp,
+      raft::group_id,
+      std::vector<model::broker_shard>);
+
     future<> join_raft_group(raft::consensus&);
 
     model::broker _self;
