@@ -74,10 +74,13 @@ struct client_context {
     T data;
 };
 
+using metrics_disabled = bool_class<struct metrics_disabled_tag>;
+
 struct server_configuration {
     std::vector<socket_address> addrs;
     int64_t max_service_memory_per_core;
     std::optional<tls::credentials_builder> credentials;
+    metrics_disabled disable_metrics = metrics_disabled::no;
 };
 struct client_configuration {
     socket_address server_addr;
@@ -88,6 +91,7 @@ struct client_configuration {
     duration_type recv_timeout = std::chrono::minutes(1);
     uint32_t max_queued_bytes = std::numeric_limits<uint32_t>::max();
     std::optional<tls::credentials_builder> credentials;
+    metrics_disabled disable_metrics = metrics_disabled::no;
 };
 
 std::ostream& operator<<(std::ostream&, const header&);

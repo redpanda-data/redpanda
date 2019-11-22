@@ -1,5 +1,6 @@
 #pragma once
 
+#include "config/configuration.h"
 #include "prometheus/prometheus_sanitize.h"
 
 #include <seastar/core/metrics.hh>
@@ -46,6 +47,9 @@ public:
     }
 
     void setup_metrics(metrics::metric_groups& mgs) {
+        if (config::shard_local_cfg().disable_metrics()) {
+            return;
+        }
         namespace sm = metrics;
         mgs.add_group(
           prometheus_sanitize::metrics_name("kafka:api:server"),
