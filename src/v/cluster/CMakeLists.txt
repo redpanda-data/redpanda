@@ -1,4 +1,11 @@
 find_package(Roaring REQUIRED)
+include(rpcgen)
+rpcgen(
+  TARGET controller_rpc
+  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/controller.json
+  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/controller_service.h
+  INCLUDES ${CMAKE_BINARY_DIR}/src/v
+)
 
 add_library (cluster STATIC
   controller.cc
@@ -14,6 +21,7 @@ add_library (cluster STATIC
 target_link_libraries(cluster
   PUBLIC
   Seastar::seastar
+  controller_rpc
   raft
   Roaring::roaring
   )
