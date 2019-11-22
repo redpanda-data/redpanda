@@ -27,48 +27,51 @@ class controller_tests_fixture {
 public:
     static constexpr int complex_topic_count{10};
     int complex_partitions_count{0};
+
     controller_tests_fixture()
+      : controller_tests_fixture(
+        model::node_id{1},
+        smp::count,
+        9092,
+        9090,
+        {{.id = model::node_id{1},
+          .addr = unresolved_address("127.0.0.1", 9090)}}) {}
+
+    controller_tests_fixture(
+      model::node_id node_id,
+      int32_t cores,
+      int32_t kafka_port,
+      int32_t rpc_port,
+      std::vector<config::seed_server> seeds)
       : _base_dir("test_dir_" + random_generators::gen_alphanum_string(4))
       , _current_node(
-          model::node_id(1),
-          unresolved_address("127.0.0.1", 9092),
-          unresolved_address("127.0.0.1", 11000),
+          model::node_id(node_id),
+          unresolved_address("127.0.0.1", kafka_port),
+          unresolved_address("127.0.0.1", rpc_port),
           std::nullopt,
-          model::broker_properties{.cores = smp::count}) {
+          model::broker_properties{.cores = smp::count})
+      , _seeds(std::move(seeds)) {
         _cli_cache.start().get0();
         _md_cache.start().get0();
         st.start().get0();
         storage::directories::initialize(_base_dir).get0();
-
-        config::data_directory_path data_dir_path{
-          .path = std::filesystem::path(_base_dir)};
-        set_configuration("data_directory", data_dir_path);
-        set_configuration("node_id", _current_node.id());
-        set_configuration("kafka_api", unresolved_address("127.0.0.1", 9092));
-        std::vector<config::seed_server> seeds{
-          {.id = model::node_id{1},
-           .addr = unresolved_address("127.0.0.1", 9090)}};
-        set_configuration("seed_servers", seeds);
-
-        using namespace std::chrono_literals;
-        _pm
-          .start(
-            storage::log_append_config::fsync::no,
-            model::timeout_clock::duration(10s),
-            std::ref(st),
-            std::ref(_cli_cache))
-          .get0();
     }
 
     cluster::metadata_cache& get_local_cache() { return _md_cache.local(); }
 
+    cluster::partition_manager& get_local_partition_manger() {
+        return _pm.local();
+    }
+
     ~controller_tests_fixture() {
-        _controller->stop().get0();
         _rpc.stop().get0();
+        _pm.stop().get0();
         st.stop().get0();
         _md_cache.stop().get0();
         _cli_cache.stop().get0();
-        _pm.stop().get0();
+        if (_controller) {
+            _controller->stop().get0();
+        }
     }
 
     void persist_test_batches(std::vector<model::record_batch> batches) {
@@ -78,6 +81,22 @@ public:
     }
 
     cluster::controller& get_controller() {
+        config::data_directory_path data_dir_path{
+          .path = std::filesystem::path(_base_dir)};
+        set_configuration("data_directory", data_dir_path);
+        set_configuration("node_id", _current_node.id());
+        set_configuration("kafka_api", _current_node.kafka_api_address());
+        set_configuration("rpc_server", _current_node.rpc_address());
+        set_configuration("seed_servers", _seeds);
+
+        using namespace std::chrono_literals;
+        _pm
+          .start(
+            storage::log_append_config::fsync::no,
+            model::timeout_clock::duration(2s),
+            std::ref(st),
+            std::ref(_cli_cache))
+          .get0();
         _controller = std::make_unique<cluster::controller>(
           std::ref(_pm),
           std::ref(st),
@@ -231,8 +250,8 @@ public:
 
 private:
     static constexpr size_t _max_segment_size = 100'000;
-
     model::ns _test_ns{"test_ns"};
+    std::vector<config::seed_server> _seeds;
     sstring _base_dir;
     model::broker _current_node;
     sharded<rpc::connection_cache> _cli_cache;
