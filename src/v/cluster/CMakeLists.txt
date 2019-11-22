@@ -16,6 +16,7 @@ add_library (cluster STATIC
   type_serializers.cc
   logger.cc
   cluster_utils.cc
+  service.cc
   )
 
 target_link_libraries(cluster
