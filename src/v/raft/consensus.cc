@@ -230,7 +230,10 @@ void consensus::dispatch_vote() {
     }
     // 5.2.1.4 - prepare next timeout
     arm_vote_timeout();
-
+    // do not vote when there are no voters available
+    if (!_conf.has_voters()) {
+        return;
+    }
     // background, acquire lock, transition state
     (void)with_gate(_bg, [this] {
         // must be oustside semaphore
@@ -512,17 +515,4 @@ consensus::disk_append(std::vector<entry>&& entries) {
           return make_ready_future<ret_t>(std::move(ret));
       });
 }
-
-std::optional<model::broker> consensus::find_in_nodes(model::node_id id) {
-    return details::find_machine(_conf.nodes, id);
-}
-
-std::optional<model::broker> consensus::find_in_learners(model::node_id id) {
-    return details::find_machine(_conf.learners, id);
-}
-
-bool consensus::contains_machine(model::node_id id) {
-    return find_in_nodes(id) || find_in_learners(id);
-}
-
 } // namespace raft

@@ -41,3 +41,10 @@ rp_test(
   SOURCES foreign_entry_test.cc
   LIBRARIES Seastar::seastar_testing raft
   )
+rp_test(
+    UNIT_TEST
+    BINARY_NAME group_configuration_tests
+    SOURCES group_configuration_tests.cc
+    DEFINITIONS BOOST_TEST_DYN_LINK
+    LIBRARIES Boost::unit_test_framework raft
+)

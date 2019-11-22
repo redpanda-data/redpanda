@@ -41,6 +41,18 @@ struct group_configuration {
     group_configuration() = default;
     group_configuration(group_configuration&&) noexcept = default;
     group_configuration& operator=(group_configuration&&) noexcept = default;
+
+    inline bool has_voters() const {
+        return !nodes.empty();
+    }
+
+    inline bool has_learners() const {
+        return !learners.empty();
+    }
+
+    std::optional<model::broker> find_in_nodes(model::node_id id) const;
+    std::optional<model::broker> find_in_learners(model::node_id id) const;
+    bool contains_machine(model::node_id id) const;
 };
 
 struct follower_index_metadata {
