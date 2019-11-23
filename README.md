@@ -1,4 +1,4 @@
-# How to get started
+# How to get started [build status](https://console.cloud.google.com/cloud-build/builds?project=redpandaci)
 
 ## Building 
 
