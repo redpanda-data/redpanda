@@ -44,6 +44,9 @@ public:
     [[gnu::always_inline]] inline uint64_t digest() {
         return XXH64_digest(&_state);
     }
+    ~incremental_xxhash64() noexcept {
+        reset();
+    }
 
 private:
     XXH64_state_t _state;
