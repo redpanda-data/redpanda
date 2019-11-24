@@ -79,7 +79,7 @@ log_segment_reader::log_segment_reader(
   , _seg(std::move(seg))
   , _tracker(tracker)
   , _config(std::move(config))
-  , _consumer(skipping_consumer(*this))
+  , _consumer(skipping_consumer(*this, config.start_offset))
   , _probe(probe) {
 }
 
@@ -88,7 +88,6 @@ bool log_segment_reader::is_initialized() const {
 }
 
 future<> log_segment_reader::initialize() {
-    // FIXME: Read from offset index
     _input = _seg->data_stream(0, _config.prio);
     _parser = continuous_batch_parser(_consumer, _input);
     return make_ready_future<>();

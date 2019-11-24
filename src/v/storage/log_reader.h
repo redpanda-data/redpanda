@@ -23,8 +23,10 @@ class log_segment_reader;
 
 class skipping_consumer : public batch_consumer {
 public:
-    explicit skipping_consumer(log_segment_reader& reader) noexcept
-      : _reader(reader) {
+    explicit skipping_consumer(
+      log_segment_reader& reader, model::offset start_offset) noexcept
+      : _reader(reader)
+      , _start_offset(start_offset) {
     }
 
     void set_timeout(model::timeout_clock::time_point timeout) {

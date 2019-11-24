@@ -167,3 +167,33 @@ SEASTAR_THREAD_TEST_CASE(test_reads_at_least_one_batch) {
         check_batches(res, first);
     }
 }
+
+SEASTAR_THREAD_TEST_CASE(test_seeks_to_first_relevant_batch) {
+    context ctx;
+    auto batches = test::make_random_batches(model::offset(0), 10);
+    ctx.write(batches);
+    ctx.tracker.update_committed_offset(model::offset(1000));
+    for (auto& b : batches) {
+        // seeks to batch with same base offset
+        auto reader = ctx.reader(b.base_offset(), 1);
+        auto res = reader.consume(consumer(), model::no_timeout).get0();
+        BOOST_TEST(!res.empty());
+        BOOST_TEST(res.front() == b);
+
+        // seeks to batch with a middle-ish offset
+        if (b.size() >= 3) {
+            auto offset = model::offset(
+              b.base_offset() + model::offset((b.size() / 2)));
+            reader = ctx.reader(offset, 1);
+            res = reader.consume(consumer(), model::no_timeout).get0();
+            BOOST_TEST(!res.empty());
+            BOOST_TEST(res.front() == b);
+        }
+
+        // seeks to batch with same last_offset
+        reader = ctx.reader(b.last_offset(), 1);
+        res = reader.consume(consumer(), model::no_timeout).get0();
+        BOOST_TEST(!res.empty());
+        BOOST_TEST(res.front() == b);
+    }
+}
