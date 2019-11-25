@@ -25,9 +25,6 @@ public:
                              model::partition_id(0)}};
 
     controller(
-      model::broker,
-      sstring basedir,
-      size_t max_segment_size,
       sharded<partition_manager>&,
       sharded<shard_table>&,
       sharded<metadata_cache>&);

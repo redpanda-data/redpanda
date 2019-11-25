@@ -5,25 +5,23 @@
 
 #include <seastar/core/reactor.hh>
 
+#include "config/configuration.cc"
+
 namespace cluster {
 
 partition_manager::partition_manager(
-  model::node_id::type nid,
-  std::chrono::milliseconds raft_timeout,
-  sstring base_dir,
-  size_t max_segment_size,
   storage::log_append_config::fsync should_fsync,
   model::timeout_clock::duration disk_timeout,
   sharded<cluster::shard_table>& nlc,
   sharded<raft::client_cache>& clients)
-  : _self(std::move(nid))
+  : _self(config::shard_local_cfg().node_id())
   , _should_fsync(should_fsync)
   , _disk_timeout(disk_timeout)
   , _mngr(storage::log_config{
-      .base_dir = base_dir,
-      .max_segment_size = max_segment_size,
+      .base_dir = config::shard_local_cfg().data_directory().as_sstring(),
+      .max_segment_size = config::shard_local_cfg().log_segment_size(),
       .should_sanitize = storage::log_config::sanitize_files::no})
-  , _hbeats(raft_timeout, clients)
+  , _hbeats(config::shard_local_cfg().raft_timeout(), clients)
   , _shard_table(nlc)
   , _clients(clients) {
 }
@@ -71,7 +69,7 @@ partition_manager::manage(model::ntp ntp, raft::group_id group) {
           _raft_table.emplace(group, p);
           return with_gate(_bg, [this, p, c, group] {
               clusterlog.debug("Recovering raft group: {}", group);
-              return p->start().then([this, c] () mutable {
+              return p->start().then([this, c]() mutable {
                   _hbeats.register_group(c);
                   return c;
               });

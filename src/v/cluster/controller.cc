@@ -2,6 +2,7 @@
 
 #include "cluster/logger.h"
 #include "cluster/simple_batch_builder.h"
+#include "config/configuration.h"
 #include "model/record_batch_reader.h"
 #include "resource_mgmt/io_priority.h"
 #include "storage/shard_assignment.h"
@@ -14,13 +15,10 @@ static void verify_shard() {
 }
 
 controller::controller(
-  model::broker n,
-  sstring basedir,
-  size_t max_segment_size,
   sharded<partition_manager>& pm,
   sharded<shard_table>& st,
   sharded<metadata_cache>& md_cache)
-  : _self(std::move(n))
+  : _self(config::make_self_broker(config::shard_local_cfg()))
   , _pm(pm)
   , _st(st)
   , _md_cache(md_cache)

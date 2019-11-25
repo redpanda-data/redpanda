@@ -1,4 +1,5 @@
 #pragma once
+#include "config/configuration.h"
 #include "resource_mgmt/rate.h"
 
 #include <seastar/core/future.hh>
@@ -39,16 +40,12 @@ public:
         clock::duration duration;
     };
 
-    quota_manager(
-      std::size_t num_windows,
-      clock::duration window_width,
-      uint32_t target_tp_rate,
-      clock::duration gc_freq)
-      : _default_num_windows(num_windows)
-      , _default_window_width(window_width)
-      , _target_tp_rate(target_tp_rate)
-      , _gc_freq(gc_freq) {
-        auto full_window = num_windows * window_width;
+    quota_manager()
+      : _default_num_windows(config::shard_local_cfg().default_num_windows())
+      , _default_window_width(config::shard_local_cfg().default_window_sec())
+      , _target_tp_rate(config::shard_local_cfg().target_quota_byte_rate())
+      , _gc_freq(config::shard_local_cfg().quota_manager_gc_sec()) {
+        auto full_window = _default_num_windows * _default_window_width;
         _gc_timer.set_callback([this, full_window] { gc(full_window); });
     }
 

@@ -132,15 +132,10 @@ void application::configure_admin_server() {
 // add additional services in here
 void application::wire_up_services() {
     // cluster
-    auto& conf = config::shard_local_cfg();
     construct_service(_raft_client_cache).get();
     construct_service(shard_table).get();
     construct_service(
       partition_manager,
-      conf.node_id(),
-      std::chrono::milliseconds(conf.raft_timeout()),
-      conf.data_directory().as_sstring(),
-      conf.log_segment_size(),
       storage::log_append_config::fsync::yes,
       std::chrono::seconds(10), // disk timeout
       std::ref(shard_table),
@@ -152,12 +147,7 @@ void application::wire_up_services() {
     construct_service(metadata_cache).get();
 
     _controller = std::make_unique<cluster::controller>(
-      config::make_self_broker(conf),
-      conf.data_directory().as_sstring(),
-      conf.log_segment_size(),
-      partition_manager,
-      shard_table,
-      metadata_cache);
+      partition_manager, shard_table, metadata_cache);
     _deferred.emplace_back([this] { _controller->stop().get(); });
 
     // group membership
@@ -174,17 +164,11 @@ void application::wire_up_services() {
     // rpc
     rpc::server_configuration rpc_cfg;
     rpc_cfg.max_service_memory_per_core = memory_groups::rpc_total_memory();
-    rpc_cfg.addrs.push_back(conf.rpc_server);
+    rpc_cfg.addrs.push_back(config::shard_local_cfg().rpc_server);
     construct_service(_rpc, rpc_cfg).get();
 
     // metrics and quota management
-    construct_service(
-      _quota_mgr,
-      conf.default_num_windows(),
-      conf.default_window_sec(),
-      conf.target_quota_byte_rate(),
-      conf.quota_manager_gc_sec())
-      .get();
+    construct_service(_quota_mgr).get();
 
     construct_service(
       cntrl_dispatcher,
