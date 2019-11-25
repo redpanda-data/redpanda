@@ -4,20 +4,18 @@
 #include "redpanda/application.h"
 #include "storage/directories.h"
 #include "storage/tests/random_batch.h"
+#include "test_utils/fixture.h"
 #include "test_utils/logs.h"
 
 #include <seastar/util/log.hh>
 
 #include <fmt/format.h>
-#include <v/native_thread_pool.h>
 
 #include <filesystem>
 
 class redpanda_test_fixture {
 public:
-    redpanda_test_fixture()
-      : thread_pool(1, 1, 0) {
-        thread_pool.start().get();
+    redpanda_test_fixture() {
         app.initialize();
         configure();
         app.check_environment();
@@ -27,7 +25,6 @@ public:
     }
 
     ~redpanda_test_fixture() {
-        thread_pool.stop().get();
         std::filesystem::remove_all(data_dir);
     }
 
@@ -48,6 +45,5 @@ public:
     }
 
     application app;
-    v::ThreadPool thread_pool;
     std::filesystem::path data_dir;
 };
