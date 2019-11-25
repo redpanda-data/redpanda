@@ -3,6 +3,7 @@
 #include "raft/service.h"
 #include "storage/directories.h"
 #include "syschecks/syschecks.h"
+#include "test_utils/logs.h"
 #include "utils/file_io.h"
 
 #include <seastar/core/prometheus.hh>
