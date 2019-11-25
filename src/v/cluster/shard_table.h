@@ -17,7 +17,7 @@ public:
     shard_id shard_for(const raft::group_id& group) {
         return _group_idx.find(group)->second;
     }
-    bool contains(const model::ntp& ntp) {
+    bool contains(const model::ntp& ntp) const {
         return _ntp_idx.find(ntp) != _ntp_idx.end();
     }
     /// \brief from storage::shard_assignment
