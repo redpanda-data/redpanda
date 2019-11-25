@@ -10,13 +10,12 @@ target_link_libraries(application
   PUBLIC
     Seastar::seastar
     cluster
-    config
   )
 
 add_executable(redpanda
     main.cc
   )
-target_link_libraries(redpanda PUBLIC application raft kafka config)
+target_link_libraries(redpanda PUBLIC application raft kafka)
 set_property(TARGET redpanda PROPERTY POSITION_INDEPENDENT_CODE ON)
 add_dependencies(application config_swagger)
 

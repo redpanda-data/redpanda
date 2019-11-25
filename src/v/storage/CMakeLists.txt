@@ -14,7 +14,7 @@ add_library(storage STATIC
 target_link_libraries(storage PUBLIC
   Seastar::seastar
   bytes
-  model
+  config
   rphashing
   finjector)
 
