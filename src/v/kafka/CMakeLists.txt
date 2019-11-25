@@ -28,8 +28,6 @@ target_link_libraries(kafka
   PUBLIC
     Seastar::seastar
     bytes
-    cluster
-    model
-    storage)
+    cluster)
 
 add_subdirectory(tests)
