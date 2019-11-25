@@ -128,4 +128,9 @@ void configuration::read_yaml(const YAML::Node& root_node) {
     }
     config_store::read_yaml(root_node["redpanda"]);
 }
+
+configuration& shard_local_cfg() {
+    static thread_local configuration cfg;
+    return cfg;
+}
 } // namespace config

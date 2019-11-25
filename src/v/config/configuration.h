@@ -57,6 +57,8 @@ private:
     property<std::optional<socket_address>> _advertised_kafka_api;
 };
 
+configuration& shard_local_cfg();
+
 using conf_ref = typename std::reference_wrapper<configuration>;
 
 static inline model::broker make_self_broker(const configuration& cfg) {
