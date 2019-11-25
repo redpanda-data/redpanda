@@ -66,6 +66,7 @@ public:
     sharded<kafka::controller_dispatcher> cntrl_dispatcher;
     sharded<cluster::shard_table> shard_table;
     sharded<cluster::partition_manager> partition_manager;
+    std::unique_ptr<cluster::controller> controller;
 
 private:
     using deferred_actions
@@ -99,7 +100,6 @@ private:
     sharded<http_server> _admin;
     sharded<kafka::quota_manager> _quota_mgr;
     sharded<kafka::kafka_server> _kafka_server;
-    std::unique_ptr<cluster::controller> _controller;
 
     // run these first on destruction
     deferred_actions _deferred;
