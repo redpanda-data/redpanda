@@ -26,7 +26,7 @@ struct configuration final : public config_store {
     // Network
     property<socket_address> rpc_server;
     // Raft
-    property<int32_t> node_id;
+    property<model::node_id> node_id;
     property<int32_t> seed_server_meta_topic_partitions;
     property<std::chrono::milliseconds> raft_timeout;
     property<std::vector<seed_server>> seed_servers;
@@ -44,6 +44,7 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> quota_manager_gc_sec;
     property<uint32_t> target_quota_byte_rate;
     property<std::optional<sstring>> rack;
+    property<bool> disable_metrics;
 
     configuration();
 
@@ -56,6 +57,8 @@ struct configuration final : public config_store {
 private:
     property<std::optional<socket_address>> _advertised_kafka_api;
 };
+
+configuration& shard_local_cfg();
 
 using conf_ref = typename std::reference_wrapper<configuration>;
 
@@ -107,6 +110,12 @@ struct adl_serializer<std::optional<T>> {
         if (v) {
             j = *v;
         }
+    }
+};
+template<typename T, typename Tag>
+struct adl_serializer<named_type<T, Tag>> {
+    static void to_json(json& j, const named_type<T, Tag>& v) {
+        j = v();
     }
 };
 } // namespace nlohmann
@@ -294,6 +303,23 @@ struct convert<std::optional<T>> {
         } else {
             rhs = std::nullopt;
         }
+        return true;
+    }
+};
+
+template<typename T, typename Tag>
+struct convert<named_type<T, Tag>> {
+    using type = named_type<T, Tag>;
+
+    static Node encode(const type& rhs) {
+        return Node(rhs());
+    }
+
+    static bool decode(const Node& node, type& rhs) {
+        if (!node) {
+            return false;
+        }
+        rhs = type{node.as<T>()};
         return true;
     }
 };

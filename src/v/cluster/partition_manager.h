@@ -12,10 +12,6 @@ namespace cluster {
 class partition_manager {
 public:
     partition_manager(
-      model::node_id::type nid,
-      std::chrono::milliseconds raft_timeout,
-      sstring base_dir,
-      size_t max_segment_size,
       storage::log_append_config::fsync should_fsync,
       model::timeout_clock::duration disk_timeout,
       sharded<cluster::shard_table>& nlc,

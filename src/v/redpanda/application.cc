@@ -30,7 +30,6 @@ int application::run(int ac, char** av) {
             });
             initialize();
             hydrate_config(cfg);
-            propogate_config();
             check_environment();
             configure_admin_server();
             wire_up_services();
@@ -42,7 +41,6 @@ int application::run(int ac, char** av) {
 }
 
 void application::initialize() {
-    construct_service(_conf).get();
     _scheduling_groups.create_groups().get();
     _smp_groups.create_groups().get();
 }
@@ -78,27 +76,18 @@ void application::hydrate_config(const po::variables_map& cfg) {
     auto in = iobuf::iterator_consumer(buf.cbegin(), buf.cend());
     in.consume_to(buf.size_bytes(), workaround.begin());
     YAML::Node config = YAML::Load(workaround);
-    _log.info("Read file:\n\n{}\n\n", config);
-    _conf.local().read_yaml(config);
-}
-
-void application::propogate_config() {
-    auto& local_cfg = _conf.local();
-    _conf
-      .invoke_on_others([&local_cfg, this](auto& cfg) {
-          // propagate to other shards
-          local_cfg.visit_all([&local_cfg, &cfg](auto& property) {
-              cfg.get(property.name()) = property;
-          });
-      })
-      .get();
+    _log.info("Configuration:\n\n{}\n\n", config);
+    smp::invoke_on_all([config] {
+        config::shard_local_cfg().read_yaml(config);
+    }).get0();
 }
 
 void application::check_environment() {
+    auto& cfg = config::shard_local_cfg();
     syschecks::cpu();
-    syschecks::memory(_conf.local().developer_mode());
+    syschecks::memory(config::shard_local_cfg().developer_mode());
     storage::directories::initialize(
-      _conf.local().data_directory().as_sstring())
+      config::shard_local_cfg().data_directory().as_sstring())
       .get();
 }
 
@@ -108,10 +97,10 @@ void application::configure_admin_server() {
     metrics_conf.metric_help = "redpanda metrics";
     metrics_conf.prefix = "vectorized";
     prometheus::add_prometheus_routes(_admin, metrics_conf).get();
-
-    if (_conf.local().enable_admin_api()) {
+    auto& conf = config::shard_local_cfg();
+    if (conf.enable_admin_api()) {
         auto rb = make_shared<api_registry_builder20>(
-          _conf.local().admin_api_doc_dir(), "/v1");
+          conf.admin_api_doc_dir(), "/v1");
         _admin
           .invoke_on_all([rb, this](http_server& server) {
               rb->set_api_doc(server._routes);
@@ -120,7 +109,7 @@ void application::configure_admin_server() {
               config_json::get_config.set(
                 server._routes, [this](const_req req) {
                     nlohmann::json jconf;
-                    _conf.local().to_json(jconf);
+                    config::shard_local_cfg().to_json(jconf);
                     return json::json_return_type(jconf.dump());
                 });
           })
@@ -128,15 +117,16 @@ void application::configure_admin_server() {
     }
 
     with_scheduling_group(_scheduling_groups.admin_sg(), [this] {
-        return _admin.invoke_on_all(&http_server::listen, _conf.local().admin())
+        return _admin
+          .invoke_on_all(
+            &http_server::listen, config::shard_local_cfg().admin())
           .handle_exception([this](auto ep) {
               _log.error("Exception on http admin server: {}", ep);
               return make_exception_future<>(ep);
           });
     }).get();
 
-    _log.info(
-      "Started HTTP admin service listening at {}", _conf.local().admin());
+    _log.info("Started HTTP admin service listening at {}", conf.admin());
 }
 
 // add additional services in here
@@ -146,10 +136,6 @@ void application::wire_up_services() {
     construct_service(shard_table).get();
     construct_service(
       partition_manager,
-      _conf.local().node_id(),
-      std::chrono::milliseconds(_conf.local().raft_timeout()),
-      _conf.local().data_directory().as_sstring(),
-      _conf.local().log_segment_size(),
       storage::log_append_config::fsync::yes,
       std::chrono::seconds(10), // disk timeout
       std::ref(shard_table),
@@ -161,12 +147,7 @@ void application::wire_up_services() {
     construct_service(metadata_cache).get();
 
     _controller = std::make_unique<cluster::controller>(
-      config::make_self_broker(_conf.local()),
-      _conf.local().data_directory().as_sstring(),
-      _conf.local().log_segment_size(),
-      partition_manager,
-      shard_table,
-      metadata_cache);
+      partition_manager, shard_table, metadata_cache);
     _deferred.emplace_back([this] { _controller->stop().get(); });
 
     // group membership
@@ -183,17 +164,11 @@ void application::wire_up_services() {
     // rpc
     rpc::server_configuration rpc_cfg;
     rpc_cfg.max_service_memory_per_core = memory_groups::rpc_total_memory();
-    rpc_cfg.addrs.push_back(_conf.local().rpc_server);
+    rpc_cfg.addrs.push_back(config::shard_local_cfg().rpc_server);
     construct_service(_rpc, rpc_cfg).get();
 
     // metrics and quota management
-    construct_service(
-      _quota_mgr,
-      _conf.local().default_num_windows(),
-      _conf.local().default_window_sec(),
-      _conf.local().target_quota_byte_rate(),
-      _conf.local().quota_manager_gc_sec())
-      .get();
+    construct_service(_quota_mgr).get();
 
     construct_service(
       cntrl_dispatcher,
@@ -216,14 +191,14 @@ void application::start() {
             shard_table.local());
       })
       .get();
+    auto& conf = config::shard_local_cfg();
     _rpc.invoke_on_all(&rpc::server::start).get();
-    _log.info("Started RPC server listening at {}", _conf.local().rpc_server());
+    _log.info("Started RPC server listening at {}", conf.rpc_server());
 
     _quota_mgr.invoke_on_all(&kafka::quota_manager::start).get();
 
     // Kafka API
-    auto kafka_creds
-      = _conf.local().kafka_api_tls().get_credentials_builder().get0();
+    auto kafka_creds = conf.kafka_api_tls().get_credentials_builder().get0();
     kafka::kafka_server_config server_config = {
       // FIXME: Add memory manager
       memory::stats().total_memory() / 10,
@@ -245,10 +220,9 @@ void application::start() {
     _kafka_server
       .invoke_on_all([this](kafka::kafka_server& server) mutable {
           // FIXME: Configure keepalive.
-          return server.listen(_conf.local().kafka_api(), false);
+          return server.listen(config::shard_local_cfg().kafka_api(), false);
       })
       .get();
 
-    _log.info(
-      "Started Kafka API server listening at {}", _conf.local().kafka_api());
+    _log.info("Started Kafka API server listening at {}", conf.kafka_api());
 }

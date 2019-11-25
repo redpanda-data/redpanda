@@ -119,7 +119,13 @@ configuration::configuration()
       "rack",
       "Rack identifier",
       required::no,
-      std::nullopt) {
+      std::nullopt)
+   , disable_metrics(
+      *this,
+      "disable_metrics",
+      "Disable registering metrics",
+      required::no,
+      false) {
 }
 
 void configuration::read_yaml(const YAML::Node& root_node) {
@@ -127,5 +133,10 @@ void configuration::read_yaml(const YAML::Node& root_node) {
         throw std::invalid_argument("'redpanda'root is required");
     }
     config_store::read_yaml(root_node["redpanda"]);
+}
+
+configuration& shard_local_cfg() {
+    static thread_local configuration cfg;
+    return cfg;
 }
 } // namespace config

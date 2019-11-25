@@ -33,19 +33,18 @@ public:
 
     void configure() {
         data_dir = fmt::format("test_dir_{}", time(0));
+        smp::invoke_on_all([this] {
+            auto& config = config::shard_local_cfg();
 
-        auto& config = app.config().local();
+            config.get("data_directory")
+              .set_value(config::data_directory_path{.path = data_dir});
 
-        config.get("data_directory")
-          .set_value(config::data_directory_path{.path = data_dir});
+            config.get("node_id").set_value(model::node_id(1));
 
-        config.get("node_id").set_value(1);
-
-        std::vector<config::seed_server> seed_servers = {
-          {1, socket_address(net::inet_address("127.0.0.1"), 33145)}};
-        config.get("seed_servers").set_value(seed_servers);
-
-        app.propogate_config();
+            std::vector<config::seed_server> seed_servers = {
+              {1, socket_address(net::inet_address("127.0.0.1"), 33145)}};
+            config.get("seed_servers").set_value(seed_servers);
+        }).get0();
     }
 
     application app;

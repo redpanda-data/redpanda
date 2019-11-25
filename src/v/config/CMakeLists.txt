@@ -6,6 +6,7 @@ add_library(config
 target_link_libraries(config
     PUBLIC
     Seastar::seastar
+    model
 )
 
 add_subdirectory(tests)
