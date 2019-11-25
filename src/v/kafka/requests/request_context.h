@@ -80,6 +80,14 @@ public:
 
     kafka::group_router_type& groups() { return _group_router; }
 
+    cluster::shard_table& shards() {
+        return _shard_table;
+    }
+
+    sharded<cluster::partition_manager>& partition_manager() {
+        return _partition_manager;
+    }
+
 private:
     sharded<cluster::metadata_cache>& _metadata_cache;
     controller_dispatcher& _cntrl_dispatcher;
