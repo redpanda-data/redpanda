@@ -58,15 +58,12 @@ public:
     int run(int, char**);
 
     void initialize();
-    void propogate_config();
     void check_environment();
     void configure_admin_server();
     void wire_up_services();
     void start();
 
-    sharded<config::configuration>& config() {
-        return _conf;
-    }
+  
 
     sharded<cluster::metadata_cache> metadata_cache;
     sharded<kafka::group_router_type> group_router;
@@ -98,7 +95,6 @@ private:
     logger _log{"redpanda::main"};
 
     // sharded services
-    sharded<config::configuration> _conf;
     sharded<raft::client_cache> _raft_client_cache;
     sharded<kafka::group_manager> _group_manager;
     sharded<kafka::group_shard_mapper<cluster::shard_table>>
