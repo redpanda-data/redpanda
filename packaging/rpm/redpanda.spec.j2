@@ -18,6 +18,7 @@ AutoReqProv:    no
 %global _build_id_links alldebug
 %setup -c
 
+%undefine _find_debuginfo_dwz_opts
 
 %pre
 getent group redpanda || /usr/sbin/groupadd redpanda 2> /dev/null || :
