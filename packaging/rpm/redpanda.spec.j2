@@ -113,7 +113,7 @@ install -m755 %{_topdir}/common/scripts/* -Dt "%{buildroot}/%{_prefix}/lib/redpa
 %systemd_preun redpanda.slice redpanda.service redpanda-tuner.service
 
 %postun
-%systemd_postun
+%systemd_postun redpanda.slice redpanda.service redpanda-tuner.service
 
 %posttrans
 ln -sfT /etc/redpanda /var/lib/redpanda/conf
