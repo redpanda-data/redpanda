@@ -39,6 +39,96 @@ struct fetch_request final {
 
     void encode(const request_context& ctx, response_writer& writer);
     void decode(request_context& ctx);
+
+    /*
+     * iterator over request partitions. this adapter iterator is used because
+     * the partitions are decoded off the wire directly into a hierarhical
+     * representation:
+     *
+     *       [
+     *         topic0 -> [...]
+     *         topic1 -> [topic1-part1, topic1-part2, ...]
+     *         ...
+     *         topicN -> [...]
+     *       ]
+     *
+     * the iterator value is a reference to the current topic and partition.
+     */
+    class const_iterator {
+    public:
+        using const_topic_iterator = std::vector<topic>::const_iterator;
+        using const_partition_iterator = std::vector<partition>::const_iterator;
+
+        struct value_type {
+            bool new_topic;
+            const_topic_iterator topic;
+            const_partition_iterator partition;
+        };
+
+        using difference_type = void;
+        using pointer = const value_type*;
+        using reference = const value_type&;
+        using iterator_category = std::forward_iterator_tag;
+
+        const_iterator(const_topic_iterator begin, const_topic_iterator end)
+          : state_({.new_topic = true, .topic = begin})
+          , t_end_(end) {
+            if (__builtin_expect(state_.topic != t_end_, true)) {
+                state_.partition = state_.topic->partitions.cbegin();
+                normalize();
+            }
+        }
+
+        reference operator*() const noexcept { return state_; }
+
+        pointer operator->() const noexcept { return &state_; }
+
+        const_iterator& operator++() {
+            state_.partition++;
+            state_.new_topic = false;
+            normalize();
+            return *this;
+        }
+
+        bool operator==(const const_iterator& o) const noexcept {
+            if (state_.topic == o.state_.topic) {
+                if (state_.topic == t_end_) {
+                    return true;
+                } else {
+                    return state_.partition == o.state_.partition;
+                }
+            }
+            return false;
+        }
+
+        bool operator!=(const const_iterator& o) const noexcept {
+            return !(*this == o);
+        }
+
+    private:
+        void normalize() {
+            while (state_.partition == state_.topic->partitions.cend()) {
+                state_.topic++;
+                state_.new_topic = true;
+                if (state_.topic != t_end_) {
+                    state_.partition = state_.topic->partitions.cbegin();
+                } else {
+                    break;
+                }
+            }
+        }
+
+        value_type state_;
+        const_topic_iterator t_end_;
+    };
+
+    const_iterator cbegin() const {
+        return const_iterator(topics.cbegin(), topics.cend());
+    }
+
+    const_iterator cend() const {
+        return const_iterator(topics.cend(), topics.cend());
+    }
 };
 
 std::ostream& operator<<(std::ostream&, const fetch_request&);
