@@ -68,7 +68,7 @@ rp_test(
   BINARY_NAME metadata_test
   SOURCES metadata_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
-  LIBRARIES Seastar::seastar_testing application raft kafka config CppKafka::cppkafka
+  LIBRARIES Seastar::seastar_testing application raft kafka CppKafka::cppkafka
   ARGS "-- -c 1"
 )
 
@@ -79,7 +79,7 @@ rp_test(
   BINARY_NAME request_parser_test
   SOURCES request_parser_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
-  LIBRARIES Seastar::seastar_testing application raft kafka config
+  LIBRARIES Seastar::seastar_testing application raft kafka
   # generate request data as a prepare step. the test and prepare command run in
   # the same scratch directory so the generated output file writes to pwd.
   PREPARE_COMMAND "${KAFKA_PYTHON_ENV} ${PROJECT_SOURCE_DIR}/tools/kafka-python-api-serde.py 1000 > requests.bin"

@@ -1,6 +1,7 @@
 #pragma once
 #include "cluster/controller.h"
 #include "cluster/tests/utils.h"
+#include "config/configuration.h"
 #include "fmt/format.h"
 #include "model/record.h"
 #include "random/generators.h"
@@ -9,6 +10,12 @@
 
 using lrk = cluster::log_record_key;
 
+template<typename T>
+void set_configuration(sstring p_name, T v) {
+    smp::invoke_on_all([p_name, v = std::move(v)] {
+        config::shard_local_cfg().get(p_name).set_value(v);
+    }).get0();
+}
 class controller_tests_fixture {
 public:
     static constexpr int complex_topic_count{10};
@@ -19,14 +26,18 @@ public:
         _cli_cache.start().get0();
         _md_cache.start().get0();
         st.start().get0();
-        using namespace std::chrono_literals;
         storage::directories::initialize(_base_dir).get0();
+
+        config::data_directory_path data_dir_path{
+          .path = std::filesystem::path(_base_dir)};
+        set_configuration("data_directory", data_dir_path);
+        set_configuration("node_id", _current_node.id());
+        set_configuration(
+          "kafka_api", socket_address(net::inet_address("127.0.0.1"), 9092));
+
+        using namespace std::chrono_literals;
         _pm
           .start(
-            _current_node.id(),
-            1s,
-            _base_dir,
-            _max_segment_size,
             storage::log_append_config::fsync::no,
             model::timeout_clock::duration(10s),
             std::ref(st),
@@ -53,12 +64,7 @@ public:
 
     cluster::controller get_controller() {
         return cluster::controller(
-          _current_node,
-          _base_dir,
-          _max_segment_size,
-          std::ref(_pm),
-          std::ref(st),
-          std::ref(_md_cache));
+          std::ref(_pm), std::ref(st), std::ref(_md_cache));
     }
 
     model::ntp make_ntp(const sstring& topic, int32_t partition_id) {
@@ -72,26 +78,27 @@ public:
         std::vector<model::record_batch> ret;
 
         // topic with partition replicas on current broker
-        auto b1 = std::move(cluster::simple_batch_builder(
-                              cluster::controller::controller_record_batch_type,
-                              model::offset(0))
-                              .add_kv(
-                                lrk{lrk::type::topic_configuration},
-                                cluster::topic_configuration(
-                                  _test_ns, model::topic("topic_1"), 2, 1))
-                              // partition 0
-                              .add_kv(
-                                lrk{lrk::type::partition_assignment},
-                                create_test_assignment(
-                                  "topic_1",
-                                0,                         // partition_id
-                                {{_current_node.id(), 0}}, // shards_assignment
-                                2))                        // group_id
-                              // partition 1
-                              .add_kv(
-                                lrk{lrk::type::partition_assignment},
-                                create_test_assignment(
-                                "topic_1", 1, {{_current_node.id(), 0}}, 3)))
+        auto b1 = std::move(
+                    cluster::simple_batch_builder(
+                      cluster::controller::controller_record_batch_type,
+                      model::offset(0))
+                      .add_kv(
+                        lrk{lrk::type::topic_configuration},
+                        cluster::topic_configuration(
+                          _test_ns, model::topic("topic_1"), 2, 1))
+                      // partition 0
+                      .add_kv(
+                        lrk{lrk::type::partition_assignment},
+                        create_test_assignment(
+                          "topic_1",
+                          0,                         // partition_id
+                          {{_current_node.id(), 0}}, // shards_assignment
+                          2))                        // group_id
+                      // partition 1
+                      .add_kv(
+                        lrk{lrk::type::partition_assignment},
+                        create_test_assignment(
+                          "topic_1", 1, {{_current_node.id(), 0}}, 3)))
                     .build();
         ret.push_back(std::move(b1));
 
@@ -161,8 +168,9 @@ public:
 
             for (int p = 0; p < partitions; p++) {
                 std::vector<std::pair<uint32_t, uint32_t>> replicas;
-                replicas.push_back({_current_node.id(),
-                                    random_generators::get_int<int16_t>() % smp::count});
+                replicas.push_back(
+                  {_current_node.id(),
+                   random_generators::get_int<int16_t>() % smp::count});
                 builder.add_kv(
                   lrk{lrk::type::partition_assignment},
                   create_test_assignment(

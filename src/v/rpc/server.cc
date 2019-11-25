@@ -39,7 +39,10 @@ server::server(server_configuration c)
   , _creds(
       cfg.credentials ? (*cfg.credentials).build_server_credentials()
                       : nullptr) {
-    _probe.setup_metrics(_metrics);
+    if (!cfg.disable_metrics) {
+        setup_metrics();
+        _probe.setup_metrics(_metrics);
+    }
 }
 
 server::~server() {
