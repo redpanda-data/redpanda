@@ -39,7 +39,7 @@ public:
             config.get("data_directory")
               .set_value(config::data_directory_path{.path = data_dir});
 
-            config.get("node_id").set_value(1);
+            config.get("node_id").set_value(model::node_id(1));
 
             std::vector<config::seed_server> seed_servers = {
               {1, socket_address(net::inet_address("127.0.0.1"), 33145)}};
