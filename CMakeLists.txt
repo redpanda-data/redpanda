@@ -12,12 +12,12 @@ set(CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS} -v")
 
 #ninja  1161.66s user 64.94s system 658% cpu 3:06.18 total
 #ninja  825.41s user 49.15s system 586% cpu 2:29.21 total
-set(CMAKE_CXX_FLAGS_DEBUG "-O0 -gsplit-dwarf -Wl,--gdb-index")
+set(CMAKE_CXX_FLAGS_DEBUG "-O0 -gsplit-dwarf -Wl,--gdb-index  --build-id=sha1")
 # do not use split-dwarf on release builds because we would have
 # to ship additional files to remote servers
-set(CMAKE_CXX_FLAGS_RELEASE "-O2 -g -DNDEBUG")
-set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g -DNDEBUG")
-set(CMAKE_CXX_FLAGS_MINSIZEREL "-Os -DNDEBUG")
+set(CMAKE_CXX_FLAGS_RELEASE "-O2 -g -DNDEBUG  --build-id=sha1")
+set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g -DNDEBUG  --build-id=sha1")
+set(CMAKE_CXX_FLAGS_MINSIZEREL "-Os -DNDEBUG  --build-id=sha1")
 set(Boost_USE_STATIC_LIBS OFF CACHE BOOL "")
 set(Boost_NO_BOOST_CMAKE ON CACHE BOOL "")
 
