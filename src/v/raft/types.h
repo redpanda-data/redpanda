@@ -42,12 +42,16 @@ struct group_configuration {
     group_configuration(group_configuration&&) noexcept = default;
     group_configuration& operator=(group_configuration&&) noexcept = default;
 
-    inline bool has_voters() const {
+    bool has_voters() const {
         return !nodes.empty();
     }
 
-    inline bool has_learners() const {
+    bool has_learners() const {
         return !learners.empty();
+    }
+
+    size_t majority() const {
+        return (nodes.size() / 2) + 1;
     }
 
     std::optional<model::broker> find_in_nodes(model::node_id id) const;
@@ -88,6 +92,13 @@ private:
 };
 
 struct append_entries_request {
+    append_entries_request() = default;
+    append_entries_request(const append_entries_request&) = delete;
+    append_entries_request& operator=(const append_entries_request&) = delete;
+    append_entries_request(append_entries_request&&) noexcept = default;
+    append_entries_request& operator=(append_entries_request&&) noexcept
+      = default;
+
     model::node_id node_id;
     protocol_metadata meta;
     std::vector<entry> entries;
@@ -154,3 +165,10 @@ void serialize(iobuf&, raft::entry&&);
 template<>
 future<raft::entry> deserialize(source&);
 } // namespace rpc
+
+static inline std::ostream&
+operator<<(std::ostream& o, const raft::protocol_metadata& m) {
+    return o << "{raft_group:" << m.group << ", commit_index:" << m.commit_index
+             << ", term:" << m.term << ", prev_log_index:" << m.prev_log_index
+             << ", prev_log_term:" << m.prev_log_term << "}";
+}

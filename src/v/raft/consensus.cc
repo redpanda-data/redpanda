@@ -2,10 +2,12 @@
 
 #include "raft/consensus_utils.h"
 #include "raft/logger.h"
+#include "raft/replicate_entries_stm.h"
 #include "seastarx.h"
 
 #include <seastar/core/fstream.hh>
 
+#include <iterator>
 namespace raft {
 using vote_request_ptr = consensus::vote_request_ptr;
 using vote_reply_ptr = consensus::vote_reply_ptr;
@@ -42,6 +44,43 @@ future<> consensus::stop() {
     return _bg.close();
 }
 
+future<> consensus::update_machines_configuration(model::broker node) {
+    // FIXME: Add node to followers if it does not exists yet.
+
+    // STUB: As only one node will join the cluster add it to list to
+    //       allow raft to work
+    if (!_conf.contains_machine(node.id())) {
+        _conf.nodes.push_back(std::move(node));
+    }
+    return make_ready_future<>();
+}
+
+void consensus::process_heartbeat(append_entries_reply&&) {
+}
+
+future<> consensus::replicate(raft::entry&& e) {
+    if (!is_leader()) {
+        return make_exception_future<>(std::runtime_error(fmt::format(
+          "Not the leader(self.node_id:{}, meta:{}). Cannot "
+          "consensus::replicate(entry&&)",
+          _self,
+          _meta.group)));
+    }
+
+    return with_semaphore(_op_sem, 1, [this, e = std::move(e)]() mutable {
+        // entyr point for append_entries_request throughout the system
+        append_entries_request req;
+        req.node_id = _self;
+        req.meta = _meta;
+        req.entries.reserve(1);
+        req.entries.push_back(std::move(e));
+        auto stm = make_lw_shared<replicate_entries_stm>(
+          this, 3, std::move(req));
+        return stm->apply().finally(
+          [stm] { (void)stm->wait().finally([stm] {}); });
+    });
+} // namespace raft
+
 static future<vote_reply_ptr> one_vote(
   model::node_id node, const sharded<client_cache>& cls, vote_request r) {
     // FIXME #206
@@ -73,7 +112,7 @@ static future<vote_reply_ptr> one_vote(
 /// and dispatch all our nodes asynchrnously
 future<> consensus::replicate_config_as_new_leader() {
     // FIXME
-    //STUB: stubbed for single node testing
+    // STUB: stubbed for single node testing
     _conf.leader_id = _self;
     return make_ready_future<>();
 }
@@ -212,7 +251,7 @@ future<> consensus::do_dispatch_vote(clock_type::time_point timeout) {
             return process_vote_replies(std::move(replies));
         });
     });
-    
+
     return make_ready_future<>();
 }
 /// performs no raft-state mutation other than resetting the timer
@@ -406,7 +445,13 @@ consensus::do_append_entries(append_entries_request&& r) {
         _probe.append_request_heartbeat();
         return make_ready_future<append_entries_reply>(std::move(reply));
     }
-
+    // if we have already committed the offset, return success
+    if (r.meta.commit_index == _meta.commit_index) {
+        reply.success = true;
+        // TODO: add probe
+        //_probe.append_request_duplicate_batch();
+        return make_ready_future<append_entries_reply>(std::move(reply));
+    }
     // sucess. copy entries for each subsystem
     using offsets_ret = std::vector<storage::log::append_result>;
     using entries_t = std::vector<entry>;
@@ -463,8 +508,14 @@ future<append_entries_reply> consensus::success_case_append_entries(
     // always update metadata first!
     const model::offset last_offset = disk_results.back().last_offset;
     const model::offset begin_offset = model::offset(_meta.commit_index);
+    if (disk_results.size() == 1) {
+        _meta.prev_log_index = _meta.commit_index;
+        _meta.prev_log_term = _meta.term;
+    } else {
+        _meta.prev_log_index = std::prev(disk_results.end(), 2)->last_offset;
+        _meta.prev_log_term = _meta.term;
+    }
     _meta.commit_index = last_offset;
-    _meta.prev_log_term = sender.term;
 
     append_entries_reply reply;
     reply.node_id = _self();
