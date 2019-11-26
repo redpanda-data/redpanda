@@ -39,7 +39,8 @@ function debs() {
             debhelper \
             fakeroot \
             rpm \
-            python3-jinja2
+            python3-jinja2 \
+            libsystemd-dev
 }
 
 function rpms() {
@@ -92,7 +93,8 @@ function rpms() {
               debhelper \
               fakeroot \
               rpm-build \
-              python3-jinja2
+              python3-jinja2 \
+              systemd-devel
 }
 
 

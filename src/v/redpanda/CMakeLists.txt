@@ -10,6 +10,7 @@ target_link_libraries(application
   PUBLIC
     Seastar::seastar
     cluster
+    syschecks
   )
 
 add_executable(redpanda

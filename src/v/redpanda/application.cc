@@ -84,6 +84,7 @@ void application::hydrate_config(const po::variables_map& cfg) {
 
 void application::check_environment() {
     auto& cfg = config::shard_local_cfg();
+    syschecks::systemd_message("checking environment (CPU, Mem)");
     syschecks::cpu();
     syschecks::memory(config::shard_local_cfg().developer_mode());
     storage::directories::initialize(
@@ -92,6 +93,7 @@ void application::check_environment() {
 }
 
 void application::configure_admin_server() {
+    syschecks::systemd_message("constructing http server");
     construct_service(_admin, sstring("admin")).get();
     prometheus::config metrics_conf;
     metrics_conf.metric_help = "redpanda metrics";
@@ -99,6 +101,8 @@ void application::configure_admin_server() {
     prometheus::add_prometheus_routes(_admin, metrics_conf).get();
     auto& conf = config::shard_local_cfg();
     if (conf.enable_admin_api()) {
+        syschecks::systemd_message(
+          "enabling admin HTTP api: {}", config::shard_local_cfg().admin());
         auto rb = make_shared<api_registry_builder20>(
           conf.admin_api_doc_dir(), "/v1");
         _admin
@@ -132,8 +136,11 @@ void application::configure_admin_server() {
 // add additional services in here
 void application::wire_up_services() {
     // cluster
+    syschecks::systemd_message("Adding raft client cache");
     construct_service(_raft_client_cache).get();
+    syschecks::systemd_message("Building shard-lookup tables");
     construct_service(shard_table).get();
+    syschecks::systemd_message("Adding partition manager");
     construct_service(
       partition_manager,
       storage::log_append_config::fsync::yes,
@@ -144,15 +151,20 @@ void application::wire_up_services() {
     _log.info("Partition manager started");
 
     // controller
+    syschecks::systemd_message("Creating kafka metadata cache");
     construct_service(metadata_cache).get();
 
+    syschecks::systemd_message("Creating cluster::controller");
     _controller = std::make_unique<cluster::controller>(
       partition_manager, shard_table, metadata_cache);
     _deferred.emplace_back([this] { _controller->stop().get(); });
 
     // group membership
+    syschecks::systemd_message("Creating partition manager");
     construct_service(_group_manager, std::ref(partition_manager)).get();
+    syschecks::systemd_message("Creating kafka group shard mapper");
     construct_service(_group_shard_mapper, std::ref(shard_table)).get();
+    syschecks::systemd_message("Creating kafka group router");
     construct_service(
       group_router,
       _scheduling_groups.kafka_sg(),
@@ -165,11 +177,15 @@ void application::wire_up_services() {
     rpc::server_configuration rpc_cfg;
     rpc_cfg.max_service_memory_per_core = memory_groups::rpc_total_memory();
     rpc_cfg.addrs.push_back(config::shard_local_cfg().rpc_server);
+    syschecks::systemd_message(
+      "Starting internal RPC {}", config::shard_local_cfg().rpc_server);
     construct_service(_rpc, rpc_cfg).get();
 
     // metrics and quota management
+    syschecks::systemd_message("Adding kafka quota manager");
     construct_service(_quota_mgr).get();
 
+    syschecks::systemd_message("Building kafka controller dispatcher");
     construct_service(
       cntrl_dispatcher,
       std::ref(*_controller),
@@ -179,8 +195,10 @@ void application::wire_up_services() {
 }
 
 void application::start() {
+    syschecks::systemd_message("Starting controller");
     _controller->start().get();
 
+    syschecks::systemd_message("Starting RPC");
     _rpc
       .invoke_on_all([this](rpc::server& s) {
           s.register_service<
@@ -198,6 +216,7 @@ void application::start() {
     _quota_mgr.invoke_on_all(&kafka::quota_manager::start).get();
 
     // Kafka API
+    syschecks::systemd_message("Building TLS credentials for kafka");
     auto kafka_creds = conf.kafka_api_tls().get_credentials_builder().get0();
     kafka::kafka_server_config server_config = {
       // FIXME: Add memory manager
@@ -217,6 +236,7 @@ void application::start() {
       std::ref(partition_manager))
       .get();
 
+    syschecks::systemd_message("Starting kafka api");
     _kafka_server
       .invoke_on_all([this](kafka::kafka_server& server) mutable {
           // FIXME: Configure keepalive.
@@ -225,4 +245,6 @@ void application::start() {
       .get();
 
     _log.info("Started Kafka API server listening at {}", conf.kafka_api());
+    syschecks::systemd_message("redpanda ready!");
+    syschecks::systemd_notify_ready();
 }
