@@ -8,6 +8,7 @@
 
 #include <fmt/format.h>
 #include <fmt/ostream.h>
+#include <systemd/sd-daemon.h>
 
 #include <cpuid.h>
 #include <cstdint>
@@ -62,6 +63,17 @@ static inline void memory(bool ignore) {
     if (!ignore) {
         throw std::runtime_error(line);
     }
+}
+
+template<typename... Args>
+void systemd_message(const char* fmt, Args&&... args) {
+    auto s = fmt::format(
+      "STATUS={}\n", fmt::format(fmt, std::forward<Args>(args)...));
+    sd_notify(0, s.c_str());
+}
+
+static inline void systemd_notify_ready() {
+    sd_notify(0, "READY=1\n");
 }
 
 } // namespace syschecks
