@@ -1,11 +1,10 @@
 #include "cluster/partition_manager.h"
 
 #include "cluster/logger.h"
+#include "config/configuration.h"
 #include "resource_mgmt/io_priority.h"
 
 #include <seastar/core/reactor.hh>
-
-#include "config/configuration.cc"
 
 namespace cluster {
 
