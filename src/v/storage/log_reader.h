@@ -12,11 +12,23 @@
 
 namespace storage {
 
+/**
+ * Log reader configuration.
+ *
+ * The default reader configuration will read all batch types. To filter batches
+ * by type add the types of interest to the type_filter set.
+ *
+ * The type filter is sorted before a segment scan, and a linear search is
+ * performed. This will generally perform better than something like a binary
+ * search when the size of the filter set is small (e.g. < 5). If you need to
+ * use a larger filter then this design should be revisted.
+ */
 struct log_reader_config {
     model::offset start_offset;
     size_t max_bytes;
     size_t min_bytes;
     io_priority_class prio;
+    std::vector<model::record_batch_type> type_filter;
 };
 
 class log_segment_reader;
@@ -50,6 +62,8 @@ public:
     virtual stop_iteration consume_batch_end() override;
 
 private:
+    bool skip_batch_type(model::record_batch_type type);
+
     log_segment_reader& _reader;
     model::offset _start_offset;
     model::record_batch_header _header;
