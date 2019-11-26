@@ -214,6 +214,17 @@ BOOST_AUTO_TEST_CASE(test_prepend) {
     a.prepend(temporary_buffer<char>(1));
     BOOST_CHECK_EQUAL(a.size_bytes(), 2);
 }
+BOOST_AUTO_TEST_CASE(append_each_other) {
+    temporary_buffer<char> buf(100);
+    auto a = iobuf();
+    auto b = iobuf();
+    a.append(buf.share());
+    b.append(a.share());
+    for (auto& f : a) {
+        // test the underlying buffer remains the same
+        BOOST_CHECK(f.share() == buf);
+    }
+}
 SEASTAR_THREAD_TEST_CASE(iobuf_cross_shard) {
     // note: run tests w/  > 2 cores for test to exercise
     auto shard = (engine().cpu_id() + 1) % smp::count;

@@ -214,6 +214,9 @@ public:
     temporary_buffer<char> share(size_t pos, size_t len) {
         return _buf.share(0, len);
     }
+
+    /// destructive move. place special care when calling this method
+    /// on a shared iobuf. most of the time you want share() instead of release
     temporary_buffer<char> release() && {
         trim();
         return std::move(_buf);
@@ -630,9 +633,7 @@ inline iobuf::placeholder iobuf::reserve(size_t sz) {
         size -= sz;
     }
 }
-[[gnu::always_inline]] inline void iobuf::append(iobuf::fragment b) {
-    append(std::move(b).release());
-}
+
 /// appends the contents of buffer; might pack values into existing space
 [[gnu::always_inline]] inline void iobuf::append(temporary_buffer<char> b) {
     if (b.size() <= available_bytes()) {
@@ -654,7 +655,7 @@ inline iobuf::placeholder iobuf::reserve(size_t sz) {
 /// appends the contents of buffer; might pack values into existing space
 inline void iobuf::append(iobuf o) {
     for (auto& f : o) {
-        append(std::move(f));
+        append(f.share());
     }
 }
 /// used for iostreams
