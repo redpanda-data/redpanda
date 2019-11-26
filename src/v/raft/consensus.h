@@ -9,6 +9,7 @@
 #include <seastar/core/sharded.hh>
 
 namespace raft {
+class replicate_entries_stm;
 /// consensus for one raft group
 class consensus {
 public:
@@ -84,22 +85,13 @@ public:
     clock_type::time_point last_heartbeat() const {
         return _hbeat;
     };
-
-    future<> update_machines_configuration(model::broker node) {
-        // FIXME: Add node to followers if it does not exists yet.
-
-        // STUB: As only one node will join the cluster add it to list to
-        //       allow raft to work
-        if (!_conf.contains_machine(node.id())) {
-            _conf.nodes.push_back(std::move(node));
-        }
-        return make_ready_future<>();
-    }
-
-    void process_heartbeat(append_entries_reply&&) {
-    }
+    future<> update_machines_configuration(model::broker node);
+    void process_heartbeat(append_entries_reply&&);
+    future<> replicate(raft::entry&&);
 
 private:
+    friend replicate_entries_stm;
+
     // all these private functions assume that we are under exclusive operations
     // via the _op_sem
     void step_down();
