@@ -82,6 +82,10 @@ public:
         return _tracker.dirty_offset();
     }
 
+    model::offset committed_offset() const {
+        return _tracker.committed_offset();
+    }
+
 private:
     future<>
     new_segment(model::offset, model::term_id, const io_priority_class&);

@@ -4,9 +4,21 @@
 
 namespace storage {
 
+bool skipping_consumer::skip_batch_type(model::record_batch_type type) {
+    auto& type_filter = _reader._config.type_filter;
+    if (type_filter.empty()) {
+        return false;
+    }
+    auto it = std::find(std::cbegin(type_filter), std::cend(type_filter), type);
+    return it == std::cend(type_filter);
+}
+
 batch_consumer::skip skipping_consumer::consume_batch_start(
   model::record_batch_header header, size_t num_records) {
     if (header.last_offset() < _start_offset) {
+        return skip::yes;
+    }
+    if (skip_batch_type(header.type)) {
         return skip::yes;
     }
     if (header.attrs.compression() == model::compression::none) {
@@ -81,6 +93,7 @@ log_segment_reader::log_segment_reader(
   , _config(std::move(config))
   , _consumer(skipping_consumer(*this, config.start_offset))
   , _probe(probe) {
+    std::sort(std::begin(_config.type_filter), std::end(_config.type_filter));
 }
 
 bool log_segment_reader::is_initialized() const {
