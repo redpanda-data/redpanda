@@ -2,6 +2,8 @@
 #include "redpanda/tests/fixture.h"
 #include "resource_mgmt/io_priority.h"
 
+#include <seastar/core/smp.hh>
+
 SEASTAR_THREAD_TEST_CASE(partition_iterator) {
     /*
      * extract topic partitions from the request
@@ -125,4 +127,63 @@ SEASTAR_THREAD_TEST_CASE(partition_iterator) {
         BOOST_TEST(parts[3].topic == model::topic("t3"));
         BOOST_TEST(parts[3].partition == 103);
     }
+}
+
+// TODO: this sort of factory should eventually go into a kafka fixture that
+// builds on top of the redpanda application fixture.
+static kafka::request_context make_request_context(application& app) {
+    kafka::request_header header;
+    auto encoder_context = kafka::request_context(
+      app.metadata_cache,
+      app.cntrl_dispatcher.local(),
+      std::move(header),
+      iobuf(),
+      std::chrono::milliseconds(0),
+      app.group_router.local(),
+      app.shard_table.local(),
+      app.partition_manager);
+
+    iobuf buf;
+    kafka::fetch_request request;
+    kafka::response_writer writer(buf);
+    request.encode(encoder_context, writer);
+
+    return kafka::request_context(
+      app.metadata_cache,
+      app.cntrl_dispatcher.local(),
+      std::move(header),
+      std::move(buf),
+      std::chrono::milliseconds(0),
+      app.group_router.local(),
+      app.shard_table.local(),
+      app.partition_manager);
+}
+
+// TODO: when we have a more precise log builder tool we can make these finer
+// grained tests. for now the test is coarse grained based on the random batch
+// builder.
+FIXTURE_TEST(read_from_ntp_max_bytes, redpanda_test_fixture) {
+    auto do_read = [this](model::ntp ntp, size_t max_bytes) {
+        kafka::fetch_config config{
+          .start_offset = model::offset(0),
+          .max_bytes = max_bytes,
+          .timeout = model::no_timeout,
+        };
+        auto rctx = make_request_context(app);
+        auto octx = kafka::op_context(
+          std::move(rctx), default_smp_service_group());
+        auto resp = kafka::read_from_ntp(octx, ntp, config).get0();
+        return resp;
+    };
+
+    auto ntp = make_data();
+
+    auto zero = do_read(ntp, 0).record_set.size_bytes();
+    auto one = do_read(ntp, 1).record_set.size_bytes();
+    auto maxlimit = do_read(ntp, std::numeric_limits<size_t>::max())
+                      .record_set.size_bytes();
+
+    BOOST_TEST(zero > 0); // read something
+    BOOST_TEST(zero == one);
+    BOOST_TEST(one < maxlimit); // read more
 }
