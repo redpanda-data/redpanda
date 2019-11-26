@@ -41,6 +41,18 @@ struct fetch_request final {
     void decode(request_context& ctx);
 
     /*
+     * For max_wait_time > 0 the request may be debounced in order to collect
+     * additional data for the response. Otherwise, no such delay is requested.
+     */
+    std::optional<std::chrono::milliseconds> debounce_delay() const {
+        if (max_wait_time <= std::chrono::milliseconds::zero()) {
+            return std::nullopt;
+        } else {
+            return max_wait_time;
+        }
+    }
+
+    /*
      * iterator over request partitions. this adapter iterator is used because
      * the partitions are decoded off the wire directly into a hierarhical
      * representation:
@@ -151,6 +163,9 @@ struct fetch_response final {
     struct partition {
         model::topic name;
         std::vector<partition_response> responses;
+
+        partition(model::topic name)
+          : name(std::move(name)) {}
     };
 
     fetch_response()
@@ -163,5 +178,75 @@ struct fetch_response final {
 };
 
 std::ostream& operator<<(std::ostream&, const fetch_response&);
+
+/*
+ * Fetch operation context
+ */
+struct op_context {
+    request_context rctx;
+    smp_service_group ssg;
+    fetch_request request;
+    fetch_response response;
+
+    // operation budgets
+    size_t bytes_left;
+    model::timeout_clock::time_point deadline;
+
+    // size of response
+    size_t response_size;
+    // does the response contain an error
+    bool response_error;
+
+    // decode request and initialize budgets
+    op_context(request_context&& ctx, smp_service_group ssg)
+      : rctx(std::move(ctx))
+      , ssg(ssg)
+      , response_size(0)
+      , response_error(false) {
+        /*
+         * decode request and prepare the inital response
+         */
+        request.decode(rctx);
+        if (__builtin_expect(!request.topics.empty(), true)) {
+            response.partitions.reserve(request.topics.size());
+        }
+
+        if (auto delay = request.debounce_delay(); delay) {
+            deadline = model::timeout_clock::now() + delay.value();
+        } else {
+            deadline = model::no_timeout;
+        }
+
+        /*
+         * TODO: max size is multifaceted. it needs to be absolute, but also
+         * integrate with other resource contraints that are dynamic within the
+         * kafka server itself.
+         */
+        static constexpr size_t MAX_SIZE = 128 << 20;
+        bytes_left = std::min(MAX_SIZE, size_t(request.max_bytes));
+    }
+
+    // insert and reserve space for a new topic in the response
+    void start_response_topic(const fetch_request::topic& topic) {
+        auto& p = response.partitions.emplace_back(topic.name);
+        p.responses.reserve(topic.partitions.size());
+    }
+
+    // add to the response the result of fetching from a partition
+    void add_partition_response(fetch_response::partition_response&& r) {
+        response_size += r.record_set.size_bytes();
+        bytes_left -= std::min(bytes_left, r.record_set.size_bytes());
+        response.partitions.back().responses.push_back(std::move(r));
+    }
+};
+
+struct fetch_config {
+    model::offset start_offset;
+    size_t max_bytes;
+    model::timeout_clock::time_point timeout;
+};
+
+future<fetch_response::partition_response>
+read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config);
 
 } // namespace kafka
