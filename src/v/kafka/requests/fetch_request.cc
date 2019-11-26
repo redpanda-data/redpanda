@@ -57,12 +57,13 @@ void fetch_request::decode(request_context& ctx) {
         return topic{
           .name = model::topic(reader.read_string()),
           .partitions = reader.read_array([](request_reader& reader) {
-              struct partition p;
-              p.id = model::partition_id(reader.read_int32());
-              p.fetch_offset = model::offset(reader.read_int64());
-              p.partition_max_bytes = reader.read_int32();
-              return p;
-          })};
+              return partition{
+                .id = model::partition_id(reader.read_int32()),
+                .fetch_offset = model::offset(reader.read_int64()),
+                .partition_max_bytes = reader.read_int32(),
+              };
+          }),
+        };
     });
 }
 
