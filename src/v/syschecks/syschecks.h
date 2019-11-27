@@ -69,11 +69,21 @@ template<typename... Args>
 void systemd_message(const char* fmt, Args&&... args) {
     auto s = fmt::format(
       "STATUS={}\n", fmt::format(fmt, std::forward<Args>(args)...));
-    sd_notify(0, s.c_str());
+    auto r = sd_notify(0, s.c_str());
+    checklog().debug("sd_noify: {}", s);
+    if (__builtin_expect(r < 0, false)) {
+        checklog().trace(
+          "Could not notify systemd sd_notify ready, error:{}", r);
+    }
 }
 
 static inline void systemd_notify_ready() {
-    sd_notify(0, "READY=1\n");
+    auto r = sd_notify(0, "READY=1\nSTATUS=redpanda is ready; let's go!");
+    checklog().info("sd_notify() READY=1");
+    if (__builtin_expect(r < 0, false)) {
+        checklog().trace(
+          "Could not notify systemd sd_notify ready, error:{}", r);
+    }
 }
 
 } // namespace syschecks
