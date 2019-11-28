@@ -50,6 +50,19 @@ future<> consensus::stop() {
 void consensus::process_heartbeat(append_entries_reply&&) {}
 
 future<> consensus::replicate(raft::entry&& e) {
+    std::vector<raft::entry> entries;
+    entries.reserve(1);
+    entries.push_back(std::move(e));
+    return replicate(std::move(entries));
+}
+
+future<> consensus::replicate(std::vector<raft::entry>&& e) {
+    return with_semaphore(_op_sem, 1, [this, e = std::move(e)]() mutable {
+        return do_replicate(std::move(e));
+    });
+}
+
+future<> consensus::do_replicate(std::vector<raft::entry>&& e) {
     if (!is_leader()) {
         return make_exception_future<>(std::runtime_error(fmt::format(
           "Not the leader(self.node_id:{}, meta:{}). Cannot "
@@ -57,20 +70,27 @@ future<> consensus::replicate(raft::entry&& e) {
           _self,
           _meta.group)));
     }
+    append_entries_request req;
+    req.node_id = _self;
+    req.meta = _meta;
+    req.entries = std::move(e);
+    auto stm = make_lw_shared<replicate_entries_stm>(this, 3, std::move(req));
+    return with_gate(_bg, [this, req = std::move(req), stm]() {
+        return stm->apply().finally([this, stm] {
+            auto f = stm->wait().finally([stm] {});
+            // if gate is closed wait for all futures
+            if (_bg.is_closed()) {
+                return f;
+            }
+            // background
+            (void)with_gate(_bg, [this, stm, f = std::move(f)]() mutable {
+                return std::move(f);
+            });
 
-    return with_semaphore(_op_sem, 1, [this, e = std::move(e)]() mutable {
-        // entyr point for append_entries_request throughout the system
-        append_entries_request req;
-        req.node_id = _self;
-        req.meta = _meta;
-        req.entries.reserve(1);
-        req.entries.push_back(std::move(e));
-        auto stm = make_lw_shared<replicate_entries_stm>(
-          this, 3, std::move(req));
-        return stm->apply().finally(
-          [stm] { (void)stm->wait().finally([stm] {}); });
+            return make_ready_future<>();
+        });
     });
-} // namespace raft
+}
 
 /// performs no raft-state mutation other than resetting the timer
 void consensus::dispatch_vote() {
@@ -119,10 +139,10 @@ void consensus::arm_vote_timeout() {
     }
 }
 future<> consensus::update_machines_configuration(model::broker node) {
-           // FIXME: Add node to followers if it does not exists yet.
-       // STUB: As only one node will join the cluster add it to list to
-           //       allow raft to work
-     if (!_conf.contains_machine(node.id())) {
+    // FIXME: Add node to followers if it does not exists yet.
+    // STUB: As only one node will join the cluster add it to list to
+    //       allow raft to work
+    if (!_conf.contains_machine(node.id())) {
         _conf.nodes.push_back(std::move(node));
     }
     return make_ready_future<>();
@@ -417,8 +437,8 @@ consensus::disk_append(std::vector<entry>&& entries) {
       .then([this, prev_base_offset](ret_t ret) {
           model::offset base_offset = _log.segments().last()->base_offset();
           if (prev_base_offset != base_offset) {
-              // we rolled a log segment. write current configuration for speedy
-              // recovery in the background
+              // we rolled a log segment. write current configuration for
+              // speedy recovery in the background
               // FIXME
           }
           if (_should_fsync) {
