@@ -122,9 +122,9 @@ static model::record make_random_record(unsigned index) {
       std::move(v));
 }
 
-static model::record_batch make_random_batch(model::offset o) {
+static model::record_batch
+make_random_batch(model::offset o, size_t num_records) {
     crc32 crc;
-    auto num_records = random_generators::get_int(2, 30);
     auto ts = model::timestamp(
       random_generators::get_int<model::timestamp::value_type>(
         model::timestamp::min().value(), model::timestamp::min().value() + 2));
@@ -160,6 +160,11 @@ static model::record_batch make_random_batch(model::offset o) {
     header.size_bytes = size;
     header.crc = crc.value();
     return model::record_batch(std::move(header), std::move(records));
+}
+
+static model::record_batch make_random_batch(model::offset o) {
+    auto num_records = random_generators::get_int(2, 30);
+    return make_random_batch(o, num_records);
 }
 
 static std::vector<model::record_batch>
