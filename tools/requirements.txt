@@ -1,4 +1,4 @@
+# only list production dependencies.
 click
 gitpython
 pylddwrap
-pex
