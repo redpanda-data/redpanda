@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 	"vectorized/pkg/checkers"
 	"vectorized/pkg/cli"
@@ -10,6 +12,7 @@ import (
 	"vectorized/pkg/redpanda"
 	"vectorized/pkg/tuners/factory"
 	"vectorized/pkg/tuners/hwloc"
+	"vectorized/pkg/tuners/iotune"
 	"vectorized/pkg/utils"
 
 	log "github.com/sirupsen/logrus"
@@ -43,6 +46,7 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 		configFilePathFlag string
 		installDirFlag     string
 		timeout            time.Duration
+		wellKnownIo        string
 	)
 	sFlags := seastarFlags{}
 	sFlagsMap := map[string]interface{}{
@@ -75,17 +79,15 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			ioConfigFile := redpanda.GetIOConfigPath(filepath.Dir(configFile))
-			if !utils.FileExists(fs, ioConfigFile) {
-				ioConfigFile = ""
-			}
-			lockMemory := config.Rpk.EnableMemoryLocking || sFlags.lockMemory
-			rpArgs := &redpanda.RedpandaArgs{
-				ConfigFilePath: configFile,
-				SeastarFlags: map[string]string{
-					"io-properties-file": ioConfigFile,
-					"lock-memory":        fmt.Sprintf("%t", lockMemory),
-				},
+			rpArgs, err := buildRedpandaFlags(
+				fs,
+				config,
+				sFlags,
+				configFile,
+				wellKnownIo,
+			)
+			if err != nil {
+				return err
 			}
 			err = prestart(fs, rpArgs, config, prestartCfg, timeout)
 			if err != nil {
@@ -138,6 +140,11 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 		"path to a YAML file describing the characteristics of the I/O Subsystem")
 	command.Flags().StringVar(&sFlags.ioProperties, "io-properties", "",
 		"a YAML string describing the characteristics of the I/O Subsystem")
+	command.Flags().StringVar(
+		&wellKnownIo,
+		"well-known-io",
+		"",
+		"The cloud vendor and VM type, in the format <vendor>:<vm type>:<storage type>")
 	command.Flags().BoolVar(&sFlags.mbind, "mbind", true, "enable mbind")
 	command.Flags().DurationVar(
 		&timeout,
@@ -181,6 +188,64 @@ func prestart(
 		log.Info("System tune - PASSED")
 	}
 	return nil
+}
+
+func buildRedpandaFlags(
+	fs afero.Fs,
+	config *redpanda.Config,
+	sFlags seastarFlags,
+	configFile string,
+	wellKnownIo string,
+) (*redpanda.RedpandaArgs, error) {
+	if wellKnownIo != "" && sFlags.ioProperties != "" {
+		return nil, errors.New(
+			"--well-known-io and --io-properties can't be set at the same time",
+		)
+	}
+	ioPropertiesFile := redpanda.GetIOConfigPath(filepath.Dir(configFile))
+	if !utils.FileExists(fs, ioPropertiesFile) {
+		ioPropertiesFile = ""
+	}
+	lockMemory := config.Rpk.EnableMemoryLocking || sFlags.lockMemory
+	rpArgs := &redpanda.RedpandaArgs{
+		ConfigFilePath: configFile,
+		SeastarFlags: map[string]string{
+			"lock-memory": fmt.Sprintf("%t", lockMemory),
+		},
+	}
+	if wellKnownIo != "" {
+		ioProperties, err := resolveWellKnownIo(config, wellKnownIo)
+		if err != nil {
+			// Log the error to let the user know that the data wasn't found
+			log.Warn(err)
+		} else {
+			yaml, err := iotune.ToYaml(*ioProperties)
+			if err != nil {
+				return nil, err
+			}
+			rpArgs.SeastarFlags["io-properties"] = fmt.Sprintf("'%s'", yaml)
+		}
+	} else if ioPropertiesFile != "" {
+		rpArgs.SeastarFlags["io-properties-file"] = ioPropertiesFile
+	}
+	return rpArgs, nil
+}
+
+func resolveWellKnownIo(
+	config *redpanda.Config,
+	wellKnownIo string,
+) (*iotune.IoProperties, error) {
+	wellKnownIoTokens := strings.Split(wellKnownIo, ":")
+	if len(wellKnownIoTokens) != 3 {
+		errMsg := "--well-known-io should have the format '<vendor>:<vm type>:<storage type>'"
+		return nil, errors.New(errMsg)
+	}
+	return iotune.DataFor(
+		config.Redpanda.Directory,
+		wellKnownIoTokens[0],
+		wellKnownIoTokens[1],
+		wellKnownIoTokens[2],
+	)
 }
 
 func tuneAll(
