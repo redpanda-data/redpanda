@@ -1,0 +1,16 @@
+{
+    "namespace": "raft::tron",
+    "service_name": "trongen",
+    "includes": ["raft/tron/types.h"],
+    "methods": [{
+            "name": "stats",
+            "input_type": "stats_request",
+            "output_type": "stats_reply"
+        },
+        {
+            "name": "put",
+            "input_type": "::raft::entry",
+            "output_type": "put_reply"
+        }
+    ]
+}

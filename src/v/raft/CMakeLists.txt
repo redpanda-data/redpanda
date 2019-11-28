@@ -26,3 +26,4 @@ target_link_libraries(raft
 
 
 add_subdirectory(tests)
+add_subdirectory(tron)
