@@ -16,6 +16,10 @@ namespace raft {
 class replicate_entries_stm {
 public:
     struct retry_meta {
+        retry_meta(model::node_id node, int32_t ret)
+          : retries_left(ret)
+          , node(node) {
+        }
         int32_t retries_left;
         model::node_id node;
         std::optional<append_entries_reply> value;
@@ -24,6 +28,7 @@ public:
         bool finished() const { return retries_left <= 0 || bool(value); }
     };
 
+    using meta_ptr = std::unique_ptr<retry_meta>;
     replicate_entries_stm(
       consensus*, int32_t max_retries, append_entries_request);
     ~replicate_entries_stm();
@@ -48,6 +53,6 @@ private:
     // list to all nodes & retries per node
     semaphore _sem;
     counted_intrusive_list<retry_meta, &retry_meta::hook> _ongoing;
-    std::vector<retry_meta> _replies;
+    std::vector<meta_ptr> _replies;
 };
 } // namespace raft
