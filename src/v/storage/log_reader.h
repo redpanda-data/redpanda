@@ -38,8 +38,7 @@ public:
     explicit skipping_consumer(
       log_segment_reader& reader, model::offset start_offset) noexcept
       : _reader(reader)
-      , _start_offset(start_offset) {
-    }
+      , _start_offset(start_offset) {}
 
     void set_timeout(model::timeout_clock::time_point timeout) {
         _timeout = timeout;
@@ -90,9 +89,7 @@ public:
     log_segment_reader(log_segment_reader&&) noexcept = default;
     log_segment_reader(const log_segment_reader&) = delete;
     log_segment_reader operator=(const log_segment_reader&) = delete;
-    size_t bytes_read() const {
-        return _bytes_read;
-    }
+    size_t bytes_read() const { return _bytes_read; }
 
 protected:
     virtual future<span>

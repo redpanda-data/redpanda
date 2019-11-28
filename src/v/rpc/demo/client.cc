@@ -184,8 +184,7 @@ public:
     using time_t = std::chrono::steady_clock::time_point;
     throughput(std::size_t total_requests)
       : _total_requests(total_requests)
-      , _begin(now()) {
-    }
+      , _begin(now()) {}
     double qps() const {
         if (_end < _begin) {
             throw std::runtime_error("call ::stop() first");
@@ -205,9 +204,7 @@ public:
     }
 
 private:
-    time_t now() const {
-        return std::chrono::steady_clock::now();
-    }
+    time_t now() const { return std::chrono::steady_clock::now(); }
     std::size_t _total_requests;
     time_t _begin;
     time_t _end;

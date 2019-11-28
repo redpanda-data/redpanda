@@ -55,12 +55,8 @@ temporary_buffer<char> hdr_hist::print_classic() const {
 int64_t hdr_hist::get_value_at(double percentile) const {
     return ::hdr_value_at_percentile(_hist.get(), percentile);
 }
-double hdr_hist::stddev() const {
-    return ::hdr_stddev(_hist.get());
-}
-double hdr_hist::mean() const {
-    return ::hdr_mean(_hist.get());
-}
+double hdr_hist::stddev() const { return ::hdr_stddev(_hist.get()); }
+double hdr_hist::mean() const { return ::hdr_mean(_hist.get()); }
 size_t hdr_hist::memory_size() const {
     return ::hdr_get_memory_size(_hist.get());
 }

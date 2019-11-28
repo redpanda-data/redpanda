@@ -1,6 +1,6 @@
-#include "random/generators.h"
 #include "kafka/requests/request_reader.h"
 #include "kafka/requests/response_writer.h"
+#include "random/generators.h"
 #include "utils/to_string.h"
 
 #include <seastar/testing/thread_test_case.hh>

@@ -67,24 +67,14 @@ public:
         _append_entries_notification = std::move(fn);
     }
 
-    bool is_leader() const {
-        return _vstate == vote_state::leader;
-    }
+    bool is_leader() const { return _vstate == vote_state::leader; }
 
-    const protocol_metadata& meta() const {
-        return _meta;
-    }
+    const protocol_metadata& meta() const { return _meta; }
 
-    const group_configuration& config() const {
-        return _conf;
-    }
-    const model::ntp& ntp() const {
-        return _log.ntp();
-    }
+    const group_configuration& config() const { return _conf; }
+    const model::ntp& ntp() const { return _log.ntp(); }
 
-    clock_type::time_point last_heartbeat() const {
-        return _hbeat;
-    };
+    clock_type::time_point last_heartbeat() const { return _hbeat; };
     future<> update_machines_configuration(model::broker node);
     void process_heartbeat(append_entries_reply&&);
     future<> replicate(raft::entry&&);

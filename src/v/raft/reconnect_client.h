@@ -21,8 +21,7 @@ public:
     }
 
     explicit reconnect_client(rpc::client_configuration c)
-      : _client(std::move(c)) {
-    }
+      : _client(std::move(c)) {}
 
     /// \brief perform Func inside the gate which ensures that the client will
     /// not go away until the Func() finishes

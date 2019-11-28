@@ -9,8 +9,7 @@
 // group.
 class smp_groups {
 public:
-    smp_groups() {
-    }
+    smp_groups() {}
     future<> create_groups() {
         smp_service_group_config smp_sg_config;
         smp_sg_config.max_nonlocal_requests = 5000;
@@ -25,12 +24,8 @@ public:
               _kafka = std::make_unique<smp_service_group>(std::move(sg));
           });
     }
-    smp_service_group raft_smp_sg() {
-        return *_raft;
-    }
-    smp_service_group kafka_smp_sg() {
-        return *_kafka;
-    }
+    smp_service_group raft_smp_sg() { return *_raft; }
+    smp_service_group kafka_smp_sg() { return *_kafka; }
 
     future<> destroy_groups() {
         return destroy_smp_service_group(*_kafka).then(

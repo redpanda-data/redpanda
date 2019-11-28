@@ -51,9 +51,7 @@ void application::validate_arguments(const po::variables_map& cfg) {
     }
 }
 
-void application::init_env() {
-    std::setvbuf(stdout, nullptr, _IOLBF, 1024);
-}
+void application::init_env() { std::setvbuf(stdout, nullptr, _IOLBF, 1024); }
 
 app_template application::setup_app_template() {
     app_template::config app_cfg;

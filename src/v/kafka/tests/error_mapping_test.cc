@@ -26,7 +26,8 @@ BOOST_AUTO_TEST_CASE(error_mapping_test) {
       kafka::map_topic_error_code(cluster::topic_error_code::time_out),
       kafka::error_code::request_timed_out);
     BOOST_REQUIRE_EQUAL(
-      kafka::map_topic_error_code(cluster::topic_error_code::not_leader_controller),
+      kafka::map_topic_error_code(
+        cluster::topic_error_code::not_leader_controller),
       kafka::error_code::not_controller);
 };
 

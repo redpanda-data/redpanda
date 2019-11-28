@@ -64,8 +64,7 @@ struct fetch_response final {
     };
 
     fetch_response()
-      : throttle_time(0) {
-    }
+      : throttle_time(0) {}
 
     std::chrono::milliseconds throttle_time; // >= v1
     std::vector<partition> partitions;

@@ -13,8 +13,7 @@ namespace rpc {
 struct server_context_impl final : streaming_context {
     server_context_impl(server& s, header h)
       : _s(std::ref(s))
-      , _h(std::move(h)) {
-    }
+      , _h(std::move(h)) {}
     future<semaphore_units<>> reserve_memory(size_t ask) final {
         auto fut = get_units(_s.get()._memory, ask);
         if (_s.get()._memory.waiters()) {
@@ -22,12 +21,8 @@ struct server_context_impl final : streaming_context {
         }
         return fut;
     }
-    const header& get_header() const final {
-        return _h;
-    }
-    void signal_body_parse() final {
-        pr.set_value();
-    }
+    const header& get_header() const final { return _h; }
+    void signal_body_parse() final { pr.set_value(); }
     std::reference_wrapper<server> _s;
     header _h;
     promise<> pr;
@@ -45,8 +40,7 @@ server::server(server_configuration c)
     }
 }
 
-server::~server() {
-}
+server::~server() {}
 
 void server::start() {
     for (auto addr : cfg.addrs) {

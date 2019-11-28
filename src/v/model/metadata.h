@@ -25,26 +25,17 @@ public:
       : _id(std::move(id))
       , _host(std::move(host))
       , _port(port)
-      , _rack(rack) {
-    }
+      , _rack(rack) {}
     broker(broker&&) noexcept = default;
     broker& operator=(broker&&) noexcept = default;
     broker(const broker&) = default;
-    const node_id& id() const {
-        return _id;
-    }
+    const node_id& id() const { return _id; }
 
-    const sstring& host() const {
-        return _host;
-    }
+    const sstring& host() const { return _host; }
 
-    int32_t port() const {
-        return _port;
-    }
+    int32_t port() const { return _port; }
 
-    const std::optional<sstring>& rack() const {
-        return _rack;
-    }
+    const std::optional<sstring>& rack() const { return _rack; }
 
 private:
     node_id _id;
@@ -55,8 +46,7 @@ private:
 
 std::ostream& operator<<(std::ostream&, const broker&);
 
-
-/// type representing single replica assignment it contains the id of a broker 
+/// type representing single replica assignment it contains the id of a broker
 /// and id of this broker shard.
 struct broker_shard {
     model::node_id node_id;
@@ -69,8 +59,7 @@ struct broker_shard {
 struct partition_metadata {
     partition_metadata() noexcept = default;
     explicit partition_metadata(partition_id p) noexcept
-      : id(std::move(p)) {
-    }
+      : id(std::move(p)) {}
     partition_id id;
     std::vector<broker_shard> replicas;
     model::node_id leader_node;
@@ -78,8 +67,7 @@ struct partition_metadata {
 
 struct topic_metadata {
     explicit topic_metadata(topic v) noexcept
-      : tp(std::move(v)) {
-    }
+      : tp(std::move(v)) {}
     topic tp;
     std::vector<partition_metadata> partitions;
 };

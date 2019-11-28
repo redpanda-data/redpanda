@@ -1,10 +1,10 @@
 #pragma once
 
-#include "kafka/requests/request_context.h"
+#include "bytes/iobuf.h"
 #include "kafka/probe.h"
 #include "kafka/quota_manager.h"
+#include "kafka/requests/request_context.h"
 #include "seastarx.h"
-#include "bytes/iobuf.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/execution_stage.hh>

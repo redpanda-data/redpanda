@@ -16,7 +16,7 @@ public:
       model::timeout_clock::duration disk_timeout,
       sharded<cluster::shard_table>& nlc,
       sharded<raft::client_cache>& clients);
-    
+
     using leader_cb_t = noncopyable_function<void(lw_shared_ptr<partition>)>;
 
     inline lw_shared_ptr<partition> get(const model::ntp& ntp) const {
@@ -35,9 +35,7 @@ public:
         _notifications.push_back(std::move(cb));
     }
 
-    storage::log_manager::logs_type& logs() {
-        return _mngr.logs();
-    }
+    storage::log_manager::logs_type& logs() { return _mngr.logs(); }
 
 private:
     void trigger_leadership_notification(raft::group_id);

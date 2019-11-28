@@ -110,9 +110,7 @@ future<> log::maybe_roll() {
     return do_roll();
 }
 
-log_segment_appender& log::appender() {
-    return *_appender;
-}
+log_segment_appender& log::appender() { return *_appender; }
 
 model::record_batch_reader log::make_reader(log_reader_config config) {
     return model::make_record_batch_reader<log_reader>(
@@ -158,9 +156,8 @@ future<> log::do_truncate(model::offset o, model::term_id term) {
     // FIXME
     // missing, find offset in offset_index and truncate at size
     // _segs.back().truncate(offset_index.get(o))
-    stlog.error(
-      "We cannot truncate a logical offset without an index. rolling "
-      "last segment");
+    stlog.error("We cannot truncate a logical offset without an index. rolling "
+                "last segment");
 
     // 7.
     f = f.then([this] { return do_roll(); });

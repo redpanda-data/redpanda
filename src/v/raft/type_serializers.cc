@@ -8,8 +8,7 @@ namespace rpc {
 
 struct rpc_model_reader_consumer {
     explicit rpc_model_reader_consumer(iobuf& oref)
-      : ref(oref) {
-    }
+      : ref(oref) {}
     future<stop_iteration> operator()(model::record_batch batch) {
         rpc::serialize(ref, batch.release_header(), batch.size());
         if (!batch.compressed()) {

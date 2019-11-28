@@ -27,9 +27,7 @@ public:
     void insert(model::ntp ntp, shard_id i) {
         _ntp_idx.insert({std::move(ntp), i});
     }
-    void insert(raft::group_id g, shard_id i) {
-        _group_idx.insert({g, i});
-    }
+    void insert(raft::group_id g, shard_id i) { _group_idx.insert({g, i}); }
 
 private:
     // kafka index

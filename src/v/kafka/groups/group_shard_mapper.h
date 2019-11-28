@@ -1,8 +1,8 @@
 #pragma once
 #include "hashing/jump_consistent_hash.h"
 #include "hashing/xx.h"
-#include "model/fundamental.h"
 #include "kafka/types.h"
+#include "model/fundamental.h"
 #include "seastarx.h"
 #include "utils/concepts-enabled.h"
 
@@ -25,8 +25,7 @@ CONCEPT(requires PartitionShardMapper<Shards>)
 class group_shard_mapper {
 public:
     explicit group_shard_mapper(Shards& shards)
-      : _shards(shards) {
-    }
+      : _shards(shards) {}
 
     shard_id shard_for(const kafka::group_id& group) {
         incremental_xxhash64 inc;

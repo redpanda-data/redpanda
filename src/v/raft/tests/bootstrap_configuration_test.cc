@@ -89,9 +89,7 @@ struct bootstrap_fixture {
           .nodes = std::move(nodes),
           .learners = std::move(learners)};
     }
-    ~bootstrap_fixture() {
-        _mngr.stop().get();
-    }
+    ~bootstrap_fixture() { _mngr.stop().get(); }
     model::offset _base_offset{0};
     storage::log_ptr _log;
     storage::log_manager _mngr;

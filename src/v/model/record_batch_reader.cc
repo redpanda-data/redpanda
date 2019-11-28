@@ -7,8 +7,7 @@ make_memory_record_batch_reader(std::vector<model::record_batch> batches) {
     class reader final : public record_batch_reader::impl {
     public:
         explicit reader(std::vector<model::record_batch> batches)
-          : _batches(std::move(batches)) {
-        }
+          : _batches(std::move(batches)) {}
 
     protected:
         virtual future<span> do_load_slice(timeout_clock::time_point) override {
@@ -28,8 +27,7 @@ record_batch_reader make_generating_record_batch_reader(
     class reader final : public record_batch_reader::impl {
     public:
         explicit reader(noncopyable_function<future<record_batch_opt>()> gen)
-          : _gen(std::move(gen)) {
-        }
+          : _gen(std::move(gen)) {}
 
     protected:
         virtual future<span> do_load_slice(timeout_clock::time_point) override {

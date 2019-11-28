@@ -10,11 +10,9 @@ namespace storage {
 record_batch_builder::record_batch_builder(
   model::record_batch_type bt, model::offset base_offset)
   : _batch_type(bt)
-  , _base_offset(base_offset) {
-}
+  , _base_offset(base_offset) {}
 
-record_batch_builder::~record_batch_builder() {
-}
+record_batch_builder::~record_batch_builder() {}
 
 model::record_batch record_batch_builder::build() && {
     int32_t offset_delta = 0;

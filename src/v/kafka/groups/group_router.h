@@ -63,8 +63,7 @@ public:
       : _sg(sched_group)
       , _ssg(smp_group)
       , _group_manager(group_manager)
-      , _shards(shards.local()) {
-    }
+      , _shards(shards.local()) {}
 
     future<join_group_response> join_group(join_group_request&& request) {
         auto shard = _shards.shard_for(request.group_id);

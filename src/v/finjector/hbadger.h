@@ -25,9 +25,7 @@ struct probe {
 #endif
     }
 
-    bool is_enabled() const {
-        return operator()();
-    }
+    bool is_enabled() const { return operator()(); }
     void set_exception(std::string_view point) {
         _exception_methods |= method_for_point(point);
     }

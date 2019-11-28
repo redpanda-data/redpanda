@@ -25,8 +25,7 @@ public:
 
     log_builder(sstring base_dir, model::ntp ntp)
       : base_dir_(std::move(base_dir))
-      , ntp_(std::move(ntp)) {
-    }
+      , ntp_(std::move(ntp)) {}
 
     log_builder& segment() {
         segments_.push_back({});
@@ -110,9 +109,7 @@ public:
     /**
      * \brief Persists the log configuration.
      */
-    future<> flush() {
-        return flush(std::numeric_limits<size_t>::max(), true);
-    }
+    future<> flush() { return flush(std::numeric_limits<size_t>::max(), true); }
 
     /**
      * \brief Write configured batches with a max segment size.

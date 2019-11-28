@@ -17,8 +17,7 @@ log_segment::log_segment(
   , _data_file(std::move(data_file))
   , _term(std::move(term))
   , _base_offset(base_offset)
-  , _buffer_size(buffer_size) {
-}
+  , _buffer_size(buffer_size) {}
 
 input_stream<char>
 log_segment::data_stream(uint64_t pos, const io_priority_class& pc) {
@@ -59,8 +58,7 @@ struct base_offset_ordering {
 };
 
 log_segment_selector::log_segment_selector(const log_set& set) noexcept
-  : _set(set) {
-}
+  : _set(set) {}
 
 log_set::log_set(std::vector<log_segment_ptr> segs) noexcept(
   log_set::is_nothrow::value)
@@ -69,12 +67,9 @@ log_set::log_set(std::vector<log_segment_ptr> segs) noexcept(
 }
 
 log_set::generation_advancer::generation_advancer(log_set& log_set) noexcept
-  : _log_set(log_set) {
-}
+  : _log_set(log_set) {}
 
-log_set::generation_advancer::~generation_advancer() {
-    ++_log_set._generation;
-}
+log_set::generation_advancer::~generation_advancer() { ++_log_set._generation; }
 
 void log_set::add(log_segment_ptr seg) {
     generation_advancer ea(*this);

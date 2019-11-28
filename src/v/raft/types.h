@@ -42,17 +42,11 @@ struct group_configuration {
     group_configuration(group_configuration&&) noexcept = default;
     group_configuration& operator=(group_configuration&&) noexcept = default;
 
-    bool has_voters() const {
-        return !nodes.empty();
-    }
+    bool has_voters() const { return !nodes.empty(); }
 
-    bool has_learners() const {
-        return !learners.empty();
-    }
+    bool has_learners() const { return !learners.empty(); }
 
-    size_t majority() const {
-        return (nodes.size() / 2) + 1;
-    }
+    size_t majority() const { return (nodes.size() / 2) + 1; }
 
     std::optional<model::broker> find_in_nodes(model::node_id id) const;
     std::optional<model::broker> find_in_learners(model::node_id id) const;
@@ -73,18 +67,13 @@ class entry final {
 public:
     explicit entry(model::record_batch_type t, model::record_batch_reader r)
       : _t(t)
-      , _rdr(std::move(r)) {
-    }
+      , _rdr(std::move(r)) {}
     entry(const entry&) = delete;
     entry& operator=(const entry&) = delete;
     entry(entry&&) noexcept = default;
     entry& operator=(entry&&) noexcept = default;
-    model::record_batch_type entry_type() const {
-        return _t;
-    }
-    model::record_batch_reader& reader() {
-        return _rdr;
-    }
+    model::record_batch_type entry_type() const { return _t; }
+    model::record_batch_reader& reader() { return _rdr; }
 
 private:
     model::record_batch_type _t;

@@ -18,8 +18,7 @@ public:
     rate_tracker(size_t num_windows, clock::duration window_size)
       : _windows(num_windows)
       , _window_size(window_size)
-      , _current(0) {
-    }
+      , _current(0) {}
 
     // record an observation and return the updated rate in units/second.
     double record_and_measure(double v, const clock::time_point& now) {
@@ -61,9 +60,7 @@ public:
         return total / std::chrono::duration<double>(elapsed).count();
     }
 
-    clock::duration window_size() const {
-        return _window_size;
-    }
+    clock::duration window_size() const { return _window_size; }
 
 private:
     // maybe advance to and reset the next window
@@ -80,8 +77,7 @@ private:
         clock::time_point time;
         double count;
         window()
-          : count(0.) {
-        }
+          : count(0.) {}
     };
 
     std::vector<window> _windows;

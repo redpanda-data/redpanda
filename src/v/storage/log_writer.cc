@@ -12,8 +12,7 @@ namespace storage {
 
 default_log_writer::default_log_writer(log& log) noexcept
   : _log(log)
-  , _last_offset(log.max_offset()) {
-}
+  , _last_offset(log.max_offset()) {}
 
 template<typename T>
 typename std::enable_if_t<std::is_integral<T>::value, seastar::future<>>
@@ -48,9 +47,8 @@ future<> write(log_segment_appender& out, const model::record& record) {
 future<>
 write(log_segment_appender& appender, const model::record_batch& batch) {
     return write_vint(appender, batch.size_bytes())
-      .then([&appender, &batch] {
-          return write(appender, batch.base_offset()());
-      })
+      .then(
+        [&appender, &batch] { return write(appender, batch.base_offset()()); })
       .then([&appender, &batch] { return write(appender, batch.type()()); })
       .then([&appender, &batch] { return write(appender, batch.crc()); })
       .then([&appender, &batch] {
@@ -107,8 +105,6 @@ operator()(model::record_batch&& batch) {
     });
 }
 
-model::offset default_log_writer::end_of_stream() {
-    return _last_offset;
-}
+model::offset default_log_writer::end_of_stream() { return _last_offset; }
 
 } // namespace storage

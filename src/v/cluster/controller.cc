@@ -23,8 +23,7 @@ controller::controller(
   , _st(st)
   , _md_cache(md_cache)
   , _raft0(nullptr)
-  , _highest_group_id(0) {
-}
+  , _highest_group_id(0) {}
 
 future<> controller::start() {
     verify_shard();
@@ -180,17 +179,13 @@ future<> controller::dispatch_manage_partition(
 future<> controller::manage_partition(
   partition_manager& pm, model::ntp ntp, raft::group_id raft_group) {
     return pm.manage(ntp, raft_group)
-      .then([this](consensus_ptr c) {
-          return join_raft_group(*c);
-      })
+      .then([this](consensus_ptr c) { return join_raft_group(*c); })
       .then([path = ntp.path(), raft_group] {
-          clusterlog.info(
-            "recovered: {}, raft group_id: {}", path, raft_group);
+          clusterlog.info("recovered: {}, raft group_id: {}", path, raft_group);
       });
 }
 
-void controller::end_of_stream() {
-}
+void controller::end_of_stream() {}
 
 future<> controller::update_cache_with_partitions_assignment(
   const partition_assignment& p_as) {

@@ -33,8 +33,7 @@ public:
     record_attributes() noexcept = default;
 
     explicit record_attributes(int8_t v) noexcept
-      : _attributes(v) {
-    }
+      : _attributes(v) {}
 
     value_type value() const {
         return static_cast<value_type>(_attributes.to_ulong());
@@ -73,13 +72,10 @@ public:
       , _timestamp_delta(timestamp_delta)
       , _offset_delta(offset_delta)
       , _key(std::move(key))
-      , _value_and_headers(std::move(value_and_headers)) {
-    }
+      , _value_and_headers(std::move(value_and_headers)) {}
 
     // Size in bytes of everything except the size_bytes field.
-    uint32_t size_bytes() const {
-        return _size_bytes;
-    }
+    uint32_t size_bytes() const { return _size_bytes; }
 
     // Used for acquiring units from semaphores limiting
     // memory resources.
@@ -88,28 +84,16 @@ public:
                + _value_and_headers.size_bytes();
     }
 
-    record_attributes attributes() const {
-        return _attributes;
-    }
+    record_attributes attributes() const { return _attributes; }
 
-    int32_t timestamp_delta() const {
-        return _timestamp_delta;
-    }
+    int32_t timestamp_delta() const { return _timestamp_delta; }
 
-    int32_t offset_delta() const {
-        return _offset_delta;
-    }
+    int32_t offset_delta() const { return _offset_delta; }
 
-    const iobuf& key() const {
-        return _key;
-    }
-    iobuf release_key() {
-        return std::move(_key);
-    }
+    const iobuf& key() const { return _key; }
+    iobuf release_key() { return std::move(_key); }
 
-    const iobuf& packed_value_and_headers() const {
-        return _value_and_headers;
-    }
+    const iobuf& packed_value_and_headers() const { return _value_and_headers; }
     iobuf release_packed_value_and_headers() {
         return std::move(_value_and_headers);
     }
@@ -129,9 +113,7 @@ public:
                && _value_and_headers == other._value_and_headers;
     }
 
-    bool operator!=(const record& other) const {
-        return !(*this == other);
-    }
+    bool operator!=(const record& other) const { return !(*this == other); }
 
     friend std::ostream& operator<<(std::ostream&, const record&);
 
@@ -155,8 +137,7 @@ public:
     record_batch_attributes() noexcept = default;
 
     explicit record_batch_attributes(int16_t v) noexcept
-      : _attributes(v) {
-    }
+      : _attributes(v) {}
 
     value_type value() const {
         return static_cast<value_type>(_attributes.to_ulong());
@@ -264,28 +245,19 @@ public:
     public:
         compressed_records(uint32_t size, iobuf data) noexcept
           : _size(size)
-          , _data(std::move(data)) {
-        }
+          , _data(std::move(data)) {}
         compressed_records(const compressed_records&) = delete;
         compressed_records& operator=(const compressed_records&) = delete;
         compressed_records(compressed_records&&) noexcept = default;
         compressed_records& operator=(compressed_records&&) noexcept = default;
 
-        uint32_t size() const {
-            return _size;
-        }
+        uint32_t size() const { return _size; }
 
-        uint32_t size_bytes() const {
-            return _data.size_bytes();
-        }
+        uint32_t size_bytes() const { return _data.size_bytes(); }
 
-        bool empty() const {
-            return !_size;
-        }
+        bool empty() const { return !_size; }
 
-        const iobuf& records() const {
-            return _data;
-        }
+        const iobuf& records() const { return _data; }
 
         iobuf release() && {
             _size = 0;
@@ -315,8 +287,7 @@ public:
 
     record_batch(record_batch_header header, records_type&& records) noexcept
       : _header(std::move(header))
-      , _records(std::move(records)) {
-    }
+      , _records(std::move(records)) {}
     record_batch(const record_batch& o) = delete;
     record_batch& operator=(const record_batch&) = delete;
     record_batch(record_batch&&) noexcept = default;
@@ -336,9 +307,7 @@ public:
     }
 
     // Size in bytes of the header plus records.
-    uint32_t size_bytes() const {
-        return _header.size_bytes;
-    }
+    uint32_t size_bytes() const { return _header.size_bytes; }
 
     uint32_t memory_usage() const {
         return sizeof(*this)
@@ -357,35 +326,19 @@ public:
                  });
     }
 
-    offset base_offset() const {
-        return _header.base_offset;
-    }
-    record_batch_type type() const {
-        return _header.type;
-    }
-    int32_t crc() const {
-        return _header.crc;
-    }
+    offset base_offset() const { return _header.base_offset; }
+    record_batch_type type() const { return _header.type; }
+    int32_t crc() const { return _header.crc; }
 
-    record_batch_attributes attributes() const {
-        return _header.attrs;
-    }
+    record_batch_attributes attributes() const { return _header.attrs; }
 
-    int32_t last_offset_delta() const {
-        return _header.last_offset_delta;
-    }
+    int32_t last_offset_delta() const { return _header.last_offset_delta; }
 
-    timestamp first_timestamp() const {
-        return _header.first_timestamp;
-    }
+    timestamp first_timestamp() const { return _header.first_timestamp; }
 
-    timestamp max_timestamp() const {
-        return _header.max_timestamp;
-    }
+    timestamp max_timestamp() const { return _header.max_timestamp; }
 
-    offset last_offset() const {
-        return _header.last_offset();
-    }
+    offset last_offset() const { return _header.last_offset(); }
 
     // Can only be called if this holds a set of uncompressed records.
     uncompressed_records::const_iterator begin() const {
@@ -413,9 +366,7 @@ public:
     compressed_records&& release() && {
         return std::move(std::get<compressed_records>(_records));
     }
-    record_batch_header&& release_header() {
-        return std::move(_header);
-    }
+    record_batch_header&& release_header() { return std::move(_header); }
     bool operator==(const record_batch& other) const {
         return _header == other._header && _records == other._records;
     }
@@ -430,9 +381,7 @@ public:
         return std::get<uncompressed_records>(_records);
     }
 
-    record_batch_header& get_header_for_testing() {
-        return _header;
-    }
+    record_batch_header& get_header_for_testing() { return _header; }
 
     record_batch share() {
         record_batch_header h = _header;
@@ -458,9 +407,7 @@ private:
     records_type _records;
 
     record_batch() = default;
-    explicit operator bool() const noexcept {
-        return size();
-    }
+    explicit operator bool() const noexcept { return size(); }
     friend class optimized_optional<record_batch>;
 };
 

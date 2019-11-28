@@ -22,12 +22,9 @@ partition_manager::partition_manager(
       .should_sanitize = storage::log_config::sanitize_files::no})
   , _hbeats(config::shard_local_cfg().raft_timeout(), clients)
   , _shard_table(nlc)
-  , _clients(clients) {
-}
+  , _clients(clients) {}
 
-future<> partition_manager::start() {
-    return _hbeats.start();
-}
+future<> partition_manager::start() { return _hbeats.start(); }
 
 future<> partition_manager::stop() {
     using pair_t = typename decltype(_raft_table)::value_type;

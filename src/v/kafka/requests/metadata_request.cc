@@ -1,9 +1,9 @@
 #include "kafka/requests/metadata_request.h"
 
 #include "cluster/metadata_cache.h"
-#include "model/metadata.h"
 #include "kafka/controller_dispatcher.h"
 #include "kafka/errors.h"
+#include "model/metadata.h"
 #include "utils/to_string.h"
 
 #include <seastar/core/thread.hh>

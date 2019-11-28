@@ -67,8 +67,7 @@ struct join_group_response final {
       , protocol_name(std::move(protocol_name))
       , leader_id(std::move(leader_id))
       , member_id(std::move(member_id))
-      , members(std::move(members)) {
-    }
+      , members(std::move(members)) {}
 
     void encode(const request_context& ctx, response& resp);
 };

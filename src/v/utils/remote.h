@@ -21,20 +21,13 @@ public:
       std::is_move_constructible<T>::value, "Types must be move constructible");
 
     explicit emptyable(T&& v) noexcept(move_noexcept)
-      : _v(std::move(v)) {
-    }
+      : _v(std::move(v)) {}
 
-    operator bool() const noexcept {
-        return bool(_v);
-    }
+    operator bool() const noexcept { return bool(_v); }
 
-    const T& get() const& {
-        return _v;
-    }
+    const T& get() const& { return _v; }
 
-    T& get() & {
-        return _v;
-    }
+    T& get() & { return _v; }
 
 private:
     T _v;
@@ -50,13 +43,11 @@ public:
 
     explicit emptyable(T&& v) noexcept(move_noexcept)
       : _v(std::move(v))
-      , _valid(true) {
-    }
+      , _valid(true) {}
 
     emptyable(emptyable&& other) noexcept(move_noexcept)
       : _v(std::move(other._v))
-      , _valid(std::exchange(other._valid, false)) {
-    }
+      , _valid(std::exchange(other._valid, false)) {}
 
     emptyable& operator=(emptyable&& other) noexcept(move_noexcept) {
         _v = std::move(other._v);
@@ -64,17 +55,11 @@ public:
         return *this;
     }
 
-    operator bool() const noexcept {
-        return _valid;
-    }
+    operator bool() const noexcept { return _valid; }
 
-    const T& get() const& {
-        return _v;
-    }
+    const T& get() const& { return _v; }
 
-    T& get() & {
-        return _v;
-    }
+    T& get() & { return _v; }
 
 private:
     T _v;
@@ -100,14 +85,12 @@ class remote final {
 public:
     explicit remote(T&& v) noexcept(::internal::emptyable<T, E>::move_noexcept)
       : _v(std::move(v))
-      , _origin_cpu(engine().cpu_id()) {
-    }
+      , _origin_cpu(engine().cpu_id()) {}
 
     template<typename... Args>
     explicit remote(Args... args) noexcept(
       std::is_nothrow_constructible<T>::value)
-      : remote(T(std::forward<Args>(args)...)) {
-    }
+      : remote(T(std::forward<Args>(args)...)) {}
 
     remote(remote&&) = default;
     remote& operator=(remote&&) = default;
@@ -118,13 +101,9 @@ public:
         }
     }
 
-    const T& get() const& {
-        return _v.get();
-    }
+    const T& get() const& { return _v.get(); }
 
-    T& get() & {
-        return _v.get();
-    }
+    T& get() & { return _v.get(); }
 
 private:
     ::internal::emptyable<T, E> _v;

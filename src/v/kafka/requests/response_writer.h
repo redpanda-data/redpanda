@@ -2,8 +2,8 @@
 
 #include "bytes/bytes.h"
 #include "bytes/iobuf.h"
-#include "model/fundamental.h"
 #include "kafka/errors.h"
+#include "model/fundamental.h"
 #include "seastarx.h"
 #include "utils/concepts-enabled.h"
 #include "utils/vint.h"
@@ -41,45 +41,28 @@ class response_writer {
 
 public:
     explicit response_writer(iobuf& out) noexcept
-      : _out(&out) {
-    }
+      : _out(&out) {}
 
-    uint32_t write(bool v) {
-        return serialize_int<int8_t>(v);
-    }
+    uint32_t write(bool v) { return serialize_int<int8_t>(v); }
 
-    uint32_t write(int8_t v) {
-        return serialize_int<int8_t>(v);
-    }
+    uint32_t write(int8_t v) { return serialize_int<int8_t>(v); }
 
-    uint32_t write(int16_t v) {
-        return serialize_int<int16_t>(v);
-    }
+    uint32_t write(int16_t v) { return serialize_int<int16_t>(v); }
 
-    uint32_t write(int32_t v) {
-        return serialize_int<int32_t>(v);
-    }
+    uint32_t write(int32_t v) { return serialize_int<int32_t>(v); }
 
-    uint32_t write(int64_t v) {
-        return serialize_int<int64_t>(v);
-    }
+    uint32_t write(int64_t v) { return serialize_int<int64_t>(v); }
 
-    uint32_t write(uint32_t v) {
-        return serialize_int<uint32_t>(v);
-    }
+    uint32_t write(uint32_t v) { return serialize_int<uint32_t>(v); }
 
     uint32_t write(kafka::error_code v) {
         using underlying = std::underlying_type_t<kafka::error_code>;
         return serialize_int<underlying>(static_cast<underlying>(v));
     }
 
-    uint32_t write_varint(int32_t v) {
-        return serialize_vint<vint>(v);
-    }
+    uint32_t write_varint(int32_t v) { return serialize_vint<vint>(v); }
 
-    uint32_t write_varlong(int64_t v) {
-        return serialize_vint<vint>(v);
-    }
+    uint32_t write_varlong(int64_t v) { return serialize_vint<vint>(v); }
 
     uint32_t write(std::string_view v) {
         auto size = serialize_int<int16_t>(v.size()) + v.size();
@@ -87,9 +70,7 @@ public:
         return size;
     }
 
-    uint32_t write(const sstring& v) {
-        return write(std::string_view(v));
-    }
+    uint32_t write(const sstring& v) { return write(std::string_view(v)); }
 
     uint32_t write(std::optional<std::string_view> v) {
         if (!v) {
@@ -118,9 +99,7 @@ public:
         return write(bytes_view(*bv));
     }
 
-    uint32_t write(const model::topic& topic) {
-        return write(topic());
-    }
+    uint32_t write(const model::topic& topic) { return write(topic()); }
 
     // write bytes directly to output without a length prefix
     uint32_t write_direct(iobuf&& f) {

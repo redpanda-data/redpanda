@@ -1,7 +1,7 @@
 #pragma once
-#include "model/fundamental.h"
 #include "kafka/requests/response.h"
 #include "kafka/requests/topics/types.h"
+#include "model/fundamental.h"
 #include "seastarx.h"
 
 #include <seastar/util/bool_class.hh>

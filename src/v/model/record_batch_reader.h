@@ -38,16 +38,11 @@ public:
         virtual future<span> do_load_slice(timeout_clock::time_point) = 0;
 
     public:
-        virtual ~impl() {
-        }
+        virtual ~impl() {}
 
-        bool end_of_stream() const {
-            return _end_of_stream;
-        }
+        bool end_of_stream() const { return _end_of_stream; }
 
-        bool is_slice_empty() const {
-            return _current == _slice.end();
-        }
+        bool is_slice_empty() const { return _current == _slice.end(); }
 
         virtual future<> load_slice(timeout_clock::time_point timeout) {
             return do_load_slice(timeout).then([this](span s) {
@@ -73,9 +68,7 @@ public:
             return std::move(batch);
         }
 
-        const record_batch& peek_batch() const {
-            return *_current;
-        }
+        const record_batch& peek_batch() const { return *_current; }
 
         template<typename Consumer>
         auto consume(Consumer consumer, timeout_clock::time_point timeout) {
@@ -106,8 +99,7 @@ public:
 
 public:
     explicit record_batch_reader(std::unique_ptr<impl> impl) noexcept
-      : _impl(std::move(impl)) {
-    }
+      : _impl(std::move(impl)) {}
     record_batch_reader(const record_batch_reader&) = delete;
     record_batch_reader& operator=(const record_batch_reader&) = delete;
     record_batch_reader(record_batch_reader&&) noexcept = default;
@@ -118,14 +110,10 @@ public:
     }
 
     // Can only be called if !should_load_slice().
-    record_batch pop_batch() {
-        return _impl->pop_batch();
-    }
+    record_batch pop_batch() { return _impl->pop_batch(); }
 
     // Can only be called if !should_load_slice().
-    const record_batch& peek_batch() const {
-        return _impl->peek_batch();
-    }
+    const record_batch& peek_batch() const { return _impl->peek_batch(); }
 
     future<> load_slice(timeout_clock::time_point timeout) {
         return _impl->load_slice(timeout);
@@ -152,9 +140,7 @@ private:
     std::unique_ptr<impl> _impl;
 
     record_batch_reader() = default;
-    explicit operator bool() const noexcept {
-        return bool(_impl);
-    }
+    explicit operator bool() const noexcept { return bool(_impl); }
     friend class optimized_optional<record_batch_reader>;
 };
 

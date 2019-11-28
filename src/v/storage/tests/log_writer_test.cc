@@ -29,9 +29,7 @@ struct context {
     log_manager manager = log_manager(config);
     log_ptr log;
 
-    ~context() {
-        manager.stop().get();
-    }
+    ~context() { manager.stop().get(); }
 };
 
 log_append_config config() {

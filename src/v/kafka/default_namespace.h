@@ -3,8 +3,6 @@
 
 namespace kafka {
 
-inline model::ns default_namespace() {
-    return model::ns("default");
-}
+inline model::ns default_namespace() { return model::ns("default"); }
 
 } // namespace kafka

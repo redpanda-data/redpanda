@@ -17,8 +17,7 @@ struct topic_op_result {
     std::optional<sstring> err_msg;
     static topic_op_result
     from_cluster_topic_result(const cluster::topic_result& err) {
-        return {.topic = err.topic,
-                .ec = map_topic_error_code(err.ec)};
+        return {.topic = err.topic, .ec = map_topic_error_code(err.ec)};
     }
 };
 

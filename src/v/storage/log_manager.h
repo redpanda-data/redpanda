@@ -41,16 +41,10 @@ public:
       record_version_type = record_version_type::v1,
       size_t buffer_size = default_read_buffer_size);
 
-    size_t max_segment_size() const {
-        return _config.max_segment_size;
-    }
-    const log_config& config() const {
-        return _config;
-    }
+    size_t max_segment_size() const { return _config.max_segment_size; }
+    const log_config& config() const { return _config; }
 
-    logs_type& logs() {
-        return _logs;
-    }
+    logs_type& logs() { return _logs; }
 
 private:
     log_config _config;

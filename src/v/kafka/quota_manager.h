@@ -49,9 +49,7 @@ public:
         _gc_timer.set_callback([this, full_window] { gc(full_window); });
     }
 
-    ~quota_manager() {
-        _gc_timer.cancel();
-    }
+    ~quota_manager() { _gc_timer.cancel(); }
 
     seastar::future<> stop() {
         _gc_timer.cancel();

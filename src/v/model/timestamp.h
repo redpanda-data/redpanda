@@ -22,48 +22,29 @@ public:
     timestamp() noexcept = default;
 
     constexpr explicit timestamp(value_type v) noexcept
-      : _v(v) {
-    }
+      : _v(v) {}
 
-    constexpr value_type value() const noexcept {
-        return _v;
-    }
+    constexpr value_type value() const noexcept { return _v; }
 
-    constexpr static timestamp min() noexcept {
-        return timestamp(0);
-    }
+    constexpr static timestamp min() noexcept { return timestamp(0); }
 
     constexpr static timestamp max() noexcept {
         return timestamp(std::numeric_limits<value_type>::max());
     }
 
-    constexpr static timestamp missing() noexcept {
-        return timestamp(-1);
-    }
+    constexpr static timestamp missing() noexcept { return timestamp(-1); }
 
-    bool operator<(const timestamp& other) const {
-        return _v < other._v;
-    }
+    bool operator<(const timestamp& other) const { return _v < other._v; }
 
-    bool operator<=(const timestamp& other) const {
-        return _v <= other._v;
-    }
+    bool operator<=(const timestamp& other) const { return _v <= other._v; }
 
-    bool operator>(const timestamp& other) const {
-        return other._v < _v;
-    }
+    bool operator>(const timestamp& other) const { return other._v < _v; }
 
-    bool operator>=(const timestamp& other) const {
-        return other._v <= _v;
-    }
+    bool operator>=(const timestamp& other) const { return other._v <= _v; }
 
-    bool operator==(const timestamp& other) const {
-        return _v == other._v;
-    }
+    bool operator==(const timestamp& other) const { return _v == other._v; }
 
-    bool operator!=(const timestamp& other) const {
-        return !(*this == other);
-    }
+    bool operator!=(const timestamp& other) const { return !(*this == other); }
 
     friend std::ostream& operator<<(std::ostream&, timestamp);
 

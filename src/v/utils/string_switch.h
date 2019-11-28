@@ -42,8 +42,7 @@ class string_switch {
 public:
     constexpr explicit string_switch(std::string_view S)
       : view(S)
-      , result() {
-    }
+      , result() {}
 
     // string_switch is not copyable.
     string_switch(const string_switch&) = delete;
@@ -54,8 +53,7 @@ public:
 
     string_switch(string_switch&& other)
       : view(other.view)
-      , result(std::move(other.result)) {
-    }
+      , result(std::move(other.result)) {}
 
     ~string_switch() = default;
 
@@ -164,8 +162,7 @@ public:
     }
 
     constexpr R default_match(T value) {
-        if (result)
-            return std::move(*result);
+        if (result) return std::move(*result);
         return value;
     }
 

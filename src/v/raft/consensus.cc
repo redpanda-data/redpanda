@@ -55,8 +55,7 @@ future<> consensus::update_machines_configuration(model::broker node) {
     return make_ready_future<>();
 }
 
-void consensus::process_heartbeat(append_entries_reply&&) {
-}
+void consensus::process_heartbeat(append_entries_reply&&) {}
 
 future<> consensus::replicate(raft::entry&& e) {
     if (!is_leader()) {

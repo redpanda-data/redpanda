@@ -34,9 +34,7 @@ static bool is_uuid(const sstring& uuid) {
  *  - should share some of this common setup with the other tests once we get a
  *  good covering set of scenarios.
  */
-static group get() {
-    return group(kafka::group_id("g"), group_state::empty);
-}
+static group get() { return group(kafka::group_id("g"), group_state::empty); }
 
 static const std::vector<member_protocol> test_protos = {
   {kafka::protocol_name("n0"), "d0"}, {kafka::protocol_name("n1"), "d1"}};

@@ -42,18 +42,13 @@ public:
       , _session_timeout(session_timeout)
       , _rebalance_timeout(rebalance_timeout)
       , _protocol_type(std::move(protocol_type))
-      , _protocols(std::move(protocols)) {
-    }
+      , _protocols(std::move(protocols)) {}
 
     /// Get the member id.
-    const kafka::member_id& id() const {
-        return _id;
-    }
+    const kafka::member_id& id() const { return _id; }
 
     /// Get the id of the member's group.
-    const kafka::group_id& group_id() const {
-        return _group_id;
-    }
+    const kafka::group_id& group_id() const { return _group_id; }
 
     /// Get the instance id of the member's group.
     const std::optional<kafka::group_instance_id>& group_instance_id() const {
@@ -61,24 +56,16 @@ public:
     }
 
     /// Get the member's session timeout.
-    duration_type session_timeout() const {
-        return _session_timeout;
-    }
+    duration_type session_timeout() const { return _session_timeout; }
 
     /// Get the member's rebalance timeout.
-    duration_type rebalance_timeout() const {
-        return _rebalance_timeout;
-    }
+    duration_type rebalance_timeout() const { return _rebalance_timeout; }
 
     /// Get the member's protocol type.
-    const kafka::protocol_type& protocol_type() const {
-        return _protocol_type;
-    }
+    const kafka::protocol_type& protocol_type() const { return _protocol_type; }
 
     /// Get the member's assignment.
-    const bytes& assignment() const {
-        return _assignment;
-    }
+    const bytes& assignment() const { return _assignment; }
 
     /// Set the member's assignment.
     void set_assignment(bytes assignment) {
@@ -86,9 +73,7 @@ public:
     }
 
     /// Clear the member's assignment.
-    void clear_assignment() {
-        _assignment.reset();
-    }
+    void clear_assignment() { _assignment.reset(); }
 
     /// Return true if the request protocols match the member's protocols.
     bool matching_protocols(const join_group_request& r) const {
@@ -112,9 +97,7 @@ public:
     }
 
     /// Check if the member is waiting to join.
-    bool is_joining() const {
-        return bool(_join_promise);
-    }
+    bool is_joining() const { return bool(_join_promise); }
 
     /**
      * Get the join response.
@@ -133,9 +116,7 @@ public:
     }
 
     /// Check if the member is syncing.
-    bool is_syncing() const {
-        return bool(_sync_promise);
-    }
+    bool is_syncing() const { return bool(_sync_promise); }
 
     /**
      * Get the sync response.

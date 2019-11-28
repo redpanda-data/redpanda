@@ -56,18 +56,13 @@ public:
       , _throttle_delay(throttle_delay)
       , _group_router(group_router)
       , _shard_table(shard_table)
-      , _partition_manager(partition_manager) {
-    }
+      , _partition_manager(partition_manager) {}
 
     request_context(request_context&&) noexcept = default;
 
-    const request_header& header() const {
-        return _header;
-    }
+    const request_header& header() const { return _header; }
 
-    request_reader& reader() {
-        return _reader;
-    }
+    request_reader& reader() { return _reader; }
 
     const cluster::metadata_cache& metadata_cache() const {
         return _metadata_cache.local();
@@ -83,9 +78,7 @@ public:
           .count();
     }
 
-    kafka::group_router_type& groups() {
-        return _group_router;
-    }
+    kafka::group_router_type& groups() { return _group_router; }
 
 private:
     sharded<cluster::metadata_cache>& _metadata_cache;

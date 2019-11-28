@@ -11,8 +11,7 @@ using namespace model; // NOLINT
 class consumer {
 public:
     explicit consumer(size_t depth)
-      : _depth(depth) {
-    }
+      : _depth(depth) {}
 
     future<stop_iteration> operator()(record_batch b) {
         _result.push_back(std::move(b));
@@ -22,9 +21,7 @@ public:
         return make_ready_future<stop_iteration>(stop_iteration::no);
     }
 
-    std::vector<record_batch> end_of_stream() {
-        return std::move(_result);
-    }
+    std::vector<record_batch> end_of_stream() { return std::move(_result); }
 
 private:
     std::vector<record_batch> _result;

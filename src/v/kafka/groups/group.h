@@ -1,9 +1,9 @@
 #pragma once
-#include "model/fundamental.h"
 #include "kafka/errors.h"
 #include "kafka/groups/member.h"
 #include "kafka/requests/join_group_request.h"
 #include "kafka/types.h"
+#include "model/fundamental.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>
@@ -75,31 +75,22 @@ public:
       : _id(id)
       , _state(s)
       , _generation(0)
-      , _num_members_joining(0) {
-    }
+      , _num_members_joining(0) {}
 
     /// Get the group id.
-    const kafka::group_id& id() const {
-        return _id;
-    }
+    const kafka::group_id& id() const { return _id; }
 
     /// Return the group state.
-    group_state state() const {
-        return _state;
-    }
+    group_state state() const { return _state; }
 
     /// Check if the group is in a given state.
-    bool in_state(group_state s) const {
-        return _state == s;
-    }
+    bool in_state(group_state s) const { return _state == s; }
 
     /// Transition the group to a new state.
     void set_state(group_state s);
 
     /// Return the generation of the group.
-    kafka::generation_id generation() const {
-        return _generation;
-    }
+    kafka::generation_id generation() const { return _generation; }
 
     /**
      * \brief Access a group member.
@@ -116,9 +107,7 @@ public:
     }
 
     /// Check if the group has members.
-    bool has_members() const {
-        return !_members.empty();
-    }
+    bool has_members() const { return !_members.empty(); }
 
     /// Check if all members have joined.
     bool all_members_joined() const {
@@ -156,9 +145,7 @@ public:
     }
 
     /// Get the group leader (if any).
-    const std::optional<member_id>& leader() const {
-        return _leader;
-    }
+    const std::optional<member_id>& leader() const { return _leader; }
 
     /**
      * \brief check if group supports a member's protocol configuration.
@@ -284,9 +271,7 @@ public:
      * TODO:
      *   - integrate with raft persistence.
      */
-    const model::ntp& ntp() const {
-        return _ntp;
-    }
+    const model::ntp& ntp() const { return _ntp; }
 
     /// Check if moving to the given state is a valid transition.
     bool valid_previous_state(group_state s) const;

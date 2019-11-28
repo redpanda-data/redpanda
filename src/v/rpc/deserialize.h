@@ -29,8 +29,7 @@ public:
       : std::invalid_argument(fmt::format(
         "cannot parse input_stream. got:{} bytes and expected:{} bytes",
         got,
-        expected)) {
-    }
+        expected)) {}
 };
 
 template<typename T>

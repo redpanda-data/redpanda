@@ -21,8 +21,7 @@ static logger lgr{"cycling test"};
 
 struct movistar final : cycling::team_movistar_service {
     movistar(scheduling_group& sc, smp_service_group& ssg)
-      : cycling::team_movistar_service(sc, ssg) {
-    }
+      : cycling::team_movistar_service(sc, ssg) {}
     future<cycling::mount_tamalpais>
     ibis_hakka(cycling::san_francisco&&, rpc::streaming_context&) final {
         lgr.info("Finished calling ibis_hakka");

@@ -32,35 +32,26 @@ public:
     future<> start();
     future<> stop();
 
-    bool is_leader() const {
-        return _recovered && _raft0->is_leader();
-    }
+    bool is_leader() const { return _recovered && _raft0->is_leader(); }
 
-    model::node_id get_leader_id() const {
-        return _raft0->config().leader_id;
-    }
+    model::node_id get_leader_id() const { return _raft0->config().leader_id; }
 
     future<std::vector<topic_result>> create_topics(
       std::vector<topic_configuration> topics,
       model::timeout_clock::time_point timeout);
 
-    raft::group_id get_highest_group_id() const {
-        return _highest_group_id;
-    }
+    raft::group_id get_highest_group_id() const { return _highest_group_id; }
 
 private:
     struct batch_consumer {
         explicit batch_consumer(controller* c)
-          : ptr(c) {
-        }
+          : ptr(c) {}
         future<stop_iteration> operator()(model::record_batch batch) {
             return ptr->recover_batch(std::move(batch)).then([] {
                 return stop_iteration::no;
             });
         }
-        void end_of_stream() {
-            ptr->end_of_stream();
-        }
+        void end_of_stream() { ptr->end_of_stream(); }
         controller* ptr;
     };
     friend batch_consumer;

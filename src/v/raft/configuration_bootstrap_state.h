@@ -17,24 +17,12 @@ public:
     void process_configuration_in_thread(model::record_batch);
     void process_data_offsets_in_thread(model::record_batch);
 
-    model::offset commit_index() const {
-        return _commit_index;
-    }
-    model::term_id term() const {
-        return _term;
-    }
-    model::offset prev_log_index() const {
-        return _prev_log_index;
-    }
-    model::term_id prev_log_term() const {
-        return _prev_log_term;
-    }
-    const raft::group_configuration& config() const {
-        return _config;
-    }
-    raft::group_configuration&& release_config() {
-        return std::move(_config);
-    }
+    model::offset commit_index() const { return _commit_index; }
+    model::term_id term() const { return _term; }
+    model::offset prev_log_index() const { return _prev_log_index; }
+    model::term_id prev_log_term() const { return _prev_log_term; }
+    const raft::group_configuration& config() const { return _config; }
+    raft::group_configuration&& release_config() { return std::move(_config); }
     bool is_finished() const {
         if (_end_of_log) {
             return true;
@@ -45,18 +33,10 @@ public:
                // we *must* have seen one configuration
                && _log_config_offset_tracker != model::offset{0};
     }
-    void set_term(model::term_id t) {
-        _term = t;
-    }
-    void set_end_of_log() {
-        _end_of_log = true;
-    }
-    uint32_t data_batches_seen() const {
-        return _data_batches_seen;
-    }
-    uint32_t config_batches_seen() const {
-        return _data_batches_seen;
-    }
+    void set_term(model::term_id t) { _term = t; }
+    void set_end_of_log() { _end_of_log = true; }
+    uint32_t data_batches_seen() const { return _data_batches_seen; }
+    uint32_t config_batches_seen() const { return _data_batches_seen; }
 
 private:
     uint32_t _data_batches_seen{0};

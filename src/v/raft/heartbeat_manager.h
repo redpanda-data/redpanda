@@ -30,9 +30,7 @@ public:
 
     void register_group(lw_shared_ptr<consensus>);
     void deregister_group(raft::group_id);
-    duration_type election_duration() const {
-        return _election_duration;
-    }
+    duration_type election_duration() const { return _election_duration; }
 
     future<> start();
     future<> stop();

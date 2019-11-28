@@ -13,8 +13,7 @@ namespace rpc {
 class source {
 public:
     explicit source(input_stream<char>& s)
-      : _source(std::ref(s)) {
-    }
+      : _source(std::ref(s)) {}
     source(const source&) = delete;
     source(source&&) noexcept = default;
 
@@ -39,12 +38,8 @@ public:
             return std::move(b);
         });
     }
-    size_t size_bytes() const {
-        return _size;
-    }
-    uint64_t checksum() const {
-        return _hash.digest();
-    }
+    size_t size_bytes() const { return _size; }
+    uint64_t checksum() const { return _hash.digest(); }
 
 private:
     std::reference_wrapper<input_stream<char>> _source;

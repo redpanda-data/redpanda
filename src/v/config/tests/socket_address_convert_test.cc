@@ -28,8 +28,7 @@ socket_address read_from_yaml(sstring yaml_string) {
     return node["test_addr"].as<socket_address>();
 }
 
-SEASTAR_THREAD_TEST_CASE(write_as_yaml) {
-}
+SEASTAR_THREAD_TEST_CASE(write_as_yaml) {}
 
 SEASTAR_THREAD_TEST_CASE(test_decode_ipv4) {
     auto ip4 = read_from_yaml(ipv4_address_str);

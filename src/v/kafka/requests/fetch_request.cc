@@ -156,8 +156,7 @@ std::ostream& operator<<(std::ostream& o, const fetch_response& r) {
 class kafka_batch_serializer {
 public:
     kafka_batch_serializer() noexcept
-      : _wr(_buf) {
-    }
+      : _wr(_buf) {}
 
     kafka_batch_serializer(const kafka_batch_serializer& o) = delete;
     kafka_batch_serializer& operator=(const kafka_batch_serializer& o) = delete;
@@ -165,8 +164,7 @@ public:
 
     kafka_batch_serializer(kafka_batch_serializer&& o) noexcept
       : _buf(std::move(o._buf))
-      , _wr(_buf) {
-    }
+      , _wr(_buf) {}
 
     future<stop_iteration> operator()(model::record_batch&& batch) {
         if (batch.compressed()) {
@@ -178,9 +176,7 @@ public:
         return make_ready_future<stop_iteration>(stop_iteration::no);
     }
 
-    iobuf end_of_stream() {
-        return std::move(_buf);
-    }
+    iobuf end_of_stream() { return std::move(_buf); }
 
 private:
     void write_batch(model::record_batch&& batch) {
@@ -250,11 +246,10 @@ fetch_api::process(request_context&& ctx, smp_service_group g) {
                     model::record_batch_reader& reader) mutable {
                       return reader
                         .consume(kafka_batch_serializer(), model::no_timeout)
-                        .then(
-                          [r = std::move(r)](iobuf&& batch) mutable {
-                              r.record_set = std::move(batch);
-                              return std::move(r);
-                          });
+                        .then([r = std::move(r)](iobuf&& batch) mutable {
+                            r.record_set = std::move(batch);
+                            return std::move(r);
+                        });
                   });
                 responses.push_back(std::move(f));
             }

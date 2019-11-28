@@ -18,8 +18,7 @@ public:
     test_consumer(size_t batch_skips, size_t record_skips, bool stop_at_batch)
       : _batch_skips(batch_skips)
       , _record_skips(record_skips)
-      , _stop_at_batch(stop_at_batch) {
-    }
+      , _stop_at_batch(stop_at_batch) {}
 
     virtual skip consume_batch_start(
       model::record_batch_header header, size_t num_records) override {
@@ -115,9 +114,7 @@ struct context {
         parser = continuous_batch_parser(c, in);
     }
 
-    bool eof() {
-        return in.eof();
-    }
+    bool eof() { return in.eof(); }
 
     ~context() {
         in.close().get();

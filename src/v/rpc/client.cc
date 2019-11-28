@@ -9,8 +9,7 @@ namespace rpc {
 struct client_context_impl final : streaming_context {
     client_context_impl(client& s, header h)
       : _c(std::ref(s))
-      , _h(std::move(h)) {
-    }
+      , _h(std::move(h)) {}
     future<semaphore_units<>> reserve_memory(size_t ask) final {
         auto fut = get_units(_c.get()._memory, ask);
         if (_c.get()._memory.waiters()) {
@@ -18,12 +17,8 @@ struct client_context_impl final : streaming_context {
         }
         return fut;
     }
-    const header& get_header() const final {
-        return _h;
-    }
-    void signal_body_parse() final {
-        pr.set_value();
-    }
+    const header& get_header() const final { return _h; }
+    void signal_body_parse() final { pr.set_value(); }
     std::reference_wrapper<client> _c;
     header _h;
     promise<> pr;
@@ -116,8 +111,7 @@ void client::shutdown() {
             _fd.reset();
         }
     } catch (...) {
-        rpclog.debug(
-          "Failed to shutdown client: {}", std::current_exception());
+        rpclog.debug("Failed to shutdown client: {}", std::current_exception());
     }
 }
 

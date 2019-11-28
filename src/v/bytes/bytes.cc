@@ -12,9 +12,7 @@ sstring to_hex(bytes_view b) {
     return out;
 }
 
-sstring to_hex(const bytes& b) {
-    return to_hex(bytes_view(b));
-}
+sstring to_hex(const bytes& b) { return to_hex(bytes_view(b)); }
 
 std::ostream& operator<<(std::ostream& os, const bytes& b) {
     return os << to_hex(b);

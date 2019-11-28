@@ -8,18 +8,10 @@
 
 class priority_manager {
 public:
-    io_priority_class raft_priority() {
-        return _raft_priority;
-    }
-    io_priority_class controller_priority() {
-        return _controller_priority;
-    }
-    io_priority_class kafka_read_priority() {
-        return _kafka_read_priority;
-    }
-    io_priority_class compaction_priority() {
-        return _compaction_priority;
-    }
+    io_priority_class raft_priority() { return _raft_priority; }
+    io_priority_class controller_priority() { return _controller_priority; }
+    io_priority_class kafka_read_priority() { return _kafka_read_priority; }
+    io_priority_class compaction_priority() { return _compaction_priority; }
 
     static priority_manager& local() {
         static thread_local priority_manager pm = priority_manager();
@@ -34,8 +26,7 @@ private:
       , _kafka_read_priority(
           engine().register_one_priority_class("kafka_read", 200))
       , _compaction_priority(
-          engine().register_one_priority_class("compaction", 200)) {
-    }
+          engine().register_one_priority_class("compaction", 200)) {}
 
     io_priority_class _raft_priority;
     io_priority_class _controller_priority;

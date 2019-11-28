@@ -17,9 +17,7 @@ connection::connection(
     _hook.get().push_back(*this);
     _probe.connection_established();
 }
-connection::~connection() {
-    _hook.get().erase(_hook.get().iterator_to(*this));
-}
+connection::~connection() { _hook.get().erase(_hook.get().iterator_to(*this)); }
 
 void connection::shutdown() {
     _probe.connection_closed();

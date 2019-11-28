@@ -4,14 +4,12 @@ namespace rpc {
 batched_output_stream::batched_output_stream(
   output_stream<char> o, size_t cache)
   : _out(std::move(o))
-  , _cache_size(cache) {
-}
+  , _cache_size(cache) {}
 batched_output_stream::batched_output_stream(batched_output_stream&& o) noexcept
   : _out(std::move(o._out))
   , _cache_size(o._cache_size)
   , _write_sem(std::move(o._write_sem))
-  , _unflushed_bytes(o._unflushed_bytes) {
-}
+  , _unflushed_bytes(o._unflushed_bytes) {}
 batched_output_stream& batched_output_stream::
 operator=(batched_output_stream&& o) noexcept {
     if (this != &o) {

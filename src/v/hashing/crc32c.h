@@ -33,9 +33,7 @@ public:
         _crc = crc32c::Extend(_crc, data, size);
     }
 
-    uint32_t value() const {
-        return _crc;
-    }
+    uint32_t value() const { return _crc; }
 
 private:
     uint32_t _crc = 0;

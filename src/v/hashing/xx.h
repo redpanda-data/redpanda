@@ -17,9 +17,7 @@ inline uint32_t xxhash_32(const char* data, const size_t& length) {
 
 class incremental_xxhash64 {
 public:
-    incremental_xxhash64() {
-        reset();
-    }
+    incremental_xxhash64() { reset(); }
     incremental_xxhash64(incremental_xxhash64&&) noexcept = default;
     incremental_xxhash64& operator=(incremental_xxhash64&&) noexcept = default;
 
@@ -44,9 +42,7 @@ public:
     [[gnu::always_inline]] inline uint64_t digest() {
         return XXH64_digest(&_state);
     }
-    ~incremental_xxhash64() noexcept {
-        reset();
-    }
+    ~incremental_xxhash64() noexcept { reset(); }
 
 private:
     XXH64_state_t _state;
@@ -54,9 +50,7 @@ private:
 
 class incremental_xxhash32 {
 public:
-    incremental_xxhash32() {
-        reset();
-    }
+    incremental_xxhash32() { reset(); }
     incremental_xxhash32(incremental_xxhash32&&) noexcept = default;
     incremental_xxhash32& operator=(incremental_xxhash32&&) noexcept = default;
 
