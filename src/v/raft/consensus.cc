@@ -301,38 +301,51 @@ consensus::do_append_entries(append_entries_request&& r) {
         //_probe.append_request_duplicate_batch();
         return make_ready_future<append_entries_reply>(std::move(reply));
     }
-    // sucess. copy entries for each subsystem
-    using offsets_ret = std::vector<storage::log::append_result>;
+    // success. copy entries for each subsystem
     using entries_t = std::vector<entry>;
-
-    const uint32_t entries_copies
-      = 1 + (_append_entries_notification ? 1 : 0)
-        + (has_configuration_entires(r.entries) ? 1 : 0);
-
+    using offsets_ret = std::vector<storage::log::append_result>;
     return details::share_n(std::move(r.entries), 2)
       .then([this, m = r.meta](std::vector<entries_t> dups) mutable {
           entries_t entries_for_disk = std::move(dups.back());
           dups.pop_back();
           return disk_append(std::move(entries_for_disk))
-            .then([this, m = std::move(m)](offsets_ret ofs) mutable {
-                return success_case_append_entries(
-                  std::move(m), std::move(ofs));
-            })
-            .then(
-              [this, dups = std::move(dups)](append_entries_reply r) mutable {
-                  using ret_t = append_entries_reply;
-                  if (!dups.empty() && _append_entries_notification) {
-                      _append_entries_notification(std::move(dups.back()));
-                      dups.pop_back();
-                  }
-                  if (!dups.empty() && has_configuration_entires(dups.back())) {
-                      return process_configurations(std::move(dups.back()))
-                        .then([r = std::move(r)]() mutable {
-                            return make_ready_future<ret_t>(std::move(r));
-                        });
-                  }
-                  return make_ready_future<ret_t>(std::move(r));
-              });
+            .then([this, m = std::move(m), dups = std::move(dups)](
+                    offsets_ret ofs) mutable {
+                return make_append_entries_reply(m, ofs).then(
+                  [this,
+                   dups = std::move(dups)](append_entries_reply repl) mutable {
+                      return commit_entries(
+                        std::move(dups.back()), std::move(repl));
+                  });
+            });
+      });
+}
+
+future<append_entries_reply> consensus::commit_entries(
+  std::vector<entry> entries, append_entries_reply reply) {
+    // update metadata first
+    _meta.prev_log_index = _meta.commit_index;
+    _meta.prev_log_term = _meta.term;
+    _meta.commit_index = reply.last_log_index;
+    raftlog.debug("Entries commited, protocol metadata {}", _meta);
+    using entries_t = std::vector<entry>;
+    const uint32_t entries_copies
+      = (_append_entries_notification ? 1 : 0)
+        + (has_configuration_entires(entries) ? 1 : 0);
+    return details::share_n(std::move(entries), entries_copies)
+      .then([this, r = std::move(reply)](std::vector<entries_t> dups) mutable {
+          using ret_t = append_entries_reply;
+          if (!dups.empty() && _append_entries_notification) {
+              _append_entries_notification(std::move(dups.back()));
+              dups.pop_back();
+          }
+          if (!dups.empty() && has_configuration_entires(dups.back())) {
+              return process_configurations(std::move(dups.back()))
+                .then([r = std::move(r)]() mutable {
+                    return make_ready_future<ret_t>(std::move(r));
+                });
+          }
+          return make_ready_future<ret_t>(std::move(r));
       });
 }
 
@@ -351,30 +364,21 @@ future<> consensus::process_configurations(std::vector<entry>&& e) {
         });
     });
 }
-future<append_entries_reply> consensus::success_case_append_entries(
+future<append_entries_reply> consensus::make_append_entries_reply(
   protocol_metadata sender,
   std::vector<storage::log::append_result> disk_results) {
     // always update metadata first!
     const model::offset last_offset = disk_results.back().last_offset;
-    const model::offset begin_offset = model::offset(_meta.commit_index);
-    if (disk_results.size() == 1) {
-        _meta.prev_log_index = _meta.commit_index;
-        _meta.prev_log_term = _meta.term;
-    } else {
-        _meta.prev_log_index = std::prev(disk_results.end(), 2)->last_offset;
-        _meta.prev_log_term = _meta.term;
-    }
-    _meta.commit_index = last_offset;
 
     append_entries_reply reply;
     reply.node_id = _self();
     reply.group = sender.group;
     reply.term = _meta.term;
-    reply.last_log_index = _meta.commit_index;
+    reply.last_log_index = last_offset;
     reply.success = true;
     return make_ready_future<append_entries_reply>(std::move(reply));
+}
 
-} // namespace raft
 future<std::vector<storage::log::append_result>>
 consensus::disk_append(std::vector<entry>&& entries) {
     using ret_t = std::vector<storage::log::append_result>;
