@@ -87,6 +87,8 @@ public:
     }
 
 private:
+    friend class log_builder;
+
     future<>
     new_segment(model::offset, model::term_id, const io_priority_class&);
 
