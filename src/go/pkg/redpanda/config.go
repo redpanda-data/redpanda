@@ -43,6 +43,7 @@ type RpkConfig struct {
 	EnableMemoryLocking bool   `yaml:"enable_memory_locking"`
 	TuneCoredump        bool   `yaml:"tune_coredump"`
 	CoredumpDir         string `yaml:"coredump_dir"`
+	WellKnownIo         string `yaml:"well_known_io,omitempty"`
 }
 
 func WriteConfig(fs afero.Fs, config *Config, path string) error {

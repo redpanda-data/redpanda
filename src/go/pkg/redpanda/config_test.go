@@ -51,6 +51,7 @@ func getValidConfig() *Config {
 			EnableMemoryLocking: true,
 			TuneCoredump:        true,
 			CoredumpDir:         "/var/lib/redpanda/coredumps",
+			WellKnownIo:         "vendor:vm:storage",
 		},
 	}
 }
@@ -190,6 +191,7 @@ rpk:
   enable_memory_locking: true
   tune_coredump: true
   coredump_dir: /var/lib/redpanda/coredumps
+  well_known_io: vendor:vm:storage
 `,
 		},
 	}
@@ -354,6 +356,18 @@ func TestCheckConfig(t *testing.T) {
 			},
 			expected: []string{"if rpk.tune_coredump is set to true," +
 				"rpk.coredump_dir can't be empty"},
+		},
+		{
+			name: "shall return no error if setup is empty," +
+				"but coredump_dir is empty",
+			args: args{
+				config: func() *Config {
+					c := getValidConfig()
+					c.Rpk.WellKnownIo = ""
+					return c
+				},
+			},
+			expected: []string{},
 		},
 	}
 	for _, tt := range tests {
