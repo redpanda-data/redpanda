@@ -235,7 +235,14 @@ func resolveWellKnownIo(
 	config *redpanda.Config,
 	wellKnownIo string,
 ) (*iotune.IoProperties, error) {
-	wellKnownIoTokens := strings.Split(wellKnownIo, ":")
+	var configuredWellKnownIo string
+	// The flags take precedence over the config file
+	if wellKnownIo != "" {
+		configuredWellKnownIo = wellKnownIo
+	} else {
+		configuredWellKnownIo = config.Rpk.WellKnownIo
+	}
+	wellKnownIoTokens := strings.Split(configuredWellKnownIo, ":")
 	if len(wellKnownIoTokens) != 3 {
 		errMsg := "--well-known-io should have the format '<vendor>:<vm type>:<storage type>'"
 		return nil, errors.New(errMsg)
