@@ -91,8 +91,10 @@ private:
     future<vote_reply> do_vote(vote_request&&);
     future<append_entries_reply> do_append_entries(append_entries_request&&);
 
-    future<append_entries_reply> success_case_append_entries(
+    future<append_entries_reply> make_append_entries_reply(
       protocol_metadata sender, std::vector<storage::log::append_result>);
+    future<append_entries_reply>
+      commit_entries(std::vector<entry>, append_entries_reply);
 
     future<std::vector<storage::log::append_result>>
     disk_append(std::vector<entry>&&);
