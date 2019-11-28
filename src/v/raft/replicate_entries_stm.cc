@@ -12,7 +12,9 @@ future<> replicate_entries_stm::process_replies() {
       _replies.cbegin(),
       _replies.cend(),
       size_t(0),
-      [](size_t acc, const retry_meta& m) { return m.value ? acc + 1 : acc; });
+      [](size_t acc, const meta_ptr& m) {
+          return m->value && m->value->success ? acc + 1 : acc;
+      });
     const auto& cfg = _ptr->_conf;
     if (success < cfg.majority()) {
         return make_exception_future<>(std::runtime_error(fmt::format(
@@ -123,9 +125,8 @@ replicate_entries_stm::replicate_entries_stm(
   , _req(std::move(r))
   , _sem(_ptr->_conf.nodes.size()) {
     for (auto& n : _ptr->_conf.nodes) {
-        _replies.push_back(
-          retry_meta{.retries_left = max_retries, .node = n.id()});
-        _ongoing.push_back(_replies.back());
+        _replies.push_back(std::make_unique<retry_meta>(n.id(), max_retries));
+        _ongoing.push_back(*_replies.back());
     }
 }
 replicate_entries_stm::~replicate_entries_stm() {
