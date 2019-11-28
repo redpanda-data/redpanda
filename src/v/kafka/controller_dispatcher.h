@@ -11,8 +11,7 @@ public:
       scheduling_group sg)
       : _controller(controller)
       , _ssg(ssg)
-      , _sg(sg) {
-    }
+      , _sg(sg) {}
 
     template<typename Func>
     futurize_t<std::result_of_t<Func(cluster::controller&)>>

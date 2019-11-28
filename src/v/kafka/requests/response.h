@@ -13,20 +13,13 @@ namespace kafka {
 class response {
 public:
     response() noexcept
-      : _writer(_buf) {
-    }
+      : _writer(_buf) {}
 
-    response_writer& writer() {
-        return _writer;
-    }
+    response_writer& writer() { return _writer; }
 
-    const iobuf& buf() const {
-        return _buf;
-    }
+    const iobuf& buf() const { return _buf; }
 
-    iobuf release() && {
-        return std::move(_buf);
-    }
+    iobuf release() && { return std::move(_buf); }
 
 private:
     iobuf _buf;

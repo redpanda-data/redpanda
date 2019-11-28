@@ -17,15 +17,11 @@ struct partition_allocator_tester {
               model::node_id(i), cpus, std::unordered_map<sstring, sstring>()));
         }
     }
-    partition_allocator::underlying_t& machines() {
-        return pa._machines;
-    }
+    partition_allocator::underlying_t& machines() { return pa._machines; }
     partition_allocator::cil_t& available_machines() {
         return pa._available_machines;
     }
-    raft::group_id highest_group() {
-        return pa._highest_group;
-    }
+    raft::group_id highest_group() { return pa._highest_group; }
     topic_configuration gen_topic_configuration(
       uint32_t partition_count, uint16_t replication_factor) {
         return topic_configuration(
@@ -43,8 +39,8 @@ struct partition_allocator_tester {
             for (int p = 0; p < partitions; p++) {
                 std::vector<model::broker_shard> replicas;
                 for (int r = 0; r < max_nodes; r++) {
-                    replicas.push_back({model::node_id(r),
-                                        _prng() % cpus_per_node});
+                    replicas.push_back(
+                      {model::node_id(r), _prng() % cpus_per_node});
                 }
                 model::partition_metadata p_md{model::partition_id(p)};
                 p_md.replicas = std::move(replicas);
@@ -56,9 +52,7 @@ struct partition_allocator_tester {
         return ret;
     }
 
-    void saturate_all_machines() {
-        pa.test_only_saturate_all_machines();
-    }
+    void saturate_all_machines() { pa.test_only_saturate_all_machines(); }
     uint32_t cluster_partition_capacity() const {
         return pa.test_only_max_cluster_allocation_partition_capacity();
     }

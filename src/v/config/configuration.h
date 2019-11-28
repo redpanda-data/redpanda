@@ -13,9 +13,7 @@
 namespace config {
 struct data_directory_path {
     std::filesystem::path path;
-    sstring as_sstring() const {
-        return path.c_str();
-    }
+    sstring as_sstring() const { return path.c_str(); }
 };
 
 struct configuration final : public config_store {
@@ -114,9 +112,7 @@ struct adl_serializer<std::optional<T>> {
 };
 template<typename T, typename Tag>
 struct adl_serializer<named_type<T, Tag>> {
-    static void to_json(json& j, const named_type<T, Tag>& v) {
-        j = v();
-    }
+    static void to_json(json& j, const named_type<T, Tag>& v) { j = v(); }
 };
 } // namespace nlohmann
 
@@ -222,9 +218,7 @@ template<>
 struct convert<std::chrono::milliseconds> {
     using type = std::chrono::milliseconds;
 
-    static Node encode(const type& rhs) {
-        return Node(rhs.count());
-    }
+    static Node encode(const type& rhs) { return Node(rhs.count()); }
 
     static bool decode(const Node& node, type& rhs) {
         type::rep secs;
@@ -311,9 +305,7 @@ template<typename T, typename Tag>
 struct convert<named_type<T, Tag>> {
     using type = named_type<T, Tag>;
 
-    static Node encode(const type& rhs) {
-        return Node(rhs());
-    }
+    static Node encode(const type& rhs) { return Node(rhs()); }
 
     static bool decode(const Node& node, type& rhs) {
         if (!node) {

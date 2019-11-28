@@ -30,9 +30,7 @@ public:
     future<> connect();
     future<> stop();
     void shutdown();
-    [[gnu::always_inline]] bool is_valid() {
-        return _fd && !_in.eof();
-    }
+    [[gnu::always_inline]] bool is_valid() { return _fd && !_in.eof(); }
     virtual future<std::unique_ptr<streaming_context>> send(netbuf);
 
     template<typename Input, typename Output>

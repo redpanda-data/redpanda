@@ -22,14 +22,12 @@ class file_io_sanitizer : public file_impl {
         saved_backtrace bt;
 
         op()
-          : bt(current_backtrace()) {
-        }
+          : bt(current_backtrace()) {}
     };
 
 public:
     explicit file_io_sanitizer(file f)
-      : _file(f) {
-    }
+      : _file(f) {}
 
     ~file_io_sanitizer() {
         if (!_closed && _file) {

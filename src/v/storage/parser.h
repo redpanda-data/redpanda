@@ -1,10 +1,10 @@
 #pragma once
 
+#include "bytes/iobuf.h"
 #include "model/record.h"
 #include "seastarx.h"
 #include "storage/exceptions.h"
 #include "storage/failure_probes.h"
-#include "bytes/iobuf.h"
 #include "utils/vint.h"
 
 #include <seastar/core/byteorder.hh>
@@ -183,9 +183,7 @@ private:
 
     continuous_batch_parser() = default;
 
-    explicit operator bool() const noexcept {
-        return bool(_consumer);
-    }
+    explicit operator bool() const noexcept { return bool(_consumer); }
 
     friend class optimized_optional<continuous_batch_parser>;
 

@@ -16,17 +16,11 @@ public:
         ++_connections;
     }
 
-    void connection_closed() {
-        --_connections;
-    }
+    void connection_closed() { --_connections; }
 
-    void waiting_for_available_memory() {
-        ++_requests_blocked_memory;
-    }
+    void waiting_for_available_memory() { ++_requests_blocked_memory; }
 
-    void serving_request() {
-        ++_requests_serving;
-    }
+    void serving_request() { ++_requests_serving; }
 
     void request_served() {
         ++_requests_served;
@@ -38,13 +32,9 @@ public:
         --_requests_serving;
     }
 
-    void add_bytes_sent(size_t sent) {
-        _bytes_sent += sent;
-    }
+    void add_bytes_sent(size_t sent) { _bytes_sent += sent; }
 
-    void add_bytes_received(size_t recv) {
-        _bytes_received += recv;
-    }
+    void add_bytes_received(size_t recv) { _bytes_received += recv; }
 
     void setup_metrics(metrics::metric_groups& mgs) {
         if (config::shard_local_cfg().disable_metrics()) {

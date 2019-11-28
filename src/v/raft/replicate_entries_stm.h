@@ -21,9 +21,7 @@ public:
         std::optional<append_entries_reply> value;
         safe_intrusive_list_hook hook;
 
-        bool finished() const {
-            return retries_left <= 0 || bool(value);
-        }
+        bool finished() const { return retries_left <= 0 || bool(value); }
     };
 
     replicate_entries_stm(

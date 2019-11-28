@@ -33,7 +33,7 @@ private:
     }
 
 public:
-   //clang-format off
+    //clang-format off
     template<typename Consumer>
     CONCEPT(requires requires(Consumer c, int8_t v) { {c(v)}; })
     //clang-format on
@@ -80,7 +80,5 @@ public:
         return {decode_zigzag(result), bytes_read};
     }
 
-    static bool has_more_bytes(int8_t byte) {
-        return byte & more_bytes;
-    }
+    static bool has_more_bytes(int8_t byte) { return byte & more_bytes; }
 };

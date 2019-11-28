@@ -41,9 +41,7 @@ public:
 
     future<> close();
 
-    const log_set& segments() const {
-        return _segs;
-    }
+    const log_set& segments() const { return _segs; }
 
     model::record_batch_reader make_reader(log_reader_config);
 
@@ -71,16 +69,10 @@ public:
     }
 
     sstring base_directory() const;
-    const model::ntp& ntp() const {
-        return _ntp;
-    }
+    const model::ntp& ntp() const { return _ntp; }
 
-    probe& get_probe() {
-        return _probe;
-    }
-    model::offset max_offset() const {
-        return _tracker.dirty_offset();
-    }
+    probe& get_probe() { return _probe; }
+    model::offset max_offset() const { return _tracker.dirty_offset(); }
 
     model::offset committed_offset() const {
         return _tracker.committed_offset();

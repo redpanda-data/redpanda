@@ -21,8 +21,7 @@ static inline const kafka::protocol_name no_protocol("");
 class group_manager {
 public:
     group_manager(sharded<cluster::partition_manager>& partitions)
-      : _partitions(partitions.local()) {
-    }
+      : _partitions(partitions.local()) {}
 
     future<> start() {
         // TODO setup partition manager hooks when this shard becomes a

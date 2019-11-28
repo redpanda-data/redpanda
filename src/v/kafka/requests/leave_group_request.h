@@ -31,8 +31,7 @@ struct leave_group_response final {
     // TODO: throttle will be filled in automatically
     leave_group_response(error_code error)
       : throttle_time(0)
-      , error(error) {
-    }
+      , error(error) {}
 
     void encode(const request_context& ctx, response& resp);
 };

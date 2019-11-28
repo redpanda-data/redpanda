@@ -26,14 +26,12 @@ public:
 
     team_movistar_service(scheduling_group sc, smp_service_group ssg)
       : _sc(sc)
-      , _ssg(ssg) {
-    }
+      , _ssg(ssg) {}
 
     team_movistar_service(team_movistar_service&& o) noexcept
       : _sc(std::move(o._sc))
       , _ssg(std::move(o._ssg))
-      , _methods(std::move(o._methods)) {
-    }
+      , _methods(std::move(o._methods)) {}
 
     team_movistar_service& operator=(team_movistar_service&& o) noexcept {
         if (this != &o) {
@@ -45,13 +43,9 @@ public:
 
     virtual ~team_movistar_service() noexcept = default;
 
-    scheduling_group& get_scheduling_group() override {
-        return _sc;
-    }
+    scheduling_group& get_scheduling_group() override { return _sc; }
 
-    smp_service_group& get_smp_service_group() override {
-        return _ssg;
-    }
+    smp_service_group& get_smp_service_group() override { return _ssg; }
 
     rpc::method* method_from_id(uint32_t idx) final {
         switch (idx) {
@@ -110,8 +104,7 @@ private:
 class team_movistar_service::client : public rpc::client {
 public:
     explicit client(rpc::client_configuration c)
-      : rpc::client(std::move(c), "team_movistar") {
-    }
+      : rpc::client(std::move(c), "team_movistar") {}
     virtual inline future<rpc::client_context<nairo_quintana>>
     canyon(ultimate_cf_slx&& r) {
         return send_typed<ultimate_cf_slx, nairo_quintana>(

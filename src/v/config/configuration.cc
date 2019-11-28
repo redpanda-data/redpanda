@@ -114,19 +114,13 @@ configuration::configuration()
       "Address of Kafka API published to the clients",
       required::no,
       std::nullopt)
-  , rack(
-      *this,
-      "rack",
-      "Rack identifier",
-      required::no,
-      std::nullopt)
-   , disable_metrics(
+  , rack(*this, "rack", "Rack identifier", required::no, std::nullopt)
+  , disable_metrics(
       *this,
       "disable_metrics",
       "Disable registering metrics",
       required::no,
-      false) {
-}
+      false) {}
 
 void configuration::read_yaml(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {

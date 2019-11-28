@@ -15,8 +15,7 @@ public:
         buffers.end(),
         size_t(0),
         [](size_t acc, auto& it) { return acc + it.size(); }))
-      , _buffers(std::move(buffers)) {
-    }
+      , _buffers(std::move(buffers)) {}
     virtual future<value_type> skip(uint64_t n) final {
         _byte_offset = std::min(_byte_offset + n, capacity);
         return get();

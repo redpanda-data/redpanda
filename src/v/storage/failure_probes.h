@@ -89,9 +89,7 @@ public:
         return point == "consume" ? static_cast<type>(methods::consume) : 0;
     }
 
-    std::vector<sstring> points() final {
-        return {"consume"};
-    }
+    std::vector<sstring> points() final { return {"consume"}; }
 
     future<> consume() {
         if (is_enabled()) {

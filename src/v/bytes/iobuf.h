@@ -167,12 +167,10 @@ public:
     struct empty {};
     fragment(temporary_buffer<char> buf, full)
       : _buf(std::move(buf))
-      , _used_bytes(_buf.size()) {
-    }
+      , _used_bytes(_buf.size()) {}
     fragment(temporary_buffer<char> buf, empty)
       : _buf(std::move(buf))
-      , _used_bytes(0) {
-    }
+      , _used_bytes(0) {}
     fragment(fragment&& o) noexcept = default;
     fragment& operator=(fragment&& o) noexcept = default;
     ~fragment() = default;
@@ -180,22 +178,14 @@ public:
     bool operator==(const fragment& o) const {
         return _used_bytes == o._used_bytes && _buf == o._buf;
     }
-    bool operator!=(const fragment& o) const {
-        return !(*this == o);
-    }
-    bool is_empty() const {
-        return _used_bytes == 0;
-    }
-    size_t available_bytes() const {
-        return _buf.size() - _used_bytes;
-    }
+    bool operator!=(const fragment& o) const { return !(*this == o); }
+    bool is_empty() const { return _used_bytes == 0; }
+    size_t available_bytes() const { return _buf.size() - _used_bytes; }
     void reserve(size_t reservation) {
         details::check_out_of_range(reservation, available_bytes());
         _used_bytes += reservation;
     }
-    size_t size() const {
-        return _used_bytes;
-    }
+    size_t size() const { return _used_bytes; }
     const char* get() const {
         // required for the networking layer to conver to
         // scattered message without copying data
@@ -241,9 +231,7 @@ public:
     }
 
 private:
-    char* get_current() {
-        return _buf.get_write() + _used_bytes;
-    }
+    char* get_current() { return _buf.get_write() + _used_bytes; }
 
     friend iobuf::placeholder;
 
@@ -259,8 +247,7 @@ public:
     placeholder(iterator iter, size_t initial_index, size_t max_size_to_write)
       : _iter(iter)
       , _byte_index(initial_index)
-      , _remaining_size(max_size_to_write) {
-    }
+      , _remaining_size(max_size_to_write) {}
 
     [[gnu::always_inline]] void write(const char* src, size_t len) {
         details::check_out_of_range(len, _remaining_size);
@@ -269,19 +256,13 @@ public:
         _byte_index += len;
     }
 
-    size_t remaining_size() const {
-        return _remaining_size;
-    }
+    size_t remaining_size() const { return _remaining_size; }
 
     // the first byte of the _current_ iterator + offset
-    const char* index() const {
-        return _iter->_buf.get() + _byte_index;
-    }
+    const char* index() const { return _iter->_buf.get() + _byte_index; }
 
 private:
-    char* mutable_index() {
-        return _iter->_buf.get_write() + _byte_index;
-    }
+    char* mutable_index() { return _iter->_buf.get_write() + _byte_index; }
 
     iterator _iter;
     size_t _byte_index{0};
@@ -316,18 +297,11 @@ public:
       : _frag(begin)
       , _frag_end(end)
       , _frag_index(frag_index)
-      , _frag_index_end(frag_index_end) {
-    }
+      , _frag_index_end(frag_index_end) {}
 
-    pointer get() const {
-        return _frag_index;
-    }
-    reference operator*() const noexcept {
-        return *_frag_index;
-    }
-    pointer operator->() const noexcept {
-        return _frag_index;
-    }
+    pointer get() const { return _frag_index; }
+    reference operator*() const noexcept { return *_frag_index; }
+    pointer operator->() const noexcept { return _frag_index; }
     /// true if pointing to the byte-value (not necessarily the same address)
     bool operator==(const byte_iterator& o) const noexcept {
         return _frag_index == o._frag_index;
@@ -440,15 +414,9 @@ public:
         }
         return i;
     }
-    size_t bytes_consumed() const {
-        return _bytes_consumed;
-    }
-    size_t segment_bytes_left() const {
-        return _frag_index_end - _frag_index;
-    }
-    bool is_finished() const {
-        return _frag == _frag_end;
-    }
+    size_t bytes_consumed() const { return _bytes_consumed; }
+    size_t segment_bytes_left() const { return _frag_index_end - _frag_index; }
+    bool is_finished() const { return _frag == _frag_end; }
 
     /// starts a new iterator byte-for-byte starting at *this* index
     /// useful for varint decoding that need to peek ahead
@@ -491,27 +459,18 @@ inline iobuf::iobuf() {
 /// constructor used for sharing
 inline iobuf::iobuf(iobuf::control_ptr c, deleter del) noexcept
   : _ctrl(c)
-  , _deleter(std::move(del)) {
-}
+  , _deleter(std::move(del)) {}
 
-inline iobuf::iterator iobuf::begin() {
-    return _ctrl->frags.begin();
-}
-inline iobuf::iterator iobuf::end() {
-    return _ctrl->frags.end();
-}
+inline iobuf::iterator iobuf::begin() { return _ctrl->frags.begin(); }
+inline iobuf::iterator iobuf::end() { return _ctrl->frags.end(); }
 inline iobuf::const_iterator iobuf::begin() const {
     return _ctrl->frags.cbegin();
 }
-inline iobuf::const_iterator iobuf::end() const {
-    return _ctrl->frags.cend();
-}
+inline iobuf::const_iterator iobuf::end() const { return _ctrl->frags.cend(); }
 inline iobuf::const_iterator iobuf::cbegin() const {
     return _ctrl->frags.cbegin();
 }
-inline iobuf::const_iterator iobuf::cend() const {
-    return _ctrl->frags.cend();
-}
+inline iobuf::const_iterator iobuf::cend() const { return _ctrl->frags.cend(); }
 
 inline bool iobuf::operator==(const iobuf& o) const {
     if (_ctrl->size != o._ctrl->size) {
@@ -531,15 +490,9 @@ inline bool iobuf::operator==(const iobuf& o) const {
     }
     return true;
 }
-inline bool iobuf::operator!=(const iobuf& o) const {
-    return !(*this == o);
-}
-inline bool iobuf::empty() const {
-    return _ctrl->frags.empty();
-}
-inline size_t iobuf::size_bytes() const {
-    return _ctrl->size;
-}
+inline bool iobuf::operator!=(const iobuf& o) const { return !(*this == o); }
+inline bool iobuf::empty() const { return _ctrl->frags.empty(); }
+inline size_t iobuf::size_bytes() const { return _ctrl->size; }
 
 inline size_t iobuf::available_bytes() const {
     if (_ctrl->frags.empty()) {
@@ -548,9 +501,7 @@ inline size_t iobuf::available_bytes() const {
     return _ctrl->frags.back().available_bytes();
 }
 
-inline iobuf iobuf::share() {
-    return iobuf(_ctrl, _deleter.share());
-}
+inline iobuf iobuf::share() { return iobuf(_ctrl, _deleter.share()); }
 
 inline iobuf iobuf::share(size_t pos, size_t len) {
     auto alloc = allocate_control();
@@ -678,8 +629,7 @@ inline void iobuf::trim_front(size_t n) {
 inline input_stream<char> make_iobuf_input_stream(iobuf io) {
     struct iobuf_input_stream final : data_source_impl {
         iobuf_input_stream(iobuf i)
-          : io(std::move(i)) {
-        }
+          : io(std::move(i)) {}
         future<temporary_buffer<char>> skip(uint64_t n) final {
             io.trim_front(n);
             return get();
@@ -700,8 +650,7 @@ inline input_stream<char> make_iobuf_input_stream(iobuf io) {
 inline output_stream<char> make_iobuf_output_stream(iobuf io) {
     struct iobuf_output_stream final : data_sink_impl {
         iobuf_output_stream(iobuf i)
-          : io(std::move(i)) {
-        }
+          : io(std::move(i)) {}
         future<> put(net::packet data) final {
             auto all = data.release();
             for (auto& b : all) {
@@ -719,12 +668,8 @@ inline output_stream<char> make_iobuf_output_stream(iobuf io) {
             io.append(std::move(buf));
             return make_ready_future<>();
         }
-        future<> flush() final {
-            return make_ready_future<>();
-        }
-        future<> close() final {
-            return make_ready_future<>();
-        }
+        future<> flush() final { return make_ready_future<>(); }
+        future<> close() final { return make_ready_future<>(); }
         iobuf io;
     };
     const size_t sz = io.size_bytes();

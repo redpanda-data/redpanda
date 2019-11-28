@@ -25,16 +25,11 @@ public:
     using named_type<sstring, struct model_topic_type>::named_type;
 
     topic(model::topic_view view)
-      : named_type<sstring, struct model_topic_type>(sstring(view())) {
-    }
+      : named_type<sstring, struct model_topic_type>(sstring(view())) {}
 
-    operator topic_view() {
-        return topic_view(_value);
-    }
+    operator topic_view() { return topic_view(_value); }
 
-    operator topic_view() const {
-        return topic_view(_value);
-    }
+    operator topic_view() const { return topic_view(_value); }
 };
 
 /// \brief namespace is reserved in c++;  use ns
@@ -67,9 +62,7 @@ struct ntp {
         return ns == other.ns && tp == other.tp;
     }
 
-    bool operator!=(const ntp& other) const {
-        return !(*this == other);
-    }
+    bool operator!=(const ntp& other) const { return !(*this == other); }
 
     sstring path() const;
 };

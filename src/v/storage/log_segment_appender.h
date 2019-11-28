@@ -18,8 +18,7 @@ class log_segment_appender {
 public:
     log_segment_appender(file f, file_output_stream_options options)
       : _prio(options.io_priority_class)
-      , _out(make_file_output_stream(std::move(f), std::move(options))) {
-    }
+      , _out(make_file_output_stream(std::move(f), std::move(options))) {}
 
     future<> append(const char* buf, size_t n) {
         _offset += n;
@@ -46,21 +45,13 @@ public:
         return f;
     }
 
-    future<> flush() {
-        return _out.flush();
-    }
+    future<> flush() { return _out.flush(); }
 
-    future<> close() {
-        return _out.close();
-    }
+    future<> close() { return _out.close(); }
 
-    uint64_t file_byte_offset() const {
-        return _offset;
-    }
+    uint64_t file_byte_offset() const { return _offset; }
 
-    const io_priority_class& priority_class() const {
-        return _prio;
-    }
+    const io_priority_class& priority_class() const { return _prio; }
 
 private:
     output_stream<char> _out;

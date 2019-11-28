@@ -76,9 +76,7 @@ public:
         return stop_iteration::yes;
     }
 
-    bool recovered() const {
-        return _current_batch_crc == _crc.value();
-    }
+    bool recovered() const { return _current_batch_crc == _crc.value(); }
 
     std::optional<model::offset> last_valid_offset() const {
         return _last_valid_offset;

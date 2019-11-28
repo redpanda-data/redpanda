@@ -20,8 +20,7 @@ public:
       : _enabled(false)
       , _key_cert(std::nullopt)
       , _truststore_file(std::nullopt)
-      , _require_client_auth(false) {
-    }
+      , _require_client_auth(false) {}
 
     tls_config(
       bool enabled,
@@ -31,12 +30,9 @@ public:
       : _enabled(enabled)
       , _key_cert(key_cert)
       , _truststore_file(truststore)
-      , _require_client_auth(require_client_auth) {
-    }
+      , _require_client_auth(require_client_auth) {}
 
-    bool is_enabled() const {
-        return _enabled;
-    }
+    bool is_enabled() const { return _enabled; }
 
     const std::optional<key_cert>& get_key_cert_files() const {
         return _key_cert;
@@ -46,9 +42,7 @@ public:
         return _truststore_file;
     }
 
-    bool get_require_client_auth() const {
-        return _require_client_auth;
-    }
+    bool get_require_client_auth() const { return _require_client_auth; }
 
     future<std::optional<tls::credentials_builder>>
     get_credentials_builder() const {

@@ -24,22 +24,16 @@ public:
         --_requests_pending;
     }
 
-    void add_bytes_sent(size_t sent) {
-        _out_bytes += sent;
-    }
+    void add_bytes_sent(size_t sent) { _out_bytes += sent; }
 
-    void add_bytes_received(size_t recv) {
-        _in_bytes += recv;
-    }
+    void add_bytes_received(size_t recv) { _in_bytes += recv; }
 
     void connection_established() {
         ++_connects;
         ++_connections;
     }
 
-    void connection_closed() {
-        --_connections;
-    }
+    void connection_closed() { --_connections; }
 
     void connection_error(std::exception_ptr e) {
         rpclog.error("Connection error: {}", e);
@@ -56,17 +50,11 @@ public:
         request_error();
     }
 
-    void client_correlation_error() {
-        ++_client_correlation_errors;
-    }
+    void client_correlation_error() { ++_client_correlation_errors; }
 
-    void server_correlation_error() {
-        ++_server_correlation_errors;
-    }
+    void server_correlation_error() { ++_server_correlation_errors; }
 
-    void waiting_for_available_memory() {
-        ++_requests_blocked_memory;
-    }
+    void waiting_for_available_memory() { ++_requests_blocked_memory; }
 
     void setup_metrics(
       metrics::metric_groups& mgs,

@@ -45,9 +45,7 @@ public:
           .get0();
     }
 
-    cluster::metadata_cache& get_local_cache() {
-        return _md_cache.local();
-    }
+    cluster::metadata_cache& get_local_cache() { return _md_cache.local(); }
 
     ~controller_tests_fixture() {
         st.stop().get0();

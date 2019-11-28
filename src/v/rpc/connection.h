@@ -20,9 +20,7 @@ public:
       server_probe& p);
     ~connection();
     connection(const connection&) = delete;
-    input_stream<char>& input() {
-        return _in;
-    }
+    input_stream<char>& input() { return _in; }
     future<> write(scattered_message<char> msg);
     void shutdown();
 

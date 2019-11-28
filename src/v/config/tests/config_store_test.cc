@@ -38,8 +38,7 @@ struct test_config : public config::config_store {
           "Aggregate type",
           config::required::no,
           custom_aggregate{"str", 10})
-      , strings(*this, "strings", "Required strings vector") {
-    }
+      , strings(*this, "strings", "Required strings vector") {}
 };
 
 YAML::Node minimal_valid_cofniguration() {

@@ -19,8 +19,7 @@
 namespace storage {
 
 log_manager::log_manager(log_config config) noexcept
-  : _config(std::move(config)) {
-}
+  : _config(std::move(config)) {}
 
 future<> log_manager::stop() {
     return parallel_for_each(_logs, [](logs_type::value_type& entry) {
@@ -142,15 +141,13 @@ future<log_ptr> log_manager::manage(model::ntp ntp) {
 
             auto seg_metadata = extract_segment_metadata(seg.name);
             if (!seg_metadata) {
-                stlog.error(
-                  "Could not extract name for segment: {}", seg.name);
+                stlog.error("Could not extract name for segment: {}", seg.name);
                 return make_ready_future<>();
             }
 
             auto&& [offset, term, version] = std::move(seg_metadata.value());
             if (version != record_version_type::v1) {
-                stlog.error(
-                  "Found sement with invalid version: {}", seg.name);
+                stlog.error("Found sement with invalid version: {}", seg.name);
                 return make_ready_future<>();
             }
 

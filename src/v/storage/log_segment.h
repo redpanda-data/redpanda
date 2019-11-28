@@ -27,43 +27,27 @@ public:
     log_segment(log_segment&&) noexcept = default;
     log_segment(const log_segment&) = delete;
     log_segment& operator=(const log_segment&) = delete;
-    sstring get_filename() const {
-        return _filename;
-    }
+    sstring get_filename() const { return _filename; }
 
-    model::term_id term() const {
-        return _term;
-    }
+    model::term_id term() const { return _term; }
 
     // Inclusive lower bound offset.
-    model::offset base_offset() const {
-        return _base_offset;
-    }
+    model::offset base_offset() const { return _base_offset; }
 
     // Exclusive upper bound offset.
-    model::offset max_offset() const {
-        return _max_offset;
-    }
+    model::offset max_offset() const { return _max_offset; }
 
     void set_last_written_offset(model::offset max_offset) {
         _max_offset = std::max(_max_offset, max_offset);
     }
 
-    future<> close() {
-        return _data_file.close();
-    }
+    future<> close() { return _data_file.close(); }
 
-    future<> flush() {
-        return _data_file.flush();
-    }
+    future<> flush() { return _data_file.flush(); }
 
-    future<struct stat> stat() {
-        return _data_file.stat();
-    }
+    future<struct stat> stat() { return _data_file.stat(); }
 
-    future<> truncate(size_t size) {
-        return _data_file.truncate(size);
-    }
+    future<> truncate(size_t size) { return _data_file.truncate(size); }
 
     input_stream<char> data_stream(uint64_t pos, const io_priority_class&);
 
@@ -114,44 +98,26 @@ public:
 
     explicit log_set(std::vector<log_segment_ptr>) noexcept(is_nothrow::value);
 
-    size_t size() const {
-        return _segments.size();
-    }
+    size_t size() const { return _segments.size(); }
 
-    bool empty() const {
-        return _segments.empty();
-    }
+    bool empty() const { return _segments.empty(); }
 
     /// New segments must be monotonically increasing in base offset
     void add(log_segment_ptr);
 
     void pop_last();
 
-    log_segment_ptr last() const {
-        return _segments.back();
-    }
+    log_segment_ptr last() const { return _segments.back(); }
 
-    const_iterator begin() const {
-        return _segments.begin();
-    }
+    const_iterator begin() const { return _segments.begin(); }
 
-    const_iterator end() const {
-        return _segments.end();
-    }
-    const_reverse_iterator rbegin() const {
-        return _segments.rbegin();
-    }
-    const_reverse_iterator rend() const {
-        return _segments.rend();
-    }
+    const_iterator end() const { return _segments.end(); }
+    const_reverse_iterator rbegin() const { return _segments.rbegin(); }
+    const_reverse_iterator rend() const { return _segments.rend(); }
 
-    iterator begin() {
-        return _segments.begin();
-    }
+    iterator begin() { return _segments.begin(); }
 
-    iterator end() {
-        return _segments.end();
-    }
+    iterator end() { return _segments.end(); }
 
     /// very rare. needed when raft needs to truncate un-acknowledged data
     /// it is also very likely that they are the back sements, and so
@@ -183,9 +149,7 @@ public:
         return retval;
     }
     // On generation changes, the iterators are invalidated.
-    iter_gen_type iter_gen() const {
-        return _generation;
-    }
+    iter_gen_type iter_gen() const { return _generation; }
 
 private:
     class generation_advancer {

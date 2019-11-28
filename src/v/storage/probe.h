@@ -9,34 +9,22 @@
 namespace storage {
 class probe {
 public:
-    void add_bytes_written(uint64_t written) {
-        _bytes_written += written;
-    }
+    void add_bytes_written(uint64_t written) { _bytes_written += written; }
 
-    void add_bytes_read(uint64_t read) {
-        _bytes_written += read;
-    }
+    void add_bytes_read(uint64_t read) { _bytes_written += read; }
 
-    void batch_written() {
-        ++_batches_written;
-    }
+    void batch_written() { ++_batches_written; }
 
-    void segment_created() {
-        ++_log_segments_created;
-    }
+    void segment_created() { ++_log_segments_created; }
 
     void batch_write_error(std::exception_ptr e) {
         stlog.error("Error writing record batch {}", e);
         ++_batch_write_errors;
     }
 
-    void add_batches_read(uint32_t batches) {
-        _batches_read += batches;
-    }
+    void add_batches_read(uint32_t batches) { _batches_read += batches; }
 
-    void batch_parse_error() {
-        ++_batch_parse_errors;
-    }
+    void batch_parse_error() { ++_batch_parse_errors; }
 
     void setup_metrics(const model::ntp&);
 

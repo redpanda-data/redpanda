@@ -1,12 +1,12 @@
 #include "kafka/requests/produce_request.h"
 
 #include "bytes/iobuf.h"
-#include "model/fundamental.h"
-#include "model/metadata.h"
-#include "model/timestamp.h"
 #include "kafka/default_namespace.h"
 #include "kafka/errors.h"
 #include "kafka/requests/kafka_batch_adapter.h"
+#include "model/fundamental.h"
+#include "model/metadata.h"
+#include "model/timestamp.h"
 #include "storage/shard_assignment.h"
 #include "utils/remote.h"
 

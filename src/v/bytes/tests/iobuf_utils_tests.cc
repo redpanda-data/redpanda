@@ -10,7 +10,6 @@ SEASTAR_THREAD_TEST_CASE(test_reading_zero_bytes_empty_stream) {
     BOOST_REQUIRE_EQUAL(read_buf.size_bytes(), 0);
 };
 
-
 SEASTAR_THREAD_TEST_CASE(test_reading_zero_bytes) {
     auto buf = iobuf();
     append_sequence(buf, 5);

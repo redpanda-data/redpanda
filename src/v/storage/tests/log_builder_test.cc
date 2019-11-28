@@ -24,8 +24,7 @@ public:
     };
 
     log_builder_fixture()
-      : b(make_dir(), make_ntp()) {
-    }
+      : b(make_dir(), make_ntp()) {}
 
     future<log_stats> get_stats() {
         return b.with_log([](storage::log_ptr log) {
@@ -56,9 +55,7 @@ private:
             return make_ready_future<stop_iteration>(stop_iteration::no);
         }
 
-        log_stats end_of_stream() {
-            return stats_;
-        }
+        log_stats end_of_stream() { return stats_; }
 
     private:
         log_stats stats_;

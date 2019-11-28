@@ -36,17 +36,10 @@ public:
       , _weights(std::move(o._weights))
       , _partition_capacity(o._partition_capacity)
       , _machine_labels(std::move(o._machine_labels))
-      , _hook(std::move(o._hook)) {
-    }
-    uint32_t cpus() const {
-        return _weights.size();
-    }
-    model::node_id id() const {
-        return _id;
-    }
-    uint32_t partition_capacity() const {
-        return _partition_capacity;
-    }
+      , _hook(std::move(o._hook)) {}
+    uint32_t cpus() const { return _weights.size(); }
+    model::node_id id() const { return _id; }
+    uint32_t partition_capacity() const { return _partition_capacity; }
 
 private:
     friend partition_allocator;

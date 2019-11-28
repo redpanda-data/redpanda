@@ -18,11 +18,9 @@ public:
     using type = T;
     constexpr base_named_type() = default;
     constexpr explicit base_named_type(const type& v)
-      : _value(v) {
-    }
+      : _value(v) {}
     constexpr explicit base_named_type(type&& v)
-      : _value(std::move(v)) {
-    }
+      : _value(std::move(v)) {}
     base_named_type(base_named_type&& o) noexcept = default;
     base_named_type& operator=(base_named_type&& o) noexcept = default;
     base_named_type(const base_named_type& o) noexcept = default;
@@ -73,12 +71,8 @@ public:
     constexpr bool operator!=(const type& other) const {
         return _value != other;
     }
-    constexpr bool operator<(const type& other) const {
-        return _value < other;
-    }
-    constexpr bool operator>(const type& other) const {
-        return _value > other;
-    }
+    constexpr bool operator<(const type& other) const { return _value < other; }
+    constexpr bool operator>(const type& other) const { return _value > other; }
     constexpr bool operator<=(const type& other) const {
         return _value <= other;
     }
@@ -87,13 +81,9 @@ public:
     }
 
     // explicit getter
-    constexpr type operator()() const {
-        return _value;
-    }
+    constexpr type operator()() const { return _value; }
     // implicit conversion operator
-    constexpr operator type() const {
-        return _value;
-    }
+    constexpr operator type() const { return _value; }
 
 protected:
     type _value = std::numeric_limits<T>::min();
@@ -107,11 +97,9 @@ public:
 
     base_named_type() = default;
     explicit base_named_type(const type& v)
-      : _value(v) {
-    }
+      : _value(v) {}
     explicit base_named_type(type&& v)
-      : _value(std::move(v)) {
-    }
+      : _value(std::move(v)) {}
 
     base_named_type(base_named_type&& o) noexcept(move_noexcept) = default;
 
@@ -142,33 +130,17 @@ public:
     }
 
     // provide overloads for naked type
-    bool operator==(const type& other) const {
-        return _value == other;
-    }
-    bool operator!=(const type& other) const {
-        return _value != other;
-    }
-    bool operator<(const type& other) const {
-        return _value < other;
-    }
-    bool operator>(const type& other) const {
-        return _value > other;
-    }
-    bool operator<=(const type& other) const {
-        return _value <= other;
-    }
-    bool operator>=(const type& other) const {
-        return _value >= other;
-    }
+    bool operator==(const type& other) const { return _value == other; }
+    bool operator!=(const type& other) const { return _value != other; }
+    bool operator<(const type& other) const { return _value < other; }
+    bool operator>(const type& other) const { return _value > other; }
+    bool operator<=(const type& other) const { return _value <= other; }
+    bool operator>=(const type& other) const { return _value >= other; }
 
     // explicit getter
-    const type& operator()() const {
-        return _value;
-    }
+    const type& operator()() const { return _value; }
     // implicit conversion operator
-    operator const type&() const {
-        return _value;
-    }
+    operator const type&() const { return _value; }
 
 protected:
     type _value;

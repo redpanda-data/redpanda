@@ -24,16 +24,10 @@ public:
       std::string_view desc,
       required req);
 
-    const std::string_view& name() const {
-        return _name;
-    }
-    const std::string_view& desc() const {
-        return _desc;
-    }
+    const std::string_view& name() const { return _name; }
+    const std::string_view& desc() const { return _desc; }
 
-    const required is_required() const {
-        return _required;
-    }
+    const required is_required() const { return _required; }
 
     // this serializes the property value. a full configuration serialization is
     // performed in config_store::to_json where the json object key is taken

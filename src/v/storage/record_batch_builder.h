@@ -21,8 +21,7 @@ private:
     struct serialized_record {
         serialized_record(iobuf k, iobuf v)
           : key(std::move(k))
-          , value(std::move(v)) {
-        }
+          , value(std::move(v)) {}
 
         iobuf key;
         iobuf value;

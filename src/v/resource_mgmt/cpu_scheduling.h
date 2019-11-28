@@ -17,15 +17,9 @@ public:
           .then([this](scheduling_group sg) { _kafka = sg; });
     }
 
-    scheduling_group admin_sg() {
-        return _admin;
-    }
-    scheduling_group raft_sg() {
-        return _raft;
-    }
-    scheduling_group kafka_sg() {
-        return _kafka;
-    }
+    scheduling_group admin_sg() { return _admin; }
+    scheduling_group raft_sg() { return _raft; }
+    scheduling_group kafka_sg() { return _kafka; }
 
 private:
     scheduling_group _admin;

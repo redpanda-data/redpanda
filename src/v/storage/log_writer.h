@@ -21,16 +21,14 @@ class log_writer {
 public:
     class impl {
     public:
-        virtual ~impl() {
-        }
+        virtual ~impl() {}
 
         virtual future<stop_iteration> operator()(model::record_batch&&) = 0;
         virtual model::offset end_of_stream() = 0;
     };
 
     explicit log_writer(std::unique_ptr<impl> impl) noexcept
-      : _impl(std::move(impl)) {
-    }
+      : _impl(std::move(impl)) {}
 
     log_writer(log_writer&& o) = default;
     log_writer& operator=(log_writer&& o) = default;
@@ -39,9 +37,7 @@ public:
         return _impl->operator()(std::move(batch));
     }
 
-    model::offset end_of_stream() {
-        return _impl->end_of_stream();
-    }
+    model::offset end_of_stream() { return _impl->end_of_stream(); }
 
 private:
     std::unique_ptr<impl> _impl;

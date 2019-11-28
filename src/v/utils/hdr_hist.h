@@ -54,9 +54,7 @@ public:
           , _begin_t(o._begin_t) {
             o.detach_hdr_hist();
         }
-        void set_trace(bool b) {
-            _trace = b;
-        }
+        void set_trace(bool b) { _trace = b; }
         ~measurement() {
             if (!_detached) {
                 _h.get()._probes.erase(_h.get()._probes.iterator_to(*this));
@@ -73,9 +71,7 @@ public:
     private:
         friend hdr_hist;
 
-        void detach_hdr_hist() {
-            _detached = true;
-        }
+        void detach_hdr_hist() { _detached = true; }
 
         bool _detached = false;
         bool _trace = true;
@@ -88,15 +84,13 @@ public:
       int64_t min = 1,
       int32_t significant_figures = 3)
       : _hist(hist_internal::make_unique_hdr_histogram(
-        max_value, min, significant_figures)) {
-    }
+        max_value, min, significant_figures)) {}
 
     hdr_hist(hdr_hist&& o) noexcept
       : _probes(std::move(o._probes))
       , _hist(std::move(o._hist))
       , _sample_count(o._sample_count)
-      , _sample_sum(o._sample_sum) {
-    }
+      , _sample_sum(o._sample_sum) {}
     hdr_hist& operator+=(const hdr_hist& o);
     temporary_buffer<char> print_classic() const;
     void record(uint64_t value);

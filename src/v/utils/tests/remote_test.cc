@@ -21,13 +21,11 @@ struct obj_with_foreign_ptr {
 
     obj_with_foreign_ptr(int x, foreign_ptr<const char*> ptr)
       : x(x)
-      , ptr(std::move(ptr)) {
-    }
+      , ptr(std::move(ptr)) {}
 
     obj_with_foreign_ptr(obj_with_foreign_ptr&& other) noexcept
       : x(other.x)
-      , ptr(std::exchange(other.ptr, {})) {
-    }
+      , ptr(std::exchange(other.ptr, {})) {}
 
     obj_with_foreign_ptr& operator=(obj_with_foreign_ptr&& other) noexcept {
         x = other.x;
@@ -35,9 +33,7 @@ struct obj_with_foreign_ptr {
         return *this;
     }
 
-    operator bool() const {
-        return bool(ptr);
-    }
+    operator bool() const { return bool(ptr); }
 };
 
 SEASTAR_THREAD_TEST_CASE(test_free_on_right_cpu_with_foreign_ptr) {

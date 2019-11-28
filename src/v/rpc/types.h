@@ -68,8 +68,7 @@ using method = noncopyable_function<future<netbuf>(
 template<typename T>
 struct client_context {
     explicit client_context(header h)
-      : hdr(std::move(h)) {
-    }
+      : hdr(std::move(h)) {}
     header hdr;
     T data;
 };

@@ -43,9 +43,7 @@ public:
         return _cond.wait([this] { return _caught; });
     }
 
-    bool stopping() const {
-        return _caught;
-    }
+    bool stopping() const { return _caught; }
 
 private:
     bool _caught = false;
@@ -62,8 +60,6 @@ public:
     void configure_admin_server();
     void wire_up_services();
     void start();
-
-  
 
     sharded<cluster::metadata_cache> metadata_cache;
     sharded<kafka::group_router_type> group_router;

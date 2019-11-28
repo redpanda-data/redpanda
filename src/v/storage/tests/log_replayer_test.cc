@@ -47,13 +47,9 @@ struct context {
         replayer_opt = log_replayer(log_seg);
     }
 
-    log_replayer& replayer() {
-        return *replayer_opt;
-    }
+    log_replayer& replayer() { return *replayer_opt; }
 
-    ~context() {
-        log_seg->close().get();
-    }
+    ~context() { log_seg->close().get(); }
 };
 
 SEASTAR_THREAD_TEST_CASE(test_can_recover_single_batch) {

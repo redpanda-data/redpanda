@@ -1,6 +1,6 @@
 #define BOOST_TEST_MODULE utils
-#include "model/fundamental.h"
 #include "kafka/requests/topics/topic_utils.h"
+#include "model/fundamental.h"
 
 #include <boost/range/iterator_range.hpp>
 #include <boost/test/unit_test.hpp>
@@ -126,8 +126,7 @@ BOOST_AUTO_TEST_CASE(
     BOOST_REQUIRE_EQUAL(errs.size(), 2);
     for (auto const& e : errs) {
         BOOST_TEST(
-          (int8_t)e.ec
-          == (int8_t)kafka::error_code::invalid_partitions);
+          (int8_t)e.ec == (int8_t)kafka::error_code::invalid_partitions);
         BOOST_REQUIRE_EQUAL(*(e.err_msg), "Partitions count is invalid");
     }
 

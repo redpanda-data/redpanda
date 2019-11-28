@@ -89,9 +89,7 @@ struct foreign_entry_fixture {
           .nodes = std::move(nodes),
           .learners = std::move(learners)};
     }
-    ~foreign_entry_fixture() {
-        _mngr.stop().get();
-    }
+    ~foreign_entry_fixture() { _mngr.stop().get(); }
     model::offset _base_offset{0};
     storage::log_ptr _log;
     storage::log_manager _mngr;

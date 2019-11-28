@@ -248,23 +248,22 @@ future<> kafka_server::connection::process_request() {
                         auto remaining = size - sizeof(raw_request_header)
                                          - header.client_id_buffer.size();
                         return read_iobuf_exactly(_read_buf, remaining)
-                          .then(
-                            [this,
-                             header = std::move(header),
-                             units = std::move(units),
-                             delay = std::move(delay)](iobuf buf) mutable {
-                                auto ctx = request_context(
-                                  _server._metadata_cache,
-                                  _server._cntrl_dispatcher.local(),
-                                  std::move(header),
-                                  std::move(buf),
-                                  delay.duration,
-                                  _server._group_router.local(),
-                                  _server._shard_table.local(),
-                                  _server._partition_manager);
-                                _server._probe.serving_request();
-                                do_process(std::move(ctx), std::move(units));
-                            });
+                          .then([this,
+                                 header = std::move(header),
+                                 units = std::move(units),
+                                 delay = std::move(delay)](iobuf buf) mutable {
+                              auto ctx = request_context(
+                                _server._metadata_cache,
+                                _server._cntrl_dispatcher.local(),
+                                std::move(header),
+                                std::move(buf),
+                                delay.duration,
+                                _server._group_router.local(),
+                                _server._shard_table.local(),
+                                _server._partition_manager);
+                              _server._probe.serving_request();
+                              do_process(std::move(ctx), std::move(units));
+                          });
                     });
                 });
           });

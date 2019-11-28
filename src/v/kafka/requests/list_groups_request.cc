@@ -1,7 +1,7 @@
 #include "kafka/requests/list_groups_request.h"
 
-#include "model/metadata.h"
 #include "kafka/errors.h"
+#include "model/metadata.h"
 
 #include <seastar/util/log.hh>
 

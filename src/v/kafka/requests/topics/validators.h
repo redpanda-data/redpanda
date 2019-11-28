@@ -20,8 +20,7 @@ CONCEPT(requires(RequestValidator<Request, Validators>, ...))
 using make_validator_types = validator_type_list<Request, Validators...>;
 
 struct no_custom_partition_assignment {
-    static constexpr error_code ec
-      = error_code::invalid_replica_assignment;
+    static constexpr error_code ec = error_code::invalid_replica_assignment;
     static constexpr const char* error_message
       = "Replica assignment is not supported";
 
@@ -41,8 +40,7 @@ struct partition_count_must_be_positive {
 };
 
 struct replication_factor_must_be_positive {
-    static constexpr error_code ec
-      = error_code::invalid_replication_factor;
+    static constexpr error_code ec = error_code::invalid_replication_factor;
     static constexpr const char* error_message
       = "Replication factor must be greater than 0";
 

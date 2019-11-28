@@ -23,46 +23,25 @@ public:
     explicit request_reader(iobuf io) noexcept
       : _io(std::move(io))
       , _in(_io.cbegin(), _io.cend())
-      , _original_size(_io.size_bytes()) {
-    }
-    size_t bytes_left() const {
-        return _original_size - _in.bytes_consumed();
-    }
-    size_t bytes_consumed() const {
-        return _in.bytes_consumed();
-    }
+      , _original_size(_io.size_bytes()) {}
+    size_t bytes_left() const { return _original_size - _in.bytes_consumed(); }
+    size_t bytes_consumed() const { return _in.bytes_consumed(); }
 
-    bytes_view read_raw_bytes_view(size_t n) {
-        return do_read_bytes_view(n);
-    }
+    bytes_view read_raw_bytes_view(size_t n) { return do_read_bytes_view(n); }
 
-    bool read_bool() {
-        return bool(read_int8());
-    }
+    bool read_bool() { return bool(read_int8()); }
 
-    int8_t read_int8() {
-        return _in.consume_type<int8_t>();
-    }
+    int8_t read_int8() { return _in.consume_type<int8_t>(); }
 
-    int16_t read_int16() {
-        return be_to_cpu(_in.consume_type<int16_t>());
-    }
+    int16_t read_int16() { return be_to_cpu(_in.consume_type<int16_t>()); }
 
-    int32_t read_int32() {
-        return be_to_cpu(_in.consume_type<int32_t>());
-    }
+    int32_t read_int32() { return be_to_cpu(_in.consume_type<int32_t>()); }
 
-    int64_t read_int64() {
-        return be_to_cpu(_in.consume_type<int64_t>());
-    }
+    int64_t read_int64() { return be_to_cpu(_in.consume_type<int64_t>()); }
 
-    uint32_t read_uint32() {
-        return be_to_cpu(_in.consume_type<uint32_t>());
-    }
+    uint32_t read_uint32() { return be_to_cpu(_in.consume_type<uint32_t>()); }
 
-    int32_t read_varint() {
-        return vint::value_type(read_varlong());
-    }
+    int32_t read_varint() { return vint::value_type(read_varlong()); }
 
     int64_t read_varlong() {
         auto [val, length_size] = vint::deserialize(_in);
@@ -70,9 +49,7 @@ public:
         return val;
     }
 
-    sstring read_string() {
-        return do_read_string(read_int16());
-    }
+    sstring read_string() { return do_read_string(read_int16()); }
 
     std::string_view read_string_view() {
         return do_read_string_view(read_int16());
@@ -101,13 +78,9 @@ public:
         }
     }
 
-    bytes read_bytes() {
-        return do_read_bytes(read_int32());
-    }
+    bytes read_bytes() { return do_read_bytes(read_int32()); }
 
-    bytes_view read_bytes_view() {
-        return do_read_bytes_view(read_int32());
-    }
+    bytes_view read_bytes_view() { return do_read_bytes_view(read_int32()); }
 
     bytes_opt read_nullable_bytes() {
         auto len = read_int32();

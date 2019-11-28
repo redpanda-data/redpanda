@@ -12,20 +12,16 @@ namespace storage {
 class log_replayer {
 public:
     explicit log_replayer(log_segment_ptr seg) noexcept
-      : _seg(std::move(seg)) {
-    }
+      : _seg(std::move(seg)) {}
 
     class [[nodiscard]] recovered {
         explicit recovered(
           bool good, std::optional<model::offset> offset) noexcept
           : _good(good)
-          , _last_valid_offset(std::move(offset)) {
-        }
+          , _last_valid_offset(std::move(offset)) {}
 
     public:
-        operator bool() const {
-            return _good;
-        }
+        operator bool() const { return _good; }
 
         std::optional<model::offset> last_valid_offset() const {
             return _last_valid_offset;

@@ -5,14 +5,12 @@
 namespace human {
 struct bytes {
     explicit bytes(double x)
-      : value(x) {
-    }
+      : value(x) {}
     double value;
 };
 struct latency {
     explicit latency(double x)
-      : value(x) {
-    }
+      : value(x) {}
     double value;
 };
 } // namespace human

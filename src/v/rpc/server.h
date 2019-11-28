@@ -36,9 +36,7 @@ public:
     }
 
     const server_configuration cfg;
-    const hdr_hist& histogram() const {
-        return _hist;
-    }
+    const hdr_hist& histogram() const { return _hist; }
 
 private:
     friend server_context_impl;

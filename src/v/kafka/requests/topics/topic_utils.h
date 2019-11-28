@@ -33,9 +33,8 @@ concept TopicResultIterator = requires (Iterator it) {
 template<typename T>
 CONCEPT(requires TopicRequestItem<T>)
 topic_op_result generate_error(T item, error_code code, const sstring& msg) {
-    return topic_op_result{.topic = model::topic{sstring(item.topic())},
-                           .ec = code,
-                           .err_msg = msg};
+    return topic_op_result{
+      .topic = model::topic{sstring(item.topic())}, .ec = code, .err_msg = msg};
 }
 
 /// Generates successfull topic_op_result for single topic request item

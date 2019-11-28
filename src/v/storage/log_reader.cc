@@ -96,9 +96,7 @@ log_segment_reader::log_segment_reader(
     std::sort(std::begin(_config.type_filter), std::end(_config.type_filter));
 }
 
-bool log_segment_reader::is_initialized() const {
-    return bool(_parser);
-}
+bool log_segment_reader::is_initialized() const { return bool(_parser); }
 
 future<> log_segment_reader::initialize() {
     _input = _seg->data_stream(0, _config.prio);
@@ -165,8 +163,7 @@ log_reader::log_reader(
   : _selector(seg_set)
   , _offset_tracker(tracker)
   , _config(std::move(config))
-  , _probe(probe) {
-}
+  , _probe(probe) {}
 
 future<log_reader::span>
 log_reader::do_load_slice(model::timeout_clock::time_point timeout) {

@@ -40,11 +40,7 @@ scattered_message<char> netbuf::as_scattered() && {
     // prepare for output
     return iobuf_as_scattered(std::move(_out));
 }
-void netbuf::set_correlation_id(uint32_t x) {
-    _hdr.correlation_id = x;
-}
-void netbuf::set_service_method_id(uint32_t x) {
-    _hdr.meta = x;
-}
+void netbuf::set_correlation_id(uint32_t x) { _hdr.correlation_id = x; }
+void netbuf::set_service_method_id(uint32_t x) { _hdr.meta = x; }
 
 } // namespace rpc
