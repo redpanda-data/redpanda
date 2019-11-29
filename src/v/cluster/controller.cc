@@ -320,7 +320,7 @@ future<> controller::join_raft_group(raft::consensus& c) {
     // mechanism. This is stubbed implementation for being able to
     // test raft
     if (!c.config().contains_broker(_self.id())) {
-        return c.update_machines_configuration(_self);
+        return c.add_group_member(_self);
     }
     return make_ready_future<>();
 }
