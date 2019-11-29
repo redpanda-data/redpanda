@@ -38,6 +38,9 @@ future<std::vector<raft::entry>> share_one_entry(
 /// parses the configuration out of the entry
 future<raft::group_configuration> extract_configuration(raft::entry);
 
+/// serialize group configuration to the entry
+raft::entry serialize_configuration(group_configuration cfg);
+
 /// returns a fully parsed config state from a given storage log
 future<raft::configuration_bootstrap_state> read_bootstrap_state(storage::log&);
 
