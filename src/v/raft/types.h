@@ -39,6 +39,7 @@ struct group_configuration {
     std::vector<model::broker> nodes;
     std::vector<model::broker> learners;
     group_configuration() = default;
+    group_configuration(const group_configuration&) = default;
     group_configuration(group_configuration&&) noexcept = default;
     group_configuration& operator=(group_configuration&&) noexcept = default;
 
