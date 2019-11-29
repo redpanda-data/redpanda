@@ -46,6 +46,10 @@ public:
         return !(*this == other);
     }
 
+    bool operator<(const model::broker& other) const {
+        return _id < other._id;
+    }
+
 private:
     node_id _id;
     sstring _host;
