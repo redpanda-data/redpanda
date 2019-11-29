@@ -108,7 +108,9 @@ private:
 
     /// used for timer callback to dispatch the vote_stm
     void dispatch_vote();
-
+    /// Replicates configuration to other nodes,
+    //  it have to be called under ops semaphore
+    future<> replicate_configuration(group_configuration);
     /// After we append on disk, we must consume the entries
     /// to update our leader_id, nodes & learners configuration
     future<> process_configurations(std::vector<entry>&&);
