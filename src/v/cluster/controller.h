@@ -63,7 +63,7 @@ private:
         controller* ptr;
     };
     friend batch_consumer;
-    
+
     future<consensus_ptr> start_raft0();
     future<> bootstrap_from_log(storage::log_ptr);
     future<> process_raft0_batch(model::record_batch);
@@ -82,6 +82,8 @@ private:
     void end_of_stream();
     void leadership_notification();
     future<> update_brokers_cache(std::vector<model::broker>);
+    future<>
+      update_clients_cache(std::vector<broker_ptr>, std::vector<broker_ptr>);
     void create_partition_allocator();
     allocation_node local_allocation_node();
     void on_raft0_entries_commited(std::vector<raft::entry>&&);

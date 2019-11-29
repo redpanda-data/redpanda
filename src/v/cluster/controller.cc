@@ -8,6 +8,9 @@
 #include "raft/client_cache.h"
 #include "resource_mgmt/io_priority.h"
 #include "storage/shard_assignment.h"
+
+#include <seastar/net/inet_address.hh>
+
 namespace cluster {
 static void verify_shard() {
     if (__builtin_expect(engine().cpu_id() != controller::shard, false)) {
@@ -136,7 +139,20 @@ future<> controller::process_raft0_cfg_update(model::record r) {
              r.share_packed_value_and_headers())
       .then([this](raft::group_configuration cfg) {
           clusterlog.debug("Processing new raft-0 configuration");
-          return update_brokers_cache(std::move(cfg.nodes));
+          auto old_list = _md_cache.local().all_brokers();
+          std::vector<broker_ptr> new_list;
+          new_list.reserve(cfg.nodes.size());
+          std::transform(
+            std::cbegin(cfg.nodes),
+            std::cend(cfg.nodes),
+            std::back_inserter(new_list),
+            [](const model::broker& broker) {
+                return make_lw_shared<model::broker>(broker);
+            });
+          return update_clients_cache(std::move(new_list), std::move(old_list))
+            .then([this, nodes = std::move(cfg.nodes)] {
+                return update_brokers_cache(std::move(nodes));
+            });
       });
 }
 
@@ -398,4 +414,22 @@ void controller::on_raft0_entries_commited(std::vector<raft::entry>&& entries) {
     });
 }
 
+future<> controller::update_clients_cache(
+  std::vector<broker_ptr> new_list, std::vector<broker_ptr> old_list) {
+    auto diff = calculate_changed_brokers(new_list, old_list);
+    return do_for_each(
+             diff.removed,
+             [this](broker_ptr removed) {
+                 return remove_broker_client(_client_cache, removed->id());
+             })
+      .then([this, updated = std::move(diff.updated)] {
+          return do_for_each(updated, [this](broker_ptr b) {
+              if (b->id() == _self.id()) {
+                  // Do not create client to local broker
+                  return make_ready_future<>();
+              }
+              return update_broker_client(_client_cache, b);
+          });
+      });
+}
 } // namespace cluster
