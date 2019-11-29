@@ -35,9 +35,12 @@ struct [[gnu::packed]] protocol_metadata {
 };
 
 struct group_configuration {
+    using brokers_t = std::vector<model::broker>;
+    using iter = brokers_t::iterator;
+    using const_iter = brokers_t::const_iterator;
     model::node_id leader_id;
-    std::vector<model::broker> nodes;
-    std::vector<model::broker> learners;
+    brokers_t nodes;
+    brokers_t learners;
     group_configuration() = default;
     group_configuration(const group_configuration&) = default;
     group_configuration(group_configuration&&) noexcept = default;
@@ -49,8 +52,10 @@ struct group_configuration {
 
     size_t majority() const { return (nodes.size() / 2) + 1; }
 
-    std::optional<model::broker> find_in_nodes(model::node_id id) const;
-    std::optional<model::broker> find_in_learners(model::node_id id) const;
+    iter find_in_nodes(model::node_id id);
+    const_iter find_in_nodes(model::node_id id) const;
+    iter find_in_learners(model::node_id id);
+    const_iter find_in_learners(model::node_id id) const;
     bool contains_machine(model::node_id id) const;
 };
 
