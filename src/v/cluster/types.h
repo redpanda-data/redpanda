@@ -86,6 +86,13 @@ struct topic_result {
   topic_error_code ec;
 };
 
+/// Structure representing difference between two set of brokers. 
+/// It is used to represent changes that have to be applied to raft client cache
+struct brokers_diff {
+    std::vector<broker_ptr> updated;
+    std::vector<broker_ptr> removed;
+};
+
 }  // namespace cluster
 
 namespace rpc {

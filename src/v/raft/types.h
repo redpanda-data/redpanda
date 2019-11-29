@@ -57,6 +57,7 @@ struct group_configuration {
     iter find_in_learners(model::node_id id);
     const_iter find_in_learners(model::node_id id) const;
     bool contains_broker(model::node_id id) const;
+    brokers_t all_brokers() const;
 };
 
 struct follower_index_metadata {

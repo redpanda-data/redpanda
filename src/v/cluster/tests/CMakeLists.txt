@@ -38,3 +38,10 @@ rp_test(
   LIBRARIES Seastar::seastar_testing cluster
   DEFINITIONS SEASTAR_TESTING_MAIN
 )
+rp_test(
+  UNIT_TEST
+  BINARY_NAME cluster_utils_tests
+  SOURCES cluster_utils_tests.cc
+  LIBRARIES Seastar::seastar_testing cluster
+  DEFINITIONS SEASTAR_TESTING_MAIN
+)
