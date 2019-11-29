@@ -20,7 +20,7 @@ void configuration_bootstrap_state::process_configuration_in_thread(
         _log_config_offset_tracker = b.last_offset();
         for (model::record& rec : b) {
             _config = std::move(rpc::deserialize<group_configuration>(
-                                  rec.release_packed_value_and_headers())
+                                  rec.share_packed_value_and_headers())
                                   .get0());
         }
     }

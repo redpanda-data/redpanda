@@ -211,8 +211,8 @@ private:
             _wr.write_varint(record.timestamp_delta());
             _wr.write_varint(record.offset_delta());
             _wr.write_varint(record.key().size_bytes());
-            _wr.write_direct(record.release_key());
-            _wr.write_direct(record.release_packed_value_and_headers());
+            _wr.write_direct(record.share_key());
+            _wr.write_direct(record.share_packed_value_and_headers());
         }
     }
 

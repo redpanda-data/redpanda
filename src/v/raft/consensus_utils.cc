@@ -140,9 +140,9 @@ static inline std::vector<model::record_batch> share_n_record_batch(
         auto const attributes = r.attributes();
         auto const timestamp_delta = r.timestamp_delta();
         auto const offset_delta = r.offset_delta();
-        auto kvec = iobuf_share_foreign_n(r.release_key(), copies);
+        auto kvec = iobuf_share_foreign_n(r.share_key(), copies);
         auto vvec = iobuf_share_foreign_n(
-          std::move(r).release_packed_value_and_headers(), copies);
+          std::move(r).share_packed_value_and_headers(), copies);
         for (auto& d : data) {
             iobuf key = std::move(kvec.back());
             iobuf val = std::move(vvec.back());
@@ -335,7 +335,7 @@ future<raft::group_configuration> extract_configuration(raft::entry e) {
                                      "unsupported"));
                              }
                              auto it = std::prev(b.end());
-                             auto val = it->release_packed_value_and_headers();
+                             auto val = it->share_packed_value_and_headers();
                              return rpc::deserialize<cfg_t>(std::move(val))
                                .then([&cfg](cfg_t c) { cfg = std::move(c); });
                          })

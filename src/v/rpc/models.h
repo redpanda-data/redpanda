@@ -56,8 +56,8 @@ inline void serialize(iobuf& ref, model::record&& record) {
       record.attributes().value(),
       record.timestamp_delta(),
       record.offset_delta(),
-      record.release_key(),
-      record.release_packed_value_and_headers());
+      record.share_key(),
+      record.share_packed_value_and_headers());
 }
 
 template<>
