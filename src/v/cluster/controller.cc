@@ -222,13 +222,11 @@ future<std::vector<topic_result>> controller::create_topics(
     }
 
     // Do append entries to raft0 logs
-    auto f = raft0_append_entries(std::move(entries))
-               .then_wrapped([topics = std::move(topics)](
-                               future<raft::append_entries_reply> f) {
+    auto f = _raft0->replicate(std::move(entries))
+               .then_wrapped([topics = std::move(topics)](future<> f) {
                    bool success = true;
                    try {
-                       auto repl = f.get0();
-                       success = repl.success;
+                       f.get();
                    } catch (...) {
                        auto e = std::current_exception();
                        clusterlog.error(
@@ -254,13 +252,6 @@ future<std::vector<topic_result>> controller::create_topics(
 
     return with_timeout(timeout, std::move(f));
 } // namespace cluster
-
-future<raft::append_entries_reply>
-controller::raft0_append_entries(std::vector<raft::entry> entries) {
-    return _raft0->append_entries({.node_id = _self.id(),
-                                   .meta = _raft0->meta(),
-                                   .entries = std::move(entries)});
-}
 
 std::optional<raft::entry>
 controller::create_topic_cfg_entry(const topic_configuration& cfg) {
