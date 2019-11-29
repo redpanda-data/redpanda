@@ -69,8 +69,8 @@ public:
         _append_entries_notification = std::move(fn);
     }
 
-    /// XXX: this is a workaround. fix in the works
-    future<> update_machines_configuration(model::broker node);
+    /// This method adds a member to the group and performs configuration update
+    future<> add_group_member(model::broker node);
 
     bool is_leader() const { return _vstate == vote_state::leader; }
     model::node_id self() const { return _self; }
@@ -96,9 +96,9 @@ private:
       protocol_metadata sender, std::vector<storage::log::append_result>);
     future<append_entries_reply>
       commit_entries(std::vector<entry>, append_entries_reply);
-    
+
     future<> do_replicate(std::vector<raft::entry>&&);
-    
+
     future<std::vector<storage::log::append_result>>
     disk_append(std::vector<entry>&&);
 
