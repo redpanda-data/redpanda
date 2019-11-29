@@ -394,6 +394,15 @@ future<> consensus::process_configurations(std::vector<entry>&& e) {
         });
     });
 }
+
+future<> consensus::replicate_configuration(group_configuration cfg) {
+    raftlog.debug("Replicating group {} configuration", _meta.group);
+    auto cfg_entry = details::serialize_configuration(std::move(cfg));
+    std::vector<raft::entry> e;
+    e.push_back(std::move(cfg_entry));
+    return do_replicate(std::move(e));
+}
+
 future<append_entries_reply> consensus::make_append_entries_reply(
   protocol_metadata sender,
   std::vector<storage::log::append_result> disk_results) {
