@@ -102,7 +102,7 @@ future<> controller::recover_batch(model::record_batch batch) {
 }
 
 future<> controller::recover_record(model::record r) {
-    return rpc::deserialize<log_record_key>(r.release_key())
+    return rpc::deserialize<log_record_key>(r.share_key())
       .then([this, v_buf = std::move(r.share_packed_value_and_headers())](
               log_record_key key) mutable {
           return dispatch_record_recovery(std::move(key), std::move(v_buf));

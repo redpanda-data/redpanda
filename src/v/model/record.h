@@ -91,13 +91,9 @@ public:
     int32_t offset_delta() const { return _offset_delta; }
 
     const iobuf& key() const { return _key; }
-    iobuf release_key() { return std::move(_key); }
     iobuf share_key() { return _key.share(); }
 
     const iobuf& packed_value_and_headers() const { return _value_and_headers; }
-    iobuf release_packed_value_and_headers() {
-        return std::move(_value_and_headers);
-    }
     iobuf share_packed_value_and_headers() {
         return _value_and_headers.share();
     }
