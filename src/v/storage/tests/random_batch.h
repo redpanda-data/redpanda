@@ -37,7 +37,7 @@ static model::record_batch_header make_random_header(
   bool allow_compression) {
     model::record_batch_header h;
     h.base_offset = o;
-    h.last_offset_delta = num_records;
+    h.last_offset_delta = num_records - 1;
     h.first_timestamp = ts;
     h.type = model::record_batch_type(1);
     h.max_timestamp = model::timestamp(ts.value() + num_records);
