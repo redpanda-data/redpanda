@@ -1,5 +1,6 @@
 #include "redpanda/application.h"
 
+#include "platform/stop_signal.h"
 #include "raft/service.h"
 #include "storage/directories.h"
 #include "syschecks/syschecks.h"
@@ -20,7 +21,7 @@ int application::run(int ac, char** av) {
         auto& cfg = app.configuration();
         validate_arguments(cfg);
         return async([this, &cfg] {
-            ::stop_signal stop_signal;
+            ::stop_signal app_signal;
             auto deferred = defer([this] {
                 auto deferred = std::move(_deferred);
                 // stop services in reverse order
@@ -34,7 +35,7 @@ int application::run(int ac, char** av) {
             configure_admin_server();
             wire_up_services();
             start();
-            stop_signal.wait().get();
+            app_signal.wait().get();
             _log.info("Stopping...");
         });
     });

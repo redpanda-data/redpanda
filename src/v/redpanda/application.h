@@ -20,36 +20,6 @@
 #include <seastar/core/sharded.hh>
 #include <seastar/http/httpd.hh>
 
-class stop_signal {
-    void signaled() {
-        _caught = true;
-        _cond.broadcast();
-    }
-
-public:
-    stop_signal() {
-        engine().handle_signal(SIGINT, [this] { signaled(); });
-        engine().handle_signal(SIGTERM, [this] { signaled(); });
-    }
-
-    ~stop_signal() {
-        // There's no way to unregister a handler yet, so register a no-op
-        // handler instead.
-        engine().handle_signal(SIGINT, [] {});
-        engine().handle_signal(SIGTERM, [] {});
-    }
-
-    future<> wait() {
-        return _cond.wait([this] { return _caught; });
-    }
-
-    bool stopping() const { return _caught; }
-
-private:
-    bool _caught = false;
-    condition_variable _cond;
-};
-
 namespace po = boost::program_options; // NOLINT
 class application {
 public:
