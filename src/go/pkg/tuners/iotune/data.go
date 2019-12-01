@@ -2,7 +2,9 @@ package iotune
 
 import (
 	"fmt"
+	"vectorized/pkg/cloud"
 
+	log "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
 )
 
@@ -32,6 +34,17 @@ func DataFor(mountPoint, vendor, vm, storage string) (*IoProperties, error) {
 	}
 	settings.MountPoint = mountPoint
 	return &settings, nil
+}
+
+func DataForVendor(
+	mountpoint string, vendor cloud.InitializedVendor,
+) (*IoProperties, error) {
+	vmType, err := vendor.VmType()
+	if err != nil {
+		return nil, fmt.Errorf("Couldn't get the current VM type for vendor '%s'", vendor.Name())
+	}
+	log.Infof("Detected vendor '%s' and VM type '%s'", vendor.Name(), vmType)
+	return DataFor(mountpoint, vendor.Name(), vmType, "default")
 }
 
 func ToYaml(props IoProperties) (string, error) {

@@ -3,6 +3,8 @@ package cloud
 import (
 	"errors"
 	"sync"
+
+	log "github.com/sirupsen/logrus"
 )
 
 type Vendor interface {
@@ -41,6 +43,8 @@ func availableVendorFrom(vendors map[string]Vendor) (InitializedVendor, error) {
 	for res := range ch {
 		if res.err == nil {
 			vendor = res.vendor
+		} else {
+			log.Debug(res.err)
 		}
 		wg.Done()
 	}
