@@ -11,11 +11,19 @@
 #include <seastar/http/api_docs.hh>
 
 #include <nlohmann/json.hpp>
+#include <sys/utsname.h>
 
 #include <chrono>
 
 int application::run(int ac, char** av) {
     init_env();
+    struct ::utsname buf;
+    ::uname(&buf);
+    _log.info(
+      "kernel={}, nodename={}, machine={}",
+      buf.release,
+      buf.nodename,
+      buf.machine);
     app_template app = setup_app_template();
     return app.run(ac, av, [this, &app] {
         auto& cfg = app.configuration();
