@@ -8,6 +8,7 @@ import (
 	"time"
 	"vectorized/pkg/checkers"
 	"vectorized/pkg/cli"
+	"vectorized/pkg/cloud"
 	"vectorized/pkg/os"
 	"vectorized/pkg/redpanda"
 	"vectorized/pkg/tuners/factory"
@@ -213,20 +214,20 @@ func buildRedpandaFlags(
 			"lock-memory": fmt.Sprintf("%t", lockMemory),
 		},
 	}
-	if wellKnownIo != "" {
-		ioProperties, err := resolveWellKnownIo(config, wellKnownIo)
-		if err != nil {
-			// Log the error to let the user know that the data wasn't found
-			log.Warn(err)
-		} else {
-			yaml, err := iotune.ToYaml(*ioProperties)
-			if err != nil {
-				return nil, err
-			}
-			rpArgs.SeastarFlags["io-properties"] = fmt.Sprintf("'%s'", yaml)
-		}
-	} else if ioPropertiesFile != "" {
+	if ioPropertiesFile != "" {
 		rpArgs.SeastarFlags["io-properties-file"] = ioPropertiesFile
+		return rpArgs, nil
+	}
+	ioProps, err := resolveWellKnownIo(config, wellKnownIo)
+	if err == nil {
+		yaml, err := iotune.ToYaml(*ioProps)
+		if err != nil {
+			return nil, err
+		}
+		rpArgs.SeastarFlags["io-properties"] = fmt.Sprintf("'%s'", yaml)
+		return rpArgs, nil
+	} else {
+		log.Warn(err)
 	}
 	return rpArgs, nil
 }
@@ -242,17 +243,38 @@ func resolveWellKnownIo(
 	} else {
 		configuredWellKnownIo = config.Rpk.WellKnownIo
 	}
-	wellKnownIoTokens := strings.Split(configuredWellKnownIo, ":")
-	if len(wellKnownIoTokens) != 3 {
-		errMsg := "--well-known-io should have the format '<vendor>:<vm type>:<storage type>'"
-		return nil, errors.New(errMsg)
+	var ioProps *iotune.IoProperties
+	if configuredWellKnownIo != "" {
+		wellKnownIoTokens := strings.Split(configuredWellKnownIo, ":")
+		if len(wellKnownIoTokens) != 3 {
+			err := errors.New(
+				"--well-known-io should have the format '<vendor>:<vm type>:<storage type>'",
+			)
+			return nil, err
+		}
+		ioProps, err := iotune.DataFor(
+			config.Redpanda.Directory,
+			wellKnownIoTokens[0],
+			wellKnownIoTokens[1],
+			wellKnownIoTokens[2],
+		)
+		if err != nil {
+			// Log the error to let the user know that the data wasn't found
+			return nil, err
+		}
+		return ioProps, nil
 	}
-	return iotune.DataFor(
-		config.Redpanda.Directory,
-		wellKnownIoTokens[0],
-		wellKnownIoTokens[1],
-		wellKnownIoTokens[2],
-	)
+	log.Info("Detecting the current cloud vendor and VM")
+	vendor, err := cloud.AvailableVendor()
+	if err != nil {
+		return nil, errors.New("Could not detect the current cloud vendor")
+	}
+	ioProps, err = iotune.DataForVendor(config.Redpanda.Directory, vendor)
+	if err != nil {
+		// Log the error to let the user know that the data wasn't found
+		return nil, err
+	}
+	return ioProps, nil
 }
 
 func tuneAll(
