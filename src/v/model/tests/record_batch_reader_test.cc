@@ -65,10 +65,11 @@ SEASTAR_THREAD_TEST_CASE(test_pop) {
     auto reader = make_memory_record_batch_reader(
       make_batches(offset(1), offset(2), offset(3), offset(4)));
     {
-        BOOST_REQUIRE(reader.should_load_slice());
-        reader.load_slice(no_timeout).get();
-        BOOST_REQUIRE(!reader.should_load_slice());
-    }
+      //  Memory record batch reader comes with pre buffered data
+      // BOOST_REQUIRE(reader.should_load_slice());
+      // reader.load_slice(no_timeout).get();
+      // BOOST_REQUIRE(!reader.should_load_slice());
+    };
     {
         auto& batch = reader.peek_batch();
         BOOST_CHECK_EQUAL(batch.base_offset(), offset(1));
