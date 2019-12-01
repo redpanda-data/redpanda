@@ -28,9 +28,19 @@ struct rpc_model_reader_consumer {
 template<>
 void serialize(iobuf& out, raft::entry&& r) {
     rpc::serialize(out, r.entry_type());
-    (void)r.reader()
-      .consume(rpc_model_reader_consumer(out), model::no_timeout)
-      .get();
+    auto batches = r.reader().release_buffered_batches();
+    for (auto& batch : batches) {
+        rpc::serialize(out, batch.release_header(), batch.size());
+        if (!batch.compressed()) {
+            rpc::serialize<int8_t>(out, 0);
+            for (model::record& r : batch) {
+                rpc::serialize(out, std::move(r));
+            }
+        } else {
+            rpc::serialize<int8_t>(out, 1);
+            rpc::serialize(out, std::move(batch).release().release());
+        }
+    }
 }
 
 template<>
