@@ -13,9 +13,9 @@
 
 #include <filesystem>
 
-class redpanda_test_fixture {
+class redpanda_thread_fixture {
 public:
-    redpanda_test_fixture() {
+    redpanda_thread_fixture() {
         app.initialize();
         configure();
         app.check_environment();
@@ -24,13 +24,9 @@ public:
         app.start();
     }
 
-    ~redpanda_test_fixture() {
-        std::filesystem::remove_all(data_dir);
-    }
+    ~redpanda_thread_fixture() { std::filesystem::remove_all(data_dir); }
 
-    config::configuration& lconf() {
-        return config::shard_local_cfg();
-    }
+    config::configuration& lconf() { return config::shard_local_cfg(); }
 
     void configure() {
         data_dir = fmt::format("test_dir_{}", time(0));
