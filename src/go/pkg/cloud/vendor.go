@@ -17,6 +17,20 @@ type InitializedVendor interface {
 	VmType() (string, error)
 }
 
+func vendors() map[string]Vendor {
+	vendors := make(map[string]Vendor)
+	aws := &AwsVendor{}
+	vendors[aws.Name()] = aws
+
+	return vendors
+}
+
+// Tries to initializes the vendors and returns the one available, or an error
+// if none could be initialized.
+func AvailableVendor() (InitializedVendor, error) {
+	return availableVendorFrom(vendors())
+}
+
 func availableVendorFrom(vendors map[string]Vendor) (InitializedVendor, error) {
 	type initResult struct {
 		vendor InitializedVendor
