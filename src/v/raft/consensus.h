@@ -10,6 +10,7 @@
 
 namespace raft {
 class replicate_entries_stm;
+class vote_stm;
 /// consensus for one raft group
 class consensus {
 public:
@@ -28,6 +29,7 @@ public:
     consensus(
       model::node_id,
       group_id,
+      group_configuration,
       timeout_jitter,
       storage::log&,
       storage::log_append_config::fsync should_fsync,
@@ -67,21 +69,22 @@ public:
         _append_entries_notification = std::move(fn);
     }
 
+    /// XXX: this is a workaround. fix in the works
+    future<> update_machines_configuration(model::broker node);
+
     bool is_leader() const { return _vstate == vote_state::leader; }
-
+    model::node_id self() const { return _self; }
     const protocol_metadata& meta() const { return _meta; }
-
     const group_configuration& config() const { return _conf; }
     const model::ntp& ntp() const { return _log.ntp(); }
-
     clock_type::time_point last_heartbeat() const { return _hbeat; };
-    future<> update_machines_configuration(model::broker node);
+
     void process_heartbeat(append_entries_reply&&);
     future<> replicate(raft::entry&&);
 
 private:
     friend replicate_entries_stm;
-
+    friend vote_stm;
     // all these private functions assume that we are under exclusive operations
     // via the _op_sem
     void step_down();
@@ -98,27 +101,14 @@ private:
         return _log.base_directory() + "/voted_for";
     }
 
+    /// used for timer callback to dispatch the vote_stm
     void dispatch_vote();
-
-    future<> do_dispatch_vote(clock_type::time_point);
-
-    future<std::vector<vote_reply_ptr>>
-      send_vote_requests(clock_type::time_point);
-
-    future<vote_reply_ptr> self_vote(vote_request);
-
-    future<> process_vote_replies(std::vector<vote_reply_ptr>);
-    future<> replicate_config_as_new_leader();
 
     /// After we append on disk, we must consume the entries
     /// to update our leader_id, nodes & learners configuration
     future<> process_configurations(std::vector<entry>&&);
 
-    void arm_vote_timeout() {
-        if (!_bg.is_closed()) {
-            _vote_timeout.rearm(_jit());
-        }
-    }
+    void arm_vote_timeout();
 
     // args
     model::node_id _self;
@@ -130,10 +120,13 @@ private:
     sharded<client_cache>& _clients;
     leader_cb_t _leader_notification;
 
+    // _conf is set *both* in ctor with initial configuration
+    // and it is overriden to the last one found the in the last log segment
+    group_configuration _conf;
+
     // read at `future<> start()`
     model::node_id _voted_for;
     protocol_metadata _meta;
-    group_configuration _conf;
 
     /// useful for when we are not the leader
     clock_type::time_point _hbeat = clock_type::now();

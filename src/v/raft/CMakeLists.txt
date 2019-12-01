@@ -12,11 +12,11 @@ add_library (raft STATIC
   client_cache.cc
   consensus_utils.cc
   heartbeat_manager.cc
-  heartbeat_manager_utils.cc
   configuration_bootstrap_state.cc
   logger.cc
   types.cc
   replicate_entries_stm.cc
+  vote_stm.cc
   )
 
 target_link_libraries(raft
