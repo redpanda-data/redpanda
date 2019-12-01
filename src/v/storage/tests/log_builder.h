@@ -152,7 +152,7 @@ private:
         /*
          * TODO: upstream batch is pending to control compression choice
          */
-        return test::make_random_batch(*spec.offset, *spec.num_records);
+        return test::make_random_batch(*spec.offset, *spec.num_records, true);
     }
 
     static model::record_batch_reader make_batch_reader(segment_spec segment) {

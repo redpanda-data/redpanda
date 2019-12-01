@@ -30,15 +30,18 @@ static temporary_buffer<char> serialize_vint(vint::value_type value) {
 }
 } // namespace internal
 
-static model::record_batch_header
-make_random_header(model::offset o, model::timestamp ts, size_t num_records) {
+static model::record_batch_header make_random_header(
+  model::offset o,
+  model::timestamp ts,
+  size_t num_records,
+  bool allow_compression) {
     model::record_batch_header h;
     h.base_offset = o;
     h.last_offset_delta = num_records;
     h.first_timestamp = ts;
     h.type = model::record_batch_type(1);
     h.max_timestamp = model::timestamp(ts.value() + num_records);
-    if (random_generators::get_int(0, 1)) {
+    if (allow_compression && random_generators::get_int(0, 1)) {
         h.attrs = model::record_batch_attributes(4);
     }
     return h;
@@ -123,12 +126,12 @@ static model::record make_random_record(unsigned index) {
 }
 
 static model::record_batch
-make_random_batch(model::offset o, size_t num_records) {
+make_random_batch(model::offset o, size_t num_records, bool allow_compression) {
     crc32 crc;
     auto ts = model::timestamp(
       random_generators::get_int<model::timestamp::value_type>(
         model::timestamp::min().value(), model::timestamp::min().value() + 2));
-    auto header = make_random_header(o, ts, num_records);
+    auto header = make_random_header(o, ts, num_records, allow_compression);
     storage::crc_batch_header(crc, header, num_records);
     auto size = packed_header_size;
     model::record_batch::records_type records;
@@ -162,17 +165,20 @@ make_random_batch(model::offset o, size_t num_records) {
     return model::record_batch(std::move(header), std::move(records));
 }
 
-static model::record_batch make_random_batch(model::offset o) {
+static model::record_batch
+make_random_batch(model::offset o, bool allow_compression = true) {
     auto num_records = random_generators::get_int(2, 30);
-    return make_random_batch(o, num_records);
+    return make_random_batch(o, num_records, allow_compression);
 }
 
-static std::vector<model::record_batch>
-make_random_batches(model::offset o, size_t count) { // start offset + count
+static std::vector<model::record_batch> make_random_batches(
+  model::offset o,
+  size_t count,
+  bool allow_compression = true) { // start offset + count
     std::vector<model::record_batch> ret;
     ret.reserve(count);
     for (size_t i = 0; i < count; i++) {
-        auto b = make_random_batch(o);
+        auto b = make_random_batch(o, allow_compression);
         o = b.last_offset() + model::offset(1);
         ret.push_back(std::move(b));
     }
