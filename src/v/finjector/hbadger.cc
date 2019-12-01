@@ -8,7 +8,7 @@ logger log{"fault_injector"};
 
 void honey_badger::register_probe(std::string_view view, probe* p) {
     if (p && p->is_enabled()) {
-        log.debug("Probe registration: {}", view);
+        log.trace("Probe registration: {}", view);
         _probes.insert({sstring(view), p});
     } else {
         log.debug("Invalid probe: {}", view);
@@ -18,7 +18,7 @@ void honey_badger::deregister_probe(std::string_view view) {
     sstring module(view);
     auto it = _probes.find(module);
     if (it != _probes.end()) {
-        log.debug("Probe deregistration: {}", view);
+        log.trace("Probe deregistration: {}", view);
         _probes.erase(it);
     }
 }
