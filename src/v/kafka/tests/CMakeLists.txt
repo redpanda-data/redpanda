@@ -92,4 +92,5 @@ rp_test(
   SOURCES fetch_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES Seastar::seastar_testing application raft kafka config
+  ARGS "-- -c 1"
 )
