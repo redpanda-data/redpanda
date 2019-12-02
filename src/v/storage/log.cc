@@ -2,6 +2,7 @@
 
 #include "storage/log_manager.h"
 #include "storage/log_writer.h"
+#include "storage/offset_assignment.h"
 #include "storage/version.h"
 
 #include <seastar/core/reactor.hh>
@@ -69,7 +70,11 @@ log::do_append(model::record_batch_reader&& reader, log_append_config config) {
                 auto base = _active_segment->max_offset();
                 auto writer = log_writer(
                   std::make_unique<default_log_writer>(*this));
-                return reader.consume(std::move(writer), config.timeout)
+                return reader
+                  .consume(
+                    wrap_with_offset_assignment(
+                      std::move(writer), _tracker.dirty_offset()),
+                    config.timeout)
                   .then([this, config = std::move(config), now, base](
                           model::offset last_offset) {
                       _tracker.update_dirty_offset(last_offset);
