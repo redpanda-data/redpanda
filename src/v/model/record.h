@@ -91,11 +91,15 @@ public:
     int32_t offset_delta() const { return _offset_delta; }
 
     const iobuf& key() const { return _key; }
-    iobuf share_key() { return _key.share(); }
+    /// This method shares the underlying buffer sharing each fragment to
+    /// make the buffer consumable with stream
+    iobuf share_key() { return _key.share(0, _key.size_bytes()); }
 
     const iobuf& packed_value_and_headers() const { return _value_and_headers; }
+    /// This method shares the underlying buffer sharing each fragment to
+    /// make the buffer consumable with stream
     iobuf share_packed_value_and_headers() {
-        return _value_and_headers.share();
+        return _value_and_headers.share(0, _value_and_headers.size_bytes());
     }
     record share() {
         return record(
@@ -263,8 +267,11 @@ public:
             _size = 0;
             return std::move(_data);
         }
+        /// This method shares the underlying buffer sharing each fragment to
+        /// make the buffer consumable with stream
         compressed_records share() {
-            return compressed_records(_size, _data.share());
+            return compressed_records(
+              _size, _data.share(0, _data.size_bytes()));
         }
         bool operator==(const compressed_records& other) const {
             return _size == other._size && _data == other._data;
