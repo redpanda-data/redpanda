@@ -334,6 +334,7 @@ public:
     }
 
     offset base_offset() const { return _header.base_offset; }
+    void set_base_offset(model::offset offset) { _header.base_offset = offset; }
     record_batch_type type() const { return _header.type; }
     int32_t crc() const { return _header.crc; }
 
