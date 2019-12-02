@@ -3,6 +3,7 @@
 #include "raft/service.h"
 #include "storage/directories.h"
 #include "syschecks/syschecks.h"
+#include "test_utils/logs.h"
 #include "utils/file_io.h"
 
 #include <seastar/core/prometheus.hh>
@@ -153,9 +154,9 @@ void application::wire_up_services() {
     construct_service(metadata_cache).get();
 
     syschecks::systemd_message("Creating cluster::controller");
-    _controller = std::make_unique<cluster::controller>(
+    controller = std::make_unique<cluster::controller>(
       partition_manager, shard_table, metadata_cache);
-    _deferred.emplace_back([this] { _controller->stop().get(); });
+    _deferred.emplace_back([this] { controller->stop().get(); });
 
     // group membership
     syschecks::systemd_message("Creating partition manager");
@@ -186,7 +187,7 @@ void application::wire_up_services() {
     syschecks::systemd_message("Building kafka controller dispatcher");
     construct_service(
       cntrl_dispatcher,
-      std::ref(*_controller),
+      std::ref(*controller),
       _smp_groups.kafka_smp_sg(),
       _scheduling_groups.kafka_sg())
       .get();
@@ -194,7 +195,7 @@ void application::wire_up_services() {
 
 void application::start() {
     syschecks::systemd_message("Starting controller");
-    _controller->start().get();
+    controller->start().get();
 
     syschecks::systemd_message("Starting RPC");
     _rpc

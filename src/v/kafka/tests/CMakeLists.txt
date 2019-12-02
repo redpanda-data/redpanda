@@ -85,3 +85,11 @@ rp_test(
   PREPARE_COMMAND "${KAFKA_PYTHON_ENV} ${PROJECT_SOURCE_DIR}/tools/kafka-python-api-serde.py 1000 > requests.bin"
   ARGS "-- -c 1"
 )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME fetch_test
+  SOURCES fetch_test.cc
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LIBRARIES Seastar::seastar_testing application raft kafka config
+)

@@ -3,6 +3,7 @@
 #include "test_utils/fixture.h"
 
 #include <cppkafka/cppkafka.h>
+#include <v/native_thread_pool.h>
 
 seastar::future<> get_metadata(v::ThreadPool& tp) {
     return tp.submit([]() {
@@ -18,6 +19,9 @@ seastar::future<> get_metadata(v::ThreadPool& tp) {
     });
 }
 
-FIXTURE_TEST(get_metadadata, redpanda_test_fixture) {
+FIXTURE_TEST(get_metadadata, redpanda_thread_fixture) {
+    v::ThreadPool thread_pool(1, 1, 0);
+    thread_pool.start().get();
     get_metadata(thread_pool).get();
+    thread_pool.stop().get();
 }

@@ -1,9 +1,14 @@
 #include "kafka/requests/fetch_request.h"
 
+#include "kafka/default_namespace.h"
 #include "kafka/errors.h"
+#include "kafka/requests/batch_consumer.h"
+#include "model/timeout_clock.h"
+#include "resource_mgmt/io_priority.h"
 #include "storage/tests/random_batch.h"
 #include "utils/to_string.h"
 
+#include <seastar/core/sleep.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/util/log.hh>
 
@@ -56,12 +61,13 @@ void fetch_request::decode(request_context& ctx) {
         return topic{
           .name = model::topic(reader.read_string()),
           .partitions = reader.read_array([](request_reader& reader) {
-              struct partition p;
-              p.id = model::partition_id(reader.read_int32());
-              p.fetch_offset = model::offset(reader.read_int64());
-              p.partition_max_bytes = reader.read_int32();
-              return p;
-          })};
+              return partition{
+                .id = model::partition_id(reader.read_int32()),
+                .fetch_offset = model::offset(reader.read_int64()),
+                .partition_max_bytes = reader.read_int32(),
+              };
+          }),
+        };
     });
 }
 
@@ -153,125 +159,229 @@ std::ostream& operator<<(std::ostream& o, const fetch_response& r) {
     return fmt_print(o, "partitions {}", r.partitions);
 }
 
-class kafka_batch_serializer {
-public:
-    kafka_batch_serializer() noexcept
-      : _wr(_buf) {}
+/**
+ * Make a partition response error.
+ */
+static fetch_response::partition_response
+make_partition_response_error(error_code error) {
+    return fetch_response::partition_response{
+      .error = error,
+      .high_watermark = model::offset(0),
+      .last_stable_offset = model::offset(0),
+    };
+}
 
-    kafka_batch_serializer(const kafka_batch_serializer& o) = delete;
-    kafka_batch_serializer& operator=(const kafka_batch_serializer& o) = delete;
-    kafka_batch_serializer& operator=(kafka_batch_serializer&& o) = delete;
+static future<fetch_response::partition_response>
+make_ready_partition_response_error(error_code error) {
+    return make_ready_future<fetch_response::partition_response>(
+      make_partition_response_error(error));
+}
 
-    kafka_batch_serializer(kafka_batch_serializer&& o) noexcept
-      : _buf(std::move(o._buf))
-      , _wr(_buf) {}
+/**
+ * Low-level handler for reading from an ntp. Runs on ntp's home core.
+ */
+static future<fetch_response::partition_response>
+read_from_log(storage::log_ptr log, fetch_config config) {
+    storage::log_reader_config reader_config{
+      .start_offset = config.start_offset,
+      .max_bytes = config.max_bytes,
+      .min_bytes = 0,
+      .prio = kafka_read_priority(),
+      .type_filter = {raft::data_batch_type},
+    };
+    auto reader = log->make_reader(std::move(reader_config));
+    return do_with(
+      std::move(reader),
+      [timeout = config.timeout](model::record_batch_reader& reader) {
+          return reader.consume(kafka_batch_serializer(), timeout)
+            .then([](iobuf res) {
+                /*
+                 * return path will fill in other response fields.
+                 */
+                return fetch_response::partition_response{
+                  .record_set = std::move(res),
+                };
+            });
+      });
+}
 
-    future<stop_iteration> operator()(model::record_batch&& batch) {
-        if (batch.compressed()) {
-            // skip. the random batch maker doesn't yet create valid
-            // compressed kafka records.
-        } else {
-            write_batch(std::move(batch));
-        }
-        return make_ready_future<stop_iteration>(stop_iteration::no);
+/**
+ * Entry point for reading from an ntp. This will forward the request to
+ * the ntp's home core and build error responses if anything goes wrong.
+ */
+future<fetch_response::partition_response>
+read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config) {
+    /*
+     * lookup the home shard for this ntp. the caller should check for
+     * the tp in the metadata cache so that this condition is unlikely
+     * to pass.
+     */
+    if (__builtin_expect(!octx.rctx.shards().contains(ntp), false)) {
+        return make_ready_partition_response_error(
+          error_code::unknown_topic_or_partition);
     }
+    auto shard = octx.rctx.shards().shard_for(ntp);
 
-    iobuf end_of_stream() { return std::move(_buf); }
+    return octx.rctx.partition_manager().invoke_on(
+      shard,
+      octx.ssg,
+      [ntp = std::move(ntp),
+       config = std::move(config)](cluster::partition_manager& mgr) {
+          /*
+           * lookup the ntp's open log handle
+           */
+          auto it = mgr.logs().find(ntp);
+          if (__builtin_expect(it == mgr.logs().end(), false)) {
+              return make_ready_partition_response_error(
+                error_code::unknown_topic_or_partition);
+          }
+          auto log = it->second;
 
-private:
-    void write_batch(model::record_batch&& batch) {
-        // adjust the batch size to match the kafka wire size
-        auto size = batch.size_bytes()
-                    - sizeof(model::record_batch_header::base_offset)
-                    - sizeof(model::record_batch_type::type)
-                    + sizeof(int32_t)  // partition leader epoch
-                    + sizeof(int8_t)   // magic
-                    + sizeof(int64_t)  // producer id
-                    + sizeof(int16_t)  // producer epoch
-                    + sizeof(int32_t); // base sequence
+          // low-level read
+          return read_from_log(log, std::move(config))
+            .then([log](fetch_response::partition_response&& resp) {
+                resp.last_stable_offset = log->committed_offset();
+                resp.high_watermark = log->committed_offset();
+                return std::move(resp);
+            });
+      });
+}
 
-        _wr.write(int64_t(batch.base_offset()));
-        _wr.write(int32_t(size)); // batch length
-        _wr.write(int32_t(0));    // partition leader epoch
-        _wr.write(int8_t(2));     // magic
-        _wr.write(batch.crc());   // crc
-        _wr.write(int16_t(
-          batch.attributes().value())); // attributes (fixed to no compression)
-        _wr.write(int32_t(batch.last_offset_delta()));
-        _wr.write(int64_t(batch.first_timestamp().value()));
-        _wr.write(int64_t(batch.max_timestamp().value()));
-        _wr.write(int64_t(0));            // producer id
-        _wr.write(int16_t(0));            // producer epoch
-        _wr.write(int32_t(0));            // base sequence
-        _wr.write(int32_t(batch.size())); // num records
+/**
+ * Top-level handler for fetching from a topic-partition. The result is
+ * unwrapped and any errors from the storage sub-system are translated
+ * into kafka specific response codes. On failure or success the
+ * partition response is finalized and placed into its position in the
+ * response message.
+ */
+static future<>
+handle_ntp_fetch(op_context& octx, model::ntp ntp, fetch_config config) {
+    using read_response_type = future<fetch_response::partition_response>;
+    auto p_id = ntp.tp.partition;
+    return read_from_ntp(octx, std::move(ntp), std::move(config))
+      .then_wrapped([&octx, p_id](read_response_type&& f) {
+          try {
+              auto response = f.get0();
+              response.id = p_id;
+              response.error = error_code::none;
+              octx.add_partition_response(std::move(response));
+          } catch (...) {
+              /*
+               * TODO: this is where we will want to handle any storage specific
+               * errors and translate them into kafka response error codes.
+               */
+              octx.response_error = true;
+              octx.add_partition_response(make_partition_response_error(
+                error_code::unknown_server_error));
+          }
+      });
+}
 
-        for (auto& record : batch) {
-            _wr.write_varint(record.size_bytes());
-            _wr.write(int8_t(0));
-            _wr.write_varint(record.timestamp_delta());
-            _wr.write_varint(record.offset_delta());
-            _wr.write_varint(record.key().size_bytes());
-            _wr.write_direct(record.share_key());
-            _wr.write_direct(record.share_packed_value_and_headers());
-        }
-    }
+/**
+ * Process partition fetch requests.
+ *
+ * Each request is handled serially in the order they appear in the request.
+ * There are a couple reasons why we are not **yet** processing these in
+ * parallel. First, Kafka expects to some extent that the order of the
+ * partitions in the request is an implicit priority on which partitions to read
+ * from. This is closely related to the request budget limits specified in terms
+ * of maximum bytes and maximum time delay.
+ *
+ * Once we start processing requests in parallel we'll have to work through
+ * various challenges. First, once we dispatch in parallel, we'll need to
+ * develop heuristics for dealing with the implicit priority order. We'll also
+ * need to develop techniques and heuristics for dealing with budgets since
+ * global budgets aren't trivially divisible onto each core when partition
+ * requests may produce non-uniform amounts of data.
+ *
+ * w.r.t. what is needed to parallelize this, there are no data dependencies
+ * between partition requests within the fetch request, and so they can be run
+ * fully in parallel. The only dependency that exists is that the response must
+ * be reassembled such that the responses appear in these order as the
+ * partitions in the request.
+ */
+static future<> fetch_topic_partitions(op_context& octx) {
+    return do_for_each(
+      octx.request.cbegin(),
+      octx.request.cend(),
+      [&octx](const fetch_request::const_iterator::value_type& p) {
+          /*
+           * the next topic-partition to fetch
+           */
+          auto& topic = *p.topic;
+          auto& part = *p.partition;
 
-private:
-    iobuf _buf;
-    response_writer _wr;
-};
+          if (p.new_topic) {
+              octx.start_response_topic(topic);
+          }
+
+          // if over budget create placeholder response
+          if (
+            octx.bytes_left == 0
+            || model::timeout_clock::now() > octx.deadline) {
+              octx.add_partition_response(
+                make_partition_response_error(error_code::message_too_large));
+              return make_ready_future<>();
+          }
+
+          auto ntp = model::ntp{
+            .ns = default_namespace(),
+            .tp = model::topic_partition{
+              .topic = topic.name,
+              .partition = part.id,
+            },
+          };
+
+          fetch_config config{
+            .start_offset = part.fetch_offset,
+            .max_bytes = std::min(
+              octx.bytes_left, size_t(part.partition_max_bytes)),
+            .timeout = octx.deadline,
+          };
+
+          return handle_ntp_fetch(octx, std::move(ntp), std::move(config));
+      });
+}
 
 future<response_ptr>
-fetch_api::process(request_context&& ctx, smp_service_group g) {
-    return do_with(std::move(ctx), [g](request_context& ctx) {
-        fetch_request request;
-        request.decode(ctx);
+fetch_api::process(request_context&& rctx, smp_service_group ssg) {
+    return do_with(op_context(std::move(rctx), ssg), [](op_context& octx) {
+        return fetch_topic_partitions(octx).then([&octx] {
+            // build the final response message
+            auto resp = std::make_unique<response>();
+            octx.response.encode(octx.rctx, *resp.get());
 
-        std::vector<future<fetch_response::partition>> partitions;
-        for (auto& t : request.topics) {
-            std::vector<future<fetch_response::partition_response>> responses;
-            for (auto& p : t.partitions) {
-                fetch_response::partition_response r;
-                r.id = p.id;
-                r.error = error_code::none;
-                r.high_watermark = model::offset(0);
-                r.last_stable_offset = model::offset(0);
-                auto batches = storage::test::make_random_batches(
-                  p.fetch_offset, 5);
-                auto reader = model::make_memory_record_batch_reader(
-                  std::move(batches));
-                auto f = do_with(
-                  std::move(reader),
-                  [r = std::move(r)](
-                    model::record_batch_reader& reader) mutable {
-                      return reader
-                        .consume(kafka_batch_serializer(), model::no_timeout)
-                        .then([r = std::move(r)](iobuf&& batch) mutable {
-                            r.record_set = std::move(batch);
-                            return std::move(r);
-                        });
-                  });
-                responses.push_back(std::move(f));
+            /*
+             * fast out
+             */
+            if (
+              !octx.request.debounce_delay()
+              || octx.response_size >= octx.request.min_bytes
+              || octx.request.topics.empty() || octx.response_error) {
+                return make_ready_future<response_ptr>(std::move(resp));
             }
-            auto f = when_all_succeed(responses.begin(), responses.end())
-                       .then([name = std::move(t.name)](
-                               std::vector<fetch_response::partition_response>
-                                 responses) mutable {
-                           return fetch_response::partition{
-                             .name = std::move(name),
-                             .responses = std::move(responses)};
-                       });
-            partitions.push_back(std::move(f));
-        }
 
-        return when_all_succeed(partitions.begin(), partitions.end())
-          .then([&ctx](std::vector<fetch_response::partition>&& partitions) {
-              fetch_response reply;
-              reply.partitions = std::move(partitions);
-              auto resp = std::make_unique<response>();
-              reply.encode(ctx, *resp.get());
-              return make_ready_future<response_ptr>(std::move(resp));
-          });
+            /*
+             * debounce since not enough bytes were collected.
+             *
+             * TODO:
+             *   - actual debouncing would collect additional data if available,
+             *   but this only introduces the delay. the delay is still
+             *   important for now so that the client and server do not sit in
+             *   tight req/rep loop, and once the client gets an ack it can
+             *   retry. the implementation of debouncing should be done or at
+             *   least coordinated with the storage layer. Otherwise we'd have
+             *   to developer heuristics on top of storage for polling.
+             *
+             *   - this needs to be abortable sleep coordinated with server
+             *   shutdown.
+             */
+            auto delay = octx.deadline - model::timeout_clock::now();
+            return seastar::sleep<model::timeout_clock>(delay).then(
+              [resp = std::move(resp)]() mutable {
+                  return make_ready_future<response_ptr>(std::move(resp));
+              });
+        });
     });
 }
 

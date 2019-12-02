@@ -147,7 +147,7 @@ static input_stream<char> get_input() {
       .get0();
 }
 
-FIXTURE_TEST(request_test, redpanda_test_fixture) {
+FIXTURE_TEST(request_test, redpanda_thread_fixture) {
     do_with(get_input(), [this](input_stream<char>& input) {
         return do_until(
           [&input] { return input.eof(); },
