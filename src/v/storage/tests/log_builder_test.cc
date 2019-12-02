@@ -80,7 +80,7 @@ FIXTURE_TEST(kitchen_sink, log_builder_fixture) {
 
     auto bspec = storage::log_builder::batch_spec{
       .num_records = 2,
-      .compression = model::compression ::zstd,
+      .compression = model::compression::zstd,
     };
 
     b.segment()                    // start a new segment

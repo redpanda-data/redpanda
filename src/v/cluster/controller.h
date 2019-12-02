@@ -42,6 +42,8 @@ public:
 
     raft::group_id get_highest_group_id() const { return _highest_group_id; }
 
+    future<> recover_assignment(partition_assignment);
+
 private:
     struct batch_consumer {
         explicit batch_consumer(controller* c)
@@ -59,7 +61,6 @@ private:
     future<> bootstrap_from_log(storage::log_ptr);
     future<> recover_batch(model::record_batch);
     future<> recover_record(model::record);
-    future<> recover_assignment(partition_assignment);
     future<> recover_replica(model::ntp, raft::group_id, model::broker_shard);
     future<> recover_topic_configuration(topic_configuration);
     future<> dispatch_record_recovery(log_record_key, iobuf&&);
