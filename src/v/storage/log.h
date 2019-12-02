@@ -26,7 +26,38 @@ struct log_append_config {
     model::timeout_clock::time_point timeout;
 };
 
-/// \brief a non-synchronized log management class.
+/// \brief Non-synchronized log management class.
+///
+/// Offset management
+///
+/// Kafka records has the following offset-related fields
+/// Batch level:
+///
+/// FirstOffset [int64] - base offset of the batch equal to  offset of the
+///                       first record
+/// LastOffsetDelta [int32] - offset delta for last record in batch equals
+///                           FirstOffset + NumberOfMessages  + 1
+/// Record level:
+///
+/// OffsetDelta [varint] - record position in the batch starting from 0
+///
+/// For the batch with base offset 10 and 4 records the offsets are calculated
+/// as follows:
+///
+/// Batch header:
+///   FirstOffset: 10
+///   LastOffsetDelta: 3
+///
+///   Record #1:
+///     OffsetDelta: 0
+///   Record #2
+///     OffsetDelta: 1
+///   Record #3
+///     OffsetDelta: 2
+///   Record #4
+///     OffsetDelta: 3
+/// Subsequent batch will have offset 14.
+
 class log {
     using failure_probes = storage::log_failure_probes;
 
