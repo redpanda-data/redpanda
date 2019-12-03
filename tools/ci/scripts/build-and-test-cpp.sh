@@ -5,6 +5,9 @@ if [ "$COMPILER" == "clang" ]; then
   export CLANG_FLAG="--clang=/usr/local/bin/clang"
 fi
 
+# print CPU on CI machines to track illegal instructions
+command -v lscpu >/dev/null && lscpu
+
 # we create a repo to avoid having to COPY .git/ which would
 # invalidate the cache every time we rebuild the image
 git init .
