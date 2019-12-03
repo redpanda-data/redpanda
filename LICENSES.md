@@ -78,3 +78,5 @@ please keep this up to date with every new library use.
 | github.com/spf13/viper               | Apache License 2 |
 | gopkg.in/jcmturner/goidentity.v3     | Apache License 2 |
 | gopkg.in/yaml.v2                     | Apache License 2 |
+| github.com/aws/aws-sdk-go            | Apache License 2 |
+| github.com/jmespath/go-jmespath      | Apache License 2 |
