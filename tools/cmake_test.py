@@ -18,7 +18,8 @@ import fs
 
 
 class TestRunner():
-    def __init__(self, prepare_command, post_command, binary, repeat, copy_files, *args):
+    def __init__(self, prepare_command, post_command, binary, repeat,
+                 copy_files, *args):
         self.prepare_command = prepare_command
         self.post_command = post_command
         self.binary = binary
@@ -63,7 +64,8 @@ class TestRunner():
             "(cd $test_dir && $prepare_command && $binary $args && $post_command; e=$$?; "
             "rm -rf $test_dir; echo \"Test Exit code $$e\"; exit $$e)"
         ).substitute(test_dir=test_dir,
-                     prepare_command=" && ".join(self.prepare_command) or "true",
+                     prepare_command=" && ".join(self.prepare_command)
+                     or "true",
                      post_command=" && ".join(self.post_command) or "true",
                      binary=self.binary,
                      args=self.test_args)
@@ -75,8 +77,16 @@ def main():
     def generate_options():
         parser = argparse.ArgumentParser(description='test helper for cmake')
         parser.add_argument('--binary', type=str, help='binary program to run')
-        parser.add_argument('--pre', nargs='*', default=[], type=str, help='commands to run before test')
-        parser.add_argument('--post', nargs='*', default=[], type=str, help='commands to run after test')
+        parser.add_argument('--pre',
+                            nargs='*',
+                            default=[],
+                            type=str,
+                            help='commands to run before test')
+        parser.add_argument('--post',
+                            nargs='*',
+                            default=[],
+                            type=str,
+                            help='commands to run after test')
         parser.add_argument(
             '--log',
             type=str,
@@ -104,8 +114,8 @@ def main():
     log.set_logger_for_main(getattr(logging, options.log.upper()))
     logger.info("%s *args=%s" % (options, program_options))
 
-    runner = TestRunner(options.pre, options.post,
-            options.binary, options.repeat, options.copy_file, *program_options)
+    runner = TestRunner(options.pre, options.post, options.binary,
+                        options.repeat, options.copy_file, *program_options)
     runner.run()
     return 0
 
