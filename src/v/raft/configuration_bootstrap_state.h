@@ -36,7 +36,7 @@ public:
     void set_term(model::term_id t) { _term = t; }
     void set_end_of_log() { _end_of_log = true; }
     uint32_t data_batches_seen() const { return _data_batches_seen; }
-    uint32_t config_batches_seen() const { return _data_batches_seen; }
+    uint32_t config_batches_seen() const { return _config_batches_seen; }
 
 private:
     uint32_t _data_batches_seen{0};
