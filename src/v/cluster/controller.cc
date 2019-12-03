@@ -47,8 +47,7 @@ future<> controller::start() {
       })
       .then([this] {
           clusterlog.debug("Starting cluster recovery");
-          return _pm.local()
-            .manage(controller::ntp, controller::group)
+          return start_raft0()
             .then([this](consensus_ptr c) {
                 auto plog = _pm.local().logs().find(controller::ntp)->second;
                 _raft0 = c.get();
@@ -61,7 +60,6 @@ future<> controller::start() {
                       on_raft0_entries_commited(std::move(entries));
                   });
             })
-            .then([this] { return join_raft_group(*_raft0); })
             .then([this] {
                 clusterlog.info("Finished recovering cluster state");
                 _recovered = true;
@@ -71,6 +69,16 @@ future<> controller::start() {
                 }
             });
       });
+}
+
+future<consensus_ptr> controller::start_raft0() {
+    std::vector<model::broker> brokers;
+    if (_seed_servers.front().id() == _self.id()) {
+        clusterlog.info("Current node is cluster root");
+        brokers.push_back(_self);
+    }
+    return _pm.local().manage(
+      controller::ntp, controller::group, std::move(brokers));
 }
 
 future<> controller::stop() {
@@ -180,7 +188,7 @@ future<> controller::dispatch_manage_partition(
 
 future<> controller::manage_partition(
   partition_manager& pm, model::ntp ntp, raft::group_id raft_group) {
-    return pm.manage(ntp, raft_group)
+    return pm.manage(ntp, raft_group, {_self})
       .then([this](consensus_ptr c) { return join_raft_group(*c); })
       .then([path = ntp.path(), raft_group] {
           clusterlog.info("recovered: {}, raft group_id: {}", path, raft_group);

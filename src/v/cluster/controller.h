@@ -58,7 +58,8 @@ private:
         controller* ptr;
     };
     friend batch_consumer;
-
+    
+    future<consensus_ptr> start_raft0();
     future<> bootstrap_from_log(storage::log_ptr);
     future<> recover_batch(model::record_batch);
     future<> recover_record(model::record);

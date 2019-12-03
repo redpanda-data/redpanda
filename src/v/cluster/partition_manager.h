@@ -34,7 +34,8 @@ public:
 
     future<> start();
     future<> stop();
-    future<consensus_ptr> manage(model::ntp, raft::group_id);
+    future<consensus_ptr>
+      manage(model::ntp, raft::group_id, std::vector<model::broker>);
 
     void register_leadership_notification(leader_cb_t cb) {
         _notifications.push_back(std::move(cb));
