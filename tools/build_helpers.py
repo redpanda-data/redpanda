@@ -84,6 +84,7 @@ def _invoke_build(build_type):
     # assign jobs so that we have 2.0GB/core
     total_memory = os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES')
     num_jobs = math.floor(total_memory / (2 * 1024.**3))
+    num_jobs = min(num_jobs, os.sysconf('SC_NPROCESSORS_ONLN'))
     cmd = tpl.substitute(root=RP_ROOT,
                          build_root=RP_BUILD_ROOT,
                          build_type=build_type,
