@@ -97,9 +97,19 @@ void consensus::dispatch_vote() {
         auto p = vstm.get();
 
         // CRITICAL: vote performs locking on behalf of consensus
-        return p->vote().then([p, vstm = std::move(vstm)]() mutable {
+        return p->vote().then([this, p, vstm = std::move(vstm)]() mutable {
+            auto f = p->wait().finally([vstm = std::move(vstm)] {});
+            // make sure we wait for all futures when gate is closed
+            if (_bg.is_closed()) {
+                return f;
+            }
             // background
-            (void)p->wait().finally([vstm = std::move(vstm)] {});
+            (void)with_gate(
+              _bg, [this, vstm = std::move(vstm), f = std::move(f)]() mutable {
+                  return std::move(f);
+              });
+
+            return make_ready_future<>();
         });
     });
 }
