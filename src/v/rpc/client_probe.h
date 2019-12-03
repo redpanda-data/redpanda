@@ -36,7 +36,7 @@ public:
     void connection_closed() { --_connections; }
 
     void connection_error(std::exception_ptr e) {
-        rpclog.error("Connection error: {}", e);
+        rpclog.trace("Connection error: {}", e);
         ++_connection_errors;
     }
 

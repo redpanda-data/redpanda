@@ -19,6 +19,13 @@ has_backoff_expired(rpc::clock_type::time_point stamp, int32_t backoff) {
     auto const secs = ch::duration_cast<ch::seconds>(now - stamp).count();
     return secs >= backoff;
 }
+
+static inline reconnect_client::disconnected_client_exception
+make_exception(const socket_address& server) {
+    return reconnect_client::disconnected_client_exception(
+      fmt::format("{}", server));
+}
+
 future<> reconnect_client::stop() {
     _backoff_secs = std::numeric_limits<uint32_t>::max();
     return _dispatch_gate.close().then([this] { return _client.stop(); });
@@ -26,7 +33,7 @@ future<> reconnect_client::stop() {
 
 future<> reconnect_client::reconnect() {
     if (!has_backoff_expired(_stamp, _backoff_secs)) {
-        return make_exception_future<>(disconnected_client_exception());
+        return make_exception_future<>(make_exception(_client.cfg.server_addr));
     }
     _stamp = rpc::clock_type::now();
     return with_gate(_dispatch_gate, [this] {
@@ -38,18 +45,18 @@ future<> reconnect_client::reconnect() {
                 try {
                     f.get();
                     raftlog.debug(
-                      "Successfully connected to {}:{}",
+                      "connected to {}:{}",
                       _client.cfg.server_addr.addr(),
                       _client.cfg.server_addr.port());
                     _backoff_secs = 0;
                     return make_ready_future<>();
                 } catch (...) {
                     _backoff_secs = next_backoff(_backoff_secs);
-                    raftlog.debug(
-                      "Error reconnecting: {}", std::current_exception());
+                    raftlog.trace(
+                      "error reconnecting {}", std::current_exception());
                     // keep the exception interface consistent
                     return make_exception_future<>(
-                      disconnected_client_exception());
+                      make_exception(_client.cfg.server_addr));
                 }
             });
         });

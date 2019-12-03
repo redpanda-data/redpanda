@@ -115,6 +115,8 @@ future<> replicate_entries_stm::apply() {
     return _sem.wait(majority).then([this] { return process_replies(); });
 }
 future<> replicate_entries_stm::wait() {
+    // FIXME: should be a gate. see vote_stm
+
     const size_t majority = _ptr->_conf.majority();
     return _sem.wait(_ptr->_conf.nodes.size() - majority);
 }

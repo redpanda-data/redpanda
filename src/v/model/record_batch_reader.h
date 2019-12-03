@@ -51,6 +51,15 @@ public:
             });
         }
 
+        std::vector<record_batch> release_buffered_batches() {
+            std::vector<record_batch> retval;
+            retval.reserve(std::distance(_current, _slice.end()));
+            while (!is_slice_empty()) {
+                retval.push_back(pop_batch());
+            }
+            return retval;
+        }
+
         future<record_batch_opt> operator()(timeout_clock::time_point timeout) {
             if (!is_slice_empty()) {
                 return make_ready_future<record_batch_opt>(pop_batch());
@@ -91,8 +100,6 @@ public:
 
     protected:
         bool _end_of_stream = false;
-
-    private:
         span _slice = span();
         span::iterator _current = _slice.end();
     };
@@ -127,6 +134,9 @@ public:
         return _impl->is_slice_empty() && !_impl->end_of_stream();
     }
 
+    std::vector<record_batch> release_buffered_batches() {
+        return _impl->release_buffered_batches();
+    }
     // Stops when consumer returns stop_iteration::yes or end of stream is
     // reached. Next call will start from the next mutation_fragment in the
     // stream.

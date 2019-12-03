@@ -8,7 +8,7 @@
             "output_type": "stats_reply"
         },
         {
-            "name": "put",
+            "name": "replicate",
             "input_type": "::raft::entry",
             "output_type": "put_reply"
         }

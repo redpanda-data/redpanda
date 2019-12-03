@@ -53,6 +53,7 @@ partition_manager::manage(model::ntp ntp, raft::group_id group) {
           auto c = make_lw_shared<raft::consensus>(
             _self,
             group,
+            raft::group_configuration(),
             raft::timeout_jitter(_hbeats.election_duration()),
             *log,
             _should_fsync,
