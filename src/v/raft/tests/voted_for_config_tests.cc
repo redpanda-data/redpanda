@@ -62,8 +62,6 @@ SEASTAR_THREAD_TEST_CASE(clone_entries_utils) {
     for (auto& i : v) {
         for (auto& j : v) {
             for (size_t k = 0; k < i.size(); ++k) {
-                i[k].reader().load_slice(model::no_timeout).get();
-                j[k].reader().load_slice(model::no_timeout).get();
                 BOOST_REQUIRE_EQUAL(i[k].entry_type(), j[k].entry_type());
                 BOOST_REQUIRE_EQUAL(
                   i[k].reader().peek_batch(), j[k].reader().peek_batch());

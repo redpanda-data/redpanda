@@ -6,6 +6,9 @@
 
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/sharded.hh>
+#include <seastar/util/log.hh>
+
+#include <boost/container/flat_set.hpp>
 
 namespace raft::details {
 struct consensus_ptr_by_group_id {
@@ -14,17 +17,21 @@ struct consensus_ptr_by_group_id {
       const lw_shared_ptr<consensus>& r) const {
         return l->meta().group < r->meta().group;
     }
+    bool operator()(
+      const lw_shared_ptr<consensus>& ptr, raft::group_id value) const {
+        return ptr->meta().group < value;
+    }
 };
 
 } // namespace raft::details
 
 namespace raft {
-
+extern logger hbeatlog;
 class heartbeat_manager {
 public:
     using consensus_ptr = lw_shared_ptr<consensus>;
-    using consensus_set_t
-      = std::set<consensus_ptr, details::consensus_ptr_by_group_id>;
+    using consensus_set = boost::container::
+      flat_set<consensus_ptr, details::consensus_ptr_by_group_id>;
 
     heartbeat_manager(duration_type timeout, sharded<client_cache>&);
 
@@ -42,7 +49,7 @@ private:
       clock_type::time_point last_timeout, clock_type::time_point next_timeout);
 
     /// \brief sends a batch to one node
-    future<> do_heartbeat(heartbeat_request&&);
+    future<> do_heartbeat(heartbeat_request&&, clock_type::time_point);
     /// \brief notifies the consensus groups about append_entries log offsets
     void process_reply(heartbeat_reply&&);
 
@@ -53,11 +60,9 @@ private:
     timer_type _heartbeat_timer;
     /// \brief used to wait for background ops before shutting down
     gate _bghbeats;
-
-    /// \brief this index is used for post-processing requests
-    consensus_set_t _sorted_groups;
-    /// \brief this index is used for iteration order
-    std::vector<consensus_ptr> _iteration_order;
+    /// insertion/deletion happens very infrequently.
+    /// this is optimized for traversal + finding
+    consensus_set _consensus_groups;
     sharded<client_cache>& _clients;
 };
 } // namespace raft

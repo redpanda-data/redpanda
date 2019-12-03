@@ -3,6 +3,7 @@
 #include "raft/consensus_utils.h"
 #include "raft/logger.h"
 #include "raft/replicate_entries_stm.h"
+#include "raft/vote_stm.h"
 #include "seastarx.h"
 
 #include <seastar/core/fstream.hh>
@@ -15,6 +16,7 @@ using vote_reply_ptr = consensus::vote_reply_ptr;
 consensus::consensus(
   model::node_id nid,
   group_id group,
+  group_configuration initial_cfg,
   timeout_jitter jit,
   storage::log& l,
   storage::log_append_config::fsync should_fsync,
@@ -29,7 +31,8 @@ consensus::consensus(
   , _io_priority(io_priority)
   , _disk_timeout(disk_timeout)
   , _clients(clis)
-  , _leader_notification(std::move(cb)) {
+  , _leader_notification(std::move(cb))
+  , _conf(std::move(initial_cfg)) {
     _meta.group = group();
     _vote_timeout.set_callback([this] { dispatch_vote(); });
 }
@@ -42,17 +45,6 @@ void consensus::step_down() {
 future<> consensus::stop() {
     _vote_timeout.cancel();
     return _bg.close();
-}
-
-future<> consensus::update_machines_configuration(model::broker node) {
-    // FIXME: Add node to followers if it does not exists yet.
-
-    // STUB: As only one node will join the cluster add it to list to
-    //       allow raft to work
-    if (!_conf.contains_machine(node.id())) {
-        _conf.nodes.push_back(std::move(node));
-    }
-    return make_ready_future<>();
 }
 
 void consensus::process_heartbeat(append_entries_reply&&) {}
@@ -80,183 +72,11 @@ future<> consensus::replicate(raft::entry&& e) {
     });
 } // namespace raft
 
-static future<vote_reply_ptr> one_vote(
-  model::node_id node, const sharded<client_cache>& cls, vote_request r) {
-    // FIXME #206
-    auto shard = client_cache::shard_for(node);
-    using freq = vote_request_ptr;
-    freq req = make_foreign(std::make_unique<vote_request>(std::move(r)));
-    return smp::submit_to(shard, [node, &cls, r = std::move(req)]() mutable {
-        using fptr = vote_reply_ptr;
-        auto& local = cls.local();
-        if (!local.contains(node)) {
-            return make_exception_future<fptr>(std::runtime_error(fmt::format(
-              "Could not vote(). Node {} not in client_cache", node)));
-        }
-        // local copy of vote
-        return local.get(node)->with_client(
-          [rem = std::move(r)](reconnect_client::client_type& cli) mutable {
-              vote_request r(*rem); // local copy
-              // FIXME: #137
-              return cli.vote(std::move(r))
-                .then([](rpc::client_context<vote_reply> r) {
-                    auto ptr = std::make_unique<vote_reply>(std::move(r.data));
-                    return make_ready_future<fptr>(
-                      make_foreign(std::move(ptr)));
-                });
-          });
-    });
-}
-/// we write our configuration synchronously before under the lock
-/// and dispatch all our nodes asynchrnously
-future<> consensus::replicate_config_as_new_leader() {
-    // FIXME
-    // STUB: stubbed for single node testing
-    _conf.leader_id = _self;
-    return make_ready_future<>();
-}
-
-/// state mutation must happen inside `_ops_sem`
-future<> consensus::process_vote_replies(std::vector<vote_reply_ptr> reqs) {
-    if (_vstate != vote_state::candidate) {
-        raftlog.debug(
-          "We are no longer a candidate. Active term:{}", _meta.term);
-        return make_ready_future<>();
-    }
-    // use (n/2) instead of ((n/2)+1) as we already have self vote
-    const size_t majority = (_conf.nodes.size() / 2) + 1;
-    const size_t votes_granted = std::accumulate(
-      reqs.begin(),
-      reqs.end(),
-      size_t(0),
-      [](size_t acc, const vote_reply_ptr& reply) {
-          if (reply->granted) {
-              ++acc;
-          }
-          return acc;
-      });
-    if (votes_granted < majority) {
-        raftlog.info(
-          "Majority vote failed. Got {}/{} votes, need:{}",
-          votes_granted,
-          _conf.nodes.size(),
-          majority);
-        return make_ready_future<>();
-    }
-    // section vote:5.2.2
-    return with_semaphore(
-             _op_sem,
-             1,
-             [this] {
-                 // race on acquiring lock requiers double check
-                 if (_vstate != vote_state::candidate) {
-                     return make_ready_future<>();
-                 }
-                 raftlog.info(
-                   "We({}) are the new leader, term:{}, group {}",
-                   _self,
-                   _meta.term,
-                   _meta.group);
-                 _vstate = vote_state::leader;
-                 // update configuration changes and propagate to all clients
-                 return replicate_config_as_new_leader();
-             })
-      .then([this] {
-          // execute callback oustide of critical section
-          _leader_notification(group_id(_meta.group));
-      });
-}
-
-// FIXME need to see if we should inform the learners
-future<std::vector<vote_reply_ptr>>
-consensus::send_vote_requests(clock_type::time_point timeout) {
-    auto sem = make_lw_shared<semaphore>(_conf.nodes.size());
-    auto ret = make_lw_shared<std::vector<vote_reply_ptr>>();
-    ret->reserve(_conf.nodes.size());
-    // force copy
-    const vote_request vreq{_self(),
-                            _meta.group,
-                            _meta.term,
-                            _meta.prev_log_index,
-                            _meta.prev_log_term};
-    // background
-    (void)do_for_each(
-      _conf.nodes.begin(),
-      _conf.nodes.end(),
-      [this, timeout, sem, ret, vreq](const model::broker& b) mutable {
-          model::node_id n = b.id();
-          // send vote request of self vote
-          auto reply_f = (n == _self) ? self_vote(std::move(vreq))
-                                      : one_vote(n, _clients, std::move(vreq));
-
-          // ensure 'sem' capture & 'vreq' copy
-          auto f = reply_f.then(
-            [ret, sem](vote_reply_ptr r) { ret->push_back(std::move(r)); });
-
-          f = with_semaphore(
-            *sem, 1, [f = std::move(f)]() mutable { return std::move(f); });
-          // background
-          (void)with_timeout(timeout, std::move(f))
-            .handle_exception([n](std::exception_ptr e) {
-                raftlog.info("Node:{} could not vote() - {} ", n, e);
-            });
-      });
-    // wait for safety, or timeout, do not wait for self vote.
-    const size_t majority = (_conf.nodes.size() / 2) + 1;
-    return sem->wait(majority).then([ret, sem] {
-        std::vector<vote_reply_ptr> clean;
-        clean.reserve(ret->size());
-        std::move(ret->begin(), ret->end(), std::back_inserter(clean));
-        ret->clear();
-        return clean;
-    });
-}
-
-future<vote_reply_ptr> consensus::self_vote(vote_request req) {
-    // 5.2.1.3
-    return do_vote(std::move(req)).then([this](vote_reply r) {
-        if (!r.granted) {
-            // we are under _ops_sem. should never happen
-            return make_exception_future<vote_reply_ptr>(
-              std::runtime_error(fmt::format(
-                "Logic error. Self vote granting failed. term:{}",
-                _meta.term)));
-        }
-        raftlog.debug("self vote granted. term:{}", _meta.term);
-        auto ptr = std::make_unique<vote_reply>(std::move(r));
-        return make_ready_future<vote_reply_ptr>(std::move(ptr));
-    });
-}
-
-future<> consensus::do_dispatch_vote(clock_type::time_point timeout) {
-    // Section 5.2
-    // 1 start election
-    // 1.2 increment term
-    // 1.3 vote for self
-    // 1.4 reset election timer
-    // 1.5 send all votes
-    // 2 if votes from majority become leader
-    // 3 if got append_entries() from new leader, become follower
-    // 4 if election timeout elapses, start new lection
-
-    // 5.2.1
-    _vstate = vote_state::candidate;
-    // 5.2.1.2
-    _meta.term = _meta.term + 1;
-
-    // 5.2.1.5 - background
-    (void)with_gate(_bg, [this, timeout] {
-        return send_vote_requests(timeout).then([this](auto replies) {
-            return process_vote_replies(std::move(replies));
-        });
-    });
-
-    return make_ready_future<>();
-}
 /// performs no raft-state mutation other than resetting the timer
-/// state manipulation needs to happen under the `_ops_sem`
-/// see do_dispatch_vote()
 void consensus::dispatch_vote() {
+    // 5.2.1.4 - prepare next timeout
+    arm_vote_timeout();
+
     auto now = clock_type::now();
     auto expiration = _hbeat + _jit.base_duration();
     if (now < expiration) {
@@ -266,29 +86,48 @@ void consensus::dispatch_vote() {
     if (_vstate == vote_state::leader) {
         return;
     }
-    // 5.2.1.4 - prepare next timeout
-    arm_vote_timeout();
     // do not vote when there are no voters available
     if (!_conf.has_voters()) {
         return;
     }
+
     // background, acquire lock, transition state
     (void)with_gate(_bg, [this] {
-        // must be oustside semaphore
-        const auto timeout = clock_type::now() + _jit.base_duration();
-        return with_semaphore(_op_sem, 1, [this, timeout] {
-            return with_timeout(timeout, do_dispatch_vote(timeout))
-              .handle_exception([](std::exception_ptr e) {
-                  raftlog.info("Could not finish vote(): {}", e);
-              });
-            _hbeat = clock_type::now();
+        auto vstm = std::make_unique<vote_stm>(this);
+        auto p = vstm.get();
+
+        // CRITICAL: vote performs locking on behalf of consensus
+        return p->vote().then([p, vstm = std::move(vstm)]() mutable {
+            // background
+            (void)p->wait().finally([vstm = std::move(vstm)] {});
         });
     });
 }
+void consensus::arm_vote_timeout() {
+    if (!_bg.is_closed()) {
+        _vote_timeout.rearm(_jit());
+    }
+}
+future<> consensus::update_machines_configuration(model::broker node) {
+           // FIXME: Add node to followers if it does not exists yet.
+       // STUB: As only one node will join the cluster add it to list to
+           //       allow raft to work
+     if (!_conf.contains_machine(node.id())) {
+        _conf.nodes.push_back(std::move(node));
+    }
+    return make_ready_future<>();
+}
+
 future<> consensus::start() {
     return with_semaphore(_op_sem, 1, [this] {
         return details::read_voted_for(voted_for_filename())
           .then([this](voted_for_configuration r) {
+              if (r.voted_for < 0) {
+                  raftlog.debug(
+                    "Found default voted_for. Skipping term recovery");
+                  _meta.term = 0;
+                  return details::read_bootstrap_state(_log);
+              }
               raftlog.info(
                 "group '{}' recovered last leader: {} for term: {}",
                 _meta.group,
@@ -299,13 +138,17 @@ future<> consensus::start() {
               return details::read_bootstrap_state(_log);
           })
           .then([this](configuration_bootstrap_state st) {
-              _meta.commit_index = st.commit_index();
-              _meta.prev_log_index = st.prev_log_index();
-              _meta.prev_log_term = st.prev_log_term();
-              // FIXME(agallego) - how to think about term. seems fine to
-              // ignore: `_meta.term = st.term` - would violate the voted_for
-              //  configuration
-              _conf = std::move(st.release_config());
+              _meta.commit_index = 0;
+              _meta.prev_log_index = 0;
+              _meta.prev_log_term = 0;
+              if (st.data_batches_seen() > 0) {
+                  _meta.commit_index = st.commit_index();
+                  _meta.prev_log_index = st.prev_log_index();
+                  _meta.prev_log_term = st.prev_log_term();
+              }
+              if (st.config_batches_seen() > 0) {
+                  _conf = std::move(st.release_config());
+              }
           })
           .then([this] {
               // Arm leader election timeout.
@@ -332,7 +175,10 @@ future<vote_reply> consensus::do_vote(vote_request&& r) {
 
     if (r.term > _meta.term) {
         raftlog.info(
-          "{}-group recevied vote with larger term:{} than ours:{}",
+          "self node-id:{}, remote node-id:{}, group {} recevied vote with "
+          "larger term:{} than ours:{}",
+          _self,
+          r.node_id,
           _meta.group,
           r.term,
           _meta.term);
@@ -346,6 +192,7 @@ future<vote_reply> consensus::do_vote(vote_request&& r) {
         _meta.term = r.term;
         _voted_for = model::node_id(r.node_id);
         reply.granted = true;
+        _hbeat = clock_type::now();
         return details::persist_voted_for(
                  voted_for_filename(), {_voted_for, model::term_id(_meta.term)})
           .then([reply = std::move(reply)] {
@@ -354,6 +201,9 @@ future<vote_reply> consensus::do_vote(vote_request&& r) {
     }
     // vote for the same term, same server_id
     reply.granted = (r.node_id == _voted_for);
+    if (reply.granted) {
+        _hbeat = clock_type::now();
+    }
     return make_ready_future<vote_reply>(std::move(reply));
 }
 

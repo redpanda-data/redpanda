@@ -60,7 +60,7 @@ inline std::ostream& operator<<(std::ostream& o, const load_gen_cfg& cfg) {
 // 2. launches cfg.concurrency * parallelism number of requests
 class client_loadgen {
 public:
-    using cli = raft::tron::service::client;
+    using cli = raft::tron::trongen_service::client;
     client_loadgen(load_gen_cfg cfg)
       : _cfg(std::move(cfg))
       , _mem(memory::stats().total_memory() * .9) {
@@ -91,8 +91,15 @@ private:
     future<> execute_one(std::unique_ptr<cli>& c) {
         auto mem_sz = _cfg.key_size + _cfg.value_size + 20;
         return with_semaphore(_mem, mem_sz, [this, &c] {
-            return c->put(gen_entry())
-              .then([m = _cfg.hist->local().auto_measure()](auto _) {});
+            return c->replicate(gen_entry())
+              .then_wrapped([m = _cfg.hist->local().auto_measure()](auto f) {
+                  try {
+                      (void)f.get0();
+                  } catch (...) {
+                      tronlog.info(
+                        "Error sending payload:{}", std::current_exception());
+                  }
+              });
         });
     }
 
@@ -124,8 +131,8 @@ private:
     std::vector<std::unique_ptr<cli>> _clients;
 };
 
-inline load_gen_cfg
-cfg_from(boost::program_options::variables_map& m, sharded<hdr_hist>* h) {
+inline load_gen_cfg cfg_from_opts_in_thread(
+  boost::program_options::variables_map& m, sharded<hdr_hist>* h) {
     rpc::client_configuration client_cfg;
     client_cfg.server_addr = socket_address(
       ipv4_addr(m["ip"].as<std::string>(), m["port"].as<uint16_t>()));
@@ -168,12 +175,12 @@ int main(int args, char** argv, char** env) {
     sharded<client_loadgen> client;
     sharded<hdr_hist> hist;
     return app.run(args, argv, [&] {
-        auto& cfg = app.configuration();
         return async([&] {
+            auto& cfg = app.configuration();
             tronlog.info("constructing histogram");
             hist.start().get();
             auto hd = defer([&hist] { hist.stop().get(); });
-            const load_gen_cfg lcfg = cfg_from(cfg, &hist);
+            const load_gen_cfg lcfg = cfg_from_opts_in_thread(cfg, &hist);
             tronlog.info("config:{}", lcfg);
             tronlog.info("constructing client");
             client.start(lcfg).get();

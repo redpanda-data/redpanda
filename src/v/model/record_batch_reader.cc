@@ -7,12 +7,15 @@ make_memory_record_batch_reader(std::vector<model::record_batch> batches) {
     class reader final : public record_batch_reader::impl {
     public:
         explicit reader(std::vector<model::record_batch> batches)
-          : _batches(std::move(batches)) {}
+          : _batches(std::move(batches)) {
+            _end_of_stream = true;
+            _slice = span(_batches);
+        }
 
     protected:
         virtual future<span> do_load_slice(timeout_clock::time_point) override {
-            _end_of_stream = true;
-            return make_ready_future<span>(_batches);
+            // return an end of stream
+            return make_ready_future<span>();
         }
 
     private:

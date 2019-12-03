@@ -146,12 +146,37 @@ struct [[gnu::packed]] vote_reply {
     unaligned<bool> log_ok = false;
 };
 
-
 static inline std::ostream&
-operator<<(std::ostream& o, const raft::protocol_metadata& m) {
+operator<<(std::ostream& o, const protocol_metadata& m) {
     return o << "{raft_group:" << m.group << ", commit_index:" << m.commit_index
              << ", term:" << m.term << ", prev_log_index:" << m.prev_log_index
              << ", prev_log_term:" << m.prev_log_term << "}";
+}
+static inline std::ostream& operator<<(std::ostream& o, const vote_reply& r) {
+    return o << "{term:" << r.term << ", vote_granted: " << r.granted
+             << ", log_ok:" << r.log_ok << "}";
+}
+static inline std::ostream&
+operator<<(std::ostream& o, const append_entries_reply& r) {
+    return o << "{node_id: " << r.node_id << ", group: " << r.group
+             << ", term:" << r.term << ", last_log_index:" << r.last_log_index
+             << ", success: " << r.success << "}";
+}
+static inline std::ostream&
+operator<<(std::ostream& o, const heartbeat_request& r) {
+    o << "{node: " << r.node_id << ", meta: [";
+    for (auto& m : r.meta) {
+        o << m << ",";
+    }
+    return o << "]}";
+}
+static inline std::ostream&
+operator<<(std::ostream& o, const heartbeat_reply& r) {
+    o << "{meta:[";
+    for (auto& m : r.meta) {
+        o << m << ",";
+    }
+    return o << "]}";
 }
 
 } // namespace raft
@@ -162,4 +187,3 @@ void serialize(iobuf&, raft::entry&&);
 template<>
 future<raft::entry> deserialize(source&);
 } // namespace rpc
-

@@ -10,10 +10,15 @@ namespace raft {
 class reconnect_client {
 public:
     using client_type = raftgen_service::client;
-    struct disconnected_client_exception final : std::exception {
-        const char* what() const noexcept override {
-            return "rpc client is disconnected";
-        }
+    class disconnected_client_exception final : std::exception {
+    public:
+        explicit disconnected_client_exception(sstring host)
+          : _host(std::move(host)) {}
+
+        const char* what() const noexcept final { return _host.c_str(); }
+
+    private:
+        sstring _host;
     };
     static inline uint32_t next_backoff(uint32_t current_backoff) {
         return std::min<uint32_t>(
@@ -51,4 +56,9 @@ private:
     uint32_t _backoff_secs{0};
     gate _dispatch_gate;
 };
+static inline std::ostream& operator<<(
+  std::ostream& o, const reconnect_client::disconnected_client_exception& e) {
+    return o << "reconnect_client::disconnected_client_exception(" << e.what()
+             << ")";
+}
 } // namespace raft

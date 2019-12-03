@@ -1,5 +1,6 @@
 #include "redpanda/application.h"
 
+#include "platform/stop_signal.h"
 #include "raft/service.h"
 #include "storage/directories.h"
 #include "syschecks/syschecks.h"
@@ -11,17 +12,25 @@
 #include <seastar/http/api_docs.hh>
 
 #include <nlohmann/json.hpp>
+#include <sys/utsname.h>
 
 #include <chrono>
 
 int application::run(int ac, char** av) {
     init_env();
+    struct ::utsname buf;
+    ::uname(&buf);
+    _log.info(
+      "kernel={}, nodename={}, machine={}",
+      buf.release,
+      buf.nodename,
+      buf.machine);
     app_template app = setup_app_template();
     return app.run(ac, av, [this, &app] {
         auto& cfg = app.configuration();
         validate_arguments(cfg);
         return async([this, &cfg] {
-            ::stop_signal stop_signal;
+            ::stop_signal app_signal;
             auto deferred = defer([this] {
                 auto deferred = std::move(_deferred);
                 // stop services in reverse order
@@ -35,7 +44,7 @@ int application::run(int ac, char** av) {
             configure_admin_server();
             wire_up_services();
             start();
-            stop_signal.wait().get();
+            app_signal.wait().get();
             _log.info("Stopping...");
         });
     });
