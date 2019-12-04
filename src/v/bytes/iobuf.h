@@ -202,7 +202,7 @@ public:
         return _buf.share(0, _used_bytes);
     }
     temporary_buffer<char> share(size_t pos, size_t len) {
-        return _buf.share(0, len);
+        return _buf.share(pos, len);
     }
 
     /// destructive move. place special care when calling this method
