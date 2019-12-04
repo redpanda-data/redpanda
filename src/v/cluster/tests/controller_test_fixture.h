@@ -72,7 +72,10 @@ public:
 
     cluster::controller& get_controller() {
         _controller = std::make_unique<cluster::controller>(
-          std::ref(_pm), std::ref(st), std::ref(_md_cache));
+          std::ref(_pm),
+          std::ref(st),
+          std::ref(_md_cache),
+          std::ref(_cli_cache));
         return *_controller;
     }
 
