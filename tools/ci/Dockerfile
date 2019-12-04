@@ -1,4 +1,4 @@
-FROM fedora@sha256:f4ca3e9814bef8468b59cc3dea90ab52bcb3747057731f7ab7645d923731fed6
+FROM fedora@sha256:8fa60b88e2a7eac8460b9c0104b877f1aa0cea7fbc03c701b7e545dacccfb433
 
 ARG BUILD_TYPE=release
 ARG COMPILER=gcc
@@ -17,7 +17,9 @@ RUN curl -Ls https://dl.google.com/go/go1.12.3.linux-amd64.tar.gz | tar xzf - -C
 #####
 COPY tools/install-deps.sh /
 
-RUN /install-deps.sh && \
+# remove update repos to pin OS package deps
+RUN rm -f /etc/yum.repos.d/fedora-* && \
+    /install-deps.sh && \
     rm /install-deps.sh && \
     dnf clean all
 
