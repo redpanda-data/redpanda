@@ -88,6 +88,7 @@ private:
     bool _recovered = false;
     bool _leadership_notification_pending = false;
     std::unique_ptr<partition_allocator> _allocator;
+    seastar::gate _bg;
 };
 
 // clang-format off
