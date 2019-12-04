@@ -18,13 +18,12 @@ public:
     struct retry_meta {
         retry_meta(model::node_id node, int32_t ret)
           : retries_left(ret)
-          , node(node) {
-        }
+          , node(node) {}
         int32_t retries_left;
         model::node_id node;
         std::optional<append_entries_reply> value;
         safe_intrusive_list_hook hook;
-
+        bool is_success() const { return value && value->success; }
         bool finished() const { return retries_left <= 0 || bool(value); }
     };
 
@@ -46,6 +45,7 @@ private:
     future<append_entries_reply>
       do_dispatch_one(model::node_id, append_entries_request);
     future<> process_replies();
+    std::pair<int32_t, int32_t> partition_count() const;
 
     consensus* _ptr;
     /// we keep a copy around until we finish the retries
@@ -54,5 +54,6 @@ private:
     semaphore _sem;
     counted_intrusive_list<retry_meta, &retry_meta::hook> _ongoing;
     std::vector<meta_ptr> _replies;
+    seastar::gate _req_bg;
 };
 } // namespace raft
