@@ -31,17 +31,28 @@ type ntpQuery struct {
 }
 
 func (q *ntpQuery) IsNtpSynced() (bool, error) {
-	if _, err := exec.LookPath("timedatectl"); err == nil {
-		return q.checkWithTimedateCtl()
-	} else {
-		return false, err
+	_, err := exec.LookPath("timedatectl")
+	if err != nil {
+		log.Debug(err)
 	}
-	if _, err := exec.LookPath("ntpstat"); err == nil {
-		return q.checkWithNtpstat()
+	synced, err := q.checkWithTimedateCtl()
+	if err != nil {
+		log.Debug(err)
 	} else {
-		return false, err
+		return synced, nil
 	}
-	return false, nil
+	_, err = exec.LookPath("ntpstat")
+	if err != nil {
+		log.Debug(err)
+	}
+	synced, err = q.checkWithNtpstat()
+	if err != nil {
+		log.Debug(err)
+	} else {
+		return synced, nil
+	}
+
+	return false, errors.New("couldn't check NTP with timedatectl or ntpstat")
 }
 
 func (q *ntpQuery) checkWithTimedateCtl() (bool, error) {
