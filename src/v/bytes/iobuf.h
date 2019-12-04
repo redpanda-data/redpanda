@@ -408,9 +408,20 @@ public:
             _frag_index += step;
             _bytes_consumed += step;
             if (stop == stop_iteration::yes) {
-                return i;
+                break;
             }
         }
+
+        if (_frag_index == _frag_index_end) {
+            if (_frag != _frag_end && ++_frag != _frag_end) {
+                _frag_index = _frag->get();
+                _frag_index_end = _frag->get() + _frag->size();
+            } else {
+                _frag_index = nullptr;
+                _frag_index_end = nullptr;
+            }
+        }
+
         return i;
     }
     size_t bytes_consumed() const { return _bytes_consumed; }

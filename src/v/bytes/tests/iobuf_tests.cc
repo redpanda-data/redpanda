@@ -288,3 +288,29 @@ BOOST_AUTO_TEST_CASE(share) {
         }
     }
 }
+
+BOOST_AUTO_TEST_CASE(iterator_relationships) {
+    iobuf buf;
+    BOOST_REQUIRE(buf.begin() == buf.end());
+    BOOST_REQUIRE(buf.cbegin() == buf.cend());
+
+    buf.append(temporary_buffer<char>(100));
+    BOOST_REQUIRE(buf.begin() != buf.end());
+    BOOST_REQUIRE(buf.cbegin() != buf.cend());
+    BOOST_REQUIRE(std::next(buf.begin()) == buf.end());
+    BOOST_REQUIRE(std::next(buf.cbegin()) == buf.cend());
+}
+
+BOOST_AUTO_TEST_CASE(is_finished) {
+    iobuf buf;
+    auto in0 = iobuf::iterator_consumer(buf.cbegin(), buf.cend());
+    BOOST_CHECK(in0.is_finished());
+
+    buf.append(temporary_buffer<char>(100));
+    auto in1 = iobuf::iterator_consumer(buf.cbegin(), buf.cend());
+    BOOST_CHECK(!in1.is_finished());
+    in1.skip(50);
+    BOOST_CHECK(!in1.is_finished());
+    in1.skip(50);
+    BOOST_CHECK(in1.is_finished());
+}
