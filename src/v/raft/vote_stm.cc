@@ -15,7 +15,7 @@ vote_stm::vote_stm(consensus* p)
   : _ptr(p)
   , _sem(_ptr->_conf.nodes.size()) {}
 vote_stm::~vote_stm() {
-    if (!_vote_bg.is_closed()) {
+    if (_vote_bg.get_count() > 0 && !_vote_bg.is_closed()) {
         raftlog.error("Must call vote_stm::wait()");
         std::terminate();
     }
