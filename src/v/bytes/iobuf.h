@@ -1,5 +1,4 @@
 #pragma once
-
 #include "seastarx.h"
 #include "utils/concepts-enabled.h"
 
@@ -429,8 +428,8 @@ public:
     }
 
 private:
-    iobuf::const_iterator _frag_end;
     iobuf::const_iterator _frag;
+    iobuf::const_iterator _frag_end;
     const char* _frag_index = nullptr;
     const char* _frag_index_end = nullptr;
     size_t _bytes_consumed{0};
