@@ -113,6 +113,10 @@ future<> replicate_entries_stm::dispatch_one(retry_meta& meta) {
 future<> replicate_entries_stm::apply() {
     using reqs_t = std::vector<append_entries_request>;
     using append_res_t = std::vector<storage::log::append_result>;
+    for (auto& n : _ptr->_conf.nodes) {
+        _replies.push_back(std::make_unique<retry_meta>(n.id(), _max_retries));
+        _ongoing.push_back(*_replies.back());
+    }
     return share_request_n(1).then([this](reqs_t r) {
         for (retry_meta& m : _ongoing) {
             (void)dispatch_one(m); // background
@@ -148,13 +152,10 @@ future<> replicate_entries_stm::wait() { return _req_bg.close(); }
 replicate_entries_stm::replicate_entries_stm(
   consensus* p, int32_t max_retries, append_entries_request r)
   : _ptr(p)
+  , _max_retries(max_retries)
   , _req(std::move(r))
-  , _sem(_ptr->_conf.nodes.size()) {
-    for (auto& n : _ptr->_conf.nodes) {
-        _replies.push_back(std::make_unique<retry_meta>(n.id(), max_retries));
-        _ongoing.push_back(*_replies.back());
-    }
-}
+  , _sem(_ptr->_conf.nodes.size()) {}
+
 std::pair<int32_t, int32_t> replicate_entries_stm::partition_count() const {
     int32_t success = std::accumulate(
       _replies.cbegin(),
@@ -164,7 +165,8 @@ std::pair<int32_t, int32_t> replicate_entries_stm::partition_count() const {
     return {success, _replies.size() - success};
 }
 replicate_entries_stm::~replicate_entries_stm() {
-    if (!_req_bg.is_closed() || !_ongoing.empty()) {
+    auto gate_not_closed = _req_bg.get_count() > 0 && !_req_bg.is_closed();
+    if (gate_not_closed || !_ongoing.empty()) {
         raftlog.error(
           "Must call replicate_entries_stm::wait(). Missing futures:{}",
           _ongoing.size());

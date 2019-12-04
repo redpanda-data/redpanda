@@ -48,6 +48,7 @@ private:
     std::pair<int32_t, int32_t> partition_count() const;
 
     consensus* _ptr;
+    int32_t _max_retries;
     /// we keep a copy around until we finish the retries
     append_entries_request _req;
     // list to all nodes & retries per node
