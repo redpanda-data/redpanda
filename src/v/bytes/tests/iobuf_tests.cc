@@ -6,6 +6,7 @@
 
 #include <boost/range/algorithm/for_each.hpp>
 #include <boost/test/unit_test.hpp>
+#include <fmt/format.h>
 
 BOOST_AUTO_TEST_CASE(test_appended_data_is_retained) {
     iobuf buf;
@@ -265,4 +266,25 @@ SEASTAR_THREAD_TEST_CASE(iobuf_foreign_copy) {
           });
       })
       .get();
+}
+
+BOOST_AUTO_TEST_CASE(share) {
+    const auto data = random_generators::gen_alphanum_string(1024);
+
+    iobuf buf;
+    buf.append(data.data() + 0, 512);
+    buf.append(data.data() + 512, 512);
+
+    for (size_t window_size = 1; window_size <= 128; window_size++) {
+        for (size_t off = 0; off < (data.size() - window_size); off++) {
+            auto shared = buf.share(off, window_size);
+
+            iobuf other;
+            other.append(data.data() + off, window_size);
+
+            BOOST_REQUIRE_MESSAGE(
+              shared == other,
+              fmt::format("offset {} window_size {}", off, window_size));
+        }
+    }
 }
