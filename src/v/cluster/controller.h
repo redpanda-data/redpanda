@@ -11,6 +11,10 @@
 #include "seastarx.h"
 #include "storage/log_manager.h"
 
+namespace raft {
+class client_cache;
+}
+
 namespace cluster {
 
 // all ops must belong to shard0
@@ -28,7 +32,8 @@ public:
     controller(
       sharded<partition_manager>&,
       sharded<shard_table>&,
-      sharded<metadata_cache>&);
+      sharded<metadata_cache>&,
+      sharded<raft::client_cache>&);
 
     future<> start();
     future<> stop();
@@ -97,6 +102,7 @@ private:
     sharded<partition_manager>& _pm;
     sharded<shard_table>& _st;
     sharded<metadata_cache>& _md_cache;
+    sharded<raft::client_cache>& _client_cache;
     raft::consensus* _raft0;
     raft::group_id _highest_group_id;
     bool _recovered = false;

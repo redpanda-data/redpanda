@@ -5,6 +5,7 @@
 #include "cluster/simple_batch_builder.h"
 #include "config/configuration.h"
 #include "model/record_batch_reader.h"
+#include "raft/client_cache.h"
 #include "resource_mgmt/io_priority.h"
 #include "storage/shard_assignment.h"
 namespace cluster {
@@ -18,12 +19,14 @@ static void verify_shard() {
 controller::controller(
   sharded<partition_manager>& pm,
   sharded<shard_table>& st,
-  sharded<metadata_cache>& md_cache)
+  sharded<metadata_cache>& md_cache,
+  sharded<raft::client_cache>& client_cache)
   : _self(config::make_self_broker(config::shard_local_cfg()))
   , _seed_servers(config::shard_local_cfg().seed_servers())
   , _pm(pm)
   , _st(st)
   , _md_cache(md_cache)
+  , _client_cache(client_cache)
   , _raft0(nullptr)
   , _highest_group_id(0) {}
 
