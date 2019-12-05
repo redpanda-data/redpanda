@@ -1,0 +1,9 @@
+*                 alex@vectorized.io noah@vectorized.io
+cmake/*           ivo@vectorized.io
+infra/*           david@vectorized.io ivo@vectorized.io
+packaging/*       david@vectorized.io michal@vectorized.io
+tools/*           ivo@vectorized.io michal@vectorized.io david@vectorized.io
+conf/*            david@vectorized.io
+src/go/*          michal@vectorized.io david@vectorized.io
+src/v/storage     karim@vectorized.io
+src/v/prometheus  michal@vectorized.io
