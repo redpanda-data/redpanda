@@ -136,6 +136,7 @@ class record_batch_attributes final {
 public:
     static constexpr int16_t compression_mask = 0x7;
     static constexpr int16_t timestamp_type_mask = 0x8;
+    static constexpr size_t is_transactional_bit = 4;
     using value_type = int16_t;
 
     record_batch_attributes() noexcept = default;
@@ -145,6 +146,10 @@ public:
 
     value_type value() const {
         return static_cast<value_type>(_attributes.to_ulong());
+    }
+
+    bool is_transactional() const {
+        return _attributes.test(is_transactional_bit);
     }
 
     model::compression compression() const {
