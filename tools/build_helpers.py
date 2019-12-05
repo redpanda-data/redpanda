@@ -21,7 +21,7 @@ import packaging
 
 
 def _check_build_type(build_type):
-    if build_type not in ["debug", "release"]:
+    if build_type not in ["debug", "release", "relwithdebinfo"]:
         raise Exception("Build type is neither release or debug or all")
 
 

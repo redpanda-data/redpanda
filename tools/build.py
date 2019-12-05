@@ -34,7 +34,7 @@ def generate_options():
     parser.add_argument('--build',
                         type=str.lower,
                         default='debug',
-                        choices=['debug', 'release', 'none'],
+                        choices=['debug', 'release','relwithdebinfo', 'none'],
                         help='choose of debug|release|none')
     parser.add_argument('--targets',
                         type=str.lower,
