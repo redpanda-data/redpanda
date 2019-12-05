@@ -20,13 +20,6 @@
 
 namespace kafka {
 
-struct partition_result {
-    model::partition_id partition;
-    error_code error;
-    model::offset base_offset;
-    model::timestamp log_append_time;
-    int64_t log_start_offset;
-};
 void produce_request::encode(
   const request_context& ctx, response_writer& writer) {
     auto version = ctx.header().version;
@@ -103,99 +96,186 @@ void produce_response::encode(const request_context& ctx, response& resp) {
     writer.write(int32_t(throttle.count()));
 }
 
-struct topic_result {
-    std::string_view topic;
-    std::vector<partition_result> results;
+struct op_context {
+    request_context rctx;
+    smp_service_group ssg;
+    produce_request request;
+    produce_response response;
+
+    op_context(request_context&& rctx, smp_service_group ssg)
+      : rctx(std::move(rctx))
+      , ssg(ssg) {
+        request.decode(rctx);
+    }
 };
 
-response_ptr
-write_replies(std::vector<topic_result> topic_results, int32_t throttle) {
-    auto resp = std::make_unique<response>();
-    resp->writer().write_array(
-      topic_results, [](const topic_result& tr, response_writer& rw) {
-          rw.write(tr.topic);
-          rw.write_array(
-            tr.results, [](const partition_result& pr, response_writer& rw) {
-                rw.write(pr.partition);
-                rw.write(pr.error);
-                rw.write(int64_t(pr.base_offset()));
-                rw.write(pr.log_append_time.value());
-                rw.write(pr.log_start_offset);
-            });
+static future<produce_response::partition>
+make_partition_response_error(model::partition_id id, error_code error) {
+    return make_ready_future<produce_response::partition>(
+      produce_response::partition{
+        .id = id,
+        .error = error,
       });
-    resp->writer().write(int32_t(0));
-
-    resp->writer().write(throttle);
-    return make_foreign(std::move(resp));
 }
 
-future<partition_result> do_process(
-  remote<request_context>& ctx, std::unique_ptr<model::ntp> ntp, iobuf batch) {
-    auto reader = reader_from_kafka_batch(std::move(batch));
-    // TODO: Call into consensus
-    (void)reader;
-    return make_exception_future<partition_result>(
-      std::runtime_error("Unsupported"));
+/*
+ * Caller is expected to catch errors that may be thrown while the kafka batch
+ * is being deserialized (see reader_from_kafka_batch).
+ */
+static future<produce_response::partition> partition_append(
+  model::partition_id id,
+  lw_shared_ptr<cluster::partition> partition,
+  std::optional<iobuf> data) {
+    // parses and validates the record batch and prepares it for being
+    // replicated by raft.
+    auto reader = reader_from_kafka_batch(std::move(data.value()));
+    raft::entry e(raft::data_batch_type, std::move(reader));
+
+#if 0
+    partition->replicate(std::move(e));
+#else
+#warning "missing raft::replicate()"
+    return make_ready_future<>()
+#endif
+    .then_wrapped([id](future<> f) {
+        try {
+            f.get();
+            /*
+             * TODO: grab metadata from replication result like the offset at
+             * which the data was written in the log.
+             */
+            return produce_response::partition{
+              .id = id,
+              .error = error_code::none,
+            };
+        } catch (...) {
+            /*
+             * TODO: convert raft errors into kafka errors
+             */
+            return produce_response::partition{
+              .id = id,
+              .error = error_code::unknown_server_error,
+            };
+        }
+    });
 }
 
-using execution_stage_type = inheriting_concrete_execution_stage<
-  future<partition_result>,
-  remote<request_context>&,
-  std::unique_ptr<model::ntp>,
-  iobuf>;
+/**
+ * \brief handle writing to a single topic partition.
+ */
+static future<produce_response::partition> produce_topic_partition(
+  op_context& octx,
+  produce_request::topic& topic,
+  produce_request::topic_data& data) {
+    auto ntp = model::ntp{
+      .ns = default_namespace(),
+      .tp = model::topic_partition{
+        .topic = topic.name,
+        .partition = data.id,
+      },
+    };
 
-static thread_local execution_stage_type produce_stage{"produce", &do_process};
+    /*
+     * lookup the home shard for this ntp. the caller should check for
+     * the tp in the metadata cache so that this condition is unlikely
+     * to pass.
+     */
+    if (__builtin_expect(!octx.rctx.shards().contains(ntp), false)) {
+        return make_partition_response_error(
+          ntp.tp.partition, error_code::unknown_topic_or_partition);
+    }
+    auto shard = octx.rctx.shards().shard_for(ntp);
+
+    return octx.rctx.partition_manager().invoke_on(
+      shard,
+      octx.ssg,
+      [&data, ntp = std::move(ntp)](cluster::partition_manager& mgr) {
+          /*
+           * look up partition on the remote shard
+           */
+          if (!mgr.contains(ntp)) {
+              return make_partition_response_error(
+                ntp.tp.partition, error_code::unknown_topic_or_partition);
+          }
+          auto partition = mgr.get(ntp);
+
+          // produce version >= 3 requires a message batch be present
+          if (!data.data || data.data->size_bytes() == 0) {
+              return make_partition_response_error(
+                ntp.tp.partition, error_code::corrupt_message);
+          }
+
+          try {
+              return partition_append(
+                ntp.tp.partition, partition, std::move(data.data));
+          } catch (const invalid_record_exception& e) {
+              kreq_log.error(e.what());
+              return make_partition_response_error(
+                ntp.tp.partition, error_code::corrupt_message);
+          }
+      });
+}
+
+/**
+ * \brief Dispatch and collect topic partition produce responses
+ */
+static future<produce_response::topic>
+produce_topic(op_context& octx, produce_request::topic& topic) {
+    // partition response placeholders
+    std::vector<future<produce_response::partition>> partitions;
+    partitions.reserve(topic.data.size());
+
+    for (auto& topic_data : topic.data) {
+        auto pr = produce_topic_partition(octx, topic, topic_data);
+        partitions.push_back(std::move(pr));
+    }
+
+    // collect partition responses and build the topic response
+    return when_all_succeed(partitions.begin(), partitions.end())
+      .then([name = std::move(topic.name)](
+              std::vector<produce_response::partition> parts) mutable {
+          return produce_response::topic{
+            .name = std::move(name),
+            .partitions = std::move(parts),
+          };
+      });
+}
+
+/**
+ * \brief Dispatch and collect topic produce responses
+ */
+static std::vector<future<produce_response::topic>>
+produce_topics(op_context& octx) {
+    // topic response placeholders
+    std::vector<future<produce_response::topic>> topics;
+    topics.reserve(octx.request.topics.size());
+
+    for (auto& topic : octx.request.topics) {
+        auto tr = produce_topic(octx, topic);
+        topics.push_back(std::move(tr));
+    }
+
+    return std::move(topics);
+}
 
 future<response_ptr>
-produce_api::process(request_context&& ctx, smp_service_group g) {
-    return do_with(
-      remote(std::move(ctx)), [g](remote<request_context>& remote_ctx) {
-          auto& ctx = remote_ctx.get();
-          ctx.reader().skip_nullable_string(); // Skip the transactional ID.
-          auto acks = ctx.reader().read_int16();
-          auto timeout = ctx.reader().read_int32();
-          auto fs = ctx.reader().read_array([&](request_reader& rr) {
-              auto topic = rr.read_string_view();
-              auto partition_results = rr.read_array(
-                [&](request_reader& rr) mutable {
-                    // FIXME: Introduce ntp_view,
-                    // which should be noexcept moveable
-                    auto ntp = model::ntp{
-                      default_namespace(),
-                      model::topic_partition{
-                        model::topic(sstring(topic.data(), topic.size())),
-                        model::partition_id(rr.read_int32())}};
-                    auto batch = rr.read_fragmented_nullable_bytes();
-                    if (!batch) {
-                        throw std::runtime_error(
-                          "Produce requests must have a record batch");
-                    }
-                    // FIXME: Legacy shard assignment
-                    auto shard = storage::shard_of(ntp);
-                    return smp::submit_to(
-                      shard,
-                      g,
-                      [&remote_ctx,
-                       ntp = std::move(ntp),
-                       batch = std::move(*batch)]() mutable {
-                          return produce_stage(
-                            seastar::ref(remote_ctx),
-                            std::make_unique<model::ntp>(std::move(ntp)),
-                            std::move(batch));
-                      });
-                });
-              return when_all_succeed(
-                       partition_results.begin(), partition_results.end())
-                .then([topic](std::vector<partition_result>&& resp) mutable {
-                    return topic_result{std::move(topic), std::move(resp)};
-                });
+produce_api::process(request_context&& ctx, smp_service_group ssg) {
+    return do_with(op_context(std::move(ctx), ssg), [](op_context& octx) {
+        kreq_log.debug("handling produce request {}", octx.request);
+
+        // dispatch produce requests for each topic
+        auto topics = produce_topics(octx);
+
+        // collect topic responses and build the final response message
+        return when_all_succeed(topics.begin(), topics.end())
+          .then([&octx](std::vector<produce_response::topic> topics) {
+              octx.response.topics = std::move(topics);
+
+              auto resp = std::make_unique<response>();
+              octx.response.encode(octx.rctx, *resp.get());
+              return make_ready_future<response_ptr>(std::move(resp));
           });
-          return when_all_succeed(fs.begin(), fs.end())
-            .then([throttle = ctx.throttle_delay_ms()](
-                    std::vector<topic_result> topic_results) {
-                return write_replies(std::move(topic_results), throttle);
-            });
-      });
+    });
 }
 
 } // namespace kafka
