@@ -69,7 +69,7 @@ future<> controller::start() {
 
 future<> controller::stop() {
     verify_shard();
-    return make_ready_future<>();
+    return _bg.close();
 }
 
 future<> controller::bootstrap_from_log(storage::log_ptr l) {
@@ -290,12 +290,14 @@ controller::create_topic_cfg_entry(const topic_configuration& cfg) {
 }
 
 void controller::leadership_notification() {
-    if (__builtin_expect(!_recovered, false)) {
-        _leadership_notification_pending = true;
-        return;
-    }
-    clusterlog.info("Local controller became a leader");
-    create_partition_allocator();
+    (void)with_gate(_bg, [this]() mutable {
+        if (__builtin_expect(!_recovered, false)) {
+            _leadership_notification_pending = true;
+            return;
+        }
+        clusterlog.info("Local controller became a leader");
+        create_partition_allocator();
+    });
 }
 
 void controller::create_partition_allocator() {
@@ -324,13 +326,15 @@ future<> controller::join_raft_group(raft::consensus& c) {
 }
 
 void controller::on_raft0_entries_commited(std::vector<raft::entry>&& entries) {
-    (void)do_with(
-      std::move(entries), [this](std::vector<raft::entry>& entries) {
-          return do_for_each(entries, [this](raft::entry& entry) {
-              return entry.reader().consume(
-                batch_consumer(this), model::no_timeout);
+    (void)with_gate(_bg, [this, entries = std::move(entries)]() mutable {
+        return do_with(
+          std::move(entries), [this](std::vector<raft::entry>& entries) {
+              return do_for_each(entries, [this](raft::entry& entry) {
+                  return entry.reader().consume(
+                    batch_consumer(this), model::no_timeout);
+              });
           });
-      });
+    });
 }
 
 } // namespace cluster

@@ -48,6 +48,7 @@ public:
     cluster::metadata_cache& get_local_cache() { return _md_cache.local(); }
 
     ~controller_tests_fixture() {
+        _controller->stop().get0();
         st.stop().get0();
         _md_cache.stop().get0();
         _cli_cache.stop().get0();
@@ -60,9 +61,10 @@ public:
           .get0();
     }
 
-    cluster::controller get_controller() {
-        return cluster::controller(
+    cluster::controller& get_controller() {
+        _controller = std::make_unique<cluster::controller>(
           std::ref(_pm), std::ref(st), std::ref(_md_cache));
+        return *_controller;
     }
 
     model::ntp make_ntp(const sstring& topic, int32_t partition_id) {
@@ -194,6 +196,7 @@ private:
     sharded<cluster::metadata_cache> _md_cache;
     sharded<cluster::shard_table> st;
     sharded<cluster::partition_manager> _pm;
+    std::unique_ptr<cluster::controller> _controller;
 };
 // Waits for controller to become a leader it poll every 200ms
 void wait_for_leadership(cluster::controller& cntrl) {
