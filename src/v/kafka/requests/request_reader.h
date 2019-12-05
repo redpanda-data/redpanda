@@ -33,11 +33,19 @@ public:
 
     int8_t read_int8() { return _in.consume_type<int8_t>(); }
 
-    int16_t read_int16() { return be_to_cpu(_in.consume_type<int16_t>()); }
+    static int16_t _read_int16(iobuf::iterator_consumer& in) {
+        return be_to_cpu(in.consume_type<int16_t>());
+    }
+    static int32_t _read_int32(iobuf::iterator_consumer& in) {
+        return be_to_cpu(in.consume_type<int32_t>());
+    }
+    static int64_t _read_int64(iobuf::iterator_consumer& in) {
+        return be_to_cpu(in.consume_type<int64_t>());
+    }
 
-    int32_t read_int32() { return be_to_cpu(_in.consume_type<int32_t>()); }
-
-    int64_t read_int64() { return be_to_cpu(_in.consume_type<int64_t>()); }
+    int16_t read_int16() { return _read_int16(_in); }
+    int32_t read_int32() { return _read_int32(_in); }
+    int64_t read_int64() { return _read_int64(_in); }
 
     uint32_t read_uint32() { return be_to_cpu(_in.consume_type<uint32_t>()); }
 
