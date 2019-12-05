@@ -95,7 +95,7 @@ future<> server::accept(server_socket& s) {
                               std::current_exception());
                         }
                     });
-              }).finally([conn] {});
+              });
               return stop_iteration::no;
           });
     });
@@ -146,9 +146,9 @@ server::dispatch_method_once(header h, lw_shared_ptr<connection> conn) {
               return conn->write(std::move(view)).finally([m = std::move(m)] {
               });
           })
-          .finally([&p = _probe, conn, ctx] { p.request_completed(); });
-    }).finally([conn, ctx] {});
-    return fut.finally([ctx] {});
+          .finally([&p = _probe, conn] { p.request_completed(); });
+    });
+    return fut;
 }
 future<> server::stop() {
     rpclog.info("Stopping {} listeners", _listeners.size());
