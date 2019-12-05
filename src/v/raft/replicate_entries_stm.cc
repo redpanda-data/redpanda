@@ -118,8 +118,8 @@ future<> replicate_entries_stm::apply() {
         _ongoing.push_back(*_replies.back());
     }
     return share_request_n(1).then([this](reqs_t r) {
-        for (retry_meta& m : _ongoing) {
-            (void)dispatch_one(m); // background
+        for (auto& m : _replies) {
+            (void)dispatch_one(*m); // background
         }
 
         const size_t majority = _ptr->_conf.majority();
