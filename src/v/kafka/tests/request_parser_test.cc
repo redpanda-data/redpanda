@@ -1,4 +1,5 @@
 #include "kafka/requests/fetch_request.h"
+#include "kafka/requests/kafka_batch_adapter.h"
 #include "kafka/requests/metadata_request.h"
 #include "kafka/requests/produce_request.h"
 #include "redpanda/tests/fixture.h"
@@ -131,6 +132,17 @@ static iobuf handle_request(kafka::request_context&& ctx) {
     case kafka::produce_api::key: {
         kafka::produce_request r;
         r.decode(ctx);
+        for (auto& topic : r.topics) {
+            for (auto& topic_data : topic.data) {
+                if (topic_data.data) {
+                    // TODO: once we have a tool/utility for rebuilding the
+                    // batch blob after decoding, swap that in here for extra
+                    // testing.
+                    kafka::reader_from_kafka_batch(
+                      topic_data.data->share(0, topic_data.data->size_bytes()));
+                }
+            }
+        }
         r.encode(ctx, writer);
         break;
     }
