@@ -41,10 +41,10 @@ def random_field_value(field):
 
     elif isinstance(field, types.Array):
         if isinstance(field.array_of, types.Schema):
-            generator = tuple(map(random_field_value, field.array_of.fields))
+            generator = lambda: tuple(map(random_field_value, field.array_of.fields))
         else:
-            generator = random_field_value(field.array_of)
-        return tuple(generator
+            generator = lambda: random_field_value(field.array_of)
+        return tuple(generator()
             for _ in range(random.randint(0, 10)))
 
     raise Exception("unhandled type: {}".format(field))
