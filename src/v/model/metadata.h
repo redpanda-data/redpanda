@@ -37,6 +37,15 @@ public:
 
     const std::optional<sstring>& rack() const { return _rack; }
 
+    inline bool operator==(const model::broker& other) const {
+        return _id == other._id && _host == other._host && _port == other._port
+               && _rack == other._rack;
+    }
+
+    inline bool operator!=(const model::broker& other) const {
+        return !(*this == other);
+    }
+
 private:
     node_id _id;
     sstring _host;

@@ -48,3 +48,9 @@ rp_test(
     DEFINITIONS BOOST_TEST_DYN_LINK
     LIBRARIES Boost::unit_test_framework raft
 )
+rp_test(
+  UNIT_TEST
+  BINARY_NAME configuration_serialization_test
+  SOURCES configuration_serialization_test.cc
+  LIBRARIES Seastar::seastar_testing raft
+)
