@@ -188,7 +188,6 @@ future<> vote_stm::process_replies() {
 }
 
 future<> vote_stm::replicate_config_as_new_leader() {
-    raftlog.info("relpicate_config_as_new_leader TODO");
-    return make_ready_future<>();
+    return _ptr->replicate_configuration(_ptr->_conf);
 }
 } // namespace raft

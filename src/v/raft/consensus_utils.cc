@@ -1,6 +1,7 @@
 #include "raft/consensus_utils.h"
 
 #include "resource_mgmt/io_priority.h"
+#include "storage/record_batch_builder.h"
 
 #include <seastar/core/thread.hh>
 // delete
@@ -342,6 +343,19 @@ future<raft::group_configuration> extract_configuration(raft::entry e) {
                   .then([&cfg] { return std::move(cfg); });
             });
       });
+}
+
+raft::entry serialize_configuration(group_configuration cfg) {
+    auto batch = std::move(
+                   storage::record_batch_builder(
+                     raft::configuration_batch_type, model::offset(0))
+                     .add_raw_kv(iobuf(), rpc::serialize(std::move(cfg))))
+                   .build();
+    std::vector<model::record_batch> batches;
+    batches.push_back(std::move(batch));
+    return raft::entry(
+      raft::configuration_batch_type,
+      model::make_memory_record_batch_reader(std::move(batches)));
 }
 
 std::optional<model::broker>
