@@ -14,7 +14,7 @@ FIXTURE_TEST(
   recover_single_topic_test_at_current_broker, controller_tests_fixture) {
     persist_test_batches(single_topic_current_broker());
 
-    auto cntrl = get_controller();
+    auto& cntrl = get_controller();
     cntrl.start().get0();
     wait_for_leadership(cntrl);
     // Check topics are in cache
@@ -30,7 +30,7 @@ FIXTURE_TEST(
   recover_single_topic_test_at_different_node, controller_tests_fixture) {
     persist_test_batches(single_topic_other_broker());
 
-    auto cntrl = get_controller();
+    auto& cntrl = get_controller();
     cntrl.start().get0();
     wait_for_leadership(cntrl);
     auto all_topics = get_local_cache().all_topics();
@@ -42,7 +42,7 @@ FIXTURE_TEST(
 FIXTURE_TEST(recover_multiple_topics, controller_tests_fixture) {
     persist_test_batches(two_topics());
 
-    auto cntrl = get_controller();
+    auto& cntrl = get_controller();
     cntrl.start().get0();
     wait_for_leadership(cntrl);
     auto all_topics = get_local_cache().all_topics();
@@ -55,7 +55,7 @@ FIXTURE_TEST(recover_multiple_topics, controller_tests_fixture) {
 FIXTURE_TEST(recover_complex, controller_tests_fixture) {
     persist_test_batches(make_complex_topics());
 
-    auto cntrl = get_controller();
+    auto& cntrl = get_controller();
     cntrl.start().get0();
     wait_for_leadership(cntrl);
     auto all_topics = get_local_cache().all_topics();
