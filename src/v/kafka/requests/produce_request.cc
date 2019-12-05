@@ -9,6 +9,7 @@
 #include "model/timestamp.h"
 #include "storage/shard_assignment.h"
 #include "utils/remote.h"
+#include "utils/to_string.h"
 
 #include <seastar/core/execution_stage.hh>
 #include <seastar/util/log.hh>
@@ -26,6 +27,81 @@ struct partition_result {
     model::timestamp log_append_time;
     int64_t log_start_offset;
 };
+void produce_request::encode(
+  const request_context& ctx, response_writer& writer) {
+    auto version = ctx.header().version;
+
+    writer.write(transactional_id);
+    writer.write(int16_t(acks));
+    writer.write(int32_t(timeout.count()));
+    writer.write_array(topics, [](topic& t, response_writer& writer) {
+        writer.write(t.name);
+        writer.write_array(t.data, [](topic_data& td, response_writer& writer) {
+            writer.write(td.id());
+            writer.write(std::move(td.data));
+        });
+    });
+}
+
+void produce_request::decode(request_context& ctx) {
+    auto& reader = ctx.reader();
+    auto version = ctx.header().version;
+
+    transactional_id = reader.read_nullable_string();
+    acks = reader.read_int16();
+    timeout = std::chrono::milliseconds(reader.read_int32());
+    topics = reader.read_array([](request_reader& reader) {
+        return topic{
+          .name = model::topic(reader.read_string()),
+          .data = reader.read_array([](request_reader& reader) {
+              return topic_data{
+                .id = model::partition_id(reader.read_int32()),
+                .data = reader.read_fragmented_nullable_bytes(),
+              };
+          }),
+        };
+    });
+}
+
+static std::ostream&
+operator<<(std::ostream& o, const produce_request::topic_data& d) {
+    return fmt_print(o, "id {} payload {}", d.id, d.data);
+}
+
+static std::ostream&
+operator<<(std::ostream& o, const produce_request::topic& t) {
+    return fmt_print(o, "name {} data {}", t.name, t.data);
+}
+
+std::ostream& operator<<(std::ostream& o, const produce_request& r) {
+    return fmt_print(
+      o,
+      "txn_id {} acks {} timeout {} topics {}",
+      r.transactional_id,
+      r.acks,
+      r.timeout,
+      r.topics);
+}
+
+void produce_response::encode(const request_context& ctx, response& resp) {
+    auto& writer = resp.writer();
+    auto version = ctx.header().version;
+
+    writer.write_array(topics, [version](topic& t, response_writer& writer) {
+        writer.write(t.name);
+        writer.write_array(
+          t.partitions, [version](partition& p, response_writer& writer) {
+              writer.write(p.id);
+              writer.write(p.error);
+              writer.write(int64_t(p.base_offset()));
+              writer.write(p.log_append_time.value());
+              if (version >= api_version(5)) {
+                  writer.write(int64_t(p.log_start_offset()));
+              }
+          });
+    });
+    writer.write(int32_t(throttle.count()));
+}
 
 struct topic_result {
     std::string_view topic;

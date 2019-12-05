@@ -1,5 +1,6 @@
 #include "kafka/requests/fetch_request.h"
 #include "kafka/requests/metadata_request.h"
+#include "kafka/requests/produce_request.h"
 #include "redpanda/tests/fixture.h"
 #include "test_utils/fixture.h"
 #include "utils/file_io.h"
@@ -122,6 +123,13 @@ static iobuf handle_request(kafka::request_context&& ctx) {
 
     case kafka::metadata_api::key: {
         kafka::metadata_request r;
+        r.decode(ctx);
+        r.encode(ctx, writer);
+        break;
+    }
+
+    case kafka::produce_api::key: {
+        kafka::produce_request r;
         r.decode(ctx);
         r.encode(ctx, writer);
         break;
