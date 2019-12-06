@@ -2,7 +2,7 @@
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "storage/log_reader.h"
-#include "storage/log_segment.h"
+#include "storage/log_segment_reader.h"
 #include "storage/log_segment_appender.h"
 #include "storage/log_writer.h"
 #include "storage/tests/random_batch.h"
@@ -26,16 +26,17 @@ struct context {
                         .get0();
             fd = file(make_shared(file_io_sanitizer(std::move(fd))));
             auto appender = log_segment_appender(
-              fd, file_output_stream_options());
+              fd,
+              log_segment_appender::options(seastar::default_priority_class()));
             storage::write(appender, batch).get();
             appender.flush().get();
-            auto log_seg = make_lw_shared<log_segment>(
+            auto log_seg = make_lw_shared<log_segment_reader>(
               "test",
               std::move(fd),
               model::term_id(0),
               batches.begin()->base_offset(),
+              appender.file_byte_offset(),
               128);
-            log_seg->flush().get();
             log_seg->set_last_written_offset(batch.last_offset());
             logs.add(log_seg);
         }
