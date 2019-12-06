@@ -70,12 +70,18 @@ future<> consensus::do_replicate(std::vector<raft::entry>&& e) {
           _self,
           _meta.group)));
     }
-    append_entries_request req;
-    req.node_id = _self;
-    req.meta = _meta;
-    req.entries = std::move(e);
-    auto stm = make_lw_shared<replicate_entries_stm>(this, 3, std::move(req));
-    return with_gate(_bg, [this, req = std::move(req), stm]() {
+
+    if (_bg.is_closed()) {
+        return make_exception_future<>(gate_closed_exception());
+    }
+
+    return with_gate(_bg, [this, e = std::move(e)]() mutable {
+        append_entries_request req;
+        req.node_id = _self;
+        req.meta = _meta;
+        req.entries = std::move(e);
+        auto stm = make_lw_shared<replicate_entries_stm>(
+          this, 3, std::move(req));
         return stm->apply().finally([this, stm] {
             auto f = stm->wait().finally([stm] {});
             // if gate is closed wait for all futures

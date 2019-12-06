@@ -326,6 +326,9 @@ future<> controller::join_raft_group(raft::consensus& c) {
 }
 
 void controller::on_raft0_entries_commited(std::vector<raft::entry>&& entries) {
+    if (_bg.is_closed()) {
+        throw gate_closed_exception();
+    }
     (void)with_gate(_bg, [this, entries = std::move(entries)]() mutable {
         return do_with(
           std::move(entries), [this](std::vector<raft::entry>& entries) {
