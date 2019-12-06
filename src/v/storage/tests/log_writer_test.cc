@@ -4,7 +4,7 @@
 #include "storage/constants.h"
 #include "storage/log.h"
 #include "storage/log_manager.h"
-#include "storage/log_segment.h"
+#include "storage/log_segment_reader.h"
 #include "storage/log_writer.h"
 #include "storage/tests/random_batch.h"
 
@@ -12,6 +12,8 @@
 #include <seastar/core/thread.hh>
 #include <seastar/core/unaligned.hh>
 #include <seastar/testing/thread_test_case.hh>
+
+#include <fmt/ostream.h>
 
 using namespace storage; // NOLINT
 
@@ -39,6 +41,8 @@ log_append_config config() {
 }
 
 SEASTAR_THREAD_TEST_CASE(test_can_write_single_batch) {
+    std::cout.setf(std::ios::unitbuf);
+
     context ctx(1 * 1024 * 1024, "single_batch");
     auto batches = test::make_random_batches(model::offset(1), 1);
     auto reader = model::make_memory_record_batch_reader(std::move(batches));
@@ -46,7 +50,7 @@ SEASTAR_THREAD_TEST_CASE(test_can_write_single_batch) {
 
     BOOST_REQUIRE(ctx.log->segments().begin() != ctx.log->segments().end());
     auto seg = *ctx.log->segments().begin();
-    seg->flush().get();
+    ctx.log->flush().get();
     auto in = seg->data_stream(0, default_priority_class());
     auto buf = in.read_exactly(sizeof(packed_header_size)).get0();
     BOOST_REQUIRE(!buf.empty());
@@ -55,8 +59,7 @@ SEASTAR_THREAD_TEST_CASE(test_can_write_single_batch) {
     auto offset = be_to_cpu(*unaligned_cast<uint64_t*>(buf.get()));
     BOOST_REQUIRE_EQUAL(offset, 0);
 
-    auto file_size = seg->stat().get0().st_size;
-    BOOST_REQUIRE_EQUAL(value + read, file_size);
+    BOOST_REQUIRE_EQUAL(value + read, ctx.log->appender().file_byte_offset());
 
     in.close().get();
 }
@@ -70,7 +73,7 @@ SEASTAR_THREAD_TEST_CASE(test_log_segment_rolling) {
     {
         BOOST_REQUIRE(ctx.log->segments().begin() != ctx.log->segments().end());
         auto seg = *ctx.log->segments().begin();
-        seg->flush().get();
+        ctx.log->flush().get();
         auto in = seg->data_stream(0, default_priority_class());
         auto buf = in.read_exactly(sizeof(packed_header_size)).get0();
         BOOST_REQUIRE(!buf.empty());
@@ -86,7 +89,7 @@ SEASTAR_THREAD_TEST_CASE(test_log_segment_rolling) {
 
     {
         auto seg = *(ctx.log->segments().begin() + 1);
-        auto file_size = seg->stat().get0().st_size;
+        auto file_size = seg->file_size();
         BOOST_REQUIRE_EQUAL(0, file_size);
     }
 }
@@ -102,7 +105,7 @@ SEASTAR_THREAD_TEST_CASE(test_log_segment_rolling_middle_of_writting) {
     {
         BOOST_REQUIRE(ctx.log->segments().begin() != ctx.log->segments().end());
         auto seg = *ctx.log->segments().begin();
-        seg->flush().get();
+        ctx.log->flush().get();
         auto in = seg->data_stream(0, default_priority_class());
         auto buf = in.read_exactly(sizeof(packed_header_size)).get0();
         BOOST_REQUIRE(!buf.empty());
@@ -111,14 +114,14 @@ SEASTAR_THREAD_TEST_CASE(test_log_segment_rolling_middle_of_writting) {
         auto offset = be_to_cpu(*unaligned_cast<uint64_t*>(buf.get()));
         BOOST_REQUIRE_EQUAL(offset, first_offset());
 
-        auto file_size = seg->stat().get0().st_size;
+        auto file_size = seg->file_size();
         BOOST_REQUIRE_EQUAL(value + read, file_size);
         in.close().get();
     }
 
     {
         auto seg = *(ctx.log->segments().begin() + 1);
-        seg->flush().get();
+        ctx.log->flush().get();
         auto in = seg->data_stream(0, default_priority_class());
         auto buf = in.read_exactly(sizeof(packed_header_size)).get0();
         BOOST_REQUIRE(!buf.empty());
@@ -127,7 +130,7 @@ SEASTAR_THREAD_TEST_CASE(test_log_segment_rolling_middle_of_writting) {
         auto offset = be_to_cpu(*unaligned_cast<uint64_t*>(buf.get()));
         BOOST_REQUIRE_EQUAL(offset, second_offset());
 
-        auto file_size = seg->stat().get0().st_size;
+        auto file_size = seg->file_size();
         BOOST_REQUIRE_EQUAL(value + read, file_size);
         in.close().get();
     }

@@ -2,7 +2,7 @@
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/record.h"
-#include "storage/log_segment.h"
+#include "storage/log_segment_reader.h"
 #include "storage/log_writer.h"
 #include "storage/parser.h"
 #include "storage/tests/random_batch.h"
@@ -90,7 +90,7 @@ private:
 };
 
 struct context {
-    log_segment_ptr log_seg;
+    segment_reader_ptr log_seg;
     continuous_batch_parser_opt parser;
     input_stream<char> in;
 
@@ -98,18 +98,19 @@ struct context {
         auto fd
           = open_file_dma("test", open_flags::create | open_flags::rw).get0();
         fd = file(make_shared(file_io_sanitizer(std::move(fd))));
-        auto appender = log_segment_appender(fd, file_output_stream_options());
+        auto appender = log_segment_appender(
+          fd, log_segment_appender::options(seastar::default_priority_class()));
         for (auto& b : batches) {
             storage::write(appender, b).get();
         }
         appender.flush().get();
-        log_seg = log_segment(
+        log_seg = log_segment_reader(
           "test",
           std::move(fd),
           model::term_id(0),
           batches.begin()->base_offset(),
+          appender.file_byte_offset(),
           128);
-        log_seg->flush().get();
         in = log_seg->data_stream(0, default_priority_class());
         parser = continuous_batch_parser(c, in);
     }
