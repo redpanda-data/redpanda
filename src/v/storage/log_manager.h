@@ -3,7 +3,8 @@
 #include "model/fundamental.h"
 #include "seastarx.h"
 #include "storage/log.h"
-#include "storage/log_segment.h"
+#include "storage/log_segment_appender.h"
+#include "storage/log_segment_reader.h"
 #include "storage/version.h"
 
 #include <seastar/core/future.hh>
@@ -34,10 +35,15 @@ public:
 
     future<> stop();
 
-    future<log_segment_ptr> make_log_segment(
+    struct log_handles {
+        segment_reader_ptr reader;
+        segment_appender_ptr appender;
+    };
+    future<log_handles> make_log_segment(
       const model::ntp&,
       model::offset,
       model::term_id,
+      io_priority_class pc,
       record_version_type = record_version_type::v1,
       size_t buffer_size = default_read_buffer_size);
 

@@ -6,8 +6,8 @@
 #include "seastarx.h"
 #include "storage/failure_probes.h"
 #include "storage/log_reader.h"
-#include "storage/log_segment.h"
 #include "storage/log_segment_appender.h"
+#include "storage/log_segment_reader.h"
 #include "storage/offset_tracker.h"
 #include "storage/probe.h"
 
@@ -86,7 +86,7 @@ public:
     }
 
     // Can only be called after append().
-    log_segment_appender& appender();
+    log_segment_appender& appender() { return *_appender; }
 
     /// flushes the _tracker.dirty_offset into _tracker.committed_offset
     future<> flush();
@@ -100,9 +100,11 @@ public:
     }
 
     sstring base_directory() const;
+
     const model::ntp& ntp() const { return _ntp; }
 
     probe& get_probe() { return _probe; }
+
     model::offset max_offset() const { return _tracker.dirty_offset(); }
 
     model::offset committed_offset() const {
@@ -131,8 +133,8 @@ private:
     model::ntp _ntp;
     log_manager& _manager;
     log_set _segs;
-    log_segment_ptr _active_segment;
-    std::optional<log_segment_appender> _appender;
+    segment_reader_ptr _active_segment;
+    segment_appender_ptr _appender;
     offset_tracker _tracker;
     storage::probe _probe;
     failure_probes _failure_probes;

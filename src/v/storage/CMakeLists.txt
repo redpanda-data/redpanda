@@ -1,5 +1,5 @@
 add_library(storage STATIC
-    log_segment.cc
+    log_segment_reader.cc
     log_manager.cc
     log.cc
     log_writer.cc
@@ -9,6 +9,7 @@ add_library(storage STATIC
     probe.cc
     record_batch_builder.cc
     logger.cc
+    log_segment_appender.cc
     )
 
 target_link_libraries(storage PUBLIC

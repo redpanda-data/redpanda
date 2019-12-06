@@ -16,19 +16,30 @@
 
 namespace storage {
 
-class log_segment {
+class log_segment_reader {
 public:
-    log_segment(
+    log_segment_reader(
       sstring filename,
       file,
       model::term_id term,
       model::offset base_offset,
+      uint64_t file_size,
       size_t buffer_size) noexcept;
-    log_segment(log_segment&&) noexcept = default;
-    log_segment(const log_segment&) = delete;
-    log_segment& operator=(const log_segment&) = delete;
+    log_segment_reader(log_segment_reader&&) noexcept = default;
+    log_segment_reader(const log_segment_reader&) = delete;
+    log_segment_reader& operator=(const log_segment_reader&) = delete;
+
+    /// mutating method for keeping track of the last offset from
+    /// the active log_segment_appender
+    void set_last_written_offset(model::offset o) { _max_offset = o; }
+
+    /// max physical byte that this reader is allowed to fetch
+    void set_last_visible_byte_offset(uint64_t o) { _file_size = o; }
+
+    /// file name
     sstring get_filename() const { return _filename; }
 
+    /// current term
     model::term_id term() const { return _term; }
 
     // Inclusive lower bound offset.
@@ -37,41 +48,37 @@ public:
     // Exclusive upper bound offset.
     model::offset max_offset() const { return _max_offset; }
 
-    void set_last_written_offset(model::offset max_offset) {
-        _max_offset = std::max(_max_offset, max_offset);
-    }
+    uint64_t file_size() const { return _file_size; }
 
+    /// close the underlying file handle
     future<> close() { return _data_file.close(); }
 
-    future<> flush() { return _data_file.flush(); }
-
+    /// perform syscall stat
     future<struct stat> stat() { return _data_file.stat(); }
 
-    future<> truncate(size_t size) { return _data_file.truncate(size); }
-
+    /// create an input stream _sharing_ the underlying file handle
+    /// starting at position @pos
     input_stream<char> data_stream(uint64_t pos, const io_priority_class&);
-
-    log_segment_appender data_appender(const io_priority_class&);
 
 private:
     sstring _filename;
     file _data_file;
     model::offset _base_offset;
     model::term_id _term;
+    uint64_t _file_size;
     size_t _buffer_size;
     model::offset _max_offset;
-
     lw_shared_ptr<file_input_stream_history> _history
       = make_lw_shared<file_input_stream_history>();
 };
 
-using log_segment_ptr = lw_shared_ptr<log_segment>;
+using segment_reader_ptr = lw_shared_ptr<log_segment_reader>;
 
-std::ostream& operator<<(std::ostream&, const log_segment&);
-std::ostream& operator<<(std::ostream&, log_segment_ptr);
+std::ostream& operator<<(std::ostream&, const log_segment_reader&);
+std::ostream& operator<<(std::ostream&, segment_reader_ptr);
 
 /*
- * A container for log segments. Usage:
+ * A container for log_segment_reader's. Usage:
  *
  * log_set l;
  * l.add(some_log_segment);
@@ -84,7 +91,7 @@ std::ostream& operator<<(std::ostream&, log_segment_ptr);
  */
 class log_set {
 public:
-    using underlying_t = std::vector<log_segment_ptr>;
+    using underlying_t = std::vector<segment_reader_ptr>;
     using const_iterator = underlying_t::const_iterator;
     using const_reverse_iterator = underlying_t::const_reverse_iterator;
     using iterator = underlying_t::iterator;
@@ -94,20 +101,21 @@ public:
     static constexpr iter_gen_type invalid_iter_gen = 0;
 
     using is_nothrow
-      = std::is_nothrow_move_constructible<std::vector<log_segment_ptr>>;
+      = std::is_nothrow_move_constructible<std::vector<segment_reader_ptr>>;
 
-    explicit log_set(std::vector<log_segment_ptr>) noexcept(is_nothrow::value);
+    explicit log_set(std::vector<segment_reader_ptr>) noexcept(
+      is_nothrow::value);
 
     size_t size() const { return _segments.size(); }
 
     bool empty() const { return _segments.empty(); }
 
     /// New segments must be monotonically increasing in base offset
-    void add(log_segment_ptr);
+    void add(segment_reader_ptr);
 
     void pop_last();
 
-    log_segment_ptr last() const { return _segments.back(); }
+    segment_reader_ptr last() const { return _segments.back(); }
 
     const_iterator begin() const { return _segments.begin(); }
 
@@ -123,13 +131,13 @@ public:
     /// it is also very likely that they are the back sements, and so
     /// the overhead is likely to be small. This is why our std::find
     /// starts from the back
-    std::vector<log_segment_ptr>
+    std::vector<segment_reader_ptr>
     remove(std::vector<sstring> segment_filenames) {
-        std::vector<log_segment_ptr> retval;
+        std::vector<segment_reader_ptr> retval;
         for (auto& s : segment_filenames) {
             auto b = _segments.rbegin();
             auto e = _segments.rend();
-            auto it = std::find_if(b, e, [&s](log_segment_ptr& p) {
+            auto it = std::find_if(b, e, [&s](segment_reader_ptr& p) {
                 return p->get_filename() == s;
             });
             if (it != e) {
@@ -142,7 +150,7 @@ public:
             std::stable_sort(
               _segments.begin(),
               _segments.end(),
-              [](const log_segment_ptr& a, const log_segment_ptr& b) {
+              [](const segment_reader_ptr& a, const segment_reader_ptr& b) {
                   return a->base_offset() < b->base_offset();
               });
         }
@@ -164,7 +172,7 @@ private:
     friend class generation_advancer;
 
 private:
-    std::vector<log_segment_ptr> _segments;
+    std::vector<segment_reader_ptr> _segments;
     iter_gen_type _generation = 1;
 };
 
@@ -174,7 +182,7 @@ public:
 
     // Successive calls to `select()' have to pass weakly
     // monotonic offsets.
-    log_segment_ptr select(model::offset) const;
+    segment_reader_ptr select(model::offset) const;
 
 private:
     const log_set& _set;

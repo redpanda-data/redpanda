@@ -82,8 +82,8 @@ stop_iteration skipping_consumer::consume_batch_end() {
     return stop_iteration(_reader.is_buffer_full());
 }
 
-log_segment_reader::log_segment_reader(
-  log_segment_ptr seg,
+log_segment_batch_reader::log_segment_batch_reader(
+  segment_reader_ptr seg,
   offset_tracker& tracker,
   log_reader_config config,
   probe& probe) noexcept
@@ -96,20 +96,20 @@ log_segment_reader::log_segment_reader(
     std::sort(std::begin(_config.type_filter), std::end(_config.type_filter));
 }
 
-bool log_segment_reader::is_initialized() const { return bool(_parser); }
+bool log_segment_batch_reader::is_initialized() const { return bool(_parser); }
 
-future<> log_segment_reader::initialize() {
+future<> log_segment_batch_reader::initialize() {
     _input = _seg->data_stream(0, _config.prio);
     _parser = continuous_batch_parser(_consumer, _input);
     return make_ready_future<>();
 }
 
-bool log_segment_reader::is_buffer_full() const {
+bool log_segment_batch_reader::is_buffer_full() const {
     return _buffer_size >= max_buffer_size;
 }
 
 // Called for cached readers.
-void log_segment_reader::reset_state() {
+void log_segment_batch_reader::reset_state() {
     if (__builtin_expect(_over_committed_offset, false)) {
         _buffer_size = _buffer.back().memory_usage();
         if (_buffer.back().last_offset() > _tracker.committed_offset()) {
@@ -120,8 +120,8 @@ void log_segment_reader::reset_state() {
     _end_of_stream = false;
 }
 
-future<log_segment_reader::span>
-log_segment_reader::do_load_slice(model::timeout_clock::time_point timeout) {
+future<log_segment_batch_reader::span> log_segment_batch_reader::do_load_slice(
+  model::timeout_clock::time_point timeout) {
     if (_end_of_stream || _over_committed_offset) {
         return make_ready_future<span>();
     }
@@ -181,7 +181,7 @@ log_reader::reader_available log_reader::maybe_create_segment_reader() {
     if (_current_reader && !_current_reader->end_of_stream()) {
         return reader_available::yes;
     }
-    log_segment_ptr seg;
+    segment_reader_ptr seg;
     if (_current_reader) {
         auto bytes_read = _current_reader->bytes_read();
         if (
