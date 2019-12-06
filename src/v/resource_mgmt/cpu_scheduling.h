@@ -1,6 +1,7 @@
 #pragma once
 #include "seastarx.h"
 
+#include <seastar/core/future.hh>
 #include <seastar/core/scheduling.hh>
 
 // manage cpu scheduling groups. scheduling groups are global, so one instance
@@ -15,6 +16,12 @@ public:
           .then([this](scheduling_group sg) { _raft = sg; })
           .then([] { return create_scheduling_group("kafka", 1000); })
           .then([this](scheduling_group sg) { _kafka = sg; });
+    }
+
+    future<> destroy_groups() {
+        return destroy_scheduling_group(_admin)
+          .then([this] { return destroy_scheduling_group(_raft); })
+          .then([this] { return destroy_scheduling_group(_kafka); });
     }
 
     scheduling_group admin_sg() { return _admin; }
