@@ -2,3 +2,4 @@
 click
 gitpython
 pylddwrap
+requests
