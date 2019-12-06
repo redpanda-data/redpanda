@@ -82,6 +82,9 @@ future<> server::accept(server_socket& s) {
                 std::move(ar.connection),
                 std::move(ar.remote_address),
                 _probe);
+              if (_conn_gate.is_closed()) {
+                  throw gate_closed_exception();
+              }
               (void)with_gate(_conn_gate, [this, conn]() mutable {
                   return continous_method_dispath(conn).then_wrapped(
                     [conn](future<>&& f) {
@@ -138,6 +141,9 @@ server::dispatch_method_once(header h, lw_shared_ptr<connection> conn) {
     method* m = it->get()->method_from_id(method_id);
     _probe.add_bytes_received(header_size + h.size);
     // background!
+    if (_conn_gate.is_closed()) {
+        return make_exception_future<>(gate_closed_exception());
+    }
     (void)with_gate(_conn_gate, [this, conn, ctx, m]() mutable {
         return (*m)(conn->input(), *ctx)
           .then([ctx, conn, m = _hist.auto_measure()](netbuf n) mutable {
