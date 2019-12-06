@@ -1,5 +1,6 @@
 set(request_srcs
   requests/requests.cc
+  requests/api_versions_request.cc
   requests/metadata_request.cc
   requests/list_groups_request.cc
   requests/find_coordinator_request.cc
