@@ -101,6 +101,16 @@ public:
 
     uint32_t write(const model::topic& topic) { return write(topic()); }
 
+    uint32_t write(std::optional<iobuf>&& data) {
+        if (!data) {
+            return serialize_int<int32_t>(-1);
+        }
+        auto size = serialize_int<int32_t>(data->size_bytes())
+                    + data->size_bytes();
+        _out->append(std::move(*data));
+        return size;
+    }
+
     // write bytes directly to output without a length prefix
     uint32_t write_direct(iobuf&& f) {
         auto size = f.size_bytes();

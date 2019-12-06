@@ -33,6 +33,16 @@ constexpr size_t kafka_header_overhead = sizeof(int32_t) + // The batch length
 
 } // namespace internal
 
+class invalid_record_exception final : std::exception {
+public:
+    explicit invalid_record_exception(sstring what)
+      : what_(std::move(what)) {}
+    const char* what() const noexcept final { return what_.c_str(); }
+
+private:
+    sstring what_;
+};
+
 model::record_batch_reader reader_from_kafka_batch(iobuf&&);
 
 } // namespace kafka
