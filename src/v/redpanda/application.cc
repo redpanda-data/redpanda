@@ -52,7 +52,10 @@ int application::run(int ac, char** av) {
 
 void application::initialize() {
     _scheduling_groups.create_groups().get();
+    _deferred.emplace_back(
+      [this] { _scheduling_groups.destroy_groups().get(); });
     _smp_groups.create_groups().get();
+    _deferred.emplace_back([this] { _smp_groups.destroy_groups().get(); });
 }
 
 void application::validate_arguments(const po::variables_map& cfg) {
