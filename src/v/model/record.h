@@ -107,8 +107,8 @@ public:
           _attributes,
           _timestamp_delta,
           _offset_delta,
-          _key.share(),
-          _value_and_headers.share());
+          share_key(),
+          share_packed_value_and_headers());
     }
     bool operator==(const record& other) const {
         return _size_bytes == other._size_bytes
