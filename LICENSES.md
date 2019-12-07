@@ -1,4 +1,4 @@
-# Licenses list as of 9/4/2019
+# Licenses list as of 12/6/2019
 
 ### Please update with every change of every dependency
 
@@ -45,6 +45,8 @@ please keep this up to date with every new library use.
 | pcg             | Apache License 2                          |
 | bytellhashmap   | Boost Software License Version 1.0        |
 | nlohmann-json   | MIT                                       |
+| crc32c          | BSD 3                                     |
+| CRoaring        | Apache License 2                          |
  
 # Golang deps _used_ in production (exclude all test dependencies)
 
