@@ -117,12 +117,7 @@ void fetch_response::encode(const request_context& ctx, response& resp) {
                           writer.write(int64_t(t.first_offset));
                       });
                 }
-                writer.write_bytes_wrapped(
-                  [record_set = std::move(r.record_set)](
-                    response_writer& writer) mutable {
-                      writer.write_direct(std::move(record_set));
-                      return false;
-                  });
+                writer.write(std::move(r.record_set));
             });
       });
 }
@@ -174,7 +169,7 @@ operator<<(std::ostream& o, const fetch_response::partition_response& p) {
       p.high_watermark,
       p.last_stable_offset,
       p.aborted_transactions,
-      p.record_set.size_bytes());
+      (p.record_set ? p.record_set->size_bytes() : -1));
 }
 
 std::ostream& operator<<(std::ostream& o, const fetch_response::partition& p) {
