@@ -147,7 +147,7 @@ BOOST_AUTO_TEST_CASE(share_with_byte_comparator) {
         std::memset(x.get_write(), 'x', x.size());
         fbuf.append(x.get(), x.size());
     }
-    BOOST_CHECK_EQUAL(fbuf.share(), fbuf);
+    BOOST_CHECK_EQUAL(fbuf.share(0, fbuf.size_bytes()), fbuf);
 }
 BOOST_AUTO_TEST_CASE(copy_iobuf_equality_comparator) {
     auto fbuf = iobuf();
@@ -204,7 +204,7 @@ BOOST_AUTO_TEST_CASE(not_equal_by_size) {
 BOOST_AUTO_TEST_CASE(correct_control_structure_sharing) {
     auto a = iobuf();
     a.append("a", 1);
-    auto b = a.share();
+    auto b = a.control_share();
     b.append("b", 1);
     BOOST_CHECK_EQUAL(a.size_bytes(), b.size_bytes());
     BOOST_CHECK_EQUAL(a, b);
@@ -220,7 +220,7 @@ BOOST_AUTO_TEST_CASE(append_each_other) {
     auto a = iobuf();
     auto b = iobuf();
     a.append(buf.share());
-    b.append(a.share());
+    b.append(a.share(0, a.size_bytes()));
     for (auto& f : a) {
         // test the underlying buffer remains the same
         BOOST_CHECK(f.share() == buf);

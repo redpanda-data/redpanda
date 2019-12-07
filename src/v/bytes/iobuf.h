@@ -97,8 +97,9 @@ public:
 
     /// makes no stability claims. pre-pending, or appending
     /// might relocate buffers at will. It is intended for read only
-    iobuf share();
+    iobuf control_share();
     /// shares _individual_ fragments, not the top level structure
+    /// it allocates a _new_ control structure
     iobuf share(size_t pos, size_t len);
     /// makes a copy of the data
     iobuf copy() const;
@@ -511,7 +512,7 @@ inline size_t iobuf::available_bytes() const {
     return _ctrl->frags.back().available_bytes();
 }
 
-inline iobuf iobuf::share() { return iobuf(_ctrl, _deleter.share()); }
+inline iobuf iobuf::control_share() { return iobuf(_ctrl, _deleter.share()); }
 
 inline iobuf iobuf::share(size_t pos, size_t len) {
     auto alloc = allocate_control();
