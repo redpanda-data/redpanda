@@ -4,6 +4,8 @@
 
 #include <seastar/core/smp.hh>
 
+#include <limits>
+
 SEASTAR_THREAD_TEST_CASE(partition_iterator) {
     /*
      * extract topic partitions from the request
@@ -187,4 +189,39 @@ FIXTURE_TEST(read_from_ntp_max_bytes, redpanda_thread_fixture) {
     BOOST_TEST(zero > 0); // read something
     BOOST_TEST(zero == one);
     BOOST_TEST(one < maxlimit); // read more
+}
+
+FIXTURE_TEST(fetch_one, redpanda_thread_fixture) {
+    // create a topic partition with some data
+    model::topic topic("foo");
+    model::partition_id pid(2);
+    model::offset offset(0);
+    auto builder = make_tp_log_builder(topic, pid);
+    builder.segment().add_random_batch(1).flush().get();
+    recover_ntp(builder.ntp()).get();
+
+    kafka::fetch_request req;
+    req.max_bytes = std::numeric_limits<int32_t>::max();
+    req.min_bytes = 1;
+    req.max_wait_time = std::chrono::milliseconds(0);
+    req.topics = {{
+      .name = topic,
+      .partitions = {{
+        .id = pid,
+        .fetch_offset = offset,
+      }},
+    }};
+
+    auto client = make_kafka_client();
+    client.connect().get();
+    auto resp = client.fetch(req).get0();
+    client.stop().then([&client] { client.shutdown(); }).get();
+
+    BOOST_REQUIRE(resp.partitions.size() == 1);
+    BOOST_REQUIRE(resp.partitions[0].name == topic());
+    BOOST_REQUIRE(resp.partitions[0].responses.size() == 1);
+    BOOST_REQUIRE(
+      resp.partitions[0].responses[0].error == kafka::error_code::none);
+    BOOST_REQUIRE(resp.partitions[0].responses[0].id == pid);
+    BOOST_REQUIRE(resp.partitions[0].responses[0].record_set);
 }
