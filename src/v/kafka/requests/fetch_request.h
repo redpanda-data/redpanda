@@ -37,7 +37,7 @@ struct fetch_request final {
     int8_t isolation_level; // >= v4
     std::vector<topic> topics;
 
-    void encode(const request_context& ctx, response_writer& writer);
+    void encode(response_writer& writer, api_version version);
     void decode(request_context& ctx);
 
     /*
@@ -175,6 +175,7 @@ struct fetch_response final {
     std::vector<partition> partitions;
 
     void encode(const request_context& ctx, response& resp);
+    void decode(iobuf buf, api_version version);
 };
 
 std::ostream& operator<<(std::ostream&, const fetch_response&);
