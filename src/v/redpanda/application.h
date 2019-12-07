@@ -31,6 +31,12 @@ public:
     void wire_up_services();
     void start();
 
+    void shutdown() {
+        while (!_deferred.empty()) {
+            _deferred.pop_back();
+        }
+    }
+
     sharded<cluster::metadata_cache> metadata_cache;
     sharded<kafka::group_router_type> group_router;
     sharded<kafka::controller_dispatcher> cntrl_dispatcher;

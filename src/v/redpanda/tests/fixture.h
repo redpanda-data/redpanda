@@ -24,7 +24,10 @@ public:
         app.start();
     }
 
-    ~redpanda_thread_fixture() { std::filesystem::remove_all(data_dir); }
+    ~redpanda_thread_fixture() {
+        app.shutdown();
+        std::filesystem::remove_all(data_dir);
+    }
 
     config::configuration& lconf() { return config::shard_local_cfg(); }
 
