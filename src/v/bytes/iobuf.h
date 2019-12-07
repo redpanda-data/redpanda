@@ -6,6 +6,7 @@
 #include <seastar/core/do_with.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/iostream.hh>
+#include <seastar/core/scattered_message.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/temporary_buffer.hh>
 
@@ -729,6 +730,17 @@ inline std::vector<iobuf> iobuf_share_foreign_n(iobuf&& og, size_t n) {
         }
     }
     return retval;
+}
+
+static inline scattered_message<char> iobuf_as_scattered(iobuf b) {
+    scattered_message<char> msg;
+    auto in = iobuf::iterator_consumer(b.cbegin(), b.cend());
+    in.consume(b.size_bytes(), [&msg](const char* src, size_t sz) {
+        msg.append_static(src, sz);
+        return stop_iteration::no;
+    });
+    msg.on_delete([b = std::move(b)] {});
+    return msg;
 }
 
 inline std::ostream& operator<<(std::ostream& o, const iobuf& io) {
