@@ -146,7 +146,7 @@ static kafka::request_context make_request_context(application& app) {
     iobuf buf;
     kafka::fetch_request request;
     kafka::response_writer writer(buf);
-    request.encode(encoder_context, writer);
+    request.encode(writer, encoder_context.header().version);
 
     return kafka::request_context(
       app.metadata_cache,

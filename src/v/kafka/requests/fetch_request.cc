@@ -18,10 +18,7 @@
 
 namespace kafka {
 
-void fetch_request::encode(
-  const request_context& ctx, response_writer& writer) {
-    auto version = ctx.header().version;
-
+void fetch_request::encode(response_writer& writer, api_version version) {
     writer.write(replica_id());
     writer.write(int32_t(max_wait_time.count()));
     writer.write(min_bytes);
@@ -128,6 +125,35 @@ void fetch_response::encode(const request_context& ctx, response& resp) {
                   });
             });
       });
+}
+
+void fetch_response::decode(iobuf buf, api_version version) {
+    request_reader reader(std::move(buf));
+
+    if (version >= api_version(1)) {
+        throttle_time = std::chrono::milliseconds(reader.read_int32());
+    }
+
+    partitions = reader.read_array([version](request_reader& reader) {
+        partition p(model::topic(reader.read_string()));
+        p.responses = reader.read_array([version](request_reader& reader) {
+            return partition_response{
+              .id = model::partition_id(reader.read_int32()),
+              .error = error_code(reader.read_int16()),
+              .high_watermark = model::offset(reader.read_int64()),
+              .last_stable_offset = model::offset(reader.read_int64()),
+              .aborted_transactions = reader.read_array(
+                [](request_reader& reader) {
+                    return aborted_transaction{
+                      .producer_id = reader.read_int64(),
+                      .first_offset = model::offset(reader.read_int64()),
+                    };
+                }),
+              .record_set = reader.read_fragmented_nullable_bytes(),
+            };
+        });
+        return p;
+    });
 }
 
 std::ostream&
