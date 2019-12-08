@@ -4,7 +4,7 @@
 
 namespace storage {
 
-constexpr unsigned packed_header_size
+constexpr uint32_t packed_header_size
   = sizeof(model::record_batch_header::base_offset)
     + sizeof(model::record_batch_type::type)
     + sizeof(model::record_batch_header::crc)

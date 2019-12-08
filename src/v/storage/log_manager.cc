@@ -42,39 +42,53 @@ static sstring make_filename(
       to_string(version));
 }
 
-future<log_segment_ptr> log_manager::make_log_segment(
+future<log_manager::log_handles> log_manager::make_log_segment(
   const model::ntp& ntp,
   model::offset base_offset,
   model::term_id term,
+  io_priority_class pc,
   record_version_type version,
   size_t buffer_size) {
-    auto flags = open_flags::create | open_flags::rw;
-    file_open_options opts;
-    opts.extent_allocation_size_hint = 32 << 20;
-    opts.sloppy_size = true;
     auto filename = make_filename(
       _config.base_dir, ntp, base_offset, term, version);
-    return open_file_dma(filename, flags, std::move(opts))
-      .then_wrapped(
-        [this, filename, base_offset, term, buffer_size](future<file> f) {
-            file fd;
-            try {
-                fd = f.get0();
-            } catch (...) {
-                auto ep = std::current_exception();
-                stlog.error(
-                  "Could not create log segment {}. Found exception: {}",
-                  filename,
-                  ep);
-                return make_exception_future<log_segment_ptr>(ep);
-            }
-            if (_config.should_sanitize) {
-                fd = file(make_shared(file_io_sanitizer(std::move(fd))));
-            }
-            auto ls = make_lw_shared<log_segment>(
-              filename, fd, term, base_offset, buffer_size);
-            return make_ready_future<log_segment_ptr>(std::move(ls));
-        });
+    return do_with(log_handles{}, [=](log_handles& h) {
+        file_open_options opt;
+        opt.extent_allocation_size_hint = 32 << 20;
+        opt.sloppy_size = true;
+        return seastar::open_file_dma(
+                 filename, open_flags::create | open_flags::rw, std::move(opt))
+          .then([&h, pc, this](file writer) {
+              if (_config.should_sanitize) {
+                  writer = file(
+                    make_shared(file_io_sanitizer(std::move(writer))));
+              }
+              h.appender = std::make_unique<log_segment_appender>(
+                writer, log_segment_appender::options(pc));
+          })
+          .then([filename] {
+              return seastar::open_file_dma(filename, open_flags::ro);
+          })
+          // must be a .then_wrapped so we can close the writer
+          .then_wrapped([&h, filename, term, base_offset, buffer_size, this](
+                          future<file> f) {
+              try {
+                  file reader = f.get0();
+                  if (_config.should_sanitize) {
+                      reader = file(
+                        make_shared(file_io_sanitizer(std::move(reader))));
+                  }
+                  h.reader = make_lw_shared<log_segment_reader>(
+                    filename, reader, term, base_offset, 0, buffer_size);
+                  return make_ready_future<>();
+              } catch (...) {
+                  return h.appender->close().then(
+                    [e = std::current_exception()]() mutable {
+                        return make_exception_future<>(std::move(e));
+                    });
+              }
+          })
+          .then([&h] { return make_ready_future<log_handles>(std::move(h)); });
+    });
 }
 
 static std::optional<std::tuple<model::offset, int64_t, record_version_type>>
@@ -133,7 +147,7 @@ future<log_ptr> log_manager::manage(model::ntp ntp) {
     return async([this, ntp = std::move(ntp)]() mutable {
         sstring path = fmt::format("{}/{}", _config.base_dir, ntp.path());
         recursive_touch_directory(path).get();
-        std::vector<log_segment_ptr> segs;
+        std::vector<segment_reader_ptr> segs;
         directory_walker::walk(path, [this, path, &segs](directory_entry seg) {
             if (!seg.type || *seg.type != directory_entry_type::regular) {
                 return make_ready_future<>();
@@ -153,13 +167,20 @@ future<log_ptr> log_manager::manage(model::ntp ntp) {
 
             auto seg_name = path + "/" + seg.name;
             return open_file_dma(seg_name, open_flags::ro)
+              .then([](file f) {
+                  return f.stat().then([f](struct stat s) {
+                      return std::make_tuple(uint64_t(s.st_size), f);
+                  });
+              })
               .then([this, &segs, seg_name, offset = offset, term = term](
-                      file fd) mutable {
-                  segs.push_back(make_lw_shared<log_segment>(
+                      std::tuple<uint64_t, file> tup) mutable {
+                  auto [size, fd] = tup;
+                  segs.push_back(make_lw_shared<log_segment_reader>(
                     std::move(seg_name),
                     std::move(fd),
                     model::term_id(term),
                     offset,
+                    size,
                     default_read_buffer_size));
               });
         }).get();
