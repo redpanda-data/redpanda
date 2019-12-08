@@ -1,6 +1,6 @@
 #include "seastarx.h"
 #include "storage/log_replayer.h"
-#include "storage/log_segment.h"
+#include "storage/log_segment_reader.h"
 #include "storage/log_writer.h"
 #include "storage/tests/random_batch.h"
 #include "utils/file_sanitizer.h"
@@ -11,7 +11,7 @@
 using namespace storage; // NOLINT
 
 struct context {
-    log_segment_ptr log_seg;
+    segment_reader_ptr log_seg;
     std::optional<log_replayer> replayer_opt;
 
     void write_garbage() {
@@ -38,12 +38,17 @@ struct context {
         auto fd
           = open_file_dma("test", open_flags::create | open_flags::rw).get0();
         fd = file(make_shared(file_io_sanitizer(std::move(fd))));
-        auto appender = log_segment_appender(fd, file_output_stream_options());
+        auto appender = log_segment_appender(
+          fd, log_segment_appender::options(seastar::default_priority_class()));
         w(appender);
         appender.flush().get();
-        log_seg = make_lw_shared<log_segment>(
-          "test", std::move(fd), model::term_id(0), base, 128);
-        log_seg->flush().get();
+        log_seg = make_lw_shared<log_segment_reader>(
+          "test",
+          std::move(fd),
+          model::term_id(0),
+          base,
+          appender.file_byte_offset(),
+          128);
         replayer_opt = log_replayer(log_seg);
     }
 

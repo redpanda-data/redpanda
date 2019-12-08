@@ -2,8 +2,8 @@
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "storage/log_reader.h"
-#include "storage/log_segment.h"
 #include "storage/log_segment_appender.h"
+#include "storage/log_segment_reader.h"
 #include "storage/log_writer.h"
 #include "storage/tests/random_batch.h"
 #include "utils/file_sanitizer.h"
@@ -14,7 +14,7 @@
 using namespace storage; // NOLINT
 
 struct context {
-    log_segment_ptr log_seg;
+    segment_reader_ptr log_seg;
     offset_tracker tracker;
     probe prb;
 
@@ -22,18 +22,19 @@ struct context {
         auto fd
           = open_file_dma("test", open_flags::create | open_flags::rw).get0();
         fd = file(make_shared(file_io_sanitizer(std::move(fd))));
-        auto appender = log_segment_appender(fd, file_output_stream_options());
+        auto appender = log_segment_appender(
+          fd, log_segment_appender::options(seastar::default_priority_class()));
         for (auto& b : batches) {
             storage::write(appender, b).get();
         }
         appender.flush().get();
-        log_seg = log_segment(
+        log_seg = make_lw_shared<log_segment_reader>(
           "test",
           std::move(fd),
           model::term_id(0),
           batches.begin()->base_offset(),
+          appender.file_byte_offset(),
           128);
-        log_seg->flush().get();
     }
 
     model::record_batch_reader reader(
@@ -41,7 +42,7 @@ struct context {
       size_t max_bytes = std::numeric_limits<size_t>::max()) {
         auto cfg = log_reader_config{
           start, max_bytes, 0, default_priority_class()};
-        return model::make_record_batch_reader<log_segment_reader>(
+        return model::make_record_batch_reader<log_segment_batch_reader>(
           log_seg, tracker, std::move(cfg), prb);
     }
 
@@ -227,7 +228,7 @@ SEASTAR_THREAD_TEST_CASE(test_batch_type_filter) {
           .type_filter = std::move(type_filter),
         };
 
-        auto reader = model::make_record_batch_reader<log_segment_reader>(
+        auto reader = model::make_record_batch_reader<log_segment_batch_reader>(
           ctx.log_seg, ctx.tracker, std::move(config), ctx.prb);
         auto batches = reader.consume(consumer(), model::no_timeout).get0();
 

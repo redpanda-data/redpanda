@@ -31,22 +31,23 @@ sstring log::base_directory() const {
 
 future<> log::close() {
     auto active = make_ready_future<>();
-    if (_active_segment) {
-        active = _active_segment->flush();
+    if (_appender) {
+        // flush + truncate + close
+        active = _appender->close();
     }
     return active.then([this] {
         return parallel_for_each(
-          _segs, [](log_segment_ptr& seg) { return seg->close(); });
+          _segs, [](segment_reader_ptr& seg) { return seg->close(); });
     });
 }
 
 future<> log::new_segment(
   model::offset o, model::term_id term, const io_priority_class& pc) {
-    return _manager.make_log_segment(_ntp, o, term)
-      .then([this, pc](log_segment_ptr seg) {
-          _active_segment = std::move(seg);
+    return _manager.make_log_segment(_ntp, o, term, pc)
+      .then([this, pc](log_manager::log_handles handles) {
+          _active_segment = std::move(handles.reader);
+          _appender = std::move(handles.appender);
           _segs.add(_active_segment);
-          _appender.emplace(_active_segment->data_appender(pc));
           _probe.segment_created();
       });
 }
@@ -97,10 +98,12 @@ future<> log::flush() {
     return _appender->flush().then([this] {
         _tracker.update_committed_offset(_tracker.dirty_offset());
         _active_segment->set_last_written_offset(_tracker.committed_offset());
+        _active_segment->set_last_visible_byte_offset(
+          _appender->file_byte_offset());
     });
 }
 future<> log::do_roll() {
-    return flush().then([this] {
+    return flush().then([this] { return _appender->close(); }).then([this] {
         auto o = model::offset(1) + _tracker.committed_offset();
         // update all offsets to next
         _tracker.update_dirty_offset(o);
@@ -114,8 +117,6 @@ future<> log::maybe_roll() {
     }
     return do_roll();
 }
-
-log_segment_appender& log::appender() { return *_appender; }
 
 model::record_batch_reader log::make_reader(log_reader_config config) {
     return model::make_record_batch_reader<log_reader>(
@@ -150,7 +151,7 @@ future<> log::do_truncate(model::offset o, model::term_id term) {
     auto f = make_ready_future<>();
 
     // 4.
-    f = parallel_for_each(erased, [](log_segment_ptr i) {
+    f = parallel_for_each(erased, [](segment_reader_ptr i) {
         return i->close().then([i] { return remove_file(i->get_filename()); });
     });
 

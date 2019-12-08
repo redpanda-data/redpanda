@@ -2,7 +2,7 @@
 
 #include "bytes/iobuf.h"
 #include "model/record_batch_reader.h"
-#include "storage/log_segment.h"
+#include "storage/log_segment_reader.h"
 #include "storage/offset_tracker.h"
 #include "storage/parser.h"
 #include "storage/probe.h"
@@ -31,12 +31,12 @@ struct log_reader_config {
     std::vector<model::record_batch_type> type_filter;
 };
 
-class log_segment_reader;
+class log_segment_batch_reader;
 
 class skipping_consumer : public batch_consumer {
 public:
     explicit skipping_consumer(
-      log_segment_reader& reader, model::offset start_offset) noexcept
+      log_segment_batch_reader& reader, model::offset start_offset) noexcept
       : _reader(reader)
       , _start_offset(start_offset) {}
 
@@ -63,7 +63,7 @@ public:
 private:
     bool skip_batch_type(model::record_batch_type type);
 
-    log_segment_reader& _reader;
+    log_segment_batch_reader& _reader;
     model::offset _start_offset;
     model::record_batch_header _header;
     size_t _record_size_bytes;
@@ -76,19 +76,20 @@ private:
     model::timeout_clock::time_point _timeout;
 };
 
-class log_segment_reader : public model::record_batch_reader::impl {
+class log_segment_batch_reader : public model::record_batch_reader::impl {
     static constexpr size_t max_buffer_size = 8 * 1024;
     using span = model::record_batch_reader::impl::span;
 
 public:
-    log_segment_reader(
-      log_segment_ptr seg,
+    log_segment_batch_reader(
+      segment_reader_ptr seg,
       offset_tracker& tracker,
       log_reader_config config,
       probe& probe) noexcept;
-    log_segment_reader(log_segment_reader&&) noexcept = default;
-    log_segment_reader(const log_segment_reader&) = delete;
-    log_segment_reader operator=(const log_segment_reader&) = delete;
+    log_segment_batch_reader(log_segment_batch_reader&&) noexcept = default;
+    log_segment_batch_reader(const log_segment_batch_reader&) = delete;
+    log_segment_batch_reader operator=(const log_segment_batch_reader&)
+      = delete;
     size_t bytes_read() const { return _bytes_read; }
 
 protected:
@@ -111,7 +112,7 @@ private:
     friend class log_reader;
 
 private:
-    log_segment_ptr _seg;
+    segment_reader_ptr _seg;
     offset_tracker& _tracker;
     log_reader_config _config;
     size_t _bytes_read = 0;
@@ -151,7 +152,7 @@ private:
     offset_tracker& _offset_tracker;
     log_reader_config _config;
     probe& _probe;
-    std::optional<log_segment_reader> _current_reader;
+    std::optional<log_segment_batch_reader> _current_reader;
 };
 
 } // namespace storage

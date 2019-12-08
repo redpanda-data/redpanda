@@ -4,7 +4,7 @@
 #include "storage/constants.h"
 #include "storage/log.h"
 #include "storage/log_manager.h"
-#include "storage/log_segment.h"
+#include "storage/log_segment_reader.h"
 #include "storage/log_writer.h"
 #include "storage/tests/log_builder.h"
 #include "storage/tests/random_batch.h"
