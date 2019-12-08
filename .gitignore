@@ -177,3 +177,4 @@ venv.bak/
 .idea
 tags
 .ccls-cache
+.clangd
