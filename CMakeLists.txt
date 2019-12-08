@@ -13,11 +13,15 @@ set(CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS} -v -Wl,--build-id=sha1")
 #ninja  1161.66s user 64.94s system 658% cpu 3:06.18 total
 #ninja  825.41s user 49.15s system 586% cpu 2:29.21 total
 set(CMAKE_CXX_FLAGS_DEBUG "-O0 -gsplit-dwarf -Wl,--gdb-index")
+set(CMAKE_C_FLAGS_DEBUG "-O0 -gsplit-dwarf -Wl,--gdb-index")
 # do not use split-dwarf on release builds because we would have
 # to ship additional files to remote servers
 set(CMAKE_CXX_FLAGS_RELEASE "-O2 -g -DNDEBUG")
 set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g -DNDEBUG")
 set(CMAKE_CXX_FLAGS_MINSIZEREL "-Os -DNDEBUG")
+set(CMAKE_C_FLAGS_RELEASE "-O2 -g -DNDEBUG")
+set(CMAKE_C_FLAGS_RELWITHDEBINFO "-O2 -g -DNDEBUG")
+set(CMAKE_C_FLAGS_MINSIZEREL "-Os -DNDEBUG")
 set(Boost_USE_STATIC_LIBS OFF CACHE BOOL "")
 set(Boost_NO_BOOST_CMAKE ON CACHE BOOL "")
 
@@ -35,7 +39,7 @@ set(V_DEPS_INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/v_deps_install
 option (RP_ENABLE_DPDK "Enable DPDK support" OFF)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 # compiler specific options
 set(BASE_LD_FLAGS_LIST ${RP_MARCH})
 
@@ -52,6 +56,8 @@ if (V_MANAGE_DEPS)
   )
 endif()
 
+set(BASE_CXX_FLAGS_LIST -fPIC)
+set(BASE_C_FLAGS_LIST -fPIC)
 if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
     if (RP_ENABLE_GOLD_LINKER)
         message(FATAL_ERROR
@@ -65,7 +71,7 @@ if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
     if (V_MANAGE_DEPS)
       set(LLVM_LIBCPP_INCLUDE_FLAG "-I${V_DEPS_INSTALL_DIR}/include/c++/v1")
     endif()
-    set(BASE_CXX_FLAGS_LIST
+    list(APPEND BASE_CXX_FLAGS_LIST
         -Wno-unused-lambda-capture
         -Wno-unused-command-line-argument
         -D_LIBCPP_ENABLE_CXX17_REMOVED_AUTO_PTR
@@ -86,16 +92,24 @@ endif()
 if ("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
     list(APPEND BASE_CXX_FLAGS_LIST
             -fsanitize=undefined
-            -fsanitize=address)
+            -fsanitize=address
+            )
+
+    list(APPEND BASE_C_FLAGS_LIST
+            -fsanitize=undefined
+            -fsanitize=address
+            )
 endif()
 
 # join flag lists
+string(JOIN " " BASE_C_FLAGS ${BASE_C_FLAGS_LIST})
 string(JOIN " " BASE_CXX_FLAGS ${BASE_CXX_FLAGS_LIST})
 string(JOIN " " BASE_LD_FLAGS ${BASE_LD_FLAGS_LIST})
 string(JOIN ":" PKG_CONFIG_PATH ${PKG_CONFIG_PATH_LIST})
 find_package(PkgConfig REQUIRED)
 set(ENV{PKG_CONFIG_PATH}  "${PKG_CONFIG_PATH}")
 set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} ${BASE_CXX_FLAGS}")
+set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} ${BASE_C_FLAGS}")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo" CACHE STRING
@@ -133,7 +147,7 @@ if(V_MANAGE_DEPS)
   set(BASE_LD_FLAGS "${BASE_LD_FLAGS} -L${V_DEPS_INSTALL_DIR}/lib")
 endif()
 
-set(CMAKE_EXE_LINKER_FLAGS "${BASE_LD_FLAGS}")
+set(CMAKE_EXE_LINKER_FLAGS "${BASE_LD_FLAGS} -pie")
 set(CMAKE_SHARED_LINKER_FLAGS "${BASE_LD_FLAGS}")
 set(CMAKE_MODULE_LINKER_FLAGS "${BASE_LD_FLAGS}")
 

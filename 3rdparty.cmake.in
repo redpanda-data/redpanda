@@ -3,23 +3,59 @@ project(build-deps NONE)
 cmake_host_system_information(
   RESULT build_concurrency_factor
   QUERY NUMBER_OF_LOGICAL_CORES)
-set(make_command make -j ${build_concurrency_factor})
 set(info_dir --infodir=@V_DEPS_INSTALL_DIR@/share/info)
 include(ExternalProject)
 
+set(c_flags "@BASE_C_FLAGS@")
 set(cxx_flags "@BASE_CXX_FLAGS@")
 set(ld_flags "@BASE_LD_FLAGS@")
 set(default_depends "")
-set(luajit_c_compiler "")
-set(boost_link_flags "")
-set(boost_cxx_flags "")
 set(common_cmake_args
     -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@
     -DCMAKE_PREFIX_PATH=@V_DEPS_INSTALL_DIR@
     -DCMAKE_INSTALL_PREFIX=@V_DEPS_INSTALL_DIR@
     -DCMAKE_INSTALL_RPATH=@V_DEPS_INSTALL_DIR@/lib
     -DCMAKE_SKIP_BUILD_RPATH=OFF
-    -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON)
+    -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON
+    -DCMAKE_POSITION_INDEPENDENT_CODE=@CMAKE_POSITION_INDEPENDENT_CODE@
+)
+
+# build environment variables
+
+# pkgconfig
+set(ENV{PKG_CONFIG_PATH}  @PKG_CONFIG_PATH@)
+
+# cmake build environment
+set(cmake_build_env
+  PKG_CONFIG_PATH=@PKG_CONFIG_PATH@
+  LDFLAGS=${ld_flags}
+  CFLAGS=${c_flags}
+  CXXFLAGS=-std=gnu++17\ ${cxx_flags}
+  CPPFLAGS=-std=gnu++17\ ${cxx_flags}
+  )
+# autotools
+set(build_env
+    CFLAGS=${c_flags}
+    CXXFLAGS=${cxx_flags}
+    CPPFLAGS=${cxx_flags}
+    LDFLAGS=${ld_flags}
+    PKG_CONFIG_PATH=@PKG_CONFIG_PATH@)
+# cryptopp does not build with C++17
+set(cryptopp_build_env
+  LDFLAGS=${ld_flags}
+  CXXFLAGS=${cxx_flags}
+  CPPFLAGS=${cxx_flags}
+  )
+# nettle needs explicit path to headers
+set(nettle_build_env
+  CFLAGS=${c_flags}\ -I@V_DEPS_INSTALL_DIR@/include
+  LDFLAGS=${ld_flags}
+)
+
+# define make command in terms of cmake
+set(make_command make ${build_env} -j${build_concurrency_factor} )
+
+# ----------- libcxxabi and libcxx for clang
 
 if (@CMAKE_CXX_COMPILER_ID@ MATCHES "Clang")
     set(toolset clang)
@@ -27,15 +63,16 @@ if (@CMAKE_CXX_COMPILER_ID@ MATCHES "Clang")
     # Boost build user config
     set(boost_user_config_jam "using clang : : @CMAKE_CXX_COMPILER@ $<SEMICOLON>")
     set(default_depends libcxx)
-    # Luajit settings
-    set(luajit_c_compiler CC=$ENV{CC})
     ExternalProject_Add(libcxxabi
         SOURCE_DIR @CMAKE_BINARY_DIR@/../llvm/llvm-src/libcxxabi
         INSTALL_DIR @V_DEPS_INSTALL_DIR@
         CMAKE_ARGS
             ${common_cmake_args}
             -DLLVM_PATH=@CMAKE_BINARY_DIR@/../llvm/llvm-src/llvm
-            -DLIBCXXABI_LIBCXX_PATH=@CMAKE_BINARY_DIR@/../llvm/llvm-src/libcxx)
+            -DLIBCXXABI_LIBCXX_PATH=@CMAKE_BINARY_DIR@/../llvm/llvm-src/libcxx
+            -DLIBCXXABI_C_FLAGS=${c_flags}
+            -DLIBCXXABI_CXX_FLAGS=${cxx_flags}
+            -DLIBCXXABI_LINK_FLAGS=${ld_flags})
     ExternalProject_Add(libcxx
         SOURCE_DIR @CMAKE_BINARY_DIR@/../llvm/llvm-src/libcxx
         INSTALL_DIR @V_DEPS_INSTALL_DIR@
@@ -45,6 +82,9 @@ if (@CMAKE_CXX_COMPILER_ID@ MATCHES "Clang")
             -DLIBCXX_CXX_ABI=libcxxabi
             -DLIBCXX_CXX_ABI_INCLUDE_PATHS=@CMAKE_BINARY_DIR@/../llvm/llvm-src/libcxxabi/include
             -DLIBCXX_CXX_ABI_LIBRARY_PATH=@V_DEPS_INSTALL_DIR@/lib
+            -DLIBCXX_C_FLAGS=${c_flags}
+            -DLIBCXX_CXX_FLAGS=${cxx_flags}
+            -DLIBCXX_LINK_FLAGS=${ld_flags}
             DEPENDS libcxxabi)
 elseif (@CMAKE_CXX_COMPILER_ID@ STREQUAL "GNU")
     set(toolset gcc)
@@ -52,28 +92,7 @@ elseif (@CMAKE_CXX_COMPILER_ID@ STREQUAL "GNU")
     set(boost_user_config_jam "using gcc : : @CMAKE_CXX_COMPILER@ : $<SEMICOLON>")
 endif()
 
-set(ENV{PKG_CONFIG_PATH}  @PKG_CONFIG_PATH@)
-# CMake build environment
-set(cmake_build_env
-  PKG_CONFIG_PATH=@PKG_CONFIG_PATH@
-  LDFLAGS=${ld_flags} CXXFLAGS=-std=gnu++17\ ${cxx_flags})
-# CRYPTOPP does not build with C++17
-set(cryptopp_build_env LDFLAGS=${ld_flags} CXXFLAGS=${cxx_flags})
-
-# Build environment for autotools
-set(build_env
-    CFLAGS=-I@V_DEPS_INSTALL_DIR@/include
-    CXXFLAGS=${cxx_flags}
-    LDFLAGS=${ld_flags}
-    PKG_CONFIG_PATH=@PKG_CONFIG_PATH@)
-
-# Boost settings
-if(ld_flags)
-    set(boost_link_flags linkflags=${ld_flags})
-endif()
-if(cxx_flags)
-    set(boost_cxx_flags cxxflags=${cxx_flags})
-endif()
+# ----------- dependencies below
 
 ExternalProject_Add(boost
   # The 1.67.0 release has a bug in Boost Lockfree around a missing header.
@@ -100,11 +119,10 @@ ExternalProject_Add(boost
     --build-dir=<BINARY_DIR>
     install
     variant=release
-    cflags=-fPIC
-    cxxflags=-fPIC
+    cflags=${c_flags}
+    cxxflags=${cxx_flags}
+    linkflags=${ld_flags}
     link=shared
-    ${boost_cxx_flags}
-    ${boost_link_flags}
     threading=multi
     hardcode-dll-paths=true
     dll-path=@V_DEPS_INSTALL_DIR@/lib)
@@ -225,7 +243,7 @@ ExternalProject_Add(nettle
   PATCH_COMMAND
     <SOURCE_DIR>/.bootstrap
   CONFIGURE_COMMAND
-    ${CMAKE_COMMAND} -E env ${build_env}
+    ${CMAKE_COMMAND} -E env ${nettle_build_env}
     <SOURCE_DIR>/configure
     --prefix=<INSTALL_DIR>
     --srcdir=<SOURCE_DIR>
