@@ -345,7 +345,7 @@ ExternalProject_Add(xml2
       ${CMAKE_COMMAND} -E env ${build_env}
         NOCONFIGURE=true ./autogen.sh
     COMMAND
-    ${CMAKE_COMMAND} -E env ${build_env}
+    ${CMAKE_COMMAND} -E env ${build_env} LIBS=-ldl
       <SOURCE_DIR>/configure
       --without-python
       --with-zlib=@V_DEPS_INSTALL_DIR@/lib
