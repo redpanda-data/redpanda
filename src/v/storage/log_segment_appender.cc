@@ -102,17 +102,16 @@ future<> log_segment_appender::flush() {
         const char* src = c.dma_ptr(_dma_write_alignment);
         const size_t inside_buffer_offset = seastar::align_down<size_t>(
           c.flushed_pos(), _dma_write_alignment);
-        future<> f = _out.dma_write(
-          start_offset, src, expected, _opts.priority);
-        f = f.then(
-          [&c, alignment = _dma_write_alignment, expected](size_t got) {
-              if (c.is_full()) {
-                  c.reset();
-              } else {
-                  c.compact(alignment);
-              }
-              return process_write_fut(expected, got);
-          });
+        future<> f = _out.dma_write(start_offset, src, expected, _opts.priority)
+                       .then([&c, alignment = _dma_write_alignment, expected](
+                               size_t got) {
+                           if (c.is_full()) {
+                               c.reset();
+                           } else {
+                               c.compact(alignment);
+                           }
+                           return process_write_fut(expected, got);
+                       });
         // accounting
         _committed_offset += c.bytes_pending();
         _bytes_flush_pending -= c.bytes_pending();
