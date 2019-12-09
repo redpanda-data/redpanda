@@ -78,6 +78,28 @@ inline future<socket_address> deserialize(source& in) {
       });
 }
 
+//FIXME: Change to generic unordered map serdes when RPC will work with ADL
+template<>
+inline void serialize(iobuf& out, std::unordered_map<sstring, sstring>&& map) {
+    using type = std::vector<std::pair<sstring, sstring>>;
+    type vec;
+    vec.reserve(map.size());
+    std::move(std::begin(map), std::end(map), std::back_inserter(vec));
+    serialize(out, std::move(vec));
+}
+
+template<>
+inline future<std::unordered_map<sstring, sstring>> deserialize(source& in) {
+    using type = std::vector<std::pair<sstring, sstring>>;
+    return deserialize<type>(in).then([](type pairs) {
+        std::unordered_map<sstring, sstring> map;
+        for (auto& p : pairs) {
+            map.insert(std::move(p));
+        }
+        return map;
+    });
+}
+
 template<>
 inline void serialize(iobuf& out, model::broker&& r) {
     rpc::serialize(
