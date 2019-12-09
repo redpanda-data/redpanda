@@ -120,7 +120,13 @@ configuration::configuration()
       "disable_metrics",
       "Disable registering metrics",
       required::no,
-      false) {}
+      false)
+  , _advertised_rpc_api(
+      *this,
+      "advertised_rpc_api",
+      "Address of RPC endpoint published to other cluster members",
+      required::no,
+      std::nullopt) {}
 
 void configuration::read_yaml(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {

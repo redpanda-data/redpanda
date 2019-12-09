@@ -64,6 +64,10 @@ partition_manager::manage(model::ntp ntp, raft::group_id group) {
           auto p = make_lw_shared<partition>(c);
           _ntp_table.emplace(log->ntp(), p);
           _raft_table.emplace(group, p);
+          if (_bg.is_closed()) {
+              return make_exception_future<consensus_ptr>(
+                gate_closed_exception());
+          }
           return with_gate(_bg, [this, p, c, group] {
               clusterlog.debug("Recovering raft group: {}", group);
               return p->start().then([this, c]() mutable {

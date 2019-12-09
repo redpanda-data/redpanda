@@ -6,6 +6,10 @@
 #include "rpc/deserialize.h"
 #include "rpc/serialize.h"
 
+#include <seastar/net/inet_address.hh>
+#include <seastar/net/ip.hh>
+#include <seastar/net/socket_defs.hh>
+
 namespace rpc {
 template<>
 inline void serialize(iobuf& out, model::ntp&& ntp) {
@@ -27,27 +31,142 @@ inline future<model::ntp> deserialize(source& in) {
 }
 
 template<>
+inline void serialize(iobuf& out, net::inet_address&& addr) {
+    using family_t = seastar::net::inet_address::family;
+    switch (addr.in_family()) {
+    case family_t::INET:
+        rpc::serialize(out, addr.in_family(), addr.as_ipv4_address().ip);
+        break;
+    case family_t::INET6:
+        rpc::serialize(out, addr.in_family(), addr.as_ipv6_address().ip);
+        break;
+    }
+}
+
+template<>
+inline future<net::inet_address> deserialize(source& in) {
+    using addr_t = seastar::net::inet_address;
+    return rpc::deserialize<addr_t::family>(in).then([&in](addr_t::family f) {
+        switch (f) {
+        case addr_t::family::INET:
+            using ip_t = uint32_t;
+            return rpc::deserialize<ip_t>(in).then([](uint32_t ip) {
+                return net::inet_address(net::ipv4_address(ip));
+            });
+        case addr_t::family::INET6:
+            using ip6_t = net::ipv6_address::ipv6_bytes;
+            return rpc::deserialize<ip6_t>(in).then([](ip6_t ip) {
+                return net::inet_address(net::ipv6_address(ip));
+            });
+        }
+    });
+}
+
+template<>
+inline void serialize(iobuf& out, socket_address&& addr) {
+    rpc::serialize(out, std::move(addr.addr()), addr.port());
+}
+
+template<>
+inline future<socket_address> deserialize(source& in) {
+    return rpc::deserialize<net::inet_address>(in).then(
+      [&in](net::inet_address addr) mutable {
+          return rpc::deserialize<uint16_t>(in).then(
+            [addr = std::move(addr)](uint16_t port) mutable {
+                return socket_address(std::move(addr), port);
+            });
+      });
+}
+
+// FIXME: Change to generic unordered map serdes when RPC will work with ADL
+template<>
+inline void serialize(iobuf& out, std::unordered_map<sstring, sstring>&& map) {
+    using type = std::vector<std::pair<sstring, sstring>>;
+    type vec;
+    vec.reserve(map.size());
+    std::move(std::begin(map), std::end(map), std::back_inserter(vec));
+    serialize(out, std::move(vec));
+}
+
+template<>
+inline future<std::unordered_map<sstring, sstring>> deserialize(source& in) {
+    using type = std::vector<std::pair<sstring, sstring>>;
+    return deserialize<type>(in).then([](type pairs) {
+        std::unordered_map<sstring, sstring> map;
+        for (auto& p : pairs) {
+            map.insert(std::move(p));
+        }
+        return map;
+    });
+}
+
+template<>
+inline void serialize(iobuf& out, model::broker_properties&& p) {
+    serialize(
+      out,
+      p.cores,
+      p.available_memory,
+      p.available_disk,
+      std::move(p.mount_paths),
+      std::move(p.etc_props));
+}
+
+template<>
+inline future<model::broker_properties> deserialize(source& in) {
+    struct simple {
+        uint32_t cores;
+        uint32_t available_memory;
+        uint32_t available_disk;
+    };
+    return deserialize<simple>(in).then([&in](simple s) mutable {
+        return deserialize<std::vector<sstring>>(in).then(
+          [&in, s = std::move(s)](std::vector<sstring> m_points) mutable {
+              return deserialize<std::unordered_map<sstring, sstring>>(in).then(
+                [s = std::move(s), m_points = std::move(m_points)](
+                  std::unordered_map<sstring, sstring> props) mutable {
+                    return model::broker_properties{
+                      .cores = s.cores,
+                      .available_memory = s.available_memory,
+                      .available_disk = s.available_disk,
+                      .mount_paths = std::move(m_points),
+                      .etc_props = std::move(props)};
+                });
+          });
+    });
+}
+
+template<>
 inline void serialize(iobuf& out, model::broker&& r) {
     rpc::serialize(
-      out, r.id(), sstring(r.host()), r.port(), std::optional(r.rack()));
+      out,
+      r.id(),
+      socket_address(r.kafka_api_address()),
+      socket_address(r.rpc_address()),
+      std::optional(r.rack()),
+      model::broker_properties(r.properties()));
 }
 
 template<>
 inline future<model::broker> deserialize(source& in) {
     struct broker_contents {
         model::node_id id;
-        sstring host;
-        int32_t port;
+        socket_address kafka_api_addr;
+        socket_address rpc_address;
         std::optional<sstring> rack;
     };
-    return deserialize<broker_contents>(in).then([](broker_contents res) {
-        return model::broker(
-          std::move(res.id),
-          std::move(res.host),
-          res.port,
-          std::move(res.rack));
+    return deserialize<broker_contents>(in).then([&in](broker_contents res) {
+        return deserialize<model::broker_properties>(in).then(
+          [&in, res = std::move(res)](model::broker_properties props) {
+              return model::broker(
+                std::move(res.id),
+                std::move(res.kafka_api_addr),
+                std::move(res.rpc_address),
+                std::move(res.rack),
+                props);
+          });
     });
 }
+
 template<>
 inline void serialize(iobuf& ref, model::record&& record) {
     rpc::serialize(

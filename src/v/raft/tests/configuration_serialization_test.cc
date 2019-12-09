@@ -1,16 +1,13 @@
 #include "raft/consensus_utils.h"
 #include "random/generators.h"
+#include "test_utils/randoms.h"
 
 #include <seastar/testing/thread_test_case.hh>
 
 std::vector<model::broker> random_brokers() {
     std::vector<model::broker> ret;
     for (auto i = 0; i < random_generators::get_int(5, 10); ++i) {
-        ret.emplace_back(
-          model::node_id(i),
-          random_generators::gen_alphanum_string(10),  // host
-          random_generators::get_int(1024, 65535),     // port
-          random_generators::gen_alphanum_string(10)); // rack
+        ret.push_back(tests::random_broker(i, i));
     }
     return ret;
 }

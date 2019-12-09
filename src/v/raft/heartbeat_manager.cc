@@ -108,7 +108,7 @@ void heartbeat_manager::process_reply(heartbeat_reply&& r) {
         }
         consensus_ptr ptr = *it;
         const raft::group_configuration& cfg = ptr->config();
-        if (cfg.contains_machine(model::node_id(m.node_id))) {
+        if (cfg.contains_broker(model::node_id(m.node_id))) {
             ptr->process_heartbeat(std::move(m));
         }
     }
