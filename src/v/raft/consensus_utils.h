@@ -45,7 +45,10 @@ raft::entry serialize_configuration(group_configuration cfg);
 future<raft::configuration_bootstrap_state> read_bootstrap_state(storage::log&);
 
 /// looks up for the broker with request id in a vector of brokers
-std::optional<model::broker>
-find_machine(const std::vector<model::broker>&, model::node_id);
+template<typename Iterator>
+Iterator find_machine(Iterator begin, Iterator end, model::node_id id) {
+    return std::find_if(
+      begin, end, [id](decltype(*begin) b) { return b.id() == id; });
+}
 
 } // namespace raft::details

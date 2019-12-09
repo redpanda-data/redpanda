@@ -52,8 +52,13 @@ struct configuration final : public config_store {
         return _advertised_kafka_api().value_or(kafka_api());
     }
 
+    socket_address advertised_rpc_api() const {
+        return _advertised_rpc_api().value_or(rpc_server());
+    }
+
 private:
     property<std::optional<socket_address>> _advertised_kafka_api;
+    property<std::optional<socket_address>> _advertised_rpc_api;
 };
 
 configuration& shard_local_cfg();
@@ -62,11 +67,14 @@ using conf_ref = typename std::reference_wrapper<configuration>;
 
 static inline model::broker make_self_broker(const configuration& cfg) {
     auto kafka_addr = cfg.advertised_kafka_api();
+    auto rpc_addr = cfg.advertised_rpc_api();
     return model::broker(
       model::node_id(cfg.node_id),
-      fmt::format("{}", kafka_addr.addr()),
-      kafka_addr.port(),
-      cfg.rack);
+      kafka_addr,
+      rpc_addr,
+      cfg.rack,
+      // FIXME: Fill broker properties with all the information
+      model::broker_properties{.cores = smp::count});
 }
 
 } // namespace config
@@ -122,7 +130,7 @@ static void to_json(nlohmann::json& j, const data_directory_path& v) {
 }
 
 static void to_json(nlohmann::json& j, const seed_server& v) {
-    j = {{"node_id", v.id}, {"host", v.addr}};
+    j = {{"node_id", v.id()}, {"host", v.addr}};
 }
 
 static void to_json(nlohmann::json& j, const key_cert& v) {
@@ -169,7 +177,7 @@ struct convert<config::seed_server> {
     using type = config::seed_server;
     static Node encode(const type& rhs) {
         Node node;
-        node["node_id"] = rhs.id;
+        node["node_id"] = rhs.id();
         node["host"] = rhs.addr;
         return node;
     }
@@ -180,7 +188,7 @@ struct convert<config::seed_server> {
                 return false;
             }
         }
-        rhs.id = node["node_id"].as<int64_t>();
+        rhs.id = model::node_id(node["node_id"].as<int32_t>());
         rhs.addr = node["host"].as<socket_address>();
         return true;
     }

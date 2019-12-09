@@ -357,15 +357,4 @@ raft::entry serialize_configuration(group_configuration cfg) {
       raft::configuration_batch_type,
       model::make_memory_record_batch_reader(std::move(batches)));
 }
-
-std::optional<model::broker>
-find_machine(const std::vector<model::broker>& v, model::node_id id) {
-    auto it = std::find_if(
-      std::cbegin(v), std::cend(v), [id](const model::broker& b) {
-          return b.id() == id;
-      });
-    return it != std::cend(v) ? std::optional<model::broker>(*it)
-                              : std::nullopt;
-}
-
 } // namespace raft::details

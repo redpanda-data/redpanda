@@ -7,6 +7,7 @@
 #include "storage/log.h"
 #include "storage/log_manager.h"
 #include "storage/record_batch_builder.h"
+#include "test_utils/randoms.h"
 // testing
 #include "test_utils/fixture.h"
 
@@ -71,17 +72,11 @@ struct bootstrap_fixture {
     raft::group_configuration rand_config() const {
         std::vector<model::broker> nodes;
         std::vector<model::broker> learners;
-        auto bgen = [](int l, int h) {
-            return model::broker(
-              model::node_id(random_generators::get_int(l, h)), // id
-              random_generators::gen_alphanum_string(10),       // host
-              random_generators::get_int(1025, 65535),          // port
-              std::nullopt);
-        };
+
         for (auto i = 0; i < active_nodes; ++i) {
-            nodes.push_back(bgen(i, i));
-            learners.push_back(
-              bgen(active_nodes + 1, active_nodes * active_nodes));
+            nodes.push_back(tests::random_broker(i, i));
+            learners.push_back(tests::random_broker(
+              active_nodes + 1, active_nodes * active_nodes));
         }
         return raft::group_configuration{
           .leader_id = model::node_id(
