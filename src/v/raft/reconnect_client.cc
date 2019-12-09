@@ -33,7 +33,8 @@ future<> reconnect_client::stop() {
 
 future<> reconnect_client::reconnect() {
     if (!has_backoff_expired(_stamp, _backoff_secs)) {
-        return make_exception_future<>(make_exception(_client.cfg.server_addr));
+        return make_exception_future<>(
+          make_exception(_client.server_address()));
     }
     _stamp = rpc::clock_type::now();
     return with_gate(_dispatch_gate, [this] {
@@ -46,8 +47,8 @@ future<> reconnect_client::reconnect() {
                     f.get();
                     raftlog.debug(
                       "connected to {}:{}",
-                      _client.cfg.server_addr.addr(),
-                      _client.cfg.server_addr.port());
+                      _client.server_address().addr(),
+                      _client.server_address().port());
                     _backoff_secs = 0;
                     return make_ready_future<>();
                 } catch (...) {
@@ -56,7 +57,7 @@ future<> reconnect_client::reconnect() {
                       "error reconnecting {}", std::current_exception());
                     // keep the exception interface consistent
                     return make_exception_future<>(
-                      make_exception(_client.cfg.server_addr));
+                      make_exception(_client.server_address()));
                 }
             });
         });
