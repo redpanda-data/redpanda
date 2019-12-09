@@ -118,7 +118,7 @@ static iobuf handle_request(kafka::request_context&& ctx) {
     case kafka::fetch_api::key: {
         kafka::fetch_request r;
         r.decode(ctx);
-        r.encode(ctx, writer);
+        r.encode(writer, ctx.header().version);
         break;
     }
 

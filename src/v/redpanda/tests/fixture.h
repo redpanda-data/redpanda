@@ -1,8 +1,10 @@
 #pragma once
 #include "config/configuration.h"
+#include "kafka/client.h"
 #include "kafka/default_namespace.h"
 #include "redpanda/application.h"
 #include "storage/directories.h"
+#include "storage/tests/log_builder.h"
 #include "storage/tests/random_batch.h"
 #include "test_utils/fixture.h"
 #include "test_utils/logs.h"
@@ -48,6 +50,44 @@ public:
         }).get0();
     }
 
+    kafka::client make_kafka_client() {
+        return kafka::client(rpc::base_client::configuration{
+          .server_addr = config::shard_local_cfg().kafka_api(),
+        });
+    }
+
+    /// Make a log builder that will flush to a specific topic partition.
+    storage::log_builder
+    make_tp_log_builder(model::topic topic, model::partition_id partition) {
+        auto ntp = model::ntp{
+          .ns = kafka::default_namespace(),
+          .tp = model::topic_partition{
+            .topic = model::topic(topic),
+            .partition = model::partition_id(partition),
+          },
+        };
+        return storage::log_builder(
+          lconf().data_directory().as_sstring(), std::move(ntp));
+    }
+
+    future<> recover_ntp(const model::ntp& ntp) {
+        cluster::partition_assignment as{
+          .group = raft::group_id(1),
+          .ntp = ntp,
+          .replicas = {{model::node_id(lconf().node_id()), 0}},
+        };
+        return do_with(
+          std::move(as), [this](cluster::partition_assignment& as) {
+              return app.metadata_cache
+                .invoke_on_all([&as](cluster::metadata_cache& mdc) {
+                    mdc.add_topic(as.ntp.tp.topic);
+                })
+                .then([this, &as] {
+                    return app.controller->recover_assignment(as);
+                });
+          });
+    }
+
     model::ntp make_data() {
         auto topic_name = fmt::format("my_topic_{}", 0);
 
@@ -62,19 +102,7 @@ public:
           lconf().data_directory().as_sstring(), ntp, std::move(batches))
           .get();
 
-        cluster::partition_assignment as{
-          .group = raft::group_id(1),
-          .ntp = ntp,
-          .replicas = {{model::node_id(lconf().node_id()), 0}},
-        };
-
-        app.metadata_cache
-          .invoke_on_all([as](cluster::metadata_cache& mdc) {
-              mdc.add_topic(as.ntp.tp.topic);
-          })
-          .get();
-
-        app.controller->recover_assignment(as).get();
+        recover_ntp(ntp).get();
 
         return ntp;
     }

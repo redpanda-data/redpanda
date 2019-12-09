@@ -314,3 +314,18 @@ BOOST_AUTO_TEST_CASE(is_finished) {
     in1.skip(50);
     BOOST_CHECK(in1.is_finished());
 }
+
+BOOST_AUTO_TEST_CASE(iobuf_as_scattered_message) {
+    const auto b = random_generators::gen_alphanum_string(512);
+    for (size_t size = 0; size < b.size(); size++) {
+        iobuf buf;
+        buf.append(b.data(), size);
+        auto msg = iobuf_as_scattered(std::move(buf));
+        auto packet = std::move(msg).release();
+        packet.linearize();
+        BOOST_TEST(packet.nr_frags() == 1);
+        auto& frag = packet.frag(0);
+        BOOST_TEST(frag.size == size);
+        BOOST_TEST(std::memcmp(frag.base, b.data(), size) == 0);
+    }
+}

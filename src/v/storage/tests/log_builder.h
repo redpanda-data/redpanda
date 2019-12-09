@@ -32,6 +32,8 @@ public:
         return *this;
     }
 
+    const model::ntp& ntp() const { return ntp_; }
+
     /**
      * Add a random batch with a fixed number of records.
      */

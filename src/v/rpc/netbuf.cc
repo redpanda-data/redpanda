@@ -1,19 +1,9 @@
 #include "rpc/netbuf.h"
 
+#include "bytes/iobuf.h"
 #include "hashing/xx.h"
 
 namespace rpc {
-
-static inline scattered_message<char> iobuf_as_scattered(iobuf b) {
-    scattered_message<char> msg;
-    auto in = iobuf::iterator_consumer(b.cbegin(), b.cend());
-    in.consume(b.size_bytes(), [&msg](const char* src, size_t sz) {
-        msg.append_static(src, sz);
-        return stop_iteration::no;
-    });
-    msg.on_delete([b = std::move(b)] {});
-    return msg;
-}
 
 /// \brief used to send the bytes down the wire
 /// we re-compute the header-checksum on every call

@@ -18,10 +18,7 @@
 
 namespace kafka {
 
-void fetch_request::encode(
-  const request_context& ctx, response_writer& writer) {
-    auto version = ctx.header().version;
-
+void fetch_request::encode(response_writer& writer, api_version version) {
     writer.write(replica_id());
     writer.write(int32_t(max_wait_time.count()));
     writer.write(min_bytes);
@@ -120,14 +117,38 @@ void fetch_response::encode(const request_context& ctx, response& resp) {
                           writer.write(int64_t(t.first_offset));
                       });
                 }
-                writer.write_bytes_wrapped(
-                  [record_set = std::move(r.record_set)](
-                    response_writer& writer) mutable {
-                      writer.write_direct(std::move(record_set));
-                      return false;
-                  });
+                writer.write(std::move(r.record_set));
             });
       });
+}
+
+void fetch_response::decode(iobuf buf, api_version version) {
+    request_reader reader(std::move(buf));
+
+    if (version >= api_version(1)) {
+        throttle_time = std::chrono::milliseconds(reader.read_int32());
+    }
+
+    partitions = reader.read_array([version](request_reader& reader) {
+        partition p(model::topic(reader.read_string()));
+        p.responses = reader.read_array([version](request_reader& reader) {
+            return partition_response{
+              .id = model::partition_id(reader.read_int32()),
+              .error = error_code(reader.read_int16()),
+              .high_watermark = model::offset(reader.read_int64()),
+              .last_stable_offset = model::offset(reader.read_int64()),
+              .aborted_transactions = reader.read_array(
+                [](request_reader& reader) {
+                    return aborted_transaction{
+                      .producer_id = reader.read_int64(),
+                      .first_offset = model::offset(reader.read_int64()),
+                    };
+                }),
+              .record_set = reader.read_fragmented_nullable_bytes(),
+            };
+        });
+        return p;
+    });
 }
 
 std::ostream&
@@ -148,7 +169,7 @@ operator<<(std::ostream& o, const fetch_response::partition_response& p) {
       p.high_watermark,
       p.last_stable_offset,
       p.aborted_transactions,
-      p.record_set.size_bytes());
+      (p.record_set ? p.record_set->size_bytes() : -1));
 }
 
 std::ostream& operator<<(std::ostream& o, const fetch_response::partition& p) {

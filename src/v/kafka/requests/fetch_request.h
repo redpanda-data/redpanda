@@ -37,7 +37,7 @@ struct fetch_request final {
     int8_t isolation_level; // >= v4
     std::vector<topic> topics;
 
-    void encode(const request_context& ctx, response_writer& writer);
+    void encode(response_writer& writer, api_version version);
     void decode(request_context& ctx);
 
     /*
@@ -157,7 +157,7 @@ struct fetch_response final {
         model::offset high_watermark;
         model::offset last_stable_offset;                      // >= v4
         std::vector<aborted_transaction> aborted_transactions; // >= v4
-        iobuf record_set;
+        std::optional<iobuf> record_set;
     };
 
     struct partition {
@@ -175,6 +175,7 @@ struct fetch_response final {
     std::vector<partition> partitions;
 
     void encode(const request_context& ctx, response& resp);
+    void decode(iobuf buf, api_version version);
 };
 
 std::ostream& operator<<(std::ostream&, const fetch_response&);
@@ -234,8 +235,10 @@ struct op_context {
 
     // add to the response the result of fetching from a partition
     void add_partition_response(fetch_response::partition_response&& r) {
-        response_size += r.record_set.size_bytes();
-        bytes_left -= std::min(bytes_left, r.record_set.size_bytes());
+        if (r.record_set) {
+            response_size += r.record_set->size_bytes();
+            bytes_left -= std::min(bytes_left, r.record_set->size_bytes());
+        }
         response.partitions.back().responses.push_back(std::move(r));
     }
 };
