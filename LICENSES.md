@@ -19,17 +19,17 @@ please keep this up to date with every new library use.
 | DPDK            | BSD                                       |
 | c-ares          | MIT                                       |
 | yaml-cpp        | MIT                                       |
-| gmp             | dual licenses, GNU LGPL v3 and GNU GPL v2 |
-| nettle          | GNU GPL v2                                |
+| gmp             | LGPL v3                                   |
+| nettle          | LGPL v3                                   |
 | gnutls          | LGPL v2.1                                 |
-| lz4             | GPL v2                                    |
+| lz4             | BSD 2                                     |
 | libnumactl      | LGPL v2.1                                 |
 | libpciaccess    | MIT                                       |
 | hwloc           | BSD                                       |
 | xz:liblzma      | Public Domain                             |
 | xml2            | MIT                                       |
 | cryptopp        | Public Domain                             |
-| lksctp-tools    | GPL v2                                    |
+| lksctp-tools    | LGPL v2.1                                 |
 | seastar         | Apache License 2                          |
 | zstd            | BSD                                       |
 | HdrHistogram    | BSD 2                                     |
