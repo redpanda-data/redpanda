@@ -6,6 +6,10 @@
 #include "rpc/deserialize.h"
 #include "rpc/serialize.h"
 
+#include <seastar/net/inet_address.hh>
+#include <seastar/net/ip.hh>
+#include <seastar/net/socket_defs.hh>
+
 namespace rpc {
 template<>
 inline void serialize(iobuf& out, model::ntp&& ntp) {
@@ -24,6 +28,54 @@ inline future<model::ntp> deserialize(source& in) {
                           model::topic_partition{model::topic(n.topic),
                                                  model::partition_id(n.p)}};
     });
+}
+
+template<>
+inline void serialize(iobuf& out, net::inet_address&& addr) {
+    using family_t = seastar::net::inet_address::family;
+    switch (addr.in_family()) {
+    case family_t::INET:
+        rpc::serialize(out, addr.in_family(), addr.as_ipv4_address().ip);
+        break;
+    case family_t::INET6:
+        rpc::serialize(out, addr.in_family(), addr.as_ipv6_address().ip);
+        break;
+    }
+}
+
+template<>
+inline future<net::inet_address> deserialize(source& in) {
+    using addr_t = seastar::net::inet_address;
+    return rpc::deserialize<addr_t::family>(in).then([&in](addr_t::family f) {
+        switch (f) {
+        case addr_t::family::INET:
+            using ip_t = uint32_t;
+            return rpc::deserialize<ip_t>(in).then([](uint32_t ip) {
+                return net::inet_address(net::ipv4_address(ip));
+            });
+        case addr_t::family::INET6:
+            using ip6_t = net::ipv6_address::ipv6_bytes;
+            return rpc::deserialize<ip6_t>(in).then([](ip6_t ip) {
+                return net::inet_address(net::ipv6_address(ip));
+            });
+        }
+    });
+}
+
+template<>
+inline void serialize(iobuf& out, socket_address&& addr) {
+    rpc::serialize(out, std::move(addr.addr()), addr.port());
+}
+
+template<>
+inline future<socket_address> deserialize(source& in) {
+    return rpc::deserialize<net::inet_address>(in).then(
+      [&in](net::inet_address addr) mutable {
+          return rpc::deserialize<uint16_t>(in).then(
+            [addr = std::move(addr)](uint16_t port) mutable {
+                return socket_address(std::move(addr), port);
+            });
+      });
 }
 
 template<>
