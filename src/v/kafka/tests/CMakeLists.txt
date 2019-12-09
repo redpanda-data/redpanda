@@ -63,14 +63,14 @@ rp_test(
   LIBRARIES Seastar::seastar_testing kafka
 )
 
-rp_test(
-  UNIT_TEST
-  BINARY_NAME metadata_test
-  SOURCES metadata_test.cc
-  DEFINITIONS BOOST_TEST_DYN_LINK
-  LIBRARIES Seastar::seastar_testing application raft kafka CppKafka::cppkafka
-  ARGS "-- -c 1"
-)
+#rp_test(
+#  UNIT_TEST
+#  BINARY_NAME metadata_test
+#  SOURCES metadata_test.cc
+#  DEFINITIONS BOOST_TEST_DYN_LINK
+#  LIBRARIES Seastar::seastar_testing application raft kafka CppKafka::cppkafka
+#  ARGS "-- -c 1"
+#)
 
 find_program(KAFKA_PYTHON_ENV "kafka-python-env")
 
