@@ -24,27 +24,33 @@ struct client_context_impl final : streaming_context {
     promise<> pr;
 };
 
-client::client(client_configuration c, std::optional<sstring> service_name)
-  : cfg(std::move(c))
-  , _memory(cfg.max_queued_bytes)
+base_client::base_client(configuration c)
+  : _server_addr(std::move(c.server_addr))
   , _creds(
-      cfg.credentials ? (*cfg.credentials).build_certificate_credentials()
-                      : nullptr) {
+      c.credentials ? c.credentials->build_certificate_credentials()
+                    : nullptr) {}
+
+client::client(client_configuration c, std::optional<sstring> service_name)
+  : base_client(base_client::configuration{
+    .server_addr = std::move(c.server_addr),
+    .credentials = std::move(c.credentials),
+  })
+  , _memory(c.max_queued_bytes) {
     // setup_metrics(service_name);
 }
 
-future<> client::do_connect() {
+future<> base_client::do_connect() {
     // hold invariant of having an always valid dispatch gate
     // and make sure we don't have a live connection already
     if (is_valid() || _dispatch_gate.is_closed()) {
         return make_exception_future<>(std::runtime_error(fmt::format(
           "cannot do_connect with a valid connection. remote:{}",
-          cfg.server_addr)));
+          server_address())));
     }
     return engine()
       .net()
       .connect(
-        cfg.server_addr,
+        server_address(),
         socket_address(sockaddr_in{AF_INET, INADDR_ANY, {0}}),
         transport::TCP)
       .then([this](connected_socket fd) mutable {
@@ -64,22 +70,9 @@ future<> client::do_connect() {
           _probe.connection_established();
           _in = std::move(_fd->input());
           _out = batched_output_stream(std::move(_fd->output()));
-          _correlation_idx = 0;
-          // background
-          (void)with_gate(_dispatch_gate, [this] {
-              return do_reads().then_wrapped([this](future<> f) {
-                  _probe.connection_closed();
-                  try {
-                      f.get();
-                  } catch (...) {
-                      fail_outstanding_futures();
-                      _probe.read_dispatch_error(std::current_exception());
-                  }
-              });
-          });
       });
 }
-future<> client::connect() {
+future<> base_client::connect() {
     // in order to hold concurrency correctness invariants we must guarantee 3
     // things before we attempt to send a payload:
     // 1. there are no background futures waiting
@@ -91,7 +84,7 @@ future<> client::connect() {
         return do_connect();
     });
 }
-future<> client::stop() {
+future<> base_client::stop() {
     fail_outstanding_futures();
     return _dispatch_gate.close();
 }
@@ -103,7 +96,7 @@ void client::fail_outstanding_futures() {
     }
     _correlations.clear();
 }
-void client::shutdown() {
+void base_client::shutdown() {
     try {
         if (_fd) {
             _fd->shutdown_input();
@@ -115,6 +108,24 @@ void client::shutdown() {
     }
 }
 
+future<> client::connect() {
+    return base_client::connect().then([this] {
+        _correlation_idx = 0;
+        // background
+        (void)with_gate(_dispatch_gate, [this] {
+            return do_reads().then_wrapped([this](future<> f) {
+                _probe.connection_closed();
+                try {
+                    f.get();
+                } catch (...) {
+                    fail_outstanding_futures();
+                    _probe.read_dispatch_error(std::current_exception());
+                }
+            });
+        });
+    });
+}
+
 future<std::unique_ptr<streaming_context>> client::send(netbuf b) {
     // hold invariant of always having a valid connection _and_ a working
     // dispatch gate where we can wait for async futures
@@ -122,7 +133,7 @@ future<std::unique_ptr<streaming_context>> client::send(netbuf b) {
         return make_exception_future<std::unique_ptr<streaming_context>>(
           std::runtime_error(fmt::format(
             "cannot send payload with invalid connection. remote:{}",
-            cfg.server_addr)));
+            server_address())));
     }
     return with_gate(_dispatch_gate, [this, b = std::move(b)]() mutable {
         if (_correlations.find(_correlation_idx + 1) != _correlations.end()) {
@@ -168,7 +179,7 @@ future<> client::do_reads() {
           return parse_header(_in).then([this](std::optional<header> h) {
               if (!h) {
                   rpclog.debug(
-                    "could not parse header from server: {}", cfg.server_addr);
+                    "could not parse header from server: {}", server_address());
                   _probe.header_corrupted();
                   return make_ready_future<>();
               }
@@ -201,7 +212,7 @@ future<> client::dispatch(header h) {
 }
 
 void client::setup_metrics(const std::optional<sstring>& service_name) {
-    _probe.setup_metrics(_metrics, service_name, cfg.server_addr);
+    _probe.setup_metrics(_metrics, service_name, server_address());
 }
 
 client::~client() {
@@ -209,7 +220,7 @@ client::~client() {
     if (is_valid()) {
         rpclog.error(
           "connection '{}' is still valid. must call stop() before destroying",
-          cfg.server_addr);
+          server_address());
         std::terminate();
     }
 }
