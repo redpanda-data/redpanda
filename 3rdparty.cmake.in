@@ -96,8 +96,8 @@ endif()
 
 ExternalProject_Add(boost
   # The 1.67.0 release has a bug in Boost Lockfree around a missing header.
-  URL https://storage.googleapis.com/vectorizedio-public/dependencies/boost_1_70_0.tar.gz
-  URL_MD5 fea771fe8176828fabf9c09242ee8c26
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/boost_1_71_0.tar.gz
+  URL_MD5 5f521b41b79bf8616582c4a8a2c10177
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   PATCH_COMMAND
     ./bootstrap.sh
