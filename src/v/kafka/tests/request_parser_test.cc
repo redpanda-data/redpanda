@@ -125,7 +125,7 @@ static iobuf handle_request(kafka::request_context&& ctx) {
     case kafka::metadata_api::key: {
         kafka::metadata_request r;
         r.decode(ctx);
-        r.encode(ctx, writer);
+        r.encode(writer, ctx.header().version);
         break;
     }
 
