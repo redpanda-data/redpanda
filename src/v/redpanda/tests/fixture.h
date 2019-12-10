@@ -37,6 +37,7 @@ public:
         data_dir = fmt::format("test_dir_{}", time(0));
         smp::invoke_on_all([this] {
             auto& config = config::shard_local_cfg();
+            config.get("enable_admin_api").set_value(false);
 
             config.get("data_directory")
               .set_value(config::data_directory_path{.path = data_dir});

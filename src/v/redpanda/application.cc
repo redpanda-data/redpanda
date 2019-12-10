@@ -104,13 +104,16 @@ void application::check_environment() {
 }
 
 void application::configure_admin_server() {
+    auto& conf = config::shard_local_cfg();
+    if (!conf.enable_admin_api()) {
+        return;
+    }
     syschecks::systemd_message("constructing http server");
     construct_service(_admin, sstring("admin")).get();
     prometheus::config metrics_conf;
     metrics_conf.metric_help = "redpanda metrics";
     metrics_conf.prefix = "vectorized";
     prometheus::add_prometheus_routes(_admin, metrics_conf).get();
-    auto& conf = config::shard_local_cfg();
     if (conf.enable_admin_api()) {
         syschecks::systemd_message(
           "enabling admin HTTP api: {}", config::shard_local_cfg().admin());
