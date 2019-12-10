@@ -1,5 +1,6 @@
 #include "kafka/requests/api_versions_request.h"
 #include "kafka/requests/fetch_request.h"
+#include "kafka/requests/metadata_request.h"
 #include "kafka/server.h"
 #include "rpc/client.h"
 #include "seastarx.h"
@@ -82,6 +83,19 @@ public:
           .then([](iobuf buf) {
               fetch_response r;
               r.decode(std::move(buf), api_version(4));
+              return r;
+          });
+    }
+
+    future<metadata_response> metadata(metadata_request r, api_version v) {
+        return send_recv(
+                 [this, v, r = std::move(r)](response_writer& wr) mutable {
+                     write_header(wr, metadata_api::key, v);
+                     r.encode(wr, v);
+                 })
+          .then([v](iobuf buf) {
+              metadata_response r;
+              r.decode(std::move(buf), v);
               return r;
           });
     }
