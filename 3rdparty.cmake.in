@@ -382,8 +382,8 @@ ExternalProject_Add(lksctp-tools
   INSTALL_COMMAND ${make_command} install)
 
 ExternalProject_Add(seastar
-  URL https://storage.googleapis.com/vectorizedio-public/dependencies/seastar-830a2ea.tar.gz
-  URL_MD5 54301f8b5fa0d0b4dc877edd41c6dc5c
+  GIT_REPOSITORY https://github.com/vectorizedio/seastar.git
+  GIT_TAG 830a2ea570847f9bd906d9da1026717faefb284e
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
