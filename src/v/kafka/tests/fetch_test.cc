@@ -224,4 +224,5 @@ FIXTURE_TEST(fetch_one, redpanda_thread_fixture) {
       resp.partitions[0].responses[0].error == kafka::error_code::none);
     BOOST_REQUIRE(resp.partitions[0].responses[0].id == pid);
     BOOST_REQUIRE(resp.partitions[0].responses[0].record_set);
+    BOOST_REQUIRE(resp.partitions[0].responses[0].record_set->size_bytes() > 0);
 }
