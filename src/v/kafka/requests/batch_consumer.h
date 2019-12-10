@@ -24,12 +24,7 @@ public:
       , _wr(_buf) {}
 
     future<stop_iteration> operator()(model::record_batch&& batch) {
-        if (batch.compressed()) {
-            // skip. the random batch maker doesn't yet create valid
-            // compressed kafka records.
-        } else {
-            write_batch(std::move(batch));
-        }
+        write_batch(std::move(batch));
         return make_ready_future<stop_iteration>(stop_iteration::no);
     }
 
@@ -62,14 +57,18 @@ private:
         _wr.write(int32_t(0));            // base sequence
         _wr.write(int32_t(batch.size())); // num records
 
-        for (auto& record : batch) {
-            _wr.write_varint(record.size_bytes());
-            _wr.write(int8_t(0));
-            _wr.write_varint(record.timestamp_delta());
-            _wr.write_varint(record.offset_delta());
-            _wr.write_varint(record.key().size_bytes());
-            _wr.write_direct(record.share_key());
-            _wr.write_direct(record.share_packed_value_and_headers());
+        if (batch.compressed()) {
+            _wr.write(std::move(batch).release().release());
+        } else {
+            for (auto& record : batch) {
+                _wr.write_varint(record.size_bytes());
+                _wr.write(int8_t(0));
+                _wr.write_varint(record.timestamp_delta());
+                _wr.write_varint(record.offset_delta());
+                _wr.write_varint(record.key().size_bytes());
+                _wr.write_direct(record.share_key());
+                _wr.write_direct(record.share_packed_value_and_headers());
+            }
         }
     }
 
