@@ -26,9 +26,11 @@ tools/build.py $CLANG_FLAG \
 cp "build/$BUILD_TYPE/v_deps_build/seastar-prefix/src/seastar-build/apps/iotune/iotune" \
    "$INSTALL_PREFIX/bin/"
 
-echo "$INSTALL_PREFIX/lib" > /etc/ld.so.conf.d/usrlocallib.conf
-echo "$INSTALL_PREFIX/lib64" > /etc/ld.so.conf.d/usrlocallib64.conf
-ldconfig
+if [ "$COMPILER" == "clang" ]; then
+  echo "$INSTALL_PREFIX/lib/" > /etc/ld.so.conf.d/usrlocallib.conf
+  echo "$INSTALL_PREFIX/lib64/" > /etc/ld.so.conf.d/usrlocallib64.conf
+  ldconfig
+fi
 
 # TODO: remove after github.com/vectorizedio/v/issues/191 is fixed
 sed -i \
