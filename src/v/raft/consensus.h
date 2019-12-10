@@ -102,9 +102,7 @@ private:
     future<std::vector<storage::log::append_result>>
     disk_append(std::vector<entry>&&);
 
-    sstring voted_for_filename() const {
-        return _log.base_directory() + "/voted_for";
-    }
+    sstring voted_for_filename() const;
 
     /// used for timer callback to dispatch the vote_stm
     void dispatch_vote();

@@ -47,6 +47,10 @@ future<> consensus::stop() {
     return _bg.close();
 }
 
+sstring consensus::voted_for_filename() const {
+    return _log.base_directory() + "/voted_for";
+}
+
 void consensus::process_heartbeat(append_entries_reply&&) {}
 
 future<> consensus::replicate(raft::entry&& e) {
