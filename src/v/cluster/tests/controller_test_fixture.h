@@ -24,8 +24,8 @@ public:
       : _base_dir("test_dir_" + random_generators::gen_alphanum_string(4))
       , _current_node(
           model::node_id(1),
-          socket_address(net::inet_address("127.0.0.1"), 9092),
-          socket_address(net::inet_address("127.0.0.1"), 11000),
+          unresolved_address("127.0.0.1", 9092),
+          unresolved_address("127.0.0.1", 11000),
           std::nullopt,
           model::broker_properties{.cores = smp::count}) {
         _cli_cache.start().get0();
