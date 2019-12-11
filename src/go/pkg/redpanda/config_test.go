@@ -48,6 +48,7 @@ func getValidConfig() *Config {
 			TuneCpu:             true,
 			TuneAioEvents:       true,
 			TuneClocksource:     true,
+			TuneSwappiness:      true,
 			EnableMemoryLocking: true,
 			TuneCoredump:        true,
 			CoredumpDir:         "/var/lib/redpanda/coredumps",
@@ -188,6 +189,7 @@ rpk:
   tune_cpu: true
   tune_aio_events: true
   tune_clocksource: true
+  tune_swappiness: true
   enable_memory_locking: true
   tune_coredump: true
   coredump_dir: /var/lib/redpanda/coredumps

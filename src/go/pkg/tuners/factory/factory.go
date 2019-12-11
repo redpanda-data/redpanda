@@ -15,6 +15,7 @@ import (
 	"vectorized/pkg/tuners/executors"
 	"vectorized/pkg/tuners/hwloc"
 	"vectorized/pkg/tuners/irq"
+	"vectorized/pkg/tuners/memory"
 	"vectorized/pkg/tuners/network"
 	"vectorized/pkg/tuners/sys"
 
@@ -31,6 +32,7 @@ var (
 		"cpu":            (*tunersFactory).newCpuTuner,
 		"aio_events":     (*tunersFactory).newMaxAIOEventsTuner,
 		"clocksource":    (*tunersFactory).newClockSourceTuner,
+		"swappiness":     (*tunersFactory).newSwappinessTuner,
 		"coredump":       (*tunersFactory).newCoredumpTuner,
 	}
 )
@@ -132,6 +134,8 @@ func IsTunerEnabled(tuner string, rpkConfig *redpanda.RpkConfig) bool {
 		return rpkConfig.TuneAioEvents
 	case "clocksource":
 		return rpkConfig.TuneClocksource
+	case "swappiness":
+		return rpkConfig.TuneSwappiness
 	case "coredump":
 		return rpkConfig.TuneCoredump
 	}
@@ -229,6 +233,12 @@ func (factory *tunersFactory) newClockSourceTuner(
 	params *TunerParams,
 ) tuners.Tunable {
 	return sys.NewClockSourceTuner(factory.fs, factory.executor)
+}
+
+func (factory *tunersFactory) newSwappinessTuner(
+	params *TunerParams,
+) tuners.Tunable {
+	return memory.NewSwappinessTuner(factory.fs, factory.executor)
 }
 
 func (factory *tunersFactory) newCoredumpTuner(

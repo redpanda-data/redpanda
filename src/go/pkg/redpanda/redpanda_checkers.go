@@ -12,6 +12,7 @@ import (
 	"vectorized/pkg/tuners/executors"
 	"vectorized/pkg/tuners/hwloc"
 	"vectorized/pkg/tuners/irq"
+	"vectorized/pkg/tuners/memory"
 	"vectorized/pkg/tuners/network"
 	"vectorized/pkg/tuners/sys"
 
@@ -44,6 +45,7 @@ const (
 	SynBacklogChecker
 	MaxAIOEvents
 	ClockSource
+	Swappiness
 )
 
 func NewConfigChecker(config *Config) checkers.Checker {
@@ -215,5 +217,6 @@ func RedpandaCheckers(
 		NicXpsChecker:                 netCheckersFactory.NewNicXpsCheckers(interfaces),
 		MaxAIOEvents:                  []checkers.Checker{sys.NewMaxAIOEventsChecker(fs)},
 		ClockSource:                   []checkers.Checker{sys.NewClockSourceChecker(fs)},
+		Swappiness:                    []checkers.Checker{memory.NewSwappinessChecker(fs)},
 	}, nil
 }

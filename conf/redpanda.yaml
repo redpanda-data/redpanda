@@ -37,6 +37,7 @@ rpk:
   tune_cpu: true
   tune_aio_events: true
   tune_clocksource: true
+  tune_swappiness: true
   enable_memory_locking: true
   tune_coredump: true
 

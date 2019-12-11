@@ -40,6 +40,7 @@ type RpkConfig struct {
 	TuneCpu             bool   `yaml:"tune_cpu"`
 	TuneAioEvents       bool   `yaml:"tune_aio_events"`
 	TuneClocksource     bool   `yaml:"tune_clocksource"`
+	TuneSwappiness      bool   `yaml:"tune_swappiness"`
 	EnableMemoryLocking bool   `yaml:"enable_memory_locking"`
 	TuneCoredump        bool   `yaml:"tune_coredump"`
 	CoredumpDir         string `yaml:"coredump_dir"`
