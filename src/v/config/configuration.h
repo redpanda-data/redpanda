@@ -71,9 +71,8 @@ static inline model::broker make_self_broker(const configuration& cfg) {
     auto rpc_addr = cfg.advertised_rpc_api();
     return model::broker(
       model::node_id(cfg.node_id),
-      //FIXME: broker should keep unresolved_address
-      socket_address(net::inet_address(kafka_addr.host()), kafka_addr.port()),
-      socket_address(net::inet_address(rpc_addr.host()), rpc_addr.port()),
+      kafka_addr,
+      rpc_addr,
       cfg.rack,
       // FIXME: Fill broker properties with all the information
       model::broker_properties{.cores = smp::count});

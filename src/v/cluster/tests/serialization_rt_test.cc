@@ -28,8 +28,8 @@ SEASTAR_THREAD_TEST_CASE(topic_config_rt_test) {
 SEASTAR_THREAD_TEST_CASE(broker_metadata_rt_test) {
     model::broker b(
       model::node_id(0),
-      socket_address(net::inet_address("127.0.0.1"), 9092),
-      socket_address(net::inet_address("172.0.1.2"), 9999),
+      unresolved_address("127.0.0.1", 9092),
+      unresolved_address("172.0.1.2", 9999),
       "test",
       model::broker_properties{
         .cores = 8,
@@ -40,10 +40,9 @@ SEASTAR_THREAD_TEST_CASE(broker_metadata_rt_test) {
     auto d = serialize_roundtrip_rpc(std::move(b)).get0();
 
     BOOST_REQUIRE_EQUAL(d.id(), model::node_id(0));
-    BOOST_REQUIRE_EQUAL(
-      d.kafka_api_address().addr(), net::inet_address("127.0.0.1"));
+    BOOST_REQUIRE_EQUAL(d.kafka_api_address().host(), "127.0.0.1");
     BOOST_REQUIRE_EQUAL(d.kafka_api_address().port(), 9092);
-    BOOST_REQUIRE_EQUAL(d.rpc_address().addr(), net::inet_address("172.0.1.2"));
+    BOOST_REQUIRE_EQUAL(d.rpc_address().host(), "172.0.1.2");
     BOOST_REQUIRE_EQUAL(d.properties().cores, 8);
     BOOST_REQUIRE_EQUAL(d.properties().available_memory, 1024);
     BOOST_REQUIRE_EQUAL(
