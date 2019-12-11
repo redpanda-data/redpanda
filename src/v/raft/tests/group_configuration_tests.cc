@@ -1,3 +1,4 @@
+#include "utils/unresolved_address.h"
 #define BOOST_TEST_MODULE raft
 #include "raft/types.h"
 
@@ -6,8 +7,8 @@
 model::broker create_broker(int32_t id) {
     return model::broker(
       model::node_id{id},
-      socket_address(net::inet_address("127.0.0.1"), 9002),
-      socket_address(net::inet_address("127.0.0.1"), 9002),
+      unresolved_address("127.0.0.1", 9002),
+      unresolved_address("127.0.0.1", 1234),
       std::nullopt,
       model::broker_properties{});
 }
