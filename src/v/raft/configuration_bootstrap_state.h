@@ -39,10 +39,12 @@ public:
     uint32_t config_batches_seen() const { return _config_batches_seen; }
 
 private:
+    void process_offsets(model::offset base_offset, model::offset last_offset);
+
     uint32_t _data_batches_seen{0};
     uint32_t _config_batches_seen{0};
     bool _end_of_log{false};
-
+    // This is an exclusive upper bound
     model::offset _commit_index{0};
     model::term_id _term{0};
     model::offset _prev_log_index{0};

@@ -16,8 +16,10 @@ void configuration_bootstrap_state::process_configuration_in_thread(
         throw std::runtime_error(
           "Compressed configuration records are unsupported");
     }
-    if (_log_config_offset_tracker < b.last_offset()) {
-        _log_config_offset_tracker = b.last_offset();
+    auto last_offset = b.end_offset();
+    if (_log_config_offset_tracker < last_offset) {
+        _log_config_offset_tracker = last_offset;
+        process_offsets(b.base_offset(), last_offset);
         for (model::record& rec : b) {
             _config = std::move(rpc::deserialize<group_configuration>(
                                   rec.share_packed_value_and_headers())
@@ -35,23 +37,27 @@ void configuration_bootstrap_state::process_data_offsets_in_thread(
           "record_batch_type: {}",
           b.type()));
     }
+    process_offsets(b.base_offset(), b.end_offset());
+}
+
+void configuration_bootstrap_state::process_offsets(
+  model::offset base_offset, model::offset last_offset) {
     // happy path
-    if (b.last_offset() > _commit_index) {
+    if (last_offset > _commit_index) {
         _prev_log_index = _commit_index;
         _prev_log_term = _term;
-        _commit_index = b.last_offset();
-        _commit_index_base_batch_offset = b.base_offset();
+        _commit_index = last_offset;
+        _commit_index_base_batch_offset = base_offset;
         return;
     }
     // we need to test how to find prev term
     if (
-      b.base_offset() < _commit_index_base_batch_offset
-      && b.last_offset() >= _commit_index_base_batch_offset) {
+      base_offset < _commit_index_base_batch_offset
+      && last_offset >= _commit_index_base_batch_offset) {
         _prev_log_index = _commit_index;
         _prev_log_term = _term;
         return;
     }
-    // ignore the rest of the records, only interested in the last 2
 }
 
 void configuration_bootstrap_state::process_batch_in_thread(
