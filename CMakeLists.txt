@@ -12,8 +12,8 @@ set(CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS} -v -Wl,--build-id=sha1")
 
 #ninja  1161.66s user 64.94s system 658% cpu 3:06.18 total
 #ninja  825.41s user 49.15s system 586% cpu 2:29.21 total
-set(CMAKE_CXX_FLAGS_DEBUG "-O0 -gsplit-dwarf -Wl,--gdb-index")
-set(CMAKE_C_FLAGS_DEBUG "-O0 -gsplit-dwarf -Wl,--gdb-index")
+set(CMAKE_CXX_FLAGS_DEBUG "-O0 -gsplit-dwarf")
+set(CMAKE_C_FLAGS_DEBUG "-O0 -gsplit-dwarf")
 # do not use split-dwarf on release builds because we would have
 # to ship additional files to remote servers
 set(CMAKE_CXX_FLAGS_RELEASE "-O2 -g -DNDEBUG")
@@ -66,7 +66,6 @@ if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
     list(APPEND BASE_LD_FLAGS_LIST
         -stdlib=libc++
         -fuse-ld=lld
-        -lc++fs
         -lc++experimental)
     if (V_MANAGE_DEPS)
       set(LLVM_LIBCPP_INCLUDE_FLAG "-I${V_DEPS_INSTALL_DIR}/include/c++/v1")
@@ -80,6 +79,10 @@ if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
         --stdlib=libc++
         -DNO_CONCEPTS)
 elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
+    if ("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
+        # Add gdb-index option only for GCC and Debug build
+        list(APPEND BASE_LD_FLAGS_LIST --gdb-index)
+    endif()
     if(RP_ENABLE_GOLD_LINKER)
         list(APPEND BASE_LD_FLAGS_LIST -fuse-ld=gold)
     endif()

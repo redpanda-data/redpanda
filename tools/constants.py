@@ -19,5 +19,5 @@ GOLANG_COMPILER = "%s/%s/go/bin/go" % (GOLANG_COMPLILER_ROOT, GOLANG_VERSION)
 CPPLINT_URL = "https://raw.githubusercontent.com/google/styleguide/gh-pages/cpplint/cpplint.py"
 CLANG_SOURCE_VERSION = "8.0.0"
 
-LLVM_REF='llvmorg-8.0.0'
-LLVM_MD5='56d611480b48aee351c13e113f7722e6'
+LLVM_REF='llvmorg-9.0.0'
+LLVM_MD5='c5fbb6a232c907e912883fac8b221e2d'

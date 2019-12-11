@@ -86,6 +86,12 @@ if (@CMAKE_CXX_COMPILER_ID@ MATCHES "Clang")
             -DLIBCXX_CXX_FLAGS=${cxx_flags}
             -DLIBCXX_LINK_FLAGS=${ld_flags}
             DEPENDS libcxxabi)
+    ExternalProject_Add_Step(libcxx install-experimental
+                COMMAND           ${CMAKE_COMMAND} -E copy lib/libc++experimental.a @V_DEPS_INSTALL_DIR@/lib
+                WORKING_DIRECTORY <BINARY_DIR>
+                COMMENT           "Installing lc++experimental.a"
+                DEPENDEES         build
+                EXCLUDE_FROM_MAIN FALSE)
 elseif (@CMAKE_CXX_COMPILER_ID@ STREQUAL "GNU")
     set(toolset gcc)
     # Boost build user config
