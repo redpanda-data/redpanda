@@ -38,7 +38,7 @@ public:
         set_configuration("data_directory", data_dir_path);
         set_configuration("node_id", _current_node.id());
         set_configuration(
-          "kafka_api", socket_address(net::inet_address("127.0.0.1"), 9092));
+          "kafka_api", unresolved_address("127.0.0.1", 9092));
 
         using namespace std::chrono_literals;
         _pm

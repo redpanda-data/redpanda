@@ -26,7 +26,7 @@ configuration::configuration()
       "rpc_server",
       "IpAddress and port for RPC server",
       required::no,
-      socket_address(net::inet_address("127.0.0.1"), 33145))
+      unresolved_address("127.0.0.1", 33145))
   , node_id(
       *this,
       "node_id",
@@ -56,7 +56,7 @@ configuration::configuration()
       "kafka_api",
       "Address and port of an interface to listen for Kafka API requests",
       required::no,
-      socket_address(net::inet_address("127.0.0.1"), 9092))
+      unresolved_address("127.0.0.1", 9092))
   , kafka_api_tls(
       *this,
       "kafka_api_tls",
@@ -75,7 +75,7 @@ configuration::configuration()
       "admin",
       "Address and port of admin server",
       required::no,
-      socket_address(net::inet_address("127.0.0.1"), 9644))
+      unresolved_address("127.0.0.1", 9644))
   , enable_admin_api(
       *this, "enable_admin_api", "Enable the admin API", required::no, true)
   , admin_api_doc_dir(

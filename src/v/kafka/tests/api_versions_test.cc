@@ -9,7 +9,7 @@
 #include <seastar/net/ip.hh>
 
 FIXTURE_TEST(get_api_versions, redpanda_thread_fixture) {
-    auto client = make_kafka_client();
+    auto client = make_kafka_client().get0();
     client.connect().get();
     auto received = client.api_versions().get0();
     client.stop().then([&client] { client.shutdown(); }).get();
