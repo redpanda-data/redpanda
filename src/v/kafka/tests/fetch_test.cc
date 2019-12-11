@@ -212,7 +212,7 @@ FIXTURE_TEST(fetch_one, redpanda_thread_fixture) {
       }},
     }};
 
-    auto client = make_kafka_client();
+    auto client = make_kafka_client().get0();
     client.connect().get();
     auto resp = client.fetch(req).get0();
     client.stop().then([&client] { client.shutdown(); }).get();
