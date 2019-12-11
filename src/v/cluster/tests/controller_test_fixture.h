@@ -24,8 +24,8 @@ public:
       : _base_dir("test_dir_" + random_generators::gen_alphanum_string(4))
       , _current_node(
           model::node_id(1),
-          socket_address(net::inet_address("127.0.0.1"), 9092),
-          socket_address(net::inet_address("127.0.0.1"), 11000),
+          unresolved_address("127.0.0.1", 9092),
+          unresolved_address("127.0.0.1", 11000),
           std::nullopt,
           model::broker_properties{.cores = smp::count}) {
         _cli_cache.start().get0();
@@ -38,7 +38,7 @@ public:
         set_configuration("data_directory", data_dir_path);
         set_configuration("node_id", _current_node.id());
         set_configuration(
-          "kafka_api", socket_address(net::inet_address("127.0.0.1"), 9092));
+          "kafka_api", unresolved_address("127.0.0.1", 9092));
 
         using namespace std::chrono_literals;
         _pm

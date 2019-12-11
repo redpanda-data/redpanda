@@ -1,5 +1,4 @@
 #pragma once
-#include "config/configuration.h"
 #include "kafka/client.h"
 #include "kafka/default_namespace.h"
 #include "redpanda/application.h"
@@ -45,16 +44,18 @@ public:
             config.get("node_id").set_value(model::node_id(1));
 
             std::vector<config::seed_server> seed_servers = {
-              {model::node_id(1),
-               socket_address(net::inet_address("127.0.0.1"), 33145)}};
+              {model::node_id(1), unresolved_address("127.0.0.1", 33145)}};
             config.get("seed_servers").set_value(seed_servers);
         }).get0();
     }
 
-    kafka::client make_kafka_client() {
-        return kafka::client(rpc::base_client::configuration{
-          .server_addr = config::shard_local_cfg().kafka_api(),
-        });
+    future<kafka::client> make_kafka_client() {
+        return config::shard_local_cfg().kafka_api().resolve().then(
+          [](socket_address addr) {
+              return kafka::client(rpc::base_client::configuration{
+                .server_addr = addr,
+              });
+          });
     }
 
     /// Make a log builder that will flush to a specific topic partition.
