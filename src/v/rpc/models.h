@@ -136,12 +136,27 @@ inline future<model::broker_properties> deserialize(source& in) {
 }
 
 template<>
+inline void serialize(iobuf& out, unresolved_address&& a) {
+    rpc::serialize(out, sstring(a.host()), a.port());
+}
+
+template<>
+inline future<unresolved_address> deserialize(source& in) {
+    struct simple {
+        sstring host;
+        uint16_t port;
+    };
+    return deserialize<simple>(in).then(
+      [](simple s) { return unresolved_address(std::move(s.host), s.port); });
+}
+
+template<>
 inline void serialize(iobuf& out, model::broker&& r) {
     rpc::serialize(
       out,
       r.id(),
-      socket_address(r.kafka_api_address()),
-      socket_address(r.rpc_address()),
+      unresolved_address(r.kafka_api_address()),
+      unresolved_address(r.rpc_address()),
       std::optional(r.rack()),
       model::broker_properties(r.properties()));
 }
@@ -150,8 +165,8 @@ template<>
 inline future<model::broker> deserialize(source& in) {
     struct broker_contents {
         model::node_id id;
-        socket_address kafka_api_addr;
-        socket_address rpc_address;
+        unresolved_address kafka_api_addr;
+        unresolved_address rpc_address;
         std::optional<sstring> rack;
     };
     return deserialize<broker_contents>(in).then([&in](broker_contents res) {
