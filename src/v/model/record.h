@@ -353,6 +353,14 @@ public:
 
     offset last_offset() const { return _header.last_offset(); }
 
+    // In Kafka protocol last offset is an inclusive upper bound.
+    // We need to track exclusive upper bound in trackers
+    //
+    // NOTE: Kafka protocol explicitly prohibits empty batches
+    offset end_offset() const {
+        return _header.last_offset() + model::offset(1);
+    }
+
     // Can only be called if this holds a set of uncompressed records.
     uncompressed_records::const_iterator begin() const {
         return std::get<uncompressed_records>(_records).begin();
