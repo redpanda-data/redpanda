@@ -1,11 +1,11 @@
 #pragma once
 
 #include "model/fundamental.h"
+#include "utils/unresolved_address.h"
 #include "seastarx.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/sstring.hh>
-#include <seastar/net/socket_defs.hh>
 
 #include <boost/container/flat_map.hpp>
 #include <boost/functional/hash.hpp>
@@ -39,8 +39,8 @@ class broker {
 public:
     broker(
       node_id id,
-      socket_address kafka_api_address,
-      socket_address rpc_address,
+      unresolved_address kafka_api_address,
+      unresolved_address rpc_address,
       std::optional<sstring> rack,
       broker_properties props) noexcept
       : _id(std::move(id))
@@ -54,10 +54,10 @@ public:
     const node_id& id() const { return _id; }
 
     const broker_properties& properties() const { return _properties; }
-    const socket_address& kafka_api_address() const {
+    const unresolved_address& kafka_api_address() const {
         return _kafka_api_address;
     }
-    const socket_address& rpc_address() const { return _rpc_address; }
+    const unresolved_address& rpc_address() const { return _rpc_address; }
     const std::optional<sstring>& rack() const { return _rack; }
 
     inline bool operator==(const model::broker& other) const {
@@ -75,8 +75,8 @@ public:
 
 private:
     node_id _id;
-    socket_address _kafka_api_address;
-    socket_address _rpc_address;
+    unresolved_address _kafka_api_address;
+    unresolved_address _rpc_address;
     std::optional<sstring> _rack;
     broker_properties _properties;
 };
@@ -156,8 +156,9 @@ struct hash<model::broker> {
         size_t h = 0;
         boost::hash_combine(h, std::hash<model::node_id>()(b.id()));
         boost::hash_combine(
-          h, std::hash<socket_address>()(b.kafka_api_address()));
-        boost::hash_combine(h, std::hash<socket_address>()(b.rpc_address()));
+          h, std::hash<unresolved_address>()(b.kafka_api_address()));
+        boost::hash_combine(
+          h, std::hash<unresolved_address>()(b.rpc_address()));
         boost::hash_combine(
           h, std::hash<model::broker_properties>()(b.properties()));
         boost::hash_combine(

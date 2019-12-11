@@ -6,6 +6,7 @@
 
 #include <seastar/net/inet_address.hh>
 #include <seastar/net/ip.hh>
+#include <seastar/net/socket_defs.hh>
 
 #include <cstdlib>
 #include <filesystem>
@@ -22,7 +23,7 @@ struct configuration final : public config_store {
     property<bool> developer_mode;
     property<uint64_t> log_segment_size;
     // Network
-    property<socket_address> rpc_server;
+    property<unresolved_address> rpc_server;
     // Raft
     property<model::node_id> node_id;
     property<int32_t> seed_server_meta_topic_partitions;
@@ -31,10 +32,10 @@ struct configuration final : public config_store {
     property<int16_t> min_version;
     property<int16_t> max_version;
     // Kafka
-    property<socket_address> kafka_api;
+    property<unresolved_address> kafka_api;
     property<tls_config> kafka_api_tls;
     property<bool> use_scheduling_groups;
-    property<socket_address> admin;
+    property<unresolved_address> admin;
     property<sstring> admin_api_doc_dir;
     property<bool> enable_admin_api;
     property<int16_t> default_num_windows;
@@ -48,17 +49,17 @@ struct configuration final : public config_store {
 
     void read_yaml(const YAML::Node& root_node) override;
 
-    socket_address advertised_kafka_api() const {
+    unresolved_address advertised_kafka_api() const {
         return _advertised_kafka_api().value_or(kafka_api());
     }
 
-    socket_address advertised_rpc_api() const {
+    unresolved_address advertised_rpc_api() const {
         return _advertised_rpc_api().value_or(rpc_server());
     }
 
 private:
-    property<std::optional<socket_address>> _advertised_kafka_api;
-    property<std::optional<socket_address>> _advertised_rpc_api;
+    property<std::optional<unresolved_address>> _advertised_kafka_api;
+    property<std::optional<unresolved_address>> _advertised_rpc_api;
 };
 
 configuration& shard_local_cfg();
@@ -100,6 +101,13 @@ struct adl_serializer<seastar::socket_address> {
         std::ostringstream a;
         a << v.addr();
         j = {{"address", a.str()}, {"port", v.port()}};
+    }
+};
+
+template<>
+struct adl_serializer<unresolved_address> {
+    static void to_json(json& j, const unresolved_address& v) {
+        j = {{"address", v.host()}, {"port", v.port()}};
     }
 };
 
@@ -189,7 +197,7 @@ struct convert<config::seed_server> {
             }
         }
         rhs.id = model::node_id(node["node_id"].as<int32_t>());
-        rhs.addr = node["host"].as<socket_address>();
+        rhs.addr = node["host"].as<unresolved_address>();
         return true;
     }
 };
@@ -218,6 +226,28 @@ struct convert<socket_address> {
         } else {
             rhs = socket_address(addr_str, port);
         }
+        return true;
+    }
+};
+
+template<>
+struct convert<unresolved_address> {
+    using type = unresolved_address;
+    static Node encode(const type& rhs) {
+        Node node;
+        node["address"] = rhs.host();
+        node["port"] = rhs.port();
+        return node;
+    }
+    static bool decode(const Node& node, type& rhs) {
+        for (auto s : {"address", "port"}) {
+            if (!node[s]) {
+                return false;
+            }
+        }
+        auto addr_str = node["address"].as<sstring>();
+        auto port = node["port"].as<uint16_t>();
+        rhs = unresolved_address(addr_str, port);
         return true;
     }
 };

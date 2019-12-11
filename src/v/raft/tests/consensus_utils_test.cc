@@ -6,8 +6,8 @@
 model::broker test_broker(int32_t id) {
     return model::broker(
       model::node_id{id},
-      socket_address(net::inet_address("127.0.0.1"), 9092),
-      socket_address(net::inet_address("127.0.0.1"), 1234),
+      unresolved_address("127.0.0.1", 9092),
+      unresolved_address("127.0.0.1", 1234),
       std::nullopt,
       model::broker_properties{});
 }

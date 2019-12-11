@@ -1,5 +1,6 @@
 #include "rpc/server.h"
 
+#include "utils/unresolved_address.h"
 #include "platform/stop_signal.h"
 #include "raft/client_cache.h"
 #include "raft/consensus.h"
@@ -159,8 +160,8 @@ static model::broker broker_from_arg(sstring peer) {
     auto port = boost::lexical_cast<int32_t>(parts[0]);
     return model::broker(
       model::node_id(id),
-      socket_address(net::inet_address(host_port[0]), port),
-      socket_address(net::inet_address(host_port[0]), port),
+      unresolved_address(host_port[0], port),
+      unresolved_address(host_port[0], port),
       std::nullopt,
       model::broker_properties{.cores = smp::count});
 }
@@ -175,12 +176,8 @@ group_cfg_from_args(const po::variables_map& opts) {
     // add self
     cfg.nodes.push_back(model::broker(
       model::node_id(opts["node-id"].as<int32_t>()),
-      socket_address(
-        net::inet_address(opts["ip"].as<sstring>()),
-        opts["port"].as<uint16_t>()),
-      socket_address(
-        net::inet_address(opts["ip"].as<sstring>()),
-        opts["port"].as<uint16_t>()),
+      unresolved_address(opts["ip"].as<sstring>(), opts["port"].as<uint16_t>()),
+      unresolved_address(opts["ip"].as<sstring>(), opts["port"].as<uint16_t>()),
       std::optional<sstring>(),
       model::broker_properties{
         .cores = smp::count,

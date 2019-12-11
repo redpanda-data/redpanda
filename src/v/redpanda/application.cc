@@ -135,12 +135,13 @@ void application::configure_admin_server() {
     }
 
     with_scheduling_group(_scheduling_groups.admin_sg(), [this] {
-        return _admin
-          .invoke_on_all(
-            &http_server::listen, config::shard_local_cfg().admin())
-          .handle_exception([this](auto ep) {
-              _log.error("Exception on http admin server: {}", ep);
-              return make_exception_future<>(ep);
+        return config::shard_local_cfg().admin().resolve().then(
+          [this](socket_address addr) mutable {
+              return _admin.invoke_on_all(&http_server::listen, addr)
+                .handle_exception([this](auto ep) {
+                    _log.error("Exception on http admin server: {}", ep);
+                    return make_exception_future<>(ep);
+                });
           });
     }).get();
 
@@ -192,9 +193,10 @@ void application::wire_up_services() {
     // rpc
     rpc::server_configuration rpc_cfg;
     rpc_cfg.max_service_memory_per_core = memory_groups::rpc_total_memory();
-    rpc_cfg.addrs.push_back(config::shard_local_cfg().rpc_server);
-    syschecks::systemd_message(
-      "Starting internal RPC {}", config::shard_local_cfg().rpc_server);
+    auto rpc_server_addr
+      = config::shard_local_cfg().rpc_server().resolve().get0();
+    rpc_cfg.addrs.push_back(rpc_server_addr);
+    syschecks::systemd_message("Starting internal RPC {}", rpc_server_addr);
     construct_service(_rpc, rpc_cfg).get();
 
     // metrics and quota management
@@ -253,10 +255,16 @@ void application::start() {
       .get();
 
     syschecks::systemd_message("Starting kafka api");
-    _kafka_server
-      .invoke_on_all([this](kafka::kafka_server& server) mutable {
-          // FIXME: Configure keepalive.
-          return server.listen(config::shard_local_cfg().kafka_api(), false);
+    config::shard_local_cfg()
+      .kafka_api()
+      .resolve()
+      .then([this](socket_address kafka_api_addr) {
+          return _kafka_server.invoke_on_all(
+            [this, kafka_api_addr = std::move(kafka_api_addr)](
+              kafka::kafka_server& server) mutable {
+                // FIXME: Configure keepalive.
+                return server.listen(kafka_api_addr, false);
+            });
       })
       .get();
 
