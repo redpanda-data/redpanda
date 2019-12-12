@@ -7,8 +7,9 @@
 #include <boost/outcome/std_result.hpp>
 
 // include utils
-#include <boost/outcome/outcome.hpp>
+#include <boost/outcome/iostream_support.hpp>
 #include <boost/outcome/try.hpp>
+#include <boost/outcome/utils.hpp>
 
 namespace outcome = boost::outcome_v2;
 
