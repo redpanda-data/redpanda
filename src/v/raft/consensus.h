@@ -69,8 +69,8 @@ public:
         _append_entries_notification = std::move(fn);
     }
 
-    /// XXX: this is a workaround. fix in the works
-    future<> update_machines_configuration(model::broker node);
+    /// This method adds a member to the group and performs configuration update
+    future<> add_group_member(model::broker node);
 
     bool is_leader() const { return _vstate == vote_state::leader; }
     model::node_id self() const { return _self; }

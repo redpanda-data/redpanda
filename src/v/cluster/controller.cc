@@ -19,6 +19,7 @@ controller::controller(
   sharded<shard_table>& st,
   sharded<metadata_cache>& md_cache)
   : _self(config::make_self_broker(config::shard_local_cfg()))
+  , _seed_servers(config::shard_local_cfg().seed_servers())
   , _pm(pm)
   , _st(st)
   , _md_cache(md_cache)
@@ -40,9 +41,13 @@ future<> controller::start() {
           return pm.start();
       })
       .then([this] {
+          // add raft0 to shard table
+          return assign_group_to_shard(
+            controller::ntp, controller::group, controller::shard);
+      })
+      .then([this] {
           clusterlog.debug("Starting cluster recovery");
-          return _pm.local()
-            .manage(controller::ntp, controller::group)
+          return start_raft0()
             .then([this](consensus_ptr c) {
                 auto plog = _pm.local().logs().find(controller::ntp)->second;
                 _raft0 = c.get();
@@ -55,7 +60,6 @@ future<> controller::start() {
                       on_raft0_entries_commited(std::move(entries));
                   });
             })
-            .then([this] { return join_raft_group(*_raft0); })
             .then([this] {
                 clusterlog.info("Finished recovering cluster state");
                 _recovered = true;
@@ -65,6 +69,16 @@ future<> controller::start() {
                 }
             });
       });
+}
+
+future<consensus_ptr> controller::start_raft0() {
+    std::vector<model::broker> brokers;
+    if (_seed_servers.front().id() == _self.id()) {
+        clusterlog.info("Current node is cluster root");
+        brokers.push_back(_self);
+    }
+    return _pm.local().manage(
+      controller::ntp, controller::group, std::move(brokers));
 }
 
 future<> controller::stop() {
@@ -156,12 +170,8 @@ future<> controller::recover_replica(
     // FIXME: Pass topic configuration to partitions manager
 
     // (compression, compation, etc)
-    // 1. update shard_table: broadcast
-    return _st
-      .invoke_on_all([ntp, raft_group, shard = bs.shard](shard_table& s) {
-          s.insert(ntp, shard);
-          s.insert(raft_group, shard);
-      })
+
+    return assign_group_to_shard(ntp, raft_group, bs.shard)
       .then([this, shard = bs.shard, raft_group, ntp] {
           // 2. update partition_manager
           return dispatch_manage_partition(std::move(ntp), raft_group, shard);
@@ -178,10 +188,20 @@ future<> controller::dispatch_manage_partition(
 
 future<> controller::manage_partition(
   partition_manager& pm, model::ntp ntp, raft::group_id raft_group) {
-    return pm.manage(ntp, raft_group)
+    return pm.manage(ntp, raft_group, {_self})
       .then([this](consensus_ptr c) { return join_raft_group(*c); })
       .then([path = ntp.path(), raft_group] {
           clusterlog.info("recovered: {}, raft group_id: {}", path, raft_group);
+      });
+}
+
+future<> controller::assign_group_to_shard(
+  model::ntp ntp, raft::group_id raft_group, uint32_t shard) {
+    // 1. update shard_table: broadcast
+    return _st.invoke_on_all(
+      [ntp = std::move(ntp), raft_group, shard](shard_table& s) {
+          s.insert(std::move(ntp), shard);
+          s.insert(raft_group, shard);
       });
 }
 
@@ -222,13 +242,11 @@ future<std::vector<topic_result>> controller::create_topics(
     }
 
     // Do append entries to raft0 logs
-    auto f = raft0_append_entries(std::move(entries))
-               .then_wrapped([topics = std::move(topics)](
-                               future<raft::append_entries_reply> f) {
+    auto f = _raft0->replicate(std::move(entries))
+               .then_wrapped([topics = std::move(topics)](future<> f) {
                    bool success = true;
                    try {
-                       auto repl = f.get0();
-                       success = repl.success;
+                       f.get();
                    } catch (...) {
                        auto e = std::current_exception();
                        clusterlog.error(
@@ -254,13 +272,6 @@ future<std::vector<topic_result>> controller::create_topics(
 
     return with_timeout(timeout, std::move(f));
 } // namespace cluster
-
-future<raft::append_entries_reply>
-controller::raft0_append_entries(std::vector<raft::entry> entries) {
-    return _raft0->append_entries({.node_id = _self.id(),
-                                   .meta = _raft0->meta(),
-                                   .entries = std::move(entries)});
-}
 
 std::optional<raft::entry>
 controller::create_topic_cfg_entry(const topic_configuration& cfg) {
@@ -320,7 +331,7 @@ future<> controller::join_raft_group(raft::consensus& c) {
     // mechanism. This is stubbed implementation for being able to
     // test raft
     if (!c.config().contains_broker(_self.id())) {
-        return c.update_machines_configuration(_self);
+        return c.add_group_member(_self);
     }
     return make_ready_future<>();
 }

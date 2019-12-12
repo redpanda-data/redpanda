@@ -149,14 +149,20 @@ void consensus::arm_vote_timeout() {
         _vote_timeout.rearm(_jit());
     }
 }
-future<> consensus::update_machines_configuration(model::broker node) {
-    // FIXME: Add node to followers if it does not exists yet.
-    // STUB: As only one node will join the cluster add it to list to
-    //       allow raft to work
-    if (!_conf.contains_broker(node.id())) {
-        _conf.nodes.push_back(std::move(node));
-    }
-    return make_ready_future<>();
+future<> consensus::add_group_member(model::broker node) {
+    return with_semaphore(_op_sem, 1, [this, node = std::move(node)]() mutable {
+        auto cfg = _conf;
+        // check once again under the lock
+        if (!cfg.contains_broker(node.id())) {
+            // New broker
+            // FIXME: Change this so that the node is added to followers
+            //        not the nodes directly
+            cfg.nodes.push_back(std::move(node));
+        }
+        // append new configuration to log
+
+        return replicate_configuration(std::move(cfg));
+    });
 }
 
 future<> consensus::start() {
