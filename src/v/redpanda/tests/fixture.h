@@ -16,6 +16,8 @@
 
 class redpanda_thread_fixture {
 public:
+    static constexpr const char* rack_name = "i-am-rack";
+
     redpanda_thread_fixture() {
         app.initialize();
         configure();
@@ -37,6 +39,7 @@ public:
         smp::invoke_on_all([this] {
             auto& config = config::shard_local_cfg();
             config.get("enable_admin_api").set_value(false);
+            config.get("rack").set_value(std::optional<sstring>(rack_name));
 
             config.get("data_directory")
               .set_value(config::data_directory_path{.path = data_dir});

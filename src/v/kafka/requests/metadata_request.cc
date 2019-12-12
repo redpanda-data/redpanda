@@ -27,9 +27,7 @@ void metadata_request::decode(request_context& ctx) {
     }
 }
 
-void metadata_request::encode(
-  const request_context& ctx, response_writer& writer) {
-    auto version = ctx.header().version;
+void metadata_request::encode(response_writer& writer, api_version version) {
     writer.write_array(
       topics, [](const model::topic tp, response_writer& writer) {
           writer.write(tp());
@@ -122,6 +120,72 @@ void metadata_response::partition::encode(
         rw.write_array(
           offline_replicas,
           [](const model::node_id& n, response_writer& rw) { rw.write(n); });
+    }
+}
+
+void metadata_response::decode(iobuf buf, api_version version) {
+    request_reader reader(std::move(buf));
+
+    if (version >= api_version(3)) {
+        throttle_time = std::chrono::milliseconds(reader.read_int32());
+    }
+
+    brokers = reader.read_array([version](request_reader& reader) {
+        auto b = broker{
+          .node_id = model::node_id(reader.read_int32()),
+          .host = reader.read_string(),
+          .port = reader.read_int32(),
+        };
+        if (version >= api_version(1)) {
+            b.rack = reader.read_nullable_string();
+        }
+        return b;
+    });
+
+    if (version >= api_version(2)) {
+        cluster_id = reader.read_nullable_string();
+    }
+
+    if (version >= api_version(1)) {
+        controller_id = model::node_id(reader.read_int32());
+    }
+
+    topics = reader.read_array([version](request_reader& reader) {
+        auto t = topic{
+          .err_code = error_code(reader.read_int16()),
+          .name = model::topic(reader.read_string()),
+        };
+        if (version >= api_version(1)) {
+            t.is_internal = reader.read_bool();
+        }
+        t.partitions = reader.read_array([version](request_reader& reader) {
+            auto p = partition{
+              .err_code = error_code(reader.read_int16()),
+              .index = model::partition_id(reader.read_int32()),
+              .leader = model::node_id(reader.read_int32()),
+            };
+            if (version >= api_version(7)) {
+                p.leader_epoch = reader.read_int32();
+            }
+            p.replica_nodes = reader.read_array([](request_reader& reader) {
+                return model::node_id(reader.read_int32());
+            });
+            if (version >= api_version(5)) {
+                p.offline_replicas = reader.read_array(
+                  [](request_reader& reader) {
+                      return model::node_id(reader.read_int32());
+                  });
+            }
+            return p;
+        });
+        if (version >= api_version(8)) {
+            t.topic_authorized_operations = reader.read_int32();
+        }
+        return t;
+    });
+
+    if (version >= api_version(8)) {
+        cluster_authorized_operations = model::node_id(reader.read_int32());
     }
 }
 

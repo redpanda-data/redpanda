@@ -24,7 +24,7 @@ struct metadata_request {
     bool include_cluster_authorized_operations = false; // version >= 8
     bool include_topic_authorized_operations = false;   // version >= 8
 
-    void encode(const request_context& ctx, response_writer& writer);
+    void encode(response_writer& writer, api_version version);
     void decode(request_context& ctx);
 };
 
@@ -66,6 +66,7 @@ struct metadata_response {
     int32_t cluster_authorized_operations = 0; // version >= 8
 
     void encode(const request_context& ctx, response& resp);
+    void decode(iobuf buf, api_version version);
 };
 
 std::ostream& operator<<(std::ostream&, const metadata_response&);
