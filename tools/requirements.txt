@@ -2,3 +2,5 @@
 click
 gitpython
 pylddwrap
+requests
+Jinja2

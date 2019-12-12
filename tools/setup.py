@@ -20,6 +20,7 @@ setup(
     description='vectorized internal tooling',
     packages=find_packages(exclude=['tests']),
     setup_requires=['setuptools'],
+    package_data={'': ['*.md']},
     include_package_data=True,
     install_requires=[],
     scripts=[],
