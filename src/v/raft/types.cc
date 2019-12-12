@@ -28,4 +28,13 @@ bool group_configuration::contains_broker(model::node_id id) const {
            || std::any_of(
              std::cbegin(learners), std::cend(learners), find_by_id);
 }
+
+group_configuration::brokers_t group_configuration::all_brokers() const {
+    std::vector<model::broker> all;
+    all.reserve(nodes.size() + learners.size());
+    std::copy(std::cbegin(nodes), std::cend(nodes), std::back_inserter(all));
+    std::copy(
+      std::cbegin(learners), std::cend(learners), std::back_inserter(all));
+    return all;
+}
 } // namespace raft

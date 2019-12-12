@@ -6,6 +6,7 @@
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/reactor.hh>
+#include <seastar/net/socket_defs.hh>
 
 namespace raft {
 class reconnect_client {
@@ -27,6 +28,10 @@ public:
 
     /// safe client connect - attempts to reconnect if not connected
  future<result<client_type*>> get_connected();
+
+    const socket_address& server_address() const {
+        return _client.server_address();
+    }
 
     future<> stop();
 

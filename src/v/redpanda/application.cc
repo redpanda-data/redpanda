@@ -173,7 +173,7 @@ void application::wire_up_services() {
 
     syschecks::systemd_message("Creating cluster::controller");
     controller = std::make_unique<cluster::controller>(
-      partition_manager, shard_table, metadata_cache);
+      partition_manager, shard_table, metadata_cache, _raft_client_cache);
     _deferred.emplace_back([this] { controller->stop().get(); });
 
     // group membership
