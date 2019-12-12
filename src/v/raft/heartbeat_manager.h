@@ -1,5 +1,6 @@
 #pragma once
 
+#include "outcome.h"
 #include "raft/client_cache.h"
 #include "raft/consensus.h"
 #include "raft/types.h"
@@ -50,8 +51,15 @@ private:
 
     /// \brief sends a batch to one node
     future<> do_heartbeat(heartbeat_request&&, clock_type::time_point);
+
     /// \brief notifies the consensus groups about append_entries log offsets
-    void process_reply(heartbeat_reply&&);
+    /// \param n the physical node that owns heart beats
+    /// \param groups raft groups managed by \param n
+    /// \param result if the node return successful heartbeats
+    void process_reply(
+      model::node_id n,
+      std::vector<group_id> groups,
+      result<heartbeat_reply> result);
 
     // private members
 

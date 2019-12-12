@@ -1,5 +1,6 @@
 #pragma once
 
+#include "outcome.h"
 #include "raft/consensus.h"
 
 #include <seastar/core/semaphore.hh>
@@ -36,27 +37,27 @@ private:
     struct vmeta {
         vmeta(model::node_id n)
           : node(n) {}
-        vmeta(vmeta&&) noexcept = default;
-        vmeta& operator=(vmeta&&) noexcept = default;
 
-        bool is_set() const { return value.index() != std::variant_npos; }
-        bool is_error() const { return std::holds_alternative<sstring>(value); }
-        bool is_reply() const {
-            return std::holds_alternative<vote_reply>(value);
-        }
         bool is_vote_granted_reply() const {
-            return is_reply() && std::get<vote_reply>(value).granted;
+            return value && value->has_value() && value->value().granted;
+        }
+
+        bool is_failure() const { return value && value->has_error(); }
+
+        void set_value(result<vote_reply> r) {
+            value = std::make_unique<result<vote_reply>>(std::move(r));
         }
 
         model::node_id node;
-        std::variant<vote_reply, sstring> value;
+        std::unique_ptr<result<vote_reply>> value;
     };
+
     friend std::ostream& operator<<(std::ostream&, const vmeta&);
 
     future<> do_vote();
     future<> self_vote();
     future<> dispatch_one(model::node_id);
-    future<vote_reply> do_dispatch_one(model::node_id);
+    future<result<vote_reply>> do_dispatch_one(model::node_id);
     std::pair<int32_t, int32_t> partition_count() const;
     future<> process_replies();
     future<> replicate_config_as_new_leader();

@@ -79,7 +79,7 @@ public:
     const model::ntp& ntp() const { return _log.ntp(); }
     clock_type::time_point last_heartbeat() const { return _hbeat; };
 
-    void process_heartbeat(append_entries_reply&&);
+    void process_heartbeat(model::node_id, result<append_entries_reply>);
     future<> replicate(raft::entry&&);
     future<> replicate(std::vector<raft::entry>&&);
 
