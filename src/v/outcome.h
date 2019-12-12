@@ -24,5 +24,3 @@ using unchecked = outcome::std_result<R, S, outcome::policy::all_narrow>;
 template<class R, class S = std::error_code>
 using checked
   = outcome::result<R, S, outcome::policy::throw_bad_result_access<S, void>>;
-
-#define outcome_try(...) BOOST_OUTCOME_TRY(__VA_ARGS__)
