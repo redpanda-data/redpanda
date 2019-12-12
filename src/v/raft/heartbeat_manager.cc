@@ -1,5 +1,8 @@
 #include "raft/heartbeat_manager.h"
 
+#include "outcome_future_utils.h"
+#include "raft/errc.h"
+
 #include <boost/range/iterator_range.hpp>
 
 namespace raft {
@@ -60,43 +63,71 @@ future<> heartbeat_manager::do_dispatch_heartbeats(
       });
 }
 
-future<> heartbeat_manager::do_heartbeat(
-  heartbeat_request&& r, clock_type::time_point next_timeout) {
-    auto shard = client_cache::shard_for(r.node_id);
-    // FIXME: #206
-    return smp::submit_to(
-             shard,
-             [this, r = std::move(r), next_timeout]() mutable {
-                 auto& local = _clients.local();
-                 if (!local.contains(r.node_id)) {
-                     throw std::runtime_error(fmt::format(
-                       "Could not find {} in raft::client_cache", r.node_id));
-                 }
-                 return local.get(r.node_id)->with_client(
-                   [next_timeout, r = std::move(r)](
-                     reconnect_client::client_type& cli) mutable {
-                       hbeatlog.info("DEBUG: sending hbeats {}", r);
-                       // FIXME: #137
-                       auto f = cli.heartbeat(std::move(r));
-                       return with_timeout(next_timeout, std::move(f))
-                         .then([](rpc::client_context<heartbeat_reply> r) {
-                             return r.data; // copy
-                         });
-                   });
-             })
-      .then_wrapped([this](future<heartbeat_reply> fut) {
-          try {
-              process_reply(fut.get0());
-          } catch (...) {
-              hbeatlog.error(
-                "Could not send heartbeats: {}", std::current_exception());
+static future<result<heartbeat_reply>> send_beat(
+  client_cache& local, clock_type::time_point tmo, heartbeat_request&& r) {
+    using ret_t = result<heartbeat_reply>;
+    if (!local.contains(r.node_id)) {
+        return make_ready_future<ret_t>(errc::missing_tcp_client);
+    }
+    using rpc_client = reconnect_client::client_type;
+    return local.get(r.node_id)->get_connected().then(
+      [tmo, r = std::move(r)](result<rpc_client*> cli) mutable {
+          if (!cli) {
+              return make_ready_future<ret_t>(cli.error());
           }
+          hbeatlog.trace("sending hbeats {}", r);
+          auto f = cli.value()->heartbeat(std::move(r));
+          return result_with_timeout(tmo, errc::timeout, std::move(f))
+            .then([](auto r) {
+                if (!r) {
+                    return make_ready_future<ret_t>(r.error());
+                }
+                // TODO: wrap in foreign ptr
+                return make_ready_future<ret_t>(std::move(r.value().data));
+            });
       });
 }
 
-void heartbeat_manager::process_reply(heartbeat_reply&& r) {
-    hbeatlog.info("DEBUG: process_reply {}", r);
-    for (auto& m : r.meta) {
+future<> heartbeat_manager::do_heartbeat(
+  heartbeat_request&& r, clock_type::time_point next_timeout) {
+    auto shard = client_cache::shard_for(r.node_id);
+    std::vector<group_id> groups(r.meta.size());
+    for (size_t i = 0; i < groups.size(); ++i) {
+        groups[i] = group_id(r.meta[i].group);
+    }
+    return smp::submit_to(
+             shard,
+             [this, r = std::move(r), next_timeout]() mutable {
+                 return send_beat(_clients.local(), next_timeout, std::move(r));
+             })
+      .then([node = r.node_id, groups = std::move(groups), this](
+              result<heartbeat_reply> ret) mutable {
+          process_reply(node, std::move(groups), std::move(ret));
+      });
+}
+
+void heartbeat_manager::process_reply(
+  model::node_id n, std::vector<group_id> groups, result<heartbeat_reply> r) {
+    if (!r) {
+        hbeatlog.info("Could not send hearbeats to node:{}, reason:{}", n, r);
+        for (auto g : groups) {
+            auto it = std::lower_bound(
+              _consensus_groups.begin(),
+              _consensus_groups.end(),
+              g,
+              details::consensus_ptr_by_group_id{});
+            if (it == _consensus_groups.end()) {
+                hbeatlog.error("cannot find consensus group:{}", g);
+                continue;
+            }
+            // propagte error
+            (*it)->process_heartbeat(
+              n, result<append_entries_reply>(r.error()));
+        }
+        return;
+    }
+    hbeatlog.trace("process_reply {}", r);
+    for (auto& m : r.value().meta) {
         auto it = std::lower_bound(
           _consensus_groups.begin(),
           _consensus_groups.end(),
@@ -106,11 +137,7 @@ void heartbeat_manager::process_reply(heartbeat_reply&& r) {
             hbeatlog.error("Could not find consensus for group:{}", m.group);
             continue;
         }
-        consensus_ptr ptr = *it;
-        const raft::group_configuration& cfg = ptr->config();
-        if (cfg.contains_broker(model::node_id(m.node_id))) {
-            ptr->process_heartbeat(std::move(m));
-        }
+        (*it)->process_heartbeat(n, result<append_entries_reply>(std::move(m)));
     }
 }
 

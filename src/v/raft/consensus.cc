@@ -51,7 +51,8 @@ sstring consensus::voted_for_filename() const {
     return _log.base_directory() + "/voted_for";
 }
 
-void consensus::process_heartbeat(append_entries_reply&&) {}
+void consensus::process_heartbeat(
+  model::node_id node, result<append_entries_reply>) {}
 
 future<> consensus::replicate(raft::entry&& e) {
     std::vector<raft::entry> entries;
