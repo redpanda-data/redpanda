@@ -33,6 +33,7 @@ set(RP_MARCH
   "-march override, use -march=armv8-a+crc+crypto or -march=westmere"
   )
 option(V_MANAGE_DEPS "Use our own 3rdparty.cmake.in" ON)
+option(V_DEPS_SKIP_BUILD "Do not build dependencies" OFF)
 option(V_DEPS_ONLY "Only build dependencies" OFF)
 set(V_DEPS_INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/v_deps_install
   CACHE STRING "Managed dependencies install directory")
@@ -137,21 +138,23 @@ if(V_MANAGE_DEPS)
   set(CMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY ON CACHE INTERNAL "" FORCE)
   set(V_DEPS_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/v_deps_build)
   configure_file(3rdparty.cmake.in ${V_DEPS_BUILD_DIR}/CMakeLists.txt @ONLY)
-  execute_process(COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" .
-    RESULT_VARIABLE result
-    WORKING_DIRECTORY ${V_DEPS_BUILD_DIR})
-  if(result)
-    message(FATAL_ERROR "CMake step for v::deps failed: ${result}")
-  endif()
-  execute_process(COMMAND ${CMAKE_COMMAND} --build .
-    RESULT_VARIABLE result
-    WORKING_DIRECTORY ${V_DEPS_BUILD_DIR})
-  if(result)
-    message(FATAL_ERROR "Build step for v::build failed: ${result}")
-  endif()
   # wire up dependency search paths.
   list(APPEND CMAKE_PREFIX_PATH "${V_DEPS_INSTALL_DIR}")
   set(BASE_LD_FLAGS "${BASE_LD_FLAGS} -L${V_DEPS_INSTALL_DIR}/lib")
+  if(NOT V_DEPS_SKIP_BUILD)
+    execute_process(COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" .
+      RESULT_VARIABLE result
+      WORKING_DIRECTORY ${V_DEPS_BUILD_DIR})
+    if(result)
+      message(FATAL_ERROR "CMake step for v::deps failed: ${result}")
+    endif()
+    execute_process(COMMAND ${CMAKE_COMMAND} --build .
+      RESULT_VARIABLE result
+      WORKING_DIRECTORY ${V_DEPS_BUILD_DIR})
+    if(result)
+      message(FATAL_ERROR "Build step for v::build failed: ${result}")
+    endif()
+  endif()
 endif()
 
 set(CMAKE_EXE_LINKER_FLAGS "${BASE_LD_FLAGS} -pie")

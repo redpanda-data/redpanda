@@ -33,7 +33,7 @@ def _symlink_compile_commands(build_type):
     os.symlink(src, dst)
 
 
-def _configure_build(build_type, external, external_only,
+def _configure_build(build_type, external, external_only, external_skip_build,
                      external_install_prefix, clang_opt):
     _check_build_type(build_type)
     cpp.check_bdir(build_type)
@@ -50,9 +50,10 @@ def _configure_build(build_type, external, external_only,
             "Clang not defined, building using default system compiler")
     elif clang_opt == "internal" or clang_opt == "llvm_bootstrap":
         logger.info("Builing using internal Clang compiler")
-        llvm.get_llvm()
-        bootstrap_build = clang_opt == "llvm_bootstrap"
-        llvm.build_llvm(bootstrap_build, external_install_prefix)
+        if not external_skip_build:
+            llvm.get_llvm()
+            bootstrap_build = clang_opt == "llvm_bootstrap"
+            llvm.build_llvm(bootstrap_build, external_install_prefix)
         clang_bin_path = os.path.join(
             external_install_prefix if external_install_prefix else
             llvm.get_internal_llvm_install_path(), 'bin', 'clang')
@@ -65,6 +66,8 @@ def _configure_build(build_type, external, external_only,
         args.append('-DV_MANAGE_DEPS=OFF')
     if external_only:
         args.append('-DV_DEPS_ONLY=ON')
+    if external_skip_build:
+        args.append('-DV_DEPS_SKIP_BUILD=ON')
     if external_install_prefix:
         args.append('-DV_DEPS_INSTALL_DIR=%s' % external_install_prefix)
 
@@ -79,7 +82,8 @@ def _configure_build(build_type, external, external_only,
 def _invoke_build(build_type):
     _check_build_type(build_type)
     tpl = Template(
-        "cd $build_root/$build_type && ninja -C $build_root/$build_type -j$num_jobs")
+        "cd $build_root/$build_type && ninja -C $build_root/$build_type -j$num_jobs"
+    )
 
     # assign jobs so that we have 2.0GB/core
     total_memory = os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES')
@@ -117,7 +121,7 @@ def _invoke_go_tests():
     golang.go_test(GOLANG_ROOT, "./...")
 
 
-def build(build_type, targets, external, external_only,
+def build(build_type, targets, external, external_only, external_skip_build,
           external_install_prefix, clang):
     if 'all' in targets or 'go' in targets:
         _invoke_go_tests()
@@ -126,7 +130,7 @@ def build(build_type, targets, external, external_only,
     if 'all' in targets or 'cpp' in targets:
         logger.info("Building Cpp...")
         _configure_build(build_type, external, external_only,
-                         external_install_prefix, clang)
+                         external_skip_build, external_install_prefix, clang)
         if external_only:
             return
         _invoke_build(build_type)
