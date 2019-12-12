@@ -34,7 +34,7 @@ public:
     future<> stop();
     void shutdown();
 
-    [[gnu::always_inline]] bool is_valid() { return _fd && !_in.eof(); }
+    [[gnu::always_inline]] bool is_valid() const { return _fd && !_in.eof(); }
 
     const socket_address& server_address() const { return _server_addr; }
 

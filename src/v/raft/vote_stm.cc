@@ -1,14 +1,18 @@
 #include "raft/vote_stm.h"
 
+#include "outcome_future_utils.h"
 #include "raft/consensus_utils.h"
+#include "raft/errc.h"
 #include "raft/logger.h"
 
 namespace raft {
-
 std::ostream& operator<<(std::ostream& o, const vote_stm::vmeta& m) {
-    o << "{node: " << m.node << ", is_error: " << m.is_error()
-      << ", is_reply: " << m.is_reply();
-    seastar::visit(m.value, [&](auto& v) { o << ", value: " << v; });
+    o << "{node: " << m.node << ", value: ";
+    if (m.value) {
+        o << "[" << *m.value << "]";
+    } else {
+        o << "nullptr";
+    }
     return o << "}";
 }
 vote_stm::vote_stm(consensus* p)
@@ -20,7 +24,8 @@ vote_stm::~vote_stm() {
         std::terminate();
     }
 }
-future<vote_reply> vote_stm::do_dispatch_one(model::node_id n) {
+future<result<vote_reply>> vote_stm::do_dispatch_one(model::node_id n) {
+    using ret_t = result<vote_reply>;
     if (n == _ptr->_self) {
         // 5.2.1. 3
         vote_reply reply;
@@ -35,27 +40,33 @@ future<vote_reply> vote_stm::do_dispatch_one(model::node_id n) {
                            _ptr->voted_for_filename(),
                            {_ptr->_self, model::term_id(_req.term)})
                     .then([reply = std::move(reply)] {
-                        return make_ready_future<vote_reply>(std::move(reply));
+                        return make_ready_future<ret_t>(std::move(reply));
                     });
               });
         }
-        return make_ready_future<vote_reply>(std::move(reply));
+        return make_ready_future<ret_t>(std::move(reply));
     }
     auto shard = raft::client_cache::shard_for(n);
     return smp::submit_to(shard, [this, n]() mutable {
         auto& local = _ptr->_clients.local();
         if (!local.contains(n)) {
-            return make_exception_future<vote_reply>(std::runtime_error(
-              fmt::format("Missing node {} in client_cache", n)));
+            return make_ready_future<ret_t>(errc::missing_tcp_client);
         }
         // make a local copy of `this->_req`
-        return local.get(n)->with_client(
-          [this, r = _req](reconnect_client::client_type& cli) mutable {
-              auto f = cli.vote(std::move(r));
-              auto tout = raft::clock_type::now() + _ptr->_jit.base_duration();
-              return with_timeout(tout, std::move(f))
-                .then([](rpc::client_context<vote_reply> r) {
-                    return r.data; // copy
+        using rpc_client = reconnect_client::client_type;
+        return local.get(n)->get_connected().then(
+          [this, r = _req](result<rpc_client*> cli) mutable {
+              if (!cli) {
+                  return make_ready_future<ret_t>(cli.error());
+              }
+              auto f = cli.value()->vote(std::move(r));
+              auto tout = clock_type::now() + _ptr->_jit.base_duration();
+              return result_with_timeout(tout, errc::timeout, std::move(f))
+                .then([](auto r) {
+                    if (!r) {
+                        return make_ready_future<ret_t>(r.error());
+                    }
+                    return make_ready_future<ret_t>(r.value().data); // copy
                 });
           });
     });
@@ -63,39 +74,31 @@ future<vote_reply> vote_stm::do_dispatch_one(model::node_id n) {
 future<> vote_stm::dispatch_one(model::node_id n) {
     return with_gate(_vote_bg, [this, n] {
         return with_semaphore(_sem, 1, [this, n] {
-            return do_dispatch_one(n).then_wrapped(
-              [this, n](future<vote_reply> f) {
-                  auto m = std::find_if(
-                    _replies.begin(), _replies.end(), [n](vmeta& mi) {
-                        return mi.node == n;
-                    });
-                  try {
-                      vote_reply r = std::move(f.get0());
-                      m->value.emplace<vote_reply>(std::move(r));
-                  } catch (
-                    const reconnect_client::disconnected_client_exception& e) {
-                      sstring tmp = fmt::format("{}", e);
-                      raftlog.info("node {} is unreachable {}", n, tmp);
-                      m->value.emplace<sstring>(std::move(tmp));
-                  } catch (...) {
-                      sstring tmp = fmt::format("{}", std::current_exception());
-                      raftlog.error("Unknown error from node {} : {}", n, tmp);
-                      m->value.emplace<sstring>(std::move(tmp));
-                  }
-              });
+            return do_dispatch_one(n).then([this, n](result<vote_reply> r) {
+                auto m = std::find_if(
+                  _replies.begin(), _replies.end(), [n](vmeta& mi) {
+                      return mi.node == n;
+                  });
+                m->set_value(std::move(r));
+                if (!m->value) {
+                    raftlog.info("error voting: {}", *m);
+                }
+            });
         });
     });
 }
 
 std::pair<int32_t, int32_t> vote_stm::partition_count() const {
-    int32_t success = std::accumulate(
-      _replies.cbegin(),
-      _replies.cend(),
-      int32_t(0),
-      [](int32_t acc, const vmeta& m) {
-          return m.is_vote_granted_reply() ? acc + 1 : acc;
-      });
-    return {success, _replies.size() - success};
+    int32_t success = 0;
+    int32_t failure = 0;
+    for (auto& m : _replies) {
+        if (m.is_vote_granted_reply()) {
+            ++success;
+        } else if (m.is_failure()) {
+            ++failure;
+        }
+    }
+    return {success, failure};
 }
 future<> vote_stm::vote() {
     return with_semaphore(

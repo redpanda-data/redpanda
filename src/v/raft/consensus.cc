@@ -47,7 +47,12 @@ future<> consensus::stop() {
     return _bg.close();
 }
 
-void consensus::process_heartbeat(append_entries_reply&&) {}
+sstring consensus::voted_for_filename() const {
+    return _log.base_directory() + "/voted_for";
+}
+
+void consensus::process_heartbeat(
+  model::node_id node, result<append_entries_reply>) {}
 
 future<> consensus::replicate(raft::entry&& e) {
     std::vector<raft::entry> entries;
@@ -347,12 +352,8 @@ consensus::do_append_entries(append_entries_request&& r) {
           return disk_append(std::move(entries_for_disk))
             .then([this, m = std::move(m), dups = std::move(dups)](
                     offsets_ret ofs) mutable {
-                return make_append_entries_reply(m, ofs).then(
-                  [this,
-                   dups = std::move(dups)](append_entries_reply repl) mutable {
-                      return commit_entries(
-                        std::move(dups.back()), std::move(repl));
-                  });
+                return commit_entries(
+                  std::move(dups.back()), make_append_entries_reply(m, ofs));
             });
       });
 }
@@ -409,7 +410,7 @@ future<> consensus::replicate_configuration(group_configuration cfg) {
     return do_replicate(std::move(e));
 }
 
-future<append_entries_reply> consensus::make_append_entries_reply(
+append_entries_reply consensus::make_append_entries_reply(
   protocol_metadata sender,
   std::vector<storage::log::append_result> disk_results) {
     // always update metadata first!
@@ -421,7 +422,7 @@ future<append_entries_reply> consensus::make_append_entries_reply(
     reply.term = _meta.term;
     reply.last_log_index = last_offset;
     reply.success = true;
-    return make_ready_future<append_entries_reply>(std::move(reply));
+    return reply;
 }
 
 future<std::vector<storage::log::append_result>>

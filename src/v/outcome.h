@@ -7,8 +7,9 @@
 #include <boost/outcome/std_result.hpp>
 
 // include utils
-#include <boost/outcome/outcome.hpp>
+#include <boost/outcome/iostream_support.hpp>
 #include <boost/outcome/try.hpp>
+#include <boost/outcome/utils.hpp>
 
 namespace outcome = boost::outcome_v2;
 
@@ -24,5 +25,3 @@ using unchecked = outcome::std_result<R, S, outcome::policy::all_narrow>;
 template<class R, class S = std::error_code>
 using checked
   = outcome::result<R, S, outcome::policy::throw_bad_result_access<S, void>>;
-
-#define outcome_try(...) BOOST_OUTCOME_TRY(__VA_ARGS__)
