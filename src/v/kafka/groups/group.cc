@@ -48,7 +48,7 @@ bool group::valid_previous_state(group_state s) const {
 }
 
 void group::set_state(group_state s) {
-    log.debug("group state transition {} -> {}", _state, s);
+    kglog.trace("group state transition {} -> {}", _state, s);
     if (!valid_previous_state(s)) {
         std::terminate();
     }
@@ -139,7 +139,7 @@ group::duration_type group::rebalance_timeout() const {
 void group::remove_unjoined_members() {
     for (auto it = _members.begin(); it != _members.end();) {
         if (!it->second->is_joining()) {
-            log.debug("removing unjoined member {}", it->first);
+            kglog.trace("removing unjoined member {}", it->first);
             // TODO: ensure that member heartbeat timers are canceled in
             // group destructor and in member dtor
             it = _members.erase(it);
@@ -207,7 +207,7 @@ void group::advance_generation() {
         _protocol = select_protocol();
         set_state(group_state::completing_rebalance);
     }
-    log.debug(
+    kglog.trace(
       "advanced to group generation {} protocol {} state {}",
       _generation,
       _protocol,
@@ -221,7 +221,7 @@ void group::advance_generation() {
  *   creation / destruction.
  */
 kafka::protocol_name group::select_protocol() const {
-    log.debug("selecting group protocol");
+    kglog.trace("selecting group protocol");
 
     // index of protocols supported by all members
     std::set<kafka::protocol_name> candidates;
@@ -231,7 +231,7 @@ kafka::protocol_name group::select_protocol() const {
       [this, &candidates](const protocol_support::value_type& p) mutable {
           if (p.second == _members.size()) {
               candidates.insert(p.first);
-              log.debug("candidate: {}", p.first);
+              kglog.trace("candidate: {}", p.first);
           }
       });
 
@@ -243,7 +243,7 @@ kafka::protocol_name group::select_protocol() const {
       [&votes, &candidates](const member_map::value_type& m) mutable {
           auto& choice = m.second->vote(candidates);
           auto total = ++votes[choice];
-          log.debug(
+          kglog.trace(
             "member {} votes for protocol {} ({})", m.first, choice, total);
       });
 
@@ -259,7 +259,7 @@ kafka::protocol_name group::select_protocol() const {
 
     // this is guaranteed to succeed because `member->vote` will throw if it
     // is unable to vote on some protocol candidate.
-    log.debug("selected group protocol {}", winner->first);
+    kglog.trace("selected group protocol {}", winner->first);
     return winner->first;
 }
 
@@ -292,7 +292,7 @@ void group::finish_joining_members() {
             m.first,
             std::move(md));
 
-          log.debug(
+          kglog.trace(
             "set join response for member {} reply {}", m.second, reply);
 
           _num_members_joining--;
@@ -315,23 +315,23 @@ void group::finish_syncing_members(error_code error) const {
           }
           auto reply = sync_group_response(
             error_code::none, member->assignment());
-          log.debug("set sync response for member {}", member);
+          kglog.trace("set sync response for member {}", member);
           member->set_sync_response(std::move(reply));
       });
 }
 
 bool group::leader_rejoined() {
     if (!_leader) {
-        log.debug("group has no leader");
+        kglog.trace("group has no leader");
         return false;
     }
 
     auto leader = get_member(*_leader);
     if (leader->is_joining()) {
-        log.debug("leader has rejoined");
+        kglog.trace("leader has rejoined");
         return true;
     } else {
-        log.debug("leader has not rejoined {}", *_leader);
+        kglog.trace("leader has not rejoined {}", *_leader);
     }
 
     // look for a replacement
@@ -343,11 +343,11 @@ bool group::leader_rejoined() {
       });
 
     if (it == _members.end()) {
-        log.debug("group has no leader replacement");
+        kglog.trace("group has no leader replacement");
         return false;
     } else {
         _leader = it->first;
-        log.debug("selected new leader {}", *_leader);
+        kglog.trace("selected new leader {}", *_leader);
         return true;
     }
 }
