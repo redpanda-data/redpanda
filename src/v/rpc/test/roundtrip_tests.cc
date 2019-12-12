@@ -25,7 +25,7 @@ SEASTAR_THREAD_TEST_CASE(roundtrip_pod_with_checksum) {
     BOOST_REQUIRE_EQUAL(x, 1);
     BOOST_REQUIRE_EQUAL(y, 2);
     BOOST_REQUIRE_EQUAL(z, 3);
-    BOOST_REQUIRE_EQUAL(rsource.checksum(), 2937580136870592988);
+    BOOST_REQUIRE_EQUAL(rsource.checksum(), 8345071225529513226);
 }
 SEASTAR_THREAD_TEST_CASE(roundtrip_packed_struct) {
     auto in = make_iobuf_input_stream(rpc::serialize(very_packed_pod{}));

@@ -41,7 +41,8 @@ BOOST_AUTO_TEST_CASE(serialize_pod_with_vector) {
     rpc::serialize(b, std::move(it));
     BOOST_CHECK_EQUAL(
       b.size_bytes(),
-      sizeof(pod) + (sizeof(int32_t) * 3 /*3 times*/)
+      sizeof(pod)
+        /*2 bytes of padding missing*/ + (sizeof(int32_t) * 3 /*3 times*/)
         + sizeof(int32_t) /*prefix size*/);
 }
 BOOST_AUTO_TEST_CASE(serialize_pod_with_array) {
@@ -50,7 +51,8 @@ BOOST_AUTO_TEST_CASE(serialize_pod_with_array) {
     rpc::serialize(b, std::move(it));
     BOOST_CHECK_EQUAL(
       b.size_bytes(),
-      sizeof(pod) + (sizeof(int32_t) * 3 /*3 times*/)
+      sizeof(pod)
+        - 2 /*2 bytes of padding missing*/ + (sizeof(int32_t) * 3 /*3 times*/)
         + sizeof(int32_t) /*prefix size*/);
 }
 BOOST_AUTO_TEST_CASE(serialize_sstring_vector) {

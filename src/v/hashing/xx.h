@@ -8,23 +8,6 @@
 #include <functional>
 #include <xxhash.h>
 
-namespace detail {
-struct xxhash64_deleter {
-    void operator()(XXH64_state_t* s) {
-        XXH64_freeState(s);
-        s = nullptr;
-    }
-};
-using xxhash64_ptr = std::unique_ptr<XXH64_state_t, xxhash64_deleter>;
-inline xxhash64_ptr make_xxhash64_ptr() {
-    auto ptr = XXH64_createState();
-    if (!ptr) {
-        throw std::bad_alloc();
-    }
-    return xxhash64_ptr(ptr, xxhash64_deleter{});
-}
-} // namespace detail
-
 inline uint64_t xxhash_64(const char* data, const size_t& length) {
     return XXH64(data, length, 0);
 }
@@ -34,38 +17,27 @@ inline uint32_t xxhash_32(const char* data, const size_t& length) {
 
 class incremental_xxhash64 {
 public:
-    incremental_xxhash64()
-      : _state(detail::make_xxhash64_ptr()) {
-        reset();
-    }
+    incremental_xxhash64(uint64_t seed = 0) { XXH64_reset(&_state, seed); }
     incremental_xxhash64(incremental_xxhash64&&) noexcept = default;
     incremental_xxhash64& operator=(incremental_xxhash64&&) noexcept = default;
 
-    [[gnu::always_inline]] inline void reset() {
-        // no need to check for error
-        // https://gist.github.com/9ea1c9ad4df3bad8b16e4dea4a18018a
-        XXH64_reset(_state.get(), 0);
+    void update(const char* src, const std::size_t sz) {
+        XXH64_update(&_state, src, sz);
     }
-    [[gnu::always_inline]] inline void
-    update(const char* src, const std::size_t& sz) {
-        XXH64_update(_state.get(), src, sz);
-    }
-    [[gnu::always_inline]] inline void update(const sstring& str) {
-        update(str.data(), str.size());
-    }
+
+    void update(const sstring& str) { update(str.data(), str.size()); }
+
     template<
       typename T,
-      class = typename std::enable_if<std::is_integral<T>::value>::type>
-    [[gnu::always_inline]] inline void update(T t) {
+      class = typename std::enable_if<std::is_arithmetic_v<T>, T>>
+    void update(T t) {
         update((const char*)&t, sizeof(T));
     }
-    [[gnu::always_inline]] inline uint64_t digest() {
-        return XXH64_digest(_state.get());
-    }
-    //~incremental_xxhash64() noexcept { reset(); }
+
+    uint64_t digest() { return XXH64_digest(&_state); }
 
 private:
-    detail::xxhash64_ptr _state;
+    XXH64_state_t _state;
 };
 
 template<

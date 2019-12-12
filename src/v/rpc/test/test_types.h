@@ -9,10 +9,11 @@
 #include <cstdint>
 #include <vector>
 
-struct pod {
-    int16_t x = 1;
-    int32_t y = 2;
-    int64_t z = 3;
+struct [[gnu::packed]] pod {
+    unaligned<int16_t> x = 1;
+    // MISSING int16_t alignment here
+    unaligned<int32_t> y = 2;
+    unaligned<int64_t> z = 3;
 };
 struct [[gnu::packed]] very_packed_pod {
     unaligned<int16_t> x = 1;
