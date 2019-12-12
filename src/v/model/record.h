@@ -434,4 +434,23 @@ private:
 
 using record_batch_opt = optimized_optional<record_batch>;
 
+/// Execute provided async action on each record of record batch
+
+// clang-format off
+template<typename Func>
+CONCEPT(requires requires(Func f, model::record r) {
+    { f(std::move(r)) } -> future<>;
+})
+// clang-format on
+inline future<> consume_records(model::record_batch&& batch, Func&& f) {
+    return do_with(
+      std::move(batch),
+      [f = std::forward<Func>(f)](model::record_batch& batch) mutable {
+          return do_for_each(
+            batch, [f = std::forward<Func>(f)](model::record& rec) mutable {
+                return f(std::move(rec));
+            });
+      });
+}
+
 } // namespace model

@@ -13,7 +13,7 @@ class consensus;
 namespace cluster {
 
 using consensus_ptr = lw_shared_ptr<raft::consensus>;
-
+using broker_ptr = lw_shared_ptr<model::broker>;
 struct log_record_key {
   enum class type : int8_t { partition_assignment, topic_configuration };
 
@@ -84,6 +84,13 @@ struct topic_result {
     : topic(std::move(t)), ec(ec) {}
   model::topic     topic;
   topic_error_code ec;
+};
+
+/// Structure representing difference between two set of brokers. 
+/// It is used to represent changes that have to be applied to raft client cache
+struct brokers_diff {
+    std::vector<broker_ptr> updated;
+    std::vector<broker_ptr> removed;
 };
 
 }  // namespace cluster

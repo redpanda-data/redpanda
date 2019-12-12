@@ -1,11 +1,16 @@
 #include "cluster/controller.h"
 
+#include "cluster/cluster_utils.h"
 #include "cluster/logger.h"
 #include "cluster/simple_batch_builder.h"
 #include "config/configuration.h"
 #include "model/record_batch_reader.h"
+#include "raft/client_cache.h"
 #include "resource_mgmt/io_priority.h"
 #include "storage/shard_assignment.h"
+
+#include <seastar/net/inet_address.hh>
+
 namespace cluster {
 static void verify_shard() {
     if (__builtin_expect(engine().cpu_id() != controller::shard, false)) {
@@ -17,12 +22,14 @@ static void verify_shard() {
 controller::controller(
   sharded<partition_manager>& pm,
   sharded<shard_table>& st,
-  sharded<metadata_cache>& md_cache)
+  sharded<metadata_cache>& md_cache,
+  sharded<raft::client_cache>& client_cache)
   : _self(config::make_self_broker(config::shard_local_cfg()))
   , _seed_servers(config::shard_local_cfg().seed_servers())
   , _pm(pm)
   , _st(st)
   , _md_cache(md_cache)
+  , _client_cache(client_cache)
   , _raft0(nullptr)
   , _highest_group_id(0) {}
 
@@ -44,6 +51,10 @@ future<> controller::start() {
           // add raft0 to shard table
           return assign_group_to_shard(
             controller::ntp, controller::group, controller::shard);
+      })
+      .then([this] {
+          // add current node to brokers cache
+          return update_brokers_cache({_self});
       })
       .then([this] {
           clusterlog.debug("Starting cluster recovery");
@@ -98,8 +109,9 @@ future<> controller::bootstrap_from_log(storage::log_ptr l) {
       });
 }
 
-future<> controller::recover_batch(model::record_batch batch) {
-    if (batch.type() != controller::controller_record_batch_type) {
+future<> controller::process_raft0_batch(model::record_batch batch) {
+    if (__builtin_expect(batch.type() == raft::data_batch_type, false)) {
+        // we are not intrested in data batches
         return make_ready_future<>();
     }
     // XXX https://github.com/vectorizedio/v/issues/188
@@ -108,11 +120,40 @@ future<> controller::recover_batch(model::record_batch batch) {
         return make_exception_future<>(std::runtime_error(
           "We cannot process compressed record_batch'es yet, see #188"));
     }
-    return do_with(std::move(batch), [this](model::record_batch& batch) {
-        return do_for_each(batch, [this](model::record& rec) {
-            return recover_record(std::move(rec));
-        });
-    });
+
+    if (batch.type() == raft::configuration_batch_type) {
+        return model::consume_records(
+          std::move(batch), [this](model::record rec) mutable {
+              return process_raft0_cfg_update(std::move(rec));
+          });
+    }
+
+    return model::consume_records(
+      std::move(batch), [this](model::record rec) mutable {
+          return recover_record(std::move(rec));
+      });
+}
+
+future<> controller::process_raft0_cfg_update(model::record r) {
+    return rpc::deserialize<raft::group_configuration>(
+             r.share_packed_value_and_headers())
+      .then([this](raft::group_configuration cfg) {
+          clusterlog.debug("Processing new raft-0 configuration");
+          auto old_list = _md_cache.local().all_brokers();
+          std::vector<broker_ptr> new_list;
+          new_list.reserve(cfg.nodes.size());
+          std::transform(
+            std::cbegin(cfg.nodes),
+            std::cend(cfg.nodes),
+            std::back_inserter(new_list),
+            [](const model::broker& broker) {
+                return make_lw_shared<model::broker>(broker);
+            });
+          return update_clients_cache(std::move(new_list), std::move(old_list))
+            .then([this, nodes = std::move(cfg.nodes)] {
+                return update_brokers_cache(std::move(nodes));
+            });
+      });
 }
 
 future<> controller::recover_record(model::record r) {
@@ -146,24 +187,28 @@ future<> controller::recover_assignment(partition_assignment as) {
     _highest_group_id = std::max(_highest_group_id, as.group);
     return do_with(std::move(as), [this](partition_assignment& as) {
         return update_cache_with_partitions_assignment(as).then([this, &as] {
-            return do_for_each(
-              as.replicas,
-              [this, raft_group = as.group, ntp = std::move(as.ntp)](
-                model::broker_shard& bs) {
-                  return recover_replica(
-                    std::move(ntp), raft_group, std::move(bs));
+            auto it = std::find_if(
+              std::cbegin(as.replicas),
+              std::cend(as.replicas),
+              [this](const model::broker_shard& bs) {
+                  return bs.node_id == _self.id();
               });
+
+            if (it == std::cend(as.replicas)) {
+                // This partition in not replicated on current broker
+                return make_ready_future<>();
+            }
+            // Recover replica as it is replicated on current broker
+            return recover_replica(as.ntp, as.group, it->shard, as.replicas);
         });
     });
 }
 
 future<> controller::recover_replica(
-  model::ntp ntp, raft::group_id raft_group, model::broker_shard bs) {
-    // if the assignment is not for current broker just update
-    // metadata cache
-    if (bs.node_id != _self.id()) {
-        return make_ready_future<>();
-    }
+  model::ntp ntp,
+  raft::group_id raft_group,
+  uint32_t shard,
+  std::vector<model::broker_shard> replicas) {
     // the following ops have a dependency on the shard_table
     // *then* partition_manager order
 
@@ -171,26 +216,39 @@ future<> controller::recover_replica(
 
     // (compression, compation, etc)
 
-    return assign_group_to_shard(ntp, raft_group, bs.shard)
-      .then([this, shard = bs.shard, raft_group, ntp] {
+    return assign_group_to_shard(ntp, raft_group, shard)
+      .then([this, shard, raft_group, ntp, replicas = std::move(replicas)] {
           // 2. update partition_manager
-          return dispatch_manage_partition(std::move(ntp), raft_group, shard);
+          return dispatch_manage_partition(
+            std::move(ntp), raft_group, shard, std::move(replicas));
       });
 }
 
 future<> controller::dispatch_manage_partition(
-  model::ntp ntp, raft::group_id raft_group, uint32_t shard) {
+  model::ntp ntp,
+  raft::group_id raft_group,
+  uint32_t shard,
+  std::vector<model::broker_shard> replicas) {
     return _pm.invoke_on(
-      shard, [this, raft_group, ntp = std::move(ntp)](partition_manager& pm) {
-          return manage_partition(pm, std::move(ntp), raft_group);
+      shard,
+      [this, raft_group, ntp = std::move(ntp), replicas = std::move(replicas)](
+        partition_manager& pm) {
+          return manage_partition(
+            pm, std::move(ntp), raft_group, std::move(replicas));
       });
 }
 
 future<> controller::manage_partition(
-  partition_manager& pm, model::ntp ntp, raft::group_id raft_group) {
-    return pm.manage(ntp, raft_group, {_self})
-      .then([this](consensus_ptr c) { return join_raft_group(*c); })
-      .then([path = ntp.path(), raft_group] {
+  partition_manager& pm,
+  model::ntp ntp,
+  raft::group_id raft_group,
+  std::vector<model::broker_shard> replicas) {
+    return pm
+      .manage(
+        ntp,
+        raft_group,
+        get_replica_set_brokers(_md_cache.local(), std::move(replicas)))
+      .then([path = ntp.path(), raft_group](consensus_ptr) {
           clusterlog.info("recovered: {}, raft group_id: {}", path, raft_group);
       });
 }
@@ -313,17 +371,22 @@ void controller::leadership_notification() {
 
 void controller::create_partition_allocator() {
     _allocator = std::make_unique<partition_allocator>(_highest_group_id);
-
-    _allocator->register_node(
-      std::make_unique<allocation_node>(local_allocation_node()));
     // _md_cache contains a mirror copy of metadata at each core
     // so it is sufficient to access core-local copy
+    for (auto b : _md_cache.local().all_brokers()) {
+        _allocator->register_node(std::make_unique<allocation_node>(
+          allocation_node(b->id(), b->properties().cores, {})));
+    }
     _allocator->update_allocation_state(
       _md_cache.local().all_topics_metadata());
 }
 
-allocation_node controller::local_allocation_node() {
-    return allocation_node(_self.id(), smp::count, {});
+future<> controller::update_brokers_cache(std::vector<model::broker> nodes) {
+    // broadcast update to all caches
+    return _md_cache.invoke_on_all(
+      [nodes = std::move(nodes)](metadata_cache& c) mutable {
+          c.update_brokers_cache(std::move(nodes));
+      });
 }
 
 future<> controller::join_raft_group(raft::consensus& c) {
@@ -351,4 +414,22 @@ void controller::on_raft0_entries_commited(std::vector<raft::entry>&& entries) {
     });
 }
 
+future<> controller::update_clients_cache(
+  std::vector<broker_ptr> new_list, std::vector<broker_ptr> old_list) {
+    auto diff = calculate_changed_brokers(new_list, old_list);
+    return do_for_each(
+             diff.removed,
+             [this](broker_ptr removed) {
+                 return remove_broker_client(_client_cache, removed->id());
+             })
+      .then([this, updated = std::move(diff.updated)] {
+          return do_for_each(updated, [this](broker_ptr b) {
+              if (b->id() == _self.id()) {
+                  // Do not create client to local broker
+                  return make_ready_future<>();
+              }
+              return update_broker_client(_client_cache, b);
+          });
+      });
+}
 } // namespace cluster

@@ -11,6 +11,10 @@
 #include "seastarx.h"
 #include "storage/log_manager.h"
 
+namespace raft {
+class client_cache;
+}
+
 namespace cluster {
 
 // all ops must belong to shard0
@@ -28,7 +32,8 @@ public:
     controller(
       sharded<partition_manager>&,
       sharded<shard_table>&,
-      sharded<metadata_cache>&);
+      sharded<metadata_cache>&,
+      sharded<raft::client_cache>&);
 
     future<> start();
     future<> stop();
@@ -50,7 +55,7 @@ private:
         explicit batch_consumer(controller* c)
           : ptr(c) {}
         future<stop_iteration> operator()(model::record_batch batch) {
-            return ptr->recover_batch(std::move(batch)).then([] {
+            return ptr->process_raft0_batch(std::move(batch)).then([] {
                 return stop_iteration::no;
             });
         }
@@ -58,12 +63,15 @@ private:
         controller* ptr;
     };
     friend batch_consumer;
-    
+
     future<consensus_ptr> start_raft0();
     future<> bootstrap_from_log(storage::log_ptr);
-    future<> recover_batch(model::record_batch);
+    future<> process_raft0_batch(model::record_batch);
+    future<> process_raft0_cfg_update(model::record);
     future<> recover_record(model::record);
-    future<> recover_replica(model::ntp, raft::group_id, model::broker_shard);
+    future<> recover_replica(
+      model::ntp, raft::group_id, uint32_t, std::vector<model::broker_shard>);
+
     future<> assign_group_to_shard(model::ntp, raft::group_id, uint32_t);
     future<> recover_topic_configuration(topic_configuration);
     future<> dispatch_record_recovery(log_record_key, iobuf&&);
@@ -73,11 +81,22 @@ private:
     create_topic_cfg_entry(const topic_configuration&);
     void end_of_stream();
     void leadership_notification();
+    future<> update_brokers_cache(std::vector<model::broker>);
+    future<>
+      update_clients_cache(std::vector<broker_ptr>, std::vector<broker_ptr>);
     void create_partition_allocator();
     allocation_node local_allocation_node();
     void on_raft0_entries_commited(std::vector<raft::entry>&&);
-    future<> dispatch_manage_partition(model::ntp, raft::group_id, uint32_t);
-    future<> manage_partition(partition_manager&, model::ntp, raft::group_id);
+
+    future<> dispatch_manage_partition(
+      model::ntp, raft::group_id, uint32_t, std::vector<model::broker_shard>);
+
+    future<> manage_partition(
+      partition_manager&,
+      model::ntp,
+      raft::group_id,
+      std::vector<model::broker_shard>);
+
     future<> join_raft_group(raft::consensus&);
 
     model::broker _self;
@@ -85,6 +104,7 @@ private:
     sharded<partition_manager>& _pm;
     sharded<shard_table>& _st;
     sharded<metadata_cache>& _md_cache;
+    sharded<raft::client_cache>& _client_cache;
     raft::consensus* _raft0;
     raft::group_id _highest_group_id;
     bool _recovered = false;
@@ -92,22 +112,4 @@ private:
     std::unique_ptr<partition_allocator> _allocator;
     seastar::gate _bg;
 };
-
-// clang-format off
-template<typename T>
-CONCEPT(requires requires(const T& req) {
-    { req.topic } -> model::topic;
-})
-// clang-format on
-std::vector<topic_result> create_topic_results(
-  const std::vector<T>& requests, topic_error_code error_code) {
-    std::vector<topic_result> results;
-    results.reserve(requests.size());
-    std::transform(
-      requests.begin(),
-      requests.end(),
-      std::back_inserter(results),
-      [error_code](const T& r) { return topic_result(r.topic, error_code); });
-    return results;
-}
 } // namespace cluster
