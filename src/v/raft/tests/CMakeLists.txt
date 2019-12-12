@@ -54,3 +54,9 @@ rp_test(
   SOURCES configuration_serialization_test.cc
   LIBRARIES Seastar::seastar_testing raft
 )
+rp_test(
+  UNIT_TEST
+  BINARY_NAME type_serialization_tests
+  SOURCES type_serialization_tests.cc
+  LIBRARIES Seastar::seastar_testing raft
+)
