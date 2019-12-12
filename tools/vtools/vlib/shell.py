@@ -1,15 +1,12 @@
-#!/usr/bin/env python3
 import subprocess
 import sys
 import re
 import os
-import logging
-sys.path.append(os.path.dirname(__file__))
-logger = logging.getLogger('rp')
+from absl import logging
 
 
 def run_subprocess(cmd, env=os.environ):
-    logger.debug("Running command: exec bash -c '%s'" % cmd)
+    logging.debug("Running command: exec bash -c '%s'" % cmd)
     proc = subprocess.Popen("exec bash -c '%s'" % cmd,
                             stdout=sys.stdout,
                             stderr=sys.stderr,
@@ -34,14 +31,14 @@ def _cleanup_whitespace(s):
 
 
 def raw_check_output(cmd):
-    logger.debug("raw_check_output: %s", cmd)
+    logging.debug("raw_check_output: %s", cmd)
     ret = subprocess.check_output(cmd, shell=True)
     if ret is None: return ret
     return str(ret.decode("utf-8"))
 
 
 def run_oneline(cmd):
-    logger.debug("run_oneline: %s", cmd)
+    logging.debug("run_oneline: %s", cmd)
     ret = raw_check_output(cmd)
     if ret is None: return ret
     return _cleanup_whitespace(ret)
