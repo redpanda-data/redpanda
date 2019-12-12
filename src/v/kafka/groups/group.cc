@@ -45,14 +45,14 @@ bool group::valid_previous_state(group_state s) const {
     case g::dead:
         return true;
     default:
-        std::abort(); // make gcc happy
+        std::terminate(); // make gcc happy
     }
 }
 
 void group::set_state(group_state s) {
     log.debug("group state transition {} -> {}", _state, s);
     if (!valid_previous_state(s)) {
-        std::abort();
+        std::terminate();
     }
     _state = s;
 }
@@ -388,7 +388,7 @@ std::ostream& operator<<(std::ostream& o, group_state gs) {
     case group_state::dead:
         return o << "dead";
     default:
-        std::abort(); // make gcc happy
+        std::terminate(); // make gcc happy
     }
 }
 
