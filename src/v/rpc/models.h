@@ -183,28 +183,30 @@ inline future<model::broker> deserialize(source& in) {
     });
 }
 
+struct simple_record {
+    uint32_t size_bytes;
+    model::record_attributes attributes;
+    int32_t timestamp_delta;
+    int32_t offset_delta;
+    iobuf key;
+    iobuf value_and_headers;
+};
+
 template<>
 inline void serialize(iobuf& ref, model::record&& record) {
     rpc::serialize(
       ref,
-      record.size_bytes(),
-      record.attributes().value(),
-      record.timestamp_delta(),
-      record.offset_delta(),
-      record.share_key(),
-      record.share_packed_value_and_headers());
+      simple_record{
+        .size_bytes = record.size_bytes(),
+        .attributes = record.attributes(),
+        .timestamp_delta = record.timestamp_delta(),
+        .offset_delta = record.offset_delta(),
+        .key = record.share_key(),
+        .value_and_headers = record.share_packed_value_and_headers()});
 }
 
 template<>
 inline future<model::record> deserialize(source& in) {
-    struct simple_record {
-        uint32_t size_bytes;
-        model::record_attributes attributes;
-        int32_t timestamp_delta;
-        int32_t offset_delta;
-        iobuf key;
-        iobuf value_and_headers;
-    };
     return rpc::deserialize<simple_record>(in).then([](simple_record r) {
         return model::record(
           r.size_bytes,
@@ -216,4 +218,51 @@ inline future<model::record> deserialize(source& in) {
     });
 }
 
+struct batch_header {
+    model::record_batch_header bhdr;
+    uint32_t batch_size;
+    int8_t is_compressed;
+};
+
+template<>
+inline void serialize(iobuf& out, model::record_batch&& batch) {
+    batch_header hdr{
+      .bhdr = batch.release_header(),
+      .batch_size = batch.size(),
+      .is_compressed = static_cast<int8_t>(batch.compressed() ? 1 : 0)};
+    rpc::serialize(out, std::move(hdr));
+    if (!batch.compressed()) {
+        for (model::record& r : batch) {
+            rpc::serialize(out, std::move(r));
+        }
+    } else {
+        rpc::serialize(out, std::move(batch).release().release());
+    }
+}
+
+template<>
+inline future<model::record_batch> deserialize(source& in) {
+    return rpc::deserialize<batch_header>(in).then([&in](batch_header b_hdr) {
+        if (b_hdr.is_compressed == 1) {
+            return rpc::deserialize<iobuf>(in).then(
+              [hdr = std::move(b_hdr)](iobuf f) mutable {
+                  return model::record_batch(
+                    std::move(hdr.bhdr),
+                    model::record_batch::compressed_records(
+                      hdr.batch_size, std::move(f)));
+              });
+        }
+        // not compressed
+        return do_with(
+                 boost::irange(0, static_cast<int>(b_hdr.batch_size)),
+                 [&in](auto& r) {
+                     return copy_range<std::vector<model::record>>(
+                       r,
+                       [&in](int) { return deserialize<model::record>(in); });
+                 })
+          .then([hdr = std::move(b_hdr)](std::vector<model::record> recs) {
+              return model::record_batch(std::move(hdr.bhdr), std::move(recs));
+          });
+    });
+}
 } // namespace rpc
