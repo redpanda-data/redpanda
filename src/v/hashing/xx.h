@@ -8,6 +8,23 @@
 #include <functional>
 #include <xxhash.h>
 
+namespace detail {
+struct xxhash64_deleter {
+    void operator()(XXH64_state_t* s) {
+        XXH64_freeState(s);
+        s = nullptr;
+    }
+};
+using xxhash64_ptr = std::unique_ptr<XXH64_state_t, xxhash64_deleter>;
+inline xxhash64_ptr make_xxhash64_ptr() {
+    auto ptr = XXH64_createState();
+    if (!ptr) {
+        throw std::bad_alloc();
+    }
+    return xxhash64_ptr(ptr, xxhash64_deleter{});
+}
+} // namespace detail
+
 inline uint64_t xxhash_64(const char* data, const size_t& length) {
     return XXH64(data, length, 0);
 }
@@ -17,18 +34,21 @@ inline uint32_t xxhash_32(const char* data, const size_t& length) {
 
 class incremental_xxhash64 {
 public:
-    incremental_xxhash64() { reset(); }
+    incremental_xxhash64()
+      : _state(detail::make_xxhash64_ptr()) {
+        reset();
+    }
     incremental_xxhash64(incremental_xxhash64&&) noexcept = default;
     incremental_xxhash64& operator=(incremental_xxhash64&&) noexcept = default;
 
     [[gnu::always_inline]] inline void reset() {
         // no need to check for error
         // https://gist.github.com/9ea1c9ad4df3bad8b16e4dea4a18018a
-        XXH64_reset(&_state, 0);
+        XXH64_reset(_state.get(), 0);
     }
     [[gnu::always_inline]] inline void
     update(const char* src, const std::size_t& sz) {
-        XXH64_update(&_state, src, sz);
+        XXH64_update(_state.get(), src, sz);
     }
     [[gnu::always_inline]] inline void update(const sstring& str) {
         update(str.data(), str.size());
@@ -37,43 +57,15 @@ public:
       typename T,
       class = typename std::enable_if<std::is_integral<T>::value>::type>
     [[gnu::always_inline]] inline void update(T t) {
-        XXH64_update(&_state, (const char*)&t, sizeof(T));
+        update((const char*)&t, sizeof(T));
     }
     [[gnu::always_inline]] inline uint64_t digest() {
-        return XXH64_digest(&_state);
+        return XXH64_digest(_state.get());
     }
-    ~incremental_xxhash64() noexcept { reset(); }
+    //~incremental_xxhash64() noexcept { reset(); }
 
 private:
-    XXH64_state_t _state;
-};
-
-class incremental_xxhash32 {
-public:
-    incremental_xxhash32() { reset(); }
-    incremental_xxhash32(incremental_xxhash32&&) noexcept = default;
-    incremental_xxhash32& operator=(incremental_xxhash32&&) noexcept = default;
-
-    [[gnu::always_inline]] inline void reset() { // no need to check for error
-        // https://gist.github.com/9ea1c9ad4df3bad8b16e4dea4a18018a
-        XXH32_reset(&_state, 0);
-    }
-    [[gnu::always_inline]] inline void
-    update(const char* src, const std::size_t& sz) {
-        XXH32_update(&_state, src, sz);
-    }
-    template<
-      typename T,
-      class = typename std::enable_if<std::is_integral<T>::value>::type>
-    [[gnu::always_inline]] inline void update(T t) {
-        XXH32_update(&_state, (const char*)&t, sizeof(T));
-    }
-    [[gnu::always_inline]] inline uint32_t digest() {
-        return XXH32_digest(&_state);
-    }
-
-private:
-    XXH32_state_t _state;
+    detail::xxhash64_ptr _state;
 };
 
 template<
