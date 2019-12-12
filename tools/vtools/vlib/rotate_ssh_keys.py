@@ -1,20 +1,13 @@
-#!/usr/bin/env python3
 import sys
 import os
-import logging
 import time
 import json
 from datetime import datetime, timedelta
+from git import Repo
+from absl import logging
 import random
-
-sys.path.append(os.path.dirname(__file__))
-logger = logging.getLogger('rp')
-
-# our types
-import shell
-import log
-import fs
-import git
+from . import shell
+from . import fs
 
 KEY_TYPES = ["external", "internal", "deploy"]
 
@@ -46,15 +39,18 @@ def is_ssh_key_path_timestamp_valid(path):
     path_date = datetime.strptime(path.split("/")[-1], "%Y.%m.%d")
     expiry_date = path_date + timedelta(days=90)
     if expiry_date < datetime.now():
-        logger.debug(
+        logging.debug(
             f"Expired keys date {path_date} with expiration: {expiry_date}")
         return False
-    logger.debug(f"Valid keys date {path_date} with expiration: {expiry_date}")
+    logging.debug(f"Valid keys date {path_date} with expiration: {expiry_date}")
     return True
 
 
 def get_key_comment():
-    return "%s.%s" % (git.get_git_email(), time.strftime("%Y.%m.%d"))
+    r = Repo('.', search_parent_directories=True)
+    reader = r.config_reader()
+    email = reader.get_value("user", "email")
+    return "%s.%s" % (email, time.strftime("%Y.%m.%d"))
 
 
 def generate_keys():
@@ -65,7 +61,7 @@ def generate_keys():
         output_file = "%s/%s_key" % (root, key_type)
         cmd = "ssh-keygen -t rsa -b 4096 -f %s -C %s" % (output_file, comment)
         if not os.path.exists(output_file): shell.run_subprocess(cmd)
-        else: logger.info("File already exists: %s" % output_file)
+        else: logging.info("File already exists: %s" % output_file)
     return root
 
 
@@ -74,7 +70,7 @@ def _fprint():
     retval = {}
     for key_type in KEY_TYPES:
         output_file = "%s/%s_key" % (root, key_type)
-        logger.debug(f"fingerprint {output_file}")
+        logging.debug(f"fingerprint {output_file}")
         fprint_cmd = "ssh-keygen -l -E md5 -f %s.pub" % output_file
         fprint = shell.run_oneline(fprint_cmd)
         retval[output_file] = fprint
@@ -103,8 +99,8 @@ def fingerprint_keys():
         if not _match_filesystem(fprints):
             os.remove(fingerprint_file)
         else:
-            logger.info("Matching fingerprints")
-            logger.info(fprints)
+            logging.info("Matching fingerprints")
+            logging.info(fprints)
             return
     with open(fingerprint_file, 'w') as f:
         f.write(json.dumps(fprints, indent=4, sort_keys=True))
@@ -113,7 +109,7 @@ def fingerprint_keys():
 def symlink_new_keys(latest_dir):
     current = "%s/current" % get_vectorized_keys_path()
     fs.mkdir_p(current)
-    logger.info("Executing in directory: %s" % current)
+    logging.info("Executing in directory: %s" % current)
     os.chdir(current)
     all_symlink_keys = ["fingerprint"] + list(
         map(lambda x: "%s_key" % x, KEY_TYPES)) + list(
@@ -128,7 +124,7 @@ def symlink_new_keys(latest_dir):
 def needs_rotation():
     keys_dir = get_latest_keys_dir()
     if keys_dir is None:
-        logger.debug("no vectorized ssh key discovered: %s" %
+        logging.debug("no vectorized ssh key discovered: %s" %
                      get_vectorized_keys_path())
         return True
     if is_ssh_key_path_timestamp_valid(keys_dir):
@@ -138,7 +134,7 @@ def needs_rotation():
     for key_type in KEY_TYPES:
         output_file = "%s/%s_key" % (root, key_type)
         if not os.path.exists(output_file):
-            logger.debug("key %s does not exist" % output_file)
+            logging.debug("key %s does not exist" % output_file)
             return True
 
     return False
@@ -158,12 +154,12 @@ def main():
 
     parser = _generate_options()
     options, program_options = parser.parse_known_args()
-    log.set_logger_for_main(getattr(logging, options.log.upper()))
-    logger.info(f"{options}")
+    log.set_logging_for_main(getattr(logging, options.log.upper()))
+    logging.info(f"{options}")
 
     if not needs_rotation():
-        logger.info("all good!")
-        logger.info(json.dumps(_fprint(), indent=4, sort_keys=True))
+        logging.info("all good!")
+        logging.info(json.dumps(_fprint(), indent=4, sort_keys=True))
         return 0
 
     latest_dir = generate_keys()
@@ -171,10 +167,10 @@ def main():
     fingerprint_keys()
     # always check the symlinks
     symlink_new_keys(latest_dir)
-    logger.info("Remember:")
-    logger.info("1. Use your external key for github & external accounts")
-    logger.info("2. Use your internal key for VPN systems")
-    logger.info("3. Use your deploy key for our production systems")
+    logging.info("Remember:")
+    logging.info("1. Use your external key for github & external accounts")
+    logging.info("2. Use your internal key for VPN systems")
+    logging.info("3. Use your deploy key for our production systems")
 
 
 if __name__ == '__main__':
