@@ -82,8 +82,6 @@ if (@CMAKE_CXX_COMPILER_ID@ MATCHES "Clang")
             -DLIBCXX_CXX_ABI=libcxxabi
             -DLIBCXX_CXX_ABI_INCLUDE_PATHS=@CMAKE_BINARY_DIR@/../llvm/llvm-src/libcxxabi/include
             -DLIBCXX_CXX_ABI_LIBRARY_PATH=@V_DEPS_INSTALL_DIR@/lib
-            -DLIBCXX_C_FLAGS=${c_flags}
-            -DLIBCXX_CXX_FLAGS=${cxx_flags}
             -DLIBCXX_LINK_FLAGS=${ld_flags}
             DEPENDS libcxxabi)
     ExternalProject_Add_Step(libcxx install-experimental
@@ -166,7 +164,6 @@ ExternalProject_Add(protobuf
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   SOURCE_SUBDIR cmake
   CMAKE_ARGS
-    -DProtobuf_USE_STATIC_LIBS=ON
     -Dprotobuf_BUILD_TESTS=OFF
     ${common_cmake_args})
 
