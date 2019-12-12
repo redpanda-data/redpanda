@@ -106,14 +106,15 @@ BOOST_AUTO_TEST_CASE(test_implicit_conversions_to_from_error_code) {
     BOOST_REQUIRE(ec != std::errc::result_out_of_range);
 }
 
-inline result<int> test_macro(const std::string& input) {
-    outcome_try(i, convert(input));
-    // try will short circuit
-    // i == integer!
-    return i + 1;
+inline result<int> test_propagate(const std::string& input) {
+    auto i = convert(input);
+    if (!i) {
+        return i;
+    }
+    return i.value() + 1;
 }
 
-BOOST_AUTO_TEST_CASE(test_macro_redefinition) {
+BOOST_AUTO_TEST_CASE(test_propagate_redefinition) {
     {
         result<int> r = convert("1234");
         BOOST_REQUIRE(r);
@@ -123,7 +124,7 @@ BOOST_AUTO_TEST_CASE(test_macro_redefinition) {
         BOOST_REQUIRE(r.error() == conversion_errc::too_long);
     }
     {
-        auto i = test_macro("12341234123412341234123412341");
+        auto i = test_propagate("12341234123412341234123412341");
         BOOST_REQUIRE(i.error() == conversion_errc::too_long);
     }
 
