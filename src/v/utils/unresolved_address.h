@@ -22,7 +22,9 @@ public:
 
     future<socket_address> resolve() const {
         return net::inet_address::find(_host).then(
-          [this](net::inet_address i_a) { return socket_address(i_a, _port); });
+          [port = _port](net::inet_address i_a) {
+              return socket_address(i_a, port);
+          });
     }
 
     bool operator==(const unresolved_address& other) const {
