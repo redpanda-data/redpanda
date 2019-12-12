@@ -98,7 +98,6 @@ if ("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
             -fsanitize=undefined
             -fsanitize=address
             )
-
     list(APPEND BASE_C_FLAGS_LIST
             -fsanitize=undefined
             -fsanitize=address
@@ -158,6 +157,12 @@ endif()
 set(CMAKE_EXE_LINKER_FLAGS "${BASE_LD_FLAGS} -pie")
 set(CMAKE_SHARED_LINKER_FLAGS "${BASE_LD_FLAGS}")
 set(CMAKE_MODULE_LINKER_FLAGS "${BASE_LD_FLAGS}")
+
+if ("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=undefined -fsanitize=address")
+  set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fsanitize=undefined -fsanitize=address")
+  set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -fsanitize=undefined -fsanitize=address")
+endif()
 
 # Look for libc++ only if we are using Clang
 if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
