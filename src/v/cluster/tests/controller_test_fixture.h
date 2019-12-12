@@ -7,6 +7,7 @@
 #include "random/generators.h"
 #include "storage/directories.h"
 #include "test_utils/logs.h"
+#include "utils/unresolved_address.h"
 
 using lrk = cluster::log_record_key;
 
@@ -37,8 +38,11 @@ public:
           .path = std::filesystem::path(_base_dir)};
         set_configuration("data_directory", data_dir_path);
         set_configuration("node_id", _current_node.id());
-        set_configuration(
-          "kafka_api", unresolved_address("127.0.0.1", 9092));
+        set_configuration("kafka_api", unresolved_address("127.0.0.1", 9092));
+        std::vector<config::seed_server> seeds{
+          {.id = model::node_id{1},
+           .addr = unresolved_address("127.0.0.1", 9090)}};
+        set_configuration("seed_servers", seeds);
 
         using namespace std::chrono_literals;
         _pm

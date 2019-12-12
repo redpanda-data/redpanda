@@ -5,6 +5,7 @@
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
 #include "cluster/types.h"
+#include "config/seed_server.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "seastarx.h"
@@ -57,11 +58,13 @@ private:
         controller* ptr;
     };
     friend batch_consumer;
-
+    
+    future<consensus_ptr> start_raft0();
     future<> bootstrap_from_log(storage::log_ptr);
     future<> recover_batch(model::record_batch);
     future<> recover_record(model::record);
     future<> recover_replica(model::ntp, raft::group_id, model::broker_shard);
+    future<> assign_group_to_shard(model::ntp, raft::group_id, uint32_t);
     future<> recover_topic_configuration(topic_configuration);
     future<> dispatch_record_recovery(log_record_key, iobuf&&);
     future<>
@@ -72,14 +75,13 @@ private:
     void leadership_notification();
     void create_partition_allocator();
     allocation_node local_allocation_node();
-    future<raft::append_entries_reply>
-      raft0_append_entries(std::vector<raft::entry>);
     void on_raft0_entries_commited(std::vector<raft::entry>&&);
     future<> dispatch_manage_partition(model::ntp, raft::group_id, uint32_t);
     future<> manage_partition(partition_manager&, model::ntp, raft::group_id);
     future<> join_raft_group(raft::consensus&);
 
     model::broker _self;
+    std::vector<config::seed_server> _seed_servers;
     sharded<partition_manager>& _pm;
     sharded<shard_table>& _st;
     sharded<metadata_cache>& _md_cache;
