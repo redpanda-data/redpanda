@@ -35,11 +35,11 @@ set(cmake_build_env
   )
 # autotools
 set(build_env
-    CFLAGS=${c_flags}
-    CXXFLAGS=${cxx_flags}
-    CPPFLAGS=${cxx_flags}
-    LDFLAGS=${ld_flags}
-    PKG_CONFIG_PATH=@PKG_CONFIG_PATH@)
+  CFLAGS=${c_flags}
+  CXXFLAGS=${cxx_flags}
+  CPPFLAGS=${cxx_flags}
+  LDFLAGS=${ld_flags}
+  PKG_CONFIG_PATH=@PKG_CONFIG_PATH@)
 # cryptopp does not build with C++17
 set(cryptopp_build_env
   LDFLAGS=${ld_flags}
@@ -54,6 +54,21 @@ set(nettle_build_env
 
 # define make command in terms of cmake
 set(make_command make ${build_env} -j${build_concurrency_factor} )
+
+ExternalProject_Add(zlib
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/zlib-1.2.11.tar.gz
+  URL_MD5 1c9f62f0778697a09d36121ead88e08e
+  INSTALL_DIR @V_DEPS_INSTALL_DIR@
+  DEPENDS ${default_depends}
+  CONFIGURE_COMMAND
+    ${CMAKE_COMMAND} -E env ${build_env}
+    <SOURCE_DIR>/configure
+    --prefix=<INSTALL_DIR>
+    --libdir=<INSTALL_DIR>/lib
+    --static
+  BUILD_COMMAND ${make_command}
+  INSTALL_COMMAND ${make_command} install)
+
 
 # ----------- libcxxabi and libcxx for clang
 
@@ -72,7 +87,8 @@ if (@CMAKE_CXX_COMPILER_ID@ MATCHES "Clang")
             -DLIBCXXABI_LIBCXX_PATH=@CMAKE_BINARY_DIR@/../llvm/llvm-src/libcxx
             -DLIBCXXABI_C_FLAGS=${c_flags}
             -DLIBCXXABI_CXX_FLAGS=${cxx_flags}
-            -DLIBCXXABI_LINK_FLAGS=${ld_flags})
+            -DLIBCXXABI_LINK_FLAGS=${ld_flags}
+        DEPENDS zlib)
     ExternalProject_Add(libcxx
         SOURCE_DIR @CMAKE_BINARY_DIR@/../llvm/llvm-src/libcxx
         INSTALL_DIR @V_DEPS_INSTALL_DIR@
@@ -142,19 +158,6 @@ ExternalProject_Add(fmt
     -DFMT_INSTALL=ON
     -DFMT_DOC=OFF
     -DFMT_TEST=OFF)
-
-ExternalProject_Add(zlib
-  URL https://storage.googleapis.com/vectorizedio-public/dependencies/zlib-1.2.11.tar.gz
-  URL_MD5 1c9f62f0778697a09d36121ead88e08e
-  INSTALL_DIR @V_DEPS_INSTALL_DIR@
-  DEPENDS ${default_depends}
-  CONFIGURE_COMMAND
-    ${CMAKE_COMMAND} -E env ${build_env}
-    <SOURCE_DIR>/configure
-    --prefix=<INSTALL_DIR>
-    --libdir=<INSTALL_DIR>/lib
-  BUILD_COMMAND ${make_command}
-  INSTALL_COMMAND ${make_command} install)
 
 ExternalProject_Add(protobuf
   DEPENDS zlib ${default_depends}
