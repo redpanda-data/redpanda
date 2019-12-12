@@ -1,26 +1,43 @@
 #include "raft/replicate_entries_stm.h"
 
+#include "outcome_future_utils.h"
 #include "raft/consensus_utils.h"
+#include "raft/errc.h"
 #include "raft/logger.h"
 
 #include <chrono>
 
 namespace raft {
 using namespace std::chrono_literals;
-future<> replicate_entries_stm::process_replies() {
+
+std::ostream&
+operator<<(std::ostream& o, const replicate_entries_stm::retry_meta& m) {
+    o << "{node: " << m.node << ", retries_left: " << m.retries_left
+      << ", value: ";
+    if (m.value) {
+        o << "[" << *m.value << "]";
+    } else {
+        o << "nullptr";
+    }
+    return o << "}";
+}
+
+future<result<void>> replicate_entries_stm::process_replies() {
     auto [success, failure] = partition_count();
     const auto& cfg = _ptr->_conf;
     if (success < cfg.majority()) {
-        return make_exception_future<>(std::runtime_error(fmt::format(
+        raftlog.info(
           "Could not get majority append_entries() including retries."
-          "Replicated entries:{}, majority:{}, nodes:{}",
+          "Replicated success:{}, failure:{}, majority:{}, nodes:{}",
           success,
+          failure,
           cfg.majority(),
-          cfg.nodes.size())));
+          cfg.nodes.size());
+        return make_ready_future<result<void>>(errc::non_majority_replication);
     }
     raftlog.debug(
       "Successful append with: {} acks out of: {}", success, cfg.nodes.size());
-    return make_ready_future<>();
+    return make_ready_future<result<void>>(outcome::success());
 }
 
 future<std::vector<append_entries_request>>
@@ -42,31 +59,41 @@ replicate_entries_stm::share_request_n(size_t n) {
       });
 }
 
-future<append_entries_reply> replicate_entries_stm::do_dispatch_one(
+future<result<append_entries_reply>> replicate_entries_stm::do_dispatch_one(
   model::node_id n, append_entries_request req) {
+    using ret_t = result<append_entries_reply>;
+
     if (n == _ptr->_self) {
         using reqs_t = std::vector<append_entries_request>;
         using append_res_t = std::vector<storage::log::append_result>;
         return _ptr->disk_append(std::move(req.entries))
           .then([this](append_res_t append_res) {
-              return _ptr->make_append_entries_reply(
-                _req.meta, std::move(append_res));
+              return make_ready_future<ret_t>(_ptr->make_append_entries_reply(
+                _req.meta, std::move(append_res)));
           });
     }
     auto shard = client_cache::shard_for(n);
     return smp::submit_to(shard, [this, n, r = std::move(req)]() mutable {
         auto& local = _ptr->_clients.local();
         if (!local.contains(n)) {
-            return make_exception_future<append_entries_reply>(
-              std::runtime_error(
-                fmt::format("Missing node {} in client_cache", n)));
+            return make_ready_future<ret_t>(errc::missing_tcp_client);
         }
-        return local.get(n)->with_client(
-          [r = std::move(r)](reconnect_client::client_type& cli) mutable {
-              auto f = cli.append_entries(std::move(r));
-              return with_timeout(raft::clock_type::now() + 3s, std::move(f))
-                .then([](rpc::client_context<append_entries_reply> r) {
-                    return r.data; // copy
+        using rpc_client = reconnect_client::client_type;
+        return local.get(n)->get_connected().then(
+          [r = std::move(r)](result<rpc_client*> cli) mutable {
+              if (!cli) {
+                  return make_ready_future<ret_t>(cli.error());
+              }
+              auto f = cli.value()->append_entries(std::move(r));
+              return result_with_timeout(
+                       raft::clock_type::now() + 1s,
+                       errc::timeout,
+                       std::move(f))
+                .then([](auto r) {
+                    if (!r) {
+                        return make_ready_future<ret_t>(r.error());
+                    }
+                    return make_ready_future<ret_t>(r.value().data); // copy
                 });
           });
     });
@@ -80,46 +107,38 @@ future<> replicate_entries_stm::dispatch_one(retry_meta& meta) {
             return do_until(
               [this, majority, &meta] {
                   // Either this request finished, or we reached majority
-                  return meta.finished() || _ongoing.size() < majority;
+                  if (meta.finished()) {
+                      return true;
+                  }
+                  auto [success, failure] = partition_count();
+                  return success >= majority || failure >= majority;
               },
               [this, &meta] {
                   return share_request_n(1)
                     .then([this, &meta](reqs_t r) mutable {
                         return do_dispatch_one(meta.node, std::move(r.back()));
                     })
-                    .then_wrapped(
-                      [this,
-                       &meta](future<append_entries_reply> reply) mutable {
-                          --meta.retries_left;
-                          try {
-                              meta.value = std::move(reply.get0());
-                              meta.retries_left = 0;
-                          } catch (...) {
-                              raftlog.info(
-                                "Could not replicate entry due to: {}, retries "
-                                "left:{}",
-                                std::current_exception(),
-                                meta.retries_left);
-                          }
-                          if (meta.retries_left <= 0) {
-                              _ongoing.erase(_ongoing.iterator_to(meta));
-                          }
-                      });
-              });
-        });
-    });
+                    .then([this,
+                           &meta](result<append_entries_reply> reply) mutable {
+                        --meta.retries_left;
+                        if (reply || meta.retries_left == 0) {
+                            meta.set_value(std::move(reply));
+                        }
+                    }); // actual work
+              });       // loop
+        });             // semaphore
+    });                 // gate
 }
 
 future<> replicate_entries_stm::apply() {
     using reqs_t = std::vector<append_entries_request>;
     using append_res_t = std::vector<storage::log::append_result>;
     for (auto& n : _ptr->_conf.nodes) {
-        _replies.push_back(std::make_unique<retry_meta>(n.id(), _max_retries));
-        _ongoing.push_back(*_replies.back());
+        _replies.push_back(retry_meta(n.id(), _max_retries));
     }
     return share_request_n(1).then([this](reqs_t r) {
         for (auto& m : _replies) {
-            (void)dispatch_one(*m); // background
+            (void)dispatch_one(m); // background
         }
 
         const size_t majority = _ptr->_conf.majority();
@@ -135,13 +154,27 @@ future<> replicate_entries_stm::apply() {
                 });
           })
           .then([this] { return process_replies(); })
-          .then([this] {
+          .then([this](result<void> r) {
+              if (!r) {
+                  // we need to truncate on unsuccessful replication
+                  auto offset = model::offset(_ptr->_meta.commit_index);
+                  auto term = model::term_id(_ptr->_meta.term);
+                  raftlog.debug(
+                    "Truncating log for unfinished append at offset:{}, "
+                    "term:{}",
+                    offset,
+                    term);
+                  return _ptr->_log.truncate(offset, term);
+              }
               // append only when we have majority
               return share_request_n(1).then([this](reqs_t r) {
+                  auto m = std::find_if(
+                    _replies.begin(), _replies.end(), [](const retry_meta& i) {
+                        return i.is_success();
+                    });
                   return _ptr
                     ->commit_entries(
-                      std::move(r.back().entries),
-                      std::move(_replies.back()->value.value()))
+                      std::move(r.back().entries), std::move(m->value->value()))
                     .discard_result();
               });
           });
@@ -157,19 +190,29 @@ replicate_entries_stm::replicate_entries_stm(
   , _sem(_ptr->_conf.nodes.size()) {}
 
 std::pair<int32_t, int32_t> replicate_entries_stm::partition_count() const {
-    int32_t success = std::accumulate(
-      _replies.cbegin(),
-      _replies.cend(),
-      int32_t(0),
-      [](int32_t acc, const meta_ptr& m) { return m->is_success(); });
-    return {success, _replies.size() - success};
+    int32_t success = 0;
+    int32_t failure = 0;
+    for (auto& m : _replies) {
+        if (m.is_success()) {
+            ++success;
+        } else if (m.is_failure()) {
+            ++failure;
+        }
+    }
+    return {success, failure};
 }
+
 replicate_entries_stm::~replicate_entries_stm() {
     auto gate_not_closed = _req_bg.get_count() > 0 && !_req_bg.is_closed();
-    if (gate_not_closed || !_ongoing.empty()) {
+    auto [success, failures] = partition_count();
+    if (gate_not_closed || (success + failures) != _replies.size()) {
         raftlog.error(
-          "Must call replicate_entries_stm::wait(). Missing futures:{}",
-          _ongoing.size());
+          "Must call replicate_entries_stm::wait(). success{}, "
+          "failures:{}, total:{}, is_gate_closed:{}",
+          success,
+          failures,
+          _replies.size(),
+          _req_bg.is_closed());
         std::terminate();
     }
 }

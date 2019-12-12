@@ -1,7 +1,6 @@
 #pragma once
 
 #include "raft/consensus.h"
-#include "utils/intrusive_list_helpers.h"
 
 namespace raft {
 
@@ -15,19 +14,6 @@ namespace raft {
 ///            });
 class replicate_entries_stm {
 public:
-    struct retry_meta {
-        retry_meta(model::node_id node, int32_t ret)
-          : retries_left(ret)
-          , node(node) {}
-        int32_t retries_left;
-        model::node_id node;
-        std::optional<append_entries_reply> value;
-        safe_intrusive_list_hook hook;
-        bool is_success() const { return value && value->success; }
-        bool finished() const { return retries_left <= 0 || bool(value); }
-    };
-
-    using meta_ptr = std::unique_ptr<retry_meta>;
     replicate_entries_stm(
       consensus*, int32_t max_retries, append_entries_request);
     ~replicate_entries_stm();
@@ -40,11 +26,46 @@ public:
     future<> wait();
 
 private:
+    struct retry_meta {
+        retry_meta(model::node_id n, int32_t ret)
+          : retries_left(ret)
+          , node(n) {}
+
+        bool is_success() const {
+            if (!finished() || !value) {
+                return false;
+            }
+            auto& ref = *value;
+            return ref.has_value() && ref.value().success;
+        }
+
+        bool is_failure() const {
+            return finished() && value && value->has_error();
+        }
+
+        bool finished() const { return retries_left <= 0 || value; }
+
+        void set_value(result<append_entries_reply> r) {
+            value = std::make_unique<result<append_entries_reply>>(
+              std::move(r));
+        }
+
+        int32_t retries_left;
+        model::node_id node;
+        std::unique_ptr<result<append_entries_reply>> value;
+    };
+
+    friend std::ostream& operator<<(std::ostream&, const retry_meta&);
+
     future<std::vector<append_entries_request>> share_request_n(size_t n);
+
     future<> dispatch_one(retry_meta&);
-    future<append_entries_reply>
+
+    future<result<append_entries_reply>>
       do_dispatch_one(model::node_id, append_entries_request);
-    future<> process_replies();
+
+    future<result<void>> process_replies();
+
     std::pair<int32_t, int32_t> partition_count() const;
 
     consensus* _ptr;
@@ -53,8 +74,8 @@ private:
     append_entries_request _req;
     // list to all nodes & retries per node
     semaphore _sem;
-    counted_intrusive_list<retry_meta, &retry_meta::hook> _ongoing;
-    std::vector<meta_ptr> _replies;
+    std::vector<retry_meta> _replies;
     seastar::gate _req_bg;
 };
+
 } // namespace raft
