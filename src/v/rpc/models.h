@@ -59,6 +59,7 @@ inline future<net::inet_address> deserialize(source& in) {
                 return net::inet_address(net::ipv6_address(ip));
             });
         }
+        __builtin_unreachable();
     });
 }
 
