@@ -103,6 +103,10 @@ if ("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
             -fsanitize=undefined
             -fsanitize=address
             )
+    list(APPEND BASE_LD_FLAGS_LIST
+            -fsanitize=undefined
+            -fsanitize=address
+            )
 endif()
 
 # join flag lists
