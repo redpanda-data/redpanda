@@ -17,7 +17,7 @@ future<> client_cache::emplace(model::node_id n, rpc::client_configuration c) {
     return with_semaphore(
       _sem, 1, [this, n = std::move(n), c = std::move(c)]() mutable {
           _cache.emplace(
-            std::move(n), make_lw_shared<reconnect_client>(std::move(c)));
+            std::move(n), make_lw_shared<client_type>(std::move(c)));
       });
 }
 future<> client_cache::remove(model::node_id n) {

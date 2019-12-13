@@ -7,7 +7,7 @@
 
 namespace rpc {
 struct client_context_impl final : streaming_context {
-    client_context_impl(client& s, header h)
+    client_context_impl(transport& s, header h)
       : _c(std::ref(s))
       , _h(std::move(h)) {}
     future<semaphore_units<>> reserve_memory(size_t ask) final {
@@ -19,19 +19,20 @@ struct client_context_impl final : streaming_context {
     }
     const header& get_header() const final { return _h; }
     void signal_body_parse() final { pr.set_value(); }
-    std::reference_wrapper<client> _c;
+    std::reference_wrapper<transport> _c;
     header _h;
     promise<> pr;
 };
 
-base_client::base_client(configuration c)
+base_transport::base_transport(configuration c)
   : _server_addr(std::move(c.server_addr))
   , _creds(
       c.credentials ? c.credentials->build_certificate_credentials()
                     : nullptr) {}
 
-client::client(client_configuration c, std::optional<sstring> service_name)
-  : base_client(base_client::configuration{
+transport::transport(
+  client_configuration c, std::optional<sstring> service_name)
+  : base_transport(base_transport::configuration{
     .server_addr = std::move(c.server_addr),
     .credentials = std::move(c.credentials),
   })
@@ -39,7 +40,7 @@ client::client(client_configuration c, std::optional<sstring> service_name)
     // setup_metrics(service_name);
 }
 
-future<> base_client::do_connect() {
+future<> base_transport::do_connect() {
     // hold invariant of having an always valid dispatch gate
     // and make sure we don't have a live connection already
     if (is_valid() || _dispatch_gate.is_closed()) {
@@ -52,7 +53,7 @@ future<> base_client::do_connect() {
       .connect(
         server_address(),
         socket_address(sockaddr_in{AF_INET, INADDR_ANY, {0}}),
-        transport::TCP)
+        seastar::transport::TCP)
       .then([this](connected_socket fd) mutable {
           if (_creds) {
               return tls::wrap_client(_creds, std::move(fd));
@@ -72,7 +73,7 @@ future<> base_client::do_connect() {
           _out = batched_output_stream(std::move(_fd->output()));
       });
 }
-future<> base_client::connect() {
+future<> base_transport::connect() {
     // in order to hold concurrency correctness invariants we must guarantee 3
     // things before we attempt to send a payload:
     // 1. there are no background futures waiting
@@ -84,11 +85,11 @@ future<> base_client::connect() {
         return do_connect();
     });
 }
-future<> base_client::stop() {
+future<> base_transport::stop() {
     fail_outstanding_futures();
     return _dispatch_gate.close();
 }
-void client::fail_outstanding_futures() {
+void transport::fail_outstanding_futures() {
     // must close the socket
     shutdown();
     for (auto& [_, p] : _correlations) {
@@ -96,7 +97,7 @@ void client::fail_outstanding_futures() {
     }
     _correlations.clear();
 }
-void base_client::shutdown() {
+void base_transport::shutdown() {
     try {
         if (_fd) {
             _fd->shutdown_input();
@@ -104,12 +105,13 @@ void base_client::shutdown() {
             _fd.reset();
         }
     } catch (...) {
-        rpclog.debug("Failed to shutdown client: {}", std::current_exception());
+        rpclog.debug(
+          "Failed to shutdown transport: {}", std::current_exception());
     }
 }
 
-future<> client::connect() {
-    return base_client::connect().then([this] {
+future<> transport::connect() {
+    return base_transport::connect().then([this] {
         _correlation_idx = 0;
         // background
         (void)with_gate(_dispatch_gate, [this] {
@@ -126,7 +128,7 @@ future<> client::connect() {
     });
 }
 
-future<std::unique_ptr<streaming_context>> client::send(netbuf b) {
+future<std::unique_ptr<streaming_context>> transport::send(netbuf b) {
     // hold invariant of always having a valid connection _and_ a working
     // dispatch gate where we can wait for async futures
     if (!is_valid() || _dispatch_gate.is_closed()) {
@@ -139,7 +141,7 @@ future<std::unique_ptr<streaming_context>> client::send(netbuf b) {
         if (_correlations.find(_correlation_idx + 1) != _correlations.end()) {
             _probe.client_correlation_error();
             throw std::runtime_error(
-              "Invalid client state. Doubly registered correlation_id");
+              "Invalid transport state. Doubly registered correlation_id");
         }
         const uint32_t idx = ++_correlation_idx;
         promise_t item;
@@ -172,7 +174,7 @@ future<std::unique_ptr<streaming_context>> client::send(netbuf b) {
     });
 }
 
-future<> client::do_reads() {
+future<> transport::do_reads() {
     return do_until(
       [this] { return !is_valid(); },
       [this] {
@@ -190,7 +192,7 @@ future<> client::do_reads() {
 
 /// - this needs a streaming_context.
 ///
-future<> client::dispatch(header h) {
+future<> transport::dispatch(header h) {
     static constexpr auto header_size = sizeof(header);
     auto it = _correlations.find(h.correlation_id);
     if (it == _correlations.end()) {
@@ -211,11 +213,11 @@ future<> client::dispatch(header h) {
     return fut.then([this] { _probe.request_completed(); });
 }
 
-void client::setup_metrics(const std::optional<sstring>& service_name) {
+void transport::setup_metrics(const std::optional<sstring>& service_name) {
     _probe.setup_metrics(_metrics, service_name, server_address());
 }
 
-client::~client() {
+transport::~transport() {
     rpclog.debug("RPC Client probes: {}", _probe);
     if (is_valid()) {
         rpclog.error(

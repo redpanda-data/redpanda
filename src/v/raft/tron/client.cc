@@ -60,7 +60,7 @@ inline std::ostream& operator<<(std::ostream& o, const load_gen_cfg& cfg) {
 // 2. launches cfg.concurrency * parallelism number of requests
 class client_loadgen {
 public:
-    using cli = raft::tron::trongen_service::client;
+    using cli = rpc::client<raft::tron::trongen_client_protocol>;
     client_loadgen(load_gen_cfg cfg)
       : _cfg(std::move(cfg))
       , _mem(memory::stats().total_memory() * .9) {

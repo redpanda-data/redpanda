@@ -11,7 +11,8 @@ FIXTURE_TEST(rpcgen_integration, rpc_integration_fixture) {
     register_movistar();
     start_server();
     info("started");
-    auto cli = movistar::client(client_config());
+    auto cli = rpc::client<cycling::team_movistar_client_protocol>(
+      client_config());
     info("client connecting");
     cli.connect().get();
     info("client calling method");
@@ -35,7 +36,8 @@ FIXTURE_TEST(rpcgen_tls_integration, rpc_integration_fixture) {
     register_movistar();
     start_server();
     info("started");
-    auto cli = movistar::client(client_config(creds_builder));
+    auto cli = rpc::client<cycling::team_movistar_client_protocol>(
+      client_config(creds_builder));
     info("client connecting");
     cli.connect().get();
     info("client calling method");
