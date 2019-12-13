@@ -1,19 +1,14 @@
-#!/usr/bin/env python3
-
 import argparse
 import logging
 import os
 import shutil
 import sys
 from urllib import request
+from ..vlib import log
+from ..vlib import shell
+
 
 root_dir = os.path.join(os.path.dirname(__file__), '..')
-
-sys.path.append(os.path.join(root_dir, 'tools'))
-
-import log
-import shell
-
 logger = logging.getLogger('rp')
 install_dir = os.path.abspath(os.path.join(root_dir, 'build', 'infra'))
 
@@ -68,25 +63,3 @@ def _download_and_extract(url, dest, extract_to):
     # See https://bugs.python.org/issue15795
     shell.run_subprocess(f'unzip -o -d {extract_to} {dest}')
     os.remove(dest)
-
-
-def main():
-    parser = _build_parser()
-    opts = parser.parse_args()
-    log.set_logger_for_main(getattr(logging, opts.log.upper()))
-    install_deps()
-
-
-def _build_parser():
-    parser = argparse.ArgumentParser(description='Deploy test environments')
-    parser.add_argument(
-        '--log',
-        type=str,
-        choices=['critical', 'error', 'warning', 'info', 'debug'],
-        default='info',
-        help="The log level")
-    return parser
-
-
-if __name__ == '__main__':
-    main()
