@@ -4,12 +4,11 @@ import os
 import shutil
 import sys
 from urllib import request
-from ..vlib import log
+from absl import logging
 from ..vlib import shell
 
 
 root_dir = os.path.join(os.path.dirname(__file__), '..')
-logger = logging.getLogger('rp')
 install_dir = os.path.abspath(os.path.join(root_dir, 'build', 'infra'))
 
 
@@ -33,10 +32,10 @@ def _install_awscli():
     install_cmd = f"""{os.path.join(install_dir, 'aws', 'install')} \
     --install-dir {install_dir} \
     --bin-dir {install_dir}"""
-    logger.info('Downloading AWS CLI v2...')
+    logging.info('Downloading AWS CLI v2...')
     _download_and_extract(awscli_url, awscli_zip, install_dir)
     if _check_installed('aws2'):
-        logger.info('Found existing AWS CLI v2 installation. Updating...')
+        logging.info('Found existing AWS CLI v2 installation. Updating...')
         shell.run_subprocess(f'{install_cmd} --update')
     else:
         shell.run_subprocess(install_cmd)
@@ -47,7 +46,7 @@ def _install_awscli():
 def _install_terraform():
     tf_zip = os.path.join(install_dir, 'terraform.zip')
     tf_url = 'https://releases.hashicorp.com/terraform/0.12.15/terraform_0.12.15_linux_amd64.zip'
-    logger.info('Downloading Terraform...')
+    logging.info('Downloading Terraform...')
     _download_and_extract(tf_url, tf_zip, install_dir)
 
 
