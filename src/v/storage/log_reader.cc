@@ -68,7 +68,9 @@ stop_iteration skipping_consumer::consume_batch_end() {
     _reader._bytes_read += mem;
     _reader._buffer_size += mem;
     // We keep the batch in the buffer so that the reader can be cached.
-    if (batch.base_offset() > _reader._tracker.committed_offset()) {
+    if (
+      batch.base_offset() > _reader._tracker.committed_offset()
+      || batch.base_offset() >= _reader._config.max_offset) {
         _reader._end_of_stream = true;
         _reader._over_committed_offset = true;
         return stop_iteration::yes;

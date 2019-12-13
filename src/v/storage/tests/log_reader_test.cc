@@ -1,15 +1,19 @@
+#include "model/fundamental.h"
+#include "model/limits.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "storage/log_reader.h"
-#include "storage/log_segment_reader.h"
 #include "storage/log_segment_appender.h"
+#include "storage/log_segment_reader.h"
 #include "storage/log_writer.h"
 #include "storage/tests/random_batch.h"
 #include "utils/file_sanitizer.h"
 
 #include <seastar/core/thread.hh>
 #include <seastar/testing/thread_test_case.hh>
+
+#include <limits>
 
 using namespace storage; // NOLINT
 
@@ -44,9 +48,10 @@ struct context {
 
     model::record_batch_reader reader(
       model::offset start,
-      size_t max_bytes = std::numeric_limits<size_t>::max()) {
+      size_t max_bytes = std::numeric_limits<size_t>::max(),
+      model::offset max_offset = model::model_limits<model::offset>::max()) {
         auto cfg = log_reader_config{
-          start, max_bytes, 0, default_priority_class()};
+          start, max_bytes, 0, default_priority_class(), {}, max_offset};
         return model::make_record_batch_reader<log_reader>(
           logs, tracker, std::move(cfg), prb);
     }
@@ -149,6 +154,32 @@ SEASTAR_THREAD_TEST_CASE(test_does_not_read_past_max_bytes) {
         first.push_back(std::move(*std::next(batches.begin())));
         check_batches(res, first);
     }
+}
+
+SEASTAR_THREAD_TEST_CASE(test_does_not_read_past_max_offset_multiple_batches) {
+    context ctx;
+
+    // 3 batch, last offset = 299, in chunks of 100 batches each
+    std::vector<model::record_batch> batches;
+    batches.push_back(test::make_random_batch(model::offset(0), 100));
+    batches.push_back(test::make_random_batch(model::offset(100), 100));
+    batches.push_back(test::make_random_batch(model::offset(200), 100));
+    ctx.write(batches);
+    ctx.tracker.update_committed_offset(model::offset(299));
+
+    // max reader offset is 200
+    auto maxbytes = std::numeric_limits<size_t>::max();
+    auto reader = ctx.reader(model::offset(0), maxbytes, model::offset(200));
+
+    std::vector<model::record_batch> consumed =
+        reader.consume(consumer(), model::no_timeout).get0();
+
+    // max offset set to 200, so the last batch should not be returned.
+    std::vector<model::record_batch> expected;
+    expected.push_back(std::move(batches[0]));
+    expected.push_back(std::move(batches[1]));
+
+    check_batches(consumed, expected);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_reads_at_least_one_batch) {
