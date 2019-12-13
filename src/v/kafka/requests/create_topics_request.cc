@@ -7,6 +7,7 @@
 #include "kafka/requests/topics/topic_result_utils.h"
 #include "kafka/requests/topics/topic_utils.h"
 #include "model/metadata.h"
+#include "utils/to_string.h"
 
 #include <seastar/util/log.hh>
 
@@ -16,6 +17,32 @@
 
 namespace kafka {
 
+void create_topics_request::encode(
+  response_writer& writer, api_version version) {
+    writer.write_array(
+      topics, [](new_topic_configuration& t, response_writer& wr) {
+          wr.write(t.topic());
+          wr.write(t.partition_count);
+          wr.write(t.replication_factor);
+          wr.write_array(
+            t.assignments, [](partition_assignment& pa, response_writer& wr) {
+                wr.write(int32_t(pa.partition()));
+                wr.write_array(
+                  pa.assignments, [](model::node_id n, response_writer& wr) {
+                      wr.write(int32_t(n()));
+                  });
+            });
+          wr.write_array(t.config, [](config_entry& c, response_writer& wr) {
+              wr.write(c.name);
+              wr.write(c.value);
+          });
+      });
+    writer.write(int32_t(timeout.count()));
+    if (version >= api_version(1)) {
+        writer.write(bool(validate_only));
+    }
+}
+
 create_topics_request create_topics_request::decode(request_context& ctx) {
     return create_topics_request{
       .topics = ctx.reader().read_array(
@@ -24,7 +51,34 @@ create_topics_request create_topics_request::decode(request_context& ctx) {
       .validate_only = ctx.header().version > api_version(0)
                          ? ctx.reader().read_bool()
                          : false};
-} // namespace kafka
+}
+
+void create_topics_response::decode(iobuf buf, api_version version) {
+    request_reader reader(std::move(buf));
+    if (version >= api_version(2)) {
+        throttle = std::chrono::milliseconds(reader.read_int32());
+    }
+    topics = reader.read_array([version](request_reader& reader) {
+        auto t = topic{
+          .name = model::topic(reader.read_string()),
+          .error = error_code{reader.read_int16()},
+        };
+        if (version >= api_version(1)) {
+            t.error_message = reader.read_nullable_string();
+        }
+        return t;
+    });
+}
+
+static std::ostream&
+operator<<(std::ostream& o, const create_topics_response::topic& t) {
+    return fmt_print(
+      o, "name {} error {} error_msg {}", t.name, t.error, t.error_message);
+}
+
+std::ostream& operator<<(std::ostream& o, const create_topics_response& r) {
+    return fmt_print(o, "topics {}", r.topics);
+}
 
 new_topic_configuration
 create_topics_request::read_topic_configuration(request_reader& r) {
