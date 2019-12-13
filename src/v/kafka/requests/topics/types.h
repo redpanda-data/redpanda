@@ -36,7 +36,7 @@ struct config_entry {
 /// \brief Part of CreateTopics request from Kafka API
 /// that describes single topic configuration
 struct new_topic_configuration {
-    model::topic_view topic;
+    model::topic topic;
     int32_t partition_count;
     int16_t replication_factor;
     std::vector<partition_assignment> assignments;
