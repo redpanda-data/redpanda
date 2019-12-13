@@ -12,7 +12,3 @@ crash.log
 *override.tf
 *override.tf.json
 *.tfvars
-
-*.zip
-aws
-bin

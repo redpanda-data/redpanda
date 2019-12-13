@@ -15,11 +15,7 @@ def rotate_ssh_keys(log):
         logging.info("All good!")
         return 0
 
-    latest_dir = keys.generate_keys()
-    # make sure fingerprints match
-    keys.fingerprint_keys()
-    # always check the symlinks
-    keys.symlink_new_keys(latest_dir)
+    keys.rotate_ssh_keys()
     logging.info("Remember:")
     logging.info("1. Use your external key for github & external accounts")
     logging.info("2. Use your internal key for VPN systems")
