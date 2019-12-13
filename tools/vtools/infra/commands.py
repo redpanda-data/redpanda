@@ -28,6 +28,23 @@ def deploy(module, install_deps, v_root, log, tfvars):
     _run_terraform_cmd('apply', module, install_deps, v_root, log, tfvars)
 
 
+@infra.command()
+@click.option('--module',
+              help='The name of the module to deploy',
+              required=True)
+@click.option('--install-deps',
+              default=False,
+              help='Download and install the dependencies')
+@click.option('--v-root', help='The path to the v repo', required=True)
+@click.option('--log',
+              default='info',
+              type=click.Choice(['debug', 'info', 'warning', 'error', 'fatal'],
+                                case_sensitive=False))
+@click.argument('tfvars', nargs=-1)
+def destroy(module, install_deps, v_root, log, tfvars):
+    _run_terraform_cmd('destroy', module, install_deps, v_root, log, tfvars)
+
+
 def _run_terraform_cmd(action, module, install_deps, v_root, log, tfvars):
     logging.set_verbosity(log)
     _check_keys()
