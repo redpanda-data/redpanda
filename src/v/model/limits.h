@@ -1,6 +1,6 @@
 #pragma once
 
-#include "fundamental.h"
+#include "model/fundamental.h"
 
 namespace model {
 
