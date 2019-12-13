@@ -55,10 +55,11 @@ struct unsupported_configuration_entries {
       = "Not supported configuration entry ";
 
     static bool is_valid(const new_topic_configuration& c) {
-        auto end = c.config_entries.end();
-        return end == c.config_entries.find("min.insync.replicas")
-               && end == c.config_entries.find("flush.messages")
-               && end == c.config_entries.find("flush.ms");
+        auto config_entries = c.config_map();
+        auto end = config_entries.end();
+        return end == config_entries.find("min.insync.replicas")
+               && end == config_entries.find("flush.messages")
+               && end == config_entries.find("flush.ms");
     }
 };
 

@@ -45,11 +45,9 @@ struct create_topics_request {
 
     static model::node_id read_node_id(request_reader&);
 
-    static std::unordered_map<sstring, sstring> read_config(request_reader&);
-
     std::vector<new_topic_configuration> topics;
     std::chrono::milliseconds timeout;
-    bool validate_only;
+    bool validate_only; // >= v1
 };
 
 } // namespace kafka
