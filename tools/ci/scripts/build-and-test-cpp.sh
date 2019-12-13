@@ -2,7 +2,7 @@
 set -ex
 
 if [ "$COMPILER" == "clang" ]; then
-  export CLANG_FLAG="--clang=/usr/local/bin/clang"
+  CLANG_FLAG="--clang=internal"
 fi
 
 # print CPU on CI machines to track illegal instructions
@@ -12,5 +12,9 @@ tools/build.py $CLANG_FLAG \
   --log=debug \
   --fmt=false \
   --build="$BUILD_TYPE" \
-  --external=false \
+  --build-dir=/v \
+  --external-skip-build=true \
   --targets=cpp
+
+mkdir -p build/$BUILD_TYPE/bin
+mv /v/$BUILD_TYPE/bin/redpanda build/$BUILD_TYPE/bin/
