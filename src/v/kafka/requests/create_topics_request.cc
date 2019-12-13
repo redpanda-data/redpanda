@@ -33,7 +33,15 @@ create_topics_request::read_topic_configuration(request_reader& r) {
       .partition_count = r.read_int32(),
       .replication_factor = r.read_int16(),
       .assignments = read_partiton_assignments(r),
-      .config_entries = read_config(r)};
+      .config = r.read_array([](request_reader& r) {
+          auto name = r.read_string();
+          auto value = r.read_nullable_string().value_or("");
+          return config_entry{
+            .name = std::move(name),
+            .value = std::move(value),
+          };
+      }),
+    };
 }
 
 std::vector<partition_assignment>
@@ -51,21 +59,6 @@ create_topics_request::read_partiton_assignment(request_reader& r) {
 model::node_id create_topics_request::read_node_id(request_reader& r) {
     return model::node_id(r.read_int32());
 }
-
-std::unordered_map<sstring, sstring>
-create_topics_request::read_config(request_reader& r) {
-    auto len = r.read_int32();
-    std::unordered_map<sstring, sstring> res;
-    res.reserve(std::max(0, len));
-    while (len-- > 0) {
-        auto key = r.read_string();
-        auto val = r.read_nullable_string();
-        if (val) {
-            res.emplace(std::move(key), std::move(*val));
-        }
-    }
-    return res;
-};
 
 future<response_ptr>
 create_topics_api::process(request_context&& ctx, smp_service_group g) {
