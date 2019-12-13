@@ -7,39 +7,40 @@ This is a subproject containing infrastructure definitions.
 
 ### Set up
 
-If it's your first time running `deploy.py`, it will also install all the
-dependencies (AWS CLI v2 and Terraform), and ask you to configure the AWS CLI,
-so that Terraform can use your access key to deploy the plans. To create
-a Secret Access Key, follow
+If it's your first time deploying a module, running `vtools infra deploy` will
+also install all the dependencies (AWS CLI v2 and Terraform), and ask you to
+configure the AWS CLI, so that Terraform can use your access key to deploy the
+modules. To create a Secret Access Key, follow
 [this guide](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html#Using_CreateAccessKey)
 
 
-### Deploying a plan
+### Deploying a module
 
-You can use [deploy.py](deploy.py) to deploy the modules. For example, to deploy
-the `cluster` module, run:
+You can use [vtools infra](../tools/vtools/infra/commands.py) to deploy the
+modules. For example, to deploy the `cluster` module, run:
 
 ```sh
-./deploy.py        \
-  --action apply   \
+vtools infra deploy \
+  --v-root <path to v repo> \
   --module cluster
 ```
 
 To destroy it:
 
 ```sh
-./deploy.py        \
-  --action destroy \
+vtools infra destroy \
+  --v-root <path to v repo> \
   --module cluster
 ```
 
-To override a module variable, pass a `--var` flag:
+To override a module variable, pass it in the form of a key-value pair
+(`key=value`):
 
 ```sh
-./deploy.py        \
-  --action destroy \
+vtools infra deploy \
+  --v-root <path to v repo> \
   --module cluster \
-  --var distro=ubuntu-bionic instance_type=i3.large
+  distro=ubuntu-bionic instance_type=i3.large
 ```
 
 To see the module's available variables, please see its `vars.tf` file.
@@ -48,5 +49,5 @@ To avoid having to pass the module's variables to create it and destroy it, you
 can create a file called `terraform.tfvars` in the module's directory, and write
 one `key = value` pair per line. Terraform will load them automatically.
 
-Alternatively, you can omit the file and `--var`, and enter the required variable
-values interactively.
+Alternatively, you can omit the file and key-value pairs, and enter the required
+variable values interactively when prompted.
