@@ -34,7 +34,7 @@ def generate_options():
     parser.add_argument('--build',
                         type=str.lower,
                         default='debug',
-                        choices=['debug', 'release','relwithdebinfo', 'none'],
+                        choices=['debug', 'release', 'relwithdebinfo', 'none'],
                         help='choose of debug|release|none')
     parser.add_argument('--targets',
                         type=str.lower,
@@ -54,12 +54,23 @@ def generate_options():
         help=('only build external project dependencies, '
               'without building and testing RP. Ignored if --external=false.'))
     parser.add_argument(
+        '--external-skip-build',
+        type=cli.str2bool,
+        default='false',
+        help=('use external dependencies but do not re-run build sequence. '
+              'Ignored if --external=false.'))
+    parser.add_argument(
+        '--build-dir',
+        type=str,
+        default=None,
+        help='Where to put the cmake build directory (build/ by default).')
+    parser.add_argument(
         '--external-install-prefix',
         type=str,
         default=None,
         help=('install prefix for external cpp project dependencies. This is '
               'build/<type>/v_deps_install by default. This flag is ignored '
-              'if --external=false.'))
+              'if --external=false or if --external-skip-build=true.'))
     parser.add_argument('--files',
                         type=str.lower,
                         default='incremental',
@@ -108,10 +119,12 @@ def main():
     import fmt
 
     if options.build and options.build != "none":
-        build_helpers.build(options.build, options.targets, options.external,
-                            options.external_only,
+        build_helpers.build(options.build, options.build_dir, options.targets,
+                            options.external, options.external_only,
+                            options.external_skip_build,
                             options.external_install_prefix, options.clang)
-    build_helpers.build_packages(options.build, options.packages)
+    build_helpers.build_packages(options.build, options.build_dir,
+                                 options.packages)
 
     def _files():
         r = []

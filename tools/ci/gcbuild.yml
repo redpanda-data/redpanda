@@ -47,7 +47,7 @@ steps:
          '--build-dir', '/workspace/build/',
          '--build-type', '$_BUILD_TYPE',
          '--formats', 'rpm', 'deb', 'tar',
-         '--external', '/usr/local/bin/iotune', '/usr/local/bin/hwloc-calc', '/usr/local/bin/hwloc-distrib']
+         '--external', '/v/iotune', '/v/$_BUILD_TYPE/v_deps_install/bin/hwloc-calc', '/v/$_BUILD_TYPE/v_deps_install/bin/hwloc-distrib']
 
 - id: 'publish package'
   name: 'gcr.io/$PROJECT_ID/packagecloud'

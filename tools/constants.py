@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import sys
 import os
-import logging
 sys.path.append(os.path.dirname(__file__))
 
 # rp
