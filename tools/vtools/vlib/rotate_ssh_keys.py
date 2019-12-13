@@ -12,6 +12,14 @@ from . import fs
 KEY_TYPES = ["external", "internal", "deploy"]
 
 
+def rotate_ssh_keys():
+    latest_dir = generate_keys()
+    # make sure fingerprints match
+    fingerprint_keys()
+    # always check the symlinks
+    symlink_new_keys(latest_dir)
+
+
 def get_vectorized_keys_path():
     home = os.environ["HOME"]
     return "%s/.ssh/vectorized" % home
@@ -42,7 +50,8 @@ def is_ssh_key_path_timestamp_valid(path):
         logging.debug(
             f"Expired keys date {path_date} with expiration: {expiry_date}")
         return False
-    logging.debug(f"Valid keys date {path_date} with expiration: {expiry_date}")
+    logging.debug(
+        f"Valid keys date {path_date} with expiration: {expiry_date}")
     return True
 
 
@@ -125,7 +134,7 @@ def needs_rotation():
     keys_dir = get_latest_keys_dir()
     if keys_dir is None:
         logging.debug("no vectorized ssh key discovered: %s" %
-                     get_vectorized_keys_path())
+                      get_vectorized_keys_path())
         return True
     if is_ssh_key_path_timestamp_valid(keys_dir):
         return False
