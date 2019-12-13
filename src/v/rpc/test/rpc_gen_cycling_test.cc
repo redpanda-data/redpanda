@@ -48,3 +48,24 @@ FIXTURE_TEST(rpcgen_tls_integration, rpc_integration_fixture) {
 
     BOOST_REQUIRE_EQUAL(ret.data.x, 66);
 }
+
+FIXTURE_TEST(client_muxing, rpc_integration_fixture) {
+    configure_server();
+    // Two services @ single server
+    register_movistar();
+    register_echo();
+    start_server();
+
+    rpc::
+      client<cycling::team_movistar_client_protocol, echo::echo_client_protocol>
+        client(client_config());
+    client.connect().get();
+    info("Calling movistar method");
+    auto ret = client.ibis_hakka(cycling::san_francisco{66}).get0();
+    info("Calling echo method");
+    auto echo_resp
+      = client.suffix_echo(echo::echo_req{.str = "testing..."}).get0();
+    client.stop().get();
+
+    BOOST_REQUIRE_EQUAL(echo_resp.data.str, "testing..._suffix");
+}

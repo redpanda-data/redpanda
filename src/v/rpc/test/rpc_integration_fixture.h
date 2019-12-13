@@ -13,6 +13,9 @@
 // rpcgen.py --service_file test_definitions.json --output_file rpcgen.h
 #include "rpc/test/rpcgen.h"
 
+// rpcgen.py --service_file echo_service.json --output_file echo_gen.h
+#include "rpc/test/echo_gen.h"
+
 // Test services
 struct movistar final : cycling::team_movistar_service {
     movistar(scheduling_group& sc, smp_service_group& ssg)
@@ -26,6 +29,21 @@ struct movistar final : cycling::team_movistar_service {
     canyon(cycling::ultimate_cf_slx&&, rpc::streaming_context&) final {
         return make_ready_future<cycling::nairo_quintana>(
           cycling::nairo_quintana{32});
+    }
+};
+
+struct echo_impl final : echo::echo_service {
+    echo_impl(scheduling_group& sc, smp_service_group& ssg)
+      : echo::echo_service(sc, ssg) {}
+    future<echo::echo_resp>
+    prefix_echo(echo::echo_req&& req, rpc::streaming_context&) final {
+        return make_ready_future<echo::echo_resp>(
+          echo::echo_resp{.str = fmt::format("prefix_{}", req.str)});
+    }
+    future<echo::echo_resp>
+    suffix_echo(echo::echo_req&& req, rpc::streaming_context&) final {
+        return make_ready_future<echo::echo_resp>(
+          echo::echo_resp{.str = fmt::format("{}_suffix", req.str)});
     }
 };
 
@@ -48,6 +66,12 @@ public:
         check_server();
         _server->register_service<movistar>(_sg, _ssg);
     }
+
+    void register_echo() {
+        check_server();
+        _server->register_service<echo_impl>(_sg, _ssg);
+    }
+
     void configure_server(
       std::optional<tls::credentials_builder> credentials = std::nullopt) {
         _server = std::make_unique<rpc::server>(rpc::server_configuration{
