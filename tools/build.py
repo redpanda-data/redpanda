@@ -60,6 +60,11 @@ def generate_options():
         help=('use external dependencies but do not re-run build sequence. '
               'Ignored if --external=false.'))
     parser.add_argument(
+        '--build-dir',
+        type=str,
+        default=None,
+        help='Where to put the cmake build directory (build/ by default).')
+    parser.add_argument(
         '--external-install-prefix',
         type=str,
         default=None,
@@ -114,10 +119,12 @@ def main():
     import fmt
 
     if options.build and options.build != "none":
-        build_helpers.build(options.build, options.targets, options.external,
-                            options.external_only, options.external_skip_build,
+        build_helpers.build(options.build, options.build_dir, options.targets,
+                            options.external, options.external_only,
+                            options.external_skip_build,
                             options.external_install_prefix, options.clang)
-    build_helpers.build_packages(options.build, options.packages)
+    build_helpers.build_packages(options.build, options.build_dir,
+                                 options.packages)
 
     def _files():
         r = []

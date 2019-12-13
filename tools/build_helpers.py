@@ -25,16 +25,16 @@ def _check_build_type(build_type):
         raise Exception("Build type is neither release or debug or all")
 
 
-def _symlink_compile_commands(build_type):
+def _symlink_compile_commands(build_type, build_dir):
     cpp.check_bdir()
-    src = "%s/%s/compile_commands.json" % (RP_BUILD_ROOT, build_type)
+    src = "%s/%s/compile_commands.json" % (build_dir, build_type)
     dst = "%s/compile_commands.json" % RP_ROOT
     if os.path.islink(dst): os.unlink(dst)
     os.symlink(src, dst)
 
 
-def _configure_build(build_type, external, external_only, external_skip_build,
-                     external_install_prefix, clang_opt):
+def _configure_build(build_type, build_dir, external, external_only,
+                     external_skip_build, external_install_prefix, clang_opt):
     _check_build_type(build_type)
     cpp.check_bdir(build_type)
     logger.info("configuring build %s" % build_type)
@@ -51,12 +51,12 @@ def _configure_build(build_type, external, external_only, external_skip_build,
     elif clang_opt == "internal" or clang_opt == "llvm_bootstrap":
         logger.info("Builing using internal Clang compiler")
         if not external_skip_build:
-            llvm.get_llvm()
+            llvm.get_llvm(build_dir)
             bootstrap_build = clang_opt == "llvm_bootstrap"
-            llvm.build_llvm(bootstrap_build, external_install_prefix)
+            llvm.build_llvm(bootstrap_build, build_dir, external_install_prefix)
         clang_bin_path = os.path.join(
             external_install_prefix if external_install_prefix else
-            llvm.get_internal_llvm_install_path(), 'bin', 'clang')
+            llvm.get_internal_llvm_install_path(build_dir), 'bin', 'clang')
         build_env = clang.clang_env_from_path(clang_bin_path)
     else:
         logger.info("Using clang compiler from path `%s`" % clang_opt)
@@ -72,14 +72,14 @@ def _configure_build(build_type, external, external_only, external_skip_build,
         args.append('-DV_DEPS_INSTALL_DIR=%s' % external_install_prefix)
 
     cmd = tpl.substitute(root=RP_ROOT,
-                         build_root=RP_BUILD_ROOT,
+                         build_root=build_dir,
                          args=' '.join(args),
                          cmake_type=build_type.capitalize(),
                          build_type=build_type)
     shell.run_subprocess(cmd, build_env)
 
 
-def _invoke_build(build_type):
+def _invoke_build(build_type, build_dir):
     _check_build_type(build_type)
     tpl = Template(
         "cd $build_root/$build_type && ninja -C $build_root/$build_type -j$num_jobs"
@@ -90,18 +90,18 @@ def _invoke_build(build_type):
     num_jobs = math.floor(total_memory / (2 * 1024.**3))
     num_jobs = min(num_jobs, os.sysconf('SC_NPROCESSORS_ONLN'))
     cmd = tpl.substitute(root=RP_ROOT,
-                         build_root=RP_BUILD_ROOT,
+                         build_root=build_dir,
                          build_type=build_type,
                          num_jobs=num_jobs)
     shell.run_subprocess(cmd)
-    _symlink_compile_commands(build_type)
+    _symlink_compile_commands(build_type, build_dir)
 
 
-def _invoke_tests(build_type):
+def _invoke_tests(build_type, build_dir):
     _check_build_type(build_type)
     rp_test_regex = "\".*_rp(unit|bench|int)$\""
     tpl = Template("cd $build_root/$build_type && ctest $verbose -R $re")
-    cmd = tpl.substitute(build_root=RP_BUILD_ROOT,
+    cmd = tpl.substitute(build_root=build_dir,
                          re=rp_test_regex,
                          build_type=build_type,
                          verbose="-V" if os.environ.get("CI") else "")
@@ -121,29 +121,40 @@ def _invoke_go_tests():
     golang.go_test(GOLANG_ROOT, "./...")
 
 
-def build(build_type, targets, external, external_only, external_skip_build,
-          external_install_prefix, clang):
+def build(build_type, build_dir, targets, external, external_only,
+          external_skip_build, external_install_prefix, clang):
+
+    if build_dir:
+        rp_build_root = build_dir
+    else:
+        rp_build_root = RP_BUILD_ROOT
+
     if 'all' in targets or 'go' in targets:
         _invoke_go_tests()
         _invoke_build_go_cmds()
 
     if 'all' in targets or 'cpp' in targets:
         logger.info("Building Cpp...")
-        _configure_build(build_type, external, external_only,
+        _configure_build(build_type, rp_build_root, external, external_only,
                          external_skip_build, external_install_prefix, clang)
         if external_only:
             return
-        _invoke_build(build_type)
-        _invoke_tests(build_type)
+        _invoke_build(build_type, rp_build_root)
+        _invoke_tests(build_type, rp_build_root)
 
 
-def build_packages(build_type, packages):
+def build_packages(build_type, build_dir, packages):
     if not packages:
         return
 
+    if build_dir:
+        rp_build_root = build_dir
+    else:
+        rp_build_root = RP_BUILD_ROOT
+
     res_type = "release" if build_type == "none" else build_type
 
-    build_dir = "%s/%s/" % (RP_BUILD_ROOT, res_type)
+    build_dir = "%s/%s/" % (rp_build_root, res_type)
 
     execs = [
         "%s/v_deps_build/seastar-prefix/src/seastar-build/apps/iotune/iotune" %
@@ -153,6 +164,6 @@ def build_packages(build_type, packages):
     ]
 
     packaging.create_packages(packages,
-                              build_dir=RP_BUILD_ROOT,
+                              build_dir=rp_build_root,
                               build_type=res_type,
                               external=execs)
