@@ -11,6 +11,8 @@
 #include "seastarx.h"
 #include "storage/log_manager.h"
 
+#include <seastar/core/condition-variable.hh>
+
 namespace raft {
 class client_cache;
 }
@@ -49,6 +51,16 @@ public:
     raft::group_id get_highest_group_id() const { return _highest_group_id; }
 
     future<> recover_assignment(partition_assignment);
+
+    /**
+     * \brief Wait on controller to become the leader.
+     *
+     * Returns a future that resolves when this controller becomes the leader of
+     * the raft0 group. The future will also resolve when the controller is
+     * shutting down. This method serves only as a weak signal. Any caller must
+     * make sure to properly check for leadership again when necessary.
+     */
+    future<> wait_for_leadership();
 
 private:
     struct batch_consumer {
@@ -110,6 +122,7 @@ private:
     bool _recovered = false;
     bool _leadership_notification_pending = false;
     std::unique_ptr<partition_allocator> _allocator;
+    condition_variable _leadership_cond;
     seastar::gate _bg;
 };
 } // namespace cluster
