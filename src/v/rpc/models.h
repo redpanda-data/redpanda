@@ -254,8 +254,8 @@ inline future<model::record_batch> deserialize(source& in) {
         }
         // not compressed
         return do_with(
-                 boost::irange(0, static_cast<int>(b_hdr.batch_size)),
-                 [&in](auto& r) {
+                 boost::irange<uint32_t>(0, b_hdr.batch_size),
+                 [&in](boost::integer_range<uint32_t>& r) {
                      return copy_range<std::vector<model::record>>(
                        r,
                        [&in](int) { return deserialize<model::record>(in); });
