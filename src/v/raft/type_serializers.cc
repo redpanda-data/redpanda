@@ -28,7 +28,7 @@ struct rpc_model_reader_consumer {
 
 struct entry_header {
     model::record_batch_type etype;
-    int32_t batch_count;
+    uint32_t batch_count;
 };
 
 template<>
@@ -37,7 +37,7 @@ void serialize(iobuf& out, raft::entry&& r) {
     rpc::serialize(
       out,
       entry_header{.etype = r.entry_type(),
-                   .batch_count = static_cast<int32_t>(batches.size())});
+                   .batch_count = static_cast<uint32_t>(batches.size())});
     for (auto& batch : batches) {
         serialize(out, std::move(batch));
     }
@@ -48,8 +48,8 @@ future<raft::entry> deserialize(source& in) {
     return rpc::deserialize<entry_header>(in).then(
       [&in](entry_header e_hdr) mutable {
           return do_with(
-                   boost::irange(0, static_cast<int>(e_hdr.batch_count)),
-                   [&in](auto& r) mutable {
+                   boost::irange<uint32_t>(0, e_hdr.batch_count),
+                   [&in](boost::integer_range<uint32_t>& r) mutable {
                        return copy_range<std::vector<model::record_batch>>(
                          r, [&in](int) {
                              return deserialize<model::record_batch>(in);
