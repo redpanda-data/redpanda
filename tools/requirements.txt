@@ -4,3 +4,4 @@ gitpython
 pylddwrap
 requests
 Jinja2
+absl-py
