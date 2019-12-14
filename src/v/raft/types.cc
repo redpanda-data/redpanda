@@ -3,21 +3,21 @@
 #include "raft/consensus_utils.h"
 
 namespace raft {
-group_configuration::const_iter
+group_configuration::const_iterator
 group_configuration::find_in_nodes(model::node_id id) const {
     return details::find_machine(cbegin(nodes), cend(nodes), id);
 }
-group_configuration::iter
+group_configuration::iterator
 group_configuration::find_in_nodes(model::node_id id) {
     return details::find_machine(begin(nodes), end(nodes), id);
 }
 
-group_configuration::const_iter
+group_configuration::const_iterator
 group_configuration::find_in_learners(model::node_id id) const {
     return details::find_machine(cbegin(learners), cend(learners), id);
 }
 
-group_configuration::iter
+group_configuration::iterator
 group_configuration::find_in_learners(model::node_id id) {
     return details::find_machine(begin(learners), end(learners), id);
 }
