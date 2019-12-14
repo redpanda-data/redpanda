@@ -316,15 +316,19 @@ ExternalProject_Add(libpciaccess
   INSTALL_COMMAND ${make_command} install)
 
 ExternalProject_Add(hwloc
-  URL https://storage.googleapis.com/vectorizedio-public/dependencies/hwloc-1.11.5.tar.gz
-  URL_MD5 8f5fe6a9be2eb478409ad5e640b2d3ba
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/hwloc-2.22-1af6d22.tar.gz
+  URL_MD5 286d1b0459e7a3925717cfb47c5d6dad
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   CONFIGURE_COMMAND
-    ${CMAKE_COMMAND} -E env ${build_env}
-    <SOURCE_DIR>/configure
-    --disable-libudev
-    --prefix=<INSTALL_DIR>
-    --srcdir=<SOURCE_DIR>
+    COMMAND
+      ${CMAKE_COMMAND} -E chdir <SOURCE_DIR>
+      autoreconf -ivf
+    COMMAND
+      ${CMAKE_COMMAND} -E env ${build_env}
+      <SOURCE_DIR>/configure
+      --disable-libudev
+      --prefix=<INSTALL_DIR>
+      --srcdir=<SOURCE_DIR>
   BUILD_COMMAND ${make_command}
   INSTALL_COMMAND ${make_command} install
   DEPENDS ${default_depends} numactl libpciaccess)
