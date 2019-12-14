@@ -8,9 +8,12 @@
 
 #include <seastar/core/sharded.hh>
 
+#include <boost/container/flat_map.hpp>
+
 namespace raft {
 class replicate_entries_stm;
 class vote_stm;
+class recovery_stm;
 /// consensus for one raft group
 class consensus {
 public:
@@ -20,8 +23,6 @@ public:
         model::term_id term{0};
     };
     enum class vote_state { follower, candidate, leader };
-    using vote_request_ptr = foreign_ptr<std::unique_ptr<vote_request>>;
-    using vote_reply_ptr = foreign_ptr<std::unique_ptr<vote_reply>>;
     using leader_cb_t = noncopyable_function<void(group_id)>;
     using append_entries_cb_t
       = noncopyable_function<void(std::vector<entry>&&)>;
@@ -86,6 +87,7 @@ public:
 private:
     friend replicate_entries_stm;
     friend vote_stm;
+    friend recovery_stm;
     // all these private functions assume that we are under exclusive operations
     // via the _op_sem
     void step_down();
@@ -141,6 +143,11 @@ private:
     vote_state _vstate = vote_state::follower;
     /// used for votes only. heartbeats are done by heartbeat_manager
     timer_type _vote_timeout;
+
+    /// used for keepint tally on followers
+    boost::container::flat_map<model::node_id, follower_index_metadata>
+      _follower_stats;
+
     /// used to wait for background ops before shutting down
     gate _bg;
 

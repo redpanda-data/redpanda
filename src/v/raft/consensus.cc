@@ -2,6 +2,7 @@
 
 #include "raft/consensus_utils.h"
 #include "raft/logger.h"
+#include "raft/recovery_stm.h"
 #include "raft/replicate_entries_stm.h"
 #include "raft/vote_stm.h"
 #include "seastarx.h"
@@ -9,10 +10,8 @@
 #include <seastar/core/fstream.hh>
 
 #include <iterator>
-namespace raft {
-using vote_request_ptr = consensus::vote_request_ptr;
-using vote_reply_ptr = consensus::vote_reply_ptr;
 
+namespace raft {
 consensus::consensus(
   model::node_id nid,
   group_id group,
@@ -35,6 +34,9 @@ consensus::consensus(
   , _conf(std::move(initial_cfg)) {
     _meta.group = group();
     _vote_timeout.set_callback([this] { dispatch_vote(); });
+    for (auto& n : initial_cfg.nodes) {
+        _follower_stats.emplace(n.id(), follower_index_metadata(n.id()));
+    }
 }
 void consensus::step_down() {
     _probe.step_down();
@@ -52,7 +54,61 @@ sstring consensus::voted_for_filename() const {
 }
 
 void consensus::process_heartbeat(
-  model::node_id node, result<append_entries_reply>) {}
+  model::node_id node, result<append_entries_reply> r) {
+    auto i = _follower_stats.find(node);
+    if (i == _follower_stats.end()) {
+        raftlog.error(
+          "node:{} does not belong to group:{}. had reply: {}",
+          node,
+          _meta.group,
+          r);
+        return;
+    }
+    if (!r) {
+        raftlog.trace(
+          "Error sending heartbeat:{}, {}", node, r.error().message());
+        // add stats to group
+        return;
+    }
+    follower_index_metadata& idx = i->second;
+    append_entries_reply& reply = r.value();
+    if (__builtin_expect(reply.group != _meta.group, false)) {
+        // logic bug
+        throw std::runtime_error(fmt::format(
+          "process_heartbeat was sent wrong group: {}", reply.group));
+    }
+    if (reply.success && !idx.is_recovering) {
+        // ignore heartbeats while we are in a background fiber
+        idx.term = model::term_id(reply.term);
+        idx.commit_index = model::offset(reply.last_log_index);
+    }
+    if (reply.success) {
+        // all caught up w/ the logs. nothing to do
+        raftlog.trace("successful append {}", reply);
+        return;
+    }
+    if (idx.is_recovering) {
+        // we are not caught up but we're working on it
+        return;
+    }
+    if (reply.last_log_index < _meta.commit_index) {
+        idx.is_recovering = true;
+        raftlog.info(
+          "Starting recovery process for {} - current reply: {}", node, reply);
+        // background
+        (void)with_gate(_bg, [this, &idx] {
+            auto recovery = std::make_unique<recovery_stm>(
+              this, idx, _io_priority);
+            auto ptr = recovery.get();
+            return ptr->apply().finally([r = std::move(recovery)] {});
+        });
+        return;
+    }
+    // TODO(agallego) - add target_replication_factor,
+    // current_replication_factor to group_configuration so we can promote
+    // learners to nodes and perform data movement to added replicas
+    //
+}
 
 future<> consensus::replicate(raft::entry&& e) {
     std::vector<raft::entry> entries;
