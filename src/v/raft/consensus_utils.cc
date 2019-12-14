@@ -82,20 +82,15 @@ future<consensus::voted_for_configuration> read_voted_for(sstring filename) {
         return node.as<consensus::voted_for_configuration>();
     });
 }
-class memory_batch_consumer {
-public:
-    future<stop_iteration> operator()(model::record_batch b) {
-        _result.push_back(std::move(b));
-        return make_ready_future<stop_iteration>(stop_iteration::no);
-    }
+future<stop_iteration> memory_batch_consumer::
+operator()(model::record_batch b) {
+    _result.push_back(std::move(b));
+    return make_ready_future<stop_iteration>(stop_iteration::no);
+}
 
-    std::vector<model::record_batch> end_of_stream() {
-        return std::move(_result);
-    }
-
-private:
-    std::vector<model::record_batch> _result;
-};
+std::vector<model::record_batch> memory_batch_consumer::end_of_stream() {
+    return std::move(_result);
+}
 
 static inline void check_copy_out_of_range(size_t expected, size_t got) {
     if (__builtin_expect(expected != got, false)) {
