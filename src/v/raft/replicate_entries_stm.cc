@@ -15,7 +15,12 @@ operator<<(std::ostream& o, const replicate_entries_stm::retry_meta& m) {
     o << "{node: " << m.node << ", retries_left: " << m.retries_left
       << ", value: ";
     if (m.value) {
-        o << "[" << *m.value << "]";
+        if (m.value->has_error()) {
+            auto& e = m.value->error();
+            o << "{" << *m.value << ", message: " << e.message() << "}";
+        } else {
+            o << "[" << *m.value << "]";
+        }
     } else {
         o << "nullptr";
     }
