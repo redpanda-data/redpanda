@@ -353,29 +353,38 @@ raft::entry serialize_configuration(group_configuration cfg) {
       model::make_memory_record_batch_reader(std::move(batches)));
 }
 
+static inline std::vector<std::pair<size_t, size_t>>
+batch_type_positions(const std::vector<model::record_batch>& v) {
+    std::vector<std::pair<size_t, size_t>> ret;
+    for (size_t i = 0; i < v.size(); /*in body loop increment*/) {
+        size_t j = i;
+        const auto type = v[i].type();
+        for (; j < v.size() && type == v[j].type(); ++j) {
+            /*do nothing*/
+        }
+        ret.emplace_back(i, j);
+        i = j;
+    }
+    return ret;
+}
 /// in order traversal creates a raft::entry every time it encounters
 /// a different record_batch.type() as all raft entries _must_ be for the
 /// same record_batch type
 std::vector<raft::entry>
 batches_as_entries(std::vector<model::record_batch> batches) {
     std::vector<raft::entry> ret;
-    auto type = batches.front().type();
-    for (size_t i = 0; i < batches.size(); ++i) {
-        for (size_t j = i; j < batches.size(); ++j) {
-            if (type != batches[j].type() || j + 1 == batches.size()) {
-                std::vector<model::record_batch> b;
-                b.reserve(j - i);
-                std::move(
-                  batches.begin() + i,
-                  batches.begin() + j,
-                  std::back_inserter(b));
-                auto e = raft::entry(
-                  type, model::make_memory_record_batch_reader(std::move(b)));
-                ret.emplace_back(std::move(e));
-                type = batches[j].type();
-                break;
-            }
-        }
+    const auto indices = batch_type_positions(batches);
+    for (auto& p : indices) {
+        std::vector<model::record_batch> b;
+        b.reserve(p.second - p.first);
+        std::move(
+          batches.begin() + p.first,
+          batches.begin() + p.second,
+          std::back_inserter(b));
+        const auto type = b.front().type();
+        auto e = raft::entry(
+          type, model::make_memory_record_batch_reader(std::move(b)));
+        ret.emplace_back(std::move(e));
     }
     return ret;
 }

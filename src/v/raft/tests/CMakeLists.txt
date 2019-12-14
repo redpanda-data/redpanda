@@ -60,3 +60,9 @@ rp_test(
   SOURCES type_serialization_tests.cc
   LIBRARIES Seastar::seastar_testing raft
 )
+rp_test(
+  UNIT_TEST
+  BINARY_NAME batches_as_entries
+  SOURCES batches_as_entries_tests.cc
+  LIBRARIES Seastar::seastar_testing raft
+)
