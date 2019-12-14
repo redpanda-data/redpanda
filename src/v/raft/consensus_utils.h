@@ -51,4 +51,13 @@ Iterator find_machine(Iterator begin, Iterator end, model::node_id id) {
       begin, end, [id](decltype(*begin) b) { return b.id() == id; });
 }
 
+class memory_batch_consumer {
+public:
+    seastar::future<seastar::stop_iteration> operator()(model::record_batch);
+    std::vector<model::record_batch> end_of_stream();
+
+private:
+    std::vector<model::record_batch> _result;
+};
+
 } // namespace raft::details
