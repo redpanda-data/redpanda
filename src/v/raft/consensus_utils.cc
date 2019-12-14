@@ -219,7 +219,7 @@ static inline future<std::vector<std::vector<raft::entry>>> share_entries(
   const bool use_foreign_iobuf_share) {
     using T = std::vector<raft::entry>;
     using ret_t = std::vector<T>;
-    if (ncopies <= 1) {
+    if (ncopies <= 1 && !use_foreign_iobuf_share) {
         ret_t ret;
         ret.reserve(1);
         ret.push_back(std::move(r));
