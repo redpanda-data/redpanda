@@ -64,9 +64,15 @@ struct group_configuration {
 };
 
 struct follower_index_metadata {
+    explicit follower_index_metadata(model::node_id node)
+      : node_id(node) {}
+
     model::node_id node_id;
-    model::term_id term;
-    model::offset commit_index;
+    model::term_id term{0};
+    model::offset commit_index{0};
+    uint64_t failed_appends{0};
+    bool is_learner = false;
+    bool is_recovering = false;
 };
 
 /// \brief a *collection* of record_batch. In other words
