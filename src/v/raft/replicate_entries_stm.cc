@@ -189,7 +189,11 @@ future<> replicate_entries_stm::apply() {
           });
     });
 }
-future<> replicate_entries_stm::wait() { return _req_bg.close(); }
+future<> replicate_entries_stm::wait() {
+    return _req_bg.close();
+    // TODO(agallego) - propagate the entries replies to
+    // _ptr->process_heartbeat() for all replies
+}
 
 replicate_entries_stm::replicate_entries_stm(
   consensus* p, int32_t max_retries, append_entries_request r)
