@@ -60,4 +60,9 @@ private:
     std::vector<model::record_batch> _result;
 };
 
+/// in order traversal creates a raft::entry every time it encounters
+/// a different record_batch.type() as all raft entries _must_ be for the
+/// same record_batch type
+std::vector<raft::entry> batches_as_entries(std::vector<model::record_batch>);
+
 } // namespace raft::details

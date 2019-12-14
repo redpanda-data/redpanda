@@ -352,4 +352,32 @@ raft::entry serialize_configuration(group_configuration cfg) {
       raft::configuration_batch_type,
       model::make_memory_record_batch_reader(std::move(batches)));
 }
+
+/// in order traversal creates a raft::entry every time it encounters
+/// a different record_batch.type() as all raft entries _must_ be for the
+/// same record_batch type
+std::vector<raft::entry>
+batches_as_entries(std::vector<model::record_batch> batches) {
+    std::vector<raft::entry> ret;
+    auto type = batches.front().type();
+    for (size_t i = 0; i < batches.size(); ++i) {
+        for (size_t j = i; j < batches.size(); ++j) {
+            if (type != batches[j].type() || j + 1 == batches.size()) {
+                std::vector<model::record_batch> b;
+                b.reserve(j - i);
+                std::move(
+                  batches.begin() + i,
+                  batches.begin() + j,
+                  std::back_inserter(b));
+                auto e = raft::entry(
+                  type, model::make_memory_record_batch_reader(std::move(b)));
+                ret.emplace_back(std::move(e));
+                type = batches[j].type();
+                break;
+            }
+        }
+    }
+    return ret;
+}
+
 } // namespace raft::details
