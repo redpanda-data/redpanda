@@ -174,12 +174,16 @@ future<> replicate_entries_stm::apply() {
               // append only when we have majority
               return share_request_n(1).then([this](reqs_t r) {
                   auto m = std::find_if(
-                    _replies.begin(), _replies.end(), [](const retry_meta& i) {
+                    _replies.cbegin(), _replies.cend(), [](const retry_meta& i) {
                         return i.is_success();
                     });
+                  if (__builtin_expect(m == _replies.end(), false)) {
+                      throw std::runtime_error(
+                        "Logic error. cannot acknowledge commits");
+                  }
                   return _ptr
                     ->commit_entries(
-                      std::move(r.back().entries), std::move(m->value->value()))
+                      std::move(r.back().entries), m->value->value())
                     .discard_result();
               });
           });
