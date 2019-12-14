@@ -9,7 +9,12 @@ namespace raft {
 std::ostream& operator<<(std::ostream& o, const vote_stm::vmeta& m) {
     o << "{node: " << m.node << ", value: ";
     if (m.value) {
-        o << "[" << *m.value << "]";
+        if (m.value->has_error()) {
+            auto& e = m.value->error();
+            o << "{" << *m.value << ", message: " << e.message() << "}";
+        } else {
+            o << "[" << *m.value << "]";
+        }
     } else {
         o << "nullptr";
     }

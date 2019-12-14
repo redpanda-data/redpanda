@@ -36,8 +36,9 @@ struct [[gnu::packed]] protocol_metadata {
 
 struct group_configuration {
     using brokers_t = std::vector<model::broker>;
-    using iter = brokers_t::iterator;
-    using const_iter = brokers_t::const_iterator;
+    using iterator = brokers_t::iterator;
+    using const_iterator = brokers_t::const_iterator;
+
     model::node_id leader_id;
     brokers_t nodes;
     brokers_t learners;
@@ -52,18 +53,26 @@ struct group_configuration {
 
     size_t majority() const { return (nodes.size() / 2) + 1; }
 
-    iter find_in_nodes(model::node_id id);
-    const_iter find_in_nodes(model::node_id id) const;
-    iter find_in_learners(model::node_id id);
-    const_iter find_in_learners(model::node_id id) const;
+    iterator find_in_nodes(model::node_id id);
+    const_iterator find_in_nodes(model::node_id id) const;
+
+    iterator find_in_learners(model::node_id id);
+    const_iterator find_in_learners(model::node_id id) const;
+
     bool contains_broker(model::node_id id) const;
     brokers_t all_brokers() const;
 };
 
 struct follower_index_metadata {
+    explicit follower_index_metadata(model::node_id node)
+      : node_id(node) {}
+
     model::node_id node_id;
-    model::term_id term;
-    model::offset commit_index;
+    model::term_id term{0};
+    model::offset commit_index{0};
+    uint64_t failed_appends{0};
+    bool is_learner = false;
+    bool is_recovering = false;
 };
 
 /// \brief a *collection* of record_batch. In other words

@@ -15,7 +15,12 @@ operator<<(std::ostream& o, const replicate_entries_stm::retry_meta& m) {
     o << "{node: " << m.node << ", retries_left: " << m.retries_left
       << ", value: ";
     if (m.value) {
-        o << "[" << *m.value << "]";
+        if (m.value->has_error()) {
+            auto& e = m.value->error();
+            o << "{" << *m.value << ", message: " << e.message() << "}";
+        } else {
+            o << "[" << *m.value << "]";
+        }
     } else {
         o << "nullptr";
     }
@@ -169,18 +174,26 @@ future<> replicate_entries_stm::apply() {
               // append only when we have majority
               return share_request_n(1).then([this](reqs_t r) {
                   auto m = std::find_if(
-                    _replies.begin(), _replies.end(), [](const retry_meta& i) {
+                    _replies.cbegin(), _replies.cend(), [](const retry_meta& i) {
                         return i.is_success();
                     });
+                  if (__builtin_expect(m == _replies.end(), false)) {
+                      throw std::runtime_error(
+                        "Logic error. cannot acknowledge commits");
+                  }
                   return _ptr
                     ->commit_entries(
-                      std::move(r.back().entries), std::move(m->value->value()))
+                      std::move(r.back().entries), m->value->value())
                     .discard_result();
               });
           });
     });
 }
-future<> replicate_entries_stm::wait() { return _req_bg.close(); }
+future<> replicate_entries_stm::wait() {
+    return _req_bg.close();
+    // TODO(agallego) - propagate the entries replies to
+    // _ptr->process_heartbeat() for all replies
+}
 
 replicate_entries_stm::replicate_entries_stm(
   consensus* p, int32_t max_retries, append_entries_request r)
