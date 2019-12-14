@@ -10,7 +10,7 @@ ENV GOROOT=/usr/local/go \
     GOPATH=/usr/local/gopath \
     PATH=$PATH:/usr/local/go/bin \
     CGO_ENABLED=1
-RUN curl -Ls https://dl.google.com/go/go1.12.3.linux-amd64.tar.gz | tar xzf - -C /usr/local
+RUN curl -Ls https://dl.google.com/go/go1.13.5.linux-amd64.tar.gz | tar xzf - -C /usr/local
 
 #####
 ## OS package dependencies
