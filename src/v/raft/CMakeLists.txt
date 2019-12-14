@@ -17,6 +17,7 @@ add_library (raft STATIC
   types.cc
   replicate_entries_stm.cc
   vote_stm.cc
+  recovery_stm.cc
   )
 
 target_link_libraries(raft

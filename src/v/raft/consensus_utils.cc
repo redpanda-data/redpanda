@@ -82,20 +82,15 @@ future<consensus::voted_for_configuration> read_voted_for(sstring filename) {
         return node.as<consensus::voted_for_configuration>();
     });
 }
-class memory_batch_consumer {
-public:
-    future<stop_iteration> operator()(model::record_batch b) {
-        _result.push_back(std::move(b));
-        return make_ready_future<stop_iteration>(stop_iteration::no);
-    }
+future<stop_iteration> memory_batch_consumer::
+operator()(model::record_batch b) {
+    _result.push_back(std::move(b));
+    return make_ready_future<stop_iteration>(stop_iteration::no);
+}
 
-    std::vector<model::record_batch> end_of_stream() {
-        return std::move(_result);
-    }
-
-private:
-    std::vector<model::record_batch> _result;
-};
+std::vector<model::record_batch> memory_batch_consumer::end_of_stream() {
+    return std::move(_result);
+}
 
 static inline void check_copy_out_of_range(size_t expected, size_t got) {
     if (__builtin_expect(expected != got, false)) {
@@ -224,7 +219,7 @@ static inline future<std::vector<std::vector<raft::entry>>> share_entries(
   const bool use_foreign_iobuf_share) {
     using T = std::vector<raft::entry>;
     using ret_t = std::vector<T>;
-    if (ncopies <= 1) {
+    if (ncopies <= 1 && !use_foreign_iobuf_share) {
         ret_t ret;
         ret.reserve(1);
         ret.push_back(std::move(r));
@@ -357,4 +352,41 @@ raft::entry serialize_configuration(group_configuration cfg) {
       raft::configuration_batch_type,
       model::make_memory_record_batch_reader(std::move(batches)));
 }
+
+static inline std::vector<std::pair<size_t, size_t>>
+batch_type_positions(const std::vector<model::record_batch>& v) {
+    std::vector<std::pair<size_t, size_t>> ret;
+    for (size_t i = 0; i < v.size(); /*in body loop increment*/) {
+        size_t j = i;
+        const auto type = v[i].type();
+        for (; j < v.size() && type == v[j].type(); ++j) {
+            /*do nothing*/
+        }
+        ret.emplace_back(i, j);
+        i = j;
+    }
+    return ret;
+}
+/// in order traversal creates a raft::entry every time it encounters
+/// a different record_batch.type() as all raft entries _must_ be for the
+/// same record_batch type
+std::vector<raft::entry>
+batches_as_entries(std::vector<model::record_batch> batches) {
+    std::vector<raft::entry> ret;
+    const auto indices = batch_type_positions(batches);
+    for (auto& p : indices) {
+        std::vector<model::record_batch> b;
+        b.reserve(p.second - p.first);
+        std::move(
+          batches.begin() + p.first,
+          batches.begin() + p.second,
+          std::back_inserter(b));
+        const auto type = b.front().type();
+        auto e = raft::entry(
+          type, model::make_memory_record_batch_reader(std::move(b)));
+        ret.emplace_back(std::move(e));
+    }
+    return ret;
+}
+
 } // namespace raft::details

@@ -51,4 +51,18 @@ Iterator find_machine(Iterator begin, Iterator end, model::node_id id) {
       begin, end, [id](decltype(*begin) b) { return b.id() == id; });
 }
 
+class memory_batch_consumer {
+public:
+    seastar::future<seastar::stop_iteration> operator()(model::record_batch);
+    std::vector<model::record_batch> end_of_stream();
+
+private:
+    std::vector<model::record_batch> _result;
+};
+
+/// in order traversal creates a raft::entry every time it encounters
+/// a different record_batch.type() as all raft entries _must_ be for the
+/// same record_batch type
+std::vector<raft::entry> batches_as_entries(std::vector<model::record_batch>);
+
 } // namespace raft::details

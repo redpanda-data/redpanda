@@ -109,7 +109,11 @@ future<> heartbeat_manager::do_heartbeat(
 void heartbeat_manager::process_reply(
   model::node_id n, std::vector<group_id> groups, result<heartbeat_reply> r) {
     if (!r) {
-        hbeatlog.info("Could not send hearbeats to node:{}, reason:{}", n, r);
+        hbeatlog.info(
+          "Could not send hearbeats to node:{}, reason:{}, message:{}",
+          n,
+          r,
+          r.error().message());
         for (auto g : groups) {
             auto it = std::lower_bound(
               _consensus_groups.begin(),
