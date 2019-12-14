@@ -149,7 +149,10 @@ future<> log::do_truncate(model::offset o, model::term_id term) {
     //  3.
     auto erased = _segs.remove(std::move(names_to_delete));
     auto f = make_ready_future<>();
-
+    // do not roll when we do not have segment opened
+    if (!_appender) {
+        return f;
+    }
     // 4.
     f = parallel_for_each(erased, [](segment_reader_ptr i) {
         return i->close().then([i] { return remove_file(i->get_filename()); });
