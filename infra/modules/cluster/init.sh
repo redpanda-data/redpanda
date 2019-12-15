@@ -6,13 +6,20 @@ packagecloud_token=$1
 
 set_up () {
     distro=$1
-    # Configure the Vectorized packagecloud DEB repo
-    rpm_repo_cmd='set_up_repo rpm'
-    deb_repo_cmd='set_up_repo deb'
-    run_for_distro "${distro}" "${rpm_repo_cmd}" "${deb_repo_cmd}"
-    rpm_cmd='sudo yum install -y redpanda'
-    deb_cmd='sudo apt install -y redpanda'
-    run_for_distro "${distro}" "${rpm_cmd}" "${deb_cmd}"
+    existing_pkg=$(find . | grep 'deb\|rpm' | sort | tail -1)
+    if [ -n "${existing_pkg}" ]; then
+        rpm_cmd="sudo rpm -ivh ${existing_pkg}"
+        deb_cmd="sudo apt install -y ${existing_pkg}"
+        run_for_distro "${distro}" "${rpm_cmd}" "${deb_cmd}"
+    else
+        # Configure the Vectorized packagecloud DEB repo
+        rpm_repo_cmd='set_up_repo rpm'
+        deb_repo_cmd='set_up_repo deb'
+        run_for_distro "${distro}" "${rpm_repo_cmd}" "${deb_repo_cmd}"
+        rpm_cmd='sudo yum install -y redpanda'
+        deb_cmd='sudo apt install -y redpanda'
+        run_for_distro "${distro}" "${rpm_cmd}" "${deb_cmd}"
+    fi
 }
 
 set_up_repo () {
