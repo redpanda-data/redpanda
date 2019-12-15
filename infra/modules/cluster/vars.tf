@@ -28,7 +28,14 @@ DESC
   default     = "3"
 }
 
-variable packagecloud_token {}
+variable packagecloud_token {
+  description = <<DESC
+  A packagecloud master token, used to download and install the latest Redpanda
+  package into the VMs.
+  Not needed if local_package_abs_path
+DESC
+  default     = ""
+}
 
 variable "private_key_path" {}
 
