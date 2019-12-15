@@ -11,7 +11,7 @@
 namespace raft {
 class reconnect_client {
 public:
-    using client_type = raftgen_service::client;
+    using client_type = rpc::client<raftgen_client_protocol>;
     static inline uint32_t next_backoff(uint32_t current_backoff) {
         return std::min<uint32_t>(
           300, std::max<uint32_t>(1, current_backoff) << 1);

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <seastar/core/sstring.hh>
+
 #include <cstdint>
 
 namespace cycling {
@@ -16,3 +18,13 @@ struct mount_tamalpais {
     int x = 45;
 };
 } // namespace cycling
+
+namespace echo {
+struct echo_req {
+    seastar::sstring str;
+};
+
+struct echo_resp {
+    seastar::sstring str;
+};
+} // namespace echo

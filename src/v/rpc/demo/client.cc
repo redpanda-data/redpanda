@@ -88,7 +88,7 @@ inline std::ostream& operator<<(std::ostream& o, const load_gen_cfg& cfg) {
 // 5. profit
 class client_loadgen {
 public:
-    using cli = demo::simple_service::client;
+    using cli = rpc::client<demo::simple_client_protocol>;
     client_loadgen(load_gen_cfg cfg)
       : _cfg(std::move(cfg))
       , _mem(memory::stats().total_memory() * .9) {

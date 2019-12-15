@@ -19,7 +19,7 @@ namespace kafka {
  * Restrictions:
  *  - don't dispatch concurrent requests.
  */
-class client : public rpc::base_client {
+class client : public rpc::base_transport {
 private:
     /*
      * send a request message and process the reply. note that the kafka
@@ -61,7 +61,7 @@ private:
     }
 
 public:
-    using rpc::base_client::base_client;
+    using rpc::base_transport::base_transport;
 
     future<api_versions_response> api_versions() {
         return send_recv([this](response_writer& wr) mutable {
