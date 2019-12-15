@@ -22,8 +22,6 @@ namespace cycling {
 
 class team_movistar_service : public rpc::service {
 public:
-    class client;
-
     team_movistar_service(scheduling_group sc, smp_service_group ssg)
       : _sc(sc)
       , _ssg(ssg) {}
@@ -101,20 +99,25 @@ private:
            return raw_ibis_hakka(in, ctx);
        })}};
 };
-class team_movistar_service::client : public rpc::client {
+
+class team_movistar_client_protocol {
 public:
-    explicit client(rpc::client_configuration c)
-      : rpc::client(std::move(c), "team_movistar") {}
-    virtual inline future<rpc::client_context<nairo_quintana>>
+    explicit team_movistar_client_protocol(rpc::transport& t)
+      : _transport(t) {}
+
+    inline future<rpc::client_context<nairo_quintana>>
     canyon(ultimate_cf_slx&& r) {
-        return send_typed<ultimate_cf_slx, nairo_quintana>(
+        return _transport.send_typed<ultimate_cf_slx, nairo_quintana>(
           std::move(r), 3887553648);
     }
-    virtual inline future<rpc::client_context<mount_tamalpais>>
+    inline future<rpc::client_context<mount_tamalpais>>
     ibis_hakka(san_francisco&& r) {
-        return send_typed<san_francisco, mount_tamalpais>(
+        return _transport.send_typed<san_francisco, mount_tamalpais>(
           std::move(r), 3924709550);
     }
+
+private:
+    rpc::transport& _transport;
 };
 
 } // namespace cycling

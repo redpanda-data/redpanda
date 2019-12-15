@@ -19,16 +19,16 @@
 namespace rpc {
 class client_context_impl;
 
-class base_client {
+class base_transport {
 public:
     struct configuration {
         socket_address server_addr;
         std::optional<tls::credentials_builder> credentials;
     };
 
-    explicit base_client(configuration c);
-    virtual ~base_client() {}
-    base_client(base_client&&) = default;
+    explicit base_transport(configuration c);
+    virtual ~base_transport() {}
+    base_transport(base_transport&&) = default;
 
     virtual future<> connect();
     future<> stop();
@@ -54,17 +54,17 @@ private:
     shared_ptr<tls::certificate_credentials> _creds;
 };
 
-class client : public base_client {
+class transport final : public base_transport {
 public:
     using promise_t = promise<std::unique_ptr<streaming_context>>;
 
-    explicit client(
+    explicit transport(
       client_configuration c,
       std::optional<sstring> service_name = std::nullopt);
-    client(client&&) = default;
-    virtual ~client();
-    virtual future<> connect() override;
-    virtual future<std::unique_ptr<streaming_context>> send(netbuf);
+    transport(transport&&) = default;
+    virtual ~transport();
+    future<> connect() final;
+    future<std::unique_ptr<streaming_context>> send(netbuf);
 
     template<typename Input, typename Output>
     future<client_context<Output>> send_typed(Input, uint32_t);
@@ -74,7 +74,7 @@ private:
 
     future<> do_reads();
     future<> dispatch(header);
-    void fail_outstanding_futures() override;
+    void fail_outstanding_futures() final;
     void setup_metrics(const std::optional<sstring>&);
 
     semaphore _memory;
@@ -85,7 +85,7 @@ private:
 
 template<typename Input, typename Output>
 inline future<client_context<Output>>
-client::send_typed(Input r, uint32_t method_id) {
+transport::send_typed(Input r, uint32_t method_id) {
     auto b = rpc::netbuf();
     b.serialize_type(std::move(r));
     b.set_service_method_id(method_id);
@@ -102,5 +102,38 @@ client::send_typed(Input r, uint32_t method_id) {
             });
       });
 }
+
+// clang-format off
+CONCEPT(
+template<typename Protocol>
+concept RpcClientProtocol = requires (rpc::transport& t) {
+    { Protocol(t) } -> Protocol;
+};
+)
+// clang-format on
+
+template<typename... Protocol>
+CONCEPT(requires(RpcClientProtocol<Protocol>&&...))
+class client : public Protocol... {
+public:
+    client(client_configuration cfg)
+      : _transport(std::move(cfg))
+      , Protocol(_transport)... {}
+
+    future<> connect() { return _transport.connect(); }
+    future<> stop() { return _transport.stop(); };
+    void shutdown() { _transport.shutdown(); }
+
+    [[gnu::always_inline]] bool is_valid() const {
+        return _transport.is_valid();
+    }
+
+    const socket_address& server_address() const {
+        return _transport.server_address();
+    }
+
+private:
+    rpc::transport _transport;
+};
 
 } // namespace rpc

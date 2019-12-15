@@ -47,7 +47,6 @@ namespace {{namespace}} {
 class {{service_name}}_service : public rpc::service {
 public:
     class failure_probes;
-    class client;
 
     {{service_name}}_service(scheduling_group sc, smp_service_group ssg)
        : _sc(sc), _ssg(ssg) {}
@@ -107,17 +106,20 @@ private:
       {%- endfor %}
     {% raw %}}}{% endraw %};
 };
-class {{service_name}}_service::client : public rpc::client {
+class {{service_name}}_client_protocol {
 public:
-    explicit client(rpc::client_configuration c)
-      : rpc::client(std::move(c), "{{service_name}}") {
+    explicit {{service_name}}_client_protocol(rpc::transport& t)
+      : _transport(t) {
     }
     {%- for method in methods %}
     virtual inline future<rpc::client_context<{{method.output_type}}>>
     {{method.name}}({{method.input_type}}&& r) {
-       return send_typed<{{method.input_type}}, {{method.output_type}}>(std::move(r), {{method.id}});
+       return _transport.send_typed<{{method.input_type}}, {{method.output_type}}>(std::move(r), {{method.id}});
     }
     {%- endfor %}
+
+private:
+    rpc::transport& _transport;
 };
 
 class {{service_name}}_service::failure_probes final : public finjector::probe {
