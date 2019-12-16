@@ -1,14 +1,16 @@
-#include "raft/reconnect_client.h"
+#include "rpc/reconnect_transport.h"
 
-#include "raft/errc.h"
 #include "raft/logger.h"
+#include "rpc/transport.h"
+#include "rpc/errc.h"
+#include "rpc/logger.h"
 
 #include <seastar/net/inet_address.hh>
 
 #include <chrono>
 #include <functional>
 
-namespace raft {
+namespace rpc {
 namespace ch = std::chrono; // NOLINT
 
 static inline bool
@@ -21,21 +23,20 @@ has_backoff_expired(rpc::clock_type::time_point stamp, int32_t backoff) {
     return secs >= backoff;
 }
 
-future<> reconnect_client::stop() {
+future<> reconnect_transport::stop() {
     _backoff_secs = std::numeric_limits<uint32_t>::max();
-    return _dispatch_gate.close().then([this] { return _client.stop(); });
+    return _dispatch_gate.close().then([this] { return _transport.stop(); });
 }
 
-future<result<reconnect_client::client_type*>>
-reconnect_client::get_connected() {
+future<result<transport*>> reconnect_transport::get_connected() {
     if (is_valid()) {
-        return make_ready_future<result<client_type*>>(&_client);
+        return make_ready_future<result<transport*>>(&_transport);
     }
     return reconnect();
 }
 
-future<result<reconnect_client::client_type*>> reconnect_client::reconnect() {
-    using ret_t = result<reconnect_client::client_type*>;
+future<result<transport*>> reconnect_transport::reconnect() {
+    using ret_t = result<transport*>;
     if (!has_backoff_expired(_stamp, _backoff_secs)) {
         return make_ready_future<ret_t>(errc::exponential_backoff);
     }
@@ -43,17 +44,18 @@ future<result<reconnect_client::client_type*>> reconnect_client::reconnect() {
     return with_gate(_dispatch_gate, [this] {
         return with_semaphore(_connected_sem, 1, [this] {
             if (is_valid()) {
-                return make_ready_future<ret_t>(&_client);
+                return make_ready_future<ret_t>(&_transport);
             }
-            return _client.connect().then_wrapped([this](future<> f) {
+            return _transport.connect().then_wrapped([this](future<> f) {
                 try {
                     f.get();
-                    raftlog.debug("connected to {}", _client.server_address());
+                    rpclog.debug(
+                      "connected to {}", _transport.server_address());
                     _backoff_secs = 0;
-                    return make_ready_future<ret_t>(&_client);
+                    return make_ready_future<ret_t>(&_transport);
                 } catch (...) {
                     _backoff_secs = next_backoff(_backoff_secs);
-                    raftlog.trace(
+                    rpclog.trace(
                       "error reconnecting {}", std::current_exception());
                     return make_ready_future<ret_t>(
                       errc::disconnected_endpoint);
@@ -62,4 +64,4 @@ future<result<reconnect_client::client_type*>> reconnect_client::reconnect() {
         });
     });
 }
-} // namespace raft
+} // namespace rpc

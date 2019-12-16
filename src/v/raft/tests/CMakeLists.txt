@@ -16,13 +16,6 @@ rp_test(
  )
 rp_test(
   UNIT_TEST
-  BINARY_NAME exponential_backoff
-  SOURCES exponential_backoff.cc
-  DEFINITIONS BOOST_TEST_DYN_LINK
-  LIBRARIES Boost::unit_test_framework raft
-)
-rp_test(
-  UNIT_TEST
   BINARY_NAME log_bootstrap_parsing
   SOURCES bootstrap_configuration_test.cc
   LIBRARIES Seastar::seastar_testing raft

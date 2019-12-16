@@ -56,25 +56,26 @@ seastar::future<> recovery_stm::replicate(std::vector<raft::entry> es) {
                  if (!local.contains(_meta.node_id)) {
                      return make_ready_future<ret_t>(errc::missing_tcp_client);
                  }
-                 using rpc_client = reconnect_client::client_type;
                  return local.get(_meta.node_id)
                    ->get_connected()
-                   .then([r = std::move(r)](result<rpc_client*> cli) mutable {
-                       if (!cli) {
-                           return make_ready_future<ret_t>(cli.error());
-                       }
-                       auto f = cli.value()->append_entries(std::move(r));
-                       return result_with_timeout(
-                                raft::clock_type::now() + 1s,
-                                errc::timeout,
-                                std::move(f))
-                         .then([](auto r) {
-                             if (!r) {
-                                 return make_ready_future<ret_t>(r.error());
-                             }
-                             return make_ready_future<ret_t>(r.value().data);
-                         });
-                   });
+                   .then(
+                     [r = std::move(r)](result<rpc::transport*> cli) mutable {
+                         if (!cli) {
+                             return make_ready_future<ret_t>(cli.error());
+                         }
+                         auto f = raftgen_client_protocol(*cli.value())
+                                    .append_entries(std::move(r));
+                         return result_with_timeout(
+                                  raft::clock_type::now() + 1s,
+                                  errc::timeout,
+                                  std::move(f))
+                           .then([](auto r) {
+                               if (!r) {
+                                   return make_ready_future<ret_t>(r.error());
+                               }
+                               return make_ready_future<ret_t>(r.value().data);
+                           });
+                     });
              })
       .then([this](auto r) {
           if (!r || !r.value().success) {

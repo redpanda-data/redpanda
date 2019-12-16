@@ -4,6 +4,7 @@
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
 #include "raft/logger.h"
+#include "raft/raftgen_service.h"
 
 #include <chrono>
 
@@ -83,13 +84,14 @@ future<result<append_entries_reply>> replicate_entries_stm::do_dispatch_one(
         if (!local.contains(n)) {
             return make_ready_future<ret_t>(errc::missing_tcp_client);
         }
-        using rpc_client = reconnect_client::client_type;
+
         return local.get(n)->get_connected().then(
-          [r = std::move(r)](result<rpc_client*> cli) mutable {
-              if (!cli) {
-                  return make_ready_future<ret_t>(cli.error());
+          [r = std::move(r)](result<rpc::transport*> t) mutable {
+              if (!t) {
+                  return make_ready_future<ret_t>(t.error());
               }
-              auto f = cli.value()->append_entries(std::move(r));
+              auto f = raftgen_client_protocol(*t.value())
+                         .append_entries(std::move(r));
               return result_with_timeout(
                        raft::clock_type::now() + 1s,
                        errc::timeout,

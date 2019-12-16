@@ -40,3 +40,10 @@ rp_test(
   SOURCES rpc_bench.cc
   LIBRARIES Seastar::seastar_perf_testing rpc
 )
+rp_test(
+  UNIT_TEST
+  BINARY_NAME exponential_backoff
+  SOURCES exponential_backoff.cc
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LIBRARIES Boost::unit_test_framework rpc
+)

@@ -8,7 +8,6 @@ rpcgen(
 add_library (raft STATIC
   type_serializers.cc
   consensus.cc
-  reconnect_client.cc
   client_cache.cc
   consensus_utils.cc
   heartbeat_manager.cc
