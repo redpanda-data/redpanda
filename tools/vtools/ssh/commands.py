@@ -12,7 +12,7 @@ def ssh():
               default='info',
               type=click.Choice(['debug', 'info', 'warning', 'error', 'fatal'],
                                 case_sensitive=False))
-def rotate_ssh_keys(log):
+def rotate_keys(log):
     logging.set_verbosity(log)
     if not keys.needs_rotation():
         logging.info("All good!")
