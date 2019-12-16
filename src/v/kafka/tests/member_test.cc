@@ -35,7 +35,7 @@ static join_group_response make_join_response() {
 }
 
 static sync_group_response make_sync_response() {
-    return sync_group_response(bytes("this is some bytes"));
+    return sync_group_response(error_code::none, bytes("this is some bytes"));
 }
 
 BOOST_AUTO_TEST_CASE(constructor) {

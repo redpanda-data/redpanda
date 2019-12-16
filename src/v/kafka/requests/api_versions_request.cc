@@ -23,6 +23,7 @@ void api_versions_response::encode(const request_context& ctx, response& resp) {
     auto& writer = resp.writer();
     auto version = ctx.header().version;
 
+    writer.write(int16_t(error));
     writer.write_array(apis, [](const auto& api, response_writer& wr) {
         wr.write(int16_t(api.key()));
         wr.write(int16_t(api.min_version()));
@@ -36,6 +37,8 @@ void api_versions_response::encode(const request_context& ctx, response& resp) {
 
 void api_versions_response::decode(iobuf buf, api_version version) {
     request_reader reader(std::move(buf));
+
+    error = error_code{reader.read_int16()};
     apis = reader.read_array([](request_reader& reader) {
         return api{
           .key = api_key(reader.read_int16()),

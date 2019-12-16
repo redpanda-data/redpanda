@@ -24,16 +24,23 @@ struct leave_group_request final {
     void decode(request_context& ctx);
 };
 
+std::ostream& operator<<(std::ostream&, const leave_group_request&);
+
 struct leave_group_response final {
     std::chrono::milliseconds throttle_time; // >= v1
     error_code error;
 
-    // TODO: throttle will be filled in automatically
     leave_group_response(error_code error)
       : throttle_time(0)
       , error(error) {}
 
     void encode(const request_context& ctx, response& resp);
 };
+
+static inline future<leave_group_response> make_leave_error(error_code error) {
+    return make_ready_future<leave_group_response>(error);
+}
+
+std::ostream& operator<<(std::ostream&, const leave_group_response&);
 
 } // namespace kafka
