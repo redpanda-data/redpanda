@@ -3,8 +3,11 @@ import click
 from absl import logging
 from ..vlib import rotate_ssh_keys as keys
 
+@click.group()
+def ssh():
+    pass
 
-@click.command()
+@ssh.command()
 @click.option('--log',
               default='info',
               type=click.Choice(['debug', 'info', 'warning', 'error', 'fatal'],
