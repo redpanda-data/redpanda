@@ -94,6 +94,12 @@ future<consensus_ptr> controller::start_raft0() {
 
 future<> controller::stop() {
     verify_shard();
+    // in a multi-threaded app this would look like a deadlock waiting to
+    // happen, but it works in seastar: broadcast here only makes the waiters
+    // runnable. they won't actually have a chance to run until after the closed
+    // flag within the gate is set, ensuring that when they wake up they'll
+    // leave the gate after observing that it is closed.
+    _leadership_cond.broadcast();
     return _bg.close();
 }
 
@@ -366,6 +372,7 @@ void controller::leadership_notification() {
         }
         clusterlog.info("Local controller became a leader");
         create_partition_allocator();
+        _leadership_cond.broadcast();
     });
 }
 
@@ -432,4 +439,13 @@ future<> controller::update_clients_cache(
           });
       });
 }
+
+future<> controller::wait_for_leadership() {
+    verify_shard();
+    return with_gate(_bg, [this]() {
+        return _leadership_cond.wait(
+          [this] { return is_leader() || _bg.is_closed(); });
+    });
+}
+
 } // namespace cluster

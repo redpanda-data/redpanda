@@ -24,7 +24,7 @@ BOOST_AUTO_TEST_CASE(test_all_additional_options) {
       .topic = model::topic_view{"test_tp"},
       .partition_count = 5,
       .replication_factor = 5,
-      .config_entries = {
+      .config = {
         {"compression.type", "snappy"},
         {"cleanup.policy", "compact"},
         {"retention.bytes", "1000000"},

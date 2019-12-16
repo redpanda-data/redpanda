@@ -27,16 +27,28 @@ struct partition_assignment {
     model::partition_id partition;
     std::vector<model::node_id> assignments;
 };
+
+struct config_entry {
+    sstring name;
+    sstring value;
+};
+
 /// \brief Part of CreateTopics request from Kafka API
 /// that describes single topic configuration
 struct new_topic_configuration {
-    model::topic_view topic;
-    // using signed int as Kafka protocol defines it to be signed integer
+    model::topic topic;
     int32_t partition_count;
-    // using signed int as Kafka protocol defines it to be signed integer
     int16_t replication_factor;
     std::vector<partition_assignment> assignments;
-    std::unordered_map<sstring, sstring> config_entries;
+    std::vector<config_entry> config;
+
+    std::unordered_map<sstring, sstring> config_map() const {
+        std::unordered_map<sstring, sstring> ret;
+        for (const auto& c : config) {
+            ret.emplace(c.name, c.value);
+        }
+        return ret;
+    }
 
     cluster::topic_configuration to_cluster_type() const {
         cluster::topic_configuration cfg(
@@ -44,6 +56,7 @@ struct new_topic_configuration {
           model::topic{sstring(topic())},
           partition_count,
           replication_factor);
+        auto config_entries = config_map();
         if (auto it = config_entries.find("compression.type");
             it != config_entries.end()) {
             cfg.compression = boost::lexical_cast<model::compression>(

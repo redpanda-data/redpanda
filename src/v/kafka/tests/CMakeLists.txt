@@ -102,3 +102,11 @@ rp_test(
   LIBRARIES Seastar::seastar_testing application raft kafka config
   ARGS "-- -c 1"
 )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME create_topics_test
+  SOURCES create_topics_test.cc
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LIBRARIES Seastar::seastar_testing application raft kafka config
+)

@@ -53,6 +53,11 @@ public:
         }).get0();
     }
 
+    future<> wait_for_controller_leadership() {
+        return app.cntrl_dispatcher.local().dispatch_to_controller(
+          [](cluster::controller& c) { return c.wait_for_leadership(); });
+    }
+
     future<kafka::client> make_kafka_client() {
         return config::shard_local_cfg().kafka_api().resolve().then(
           [](socket_address addr) {
