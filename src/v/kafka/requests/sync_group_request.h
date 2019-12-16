@@ -30,17 +30,30 @@ struct sync_group_request final {
 
     void encode(const request_context& ctx, response_writer& writer);
     void decode(request_context& ctx);
+
+    assignments_type member_assignments() && {
+        assignments_type res;
+        res.reserve(assignments.size());
+        std::for_each(
+          std::begin(assignments),
+          std::end(assignments),
+          [&res](member_assignment& a) mutable {
+              res.emplace(std::move(a.member), std::move(a.assignment));
+          });
+        return res;
+    }
 };
+
+std::ostream& operator<<(std::ostream&, const sync_group_request&);
 
 struct sync_group_response final {
     std::chrono::milliseconds throttle_time; // >= v1
     error_code error;
     bytes assignment;
 
-    // TODO: throttle will be filled in automatically
-    explicit sync_group_response(bytes assignment)
+    sync_group_response(error_code error, bytes assignment)
       : throttle_time(0)
-      , error(error_code::none)
+      , error(error)
       , assignment(assignment) {}
 
     explicit sync_group_response(error_code error)
@@ -49,5 +62,11 @@ struct sync_group_response final {
 
     void encode(const request_context& ctx, response& resp);
 };
+
+static inline future<sync_group_response> make_sync_error(error_code error) {
+    return make_ready_future<sync_group_response>(error);
+}
+
+std::ostream& operator<<(std::ostream&, const sync_group_response&);
 
 } // namespace kafka

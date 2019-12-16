@@ -1,7 +1,11 @@
 #pragma once
+#include "config/configuration.h"
 #include "kafka/errors.h"
 #include "kafka/groups/member.h"
+#include "kafka/requests/heartbeat_request.h"
 #include "kafka/requests/join_group_request.h"
+#include "kafka/requests/leave_group_request.h"
+#include "kafka/requests/sync_group_request.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "seastarx.h"
@@ -18,6 +22,8 @@
 #include <vector>
 
 namespace kafka {
+
+inline logger kglog{"k/group"};
 
 /**
  * \defgroup kafka-groups Kafka group membership API
@@ -37,6 +43,14 @@ namespace kafka {
  * implementation are not ideal. However, most of the names directly correspond
  * to their counterparts in the Kafka implementation. This equivalence has
  * proven generally useful when comparing implementations.
+ *
+ * join_timer: the group contains a timer called the join timer. this timer
+ * controls group state transitions in a couple scenarios. for a new group it
+ * delays transition as long as members continue to join within in a time bound.
+ * this delay implements a debouncing optimization. the new_member_added flag
+ * tracks this scenario and is inspected in the timer callback. the delay is
+ * also used to wait for all members to join before either rebalancing or
+ * removing inactive members.
  *
  * \addtogroup kafka-groups
  * @{
@@ -69,13 +83,16 @@ std::ostream& operator<<(std::ostream&, group_state gs);
 /// Container of members.
 class group {
 public:
-    using duration_type = lowres_clock::duration;
+    using clock_type = lowres_clock;
+    using duration_type = clock_type::duration;
 
-    group(kafka::group_id id, group_state s)
+    group(kafka::group_id id, group_state s, config::configuration& conf)
       : _id(id)
       , _state(s)
       , _generation(0)
-      , _num_members_joining(0) {}
+      , _num_members_joining(0)
+      , _new_member_added(false)
+      , _conf(conf) {}
 
     /// Get the group id.
     const kafka::group_id& id() const { return _id; }
@@ -86,8 +103,12 @@ public:
     /// Check if the group is in a given state.
     bool in_state(group_state s) const { return _state == s; }
 
-    /// Transition the group to a new state.
-    void set_state(group_state s);
+    /**
+     * \brief Transition the group to a new state.
+     *
+     * Returns the previous state.
+     */
+    group_state set_state(group_state s);
 
     /// Return the generation of the group.
     kafka::generation_id generation() const { return _generation; }
@@ -125,9 +146,7 @@ public:
         return _pending_members.find(member) != _pending_members.end();
     }
 
-    void remove_pending_member(const kafka::member_id& member_id) {
-        _pending_members.erase(member_id);
-    }
+    void remove_pending_member(const kafka::member_id& member_id);
 
     /// Check if a member id refers to the group leader.
     bool is_leader(const kafka::member_id& member_id) const {
@@ -189,13 +208,6 @@ public:
     duration_type rebalance_timeout() const;
 
     /**
-     * \brief Remove members that have not rejoined the group.
-     *
-     * When a member is removed any pending heartbeat timers will be cancelled.
-     */
-    void remove_unjoined_members();
-
-    /**
      * \brief Return member metadata for the group's selected protocol.
      *
      * This is used at the end of the join phase to generate the group leader's
@@ -248,24 +260,6 @@ public:
     kafka::protocol_name select_protocol() const;
 
     /**
-     * \brief Fulfill joining members' response promise.
-     *
-     * Joining members may be delayed waiting for other members to join or to
-     * implement join debouncing for efficiency. This method is called after the
-     * join process completes and generates join responses for each member.
-     */
-    void finish_joining_members();
-
-    /**
-     * \brief Fufill syncing members' response promise.
-     *
-     * A syncing member waits on a future that is fulfilled once the group
-     * leader has reported member assignments. This method is called by the
-     * leader to set the value on the associated promise.
-     */
-    void finish_syncing_members(error_code error) const;
-
-    /**
      * \brief Get the group's associated partition.
      *
      * TODO:
@@ -292,6 +286,61 @@ public:
      */
     static kafka::member_id generate_member_id(const join_group_request& r);
 
+    /// Handle join entry point.
+    future<join_group_response> handle_join_group(join_group_request&& r);
+
+    /// Handle join of an unknown member.
+    future<join_group_response>
+    join_group_unknown_member(join_group_request&& request);
+
+    /// Handle join of a known member.
+    future<join_group_response>
+    join_group_known_member(join_group_request&& request);
+
+    /// Add a new member and initiate a rebalance.
+    future<join_group_response> add_member_and_rebalance(
+      kafka::member_id member_id, join_group_request&& request);
+
+    /// Update an existing member and rebalance.
+    future<join_group_response> update_member_and_rebalance(
+      member_ptr member, join_group_request&& request);
+
+    /// Transition to preparing rebalance if possible.
+    void try_prepare_rebalance();
+
+    /// Finalize the join phase.
+    void complete_join();
+
+    /// Handle a heartbeat expiration.
+    void heartbeat_expire(
+      kafka::member_id member_id, clock_type::time_point deadline);
+
+    /// Send response to joining member.
+    void try_finish_joining_member(
+      member_ptr member, join_group_response&& response);
+
+    /// Restart the member heartbeat timer.
+    void schedule_next_heartbeat_expiration(member_ptr member);
+
+    /// Removes a full member and may rebalance.
+    void remove_member(member_ptr member);
+
+    /// Handle a group sync request.
+    future<sync_group_response> handle_sync_group(sync_group_request&& r);
+
+    /// Handle sync group in completing rebalance state.
+    future<sync_group_response> sync_group_completing_rebalance(
+      member_ptr member, sync_group_request&& request);
+
+    /// Complete syncing for members.
+    void finish_syncing_members(error_code error);
+
+    /// Handle a heartbeat request.
+    future<heartbeat_response> handle_heartbeat(heartbeat_request&& r);
+
+    /// Handle a leave group request.
+    future<leave_group_response> handle_leave_group(leave_group_request&& r);
+
 private:
     using member_map = std::unordered_map<kafka::member_id, member_ptr>;
     using protocol_support = std::unordered_map<kafka::protocol_name, int>;
@@ -307,6 +356,9 @@ private:
     std::optional<kafka::protocol_type> _protocol_type;
     std::optional<kafka::protocol_name> _protocol;
     std::optional<kafka::member_id> _leader;
+    timer<clock_type> _join_timer;
+    bool _new_member_added;
+    config::configuration& _conf;
 };
 
 using group_ptr = lw_shared_ptr<group>;

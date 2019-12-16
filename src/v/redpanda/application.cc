@@ -178,7 +178,11 @@ void application::wire_up_services() {
 
     // group membership
     syschecks::systemd_message("Creating partition manager");
-    construct_service(_group_manager, std::ref(partition_manager)).get();
+    construct_service(
+      _group_manager,
+      std::ref(partition_manager),
+      std::ref(config::shard_local_cfg()))
+      .get();
     syschecks::systemd_message("Creating kafka group shard mapper");
     construct_service(_group_shard_mapper, std::ref(shard_table)).get();
     syschecks::systemd_message("Creating kafka group router");

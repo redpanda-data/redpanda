@@ -72,6 +72,23 @@ struct join_group_response final {
     void encode(const request_context& ctx, response& resp);
 };
 
+static inline const kafka::member_id no_member("");
+static inline const kafka::member_id no_leader("");
+static constexpr kafka::generation_id no_generation(-1);
+static inline const kafka::protocol_name no_protocol("");
+
+static inline join_group_response
+_make_join_error(kafka::member_id member_id, error_code error) {
+    return join_group_response(
+      error, no_generation, no_protocol, no_leader, std::move(member_id));
+}
+
+static inline future<join_group_response>
+make_join_error(kafka::member_id member_id, error_code error) {
+    return make_ready_future<join_group_response>(
+      _make_join_error(member_id, error));
+}
+
 std::ostream& operator<<(std::ostream&, const join_group_response&);
 
 } // namespace kafka

@@ -1,6 +1,7 @@
 #include "config/configuration.h"
 
 namespace config {
+using namespace std::chrono_literals;
 
 configuration::configuration()
   : data_directory(
@@ -126,7 +127,37 @@ configuration::configuration()
       "advertised_rpc_api",
       "Address of RPC endpoint published to other cluster members",
       required::no,
-      std::nullopt) {}
+      std::nullopt)
+  , group_min_session_timeout_ms(
+      *this,
+      "group_min_session_timeout_ms",
+      "The minimum allowed session timeout for registered consumers. Shorter "
+      "timeouts result in quicker failure detection at the cost of more "
+      "frequent "
+      "consumer heartbeating, which can overwhelm broker resources.",
+      required::no,
+      6000ms)
+  , group_max_session_timeout_ms(
+      *this,
+      "group_max_session_timeout_ms",
+      "The maximum allowed session timeout for registered consumers. Longer "
+      "timeouts give consumers more time to process messages in between "
+      "heartbeats at the cost of a longer time to detect failures. "
+      "Default quota tracking window size in milliseconds",
+      required::no,
+      30'000ms)
+  , group_initial_rebalance_delay(
+      *this,
+      "group_initial_rebalance_delay",
+      "Extra delay (ms) added to rebalance phase to wait for new members",
+      required::no,
+      300ms)
+  , group_new_member_join_timeout(
+      *this,
+      "group_new_member_join_timeout",
+      "Timeout for new member joins",
+      required::no,
+      30'000ms) {}
 
 void configuration::read_yaml(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {

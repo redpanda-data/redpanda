@@ -17,7 +17,8 @@ set(request_srcs
 
 set(group_srcs
   groups/member.cc
-  groups/group.cc)
+  groups/group.cc
+  groups/group_manager.cc)
 
 add_library(kafka STATIC
   ${request_srcs}
