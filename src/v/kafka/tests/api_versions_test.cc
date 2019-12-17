@@ -11,10 +11,12 @@
 FIXTURE_TEST(get_api_versions, redpanda_thread_fixture) {
     auto client = make_kafka_client().get0();
     client.connect().get();
-    auto received = client.api_versions().get0();
+
+    kafka::api_versions_request request;
+    auto response = client.dispatch(request, kafka::api_version(0)).get0();
     client.stop().then([&client] { client.shutdown(); }).get();
-    BOOST_REQUIRE(!received.apis.empty());
+    BOOST_REQUIRE(!response.apis.empty());
 
     auto expected = kafka::get_supported_apis();
-    BOOST_TEST(received.apis == expected);
+    BOOST_TEST(response.apis == expected);
 }
