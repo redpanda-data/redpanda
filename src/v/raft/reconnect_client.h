@@ -17,7 +17,7 @@ public:
           300, std::max<uint32_t>(1, current_backoff) << 1);
     }
 
-    explicit reconnect_client(rpc::client_configuration c)
+    explicit reconnect_client(rpc::transport_configuration c)
       : _client(std::move(c)) {}
 
     bool is_valid() const { return _client.is_valid(); }

@@ -59,7 +59,7 @@ public:
     using promise_t = promise<std::unique_ptr<streaming_context>>;
 
     explicit transport(
-      client_configuration c,
+      transport_configuration c,
       std::optional<sstring> service_name = std::nullopt);
     transport(transport&&) = default;
     virtual ~transport();
@@ -116,7 +116,7 @@ template<typename... Protocol>
 CONCEPT(requires(RpcClientProtocol<Protocol>&&...))
 class client : public Protocol... {
 public:
-    client(client_configuration cfg)
+    client(transport_configuration cfg)
       : _transport(std::move(cfg))
       , Protocol(_transport)... {}
 

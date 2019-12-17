@@ -27,7 +27,7 @@ public:
 
     /// \brief needs to be a future, because mutations may come from different
     /// fibers and they need to be synchronized
-    future<> emplace(model::node_id n, rpc::client_configuration c);
+    future<> emplace(model::node_id n, rpc::transport_configuration c);
     future<> remove(model::node_id n);
 
     /// \brief closes all client connections

@@ -45,7 +45,7 @@ struct load_gen_cfg {
     std::size_t value_size;
     std::size_t concurrency;
     std::size_t parallelism;
-    rpc::client_configuration client_cfg;
+    rpc::transport_configuration client_cfg;
     sharded<hdr_hist>* hist;
 };
 
@@ -133,7 +133,7 @@ private:
 
 inline load_gen_cfg cfg_from_opts_in_thread(
   boost::program_options::variables_map& m, sharded<hdr_hist>* h) {
-    rpc::client_configuration client_cfg;
+    rpc::transport_configuration client_cfg;
     client_cfg.server_addr = socket_address(
       ipv4_addr(m["ip"].as<std::string>(), m["port"].as<uint16_t>()));
     auto ca_cert = m["ca-cert"].as<std::string>();

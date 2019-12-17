@@ -2,7 +2,7 @@ add_library (rpc STATIC
   types.cc
   netbuf.cc
   server.cc
-  client.cc
+  transport.cc
   connection.cc
   batched_output_stream.cc
   probes.cc
