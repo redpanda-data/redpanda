@@ -2,6 +2,7 @@
 
 #include "cluster/types.h"
 #include "raft/consensus.h"
+#include "raft/types.h"
 
 namespace cluster {
 class partition_manager;
@@ -16,7 +17,7 @@ public:
     future<> start() { return _raft->start(); }
     future<> stop() { return _raft->stop(); }
 
-    future<> replicate(raft::entry&& e) {
+    future<result<raft::replicate_result>> replicate(raft::entry&& e) {
         return _raft->replicate(std::move(e));
     }
     const model::ntp& ntp() const { return _raft->ntp(); }

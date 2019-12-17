@@ -110,30 +110,34 @@ void consensus::process_heartbeat(
     //
 }
 
-future<> consensus::replicate(raft::entry&& e) {
+future<result<replicate_result>> consensus::replicate(raft::entry&& e) {
     std::vector<raft::entry> entries;
     entries.reserve(1);
     entries.push_back(std::move(e));
     return replicate(std::move(entries));
 }
 
-future<> consensus::replicate(std::vector<raft::entry>&& e) {
+future<result<replicate_result>>
+consensus::replicate(std::vector<raft::entry>&& e) {
     return with_semaphore(_op_sem, 1, [this, e = std::move(e)]() mutable {
         return do_replicate(std::move(e));
     });
 }
 
-future<> consensus::do_replicate(std::vector<raft::entry>&& e) {
+future<result<replicate_result>>
+consensus::do_replicate(std::vector<raft::entry>&& e) {
     if (!is_leader()) {
-        return make_exception_future<>(std::runtime_error(fmt::format(
-          "Not the leader(self.node_id:{}, meta:{}). Cannot "
-          "consensus::replicate(entry&&)",
-          _self,
-          _meta.group)));
+        return make_exception_future<result<replicate_result>>(
+          std::runtime_error(fmt::format(
+            "Not the leader(self.node_id:{}, meta:{}). Cannot "
+            "consensus::replicate(entry&&)",
+            _self,
+            _meta.group)));
     }
 
     if (_bg.is_closed()) {
-        return make_exception_future<>(gate_closed_exception());
+        return make_exception_future<result<replicate_result>>(
+          gate_closed_exception());
     }
 
     return with_gate(_bg, [this, e = std::move(e)]() mutable {
@@ -469,7 +473,7 @@ future<> consensus::replicate_configuration(group_configuration cfg) {
     auto cfg_entry = details::serialize_configuration(std::move(cfg));
     std::vector<raft::entry> e;
     e.push_back(std::move(cfg_entry));
-    return do_replicate(std::move(e));
+    return do_replicate(std::move(e)).discard_result();
 }
 
 append_entries_reply consensus::make_append_entries_reply(
