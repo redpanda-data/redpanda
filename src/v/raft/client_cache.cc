@@ -6,7 +6,7 @@ namespace raft {
 
 /// \brief needs to be a future, because mutations may come from different
 /// fibers and they need to be synchronized
-future<> client_cache::emplace(model::node_id n, rpc::client_configuration c) {
+future<> client_cache::emplace(model::node_id n, rpc::transport_configuration c) {
     if (auto s = shard_for(n); s != engine().cpu_id()) {
         throw std::runtime_error(fmt::format(
           "Cannot ::emplace, node:{}, belonging to shard:{}, on shard:{}",

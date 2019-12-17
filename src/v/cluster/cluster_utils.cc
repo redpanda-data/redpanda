@@ -90,7 +90,7 @@ update_broker_client(sharded<raft::client_cache>& clients, broker_ptr node) {
                 // there is no client in cache, create new
                 return f.then([&cache, id, new_addr = std::move(new_addr)]() {
                     return cache.emplace(
-                      id, rpc::client_configuration{.server_addr = new_addr});
+                      id, rpc::transport_configuration{.server_addr = new_addr});
                 });
             });
       });

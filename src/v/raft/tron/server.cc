@@ -117,7 +117,7 @@ private:
     lw_shared_ptr<raft::consensus> _consensus;
 };
 
-static std::pair<model::node_id, rpc::client_configuration>
+static std::pair<model::node_id, rpc::transport_configuration>
 extract_peer(sstring peer) {
     std::vector<sstring> parts;
     parts.reserve(2);
@@ -126,7 +126,7 @@ extract_peer(sstring peer) {
         throw std::runtime_error(fmt::format("Could not parse peer:{}", peer));
     }
     int32_t n = boost::lexical_cast<int32_t>(parts[0]);
-    rpc::client_configuration cfg;
+    rpc::transport_configuration cfg;
     cfg.server_addr = ipv4_addr(parts[1]);
     return {model::node_id(n), cfg};
 }

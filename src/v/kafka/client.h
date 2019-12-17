@@ -3,7 +3,7 @@
 #include "kafka/requests/fetch_request.h"
 #include "kafka/requests/metadata_request.h"
 #include "kafka/server.h"
-#include "rpc/client.h"
+#include "rpc/transport.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>
