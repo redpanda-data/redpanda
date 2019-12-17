@@ -440,7 +440,8 @@ future<> controller::update_clients_cache(
                         // Do not create client to local broker
                         return make_ready_future<>();
                     }
-                    return update_broker_client(_connection_cache, b);
+                    return update_broker_client(
+                      _connection_cache, b->id(), b->rpc_address());
                 });
             });
       });

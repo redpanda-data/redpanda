@@ -40,6 +40,9 @@ std::vector<topic_result> create_topic_results(
 std::vector<model::broker> get_replica_set_brokers(
   const metadata_cache& md_cache, std::vector<model::broker_shard> replicas);
 
-future<> update_broker_client(sharded<rpc::connection_cache>&, broker_ptr);
+future<> update_broker_client(
+  sharded<rpc::connection_cache>&,
+  model::node_id node,
+  unresolved_address addr);
 future<> remove_broker_client(sharded<rpc::connection_cache>&, model::node_id);
 } // namespace cluster
