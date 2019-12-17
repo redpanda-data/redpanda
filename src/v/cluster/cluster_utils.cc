@@ -57,8 +57,8 @@ std::vector<model::broker> get_replica_set_brokers(
     return brokers;
 }
 
-future<>
-remove_broker_client(sharded<rpc::connection_cache>& clients, model::node_id id) {
+future<> remove_broker_client(
+  sharded<rpc::connection_cache>& clients, model::node_id id) {
     auto shard = rpc::connection_cache::shard_for(id);
     clusterlog.debug(
       "Removing {} broker client from cache at shard {}", id, shard);
@@ -66,31 +66,32 @@ remove_broker_client(sharded<rpc::connection_cache>& clients, model::node_id id)
       shard, [id](rpc::connection_cache& cache) { return cache.remove(id); });
 }
 
-future<>
-update_broker_client(sharded<rpc::connection_cache>& clients, broker_ptr node) {
-    auto shard = rpc::connection_cache::shard_for(node->id());
+future<> update_broker_client(
+  sharded<rpc::connection_cache>& clients,
+  model::node_id node,
+  unresolved_address addr) {
+    auto shard = rpc::connection_cache::shard_for(node);
     clusterlog.debug(
-      "Updating {} broker client cache at shard {} ", node->id(), shard);
+      "Updating {} broker client cache at shard {} ", node, shard);
     return clients.invoke_on(
       shard,
-      [id = node->id(),
-       rpc_address = node->rpc_address()](rpc::connection_cache& cache) {
+      [node, rpc_address = std::move(addr)](rpc::connection_cache& cache) {
           return rpc_address.resolve().then(
-            [id, &cache](socket_address new_addr) {
+            [node, &cache](socket_address new_addr) {
                 auto f = make_ready_future<>();
-                if (cache.contains(id)) {
+                if (cache.contains(node)) {
                     // client is already there, check if configuration changed
-                    if (cache.get(id)->server_address() == new_addr) {
+                    if (cache.get(node)->server_address() == new_addr) {
                         // If configuration did not changed, do nothing
                         return f;
                     }
                     // configuration changed, first remove the client
-                    f = cache.remove(id);
+                    f = cache.remove(node);
                 }
                 // there is no client in cache, create new
-                return f.then([&cache, id, new_addr = std::move(new_addr)]() {
+                return f.then([&cache, node, new_addr = std::move(new_addr)]() {
                     return cache.emplace(
-                      id, rpc::transport_configuration{.server_addr = new_addr});
+                      node, rpc::transport_configuration{.server_addr = new_addr});
                 });
             });
       });
