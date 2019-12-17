@@ -131,6 +131,39 @@ public:
         return dispatch(r, T::api_type::max_supported);
     }
 
+    /*
+     * TODO: the concept here can be improved once we convert all of the request
+     * types to encode their type relationships between api/request/response.
+     */
+    template<typename T>
+    CONCEPT(requires(KafkaRequest<typename T::api_type>))
+    future<typename T::api_type::response_type> dispatch(
+      T r, api_version request_version, api_version response_version) {
+        return send_recv([this, request_version, r = std::move(r)](
+                           response_writer& wr) mutable {
+                   write_header(wr, T::api_type::key, request_version);
+                   r.encode(wr, request_version);
+               })
+          .then([response_version](iobuf buf) {
+              using response_type = typename T::api_type::response_type;
+              response_type r;
+              r.decode(std::move(buf), response_version);
+              return make_ready_future<response_type>(std::move(r));
+          });
+    }
+
+    template<typename T>
+    CONCEPT(requires(KafkaRequest<typename T::api_type>))
+    future<typename T::api_type::response_type> dispatch(T r, api_version ver) {
+        return dispatch(r, ver, ver);
+    }
+
+    template<typename T>
+    CONCEPT(requires(KafkaRequest<typename T::api_type>))
+    future<typename T::api_type::response_type> dispatch(T r) {
+        return dispatch(r, T::api_type::max_supported);
+    }
+
 private:
     void write_header(response_writer& wr, api_key key, api_version version) {
         wr.write(int16_t(key()));
