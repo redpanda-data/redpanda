@@ -4,6 +4,7 @@
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
 #include "raft/logger.h"
+#include "raft/raftgen_service.h"
 
 #include <seastar/core/future-util.hh>
 
@@ -45,7 +46,7 @@ seastar::future<> recovery_stm::do_one_read() {
 
 seastar::future<> recovery_stm::replicate(std::vector<raft::entry> es) {
     using ret_t = result<append_entries_reply>;
-    auto shard = client_cache::shard_for(_meta.node_id);
+    auto shard = rpc::connection_cache::shard_for(_meta.node_id);
     // TODO(agallego) - verify we shouldn't use 'this->_meta' instead of _ptr
     auto r = append_entries_request{
       .node_id = _meta.node_id, .meta = _ptr->_meta, .entries = std::move(es)};

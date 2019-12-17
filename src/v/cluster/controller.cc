@@ -5,7 +5,7 @@
 #include "cluster/simple_batch_builder.h"
 #include "config/configuration.h"
 #include "model/record_batch_reader.h"
-#include "raft/client_cache.h"
+#include "rpc/connection_cache.h"
 #include "resource_mgmt/io_priority.h"
 #include "storage/shard_assignment.h"
 
@@ -23,13 +23,13 @@ controller::controller(
   sharded<partition_manager>& pm,
   sharded<shard_table>& st,
   sharded<metadata_cache>& md_cache,
-  sharded<raft::client_cache>& client_cache)
+  sharded<rpc::connection_cache>& connection_cache)
   : _self(config::make_self_broker(config::shard_local_cfg()))
   , _seed_servers(config::shard_local_cfg().seed_servers())
   , _pm(pm)
   , _st(st)
   , _md_cache(md_cache)
-  , _client_cache(client_cache)
+  , _connection_cache(connection_cache)
   , _raft0(nullptr)
   , _highest_group_id(0) {}
 
@@ -427,7 +427,7 @@ future<> controller::update_clients_cache(
     return do_for_each(
              diff.removed,
              [this](broker_ptr removed) {
-                 return remove_broker_client(_client_cache, removed->id());
+                 return remove_broker_client(_connection_cache, removed->id());
              })
       .then([this, updated = std::move(diff.updated)] {
           return do_for_each(updated, [this](broker_ptr b) {
@@ -435,7 +435,7 @@ future<> controller::update_clients_cache(
                   // Do not create client to local broker
                   return make_ready_future<>();
               }
-              return update_broker_client(_client_cache, b);
+              return update_broker_client(_connection_cache, b);
           });
       });
 }

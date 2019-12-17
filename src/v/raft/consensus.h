@@ -1,8 +1,8 @@
 #pragma once
 
-#include "raft/client_cache.h"
 #include "raft/probe.h"
 #include "raft/timeout_jitter.h"
+#include "rpc/connection_cache.h"
 #include "seastarx.h"
 #include "storage/log.h"
 
@@ -36,7 +36,7 @@ public:
       storage::log_append_config::fsync should_fsync,
       io_priority_class io_priority,
       model::timeout_clock::duration disk_timeout,
-      sharded<client_cache>&,
+      sharded<rpc::connection_cache>&,
       leader_cb_t);
 
     /// Initial call. Allow for internal state recovery
@@ -126,7 +126,7 @@ private:
     storage::log_append_config::fsync _should_fsync;
     io_priority_class _io_priority;
     model::timeout_clock::duration _disk_timeout;
-    sharded<client_cache>& _clients;
+    sharded<rpc::connection_cache>& _clients;
     leader_cb_t _leader_notification;
 
     // _conf is set *both* in ctor with initial configuration

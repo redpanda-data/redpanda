@@ -44,7 +44,7 @@ requests_for_range(const consensus_set& c) {
 }
 
 heartbeat_manager::heartbeat_manager(
-  duration_type timeout, sharded<client_cache>& cls)
+  duration_type timeout, sharded<rpc::connection_cache>& cls)
   : _election_duration(timeout)
   , _clients(cls) {
     _heartbeat_timer.set_callback([this] { dispatch_heartbeats(); });
@@ -66,7 +66,7 @@ future<> heartbeat_manager::do_dispatch_heartbeats(
 }
 
 static future<result<heartbeat_reply>> send_beat(
-  client_cache& local, clock_type::time_point tmo, heartbeat_request&& r) {
+  rpc::connection_cache& local, clock_type::time_point tmo, heartbeat_request&& r) {
     using ret_t = result<heartbeat_reply>;
     if (!local.contains(r.node_id)) {
         return make_ready_future<ret_t>(errc::missing_tcp_client);
@@ -93,7 +93,7 @@ static future<result<heartbeat_reply>> send_beat(
 
 future<> heartbeat_manager::do_heartbeat(
   heartbeat_request&& r, clock_type::time_point next_timeout) {
-    auto shard = client_cache::shard_for(r.node_id);
+    auto shard = rpc::connection_cache::shard_for(r.node_id);
     std::vector<group_id> groups(r.meta.size());
     for (size_t i = 0; i < groups.size(); ++i) {
         groups[i] = group_id(r.meta[i].group);

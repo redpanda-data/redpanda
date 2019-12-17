@@ -4,6 +4,7 @@
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
 #include "raft/logger.h"
+#include "raft/raftgen_service.h"
 
 namespace raft {
 std::ostream& operator<<(std::ostream& o, const vote_stm::vmeta& m) {
@@ -51,7 +52,7 @@ future<result<vote_reply>> vote_stm::do_dispatch_one(model::node_id n) {
         }
         return make_ready_future<ret_t>(std::move(reply));
     }
-    auto shard = raft::client_cache::shard_for(n);
+    auto shard = rpc::connection_cache::shard_for(n);
     return smp::submit_to(shard, [this, n]() mutable {
         auto& local = _ptr->_clients.local();
         if (!local.contains(n)) {

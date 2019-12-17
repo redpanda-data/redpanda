@@ -1,7 +1,7 @@
 #pragma once
 
 #include "outcome.h"
-#include "raft/client_cache.h"
+#include "rpc/connection_cache.h"
 #include "raft/consensus.h"
 #include "raft/types.h"
 
@@ -34,7 +34,7 @@ public:
     using consensus_set = boost::container::
       flat_set<consensus_ptr, details::consensus_ptr_by_group_id>;
 
-    heartbeat_manager(duration_type timeout, sharded<client_cache>&);
+    heartbeat_manager(duration_type timeout, sharded<rpc::connection_cache>&);
 
     void register_group(lw_shared_ptr<consensus>);
     void deregister_group(raft::group_id);
@@ -71,6 +71,6 @@ private:
     /// insertion/deletion happens very infrequently.
     /// this is optimized for traversal + finding
     consensus_set _consensus_groups;
-    sharded<client_cache>& _clients;
+    sharded<rpc::connection_cache>& _clients;
 };
 } // namespace raft

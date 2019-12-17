@@ -3,7 +3,7 @@
 #include "cluster/logger.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/types.h"
-#include "raft/client_cache.h"
+#include "rpc/connection_cache.h"
 
 namespace cluster {
 brokers_diff calculate_changed_brokers(
@@ -58,23 +58,23 @@ std::vector<model::broker> get_replica_set_brokers(
 }
 
 future<>
-remove_broker_client(sharded<raft::client_cache>& clients, model::node_id id) {
-    auto shard = raft::client_cache::shard_for(id);
+remove_broker_client(sharded<rpc::connection_cache>& clients, model::node_id id) {
+    auto shard = rpc::connection_cache::shard_for(id);
     clusterlog.debug(
       "Removing {} broker client from cache at shard {}", id, shard);
     return clients.invoke_on(
-      shard, [id](raft::client_cache& cache) { return cache.remove(id); });
+      shard, [id](rpc::connection_cache& cache) { return cache.remove(id); });
 }
 
 future<>
-update_broker_client(sharded<raft::client_cache>& clients, broker_ptr node) {
-    auto shard = raft::client_cache::shard_for(node->id());
+update_broker_client(sharded<rpc::connection_cache>& clients, broker_ptr node) {
+    auto shard = rpc::connection_cache::shard_for(node->id());
     clusterlog.debug(
       "Updating {} broker client cache at shard {} ", node->id(), shard);
     return clients.invoke_on(
       shard,
       [id = node->id(),
-       rpc_address = node->rpc_address()](raft::client_cache& cache) {
+       rpc_address = node->rpc_address()](rpc::connection_cache& cache) {
           return rpc_address.resolve().then(
             [id, &cache](socket_address new_addr) {
                 auto f = make_ready_future<>();
