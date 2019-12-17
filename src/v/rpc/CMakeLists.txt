@@ -8,6 +8,7 @@ add_library (rpc STATIC
   probes.cc
   logger.cc
   reconnect_transport.cc
+  connection_cache.cc
   )
 target_link_libraries(rpc PUBLIC Seastar::seastar bytes rphashing utils)
 add_subdirectory(test)

@@ -68,7 +68,7 @@ private:
     logger _log{"redpanda::main"};
 
     // sharded services
-    sharded<raft::client_cache> _raft_client_cache;
+    sharded<rpc::connection_cache> _raft_connection_cache;
     sharded<kafka::group_manager> _group_manager;
     sharded<kafka::group_shard_mapper<cluster::shard_table>>
       _group_shard_mapper;

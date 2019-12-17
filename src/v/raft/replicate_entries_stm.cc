@@ -78,7 +78,7 @@ future<result<append_entries_reply>> replicate_entries_stm::do_dispatch_one(
                 _req.meta, std::move(append_res)));
           });
     }
-    auto shard = client_cache::shard_for(n);
+    auto shard = rpc::connection_cache::shard_for(n);
     return smp::submit_to(shard, [this, n, r = std::move(req)]() mutable {
         auto& local = _ptr->_clients.local();
         if (!local.contains(n)) {

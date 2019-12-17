@@ -1,16 +1,15 @@
 #pragma once
-
 #include "hashing/jump_consistent_hash.h"
-#include "raft/raftgen_service.h"
-#include "raft/types.h"
+#include "model/metadata.h"
+#include "rpc/connection.h"
 #include "rpc/reconnect_transport.h"
 
 #include <seastar/core/shared_ptr.hh>
 
 #include <unordered_map>
 
-namespace raft {
-class client_cache final {
+namespace rpc {
+class connection_cache final {
 public:
     using transport_ptr = lw_shared_ptr<rpc::reconnect_transport>;
     using underlying = std::unordered_map<model::node_id, transport_ptr>;
@@ -18,7 +17,7 @@ public:
 
     static inline shard_id shard_for(const model::node_id&);
 
-    client_cache() = default;
+    connection_cache() = default;
     bool contains(model::node_id n) const {
         return _cache.find(n) != _cache.end();
     }
@@ -29,15 +28,15 @@ public:
     future<> emplace(model::node_id n, rpc::transport_configuration c);
     future<> remove(model::node_id n);
 
-    /// \brief closes all client connections
+    /// \brief closes all connections
     future<> stop();
 
 private:
     semaphore _sem{1}; // to add/remove nodes
     underlying _cache;
 };
-inline shard_id client_cache::shard_for(const model::node_id& b) {
+inline shard_id connection_cache::shard_for(const model::node_id& b) {
     auto h = ::std::hash<model::node_id>()(b);
     return jump_consistent_hash(h, smp::count);
 }
-} // namespace raft
+} // namespace rpc
