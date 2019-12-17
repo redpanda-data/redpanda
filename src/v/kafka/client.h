@@ -65,18 +65,6 @@ private:
 public:
     using rpc::base_transport::base_transport;
 
-    future<api_versions_response> api_versions() {
-        return send_recv([this](response_writer& wr) mutable {
-                   // just the header: the api version request is empty
-                   write_header(wr, api_versions_api::key, api_version(0));
-               })
-          .then([](iobuf buf) {
-              api_versions_response r;
-              r.decode(std::move(buf), api_version(0));
-              return r;
-          });
-    }
-
     future<fetch_response> fetch(fetch_request r) {
         return send_recv([this, r = std::move(r)](response_writer& wr) mutable {
                    write_header(wr, fetch_api::key, api_version(4));
