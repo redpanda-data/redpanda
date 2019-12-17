@@ -20,7 +20,7 @@ public:
 
     /// assumes that this is operating under the consensus::_op_sem lock
     /// returns after majority have responded
-    future<> apply();
+    future<result<replicate_result>> apply();
 
     /// waits for the remaining background futures
     future<> wait();

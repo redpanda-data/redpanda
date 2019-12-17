@@ -162,6 +162,10 @@ struct [[gnu::packed]] vote_reply {
     unaligned<bool> log_ok = false;
 };
 
+struct replicate_result {
+    model::offset last_offset;
+};
+
 static inline std::ostream&
 operator<<(std::ostream& o, const protocol_metadata& m) {
     return o << "{raft_group:" << m.group << ", commit_index:" << m.commit_index
