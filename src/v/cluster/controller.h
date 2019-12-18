@@ -14,7 +14,7 @@
 #include <seastar/core/condition-variable.hh>
 
 namespace raft {
-class client_cache;
+class connection_cache;
 }
 
 namespace cluster {
@@ -35,7 +35,7 @@ public:
       sharded<partition_manager>&,
       sharded<shard_table>&,
       sharded<metadata_cache>&,
-      sharded<raft::client_cache>&);
+      sharded<rpc::connection_cache>&);
 
     future<> start();
     future<> stop();
@@ -116,7 +116,7 @@ private:
     sharded<partition_manager>& _pm;
     sharded<shard_table>& _st;
     sharded<metadata_cache>& _md_cache;
-    sharded<raft::client_cache>& _client_cache;
+    sharded<rpc::connection_cache>& _connection_cache;
     raft::consensus* _raft0;
     raft::group_id _highest_group_id;
     bool _recovered = false;

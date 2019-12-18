@@ -2,6 +2,8 @@
 
 #include "outcome_future_utils.h"
 #include "raft/errc.h"
+#include "raft/raftgen_service.h"
+#include "rpc/reconnect_transport.h"
 
 #include <boost/range/iterator_range.hpp>
 
@@ -42,7 +44,7 @@ requests_for_range(const consensus_set& c) {
 }
 
 heartbeat_manager::heartbeat_manager(
-  duration_type timeout, sharded<client_cache>& cls)
+  duration_type timeout, sharded<rpc::connection_cache>& cls)
   : _election_duration(timeout)
   , _clients(cls) {
     _heartbeat_timer.set_callback([this] { dispatch_heartbeats(); });
@@ -64,19 +66,20 @@ future<> heartbeat_manager::do_dispatch_heartbeats(
 }
 
 static future<result<heartbeat_reply>> send_beat(
-  client_cache& local, clock_type::time_point tmo, heartbeat_request&& r) {
+  rpc::connection_cache& local, clock_type::time_point tmo, heartbeat_request&& r) {
     using ret_t = result<heartbeat_reply>;
     if (!local.contains(r.node_id)) {
         return make_ready_future<ret_t>(errc::missing_tcp_client);
     }
-    using rpc_client = reconnect_client::client_type;
+
     return local.get(r.node_id)->get_connected().then(
-      [tmo, r = std::move(r)](result<rpc_client*> cli) mutable {
-          if (!cli) {
-              return make_ready_future<ret_t>(cli.error());
+      [tmo, r = std::move(r)](result<rpc::transport*> t) mutable {
+          if (!t) {
+              return make_ready_future<ret_t>(t.error());
           }
           hbeatlog.trace("sending hbeats {}", r);
-          auto f = cli.value()->heartbeat(std::move(r));
+          auto f
+            = raftgen_client_protocol(*(t.value())).heartbeat(std::move(r));
           return result_with_timeout(tmo, errc::timeout, std::move(f))
             .then([](auto r) {
                 if (!r) {
@@ -90,7 +93,7 @@ static future<result<heartbeat_reply>> send_beat(
 
 future<> heartbeat_manager::do_heartbeat(
   heartbeat_request&& r, clock_type::time_point next_timeout) {
-    auto shard = client_cache::shard_for(r.node_id);
+    auto shard = rpc::connection_cache::shard_for(r.node_id);
     std::vector<group_id> groups(r.meta.size());
     for (size_t i = 0; i < groups.size(); ++i) {
         groups[i] = group_id(r.meta[i].group);

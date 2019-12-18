@@ -15,7 +15,7 @@ public:
       storage::log_append_config::fsync should_fsync,
       model::timeout_clock::duration disk_timeout,
       sharded<cluster::shard_table>& nlc,
-      sharded<raft::client_cache>& clients);
+      sharded<rpc::connection_cache>& clients);
 
     using leader_cb_t = noncopyable_function<void(lw_shared_ptr<partition>)>;
 
@@ -56,7 +56,7 @@ private:
     gate _bg;
 
     sharded<cluster::shard_table>& _shard_table;
-    sharded<raft::client_cache>& _clients;
+    sharded<rpc::connection_cache>& _clients;
 
     std::vector<leader_cb_t> _notifications;
     // XXX use intrusive containers here

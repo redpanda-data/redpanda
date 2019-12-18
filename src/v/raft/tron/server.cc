@@ -2,7 +2,7 @@
 
 #include "utils/unresolved_address.h"
 #include "platform/stop_signal.h"
-#include "raft/client_cache.h"
+#include "rpc/connection_cache.h"
 #include "raft/consensus.h"
 #include "raft/heartbeat_manager.h"
 #include "raft/logger.h"
@@ -66,7 +66,7 @@ public:
       model::node_id self,
       sstring directory,
       std::chrono::milliseconds raft_timeout,
-      sharded<raft::client_cache>& clients)
+      sharded<rpc::connection_cache>& clients)
       : _self(self)
       , _mngr(storage::log_config{
           .base_dir = directory,
@@ -109,7 +109,7 @@ private:
     model::node_id _self;
     storage::log_manager _mngr;
     raft::heartbeat_manager _hbeats;
-    sharded<raft::client_cache>& _clients;
+    sharded<rpc::connection_cache>& _clients;
     model::ntp _ntp{
       model::ns("master_control_program"),
       model::topic_partition{model::topic("tron"),
@@ -117,7 +117,7 @@ private:
     lw_shared_ptr<raft::consensus> _consensus;
 };
 
-static std::pair<model::node_id, rpc::client_configuration>
+static std::pair<model::node_id, rpc::transport_configuration>
 extract_peer(sstring peer) {
     std::vector<sstring> parts;
     parts.reserve(2);
@@ -126,16 +126,16 @@ extract_peer(sstring peer) {
         throw std::runtime_error(fmt::format("Could not parse peer:{}", peer));
     }
     int32_t n = boost::lexical_cast<int32_t>(parts[0]);
-    rpc::client_configuration cfg;
+    rpc::transport_configuration cfg;
     cfg.server_addr = ipv4_addr(parts[1]);
     return {model::node_id(n), cfg};
 }
 
-static void initialize_client_cache_in_thread(
-  sharded<raft::client_cache>& cache, std::vector<sstring> opts) {
+static void initialize_connection_cache_in_thread(
+  sharded<rpc::connection_cache>& cache, std::vector<sstring> opts) {
     for (auto& i : opts) {
         auto [node, cfg] = extract_peer(i);
-        auto shard = raft::client_cache::shard_for(node);
+        auto shard = rpc::connection_cache::shard_for(node);
         smp::submit_to(shard, [&cache, shard, n = node, config = cfg] {
             tronlog.info("shard: {} owns {}->{}", shard, n, config.server_addr);
             return cache.local().emplace(n, config);
@@ -189,7 +189,7 @@ int main(int args, char** argv, char** env) {
     syschecks::initialize_intrinsics();
     std::setvbuf(stdout, nullptr, _IOLBF, 1024);
     seastar::sharded<rpc::server> serv;
-    seastar::sharded<raft::client_cache> client_cache;
+    seastar::sharded<rpc::connection_cache> connection_cache;
     seastar::sharded<simple_group_manager> group_manager;
     seastar::app_template app;
     cli_opts(app.add_options());
@@ -202,9 +202,9 @@ int main(int args, char** argv, char** env) {
             storage::stlog.trace("ack");
             stop_signal app_signal;
             auto& cfg = app.configuration();
-            client_cache.start().get();
+            connection_cache.start().get();
             auto ccd = seastar::defer(
-              [&client_cache] { client_cache.stop().get(); });
+              [&connection_cache] { connection_cache.stop().get(); });
             rpc::server_configuration scfg;
             scfg.addrs.push_back(socket_address(
               net::inet_address(cfg["ip"].as<sstring>()),
@@ -220,8 +220,8 @@ int main(int args, char** argv, char** env) {
                   .get();
                 scfg.credentials = std::move(builder);
             }
-            initialize_client_cache_in_thread(
-              client_cache, cfg["peers"].as<std::vector<sstring>>());
+            initialize_connection_cache_in_thread(
+              connection_cache, cfg["peers"].as<std::vector<sstring>>());
 
             const sstring workdir = fmt::format(
               "{}/greetings-{}",
@@ -236,7 +236,7 @@ int main(int args, char** argv, char** env) {
                 workdir,
                 std::chrono::milliseconds(
                   cfg["heartbeat-timeout-ms"].as<int32_t>()),
-                std::ref(client_cache))
+                std::ref(connection_cache))
               .get();
             serv.start(scfg).get();
             auto dserv = seastar::defer([&serv] { serv.stop().get(); });

@@ -204,7 +204,7 @@ private:
     model::ns _test_ns{"test_ns"};
     sstring _base_dir;
     model::broker _current_node;
-    sharded<raft::client_cache> _cli_cache;
+    sharded<rpc::connection_cache> _cli_cache;
     sharded<cluster::metadata_cache> _md_cache;
     sharded<cluster::shard_table> st;
     sharded<cluster::partition_manager> _pm;
