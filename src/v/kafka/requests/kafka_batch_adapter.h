@@ -43,6 +43,6 @@ private:
     sstring what_;
 };
 
-model::record_batch_reader reader_from_kafka_batch(iobuf&&);
+std::pair<model::record_batch_reader, int32_t> reader_from_kafka_batch(iobuf&&);
 
 } // namespace kafka

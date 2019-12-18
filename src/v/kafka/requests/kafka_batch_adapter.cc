@@ -96,8 +96,10 @@ read_records(iobuf::iterator_consumer& in, iobuf& b, size_t num_records) {
     return rs;
 }
 
-model::record_batch_reader reader_from_kafka_batch(iobuf&& kbatch) {
+std::pair<model::record_batch_reader, int32_t>
+reader_from_kafka_batch(iobuf&& kbatch) {
     auto in = iobuf::iterator_consumer(kbatch.cbegin(), kbatch.cend());
+    int32_t num_records = 0;
     std::vector<model::record_batch> ret;
     while (!in.is_finished()) {
         if (!ret.empty()) {
@@ -107,7 +109,7 @@ model::record_batch_reader reader_from_kafka_batch(iobuf&& kbatch) {
         }
 
         auto [header, batch_length] = read_header(in);
-        auto num_records = request_reader::_read_int32(in);
+        num_records = request_reader::_read_int32(in);
 
         model::record_batch::records_type records;
         if (header.attrs.compression() != model::compression::none) {
@@ -121,7 +123,8 @@ model::record_batch_reader reader_from_kafka_batch(iobuf&& kbatch) {
         }
         ret.emplace_back(std::move(header), std::move(records));
     }
-    return model::make_memory_record_batch_reader(std::move(ret));
+    return std::make_pair(
+      model::make_memory_record_batch_reader(std::move(ret)), num_records);
 }
 
 } // namespace kafka

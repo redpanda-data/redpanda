@@ -307,7 +307,8 @@ future<std::vector<topic_result>> controller::create_topics(
 
     // Do append entries to raft0 logs
     auto f = _raft0->replicate(std::move(entries))
-               .then_wrapped([topics = std::move(topics)](future<> f) {
+               .then_wrapped([topics = std::move(topics)](
+                               future<result<raft::replicate_result>> f) {
                    bool success = true;
                    try {
                        f.get();

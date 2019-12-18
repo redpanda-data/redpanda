@@ -128,36 +128,28 @@ static future<produce_response::partition> partition_append(
   std::optional<iobuf> data) {
     // parses and validates the record batch and prepares it for being
     // replicated by raft.
-    auto reader = reader_from_kafka_batch(std::move(data.value()));
+    auto [reader, num_records] = reader_from_kafka_batch(
+      std::move(data.value()));
     raft::entry e(raft::data_batch_type, std::move(reader));
 
-#if 0
-    partition->replicate(std::move(e));
-#else
-#warning "missing raft::replicate()"
-    return make_ready_future<>()
-#endif
-    .then_wrapped([id](future<> f) {
-        try {
-            f.get();
-            /*
-             * TODO: grab metadata from replication result like the offset at
-             * which the data was written in the log.
-             */
-            return produce_response::partition{
-              .id = id,
-              .error = error_code::none,
-            };
-        } catch (...) {
-            /*
-             * TODO: convert raft errors into kafka errors
-             */
-            return produce_response::partition{
-              .id = id,
-              .error = error_code::unknown_server_error,
-            };
-        }
-    });
+    return partition->replicate(std::move(e))
+      .then_wrapped([id, num_records = num_records](
+                      future<result<raft::replicate_result>> f) {
+          produce_response::partition p;
+          p.id = id;
+          try {
+              auto r = f.get0();
+              if (r) {
+                  p.base_offset = model::offset(
+                    r.value().last_offset() - num_records);
+              } else {
+                  p.error = error_code::unknown_server_error;
+              }
+          } catch (...) {
+              p.error = error_code::unknown_server_error;
+          }
+          return p;
+      });
 }
 
 /**

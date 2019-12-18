@@ -34,7 +34,7 @@ struct service final : trongen_service {
                 [this, r = std::move(r)](ConsensusManager& m) mutable {
                     return m.consensus_for(group_id(66))
                       .replicate(std::move(r))
-                      .then_wrapped([](future<> f) {
+                      .then_wrapped([](future<result<replicate_result>> f) {
                           put_reply ret;
                           try {
                               f.get();

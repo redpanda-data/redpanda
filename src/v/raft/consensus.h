@@ -81,8 +81,8 @@ public:
     clock_type::time_point last_heartbeat() const { return _hbeat; };
 
     void process_heartbeat(model::node_id, result<append_entries_reply>);
-    future<> replicate(raft::entry&&);
-    future<> replicate(std::vector<raft::entry>&&);
+    future<result<replicate_result>> replicate(raft::entry&&);
+    future<result<replicate_result>> replicate(std::vector<raft::entry>&&);
 
 private:
     friend replicate_entries_stm;
@@ -101,7 +101,7 @@ private:
     future<append_entries_reply>
       commit_entries(std::vector<entry>, append_entries_reply);
 
-    future<> do_replicate(std::vector<raft::entry>&&);
+    future<result<replicate_result>> do_replicate(std::vector<raft::entry>&&);
 
     future<std::vector<storage::log::append_result>>
     disk_append(std::vector<entry>&&);
