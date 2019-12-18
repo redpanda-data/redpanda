@@ -104,7 +104,7 @@ public:
         kafka::metadata_request metadata_req;
         metadata_req.topics.push_back(request_topic.topic);
         auto metadata_resp
-          = client.metadata(metadata_req, kafka::api_version(1)).get0();
+          = client.dispatch(metadata_req, kafka::api_version(1)).get0();
 
         // yank out the metadata for the topic from the response
         auto topic_metadata = std::find_if(

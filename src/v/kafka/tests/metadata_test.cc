@@ -46,7 +46,7 @@ FIXTURE_TEST(cluster_id_with_req_v1, redpanda_thread_fixture) {
 
     auto client = make_kafka_client().get0();
     client.connect().get();
-    auto resp = client.metadata(req, kafka::api_version(1)).get0();
+    auto resp = client.dispatch(req, kafka::api_version(1)).get0();
     client.stop().then([&client] { client.shutdown(); }).get();
 
     BOOST_REQUIRE(resp.cluster_id == std::nullopt);
@@ -60,7 +60,7 @@ FIXTURE_TEST_EXPECTED_FAILURES(
 
     auto client = make_kafka_client().get0();
     client.connect().get();
-    auto resp = client.metadata(req, kafka::api_version(2)).get0();
+    auto resp = client.dispatch(req, kafka::api_version(2)).get0();
     client.stop().then([&client] { client.shutdown(); }).get();
 
     BOOST_TEST((resp.cluster_id && !resp.cluster_id->empty()));
@@ -73,7 +73,7 @@ FIXTURE_TEST_EXPECTED_FAILURES(rack, redpanda_thread_fixture, 1) {
 
     auto client = make_kafka_client().get0();
     client.connect().get();
-    auto resp = client.metadata(req, kafka::api_version(1)).get0();
+    auto resp = client.dispatch(req, kafka::api_version(1)).get0();
     client.stop().then([&client] { client.shutdown(); }).get();
 
     // expected rack name is configured in fixture setup
