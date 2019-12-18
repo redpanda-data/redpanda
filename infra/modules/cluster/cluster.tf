@@ -15,6 +15,19 @@ resource "aws_instance" "root_node" {
     private_key = file(var.private_key_path)
   }
 
+  provisioner "local-exec" {
+    environment = {
+      PKG_PATH = var.local_package_abs_path
+      SSH_KEY  = var.private_key_path
+      SSH_USER = var.distro_ssh_user[var.distro]
+      IP       = self.public_ip
+      TIMEOUT  = var.ssh_timeout
+      RETRIES  = var.ssh_retries
+    }
+
+    command = "./scp_local_pkg.sh"
+  }
+
   provisioner "file" {
     source      = "init.sh"
     destination = "/tmp/init.sh"

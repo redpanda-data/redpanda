@@ -16,5 +16,5 @@ def main():
 main.add_command(pkg.print_deps)
 main.add_command(git.verify_git)
 main.add_command(client.client)
-main.add_command(ssh.rotate_ssh_keys)
+main.add_command(ssh.ssh)
 main.add_command(infra.infra)
