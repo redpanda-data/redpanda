@@ -214,7 +214,7 @@ FIXTURE_TEST(fetch_one, redpanda_thread_fixture) {
 
     auto client = make_kafka_client().get0();
     client.connect().get();
-    auto resp = client.fetch(req).get0();
+    auto resp = client.dispatch(req, kafka::api_version(4)).get0();
     client.stop().then([&client] { client.shutdown(); }).get();
 
     BOOST_REQUIRE(resp.partitions.size() == 1);

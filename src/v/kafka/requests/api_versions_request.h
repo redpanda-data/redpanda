@@ -8,13 +8,32 @@
 
 namespace kafka {
 
+struct api_versions_response;
+
 struct api_versions_api final {
+    using response_type = api_versions_response;
+
     static constexpr const char* name = "API versions";
     static constexpr api_key key = api_key(18);
     static constexpr api_version min_supported = api_version(0);
-    static constexpr api_version max_supported = api_version(2);
+    static constexpr api_version max_supported = api_version(3);
 
     static future<response_ptr> process(request_context&&, smp_service_group);
+};
+
+struct api_versions_request final {
+    using api_type = api_versions_api;
+
+    sstring client_software_name;    // >= v3
+    sstring client_software_version; // >= v3
+
+    bool valid(api_version version) {
+        return version < api_version(3)
+               || (!client_software_name.empty() && !client_software_version.empty());
+    }
+
+    void decode(request_reader& reader, api_version version);
+    void encode(response_writer& writer, api_version version);
 };
 
 struct api_versions_response final {

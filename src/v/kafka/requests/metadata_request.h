@@ -8,8 +8,11 @@
 
 namespace kafka {
 
-class metadata_api final {
-public:
+struct metadata_response;
+
+struct metadata_api final {
+    using response_type = metadata_response;
+
     static constexpr const char* name = "metadata";
     static constexpr api_key key = api_key(3);
     static constexpr api_version min_supported = api_version(0);
@@ -19,6 +22,8 @@ public:
 };
 
 struct metadata_request {
+    using api_type = metadata_api;
+
     std::vector<model::topic> topics;
     bool allow_auto_topic_creation = false;             // version >= 4
     bool include_cluster_authorized_operations = false; // version >= 8

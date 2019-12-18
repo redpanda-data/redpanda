@@ -2,6 +2,7 @@
 #include "kafka/requests/create_topics_request.h"
 #include "kafka/requests/fetch_request.h"
 #include "kafka/requests/metadata_request.h"
+#include "kafka/requests/requests.h"
 #include "kafka/server.h"
 #include "rpc/transport.h"
 #include "seastarx.h"
@@ -64,55 +65,37 @@ private:
 public:
     using rpc::base_transport::base_transport;
 
-    future<api_versions_response> api_versions() {
-        return send_recv([this](response_writer& wr) mutable {
-                   // just the header: the api version request is empty
-                   write_header(wr, api_versions_api::key, api_version(0));
+    /*
+     * TODO: the concept here can be improved once we convert all of the request
+     * types to encode their type relationships between api/request/response.
+     */
+    template<typename T>
+    CONCEPT(requires(KafkaRequest<typename T::api_type>))
+    future<typename T::api_type::response_type> dispatch(
+      T r, api_version request_version, api_version response_version) {
+        return send_recv([this, request_version, r = std::move(r)](
+                           response_writer& wr) mutable {
+                   write_header(wr, T::api_type::key, request_version);
+                   r.encode(wr, request_version);
                })
-          .then([](iobuf buf) {
-              api_versions_response r;
-              r.decode(std::move(buf), api_version(0));
-              return r;
+          .then([response_version](iobuf buf) {
+              using response_type = typename T::api_type::response_type;
+              response_type r;
+              r.decode(std::move(buf), response_version);
+              return make_ready_future<response_type>(std::move(r));
           });
     }
 
-    future<fetch_response> fetch(fetch_request r) {
-        return send_recv([this, r = std::move(r)](response_writer& wr) mutable {
-                   write_header(wr, fetch_api::key, api_version(4));
-                   r.encode(wr, api_version(4));
-               })
-          .then([](iobuf buf) {
-              fetch_response r;
-              r.decode(std::move(buf), api_version(4));
-              return r;
-          });
+    template<typename T>
+    CONCEPT(requires(KafkaRequest<typename T::api_type>))
+    future<typename T::api_type::response_type> dispatch(T r, api_version ver) {
+        return dispatch(r, ver, ver);
     }
 
-    future<metadata_response> metadata(metadata_request r, api_version v) {
-        return send_recv(
-                 [this, v, r = std::move(r)](response_writer& wr) mutable {
-                     write_header(wr, metadata_api::key, v);
-                     r.encode(wr, v);
-                 })
-          .then([v](iobuf buf) {
-              metadata_response r;
-              r.decode(std::move(buf), v);
-              return r;
-          });
-    }
-
-    future<create_topics_response>
-    create_topics(create_topics_request r, api_version v) {
-        return send_recv(
-                 [this, v, r = std::move(r)](response_writer& wr) mutable {
-                     write_header(wr, create_topics_api::key, v);
-                     r.encode(wr, v);
-                 })
-          .then([v](iobuf buf) {
-              create_topics_response r;
-              r.decode(std::move(buf), v);
-              return r;
-          });
+    template<typename T>
+    CONCEPT(requires(KafkaRequest<typename T::api_type>))
+    future<typename T::api_type::response_type> dispatch(T r) {
+        return dispatch(r, T::api_type::max_supported);
     }
 
 private:

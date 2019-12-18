@@ -8,8 +8,11 @@
 
 namespace kafka {
 
-class fetch_api final {
-public:
+struct fetch_response;
+
+struct fetch_api final {
+    using response_type = fetch_response;
+
     static constexpr const char* name = "fetch";
     static constexpr api_key key = api_key(1);
     static constexpr api_version min_supported = api_version(4);
@@ -19,6 +22,8 @@ public:
 };
 
 struct fetch_request final {
+    using api_type = fetch_api;
+
     struct partition {
         model::partition_id id;
         model::offset fetch_offset;

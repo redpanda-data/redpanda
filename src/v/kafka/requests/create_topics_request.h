@@ -12,8 +12,12 @@
 
 namespace kafka {
 
+struct create_topics_response;
+
 class create_topics_api final {
 public:
+    using response_type = create_topics_response;
+
     static constexpr const char* name = "create topics";
     static constexpr api_key key = api_key(19);
     static constexpr api_version min_supported = api_version(0);
@@ -34,6 +38,8 @@ private:
 };
 
 struct create_topics_request {
+    using api_type = create_topics_api;
+
     static create_topics_request decode(request_context&);
 
     static new_topic_configuration read_topic_configuration(request_reader&);
