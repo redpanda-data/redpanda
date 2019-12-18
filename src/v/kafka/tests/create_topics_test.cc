@@ -72,7 +72,7 @@ public:
     void test_create_topic(kafka::create_topics_request req) {
         auto client = make_kafka_client().get0();
         client.connect().get();
-        auto resp = client.create_topics(req, kafka::api_version(2)).get0();
+        auto resp = client.dispatch(req, kafka::api_version(2)).get0();
 
         BOOST_TEST(
           std::all_of(

@@ -78,20 +78,6 @@ public:
           });
     }
 
-    future<create_topics_response>
-    create_topics(create_topics_request r, api_version v) {
-        return send_recv(
-                 [this, v, r = std::move(r)](response_writer& wr) mutable {
-                     write_header(wr, create_topics_api::key, v);
-                     r.encode(wr, v);
-                 })
-          .then([v](iobuf buf) {
-              create_topics_response r;
-              r.decode(std::move(buf), v);
-              return r;
-          });
-    }
-
     /*
      * TODO: the concept here can be improved once we convert all of the request
      * types to encode their type relationships between api/request/response.
