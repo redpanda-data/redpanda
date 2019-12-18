@@ -137,7 +137,7 @@ future<> replicate_entries_stm::dispatch_one(retry_meta& meta) {
     });                 // gate
 }
 
-future<> replicate_entries_stm::apply() {
+future<result<replicate_result>> replicate_entries_stm::apply() {
     using reqs_t = std::vector<append_entries_request>;
     using append_res_t = std::vector<storage::log::append_result>;
     for (auto& n : _ptr->_conf.nodes) {
@@ -171,22 +171,33 @@ future<> replicate_entries_stm::apply() {
                     "term:{}",
                     offset,
                     term);
-                  return _ptr->_log.truncate(offset, term);
+                  return _ptr->_log.truncate(offset, term)
+                    .then([r = std::move(r)] {
+                        return make_ready_future<result<replicate_result>>(
+                          r.error());
+                    });
               }
               // append only when we have majority
               return share_request_n(1).then([this](reqs_t r) {
                   auto m = std::find_if(
-                    _replies.cbegin(), _replies.cend(), [](const retry_meta& i) {
-                        return i.is_success();
-                    });
+                    _replies.cbegin(),
+                    _replies.cend(),
+                    [](const retry_meta& i) { return i.is_success(); });
                   if (__builtin_expect(m == _replies.end(), false)) {
                       throw std::runtime_error(
                         "Logic error. cannot acknowledge commits");
                   }
+                  auto last_offset = m->value->value().last_log_index;
                   return _ptr
                     ->commit_entries(
                       std::move(r.back().entries), m->value->value())
-                    .discard_result();
+                    .discard_result()
+                    .then([last_offset] {
+                        return make_ready_future<result<replicate_result>>(
+                          replicate_result{
+                            .last_offset = model::offset(last_offset),
+                          });
+                    });
               });
           });
     });
