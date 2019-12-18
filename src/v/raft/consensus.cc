@@ -21,7 +21,7 @@ consensus::consensus(
   storage::log_append_config::fsync should_fsync,
   io_priority_class io_priority,
   model::timeout_clock::duration disk_timeout,
-  sharded<client_cache>& clis,
+  sharded<rpc::connection_cache>& clis,
   consensus::leader_cb_t cb)
   : _self(std::move(nid))
   , _jit(std::move(jit))

@@ -4,6 +4,7 @@
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
 #include "raft/logger.h"
+#include "raft/raftgen_service.h"
 
 namespace raft {
 std::ostream& operator<<(std::ostream& o, const vote_stm::vmeta& m) {
@@ -51,20 +52,19 @@ future<result<vote_reply>> vote_stm::do_dispatch_one(model::node_id n) {
         }
         return make_ready_future<ret_t>(std::move(reply));
     }
-    auto shard = raft::client_cache::shard_for(n);
+    auto shard = rpc::connection_cache::shard_for(n);
     return smp::submit_to(shard, [this, n]() mutable {
         auto& local = _ptr->_clients.local();
         if (!local.contains(n)) {
             return make_ready_future<ret_t>(errc::missing_tcp_client);
         }
         // make a local copy of `this->_req`
-        using rpc_client = reconnect_client::client_type;
         return local.get(n)->get_connected().then(
-          [this, r = _req](result<rpc_client*> cli) mutable {
-              if (!cli) {
-                  return make_ready_future<ret_t>(cli.error());
+          [this, r = _req](result<rpc::transport*> t) mutable {
+              if (!t) {
+                  return make_ready_future<ret_t>(t.error());
               }
-              auto f = cli.value()->vote(std::move(r));
+              auto f = raftgen_client_protocol(*t.value()).vote(std::move(r));
               auto tout = clock_type::now() + _ptr->_jit.base_duration();
               return result_with_timeout(tout, errc::timeout, std::move(f))
                 .then([](auto r) {

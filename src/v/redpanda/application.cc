@@ -152,7 +152,7 @@ void application::configure_admin_server() {
 void application::wire_up_services() {
     // cluster
     syschecks::systemd_message("Adding raft client cache");
-    construct_service(_raft_client_cache).get();
+    construct_service(_raft_connection_cache).get();
     syschecks::systemd_message("Building shard-lookup tables");
     construct_service(shard_table).get();
     syschecks::systemd_message("Adding partition manager");
@@ -163,7 +163,7 @@ void application::wire_up_services() {
       storage::log_append_config::fsync::no,
       std::chrono::seconds(10), // disk timeout
       std::ref(shard_table),
-      std::ref(_raft_client_cache))
+      std::ref(_raft_connection_cache))
       .get();
     _log.info("Partition manager started");
 
@@ -173,7 +173,7 @@ void application::wire_up_services() {
 
     syschecks::systemd_message("Creating cluster::controller");
     controller = std::make_unique<cluster::controller>(
-      partition_manager, shard_table, metadata_cache, _raft_client_cache);
+      partition_manager, shard_table, metadata_cache, _raft_connection_cache);
     _deferred.emplace_back([this] { controller->stop().get(); });
 
     // group membership

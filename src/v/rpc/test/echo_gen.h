@@ -4,7 +4,7 @@
 
 #include "finjector/hbadger.h"
 #include "random/fast_prng.h"
-#include "rpc/client.h"
+#include "rpc/transport.h"
 #include "rpc/netbuf.h"
 #include "rpc/parse_utils.h"
 #include "rpc/service.h"

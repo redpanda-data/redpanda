@@ -1,6 +1,6 @@
 #pragma once
 #include "config/tls_config.h"
-#include "rpc/client.h"
+#include "rpc/transport.h"
 #include "rpc/server.h"
 #include "rpc/service.h"
 #include "rpc/types.h"
@@ -55,10 +55,10 @@ public:
         _sg = create_scheduling_group("rpc scheduling group", 200).get0();
     }
 
-    rpc::client_configuration client_config(
+    rpc::transport_configuration client_config(
       std::optional<tls::credentials_builder> credentials
       = std::nullopt) const {
-        return rpc::client_configuration{.server_addr = _listen_address,
+        return rpc::transport_configuration{.server_addr = _listen_address,
                                          .credentials = credentials};
     }
 

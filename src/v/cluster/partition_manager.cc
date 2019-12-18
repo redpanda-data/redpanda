@@ -12,7 +12,7 @@ partition_manager::partition_manager(
   storage::log_append_config::fsync should_fsync,
   model::timeout_clock::duration disk_timeout,
   sharded<cluster::shard_table>& nlc,
-  sharded<raft::client_cache>& clients)
+  sharded<rpc::connection_cache>& clients)
   : _self(config::shard_local_cfg().node_id())
   , _should_fsync(should_fsync)
   , _disk_timeout(disk_timeout)

@@ -81,7 +81,7 @@ struct server_configuration {
     std::optional<tls::credentials_builder> credentials;
     metrics_disabled disable_metrics = metrics_disabled::no;
 };
-struct client_configuration {
+struct transport_configuration {
     socket_address server_addr;
     /// \ brief The default timeout PER connection body. After we
     /// parse the header of the connection we need to

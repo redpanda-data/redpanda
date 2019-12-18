@@ -1,4 +1,4 @@
-#include "rpc/client.h"
+#include "rpc/transport.h"
 
 #include "rpc/logger.h"
 #include "rpc/parse_utils.h"
@@ -31,7 +31,7 @@ base_transport::base_transport(configuration c)
                     : nullptr) {}
 
 transport::transport(
-  client_configuration c, std::optional<sstring> service_name)
+  transport_configuration c, std::optional<sstring> service_name)
   : base_transport(base_transport::configuration{
     .server_addr = std::move(c.server_addr),
     .credentials = std::move(c.credentials),
