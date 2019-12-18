@@ -65,18 +65,6 @@ private:
 public:
     using rpc::base_transport::base_transport;
 
-    future<fetch_response> fetch(fetch_request r) {
-        return send_recv([this, r = std::move(r)](response_writer& wr) mutable {
-                   write_header(wr, fetch_api::key, api_version(4));
-                   r.encode(wr, api_version(4));
-               })
-          .then([](iobuf buf) {
-              fetch_response r;
-              r.decode(std::move(buf), api_version(4));
-              return r;
-          });
-    }
-
     future<metadata_response> metadata(metadata_request r, api_version v) {
         return send_recv(
                  [this, v, r = std::move(r)](response_writer& wr) mutable {
