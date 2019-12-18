@@ -101,9 +101,9 @@ api_versions_api::process(request_context&& ctx, smp_service_group) {
     // assuming the lowest supported version, it can use the most recent
     // version and only fallback to the old version when necessary.
     api_versions_response r;
+    r.apis = get_supported_apis();
     if (ctx.header().version <= max_supported) {
         r.error = error_code::none;
-        r.apis = get_supported_apis();
     } else {
         r.error = error_code::unsupported_version;
     }
