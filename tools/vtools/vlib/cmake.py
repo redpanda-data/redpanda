@@ -1,0 +1,40 @@
+import os
+
+from absl import logging
+from . import shell
+from . import clang
+
+
+def configure_build(vconfig, build_external=True, build_external_only=False):
+
+    clang_path = clang.find_or_install_clang(vconfig)
+
+    if clang_path:
+        os.environ['CC'] = clang_path
+        os.environ['CXX'] = f'{clang_path}++'
+        compiler = 'clang'
+    else:
+        compiler = 'default'
+
+    logging.info(f"Configuring '{vconfig.build_type}' build.")
+
+    cmake_flags = [
+        f'-DV_DEPS_INSTALL_DIR={vconfig.external_path}',
+        f'-DCMAKE_BUILD_TYPE={vconfig.build_type.capitalize()} '
+    ]
+
+    # change value of default cmake config options based on given args. Form
+    # more on what these do, take a look at /v/CMakeLists.txt
+    if not build_external:
+        cmake_flags.append('-DV_DEPS_SKIP_BUILD=ON')
+    if build_external_only:
+        cmake_flags.append('-DV_DEPS_ONLY=ON')
+    if compiler == 'clang':
+        cmake_flags.append('-DRP_ENABLE_GOLD_LINKER=OFF')
+
+    os.makedirs(vconfig.build_dir, exist_ok=True)
+
+    shell.run_subprocess(f'cmake -GNinja'
+                         f'  {" ".join(cmake_flags)}'
+                         f'  -B{vconfig.build_dir}'
+                         f'  -H{vconfig.src_dir}')
