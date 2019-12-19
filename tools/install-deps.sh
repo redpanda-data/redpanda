@@ -1,5 +1,4 @@
 #!/bin/bash
-
 set -ex
 
 function debs() {
@@ -30,17 +29,15 @@ function debs() {
             systemtap-sdt-dev \
             ragel \
             ccache \
-            python3-distutils-extra \
-            clang \
             pigz \
             zlib1g-dev \
-            python3-requests \
             devscripts \
             debhelper \
             fakeroot \
             rpm \
+            libsystemd-dev \
             python3-jinja2 \
-            libsystemd-dev
+            python3-pip
 }
 
 function rpms() {
@@ -84,17 +81,15 @@ function rpms() {
               libatomic \
               ccache \
               doxygen \
-              python3-distutils-extra \
-              clang \
               pigz \
               zlib-devel \
-              python3-requests \
               devscripts \
               debhelper \
               fakeroot \
               rpm-build \
+              systemd-devel \
               python3-jinja2 \
-              systemd-devel
+              python3-pip
 }
 
 
