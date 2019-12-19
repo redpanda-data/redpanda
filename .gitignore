@@ -23,7 +23,7 @@
 *.exe
 *.out
 *.app
-build/
+/build
 
 # bazel
 bazel-*
@@ -42,7 +42,7 @@ build_release/
 compile_commands.json
 
 # vim
-.*.swp
+.*.sw?
 
 CMakeCache.txt
 CMakeFiles/
@@ -75,7 +75,7 @@ __pycache__/
 
 # Distribution / packaging
 .Python
-build/
+/build/
 develop-eggs/
 dist/
 downloads/
