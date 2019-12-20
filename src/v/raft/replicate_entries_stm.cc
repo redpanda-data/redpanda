@@ -143,64 +143,59 @@ future<result<replicate_result>> replicate_entries_stm::apply() {
     for (auto& n : _ptr->_conf.nodes) {
         _replies.push_back(retry_meta(n.id(), _max_retries));
     }
-    return share_request_n(1).then([this](reqs_t r) {
-        for (auto& m : _replies) {
-            (void)dispatch_one(m); // background
-        }
+    for (auto& m : _replies) {
+        (void)dispatch_one(m); // background
+    }
 
-        const size_t majority = _ptr->_conf.majority();
-        return _sem.wait(majority)
-          .then([this, majority] {
-              return do_until(
-                [this, majority] {
-                    auto [success, failure] = partition_count();
-                    return success >= majority || failure >= majority;
-                },
-                [this] {
-                    return with_gate(_req_bg, [this] { return _sem.wait(1); });
-                });
-          })
-          .then([this] { return process_replies(); })
-          .then([this](result<void> r) {
-              if (!r) {
-                  // we need to truncate on unsuccessful replication
-                  auto offset = model::offset(_ptr->_meta.commit_index);
-                  auto term = model::term_id(_ptr->_meta.term);
-                  raftlog.debug(
-                    "Truncating log for unfinished append at offset:{}, "
-                    "term:{}",
-                    offset,
-                    term);
-                  return _ptr->_log.truncate(offset, term)
-                    .then([r = std::move(r)] {
-                        return make_ready_future<result<replicate_result>>(
-                          r.error());
-                    });
-              }
-              // append only when we have majority
-              return share_request_n(1).then([this](reqs_t r) {
-                  auto m = std::find_if(
-                    _replies.cbegin(),
-                    _replies.cend(),
-                    [](const retry_meta& i) { return i.is_success(); });
-                  if (__builtin_expect(m == _replies.end(), false)) {
-                      throw std::runtime_error(
-                        "Logic error. cannot acknowledge commits");
-                  }
-                  auto last_offset = m->value->value().last_log_index;
-                  return _ptr
-                    ->commit_entries(
-                      std::move(r.back().entries), m->value->value())
-                    .discard_result()
-                    .then([last_offset] {
-                        return make_ready_future<result<replicate_result>>(
-                          replicate_result{
-                            .last_offset = model::offset(last_offset),
-                          });
-                    });
+    const size_t majority = _ptr->_conf.majority();
+    return _sem.wait(majority)
+      .then([this, majority] {
+          return do_until(
+            [this, majority] {
+                auto [success, failure] = partition_count();
+                return success >= majority || failure >= majority;
+            },
+            [this] {
+                return with_gate(_req_bg, [this] { return _sem.wait(1); });
+            });
+      })
+      .then([this] { return process_replies(); })
+      .then([this](result<void> r) {
+          if (!r) {
+              // we need to truncate on unsuccessful replication
+              auto offset = model::offset(_ptr->_meta.commit_index);
+              auto term = model::term_id(_ptr->_meta.term);
+              raftlog.debug(
+                "Truncating log for unfinished append at offset:{}, "
+                "term:{}",
+                offset,
+                term);
+              return _ptr->_log.truncate(offset, term).then([r = std::move(r)] {
+                  return make_ready_future<result<replicate_result>>(r.error());
               });
+          }
+          // append only when we have majority
+          return share_request_n(1).then([this](reqs_t r) {
+              auto m = std::find_if(
+                _replies.cbegin(), _replies.cend(), [](const retry_meta& i) {
+                    return i.is_success();
+                });
+              if (__builtin_expect(m == _replies.end(), false)) {
+                  throw std::runtime_error(
+                    "Logic error. cannot acknowledge commits");
+              }
+              auto last_offset = m->value->value().last_log_index;
+              return _ptr
+                ->commit_entries(std::move(r.back().entries), m->value->value())
+                .discard_result()
+                .then([last_offset] {
+                    return make_ready_future<result<replicate_result>>(
+                      replicate_result{
+                        .last_offset = model::offset(last_offset),
+                      });
+                });
           });
-    });
+      });
 }
 future<> replicate_entries_stm::wait() {
     return _req_bg.close();
