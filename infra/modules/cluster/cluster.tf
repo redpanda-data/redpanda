@@ -43,7 +43,7 @@ resource "aws_instance" "node" {
 
 resource "aws_security_group" "node_sec_group" {
   name        = "node-sec-group"
-  description = "SSH and Kafka ports"
+  description = "redpanda ports"
 
   # SSH access from anywhere
   ingress {
@@ -57,6 +57,22 @@ resource "aws_security_group" "node_sec_group" {
   ingress {
     from_port   = 9092
     to_port     = 9092
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # HTTP access to the RPC port
+  ingress {
+    from_port   = 33145
+    to_port     = 33145
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # HTTP access to the Admin port
+  ingress {
+    from_port   = 9644
+    to_port     = 9644
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
