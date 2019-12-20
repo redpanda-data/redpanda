@@ -202,7 +202,6 @@ func Test_nic_GetIRQs(t *testing.T) {
 
 func Test_nic_GetMaxRxQueueCount(t *testing.T) {
 	type fields struct {
-		Nic           Nic
 		fs            afero.Fs
 		irqProcFile   irq.ProcFile
 		irqDeviceInfo irq.DeviceInfo
@@ -251,7 +250,6 @@ func Test_nic_GetMaxRxQueueCount(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			n := &nic{
-				Nic:           tt.fields.Nic,
 				fs:            tt.fields.fs,
 				irqProcFile:   tt.fields.irqProcFile,
 				irqDeviceInfo: tt.fields.irqDeviceInfo,
@@ -272,7 +270,6 @@ func Test_nic_GetMaxRxQueueCount(t *testing.T) {
 
 func Test_nic_GetRxQueueCount(t *testing.T) {
 	type fields struct {
-		Nic           Nic
 		fs            afero.Fs
 		irqProcFile   irq.ProcFile
 		irqDeviceInfo irq.DeviceInfo
@@ -364,7 +361,6 @@ func Test_nic_GetRxQueueCount(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			n := &nic{
-				Nic:           tt.fields.Nic,
 				fs:            tt.fields.fs,
 				irqProcFile:   tt.fields.irqProcFile,
 				irqDeviceInfo: tt.fields.irqDeviceInfo,
@@ -386,7 +382,6 @@ func Test_nic_GetRxQueueCount(t *testing.T) {
 
 func Test_nic_GetNTupleStatus(t *testing.T) {
 	type fields struct {
-		Nic           Nic
 		fs            afero.Fs
 		irqProcFile   irq.ProcFile
 		irqDeviceInfo irq.DeviceInfo
@@ -457,7 +452,6 @@ func Test_nic_GetNTupleStatus(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			n := &nic{
-				Nic:           tt.fields.Nic,
 				fs:            tt.fields.fs,
 				irqProcFile:   tt.fields.irqProcFile,
 				irqDeviceInfo: tt.fields.irqDeviceInfo,

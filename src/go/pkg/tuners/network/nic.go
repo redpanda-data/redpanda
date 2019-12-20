@@ -45,7 +45,6 @@ type Nic interface {
 }
 
 type nic struct {
-	Nic
 	fs            afero.Fs
 	irqProcFile   irq.ProcFile
 	irqDeviceInfo irq.DeviceInfo
