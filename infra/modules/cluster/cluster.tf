@@ -37,6 +37,8 @@ resource "aws_instance" "node" {
     inline = [
       "chmod +x /tmp/init.sh",
       "/tmp/init.sh ${var.packagecloud_token}",
+      "sudo systemctl start redpanda-tuner",
+      "sudo systemctl start redpanda"
     ]
   }
 }
