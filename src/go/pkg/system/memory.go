@@ -57,6 +57,9 @@ func getMemInfo(fs afero.Fs) (*MemInfo, error) {
 		return nil, err
 	}
 	cGroupMemLimit, err := getCgroupMemLimitBytes(fs)
+	if err != nil {
+		return nil, err
+	}
 	return &MemInfo{
 		MemTotal:       si.Totalram * uint64(si.Unit),
 		MemFree:        si.Freeram * uint64(si.Unit),
