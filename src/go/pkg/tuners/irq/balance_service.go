@@ -43,7 +43,6 @@ func NewBalanceService(
 }
 
 type balanceService struct {
-	BalanceService
 	fs       afero.Fs
 	proc     os.Proc
 	executor executors.Executor
