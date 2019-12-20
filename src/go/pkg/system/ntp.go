@@ -29,7 +29,6 @@ func NewNtpQuery(timeout time.Duration, fs afero.Fs) NtpQuery {
 }
 
 type ntpQuery struct {
-	NtpQuery
 	timeout time.Duration
 	fs      afero.Fs
 	proc    os.Proc

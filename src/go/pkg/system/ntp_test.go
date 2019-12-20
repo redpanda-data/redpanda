@@ -19,8 +19,7 @@ func (m *procMock) RunWithSystemLdPath(
 
 func Test_ntpQuery_checkWithTimedateCtl(t *testing.T) {
 	type fields struct {
-		NtpQuery NtpQuery
-		proc     os.Proc
+		proc os.Proc
 	}
 	tests := []struct {
 		name    string
@@ -92,8 +91,7 @@ func Test_ntpQuery_checkWithTimedateCtl(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			q := &ntpQuery{
-				NtpQuery: tt.fields.NtpQuery,
-				proc:     tt.fields.proc,
+				proc: tt.fields.proc,
 			}
 			got, err := q.checkWithTimedateCtl()
 			if (err != nil) != tt.wantErr {
