@@ -3,7 +3,7 @@ provider "aws" {
   region  = "us-west-1"
 }
 
-resource "aws_instance" "root_node" {
+resource "aws_instance" "node" {
   ami                    = var.distro_ami[var.distro]
   instance_type          = var.instance_type
   key_name               = aws_key_pair.ssh.key_name
