@@ -147,13 +147,14 @@ future<> controller::process_raft0_cfg_update(model::record r) {
           clusterlog.debug("Processing new raft-0 configuration");
           auto old_list = _md_cache.local().all_brokers();
           std::vector<broker_ptr> new_list;
-          new_list.reserve(cfg.nodes.size());
+          auto all_new_nodes = cfg.all_brokers();
+          new_list.reserve(all_new_nodes.size());
           std::transform(
-            std::cbegin(cfg.nodes),
-            std::cend(cfg.nodes),
+            std::begin(all_new_nodes),
+            std::end(all_new_nodes),
             std::back_inserter(new_list),
-            [](const model::broker& broker) {
-                return make_lw_shared<model::broker>(broker);
+            [](model::broker& broker) {
+                return make_lw_shared<model::broker>(std::move(broker));
             });
           return update_clients_cache(std::move(new_list), std::move(old_list))
             .then([this, nodes = std::move(cfg.nodes)] {
