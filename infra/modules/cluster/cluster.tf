@@ -3,7 +3,20 @@ provider "aws" {
   region  = "us-west-1"
 }
 
+resource "aws_eip_association" "eip_assoc" {
+  count         = var.nodes
+  instance_id   = aws_instance.node[count.index].id
+  allocation_id = aws_eip.elastic_ip[count.index].id
+}
+
+resource "aws_eip" "elastic_ip" {
+  count = var.nodes
+  vpc   = true
+}
+
 resource "aws_instance" "node" {
+  count                  = var.nodes
+  depends_on             = [aws_eip.elastic_ip]
   ami                    = var.distro_ami[var.distro]
   instance_type          = var.instance_type
   key_name               = aws_key_pair.ssh.key_name
@@ -36,7 +49,10 @@ resource "aws_instance" "node" {
   provisioner "remote-exec" {
     inline = [
       "chmod +x /tmp/init.sh",
+      "chmod +x /tmp/write_config.py",
       "/tmp/init.sh ${var.packagecloud_token}",
+      "sudo rpk config set id ${count.index}",
+      "sudo rpk config set seed-nodes --hosts ${join(" ", aws_eip.elastic_ip.*.public_ip)}",
       "sudo systemctl start redpanda-tuner",
       "sudo systemctl start redpanda"
     ]
