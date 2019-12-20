@@ -7,13 +7,10 @@ type Commands interface {
 }
 
 func NewCommands(proc Proc) Commands {
-	return &commands{
-		proc: proc,
-	}
+	return &commands{proc}
 }
 
 type commands struct {
-	Commands
 	proc Proc
 }
 
