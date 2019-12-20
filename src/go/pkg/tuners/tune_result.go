@@ -7,12 +7,10 @@ type TuneResult interface {
 }
 
 type errorTuneResult struct {
-	TuneResult
 	err error
 }
 
 type tuneResult struct {
-	TuneResult
 	rebootRequired bool
 }
 
