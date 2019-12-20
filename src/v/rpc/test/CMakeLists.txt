@@ -47,3 +47,9 @@ rp_test(
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES Boost::unit_test_framework rpc
 )
+rp_test(
+  UNIT_TEST
+  BINARY_NAME response_handler_tests
+  SOURCES response_handler_tests.cc
+  LIBRARIES Seastar::seastar_testing raft
+)
