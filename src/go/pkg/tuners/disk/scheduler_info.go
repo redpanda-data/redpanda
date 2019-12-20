@@ -28,7 +28,6 @@ func NewSchedulerInfo(fs afero.Fs, blockDevices BlockDevices) SchedulerInfo {
 }
 
 type schedulerInfo struct {
-	SchedulerInfo
 	fs           afero.Fs
 	blockDevices BlockDevices
 }
