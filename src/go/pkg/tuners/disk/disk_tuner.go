@@ -25,7 +25,6 @@ func NewDiskTuner(
 }
 
 type diskTuner struct {
-	tuners.Tunable
 	fs                 afero.Fs
 	deviceTunerFactory func(string) tuners.Tunable
 	blockDevices       BlockDevices
