@@ -94,8 +94,8 @@ func TestTune(t *testing.T) {
 
 			tuner := NewCoredumpTuner(tt.args.fs, tt.args.config(), executors.NewDirectExecutor())
 			res := tuner.Tune()
-			if res.GetError() != nil {
-				t.Errorf("Tune() returned an unexpected error: %v", res.GetError())
+			if res.Error() != nil {
+				t.Errorf("Tune() returned an unexpected error: %v", res.Error())
 			}
 			pattern, err := tt.args.fs.Open(corePatternFilePath)
 			if err != nil {

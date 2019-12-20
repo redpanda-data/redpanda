@@ -2,7 +2,7 @@ package tuners
 
 type TuneResult interface {
 	IsFailed() bool
-	GetError() error
+	Error() error
 	IsRebootRequired() bool
 }
 
@@ -23,7 +23,7 @@ func (result *tuneResult) IsFailed() bool {
 	return result.err != nil
 }
 
-func (result *tuneResult) GetError() error {
+func (result *tuneResult) Error() error {
 	return result.err
 }
 

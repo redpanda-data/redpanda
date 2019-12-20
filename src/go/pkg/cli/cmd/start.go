@@ -315,7 +315,7 @@ func tuneAll(
 			log.Debugf("Tuner paramters %+v", params)
 			result := tuner.Tune()
 			if result.IsFailed() {
-				return result.GetError()
+				return result.Error()
 			}
 		} else {
 			log.Debugf("Tuner '%s' is not supported - %s", tunerName, reason)

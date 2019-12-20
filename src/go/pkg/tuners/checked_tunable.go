@@ -46,8 +46,8 @@ func (t *checkedTunable) Tune() TuneResult {
 	}
 
 	tuneResult := t.tuneAction()
-	if tuneResult.GetError() != nil {
-		return NewTuneError(tuneResult.GetError())
+	if tuneResult.Error() != nil {
+		return NewTuneError(tuneResult.Error())
 	}
 	if !t.disablePostTuneCheck {
 		postTuneResult := t.checker.Check()
