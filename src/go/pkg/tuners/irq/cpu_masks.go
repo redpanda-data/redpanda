@@ -40,7 +40,6 @@ func NewCpuMasks(
 }
 
 type cpuMasks struct {
-	CpuMasks
 	hwloc    hwloc.HwLoc
 	fs       afero.Fs
 	executor executors.Executor
