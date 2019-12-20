@@ -9,7 +9,6 @@ import (
 )
 
 type scriptRenderingExecutor struct {
-	Executor
 	deffered error
 	writer   *bufio.Writer
 }
