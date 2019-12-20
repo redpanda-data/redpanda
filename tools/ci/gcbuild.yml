@@ -74,6 +74,5 @@ artifacts:
   objects:
     location: 'gs://vectorizedio/rp/$_BUILD_TYPE/$SHORT_SHA/'
     paths:
-    - 'build/$_BUILD_TYPE/dist/tar/*.tar.gz'
     - 'build/$_BUILD_TYPE/dist/debian/*.deb'
     - 'build/$_BUILD_TYPE/dist/rpm/RPMS/x86_64/*.rpm'
