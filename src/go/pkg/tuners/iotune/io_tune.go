@@ -57,9 +57,7 @@ func ioTuneCommandLineArgs(args IoTuneArgs) ([]string, error) {
 	}
 	var cmdArgs []string
 	cmdArgs = append(cmdArgs, "--evaluation-directory")
-	for _, dir := range args.Dirs {
-		cmdArgs = append(cmdArgs, dir)
-	}
+	cmdArgs = append(cmdArgs, args.Dirs...)
 	if args.Format != "" {
 		cmdArgs = append(cmdArgs, "--format")
 		cmdArgs = append(cmdArgs, string(args.Format))
