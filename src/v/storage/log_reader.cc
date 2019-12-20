@@ -15,7 +15,7 @@ bool skipping_consumer::skip_batch_type(model::record_batch_type type) {
 
 batch_consumer::skip skipping_consumer::consume_batch_start(
   model::record_batch_header header, size_t num_records) {
-    if (header.last_offset() < _start_offset) {
+    if (header.last_offset() <= _start_offset) {
         return skip::yes;
     }
     if (skip_batch_type(header.type)) {
@@ -70,7 +70,7 @@ stop_iteration skipping_consumer::consume_batch_end() {
     // We keep the batch in the buffer so that the reader can be cached.
     if (
       batch.base_offset() > _reader._tracker.committed_offset()
-      || batch.base_offset() >= _reader._config.max_offset) {
+      || batch.base_offset() > _reader._config.max_offset) {
         _reader._end_of_stream = true;
         _reader._over_committed_offset = true;
         return stop_iteration::yes;
