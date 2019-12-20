@@ -49,20 +49,22 @@ future<result<void>> replicate_entries_stm::process_replies() {
 future<std::vector<append_entries_request>>
 replicate_entries_stm::share_request_n(size_t n) {
     // one extra copy is needed for retries
-    return details::foreign_share_n(std::move(_req.entries), n + 1)
-      .then([this](std::vector<std::vector<raft::entry>> es) {
-          // keep a copy around until the end
-          _req.entries = std::move(es.back());
-          es.pop_back();
-          std::vector<append_entries_request> reqs;
-          reqs.reserve(es.size());
-          while (!es.empty()) {
-              reqs.push_back(append_entries_request{
-                _req.node_id, _req.meta, std::move(es.back())});
+    return with_semaphore(_share_sem, 1, [this, n] {
+        return details::foreign_share_n(std::move(_req.entries), n + 1)
+          .then([this](std::vector<std::vector<raft::entry>> es) {
+              // keep a copy around until the end
+              _req.entries = std::move(es.back());
               es.pop_back();
-          }
-          return reqs;
-      });
+              std::vector<append_entries_request> reqs;
+              reqs.reserve(es.size());
+              while (!es.empty()) {
+                  reqs.push_back(append_entries_request{
+                    _req.node_id, _req.meta, std::move(es.back())});
+                  es.pop_back();
+              }
+              return reqs;
+          });
+    });
 }
 
 future<result<append_entries_reply>> replicate_entries_stm::do_dispatch_one(
@@ -208,6 +210,7 @@ replicate_entries_stm::replicate_entries_stm(
   : _ptr(p)
   , _max_retries(max_retries)
   , _req(std::move(r))
+  , _share_sem(1)
   , _sem(_ptr->_conf.nodes.size()) {}
 
 std::pair<int32_t, int32_t> replicate_entries_stm::partition_count() const {
