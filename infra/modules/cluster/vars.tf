@@ -1,3 +1,9 @@
+variable "nodes" {
+  description = "The number of nodes to deploy"
+  type        = number
+  default     = "1"
+}
+
 variable "distro" {
   default = "fedora-31"
 }
