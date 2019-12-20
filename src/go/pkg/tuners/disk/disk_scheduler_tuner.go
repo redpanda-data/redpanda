@@ -21,7 +21,7 @@ func NewDeviceSchedulerTuner(
 			return tuneScheduler(fs, device, schedulerInfo, executor)
 		},
 		func() (bool, string) {
-			_, err := getPrefferedScheduler(device, schedulerInfo)
+			_, err := getPreferredScheduler(device, schedulerInfo)
 			if err != nil {
 				return false, err.Error()
 			}
@@ -37,7 +37,7 @@ func tuneScheduler(
 	schedulerInfo SchedulerInfo,
 	executor executors.Executor,
 ) tuners.TuneResult {
-	prefferedScheduler, err := getPrefferedScheduler(device, schedulerInfo)
+	preferredScheduler, err := getPreferredScheduler(device, schedulerInfo)
 	if err != nil {
 		return tuners.NewTuneError(err)
 	}
@@ -46,7 +46,7 @@ func tuneScheduler(
 		return tuners.NewTuneError(err)
 	}
 	err = executor.Execute(
-		commands.NewWriteFileCmd(fs, featureFile, prefferedScheduler))
+		commands.NewWriteFileCmd(fs, featureFile, preferredScheduler))
 	if err != nil {
 		return tuners.NewTuneError(err)
 	}
@@ -54,21 +54,21 @@ func tuneScheduler(
 	return tuners.NewTuneResult(false)
 }
 
-func getPrefferedScheduler(
+func getPreferredScheduler(
 	device string, schedulerInfo SchedulerInfo,
 ) (string, error) {
 	supported, err := schedulerInfo.GetSupportedSchedulers(device)
 	if err != nil {
 		return "", err
 	}
-	preffered := []string{"none", "noop"}
+	preferred := []string{"none", "noop"}
 	supportedMap := make(map[string]bool)
 
 	for _, sched := range supported {
 		supportedMap[sched] = true
 	}
 
-	for _, sched := range preffered {
+	for _, sched := range preferred {
 		if _, exists := supportedMap[sched]; exists {
 			return sched, nil
 		}
