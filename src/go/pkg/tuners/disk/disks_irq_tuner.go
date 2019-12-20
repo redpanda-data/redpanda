@@ -185,6 +185,9 @@ func GetExpectedIRQsDistribution(
 		devices,
 		mode, cpuMask)
 	finalCpuMask, err := cpuMasks.BaseCpuMask(cpuMask)
+	if err != nil {
+		return nil, err
+	}
 	diskInfoByType, err := blockDevices.GetDiskInfoByType(devices)
 	if err != nil {
 		return nil, err
@@ -244,6 +247,9 @@ func GetDefaultMode(
 		return irq.Mq, nil
 	}
 	numOfCores, err := cpuMasks.GetNumberOfCores(cpuMask)
+	if err != nil {
+		return irq.Default, err
+	}
 	numOfPUs, err := cpuMasks.GetNumberOfPUs(cpuMask)
 	if err != nil {
 		return "", nil
