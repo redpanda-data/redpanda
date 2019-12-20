@@ -5,8 +5,8 @@
 #include "cluster/simple_batch_builder.h"
 #include "config/configuration.h"
 #include "model/record_batch_reader.h"
-#include "rpc/connection_cache.h"
 #include "resource_mgmt/io_priority.h"
+#include "rpc/connection_cache.h"
 #include "storage/shard_assignment.h"
 
 #include <seastar/net/inet_address.hh>
@@ -425,20 +425,24 @@ void controller::on_raft0_entries_commited(std::vector<raft::entry>&& entries) {
 
 future<> controller::update_clients_cache(
   std::vector<broker_ptr> new_list, std::vector<broker_ptr> old_list) {
-    auto diff = calculate_changed_brokers(new_list, old_list);
-    return do_for_each(
-             diff.removed,
-             [this](broker_ptr removed) {
-                 return remove_broker_client(_connection_cache, removed->id());
-             })
-      .then([this, updated = std::move(diff.updated)] {
-          return do_for_each(updated, [this](broker_ptr b) {
-              if (b->id() == _self.id()) {
-                  // Do not create client to local broker
-                  return make_ready_future<>();
-              }
-              return update_broker_client(_connection_cache, b);
-          });
+    return do_with(
+      calculate_changed_brokers(std::move(new_list), std::move(old_list)),
+      [this](brokers_diff& diff) {
+          return do_for_each(
+                   diff.removed,
+                   [this](broker_ptr removed) {
+                       return remove_broker_client(
+                         _connection_cache, removed->id());
+                   })
+            .then([this, &diff] {
+                return do_for_each(diff.updated, [this](broker_ptr b) {
+                    if (b->id() == _self.id()) {
+                        // Do not create client to local broker
+                        return make_ready_future<>();
+                    }
+                    return update_broker_client(_connection_cache, b);
+                });
+            });
       });
 }
 
