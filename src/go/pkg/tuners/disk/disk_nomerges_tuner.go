@@ -44,14 +44,6 @@ func tuneNomerges(
 	return tuners.NewTuneResult(false)
 }
 
-type nomergesTuner struct {
-	tuners.Tunable
-	blockDevices BlockDevices
-	directories  []string
-	devices      []string
-	fs           afero.Fs
-}
-
 func NewNomergesTuner(
 	fs afero.Fs,
 	directories []string,
