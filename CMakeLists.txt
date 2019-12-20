@@ -4,11 +4,9 @@ project(REDPANDA VERSION "0.1.0" LANGUAGES CXX)
 # https://cmake.org/cmake/help/v3.4/policy/CMP0065.html
 cmake_policy(SET CMP0065 OLD)
 
-# prefer static linking
-#set(CMAKE_FIND_LIBRARY_SUFFIXES .a ${CMAKE_FIND_LIBRARY_SUFFIXES})
 set(CMAKE_VERBOSE_MAKEFILE ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
-set(CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS} -v -Wl,--build-id=sha1")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -v -Wl,--build-id=sha1")
 
 #ninja  1161.66s user 64.94s system 658% cpu 3:06.18 total
 #ninja  825.41s user 49.15s system 586% cpu 2:29.21 total
@@ -33,7 +31,7 @@ set(RP_MARCH
   "-march override, use -march=armv8-a+crc+crypto or -march=westmere"
   )
 option(V_MANAGE_DEPS "Use our own 3rdparty.cmake.in" ON)
-option(V_DEPS_SKIP_BUILD "Do not build dependencies" OFF)
+option(V_DEPS_SKIP_BUILD "Do not build dependencies, assume they already exist" OFF)
 option(V_DEPS_ONLY "Only build dependencies" OFF)
 set(V_DEPS_INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/v_deps_install
   CACHE STRING "Managed dependencies install directory")
