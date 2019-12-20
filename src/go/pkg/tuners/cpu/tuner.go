@@ -15,7 +15,6 @@ import (
 )
 
 type tuner struct {
-	tuners.Tunable
 	cpuMasks      irq.CpuMasks
 	grub          system.Grub
 	rebootAllowed bool
