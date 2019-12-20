@@ -38,9 +38,12 @@ func NewMaxAIOEventsTuner(
 		func() tuners.TuneResult {
 
 			log.Debugf("Setting max AIO events to %d", maxAIOEvents)
-			executor.Execute(
+			err := executor.Execute(
 				commands.NewWriteFileCmd(
 					fs, "/proc/sys/fs/aio-max-nr", fmt.Sprint(maxAIOEvents)))
+			if err != nil {
+				return tuners.NewTuneError(err)
+			}
 			return tuners.NewTuneResult(false)
 		},
 		func() (bool, string) {
