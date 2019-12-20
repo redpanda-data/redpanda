@@ -61,7 +61,7 @@ func (tuner *disksIRQsTuner) CheckIfSupported() (
 	supported bool,
 	reason string,
 ) {
-	if len(tuner.directories) == 0 && len(tuner.directories) == 0 {
+	if len(tuner.directories) == 0 && len(tuner.devices) == 0 {
 		return false, "Directories or devices are required for Disks IRQs Tuner"
 	}
 	if !tuner.cpuMasks.IsSupported() {
