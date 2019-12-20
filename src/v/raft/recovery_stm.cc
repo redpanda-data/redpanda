@@ -65,7 +65,7 @@ seastar::future<> recovery_stm::replicate(std::vector<raft::entry> es) {
                              return make_ready_future<ret_t>(cli.error());
                          }
                          auto f = raftgen_client_protocol(*cli.value())
-                                    .append_entries(std::move(r));
+                                    .append_entries(std::move(r), rpc::no_timeout);
                          return result_with_timeout(
                                   raft::clock_type::now() + 1s,
                                   errc::timeout,
