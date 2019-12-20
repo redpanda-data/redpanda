@@ -7,7 +7,6 @@ import (
 )
 
 type mockedTunable struct {
-	Tunable
 	tune             func() TuneResult
 	checkIfSupported func() (bool, string)
 }
@@ -103,7 +102,6 @@ func Test_aggregatedTunable_Tune(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tunable := &aggregatedTunable{
-				Tunable:  tt.fields.Tunable,
 				tunables: tt.fields.tunables,
 			}
 			if got := tunable.Tune(); !reflect.DeepEqual(got, tt.want) {
@@ -115,7 +113,6 @@ func Test_aggregatedTunable_Tune(t *testing.T) {
 
 func Test_aggregatedTunable_CheckIfSupported(t *testing.T) {
 	type fields struct {
-		Tunable  Tunable
 		tunables []Tunable
 	}
 	tests := []struct {
@@ -176,7 +173,6 @@ func Test_aggregatedTunable_CheckIfSupported(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tunable := &aggregatedTunable{
-				Tunable:  tt.fields.Tunable,
 				tunables: tt.fields.tunables,
 			}
 			gotSupported, gotReason := tunable.CheckIfSupported()
