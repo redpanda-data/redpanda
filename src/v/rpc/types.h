@@ -24,6 +24,8 @@ class netbuf;
 using clock_type = lowres_clock;
 using duration_type = typename clock_type::duration;
 using timer_type = timer<clock_type>;
+static constexpr clock_type::time_point no_timeout
+  = clock_type::time_point::max();
 
 struct negotiation_frame {
     int8_t version = 0;
