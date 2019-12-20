@@ -54,7 +54,6 @@ type NetTunersFactory interface {
 }
 
 type netTunersFactory struct {
-	NetTunersFactory
 	fs              afero.Fs
 	irqProcFile     irq.ProcFile
 	irqDeviceInfo   irq.DeviceInfo
