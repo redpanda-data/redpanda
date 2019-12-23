@@ -15,7 +15,6 @@ import (
 )
 
 type tuner struct {
-	tuners.Tunable
 	cpuMasks      irq.CpuMasks
 	grub          system.Grub
 	rebootAllowed bool
@@ -42,7 +41,6 @@ func NewCpuTuner(
 }
 
 func (tuner *tuner) Tune() tuners.TuneResult {
-	var err error
 	grubUpdated := false
 	log.Info("Running CPU tuner...")
 	allCpusMask, err := tuner.cpuMasks.GetAllCpusMask()
@@ -50,6 +48,9 @@ func (tuner *tuner) Tune() tuners.TuneResult {
 		return tuners.NewTuneError(err)
 	}
 	tuner.cores, err = tuner.cpuMasks.GetNumberOfCores(allCpusMask)
+	if err != nil {
+		return tuners.NewTuneError(err)
+	}
 	tuner.pus, err = tuner.cpuMasks.GetNumberOfPUs(allCpusMask)
 	log.Debugf("Running on system with '%d' cores and '%d' PUs",
 		tuner.cores, tuner.pus)
@@ -83,7 +84,9 @@ func (tuner *tuner) Tune() tuners.TuneResult {
 			}
 		}
 		pStatesEnabled, err := tuner.checkIfPStateIsEnabled()
-
+		if err != nil {
+			return tuners.NewTuneError(err)
+		}
 		if pStatesEnabled {
 			err = tuner.disablePStates()
 			grubUpdated = true

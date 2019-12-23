@@ -61,7 +61,7 @@ func (tuner *disksIRQsTuner) CheckIfSupported() (
 	supported bool,
 	reason string,
 ) {
-	if len(tuner.directories) == 0 && len(tuner.directories) == 0 {
+	if len(tuner.directories) == 0 && len(tuner.devices) == 0 {
 		return false, "Directories or devices are required for Disks IRQs Tuner"
 	}
 	if !tuner.cpuMasks.IsSupported() {
@@ -185,6 +185,9 @@ func GetExpectedIRQsDistribution(
 		devices,
 		mode, cpuMask)
 	finalCpuMask, err := cpuMasks.BaseCpuMask(cpuMask)
+	if err != nil {
+		return nil, err
+	}
 	diskInfoByType, err := blockDevices.GetDiskInfoByType(devices)
 	if err != nil {
 		return nil, err
@@ -244,6 +247,9 @@ func GetDefaultMode(
 		return irq.Mq, nil
 	}
 	numOfCores, err := cpuMasks.GetNumberOfCores(cpuMask)
+	if err != nil {
+		return irq.Default, err
+	}
 	numOfPUs, err := cpuMasks.GetNumberOfPUs(cpuMask)
 	if err != nil {
 		return "", nil

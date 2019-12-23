@@ -40,7 +40,6 @@ func NewCpuMasks(
 }
 
 type cpuMasks struct {
-	CpuMasks
 	hwloc    hwloc.HwLoc
 	fs       afero.Fs
 	executor executors.Executor
@@ -94,6 +93,9 @@ func (masks *cpuMasks) CpuMaskForIRQs(
 	var maskForIRQs string
 	if mode != Mq {
 		maskForComputations, err := masks.CpuMaskForComputations(mode, cpuMask)
+		if err != nil {
+			return "", err
+		}
 		maskForIRQs, err = masks.hwloc.Calc(cpuMask, fmt.Sprintf("~%s", maskForComputations))
 		if err != nil {
 			return maskForIRQs, err

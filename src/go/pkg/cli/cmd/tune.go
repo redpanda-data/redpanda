@@ -177,7 +177,7 @@ func tune(
 			log.Infof("Running '%s' tuner...", tunerName)
 			result := tuner.Tune()
 			if result.IsFailed() {
-				return result.GetError()
+				return result.Error()
 			}
 			rebootRequired = rebootRequired || result.IsRebootRequired()
 		} else {

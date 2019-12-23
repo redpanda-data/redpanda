@@ -2,50 +2,29 @@ package tuners
 
 type TuneResult interface {
 	IsFailed() bool
-	GetError() error
+	Error() error
 	IsRebootRequired() bool
 }
 
-type errorTuneResult struct {
-	TuneResult
-	err error
-}
-
 type tuneResult struct {
-	TuneResult
+	err            error
 	rebootRequired bool
 }
 
 func NewTuneError(err error) TuneResult {
-	return &errorTuneResult{
-		err: err,
-	}
+	return &tuneResult{err: err}
 }
 
 func NewTuneResult(rebootRequired bool) TuneResult {
-	return &tuneResult{
-		rebootRequired: rebootRequired,
-	}
-}
-
-func (result *errorTuneResult) IsFailed() bool {
-	return true
-}
-
-func (result *errorTuneResult) GetError() error {
-	return result.err
-}
-
-func (result *errorTuneResult) IsRebootRequired() bool {
-	return false
+	return &tuneResult{rebootRequired: rebootRequired}
 }
 
 func (result *tuneResult) IsFailed() bool {
-	return false
+	return result.err != nil
 }
 
-func (result *tuneResult) GetError() error {
-	return nil
+func (result *tuneResult) Error() error {
+	return result.err
 }
 
 func (result *tuneResult) IsRebootRequired() bool {

@@ -54,7 +54,6 @@ type NetTunersFactory interface {
 }
 
 type netTunersFactory struct {
-	NetTunersFactory
 	fs              afero.Fs
 	irqProcFile     irq.ProcFile
 	irqDeviceInfo   irq.DeviceInfo
@@ -138,7 +137,7 @@ func (f *netTunersFactory) NewNICsIRQsAffinityTuner(
 		},
 		func() (bool, string) {
 			if !f.cpuMasks.IsSupported() {
-				return false, "Tuner is not supported as 'hwoloc' is not installed"
+				return false, "Tuner is not supported as 'hwloc' is not installed"
 			}
 			return true, ""
 		},
@@ -173,7 +172,7 @@ func (f *netTunersFactory) NewNICsRpsTuner(
 		},
 		func() (bool, string) {
 			if !f.cpuMasks.IsSupported() {
-				return false, "Tuner is not supported as 'hwoloc' is not installed"
+				return false, "Tuner is not supported as 'hwloc' is not installed"
 			}
 			return true, ""
 		},

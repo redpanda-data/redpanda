@@ -1,13 +1,10 @@
 package tuners
 
 func NewAggregatedTunable(tunables []Tunable) Tunable {
-	return &aggregatedTunable{
-		tunables: tunables,
-	}
+	return &aggregatedTunable{tunables}
 }
 
 type aggregatedTunable struct {
-	Tunable
 	tunables []Tunable
 }
 

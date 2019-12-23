@@ -32,7 +32,6 @@ type NetCheckersFactory interface {
 }
 
 type netCheckersFactory struct {
-	NetCheckersFactory
 	fs             afero.Fs
 	irqProcFile    irq.ProcFile
 	irqDeviceInfo  irq.DeviceInfo

@@ -126,11 +126,11 @@ func TestTuner(t *testing.T) {
 			}
 			tuner := memory.NewSwappinessTuner(tt.fs, executors.NewDirectExecutor())
 			res := tuner.Tune()
-			if res.GetError() != nil {
+			if res.Error() != nil {
 				if !tt.expectErr {
 					t.Errorf(
 						"got an unexpected error: %v",
-						res.GetError(),
+						res.Error(),
 					)
 				}
 				return

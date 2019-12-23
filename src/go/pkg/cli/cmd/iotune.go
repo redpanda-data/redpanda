@@ -74,7 +74,7 @@ func execIoTune(
 	tuner := iotune.NewIoTuneTuner(fs, directories, ioConfigFile, duration, timeout)
 	log.Info("Starting iotune...")
 	result := tuner.Tune()
-	if err := result.GetError(); err != nil {
+	if err := result.Error(); err != nil {
 		return err
 	}
 	log.Infof("IO configuration file stored as '%s'", ioConfigFile)

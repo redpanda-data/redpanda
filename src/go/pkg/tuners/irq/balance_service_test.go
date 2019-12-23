@@ -280,10 +280,9 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 
 func Test_balanceService_GetBannedIRQs(t *testing.T) {
 	type fields struct {
-		BalanceService BalanceService
-		fs             afero.Fs
-		proc           os.Proc
-		before         func(afero.Fs)
+		fs     afero.Fs
+		proc   os.Proc
+		before func(afero.Fs)
 	}
 	tests := []struct {
 		name    string
@@ -342,9 +341,8 @@ func Test_balanceService_GetBannedIRQs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			balanceService := &balanceService{
-				BalanceService: tt.fields.BalanceService,
-				fs:             tt.fields.fs,
-				proc:           tt.fields.proc,
+				fs:   tt.fields.fs,
+				proc: tt.fields.proc,
 			}
 			tt.fields.before(tt.fields.fs)
 			got, err := balanceService.GetBannedIRQs()

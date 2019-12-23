@@ -22,7 +22,6 @@ func NewDeviceInfo(fs afero.Fs, procFile ProcFile) DeviceInfo {
 }
 
 type deviceInfo struct {
-	DeviceInfo
 	procFile ProcFile
 	fs       afero.Fs
 }
