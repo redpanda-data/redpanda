@@ -149,9 +149,16 @@ server::dispatch_method_once(header h, lw_shared_ptr<connection> conn) {
     }
     (void)with_gate(_conn_gate, [this, conn, ctx, m]() mutable {
         return (*m)(conn->input(), *ctx)
-          .then([ctx, conn, m = _hist.auto_measure()](netbuf n) mutable {
+          .then([this, ctx, conn, m = _hist.auto_measure()](netbuf n) mutable {
               n.set_correlation_id(ctx->get_header().correlation_id);
               auto view = std::move(n).as_scattered();
+              if (_conn_gate.is_closed()) {
+                  // do not write if gate is closed
+                  rpclog.debug(
+                    "Skipping write of {} bytes, connection is closed",
+                    view.size());
+                  return make_ready_future<>();
+              }
               return conn->write(std::move(view)).finally([m = std::move(m)] {
               });
           })
