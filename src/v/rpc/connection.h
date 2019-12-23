@@ -22,7 +22,7 @@ public:
     connection(const connection&) = delete;
     input_stream<char>& input() { return _in; }
     future<> write(scattered_message<char> msg);
-    void shutdown();
+    future<> shutdown();
 
     const socket_address addr;
 

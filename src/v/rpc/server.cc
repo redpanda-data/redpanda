@@ -89,14 +89,17 @@ future<> server::accept(server_socket& s) {
                   return continous_method_dispath(conn).then_wrapped(
                     [conn](future<>&& f) {
                         rpclog.debug("closing client: {}", conn->addr);
-                        conn->shutdown();
-                        try {
-                            f.get();
-                        } catch (...) {
-                            rpclog.error(
-                              "Error dispatching method: {}",
-                              std::current_exception());
-                        }
+                        return conn->shutdown()
+                          .then([f = std::move(f)]() mutable {
+                              try {
+                                  f.get();
+                              } catch (...) {
+                                  rpclog.error(
+                                    "Error dispatching method: {}",
+                                    std::current_exception());
+                              }
+                          })
+                          .finally([conn] {});
                     });
               });
               return stop_iteration::no;
@@ -166,9 +169,8 @@ future<> server::stop() {
     _as.request_abort();
     // dispatch the gate first, wait for all connections to drain
     return _conn_gate.close().then([this] {
-        for (auto& c : _connections) {
-            c.shutdown();
-        }
+        return do_for_each(
+          _connections, [](connection& c) { return c.shutdown(); });
     });
 }
 void server::setup_metrics() {
