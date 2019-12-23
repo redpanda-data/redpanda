@@ -60,6 +60,8 @@ public:
             return &_methods[0];
         case 1296043586:
             return &_methods[1];
+        case 881961103:
+            return &_methods[2];
         default:
             return nullptr;
         }
@@ -92,31 +94,53 @@ public:
     virtual future<echo_resp> suffix_echo(echo_req&&, rpc::streaming_context&) {
         throw std::runtime_error("unimplemented method");
     }
+    /// \brief echo_req -> echo_resp
+    virtual future<rpc::netbuf>
+    raw_sleep_5s(input_stream<char>& in, rpc::streaming_context& ctx) {
+        auto fapply = execution_helper<echo_req, echo_resp>();
+        return fapply.exec(
+          in,
+          ctx,
+          881961103,
+          [this](echo_req&& t, rpc::streaming_context& ctx)
+            -> future<echo_resp> { return sleep_5s(std::move(t), ctx); });
+    }
+    virtual future<echo_resp> sleep_5s(echo_req&&, rpc::streaming_context&) {
+        throw std::runtime_error("unimplemented method");
+    }
 
 private:
     scheduling_group _sc;
     smp_service_group _ssg;
-    std::array<rpc::method, 2> _methods{
+    std::array<rpc::method, 3> _methods{
       {rpc::method([this](input_stream<char>& in, rpc::streaming_context& ctx) {
            return raw_prefix_echo(in, ctx);
        }),
        rpc::method([this](input_stream<char>& in, rpc::streaming_context& ctx) {
            return raw_suffix_echo(in, ctx);
+       }),
+       rpc::method([this](input_stream<char>& in, rpc::streaming_context& ctx) {
+           return raw_sleep_5s(in, ctx);
        })}};
 };
-
 class echo_client_protocol {
 public:
-    explicit echo_client_protocol(rpc::transport& c)
-      : _transport(c) {}
-
-    virtual inline future<rpc::client_context<echo_resp>>
-    prefix_echo(echo_req&& r) {
-        return _transport.send_typed<echo_req, echo_resp>(std::move(r), 1350179844);
+    explicit echo_client_protocol(rpc::transport& t)
+      : _transport(t) {}
+    virtual inline future<rpc::client_context<echo_resp>> prefix_echo(
+      echo_req&& r, rpc::clock_type::time_point timeout = rpc::no_timeout) {
+        return _transport.send_typed<echo_req, echo_resp>(
+          std::move(r), 1350179844, timeout);
     }
-    virtual inline future<rpc::client_context<echo_resp>>
-    suffix_echo(echo_req&& r) {
-        return _transport.send_typed<echo_req, echo_resp>(std::move(r), 1296043586);
+    virtual inline future<rpc::client_context<echo_resp>> suffix_echo(
+      echo_req&& r, rpc::clock_type::time_point timeout = rpc::no_timeout) {
+        return _transport.send_typed<echo_req, echo_resp>(
+          std::move(r), 1296043586, timeout);
+    }
+    virtual inline future<rpc::client_context<echo_resp>> sleep_5s(
+      echo_req&& r, rpc::clock_type::time_point timeout = rpc::no_timeout) {
+        return _transport.send_typed<echo_req, echo_resp>(
+          std::move(r), 881961103, timeout);
     }
 
 private:
