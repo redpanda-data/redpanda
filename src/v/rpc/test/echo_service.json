@@ -14,7 +14,11 @@
             "name": "suffix_echo",
             "input_type": "echo_req",
             "output_type": "echo_resp"
+        },
+        {
+            "name": "sleep_5s",
+            "input_type": "echo_req",
+            "output_type": "echo_resp"
         }
-
     ]
 }

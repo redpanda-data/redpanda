@@ -6,6 +6,7 @@
 #include "rpc/types.h"
 #include "seastarx.h"
 
+#include <seastar/core/sleep.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/net/inet_address.hh>
 
@@ -44,6 +45,13 @@ struct echo_impl final : echo::echo_service {
     suffix_echo(echo::echo_req&& req, rpc::streaming_context&) final {
         return make_ready_future<echo::echo_resp>(
           echo::echo_resp{.str = fmt::format("{}_suffix", req.str)});
+    }
+
+    future<echo::echo_resp>
+    sleep_5s(echo::echo_req&& req, rpc::streaming_context&) final {
+        using namespace std::chrono_literals;
+        return seastar::sleep(5s).then(
+          []() { return echo::echo_resp{.str = "Zzz..."}; });
     }
 };
 
