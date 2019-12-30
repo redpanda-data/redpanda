@@ -34,6 +34,12 @@ class TestRunner():
                 "--overprovisioned", "--unsafe-bypass-fsync 1",
                 "--blocked-reactor-notify-ms 2000000"
             ])
+        elif "rpbench" in binary:
+            # benchmarks have no boost wrapper which needs the silly `--` hack
+            self.test_args = " ".join([
+                " ".join(map(str, args)),
+                "--blocked-reactor-notify-ms 2000000"
+            ])
         else:
             self.test_args = "" if len(args) == 0 else " ".join(map(str, args))
 
