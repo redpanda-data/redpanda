@@ -329,3 +329,23 @@ BOOST_AUTO_TEST_CASE(iobuf_as_scattered_message) {
         BOOST_TEST(std::memcmp(frag.base, b.data(), size) == 0);
     }
 }
+BOOST_AUTO_TEST_CASE(iobuf_as_ostream_basic) {
+    const auto b = random_generators::gen_alphanum_string(512);
+    iobuf underlying;
+    iobuf_ostreambuf obuf(underlying);
+    std::ostream os(&obuf);
+    os << "hello world" << std::endl /* new line + flush*/;
+    BOOST_REQUIRE_EQUAL(underlying.size_bytes(), 12);
+}
+
+BOOST_AUTO_TEST_CASE(iobuf_as_ostream) {
+    const auto b = random_generators::gen_alphanum_string(512);
+    iobuf underlying;
+    iobuf_ostreambuf obuf(underlying);
+    std::ostream os(&obuf);
+    // first insertion
+    std::copy(b.begin(), b.end(), std::ostreambuf_iterator<char>(os));
+    // second insertion
+    os << b;
+    BOOST_REQUIRE_EQUAL(underlying.size_bytes(), 1024);
+}
