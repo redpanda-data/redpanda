@@ -12,6 +12,7 @@
 
 #include <list>
 #include <stdexcept>
+#include <streambuf>
 
 /// our iobuf is a fragmented buffer. modeled after
 /// folly::iobufqueue.h - it supports prepend and append, but no
@@ -747,3 +748,33 @@ inline std::ostream& operator<<(std::ostream& o, const iobuf& io) {
     return o << "{bytes=" << io.size_bytes()
              << ", fragments=" << std::distance(io.cbegin(), io.cend()) << "}";
 }
+
+/// A simple ostream buffer appender. No other op is currently supported.
+/// Currently works with char-by-char iterators as well. See iobuf_tests.cc
+///
+/// iobuf underlying;
+/// iobuf_ostreambuf obuf(underlying);
+/// std::ostream os(&obuf);
+///
+/// os << "hello world";
+///
+class iobuf_ostreambuf final : public std::streambuf {
+public:
+    iobuf_ostreambuf(iobuf& o)
+      : _buf(o.control_share()) {}
+    int_type overflow(int_type c = traits_type::eof()) final {
+        if (c == traits_type::eof()) {
+            return traits_type::eof();
+        }
+        char_type ch = traits_type::to_char_type(c);
+        return xsputn(&ch, 1) == 1 ? c : traits_type::eof();
+    }
+    std::streamsize xsputn(const char_type* s, std::streamsize n) final {
+        _buf.append(s, n);
+        return n;
+    }
+    ~iobuf_ostreambuf() {}
+
+private:
+    iobuf _buf;
+};
