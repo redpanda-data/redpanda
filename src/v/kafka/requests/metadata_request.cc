@@ -15,8 +15,8 @@ namespace kafka {
 void metadata_request::decode(request_context& ctx) {
     auto version = ctx.header().version;
     auto& reader = ctx.reader();
-
-    topics = reader.read_array(
+    // For metadata request version 0 this array will always be present
+    topics = reader.read_nullable_array(
       [](request_reader& r) { return model::topic(r.read_string()); });
 
     allow_auto_topic_creation = version >= api_version(4) ? reader.read_bool()
@@ -28,7 +28,7 @@ void metadata_request::decode(request_context& ctx) {
 }
 
 void metadata_request::encode(response_writer& writer, api_version version) {
-    writer.write_array(
+    writer.write_nullable_array(
       topics, [](const model::topic tp, response_writer& writer) {
           writer.write(tp());
       });
@@ -278,7 +278,17 @@ metadata_api::process(request_context&& ctx, smp_service_group g) {
         // FIXME:  #95 Cluster Id
         reply.cluster_id = std::nullopt;
 
-        if (request.topics.empty()) {
+        // list all topics if topics array is not present
+        bool list_all_topics = !request.topics;
+
+        if (__builtin_expect(ctx.header().version == api_version(0), false)) {
+            // For metadata API version 0, empty array requests all topics
+            if (request.topics->empty()) {
+                list_all_topics = true;
+            }
+        }
+
+        if (list_all_topics) {
             // need to return all topics for empty request list
             auto topics = ctx.metadata_cache().all_topics_metadata();
             std::transform(
@@ -292,8 +302,8 @@ metadata_api::process(request_context&& ctx, smp_service_group g) {
         } else {
             // ask cache for each topic separatelly
             std::transform(
-              std::cbegin(request.topics),
-              std::cend(request.topics),
+              std::cbegin(*request.topics),
+              std::cend(*request.topics),
               std::back_inserter(reply.topics),
               [&ctx, &request](const model::topic& tp) {
                   auto opt = ctx.metadata_cache().get_topic_metadata(tp);
