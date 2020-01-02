@@ -102,7 +102,8 @@ public:
       kafka::new_topic_configuration& request_topic) {
         // query the server for this topic's metadata
         kafka::metadata_request metadata_req;
-        metadata_req.topics.push_back(request_topic.topic);
+        metadata_req.topics = std::make_optional<std::vector<model::topic>>();
+        metadata_req.topics->push_back(request_topic.topic);
         auto metadata_resp
           = client.dispatch(metadata_req, kafka::api_version(1)).get0();
 

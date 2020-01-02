@@ -24,7 +24,7 @@ struct metadata_api final {
 struct metadata_request {
     using api_type = metadata_api;
 
-    std::vector<model::topic> topics;
+    std::optional<std::vector<model::topic>> topics;
     bool allow_auto_topic_creation = false;             // version >= 4
     bool include_cluster_authorized_operations = false; // version >= 8
     bool include_topic_authorized_operations = false;   // version >= 8

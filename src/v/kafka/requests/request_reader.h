@@ -116,21 +116,23 @@ public:
         return ret;
     }
 
-    // clang-format off
-    template<typename ElementParser,
-             typename T = std::invoke_result_t<ElementParser, request_reader&>>
-    CONCEPT(requires requires(ElementParser parser, request_reader& rr) {
-        { parser(rr) } -> T;
-    })
-    // clang-format on
+    template<
+      typename ElementParser,
+      typename T = std::invoke_result_t<ElementParser, request_reader&>>
     std::vector<T> read_array(ElementParser&& parser) {
         auto len = read_int32();
-        std::vector<T> res;
-        res.reserve(std::max(0, len));
-        while (len-- > 0) {
-            res.push_back(parser(*this));
+        return do_read_array(len, std::forward<ElementParser>(parser));
+    }
+
+    template<
+      typename ElementParser,
+      typename T = std::invoke_result_t<ElementParser, request_reader&>>
+    std::optional<std::vector<T>> read_nullable_array(ElementParser&& parser) {
+        auto len = read_int32();
+        if (len < 0) {
+            return std::nullopt;
         }
-        return res;
+        return do_read_array(len, std::forward<ElementParser>(parser));
     }
 
 private:
@@ -172,6 +174,22 @@ private:
         auto s = string_view_raw(n);
         return bytes_view(
           reinterpret_cast<const bytes_view::value_type*>(s.data()), s.size());
+    }
+
+    // clang-format off
+    template<typename ElementParser,
+             typename T = std::invoke_result_t<ElementParser, request_reader&>>
+    CONCEPT(requires requires(ElementParser parser, request_reader& rr) {
+        { parser(rr) } -> T;
+    })
+    // clang-format on
+    std::vector<T> do_read_array(int32_t len, ElementParser&& parser) {
+        std::vector<T> res;
+        res.reserve(std::max(0, len));
+        while (len-- > 0) {
+            res.push_back(parser(*this));
+        }
+        return res;
     }
 
     iobuf _io;
