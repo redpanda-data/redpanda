@@ -150,6 +150,21 @@ public:
         return _out->size_bytes() - start_size;
     }
 
+    // clang-format off
+    template<typename T, typename ElementWriter>
+    CONCEPT(
+          requires requires(ElementWriter writer, response_writer& rw, T& elem) {
+            { writer(elem, rw) } -> void;
+    })
+    // clang-format on
+    uint32_t write_nullable_array(
+      std::optional<std::vector<T>>& v, ElementWriter&& writer) {
+        if (!v) {
+            return write(int32_t(-1));
+        }
+        return write_array(*v, std::forward<ElementWriter>(writer));
+    }
+
     // wrap a writer in a kafka bytes array object. the writer should return
     // true if writing no bytes should result in the encoding as nullable bytes,
     // and false otherwise.
