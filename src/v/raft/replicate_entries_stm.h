@@ -72,6 +72,7 @@ private:
     int32_t _max_retries;
     /// we keep a copy around until we finish the retries
     append_entries_request _req;
+    semaphore _share_sem;
     // list to all nodes & retries per node
     semaphore _sem;
     std::vector<retry_meta> _replies;
