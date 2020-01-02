@@ -1,6 +1,10 @@
 #include "librdkafka/rdkafkacpp.h"
+#include "model/fundamental.h"
 #include "redpanda/tests/fixture.h"
 #include "test_utils/fixture.h"
+
+#include <optional>
+#include <vector>
 
 #if 0
 /*
@@ -35,9 +39,28 @@ FIXTURE_TEST(get_metadadata, redpanda_thread_fixture) {
 
 static kafka::metadata_request all_topics() {
     kafka::metadata_request req;
-    // FIXME: req.topics = std::nullopt
-    // https://app.asana.com/0/1149841353291489/1153248907521409
+    req.topics = std::nullopt;
     return req;
+}
+
+// Valid only for Metadata API versions >= 1
+static kafka::metadata_request no_topics() {
+    kafka::metadata_request req;
+    req.topics = std::make_optional<std::vector<model::topic>>();
+    return req;
+}
+
+// https://github.com/apache/kafka/blob/8968cdd/core/src/test/scala/unit/kafka/server/MetadataRequestTest.scala#L117
+FIXTURE_TEST(test_no_topics_request, redpanda_thread_fixture) {
+    // FIXME: Create some topics to make this test meaningfull
+    auto req = no_topics();
+
+    auto client = make_kafka_client().get0();
+    client.connect().get();
+    auto resp = client.dispatch(req, kafka::api_version(1)).get0();
+    client.stop().then([&client] { client.shutdown(); }).get();
+
+    BOOST_REQUIRE(resp.topics.empty());
 }
 
 // https://github.com/apache/kafka/blob/8968cdd/core/src/test/scala/unit/kafka/server/MetadataRequestTest.scala#L52
