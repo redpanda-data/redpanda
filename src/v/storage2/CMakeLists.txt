@@ -1,4 +1,5 @@
 add_library(storage2 STATIC
+     fileset.cc
      vassert.cc)
 
  target_link_libraries(storage2 PUBLIC
