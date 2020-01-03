@@ -8,6 +8,7 @@
 #include "model/record_batch_reader.h"
 #include "resource_mgmt/io_priority.h"
 #include "rpc/connection_cache.h"
+#include "rpc/types.h"
 #include "storage/shard_assignment.h"
 #include "utils/retry.h"
 
@@ -457,7 +458,10 @@ future<join_reply> controller::dispatch_join_to_remote(
       target.addr,
       [joining_node = std::move(joining_node)](
         controller_client_protocol& c) mutable {
-          return c.join(join_request(std::move(joining_node)))
+          return c
+            .join(
+              join_request(std::move(joining_node)),
+              rpc::clock_type::now() + join_timeout)
             .then([](rpc::client_context<join_reply> ctx) {
                 return std::move(ctx.data);
             });
@@ -517,7 +521,9 @@ future<> controller::process_join_request(model::broker broker) {
     // controller
     return dispatch_rpc_to_leader([this, broker = std::move(broker)](
                                     controller_client_protocol& c) mutable {
-               return c.join(join_request(std::move(broker)));
+               return c.join(
+                 join_request(std::move(broker)),
+                 rpc::clock_type::now() + join_timeout);
            })
       .discard_result();
 }
