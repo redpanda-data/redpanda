@@ -21,7 +21,7 @@ struct retry_counter {
     }
 
     int success_after;
-    int cnt;
+    int cnt = 0;
 };
 
 SEASTAR_THREAD_TEST_CASE(retry_then_succed) {
