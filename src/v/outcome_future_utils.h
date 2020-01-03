@@ -55,3 +55,15 @@ seastar::future<result<T, EC>> result_with_timeout(
       });
     return result;
 }
+
+template<typename Ex, typename EC = std::error_code, typename T>
+seastar::future<result<T, EC>>
+wrap_exception_with_result(EC error, seastar::future<T> f) {
+    constexpr bool is_already_result = outcome::is_basic_result_v<T>;
+    static_assert(!is_already_result, "nested result<T> not yet supported");
+
+    using ret_t = result<T, EC>;
+    return f.then([](T t) { return make_ready_future<ret_t>(std::move(t)); })
+      .handle_exception_type(
+        [error](Ex& e) { return make_ready_future<ret_t>(error); });
+}

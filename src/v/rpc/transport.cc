@@ -128,7 +128,8 @@ future<> transport::connect() {
     });
 }
 
-future<std::unique_ptr<streaming_context>> transport::send(netbuf b) {
+future<std::unique_ptr<streaming_context>>
+transport::send(netbuf b, rpc::clock_type::time_point timeout) {
     // hold invariant of always having a valid connection _and_ a working
     // dispatch gate where we can wait for async futures
     if (!is_valid() || _dispatch_gate.is_closed()) {
@@ -137,41 +138,49 @@ future<std::unique_ptr<streaming_context>> transport::send(netbuf b) {
             "cannot send payload with invalid connection. remote:{}",
             server_address())));
     }
-    return with_gate(_dispatch_gate, [this, b = std::move(b)]() mutable {
-        if (_correlations.find(_correlation_idx + 1) != _correlations.end()) {
-            _probe.client_correlation_error();
-            throw std::runtime_error(
-              "Invalid transport state. Doubly registered correlation_id");
-        }
-        const uint32_t idx = ++_correlation_idx;
-        promise_t item;
-        // capture the future _before_ inserting promise in the map
-        // in case there is a concurrent error w/ the connection and it fails
-        // the future before we return from this function
-        auto fut = item.get_future();
-        b.set_correlation_id(idx);
-        _correlations.emplace(idx, std::move(item));
-
-        // send
-        auto view = std::move(b).as_scattered();
-        const auto sz = view.size();
-        return get_units(_memory, sz)
-          .then([this, v = std::move(view), f = std::move(fut)](
-                  semaphore_units<> units) mutable {
-              /// background
-              (void)with_gate(
-                _dispatch_gate,
-                [this, v = std::move(v), u = std::move(units)]() mutable {
-                    auto msg_size = v.size();
-                    return _out.write(std::move(v))
-                      .then([this, msg_size, u = std::move(u)] {
-                          _probe.request_sent();
-                          _probe.add_bytes_sent(msg_size);
-                      });
-                });
-              return std::move(f);
+    return with_gate(
+      _dispatch_gate, [this, b = std::move(b), timeout]() mutable {
+          if (_correlations.find(_correlation_idx + 1) != _correlations.end()) {
+              _probe.client_correlation_error();
+              throw std::runtime_error(
+                "Invalid transport state. Doubly registered correlation_id");
+          }
+          const uint32_t idx = ++_correlation_idx;
+          internal::response_handler item;
+          // capture the future _before_ inserting promise in the map
+          // in case there is a concurrent error w/ the connection and it fails
+          // the future before we return from this function
+          auto fut = item.get_future();
+          b.set_correlation_id(idx);
+          auto [it, placed] = _correlations.emplace(idx, std::move(item));
+          it->second.with_timeout(timeout, [this, idx] {
+              auto it = _correlations.find(idx);
+              if (__builtin_expect(it != _correlations.end(), true)) {
+                  rpclog.warn("Request timeout");
+                  _correlations.erase(it);
+              }
           });
-    });
+
+          // send
+          auto view = std::move(b).as_scattered();
+          const auto sz = view.size();
+          return get_units(_memory, sz)
+            .then([this, v = std::move(view), f = std::move(fut)](
+                    semaphore_units<> units) mutable {
+                /// background
+                (void)with_gate(
+                  _dispatch_gate,
+                  [this, v = std::move(v), u = std::move(units)]() mutable {
+                      auto msg_size = v.size();
+                      return _out.write(std::move(v))
+                        .then([this, msg_size, u = std::move(u)] {
+                            _probe.request_sent();
+                            _probe.add_bytes_sent(msg_size);
+                        });
+                  });
+                return std::move(f);
+            });
+      });
 }
 
 future<> transport::do_reads() {
@@ -196,11 +205,8 @@ future<> transport::dispatch(header h) {
     static constexpr auto header_size = sizeof(header);
     auto it = _correlations.find(h.correlation_id);
     if (it == _correlations.end()) {
-        // the background future on connect will fail all outstanding futures
-        // and close the connection
+        // We removed correlation already
         _probe.server_correlation_error();
-        return make_exception_future<>(std::runtime_error(
-          fmt::format("cannot find correlation_id: {}", h.correlation_id)));
     }
     _probe.add_bytes_received(header_size + h.size);
     auto ctx = std::make_unique<client_context_impl>(*this, std::move(h));
