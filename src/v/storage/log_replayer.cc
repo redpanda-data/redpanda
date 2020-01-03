@@ -38,6 +38,15 @@ void crc_record_header_and_key(
     crc.extend(key);
 }
 
+void crc_record_header_and_key(crc32& crc, const model::record& r) {
+   crc.extend_vint(r.size_bytes());
+   crc.extend_vint(r.attributes().value());
+   crc.extend_vint(r.timestamp_delta());
+   crc.extend_vint(r.offset_delta());
+   crc.extend_vint(r.key().size_bytes());
+   crc.extend(r.key());
+ }
+
 class checksumming_consumer : public batch_consumer {
 public:
     virtual skip consume_batch_start(
