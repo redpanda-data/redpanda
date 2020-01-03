@@ -1,10 +1,13 @@
 package redpanda
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
 	"vectorized/pkg/utils"
+
+	vyaml "vectorized/pkg/yaml"
 
 	"github.com/spf13/afero"
 	"gopkg.in/yaml.v2"
@@ -223,7 +226,12 @@ rpk:
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := WriteConfig(tt.args.fs, tt.args.config(), tt.args.path)
+			// WriteConfig needs the file at the given path to exist.
+			err := vyaml.Persist(tt.args.fs, tt.args.config(), tt.args.path)
+			if err != nil {
+				t.Fatal(err.Error())
+			}
+			err = WriteConfig(tt.args.fs, tt.args.config(), tt.args.path)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected an error, got nil")
@@ -243,6 +251,11 @@ rpk:
 					strings.ReplaceAll(tt.expected, " ", "·"),
 					strings.ReplaceAll(content, " ", "·"),
 				)
+			}
+			backup := fmt.Sprintf("%s.bk", tt.args.path)
+			_, err = tt.args.fs.Stat(backup)
+			if err != nil {
+				t.Errorf("got an error while stat'ing %v: %v", backup, err)
 			}
 		})
 	}
