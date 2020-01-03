@@ -16,4 +16,6 @@ void crc_record_header_and_key(
   int32_t offset_delta,
   const iobuf& key);
 
+void crc_record_header_and_key(crc32&, const model::record& r);
+
 } // namespace storage
