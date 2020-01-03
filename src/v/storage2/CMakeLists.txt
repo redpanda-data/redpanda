@@ -1,6 +1,9 @@
 add_library(storage2 STATIC
+     indices.cc
      fileset.cc
-     vassert.cc)
+     vassert.cc
+     offset_index.cc
+     timestamp_index.cc)
 
  target_link_libraries(storage2 PUBLIC
    Seastar::seastar
