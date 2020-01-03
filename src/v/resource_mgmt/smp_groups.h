@@ -22,17 +22,27 @@ public:
             [smp_sg_config] { return create_smp_service_group(smp_sg_config); })
           .then([this](smp_service_group sg) {
               _kafka = std::make_unique<smp_service_group>(std::move(sg));
+          })
+          .then(
+            [smp_sg_config] { return create_smp_service_group(smp_sg_config); })
+          .then([this](smp_service_group sg) {
+              _cluster = std::make_unique<smp_service_group>(std::move(sg));
           });
+        ;
     }
     smp_service_group raft_smp_sg() { return *_raft; }
     smp_service_group kafka_smp_sg() { return *_kafka; }
+    smp_service_group cluster_smp_sg() { return *_cluster; }
 
     future<> destroy_groups() {
-        return destroy_smp_service_group(*_kafka).then(
-          [this] { return destroy_smp_service_group(*_raft); });
+        return destroy_smp_service_group(*_kafka)
+          .then([this] { return destroy_smp_service_group(*_raft); })
+          .then([this] { return destroy_smp_service_group(*_kafka); })
+          .then([this] { return destroy_smp_service_group(*_cluster); });
     }
 
 private:
     std::unique_ptr<smp_service_group> _raft;
     std::unique_ptr<smp_service_group> _kafka;
+    std::unique_ptr<smp_service_group> _cluster;
 };

@@ -91,7 +91,7 @@ FIXTURE_TEST_EXPECTED_FAILURES(
 
 // https://github.com/apache/kafka/blob/8968cdd/core/src/test/scala/unit/kafka/server/MetadataRequestTest.scala#L87
 // https://app.asana.com/0/1149841353291489/1153248907521428
-FIXTURE_TEST_EXPECTED_FAILURES(rack, redpanda_thread_fixture, 1) {
+FIXTURE_TEST(rack, redpanda_thread_fixture) {
     auto req = all_topics();
 
     auto client = make_kafka_client().get0();

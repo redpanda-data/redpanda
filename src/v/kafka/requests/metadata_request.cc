@@ -1,6 +1,7 @@
 #include "kafka/requests/metadata_request.h"
 
 #include "cluster/metadata_cache.h"
+#include "cluster/types.h"
 #include "kafka/controller_dispatcher.h"
 #include "kafka/errors.h"
 #include "model/metadata.h"
@@ -270,11 +271,19 @@ metadata_api::process(request_context&& ctx, smp_service_group g) {
           [](cluster::controller& cntrl) { return cntrl.get_leader_id(); });
 
         metadata_response reply;
-        // FIXME: fill with brokers list when available in cache
-        reply.brokers.push_back({.node_id = model::node_id(1),
-                                 .host = "localhost",
-                                 .port = 9092,
-                                 .rack = std::nullopt});
+        auto brokers = ctx.metadata_cache().all_brokers();
+        std::transform(
+          brokers.begin(),
+          brokers.end(),
+          std::back_inserter(reply.brokers),
+          [](cluster::broker_ptr b) {
+              return metadata_response::broker{
+                .node_id = b->id(),
+                .host = b->kafka_api_address().host(),
+                .port = b->kafka_api_address().port(),
+                .rack = b->rack()};
+          });
+
         // FIXME:  #95 Cluster Id
         reply.cluster_id = std::nullopt;
 
