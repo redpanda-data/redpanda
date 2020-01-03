@@ -94,11 +94,10 @@ future<result<append_entries_reply>> replicate_entries_stm::do_dispatch_one(
                   return make_ready_future<ret_t>(t.error());
               }
               auto f = raftgen_client_protocol(*t.value())
-                         .append_entries(std::move(r), rpc::no_timeout);
-              return result_with_timeout(
-                       raft::clock_type::now() + 1s,
-                       errc::timeout,
-                       std::move(f))
+                         .append_entries(
+                           std::move(r), raft::clock_type::now() + 1s);
+              return wrap_exception_with_result<
+                                rpc::request_timeout_exception>(errc::timeout, std::move(f))
                 .then([](auto r) {
                     if (!r) {
                         return make_ready_future<ret_t>(r.error());
