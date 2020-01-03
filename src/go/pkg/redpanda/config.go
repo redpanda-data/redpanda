@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"vectorized/pkg/utils"
 	"vectorized/pkg/yaml"
 
 	log "github.com/sirupsen/logrus"
@@ -58,8 +59,35 @@ func WriteConfig(fs afero.Fs, config *Config, path string) error {
 		}
 		return errors.New(strings.Join(reasons, ", "))
 	}
-	log.Debugf("Writing redpanda config file to '%s'", path)
-	return yaml.Persist(fs, config, path)
+	backup := fmt.Sprintf("%s.bk", path)
+	exists, err := afero.Exists(fs, backup)
+	if err != nil {
+		return err
+	}
+	if exists {
+		log.Debug("Removing current backup file")
+		err = fs.Remove(backup)
+		if err != nil {
+			return err
+		}
+	}
+	log.Debugf("Backing up the current configuration to '%s'", backup)
+	err = fs.Rename(path, backup)
+	if err != nil {
+		return err
+	}
+	log.Debugf("Writing the new redpanda config to '%s'", path)
+	err = yaml.Persist(fs, config, path)
+	if err != nil {
+		log.Debugf("Recovering the previous confing from %s", backup)
+		recErr := utils.CopyFile(fs, backup, path)
+		if recErr != nil {
+			msg := "couldn't persist the new config due to '%v', nor recover the backup due to '%v"
+			return fmt.Errorf(msg, err, recErr)
+		}
+		return err
+	}
+	return nil
 }
 
 func ReadConfigFromPath(fs afero.Fs, path string) (*Config, error) {
