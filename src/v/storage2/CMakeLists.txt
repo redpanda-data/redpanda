@@ -8,7 +8,8 @@ add_library(storage2 STATIC
      segment_writer.cc
      segment_appender.cc
      partition.cc
-     repository.cc)
+     repository.cc
+     parser.cc)
 
  target_link_libraries(storage2 PUBLIC
    Seastar::seastar
