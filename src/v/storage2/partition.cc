@@ -25,6 +25,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <numeric>
 #include <stdexcept>
 #include <string>
 
@@ -167,7 +168,7 @@ private:
         if (empty()) {
             return index_key_traits<pkey_type>::zero();
         } else {
-            pkey_type maxpkey = std::reduce(
+            pkey_type maxpkey = std::accumulate(
               _segments.begin(),
               _segments.end(),
               index_key_traits<pkey_type>::zero(),
