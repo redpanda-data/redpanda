@@ -35,3 +35,11 @@ rp_test(
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES Boost::unit_test_framework
   )
+  rp_test(
+    UNIT_TEST
+    BINARY_NAME retry_test
+    SOURCES retry_test.cc
+    LIBRARIES Seastar::seastar_testing
+  
+    ARGS "-- -c 2"
+  )
