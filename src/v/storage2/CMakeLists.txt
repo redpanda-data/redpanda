@@ -3,7 +3,10 @@ add_library(storage2 STATIC
      fileset.cc
      vassert.cc
      offset_index.cc
-     timestamp_index.cc)
+     timestamp_index.cc
+     segment.cc
+     segment_writer.cc
+     segment_appender.cc)
 
  target_link_libraries(storage2 PUBLIC
    Seastar::seastar
