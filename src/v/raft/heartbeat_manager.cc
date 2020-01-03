@@ -82,8 +82,9 @@ static future<result<heartbeat_reply>> send_beat(
           }
           hbeatlog.trace("sending hbeats {}", r);
           auto f = raftgen_client_protocol(*(t.value()))
-                     .heartbeat(std::move(r), rpc::no_timeout);
-          return result_with_timeout(tmo, errc::timeout, std::move(f))
+                     .heartbeat(std::move(r), tmo);
+          return wrap_exception_with_result<rpc::request_timeout_exception>(
+                   errc::timeout, std::move(f))
             .then([](auto r) {
                 if (!r) {
                     return make_ready_future<ret_t>(r.error());
