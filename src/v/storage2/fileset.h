@@ -44,12 +44,10 @@ namespace storage {
  * header defines types that make it easier to access them as a unit.
  */
 
-namespace { // helpers
-
+namespace detail { // helpers
 template<typename T>
-using ix_type = detail::as_array_of<segment_indices, T>;
-
-} // namespace
+using ix_type = as_array_of<segment_indices, T>;
+} // namespace detail
 
 /**
  * This type represents a fileset with "live" open handles to
@@ -59,7 +57,7 @@ using ix_type = detail::as_array_of<segment_indices, T>;
  */
 class open_fileset {
 public:
-    using ix_type = ix_type<file>;
+    using ix_type = detail::ix_type<file>;
     using ix_type_iterator = ix_type::iterator;
     using ix_type_const_iterator = ix_type::const_iterator;
 
@@ -101,7 +99,7 @@ public:
      * Sync only the data log file not the aux indices.
      */
     future<> flush_logfile();
-    
+
     /**
      * Used only in non-sealed segments, this method syncs buffers with disk.
      * Sync only the aux indices.
@@ -130,7 +128,7 @@ private:
  */
 class closed_fileset {
 public:
-    using ix_type = ix_type<std::filesystem::path>;
+    using ix_type = detail::ix_type<std::filesystem::path>;
     using ix_iterator = ix_type::iterator;
     using ix_const_iterator = ix_type::const_iterator;
 
