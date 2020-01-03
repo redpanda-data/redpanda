@@ -19,37 +19,41 @@ steps:
 - id: 'build builder image'
   name: 'gcr.io/kaniko-project/executor:debug-v0.13.0'
   entrypoint: '/busybox/sh'
-  args: ['tools/ci/scripts/build-builder.sh']
+  args:
+  - '-c'
+  - >-
+    /kaniko/executor \
+      --dockerfile=tools/ci/Dockerfile \
+      --build-arg="BUILD_TYPE=$_BUILD_TYPE" \
+      --build-arg="COMPILER=$_COMPILER" \
+      --destination="gcr.io/$PROJECT_ID/builder-$_COMPILER-$_BUILD_TYPE:$SHORT_SHA" \
+      --cache=true \
+      --cache-ttl=12h
+
+- id: 'build redpanda'
+  name: 'gcr.io/$PROJECT_ID/builder-$_COMPILER-$_BUILD_TYPE:$SHORT_SHA'
+  args: ['vtools', 'build', 'cpp', '--conf=tools/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml', '--skip-external']
+
+- id: 'test redpanda'
+  name: 'gcr.io/$PROJECT_ID/builder-$_COMPILER-$_BUILD_TYPE:$SHORT_SHA'
+  args: ['vtools', 'test', 'cpp', '--conf=tools/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml']
+
+- id: 'test rpk'
+  name: 'gcr.io/$PROJECT_ID/builder-$_COMPILER-$_BUILD_TYPE:$SHORT_SHA'
+  args: ['vtools', 'test', 'go', '--conf=tools/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml']
+
+- id: 'build rpk'
+  name: 'gcr.io/$PROJECT_ID/builder-$_COMPILER-$_BUILD_TYPE:$SHORT_SHA'
+  args: ['vtools', 'build', 'go', '--conf=tools/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml']
+
+- id: 'create distro packages'
+  name: 'gcr.io/$PROJECT_ID/builder-$_COMPILER-$_BUILD_TYPE:$SHORT_SHA'
+  args: ['vtools', 'build', 'pkg', '--conf=tools/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml', '--format=rpm', '--format=deb']
   env:
-  - 'BUILD_TYPE=$_BUILD_TYPE'
-  - 'COMPILER=$_COMPILER'
   - 'SHORT_SHA=$SHORT_SHA'
-  - 'PROJECT_ID=$PROJECT_ID'
+  - 'TAG_NAME=$TAG_NAME'
 
-- id: 'build and test cpp'
-  name: 'gcr.io/$PROJECT_ID/builder-$_COMPILER-$_BUILD_TYPE:$SHORT_SHA'
-  args: ['tools/ci/scripts/build-and-test-cpp.sh']
-  env:
-  - 'BUILD_TYPE=$_BUILD_TYPE'
-  - 'COMPILER=$_COMPILER'
-  - 'CI=1'
-
-- id: 'test and build go'
-  name: 'gcr.io/$PROJECT_ID/builder-$_COMPILER-$_BUILD_TYPE:$SHORT_SHA'
-  args: ['tools/ci/scripts/test-and-build-go.sh']
-  env:
-  - 'GOBIN=/workspace/build/go/bin'
-  - 'CI=1'
-
-- id: 'package'
-  name: 'gcr.io/$PROJECT_ID/builder-$_COMPILER-$_BUILD_TYPE:$SHORT_SHA'
-  args: ['tools/packaging.py',
-         '--build-dir', '/workspace/build/',
-         '--build-type', '$_BUILD_TYPE',
-         '--formats', 'rpm', 'deb', 'tar',
-         '--external', '/v/iotune', '/v/$_BUILD_TYPE/v_deps_install/bin/hwloc-calc', '/v/$_BUILD_TYPE/v_deps_install/bin/hwloc-distrib']
-
-- id: 'publish package'
+- id: 'publish distro package'
   name: 'gcr.io/$PROJECT_ID/packagecloud'
   entrypoint: '/bin/bash'
   args: ['tools/ci/scripts/packagecloud-push.sh']
@@ -74,6 +78,5 @@ artifacts:
   objects:
     location: 'gs://vectorizedio/rp/$_BUILD_TYPE/$SHORT_SHA/'
     paths:
-    - 'build/$_BUILD_TYPE/dist/tar/*.tar.gz'
     - 'build/$_BUILD_TYPE/dist/debian/*.deb'
     - 'build/$_BUILD_TYPE/dist/rpm/RPMS/x86_64/*.rpm'

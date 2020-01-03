@@ -1,6 +1,7 @@
 import os
 import errno
 
+
 def force_link(src, target):
     _force_link(os.link, src, target)
 

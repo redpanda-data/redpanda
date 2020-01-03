@@ -6,3 +6,4 @@ requests
 Jinja2
 absl-py
 paramiko
+pyyaml

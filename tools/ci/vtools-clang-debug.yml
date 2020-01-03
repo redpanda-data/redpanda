@@ -1,0 +1,8 @@
+---
+build:
+  root: ./build
+  src: .
+  gopath: /vectorized
+  external: /vectorized
+  clang: /vectorized
+  default_type: debug

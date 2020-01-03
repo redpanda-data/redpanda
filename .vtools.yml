@@ -1,0 +1,5 @@
+---
+build:
+  root: ./build
+  src: ./
+  gopath: ./build

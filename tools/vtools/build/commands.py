@@ -1,0 +1,105 @@
+import click
+import math
+import os
+
+from absl import logging
+from ..vlib import cmake
+from ..vlib import config
+from ..vlib import packaging
+from ..vlib import shell
+
+
+@click.group()
+def build():
+    pass
+
+
+@build.command(short_help='build the redpanda binary.')
+@click.option('--build-type',
+              help=('Build configuration to select. If none given, the '
+                    '``build.default_type`` option from the vtools YAML config '
+                    'is used (an error is thrown if not defined).'),
+              type=click.Choice(['debug', 'release', None],
+                                case_sensitive=False),
+              default=None)
+@click.option('--skip-external',
+              help='Do not build external projects.',
+              is_flag=True)
+@click.option('--clang',
+              help='Build clang and install in <build-root>/llvm/llvm-bin.',
+              is_flag=True)
+@click.option('--conf',
+              help=('Path to configuration file. If not given, a .vtools.yml '
+                    'file is searched recursively starting from the current '
+                    'working directory'),
+              default=None)
+def cpp(build_type, conf, skip_external, clang):
+    """
+    Build the `redpanda` binary using the system's default compiler. To use
+    clang, the `build.clang` YAML configuration option needs to be specified,
+    which should be pointing to the install prefix for clang (e.g. /usr/ or
+    /usr/local). Alternatively, the `--clang` flag can be given, in which case
+    it is assumed to be available in `llvm/llvm-bin` inside the build root
+    folder. If it is not found there, it is installed from source. The
+    `--clang` flag overrides the value in the `build.clang` YAML configuration
+    option.
+
+    In addition, external dependencies are installed from source unless the
+    `--skip-external` flag is given. If `--skip-external` is given, the build
+    expects to find it in the default folder inside the build root (in the
+    v_deps_install/ folder).
+    """
+    vconfig = config.VConfig(config_file=conf, build_type=build_type)
+
+    if clang:
+        # build clang in llvm/ folder inside build root
+        vconfig.clang_path = f'{vconfig.build_root}/llvm/llvm-bin'
+
+    cmake.configure_build(vconfig,
+                          build_external=(not skip_external),
+                          build_external_only=False)
+
+    # assign jobs so that we have 2.0GB/core
+    total_memory = os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES')
+    num_jobs = math.floor(total_memory / (2 * 1024.**3))
+    num_jobs = min(num_jobs, os.sysconf('SC_NPROCESSORS_ONLN'))
+    shell.run_subprocess(f'cd {vconfig.build_dir} && ninja -j{num_jobs}')
+
+
+@build.command()
+@click.option('--conf',
+              help=('Path to configuration file. If not given, a .vtools.yml '
+                    'file is searched recursively starting from the current '
+                    'working directory'),
+              default=None)
+def go(conf):
+    vconfig = config.VConfig(conf, build_type='ignored')
+    os.makedirs(vconfig.go_out_dir, exist_ok=True)
+    build_flags = '-buildmode=pie -v -a -tags netgo'
+    shell.run_subprocess(
+        f'cd {vconfig.go_src_dir} && '
+        f'go build {build_flags} -o {vconfig.go_out_dir} ./...')
+
+
+@build.command()
+@click.option('--format', multiple=True)
+@click.option('--build-type',
+              help=('Build configuration to select. If none given, the '
+                    '``build.default_type`` option from the vtools YAML config '
+                    'is used (an error is thrown if not defined).'),
+              type=click.Choice(['debug', 'release', None],
+                                case_sensitive=False),
+              default=None)
+@click.option('--conf',
+              help=('Path to configuration file. If not given, a .vtools.yml '
+                    'file is searched recursively starting from the current '
+                    'working directory'),
+              default=None)
+def pkg(build_type, conf, format):
+    vconfig = config.VConfig(config_file=conf, build_type=build_type)
+
+    for f in format:
+        if f not in ['tar', 'deb', 'rpm']:
+            logging.fatal(f'Unknown format {format}')
+
+    packaging.create_packages(vconfig, format, vconfig.build_type)

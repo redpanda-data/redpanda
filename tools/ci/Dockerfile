@@ -2,45 +2,37 @@ FROM fedora@sha256:8fa60b88e2a7eac8460b9c0104b877f1aa0cea7fbc03c701b7e545dacccfb
 
 ARG BUILD_TYPE=release
 ARG COMPILER=gcc
+ENV CI=1
+WORKDIR /v
 
-#####
-## go compiler
-#####
-ENV GOROOT=/usr/local/go \
-    GOPATH=/usr/local/gopath \
-    PATH=$PATH:/usr/local/go/bin \
-    CGO_ENABLED=1
-RUN curl -Ls https://dl.google.com/go/go1.13.5.linux-amd64.tar.gz | tar xzf - -C /usr/local
-
-#####
-## OS package dependencies
-#####
+# OS package dependencies
 COPY tools/install-deps.sh /
-
-# remove update repos to pin OS package deps
 RUN rm -f /etc/yum.repos.d/fedora-* && \
     /install-deps.sh && \
     rm /install-deps.sh && \
     dnf clean all
 
-#####
-## clang/3rdparty
-#####
-COPY 3rdparty.cmake.in CMakeLists.txt /rp/
-COPY cmake/FindLibCxx.cmake /rp/cmake/
-COPY cmake/caches/llvm.cmake /rp/cmake/caches/
-COPY tools/build.py tools/build_helpers.py tools/clang.py tools/cli.py tools/constants.py tools/cpp.py tools/dependencies.py tools/fmt.py tools/fs.py tools/git.py tools/golang.py tools/llvm.py tools/log.py tools/packaging.py tools/pkg_config.py tools/shell.py tools/system.py tools/templates.py /rp/tools/
-COPY tools/ci/scripts/install-external.sh /rp/tools/ci/scripts/
+# vtools
+COPY tools/setup.py tools/tox.ini tools/README.md tools/requirements.txt tools/requirements-dev.txt /v/tools/
+COPY tools/vtools/ /v/tools/vtools
+RUN pip install tox && \
+    tox -c /v/tools && \
+    mv /v/build/bin/vtools /usr/bin/ && \
+    rm -fr /v/build/
 
-RUN cd /rp && \
-    tools/ci/scripts/install-external.sh && \
-    rm -r /rp
+# vtools config for CI
+COPY tools/ci/vtools-${COMPILER}-${BUILD_TYPE}.yml /v/.vtools.yml
 
-#####
-## go deps
-#####
-COPY src/go/go.mod src/go/go.sum tools/ci/scripts/install-go-deps.sh /rpgo/
+# go compiler
+RUN vtools install go-compiler
 
-RUN cd /rpgo && \
-    ./install-go-deps.sh && \
-    rm -r /rpgo
+# rpk dependencies
+COPY src/go/go.mod src/go/go.sum /v/src/go/
+RUN vtools install go-deps
+
+# clang/3rdparty
+COPY 3rdparty.cmake.in CMakeLists.txt /v/
+COPY cmake/caches/llvm.cmake /v/cmake/caches/
+RUN bash -c 'if [ "$COMPILER" == "clang" ]; then vtools install clang; fi' && \
+    vtools install cpp-deps && \
+    rm -r /v/

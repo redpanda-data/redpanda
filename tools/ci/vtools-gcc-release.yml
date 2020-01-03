@@ -1,0 +1,7 @@
+---
+build:
+  root: ./build
+  src: .
+  gopath: /vectorized
+  external: /vectorized
+  default_type: release
