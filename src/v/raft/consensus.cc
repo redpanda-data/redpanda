@@ -8,6 +8,7 @@
 #include "seastarx.h"
 
 #include <seastar/core/fstream.hh>
+#include <seastar/core/future.hh>
 
 #include <iterator>
 
@@ -218,10 +219,11 @@ future<> consensus::add_group_member(model::broker node) {
             // FIXME: Change this so that the node is added to followers
             //        not the nodes directly
             cfg.nodes.push_back(std::move(node));
-        }
-        // append new configuration to log
 
-        return replicate_configuration(std::move(cfg));
+            // append new configuration to log
+            return replicate_configuration(std::move(cfg));
+        }
+        return make_ready_future<>();
     });
 }
 
