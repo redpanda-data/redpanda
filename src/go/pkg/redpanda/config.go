@@ -3,6 +3,7 @@ package redpanda
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"vectorized/pkg/yaml"
 
 	log "github.com/sirupsen/logrus"
@@ -47,7 +48,16 @@ type RpkConfig struct {
 	WellKnownIo         string `yaml:"well_known_io,omitempty"`
 }
 
+// Checks config and writes it to the given path.
 func WriteConfig(fs afero.Fs, config *Config, path string) error {
+	ok, errs := CheckConfig(config)
+	if !ok {
+		reasons := []string{}
+		for _, err := range errs {
+			reasons = append(reasons, err.Error())
+		}
+		return errors.New(strings.Join(reasons, ", "))
+	}
 	log.Debugf("Writing redpanda config file to '%s'", path)
 	return yaml.Persist(fs, config, path)
 }
@@ -74,6 +84,9 @@ func CheckConfig(config *Config) (bool, []error) {
 
 func checkRedpandaConfig(config *RedpandaConfig) []error {
 	errs := []error{}
+	if config == nil {
+		return []error{errors.New("the redpanda config is missing")}
+	}
 	if config.Directory == "" {
 		errs = append(errs, fmt.Errorf("redpanda.data_directory can't be empty"))
 	}
@@ -118,6 +131,9 @@ func checkSocketAddress(socketAddr SocketAddress, configPath string) []error {
 
 func checkRpkConfig(rpk *RpkConfig) []error {
 	errs := []error{}
+	if rpk == nil {
+		return errs
+	}
 	if rpk.TuneCoredump && rpk.CoredumpDir == "" {
 		msg := "if rpk.tune_coredump is set to true," +
 			"rpk.coredump_dir can't be empty"
