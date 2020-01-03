@@ -1,6 +1,7 @@
 #include "cluster/controller.h"
 
 #include "cluster/cluster_utils.h"
+#include "cluster/controller_service.h"
 #include "cluster/logger.h"
 #include "cluster/simple_batch_builder.h"
 #include "config/configuration.h"
@@ -8,6 +9,7 @@
 #include "resource_mgmt/io_priority.h"
 #include "rpc/connection_cache.h"
 #include "storage/shard_assignment.h"
+#include "utils/retry.h"
 
 #include <seastar/net/inet_address.hh>
 
@@ -71,6 +73,7 @@ future<> controller::start() {
                       on_raft0_entries_commited(std::move(entries));
                   });
             })
+            .then([this] { return join_raft0(); })
             .then([this] {
                 clusterlog.info("Finished recovering cluster state");
                 _recovered = true;
@@ -398,16 +401,6 @@ future<> controller::update_brokers_cache(std::vector<model::broker> nodes) {
       });
 }
 
-future<> controller::join_raft_group(raft::consensus& c) {
-    // FIXME: Replace this naive join with full fledged join
-    // mechanism. This is stubbed implementation for being able to
-    // test raft
-    if (!c.config().contains_broker(_self.id())) {
-        return c.add_group_member(_self);
-    }
-    return make_ready_future<>();
-}
-
 void controller::on_raft0_entries_commited(std::vector<raft::entry>&& entries) {
     if (_bg.is_closed()) {
         throw gate_closed_exception();
@@ -440,7 +433,8 @@ future<> controller::update_clients_cache(
                         // Do not create client to local broker
                         return make_ready_future<>();
                     }
-                    return update_broker_client(_connection_cache, b);
+                    return update_broker_client(
+                      _connection_cache, b->id(), b->rpc_address());
                 });
             });
       });
@@ -454,4 +448,94 @@ future<> controller::wait_for_leadership() {
     });
 }
 
+future<join_reply> controller::dispatch_join_to_remote(
+  const config::seed_server& target, model::broker joining_node) {
+    clusterlog.info("Sending join request to {} @ {}", target.id, target.addr);
+    return dispatch_rpc(
+      _connection_cache,
+      target.id,
+      target.addr,
+      [joining_node = std::move(joining_node)](
+        controller_client_protocol& c) mutable {
+          return c.join(join_request(std::move(joining_node)))
+            .then([](rpc::client_context<join_reply> ctx) {
+                return std::move(ctx.data);
+            });
+      });
+}
+
+future<> controller::join_raft0() {
+    if (_raft0->config().contains_broker(_self.id())) {
+        clusterlog.debug(
+          "Current node '{}' is already raft0 group member", _self.id());
+        return make_ready_future<>();
+    }
+    return retry_with_backoff(8, [this] {
+        return dispatch_join_to_seed_server(std::cbegin(_seed_servers));
+    });
+}
+
+future<> controller::dispatch_join_to_seed_server(seed_iterator it) {
+    if (it == std::cend(_seed_servers)) {
+        return make_exception_future<>(
+          std::runtime_error("Error registering node in the cluster"));
+    }
+    // Current node is a seed server, just call the method
+    if (it->id == _self.id()) {
+        clusterlog.debug("Using current node as a seed server");
+        return process_join_request(_self).handle_exception(
+          [this, it](std::exception_ptr e) {
+              clusterlog.warn("Error processing join request at current node");
+              return dispatch_join_to_seed_server(std::next(it));
+          });
+    }
+    // If seed is the other server then dispatch join requst to it
+    return dispatch_join_to_remote(*it, _self)
+      .then_wrapped([it, this](future<join_reply> f) {
+          try {
+              join_reply reply = f.get0();
+              if (reply.success) {
+                  return make_ready_future<>();
+              }
+          } catch (...) {
+              clusterlog.error("Error sending join request");
+          }
+          // Dispatch to next server
+          return dispatch_join_to_seed_server(std::next(it));
+      });
+}
+
+future<> controller::process_join_request(model::broker broker) {
+    verify_shard();
+    clusterlog.info("Processing node '{}' join request", broker.id());
+    // curent node is a leader
+    if (is_leader()) {
+        // Just update raft0 configuration
+        return _raft0->add_group_member(std::move(broker));
+    }
+    // Current node is not the leader have to send an RPC to leader
+    // controller
+    return dispatch_rpc_to_leader([this, broker = std::move(broker)](
+                                    controller_client_protocol& c) mutable {
+               return c.join(join_request(std::move(broker)));
+           })
+      .discard_result();
+}
+
+template<typename Func>
+futurize_t<std::result_of_t<Func(controller_client_protocol&)>>
+controller::dispatch_rpc_to_leader(Func&& f) {
+    using ret_t = futurize<std::result_of_t<Func(controller_client_protocol&)>>;
+    auto leader = _raft0->config().find_in_nodes(_raft0->config().leader_id);
+    if (leader == _raft0->config().nodes.end()) {
+        return ret_t::make_exception_future(
+          std::runtime_error("There is no leader controller in cluster"));
+    }
+    // Dispatch request to current leader
+    return dispatch_rpc(
+      _connection_cache,
+      leader->id(),
+      leader->rpc_address(),
+      std::forward<Func>(f));
+}
 } // namespace cluster

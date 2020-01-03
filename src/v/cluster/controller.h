@@ -1,5 +1,6 @@
 #pragma once
 
+#include "cluster/controller_service.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_allocator.h"
 #include "cluster/partition_manager.h"
@@ -44,6 +45,8 @@ public:
 
     model::node_id get_leader_id() const { return _raft0->config().leader_id; }
 
+    future<> process_join_request(model::broker broker);
+
     future<std::vector<topic_result>> create_topics(
       std::vector<topic_configuration> topics,
       model::timeout_clock::time_point timeout);
@@ -63,6 +66,7 @@ public:
     future<> wait_for_leadership();
 
 private:
+    using seed_iterator = std::vector<config::seed_server>::const_iterator;
     struct batch_consumer {
         explicit batch_consumer(controller* c)
           : ptr(c) {}
@@ -109,7 +113,15 @@ private:
       raft::group_id,
       std::vector<model::broker_shard>);
 
-    future<> join_raft_group(raft::consensus&);
+    future<> dispatch_join_to_seed_server(seed_iterator it);
+    future<> join_raft0();
+
+    template<typename Func>
+    futurize_t<std::result_of_t<Func(controller_client_protocol&)>>
+    dispatch_rpc_to_leader(Func&&);
+
+    future<join_reply>
+    dispatch_join_to_remote(const config::seed_server&, model::broker);
 
     model::broker _self;
     std::vector<config::seed_server> _seed_servers;
