@@ -4,6 +4,7 @@
 #include "rpc/client_probe.h"
 #include "rpc/netbuf.h"
 #include "rpc/parse_utils.h"
+#include "rpc/response_handler.h"
 #include "rpc/types.h"
 
 #include <seastar/core/gate.hh>
@@ -56,18 +57,18 @@ private:
 
 class transport final : public base_transport {
 public:
-    using promise_t = promise<std::unique_ptr<streaming_context>>;
-
     explicit transport(
       transport_configuration c,
       std::optional<sstring> service_name = std::nullopt);
     transport(transport&&) = default;
     virtual ~transport();
     future<> connect() final;
-    future<std::unique_ptr<streaming_context>> send(netbuf);
+    future<std::unique_ptr<streaming_context>>
+      send(netbuf, rpc::timer_type::time_point);
 
     template<typename Input, typename Output>
-    future<client_context<Output>> send_typed(Input, uint32_t);
+    future<client_context<Output>> send_typed(
+      Input, uint32_t, rpc::timer_type::time_point = rpc::no_timeout);
 
 private:
     friend client_context_impl;
@@ -78,18 +79,18 @@ private:
     void setup_metrics(const std::optional<sstring>&);
 
     semaphore _memory;
-    std::unordered_map<uint32_t, promise_t> _correlations;
+    std::unordered_map<uint32_t, internal::response_handler> _correlations;
     uint32_t _correlation_idx{0};
     metrics::metric_groups _metrics;
 };
 
 template<typename Input, typename Output>
-inline future<client_context<Output>>
-transport::send_typed(Input r, uint32_t method_id) {
+inline future<client_context<Output>> transport::send_typed(
+  Input r, uint32_t method_id, rpc::timer_type::time_point timeout) {
     auto b = rpc::netbuf();
     b.serialize_type(std::move(r));
     b.set_service_method_id(method_id);
-    return send(std::move(b))
+    return send(std::move(b), timeout)
       .then([this](std::unique_ptr<streaming_context> sctx) mutable {
           return parse_type<Output>(_in, sctx->get_header())
             .then([sctx = std::move(sctx)](Output o) {

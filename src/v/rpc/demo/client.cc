@@ -1,5 +1,6 @@
 #include "rpc/demo/demo_utils.h"
 #include "rpc/demo/simple_service.h"
+#include "rpc/types.h"
 #include "seastarx.h"
 #include "syschecks/syschecks.h"
 #include "utils/hdr_hist.h"
@@ -126,14 +127,16 @@ private:
               .then([this, &c](semaphore_units<> u) {
                   return c
                     ->put(
-                      demo::gen_simple_request(_cfg.data_size, _cfg.chunk_size))
+                      demo::gen_simple_request(_cfg.data_size, _cfg.chunk_size),
+                      rpc::no_timeout)
                     .then([m = _cfg.hist->local().auto_measure(),
                            u = std::move(u)](auto _) {});
               });
         } else if (_cfg.test_case == 2) {
             return get_units(_mem, sizeof(demo::complex_request{}))
               .then([this, &c](semaphore_units<> u) {
-                  return c->put_complex(demo::complex_request{})
+                  return c
+                    ->put_complex(demo::complex_request{}, rpc::no_timeout)
                     .then([m = _cfg.hist->local().auto_measure(),
                            u = std::move(u)](auto _) {});
               });
@@ -142,7 +145,7 @@ private:
               .then([this, &c](semaphore_units<> u) {
                   auto r = demo::gen_interspersed_request(
                     _cfg.data_size, _cfg.chunk_size);
-                  return c->put_interspersed(std::move(r))
+                  return c->put_interspersed(std::move(r), rpc::no_timeout)
                     .then([m = _cfg.hist->local().auto_measure(),
                            u = std::move(u)](auto _) {});
               });

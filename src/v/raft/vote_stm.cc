@@ -64,9 +64,11 @@ future<result<vote_reply>> vote_stm::do_dispatch_one(model::node_id n) {
               if (!t) {
                   return make_ready_future<ret_t>(t.error());
               }
-              auto f = raftgen_client_protocol(*t.value()).vote(std::move(r));
               auto tout = clock_type::now() + _ptr->_jit.base_duration();
-              return result_with_timeout(tout, errc::timeout, std::move(f))
+              auto f
+                = raftgen_client_protocol(*t.value()).vote(std::move(r), tout);
+              return wrap_exception_with_result<rpc::request_timeout_exception>(
+                       errc::timeout, std::move(f))
                 .then([](auto r) {
                     if (!r) {
                         return make_ready_future<ret_t>(r.error());

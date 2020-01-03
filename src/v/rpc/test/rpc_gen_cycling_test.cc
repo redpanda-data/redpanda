@@ -1,4 +1,5 @@
 
+#include "rpc/exceptions.h"
 #include "rpc/test/rpc_integration_fixture.h"
 #include "test_utils/fixture.h"
 
@@ -20,7 +21,7 @@ FIXTURE_TEST(rpcgen_integration, rpc_integration_fixture) {
     info("client stopping");
     cli.stop().get();
     info("service stopping");
-    
+
     BOOST_REQUIRE_EQUAL(ret.data.x, 66);
 }
 
@@ -68,4 +69,18 @@ FIXTURE_TEST(client_muxing, rpc_integration_fixture) {
     client.stop().get();
 
     BOOST_REQUIRE_EQUAL(echo_resp.data.str, "testing..._suffix");
+}
+
+FIXTURE_TEST(timeout_test, rpc_integration_fixture) {
+    configure_server();
+    register_echo();
+    start_server();
+
+    rpc::client<echo::echo_client_protocol> client(client_config());
+    client.connect().get();
+    info("Calling echo method");
+    auto echo_resp = client.sleep_5s(
+      echo::echo_req{.str = "testing..."}, rpc::clock_type::now() + 100ms);
+    BOOST_REQUIRE_THROW(echo_resp.get0(), rpc::request_timeout_exception);
+    client.stop().get();
 }

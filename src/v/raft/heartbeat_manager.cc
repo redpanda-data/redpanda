@@ -4,6 +4,7 @@
 #include "raft/errc.h"
 #include "raft/raftgen_service.h"
 #include "rpc/reconnect_transport.h"
+#include "rpc/types.h"
 
 #include <boost/range/iterator_range.hpp>
 
@@ -66,7 +67,9 @@ future<> heartbeat_manager::do_dispatch_heartbeats(
 }
 
 static future<result<heartbeat_reply>> send_beat(
-  rpc::connection_cache& local, clock_type::time_point tmo, heartbeat_request&& r) {
+  rpc::connection_cache& local,
+  clock_type::time_point tmo,
+  heartbeat_request&& r) {
     using ret_t = result<heartbeat_reply>;
     if (!local.contains(r.node_id)) {
         return make_ready_future<ret_t>(errc::missing_tcp_client);
@@ -78,9 +81,10 @@ static future<result<heartbeat_reply>> send_beat(
               return make_ready_future<ret_t>(t.error());
           }
           hbeatlog.trace("sending hbeats {}", r);
-          auto f
-            = raftgen_client_protocol(*(t.value())).heartbeat(std::move(r));
-          return result_with_timeout(tmo, errc::timeout, std::move(f))
+          auto f = raftgen_client_protocol(*(t.value()))
+                     .heartbeat(std::move(r), tmo);
+          return wrap_exception_with_result<rpc::request_timeout_exception>(
+                   errc::timeout, std::move(f))
             .then([](auto r) {
                 if (!r) {
                     return make_ready_future<ret_t>(r.error());
