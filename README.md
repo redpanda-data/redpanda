@@ -1,3 +1,6 @@
+This source code is Private and Confidential Property of Vectorized, Inc.
+Please report abuse to: security@vectorized.io
+
 # How to get started [build status](https://console.cloud.google.com/cloud-build/builds?project=redpandaci)
 
 ## Building 
