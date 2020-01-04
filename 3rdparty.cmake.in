@@ -79,24 +79,24 @@ if (@CMAKE_CXX_COMPILER_ID@ MATCHES "Clang")
     set(boost_user_config_jam "using clang : : @CMAKE_CXX_COMPILER@ $<SEMICOLON>")
     set(default_depends libcxx)
     ExternalProject_Add(libcxxabi
-        SOURCE_DIR @CMAKE_BINARY_DIR@/../llvm/llvm-src/libcxxabi
+        SOURCE_DIR @CMAKE_BINARY_DIR@/../../llvm/llvm-src/libcxxabi
         INSTALL_DIR @V_DEPS_INSTALL_DIR@
         CMAKE_ARGS
             ${common_cmake_args}
-            -DLLVM_PATH=@CMAKE_BINARY_DIR@/../llvm/llvm-src/llvm
-            -DLIBCXXABI_LIBCXX_PATH=@CMAKE_BINARY_DIR@/../llvm/llvm-src/libcxx
+            -DLLVM_PATH=@CMAKE_BINARY_DIR@/../../llvm/llvm-src/llvm
+            -DLIBCXXABI_LIBCXX_PATH=@CMAKE_BINARY_DIR@/../../llvm/llvm-src/libcxx
             -DLIBCXXABI_C_FLAGS=${c_flags}
             -DLIBCXXABI_CXX_FLAGS=${cxx_flags}
             -DLIBCXXABI_LINK_FLAGS=${ld_flags}
         DEPENDS zlib)
     ExternalProject_Add(libcxx
-        SOURCE_DIR @CMAKE_BINARY_DIR@/../llvm/llvm-src/libcxx
+        SOURCE_DIR @CMAKE_BINARY_DIR@/../../llvm/llvm-src/libcxx
         INSTALL_DIR @V_DEPS_INSTALL_DIR@
         CMAKE_ARGS
             ${common_cmake_args}
-            -DLLVM_PATH=@CMAKE_BINARY_DIR@/../llvm/llvm-src/llvm
+            -DLLVM_PATH=@CMAKE_BINARY_DIR@/../../llvm/llvm-src/llvm
             -DLIBCXX_CXX_ABI=libcxxabi
-            -DLIBCXX_CXX_ABI_INCLUDE_PATHS=@CMAKE_BINARY_DIR@/../llvm/llvm-src/libcxxabi/include
+            -DLIBCXX_CXX_ABI_INCLUDE_PATHS=@CMAKE_BINARY_DIR@/../../llvm/llvm-src/libcxxabi/include
             -DLIBCXX_CXX_ABI_LIBRARY_PATH=@V_DEPS_INSTALL_DIR@/lib
             -DLIBCXX_LINK_FLAGS=${ld_flags}
             DEPENDS libcxxabi)
