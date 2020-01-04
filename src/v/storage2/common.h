@@ -2,7 +2,7 @@
 
 #include "model/fundamental.h"
 #include "model/timestamp.h"
-#include "storage2/vassert.h"
+#include "vassert.h"
 
 namespace storage {
 

@@ -1,7 +1,6 @@
 add_library(storage2 STATIC
      indices.cc
      fileset.cc
-     vassert.cc
      offset_index.cc
      timestamp_index.cc
      segment.cc

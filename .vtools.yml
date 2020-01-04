@@ -3,3 +3,4 @@ build:
   root: ./build
   src: ./
   gopath: ./build
+  default_type: release

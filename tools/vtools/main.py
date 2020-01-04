@@ -3,6 +3,8 @@ import os
 
 from absl import logging
 
+logging._warn_preinit_stderr = 0
+
 from .pkg import commands as pkg
 from .git import commands as git
 from .client import commands as client
