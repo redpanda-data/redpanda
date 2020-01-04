@@ -1,6 +1,5 @@
 import os
 import yaml
-import sys
 
 from absl import logging
 from pathlib import Path
@@ -19,12 +18,16 @@ class VConfig(object):
       external: <path> # [optional] external deps installed out of build dir
     ```
     """
-    def __init__(self, config_file=None, top_folder=None, build_type=None):
+    def __init__(self, config_file=None, top_folder=None, build_type=None,
+                 clang=None):
         """Reads configuration and populates internal properties of the object
         based on contents of the file. If `config_file` is `None`, it
         recursively looks for a `.vtools.yml` file. The search is done from
         the folder pointed to by `top_folder` or current working directory if
-        `top_folder` is `None`.
+        `top_folder` is `None`. The configuration defaults to using GCC, unless
+        `clang` is given. If the `build_type` arg is not given, the config
+        looks for `build.default_type` in the YAML config, and throws an error
+        if it's not defined.
         """
         if not config_file:
             config_file = self.__find_config_file(top_folder)
@@ -46,17 +49,24 @@ class VConfig(object):
                 logging.fatal(f"Expecting 'build.{k}' in {config_file}")
 
         if not build_type:
-            logging.info(f"No 'build_type' given, attempting to use "
-                         f"value from {config_file}.")
             build_type = self._cfg['build'].get('default_type', None)
             if not build_type:
                 logging.fatal('Unable to determine build type.')
+            logging.info(f"Using 'build_type' value from {config_file}")
         self._build_type = build_type
         logging.info(f"Using '{self._build_type}' as build type.")
 
+        if self.clang_path and not clang:
+            # if YAML file defines path for clang, it implies we want clang
+            clang = True
+        elif clang and not self.clang_path:
+            # use <build-root>/llvm/ if clang wanted but no clang_path given
+            self.clang_path = f'{self.build_root}/llvm/llvm-bin'
+        self._compiler = 'clang' if clang else 'gcc'
+
         if not self._cfg['build'].get('external', None):
             self._cfg['build']['external'] = (
-                f'{self.build_dir}/{self.build_type}/v_deps_install')
+                f'{self.build_dir}/v_deps_install')
 
         # Set Go-specific environment variables (GOPATH and PATH). This
         # modifies environment for the current process and its children.
@@ -102,7 +112,7 @@ class VConfig(object):
     @property
     def build_dir(self):
         """Path to build directory, which is the root plus build_type."""
-        return f'{self.build_root}/{self.build_type}'
+        return f'{self.build_root}/{self.build_type}/{self.compiler}'
 
     @property
     def build_type(self):
@@ -112,6 +122,10 @@ class VConfig(object):
     @build_type.setter
     def build_type(self, value):
         self._build_type = value
+
+    @property
+    def compiler(self):
+        return self._compiler
 
     @property
     def clang_path(self):
