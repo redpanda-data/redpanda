@@ -6,32 +6,24 @@
 #include "storage2/common.h"
 #include "storage2/detail/index.h"
 #include "storage2/indices.h"
-#include "utils/named_type.h"
-
-#include <seastar/core/file.hh>
-#include <seastar/core/future.hh>
-#include <seastar/core/iostream.hh>
-
-#include <filesystem>
-#include <type_traits>
 
 namespace storage {
 
 class segment;
-class repository;
+class log_manager;
 
 /**
- * Represents a single topic-partition in the storage subsystem.
+ * Represents a single topic-log in the storage subsystem.
  *
- * A partition is a logical unit of storage where writes and reads
+ * A log is a logical unit of storage where writes and reads
  * are ordered. Data is stored in a series of segment files that contain
  * contigious list of record_batch-es.
  */
-class partition {
+class log {
 public:
     /**
      * This enum describes the direction of trimming in a log.
-     * It is used as a parameter to partition::trim.
+     * It is used as a parameter to log::trim.
      */
     enum class trim_direction {
         /**
@@ -49,12 +41,14 @@ public:
 
 public: // ro getters
     /**
-     * Returns the namespace-topic-partition identifier of this partition.
+     * Returns the namespace-topic-partition identifier of this log.
      */
     const model::ntp& ntp() const;
 
 public: // ro access
-    template<typename Key, typename = detail::is_indexable<Key, segment_indices>>
+    template<
+      typename Key,
+      typename = detail::is_indexable<Key, segment_indices>>
     seastar::input_stream<char> read(Key key) const;
 
 public: // rw access
@@ -67,7 +61,9 @@ public: // rw access
      *
      * The range may or may not span more than one segment.
      */
-    template<typename Key, typename = detail::is_indexable<Key, segment_indices>>
+    template<
+      typename Key,
+      typename = detail::is_indexable<Key, segment_indices>>
     future<trim_result> trim(
       Key at,
       model::term_id term,
@@ -103,24 +99,23 @@ public: // rw access
 
 private: // async construction
     /**
-     * Opens a partition and prepares it for IO operations.
+     * Opens a log and prepares it for IO operations.
      *
-     * Opening a partition involves:
+     * Opening a log involves:
      *   - enumerating available segments
      *   - finding and storing in memory the map of key-ranges to segments (for
      *     index cache)
      *   - loading segment caches into memory
      */
-    static future<partition>
-    open(const repository&, model::ntp, io_priority_class);
+    static future<log> open(const log_manager&, model::ntp, io_priority_class);
 
 private:
     class impl;
     shared_ptr<impl> _impl;
 
 private:
-    partition(shared_ptr<impl>);
-    friend class repository;
+    log(shared_ptr<impl>);
+    friend class log_manager;
 };
 
 } // namespace storage

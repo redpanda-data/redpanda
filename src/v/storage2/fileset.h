@@ -14,12 +14,12 @@
 namespace storage {
 
 /**
- * The directory layout of a partition folder:
+ * The directory layout of a log folder:
  *
  *  default/topic-one/0:
- *    - partition.log           \
- *    - partition.offset_ix     | -> fileset
- *    - partition.timestamp_ix /
+ *    - state.log           \
+ *    - log.offset_ix     | -> fileset
+ *    - log.timestamp_ix /
  *
  *    - 0-0-v1.log           \
  *    - 0-0-v1.offset_ix     | -> fileset

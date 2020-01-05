@@ -1,4 +1,4 @@
-#include "storage2/partition.h"
+#include "storage2/log.h"
 
 #include "model/fundamental.h"
 #include "model/record.h"
@@ -8,44 +8,33 @@
 #include "storage2/fileset.h"
 #include "storage2/fold_log.h"
 #include "storage2/indices.h"
-#include "storage2/repository.h"
+#include "storage2/log_manager.h"
 #include "storage2/segment.h"
 #include "storage2/segment_index.h"
 #include "utils/directory_walker.h"
 
 #include <seastar/core/file-types.hh>
 #include <seastar/core/file.hh>
-#include <seastar/core/future-util.hh>
-#include <seastar/core/future.hh>
-#include <seastar/core/seastar.hh>
-#include <seastar/util/log.hh>
 
-#include <fmt/core.h>
 #include <gsl/span>
 
-#include <algorithm>
-#include <filesystem>
-#include <numeric>
-#include <stdexcept>
-#include <string>
-
-static logger slog("s/partition");
+static logger slog("s/log");
 
 namespace storage {
 
 /**
- * At the implementation level a partition is a folder with several types of
+ * At the implementation level a log is a folder with several types of
  * files in it:
  *
- *  1. partition.log
- *     It is a log file of all the actions that happened to the partition at
+ *  1. state.log
+ *     It is a log file of all the actions that happened to the log at
  *     the segment level, like creating a segment, sealing a segment, truncating
  *     a segment or deleting a segment. Folding all this list of events creates
- *     a snapshot of the state of the partition. This log file is not aware of
+ *     a snapshot of the state of the log. This log file is not aware of
  *     any indices or offsets within segments. Offset information is stored
  *     index files.
  *
- *  2. partition.offset_idx / partition.timestamp_idx
+ *  2. log.offset_idx / log.timestamp_idx
  *     A collection of index files that store the range of index values per
  *     segment. They are used to identify the segment holding a given offset.
  *     So things like first_offset, last_offset are here. This is the first
@@ -62,7 +51,7 @@ namespace storage {
  *     offset of record batches within the segment data file. This is the
  *     second level of indexing.
  */
-class partition::impl {
+class log::impl {
 public:
     using primary_index = segment_indices::primary_index_type;
     using pkey_type = primary_index::key_type;
@@ -70,29 +59,29 @@ public:
 
 public:
     /**
-     * Constructing a partition object is an IO heavy operation and involves
+     * Constructing a log object is an IO heavy operation and involves
      * lots of async work, That's why the constructor is made private and public
      * initialization happens through the open() function that does all the
      * heavylifting asynchronously and returns a constructed object in a
      * future.
      *
-     * For the partition object to be usable, it needs a list of all the
-     * segments it manages - which is stored in the partition.log file,
-     * and the partition indices for each active index.
+     * For the log object to be usable, it needs a list of all the
+     * segments it manages - which is stored in the state.log file,
+     * and the log indices for each active index.
      */
     impl(
       std::vector<segment> segs,
       model::ntp id,
       io_priority_class iopc,
-      const repository& repo)
+      const log_manager& mgr)
       : _myntp(std::move(id))
       , _segments(std::move(segs))
       , _io_priority(std::move(iopc))
-      , _reporef(repo)
+      , _mgr(mgr)
       , _termid(0) {}
 
     /**
-     * The model identifier of the current partition.
+     * The model identifier of the current log.
      */
     const model::ntp& ntp() const { return _myntp; }
 
@@ -112,10 +101,10 @@ public:
     }
 
     /**
-     * Closes all partition resources and all its underlying segments.
+     * Closes all log resources and all its underlying segments.
      *
      * During this operation this is what gets closed:
-     *  - partition log file, partition indices
+     *  - state log file, log indices
      *  - segment log files, segment indices
      */
     future<> close() {
@@ -127,7 +116,7 @@ public:
 
 private:
     /**
-     * True of this partition has no data stored in it yet.
+     * True of this log has no data stored in it yet.
      * Otherwise false.
      */
     bool empty() const { return _segments.empty(); }
@@ -140,7 +129,7 @@ private:
     bool needs_new_segment() const {
         return empty()
                || _segments.back().size_bytes()
-                    >= file_offset(_reporef.configuration().max_segment_size)
+                    >= file_offset(_mgr.configuration().max_segment_size)
                || _segments.back().is_sealed();
     }
 
@@ -187,7 +176,7 @@ private:
     std::filesystem::path
     seg_filename(pkey_type base_pkey, model::term_id term) const {
         auto ntppath = std::filesystem::path(ntp().path());
-        auto basedir = _reporef.working_directory() / ntppath;
+        auto basedir = _mgr.working_directory() / ntppath;
         auto segbase = std::to_string(base_pkey());
         auto filename = fmt::format("{}-{}-v1.log", segbase, term());
         return basedir / filename;
@@ -210,7 +199,7 @@ private:
 
     /**
      * Possible scenarios:
-     *  1. does not exist (empty partition), create one and return.
+     *  1. does not exist (empty log), create one and return.
      *  2. available and not reached max size, return a reference to what we
      *     have.
      *  3. available and reached max size, roll to new segment and return.
@@ -228,7 +217,7 @@ private:
 private:
     model::ntp _myntp;
     model::term_id _termid;
-    repository const& _reporef;
+    log_manager const& _mgr;
     std::vector<segment> _segments;
     io_priority_class _io_priority;
 };
@@ -256,38 +245,37 @@ discover_filesets(std::filesystem::path dir) {
       });
 }
 
-partition::partition(shared_ptr<impl> impl)
+log::log(shared_ptr<impl> impl)
   : _impl(std::move(impl)) {}
 
-future<partition>
-partition::open(const repository& repo, model::ntp id, io_priority_class iopc) {
-    auto path = repo.working_directory() / id.path().c_str();
-    auto partition_log = path / "partition.log";
+future<log>
+log::open(const log_manager& mgr, model::ntp id, io_priority_class iopc) {
+    auto path = mgr.working_directory() / id.path().c_str();
+    auto log_log = path / "state.log";
 
-    return discover_filesets(path).then(
-      [iopc, id, &repo](std::vector<closed_fileset> cfss) {
-          std::vector<future<segment>> segments;
-          for (auto& cfs : cfss) {
-              segments.emplace_back(segment::open(cfs, iopc));
-          }
-          return when_all_succeed(segments.begin(), segments.end())
-            .then([id, iopc, &repo](auto vals) {
-                return make_ready_future<partition>(
-                  partition(seastar::make_shared<partition::impl>(
-                    std::move(vals), id, iopc, repo)));
-            });
-      });
+    return discover_filesets(path).then([iopc, id, &mgr](
+                                          std::vector<closed_fileset> cfss) {
+        std::vector<future<segment>> segments;
+        for (auto& cfs : cfss) {
+            segments.emplace_back(segment::open(cfs, iopc));
+        }
+        return when_all_succeed(segments.begin(), segments.end())
+          .then([id, iopc, &mgr](auto vals) {
+              return make_ready_future<log>(log(seastar::make_shared<log::impl>(
+                std::move(vals), id, iopc, mgr)));
+          });
+    });
 }
 
 /**
- * The partition unique identifier using model types.
+ * The log unique identifier using model types.
  */
-const model::ntp& partition::ntp() const { return _impl->ntp(); }
+const model::ntp& log::ntp() const { return _impl->ntp(); }
 
 /**
- * Appends a batch of records to the partition.
+ * Appends a batch of records to the log.
  */
-future<append_result> partition::append(model::record_batch&& batch) {
+future<append_result> log::append(model::record_batch&& batch) {
     if (batch.size() == 0) {
         return make_exception_future<append_result>(
           record_batch_error("empty batches are not supported"));
@@ -295,12 +283,12 @@ future<append_result> partition::append(model::record_batch&& batch) {
     return _impl->append(std::move(batch));
 }
 
-future<flush_result> partition::flush() {
+future<flush_result> log::flush() {
     return make_ready_future<flush_result>(
       flush_result{model::offset(0), model::offset(0)});
 }
 
-future<flush_result> partition::close() {
+future<flush_result> log::close() {
     return flush().then([this](flush_result result) {
         return _impl->close().then([result = std::move(result)]() {
             return make_ready_future<flush_result>(std::move(result));
@@ -309,12 +297,12 @@ future<flush_result> partition::close() {
 }
 
 template<>
-seastar::input_stream<char> partition::read(model::offset key) const {
+seastar::input_stream<char> log::read(model::offset key) const {
     return _impl->read(key);
 }
 
 template<>
-seastar::input_stream<char> partition::read(model::timestamp key) const {
+seastar::input_stream<char> log::read(model::timestamp key) const {
     return _impl->read(key);
 }
 
