@@ -17,7 +17,7 @@ def build():
 @build.command(short_help='build the redpanda binary.')
 @click.option('--build-type',
               help=('Build configuration to select. If none given, the '
-                    '``build.default_type`` option from the vtools YAML config '
+                    '`build.default_type` option from the vtools YAML config '
                     'is used (an error is thrown if not defined).'),
               type=click.Choice(['debug', 'release', None],
                                 case_sensitive=False),
@@ -46,14 +46,13 @@ def cpp(build_type, conf, skip_external, clang):
 
     In addition, external dependencies are installed from source unless the
     `--skip-external` flag is given. If `--skip-external` is given, the build
-    expects to find it in the default folder inside the build root (in the
-    v_deps_install/ folder).
+    expects to find it in the folder pointed by the `build.external` option of
+    the YAML config file. If that value is not given, external dependencies are
+    expected to be in the default folder inside the build root (v_deps_install/
+    folder).
     """
-    vconfig = config.VConfig(config_file=conf, build_type=build_type)
-
-    if clang:
-        # build clang in llvm/ folder inside build root
-        vconfig.clang_path = f'{vconfig.build_root}/llvm/llvm-bin'
+    vconfig = config.VConfig(config_file=conf, build_type=build_type,
+                             clang=clang)
 
     cmake.configure_build(vconfig,
                           build_external=(not skip_external),
@@ -85,18 +84,22 @@ def go(conf):
 @click.option('--format', multiple=True)
 @click.option('--build-type',
               help=('Build configuration to select. If none given, the '
-                    '``build.default_type`` option from the vtools YAML config '
+                    '`build.default_type` option from the vtools YAML config '
                     'is used (an error is thrown if not defined).'),
               type=click.Choice(['debug', 'release', None],
                                 case_sensitive=False),
               default=None)
+@click.option('--clang',
+              help='Use binary files that were compiled with clang.',
+              is_flag=True)
 @click.option('--conf',
               help=('Path to configuration file. If not given, a .vtools.yml '
                     'file is searched recursively starting from the current '
                     'working directory'),
               default=None)
-def pkg(build_type, conf, format):
-    vconfig = config.VConfig(config_file=conf, build_type=build_type)
+def pkg(build_type, clang, conf, format):
+    vconfig = config.VConfig(config_file=conf, build_type=build_type,
+                             clang=clang)
 
     for f in format:
         if f not in ['tar', 'deb', 'rpm']:

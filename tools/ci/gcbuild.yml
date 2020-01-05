@@ -76,7 +76,7 @@ options:
 
 artifacts:
   objects:
-    location: 'gs://vectorizedio/rp/$_BUILD_TYPE/$SHORT_SHA/'
+    location: 'gs://vectorizedio/rp/$_BUILD_TYPE/$_COMPILER/$SHORT_SHA/'
     paths:
-    - 'build/$_BUILD_TYPE/dist/debian/*.deb'
-    - 'build/$_BUILD_TYPE/dist/rpm/RPMS/x86_64/*.rpm'
+    - 'build/$_BUILD_TYPE/$_COMPILER/dist/debian/*.deb'
+    - 'build/$_BUILD_TYPE/$_COMPILER/dist/rpm/RPMS/x86_64/*.rpm'

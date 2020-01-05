@@ -20,7 +20,7 @@ def install():
 @install.command(short_help='build and install external cmake projects.')
 @click.option('--build-type',
               help=('Build configuration to select. If none given, the '
-                    '``build.default_type`` option from the vtools YAML config '
+                    '`build.default_type` option from the vtools YAML config '
                     'is used (an error is thrown if not defined).'),
               type=click.Choice(['debug', 'release', None],
                                 case_sensitive=False),
@@ -30,8 +30,13 @@ def install():
                     'file is searched recursively starting from the current '
                     'working directory'),
               default=None)
-def cpp_deps(build_type, conf):
-    vconfig = config.VConfig(config_file=conf, build_type=build_type)
+@click.option('--clang',
+              help=('Build external projects using clang, including libc++ '
+                    'and libc++abi.'),
+              is_flag=True)
+def cpp_deps(build_type, conf, clang):
+    vconfig = config.VConfig(config_file=conf, build_type=build_type,
+                             clang=clang)
 
     cmake.configure_build(vconfig,
                           build_external=True,

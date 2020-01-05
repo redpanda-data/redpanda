@@ -3,48 +3,77 @@ Please report abuse to: security@vectorized.io
 
 # How to get started [build status](https://console.cloud.google.com/cloud-build/builds?project=redpandaci)
 
-## Building 
+## Setup
 
-```sh
-python3 tools/build.py                                    \
-        --deps=true             `# [true, false]`         \
-        --targets=all           `# [cpp, go]`             \
-        --build=release         `# [release, debug]`      \
-        --log=debug             `# [info, debug, trace]`  \
-        --fmt=false             `# [true, false]`         \
-        --clang=internal        `# [<empty>, internal]`   \
-        --packages rpm deb tar   # [rpm, deb, tar]
+We mainly work with four types of builds based on the compiler (`gcc` 
+or `clang`) and CMake build type (`debug` or `release`). The build 
+folder has the structure `build/<build-type>/<compiler>`. To get 
+started, run:
+
+```bash
+tools/bootstraph.sh
 ```
 
+The above (idempotent) [bootstrapping script](tools/bootstrap.sh):
 
-## Incremental 
+  * Installs OS package dependencies on deb- and rpm-based 
+    distributions (we mainly develop on Fedora but others should be 
+    supported).
+  * Installs [`vtools`](./tools), our tooling Python-based CLI 
+    interface, putting the binary in the `build/bin` folder.
+  * Installs `clang`, from source, putting the build and binaries 
+    inside the `v/build/llvm` folder.
+  * Installs 3rd-party project dependencies, also from source, putting 
+    the build files in `build/<build-type>/<compiler>/v_deps_build` 
+    and output binary files in 
+    `build/<build-type>/<compiler>/v_deps_install`. 3rd party code is 
+    built differently depending on the build type (debug builds are 
+    sanitized), thus they need to be specialized for each compiler and 
+    build type.
+
+## Build
+
+To build `redpanda`:
+
+```bash
+build/bin/vtools build cpp
+```
+
+By default, `vtools` assumes `release` and `gcc` options. To build 
+using clang:
+
+```bash
+build/bin/vtools build cpp --clang
+```
+
+to build a `debug` build:
+
+```bash
+build/bin/vtools build cpp --build-type debug
+```
+
+For running other tasks:
+
+```bash
+build/bin/vtools <subcommand> --help
+```
+
+## Incremental build
 
 ```sh
-cd build/release  # [debug, release] folders
+cd build/release/gcc  # [debug,release]/[gcc,clang] folders
 ninja redpanda    # can be any target, use 'cmake -N' to list 
 ```
-
 
 ## Debugging main build:
 
 ```sh
-cmake -DCMAKE_BUILD_TYPE=Debug  `# [Debug, Release]`           \
-      -Bbuild/debug             `# [debug, release] folders`   \
-      -H.                        # assumes you are at the tld 
-
+cmake -DCMAKE_BUILD_TYPE=Debug   # [Debug, Release]           \
+      -Bbuild/<type>/<compiler>  # [debug,release], [gcc,clang] folders \
+      -H.                        # assumes you are at the tld \
 make -j8                         # or (($(nproc)-1)) 
 ```
 
-
 ## Contributing
-* [See our contributing guide](CONTRIBUTING.md)
 
-
-```sh
-# Run before submitting changes
-python3 tools/build.py   \
-        --cpplint=1      \
-        --log=debug      \
-        --build=none     \
-        --files=all
-```
+See our [contributing guide](CONTRIBUTING.md).

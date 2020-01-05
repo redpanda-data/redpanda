@@ -7,14 +7,10 @@ from . import clang
 
 def configure_build(vconfig, build_external=True, build_external_only=False):
 
-    clang_path = clang.find_or_install_clang(vconfig)
-
-    if clang_path:
+    if vconfig.compiler == 'clang':
+        clang_path = clang.find_or_install_clang(vconfig)
         os.environ['CC'] = clang_path
         os.environ['CXX'] = f'{clang_path}++'
-        compiler = 'clang'
-    else:
-        compiler = 'default'
 
     logging.info(f"Configuring '{vconfig.build_type}' build.")
 
@@ -29,7 +25,7 @@ def configure_build(vconfig, build_external=True, build_external_only=False):
         cmake_flags.append('-DV_DEPS_SKIP_BUILD=ON')
     if build_external_only:
         cmake_flags.append('-DV_DEPS_ONLY=ON')
-    if compiler == 'clang':
+    if vconfig.compiler == 'clang':
         cmake_flags.append('-DRP_ENABLE_GOLD_LINKER=OFF')
 
     os.makedirs(vconfig.build_dir, exist_ok=True)
