@@ -2,6 +2,7 @@
 
 #include "model/fundamental.h"
 #include "model/record.h"
+#include "model/record_batch_reader.h"
 #include "model/timestamp.h"
 #include "storage2/common.h"
 #include "storage2/detail/index.h"
@@ -78,7 +79,7 @@ public: // rw access
      * This method also assigns offsets to the record batch, and returns the
      * assigned range in the returned promise.
      */
-    future<append_result> append(model::record_batch&& batch);
+    future<std::vector<append_result>> append(model::record_batch_reader&&);
 
     /**
      * Flushes in-memory record batches to disk.

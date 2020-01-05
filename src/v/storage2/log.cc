@@ -94,12 +94,34 @@ public:
      * Locates the current active segment and forwards the append call to it.
      */
     future<append_result> append(model::record_batch&& batch) {
+        if (__builtin_expect(batch.size() == 0, false)) {
+            return make_exception_future<append_result>(
+              record_batch_error("empty batches are not supported"));
+        }
         return active_segment().then(
           [batch = std::move(batch)](segment_ref active_seg) mutable {
               return active_seg.get().append(std::move(batch));
           });
     }
-
+    future<std::vector<append_result>>
+    append(model::record_batch_reader&& reader) {
+        struct consumer {
+            explicit consumer(log::impl* p)
+              : ptr(p) {}
+            future<stop_iteration> operator()(model::record_batch batch) {
+                return ptr->append(std::move(batch))
+                  .then([this](append_result r) {
+                      ret.push_back(r);
+                      return stop_iteration::no;
+                  });
+            }
+            std::vector<append_result> end_of_stream() { return ret; }
+            log::impl* ptr;
+            std::vector<append_result> ret;
+        };
+        // FIXME(agallego) - once we add per write options
+        return reader.consume(consumer(this), model::no_timeout);
+    }
     /**
      * Closes all log resources and all its underlying segments.
      *
@@ -275,12 +297,9 @@ const model::ntp& log::ntp() const { return _impl->ntp(); }
 /**
  * Appends a batch of records to the log.
  */
-future<append_result> log::append(model::record_batch&& batch) {
-    if (batch.size() == 0) {
-        return make_exception_future<append_result>(
-          record_batch_error("empty batches are not supported"));
-    }
-    return _impl->append(std::move(batch));
+future<std::vector<append_result>>
+log::append(model::record_batch_reader&& reader) {
+    return _impl->append(std::move(reader));
 }
 
 future<flush_result> log::flush() {
