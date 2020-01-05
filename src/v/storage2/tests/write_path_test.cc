@@ -8,12 +8,20 @@ using namespace storage;       // NOLINT
 using namespace storage::test; // NOLINT
 
 FIXTURE_TEST(test_write_few_small_batches, storage_test_fixture) {
-    storage::log_manager mgr = make_log_manager();
-    storage::log t1p0
-      = mgr.create_ntp(make_ntp("default", "topic-1", 0)).get0();
-    auto ar1 = t1p0.append(test::make_random_batch_v2(100)).get0();
-    auto ar2 = t1p0.append(test::make_random_batch_v2(200)).get0();
-    auto ar3 = t1p0.append(test::make_random_batch_v2(300)).get0();
+    storage::log_manager repo = make_log_manager();
+    storage::log t1p0 = repo.create_ntp(make_ntp("default", "topic-1", 0)).get0();
+    auto ar1 = t1p0
+                 .append(model::make_memory_record_batch_reader(
+                   test::make_random_batch_v2(100)))
+                 .get0();
+    auto ar2 = t1p0
+                 .append(model::make_memory_record_batch_reader(
+                   test::make_random_batch_v2(200)))
+                 .get0();
+    auto ar3 = t1p0
+                 .append(model::make_memory_record_batch_reader(
+                   test::make_random_batch_v2(300)))
+                 .get0();
 
     // auto istream = t1p0.read(model::offset(30));
     // istream.close().wait();
@@ -28,7 +36,10 @@ FIXTURE_TEST(test_write_empty_batch, storage_test_fixture) {
       = mgr.create_ntp(make_ntp("default", "topic-1", 0)).get0();
 
     BOOST_CHECK_THROW(
-      t1p0.append(make_random_batch_v2(0)).get0(), storage::record_batch_error);
+      t1p0
+        .append(model::make_memory_record_batch_reader(make_random_batch_v2(0)))
+        .get0(),
+      storage::record_batch_error);
 
     t1p0.close().wait();
 };
@@ -47,8 +58,11 @@ FIXTURE_TEST(
 
     std::vector<storage::append_result> results;
     for (auto i = 1; i <= 10; ++i) {
-        results.emplace_back(
-          t1p0.append(test::make_random_batch_v2(i * 100)).get0());
+        auto tmpv = t1p0
+                      .append(model::make_memory_record_batch_reader(
+                        test::make_random_batch_v2(i * 100)))
+                      .get0();
+        results.emplace_back(tmpv[0]);
     }
 
     // BOOST_TEST_REQUIRE assigned offsets to be correct.

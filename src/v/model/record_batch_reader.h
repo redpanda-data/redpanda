@@ -165,6 +165,13 @@ record_batch_reader make_record_batch_reader(Args&&... args) {
 record_batch_reader
   make_memory_record_batch_reader(std::vector<model::record_batch>);
 
+inline record_batch_reader
+make_memory_record_batch_reader(model::record_batch b) {
+    std::vector<model::record_batch> batches;
+    batches.reserve(1);
+    batches.push_back(std::move(b));
+    return make_memory_record_batch_reader(std::move(batches));
+}
 // clang-format off
 record_batch_reader
 make_generating_record_batch_reader(noncopyable_function<future<record_batch_opt>()>);

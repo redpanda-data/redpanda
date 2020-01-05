@@ -13,10 +13,14 @@ FIXTURE_TEST(test_log_manager_api_smoke_test, storage_test_fixture) {
     auto t1p0 = mgr.create_ntp(make_ntp("default", "topic-one", 0)).get0();
     auto t1p1 = mgr.create_ntp(make_ntp("default", "topic-one", 1)).get0();
 
-    t1p0.append(make_random_batch_v2(100)).wait();
-    t1p0.append(make_random_batch_v2(50)).wait();
-    t1p1.append(make_random_batch_v2(10)).wait();
-    t1p1.append(make_random_batch_v2(5)).wait();
+    t1p0.append(make_memory_record_batch_reader(make_random_batch_v2(100)))
+      .wait();
+    t1p0.append(make_memory_record_batch_reader(make_random_batch_v2(50)))
+      .wait();
+    t1p1.append(make_memory_record_batch_reader(make_random_batch_v2(10)))
+      .wait();
+    t1p1.append(make_memory_record_batch_reader(make_random_batch_v2(5)))
+      .wait();
 
     t1p0.close().wait();
     t1p1.close().wait();
@@ -41,7 +45,8 @@ FIXTURE_TEST(repo_read_write_one_batch, storage_test_fixture) {
       = mgr.create_ntp(make_ntp("default", "topic-one", 0)).get0();
 
     auto result = topic_one_0
-                    .append(make_random_batch(model::offset(0), 100, false))
+                    .append(make_memory_record_batch_reader(
+                      make_random_batch(model::offset(0), 100, false)))
                     .get0();
 
     topic_one_0.close().wait();
