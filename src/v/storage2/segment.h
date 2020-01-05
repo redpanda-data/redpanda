@@ -132,7 +132,7 @@ private:
     class impl;
     shared_ptr<impl> _impl;
     segment(shared_ptr<impl>);
-    friend class partition;
+    friend class log;
 };
 
 } // namespace storage

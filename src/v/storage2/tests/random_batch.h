@@ -23,7 +23,7 @@ static model::record_batch make_random_batch_v2(
       random_generators::get_int<model::timestamp::value_type>(
         ts_window_size, ts_window_end + 2));
 
-    // the model offset will be assigned by the partition, so here
+    // the model offset will be assigned by the log, so here
     // whatever we set as the offset will be overwritten anyway, that's
     // why here the model::offset parameter is removed from the signature.
     auto offset = model::model_limits<model::offset>::min();

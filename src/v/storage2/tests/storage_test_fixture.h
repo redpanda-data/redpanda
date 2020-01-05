@@ -2,7 +2,7 @@
 
 #include "model/fundamental.h"
 #include "random/generators.h"
-#include "storage2/repository.h"
+#include "storage2/log_manager.h"
 #include "test_utils/fixture.h"
 
 #include <fmt/core.h>
@@ -35,10 +35,10 @@ public:
           .stdout_timestamp_style = seastar::logger_timestamp_style::real});
     }
 
-    storage::repository make_repo(
-      storage::repository::config cfg
-      = storage::repository::config::testing_defaults()) {
-        return storage::repository::open(test_dir, std::move(cfg)).get0();
+    storage::log_manager make_log_manager(
+      storage::log_manager::config cfg
+      = storage::log_manager::config::testing_defaults()) {
+        return storage::log_manager::open(test_dir, std::move(cfg)).get0();
     }
 
     model::ntp make_ntp(sstring ns, sstring topic, size_t partition_id) {

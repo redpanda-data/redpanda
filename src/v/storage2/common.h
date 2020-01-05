@@ -17,14 +17,14 @@ struct key_bounds {
 };
 
 /**
- * This type is returned after each partition.append() operation.
+ * This type is returned after each logappend() operation.
  * It specifies the inclusive range of offsets assigned to the batch and its
  * records.
  */
 using append_result = key_bounds<model::offset>;
 
 /**
- * This type is returned after each partition.trim operation,
+ * This type is returned after each logtrim operation,
  * It describes the inclusive range of offsets that were removed.
  */
 using trim_result = key_bounds<model::offset>;
@@ -35,7 +35,7 @@ using trim_result = key_bounds<model::offset>;
 using file_offset = named_type<int64_t, struct file_offset_tag>;
 
 /**
- * This type is returned after partition::flush operation.
+ * This type is returned after log::flush operation.
  * It tells what was the last dirty offset before the flush
  * and what is the last committed offset after the flush.
  * The number of flushed records is (dirty - committed).
@@ -53,7 +53,7 @@ using timestamp_index = segment_index<model::timestamp>;
 
 /**
  * This type defines the list of all indexers that are enabled for segments
- * and automatically for partitions. This list is used quite extensively
+ * and automatically for logs. This list is used quite extensively
  * throughout the codebase when performaing index-related operations. For
  * example when we want to add a batch to the index type is used to collectively
  * index it on all enabled/active indices. The index at position 0 has a special

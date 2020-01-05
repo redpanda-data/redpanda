@@ -6,8 +6,8 @@ add_library(storage2 STATIC
      segment.cc
      segment_writer.cc
      segment_appender.cc
-     partition.cc
-     repository.cc
+     log.cc
+     log_manager.cc
      parser.cc)
 
  target_link_libraries(storage2 PUBLIC

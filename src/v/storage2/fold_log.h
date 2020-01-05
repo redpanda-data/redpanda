@@ -74,10 +74,10 @@ private:
  * It is used most often with an action log to recreate a the final state
  * of something. For example it can be a list of modifications to the index
  * that gets folded into the final compacted version, or a list of segment
- * operations that gets folded into the final shape of a partition.
+ * operations that gets folded into the final shape of a log.
  *
  * Current uses of this are:
- *  1. segment list compaction in a partition
+ *  1. segment list compaction in a log
  *  2. segment index compaction
  *  3. crc checksum verification
  */

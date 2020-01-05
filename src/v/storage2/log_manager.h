@@ -1,7 +1,7 @@
 #pragma once
 
 #include "model/fundamental.h"
-#include "storage2/partition.h"
+#include "storage2/log.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/core/future.hh>
@@ -22,7 +22,7 @@ namespace storage {
  * Its meant to be instantiated first thing when the system start and its
  * initialization logic is blocking.
  */
-class repository {
+class log_manager {
 private:
     using ntp_predicate = std::function<bool(const model::ntp&)>;
 
@@ -41,7 +41,7 @@ public:
 
 public:
     /**
-     * A set of optional configuration settings for the repository.
+     * A set of optional configuration settings for the log_manager.
      *
      * most of the time, using default values is the recommended thing
      * to do.
@@ -63,7 +63,7 @@ public:
         sanitize_files should_sanitize;
 
         /**
-         * When enabled log-partitions and their segments will
+         * When enabled log-logs and their segments will
          * be loaded only when they're first requested. That
          * includes preloading their indices and hidrating them
          * in memory.
@@ -76,7 +76,7 @@ public:
 
         /**
          * This io priority class will be inherited by all IO operations
-         * issued through this repository.
+         * issued through this log_manager.
          */
         io_priority_class io_priority;
 
@@ -88,11 +88,11 @@ public:
     };
 
 public:
-    static future<repository> open(sstring basedir, config cfg);
+    static future<log_manager> open(sstring basedir, config cfg);
 
 public:
     /**
-     * Access to the Namespace-Topic-Partition collection on this server.
+     * Access to the Namespace-Topic-log collection on this server.
      *
      * This collection reflects the state of the filesystem directory structure
      * that is populated in the constructor. It returns a range (pair of
@@ -100,7 +100,7 @@ public:
      * namespace.
      *
      * Optionally the user may narrow down the range to a specific
-     * namespace or a specific topic, up to a specific partition by
+     * namespace or a specific topic, up to a specific log by
      * using non-default values for the filter arguments.
      *
      * Examples:
@@ -117,36 +117,36 @@ public:
     ntp_range ntps(
       model::ns namespace_filter = model::ns("default"),
       model::topic topic_filter = model::topic_view(),
-      model::partition_id partition_filter = model::partition_id(-1));
+      model::partition_id log_filter = model::partition_id(-1));
 
     /**
-     * Asynchronously opens a log partition.
-     * Opening a log partition means enumerating available segments,
+     * Asynchronously opens a log log.
+     * Opening a log log means enumerating available segments,
      * loading its indices into memory and getting ready for read/write
-     * operations on that partition.
+     * operations on that log.
      */
-    future<partition> open_ntp(model::ntp);
+    future<log> open_ntp(model::ntp);
 
     /**
-     *  Creates a namespace-topic-partition and returns an open partition.
+     *  Creates a namespace-topic-log and returns an open log.
      *
-     * This method will create the filesystem structure for one partition,
-     * and return an open partition object pointing at the just created ntp.
+     * This method will create the filesystem structure for one log,
+     * and return an open log object pointing at the just created ntp.
      */
-    future<partition> create_ntp(model::ntp);
+    future<log> create_ntp(model::ntp);
 
     /**
      * Helper function. Creates an entire range of ntps with a
      * given topic name.
      *
      * This function is equivalent to calling create_ntp from 0
-     * to partitions.
+     * to logs.
      */
-    future<std::vector<partition>>
-    create_topic(model::ns, model::topic name, size_t partitions);
+    future<std::vector<log>>
+    create_topic(model::ns, model::topic name, size_t logs);
 
     /**
-     * Deletes a partition and all its data from the current repository.
+     * Deletes a log and all its data from the current log_manager.
      * This operation is nonreversable. not implemented yet.
      */
     future<> remove_ntp(model::ntp ntp);
@@ -155,13 +155,13 @@ public:
      * Getter for the path used as the root working directory.
      *
      * This is where the top-level children are namespaces,
-     * the second level children topic, third are partitions
+     * the second level children topic, third are logs
      * and leafs are segment files and indices.
      */
     const std::filesystem::path& working_directory() const;
 
     /**
-     * Closes and releases all partitions that were open during the lifetime
+     * Closes and releases all logs that were open during the lifetime
      * of this instance.
      *
      * This method most likely will never be called unless we expect the system
@@ -171,7 +171,7 @@ public:
 
     /**
      * Gets a read-only view of the config values used to initialize
-     * this repository.
+     * this log_manager.
      */
     const config& configuration() const;
 
@@ -181,7 +181,7 @@ private:
 
 private:
     /**
-     * Initializes a data repository with a given working directory and configs.
+     * Initializes a data log_manager with a given working directory and configs.
      *
      * This is a not a blocking call but an expensive one and it should only
      * be called once, very early in the process start.
@@ -190,7 +190,7 @@ private:
      * the ntps() data structure. Also if lazy loading is turned off, then this
      * constructor will trigger the hidration of all log segment caches.
      */
-    repository(shared_ptr<impl> impl);
+    log_manager(shared_ptr<impl> impl);
 };
 
 } // namespace storage

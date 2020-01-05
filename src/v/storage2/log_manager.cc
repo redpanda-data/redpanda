@@ -1,30 +1,20 @@
-#include "repository.h"
+#include "storage2/log_manager.h"
 
 #include "config/configuration.h"
 #include "model/fundamental.h"
-#include "storage2/partition.h"
+#include "storage2/log.h"
 #include "utils/directory_walker.h"
 
 #include <seastar/core/file-types.hh>
 #include <seastar/core/file.hh>
-#include <seastar/core/future-util.hh>
-#include <seastar/core/future.hh>
-#include <seastar/core/seastar.hh>
 #include <seastar/util/log.hh>
 
 #include <boost/range/adaptor/filtered.hpp>
 #include <boost/range/adaptor/reversed.hpp>
-#include <fmt/format.h>
-
-#include <algorithm>
-#include <filesystem>
-#include <iterator>
-#include <stdexcept>
-#include <string>
 
 namespace storage {
 
-static logger slog("s/repository");
+static logger slog("s/log_manager");
 
 /**
  * This function is used by the discover_directory recursive traversal.
@@ -51,13 +41,13 @@ visit_directory(sstring path, std::vector<sstring>& accum, int depth = 0) {
 }
 
 /**
- * Used when initializing an instance of the repository. This function
+ * Used when initializing an instance of the log_manager. This function
  * will traverse the working directory and discover all ntps in the system
  *
- * The directory structure is: <some-path-to-working-dir>/ns/topic/partition/...
+ * The directory structure is: <some-path-to-working-dir>/ns/topic/log/...
  * The traversal begins at the root of the working directory and recursively
  * descends into child nodes until it reaches 3 levels of depth. That is where
- * the partition directory is expected to be.
+ * the log directory is expected to be.
  */
 static future<std::vector<model::ntp>> discover_directory(sstring path) {
     return do_with(
@@ -88,18 +78,18 @@ static future<std::vector<model::ntp>> discover_directory(sstring path) {
       });
 }
 
-class repository::impl {
+class log_manager::impl {
 public:
     impl(
       sstring basedir,
-      repository::config cfg,
+      log_manager::config cfg,
       std::vector<model::ntp> discovered_ntps)
       : config_(std::move(cfg))
       , rootdir_(std::move(basedir))
       , ntps_(std::move(discovered_ntps)) {}
 
 public:
-    repository::ntp_range ntps(
+    log_manager::ntp_range ntps(
       model::ns ns_filter,
       model::topic topic_filter,
       model::partition_id partition_filter) {
@@ -130,8 +120,7 @@ public:
           [tpred = std::move(topic_predicate),
            ppred = std::move(partition_predicate),
            npred = std::move(ns_predicate)](const model::ntp& ntp) {
-              return tpred(ntp.tp.topic) && ppred(ntp.tp.partition)
-                     && npred(ntp.ns);
+              return tpred(ntp.tp.topic) && ppred(ntp.tp.partition) && npred(ntp.ns);
           };
 
         return ntps_ | boost::adaptors::filtered(std::move(predicate));
@@ -150,7 +139,7 @@ public:
           });
     }
 
-    future<> close_all_partitions() {
+    future<> close_all_logs() {
         std::vector<future<flush_result>> work;
         for (auto& kv : instances_) {
             work.emplace_back(kv.second.close());
@@ -162,21 +151,21 @@ public:
 
     io_priority_class io_priority() const { return config_.io_priority; }
 
-    const repository::config& configuration() const { return config_; }
+    const log_manager::config& configuration() const { return config_; }
 
 private:
     const config config_;
     const std::filesystem::path rootdir_;
 
-    repository::ntps_type ntps_;
-    std::unordered_map<model::ntp, partition> instances_;
+    log_manager::ntps_type ntps_;
+    std::unordered_map<model::ntp, log> instances_;
 };
 
 /**
  * Defaults come either from the config file/test fixture
  * or set to optimal non-debug values.
  */
-repository::config repository::config::testing_defaults() {
+log_manager::config log_manager::config::testing_defaults() {
     return config{
       .max_segment_size = ::config::shard_local_cfg().log_segment_size(),
       .should_sanitize = sanitize_files::no,
@@ -184,37 +173,37 @@ repository::config repository::config::testing_defaults() {
       .io_priority = default_priority_class()};
 }
 
-repository::repository(shared_ptr<impl> impl)
+log_manager::log_manager(shared_ptr<impl> impl)
   : _impl(impl) {}
 
-future<repository>
-repository::open(sstring basedir, repository::config optional) {
+future<log_manager>
+log_manager::open(sstring basedir, log_manager::config optional) {
     return seastar::recursive_touch_directory(basedir)
       .then([basedir] { return discover_directory(basedir); })
       .then([basedir, optional](std::vector<model::ntp> ntps) {
           // TODO: Here check in the config if we lazy loading is enabled
-          // if its disabled, then preload all partitions and their indices.
+          // if its disabled, then preload all logs and their indices.
           return make_ready_future<std::vector<model::ntp>>(std::move(ntps));
       })
       .then([basedir, optional](std::vector<model::ntp> ntps) {
-          return make_ready_future<repository>(repository(make_shared<impl>(
+          return make_ready_future<log_manager>(log_manager(make_shared<impl>(
             impl(std::move(basedir), std::move(optional), std::move(ntps)))));
       });
 }
 
-future<partition> repository::open_ntp(model::ntp ntp) {
+future<log> log_manager::open_ntp(model::ntp ntp) {
     if (!_impl->contains_ntp(ntp)) {
-        return make_exception_future<partition>(
+        return make_exception_future<log>(
           std::invalid_argument(fmt::format("ntp {} not found", ntp)));
     }
-    return partition::open(*this, std::move(ntp), _impl->io_priority());
+    return log::open(*this, std::move(ntp), _impl->io_priority());
 }
 
-const std::filesystem::path& repository::working_directory() const {
+const std::filesystem::path& log_manager::working_directory() const {
     return _impl->working_directory();
 }
 
-repository::ntp_range repository::ntps(
+log_manager::ntp_range log_manager::ntps(
   model::ns ns_filter,
   model::topic topic_filter,
   model::partition_id partition_filter) {
@@ -224,21 +213,21 @@ repository::ntp_range repository::ntps(
       std::move(partition_filter));
 }
 
-future<partition> repository::create_ntp(model::ntp ntp) {
+future<log> log_manager::create_ntp(model::ntp ntp) {
     if (_impl->contains_ntp(ntp)) {
-        return make_exception_future<partition>(
+        return make_exception_future<log>(
           std::invalid_argument(fmt::format("ntp {} already exists.", ntp)));
     }
 
     slog.info("creating ntp: {}", ntp);
     return _impl->add_ntp(ntp).then([this, ntp = std::move(ntp)] {
-        return partition::open(*this, std::move(ntp), _impl->io_priority());
+        return log::open(*this, std::move(ntp), _impl->io_priority());
     });
 }
 
-future<std::vector<partition>>
-repository::create_topic(model::ns ns, model::topic name, size_t partitions) {
-    std::vector<future<partition>> workload;
+future<std::vector<log>>
+log_manager::create_topic(model::ns ns, model::topic name, size_t partitions) {
+    std::vector<future<log>> workload;
     for (auto i = 0; i < partitions; ++i) {
         workload.emplace_back(create_ntp(model::ntp{
           .ns = ns,
@@ -248,14 +237,14 @@ repository::create_topic(model::ns ns, model::topic name, size_t partitions) {
     return when_all_succeed(workload.begin(), workload.end());
 }
 
-future<> repository::close() { return _impl->close_all_partitions(); }
+future<> log_manager::close() { return _impl->close_all_logs(); }
 
-future<> repository::remove_ntp(model::ntp ntp) {
+future<> log_manager::remove_ntp(model::ntp ntp) {
     // TOO dangerous, not implemented.
     return make_ready_future<>();
 }
 
-const repository::config& repository::configuration() const {
+const log_manager::config& log_manager::configuration() const {
     return _impl->configuration();
 }
 
