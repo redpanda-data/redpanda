@@ -1,51 +1,57 @@
-#!/bin/env bash
+#!/usr/bin/env bash
 set -o errexit
-set -o nounset
 set -o pipefail
 
-## we assume bootstraph.sh lives in v/tools/
+# we assume bootstraph.sh lives in v/tools/
 vroot="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-echo "Root of project: $vroot"
+echo "root of project: $vroot"
 
-if [[ ! -e "${vroot}/build/bin/vtools" ]]; then
-    # install OS package deps
-    sudo "${vroot}/tools/install-deps.sh"
+cd "${vroot}"
 
-    # install tox (via virtualenv)
-    pip install --user tox
-    PATH="${HOME}/.local/bin:${PATH}:${vroot}/build/bin"
+if [[ ! -e "${HOME}/.local/bin/vtools" ]]; then
+  # install OS package deps
+  sudo tools/install-deps.sh
 
-    # build vtools
-    tox -c tools/
+  # install vtools
+  pip install --user -r tools/requirements.txt
+  pip install --user -e tools/
 fi
-# install go dependencies
-vtools install go-compiler
+
+# add build/bin/vtools to PATH
+if [[ ${PATH} != *"${HOME}/.local/bin/"* ]]; then
+  export PATH="${PATH}:${HOME}/.local/bin/"
+fi
+
+if [ ! -f "build/go/bin/go" ]; then
+  vtools install go-compiler
+fi
+
 vtools install go-deps
 
-# install clang
 vtools install clang
 
-# install external dependencies for all build types
-vtools install cpp-deps
-vtools install cpp-deps --clang
-vtools install cpp-deps --build-type debug
-vtools install cpp-deps --build-type debug --clang
+vtools build cpp
+vtools build cpp --clang
+vtools build cpp --build-type debug
+vtools build cpp --build-type debug --clang
 
 echo ""
 echo "###############################################"
 echo ""
-echo "successfully installed dev dependencies"
+echo "Successfully installed vtools and dev dependencies"
 echo ""
-echo "vtools command available as 'vtools'"
+echo "Execute vtools with:"
+echo ""
+echo "  ${HOME}/.local/bin/vtools"
+echo ""
+echo "Alternatively, add ${HOME}/.local/bin to PATH:"
+echo ""
+echo "  export PATH=\$PATH:${HOME}/.local/bin"
+echo ""
+echo "Or execute tools/bootstrap.sh on new terminals."
 echo ""
 echo "###############################################"
 echo ""
-
-vtools --help
-
-echo ""
-echo "###############################################"
-echo ""
-echo "happy vhacking!"
+echo "happy v-hacking!"
 echo ""
