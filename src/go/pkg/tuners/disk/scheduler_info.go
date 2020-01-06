@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 	"vectorized/pkg/system"
-	"vectorized/pkg/utils"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
@@ -93,7 +92,7 @@ func (s *schedulerInfo) getQueueFeatureFile(
 	}
 	featureFile := filepath.Join(device.Syspath(), "queue", featureType)
 	log.Debugf("Trying to open feature file '%s'", featureFile)
-	if utils.FileExists(s.fs, featureFile) {
+	if exists, _ := afero.Exists(s.fs, featureFile); exists {
 		return featureFile, nil
 	} else if device.Parent() != nil {
 		return s.getQueueFeatureFile(device.Parent().Devnode(), featureType)

@@ -74,7 +74,7 @@ func (n *nic) Name() string {
 
 func (n *nic) IsBondIface() bool {
 	log.Debugf("Checking if '%s' is bond interface", n.name)
-	if !utils.FileExists(n.fs, "/sys/class/net/bond_masters") {
+	if exists, _ := afero.Exists(n.fs, "/sys/class/net/bond_masters"); !exists {
 		return false
 	}
 	lines, _ := utils.ReadFileLines(n.fs, "/sys/class/net/bond_masters")
@@ -110,7 +110,8 @@ func (n *nic) Slaves() ([]Nic, error) {
 
 func (n *nic) IsHwInterface() bool {
 	log.Debugf("Checking if '%s' is HW interface", n.name)
-	return utils.FileExists(n.fs, fmt.Sprintf("/sys/class/net/%s/device", n.name))
+	exists, _ := afero.Exists(n.fs, fmt.Sprintf("/sys/class/net/%s/device", n.name))
+	return exists
 }
 
 func (n *nic) GetIRQs() ([]int, error) {

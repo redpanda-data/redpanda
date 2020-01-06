@@ -10,7 +10,6 @@ import (
 	"vectorized/pkg/redpanda"
 	"vectorized/pkg/redpanda/sandbox/docker"
 	"vectorized/pkg/redpanda/sandbox/docker/labels"
-	"vectorized/pkg/utils"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/filters"
@@ -69,7 +68,7 @@ func newNode(
 func (n *node) Create(
 	containerIP string, containerFactory docker.ContainerFactory,
 ) error {
-	if !utils.FileExists(n.fs, n.dataDir()) {
+	if exists, _ := afero.Exists(n.fs, n.dataDir()); !exists {
 		log.Debugf("Creating node in '%s'", n.nodeDir)
 		n.fs.MkdirAll(n.dataDir(), 0755)
 		n.fs.MkdirAll(n.confDir(), 0755)

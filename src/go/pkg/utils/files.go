@@ -39,13 +39,6 @@ func ListFilesInPath(fs afero.Fs, path string) []string {
 	return names
 }
 
-func FileExists(fs afero.Fs, fileName string) bool {
-	if _, err := fs.Stat(fileName); err == nil {
-		return true
-	}
-	return false
-}
-
 func CopyFile(fs afero.Fs, src string, dst string) error {
 	input, err := afero.ReadFile(fs, src)
 	if err != nil {

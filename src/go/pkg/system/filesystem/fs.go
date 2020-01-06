@@ -3,7 +3,6 @@ package filesystem
 import (
 	"path/filepath"
 	"syscall"
-	"vectorized/pkg/utils"
 
 	"github.com/docker/go-units"
 	"github.com/spf13/afero"
@@ -11,7 +10,7 @@ import (
 )
 
 func DirectoryIsWriteable(fs afero.Fs, path string) (bool, error) {
-	if !utils.FileExists(fs, path) {
+	if exists, _ := afero.Exists(fs, path); !exists {
 		err := fs.MkdirAll(path, 0755)
 		if err != nil {
 			return false, nil

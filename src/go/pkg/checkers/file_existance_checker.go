@@ -1,8 +1,6 @@
 package checkers
 
 import (
-	"vectorized/pkg/utils"
-
 	"github.com/spf13/afero"
 )
 
@@ -14,6 +12,6 @@ func NewFileExistanceChecker(
 		severity,
 		true,
 		func() (interface{}, error) {
-			return utils.FileExists(fs, filePath), nil
+			return afero.Exists(fs, filePath)
 		})
 }

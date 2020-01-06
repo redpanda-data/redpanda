@@ -79,7 +79,7 @@ func (s *sandbox) Create(
 	numberOfNodes int, containerFactory docker.ContainerFactory,
 ) error {
 	log.Infof("Creating sandbox with '%d' nodes", numberOfNodes)
-	if !utils.FileExists(s.fs, s.sandboxDir) {
+	if exists, _ := afero.Exists(s.fs, s.sandboxDir); !exists {
 		err := s.fs.MkdirAll(s.sandboxDir, 0755)
 		if err != nil {
 			return err

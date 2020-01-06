@@ -65,7 +65,7 @@ func (b *blockDevices) GetDirectoriesDevices(
 ) (map[string][]string, error) {
 	dirDevices := make(map[string][]string)
 	for _, directory := range directories {
-		if !utils.FileExists(b.fs, directory) {
+		if exists, _ := afero.Exists(b.fs, directory); !exists {
 			return nil, fmt.Errorf("Directory '%s' does not exists", directory)
 		}
 		devices, err := b.GetDirectoryDevices(directory)
@@ -79,7 +79,7 @@ func (b *blockDevices) GetDirectoriesDevices(
 
 func (b *blockDevices) GetDirectoryDevices(path string) ([]string, error) {
 	log.Debugf("Collecting info about directory '%s'", path)
-	if !utils.FileExists(b.fs, path) {
+	if exists, _ := afero.Exists(b.fs, path); !exists {
 		// path/to/whatever does not exist
 		return []string{}, nil
 	}

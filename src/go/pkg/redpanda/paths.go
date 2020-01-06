@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"vectorized/pkg/utils"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
@@ -44,7 +43,7 @@ func FindConfig(fs afero.Fs) (string, error) {
 		for _, path := range paths {
 			candidate := filepath.Join(path, "redpanda.yaml")
 			log.Debugf("Looking for redpanda config file in '%s'", path)
-			if utils.FileExists(fs, candidate) {
+			if exists, _ := afero.Exists(fs, candidate); exists {
 				return candidate, nil
 			}
 		}
@@ -62,7 +61,7 @@ func FindInstallDir(fs afero.Fs) (string, error) {
 	for _, path := range redpandaInstallDirContent {
 		installDirPath := filepath.Join(installDirCandidate, path)
 		log.Debugf("Checking if path '%s' exists", installDirPath)
-		if !utils.FileExists(fs, installDirPath) {
+		if exists, _ := afero.Exists(fs, installDirPath); !exists {
 			return "", fmt.Errorf("Directory '%s' does not contain '%s'",
 				installDirCandidate, path)
 		}

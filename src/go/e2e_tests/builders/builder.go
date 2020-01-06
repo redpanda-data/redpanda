@@ -8,7 +8,6 @@ import (
 	"vectorized/e2e_tests/kafka"
 	"vectorized/pkg/redpanda/sandbox"
 	"vectorized/pkg/redpanda/sandbox/docker"
-	"vectorized/pkg/utils"
 
 	"github.com/docker/docker/client"
 	"github.com/spf13/afero"
@@ -119,7 +118,7 @@ func (b *sandboxBuilder) validateConfig() error {
 		if b.tarball == "" {
 			return errors.New("Tarball is required to create Redpanda sandbox")
 		}
-		if !utils.FileExists(b.fs, b.tarball) {
+		if exists, _ := afero.Exists(b.fs, b.tarball); !exists {
 			return fmt.Errorf("Redpanda tarball '%s' does not exists", b.tarball)
 		}
 	case KafkaBroker:

@@ -115,7 +115,7 @@ func TestGrubAddCommandLineOptions(t *testing.T) {
 			check: func(fields fields) {
 				md5 := calcMd5(fields.grubCfg)
 				backupName := fmt.Sprintf("/etc/default/grub.vectorized.%s.bk", md5)
-				backupPresent := utils.FileExists(fields.fs, backupName)
+				backupPresent, _ := afero.Exists(fields.fs, backupName)
 				assert.Equal(t, backupPresent, false)
 				lines, _ := utils.ReadFileLines(fields.fs, "/etc/default/grub")
 				assert.Len(t, lines, 6)

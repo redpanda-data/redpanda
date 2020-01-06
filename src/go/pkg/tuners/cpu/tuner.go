@@ -205,7 +205,7 @@ func (tuner *tuner) disablePStates() error {
 
 func (tuner *tuner) setupCPUGovernors() error {
 	log.Debugf("Setting up ACPI based CPU governors")
-	if utils.FileExists(tuner.fs, "/sys/devices/system/cpu/cpufreq/boost") {
+	if exists, _ := afero.Exists(tuner.fs, "/sys/devices/system/cpu/cpufreq/boost"); exists {
 		err := tuner.executor.Execute(
 			commands.NewWriteFileCmd(tuner.fs,
 				"/sys/devices/system/cpu/cpufreq/boost", "0"))
@@ -218,7 +218,7 @@ func (tuner *tuner) setupCPUGovernors() error {
 	for i := uint(0); i < tuner.cores; i = i + 1 {
 		policyPath := fmt.Sprintf(
 			"/sys/devices/system/cpu/cpufreq/policy%d/scaling_governor", i)
-		if utils.FileExists(tuner.fs, policyPath) {
+		if exists, _ := afero.Exists(tuner.fs, policyPath); exists {
 			err := tuner.executor.Execute(
 				commands.NewWriteFileCmd(tuner.fs, policyPath, "performance"))
 			if err != nil {

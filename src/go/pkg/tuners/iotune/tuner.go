@@ -5,7 +5,6 @@ import (
 	"vectorized/pkg/os"
 	"vectorized/pkg/redpanda"
 	"vectorized/pkg/tuners"
-	"vectorized/pkg/utils"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
@@ -30,7 +29,7 @@ func NewIoTuneTuner(
 }
 
 func checkIfIoTuneIsSupported(fs afero.Fs) (bool, string) {
-	if !utils.FileExists(fs, "iotune") {
+	if exists, _ := afero.Exists(fs, "iotune"); !exists {
 		return false, "Seastar iotune not found in PATH"
 	}
 	return true, ""

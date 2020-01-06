@@ -186,20 +186,20 @@ func (balanceService *balanceService) getBalanceServiceInfo() (
 	*balanceServiceInfo,
 	error,
 ) {
+	fs := balanceService.fs
 	optionsKey := "OPTIONS"
 	configFile := "/etc/default/irqbalance"
 	systemd := false
-
-	if !utils.FileExists(balanceService.fs, configFile) {
-		log.Debugf("File '/etc/default/irqbalance' does not exists")
-		if utils.FileExists(balanceService.fs, "/etc/sysconfig/irqbalance") {
+	if exists, _ := afero.Exists(fs, configFile); !exists {
+		log.Debugf("File '%s' does not exist", configFile)
+		if exists, _ := afero.Exists(fs, "/etc/sysconfig/irqbalance"); exists {
 			configFile = "/etc/sysconfig/irqbalance"
 			optionsKey = "IRQBALANCE_ARGS"
 			systemd = true
-		} else if utils.FileExists(balanceService.fs, "/etc/conf.d/irqbalance") {
+		} else if exists, _ := afero.Exists(fs, "/etc/conf.d/irqbalance"); exists {
 			configFile = "/etc/conf.d/irqbalance"
 			optionsKey = "IRQBALANCE_OPTS"
-			lines, err := utils.ReadFileLines(balanceService.fs, "/proc/1/comm")
+			lines, err := utils.ReadFileLines(fs, "/proc/1/comm")
 			if err != nil {
 				return nil, err
 			}

@@ -14,7 +14,6 @@ import (
 	"vectorized/pkg/tuners/factory"
 	"vectorized/pkg/tuners/hwloc"
 	"vectorized/pkg/tuners/iotune"
-	"vectorized/pkg/utils"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
@@ -204,7 +203,7 @@ func buildRedpandaFlags(
 		)
 	}
 	ioPropertiesFile := redpanda.GetIOConfigPath(filepath.Dir(configFile))
-	if !utils.FileExists(fs, ioPropertiesFile) {
+	if exists, _ := afero.Exists(fs, ioPropertiesFile); !exists {
 		ioPropertiesFile = ""
 	}
 	lockMemory := config.Rpk.EnableMemoryLocking || sFlags.lockMemory

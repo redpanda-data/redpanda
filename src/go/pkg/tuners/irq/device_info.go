@@ -32,7 +32,7 @@ func (deviceInfo *deviceInfo) GetIRQs(
 	log.Debugf("Reading IRQs of '%s', with deviceInfo name pattern '%s'", irqConfigDir, xenDeviceName)
 	msiIRQsDirName := path.Join(irqConfigDir, "msi_irqs")
 	var irqs []int
-	if utils.FileExists(deviceInfo.fs, msiIRQsDirName) {
+	if exists, _ := afero.Exists(deviceInfo.fs, msiIRQsDirName); exists {
 		log.Debugf("Device '%s' uses MSI IRQs", irqConfigDir)
 		files := utils.ListFilesInPath(deviceInfo.fs, msiIRQsDirName)
 		for _, file := range files {
@@ -44,7 +44,7 @@ func (deviceInfo *deviceInfo) GetIRQs(
 		}
 	} else {
 		irqFileName := path.Join(irqConfigDir, "irq")
-		if utils.FileExists(deviceInfo.fs, irqFileName) {
+		if exists, _ := afero.Exists(deviceInfo.fs, irqFileName); exists {
 			log.Debugf("Device '%s' uses INT#x IRQs", irqConfigDir)
 			lines, err := utils.ReadFileLines(deviceInfo.fs, irqFileName)
 			if err != nil {

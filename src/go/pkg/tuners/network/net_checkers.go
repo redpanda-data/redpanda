@@ -7,7 +7,6 @@ import (
 	"vectorized/pkg/checkers"
 	"vectorized/pkg/tuners/ethtool"
 	"vectorized/pkg/tuners/irq"
-	"vectorized/pkg/utils"
 
 	"github.com/lorenzosaino/go-sysctl"
 	log "github.com/sirupsen/logrus"
@@ -248,7 +247,7 @@ func (f *netCheckersFactory) NewNicXpsChecker(nic Nic) checkers.Checker {
 					return false, err
 				}
 				for i, mask := range masks {
-					if !utils.FileExists(f.fs, xpsCPUFiles[i]) {
+					if exists, _ := afero.Exists(f.fs, xpsCPUFiles[i]); !exists {
 						continue
 					}
 					readMask, err := f.cpuMasks.ReadMask(xpsCPUFiles[i])

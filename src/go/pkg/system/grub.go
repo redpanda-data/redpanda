@@ -125,7 +125,7 @@ func (g *grub) MakeConfig() error {
 	for _, file := range []string{
 		"/boot/grub2/grub.cfg",
 		"/boot/efi/EFI/fedora/grub.cfg"} {
-		if utils.FileExists(g.fs, file) {
+		if exists, _ := afero.Exists(g.fs, file); exists {
 			log.Debugf("Found 'grub.cfg' in %s", file)
 			err := g.executor.Execute(
 				commands.NewLaunchCmd(g.proc, g.timeout, "grub2-mkconfig", "-o", file))
