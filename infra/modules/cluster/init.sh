@@ -55,6 +55,3 @@ else
 fi
 
 set_up "${ID}"
-
-sudo systemctl start redpanda-tuner
-sudo systemctl start redpanda

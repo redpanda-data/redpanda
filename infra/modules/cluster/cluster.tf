@@ -3,7 +3,20 @@ provider "aws" {
   region  = "us-west-1"
 }
 
-resource "aws_instance" "root_node" {
+resource "aws_eip_association" "eip_assoc" {
+  count         = var.nodes
+  instance_id   = aws_instance.node[count.index].id
+  allocation_id = aws_eip.elastic_ip[count.index].id
+}
+
+resource "aws_eip" "elastic_ip" {
+  count = var.nodes
+  vpc   = true
+}
+
+resource "aws_instance" "node" {
+  count                  = var.nodes
+  depends_on             = [aws_eip.elastic_ip]
   ami                    = var.distro_ami[var.distro]
   instance_type          = var.instance_type
   key_name               = aws_key_pair.ssh.key_name
@@ -36,14 +49,19 @@ resource "aws_instance" "root_node" {
   provisioner "remote-exec" {
     inline = [
       "chmod +x /tmp/init.sh",
+      "chmod +x /tmp/write_config.py",
       "/tmp/init.sh ${var.packagecloud_token}",
+      "sudo rpk config set id ${count.index}",
+      "sudo rpk config set seed-nodes --hosts ${join(" ", aws_eip.elastic_ip.*.public_ip)}",
+      "sudo systemctl start redpanda-tuner",
+      "sudo systemctl start redpanda"
     ]
   }
 }
 
 resource "aws_security_group" "node_sec_group" {
   name        = "node-sec-group"
-  description = "SSH and Kafka ports"
+  description = "redpanda ports"
 
   # SSH access from anywhere
   ingress {
@@ -57,6 +75,22 @@ resource "aws_security_group" "node_sec_group" {
   ingress {
     from_port   = 9092
     to_port     = 9092
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # HTTP access to the RPC port
+  ingress {
+    from_port   = 33145
+    to_port     = 33145
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # HTTP access to the Admin port
+  ingress {
+    from_port   = 9644
+    to_port     = 9644
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
