@@ -12,10 +12,6 @@ from string import Template
 sys.path.append(os.path.dirname(__file__))
 logger = logging.getLogger('rp')
 
-import log
-import shell
-import fs
-
 
 class TestRunner():
     def __init__(self, prepare_command, post_command, binary, repeat,
@@ -26,7 +22,7 @@ class TestRunner():
         self.repeat = repeat
         self.copy_files = copy_files
         self.root = "/dev/shm/vectorized_io"
-        fs.mkdir_p(self.root)
+        os.makedirs(self.root, exist_ok=True)
 
         if "rpunit" in binary:
             self.test_args = " ".join([
@@ -117,7 +113,6 @@ def main():
     if not options.copy_file:
         options.copy_file = []
 
-    log.set_logger_for_main(getattr(logging, options.log.upper()))
     logger.info("%s *args=%s" % (options, program_options))
 
     runner = TestRunner(options.pre, options.post, options.binary,
