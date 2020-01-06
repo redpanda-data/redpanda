@@ -179,6 +179,3 @@ venv.bak/
 tags
 .ccls-cache
 .clangd
-
-# Configuration
-*.bk
