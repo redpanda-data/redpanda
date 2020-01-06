@@ -1,10 +1,13 @@
 package redpanda
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
 	"vectorized/pkg/utils"
+
+	vyaml "vectorized/pkg/yaml"
 
 	"github.com/spf13/afero"
 	"gopkg.in/yaml.v2"
@@ -156,6 +159,30 @@ func TestWriteConfig(t *testing.T) {
 `,
 		},
 		{
+			name: "shall fail with an invalid config",
+			args: args{
+				fs:   afero.NewMemMapFs(),
+				path: path,
+				config: func() *Config {
+					c := getValidConfig()
+					c.Redpanda.Directory = ""
+					return c
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "shall fail if there's no redpanda config",
+			args: args{
+				fs:   afero.NewMemMapFs(),
+				path: path,
+				config: func() *Config {
+					return &Config{}
+				},
+			},
+			wantErr: true,
+		},
+		{
 			name: "shall write a valid config file with an rpk config object",
 			args: args{
 				fs:     afero.NewMemMapFs(),
@@ -199,8 +226,19 @@ rpk:
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := WriteConfig(tt.args.fs, tt.args.config(), tt.args.path); (err != nil) != tt.wantErr {
-				t.Errorf("WriteConfig() error = %v, wantErr %v", err, tt.wantErr)
+			// WriteConfig needs the file at the given path to exist.
+			err := vyaml.Persist(tt.args.fs, tt.args.config(), tt.args.path)
+			if err != nil {
+				t.Fatal(err.Error())
+			}
+			err = WriteConfig(tt.args.fs, tt.args.config(), tt.args.path)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected an error, got nil")
+				}
+				return
+			} else if err != nil {
+				t.Fatalf("got an unexpected error: %v", err)
 			}
 
 			contentBytes, err := afero.ReadFile(tt.args.fs, path)
@@ -213,6 +251,11 @@ rpk:
 					strings.ReplaceAll(tt.expected, " ", "·"),
 					strings.ReplaceAll(content, " ", "·"),
 				)
+			}
+			backup := fmt.Sprintf("%s.bk", tt.args.path)
+			_, err = tt.args.fs.Stat(backup)
+			if err != nil {
+				t.Errorf("got an error while stat'ing %v: %v", backup, err)
 			}
 		})
 	}
