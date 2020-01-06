@@ -11,7 +11,7 @@ folder has the structure `build/<build-type>/<compiler>`. To get
 started, run:
 
 ```bash
-tools/bootstraph.sh
+source tools/bootstraph.sh
 ```
 
 The above (idempotent) [bootstrapping script](tools/bootstrap.sh):
@@ -20,7 +20,7 @@ The above (idempotent) [bootstrapping script](tools/bootstrap.sh):
     distributions (we mainly develop on Fedora but others should be 
     supported).
   * Installs [`vtools`](./tools), our tooling Python-based CLI 
-    interface, putting the binary in the `build/bin` folder.
+    interface, putting the binary in the `${HOME}/.local/bin` folder.
   * Installs `clang`, from source, putting the build and binaries 
     inside the `v/build/llvm` folder.
   * Installs 3rd-party project dependencies, also from source, putting 
@@ -30,6 +30,21 @@ The above (idempotent) [bootstrapping script](tools/bootstrap.sh):
     built differently depending on the build type (debug builds are 
     sanitized), thus they need to be specialized for each compiler and 
     build type.
+
+The `vtools` command can be executed with:
+
+```
+${HOME}/.local/bin/vtools
+```
+
+Alternatively, add `${HOME}/.local/bin` to `$PATH`:
+
+```bash
+export PATH=\$PATH:${HOME}/.local/bin
+```
+
+Or execute the `tools/bootstrap.sh` on new terminals, which executes 
+the above (subsequent executions do not take long).
 
 ## Build
 
