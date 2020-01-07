@@ -58,7 +58,7 @@ def cpp_deps(build_type, conf, clang):
                     'working directory'),
               default=None)
 def clang(conf):
-    llvm.install_clang(config.VConfig(conf, build_type='ignored'))
+    llvm.install_clang(config.VConfig(conf, build_type='ignored', clang=True))
 
 
 @install.command(short_help='install go build dependencies.')
