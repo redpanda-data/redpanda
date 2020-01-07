@@ -9,6 +9,10 @@
 
 namespace kafka {
 
+/**
+ * Support starts at version 3 because this is the first version that supports
+ * version 2 of the kafka message format.
+ */
 class produce_api final {
 public:
     static constexpr const char* name = "produce";
@@ -21,7 +25,7 @@ public:
 };
 
 struct produce_request final {
-    struct topic_data {
+    struct partition {
         model::partition_id id;
         std::optional<iobuf> data;
 
@@ -33,7 +37,7 @@ struct produce_request final {
 
     struct topic {
         model::topic name;
-        std::vector<topic_data> data;
+        std::vector<partition> partitions;
     };
 
     std::optional<sstring> transactional_id;
