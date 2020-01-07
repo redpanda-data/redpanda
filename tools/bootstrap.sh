@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -o errexit
+set -o nounset
 set -o pipefail
 
 # we assume bootstraph.sh lives in v/tools/
@@ -14,8 +15,16 @@ if [[ ! -e "${HOME}/.local/bin/vtools" ]]; then
   sudo tools/install-deps.sh
 
   # install vtools
-  pip install --user -r tools/requirements.txt
-  pip install --user -e tools/
+  pip3 install --user -r tools/requirements.txt
+  pip3 install --user -e tools/
+fi
+
+# check gcc version
+gcc_installed="$(gcc -dumpversion)"
+gcc_required="9"
+if (( $gcc_installed < $gcc_required )); then
+  echo "Expecting GCC 9, found $gcc_installed"
+  exit 1
 fi
 
 # add build/bin/vtools to PATH
@@ -48,8 +57,6 @@ echo ""
 echo "Alternatively, add ${HOME}/.local/bin to PATH:"
 echo ""
 echo "  export PATH=\$PATH:${HOME}/.local/bin"
-echo ""
-echo "Or execute tools/bootstrap.sh on new terminals."
 echo ""
 echo "###############################################"
 echo ""
