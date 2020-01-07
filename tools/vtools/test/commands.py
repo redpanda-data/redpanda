@@ -52,8 +52,9 @@ def cpp(build_type, conf, clang, args):
         logging.info(f'Setting LD_LIBRARY_PATH={ld_path}')
         os.environ['LD_LIBRARY_PATH'] = ld_path
 
+    args = f' {args}' if args else '-R \".*_rp(unit|bench|int)$\"'
     shell.run_subprocess(
         f'cd {vconfig.build_dir} && '
         f'ctest '
-        f'  {"-V" if os.environ.get("CI") else ""} '
-        f'  {args}' if args else f'-R \".*_rp(unit|bench|int)$\"')
+        f' {"-V" if os.environ.get("CI") else ""} '
+        + args)
