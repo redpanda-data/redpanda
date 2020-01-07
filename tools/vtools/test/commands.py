@@ -38,11 +38,10 @@ def go(conf):
                     'file is searched recursively starting from the current '
                     'working directory'),
               default=None)
-@click.option('--args',
-              help=('passes raw args to testing'),
-              default=None)
+@click.option('--args', help=('passes raw args to testing'), default=None)
 def cpp(build_type, conf, clang, args):
-    vconfig = config.VConfig(config_file=conf, build_type=build_type,
+    vconfig = config.VConfig(config_file=conf,
+                             build_type=build_type,
                              clang=clang)
 
     if vconfig.compiler == 'clang':
@@ -53,7 +52,8 @@ def cpp(build_type, conf, clang, args):
         logging.info(f'Setting LD_LIBRARY_PATH={ld_path}')
         os.environ['LD_LIBRARY_PATH'] = ld_path
 
-    shell.run_subprocess(f'cd {vconfig.build_dir} && '
-                         f'ctest '
-                         f'  {"-V" if os.environ.get("CI") else ""} '
-                         f'  {args}'if args else f'-R \".*_rp(unit|bench|int)$\"')
+    shell.run_subprocess(
+        f'cd {vconfig.build_dir} && '
+        f'ctest '
+        f'  {"-V" if os.environ.get("CI") else ""} '
+        f'  {args}' if args else f'-R \".*_rp(unit|bench|int)$\"')
