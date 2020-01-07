@@ -1,13 +1,8 @@
-;; Project-wide Emacs settings
-;; We use clang-format for the whole project
-;; see misc/fmt.py  - but this sets up the basic
-;; environment for c++
-(
- (nil . ((lsp-file-watch-ignored . ("/\\.git$"
-                                    ;; temporaries
-                                    "/\\.ccls-cache$"
-                                    "/build$"
-                                    ))
-         ))
- (c++-mode (helm-make-build-dir . "build/debug"))
- )
+;;; Directory Local Variables
+;;; For more information see (info "(emacs) Directory Variables")
+
+((nil
+  (lsp-file-watch-ignored "/\\.git$" "/\\.ccls-cache$" "/build$"))
+ (c-or-c++-mode
+  (helm-make-build-dir . build/debug/gcc)
+  (clang-format-executable . build/llvm/llvm-bin/bin/clang-format)))
