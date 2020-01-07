@@ -33,16 +33,17 @@ constexpr size_t kafka_header_overhead = sizeof(int32_t) + // The batch length
 
 } // namespace internal
 
-class invalid_record_exception final : std::exception {
+class kafka_batch_adapter {
 public:
-    explicit invalid_record_exception(sstring what)
-      : what_(std::move(what)) {}
-    const char* what() const noexcept final { return what_.c_str(); }
+    void adapt(iobuf&&);
+
+    bool has_transactional = false;
+    bool has_idempotent = false;
+    bool has_non_v2_magic = false;
+    std::vector<model::record_batch> batches;
 
 private:
-    sstring what_;
+    model::record_batch_header read_header(iobuf::iterator_consumer& in);
 };
-
-std::pair<model::record_batch_reader, int32_t> reader_from_kafka_batch(iobuf&&);
 
 } // namespace kafka
