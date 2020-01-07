@@ -27,7 +27,7 @@ concept BackoffPolicy = requires (Policy b) {
 // clang-format on
 
 // clang-format off
-template<typename Func, typename Policy = exp_backoff_policy>
+template<typename Func, typename DurationType = std::chrono::seconds, typename Policy = exp_backoff_policy>
 CONCEPT(
   requires requires (Func f) {
       { f() } -> seastar::futurize_t<std::result_of_t<Func()>>;
@@ -36,14 +36,14 @@ CONCEPT(
 )
 // clang-format on
 seastar::futurize_t<std::result_of_t<Func()>> retry_with_backoff(
-  int max_retries, Func&& f) {
+  int max_retries, Func&& f, DurationType base_backoff = DurationType{1}) {
     using seastar::stop_iteration;
     using ret = seastar::futurize<std::result_of_t<Func()>>;
     return seastar::do_with(
       0,
       Policy{},
       (typename ret::promise_type){},
-      [f = std::forward<Func>(f), max_retries](
+      [f = std::forward<Func>(f), max_retries, base_backoff](
         int& attempt,
         Policy& backoff_policy,
         typename ret::promise_type& promise) mutable {
@@ -51,7 +51,8 @@ seastar::futurize_t<std::result_of_t<Func()>> retry_with_backoff(
                                   f = std::forward<Func>(f),
                                   &backoff_policy,
                                   &promise,
-                                  max_retries]() mutable {
+                                  max_retries,
+                                  base_backoff]() mutable {
                      attempt++;
                      return f()
                        .then([&promise](auto... vals) {
@@ -60,22 +61,26 @@ seastar::futurize_t<std::result_of_t<Func()>> retry_with_backoff(
                            return seastar::make_ready_future<stop_iteration>(
                              stop_iteration::yes);
                        })
-                       .handle_exception(
-                         [&attempt, &backoff_policy, max_retries, &promise](
-                           std::exception_ptr e) mutable {
-                             if (attempt > max_retries) {
-                                 // out ot attempts
-                                 promise.set_exception(e);
-                                 return seastar::make_ready_future<
-                                   stop_iteration>(stop_iteration::yes);
-                             }
+                       .handle_exception([&attempt,
+                                          &backoff_policy,
+                                          max_retries,
+                                          &promise,
+                                          base_backoff](
+                                           std::exception_ptr e) mutable {
+                           if (attempt > max_retries) {
+                               // out ot attempts
+                               promise.set_exception(e);
+                               return seastar::make_ready_future<
+                                 stop_iteration>(stop_iteration::yes);
+                           }
 
-                             // retry
+                           // retry
 
-                             auto next = backoff_policy.next_backoff();
-                             return seastar::sleep(std::chrono::seconds(next))
-                               .then([] { return stop_iteration::no; });
-                         });
+                           auto next = backoff_policy.next_backoff();
+                           return seastar::sleep(base_backoff * next).then([] {
+                               return stop_iteration::no;
+                           });
+                       });
                  })
             .then([&promise] { return promise.get_future(); });
       });
