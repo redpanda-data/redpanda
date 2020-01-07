@@ -17,32 +17,25 @@ static vint::result consume_vint(iobuf::iterator_consumer& in) {
     return {value, size};
 }
 
-static header_and_kafka_size read_header(iobuf::iterator_consumer& in) {
+model::record_batch_header
+kafka_batch_adapter::read_header(iobuf::iterator_consumer& in) {
     auto base_offset = model::offset(request_reader::_read_int64(in));
     auto batch_length = request_reader::_read_int32(in);
     in.skip(sizeof(int32_t)); // partition leader epoch
     auto magic = in.consume_type<int8_t>();
-    if (magic != 2) {
-        throw invalid_record_exception(
-          fmt::format("unsupported kafka batch magic={}", magic));
-    }
+    has_non_v2_magic = has_non_v2_magic || magic != 2;
     auto crc = request_reader::_read_int32(in);
 
     auto attrs = model::record_batch_attributes(
       request_reader::_read_int16(in));
-    if (attrs.is_transactional()) {
-        throw invalid_record_exception("transactional records not supported");
-    }
+    has_transactional = has_transactional || attrs.is_transactional();
 
     auto last_offset_delta = request_reader::_read_int32(in);
     auto first_timestamp = model::timestamp(request_reader::_read_int64(in));
     auto max_timestamp = model::timestamp(request_reader::_read_int64(in));
 
     auto producer_id = request_reader::_read_int64(in);
-    if (producer_id >= 0) {
-        throw invalid_record_exception(fmt::format(
-          "idempotent records not supported producer id {}", producer_id));
-    }
+    has_idempotent = has_idempotent || producer_id >= 0;
 
     in.skip(sizeof(int16_t) + sizeof(int32_t)); // producer epoch, base sequence
     uint32_t size_bytes = batch_length - internal::kafka_header_overhead;
@@ -56,7 +49,8 @@ static header_and_kafka_size read_header(iobuf::iterator_consumer& in) {
       .first_timestamp = first_timestamp,
       .max_timestamp = max_timestamp,
     };
-    return {std::move(header), (size_t)batch_length};
+
+    return std::move(header);
 }
 
 static model::record_batch::uncompressed_records
@@ -96,24 +90,15 @@ read_records(iobuf::iterator_consumer& in, iobuf& b, size_t num_records) {
     return rs;
 }
 
-std::pair<model::record_batch_reader, int32_t>
-reader_from_kafka_batch(iobuf&& kbatch) {
+void kafka_batch_adapter::adapt(iobuf&& kbatch) {
     auto in = iobuf::iterator_consumer(kbatch.cbegin(), kbatch.cend());
-    int32_t num_records = 0;
-    std::vector<model::record_batch> ret;
     while (!in.is_finished()) {
-        if (!ret.empty()) {
-            // produce >= v3
-            throw invalid_record_exception("produce requests are required to "
-                                           "contain exactly one record batch");
-        }
-
-        auto [header, batch_length] = read_header(in);
-        num_records = request_reader::_read_int32(in);
+        auto header = read_header(in);
+        int32_t num_records = request_reader::_read_int32(in);
 
         model::record_batch::records_type records;
         if (header.attrs.compression() != model::compression::none) {
-            auto records_size = batch_length - internal::kafka_header_overhead;
+            auto records_size = header.size_bytes;
             auto buf = kbatch.share(in.bytes_consumed(), records_size);
             in.skip(records_size);
             records = model::record_batch::compressed_records(
@@ -121,10 +106,9 @@ reader_from_kafka_batch(iobuf&& kbatch) {
         } else {
             records = read_records(in, kbatch, num_records);
         }
-        ret.emplace_back(std::move(header), std::move(records));
+
+        batches.emplace_back(std::move(header), std::move(records));
     }
-    return std::make_pair(
-      model::make_memory_record_batch_reader(std::move(ret)), num_records);
 }
 
 } // namespace kafka

@@ -209,6 +209,8 @@ enum class error_code : int16_t {
   // The broker rejected this static consumer since another consumer with the
   // same group.instance.id has registered with a different member.id.
   fenced_instance_id = 82,
+  // This record has failed the validation on broker and hence be rejected.
+  invalid_record = 87,
 };
 
 constexpr std::string_view error_code_names[] = {
