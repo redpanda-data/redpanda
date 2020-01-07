@@ -2,28 +2,21 @@
 set -ex
 
 function debs() {
-    apt-get update -y
-    if [ "${UBUNTU_CODENAME}" == "xenial" ] && [ -n "${CI}" ]; then
-        cmake_version="3.14.0"
-        cmake_full_name="cmake-${cmake_version}-Linux-x86_64.sh"
-        apt-get install -y wget
-        wget https://github.com/Kitware/CMake/releases/download/v${cmake_version}/${cmake_full_name} -O /tmp/${cmake_full_name}
-        chmod +x /tmp/${cmake_full_name}
-        /tmp/${cmake_full_name} --skip-license --prefix=/usr
-    else
-        apt-get install -y cmake
-    fi
-    apt-get install -y build-essential
     if ! command -v add-apt-repository; then
-        apt-get -y install software-properties-common
         apt-get update -y
+        apt-get -y install software-properties-common
     fi
+    add-apt-repository ppa:ubuntu-toolchain-r/test -y
+    apt update -y
     apt-get install -y \
             build-essential \
+            gcc-9 \
+            g++-9 \
             libtool \
             m4 \
             ninja-build \
             automake \
+            cmake \
             pkg-config \
             xfslibs-dev \
             systemtap-sdt-dev \
@@ -37,7 +30,11 @@ function debs() {
             rpm \
             libsystemd-dev \
             python3-jinja2 \
-            python3-pip
+            python3-pip \
+            python3-venv
+    update-alternatives \
+      --install /usr/bin/gcc gcc /usr/bin/gcc-9 60 \
+      --slave /usr/bin/g++ g++ /usr/bin/g++-9
 }
 
 function rpms() {
