@@ -19,6 +19,10 @@ if [[ ! -e "${HOME}/.local/bin/vtools" ]]; then
   pip3 install --user -e tools/
 fi
 
+if [[ ! -e "${vroot}/compile_commands.json" ]]; then
+    ln -sf "${vroot}/build/debug/gcc/compile_commands.json" "${vroot}/compile_commands.json"
+fi
+
 # check gcc version
 gcc_installed="$(gcc -dumpversion)"
 gcc_required="9"
