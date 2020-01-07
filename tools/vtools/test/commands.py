@@ -38,7 +38,10 @@ def go(conf):
                     'file is searched recursively starting from the current '
                     'working directory'),
               default=None)
-def cpp(build_type, conf, clang):
+@click.option('--args',
+              help=('passes raw args to testing'),
+              default=None)
+def cpp(build_type, conf, clang, args):
     vconfig = config.VConfig(config_file=conf, build_type=build_type,
                              clang=clang)
 
@@ -53,4 +56,4 @@ def cpp(build_type, conf, clang):
     shell.run_subprocess(f'cd {vconfig.build_dir} && '
                          f'ctest '
                          f'  {"-V" if os.environ.get("CI") else ""} '
-                         f'   -R \".*_rp(unit|bench|int)$\"')
+                         f'  {args}'if args else f'-R \".*_rp(unit|bench|int)$\"')
