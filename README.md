@@ -11,7 +11,7 @@ folder has the structure `build/<build-type>/<compiler>`. To get
 started, run:
 
 ```bash
-source tools/bootstraph.sh
+tools/bootstraph.sh
 ```
 
 The above (idempotent) [bootstrapping script](tools/bootstrap.sh):
@@ -40,11 +40,8 @@ ${HOME}/.local/bin/vtools
 Alternatively, add `${HOME}/.local/bin` to `$PATH`:
 
 ```bash
-export PATH=\$PATH:${HOME}/.local/bin
+export PATH=${PATH}:${HOME}/.local/bin
 ```
-
-Or execute the `tools/bootstrap.sh` on new terminals, which executes 
-the above (subsequent executions do not take long).
 
 ## Build
 
