@@ -30,10 +30,11 @@ void produce_request::encode(
     writer.write(int32_t(timeout.count()));
     writer.write_array(topics, [](topic& t, response_writer& writer) {
         writer.write(t.name);
-        writer.write_array(t.data, [](topic_data& td, response_writer& writer) {
-            writer.write(td.id());
-            writer.write(std::move(td.data));
-        });
+        writer.write_array(
+          t.partitions, [](partition& part, response_writer& writer) {
+              writer.write(part.id());
+              writer.write(std::move(part.data));
+          });
     });
 }
 
@@ -47,8 +48,8 @@ void produce_request::decode(request_context& ctx) {
     topics = reader.read_array([](request_reader& reader) {
         return topic{
           .name = model::topic(reader.read_string()),
-          .data = reader.read_array([](request_reader& reader) {
-              return topic_data{
+          .partitions = reader.read_array([](request_reader& reader) {
+              return partition{
                 .id = model::partition_id(reader.read_int32()),
                 .data = reader.read_fragmented_nullable_bytes(),
               };
@@ -57,25 +58,25 @@ void produce_request::decode(request_context& ctx) {
     });
 
     for (auto& topic : topics) {
-        for (auto& td : topic.data) {
-            if (td.data) {
-                td.adapter.adapt(std::move(td.data.value()));
+        for (auto& part : topic.partitions) {
+            if (part.data) {
+                part.adapter.adapt(std::move(part.data.value()));
                 has_transactional = has_transactional
-                                    || td.adapter.has_transactional;
-                has_idempotent = has_idempotent || td.adapter.has_idempotent;
+                                    || part.adapter.has_transactional;
+                has_idempotent = has_idempotent || part.adapter.has_idempotent;
             }
         }
     }
 }
 
 static std::ostream&
-operator<<(std::ostream& o, const produce_request::topic_data& d) {
-    return fmt_print(o, "id {} payload {}", d.id, d.data);
+operator<<(std::ostream& o, const produce_request::partition& p) {
+    return fmt_print(o, "id {} payload {}", p.id, p.data);
 }
 
 static std::ostream&
 operator<<(std::ostream& o, const produce_request::topic& t) {
-    return fmt_print(o, "name {} data {}", t.name, t.data);
+    return fmt_print(o, "name {} data {}", t.name, t.partitions);
 }
 
 std::ostream& operator<<(std::ostream& o, const produce_request& r) {
@@ -181,12 +182,12 @@ static future<produce_response::partition> partition_append(
 static future<produce_response::partition> produce_topic_partition(
   op_context& octx,
   produce_request::topic& topic,
-  produce_request::topic_data& data) {
+  produce_request::partition& part) {
     auto ntp = model::ntp{
       .ns = default_namespace(),
       .tp = model::topic_partition{
         .topic = topic.name,
-        .partition = data.id,
+        .partition = part.id,
       },
     };
 
@@ -204,7 +205,7 @@ static future<produce_response::partition> produce_topic_partition(
     return octx.rctx.partition_manager().invoke_on(
       shard,
       octx.ssg,
-      [&data, ntp = std::move(ntp)](cluster::partition_manager& mgr) {
+      [&part, ntp = std::move(ntp)](cluster::partition_manager& mgr) {
           /*
            * look up partition on the remote shard
            */
@@ -217,7 +218,7 @@ static future<produce_response::partition> produce_topic_partition(
           // produce version >= 3 requires exactly one record batch per
           // request and it must use the v2 format.
           if (
-            data.adapter.batches.size() != 1 || data.adapter.has_non_v2_magic) {
+            part.adapter.batches.size() != 1 || part.adapter.has_non_v2_magic) {
               return make_partition_response_error(
                 ntp.tp.partition, error_code::invalid_record);
           }
@@ -225,7 +226,7 @@ static future<produce_response::partition> produce_topic_partition(
           return partition_append(
             ntp.tp.partition,
             partition,
-            std::move(data.adapter.batches.front()));
+            std::move(part.adapter.batches.front()));
       });
 }
 
@@ -236,10 +237,10 @@ static future<produce_response::topic>
 produce_topic(op_context& octx, produce_request::topic& topic) {
     // partition response placeholders
     std::vector<future<produce_response::partition>> partitions;
-    partitions.reserve(topic.data.size());
+    partitions.reserve(topic.partitions.size());
 
-    for (auto& topic_data : topic.data) {
-        auto pr = produce_topic_partition(octx, topic, topic_data);
+    for (auto& part : topic.partitions) {
+        auto pr = produce_topic_partition(octx, topic, part);
         partitions.push_back(std::move(pr));
     }
 
@@ -279,7 +280,7 @@ void make_error_response(op_context& octx, error_code error) {
         produce_response::topic t{
           .name = topic.name,
         };
-        for (const auto& part : topic.data) {
+        for (const auto& part : topic.partitions) {
             produce_response::partition p{
               .id = part.id,
               .error = error,
