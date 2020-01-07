@@ -25,11 +25,15 @@ struct retry_counter {
 };
 
 SEASTAR_THREAD_TEST_CASE(retry_then_succed) {
-    auto retry_count = retry_with_backoff(5, retry_counter(2)).get0();
+    auto retry_count = retry_with_backoff(
+                         5, retry_counter(2), std::chrono::milliseconds(1))
+                         .get0();
     BOOST_REQUIRE_EQUAL(retry_count, 3);
 };
 
 SEASTAR_THREAD_TEST_CASE(retry_then_fail) {
     BOOST_CHECK_THROW(
-      retry_with_backoff(2, retry_counter(10)).get0(), std::logic_error);
+      retry_with_backoff(2, retry_counter(10), std::chrono::milliseconds(1))
+        .get0(),
+      std::logic_error);
 };
