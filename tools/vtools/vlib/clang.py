@@ -51,6 +51,9 @@ def install_clang(vconfig):
 
 
 def _build_clang(src_dir, build_dir, llvm_cache_file, install_prefix):
+    if os.path.exists(f'{install_prefix}/bin/clang'):
+        logging.info(f"clang exists: {install_prefix}/bin/clang")
+        return
     os.makedirs(build_dir, exist_ok=True)
     logging.info("Configuring LLVM build....")
     shell.run_subprocess(f'cd {build_dir} && '
