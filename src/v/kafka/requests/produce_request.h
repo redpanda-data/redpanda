@@ -1,5 +1,6 @@
 #pragma once
 
+#include "kafka/requests/kafka_batch_adapter.h"
 #include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
 #include "seastarx.h"
@@ -23,6 +24,11 @@ struct produce_request final {
     struct topic_data {
         model::partition_id id;
         std::optional<iobuf> data;
+
+        // the kafka batch format on the wire is slightly different than what is
+        // managed by redpanda. this adapter is setup during request decoding,
+        // and is not involved in request encoding.
+        kafka_batch_adapter adapter;
     };
 
     struct topic {
@@ -37,6 +43,12 @@ struct produce_request final {
 
     void encode(const request_context& ctx, response_writer& writer);
     void decode(request_context& ctx);
+
+    /// True if the request contains a batch with a transactional id.
+    bool has_transactional = false;
+
+    /// True if the request contains a batch with a producer id.
+    bool has_idempotent = false;
 };
 
 std::ostream& operator<<(std::ostream&, const produce_request&);

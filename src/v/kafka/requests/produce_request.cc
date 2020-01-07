@@ -6,6 +6,7 @@
 #include "kafka/requests/kafka_batch_adapter.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/record_batch_reader.h"
 #include "model/timestamp.h"
 #include "storage/shard_assignment.h"
 #include "utils/remote.h"
@@ -54,6 +55,17 @@ void produce_request::decode(request_context& ctx) {
           }),
         };
     });
+
+    for (auto& topic : topics) {
+        for (auto& td : topic.data) {
+            if (td.data) {
+                td.adapter.adapt(std::move(td.data.value()));
+                has_transactional = has_transactional
+                                    || td.adapter.has_transactional;
+                has_idempotent = has_idempotent || td.adapter.has_idempotent;
+            }
+        }
+    }
 }
 
 static std::ostream&
@@ -86,10 +98,23 @@ void produce_response::encode(const request_context& ctx, response& resp) {
           t.partitions, [version](partition& p, response_writer& writer) {
               writer.write(p.id);
               writer.write(p.error);
-              writer.write(int64_t(p.base_offset()));
-              writer.write(p.log_append_time.value());
+
+              int64_t base_offset = p.base_offset();
+              int64_t log_append_time = p.log_append_time.value();
+              int64_t log_start_offset = p.log_start_offset();
+
+              // TODO: we can unify this into the error response encoding when
+              // we've fully switched over to signed model offsets.
+              if (p.error != error_code::none) {
+                  base_offset = -1;
+                  log_append_time = -1;
+                  log_start_offset = -1;
+              }
+
+              writer.write(base_offset);
+              writer.write(log_append_time);
               if (version >= api_version(5)) {
-                  writer.write(int64_t(p.log_start_offset()));
+                  writer.write(log_start_offset);
               }
           });
     });
@@ -125,11 +150,9 @@ make_partition_response_error(model::partition_id id, error_code error) {
 static future<produce_response::partition> partition_append(
   model::partition_id id,
   lw_shared_ptr<cluster::partition> partition,
-  std::optional<iobuf> data) {
-    // parses and validates the record batch and prepares it for being
-    // replicated by raft.
-    auto [reader, num_records] = reader_from_kafka_batch(
-      std::move(data.value()));
+  model::record_batch batch) {
+    auto num_records = batch.size();
+    auto reader = model::make_memory_record_batch_reader(std::move(batch));
     raft::entry e(raft::data_batch_type, std::move(reader));
 
     return partition->replicate(std::move(e))
@@ -191,20 +214,18 @@ static future<produce_response::partition> produce_topic_partition(
           }
           auto partition = mgr.get(ntp);
 
-          // produce version >= 3 requires a message batch be present
-          if (!data.data || data.data->size_bytes() == 0) {
+          // produce version >= 3 requires exactly one record batch per
+          // request and it must use the v2 format.
+          if (
+            data.adapter.batches.size() != 1 || data.adapter.has_non_v2_magic) {
               return make_partition_response_error(
-                ntp.tp.partition, error_code::corrupt_message);
+                ntp.tp.partition, error_code::invalid_record);
           }
 
-          try {
-              return partition_append(
-                ntp.tp.partition, partition, std::move(data.data));
-          } catch (const invalid_record_exception& e) {
-              kreq_log.error(e.what());
-              return make_partition_response_error(
-                ntp.tp.partition, error_code::corrupt_message);
-          }
+          return partition_append(
+            ntp.tp.partition,
+            partition,
+            std::move(data.adapter.batches.front()));
       });
 }
 
@@ -250,10 +271,47 @@ produce_topics(op_context& octx) {
     return std::move(topics);
 }
 
+/**
+ * \brief Construct a generic octx error response.
+ */
+void make_error_response(op_context& octx, error_code error) {
+    for (const auto& topic : octx.request.topics) {
+        produce_response::topic t{
+          .name = topic.name,
+        };
+        for (const auto& part : topic.data) {
+            produce_response::partition p{
+              .id = part.id,
+              .error = error,
+            };
+            t.partitions.push_back(std::move(p));
+        }
+        octx.response.topics.push_back(std::move(t));
+    }
+}
+
+/**
+ * \brief Encode the final response from the octx response structure.
+ */
+static future<response_ptr> make_response(op_context& octx) {
+    auto resp = std::make_unique<response>();
+    octx.response.encode(octx.rctx, *resp.get());
+    return make_ready_future<response_ptr>(std::move(resp));
+}
+
 future<response_ptr>
 produce_api::process(request_context&& ctx, smp_service_group ssg) {
     return do_with(op_context(std::move(ctx), ssg), [](op_context& octx) {
         kreq_log.debug("handling produce request {}", octx.request);
+
+        if (octx.request.has_transactional) {
+            make_error_response(
+              octx, error_code::transactional_id_authorization_failed);
+            return make_response(octx);
+        } else if (octx.request.has_idempotent) {
+            make_error_response(octx, error_code::cluster_authorization_failed);
+            return make_response(octx);
+        }
 
         // dispatch produce requests for each topic
         auto topics = produce_topics(octx);
@@ -262,10 +320,7 @@ produce_api::process(request_context&& ctx, smp_service_group ssg) {
         return when_all_succeed(topics.begin(), topics.end())
           .then([&octx](std::vector<produce_response::topic> topics) {
               octx.response.topics = std::move(topics);
-
-              auto resp = std::make_unique<response>();
-              octx.response.encode(octx.rctx, *resp.get());
-              return make_ready_future<response_ptr>(std::move(resp));
+              return make_response(octx);
           });
     });
 }
