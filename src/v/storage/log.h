@@ -91,7 +91,7 @@ public:
     /// flushes the _tracker.dirty_offset into _tracker.committed_offset
     future<> flush();
 
-    future<> maybe_roll();
+    future<> maybe_roll(model::offset);
 
     [[gnu::always_inline]] future<>
     truncate(model::offset offset, model::term_id term) {
