@@ -58,7 +58,7 @@ def cpp_deps(build_type, conf, clang):
                     'working directory'),
               default=None)
 def clang(conf):
-    llvm.install_clang(config.VConfig(conf, build_type='ignored', clang=True))
+    llvm.install_clang(config.VConfig(conf, clang=True))
 
 
 @install.command(short_help='install go build dependencies.')
@@ -68,7 +68,7 @@ def clang(conf):
                     'working directory'),
               default=None)
 def go_deps(conf):
-    vconfig = config.VConfig(conf, build_type='ignored')
+    vconfig = config.VConfig(conf)
     shell.run_subprocess(f'cd {vconfig.go_src_dir} && go mod download')
 
 
@@ -82,7 +82,7 @@ def go_deps(conf):
                     'working directory'),
               default=None)
 def go_compiler(version, conf):
-    vconfig = config.VConfig(conf, build_type='ignored')
+    vconfig = config.VConfig(conf)
 
     if os.path.isfile(f'{vconfig.go_path}/bin/go'):
         logging.info(

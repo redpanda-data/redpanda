@@ -72,7 +72,7 @@ def cpp(build_type, conf, skip_external, clang):
                     'working directory'),
               default=None)
 def go(conf):
-    vconfig = config.VConfig(conf, build_type='ignored')
+    vconfig = config.VConfig(conf)
     os.makedirs(vconfig.go_out_dir, exist_ok=True)
     build_flags = '-buildmode=pie -v -a -tags netgo'
     shell.run_subprocess(

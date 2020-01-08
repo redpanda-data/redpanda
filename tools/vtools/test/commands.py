@@ -18,7 +18,7 @@ def test():
                     'working directory'),
               default=None)
 def go(conf):
-    vconfig = config.VConfig(conf, build_type='ignored')
+    vconfig = config.VConfig(conf)
     shell.run_subprocess(f'cd {vconfig.go_src_dir}/pkg && go test ./...')
 
 
