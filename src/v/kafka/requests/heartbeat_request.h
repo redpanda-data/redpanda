@@ -32,7 +32,7 @@ struct heartbeat_response final {
     std::chrono::milliseconds throttle_time; // >= v1
     error_code error;
 
-    heartbeat_response(error_code error)
+    explicit heartbeat_response(error_code error)
       : throttle_time(0)
       , error(error) {}
 

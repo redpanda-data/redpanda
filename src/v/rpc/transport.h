@@ -28,7 +28,7 @@ public:
     };
 
     explicit base_transport(configuration c);
-    virtual ~base_transport() {}
+    virtual ~base_transport() = default;
     base_transport(base_transport&&) = default;
 
     virtual future<> connect();
@@ -61,7 +61,7 @@ public:
       transport_configuration c,
       std::optional<sstring> service_name = std::nullopt);
     transport(transport&&) = default;
-    virtual ~transport();
+    ~transport() override;
     future<> connect() final;
     future<std::unique_ptr<streaming_context>>
       send(netbuf, rpc::timer_type::time_point);
@@ -117,7 +117,7 @@ template<typename... Protocol>
 CONCEPT(requires(RpcClientProtocol<Protocol>&&...))
 class client : public Protocol... {
 public:
-    client(transport_configuration cfg)
+    explicit client(transport_configuration cfg)
       : _transport(std::move(cfg))
       , Protocol(_transport)... {}
 

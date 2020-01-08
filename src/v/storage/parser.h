@@ -192,13 +192,13 @@ private:
     input_stream<char>* _input = nullptr;
     prestate _prestate = prestate::none;
     // state for non-NONE prestates
-    uint32_t _pos;
+    uint32_t _pos{0};
     // state for the integer pre-state, in host byte order.
-    int8_t _8;
-    int16_t _16;
-    int32_t _32;
-    int64_t _64;
-    size_t _varint_size;
+    int8_t _8{0};
+    int16_t _16{0};
+    int32_t _32{0};
+    int64_t _64{0};
+    size_t _varint_size{0};
     // state for reading fragmented ints, in big-endian.
     union {
         char bytes[vint::max_length];
@@ -206,21 +206,21 @@ private:
         int32_t int32;
         int16_t int16;
         int8_t int8;
-    } _read_int;
+    } _read_int; // NOLINT
     // state for reading fragmented bytes
-    size_t _ftb_size;
+    size_t _ftb_size{0};
     std::vector<temporary_buffer<char>> _read_bytes;
     // state for reading batches
     state _state = state::batch_start;
     model::record_batch_header _header;
     bool _compressed_batch = false;
-    size_t _num_records;
-    size_t _record_size;
+    size_t _num_records{0};
+    size_t _record_size{0} ;
     model::record_attributes _record_attributes;
-    int32_t _timestamp_delta;
-    int32_t _offset_delta;
-    size_t _value_and_headers_size;
-    size_t _bytes_consumed;
+    int32_t _timestamp_delta{0} ;
+    int32_t _offset_delta{0} ;
+    size_t _value_and_headers_size{0};
+    size_t _bytes_consumed{0};
     failure_probes _fprobe;
 };
 

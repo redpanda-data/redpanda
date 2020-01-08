@@ -104,7 +104,7 @@ public:
         auto prev = it->second.delay;
         it->second.delay = std::chrono::milliseconds(delay_ms);
 
-        struct throttle_delay res;
+        throttle_delay res{};
         res.first_violation = prev.count() == 0;
         res.duration = it->second.delay;
         return res;

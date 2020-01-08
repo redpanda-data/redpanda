@@ -9,7 +9,7 @@ public:
     fast_prng()
       : _rng(pcg_extras::seed_seq_from<std::random_device>()) {}
     fast_prng(fast_prng&& o) noexcept
-      : _rng(std::move(o._rng)) {}
+      : _rng(o._rng) {}
     fast_prng& operator=(fast_prng&& o) noexcept {
         if (this != &o) {
             this->~fast_prng();

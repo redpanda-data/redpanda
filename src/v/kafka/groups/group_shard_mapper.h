@@ -47,7 +47,7 @@ public:
 private:
     model::ns _ns;
     model::topic _topic;
-    model::partition_id::type _num_partitions;
+    model::partition_id::type _num_partitions{};
     Shards& _shards;
 };
 

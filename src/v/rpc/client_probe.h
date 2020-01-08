@@ -35,12 +35,12 @@ public:
 
     void connection_closed() { --_connections; }
 
-    void connection_error(std::exception_ptr e) {
+    void connection_error(const std::exception_ptr& e) {
         rpclog.trace("Connection error: {}", e);
         ++_connection_errors;
     }
 
-    void read_dispatch_error(std::exception_ptr e) {
+    void read_dispatch_error(const std::exception_ptr& e) {
         rpclog.error("Error dispatching client reads: {}", e);
         ++_read_dispatch_errors;
     }

@@ -33,7 +33,7 @@ public:
 
 private:
     seastar::sstring _host;
-    uint16_t _port;
+    uint16_t _port{0};
 };
 
 namespace std {

@@ -75,9 +75,8 @@ private:
 
     struct window {
         clock::time_point time;
-        double count;
-        window()
-          : count(0.) {}
+        double count{0.};
+        window() = default;
     };
 
     std::vector<window> _windows;

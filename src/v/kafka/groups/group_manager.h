@@ -58,7 +58,7 @@ public:
     static bool valid_group_id(group_id group, api_key api);
 
 private:
-    group_ptr get_group(group_id group) {
+    group_ptr get_group(const group_id& group) {
         if (auto it = _groups.find(group); it != _groups.end()) {
             return it->second;
         }

@@ -17,7 +17,9 @@ inline uint32_t xxhash_32(const char* data, const size_t& length) {
 
 class incremental_xxhash64 {
 public:
-    incremental_xxhash64(uint64_t seed = 0) { XXH64_reset(&_state, seed); }
+    explicit incremental_xxhash64(uint64_t seed = 0) {
+        XXH64_reset(&_state, seed);
+    }
     incremental_xxhash64(incremental_xxhash64&&) noexcept = default;
     incremental_xxhash64& operator=(incremental_xxhash64&&) noexcept = default;
 
@@ -37,7 +39,7 @@ public:
     uint64_t digest() { return XXH64_digest(&_state); }
 
 private:
-    XXH64_state_t _state;
+    XXH64_state_t _state{};
 };
 
 template<
