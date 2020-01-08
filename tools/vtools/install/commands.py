@@ -84,6 +84,11 @@ def go_deps(conf):
 def go_compiler(version, conf):
     vconfig = config.VConfig(conf, build_type='ignored')
 
+    if os.path.isfile(f'{vconfig.go_path}/bin/go'):
+        logging.info(
+            f'Found go binary in {vconfig.go_path}/bin. Skipping install.')
+        return
+
     url = f'https://dl.google.com/go/go{version}.linux-amd64.tar.gz'
 
     logging.info("Downloading " + url)
