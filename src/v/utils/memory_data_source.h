@@ -16,21 +16,21 @@ public:
         size_t(0),
         [](size_t acc, auto& it) { return acc + it.size(); }))
       , _buffers(std::move(buffers)) {}
-    virtual future<value_type> skip(uint64_t n) final {
+    future<value_type> skip(uint64_t n) final {
         _byte_offset = std::min(_byte_offset + n, capacity);
         return get();
     }
-    virtual future<value_type> get() final {
+    future<value_type> get() final {
         if (_byte_offset >= capacity) {
             return make_ready_future<value_type>();
         }
         int64_t offset = _byte_offset;
-        for (size_t i = 0; i < _buffers.size(); ++i) {
-            const int64_t end = _buffers[i].size();
+        for (auto& _buffer : _buffers) {
+            const int64_t end = _buffer.size();
             if (offset - end < 0) {
                 _byte_offset += end - offset;
                 return make_ready_future<value_type>(
-                  _buffers[i].share(offset, end));
+                  _buffer.share(offset, end));
             }
             offset -= end;
         }

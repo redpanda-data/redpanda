@@ -38,7 +38,7 @@ public:
         virtual future<span> do_load_slice(timeout_clock::time_point) = 0;
 
     public:
-        virtual ~impl() {}
+        virtual ~impl() = default;
 
         bool end_of_stream() const { return _end_of_stream; }
 
@@ -46,7 +46,7 @@ public:
 
         virtual future<> load_slice(timeout_clock::time_point timeout) {
             return do_load_slice(timeout).then([this](span s) {
-                _slice = std::move(s);
+                _slice = s;
                 _current = _slice.begin();
             });
         }

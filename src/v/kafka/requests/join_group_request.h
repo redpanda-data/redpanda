@@ -5,6 +5,8 @@
 
 #include <seastar/core/future.hh>
 
+#include <utility>
+
 namespace kafka {
 
 struct join_group_api final {
@@ -63,7 +65,7 @@ struct join_group_response final {
       std::vector<member_config> members = {})
       : throttle_time(0)
       , error(error)
-      , generation_id(std::move(generation_id))
+      , generation_id(generation_id)
       , protocol_name(std::move(protocol_name))
       , leader_id(std::move(leader_id))
       , member_id(std::move(member_id))
@@ -86,7 +88,7 @@ _make_join_error(kafka::member_id member_id, error_code error) {
 static inline future<join_group_response>
 make_join_error(kafka::member_id member_id, error_code error) {
     return make_ready_future<join_group_response>(
-      _make_join_error(member_id, error));
+      _make_join_error(std::move(member_id), error));
 }
 
 std::ostream& operator<<(std::ostream&, const join_group_response&);

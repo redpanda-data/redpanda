@@ -84,7 +84,7 @@ public:
         Range>
       // clang-format on
       >
-    iobuf(Range&& r) {
+    explicit iobuf(Range&& r) {
         static_assert(
           std::is_rvalue_reference_v<decltype(r)>,
           "Must be an rvalue. Use std::move()");
@@ -245,7 +245,8 @@ class iobuf::placeholder {
 public:
     using iterator = iobuf::iterator;
 
-    placeholder() noexcept {};
+    placeholder() noexcept = default;
+
     placeholder(iterator iter, size_t initial_index, size_t max_size_to_write)
       : _iter(iter)
       , _byte_index(initial_index)
@@ -347,7 +348,7 @@ public:
     }
     void skip(size_t n) {
         size_t c = consume(
-          n, [](const char*, size_t max) { return stop_iteration::no; });
+          n, [](const char*, size_t /*max*/) { return stop_iteration::no; });
         if (__builtin_expect(c != n, false)) {
             throw std::out_of_range("Invalid skip(n)");
         }
@@ -571,7 +572,7 @@ inline iobuf::placeholder iobuf::reserve(size_t sz) {
     auto it = std::prev(_ctrl->frags.end());
     placeholder p(it, it->size(), sz);
     it->reserve(sz);
-    return std::move(p);
+    return p;
 }
 
 [[gnu::always_inline]] void inline iobuf::prepend(temporary_buffer<char> b) {
@@ -641,7 +642,7 @@ inline void iobuf::trim_front(size_t n) {
 
 inline input_stream<char> make_iobuf_input_stream(iobuf io) {
     struct iobuf_input_stream final : data_source_impl {
-        iobuf_input_stream(iobuf i)
+        explicit iobuf_input_stream(iobuf i)
           : io(std::move(i)) {}
         future<temporary_buffer<char>> skip(uint64_t n) final {
             io.trim_front(n);
@@ -662,7 +663,7 @@ inline input_stream<char> make_iobuf_input_stream(iobuf io) {
 }
 inline output_stream<char> make_iobuf_output_stream(iobuf io) {
     struct iobuf_output_stream final : data_sink_impl {
-        iobuf_output_stream(iobuf i)
+        explicit iobuf_output_stream(iobuf i)
           : io(std::move(i)) {}
         future<> put(net::packet data) final {
             auto all = data.release();
@@ -760,7 +761,7 @@ inline std::ostream& operator<<(std::ostream& o, const iobuf& io) {
 ///
 class iobuf_ostreambuf final : public std::streambuf {
 public:
-    iobuf_ostreambuf(iobuf& o)
+    explicit iobuf_ostreambuf(iobuf& o)
       : _buf(o.control_share()) {}
     int_type overflow(int_type c = traits_type::eof()) final {
         if (c == traits_type::eof()) {
@@ -773,7 +774,7 @@ public:
         _buf.append(s, n);
         return n;
     }
-    ~iobuf_ostreambuf() {}
+    ~iobuf_ostreambuf() override = default;
 
 private:
     iobuf _buf;

@@ -30,7 +30,7 @@ struct leave_group_response final {
     std::chrono::milliseconds throttle_time; // >= v1
     error_code error;
 
-    leave_group_response(error_code error)
+    explicit leave_group_response(error_code error)
       : throttle_time(0)
       , error(error) {}
 

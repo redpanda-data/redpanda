@@ -84,8 +84,9 @@ namespace YAML {
 template <> struct convert<seastar::sstring> {
   static Node encode(const seastar::sstring &rhs) { return Node(rhs.c_str()); }
   static bool decode(const Node &node, seastar::sstring &rhs) {
-    if (!node.IsScalar())
-      return false;
+      if (!node.IsScalar()) {
+          return false;
+      }
     rhs = node.as<std::string>();
     return true;
   }

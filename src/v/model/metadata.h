@@ -1,9 +1,9 @@
 #pragma once
 
 #include "model/fundamental.h"
-#include "utils/unresolved_address.h"
 #include "seastarx.h"
 #include "utils/named_type.h"
+#include "utils/unresolved_address.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -13,6 +13,7 @@
 #include <optional>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace model {
@@ -43,11 +44,12 @@ public:
       unresolved_address rpc_address,
       std::optional<sstring> rack,
       broker_properties props) noexcept
-      : _id(std::move(id))
+      : _id(id)
       , _kafka_api_address(std::move(kafka_api_address))
       , _rpc_address(std::move(rpc_address))
-      , _rack(rack)
-      , _properties(props) {}
+      , _rack(std::move(rack))
+      , _properties(std::move(props)) {}
+
     broker(broker&&) noexcept = default;
     broker& operator=(broker&&) noexcept = default;
     broker(const broker&) = default;
@@ -96,7 +98,7 @@ struct broker_shard {
 struct partition_metadata {
     partition_metadata() noexcept = default;
     explicit partition_metadata(partition_id p) noexcept
-      : id(std::move(p)) {}
+      : id(p) {}
     partition_id id;
     std::vector<broker_shard> replicas;
     model::node_id leader_node;

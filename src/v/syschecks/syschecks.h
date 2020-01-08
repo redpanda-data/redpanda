@@ -38,7 +38,7 @@ static inline void cpu() {
     }
 }
 
-static inline future<> disk(sstring path) {
+static inline future<> disk(const sstring& path) {
     return check_direct_io_support(path).then([path] {
         return file_system_at(path).then([path](auto fs) {
             if (fs != fs_type::xfs) {

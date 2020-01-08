@@ -36,7 +36,7 @@ public:
         chunk& operator=(const chunk&) = delete;
         chunk(chunk&&) noexcept = default;
         chunk& operator=(chunk&&) noexcept = default;
-        chunk(const size_t alignment = 4096)
+        explicit chunk(const size_t alignment = 4096)
           : _buf(
             seastar::allocate_aligned_buffer<char>(chunk_size, alignment)) {}
 
@@ -58,7 +58,7 @@ public:
         const char* dma_ptr(size_t alignment) const {
             // we must always write in hardware-aligned page multiples.
             // alignment comes from the filesystem
-            const size_t sz = seastar::align_down<size_t>(
+            const auto sz = seastar::align_down<size_t>(
               _flushed_pos, alignment);
             return _buf.get() + sz;
         }
@@ -74,7 +74,7 @@ public:
             // must be 8192 bytes, starting at the bottom of the _flushed_pos
             // page, in this example, at offset 0.
             //
-            const size_t prev_sz = seastar::align_down<size_t>(
+            const auto prev_sz = seastar::align_down<size_t>(
               _flushed_pos, alignment);
             const size_t sz = _pos - prev_sz;
             return seastar::align_up<size_t>(sz, alignment);
