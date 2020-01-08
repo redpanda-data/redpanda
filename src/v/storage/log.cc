@@ -112,10 +112,11 @@ future<> log::do_roll() {
           _tracker.committed_offset(), _term, _appender->priority_class());
     });
 }
-future<> log::maybe_roll() {
+future<> log::maybe_roll(model::offset current_offset) {
     if (_appender->file_byte_offset() < _manager.max_segment_size()) {
         return make_ready_future<>();
     }
+    _tracker.update_dirty_offset(current_offset);
     return do_roll();
 }
 
