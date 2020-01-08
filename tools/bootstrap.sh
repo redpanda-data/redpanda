@@ -36,10 +36,7 @@ if [[ ${PATH} != *"${HOME}/.local/bin/"* ]]; then
   export PATH="${PATH}:${HOME}/.local/bin/"
 fi
 
-if [ ! -f "build/go/bin/go" ]; then
-  vtools install go-compiler
-fi
-
+vtools install go-compiler
 vtools install go-deps
 
 vtools install clang
