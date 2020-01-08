@@ -32,6 +32,7 @@ FIXTURE_TEST(
     mgr.stop().get0();
 };
 
+// Uncomment when writing after flush will be fixed in appender
 #if 0
 FIXTURE_TEST(append_twice_to_same_segment, storage_test_fixture) {
     storage::log_manager mgr = make_log_manager();
