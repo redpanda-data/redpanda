@@ -5,6 +5,15 @@ from . import shell
 from . import clang
 
 
+def cache_exists(vconfig):
+    return os.path.exists(_cache_file(vconfig))
+
+
+def rm_cache(vconfig):
+    if cache_exists(vconfig):
+        os.remove(_cache_file(vconfig))
+
+
 def configure_build(vconfig, build_external=True, build_external_only=False):
 
     if vconfig.compiler == 'clang':
@@ -34,3 +43,8 @@ def configure_build(vconfig, build_external=True, build_external_only=False):
                          f'  {" ".join(cmake_flags)}'
                          f'  -B{vconfig.build_dir}'
                          f'  -H{vconfig.src_dir}')
+
+
+def _cache_file(vconfig):
+    return f'{vconfig.build_dir}/CMakeCache.txt'
+
