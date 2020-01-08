@@ -31,7 +31,7 @@ public:
 
     const T& operator()() const { return value(); }
 
-    operator T() const { return value(); }
+    operator T() const { return value(); } // NOLINT
 
     void print(std::ostream& o) const override { o << name() << ":" << _value; }
 

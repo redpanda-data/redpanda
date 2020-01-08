@@ -5,6 +5,8 @@
 
 #include <seastar/core/future.hh>
 
+#include <utility>
+
 namespace kafka {
 
 struct sync_group_api final {
@@ -54,7 +56,7 @@ struct sync_group_response final {
     sync_group_response(error_code error, bytes assignment)
       : throttle_time(0)
       , error(error)
-      , assignment(assignment) {}
+      , assignment(std::move(assignment)) {}
 
     explicit sync_group_response(error_code error)
       : throttle_time(0)

@@ -17,7 +17,7 @@
 namespace hist_internal {
 struct hdr_histogram_c_deleter {
     void operator()(void* ptr) {
-        ::hdr_histogram* h = reinterpret_cast<hdr_histogram*>(ptr);
+        auto* h = reinterpret_cast<hdr_histogram*>(ptr);
         ::hdr_close(h);
         h = nullptr;
     }
@@ -48,9 +48,9 @@ public:
             _h.get()._probes.push_back(*this);
         }
         measurement(measurement&& o) noexcept
-          : _detached(std::move(o._detached))
-          , _trace(std::move(o._trace))
-          , _h(std::move(o._h))
+          : _detached(o._detached)
+          , _trace(o._trace)
+          , _h(o._h)
           , _begin_t(o._begin_t) {
             o.detach_hdr_hist();
         }
@@ -79,7 +79,7 @@ public:
         hdr_hist::clock_type::time_point _begin_t;
     };
 
-    hdr_hist(
+    explicit hdr_hist(
       int64_t max_value = 3600000000,
       int64_t min = 1,
       int32_t significant_figures = 3)

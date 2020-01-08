@@ -20,7 +20,7 @@ public:
 
     timeout_jitter(timeout_jitter&& o) noexcept
       : _jitter(o._jitter)
-      , _election_duration(std::move(o._election_duration))
+      , _election_duration(o._election_duration)
       , _prng(std::move(o._prng)) {}
 
     /// adds a random amount of jitter time to base_timeout

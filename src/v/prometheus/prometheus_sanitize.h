@@ -6,8 +6,10 @@
 
 struct prometheus_sanitize {
     static sstring metrics_name(sstring n) {
-        for (auto i = 0u; i < n.size(); ++i) {
-            if (!std::isalnum(n[i])) n[i] = '_';
+        for (char& i : n) {
+            if (!std::isalnum(i)) {
+                i = '_';
+            }
         }
         return n;
     }
