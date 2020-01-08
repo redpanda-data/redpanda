@@ -108,6 +108,7 @@ future<> log::do_roll() {
         // update all offsets to next
         _tracker.update_dirty_offset(o);
         _tracker.update_committed_offset(o);
+        stlog.debug("Rolling log segment offset {}, term {}", o, _term);
         return new_segment(o, _term, _appender->priority_class());
     });
 }

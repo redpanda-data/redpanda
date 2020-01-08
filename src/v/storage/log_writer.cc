@@ -91,6 +91,12 @@ operator()(model::record_batch&& batch) {
             return make_exception_future<stop_iteration>(std::move(e));
         }
         auto offset_before = _log.appender().file_byte_offset();
+        stlog.trace(
+          "Wrting batch of {} records offsets [{},{}], compressed: {}",
+          batch.size(),
+          batch.base_offset(),
+          batch.last_offset(),
+          batch.compressed());
         return write(_log.appender(), batch)
           .then([this, &batch, offset_before] {
               _last_offset = batch.last_offset();
