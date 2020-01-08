@@ -78,8 +78,8 @@ write(log_segment_appender& appender, const model::record_batch& batch) {
       });
 }
 
-future<stop_iteration> default_log_writer::
-operator()(model::record_batch&& batch) {
+future<stop_iteration>
+default_log_writer::operator()(model::record_batch&& batch) {
     return do_with(std::move(batch), [this](model::record_batch& batch) {
         if (_last_offset > batch.base_offset()) {
             auto e = std::make_exception_ptr(std::runtime_error(fmt::format(
