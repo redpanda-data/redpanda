@@ -162,11 +162,13 @@ public:
     }
 
     constexpr R default_match(T value) {
-        if (result) return std::move(*result);
+        if (result) {
+            return std::move(*result);
+        }
         return value;
     }
 
-    constexpr operator R() {
+    constexpr operator R() { // NOLINT
         if (!result) {
             throw std::runtime_error("Fell off the end of a string-switch");
         }

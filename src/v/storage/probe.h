@@ -17,7 +17,7 @@ public:
 
     void segment_created() { ++_log_segments_created; }
 
-    void batch_write_error(std::exception_ptr e) {
+    void batch_write_error(const std::exception_ptr& e) {
         stlog.error("Error writing record batch {}", e);
         ++_batch_write_errors;
     }

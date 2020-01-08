@@ -15,7 +15,7 @@ public:
     static constexpr size_t default_max_unflushed_bytes = 1024 * 1024;
 
     batched_output_stream() = default;
-    batched_output_stream(
+    explicit batched_output_stream(
       output_stream<char>, size_t cache = default_max_unflushed_bytes);
     batched_output_stream(batched_output_stream&&) noexcept;
     batched_output_stream& operator=(batched_output_stream&&) noexcept;

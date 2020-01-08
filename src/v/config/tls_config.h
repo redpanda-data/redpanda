@@ -6,6 +6,7 @@
 #include <seastar/net/tls.hh>
 
 #include <optional>
+#include <utility>
 
 namespace config {
 
@@ -17,10 +18,8 @@ struct key_cert {
 class tls_config {
 public:
     tls_config()
-      : _enabled(false)
-      , _key_cert(std::nullopt)
-      , _truststore_file(std::nullopt)
-      , _require_client_auth(false) {}
+      : _key_cert(std::nullopt)
+      , _truststore_file(std::nullopt) {}
 
     tls_config(
       bool enabled,
@@ -85,10 +84,10 @@ public:
     }
 
 private:
-    bool _enabled;
+    bool _enabled{false};
     std::optional<key_cert> _key_cert;
     std::optional<sstring> _truststore_file;
-    bool _require_client_auth;
+    bool _require_client_auth{false};
 };
 
 }; // namespace config

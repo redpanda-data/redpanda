@@ -20,7 +20,7 @@ namespace detail {
 
 struct instance {
     template<typename Type>
-    operator Type() const;
+    operator Type() const; // NOLINt
 };
 
 template<

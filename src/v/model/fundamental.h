@@ -24,7 +24,7 @@ class topic : public named_type<sstring, struct model_topic_type> {
 public:
     using named_type<sstring, struct model_topic_type>::named_type;
 
-    topic(model::topic_view view)
+    topic(model::topic_view view) // NOLINT - see topic_view_tests.cc
       : named_type<sstring, struct model_topic_type>(sstring(view())) {}
 
     operator topic_view() { return topic_view(_value); }

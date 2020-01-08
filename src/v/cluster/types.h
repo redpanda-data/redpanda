@@ -92,10 +92,12 @@ constexpr std::string_view topic_error_code_names[] = {
 std::ostream &operator<<(std::ostream &, topic_error_code);
 
 struct topic_result {
-  topic_result(model::topic t, topic_error_code ec = topic_error_code::no_error)
-    : topic(std::move(t)), ec(ec) {}
-  model::topic     topic;
-  topic_error_code ec;
+    explicit topic_result(
+      model::topic t, topic_error_code ec = topic_error_code::no_error)
+      : topic(std::move(t))
+      , ec(ec) {}
+    model::topic topic;
+    topic_error_code ec;
 };
 
 /// Structure representing difference between two set of brokers. 

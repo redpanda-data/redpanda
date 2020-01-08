@@ -93,7 +93,7 @@ public:
     /// should only be initialized _after_ we become the leader so we know we
     /// are up to date, and have the highest known group_id ever assigned
     /// reset to nullptr when no longer leader
-    partition_allocator(raft::group_id highest_known_group)
+    explicit partition_allocator(raft::group_id highest_known_group)
       : _highest_group(highest_known_group) {
         _rr = _available_machines.end();
     }

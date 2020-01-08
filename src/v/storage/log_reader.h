@@ -46,21 +46,21 @@ public:
         _timeout = timeout;
     }
 
-    virtual skip consume_batch_start(
+    skip consume_batch_start(
       model::record_batch_header, size_t num_records) override;
 
-    virtual skip consume_record_key(
+    skip consume_record_key(
       size_t size_bytes,
       model::record_attributes attributes,
       int32_t timestamp_delta,
       int32_t offset_delta,
       iobuf&& key) override;
 
-    virtual void consume_record_value(iobuf&&) override;
+    void consume_record_value(iobuf&&) override;
 
-    virtual void consume_compressed_records(iobuf&&) override;
+    void consume_compressed_records(iobuf&&) override;
 
-    virtual stop_iteration consume_batch_end() override;
+    stop_iteration consume_batch_end() override;
 
 private:
     bool skip_batch_type(model::record_batch_type type);
@@ -68,12 +68,12 @@ private:
     log_segment_batch_reader& _reader;
     model::offset _start_offset;
     model::record_batch_header _header;
-    size_t _record_size_bytes;
+    size_t _record_size_bytes{0};
     model::record_attributes _record_attributes;
-    int32_t _record_timestamp_delta;
-    int32_t _record_offset_delta;
+    int32_t _record_timestamp_delta{0};
+    int32_t _record_offset_delta{0};
     iobuf _record_key;
-    size_t _num_records;
+    size_t _num_records{0};
     model::record_batch::records_type _records;
     model::timeout_clock::time_point _timeout;
 };
@@ -95,8 +95,7 @@ public:
     size_t bytes_read() const { return _bytes_read; }
 
 protected:
-    virtual future<span>
-      do_load_slice(model::timeout_clock::time_point) override;
+    future<span> do_load_slice(model::timeout_clock::time_point) override;
 
 private:
     future<> initialize();
@@ -139,8 +138,7 @@ public:
     //       is because batchs are atomically made visible.
     log_reader(log_set&, offset_tracker&, log_reader_config, probe&) noexcept;
 
-    virtual future<span>
-      do_load_slice(model::timeout_clock::time_point) override;
+    future<span> do_load_slice(model::timeout_clock::time_point) override;
 
 private:
     bool is_done();
