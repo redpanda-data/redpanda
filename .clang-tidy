@@ -1,12 +1,29 @@
-Checks: '-*,clang-diagnostic-*,llvm-*,misc-*,-misc-unused-parameters,readability-identifier-naming'
+---
+Checks:          'clang-diagnostic-*,clang-analyzer-*,cert-*,cppcoreguidelines-*,hicpp-*,modernize-*,performance-*,misc-*,bugprone-*,-modernize-use-trailing-return-type,-modernize-use-nodiscard'
+WarningsAsErrors: ''
+HeaderFilterRegex: '.*'
+AnalyzeTemporaryDtors: false
+FormatStyle:    file
 CheckOptions:
-  - key:             readability-identifier-naming.ClassCase
-    value:           snake_case
-  - key:             readability-identifier-naming.EnumCase
-    value:           snake_case
-  - key:             readability-identifier-naming.FunctionCase
-    value:           lowerCase
-  - key:             readability-identifier-naming.UnionCase
-    value:           snake_case
-  - key:             readability-identifier-naming.VariableCase
-    value:           snake_case
+  - key:             cert-dcl16-c.NewSuffixes
+    value:           'L;LL;LU;LLU'
+  - key:             cert-oop54-cpp.WarnOnlyIfThisHasSuspiciousField
+    value:           '0'
+  - key:             cppcoreguidelines-explicit-virtual-functions.IgnoreDestructors
+    value:           '1'
+  - key:             cppcoreguidelines-non-private-member-variables-in-classes.IgnoreClassesWithAllMemberVariablesBeingPublic
+    value:           '1'
+  - key:             modernize-loop-convert.MaxCopySize
+    value:           '16'
+  - key:             modernize-loop-convert.MinConfidence
+    value:           reasonable
+  - key:             modernize-loop-convert.NamingStyle
+    value:           CamelCase
+  - key:             modernize-pass-by-value.IncludeStyle
+    value:           llvm
+  - key:             modernize-replace-auto-ptr.IncludeStyle
+    value:           llvm
+  - key:             modernize-use-nullptr.NullMacros
+    value:           'NULL'
+...
+
