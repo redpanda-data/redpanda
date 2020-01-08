@@ -99,7 +99,8 @@ operator()(model::record_batch&& batch) {
           batch.compressed());
         return write(_log.appender(), batch)
           .then([this, &batch, offset_before] {
-              _last_offset = batch.last_offset();
+              // we use exclusive upper bound
+              _last_offset = batch.end_offset();
               _log.get_probe().add_bytes_written(
                 _log.appender().file_byte_offset() - offset_before);
               return _log.maybe_roll().then([] { return stop_iteration::no; });
