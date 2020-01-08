@@ -20,7 +20,7 @@ if [[ ! -e "${HOME}/.local/bin/vtools" ]]; then
 fi
 
 if [[ ! -e "${vroot}/compile_commands.json" ]]; then
-    ln -sf "${vroot}/build/debug/gcc/compile_commands.json" "${vroot}/compile_commands.json"
+    ln -sf "${vroot}/build/debug/clang/compile_commands.json" "${vroot}/compile_commands.json"
 fi
 
 # check gcc version
