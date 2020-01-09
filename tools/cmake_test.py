@@ -56,6 +56,8 @@ class TestRunner():
         env["BOOST_TEST_REPORT_LEVEL"] = "no"
         env["BOOST_LOGGER"] = "HRF,test_suite"
         env["UBSAN_OPTIONS"] = "halt_on_error=1:abort_on_error=1"
+        env["ASAN_OPTIONS"] = "disable_coredump=0:abort_on_error=1"
+
         logger.info("Test dir: %s" % test_dir)
         for f in self.copy_files:
             logger.debug("Copying input file: %s" % f)
