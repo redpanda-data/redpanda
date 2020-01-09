@@ -35,7 +35,7 @@ public:
 /// \brief namespace is reserved in c++;  use ns
 using ns = named_type<sstring, struct model_ns_type>;
 
-using offset = named_type<uint64_t, struct model_offset_type>;
+using offset = named_type<int64_t, struct model_offset_type>;
 
 struct topic_partition {
     using compaction = bool_class<struct compaction_tag>;

@@ -39,6 +39,13 @@ inline void validate_batch_crc(model::record_batch& batch) {
     BOOST_REQUIRE_EQUAL(batch.crc(), crc.value());
 }
 
+struct random_batches_generator {
+    std::vector<model::record_batch> operator()() {
+        return storage::test::make_random_batches(
+          model::offset(0), random_generators::get_int(1, 10));
+    }
+};
+
 class storage_test_fixture {
 public:
     sstring test_dir = "test_data_" + random_generators::gen_alphanum_string(5);
@@ -123,39 +130,71 @@ public:
           .get0();
     }
 
+    // clang-format off
+    template<typename T = random_batches_generator>
+    CONCEPT(
+        requires requires (T generator) {
+            { generator() } -> std::vector<model::record_batch>;
+        }
+    )
+    // clang-format on
     std::vector<model::record_batch_header> append_random_batches(
       storage::log_ptr log_ptr,
       int appends,
-      int max_batches_per_append,
+      T batch_generator = T{},
       storage::log_append_config::fsync sync
       = storage::log_append_config::fsync::no) {
         storage::log_append_config append_cfg{
           sync, default_priority_class(), model::no_timeout};
 
-        model::offset expected_offset = log_ptr->max_offset();
+        model::offset base_offset = log_ptr->max_offset() < model::offset(0)
+                                      ? model::offset(0)
+                                      : log_ptr->max_offset()
+                                          + model::offset(1);
+        int64_t total_records = 0;
         std::vector<model::record_batch_header> headers;
 
         // do multiple append calls
 
         for (auto append : boost::irange(0, appends)) {
-            auto batch_count = random_generators::get_int(
-              max_batches_per_append);
-            auto batches = storage::test::make_random_batches(
-              model::offset(0), batch_count);
+            auto batches = batch_generator();
             // Collect batches offsets
             for (auto& b : batches) {
                 headers.push_back(b.get_header_for_testing());
-                expected_offset += model::offset(b.size());
+                total_records += b.size();
             }
+            // make expected offset inclusive
             auto reader = model::make_memory_record_batch_reader(
               std::move(batches));
             auto res = log_ptr->append(std::move(reader), append_cfg).get0();
 
             // Check if after append offset was updated correctly
+            auto expected_offset = model::offset(total_records - 1)
+                                   + base_offset;
             BOOST_REQUIRE_EQUAL(log_ptr->max_offset(), res.last_offset);
             BOOST_REQUIRE_EQUAL(log_ptr->max_offset(), expected_offset);
         }
 
         return headers;
+    }
+
+    // model::offset start_offset;
+    // size_t max_bytes;
+    // size_t min_bytes;
+    // io_priority_class prio;
+    // std::vector<model::record_batch_type> type_filter;
+    // model::offset max_offset = model::model_limits<model::offset>::max(); // inclusive
+    std::vector<model::record_batch> read_range_to_vector(
+      const storage::log_ptr& log, model::offset start, model::offset end) {
+        storage::log_reader_config cfg{
+          .start_offset = start,
+          .max_bytes = std::numeric_limits<size_t>::max(),
+          .min_bytes = 0,
+          .prio = default_priority_class(),
+          .type_filter = {},
+          .max_offset = end};
+        auto reader = log->make_reader(std::move(cfg));
+        return reader.consume(batch_validating_consumer(), model::no_timeout)
+          .get0();
     }
 };

@@ -59,6 +59,10 @@ public:
         return base_named_type(_value + val); // not mutable
     }
 
+    constexpr base_named_type operator-(const base_named_type& val) const {
+        return base_named_type(_value - val()); // not mutable
+    }
+
     base_named_type& operator+=(const type& val) {
         _value += val;
         return *this;
