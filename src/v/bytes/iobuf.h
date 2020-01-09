@@ -13,6 +13,7 @@
 #include <list>
 #include <stdexcept>
 #include <streambuf>
+#include <type_traits>
 
 /// our iobuf is a fragmented buffer. modeled after
 /// folly::iobufqueue.h - it supports prepend and append, but no
@@ -176,6 +177,9 @@ public:
       , _used_bytes(0) {}
     fragment(fragment&& o) noexcept = default;
     fragment& operator=(fragment&& o) noexcept = default;
+    fragment(const fragment& o) = delete;
+    fragment& operator=(const fragment& o) = delete;
+
     ~fragment() = default;
 
     bool operator==(const fragment& o) const {
@@ -235,6 +239,7 @@ public:
     }
 
 private:
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
     char* get_current() { return _buf.get_write() + _used_bytes; }
 
     friend iobuf::placeholder;
@@ -264,9 +269,11 @@ public:
     size_t remaining_size() const { return _remaining_size; }
 
     // the first byte of the _current_ iterator + offset
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
     const char* index() const { return _iter->_buf.get() + _byte_index; }
 
 private:
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
     char* mutable_index() { return _iter->_buf.get_write() + _byte_index; }
 
     iterator _iter;
@@ -288,6 +295,7 @@ public:
       , _frag_end(end) {
         if (_frag != _frag_end) {
             _frag_index = _frag->get();
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
             _frag_index_end = _frag->get() + _frag->size();
         } else {
             _frag_index = nullptr;
@@ -315,6 +323,7 @@ public:
         return !(*this == o);
     }
     byte_iterator& operator++() {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
         if (++_frag_index == _frag_index_end) {
             next_fragment();
         }
@@ -323,8 +332,10 @@ public:
 
 private:
     void next_fragment() {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
         if (++_frag != _frag_end) {
             _frag_index = _frag->get();
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
             _frag_index_end = _frag->get() + _frag->size();
         } else {
             _frag_index = nullptr;
@@ -345,6 +356,7 @@ public:
       , _frag_end(end) {
         if (_frag != _frag_end) {
             _frag_index = _frag->get();
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
             _frag_index_end = _frag->get() + _frag->size();
         }
     }
@@ -368,11 +380,13 @@ public:
         }
     }
 
-    template<typename T>
+    template<
+      typename T,
+      typename = std::enable_if_t<std::is_trivially_copyable_v<T>, T>>
     T consume_type() {
         constexpr size_t sz = sizeof(T);
         T obj;
-        char* dst = reinterpret_cast<char*>(&obj);
+        char* dst = reinterpret_cast<char*>(&obj); // NOLINT
         consume_to(sz, dst);
         return obj;
     }
@@ -403,8 +417,10 @@ public:
             }
             const size_t bytes_left = segment_bytes_left();
             if (bytes_left == 0) {
+                // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
                 if (++_frag != _frag_end) {
                     _frag_index = _frag->get();
+                    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
                     _frag_index_end = _frag->get() + _frag->size();
                 }
                 continue;
@@ -412,6 +428,7 @@ public:
             const size_t step = std::min(n - i, bytes_left);
             const ss::stop_iteration stop = f(_frag_index, step);
             i += step;
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
             _frag_index += step;
             _bytes_consumed += step;
             if (stop == ss::stop_iteration::yes) {
@@ -420,8 +437,10 @@ public:
         }
 
         if (_frag_index == _frag_index_end) {
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
             if (_frag != _frag_end && ++_frag != _frag_end) {
                 _frag_index = _frag->get();
+                // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
                 _frag_index_end = _frag->get() + _frag->size();
             } else {
                 _frag_index = nullptr;
@@ -432,6 +451,7 @@ public:
         return i;
     }
     size_t bytes_consumed() const { return _bytes_consumed; }
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
     size_t segment_bytes_left() const { return _frag_index_end - _frag_index; }
     bool is_finished() const { return _frag == _frag_end; }
 
@@ -596,6 +616,7 @@ inline iobuf::placeholder iobuf::reserve(size_t sz) {
         if (available_bytes() == 0) {
             create_new_fragment(size);
         }
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
         const size_t sz = _ctrl->frags.back().append(ptr + i, size);
         _ctrl->size += sz;
         i += sz;
@@ -771,6 +792,10 @@ class iobuf_ostreambuf final : public std::streambuf {
 public:
     explicit iobuf_ostreambuf(iobuf& o)
       : _buf(o.control_share()) {}
+    iobuf_ostreambuf(iobuf_ostreambuf&&) noexcept = default;
+    iobuf_ostreambuf& operator=(iobuf_ostreambuf&&) noexcept = default;
+    iobuf_ostreambuf(const iobuf_ostreambuf&) = delete;
+    iobuf_ostreambuf& operator=(const iobuf_ostreambuf&) = delete;
     int_type overflow(int_type c = traits_type::eof()) final {
         if (c == traits_type::eof()) {
             return traits_type::eof();
