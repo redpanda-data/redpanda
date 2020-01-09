@@ -198,7 +198,8 @@ ss::future<log_ptr> log_manager::manage(model::ntp ntp) {
         auto seg_set = log_set(std::move(segs));
         set_max_offsets(seg_set);
         do_recover(seg_set);
-        auto ptr = ss::make_lw_shared<log>(ntp, *this, std::move(seg_set));
+        auto ptr = ss::make_lw_shared<storage::log>(
+          ntp, *this, std::move(seg_set));
         _logs.emplace(std::move(ntp), ptr);
         return ptr;
     });

@@ -27,8 +27,6 @@ struct log_config {
 
 class log_manager {
 public:
-    using logs_type = std::unordered_map<model::ntp, log_ptr>;
-
     explicit log_manager(log_config) noexcept;
 
     ss::future<log_ptr> manage(model::ntp);
@@ -50,9 +48,20 @@ public:
     size_t max_segment_size() const { return _config.max_segment_size; }
     const log_config& config() const { return _config; }
 
-    logs_type& logs() { return _logs; }
+    /// Returns the number of managed logs.
+    size_t size() const { return _logs.size(); }
+
+    /// Returns the log for the specified ntp.
+    log_ptr log(const model::ntp& ntp) {
+        if (auto it = _logs.find(ntp); it != _logs.end()) {
+            return it->second;
+        }
+        return nullptr;
+    }
 
 private:
+    using logs_type = std::unordered_map<model::ntp, log_ptr>;
+
     log_config _config;
     logs_type _logs;
 };
