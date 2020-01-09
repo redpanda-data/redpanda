@@ -104,17 +104,19 @@ future<> log::flush() {
 }
 future<> log::do_roll() {
     return flush().then([this] { return _appender->close(); }).then([this] {
-        auto o = model::offset(1) + _tracker.committed_offset();
-        // update all offsets to next
-        _tracker.update_dirty_offset(o);
-        _tracker.update_committed_offset(o);
-        return new_segment(o, _term, _appender->priority_class());
+        stlog.debug(
+          "Rolling log segment offset {}, term {}",
+          _tracker.committed_offset(),
+          _term);
+        return new_segment(
+          _tracker.committed_offset(), _term, _appender->priority_class());
     });
 }
-future<> log::maybe_roll() {
+future<> log::maybe_roll(model::offset current_offset) {
     if (_appender->file_byte_offset() < _manager.max_segment_size()) {
         return make_ready_future<>();
     }
+    _tracker.update_dirty_offset(current_offset);
     return do_roll();
 }
 

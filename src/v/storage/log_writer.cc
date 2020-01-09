@@ -78,8 +78,8 @@ write(log_segment_appender& appender, const model::record_batch& batch) {
       });
 }
 
-future<stop_iteration> default_log_writer::
-operator()(model::record_batch&& batch) {
+future<stop_iteration>
+default_log_writer::operator()(model::record_batch&& batch) {
     return do_with(std::move(batch), [this](model::record_batch& batch) {
         if (_last_offset > batch.base_offset()) {
             auto e = std::make_exception_ptr(std::runtime_error(fmt::format(
@@ -91,12 +91,21 @@ operator()(model::record_batch&& batch) {
             return make_exception_future<stop_iteration>(std::move(e));
         }
         auto offset_before = _log.appender().file_byte_offset();
+        stlog.trace(
+          "Wrting batch of {} records offsets [{},{}], compressed: {}",
+          batch.size(),
+          batch.base_offset(),
+          batch.last_offset(),
+          batch.compressed());
         return write(_log.appender(), batch)
           .then([this, &batch, offset_before] {
-              _last_offset = batch.last_offset();
+              // we use exclusive upper bound
+              _last_offset = batch.end_offset();
               _log.get_probe().add_bytes_written(
                 _log.appender().file_byte_offset() - offset_before);
-              return _log.maybe_roll().then([] { return stop_iteration::no; });
+              return _log.maybe_roll(_last_offset).then([] {
+                  return stop_iteration::no;
+              });
           })
           .handle_exception([this](std::exception_ptr e) {
               _log.get_probe().batch_write_error(e);
