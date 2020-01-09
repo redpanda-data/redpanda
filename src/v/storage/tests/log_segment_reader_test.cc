@@ -169,37 +169,6 @@ SEASTAR_THREAD_TEST_CASE(test_reads_at_least_one_batch) {
     }
 }
 
-SEASTAR_THREAD_TEST_CASE(test_read_batch_range) {
-    context ctx;
-    auto batches = test::make_random_batches(model::offset(0), 10);
-    ctx.write(batches);
-    ctx.tracker.update_committed_offset(model::offset(1000));
-    {
-        // read batches from 3 to 7
-        auto start_offset = batches[2].base_offset();
-        auto max_offset = batches[6].last_offset();
-
-        log_reader_config cfg{
-          .start_offset = start_offset,
-          .max_bytes = std::numeric_limits<size_t>::max(),
-          .min_bytes = 0,
-          .prio = default_priority_class(),
-          .type_filter = {},
-          .max_offset = max_offset,
-        };
-
-        auto reader = model::make_record_batch_reader<log_segment_batch_reader>(
-          ctx.log_seg, ctx.tracker, std::move(cfg), ctx.prb);
-
-        auto res = reader.consume(consumer(), model::no_timeout).get0();
-        BOOST_REQUIRE_EQUAL_COLLECTIONS(
-          res.begin(),
-          res.end(),
-          std::next(batches.begin(), 2),
-          std::next(batches.begin(), 7));
-    }
-};
-
 SEASTAR_THREAD_TEST_CASE(test_seeks_to_first_relevant_batch) {
     context ctx;
     auto batches = test::make_random_batches(model::offset(0), 10);
