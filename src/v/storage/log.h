@@ -91,7 +91,7 @@ public:
     /// flushes the _tracker.dirty_offset into _tracker.committed_offset
     future<> flush();
 
-    future<> maybe_roll();
+    future<> maybe_roll(model::offset);
 
     [[gnu::always_inline]] future<>
     truncate(model::offset offset, model::term_id term) {
@@ -120,8 +120,6 @@ private:
     /// \brief forces a flush() on the last segment & rotates given the current
     /// _term && (tracker.committed_offset+1)
     future<> do_roll();
-
-    future<> do_roll(model::offset, model::term_id);
 
     future<append_result>
     do_append(model::record_batch_reader&&, log_append_config);
