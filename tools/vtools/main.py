@@ -5,6 +5,7 @@ from absl import logging
 
 logging._warn_preinit_stderr = 0
 
+from .clean import commands as clean
 from .pkg import commands as pkg
 from .git import commands as git
 from .client import commands as client
@@ -28,6 +29,7 @@ def main():
 
 
 # add commands here
+main.add_command(clean.clean)
 main.add_command(pkg.print_deps)
 main.add_command(git.verify_git)
 main.add_command(client.client)
