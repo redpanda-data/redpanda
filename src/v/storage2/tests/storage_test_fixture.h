@@ -30,9 +30,7 @@ public:
         seastar::apply_logging_settings(seastar::logging_settings{
           .logger_levels = {{"exception", seastar::log_level::debug}},
           .default_level = seastar::log_level::trace,
-          .stdout_enabled = true,
-          .syslog_enabled = false,
-          .stdout_timestamp_style = seastar::logger_timestamp_style::real});
+          .syslog_enabled = false});
     }
 
     storage::log_manager make_log_manager(
