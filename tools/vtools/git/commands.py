@@ -104,8 +104,9 @@ def pr(ctx, fork, upstream, to):
     # ci/cd pipeline before merging to master.
     if not upstream:
         upstream = local_branch.tracking_branch()
-    if not upstream:
-        ctx.fail("Please configure an upstream branch. See --help output.")
+        if not upstream:
+            ctx.fail("Please configure an upstream branch. See --help output.")
+        upstream = upstream.name
     click.echo("Using upstream branch: {}".format(upstream))
 
     # create name for remote branch. the expected name is {local_branch}-vV. a
@@ -140,7 +141,7 @@ def pr(ctx, fork, upstream, to):
     staging_dir = tempfile.mkdtemp()
     format_args = [
         "git", "format-patch", "-v{}".format(version), "--cover-letter", "-o",
-        staging_dir, upstream.name
+        staging_dir, upstream
     ]
     click.echo("Generating patches: {}".format(" ".join(format_args)))
     subprocess.run(format_args)
