@@ -93,37 +93,49 @@ SEASTAR_THREAD_TEST_CASE(log_set_invalidates_iterators) {
 
 SEASTAR_THREAD_TEST_CASE(test_log_seg_selector) {
     file f(nullptr);
+
     auto log_seg1 = make_lw_shared<log_segment_reader>(
       "test", f, model::term_id(0), model::offset(0), 0, 1024);
     log_seg1->set_last_written_offset(model::offset(10));
+
     auto log_seg2 = make_lw_shared<log_segment_reader>(
-      "test", f, model::term_id(0), model::offset(10), 0, 1024);
+      "test", f, model::term_id(0), model::offset(11), 0, 1024);
     log_seg2->set_last_written_offset(model::offset(20));
+
     auto log_seg3 = make_lw_shared<log_segment_reader>(
-      "test", f, model::term_id(0), model::offset(20), 0, 1024);
+      "test", f, model::term_id(0), model::offset(21), 0, 1024);
     log_seg3->set_last_written_offset(model::offset(21));
 
     log_set segs({log_seg1, log_seg2, log_seg3});
 
     auto select = log_segment_selector(segs);
 
-    auto seg = select.select(model::offset(10));
+    auto seg = select.select(model::offset(0));
+    BOOST_CHECK_EQUAL(seg, log_seg1);
+
+    seg = select.select(model::offset(10));
+    BOOST_CHECK_EQUAL(seg, log_seg1);
+
+    seg = select.select(model::offset(11));
     BOOST_CHECK_EQUAL(seg, log_seg2);
 
     seg = select.select(model::offset(15));
     BOOST_CHECK_EQUAL(seg, log_seg2);
 
     seg = select.select(model::offset(20));
-    BOOST_CHECK_EQUAL(seg, log_seg3);
+    BOOST_CHECK_EQUAL(seg, log_seg2);
 
     seg = select.select(model::offset(21));
+    BOOST_CHECK_EQUAL(seg, log_seg3);
+
+    seg = select.select(model::offset(22));
     BOOST_CHECK_EQUAL(seg, segment_reader_ptr());
 
     auto log_seg4 = make_lw_shared<log_segment_reader>(
-      "test", f, model::term_id(0), model::offset(21), 0, 1024);
+      "test", f, model::term_id(0), model::offset(22), 0, 1024);
     log_seg4->set_last_written_offset(model::offset(25));
     segs.add(log_seg4);
-    seg = select.select(model::offset(21));
+    seg = select.select(model::offset(22));
     BOOST_CHECK_EQUAL(seg, log_seg4);
 
     segs = log_set({log_seg1, log_seg2, log_seg3, log_seg4});

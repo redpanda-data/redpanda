@@ -1,5 +1,6 @@
 #include "storage/log_manager.h"
 
+#include "model/fundamental.h"
 #include "storage/log_replayer.h"
 #include "storage/logger.h"
 #include "utils/directory_walker.h"
@@ -118,9 +119,8 @@ static void do_recover(log_set& seg_set) {
     auto replayer = log_replayer(last);
     auto recovered = replayer.recover_in_thread(default_priority_class());
     if (recovered) {
-        // Max offset is exclusive.
-        last->set_last_written_offset(
-          *recovered.last_valid_offset() + model::offset(1));
+        // Max offset is inclusive
+        last->set_last_written_offset(*recovered.last_valid_offset());
     } else {
         if (stat.st_size == 0) {
             seg_set.pop_last();
@@ -140,7 +140,8 @@ void set_max_offsets(log_set& seg_set) {
     for (auto it = seg_set.begin(); it != seg_set.end(); ++it) {
         auto next = std::next(it);
         if (next != seg_set.end()) {
-            (*it)->set_last_written_offset((*next)->base_offset());
+            (*it)->set_last_written_offset(
+              (*next)->base_offset() - model::offset(1));
         }
     }
 }

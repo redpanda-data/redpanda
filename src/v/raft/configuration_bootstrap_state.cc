@@ -16,7 +16,7 @@ void configuration_bootstrap_state::process_configuration_in_thread(
         throw std::runtime_error(
           "Compressed configuration records are unsupported");
     }
-    auto last_offset = b.end_offset();
+    auto last_offset = b.last_offset();
     if (_log_config_offset_tracker < last_offset) {
         _log_config_offset_tracker = last_offset;
         process_offsets(b.base_offset(), last_offset);
@@ -37,7 +37,7 @@ void configuration_bootstrap_state::process_data_offsets_in_thread(
           "record_batch_type: {}",
           b.type()));
     }
-    process_offsets(b.base_offset(), b.end_offset());
+    process_offsets(b.base_offset(), b.last_offset());
 }
 
 void configuration_bootstrap_state::process_offsets(
