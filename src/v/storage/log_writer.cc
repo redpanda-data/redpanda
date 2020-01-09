@@ -15,26 +15,26 @@ default_log_writer::default_log_writer(log& log) noexcept
   , _last_offset(log.max_offset()) {}
 
 template<typename T>
-typename std::enable_if_t<std::is_integral<T>::value, seastar::future<>>
+typename std::enable_if_t<std::is_integral<T>::value, ss::future<>>
 write(log_segment_appender& out, T i) {
-    auto* nr = reinterpret_cast<const unaligned<T>*>(&i);
+    auto* nr = reinterpret_cast<const ss::unaligned<T>*>(&i);
     i = cpu_to_be(*nr);
     auto p = reinterpret_cast<const char*>(&i);
     return out.append(p, sizeof(T));
 }
 
-future<> write_vint(log_segment_appender& out, vint::value_type v) {
+ss::future<> write_vint(log_segment_appender& out, vint::value_type v) {
     std::array<bytes::value_type, vint::max_length> encoding_buffer;
     const auto size = vint::serialize(v, encoding_buffer.begin());
     return out.append(
       reinterpret_cast<const char*>(encoding_buffer.data()), size);
 }
 
-future<> write(log_segment_appender& out, const iobuf& buf) {
+ss::future<> write(log_segment_appender& out, const iobuf& buf) {
     return out.append(buf);
 }
 
-future<> write(log_segment_appender& out, const model::record& record) {
+ss::future<> write(log_segment_appender& out, const model::record& record) {
     return write_vint(out, record.size_bytes())
       .then([&] { return write(out, record.attributes().value()); })
       .then([&] { return write_vint(out, record.timestamp_delta()); })
@@ -44,7 +44,7 @@ future<> write(log_segment_appender& out, const model::record& record) {
       .then([&] { return write(out, record.packed_value_and_headers()); });
 }
 
-future<>
+ss::future<>
 write(log_segment_appender& appender, const model::record_batch& batch) {
     return write_vint(appender, batch.size_bytes())
       .then(
@@ -72,15 +72,16 @@ write(log_segment_appender& appender, const model::record_batch& batch) {
           if (batch.compressed()) {
               return write(appender, batch.get_compressed_records().records());
           }
-          return do_for_each(batch, [&appender](const model::record& record) {
-              return write(appender, record);
-          });
+          return ss::do_for_each(
+            batch, [&appender](const model::record& record) {
+                return write(appender, record);
+            });
       });
 }
 
-future<stop_iteration>
+ss::future<ss::stop_iteration>
 default_log_writer::operator()(model::record_batch&& batch) {
-    return do_with(std::move(batch), [this](model::record_batch& batch) {
+    return ss::do_with(std::move(batch), [this](model::record_batch& batch) {
         if (_last_offset > batch.base_offset()) {
             auto e = std::make_exception_ptr(std::runtime_error(fmt::format(
               "Attempted to write batch at offset:{}, which violates our "
@@ -88,7 +89,7 @@ default_log_writer::operator()(model::record_batch&& batch) {
               batch.base_offset(),
               _last_offset)));
             _log.get_probe().batch_write_error(e);
-            return make_exception_future<stop_iteration>(std::move(e));
+            return ss::make_exception_future<ss::stop_iteration>(std::move(e));
         }
         auto offset_before = _log.appender().file_byte_offset();
         stlog.trace(
@@ -104,12 +105,12 @@ default_log_writer::operator()(model::record_batch&& batch) {
               _log.get_probe().add_bytes_written(
                 _log.appender().file_byte_offset() - offset_before);
               return _log.maybe_roll(_last_offset).then([] {
-                  return stop_iteration::no;
+                  return ss::stop_iteration::no;
               });
           })
           .handle_exception([this](std::exception_ptr e) {
               _log.get_probe().batch_write_error(e);
-              return make_exception_future<stop_iteration>(e);
+              return ss::make_exception_future<ss::stop_iteration>(e);
           });
     });
 }

@@ -7,11 +7,12 @@
 #include <seastar/core/fstream.hh>
 #include <seastar/core/reactor.hh>
 
-inline future<>
-force_write_ptr(sstring filename, const char* ptr, std::size_t len) {
-    auto flags = open_flags::rw | open_flags::create | open_flags::truncate;
-    return open_file_dma(filename, flags).then([ptr, len](file f) mutable {
-        auto out = make_lw_shared<output_stream<char>>(
+inline ss::future<>
+force_write_ptr(ss::sstring filename, const char* ptr, std::size_t len) {
+    auto flags = ss::open_flags::rw | ss::open_flags::create
+                 | ss::open_flags::truncate;
+    return open_file_dma(filename, flags).then([ptr, len](ss::file f) mutable {
+        auto out = ss::make_lw_shared<ss::output_stream<char>>(
           make_file_output_stream(std::move(f)));
         return out->write(ptr, len)
           .then([out] { return out->flush(); })
@@ -20,14 +21,15 @@ force_write_ptr(sstring filename, const char* ptr, std::size_t len) {
     });
 }
 
-inline future<> force_write_buffer(sstring filename, temporary_buffer<char> b) {
+inline ss::future<>
+force_write_buffer(ss::sstring filename, ss::temporary_buffer<char> b) {
     const char* ptr = b.get();
     std::size_t len = b.size();
     return force_write_ptr(std::move(filename), ptr, len)
       .then([b = std::move(b)] {});
 }
 
-inline future<> write_histogram(sstring filename, const hdr_hist& h) {
+inline ss::future<> write_histogram(ss::sstring filename, const hdr_hist& h) {
     return force_write_buffer(std::move(filename), h.print_classic());
 }
 
@@ -35,7 +37,7 @@ namespace demo {
 inline iobuf rand_iobuf(std::size_t chunks, std::size_t chunk_size) {
     iobuf b;
     for (size_t i = 0; i < chunks; ++i) {
-        b.append(temporary_buffer<char>(chunk_size));
+        b.append(ss::temporary_buffer<char>(chunk_size));
     }
     return b;
 }

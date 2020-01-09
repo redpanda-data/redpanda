@@ -1,4 +1,3 @@
-#include "seastarx.h"
 #include "storage/log_replayer.h"
 #include "storage/log_segment_reader.h"
 #include "storage/log_writer.h"
@@ -35,14 +34,15 @@ struct context {
 
     template<typename Writer>
     void do_write(Writer&& w, model::offset base) {
-        auto fd
-          = open_file_dma("test", open_flags::create | open_flags::rw).get0();
-        fd = file(make_shared(file_io_sanitizer(std::move(fd))));
+        auto fd = ss::open_file_dma(
+                    "test", ss::open_flags::create | ss::open_flags::rw)
+                    .get0();
+        fd = ss::file(ss::make_shared(file_io_sanitizer(std::move(fd))));
         auto appender = log_segment_appender(
-          fd, log_segment_appender::options(seastar::default_priority_class()));
+          fd, log_segment_appender::options(ss::default_priority_class()));
         w(appender);
         appender.flush().get();
-        log_seg = make_lw_shared<log_segment_reader>(
+        log_seg = ss::make_lw_shared<log_segment_reader>(
           "test",
           std::move(fd),
           model::term_id(0),
@@ -62,7 +62,8 @@ SEASTAR_THREAD_TEST_CASE(test_can_recover_single_batch) {
     auto batches = test::make_random_batches(model::offset(1), 1);
     auto last_offset = batches.back().last_offset();
     ctx.write(batches);
-    auto recovered = ctx.replayer().recover_in_thread(default_priority_class());
+    auto recovered = ctx.replayer().recover_in_thread(
+      ss::default_priority_class());
     BOOST_CHECK(bool(recovered));
     BOOST_CHECK(bool(recovered.last_valid_offset()));
     BOOST_CHECK_EQUAL(recovered.last_valid_offset().value(), last_offset);
@@ -75,7 +76,7 @@ SEASTAR_THREAD_TEST_CASE(test_unrecovered_single_batch) {
         batches.back().get_header_for_testing().crc = 10;
         ctx.write(batches);
         auto recovered = ctx.replayer().recover_in_thread(
-          default_priority_class());
+          ss::default_priority_class());
         BOOST_CHECK(!bool(recovered));
         BOOST_CHECK(!bool(recovered.last_valid_offset()));
     }
@@ -86,7 +87,7 @@ SEASTAR_THREAD_TEST_CASE(test_unrecovered_single_batch) {
           = model::timestamp(10);
         ctx.write(batches);
         auto recovered = ctx.replayer().recover_in_thread(
-          default_priority_class());
+          ss::default_priority_class());
         BOOST_CHECK(!bool(recovered));
         BOOST_CHECK(!bool(recovered.last_valid_offset()));
     }
@@ -97,7 +98,8 @@ SEASTAR_THREAD_TEST_CASE(test_malformed_segment) {
     auto batches = test::make_random_batches(model::offset(1), 1);
     batches.back().get_header_for_testing().crc = 10;
     ctx.write_garbage();
-    auto recovered = ctx.replayer().recover_in_thread(default_priority_class());
+    auto recovered = ctx.replayer().recover_in_thread(
+      ss::default_priority_class());
     BOOST_CHECK(!bool(recovered));
     BOOST_CHECK(!bool(recovered.last_valid_offset()));
 }
@@ -107,7 +109,8 @@ SEASTAR_THREAD_TEST_CASE(test_can_recover_multiple_batches) {
     auto batches = test::make_random_batches(model::offset(1), 10);
     auto last_offset = batches.back().last_offset();
     ctx.write(batches);
-    auto recovered = ctx.replayer().recover_in_thread(default_priority_class());
+    auto recovered = ctx.replayer().recover_in_thread(
+      ss::default_priority_class());
     BOOST_CHECK(bool(recovered));
     BOOST_CHECK(bool(recovered.last_valid_offset()));
     BOOST_CHECK_EQUAL(recovered.last_valid_offset().value(), last_offset);
@@ -121,7 +124,7 @@ SEASTAR_THREAD_TEST_CASE(test_unrecovered_multiple_batches) {
         auto last_offset = (batches.end() - 2)->last_offset();
         ctx.write(batches);
         auto recovered = ctx.replayer().recover_in_thread(
-          default_priority_class());
+          ss::default_priority_class());
         BOOST_CHECK(!bool(recovered));
         BOOST_CHECK(bool(recovered.last_valid_offset()));
         BOOST_CHECK_EQUAL(recovered.last_valid_offset().value(), last_offset);
@@ -134,7 +137,7 @@ SEASTAR_THREAD_TEST_CASE(test_unrecovered_multiple_batches) {
         auto last_offset = (batches.end() - 2)->last_offset();
         ctx.write(batches);
         auto recovered = ctx.replayer().recover_in_thread(
-          default_priority_class());
+          ss::default_priority_class());
         BOOST_CHECK(!bool(recovered));
         BOOST_CHECK(bool(recovered.last_valid_offset()));
         BOOST_CHECK_EQUAL(recovered.last_valid_offset().value(), last_offset);

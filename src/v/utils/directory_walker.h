@@ -16,12 +16,12 @@
 ///   return visit_topic(ns, std::move(de));
 /// });
 struct directory_walker {
-    using walker_type = std::function<future<>(directory_entry)>;
+    using walker_type = std::function<ss::future<>(ss::directory_entry)>;
 
-    static future<> walk(sstring dirname, walker_type walker_func) {
+    static ss::future<> walk(ss::sstring dirname, walker_type walker_func) {
         return open_directory(std::move(dirname))
-          .then([walker_func = std::move(walker_func)](file f) mutable {
-              auto s = std::make_unique<subscription<directory_entry>>(
+          .then([walker_func = std::move(walker_func)](ss::file f) mutable {
+              auto s = std::make_unique<ss::subscription<ss::directory_entry>>(
                 f.list_directory(std::move(walker_func)));
               return s->done().finally(
                 [f = std::move(f), s = std::move(s)]() mutable {

@@ -19,39 +19,39 @@ namespace kafka {
 class group_manager {
 public:
     group_manager(
-      sharded<cluster::partition_manager>& partitions,
+      ss::sharded<cluster::partition_manager>& partitions,
       config::configuration& conf)
       : _partitions(partitions.local())
       , _conf(conf) {}
 
-    future<> start() {
+    ss::future<> start() {
         // TODO setup partition manager hooks when this shard becomes a
         // partition leader for the group membership topic then group state will
         // need to be recovered. this will happen for instance at startup, and
         // in response to failovers.
-        return make_ready_future<>();
+        return ss::make_ready_future<>();
     }
 
-    future<> stop() {
+    ss::future<> stop() {
         // TODO clean up groups and members and timers. in flight requests may
         // be holding references to groups/members--so here we mark groups as
         // being cleaned up. we can also use semaphore / guards here, but this
         // integration is evolving.
-        return make_ready_future<>();
+        return ss::make_ready_future<>();
     }
 
 public:
     /// \brief Handle a JoinGroup request
-    future<join_group_response> join_group(join_group_request&& request);
+    ss::future<join_group_response> join_group(join_group_request&& request);
 
     /// \brief Handle a SyncGroup request
-    future<sync_group_response> sync_group(sync_group_request&& request);
+    ss::future<sync_group_response> sync_group(sync_group_request&& request);
 
     /// \brief Handle a Heartbeat request
-    future<heartbeat_response> heartbeat(heartbeat_request&& request);
+    ss::future<heartbeat_response> heartbeat(heartbeat_request&& request);
 
     /// \brief Handle a LeaveGroup request
-    future<leave_group_response> leave_group(leave_group_request&& request);
+    ss::future<leave_group_response> leave_group(leave_group_request&& request);
 
 public:
     static error_code validate_group_status(group_id group, api_key api);

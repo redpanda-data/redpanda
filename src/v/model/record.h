@@ -306,7 +306,7 @@ public:
     record_batch& operator=(record_batch&&) noexcept = default;
 
     bool empty() const {
-        return seastar::visit(_records, [](auto& e) { return e.empty(); });
+        return ss::visit(_records, [](auto& e) { return e.empty(); });
     }
 
     bool compressed() const {
@@ -314,7 +314,7 @@ public:
     }
 
     uint32_t size() const {
-        return seastar::visit(
+        return ss::visit(
           _records, [](auto& e) { return static_cast<uint32_t>(e.size()); });
     }
 
@@ -323,7 +323,7 @@ public:
 
     uint32_t memory_usage() const {
         return sizeof(*this)
-               + seastar::visit(
+               + ss::visit(
                  _records,
                  [](const compressed_records& records) {
                      return records.size_bytes();
@@ -421,24 +421,24 @@ private:
 
     record_batch() = default;
     explicit operator bool() const noexcept { return size(); }
-    friend class optimized_optional<record_batch>;
+    friend class ss::optimized_optional<record_batch>;
 };
 
-using record_batch_opt = optimized_optional<record_batch>;
+using record_batch_opt = ss::optimized_optional<record_batch>;
 
 /// Execute provided async action on each record of record batch
 
 // clang-format off
 template<typename Func>
 CONCEPT(requires requires(Func f, model::record r) {
-    { f(std::move(r)) } -> future<>;
+    { f(std::move(r)) } -> ss::future<>;
 })
 // clang-format on
-inline future<> consume_records(model::record_batch&& batch, Func&& f) {
-    return do_with(
+inline ss::future<> consume_records(model::record_batch&& batch, Func&& f) {
+    return ss::do_with(
       std::move(batch),
       [f = std::forward<Func>(f)](model::record_batch& batch) mutable {
-          return do_for_each(
+          return ss::do_for_each(
             batch, [f = std::forward<Func>(f)](model::record& rec) mutable {
                 return f(std::move(rec));
             });

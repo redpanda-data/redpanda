@@ -14,10 +14,10 @@ public:
     explicit partition(consensus_ptr r)
       : _raft(r) {}
     raft::group_id group() const { return raft::group_id(_raft->meta().group); }
-    future<> start() { return _raft->start(); }
-    future<> stop() { return _raft->stop(); }
+    ss::future<> start() { return _raft->start(); }
+    ss::future<> stop() { return _raft->stop(); }
 
-    future<result<raft::replicate_result>> replicate(raft::entry&& e) {
+    ss::future<result<raft::replicate_result>> replicate(raft::entry&& e) {
         return _raft->replicate(std::move(e));
     }
     const model::ntp& ntp() const { return _raft->ntp(); }

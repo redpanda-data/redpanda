@@ -1,4 +1,5 @@
 #pragma once
+
 #include "seastarx.h"
 
 #include <seastar/core/reactor.hh>
@@ -10,31 +11,33 @@
 class smp_groups {
 public:
     smp_groups() = default;
-    future<> create_groups() {
-        smp_service_group_config smp_sg_config;
+    ss::future<> create_groups() {
+        ss::smp_service_group_config smp_sg_config;
         smp_sg_config.max_nonlocal_requests = 5000;
 
         return create_smp_service_group(smp_sg_config)
-          .then([this](smp_service_group sg) {
-              _raft = std::make_unique<smp_service_group>(sg);
+          .then([this](ss::smp_service_group sg) {
+              _raft = std::make_unique<ss::smp_service_group>(sg);
           })
-          .then(
-            [smp_sg_config] { return create_smp_service_group(smp_sg_config); })
-          .then([this](smp_service_group sg) {
-              _kafka = std::make_unique<smp_service_group>(sg);
+          .then([smp_sg_config] {
+              return ss::create_smp_service_group(smp_sg_config);
           })
-          .then(
-            [smp_sg_config] { return create_smp_service_group(smp_sg_config); })
-          .then([this](smp_service_group sg) {
-              _cluster = std::make_unique<smp_service_group>(sg);
+          .then([this](ss::smp_service_group sg) {
+              _kafka = std::make_unique<ss::smp_service_group>(sg);
+          })
+          .then([smp_sg_config] {
+              return ss::create_smp_service_group(smp_sg_config);
+          })
+          .then([this](ss::smp_service_group sg) {
+              _cluster = std::make_unique<ss::smp_service_group>(sg);
           });
         ;
     }
-    smp_service_group raft_smp_sg() { return *_raft; }
-    smp_service_group kafka_smp_sg() { return *_kafka; }
-    smp_service_group cluster_smp_sg() { return *_cluster; }
+    ss::smp_service_group raft_smp_sg() { return *_raft; }
+    ss::smp_service_group kafka_smp_sg() { return *_kafka; }
+    ss::smp_service_group cluster_smp_sg() { return *_cluster; }
 
-    future<> destroy_groups() {
+    ss::future<> destroy_groups() {
         return destroy_smp_service_group(*_kafka)
           .then([this] { return destroy_smp_service_group(*_raft); })
           .then([this] { return destroy_smp_service_group(*_kafka); })
@@ -42,7 +45,7 @@ public:
     }
 
 private:
-    std::unique_ptr<smp_service_group> _raft;
-    std::unique_ptr<smp_service_group> _kafka;
-    std::unique_ptr<smp_service_group> _cluster;
+    std::unique_ptr<ss::smp_service_group> _raft;
+    std::unique_ptr<ss::smp_service_group> _kafka;
+    std::unique_ptr<ss::smp_service_group> _cluster;
 };

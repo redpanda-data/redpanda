@@ -4,7 +4,7 @@
 
 namespace detail {
 struct dummyassert {
-    static inline seastar::logger l{"assert"};
+    static inline ss::logger l{"assert"};
 };
 static dummyassert g_assert_log;
 } // namespace detail

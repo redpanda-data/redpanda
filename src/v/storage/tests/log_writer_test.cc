@@ -18,7 +18,7 @@
 using namespace storage; // NOLINT
 
 struct context {
-    context(size_t max_segment_size, sstring test_name)
+    context(size_t max_segment_size, ss::sstring test_name)
       : config{"test", max_segment_size, log_config::sanitize_files::yes} {
         log = manager
                 .manage(
@@ -36,7 +36,7 @@ struct context {
 
 log_append_config config() {
     return log_append_config{log_append_config::fsync::yes,
-                             default_priority_class(),
+                             ss::default_priority_class(),
                              model::timeout_clock::time_point::max()};
 }
 
@@ -51,12 +51,12 @@ SEASTAR_THREAD_TEST_CASE(test_can_write_single_batch) {
     BOOST_REQUIRE(ctx.log->segments().begin() != ctx.log->segments().end());
     auto seg = *ctx.log->segments().begin();
     ctx.log->flush().get();
-    auto in = seg->data_stream(0, default_priority_class());
+    auto in = seg->data_stream(0, ss::default_priority_class());
     auto buf = in.read_exactly(sizeof(packed_header_size)).get0();
     BOOST_REQUIRE(!buf.empty());
     auto [value, read] = vint::deserialize(buf);
     buf.trim_front(read);
-    auto offset = be_to_cpu(*unaligned_cast<uint64_t*>(buf.get()));
+    auto offset = be_to_cpu(*ss::unaligned_cast<uint64_t*>(buf.get()));
     BOOST_REQUIRE_EQUAL(offset, 0);
 
     BOOST_REQUIRE_EQUAL(value + read, ctx.log->appender().file_byte_offset());
@@ -74,12 +74,12 @@ SEASTAR_THREAD_TEST_CASE(test_log_segment_rolling) {
         BOOST_REQUIRE(ctx.log->segments().begin() != ctx.log->segments().end());
         auto seg = *ctx.log->segments().begin();
         ctx.log->flush().get();
-        auto in = seg->data_stream(0, default_priority_class());
+        auto in = seg->data_stream(0, ss::default_priority_class());
         auto buf = in.read_exactly(sizeof(packed_header_size)).get0();
         BOOST_REQUIRE(!buf.empty());
         auto [value, read] = vint::deserialize(buf);
         buf.trim_front(read);
-        auto offset = be_to_cpu(*unaligned_cast<uint64_t*>(buf.get()));
+        auto offset = be_to_cpu(*ss::unaligned_cast<uint64_t*>(buf.get()));
         BOOST_REQUIRE_EQUAL(offset, 0);
 
         auto file_size = seg->stat().get0().st_size;
@@ -106,12 +106,12 @@ SEASTAR_THREAD_TEST_CASE(test_log_segment_rolling_middle_of_writting) {
         BOOST_REQUIRE(ctx.log->segments().begin() != ctx.log->segments().end());
         auto seg = *ctx.log->segments().begin();
         ctx.log->flush().get();
-        auto in = seg->data_stream(0, default_priority_class());
+        auto in = seg->data_stream(0, ss::default_priority_class());
         auto buf = in.read_exactly(sizeof(packed_header_size)).get0();
         BOOST_REQUIRE(!buf.empty());
         auto [value, read] = vint::deserialize(buf);
         buf.trim_front(read);
-        auto offset = be_to_cpu(*unaligned_cast<uint64_t*>(buf.get()));
+        auto offset = be_to_cpu(*ss::unaligned_cast<uint64_t*>(buf.get()));
         BOOST_REQUIRE_EQUAL(offset, first_offset());
 
         auto file_size = seg->file_size();
@@ -122,12 +122,12 @@ SEASTAR_THREAD_TEST_CASE(test_log_segment_rolling_middle_of_writting) {
     {
         auto seg = *(ctx.log->segments().begin() + 1);
         ctx.log->flush().get();
-        auto in = seg->data_stream(0, default_priority_class());
+        auto in = seg->data_stream(0, ss::default_priority_class());
         auto buf = in.read_exactly(sizeof(packed_header_size)).get0();
         BOOST_REQUIRE(!buf.empty());
         auto [value, read] = vint::deserialize(buf);
         buf.trim_front(read);
-        auto offset = be_to_cpu(*unaligned_cast<uint64_t*>(buf.get()));
+        auto offset = be_to_cpu(*ss::unaligned_cast<uint64_t*>(buf.get()));
         BOOST_REQUIRE_EQUAL(offset, second_offset());
 
         auto file_size = seg->file_size();

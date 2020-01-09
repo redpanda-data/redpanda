@@ -14,7 +14,9 @@ struct partition_allocator_tester {
       : pa(raft::group_id(0)) {
         for (auto i = 0; i < nodes; ++i) {
             pa.register_node(std::make_unique<allocation_node>(
-              model::node_id(i), cpus, std::unordered_map<sstring, sstring>()));
+              model::node_id(i),
+              cpus,
+              std::unordered_map<ss::sstring, ss::sstring>()));
         }
     }
     partition_allocator::underlying_t& machines() { return pa._machines; }

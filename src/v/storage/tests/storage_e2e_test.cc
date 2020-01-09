@@ -106,10 +106,10 @@ FIXTURE_TEST(test_reading_range_from_a_log, storage_test_fixture) {
       .start_offset = batches[3].base_offset(),
       .max_bytes = std::numeric_limits<size_t>::max(),
       .min_bytes = 0,
-      .prio = default_priority_class(),
+      .prio = ss::default_priority_class(),
       .type_filter = {},
       .max_offset = batches[7].last_offset()};
-      
+
     auto reader = log->make_reader(read_range_cfg);
 
     // range from base of beging to last of end

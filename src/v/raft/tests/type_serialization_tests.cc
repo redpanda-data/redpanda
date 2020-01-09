@@ -22,7 +22,7 @@ struct checking_consumer {
       : expected(std::move(exp))
       , current_batch(expected.cbegin()) {}
 
-    future<stop_iteration> operator()(model::record_batch batch) {
+    ss::future<ss::stop_iteration> operator()(model::record_batch batch) {
         BOOST_REQUIRE_EQUAL(current_batch->base_offset(), batch.base_offset());
         BOOST_REQUIRE_EQUAL(current_batch->last_offset(), batch.last_offset());
         BOOST_REQUIRE_EQUAL(current_batch->crc(), batch.crc());
@@ -31,7 +31,8 @@ struct checking_consumer {
         BOOST_REQUIRE_EQUAL(current_batch->size_bytes(), batch.size_bytes());
         BOOST_REQUIRE_EQUAL(current_batch->size(), batch.size());
         current_batch++;
-        return make_ready_future<stop_iteration>(stop_iteration::no);
+        return ss::make_ready_future<ss::stop_iteration>(
+          ss::stop_iteration::no);
     }
 
     void end_of_stream() { BOOST_CHECK(current_batch == expected.end()); }

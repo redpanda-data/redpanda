@@ -12,8 +12,8 @@ class consensus;
 
 namespace cluster {
 
-using consensus_ptr = lw_shared_ptr<raft::consensus>;
-using broker_ptr = lw_shared_ptr<model::broker>;
+using consensus_ptr = ss::lw_shared_ptr<raft::consensus>;
+using broker_ptr    = ss::lw_shared_ptr<model::broker>;
 struct log_record_key {
   enum class type : int8_t { partition_assignment, topic_configuration };
 
@@ -22,14 +22,12 @@ struct log_record_key {
 
 /// Join request sent by node to join raft-0
 struct join_request {
-    explicit join_request(model::broker b)
-        : node(std::move(b)){
-    }
-    model::broker node;
+  explicit join_request(model::broker b) : node(std::move(b)) {}
+  model::broker node;
 };
 
 struct join_reply {
-    bool success;
+  bool success;
 };
 
 /// Partition assignment describes an assignment of all replicas for single NTP.
@@ -92,19 +90,18 @@ constexpr std::string_view topic_error_code_names[] = {
 std::ostream &operator<<(std::ostream &, topic_error_code);
 
 struct topic_result {
-    explicit topic_result(
-      model::topic t, topic_error_code ec = topic_error_code::no_error)
-      : topic(std::move(t))
-      , ec(ec) {}
-    model::topic topic;
-    topic_error_code ec;
+  explicit topic_result(model::topic     t,
+                        topic_error_code ec = topic_error_code::no_error)
+    : topic(std::move(t)), ec(ec) {}
+  model::topic     topic;
+  topic_error_code ec;
 };
 
-/// Structure representing difference between two set of brokers. 
+/// Structure representing difference between two set of brokers.
 /// It is used to represent changes that have to be applied to raft client cache
 struct brokers_diff {
-    std::vector<broker_ptr> updated;
-    std::vector<broker_ptr> removed;
+  std::vector<broker_ptr> updated;
+  std::vector<broker_ptr> removed;
 };
 
 }  // namespace cluster
@@ -112,10 +109,10 @@ struct brokers_diff {
 namespace rpc {
 
 // Topic configuration type requires custom ser/des as is has custom constructor
-template <> future<cluster::topic_configuration> deserialize(source &);
+template <> ss::future<cluster::topic_configuration> deserialize(source &);
 
 template <> void serialize(iobuf &out, cluster::topic_configuration &&t);
 
-template <> future<cluster::join_request> deserialize(source &);
+template <> ss::future<cluster::join_request> deserialize(source &);
 template <> void serialize(iobuf &out, cluster::join_request &&t);
 }  // namespace rpc

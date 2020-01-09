@@ -16,8 +16,8 @@
 
 namespace syschecks {
 
-inline logger& checklog() {
-    static logger _syslgr{"syschecks"};
+inline ss::logger& checklog() {
+    static ss::logger _syslgr{"syschecks"};
     return _syslgr;
 }
 
@@ -38,10 +38,10 @@ static inline void cpu() {
     }
 }
 
-static inline future<> disk(const sstring& path) {
+static inline ss::future<> disk(const ss::sstring& path) {
     return check_direct_io_support(path).then([path] {
         return file_system_at(path).then([path](auto fs) {
-            if (fs != fs_type::xfs) {
+            if (fs != ss::fs_type::xfs) {
                 checklog().error(
                   "Path: `{}' is not on XFS. This is a non-supported setup. "
                   "Expect poor performance.",
@@ -53,7 +53,7 @@ static inline future<> disk(const sstring& path) {
 
 static inline void memory(bool ignore) {
     static const uint64_t kMinMemory = 1 << 30;
-    const auto shard_mem = memory::stats().total_memory();
+    const auto shard_mem = ss::memory::stats().total_memory();
     if (shard_mem >= kMinMemory) {
         return;
     }

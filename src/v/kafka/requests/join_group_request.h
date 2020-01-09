@@ -2,6 +2,7 @@
 #include "kafka/errors.h"
 #include "kafka/requests/fwd.h"
 #include "kafka/types.h"
+#include "seastarx.h"
 
 #include <seastar/core/future.hh>
 
@@ -15,7 +16,8 @@ struct join_group_api final {
     static constexpr api_version min_supported = api_version(0);
     static constexpr api_version max_supported = api_version(3);
 
-    static future<response_ptr> process(request_context&&, smp_service_group);
+    static ss::future<response_ptr>
+    process(request_context&&, ss::smp_service_group);
 };
 
 struct join_group_request final {
@@ -29,7 +31,7 @@ struct join_group_request final {
 
     // extra context from request header
     api_version version;
-    std::optional<sstring> client_id;
+    std::optional<ss::sstring> client_id;
 
     void encode(const request_context& ctx, response_writer& writer);
     void decode(request_context& ctx);
@@ -85,9 +87,9 @@ _make_join_error(kafka::member_id member_id, error_code error) {
       error, no_generation, no_protocol, no_leader, std::move(member_id));
 }
 
-static inline future<join_group_response>
+static inline ss::future<join_group_response>
 make_join_error(kafka::member_id member_id, error_code error) {
-    return make_ready_future<join_group_response>(
+    return ss::make_ready_future<join_group_response>(
       _make_join_error(std::move(member_id), error));
 }
 

@@ -1,7 +1,6 @@
 #include "raft/tron/logger.h"
 #include "raft/tron/service.h"
 #include "random/generators.h"
-#include "seastarx.h"
 #include "storage/record_batch_builder.h"
 #include "syschecks/syschecks.h"
 #include "utils/hdr_hist.h"
@@ -46,7 +45,7 @@ struct load_gen_cfg {
     std::size_t concurrency;
     std::size_t parallelism;
     rpc::transport_configuration client_cfg;
-    sharded<hdr_hist>* hist;
+    ss::sharded<hdr_hist>* hist;
 };
 
 inline std::ostream& operator<<(std::ostream& o, const load_gen_cfg& cfg) {
@@ -63,32 +62,33 @@ public:
     using cli = rpc::client<raft::tron::trongen_client_protocol>;
     client_loadgen(load_gen_cfg cfg)
       : _cfg(std::move(cfg))
-      , _mem(memory::stats().total_memory() * .9) {
+      , _mem(ss::memory::stats().total_memory() * .9) {
         tronlog.debug("Mem for loadgen: {}", _mem.available_units());
         for (std::size_t i = 0; i < _cfg.parallelism; ++i) {
             _clients.push_back(std::make_unique<cli>(_cfg.client_cfg));
         }
     }
-    future<> execute_loadgen() {
-        return parallel_for_each(
+    ss::future<> execute_loadgen() {
+        return ss::parallel_for_each(
           _clients.begin(), _clients.end(), [this](auto& c) {
-              return parallel_for_each(
+              return ss::parallel_for_each(
                 boost::irange(std::size_t(0), _cfg.concurrency),
                 [this, &c](std::size_t) mutable { return execute_one(c); });
           });
     }
-    future<> connect() {
-        return parallel_for_each(_clients.begin(), _clients.end(), [](auto& c) {
-            return c->connect();
-        });
+    ss::future<> connect() {
+        return ss::parallel_for_each(
+          _clients.begin(), _clients.end(), [](auto& c) {
+              return c->connect();
+          });
     }
-    future<> stop() {
-        return parallel_for_each(
+    ss::future<> stop() {
+        return ss::parallel_for_each(
           _clients.begin(), _clients.end(), [](auto& c) { return c->stop(); });
     }
 
 private:
-    future<> execute_one(std::unique_ptr<cli>& c) {
+    ss::future<> execute_one(std::unique_ptr<cli>& c) {
         auto mem_sz = _cfg.key_size + _cfg.value_size + 20;
         return with_semaphore(_mem, mem_sz, [this, &c] {
             return c->replicate(gen_entry(), rpc::no_timeout)
@@ -127,25 +127,26 @@ private:
 
     model::offset _offset_index{0};
     load_gen_cfg _cfg;
-    semaphore _mem;
+    ss::semaphore _mem;
     std::vector<std::unique_ptr<cli>> _clients;
 };
 
 inline load_gen_cfg cfg_from_opts_in_thread(
-  boost::program_options::variables_map& m, sharded<hdr_hist>* h) {
+  boost::program_options::variables_map& m, ss::sharded<hdr_hist>* h) {
     rpc::transport_configuration client_cfg;
-    client_cfg.server_addr = socket_address(
-      ipv4_addr(m["ip"].as<std::string>(), m["port"].as<uint16_t>()));
+    client_cfg.server_addr = ss::socket_address(
+      ss::ipv4_addr(m["ip"].as<std::string>(), m["port"].as<uint16_t>()));
     auto ca_cert = m["ca-cert"].as<std::string>();
     if (ca_cert != "") {
-        auto builder = tls::credentials_builder();
+        auto builder = ss::tls::credentials_builder();
         // FIXME
         // builder.set_dh_level(tls::dh_params::level::MEDIUM);
         tronlog.info("Using {} as CA root certificate", ca_cert);
-        builder.set_x509_trust_file(ca_cert, tls::x509_crt_format::PEM).get0();
+        builder.set_x509_trust_file(ca_cert, ss::tls::x509_crt_format::PEM)
+          .get0();
         client_cfg.credentials = std::move(builder);
     }
-    client_cfg.max_queued_bytes = memory::stats().total_memory() * .8;
+    client_cfg.max_queued_bytes = ss::memory::stats().total_memory() * .8;
     return load_gen_cfg{.key_size = m["key-size"].as<std::size_t>(),
                         .value_size = m["value-size"].as<std::size_t>(),
                         .concurrency = m["concurrency"].as<std::size_t>(),
@@ -154,14 +155,14 @@ inline load_gen_cfg cfg_from_opts_in_thread(
                         .hist = h};
 }
 
-inline hdr_hist aggregate_in_thread(sharded<hdr_hist>& h) {
+inline hdr_hist aggregate_in_thread(ss::sharded<hdr_hist>& h) {
     hdr_hist retval;
-    for (auto i = 0; i < smp::count; ++i) {
+    for (auto i = 0; i < ss::smp::count; ++i) {
         h.invoke_on(i, [&retval](const hdr_hist& o) { retval += o; }).get();
     }
     return retval;
 }
-void write_latency_in_thread(sharded<hdr_hist>& hist) {
+void write_latency_in_thread(ss::sharded<hdr_hist>& hist) {
     auto h = aggregate_in_thread(hist);
     // write to file instead
     std::cout << std::endl << h << std::endl;
@@ -170,21 +171,21 @@ void write_latency_in_thread(sharded<hdr_hist>& hist) {
 int main(int args, char** argv, char** env) {
     syschecks::initialize_intrinsics();
     std::setvbuf(stdout, nullptr, _IOLBF, 1024);
-    app_template app;
+    ss::app_template app;
     cli_opts(app.add_options());
-    sharded<client_loadgen> client;
-    sharded<hdr_hist> hist;
+    ss::sharded<client_loadgen> client;
+    ss::sharded<hdr_hist> hist;
     return app.run(args, argv, [&] {
-        return async([&] {
+        return ss::async([&] {
             auto& cfg = app.configuration();
             tronlog.info("constructing histogram");
             hist.start().get();
-            auto hd = defer([&hist] { hist.stop().get(); });
+            auto hd = ss::defer([&hist] { hist.stop().get(); });
             const load_gen_cfg lcfg = cfg_from_opts_in_thread(cfg, &hist);
             tronlog.info("config:{}", lcfg);
             tronlog.info("constructing client");
             client.start(lcfg).get();
-            auto cd = defer([&client] { client.stop().get(); });
+            auto cd = ss::defer([&client] { client.stop().get(); });
             tronlog.info("connecting clients");
             client.invoke_on_all(&client_loadgen::connect).get();
             tronlog.info("invoking loadgen");

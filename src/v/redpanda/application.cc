@@ -1,7 +1,7 @@
 #include "redpanda/application.h"
 
-#include "platform/stop_signal.h"
 #include "cluster/service.h"
+#include "platform/stop_signal.h"
 #include "raft/service.h"
 #include "storage/directories.h"
 #include "syschecks/syschecks.h"
@@ -26,13 +26,13 @@ int application::run(int ac, char** av) {
       buf.release,
       buf.nodename,
       buf.machine);
-    app_template app = setup_app_template();
+    ss::app_template app = setup_app_template();
     return app.run(ac, av, [this, &app] {
         auto& cfg = app.configuration();
         validate_arguments(cfg);
-        return async([this, &cfg] {
+        return ss::async([this, &cfg] {
             ::stop_signal app_signal;
-            auto deferred = defer([this] {
+            auto deferred = ss::defer([this] {
                 auto deferred = std::move(_deferred);
                 // stop services in reverse order
                 while (!deferred.empty()) {
@@ -67,13 +67,13 @@ void application::validate_arguments(const po::variables_map& cfg) {
 
 void application::init_env() { std::setvbuf(stdout, nullptr, _IOLBF, 1024); }
 
-app_template application::setup_app_template() {
-    app_template::config app_cfg;
+ss::app_template application::setup_app_template() {
+    ss::app_template::config app_cfg;
     app_cfg.name = "Redpanda";
     using namespace std::literals::chrono_literals; // NOLINT
     app_cfg.default_task_quota = 500us;
     app_cfg.auto_handle_sigint_sigterm = false;
-    auto app = app_template(app_cfg);
+    auto app = ss::app_template(app_cfg);
     app.add_options()(
       "redpanda-cfg",
       po::value<std::string>(),
@@ -84,12 +84,12 @@ app_template application::setup_app_template() {
 void application::hydrate_config(const po::variables_map& cfg) {
     auto buf = read_fully(cfg["redpanda-cfg"].as<std::string>()).get0();
     // see https://github.com/jbeder/yaml-cpp/issues/765
-    sstring workaround(sstring::initialized_later(), buf.size_bytes());
+    ss::sstring workaround(ss::sstring::initialized_later(), buf.size_bytes());
     auto in = iobuf::iterator_consumer(buf.cbegin(), buf.cend());
     in.consume_to(buf.size_bytes(), workaround.begin());
     YAML::Node config = YAML::Load(workaround);
     _log.info("Configuration:\n\n{}\n\n", config);
-    smp::invoke_on_all([config] {
+    ss::smp::invoke_on_all([config] {
         config::shard_local_cfg().read_yaml(config);
     }).get0();
 }
@@ -110,26 +110,26 @@ void application::configure_admin_server() {
         return;
     }
     syschecks::systemd_message("constructing http server");
-    construct_service(_admin, sstring("admin")).get();
-    prometheus::config metrics_conf;
+    construct_service(_admin, ss::sstring("admin")).get();
+    ss::prometheus::config metrics_conf;
     metrics_conf.metric_help = "redpanda metrics";
     metrics_conf.prefix = "vectorized";
-    prometheus::add_prometheus_routes(_admin, metrics_conf).get();
+    ss::prometheus::add_prometheus_routes(_admin, metrics_conf).get();
     if (conf.enable_admin_api()) {
         syschecks::systemd_message(
           "enabling admin HTTP api: {}", config::shard_local_cfg().admin());
-        auto rb = make_shared<api_registry_builder20>(
+        auto rb = ss::make_shared<ss::api_registry_builder20>(
           conf.admin_api_doc_dir(), "/v1");
         _admin
-          .invoke_on_all([rb, this](http_server& server) {
+          .invoke_on_all([rb, this](ss::http_server& server) {
               rb->set_api_doc(server._routes);
               rb->register_api_file(server._routes, "header");
               rb->register_api_file(server._routes, "config");
-              config_json::get_config.set(
-                server._routes, [this](const_req req) {
+              ss::httpd::config_json::get_config.set(
+                server._routes, [this](ss::const_req req) {
                     nlohmann::json jconf;
                     config::shard_local_cfg().to_json(jconf);
-                    return json::json_return_type(jconf.dump());
+                    return ss::json::json_return_type(jconf.dump());
                 });
           })
           .get();
@@ -137,11 +137,11 @@ void application::configure_admin_server() {
 
     with_scheduling_group(_scheduling_groups.admin_sg(), [this] {
         return config::shard_local_cfg().admin().resolve().then(
-          [this](socket_address addr) mutable {
-              return _admin.invoke_on_all(&http_server::listen, addr)
+          [this](ss::socket_address addr) mutable {
+              return _admin.invoke_on_all(&ss::http_server::listen, addr)
                 .handle_exception([this](auto ep) {
                     _log.error("Exception on http admin server: {}", ep);
-                    return make_exception_future<>(ep);
+                    return ss::make_exception_future<>(ep);
                 });
           });
     }).get();
@@ -247,7 +247,7 @@ void application::start() {
     auto kafka_creds = conf.kafka_api_tls().get_credentials_builder().get0();
     kafka::kafka_server_config server_config = {
       // FIXME: Add memory manager
-      memory::stats().total_memory() / 10,
+      ss::memory::stats().total_memory() / 10,
       _smp_groups.kafka_smp_sg(),
       kafka_creds};
 
@@ -267,7 +267,7 @@ void application::start() {
     config::shard_local_cfg()
       .kafka_api()
       .resolve()
-      .then([this](socket_address kafka_api_addr) {
+      .then([this](ss::socket_address kafka_api_addr) {
           return _kafka_server.invoke_on_all(
             [this, kafka_api_addr = std::move(kafka_api_addr)](
               kafka::kafka_server& server) mutable {

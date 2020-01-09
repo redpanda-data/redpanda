@@ -36,11 +36,11 @@ public:
 
     void add_bytes_received(size_t recv) { _bytes_received += recv; }
 
-    void setup_metrics(metrics::metric_groups& mgs) {
+    void setup_metrics(ss::metrics::metric_groups& mgs) {
         if (config::shard_local_cfg().disable_metrics()) {
             return;
         }
-        namespace sm = metrics;
+        namespace sm = ss::metrics;
         mgs.add_group(
           prometheus_sanitize::metrics_name("kafka:api:server"),
           {

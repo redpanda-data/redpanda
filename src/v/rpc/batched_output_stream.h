@@ -16,21 +16,21 @@ public:
 
     batched_output_stream() = default;
     explicit batched_output_stream(
-      output_stream<char>, size_t cache = default_max_unflushed_bytes);
+      ss::output_stream<char>, size_t cache = default_max_unflushed_bytes);
     batched_output_stream(batched_output_stream&&) noexcept;
     batched_output_stream& operator=(batched_output_stream&&) noexcept;
-    future<> write(scattered_message<char> msg);
-    future<> flush();
+    ss::future<> write(ss::scattered_message<char> msg);
+    ss::future<> flush();
 
     /// \brief calls output_stream<char>::close()
     /// do not use `_fd.shutdown_output();` on connected_sockets
-    future<> stop();
+    ss::future<> stop();
 
 private:
-    future<> do_flush();
+    ss::future<> do_flush();
 
-    output_stream<char> _out;
-    semaphore _write_sem{1};
+    ss::output_stream<char> _out;
+    ss::semaphore _write_sem{1};
     size_t _cache_size{0};
     size_t _unflushed_bytes{0};
 };

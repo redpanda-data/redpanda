@@ -56,8 +56,8 @@ std::vector<model::broker> get_replica_set_brokers(
     return brokers;
 }
 
-future<> remove_broker_client(
-  sharded<rpc::connection_cache>& clients, model::node_id id) {
+ss::future<> remove_broker_client(
+  ss::sharded<rpc::connection_cache>& clients, model::node_id id) {
     auto shard = rpc::connection_cache::shard_for(id);
     clusterlog.debug(
       "Removing {} broker client from cache at shard {}", id, shard);
@@ -65,8 +65,8 @@ future<> remove_broker_client(
       shard, [id](rpc::connection_cache& cache) { return cache.remove(id); });
 }
 
-future<> update_broker_client(
-  sharded<rpc::connection_cache>& clients,
+ss::future<> update_broker_client(
+  ss::sharded<rpc::connection_cache>& clients,
   model::node_id node,
   unresolved_address addr) {
     auto shard = rpc::connection_cache::shard_for(node);
@@ -76,8 +76,8 @@ future<> update_broker_client(
       shard,
       [node, rpc_address = std::move(addr)](rpc::connection_cache& cache) {
           return rpc_address.resolve().then(
-            [node, &cache](socket_address new_addr) {
-                auto f = make_ready_future<>();
+            [node, &cache](ss::socket_address new_addr) {
+                auto f = ss::make_ready_future<>();
                 if (cache.contains(node)) {
                     // client is already there, check if configuration changed
                     if (cache.get(node)->server_address() == new_addr) {
@@ -90,7 +90,8 @@ future<> update_broker_client(
                 // there is no client in cache, create new
                 return f.then([&cache, node, new_addr = std::move(new_addr)]() {
                     return cache.emplace(
-                      node, rpc::transport_configuration{.server_addr = new_addr});
+                      node,
+                      rpc::transport_configuration{.server_addr = new_addr});
                 });
             });
       });

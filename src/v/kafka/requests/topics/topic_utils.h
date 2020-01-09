@@ -32,16 +32,18 @@ concept TopicResultIterator = requires (Iterator it) {
 /// Generates failed topic_op_result for single topic request item
 template<typename T>
 CONCEPT(requires TopicRequestItem<T>)
-topic_op_result generate_error(T item, error_code code, const sstring& msg) {
-    return topic_op_result{
-      .topic = model::topic{sstring(item.topic())}, .ec = code, .err_msg = msg};
+topic_op_result
+  generate_error(T item, error_code code, const ss::sstring& msg) {
+    return topic_op_result{.topic = model::topic{ss::sstring(item.topic())},
+                           .ec = code,
+                           .err_msg = msg};
 }
 
 /// Generates successfull topic_op_result for single topic request item
 template<typename T>
 CONCEPT(requires TopicRequestItem<T>)
 topic_op_result generate_successfull_result(T item) {
-    return topic_op_result{.topic = model::topic{sstring(item.topic())},
+    return topic_op_result{.topic = model::topic{ss::sstring(item.topic())},
                            .ec = error_code::none};
 }
 
@@ -63,7 +65,7 @@ Iter validate_requests_range(
   Iter end,
   ErrIter out_it,
   error_code code,
-  const sstring& error_msg,
+  const ss::sstring& error_msg,
   Predicate&& p) {
     auto valid_range_end = std::partition(begin, end, p);
     std::transform(

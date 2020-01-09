@@ -21,11 +21,12 @@ auto hostname_address_str = "test_addr:\n"
                             "  address: localhost\n"
                             "  port: 1234\n";
 
-socket_address ip4_addr = socket_address(ipv4_addr("192.168.0.1", 6547));
+ss::socket_address ip4_addr = ss::socket_address(
+  ss::ipv4_addr("192.168.0.1", 6547));
 
-socket_address read_from_yaml(sstring yaml_string) {
+ss::socket_address read_from_yaml(ss::sstring yaml_string) {
     auto node = YAML::Load(yaml_string);
-    return node["test_addr"].as<socket_address>();
+    return node["test_addr"].as<ss::socket_address>();
 }
 
 SEASTAR_THREAD_TEST_CASE(write_as_yaml) {}

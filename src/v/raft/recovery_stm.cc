@@ -14,12 +14,12 @@ namespace raft {
 using namespace std::chrono_literals;
 
 recovery_stm::recovery_stm(
-  consensus* p, follower_index_metadata& meta, seastar::io_priority_class prio)
+  consensus* p, follower_index_metadata& meta, ss::io_priority_class prio)
   : _ptr(p)
   , _meta(meta)
   , _prio(prio) {}
 
-seastar::future<> recovery_stm::do_one_read() {
+ss::future<> recovery_stm::do_one_read() {
     storage::log_reader_config cfg{
       .start_offset = _meta.commit_index,
       .max_bytes = 1024 * 1024, // 1MB
@@ -28,7 +28,7 @@ seastar::future<> recovery_stm::do_one_read() {
       .type_filter = {},
       .max_offset = model::offset(_ptr->_meta.commit_index) // inclusive
     };
-    return do_with(
+    return ss::do_with(
              _ptr->_log.make_reader(cfg),
              [this](model::record_batch_reader& reader) {
                  return reader.consume(
@@ -44,25 +44,26 @@ seastar::future<> recovery_stm::do_one_read() {
       });
 }
 
-seastar::future<> recovery_stm::replicate(std::vector<raft::entry> es) {
+ss::future<> recovery_stm::replicate(std::vector<raft::entry> es) {
     using ret_t = result<append_entries_reply>;
     auto shard = rpc::connection_cache::shard_for(_meta.node_id);
     // TODO(agallego) - verify we shouldn't use 'this->_meta' instead of _ptr
     auto r = append_entries_request{
       .node_id = _meta.node_id, .meta = _ptr->_meta, .entries = std::move(es)};
-    return smp::submit_to(
+    return ss::smp::submit_to(
              shard,
              [this, r = std::move(r)]() mutable {
                  auto& local = _ptr->_clients.local();
                  if (!local.contains(_meta.node_id)) {
-                     return make_ready_future<ret_t>(errc::missing_tcp_client);
+                     return ss::make_ready_future<ret_t>(
+                       errc::missing_tcp_client);
                  }
                  return local.get(_meta.node_id)
                    ->get_connected()
                    .then([r = std::move(r)](
                            result<rpc::transport*> cli) mutable {
                        if (!cli) {
-                           return make_ready_future<ret_t>(cli.error());
+                           return ss::make_ready_future<ret_t>(cli.error());
                        }
                        auto f = raftgen_client_protocol(*cli.value())
                                   .append_entries(
@@ -72,9 +73,10 @@ seastar::future<> recovery_stm::replicate(std::vector<raft::entry> es) {
                                 errc::timeout, std::move(f))
                          .then([](auto r) {
                              if (!r) {
-                                 return make_ready_future<ret_t>(r.error());
+                                 return ss::make_ready_future<ret_t>(r.error());
                              }
-                             return make_ready_future<ret_t>(r.value().data);
+                             return ss::make_ready_future<ret_t>(
+                               r.value().data);
                          });
                    });
              })
@@ -92,8 +94,8 @@ seastar::future<> recovery_stm::replicate(std::vector<raft::entry> es) {
           _meta.term = model::term_id(reply.term);
       });
 }
-seastar::future<> recovery_stm::apply() {
-    return seastar::do_until(
+ss::future<> recovery_stm::apply() {
+    return ss::do_until(
              [this] {
                  return _meta.commit_index == _ptr->_meta.commit_index
                         || _stop_requested;

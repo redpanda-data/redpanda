@@ -43,17 +43,17 @@ private:
 
         // finalize by filling in the size prefix
         int32_t total_size = buf.size_bytes() - start_size;
-        auto be_total_size = cpu_to_be(total_size);
+        auto be_total_size = ss::cpu_to_be(total_size);
         auto* raw_size = reinterpret_cast<const char*>(&be_total_size);
         ph.write(raw_size, sizeof(be_total_size));
 
         return _out.write(iobuf_as_scattered(std::move(buf))).then([this] {
             return _in.read_exactly(sizeof(kafka::size_type))
-              .then([this](temporary_buffer<char> buf) {
+              .then([this](ss::temporary_buffer<char> buf) {
                   auto size = kafka::kafka_server::connection::process_size(
                     _in, std::move(buf));
                   return _in.read_exactly(sizeof(correlation_type))
-                    .then([this, size](temporary_buffer<char> buf) {
+                    .then([this, size](ss::temporary_buffer<char> buf) {
                         // drops the correlation id on the floor
                         auto remaining = size - sizeof(correlation_type);
                         return read_iobuf_exactly(_in, remaining);
@@ -71,7 +71,7 @@ public:
      */
     template<typename T>
     CONCEPT(requires(KafkaRequest<typename T::api_type>))
-    future<typename T::api_type::response_type> dispatch(
+    ss::future<typename T::api_type::response_type> dispatch(
       T r, api_version request_version, api_version response_version) {
         return send_recv([this, request_version, r = std::move(r)](
                            response_writer& wr) mutable {
@@ -82,19 +82,20 @@ public:
               using response_type = typename T::api_type::response_type;
               response_type r;
               r.decode(std::move(buf), response_version);
-              return make_ready_future<response_type>(std::move(r));
+              return ss::make_ready_future<response_type>(std::move(r));
           });
     }
 
     template<typename T>
     CONCEPT(requires(KafkaRequest<typename T::api_type>))
-    future<typename T::api_type::response_type> dispatch(T r, api_version ver) {
+    ss::future<typename T::api_type::response_type> dispatch(
+      T r, api_version ver) {
         return dispatch(r, ver, ver);
     }
 
     template<typename T>
     CONCEPT(requires(KafkaRequest<typename T::api_type>))
-    future<typename T::api_type::response_type> dispatch(T r) {
+    ss::future<typename T::api_type::response_type> dispatch(T r) {
         return dispatch(r, T::api_type::max_supported);
     }
 

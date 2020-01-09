@@ -17,12 +17,12 @@ namespace storage {
 
 class log_manager;
 
-using log_clock = lowres_clock;
+using log_clock = ss::lowres_clock;
 
 struct log_append_config {
-    using fsync = bool_class<class skip_tag>;
+    using fsync = ss::bool_class<class skip_tag>;
     fsync should_fsync;
-    io_priority_class io_priority;
+    ss::io_priority_class io_priority;
     model::timeout_clock::time_point timeout;
 };
 
@@ -70,14 +70,14 @@ public:
 
     log(model::ntp, log_manager&, log_set) noexcept;
 
-    future<> close();
+    ss::future<> close();
 
     const log_set& segments() const { return _segs; }
 
     model::record_batch_reader make_reader(log_reader_config);
 
     // External synchronization: only one append can be performed at a time.
-    [[gnu::always_inline]] future<append_result>
+    [[gnu::always_inline]] ss::future<append_result>
     append(model::record_batch_reader&& r, log_append_config cfg) {
         return _failure_probes.append().then(
           [this, r = std::move(r), cfg = std::move(cfg)]() mutable {
@@ -89,17 +89,17 @@ public:
     log_segment_appender& appender() { return *_appender; }
 
     /// flushes the _tracker.dirty_offset into _tracker.committed_offset
-    future<> flush();
+    ss::future<> flush();
 
-    future<> maybe_roll(model::offset);
+    ss::future<> maybe_roll(model::offset);
 
-    [[gnu::always_inline]] future<>
+    [[gnu::always_inline]] ss::future<>
     truncate(model::offset offset, model::term_id term) {
         return _failure_probes.truncate().then(
           [this, offset, term]() mutable { return do_truncate(offset, term); });
     }
 
-    sstring base_directory() const;
+    ss::sstring base_directory() const;
 
     const model::ntp& ntp() const { return _ntp; }
 
@@ -114,17 +114,17 @@ public:
 private:
     friend class log_builder;
 
-    future<>
-    new_segment(model::offset, model::term_id, const io_priority_class&);
+    ss::future<>
+    new_segment(model::offset, model::term_id, const ss::io_priority_class&);
 
     /// \brief forces a flush() on the last segment & rotates given the current
     /// _term && (tracker.committed_offset+1)
-    future<> do_roll();
+    ss::future<> do_roll();
 
-    future<append_result>
+    ss::future<append_result>
     do_append(model::record_batch_reader&&, log_append_config);
 
-    future<> do_truncate(model::offset, model::term_id);
+    ss::future<> do_truncate(model::offset, model::term_id);
 
 private:
     model::term_id _term;
@@ -138,6 +138,6 @@ private:
     failure_probes _failure_probes;
 };
 
-using log_ptr = lw_shared_ptr<log>;
+using log_ptr = ss::lw_shared_ptr<log>;
 
 } // namespace storage

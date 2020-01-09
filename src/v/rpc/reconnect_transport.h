@@ -22,24 +22,24 @@ public:
 
     bool is_valid() const { return _transport.is_valid(); }
 
-    future<result<rpc::transport*>> reconnect();
+    ss::future<result<rpc::transport*>> reconnect();
 
     rpc::transport& get() { return _transport; }
 
     /// safe client connect - attempts to reconnect if not connected
-    future<result<transport*>> get_connected();
+    ss::future<result<transport*>> get_connected();
 
-    const socket_address& server_address() const {
+    const ss::socket_address& server_address() const {
         return _transport.server_address();
     }
 
-    future<> stop();
+    ss::future<> stop();
 
 private:
     rpc::transport _transport;
     rpc::clock_type::time_point _stamp{rpc::clock_type::now()};
-    semaphore _connected_sem{1};
+    ss::semaphore _connected_sem{1};
     uint32_t _backoff_secs{0};
-    gate _dispatch_gate;
+    ss::gate _dispatch_gate;
 };
 } // namespace rpc

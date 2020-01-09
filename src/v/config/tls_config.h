@@ -1,4 +1,5 @@
 #pragma once
+
 #include "seastarx.h"
 #include "utils/to_string.h"
 
@@ -11,8 +12,8 @@
 namespace config {
 
 struct key_cert {
-    sstring key_file;
-    sstring cert_file;
+    ss::sstring key_file;
+    ss::sstring cert_file;
 };
 
 class tls_config {
@@ -24,7 +25,7 @@ public:
     tls_config(
       bool enabled,
       std::optional<key_cert> key_cert,
-      std::optional<sstring> truststore,
+      std::optional<ss::sstring> truststore,
       bool require_client_auth)
       : _enabled(enabled)
       , _key_cert(key_cert)
@@ -37,19 +38,19 @@ public:
         return _key_cert;
     }
 
-    const std::optional<sstring>& get_truststore_file() const {
+    const std::optional<ss::sstring>& get_truststore_file() const {
         return _truststore_file;
     }
 
     bool get_require_client_auth() const { return _require_client_auth; }
 
-    future<std::optional<tls::credentials_builder>>
+    ss::future<std::optional<ss::tls::credentials_builder>>
     get_credentials_builder() const {
         if (_enabled) {
-            auto builder = make_lw_shared<tls::credentials_builder>();
-            builder->set_dh_level(tls::dh_params::level::MEDIUM);
+            auto builder = ss::make_lw_shared<ss::tls::credentials_builder>();
+            builder->set_dh_level(ss::tls::dh_params::level::MEDIUM);
             if (_require_client_auth) {
-                builder->set_client_auth(tls::client_auth::REQUIRE);
+                builder->set_client_auth(ss::tls::client_auth::REQUIRE);
             }
             auto f = builder->set_system_trust();
             if (_key_cert) {
@@ -57,24 +58,24 @@ public:
                     return builder->set_x509_key_file(
                       (*_key_cert).cert_file,
                       (*_key_cert).key_file,
-                      tls::x509_crt_format::PEM);
+                      ss::tls::x509_crt_format::PEM);
                 });
             }
 
             if (_truststore_file) {
                 f = f.then([this, builder]() {
                     return builder->set_x509_trust_file(
-                      *_truststore_file, tls::x509_crt_format::PEM);
+                      *_truststore_file, ss::tls::x509_crt_format::PEM);
                 });
             }
 
             return f.then([builder]() { return std::make_optional(*builder); });
         }
-        return make_ready_future<std::optional<tls::credentials_builder>>(
-          std::nullopt);
+        return ss::make_ready_future<
+          std::optional<ss::tls::credentials_builder>>(std::nullopt);
     }
 
-    static std::optional<sstring> validate(const tls_config& c) {
+    static std::optional<ss::sstring> validate(const tls_config& c) {
         if (c.get_require_client_auth() && !c.get_truststore_file()) {
             return "Trust store is required when client authentication is "
                    "enabled";
@@ -86,7 +87,7 @@ public:
 private:
     bool _enabled{false};
     std::optional<key_cert> _key_cert;
-    std::optional<sstring> _truststore_file;
+    std::optional<ss::sstring> _truststore_file;
     bool _require_client_auth{false};
 };
 

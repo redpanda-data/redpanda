@@ -7,7 +7,7 @@ namespace rpc {
 
 /// \brief used to send the bytes down the wire
 /// we re-compute the header-checksum on every call
-scattered_message<char> netbuf::as_scattered() && {
+ss::scattered_message<char> netbuf::as_scattered() && {
     constexpr const size_t size_header = sizeof(header);
     if (_hdr.correlation_id == 0 || _hdr.meta == 0) {
         throw std::runtime_error(
@@ -18,12 +18,12 @@ scattered_message<char> netbuf::as_scattered() && {
     auto in = iobuf::iterator_consumer(_out.cbegin(), _out.cend());
     in.consume(_out.size_bytes(), [&h](const char* src, size_t sz) {
         h.update(src, sz);
-        return stop_iteration::no;
+        return ss::stop_iteration::no;
     });
     _hdr.checksum = h.digest();
     _hdr.size = _out.size_bytes();
     // update the header
-    temporary_buffer<char> hdr_payload(
+    ss::temporary_buffer<char> hdr_payload(
       reinterpret_cast<const char*>(&_hdr), size_header);
     _out.prepend(std::move(hdr_payload));
 

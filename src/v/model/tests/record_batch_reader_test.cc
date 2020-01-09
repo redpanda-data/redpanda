@@ -13,12 +13,14 @@ public:
     explicit consumer(size_t depth)
       : _depth(depth) {}
 
-    future<stop_iteration> operator()(record_batch b) {
+    ss::future<ss::stop_iteration> operator()(record_batch b) {
         _result.push_back(std::move(b));
         if (--_depth == 0) {
-            return make_ready_future<stop_iteration>(stop_iteration::yes);
+            return ss::make_ready_future<ss::stop_iteration>(
+              ss::stop_iteration::yes);
         }
-        return make_ready_future<stop_iteration>(stop_iteration::no);
+        return ss::make_ready_future<ss::stop_iteration>(
+          ss::stop_iteration::no);
     }
 
     std::vector<record_batch> end_of_stream() { return std::move(_result); }
@@ -52,13 +54,13 @@ std::vector<record_batch> make_batches(Offsets... o) {
 }
 
 record_batch_reader make_generating_reader(std::vector<record_batch> batches) {
-    return make_generating_record_batch_reader(
-      [batches = std::move(batches), i = 0]() mutable {
-          if (i == batches.size()) {
-              return make_ready_future<record_batch_opt>();
-          }
-          return make_ready_future<record_batch_opt>(std::move(batches[i++]));
-      });
+    return make_generating_record_batch_reader([batches = std::move(batches),
+                                                i = 0]() mutable {
+        if (i == batches.size()) {
+            return ss::make_ready_future<record_batch_opt>();
+        }
+        return ss::make_ready_future<record_batch_opt>(std::move(batches[i++]));
+    });
 }
 
 SEASTAR_THREAD_TEST_CASE(test_pop) {

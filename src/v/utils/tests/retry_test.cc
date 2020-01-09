@@ -1,3 +1,4 @@
+#include "seastarx.h"
 #include "utils/retry.h"
 
 #include <seastar/core/future.hh>
@@ -11,12 +12,12 @@ struct retry_counter {
     retry_counter(int s)
       : success_after(s) {}
 
-    seastar::future<int> operator()() {
+    ss::future<int> operator()() {
         cnt++;
         if (cnt > success_after) {
-            return seastar::make_ready_future<int>(cnt);
+            return ss::make_ready_future<int>(cnt);
         }
-        return seastar::make_exception_future<int>(
+        return ss::make_exception_future<int>(
           std::logic_error("Expected error"));
     }
 

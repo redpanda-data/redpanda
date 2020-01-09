@@ -11,6 +11,6 @@ struct put_request {
 };
 struct put_reply {
     bool success;
-    seastar::sstring failure_reason;
+    ss::sstring failure_reason;
 };
 } // namespace raft::tron

@@ -8,7 +8,7 @@
 #include <fmt/format.h>
 
 namespace storage {
-log_segment_appender::log_segment_appender(file f, options opts)
+log_segment_appender::log_segment_appender(ss::file f, options opts)
   : _out(std::move(f))
   , _opts(std::move(opts))
   , _dma_write_alignment(_out.disk_write_dma_alignment()) {
@@ -24,14 +24,14 @@ log_segment_appender::~log_segment_appender() {
     }
 }
 
-future<> log_segment_appender::do_adaptive_fallocate() {
+ss::future<> log_segment_appender::do_adaptive_fallocate() {
     const size_t next_falloc_max = _last_fallocated_offset
                                    + _opts.adaptive_fallocation_size;
     size_t last_offset = _last_fallocated_offset;
     _last_fallocated_offset = next_falloc_max;
     return _out.allocate(last_offset, next_falloc_max);
 }
-future<> log_segment_appender::append(const char* buf, const size_t n) {
+ss::future<> log_segment_appender::append(const char* buf, const size_t n) {
     if (
       _last_fallocated_offset == 0
       || _committed_offset + n
@@ -57,7 +57,7 @@ future<> log_segment_appender::append(const char* buf, const size_t n) {
         }
     }
     if (written == n) {
-        return make_ready_future<>();
+        return ss::make_ready_future<>();
     }
     return flush().then(
       [this, next_buf = buf + written, next_sz = n - written] {
@@ -65,53 +65,54 @@ future<> log_segment_appender::append(const char* buf, const size_t n) {
       });
 }
 
-future<> log_segment_appender::truncate(size_t n) {
+ss::future<> log_segment_appender::truncate(size_t n) {
     return flush().then([this, n] { return _out.truncate(n); }).then([this] {
         return do_adaptive_fallocate();
     });
 }
-future<> log_segment_appender::close() {
+ss::future<> log_segment_appender::close() {
     return flush()
       .then([this] { return _out.truncate(_committed_offset); })
       .then([this] { return _out.close(); });
 }
 
-static future<> process_write_fut(size_t expected, size_t got) {
+static ss::future<> process_write_fut(size_t expected, size_t got) {
     if (__builtin_expect(expected != got, false)) {
-        return make_exception_future<>(fmt::format(
+        return ss::make_exception_future<>(fmt::format(
           "Could not flush file. Expected to write:{},but wrote:{}",
           expected,
           got));
     }
-    return make_ready_future<>();
+    return ss::make_ready_future<>();
 }
 
-future<> log_segment_appender::flush() {
+ss::future<> log_segment_appender::flush() {
     if (_bytes_flush_pending == 0) {
-        return make_ready_future<>();
+        return ss::make_ready_future<>();
     }
-    std::vector<future<>> flushes;
+    std::vector<ss::future<>> flushes;
     flushes.reserve(std::distance(_chunks.begin(), _current));
     for (chunk& c : _chunks) {
         if (c.bytes_pending() == 0) {
             break;
         }
-        const size_t start_offset = seastar::align_down<size_t>(
+        const size_t start_offset = ss::align_down<size_t>(
           _committed_offset, _dma_write_alignment);
         const size_t expected = c.dma_size(_dma_write_alignment);
         const char* src = c.dma_ptr(_dma_write_alignment);
-        const size_t inside_buffer_offset = seastar::align_down<size_t>(
+        const size_t inside_buffer_offset = ss::align_down<size_t>(
           c.flushed_pos(), _dma_write_alignment);
-        future<> f = _out.dma_write(start_offset, src, expected, _opts.priority)
-                       .then([&c, alignment = _dma_write_alignment, expected](
-                               size_t got) {
-                           if (c.is_full()) {
-                               c.reset();
-                           } else {
-                               c.compact(alignment);
-                           }
-                           return process_write_fut(expected, got);
-                       });
+        ss::future<> f
+          = _out.dma_write(start_offset, src, expected, _opts.priority)
+              .then(
+                [&c, alignment = _dma_write_alignment, expected](size_t got) {
+                    if (c.is_full()) {
+                        c.reset();
+                    } else {
+                        c.compact(alignment);
+                    }
+                    return process_write_fut(expected, got);
+                });
         // accounting
         _committed_offset += c.bytes_pending();
         _bytes_flush_pending -= c.bytes_pending();
@@ -126,22 +127,21 @@ future<> log_segment_appender::flush() {
         throw std::runtime_error(
           fmt::format("Invalid flush, pending bytes. Details:{}", *this));
     }
-    return seastar::when_all_succeed(flushes.begin(), flushes.end())
-      .then([this] {
-          if (_current == _chunks.end()) {
-              _current = _chunks.begin();
-          }
-          if (!_current->is_full()) {
-              std::iter_swap(_current, _chunks.begin());
-              _current = _chunks.begin();
-          }
-          return _out.flush();
-      });
+    return ss::when_all_succeed(flushes.begin(), flushes.end()).then([this] {
+        if (_current == _chunks.end()) {
+            _current = _chunks.begin();
+        }
+        if (!_current->is_full()) {
+            std::iter_swap(_current, _chunks.begin());
+            _current = _chunks.begin();
+        }
+        return _out.flush();
+    });
 }
 
 std::ostream&
 operator<<(std::ostream& o, const log_segment_appender::chunk& c) {
-    return seastar::fmt_print(
+    return ss::fmt_print(
       o,
       "[bytes_pending:{}, _pos:{}, _flushed_pos:{}, _ptr: {}, pos_ptr: {}]",
       c.bytes_pending(),
@@ -151,7 +151,7 @@ operator<<(std::ostream& o, const log_segment_appender::chunk& c) {
       fmt::ptr(c._buf.get() + c._flushed_pos));
 }
 std::ostream& operator<<(std::ostream& out, const log_segment_appender& o) {
-    return seastar::fmt_print(
+    return ss::fmt_print(
       out,
       "[write_dma:{}, last_fallocated_offset:{}, "
       "adaptive_fallocation_size:{}, bytes_written:{}, "

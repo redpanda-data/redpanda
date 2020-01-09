@@ -23,10 +23,10 @@ public:
     }
 
     kafka::new_topic_configuration make_topic(
-      sstring name,
+      ss::sstring name,
       std::optional<int> num_partitions = std::nullopt,
       std::optional<int> replication_factor = std::nullopt,
-      std::optional<std::map<sstring, sstring>> config = std::nullopt,
+      std::optional<std::map<ss::sstring, ss::sstring>> config = std::nullopt,
       std::optional<std::map<int, std::vector<int>>> assignment
       = std::nullopt) {
         kafka::new_topic_configuration topic;
@@ -193,7 +193,7 @@ FIXTURE_TEST_EXPECTED_FAILURES(create_topics, create_topic_fixture, 2) {
       "topic2",
       5,
       2,
-      std::map<sstring, sstring>{{
+      std::map<ss::sstring, ss::sstring>{{
         {"min.insync.replicas", "2"},
       }})}));
 

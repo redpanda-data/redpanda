@@ -5,8 +5,8 @@
 namespace rpc {
 connection::connection(
   boost::intrusive::list<connection>& hook,
-  connected_socket f,
-  socket_address a,
+  ss::connected_socket f,
+  ss::socket_address a,
   server_probe& p)
   : addr(std::move(a))
   , _hook(hook)
@@ -19,7 +19,7 @@ connection::connection(
 }
 connection::~connection() { _hook.get().erase(_hook.get().iterator_to(*this)); }
 
-future<> connection::shutdown() {
+ss::future<> connection::shutdown() {
     _probe.connection_closed();
     try {
         _fd.shutdown_input();
@@ -30,7 +30,7 @@ future<> connection::shutdown() {
     }
     return _out.stop();
 }
-future<> connection::write(scattered_message<char> msg) {
+ss::future<> connection::write(ss::scattered_message<char> msg) {
     _probe.add_bytes_sent(msg.size());
     return _out.write(std::move(msg));
 }

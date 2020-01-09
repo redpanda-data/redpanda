@@ -1,5 +1,5 @@
 #include "raft/logger.h"
 
 namespace raft {
-logger raftlog{"raft"};
+ss::logger raftlog{"raft"};
 } // namespace raft

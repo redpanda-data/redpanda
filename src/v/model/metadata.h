@@ -23,9 +23,9 @@ struct broker_properties {
     uint32_t cores;
     uint32_t available_memory;
     uint32_t available_disk;
-    std::vector<sstring> mount_paths;
+    std::vector<ss::sstring> mount_paths;
     // key=value properties in /etc/redpanda/machine_properties.yaml
-    std::unordered_map<sstring, sstring> etc_props;
+    std::unordered_map<ss::sstring, ss::sstring> etc_props;
 
     bool operator==(const broker_properties& other) const {
         return cores == other.cores
@@ -42,7 +42,7 @@ public:
       node_id id,
       unresolved_address kafka_api_address,
       unresolved_address rpc_address,
-      std::optional<sstring> rack,
+      std::optional<ss::sstring> rack,
       broker_properties props) noexcept
       : _id(id)
       , _kafka_api_address(std::move(kafka_api_address))
@@ -60,7 +60,7 @@ public:
         return _kafka_api_address;
     }
     const unresolved_address& rpc_address() const { return _rpc_address; }
-    const std::optional<sstring>& rack() const { return _rack; }
+    const std::optional<ss::sstring>& rack() const { return _rack; }
 
     inline bool operator==(const model::broker& other) const {
         return _id == other._id
@@ -79,7 +79,7 @@ private:
     node_id _id;
     unresolved_address _kafka_api_address;
     unresolved_address _rpc_address;
-    std::optional<sstring> _rack;
+    std::optional<ss::sstring> _rack;
     broker_properties _properties;
 };
 
@@ -89,7 +89,7 @@ std::ostream& operator<<(std::ostream&, const broker&);
 /// and id of this broker shard.
 struct broker_shard {
     model::node_id node_id;
-    /// this is the same as a seastar::shard_id
+    /// this is the same as a ss::shard_id
     /// however, seastar uses unsized-ints (unsigned)
     /// and for predictability we need fixed-sized ints
     uint32_t shard;
@@ -143,11 +143,11 @@ struct hash<model::broker_properties> {
         boost::hash_combine(h, std::hash<uint32_t>()(b.available_memory));
         boost::hash_combine(h, std::hash<uint32_t>()(b.available_disk));
         for (const auto& path : b.mount_paths) {
-            boost::hash_combine(h, std::hash<seastar::sstring>()(path));
+            boost::hash_combine(h, std::hash<ss::sstring>()(path));
         }
         for (const auto& [k, v] : b.etc_props) {
-            boost::hash_combine(h, std::hash<seastar::sstring>()(k));
-            boost::hash_combine(h, std::hash<seastar::sstring>()(v));
+            boost::hash_combine(h, std::hash<ss::sstring>()(k));
+            boost::hash_combine(h, std::hash<ss::sstring>()(v));
         }
         return h;
     }
@@ -164,7 +164,7 @@ struct hash<model::broker> {
         boost::hash_combine(
           h, std::hash<model::broker_properties>()(b.properties()));
         boost::hash_combine(
-          h, std::hash<std::optional<seastar::sstring>>()(b.rack()));
+          h, std::hash<std::optional<ss::sstring>>()(b.rack()));
         return h;
     }
 };

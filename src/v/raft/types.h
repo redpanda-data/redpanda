@@ -11,9 +11,9 @@
 #include <cstdint>
 
 namespace raft {
-using clock_type = lowres_clock;
+using clock_type = ss::lowres_clock;
 using duration_type = typename clock_type::duration;
-using timer_type = timer<clock_type>;
+using timer_type = ss::timer<clock_type>;
 static constexpr clock_type::time_point no_timeout
   = clock_type::time_point::max();
 
@@ -25,13 +25,13 @@ static constexpr const model::record_batch_type data_batch_type{1};
 /// special case. it uses underlying type because it is the most used type
 /// by using the underlying::type we save 8 continuations per deserialization
 struct [[gnu::packed]] protocol_metadata {
-    unaligned<group_id::type> group = -1;
-    unaligned<model::offset::type> commit_index = 0;
-    unaligned<model::term_id::type> term = -1;
+    ss::unaligned<group_id::type> group = -1;
+    ss::unaligned<model::offset::type> commit_index = 0;
+    ss::unaligned<model::term_id::type> term = -1;
 
     /// \brief used for completeness
-    unaligned<model::offset::type> prev_log_index = 0;
-    unaligned<model::term_id::type> prev_log_term = -1;
+    ss::unaligned<model::offset::type> prev_log_index = 0;
+    ss::unaligned<model::term_id::type> prev_log_term = -1;
 };
 
 struct group_configuration {
@@ -111,16 +111,16 @@ struct append_entries_request {
 
 struct [[gnu::packed]] append_entries_reply {
     /// \brief callee's node_id; work-around for batched heartbeats
-    unaligned<model::node_id::type> node_id = -1;
-    unaligned<group_id::type> group = -1;
+    ss::unaligned<model::node_id::type> node_id = -1;
+    ss::unaligned<group_id::type> group = -1;
     /// \brief callee's term, for the caller to upate itself
-    unaligned<model::term_id::type> term = -1;
+    ss::unaligned<model::term_id::type> term = -1;
     /// \brief The recipient's last log index after it applied changes to
     /// the log. This is used to speed up finding the correct value for the
     /// nextIndex with a follower that is far behind a leader
-    unaligned<model::offset::type> last_log_index = 0;
+    ss::unaligned<model::offset::type> last_log_index = 0;
     /// \brief did the rpc succeed or not
-    unaligned<bool> success = false;
+    ss::unaligned<bool> success = false;
 };
 
 /// \brief this is our _biggest_ modification to how raft works
@@ -140,26 +140,26 @@ struct heartbeat_reply {
 /// \brief special use of underlying::type to save continuations on the
 /// deserialization step
 struct [[gnu::packed]] vote_request {
-    unaligned<model::node_id::type> node_id = 0;
-    unaligned<group_id::type> group = -1;
+    ss::unaligned<model::node_id::type> node_id = 0;
+    ss::unaligned<group_id::type> group = -1;
     /// \brief current term
-    unaligned<model::term_id::type> term = -1;
+    ss::unaligned<model::term_id::type> term = -1;
     /// \brief used to compare completeness
-    unaligned<model::offset::type> prev_log_index = 0;
-    unaligned<model::term_id::type> prev_log_term = -1;
+    ss::unaligned<model::offset::type> prev_log_index = 0;
+    ss::unaligned<model::term_id::type> prev_log_term = -1;
 };
 
 struct [[gnu::packed]] vote_reply {
     /// \brief callee's term, for the caller to upate itself
-    unaligned<model::term_id::type> term = -1;
+    ss::unaligned<model::term_id::type> term = -1;
 
     /// True if the follower granted the candidate it's vote, false otherwise
-    unaligned<bool> granted = false;
+    ss::unaligned<bool> granted = false;
 
     /// set to true if the caller's log is as up to date as the recipient's
     /// - extension on raft. see Diego's phd dissertation, section 9.6
     /// - "Preventing disruptions when a server rejoins the cluster"
-    unaligned<bool> log_ok = false;
+    ss::unaligned<bool> log_ok = false;
 };
 
 struct replicate_result {
@@ -205,5 +205,5 @@ namespace rpc {
 template<>
 void serialize(iobuf&, raft::entry&&);
 template<>
-future<raft::entry> deserialize(source&);
+ss::future<raft::entry> deserialize(source&);
 } // namespace rpc

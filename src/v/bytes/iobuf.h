@@ -33,7 +33,7 @@ class iobuf {
     // 40 bytes total.
 
     // 32 bytes per fragment
-    // 24 of temporary_buffer<> + 8 for capacity tracking
+    // 24 of ss::temporary_buffer<> + 8 for capacity tracking
 
 public:
     class allocation_size {
@@ -62,12 +62,12 @@ public:
     using control_ptr = control*;
     struct control_allocation {
         control_ptr ctrl;
-        deleter del;
+        ss::deleter del;
     };
     static control_allocation allocate_control();
 
     iobuf();
-    iobuf(control_ptr, deleter) noexcept;
+    iobuf(control_ptr, ss::deleter) noexcept;
     ~iobuf() = default;
     iobuf(iobuf&& x) noexcept = default;
     iobuf(const iobuf&) = delete;
@@ -80,7 +80,7 @@ public:
       // clang-format off
       typename = std::enable_if<
         std::is_same_v<typename Range::value_type, fragment> ||
-        std::is_same_v<typename Range::value_type, temporary_buffer<char>>,
+        std::is_same_v<typename Range::value_type, ss::temporary_buffer<char>>,
         Range>
       // clang-format on
       >
@@ -117,11 +117,11 @@ public:
     /// appends the contents of buffer; might pack values into existing space
     void append(fragment);
     /// appends the contents of buffer; might pack values into existing space
-    void append(temporary_buffer<char>);
+    void append(ss::temporary_buffer<char>);
     /// appends the contents of buffer; might pack values into existing space
     void append(iobuf);
     /// prepends the _the buffer_ as iobuf::fragment::full{}
-    void prepend(temporary_buffer<char>);
+    void prepend(ss::temporary_buffer<char>);
 
     /// used for iostreams
     void pop_front();
@@ -147,7 +147,7 @@ private:
     void create_new_fragment(size_t);
 
     control_ptr _ctrl;
-    deleter _deleter;
+    ss::deleter _deleter;
 };
 
 namespace details {
@@ -161,16 +161,17 @@ static void check_out_of_range(size_t sz, size_t capacity) {
 inline iobuf::control_allocation iobuf::allocate_control() {
     auto data = std::make_unique<iobuf::control>();
     iobuf::control_ptr raw = data.get();
-    return control_allocation{raw, make_deleter([data = std::move(data)] {})};
+    return control_allocation{raw,
+                              ss::make_deleter([data = std::move(data)] {})};
 }
 class iobuf::fragment {
 public:
     struct full {};
     struct empty {};
-    fragment(temporary_buffer<char> buf, full)
+    fragment(ss::temporary_buffer<char> buf, full)
       : _buf(std::move(buf))
       , _used_bytes(_buf.size()) {}
-    fragment(temporary_buffer<char> buf, empty)
+    fragment(ss::temporary_buffer<char> buf, empty)
       : _buf(std::move(buf))
       , _used_bytes(0) {}
     fragment(fragment&& o) noexcept = default;
@@ -199,17 +200,17 @@ public:
         _used_bytes += sz;
         return sz;
     }
-    temporary_buffer<char> share() {
+    ss::temporary_buffer<char> share() {
         // needed for output_stream<char> wrapper
         return _buf.share(0, _used_bytes);
     }
-    temporary_buffer<char> share(size_t pos, size_t len) {
+    ss::temporary_buffer<char> share(size_t pos, size_t len) {
         return _buf.share(pos, len);
     }
 
     /// destructive move. place special care when calling this method
     /// on a shared iobuf. most of the time you want share() instead of release
-    temporary_buffer<char> release() && {
+    ss::temporary_buffer<char> release() && {
         trim();
         return std::move(_buf);
     }
@@ -222,7 +223,8 @@ public:
             // this is an important optimization. often times during RPC
             // serialization we append some small controll bytes, _right_
             // before we append a full new chain of iobufs
-            _buf = std::move(temporary_buffer<char>(_buf.get(), _used_bytes));
+            _buf = std::move(
+              ss::temporary_buffer<char>(_buf.get(), _used_bytes));
         } else {
             _buf.trim(_used_bytes);
         }
@@ -237,7 +239,7 @@ private:
 
     friend iobuf::placeholder;
 
-    temporary_buffer<char> _buf;
+    ss::temporary_buffer<char> _buf;
     size_t _used_bytes;
 };
 
@@ -347,8 +349,9 @@ public:
         }
     }
     void skip(size_t n) {
-        size_t c = consume(
-          n, [](const char*, size_t /*max*/) { return stop_iteration::no; });
+        size_t c = consume(n, [](const char*, size_t /*max*/) {
+            return ss::stop_iteration::no;
+        });
         if (__builtin_expect(c != n, false)) {
             throw std::out_of_range("Invalid skip(n)");
         }
@@ -358,7 +361,7 @@ public:
         size_t c = consume(n, [&out](const char* src, size_t max) {
             std::copy_n(src, max, out);
             out += max;
-            return stop_iteration::no;
+            return ss::stop_iteration::no;
         });
         if (__builtin_expect(c != n, false)) {
             throw std::out_of_range("Invalid consume_to(n, out)");
@@ -377,7 +380,7 @@ public:
     [[gnu::always_inline]] void consume_to(size_t n, iobuf::placeholder& ph) {
         size_t c = consume(n, [&ph](const char* src, size_t max) {
             ph.write(src, max);
-            return stop_iteration::no;
+            return ss::stop_iteration::no;
         });
         if (__builtin_expect(c != n, false)) {
             throw std::out_of_range("Invalid consume_to(n, placeholder)");
@@ -387,7 +390,7 @@ public:
     // clang-format off
     template<typename Consumer>
     CONCEPT(requires requires(Consumer c, const char* src, size_t max) {
-        { c(src, max) } -> stop_iteration;
+        { c(src, max) } -> ss::stop_iteration;
     })
     // clang-format on
     /// takes a Consumer object and iteraters over the chunks in oder, from the
@@ -407,11 +410,11 @@ public:
                 continue;
             }
             const size_t step = std::min(n - i, bytes_left);
-            const stop_iteration stop = f(_frag_index, step);
+            const ss::stop_iteration stop = f(_frag_index, step);
             i += step;
             _frag_index += step;
             _bytes_consumed += step;
-            if (stop == stop_iteration::yes) {
+            if (stop == ss::stop_iteration::yes) {
                 break;
             }
         }
@@ -471,7 +474,7 @@ inline iobuf::iobuf() {
     _deleter = std::move(alloc.del);
 }
 /// constructor used for sharing
-inline iobuf::iobuf(iobuf::control_ptr c, deleter del) noexcept
+inline iobuf::iobuf(iobuf::control_ptr c, ss::deleter del) noexcept
   : _ctrl(c)
   , _deleter(std::move(del)) {}
 
@@ -552,14 +555,14 @@ inline iobuf iobuf::copy() const {
     auto in = iobuf::iterator_consumer(cbegin(), cend());
     in.consume(_ctrl->size, [&ret](const char* src, size_t sz) {
         ret.append(src, sz);
-        return stop_iteration::no;
+        return ss::stop_iteration::no;
     });
     return ret;
 }
 inline void iobuf::create_new_fragment(size_t sz) {
     auto asz = _ctrl->alloc_sz.next_allocation_size(sz);
-    _ctrl->frags.push_back(
-      iobuf::fragment(temporary_buffer<char>(asz), iobuf::fragment::empty{}));
+    _ctrl->frags.push_back(iobuf::fragment(
+      ss::temporary_buffer<char>(asz), iobuf::fragment::empty{}));
 }
 inline iobuf::placeholder iobuf::reserve(size_t sz) {
     if (auto b = available_bytes(); b < sz) {
@@ -575,7 +578,8 @@ inline iobuf::placeholder iobuf::reserve(size_t sz) {
     return p;
 }
 
-[[gnu::always_inline]] void inline iobuf::prepend(temporary_buffer<char> b) {
+[[gnu::always_inline]] void inline iobuf::prepend(
+  ss::temporary_buffer<char> b) {
     _ctrl->size += b.size();
     _ctrl->frags.emplace_front(std::move(b), iobuf::fragment::full{});
 }
@@ -600,7 +604,7 @@ inline iobuf::placeholder iobuf::reserve(size_t sz) {
 }
 
 /// appends the contents of buffer; might pack values into existing space
-[[gnu::always_inline]] inline void iobuf::append(temporary_buffer<char> b) {
+[[gnu::always_inline]] inline void iobuf::append(ss::temporary_buffer<char> b) {
     if (b.size() <= available_bytes()) {
         append(b.get(), b.size());
         return;
@@ -640,70 +644,73 @@ inline void iobuf::trim_front(size_t n) {
     }
 }
 
-inline input_stream<char> make_iobuf_input_stream(iobuf io) {
-    struct iobuf_input_stream final : data_source_impl {
+inline ss::input_stream<char> make_iobuf_input_stream(iobuf io) {
+    struct iobuf_input_stream final : ss::data_source_impl {
         explicit iobuf_input_stream(iobuf i)
           : io(std::move(i)) {}
-        future<temporary_buffer<char>> skip(uint64_t n) final {
+        ss::future<ss::temporary_buffer<char>> skip(uint64_t n) final {
             io.trim_front(n);
             return get();
         }
-        future<temporary_buffer<char>> get() final {
+        ss::future<ss::temporary_buffer<char>> get() final {
             if (io.begin() == io.end()) {
-                return make_ready_future<temporary_buffer<char>>();
+                return ss::make_ready_future<ss::temporary_buffer<char>>();
             }
             auto buf = io.begin()->share();
             io.pop_front();
-            return make_ready_future<temporary_buffer<char>>(std::move(buf));
+            return ss::make_ready_future<ss::temporary_buffer<char>>(
+              std::move(buf));
         }
         iobuf io;
     };
-    auto ds = data_source(std::make_unique<iobuf_input_stream>(std::move(io)));
-    return input_stream<char>(std::move(ds));
+    auto ds = ss::data_source(
+      std::make_unique<iobuf_input_stream>(std::move(io)));
+    return ss::input_stream<char>(std::move(ds));
 }
-inline output_stream<char> make_iobuf_output_stream(iobuf io) {
-    struct iobuf_output_stream final : data_sink_impl {
+inline ss::output_stream<char> make_iobuf_output_stream(iobuf io) {
+    struct iobuf_output_stream final : ss::data_sink_impl {
         explicit iobuf_output_stream(iobuf i)
           : io(std::move(i)) {}
-        future<> put(net::packet data) final {
+        ss::future<> put(ss::net::packet data) final {
             auto all = data.release();
             for (auto& b : all) {
                 io.append(std::move(b));
             }
-            return make_ready_future<>();
+            return ss::make_ready_future<>();
         }
-        future<> put(std::vector<temporary_buffer<char>> all) final {
+        ss::future<> put(std::vector<ss::temporary_buffer<char>> all) final {
             for (auto& b : all) {
                 io.append(std::move(b));
             }
-            return make_ready_future<>();
+            return ss::make_ready_future<>();
         }
-        future<> put(temporary_buffer<char> buf) final {
+        ss::future<> put(ss::temporary_buffer<char> buf) final {
             io.append(std::move(buf));
-            return make_ready_future<>();
+            return ss::make_ready_future<>();
         }
-        future<> flush() final { return make_ready_future<>(); }
-        future<> close() final { return make_ready_future<>(); }
+        ss::future<> flush() final { return ss::make_ready_future<>(); }
+        ss::future<> close() final { return ss::make_ready_future<>(); }
         iobuf io;
     };
     const size_t sz = io.size_bytes();
-    return output_stream<char>(
-      data_sink(std::make_unique<iobuf_output_stream>(std::move(io))), sz);
+    return ss::output_stream<char>(
+      ss::data_sink(std::make_unique<iobuf_output_stream>(std::move(io))), sz);
 }
 
-inline future<iobuf> read_iobuf_exactly(input_stream<char>& in, size_t n) {
+inline ss::future<iobuf>
+read_iobuf_exactly(ss::input_stream<char>& in, size_t n) {
     static constexpr auto max_chunk_size
       = iobuf::allocation_size::max_chunk_size;
-    return do_with(iobuf(), n, [&in](iobuf& b, size_t& n) {
-        return do_until(
+    return ss::do_with(iobuf(), n, [&in](iobuf& b, size_t& n) {
+        return ss::do_until(
                  [&n] { return n == 0; },
                  [&n, &in, &b] {
                      const auto step = std::min(n, max_chunk_size);
                      if (step == 0) {
-                         return make_ready_future<>();
+                         return ss::make_ready_future<>();
                      }
                      return in.read_up_to(step).then(
-                       [&n, &b](temporary_buffer<char> buf) {
+                       [&n, &b](ss::temporary_buffer<char> buf) {
                            if (buf.empty()) {
                                n = 0;
                                return;
@@ -712,34 +719,35 @@ inline future<iobuf> read_iobuf_exactly(input_stream<char>& in, size_t n) {
                            b.append(std::move(buf));
                        });
                  })
-          .then([&b] { return make_ready_future<iobuf>(std::move(b)); });
+          .then([&b] { return ss::make_ready_future<iobuf>(std::move(b)); });
     });
 }
 
 inline std::vector<iobuf> iobuf_share_foreign_n(iobuf&& og, size_t n) {
-    const auto shard = this_shard_id();
+    const auto shard = ss::this_shard_id();
     std::vector<iobuf> retval(n);
     for (auto& frag : og) {
         auto tmpbuf = std::move(frag).release();
         char* src = tmpbuf.get_write();
         const size_t sz = tmpbuf.size();
-        deleter del = tmpbuf.release();
+        ss::deleter del = tmpbuf.release();
         for (iobuf& b : retval) {
-            deleter del_i = make_deleter([shard, d = del.share()]() mutable {
-                (void)smp::submit_to(shard, [d = std::move(d)] {});
-            });
-            b.append(temporary_buffer<char>(src, sz, std::move(del_i)));
+            ss::deleter del_i = ss::make_deleter(
+              [shard, d = del.share()]() mutable {
+                  (void)ss::smp::submit_to(shard, [d = std::move(d)] {});
+              });
+            b.append(ss::temporary_buffer<char>(src, sz, std::move(del_i)));
         }
     }
     return retval;
 }
 
-static inline scattered_message<char> iobuf_as_scattered(iobuf b) {
-    scattered_message<char> msg;
+static inline ss::scattered_message<char> iobuf_as_scattered(iobuf b) {
+    ss::scattered_message<char> msg;
     auto in = iobuf::iterator_consumer(b.cbegin(), b.cend());
     in.consume(b.size_bytes(), [&msg](const char* src, size_t sz) {
         msg.append_static(src, sz);
-        return stop_iteration::no;
+        return ss::stop_iteration::no;
     });
     msg.on_delete([b = std::move(b)] {});
     return msg;

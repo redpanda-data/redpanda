@@ -12,7 +12,7 @@ namespace finjector {
 struct probe {
     probe() = default;
     virtual ~probe() = default;
-    virtual std::vector<sstring> points() = 0;
+    virtual std::vector<ss::sstring> points() = 0;
     virtual int8_t method_for_point(std::string_view point) const = 0;
 
     [[gnu::always_inline]] bool operator()() const {
@@ -54,14 +54,14 @@ public:
     void register_probe(std::string_view, probe* p);
     void deregister_probe(std::string_view);
 
-    void set_exception(const sstring& module, const sstring& point);
-    void set_delay(const sstring& module, const sstring& point);
-    void set_termination(const sstring& module, const sstring& point);
-    void unset(const sstring& module, const sstring& point);
-    std::unordered_map<sstring, std::vector<sstring>> points() const;
+    void set_exception(const ss::sstring& module, const ss::sstring& point);
+    void set_delay(const ss::sstring& module, const ss::sstring& point);
+    void set_termination(const ss::sstring& module, const ss::sstring& point);
+    void unset(const ss::sstring& module, const ss::sstring& point);
+    std::unordered_map<ss::sstring, std::vector<ss::sstring>> points() const;
 
 private:
-    std::unordered_map<sstring, probe*> _probes;
+    std::unordered_map<ss::sstring, probe*> _probes;
 };
 
 honey_badger& shard_local_badger();

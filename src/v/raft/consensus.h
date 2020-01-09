@@ -23,9 +23,9 @@ public:
         model::term_id term{0};
     };
     enum class vote_state { follower, candidate, leader };
-    using leader_cb_t = noncopyable_function<void(group_id)>;
+    using leader_cb_t = ss::noncopyable_function<void(group_id)>;
     using append_entries_cb_t
-      = noncopyable_function<void(std::vector<entry>&&)>;
+      = ss::noncopyable_function<void(std::vector<entry>&&)>;
 
     consensus(
       model::node_id,
@@ -34,18 +34,18 @@ public:
       timeout_jitter,
       storage::log&,
       storage::log_append_config::fsync should_fsync,
-      io_priority_class io_priority,
+      ss::io_priority_class io_priority,
       model::timeout_clock::duration disk_timeout,
-      sharded<rpc::connection_cache>&,
+      ss::sharded<rpc::connection_cache>&,
       leader_cb_t);
 
     /// Initial call. Allow for internal state recovery
-    future<> start();
+    ss::future<> start();
 
     /// Stop all communications.
-    future<> stop();
+    ss::future<> stop();
 
-    future<vote_reply> vote(vote_request&& r) {
+    ss::future<vote_reply> vote(vote_request&& r) {
         return with_gate(_bg, [this, r = std::move(r)]() mutable {
             return with_semaphore(
               _op_sem, 1, [this, r = std::move(r)]() mutable {
@@ -53,7 +53,8 @@ public:
               });
         });
     }
-    future<append_entries_reply> append_entries(append_entries_request&& r) {
+    ss::future<append_entries_reply>
+    append_entries(append_entries_request&& r) {
         return with_gate(_bg, [this, r = std::move(r)]() mutable {
             return with_semaphore(
               _op_sem, 1, [this, r = std::move(r)]() mutable {
@@ -71,7 +72,7 @@ public:
     }
 
     /// This method adds a member to the group and performs configuration update
-    future<> add_group_member(model::broker node);
+    ss::future<> add_group_member(model::broker node);
 
     bool is_leader() const { return _vstate == vote_state::leader; }
     model::node_id self() const { return _self; }
@@ -81,8 +82,8 @@ public:
     clock_type::time_point last_heartbeat() const { return _hbeat; };
 
     void process_heartbeat(model::node_id, result<append_entries_reply>);
-    future<result<replicate_result>> replicate(raft::entry&&);
-    future<result<replicate_result>> replicate(std::vector<raft::entry>&&);
+    ss::future<result<replicate_result>> replicate(raft::entry&&);
+    ss::future<result<replicate_result>> replicate(std::vector<raft::entry>&&);
 
 private:
     friend replicate_entries_stm;
@@ -91,31 +92,33 @@ private:
     // all these private functions assume that we are under exclusive operations
     // via the _op_sem
     void step_down();
-    future<vote_reply> do_vote(vote_request&&);
-    future<append_entries_reply> do_append_entries(append_entries_request&&);
+    ss::future<vote_reply> do_vote(vote_request&&);
+    ss::future<append_entries_reply>
+    do_append_entries(append_entries_request&&);
 
     /// advances our pointer in the log
     append_entries_reply make_append_entries_reply(
       protocol_metadata, std::vector<storage::log::append_result>);
 
-    future<append_entries_reply>
+    ss::future<append_entries_reply>
       commit_entries(std::vector<entry>, append_entries_reply);
 
-    future<result<replicate_result>> do_replicate(std::vector<raft::entry>&&);
+    ss::future<result<replicate_result>>
+    do_replicate(std::vector<raft::entry>&&);
 
-    future<std::vector<storage::log::append_result>>
+    ss::future<std::vector<storage::log::append_result>>
     disk_append(std::vector<entry>&&);
 
-    sstring voted_for_filename() const;
+    ss::sstring voted_for_filename() const;
 
     /// used for timer callback to dispatch the vote_stm
     void dispatch_vote();
     /// Replicates configuration to other nodes,
     //  it have to be called under ops semaphore
-    future<> replicate_configuration(group_configuration);
+    ss::future<> replicate_configuration(group_configuration);
     /// After we append on disk, we must consume the entries
     /// to update our leader_id, nodes & learners configuration
-    future<> process_configurations(std::vector<entry>&&);
+    ss::future<> process_configurations(std::vector<entry>&&);
 
     void arm_vote_timeout();
 
@@ -124,16 +127,16 @@ private:
     timeout_jitter _jit;
     storage::log& _log;
     storage::log_append_config::fsync _should_fsync;
-    io_priority_class _io_priority;
+    ss::io_priority_class _io_priority;
     model::timeout_clock::duration _disk_timeout;
-    sharded<rpc::connection_cache>& _clients;
+    ss::sharded<rpc::connection_cache>& _clients;
     leader_cb_t _leader_notification;
 
     // _conf is set *both* in ctor with initial configuration
     // and it is overriden to the last one found the in the last log segment
     group_configuration _conf;
 
-    // read at `future<> start()`
+    // read at `ss::future<> start()`
     model::node_id _voted_for;
     protocol_metadata _meta;
 
@@ -149,11 +152,11 @@ private:
       _follower_stats;
 
     /// used to wait for background ops before shutting down
-    gate _bg;
+    ss::gate _bg;
 
     /// all raft operations must happen exclusively since the common case
     /// is for the operation to touch the disk
-    semaphore _op_sem{1};
+    ss::semaphore _op_sem{1};
     /// used for notifying when commits happened to log
     append_entries_cb_t _append_entries_notification;
     probe _probe;

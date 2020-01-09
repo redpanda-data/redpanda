@@ -45,7 +45,7 @@ class {{service_name}}_service : public rpc::service {
 public:
     class failure_probes;
 
-    {{service_name}}_service(scheduling_group sc, smp_service_group ssg)
+    {{service_name}}_service(ss::scheduling_group sc, ss::smp_service_group ssg)
        : _sc(sc), _ssg(ssg) {}
 
     {{service_name}}_service({{service_name}}_service&& o) noexcept
@@ -61,11 +61,11 @@ public:
 
     virtual ~{{service_name}}_service() noexcept = default;
 
-    scheduling_group& get_scheduling_group() override {
+    ss::scheduling_group& get_scheduling_group() override {
        return _sc;
     }
 
-    smp_service_group& get_smp_service_group() override {
+    ss::smp_service_group& get_smp_service_group() override {
        return _ssg;
     }
 
@@ -79,25 +79,25 @@ public:
     }
     {%- for method in methods %}
     /// \\brief {{method.input_type}} -> {{method.output_type}}
-    virtual future<rpc::netbuf>
-    raw_{{method.name}}(input_stream<char>& in, rpc::streaming_context& ctx) {
+    virtual ss::future<rpc::netbuf>
+    raw_{{method.name}}(ss::input_stream<char>& in, rpc::streaming_context& ctx) {
       auto fapply = execution_helper<{{method.input_type}}, {{method.output_type}}>();
       return fapply.exec(in, ctx, {{method.id}}, [this](
-          {{method.input_type}}&& t, rpc::streaming_context& ctx) -> future<{{method.output_type}}> {
+          {{method.input_type}}&& t, rpc::streaming_context& ctx) -> ss::future<{{method.output_type}}> {
           return {{method.name}}(std::move(t), ctx);
       });
     }
-    virtual future<{{method.output_type}}>
+    virtual ss::future<{{method.output_type}}>
     {{method.name}}({{method.input_type}}&&, rpc::streaming_context&) {
        throw std::runtime_error("unimplemented method");
     }
     {%- endfor %}
 private:
-    scheduling_group _sc;
-    smp_service_group _ssg;
+    ss::scheduling_group _sc;
+    ss::smp_service_group _ssg;
     std::array<rpc::method, {{methods|length}}> _methods{%raw %}{{{% endraw %}
       {%- for method in methods %}
-      rpc::method([this] (input_stream<char>& in, rpc::streaming_context& ctx) {
+      rpc::method([this] (ss::input_stream<char>& in, rpc::streaming_context& ctx) {
          return raw_{{method.name}}(in, ctx);
       }){{ "," if not loop.last }}
       {%- endfor %}
@@ -109,7 +109,7 @@ public:
       : _transport(t) {
     }
     {%- for method in methods %}
-    virtual inline future<rpc::client_context<{{method.output_type}}>>
+    virtual inline ss::future<rpc::client_context<{{method.output_type}}>>
     {{method.name}}({{method.input_type}}&& r, rpc::clock_type::time_point timeout) {
        return _transport.send_typed<{{method.input_type}}, {{method.output_type}}>(std::move(r), {{method.id}}, timeout);
     }
@@ -137,8 +137,8 @@ public:
         {%- endfor %}
           .default_match(0);
     }
-    std::vector<sstring> points() final {
-        std::vector<sstring> retval;
+    std::vector<ss::sstring> points() final {
+        std::vector<ss::sstring> retval;
         retval.reserve({{methods | length}});
         {%- for method in methods %}
         retval.push_back("{{method.name}}");
@@ -146,28 +146,28 @@ public:
         return retval;
     }
     {%- for method in methods %}
-    future<> {{method.name}}() {
+    ss::future<> {{method.name}}() {
         if(is_enabled()) {
           return do_{{method.name}}();
         }
-        return make_ready_future<>();
+        return ss::make_ready_future<>();
     }
     {%- endfor %}
 private:
     {%- for method in methods %}
-    [[gnu::noinline]] future<> do_{{method.name}}() {
+    [[gnu::noinline]] ss::future<> do_{{method.name}}() {
         if (_exception_methods & type(methods::{{method.name}})) {
-          return make_exception_future<>(std::runtime_error(
+          return ss::make_exception_future<>(std::runtime_error(
             "FailureInjector: "
             "{{namespace}}::{{service_name}}::{{method.name}}"));
         }
         if (_delay_methods & type(methods::{{method.name}})) {
-            return sleep(std::chrono::milliseconds(_prng() % 50));
+            return ss::sleep(std::chrono::milliseconds(_prng() % 50));
         }
         if (_termination_methods & type(methods::{{method.name}})) {
             std::terminate();
         }
-        return make_ready_future<>();
+        return ss::make_ready_future<>();
     }
     {%- endfor %}
 

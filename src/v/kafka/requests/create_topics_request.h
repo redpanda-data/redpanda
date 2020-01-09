@@ -23,7 +23,8 @@ public:
     static constexpr api_version min_supported = api_version(0);
     static constexpr api_version max_supported = api_version(3);
 
-    static future<response_ptr> process(request_context&&, smp_service_group);
+    static ss::future<response_ptr>
+    process(request_context&&, ss::smp_service_group);
 
 private:
     using validators = make_validator_types<
@@ -62,7 +63,7 @@ struct create_topics_response final {
     struct topic {
         model::topic name;
         error_code error;
-        std::optional<sstring> error_message; // >= v1
+        std::optional<ss::sstring> error_message; // >= v1
     };
 
     std::chrono::milliseconds throttle; // >= v2

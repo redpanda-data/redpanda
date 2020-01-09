@@ -1,8 +1,6 @@
 #include "rpc/server.h"
 
-#include "utils/unresolved_address.h"
 #include "platform/stop_signal.h"
-#include "rpc/connection_cache.h"
 #include "raft/consensus.h"
 #include "raft/heartbeat_manager.h"
 #include "raft/logger.h"
@@ -10,11 +8,12 @@
 #include "raft/tron/logger.h"
 #include "raft/tron/service.h"
 #include "raft/types.h"
-#include "seastarx.h"
+#include "rpc/connection_cache.h"
 #include "storage/log_manager.h"
 #include "storage/logger.h"
 #include "syschecks/syschecks.h"
 #include "utils/hdr_hist.h"
+#include "utils/unresolved_address.h"
 
 #include <seastar/core/app-template.hh>
 #include <seastar/core/sharded.hh>
@@ -35,11 +34,13 @@ namespace po = boost::program_options; // NOLINT
 
 void cli_opts(po::options_description_easy_init o) {
     o("ip",
-      po::value<sstring>()->default_value("127.0.0.1"),
+      po::value<ss::sstring>()->default_value("127.0.0.1"),
       "ip to listen to");
-    o("workdir", po::value<sstring>()->default_value("."), "work directory");
+    o("workdir",
+      po::value<ss::sstring>()->default_value("."),
+      "work directory");
     o("peers",
-      po::value<std::vector<sstring>>()->multitoken(),
+      po::value<std::vector<ss::sstring>>()->multitoken(),
       "--peers 1,127.0.0.1:11215 \n --peers 2,127.0.0.0.1:11216");
     o("port", po::value<uint16_t>()->default_value(20776), "port for service");
     o("heartbeat-timeout-ms",
@@ -47,26 +48,24 @@ void cli_opts(po::options_description_easy_init o) {
       "raft heartbeat timeout in milliseconds");
     o("node-id", po::value<int32_t>(), "node-id required");
     o("key",
-      po::value<sstring>()->default_value(""),
+      po::value<ss::sstring>()->default_value(""),
       "key for TLS seccured connection");
     o("cert",
-      po::value<sstring>()->default_value(""),
+      po::value<ss::sstring>()->default_value(""),
       "cert for TLS seccured connection");
 }
 
 struct simple_shard_lookup {
-    seastar::shard_id shard_for(raft::group_id g) {
-        return g() % seastar::smp::count;
-    }
+    ss::shard_id shard_for(raft::group_id g) { return g() % ss::smp::count; }
 };
 
 class simple_group_manager {
 public:
     simple_group_manager(
       model::node_id self,
-      sstring directory,
+      ss::sstring directory,
       std::chrono::milliseconds raft_timeout,
-      sharded<rpc::connection_cache>& clients)
+      ss::sharded<rpc::connection_cache>& clients)
       : _self(self)
       , _mngr(storage::log_config{
           .base_dir = directory,
@@ -77,18 +76,18 @@ public:
 
     raft::consensus& consensus_for(raft::group_id g) { return *_consensus; }
 
-    future<> start(raft::group_configuration init_cfg) {
+    ss::future<> start(raft::group_configuration init_cfg) {
         return _mngr.manage(_ntp)
           .then(
             [this, cfg = std::move(init_cfg)](storage::log_ptr log) mutable {
-                _consensus = make_lw_shared<raft::consensus>(
+                _consensus = ss::make_lw_shared<raft::consensus>(
                   _self,
                   raft::group_id(66),
                   std::move(cfg),
                   raft::timeout_jitter(_hbeats.election_duration()),
                   *log,
                   storage::log_append_config::fsync::yes,
-                  default_priority_class(),
+                  ss::default_priority_class(),
                   std::chrono::seconds(1),
                   _clients,
                   [this](raft::group_id g) {
@@ -99,7 +98,7 @@ public:
             })
           .then([this] { return _hbeats.start(); });
     }
-    future<> stop() {
+    ss::future<> stop() {
         return _consensus->stop()
           .then([this] { return _hbeats.stop(); })
           .then([this] { return _mngr.stop(); });
@@ -109,17 +108,17 @@ private:
     model::node_id _self;
     storage::log_manager _mngr;
     raft::heartbeat_manager _hbeats;
-    sharded<rpc::connection_cache>& _clients;
+    ss::sharded<rpc::connection_cache>& _clients;
     model::ntp _ntp{
       model::ns("master_control_program"),
       model::topic_partition{model::topic("tron"),
-                             model::partition_id(engine().cpu_id())}};
-    lw_shared_ptr<raft::consensus> _consensus;
+                             model::partition_id(ss::engine().cpu_id())}};
+    ss::lw_shared_ptr<raft::consensus> _consensus;
 };
 
 static std::pair<model::node_id, rpc::transport_configuration>
-extract_peer(sstring peer) {
-    std::vector<sstring> parts;
+extract_peer(ss::sstring peer) {
+    std::vector<ss::sstring> parts;
     parts.reserve(2);
     boost::split(parts, peer, boost::is_any_of(","));
     if (parts.size() != 2) {
@@ -127,31 +126,31 @@ extract_peer(sstring peer) {
     }
     int32_t n = boost::lexical_cast<int32_t>(parts[0]);
     rpc::transport_configuration cfg;
-    cfg.server_addr = ipv4_addr(parts[1]);
+    cfg.server_addr = ss::ipv4_addr(parts[1]);
     return {model::node_id(n), cfg};
 }
 
 static void initialize_connection_cache_in_thread(
-  sharded<rpc::connection_cache>& cache, std::vector<sstring> opts) {
+  ss::sharded<rpc::connection_cache>& cache, std::vector<ss::sstring> opts) {
     for (auto& i : opts) {
         auto [node, cfg] = extract_peer(i);
         auto shard = rpc::connection_cache::shard_for(node);
-        smp::submit_to(shard, [&cache, shard, n = node, config = cfg] {
+        ss::smp::submit_to(shard, [&cache, shard, n = node, config = cfg] {
             tronlog.info("shard: {} owns {}->{}", shard, n, config.server_addr);
             return cache.local().emplace(n, config);
         }).get();
     }
 }
 
-static model::broker broker_from_arg(sstring peer) {
-    std::vector<sstring> parts;
+static model::broker broker_from_arg(ss::sstring peer) {
+    std::vector<ss::sstring> parts;
     parts.reserve(2);
     boost::split(parts, peer, boost::is_any_of(","));
     if (parts.size() != 2) {
         throw std::runtime_error(fmt::format("Could not parse peer:{}", peer));
     }
     int32_t id = boost::lexical_cast<int32_t>(parts[0]);
-    std::vector<sstring> host_port;
+    std::vector<ss::sstring> host_port;
     host_port.reserve(2);
     boost::split(host_port, parts[1], boost::is_any_of(":"));
     if (host_port.size() != 2) {
@@ -163,24 +162,26 @@ static model::broker broker_from_arg(sstring peer) {
       unresolved_address(host_port[0], port),
       unresolved_address(host_port[0], port),
       std::nullopt,
-      model::broker_properties{.cores = smp::count});
+      model::broker_properties{.cores = ss::smp::count});
 }
 
 static raft::group_configuration
 group_cfg_from_args(const po::variables_map& opts) {
     raft::group_configuration cfg;
-    auto peers = opts["peers"].as<std::vector<sstring>>();
+    auto peers = opts["peers"].as<std::vector<ss::sstring>>();
     for (auto& arg : peers) {
         cfg.nodes.push_back(broker_from_arg(arg));
     }
     // add self
     cfg.nodes.push_back(model::broker(
       model::node_id(opts["node-id"].as<int32_t>()),
-      unresolved_address(opts["ip"].as<sstring>(), opts["port"].as<uint16_t>()),
-      unresolved_address(opts["ip"].as<sstring>(), opts["port"].as<uint16_t>()),
-      std::optional<sstring>(),
+      unresolved_address(
+        opts["ip"].as<ss::sstring>(), opts["port"].as<uint16_t>()),
+      unresolved_address(
+        opts["ip"].as<ss::sstring>(), opts["port"].as<uint16_t>()),
+      std::optional<ss::sstring>(),
       model::broker_properties{
-        .cores = smp::count,
+        .cores = ss::smp::count,
       }));
     return cfg;
 }
@@ -188,13 +189,13 @@ group_cfg_from_args(const po::variables_map& opts) {
 int main(int args, char** argv, char** env) {
     syschecks::initialize_intrinsics();
     std::setvbuf(stdout, nullptr, _IOLBF, 1024);
-    seastar::sharded<rpc::server> serv;
-    seastar::sharded<rpc::connection_cache> connection_cache;
-    seastar::sharded<simple_group_manager> group_manager;
-    seastar::app_template app;
+    ss::sharded<rpc::server> serv;
+    ss::sharded<rpc::connection_cache> connection_cache;
+    ss::sharded<simple_group_manager> group_manager;
+    ss::app_template app;
     cli_opts(app.add_options());
     return app.run(args, argv, [&] {
-        return seastar::async([&] {
+        return ss::async([&] {
 #ifndef NDEBUG
             std::cout.setf(std::ios::unitbuf);
 #endif
@@ -203,29 +204,30 @@ int main(int args, char** argv, char** env) {
             stop_signal app_signal;
             auto& cfg = app.configuration();
             connection_cache.start().get();
-            auto ccd = seastar::defer(
+            auto ccd = ss::defer(
               [&connection_cache] { connection_cache.stop().get(); });
             rpc::server_configuration scfg;
-            scfg.addrs.push_back(socket_address(
-              net::inet_address(cfg["ip"].as<sstring>()),
+            scfg.addrs.push_back(ss::socket_address(
+              ss::net::inet_address(cfg["ip"].as<ss::sstring>()),
               cfg["port"].as<uint16_t>()));
-            scfg.max_service_memory_per_core = memory::stats().total_memory()
-                                               * .7;
-            auto key = cfg["key"].as<sstring>();
-            auto cert = cfg["cert"].as<sstring>();
+            scfg.max_service_memory_per_core
+              = ss::memory::stats().total_memory() * .7;
+            auto key = cfg["key"].as<ss::sstring>();
+            auto cert = cfg["cert"].as<ss::sstring>();
             if (key != "" && cert != "") {
-                auto builder = tls::credentials_builder();
-                builder.set_dh_level(tls::dh_params::level::MEDIUM);
-                builder.set_x509_key_file(cert, key, tls::x509_crt_format::PEM)
+                auto builder = ss::tls::credentials_builder();
+                builder.set_dh_level(ss::tls::dh_params::level::MEDIUM);
+                builder
+                  .set_x509_key_file(cert, key, ss::tls::x509_crt_format::PEM)
                   .get();
                 scfg.credentials = std::move(builder);
             }
             initialize_connection_cache_in_thread(
-              connection_cache, cfg["peers"].as<std::vector<sstring>>());
+              connection_cache, cfg["peers"].as<std::vector<ss::sstring>>());
 
-            const sstring workdir = fmt::format(
+            const ss::sstring workdir = fmt::format(
               "{}/greetings-{}",
-              cfg["workdir"].as<sstring>(),
+              cfg["workdir"].as<ss::sstring>(),
               cfg["node-id"].as<int32_t>());
             tronlog.info("Work directory:{}", workdir);
 
@@ -239,7 +241,7 @@ int main(int args, char** argv, char** env) {
                 std::ref(connection_cache))
               .get();
             serv.start(scfg).get();
-            auto dserv = seastar::defer([&serv] { serv.stop().get(); });
+            auto dserv = ss::defer([&serv] { serv.stop().get(); });
             tronlog.info("registering service on all cores");
             simple_shard_lookup shard_table;
             serv
@@ -247,14 +249,14 @@ int main(int args, char** argv, char** env) {
                   s.register_service<raft::tron::service<
                     simple_group_manager,
                     simple_shard_lookup>>(
-                    default_scheduling_group(),
-                    default_smp_service_group(),
+                    ss::default_scheduling_group(),
+                    ss::default_smp_service_group(),
                     group_manager,
                     shard_table);
                   s.register_service<
                     raft::service<simple_group_manager, simple_shard_lookup>>(
-                    default_scheduling_group(),
-                    default_smp_service_group(),
+                    ss::default_scheduling_group(),
+                    ss::default_smp_service_group(),
                     group_manager,
                     shard_table);
               })

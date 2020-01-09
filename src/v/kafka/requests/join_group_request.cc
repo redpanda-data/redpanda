@@ -8,7 +8,7 @@
 namespace kafka {
 
 std::ostream& operator<<(std::ostream& o, const member_protocol& p) {
-    return fmt_print(o, "{}:{}", p.name, p.metadata.size());
+    return ss::fmt_print(o, "{}:{}", p.name, p.metadata.size());
 }
 
 void join_group_request::decode(request_context& ctx) {
@@ -16,7 +16,7 @@ void join_group_request::decode(request_context& ctx) {
 
     version = ctx.header().version;
     if (ctx.header().client_id) {
-        client_id = sstring(*ctx.header().client_id);
+        client_id = ss::sstring(*ctx.header().client_id);
     }
     group_id = kafka::group_id(reader.read_string());
     session_timeout = std::chrono::milliseconds(reader.read_int32());
@@ -62,7 +62,7 @@ void join_group_request::encode(
 }
 
 std::ostream& operator<<(std::ostream& o, const join_group_request& r) {
-    return fmt_print(
+    return ss::fmt_print(
       o,
       "group={} member={} group_inst={} proto_type={} timeout={}/{} v{} "
       "protocols={}",
@@ -101,12 +101,12 @@ void join_group_response::encode(const request_context& ctx, response& resp) {
 
 std::ostream&
 operator<<(std::ostream& o, const join_group_response::member_config& m) {
-    return fmt_print(
+    return ss::fmt_print(
       o, "{}:{}:{}", m.member_id, m.group_instance_id, m.metadata.size());
 }
 
 std::ostream& operator<<(std::ostream& o, const join_group_response& r) {
-    return fmt_print(
+    return ss::fmt_print(
       o,
       "error={} gen={} proto_name={} leader={} member={} members={}",
       r.error,
@@ -117,9 +117,9 @@ std::ostream& operator<<(std::ostream& o, const join_group_response& r) {
       r.members);
 }
 
-future<response_ptr>
-join_group_api::process(request_context&& ctx, smp_service_group g) {
-    return do_with(
+ss::future<response_ptr>
+join_group_api::process(request_context&& ctx, ss::smp_service_group g) {
+    return ss::do_with(
       remote(std::move(ctx)), [g](remote<request_context>& remote_ctx) {
           auto& ctx = remote_ctx.get();
           join_group_request request;
@@ -129,7 +129,7 @@ join_group_api::process(request_context&& ctx, smp_service_group g) {
             .then([&ctx](join_group_response&& reply) {
                 auto resp = std::make_unique<response>();
                 reply.encode(ctx, *resp.get());
-                return make_ready_future<response_ptr>(std::move(resp));
+                return ss::make_ready_future<response_ptr>(std::move(resp));
             });
       });
 }

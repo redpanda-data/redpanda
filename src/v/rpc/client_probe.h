@@ -57,9 +57,9 @@ public:
     void waiting_for_available_memory() { ++_requests_blocked_memory; }
 
     void setup_metrics(
-      metrics::metric_groups& mgs,
-      const std::optional<sstring>& service_name,
-      const socket_address& target_addr);
+      ss::metrics::metric_groups& mgs,
+      const std::optional<ss::sstring>& service_name,
+      const ss::socket_address& target_addr);
 
 private:
     uint64_t _requests_sent = 0;
@@ -76,7 +76,7 @@ private:
     uint32_t _server_correlation_errors = 0;
     uint32_t _client_correlation_errors = 0;
     uint32_t _requests_blocked_memory = 0;
-    metrics::metric_groups _metrics;
+    ss::metrics::metric_groups _metrics;
 
     friend std::ostream&
     operator<<(std::ostream& o, const rpc::client_probe& p);

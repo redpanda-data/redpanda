@@ -31,21 +31,21 @@ SEASTAR_THREAD_TEST_CASE(write_and_read_value_test) {
     roundtrip_test(true, bool, &request_reader::read_bool);
     roundtrip_test(false, bool, &request_reader::read_bool);
     roundtrip_test(
-      sstring{"test_string"}, sstring, &request_reader::read_string);
+      ss::sstring{"test_string"}, ss::sstring, &request_reader::read_string);
     roundtrip_test(
-      sstring{"test_string"},
+      ss::sstring{"test_string"},
       std::string_view,
       &request_reader::read_string_view);
     roundtrip_test(
-      sstring("test_string"),
-      std::optional<sstring>,
+      ss::sstring("test_string"),
+      std::optional<ss::sstring>,
       &request_reader::read_nullable_string);
     roundtrip_test(
-      static_cast<std::optional<sstring>>(std::nullopt),
-      std::optional<sstring>,
+      static_cast<std::optional<ss::sstring>>(std::nullopt),
+      std::optional<ss::sstring>,
       &request_reader::read_nullable_string);
     roundtrip_test(
-      sstring("test_string"),
+      ss::sstring("test_string"),
       std::optional<std::string_view>,
       &request_reader::read_nullable_string_view);
     roundtrip_test(
@@ -63,5 +63,5 @@ SEASTAR_THREAD_TEST_CASE(write_and_read_value_test) {
       bytes_opt,
       &request_reader::read_nullable_bytes);
     roundtrip_test(
-      model::topic{"test_topic"}, sstring, &request_reader::read_string);
+      model::topic{"test_topic"}, ss::sstring, &request_reader::read_string);
 }

@@ -30,8 +30,8 @@ public:
     /// (2) while processing leadership replies
     /// it _does not_ hold the semaphore for the full vote to allow for
     /// staggering processing/vote interruption
-    future<> vote();
-    future<> wait();
+    ss::future<> vote();
+    ss::future<> wait();
 
 private:
     struct vmeta {
@@ -54,22 +54,22 @@ private:
 
     friend std::ostream& operator<<(std::ostream&, const vmeta&);
 
-    future<> do_vote();
-    future<> self_vote();
-    future<> dispatch_one(model::node_id);
-    future<result<vote_reply>> do_dispatch_one(model::node_id);
+    ss::future<> do_vote();
+    ss::future<> self_vote();
+    ss::future<> dispatch_one(model::node_id);
+    ss::future<result<vote_reply>> do_dispatch_one(model::node_id);
     std::pair<int32_t, int32_t> partition_count() const;
-    future<> process_replies();
-    future<> replicate_config_as_new_leader();
+    ss::future<> process_replies();
+    ss::future<> replicate_config_as_new_leader();
     // args
     consensus* _ptr;
     // make sure to always make a copy; never move() this struct
     vote_request _req;
 
     // for sequentiality/progress
-    seastar::semaphore _sem;
+    ss::semaphore _sem;
     // for safety to wait for all bg ops
-    seastar::gate _vote_bg;
+    ss::gate _vote_bg;
     std::vector<vmeta> _replies;
 };
 

@@ -26,6 +26,6 @@ private:
     response_writer _writer;
 };
 
-using response_ptr = foreign_ptr<std::unique_ptr<response>>;
+using response_ptr = ss::foreign_ptr<std::unique_ptr<response>>;
 
 } // namespace kafka

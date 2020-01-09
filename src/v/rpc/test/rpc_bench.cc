@@ -43,7 +43,7 @@ inline big_t gen_big(size_t data_size, size_t chunk_size) {
     const size_t chunks = data_size / chunk_size;
     big_t ret{.s = small_t{}};
     for (size_t i = 0; i < chunks; ++i) {
-        auto c = temporary_buffer<char>(chunk_size);
+        auto c = ss::temporary_buffer<char>(chunk_size);
         ret.data.append(std::move(c));
     }
     return ret;
@@ -58,7 +58,7 @@ inline void serialize_big(size_t data_size, size_t chunk_size) {
     perf_tests::stop_measuring_time();
 }
 
-inline future<> deserialize_big(size_t data_size, size_t chunk_size) {
+inline ss::future<> deserialize_big(size_t data_size, size_t chunk_size) {
     big_t b = gen_big(data_size, chunk_size);
     auto o = iobuf();
     serialize(o, std::move(b));

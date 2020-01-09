@@ -25,24 +25,24 @@ log::log(model::ntp ntp, log_manager& manager, log_set segs) noexcept
     }
 }
 
-sstring log::base_directory() const {
+ss::sstring log::base_directory() const {
     return fmt::format("{}/{}", _manager.config().base_dir, _ntp.path());
 }
 
-future<> log::close() {
-    auto active = make_ready_future<>();
+ss::future<> log::close() {
+    auto active = ss::make_ready_future<>();
     if (_appender) {
         // flush + truncate + close
         active = _appender->close();
     }
     return active.then([this] {
-        return parallel_for_each(
+        return ss::parallel_for_each(
           _segs, [](segment_reader_ptr& seg) { return seg->close(); });
     });
 }
 
-future<> log::new_segment(
-  model::offset o, model::term_id term, const io_priority_class& pc) {
+ss::future<> log::new_segment(
+  model::offset o, model::term_id term, const ss::io_priority_class& pc) {
     return _manager.make_log_segment(_ntp, o, term, pc)
       .then([this, pc](log_manager::log_handles handles) {
           _active_segment = std::move(handles.reader);
@@ -52,9 +52,9 @@ future<> log::new_segment(
       });
 }
 
-future<log::append_result>
+ss::future<log::append_result>
 log::do_append(model::record_batch_reader&& reader, log_append_config config) {
-    auto f = make_ready_future<>();
+    auto f = ss::make_ready_future<>();
     if (__builtin_expect(!_active_segment, false)) {
         // FIXME: We need to persist the last offset somewhere.
         auto offset = _segs.size() > 0
@@ -64,7 +64,7 @@ log::do_append(model::record_batch_reader&& reader, log_append_config config) {
     }
     return f.then(
       [this, reader = std::move(reader), config = std::move(config)]() mutable {
-          return do_with(
+          return ss::do_with(
             std::move(reader),
             [this,
              config = std::move(config)](model::record_batch_reader& reader) {
@@ -82,7 +82,7 @@ log::do_append(model::record_batch_reader&& reader, log_append_config config) {
                           model::offset last_offset) {
                       _tracker.update_dirty_offset(last_offset);
                       _active_segment->set_last_written_offset(last_offset);
-                      auto f = make_ready_future<>();
+                      auto f = ss::make_ready_future<>();
                       /// fsync, means we fsync _every_ record_batch
                       /// most API's will want to batch the fsync, at least
                       /// to the record_batch_reader level
@@ -96,7 +96,7 @@ log::do_append(model::record_batch_reader&& reader, log_append_config config) {
             });
       });
 }
-future<> log::flush() {
+ss::future<> log::flush() {
     return _appender->flush().then([this] {
         _tracker.update_committed_offset(_tracker.dirty_offset());
         _active_segment->set_last_written_offset(_tracker.committed_offset());
@@ -104,16 +104,16 @@ future<> log::flush() {
           _appender->file_byte_offset());
     });
 }
-future<> log::do_roll() {
+ss::future<> log::do_roll() {
     return flush().then([this] { return _appender->close(); }).then([this] {
         auto offset = _tracker.committed_offset() + model::offset(1);
         stlog.trace("Rolling log segment offset {}, term {}", offset, _term);
         return new_segment(offset, _term, _appender->priority_class());
     });
 }
-future<> log::maybe_roll(model::offset current_offset) {
+ss::future<> log::maybe_roll(model::offset current_offset) {
     if (_appender->file_byte_offset() < _manager.max_segment_size()) {
-        return make_ready_future<>();
+        return ss::make_ready_future<>();
     }
     _tracker.update_dirty_offset(current_offset);
     return do_roll();
@@ -124,7 +124,7 @@ model::record_batch_reader log::make_reader(log_reader_config config) {
       _segs, _tracker, std::move(config), _probe);
 }
 
-future<> log::do_truncate(model::offset o, model::term_id term) {
+ss::future<> log::do_truncate(model::offset o, model::term_id term) {
     // 1. update metadata
     // 2. get a list of segments to drop
     // 3. perform drop in background for all
@@ -139,7 +139,7 @@ future<> log::do_truncate(model::offset o, model::term_id term) {
     _tracker.update_committed_offset(o);
 
     // 2.
-    std::vector<sstring> names_to_delete;
+    std::vector<ss::sstring> names_to_delete;
     for (auto s : _segs) {
         if (s->term() > term) {
             stlog.info("do_truncate() full file:{}", s->get_filename());
@@ -149,7 +149,7 @@ future<> log::do_truncate(model::offset o, model::term_id term) {
 
     //  3.
     auto erased = _segs.remove(std::move(names_to_delete));
-    auto f = make_ready_future<>();
+    auto f = ss::make_ready_future<>();
     // do not roll when we do not have segment opened
     if (!_appender) {
         return f;

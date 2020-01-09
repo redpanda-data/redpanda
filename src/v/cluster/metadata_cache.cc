@@ -60,7 +60,7 @@ void metadata_cache::update_brokers_cache(
     _brokers_cache.clear();
     for (auto& b : brokers) {
         auto id = b.id();
-        _brokers_cache.emplace(id, seastar::make_lw_shared(std::move(b)));
+        _brokers_cache.emplace(id, ss::make_lw_shared(std::move(b)));
     }
 }
 

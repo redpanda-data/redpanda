@@ -5,9 +5,9 @@
 #include <seastar/testing/thread_test_case.hh>
 
 SEASTAR_THREAD_TEST_CASE(test_free_on_right_cpu) {
-    auto p = smp::submit_to(1, [] { return remote<int>(10); }).get0();
+    auto p = ss::smp::submit_to(1, [] { return remote<int>(10); }).get0();
     p.get() += 1;
-    smp::submit_to(1, [p = std::move(p)]() mutable {
+    ss::smp::submit_to(1, [p = std::move(p)]() mutable {
         auto local = std::move(p);
         (void)local;
     }).get();
@@ -15,11 +15,11 @@ SEASTAR_THREAD_TEST_CASE(test_free_on_right_cpu) {
 
 struct obj_with_foreign_ptr {
     int x;
-    foreign_ptr<const char*> ptr;
+    ss::foreign_ptr<const char*> ptr;
 
     obj_with_foreign_ptr() = default;
 
-    obj_with_foreign_ptr(int x, foreign_ptr<const char*> ptr)
+    obj_with_foreign_ptr(int x, ss::foreign_ptr<const char*> ptr)
       : x(x)
       , ptr(std::move(ptr)) {}
 
@@ -37,11 +37,11 @@ struct obj_with_foreign_ptr {
 };
 
 SEASTAR_THREAD_TEST_CASE(test_free_on_right_cpu_with_foreign_ptr) {
-    auto p = smp::submit_to(1, [] {
-                 return remote<obj_with_foreign_ptr>(0, make_foreign("la"));
+    auto p = ss::smp::submit_to(1, [] {
+                 return remote<obj_with_foreign_ptr>(0, ss::make_foreign("la"));
              }).get0();
     p.get().x += 1;
-    smp::submit_to(1, [p = std::move(p)]() mutable {
+    ss::smp::submit_to(1, [p = std::move(p)]() mutable {
         auto local = std::move(p);
         (void)local;
     }).get();

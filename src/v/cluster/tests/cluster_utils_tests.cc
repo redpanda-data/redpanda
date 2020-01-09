@@ -8,7 +8,7 @@
 #include <seastar/testing/thread_test_case.hh>
 
 cluster::broker_ptr test_broker(int32_t id) {
-    return make_lw_shared<model::broker>(
+    return ss::make_lw_shared<model::broker>(
       model::node_id{id},
       unresolved_address("127.0.0.1", 9092),
       unresolved_address("127.0.0.1", 1234),
@@ -23,14 +23,14 @@ SEASTAR_THREAD_TEST_CASE(test_group_cfg_difference) {
     auto broker_4 = test_broker(4); // new
     auto broker_5 = test_broker(5); // updated
 
-    cluster::broker_ptr broker_2_updated = make_lw_shared<model::broker>(
+    cluster::broker_ptr broker_2_updated = ss::make_lw_shared<model::broker>(
       model::node_id{2},
       unresolved_address("127.0.0.1", 9092),
       unresolved_address("172.168.1.1", 1234),
       std::nullopt,
       model::broker_properties{.cores = 32});
 
-    cluster::broker_ptr broker_5_updated = make_lw_shared<model::broker>(
+    cluster::broker_ptr broker_5_updated = ss::make_lw_shared<model::broker>(
       model::node_id{5},
       unresolved_address("127.0.0.1", 9092),
       unresolved_address("127.0.0.1", 6060),

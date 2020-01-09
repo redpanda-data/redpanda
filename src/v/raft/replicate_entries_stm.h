@@ -1,12 +1,13 @@
 #pragma once
 
 #include "raft/consensus.h"
+#include "seastarx.h"
 
 namespace raft {
 
 /// A single-shot class. Utility method with state
 /// Use with a lw_shared_ptr like so:
-/// auto ptr = make_lw_shared<replicate_entries_stm>(..);
+/// auto ptr = ss::make_lw_shared<replicate_entries_stm>(..);
 /// return ptr->apply()
 ///            .then([ptr]{
 ///                 // wait in background.
@@ -20,10 +21,10 @@ public:
 
     /// assumes that this is operating under the consensus::_op_sem lock
     /// returns after majority have responded
-    future<result<replicate_result>> apply();
+    ss::future<result<replicate_result>> apply();
 
     /// waits for the remaining background futures
-    future<> wait();
+    ss::future<> wait();
 
 private:
     struct retry_meta {
@@ -57,14 +58,14 @@ private:
 
     friend std::ostream& operator<<(std::ostream&, const retry_meta&);
 
-    future<std::vector<append_entries_request>> share_request_n(size_t n);
+    ss::future<std::vector<append_entries_request>> share_request_n(size_t n);
 
-    future<> dispatch_one(retry_meta&);
+    ss::future<> dispatch_one(retry_meta&);
 
-    future<result<append_entries_reply>>
+    ss::future<result<append_entries_reply>>
       do_dispatch_one(model::node_id, append_entries_request);
 
-    future<result<void>> process_replies();
+    ss::future<result<void>> process_replies();
 
     std::pair<int32_t, int32_t> partition_count() const;
 
@@ -72,11 +73,11 @@ private:
     int32_t _max_retries;
     /// we keep a copy around until we finish the retries
     append_entries_request _req;
-    semaphore _share_sem;
+    ss::semaphore _share_sem;
     // list to all nodes & retries per node
-    semaphore _sem;
+    ss::semaphore _sem;
     std::vector<retry_meta> _replies;
-    seastar::gate _req_bg;
+    ss::gate _req_bg;
 };
 
 } // namespace raft

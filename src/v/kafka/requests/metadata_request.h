@@ -18,7 +18,8 @@ struct metadata_api final {
     static constexpr api_version min_supported = api_version(0);
     static constexpr api_version max_supported = api_version(7);
 
-    static future<response_ptr> process(request_context&&, smp_service_group);
+    static ss::future<response_ptr>
+    process(request_context&&, ss::smp_service_group);
 };
 
 struct metadata_request {
@@ -38,9 +39,9 @@ std::ostream& operator<<(std::ostream&, const metadata_request&);
 struct metadata_response {
     struct broker {
         model::node_id node_id;
-        sstring host;
+        ss::sstring host;
         int32_t port;
-        std::optional<sstring> rack; // version >= 1
+        std::optional<ss::sstring> rack; // version >= 1
     };
 
     struct partition {
@@ -65,8 +66,8 @@ struct metadata_response {
 
     std::chrono::milliseconds throttle_time; // version >= 3
     std::vector<broker> brokers;
-    std::optional<sstring> cluster_id; // version >= 2
-    model::node_id controller_id;      // version >= 1
+    std::optional<ss::sstring> cluster_id; // version >= 2
+    model::node_id controller_id;          // version >= 1
     std::vector<topic> topics;
     int32_t cluster_authorized_operations = 0; // version >= 8
 

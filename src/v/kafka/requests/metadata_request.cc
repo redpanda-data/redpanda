@@ -43,7 +43,7 @@ void metadata_request::encode(response_writer& writer, api_version version) {
 }
 
 std::ostream& operator<<(std::ostream& o, const metadata_request& r) {
-    return fmt_print(
+    return ss::fmt_print(
       o,
       "topics {} auto_creation {} inc_cluster_aut_ops {} inc_topic_aut_ops {}",
       r.topics,
@@ -227,7 +227,7 @@ std::ostream& operator<<(std::ostream& o, const metadata_response::broker& b) {
 
 std::ostream&
 operator<<(std::ostream& o, const metadata_response::partition& p) {
-    return fmt_print(
+    return ss::fmt_print(
       o,
       "err_code {} idx {} leader {} leader_epoch {} replicas {} offline {}",
       p.err_code,
@@ -262,9 +262,9 @@ std::ostream& operator<<(std::ostream& o, const metadata_response& resp) {
       resp.cluster_authorized_operations);
 }
 
-future<response_ptr>
-metadata_api::process(request_context&& ctx, smp_service_group g) {
-    return do_with(std::move(ctx), [g](request_context& ctx) {
+ss::future<response_ptr>
+metadata_api::process(request_context&& ctx, ss::smp_service_group g) {
+    return ss::do_with(std::move(ctx), [g](request_context& ctx) {
         metadata_request request;
         request.decode(ctx);
         auto f = ctx.cntrl_dispatcher().dispatch_to_controller(
@@ -342,7 +342,7 @@ metadata_api::process(request_context&& ctx, smp_service_group g) {
               reply.controller_id = std::move(leader_id);
               response resp;
               reply.encode(ctx, resp);
-              return make_ready_future<response_ptr>(
+              return ss::make_ready_future<response_ptr>(
                 std::make_unique<response>(std::move(resp)));
           });
     });

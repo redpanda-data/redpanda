@@ -30,7 +30,7 @@ vote_stm::~vote_stm() {
         std::terminate();
     }
 }
-future<result<vote_reply>> vote_stm::do_dispatch_one(model::node_id n) {
+ss::future<result<vote_reply>> vote_stm::do_dispatch_one(model::node_id n) {
     using ret_t = result<vote_reply>;
     if (n == _ptr->_self) {
         // 5.2.1. 3
@@ -46,23 +46,23 @@ future<result<vote_reply>> vote_stm::do_dispatch_one(model::node_id n) {
                            _ptr->voted_for_filename(),
                            {_ptr->_self, model::term_id(_req.term)})
                     .then([reply = std::move(reply)] {
-                        return make_ready_future<ret_t>(std::move(reply));
+                        return ss::make_ready_future<ret_t>(std::move(reply));
                     });
               });
         }
-        return make_ready_future<ret_t>(std::move(reply));
+        return ss::make_ready_future<ret_t>(std::move(reply));
     }
     auto shard = rpc::connection_cache::shard_for(n);
-    return smp::submit_to(shard, [this, n]() mutable {
+    return ss::smp::submit_to(shard, [this, n]() mutable {
         auto& local = _ptr->_clients.local();
         if (!local.contains(n)) {
-            return make_ready_future<ret_t>(errc::missing_tcp_client);
+            return ss::make_ready_future<ret_t>(errc::missing_tcp_client);
         }
         // make a local copy of `this->_req`
         return local.get(n)->get_connected().then(
           [this, r = _req](result<rpc::transport*> t) mutable {
               if (!t) {
-                  return make_ready_future<ret_t>(t.error());
+                  return ss::make_ready_future<ret_t>(t.error());
               }
               auto tout = clock_type::now() + _ptr->_jit.base_duration();
               auto f
@@ -71,14 +71,14 @@ future<result<vote_reply>> vote_stm::do_dispatch_one(model::node_id n) {
                        errc::timeout, std::move(f))
                 .then([](auto r) {
                     if (!r) {
-                        return make_ready_future<ret_t>(r.error());
+                        return ss::make_ready_future<ret_t>(r.error());
                     }
-                    return make_ready_future<ret_t>(r.value().data); // copy
+                    return ss::make_ready_future<ret_t>(r.value().data); // copy
                 });
           });
     });
 }
-future<> vote_stm::dispatch_one(model::node_id n) {
+ss::future<> vote_stm::dispatch_one(model::node_id n) {
     return with_gate(_vote_bg, [this, n] {
         return with_semaphore(_sem, 1, [this, n] {
             return do_dispatch_one(n).then([this, n](result<vote_reply> r) {
@@ -107,7 +107,7 @@ std::pair<int32_t, int32_t> vote_stm::partition_count() const {
     }
     return {success, failure};
 }
-future<> vote_stm::vote() {
+ss::future<> vote_stm::vote() {
     return with_semaphore(
              _ptr->_op_sem,
              1,
@@ -131,7 +131,7 @@ future<> vote_stm::vote() {
              })
       .then([this] { return do_vote(); });
 }
-future<> vote_stm::do_vote() {
+ss::future<> vote_stm::do_vote() {
     auto& cfg = _ptr->_conf;
     for (auto& n : cfg.nodes) {
         (void)dispatch_one(n.id()); // background
@@ -140,7 +140,7 @@ future<> vote_stm::do_vote() {
     const size_t majority = cfg.majority();
     return _sem.wait(majority)
       .then([this, majority] {
-          return do_until(
+          return ss::do_until(
             [this, majority] {
                 auto [success, failure] = partition_count();
                 return success >= majority || failure >= majority;
@@ -155,9 +155,9 @@ future<> vote_stm::do_vote() {
             _ptr->_op_sem, 1, [this] { return process_replies(); });
       });
 }
-future<> vote_stm::wait() { return _vote_bg.close(); }
+ss::future<> vote_stm::wait() { return _vote_bg.close(); }
 
-future<> vote_stm::process_replies() {
+ss::future<> vote_stm::process_replies() {
     const size_t majority = _ptr->_conf.majority();
     auto [success, failure] = partition_count();
     if (_ptr->_vstate != consensus::vote_state::candidate) {
@@ -165,7 +165,7 @@ future<> vote_stm::process_replies() {
           "No longer a candidate, ignoring vote replies: {}/{}",
           success,
           _ptr->_conf.nodes.size());
-        return make_ready_future<>();
+        return ss::make_ready_future<>();
     }
     if (success < majority) {
         raftlog.info(
@@ -174,7 +174,7 @@ future<> vote_stm::process_replies() {
           _ptr->_conf.nodes.size(),
           majority);
         _ptr->_vstate = consensus::vote_state::follower;
-        return make_ready_future<>();
+        return ss::make_ready_future<>();
     }
     std::vector<model::node_id> acks;
     acks.reserve(success);
@@ -197,7 +197,7 @@ future<> vote_stm::process_replies() {
       [this] { _ptr->_leader_notification(group_id(_ptr->_meta.group)); });
 }
 
-future<> vote_stm::replicate_config_as_new_leader() {
+ss::future<> vote_stm::replicate_config_as_new_leader() {
     return _ptr->replicate_configuration(_ptr->_conf);
 }
 } // namespace raft

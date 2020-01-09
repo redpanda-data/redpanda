@@ -1,7 +1,6 @@
 #define BOOST_TEST_MODULE kafka group
 #include "config/configuration.h"
 #include "kafka/groups/group.h"
-#include "seastarx.h"
 #include "utils/to_string.h"
 
 #include <seastar/core/sstring.hh>
@@ -12,14 +11,14 @@
 
 namespace kafka {
 
-static auto split_member_id(const sstring& m) {
+static auto split_member_id(const ss::sstring& m) {
     auto p = m.find("-");
     auto id = m.substr(0, p);
     auto uuid = m.substr(p + 1);
     return std::tuple(id, uuid);
 }
 
-static bool is_uuid(const sstring& uuid) {
+static bool is_uuid(const ss::sstring& uuid) {
     try {
         boost::uuids::string_generator g;
         auto _ = g(uuid.c_str());
@@ -43,8 +42,8 @@ static const std::vector<member_protocol> test_protos = {
   {kafka::protocol_name("n0"), "d0"}, {kafka::protocol_name("n1"), "d1"}};
 
 static member_ptr get_member(
-  sstring id = "m", std::vector<member_protocol> protos = test_protos) {
-    return make_lw_shared<group_member>(
+  ss::sstring id = "m", std::vector<member_protocol> protos = test_protos) {
+    return ss::make_lw_shared<group_member>(
       kafka::member_id(id),
       kafka::group_id("g"),
       kafka::group_instance_id("i"),
@@ -137,7 +136,7 @@ BOOST_AUTO_TEST_CASE(rebalance_timeout_throws_when_empty) {
 BOOST_AUTO_TEST_CASE(rebalance_timeout) {
     auto g = get();
 
-    auto m0 = make_lw_shared<group_member>(
+    auto m0 = ss::make_lw_shared<group_member>(
       kafka::member_id("m"),
       kafka::group_id("g"),
       kafka::group_instance_id("i"),
@@ -146,7 +145,7 @@ BOOST_AUTO_TEST_CASE(rebalance_timeout) {
       kafka::protocol_type("p"),
       test_protos);
 
-    auto m1 = make_lw_shared<group_member>(
+    auto m1 = ss::make_lw_shared<group_member>(
       kafka::member_id("n"),
       kafka::group_id("g"),
       kafka::group_instance_id("i"),
@@ -349,7 +348,7 @@ BOOST_AUTO_TEST_CASE(supports_protocols) {
     BOOST_TEST(g.supports_protocols(r));
 
     // adding first member will initialize some group state
-    auto m = make_lw_shared<group_member>(
+    auto m = ss::make_lw_shared<group_member>(
       kafka::member_id("m"),
       kafka::group_id("g"),
       kafka::group_instance_id("i"),
@@ -377,7 +376,7 @@ BOOST_AUTO_TEST_CASE(supports_protocols) {
     BOOST_TEST(g.supports_protocols(r));
 
     // add member with disjoint set of protocols
-    auto m2 = make_lw_shared<group_member>(
+    auto m2 = ss::make_lw_shared<group_member>(
       kafka::member_id("n"),
       kafka::group_id("g"),
       kafka::group_instance_id("i"),
@@ -423,14 +422,14 @@ BOOST_AUTO_TEST_CASE(leader_rejoined) {
 BOOST_AUTO_TEST_CASE(generate_member_id) {
     join_group_request r;
 
-    r.client_id = sstring("dog");
+    r.client_id = ss::sstring("dog");
     r.group_instance_id = std::nullopt;
     auto m = group::generate_member_id(r);
     auto [id, uuid] = split_member_id(m);
     BOOST_TEST(id == "dog");
     BOOST_TEST(is_uuid(uuid));
 
-    r.client_id = sstring("dog");
+    r.client_id = ss::sstring("dog");
     r.group_instance_id = kafka::group_instance_id("cat");
     m = group::generate_member_id(r);
     std::tie(id, uuid) = split_member_id(m);

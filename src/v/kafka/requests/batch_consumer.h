@@ -2,6 +2,7 @@
 #include "bytes/iobuf.h"
 #include "kafka/requests/response_writer.h"
 #include "model/record.h"
+#include "seastarx.h"
 
 namespace kafka {
 
@@ -23,9 +24,10 @@ public:
       : _buf(std::move(o._buf))
       , _wr(_buf) {}
 
-    future<stop_iteration> operator()(model::record_batch&& batch) {
+    ss::future<ss::stop_iteration> operator()(model::record_batch&& batch) {
         write_batch(std::move(batch));
-        return make_ready_future<stop_iteration>(stop_iteration::no);
+        return ss::make_ready_future<ss::stop_iteration>(
+          ss::stop_iteration::no);
     }
 
     iobuf end_of_stream() { return std::move(_buf); }

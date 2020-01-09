@@ -33,9 +33,9 @@ public:
 };
 
 template<typename T>
-future<T> deserialize(source& in) {
+ss::future<T> deserialize(source& in) {
     constexpr bool is_optional = is_std_optional_v<T>;
-    constexpr bool is_sstring = std::is_same_v<T, sstring>;
+    constexpr bool is_sstring = std::is_same_v<T, ss::sstring>;
     constexpr bool is_vector = is_std_vector_v<T>;
     constexpr bool is_iobuf = std::is_same_v<T, iobuf>;
     constexpr bool is_standard_layout = std::is_standard_layout_v<T>;
@@ -48,25 +48,26 @@ future<T> deserialize(source& in) {
         using value_type = typename std::decay_t<T>::value_type;
         return deserialize<int8_t>(in).then([&in](int8_t is_set) {
             if (is_set == 0) {
-                return make_ready_future<T>();
+                return ss::make_ready_future<T>();
             }
-            return deserialize<value_type>(in).then(
-              [](value_type t) { return make_ready_future<T>(std::move(t)); });
+            return deserialize<value_type>(in).then([](value_type t) {
+                return ss::make_ready_future<T>(std::move(t));
+            });
         });
     } else if constexpr (is_sstring) {
         return deserialize<int32_t>(in).then([&in](int32_t sz) {
             return in.read_exactly(sz).then(
-              [&in, sz](temporary_buffer<char> buf) {
+              [&in, sz](ss::temporary_buffer<char> buf) {
                   if (buf.size() != static_cast<size_t>(sz)) {
                       throw deserialize_invalid_argument(buf.size(), sz);
                   }
-                  return sstring(buf.get(), sz);
+                  return ss::sstring(buf.get(), sz);
               });
         });
     } else if constexpr (is_vector) {
         using value_type = typename std::decay_t<T>::value_type;
         return deserialize<int32_t>(in).then([&in](int32_t w) {
-            return do_with(
+            return ss::do_with(
               boost::irange(0, static_cast<int>(w)), [&in](auto& r) {
                   return copy_range<T>(
                     r, [&in](int) { return deserialize<value_type>(in); });
@@ -85,17 +86,18 @@ future<T> deserialize(source& in) {
         });
     } else if constexpr (is_standard_layout && is_trivially_copyable) {
         constexpr const size_t sz = sizeof(T);
-        return in.read_exactly(sz).then([&in, sz](temporary_buffer<char> buf) {
-            if (__builtin_expect(buf.size() != sz, false)) {
-                throw deserialize_invalid_argument(buf.size(), sz);
-            }
-            T t{};
-            std::copy_n(buf.get(), sz, reinterpret_cast<char*>(&t));
-            return t;
-        });
+        return in.read_exactly(sz).then(
+          [&in, sz](ss::temporary_buffer<char> buf) {
+              if (__builtin_expect(buf.size() != sz, false)) {
+                  throw deserialize_invalid_argument(buf.size(), sz);
+              }
+              T t{};
+              std::copy_n(buf.get(), sz, reinterpret_cast<char*>(&t));
+              return t;
+          });
     } else if constexpr (is_standard_layout) {
-        return do_with(T{}, [&in](T& t) mutable {
-            auto f = make_ready_future<>();
+        return ss::do_with(T{}, [&in](T& t) mutable {
+            auto f = ss::make_ready_future<>();
             for_each_field(t, [&](auto& field) mutable {
                 f = f.then([&in, &field]() mutable {
                     return deserialize<std::decay_t<decltype(field)>>(in).then(
@@ -116,16 +118,16 @@ template<
   typename T,
   typename Tag,
   typename U = std::enable_if_t<std::is_arithmetic_v<T>, T>>
-future<named_type<U, Tag>> deserialize(source& in) {
+ss::future<named_type<U, Tag>> deserialize(source& in) {
     return deserialize<U>(in).then(
       [](U u) { return named_type<U, Tag>{std::move(u)}; });
 }
 
 template<typename T>
-future<T> deserialize(iobuf&& fb) {
+ss::future<T> deserialize(iobuf&& fb) {
     auto in = make_iobuf_input_stream(std::move(fb));
-    return do_with(std::move(in), [](input_stream<char>& in) {
-        return do_with(rpc::source(in), [](rpc::source& src) {
+    return ss::do_with(std::move(in), [](ss::input_stream<char>& in) {
+        return ss::do_with(rpc::source(in), [](rpc::source& src) {
             return rpc::deserialize<T>(src);
         });
     });

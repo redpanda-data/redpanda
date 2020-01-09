@@ -19,7 +19,7 @@ public:
         auto in = iobuf::iterator_consumer(buf.cbegin(), buf.cend());
         (void)in.consume(buf.size_bytes(), [this](const char* src, size_t sz) {
             extend(reinterpret_cast<const uint8_t*>(src), sz);
-            return stop_iteration::no;
+            return ss::stop_iteration::no;
         });
     }
 

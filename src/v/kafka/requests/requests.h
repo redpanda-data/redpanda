@@ -12,12 +12,12 @@ namespace kafka {
 CONCEPT(
 // A Kafka request.
 template<typename T>
-concept KafkaRequest = requires (T request, request_context&& ctx, smp_service_group g) {
+concept KafkaRequest = requires (T request, request_context&& ctx, ss::smp_service_group g) {
     { T::name } -> const char*;
     { T::key } -> api_key;
     { T::min_supported } -> api_version;
     { T::max_supported } -> api_version;
-    { T::process(std::move(ctx), g) } -> future<response_ptr>;
+    { T::process(std::move(ctx), g) } -> ss::future<response_ptr>;
 };
 )
 // clang-format on

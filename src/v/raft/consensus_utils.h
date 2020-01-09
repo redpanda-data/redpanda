@@ -8,41 +8,43 @@
 namespace raft::details {
 
 /// reads all into the tmpbuf to file
-future<temporary_buffer<char>> readfile(sstring name);
+ss::future<ss::temporary_buffer<char>> readfile(ss::sstring name);
 
 /// writes the tmpbuf to file
-future<> writefile(sstring name, temporary_buffer<char> buf);
+ss::future<> writefile(ss::sstring name, ss::temporary_buffer<char> buf);
 
 /// writes a yaml file with voted_for and term of the vote
-future<>
-persist_voted_for(sstring filename, consensus::voted_for_configuration);
+ss::future<>
+persist_voted_for(ss::sstring filename, consensus::voted_for_configuration);
 
 /// reads the filename and returns voted_for and term of the vote
-future<consensus::voted_for_configuration> read_voted_for(sstring filename);
+ss::future<consensus::voted_for_configuration>
+read_voted_for(ss::sstring filename);
 
 /// copy all raft entries into N containers using the record_batch::share()
-future<std::vector<std::vector<raft::entry>>>
+ss::future<std::vector<std::vector<raft::entry>>>
   share_n(std::vector<raft::entry>, std::size_t);
 
 /// copy all raft entries into N containers using the record_batch::share()
 /// it also wraps all the iobufs using the iobuf_share_foreign_n() method
-/// which wraps the deallocator w/ a seastar::submit_to() call
-future<std::vector<std::vector<raft::entry>>>
+/// which wraps the deallocator w/ a ss::submit_to() call
+ss::future<std::vector<std::vector<raft::entry>>>
   foreign_share_n(std::vector<raft::entry>, std::size_t);
 
 /// shares the contents of the entry in memory; should not be used w/ disk
 /// backed record_batch_reader
-future<std::vector<raft::entry>> share_one_entry(
+ss::future<std::vector<raft::entry>> share_one_entry(
   raft::entry, const size_t ncopies, const bool use_foreign_iobuf_share);
 
 /// parses the configuration out of the entry
-future<raft::group_configuration> extract_configuration(raft::entry);
+ss::future<raft::group_configuration> extract_configuration(raft::entry);
 
 /// serialize group configuration to the entry
 raft::entry serialize_configuration(group_configuration cfg);
 
 /// returns a fully parsed config state from a given storage log
-future<raft::configuration_bootstrap_state> read_bootstrap_state(storage::log&);
+ss::future<raft::configuration_bootstrap_state>
+read_bootstrap_state(storage::log&);
 
 /// looks up for the broker with request id in a vector of brokers
 template<typename Iterator>
@@ -53,7 +55,7 @@ Iterator find_machine(Iterator begin, Iterator end, model::node_id id) {
 
 class memory_batch_consumer {
 public:
-    seastar::future<seastar::stop_iteration> operator()(model::record_batch);
+    ss::future<ss::stop_iteration> operator()(model::record_batch);
     std::vector<model::record_batch> end_of_stream();
 
 private:

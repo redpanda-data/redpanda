@@ -9,6 +9,7 @@
 #include "random/generators.h"
 #include "resource_mgmt/memory_groups.h"
 #include "rpc/server.h"
+#include "seastarx.h"
 #include "storage/directories.h"
 #include "test_utils/logs.h"
 #include "utils/unresolved_address.h"
@@ -18,8 +19,8 @@
 using lrk = cluster::log_record_key;
 
 template<typename T>
-void set_configuration(sstring p_name, T v) {
-    smp::invoke_on_all([p_name, v = std::move(v)] {
+void set_configuration(ss::sstring p_name, T v) {
+    ss::smp::invoke_on_all([p_name, v = std::move(v)] {
         config::shard_local_cfg().get(p_name).set_value(v);
     }).get0();
 }
@@ -31,7 +32,7 @@ public:
     controller_tests_fixture()
       : controller_tests_fixture(
         model::node_id{1},
-        smp::count,
+        ss::smp::count,
         9092,
         9090,
         {{.id = model::node_id{1},
@@ -49,7 +50,7 @@ public:
           unresolved_address("127.0.0.1", kafka_port),
           unresolved_address("127.0.0.1", rpc_port),
           std::nullopt,
-          model::broker_properties{.cores = smp::count})
+          model::broker_properties{.cores = ss::smp::count})
       , _seeds(std::move(seeds)) {
         _cli_cache.start().get0();
         _md_cache.start().get0();
@@ -115,13 +116,13 @@ public:
               s.register_service<raft::service<
                 cluster::partition_manager,
                 cluster::shard_table>>(
-                default_scheduling_group(),
-                default_smp_service_group(),
+                ss::default_scheduling_group(),
+                ss::default_smp_service_group(),
                 _pm,
                 st.local());
               s.register_service<cluster::service>(
-                default_scheduling_group(),
-                default_smp_service_group(),
+                ss::default_scheduling_group(),
+                ss::default_smp_service_group(),
                 *_controller);
           })
           .get();
@@ -129,7 +130,7 @@ public:
         return *_controller;
     }
 
-    model::ntp make_ntp(const sstring& topic, int32_t partition_id) {
+    model::ntp make_ntp(const ss::sstring& topic, int32_t partition_id) {
         return model::ntp{
           .ns = _test_ns,
           .tp = {.topic = model::topic(topic),
@@ -232,7 +233,7 @@ public:
                 std::vector<std::pair<uint32_t, uint32_t>> replicas;
                 replicas.push_back(
                   {_current_node.id(),
-                   random_generators::get_int<int16_t>() % smp::count});
+                   random_generators::get_int<int16_t>() % ss::smp::count});
                 builder.add_kv(
                   lrk{lrk::type::partition_assignment},
                   create_test_assignment(
@@ -252,24 +253,26 @@ private:
     static constexpr size_t _max_segment_size = 100'000;
     model::ns _test_ns{"test_ns"};
     std::vector<config::seed_server> _seeds;
-    sstring _base_dir;
+    ss::sstring _base_dir;
     model::broker _current_node;
-    sharded<rpc::connection_cache> _cli_cache;
-    sharded<cluster::metadata_cache> _md_cache;
-    sharded<cluster::shard_table> st;
-    sharded<cluster::partition_manager> _pm;
-    sharded<rpc::server> _rpc;
+    ss::sharded<rpc::connection_cache> _cli_cache;
+    ss::sharded<cluster::metadata_cache> _md_cache;
+    ss::sharded<cluster::shard_table> st;
+    ss::sharded<cluster::partition_manager> _pm;
+    ss::sharded<rpc::server> _rpc;
     std::unique_ptr<cluster::controller> _controller;
 };
 // Waits for controller to become a leader it poll every 200ms
 void wait_for_leadership(cluster::controller& cntrl) {
     with_timeout(
-      model::timeout_clock::now() + std::chrono::seconds(30), repeat([&cntrl] {
+      model::timeout_clock::now() + std::chrono::seconds(30),
+      ss::repeat([&cntrl] {
           if (cntrl.is_leader()) {
-              return make_ready_future<stop_iteration>(stop_iteration::yes);
+              return ss::make_ready_future<ss::stop_iteration>(
+                ss::stop_iteration::yes);
           }
-          return sleep(std::chrono::milliseconds(200)).then([] {
-              return stop_iteration::no;
+          return ss::sleep(std::chrono::milliseconds(200)).then([] {
+              return ss::stop_iteration::no;
           });
       }))
       .get();

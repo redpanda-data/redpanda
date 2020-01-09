@@ -1,4 +1,5 @@
 #pragma once
+#include "seastarx.h"
 #include "utils/concepts-enabled.h"
 
 #include <seastar/core/future-util.hh>
@@ -30,16 +31,16 @@ concept BackoffPolicy = requires (Policy b) {
 template<typename Func, typename DurationType = std::chrono::seconds, typename Policy = exp_backoff_policy>
 CONCEPT(
   requires requires (Func f) {
-      { f() } -> seastar::futurize_t<std::result_of_t<Func()>>;
+      { f() } -> ss::futurize_t<std::result_of_t<Func()>>;
   } 
   && BackoffPolicy<Policy>
 )
 // clang-format on
-seastar::futurize_t<std::result_of_t<Func()>> retry_with_backoff(
+ss::futurize_t<std::result_of_t<Func()>> retry_with_backoff(
   int max_retries, Func&& f, DurationType base_backoff = DurationType{1}) {
-    using seastar::stop_iteration;
-    using ret = seastar::futurize<std::result_of_t<Func()>>;
-    return seastar::do_with(
+    using ss::stop_iteration;
+    using ret = ss::futurize<std::result_of_t<Func()>>;
+    return ss::do_with(
       0,
       Policy{},
       (typename ret::promise_type){},
@@ -47,40 +48,40 @@ seastar::futurize_t<std::result_of_t<Func()>> retry_with_backoff(
         int& attempt,
         Policy& backoff_policy,
         typename ret::promise_type& promise) mutable {
-          return seastar::repeat([&attempt,
-                                  f = std::forward<Func>(f),
-                                  &backoff_policy,
-                                  &promise,
-                                  max_retries,
-                                  base_backoff]() mutable {
+          return ss::repeat([&attempt,
+                             f = std::forward<Func>(f),
+                             &backoff_policy,
+                             &promise,
+                             max_retries,
+                             base_backoff]() mutable {
                      attempt++;
                      return f()
                        .then([&promise](auto... vals) {
                            // success case
                            promise.set_value(vals...);
-                           return seastar::make_ready_future<stop_iteration>(
+                           return ss::make_ready_future<stop_iteration>(
                              stop_iteration::yes);
                        })
-                       .handle_exception([&attempt,
-                                          &backoff_policy,
-                                          max_retries,
-                                          &promise,
-                                          base_backoff](
-                                           std::exception_ptr e) mutable {
-                           if (attempt > max_retries) {
-                               // out ot attempts
-                               promise.set_exception(e);
-                               return seastar::make_ready_future<
-                                 stop_iteration>(stop_iteration::yes);
-                           }
+                       .handle_exception(
+                         [&attempt,
+                          &backoff_policy,
+                          max_retries,
+                          &promise,
+                          base_backoff](std::exception_ptr e) mutable {
+                             if (attempt > max_retries) {
+                                 // out ot attempts
+                                 promise.set_exception(e);
+                                 return ss::make_ready_future<stop_iteration>(
+                                   stop_iteration::yes);
+                             }
 
-                           // retry
+                             // retry
 
-                           auto next = backoff_policy.next_backoff();
-                           return seastar::sleep(base_backoff * next).then([] {
-                               return stop_iteration::no;
-                           });
-                       });
+                             auto next = backoff_policy.next_backoff();
+                             return ss::sleep(base_backoff * next).then([] {
+                                 return stop_iteration::no;
+                             });
+                         });
                  })
             .then([&promise] { return promise.get_future(); });
       });

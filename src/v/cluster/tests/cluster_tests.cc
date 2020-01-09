@@ -7,7 +7,7 @@ using namespace std::chrono_literals; // NOLINT
 FIXTURE_TEST(test_join_single_node, cluster_test_fixture) {
     add_controller(
       model::node_id{1},
-      smp::count,
+      ss::smp::count,
       9092,
       11000,
       {{.id = model::node_id{1},
@@ -23,7 +23,6 @@ FIXTURE_TEST(test_join_single_node, cluster_test_fixture) {
     BOOST_REQUIRE_EQUAL(brokers.size(), 1);
     BOOST_REQUIRE_EQUAL(brokers[0]->id(), model::node_id(1));
 }
-
 
 // Enable when Raft implementation will be working
 #if 0

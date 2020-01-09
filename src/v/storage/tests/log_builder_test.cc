@@ -26,20 +26,20 @@ public:
     log_builder_fixture()
       : b(make_dir(), make_ntp()) {}
 
-    future<log_stats> get_stats() {
+    ss::future<log_stats> get_stats() {
         return b.with_log([](storage::log_ptr log) {
             auto reader = log->make_reader(storage::log_reader_config{
               .start_offset = model::offset(0),
               .max_bytes = std::numeric_limits<size_t>::max(),
               .min_bytes = 0,
-              .prio = default_priority_class(),
+              .prio = ss::default_priority_class(),
             });
-            return do_with(
+            return ss::do_with(
               std::move(reader), [log](model::record_batch_reader& reader) {
                   return reader.consume(stat_consumer(), model::no_timeout)
                     .then([log](log_stats stats) {
                         stats.seg_count = log->segments().size();
-                        return make_ready_future<log_stats>(stats);
+                        return ss::make_ready_future<log_stats>(stats);
                     });
               });
         });
@@ -49,10 +49,11 @@ public:
 
 private:
     struct stat_consumer {
-        future<stop_iteration> operator()(model::record_batch&& batch) {
+        ss::future<ss::stop_iteration> operator()(model::record_batch&& batch) {
             stats_.batch_count++;
             stats_.record_count += batch.size();
-            return make_ready_future<stop_iteration>(stop_iteration::no);
+            return ss::make_ready_future<ss::stop_iteration>(
+              ss::stop_iteration::no);
         }
 
         log_stats end_of_stream() { return stats_; }
@@ -61,7 +62,7 @@ private:
         log_stats stats_;
     };
 
-    static sstring make_dir() {
+    static ss::sstring make_dir() {
         return fmt::format(
           "test_dir_{}", random_generators::gen_alphanum_string(7));
     }

@@ -10,7 +10,7 @@ namespace internal {
 class response_handler {
 public:
     using response_ptr = std::unique_ptr<streaming_context>;
-    using promise_t = promise<response_ptr>;
+    using promise_t = ss::promise<response_ptr>;
     using timer_ptr = std::unique_ptr<rpc::timer_type>;
 
     response_handler() = default;
@@ -32,7 +32,7 @@ public:
     response_handler(response_handler&&) = default;
     response_handler& operator=(response_handler&&) = default;
 
-    future<response_ptr> get_future() { return _promise.get_future(); }
+    ss::future<response_ptr> get_future() { return _promise.get_future(); }
 
     template<typename Exception>
     void set_exception(Exception&& e) {

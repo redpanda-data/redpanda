@@ -1,7 +1,7 @@
 #pragma once
 #include "model/metadata.h"
-#include "utils/unresolved_address.h"
 #include "random/generators.h"
+#include "utils/unresolved_address.h"
 
 #include <seastar/net/inet_address.hh>
 #include <seastar/net/ip.hh>

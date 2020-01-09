@@ -18,7 +18,8 @@ struct fetch_api final {
     static constexpr api_version min_supported = api_version(4);
     static constexpr api_version max_supported = api_version(4);
 
-    static future<response_ptr> process(request_context&&, smp_service_group);
+    static ss::future<response_ptr>
+    process(request_context&&, ss::smp_service_group);
 };
 
 struct fetch_request final {
@@ -190,7 +191,7 @@ std::ostream& operator<<(std::ostream&, const fetch_response&);
  */
 struct op_context {
     request_context rctx;
-    smp_service_group ssg;
+    ss::smp_service_group ssg;
     fetch_request request;
     fetch_response response;
 
@@ -204,7 +205,7 @@ struct op_context {
     bool response_error;
 
     // decode request and initialize budgets
-    op_context(request_context&& ctx, smp_service_group ssg)
+    op_context(request_context&& ctx, ss::smp_service_group ssg)
       : rctx(std::move(ctx))
       , ssg(ssg)
       , response_size(0)
@@ -254,7 +255,7 @@ struct fetch_config {
     model::timeout_clock::time_point timeout;
 };
 
-future<fetch_response::partition_response>
+ss::future<fetch_response::partition_response>
 read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config);
 
 } // namespace kafka

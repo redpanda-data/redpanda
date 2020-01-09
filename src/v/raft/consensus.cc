@@ -5,7 +5,6 @@
 #include "raft/recovery_stm.h"
 #include "raft/replicate_entries_stm.h"
 #include "raft/vote_stm.h"
-#include "seastarx.h"
 
 #include <seastar/core/fstream.hh>
 #include <seastar/core/future.hh>
@@ -20,9 +19,9 @@ consensus::consensus(
   timeout_jitter jit,
   storage::log& l,
   storage::log_append_config::fsync should_fsync,
-  io_priority_class io_priority,
+  ss::io_priority_class io_priority,
   model::timeout_clock::duration disk_timeout,
-  sharded<rpc::connection_cache>& clis,
+  ss::sharded<rpc::connection_cache>& clis,
   consensus::leader_cb_t cb)
   : _self(std::move(nid))
   , _jit(std::move(jit))
@@ -45,12 +44,12 @@ void consensus::step_down() {
     _vstate = vote_state::follower;
 }
 
-future<> consensus::stop() {
+ss::future<> consensus::stop() {
     _vote_timeout.cancel();
     return _bg.close();
 }
 
-sstring consensus::voted_for_filename() const {
+ss::sstring consensus::voted_for_filename() const {
     return _log.base_directory() + "/voted_for";
 }
 
@@ -111,24 +110,24 @@ void consensus::process_heartbeat(
     //
 }
 
-future<result<replicate_result>> consensus::replicate(raft::entry&& e) {
+ss::future<result<replicate_result>> consensus::replicate(raft::entry&& e) {
     std::vector<raft::entry> entries;
     entries.reserve(1);
     entries.push_back(std::move(e));
     return replicate(std::move(entries));
 }
 
-future<result<replicate_result>>
+ss::future<result<replicate_result>>
 consensus::replicate(std::vector<raft::entry>&& e) {
     return with_semaphore(_op_sem, 1, [this, e = std::move(e)]() mutable {
         return do_replicate(std::move(e));
     });
 }
 
-future<result<replicate_result>>
+ss::future<result<replicate_result>>
 consensus::do_replicate(std::vector<raft::entry>&& e) {
     if (!is_leader()) {
-        return make_exception_future<result<replicate_result>>(
+        return ss::make_exception_future<result<replicate_result>>(
           std::runtime_error(fmt::format(
             "Not the leader(self.node_id:{}, meta:{}). Cannot "
             "consensus::replicate(entry&&)",
@@ -137,8 +136,8 @@ consensus::do_replicate(std::vector<raft::entry>&& e) {
     }
 
     if (_bg.is_closed()) {
-        return make_exception_future<result<replicate_result>>(
-          gate_closed_exception());
+        return ss::make_exception_future<result<replicate_result>>(
+          ss::gate_closed_exception());
     }
 
     return with_gate(_bg, [this, e = std::move(e)]() mutable {
@@ -146,7 +145,7 @@ consensus::do_replicate(std::vector<raft::entry>&& e) {
         req.node_id = _self;
         req.meta = _meta;
         req.entries = std::move(e);
-        auto stm = make_lw_shared<replicate_entries_stm>(
+        auto stm = ss::make_lw_shared<replicate_entries_stm>(
           this, 3, std::move(req));
         return stm->apply().finally([this, stm] {
             auto f = stm->wait().finally([stm] {});
@@ -159,7 +158,7 @@ consensus::do_replicate(std::vector<raft::entry>&& e) {
                 return std::move(f);
             });
 
-            return make_ready_future<>();
+            return ss::make_ready_future<>();
         });
     });
 }
@@ -201,7 +200,7 @@ void consensus::dispatch_vote() {
                   return std::move(f);
               });
 
-            return make_ready_future<>();
+            return ss::make_ready_future<>();
         });
     });
 }
@@ -210,7 +209,7 @@ void consensus::arm_vote_timeout() {
         _vote_timeout.rearm(_jit());
     }
 }
-future<> consensus::add_group_member(model::broker node) {
+ss::future<> consensus::add_group_member(model::broker node) {
     return with_semaphore(_op_sem, 1, [this, node = std::move(node)]() mutable {
         auto cfg = _conf;
         // check once again under the lock
@@ -223,11 +222,11 @@ future<> consensus::add_group_member(model::broker node) {
             // append new configuration to log
             return replicate_configuration(std::move(cfg));
         }
-        return make_ready_future<>();
+        return ss::make_ready_future<>();
     });
 }
 
-future<> consensus::start() {
+ss::future<> consensus::start() {
     return with_semaphore(_op_sem, 1, [this] {
         return details::read_voted_for(voted_for_filename())
           .then([this](voted_for_configuration r) {
@@ -265,7 +264,7 @@ future<> consensus::start() {
           });
     });
 }
-future<vote_reply> consensus::do_vote(vote_request&& r) {
+ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
     vote_reply reply;
     reply.term = _meta.term;
     _probe.vote_requested();
@@ -279,7 +278,7 @@ future<vote_reply> consensus::do_vote(vote_request&& r) {
     // raft.pdf: reply false if term < currentTerm (§5.1)
     if (r.term < _meta.term) {
         _probe.vote_request_term_older();
-        return make_ready_future<vote_reply>(std::move(reply));
+        return ss::make_ready_future<vote_reply>(std::move(reply));
     }
 
     if (r.term > _meta.term) {
@@ -305,7 +304,7 @@ future<vote_reply> consensus::do_vote(vote_request&& r) {
         return details::persist_voted_for(
                  voted_for_filename(), {_voted_for, model::term_id(_meta.term)})
           .then([reply = std::move(reply)] {
-              return make_ready_future<vote_reply>(std::move(reply));
+              return ss::make_ready_future<vote_reply>(std::move(reply));
           });
     }
     // vote for the same term, same server_id
@@ -313,7 +312,7 @@ future<vote_reply> consensus::do_vote(vote_request&& r) {
     if (reply.granted) {
         _hbeat = clock_type::now();
     }
-    return make_ready_future<vote_reply>(std::move(reply));
+    return ss::make_ready_future<vote_reply>(std::move(reply));
 }
 
 template<typename Container>
@@ -323,7 +322,7 @@ static inline bool has_configuration_entires(const Container& c) {
     });
 }
 
-future<append_entries_reply>
+ss::future<append_entries_reply>
 consensus::do_append_entries(append_entries_request&& r) {
     append_entries_reply reply;
     reply.node_id = _self();
@@ -336,7 +335,7 @@ consensus::do_append_entries(append_entries_request&& r) {
     if (r.meta.term < _meta.term) {
         _probe.append_request_term_older();
         reply.success = false;
-        return make_ready_future<append_entries_reply>(std::move(reply));
+        return ss::make_ready_future<append_entries_reply>(std::move(reply));
     }
     if (r.meta.term > _meta.term) {
         raftlog.debug(
@@ -363,7 +362,7 @@ consensus::do_append_entries(append_entries_request&& r) {
         raftlog.debug("rejecting append_entries. would leave gap in log");
         _probe.append_request_log_commited_index_mismatch();
         reply.success = false;
-        return make_ready_future<append_entries_reply>(std::move(reply));
+        return ss::make_ready_future<append_entries_reply>(std::move(reply));
     }
 
     // section 2
@@ -372,7 +371,7 @@ consensus::do_append_entries(append_entries_request&& r) {
         raftlog.debug("rejecting append_entries missmatching prev_log_term");
         _probe.append_request_log_term_older();
         reply.success = false;
-        return make_ready_future<append_entries_reply>(std::move(reply));
+        return ss::make_ready_future<append_entries_reply>(std::move(reply));
     }
 
     // the success case
@@ -401,14 +400,14 @@ consensus::do_append_entries(append_entries_request&& r) {
     if (r.entries.empty()) {
         reply.success = true;
         _probe.append_request_heartbeat();
-        return make_ready_future<append_entries_reply>(std::move(reply));
+        return ss::make_ready_future<append_entries_reply>(std::move(reply));
     }
     // if we have already committed the offset, return success
     if (r.meta.commit_index == _meta.commit_index) {
         reply.success = true;
         // TODO: add probe
         //_probe.append_request_duplicate_batch();
-        return make_ready_future<append_entries_reply>(std::move(reply));
+        return ss::make_ready_future<append_entries_reply>(std::move(reply));
     }
     // success. copy entries for each subsystem
     using entries_t = std::vector<entry>;
@@ -426,7 +425,7 @@ consensus::do_append_entries(append_entries_request&& r) {
       });
 }
 
-future<append_entries_reply> consensus::commit_entries(
+ss::future<append_entries_reply> consensus::commit_entries(
   std::vector<entry> entries, append_entries_reply reply) {
     // update metadata first
     _meta.prev_log_index = _meta.commit_index;
@@ -447,16 +446,16 @@ future<append_entries_reply> consensus::commit_entries(
           if (!dups.empty() && has_configuration_entires(dups.back())) {
               return process_configurations(std::move(dups.back()))
                 .then([r = std::move(r)]() mutable {
-                    return make_ready_future<ret_t>(std::move(r));
+                    return ss::make_ready_future<ret_t>(std::move(r));
                 });
           }
-          return make_ready_future<ret_t>(std::move(r));
+          return ss::make_ready_future<ret_t>(std::move(r));
       });
 }
 
-future<> consensus::process_configurations(std::vector<entry>&& e) {
-    return do_with(std::move(e), [this](std::vector<entry>& entries) {
-        return do_for_each(entries, [this](entry& e) {
+ss::future<> consensus::process_configurations(std::vector<entry>&& e) {
+    return ss::do_with(std::move(e), [this](std::vector<entry>& entries) {
+        return ss::do_for_each(entries, [this](entry& e) {
             if (e.entry_type() == configuration_batch_type) {
                 return details::extract_configuration(std::move(e))
                   .then([this](group_configuration cfg) mutable {
@@ -465,12 +464,12 @@ future<> consensus::process_configurations(std::vector<entry>&& e) {
                         "group({}) configuration update", _meta.group);
                   });
             }
-            return make_ready_future<>();
+            return ss::make_ready_future<>();
         });
     });
 }
 
-future<> consensus::replicate_configuration(group_configuration cfg) {
+ss::future<> consensus::replicate_configuration(group_configuration cfg) {
     raftlog.debug("Replicating group {} configuration", _meta.group);
     auto cfg_entry = details::serialize_configuration(std::move(cfg));
     std::vector<raft::entry> e;
@@ -493,7 +492,7 @@ append_entries_reply consensus::make_append_entries_reply(
     return reply;
 }
 
-future<std::vector<storage::log::append_result>>
+ss::future<std::vector<storage::log::append_result>>
 consensus::disk_append(std::vector<entry>&& entries) {
     using ret_t = std::vector<storage::log::append_result>;
     // used to detect if we roll the last segment
@@ -502,7 +501,7 @@ consensus::disk_append(std::vector<entry>&& entries) {
                                        : _log.segments().last()->base_offset();
 
     // clang-format off
-    return do_with(std::move(entries), [this](std::vector<entry>& in) {
+    return ss::do_with(std::move(entries), [this](std::vector<entry>& in) {
             auto no_of_entries = in.size();
             auto cfg = storage::log_append_config{
             // no fsync explicit on a per write, we verify at the end to
@@ -527,10 +526,10 @@ consensus::disk_append(std::vector<entry>&& entries) {
           }
           if (_should_fsync) {
               return _log.flush().then([ret = std::move(ret)] {
-                  return make_ready_future<ret_t>(std::move(ret));
+                  return ss::make_ready_future<ret_t>(std::move(ret));
               });
           }
-          return make_ready_future<ret_t>(std::move(ret));
+          return ss::make_ready_future<ret_t>(std::move(ret));
       });
 }
 } // namespace raft

@@ -28,9 +28,10 @@ struct log_reader_config {
     model::offset start_offset;
     size_t max_bytes;
     size_t min_bytes;
-    io_priority_class prio;
+    ss::io_priority_class prio;
     std::vector<model::record_batch_type> type_filter;
-    model::offset max_offset = model::model_limits<model::offset>::max(); // inclusive
+    model::offset max_offset
+      = model::model_limits<model::offset>::max(); // inclusive
 };
 
 class log_segment_batch_reader;
@@ -60,7 +61,7 @@ public:
 
     void consume_compressed_records(iobuf&&) override;
 
-    stop_iteration consume_batch_end() override;
+    ss::stop_iteration consume_batch_end() override;
 
 private:
     bool skip_batch_type(model::record_batch_type type);
@@ -95,10 +96,10 @@ public:
     size_t bytes_read() const { return _bytes_read; }
 
 protected:
-    future<span> do_load_slice(model::timeout_clock::time_point) override;
+    ss::future<span> do_load_slice(model::timeout_clock::time_point) override;
 
 private:
-    future<> initialize();
+    ss::future<> initialize();
 
     bool is_initialized() const;
 
@@ -118,7 +119,7 @@ private:
     log_reader_config _config;
     size_t _bytes_read = 0;
     skipping_consumer _consumer;
-    input_stream<char> _input;
+    ss::input_stream<char> _input;
     continuous_batch_parser_opt _parser;
     std::vector<model::record_batch> _buffer;
     size_t _buffer_size = 0;
@@ -138,12 +139,12 @@ public:
     //       is because batchs are atomically made visible.
     log_reader(log_set&, offset_tracker&, log_reader_config, probe&) noexcept;
 
-    future<span> do_load_slice(model::timeout_clock::time_point) override;
+    ss::future<span> do_load_slice(model::timeout_clock::time_point) override;
 
 private:
     bool is_done();
 
-    using reader_available = bool_class<struct create_reader_tag>;
+    using reader_available = ss::bool_class<struct create_reader_tag>;
 
     reader_available maybe_create_segment_reader();
 

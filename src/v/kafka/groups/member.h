@@ -26,7 +26,7 @@ namespace kafka {
 /// \brief A Kafka group member.
 class group_member {
 public:
-    using clock_type = lowres_clock;
+    using clock_type = ss::lowres_clock;
     using duration_type = clock_type::duration;
 
     group_member(
@@ -109,7 +109,7 @@ public:
      *
      * NOTE: the caller must ensure that the member is not already joining.
      */
-    future<join_group_response> get_join_response() {
+    ss::future<join_group_response> get_join_response() {
         _join_promise = std::make_unique<join_promise>();
         return _join_promise->get_future();
     }
@@ -128,7 +128,7 @@ public:
      *
      * NOTE: the caller must ensure that the member is not already syncing.
      */
-    future<sync_group_response> get_sync_response() {
+    ss::future<sync_group_response> get_sync_response() {
         _sync_promise = std::make_unique<sync_promise>();
         return _sync_promise->get_future();
     }
@@ -174,13 +174,11 @@ public:
         _latest_heartbeat = t;
     }
 
-    timer<clock_type>& expire_timer() {
-        return _expire_timer;
-    }
+    ss::timer<clock_type>& expire_timer() { return _expire_timer; }
 
 private:
-    using join_promise = promise<join_group_response>;
-    using sync_promise = promise<sync_group_response>;
+    using join_promise = ss::promise<join_group_response>;
+    using sync_promise = ss::promise<sync_group_response>;
 
     friend std::ostream& operator<<(std::ostream&, const group_member&);
 
@@ -194,7 +192,7 @@ private:
     std::vector<member_protocol> _protocols;
     bool _is_new;
     clock_type::time_point _latest_heartbeat;
-    timer<clock_type> _expire_timer;
+    ss::timer<clock_type> _expire_timer;
 
     // external shutdown synchronization
     std::unique_ptr<sync_promise> _sync_promise;
@@ -202,7 +200,7 @@ private:
 };
 
 /// \brief Shared pointer to a group member.
-using member_ptr = lw_shared_ptr<group_member>;
+using member_ptr = ss::lw_shared_ptr<group_member>;
 
 std::ostream& operator<<(std::ostream&, const group_member&);
 

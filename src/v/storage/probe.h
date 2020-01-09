@@ -36,6 +36,6 @@ private:
     uint64_t _batches_read = 0;
     uint32_t _batch_parse_errors = 0;
     uint32_t _batch_write_errors = 0;
-    metrics::metric_groups _metrics;
+    ss::metrics::metric_groups _metrics;
 };
 } // namespace storage

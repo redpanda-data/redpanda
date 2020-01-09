@@ -25,7 +25,7 @@ namespace cluster {
 // all ops must belong to shard0
 class controller final {
 public:
-    static constexpr const shard_id shard = 0;
+    static constexpr const ss::shard_id shard = 0;
     static constexpr const raft::group_id group{0};
     /// \brief used to distinguished log messages
     static constexpr model::record_batch_type controller_record_batch_type{3};
@@ -37,27 +37,27 @@ public:
     static constexpr auto join_timeout = std::chrono::seconds(5);
 
     controller(
-      sharded<partition_manager>&,
-      sharded<shard_table>&,
-      sharded<metadata_cache>&,
-      sharded<rpc::connection_cache>&);
+      ss::sharded<partition_manager>&,
+      ss::sharded<shard_table>&,
+      ss::sharded<metadata_cache>&,
+      ss::sharded<rpc::connection_cache>&);
 
-    future<> start();
-    future<> stop();
+    ss::future<> start();
+    ss::future<> stop();
 
     bool is_leader() const { return _recovered && _raft0->is_leader(); }
 
     model::node_id get_leader_id() const { return _raft0->config().leader_id; }
 
-    future<> process_join_request(model::broker broker);
+    ss::future<> process_join_request(model::broker broker);
 
-    future<std::vector<topic_result>> create_topics(
+    ss::future<std::vector<topic_result>> create_topics(
       std::vector<topic_configuration> topics,
       model::timeout_clock::time_point timeout);
 
     raft::group_id get_highest_group_id() const { return _highest_group_id; }
 
-    future<> recover_assignment(partition_assignment);
+    ss::future<> recover_assignment(partition_assignment);
 
     /**
      * \brief Wait on controller to become the leader.
@@ -67,16 +67,16 @@ public:
      * shutting down. This method serves only as a weak signal. Any caller must
      * make sure to properly check for leadership again when necessary.
      */
-    future<> wait_for_leadership();
+    ss::future<> wait_for_leadership();
 
 private:
     using seed_iterator = std::vector<config::seed_server>::const_iterator;
     struct batch_consumer {
         explicit batch_consumer(controller* c)
           : ptr(c) {}
-        future<stop_iteration> operator()(model::record_batch batch) {
+        ss::future<ss::stop_iteration> operator()(model::record_batch batch) {
             return ptr->process_raft0_batch(std::move(batch)).then([] {
-                return stop_iteration::no;
+                return ss::stop_iteration::no;
             });
         }
         void end_of_stream() { ptr->end_of_stream(); }
@@ -84,61 +84,61 @@ private:
     };
     friend batch_consumer;
 
-    future<consensus_ptr> start_raft0();
-    future<> bootstrap_from_log(storage::log_ptr);
-    future<> process_raft0_batch(model::record_batch);
-    future<> process_raft0_cfg_update(model::record);
-    future<> recover_record(model::record);
-    future<> recover_replica(
+    ss::future<consensus_ptr> start_raft0();
+    ss::future<> bootstrap_from_log(storage::log_ptr);
+    ss::future<> process_raft0_batch(model::record_batch);
+    ss::future<> process_raft0_cfg_update(model::record);
+    ss::future<> recover_record(model::record);
+    ss::future<> recover_replica(
       model::ntp, raft::group_id, uint32_t, std::vector<model::broker_shard>);
 
-    future<> assign_group_to_shard(model::ntp, raft::group_id, uint32_t);
-    future<> recover_topic_configuration(topic_configuration);
-    future<> dispatch_record_recovery(log_record_key, iobuf&&);
-    future<>
+    ss::future<> assign_group_to_shard(model::ntp, raft::group_id, uint32_t);
+    ss::future<> recover_topic_configuration(topic_configuration);
+    ss::future<> dispatch_record_recovery(log_record_key, iobuf&&);
+    ss::future<>
     update_cache_with_partitions_assignment(const partition_assignment&);
     std::optional<raft::entry>
     create_topic_cfg_entry(const topic_configuration&);
     void end_of_stream();
     void leadership_notification();
-    future<> update_brokers_cache(std::vector<model::broker>);
-    future<>
+    ss::future<> update_brokers_cache(std::vector<model::broker>);
+    ss::future<>
       update_clients_cache(std::vector<broker_ptr>, std::vector<broker_ptr>);
     void create_partition_allocator();
     allocation_node local_allocation_node();
     void on_raft0_entries_commited(std::vector<raft::entry>&&);
 
-    future<> dispatch_manage_partition(
+    ss::future<> dispatch_manage_partition(
       model::ntp, raft::group_id, uint32_t, std::vector<model::broker_shard>);
 
-    future<> manage_partition(
+    ss::future<> manage_partition(
       partition_manager&,
       model::ntp,
       raft::group_id,
       std::vector<model::broker_shard>);
 
-    future<> dispatch_join_to_seed_server(seed_iterator it);
-    future<> join_raft0();
+    ss::future<> dispatch_join_to_seed_server(seed_iterator it);
+    ss::future<> join_raft0();
 
     template<typename Func>
-    futurize_t<std::result_of_t<Func(controller_client_protocol&)>>
+    ss::futurize_t<std::result_of_t<Func(controller_client_protocol&)>>
     dispatch_rpc_to_leader(Func&&);
 
-    future<join_reply>
+    ss::future<join_reply>
     dispatch_join_to_remote(const config::seed_server&, model::broker);
 
     model::broker _self;
     std::vector<config::seed_server> _seed_servers;
-    sharded<partition_manager>& _pm;
-    sharded<shard_table>& _st;
-    sharded<metadata_cache>& _md_cache;
-    sharded<rpc::connection_cache>& _connection_cache;
+    ss::sharded<partition_manager>& _pm;
+    ss::sharded<shard_table>& _st;
+    ss::sharded<metadata_cache>& _md_cache;
+    ss::sharded<rpc::connection_cache>& _connection_cache;
     raft::consensus* _raft0;
     raft::group_id _highest_group_id;
     bool _recovered = false;
     bool _leadership_notification_pending = false;
     std::unique_ptr<partition_allocator> _allocator;
-    condition_variable _leadership_cond;
-    seastar::gate _bg;
+    ss::condition_variable _leadership_cond;
+    ss::gate _bg;
 };
 } // namespace cluster

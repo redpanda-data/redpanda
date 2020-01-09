@@ -23,7 +23,7 @@ public:
         std::optional<model::compression> compression;
     };
 
-    log_builder(sstring base_dir, model::ntp ntp)
+    log_builder(ss::sstring base_dir, model::ntp ntp)
       : base_dir_(std::move(base_dir))
       , ntp_(std::move(ntp)) {}
 
@@ -111,7 +111,9 @@ public:
     /**
      * \brief Persists the log configuration.
      */
-    future<> flush() { return flush(std::numeric_limits<size_t>::max(), true); }
+    ss::future<> flush() {
+        return flush(std::numeric_limits<size_t>::max(), true);
+    }
 
     /**
      * \brief Write configured batches with a max segment size.
@@ -120,7 +122,7 @@ public:
      * and write all batches as if no segments were defined and the log
      * manager were configured with the specified max segment size.
      */
-    future<> flush_with_max_segment_size(
+    ss::future<> flush_with_max_segment_size(
       size_t max_segment_size = default_max_segment_size) {
         return flush(max_segment_size, false);
     }
@@ -171,13 +173,14 @@ private:
         return model::make_memory_record_batch_reader(std::move(batches));
     }
 
-    future<> flush(storage::log_ptr log, segments_type& segments, bool roll) {
-        return do_for_each(segments, [log, roll](segment_spec& segment) {
+    ss::future<>
+    flush(storage::log_ptr log, segments_type& segments, bool roll) {
+        return ss::do_for_each(segments, [log, roll](segment_spec& segment) {
             auto reader = make_batch_reader(std::move(segment));
             // roll when starting a new segment. unless it is the first
             // segment cause log freaks about that. i do not like that
             // behavior.
-            auto f = make_ready_future<>();
+            auto f = ss::make_ready_future<>();
             if (roll && log->segments().size() > 0) {
                 f = log->do_roll();
             }
@@ -187,7 +190,7 @@ private:
                     std::move(reader),
                     storage::log_append_config{
                       storage::log_append_config::fsync::yes,
-                      default_priority_class(),
+                      ss::default_priority_class(),
                       model::no_timeout})
                   .discard_result();
             });
@@ -197,7 +200,7 @@ private:
     template<typename Func>
     auto with_log(log_config config, Func&& f) {
         auto mgr = log_manager(std::move(config));
-        return do_with(
+        return ss::do_with(
           std::move(mgr),
           [ntp = ntp_, f = std::move(f)](log_manager& mgr) mutable {
               return mgr.manage(ntp)
@@ -206,21 +209,21 @@ private:
           });
     }
 
-    future<> flush(size_t max_segment_size, bool roll) {
+    ss::future<> flush(size_t max_segment_size, bool roll) {
         storage::log_config config{
           .base_dir = base_dir_,
           .max_segment_size = max_segment_size,
           .should_sanitize = storage::log_config::sanitize_files::yes,
         };
         return with_log(config, [this, roll](log_ptr log) {
-            return do_with(
+            return ss::do_with(
               std::move(segments_), [this, log, roll](segments_type& segments) {
                   return flush(log, segments, roll);
               });
         });
     }
 
-    sstring base_dir_;
+    ss::sstring base_dir_;
     model::ntp ntp_;
     segments_type segments_;
     model::offset next_offset_{0};

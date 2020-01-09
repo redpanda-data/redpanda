@@ -1,6 +1,7 @@
 #pragma once
 #include "config/configuration.h"
 #include "resource_mgmt/rate.h"
+#include "seastarx.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>
@@ -33,7 +34,7 @@ namespace kafka {
 //
 class quota_manager {
 public:
-    using clock = seastar::lowres_clock;
+    using clock = ss::lowres_clock;
 
     struct throttle_delay {
         bool first_violation;
@@ -51,14 +52,14 @@ public:
 
     ~quota_manager() { _gc_timer.cancel(); }
 
-    seastar::future<> stop() {
+    ss::future<> stop() {
         _gc_timer.cancel();
-        return seastar::make_ready_future<>();
+        return ss::make_ready_future<>();
     }
 
-    seastar::future<> start() {
+    ss::future<> start() {
         _gc_timer.arm_periodic(_gc_freq);
-        return seastar::make_ready_future<>();
+        return ss::make_ready_future<>();
     }
 
     // record a new observation and return <previous delay, new delay>
@@ -78,7 +79,7 @@ public:
         // now, these client-name strings are small. This will be solved in
         // c++20 via Hash::transparent_key_equal.
         auto [it, inserted] = _quotas.try_emplace(
-          seastar::sstring(cid),
+          ss::sstring(cid),
           quota{now,
                 clock::duration(0),
                 {_default_num_windows, _default_window_width}});
@@ -140,9 +141,9 @@ private:
     const clock::duration _default_window_width;
 
     const uint32_t _target_tp_rate;
-    std::unordered_map<seastar::sstring, quota> _quotas;
+    std::unordered_map<ss::sstring, quota> _quotas;
 
-    seastar::timer<> _gc_timer;
+    ss::timer<> _gc_timer;
     const clock::duration _gc_freq;
 };
 

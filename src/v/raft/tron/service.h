@@ -4,6 +4,7 @@
 #include "raft/tron/logger.h"
 #include "raft/tron/trongen_service.h"
 #include "raft/tron/types.h"
+#include "seastarx.h"
 
 namespace raft::tron {
 template<typename ConsensusManager, typename ShardLookup>
@@ -12,17 +13,18 @@ CONCEPT(
   && raft::ShardLookupManager<ShardLookup>())
 struct service final : trongen_service {
     service(
-      scheduling_group sc,
-      smp_service_group ssg,
-      sharded<ConsensusManager>& mngr,
+      ss::scheduling_group sc,
+      ss::smp_service_group ssg,
+      ss::sharded<ConsensusManager>& mngr,
       ShardLookup& tbl)
       : trongen_service(sc, ssg)
       , _group_manager(mngr)
       , _shard_table(tbl) {}
-    future<stats_reply> stats(stats_request&&, rpc::streaming_context&) final {
-        return make_ready_future<stats_reply>(stats_reply{});
+    ss::future<stats_reply>
+    stats(stats_request&&, rpc::streaming_context&) final {
+        return ss::make_ready_future<stats_reply>(stats_reply{});
     }
-    future<put_reply>
+    ss::future<put_reply>
     replicate(::raft::entry&& r, rpc::streaming_context&) final {
         tronlog.info("replicating entry");
         auto shard = _shard_table.shard_for(raft::group_id(66));
@@ -34,7 +36,7 @@ struct service final : trongen_service {
                 [this, r = std::move(r)](ConsensusManager& m) mutable {
                     return m.consensus_for(group_id(66))
                       .replicate(std::move(r))
-                      .then_wrapped([](future<result<replicate_result>> f) {
+                      .then_wrapped([](ss::future<result<replicate_result>> f) {
                           put_reply ret;
                           try {
                               f.get();
@@ -50,7 +52,7 @@ struct service final : trongen_service {
                 });
           });
     }
-    sharded<ConsensusManager>& _group_manager;
+    ss::sharded<ConsensusManager>& _group_manager;
     ShardLookup& _shard_table;
 };
 

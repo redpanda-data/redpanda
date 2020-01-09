@@ -14,7 +14,7 @@ struct server_context_impl final : streaming_context {
     server_context_impl(server& s, header h)
       : _s(std::ref(s))
       , _h(std::move(h)) {}
-    future<semaphore_units<>> reserve_memory(size_t ask) final {
+    ss::future<ss::semaphore_units<>> reserve_memory(size_t ask) final {
         auto fut = get_units(_s.get()._memory, ask);
         if (_s.get()._memory.waiters()) {
             _s.get()._probe.waiting_for_available_memory();
@@ -25,7 +25,7 @@ struct server_context_impl final : streaming_context {
     void signal_body_parse() final { pr.set_value(); }
     std::reference_wrapper<server> _s;
     header _h;
-    promise<> pr;
+    ss::promise<> pr;
 };
 
 server::server(server_configuration c)
@@ -44,14 +44,14 @@ server::~server() {}
 
 void server::start() {
     for (auto addr : cfg.addrs) {
-        server_socket ss;
+        ss::server_socket ss;
         try {
-            listen_options lo;
+            ss::listen_options lo;
             lo.reuse_address = true;
             if (!_creds) {
-                ss = engine().listen(addr, lo);
+                ss = ss::engine().listen(addr, lo);
             } else {
-                ss = tls::listen(_creds, engine().listen(addr, lo));
+                ss = ss::tls::listen(_creds, ss::engine().listen(addr, lo));
             }
         } catch (...) {
             throw std::runtime_error(fmt::format(
@@ -60,34 +60,34 @@ void server::start() {
               std::current_exception()));
         }
         _listeners.emplace_back(std::move(ss));
-        server_socket& ref = _listeners.back();
+        ss::server_socket& ref = _listeners.back();
         // background
         (void)with_gate(_conn_gate, [this, &ref] { return accept(ref); });
     }
 }
 
-future<> server::accept(server_socket& s) {
-    return repeat([this, &s]() mutable {
+ss::future<> server::accept(ss::server_socket& s) {
+    return ss::repeat([this, &s]() mutable {
         return s.accept().then_wrapped(
-          [this](future<accept_result> f_cs_sa) mutable {
+          [this](ss::future<ss::accept_result> f_cs_sa) mutable {
               if (_as.abort_requested()) {
                   f_cs_sa.ignore_ready_future();
-                  return stop_iteration::yes;
+                  return ss::stop_iteration::yes;
               }
               auto [ar] = f_cs_sa.get();
               ar.connection.set_nodelay(true);
               ar.connection.set_keepalive(true);
-              auto conn = make_lw_shared<connection>(
+              auto conn = ss::make_lw_shared<connection>(
                 _connections,
                 std::move(ar.connection),
                 std::move(ar.remote_address),
                 _probe);
               if (_conn_gate.is_closed()) {
-                  throw gate_closed_exception();
+                  throw ss::gate_closed_exception();
               }
               (void)with_gate(_conn_gate, [this, conn]() mutable {
                   return continous_method_dispath(conn).then_wrapped(
-                    [conn](future<>&& f) {
+                    [conn](ss::future<>&& f) {
                         rpclog.debug("closing client: {}", conn->addr);
                         return conn->shutdown()
                           .then([f = std::move(f)]() mutable {
@@ -102,13 +102,14 @@ future<> server::accept(server_socket& s) {
                           .finally([conn] {});
                     });
               });
-              return stop_iteration::no;
+              return ss::stop_iteration::no;
           });
     });
 }
 
-future<> server::continous_method_dispath(lw_shared_ptr<connection> conn) {
-    return do_until(
+ss::future<>
+server::continous_method_dispath(ss::lw_shared_ptr<connection> conn) {
+    return ss::do_until(
       [this, conn] { return conn->input().eof() || _as.abort_requested(); },
       [this, conn] {
           return parse_header(conn->input())
@@ -117,18 +118,18 @@ future<> server::continous_method_dispath(lw_shared_ptr<connection> conn) {
                     rpclog.debug(
                       "could not parse header from client: {}", conn->addr);
                     _probe.header_corrupted();
-                    return make_ready_future<>();
+                    return ss::make_ready_future<>();
                 }
                 return dispatch_method_once(std::move(h.value()), conn);
             });
       });
 }
 
-future<>
-server::dispatch_method_once(header h, lw_shared_ptr<connection> conn) {
+ss::future<>
+server::dispatch_method_once(header h, ss::lw_shared_ptr<connection> conn) {
     const auto method_id = h.meta;
     constexpr size_t header_size = sizeof(header);
-    auto ctx = make_lw_shared<server_context_impl>(*this, std::move(h));
+    auto ctx = ss::make_lw_shared<server_context_impl>(*this, std::move(h));
     auto it = std::find_if(
       _services.begin(),
       _services.end(),
@@ -145,7 +146,7 @@ server::dispatch_method_once(header h, lw_shared_ptr<connection> conn) {
     _probe.add_bytes_received(header_size + h.size);
     // background!
     if (_conn_gate.is_closed()) {
-        return make_exception_future<>(gate_closed_exception());
+        return ss::make_exception_future<>(ss::gate_closed_exception());
     }
     (void)with_gate(_conn_gate, [this, conn, ctx, m]() mutable {
         return (*m)(conn->input(), *ctx)
@@ -157,7 +158,7 @@ server::dispatch_method_once(header h, lw_shared_ptr<connection> conn) {
                   rpclog.debug(
                     "Skipping write of {} bytes, connection is closed",
                     view.size());
-                  return make_ready_future<>();
+                  return ss::make_ready_future<>();
               }
               return conn->write(std::move(view)).finally([m = std::move(m)] {
               });
@@ -166,7 +167,7 @@ server::dispatch_method_once(header h, lw_shared_ptr<connection> conn) {
     });
     return fut;
 }
-future<> server::stop() {
+ss::future<> server::stop() {
     rpclog.info("Stopping {} listeners", _listeners.size());
     for (auto&& l : _listeners) {
         l.abort_accept();
@@ -176,12 +177,12 @@ future<> server::stop() {
     _as.request_abort();
     // dispatch the gate first, wait for all connections to drain
     return _conn_gate.close().then([this] {
-        return do_for_each(
+        return ss::do_for_each(
           _connections, [](connection& c) { return c.shutdown(); });
     });
 }
 void server::setup_metrics() {
-    namespace sm = metrics;
+    namespace sm = ss::metrics;
     _metrics.add_group(
       prometheus_sanitize::metrics_name("rpc"),
       {sm::make_gauge(

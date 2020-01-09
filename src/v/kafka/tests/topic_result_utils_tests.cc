@@ -9,7 +9,7 @@ using namespace kafka;
 std::vector<topic_op_result> create_non_empty_response() {
     return {{.topic = model::topic("topic1"),
              .ec = kafka::error_code::invalid_request,
-             .err_msg = std::make_optional<sstring>("Invalid request")},
+             .err_msg = std::make_optional<ss::sstring>("Invalid request")},
             {.topic = model::topic("topic2"),
              .ec = kafka::error_code::invalid_config,
              .err_msg = std::nullopt}};

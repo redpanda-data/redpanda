@@ -5,9 +5,10 @@
 #include "seastarx.h"
 
 #include <seastar/util/bool_class.hh>
+
 namespace kafka {
 
-using include_message = bool_class<struct include_message_tag>;
+using include_message = ss::bool_class<struct include_message_tag>;
 
 kafka::response_ptr encode_topic_results(
   const std::vector<topic_op_result>& errors,

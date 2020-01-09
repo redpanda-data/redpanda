@@ -1,7 +1,7 @@
 #pragma once
 
-#include "utils/unresolved_address.h"
 #include "seastarx.h"
+#include "utils/unresolved_address.h"
 
 #include <model/metadata.h>
 

@@ -48,11 +48,11 @@ SEASTAR_THREAD_TEST_CASE(broker_metadata_rt_test) {
     BOOST_REQUIRE_EQUAL(
       d.properties().available_disk, static_cast<uint32_t>(10000000000));
     BOOST_REQUIRE_EQUAL(
-      d.properties().mount_paths, std::vector<sstring>({"/", "/var/lib"}));
+      d.properties().mount_paths, std::vector<ss::sstring>({"/", "/var/lib"}));
     BOOST_REQUIRE_EQUAL(d.properties().etc_props.size(), 1);
     BOOST_REQUIRE_EQUAL(
       d.properties().etc_props.find("max_segment_size")->second, "1233451");
-    BOOST_CHECK(d.rack() == std::optional<sstring>("test"));
+    BOOST_CHECK(d.rack() == std::optional<ss::sstring>("test"));
 }
 
 SEASTAR_THREAD_TEST_CASE(partition_assignment_rt_test) {

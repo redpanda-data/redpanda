@@ -14,7 +14,7 @@ auto with_values = "tls_config:\n"
                    "  truststore_file: /fake/truststore\n"
                    "  require_client_auth: true\n";
 
-config::tls_config read_from_yaml(sstring yaml_string) {
+config::tls_config read_from_yaml(ss::sstring yaml_string) {
     auto node = YAML::Load(yaml_string);
     return node["tls_config"].as<config::tls_config>();
 }

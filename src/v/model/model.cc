@@ -3,7 +3,6 @@
 #include "model/metadata.h"
 #include "model/record.h"
 #include "model/timestamp.h"
-#include "seastarx.h"
 #include "utils/string_switch.h"
 #include "utils/to_string.h"
 
@@ -39,17 +38,18 @@ std::ostream& operator<<(std::ostream& os, const compression& c) {
 
 std::ostream& operator<<(std::ostream& os, timestamp ts) {
     if (ts != timestamp::missing()) {
-        return fmt_print(os, "{{timestamp: {}}}", ts.value());
+        return ss::fmt_print(os, "{{timestamp: {}}}", ts.value());
     }
     return os << "{timestamp: missing}";
 }
 
 std::ostream& operator<<(std::ostream& os, const topic_partition& tp) {
-    return fmt_print(os, "{{topic_partition: {}:{}}}", tp.topic, tp.partition);
+    return ss::fmt_print(
+      os, "{{topic_partition: {}:{}}}", tp.topic, tp.partition);
 }
 
 std::ostream& operator<<(std::ostream& os, const ntp& n) {
-    return fmt_print(os, "{{ntp: {}:{}}}", n.ns, n.tp);
+    return ss::fmt_print(os, "{{ntp: {}:{}}}", n.ns, n.tp);
 }
 
 std::ostream& operator<<(std::ostream& os, timestamp_type ts) {
@@ -63,7 +63,7 @@ std::ostream& operator<<(std::ostream& os, timestamp_type ts) {
 }
 
 std::ostream& operator<<(std::ostream& os, const record& record) {
-    return fmt_print(
+    return ss::fmt_print(
       os,
       "{{record: size_bytes={}, timestamp_delta={}, "
       "offset_delta={}, key={} bytes, value_and_headers={} bytes}}",
@@ -76,11 +76,12 @@ std::ostream& operator<<(std::ostream& os, const record& record) {
 
 std::ostream&
 operator<<(std::ostream& os, const record_batch_attributes& attrs) {
-    return fmt_print(os, "{}:{}", attrs.compression(), attrs.timestamp_type());
+    return ss::fmt_print(
+      os, "{}:{}", attrs.compression(), attrs.timestamp_type());
 }
 
 std::ostream& operator<<(std::ostream& os, const record_batch_header& header) {
-    return fmt_print(
+    return ss::fmt_print(
       os,
       "{{header: size_bytes={}, base_offset={}, crc={}, attrs={}, "
       "last_offset_delta={}, first_timestamp={}, max_timestamp={}}}",
@@ -95,7 +96,7 @@ std::ostream& operator<<(std::ostream& os, const record_batch_header& header) {
 
 std::ostream&
 operator<<(std::ostream& os, const record_batch::compressed_records& records) {
-    return fmt_print(
+    return ss::fmt_print(
       os, "{{compressed_records: size_bytes={}}}", records.size_bytes());
 }
 
@@ -115,12 +116,12 @@ std::ostream& operator<<(std::ostream& os, const record_batch& batch) {
     return os;
 }
 
-sstring ntp::path() const {
+ss::sstring ntp::path() const {
     return fmt::format("{}/{}/{}", ns(), tp.topic(), tp.partition());
 }
 
 std::istream& operator>>(std::istream& i, compression& c) {
-    sstring s;
+    ss::sstring s;
     i >> s;
     c = string_switch<compression>(s)
           .match_all("none", "uncompressed", compression::none)
@@ -132,7 +133,7 @@ std::istream& operator>>(std::istream& i, compression& c) {
 }
 
 std::ostream& operator<<(std::ostream& o, const model::broker_properties& b) {
-    return fmt_print(
+    return ss::fmt_print(
       o,
       "{cores {}, mem_available {}, disk_available {}}",
       b.cores,
@@ -143,7 +144,7 @@ std::ostream& operator<<(std::ostream& o, const model::broker_properties& b) {
 }
 
 std::ostream& operator<<(std::ostream& o, const model::broker& b) {
-    return fmt_print(
+    return ss::fmt_print(
       o,
       "id: {} kafka_api_address: {} rpc_address: {} rack: {} "
       "properties: {}",

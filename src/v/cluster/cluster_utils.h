@@ -35,11 +35,12 @@ std::vector<topic_result> create_topic_results(
 std::vector<model::broker> get_replica_set_brokers(
   const metadata_cache& md_cache, std::vector<model::broker_shard> replicas);
 
-future<> update_broker_client(
-  sharded<rpc::connection_cache>&,
+ss::future<> update_broker_client(
+  ss::sharded<rpc::connection_cache>&,
   model::node_id node,
   unresolved_address addr);
-future<> remove_broker_client(sharded<rpc::connection_cache>&, model::node_id);
+ss::future<>
+remove_broker_client(ss::sharded<rpc::connection_cache>&, model::node_id);
 
 /// \brief Dispatches controller service RPC requests to the specified
 /// unresolved_address. It uses the connection cached in connection_cache or if
@@ -50,13 +51,15 @@ template<typename Func>
 CONCEPT(requires requires(Func&& f, controller_client_protocol& c) {
         f(c);
 })
-// clang-format on
-futurize_t<std::result_of_t<Func(controller_client_protocol&)>> dispatch_rpc(
-  sharded<rpc::connection_cache>& cache,
-  model::node_id id,
-  unresolved_address addr,
-  Func&& f) {
-    using ret_t = futurize<std::result_of_t<Func(controller_client_protocol&)>>;
+ss::futurize_t<std::result_of_t<Func(controller_client_protocol&)>>
+  // clang-format on
+  dispatch_rpc(
+    ss::sharded<rpc::connection_cache>& cache,
+    model::node_id id,
+    unresolved_address addr,
+    Func&& f) {
+    using ret_t
+      = ss::futurize<std::result_of_t<Func(controller_client_protocol&)>>;
     using rpc_protocol = controller_client_protocol;
     return update_broker_client(cache, id, std::move(addr))
       .then([id, &cache, f = std::forward<Func>(f)]() mutable {
@@ -73,7 +76,7 @@ futurize_t<std::result_of_t<Func(controller_client_protocol&)>> dispatch_rpc(
                             std::runtime_error(
                               fmt::format("Error connecting node {}", id)));
                       }
-                      return do_with(
+                      return ss::do_with(
                         rpc_protocol(*r.value()),
                         [f = std::forward<Func>(f)](
                           rpc_protocol& proto) mutable { return f(proto); });

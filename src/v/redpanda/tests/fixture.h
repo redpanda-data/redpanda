@@ -36,11 +36,11 @@ public:
 
     void configure() {
         data_dir = fmt::format("test_dir_{}", time(0));
-        smp::invoke_on_all([this] {
+        ss::smp::invoke_on_all([this] {
             auto& config = config::shard_local_cfg();
             config.get("developer_mode").set_value(true);
             config.get("enable_admin_api").set_value(false);
-            config.get("rack").set_value(std::optional<sstring>(rack_name));
+            config.get("rack").set_value(std::optional<ss::sstring>(rack_name));
 
             config.get("data_directory")
               .set_value(config::data_directory_path{.path = data_dir});
@@ -53,14 +53,14 @@ public:
         }).get0();
     }
 
-    future<> wait_for_controller_leadership() {
+    ss::future<> wait_for_controller_leadership() {
         return app.cntrl_dispatcher.local().dispatch_to_controller(
           [](cluster::controller& c) { return c.wait_for_leadership(); });
     }
 
-    future<kafka::client> make_kafka_client() {
+    ss::future<kafka::client> make_kafka_client() {
         return config::shard_local_cfg().kafka_api().resolve().then(
-          [](socket_address addr) {
+          [](ss::socket_address addr) {
               return kafka::client(rpc::base_transport::configuration{
                 .server_addr = addr,
               });
@@ -81,13 +81,13 @@ public:
           lconf().data_directory().as_sstring(), std::move(ntp));
     }
 
-    future<> recover_ntp(const model::ntp& ntp) {
+    ss::future<> recover_ntp(const model::ntp& ntp) {
         cluster::partition_assignment as{
           .group = raft::group_id(1),
           .ntp = ntp,
           .replicas = {{model::node_id(lconf().node_id()), 0}},
         };
-        return do_with(
+        return ss::do_with(
           std::move(as), [this](cluster::partition_assignment& as) {
               return app.metadata_cache
                 .invoke_on_all([&as](cluster::metadata_cache& mdc) {

@@ -25,7 +25,7 @@ class response_writer {
             && std::is_integral<IntegerType>::value)
       // clang-format on
       uint32_t serialize_int(IntegerType val) {
-        auto nval = cpu_to_be(ExplicitIntegerType(val));
+        auto nval = ss::cpu_to_be(ExplicitIntegerType(val));
         _out->append(reinterpret_cast<const char*>(&nval), sizeof(nval));
         return sizeof(nval);
     }
@@ -70,7 +70,7 @@ public:
         return size;
     }
 
-    uint32_t write(const sstring& v) { return write(std::string_view(v)); }
+    uint32_t write(const ss::sstring& v) { return write(std::string_view(v)); }
 
     uint32_t write(std::optional<std::string_view> v) {
         if (!v) {
@@ -79,7 +79,7 @@ public:
         return write(*v);
     }
 
-    uint32_t write(const std::optional<sstring>& v) {
+    uint32_t write(const std::optional<ss::sstring>& v) {
         if (!v) {
             return serialize_int<int16_t>(-1);
         }
@@ -184,7 +184,7 @@ public:
         // enc_size: the size prefix in the serialization
         int32_t enc_size = real_size > 0 ? real_size
                                          : (zero_len_is_null ? -1 : 0);
-        auto be_size = cpu_to_be(enc_size);
+        auto be_size = ss::cpu_to_be(enc_size);
         auto* in = reinterpret_cast<const char*>(&be_size);
         ph.write(in, sizeof(be_size));
         return real_size + sizeof(be_size);

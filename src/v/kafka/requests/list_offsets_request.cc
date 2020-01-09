@@ -12,12 +12,12 @@ struct partition {
 };
 
 struct topic {
-    sstring name;
+    ss::sstring name;
     std::vector<partition> partitions;
 };
 
-future<response_ptr>
-list_offsets_api::process(request_context&& ctx, smp_service_group g) {
+ss::future<response_ptr>
+list_offsets_api::process(request_context&& ctx, ss::smp_service_group g) {
     auto replica_id = ctx.reader().read_int32();
     auto topics = ctx.reader().read_array([&ctx](request_reader& r) {
         auto name = r.read_string();
@@ -44,7 +44,7 @@ list_offsets_api::process(request_context&& ctx, smp_service_group g) {
             });
       });
 
-    return make_ready_future<response_ptr>(std::move(resp));
+    return ss::make_ready_future<response_ptr>(std::move(resp));
 }
 
 } // namespace kafka

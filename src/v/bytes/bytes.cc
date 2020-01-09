@@ -1,8 +1,8 @@
 #include "bytes/bytes.h"
 
-sstring to_hex(bytes_view b) {
+ss::sstring to_hex(bytes_view b) {
     static char digits[] = "0123456789abcdef";
-    sstring out(sstring::initialized_later(), b.size() * 2);
+    ss::sstring out(ss::sstring::initialized_later(), b.size() * 2);
     unsigned end = b.size();
     for (unsigned i = 0; i != end; ++i) {
         uint8_t x = b[i];
@@ -12,7 +12,7 @@ sstring to_hex(bytes_view b) {
     return out;
 }
 
-sstring to_hex(const bytes& b) { return to_hex(bytes_view(b)); }
+ss::sstring to_hex(const bytes& b) { return to_hex(bytes_view(b)); }
 
 std::ostream& operator<<(std::ostream& os, const bytes& b) {
     return os << to_hex(b);

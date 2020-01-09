@@ -41,11 +41,11 @@ SEASTAR_THREAD_TEST_CASE(roundtrip_with_fragmented_buffer) {
     auto b = iobuf();
     {
         complex_custom src;
-        src.oi.append(temporary_buffer<char>(55));
+        src.oi.append(ss::temporary_buffer<char>(55));
         rpc::serialize(b, std::move(src));
     }
     const size_t src_size = b.size_bytes();
-    input_stream<char> in = make_iobuf_input_stream(std::move(b));
+    ss::input_stream<char> in = make_iobuf_input_stream(std::move(b));
     auto rsource = rpc::source(in);
     auto expected = rpc::deserialize<complex_custom>(rsource).get0();
     BOOST_REQUIRE_EQUAL(55, expected.oi.size_bytes());
@@ -80,8 +80,8 @@ SEASTAR_THREAD_TEST_CASE(roundtrip_iobuf_vector) {
     auto b = iobuf();
     {
         test_rpc_header it;
-        std::vector<temporary_buffer<char>> vi;
-        vi.push_back(temporary_buffer<char>(87));
+        std::vector<ss::temporary_buffer<char>> vi;
+        vi.push_back(ss::temporary_buffer<char>(87));
         kv x;
         x.k = "foobar";
         x.v = iobuf(std::move(vi));

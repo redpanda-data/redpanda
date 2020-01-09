@@ -37,45 +37,45 @@ public:
         }
     }
 
-    sharded<cluster::metadata_cache> metadata_cache;
-    sharded<kafka::group_router_type> group_router;
-    sharded<kafka::controller_dispatcher> cntrl_dispatcher;
-    sharded<cluster::shard_table> shard_table;
-    sharded<cluster::partition_manager> partition_manager;
+    ss::sharded<cluster::metadata_cache> metadata_cache;
+    ss::sharded<kafka::group_router_type> group_router;
+    ss::sharded<kafka::controller_dispatcher> cntrl_dispatcher;
+    ss::sharded<cluster::shard_table> shard_table;
+    ss::sharded<cluster::partition_manager> partition_manager;
     std::unique_ptr<cluster::controller> controller;
 
 private:
     using deferred_actions
-      = std::vector<deferred_action<std::function<void()>>>;
+      = std::vector<ss::deferred_action<std::function<void()>>>;
 
     // All methods are calleds from Seastar thread
     void init_env();
-    app_template setup_app_template();
+    ss::app_template setup_app_template();
     void validate_arguments(const po::variables_map&);
     void hydrate_config(const po::variables_map&);
 
     template<typename Service, typename... Args>
-    future<> construct_service(sharded<Service>& s, Args&&... args) {
+    ss::future<> construct_service(ss::sharded<Service>& s, Args&&... args) {
         auto f = s.start(std::forward<Args>(args)...);
         _deferred.emplace_back([&s] { s.stop().get(); });
         return f;
     }
 
-    std::unique_ptr<app_template> _app;
+    std::unique_ptr<ss::app_template> _app;
     scheduling_groups _scheduling_groups;
     memory_groups _memory_groups;
     smp_groups _smp_groups;
-    logger _log{"redpanda::main"};
+    ss::logger _log{"redpanda::main"};
 
-    // sharded services
-    sharded<rpc::connection_cache> _raft_connection_cache;
-    sharded<kafka::group_manager> _group_manager;
-    sharded<kafka::group_shard_mapper<cluster::shard_table>>
+    // ss::sharded services
+    ss::sharded<rpc::connection_cache> _raft_connection_cache;
+    ss::sharded<kafka::group_manager> _group_manager;
+    ss::sharded<kafka::group_shard_mapper<cluster::shard_table>>
       _group_shard_mapper;
-    sharded<rpc::server> _rpc;
-    sharded<http_server> _admin;
-    sharded<kafka::quota_manager> _quota_mgr;
-    sharded<kafka::kafka_server> _kafka_server;
+    ss::sharded<rpc::server> _rpc;
+    ss::sharded<ss::http_server> _admin;
+    ss::sharded<kafka::quota_manager> _quota_mgr;
+    ss::sharded<kafka::kafka_server> _kafka_server;
 
     // run these first on destruction
     deferred_actions _deferred;

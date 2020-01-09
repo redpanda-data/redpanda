@@ -11,11 +11,11 @@
 namespace rpc {
 class connection_cache final {
 public:
-    using transport_ptr = lw_shared_ptr<rpc::reconnect_transport>;
+    using transport_ptr = ss::lw_shared_ptr<rpc::reconnect_transport>;
     using underlying = std::unordered_map<model::node_id, transport_ptr>;
     using iterator = typename underlying::iterator;
 
-    static inline shard_id shard_for(const model::node_id&);
+    static inline ss::shard_id shard_for(const model::node_id&);
 
     connection_cache() = default;
     bool contains(model::node_id n) const {
@@ -25,18 +25,18 @@ public:
 
     /// \brief needs to be a future, because mutations may come from different
     /// fibers and they need to be synchronized
-    future<> emplace(model::node_id n, rpc::transport_configuration c);
-    future<> remove(model::node_id n);
+    ss::future<> emplace(model::node_id n, rpc::transport_configuration c);
+    ss::future<> remove(model::node_id n);
 
     /// \brief closes all connections
-    future<> stop();
+    ss::future<> stop();
 
 private:
-    semaphore _sem{1}; // to add/remove nodes
+    ss::semaphore _sem{1}; // to add/remove nodes
     underlying _cache;
 };
-inline shard_id connection_cache::shard_for(const model::node_id& b) {
+inline ss::shard_id connection_cache::shard_for(const model::node_id& b) {
     auto h = ::std::hash<model::node_id>()(b);
-    return jump_consistent_hash(h, smp::count);
+    return jump_consistent_hash(h, ss::smp::count);
 }
 } // namespace rpc

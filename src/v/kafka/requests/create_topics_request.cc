@@ -72,12 +72,12 @@ void create_topics_response::decode(iobuf buf, api_version version) {
 
 static std::ostream&
 operator<<(std::ostream& o, const create_topics_response::topic& t) {
-    return fmt_print(
+    return ss::fmt_print(
       o, "name {} error {} error_msg {}", t.name, t.error, t.error_message);
 }
 
 std::ostream& operator<<(std::ostream& o, const create_topics_response& r) {
-    return fmt_print(o, "topics {}", r.topics);
+    return ss::fmt_print(o, "topics {}", r.topics);
 }
 
 new_topic_configuration
@@ -114,10 +114,10 @@ model::node_id create_topics_request::read_node_id(request_reader& r) {
     return model::node_id(r.read_int32());
 }
 
-future<response_ptr>
-create_topics_api::process(request_context&& ctx, smp_service_group g) {
+ss::future<response_ptr>
+create_topics_api::process(request_context&& ctx, ss::smp_service_group g) {
     auto request = create_topics_request::decode(ctx);
-    return do_with(
+    return ss::do_with(
       std::move(ctx),
       [request = std::move(request)](request_context& ctx) mutable {
           return ctx.cntrl_dispatcher()
@@ -131,7 +131,7 @@ create_topics_api::process(request_context&& ctx, smp_service_group g) {
                 if (!is_leader) {
                     generate_not_controller_errors(
                       begin, request.topics.end(), std::back_inserter(results));
-                    return make_ready_future<std::vector<topic_op_result>>(
+                    return ss::make_ready_future<std::vector<topic_op_result>>(
                       std::move(results));
                 }
 
@@ -157,7 +157,7 @@ create_topics_api::process(request_context&& ctx, smp_service_group g) {
                       [](const new_topic_configuration& t) {
                           return generate_successfull_result(t);
                       });
-                    return make_ready_future<std::vector<topic_op_result>>(
+                    return ss::make_ready_future<std::vector<topic_op_result>>(
                       std::move(results));
                 }
 
@@ -172,8 +172,8 @@ create_topics_api::process(request_context&& ctx, smp_service_group g) {
                           std::vector<cluster::topic_result> c_res) mutable {
                       // Append controller results to validation errors
                       append_cluster_results(c_res, results);
-                      return make_ready_future<std::vector<topic_op_result>>(
-                        std::move(results));
+                      return ss::make_ready_future<
+                        std::vector<topic_op_result>>(std::move(results));
                   });
             })
             .then([&ctx](std::vector<topic_op_result> errs) {

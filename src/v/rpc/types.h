@@ -21,9 +21,9 @@
 namespace rpc {
 class netbuf;
 
-using clock_type = lowres_clock;
+using clock_type = ss::lowres_clock;
 using duration_type = typename clock_type::duration;
-using timer_type = timer<clock_type>;
+using timer_type = ss::timer<clock_type>;
 static constexpr clock_type::time_point no_timeout
   = clock_type::time_point::max();
 
@@ -37,16 +37,16 @@ struct negotiation_frame {
 /// \brief core struct for communications. sent with _each_ payload
 struct [[gnu::packed]] header {
     /// \brief size of the payload _after_ this header
-    unaligned<uint32_t> size = 0;
+    ss::unaligned<uint32_t> size = 0;
     /// \brief used to find the method id on the server side
-    unaligned<uint32_t> meta = 0;
+    ss::unaligned<uint32_t> meta = 0;
     /// \brief every client/tcp connection will need to match
-    /// the future<> that dispatched the method
-    unaligned<uint32_t> correlation_id = 0;
+    /// the ss::future<> that dispatched the method
+    ss::unaligned<uint32_t> correlation_id = 0;
     /// \bitflags for payload
-    unaligned<uint32_t> bitflags = 0;
+    ss::unaligned<uint32_t> bitflags = 0;
     /// \brief xxhash64
-    unaligned<uint64_t> checksum = 0;
+    ss::unaligned<uint64_t> checksum = 0;
 };
 static_assert(sizeof(header) == 24, "This is expensive. Expand gently");
 
@@ -54,7 +54,7 @@ static_assert(sizeof(header) == 24, "This is expensive. Expand gently");
 /// actually doing the work
 struct streaming_context {
     virtual ~streaming_context() noexcept = default;
-    virtual future<semaphore_units<>> reserve_memory(size_t) = 0;
+    virtual ss::future<ss::semaphore_units<>> reserve_memory(size_t) = 0;
     virtual const header& get_header() const = 0;
     /// \brief because we parse the input as a _stream_ we need to signal
     /// to the dispatching thread that it can resume parsing for a new RPC
@@ -63,8 +63,8 @@ struct streaming_context {
 
 /// \brief most method implementations will be codegenerated
 /// by $root/tools/rpcgen.py
-using method = noncopyable_function<future<netbuf>(
-  input_stream<char>&, streaming_context&)>;
+using method = ss::noncopyable_function<ss::future<netbuf>(
+  ss::input_stream<char>&, streaming_context&)>;
 
 /// \brief used in returned types for client::send_typed() calls
 template<typename T>
@@ -75,23 +75,23 @@ struct client_context {
     T data;
 };
 
-using metrics_disabled = bool_class<struct metrics_disabled_tag>;
+using metrics_disabled = ss::bool_class<struct metrics_disabled_tag>;
 
 struct server_configuration {
-    std::vector<socket_address> addrs;
+    std::vector<ss::socket_address> addrs;
     int64_t max_service_memory_per_core;
-    std::optional<tls::credentials_builder> credentials;
+    std::optional<ss::tls::credentials_builder> credentials;
     metrics_disabled disable_metrics = metrics_disabled::no;
 };
 struct transport_configuration {
-    socket_address server_addr;
+    ss::socket_address server_addr;
     /// \ brief The default timeout PER connection body. After we
     /// parse the header of the connection we need to
     /// make sure that we at some point receive some
     /// bytes or expire the (connection).
     duration_type recv_timeout = std::chrono::minutes(1);
     uint32_t max_queued_bytes = std::numeric_limits<uint32_t>::max();
-    std::optional<tls::credentials_builder> credentials;
+    std::optional<ss::tls::credentials_builder> credentials;
     metrics_disabled disable_metrics = metrics_disabled::no;
 };
 

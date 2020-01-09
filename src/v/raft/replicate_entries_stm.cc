@@ -29,7 +29,7 @@ operator<<(std::ostream& o, const replicate_entries_stm::retry_meta& m) {
     return o << "}";
 }
 
-future<result<void>> replicate_entries_stm::process_replies() {
+ss::future<result<void>> replicate_entries_stm::process_replies() {
     auto [success, failure] = partition_count();
     const auto& cfg = _ptr->_conf;
     if (success < cfg.majority()) {
@@ -40,14 +40,15 @@ future<result<void>> replicate_entries_stm::process_replies() {
           failure,
           cfg.majority(),
           cfg.nodes.size());
-        return make_ready_future<result<void>>(errc::non_majority_replication);
+        return ss::make_ready_future<result<void>>(
+          errc::non_majority_replication);
     }
     raftlog.debug(
       "Successful append with: {} acks out of: {}", success, cfg.nodes.size());
-    return make_ready_future<result<void>>(outcome::success());
+    return ss::make_ready_future<result<void>>(outcome::success());
 }
 
-future<std::vector<append_entries_request>>
+ss::future<std::vector<append_entries_request>>
 replicate_entries_stm::share_request_n(size_t n) {
     // one extra copy is needed for retries
     return with_semaphore(_share_sem, 1, [this, n] {
@@ -68,7 +69,7 @@ replicate_entries_stm::share_request_n(size_t n) {
     });
 }
 
-future<result<append_entries_reply>> replicate_entries_stm::do_dispatch_one(
+ss::future<result<append_entries_reply>> replicate_entries_stm::do_dispatch_one(
   model::node_id n, append_entries_request req) {
     using ret_t = result<append_entries_reply>;
 
@@ -77,43 +78,44 @@ future<result<append_entries_reply>> replicate_entries_stm::do_dispatch_one(
         using append_res_t = std::vector<storage::log::append_result>;
         return _ptr->disk_append(std::move(req.entries))
           .then([this](append_res_t append_res) {
-              return make_ready_future<ret_t>(_ptr->make_append_entries_reply(
-                _req.meta, std::move(append_res)));
+              return ss::make_ready_future<ret_t>(
+                _ptr->make_append_entries_reply(
+                  _req.meta, std::move(append_res)));
           });
     }
     auto shard = rpc::connection_cache::shard_for(n);
-    return smp::submit_to(shard, [this, n, r = std::move(req)]() mutable {
+    return ss::smp::submit_to(shard, [this, n, r = std::move(req)]() mutable {
         auto& local = _ptr->_clients.local();
         if (!local.contains(n)) {
-            return make_ready_future<ret_t>(errc::missing_tcp_client);
+            return ss::make_ready_future<ret_t>(errc::missing_tcp_client);
         }
 
         return local.get(n)->get_connected().then(
           [r = std::move(r)](result<rpc::transport*> t) mutable {
               if (!t) {
-                  return make_ready_future<ret_t>(t.error());
+                  return ss::make_ready_future<ret_t>(t.error());
               }
               auto f = raftgen_client_protocol(*t.value())
                          .append_entries(
                            std::move(r), raft::clock_type::now() + 1s);
-              return wrap_exception_with_result<
-                                rpc::request_timeout_exception>(errc::timeout, std::move(f))
+              return wrap_exception_with_result<rpc::request_timeout_exception>(
+                       errc::timeout, std::move(f))
                 .then([](auto r) {
                     if (!r) {
-                        return make_ready_future<ret_t>(r.error());
+                        return ss::make_ready_future<ret_t>(r.error());
                     }
-                    return make_ready_future<ret_t>(r.value().data); // copy
+                    return ss::make_ready_future<ret_t>(r.value().data); // copy
                 });
           });
     });
 }
 
-future<> replicate_entries_stm::dispatch_one(retry_meta& meta) {
+ss::future<> replicate_entries_stm::dispatch_one(retry_meta& meta) {
     using reqs_t = std::vector<append_entries_request>;
     return with_gate(_req_bg, [this, &meta] {
         return with_semaphore(_sem, 1, [this, &meta] {
             const size_t majority = _ptr->_conf.majority();
-            return do_until(
+            return ss::do_until(
               [this, majority, &meta] {
                   // Either this request finished, or we reached majority
                   if (meta.finished()) {
@@ -139,7 +141,7 @@ future<> replicate_entries_stm::dispatch_one(retry_meta& meta) {
     });                 // gate
 }
 
-future<result<replicate_result>> replicate_entries_stm::apply() {
+ss::future<result<replicate_result>> replicate_entries_stm::apply() {
     using reqs_t = std::vector<append_entries_request>;
     using append_res_t = std::vector<storage::log::append_result>;
     for (auto& n : _ptr->_conf.nodes) {
@@ -148,17 +150,16 @@ future<result<replicate_result>> replicate_entries_stm::apply() {
     for (auto& m : _replies) {
         (void)dispatch_one(m); // background
     }
-
     const size_t majority = _ptr->_conf.majority();
     return _sem.wait(majority)
       .then([this, majority] {
-          return do_until(
+          return ss::do_until(
             [this, majority] {
                 auto [success, failure] = partition_count();
                 return success >= majority || failure >= majority;
             },
             [this] {
-                return with_gate(_req_bg, [this] { return _sem.wait(1); });
+                return ss::with_gate(_req_bg, [this] { return _sem.wait(1); });
             });
       })
       .then([this] { return process_replies(); })
@@ -173,7 +174,8 @@ future<result<replicate_result>> replicate_entries_stm::apply() {
                 offset,
                 term);
               return _ptr->_log.truncate(offset, term).then([r = std::move(r)] {
-                  return make_ready_future<result<replicate_result>>(r.error());
+                  return ss::make_ready_future<result<replicate_result>>(
+                    r.error());
               });
           }
           // append only when we have majority
@@ -191,7 +193,7 @@ future<result<replicate_result>> replicate_entries_stm::apply() {
                 ->commit_entries(std::move(r.back().entries), m->value->value())
                 .discard_result()
                 .then([last_offset] {
-                    return make_ready_future<result<replicate_result>>(
+                    return ss::make_ready_future<result<replicate_result>>(
                       replicate_result{
                         .last_offset = model::offset(last_offset),
                       });
@@ -199,7 +201,7 @@ future<result<replicate_result>> replicate_entries_stm::apply() {
           });
       });
 }
-future<> replicate_entries_stm::wait() {
+ss::future<> replicate_entries_stm::wait() {
     return _req_bg.close();
     // TODO(agallego) - propagate the entries replies to
     // _ptr->process_heartbeat() for all replies

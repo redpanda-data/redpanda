@@ -61,7 +61,7 @@ void skipping_consumer::consume_compressed_records(iobuf&& records) {
       _num_records, std::move(records));
 }
 
-stop_iteration skipping_consumer::consume_batch_end() {
+ss::stop_iteration skipping_consumer::consume_batch_end() {
     auto& batch = _reader._buffer.emplace_back(
       std::move(_header), std::move(_records));
     auto mem = batch.memory_usage();
@@ -73,15 +73,15 @@ stop_iteration skipping_consumer::consume_batch_end() {
       || batch.base_offset() > _reader._config.max_offset) {
         _reader._end_of_stream = true;
         _reader._over_committed_offset = true;
-        return stop_iteration::yes;
+        return ss::stop_iteration::yes;
     }
     if (
       _reader._bytes_read >= _reader._config.max_bytes
       || model::timeout_clock::now() >= _timeout) {
         _reader._end_of_stream = true;
-        return stop_iteration::yes;
+        return ss::stop_iteration::yes;
     }
-    return stop_iteration(_reader.is_buffer_full());
+    return ss::stop_iteration(_reader.is_buffer_full());
 }
 
 log_segment_batch_reader::log_segment_batch_reader(
@@ -100,10 +100,10 @@ log_segment_batch_reader::log_segment_batch_reader(
 
 bool log_segment_batch_reader::is_initialized() const { return bool(_parser); }
 
-future<> log_segment_batch_reader::initialize() {
+ss::future<> log_segment_batch_reader::initialize() {
     _input = _seg->data_stream(0, _config.prio);
     _parser = continuous_batch_parser(_consumer, _input);
-    return make_ready_future<>();
+    return ss::make_ready_future<>();
 }
 
 bool log_segment_batch_reader::is_buffer_full() const {
@@ -122,10 +122,11 @@ void log_segment_batch_reader::reset_state() {
     _end_of_stream = false;
 }
 
-future<log_segment_batch_reader::span> log_segment_batch_reader::do_load_slice(
+ss::future<log_segment_batch_reader::span>
+log_segment_batch_reader::do_load_slice(
   model::timeout_clock::time_point timeout) {
     if (_end_of_stream || _over_committed_offset) {
-        return make_ready_future<span>();
+        return ss::make_ready_future<span>();
     }
     if (!is_initialized()) {
         return initialize().then(
@@ -137,11 +138,11 @@ future<log_segment_batch_reader::span> log_segment_batch_reader::do_load_slice(
     return _parser->consume()
       .handle_exception([this](std::exception_ptr e) {
           _probe.batch_parse_error();
-          return make_exception_future<size_t>(e);
+          return ss::make_exception_future<size_t>(e);
       })
       .then([this](size_t bytes_consumed) {
           _probe.add_bytes_read(bytes_consumed);
-          auto f = make_ready_future<>();
+          auto f = ss::make_ready_future<>();
           if (_input.eof() || end_of_stream()) {
               _end_of_stream = true;
               f = _input.close();
@@ -167,10 +168,10 @@ log_reader::log_reader(
   , _config(std::move(config))
   , _probe(probe) {}
 
-future<log_reader::span>
+ss::future<log_reader::span>
 log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
     if (is_done()) {
-        return make_ready_future<span>();
+        return ss::make_ready_future<span>();
     }
     return _current_reader->do_load_slice(timeout);
 }

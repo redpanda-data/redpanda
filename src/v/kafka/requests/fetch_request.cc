@@ -69,16 +69,16 @@ void fetch_request::decode(request_context& ctx) {
 }
 
 std::ostream& operator<<(std::ostream& o, const fetch_request::partition& p) {
-    return fmt_print(
+    return ss::fmt_print(
       o, "id {} off {} max {}", p.id, p.fetch_offset, p.partition_max_bytes);
 }
 
 std::ostream& operator<<(std::ostream& o, const fetch_request::topic& t) {
-    return fmt_print(o, "name {} parts {}", t.name, t.partitions);
+    return ss::fmt_print(o, "name {} parts {}", t.name, t.partitions);
 }
 
 std::ostream& operator<<(std::ostream& o, const fetch_request& r) {
-    return fmt_print(
+    return ss::fmt_print(
       o,
       "replica {} max_wait_time {} min_bytes {} max_bytes {} isolation {} "
       "topics {}",
@@ -153,13 +153,13 @@ void fetch_response::decode(iobuf buf, api_version version) {
 
 std::ostream&
 operator<<(std::ostream& o, const fetch_response::aborted_transaction& t) {
-    return fmt_print(
+    return ss::fmt_print(
       o, "producer {} first_off {}", t.producer_id, t.first_offset);
 }
 
 std::ostream&
 operator<<(std::ostream& o, const fetch_response::partition_response& p) {
-    return fmt_print(
+    return ss::fmt_print(
       o,
       "id {} err {} high_water {} last_stable_off {} aborted {} "
       "record_set_len "
@@ -173,11 +173,11 @@ operator<<(std::ostream& o, const fetch_response::partition_response& p) {
 }
 
 std::ostream& operator<<(std::ostream& o, const fetch_response::partition& p) {
-    return fmt_print(o, "name {} responses {}", p.name, p.responses);
+    return ss::fmt_print(o, "name {} responses {}", p.name, p.responses);
 }
 
 std::ostream& operator<<(std::ostream& o, const fetch_response& r) {
-    return fmt_print(o, "partitions {}", r.partitions);
+    return ss::fmt_print(o, "partitions {}", r.partitions);
 }
 
 /**
@@ -192,16 +192,16 @@ make_partition_response_error(error_code error) {
     };
 }
 
-static future<fetch_response::partition_response>
+static ss::future<fetch_response::partition_response>
 make_ready_partition_response_error(error_code error) {
-    return make_ready_future<fetch_response::partition_response>(
+    return ss::make_ready_future<fetch_response::partition_response>(
       make_partition_response_error(error));
 }
 
 /**
  * Low-level handler for reading from an ntp. Runs on ntp's home core.
  */
-static future<fetch_response::partition_response>
+static ss::future<fetch_response::partition_response>
 read_from_log(storage::log_ptr log, fetch_config config) {
     storage::log_reader_config reader_config{
       .start_offset = config.start_offset,
@@ -211,7 +211,7 @@ read_from_log(storage::log_ptr log, fetch_config config) {
       .type_filter = {raft::data_batch_type},
     };
     auto reader = log->make_reader(std::move(reader_config));
-    return do_with(
+    return ss::do_with(
       std::move(reader),
       [timeout = config.timeout](model::record_batch_reader& reader) {
           return reader.consume(kafka_batch_serializer(), timeout)
@@ -230,7 +230,7 @@ read_from_log(storage::log_ptr log, fetch_config config) {
  * Entry point for reading from an ntp. This will forward the request to
  * the ntp's home core and build error responses if anything goes wrong.
  */
-future<fetch_response::partition_response>
+ss::future<fetch_response::partition_response>
 read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config) {
     /*
      * lookup the home shard for this ntp. the caller should check for
@@ -275,9 +275,9 @@ read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config) {
  * partition response is finalized and placed into its position in the
  * response message.
  */
-static future<>
+static ss::future<>
 handle_ntp_fetch(op_context& octx, model::ntp ntp, fetch_config config) {
-    using read_response_type = future<fetch_response::partition_response>;
+    using read_response_type = ss::future<fetch_response::partition_response>;
     auto p_id = ntp.tp.partition;
     return read_from_ntp(octx, std::move(ntp), std::move(config))
       .then_wrapped([&octx, p_id](read_response_type&& f) {
@@ -321,8 +321,8 @@ handle_ntp_fetch(op_context& octx, model::ntp ntp, fetch_config config) {
  * be reassembled such that the responses appear in these order as the
  * partitions in the request.
  */
-static future<> fetch_topic_partitions(op_context& octx) {
-    return do_for_each(
+static ss::future<> fetch_topic_partitions(op_context& octx) {
+    return ss::do_for_each(
       octx.request.cbegin(),
       octx.request.cend(),
       [&octx](const fetch_request::const_iterator::value_type& p) {
@@ -342,7 +342,7 @@ static future<> fetch_topic_partitions(op_context& octx) {
             || model::timeout_clock::now() > octx.deadline) {
               octx.add_partition_response(
                 make_partition_response_error(error_code::message_too_large));
-              return make_ready_future<>();
+              return ss::make_ready_future<>();
           }
 
           auto ntp = model::ntp{
@@ -364,9 +364,9 @@ static future<> fetch_topic_partitions(op_context& octx) {
       });
 }
 
-future<response_ptr>
-fetch_api::process(request_context&& rctx, smp_service_group ssg) {
-    return do_with(op_context(std::move(rctx), ssg), [](op_context& octx) {
+ss::future<response_ptr>
+fetch_api::process(request_context&& rctx, ss::smp_service_group ssg) {
+    return ss::do_with(op_context(std::move(rctx), ssg), [](op_context& octx) {
         return fetch_topic_partitions(octx).then([&octx] {
             // build the final response message
             auto resp = std::make_unique<response>();
@@ -379,7 +379,7 @@ fetch_api::process(request_context&& rctx, smp_service_group ssg) {
               !octx.request.debounce_delay()
               || octx.response_size >= octx.request.min_bytes
               || octx.request.topics.empty() || octx.response_error) {
-                return make_ready_future<response_ptr>(std::move(resp));
+                return ss::make_ready_future<response_ptr>(std::move(resp));
             }
 
             /*
@@ -398,9 +398,9 @@ fetch_api::process(request_context&& rctx, smp_service_group ssg) {
              *   shutdown.
              */
             auto delay = octx.deadline - model::timeout_clock::now();
-            return seastar::sleep<model::timeout_clock>(delay).then(
+            return ss::sleep<model::timeout_clock>(delay).then(
               [resp = std::move(resp)]() mutable {
-                  return make_ready_future<response_ptr>(std::move(resp));
+                  return ss::make_ready_future<response_ptr>(std::move(resp));
               });
         });
     });

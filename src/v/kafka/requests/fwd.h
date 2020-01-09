@@ -1,4 +1,5 @@
 #pragma once
+
 #include "seastarx.h"
 
 #include <seastar/core/sharded.hh>
@@ -14,5 +15,5 @@ class request_context;
 class response_writer;
 
 class response;
-using response_ptr = foreign_ptr<std::unique_ptr<response>>;
+using response_ptr = ss::foreign_ptr<std::unique_ptr<response>>;
 } // namespace kafka

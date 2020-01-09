@@ -2,6 +2,7 @@
 
 #include "bytes/bytes.h"
 #include "bytes/iobuf.h"
+#include "seastarx.h"
 
 #include <seastar/core/aligned_buffer.hh>
 #include <seastar/core/file.hh>
@@ -23,9 +24,9 @@ public:
     static constexpr const size_t chunk_size = 128 * 1024; // 128KB
     static constexpr const size_t chunks_no_buffer = (1024 * 1024) / chunk_size;
     struct options {
-        explicit options(seastar::io_priority_class p)
+        explicit options(ss::io_priority_class p)
           : priority(p) {}
-        seastar::io_priority_class priority;
+        ss::io_priority_class priority;
         size_t adaptive_fallocation_size = 1024 * 1024 * 8; // 8MB
         /// when to dispatch the background fallocate
         size_t fallocation_free_space_size = 1024 * 1024 * 2; // 2MB
@@ -37,8 +38,7 @@ public:
         chunk(chunk&&) noexcept = default;
         chunk& operator=(chunk&&) noexcept = default;
         explicit chunk(const size_t alignment = 4096)
-          : _buf(
-            seastar::allocate_aligned_buffer<char>(chunk_size, alignment)) {}
+          : _buf(ss::allocate_aligned_buffer<char>(chunk_size, alignment)) {}
 
         bool is_full() const { return _pos == chunk_size; }
         bool is_empty() const { return _pos == 0; }
@@ -58,8 +58,7 @@ public:
         const char* dma_ptr(size_t alignment) const {
             // we must always write in hardware-aligned page multiples.
             // alignment comes from the filesystem
-            const auto sz = seastar::align_down<size_t>(
-              _flushed_pos, alignment);
+            const auto sz = ss::align_down<size_t>(_flushed_pos, alignment);
             return _buf.get() + sz;
         }
         size_t dma_size(size_t alignment) const {
@@ -74,10 +73,10 @@ public:
             // must be 8192 bytes, starting at the bottom of the _flushed_pos
             // page, in this example, at offset 0.
             //
-            const auto prev_sz = seastar::align_down<size_t>(
+            const auto prev_sz = ss::align_down<size_t>(
               _flushed_pos, alignment);
             const size_t sz = _pos - prev_sz;
-            return seastar::align_up<size_t>(sz, alignment);
+            return ss::align_up<size_t>(sz, alignment);
         }
         void compact(size_t alignment) {
             if (__builtin_expect(_flushed_pos != _pos, false)) {
@@ -101,7 +100,7 @@ public:
     private:
         friend std::ostream& operator<<(std::ostream&, const chunk&);
         char* get_current() { return _buf.get() + _pos; }
-        std::unique_ptr<char[], free_deleter> _buf;
+        std::unique_ptr<char[], ss::free_deleter> _buf;
         size_t _pos{0};
         size_t _flushed_pos{0};
     };
@@ -109,7 +108,7 @@ public:
     using iterator = typename underlying_t::iterator;
     using const_iterator = typename underlying_t::const_iterator;
 
-    log_segment_appender(file f, options opts);
+    log_segment_appender(ss::file f, options opts);
     ~log_segment_appender();
     log_segment_appender(log_segment_appender&&) noexcept = default;
     log_segment_appender& operator=(log_segment_appender&&) noexcept = default;
@@ -120,36 +119,36 @@ public:
         return _committed_offset + _bytes_flush_pending;
     }
     size_t dma_write_alignment() const { return _dma_write_alignment; }
-    seastar::io_priority_class priority_class() const { return _opts.priority; }
+    ss::io_priority_class priority_class() const { return _opts.priority; }
 
-    future<> append(const char* buf, const size_t n);
-    future<> append(bytes_view s) {
+    ss::future<> append(const char* buf, const size_t n);
+    ss::future<> append(bytes_view s) {
         return append(reinterpret_cast<const char*>(s.begin()), s.size());
     }
-    future<> append(const iobuf& io) {
+    ss::future<> append(const iobuf& io) {
         auto in = iobuf::iterator_consumer(io.cbegin(), io.cend());
-        auto f = make_ready_future<>();
+        auto f = ss::make_ready_future<>();
         auto c = in.consume(
           io.size_bytes(), [this, &f](const char* src, size_t sz) {
               f = f.then([this, src, sz] { return append(src, sz); });
-              return stop_iteration::no;
+              return ss::stop_iteration::no;
           });
         if (__builtin_expect(c != io.size_bytes(), false)) {
-            return make_exception_future<>(
+            return ss::make_exception_future<>(
                      std::runtime_error("could not append data"))
               .then([f = std::move(f)]() mutable { return std::move(f); });
         }
         return f;
     }
-    future<> truncate(size_t n);
-    future<> close();
-    future<> flush();
+    ss::future<> truncate(size_t n);
+    ss::future<> close();
+    ss::future<> flush();
 
 protected:
     friend std::ostream& operator<<(std::ostream&, const log_segment_appender&);
-    future<> do_adaptive_fallocate();
+    ss::future<> do_adaptive_fallocate();
 
-    file _out;
+    ss::file _out;
     options _opts;
     size_t _dma_write_alignment{0};
 

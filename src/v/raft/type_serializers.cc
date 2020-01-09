@@ -9,7 +9,7 @@ namespace rpc {
 struct rpc_model_reader_consumer {
     explicit rpc_model_reader_consumer(iobuf& oref)
       : ref(oref) {}
-    future<stop_iteration> operator()(model::record_batch batch) {
+    ss::future<ss::stop_iteration> operator()(model::record_batch batch) {
         rpc::serialize(ref, batch.release_header(), batch.size());
         if (!batch.compressed()) {
             rpc::serialize<int8_t>(ref, 0);
@@ -20,7 +20,8 @@ struct rpc_model_reader_consumer {
             rpc::serialize<int8_t>(ref, 1);
             rpc::serialize(ref, std::move(batch).release().release());
         }
-        return make_ready_future<stop_iteration>(stop_iteration::no);
+        return ss::make_ready_future<ss::stop_iteration>(
+          ss::stop_iteration::no);
     }
     void end_of_stream(){};
     iobuf& ref;
@@ -44,10 +45,10 @@ void serialize(iobuf& out, raft::entry&& r) {
 }
 
 template<>
-future<raft::entry> deserialize(source& in) {
+ss::future<raft::entry> deserialize(source& in) {
     return rpc::deserialize<entry_header>(in).then(
       [&in](entry_header e_hdr) mutable {
-          return do_with(
+          return ss::do_with(
                    boost::irange<uint32_t>(0, e_hdr.batch_count),
                    [&in](boost::integer_range<uint32_t>& r) mutable {
                        return copy_range<std::vector<model::record_batch>>(
