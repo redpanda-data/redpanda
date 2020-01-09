@@ -51,6 +51,7 @@ future<log_manager::log_handles> log_manager::make_log_segment(
   size_t buffer_size) {
     auto filename = make_filename(
       _config.base_dir, ntp, base_offset, term, version);
+    stlog.trace("Creating new segment {}", filename);
     return do_with(log_handles{}, [=](log_handles& h) {
         file_open_options opt;
         opt.extent_allocation_size_hint = 32 << 20;
