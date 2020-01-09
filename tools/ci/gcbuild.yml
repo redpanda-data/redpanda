@@ -63,6 +63,10 @@ steps:
   - 'TAG_NAME=$TAG_NAME'
   - 'PACKAGECLOUD_TOKEN=$_PACKAGECLOUD_TOKEN'
 
+- id: 'delete builder image'
+  name: 'gcr.io/cloud-builders/gcloud-slim'
+  args: ['container', 'images', 'delete', 'gcr.io/$PROJECT_ID/builder-$_COMPILER-$_BUILD_TYPE:$SHORT_SHA']
+
 timeout: 3600s
 
 substitutions:
