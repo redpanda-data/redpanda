@@ -393,7 +393,7 @@ ExternalProject_Add(lksctp-tools
 
 ExternalProject_Add(seastar
   GIT_REPOSITORY https://github.com/vectorizedio/seastar.git
-  GIT_TAG 60c2592605880be3999663dd5e970d1c9723c590
+  GIT_TAG 2d9358031fe051ae3cc36b533978ec77ed6d0866
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
