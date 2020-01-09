@@ -143,7 +143,6 @@ std::ostream& operator<<(std::ostream& o, const model::broker_properties& b) {
 }
 
 std::ostream& operator<<(std::ostream& o, const model::broker& b) {
-    return o;
     return fmt_print(
       o,
       "id: {} kafka_api_address: {} rpc_address: {} rack: {} "
