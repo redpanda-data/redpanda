@@ -149,7 +149,8 @@ public:
 
         model::offset base_offset = log_ptr->max_offset() < model::offset(0)
                                       ? model::offset(0)
-                                      : log_ptr->max_offset();
+                                      : log_ptr->max_offset()
+                                          + model::offset(1);
         int64_t total_records = 0;
         std::vector<model::record_batch_header> headers;
 
@@ -175,5 +176,25 @@ public:
         }
 
         return headers;
+    }
+
+    // model::offset start_offset;
+    // size_t max_bytes;
+    // size_t min_bytes;
+    // io_priority_class prio;
+    // std::vector<model::record_batch_type> type_filter;
+    // model::offset max_offset = model::model_limits<model::offset>::max(); // inclusive
+    std::vector<model::record_batch> read_range_to_vector(
+      const storage::log_ptr& log, model::offset start, model::offset end) {
+        storage::log_reader_config cfg{
+          .start_offset = start,
+          .max_bytes = std::numeric_limits<size_t>::max(),
+          .min_bytes = 0,
+          .prio = default_priority_class(),
+          .type_filter = {},
+          .max_offset = end};
+        auto reader = log->make_reader(std::move(cfg));
+        return reader.consume(batch_validating_consumer(), model::no_timeout)
+          .get0();
     }
 };

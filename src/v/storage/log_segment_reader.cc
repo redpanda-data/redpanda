@@ -89,7 +89,7 @@ segment_reader_ptr log_segment_selector::select(model::offset offset) const {
     }
     auto seg = _current_segment;
     while (seg != _set.end()) {
-        if (offset < (*seg)->max_offset()) {
+        if (offset <= (*seg)->max_offset()) {
             _current_segment = seg;
             return *seg;
         }

@@ -70,7 +70,7 @@ stop_iteration skipping_consumer::consume_batch_end() {
     // We keep the batch in the buffer so that the reader can be cached.
     if (
       batch.base_offset() > _reader._tracker.committed_offset()
-      || batch.base_offset() >= _reader._config.max_offset) {
+      || batch.base_offset() > _reader._config.max_offset) {
         _reader._end_of_stream = true;
         _reader._over_committed_offset = true;
         return stop_iteration::yes;
@@ -194,7 +194,9 @@ log_reader::reader_available log_reader::maybe_create_segment_reader() {
         }
         _config.max_bytes -= bytes_read;
         _config.min_bytes -= std::min(bytes_read, _config.min_bytes);
-        seg = _selector.select(_current_reader->_seg->max_offset());
+        // The max offset is inclusive, we have to select next segment
+        seg = _selector.select(
+          _current_reader->_seg->max_offset() + model::offset(1));
     } else {
         seg = _selector.select(_config.start_offset);
     }

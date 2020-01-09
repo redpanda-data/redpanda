@@ -169,12 +169,12 @@ SEASTAR_THREAD_TEST_CASE(test_does_not_read_past_max_offset_multiple_batches) {
 
     // max reader offset is 200
     auto maxbytes = std::numeric_limits<size_t>::max();
-    auto reader = ctx.reader(model::offset(0), maxbytes, model::offset(200));
+    auto reader = ctx.reader(model::offset(0), maxbytes, model::offset(199));
 
     std::vector<model::record_batch> consumed =
         reader.consume(consumer(), model::no_timeout).get0();
 
-    // max offset set to 200, so the last batch should not be returned.
+    // max offset set to 199, so the last batch should not be returned.
     std::vector<model::record_batch> expected;
     expected.push_back(std::move(batches[0]));
     expected.push_back(std::move(batches[1]));

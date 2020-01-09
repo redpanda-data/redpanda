@@ -45,7 +45,7 @@ public:
     // Inclusive lower bound offset.
     model::offset base_offset() const { return _base_offset; }
 
-    // Exclusive upper bound offset.
+    // Inclusive upper bound offset.
     model::offset max_offset() const { return _max_offset; }
 
     uint64_t file_size() const { return _file_size; }
