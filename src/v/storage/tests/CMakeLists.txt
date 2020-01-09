@@ -86,3 +86,11 @@ rp_test(
   LIBRARIES Seastar::seastar_testing storage
   ARGS "-- -c 1"
 )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME storage_e2e_test
+  SOURCES storage_e2e_test.cc
+  LIBRARIES Seastar::seastar_testing storage
+  ARGS "-- -c 1"
+)
