@@ -133,7 +133,7 @@ def pr(ctx, fork, upstream, to):
 
     if not remote_ref or force:
         refspec = "{}:{}".format(local_branch.name, remote_branch)
-        click.echo("Pushing remote({}} branch: {}".format(fork, refspec))
+        click.echo("Pushing remote({}) branch: {}".format(fork, refspec))
         remote.push(refspec, force=force)
 
     # build the patch series in a staging directory
