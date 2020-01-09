@@ -1,3 +1,4 @@
+import git
 import glob
 import io
 import os
@@ -192,7 +193,14 @@ def create_packages(vconfig, formats, build_type):
     global REVISION
     global RELEASE
 
-    REVISION = os.environ['SHORT_SHA']
+    REVISION = os.environ.get('SHORT_SHA', None)
+    if not REVISION:
+        repo = git.Repo(os.getcwd(), search_parent_directories=True)
+        if repo:
+            REVISION = repo.git.rev_parse(repo.head.object.hexsha, short=1)
+        else:
+            REVISION = '000000'
+
     tag = os.environ.get('TAG_NAME', None)
     if tag and 'release-' in tag:
         VERSION = tag.replace('release-', '')
