@@ -63,7 +63,7 @@ ss::future<> controller::start() {
           clusterlog.debug("Starting cluster recovery");
           return start_raft0()
             .then([this](consensus_ptr c) {
-                auto plog = _pm.local().logs().find(controller::ntp)->second;
+                auto plog = _pm.local().log(controller::ntp);
                 _raft0 = c.get();
                 return bootstrap_from_log(plog);
             })
