@@ -1,5 +1,5 @@
 #include "cluster/logger.h"
 
 namespace cluster {
-logger clusterlog{"cluster"};
+ss::logger clusterlog{"cluster"};
 } // namespace cluster

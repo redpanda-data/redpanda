@@ -1,4 +1,5 @@
 #pragma once
+
 #include "seastarx.h"
 
 #include <seastar/core/metrics_registration.hh>
@@ -36,7 +37,7 @@ public:
 
     void waiting_for_available_memory() { ++_requests_blocked_memory; }
 
-    void setup_metrics(metrics::metric_groups& mgs);
+    void setup_metrics(ss::metrics::metric_groups& mgs);
 
 private:
     uint64_t _requests_completed = 0;

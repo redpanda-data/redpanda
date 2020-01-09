@@ -14,7 +14,7 @@ namespace kafka {
 CONCEPT(
 template<typename T>
 concept PartitionShardMapper = requires(T m, model::ntp ntp) {
-    { m.shard_for(ntp) } -> shard_id;
+    { m.shard_for(ntp) } -> ss::shard_id;
 };
 )
 // clang-format on
@@ -27,7 +27,7 @@ public:
     explicit group_shard_mapper(Shards& shards)
       : _shards(shards) {}
 
-    shard_id shard_for(const kafka::group_id& group) {
+    ss::shard_id shard_for(const kafka::group_id& group) {
         incremental_xxhash64 inc;
         inc.update(group);
         auto p = static_cast<model::partition_id::type>(

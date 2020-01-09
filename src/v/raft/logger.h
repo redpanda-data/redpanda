@@ -5,5 +5,5 @@
 #include <seastar/util/log.hh>
 
 namespace raft {
-extern logger raftlog;
+extern ss::logger raftlog;
 } // namespace raft

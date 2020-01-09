@@ -19,16 +19,17 @@ struct context {
     probe prb;
 
     void write(std::vector<model::record_batch>& batches) {
-        auto fd
-          = open_file_dma("test", open_flags::create | open_flags::rw).get0();
-        fd = file(make_shared(file_io_sanitizer(std::move(fd))));
+        auto fd = ss::open_file_dma(
+                    "test", ss::open_flags::create | ss::open_flags::rw)
+                    .get0();
+        fd = ss::file(ss::make_shared(file_io_sanitizer(std::move(fd))));
         auto appender = log_segment_appender(
-          fd, log_segment_appender::options(seastar::default_priority_class()));
+          fd, log_segment_appender::options(ss::default_priority_class()));
         for (auto& b : batches) {
             storage::write(appender, b).get();
         }
         appender.flush().get();
-        log_seg = make_lw_shared<log_segment_reader>(
+        log_seg = ss::make_lw_shared<log_segment_reader>(
           "test",
           std::move(fd),
           model::term_id(0),
@@ -41,7 +42,7 @@ struct context {
       model::offset start,
       size_t max_bytes = std::numeric_limits<size_t>::max()) {
         auto cfg = log_reader_config{
-          start, max_bytes, 0, default_priority_class()};
+          start, max_bytes, 0, ss::default_priority_class()};
         return model::make_record_batch_reader<log_segment_batch_reader>(
           log_seg, tracker, std::move(cfg), prb);
     }
@@ -55,9 +56,10 @@ struct context {
 
 class consumer {
 public:
-    future<stop_iteration> operator()(model::record_batch b) {
+    ss::future<ss::stop_iteration> operator()(model::record_batch b) {
         _result.push_back(std::move(b));
-        return make_ready_future<stop_iteration>(stop_iteration::no);
+        return ss::make_ready_future<ss::stop_iteration>(
+          ss::stop_iteration::no);
     }
     std::vector<model::record_batch> end_of_stream() {
         return std::move(_result);
@@ -183,7 +185,7 @@ SEASTAR_THREAD_TEST_CASE(test_read_batch_range) {
           .start_offset = start_offset,
           .max_bytes = std::numeric_limits<size_t>::max(),
           .min_bytes = 0,
-          .prio = default_priority_class(),
+          .prio = ss::default_priority_class(),
           .type_filter = {},
           .max_offset = max_offset,
         };
@@ -255,7 +257,7 @@ SEASTAR_THREAD_TEST_CASE(test_batch_type_filter) {
           .start_offset = model::offset(0),
           .max_bytes = std::numeric_limits<size_t>::max(),
           .min_bytes = 0,
-          .prio = default_priority_class(),
+          .prio = ss::default_priority_class(),
           .type_filter = std::move(type_filter),
         };
 

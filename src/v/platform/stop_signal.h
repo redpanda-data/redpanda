@@ -6,14 +6,14 @@
 class stop_signal {
 public:
     stop_signal() {
-        seastar::engine().handle_signal(SIGINT, [this] { signaled(); });
-        seastar::engine().handle_signal(SIGTERM, [this] { signaled(); });
+        ss::engine().handle_signal(SIGINT, [this] { signaled(); });
+        ss::engine().handle_signal(SIGTERM, [this] { signaled(); });
     }
     ~stop_signal() {
-        seastar::engine().handle_signal(SIGINT, [] {});
-        seastar::engine().handle_signal(SIGTERM, [] {});
+        ss::engine().handle_signal(SIGINT, [] {});
+        ss::engine().handle_signal(SIGTERM, [] {});
     }
-    seastar::future<> wait() {
+    ss::future<> wait() {
         return _cond.wait([this] { return _caught; });
     }
 
@@ -26,5 +26,5 @@ private:
     }
 
     bool _caught = false;
-    seastar::condition_variable _cond;
+    ss::condition_variable _cond;
 };

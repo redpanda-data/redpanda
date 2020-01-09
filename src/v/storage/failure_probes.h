@@ -1,6 +1,7 @@
 #pragma once
 #include "finjector/hbadger.h"
 #include "random/fast_prng.h"
+#include "seastarx.h"
 #include "utils/string_switch.h"
 
 #include <seastar/core/sleep.hh>
@@ -27,47 +28,47 @@ public:
           .default_match(0);
     }
 
-    std::vector<sstring> points() final {
+    std::vector<ss::sstring> points() final {
         return {"append", "roll", "truncate"};
     }
 
-    future<> append() {
+    ss::future<> append() {
         if (is_enabled()) {
             return inject_method_failure(methods::append, "append");
         }
-        return make_ready_future<>();
+        return ss::make_ready_future<>();
     }
 
-    future<> roll() {
+    ss::future<> roll() {
         if (is_enabled()) {
             return inject_method_failure(methods::roll, "roll");
         }
-        return make_ready_future<>();
+        return ss::make_ready_future<>();
     }
 
-    future<> truncate() {
+    ss::future<> truncate() {
         if (is_enabled()) {
             return inject_method_failure(methods::truncate, "truncate");
         }
-        return make_ready_future<>();
+        return ss::make_ready_future<>();
     }
 
 private:
-    [[gnu::noinline]] future<>
+    [[gnu::noinline]] ss::future<>
     inject_method_failure(methods method, std::string_view method_name) {
         if (_exception_methods & type(method)) {
-            return make_exception_future<>(std::runtime_error(fmt::format(
+            return ss::make_exception_future<>(std::runtime_error(fmt::format(
               "FailureInjector: "
               "storage::log::{}",
               method_name)));
         }
         if (_delay_methods & type(method)) {
-            return sleep(std::chrono::milliseconds(_prng() % 50));
+            return ss::sleep(std::chrono::milliseconds(_prng() % 50));
         }
         if (_termination_methods & type(method)) {
             std::terminate();
         }
-        return make_ready_future<>();
+        return ss::make_ready_future<>();
     }
     fast_prng _prng;
 };
@@ -89,29 +90,29 @@ public:
         return point == "consume" ? static_cast<type>(methods::consume) : 0;
     }
 
-    std::vector<sstring> points() final { return {"consume"}; }
+    std::vector<ss::sstring> points() final { return {"consume"}; }
 
-    future<> consume() {
+    ss::future<> consume() {
         if (is_enabled()) {
             return do_consume();
         }
-        return make_ready_future<>();
+        return ss::make_ready_future<>();
     }
 
 private:
-    [[gnu::noinline]] future<> do_consume() {
+    [[gnu::noinline]] ss::future<> do_consume() {
         if (_exception_methods & type(methods::consume)) {
-            return make_exception_future<>(
+            return ss::make_exception_future<>(
               std::runtime_error("FailureInjector: "
                                  "storage::parser::consume"));
         }
         if (_delay_methods & type(methods::consume)) {
-            return sleep(std::chrono::milliseconds(_prng() % 50));
+            return ss::sleep(std::chrono::milliseconds(_prng() % 50));
         }
         if (_termination_methods & type(methods::consume)) {
             std::terminate();
         }
-        return make_ready_future<>();
+        return ss::make_ready_future<>();
     }
     fast_prng _prng;
 };

@@ -46,13 +46,13 @@ inline bytes get_bytes(size_t n = 128 * 1024) {
     return b;
 }
 
-inline sstring gen_alphanum_string(size_t n) {
+inline ss::sstring gen_alphanum_string(size_t n) {
     static constexpr char chars[]
       = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     // do not include \0
     static constexpr std::size_t max_index = sizeof(chars) - 2;
     std::uniform_int_distribution<size_t> dist(0, max_index);
-    sstring s(sstring::initialized_later(), n);
+    ss::sstring s(ss::sstring::initialized_later(), n);
     std::generate_n(
       s.begin(), n, [&dist] { return chars[dist(internal::gen)]; });
     return s;

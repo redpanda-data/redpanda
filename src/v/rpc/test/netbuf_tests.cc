@@ -12,7 +12,7 @@
 namespace rpc {
 /// \brief expects the inputstream to be prefixed by an rpc::header
 template<typename T>
-future<T> parse_framed(input_stream<char>& in) {
+ss::future<T> parse_framed(ss::input_stream<char>& in) {
     return parse_header(in).then([&in](std::optional<header> o) {
         auto h = std::move(o.value());
         if (h.bitflags == 0) {

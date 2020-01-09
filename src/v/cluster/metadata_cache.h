@@ -23,7 +23,7 @@ public:
     using cache_t = std::unordered_map<model::topic, metadata>;
 
     metadata_cache() = default;
-    future<> stop() { return make_ready_future<>(); }
+    ss::future<> stop() { return ss::make_ready_future<>(); }
 
     /// Returns list of all topics that exists in the cluster.
     std::vector<model::topic> all_topics() const;

@@ -10,7 +10,7 @@ template<class T>
 class property : public base_property {
 public:
     using validator =
-      typename seastar::noncopyable_function<std::optional<sstring>(const T&)>;
+      typename ss::noncopyable_function<std::optional<ss::sstring>(const T&)>;
 
     property(
       config_store& conf,

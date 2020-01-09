@@ -8,8 +8,8 @@
 namespace storage {
 
 log_segment_reader::log_segment_reader(
-  sstring filename,
-  file data_file,
+  ss::sstring filename,
+  ss::file data_file,
   model::term_id term,
   model::offset base_offset,
   uint64_t file_size,
@@ -21,9 +21,9 @@ log_segment_reader::log_segment_reader(
   , _file_size(file_size)
   , _buffer_size(buffer_size) {}
 
-input_stream<char>
-log_segment_reader::data_stream(uint64_t pos, const io_priority_class& pc) {
-    file_input_stream_options options;
+ss::input_stream<char>
+log_segment_reader::data_stream(uint64_t pos, const ss::io_priority_class& pc) {
+    ss::file_input_stream_options options;
     options.buffer_size = _buffer_size;
     options.io_priority_class = pc;
     options.read_ahead = 4;
@@ -44,7 +44,7 @@ std::ostream& operator<<(std::ostream& os, segment_reader_ptr seg) {
     if (seg) {
         return os << *seg;
     }
-    return fmt_print(os, "{{log_segment: null}}");
+    return ss::fmt_print(os, "{{log_segment: null}}");
 }
 
 struct base_offset_ordering {

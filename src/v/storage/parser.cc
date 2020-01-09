@@ -13,41 +13,43 @@
 
 namespace storage {
 
-future<consumption_result<char>> continuous_batch_parser::
-operator()(temporary_buffer<char> data) {
+ss::future<ss::consumption_result<char>>
+continuous_batch_parser::operator()(ss::temporary_buffer<char> data) {
     auto orig_data_size = data.size();
     auto result = process(data);
     _bytes_consumed = orig_data_size - data.size();
-    return seastar::visit(
+    return ss::visit(
       result,
-      [this, orig_data_size, &data](stop_iteration stop) {
+      [this, orig_data_size, &data](ss::stop_iteration stop) {
           if (stop) {
-              return make_ready_future<consumption_result<char>>(
-                stop_consuming<char>(std::move(data)));
+              return ss::make_ready_future<ss::consumption_result<char>>(
+                ss::stop_consuming<char>(std::move(data)));
           }
           if (!orig_data_size) {
               // End of file
               ensure_valid_end_state();
-              return make_ready_future<consumption_result<char>>(
-                stop_consuming<char>(std::move(data)));
+              return ss::make_ready_future<ss::consumption_result<char>>(
+                ss::stop_consuming<char>(std::move(data)));
           }
-          return make_ready_future<consumption_result<char>>(
-            continue_consuming{});
+          return ss::make_ready_future<ss::consumption_result<char>>(
+            ss::continue_consuming{});
       },
-      [this, &data](skip_bytes skip) {
+      [this, &data](ss::skip_bytes skip) {
           auto n = skip.get_value();
           auto skip_buf = std::min(n, data.size());
           data.trim_front(skip_buf);
           n -= skip_buf;
           if (!n) {
-              return make_ready_future<consumption_result<char>>(
-                stop_consuming<char>(std::move(data)));
+              return ss::make_ready_future<ss::consumption_result<char>>(
+                ss::stop_consuming<char>(std::move(data)));
           }
-          return make_ready_future<consumption_result<char>>(skip_bytes(n));
+          return ss::make_ready_future<ss::consumption_result<char>>(
+            ss::skip_bytes(n));
       });
 }
 
-parse_result continuous_batch_parser::process(temporary_buffer<char>& data) {
+parse_result
+continuous_batch_parser::process(ss::temporary_buffer<char>& data) {
     while (data || non_consuming()) {
         process_sliced_data(data);
         // If _prestate is set to something other than prestate::none
@@ -58,14 +60,14 @@ parse_result continuous_batch_parser::process(temporary_buffer<char>& data) {
                 throw std::logic_error(
                   "Expected all data from the buffer to have been consumed.");
             }
-            return stop_iteration::no;
+            return ss::stop_iteration::no;
         }
         auto ret = do_process(data);
-        if (__builtin_expect(ret != stop_iteration::no, false)) {
+        if (__builtin_expect(ret != ss::stop_iteration::no, false)) {
             return ret;
         }
     }
-    return stop_iteration::no;
+    return ss::stop_iteration::no;
 }
 
 // a state machine approach to parsing, with the following structure
@@ -76,7 +78,8 @@ parse_result continuous_batch_parser::process(temporary_buffer<char>& data) {
 //     break;
 //   }
 // }
-parse_result continuous_batch_parser::do_process(temporary_buffer<char>& data) {
+parse_result
+continuous_batch_parser::do_process(ss::temporary_buffer<char>& data) {
     switch (_state) {
     case state::batch_start: {
         if (read_vint(data) != read_status::ready) {
@@ -151,7 +154,7 @@ parse_result continuous_batch_parser::do_process(temporary_buffer<char>& data) {
           std::move(_header), _num_records);
         if (__builtin_expect(bool(should_skip), false)) {
             _state = state::batch_start;
-            return skip_bytes(remaining_batch_bytes);
+            return ss::skip_bytes(remaining_batch_bytes);
         }
         if (_compressed_batch) {
             _record_size = remaining_batch_bytes;
@@ -225,7 +228,7 @@ parse_result continuous_batch_parser::do_process(temporary_buffer<char>& data) {
             } else {
                 _state = state::batch_end;
             }
-            return skip_bytes(_value_and_headers_size);
+            return ss::skip_bytes(_value_and_headers_size);
         }
     }
     case state::value_and_headers: {
@@ -274,11 +277,11 @@ parse_result continuous_batch_parser::do_process(temporary_buffer<char>& data) {
         _state = state::batch_start;
         return _consumer->consume_batch_end();
     }
-    return stop_iteration::no;
+    return ss::stop_iteration::no;
 }
 
 void continuous_batch_parser::process_sliced_data(
-  temporary_buffer<char>& data) {
+  ss::temporary_buffer<char>& data) {
     if (__builtin_expect(_prestate != prestate::none, false)) {
         // We're in the middle of reading a basic type, which crossed
         // an input buffer. Resume that read before continuing to
@@ -301,21 +304,21 @@ void continuous_batch_parser::process_sliced_data(
         }
         case prestate::reading_16: {
             if (process_int(data, sizeof(int16_t))) {
-                _16 = be_to_cpu(_read_int.int16);
+                _16 = ss::be_to_cpu(_read_int.int16);
                 _prestate = prestate::none;
             }
             break;
         }
         case prestate::reading_32: {
             if (process_int(data, sizeof(int32_t))) {
-                _32 = be_to_cpu(_read_int.int32);
+                _32 = ss::be_to_cpu(_read_int.int32);
                 _prestate = prestate::none;
             }
             break;
         }
         case prestate::reading_64: {
             if (process_int(data, sizeof(int64_t))) {
-                _64 = be_to_cpu(_read_int.int64);
+                _64 = ss::be_to_cpu(_read_int.int64);
                 _prestate = prestate::none;
             }
             break;
@@ -339,7 +342,7 @@ void continuous_batch_parser::process_sliced_data(
 }
 
 continuous_batch_parser::read_status
-continuous_batch_parser::read_vint(temporary_buffer<char>& data) {
+continuous_batch_parser::read_vint(ss::temporary_buffer<char>& data) {
     if (data.size() >= vint::max_length) {
         auto [val, bytes_read] = vint::deserialize(data);
         data.trim_front(bytes_read);
@@ -352,7 +355,7 @@ continuous_batch_parser::read_vint(temporary_buffer<char>& data) {
     return read_status::waiting;
 }
 
-void continuous_batch_parser::process_vint(temporary_buffer<char>& data) {
+void continuous_batch_parser::process_vint(ss::temporary_buffer<char>& data) {
     bool finished = false;
     auto it = data.begin();
     for (; it != data.end(); ++it) {
@@ -378,7 +381,7 @@ void continuous_batch_parser::process_vint(temporary_buffer<char>& data) {
 // Reads bytes belonging to an integer of size len. Returns true
 // if a full integer is now available.
 bool continuous_batch_parser::process_int(
-  temporary_buffer<char>& data, size_t len) {
+  ss::temporary_buffer<char>& data, size_t len) {
     if (_pos >= len) {
         throw malformed_batch_stream_exception(
           "Overrun the amount of bytes to read");
@@ -392,7 +395,7 @@ bool continuous_batch_parser::process_int(
 
 continuous_batch_parser::read_status
 continuous_batch_parser::read_fragmented_bytes(
-  temporary_buffer<char>& data, size_t len) {
+  ss::temporary_buffer<char>& data, size_t len) {
     _read_bytes.push_back(data.share(0, std::min(len, data.size())));
     if (data.size() >= len) {
         data.trim_front(len);

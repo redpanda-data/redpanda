@@ -25,7 +25,7 @@ struct foreign_entry_fixture {
     std::vector<storage::log::append_result> write_n(const std::size_t n) {
         auto cfg = storage::log_append_config{
           storage::log_append_config::fsync::no,
-          default_priority_class(),
+          ss::default_priority_class(),
           model::no_timeout};
         std::vector<storage::log::append_result> res;
         res.push_back(
@@ -100,15 +100,15 @@ FIXTURE_TEST(sharing_one_entry, foreign_entry_fixture) {
       raft::details::share_one_entry(
         raft::entry(raft::configuration_batch_type,
                     gen_config_record_batch_reader(3)),
-        smp::count, true).get0();
+        ss::smp::count, true).get0();
     // clang-format on
 
-    BOOST_REQUIRE_EQUAL(copies.size(), smp::count);
-    for (shard_id shard = 0; shard < smp::count; ++shard) {
+    BOOST_REQUIRE_EQUAL(copies.size(), ss::smp::count);
+    for (ss::shard_id shard = 0; shard < ss::smp::count; ++shard) {
         info("Submitting shared raft::entry to shard:{}", shard);
         auto cfg =
           // MUST return the config; otherwise thread exception
-          smp::submit_to(shard, [e = std::move(copies[shard])]() mutable {
+          ss::smp::submit_to(shard, [e = std::move(copies[shard])]() mutable {
               info("extracting configuration");
               return raft::details::extract_configuration(std::move(e));
           }).get0();
@@ -127,17 +127,17 @@ FIXTURE_TEST(copy_lots_of_entries, foreign_entry_fixture) {
     std::vector<std::vector<raft::entry>> share_copies;
     {
         std::vector<raft::entry> entries;
-        entries.reserve(smp::count);
-        for (size_t i = 0; i < smp::count; ++i) {
+        entries.reserve(ss::smp::count);
+        for (size_t i = 0; i < ss::smp::count; ++i) {
             entries.emplace_back(
               raft::configuration_batch_type,
               gen_config_record_batch_reader(1));
         }
         share_copies = raft::details::foreign_share_n(
-                         std::move(entries), smp::count)
+                         std::move(entries), ss::smp::count)
                          .get0();
     }
-    BOOST_REQUIRE_EQUAL(share_copies.size(), smp::count);
+    BOOST_REQUIRE_EQUAL(share_copies.size(), ss::smp::count);
     BOOST_REQUIRE_EQUAL(
       std::accumulate(
         share_copies.begin(),
@@ -146,15 +146,15 @@ FIXTURE_TEST(copy_lots_of_entries, foreign_entry_fixture) {
         [](size_t acc, std::vector<raft::entry>& ex) {
             return acc + ex.size();
         }),
-      smp::count * smp::count);
+      ss::smp::count * ss::smp::count);
 
-    for (shard_id shard = 0; shard < smp::count; ++shard) {
+    for (ss::shard_id shard = 0; shard < ss::smp::count; ++shard) {
         info("Submitting shared raft::entry to shard:{}", shard);
         auto cfgs
-          = smp::submit_to(
+          = ss::smp::submit_to(
               shard,
               [es = std::move(share_copies[shard])]() mutable {
-                  return do_with(
+                  return ss::do_with(
                     std::move(es), [](std::vector<raft::entry>& es) {
                         return copy_range<
                           std::vector<raft::group_configuration>>(

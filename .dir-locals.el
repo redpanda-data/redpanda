@@ -8,4 +8,6 @@
  ;; adds them without quotes
  (c++-mode
   (helm-make-build-dir . "build/debug/clang")
-  (clang-format-executable . "build/llvm/llvm-bin/bin/clang-format")))
+  )
+ (c-or-c++-mode
+  (clang-format-executable . build/llvm/llvm-bin/bin/clang-format)))

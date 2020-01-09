@@ -14,13 +14,13 @@ namespace rpc {
 template<>
 inline void serialize(iobuf& out, model::ntp&& ntp) {
     rpc::serialize(
-      out, sstring(ntp.ns), sstring(ntp.tp.topic), ntp.tp.partition);
+      out, ss::sstring(ntp.ns), ss::sstring(ntp.tp.topic), ntp.tp.partition);
 }
 template<>
-inline future<model::ntp> deserialize(source& in) {
+inline ss::future<model::ntp> deserialize(source& in) {
     struct _ntp {
-        sstring ns;
-        sstring topic;
+        ss::sstring ns;
+        ss::sstring topic;
         model::partition_id::type p;
     };
     return deserialize<_ntp>(in).then([](_ntp n) {
@@ -31,8 +31,8 @@ inline future<model::ntp> deserialize(source& in) {
 }
 
 template<>
-inline void serialize(iobuf& out, net::inet_address&& addr) {
-    using family_t = seastar::net::inet_address::family;
+inline void serialize(iobuf& out, ss::net::inet_address&& addr) {
+    using family_t = ss::net::inet_address::family;
     switch (addr.in_family()) {
     case family_t::INET:
         rpc::serialize(out, addr.in_family(), addr.as_ipv4_address().ip);
@@ -44,19 +44,19 @@ inline void serialize(iobuf& out, net::inet_address&& addr) {
 }
 
 template<>
-inline future<net::inet_address> deserialize(source& in) {
-    using addr_t = seastar::net::inet_address;
+inline ss::future<ss::net::inet_address> deserialize(source& in) {
+    using addr_t = ss::net::inet_address;
     return rpc::deserialize<addr_t::family>(in).then([&in](addr_t::family f) {
         switch (f) {
         case addr_t::family::INET:
             using ip_t = uint32_t;
             return rpc::deserialize<ip_t>(in).then([](uint32_t ip) {
-                return net::inet_address(net::ipv4_address(ip));
+                return ss::net::inet_address(ss::net::ipv4_address(ip));
             });
         case addr_t::family::INET6:
-            using ip6_t = net::ipv6_address::ipv6_bytes;
+            using ip6_t = ss::net::ipv6_address::ipv6_bytes;
             return rpc::deserialize<ip6_t>(in).then([](ip6_t ip) {
-                return net::inet_address(net::ipv6_address(ip));
+                return ss::net::inet_address(ss::net::ipv6_address(ip));
             });
         }
         __builtin_unreachable();
@@ -64,25 +64,26 @@ inline future<net::inet_address> deserialize(source& in) {
 }
 
 template<>
-inline void serialize(iobuf& out, socket_address&& addr) {
+inline void serialize(iobuf& out, ss::socket_address&& addr) {
     rpc::serialize(out, std::move(addr.addr()), addr.port());
 }
 
 template<>
-inline future<socket_address> deserialize(source& in) {
-    return rpc::deserialize<net::inet_address>(in).then(
-      [&in](net::inet_address addr) mutable {
+inline ss::future<ss::socket_address> deserialize(source& in) {
+    return rpc::deserialize<ss::net::inet_address>(in).then(
+      [&in](ss::net::inet_address addr) mutable {
           return rpc::deserialize<uint16_t>(in).then(
             [addr = std::move(addr)](uint16_t port) mutable {
-                return socket_address(std::move(addr), port);
+                return ss::socket_address(std::move(addr), port);
             });
       });
 }
 
 // FIXME: Change to generic unordered map serdes when RPC will work with ADL
 template<>
-inline void serialize(iobuf& out, std::unordered_map<sstring, sstring>&& map) {
-    using type = std::vector<std::pair<sstring, sstring>>;
+inline void
+serialize(iobuf& out, std::unordered_map<ss::sstring, ss::sstring>&& map) {
+    using type = std::vector<std::pair<ss::sstring, ss::sstring>>;
     type vec;
     vec.reserve(map.size());
     std::move(std::begin(map), std::end(map), std::back_inserter(vec));
@@ -90,10 +91,11 @@ inline void serialize(iobuf& out, std::unordered_map<sstring, sstring>&& map) {
 }
 
 template<>
-inline future<std::unordered_map<sstring, sstring>> deserialize(source& in) {
-    using type = std::vector<std::pair<sstring, sstring>>;
+inline ss::future<std::unordered_map<ss::sstring, ss::sstring>>
+deserialize(source& in) {
+    using type = std::vector<std::pair<ss::sstring, ss::sstring>>;
     return deserialize<type>(in).then([](type pairs) {
-        std::unordered_map<sstring, sstring> map;
+        std::unordered_map<ss::sstring, ss::sstring> map;
         for (auto& p : pairs) {
             map.insert(std::move(p));
         }
@@ -113,18 +115,20 @@ inline void serialize(iobuf& out, model::broker_properties&& p) {
 }
 
 template<>
-inline future<model::broker_properties> deserialize(source& in) {
+inline ss::future<model::broker_properties> deserialize(source& in) {
     struct simple {
         uint32_t cores;
         uint32_t available_memory;
         uint32_t available_disk;
     };
     return deserialize<simple>(in).then([&in](simple s) mutable {
-        return deserialize<std::vector<sstring>>(in).then(
-          [&in, s = std::move(s)](std::vector<sstring> m_points) mutable {
-              return deserialize<std::unordered_map<sstring, sstring>>(in).then(
-                [s = std::move(s), m_points = std::move(m_points)](
-                  std::unordered_map<sstring, sstring> props) mutable {
+        return deserialize<std::vector<ss::sstring>>(in).then(
+          [&in, s = std::move(s)](std::vector<ss::sstring> m_points) mutable {
+              return deserialize<std::unordered_map<ss::sstring, ss::sstring>>(
+                       in)
+                .then([s = std::move(s), m_points = std::move(m_points)](
+                        std::unordered_map<ss::sstring, ss::sstring>
+                          props) mutable {
                     return model::broker_properties{
                       .cores = s.cores,
                       .available_memory = s.available_memory,
@@ -138,13 +142,13 @@ inline future<model::broker_properties> deserialize(source& in) {
 
 template<>
 inline void serialize(iobuf& out, unresolved_address&& a) {
-    rpc::serialize(out, sstring(a.host()), a.port());
+    rpc::serialize(out, ss::sstring(a.host()), a.port());
 }
 
 template<>
-inline future<unresolved_address> deserialize(source& in) {
+inline ss::future<unresolved_address> deserialize(source& in) {
     struct simple {
-        sstring host;
+        ss::sstring host;
         uint16_t port;
     };
     return deserialize<simple>(in).then(
@@ -163,12 +167,12 @@ inline void serialize(iobuf& out, model::broker&& r) {
 }
 
 template<>
-inline future<model::broker> deserialize(source& in) {
+inline ss::future<model::broker> deserialize(source& in) {
     struct broker_contents {
         model::node_id id;
         unresolved_address kafka_api_addr;
         unresolved_address rpc_address;
-        std::optional<sstring> rack;
+        std::optional<ss::sstring> rack;
     };
     return deserialize<broker_contents>(in).then([&in](broker_contents res) {
         return deserialize<model::broker_properties>(in).then(
@@ -206,7 +210,7 @@ inline void serialize(iobuf& ref, model::record&& record) {
 }
 
 template<>
-inline future<model::record> deserialize(source& in) {
+inline ss::future<model::record> deserialize(source& in) {
     return rpc::deserialize<simple_record>(in).then([](simple_record r) {
         return model::record(
           r.size_bytes,
@@ -241,7 +245,7 @@ inline void serialize(iobuf& out, model::record_batch&& batch) {
 }
 
 template<>
-inline future<model::record_batch> deserialize(source& in) {
+inline ss::future<model::record_batch> deserialize(source& in) {
     return rpc::deserialize<batch_header>(in).then([&in](batch_header b_hdr) {
         if (b_hdr.is_compressed == 1) {
             return rpc::deserialize<iobuf>(in).then(
@@ -253,7 +257,7 @@ inline future<model::record_batch> deserialize(source& in) {
               });
         }
         // not compressed
-        return do_with(
+        return ss::do_with(
                  boost::irange<uint32_t>(0, b_hdr.batch_size),
                  [&in](boost::integer_range<uint32_t>& r) {
                      return copy_range<std::vector<model::record>>(

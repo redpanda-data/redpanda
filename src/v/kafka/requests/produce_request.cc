@@ -71,16 +71,16 @@ void produce_request::decode(request_context& ctx) {
 
 static std::ostream&
 operator<<(std::ostream& o, const produce_request::partition& p) {
-    return fmt_print(o, "id {} payload {}", p.id, p.data);
+    return ss::fmt_print(o, "id {} payload {}", p.id, p.data);
 }
 
 static std::ostream&
 operator<<(std::ostream& o, const produce_request::topic& t) {
-    return fmt_print(o, "name {} data {}", t.name, t.partitions);
+    return ss::fmt_print(o, "name {} data {}", t.name, t.partitions);
 }
 
 std::ostream& operator<<(std::ostream& o, const produce_request& r) {
-    return fmt_print(
+    return ss::fmt_print(
       o,
       "txn_id {} acks {} timeout {} topics {}",
       r.transactional_id,
@@ -124,20 +124,20 @@ void produce_response::encode(const request_context& ctx, response& resp) {
 
 struct op_context {
     request_context rctx;
-    smp_service_group ssg;
+    ss::smp_service_group ssg;
     produce_request request;
     produce_response response;
 
-    op_context(request_context&& rctx, smp_service_group ssg)
+    op_context(request_context&& rctx, ss::smp_service_group ssg)
       : rctx(std::move(rctx))
       , ssg(ssg) {
         request.decode(rctx);
     }
 };
 
-static future<produce_response::partition>
+static ss::future<produce_response::partition>
 make_partition_response_error(model::partition_id id, error_code error) {
-    return make_ready_future<produce_response::partition>(
+    return ss::make_ready_future<produce_response::partition>(
       produce_response::partition{
         .id = id,
         .error = error,
@@ -148,9 +148,9 @@ make_partition_response_error(model::partition_id id, error_code error) {
  * Caller is expected to catch errors that may be thrown while the kafka batch
  * is being deserialized (see reader_from_kafka_batch).
  */
-static future<produce_response::partition> partition_append(
+static ss::future<produce_response::partition> partition_append(
   model::partition_id id,
-  lw_shared_ptr<cluster::partition> partition,
+  ss::lw_shared_ptr<cluster::partition> partition,
   model::record_batch batch) {
     auto num_records = batch.size();
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
@@ -158,7 +158,7 @@ static future<produce_response::partition> partition_append(
 
     return partition->replicate(std::move(e))
       .then_wrapped([id, num_records = num_records](
-                      future<result<raft::replicate_result>> f) {
+                      ss::future<result<raft::replicate_result>> f) {
           produce_response::partition p;
           p.id = id;
           try {
@@ -179,7 +179,7 @@ static future<produce_response::partition> partition_append(
 /**
  * \brief handle writing to a single topic partition.
  */
-static future<produce_response::partition> produce_topic_partition(
+static ss::future<produce_response::partition> produce_topic_partition(
   op_context& octx,
   produce_request::topic& topic,
   produce_request::partition& part) {
@@ -233,10 +233,10 @@ static future<produce_response::partition> produce_topic_partition(
 /**
  * \brief Dispatch and collect topic partition produce responses
  */
-static future<produce_response::topic>
+static ss::future<produce_response::topic>
 produce_topic(op_context& octx, produce_request::topic& topic) {
     // partition response placeholders
-    std::vector<future<produce_response::partition>> partitions;
+    std::vector<ss::future<produce_response::partition>> partitions;
     partitions.reserve(topic.partitions.size());
 
     for (auto& part : topic.partitions) {
@@ -258,10 +258,10 @@ produce_topic(op_context& octx, produce_request::topic& topic) {
 /**
  * \brief Dispatch and collect topic produce responses
  */
-static std::vector<future<produce_response::topic>>
+static std::vector<ss::future<produce_response::topic>>
 produce_topics(op_context& octx) {
     // topic response placeholders
-    std::vector<future<produce_response::topic>> topics;
+    std::vector<ss::future<produce_response::topic>> topics;
     topics.reserve(octx.request.topics.size());
 
     for (auto& topic : octx.request.topics) {
@@ -294,15 +294,15 @@ void make_error_response(op_context& octx, error_code error) {
 /**
  * \brief Encode the final response from the octx response structure.
  */
-static future<response_ptr> make_response(op_context& octx) {
+static ss::future<response_ptr> make_response(op_context& octx) {
     auto resp = std::make_unique<response>();
     octx.response.encode(octx.rctx, *resp.get());
-    return make_ready_future<response_ptr>(std::move(resp));
+    return ss::make_ready_future<response_ptr>(std::move(resp));
 }
 
-future<response_ptr>
-produce_api::process(request_context&& ctx, smp_service_group ssg) {
-    return do_with(op_context(std::move(ctx), ssg), [](op_context& octx) {
+ss::future<response_ptr>
+produce_api::process(request_context&& ctx, ss::smp_service_group ssg) {
+    return ss::do_with(op_context(std::move(ctx), ssg), [](op_context& octx) {
         kreq_log.debug("handling produce request {}", octx.request);
 
         if (octx.request.has_transactional) {

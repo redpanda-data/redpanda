@@ -25,21 +25,21 @@ requires(
   leave_group_request&& leave_request) {
 
     { m.join_group(std::move(join_request)) } ->
-        future<join_group_response>;
+        ss::future<join_group_response>;
 
     { m.sync_group(std::move(sync_request)) } ->
-        future<sync_group_response>;
+        ss::future<sync_group_response>;
 
     { m.heartbeat(std::move(heartbeat_request)) } ->
-        future<heartbeat_response>;
+        ss::future<heartbeat_response>;
 
     { m.leave_group(std::move(leave_request)) } ->
-        future<leave_group_response>;
+        ss::future<leave_group_response>;
 };
 
 template<typename T>
 concept GroupShardMapper = requires(T m, const kafka::group_id& group_id) {
-    { m.shard_for(group_id) } -> seastar::shard_id;
+    { m.shard_for(group_id) } -> ss::shard_id;
 };
 )
 // clang-format on
@@ -56,16 +56,16 @@ public:
     /// the group router via sharded<group_router>::start, the constructor will
     /// run on each core so sharded<>::local() is valid.
     group_router(
-      scheduling_group sched_group,
-      smp_service_group smp_group,
-      sharded<GroupMgr>& group_manager,
-      sharded<Shards>& shards)
+      ss::scheduling_group sched_group,
+      ss::smp_service_group smp_group,
+      ss::sharded<GroupMgr>& group_manager,
+      ss::sharded<Shards>& shards)
       : _sg(sched_group)
       , _ssg(smp_group)
       , _group_manager(group_manager)
       , _shards(shards.local()) {}
 
-    future<join_group_response> join_group(join_group_request&& request) {
+    ss::future<join_group_response> join_group(join_group_request&& request) {
         auto shard = _shards.shard_for(request.group_id);
         return with_scheduling_group(
           _sg, [this, shard, request = std::move(request)]() mutable {
@@ -78,7 +78,7 @@ public:
           });
     }
 
-    future<sync_group_response> sync_group(sync_group_request&& request) {
+    ss::future<sync_group_response> sync_group(sync_group_request&& request) {
         auto shard = _shards.shard_for(request.group_id);
         return with_scheduling_group(
           _sg, [this, shard, request = std::move(request)]() mutable {
@@ -91,7 +91,7 @@ public:
           });
     }
 
-    future<heartbeat_response> heartbeat(heartbeat_request&& request) {
+    ss::future<heartbeat_response> heartbeat(heartbeat_request&& request) {
         auto shard = _shards.shard_for(request.group_id);
         return with_scheduling_group(
           _sg, [this, shard, request = std::move(request)]() mutable {
@@ -104,7 +104,8 @@ public:
           });
     }
 
-    future<leave_group_response> leave_group(leave_group_request&& request) {
+    ss::future<leave_group_response>
+    leave_group(leave_group_request&& request) {
         auto shard = _shards.shard_for(request.group_id);
         return with_scheduling_group(
           _sg, [this, shard, request = std::move(request)]() mutable {
@@ -118,9 +119,9 @@ public:
     }
 
 private:
-    scheduling_group _sg;
-    smp_service_group _ssg;
-    sharded<GroupMgr>& _group_manager;
+    ss::scheduling_group _sg;
+    ss::smp_service_group _ssg;
+    ss::sharded<GroupMgr>& _group_manager;
     Shards& _shards;
 };
 

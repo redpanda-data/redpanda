@@ -173,7 +173,7 @@ FIXTURE_TEST(read_from_ntp_max_bytes, redpanda_thread_fixture) {
         };
         auto rctx = make_request_context(app);
         auto octx = kafka::op_context(
-          std::move(rctx), default_smp_service_group());
+          std::move(rctx), ss::default_smp_service_group());
         auto resp = kafka::read_from_ntp(octx, ntp, config).get0();
         BOOST_REQUIRE(resp.record_set);
         return resp;

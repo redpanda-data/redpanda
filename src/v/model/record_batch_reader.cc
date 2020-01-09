@@ -13,9 +13,10 @@ make_memory_record_batch_reader(std::vector<model::record_batch> batches) {
         }
 
     protected:
-        virtual future<span> do_load_slice(timeout_clock::time_point) override {
+        virtual ss::future<span>
+        do_load_slice(timeout_clock::time_point) override {
             // return an end of stream
-            return make_ready_future<span>();
+            return ss::make_ready_future<span>();
         }
 
     private:
@@ -26,14 +27,16 @@ make_memory_record_batch_reader(std::vector<model::record_batch> batches) {
 }
 
 record_batch_reader make_generating_record_batch_reader(
-  noncopyable_function<future<record_batch_opt>()> gen) {
+  ss::noncopyable_function<ss::future<record_batch_opt>()> gen) {
     class reader final : public record_batch_reader::impl {
     public:
-        explicit reader(noncopyable_function<future<record_batch_opt>()> gen)
+        explicit reader(
+          ss::noncopyable_function<ss::future<record_batch_opt>()> gen)
           : _gen(std::move(gen)) {}
 
     protected:
-        virtual future<span> do_load_slice(timeout_clock::time_point) override {
+        virtual ss::future<span>
+        do_load_slice(timeout_clock::time_point) override {
             return _gen().then([this](record_batch_opt batch) {
                 _current_batch = std::move(batch);
                 if (_current_batch) {
@@ -45,7 +48,7 @@ record_batch_reader make_generating_record_batch_reader(
         }
 
     private:
-        noncopyable_function<future<record_batch_opt>()> _gen;
+        ss::noncopyable_function<ss::future<record_batch_opt>()> _gen;
         model::record_batch_opt _current_batch;
     };
 

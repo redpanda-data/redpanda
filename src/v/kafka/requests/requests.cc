@@ -21,15 +21,16 @@
 
 namespace kafka {
 
-logger kreq_log("kafka api");
+ss::logger kreq_log("kafka api");
 
 template<typename Request>
 CONCEPT(requires(KafkaRequest<Request>))
-future<response_ptr> do_process(request_context&& ctx, smp_service_group g) {
+ss::future<response_ptr> do_process(
+  request_context&& ctx, ss::smp_service_group g) {
     if (
       ctx.header().version < Request::min_supported
       || ctx.header().version > Request::max_supported) {
-        return make_exception_future<response_ptr>(
+        return ss::make_exception_future<response_ptr>(
           std::runtime_error(fmt::format(
             "Unsupported version {} for {} API",
             ctx.header().version,
@@ -38,8 +39,8 @@ future<response_ptr> do_process(request_context&& ctx, smp_service_group g) {
     return Request::process(std::move(ctx), std::move(g));
 }
 
-future<response_ptr>
-process_request(request_context&& ctx, smp_service_group g) {
+ss::future<response_ptr>
+process_request(request_context&& ctx, ss::smp_service_group g) {
     // Eventually generate this with meta-classes.
     kreq_log.debug("Processing request for {}", ctx.header().key);
     switch (ctx.header().key) {
@@ -70,18 +71,18 @@ process_request(request_context&& ctx, smp_service_group g) {
     case create_topics_api::key:
         return do_process<create_topics_api>(std::move(ctx), std::move(g));
     };
-    return seastar::make_exception_future<response_ptr>(
+    return ss::make_exception_future<response_ptr>(
       std::runtime_error(fmt::format("Unsupported API {}", ctx.header().key)));
 }
 
 std::ostream& operator<<(std::ostream& os, const request_header& header) {
-    fmt_print(
+    ss::fmt_print(
       os,
       "{{request_header: {}, {}, {{correlation_id: {}}}, ",
       header.key,
       header.version);
     if (header.client_id) {
-        return fmt_print(os, "{{client_id: {}}}}}", header.client_id);
+        return ss::fmt_print(os, "{{client_id: {}}}}}", header.client_id);
     }
     return os << "{no client_id}}";
 }

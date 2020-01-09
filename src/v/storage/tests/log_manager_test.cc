@@ -1,5 +1,4 @@
 #include "model/fundamental.h"
-#include "seastarx.h"
 #include "storage/directories.h"
 #include "storage/log_manager.h"
 #include "storage/log_segment_appender.h"
@@ -35,15 +34,19 @@ log_config make_config() {
 
 SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
     log_manager m(make_config());
-    auto stop_manager = defer([&m] { m.stop().get(); });
+    auto stop_manager = ss::defer([&m] { m.stop().get(); });
 
     auto ntp = model::ntp{
       model::ns("ns1"),
       model::topic_partition{model::topic("tp1"), model::partition_id(11)}};
     directories::initialize("test_dir/" + ntp.path()).get();
     // Empty file
-    auto&& [seg, app]
-      = m.make_log_segment(ntp, model::offset(10), model::term_id(1), seastar::default_priority_class()).get0();
+    auto&& [seg, app] = m.make_log_segment(
+                           ntp,
+                           model::offset(10),
+                           model::term_id(1),
+                           ss::default_priority_class())
+                          .get0();
     seg->close().get();
     app->close().get();
 
@@ -58,11 +61,11 @@ SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
       model::topic_partition{model::topic("tp2"), model::partition_id(33)}};
     directories::initialize("test_dir/" + ntp3.path()).get();
     auto&& [seg3, app3] = m.make_log_segment(
-                            ntp3,
-                            model::offset(20),
-                            model::term_id(1),
-                            seastar::default_priority_class())
-                           .get0();
+                             ntp3,
+                             model::offset(20),
+                             model::term_id(1),
+                             ss::default_priority_class())
+                            .get0();
     write_batches(app3);
     seg3->close().get();
     app3->close().get();
@@ -72,11 +75,11 @@ SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
       model::topic_partition{model::topic("tp1"), model::partition_id(50)}};
     directories::initialize("test_dir/" + ntp4.path()).get();
     auto&& [seg4, app4] = m.make_log_segment(
-                            ntp4,
-                            model::offset(2),
-                            model::term_id(1),
-                            seastar::default_priority_class())
-                           .get0();
+                             ntp4,
+                             model::offset(2),
+                             model::term_id(1),
+                             ss::default_priority_class())
+                            .get0();
     write_garbage(app4);
     seg4->close().get();
     app4->close().get();

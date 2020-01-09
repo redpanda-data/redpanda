@@ -21,10 +21,10 @@ struct mount_tamalpais {
 
 namespace echo {
 struct echo_req {
-    seastar::sstring str;
+    ss::sstring str;
 };
 
 struct echo_resp {
-    seastar::sstring str;
+    ss::sstring str;
 };
 } // namespace echo

@@ -32,9 +32,9 @@ void leave_group_response::encode(const request_context& ctx, response& resp) {
     writer.write(error);
 }
 
-future<response_ptr>
-leave_group_api::process(request_context&& ctx, smp_service_group g) {
-    return do_with(
+ss::future<response_ptr>
+leave_group_api::process(request_context&& ctx, ss::smp_service_group g) {
+    return ss::do_with(
       remote(std::move(ctx)), [g](remote<request_context>& remote_ctx) {
           auto& ctx = remote_ctx.get();
           leave_group_request request;
@@ -44,17 +44,17 @@ leave_group_api::process(request_context&& ctx, smp_service_group g) {
             .then([&ctx](leave_group_response&& reply) {
                 auto resp = std::make_unique<response>();
                 reply.encode(ctx, *resp.get());
-                return make_ready_future<response_ptr>(std::move(resp));
+                return ss::make_ready_future<response_ptr>(std::move(resp));
             });
       });
 }
 
 std::ostream& operator<<(std::ostream& o, const leave_group_request& r) {
-    return fmt_print(o, "group={} member={}", r.group_id, r.member_id);
+    return ss::fmt_print(o, "group={} member={}", r.group_id, r.member_id);
 }
 
 std::ostream& operator<<(std::ostream& o, const leave_group_response& r) {
-    return fmt_print(o, "error={}", r.error);
+    return ss::fmt_print(o, "error={}", r.error);
 }
 
 } // namespace kafka

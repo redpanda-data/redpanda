@@ -28,7 +28,7 @@ BOOST_AUTO_TEST_CASE(verify_airty) {
 BOOST_AUTO_TEST_CASE(serialize_with_fragmented_buffer) {
     auto b = iobuf();
     complex_custom it;
-    it.oi.append(temporary_buffer<char>(55));
+    it.oi.append(ss::temporary_buffer<char>(55));
     rpc::serialize(b, std::move(it));
     BOOST_CHECK_EQUAL(
       b.size_bytes(),
@@ -42,8 +42,8 @@ BOOST_AUTO_TEST_CASE(serialize_pod_with_vector) {
     BOOST_CHECK_EQUAL(
       b.size_bytes(),
       sizeof(pod)
-        /*2 bytes of padding missing*/ + (sizeof(int32_t) * 3 /*3 times*/)
-        + sizeof(int32_t) /*prefix size*/);
+        /*2 bytes of padding missing*/
+        + (sizeof(int32_t) * 3 /*3 times*/) + sizeof(int32_t) /*prefix size*/);
 }
 BOOST_AUTO_TEST_CASE(serialize_pod_with_array) {
     auto b = iobuf();
@@ -60,7 +60,7 @@ BOOST_AUTO_TEST_CASE(serialize_sstring_vector) {
     test_rpc_header it;
     kv x;
     x.k = "foobar";
-    x.v.append(temporary_buffer<char>(87));
+    x.v.append(ss::temporary_buffer<char>(87));
     it.hdrs.push_back(std::move(x));
     rpc::serialize(b, std::move(it));
     const size_t expected =

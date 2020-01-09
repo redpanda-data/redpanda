@@ -22,10 +22,10 @@ static size_t vint_size(size_t val) {
     return vint::serialize(val, encoding_buffer.begin());
 }
 
-static temporary_buffer<char> serialize_vint(vint::value_type value) {
+static ss::temporary_buffer<char> serialize_vint(vint::value_type value) {
     std::array<bytes::value_type, vint::max_length> encoding_buffer;
     const auto size = vint::serialize(value, encoding_buffer.begin());
-    return temporary_buffer<char>(
+    return ss::temporary_buffer<char>(
       reinterpret_cast<const char*>(encoding_buffer.data()), size);
 }
 } // namespace internal
@@ -47,11 +47,11 @@ static model::record_batch_header make_random_header(
     return h;
 }
 
-static temporary_buffer<char> make_buffer(size_t blob_size) {
+static ss::temporary_buffer<char> make_buffer(size_t blob_size) {
     static thread_local std::
       independent_bits_engine<std::default_random_engine, 8, uint8_t>
         random_bytes;
-    temporary_buffer<char> blob(blob_size);
+    ss::temporary_buffer<char> blob(blob_size);
     auto* out = blob.get_write();
     for (unsigned i = 0; i < blob_size; ++i) {
         *out++ = random_bytes();
@@ -59,7 +59,8 @@ static temporary_buffer<char> make_buffer(size_t blob_size) {
     return blob;
 }
 
-static temporary_buffer<char> make_buffer_with_vint_size_prefix(size_t size) {
+static ss::temporary_buffer<char>
+make_buffer_with_vint_size_prefix(size_t size) {
     auto buf = make_buffer(size + internal::vint_size(size));
     // overwrite the head of the buffer with the size prefix
     vint::serialize(size, reinterpret_cast<signed char*>(buf.get_write()));
@@ -76,7 +77,7 @@ static iobuf make_random_ftb(size_t blob_size) {
 }
 
 static iobuf make_packed_value_and_headers(size_t size) {
-    std::vector<temporary_buffer<char>> bufs;
+    std::vector<ss::temporary_buffer<char>> bufs;
 
     // valueLen: varint
     // value: byte[]
@@ -90,10 +91,10 @@ static iobuf make_packed_value_and_headers(size_t size) {
     for (int i = 0; i < num_headers; i++) {
         // headerKeyLength: varint
         // headerKey: String
-        sstring key = random_generators::gen_alphanum_string(
+        ss::sstring key = random_generators::gen_alphanum_string(
           random_generators::get_int(2, 30));
         bufs.push_back(internal::serialize_vint(key.size()));
-        bufs.push_back(temporary_buffer<char>(
+        bufs.push_back(ss::temporary_buffer<char>(
           reinterpret_cast<const char*>(key.data()), key.size()));
 
         // headerValueLength: varint

@@ -3,7 +3,9 @@
 #include "test_utils/fixture.h"
 
 void validate_topic_metadata(
-  cluster::metadata_cache& cache, const sstring& topic, int partition_count) {
+  cluster::metadata_cache& cache,
+  const ss::sstring& topic,
+  int partition_count) {
     auto tp_md = cache.get_topic_metadata(model::topic(topic));
     BOOST_REQUIRE_EQUAL(tp_md.has_value(), true);
     BOOST_REQUIRE_EQUAL(tp_md->partitions.size(), partition_count);

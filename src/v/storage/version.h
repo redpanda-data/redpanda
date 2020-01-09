@@ -21,7 +21,7 @@ inline record_version_type from_string(std::string_view version) {
       fmt::format("Wrong record version name: {}", version));
 }
 
-inline sstring to_string(record_version_type version) {
+inline ss::sstring to_string(record_version_type version) {
     switch (version) {
     case record_version_type::v1:
         return "v1";

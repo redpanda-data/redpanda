@@ -24,17 +24,16 @@ struct context {
     void write(std::vector<model::record_batch>& batches) {
         unsigned id = 0;
         for (auto& batch : batches) {
-            auto fd = open_file_dma(
-                        "test" + to_sstring(id++),
-                        open_flags::create | open_flags::rw)
+            auto fd = ss::open_file_dma(
+                        "test" + ss::to_sstring(id++),
+                        ss::open_flags::create | ss::open_flags::rw)
                         .get0();
-            fd = file(make_shared(file_io_sanitizer(std::move(fd))));
+            fd = ss::file(ss::make_shared(file_io_sanitizer(std::move(fd))));
             auto appender = log_segment_appender(
-              fd,
-              log_segment_appender::options(seastar::default_priority_class()));
+              fd, log_segment_appender::options(ss::default_priority_class()));
             storage::write(appender, batch).get();
             appender.flush().get();
-            auto log_seg = make_lw_shared<log_segment_reader>(
+            auto log_seg = ss::make_lw_shared<log_segment_reader>(
               "test",
               std::move(fd),
               model::term_id(0),
@@ -51,7 +50,7 @@ struct context {
       size_t max_bytes = std::numeric_limits<size_t>::max(),
       model::offset max_offset = model::model_limits<model::offset>::max()) {
         auto cfg = log_reader_config{
-          start, max_bytes, 0, default_priority_class(), {}, max_offset};
+          start, max_bytes, 0, ss::default_priority_class(), {}, max_offset};
         return model::make_record_batch_reader<log_reader>(
           logs, tracker, std::move(cfg), prb);
     }
@@ -65,9 +64,10 @@ struct context {
 
 class consumer {
 public:
-    future<stop_iteration> operator()(model::record_batch b) {
+    ss::future<ss::stop_iteration> operator()(model::record_batch b) {
         _result.push_back(std::move(b));
-        return make_ready_future<stop_iteration>(stop_iteration::no);
+        return ss::make_ready_future<ss::stop_iteration>(
+          ss::stop_iteration::no);
     }
     std::vector<model::record_batch> end_of_stream() {
         return std::move(_result);
@@ -171,8 +171,8 @@ SEASTAR_THREAD_TEST_CASE(test_does_not_read_past_max_offset_multiple_batches) {
     auto maxbytes = std::numeric_limits<size_t>::max();
     auto reader = ctx.reader(model::offset(0), maxbytes, model::offset(199));
 
-    std::vector<model::record_batch> consumed =
-        reader.consume(consumer(), model::no_timeout).get0();
+    std::vector<model::record_batch> consumed
+      = reader.consume(consumer(), model::no_timeout).get0();
 
     // max offset set to 199, so the last batch should not be returned.
     std::vector<model::record_batch> expected;

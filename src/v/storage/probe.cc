@@ -11,7 +11,7 @@ void probe::setup_metrics(const model::ntp& ntp) {
         return;
     }
 
-    namespace sm = metrics;
+    namespace sm = ss::metrics;
     auto ns_label = sm::label("namespace");
     auto topic_label = sm::label("topic");
     auto partition_label = sm::label("partition");

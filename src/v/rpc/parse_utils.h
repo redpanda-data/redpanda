@@ -2,6 +2,7 @@
 
 #include "rpc/deserialize.h"
 #include "rpc/types.h"
+#include "seastarx.h"
 
 #include <seastar/core/do_with.hh>
 #include <seastar/core/future.hh>
@@ -13,24 +14,25 @@
 #include <optional>
 
 namespace rpc {
-inline future<std::optional<header>> parse_header(input_stream<char>& in) {
+inline ss::future<std::optional<header>>
+parse_header(ss::input_stream<char>& in) {
     constexpr size_t rpc_header_size = sizeof(header);
     return in.read_exactly(rpc_header_size)
-      .then([&in](temporary_buffer<char> b) {
+      .then([&in](ss::temporary_buffer<char> b) {
           if (b.size() != rpc_header_size) {
-              return make_ready_future<std::optional<header>>();
+              return ss::make_ready_future<std::optional<header>>();
           }
           header h;
           std::copy_n(b.get(), rpc_header_size, reinterpret_cast<char*>(&h));
-          return make_ready_future<std::optional<header>>(std::move(h));
+          return ss::make_ready_future<std::optional<header>>(std::move(h));
       });
 }
 template<typename T>
-future<T>
-parse_type_wihout_compression(input_stream<char>& in, const header& h) {
+ss::future<T>
+parse_type_wihout_compression(ss::input_stream<char>& in, const header& h) {
     const auto header_size = h.size;
     const auto header_checksum = h.checksum;
-    return do_with(source(in), [header_size, header_checksum](source& src) {
+    return ss::do_with(source(in), [header_size, header_checksum](source& src) {
         return deserialize<T>(src).then(
           [header_size, header_checksum, &src](T t) {
               const auto got_checksum = src.checksum();
@@ -49,11 +51,11 @@ parse_type_wihout_compression(input_stream<char>& in, const header& h) {
     });
 }
 template<typename T>
-future<T> parse_type(input_stream<char>& in, const header& h) {
+ss::future<T> parse_type(ss::input_stream<char>& in, const header& h) {
     if (h.bitflags == 0) {
         return rpc::parse_type_wihout_compression<T>(in, h);
     }
-    return make_exception_future<T>(std::runtime_error(
+    return ss::make_exception_future<T>(std::runtime_error(
       fmt::format("no compression supported. header: {}", h)));
 }
 

@@ -10,7 +10,7 @@ struct client_context_impl final : streaming_context {
     client_context_impl(transport& s, header h)
       : _c(std::ref(s))
       , _h(std::move(h)) {}
-    future<semaphore_units<>> reserve_memory(size_t ask) final {
+    ss::future<ss::semaphore_units<>> reserve_memory(size_t ask) final {
         auto fut = get_units(_c.get()._memory, ask);
         if (_c.get()._memory.waiters()) {
             _c.get()._probe.waiting_for_available_memory();
@@ -21,7 +21,7 @@ struct client_context_impl final : streaming_context {
     void signal_body_parse() final { pr.set_value(); }
     std::reference_wrapper<transport> _c;
     header _h;
-    promise<> pr;
+    ss::promise<> pr;
 };
 
 base_transport::base_transport(configuration c)
@@ -31,7 +31,7 @@ base_transport::base_transport(configuration c)
                     : nullptr) {}
 
 transport::transport(
-  transport_configuration c, std::optional<sstring> service_name)
+  transport_configuration c, std::optional<ss::sstring> service_name)
   : base_transport(base_transport::configuration{
     .server_addr = std::move(c.server_addr),
     .credentials = std::move(c.credentials),
@@ -40,29 +40,30 @@ transport::transport(
     // setup_metrics(service_name);
 }
 
-future<> base_transport::do_connect() {
+ss::future<> base_transport::do_connect() {
     // hold invariant of having an always valid dispatch gate
     // and make sure we don't have a live connection already
     if (is_valid() || _dispatch_gate.is_closed()) {
-        return make_exception_future<>(std::runtime_error(fmt::format(
+        return ss::make_exception_future<>(std::runtime_error(fmt::format(
           "cannot do_connect with a valid connection. remote:{}",
           server_address())));
     }
-    return engine()
+    return ss::engine()
       .net()
       .connect(
         server_address(),
-        socket_address(sockaddr_in{AF_INET, INADDR_ANY, {0}}),
-        seastar::transport::TCP)
-      .then([this](connected_socket fd) mutable {
+        ss::socket_address(sockaddr_in{AF_INET, INADDR_ANY, {0}}),
+        ss::transport::TCP)
+      .then([this](ss::connected_socket fd) mutable {
           if (_creds) {
-              return tls::wrap_client(_creds, std::move(fd));
+              return ss::tls::wrap_client(_creds, std::move(fd));
           }
-          return make_ready_future<connected_socket>(std::move(fd));
+          return ss::make_ready_future<ss::connected_socket>(std::move(fd));
       })
-      .then_wrapped([this](future<connected_socket> f_fd) mutable {
+      .then_wrapped([this](ss::future<ss::connected_socket> f_fd) mutable {
           try {
-              _fd = std::make_unique<connected_socket>(std::move(f_fd.get0()));
+              _fd = std::make_unique<ss::connected_socket>(
+                std::move(f_fd.get0()));
           } catch (...) {
               auto e = std::current_exception();
               _probe.connection_error(e);
@@ -73,7 +74,7 @@ future<> base_transport::do_connect() {
           _out = batched_output_stream(std::move(_fd->output()));
       });
 }
-future<> base_transport::connect() {
+ss::future<> base_transport::connect() {
     // in order to hold concurrency correctness invariants we must guarantee 3
     // things before we attempt to send a payload:
     // 1. there are no background futures waiting
@@ -85,7 +86,7 @@ future<> base_transport::connect() {
         return do_connect();
     });
 }
-future<> base_transport::stop() {
+ss::future<> base_transport::stop() {
     fail_outstanding_futures();
     return _dispatch_gate.close();
 }
@@ -110,12 +111,12 @@ void base_transport::shutdown() {
     }
 }
 
-future<> transport::connect() {
+ss::future<> transport::connect() {
     return base_transport::connect().then([this] {
         _correlation_idx = 0;
         // background
-        (void)with_gate(_dispatch_gate, [this] {
-            return do_reads().then_wrapped([this](future<> f) {
+        (void)ss::with_gate(_dispatch_gate, [this] {
+            return do_reads().then_wrapped([this](ss::future<> f) {
                 _probe.connection_closed();
                 try {
                     f.get();
@@ -128,17 +129,17 @@ future<> transport::connect() {
     });
 }
 
-future<std::unique_ptr<streaming_context>>
+ss::future<std::unique_ptr<streaming_context>>
 transport::send(netbuf b, rpc::clock_type::time_point timeout) {
     // hold invariant of always having a valid connection _and_ a working
     // dispatch gate where we can wait for async futures
     if (!is_valid() || _dispatch_gate.is_closed()) {
-        return make_exception_future<std::unique_ptr<streaming_context>>(
+        return ss::make_exception_future<std::unique_ptr<streaming_context>>(
           std::runtime_error(fmt::format(
             "cannot send payload with invalid connection. remote:{}",
             server_address())));
     }
-    return with_gate(
+    return ss::with_gate(
       _dispatch_gate, [this, b = std::move(b), timeout]() mutable {
           if (_correlations.find(_correlation_idx + 1) != _correlations.end()) {
               _probe.client_correlation_error();
@@ -166,9 +167,9 @@ transport::send(netbuf b, rpc::clock_type::time_point timeout) {
           const auto sz = view.size();
           return get_units(_memory, sz)
             .then([this, v = std::move(view), f = std::move(fut)](
-                    semaphore_units<> units) mutable {
+                    ss::semaphore_units<> units) mutable {
                 /// background
-                (void)with_gate(
+                (void)ss::with_gate(
                   _dispatch_gate,
                   [this, v = std::move(v), u = std::move(units)]() mutable {
                       auto msg_size = v.size();
@@ -183,8 +184,8 @@ transport::send(netbuf b, rpc::clock_type::time_point timeout) {
       });
 }
 
-future<> transport::do_reads() {
-    return do_until(
+ss::future<> transport::do_reads() {
+    return ss::do_until(
       [this] { return !is_valid(); },
       [this] {
           return parse_header(_in).then([this](std::optional<header> h) {
@@ -192,7 +193,7 @@ future<> transport::do_reads() {
                   rpclog.debug(
                     "could not parse header from server: {}", server_address());
                   _probe.header_corrupted();
-                  return make_ready_future<>();
+                  return ss::make_ready_future<>();
               }
               return dispatch(std::move(h.value()));
           });
@@ -201,7 +202,7 @@ future<> transport::do_reads() {
 
 /// - this needs a streaming_context.
 ///
-future<> transport::dispatch(header h) {
+ss::future<> transport::dispatch(header h) {
     static constexpr auto header_size = sizeof(header);
     auto it = _correlations.find(h.correlation_id);
     if (it == _correlations.end()) {
@@ -219,7 +220,7 @@ future<> transport::dispatch(header h) {
     return fut.then([this] { _probe.request_completed(); });
 }
 
-void transport::setup_metrics(const std::optional<sstring>& service_name) {
+void transport::setup_metrics(const std::optional<ss::sstring>& service_name) {
     _probe.setup_metrics(_metrics, service_name, server_address());
 }
 

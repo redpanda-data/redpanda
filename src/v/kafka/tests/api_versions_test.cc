@@ -2,7 +2,6 @@
 #include "kafka/types.h"
 #include "redpanda/tests/fixture.h"
 #include "resource_mgmt/io_priority.h"
-#include "seastarx.h"
 
 #include <seastar/core/smp.hh>
 #include <seastar/net/inet_address.hh>

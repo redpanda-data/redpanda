@@ -7,7 +7,8 @@
 
 namespace kafka {
 
-future<join_group_response> group_manager::join_group(join_group_request&& r) {
+ss::future<join_group_response>
+group_manager::join_group(join_group_request&& r) {
     kglog.trace("join request {}", r);
 
     if (r.group_instance_id) {
@@ -44,7 +45,7 @@ future<join_group_response> group_manager::join_group(join_group_request&& r) {
               "join request rejected for known member and unknown group");
             return make_join_error(r.member_id, error_code::unknown_member_id);
         }
-        group = make_lw_shared<kafka::group>(
+        group = ss::make_lw_shared<kafka::group>(
           r.group_id, group_state::empty, _conf);
         _groups.emplace(r.group_id, group);
         kglog.trace("created new group {}", group);
@@ -53,7 +54,8 @@ future<join_group_response> group_manager::join_group(join_group_request&& r) {
     return group->handle_join_group(std::move(r));
 }
 
-future<sync_group_response> group_manager::sync_group(sync_group_request&& r) {
+ss::future<sync_group_response>
+group_manager::sync_group(sync_group_request&& r) {
     kglog.trace("sync request {}", r);
 
     if (r.group_instance_id) {
@@ -86,7 +88,7 @@ future<sync_group_response> group_manager::sync_group(sync_group_request&& r) {
     }
 }
 
-future<heartbeat_response> group_manager::heartbeat(heartbeat_request&& r) {
+ss::future<heartbeat_response> group_manager::heartbeat(heartbeat_request&& r) {
     kglog.trace("heartbeat request {}", r);
 
     if (r.group_instance_id) {
@@ -114,7 +116,7 @@ future<heartbeat_response> group_manager::heartbeat(heartbeat_request&& r) {
     return make_heartbeat_error(error_code::unknown_member_id);
 }
 
-future<leave_group_response>
+ss::future<leave_group_response>
 group_manager::leave_group(leave_group_request&& r) {
     kglog.trace("leave request {}", r);
 

@@ -2,6 +2,7 @@
 #include "kafka/errors.h"
 #include "kafka/requests/fwd.h"
 #include "kafka/types.h"
+#include "seastarx.h"
 
 #include <seastar/core/future.hh>
 
@@ -13,7 +14,8 @@ struct leave_group_api final {
     static constexpr api_version min_supported = api_version(0);
     static constexpr api_version max_supported = api_version(2);
 
-    static future<response_ptr> process(request_context&&, smp_service_group);
+    static ss::future<response_ptr>
+    process(request_context&&, ss::smp_service_group);
 };
 
 struct leave_group_request final {
@@ -37,8 +39,9 @@ struct leave_group_response final {
     void encode(const request_context& ctx, response& resp);
 };
 
-static inline future<leave_group_response> make_leave_error(error_code error) {
-    return make_ready_future<leave_group_response>(error);
+static inline ss::future<leave_group_response>
+make_leave_error(error_code error) {
+    return ss::make_ready_future<leave_group_response>(error);
 }
 
 std::ostream& operator<<(std::ostream&, const leave_group_response&);

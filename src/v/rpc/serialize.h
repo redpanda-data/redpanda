@@ -21,7 +21,7 @@ void serialize(iobuf& out, T&& t) {
       std::is_rvalue_reference_v<decltype(t)>,
       "Must be an rvalue. Use std::move()");
     constexpr bool is_optional = is_std_optional_v<T>;
-    constexpr bool is_sstring = std::is_same_v<T, sstring>;
+    constexpr bool is_sstring = std::is_same_v<T, ss::sstring>;
     constexpr bool is_vector = is_std_vector_v<T>;
     constexpr bool is_iobuf = std::is_same_v<T, iobuf>;
     constexpr bool is_standard_layout = std::is_standard_layout_v<T>;

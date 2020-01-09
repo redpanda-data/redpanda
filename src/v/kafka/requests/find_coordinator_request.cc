@@ -11,8 +11,8 @@
 
 namespace kafka {
 
-future<response_ptr>
-find_coordinator_api::process(request_context&& ctx, smp_service_group g) {
+ss::future<response_ptr>
+find_coordinator_api::process(request_context&& ctx, ss::smp_service_group g) {
     // request
     auto key = ctx.reader().read_string();
     std::optional<int8_t> key_type;
@@ -31,9 +31,9 @@ find_coordinator_api::process(request_context&& ctx, smp_service_group g) {
     }
     // TODO: return connection for raft group 0 leader
     resp->writer().write(int32_t(0));
-    resp->writer().write(sstring("localhost"));
+    resp->writer().write(ss::sstring("localhost"));
     resp->writer().write(int32_t(9092));
-    return make_ready_future<response_ptr>(std::move(resp));
+    return ss::make_ready_future<response_ptr>(std::move(resp));
 }
 
 } // namespace kafka

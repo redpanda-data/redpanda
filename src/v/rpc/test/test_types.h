@@ -10,14 +10,14 @@
 #include <vector>
 
 struct [[gnu::packed]] pod {
-    unaligned<int16_t> x = 1;
+    ss::unaligned<int16_t> x = 1;
     // MISSING int16_t alignment here
-    unaligned<int32_t> y = 2;
-    unaligned<int64_t> z = 3;
+    ss::unaligned<int32_t> y = 2;
+    ss::unaligned<int64_t> z = 3;
 };
 struct [[gnu::packed]] very_packed_pod {
-    unaligned<int16_t> x = 1;
-    unaligned<int8_t> y = 2;
+    ss::unaligned<int16_t> x = 1;
+    ss::unaligned<int8_t> y = 2;
 };
 struct complex_custom {
     pod pit;
@@ -32,7 +32,7 @@ struct pod_with_array {
     std::array<int, 3> v{1, 2, 3};
 };
 struct kv {
-    sstring k;
+    ss::sstring k;
     iobuf v;
 };
 struct test_rpc_header {

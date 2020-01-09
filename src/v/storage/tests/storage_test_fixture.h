@@ -21,7 +21,7 @@ constexpr size_t operator""_kb(unsigned long long val) { return val * kb; }
 constexpr size_t operator""_mb(unsigned long long val) { return val * mb; }
 constexpr size_t operator""_gb(unsigned long long val) { return val * gb; }
 
-static logger tlog{"test_log"};
+static ss::logger tlog{"test_log"};
 
 inline void validate_batch_crc(model::record_batch& batch) {
     crc32 crc;
@@ -48,20 +48,21 @@ struct random_batches_generator {
 
 class storage_test_fixture {
 public:
-    sstring test_dir = "test_data_" + random_generators::gen_alphanum_string(5);
+    ss::sstring test_dir = "test_data_"
+                           + random_generators::gen_alphanum_string(5);
 
     storage_test_fixture() { configure_unit_test_logging(); }
 
     void configure_unit_test_logging() {
-        seastar::global_logger_registry().set_all_loggers_level(
-          seastar::log_level::trace);
-        seastar::global_logger_registry().set_logger_level(
-          "exception", seastar::log_level::debug);
+        ss::global_logger_registry().set_all_loggers_level(
+          ss::log_level::trace);
+        ss::global_logger_registry().set_logger_level(
+          "exception", ss::log_level::debug);
 
-        seastar::apply_logging_settings(seastar::logging_settings{
-          .logger_levels = {{"exception", seastar::log_level::debug}},
-          .default_level = seastar::log_level::trace,
-          .stdout_timestamp_style = seastar::logger_timestamp_style::real});
+        ss::apply_logging_settings(ss::logging_settings{
+          .logger_levels = {{"exception", ss::log_level::debug}},
+          .default_level = ss::log_level::trace,
+          .stdout_timestamp_style = ss::logger_timestamp_style::real});
     }
 
     /// Creates a log manager in test directory
@@ -74,26 +75,29 @@ public:
         return storage::log_manager(default_log_config(test_dir));
     }
 
-    storage::log_config default_log_config(sstring test_dir) {
+    storage::log_config default_log_config(ss::sstring test_dir) {
         return storage::log_config{
           test_dir, 200_mb, storage::log_config::sanitize_files::yes};
     }
 
-    model::ntp make_ntp(sstring ns, sstring topic, size_t partition_id) {
+    model::ntp
+    make_ntp(ss::sstring ns, ss::sstring topic, size_t partition_id) {
         return model::ntp{
           .ns = model::ns(std::move(ns)),
           .tp = {.topic = model::topic(std::move(topic)),
                  .partition = model::partition_id(partition_id)}};
     }
 
-    void create_topic_dir(sstring ns, sstring topic, size_t partition_id) {
+    void
+    create_topic_dir(ss::sstring ns, ss::sstring topic, size_t partition_id) {
         auto ntp = make_ntp(ns, topic, partition_id);
-        recursive_touch_directory(fmt::format("{}/{}", test_dir, ntp.path()))
+        ss::recursive_touch_directory(
+          fmt::format("{}/{}", test_dir, ntp.path()))
           .wait();
     }
 
     struct batch_validating_consumer {
-        future<stop_iteration> operator()(model::record_batch b) {
+        ss::future<ss::stop_iteration> operator()(model::record_batch b) {
             tlog.debug(
               "Validating batch [{},{}] of size {} bytes and {} records, "
               "compressed {}, CRC: [{}] ",
@@ -106,7 +110,8 @@ public:
 
             validate_batch_crc(b);
             batches.push_back(std::move(b));
-            return make_ready_future<stop_iteration>(stop_iteration::no);
+            return ss::make_ready_future<ss::stop_iteration>(
+              ss::stop_iteration::no);
         }
 
         std::vector<model::record_batch> end_of_stream() {
@@ -122,7 +127,7 @@ public:
           .start_offset = model::offset(0),
           .max_bytes = std::numeric_limits<size_t>::max(),
           .min_bytes = 0,
-          .prio = default_priority_class(),
+          .prio = ss::default_priority_class(),
           .type_filter = {}};
 
         auto reader = log_ptr->make_reader(std::move(cfg));
@@ -145,7 +150,7 @@ public:
       storage::log_append_config::fsync sync
       = storage::log_append_config::fsync::no) {
         storage::log_append_config append_cfg{
-          sync, default_priority_class(), model::no_timeout};
+          sync, ss::default_priority_class(), model::no_timeout};
 
         model::offset base_offset = log_ptr->max_offset() < model::offset(0)
                                       ? model::offset(0)
@@ -183,14 +188,15 @@ public:
     // size_t min_bytes;
     // io_priority_class prio;
     // std::vector<model::record_batch_type> type_filter;
-    // model::offset max_offset = model::model_limits<model::offset>::max(); // inclusive
+    // model::offset max_offset = model::model_limits<model::offset>::max(); //
+    // inclusive
     std::vector<model::record_batch> read_range_to_vector(
       const storage::log_ptr& log, model::offset start, model::offset end) {
         storage::log_reader_config cfg{
           .start_offset = start,
           .max_bytes = std::numeric_limits<size_t>::max(),
           .min_bytes = 0,
-          .prio = default_priority_class(),
+          .prio = ss::default_priority_class(),
           .type_filter = {},
           .max_offset = end};
         auto reader = log->make_reader(std::move(cfg));

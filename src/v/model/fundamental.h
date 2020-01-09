@@ -20,12 +20,12 @@ using partition_id = named_type<int32_t, struct model_partition_id_type>;
 
 using topic_view = named_type<std::string_view, struct model_topic_view_type>;
 
-class topic : public named_type<sstring, struct model_topic_type> {
+class topic : public named_type<ss::sstring, struct model_topic_type> {
 public:
-    using named_type<sstring, struct model_topic_type>::named_type;
+    using named_type<ss::sstring, struct model_topic_type>::named_type;
 
     topic(model::topic_view view) // NOLINT - see topic_view_tests.cc
-      : named_type<sstring, struct model_topic_type>(sstring(view())) {}
+      : named_type<ss::sstring, struct model_topic_type>(ss::sstring(view())) {}
 
     operator topic_view() { return topic_view(_value); }
 
@@ -33,12 +33,12 @@ public:
 };
 
 /// \brief namespace is reserved in c++;  use ns
-using ns = named_type<sstring, struct model_ns_type>;
+using ns = named_type<ss::sstring, struct model_ns_type>;
 
 using offset = named_type<int64_t, struct model_offset_type>;
 
 struct topic_partition {
-    using compaction = bool_class<struct compaction_tag>;
+    using compaction = ss::bool_class<struct compaction_tag>;
 
     model::topic topic;
     model::partition_id partition;
@@ -64,7 +64,7 @@ struct ntp {
 
     bool operator!=(const ntp& other) const { return !(*this == other); }
 
-    sstring path() const;
+    ss::sstring path() const;
 };
 
 std::ostream& operator<<(std::ostream&, const ntp&);
@@ -75,7 +75,7 @@ namespace std {
 template<>
 struct hash<model::topic> {
     size_t operator()(const model::topic& tp) const {
-        return std::hash<sstring>()(tp());
+        return std::hash<ss::sstring>()(tp());
     }
 };
 
@@ -83,8 +83,8 @@ template<>
 struct hash<model::ntp> {
     size_t operator()(const model::ntp& ntp) const {
         size_t h = 0;
-        boost::hash_combine(h, hash<sstring>()(ntp.ns));
-        boost::hash_combine(h, hash<sstring>()(ntp.tp.topic));
+        boost::hash_combine(h, hash<ss::sstring>()(ntp.ns));
+        boost::hash_combine(h, hash<ss::sstring>()(ntp.tp.topic));
         boost::hash_combine(h, hash<model::partition_id>()(ntp.tp.partition));
         return h;
     }

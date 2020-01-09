@@ -6,6 +6,7 @@
 #include "rpc/parse_utils.h"
 #include "rpc/response_handler.h"
 #include "rpc/types.h"
+#include "seastarx.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/iostream.hh>
@@ -23,69 +24,69 @@ class client_context_impl;
 class base_transport {
 public:
     struct configuration {
-        socket_address server_addr;
-        std::optional<tls::credentials_builder> credentials;
+        ss::socket_address server_addr;
+        std::optional<ss::tls::credentials_builder> credentials;
     };
 
     explicit base_transport(configuration c);
     virtual ~base_transport() = default;
     base_transport(base_transport&&) = default;
 
-    virtual future<> connect();
-    future<> stop();
+    virtual ss::future<> connect();
+    ss::future<> stop();
     void shutdown();
 
     [[gnu::always_inline]] bool is_valid() const { return _fd && !_in.eof(); }
 
-    const socket_address& server_address() const { return _server_addr; }
+    const ss::socket_address& server_address() const { return _server_addr; }
 
 protected:
     virtual void fail_outstanding_futures() {}
 
-    input_stream<char> _in;
+    ss::input_stream<char> _in;
     batched_output_stream _out;
-    gate _dispatch_gate;
+    ss::gate _dispatch_gate;
     client_probe _probe;
 
 private:
-    future<> do_connect();
+    ss::future<> do_connect();
 
-    std::unique_ptr<connected_socket> _fd;
-    socket_address _server_addr;
-    shared_ptr<tls::certificate_credentials> _creds;
+    std::unique_ptr<ss::connected_socket> _fd;
+    ss::socket_address _server_addr;
+    ss::shared_ptr<ss::tls::certificate_credentials> _creds;
 };
 
 class transport final : public base_transport {
 public:
     explicit transport(
       transport_configuration c,
-      std::optional<sstring> service_name = std::nullopt);
+      std::optional<ss::sstring> service_name = std::nullopt);
     transport(transport&&) = default;
     ~transport() override;
-    future<> connect() final;
-    future<std::unique_ptr<streaming_context>>
+    ss::future<> connect() final;
+    ss::future<std::unique_ptr<streaming_context>>
       send(netbuf, rpc::timer_type::time_point);
 
     template<typename Input, typename Output>
-    future<client_context<Output>> send_typed(
+    ss::future<client_context<Output>> send_typed(
       Input, uint32_t, rpc::timer_type::time_point = rpc::no_timeout);
 
 private:
     friend client_context_impl;
 
-    future<> do_reads();
-    future<> dispatch(header);
+    ss::future<> do_reads();
+    ss::future<> dispatch(header);
     void fail_outstanding_futures() final;
-    void setup_metrics(const std::optional<sstring>&);
+    void setup_metrics(const std::optional<ss::sstring>&);
 
-    semaphore _memory;
+    ss::semaphore _memory;
     std::unordered_map<uint32_t, internal::response_handler> _correlations;
     uint32_t _correlation_idx{0};
-    metrics::metric_groups _metrics;
+    ss::metrics::metric_groups _metrics;
 };
 
 template<typename Input, typename Output>
-inline future<client_context<Output>> transport::send_typed(
+inline ss::future<client_context<Output>> transport::send_typed(
   Input r, uint32_t method_id, rpc::timer_type::time_point timeout) {
     auto b = rpc::netbuf();
     b.serialize_type(std::move(r));
@@ -99,7 +100,7 @@ inline future<client_context<Output>> transport::send_typed(
                 // TODO - don't copy the header
                 ctx_t ctx(sctx->get_header());
                 std::swap(ctx.data, o);
-                return make_ready_future<ctx_t>(std::move(ctx));
+                return ss::make_ready_future<ctx_t>(std::move(ctx));
             });
       });
 }
@@ -121,15 +122,15 @@ public:
       : _transport(std::move(cfg))
       , Protocol(_transport)... {}
 
-    future<> connect() { return _transport.connect(); }
-    future<> stop() { return _transport.stop(); };
+    ss::future<> connect() { return _transport.connect(); }
+    ss::future<> stop() { return _transport.stop(); };
     void shutdown() { _transport.shutdown(); }
 
     [[gnu::always_inline]] bool is_valid() const {
         return _transport.is_valid();
     }
 
-    const socket_address& server_address() const {
+    const ss::socket_address& server_address() const {
         return _transport.server_address();
     }
 

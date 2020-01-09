@@ -19,8 +19,8 @@ namespace storage {
 class log_segment_reader {
 public:
     log_segment_reader(
-      sstring filename,
-      file,
+      ss::sstring filename,
+      ss::file,
       model::term_id term,
       model::offset base_offset,
       uint64_t file_size,
@@ -37,7 +37,7 @@ public:
     void set_last_visible_byte_offset(uint64_t o) { _file_size = o; }
 
     /// file name
-    sstring get_filename() const { return _filename; }
+    ss::sstring get_filename() const { return _filename; }
 
     /// current term
     model::term_id term() const { return _term; }
@@ -51,28 +51,29 @@ public:
     uint64_t file_size() const { return _file_size; }
 
     /// close the underlying file handle
-    future<> close() { return _data_file.close(); }
+    ss::future<> close() { return _data_file.close(); }
 
     /// perform syscall stat
-    future<struct stat> stat() { return _data_file.stat(); }
+    ss::future<struct stat> stat() { return _data_file.stat(); }
 
     /// create an input stream _sharing_ the underlying file handle
     /// starting at position @pos
-    input_stream<char> data_stream(uint64_t pos, const io_priority_class&);
+    ss::input_stream<char>
+    data_stream(uint64_t pos, const ss::io_priority_class&);
 
 private:
-    sstring _filename;
-    file _data_file;
+    ss::sstring _filename;
+    ss::file _data_file;
     model::offset _base_offset;
     model::term_id _term;
     uint64_t _file_size;
     size_t _buffer_size;
     model::offset _max_offset;
-    lw_shared_ptr<file_input_stream_history> _history
-      = make_lw_shared<file_input_stream_history>();
+    ss::lw_shared_ptr<ss::file_input_stream_history> _history
+      = ss::make_lw_shared<ss::file_input_stream_history>();
 };
 
-using segment_reader_ptr = lw_shared_ptr<log_segment_reader>;
+using segment_reader_ptr = ss::lw_shared_ptr<log_segment_reader>;
 
 std::ostream& operator<<(std::ostream&, const log_segment_reader&);
 std::ostream& operator<<(std::ostream&, segment_reader_ptr);
@@ -132,7 +133,7 @@ public:
     /// the overhead is likely to be small. This is why our std::find
     /// starts from the back
     std::vector<segment_reader_ptr>
-    remove(std::vector<sstring> segment_filenames) {
+    remove(std::vector<ss::sstring> segment_filenames) {
         std::vector<segment_reader_ptr> retval;
         for (auto& s : segment_filenames) {
             auto b = _segments.rbegin();

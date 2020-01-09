@@ -1,4 +1,5 @@
 #pragma once
+
 #include "seastarx.h"
 
 #include <seastar/core/sstring.hh>
@@ -27,7 +28,7 @@ public:
         XXH64_update(&_state, src, sz);
     }
 
-    void update(const sstring& str) { update(str.data(), str.size()); }
+    void update(const ss::sstring& str) { update(str.data(), str.size()); }
 
     template<
       typename T,

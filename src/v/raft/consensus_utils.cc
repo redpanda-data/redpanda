@@ -34,25 +34,27 @@ struct convert<::raft::consensus::voted_for_configuration> {
 } // namespace YAML
 
 namespace raft::details {
-future<temporary_buffer<char>> readfile(sstring name) {
-    return open_file_dma(std::move(name), open_flags::ro | open_flags::create)
-      .then([](file f) {
+ss::future<ss::temporary_buffer<char>> readfile(ss::sstring name) {
+    return ss::open_file_dma(
+             std::move(name), ss::open_flags::ro | ss::open_flags::create)
+      .then([](ss::file f) {
           return f.size()
             .then([f](uint64_t size) mutable {
                 return f.dma_read_bulk<char>(0, size);
             })
-            .then([f](temporary_buffer<char> b) mutable {
+            .then([f](ss::temporary_buffer<char> b) mutable {
                 return f.close().then(
                   [f, b = std::move(b)]() mutable { return std::move(b); });
             });
       });
 }
 
-future<> writefile(sstring name, temporary_buffer<char> buf) {
-    auto flags = open_flags::wo | open_flags::create | open_flags::truncate;
-    return open_file_dma(std::move(name), flags)
-      .then([b = std::move(buf)](file f) {
-          auto out = make_lw_shared<output_stream<char>>(
+ss::future<> writefile(ss::sstring name, ss::temporary_buffer<char> buf) {
+    auto flags = ss::open_flags::wo | ss::open_flags::create
+                 | ss::open_flags::truncate;
+    return ss::open_file_dma(std::move(name), flags)
+      .then([b = std::move(buf)](ss::file f) {
+          auto out = ss::make_lw_shared<ss::output_stream<char>>(
             make_file_output_stream(std::move(f)));
           return out->write(b.get(), b.size())
             .then([out] { return out->flush(); })
@@ -60,17 +62,18 @@ future<> writefile(sstring name, temporary_buffer<char> buf) {
             .finally([out] {});
       });
 }
-future<>
-persist_voted_for(sstring filename, consensus::voted_for_configuration r) {
+ss::future<>
+persist_voted_for(ss::sstring filename, consensus::voted_for_configuration r) {
     YAML::Emitter out;
     out << YAML::convert<consensus::voted_for_configuration>::encode(r);
-    temporary_buffer<char> buf(out.size());
+    ss::temporary_buffer<char> buf(out.size());
     std::copy_n(out.c_str(), out.size(), buf.get_write());
     return writefile(filename, std::move(buf));
 }
 
-future<consensus::voted_for_configuration> read_voted_for(sstring filename) {
-    return readfile(filename).then([](temporary_buffer<char> buf) {
+ss::future<consensus::voted_for_configuration>
+read_voted_for(ss::sstring filename) {
+    return readfile(filename).then([](ss::temporary_buffer<char> buf) {
         if (buf.empty()) {
             return consensus::voted_for_configuration{};
         }
@@ -82,10 +85,10 @@ future<consensus::voted_for_configuration> read_voted_for(sstring filename) {
         return node.as<consensus::voted_for_configuration>();
     });
 }
-future<stop_iteration> memory_batch_consumer::
-operator()(model::record_batch b) {
+ss::future<ss::stop_iteration>
+memory_batch_consumer::operator()(model::record_batch b) {
     _result.push_back(std::move(b));
-    return make_ready_future<stop_iteration>(stop_iteration::no);
+    return ss::make_ready_future<ss::stop_iteration>(ss::stop_iteration::no);
 }
 
 std::vector<model::record_batch> memory_batch_consumer::end_of_stream() {
@@ -180,10 +183,10 @@ static inline std::vector<std::vector<model::record_batch>> share_n_batches(
     return data;
 }
 
-future<std::vector<raft::entry>> share_one_entry(
+ss::future<std::vector<raft::entry>> share_one_entry(
   raft::entry e, const size_t ncopies, const bool use_foreign_iobuf_share) {
     auto t = e.entry_type();
-    return do_with(
+    return ss::do_with(
              std::move(e),
              [ncopies, use_foreign_iobuf_share](raft::entry& e) {
                  return e.reader()
@@ -213,7 +216,7 @@ future<std::vector<raft::entry>> share_one_entry(
 }
 
 // don't move out of impl file - internal detail
-static inline future<std::vector<std::vector<raft::entry>>> share_entries(
+static inline ss::future<std::vector<std::vector<raft::entry>>> share_entries(
   std::vector<raft::entry> r,
   const std::size_t ncopies,
   const bool use_foreign_iobuf_share) {
@@ -223,13 +226,13 @@ static inline future<std::vector<std::vector<raft::entry>>> share_entries(
         ret_t ret;
         ret.reserve(1);
         ret.push_back(std::move(r));
-        return make_ready_future<ret_t>(std::move(ret));
+        return ss::make_ready_future<ret_t>(std::move(ret));
     }
-    return do_with(
+    return ss::do_with(
       std::move(r),
       ret_t(ncopies),
       [ncopies, use_foreign_iobuf_share](T& src, ret_t& dst) {
-          return do_until(
+          return ss::do_until(
                    [&src] { return src.empty(); },
                    [ncopies, use_foreign_iobuf_share, &src, &dst]() mutable {
                        raft::entry e = std::move(src.back());
@@ -250,18 +253,19 @@ static inline future<std::vector<std::vector<raft::entry>>> share_entries(
       });
 }
 
-future<std::vector<std::vector<raft::entry>>>
+ss::future<std::vector<std::vector<raft::entry>>>
 foreign_share_n(std::vector<raft::entry> r, std::size_t ncopies) {
     return share_entries(std::move(r), ncopies, true);
 }
 
-future<std::vector<std::vector<raft::entry>>>
+ss::future<std::vector<std::vector<raft::entry>>>
 share_n(std::vector<raft::entry> r, std::size_t ncopies) {
     return share_entries(std::move(r), ncopies, false);
 }
 
-future<configuration_bootstrap_state> read_bootstrap_state(storage::log& log) {
-    return async([&log]() mutable {
+ss::future<configuration_bootstrap_state>
+read_bootstrap_state(storage::log& log) {
+    return ss::async([&log]() mutable {
         auto retval = configuration_bootstrap_state{};
         // set term only if there are some segments already
         if (!log.segments().empty()) {
@@ -291,41 +295,41 @@ future<configuration_bootstrap_state> read_bootstrap_state(storage::log& log) {
     });
 }
 
-future<raft::group_configuration> extract_configuration(raft::entry e) {
+ss::future<raft::group_configuration> extract_configuration(raft::entry e) {
     using cfg_t = raft::group_configuration;
     if (__builtin_expect(
           e.entry_type() != raft::configuration_batch_type, false)) {
-        return make_exception_future<cfg_t>(std::runtime_error(fmt::format(
+        return ss::make_exception_future<cfg_t>(std::runtime_error(fmt::format(
           "Configuration parser can only parse configs({}), asked "
           "to parse: {}",
           raft::configuration_batch_type,
           e.entry_type())));
     }
-    return do_with(
+    return ss::do_with(
              std::move(e),
              [](raft::entry& e) {
                  return e.reader().consume(
                    memory_batch_consumer(), model::no_timeout);
              })
       .then([](std::vector<model::record_batch> batches) {
-          return do_with(
+          return ss::do_with(
             std::move(batches),
             cfg_t{},
             [](std::vector<model::record_batch>& batches, cfg_t& cfg) {
                 if (batches.empty()) {
-                    return make_exception_future<cfg_t>(std::runtime_error(
+                    return ss::make_exception_future<cfg_t>(std::runtime_error(
                       "Invalid raft::entry configuration parsing"));
                 }
-                return do_for_each(
+                return ss::do_for_each(
                          batches,
                          [&cfg](model::record_batch& b) {
                              if (b.type() != raft::configuration_batch_type) {
-                                 return make_exception_future(
+                                 return ss::make_exception_future(
                                    std::runtime_error(
                                      "Inconsistent batch format for config"));
                              }
                              if (b.compressed()) {
-                                 return make_exception_future(
+                                 return ss::make_exception_future(
                                    std::runtime_error(
                                      "Compressed configuration records are "
                                      "unsupported"));

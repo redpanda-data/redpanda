@@ -77,7 +77,7 @@ bool group::supports_protocols(const join_group_request& r) {
       });
 }
 
-future<join_group_response> group::add_member(member_ptr member) {
+ss::future<join_group_response> group::add_member(member_ptr member) {
     if (_members.empty()) {
         _protocol_type = member->protocol_type();
     }
@@ -102,7 +102,7 @@ future<join_group_response> group::add_member(member_ptr member) {
     return member->get_join_response();
 }
 
-future<join_group_response> group::update_member(
+ss::future<join_group_response> group::update_member(
   member_ptr member, std::vector<member_protocol>&& new_protocols) {
     // subtract out old protocols
     member->for_each_protocol(
@@ -118,7 +118,7 @@ future<join_group_response> group::update_member(
         return member->get_join_response();
     }
 
-    return make_exception_future<join_group_response>(std::runtime_error(
+    return ss::make_exception_future<join_group_response>(std::runtime_error(
       fmt::format("updating non-joining member {}", member->id())));
 }
 
@@ -303,7 +303,8 @@ bool group::leader_rejoined() {
     }
 }
 
-future<join_group_response> group::handle_join_group(join_group_request&& r) {
+ss::future<join_group_response>
+group::handle_join_group(join_group_request&& r) {
     if (r.member_id == unknown_member_id) {
         return join_group_unknown_member(std::move(r));
     }
@@ -321,7 +322,7 @@ future<join_group_response> group::handle_join_group(join_group_request&& r) {
      */
 }
 
-future<join_group_response>
+ss::future<join_group_response>
 group::join_group_unknown_member(join_group_request&& r) {
     kglog.trace("unknown member joining group {}", *this);
 
@@ -356,7 +357,7 @@ group::join_group_unknown_member(join_group_request&& r) {
     }
 }
 
-future<join_group_response>
+ss::future<join_group_response>
 group::join_group_known_member(join_group_request&& r) {
     kglog.trace("member {} joining group {}", r.member_id, *this);
 
@@ -412,7 +413,8 @@ group::join_group_known_member(join_group_request&& r) {
               std::move(r.member_id),
               std::move(members));
 
-            return make_ready_future<join_group_response>(std::move(response));
+            return ss::make_ready_future<join_group_response>(
+              std::move(response));
 
         } else {
             // <kafka>member has changed metadata, so force a rebalance</kafka>
@@ -446,7 +448,8 @@ group::join_group_known_member(join_group_request&& r) {
               leader().value_or(member_id("")),
               std::move(r.member_id));
 
-            return make_ready_future<join_group_response>(std::move(response));
+            return ss::make_ready_future<join_group_response>(
+              std::move(response));
         }
 
     case group_state::empty:
@@ -462,9 +465,9 @@ group::join_group_known_member(join_group_request&& r) {
     }
 }
 
-future<join_group_response> group::add_member_and_rebalance(
+ss::future<join_group_response> group::add_member_and_rebalance(
   kafka::member_id member_id, join_group_request&& r) {
-    auto member = make_lw_shared<group_member>(
+    auto member = ss::make_lw_shared<group_member>(
       std::move(member_id),
       id(),
       std::move(r.group_instance_id),
@@ -516,7 +519,7 @@ future<join_group_response> group::add_member_and_rebalance(
     return response;
 }
 
-future<join_group_response>
+ss::future<join_group_response>
 group::update_member_and_rebalance(member_ptr member, join_group_request&& r) {
     auto response = update_member(member, std::move(r.protocols));
     try_prepare_rebalance();
@@ -758,7 +761,8 @@ void group::remove_member(member_ptr member) {
     }
 }
 
-future<sync_group_response> group::handle_sync_group(sync_group_request&& r) {
+ss::future<sync_group_response>
+group::handle_sync_group(sync_group_request&& r) {
     if (in_state(group_state::dead)) {
         kglog.trace("group is dead");
         return make_sync_error(error_code::coordinator_not_available);
@@ -811,7 +815,7 @@ future<sync_group_response> group::handle_sync_group(sync_group_request&& r) {
         // assignment</kafka>
         auto member = get_member(r.member_id);
         schedule_next_heartbeat_expiration(member);
-        return make_ready_future<sync_group_response>(
+        return ss::make_ready_future<sync_group_response>(
           sync_group_response(error_code::none, member->assignment()));
     }
 
@@ -824,7 +828,7 @@ future<sync_group_response> group::handle_sync_group(sync_group_request&& r) {
     }
 }
 
-future<sync_group_response> group::sync_group_completing_rebalance(
+ss::future<sync_group_response> group::sync_group_completing_rebalance(
   member_ptr member, sync_group_request&& r) {
     // this response will be set by the leader when it arrives. the leader also
     // sets its own response which reduces the special cases in the code, but we
@@ -858,7 +862,7 @@ future<sync_group_response> group::sync_group_completing_rebalance(
     auto part = _partitions.get(group->ntp());
     return part->replicate(std::move(e))
 #else
-    auto part = make_ready_future<>();
+    auto part = ss::make_ready_future<>();
     return part
 #endif
     .then([this,
@@ -897,7 +901,7 @@ future<sync_group_response> group::sync_group_completing_rebalance(
     });
 }
 
-future<heartbeat_response> group::handle_heartbeat(heartbeat_request&& r) {
+ss::future<heartbeat_response> group::handle_heartbeat(heartbeat_request&& r) {
     if (in_state(group_state::dead)) {
         kglog.trace("group is dead");
         return make_heartbeat_error(error_code::coordinator_not_available);
@@ -941,7 +945,7 @@ future<heartbeat_response> group::handle_heartbeat(heartbeat_request&& r) {
     }
 }
 
-future<leave_group_response>
+ss::future<leave_group_response>
 group::handle_leave_group(leave_group_request&& r) {
     if (in_state(group_state::dead)) {
         kglog.trace("group is dead");

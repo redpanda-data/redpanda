@@ -18,10 +18,10 @@ namespace storage {
 static constexpr size_t default_read_buffer_size = 128 * 1024;
 
 struct log_config {
-    sstring base_dir;
+    ss::sstring base_dir;
     size_t max_segment_size;
     // used for testing: keeps a backtrace of operations for debugging
-    using sanitize_files = bool_class<struct sanitize_files_tag>;
+    using sanitize_files = ss::bool_class<struct sanitize_files_tag>;
     sanitize_files should_sanitize;
 };
 
@@ -31,19 +31,19 @@ public:
 
     explicit log_manager(log_config) noexcept;
 
-    future<log_ptr> manage(model::ntp);
+    ss::future<log_ptr> manage(model::ntp);
 
-    future<> stop();
+    ss::future<> stop();
 
     struct log_handles {
         segment_reader_ptr reader;
         segment_appender_ptr appender;
     };
-    future<log_handles> make_log_segment(
+    ss::future<log_handles> make_log_segment(
       const model::ntp&,
       model::offset,
       model::term_id,
-      io_priority_class pc,
+      ss::io_priority_class pc,
       record_version_type = record_version_type::v1,
       size_t buffer_size = default_read_buffer_size);
 

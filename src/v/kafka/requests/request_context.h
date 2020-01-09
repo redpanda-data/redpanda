@@ -26,13 +26,13 @@ using group_router_type = kafka::group_router<
 
 class controller_dispatcher;
 
-extern logger kreq_log;
+extern ss::logger kreq_log;
 
 struct request_header {
     api_key key;
     api_version version;
     correlation_type correlation_id;
-    temporary_buffer<char> client_id_buffer;
+    ss::temporary_buffer<char> client_id_buffer;
     std::optional<std::string_view> client_id;
 };
 
@@ -41,14 +41,14 @@ std::ostream& operator<<(std::ostream&, const request_header&);
 class request_context {
 public:
     request_context(
-      sharded<cluster::metadata_cache>& metadata_cache,
+      ss::sharded<cluster::metadata_cache>& metadata_cache,
       controller_dispatcher& cntrl_dispatcher,
       request_header&& header,
       iobuf&& request,
-      lowres_clock::duration throttle_delay,
+      ss::lowres_clock::duration throttle_delay,
       kafka::group_router_type& group_router,
       cluster::shard_table& shard_table,
-      sharded<cluster::partition_manager>& partition_manager) noexcept
+      ss::sharded<cluster::partition_manager>& partition_manager) noexcept
       : _metadata_cache(metadata_cache)
       , _cntrl_dispatcher(cntrl_dispatcher)
       , _header(std::move(header))
@@ -80,29 +80,28 @@ public:
 
     kafka::group_router_type& groups() { return _group_router; }
 
-    cluster::shard_table& shards() {
-        return _shard_table;
-    }
+    cluster::shard_table& shards() { return _shard_table; }
 
-    sharded<cluster::partition_manager>& partition_manager() {
+    ss::sharded<cluster::partition_manager>& partition_manager() {
         return _partition_manager;
     }
 
 private:
-    sharded<cluster::metadata_cache>& _metadata_cache;
+    ss::sharded<cluster::metadata_cache>& _metadata_cache;
     controller_dispatcher& _cntrl_dispatcher;
     request_header _header;
     request_reader _reader;
-    lowres_clock::duration _throttle_delay;
+    ss::lowres_clock::duration _throttle_delay;
     kafka::group_router_type& _group_router;
     cluster::shard_table& _shard_table;
-    sharded<cluster::partition_manager>& _partition_manager;
+    ss::sharded<cluster::partition_manager>& _partition_manager;
 };
 
 class response;
-using response_ptr = foreign_ptr<std::unique_ptr<response>>;
+using response_ptr = ss::foreign_ptr<std::unique_ptr<response>>;
 
 // Executes the API call identified by the specified request_context.
-future<response_ptr> process_request(request_context&&, smp_service_group);
+ss::future<response_ptr>
+process_request(request_context&&, ss::smp_service_group);
 
 } // namespace kafka

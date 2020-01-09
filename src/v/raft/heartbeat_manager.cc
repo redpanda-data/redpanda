@@ -9,7 +9,7 @@
 #include <boost/range/iterator_range.hpp>
 
 namespace raft {
-logger hbeatlog{"r/heartbeat"};
+ss::logger hbeatlog{"r/heartbeat"};
 using consensus_ptr = heartbeat_manager::consensus_ptr;
 using consensus_set = heartbeat_manager::consensus_set;
 
@@ -45,19 +45,19 @@ requests_for_range(const consensus_set& c) {
 }
 
 heartbeat_manager::heartbeat_manager(
-  duration_type timeout, sharded<rpc::connection_cache>& cls)
+  duration_type timeout, ss::sharded<rpc::connection_cache>& cls)
   : _election_duration(timeout)
   , _clients(cls) {
     _heartbeat_timer.set_callback([this] { dispatch_heartbeats(); });
 }
 
-future<> heartbeat_manager::do_dispatch_heartbeats(
+ss::future<> heartbeat_manager::do_dispatch_heartbeats(
   clock_type::time_point last_timeout, clock_type::time_point next_timeout) {
     auto reqs = requests_for_range(_consensus_groups);
-    return do_with(
+    return ss::do_with(
       std::move(reqs),
       [this, next_timeout](std::vector<heartbeat_request>& reqs) {
-          return parallel_for_each(
+          return ss::parallel_for_each(
             reqs.begin(),
             reqs.end(),
             [this, next_timeout](heartbeat_request& r) {
@@ -66,19 +66,19 @@ future<> heartbeat_manager::do_dispatch_heartbeats(
       });
 }
 
-static future<result<heartbeat_reply>> send_beat(
+static ss::future<result<heartbeat_reply>> send_beat(
   rpc::connection_cache& local,
   clock_type::time_point tmo,
   heartbeat_request&& r) {
     using ret_t = result<heartbeat_reply>;
     if (!local.contains(r.node_id)) {
-        return make_ready_future<ret_t>(errc::missing_tcp_client);
+        return ss::make_ready_future<ret_t>(errc::missing_tcp_client);
     }
 
     return local.get(r.node_id)->get_connected().then(
       [tmo, r = std::move(r)](result<rpc::transport*> t) mutable {
           if (!t) {
-              return make_ready_future<ret_t>(t.error());
+              return ss::make_ready_future<ret_t>(t.error());
           }
           hbeatlog.trace("sending hbeats {}", r);
           auto f = raftgen_client_protocol(*(t.value()))
@@ -87,22 +87,22 @@ static future<result<heartbeat_reply>> send_beat(
                    errc::timeout, std::move(f))
             .then([](auto r) {
                 if (!r) {
-                    return make_ready_future<ret_t>(r.error());
+                    return ss::make_ready_future<ret_t>(r.error());
                 }
                 // TODO: wrap in foreign ptr
-                return make_ready_future<ret_t>(std::move(r.value().data));
+                return ss::make_ready_future<ret_t>(std::move(r.value().data));
             });
       });
 }
 
-future<> heartbeat_manager::do_heartbeat(
+ss::future<> heartbeat_manager::do_heartbeat(
   heartbeat_request&& r, clock_type::time_point next_timeout) {
     auto shard = rpc::connection_cache::shard_for(r.node_id);
     std::vector<group_id> groups(r.meta.size());
     for (size_t i = 0; i < groups.size(); ++i) {
         groups[i] = group_id(r.meta[i].group);
     }
-    return smp::submit_to(
+    return ss::smp::submit_to(
              shard,
              [this, r = std::move(r), next_timeout]() mutable {
                  return send_beat(_clients.local(), next_timeout, std::move(r));
@@ -173,14 +173,14 @@ void heartbeat_manager::deregister_group(group_id g) {
         _consensus_groups.erase(it);
     }
 }
-void heartbeat_manager::register_group(lw_shared_ptr<consensus> ptr) {
+void heartbeat_manager::register_group(ss::lw_shared_ptr<consensus> ptr) {
     _consensus_groups.insert(ptr);
 }
-future<> heartbeat_manager::start() {
+ss::future<> heartbeat_manager::start() {
     dispatch_heartbeats();
-    return make_ready_future<>();
+    return ss::make_ready_future<>();
 }
-future<> heartbeat_manager::stop() {
+ss::future<> heartbeat_manager::stop() {
     _heartbeat_timer.cancel();
     return _bghbeats.close();
 }

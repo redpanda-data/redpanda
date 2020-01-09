@@ -23,7 +23,7 @@
 
 namespace kafka {
 
-inline logger kglog{"k/group"};
+inline ss::logger kglog{"k/group"};
 
 /**
  * \defgroup kafka-groups Kafka group membership API
@@ -83,7 +83,7 @@ std::ostream& operator<<(std::ostream&, group_state gs);
 /// Container of members.
 class group {
 public:
-    using clock_type = lowres_clock;
+    using clock_type = ss::lowres_clock;
     using duration_type = clock_type::duration;
 
     group(kafka::group_id id, group_state s, config::configuration& conf)
@@ -188,14 +188,14 @@ public:
      *
      * \returns join response promise set at the end of the join phase.
      */
-    future<join_group_response> add_member(member_ptr member);
+    ss::future<join_group_response> add_member(member_ptr member);
 
     /**
      * \brief Update the set of protocols supported by a group member.
      *
      * \returns join response promise set at the end of the join phase.
      */
-    future<join_group_response> update_member(
+    ss::future<join_group_response> update_member(
       member_ptr member, std::vector<member_protocol>&& new_protocols);
 
     /**
@@ -287,22 +287,22 @@ public:
     static kafka::member_id generate_member_id(const join_group_request& r);
 
     /// Handle join entry point.
-    future<join_group_response> handle_join_group(join_group_request&& r);
+    ss::future<join_group_response> handle_join_group(join_group_request&& r);
 
     /// Handle join of an unknown member.
-    future<join_group_response>
+    ss::future<join_group_response>
     join_group_unknown_member(join_group_request&& request);
 
     /// Handle join of a known member.
-    future<join_group_response>
+    ss::future<join_group_response>
     join_group_known_member(join_group_request&& request);
 
     /// Add a new member and initiate a rebalance.
-    future<join_group_response> add_member_and_rebalance(
+    ss::future<join_group_response> add_member_and_rebalance(
       kafka::member_id member_id, join_group_request&& request);
 
     /// Update an existing member and rebalance.
-    future<join_group_response> update_member_and_rebalance(
+    ss::future<join_group_response> update_member_and_rebalance(
       member_ptr member, join_group_request&& request);
 
     /// Transition to preparing rebalance if possible.
@@ -326,20 +326,21 @@ public:
     void remove_member(member_ptr member);
 
     /// Handle a group sync request.
-    future<sync_group_response> handle_sync_group(sync_group_request&& r);
+    ss::future<sync_group_response> handle_sync_group(sync_group_request&& r);
 
     /// Handle sync group in completing rebalance state.
-    future<sync_group_response> sync_group_completing_rebalance(
+    ss::future<sync_group_response> sync_group_completing_rebalance(
       member_ptr member, sync_group_request&& request);
 
     /// Complete syncing for members.
     void finish_syncing_members(error_code error);
 
     /// Handle a heartbeat request.
-    future<heartbeat_response> handle_heartbeat(heartbeat_request&& r);
+    ss::future<heartbeat_response> handle_heartbeat(heartbeat_request&& r);
 
     /// Handle a leave group request.
-    future<leave_group_response> handle_leave_group(leave_group_request&& r);
+    ss::future<leave_group_response>
+    handle_leave_group(leave_group_request&& r);
 
 private:
     using member_map = std::unordered_map<kafka::member_id, member_ptr>;
@@ -356,12 +357,12 @@ private:
     std::optional<kafka::protocol_type> _protocol_type;
     std::optional<kafka::protocol_name> _protocol;
     std::optional<kafka::member_id> _leader;
-    timer<clock_type> _join_timer;
+    ss::timer<clock_type> _join_timer;
     bool _new_member_added;
     config::configuration& _conf;
 };
 
-using group_ptr = lw_shared_ptr<group>;
+using group_ptr = ss::lw_shared_ptr<group>;
 
 std::ostream& operator<<(std::ostream&, const group&);
 

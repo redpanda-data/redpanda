@@ -8,7 +8,7 @@
 
 namespace model {
 
-using timeout_clock = seastar::lowres_clock;
+using timeout_clock = ss::lowres_clock;
 
 static constexpr timeout_clock::time_point no_timeout
   = timeout_clock::time_point::max();

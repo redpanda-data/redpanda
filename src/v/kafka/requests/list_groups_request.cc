@@ -11,8 +11,8 @@
 
 namespace kafka {
 
-future<response_ptr>
-list_groups_api::process(request_context&& ctx, smp_service_group g) {
+ss::future<response_ptr>
+list_groups_api::process(request_context&& ctx, ss::smp_service_group g) {
     auto resp = std::make_unique<response>();
     if (ctx.header().version >= api_version(1)) {
         resp->writer().write(int32_t(0));
@@ -23,7 +23,7 @@ list_groups_api::process(request_context&& ctx, smp_service_group g) {
           wr.write("fake_group_id");
           wr.write("fake_protocol_type");
       });
-    return make_ready_future<response_ptr>(std::move(resp));
+    return ss::make_ready_future<response_ptr>(std::move(resp));
 }
 
 } // namespace kafka

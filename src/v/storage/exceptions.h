@@ -9,11 +9,11 @@
 
 class malformed_batch_stream_exception : public std::exception {
 public:
-    explicit malformed_batch_stream_exception(sstring s)
+    explicit malformed_batch_stream_exception(ss::sstring s)
       : _msg(std::move(s)) {}
 
     const char* what() const noexcept override { return _msg.c_str(); }
 
 private:
-    sstring _msg;
+    ss::sstring _msg;
 };

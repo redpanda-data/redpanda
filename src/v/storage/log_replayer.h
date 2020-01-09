@@ -34,8 +34,8 @@ public:
         friend class log_replayer;
     };
 
-    // Must be called in the context of a seastar::thread
-    recovered recover_in_thread(const io_priority_class&);
+    // Must be called in the context of a ss::thread
+    recovered recover_in_thread(const ss::io_priority_class&);
 
 private:
     segment_reader_ptr _seg;

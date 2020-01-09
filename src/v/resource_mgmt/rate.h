@@ -13,7 +13,7 @@
 // the common case of recording a new value and sampling the rate.
 class rate_tracker final {
 public:
-    using clock = seastar::lowres_clock;
+    using clock = ss::lowres_clock;
 
     rate_tracker(size_t num_windows, clock::duration window_size)
       : _windows(num_windows)

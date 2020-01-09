@@ -8,16 +8,17 @@
 /*
  * reads the next request from the input source as an iobuf
  */
-static future<iobuf> get_request(input_stream<char>& input) {
+static ss::future<iobuf> get_request(ss::input_stream<char>& input) {
     return input.read_exactly(sizeof(kafka::size_type))
-      .then([&input](temporary_buffer<char> buf) {
+      .then([&input](ss::temporary_buffer<char> buf) {
           if (!buf) { // eof?
-              return make_ready_future<iobuf>(iobuf());
+              return ss::make_ready_future<iobuf>(iobuf());
           }
           auto size = kafka::kafka_server::connection::process_size(
             input, buf.share());
           return input.read_exactly(size).then(
-            [size_buf = std::move(buf)](temporary_buffer<char> buf) mutable {
+            [size_buf = std::move(buf)](
+              ss::temporary_buffer<char> buf) mutable {
                 iobuf req;
                 req.append(std::move(size_buf));
                 req.append(std::move(buf));
@@ -29,14 +30,14 @@ static future<iobuf> get_request(input_stream<char>& input) {
 /*
  * build a fake request context from stdin
  */
-static future<kafka::request_context>
-get_request_context(application& app, input_stream<char>&& input) {
-    return do_with(std::move(input), [&app](input_stream<char>& input) {
+static ss::future<kafka::request_context>
+get_request_context(application& app, ss::input_stream<char>&& input) {
+    return do_with(std::move(input), [&app](ss::input_stream<char>& input) {
         /*
          * read the request size prefix
          */
         return input.read_exactly(sizeof(kafka::size_type))
-          .then([&app, &input](temporary_buffer<char> buf) {
+          .then([&app, &input](ss::temporary_buffer<char> buf) {
               auto size = kafka::kafka_server::connection::process_size(
                 input, std::move(buf));
               /*
@@ -145,27 +146,27 @@ static iobuf handle_request(kafka::request_context&& ctx) {
 
     // write the frame size into the placeholder
     int32_t total_size = os.size_bytes() - start_size;
-    auto be_total_size = cpu_to_be(total_size);
+    auto be_total_size = ss::cpu_to_be(total_size);
     auto* raw_size = reinterpret_cast<const char*>(&be_total_size);
     ph.write(raw_size, sizeof(be_total_size));
 
     return os;
 }
 
-static input_stream<char> get_input() {
+static ss::input_stream<char> get_input() {
     return read_fully("requests.bin")
       .then([](iobuf b) { return make_iobuf_input_stream(std::move(b)); })
       .get0();
 }
 
 FIXTURE_TEST(request_test, redpanda_thread_fixture) {
-    do_with(get_input(), [this](input_stream<char>& input) {
-        return do_until(
+    do_with(get_input(), [this](ss::input_stream<char>& input) {
+        return ss::do_until(
           [&input] { return input.eof(); },
           [this, &input] {
               return get_request(input).then([this](iobuf request) {
                   if (request.size_bytes() == 0) { // eof?
-                      return make_ready_future<>();
+                      return ss::make_ready_future<>();
                   }
                   // create an input stream over a share of the input. we'll
                   // use the original input to make a comparison to the

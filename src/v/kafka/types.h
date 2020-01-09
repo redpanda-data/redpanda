@@ -19,22 +19,23 @@ using api_key = named_type<int16_t, struct kafka_requests_api_key>;
 using api_version = named_type<int16_t, struct kafka_requests_api_version>;
 
 /// Kafka group identifier.
-using group_id = named_type<sstring, struct kafka_group_id>;
+using group_id = named_type<ss::sstring, struct kafka_group_id>;
 
 /// Kafka group member identifier.
-using member_id = named_type<sstring, struct kafka_member_id>;
+using member_id = named_type<ss::sstring, struct kafka_member_id>;
 
 /// Kafka group generation identifier.
 using generation_id = named_type<int32_t, struct kafka_generation_id>;
 
 /// Kafka group instance identifier.
-using group_instance_id = named_type<sstring, struct kafka_group_instance_id>;
+using group_instance_id
+  = named_type<ss::sstring, struct kafka_group_instance_id>;
 
 /// Kafka group protocol type.
-using protocol_type = named_type<sstring, struct kafka_protocol_type>;
+using protocol_type = named_type<ss::sstring, struct kafka_protocol_type>;
 
 /// Kafka group protocol name.
-using protocol_name = named_type<sstring, struct kafka_protocol>;
+using protocol_name = named_type<ss::sstring, struct kafka_protocol>;
 
 /// An unknown / missing member id (Kafka protocol specific)
 static inline const member_id unknown_member_id("");

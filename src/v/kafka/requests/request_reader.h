@@ -34,20 +34,22 @@ public:
     int8_t read_int8() { return _in.consume_type<int8_t>(); }
 
     static int16_t _read_int16(iobuf::iterator_consumer& in) {
-        return be_to_cpu(in.consume_type<int16_t>());
+        return ss::be_to_cpu(in.consume_type<int16_t>());
     }
     static int32_t _read_int32(iobuf::iterator_consumer& in) {
-        return be_to_cpu(in.consume_type<int32_t>());
+        return ss::be_to_cpu(in.consume_type<int32_t>());
     }
     static int64_t _read_int64(iobuf::iterator_consumer& in) {
-        return be_to_cpu(in.consume_type<int64_t>());
+        return ss::be_to_cpu(in.consume_type<int64_t>());
     }
 
     int16_t read_int16() { return _read_int16(_in); }
     int32_t read_int32() { return _read_int32(_in); }
     int64_t read_int64() { return _read_int64(_in); }
 
-    uint32_t read_uint32() { return be_to_cpu(_in.consume_type<uint32_t>()); }
+    uint32_t read_uint32() {
+        return ss::be_to_cpu(_in.consume_type<uint32_t>());
+    }
 
     int32_t read_varint() { return vint::value_type(read_varlong()); }
 
@@ -57,13 +59,13 @@ public:
         return val;
     }
 
-    sstring read_string() { return do_read_string(read_int16()); }
+    ss::sstring read_string() { return do_read_string(read_int16()); }
 
     std::string_view read_string_view() {
         return do_read_string_view(read_int16());
     }
 
-    std::optional<sstring> read_nullable_string() {
+    std::optional<ss::sstring> read_nullable_string() {
         auto n = read_int16();
         if (n < 0) {
             return std::nullopt;
@@ -136,12 +138,12 @@ public:
     }
 
 private:
-    sstring do_read_string(int16_t n) {
+    ss::sstring do_read_string(int16_t n) {
         if (__builtin_expect(n < 0, false)) {
             /// FIXME: maybe return empty string?
             throw std::out_of_range("Asked to read a negative byte string");
         }
-        sstring s(sstring::initialized_later(), n);
+        ss::sstring s(ss::sstring::initialized_later(), n);
         _in.consume_to(n, s.begin());
         validate_utf8(s);
         return s;

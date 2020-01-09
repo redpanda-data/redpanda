@@ -58,7 +58,7 @@ SEASTAR_THREAD_TEST_CASE(round_trip_test) {
                      .add_kv(pa_key, create_test_assignment(2, 1)))
                    .build();
     int32_t current_crc = batch.crc();
-    sstring base_dir = "./test_dir";
+    ss::sstring base_dir = "./test_dir";
     model::ntp test_ntp{.ns = model::ns("test_ns"),
                         .tp = {.topic = model::topic("test_topic"),
                                .partition = model::partition_id(0)}};

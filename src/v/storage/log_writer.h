@@ -11,7 +11,7 @@ namespace storage {
 
 class log;
 
-future<> write(log_segment_appender&, const model::record_batch&);
+ss::future<> write(log_segment_appender&, const model::record_batch&);
 
 // Log writer interface, which represents a
 // consumer for record_batch_readers. It accepts
@@ -23,7 +23,8 @@ public:
     public:
         virtual ~impl() {}
 
-        virtual future<stop_iteration> operator()(model::record_batch&&) = 0;
+        virtual ss::future<ss::stop_iteration>
+        operator()(model::record_batch&&) = 0;
         virtual model::offset end_of_stream() = 0;
     };
 
@@ -33,7 +34,7 @@ public:
     log_writer(log_writer&& o) = default;
     log_writer& operator=(log_writer&& o) = default;
 
-    future<stop_iteration> operator()(model::record_batch&& batch) {
+    ss::future<ss::stop_iteration> operator()(model::record_batch&& batch) {
         return _impl->operator()(std::move(batch));
     }
 
@@ -48,7 +49,8 @@ class default_log_writer : public log_writer::impl {
 public:
     explicit default_log_writer(log&) noexcept;
 
-    virtual future<stop_iteration> operator()(model::record_batch&&) override;
+    virtual ss::future<ss::stop_iteration>
+    operator()(model::record_batch&&) override;
 
     virtual model::offset end_of_stream() override;
 

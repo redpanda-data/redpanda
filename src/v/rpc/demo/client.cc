@@ -1,7 +1,6 @@
 #include "rpc/demo/demo_utils.h"
 #include "rpc/demo/simple_service.h"
 #include "rpc/types.h"
-#include "seastarx.h"
 #include "syschecks/syschecks.h"
 #include "utils/hdr_hist.h"
 
@@ -14,7 +13,7 @@
 #include <string>
 
 namespace ch = std::chrono;
-static logger lgr{"demo client"};
+static ss::logger lgr{"demo client"};
 
 void cli_opts(boost::program_options::options_description_easy_init o) {
     namespace po = boost::program_options;
@@ -46,7 +45,7 @@ struct load_gen_cfg {
     load_gen_cfg() = default;
     load_gen_cfg(const load_gen_cfg&) = default;
     std::size_t global_total_requests() const {
-        return core_total_requests() * smp::count;
+        return core_total_requests() * ss::smp::count;
     }
     std::size_t global_size_test1() const {
         return global_total_requests() * data_size;
@@ -64,7 +63,7 @@ struct load_gen_cfg {
     std::size_t parallelism;
     std::size_t test_case;
     rpc::transport_configuration client_cfg;
-    sharded<hdr_hist>* hist;
+    ss::sharded<hdr_hist>* hist;
 };
 
 inline std::ostream& operator<<(std::ostream& o, const load_gen_cfg& cfg) {
@@ -79,7 +78,7 @@ inline std::ostream& operator<<(std::ostream& o, const load_gen_cfg& cfg) {
              << ", 'global_test_1_data_size':" << cfg.global_size_test1()
              << ", 'global_test_2_data_size':" << cfg.global_size_test2()
              << ", 'global_requests':" << cfg.global_total_requests()
-             << ", 'cores':" << smp::count << "}";
+             << ", 'cores':" << ss::smp::count << "}";
 }
 
 // 1. creates cfg.parallelism number of TCP connections
@@ -92,39 +91,40 @@ public:
     using cli = rpc::client<demo::simple_client_protocol>;
     client_loadgen(load_gen_cfg cfg)
       : _cfg(std::move(cfg))
-      , _mem(memory::stats().total_memory() * .9) {
+      , _mem(ss::memory::stats().total_memory() * .9) {
         lgr.debug("Mem for loadgen: {}", _mem.available_units());
         for (std::size_t i = 0; i < _cfg.parallelism; ++i) {
             _clients.push_back(std::make_unique<cli>(_cfg.client_cfg));
         }
     }
-    future<> execute_loadgen() {
-        return parallel_for_each(
+    ss::future<> execute_loadgen() {
+        return ss::parallel_for_each(
           _clients.begin(), _clients.end(), [this](auto& c) {
-              return parallel_for_each(
+              return ss::parallel_for_each(
                 boost::irange(std::size_t(0), _cfg.concurrency),
                 [this, &c](std::size_t) mutable { return execute_one(c); });
           });
     }
-    future<> connect() {
-        return parallel_for_each(_clients.begin(), _clients.end(), [](auto& c) {
-            return c->connect();
-        });
+    ss::future<> connect() {
+        return ss::parallel_for_each(
+          _clients.begin(), _clients.end(), [](auto& c) {
+              return c->connect();
+          });
     }
-    future<> stop() {
-        return parallel_for_each(
+    ss::future<> stop() {
+        return ss::parallel_for_each(
           _clients.begin(), _clients.end(), [](auto& c) { return c->stop(); });
     }
 
 private:
-    future<> execute_one(std::unique_ptr<cli>& c) {
+    ss::future<> execute_one(std::unique_ptr<cli>& c) {
         if (_cfg.test_case < 1 && _cfg.test_case > 3) {
             throw std::runtime_error(fmt::format(
               "Unknown test:{}, bad config:{}", _cfg.test_case, _cfg));
         }
         if (_cfg.test_case == 1) {
             return get_units(_mem, _cfg.data_size)
-              .then([this, &c](semaphore_units<> u) {
+              .then([this, &c](ss::semaphore_units<> u) {
                   return c
                     ->put(
                       demo::gen_simple_request(_cfg.data_size, _cfg.chunk_size),
@@ -134,7 +134,7 @@ private:
               });
         } else if (_cfg.test_case == 2) {
             return get_units(_mem, sizeof(demo::complex_request{}))
-              .then([this, &c](semaphore_units<> u) {
+              .then([this, &c](ss::semaphore_units<> u) {
                   return c
                     ->put_complex(demo::complex_request{}, rpc::no_timeout)
                     .then([m = _cfg.hist->local().auto_measure(),
@@ -142,7 +142,7 @@ private:
               });
         } else if (_cfg.test_case == 3) {
             return get_units(_mem, _cfg.data_size)
-              .then([this, &c](semaphore_units<> u) {
+              .then([this, &c](ss::semaphore_units<> u) {
                   auto r = demo::gen_interspersed_request(
                     _cfg.data_size, _cfg.chunk_size);
                   return c->put_interspersed(std::move(r), rpc::no_timeout)
@@ -154,25 +154,26 @@ private:
     }
 
     load_gen_cfg _cfg;
-    semaphore _mem;
+    ss::semaphore _mem;
     std::vector<std::unique_ptr<cli>> _clients;
 };
 
 inline load_gen_cfg
-cfg_from(boost::program_options::variables_map& m, sharded<hdr_hist>* h) {
+cfg_from(boost::program_options::variables_map& m, ss::sharded<hdr_hist>* h) {
     rpc::transport_configuration client_cfg;
-    client_cfg.server_addr = socket_address(
-      ipv4_addr(m["ip"].as<std::string>(), m["port"].as<uint16_t>()));
+    client_cfg.server_addr = ss::socket_address(
+      ss::ipv4_addr(m["ip"].as<std::string>(), m["port"].as<uint16_t>()));
     auto ca_cert = m["ca-cert"].as<std::string>();
     if (ca_cert != "") {
-        auto builder = tls::credentials_builder();
+        auto builder = ss::tls::credentials_builder();
         // FIXME
         // builder.set_dh_level(tls::dh_params::level::MEDIUM);
         lgr.info("Using {} as CA root certificate", ca_cert);
-        builder.set_x509_trust_file(ca_cert, tls::x509_crt_format::PEM).get0();
+        builder.set_x509_trust_file(ca_cert, ss::tls::x509_crt_format::PEM)
+          .get0();
         client_cfg.credentials = std::move(builder);
     }
-    client_cfg.max_queued_bytes = memory::stats().total_memory() * .8;
+    client_cfg.max_queued_bytes = ss::memory::stats().total_memory() * .8;
     return load_gen_cfg{.data_size = m["data-size"].as<std::size_t>(),
                         .chunk_size = m["chunk-size"].as<std::size_t>(),
                         .concurrency = m["concurrency"].as<std::size_t>(),
@@ -218,9 +219,9 @@ inline std::ostream& operator<<(std::ostream& o, const throughput& t) {
              << "}";
 }
 
-inline hdr_hist aggregate_in_thread(sharded<hdr_hist>& h) {
+inline hdr_hist aggregate_in_thread(ss::sharded<hdr_hist>& h) {
     hdr_hist retval;
-    for (auto i = 0; i < smp::count; ++i) {
+    for (auto i = 0; i < ss::smp::count; ++i) {
         h.invoke_on(i, [&retval](const hdr_hist& o) { retval += o; }).get();
     }
     return retval;
@@ -230,11 +231,11 @@ void write_configuration_in_thread(
   const throughput& tp, const load_gen_cfg& cfg) {
     std::ostringstream to;
     to << "{'throughput':" << tp << ", 'config':" << cfg << "}";
-    const sstring s = to.str();
+    const ss::sstring s = to.str();
     force_write_ptr("test_config.json", s.data(), s.size()).get();
 }
 
-void write_latency_in_thread(sharded<hdr_hist>& hist) {
+void write_latency_in_thread(ss::sharded<hdr_hist>& hist) {
     auto h = aggregate_in_thread(hist);
     write_histogram("clients.hdr", h).get();
 }
@@ -242,21 +243,21 @@ void write_latency_in_thread(sharded<hdr_hist>& hist) {
 int main(int args, char** argv, char** env) {
     syschecks::initialize_intrinsics();
     std::setvbuf(stdout, nullptr, _IOLBF, 1024);
-    app_template app;
+    ss::app_template app;
     cli_opts(app.add_options());
-    sharded<client_loadgen> client;
-    sharded<hdr_hist> hist;
+    ss::sharded<client_loadgen> client;
+    ss::sharded<hdr_hist> hist;
     return app.run(args, argv, [&] {
         auto& cfg = app.configuration();
-        return async([&] {
+        return ss::async([&] {
             lgr.info("constructing histogram");
             hist.start().get();
-            auto hd = defer([&hist] { hist.stop().get(); });
+            auto hd = ss::defer([&hist] { hist.stop().get(); });
             const load_gen_cfg lcfg = cfg_from(cfg, &hist);
             lgr.info("config:{}", lcfg);
             lgr.info("constructing client");
             client.start(lcfg).get();
-            auto cd = defer([&client] { client.stop().get(); });
+            auto cd = ss::defer([&client] { client.stop().get(); });
             lgr.info("connecting clients");
             client.invoke_on_all(&client_loadgen::connect).get();
             auto tp = throughput(lcfg.global_total_requests());

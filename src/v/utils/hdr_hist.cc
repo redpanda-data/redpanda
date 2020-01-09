@@ -29,7 +29,7 @@ hdr_hist& hdr_hist::operator+=(const hdr_hist& o) {
     return *this;
 }
 
-temporary_buffer<char> hdr_hist::print_classic() const {
+ss::temporary_buffer<char> hdr_hist::print_classic() const {
     char* buf = nullptr;
     std::size_t len = 0;
     FILE* fp = open_memstream(&buf, &len);
@@ -49,7 +49,7 @@ temporary_buffer<char> hdr_hist::print_classic() const {
         throw std::runtime_error(
           fmt::format("Failed to print histogram: {}", p_ret));
     }
-    return temporary_buffer<char>(buf, len, make_free_deleter(buf));
+    return ss::temporary_buffer<char>(buf, len, ss::make_free_deleter(buf));
 }
 // getters
 int64_t hdr_hist::get_value_at(double percentile) const {
@@ -60,7 +60,7 @@ double hdr_hist::mean() const { return ::hdr_mean(_hist.get()); }
 size_t hdr_hist::memory_size() const {
     return ::hdr_get_memory_size(_hist.get());
 }
-metrics::histogram hdr_hist::seastar_histogram_logform() const {
+ss::metrics::histogram hdr_hist::seastar_histogram_logform() const {
     // logarithmic histogram configuration. this will range from 10 microseconds
     // through around 6000 seconds with 26 buckets doubling.
     //
@@ -74,7 +74,7 @@ metrics::histogram hdr_hist::seastar_histogram_logform() const {
     constexpr int64_t first_value = 10;
     constexpr double log_base = 2.0;
 
-    seastar::metrics::histogram sshist;
+    ss::metrics::histogram sshist;
     sshist.buckets.resize(num_buckets);
 
     sshist.sample_count = _sample_count;

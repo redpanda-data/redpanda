@@ -2,7 +2,7 @@
 #include "cluster/types.h"
 
 cluster::partition_assignment create_test_assignment(
-  const sstring& topic,
+  const ss::sstring& topic,
   int partition_id,
   std::vector<std::pair<uint32_t, uint32_t>> shards_assignment,
   int group_id) {

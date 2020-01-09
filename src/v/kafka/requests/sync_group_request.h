@@ -2,6 +2,7 @@
 #include "kafka/errors.h"
 #include "kafka/requests/fwd.h"
 #include "kafka/types.h"
+#include "seastarx.h"
 
 #include <seastar/core/future.hh>
 
@@ -15,7 +16,8 @@ struct sync_group_api final {
     static constexpr api_version min_supported = api_version(0);
     static constexpr api_version max_supported = api_version(3);
 
-    static future<response_ptr> process(request_context&&, smp_service_group);
+    static ss::future<response_ptr>
+    process(request_context&&, ss::smp_service_group);
 };
 
 struct sync_group_request final {
@@ -65,8 +67,9 @@ struct sync_group_response final {
     void encode(const request_context& ctx, response& resp);
 };
 
-static inline future<sync_group_response> make_sync_error(error_code error) {
-    return make_ready_future<sync_group_response>(error);
+static inline ss::future<sync_group_response>
+make_sync_error(error_code error) {
+    return ss::make_ready_future<sync_group_response>(error);
 }
 
 std::ostream& operator<<(std::ostream&, const sync_group_response&);

@@ -5,8 +5,8 @@
 #include <seastar/core/metrics.hh>
 
 namespace rpc {
-void server_probe::setup_metrics(metrics::metric_groups& mgs) {
-    namespace sm = metrics;
+void server_probe::setup_metrics(ss::metrics::metric_groups& mgs) {
+    namespace sm = ss::metrics;
     mgs.add_group(
       prometheus_sanitize::metrics_name("rpc"),
       {
@@ -73,10 +73,10 @@ std::ostream& operator<<(std::ostream& o, const server_probe& p) {
 }
 
 void client_probe::setup_metrics(
-  metrics::metric_groups& mgs,
-  const std::optional<sstring>& service_name,
-  const socket_address& target_addr) {
-    namespace sm = metrics;
+  ss::metrics::metric_groups& mgs,
+  const std::optional<ss::sstring>& service_name,
+  const ss::socket_address& target_addr) {
+    namespace sm = ss::metrics;
     auto target = sm::label("target");
     std::vector<sm::label_instance> labels = {target(target_addr)};
     if (service_name) {

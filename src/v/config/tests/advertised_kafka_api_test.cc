@@ -30,7 +30,7 @@ YAML::Node no_advertised_kafka_api() {
 }
 
 YAML::Node with_advertised_kafka_api() {
-    sstring conf = no_advertised_kafka_api_conf;
+    ss::sstring conf = no_advertised_kafka_api_conf;
     conf += advertised_kafka_api_conf;
     return YAML::Load(conf);
 }

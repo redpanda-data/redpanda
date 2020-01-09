@@ -7,8 +7,8 @@ template<>
 void serialize(iobuf& out, cluster::topic_configuration&& t) {
     rpc::serialize(
       out,
-      sstring(t.ns),
-      sstring(t.topic),
+      ss::sstring(t.ns),
+      ss::sstring(t.topic),
       t.partition_count,
       t.replication_factor,
       t.compression,
@@ -18,10 +18,10 @@ void serialize(iobuf& out, cluster::topic_configuration&& t) {
 }
 
 template<>
-future<cluster::topic_configuration> deserialize(rpc::source& in) {
+ss::future<cluster::topic_configuration> deserialize(rpc::source& in) {
     struct _simple {
-        sstring ns;
-        sstring topic;
+        ss::sstring ns;
+        ss::sstring topic;
         int32_t partition_count;
         int16_t replication_factor;
         model::compression compression;
@@ -50,7 +50,7 @@ void serialize(iobuf& out, cluster::join_request&& r) {
 }
 
 template<>
-future<cluster::join_request> deserialize(rpc::source& in) {
+ss::future<cluster::join_request> deserialize(rpc::source& in) {
     return deserialize<model::broker>(in).then(
       [](model::broker b) { return cluster::join_request(std::move(b)); });
 }

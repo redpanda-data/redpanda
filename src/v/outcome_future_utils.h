@@ -1,10 +1,11 @@
 #pragma once
 
 #include "outcome.h"
+#include "seastarx.h"
 
 #include <seastar/core/future-util.hh>
 /// \brief Wait for either a future, or a timeout, whichever comes first
-///        same as seastar::with_timeout(timeout, future); except that we
+///        same as ss::with_timeout(timeout, future); except that we
 ///        do not set the exception, only the result with default error code
 ///
 ///        We explicitly take an \param error to allow std::make_error_code
@@ -27,19 +28,17 @@ template<
   typename Clock,
   typename Duration,
   typename T>
-seastar::future<result<T, EC>> result_with_timeout(
-  std::chrono::time_point<Clock, Duration> timeout,
-  EC error,
-  seastar::future<T> f) {
+ss::future<result<T, EC>> result_with_timeout(
+  std::chrono::time_point<Clock, Duration> timeout, EC error, ss::future<T> f) {
     constexpr bool is_already_result = outcome::is_basic_result_v<T>;
     static_assert(!is_already_result, "nested result<T> not yet supported");
     using ret_t = result<T, EC>;
     if (f.available()) {
-        return seastar::make_ready_future<ret_t>(f.get0());
+        return ss::make_ready_future<ret_t>(f.get0());
     }
-    auto pr = std::make_unique<seastar::promise<ret_t>>();
+    auto pr = std::make_unique<ss::promise<ret_t>>();
     auto result = pr->get_future();
-    seastar::timer<Clock> timer([& pr = *pr, error] { pr.set_value(error); });
+    ss::timer<Clock> timer([& pr = *pr, error] { pr.set_value(error); });
     timer.arm(timeout);
     (void)f.then_wrapped(
       [pr = std::move(pr), timer = std::move(timer), error](auto&& f) mutable {
@@ -57,13 +56,14 @@ seastar::future<result<T, EC>> result_with_timeout(
 }
 
 template<typename Ex, typename EC = std::error_code, typename T>
-seastar::future<result<T, EC>>
-wrap_exception_with_result(EC error, seastar::future<T> f) {
+ss::future<result<T, EC>>
+wrap_exception_with_result(EC error, ss::future<T> f) {
     constexpr bool is_already_result = outcome::is_basic_result_v<T>;
     static_assert(!is_already_result, "nested result<T> not yet supported");
 
     using ret_t = result<T, EC>;
-    return f.then([](T t) { return make_ready_future<ret_t>(std::move(t)); })
+    return f
+      .then([](T t) { return ss::make_ready_future<ret_t>(std::move(t)); })
       .handle_exception_type(
-        [error](Ex& e) { return make_ready_future<ret_t>(error); });
+        [error](Ex& e) { return ss::make_ready_future<ret_t>(error); });
 }

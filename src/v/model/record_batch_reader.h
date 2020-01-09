@@ -20,7 +20,7 @@ namespace model {
 // clang-format off
 CONCEPT(template<typename Consumer> concept bool BatchReaderConsumer() {
     return requires(Consumer c, record_batch b) {
-        { c(std::move(b)) } -> future<stop_iteration>;
+        { c(std::move(b)) } -> ss::future<ss::stop_iteration>;
         c.end_of_stream();
     };
 })
@@ -35,7 +35,7 @@ public:
         // FIXME: In C++20, use std::span.
         using span = gsl::span<record_batch>;
 
-        virtual future<span> do_load_slice(timeout_clock::time_point) = 0;
+        virtual ss::future<span> do_load_slice(timeout_clock::time_point) = 0;
 
     public:
         virtual ~impl() = default;
@@ -44,7 +44,7 @@ public:
 
         bool is_slice_empty() const { return _current == _slice.end(); }
 
-        virtual future<> load_slice(timeout_clock::time_point timeout) {
+        virtual ss::future<> load_slice(timeout_clock::time_point timeout) {
             return do_load_slice(timeout).then([this](span s) {
                 _slice = s;
                 _current = _slice.begin();
@@ -60,12 +60,13 @@ public:
             return retval;
         }
 
-        future<record_batch_opt> operator()(timeout_clock::time_point timeout) {
+        ss::future<record_batch_opt>
+        operator()(timeout_clock::time_point timeout) {
             if (!is_slice_empty()) {
-                return make_ready_future<record_batch_opt>(pop_batch());
+                return ss::make_ready_future<record_batch_opt>(pop_batch());
             }
             if (end_of_stream()) {
-                return make_ready_future<record_batch_opt>();
+                return ss::make_ready_future<record_batch_opt>();
             }
             return load_slice(timeout).then(
               [this, timeout] { return operator()(timeout); });
@@ -81,16 +82,16 @@ public:
 
         template<typename Consumer>
         auto consume(Consumer consumer, timeout_clock::time_point timeout) {
-            return do_with(
+            return ss::do_with(
               std::move(consumer), [this, timeout](Consumer& consumer) {
-                  return repeat([this, timeout, &consumer] {
+                  return ss::repeat([this, timeout, &consumer] {
                              if (end_of_stream() && is_slice_empty()) {
-                                 return make_ready_future<stop_iteration>(
-                                   stop_iteration::yes);
+                                 return ss::make_ready_future<
+                                   ss::stop_iteration>(ss::stop_iteration::yes);
                              }
                              if (is_slice_empty()) {
                                  return load_slice(timeout).then(
-                                   [] { return stop_iteration::no; });
+                                   [] { return ss::stop_iteration::no; });
                              }
                              return consumer(pop_batch());
                          })
@@ -112,7 +113,7 @@ public:
     record_batch_reader(record_batch_reader&&) noexcept = default;
     record_batch_reader& operator=(record_batch_reader&&) noexcept = default;
 
-    future<record_batch_opt> operator()(timeout_clock::time_point timeout) {
+    ss::future<record_batch_opt> operator()(timeout_clock::time_point timeout) {
         return _impl->operator()(timeout);
     }
 
@@ -122,7 +123,7 @@ public:
     // Can only be called if !should_load_slice().
     const record_batch& peek_batch() const { return _impl->peek_batch(); }
 
-    future<> load_slice(timeout_clock::time_point timeout) {
+    ss::future<> load_slice(timeout_clock::time_point timeout) {
         return _impl->load_slice(timeout);
     }
 
@@ -151,10 +152,10 @@ private:
 
     record_batch_reader() = default;
     explicit operator bool() const noexcept { return bool(_impl); }
-    friend class optimized_optional<record_batch_reader>;
+    friend class ss::optimized_optional<record_batch_reader>;
 };
 
-using record_batch_reader_opt = optimized_optional<record_batch_reader>;
+using record_batch_reader_opt = ss::optimized_optional<record_batch_reader>;
 
 template<typename Impl, typename... Args>
 record_batch_reader make_record_batch_reader(Args&&... args) {
@@ -174,7 +175,7 @@ make_memory_record_batch_reader(model::record_batch b) {
 }
 // clang-format off
 record_batch_reader
-make_generating_record_batch_reader(noncopyable_function<future<record_batch_opt>()>);
+make_generating_record_batch_reader(ss::noncopyable_function<ss::future<record_batch_opt>()>);
 // clang-format on
 
 } // namespace model

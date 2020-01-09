@@ -14,7 +14,7 @@
 namespace config {
 
 class config_store;
-using required = bool_class<struct required_tag>;
+using required = ss::bool_class<struct required_tag>;
 
 class base_property {
 public:

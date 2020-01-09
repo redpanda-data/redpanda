@@ -27,7 +27,7 @@ public:
     ~server();
 
     void start();
-    future<> stop();
+    ss::future<> stop();
 
     template<typename T, typename... Args>
     void register_service(Args&&... args) {
@@ -41,22 +41,22 @@ public:
 private:
     friend server_context_impl;
 
-    future<> accept(server_socket&);
-    future<> continous_method_dispath(lw_shared_ptr<connection>);
-    future<> dispatch_method_once(header, lw_shared_ptr<connection>);
-    future<> handle_connection(lw_shared_ptr<connection>);
+    ss::future<> accept(ss::server_socket&);
+    ss::future<> continous_method_dispath(ss::lw_shared_ptr<connection>);
+    ss::future<> dispatch_method_once(header, ss::lw_shared_ptr<connection>);
+    ss::future<> handle_connection(ss::lw_shared_ptr<connection>);
     void setup_metrics();
 
-    semaphore _memory;
+    ss::semaphore _memory;
     std::vector<std::unique_ptr<service>> _services;
-    std::vector<server_socket> _listeners;
+    std::vector<ss::server_socket> _listeners;
     boost::intrusive::list<connection> _connections;
-    abort_source _as;
-    gate _conn_gate;
+    ss::abort_source _as;
+    ss::gate _conn_gate;
     hdr_hist _hist;
     server_probe _probe;
-    metrics::metric_groups _metrics;
-    shared_ptr<tls::server_credentials> _creds;
+    ss::metrics::metric_groups _metrics;
+    ss::shared_ptr<ss::tls::server_credentials> _creds;
 };
 
 } // namespace rpc

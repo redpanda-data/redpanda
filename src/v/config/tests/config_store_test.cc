@@ -11,16 +11,16 @@
 
 namespace {
 struct custom_aggregate {
-    seastar::sstring string_value;
+    ss::sstring string_value;
     int int_value;
 };
 
 struct test_config : public config::config_store {
     config::property<int> optional_int;
-    config::property<seastar::sstring> required_string;
+    config::property<ss::sstring> required_string;
     config::property<int64_t> an_int64_t;
     config::property<custom_aggregate> an_aggregate;
-    config::property<std::vector<seastar::sstring>> strings;
+    config::property<std::vector<ss::sstring>> strings;
 
     test_config()
       : optional_int(
@@ -93,7 +93,7 @@ struct convert<custom_aggregate> {
             }
         }
         rhs.int_value = node["int_value"].as<int>();
-        rhs.string_value = node["string_value"].as<seastar::sstring>();
+        rhs.string_value = node["string_value"].as<ss::sstring>();
         return true;
     }
 };
@@ -132,7 +132,7 @@ SEASTAR_THREAD_TEST_CASE(update_property_value) {
     cfg.read_yaml(minimal_valid_cofniguration());
 
     BOOST_TEST(cfg.required_string() == "test_value_1");
-    cfg.get("required_string").set_value(seastar::sstring("new_string_value"));
+    cfg.get("required_string").set_value(ss::sstring("new_string_value"));
     BOOST_TEST(cfg.required_string() == "new_string_value");
 };
 

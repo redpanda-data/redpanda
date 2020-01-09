@@ -11,8 +11,8 @@ namespace cluster {
 partition_manager::partition_manager(
   storage::log_append_config::fsync should_fsync,
   model::timeout_clock::duration disk_timeout,
-  sharded<cluster::shard_table>& nlc,
-  sharded<rpc::connection_cache>& clients)
+  ss::sharded<cluster::shard_table>& nlc,
+  ss::sharded<rpc::connection_cache>& clients)
   : _self(config::shard_local_cfg().node_id())
   , _should_fsync(should_fsync)
   , _disk_timeout(disk_timeout)
@@ -24,9 +24,9 @@ partition_manager::partition_manager(
   , _shard_table(nlc)
   , _clients(clients) {}
 
-future<> partition_manager::start() { return _hbeats.start(); }
+ss::future<> partition_manager::start() { return _hbeats.start(); }
 
-future<> partition_manager::stop() {
+ss::future<> partition_manager::stop() {
     using pair_t = typename decltype(_raft_table)::value_type;
     return _bg.close()
       .then([this] { return _hbeats.stop(); })
@@ -46,14 +46,14 @@ void partition_manager::trigger_leadership_notification(raft::group_id group) {
     }
 }
 
-future<consensus_ptr> partition_manager::manage(
+ss::future<consensus_ptr> partition_manager::manage(
   model::ntp ntp,
   raft::group_id group,
   std::vector<model::broker> initial_nodes) {
     return _mngr.manage(std::move(ntp))
       .then(
         [this, group, nodes = std::move(initial_nodes)](storage::log_ptr log) {
-            auto c = make_lw_shared<raft::consensus>(
+            auto c = ss::make_lw_shared<raft::consensus>(
               _self,
               group,
               raft::group_configuration{.nodes = std::move(nodes)},
@@ -64,12 +64,12 @@ future<consensus_ptr> partition_manager::manage(
               _disk_timeout,
               _clients,
               [this](raft::group_id g) { trigger_leadership_notification(g); });
-            auto p = make_lw_shared<partition>(c);
+            auto p = ss::make_lw_shared<partition>(c);
             _ntp_table.emplace(log->ntp(), p);
             _raft_table.emplace(group, p);
             if (_bg.is_closed()) {
-                return make_exception_future<consensus_ptr>(
-                  gate_closed_exception());
+                return ss::make_exception_future<consensus_ptr>(
+                  ss::gate_closed_exception());
             }
             return with_gate(_bg, [this, p, c, group] {
                 clusterlog.debug("Recovering raft group: {}", group);

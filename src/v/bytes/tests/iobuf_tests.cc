@@ -56,7 +56,7 @@ BOOST_AUTO_TEST_CASE(test_fragment_iteration) {
 
 BOOST_AUTO_TEST_CASE(test_writing_placeholders) {
     iobuf buf;
-    sstring s = "hello world";
+    ss::sstring s = "hello world";
     const int32_t val = 55;
 
     auto ph = buf.reserve(sizeof(val));
@@ -71,7 +71,7 @@ BOOST_AUTO_TEST_CASE(test_writing_placeholders) {
 
 BOOST_AUTO_TEST_CASE(test_temporary_buffs) {
     iobuf buf;
-    temporary_buffer<char> x(55);
+    ss::temporary_buffer<char> x(55);
     buf.append(std::move(x));
     BOOST_REQUIRE(buf.size_bytes() == 55);
 }
@@ -112,12 +112,12 @@ BOOST_AUTO_TEST_CASE(test_consume_to) {
     auto fbuf = iobuf();
 
     for (size_t i = 1; i < 10; ++i) {
-        temporary_buffer<char> x(75);
+        ss::temporary_buffer<char> x(75);
         std::memset(x.get_write(), 'x', x.size());
         fbuf.append(x.get(), x.size());
         auto in = iobuf::iterator_consumer(fbuf.cbegin(), fbuf.cend());
 
-        temporary_buffer<char> y(x.size() * i);
+        ss::temporary_buffer<char> y(x.size() * i);
         in.consume_to(y.size(), y.get_write());
         BOOST_CHECK_EQUAL(in.bytes_consumed(), fbuf.size_bytes());
     }
@@ -129,7 +129,7 @@ BOOST_AUTO_TEST_CASE(test_linearization) {
     auto dstbuf = iobuf();
 
     for (size_t i = 1; i < 10; ++i) {
-        temporary_buffer<char> x(136);
+        ss::temporary_buffer<char> x(136);
         std::memset(x.get_write(), 'x', x.size());
         fbuf.append(x.get(), x.size());
     }
@@ -143,7 +143,7 @@ BOOST_AUTO_TEST_CASE(test_linearization) {
 BOOST_AUTO_TEST_CASE(share_with_byte_comparator) {
     auto fbuf = iobuf();
     for (size_t i = 1; i < 10; ++i) {
-        temporary_buffer<char> x(136);
+        ss::temporary_buffer<char> x(136);
         std::memset(x.get_write(), 'x', x.size());
         fbuf.append(x.get(), x.size());
     }
@@ -152,7 +152,7 @@ BOOST_AUTO_TEST_CASE(share_with_byte_comparator) {
 BOOST_AUTO_TEST_CASE(copy_iobuf_equality_comparator) {
     auto fbuf = iobuf();
     for (size_t i = 1; i < 10; ++i) {
-        temporary_buffer<char> x(136);
+        ss::temporary_buffer<char> x(136);
         std::memset(x.get_write(), 'x', x.size());
         fbuf.append(x.get(), x.size());
     }
@@ -174,7 +174,7 @@ BOOST_AUTO_TEST_CASE(traver_all_bytes_one_at_a_time) {
     const char* str = "alex";
     io.append(str, std::strlen(str));
     BOOST_CHECK_EQUAL(io.size_bytes(), std::strlen(str));
-    sstring expected(sstring::initialized_later(), std::strlen(str));
+    ss::sstring expected(ss::sstring::initialized_later(), std::strlen(str));
     BOOST_CHECK_EQUAL(expected.size(), std::strlen(str));
     auto begin = iobuf::byte_iterator(io.cbegin(), io.cend());
     auto end = iobuf::byte_iterator(io.cend(), io.cend());
@@ -212,11 +212,11 @@ BOOST_AUTO_TEST_CASE(correct_control_structure_sharing) {
 BOOST_AUTO_TEST_CASE(test_prepend) {
     auto a = iobuf();
     a.append("a", 1);
-    a.prepend(temporary_buffer<char>(1));
+    a.prepend(ss::temporary_buffer<char>(1));
     BOOST_CHECK_EQUAL(a.size_bytes(), 2);
 }
 BOOST_AUTO_TEST_CASE(append_each_other) {
-    temporary_buffer<char> buf(100);
+    ss::temporary_buffer<char> buf(100);
     auto a = iobuf();
     auto b = iobuf();
     a.append(buf.share());
@@ -228,9 +228,9 @@ BOOST_AUTO_TEST_CASE(append_each_other) {
 }
 SEASTAR_THREAD_TEST_CASE(iobuf_cross_shard) {
     // note: run tests w/  > 2 cores for test to exercise
-    auto shard = (engine().cpu_id() + 1) % smp::count;
-    const sstring data("question authority");
-    auto f = smp::submit_to(shard, [data] {
+    auto shard = (ss::engine().cpu_id() + 1) % ss::smp::count;
+    const ss::sstring data("question authority");
+    auto f = ss::smp::submit_to(shard, [data] {
         iobuf src;
         src.append(data.data(), data.size());
         return src;
@@ -247,23 +247,25 @@ SEASTAR_THREAD_TEST_CASE(iobuf_foreign_copy) {
         og.append(b.data(), b.size());
     }
     // main tests
-    std::vector<iobuf> bufs = iobuf_share_foreign_n(std::move(og), smp::count);
-    parallel_for_each(
-      boost::irange(shard_id(0), smp::count),
-      [&bufs](shard_id shard) {
+    std::vector<iobuf> bufs = iobuf_share_foreign_n(
+      std::move(og), ss::smp::count);
+    ss::parallel_for_each(
+      boost::irange(ss::shard_id(0), ss::smp::count),
+      [&bufs](ss::shard_id shard) {
           iobuf io = std::move(bufs[shard]);
           std::vector<iobuf> nested_bufs = iobuf_share_foreign_n(
-            std::move(io), smp::count);
+            std::move(io), ss::smp::count);
 
           // transitive sharing
-          return do_with(std::move(nested_bufs), [](std::vector<iobuf>& bufs) {
-              return parallel_for_each(
-                boost::irange(shard_id(0), smp::count),
-                [&bufs](shard_id shard) {
-                    iobuf io = std::move(bufs[shard]);
-                    return smp::submit_to(shard, [io = std::move(io)] {});
-                });
-          });
+          return ss::do_with(
+            std::move(nested_bufs), [](std::vector<iobuf>& bufs) {
+                return ss::parallel_for_each(
+                  boost::irange(ss::shard_id(0), ss::smp::count),
+                  [&bufs](ss::shard_id shard) {
+                      iobuf io = std::move(bufs[shard]);
+                      return ss::smp::submit_to(shard, [io = std::move(io)] {});
+                  });
+            });
       })
       .get();
 }
@@ -294,7 +296,7 @@ BOOST_AUTO_TEST_CASE(iterator_relationships) {
     BOOST_REQUIRE(buf.begin() == buf.end());
     BOOST_REQUIRE(buf.cbegin() == buf.cend());
 
-    buf.append(temporary_buffer<char>(100));
+    buf.append(ss::temporary_buffer<char>(100));
     BOOST_REQUIRE(buf.begin() != buf.end());
     BOOST_REQUIRE(buf.cbegin() != buf.cend());
     BOOST_REQUIRE(std::next(buf.begin()) == buf.end());
@@ -306,7 +308,7 @@ BOOST_AUTO_TEST_CASE(is_finished) {
     auto in0 = iobuf::iterator_consumer(buf.cbegin(), buf.cend());
     BOOST_CHECK(in0.is_finished());
 
-    buf.append(temporary_buffer<char>(100));
+    buf.append(ss::temporary_buffer<char>(100));
     auto in1 = iobuf::iterator_consumer(buf.cbegin(), buf.cend());
     BOOST_CHECK(!in1.is_finished());
     in1.skip(50);

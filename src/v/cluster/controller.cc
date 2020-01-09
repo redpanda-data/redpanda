@@ -16,17 +16,17 @@
 
 namespace cluster {
 static void verify_shard() {
-    if (__builtin_expect(engine().cpu_id() != controller::shard, false)) {
+    if (__builtin_expect(ss::engine().cpu_id() != controller::shard, false)) {
         throw std::runtime_error(fmt::format(
-          "Attempted to access controller on core: {}", engine().cpu_id()));
+          "Attempted to access controller on core: {}", ss::engine().cpu_id()));
     }
 }
 
 controller::controller(
-  sharded<partition_manager>& pm,
-  sharded<shard_table>& st,
-  sharded<metadata_cache>& md_cache,
-  sharded<rpc::connection_cache>& connection_cache)
+  ss::sharded<partition_manager>& pm,
+  ss::sharded<shard_table>& st,
+  ss::sharded<metadata_cache>& md_cache,
+  ss::sharded<rpc::connection_cache>& connection_cache)
   : _self(config::make_self_broker(config::shard_local_cfg()))
   , _seed_servers(config::shard_local_cfg().seed_servers())
   , _pm(pm)
@@ -36,10 +36,10 @@ controller::controller(
   , _raft0(nullptr)
   , _highest_group_id(0) {}
 
-future<> controller::start() {
+ss::future<> controller::start() {
     verify_shard();
     _pm.local().register_leadership_notification(
-      [this](lw_shared_ptr<partition> p) {
+      [this](ss::lw_shared_ptr<partition> p) {
           if (p->ntp() == controller::ntp) {
               verify_shard();
               leadership_notification();
@@ -86,7 +86,7 @@ future<> controller::start() {
       });
 }
 
-future<consensus_ptr> controller::start_raft0() {
+ss::future<consensus_ptr> controller::start_raft0() {
     std::vector<model::broker> brokers;
     if (_seed_servers.front().id() == _self.id()) {
         clusterlog.info("Current node is cluster root");
@@ -96,7 +96,7 @@ future<consensus_ptr> controller::start_raft0() {
       controller::ntp, controller::group, std::move(brokers));
 }
 
-future<> controller::stop() {
+ss::future<> controller::stop() {
     verify_shard();
     // in a multi-threaded app this would look like a deadlock waiting to
     // happen, but it works in seastar: broadcast here only makes the waiters
@@ -107,27 +107,27 @@ future<> controller::stop() {
     return _bg.close();
 }
 
-future<> controller::bootstrap_from_log(storage::log_ptr l) {
+ss::future<> controller::bootstrap_from_log(storage::log_ptr l) {
     storage::log_reader_config rcfg{
       .start_offset = model::offset(0), // from begining
       .max_bytes = std::numeric_limits<size_t>::max(),
       .min_bytes = 0, // ok to be empty
       .prio = controller_priority()};
-    return do_with(
+    return ss::do_with(
       l->make_reader(rcfg), [this](model::record_batch_reader& reader) {
           return reader.consume(batch_consumer(this), model::no_timeout);
       });
 }
 
-future<> controller::process_raft0_batch(model::record_batch batch) {
+ss::future<> controller::process_raft0_batch(model::record_batch batch) {
     if (__builtin_expect(batch.type() == raft::data_batch_type, false)) {
         // we are not intrested in data batches
-        return make_ready_future<>();
+        return ss::make_ready_future<>();
     }
     // XXX https://github.com/vectorizedio/v/issues/188
     // we only support decompressed records
     if (batch.compressed()) {
-        return make_exception_future<>(std::runtime_error(
+        return ss::make_exception_future<>(std::runtime_error(
           "We cannot process compressed record_batch'es yet, see #188"));
     }
 
@@ -144,7 +144,7 @@ future<> controller::process_raft0_batch(model::record_batch batch) {
       });
 }
 
-future<> controller::process_raft0_cfg_update(model::record r) {
+ss::future<> controller::process_raft0_cfg_update(model::record r) {
     return rpc::deserialize<raft::group_configuration>(
              r.share_packed_value_and_headers())
       .then([this](raft::group_configuration cfg) {
@@ -158,7 +158,7 @@ future<> controller::process_raft0_cfg_update(model::record r) {
             std::end(all_new_nodes),
             std::back_inserter(new_list),
             [](model::broker& broker) {
-                return make_lw_shared<model::broker>(std::move(broker));
+                return ss::make_lw_shared<model::broker>(std::move(broker));
             });
           return update_clients_cache(std::move(new_list), std::move(old_list))
             .then([this, nodes = std::move(cfg.nodes)] {
@@ -167,7 +167,7 @@ future<> controller::process_raft0_cfg_update(model::record r) {
       });
 }
 
-future<> controller::recover_record(model::record r) {
+ss::future<> controller::recover_record(model::record r) {
     return rpc::deserialize<log_record_key>(r.share_key())
       .then([this, v_buf = std::move(r.share_packed_value_and_headers())](
               log_record_key key) mutable {
@@ -175,7 +175,7 @@ future<> controller::recover_record(model::record r) {
       });
 }
 
-future<>
+ss::future<>
 controller::dispatch_record_recovery(log_record_key key, iobuf&& v_buf) {
     switch (key.record_type) {
     case log_record_key::type::partition_assignment:
@@ -189,14 +189,14 @@ controller::dispatch_record_recovery(log_record_key key, iobuf&& v_buf) {
               return recover_topic_configuration(std::move(t_cfg));
           });
     default:
-        return make_exception_future<>(
+        return ss::make_exception_future<>(
           std::runtime_error("Not supported record type in controller batch"));
     }
 }
 
-future<> controller::recover_assignment(partition_assignment as) {
+ss::future<> controller::recover_assignment(partition_assignment as) {
     _highest_group_id = std::max(_highest_group_id, as.group);
-    return do_with(std::move(as), [this](partition_assignment& as) {
+    return ss::do_with(std::move(as), [this](partition_assignment& as) {
         return update_cache_with_partitions_assignment(as).then([this, &as] {
             auto it = std::find_if(
               std::cbegin(as.replicas),
@@ -207,7 +207,7 @@ future<> controller::recover_assignment(partition_assignment as) {
 
             if (it == std::cend(as.replicas)) {
                 // This partition in not replicated on current broker
-                return make_ready_future<>();
+                return ss::make_ready_future<>();
             }
             // Recover replica as it is replicated on current broker
             return recover_replica(as.ntp, as.group, it->shard, as.replicas);
@@ -215,7 +215,7 @@ future<> controller::recover_assignment(partition_assignment as) {
     });
 }
 
-future<> controller::recover_replica(
+ss::future<> controller::recover_replica(
   model::ntp ntp,
   raft::group_id raft_group,
   uint32_t shard,
@@ -235,7 +235,7 @@ future<> controller::recover_replica(
       });
 }
 
-future<> controller::dispatch_manage_partition(
+ss::future<> controller::dispatch_manage_partition(
   model::ntp ntp,
   raft::group_id raft_group,
   uint32_t shard,
@@ -249,7 +249,7 @@ future<> controller::dispatch_manage_partition(
       });
 }
 
-future<> controller::manage_partition(
+ss::future<> controller::manage_partition(
   partition_manager& pm,
   model::ntp ntp,
   raft::group_id raft_group,
@@ -264,7 +264,7 @@ future<> controller::manage_partition(
       });
 }
 
-future<> controller::assign_group_to_shard(
+ss::future<> controller::assign_group_to_shard(
   model::ntp ntp, raft::group_id raft_group, uint32_t shard) {
     // 1. update shard_table: broadcast
     return _st.invoke_on_all(
@@ -276,24 +276,25 @@ future<> controller::assign_group_to_shard(
 
 void controller::end_of_stream() {}
 
-future<> controller::update_cache_with_partitions_assignment(
+ss::future<> controller::update_cache_with_partitions_assignment(
   const partition_assignment& p_as) {
     return _md_cache.invoke_on_all(
       [p_as](metadata_cache& md_c) { md_c.update_partition_assignment(p_as); });
 }
 
-future<> controller::recover_topic_configuration(topic_configuration t_cfg) {
+ss::future<>
+controller::recover_topic_configuration(topic_configuration t_cfg) {
     // broadcast to all caches
     return _md_cache.invoke_on_all(
       [tp = t_cfg.topic](metadata_cache& md_c) { md_c.add_topic(tp); });
 }
 
-future<std::vector<topic_result>> controller::create_topics(
+ss::future<std::vector<topic_result>> controller::create_topics(
   std::vector<topic_configuration> topics,
   model::timeout_clock::time_point timeout) {
     verify_shard();
     if (!is_leader() || _allocator == nullptr) {
-        return make_ready_future<std::vector<topic_result>>(
+        return ss::make_ready_future<std::vector<topic_result>>(
           create_topic_results(
             std::move(topics), topic_error_code::not_leader_controller));
     }
@@ -313,7 +314,7 @@ future<std::vector<topic_result>> controller::create_topics(
     // Do append entries to raft0 logs
     auto f = _raft0->replicate(std::move(entries))
                .then_wrapped([topics = std::move(topics)](
-                               future<result<raft::replicate_result>> f) {
+                               ss::future<result<raft::replicate_result>> f) {
                    bool success = true;
                    try {
                        f.get();
@@ -394,7 +395,8 @@ void controller::create_partition_allocator() {
       _md_cache.local().all_topics_metadata());
 }
 
-future<> controller::update_brokers_cache(std::vector<model::broker> nodes) {
+ss::future<>
+controller::update_brokers_cache(std::vector<model::broker> nodes) {
     // broadcast update to all caches
     return _md_cache.invoke_on_all(
       [nodes = std::move(nodes)](metadata_cache& c) mutable {
@@ -404,12 +406,12 @@ future<> controller::update_brokers_cache(std::vector<model::broker> nodes) {
 
 void controller::on_raft0_entries_commited(std::vector<raft::entry>&& entries) {
     if (_bg.is_closed()) {
-        throw gate_closed_exception();
+        throw ss::gate_closed_exception();
     }
     (void)with_gate(_bg, [this, entries = std::move(entries)]() mutable {
-        return do_with(
+        return ss::do_with(
           std::move(entries), [this](std::vector<raft::entry>& entries) {
-              return do_for_each(entries, [this](raft::entry& entry) {
+              return ss::do_for_each(entries, [this](raft::entry& entry) {
                   return entry.reader().consume(
                     batch_consumer(this), model::no_timeout);
               });
@@ -417,22 +419,22 @@ void controller::on_raft0_entries_commited(std::vector<raft::entry>&& entries) {
     });
 }
 
-future<> controller::update_clients_cache(
+ss::future<> controller::update_clients_cache(
   std::vector<broker_ptr> new_list, std::vector<broker_ptr> old_list) {
-    return do_with(
+    return ss::do_with(
       calculate_changed_brokers(std::move(new_list), std::move(old_list)),
       [this](brokers_diff& diff) {
-          return do_for_each(
+          return ss::do_for_each(
                    diff.removed,
                    [this](broker_ptr removed) {
                        return remove_broker_client(
                          _connection_cache, removed->id());
                    })
             .then([this, &diff] {
-                return do_for_each(diff.updated, [this](broker_ptr b) {
+                return ss::do_for_each(diff.updated, [this](broker_ptr b) {
                     if (b->id() == _self.id()) {
                         // Do not create client to local broker
-                        return make_ready_future<>();
+                        return ss::make_ready_future<>();
                     }
                     return update_broker_client(
                       _connection_cache, b->id(), b->rpc_address());
@@ -441,7 +443,7 @@ future<> controller::update_clients_cache(
       });
 }
 
-future<> controller::wait_for_leadership() {
+ss::future<> controller::wait_for_leadership() {
     verify_shard();
     return with_gate(_bg, [this]() {
         return _leadership_cond.wait(
@@ -449,7 +451,7 @@ future<> controller::wait_for_leadership() {
     });
 }
 
-future<join_reply> controller::dispatch_join_to_remote(
+ss::future<join_reply> controller::dispatch_join_to_remote(
   const config::seed_server& target, model::broker joining_node) {
     clusterlog.info("Sending join request to {} @ {}", target.id, target.addr);
     return dispatch_rpc(
@@ -468,20 +470,20 @@ future<join_reply> controller::dispatch_join_to_remote(
       });
 }
 
-future<> controller::join_raft0() {
+ss::future<> controller::join_raft0() {
     if (_raft0->config().contains_broker(_self.id())) {
         clusterlog.debug(
           "Current node '{}' is already raft0 group member", _self.id());
-        return make_ready_future<>();
+        return ss::make_ready_future<>();
     }
     return retry_with_backoff(8, [this] {
         return dispatch_join_to_seed_server(std::cbegin(_seed_servers));
     });
 }
 
-future<> controller::dispatch_join_to_seed_server(seed_iterator it) {
+ss::future<> controller::dispatch_join_to_seed_server(seed_iterator it) {
     if (it == std::cend(_seed_servers)) {
-        return make_exception_future<>(
+        return ss::make_exception_future<>(
           std::runtime_error("Error registering node in the cluster"));
     }
     // Current node is a seed server, just call the method
@@ -495,11 +497,11 @@ future<> controller::dispatch_join_to_seed_server(seed_iterator it) {
     }
     // If seed is the other server then dispatch join requst to it
     return dispatch_join_to_remote(*it, _self)
-      .then_wrapped([it, this](future<join_reply> f) {
+      .then_wrapped([it, this](ss::future<join_reply> f) {
           try {
               join_reply reply = f.get0();
               if (reply.success) {
-                  return make_ready_future<>();
+                  return ss::make_ready_future<>();
               }
           } catch (...) {
               clusterlog.error("Error sending join request");
@@ -509,7 +511,7 @@ future<> controller::dispatch_join_to_seed_server(seed_iterator it) {
       });
 }
 
-future<> controller::process_join_request(model::broker broker) {
+ss::future<> controller::process_join_request(model::broker broker) {
     verify_shard();
     clusterlog.info("Processing node '{}' join request", broker.id());
     // curent node is a leader
@@ -529,9 +531,10 @@ future<> controller::process_join_request(model::broker broker) {
 }
 
 template<typename Func>
-futurize_t<std::result_of_t<Func(controller_client_protocol&)>>
+ss::futurize_t<std::result_of_t<Func(controller_client_protocol&)>>
 controller::dispatch_rpc_to_leader(Func&& f) {
-    using ret_t = futurize<std::result_of_t<Func(controller_client_protocol&)>>;
+    using ret_t
+      = ss::futurize<std::result_of_t<Func(controller_client_protocol&)>>;
     auto leader = _raft0->config().find_in_nodes(_raft0->config().leader_id);
     if (leader == _raft0->config().nodes.end()) {
         return ret_t::make_exception_future(

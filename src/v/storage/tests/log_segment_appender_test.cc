@@ -13,17 +13,18 @@
 using namespace storage; // NOLINT
 
 SEASTAR_THREAD_TEST_CASE(test_can_append_mixed) {
-    auto f = open_file_dma(
+    auto f = ss::open_file_dma(
                "test_log_segment_mixed.log",
-               open_flags::create | open_flags::rw | open_flags::truncate)
+               ss::open_flags::create | ss::open_flags::rw
+                 | ss::open_flags::truncate)
                .get0();
     auto appender = log_segment_appender(
-      f, log_segment_appender::options(seastar::default_priority_class()));
+      f, log_segment_appender::options(ss::default_priority_class()));
 
     for (size_t i = 0, acc = 0; i < 100; ++i) {
         iobuf original;
         const size_t step = random_generators::get_int<size_t>(
-                              0, appender.dma_write_alignment()*2)
+                              0, appender.dma_write_alignment() * 2)
                             + 1;
         {
             const auto data = random_generators::gen_alphanum_string(step - 1);
@@ -52,7 +53,7 @@ SEASTAR_THREAD_TEST_CASE(test_can_append_mixed) {
                     fmt::print("{}", *src++);
                 }
                 fmt::print("\n");
-                return stop_iteration::no;
+                return ss::stop_iteration::no;
             });
             in = iobuf::iterator_consumer(result.cbegin(), result.cend());
             in.consume(original.size_bytes(), [](const char* src, size_t n) {
@@ -61,7 +62,7 @@ SEASTAR_THREAD_TEST_CASE(test_can_append_mixed) {
                     fmt::print("{}", *src++);
                 }
                 fmt::print("\n");
-                return stop_iteration::no;
+                return ss::stop_iteration::no;
             });
 
             // fail the test
@@ -74,12 +75,13 @@ SEASTAR_THREAD_TEST_CASE(test_can_append_mixed) {
 }
 
 SEASTAR_THREAD_TEST_CASE(test_can_append_10MB) {
-    auto f = open_file_dma(
+    auto f = ss::open_file_dma(
                "test_log_segment_appender.log",
-               open_flags::create | open_flags::rw | open_flags::truncate)
+               ss::open_flags::create | ss::open_flags::rw
+                 | ss::open_flags::truncate)
                .get0();
     auto appender = log_segment_appender(
-      f, log_segment_appender::options(seastar::default_priority_class()));
+      f, log_segment_appender::options(ss::default_priority_class()));
 
     for (size_t i = 0; i < 10; ++i) {
         iobuf original;
@@ -103,12 +105,13 @@ SEASTAR_THREAD_TEST_CASE(test_can_append_10MB) {
 }
 SEASTAR_THREAD_TEST_CASE(
   test_can_append_10MB_sequential_write_sequential_read) {
-    auto f = open_file_dma(
+    auto f = ss::open_file_dma(
                "test_log_segment_appender_sequential.log",
-               open_flags::create | open_flags::rw | open_flags::truncate)
+               ss::open_flags::create | ss::open_flags::rw
+                 | ss::open_flags::truncate)
                .get0();
     auto appender = log_segment_appender(
-      f, log_segment_appender::options(seastar::default_priority_class()));
+      f, log_segment_appender::options(ss::default_priority_class()));
 
     // write sequential. then read all
     iobuf original;
@@ -131,12 +134,13 @@ SEASTAR_THREAD_TEST_CASE(
     appender.close().get();
 }
 SEASTAR_THREAD_TEST_CASE(test_can_append_little_data) {
-    auto f = open_file_dma(
+    auto f = ss::open_file_dma(
                "test_log_segment_appender_little.log",
-               open_flags::create | open_flags::rw | open_flags::truncate)
+               ss::open_flags::create | ss::open_flags::rw
+                 | ss::open_flags::truncate)
                .get0();
     auto appender = log_segment_appender(
-      f, log_segment_appender::options(seastar::default_priority_class()));
+      f, log_segment_appender::options(ss::default_priority_class()));
 
     // at least 1 page and some 20 bytes to test boundary conditions
     const auto data = random_generators::gen_alphanum_string(

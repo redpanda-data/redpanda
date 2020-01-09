@@ -7,7 +7,7 @@ using namespace std::chrono_literals; // NOLINT
 
 struct test_str_ctx final : public rpc::streaming_context {
     virtual ~test_str_ctx() noexcept = default;
-    virtual future<semaphore_units<>> reserve_memory(size_t) final {
+    virtual ss::future<ss::semaphore_units<>> reserve_memory(size_t) final {
         return get_units(s, 1);
     }
     virtual const rpc::header& get_header() const final { return hdr; }
@@ -15,7 +15,7 @@ struct test_str_ctx final : public rpc::streaming_context {
     virtual void signal_body_parse() final {}
 
     rpc::header hdr;
-    semaphore s{1};
+    ss::semaphore s{1};
 };
 
 struct test_fixture {
@@ -33,7 +33,7 @@ FIXTURE_TEST(fail_with_timeout, test_fixture) {
     auto rh = create_handler(rpc::clock_type::now() + 100ms);
 
     // wait for timeout
-    seastar::sleep(1s).get();
+    ss::sleep(1s).get();
 
     BOOST_REQUIRE_THROW(rh.get_future().get0(), rpc::request_timeout_exception);
     BOOST_REQUIRE_EQUAL(triggered, true);

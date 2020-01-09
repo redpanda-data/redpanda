@@ -10,10 +10,11 @@ struct offset_validating_consumer {
     offset_validating_consumer(model::offset o)
       : starting_offset(o) {}
 
-    future<stop_iteration> operator()(model::record_batch&& batch) {
+    ss::future<ss::stop_iteration> operator()(model::record_batch&& batch) {
         BOOST_REQUIRE_EQUAL(batch.base_offset(), starting_offset);
         starting_offset += batch.size();
-        return make_ready_future<stop_iteration>(stop_iteration::no);
+        return ss::make_ready_future<ss::stop_iteration>(
+          ss::stop_iteration::no);
     }
 
     void end_of_stream() {}

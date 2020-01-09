@@ -39,13 +39,13 @@ void crc_record_header_and_key(
 }
 
 void crc_record_header_and_key(crc32& crc, const model::record& r) {
-   crc.extend_vint(r.size_bytes());
-   crc.extend_vint(r.attributes().value());
-   crc.extend_vint(r.timestamp_delta());
-   crc.extend_vint(r.offset_delta());
-   crc.extend_vint(r.key().size_bytes());
-   crc.extend(r.key());
- }
+    crc.extend_vint(r.size_bytes());
+    crc.extend_vint(r.attributes().value());
+    crc.extend_vint(r.timestamp_delta());
+    crc.extend_vint(r.offset_delta());
+    crc.extend_vint(r.key().size_bytes());
+    crc.extend(r.key());
+}
 
 class checksumming_consumer : public batch_consumer {
 public:
@@ -77,12 +77,12 @@ public:
         _crc.extend(records);
     }
 
-    virtual stop_iteration consume_batch_end() override {
+    virtual ss::stop_iteration consume_batch_end() override {
         if (recovered()) {
             _last_valid_offset = _last_offset;
-            return stop_iteration::no;
+            return ss::stop_iteration::no;
         }
-        return stop_iteration::yes;
+        return ss::stop_iteration::yes;
     }
 
     bool recovered() const { return _current_batch_crc == _crc.value(); }
@@ -98,12 +98,12 @@ private:
     std::optional<model::offset> _last_valid_offset;
 };
 
-// Called in the context of a seastar::thread
+// Called in the context of a ss::thread
 log_replayer::recovered
-log_replayer::recover_in_thread(const io_priority_class& prio) {
+log_replayer::recover_in_thread(const ss::io_priority_class& prio) {
     stlog.debug("Recovering segment {}", _seg->get_filename());
     auto data_stream = _seg->data_stream(0, prio);
-    auto d = defer([&data_stream] { data_stream.close().get(); });
+    auto d = ss::defer([&data_stream] { data_stream.close().get(); });
     auto consumer = checksumming_consumer();
     auto parser = continuous_batch_parser(consumer, data_stream);
     try {

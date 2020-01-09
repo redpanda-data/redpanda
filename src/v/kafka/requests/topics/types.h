@@ -14,7 +14,7 @@ namespace kafka {
 struct topic_op_result {
     model::topic topic;
     error_code ec;
-    std::optional<sstring> err_msg;
+    std::optional<ss::sstring> err_msg;
     static topic_op_result
     from_cluster_topic_result(const cluster::topic_result& err) {
         return {.topic = err.topic, .ec = map_topic_error_code(err.ec)};
@@ -29,8 +29,8 @@ struct partition_assignment {
 };
 
 struct config_entry {
-    sstring name;
-    sstring value;
+    ss::sstring name;
+    ss::sstring value;
 };
 
 /// \brief Part of CreateTopics request from Kafka API
@@ -42,8 +42,8 @@ struct new_topic_configuration {
     std::vector<partition_assignment> assignments;
     std::vector<config_entry> config;
 
-    std::unordered_map<sstring, sstring> config_map() const {
-        std::unordered_map<sstring, sstring> ret;
+    std::unordered_map<ss::sstring, ss::sstring> config_map() const {
+        std::unordered_map<ss::sstring, ss::sstring> ret;
         for (const auto& c : config) {
             ret.emplace(c.name, c.value);
         }
@@ -53,7 +53,7 @@ struct new_topic_configuration {
     cluster::topic_configuration to_cluster_type() const {
         cluster::topic_configuration cfg(
           default_namespace(),
-          model::topic{sstring(topic())},
+          model::topic{ss::sstring(topic())},
           partition_count,
           replication_factor);
         auto config_entries = config_map();

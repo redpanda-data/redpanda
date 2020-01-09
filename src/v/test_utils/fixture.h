@@ -25,8 +25,7 @@
         }                                                                      \
                                                                                \
     private:                                                                   \
-        static inline seastar::logger g_seastar_test_log{"" #klass             \
-                                                         "::" #method};        \
+        static inline ss::logger g_seastar_test_log{"" #klass "::" #method};   \
     };                                                                         \
     SEASTAR_THREAD_TEST_CASE_EXPECTED_FAILURES(method, failures) {             \
         BOOST_TEST_CHECKPOINT("" << #klass << "::" << #method << "()");        \

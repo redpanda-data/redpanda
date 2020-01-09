@@ -68,9 +68,9 @@ public:
           _num_records, std::move(records));
     }
 
-    virtual stop_iteration consume_batch_end() override {
+    virtual ss::stop_iteration consume_batch_end() override {
         batches.emplace_back(std::move(_header), std::move(_records));
-        return stop_iteration(_stop_at_batch);
+        return ss::stop_iteration(_stop_at_batch);
     }
 
     std::vector<model::record_batch> batches;
@@ -92,14 +92,15 @@ private:
 struct context {
     segment_reader_ptr log_seg;
     continuous_batch_parser_opt parser;
-    input_stream<char> in;
+    ss::input_stream<char> in;
 
     void write(std::vector<model::record_batch>& batches, test_consumer& c) {
-        auto fd
-          = open_file_dma("test", open_flags::create | open_flags::rw).get0();
-        fd = file(make_shared(file_io_sanitizer(std::move(fd))));
+        auto fd = ss::open_file_dma(
+                    "test", ss::open_flags::create | ss::open_flags::rw)
+                    .get0();
+        fd = ss::file(make_shared(file_io_sanitizer(std::move(fd))));
         auto appender = log_segment_appender(
-          fd, log_segment_appender::options(seastar::default_priority_class()));
+          fd, log_segment_appender::options(ss::default_priority_class()));
         for (auto& b : batches) {
             storage::write(appender, b).get();
         }
@@ -111,7 +112,7 @@ struct context {
           batches.begin()->base_offset(),
           appender.file_byte_offset(),
           128);
-        in = log_seg->data_stream(0, default_priority_class());
+        in = log_seg->data_stream(0, ss::default_priority_class());
         parser = continuous_batch_parser(c, in);
     }
 

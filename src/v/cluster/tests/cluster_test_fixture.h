@@ -14,7 +14,7 @@ void wait_for(model::timeout_clock::duration timeout, Pred&& p) {
       model::timeout_clock::now() + timeout,
       do_until(
         [p = std::forward<Pred>(p)] { return p(); },
-        [] { return seastar::sleep(std::chrono::milliseconds(400)); }))
+        [] { return ss::sleep(std::chrono::milliseconds(400)); }))
       .get0();
 }
 

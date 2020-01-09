@@ -2,6 +2,7 @@
 
 #include "raft/consensus.h"
 #include "raft/raftgen_service.h"
+#include "seastarx.h"
 
 #include <seastar/core/sharded.hh>
 
@@ -18,7 +19,7 @@ CONCEPT(
     template<typename ShardLookup>
     concept bool ShardLookupManager() {
         return requires(ShardLookup m, group_id g) {
-            { m.shard_for(g) } -> shard_id;
+            { m.shard_for(g) } -> ss::shard_id;
     };
 })
 // clang-format on
@@ -31,9 +32,9 @@ class service final : public raftgen_service {
 public:
     using failure_probes = raftgen_service::failure_probes;
     service(
-      scheduling_group sc,
-      smp_service_group ssg,
-      sharded<ConsensusManager>& mngr,
+      ss::scheduling_group sc,
+      ss::smp_service_group ssg,
+      ss::sharded<ConsensusManager>& mngr,
       ShardLookup& tbl)
       : raftgen_service(sc, ssg)
       , _group_manager(mngr)
@@ -46,14 +47,14 @@ public:
           failure_probes::name());
     }
 
-    [[gnu::always_inline]] future<heartbeat_reply>
+    [[gnu::always_inline]] ss::future<heartbeat_reply>
     heartbeat(heartbeat_request&& r, rpc::streaming_context& ctx) final {
         std::vector<append_entries_request> reqs;
         reqs.reserve(r.meta.size());
         for (auto& m : r.meta) {
             reqs.push_back(append_entries_request{r.node_id, std::move(m), {}});
         }
-        return do_with(
+        return ss::do_with(
                  std::move(reqs),
                  [this,
                   &ctx](std::vector<append_entries_request>& reqs) mutable {
@@ -63,19 +64,19 @@ public:
                        });
                  })
           .then([](std::vector<append_entries_reply> r) {
-              return make_ready_future<heartbeat_reply>(
+              return ss::make_ready_future<heartbeat_reply>(
                 heartbeat_reply{std::move(r)});
           });
     }
 
-    [[gnu::always_inline]] future<vote_reply>
+    [[gnu::always_inline]] ss::future<vote_reply>
     vote(vote_request&& r, rpc::streaming_context& ctx) final {
         return _probe.vote().then([this, r = std::move(r), &ctx]() mutable {
             return do_vote(std::move(r), ctx);
         });
     }
 
-    [[gnu::always_inline]] future<append_entries_reply> append_entries(
+    [[gnu::always_inline]] ss::future<append_entries_reply> append_entries(
       append_entries_request&& r, rpc::streaming_context& ctx) final {
         return _probe.append_entries().then(
           [this, r = std::move(r), &ctx]() mutable {
@@ -84,7 +85,7 @@ public:
     }
 
 private:
-    future<vote_reply> do_vote(vote_request&& r, rpc::streaming_context&) {
+    ss::future<vote_reply> do_vote(vote_request&& r, rpc::streaming_context&) {
         auto shard = _shard_table.shard_for(group_id(r.group));
         return with_scheduling_group(
           get_scheduling_group(), [this, shard, r = std::move(r)]() mutable {
@@ -97,7 +98,7 @@ private:
                 });
           });
     }
-    future<append_entries_reply>
+    ss::future<append_entries_reply>
     do_append_entries(append_entries_request&& r, rpc::streaming_context&) {
         auto shard = _shard_table.shard_for(group_id(r.meta.group));
         return with_scheduling_group(
@@ -113,7 +114,7 @@ private:
     }
 
     failure_probes _probe;
-    sharded<ConsensusManager>& _group_manager;
+    ss::sharded<ConsensusManager>& _group_manager;
     ShardLookup& _shard_table;
 };
 } // namespace raft

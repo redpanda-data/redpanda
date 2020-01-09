@@ -16,17 +16,17 @@
 
 namespace kafka {
 
-static logger klog("kafka_server");
+static ss::logger klog("kafka_server");
 
 kafka_server::kafka_server(
   probe p,
-  sharded<cluster::metadata_cache>& metadata_cache,
-  sharded<controller_dispatcher>& cntrl_dispatcher,
+  ss::sharded<cluster::metadata_cache>& metadata_cache,
+  ss::sharded<controller_dispatcher>& cntrl_dispatcher,
   kafka_server_config config,
-  sharded<quota_manager>& quota_mgr,
-  sharded<group_router_type>& group_router,
-  sharded<cluster::shard_table>& shard_table,
-  sharded<cluster::partition_manager>& partition_manager) noexcept
+  ss::sharded<quota_manager>& quota_mgr,
+  ss::sharded<group_router_type>& group_router,
+  ss::sharded<cluster::shard_table>& shard_table,
+  ss::sharded<cluster::partition_manager>& partition_manager) noexcept
   : _probe(std::move(p))
   , _metadata_cache(metadata_cache)
   , _cntrl_dispatcher(cntrl_dispatcher)
@@ -43,23 +43,24 @@ kafka_server::kafka_server(
     _probe.setup_metrics(_metrics);
 }
 
-future<> kafka_server::listen(socket_address server_addr, bool keepalive) {
-    listen_options lo;
+ss::future<>
+kafka_server::listen(ss::socket_address server_addr, bool keepalive) {
+    ss::listen_options lo;
     lo.reuse_address = true;
-    server_socket ss;
+    ss::server_socket ss;
     try {
         if (!_creds) {
-            ss = engine().listen(server_addr, lo);
+            ss = ss::engine().listen(server_addr, lo);
             klog.debug(
               "Started plaintext Kafka API server listening at {}",
               server_addr);
         } else {
-            ss = tls::listen(_creds, engine().listen(server_addr, lo));
+            ss = ss::tls::listen(_creds, ss::engine().listen(server_addr, lo));
             klog.debug(
               "Started secured Kafka API server listening at {}", server_addr);
         }
     } catch (...) {
-        return make_exception_future<>(std::runtime_error(fmt::format(
+        return ss::make_exception_future<>(std::runtime_error(fmt::format(
           "KafkaServer error while listening on {} -> {}",
           server_addr,
           std::current_exception())));
@@ -69,18 +70,18 @@ future<> kafka_server::listen(socket_address server_addr, bool keepalive) {
     (void)with_gate(_listeners_and_connections, [this, keepalive, server_addr] {
         return do_accepts(_listeners.size() - 1, keepalive);
     });
-    return make_ready_future<>();
+    return ss::make_ready_future<>();
 }
 
-future<> kafka_server::do_accepts(int which, bool keepalive) {
-    return repeat([this, which, keepalive] {
+ss::future<> kafka_server::do_accepts(int which, bool keepalive) {
+    return ss::repeat([this, which, keepalive] {
         return _listeners[which]
           .accept()
           .then_wrapped([this, which, keepalive](
-                          future<accept_result> f_ar) mutable {
+                          ss::future<ss::accept_result> f_ar) mutable {
               if (_as.abort_requested()) {
                   f_ar.ignore_ready_future();
-                  return stop_iteration::yes;
+                  return ss::stop_iteration::yes;
               }
               auto [fd, addr] = f_ar.get0();
               fd.set_nodelay(true);
@@ -92,7 +93,7 @@ future<> kafka_server::do_accepts(int which, bool keepalive) {
                 [this, conn = std::move(conn)]() mutable {
                     auto f = conn->process();
                     return f.then_wrapped([conn = std::move(conn)](
-                                            future<>&& f) {
+                                            ss::future<>&& f) {
                         try {
                             f.get();
                         } catch (...) {
@@ -101,16 +102,16 @@ future<> kafka_server::do_accepts(int which, bool keepalive) {
                         }
                     });
                 });
-              return stop_iteration::no;
+              return ss::stop_iteration::no;
           })
           .handle_exception([](std::exception_ptr ep) {
               klog.debug("Accept failed: {}", ep);
-              return stop_iteration::no;
+              return ss::stop_iteration::no;
           });
     });
 }
 
-future<> kafka_server::stop() {
+ss::future<> kafka_server::stop() {
     klog.debug("Aborting {} listeners", _listeners.size());
     for (auto&& l : _listeners) {
         l.abort_accept();
@@ -124,7 +125,7 @@ future<> kafka_server::stop() {
 }
 
 kafka_server::connection::connection(
-  kafka_server& server, connected_socket&& fd, socket_address addr)
+  kafka_server& server, ss::connected_socket&& fd, ss::socket_address addr)
   : _server(server)
   , _fd(std::move(fd))
   , _addr(std::move(addr))
@@ -150,8 +151,8 @@ void kafka_server::connection::shutdown() {
 }
 
 // clang-format off
-future<> kafka_server::connection::process() {
-    return do_until(
+ss::future<> kafka_server::connection::process() {
+    return ss::do_until(
       [this] {
           return _read_buf.eof() || _server._as.abort_requested();
       },
@@ -168,16 +169,17 @@ future<> kafka_server::connection::process() {
 }
 // clang-format on
 
-future<> kafka_server::connection::write_response(
+ss::future<> kafka_server::connection::write_response(
   response_ptr&& response, correlation_type correlation_id) {
-    sstring header(sstring::initialized_later(), sizeof(raw_response_header));
+    ss::sstring header(
+      ss::sstring::initialized_later(), sizeof(raw_response_header));
     auto* raw_header = reinterpret_cast<raw_response_header*>(header.begin());
     auto size = size_type(
       sizeof(correlation_type) + response->buf().size_bytes());
-    raw_header->size = cpu_to_be(size);
-    raw_header->correlation_id = cpu_to_be(correlation_id);
+    raw_header->size = ss::cpu_to_be(size);
+    raw_header->correlation_id = ss::cpu_to_be(correlation_id);
 
-    scattered_message<char> msg;
+    ss::scattered_message<char> msg;
     msg.append(std::move(header));
     for (auto&& chunk : response->buf()) {
         msg.append_static(
@@ -193,12 +195,12 @@ future<> kafka_server::connection::write_response(
 // The server guarantees that on a single TCP connection, requests will be
 // processed in the order they are sent and responses will return in that order
 // as well.
-future<> kafka_server::connection::process_request() {
+ss::future<> kafka_server::connection::process_request() {
     return _read_buf.read_exactly(sizeof(size_type))
-      .then([this](temporary_buffer<char> buf) {
+      .then([this](ss::temporary_buffer<char> buf) {
           if (!buf) {
               // EOF
-              return make_ready_future<>();
+              return ss::make_ready_future<>();
           }
           auto size = process_size(_read_buf, std::move(buf));
           // Allow for extra copies and bookkeeping
@@ -216,7 +218,7 @@ future<> kafka_server::connection::process_request() {
           if (_server._memory_available.waiters()) {
               _server._probe.waiting_for_available_memory();
           }
-          return fut.then([this, size](semaphore_units<> units) {
+          return fut.then([this, size](ss::semaphore_units<> units) {
               return read_header(_read_buf).then(
                 [this, size, units = std::move(units)](
                   request_header header) mutable {
@@ -237,8 +239,8 @@ future<> kafka_server::connection::process_request() {
 
                     // apply the throttling delay, if any.
                     auto throttle_delay = delay.first_violation
-                                            ? make_ready_future<>()
-                                            : seastar::sleep(delay.duration);
+                                            ? ss::make_ready_future<>()
+                                            : ss::sleep(delay.duration);
                     return throttle_delay.then([this,
                                                 size,
                                                 header = std::move(header),
@@ -271,13 +273,13 @@ future<> kafka_server::connection::process_request() {
 }
 
 void kafka_server::connection::do_process(
-  request_context&& ctx, semaphore_units<>&& units) {
+  request_context&& ctx, ss::semaphore_units<>&& units) {
     auto correlation = ctx.header().correlation_id;
     auto f = ::kafka::process_request(std::move(ctx), _server._smp_group);
     auto ready = std::move(_ready_to_respond);
     _ready_to_respond = f.then_wrapped(
       [this, units = std::move(units), ready = std::move(ready), correlation](
-        future<response_ptr>&& f) mutable {
+        ss::future<response_ptr>&& f) mutable {
           try {
               auto r = f.get0();
               return ready
@@ -295,11 +297,11 @@ void kafka_server::connection::do_process(
 }
 
 size_t kafka_server::connection::process_size(
-  const input_stream<char>& src, temporary_buffer<char>&& buf) {
+  const ss::input_stream<char>& src, ss::temporary_buffer<char>&& buf) {
     if (src.eof()) {
         return 0;
     }
-    auto* raw = unaligned_cast<const size_type*>(buf.get());
+    auto* raw = ss::unaligned_cast<const size_type*>(buf.get());
     size_type size = be_to_cpu(*raw);
     if (size < 0) {
         throw std::runtime_error(
@@ -308,11 +310,11 @@ size_t kafka_server::connection::process_size(
     return size_t(size);
 }
 
-future<request_header>
-kafka_server::connection::read_header(input_stream<char>& src) {
+ss::future<request_header>
+kafka_server::connection::read_header(ss::input_stream<char>& src) {
     constexpr int16_t no_client_id = -1;
     return src.read_exactly(sizeof(raw_request_header))
-      .then([&src](temporary_buffer<char> buf) {
+      .then([&src](ss::temporary_buffer<char> buf) {
           if (src.eof()) {
               throw std::runtime_error(
                 fmt::format("Unexpected EOF for request header"));
@@ -324,21 +326,21 @@ kafka_server::connection::read_header(input_stream<char>& src) {
               auto* raw_header = reinterpret_cast<const raw_request_header*>(
                 buf.get());
               return request_header{
-                api_key(net::ntoh(raw_header->api_key)),
-                api_version(net::ntoh(raw_header->api_version)),
-                net::ntoh(raw_header->correlation_id)};
+                api_key(ss::net::ntoh(raw_header->api_key)),
+                api_version(ss::net::ntoh(raw_header->api_version)),
+                ss::net::ntoh(raw_header->correlation_id)};
           };
           if (client_id_size == 0) {
               auto header = make_header();
               header.client_id = std::string_view();
-              return make_ready_future<request_header>(std::move(header));
+              return ss::make_ready_future<request_header>(std::move(header));
           }
           if (client_id_size == no_client_id) {
-              return make_ready_future<request_header>(make_header());
+              return ss::make_ready_future<request_header>(make_header());
           }
           return src.read_exactly(client_id_size)
             .then([&src, make_header = std::move(make_header)](
-                    temporary_buffer<char> buf) {
+                    ss::temporary_buffer<char> buf) {
                 if (src.eof()) {
                     throw std::runtime_error(
                       fmt::format("Unexpected EOF for client ID"));

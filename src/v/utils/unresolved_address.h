@@ -1,4 +1,5 @@
 #pragma once
+
 #include "seastarx.h"
 
 #include <seastar/core/sstring.hh>
@@ -13,17 +14,17 @@
 class unresolved_address {
 public:
     unresolved_address() = default;
-    unresolved_address(sstring host, uint16_t port)
+    unresolved_address(ss::sstring host, uint16_t port)
       : _host(std::move(host))
       , _port(port) {}
 
-    const sstring& host() const { return _host; }
+    const ss::sstring& host() const { return _host; }
     uint16_t port() const { return _port; }
 
-    future<socket_address> resolve() const {
-        return net::inet_address::find(_host).then(
-          [port = _port](net::inet_address i_a) {
-              return socket_address(i_a, port);
+    ss::future<ss::socket_address> resolve() const {
+        return ss::net::inet_address::find(_host).then(
+          [port = _port](ss::net::inet_address i_a) {
+              return ss::socket_address(i_a, port);
           });
     }
 
@@ -32,7 +33,7 @@ public:
     }
 
 private:
-    seastar::sstring _host;
+    ss::sstring _host;
     uint16_t _port{0};
 };
 
@@ -46,7 +47,7 @@ template<>
 struct hash<unresolved_address> {
     size_t operator()(const unresolved_address& a) const {
         size_t h = 0;
-        boost::hash_combine(h, hash<sstring>()(a.host()));
+        boost::hash_combine(h, hash<ss::sstring>()(a.host()));
         boost::hash_combine(h, hash<uint16_t>()(a.port()));
         return h;
     }

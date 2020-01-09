@@ -14,7 +14,7 @@
 namespace config {
 struct data_directory_path {
     std::filesystem::path path;
-    sstring as_sstring() const { return path.c_str(); }
+    ss::sstring as_sstring() const { return path.c_str(); }
 };
 
 struct configuration final : public config_store {
@@ -36,13 +36,13 @@ struct configuration final : public config_store {
     property<tls_config> kafka_api_tls;
     property<bool> use_scheduling_groups;
     property<unresolved_address> admin;
-    property<sstring> admin_api_doc_dir;
+    property<ss::sstring> admin_api_doc_dir;
     property<bool> enable_admin_api;
     property<int16_t> default_num_windows;
     property<std::chrono::milliseconds> default_window_sec;
     property<std::chrono::milliseconds> quota_manager_gc_sec;
     property<uint32_t> target_quota_byte_rate;
-    property<std::optional<sstring>> rack;
+    property<std::optional<ss::sstring>> rack;
     property<bool> disable_metrics;
     property<std::chrono::milliseconds> group_min_session_timeout_ms;
     property<std::chrono::milliseconds> group_max_session_timeout_ms;
@@ -79,7 +79,7 @@ static inline model::broker make_self_broker(const configuration& cfg) {
       rpc_addr,
       cfg.rack,
       // FIXME: Fill broker properties with all the information
-      model::broker_properties{.cores = smp::count});
+      model::broker_properties{.cores = ss::smp::count});
 }
 
 } // namespace config
@@ -92,15 +92,13 @@ inline ostream& operator<<(ostream& o, const config::data_directory_path& p) {
 
 namespace nlohmann {
 template<>
-struct adl_serializer<seastar::sstring> {
-    static void to_json(json& j, const seastar::sstring& v) {
-        j = std::string(v);
-    }
+struct adl_serializer<ss::sstring> {
+    static void to_json(json& j, const ss::sstring& v) { j = std::string(v); }
 };
 
 template<>
-struct adl_serializer<seastar::socket_address> {
-    static void to_json(json& j, const seastar::socket_address& v) {
+struct adl_serializer<ss::socket_address> {
+    static void to_json(json& j, const ss::socket_address& v) {
         // seastar doesn't have a fmt::formatter for inet_address
         std::ostringstream a;
         a << v.addr();
@@ -207,8 +205,8 @@ struct convert<config::seed_server> {
 };
 
 template<>
-struct convert<socket_address> {
-    using type = socket_address;
+struct convert<ss::socket_address> {
+    using type = ss::socket_address;
     static Node encode(const type& rhs) {
         Node node;
         std::ostringstream o;
@@ -223,12 +221,12 @@ struct convert<socket_address> {
                 return false;
             }
         }
-        auto addr_str = node["address"].as<sstring>();
+        auto addr_str = node["address"].as<ss::sstring>();
         auto port = node["port"].as<uint16_t>();
         if (addr_str == "localhost") {
-            rhs = socket_address(net::inet_address("127.0.0.1"), port);
+            rhs = ss::socket_address(ss::net::inet_address("127.0.0.1"), port);
         } else {
-            rhs = socket_address(addr_str, port);
+            rhs = ss::socket_address(addr_str, port);
         }
         return true;
     }
@@ -249,7 +247,7 @@ struct convert<unresolved_address> {
                 return false;
             }
         }
-        auto addr_str = node["address"].as<sstring>();
+        auto addr_str = node["address"].as<ss::sstring>();
         auto port = node["port"].as<uint16_t>();
         rhs = unresolved_address(addr_str, port);
         return true;
@@ -293,10 +291,10 @@ struct convert<config::tls_config> {
         return node;
     }
 
-    static std::optional<sstring>
-    read_optional(const Node& node, const sstring& key) {
+    static std::optional<ss::sstring>
+    read_optional(const Node& node, const ss::sstring& key) {
         if (node[key]) {
-            return node[key].as<sstring>();
+            return node[key].as<ss::sstring>();
         }
         return std::nullopt;
     }
@@ -310,8 +308,8 @@ struct convert<config::tls_config> {
         }
 
         auto key_cert = node["key_file"] ? std::make_optional<config::key_cert>(
-                          config::key_cert{node["key_file"].as<sstring>(),
-                                           node["cert_file"].as<sstring>()})
+                          config::key_cert{node["key_file"].as<ss::sstring>(),
+                                           node["cert_file"].as<ss::sstring>()})
                                          : std::nullopt;
         rhs = config::tls_config(
           node["enabled"] && node["enabled"].as<bool>(),

@@ -15,7 +15,8 @@ public:
     static constexpr api_version min_supported = api_version(0);
     static constexpr api_version max_supported = api_version(2);
 
-    static future<response_ptr> process(request_context&&, smp_service_group);
+    static ss::future<response_ptr>
+    process(request_context&&, ss::smp_service_group);
 };
 
 } // namespace kafka

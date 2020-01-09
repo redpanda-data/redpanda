@@ -85,7 +85,7 @@ class remote final {
 public:
     explicit remote(T&& v) noexcept(::internal::emptyable<T, E>::move_noexcept)
       : _v(std::move(v))
-      , _origin_cpu(engine().cpu_id()) {}
+      , _origin_cpu(ss::engine().cpu_id()) {}
 
     template<typename... Args>
     explicit remote(Args... args) noexcept(
@@ -96,7 +96,8 @@ public:
     remote& operator=(remote&&) = default;
 
     ~remote() noexcept {
-        if (__builtin_expect(_v && _origin_cpu != engine().cpu_id(), false)) {
+        if (__builtin_expect(
+              _v && _origin_cpu != ss::engine().cpu_id(), false)) {
             std::abort();
         }
     }
@@ -107,5 +108,5 @@ public:
 
 private:
     ::internal::emptyable<T, E> _v;
-    shard_id _origin_cpu;
+    ss::shard_id _origin_cpu;
 };

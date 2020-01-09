@@ -20,8 +20,8 @@ public:
     static constexpr api_version min_supported = api_version(3);
     static constexpr api_version max_supported = api_version(7);
 
-    static future<response_ptr>
-    process(request_context&&, seastar::smp_service_group);
+    static ss::future<response_ptr>
+    process(request_context&&, ss::smp_service_group);
 };
 
 struct produce_request final {
@@ -40,7 +40,7 @@ struct produce_request final {
         std::vector<partition> partitions;
     };
 
-    std::optional<sstring> transactional_id;
+    std::optional<ss::sstring> transactional_id;
     int16_t acks;
     std::chrono::milliseconds timeout;
     std::vector<topic> topics;

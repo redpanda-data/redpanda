@@ -15,7 +15,7 @@
 #include <cppkafka/cppkafka.h>
 #include <v/native_thread_pool.h>
 
-seastar::future<> get_metadata(v::ThreadPool& tp) {
+ss::ss::future<> get_metadata(v::ThreadPool& tp) {
     return tp.submit([]() {
         cppkafka::Configuration config = {
           {"metadata.broker.list", "127.0.0.1:9092"}};

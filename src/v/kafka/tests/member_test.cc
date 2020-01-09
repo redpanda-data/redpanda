@@ -1,6 +1,5 @@
 #include "kafka/groups/member.h"
 #include "kafka/types.h"
-#include "seastarx.h"
 #include "utils/to_string.h"
 
 #include <seastar/core/sstring.hh>

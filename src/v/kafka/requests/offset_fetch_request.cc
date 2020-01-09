@@ -11,8 +11,8 @@
 
 namespace kafka {
 
-future<response_ptr>
-offset_fetch_api::process(request_context&& ctx, smp_service_group g) {
+ss::future<response_ptr>
+offset_fetch_api::process(request_context&& ctx, ss::smp_service_group g) {
     // request
     auto group_id = ctx.reader().read_string();
     auto topics = ctx.reader().read_array([](request_reader& r) {
@@ -45,7 +45,7 @@ offset_fetch_api::process(request_context&& ctx, smp_service_group g) {
         resp->writer().write(int16_t(0));
     }
 
-    return make_ready_future<response_ptr>(std::move(resp));
+    return ss::make_ready_future<response_ptr>(std::move(resp));
 }
 
 } // namespace kafka
