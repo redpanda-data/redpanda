@@ -84,31 +84,35 @@ ss::future<log_manager::log_handles> log_manager::make_log_segment(
 // Recover the last segment. Whenever we close a segment, we will likely
 // open a new one to which we will direct new writes. That new segment
 // might be empty. To optimize log replay, implement #140.
-// Called from a ss::thread.
-static void do_recover(log_set& seg_set) {
-    if (seg_set.begin() == seg_set.end()) {
-        return;
-    }
-    auto last = seg_set.last();
-    auto stat = last->stat().get0();
-    auto replayer = log_replayer(last);
-    auto recovered = replayer.recover_in_thread(ss::default_priority_class());
-    if (recovered) {
-        // Max offset is inclusive
-        last->set_last_written_offset(*recovered.last_valid_offset());
-    } else {
-        if (stat.st_size == 0) {
-            seg_set.pop_last();
-            last->close().get();
-            remove_file(last->get_filename()).get();
-        } else {
-            seg_set.pop_last();
-            ss::engine()
-              .rename_file(
-                last->get_filename(), last->get_filename() + ".cannotrecover")
-              .get();
+static ss::future<log_set> do_recover(log_set&& seg_set) {
+    return ss::async([seg_set = std::move(seg_set)]() mutable {
+        if (seg_set.empty()) {
+            return seg_set;
         }
-    }
+        auto last = seg_set.last();
+        auto stat = last->stat().get0();
+        auto replayer = log_replayer(last);
+        auto recovered = replayer.recover_in_thread(
+          ss::default_priority_class());
+        if (recovered) {
+            // Max offset is inclusive
+            last->set_last_written_offset(*recovered.last_valid_offset());
+        } else {
+            if (stat.st_size == 0) {
+                seg_set.pop_last();
+                last->close().get();
+                remove_file(last->get_filename()).get();
+            } else {
+                seg_set.pop_last();
+                ss::engine()
+                  .rename_file(
+                    last->get_filename(),
+                    last->get_filename() + ".cannotrecover")
+                  .get();
+            }
+        }
+        return seg_set;
+    });
 }
 
 void set_max_offsets(log_set& seg_set) {
@@ -198,18 +202,20 @@ log_manager::open_segments(ss::sstring path) {
 }
 
 ss::future<log_ptr> log_manager::manage(model::ntp ntp) {
-    return ss::async([this, ntp = std::move(ntp)]() mutable {
-        ss::sstring path = fmt::format("{}/{}", _config.base_dir, ntp.path());
-        recursive_touch_directory(path).get();
-        auto segs = open_segments(path).get0();
-        auto seg_set = log_set(std::move(segs));
-        set_max_offsets(seg_set);
-        do_recover(seg_set);
-        auto ptr = ss::make_lw_shared<storage::log>(
-          ntp, *this, std::move(seg_set));
-        _logs.emplace(std::move(ntp), ptr);
-        return ptr;
-    });
+    ss::sstring path = fmt::format("{}/{}", _config.base_dir, ntp.path());
+    return recursive_touch_directory(path)
+      .then([this, path] { return open_segments(path); })
+      .then([this, ntp](std::vector<segment_reader_ptr> segs) {
+          auto seg_set = log_set(std::move(segs));
+          set_max_offsets(seg_set);
+          return do_recover(std::move(seg_set))
+            .then([this, ntp](log_set seg_set) {
+                auto ptr = ss::make_lw_shared<storage::log>(
+                  ntp, *this, std::move(seg_set));
+                _logs.emplace(std::move(ntp), ptr);
+                return ptr;
+            });
+      });
 }
 
 } // namespace storage
