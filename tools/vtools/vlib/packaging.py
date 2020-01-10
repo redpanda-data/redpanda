@@ -137,8 +137,10 @@ def red_panda_rpm(input_tar, dest_path, src_dir):
         os.path.join("packaging", "common", "systemd", "50-redpanda.preset"),
         os.path.join(dest_path, "systemd"))
     # build RPM
+    nproc = os.cpu_count()
     shell.run_subprocess(
-        f'rpmbuild -bb --define \"_topdir {rpm_tree_root}\" {spec}')
+        f'rpmbuild -bb --define \"_topdir {rpm_tree_root}\" --define \"_binary_payload w2T{nproc}.xzdio\" {spec}'
+    )
 
 
 def red_panda_deb(input_tar, dest_path, src_dir):
