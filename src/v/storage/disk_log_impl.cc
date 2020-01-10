@@ -130,54 +130,111 @@ disk_log_impl::make_reader(log_reader_config config) {
       _segs, _tracker, std::move(config), _probe);
 }
 
-ss::future<> disk_log_impl::do_truncate(model::offset o, model::term_id term) {
-    // 1. update metadata
-    // 2. get a list of segments to drop
-    // 3. perform drop in background for all
-    // 4. synchronize dir-entry
-    // 5. translate offset into disk/filename
-    // 6. truncate the last segment
-    // 7. roll
+ss::future<> disk_log_impl::truncate_whole_segments(
+  log_set::const_iterator first_to_remove) {
+    std::vector<segment_reader_ptr> truncated_logs;
+    truncated_logs.reserve(std::distance(first_to_remove, std::cend(_segs)));
+    while (first_to_remove != _segs.end()) {
+        auto truncated = _segs.last();
+        stlog.debug(
+          "Truncated whole log segment {}", truncated->get_filename());
+        truncated_logs.push_back(truncated);
+        _segs.pop_last();
+    }
 
-    // 1.
-    _term = term;
+    return parallel_for_each(
+             truncated_logs,
+             [](const segment_reader_ptr& seg) {
+                 return seg->close().then(
+                   [seg] { return remove_file(seg->get_filename()); });
+             })
+      .then([d = _manager.config().base_dir] { return sync_directory(d); });
+}
+
+ss::future<> disk_log_impl::do_truncate(model::offset o) {
+    stlog.trace("Truncating log {} at offset {}", ntp(), o);
+
+    if (o < model::offset(0)) {
+        // remove all
+        stlog.trace("Truncating  whole log {}", ntp());
+        _tracker.update_dirty_offset(model::offset{});
+        _tracker.update_committed_offset(model::offset{});
+        return truncate_whole_segments(_segs.begin()).then([this] {
+            if (!_appender) {
+                return ss::make_ready_future<>();
+            }
+            return flush()
+              .then([this] { return _appender->close(); })
+              .then([this] {
+                  _appender = nullptr;
+                  _active_segment = nullptr;
+              });
+        });
+    }
+    auto to_truncate_in_middle = _segs.lower_bound(o);
+    if (to_truncate_in_middle == _segs.end()) {
+        return ss::make_exception_future<>(std::invalid_argument(
+          fmt::format("Unable to truncate as offset {} is not in the log", o)));
+    }
+
+    // first remove whole segments
+    auto first_to_remove = std::next(to_truncate_in_middle);
+    auto f = truncate_whole_segments(first_to_remove);
+    // truncate in the middle
     _tracker.update_dirty_offset(o);
     _tracker.update_committed_offset(o);
-
-    // 2.
-    std::vector<ss::sstring> names_to_delete;
-    for (auto s : _segs) {
-        if (s->term() > term) {
-            stlog.info("do_truncate() full file:{}", s->get_filename());
-            names_to_delete.push_back(s->get_filename());
+    struct file_offset_batch_consumer {
+        ss::future<ss::stop_iteration> operator()(model::record_batch batch) {
+            f_pos += (batch.size_bytes() + vint::vint_size(batch.size_bytes()));
+            return ss::make_ready_future<ss::stop_iteration>(
+              ss::stop_iteration::no);
         }
-    }
+        uint64_t end_of_stream() { return f_pos; }
+        uint64_t f_pos{0};
+    };
 
-    //  3.
-    auto erased = _segs.remove(std::move(names_to_delete));
-    auto f = ss::make_ready_future<>();
-    // do not roll when we do not have segment opened
-    if (!_appender) {
-        return f;
-    }
-    // 4.
-    f = parallel_for_each(erased, [](segment_reader_ptr i) {
-        return i->close().then([i] { return remove_file(i->get_filename()); });
+    return f.then([this, o, to_truncate = *to_truncate_in_middle] {
+        log_reader_config cfg{.start_offset = to_truncate->base_offset(),
+                              .max_bytes = std::numeric_limits<size_t>::max(),
+                              .min_bytes = 0,
+                              .prio = ss::default_priority_class(),
+                              .type_filter = {},
+                              .max_offset = o};
+        return ss::do_with(
+          file_offset_batch_consumer{},
+          model::make_record_batch_reader<log_segment_batch_reader>(
+            to_truncate, _tracker, std::move(cfg), _probe),
+          [this, o, to_truncate](
+            file_offset_batch_consumer& c,
+            model::record_batch_reader& reader) mutable {
+              return reader.consume(c, model::no_timeout)
+                .then([this, o, to_truncate](uint64_t f_pos) {
+                    stlog.debug(
+                      "Truncating segment {} of size {} at {}",
+                      to_truncate->get_filename(),
+                      to_truncate->file_size(),
+                      f_pos);
+
+                    if (_active_segment->base_offset() <= o) {
+                        // we have an appender to this segment,
+                        // truncate using the appender
+                        _active_segment->set_last_visible_byte_offset(f_pos);
+                        _active_segment->set_last_written_offset(o);
+                        return _appender->truncate(f_pos);
+                    }
+                    // truncate old segment and roll
+                    const auto flags = ss::open_flags::rw;
+                    return ss::open_file_dma(to_truncate->get_filename(), flags)
+                      .then([this, f_pos](ss::file f) {
+                          return f.truncate(f_pos)
+                            .then([f]() mutable { return f.flush(); })
+                            .finally([f]() mutable { return f.close(); })
+                            .finally([f] {});
+                      })
+                      .then([this] { return do_roll(); });
+                });
+          });
     });
-
-    // 5.
-    f = f.then([d = _manager.config().base_dir] { return sync_directory(d); });
-
-    // 6.
-    // FIXME
-    // missing, find offset in offset_index and truncate at size
-    // _segs.back().truncate(offset_index.get(o))
-    stlog.error("We cannot truncate a logical offset without an index. rolling "
-                "last segment");
-
-    // 7.
-    f = f.then([this] { return do_roll(); });
-    return f;
 }
 
 log make_disk_backed_log(model::ntp ntp, log_manager& manager, log_set segs) {
