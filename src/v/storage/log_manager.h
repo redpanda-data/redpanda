@@ -71,6 +71,14 @@ private:
     ss::future<segment_reader_ptr>
     open_segment(const ss::sstring& dir, const ss::sstring& name);
 
+    /**
+     * \brief Open all segments in a directory.
+     *
+     * Returns an exceptional future if any error occured opening a segment.
+     * Otherwise all open segment readers are returned.
+     */
+    ss::future<std::vector<segment_reader_ptr>> open_segments(ss::sstring path);
+
     log_config _config;
     logs_type _logs;
 };
