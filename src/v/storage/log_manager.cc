@@ -182,27 +182,35 @@ log_manager::open_segment(const ss::sstring& dir, const ss::sstring& name) {
       });
 }
 
+ss::future<std::vector<segment_reader_ptr>>
+log_manager::open_segments(ss::sstring path) {
+    using segs_type = std::vector<segment_reader_ptr>;
+    return ss::do_with(
+      segs_type{}, [this, path = std::move(path)](segs_type& segs) {
+          auto f = directory_walker::walk(
+            path, [this, path, &segs](ss::directory_entry seg) {
+                if (
+                  !seg.type || *seg.type != ss::directory_entry_type::regular) {
+                    return ss::make_ready_future<>();
+                }
+                return open_segment(path, seg.name)
+                  .then([&segs](segment_reader_ptr p) {
+                      if (p) {
+                          segs.push_back(std::move(p));
+                      }
+                  });
+            });
+          return f.then([&segs]() mutable {
+              return ss::make_ready_future<segs_type>(std::move(segs));
+          });
+      });
+}
+
 ss::future<log_ptr> log_manager::manage(model::ntp ntp) {
     return ss::async([this, ntp = std::move(ntp)]() mutable {
         ss::sstring path = fmt::format("{}/{}", _config.base_dir, ntp.path());
         recursive_touch_directory(path).get();
-        std::vector<segment_reader_ptr> segs;
-        directory_walker::walk(
-          path,
-          [this, path, &segs](ss::directory_entry seg) {
-              if (!seg.type || *seg.type != ss::directory_entry_type::regular) {
-                  return ss::make_ready_future<>();
-              }
-
-              return open_segment(path, seg.name)
-                .then([&segs](segment_reader_ptr p) {
-                    if (p) {
-                        segs.push_back(std::move(p));
-                    }
-                });
-          })
-          .get();
-
+        auto segs = open_segments(path).get0();
         auto seg_set = log_set(std::move(segs));
         set_max_offsets(seg_set);
         do_recover(seg_set);
