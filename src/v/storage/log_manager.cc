@@ -148,6 +148,40 @@ void set_max_offsets(log_set& seg_set) {
         }
     }
 }
+
+ss::future<segment_reader_ptr>
+log_manager::open_segment(const ss::sstring& dir, const ss::sstring& name) {
+    auto seg_metadata = extract_segment_metadata(name);
+    if (!seg_metadata) {
+        stlog.error("Could not extract name for segment: {}", name);
+        return ss::make_ready_future<segment_reader_ptr>();
+    }
+
+    auto&& [offset, term, version] = std::move(seg_metadata.value());
+    if (version != record_version_type::v1) {
+        stlog.error("Found sement with invalid version: {}", name);
+        return ss::make_ready_future<segment_reader_ptr>();
+    }
+
+    auto seg_name = dir + "/" + name;
+    return ss::open_file_dma(seg_name, ss::open_flags::ro)
+      .then([](ss::file f) {
+          return f.stat().then([f](struct stat s) {
+              return ss::make_ready_future<uint64_t, ss::file>(s.st_size, f);
+          });
+      })
+      .then([this, seg_name, offset = offset, term = term](
+              uint64_t size, ss::file fd) {
+          return ss::make_lw_shared<log_segment_reader>(
+            std::move(seg_name),
+            std::move(fd),
+            model::term_id(term),
+            offset,
+            size,
+            default_read_buffer_size);
+      });
+}
+
 ss::future<log_ptr> log_manager::manage(model::ntp ntp) {
     return ss::async([this, ntp = std::move(ntp)]() mutable {
         ss::sstring path = fmt::format("{}/{}", _config.base_dir, ntp.path());
@@ -160,37 +194,11 @@ ss::future<log_ptr> log_manager::manage(model::ntp ntp) {
                   return ss::make_ready_future<>();
               }
 
-              auto seg_metadata = extract_segment_metadata(seg.name);
-              if (!seg_metadata) {
-                  stlog.error(
-                    "Could not extract name for segment: {}", seg.name);
-                  return ss::make_ready_future<>();
-              }
-
-              auto&& [offset, term, version] = std::move(seg_metadata.value());
-              if (version != record_version_type::v1) {
-                  stlog.error(
-                    "Found sement with invalid version: {}", seg.name);
-                  return ss::make_ready_future<>();
-              }
-
-              auto seg_name = path + "/" + seg.name;
-              return ss::open_file_dma(seg_name, ss::open_flags::ro)
-                .then([](ss::file f) {
-                    return f.stat().then([f](struct stat s) {
-                        return std::make_tuple(uint64_t(s.st_size), f);
-                    });
-                })
-                .then([this, &segs, seg_name, offset = offset, term = term](
-                        std::tuple<uint64_t, ss::file> tup) mutable {
-                    auto [size, fd] = tup;
-                    segs.push_back(ss::make_lw_shared<log_segment_reader>(
-                      std::move(seg_name),
-                      std::move(fd),
-                      model::term_id(term),
-                      offset,
-                      size,
-                      default_read_buffer_size));
+              return open_segment(path, seg.name)
+                .then([&segs](segment_reader_ptr p) {
+                    if (p) {
+                        segs.push_back(std::move(p));
+                    }
                 });
           })
           .get();
