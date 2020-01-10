@@ -25,6 +25,36 @@ struct log_config {
     sanitize_files should_sanitize;
 };
 
+/**
+ * \brief Create, track, and manage log instances.
+ *
+ * The log manager is the access point for creating, obtaining, and managing the
+ * lifecycle of references to log instances each identified by a model::ntp.
+ *
+ * Before a log may be accessed it must be brought under management using the
+ * interface `manage(ntp)`. This will open the log if it exists on disk.
+ * Otherwise, a new log will be initialized and then opened.
+ *
+ * The log manager uses the file system to organize log storage. All log data
+ * (e.g. segments) for a given ntp is managed under a single directory:
+ *
+ *    <base>/<namespace>/<topic>/<partition>/
+ *
+ * where <base> is configured for each server (e.g. /var/lib/redpanda/data). Log
+ * segments are stored in the ntp directory with the naming convention:
+ *
+ *   <base offset>-<raft term>-<format version>.log
+ *
+ * where <base offset> is the smallest offset (inclusive) that maps to / is
+ * managed by the segment, <format version> is the binary format of the segment,
+ * and <raft term> is special metadata specified by raft as it interacts with
+ * the log.
+ *
+ * Generally the log manager is instantiated as part of a sharded service where
+ * each core manages a distinct set of logs. When the service is shut down,
+ * calling `stop` on the log manager will close all of the logs currently being
+ * managed.
+ */
 class log_manager {
 public:
     explicit log_manager(log_config) noexcept;
