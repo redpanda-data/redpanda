@@ -115,7 +115,7 @@ static ss::future<log_set> do_recover(log_set&& seg_set) {
     });
 }
 
-void set_max_offsets(log_set& seg_set) {
+static void set_max_offsets(log_set& seg_set) {
     for (auto it = seg_set.begin(); it != seg_set.end(); ++it) {
         auto next = std::next(it);
         if (next != seg_set.end()) {
