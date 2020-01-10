@@ -1,6 +1,7 @@
 #include "storage/log_manager.h"
 
 #include "model/fundamental.h"
+#include "storage/fs_utils.h"
 #include "storage/log_replayer.h"
 #include "storage/logger.h"
 #include "utils/directory_walker.h"
@@ -15,7 +16,6 @@
 
 #include <exception>
 #include <filesystem>
-#include <regex>
 
 namespace storage {
 
@@ -28,21 +28,6 @@ ss::future<> log_manager::stop() {
     });
 }
 
-static ss::sstring make_filename(
-  const ss::sstring& base,
-  const model::ntp& ntp,
-  const model::offset& base_offset,
-  const model::term_id& term,
-  const record_version_type& version) {
-    return format(
-      "{}/{}/{}-{}-{}.log",
-      base,
-      ntp.path(),
-      base_offset(),
-      term(),
-      to_string(version));
-}
-
 ss::future<log_manager::log_handles> log_manager::make_log_segment(
   const model::ntp& ntp,
   model::offset base_offset,
@@ -50,7 +35,7 @@ ss::future<log_manager::log_handles> log_manager::make_log_segment(
   ss::io_priority_class pc,
   record_version_type version,
   size_t buffer_size) {
-    auto filename = make_filename(
+    auto filename = segment_path::make_segment_path(
       _config.base_dir, ntp, base_offset, term, version);
     stlog.trace("Creating new segment {}", filename);
     return ss::do_with(log_handles{}, [=](log_handles& h) {
@@ -96,19 +81,6 @@ ss::future<log_manager::log_handles> log_manager::make_log_segment(
     });
 }
 
-static std::optional<std::tuple<model::offset, int64_t, record_version_type>>
-extract_segment_metadata(const ss::sstring& seg) {
-    const std::regex re("^(\\d+)-(\\d+)-([\\x00-\\x7F]+).log$");
-    std::cmatch match;
-    if (!std::regex_match(seg.c_str(), match, re)) {
-        return {};
-    }
-    return std::make_tuple(
-      model::offset(boost::lexical_cast<uint64_t>(match[1].str())),
-      boost::lexical_cast<int64_t>(match[2].str()),
-      from_string(match[3].str()));
-}
-
 // Recover the last segment. Whenever we close a segment, we will likely
 // open a new one to which we will direct new writes. That new segment
 // might be empty. To optimize log replay, implement #140.
@@ -151,7 +123,7 @@ void set_max_offsets(log_set& seg_set) {
 
 ss::future<segment_reader_ptr>
 log_manager::open_segment(const ss::sstring& dir, const ss::sstring& name) {
-    auto seg_metadata = extract_segment_metadata(name);
+    auto seg_metadata = segment_path::parse_segment_filename(name);
     if (!seg_metadata) {
         stlog.error("Could not extract name for segment: {}", name);
         return ss::make_ready_future<segment_reader_ptr>();
