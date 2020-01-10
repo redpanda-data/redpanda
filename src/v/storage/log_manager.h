@@ -62,6 +62,15 @@ public:
 private:
     using logs_type = std::unordered_map<model::ntp, log_ptr>;
 
+    /**
+     * \brief Create a segment reader for the specified file.
+     *
+     * If the segment cannot be opened the future will resolve to a nullptr.
+     * Otherwise it will resolve to the segment reader instance.
+     */
+    ss::future<segment_reader_ptr>
+    open_segment(const ss::sstring& dir, const ss::sstring& name);
+
     log_config _config;
     logs_type _logs;
 };
