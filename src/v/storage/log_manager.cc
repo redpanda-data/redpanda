@@ -23,7 +23,7 @@ log_manager::log_manager(log_config config) noexcept
   : _config(std::move(config)) {}
 
 ss::future<> log_manager::stop() {
-    return parallel_for_each(_logs, [](logs_type::value_type& entry) {
+    return ss::parallel_for_each(_logs, [](logs_type::value_type& entry) {
         return entry.second->close();
     });
 }

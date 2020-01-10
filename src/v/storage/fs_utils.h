@@ -27,7 +27,7 @@ struct segment_path {
       const model::offset& base_offset,
       const model::term_id& term,
       const record_version_type& version) {
-        return std::filesystem::path(format(
+        return std::filesystem::path(ss::format(
           "{}/{}/{}-{}-{}.log",
           base,
           ntp.path(),
