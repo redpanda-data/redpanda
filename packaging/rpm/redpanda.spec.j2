@@ -108,6 +108,7 @@ install -m755 %{_topdir}/common/scripts/* -Dt "%{buildroot}/%{_prefix}/lib/redpa
 %systemd_post redpanda.slice redpanda.service redpanda-tuner.service
 /usr/lib/systemd/systemd-sysctl 99-redpanda-sched.conf >/dev/null 2>&1 || :
 /usr/lib/systemd/systemd-sysctl 99-redpanda-aio.conf >/dev/null 2>&1 || :
+/usr/bin/systemctl daemon-reload ||:
 
 %preun
 %systemd_preun redpanda.slice redpanda.service redpanda-tuner.service
