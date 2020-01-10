@@ -65,8 +65,14 @@ private:
     /**
      * \brief Create a segment reader for the specified file.
      *
-     * If the segment cannot be opened the future will resolve to a nullptr.
-     * Otherwise it will resolve to the segment reader instance.
+     * Returns an exceptional future if the segment cannot be opened. This may
+     * occur due to many reasons such as a file system error, or because the
+     * segment is corrupt or is stored in an unsupported format.
+     *
+     * Returns a ready future containing a nullptr value if the specified file
+     * is not a segment file.
+     *
+     * Returns an open segment reader if the segment was successfully opened.
      */
     ss::future<segment_reader_ptr>
     open_segment(const ss::sstring& dir, const ss::sstring& name);

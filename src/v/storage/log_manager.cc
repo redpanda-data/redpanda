@@ -123,32 +123,44 @@ void set_max_offsets(log_set& seg_set) {
 
 ss::future<segment_reader_ptr>
 log_manager::open_segment(const ss::sstring& dir, const ss::sstring& name) {
-    auto seg_metadata = segment_path::parse_segment_filename(name);
-    if (!seg_metadata) {
-        stlog.error("Could not extract name for segment: {}", name);
-        return ss::make_ready_future<segment_reader_ptr>();
+    auto path = ss::format("{}/{}", dir, name);
+
+    std::optional<segment_path::metadata> meta;
+    try {
+        meta = segment_path::parse_segment_filename(name);
+    } catch (...) {
+        stlog.error("An error occurred parsing filename: {}", path);
+        return ss::make_exception_future<segment_reader_ptr>(
+          std::current_exception());
     }
 
-    auto&& [offset, term, version] = std::move(seg_metadata.value());
-    if (version != record_version_type::v1) {
-        stlog.error("Found sement with invalid version: {}", name);
-        return ss::make_ready_future<segment_reader_ptr>();
+    if (!meta) {
+        stlog.trace("Cannot open non-segment file: {}", path);
+        return ss::make_ready_future<segment_reader_ptr>(nullptr);
     }
 
-    auto seg_name = dir + "/" + name;
-    return ss::open_file_dma(seg_name, ss::open_flags::ro)
+    if (meta->version != record_version_type::v1) {
+        stlog.error(
+          "Segment has invalid version {} != {} path {}",
+          meta->version,
+          record_version_type::v1,
+          path);
+        return ss::make_exception_future<segment_reader_ptr>(
+          std::runtime_error("Invalid segment format"));
+    }
+
+    return ss::open_file_dma(path, ss::open_flags::ro)
       .then([](ss::file f) {
           return f.stat().then([f](struct stat s) {
               return ss::make_ready_future<uint64_t, ss::file>(s.st_size, f);
           });
       })
-      .then([this, seg_name, offset = offset, term = term](
-              uint64_t size, ss::file fd) {
+      .then([this, path = std::move(path), meta](uint64_t size, ss::file fd) {
           return ss::make_lw_shared<log_segment_reader>(
-            std::move(seg_name),
+            std::move(path),
             std::move(fd),
-            model::term_id(term),
-            offset,
+            model::term_id(meta->term),
+            meta->base_offset,
             size,
             default_read_buffer_size);
       });
@@ -161,17 +173,24 @@ log_manager::open_segments(ss::sstring path) {
       segs_type{}, [this, path = std::move(path)](segs_type& segs) {
           auto f = directory_walker::walk(
             path, [this, path, &segs](ss::directory_entry seg) {
+                /*
+                 * Skip non-regular files (including links)
+                 */
                 if (
                   !seg.type || *seg.type != ss::directory_entry_type::regular) {
                     return ss::make_ready_future<>();
                 }
                 return open_segment(path, seg.name)
                   .then([&segs](segment_reader_ptr p) {
-                      if (p) {
+                      if (p) { // skip non-segment files
                           segs.push_back(std::move(p));
                       }
                   });
             });
+          /*
+           * if the directory walker returns an exceptional future then all the
+           * segment readers that were created are cleaned up by ss::do_with.
+           */
           return f.then([&segs]() mutable {
               return ss::make_ready_future<segs_type>(std::move(segs));
           });
