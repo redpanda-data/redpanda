@@ -1,5 +1,6 @@
 import os
 import yaml
+import pathlib
 
 from absl import logging
 from pathlib import Path
@@ -18,30 +19,36 @@ class VConfig(object):
       external: <path> # [optional] external deps installed out of build dir
     ```
     """
-    def __init__(self, config_file=None, top_folder=None, build_type=None,
-                 clang=None):
+    def __init__(self, config_file=None, build_type=None, clang=None):
         """Reads configuration and populates internal properties of the object
         based on contents of the file. If `config_file` is `None`, it
         recursively looks for a `.vtools.yml` file. The search is done from
-        the folder pointed to by `top_folder` or current working directory if
-        `top_folder` is `None`. The configuration defaults to using GCC, unless
-        `clang` is given. If the `build_type` arg is not given, the config
-        looks for `build.default_type` in the YAML config, and throws an error
-        if it's not defined.
+        the current working directory up until a config file is found or the
+        root of folder is reached. The configuration defaults to using GCC,
+        unless `clang` is given. If the `build_type` arg is not given, the
+        config looks for `build.default_type` in the YAML config, and throws an
+        error if it's not defined.
         """
+        # when config_file is given, working directory is os.getcwd()
+        wd = os.getcwd()
         if not config_file:
-            config_file = self.__find_config_file(top_folder)
+            config_file = self.__find_config_file()
+            if not config_file:
+                logging.fatal('Unable to find .vtools.yml file.')
+            # when config is found recursively, wd is config file's parent
+            wd = os.path.dirname(config_file)
 
         logging.info(f'Reading configuration file {config_file}.')
         with open(config_file, 'r') as f:
             self._cfg = yaml.safe_load(f)
 
-        # make paths absolute
+        # make relative paths absolute (w.r.t. working directory)
         for k in self._cfg['build'].keys():
             if k == 'default_type':
                 # the only option that is not a path
                 continue
-            self._cfg['build'][k] = os.path.abspath(self._cfg['build'][k])
+            if not os.path.isabs(self._cfg['build'][k]):
+                self._cfg['build'][k] = f"{wd}/{self._cfg['build'][k]}"
 
         # check expected keys
         for k in ['gopath', 'root', 'src']:
@@ -52,7 +59,7 @@ class VConfig(object):
             build_type = self._cfg['build'].get('default_type', None)
             if not build_type:
                 logging.fatal('Unable to determine build type.')
-            logging.info(f"Using 'build_type' value from {config_file}")
+            logging.info(f"Reading 'build_type' value from {config_file}")
         self._build_type = build_type
         logging.info(f"Using '{self._build_type}' as build type.")
 
@@ -85,19 +92,23 @@ class VConfig(object):
         logging.debug(f'Environment: {os.environ}')
 
     @staticmethod
-    def __find_config_file(top_folder=None):
+    def __find_config_file(curr_dir=os.getcwd()):
         """Attempts to recursively find a .vtools.yml file, starting from
-        `top_folder`. If `top_folder` is `None`, the search starts at
-        `os.getcwd()`. The first match is returned.
+        `os.getcwd()` up to the root of the file system. The search stops at
+        the first match.
         """
-        if not top_folder:
-            top_folder = os.getcwd()
+        def search_vtools(thedir):
+            if thedir == '/':
+                return None
 
-        for f in Path(top_folder).rglob('.vtools.yml'):
-            logging.info(f'Found {f}.')
-            return f
+            for f in Path(thedir).glob('.vtools.yml'):
+                logging.info(f'Found {f}.')
+                return f
 
-        logging.fatal('Unable to find .vtools.yml file.')
+            return search_vtools(os.path.dirname(thedir))
+
+        return search_vtools(curr_dir)
+
 
     @property
     def src_dir(self):

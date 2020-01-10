@@ -28,12 +28,15 @@ def build():
 @click.option('--clang',
               help='Build clang and install in <build-root>/llvm/llvm-bin.',
               is_flag=True)
+@click.option('--reconfigure',
+              help='Run cmake regardless of whether cmake cache exists.',
+              is_flag=True)
 @click.option('--conf',
               help=('Path to configuration file. If not given, a .vtools.yml '
                     'file is searched recursively starting from the current '
                     'working directory'),
               default=None)
-def cpp(build_type, conf, skip_external, clang):
+def cpp(build_type, conf, skip_external, clang, reconfigure):
     """
     Build the `redpanda` binary using the system's default compiler. To use
     clang, the `build.clang` YAML configuration option needs to be specified,
@@ -54,9 +57,12 @@ def cpp(build_type, conf, skip_external, clang):
     vconfig = config.VConfig(config_file=conf, build_type=build_type,
                              clang=clang)
 
-    cmake.configure_build(vconfig,
-                          build_external=(not skip_external),
-                          build_external_only=False)
+    if not cmake.cache_exists(vconfig) or reconfigure:
+        cmake.configure_build(vconfig,
+                              build_external=(not skip_external),
+                              build_external_only=False)
+    else:
+        logging.info(f'Found cmake cache, skipping cmake configuration.')
 
     # assign jobs so that we have 2.0GB/core
     total_memory = os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES')
@@ -72,7 +78,7 @@ def cpp(build_type, conf, skip_external, clang):
                     'working directory'),
               default=None)
 def go(conf):
-    vconfig = config.VConfig(conf, build_type='ignored')
+    vconfig = config.VConfig(conf)
     os.makedirs(vconfig.go_out_dir, exist_ok=True)
     build_flags = '-buildmode=pie -v -a -tags netgo'
     shell.run_subprocess(

@@ -15,8 +15,13 @@ if [[ ! -e "${HOME}/.local/bin/vtools" ]]; then
   sudo tools/install-deps.sh
 
   # install vtools
-  pip3 install --user -r tools/requirements.txt
-  pip3 install --user -e tools/
+  mkdir -p build/venv/
+  python3 -mvenv build/venv/v/
+  source build/venv/v/bin/activate
+  pip install -r tools/requirements.txt
+  pip install -e tools/
+  mkdir -p build/bin/
+  ln -sf "${vroot}/build/venv/v/bin/vtools" build/bin/
 fi
 
 if [[ ! -e "${vroot}/compile_commands.json" ]]; then
@@ -31,15 +36,12 @@ if (( $gcc_installed < $gcc_required )); then
   exit 1
 fi
 
-# add build/bin/vtools to PATH
-if [[ ${PATH} != *"${HOME}/.local/bin/"* ]]; then
-  export PATH="${PATH}:${HOME}/.local/bin/"
+# add build/bin/ to PATH
+if [[ ${PATH} != *"${vroot}/build/bin/"* ]]; then
+   PATH="${PATH}:${vroot}/build/bin/"
 fi
 
-if [ ! -f "build/go/bin/go" ]; then
-  vtools install go-compiler
-fi
-
+vtools install go-compiler
 vtools install go-deps
 
 vtools install clang
@@ -56,11 +58,11 @@ echo "Successfully installed vtools and dev dependencies"
 echo ""
 echo "Execute vtools with:"
 echo ""
-echo "  ${HOME}/.local/bin/vtools"
+echo "  ${vroot}/build/bin/vtools"
 echo ""
-echo "Alternatively, add ${HOME}/.local/bin to PATH:"
+echo "Alternatively, add ${vroot}/build/bin to PATH:"
 echo ""
-echo "  export PATH=\$PATH:${HOME}/.local/bin"
+echo "  export PATH=\${PATH}:${vroot}/build/bin"
 echo ""
 echo "###############################################"
 echo ""
