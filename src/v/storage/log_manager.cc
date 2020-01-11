@@ -126,7 +126,7 @@ static void set_max_offsets(log_set& seg_set) {
 }
 
 ss::future<segment_reader_ptr>
-log_manager::open_segment(const std::filesystem::path& path) {
+log_manager::open_segment(const std::filesystem::path& path, size_t buf_size) {
     std::optional<segment_path::metadata> meta;
     try {
         meta = segment_path::parse_segment_filename(path.filename().string());
@@ -157,7 +157,8 @@ log_manager::open_segment(const std::filesystem::path& path) {
               return ss::make_ready_future<uint64_t, ss::file>(s.st_size, f);
           });
       })
-      .then([this, path = std::move(path), meta](uint64_t size, ss::file fd) {
+      .then([this, buf_size, path = std::move(path), meta](
+              uint64_t size, ss::file fd) {
           if (_config.should_sanitize) {
               fd = ss::file(ss::make_shared(file_io_sanitizer(std::move(fd))));
           }
@@ -167,7 +168,7 @@ log_manager::open_segment(const std::filesystem::path& path) {
             model::term_id(meta->term),
             meta->base_offset,
             size,
-            default_read_buffer_size);
+            buf_size);
       });
 }
 
