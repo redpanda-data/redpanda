@@ -34,51 +34,44 @@ ss::future<log_manager::log_handles> log_manager::make_log_segment(
   model::term_id term,
   ss::io_priority_class pc,
   record_version_type version,
-  size_t buffer_size) {
+  size_t buf_size) {
     auto path = segment_path::make_segment_path(
       _config.base_dir, ntp, base_offset, term, version);
     stlog.trace("Creating new segment {}", path.string());
-    return ss::do_with(log_handles{}, [=](log_handles& h) {
-        ss::file_open_options opt;
-        opt.extent_allocation_size_hint = 32 << 20;
-        opt.sloppy_size = true;
-        return ss::open_file_dma(
-                 path.string(),
-                 ss::open_flags::create | ss::open_flags::rw,
-                 std::move(opt))
-          .then([&h, pc, this](ss::file writer) {
-              if (_config.should_sanitize) {
-                  writer = ss::file(
-                    ss::make_shared(file_io_sanitizer(std::move(writer))));
-              }
-              h.appender = std::make_unique<log_segment_appender>(
-                writer, log_segment_appender::options(pc));
-          })
-          .then([path] {
-              return ss::open_file_dma(path.string(), ss::open_flags::ro);
-          })
-          // must be a .then_wrapped so we can close the writer
-          .then_wrapped([&h, path, term, base_offset, buffer_size, this](
-                          ss::future<ss::file> f) {
-              try {
-                  ss::file reader = f.get0();
-                  if (_config.should_sanitize) {
-                      reader = ss::file(
-                        ss::make_shared(file_io_sanitizer(std::move(reader))));
-                  }
-                  h.reader = ss::make_lw_shared<log_segment_reader>(
-                    path.string(), reader, term, base_offset, 0, buffer_size);
-                  return ss::make_ready_future<>();
-              } catch (...) {
-                  return h.appender->close().then(
-                    [e = std::current_exception()]() mutable {
-                        return ss::make_exception_future<>(std::move(e));
-                    });
-              }
-          })
-          .then(
-            [&h] { return ss::make_ready_future<log_handles>(std::move(h)); });
-    });
+    return ss::do_with(
+      log_handles{},
+      [this, pc, buf_size, path = std::move(path)](log_handles& h) {
+          ss::file_open_options opt{
+            .extent_allocation_size_hint = 32 << 20,
+            .sloppy_size = true,
+          };
+          const auto flags = ss::open_flags::create | ss::open_flags::rw;
+          return ss::open_file_dma(path.string(), flags, std::move(opt))
+            .then([&h, pc, this](ss::file writer) {
+                if (_config.should_sanitize) {
+                    writer = ss::file(
+                      ss::make_shared(file_io_sanitizer(std::move(writer))));
+                }
+                h.appender = std::make_unique<log_segment_appender>(
+                  writer, log_segment_appender::options(pc));
+            })
+            .then(
+              [this, buf_size, path] { return open_segment(path, buf_size); })
+            .then([&h](segment_reader_ptr p) {
+                if (!p) {
+                    return ss::make_exception_future<log_handles>(
+                      std::runtime_error("Failed to open segment"));
+                }
+                p->set_last_visible_byte_offset(0);
+                h.reader = std::move(p);
+                return ss::make_ready_future<log_handles>(std::move(h));
+            })
+            .handle_exception([&h](auto e) {
+                return h.appender->close().then([e = std::move(e)]() mutable {
+                    return ss::make_exception_future<log_handles>(std::move(e));
+                });
+            });
+      });
 }
 
 // Recover the last segment. Whenever we close a segment, we will likely
