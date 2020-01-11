@@ -10,6 +10,7 @@ function debs() {
     apt update -y
     apt-get install -y \
             build-essential \
+            binutils-dev \
             gcc-9 \
             g++-9 \
             libtool \
@@ -65,6 +66,7 @@ function rpms() {
 
     ${yumdnf} install -y \
               ${cmake} \
+              binutils-devel \
               gcc-c++ \
               ninja-build \
               m4 \
