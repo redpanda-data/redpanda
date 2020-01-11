@@ -126,12 +126,10 @@ static void set_max_offsets(log_set& seg_set) {
 }
 
 ss::future<segment_reader_ptr>
-log_manager::open_segment(const ss::sstring& dir, const ss::sstring& name) {
-    auto path = ss::format("{}/{}", dir, name);
-
+log_manager::open_segment(const std::filesystem::path& path) {
     std::optional<segment_path::metadata> meta;
     try {
-        meta = segment_path::parse_segment_filename(name);
+        meta = segment_path::parse_segment_filename(path.filename().string());
     } catch (...) {
         stlog.error("An error occurred parsing filename: {}", path);
         return ss::make_exception_future<segment_reader_ptr>(
@@ -153,7 +151,7 @@ log_manager::open_segment(const ss::sstring& dir, const ss::sstring& name) {
           std::runtime_error("Invalid segment format"));
     }
 
-    return ss::open_file_dma(path, ss::open_flags::ro)
+    return ss::open_file_dma(path.string(), ss::open_flags::ro)
       .then([](ss::file f) {
           return f.stat().then([f](struct stat s) {
               return ss::make_ready_future<uint64_t, ss::file>(s.st_size, f);
@@ -164,7 +162,7 @@ log_manager::open_segment(const ss::sstring& dir, const ss::sstring& name) {
               fd = ss::file(ss::make_shared(file_io_sanitizer(std::move(fd))));
           }
           return ss::make_lw_shared<log_segment_reader>(
-            std::move(path),
+            path.string(),
             std::move(fd),
             model::term_id(meta->term),
             meta->base_offset,
@@ -174,12 +172,12 @@ log_manager::open_segment(const ss::sstring& dir, const ss::sstring& name) {
 }
 
 ss::future<std::vector<segment_reader_ptr>>
-log_manager::open_segments(ss::sstring path) {
+log_manager::open_segments(ss::sstring dir) {
     using segs_type = std::vector<segment_reader_ptr>;
     return ss::do_with(
-      segs_type{}, [this, path = std::move(path)](segs_type& segs) {
+      segs_type{}, [this, dir = std::move(dir)](segs_type& segs) {
           auto f = directory_walker::walk(
-            path, [this, path, &segs](ss::directory_entry seg) {
+            dir, [this, dir, &segs](ss::directory_entry seg) {
                 /*
                  * Skip non-regular files (including links)
                  */
@@ -187,7 +185,9 @@ log_manager::open_segments(ss::sstring path) {
                   !seg.type || *seg.type != ss::directory_entry_type::regular) {
                     return ss::make_ready_future<>();
                 }
-                return open_segment(path, seg.name)
+                auto path = std::filesystem::path(
+                  fmt::format("{}/{}", dir, seg.name));
+                return open_segment(std::move(path))
                   .then([&segs](segment_reader_ptr p) {
                       if (p) { // skip non-segment files
                           segs.push_back(std::move(p));
