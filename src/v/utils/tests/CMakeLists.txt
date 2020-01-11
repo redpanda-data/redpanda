@@ -43,3 +43,10 @@ rp_test(
   
     ARGS "-- -c 2"
   )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME directory_walker
+  SOURCES directory_walker_test.cc
+  LIBRARIES Seastar::seastar_testing
+)

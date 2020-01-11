@@ -251,12 +251,11 @@ read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config) {
           /*
            * lookup the ntp's open log handle
            */
-          auto it = mgr.logs().find(ntp);
-          if (__builtin_expect(it == mgr.logs().end(), false)) {
+          auto log = mgr.log(ntp);
+          if (__builtin_expect(!log, false)) {
               return make_ready_partition_response_error(
                 error_code::unknown_topic_or_partition);
           }
-          auto log = it->second;
 
           // low-level read
           return read_from_log(log, std::move(config))

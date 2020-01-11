@@ -42,7 +42,7 @@ public:
         _notifications.push_back(std::move(cb));
     }
 
-    storage::log_manager::logs_type& logs() { return _mngr.logs(); }
+    storage::log_ptr log(const model::ntp& ntp) { return _mngr.log(ntp); }
 
 private:
     void trigger_leadership_notification(raft::group_id);

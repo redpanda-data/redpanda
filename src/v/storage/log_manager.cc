@@ -1,6 +1,7 @@
 #include "storage/log_manager.h"
 
 #include "model/fundamental.h"
+#include "storage/fs_utils.h"
 #include "storage/log_replayer.h"
 #include "storage/logger.h"
 #include "utils/directory_walker.h"
@@ -15,7 +16,6 @@
 
 #include <exception>
 #include <filesystem>
-#include <regex>
 
 namespace storage {
 
@@ -23,24 +23,9 @@ log_manager::log_manager(log_config config) noexcept
   : _config(std::move(config)) {}
 
 ss::future<> log_manager::stop() {
-    return parallel_for_each(_logs, [](logs_type::value_type& entry) {
+    return ss::parallel_for_each(_logs, [](logs_type::value_type& entry) {
         return entry.second->close();
     });
-}
-
-static ss::sstring make_filename(
-  const ss::sstring& base,
-  const model::ntp& ntp,
-  const model::offset& base_offset,
-  const model::term_id& term,
-  const record_version_type& version) {
-    return format(
-      "{}/{}/{}-{}-{}.log",
-      base,
-      ntp.path(),
-      base_offset(),
-      term(),
-      to_string(version));
 }
 
 ss::future<log_manager::log_handles> log_manager::make_log_segment(
@@ -49,97 +34,81 @@ ss::future<log_manager::log_handles> log_manager::make_log_segment(
   model::term_id term,
   ss::io_priority_class pc,
   record_version_type version,
-  size_t buffer_size) {
-    auto filename = make_filename(
+  size_t buf_size) {
+    auto path = segment_path::make_segment_path(
       _config.base_dir, ntp, base_offset, term, version);
-    stlog.trace("Creating new segment {}", filename);
-    return ss::do_with(log_handles{}, [=](log_handles& h) {
-        ss::file_open_options opt;
-        opt.extent_allocation_size_hint = 32 << 20;
-        opt.sloppy_size = true;
-        return ss::open_file_dma(
-                 filename,
-                 ss::open_flags::create | ss::open_flags::rw,
-                 std::move(opt))
-          .then([&h, pc, this](ss::file writer) {
-              if (_config.should_sanitize) {
-                  writer = ss::file(
-                    ss::make_shared(file_io_sanitizer(std::move(writer))));
-              }
-              h.appender = std::make_unique<log_segment_appender>(
-                writer, log_segment_appender::options(pc));
-          })
-          .then([filename] {
-              return ss::open_file_dma(filename, ss::open_flags::ro);
-          })
-          // must be a .then_wrapped so we can close the writer
-          .then_wrapped([&h, filename, term, base_offset, buffer_size, this](
-                          ss::future<ss::file> f) {
-              try {
-                  ss::file reader = f.get0();
-                  if (_config.should_sanitize) {
-                      reader = ss::file(
-                        ss::make_shared(file_io_sanitizer(std::move(reader))));
-                  }
-                  h.reader = ss::make_lw_shared<log_segment_reader>(
-                    filename, reader, term, base_offset, 0, buffer_size);
-                  return ss::make_ready_future<>();
-              } catch (...) {
-                  return h.appender->close().then(
-                    [e = std::current_exception()]() mutable {
-                        return ss::make_exception_future<>(std::move(e));
-                    });
-              }
-          })
-          .then(
-            [&h] { return ss::make_ready_future<log_handles>(std::move(h)); });
-    });
-}
-
-static std::optional<std::tuple<model::offset, int64_t, record_version_type>>
-extract_segment_metadata(const ss::sstring& seg) {
-    const std::regex re("^(\\d+)-(\\d+)-([\\x00-\\x7F]+).log$");
-    std::cmatch match;
-    if (!std::regex_match(seg.c_str(), match, re)) {
-        return {};
-    }
-    return std::make_tuple(
-      model::offset(boost::lexical_cast<uint64_t>(match[1].str())),
-      boost::lexical_cast<int64_t>(match[2].str()),
-      from_string(match[3].str()));
+    stlog.trace("Creating new segment {}", path.string());
+    return ss::do_with(
+      log_handles{},
+      [this, pc, buf_size, path = std::move(path)](log_handles& h) {
+          ss::file_open_options opt{
+            .extent_allocation_size_hint = 32 << 20,
+            .sloppy_size = true,
+          };
+          const auto flags = ss::open_flags::create | ss::open_flags::rw;
+          return ss::open_file_dma(path.string(), flags, std::move(opt))
+            .then([&h, pc, this](ss::file writer) {
+                if (_config.should_sanitize) {
+                    writer = ss::file(
+                      ss::make_shared(file_io_sanitizer(std::move(writer))));
+                }
+                h.appender = std::make_unique<log_segment_appender>(
+                  writer, log_segment_appender::options(pc));
+            })
+            .then(
+              [this, buf_size, path] { return open_segment(path, buf_size); })
+            .then([&h](segment_reader_ptr p) {
+                if (!p) {
+                    return ss::make_exception_future<log_handles>(
+                      std::runtime_error("Failed to open segment"));
+                }
+                p->set_last_visible_byte_offset(0);
+                h.reader = std::move(p);
+                return ss::make_ready_future<log_handles>(std::move(h));
+            })
+            .handle_exception([&h](auto e) {
+                return h.appender->close().then([e = std::move(e)]() mutable {
+                    return ss::make_exception_future<log_handles>(std::move(e));
+                });
+            });
+      });
 }
 
 // Recover the last segment. Whenever we close a segment, we will likely
 // open a new one to which we will direct new writes. That new segment
 // might be empty. To optimize log replay, implement #140.
-// Called from a ss::thread.
-static void do_recover(log_set& seg_set) {
-    if (seg_set.begin() == seg_set.end()) {
-        return;
-    }
-    auto last = seg_set.last();
-    auto stat = last->stat().get0();
-    auto replayer = log_replayer(last);
-    auto recovered = replayer.recover_in_thread(ss::default_priority_class());
-    if (recovered) {
-        // Max offset is inclusive
-        last->set_last_written_offset(*recovered.last_valid_offset());
-    } else {
-        if (stat.st_size == 0) {
-            seg_set.pop_last();
-            last->close().get();
-            remove_file(last->get_filename()).get();
-        } else {
-            seg_set.pop_last();
-            ss::engine()
-              .rename_file(
-                last->get_filename(), last->get_filename() + ".cannotrecover")
-              .get();
+static ss::future<log_set> do_recover(log_set&& seg_set) {
+    return ss::async([seg_set = std::move(seg_set)]() mutable {
+        if (seg_set.empty()) {
+            return seg_set;
         }
-    }
+        auto last = seg_set.last();
+        auto stat = last->stat().get0();
+        auto replayer = log_replayer(last);
+        auto recovered = replayer.recover_in_thread(
+          ss::default_priority_class());
+        if (recovered) {
+            // Max offset is inclusive
+            last->set_last_written_offset(*recovered.last_valid_offset());
+        } else {
+            if (stat.st_size == 0) {
+                seg_set.pop_last();
+                last->close().get();
+                remove_file(last->get_filename()).get();
+            } else {
+                seg_set.pop_last();
+                ss::engine()
+                  .rename_file(
+                    last->get_filename(),
+                    last->get_filename() + ".cannotrecover")
+                  .get();
+            }
+        }
+        return seg_set;
+    });
 }
 
-void set_max_offsets(log_set& seg_set) {
+static void set_max_offsets(log_set& seg_set) {
     for (auto it = seg_set.begin(); it != seg_set.end(); ++it) {
         auto next = std::next(it);
         if (next != seg_set.end()) {
@@ -148,60 +117,102 @@ void set_max_offsets(log_set& seg_set) {
         }
     }
 }
+
+ss::future<segment_reader_ptr>
+log_manager::open_segment(const std::filesystem::path& path, size_t buf_size) {
+    std::optional<segment_path::metadata> meta;
+    try {
+        meta = segment_path::parse_segment_filename(path.filename().string());
+    } catch (...) {
+        stlog.error("An error occurred parsing filename: {}", path);
+        return ss::make_exception_future<segment_reader_ptr>(
+          std::current_exception());
+    }
+
+    if (!meta) {
+        stlog.trace("Cannot open non-segment file: {}", path);
+        return ss::make_ready_future<segment_reader_ptr>(nullptr);
+    }
+
+    if (meta->version != record_version_type::v1) {
+        stlog.error(
+          "Segment has invalid version {} != {} path {}",
+          meta->version,
+          record_version_type::v1,
+          path);
+        return ss::make_exception_future<segment_reader_ptr>(
+          std::runtime_error("Invalid segment format"));
+    }
+
+    return ss::open_file_dma(path.string(), ss::open_flags::ro)
+      .then([](ss::file f) {
+          return f.stat().then([f](struct stat s) {
+              return ss::make_ready_future<uint64_t, ss::file>(s.st_size, f);
+          });
+      })
+      .then([this, buf_size, path = std::move(path), meta](
+              uint64_t size, ss::file fd) {
+          if (_config.should_sanitize) {
+              fd = ss::file(ss::make_shared(file_io_sanitizer(std::move(fd))));
+          }
+          return ss::make_lw_shared<log_segment_reader>(
+            path.string(),
+            std::move(fd),
+            model::term_id(meta->term),
+            meta->base_offset,
+            size,
+            buf_size);
+      });
+}
+
+ss::future<std::vector<segment_reader_ptr>>
+log_manager::open_segments(ss::sstring dir) {
+    using segs_type = std::vector<segment_reader_ptr>;
+    return ss::do_with(
+      segs_type{}, [this, dir = std::move(dir)](segs_type& segs) {
+          auto f = directory_walker::walk(
+            dir, [this, dir, &segs](ss::directory_entry seg) {
+                /*
+                 * Skip non-regular files (including links)
+                 */
+                if (
+                  !seg.type || *seg.type != ss::directory_entry_type::regular) {
+                    return ss::make_ready_future<>();
+                }
+                auto path = std::filesystem::path(
+                  fmt::format("{}/{}", dir, seg.name));
+                return open_segment(std::move(path))
+                  .then([&segs](segment_reader_ptr p) {
+                      if (p) { // skip non-segment files
+                          segs.push_back(std::move(p));
+                      }
+                  });
+            });
+          /*
+           * if the directory walker returns an exceptional future then all the
+           * segment readers that were created are cleaned up by ss::do_with.
+           */
+          return f.then([&segs]() mutable {
+              return ss::make_ready_future<segs_type>(std::move(segs));
+          });
+      });
+}
+
 ss::future<log_ptr> log_manager::manage(model::ntp ntp) {
-    return ss::async([this, ntp = std::move(ntp)]() mutable {
-        ss::sstring path = fmt::format("{}/{}", _config.base_dir, ntp.path());
-        recursive_touch_directory(path).get();
-        std::vector<segment_reader_ptr> segs;
-        directory_walker::walk(
-          path,
-          [this, path, &segs](ss::directory_entry seg) {
-              if (!seg.type || *seg.type != ss::directory_entry_type::regular) {
-                  return ss::make_ready_future<>();
-              }
-
-              auto seg_metadata = extract_segment_metadata(seg.name);
-              if (!seg_metadata) {
-                  stlog.error(
-                    "Could not extract name for segment: {}", seg.name);
-                  return ss::make_ready_future<>();
-              }
-
-              auto&& [offset, term, version] = std::move(seg_metadata.value());
-              if (version != record_version_type::v1) {
-                  stlog.error(
-                    "Found sement with invalid version: {}", seg.name);
-                  return ss::make_ready_future<>();
-              }
-
-              auto seg_name = path + "/" + seg.name;
-              return ss::open_file_dma(seg_name, ss::open_flags::ro)
-                .then([](ss::file f) {
-                    return f.stat().then([f](struct stat s) {
-                        return std::make_tuple(uint64_t(s.st_size), f);
-                    });
-                })
-                .then([this, &segs, seg_name, offset = offset, term = term](
-                        std::tuple<uint64_t, ss::file> tup) mutable {
-                    auto [size, fd] = tup;
-                    segs.push_back(ss::make_lw_shared<log_segment_reader>(
-                      std::move(seg_name),
-                      std::move(fd),
-                      model::term_id(term),
-                      offset,
-                      size,
-                      default_read_buffer_size));
-                });
-          })
-          .get();
-
-        auto seg_set = log_set(std::move(segs));
-        set_max_offsets(seg_set);
-        do_recover(seg_set);
-        auto ptr = ss::make_lw_shared<log>(ntp, *this, std::move(seg_set));
-        _logs.emplace(std::move(ntp), ptr);
-        return ptr;
-    });
+    ss::sstring path = fmt::format("{}/{}", _config.base_dir, ntp.path());
+    return recursive_touch_directory(path)
+      .then([this, path] { return open_segments(path); })
+      .then([this, ntp](std::vector<segment_reader_ptr> segs) {
+          auto seg_set = log_set(std::move(segs));
+          set_max_offsets(seg_set);
+          return do_recover(std::move(seg_set))
+            .then([this, ntp](log_set seg_set) {
+                auto ptr = ss::make_lw_shared<storage::log>(
+                  ntp, *this, std::move(seg_set));
+                _logs.emplace(std::move(ntp), ptr);
+                return ptr;
+            });
+      });
 }
 
 } // namespace storage
