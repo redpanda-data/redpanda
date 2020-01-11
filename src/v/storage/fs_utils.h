@@ -8,6 +8,7 @@
 
 #include <boost/lexical_cast.hpp>
 
+#include <filesystem>
 #include <regex>
 
 namespace storage {
@@ -20,19 +21,19 @@ struct segment_path {
     };
 
     /// Construct an absolute path to a segment file.
-    static ss::sstring make_segment_path(
+    static std::filesystem::path make_segment_path(
       const ss::sstring& base,
       const model::ntp& ntp,
       const model::offset& base_offset,
       const model::term_id& term,
       const record_version_type& version) {
-        return format(
+        return std::filesystem::path(format(
           "{}/{}/{}-{}-{}.log",
           base,
           ntp.path(),
           base_offset(),
           term(),
-          to_string(version));
+          to_string(version)));
     }
 
     /// Parse metadata from a segment filename.
