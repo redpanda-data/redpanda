@@ -2,6 +2,8 @@ import click
 
 from ..vlib import cmake
 from ..vlib import config
+from ..vlib import shell
+
 
 @click.group()
 def clean():
