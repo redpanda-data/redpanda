@@ -24,7 +24,6 @@ set(Boost_USE_STATIC_LIBS OFF CACHE BOOL "")
 set(Boost_NO_BOOST_CMAKE ON CACHE BOOL "")
 
 # options
-option(RP_ENABLE_GOLD_LINKER "Enable -fuse-ld=gold" ON)
 set(RP_MARCH
   "-march=westmere"
   CACHE STRING
@@ -39,8 +38,8 @@ option (RP_ENABLE_DPDK "Enable DPDK support" OFF)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-# compiler specific options
 set(BASE_LD_FLAGS_LIST ${RP_MARCH})
+list(APPEND BASE_LD_FLAGS_LIST -fuse-ld=gold)
 
 if (V_MANAGE_DEPS)
   list(APPEND BASE_LD_FLAGS_LIST
@@ -57,11 +56,9 @@ endif()
 
 set(BASE_CXX_FLAGS_LIST -fPIC)
 set(BASE_C_FLAGS_LIST -fPIC)
+
+# compiler specific options
 if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
-    if (RP_ENABLE_GOLD_LINKER)
-        message(FATAL_ERROR
-        "Gold linker is not supported by Clang, disable RP_ENABLE_GOLD_LINKER")
-    endif()
     list(APPEND BASE_LD_FLAGS_LIST
         -stdlib=libc++
         -fuse-ld=lld
@@ -82,9 +79,6 @@ elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
         # Add gdb-index option only for GCC and Debug build
         set(CMAKE_CXX_FLAGS_DEBUG "-O0 -gsplit-dwarf -Wl,--gdb-index")
         set(CMAKE_C_FLAGS_DEBUG "-O0 -gsplit-dwarf -Wl,--gdb-index")
-    endif()
-    if(RP_ENABLE_GOLD_LINKER)
-        list(APPEND BASE_LD_FLAGS_LIST -fuse-ld=gold)
     endif()
 endif()
 
