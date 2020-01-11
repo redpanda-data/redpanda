@@ -160,6 +160,9 @@ log_manager::open_segment(const ss::sstring& dir, const ss::sstring& name) {
           });
       })
       .then([this, path = std::move(path), meta](uint64_t size, ss::file fd) {
+          if (_config.should_sanitize) {
+              fd = ss::file(ss::make_shared(file_io_sanitizer(std::move(fd))));
+          }
           return ss::make_lw_shared<log_segment_reader>(
             std::move(path),
             std::move(fd),
