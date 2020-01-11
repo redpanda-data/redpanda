@@ -104,7 +104,9 @@ private:
      *
      * Returns an open segment reader if the segment was successfully opened.
      */
-    ss::future<segment_reader_ptr> open_segment(const std::filesystem::path&);
+    ss::future<segment_reader_ptr> open_segment(
+      const std::filesystem::path& path,
+      size_t buf_size = default_read_buffer_size);
 
     /**
      * \brief Open all segments in a directory.
