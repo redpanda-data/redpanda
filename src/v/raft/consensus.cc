@@ -17,7 +17,7 @@ consensus::consensus(
   group_id group,
   group_configuration initial_cfg,
   timeout_jitter jit,
-  storage::log& l,
+  storage::log l,
   storage::log_append_config::fsync should_fsync,
   ss::io_priority_class io_priority,
   model::timeout_clock::duration disk_timeout,
@@ -50,7 +50,7 @@ ss::future<> consensus::stop() {
 }
 
 ss::sstring consensus::voted_for_filename() const {
-    return _log.base_directory() + "/voted_for";
+    return _log.work_directory() + "/voted_for";
 }
 
 void consensus::process_heartbeat(
@@ -411,7 +411,7 @@ consensus::do_append_entries(append_entries_request&& r) {
     }
     // success. copy entries for each subsystem
     using entries_t = std::vector<entry>;
-    using offsets_ret = std::vector<storage::log::append_result>;
+    using offsets_ret = std::vector<storage::append_result>;
     return details::share_n(std::move(r.entries), 2)
       .then([this, m = r.meta](std::vector<entries_t> dups) mutable {
           entries_t entries_for_disk = std::move(dups.back());
@@ -478,8 +478,7 @@ ss::future<> consensus::replicate_configuration(group_configuration cfg) {
 }
 
 append_entries_reply consensus::make_append_entries_reply(
-  protocol_metadata sender,
-  std::vector<storage::log::append_result> disk_results) {
+  protocol_metadata sender, std::vector<storage::append_result> disk_results) {
     // always update metadata first!
     const model::offset last_offset = disk_results.back().last_offset;
 
@@ -492,14 +491,9 @@ append_entries_reply consensus::make_append_entries_reply(
     return reply;
 }
 
-ss::future<std::vector<storage::log::append_result>>
+ss::future<std::vector<storage::append_result>>
 consensus::disk_append(std::vector<entry>&& entries) {
-    using ret_t = std::vector<storage::log::append_result>;
-    // used to detect if we roll the last segment
-    model::offset prev_base_offset = _log.segments().empty()
-                                       ? model::offset(0)
-                                       : _log.segments().last()->base_offset();
-
+    using ret_t = std::vector<storage::append_result>;
     // clang-format off
     return ss::do_with(std::move(entries), [this](std::vector<entry>& in) {
             auto no_of_entries = in.size();
@@ -517,13 +511,10 @@ consensus::disk_append(std::vector<entry>&& entries) {
             });
       })
       // clang-format on
-      .then([this, prev_base_offset](ret_t ret) {
-          model::offset base_offset = _log.segments().last()->base_offset();
-          if (prev_base_offset != base_offset) {
-              // we rolled a log segment. write current configuration for
-              // speedy recovery in the background
-              // FIXME
-          }
+      .then([this](ret_t ret) {
+          // TODO
+          // if we rolled a log segment. write current configuration for
+          // speedy recovery in the background
           if (_should_fsync) {
               return _log.flush().then([ret = std::move(ret)] {
                   return ss::make_ready_future<ret_t>(std::move(ret));

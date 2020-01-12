@@ -10,7 +10,7 @@
 
 namespace storage {
 
-default_log_writer::default_log_writer(log& log) noexcept
+default_log_writer::default_log_writer(disk_log_impl& log) noexcept
   : _log(log)
   , _last_offset(log.max_offset()) {}
 

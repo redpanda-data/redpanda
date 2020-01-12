@@ -75,7 +75,7 @@ ss::future<result<append_entries_reply>> replicate_entries_stm::do_dispatch_one(
 
     if (n == _ptr->_self) {
         using reqs_t = std::vector<append_entries_request>;
-        using append_res_t = std::vector<storage::log::append_result>;
+        using append_res_t = std::vector<storage::append_result>;
         return _ptr->disk_append(std::move(req.entries))
           .then([this](append_res_t append_res) {
               return ss::make_ready_future<ret_t>(
@@ -143,7 +143,7 @@ ss::future<> replicate_entries_stm::dispatch_one(retry_meta& meta) {
 
 ss::future<result<replicate_result>> replicate_entries_stm::apply() {
     using reqs_t = std::vector<append_entries_request>;
-    using append_res_t = std::vector<storage::log::append_result>;
+    using append_res_t = std::vector<storage::append_result>;
     for (auto& n : _ptr->_conf.nodes) {
         _replies.push_back(retry_meta(n.id(), _max_retries));
     }

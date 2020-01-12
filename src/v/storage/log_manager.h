@@ -57,9 +57,11 @@ struct log_config {
  */
 class log_manager {
 public:
+    enum class storage_type { memory, disk };
+
     explicit log_manager(log_config) noexcept;
 
-    ss::future<log_ptr> manage(model::ntp);
+    ss::future<log> manage(model::ntp, storage_type type = storage_type::disk);
 
     ss::future<> stop();
 
@@ -82,15 +84,15 @@ public:
     size_t size() const { return _logs.size(); }
 
     /// Returns the log for the specified ntp.
-    log_ptr log(const model::ntp& ntp) {
+    std::optional<log> get(const model::ntp& ntp) {
         if (auto it = _logs.find(ntp); it != _logs.end()) {
             return it->second;
         }
-        return nullptr;
+        return std::nullopt;
     }
 
 private:
-    using logs_type = std::unordered_map<model::ntp, log_ptr>;
+    using logs_type = std::unordered_map<model::ntp, log>;
 
     /**
      * \brief Create a segment reader for the specified file.

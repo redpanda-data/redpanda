@@ -52,20 +52,20 @@ ss::future<consensus_ptr> partition_manager::manage(
   std::vector<model::broker> initial_nodes) {
     return _mngr.manage(std::move(ntp))
       .then(
-        [this, group, nodes = std::move(initial_nodes)](storage::log_ptr log) {
+        [this, group, nodes = std::move(initial_nodes)](storage::log log) {
             auto c = ss::make_lw_shared<raft::consensus>(
               _self,
               group,
               raft::group_configuration{.nodes = std::move(nodes)},
               raft::timeout_jitter(_hbeats.election_duration()),
-              *log,
+              log,
               _should_fsync,
               raft_priority(),
               _disk_timeout,
               _clients,
               [this](raft::group_id g) { trigger_leadership_notification(g); });
             auto p = ss::make_lw_shared<partition>(c);
-            _ntp_table.emplace(log->ntp(), p);
+            _ntp_table.emplace(log.ntp(), p);
             _raft_table.emplace(group, p);
             if (_bg.is_closed()) {
                 return ss::make_exception_future<consensus_ptr>(

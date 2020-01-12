@@ -44,7 +44,7 @@ raft::entry serialize_configuration(group_configuration cfg);
 
 /// returns a fully parsed config state from a given storage log
 ss::future<raft::configuration_bootstrap_state>
-read_bootstrap_state(storage::log&);
+read_bootstrap_state(storage::log);
 
 /// looks up for the broker with request id in a vector of brokers
 template<typename Iterator>

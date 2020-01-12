@@ -7,32 +7,12 @@
 #include "storage/offset_tracker.h"
 #include "storage/parser.h"
 #include "storage/probe.h"
+#include "storage/types.h"
 
 #include <seastar/core/io_queue.hh>
 #include <seastar/util/optimized_optional.hh>
 
 namespace storage {
-
-/**
- * Log reader configuration.
- *
- * The default reader configuration will read all batch types. To filter batches
- * by type add the types of interest to the type_filter set.
- *
- * The type filter is sorted before a segment scan, and a linear search is
- * performed. This will generally perform better than something like a binary
- * search when the size of the filter set is small (e.g. < 5). If you need to
- * use a larger filter then this design should be revisited.
- */
-struct log_reader_config {
-    model::offset start_offset;
-    size_t max_bytes;
-    size_t min_bytes;
-    ss::io_priority_class prio;
-    std::vector<model::record_batch_type> type_filter;
-    model::offset max_offset
-      = model::model_limits<model::offset>::max(); // inclusive
-};
 
 class log_segment_batch_reader;
 

@@ -20,19 +20,20 @@ struct foreign_entry_fixture {
         .base_dir = ".",
         .max_segment_size = 1 << 30,
         .should_sanitize = storage::log_config::sanitize_files::yes}) {
-        _log = _mngr.manage(_ntp).get0();
+        (void)_mngr.manage(_ntp).get0();
     }
-    std::vector<storage::log::append_result> write_n(const std::size_t n) {
+
+    std::vector<storage::append_result> write_n(const std::size_t n) {
         auto cfg = storage::log_append_config{
           storage::log_append_config::fsync::no,
           ss::default_priority_class(),
           model::no_timeout};
-        std::vector<storage::log::append_result> res;
+        std::vector<storage::append_result> res;
         res.push_back(
-          _log->append(gen_data_record_batch_reader(n), cfg).get0());
+          get_log().append(gen_data_record_batch_reader(n), cfg).get0());
         res.push_back(
-          _log->append(gen_config_record_batch_reader(n), cfg).get0());
-        _log->flush().get();
+          get_log().append(gen_config_record_batch_reader(n), cfg).get0());
+        get_log().flush().get();
         return res;
     }
     template<typename Func>
@@ -85,7 +86,7 @@ struct foreign_entry_fixture {
     }
     ~foreign_entry_fixture() { _mngr.stop().get(); }
     model::offset _base_offset{0};
-    storage::log_ptr _log;
+    storage::log get_log() { return _mngr.get(_ntp).value(); }
     storage::log_manager _mngr;
     model::ntp _ntp{
       model::ns("bootstrap_test_" + random_generators::gen_alphanum_string(8)),

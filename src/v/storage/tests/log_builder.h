@@ -32,6 +32,8 @@ public:
         return *this;
     }
 
+    const ss::sstring& base_dir() const { return base_dir_; }
+
     const model::ntp& ntp() const { return ntp_; }
 
     /**
@@ -134,13 +136,13 @@ public:
      * a read-only interface.
      */
     template<typename Func>
-    auto with_log(Func f) {
+    auto with_log(Func&& f) {
         log_config config{
           .base_dir = base_dir_,
           .max_segment_size = std::numeric_limits<size_t>::max(),
           .should_sanitize = log_config::sanitize_files::yes,
         };
-        return with_log(config, f);
+        return with_log(config, std::forward<Func>(f));
     }
 
 private:
@@ -173,20 +175,13 @@ private:
         return model::make_memory_record_batch_reader(std::move(batches));
     }
 
-    ss::future<>
-    flush(storage::log_ptr log, segments_type& segments, bool roll) {
+    ss::future<> flush(storage::log log, segments_type& segments, bool roll) {
         return ss::do_for_each(segments, [log, roll](segment_spec& segment) {
             auto reader = make_batch_reader(std::move(segment));
-            // roll when starting a new segment. unless it is the first
-            // segment cause log freaks about that. i do not like that
-            // behavior.
             auto f = ss::make_ready_future<>();
-            if (roll && log->segments().size() > 0) {
-                f = log->do_roll();
-            }
             return f.then([log, reader = std::move(reader)]() mutable {
                 return log
-                  ->append(
+                  .append(
                     std::move(reader),
                     storage::log_append_config{
                       storage::log_append_config::fsync::yes,
@@ -202,9 +197,9 @@ private:
         auto mgr = log_manager(std::move(config));
         return ss::do_with(
           std::move(mgr),
-          [ntp = ntp_, f = std::move(f)](log_manager& mgr) mutable {
+          [ntp = ntp_, f = std::forward<Func>(f)](log_manager& mgr) mutable {
               return mgr.manage(ntp)
-                .then([f = std::move(f)](log_ptr log) { return f(log); })
+                .then([f = std::forward<Func>(f)](log l) { return f(l); })
                 .finally([&mgr] { return mgr.stop(); });
           });
     }
@@ -215,10 +210,10 @@ private:
           .max_segment_size = max_segment_size,
           .should_sanitize = storage::log_config::sanitize_files::yes,
         };
-        return with_log(config, [this, roll](log_ptr log) {
+        return with_log(config, [this, roll](log l) {
             return ss::do_with(
-              std::move(segments_), [this, log, roll](segments_type& segments) {
-                  return flush(log, segments, roll);
+              std::move(segments_), [this, l, roll](segments_type& segments) {
+                  return flush(l, segments, roll);
               });
         });
     }

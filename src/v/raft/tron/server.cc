@@ -79,13 +79,13 @@ public:
     ss::future<> start(raft::group_configuration init_cfg) {
         return _mngr.manage(_ntp)
           .then(
-            [this, cfg = std::move(init_cfg)](storage::log_ptr log) mutable {
+            [this, cfg = std::move(init_cfg)](storage::log log) mutable {
                 _consensus = ss::make_lw_shared<raft::consensus>(
                   _self,
                   raft::group_id(66),
                   std::move(cfg),
                   raft::timeout_jitter(_hbeats.election_duration()),
-                  *log,
+                  log,
                   storage::log_append_config::fsync::yes,
                   ss::default_priority_class(),
                   std::chrono::seconds(1),

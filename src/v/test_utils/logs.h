@@ -21,10 +21,10 @@ static ss::future<> persist_log_file(
       [file_ntp = std::move(file_ntp),
        batches = std::move(batches)](storage::log_manager& mgr) mutable {
           return mgr.manage(file_ntp)
-            .then([b = std::move(batches)](storage::log_ptr log) mutable {
+            .then([b = std::move(batches)](storage::log log) mutable {
                 auto reader = model::make_memory_record_batch_reader(
                   std::move(b));
-                return log->append(
+                return log.append(
                   std::move(reader),
                   storage::log_append_config{
                     storage::log_append_config::fsync::yes,
@@ -56,8 +56,8 @@ read_log_file(ss::sstring base_dir, model::ntp file_ntp) {
     return ss::do_with(
       make_log_mgr(base_dir),
       [file_ntp = std::move(file_ntp)](storage::log_manager& mgr) mutable {
-          return mgr.manage(file_ntp).then([](storage::log_ptr log) mutable {
-              auto reader = log->make_reader(storage::log_reader_config{
+          return mgr.manage(file_ntp).then([](storage::log log) mutable {
+              auto reader = log.make_reader(storage::log_reader_config{
                 .start_offset = model::offset(0),
                 .max_bytes = (1 << 30),
                 .min_bytes = 0,
