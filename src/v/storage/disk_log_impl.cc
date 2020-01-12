@@ -1,4 +1,4 @@
-#include "storage/log.h"
+#include "storage/disk_log_impl.h"
 
 #include "storage/log_manager.h"
 #include "storage/log_writer.h"
@@ -11,11 +11,12 @@
 
 namespace storage {
 
-log::log(model::ntp ntp, log_manager& manager, log_set segs) noexcept
-  : _ntp(std::move(ntp))
+disk_log_impl::disk_log_impl(
+  model::ntp ntp, ss::sstring workdir, log_manager& manager, log_set segs)
+  : log::impl(std::move(ntp), std::move(workdir))
   , _manager(manager)
   , _segs(std::move(segs)) {
-    _probe.setup_metrics(_ntp);
+    _probe.setup_metrics(this->ntp());
     if (_segs.size()) {
         _tracker.update_committed_offset(_segs.last()->max_offset());
         _tracker.update_dirty_offset(_segs.last()->max_offset());
@@ -25,11 +26,7 @@ log::log(model::ntp ntp, log_manager& manager, log_set segs) noexcept
     }
 }
 
-ss::sstring log::base_directory() const {
-    return fmt::format("{}/{}", _manager.config().base_dir, _ntp.path());
-}
-
-ss::future<> log::close() {
+ss::future<> disk_log_impl::close() {
     auto active = ss::make_ready_future<>();
     if (_appender) {
         // flush + truncate + close
@@ -41,9 +38,9 @@ ss::future<> log::close() {
     });
 }
 
-ss::future<> log::new_segment(
+ss::future<> disk_log_impl::new_segment(
   model::offset o, model::term_id term, const ss::io_priority_class& pc) {
-    return _manager.make_log_segment(_ntp, o, term, pc)
+    return _manager.make_log_segment(ntp(), o, term, pc)
       .then([this, pc](log_manager::log_handles handles) {
           _active_segment = std::move(handles.reader);
           _appender = std::move(handles.appender);
@@ -52,8 +49,8 @@ ss::future<> log::new_segment(
       });
 }
 
-ss::future<log::append_result>
-log::do_append(model::record_batch_reader&& reader, log_append_config config) {
+ss::future<append_result> disk_log_impl::do_append(
+  model::record_batch_reader&& reader, log_append_config config) {
     auto f = ss::make_ready_future<>();
     if (__builtin_expect(!_active_segment, false)) {
         // FIXME: We need to persist the last offset somewhere.
@@ -96,7 +93,10 @@ log::do_append(model::record_batch_reader&& reader, log_append_config config) {
             });
       });
 }
-ss::future<> log::flush() {
+ss::future<> disk_log_impl::flush() {
+    if (!_appender) {
+        return ss::make_ready_future<>();
+    }
     return _appender->flush().then([this] {
         _tracker.update_committed_offset(_tracker.dirty_offset());
         _active_segment->set_last_written_offset(_tracker.committed_offset());
@@ -104,14 +104,14 @@ ss::future<> log::flush() {
           _appender->file_byte_offset());
     });
 }
-ss::future<> log::do_roll() {
+ss::future<> disk_log_impl::do_roll() {
     return flush().then([this] { return _appender->close(); }).then([this] {
         auto offset = _tracker.committed_offset() + model::offset(1);
         stlog.trace("Rolling log segment offset {}, term {}", offset, _term);
         return new_segment(offset, _term, _appender->priority_class());
     });
 }
-ss::future<> log::maybe_roll(model::offset current_offset) {
+ss::future<> disk_log_impl::maybe_roll(model::offset current_offset) {
     if (_appender->file_byte_offset() < _manager.max_segment_size()) {
         return ss::make_ready_future<>();
     }
@@ -119,12 +119,13 @@ ss::future<> log::maybe_roll(model::offset current_offset) {
     return do_roll();
 }
 
-model::record_batch_reader log::make_reader(log_reader_config config) {
+model::record_batch_reader
+disk_log_impl::make_reader(log_reader_config config) {
     return model::make_record_batch_reader<log_reader>(
       _segs, _tracker, std::move(config), _probe);
 }
 
-ss::future<> log::do_truncate(model::offset o, model::term_id term) {
+ss::future<> disk_log_impl::do_truncate(model::offset o, model::term_id term) {
     // 1. update metadata
     // 2. get a list of segments to drop
     // 3. perform drop in background for all
@@ -172,6 +173,13 @@ ss::future<> log::do_truncate(model::offset o, model::term_id term) {
     // 7.
     f = f.then([this] { return do_roll(); });
     return f;
+}
+
+log make_disk_backed_log(model::ntp ntp, log_manager& manager, log_set segs) {
+    auto workdir = fmt::format("{}/{}", manager.config().base_dir, ntp.path());
+    auto ptr = ss::make_shared<disk_log_impl>(
+      std::move(ntp), std::move(workdir), manager, std::move(segs));
+    return log(ptr);
 }
 
 } // namespace storage

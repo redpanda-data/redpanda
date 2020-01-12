@@ -166,7 +166,9 @@ log_reader::log_reader(
   : _selector(seg_set)
   , _offset_tracker(tracker)
   , _config(std::move(config))
-  , _probe(probe) {}
+  , _probe(probe) {
+    _end_of_stream = seg_set.empty();
+}
 
 ss::future<log_reader::span>
 log_reader::do_load_slice(model::timeout_clock::time_point timeout) {

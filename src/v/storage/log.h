@@ -4,27 +4,10 @@
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "seastarx.h"
-#include "storage/failure_probes.h"
-#include "storage/log_reader.h"
-#include "storage/log_segment_appender.h"
 #include "storage/log_segment_reader.h"
-#include "storage/offset_tracker.h"
-#include "storage/probe.h"
+#include "storage/types.h"
 
-#include <optional>
-
-namespace storage {
-
-class log_manager;
-
-using log_clock = ss::lowres_clock;
-
-struct log_append_config {
-    using fsync = ss::bool_class<class skip_tag>;
-    fsync should_fsync;
-    ss::io_priority_class io_priority;
-    model::timeout_clock::time_point timeout;
-};
+#include <seastar/core/shared_ptr.hh>
 
 /// \brief Non-synchronized log management class.
 ///
@@ -57,87 +40,85 @@ struct log_append_config {
 ///   Record #4
 ///     OffsetDelta: 3
 /// Subsequent batch will have offset 14.
+///
+namespace storage {
 
-class log {
-    using failure_probes = storage::log_failure_probes;
-
+class log final {
 public:
-    struct append_result {
-        log_clock::time_point append_time;
-        model::offset base_offset;
-        model::offset last_offset;
+    class impl {
+    public:
+        explicit impl(model::ntp n, ss::sstring log_directory) noexcept
+          : _ntp(std::move(n))
+          , _workdir(std::move(log_directory)) {}
+        virtual ~impl() noexcept = default;
+
+        virtual ss::future<>
+        truncate(model::offset offset, model::term_id term) = 0;
+
+        virtual ss::future<append_result>
+        append(model::record_batch_reader&& r, log_append_config cfg) = 0;
+
+        virtual model::record_batch_reader make_reader(log_reader_config) = 0;
+        virtual ss::future<> close() = 0;
+        virtual ss::future<> flush() = 0;
+
+        const model::ntp& ntp() const { return _ntp; }
+        const ss::sstring& work_directory() const { return _workdir; }
+
+        virtual size_t segment_count() const = 0;
+        virtual model::offset max_offset() const = 0;
+        virtual model::offset start_offset() const = 0;
+        virtual model::offset committed_offset() const = 0;
+
+    private:
+        model::ntp _ntp;
+        ss::sstring _workdir;
     };
 
-    log(model::ntp, log_manager&, log_set) noexcept;
+public:
+    explicit log(ss::shared_ptr<impl> i)
+      : _impl(i) {}
+    ss::future<> close() { return _impl->close(); }
+    ss::future<> flush() { return _impl->flush(); }
 
-    ss::future<> close();
-
-    const log_set& segments() const { return _segs; }
-
-    model::record_batch_reader make_reader(log_reader_config);
-
-    // External synchronization: only one append can be performed at a time.
-    [[gnu::always_inline]] ss::future<append_result>
-    append(model::record_batch_reader&& r, log_append_config cfg) {
-        return _failure_probes.append().then(
-          [this, r = std::move(r), cfg = std::move(cfg)]() mutable {
-              return do_append(std::move(r), std::move(cfg));
-          });
+    ss::future<> truncate(model::offset offset, model::term_id term) {
+        return _impl->truncate(offset, term);
     }
 
-    // Can only be called after append().
-    log_segment_appender& appender() { return *_appender; }
-
-    /// flushes the _tracker.dirty_offset into _tracker.committed_offset
-    ss::future<> flush();
-
-    ss::future<> maybe_roll(model::offset);
-
-    [[gnu::always_inline]] ss::future<>
-    truncate(model::offset offset, model::term_id term) {
-        return _failure_probes.truncate().then(
-          [this, offset, term]() mutable { return do_truncate(offset, term); });
+    model::record_batch_reader make_reader(log_reader_config cfg) {
+        return _impl->make_reader(std::move(cfg));
     }
-
-    ss::sstring base_directory() const;
-
-    const model::ntp& ntp() const { return _ntp; }
-
-    probe& get_probe() { return _probe; }
-
-    model::offset max_offset() const { return _tracker.dirty_offset(); }
-
-    model::offset committed_offset() const {
-        return _tracker.committed_offset();
-    }
-
-private:
-    friend class log_builder;
-
-    ss::future<>
-    new_segment(model::offset, model::term_id, const ss::io_priority_class&);
-
-    /// \brief forces a flush() on the last segment & rotates given the current
-    /// _term && (tracker.committed_offset+1)
-    ss::future<> do_roll();
 
     ss::future<append_result>
-    do_append(model::record_batch_reader&&, log_append_config);
+    append(model::record_batch_reader&& r, log_append_config cfg) {
+        return _impl->append(std::move(r), cfg);
+    }
 
-    ss::future<> do_truncate(model::offset, model::term_id);
+    const model::ntp& ntp() const { return _impl->ntp(); }
+
+    const ss::sstring& work_directory() const {
+        return _impl->work_directory();
+    }
+
+    size_t segment_count() const { return _impl->segment_count(); }
+
+    model::offset start_offset() const { return _impl->start_offset(); }
+
+    model::offset max_offset() const { return _impl->max_offset(); }
+
+    model::offset committed_offset() const { return _impl->committed_offset(); }
 
 private:
-    model::term_id _term;
-    model::ntp _ntp;
-    log_manager& _manager;
-    log_set _segs;
-    segment_reader_ptr _active_segment;
-    segment_appender_ptr _appender;
-    offset_tracker _tracker;
-    storage::probe _probe;
-    failure_probes _failure_probes;
+    ss::shared_ptr<impl> _impl;
 };
 
-using log_ptr = ss::lw_shared_ptr<log>;
+inline std::ostream& operator<<(std::ostream& o, storage::log lg) {
+    return o << "{start:" << lg.start_offset() << ", max:" << lg.max_offset()
+             << ", committed:" << lg.committed_offset() << "}";
+}
+
+class log_manager;
+log make_memory_backed_log(model::ntp, ss::sstring);
+log make_disk_backed_log(model::ntp, log_manager&, log_set);
 
 } // namespace storage

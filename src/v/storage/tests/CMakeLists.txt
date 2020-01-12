@@ -17,14 +17,14 @@ rp_test(
   ARGS "-- -c 1"
 )
 
-rp_test(
-  UNIT_TEST
-  BINARY_NAME log_writer_test
-  SOURCES log_writer_test.cc
-  LIBRARIES Seastar::seastar_testing storage
-
-  ARGS "-- -c 1"
-)
+# FIXME(agallego)
+# rp_test(
+#   UNIT_TEST
+#   BINARY_NAME log_writer_test
+#   SOURCES log_writer_test.cc
+#   LIBRARIES Seastar::seastar_testing storage
+#   ARGS "-- -c 1"
+# )
 
 rp_test(
   UNIT_TEST
@@ -71,13 +71,14 @@ rp_test(
   ARGS "-- -c 1"
 )
 
-rp_test(
-  UNIT_TEST
-  BINARY_NAME log_builder_test
-  SOURCES log_builder_test.cc
-  LIBRARIES Seastar::seastar_testing storage
-  ARGS "-- -c 1"
-)
+# TODO
+# rp_test(
+#   UNIT_TEST
+#   BINARY_NAME log_builder_test
+#   SOURCES log_builder_test.cc
+#   LIBRARIES Seastar::seastar_testing storage
+#   ARGS "-- -c 1"
+# )
 
 rp_test(
   UNIT_TEST

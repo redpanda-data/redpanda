@@ -264,33 +264,33 @@ share_n(std::vector<raft::entry> r, std::size_t ncopies) {
 }
 
 ss::future<configuration_bootstrap_state>
-read_bootstrap_state(storage::log& log) {
-    return ss::async([&log]() mutable {
+read_bootstrap_state(storage::log log) {
+    // TODO(agallego, michal) - iterate the log in reverse
+    // as an optimization
+    return ss::async([log]() mutable {
         auto retval = configuration_bootstrap_state{};
-        // set term only if there are some segments already
-        if (!log.segments().empty()) {
-            retval.set_term((*log.segments().rbegin())->term());
+        model::offset it = log.start_offset();
+        const model::offset end = log.max_offset();
+        if (it == end) {
+            retval.set_end_of_log();
         }
-        auto it = log.segments().rbegin();
-        auto end = log.segments().rend();
-        for (; it != end && !retval.is_finished(); it++) {
-            storage::log_reader_config rcfg{
-              .start_offset = (*it)->base_offset(),
-              .max_bytes = std::numeric_limits<size_t>::max(),
-              .min_bytes = 0, // ok to be empty
-              .prio = raft_priority()};
+        while (it < end) {
+            storage::log_reader_config rcfg{.start_offset = it,
+                                            .max_offset = end,
+                                            .max_bytes = 1024 * 1024 /*1MB*/,
+                                            .min_bytes = 0, // ok to be empty
+                                            .prio = raft_priority()};
             auto reader = log.make_reader(rcfg);
             auto batches = reader
                              .consume(
                                memory_batch_consumer(), model::no_timeout)
                              .get0();
+            it = it + model::offset(batches.size());
             for (auto& batch : batches) {
                 retval.process_batch_in_thread(std::move(batch));
             }
         }
-        if (it == end) {
-            retval.set_end_of_log();
-        }
+
         return retval;
     });
 }

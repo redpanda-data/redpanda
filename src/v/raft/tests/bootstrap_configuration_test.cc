@@ -23,22 +23,23 @@ struct bootstrap_fixture : raft::simple_record_fixture {
         .base_dir = ".",
         .max_segment_size = 1 << 30,
         .should_sanitize = storage::log_config::sanitize_files::yes}) {
-        _log = _mngr.manage(_ntp).get0();
+        // ignore the get_log()
+        (void)_mngr.manage(_ntp).get0();
     }
-    std::vector<storage::log::append_result> write_n(const std::size_t n) {
+    std::vector<storage::append_result> write_n(const std::size_t n) {
         auto cfg = storage::log_append_config{
           storage::log_append_config::fsync::no,
           ss::default_priority_class(),
           model::no_timeout};
-        std::vector<storage::log::append_result> res;
-        res.push_back(_log->append(datas(n), cfg).get0());
-        res.push_back(_log->append(configs(n), cfg).get0());
-        _log->flush().get();
+        std::vector<storage::append_result> res;
+        res.push_back(get_log().append(datas(n), cfg).get0());
+        res.push_back(get_log().append(configs(n), cfg).get0());
+        get_log().flush().get();
         return res;
     }
+    storage::log get_log() { return _mngr.get(_ntp).value(); }
 
     ~bootstrap_fixture() { _mngr.stop().get(); }
-    storage::log_ptr _log;
     storage::log_manager _mngr;
 };
 
@@ -57,10 +58,7 @@ FIXTURE_TEST(write_configs, bootstrap_fixture) {
     for (auto& i : replies) {
         info("base:{}, last:{}", i.base_offset, i.last_offset);
     }
-    for (auto& s : _log->segments()) {
-        info("{}", *s);
-    }
-    auto cfg = raft::details::read_bootstrap_state(*_log).get0();
+    auto cfg = raft::details::read_bootstrap_state(get_log()).get0();
     info(
       "data batches:{}, config batches:{}",
       cfg.data_batches_seen(),
@@ -78,7 +76,7 @@ FIXTURE_TEST(write_configs, bootstrap_fixture) {
 }
 
 FIXTURE_TEST(empty_log, bootstrap_fixture) {
-    auto cfg = raft::details::read_bootstrap_state(*_log).get0();
+    auto cfg = raft::details::read_bootstrap_state(get_log()).get0();
 
     BOOST_REQUIRE(cfg.is_finished());
     BOOST_REQUIRE_EQUAL(cfg.data_batches_seen(), 0);

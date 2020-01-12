@@ -32,7 +32,7 @@ public:
       group_id,
       group_configuration,
       timeout_jitter,
-      storage::log&,
+      storage::log,
       storage::log_append_config::fsync should_fsync,
       ss::io_priority_class io_priority,
       model::timeout_clock::duration disk_timeout,
@@ -98,7 +98,7 @@ private:
 
     /// advances our pointer in the log
     append_entries_reply make_append_entries_reply(
-      protocol_metadata, std::vector<storage::log::append_result>);
+      protocol_metadata, std::vector<storage::append_result>);
 
     ss::future<append_entries_reply>
       commit_entries(std::vector<entry>, append_entries_reply);
@@ -106,7 +106,7 @@ private:
     ss::future<result<replicate_result>>
     do_replicate(std::vector<raft::entry>&&);
 
-    ss::future<std::vector<storage::log::append_result>>
+    ss::future<std::vector<storage::append_result>>
     disk_append(std::vector<entry>&&);
 
     ss::sstring voted_for_filename() const;
@@ -125,7 +125,7 @@ private:
     // args
     model::node_id _self;
     timeout_jitter _jit;
-    storage::log& _log;
+    storage::log _log;
     storage::log_append_config::fsync _should_fsync;
     ss::io_priority_class _io_priority;
     model::timeout_clock::duration _disk_timeout;

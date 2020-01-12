@@ -15,6 +15,7 @@
 #include <seastar/core/unaligned.hh>
 #include <seastar/testing/thread_test_case.hh>
 
+static ss::logger fixturelog{"log_fixture"};
 class log_builder_fixture {
 public:
     struct log_stats {
@@ -27,8 +28,9 @@ public:
       : b(make_dir(), make_ntp()) {}
 
     ss::future<log_stats> get_stats() {
-        return b.with_log([](storage::log_ptr log) {
-            auto reader = log->make_reader(storage::log_reader_config{
+        return b.with_log([](storage::log log) {
+            fixturelog.info("log : {}", log);
+            auto reader = log.make_reader(storage::log_reader_config{
               .start_offset = model::offset(0),
               .max_bytes = std::numeric_limits<size_t>::max(),
               .min_bytes = 0,
@@ -38,7 +40,7 @@ public:
               std::move(reader), [log](model::record_batch_reader& reader) {
                   return reader.consume(stat_consumer(), model::no_timeout)
                     .then([log](log_stats stats) {
-                        stats.seg_count = log->segments().size();
+                        stats.seg_count = log.segment_count();
                         return ss::make_ready_future<log_stats>(stats);
                     });
               });
