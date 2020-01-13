@@ -9,7 +9,7 @@ from ..vlib import packaging
 from ..vlib import shell
 
 
-@click.group()
+@click.group(short_help='build redpanda and rpk binaries as well as packages')
 def build():
     pass
 
@@ -19,7 +19,7 @@ def build():
               help=('Build configuration to select. If none given, the '
                     '`build.default_type` option from the vtools YAML config '
                     'is used (an error is thrown if not defined).'),
-              type=click.Choice(['debug', 'release', None],
+              type=click.Choice(['debug', 'release'],
                                 case_sensitive=False),
               default=None)
 @click.option('--skip-external',
@@ -71,7 +71,7 @@ def cpp(build_type, conf, skip_external, clang, reconfigure):
     shell.run_subprocess(f'cd {vconfig.build_dir} && ninja -j{num_jobs}')
 
 
-@build.command()
+@build.command(short_help='build the rpk binary')
 @click.option('--conf',
               help=('Path to configuration file. If not given, a .vtools.yml '
                     'file is searched recursively starting from the current '
@@ -86,13 +86,15 @@ def go(conf):
         f'go build {build_flags} -o {vconfig.go_out_dir} ./...')
 
 
-@build.command()
-@click.option('--format', multiple=True)
+@build.command(short_help='build tar, deb or rpm packages.')
+@click.option('--format',
+              help="format to build ('rpm', 'deb' and 'tar').",
+              multiple=True, required=True)
 @click.option('--build-type',
               help=('Build configuration to select. If none given, the '
                     '`build.default_type` option from the vtools YAML config '
                     'is used (an error is thrown if not defined).'),
-              type=click.Choice(['debug', 'release', None],
+              type=click.Choice(['debug', 'release'],
                                 case_sensitive=False),
               default=None)
 @click.option('--clang',

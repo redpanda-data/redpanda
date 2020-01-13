@@ -1,4 +1,3 @@
-import json
 import os
 import click
 import paramiko
@@ -8,12 +7,12 @@ from ..vlib import rotate_ssh_keys as keys
 known_hosts_file = os.path.expanduser("~/.ssh/known_hosts")
 
 
-@click.group()
+@click.group(short_help='utilities for dealing with ssh keys')
 def ssh():
     pass
 
 
-@ssh.command()
+@ssh.command(short_help='execute an ssh key rotation.')
 @click.option('--log',
               default='info',
               type=click.Choice(['debug', 'info', 'warning', 'error', 'fatal'],
@@ -31,7 +30,7 @@ def rotate_keys(log):
     logging.info("3. Use your deploy key for our production systems")
 
 
-@ssh.command()
+@ssh.command(short_help='add a host to the known_hosts list.')
 @click.option(
     '--host',
     help="The hostname or IP to add. If ommitted, the IP will be added instead."

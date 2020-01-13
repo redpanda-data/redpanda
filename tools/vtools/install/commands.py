@@ -1,7 +1,6 @@
 import click
 import io
 import os
-import shutil
 import tarfile
 import urllib
 
@@ -12,7 +11,7 @@ from ..vlib import config
 from ..vlib import shell
 
 
-@click.group()
+@click.group(short_help='install build dependencies')
 def install():
     pass
 
@@ -22,7 +21,7 @@ def install():
               help=('Build configuration to select. If none given, the '
                     '`build.default_type` option from the vtools YAML config '
                     'is used (an error is thrown if not defined).'),
-              type=click.Choice(['debug', 'release', None],
+              type=click.Choice(['debug', 'release'],
                                 case_sensitive=False),
               default=None)
 @click.option('--conf',
@@ -41,14 +40,6 @@ def cpp_deps(build_type, conf, clang):
     cmake.configure_build(vconfig,
                           build_external=True,
                           build_external_only=True)
-
-    # FIXME https://app.asana.com/0/1149841353291489/1153763539998305
-    src = (f'{vconfig.build_dir}/v_deps_build/seastar-prefix/'
-           f'src/seastar-build/apps/iotune/iotune')
-    dst = f'{vconfig.external_path}/bin/iotune'
-    if os.path.isfile(dst):
-        os.remove(dst)
-    shutil.move(src, dst)
 
 
 @install.command(short_help='install clang from source.')
