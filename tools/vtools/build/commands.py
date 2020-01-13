@@ -87,7 +87,7 @@ def go(conf):
 
 
 @build.command()
-@click.option('--format', multiple=True)
+@click.option('--format', multiple=True, required=True)
 @click.option('--build-type',
               help=('Build configuration to select. If none given, the '
                     '`build.default_type` option from the vtools YAML config '
