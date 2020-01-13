@@ -10,7 +10,7 @@ echo "root of project: $vroot"
 
 cd "${vroot}"
 
-if [[ ! -e "${HOME}/.local/bin/vtools" ]]; then
+if [[ ! -e "build/bin/vtools" ]]; then
   # install OS package deps
   sudo tools/install-deps.sh
 
