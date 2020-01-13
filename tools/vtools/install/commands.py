@@ -11,7 +11,7 @@ from ..vlib import config
 from ..vlib import shell
 
 
-@click.group()
+@click.group(short_help='install build dependencies')
 def install():
     pass
 
@@ -21,7 +21,7 @@ def install():
               help=('Build configuration to select. If none given, the '
                     '`build.default_type` option from the vtools YAML config '
                     'is used (an error is thrown if not defined).'),
-              type=click.Choice(['debug', 'release', None],
+              type=click.Choice(['debug', 'release'],
                                 case_sensitive=False),
               default=None)
 @click.option('--conf',

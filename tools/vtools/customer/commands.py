@@ -1,44 +1,43 @@
 from datetime import date
 import click
-import jinja2
 from ..vlib import packagecloud as pc
 from ..vlib import templates as tmpl
 import os
 
 
-@click.group()
-def client():
+@click.group(short_help='onboard/offboard customers.')
+def customer():
     pass
 
 
-@client.command()
+@customer.command(short_help='add a new customer to packagecloud')
 @click.option(
     '--access-token',
     help="Your Packagecloud access token. https://packagecloud.io/api_token")
-@click.option('--client-name', help='The client company name')
+@click.option('--customer-name', help='Name of company being onboarded.')
 @click.option(
-    '--client-id',
-    help=
-    'A unique string to identify the client by. Used to create unique resources such as the package repo tokens, the docs bucket, etc.'
+    '--customer-id',
+    help=('A unique string to identify the customer by. Used to create unique'
+          'resources such as the package repo tokens, the docs bucket, etc.')
 )
 @click.option('--docs-out-dir',
               default='.',
               help='The directory where the rendered docs will be output')
-def onboard(access_token, client_name, client_id, docs_out_dir):
+def onboard(access_token, customer_name, customer_id, docs_out_dir):
     token = pc.create_session_token(access_token)
-    master_token = pc.create_master_token(token, client_id)
+    master_token = pc.create_master_token(token, customer_id)
     click.echo(master_token)
-    read_token = pc.create_read_token(token, master_token['id'], client_id)
+    pc.create_read_token(token, master_token['id'], customer_id)
     tmpl.render_to_file(
         f'{os.path.dirname(__file__)}/docs-template.md',
         f'{docs_out_dir}/docs.md', {
-            'client_name': client_name,
+            'customer_name': customer_name,
             'master_token': master_token,
             'date': date.today()
         })
 
 
-@client.command()
+@customer.command(short_help='remove a customer from packagecloud')
 @click.option(
     '--access-token',
     help="Your Packagecloud access token. https://packagecloud.io/api_token")

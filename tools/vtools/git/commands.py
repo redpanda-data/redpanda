@@ -4,17 +4,21 @@ import shutil
 import subprocess
 import tempfile
 import click
-import git
+import git as g
 
 
-@click.command()
+@click.group(short_help='git niceties')
+def git():
+    pass
+
+
+@git.command(short_help='verify git user and password end in vectorized.io')
 @click.option("--path", default=".", help="path to git repo")
-def verify_git(path):
+def verify(path):
     """verify the git user name and password end in vectorized.io"""
     r = git.Repo(path, search_parent_directories=True)
     reader = r.config_reader()
     email = reader.get_value("user", "email")
-    name = reader.get_value("user", "name")
     sendmail_smtp = reader.get_value("sendemail", "smtpuser")
     for mail in [email, sendmail_smtp]:
         if not mail.endswith("@vectorized.io"):
@@ -24,7 +28,7 @@ def verify_git(path):
     click.echo(f"valid repo settings for: {git_root}")
 
 
-@click.command()
+@git.command(short_help='mildly opininated patch submission.')
 @click.option("-f",
               "--fork",
               default="origin",
@@ -80,7 +84,7 @@ def pr(ctx, fork, upstream, to):
     will be pushed. It is common for this to be `origin` (default), or
     `your-name`.
     """
-    repo = git.Repo(os.getcwd(), search_parent_directories=True)
+    repo = g.Repo(os.getcwd(), search_parent_directories=True)
     local_branch = repo.active_branch
 
     if "/" in local_branch.name:

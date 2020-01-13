@@ -6,12 +6,12 @@ from ..vlib import shell
 from . import install_deps as deps
 
 
-@click.group()
+@click.group(short_help='execute infrastructure-related tasks.')
 def infra():
     pass
 
 
-@infra.command()
+@infra.command(short_help='deploy redpanda.')
 @click.option('--module',
               help='The name of the module to deploy',
               required=True)
@@ -28,7 +28,7 @@ def deploy(module, install_deps, v_root, log, tfvars):
     _run_terraform_cmd('apply', module, install_deps, v_root, log, tfvars)
 
 
-@infra.command()
+@infra.command(short_help='destroy redpanda deployment.')
 @click.option('--module',
               help='The name of the module to deploy',
               required=True)

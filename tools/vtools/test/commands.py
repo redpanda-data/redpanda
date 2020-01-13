@@ -1,17 +1,19 @@
 import click
+import lddwrap
 import os
+import pathlib
 
 from absl import logging
 from ..vlib import config
 from ..vlib import shell
 
 
-@click.group()
+@click.group(short_help='run redpanda and rpk tests')
 def test():
     pass
 
 
-@test.command()
+@test.command(short_help='execute rpk unit tests')
 @click.option('--conf',
               help=('Path to configuration file. If not given, a .vtools.yml '
                     'file is searched recursively starting from the current '
@@ -22,7 +24,7 @@ def go(conf):
     shell.run_subprocess(f'cd {vconfig.go_src_dir}/pkg && go test ./...')
 
 
-@test.command()
+@test.command(short_help='execute redpanda unit tests')
 @click.option('--build-type',
               help=('Build configuration to select. If none given, the '
                     '`build.default_type` option from the vtools YAML config '
