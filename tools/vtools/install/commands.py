@@ -1,7 +1,6 @@
 import click
 import io
 import os
-import shutil
 import tarfile
 import urllib
 
@@ -41,14 +40,6 @@ def cpp_deps(build_type, conf, clang):
     cmake.configure_build(vconfig,
                           build_external=True,
                           build_external_only=True)
-
-    # FIXME https://app.asana.com/0/1149841353291489/1153763539998305
-    src = (f'{vconfig.build_dir}/v_deps_build/seastar-prefix/'
-           f'src/seastar-build/apps/iotune/iotune')
-    dst = f'{vconfig.external_path}/bin/iotune'
-    if os.path.isfile(dst):
-        os.remove(dst)
-    shutil.move(src, dst)
 
 
 @install.command(short_help='install clang from source.')
