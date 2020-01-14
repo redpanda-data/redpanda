@@ -176,20 +176,21 @@ private:
     }
 
     ss::future<> flush(storage::log log, segments_type& segments, bool roll) {
-        return ss::do_for_each(segments, [log, roll](segment_spec& segment) {
-            auto reader = make_batch_reader(std::move(segment));
-            auto f = ss::make_ready_future<>();
-            return f.then([log, reader = std::move(reader)]() mutable {
-                return log
-                  .append(
-                    std::move(reader),
-                    storage::log_append_config{
-                      storage::log_append_config::fsync::yes,
-                      ss::default_priority_class(),
-                      model::no_timeout})
-                  .discard_result();
-            });
-        });
+        return ss::do_for_each(
+          segments, [log, roll](segment_spec& segment) mutable {
+              auto reader = make_batch_reader(std::move(segment));
+              auto f = ss::make_ready_future<>();
+              return f.then([log, reader = std::move(reader)]() mutable {
+                  return log
+                    .append(
+                      std::move(reader),
+                      storage::log_append_config{
+                        storage::log_append_config::fsync::yes,
+                        ss::default_priority_class(),
+                        model::no_timeout})
+                    .discard_result();
+              });
+          });
     }
 
     template<typename Func>
