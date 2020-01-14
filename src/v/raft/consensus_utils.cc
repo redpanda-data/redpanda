@@ -276,10 +276,10 @@ read_bootstrap_state(storage::log log) {
         }
         while (it < end) {
             storage::log_reader_config rcfg{.start_offset = it,
-                                            .max_offset = end,
                                             .max_bytes = 1024 * 1024 /*1MB*/,
                                             .min_bytes = 0, // ok to be empty
-                                            .prio = raft_priority()};
+                                            .prio = raft_priority(),
+                                            .max_offset = end};
             auto reader = log.make_reader(rcfg);
             auto batches = reader
                              .consume(
