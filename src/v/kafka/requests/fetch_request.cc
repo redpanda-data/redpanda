@@ -202,7 +202,7 @@ make_ready_partition_response_error(error_code error) {
  * Low-level handler for reading from an ntp. Runs on ntp's home core.
  */
 static ss::future<fetch_response::partition_response>
-read_from_log(storage::log_ptr log, fetch_config config) {
+read_from_log(storage::log log, fetch_config config) {
     storage::log_reader_config reader_config{
       .start_offset = config.start_offset,
       .max_bytes = config.max_bytes,
@@ -210,7 +210,7 @@ read_from_log(storage::log_ptr log, fetch_config config) {
       .prio = kafka_read_priority(),
       .type_filter = {raft::data_batch_type},
     };
-    auto reader = log->make_reader(std::move(reader_config));
+    auto reader = log.make_reader(std::move(reader_config));
     return ss::do_with(
       std::move(reader),
       [timeout = config.timeout](model::record_batch_reader& reader) {
@@ -251,17 +251,17 @@ read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config) {
           /*
            * lookup the ntp's open log handle
            */
-          auto log = mgr.log(ntp);
-          if (__builtin_expect(!log, false)) {
+          auto optlog = mgr.log(ntp);
+          if (__builtin_expect(!optlog, false)) {
               return make_ready_partition_response_error(
                 error_code::unknown_topic_or_partition);
           }
-
+          auto log = optlog.value();
           // low-level read
           return read_from_log(log, std::move(config))
             .then([log](fetch_response::partition_response&& resp) {
-                resp.last_stable_offset = log->committed_offset();
-                resp.high_watermark = log->committed_offset();
+                resp.last_stable_offset = log.committed_offset();
+                resp.high_watermark = log.committed_offset();
                 return std::move(resp);
             });
       });

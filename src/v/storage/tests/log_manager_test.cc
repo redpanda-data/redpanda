@@ -89,10 +89,10 @@ SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
     m.manage(ntp3).get();
     m.manage(ntp4).get();
     BOOST_CHECK_EQUAL(4, m.size());
-    BOOST_CHECK_EQUAL(m.log(ntp)->segments().size(), 0);
-    BOOST_CHECK_EQUAL(m.log(ntp2)->segments().size(), 0);
-    BOOST_CHECK_EQUAL(m.log(ntp3)->segments().size(), 1);
-    BOOST_CHECK_EQUAL(m.log(ntp4)->segments().size(), 0);
+    BOOST_CHECK_EQUAL(m.get(ntp)->segment_count(), 0);
+    BOOST_CHECK_EQUAL(m.get(ntp2)->segment_count(), 0);
+    BOOST_CHECK_EQUAL(m.get(ntp3)->segment_count(), 1);
+    BOOST_CHECK_EQUAL(m.get(ntp4)->segment_count(), 0);
     BOOST_CHECK(!file_exists(seg->get_filename()).get0());
     BOOST_CHECK(file_exists(seg3->get_filename()).get0());
     BOOST_CHECK(!file_exists(seg4->get_filename()).get0());

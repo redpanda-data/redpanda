@@ -1,7 +1,8 @@
 add_library(storage STATIC
     log_segment_reader.cc
     log_manager.cc
-    log.cc
+    mem_log_impl.cc
+    disk_log_impl.cc
     log_writer.cc
     parser.cc
     log_reader.cc

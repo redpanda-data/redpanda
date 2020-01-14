@@ -3,6 +3,7 @@
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "seastarx.h"
+#include "storage/disk_log_impl.h"
 #include "storage/log_segment_appender.h"
 
 #include <seastar/core/future.hh>
@@ -47,7 +48,7 @@ private:
 // Serializer for the current batch version.
 class default_log_writer : public log_writer::impl {
 public:
-    explicit default_log_writer(log&) noexcept;
+    explicit default_log_writer(disk_log_impl&) noexcept;
 
     virtual ss::future<ss::stop_iteration>
     operator()(model::record_batch&&) override;
@@ -55,7 +56,7 @@ public:
     virtual model::offset end_of_stream() override;
 
 private:
-    log& _log;
+    disk_log_impl& _log;
     model::offset _last_offset;
 };
 

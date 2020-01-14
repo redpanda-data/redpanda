@@ -122,7 +122,7 @@ public:
     };
 
     std::vector<model::record_batch>
-    read_and_validate_all_batches(storage::log_ptr log_ptr) {
+    read_and_validate_all_batches(storage::log log) {
         storage::log_reader_config cfg{
           .start_offset = model::offset(0),
           .max_bytes = std::numeric_limits<size_t>::max(),
@@ -130,7 +130,7 @@ public:
           .prio = ss::default_priority_class(),
           .type_filter = {}};
 
-        auto reader = log_ptr->make_reader(std::move(cfg));
+        auto reader = log.make_reader(std::move(cfg));
         return reader.consume(batch_validating_consumer{}, model::no_timeout)
           .get0();
     }
@@ -144,7 +144,7 @@ public:
     )
     // clang-format on
     std::vector<model::record_batch_header> append_random_batches(
-      storage::log_ptr log_ptr,
+      storage::log log,
       int appends,
       T batch_generator = T{},
       storage::log_append_config::fsync sync
@@ -152,9 +152,9 @@ public:
         storage::log_append_config append_cfg{
           sync, ss::default_priority_class(), model::no_timeout};
 
-        model::offset base_offset = log_ptr->max_offset() < model::offset(0)
+        model::offset base_offset = log.max_offset() < model::offset(0)
                                       ? model::offset(0)
-                                      : log_ptr->max_offset()
+                                      : log.max_offset()
                                           + model::offset(1);
         int64_t total_records = 0;
         std::vector<model::record_batch_header> headers;
@@ -171,13 +171,13 @@ public:
             // make expected offset inclusive
             auto reader = model::make_memory_record_batch_reader(
               std::move(batches));
-            auto res = log_ptr->append(std::move(reader), append_cfg).get0();
+            auto res = log.append(std::move(reader), append_cfg).get0();
 
             // Check if after append offset was updated correctly
             auto expected_offset = model::offset(total_records - 1)
                                    + base_offset;
-            BOOST_REQUIRE_EQUAL(log_ptr->max_offset(), res.last_offset);
-            BOOST_REQUIRE_EQUAL(log_ptr->max_offset(), expected_offset);
+            BOOST_REQUIRE_EQUAL(log.max_offset(), res.last_offset);
+            BOOST_REQUIRE_EQUAL(log.max_offset(), expected_offset);
         }
 
         return headers;
@@ -191,7 +191,7 @@ public:
     // model::offset max_offset = model::model_limits<model::offset>::max(); //
     // inclusive
     std::vector<model::record_batch> read_range_to_vector(
-      const storage::log_ptr& log, model::offset start, model::offset end) {
+      storage::log log, model::offset start, model::offset end) {
         storage::log_reader_config cfg{
           .start_offset = start,
           .max_bytes = std::numeric_limits<size_t>::max(),
@@ -199,7 +199,7 @@ public:
           .prio = ss::default_priority_class(),
           .type_filter = {},
           .max_offset = end};
-        auto reader = log->make_reader(std::move(cfg));
+        auto reader = log.make_reader(std::move(cfg));
         return reader.consume(batch_validating_consumer(), model::no_timeout)
           .get0();
     }

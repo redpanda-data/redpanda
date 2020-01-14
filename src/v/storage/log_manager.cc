@@ -2,6 +2,7 @@
 
 #include "model/fundamental.h"
 #include "storage/fs_utils.h"
+#include "storage/log.h"
 #include "storage/log_replayer.h"
 #include "storage/logger.h"
 #include "utils/directory_walker.h"
@@ -23,9 +24,8 @@ log_manager::log_manager(log_config config) noexcept
   : _config(std::move(config)) {}
 
 ss::future<> log_manager::stop() {
-    return ss::parallel_for_each(_logs, [](logs_type::value_type& entry) {
-        return entry.second->close();
-    });
+    return ss::parallel_for_each(
+      _logs, [](logs_type::value_type& entry) { return entry.second.close(); });
 }
 
 ss::future<log_manager::log_handles> log_manager::make_log_segment(
@@ -67,6 +67,10 @@ ss::future<log_manager::log_handles> log_manager::make_log_segment(
                 return ss::make_ready_future<log_handles>(std::move(h));
             })
             .handle_exception([&h](auto e) {
+                if (h.appender == nullptr) {
+                    // null when path does not exist to appender directory
+                    return ss::make_exception_future<log_handles>(std::move(e));
+                }
                 return h.appender->close().then([e = std::move(e)]() mutable {
                     return ss::make_exception_future<log_handles>(std::move(e));
                 });
@@ -198,8 +202,18 @@ log_manager::open_segments(ss::sstring dir) {
       });
 }
 
-ss::future<log_ptr> log_manager::manage(model::ntp ntp) {
+ss::future<log>
+log_manager::manage(model::ntp ntp, log_manager::storage_type type) {
+    if (_config.base_dir.empty()) {
+        return ss::make_exception_future<log>(std::runtime_error(
+          "log_manager:: cannot have empty config.base_dir"));
+    }
     ss::sstring path = fmt::format("{}/{}", _config.base_dir, ntp.path());
+    if (type == storage_type::memory) {
+        auto l = storage::make_memory_backed_log(ntp, std::move(path));
+        _logs.emplace(std::move(ntp), l);
+        return ss::make_ready_future<log>(l);
+    }
     return recursive_touch_directory(path)
       .then([this, path] { return open_segments(path); })
       .then([this, ntp](std::vector<segment_reader_ptr> segs) {
@@ -207,7 +221,7 @@ ss::future<log_ptr> log_manager::manage(model::ntp ntp) {
           set_max_offsets(seg_set);
           return do_recover(std::move(seg_set))
             .then([this, ntp](log_set seg_set) {
-                auto ptr = ss::make_lw_shared<storage::log>(
+                auto ptr = storage::make_disk_backed_log(
                   ntp, *this, std::move(seg_set));
                 _logs.emplace(std::move(ntp), ptr);
                 return ptr;

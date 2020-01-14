@@ -65,7 +65,7 @@ ss::future<> controller::start() {
             .then([this](consensus_ptr c) {
                 auto plog = _pm.local().log(controller::ntp);
                 _raft0 = c.get();
-                return bootstrap_from_log(plog);
+                return bootstrap_from_log(plog.value());
             })
             .then([this] {
                 _raft0->register_hook(
@@ -107,14 +107,14 @@ ss::future<> controller::stop() {
     return _bg.close();
 }
 
-ss::future<> controller::bootstrap_from_log(storage::log_ptr l) {
+ss::future<> controller::bootstrap_from_log(storage::log l) {
     storage::log_reader_config rcfg{
       .start_offset = model::offset(0), // from begining
       .max_bytes = std::numeric_limits<size_t>::max(),
       .min_bytes = 0, // ok to be empty
       .prio = controller_priority()};
     return ss::do_with(
-      l->make_reader(rcfg), [this](model::record_batch_reader& reader) {
+      l.make_reader(rcfg), [this](model::record_batch_reader& reader) {
           return reader.consume(batch_consumer(this), model::no_timeout);
       });
 }
