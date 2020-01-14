@@ -3,14 +3,13 @@
 #include "seastarx.h"
 
 #include <seastar/core/sstring.hh>
+#include <algorithm>
 
 struct prometheus_sanitize {
     static ss::sstring metrics_name(ss::sstring n) {
-        for (char& i : n) {
-            if (!std::isalnum(i)) {
-                i = '_';
-            }
-        }
+        constexpr char value  = '_';
+        std::replace_if(n.begin(), n.end(), 
+                        [](auto c){ return !std::isalnum(c); }, value);
         return n;
     }
 };
