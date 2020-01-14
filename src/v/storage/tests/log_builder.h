@@ -185,9 +185,9 @@ private:
                     .append(
                       std::move(reader),
                       storage::log_append_config{
-                        storage::log_append_config::fsync::yes,
-                        ss::default_priority_class(),
-                        model::no_timeout})
+                        .should_fsync = storage::log_append_config::fsync::yes,
+                        .io_priority = ss::default_priority_class(),
+                        .timeout = model::no_timeout})
                     .discard_result();
               });
           });
