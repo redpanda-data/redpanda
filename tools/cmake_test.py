@@ -11,7 +11,11 @@ from string import Template
 
 sys.path.append(os.path.dirname(__file__))
 logger = logging.getLogger('rp')
-
+fmt_string = '%(levelname)s:%(asctime)s %(filename)s:%(lineno)d] %(message)s'
+logging.basicConfig(format=fmt_string)
+formatter = logging.Formatter(fmt_string)
+for h in logging.getLogger().handlers:
+    h.setFormatter(formatter)
 
 class TestRunner():
     def __init__(self, prepare_command, post_command, binary, repeat,
@@ -115,6 +119,7 @@ def main():
     if not options.copy_file:
         options.copy_file = []
 
+    logger.setLevel(getattr(logging, options.log.upper()))
     logger.info("%s *args=%s" % (options, program_options))
 
     runner = TestRunner(options.pre, options.post, options.binary,
