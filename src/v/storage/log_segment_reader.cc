@@ -53,7 +53,7 @@ struct base_offset_ordering {
         return seg1->base_offset() <= seg2->base_offset();
     }
     bool operator()(const segment_reader_ptr& seg, model::offset value) const {
-        return seg->max_offset() < value;
+        return seg->max_offset() < value && seg->base_offset() < value;
     }
 };
 
@@ -97,5 +97,4 @@ segment_reader_ptr log_segment_selector::select(model::offset offset) const {
     }
     return nullptr;
 }
-
 } // namespace storage
