@@ -108,8 +108,6 @@ ss::future<> log_segment_appender::flush() {
                 [&c, alignment = _dma_write_alignment, expected](size_t got) {
                     if (c.is_full()) {
                         c.reset();
-                    } else {
-                        c.compact(alignment);
                     }
                     return process_write_fut(expected, got);
                 });

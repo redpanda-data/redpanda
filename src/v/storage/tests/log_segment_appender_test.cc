@@ -12,6 +12,41 @@
 
 using namespace storage; // NOLINT
 
+SEASTAR_THREAD_TEST_CASE(test_can_append_multiple_flushes) {
+    std::cout.setf(std::ios::unitbuf);
+    auto f = ss::open_file_dma(
+               "test_log_segment_appender_random.log",
+               ss::open_flags::create | ss::open_flags::rw
+                 | ss::open_flags::truncate)
+               .get0();
+    auto appender = log_segment_appender(
+      f, log_segment_appender::options(ss::default_priority_class()));
+
+    iobuf expected;
+
+    ss::sstring data = "_redpanda";
+    for (int j = 0; j < 910; ++j) {
+        expected.append(data.data(), data.size());
+        appender.append(data.data(), data.size()).get();
+    }
+    // This 911 time of appending "_redpanda" causes bug
+    // Commnting next two lines make the test passing
+    expected.append(data.data(), data.size());
+    appender.append(data.data(), data.size()).get();
+    appender.flush().get();
+
+    expected.append(data.data(), data.size());
+    appender.append(data.data(), data.size()).get();
+    appender.flush().get();
+
+    auto in = make_file_input_stream(f, 0);
+    iobuf result = read_iobuf_exactly(in, expected.size_bytes()).get0();
+    BOOST_REQUIRE_EQUAL(result.size_bytes(), expected.size_bytes());
+    BOOST_REQUIRE_EQUAL(result, expected);
+    appender.close().get();
+    in.close().get();
+}
+
 SEASTAR_THREAD_TEST_CASE(test_can_append_mixed) {
     auto f = ss::open_file_dma(
                "test_log_segment_mixed.log",
