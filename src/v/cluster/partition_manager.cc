@@ -51,34 +51,33 @@ ss::future<consensus_ptr> partition_manager::manage(
   raft::group_id group,
   std::vector<model::broker> initial_nodes) {
     return _mngr.manage(std::move(ntp))
-      .then(
-        [this, group, nodes = std::move(initial_nodes)](storage::log log) {
-            auto c = ss::make_lw_shared<raft::consensus>(
-              _self,
-              group,
-              raft::group_configuration{.nodes = std::move(nodes)},
-              raft::timeout_jitter(_hbeats.election_duration()),
-              log,
-              _should_fsync,
-              raft_priority(),
-              _disk_timeout,
-              _clients,
-              [this](raft::group_id g) { trigger_leadership_notification(g); });
-            auto p = ss::make_lw_shared<partition>(c);
-            _ntp_table.emplace(log.ntp(), p);
-            _raft_table.emplace(group, p);
-            if (_bg.is_closed()) {
-                return ss::make_exception_future<consensus_ptr>(
-                  ss::gate_closed_exception());
-            }
-            return with_gate(_bg, [this, p, c, group] {
-                clusterlog.debug("Recovering raft group: {}", group);
-                return p->start().then([this, c]() mutable {
-                    _hbeats.register_group(c);
-                    return c;
-                });
-            });
-        });
+      .then([this, group, nodes = std::move(initial_nodes)](storage::log log) {
+          auto c = ss::make_lw_shared<raft::consensus>(
+            _self,
+            group,
+            raft::group_configuration{.nodes = std::move(nodes)},
+            raft::timeout_jitter(_hbeats.election_duration()),
+            log,
+            _should_fsync,
+            raft_priority(),
+            _disk_timeout,
+            _clients,
+            [this](raft::group_id g) { trigger_leadership_notification(g); });
+          auto p = ss::make_lw_shared<partition>(c);
+          _ntp_table.emplace(log.ntp(), p);
+          _raft_table.emplace(group, p);
+          if (_bg.is_closed()) {
+              return ss::make_exception_future<consensus_ptr>(
+                ss::gate_closed_exception());
+          }
+          return with_gate(_bg, [this, p, c, group] {
+              clusterlog.debug("Recovering raft group: {}", group);
+              return p->start().then([this, c]() mutable {
+                  _hbeats.register_group(c);
+                  return c;
+              });
+          });
+      });
 }
 
 } // namespace cluster
