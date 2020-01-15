@@ -3,7 +3,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME vint_test
   SOURCES vint_test.cc
-  LIBRARIES Seastar::seastar_testing bytes
+  LIBRARIES Seastar::seastar_testing v::bytes
 )
 
 rp_test(
@@ -40,7 +40,6 @@ rp_test(
     BINARY_NAME retry_test
     SOURCES retry_test.cc
     LIBRARIES Seastar::seastar_testing
-  
     ARGS "-- -c 2"
   )
 

@@ -5,24 +5,23 @@ rpcgen(
   OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/raftgen_service.h
   INCLUDES ${CMAKE_BINARY_DIR}/src/v
   )
-add_library (raft STATIC
-  type_serializers.cc
-  consensus.cc
-  consensus_utils.cc
-  heartbeat_manager.cc
-  configuration_bootstrap_state.cc
-  logger.cc
-  types.cc
-  replicate_entries_stm.cc
-  vote_stm.cc
-  recovery_stm.cc
+v_cc_library(
+  NAME raft
+  SRCS
+    type_serializers.cc
+    consensus.cc
+    consensus_utils.cc
+    heartbeat_manager.cc
+    configuration_bootstrap_state.cc
+    logger.cc
+    types.cc
+    replicate_entries_stm.cc
+    vote_stm.cc
+    recovery_stm.cc
+  DEPS
+    v::storage
+    raft_rpc
+    v::finjector
   )
-
-target_link_libraries(raft
-  storage raft_rpc finjector
-  )
-
-
-
 add_subdirectory(tests)
 add_subdirectory(tron)

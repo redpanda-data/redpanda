@@ -5,20 +5,22 @@ seastar_generate_swagger(
   OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/admin/api-doc/config.json.h
 )
 
-add_library(application STATIC application.cc)
-target_link_libraries(application
-  PUBLIC
+v_cc_library(
+  NAME application
+  SRCS application.cc
+  DEPS
     Seastar::seastar
-    cluster
-    syschecks
+    v::cluster
+    v::syschecks
+    v::kafka
   )
 
 add_executable(redpanda
     main.cc
   )
-target_link_libraries(redpanda PUBLIC application raft kafka)
+target_link_libraries(redpanda PUBLIC v::application v::raft v::kafka)
 set_property(TARGET redpanda PROPERTY POSITION_INDEPENDENT_CODE ON)
-add_dependencies(application config_swagger)
+add_dependencies(v_application config_swagger)
 
 if(NOT CMAKE_BUILD_TYPE MATCHES Debug)
   include(CheckIPOSupported)

@@ -20,16 +20,16 @@ set(group_srcs
   groups/group.cc
   groups/group_manager.cc)
 
-add_library(kafka STATIC
-  ${request_srcs}
-  ${group_srcs}
-  errors.cc
-  server.cc)
-
-target_link_libraries(kafka
-  PUBLIC
+v_cc_library(
+  NAME kafka
+  SRCS
+    ${request_srcs}
+    ${group_srcs}
+    errors.cc
+    server.cc
+ DEPS
     Seastar::seastar
-    bytes
-    cluster)
-
+    v::bytes
+    v::cluster
+)
 add_subdirectory(tests)

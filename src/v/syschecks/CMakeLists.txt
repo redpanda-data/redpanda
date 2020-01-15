@@ -1,2 +1,6 @@
-add_library(syschecks INTERFACE)
-target_link_libraries(syschecks INTERFACE utils systemd)
+v_cc_library(
+  NAME syschecks
+  HRDS syschecks.h
+  DEPS
+    v::utils
+    systemd)

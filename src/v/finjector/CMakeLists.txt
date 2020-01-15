@@ -1,4 +1,4 @@
-add_library (finjector STATIC
-  hbadger.cc
-  )
-target_link_libraries(finjector PUBLIC Seastar::seastar)
+v_cc_library(
+  NAME finjector
+  SRCS hbadger.cc
+  DEPS Seastar::seastar)

@@ -1,15 +1,21 @@
-add_library (rpc STATIC
-  types.cc
-  netbuf.cc
-  server.cc
-  transport.cc
-  connection.cc
-  batched_output_stream.cc
-  probes.cc
-  logger.cc
-  reconnect_transport.cc
-  connection_cache.cc
+v_cc_library(
+  NAME rpc
+  SRCS
+    types.cc
+    netbuf.cc
+    server.cc
+    transport.cc
+    connection.cc
+    batched_output_stream.cc
+    probes.cc
+    logger.cc
+    reconnect_transport.cc
+    connection_cache.cc
+  DEPS
+    Seastar::seastar
+    v::bytes
+    v::rphashing
+    v::utils
   )
-target_link_libraries(rpc PUBLIC Seastar::seastar bytes rphashing utils)
 add_subdirectory(test)
 add_subdirectory(demo)

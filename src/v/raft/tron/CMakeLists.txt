@@ -9,7 +9,7 @@ add_executable(srvtron
   server.cc
   logger.cc
   )
-target_link_libraries(srvtron PUBLIC tron_gen raft)
+target_link_libraries(srvtron PUBLIC tron_gen v::raft)
 set_property(TARGET srvtron PROPERTY POSITION_INDEPENDENT_CODE ON)
 if(NOT CMAKE_BUILD_TYPE MATCHES Debug)
   include(CheckIPOSupported)
@@ -25,5 +25,5 @@ add_executable(tron
   client.cc
   logger.cc
   )
-target_link_libraries(tron PUBLIC tron_gen raft)
+target_link_libraries(tron PUBLIC tron_gen v::raft)
 set_property(TARGET tron PROPERTY POSITION_INDEPENDENT_CODE ON)
