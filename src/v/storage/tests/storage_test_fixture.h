@@ -154,8 +154,7 @@ public:
 
         model::offset base_offset = log.max_offset() < model::offset(0)
                                       ? model::offset(0)
-                                      : log.max_offset()
-                                          + model::offset(1);
+                                      : log.max_offset() + model::offset(1);
         int64_t total_records = 0;
         std::vector<model::record_batch_header> headers;
 

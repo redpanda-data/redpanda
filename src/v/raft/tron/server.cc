@@ -78,24 +78,23 @@ public:
 
     ss::future<> start(raft::group_configuration init_cfg) {
         return _mngr.manage(_ntp)
-          .then(
-            [this, cfg = std::move(init_cfg)](storage::log log) mutable {
-                _consensus = ss::make_lw_shared<raft::consensus>(
-                  _self,
-                  raft::group_id(66),
-                  std::move(cfg),
-                  raft::timeout_jitter(_hbeats.election_duration()),
-                  log,
-                  storage::log_append_config::fsync::yes,
-                  ss::default_priority_class(),
-                  std::chrono::seconds(1),
-                  _clients,
-                  [this](raft::group_id g) {
-                      tronlog.info("Took leadership of: {}", g);
-                  });
-                _hbeats.register_group(_consensus);
-                return _consensus->start();
-            })
+          .then([this, cfg = std::move(init_cfg)](storage::log log) mutable {
+              _consensus = ss::make_lw_shared<raft::consensus>(
+                _self,
+                raft::group_id(66),
+                std::move(cfg),
+                raft::timeout_jitter(_hbeats.election_duration()),
+                log,
+                storage::log_append_config::fsync::yes,
+                ss::default_priority_class(),
+                std::chrono::seconds(1),
+                _clients,
+                [this](raft::group_id g) {
+                    tronlog.info("Took leadership of: {}", g);
+                });
+              _hbeats.register_group(_consensus);
+              return _consensus->start();
+          })
           .then([this] { return _hbeats.start(); });
     }
     ss::future<> stop() {
