@@ -128,6 +128,7 @@ public:
 
     iterator end() { return _segments.end(); }
 
+    const_iterator lower_bound(model::offset) const;
     /// very rare. needed when raft needs to truncate un-acknowledged data
     /// it is also very likely that they are the back sements, and so
     /// the overhead is likely to be small. This is why our std::find
