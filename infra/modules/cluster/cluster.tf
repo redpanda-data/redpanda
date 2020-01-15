@@ -48,11 +48,11 @@ resource "aws_instance" "node" {
 
   provisioner "remote-exec" {
     inline = [
+      "set -ex",
       "chmod +x /tmp/init.sh",
-      "chmod +x /tmp/write_config.py",
       "/tmp/init.sh ${var.packagecloud_token}",
       "sudo rpk config set id ${count.index}",
-      "sudo rpk config set seed-nodes --hosts ${join(" ", aws_eip.elastic_ip.*.public_ip)}",
+      "sudo rpk config set seed-nodes --hosts ${join(",", aws_eip.elastic_ip.*.public_ip)}",
       "sudo systemctl start redpanda-tuner",
       "sudo systemctl start redpanda"
     ]
