@@ -1,10 +1,9 @@
-add_library (bytes STATIC
-  bytes.cc
+v_cc_library(
+  NAME
+    bytes
+  SRCS
+    "bytes.cc"
+  DEPS
+    Seastar::seastar
   )
-
-target_link_libraries(bytes
-  PUBLIC
-  Seastar::seastar
-  )
-
 add_subdirectory(tests)

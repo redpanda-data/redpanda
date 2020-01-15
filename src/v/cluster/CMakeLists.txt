@@ -7,24 +7,22 @@ rpcgen(
   INCLUDES ${CMAKE_BINARY_DIR}/src/v
 )
 
-add_library (cluster STATIC
-  controller.cc
-  metadata_cache.cc
-  partition_manager.cc
-  types.cc
-  partition_allocator.cc
-  type_serializers.cc
-  logger.cc
-  cluster_utils.cc
-  service.cc
+v_cc_library(
+  NAME cluster
+  SRCS
+    controller.cc
+    metadata_cache.cc
+    partition_manager.cc
+    types.cc
+    partition_allocator.cc
+    type_serializers.cc
+    logger.cc
+    cluster_utils.cc
+    service.cc
+  DEPS
+    Seastar::seastar
+    controller_rpc
+    v::raft
+    Roaring::roaring
   )
-
-target_link_libraries(cluster
-  PUBLIC
-  Seastar::seastar
-  controller_rpc
-  raft
-  Roaring::roaring
-  )
-
 add_subdirectory(tests)

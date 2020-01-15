@@ -1,11 +1,9 @@
-add_library (model STATIC
-  model.cc
-  record_batch_reader.cc
+v_cc_library(
+  NAME model
+  SRCS
+    model.cc
+    record_batch_reader.cc
+  DEPS
+    Seastar::seastar
   )
-
-target_link_libraries(model
-  PUBLIC
-  Seastar::seastar
-  )
-
 add_subdirectory(tests)

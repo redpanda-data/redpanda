@@ -1,4 +1,6 @@
-add_library(storage STATIC
+v_cc_library(
+  NAME storage
+  SRCS
     log_segment_reader.cc
     log_manager.cc
     mem_log_impl.cc
@@ -11,13 +13,11 @@ add_library(storage STATIC
     record_batch_builder.cc
     logger.cc
     log_segment_appender.cc
-    )
-
-target_link_libraries(storage PUBLIC
-  Seastar::seastar
-  bytes
-  config
-  rphashing
-  finjector)
+  DEPS
+    Seastar::seastar
+    v::bytes
+    v::config
+    v::rphashing
+    v::finjector)
 
 add_subdirectory(tests)
