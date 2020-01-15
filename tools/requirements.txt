@@ -7,3 +7,4 @@ Jinja2
 absl-py
 paramiko
 pyyaml
+yapf

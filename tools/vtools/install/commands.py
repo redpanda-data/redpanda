@@ -60,7 +60,10 @@ def clang(conf):
               default=None)
 def go_deps(conf):
     vconfig = config.VConfig(conf)
-    shell.run_subprocess(f'cd {vconfig.go_src_dir} && go mod download')
+    shell.run_subprocess(
+        f'cd {vconfig.go_src_dir} && '
+        f'go mod download && '
+        f'go get github.com/cockroachdb/crlfmt')
 
 
 @install.command(short_help='install the go compiler.')

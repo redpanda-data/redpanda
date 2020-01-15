@@ -6,6 +6,7 @@ from absl import logging
 logging._warn_preinit_stderr = 0
 
 from .clean import commands as clean
+from .fmt import commands as fmt
 from .git import commands as git
 from .customer import commands as customer
 from .ssh import commands as ssh
@@ -29,6 +30,7 @@ def main():
 
 # add commands here
 main.add_command(clean.clean)
+main.add_command(fmt.fmt)
 main.add_command(git.git)
 main.add_command(customer.customer)
 main.add_command(ssh.ssh)
