@@ -187,6 +187,45 @@ inline ss::future<model::broker> deserialize(source& in) {
     });
 }
 
+template<>
+inline void serialize(iobuf& out, model::record_batch_header&& r) {
+    rpc::serialize(
+      out,
+      r.size_bytes,
+      r.base_offset,
+      r.type,
+      r.crc,
+      r.attrs,
+      r.last_offset_delta,
+      r.first_timestamp,
+      r.max_timestamp);
+}
+
+template<>
+inline ss::future<model::record_batch_header> deserialize(source& in) {
+    struct [[gnu::packed]] hdr_contents {
+        uint32_t size_bytes;
+        model::offset base_offset;
+        model::record_batch_type type;
+        int32_t crc;
+        model::record_batch_attributes attrs;
+        int32_t last_offset_delta;
+        model::timestamp first_timestamp;
+        model::timestamp max_timestamp;
+    };
+    return deserialize<hdr_contents>(in).then([](hdr_contents r) {
+        return model::record_batch_header{
+          .size_bytes = r.size_bytes,
+          .base_offset = r.base_offset,
+          .type = r.type,
+          .crc = r.crc,
+          .attrs = r.attrs,
+          .last_offset_delta = r.last_offset_delta,
+          .first_timestamp = r.first_timestamp,
+          .max_timestamp = r.max_timestamp};
+    });
+}
+
 struct simple_record {
     uint32_t size_bytes;
     model::record_attributes attributes;

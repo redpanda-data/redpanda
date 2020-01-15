@@ -215,7 +215,12 @@ static constexpr std::array<record_batch_type, 4> well_known_record_batch_types{
   record_batch_type(3)  // controller::*
 };
 
+/** expect all fields to be serialized, except context fields */
 struct record_batch_header {
+    struct context {
+        model::term_id term;
+    };
+
     // Size of the batch minus this field.
     uint32_t size_bytes;
     offset base_offset;
@@ -225,6 +230,8 @@ struct record_batch_header {
     int32_t last_offset_delta;
     timestamp first_timestamp;
     timestamp max_timestamp;
+    /// context object with opaque environment data
+    context ctx;
 
     record_batch_header() = default;
     offset last_offset() const {
