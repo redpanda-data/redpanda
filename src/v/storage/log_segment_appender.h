@@ -78,21 +78,6 @@ public:
             const size_t sz = _pos - prev_sz;
             return ss::align_up<size_t>(sz, alignment);
         }
-        void compact(size_t alignment) {
-            if (__builtin_expect(_flushed_pos != _pos, false)) {
-                throw std::runtime_error(
-                  "compact() must be called after flush()");
-            }
-            const char* src = dma_ptr(alignment);
-            if (src == data()) {
-                return;
-            }
-            const size_t copy_sz = dma_size(alignment);
-            const size_t final_sz = size() - copy_sz;
-            std::copy_n(src, copy_sz, _buf.get());
-            // must be called after flush!
-            _flushed_pos = _pos = final_sz;
-        }
         void flush() { _flushed_pos = _pos; }
         size_t bytes_pending() const { return _pos - _flushed_pos; }
         size_t flushed_pos() const { return _flushed_pos; }
