@@ -67,7 +67,7 @@ def add_known_host(host, port, timeout, retries):
 
 
 def _scan_host(host, port, timeout=10, retries=0):
-    exception = None
+    exception = Exception('Maximum retries reached')
     while retries > 0:
         retries -= 1
         try:
