@@ -69,7 +69,7 @@ struct mem_log_impl final : log::impl {
     ss::future<> close() final { return ss::make_ready_future<>(); }
     ss::future<> flush() final { return ss::make_ready_future<>(); }
 
-    ss::future<> truncate(model::offset offset, model::term_id) final {
+    ss::future<> truncate(model::offset offset) final {
         auto it = _data.find(offset);
         _data.erase(it, _data.end());
         return ss::make_ready_future<>();

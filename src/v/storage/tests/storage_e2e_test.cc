@@ -78,7 +78,7 @@ FIXTURE_TEST(test_single_record_per_segment, storage_test_fixture) {
     storage::log_manager mgr = make_log_manager(std::move(cfg));
     auto ntp = make_ntp("default", "test", 0);
     auto log = mgr.manage(ntp).get0();
-    auto headers = append_random_batches(log, 10, []() {
+    auto headers = append_random_batches(log, 10, model::term_id(1), []() {
         std::vector<model::record_batch> batches;
         batches.push_back(
           storage::test::make_random_batch(model::offset(0), 1, true));

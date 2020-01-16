@@ -171,9 +171,8 @@ ss::future<result<replicate_result>> replicate_entries_stm::apply() {
               raftlog.debug(
                 "Truncating log for unfinished append at offset:{}, "
                 "term:{}",
-                offset,
-                term);
-              return _ptr->_log.truncate(offset, term).then([r = std::move(r)] {
+                offset);
+              return _ptr->_log.truncate(offset).then([r = std::move(r)] {
                   return ss::make_ready_future<result<replicate_result>>(
                     r.error());
               });

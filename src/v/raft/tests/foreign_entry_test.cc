@@ -1,3 +1,4 @@
+#include "model/fundamental.h"
 #include "model/record.h"
 #include "raft/configuration_bootstrap_state.h"
 #include "raft/consensus_utils.h"
@@ -27,7 +28,8 @@ struct foreign_entry_fixture {
         auto cfg = storage::log_append_config{
           storage::log_append_config::fsync::no,
           ss::default_priority_class(),
-          model::no_timeout};
+          model::no_timeout,
+          model::term_id(0)};
         std::vector<storage::append_result> res;
         res.push_back(
           get_log().append(gen_data_record_batch_reader(n), cfg).get0());

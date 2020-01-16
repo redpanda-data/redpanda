@@ -52,8 +52,7 @@ public:
           , _workdir(std::move(log_directory)) {}
         virtual ~impl() noexcept = default;
 
-        virtual ss::future<>
-        truncate(model::offset offset, model::term_id term) = 0;
+        virtual ss::future<> truncate(model::offset) = 0;
 
         virtual ss::future<append_result>
         append(model::record_batch_reader&& r, log_append_config cfg) = 0;
@@ -81,8 +80,32 @@ public:
     ss::future<> close() { return _impl->close(); }
     ss::future<> flush() { return _impl->flush(); }
 
-    ss::future<> truncate(model::offset offset, model::term_id term) {
-        return _impl->truncate(offset, term);
+    // Truncate log at offset specified
+    //
+    // Provided index is the last index that will be preserved after
+    // truncation.
+    //
+    //
+    // Example
+    //
+    // {[base_1,last_1],[base_2,last_2]} denotes log segment with two batches
+    // 				  having base_1,last_1 and base_2,last_2
+    // 				  offset boundaries
+    //
+    // Having a segment:
+    //
+    // segment: {[10,10][11,30][31,100][101,103]}
+    //
+    // Truncate at offset 30 will result in
+    //
+    // segment: {[10,10][11,30]}
+    //
+    // Truncate at offset 29 will result in
+    //
+    // segment: {[10,10][11,30]}
+
+    ss::future<> truncate(model::offset offset) {
+        return _impl->truncate(offset);
     }
 
     model::record_batch_reader make_reader(log_reader_config cfg) {
