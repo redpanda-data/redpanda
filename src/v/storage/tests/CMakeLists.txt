@@ -100,6 +100,6 @@ rp_test(
   UNIT_TEST
   BINARY_NAME log_truncate_test
   SOURCES log_truncate_test.cc
-  LIBRARIES Seastar::seastar_testing storage
+  LIBRARIES Seastar::seastar_testing v::storage
   ARGS "-- -c 1"
 )
