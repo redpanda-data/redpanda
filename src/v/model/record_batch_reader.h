@@ -17,10 +17,23 @@
 
 namespace model {
 
+/**
+ * The BatchReaderConsumerInitialize is a batch reader consumer that contains an
+ * initialization life cycle hook. The hook is called before the first call to
+ * operator() and can be used to do things like initialize data on disk as is
+ * the case fo the log_writer.
+ */
 // clang-format off
 CONCEPT(template<typename Consumer> concept bool BatchReaderConsumer() {
     return requires(Consumer c, record_batch b) {
         { c(std::move(b)) } -> ss::future<ss::stop_iteration>;
+        c.end_of_stream();
+    };
+})
+CONCEPT(template<typename Consumer> concept bool BatchReaderConsumerInitialize() {
+    return requires(Consumer c, record_batch b) {
+        { c(std::move(b)) } -> ss::future<ss::stop_iteration>;
+        { c.initialize() } -> ss::future<>;
         c.end_of_stream();
     };
 })
@@ -31,6 +44,13 @@ CONCEPT(template<typename Consumer> concept bool BatchReaderConsumer() {
 class record_batch_reader final {
 public:
     class impl {
+        template<typename C, typename = int>
+        struct has_initialize : std::false_type {};
+
+        template<typename C>
+        struct has_initialize<C, decltype(&C::initialize, 0)>
+          : std::true_type {};
+
     protected:
         // FIXME: In C++20, use std::span.
         using span = gsl::span<record_batch>;
@@ -80,22 +100,25 @@ public:
 
         const record_batch& peek_batch() const { return *_current; }
 
-        template<typename Consumer>
+        template<
+          typename Consumer,
+          typename std::enable_if_t<has_initialize<Consumer>::value, int> = 0>
         auto consume(Consumer consumer, timeout_clock::time_point timeout) {
             return ss::do_with(
               std::move(consumer), [this, timeout](Consumer& consumer) {
-                  return ss::repeat([this, timeout, &consumer] {
-                             if (end_of_stream() && is_slice_empty()) {
-                                 return ss::make_ready_future<
-                                   ss::stop_iteration>(ss::stop_iteration::yes);
-                             }
-                             if (is_slice_empty()) {
-                                 return load_slice(timeout).then(
-                                   [] { return ss::stop_iteration::no; });
-                             }
-                             return consumer(pop_batch());
-                         })
-                    .then([&consumer] { return consumer.end_of_stream(); });
+                  return consumer.initialize().then([this, timeout, &consumer] {
+                      return do_consume(consumer, timeout);
+                  });
+              });
+        }
+
+        template<
+          typename Consumer,
+          typename std::enable_if_t<!has_initialize<Consumer>::value, int> = 0>
+        auto consume(Consumer consumer, timeout_clock::time_point timeout) {
+            return ss::do_with(
+              std::move(consumer), [this, timeout](Consumer& consumer) {
+                  return do_consume(consumer, timeout);
               });
         }
 
@@ -103,6 +126,23 @@ public:
         bool _end_of_stream = false;
         span _slice = span();
         span::iterator _current = _slice.end();
+
+    private:
+        template<typename Consumer>
+        auto do_consume(Consumer& consumer, timeout_clock::time_point timeout) {
+            return ss::repeat([this, timeout, &consumer] {
+                       if (end_of_stream() && is_slice_empty()) {
+                           return ss::make_ready_future<ss::stop_iteration>(
+                             ss::stop_iteration::yes);
+                       }
+                       if (is_slice_empty()) {
+                           return load_slice(timeout).then(
+                             [] { return ss::stop_iteration::no; });
+                       }
+                       return consumer(pop_batch());
+                   })
+              .then([&consumer] { return consumer.end_of_stream(); });
+        }
     };
 
 public:
@@ -142,7 +182,9 @@ public:
     // reached. Next call will start from the next mutation_fragment in the
     // stream.
     template<typename Consumer>
-    CONCEPT(requires BatchReaderConsumer<Consumer>())
+    CONCEPT(
+      requires BatchReaderConsumer<Consumer>()
+      || BatchReaderConsumerInitialize<Consumer>())
     auto consume(Consumer consumer, timeout_clock::time_point timeout) {
         return _impl->consume(std::move(consumer), timeout);
     }

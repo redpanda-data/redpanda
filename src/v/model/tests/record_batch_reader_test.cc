@@ -30,6 +30,45 @@ private:
     size_t _depth;
 };
 
+class consumer_with_init {
+public:
+    explicit consumer_with_init(size_t depth)
+      : _depth(depth)
+      , _init_count(0) {}
+
+    ss::future<> initialize() {
+        _init_count++;
+        return ss::make_ready_future<>();
+    }
+
+    ss::future<ss::stop_iteration> operator()(record_batch b) {
+        _result.push_back(std::move(b));
+        if (--_depth == 0) {
+            return ss::make_ready_future<ss::stop_iteration>(
+              ss::stop_iteration::yes);
+        }
+        return ss::make_ready_future<ss::stop_iteration>(
+          ss::stop_iteration::no);
+    }
+
+    struct consumer_ret {
+        int init_count;
+        std::vector<record_batch> batches;
+    };
+
+    consumer_ret end_of_stream() {
+        return consumer_ret{
+          .init_count = _init_count,
+          .batches = std::move(_result),
+        };
+    }
+
+private:
+    int _init_count;
+    std::vector<record_batch> _result;
+    size_t _depth;
+};
+
 record_batch_header make_header(offset o) {
     return record_batch_header{1,
                                o,
@@ -204,4 +243,19 @@ SEASTAR_THREAD_TEST_CASE(record_batch_sharing) {
     for (auto i = 0; i < v1.size(); ++i) {
         BOOST_CHECK(v1[i] == v2[i]);
     }
+}
+
+SEASTAR_THREAD_TEST_CASE(test_consume_init) {
+    auto reader = make_memory_record_batch_reader(
+      make_batches(offset(1), offset(2), offset(3), offset(4)));
+
+    auto ret = reader.consume(consumer_with_init(4), no_timeout).get0();
+    auto batches = std::move(ret.batches);
+    auto o = offset(1);
+    for (auto& batch : batches) {
+        BOOST_CHECK_EQUAL(batch.base_offset(), o);
+        o += 1;
+    }
+
+    BOOST_REQUIRE(ret.init_count == 1);
 }
