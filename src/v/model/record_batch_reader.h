@@ -185,8 +185,44 @@ public:
     CONCEPT(
       requires BatchReaderConsumer<Consumer>()
       || BatchReaderConsumerInitialize<Consumer>())
-    auto consume(Consumer consumer, timeout_clock::time_point timeout) {
+    auto consume(Consumer consumer, timeout_clock::time_point timeout) & {
         return _impl->consume(std::move(consumer), timeout);
+    }
+
+    /**
+     * A common pattern is
+     *
+     *    auto reader = make_reader(...);
+     *    return reader.consume(writer(), ..);
+     *
+     * which means that we need a way to deal with the common case of
+     * reader.consume returning a future and reader going out of scope. that is
+     * what this r-value ref qualified version is for. instead, write
+     *
+     *    return std::move(reader).consume(writer(), ..);
+     *
+     * and the internal impl will be released and held onto for the lifetime of
+     * the consume method.
+     */
+    template<typename Consumer>
+    CONCEPT(
+      requires BatchReaderConsumer<Consumer>()
+      || BatchReaderConsumerInitialize<Consumer>())
+    auto consume(Consumer consumer, timeout_clock::time_point timeout) && {
+        /*
+         * ideally what we would do here is:
+         *
+         *    ss::shared_ptr p(std::move(_impl));
+         *
+         * but ss::shared_ptr has no such constructor, and we cannot use
+         * ss::make_shared<impl>(_impl.release()) since impl is abstract. so
+         * this would appear to be an example of a valid case where manual
+         * memory management is necessary.
+         */
+        auto i = _impl.release();
+        return i->consume(std::move(consumer), timeout).finally([i] {
+            delete i; // NOLINT
+        });
     }
 
 private:
