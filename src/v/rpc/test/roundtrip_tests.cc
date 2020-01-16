@@ -12,7 +12,7 @@ SEASTAR_THREAD_TEST_CASE(roundtrip_pod) {
     auto in = make_iobuf_input_stream(rpc::serialize(pod{}));
     auto rsource = rpc::source(in);
     auto expected = rpc::deserialize<pod>(rsource).get0();
-    auto [x, y, z] = rpc::to_tuple(expected);
+    auto [x, y, z] = reflection::to_tuple(expected);
     BOOST_REQUIRE_EQUAL(x, 1);
     BOOST_REQUIRE_EQUAL(y, 2);
     BOOST_REQUIRE_EQUAL(z, 3);
@@ -21,7 +21,7 @@ SEASTAR_THREAD_TEST_CASE(roundtrip_pod_with_checksum) {
     auto in = make_iobuf_input_stream(rpc::serialize(pod{}));
     auto rsource = rpc::source(in);
     auto expected = rpc::deserialize<pod>(rsource).get0();
-    auto [x, y, z] = rpc::to_tuple(expected);
+    auto [x, y, z] = reflection::to_tuple(expected);
     BOOST_REQUIRE_EQUAL(x, 1);
     BOOST_REQUIRE_EQUAL(y, 2);
     BOOST_REQUIRE_EQUAL(z, 3);
@@ -31,7 +31,7 @@ SEASTAR_THREAD_TEST_CASE(roundtrip_packed_struct) {
     auto in = make_iobuf_input_stream(rpc::serialize(very_packed_pod{}));
     auto rsource = rpc::source(in);
     auto expected = rpc::deserialize<very_packed_pod>(rsource).get0();
-    auto [x, y] = rpc::to_tuple(expected);
+    auto [x, y] = reflection::to_tuple(expected);
     BOOST_REQUIRE_EQUAL(x, 1);
     BOOST_REQUIRE_EQUAL(y, 2);
 }

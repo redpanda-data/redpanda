@@ -14,7 +14,7 @@ add_subdirectory(storage)
 add_subdirectory(raft)
 add_subdirectory(cluster)
 add_subdirectory(kafka)
-
+add_subdirectory(reflection)
 
 # main executables
 add_subdirectory(redpanda)

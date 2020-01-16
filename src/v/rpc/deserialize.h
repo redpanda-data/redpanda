@@ -1,8 +1,8 @@
 #pragma once
 
 #include "bytes/iobuf.h"
-#include "rpc/arity.h"
-#include "rpc/for_each_field.h"
+#include "reflection/arity.h"
+#include "reflection/for_each_field.h"
 #include "rpc/is_std_helpers.h"
 #include "rpc/source.h"
 #include "seastarx.h"
@@ -98,7 +98,7 @@ ss::future<T> deserialize(source& in) {
     } else if constexpr (is_standard_layout) {
         return ss::do_with(T{}, [&in](T& t) mutable {
             auto f = ss::make_ready_future<>();
-            for_each_field(t, [&](auto& field) mutable {
+            reflection::for_each_field(t, [&](auto& field) mutable {
                 f = f.then([&in, &field]() mutable {
                     return deserialize<std::decay_t<decltype(field)>>(in).then(
                       [&field](auto value) mutable {

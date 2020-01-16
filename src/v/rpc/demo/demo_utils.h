@@ -1,6 +1,6 @@
-#include "rpc/arity.h"
+#include "reflection/arity.h"
+#include "reflection/for_each_field.h"
 #include "rpc/demo/types.h"
-#include "rpc/for_each_field.h"
 #include "seastarx.h"
 #include "utils/hdr_hist.h"
 

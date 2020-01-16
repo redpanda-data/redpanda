@@ -1,7 +1,7 @@
 #pragma once
 
 #include "bytes/iobuf.h"
-#include "rpc/for_each_field.h"
+#include "reflection/for_each_field.h"
 #include "rpc/is_std_helpers.h"
 #include "seastarx.h"
 #include "utils/named_type.h"
@@ -67,7 +67,7 @@ void serialize(iobuf& out, T&& t) {
         out.append(reinterpret_cast<const char*>(&t), sz);
         return;
     } else if constexpr (is_standard_layout) {
-        for_each_field(
+        reflection::for_each_field(
           t, [&out](auto& field) { serialize(out, std::move(field)); });
         return;
     }
