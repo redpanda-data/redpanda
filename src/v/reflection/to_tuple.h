@@ -2,11 +2,11 @@
 
 // derived from cista.rocks
 
-#include "rpc/arity.h"
+#include "reflection/arity.h"
 
 #include <tuple>
 
-namespace rpc {
+namespace reflection {
 
 template<typename T>
 inline auto to_tuple(T& t) {
@@ -174,4 +174,4 @@ inline auto to_tuple(T& t) {
     }
 }
 
-} // namespace rpc
+} // namespace reflection

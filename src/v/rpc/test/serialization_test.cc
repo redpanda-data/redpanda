@@ -1,7 +1,7 @@
 #define BOOST_TEST_MODULE rpc
 
 #include "bytes/iobuf.h"
-#include "rpc/arity.h"
+#include "reflection/arity.h"
 #include "rpc/serialize.h"
 #include "rpc/test/test_types.h"
 
@@ -21,9 +21,9 @@ BOOST_AUTO_TEST_CASE(serialize_packed_struct) {
 }
 
 BOOST_AUTO_TEST_CASE(verify_airty) {
-    BOOST_CHECK_EQUAL(rpc::arity<pod>(), 3);
-    BOOST_CHECK_EQUAL(rpc::arity<complex_custom>(), 2);
-    BOOST_CHECK_EQUAL(rpc::arity<very_packed_pod>(), 2);
+    BOOST_CHECK_EQUAL(reflection::arity<pod>(), 3);
+    BOOST_CHECK_EQUAL(reflection::arity<complex_custom>(), 2);
+    BOOST_CHECK_EQUAL(reflection::arity<very_packed_pod>(), 2);
 }
 BOOST_AUTO_TEST_CASE(serialize_with_fragmented_buffer) {
     auto b = iobuf();
