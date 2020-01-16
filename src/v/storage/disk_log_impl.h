@@ -54,6 +54,7 @@ public:
     model::offset committed_offset() const final {
         return _tracker.committed_offset();
     }
+    std::ostream& print(std::ostream&) const final;
 
 private:
     friend class log_builder;

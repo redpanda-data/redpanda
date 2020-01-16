@@ -16,7 +16,7 @@ log_segment_reader::log_segment_reader(
   size_t buffer_size) noexcept
   : _filename(std::move(filename))
   , _data_file(std::move(data_file))
-  , _term(std::move(term))
+  , _term(term)
   , _base_offset(base_offset)
   , _file_size(file_size)
   , _buffer_size(buffer_size) {}
@@ -36,8 +36,12 @@ log_segment_reader::data_stream(uint64_t pos, const ss::io_priority_class& pc) {
 }
 
 std::ostream& operator<<(std::ostream& os, const log_segment_reader& seg) {
-    return fmt_print(
-      os, "{{log_segment: {}, {}}}", seg.get_filename(), seg.base_offset());
+    return ss::fmt_print(
+      os,
+      "{{log_segment: {}, {}-{}}}",
+      seg.get_filename(),
+      seg.base_offset(),
+      seg.max_offset());
 }
 
 std::ostream& operator<<(std::ostream& os, segment_reader_ptr seg) {
@@ -45,64 +49,5 @@ std::ostream& operator<<(std::ostream& os, segment_reader_ptr seg) {
         return os << *seg;
     }
     return ss::fmt_print(os, "{{log_segment: null}}");
-}
-
-struct base_offset_ordering {
-    bool operator()(
-      const segment_reader_ptr& seg1, const segment_reader_ptr& seg2) const {
-        return seg1->base_offset() <= seg2->base_offset();
-    }
-    bool operator()(const segment_reader_ptr& seg, model::offset value) const {
-        return seg->max_offset() < value && seg->base_offset() < value;
-    }
-};
-
-log_segment_selector::log_segment_selector(const log_set& set) noexcept
-  : _set(set) {}
-
-log_set::log_set(std::vector<segment_reader_ptr> segs) noexcept(
-  log_set::is_nothrow::value)
-  : _segments(std::move(segs)) {
-    std::sort(_segments.begin(), _segments.end(), base_offset_ordering{});
-}
-
-log_set::generation_advancer::generation_advancer(log_set& log_set) noexcept
-  : _log_set(log_set) {}
-
-log_set::generation_advancer::~generation_advancer() { ++_log_set._generation; }
-
-void log_set::add(segment_reader_ptr seg) {
-    generation_advancer ea(*this);
-    _segments.push_back(std::move(seg));
-}
-
-void log_set::pop_last() {
-    generation_advancer ea(*this);
-    _segments.pop_back();
-}
-
-log_set::const_iterator log_set::lower_bound(model::offset offset) const {
-    return std::lower_bound(
-      std::cbegin(_segments),
-      std::cend(_segments),
-      offset,
-      base_offset_ordering{});
-}
-
-segment_reader_ptr log_segment_selector::select(model::offset offset) const {
-    if (_iter_gen != _set.iter_gen()) {
-        _current_segment = std::lower_bound(
-          _set.begin(), _set.end(), offset, base_offset_ordering{});
-        _iter_gen = _set.iter_gen();
-    }
-    auto seg = _current_segment;
-    while (seg != _set.end()) {
-        if (offset <= (*seg)->max_offset()) {
-            _current_segment = seg;
-            return *seg;
-        }
-        ++seg;
-    }
-    return nullptr;
 }
 } // namespace storage

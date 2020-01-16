@@ -1,4 +1,5 @@
 #include "storage/log_segment_reader.h"
+#include "storage/log_set.h"
 
 #include <seastar/core/simple-stream.hh>
 #include <seastar/core/thread.hh>
@@ -73,23 +74,8 @@ SEASTAR_THREAD_TEST_CASE(log_set_expects_monotonic_adds) {
       "test", f, model::term_id(0), model::offset(0), 0, 1024);
 
     log_set segs({log_seg1});
-    segs.add(log_seg0);
-
-    BOOST_CHECK_EQUAL(segs.last()->base_offset(), model::offset(0));
-}
-
-SEASTAR_THREAD_TEST_CASE(log_set_invalidates_iterators) {
-    ss::file f(nullptr);
-    auto log_seg = ss::make_lw_shared<log_segment_reader>(
-      "test", f, model::term_id(0), model::offset(1), 0, 1024);
-    auto other_log_seg = ss::make_lw_shared<log_segment_reader>(
-      "test", f, model::term_id(0), model::offset(0), 0, 1024);
-
-    log_set segs({log_seg});
-    auto gen = segs.iter_gen();
-    segs.add(other_log_seg);
-
-    BOOST_CHECK_NE(gen, segs.iter_gen());
+    BOOST_REQUIRE_THROW(segs.add(log_seg0), std::runtime_error);
+    BOOST_CHECK_EQUAL(segs.last()->base_offset(), model::offset(1));
 }
 
 SEASTAR_THREAD_TEST_CASE(test_log_seg_selector) {
@@ -109,38 +95,35 @@ SEASTAR_THREAD_TEST_CASE(test_log_seg_selector) {
 
     log_set segs({log_seg1, log_seg2, log_seg3});
 
-    auto select = log_segment_selector(segs);
-
-    auto seg = select.select(model::offset(0));
+    auto seg = *segs.lower_bound(model::offset(0));
     BOOST_CHECK_EQUAL(seg, log_seg1);
 
-    seg = select.select(model::offset(10));
+    seg = *segs.lower_bound(model::offset(10));
     BOOST_CHECK_EQUAL(seg, log_seg1);
 
-    seg = select.select(model::offset(11));
+    seg = *segs.lower_bound(model::offset(11));
     BOOST_CHECK_EQUAL(seg, log_seg2);
 
-    seg = select.select(model::offset(15));
+    seg = *segs.lower_bound(model::offset(15));
     BOOST_CHECK_EQUAL(seg, log_seg2);
 
-    seg = select.select(model::offset(20));
+    seg = *segs.lower_bound(model::offset(20));
     BOOST_CHECK_EQUAL(seg, log_seg2);
 
-    seg = select.select(model::offset(21));
+    seg = *segs.lower_bound(model::offset(21));
     BOOST_CHECK_EQUAL(seg, log_seg3);
 
-    seg = select.select(model::offset(22));
-    BOOST_CHECK_EQUAL(seg, segment_reader_ptr());
+    BOOST_CHECK(segs.lower_bound(model::offset(22)) == segs.end());
 
     auto log_seg4 = ss::make_lw_shared<log_segment_reader>(
       "test", f, model::term_id(0), model::offset(22), 0, 1024);
 
     log_seg4->set_last_written_offset(model::offset(25));
     segs.add(log_seg4);
-    seg = select.select(model::offset(22));
+    seg = *segs.lower_bound(model::offset(22));
     BOOST_CHECK_EQUAL(seg, log_seg4);
 
     segs = log_set({log_seg1, log_seg2, log_seg3, log_seg4});
-    seg = select.select(model::offset(12));
+    seg = *segs.lower_bound(model::offset(12));
     BOOST_CHECK_EQUAL(seg, log_seg2);
 }
