@@ -39,10 +39,9 @@ public:
 
     ss::future<> maybe_roll(model::offset);
 
-    [[gnu::always_inline]] ss::future<>
-    truncate(model::offset offset, model::term_id term) final {
+    [[gnu::always_inline]] ss::future<> truncate(model::offset offset) final {
         return _failure_probes.truncate().then(
-          [this, offset, term]() mutable { return do_truncate(offset, term); });
+          [this, offset]() mutable { return do_truncate(offset); });
     }
 
     probe& get_probe() { return _probe; }
@@ -74,7 +73,9 @@ private:
     ss::future<append_result>
     do_append(model::record_batch_reader&&, log_append_config);
 
-    ss::future<> do_truncate(model::offset, model::term_id);
+    ss::future<> do_truncate(model::offset);
+
+    ss::future<> truncate_whole_segments(log_set::const_iterator);
 
 private:
     model::term_id _term;

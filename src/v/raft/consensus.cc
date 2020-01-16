@@ -343,14 +343,9 @@ consensus::do_append_entries(append_entries_request&& r) {
           r.meta.term,
           _meta.term);
         _probe.append_request_term_newer();
-        return _log
-          .truncate(
-            model::offset(_meta.commit_index), model::term_id(r.meta.term))
-          .then([this, r = std::move(r)]() mutable {
-              step_down();
-              _meta.term = r.meta.term;
-              return do_append_entries(std::move(r));
-          });
+        step_down();
+        _meta.term = r.meta.term;
+        return do_append_entries(std::move(r));
     }
     // raft.pdf: Reply false if log doesn’t contain an entry at
     // prevLogIndex whose term matches prevLogTerm (§5.3)
@@ -385,9 +380,7 @@ consensus::do_append_entries(append_entries_request&& r) {
           _meta.commit_index,
           r.meta.prev_log_index);
         _probe.append_request_log_truncate();
-        return _log
-          .truncate(
-            model::offset(r.meta.prev_log_index), model::term_id(r.meta.term))
+        return _log.truncate(model::offset(r.meta.prev_log_index))
           .then([this, r = std::move(r)]() mutable {
               return do_append_entries(std::move(r));
           });
@@ -502,7 +495,8 @@ consensus::disk_append(std::vector<entry>&& entries) {
             // batch fsync
             storage::log_append_config::fsync::no,
             _io_priority,
-            model::timeout_clock::now() + _disk_timeout};
+            model::timeout_clock::now() + _disk_timeout, 
+            model::term_id(_meta.term)};
             return copy_range<ret_t>(in, [this, cfg](entry& e) {
                    return _log.append(std::move(e.reader()), cfg);
             }).then([this, no_of_entries](ret_t ret) {

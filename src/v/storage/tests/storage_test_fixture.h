@@ -146,11 +146,12 @@ public:
     std::vector<model::record_batch_header> append_random_batches(
       storage::log log,
       int appends,
+      model::term_id term = model::term_id(0),
       T batch_generator = T{},
       storage::log_append_config::fsync sync
       = storage::log_append_config::fsync::no) {
         storage::log_append_config append_cfg{
-          sync, ss::default_priority_class(), model::no_timeout};
+          sync, ss::default_priority_class(), model::no_timeout, term};
 
         model::offset base_offset = log.max_offset() < model::offset(0)
                                       ? model::offset(0)
