@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"time"
-	"vectorized/pkg/redpanda"
+	"vectorized/pkg/config"
 	"vectorized/pkg/redpanda/sandbox/docker"
 	"vectorized/pkg/redpanda/sandbox/docker/labels"
 
@@ -32,7 +32,7 @@ type Node interface {
 	WipeRestart() error
 	Wipe() error
 	Logs(numberOfLines int, follow bool, timestamps bool) (io.ReadCloser, error)
-	Configure(seedServers []*redpanda.SeedServer) error
+	Configure(seedServers []*config.SeedServer) error
 	Create(containerIP string, containerFactory docker.ContainerFactory) error
 	State() (*NodeState, error)
 }
@@ -93,7 +93,7 @@ func (n *node) Create(
 	return nil
 }
 
-func (n *node) Configure(seedServers []*redpanda.SeedServer) error {
+func (n *node) Configure(seedServers []*config.SeedServer) error {
 	log.Debugf("Configuring node %d", n.id)
 	return n.updateNodeConfig(n.id, "0.0.0.0", containerRPCPort, containerKafkaPort, seedServers)
 }
@@ -225,18 +225,18 @@ func (n *node) updateNodeConfig(
 	address string,
 	rpcPort int,
 	kafkaPort int,
-	seedServers []*redpanda.SeedServer,
+	seedServers []*config.SeedServer,
 ) error {
 	configPath := n.configPath()
 	log.Debugf("Updating node config in %s", configPath)
-	config := redpanda.Config{
-		Redpanda: &redpanda.RedpandaConfig{
+	conf := config.Config{
+		Redpanda: &config.RedpandaConfig{
 			Directory: "/opt/redpanda/data",
-			KafkaApi: redpanda.SocketAddress{
+			KafkaApi: config.SocketAddress{
 				Port:    kafkaPort,
 				Address: address,
 			},
-			RPCServer: redpanda.SocketAddress{
+			RPCServer: config.SocketAddress{
 				Port:    rpcPort,
 				Address: address,
 			},
@@ -244,7 +244,7 @@ func (n *node) updateNodeConfig(
 			SeedServers: seedServers,
 		},
 	}
-	return redpanda.WriteConfig(n.fs, &config, configPath)
+	return config.WriteConfig(n.fs, &conf, configPath)
 }
 
 func (n *node) getState() (*NodeState, error) {

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 	"vectorized/pkg/cli"
-	"vectorized/pkg/redpanda"
+	"vectorized/pkg/config"
 	"vectorized/pkg/tuners/factory"
 	"vectorized/pkg/tuners/hwloc"
 	"vectorized/pkg/utils"
@@ -67,19 +67,19 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			config, err := redpanda.ReadConfigFromPath(fs, configFile)
+			conf, err := config.ReadConfigFromPath(fs, configFile)
 			if err != nil {
 				return err
 			}
 			var tunerFactory factory.TunersFactory
 			if outTuneScriptFile != "" {
 				tunerFactory = factory.NewScriptRenderingTunersFactory(
-					fs, *config, outTuneScriptFile, timeout)
+					fs, *conf, outTuneScriptFile, timeout)
 			} else {
 				tunerFactory = factory.NewDirectExecutorTunersFactory(
-					fs, *config, timeout)
+					fs, *conf, timeout)
 			}
-			return tune(fs, config, tuners, tunerFactory, &tunerParams)
+			return tune(fs, conf, tuners, tunerFactory, &tunerParams)
 		},
 	}
 	command.Flags().StringVarP(&tunerParams.Mode,
@@ -156,18 +156,18 @@ func newHelpCommand() *cobra.Command {
 
 func tune(
 	fs afero.Fs,
-	config *redpanda.Config,
+	conf *config.Config,
 	tunerNames []string,
 	tunersFactory factory.TunersFactory,
 	params *factory.TunerParams,
 ) error {
-	params, err := factory.MergeTunerParamsConfig(params, config)
+	params, err := factory.MergeTunerParamsConfig(params, conf)
 	if err != nil {
 		return err
 	}
 	rebootRequired := false
 	for _, tunerName := range tunerNames {
-		if !factory.IsTunerEnabled(tunerName, config.Rpk) {
+		if !factory.IsTunerEnabled(tunerName, conf.Rpk) {
 			log.Infof("Skipping disabled tuner %s", tunerName)
 			continue
 		}

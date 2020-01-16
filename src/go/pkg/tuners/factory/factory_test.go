@@ -3,33 +3,33 @@ package factory_test
 import (
 	"reflect"
 	"testing"
-	"vectorized/pkg/redpanda"
+	"vectorized/pkg/config"
 	"vectorized/pkg/tuners/factory"
 )
 
-func getValidConfig() *redpanda.Config {
-	return &redpanda.Config{
-		Redpanda: &redpanda.RedpandaConfig{
+func getValidConfig() *config.Config {
+	return &config.Config{
+		Redpanda: &config.RedpandaConfig{
 			Directory: "/var/lib/redpanda/data",
-			RPCServer: redpanda.SocketAddress{
+			RPCServer: config.SocketAddress{
 				Port:    33145,
 				Address: "127.0.0.1",
 			},
 			Id: 1,
-			KafkaApi: redpanda.SocketAddress{
+			KafkaApi: config.SocketAddress{
 				Port:    9092,
 				Address: "127.0.0.1",
 			},
-			SeedServers: []*redpanda.SeedServer{
-				&redpanda.SeedServer{
-					Host: redpanda.SocketAddress{
+			SeedServers: []*config.SeedServer{
+				&config.SeedServer{
+					Host: config.SocketAddress{
 						Port:    33145,
 						Address: "127.0.0.1",
 					},
 					Id: 1,
 				},
-				&redpanda.SeedServer{
-					Host: redpanda.SocketAddress{
+				&config.SeedServer{
+					Host: config.SocketAddress{
 						Port:    33146,
 						Address: "127.0.0.1",
 					},
@@ -37,7 +37,7 @@ func getValidConfig() *redpanda.Config {
 				},
 			},
 		},
-		Rpk: &redpanda.RpkConfig{},
+		Rpk: &config.RpkConfig{},
 	}
 }
 
@@ -55,7 +55,7 @@ func getValidTunerParams() *factory.TunerParams {
 func TestMergeTunerParamsConfig(t *testing.T) {
 	type args struct {
 		tunerParams func() *factory.TunerParams
-		config      func() *redpanda.Config
+		conf        func() *config.Config
 	}
 	tests := []struct {
 		name     string
@@ -66,7 +66,7 @@ func TestMergeTunerParamsConfig(t *testing.T) {
 			name: "it should override the configuration",
 			args: args{
 				tunerParams: getValidTunerParams,
-				config:      getValidConfig,
+				conf:        getValidConfig,
 			},
 			expected: getValidTunerParams,
 		},
@@ -78,7 +78,7 @@ func TestMergeTunerParamsConfig(t *testing.T) {
 					params.Directories = []string{}
 					return params
 				},
-				config: getValidConfig,
+				conf: getValidConfig,
 			},
 			expected: func() *factory.TunerParams {
 				params := getValidTunerParams()
@@ -90,7 +90,7 @@ func TestMergeTunerParamsConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := factory.MergeTunerParamsConfig(tt.args.tunerParams(), tt.args.config())
+			res, err := factory.MergeTunerParamsConfig(tt.args.tunerParams(), tt.args.conf())
 			if err != nil {
 				t.Errorf("got an unexpected error: %v", err)
 			}

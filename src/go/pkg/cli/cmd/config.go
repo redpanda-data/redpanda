@@ -4,7 +4,7 @@ import (
 	"errors"
 	"strconv"
 	"vectorized/pkg/cli"
-	"vectorized/pkg/redpanda"
+	"vectorized/pkg/config"
 
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
@@ -55,12 +55,12 @@ func id(fs afero.Fs) *cobra.Command {
 			// Safe to access args[0] directly, and to ignore the error,
 			// because it was previously validated.
 			id, _ := strconv.Atoi(args[0])
-			configFile, config, err := loadConfig(c, fs)
+			configFile, conf, err := loadConfig(c, fs)
 			if err != nil {
 				return err
 			}
-			config.Redpanda.Id = id
-			return redpanda.WriteConfig(fs, config, configFile)
+			conf.Redpanda.Id = id
+			return config.WriteConfig(fs, conf, configFile)
 		},
 	}
 	return c
@@ -101,23 +101,23 @@ elements must be separated by commas.`,
 			} else if len(ids) != len(hosts) {
 				return errors.New("There should be one id per host")
 			}
-			configFile, config, err := loadConfig(c, fs)
+			configFile, conf, err := loadConfig(c, fs)
 			if err != nil {
 				return err
 			}
-			seeds := make([]*redpanda.SeedServer, len(hosts))
+			seeds := make([]*config.SeedServer, len(hosts))
 			for i := 0; i < len(hosts); i++ {
-				seed := &redpanda.SeedServer{
+				seed := &config.SeedServer{
 					Id: ids[i],
-					Host: redpanda.SocketAddress{
+					Host: config.SocketAddress{
 						Address: hosts[i],
 						Port:    ports[i],
 					},
 				}
 				seeds[i] = seed
 			}
-			config.Redpanda.SeedServers = seeds
-			return redpanda.WriteConfig(fs, config, configFile)
+			conf.Redpanda.SeedServers = seeds
+			return config.WriteConfig(fs, conf, configFile)
 		},
 	}
 	c.Flags().StringSliceVar(&hosts, "hosts", []string{}, "The list of node addresses or hostnames")
@@ -127,7 +127,7 @@ elements must be separated by commas.`,
 	return c
 }
 
-func loadConfig(c *cobra.Command, fs afero.Fs) (string, *redpanda.Config, error) {
+func loadConfig(c *cobra.Command, fs afero.Fs) (string, *config.Config, error) {
 	redpandaConfigFile, err := c.Flags().GetString(configFileFlag)
 	if err != nil {
 		return "", nil, err
@@ -136,6 +136,6 @@ func loadConfig(c *cobra.Command, fs afero.Fs) (string, *redpanda.Config, error)
 	if err != nil {
 		return "", nil, err
 	}
-	config, err := redpanda.ReadConfigFromPath(fs, configFile)
+	config, err := config.ReadConfigFromPath(fs, configFile)
 	return configFile, config, err
 }

@@ -3,6 +3,7 @@ package redpanda
 import (
 	"time"
 	"vectorized/pkg/checkers"
+	"vectorized/pkg/config"
 	"vectorized/pkg/net"
 	"vectorized/pkg/os"
 	"vectorized/pkg/system"
@@ -48,13 +49,13 @@ const (
 	Swappiness
 )
 
-func NewConfigChecker(config *Config) checkers.Checker {
+func NewConfigChecker(conf *config.Config) checkers.Checker {
 	return checkers.NewEqualityChecker(
 		"Config file valid",
 		checkers.Fatal,
 		true,
 		func() (interface{}, error) {
-			ok, _ := CheckConfig(config)
+			ok, _ := config.CheckConfig(conf)
 			return ok, nil
 		})
 }
@@ -153,7 +154,7 @@ func NewNTPSyncChecker(timeout time.Duration, fs afero.Fs) checkers.Checker {
 }
 
 func RedpandaCheckers(
-	fs afero.Fs, ioConfigFile string, config *Config, timeout time.Duration,
+	fs afero.Fs, ioConfigFile string, config *config.Config, timeout time.Duration,
 ) (map[CheckerID][]checkers.Checker, error) {
 	proc := os.NewProc()
 	ethtool, err := ethtool.NewEthtoolWrapper()

@@ -1,4 +1,4 @@
-package redpanda
+package config
 
 import (
 	"errors"

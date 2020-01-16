@@ -3,35 +3,35 @@ package coredump
 import (
 	"os"
 	"testing"
-	"vectorized/pkg/redpanda"
+	"vectorized/pkg/config"
 	"vectorized/pkg/tuners/executors"
 
 	"github.com/spf13/afero"
 )
 
-func validConfig() redpanda.Config {
-	return redpanda.Config{
-		Redpanda: &redpanda.RedpandaConfig{
+func validConfig() config.Config {
+	return config.Config{
+		Redpanda: &config.RedpandaConfig{
 			Directory: "/var/lib/redpanda/data",
-			RPCServer: redpanda.SocketAddress{
+			RPCServer: config.SocketAddress{
 				Port:    33145,
 				Address: "127.0.0.1",
 			},
 			Id: 1,
-			KafkaApi: redpanda.SocketAddress{
+			KafkaApi: config.SocketAddress{
 				Port:    9092,
 				Address: "127.0.0.1",
 			},
-			SeedServers: []*redpanda.SeedServer{
-				&redpanda.SeedServer{
-					Host: redpanda.SocketAddress{
+			SeedServers: []*config.SeedServer{
+				&config.SeedServer{
+					Host: config.SocketAddress{
 						Port:    33145,
 						Address: "127.0.0.1",
 					},
 					Id: 1,
 				},
-				&redpanda.SeedServer{
-					Host: redpanda.SocketAddress{
+				&config.SeedServer{
+					Host: config.SocketAddress{
 						Port:    33146,
 						Address: "127.0.0.1",
 					},
@@ -39,7 +39,7 @@ func validConfig() redpanda.Config {
 				},
 			},
 		},
-		Rpk: &redpanda.RpkConfig{
+		Rpk: &config.RpkConfig{
 			TuneNetwork:         true,
 			TuneDiskScheduler:   true,
 			TuneNomerges:        true,
@@ -57,11 +57,11 @@ func validConfig() redpanda.Config {
 func TestTune(t *testing.T) {
 	type args struct {
 		fs     afero.Fs
-		config func() redpanda.Config
+		config func() config.Config
 	}
 	tests := []struct {
 		name string
-		pre  func(afero.Fs, redpanda.Config) error
+		pre  func(afero.Fs, config.Config) error
 		args args
 	}{
 		{
@@ -73,7 +73,7 @@ func TestTune(t *testing.T) {
 		},
 		{
 			name: "it should not fail to install if the coredump config file already exists",
-			pre: func(fs afero.Fs, config redpanda.Config) error {
+			pre: func(fs afero.Fs, config config.Config) error {
 				_, err := fs.Create(corePatternFilePath)
 				return err
 			},

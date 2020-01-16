@@ -3,9 +3,9 @@ package factory
 import (
 	"runtime"
 	"time"
+	"vectorized/pkg/config"
 	"vectorized/pkg/net"
 	"vectorized/pkg/os"
-	"vectorized/pkg/redpanda"
 	"vectorized/pkg/system"
 	"vectorized/pkg/tuners"
 	"vectorized/pkg/tuners/coredump"
@@ -52,7 +52,7 @@ type TunersFactory interface {
 
 type tunersFactory struct {
 	fs                afero.Fs
-	config            redpanda.Config
+	conf              config.Config
 	irqDeviceInfo     irq.DeviceInfo
 	cpuMasks          irq.CpuMasks
 	irqBalanceService irq.BalanceService
@@ -64,28 +64,28 @@ type tunersFactory struct {
 }
 
 func NewDirectExecutorTunersFactory(
-	fs afero.Fs, config redpanda.Config, timeout time.Duration,
+	fs afero.Fs, conf config.Config, timeout time.Duration,
 ) TunersFactory {
 	irqProcFile := irq.NewProcFile(fs)
 	proc := os.NewProc()
 	irqDeviceInfo := irq.NewDeviceInfo(fs, irqProcFile)
 	executor := executors.NewDirectExecutor()
-	return newTunersFactory(fs, config, irqProcFile, proc, irqDeviceInfo, executor, timeout)
+	return newTunersFactory(fs, conf, irqProcFile, proc, irqDeviceInfo, executor, timeout)
 }
 
 func NewScriptRenderingTunersFactory(
-	fs afero.Fs, config redpanda.Config, out string, timeout time.Duration,
+	fs afero.Fs, conf config.Config, out string, timeout time.Duration,
 ) TunersFactory {
 	irqProcFile := irq.NewProcFile(fs)
 	proc := os.NewProc()
 	irqDeviceInfo := irq.NewDeviceInfo(fs, irqProcFile)
 	executor := executors.NewScriptRenderingExecutor(fs, out)
-	return newTunersFactory(fs, config, irqProcFile, proc, irqDeviceInfo, executor, timeout)
+	return newTunersFactory(fs, conf, irqProcFile, proc, irqDeviceInfo, executor, timeout)
 }
 
 func newTunersFactory(
 	fs afero.Fs,
-	config redpanda.Config,
+	conf config.Config,
 	irqProcFile irq.ProcFile,
 	proc os.Proc,
 	irqDeviceInfo irq.DeviceInfo,
@@ -94,7 +94,7 @@ func newTunersFactory(
 ) TunersFactory {
 	return &tunersFactory{
 		fs:                fs,
-		config:            config,
+		conf:              conf,
 		irqProcFile:       irqProcFile,
 		irqDeviceInfo:     irqDeviceInfo,
 		cpuMasks:          irq.NewCpuMasks(fs, hwloc.NewHwLocCmd(proc, timeout), executor),
@@ -118,7 +118,7 @@ func IsTunerAvailable(tuner string) bool {
 	return allTuners[tuner] != nil
 }
 
-func IsTunerEnabled(tuner string, rpkConfig *redpanda.RpkConfig) bool {
+func IsTunerEnabled(tuner string, rpkConfig *config.RpkConfig) bool {
 	switch tuner {
 	case "disk_irq":
 		return rpkConfig.TuneDiskIrq
@@ -244,16 +244,16 @@ func (factory *tunersFactory) newSwappinessTuner(
 func (factory *tunersFactory) newCoredumpTuner(
 	params *TunerParams,
 ) tuners.Tunable {
-	return coredump.NewCoredumpTuner(factory.fs, factory.config, factory.executor)
+	return coredump.NewCoredumpTuner(factory.fs, factory.conf, factory.executor)
 }
 
 func MergeTunerParamsConfig(
-	params *TunerParams, config *redpanda.Config,
+	params *TunerParams, conf *config.Config,
 ) (*TunerParams, error) {
 	if len(params.Nics) == 0 {
 		nics, err := net.GetInterfacesByIps(
-			config.Redpanda.KafkaApi.Address,
-			config.Redpanda.RPCServer.Address,
+			conf.Redpanda.KafkaApi.Address,
+			conf.Redpanda.RPCServer.Address,
 		)
 		if err != nil {
 			return params, err
@@ -261,22 +261,22 @@ func MergeTunerParamsConfig(
 		params.Nics = nics
 	}
 	if len(params.Directories) == 0 {
-		params.Directories = []string{config.Redpanda.Directory}
+		params.Directories = []string{conf.Redpanda.Directory}
 	}
 	return params, nil
 }
 
 func FillTunerParamsWithValuesFromConfig(
-	params *TunerParams, config *redpanda.Config,
+	params *TunerParams, conf *config.Config,
 ) error {
 	nics, err := net.GetInterfacesByIps(
-		config.Redpanda.KafkaApi.Address, config.Redpanda.RPCServer.Address)
+		conf.Redpanda.KafkaApi.Address, conf.Redpanda.RPCServer.Address)
 	if err != nil {
 		return err
 	}
 	params.Nics = nics
 	log.Infof("Redpanda uses '%v' NICs", params.Nics)
-	log.Infof("Redpanda data directory '%s'", config.Redpanda.Directory)
-	params.Directories = []string{config.Redpanda.Directory}
+	log.Infof("Redpanda data directory '%s'", conf.Redpanda.Directory)
+	params.Directories = []string{conf.Redpanda.Directory}
 	return nil
 }

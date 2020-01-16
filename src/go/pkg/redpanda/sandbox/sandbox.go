@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"vectorized/pkg/redpanda"
+	"vectorized/pkg/config"
 	"vectorized/pkg/redpanda/sandbox/docker"
 	"vectorized/pkg/redpanda/sandbox/docker/labels"
 	"vectorized/pkg/utils"
@@ -85,7 +85,7 @@ func (s *sandbox) Create(
 			return err
 		}
 		var nodes []Node
-		var seedServers []*redpanda.SeedServer
+		var seedServers []*config.SeedServer
 		networkID, err := s.getSandboxNetworkID(true)
 		if err != nil {
 			return err
@@ -101,9 +101,9 @@ func (s *sandbox) Create(
 				return err
 			}
 			nodes = append(nodes, node)
-			seedServer := &redpanda.SeedServer{
+			seedServer := &config.SeedServer{
 				Id: i,
-				Host: redpanda.SocketAddress{
+				Host: config.SocketAddress{
 					Address: nodeIP,
 					Port:    containerRPCPort,
 				},

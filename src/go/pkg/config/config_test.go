@@ -1,4 +1,4 @@
-package redpanda
+package config
 
 import (
 	"fmt"
@@ -116,9 +116,9 @@ func TestReadConfigFromPath(t *testing.T) {
 func TestWriteConfig(t *testing.T) {
 	const path string = "/redpanda.yaml"
 	type args struct {
-		config func() *Config
-		fs     afero.Fs
-		path   string
+		conf func() *Config
+		fs   afero.Fs
+		path string
 	}
 	tests := []struct {
 		name     string
@@ -131,7 +131,7 @@ func TestWriteConfig(t *testing.T) {
 			args: args{
 				fs:   afero.NewMemMapFs(),
 				path: path,
-				config: func() *Config {
+				conf: func() *Config {
 					c := getValidConfig()
 					c.Rpk = nil
 					return c
@@ -163,7 +163,7 @@ func TestWriteConfig(t *testing.T) {
 			args: args{
 				fs:   afero.NewMemMapFs(),
 				path: path,
-				config: func() *Config {
+				conf: func() *Config {
 					c := getValidConfig()
 					c.Redpanda.Directory = ""
 					return c
@@ -176,7 +176,7 @@ func TestWriteConfig(t *testing.T) {
 			args: args{
 				fs:   afero.NewMemMapFs(),
 				path: path,
-				config: func() *Config {
+				conf: func() *Config {
 					return &Config{}
 				},
 			},
@@ -185,9 +185,9 @@ func TestWriteConfig(t *testing.T) {
 		{
 			name: "shall write a valid config file with an rpk config object",
 			args: args{
-				fs:     afero.NewMemMapFs(),
-				path:   path,
-				config: getValidConfig,
+				fs:   afero.NewMemMapFs(),
+				path: path,
+				conf: getValidConfig,
 			},
 			wantErr: false,
 			expected: `redpanda:
@@ -227,11 +227,11 @@ rpk:
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// WriteConfig needs the file at the given path to exist.
-			err := vyaml.Persist(tt.args.fs, tt.args.config(), tt.args.path)
+			err := vyaml.Persist(tt.args.fs, tt.args.conf(), tt.args.path)
 			if err != nil {
 				t.Fatal(err.Error())
 			}
-			err = WriteConfig(tt.args.fs, tt.args.config(), tt.args.path)
+			err = WriteConfig(tt.args.fs, tt.args.conf(), tt.args.path)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected an error, got nil")
@@ -263,7 +263,7 @@ rpk:
 
 func TestCheckConfig(t *testing.T) {
 	type args struct {
-		config func() *Config
+		conf func() *Config
 	}
 	tests := []struct {
 		name     string
@@ -273,14 +273,14 @@ func TestCheckConfig(t *testing.T) {
 		{
 			name: "shall return no errors when config is valid",
 			args: args{
-				config: getValidConfig,
+				conf: getValidConfig,
 			},
 			expected: []string{},
 		},
 		{
 			name: "shall return an error when config file does not contain data directory setting",
 			args: args{
-				config: func() *Config {
+				conf: func() *Config {
 					c := getValidConfig()
 					c.Redpanda.Directory = ""
 					return c
@@ -291,7 +291,7 @@ func TestCheckConfig(t *testing.T) {
 		{
 			name: "shall return an error when id of server is negative",
 			args: args{
-				config: func() *Config {
+				conf: func() *Config {
 					c := getValidConfig()
 					c.Redpanda.Id = -100
 					return c
@@ -302,7 +302,7 @@ func TestCheckConfig(t *testing.T) {
 		{
 			name: "shall return an error when the RPC server port is 0",
 			args: args{
-				config: func() *Config {
+				conf: func() *Config {
 					c := getValidConfig()
 					c.Redpanda.RPCServer.Port = 0
 					return c
@@ -313,7 +313,7 @@ func TestCheckConfig(t *testing.T) {
 		{
 			name: "shall return an error when the RPC server address is empty",
 			args: args{
-				config: func() *Config {
+				conf: func() *Config {
 					c := getValidConfig()
 					c.Redpanda.RPCServer.Address = ""
 					return c
@@ -324,7 +324,7 @@ func TestCheckConfig(t *testing.T) {
 		{
 			name: "shall return an error when the Kafka API port is 0",
 			args: args{
-				config: func() *Config {
+				conf: func() *Config {
 					c := getValidConfig()
 					c.Redpanda.KafkaApi.Port = 0
 					return c
@@ -335,7 +335,7 @@ func TestCheckConfig(t *testing.T) {
 		{
 			name: "shall return an error when the Kafka API address is empty",
 			args: args{
-				config: func() *Config {
+				conf: func() *Config {
 					c := getValidConfig()
 					c.Redpanda.KafkaApi.Address = ""
 					return c
@@ -346,7 +346,7 @@ func TestCheckConfig(t *testing.T) {
 		{
 			name: "shall return an error when the seed servers list is empty",
 			args: args{
-				config: func() *Config {
+				conf: func() *Config {
 					c := getValidConfig()
 					c.Redpanda.SeedServers = []*SeedServer{}
 					return c
@@ -357,7 +357,7 @@ func TestCheckConfig(t *testing.T) {
 		{
 			name: "shall return an error when one of the seed servers' address is empty",
 			args: args{
-				config: func() *Config {
+				conf: func() *Config {
 					c := getValidConfig()
 					c.Redpanda.SeedServers[0].Host.Address = ""
 					return c
@@ -368,7 +368,7 @@ func TestCheckConfig(t *testing.T) {
 		{
 			name: "shall return an error when one of the seed servers' port is 0",
 			args: args{
-				config: func() *Config {
+				conf: func() *Config {
 					c := getValidConfig()
 					c.Redpanda.SeedServers[1].Host.Port = 0
 					return c
@@ -380,7 +380,7 @@ func TestCheckConfig(t *testing.T) {
 			name: "shall return no errors when tune_coredump is set to false," +
 				"regardless of coredump_dir's value",
 			args: args{
-				config: func() *Config {
+				conf: func() *Config {
 					c := getValidConfig()
 					c.Rpk.TuneCoredump = false
 					c.Rpk.CoredumpDir = ""
@@ -393,7 +393,7 @@ func TestCheckConfig(t *testing.T) {
 			name: "shall return an error when tune_coredump is set to true," +
 				"but coredump_dir is empty",
 			args: args{
-				config: func() *Config {
+				conf: func() *Config {
 					c := getValidConfig()
 					c.Rpk.CoredumpDir = ""
 					return c
@@ -406,7 +406,7 @@ func TestCheckConfig(t *testing.T) {
 			name: "shall return no error if setup is empty," +
 				"but coredump_dir is empty",
 			args: args{
-				config: func() *Config {
+				conf: func() *Config {
 					c := getValidConfig()
 					c.Rpk.WellKnownIo = ""
 					return c
@@ -417,7 +417,7 @@ func TestCheckConfig(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, got := CheckConfig(tt.args.config())
+			_, got := CheckConfig(tt.args.conf())
 			if len(got) != len(tt.expected) {
 				t.Fatalf("got a different amount of errors than expected: got: %v expected: %v", got, tt.expected)
 			}

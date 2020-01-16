@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"vectorized/pkg/cli"
-	"vectorized/pkg/redpanda"
+	"vectorized/pkg/config"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
@@ -57,28 +57,28 @@ func executeMode(fs afero.Fs, redpandaConfigFile string, mode string) error {
 	if err != nil {
 		return err
 	}
-	config, err := redpanda.ReadConfigFromPath(fs, configFile)
+	conf, err := config.ReadConfigFromPath(fs, configFile)
 	if err != nil {
 		return err
 	}
 	switch mode {
 	case "development", "dev":
-		config = setDevelopment(config)
+		conf = setDevelopment(conf)
 	case "production", "prod":
-		config = setProduction(config)
+		conf = setProduction(conf)
 	}
 	log.Infof("Writing '%s' mode defaults to '%s'", mode, configFile)
-	return redpanda.WriteConfig(fs, config, configFile)
+	return config.WriteConfig(fs, conf, configFile)
 }
 
-func setDevelopment(config *redpanda.Config) *redpanda.Config {
+func setDevelopment(conf *config.Config) *config.Config {
 	// Defaults to setting all tuners to false
-	config.Rpk = &redpanda.RpkConfig{CoredumpDir: config.Rpk.CoredumpDir}
-	return config
+	conf.Rpk = &config.RpkConfig{CoredumpDir: conf.Rpk.CoredumpDir}
+	return conf
 }
 
-func setProduction(config *redpanda.Config) *redpanda.Config {
-	rpk := config.Rpk
+func setProduction(conf *config.Config) *config.Config {
+	rpk := conf.Rpk
 	rpk.TuneNetwork = true
 	rpk.TuneDiskScheduler = true
 	rpk.TuneNomerges = true
@@ -88,7 +88,7 @@ func setProduction(config *redpanda.Config) *redpanda.Config {
 	rpk.TuneClocksource = true
 	rpk.EnableMemoryLocking = true
 	rpk.TuneCoredump = true
-	return config
+	return conf
 }
 
 func checkSupported(mode string) bool {

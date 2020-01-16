@@ -9,6 +9,7 @@ import (
 	"vectorized/pkg/checkers"
 	"vectorized/pkg/cli"
 	"vectorized/pkg/cli/ui"
+	"vectorized/pkg/config"
 	"vectorized/pkg/redpanda"
 
 	"github.com/fatih/color"
@@ -72,12 +73,12 @@ func executeCheck(
 	if err != nil {
 		return err
 	}
-	config, err := redpanda.ReadConfigFromPath(fs, configFile)
+	conf, err := config.ReadConfigFromPath(fs, configFile)
 	if err != nil {
 		return err
 	}
 	ioConfigFile := redpanda.GetIOConfigPath(filepath.Dir(configFile))
-	checkersMap, err := redpanda.RedpandaCheckers(fs, ioConfigFile, config, timeout)
+	checkersMap, err := redpanda.RedpandaCheckers(fs, ioConfigFile, conf, timeout)
 	if err != nil {
 		return err
 	}

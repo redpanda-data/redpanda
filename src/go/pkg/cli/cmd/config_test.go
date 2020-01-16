@@ -5,35 +5,35 @@ import (
 	"strings"
 	"testing"
 	"vectorized/pkg/cli/cmd"
-	"vectorized/pkg/redpanda"
+	"vectorized/pkg/config"
 
 	"github.com/spf13/afero"
 	"gopkg.in/yaml.v2"
 )
 
-func getValidConfig() redpanda.Config {
-	return redpanda.Config{
-		Redpanda: &redpanda.RedpandaConfig{
+func getValidConfig() config.Config {
+	return config.Config{
+		Redpanda: &config.RedpandaConfig{
 			Directory: "/var/lib/redpanda/data",
-			RPCServer: redpanda.SocketAddress{
+			RPCServer: config.SocketAddress{
 				Port:    33145,
 				Address: "127.0.0.1",
 			},
 			Id: 1,
-			KafkaApi: redpanda.SocketAddress{
+			KafkaApi: config.SocketAddress{
 				Port:    9092,
 				Address: "127.0.0.1",
 			},
-			SeedServers: []*redpanda.SeedServer{
-				&redpanda.SeedServer{
-					Host: redpanda.SocketAddress{
+			SeedServers: []*config.SeedServer{
+				&config.SeedServer{
+					Host: config.SocketAddress{
 						Port:    33145,
 						Address: "127.0.0.1",
 					},
 					Id: 1,
 				},
-				&redpanda.SeedServer{
-					Host: redpanda.SocketAddress{
+				&config.SeedServer{
+					Host: config.SocketAddress{
 						Port:    33146,
 						Address: "127.0.0.1",
 					},
@@ -102,12 +102,12 @@ func TestSetId(t *testing.T) {
 			if err != nil {
 				t.Fatalf("got an unexpected error: %v", err.Error())
 			}
-			config, err := redpanda.ReadConfigFromPath(fs, configPath)
+			conf, err := config.ReadConfigFromPath(fs, configPath)
 			if err != nil {
 				t.Fatalf("got an unexpected error while reading %s: %v", configPath, err)
 			}
-			if fmt.Sprint(config.Redpanda.Id) != tt.id {
-				t.Errorf("got %v, expected %v", config.Redpanda.Id, tt.id)
+			if fmt.Sprint(conf.Redpanda.Id) != tt.id {
+				t.Errorf("got %v, expected %v", conf.Redpanda.Id, tt.id)
 			}
 		})
 	}
@@ -236,11 +236,11 @@ func TestSetSeedNodes(t *testing.T) {
 			if err != nil {
 				t.Fatalf("got an unexpected error: %v", err.Error())
 			}
-			config, err := redpanda.ReadConfigFromPath(fs, configPath)
+			conf, err := config.ReadConfigFromPath(fs, configPath)
 			if err != nil {
 				t.Fatalf("got an unexpected error while reading %s: %v", configPath, err)
 			}
-			for i, h := range config.Redpanda.SeedServers {
+			for i, h := range conf.Redpanda.SeedServers {
 				if fmt.Sprint(h.Host.Address) != tt.hosts[i] {
 					t.Fatalf(
 						"expected host '%s' but got '%s' for node #%d",

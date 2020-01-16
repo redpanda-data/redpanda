@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"time"
 	"vectorized/pkg/cli"
+	"vectorized/pkg/config"
 	"vectorized/pkg/redpanda"
 	"vectorized/pkg/tuners/iotune"
 
@@ -29,7 +30,7 @@ func NewIoTuneCmd(fs afero.Fs) *cobra.Command {
 				return err
 			}
 			ioConfigFile := redpanda.GetIOConfigPath(filepath.Dir(configFile))
-			config, err := redpanda.ReadConfigFromPath(fs, configFile)
+			conf, err := config.ReadConfigFromPath(fs, configFile)
 			if err != nil {
 				return err
 			}
@@ -39,7 +40,7 @@ func NewIoTuneCmd(fs afero.Fs) *cobra.Command {
 					directories)
 				evalDirectories = directories
 			} else {
-				evalDirectories = []string{config.Redpanda.Directory}
+				evalDirectories = []string{conf.Redpanda.Directory}
 			}
 
 			return execIoTune(fs, evalDirectories, ioConfigFile, duration, timeout)

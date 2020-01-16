@@ -6,37 +6,37 @@ import (
 	"os"
 	"reflect"
 	"testing"
-	"vectorized/pkg/redpanda"
+	"vectorized/pkg/config"
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"gopkg.in/yaml.v2"
 )
 
-func getValidConfig(rpkFill bool) redpanda.Config {
+func getValidConfig(rpkFill bool) config.Config {
 	rpk := fillRpkConfig(rpkFill)
-	return redpanda.Config{
-		Redpanda: &redpanda.RedpandaConfig{
+	return config.Config{
+		Redpanda: &config.RedpandaConfig{
 			Directory: "/var/lib/redpanda/data",
-			RPCServer: redpanda.SocketAddress{
+			RPCServer: config.SocketAddress{
 				Port:    33145,
 				Address: "127.0.0.1",
 			},
 			Id: 1,
-			KafkaApi: redpanda.SocketAddress{
+			KafkaApi: config.SocketAddress{
 				Port:    9092,
 				Address: "127.0.0.1",
 			},
-			SeedServers: []*redpanda.SeedServer{
-				&redpanda.SeedServer{
-					Host: redpanda.SocketAddress{
+			SeedServers: []*config.SeedServer{
+				&config.SeedServer{
+					Host: config.SocketAddress{
 						Port:    33145,
 						Address: "127.0.0.1",
 					},
 					Id: 1,
 				},
-				&redpanda.SeedServer{
-					Host: redpanda.SocketAddress{
+				&config.SeedServer{
+					Host: config.SocketAddress{
 						Port:    33146,
 						Address: "127.0.0.1",
 					},
@@ -48,8 +48,8 @@ func getValidConfig(rpkFill bool) redpanda.Config {
 	}
 }
 
-func fillRpkConfig(val bool) redpanda.RpkConfig {
-	return redpanda.RpkConfig{
+func fillRpkConfig(val bool) config.RpkConfig {
+	return config.RpkConfig{
 		TuneNetwork:         val,
 		TuneDiskScheduler:   val,
 		TuneNomerges:        val,
@@ -70,7 +70,7 @@ func TestModeCommand(t *testing.T) {
 		args           []string
 		fs             afero.Fs
 		before         func(afero.Fs) (string, error)
-		expectedConfig redpanda.Config
+		expectedConfig config.Config
 		expectedOutput string
 		expectedErrMsg string
 	}{
@@ -211,12 +211,12 @@ func TestModeCommand(t *testing.T) {
 		if tt.expectedOutput != output {
 			t.Errorf("expected output:\n\"%v\"\ngot:\n\"%v\"", tt.expectedOutput, output)
 		}
-		config, err := redpanda.ReadConfigFromPath(tt.fs, path)
+		conf, err := config.ReadConfigFromPath(tt.fs, path)
 		if err != nil {
 			t.Errorf("got an unexpected error while reading the %s: %v", configPath, err)
 		}
-		if !reflect.DeepEqual(config, &tt.expectedConfig) {
-			t.Errorf("got %v, expected %v", config, tt.expectedConfig)
+		if !reflect.DeepEqual(conf, &tt.expectedConfig) {
+			t.Errorf("got %v, expected %v", conf, tt.expectedConfig)
 		}
 	}
 }

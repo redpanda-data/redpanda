@@ -9,6 +9,7 @@ import (
 	"vectorized/pkg/checkers"
 	"vectorized/pkg/cli"
 	"vectorized/pkg/cloud"
+	"vectorized/pkg/config"
 	"vectorized/pkg/os"
 	"vectorized/pkg/redpanda"
 	"vectorized/pkg/tuners/factory"
@@ -71,7 +72,7 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			config, err := redpanda.ReadConfigFromPath(fs, configFile)
+			conf, err := config.ReadConfigFromPath(fs, configFile)
 			if err != nil {
 				return err
 			}
@@ -81,7 +82,7 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 			}
 			rpArgs, err := buildRedpandaFlags(
 				fs,
-				config,
+				conf,
 				sFlags,
 				configFile,
 				wellKnownIo,
@@ -89,7 +90,7 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			err = prestart(fs, rpArgs, config, prestartCfg, timeout)
+			err = prestart(fs, rpArgs, conf, prestartCfg, timeout)
 			if err != nil {
 				return err
 			}
@@ -164,13 +165,13 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 func prestart(
 	fs afero.Fs,
 	args *redpanda.RedpandaArgs,
-	config *redpanda.Config,
+	conf *config.Config,
 	prestartCfg prestartConfig,
 	timeout time.Duration,
 ) error {
 	if prestartCfg.checkEnabled {
 		checkersMap, err := redpanda.RedpandaCheckers(fs,
-			args.SeastarFlags["io-properties-file"], config, timeout)
+			args.SeastarFlags["io-properties-file"], conf, timeout)
 		if err != nil {
 			return err
 		}
@@ -181,7 +182,7 @@ func prestart(
 		log.Info("System check - PASSED")
 	}
 	if prestartCfg.tuneEnabled {
-		err := tuneAll(fs, args.SeastarFlags["cpuset"], config, timeout)
+		err := tuneAll(fs, args.SeastarFlags["cpuset"], conf, timeout)
 		if err != nil {
 			return err
 		}
@@ -192,7 +193,7 @@ func prestart(
 
 func buildRedpandaFlags(
 	fs afero.Fs,
-	config *redpanda.Config,
+	conf *config.Config,
 	sFlags seastarFlags,
 	configFile string,
 	wellKnownIo string,
@@ -206,7 +207,7 @@ func buildRedpandaFlags(
 	if exists, _ := afero.Exists(fs, ioPropertiesFile); !exists {
 		ioPropertiesFile = ""
 	}
-	lockMemory := config.Rpk.EnableMemoryLocking || sFlags.lockMemory
+	lockMemory := conf.Rpk.EnableMemoryLocking || sFlags.lockMemory
 	rpArgs := &redpanda.RedpandaArgs{
 		ConfigFilePath: configFile,
 		SeastarFlags: map[string]string{
@@ -217,7 +218,7 @@ func buildRedpandaFlags(
 		rpArgs.SeastarFlags["io-properties-file"] = ioPropertiesFile
 		return rpArgs, nil
 	}
-	ioProps, err := resolveWellKnownIo(config, wellKnownIo)
+	ioProps, err := resolveWellKnownIo(conf, wellKnownIo)
 	if err == nil {
 		yaml, err := iotune.ToYaml(*ioProps)
 		if err != nil {
@@ -232,7 +233,7 @@ func buildRedpandaFlags(
 }
 
 func resolveWellKnownIo(
-	config *redpanda.Config,
+	conf *config.Config,
 	wellKnownIo string,
 ) (*iotune.IoProperties, error) {
 	var configuredWellKnownIo string
@@ -240,7 +241,7 @@ func resolveWellKnownIo(
 	if wellKnownIo != "" {
 		configuredWellKnownIo = wellKnownIo
 	} else {
-		configuredWellKnownIo = config.Rpk.WellKnownIo
+		configuredWellKnownIo = conf.Rpk.WellKnownIo
 	}
 	var ioProps *iotune.IoProperties
 	if configuredWellKnownIo != "" {
@@ -252,7 +253,7 @@ func resolveWellKnownIo(
 			return nil, err
 		}
 		ioProps, err := iotune.DataFor(
-			config.Redpanda.Directory,
+			conf.Redpanda.Directory,
 			wellKnownIoTokens[0],
 			wellKnownIoTokens[1],
 			wellKnownIoTokens[2],
@@ -268,7 +269,7 @@ func resolveWellKnownIo(
 	if err != nil {
 		return nil, errors.New("Could not detect the current cloud vendor")
 	}
-	ioProps, err = iotune.DataForVendor(config.Redpanda.Directory, vendor)
+	ioProps, err = iotune.DataForVendor(conf.Redpanda.Directory, vendor)
 	if err != nil {
 		// Log the error to let the user know that the data wasn't found
 		return nil, err
@@ -279,11 +280,11 @@ func resolveWellKnownIo(
 func tuneAll(
 	fs afero.Fs,
 	cpuSet string,
-	config *redpanda.Config,
+	conf *config.Config,
 	timeout time.Duration,
 ) error {
 	params := &factory.TunerParams{}
-	tunerFactory := factory.NewDirectExecutorTunersFactory(fs, *config, timeout)
+	tunerFactory := factory.NewDirectExecutorTunersFactory(fs, *conf, timeout)
 	hw := hwloc.NewHwLocCmd(os.NewProc(), timeout)
 	if cpuSet == "" {
 		cpuMask, err := hw.All()
@@ -299,13 +300,13 @@ func tuneAll(
 		params.CpuMask = cpuMask
 	}
 
-	err := factory.FillTunerParamsWithValuesFromConfig(params, config)
+	err := factory.FillTunerParamsWithValuesFromConfig(params, conf)
 	if err != nil {
 		return err
 	}
 
 	for _, tunerName := range factory.AvailableTuners() {
-		if !factory.IsTunerEnabled(tunerName, config.Rpk) {
+		if !factory.IsTunerEnabled(tunerName, conf.Rpk) {
 			log.Infof("Skipping disabled tuner %s", tunerName)
 			continue
 		}
