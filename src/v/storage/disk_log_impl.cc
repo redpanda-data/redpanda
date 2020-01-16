@@ -54,10 +54,15 @@ ss::future<append_result> disk_log_impl::do_append(
     auto f = ss::make_ready_future<>();
     if (__builtin_expect(!_active_segment, false)) {
         // FIXME: We need to persist the last offset somewhere.
+        _term = config.term;
         auto offset = _segs.size() > 0
                         ? _segs.last()->max_offset() + model::offset(1)
                         : model::offset(0);
         f = new_segment(offset, _term, config.io_priority);
+    }
+    if (_term != config.term) {
+        _term = config.term;
+        f = f.then([this] { return do_roll(); });
     }
     return f.then(
       [this, reader = std::move(reader), config = std::move(config)]() mutable {

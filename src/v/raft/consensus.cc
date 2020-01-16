@@ -502,7 +502,8 @@ consensus::disk_append(std::vector<entry>&& entries) {
             // batch fsync
             storage::log_append_config::fsync::no,
             _io_priority,
-            model::timeout_clock::now() + _disk_timeout};
+            model::timeout_clock::now() + _disk_timeout, 
+            model::term_id(_meta.term)};
             return copy_range<ret_t>(in, [this, cfg](entry& e) {
                    return _log.append(std::move(e.reader()), cfg);
             }).then([this, no_of_entries](ret_t ret) {
