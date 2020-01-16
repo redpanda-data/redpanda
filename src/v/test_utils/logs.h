@@ -1,4 +1,5 @@
 #pragma once
+#include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 #include "seastarx.h"
 #include "storage/log_manager.h"
@@ -29,7 +30,8 @@ static ss::future<> persist_log_file(
                   storage::log_append_config{
                     storage::log_append_config::fsync::yes,
                     ss::default_priority_class(),
-                    model::no_timeout});
+                    model::no_timeout,
+                    model::term_id(0)});
             })
             .finally([&mgr] { return mgr.stop(); })
             .discard_result();

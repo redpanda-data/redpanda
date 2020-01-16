@@ -187,7 +187,8 @@ private:
                       storage::log_append_config{
                         .should_fsync = storage::log_append_config::fsync::yes,
                         .io_priority = ss::default_priority_class(),
-                        .timeout = model::no_timeout})
+                        .timeout = model::no_timeout,
+                        .term = model::term_id(0)})
                     .discard_result();
               });
           });

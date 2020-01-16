@@ -37,7 +37,8 @@ struct context {
 log_append_config config() {
     return log_append_config{log_append_config::fsync::yes,
                              ss::default_priority_class(),
-                             model::timeout_clock::time_point::max()};
+                             model::timeout_clock::time_point::max(),
+                             model::term_id(0)};
 }
 
 SEASTAR_THREAD_TEST_CASE(test_can_write_single_batch) {
