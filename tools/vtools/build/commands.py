@@ -83,7 +83,7 @@ def go(conf):
     build_flags = '-buildmode=pie -v -a -tags netgo'
     shell.run_subprocess(
         f'cd {vconfig.go_src_dir} && '
-        f'go build {build_flags} -o {vconfig.go_out_dir} ./...')
+        f'{vconfig.gobin} build {build_flags} -o {vconfig.go_out_dir} ./...')
 
 
 @build.command(short_help='build tar, deb or rpm packages.')

@@ -62,8 +62,8 @@ def go_deps(conf):
     vconfig = config.VConfig(conf)
     shell.run_subprocess(
         f'cd {vconfig.go_src_dir} && '
-        f'go mod download && '
-        f'go get github.com/cockroachdb/crlfmt')
+        f'{vconfig.gobin} mod download && '
+        f'{vconfig.gobin} get github.com/cockroachdb/crlfmt')
 
 
 @install.command(short_help='install the go compiler.')
@@ -78,9 +78,9 @@ def go_deps(conf):
 def go_compiler(version, conf):
     vconfig = config.VConfig(conf)
 
-    if os.path.isfile(f'{vconfig.go_path}/bin/go'):
+    if os.path.isfile(f'{vconfig.gobin}'):
         logging.info(
-            f'Found go binary in {vconfig.go_path}/bin. Skipping install.')
+            f'Found go binary in {vconfig.gobin}. Skipping install.')
         return
 
     url = f'https://dl.google.com/go/go{version}.linux-amd64.tar.gz'
