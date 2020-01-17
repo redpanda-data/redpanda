@@ -1,7 +1,7 @@
 #include "storage/disk_log_impl.h"
 
+#include "storage/disk_log_appender.h"
 #include "storage/log_manager.h"
-#include "storage/log_writer.h"
 #include "storage/offset_assignment.h"
 #include "storage/version.h"
 
@@ -50,13 +50,13 @@ ss::future<> disk_log_impl::new_segment(
 }
 
 // config timeout is for the one calling reader consumer
-log_writer disk_log_impl::make_appender(log_append_config cfg) {
+log_appender disk_log_impl::make_appender(log_append_config cfg) {
     auto now = log_clock::now();
     auto base = _tracker.dirty_offset() >= model::offset(0)
                   ? _tracker.dirty_offset() + model::offset(1)
                   : model::offset(0);
-    return log_writer(
-      std::make_unique<default_log_writer>(*this, cfg, now, base));
+    return log_appender(
+      std::make_unique<disk_log_appender>(*this, cfg, now, base));
 }
 
 ss::future<> disk_log_impl::flush() {

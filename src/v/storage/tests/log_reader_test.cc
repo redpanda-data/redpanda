@@ -3,10 +3,10 @@
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
+#include "storage/disk_log_appender.h"
 #include "storage/log_reader.h"
 #include "storage/log_segment_appender.h"
 #include "storage/log_segment_reader.h"
-#include "storage/log_writer.h"
 #include "storage/tests/random_batch.h"
 #include "utils/file_sanitizer.h"
 

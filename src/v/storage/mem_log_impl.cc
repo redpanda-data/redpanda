@@ -40,7 +40,7 @@ private:
     model::offset _endoffset;
 };
 
-class mem_log_appender final : public log_writer::impl {
+class mem_log_appender final : public log_appender::impl {
 public:
     explicit mem_log_appender(
       mem_log_impl& log, model::offset min_offset) noexcept
@@ -83,14 +83,14 @@ struct mem_log_impl final : log::impl {
           std::make_unique<mem_iter_reader>(it, _data.end(), cfg.max_offset));
     }
 
-    log_writer make_appender(log_append_config cfg) final {
+    log_appender make_appender(log_append_config cfg) final {
         auto o = max_offset();
         if (o() < 0) {
             o = model::offset(0);
         } else {
             o = o + model::offset(1);
         }
-        return log_writer(std::make_unique<mem_log_appender>(*this, o));
+        return log_appender(std::make_unique<mem_log_appender>(*this, o));
     }
 
     size_t segment_count() const final { return 1; }

@@ -1,4 +1,4 @@
-#include "storage/log_writer.h"
+#include "storage/disk_log_appender.h"
 
 #include "storage/disk_log_impl.h"
 #include "storage/log_segment_appender.h"
@@ -11,7 +11,7 @@
 
 namespace storage {
 
-default_log_writer::default_log_writer(
+disk_log_appender::disk_log_appender(
   disk_log_impl& log,
   log_append_config config,
   log_clock::time_point append_time,
@@ -87,7 +87,7 @@ write(log_segment_appender& appender, const model::record_batch& batch) {
       });
 }
 
-ss::future<> default_log_writer::initialize() {
+ss::future<> disk_log_appender::initialize() {
     return _log._failure_probes.append().then([this] {
         auto f = ss::make_ready_future<>();
         if (__builtin_expect(!_log._active_segment, false)) {
@@ -107,7 +107,7 @@ ss::future<> default_log_writer::initialize() {
 }
 
 ss::future<ss::stop_iteration>
-default_log_writer::operator()(model::record_batch&& batch) {
+disk_log_appender::operator()(model::record_batch&& batch) {
     batch.set_base_offset(_base_offset);
     _base_offset = batch.last_offset() + model::offset(1);
     return ss::do_with(std::move(batch), [this](model::record_batch& batch) {
@@ -144,7 +144,7 @@ default_log_writer::operator()(model::record_batch&& batch) {
     });
 }
 
-ss::future<append_result> default_log_writer::end_of_stream() {
+ss::future<append_result> disk_log_appender::end_of_stream() {
     _log._tracker.update_dirty_offset(_last_offset);
     _log._active_segment->set_last_written_offset(_last_offset);
     auto f = ss::make_ready_future<>();

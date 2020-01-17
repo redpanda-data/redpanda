@@ -3,8 +3,8 @@
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "seastarx.h"
+#include "storage/log_appender.h"
 #include "storage/log_segment_reader.h"
-#include "storage/log_writer.h"
 #include "storage/types.h"
 
 #include <seastar/core/shared_ptr.hh>
@@ -45,7 +45,7 @@
 /// ownership
 ///
 ///   log <- log::impl                 (main log interface)
-///     log_writer <- log_writer::impl (log appending interface)
+///     log_appender <- log_appender::impl (log appending interface)
 ///       log_segment_appender
 ///
 namespace storage {
@@ -62,7 +62,7 @@ public:
         virtual ss::future<> truncate(model::offset) = 0;
 
         virtual model::record_batch_reader make_reader(log_reader_config) = 0;
-        virtual log_writer make_appender(log_append_config) = 0;
+        virtual log_appender make_appender(log_append_config) = 0;
         virtual ss::future<> close() = 0;
         virtual ss::future<> flush() = 0;
 
@@ -117,7 +117,7 @@ public:
         return _impl->make_reader(std::move(cfg));
     }
 
-    log_writer make_appender(log_append_config cfg) {
+    log_appender make_appender(log_append_config cfg) {
         return _impl->make_appender(cfg);
     }
 
