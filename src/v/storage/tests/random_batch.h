@@ -130,7 +130,7 @@ static model::record_batch
 make_random_batch(model::offset o, size_t num_records, bool allow_compression) {
     crc32 crc;
     auto ts = model::timestamp(
-      random_generators::get_int<model::timestamp::value_type>(
+      random_generators::get_int<model::timestamp::type>(
         model::timestamp::min().value(), model::timestamp::min().value() + 2));
     auto header = make_random_header(o, ts, num_records, allow_compression);
     storage::crc_batch_header(crc, header, num_records);

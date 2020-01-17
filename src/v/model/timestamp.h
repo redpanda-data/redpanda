@@ -17,19 +17,19 @@ std::ostream& operator<<(std::ostream&, timestamp_type);
 
 class timestamp {
 public:
-    using value_type = int64_t;
+    using type = int64_t;
 
     timestamp() noexcept = default;
 
-    constexpr explicit timestamp(value_type v) noexcept
+    constexpr explicit timestamp(type v) noexcept
       : _v(v) {}
 
-    constexpr value_type value() const noexcept { return _v; }
+    constexpr type value() const noexcept { return _v; }
 
     constexpr static timestamp min() noexcept { return timestamp(0); }
 
     constexpr static timestamp max() noexcept {
-        return timestamp(std::numeric_limits<value_type>::max());
+        return timestamp(std::numeric_limits<type>::max());
     }
 
     constexpr static timestamp missing() noexcept { return timestamp(-1); }
@@ -49,7 +49,7 @@ public:
     friend std::ostream& operator<<(std::ostream&, timestamp);
 
 private:
-    value_type _v = missing().value();
+    type _v = missing().value();
 };
 
 using timestamp_clock = std::chrono::system_clock;
