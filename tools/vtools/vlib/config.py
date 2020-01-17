@@ -77,6 +77,9 @@ class VConfig(object):
         # Set Go-specific environment variables (GOPATH and PATH). This
         # modifies environment for the current process and its children.
         self._gopath = f"{self._cfg['build']['gopath']}/go"
+        os.environ.pop('GOROOT', None)
+        os.environ.pop('GOBIN', None)
+        os.environ.pop('GOEXE', None)
         os.environ['GOPATH'] = self._gopath
         os.environ['PATH'] = f"{self._gopath}/bin:{os.environ['PATH']}"
 
