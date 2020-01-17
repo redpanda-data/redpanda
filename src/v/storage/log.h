@@ -73,6 +73,7 @@ public:
         virtual model::offset max_offset() const = 0;
         virtual model::offset start_offset() const = 0;
         virtual model::offset committed_offset() const = 0;
+        virtual std::ostream& print(std::ostream& o) const { return o; }
 
     private:
         model::ntp _ntp;
@@ -134,17 +135,20 @@ public:
     model::offset max_offset() const { return _impl->max_offset(); }
 
     model::offset committed_offset() const { return _impl->committed_offset(); }
+    std::ostream& print(std::ostream& o) const { return _impl->print(o); }
 
 private:
     ss::shared_ptr<impl> _impl;
 };
 
 inline std::ostream& operator<<(std::ostream& o, storage::log lg) {
-    return o << "{start:" << lg.start_offset() << ", max:" << lg.max_offset()
-             << ", committed:" << lg.committed_offset() << "}";
+    o << "{start:" << lg.start_offset() << ", max:" << lg.max_offset()
+      << ", committed:" << lg.committed_offset() << ", ";
+    return lg.print(o) << "}";
 }
 
 class log_manager;
+class log_set;
 log make_memory_backed_log(model::ntp, ss::sstring);
 log make_disk_backed_log(model::ntp, log_manager&, log_set);
 

@@ -1,9 +1,12 @@
 #include "storage/tests/storage_test_fixture.h"
 
+#include <boost/test/tools/old/interface.hpp>
+
 void validate_offsets(
   model::offset base,
   const std::vector<model::record_batch_header>& write_headers,
   const std::vector<model::record_batch>& read_batches) {
+    BOOST_REQUIRE_EQUAL(write_headers.size(), read_batches.size());
     auto it = read_batches.begin();
     model::offset next_base = base;
     for (auto const h : write_headers) {
@@ -86,7 +89,7 @@ FIXTURE_TEST(test_single_record_per_segment, storage_test_fixture) {
     });
     log.flush().get0();
     auto batches = read_and_validate_all_batches(log);
-
+    info("Flushed log: {}", log);
     BOOST_REQUIRE_EQUAL(headers.size(), batches.size());
     BOOST_REQUIRE_EQUAL(log.max_offset(), batches.back().last_offset());
     BOOST_REQUIRE_EQUAL(log.committed_offset(), batches.back().last_offset());

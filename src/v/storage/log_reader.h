@@ -4,6 +4,7 @@
 #include "model/limits.h"
 #include "model/record_batch_reader.h"
 #include "storage/log_segment_reader.h"
+#include "storage/log_set.h"
 #include "storage/offset_tracker.h"
 #include "storage/parser.h"
 #include "storage/probe.h"
@@ -129,7 +130,7 @@ private:
     reader_available maybe_create_segment_reader();
 
 private:
-    log_segment_selector _selector;
+    log_set& _set;
     offset_tracker& _offset_tracker;
     log_reader_config _config;
     probe& _probe;

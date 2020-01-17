@@ -2,6 +2,7 @@
 
 #include "storage/disk_log_appender.h"
 #include "storage/log_manager.h"
+#include "storage/log_set.h"
 #include "storage/offset_assignment.h"
 #include "storage/version.h"
 
@@ -196,6 +197,10 @@ ss::future<> disk_log_impl::do_truncate(model::offset o) {
                 });
           });
     });
+}
+
+std::ostream& disk_log_impl::print(std::ostream& o) const {
+    return o << "{term=" << _term << ", logs=" << _segs << "}";
 }
 
 log make_disk_backed_log(model::ntp ntp, log_manager& manager, log_set segs) {

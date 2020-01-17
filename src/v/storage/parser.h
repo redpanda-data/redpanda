@@ -112,14 +112,16 @@ public:
       batch_consumer& consumer, ss::input_stream<char>& input) noexcept
       : _consumer(&consumer)
       , _input(&input) {
-        finjector::shard_local_badger().register_probe(
-          failure_probes::name(), &_fprobe);
+        // TODO(michal) - too verbose, acquires a lock for *EVERY* batch
+        // finjector::shard_local_badger().register_probe(
+        //   failure_probes::name(), &_fprobe);
     }
     continuous_batch_parser(continuous_batch_parser&&) = default;
     continuous_batch_parser& operator=(continuous_batch_parser&&) = default;
     ~continuous_batch_parser() {
-        finjector::shard_local_badger().deregister_probe(
-          failure_probes::name());
+        // TODO(michal) - too verbose, acquires a lock for *EVERY* batch
+        // finjector::shard_local_badger().deregister_probe(
+        //   failure_probes::name());
     }
 
     [[gnu::always_inline]] ss::future<size_t> consume() {

@@ -109,6 +109,7 @@ public:
               b.crc());
 
             validate_batch_crc(b);
+            tlog.debug("Finished validating crc");
             batches.push_back(std::move(b));
             return ss::make_ready_future<ss::stop_iteration>(
               ss::stop_iteration::no);
