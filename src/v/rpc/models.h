@@ -195,7 +195,7 @@ inline void serialize(iobuf& out, model::record_batch_header&& r) {
       r.base_offset,
       r.type,
       r.crc,
-      r.attrs,
+      r.attrs.value(),
       r.last_offset_delta,
       r.first_timestamp,
       r.max_timestamp);
@@ -204,25 +204,25 @@ inline void serialize(iobuf& out, model::record_batch_header&& r) {
 template<>
 inline ss::future<model::record_batch_header> deserialize(source& in) {
     struct [[gnu::packed]] hdr_contents {
-        uint32_t size_bytes;
-        model::offset base_offset;
-        model::record_batch_type type;
-        int32_t crc;
-        model::record_batch_attributes attrs;
-        int32_t last_offset_delta;
-        model::timestamp first_timestamp;
-        model::timestamp max_timestamp;
+        ss::unaligned<uint32_t> size_bytes;
+        ss::unaligned<model::offset::type> base_offset;
+        ss::unaligned<model::record_batch_type::type> type;
+        ss::unaligned<int32_t> crc;
+        ss::unaligned<model::record_batch_attributes::type> attrs;
+        ss::unaligned<int32_t> last_offset_delta;
+        ss::unaligned<model::timestamp::type> first_timestamp;
+        ss::unaligned<model::timestamp::type> max_timestamp;
     };
     return deserialize<hdr_contents>(in).then([](hdr_contents r) {
         return model::record_batch_header{
           .size_bytes = r.size_bytes,
-          .base_offset = r.base_offset,
-          .type = r.type,
+          .base_offset = model::offset(r.base_offset),
+          .type = model::record_batch_type(r.type),
           .crc = r.crc,
-          .attrs = r.attrs,
+          .attrs = model::record_batch_attributes(r.attrs),
           .last_offset_delta = r.last_offset_delta,
-          .first_timestamp = r.first_timestamp,
-          .max_timestamp = r.max_timestamp};
+          .first_timestamp = model::timestamp(r.first_timestamp),
+          .max_timestamp = model::timestamp(r.max_timestamp)};
     });
 }
 
