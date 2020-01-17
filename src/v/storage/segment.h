@@ -3,46 +3,30 @@
 #include "storage/log_segment_reader.h"
 
 namespace storage {
-struct segment {
-    segment(segment_reader_ptr r, segment_appender_ptr a) noexcept
-      : reader(r)
-      , appender(std::move(a)) {}
-    explicit segment(segment_reader_ptr r) noexcept
-      : reader(r) {}
+class segment {
+public:
+    segment(segment_reader_ptr, segment_appender_ptr) noexcept;
+    explicit segment(segment_reader_ptr) noexcept;
     segment(segment&&) noexcept = default;
     segment& operator=(segment&&) noexcept = default;
     segment(const segment&) = delete;
     segment& operator=(const segment&) = delete;
 
-    ss::future<> close() {
-        auto f = reader->close();
-        if (appender) {
-            f = f.then([this] { return appender->close(); });
-        }
-        return f;
-    }
-    ss::future<> flush() {
-        if (appender) {
-            return appender->flush();
-        }
-        return ss::make_ready_future<>();
-    }
+    ss::future<> close();
+    ss::future<> flush();
+    ss::future<> truncate(model::offset);
 
-    ss::future<> truncate(model::offset) { return ss::make_ready_future<>(); }
+    segment_reader_ptr reader() const { return _reader; }
+    segment_appender_ptr& appender() { return _appender; }
+    const segment_appender_ptr& appender() const { return _appender; }
+    bool has_appender() const { return bool(_appender); }
+    operator bool() const { return bool(_reader); }
 
+private:
     // data
-    segment_reader_ptr reader;
-    segment_appender_ptr appender = nullptr;
+    segment_reader_ptr _reader;
+    segment_appender_ptr _appender = nullptr;
 };
 
-inline std::ostream& operator<<(std::ostream& o, const segment& h) {
-    o << "{reader=" << h.reader << ", writer=";
-    if (h.appender) {
-        o << *h.appender;
-    } else {
-        o << "nullptr";
-    }
-    return o << "}";
-}
-
+std::ostream& operator<<(std::ostream&, const segment&);
 } // namespace storage

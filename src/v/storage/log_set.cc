@@ -7,10 +7,10 @@
 namespace storage {
 struct base_offset_ordering {
     bool operator()(const segment& seg1, const segment& seg2) const {
-        return seg1.reader->base_offset() < seg2.reader->base_offset();
+        return seg1.reader()->base_offset() < seg2.reader()->base_offset();
     }
     bool operator()(const segment& seg, model::offset value) const {
-        return seg.reader->max_offset() < value;
+        return seg.reader()->max_offset() < value;
     }
 };
 
@@ -22,12 +22,12 @@ log_set::log_set(log_set::underlying_t segs) noexcept(log_set::is_nothrow_v)
 void log_set::add(segment h) {
     if (
       !_handles.empty()
-      && h.reader->base_offset() < _handles.back().reader->base_offset()) {
+      && h.reader()->base_offset() < _handles.back().reader()->base_offset()) {
         throw std::runtime_error(fmt::format(
           "New segments must be monotonically increasing 'base_offset()' "
           "ptr->base_offset():{} must be > last:{}",
-          h.reader->base_offset(),
-          _handles.back().reader->base_offset()));
+          h.reader()->base_offset(),
+          _handles.back().reader()->base_offset()));
     }
     _handles.push_back(std::move(h));
 }

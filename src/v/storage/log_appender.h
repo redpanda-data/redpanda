@@ -27,8 +27,8 @@ public:
     explicit log_appender(std::unique_ptr<impl> impl) noexcept
       : _impl(std::move(impl)) {}
 
-    log_appender(log_appender&& o) = default;
-    log_appender& operator=(log_appender&& o) = default;
+    log_appender(log_appender&&) noexcept = default;
+    log_appender& operator=(log_appender&&) noexcept = default;
 
     ss::future<> initialize() { return _impl->initialize(); }
 
