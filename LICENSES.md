@@ -34,14 +34,7 @@ please keep this up to date with every new library use.
 | zstd            | BSD                                       |
 | HdrHistogram    | BSD 2                                     |
 | xxhash          | BSD                                       |
-| gflags          | BSD 3                                     |
-| glog            | BSD 3                                     |
-| flatbuffers     | Apache License 2                          |
-| smf             | Apache License 2                          |
 | GSL             | MIT                                       |
-| luajit          | MIT                                       |
-| sol2            | MIT                                       |
-| croaring        | Apache License 2                          |
 | pcg             | Apache License 2                          |
 | bytellhashmap   | Boost Software License Version 1.0        |
 | nlohmann-json   | MIT                                       |
