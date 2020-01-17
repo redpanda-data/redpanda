@@ -1,6 +1,9 @@
 #include "storage/log_reader.h"
 
 #include "bytes/iobuf.h"
+#include "storage/logger.h"
+
+#include <fmt/ostream.h>
 
 namespace storage {
 
@@ -163,7 +166,7 @@ log_reader::log_reader(
   offset_tracker& tracker,
   log_reader_config config,
   probe& probe) noexcept
-  : _selector(seg_set)
+  : _set(seg_set)
   , _offset_tracker(tracker)
   , _config(std::move(config))
   , _probe(probe) {
@@ -182,6 +185,14 @@ bool log_reader::is_done() {
     return _end_of_stream || !maybe_create_segment_reader();
 }
 
+static inline segment_reader_ptr find_in_set(log_set& s, model::offset o) {
+    segment_reader_ptr ret = nullptr;
+    if (auto it = s.lower_bound(o); it != s.end()) {
+        ret = *it;
+    }
+    return ret;
+}
+
 log_reader::reader_available log_reader::maybe_create_segment_reader() {
     if (_current_reader && !_current_reader->end_of_stream()) {
         return reader_available::yes;
@@ -198,10 +209,10 @@ log_reader::reader_available log_reader::maybe_create_segment_reader() {
         _config.max_bytes -= bytes_read;
         _config.min_bytes -= std::min(bytes_read, _config.min_bytes);
         // The max offset is inclusive, we have to select next segment
-        seg = _selector.select(
-          _current_reader->_seg->max_offset() + model::offset(1));
+        seg = find_in_set(
+          _set, _current_reader->_seg->max_offset() + model::offset(1));
     } else {
-        seg = _selector.select(_config.start_offset);
+        seg = find_in_set(_set, _config.start_offset);
     }
     if (!seg) {
         _end_of_stream = true;

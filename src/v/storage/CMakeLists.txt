@@ -13,6 +13,7 @@ v_cc_library(
     record_batch_builder.cc
     logger.cc
     log_segment_appender.cc
+    log_set.cc
   DEPS
     Seastar::seastar
     v::bytes

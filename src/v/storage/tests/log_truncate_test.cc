@@ -32,6 +32,7 @@ FIXTURE_TEST(test_rolling_term, storage_test_fixture) {
       log.committed_offset(), read_batches.back().last_offset());
 };
 
+#if 0
 FIXTURE_TEST(test_truncate_whole, storage_test_fixture) {
     storage::log_manager mgr = make_log_manager();
     auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
@@ -169,3 +170,4 @@ FIXTURE_TEST(truncate_before_read, storage_test_fixture) {
     BOOST_REQUIRE_EQUAL(log.committed_offset(), model::offset{});
     BOOST_REQUIRE_EQUAL(log.max_offset(), model::offset{});
 }
+#endif

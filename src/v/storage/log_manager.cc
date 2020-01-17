@@ -4,6 +4,7 @@
 #include "storage/fs_utils.h"
 #include "storage/log.h"
 #include "storage/log_replayer.h"
+#include "storage/log_set.h"
 #include "storage/logger.h"
 #include "utils/directory_walker.h"
 #include "utils/file_sanitizer.h"
