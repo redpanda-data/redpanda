@@ -5,7 +5,7 @@ v_cc_library(
     log_manager.cc
     mem_log_impl.cc
     disk_log_impl.cc
-    log_writer.cc
+    disk_log_appender.cc
     parser.cc
     log_reader.cc
     log_replayer.cc
