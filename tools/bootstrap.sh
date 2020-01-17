@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+#
+# this whole bootstrap.sh script is idempotent so it can safely be re-executed 
+# from the top and only missing packages (or intermediary objects) will be 
+# build/installed
 set -o errexit
 set -o nounset
 set -o pipefail
@@ -10,22 +14,20 @@ echo "root of project: $vroot"
 
 cd "${vroot}"
 
-if [[ ! -e "build/bin/vtools" ]]; then
-  # install OS package deps
-  sudo tools/install-deps.sh
+# install OS package deps
+sudo tools/install-deps.sh
 
-  # install vtools
-  mkdir -p build/venv/
-  python3 -mvenv build/venv/v/
-  source build/venv/v/bin/activate
-  pip install -r tools/requirements.txt
-  pip install -e tools/
-  mkdir -p build/bin/
-  ln -sf "${vroot}/build/venv/v/bin/vtools" build/bin/
-fi
+# install vtools
+mkdir -p build/venv/
+python3 -mvenv build/venv/v/
+source build/venv/v/bin/activate
+pip install -r tools/requirements.txt
+pip install -e tools/
+mkdir -p build/bin/
+ln -sf "${vroot}/build/venv/v/bin/vtools" build/bin/
 
 if [[ ! -e "${vroot}/compile_commands.json" ]]; then
-    ln -sf "${vroot}/build/debug/clang/compile_commands.json" "${vroot}/compile_commands.json"
+  ln -sf "${vroot}/build/debug/clang/compile_commands.json" "${vroot}/compile_commands.json"
 fi
 
 # check gcc version
@@ -38,7 +40,7 @@ fi
 
 # add build/bin/ to PATH
 if [[ ${PATH} != *"${vroot}/build/bin/"* ]]; then
-   PATH="${PATH}:${vroot}/build/bin/"
+  PATH="${PATH}:${vroot}/build/bin/"
 fi
 
 vtools install go-compiler
