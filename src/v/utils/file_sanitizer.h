@@ -1,5 +1,7 @@
 #pragma once
 
+#include "vassert.h"
+
 #include <seastar/core/file.hh>
 #include <seastar/util/backtrace.hh>
 #include <seastar/util/log.hh>
@@ -44,7 +46,7 @@ public:
       const void* buffer,
       size_t len,
       const ss::io_priority_class& pc) override {
-        check_closed();
+        assert_file_not_closed();
         return with_op(get_file_impl(_file)->write_dma(pos, buffer, len, pc));
     }
 
@@ -52,7 +54,7 @@ public:
       uint64_t pos,
       std::vector<iovec> iov,
       const ss::io_priority_class& pc) override {
-        check_closed();
+        assert_file_not_closed();
         return with_op(get_file_impl(_file)->write_dma(pos, iov, pc));
     }
 
@@ -61,7 +63,7 @@ public:
       void* buffer,
       size_t len,
       const ss::io_priority_class& pc) override {
-        check_closed();
+        assert_file_not_closed();
         return with_op(get_file_impl(_file)->read_dma(pos, buffer, len, pc));
     }
 
@@ -69,12 +71,12 @@ public:
       uint64_t pos,
       std::vector<iovec> iov,
       const ss::io_priority_class& pc) override {
-        check_closed();
+        assert_file_not_closed();
         return with_op(get_file_impl(_file)->read_dma(pos, iov, pc));
     }
 
     virtual ss::future<> flush(void) override {
-        check_closed();
+        assert_file_not_closed();
         if (!_pending_ops.empty()) {
             std::cout << "flush() called concurrently with other operations.\n";
             output_pending_ops();
@@ -83,27 +85,27 @@ public:
     }
 
     virtual ss::future<struct stat> stat(void) override {
-        check_closed();
+        assert_file_not_closed();
         return with_op(get_file_impl(_file)->stat());
     }
 
     virtual ss::future<> truncate(uint64_t length) override {
-        check_closed();
+        assert_file_not_closed();
         return with_op(get_file_impl(_file)->truncate(length));
     }
 
     virtual ss::future<> discard(uint64_t offset, uint64_t length) override {
-        check_closed();
+        assert_file_not_closed();
         return with_op(get_file_impl(_file)->discard(offset, length));
     }
 
     virtual ss::future<> allocate(uint64_t position, uint64_t length) override {
-        check_closed();
+        assert_file_not_closed();
         return with_op(get_file_impl(_file)->allocate(position, length));
     }
 
     virtual ss::future<uint64_t> size(void) override {
-        check_closed();
+        assert_file_not_closed();
         return with_op(get_file_impl(_file)->size());
     }
 
@@ -121,13 +123,13 @@ public:
     }
 
     virtual std::unique_ptr<ss::file_handle_impl> dup() override {
-        check_closed();
+        assert_file_not_closed();
         return get_file_impl(_file)->dup();
     }
 
     virtual ss::subscription<ss::directory_entry> list_directory(
       std::function<ss::future<>(ss::directory_entry de)> next) override {
-        check_closed();
+        assert_file_not_closed();
         return get_file_impl(_file)->list_directory(next);
     }
 
@@ -135,7 +137,7 @@ public:
       uint64_t offset,
       size_t range_size,
       const ss::io_priority_class& pc) override {
-        check_closed();
+        assert_file_not_closed();
         return with_op(
           get_file_impl(_file)->dma_read_bulk(offset, range_size, pc));
     }
@@ -157,11 +159,11 @@ private:
         _pending_ops.clear();
     }
 
-    void check_closed() {
-        if (_closed) {
-            std::cout << "Op performed on closed file, from "
-                      << ss::current_backtrace() << std::endl;
-        }
+    void assert_file_not_closed() {
+        vassert(
+          !_closed,
+          "Op performed on closed file. StackTrace:\n{}",
+          ss::current_backtrace());
     }
 
 private:
