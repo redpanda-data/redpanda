@@ -3,6 +3,7 @@
 #include "raft/consensus.h"
 #include "raft/raftgen_service.h"
 #include "seastarx.h"
+#include "utils/copy_range.h"
 
 #include <seastar/core/sharded.hh>
 

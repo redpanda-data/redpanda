@@ -1,6 +1,6 @@
 #include "cluster/simple_batch_builder.h"
 #include "cluster/tests/batch_utils.h"
-#include "rpc/serialize.h"
+#include "reflection/adl.h"
 #include "test_utils/logs.h"
 
 #include <seastar/testing/thread_test_case.hh>

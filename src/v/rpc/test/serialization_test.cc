@@ -1,8 +1,8 @@
 #define BOOST_TEST_MODULE rpc
 
 #include "bytes/iobuf.h"
+#include "reflection/adl.h"
 #include "reflection/arity.h"
-#include "rpc/serialize.h"
 #include "rpc/test/test_types.h"
 
 #include <boost/test/unit_test.hpp>
@@ -10,13 +10,13 @@
 BOOST_AUTO_TEST_CASE(serialize_pod) {
     auto b = iobuf();
     pod it;
-    rpc::serialize(b, std::move(it));
+    reflection::serialize(b, std::move(it));
     BOOST_CHECK_EQUAL(b.size_bytes(), sizeof(it));
 }
 BOOST_AUTO_TEST_CASE(serialize_packed_struct) {
     auto b = iobuf();
     very_packed_pod it;
-    rpc::serialize(b, std::move(it));
+    reflection::serialize(b, std::move(it));
     BOOST_CHECK_EQUAL(b.size_bytes(), 3);
 }
 
@@ -29,7 +29,7 @@ BOOST_AUTO_TEST_CASE(serialize_with_fragmented_buffer) {
     auto b = iobuf();
     complex_custom it;
     it.oi.append(ss::temporary_buffer<char>(55));
-    rpc::serialize(b, std::move(it));
+    reflection::serialize(b, std::move(it));
     BOOST_CHECK_EQUAL(
       b.size_bytes(),
       55 + sizeof(it.pit)
@@ -38,7 +38,7 @@ BOOST_AUTO_TEST_CASE(serialize_with_fragmented_buffer) {
 BOOST_AUTO_TEST_CASE(serialize_pod_with_vector) {
     auto b = iobuf();
     pod_with_vector it;
-    rpc::serialize(b, std::move(it));
+    reflection::serialize(b, std::move(it));
     BOOST_CHECK_EQUAL(
       b.size_bytes(),
       sizeof(pod)
@@ -48,7 +48,7 @@ BOOST_AUTO_TEST_CASE(serialize_pod_with_vector) {
 BOOST_AUTO_TEST_CASE(serialize_pod_with_array) {
     auto b = iobuf();
     pod_with_array it;
-    rpc::serialize(b, std::move(it));
+    reflection::serialize(b, std::move(it));
     BOOST_CHECK_EQUAL(
       b.size_bytes(),
       sizeof(pod)
@@ -62,7 +62,7 @@ BOOST_AUTO_TEST_CASE(serialize_sstring_vector) {
     x.k = "foobar";
     x.v.append(ss::temporary_buffer<char>(87));
     it.hdrs.push_back(std::move(x));
-    rpc::serialize(b, std::move(it));
+    reflection::serialize(b, std::move(it));
     const size_t expected =
       /*
       struct kv {

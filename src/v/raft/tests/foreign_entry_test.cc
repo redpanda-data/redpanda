@@ -9,6 +9,7 @@
 #include "storage/log_manager.h"
 #include "storage/record_batch_builder.h"
 #include "test_utils/randoms.h"
+#include "utils/copy_range.h"
 // testing
 #include "test_utils/fixture.h"
 
@@ -31,14 +32,12 @@ struct foreign_entry_fixture {
           model::no_timeout,
           model::term_id(0)};
         std::vector<storage::append_result> res;
-        res.push_back(
-          gen_data_record_batch_reader(n)
-            .consume(get_log().make_appender(cfg), cfg.timeout)
-            .get0());
-        res.push_back(
-          gen_config_record_batch_reader(n)
-            .consume(get_log().make_appender(cfg), cfg.timeout)
-            .get0());
+        res.push_back(gen_data_record_batch_reader(n)
+                        .consume(get_log().make_appender(cfg), cfg.timeout)
+                        .get0());
+        res.push_back(gen_config_record_batch_reader(n)
+                        .consume(get_log().make_appender(cfg), cfg.timeout)
+                        .get0());
         get_log().flush().get();
         return res;
     }
@@ -66,7 +65,7 @@ struct foreign_entry_fixture {
     model::record_batch config_batch() {
         storage::record_batch_builder bldr(
           raft::configuration_batch_type, _base_offset);
-        bldr.add_raw_kv(rand_iobuf(), rpc::serialize(rand_config()));
+        bldr.add_raw_kv(rand_iobuf(), reflection::to_iobuf(rand_config()));
         ++_base_offset;
         return std::move(bldr).build();
     }

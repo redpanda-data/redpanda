@@ -1,6 +1,7 @@
 #pragma once
 
-#include "rpc/deserialize.h"
+#include "hashing/xx.h"
+#include "reflection/adl.h"
 #include "rpc/types.h"
 #include "seastarx.h"
 
@@ -8,12 +9,24 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/iostream.hh>
 
-#include <fmt/ostream.h>
+#include <fmt/format.h>
 
 #include <memory>
 #include <optional>
 
 namespace rpc {
+namespace detail {
+static inline void check_out_of_range(size_t got, size_t expected) {
+    if (__builtin_expect(got != expected, false)) {
+        // clang-format off
+         throw std::out_of_range(fmt::format(
+           "parse_utils out of range. got:{} bytes and expected:{}"
+           " bytes", got, expected));
+        // clang-format on
+    }
+}
+} // namespace detail
+
 inline ss::future<std::optional<header>>
 parse_header(ss::input_stream<char>& in) {
     constexpr size_t rpc_header_size = sizeof(header);
@@ -32,23 +45,26 @@ ss::future<T>
 parse_type_wihout_compression(ss::input_stream<char>& in, const header& h) {
     const auto header_size = h.size;
     const auto header_checksum = h.checksum;
-    return ss::do_with(source(in), [header_size, header_checksum](source& src) {
-        return deserialize<T>(src).then(
-          [header_size, header_checksum, &src](T t) {
-              const auto got_checksum = src.checksum();
-              if (header_size != src.size_bytes()) {
-                  throw deserialize_invalid_argument(
-                    src.size_bytes(), header_size);
-              }
-              if (header_checksum != got_checksum) {
-                  throw std::runtime_error(fmt::format(
-                    "invalid rpc checksum. got:{}, expected:{}",
-                    got_checksum,
-                    header_checksum));
-              }
-              return std::move(t);
-          });
-    });
+    return read_iobuf_exactly(in, header_size)
+      .then([header_checksum, header_size](iobuf io) {
+          detail::check_out_of_range(io.size_bytes(), header_size);
+          auto in = iobuf::iterator_consumer(io.cbegin(), io.cend());
+          incremental_xxhash64 hasher;
+          size_t consumed = in.consume(
+            io.size_bytes(), [&hasher](const char* src, size_t sz) {
+                hasher.update(src, sz);
+                return ss::stop_iteration::no;
+            });
+          detail::check_out_of_range(consumed, header_size);
+          const auto got_checksum = hasher.digest();
+          if (header_checksum != got_checksum) {
+              throw std::runtime_error(fmt::format(
+                "invalid rpc checksum. got:{}, expected:{}",
+                got_checksum,
+                header_checksum));
+          }
+          return reflection::adl<T>{}.from(std::move(io));
+      });
 }
 template<typename T>
 ss::future<T> parse_type(ss::input_stream<char>& in, const header& h) {

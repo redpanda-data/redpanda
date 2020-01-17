@@ -1,7 +1,7 @@
 #pragma once
 
 #include "bytes/iobuf.h"
-#include "rpc/serialize.h"
+#include "reflection/adl.h"
 #include "rpc/types.h"
 
 #include <seastar/core/scattered_message.hh>
@@ -18,7 +18,7 @@ public:
 
     template<typename T>
     void serialize_type(T&& t) {
-        ::rpc::serialize(_out, std::forward<T>(t));
+        reflection::serialize(_out, std::forward<T>(t));
     }
 
 private:

@@ -15,7 +15,6 @@ v_cc_library(
     partition_manager.cc
     types.cc
     partition_allocator.cc
-    type_serializers.cc
     logger.cc
     cluster_utils.cc
     service.cc

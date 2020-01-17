@@ -16,6 +16,7 @@ v_cc_library(
     v::bytes
     v::rphashing
     v::utils
+    v::reflection
   )
 add_subdirectory(test)
 add_subdirectory(demo)
