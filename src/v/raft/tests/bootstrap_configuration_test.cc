@@ -33,8 +33,14 @@ struct bootstrap_fixture : raft::simple_record_fixture {
           model::no_timeout,
           model::term_id{0}};
         std::vector<storage::append_result> res;
-        res.push_back(get_log().append(datas(n), cfg).get0());
-        res.push_back(get_log().append(configs(n), cfg).get0());
+        res.push_back(
+          datas(n)
+            .consume(get_log().make_appender(cfg), cfg.timeout)
+            .get0());
+        res.push_back(
+          configs(n)
+            .consume(get_log().make_appender(cfg), cfg.timeout)
+            .get0());
         get_log().flush().get();
         return res;
     }

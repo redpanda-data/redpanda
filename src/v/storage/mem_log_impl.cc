@@ -8,27 +8,6 @@
 namespace storage {
 struct mem_log_impl;
 
-class memory_map_consumer {
-public:
-    // expexts the 'next' valid offset
-    explicit memory_map_consumer(model::offset o)
-      : _idx(o) {}
-    ss::future<ss::stop_iteration> operator()(model::record_batch b) {
-        model::offset cur = _idx;
-        _idx = _idx + model::offset(1);
-        _result.emplace(cur, std::move(b));
-        return ss::make_ready_future<ss::stop_iteration>(
-          ss::stop_iteration::no);
-    }
-    std::map<model::offset, model::record_batch>&& end_of_stream() {
-        return std::move(_result);
-    }
-
-private:
-    model::offset _idx;
-    std::map<model::offset, model::record_batch> _result;
-};
-
 // makes a copy of every batch starting at some iterator
 class mem_iter_reader final : public model::record_batch_reader::impl {
 public:
@@ -61,6 +40,29 @@ private:
     model::offset _endoffset;
 };
 
+class mem_log_appender final : public log_writer::impl {
+public:
+    explicit mem_log_appender(
+      mem_log_impl& log, model::offset min_offset) noexcept
+      : _log(log)
+      , _min_offset(min_offset)
+      , _cur_offset(min_offset) {}
+
+    virtual ss::future<> initialize() override {
+        return ss::make_ready_future<>();
+    }
+
+    virtual inline ss::future<ss::stop_iteration>
+    operator()(model::record_batch&&) override;
+
+    virtual inline ss::future<append_result> end_of_stream() override;
+
+private:
+    mem_log_impl& _log;
+    model::offset _min_offset;
+    model::offset _cur_offset;
+};
+
 struct mem_log_impl final : log::impl {
     // forward ctor
     explicit mem_log_impl(model::ntp n, ss::sstring workdir)
@@ -81,32 +83,14 @@ struct mem_log_impl final : log::impl {
           std::make_unique<mem_iter_reader>(it, _data.end(), cfg.max_offset));
     }
 
-    ss::future<append_result>
-    append(model::record_batch_reader&& r, log_append_config) final {
+    log_writer make_appender(log_append_config cfg) final {
         auto o = max_offset();
         if (o() < 0) {
             o = model::offset(0);
         } else {
             o = o + model::offset(1);
         }
-        return ss::do_with(
-                 std::move(r),
-                 [o](model::record_batch_reader& r) {
-                     return r.consume(
-                       memory_map_consumer(o), model::no_timeout);
-                 })
-          .then([this](std::map<model::offset, model::record_batch> m) {
-              // TODO(agallego) missing .append_time
-              append_result ret{
-                .base_offset = m.begin()->first,
-                .last_offset = m.rbegin()->first,
-              };
-              std::move(
-                std::move_iterator(m.begin()),
-                std::move_iterator(m.end()),
-                std::inserter(_data, _data.end()));
-              return ret;
-          });
+        return log_writer(std::make_unique<mem_log_appender>(*this, o));
     }
 
     size_t segment_count() const final { return 1; }
@@ -131,6 +115,24 @@ struct mem_log_impl final : log::impl {
 
     std::map<model::offset, model::record_batch> _data;
 };
+
+ss::future<ss::stop_iteration> mem_log_appender::
+operator()(model::record_batch&& batch) {
+    model::offset cur = _cur_offset;
+    _cur_offset = _cur_offset + model::offset(1);
+    _log._data.emplace(cur, std::move(batch));
+    return ss::make_ready_future<ss::stop_iteration>(ss::stop_iteration::no);
+}
+
+ss::future<append_result> mem_log_appender::end_of_stream() {
+    // TODO(agallego) missing .append_time
+    append_result ret{
+      .base_offset = _min_offset,
+      .last_offset = _cur_offset - model::offset(1),
+    };
+    return ss::make_ready_future<append_result>(ret);
+}
+
 log make_memory_backed_log(model::ntp ntp, ss::sstring workdir) {
     auto ptr = ss::make_shared<mem_log_impl>(
       std::move(ntp), std::move(workdir));
