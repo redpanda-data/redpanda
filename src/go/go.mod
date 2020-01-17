@@ -5,7 +5,7 @@ require (
 	github.com/Microsoft/go-winio v0.4.12 // indirect
 	github.com/Shopify/sarama v1.23.1
 	github.com/aws/aws-sdk-go v1.25.43
-	github.com/cockroachdb/crlfmt v0.0.0-20181113173958-3c56c65c97a1 // indirect
+	github.com/cockroachdb/crlfmt v0.0.0-20200116191136-a78e1c207bc0 // indirect
 	github.com/cockroachdb/gostdlib v1.13.0 // indirect
 	github.com/cockroachdb/ttycolor v0.0.0-20180709150743-a1d5aaeb377d // indirect
 	github.com/docker/distribution v2.7.1+incompatible // indirect

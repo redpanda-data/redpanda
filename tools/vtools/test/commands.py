@@ -21,7 +21,8 @@ def test():
               default=None)
 def go(conf):
     vconfig = config.VConfig(conf)
-    shell.run_subprocess(f'cd {vconfig.go_src_dir}/pkg && go test ./...')
+    shell.run_subprocess(
+        f'cd {vconfig.go_src_dir}/pkg && {vconfig.gobin} test ./...')
 
 
 @test.command(short_help='execute redpanda unit tests')
