@@ -145,49 +145,41 @@ ss::future<> controller::process_raft0_batch(model::record_batch batch) {
 }
 
 ss::future<> controller::process_raft0_cfg_update(model::record r) {
-    return rpc::deserialize<raft::group_configuration>(
-             r.share_packed_value_and_headers())
-      .then([this](raft::group_configuration cfg) {
-          clusterlog.debug("Processing new raft-0 configuration");
-          auto old_list = _md_cache.local().all_brokers();
-          std::vector<broker_ptr> new_list;
-          auto all_new_nodes = cfg.all_brokers();
-          new_list.reserve(all_new_nodes.size());
-          std::transform(
-            std::begin(all_new_nodes),
-            std::end(all_new_nodes),
-            std::back_inserter(new_list),
-            [](model::broker& broker) {
-                return ss::make_lw_shared<model::broker>(std::move(broker));
-            });
-          return update_clients_cache(std::move(new_list), std::move(old_list))
-            .then([this, nodes = std::move(cfg.nodes)] {
-                return update_brokers_cache(std::move(nodes));
-            });
+    auto cfg = reflection::adl<raft::group_configuration>().from(
+      r.share_packed_value_and_headers());
+    clusterlog.debug("Processing new raft-0 configuration");
+    auto old_list = _md_cache.local().all_brokers();
+    std::vector<broker_ptr> new_list;
+    auto all_new_nodes = cfg.all_brokers();
+    new_list.reserve(all_new_nodes.size());
+    std::transform(
+      std::begin(all_new_nodes),
+      std::end(all_new_nodes),
+      std::back_inserter(new_list),
+      [](model::broker& broker) {
+          return ss::make_lw_shared<model::broker>(std::move(broker));
+      });
+    return update_clients_cache(std::move(new_list), std::move(old_list))
+      .then([this, nodes = std::move(cfg.nodes)] {
+          return update_brokers_cache(std::move(nodes));
       });
 }
 
 ss::future<> controller::recover_record(model::record r) {
-    return rpc::deserialize<log_record_key>(r.share_key())
-      .then([this, v_buf = std::move(r.share_packed_value_and_headers())](
-              log_record_key key) mutable {
-          return dispatch_record_recovery(std::move(key), std::move(v_buf));
-      });
+    auto log_record = reflection::adl<log_record_key>{}.from(r.share_key());
+    return dispatch_record_recovery(
+      std::move(log_record), r.share_packed_value_and_headers());
 }
 
 ss::future<>
 controller::dispatch_record_recovery(log_record_key key, iobuf&& v_buf) {
     switch (key.record_type) {
     case log_record_key::type::partition_assignment:
-        return rpc::deserialize<partition_assignment>(std::move(v_buf))
-          .then([this](partition_assignment as) {
-              return recover_assignment(std::move(as));
-          });
+        return recover_assignment(
+          reflection::from_iobuf<partition_assignment>(std::move(v_buf)));
     case log_record_key::type::topic_configuration:
-        return rpc::deserialize<topic_configuration>(std::move(v_buf))
-          .then([this](topic_configuration t_cfg) {
-              return recover_topic_configuration(std::move(t_cfg));
-          });
+        return recover_topic_configuration(
+          reflection::from_iobuf<topic_configuration>(std::move(v_buf)));
     default:
         return ss::make_exception_future<>(
           std::runtime_error("Not supported record type in controller batch"));

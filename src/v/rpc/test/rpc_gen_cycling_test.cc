@@ -1,4 +1,3 @@
-
 #include "rpc/exceptions.h"
 #include "rpc/test/rpc_integration_fixture.h"
 #include "test_utils/fixture.h"

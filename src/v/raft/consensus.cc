@@ -5,6 +5,7 @@
 #include "raft/recovery_stm.h"
 #include "raft/replicate_entries_stm.h"
 #include "raft/vote_stm.h"
+#include "utils/copy_range.h"
 
 #include <seastar/core/fstream.hh>
 #include <seastar/core/future.hh>

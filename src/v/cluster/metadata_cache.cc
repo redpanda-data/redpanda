@@ -1,5 +1,7 @@
 #include "cluster/metadata_cache.h"
 
+#include <fmt/format.h>
+
 namespace cluster {
 
 std::vector<model::topic> metadata_cache::all_topics() const {
