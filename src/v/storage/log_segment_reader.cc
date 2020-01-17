@@ -2,7 +2,6 @@
 
 #include <seastar/core/fstream.hh>
 #include <seastar/core/iostream.hh>
-#include <seastar/core/print.hh>
 #include <seastar/core/sstring.hh>
 
 namespace storage {
@@ -36,18 +35,14 @@ log_segment_reader::data_stream(uint64_t pos, const ss::io_priority_class& pc) {
 }
 
 std::ostream& operator<<(std::ostream& os, const log_segment_reader& seg) {
-    return ss::fmt_print(
-      os,
-      "{{log_segment: {}, {}-{}}}",
-      seg.get_filename(),
-      seg.base_offset(),
-      seg.max_offset());
+    return os << "{log_segment:" << seg.get_filename() << ", "
+              << seg.base_offset() << "-" << seg.max_offset() << "}";
 }
 
 std::ostream& operator<<(std::ostream& os, segment_reader_ptr seg) {
     if (seg) {
         return os << *seg;
     }
-    return ss::fmt_print(os, "{{log_segment: null}}");
+    return os << "{{log_segment: null}}";
 }
 } // namespace storage
