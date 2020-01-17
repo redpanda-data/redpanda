@@ -1,6 +1,8 @@
 #pragma once
 
-#include "storage/log_segment_reader.h"
+#include "storage/segment.h"
+
+#include <initializer_list>
 
 namespace storage {
 /*
@@ -17,40 +19,58 @@ namespace storage {
  */
 class log_set {
 public:
-    using underlying_t = std::vector<segment_reader_ptr>;
+    using underlying_t = std::vector<segment>;
     using const_iterator = underlying_t::const_iterator;
     using const_reverse_iterator = underlying_t::const_reverse_iterator;
     using iterator = underlying_t::iterator;
     static constexpr bool is_nothrow_v
       = std::is_nothrow_move_constructible_v<underlying_t>;
 
+    template<typename Iterator>
+    static underlying_t readers_as_handles(Iterator begin, Iterator end) {
+        underlying_t ret;
+        ret.reserve(std::distance(begin, end));
+        while (begin != end) {
+            ret.push_back(segment(*begin));
+            ++begin;
+        }
+        return ret;
+    }
+    static underlying_t
+    readers_as_handles(std::initializer_list<segment_reader_ptr> c) {
+        return readers_as_handles(std::begin(c), std::end(c));
+    }
+
     explicit log_set(underlying_t) noexcept(is_nothrow_v);
+    log_set(log_set&&) noexcept = default;
+    log_set& operator=(log_set&&) noexcept = default;
+    log_set(const log_set&) = delete;
+    log_set& operator=(const log_set&) = delete;
 
-    size_t size() const { return _segments.size(); }
+    size_t size() const { return _handles.size(); }
 
-    bool empty() const { return _segments.empty(); }
+    bool empty() const { return _handles.empty(); }
 
-    /// New segments must be monotonically increasing in base offset
-    void add(segment_reader_ptr);
+    /// must be monotonically increasing in base offset
+    void add(segment);
 
-    void pop_last();
+    void pop_back();
 
-    segment_reader_ptr last() const { return _segments.back(); }
-
-    const_iterator begin() const { return _segments.begin(); }
-
-    const_iterator end() const { return _segments.end(); }
-    const_reverse_iterator rbegin() const { return _segments.rbegin(); }
-    const_reverse_iterator rend() const { return _segments.rend(); }
-
-    iterator begin() { return _segments.begin(); }
-
-    iterator end() { return _segments.end(); }
+    segment& back() { return _handles.back(); }
+    const segment& back() const { return _handles.back(); }
+    const segment& front() const { return _handles.front(); }
 
     const_iterator lower_bound(model::offset) const;
 
+    const_iterator cbegin() const { return _handles.cbegin(); }
+    const_iterator cend() const { return _handles.cend(); }
+    iterator begin() { return _handles.begin(); }
+    iterator end() { return _handles.end(); }
+    const_iterator begin() const { return _handles.begin(); }
+    const_iterator end() const { return _handles.end(); }
+
 private:
-    std::vector<segment_reader_ptr> _segments;
+    underlying_t _handles;
 };
 
 std::ostream& operator<<(std::ostream&, const log_set&);

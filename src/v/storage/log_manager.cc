@@ -3,6 +3,7 @@
 #include "model/fundamental.h"
 #include "storage/fs_utils.h"
 #include "storage/log.h"
+#include "storage/segment.h"
 #include "storage/log_replayer.h"
 #include "storage/log_set.h"
 #include "storage/logger.h"
@@ -29,7 +30,7 @@ ss::future<> log_manager::stop() {
       _logs, [](logs_type::value_type& entry) { return entry.second.close(); });
 }
 
-ss::future<log_manager::log_handles> log_manager::make_log_segment(
+ss::future<segment> log_manager::make_log_segment(
   const model::ntp& ntp,
   model::offset base_offset,
   model::term_id term,
@@ -40,8 +41,8 @@ ss::future<log_manager::log_handles> log_manager::make_log_segment(
       _config.base_dir, ntp, base_offset, term, version);
     stlog.trace("Creating new segment {}", path.string());
     return ss::do_with(
-      log_handles{},
-      [this, pc, buf_size, path = std::move(path)](log_handles& h) {
+      segment(nullptr, nullptr),
+      [this, pc, buf_size, path = std::move(path)](segment& h) {
           ss::file_open_options opt{
             .extent_allocation_size_hint = 32 << 20,
             .sloppy_size = true,
@@ -60,20 +61,20 @@ ss::future<log_manager::log_handles> log_manager::make_log_segment(
               [this, buf_size, path] { return open_segment(path, buf_size); })
             .then([&h](segment_reader_ptr p) {
                 if (!p) {
-                    return ss::make_exception_future<log_handles>(
+                    return ss::make_exception_future<segment>(
                       std::runtime_error("Failed to open segment"));
                 }
                 p->set_last_visible_byte_offset(0);
                 h.reader = std::move(p);
-                return ss::make_ready_future<log_handles>(std::move(h));
+                return ss::make_ready_future<segment>(std::move(h));
             })
             .handle_exception([&h](auto e) {
                 if (h.appender == nullptr) {
                     // null when path does not exist to appender directory
-                    return ss::make_exception_future<log_handles>(std::move(e));
+                    return ss::make_exception_future<segment>(std::move(e));
                 }
                 return h.appender->close().then([e = std::move(e)]() mutable {
-                    return ss::make_exception_future<log_handles>(std::move(e));
+                    return ss::make_exception_future<segment>(std::move(e));
                 });
             });
       });
@@ -85,9 +86,9 @@ ss::future<log_manager::log_handles> log_manager::make_log_segment(
 static ss::future<log_set> do_recover(log_set&& seg_set) {
     return ss::async([seg_set = std::move(seg_set)]() mutable {
         if (seg_set.empty()) {
-            return seg_set;
+            return std::move(seg_set);
         }
-        auto last = seg_set.last();
+        auto last = seg_set.back().reader;
         auto stat = last->stat().get0();
         auto replayer = log_replayer(last);
         auto recovered = replayer.recover_in_thread(
@@ -97,11 +98,11 @@ static ss::future<log_set> do_recover(log_set&& seg_set) {
             last->set_last_written_offset(*recovered.last_valid_offset());
         } else {
             if (stat.st_size == 0) {
-                seg_set.pop_last();
+                seg_set.pop_back();
                 last->close().get();
                 remove_file(last->get_filename()).get();
             } else {
-                seg_set.pop_last();
+                seg_set.pop_back();
                 ss::engine()
                   .rename_file(
                     last->get_filename(),
@@ -109,7 +110,7 @@ static ss::future<log_set> do_recover(log_set&& seg_set) {
                   .get();
             }
         }
-        return seg_set;
+        return std::move(seg_set);
     });
 }
 
@@ -117,8 +118,8 @@ static void set_max_offsets(log_set& seg_set) {
     for (auto it = seg_set.begin(); it != seg_set.end(); ++it) {
         auto next = std::next(it);
         if (next != seg_set.end()) {
-            (*it)->set_last_written_offset(
-              (*next)->base_offset() - model::offset(1));
+            (*it).reader->set_last_written_offset(
+              (*next).reader->base_offset() - model::offset(1));
         }
     }
 }
@@ -218,7 +219,8 @@ log_manager::manage(model::ntp ntp, log_manager::storage_type type) {
     return recursive_touch_directory(path)
       .then([this, path] { return open_segments(path); })
       .then([this, ntp](std::vector<segment_reader_ptr> segs) {
-          auto seg_set = log_set(std::move(segs));
+          auto seg_set = log_set(
+            log_set::readers_as_handles(segs.begin(), segs.end()));
           set_max_offsets(seg_set);
           return do_recover(std::move(seg_set))
             .then([this, ntp](log_set seg_set) {

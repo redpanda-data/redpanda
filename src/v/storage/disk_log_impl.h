@@ -26,9 +26,6 @@ public:
     // External synchronization: only one append can be performed at a time.
     log_appender make_appender(log_append_config cfg) final;
 
-    // Can only be called after append().
-    log_segment_appender& appender() { return *_appender; }
-
     /// flushes the _tracker.dirty_offset into _tracker.committed_offset
     ss::future<> flush() final;
 
@@ -47,7 +44,7 @@ public:
         if (_segs.empty()) {
             return model::offset{};
         }
-        return (*_segs.begin())->base_offset();
+        return _segs.front().reader->base_offset();
     }
     model::offset max_offset() const final { return _tracker.dirty_offset(); }
 
@@ -75,8 +72,6 @@ private:
     model::term_id _term;
     log_manager& _manager;
     log_set _segs;
-    segment_reader_ptr _active_segment;
-    segment_appender_ptr _appender;
     offset_tracker _tracker;
     storage::probe _probe;
     failure_probes _failure_probes;

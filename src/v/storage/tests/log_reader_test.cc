@@ -42,7 +42,7 @@ struct context {
               appender.file_byte_offset(),
               128);
             log_seg->set_last_written_offset(batch.last_offset());
-            logs.add(log_seg);
+            logs.add(segment(log_seg));
         }
     }
 
@@ -57,8 +57,8 @@ struct context {
     }
 
     ~context() {
-        for (auto log_seg : logs) {
-            log_seg->close().get();
+        for (auto& log_seg : logs) {
+            log_seg.close().get();
         }
     }
 };
