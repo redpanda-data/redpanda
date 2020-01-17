@@ -5,6 +5,7 @@
 #include "storage/log_reader.h"
 #include "storage/log_segment_appender.h"
 #include "storage/log_segment_reader.h"
+#include "storage/log_writer.h"
 #include "storage/offset_tracker.h"
 #include "storage/probe.h"
 
@@ -23,13 +24,7 @@ public:
     model::record_batch_reader make_reader(log_reader_config) final;
 
     // External synchronization: only one append can be performed at a time.
-    [[gnu::always_inline]] ss::future<append_result>
-    append(model::record_batch_reader&& r, log_append_config cfg) final {
-        return _failure_probes.append().then(
-          [this, r = std::move(r), cfg = std::move(cfg)]() mutable {
-              return do_append(std::move(r), std::move(cfg));
-          });
-    }
+    log_writer make_appender(log_append_config cfg) final;
 
     // Can only be called after append().
     log_segment_appender& appender() { return *_appender; }
@@ -62,6 +57,7 @@ public:
 
 private:
     friend class log_builder;
+    friend class default_log_writer;
 
     ss::future<>
     new_segment(model::offset, model::term_id, const ss::io_priority_class&);
@@ -69,9 +65,6 @@ private:
     /// \brief forces a flush() on the last segment & rotates given the current
     /// _term && (tracker.committed_offset+1)
     ss::future<> do_roll();
-
-    ss::future<append_result>
-    do_append(model::record_batch_reader&&, log_append_config);
 
     ss::future<> do_truncate(model::offset);
 

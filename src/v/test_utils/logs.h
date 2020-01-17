@@ -23,15 +23,15 @@ static ss::future<> persist_log_file(
        batches = std::move(batches)](storage::log_manager& mgr) mutable {
           return mgr.manage(file_ntp)
             .then([b = std::move(batches)](storage::log log) mutable {
+                storage::log_append_config cfg{
+                  storage::log_append_config::fsync::yes,
+                  ss::default_priority_class(),
+                  model::no_timeout,
+                  model::term_id(0)};
                 auto reader = model::make_memory_record_batch_reader(
                   std::move(b));
-                return log.append(
-                  std::move(reader),
-                  storage::log_append_config{
-                    storage::log_append_config::fsync::yes,
-                    ss::default_priority_class(),
-                    model::no_timeout,
-                    model::term_id(0)});
+                return std::move(reader).consume(
+                  log.make_appender(cfg), cfg.timeout);
             })
             .finally([&mgr] { return mgr.stop(); })
             .discard_result();

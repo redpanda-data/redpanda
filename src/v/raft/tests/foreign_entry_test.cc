@@ -32,9 +32,13 @@ struct foreign_entry_fixture {
           model::term_id(0)};
         std::vector<storage::append_result> res;
         res.push_back(
-          get_log().append(gen_data_record_batch_reader(n), cfg).get0());
+          gen_data_record_batch_reader(n)
+            .consume(get_log().make_appender(cfg), cfg.timeout)
+            .get0());
         res.push_back(
-          get_log().append(gen_config_record_batch_reader(n), cfg).get0());
+          gen_config_record_batch_reader(n)
+            .consume(get_log().make_appender(cfg), cfg.timeout)
+            .get0());
         get_log().flush().get();
         return res;
     }
