@@ -171,7 +171,10 @@ public:
             // make expected offset inclusive
             auto reader = model::make_memory_record_batch_reader(
               std::move(batches));
-            auto res = log.append(std::move(reader), append_cfg).get0();
+            auto res = std::move(reader)
+                         .consume(
+                           log.make_appender(append_cfg), append_cfg.timeout)
+                         .get0();
 
             // Check if after append offset was updated correctly
             auto expected_offset = model::offset(total_records - 1)
