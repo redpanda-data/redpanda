@@ -14,6 +14,7 @@ v_cc_library(
     logger.cc
     log_segment_appender.cc
     log_set.cc
+    segment.cc
   DEPS
     Seastar::seastar
     v::bytes

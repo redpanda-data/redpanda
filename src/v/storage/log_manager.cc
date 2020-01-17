@@ -3,10 +3,10 @@
 #include "model/fundamental.h"
 #include "storage/fs_utils.h"
 #include "storage/log.h"
-#include "storage/segment.h"
 #include "storage/log_replayer.h"
 #include "storage/log_set.h"
 #include "storage/logger.h"
+#include "storage/segment.h"
 #include "utils/directory_walker.h"
 #include "utils/file_sanitizer.h"
 
@@ -30,6 +30,11 @@ ss::future<> log_manager::stop() {
       _logs, [](logs_type::value_type& entry) { return entry.second.close(); });
 }
 
+struct segment_data {
+    segment_reader_ptr reader;
+    segment_appender_ptr appender;
+};
+
 ss::future<segment> log_manager::make_log_segment(
   const model::ntp& ntp,
   model::offset base_offset,
@@ -41,8 +46,8 @@ ss::future<segment> log_manager::make_log_segment(
       _config.base_dir, ntp, base_offset, term, version);
     stlog.trace("Creating new segment {}", path.string());
     return ss::do_with(
-      segment(nullptr, nullptr),
-      [this, pc, buf_size, path = std::move(path)](segment& h) {
+      segment_data{},
+      [this, pc, buf_size, path = std::move(path)](segment_data& h) {
           ss::file_open_options opt{
             .extent_allocation_size_hint = 32 << 20,
             .sloppy_size = true,
@@ -65,8 +70,9 @@ ss::future<segment> log_manager::make_log_segment(
                       std::runtime_error("Failed to open segment"));
                 }
                 p->set_last_visible_byte_offset(0);
-                h.reader = std::move(p);
-                return ss::make_ready_future<segment>(std::move(h));
+                h.reader = p;
+                return ss::make_ready_future<segment>(
+                  segment(h.reader, std::move(h.appender)));
             })
             .handle_exception([&h](auto e) {
                 if (h.appender == nullptr) {
@@ -88,7 +94,7 @@ static ss::future<log_set> do_recover(log_set&& seg_set) {
         if (seg_set.empty()) {
             return std::move(seg_set);
         }
-        auto last = seg_set.back().reader;
+        auto last = seg_set.back().reader();
         auto stat = last->stat().get0();
         auto replayer = log_replayer(last);
         auto recovered = replayer.recover_in_thread(
@@ -118,8 +124,8 @@ static void set_max_offsets(log_set& seg_set) {
     for (auto it = seg_set.begin(); it != seg_set.end(); ++it) {
         auto next = std::next(it);
         if (next != seg_set.end()) {
-            (*it).reader->set_last_written_offset(
-              (*next).reader->base_offset() - model::offset(1));
+            (*it).reader()->set_last_written_offset(
+              (*next).reader()->base_offset() - model::offset(1));
         }
     }
 }
