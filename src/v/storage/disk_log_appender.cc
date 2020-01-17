@@ -1,6 +1,7 @@
-#include "storage/log_writer.h"
+#include "storage/disk_log_appender.h"
 
-#include "storage/log.h"
+#include "storage/disk_log_impl.h"
+#include "storage/log_segment_appender.h"
 #include "utils/vint.h"
 
 #include <seastar/core/byteorder.hh>
@@ -10,8 +11,15 @@
 
 namespace storage {
 
-default_log_writer::default_log_writer(disk_log_impl& log) noexcept
+disk_log_appender::disk_log_appender(
+  disk_log_impl& log,
+  log_append_config config,
+  log_clock::time_point append_time,
+  model::offset offset) noexcept
   : _log(log)
+  , _config(config)
+  , _append_time(append_time)
+  , _base_offset(offset)
   , _last_offset(log.max_offset()) {}
 
 template<typename T>
@@ -79,8 +87,29 @@ write(log_segment_appender& appender, const model::record_batch& batch) {
       });
 }
 
+ss::future<> disk_log_appender::initialize() {
+    return _log._failure_probes.append().then([this] {
+        auto f = ss::make_ready_future<>();
+        if (__builtin_expect(!_log._active_segment, false)) {
+            // FIXME: We need to persist the last offset somewhere.
+            _log._term = _config.term;
+            auto offset = _log._segs.size() > 0
+                            ? _log._segs.last()->max_offset() + model::offset(1)
+                            : model::offset(0);
+            f = _log.new_segment(offset, _log._term, _config.io_priority);
+        }
+        if (_log._term != _config.term) {
+            _log._term = _config.term;
+            f = f.then([this] { return _log.do_roll(); });
+        }
+        return f;
+    });
+}
+
 ss::future<ss::stop_iteration>
-default_log_writer::operator()(model::record_batch&& batch) {
+disk_log_appender::operator()(model::record_batch&& batch) {
+    batch.set_base_offset(_base_offset);
+    _base_offset = batch.last_offset() + model::offset(1);
     return ss::do_with(std::move(batch), [this](model::record_batch& batch) {
         if (_last_offset > batch.base_offset()) {
             auto e = std::make_exception_ptr(std::runtime_error(fmt::format(
@@ -115,6 +144,19 @@ default_log_writer::operator()(model::record_batch&& batch) {
     });
 }
 
-model::offset default_log_writer::end_of_stream() { return _last_offset; }
+ss::future<append_result> disk_log_appender::end_of_stream() {
+    _log._tracker.update_dirty_offset(_last_offset);
+    _log._active_segment->set_last_written_offset(_last_offset);
+    auto f = ss::make_ready_future<>();
+    /// fsync, means we fsync _every_ record_batch
+    /// most API's will want to batch the fsync, at least
+    /// to the record_batch_reader level
+    if (_config.should_fsync) {
+        f = _log.flush();
+    }
+    return f.then([this] {
+        return append_result{_append_time, _base_offset, _last_offset};
+    });
+}
 
 } // namespace storage

@@ -1,6 +1,6 @@
+#include "storage/disk_log_appender.h"
 #include "storage/log_replayer.h"
 #include "storage/log_segment_reader.h"
-#include "storage/log_writer.h"
 #include "storage/tests/random_batch.h"
 #include "utils/file_sanitizer.h"
 

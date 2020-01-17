@@ -1,9 +1,9 @@
 #pragma once
-
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "seastarx.h"
+#include "storage/log_appender.h"
 #include "storage/log_segment_reader.h"
 #include "storage/types.h"
 
@@ -41,6 +41,13 @@
 ///     OffsetDelta: 3
 /// Subsequent batch will have offset 14.
 ///
+///
+/// ownership
+///
+///   log <- log::impl                 (main log interface)
+///     log_appender <- log_appender::impl (log appending interface)
+///       log_segment_appender
+///
 namespace storage {
 
 class log final {
@@ -54,10 +61,8 @@ public:
 
         virtual ss::future<> truncate(model::offset) = 0;
 
-        virtual ss::future<append_result>
-        append(model::record_batch_reader&& r, log_append_config cfg) = 0;
-
         virtual model::record_batch_reader make_reader(log_reader_config) = 0;
+        virtual log_appender make_appender(log_append_config) = 0;
         virtual ss::future<> close() = 0;
         virtual ss::future<> flush() = 0;
 
@@ -112,9 +117,8 @@ public:
         return _impl->make_reader(std::move(cfg));
     }
 
-    ss::future<append_result>
-    append(model::record_batch_reader&& r, log_append_config cfg) {
-        return _impl->append(std::move(r), cfg);
+    log_appender make_appender(log_append_config cfg) {
+        return _impl->make_appender(cfg);
     }
 
     const model::ntp& ntp() const { return _impl->ntp(); }

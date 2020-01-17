@@ -1,7 +1,7 @@
 #include "storage/disk_log_impl.h"
 
+#include "storage/disk_log_appender.h"
 #include "storage/log_manager.h"
-#include "storage/log_writer.h"
 #include "storage/offset_assignment.h"
 #include "storage/version.h"
 
@@ -49,55 +49,16 @@ ss::future<> disk_log_impl::new_segment(
       });
 }
 
-ss::future<append_result> disk_log_impl::do_append(
-  model::record_batch_reader&& reader, log_append_config config) {
-    auto f = ss::make_ready_future<>();
-    if (__builtin_expect(!_active_segment, false)) {
-        // FIXME: We need to persist the last offset somewhere.
-        _term = config.term;
-        auto offset = _segs.size() > 0
-                        ? _segs.last()->max_offset() + model::offset(1)
-                        : model::offset(0);
-        f = new_segment(offset, _term, config.io_priority);
-    }
-    if (_term != config.term) {
-        _term = config.term;
-        f = f.then([this] { return do_roll(); });
-    }
-    return f.then(
-      [this, reader = std::move(reader), config = std::move(config)]() mutable {
-          return ss::do_with(
-            std::move(reader),
-            [this,
-             config = std::move(config)](model::record_batch_reader& reader) {
-                auto now = log_clock::now();
-                auto base = _tracker.dirty_offset() >= model::offset(0)
-                              ? _tracker.dirty_offset() + model::offset(1)
-                              : model::offset(0);
-                auto writer = log_writer(
-                  std::make_unique<default_log_writer>(*this));
-                return reader
-                  .consume(
-                    wrap_with_offset_assignment(std::move(writer), base),
-                    config.timeout)
-                  .then([this, config = std::move(config), now, base](
-                          model::offset last_offset) {
-                      _tracker.update_dirty_offset(last_offset);
-                      _active_segment->set_last_written_offset(last_offset);
-                      auto f = ss::make_ready_future<>();
-                      /// fsync, means we fsync _every_ record_batch
-                      /// most API's will want to batch the fsync, at least
-                      /// to the record_batch_reader level
-                      if (config.should_fsync) {
-                          f = flush();
-                      }
-                      return f.then([this, now, base, last_offset] {
-                          return append_result{now, base, last_offset};
-                      });
-                  });
-            });
-      });
+// config timeout is for the one calling reader consumer
+log_appender disk_log_impl::make_appender(log_append_config cfg) {
+    auto now = log_clock::now();
+    auto base = _tracker.dirty_offset() >= model::offset(0)
+                  ? _tracker.dirty_offset() + model::offset(1)
+                  : model::offset(0);
+    return log_appender(
+      std::make_unique<disk_log_appender>(*this, cfg, now, base));
 }
+
 ss::future<> disk_log_impl::flush() {
     if (!_appender) {
         return ss::make_ready_future<>();
