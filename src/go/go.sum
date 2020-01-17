@@ -17,6 +17,8 @@ github.com/aws/aws-sdk-go v1.25.43/go.mod h1:KmX6BPdI08NWTb3/sm4ZGu5ShLoqVDhKgpi
 github.com/client9/misspell v0.3.4/go.mod h1:qj6jICC3Q7zFZvVWo7KLAzC3yx5G7kyvSDkc90ppPyw=
 github.com/cockroachdb/crlfmt v0.0.0-20181113173958-3c56c65c97a1 h1:SUEb0buGhlsuGeoW222wo81V8xiIX7EYR12bsMk9XoQ=
 github.com/cockroachdb/crlfmt v0.0.0-20181113173958-3c56c65c97a1/go.mod h1:uY/PY/C5c2cIFaeWGjdZSd0eptkmXiX5vd92GMZZ50M=
+github.com/cockroachdb/crlfmt v0.0.0-20200116191136-a78e1c207bc0 h1:O4yb+RtkmDaXFlHSBpZodXaghfTd3Prdea0nk0eZCT4=
+github.com/cockroachdb/crlfmt v0.0.0-20200116191136-a78e1c207bc0/go.mod h1:uY/PY/C5c2cIFaeWGjdZSd0eptkmXiX5vd92GMZZ50M=
 github.com/cockroachdb/gostdlib v1.13.0 h1:TzSEPYgkKDNei3gbLc0rrHu4iHyBp7/+NxPOFmcXGaw=
 github.com/cockroachdb/gostdlib v1.13.0/go.mod h1:eXX95p9QDrYwJfJ6AgeN9QnRa/lqqid9LAzWz/l5OgA=
 github.com/cockroachdb/ttycolor v0.0.0-20180709150743-a1d5aaeb377d h1:TNsiMS1Ij2aleP/05UNSPzsOu9eJm9mfUGLm7Ylt7Dg=
