@@ -1,6 +1,5 @@
 import os
 import yaml
-import pathlib
 
 from absl import logging
 from pathlib import Path
@@ -109,7 +108,6 @@ class VConfig(object):
 
         return search_vtools(curr_dir)
 
-
     @property
     def src_dir(self):
         """Path to source directory folder."""
@@ -166,3 +164,8 @@ class VConfig(object):
     def go_path(self):
         """Path used for GOPATH variable."""
         return self._gopath
+
+    @property
+    def gobin(self):
+        """Path to go executable."""
+        return f'{self._gopath}/bin/go'
