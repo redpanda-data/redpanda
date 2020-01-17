@@ -90,11 +90,12 @@ write(log_segment_appender& appender, const model::record_batch& batch) {
 ss::future<> disk_log_appender::initialize() {
     return _log._failure_probes.append().then([this] {
         auto f = ss::make_ready_future<>();
-        if (__builtin_expect(!_log._active_segment, false)) {
+        if (__builtin_expect(!_log._segs.back().reader, false)) {
             // FIXME: We need to persist the last offset somewhere.
             _log._term = _config.term;
             auto offset = _log._segs.size() > 0
-                            ? _log._segs.last()->max_offset() + model::offset(1)
+                            ? _log._segs.back().reader->max_offset()
+                                + model::offset(1)
                             : model::offset(0);
             f = _log.new_segment(offset, _log._term, _config.io_priority);
         }
@@ -120,19 +121,19 @@ disk_log_appender::operator()(model::record_batch&& batch) {
             _log.get_probe().batch_write_error(e);
             return ss::make_exception_future<ss::stop_iteration>(std::move(e));
         }
-        auto offset_before = _log.appender().file_byte_offset();
+        auto offset_before = _log._segs.back().appender->file_byte_offset();
         stlog.trace(
           "Wrting batch of {} records offsets [{},{}], compressed: {}",
           batch.size(),
           batch.base_offset(),
           batch.last_offset(),
           batch.compressed());
-        return write(_log.appender(), batch)
+        return write(*_log._segs.back().appender, batch)
           .then([this, &batch, offset_before] {
               // we use inclusive upper bound
               _last_offset = batch.last_offset();
               _log.get_probe().add_bytes_written(
-                _log.appender().file_byte_offset() - offset_before);
+                _log._segs.back().appender->file_byte_offset() - offset_before);
               return _log.maybe_roll(_last_offset).then([] {
                   return ss::stop_iteration::no;
               });
@@ -146,7 +147,7 @@ disk_log_appender::operator()(model::record_batch&& batch) {
 
 ss::future<append_result> disk_log_appender::end_of_stream() {
     _log._tracker.update_dirty_offset(_last_offset);
-    _log._active_segment->set_last_written_offset(_last_offset);
+    _log._segs.back().reader->set_last_written_offset(_last_offset);
     auto f = ss::make_ready_future<>();
     /// fsync, means we fsync _every_ record_batch
     /// most API's will want to batch the fsync, at least
