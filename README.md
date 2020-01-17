@@ -10,7 +10,7 @@ or `clang`) and CMake build type (`debug` or `release`). The build
 folder has the structure `build/<build-type>/<compiler>`. To get 
 started, run:
 
-```bash
+```
 tools/bootstraph.sh
 ```
 
@@ -20,7 +20,7 @@ The above (idempotent) [bootstrapping script](tools/bootstrap.sh):
     distributions (we mainly develop on Fedora but others should be 
     supported).
   * Installs [`vtools`](./tools), our tooling Python-based CLI 
-    interface, putting the binary in the `${HOME}/.local/bin` folder.
+    interface, putting the binary in the `build/bin` folder.
   * Installs `clang`, from source, putting the build and binaries 
     inside the `v/build/llvm` folder.
   * Installs 3rd-party project dependencies, also from source, putting 
@@ -34,40 +34,45 @@ The above (idempotent) [bootstrapping script](tools/bootstrap.sh):
 The `vtools` command can be executed with:
 
 ```
-${HOME}/.local/bin/vtools
+build/bin/vtools
 ```
 
-Alternatively, add `${HOME}/.local/bin` to `$PATH`:
+The [`tools/alias.sh`](tools/alias.sh) script defines a set of utility 
+aliases:
 
 ```bash
-export PATH=${PATH}:${HOME}/.local/bin
+source tools/alias.sh
 ```
+
+the above makes `vtools` and `bootstrap` commands available in the 
+current shell that can be executed from any subfolder within the 
+project.
 
 ## Build
 
 To build `redpanda`:
 
 ```bash
-build/bin/vtools build cpp
+vtools build cpp
 ```
 
 By default, `vtools` assumes `release` and `gcc` options. To build 
 using clang:
 
 ```bash
-build/bin/vtools build cpp --clang
+vtools build cpp --clang
 ```
 
 to build a `debug` build:
 
 ```bash
-build/bin/vtools build cpp --build-type debug
+vtools build cpp --build-type debug
 ```
 
 For running other tasks:
 
 ```bash
-build/bin/vtools <subcommand> --help
+vtools <subcommand> --help
 ```
 
 ## Incremental build
