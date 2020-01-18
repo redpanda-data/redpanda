@@ -1,8 +1,8 @@
 #pragma once
 #include "model/fundamental.h"
 
-#include <seastar/core/unaligned.hh>
 #include <seastar/core/file.hh>
+#include <seastar/core/unaligned.hh>
 
 #include <memory>
 #include <optional>
@@ -39,9 +39,11 @@ public:
 
     void maybe_track(model::offset o, size_t pos, size_t data_size);
     std::optional<size_t> lower_bound(model::offset o);
-
+    size_t step() const { return _step; }
+    const ss::sstring& filename() const { return _name; }
     ss::future<> materialize_index();
     ss::future<> close();
+    ss::future<> flush();
 
 private:
     ss::sstring _name;

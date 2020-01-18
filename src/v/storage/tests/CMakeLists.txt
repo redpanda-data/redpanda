@@ -103,3 +103,10 @@ rp_test(
   LIBRARIES Seastar::seastar_testing v::storage
   ARGS "-- -c 1"
 )
+rp_test(
+  UNIT_TEST
+  BINARY_NAME offset_index_test
+  SOURCES offset_index_utils_tests.cc
+  LIBRARIES Seastar::seastar_testing v::storage
+  ARGS "-- -c 1"
+)
