@@ -1,7 +1,7 @@
-package disk
+package tuners
 
 import (
-	"vectorized/pkg/tuners"
+	"vectorized/pkg/tuners/disk"
 	"vectorized/pkg/utils"
 
 	log "github.com/sirupsen/logrus"
@@ -12,9 +12,9 @@ func NewDiskTuner(
 	fs afero.Fs,
 	directories []string,
 	devices []string,
-	blockDevices BlockDevices,
-	deviceTunerFactory func(string) tuners.Tunable,
-) tuners.Tunable {
+	blockDevices disk.BlockDevices,
+	deviceTunerFactory func(string) Tunable,
+) Tunable {
 	return &diskTuner{
 		fs:                 fs,
 		directories:        directories,
@@ -26,18 +26,18 @@ func NewDiskTuner(
 
 type diskTuner struct {
 	fs                 afero.Fs
-	deviceTunerFactory func(string) tuners.Tunable
-	blockDevices       BlockDevices
+	deviceTunerFactory func(string) Tunable
+	blockDevices       disk.BlockDevices
 	directories        []string
 	devices            []string
 }
 
-func (tuner *diskTuner) Tune() tuners.TuneResult {
+func (tuner *diskTuner) Tune() TuneResult {
 	tunables, err := tuner.createDeviceTuners()
 	if err != nil {
-		return tuners.NewTuneError(err)
+		return NewTuneError(err)
 	}
-	return tuners.NewAggregatedTunable(tunables).Tune()
+	return NewAggregatedTunable(tunables).Tune()
 }
 
 func (tuner *diskTuner) CheckIfSupported() (supported bool, reason string) {
@@ -49,10 +49,10 @@ func (tuner *diskTuner) CheckIfSupported() (supported bool, reason string) {
 	if err != nil {
 		return false, err.Error()
 	}
-	return tuners.NewAggregatedTunable(tunables).CheckIfSupported()
+	return NewAggregatedTunable(tunables).CheckIfSupported()
 }
 
-func (tuner *diskTuner) createDeviceTuners() ([]tuners.Tunable, error) {
+func (tuner *diskTuner) createDeviceTuners() ([]Tunable, error) {
 	directoryDevices, err := tuner.blockDevices.GetDirectoriesDevices(
 		tuner.directories)
 	if err != nil {
@@ -68,7 +68,7 @@ func (tuner *diskTuner) createDeviceTuners() ([]tuners.Tunable, error) {
 		disksSetMap[device] = true
 	}
 	devices := utils.GetKeys(disksSetMap)
-	var tuners []tuners.Tunable
+	var tuners []Tunable
 	for _, device := range devices {
 		log.Debugf("Creating disk tuner for '%s'", device)
 		tuners = append(tuners, tuner.deviceTunerFactory(device))

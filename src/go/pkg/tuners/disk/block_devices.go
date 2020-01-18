@@ -17,23 +17,23 @@ import (
 	"github.com/spf13/afero"
 )
 
-type diskType string
+type DiskType string
 
 const (
-	nonNvme diskType = "non-nvme"
-	nvme    diskType = "nvme"
+	NonNvme DiskType = "non-nvme"
+	Nvme    DiskType = "nvme"
 )
 
-type devicesIRQs struct {
-	devices []string
-	irqs    []int
+type DevicesIRQs struct {
+	Devices []string
+	Irqs    []int
 }
 type BlockDevices interface {
 	GetDirectoriesDevices(directories []string) (map[string][]string, error)
 	GetDirectoryDevices(directory string) ([]string, error)
 	GetDeviceFromPath(path string) (BlockDevice, error)
 	GetDeviceSystemPath(devicePath string) (string, error)
-	GetDiskInfoByType(devices []string) (map[diskType]devicesIRQs, error)
+	GetDiskInfoByType(devices []string) (map[DiskType]DevicesIRQs, error)
 }
 
 type blockDevices struct {
@@ -225,8 +225,8 @@ func (b *blockDevices) getDeviceControllerPath(
 
 func (b *blockDevices) GetDiskInfoByType(
 	devices []string,
-) (map[diskType]devicesIRQs, error) {
-	diskInfoByType := make(map[diskType]devicesIRQs)
+) (map[DiskType]DevicesIRQs, error) {
+	diskInfoByType := make(map[DiskType]DevicesIRQs)
 	// using map in order to provide set functionality
 	nvmeDisks := map[string]bool{}
 	nvmeIRQs := map[int]bool{}
@@ -261,9 +261,9 @@ func (b *blockDevices) GetDiskInfoByType(
 			}
 		}
 	}
-	diskInfoByType[nvme] = devicesIRQs{utils.GetKeys(nvmeDisks),
+	diskInfoByType[Nvme] = DevicesIRQs{utils.GetKeys(nvmeDisks),
 		utils.GetIntKeys(nvmeIRQs)}
-	diskInfoByType[nonNvme] = devicesIRQs{utils.GetKeys(nonNvmeDisks),
+	diskInfoByType[NonNvme] = DevicesIRQs{utils.GetKeys(nonNvmeDisks),
 		utils.GetIntKeys(nonNvmeIRQs)}
 	return diskInfoByType, nil
 }

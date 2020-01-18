@@ -1,7 +1,8 @@
-package disk
+package tuners
 
 import (
 	"testing"
+	"vectorized/pkg/tuners/disk"
 	"vectorized/pkg/tuners/executors"
 
 	"github.com/spf13/afero"
@@ -9,7 +10,7 @@ import (
 )
 
 type schedulerInfoMock struct {
-	SchedulerInfo
+	disk.SchedulerInfo
 	getSupportedSchedulers  func(string) ([]string, error)
 	getNomerges             func(string) (int, error)
 	getNomergesFeatureFile  func(string) (string, error)

@@ -1,10 +1,8 @@
-package sys
+package tuners
 
 import (
 	"fmt"
 	"strings"
-	"vectorized/pkg/checkers"
-	"vectorized/pkg/tuners"
 	"vectorized/pkg/tuners/executors"
 	"vectorized/pkg/tuners/executors/commands"
 
@@ -13,10 +11,10 @@ import (
 
 const prefferedClkSource = "tsc"
 
-func NewClockSourceChecker(fs afero.Fs) checkers.Checker {
-	return checkers.NewEqualityChecker(
+func NewClockSourceChecker(fs afero.Fs) Checker {
+	return NewEqualityChecker(
 		"Clock Source",
-		checkers.Warning,
+		Warning,
 		prefferedClkSource,
 		func() (interface{}, error) {
 			content, err := afero.ReadFile(fs,
@@ -31,17 +29,17 @@ func NewClockSourceChecker(fs afero.Fs) checkers.Checker {
 
 func NewClockSourceTuner(
 	fs afero.Fs, executor executors.Executor,
-) tuners.Tunable {
-	return tuners.NewCheckedTunable(
+) Tunable {
+	return NewCheckedTunable(
 		NewClockSourceChecker(fs),
-		func() tuners.TuneResult {
+		func() TuneResult {
 			err := executor.Execute(commands.NewWriteFileCmd(fs,
 				"/sys/devices/system/clocksource/clocksource0/current_clocksource",
 				prefferedClkSource))
 			if err != nil {
-				return tuners.NewTuneError(err)
+				return NewTuneError(err)
 			}
-			return tuners.NewTuneResult(false)
+			return NewTuneResult(false)
 		},
 		func() (bool, string) {
 			content, err := afero.ReadFile(fs,

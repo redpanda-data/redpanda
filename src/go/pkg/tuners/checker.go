@@ -1,4 +1,4 @@
-package checkers
+package tuners
 
 type Severity byte
 

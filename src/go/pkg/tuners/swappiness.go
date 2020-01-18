@@ -1,11 +1,9 @@
-package memory
+package tuners
 
 import (
 	"fmt"
 	"strconv"
 	"strings"
-	"vectorized/pkg/checkers"
-	"vectorized/pkg/tuners"
 	"vectorized/pkg/tuners/executors"
 	"vectorized/pkg/tuners/executors/commands"
 
@@ -14,15 +12,15 @@ import (
 )
 
 const (
-	File       string = "/proc/sys/vm/swappiness"
-	Swappiness int    = 1
+	File               string = "/proc/sys/vm/swappiness"
+	ExpectedSwappiness int    = 1
 )
 
-func NewSwappinessChecker(fs afero.Fs) checkers.Checker {
-	return checkers.NewEqualityChecker(
+func NewSwappinessChecker(fs afero.Fs) Checker {
+	return NewEqualityChecker(
 		"Swappiness",
-		checkers.Warning,
-		Swappiness,
+		Warning,
+		ExpectedSwappiness,
 		func() (interface{}, error) {
 			content, err := afero.ReadFile(fs, File)
 			if err != nil {
@@ -35,20 +33,20 @@ func NewSwappinessChecker(fs afero.Fs) checkers.Checker {
 
 func NewSwappinessTuner(
 	fs afero.Fs, executor executors.Executor,
-) tuners.Tunable {
-	return tuners.NewCheckedTunable(
+) Tunable {
+	return NewCheckedTunable(
 		NewSwappinessChecker(fs),
-		func() tuners.TuneResult {
+		func() TuneResult {
 
-			log.Debugf("Setting swappiness to %d", Swappiness)
+			log.Debugf("Setting swappiness to %d", ExpectedSwappiness)
 			err := executor.Execute(
 				commands.NewWriteFileCmd(
-					fs, File, fmt.Sprint(Swappiness)))
+					fs, File, fmt.Sprint(ExpectedSwappiness)))
 			if err != nil {
-				log.Errorf("got an error while writing %d to %s: %v", Swappiness, File, err)
-				return tuners.NewTuneError(err)
+				log.Errorf("got an error while writing %d to %s: %v", ExpectedSwappiness, File, err)
+				return NewTuneError(err)
 			}
-			return tuners.NewTuneResult(false)
+			return NewTuneResult(false)
 		},
 		func() (bool, string) {
 			return true, ""

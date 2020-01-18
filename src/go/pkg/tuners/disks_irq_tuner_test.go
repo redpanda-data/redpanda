@@ -1,8 +1,9 @@
-package disk
+package tuners
 
 import (
 	"reflect"
 	"testing"
+	"vectorized/pkg/tuners/disk"
 	"vectorized/pkg/tuners/irq"
 )
 
@@ -11,6 +12,14 @@ type cpuMasksMock struct {
 	baseCpuMask              func(string) (string, error)
 	cpuMaskForIRQs           func(irq.Mode, string) (string, error)
 	getIRQsDistributionMasks func([]int, string) (map[int]string, error)
+}
+
+type blockDevicesMock struct {
+	getDirectoriesDevices    func([]string) (map[string][]string, error)
+	getDirectoryDevices      func(string) ([]string, error)
+	getBlockDeviceFromPath   func(string) (disk.BlockDevice, error)
+	getBlockDeviceSystemPath func(string) (string, error)
+	getDiskInfoByType        func([]string) (map[disk.DiskType]disk.DevicesIRQs, error)
 }
 
 func (m *cpuMasksMock) BaseCpuMask(cpuMask string) (string, error) {
@@ -29,12 +38,36 @@ func (m *cpuMasksMock) GetIRQsDistributionMasks(
 	return m.getIRQsDistributionMasks(IRQs, cpuMask)
 }
 
+func (m *blockDevicesMock) GetDirectoriesDevices(
+	directories []string,
+) (map[string][]string, error) {
+	return m.getDirectoriesDevices(directories)
+}
+
+func (m *blockDevicesMock) GetDeviceFromPath(path string) (disk.BlockDevice, error) {
+	return m.getBlockDeviceFromPath(path)
+}
+
+func (m *blockDevicesMock) GetDeviceSystemPath(path string) (string, error) {
+	return m.getBlockDeviceSystemPath(path)
+}
+
+func (m *blockDevicesMock) GetDirectoryDevices(path string) ([]string, error) {
+	return m.getDirectoryDevices(path)
+}
+
+func (m *blockDevicesMock) GetDiskInfoByType(
+	devices []string,
+) (map[disk.DiskType]disk.DevicesIRQs, error) {
+	return m.getDiskInfoByType(devices)
+}
+
 func TestGetExpectedIRQsDistribution(t *testing.T) {
 	type args struct {
 		devices      []string
 		mode         irq.Mode
 		cpuMask      string
-		blockDevices BlockDevices
+		blockDevices disk.BlockDevices
 		cpuMasks     irq.CpuMasks
 	}
 	tests := []struct {
@@ -50,15 +83,15 @@ func TestGetExpectedIRQsDistribution(t *testing.T) {
 				mode:    irq.Sq,
 				cpuMask: "0xff",
 				blockDevices: &blockDevicesMock{
-					getDiskInfoByType: func([]string) (map[diskType]devicesIRQs, error) {
-						return map[diskType]devicesIRQs{
-							nonNvme: devicesIRQs{
-								devices: []string{"dev1"},
-								irqs:    []int{10},
+					getDiskInfoByType: func([]string) (map[disk.DiskType]disk.DevicesIRQs, error) {
+						return map[disk.DiskType]disk.DevicesIRQs{
+							disk.NonNvme: disk.DevicesIRQs{
+								Devices: []string{"dev1"},
+								Irqs:    []int{10},
 							},
-							nvme: devicesIRQs{
-								devices: []string{"dev1"},
-								irqs:    []int{12, 15, 18, 24}},
+							disk.Nvme: disk.DevicesIRQs{
+								Devices: []string{"dev1"},
+								Irqs:    []int{12, 15, 18, 24}},
 						}, nil
 					},
 				},

@@ -1,8 +1,8 @@
-package disk
+package tuners
 
 import (
 	"fmt"
-	"vectorized/pkg/checkers"
+	"vectorized/pkg/tuners/disk"
 	"vectorized/pkg/tuners/irq"
 
 	"github.com/spf13/afero"
@@ -11,14 +11,14 @@ import (
 func CreateDirectoryCheckers(
 	fs afero.Fs,
 	dir string,
-	blockDevices BlockDevices,
-	newDeviceChecker func(string) checkers.Checker,
-) ([]checkers.Checker, error) {
+	blockDevices disk.BlockDevices,
+	newDeviceChecker func(string) Checker,
+) ([]Checker, error) {
 	devices, err := blockDevices.GetDirectoryDevices(dir)
 	if err != nil {
 		return nil, err
 	}
-	var checkers []checkers.Checker
+	var checkers []Checker
 	for _, device := range devices {
 		checkers = append(checkers, newDeviceChecker(device))
 	}
@@ -26,11 +26,11 @@ func CreateDirectoryCheckers(
 }
 
 func NewDeviceNomergesChecker(
-	fs afero.Fs, device string, schedulerInfo SchedulerInfo,
-) checkers.Checker {
-	return checkers.NewEqualityChecker(
+	fs afero.Fs, device string, schedulerInfo disk.SchedulerInfo,
+) Checker {
+	return NewEqualityChecker(
 		fmt.Sprintf("Disk %s nomerges tuned", device),
-		checkers.Warning,
+		Warning,
 		true,
 		func() (interface{}, error) {
 			nomerges, err := schedulerInfo.GetNomerges(device)
@@ -45,25 +45,25 @@ func NewDeviceNomergesChecker(
 func NewDirectoryNomergesCheckers(
 	fs afero.Fs,
 	dir string,
-	schedulerInfo SchedulerInfo,
-	blockDevices BlockDevices,
-) ([]checkers.Checker, error) {
+	schedulerInfo disk.SchedulerInfo,
+	blockDevices disk.BlockDevices,
+) ([]Checker, error) {
 	return CreateDirectoryCheckers(
 		fs,
 		dir,
 		blockDevices,
-		func(device string) checkers.Checker {
+		func(device string) Checker {
 			return NewDeviceNomergesChecker(fs, device, schedulerInfo)
 		},
 	)
 }
 
 func NewDeviceSchedulerChecker(
-	fs afero.Fs, device string, schedulerInfo SchedulerInfo,
-) checkers.Checker {
-	return checkers.NewEqualityChecker(
+	fs afero.Fs, device string, schedulerInfo disk.SchedulerInfo,
+) Checker {
+	return NewEqualityChecker(
 		fmt.Sprintf("Disk %s scheduler tuned", device),
-		checkers.Warning,
+		Warning,
 		true,
 		func() (interface{}, error) {
 			scheduler, err := schedulerInfo.GetScheduler(device)
@@ -81,14 +81,14 @@ func NewDeviceSchedulerChecker(
 func NewDirectorySchedulerCheckers(
 	fs afero.Fs,
 	dir string,
-	schedulerInfo SchedulerInfo,
-	blockDevices BlockDevices,
-) ([]checkers.Checker, error) {
+	schedulerInfo disk.SchedulerInfo,
+	blockDevices disk.BlockDevices,
+) ([]Checker, error) {
 	return CreateDirectoryCheckers(
 		fs,
 		dir,
 		blockDevices,
-		func(device string) checkers.Checker {
+		func(device string) Checker {
 			return NewDeviceSchedulerChecker(fs, device, schedulerInfo)
 		},
 	)
@@ -97,12 +97,12 @@ func NewDirectorySchedulerCheckers(
 func NewDisksIRQAffinityStaticChecker(
 	fs afero.Fs,
 	devices []string,
-	blockDevices BlockDevices,
+	blockDevices disk.BlockDevices,
 	balanceService irq.BalanceService,
-) checkers.Checker {
-	return checkers.NewEqualityChecker(
+) Checker {
+	return NewEqualityChecker(
 		"Disks IRQs affinity static",
-		checkers.Warning,
+		Warning,
 		true,
 		func() (interface{}, error) {
 			diskInfoByType, err := blockDevices.GetDiskInfoByType(devices)
@@ -111,7 +111,7 @@ func NewDisksIRQAffinityStaticChecker(
 			}
 			var IRQs []int
 			for _, diskInfo := range diskInfoByType {
-				IRQs = append(IRQs, diskInfo.irqs...)
+				IRQs = append(IRQs, diskInfo.Irqs...)
 			}
 			return irq.AreIRQsStaticallyAssigned(IRQs, balanceService)
 		},
@@ -121,9 +121,9 @@ func NewDisksIRQAffinityStaticChecker(
 func NewDirectoryIRQsAffinityStaticChecker(
 	fs afero.Fs,
 	directory string,
-	blockDevices BlockDevices,
+	blockDevices disk.BlockDevices,
 	balanceService irq.BalanceService,
-) (checkers.Checker, error) {
+) (Checker, error) {
 	devices, err := blockDevices.GetDirectoryDevices(directory)
 	if err != nil {
 		return nil, err
@@ -137,12 +137,12 @@ func NewDisksIRQAffinityChecker(
 	devices []string,
 	cpuMask string,
 	mode irq.Mode,
-	blockDevices BlockDevices,
+	blockDevices disk.BlockDevices,
 	cpuMasks irq.CpuMasks,
-) checkers.Checker {
-	return checkers.NewEqualityChecker(
+) Checker {
+	return NewEqualityChecker(
 		"Disks IRQs affinity set",
-		checkers.Warning,
+		Warning,
 		true,
 		func() (interface{}, error) {
 			expectedDistribution, err := GetExpectedIRQsDistribution(
@@ -177,9 +177,9 @@ func NewDirectoryIRQAffinityChecker(
 	directory string,
 	cpuMask string,
 	mode irq.Mode,
-	blockDevices BlockDevices,
+	blockDevices disk.BlockDevices,
 	cpuMasks irq.CpuMasks,
-) (checkers.Checker, error) {
+) (Checker, error) {
 	devices, err := blockDevices.GetDirectoryDevices(directory)
 	if err != nil {
 		return nil, err

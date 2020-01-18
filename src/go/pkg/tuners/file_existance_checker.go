@@ -1,4 +1,4 @@
-package checkers
+package tuners
 
 import (
 	"github.com/spf13/afero"

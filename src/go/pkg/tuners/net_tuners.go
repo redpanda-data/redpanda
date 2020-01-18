@@ -1,13 +1,12 @@
-package network
+package tuners
 
 import (
 	"fmt"
-	"vectorized/pkg/checkers"
-	"vectorized/pkg/tuners"
 	"vectorized/pkg/tuners/ethtool"
 	"vectorized/pkg/tuners/executors"
 	"vectorized/pkg/tuners/executors/commands"
 	"vectorized/pkg/tuners/irq"
+	"vectorized/pkg/tuners/network"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
@@ -24,11 +23,11 @@ func NewNetTuner(
 	irqProcFile irq.ProcFile,
 	ethtool ethtool.EthtoolWrapper,
 	executor executors.Executor,
-) tuners.Tunable {
+) Tunable {
 	factory := NewNetTunersFactory(
 		fs, irqProcFile, irqDeviceInfo, ethtool, irqBalanceService, cpuMasks, executor)
-	return tuners.NewAggregatedTunable(
-		[]tuners.Tunable{
+	return NewAggregatedTunable(
+		[]Tunable{
 			factory.NewNICsBalanceServiceTuner(interfaces),
 			factory.NewNICsIRQsAffinityTuner(interfaces, mode, cpuMask),
 			factory.NewNICsRpsTuner(interfaces, mode, cpuMask),
@@ -42,15 +41,15 @@ func NewNetTuner(
 }
 
 type NetTunersFactory interface {
-	NewNICsBalanceServiceTuner(interfaces []string) tuners.Tunable
-	NewNICsIRQsAffinityTuner(interfaces []string, mode irq.Mode, cpuMask string) tuners.Tunable
-	NewNICsRpsTuner(interfaces []string, mode irq.Mode, cpuMask string) tuners.Tunable
-	NewNICsRfsTuner(interfaces []string) tuners.Tunable
-	NewNICsNTupleTuner(interfaces []string) tuners.Tunable
-	NewNICsXpsTuner(interfaces []string) tuners.Tunable
-	NewRfsTableSizeTuner() tuners.Tunable
-	NewListenBacklogTuner() tuners.Tunable
-	NewSynBacklogTuner() tuners.Tunable
+	NewNICsBalanceServiceTuner(interfaces []string) Tunable
+	NewNICsIRQsAffinityTuner(interfaces []string, mode irq.Mode, cpuMask string) Tunable
+	NewNICsRpsTuner(interfaces []string, mode irq.Mode, cpuMask string) Tunable
+	NewNICsRfsTuner(interfaces []string) Tunable
+	NewNICsNTupleTuner(interfaces []string) Tunable
+	NewNICsXpsTuner(interfaces []string) Tunable
+	NewRfsTableSizeTuner() Tunable
+	NewListenBacklogTuner() Tunable
+	NewSynBacklogTuner() Tunable
 }
 
 type netTunersFactory struct {
@@ -88,25 +87,25 @@ func NewNetTunersFactory(
 
 func (f *netTunersFactory) NewNICsBalanceServiceTuner(
 	interfaces []string,
-) tuners.Tunable {
-	return tuners.NewCheckedTunable(
+) Tunable {
+	return NewCheckedTunable(
 		f.checkersFactory.NewNicIRQAffinityStaticChecker(interfaces),
-		func() tuners.TuneResult {
+		func() TuneResult {
 			var IRQs []int
 			for _, ifaceName := range interfaces {
-				nic := NewNic(f.fs, f.irqProcFile, f.irqDeviceInfo, f.ethtool, ifaceName)
-				nicIRQs, err := collectIRQs(nic)
+				nic := network.NewNic(f.fs, f.irqProcFile, f.irqDeviceInfo, f.ethtool, ifaceName)
+				nicIRQs, err := network.CollectIRQs(nic)
 				if err != nil {
-					return tuners.NewTuneError(err)
+					return NewTuneError(err)
 				}
 				log.Debugf("%s interface IRQs: %v", nic.Name(), nicIRQs)
 				IRQs = append(IRQs, nicIRQs...)
 			}
 			err := f.balanceService.BanIRQsAndRestart(IRQs)
 			if err != nil {
-				return tuners.NewTuneError(err)
+				return NewTuneError(err)
 			}
-			return tuners.NewTuneResult(false)
+			return NewTuneResult(false)
 		},
 		func() (bool, string) {
 			return true, ""
@@ -117,23 +116,23 @@ func (f *netTunersFactory) NewNICsBalanceServiceTuner(
 
 func (f *netTunersFactory) NewNICsIRQsAffinityTuner(
 	interfaces []string, mode irq.Mode, cpuMask string,
-) tuners.Tunable {
+) Tunable {
 	return f.tuneNonVirtualInterfaces(
 		interfaces,
-		func(nic Nic) checkers.Checker {
+		func(nic network.Nic) Checker {
 			return f.checkersFactory.NewNicIRQAffinityChecker(nic, mode, cpuMask)
 		},
-		func(nic Nic) tuners.TuneResult {
+		func(nic network.Nic) TuneResult {
 			log.Debugf("Tuning '%s' IRQs affinity", nic.Name())
-			dist, err := getHwInterfaceIRQsDistribution(nic, mode, cpuMask, f.cpuMasks)
+			dist, err := network.GetHwInterfaceIRQsDistribution(nic, mode, cpuMask, f.cpuMasks)
 			if err != nil {
-				return tuners.NewTuneError(err)
+				return NewTuneError(err)
 			}
 			err = f.cpuMasks.DistributeIRQs(dist)
 			if err != nil {
-				return tuners.NewTuneError(err)
+				return NewTuneError(err)
 			}
-			return tuners.NewTuneResult(false)
+			return NewTuneResult(false)
 		},
 		func() (bool, string) {
 			if !f.cpuMasks.IsSupported() {
@@ -146,29 +145,29 @@ func (f *netTunersFactory) NewNICsIRQsAffinityTuner(
 
 func (f *netTunersFactory) NewNICsRpsTuner(
 	interfaces []string, mode irq.Mode, cpuMask string,
-) tuners.Tunable {
+) Tunable {
 	return f.tuneNonVirtualInterfaces(
 		interfaces,
-		func(nic Nic) checkers.Checker {
+		func(nic network.Nic) Checker {
 			return f.checkersFactory.NewNicRpsSetChecker(nic, mode, cpuMask)
 		},
-		func(nic Nic) tuners.TuneResult {
+		func(nic network.Nic) TuneResult {
 			log.Debugf("Tuning '%s' RPS", nic.Name())
 			rpsCPUs, err := nic.GetRpsCPUFiles()
 			if err != nil {
-				return tuners.NewTuneError(err)
+				return NewTuneError(err)
 			}
-			rpsMask, err := getRpsCPUMask(nic, mode, cpuMask, f.cpuMasks)
+			rpsMask, err := network.GetRpsCPUMask(nic, mode, cpuMask, f.cpuMasks)
 			if err != nil {
-				return tuners.NewTuneError(err)
+				return NewTuneError(err)
 			}
 			for _, rpsCPUFile := range rpsCPUs {
 				err := f.cpuMasks.SetMask(rpsCPUFile, rpsMask)
 				if err != nil {
-					return tuners.NewTuneError(err)
+					return NewTuneError(err)
 				}
 			}
-			return tuners.NewTuneResult(false)
+			return NewTuneResult(false)
 		},
 		func() (bool, string) {
 			if !f.cpuMasks.IsSupported() {
@@ -179,26 +178,26 @@ func (f *netTunersFactory) NewNICsRpsTuner(
 	)
 }
 
-func (f *netTunersFactory) NewNICsRfsTuner(interfaces []string) tuners.Tunable {
+func (f *netTunersFactory) NewNICsRfsTuner(interfaces []string) Tunable {
 	return f.tuneNonVirtualInterfaces(
 		interfaces,
-		func(nic Nic) checkers.Checker {
+		func(nic network.Nic) Checker {
 			return f.checkersFactory.NewNicRfsChecker(nic)
 		},
-		func(nic Nic) tuners.TuneResult {
+		func(nic network.Nic) TuneResult {
 			log.Debugf("Tuning '%s' RFS", nic.Name())
 			limits, err := nic.GetRpsLimitFiles()
 			if err != nil {
-				return tuners.NewTuneError(err)
+				return NewTuneError(err)
 			}
-			queueLimit := oneRPSQueueLimit(limits)
+			queueLimit := network.OneRPSQueueLimit(limits)
 			for _, limitFile := range limits {
 				err := f.writeIntToFile(limitFile, queueLimit)
 				if err != nil {
-					return tuners.NewTuneError(err)
+					return NewTuneError(err)
 				}
 			}
-			return tuners.NewTuneResult(false)
+			return NewTuneResult(false)
 		},
 		func() (bool, string) {
 			return true, ""
@@ -208,21 +207,21 @@ func (f *netTunersFactory) NewNICsRfsTuner(interfaces []string) tuners.Tunable {
 
 func (f *netTunersFactory) NewNICsNTupleTuner(
 	interfaces []string,
-) tuners.Tunable {
+) Tunable {
 	return f.tuneNonVirtualInterfaces(
 		interfaces,
-		func(nic Nic) checkers.Checker {
+		func(nic network.Nic) Checker {
 			return f.checkersFactory.NewNicNTupleChecker(nic)
 		},
-		func(nic Nic) tuners.TuneResult {
+		func(nic network.Nic) TuneResult {
 			log.Debugf("Tuning '%s' NTuple", nic.Name())
 			ntupleFeature := map[string]bool{"ntuple": true}
 			err := f.executor.Execute(
 				commands.NewEthtoolChangeCmd(f.ethtool, nic.Name(), ntupleFeature))
 			if err != nil {
-				return tuners.NewTuneError(err)
+				return NewTuneError(err)
 			}
-			return tuners.NewTuneResult(false)
+			return NewTuneResult(false)
 		},
 		func() (bool, string) {
 			return true, ""
@@ -230,29 +229,29 @@ func (f *netTunersFactory) NewNICsNTupleTuner(
 	)
 }
 
-func (f *netTunersFactory) NewNICsXpsTuner(interfaces []string) tuners.Tunable {
+func (f *netTunersFactory) NewNICsXpsTuner(interfaces []string) Tunable {
 	return f.tuneNonVirtualInterfaces(
 		interfaces,
-		func(nic Nic) checkers.Checker {
+		func(nic network.Nic) Checker {
 			return f.checkersFactory.NewNicXpsChecker(nic)
 		},
-		func(nic Nic) tuners.TuneResult {
+		func(nic network.Nic) TuneResult {
 			log.Debugf("Tuning '%s' XPS", nic.Name())
 			xpsCPUFiles, err := nic.GetXpsCPUFiles()
 			if err != nil {
-				return tuners.NewTuneError(err)
+				return NewTuneError(err)
 			}
 			masks, err := f.cpuMasks.GetDistributionMasks(uint(len(xpsCPUFiles)))
 			if err != nil {
-				return tuners.NewTuneError(err)
+				return NewTuneError(err)
 			}
 			for i, mask := range masks {
 				err := f.cpuMasks.SetMask(xpsCPUFiles[i], mask)
 				if err != nil {
-					return tuners.NewTuneError(err)
+					return NewTuneError(err)
 				}
 			}
-			return tuners.NewTuneResult(false)
+			return NewTuneResult(false)
 		},
 		func() (bool, string) {
 			return true, ""
@@ -260,18 +259,18 @@ func (f *netTunersFactory) NewNICsXpsTuner(interfaces []string) tuners.Tunable {
 	)
 }
 
-func (f *netTunersFactory) NewRfsTableSizeTuner() tuners.Tunable {
-	return tuners.NewCheckedTunable(
+func (f *netTunersFactory) NewRfsTableSizeTuner() Tunable {
+	return NewCheckedTunable(
 		f.checkersFactory.NewRfsTableSizeChecker(),
-		func() tuners.TuneResult {
+		func() TuneResult {
 			log.Debug("Tuning RFS table size")
 			err := f.executor.Execute(
 				commands.NewSysctlSetCmd(
-					rfsTableSizeProperty, fmt.Sprint(rfsTableSize)))
+					network.RfsTableSizeProperty, fmt.Sprint(network.RfsTableSize)))
 			if err != nil {
-				return tuners.NewTuneError(err)
+				return NewTuneError(err)
 			}
-			return tuners.NewTuneResult(false)
+			return NewTuneResult(false)
 		},
 		func() (bool, string) {
 			return true, ""
@@ -280,16 +279,16 @@ func (f *netTunersFactory) NewRfsTableSizeTuner() tuners.Tunable {
 	)
 }
 
-func (f *netTunersFactory) NewListenBacklogTuner() tuners.Tunable {
-	return tuners.NewCheckedTunable(
+func (f *netTunersFactory) NewListenBacklogTuner() Tunable {
+	return NewCheckedTunable(
 		f.checkersFactory.NewListenBacklogChecker(),
-		func() tuners.TuneResult {
+		func() TuneResult {
 			log.Debug("Tuning connections listen backlog size")
-			err := f.writeIntToFile(listenBacklogFile, listenBacklogSize)
+			err := f.writeIntToFile(network.ListenBacklogFile, network.ListenBacklogSize)
 			if err != nil {
-				return tuners.NewTuneError(err)
+				return NewTuneError(err)
 			}
-			return tuners.NewTuneResult(false)
+			return NewTuneResult(false)
 		},
 		func() (bool, string) {
 			return true, ""
@@ -298,16 +297,16 @@ func (f *netTunersFactory) NewListenBacklogTuner() tuners.Tunable {
 	)
 }
 
-func (f *netTunersFactory) NewSynBacklogTuner() tuners.Tunable {
-	return tuners.NewCheckedTunable(
+func (f *netTunersFactory) NewSynBacklogTuner() Tunable {
+	return NewCheckedTunable(
 		f.checkersFactory.NewSynBacklogChecker(),
-		func() tuners.TuneResult {
+		func() TuneResult {
 			log.Debug("Tuning SYN backlog size")
-			err := f.writeIntToFile(synBacklogFile, synBacklogSize)
+			err := f.writeIntToFile(network.SynBacklogFile, network.SynBacklogSize)
 			if err != nil {
-				return tuners.NewTuneError(err)
+				return NewTuneError(err)
 			}
-			return tuners.NewTuneResult(false)
+			return NewTuneResult(false)
 		},
 		func() (bool, string) {
 			return true, ""
@@ -323,33 +322,33 @@ func (f *netTunersFactory) writeIntToFile(file string, value int) error {
 
 func (f *netTunersFactory) tuneNonVirtualInterfaces(
 	interfaces []string,
-	checkerCreator func(Nic) checkers.Checker,
-	tuneAction func(Nic) tuners.TuneResult,
+	checkerCreator func(network.Nic) Checker,
+	tuneAction func(network.Nic) TuneResult,
 	supportedAction func() (bool, string),
-) tuners.Tunable {
+) Tunable {
 
-	var tunables []tuners.Tunable
+	var tunables []Tunable
 	for _, iface := range interfaces {
-		nic := NewNic(f.fs, f.irqProcFile, f.irqDeviceInfo, f.ethtool, iface)
+		nic := network.NewNic(f.fs, f.irqProcFile, f.irqDeviceInfo, f.ethtool, iface)
 		if !nic.IsHwInterface() && !nic.IsBondIface() {
 			log.Debugf("Skipping tuning of '%s' virtual interface", nic.Name())
 			continue
 		}
-		tunables = append(tunables, tuners.NewCheckedTunable(
+		tunables = append(tunables, NewCheckedTunable(
 			checkerCreator(nic),
-			func() tuners.TuneResult {
+			func() TuneResult {
 				return tuneInterface(nic, tuneAction)
 			},
 			supportedAction,
 			f.executor.IsLazy(),
 		))
 	}
-	return tuners.NewAggregatedTunable(tunables)
+	return NewAggregatedTunable(tunables)
 }
 
 func tuneInterface(
-	nic Nic, tuneAction func(Nic) tuners.TuneResult,
-) tuners.TuneResult {
+	nic network.Nic, tuneAction func(network.Nic) TuneResult,
+) TuneResult {
 	if nic.IsHwInterface() {
 		return tuneAction(nic)
 	}
@@ -357,12 +356,12 @@ func tuneInterface(
 	if nic.IsBondIface() {
 		slaves, err := nic.Slaves()
 		if err != nil {
-			return tuners.NewTuneError(err)
+			return NewTuneError(err)
 		}
 		for _, slave := range slaves {
 			return tuneInterface(slave, tuneAction)
 		}
 	}
 
-	return tuners.NewTuneResult(false)
+	return NewTuneResult(false)
 }

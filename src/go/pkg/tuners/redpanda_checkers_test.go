@@ -1,9 +1,9 @@
-package redpanda_test
+package tuners_test
 
 import (
 	"testing"
 	"time"
-	"vectorized/pkg/redpanda"
+	"vectorized/pkg/tuners"
 
 	"github.com/spf13/afero"
 )
@@ -11,7 +11,7 @@ import (
 func TestNtpCheckTimeout(t *testing.T) {
 	timeout := time.Duration(0)
 
-	check := redpanda.NewNTPSyncChecker(timeout, afero.NewMemMapFs())
+	check := tuners.NewNTPSyncChecker(timeout, afero.NewMemMapFs())
 
 	res := check.Check()
 

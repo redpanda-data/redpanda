@@ -1,8 +1,7 @@
-package redpanda
+package tuners
 
 import (
 	"time"
-	"vectorized/pkg/checkers"
 	"vectorized/pkg/config"
 	"vectorized/pkg/net"
 	"vectorized/pkg/os"
@@ -13,9 +12,6 @@ import (
 	"vectorized/pkg/tuners/executors"
 	"vectorized/pkg/tuners/hwloc"
 	"vectorized/pkg/tuners/irq"
-	"vectorized/pkg/tuners/memory"
-	"vectorized/pkg/tuners/network"
-	"vectorized/pkg/tuners/sys"
 
 	"github.com/spf13/afero"
 )
@@ -49,10 +45,10 @@ const (
 	Swappiness
 )
 
-func NewConfigChecker(conf *config.Config) checkers.Checker {
-	return checkers.NewEqualityChecker(
+func NewConfigChecker(conf *config.Config) Checker {
+	return NewEqualityChecker(
 		"Config file valid",
-		checkers.Fatal,
+		Fatal,
 		true,
 		func() (interface{}, error) {
 			ok, _ := config.CheckConfig(conf)
@@ -60,20 +56,20 @@ func NewConfigChecker(conf *config.Config) checkers.Checker {
 		})
 }
 
-func NewDataDirWritableChecker(fs afero.Fs, path string) checkers.Checker {
-	return checkers.NewEqualityChecker(
+func NewDataDirWritableChecker(fs afero.Fs, path string) Checker {
+	return NewEqualityChecker(
 		"Data directory is writable",
-		checkers.Fatal,
+		Fatal,
 		true,
 		func() (interface{}, error) {
 			return filesystem.DirectoryIsWriteable(fs, path)
 		})
 }
 
-func NewFreeDiskSpaceChecker(path string) checkers.Checker {
-	return checkers.NewFloatChecker(
+func NewFreeDiskSpaceChecker(path string) Checker {
+	return NewFloatChecker(
 		"Data partition free space [GB]",
-		checkers.Warning,
+		Warning,
 		func(current float64) bool {
 			return current >= 10.0
 		},
@@ -85,10 +81,10 @@ func NewFreeDiskSpaceChecker(path string) checkers.Checker {
 		})
 }
 
-func NewMemoryChecker(fs afero.Fs) checkers.Checker {
-	return checkers.NewIntChecker(
+func NewMemoryChecker(fs afero.Fs) Checker {
+	return NewIntChecker(
 		"Free memory [MB]",
-		checkers.Warning,
+		Warning,
 		func(current int) bool {
 			return current >= 2048
 		},
@@ -101,10 +97,10 @@ func NewMemoryChecker(fs afero.Fs) checkers.Checker {
 	)
 }
 
-func NewSwapChecker(fs afero.Fs) checkers.Checker {
-	return checkers.NewEqualityChecker(
+func NewSwapChecker(fs afero.Fs) Checker {
+	return NewEqualityChecker(
 		"Swap enabled",
-		checkers.Warning,
+		Warning,
 		true,
 		func() (interface{}, error) {
 			return system.IsSwapEnabled(fs)
@@ -112,10 +108,10 @@ func NewSwapChecker(fs afero.Fs) checkers.Checker {
 	)
 }
 
-func NewFilesystemTypeChecker(path string) checkers.Checker {
-	return checkers.NewEqualityChecker(
+func NewFilesystemTypeChecker(path string) Checker {
+	return NewEqualityChecker(
 		"Data directory filesystem type",
-		checkers.Warning,
+		Warning,
 		filesystem.Xfs,
 		func() (interface{}, error) {
 			return filesystem.GetFilesystemType(path)
@@ -124,28 +120,28 @@ func NewFilesystemTypeChecker(path string) checkers.Checker {
 
 func NewIOConfigFileExistanceChecker(
 	fs afero.Fs, filePath string,
-) checkers.Checker {
-	return checkers.NewFileExistanceChecker(
+) Checker {
+	return NewFileExistanceChecker(
 		fs,
 		"I/O config file present",
-		checkers.Warning,
+		Warning,
 		filePath)
 }
 
-func NewTransparentHugePagesChecker(fs afero.Fs) checkers.Checker {
-	return checkers.NewEqualityChecker(
+func NewTransparentHugePagesChecker(fs afero.Fs) Checker {
+	return NewEqualityChecker(
 		"Transparent huge pages active",
-		checkers.Warning,
+		Warning,
 		true,
 		func() (interface{}, error) {
 			return system.GetTransparentHugePagesActive(fs)
 		})
 }
 
-func NewNTPSyncChecker(timeout time.Duration, fs afero.Fs) checkers.Checker {
-	return checkers.NewEqualityChecker(
+func NewNTPSyncChecker(timeout time.Duration, fs afero.Fs) Checker {
+	return NewEqualityChecker(
 		"NTP Synced",
-		checkers.Warning,
+		Warning,
 		true,
 		func() (interface{}, error) {
 			return system.NewNtpQuery(timeout, fs).IsNtpSynced()
@@ -155,7 +151,7 @@ func NewNTPSyncChecker(timeout time.Duration, fs afero.Fs) checkers.Checker {
 
 func RedpandaCheckers(
 	fs afero.Fs, ioConfigFile string, config *config.Config, timeout time.Duration,
-) (map[CheckerID][]checkers.Checker, error) {
+) (map[CheckerID][]Checker, error) {
 	proc := os.NewProc()
 	ethtool, err := ethtool.NewEthtoolWrapper()
 	if err != nil {
@@ -166,24 +162,24 @@ func RedpandaCheckers(
 	irqDeviceInfo := irq.NewDeviceInfo(fs, irqProcFile)
 	blockDevices := disk.NewBlockDevices(fs, irqDeviceInfo, irqProcFile, proc, timeout)
 	schedulerInfo := disk.NewSchedulerInfo(fs, blockDevices)
-	schdulerCheckers, err := disk.NewDirectorySchedulerCheckers(fs,
+	schdulerCheckers, err := NewDirectorySchedulerCheckers(fs,
 		config.Redpanda.Directory, schedulerInfo, blockDevices)
 	if err != nil {
 		return nil, err
 	}
-	nomergesCheckers, err := disk.NewDirectoryNomergesCheckers(fs,
+	nomergesCheckers, err := NewDirectoryNomergesCheckers(fs,
 		config.Redpanda.Directory, schedulerInfo, blockDevices)
 	if err != nil {
 		return nil, err
 	}
 	balanceService := irq.NewBalanceService(fs, proc, executor, timeout)
 	cpuMasks := irq.NewCpuMasks(fs, hwloc.NewHwLocCmd(proc, timeout), executor)
-	dirIRQAffinityChecker, err := disk.NewDirectoryIRQAffinityChecker(
+	dirIRQAffinityChecker, err := NewDirectoryIRQAffinityChecker(
 		fs, config.Redpanda.Directory, "all", irq.Default, blockDevices, cpuMasks)
 	if err != nil {
 		return nil, err
 	}
-	dirIRQAffinityStaticChecker, err := disk.NewDirectoryIRQsAffinityStaticChecker(
+	dirIRQAffinityStaticChecker, err := NewDirectoryIRQsAffinityStaticChecker(
 		fs, config.Redpanda.Directory, blockDevices, balanceService)
 	if err != nil {
 		return nil, err
@@ -192,32 +188,32 @@ func RedpandaCheckers(
 	if err != nil {
 		return nil, err
 	}
-	netCheckersFactory := network.NewNetCheckersFactory(
+	netCheckersFactory := NewNetCheckersFactory(
 		fs, irqProcFile, irqDeviceInfo, ethtool, balanceService, cpuMasks)
-	return map[CheckerID][]checkers.Checker{
-		ConfigFileChecker:             []checkers.Checker{NewConfigChecker(config)},
-		IoConfigFileChecker:           []checkers.Checker{NewIOConfigFileExistanceChecker(fs, ioConfigFile)},
-		FreeMemChecker:                []checkers.Checker{NewMemoryChecker(fs)},
-		SwapChecker:                   []checkers.Checker{NewSwapChecker(fs)},
-		DataDirAccessChecker:          []checkers.Checker{NewDataDirWritableChecker(fs, config.Redpanda.Directory)},
-		DiskSpaceChecker:              []checkers.Checker{NewFreeDiskSpaceChecker(config.Redpanda.Directory)},
-		FsTypeChecker:                 []checkers.Checker{NewFilesystemTypeChecker(config.Redpanda.Directory)},
-		TransparentHugePagesChecker:   []checkers.Checker{NewTransparentHugePagesChecker(fs)},
-		NtpChecker:                    []checkers.Checker{NewNTPSyncChecker(timeout, fs)},
+	return map[CheckerID][]Checker{
+		ConfigFileChecker:             []Checker{NewConfigChecker(config)},
+		IoConfigFileChecker:           []Checker{NewIOConfigFileExistanceChecker(fs, ioConfigFile)},
+		FreeMemChecker:                []Checker{NewMemoryChecker(fs)},
+		SwapChecker:                   []Checker{NewSwapChecker(fs)},
+		DataDirAccessChecker:          []Checker{NewDataDirWritableChecker(fs, config.Redpanda.Directory)},
+		DiskSpaceChecker:              []Checker{NewFreeDiskSpaceChecker(config.Redpanda.Directory)},
+		FsTypeChecker:                 []Checker{NewFilesystemTypeChecker(config.Redpanda.Directory)},
+		TransparentHugePagesChecker:   []Checker{NewTransparentHugePagesChecker(fs)},
+		NtpChecker:                    []Checker{NewNTPSyncChecker(timeout, fs)},
 		SchedulerChecker:              schdulerCheckers,
 		NomergesChecker:               nomergesCheckers,
-		DiskIRQsAffinityChecker:       []checkers.Checker{dirIRQAffinityChecker},
-		DiskIRQsAffinityStaticChecker: []checkers.Checker{dirIRQAffinityStaticChecker},
-		SynBacklogChecker:             []checkers.Checker{netCheckersFactory.NewSynBacklogChecker()},
-		ListenBacklogChecker:          []checkers.Checker{netCheckersFactory.NewListenBacklogChecker()},
-		RfsTableEntriesChecker:        []checkers.Checker{netCheckersFactory.NewRfsTableSizeChecker()},
-		NicIRQsAffinitStaticChecker:   []checkers.Checker{netCheckersFactory.NewNicIRQAffinityStaticChecker(interfaces)},
+		DiskIRQsAffinityChecker:       []Checker{dirIRQAffinityChecker},
+		DiskIRQsAffinityStaticChecker: []Checker{dirIRQAffinityStaticChecker},
+		SynBacklogChecker:             []Checker{netCheckersFactory.NewSynBacklogChecker()},
+		ListenBacklogChecker:          []Checker{netCheckersFactory.NewListenBacklogChecker()},
+		RfsTableEntriesChecker:        []Checker{netCheckersFactory.NewRfsTableSizeChecker()},
+		NicIRQsAffinitStaticChecker:   []Checker{netCheckersFactory.NewNicIRQAffinityStaticChecker(interfaces)},
 		NicIRQsAffinitChecker:         netCheckersFactory.NewNicIRQAffinityCheckers(interfaces, irq.Default, "all"),
 		NicRpsChecker:                 netCheckersFactory.NewNicRpsSetCheckers(interfaces, irq.Default, "all"),
 		NicRfsChecker:                 netCheckersFactory.NewNicRfsCheckers(interfaces),
 		NicXpsChecker:                 netCheckersFactory.NewNicXpsCheckers(interfaces),
-		MaxAIOEvents:                  []checkers.Checker{sys.NewMaxAIOEventsChecker(fs)},
-		ClockSource:                   []checkers.Checker{sys.NewClockSourceChecker(fs)},
-		Swappiness:                    []checkers.Checker{memory.NewSwappinessChecker(fs)},
+		MaxAIOEvents:                  []Checker{NewMaxAIOEventsChecker(fs)},
+		ClockSource:                   []Checker{NewClockSourceChecker(fs)},
+		Swappiness:                    []Checker{NewSwappinessChecker(fs)},
 	}, nil
 }

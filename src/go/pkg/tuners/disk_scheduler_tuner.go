@@ -1,8 +1,8 @@
-package disk
+package tuners
 
 import (
 	"fmt"
-	"vectorized/pkg/tuners"
+	"vectorized/pkg/tuners/disk"
 	"vectorized/pkg/tuners/executors"
 	"vectorized/pkg/tuners/executors/commands"
 
@@ -12,12 +12,12 @@ import (
 func NewDeviceSchedulerTuner(
 	fs afero.Fs,
 	device string,
-	schedulerInfo SchedulerInfo,
+	schedulerInfo disk.SchedulerInfo,
 	executor executors.Executor,
-) tuners.Tunable {
-	return tuners.NewCheckedTunable(
+) Tunable {
+	return NewCheckedTunable(
 		NewDeviceSchedulerChecker(fs, device, schedulerInfo),
-		func() tuners.TuneResult {
+		func() TuneResult {
 			return tuneScheduler(fs, device, schedulerInfo, executor)
 		},
 		func() (bool, string) {
@@ -34,28 +34,28 @@ func NewDeviceSchedulerTuner(
 func tuneScheduler(
 	fs afero.Fs,
 	device string,
-	schedulerInfo SchedulerInfo,
+	schedulerInfo disk.SchedulerInfo,
 	executor executors.Executor,
-) tuners.TuneResult {
+) TuneResult {
 	preferredScheduler, err := getPreferredScheduler(device, schedulerInfo)
 	if err != nil {
-		return tuners.NewTuneError(err)
+		return NewTuneError(err)
 	}
 	featureFile, err := schedulerInfo.GetSchedulerFeatureFile(device)
 	if err != nil {
-		return tuners.NewTuneError(err)
+		return NewTuneError(err)
 	}
 	err = executor.Execute(
 		commands.NewWriteFileCmd(fs, featureFile, preferredScheduler))
 	if err != nil {
-		return tuners.NewTuneError(err)
+		return NewTuneError(err)
 	}
 
-	return tuners.NewTuneResult(false)
+	return NewTuneResult(false)
 }
 
 func getPreferredScheduler(
-	device string, schedulerInfo SchedulerInfo,
+	device string, schedulerInfo disk.SchedulerInfo,
 ) (string, error) {
 	supported, err := schedulerInfo.GetSupportedSchedulers(device)
 	if err != nil {
@@ -81,16 +81,16 @@ func NewSchedulerTuner(
 	fs afero.Fs,
 	directories []string,
 	devices []string,
-	blockDevices BlockDevices,
+	blockDevices disk.BlockDevices,
 	executor executors.Executor,
-) tuners.Tunable {
-	schedulerInfo := NewSchedulerInfo(fs, blockDevices)
+) Tunable {
+	schedulerInfo := disk.NewSchedulerInfo(fs, blockDevices)
 	return NewDiskTuner(
 		fs,
 		directories,
 		devices,
 		blockDevices,
-		func(device string) tuners.Tunable {
+		func(device string) Tunable {
 			return NewDeviceSchedulerTuner(fs, device, schedulerInfo, executor)
 		},
 	)

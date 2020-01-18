@@ -1,15 +1,15 @@
-package checkers
+package tuners
 
-import "strconv"
+import "fmt"
 
-func NewIntChecker(
+func NewFloatChecker(
 	desc string,
 	severity Severity,
-	check func(int) bool,
+	check func(float64) bool,
 	renderRequired func() string,
-	getCurrent func() (int, error),
+	getCurrent func() (float64, error),
 ) Checker {
-	return &intChecker{
+	return &floatChecker{
 		desc:           desc,
 		check:          check,
 		renderRequired: renderRequired,
@@ -18,28 +18,28 @@ func NewIntChecker(
 	}
 }
 
-type intChecker struct {
+type floatChecker struct {
 	Checker
 	desc           string
-	check          func(int) bool
+	check          func(float64) bool
 	renderRequired func() string
-	getCurrent     func() (int, error)
+	getCurrent     func() (float64, error)
 	severity       Severity
 }
 
-func (c *intChecker) GetDesc() string {
+func (c *floatChecker) GetDesc() string {
 	return c.desc
 }
 
-func (c *intChecker) GetSeverity() Severity {
+func (c *floatChecker) GetSeverity() Severity {
 	return c.severity
 }
 
-func (c *intChecker) GetRequiredAsString() string {
+func (c *floatChecker) GetRequiredAsString() string {
 	return c.renderRequired()
 }
 
-func (c *intChecker) Check() *CheckResult {
+func (c *floatChecker) Check() *CheckResult {
 	current, err := c.getCurrent()
 	if err != nil {
 		return &CheckResult{
@@ -49,6 +49,6 @@ func (c *intChecker) Check() *CheckResult {
 	}
 	return &CheckResult{
 		IsOk:    c.check(current),
-		Current: strconv.Itoa(current),
+		Current: fmt.Sprintf("%.2f", current),
 	}
 }

@@ -6,7 +6,7 @@ import (
 	"vectorized/pkg/cli"
 	"vectorized/pkg/config"
 	"vectorized/pkg/redpanda"
-	"vectorized/pkg/tuners/iotune"
+	"vectorized/pkg/tuners"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
@@ -72,7 +72,7 @@ func execIoTune(
 	duration int,
 	timeout time.Duration,
 ) error {
-	tuner := iotune.NewIoTuneTuner(fs, directories, ioConfigFile, duration, timeout)
+	tuner := tuners.NewIoTuneTuner(fs, directories, ioConfigFile, duration, timeout)
 	log.Info("Starting iotune...")
 	result := tuner.Tune()
 	if err := result.Error(); err != nil {

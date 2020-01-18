@@ -1,12 +1,12 @@
-package network
+package tuners
 
 import (
 	"fmt"
 	"strconv"
 	"strings"
-	"vectorized/pkg/checkers"
 	"vectorized/pkg/tuners/ethtool"
 	"vectorized/pkg/tuners/irq"
+	"vectorized/pkg/tuners/network"
 
 	"github.com/lorenzosaino/go-sysctl"
 	log "github.com/sirupsen/logrus"
@@ -14,20 +14,20 @@ import (
 )
 
 type NetCheckersFactory interface {
-	NewNicIRQAffinityStaticChecker(interfaces []string) checkers.Checker
-	NewNicIRQAffinityCheckers(interfaces []string, mode irq.Mode, mask string) []checkers.Checker
-	NewNicIRQAffinityChecker(nic Nic, mode irq.Mode, mask string) checkers.Checker
-	NewNicRpsSetCheckers(interfaces []string, mode irq.Mode, mask string) []checkers.Checker
-	NewNicRpsSetChecker(nic Nic, mode irq.Mode, mask string) checkers.Checker
-	NewNicRfsCheckers(interfaces []string) []checkers.Checker
-	NewNicRfsChecker(nic Nic) checkers.Checker
-	NewNicNTupleCheckers(interfaces []string) []checkers.Checker
-	NewNicNTupleChecker(nic Nic) checkers.Checker
-	NewNicXpsCheckers(interfaces []string) []checkers.Checker
-	NewNicXpsChecker(nic Nic) checkers.Checker
-	NewRfsTableSizeChecker() checkers.Checker
-	NewListenBacklogChecker() checkers.Checker
-	NewSynBacklogChecker() checkers.Checker
+	NewNicIRQAffinityStaticChecker(interfaces []string) Checker
+	NewNicIRQAffinityCheckers(interfaces []string, mode irq.Mode, mask string) []Checker
+	NewNicIRQAffinityChecker(nic network.Nic, mode irq.Mode, mask string) Checker
+	NewNicRpsSetCheckers(interfaces []string, mode irq.Mode, mask string) []Checker
+	NewNicRpsSetChecker(nic network.Nic, mode irq.Mode, mask string) Checker
+	NewNicRfsCheckers(interfaces []string) []Checker
+	NewNicRfsChecker(nic network.Nic) Checker
+	NewNicNTupleCheckers(interfaces []string) []Checker
+	NewNicNTupleChecker(nic network.Nic) Checker
+	NewNicXpsCheckers(interfaces []string) []Checker
+	NewNicXpsChecker(nic network.Nic) Checker
+	NewRfsTableSizeChecker() Checker
+	NewListenBacklogChecker() Checker
+	NewSynBacklogChecker() Checker
 }
 
 type netCheckersFactory struct {
@@ -59,16 +59,16 @@ func NewNetCheckersFactory(
 
 func (f *netCheckersFactory) NewNicIRQAffinityStaticChecker(
 	interfaces []string,
-) checkers.Checker {
-	return checkers.NewEqualityChecker(
+) Checker {
+	return NewEqualityChecker(
 		"NIC IRQs affinity static",
-		checkers.Warning,
+		Warning,
 		true,
 		func() (interface{}, error) {
 			var IRQs []int
 			for _, ifaceName := range interfaces {
-				nic := NewNic(f.fs, f.irqProcFile, f.irqDeviceInfo, f.ethtool, ifaceName)
-				nicIRQs, err := collectIRQs(nic)
+				nic := network.NewNic(f.fs, f.irqProcFile, f.irqDeviceInfo, f.ethtool, ifaceName)
+				nicIRQs, err := network.CollectIRQs(nic)
 				if err != nil {
 					return false, nil
 				}
@@ -80,15 +80,15 @@ func (f *netCheckersFactory) NewNicIRQAffinityStaticChecker(
 }
 
 func (f *netCheckersFactory) NewNicIRQAffinityChecker(
-	nic Nic, mode irq.Mode, cpuMask string,
-) checkers.Checker {
-	return checkers.NewEqualityChecker(
+	nic network.Nic, mode irq.Mode, cpuMask string,
+) Checker {
+	return NewEqualityChecker(
 		fmt.Sprintf("NIC %s IRQ affinity set", nic.Name()),
-		checkers.Warning,
+		Warning,
 		true,
 		func() (interface{}, error) {
-			return isSet(nic, func(currentNic Nic) (bool, error) {
-				dist, err := getHwInterfaceIRQsDistribution(
+			return isSet(nic, func(currentNic network.Nic) (bool, error) {
+				dist, err := network.GetHwInterfaceIRQsDistribution(
 					currentNic, mode, cpuMask, f.cpuMasks)
 				if err != nil {
 					return false, err
@@ -113,37 +113,37 @@ func (f *netCheckersFactory) NewNicIRQAffinityChecker(
 
 func (f *netCheckersFactory) NewNicIRQAffinityCheckers(
 	interfaces []string, mode irq.Mode, cpuMask string,
-) []checkers.Checker {
+) []Checker {
 	return f.forNonVirtualInterfaces(interfaces,
-		func(nic Nic) checkers.Checker {
+		func(nic network.Nic) Checker {
 			return f.NewNicIRQAffinityChecker(nic, mode, cpuMask)
 		})
 }
 
 func (f *netCheckersFactory) NewNicRpsSetCheckers(
 	interfaces []string, mode irq.Mode, cpuMask string,
-) []checkers.Checker {
+) []Checker {
 	return f.forNonVirtualInterfaces(
 		interfaces,
-		func(nic Nic) checkers.Checker {
+		func(nic network.Nic) Checker {
 			return f.NewNicRpsSetChecker(nic, mode, cpuMask)
 		})
 }
 
 func (f *netCheckersFactory) NewNicRpsSetChecker(
-	nic Nic, mode irq.Mode, cpuMask string,
-) checkers.Checker {
-	return checkers.NewEqualityChecker(
+	nic network.Nic, mode irq.Mode, cpuMask string,
+) Checker {
+	return NewEqualityChecker(
 		fmt.Sprintf("NIC %s RPS set", nic.Name()),
-		checkers.Warning,
+		Warning,
 		true,
 		func() (interface{}, error) {
-			return isSet(nic, func(currentNic Nic) (bool, error) {
+			return isSet(nic, func(currentNic network.Nic) (bool, error) {
 				rpsCPUs, err := currentNic.GetRpsCPUFiles()
 				if err != nil {
 					return false, err
 				}
-				rfsMask, err := getRpsCPUMask(nic, mode, cpuMask, f.cpuMasks)
+				rfsMask, err := network.GetRpsCPUMask(nic, mode, cpuMask, f.cpuMasks)
 				if err != nil {
 					return false, err
 				}
@@ -168,19 +168,19 @@ func (f *netCheckersFactory) NewNicRpsSetChecker(
 
 func (f *netCheckersFactory) NewNicRfsCheckers(
 	interfaces []string,
-) []checkers.Checker {
+) []Checker {
 	return f.forNonVirtualInterfaces(interfaces, f.NewNicRfsChecker)
 }
 
-func (f *netCheckersFactory) NewNicRfsChecker(nic Nic) checkers.Checker {
-	return checkers.NewEqualityChecker(
+func (f *netCheckersFactory) NewNicRfsChecker(nic network.Nic) Checker {
+	return NewEqualityChecker(
 		fmt.Sprintf("NIC %s RFS set", nic.Name()),
-		checkers.Warning,
+		Warning,
 		true,
 		func() (interface{}, error) {
-			return isSet(nic, func(currentNic Nic) (bool, error) {
+			return isSet(nic, func(currentNic network.Nic) (bool, error) {
 				limits, err := currentNic.GetRpsLimitFiles()
-				queueLimit := oneRPSQueueLimit(limits)
+				queueLimit := network.OneRPSQueueLimit(limits)
 				if err != nil {
 					return false, err
 				}
@@ -201,22 +201,22 @@ func (f *netCheckersFactory) NewNicRfsChecker(nic Nic) checkers.Checker {
 
 func (f *netCheckersFactory) NewNicNTupleCheckers(
 	interfaces []string,
-) []checkers.Checker {
+) []Checker {
 	return f.forNonVirtualInterfaces(interfaces, f.NewNicNTupleChecker)
 }
 
-func (f *netCheckersFactory) NewNicNTupleChecker(nic Nic) checkers.Checker {
-	return checkers.NewEqualityChecker(
+func (f *netCheckersFactory) NewNicNTupleChecker(nic network.Nic) Checker {
+	return NewEqualityChecker(
 		fmt.Sprintf("NIC %s NTuple set", nic.Name()),
-		checkers.Warning,
+		Warning,
 		true,
 		func() (interface{}, error) {
-			return isSet(nic, func(currentNic Nic) (bool, error) {
+			return isSet(nic, func(currentNic network.Nic) (bool, error) {
 				nTupleStatus, err := currentNic.GetNTupleStatus()
 				if err != nil {
 					return false, err
 				}
-				if nTupleStatus == NTupleDisabled {
+				if nTupleStatus == network.NTupleDisabled {
 					return false, nil
 				}
 				return true, nil
@@ -227,17 +227,17 @@ func (f *netCheckersFactory) NewNicNTupleChecker(nic Nic) checkers.Checker {
 
 func (f *netCheckersFactory) NewNicXpsCheckers(
 	interfaces []string,
-) []checkers.Checker {
+) []Checker {
 	return f.forNonVirtualInterfaces(interfaces, f.NewNicXpsChecker)
 }
 
-func (f *netCheckersFactory) NewNicXpsChecker(nic Nic) checkers.Checker {
-	return checkers.NewEqualityChecker(
+func (f *netCheckersFactory) NewNicXpsChecker(nic network.Nic) Checker {
+	return NewEqualityChecker(
 		fmt.Sprintf("NIC %s XPS set", nic.Name()),
-		checkers.Warning,
+		Warning,
 		true,
 		func() (interface{}, error) {
-			return isSet(nic, func(currentNic Nic) (bool, error) {
+			return isSet(nic, func(currentNic network.Nic) (bool, error) {
 				xpsCPUFiles, err := currentNic.GetXpsCPUFiles()
 				if err != nil {
 					return false, err
@@ -277,13 +277,13 @@ func readIntFromFile(fs afero.Fs, file string) (int, error) {
 
 }
 
-func (f *netCheckersFactory) NewRfsTableSizeChecker() checkers.Checker {
-	return checkers.NewEqualityChecker(
+func (f *netCheckersFactory) NewRfsTableSizeChecker() Checker {
+	return NewEqualityChecker(
 		"RFS Table entries",
-		checkers.Warning,
-		rfsTableSize,
+		Warning,
+		network.RfsTableSize,
 		func() (interface{}, error) {
-			value, err := sysctl.Get(rfsTableSizeProperty)
+			value, err := sysctl.Get(network.RfsTableSizeProperty)
 			if err != nil {
 				return false, err
 			}
@@ -291,27 +291,27 @@ func (f *netCheckersFactory) NewRfsTableSizeChecker() checkers.Checker {
 		})
 }
 
-func (f *netCheckersFactory) NewListenBacklogChecker() checkers.Checker {
-	return checkers.NewEqualityChecker(
+func (f *netCheckersFactory) NewListenBacklogChecker() Checker {
+	return NewEqualityChecker(
 		"Socket listen() backlog size",
-		checkers.Warning,
-		listenBacklogSize,
+		Warning,
+		network.ListenBacklogSize,
 		func() (interface{}, error) {
-			return readIntFromFile(f.fs, listenBacklogFile)
+			return readIntFromFile(f.fs, network.ListenBacklogFile)
 		})
 }
 
-func (f *netCheckersFactory) NewSynBacklogChecker() checkers.Checker {
-	return checkers.NewEqualityChecker(
+func (f *netCheckersFactory) NewSynBacklogChecker() Checker {
+	return NewEqualityChecker(
 		"Max syn backlog size",
-		checkers.Warning,
-		synBacklogSize,
+		Warning,
+		network.SynBacklogSize,
 		func() (interface{}, error) {
-			return readIntFromFile(f.fs, synBacklogFile)
+			return readIntFromFile(f.fs, network.SynBacklogFile)
 		})
 }
 
-func isSet(nic Nic, hwCheckFunction func(Nic) (bool, error)) (bool, error) {
+func isSet(nic network.Nic, hwCheckFunction func(network.Nic) (bool, error)) (bool, error) {
 	if nic.IsHwInterface() {
 		log.Debugf("'%s' is HW interface", nic.Name())
 		return hwCheckFunction(nic)
@@ -336,11 +336,11 @@ func isSet(nic Nic, hwCheckFunction func(Nic) (bool, error)) (bool, error) {
 }
 
 func (f *netCheckersFactory) forNonVirtualInterfaces(
-	interfaces []string, checkerFactory func(Nic) checkers.Checker,
-) []checkers.Checker {
-	var chkrs []checkers.Checker
+	interfaces []string, checkerFactory func(network.Nic) Checker,
+) []Checker {
+	var chkrs []Checker
 	for _, iface := range interfaces {
-		nic := NewNic(f.fs, f.irqProcFile, f.irqDeviceInfo, f.ethtool, iface)
+		nic := network.NewNic(f.fs, f.irqProcFile, f.irqDeviceInfo, f.ethtool, iface)
 		if !nic.IsHwInterface() && !nic.IsBondIface() {
 			log.Debugf("Skipping '%s' virtual interface", nic.Name())
 			continue

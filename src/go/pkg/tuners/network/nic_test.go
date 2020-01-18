@@ -243,7 +243,7 @@ func Test_nic_GetMaxRxQueueCount(t *testing.T) {
 				},
 				name: "test0",
 			},
-			want:    maxInt,
+			want:    MaxInt,
 			wantErr: false,
 		},
 	}

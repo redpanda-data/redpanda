@@ -154,7 +154,7 @@ func intelIrqToQueueIdx(irq int, procFileLines map[int]string) int {
 		idx, _ := strconv.Atoi(intelFastPathMatch[1])
 		return idx
 	}
-	return maxInt
+	return MaxInt
 }
 
 func (n *nic) GetMaxRxQueueCount() (int, error) {
@@ -175,7 +175,7 @@ func (n *nic) GetMaxRxQueueCount() (int, error) {
 		return maxQueues, nil
 	}
 
-	return maxInt, nil
+	return MaxInt, nil
 
 }
 

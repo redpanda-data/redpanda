@@ -12,7 +12,7 @@ type blockDevicesMock struct {
 	getDirectoryDevices      func(string) ([]string, error)
 	getBlockDeviceFromPath   func(string) (BlockDevice, error)
 	getBlockDeviceSystemPath func(string) (string, error)
-	getDiskInfoByType        func([]string) (map[diskType]devicesIRQs, error)
+	getDiskInfoByType        func([]string) (map[DiskType]DevicesIRQs, error)
 }
 
 func (m *blockDevicesMock) GetDirectoriesDevices(
@@ -35,7 +35,7 @@ func (m *blockDevicesMock) GetDirectoryDevices(path string) ([]string, error) {
 
 func (m *blockDevicesMock) GetDiskInfoByType(
 	devices []string,
-) (map[diskType]devicesIRQs, error) {
+) (map[DiskType]DevicesIRQs, error) {
 	return m.getDiskInfoByType(devices)
 }
 

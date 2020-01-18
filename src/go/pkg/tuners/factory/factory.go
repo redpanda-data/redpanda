@@ -15,9 +15,6 @@ import (
 	"vectorized/pkg/tuners/executors"
 	"vectorized/pkg/tuners/hwloc"
 	"vectorized/pkg/tuners/irq"
-	"vectorized/pkg/tuners/memory"
-	"vectorized/pkg/tuners/network"
-	"vectorized/pkg/tuners/sys"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
@@ -152,7 +149,7 @@ func (factory *tunersFactory) newDiskIRQTuner(
 	params *TunerParams,
 ) tuners.Tunable {
 
-	return disk.NewDiskIRQTuner(
+	return tuners.NewDiskIRQTuner(
 		factory.fs,
 		irq.ModeFromString(params.Mode),
 		params.CpuMask,
@@ -171,7 +168,7 @@ func (factory *tunersFactory) newDiskIRQTuner(
 func (factory *tunersFactory) newDiskSchedulerTuner(
 	params *TunerParams,
 ) tuners.Tunable {
-	return disk.NewSchedulerTuner(
+	return tuners.NewSchedulerTuner(
 		factory.fs,
 		params.Directories,
 		params.Disks,
@@ -183,7 +180,7 @@ func (factory *tunersFactory) newDiskSchedulerTuner(
 func (factory *tunersFactory) newDiskNomergesTuner(
 	params *TunerParams,
 ) tuners.Tunable {
-	return disk.NewNomergesTuner(
+	return tuners.NewNomergesTuner(
 		factory.fs,
 		params.Directories,
 		params.Disks,
@@ -199,7 +196,7 @@ func (factory *tunersFactory) newNetworkTuner(
 	if err != nil {
 		panic(err)
 	}
-	return network.NewNetTuner(
+	return tuners.NewNetTuner(
 		irq.ModeFromString(params.Mode),
 		params.CpuMask,
 		params.Nics,
@@ -226,19 +223,19 @@ func (factory *tunersFactory) newCpuTuner(params *TunerParams) tuners.Tunable {
 func (factory *tunersFactory) newMaxAIOEventsTuner(
 	params *TunerParams,
 ) tuners.Tunable {
-	return sys.NewMaxAIOEventsTuner(factory.fs, factory.executor)
+	return tuners.NewMaxAIOEventsTuner(factory.fs, factory.executor)
 }
 
 func (factory *tunersFactory) newClockSourceTuner(
 	params *TunerParams,
 ) tuners.Tunable {
-	return sys.NewClockSourceTuner(factory.fs, factory.executor)
+	return tuners.NewClockSourceTuner(factory.fs, factory.executor)
 }
 
 func (factory *tunersFactory) newSwappinessTuner(
 	params *TunerParams,
 ) tuners.Tunable {
-	return memory.NewSwappinessTuner(factory.fs, factory.executor)
+	return tuners.NewSwappinessTuner(factory.fs, factory.executor)
 }
 
 func (factory *tunersFactory) newCoredumpTuner(

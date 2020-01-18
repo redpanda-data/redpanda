@@ -58,7 +58,7 @@ func getDefaultMode(
 	return "", fmt.Errorf("Virutal device %s is not supported", nic.Name())
 }
 
-func getRpsCPUMask(
+func GetRpsCPUMask(
 	nic Nic, mode irq.Mode, cpuMask string, cpuMasks irq.CpuMasks,
 ) (string, error) {
 	effectiveCPUMask, err := cpuMasks.BaseCpuMask(cpuMask)
@@ -80,7 +80,7 @@ func getRpsCPUMask(
 	return computationsCPUMask, nil
 }
 
-func getHwInterfaceIRQsDistribution(
+func GetHwInterfaceIRQsDistribution(
 	nic Nic, mode irq.Mode, cpuMask string, cpuMasks irq.CpuMasks,
 ) (map[int]string, error) {
 	effectiveCPUMask, err := cpuMasks.BaseCpuMask(cpuMask)
@@ -142,7 +142,7 @@ func getHwInterfaceIRQsDistribution(
 	return IRQsDistribution, nil
 }
 
-func collectIRQs(nic Nic) ([]int, error) {
+func CollectIRQs(nic Nic) ([]int, error) {
 	var IRQs []int
 	if nic.IsHwInterface() {
 		nicIRQs, err := nic.GetIRQs()
@@ -157,7 +157,7 @@ func collectIRQs(nic Nic) ([]int, error) {
 			return nil, err
 		}
 		for _, slave := range slaves {
-			slaveIRQs, err := collectIRQs(slave)
+			slaveIRQs, err := CollectIRQs(slave)
 			if err != nil {
 				return nil, err
 			}
@@ -168,6 +168,6 @@ func collectIRQs(nic Nic) ([]int, error) {
 	return IRQs, nil
 }
 
-func oneRPSQueueLimit(limits []string) int {
-	return rfsTableSize / len(limits)
+func OneRPSQueueLimit(limits []string) int {
+	return RfsTableSize / len(limits)
 }

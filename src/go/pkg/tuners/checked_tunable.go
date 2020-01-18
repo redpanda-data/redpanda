@@ -2,13 +2,12 @@ package tuners
 
 import (
 	"fmt"
-	"vectorized/pkg/checkers"
 
 	log "github.com/sirupsen/logrus"
 )
 
 func NewCheckedTunable(
-	checker checkers.Checker,
+	checker Checker,
 	tuneAction func() TuneResult,
 	supportedAction func() (supported bool, reason string),
 	disablePostTuneCheck bool,
@@ -22,7 +21,7 @@ func NewCheckedTunable(
 }
 
 type checkedTunable struct {
-	checker              checkers.Checker
+	checker              Checker
 	tuneAction           func() TuneResult
 	supportedAction      func() (supported bool, reason string)
 	disablePostTuneCheck bool

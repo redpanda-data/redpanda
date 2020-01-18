@@ -1,4 +1,4 @@
-package checkers
+package tuners
 
 import (
 	"errors"
@@ -6,11 +6,11 @@ import (
 	"testing"
 )
 
-func Test_floatChecker_Check(t *testing.T) {
+func Test_intChecker_Check(t *testing.T) {
 	type fields struct {
-		check          func(c float64) bool
+		check          func(c int) bool
 		renderRequired func() string
-		getCurrent     func() (float64, error)
+		getCurrent     func() (int, error)
 		desc           string
 		severity       Severity
 	}
@@ -22,39 +22,39 @@ func Test_floatChecker_Check(t *testing.T) {
 		{
 			name: "Shall return valid result when condition is met",
 			fields: fields{
-				check:          func(c float64) bool { return c >= 0.0 },
-				renderRequired: func() string { return ">= 0.0" },
+				check:          func(c int) bool { return c == 0 },
+				renderRequired: func() string { return "0" },
 				desc:           "Some desc",
-				getCurrent:     func() (float64, error) { return 0.0, nil },
+				getCurrent:     func() (int, error) { return 0, nil },
 				severity:       Warning,
 			},
 			want: &CheckResult{
 				IsOk:    true,
 				Err:     nil,
-				Current: "0.00",
+				Current: "0",
 			},
 		},
 		{
 			name: "Shall return not valid result when condition is not met",
 			fields: fields{
-				check:          func(c float64) bool { return c == 0.1 },
-				renderRequired: func() string { return "0.1" },
+				check:          func(c int) bool { return c == 0 },
+				renderRequired: func() string { return "0" },
 				desc:           "Some desc",
-				getCurrent:     func() (float64, error) { return 1.1, nil },
+				getCurrent:     func() (int, error) { return 1, nil },
 				severity:       Warning,
 			},
 			want: &CheckResult{
 				IsOk:    false,
 				Err:     nil,
-				Current: "1.10",
+				Current: "1",
 			},
 		},
 		{
 			name: "Shall return result with an error when getCurretn returns an error",
 			fields: fields{
-				check:          func(c float64) bool { return c < 10.0 },
-				renderRequired: func() string { return "< 10" },
-				getCurrent:     func() (float64, error) { return 0.0, errors.New("err") },
+				check:          func(c int) bool { return c == 0 },
+				renderRequired: func() string { return "0" },
+				getCurrent:     func() (int, error) { return 0, errors.New("err") },
 				severity:       Warning,
 			},
 			want: &CheckResult{
@@ -65,7 +65,7 @@ func Test_floatChecker_Check(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			v := &floatChecker{
+			v := &intChecker{
 				check:          tt.fields.check,
 				renderRequired: tt.fields.renderRequired,
 				getCurrent:     tt.fields.getCurrent,
@@ -73,7 +73,7 @@ func Test_floatChecker_Check(t *testing.T) {
 				severity:       tt.fields.severity,
 			}
 			if got := v.Check(); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("floatChecker.Check() = %v, want %v", got, tt.want)
+				t.Errorf("intChecker.Check() = %v, want %v", got, tt.want)
 			}
 		})
 	}

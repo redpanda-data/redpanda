@@ -1,7 +1,7 @@
-package disk
+package tuners
 
 import (
-	"vectorized/pkg/tuners"
+	"vectorized/pkg/tuners/disk"
 	"vectorized/pkg/tuners/executors"
 	"vectorized/pkg/tuners/irq"
 
@@ -15,7 +15,7 @@ type disksIRQsTuner struct {
 	cpuMasks          irq.CpuMasks
 	irqBalanceService irq.BalanceService
 	irqProcFile       irq.ProcFile
-	blockDevices      BlockDevices
+	blockDevices      disk.BlockDevices
 	mode              irq.Mode
 	baseCPUMask       string
 	directories       []string
@@ -34,10 +34,10 @@ func NewDiskIRQTuner(
 	cpuMasks irq.CpuMasks,
 	irqBalanceService irq.BalanceService,
 	irqProcFile irq.ProcFile,
-	blockDevices BlockDevices,
+	blockDevices disk.BlockDevices,
 	numberOfCpus int,
 	executor executors.Executor,
-) tuners.Tunable {
+) Tunable {
 	log.Debugf("Creating disk IRQs tuner with mode '%s', cpu mask '%s', directories '%s' and devices '%s'",
 		mode, cpuMask, dirs, devices)
 
@@ -71,11 +71,11 @@ func (tuner *disksIRQsTuner) CheckIfSupported() (
 	return true, ""
 }
 
-func (tuner *disksIRQsTuner) Tune() tuners.TuneResult {
+func (tuner *disksIRQsTuner) Tune() TuneResult {
 	directoryDevices, err := tuner.blockDevices.GetDirectoriesDevices(
 		tuner.directories)
 	if err != nil {
-		return tuners.NewTuneError(err)
+		return NewTuneError(err)
 	}
 
 	var allDevices []string
@@ -108,26 +108,26 @@ func (tuner *disksIRQsTuner) Tune() tuners.TuneResult {
 func NewDiskIRQsBalanceServiceTuner(
 	fs afero.Fs,
 	devices []string,
-	blockDevices BlockDevices,
+	blockDevices disk.BlockDevices,
 	balanceService irq.BalanceService,
 	executor executors.Executor,
-) tuners.Tunable {
-	return tuners.NewCheckedTunable(
+) Tunable {
+	return NewCheckedTunable(
 		NewDisksIRQAffinityStaticChecker(fs, devices, blockDevices, balanceService),
-		func() tuners.TuneResult {
+		func() TuneResult {
 			diskInfoByType, err := blockDevices.GetDiskInfoByType(devices)
 			if err != nil {
-				return tuners.NewTuneError(err)
+				return NewTuneError(err)
 			}
 			var IRQs []int
 			for _, diskInfo := range diskInfoByType {
-				IRQs = append(IRQs, diskInfo.irqs...)
+				IRQs = append(IRQs, diskInfo.Irqs...)
 			}
 			err = balanceService.BanIRQsAndRestart(IRQs)
 			if err != nil {
-				return tuners.NewTuneError(err)
+				return NewTuneError(err)
 			}
-			return tuners.NewTuneResult(false)
+			return NewTuneResult(false)
 		},
 		func() (bool, string) {
 			return true, ""
@@ -141,13 +141,13 @@ func NewDiskIRQsAffinityTuner(
 	devices []string,
 	cpuMask string,
 	mode irq.Mode,
-	blockDevices BlockDevices,
+	blockDevices disk.BlockDevices,
 	cpuMasks irq.CpuMasks,
 	executor executors.Executor,
-) tuners.Tunable {
-	return tuners.NewCheckedTunable(
+) Tunable {
+	return NewCheckedTunable(
 		NewDisksIRQAffinityChecker(fs, devices, cpuMask, mode, blockDevices, cpuMasks),
-		func() tuners.TuneResult {
+		func() TuneResult {
 			distribution, err := GetExpectedIRQsDistribution(
 				devices,
 				blockDevices,
@@ -155,13 +155,13 @@ func NewDiskIRQsAffinityTuner(
 				cpuMask,
 				cpuMasks)
 			if err != nil {
-				return tuners.NewTuneError(err)
+				return NewTuneError(err)
 			}
 			err = cpuMasks.DistributeIRQs(distribution)
 			if err != nil {
-				return tuners.NewTuneError(err)
+				return NewTuneError(err)
 			}
-			return tuners.NewTuneResult(false)
+			return NewTuneResult(false)
 		},
 		func() (bool, string) {
 			if !cpuMasks.IsSupported() {
@@ -176,7 +176,7 @@ func NewDiskIRQsAffinityTuner(
 
 func GetExpectedIRQsDistribution(
 	devices []string,
-	blockDevices BlockDevices,
+	blockDevices disk.BlockDevices,
 	mode irq.Mode,
 	cpuMask string,
 	cpuMasks irq.CpuMasks,
@@ -203,16 +203,16 @@ func GetExpectedIRQsDistribution(
 		}
 	}
 
-	nonNvmeDisksInfo := diskInfoByType[nonNvme]
-	nvmeDisksInfo := diskInfoByType[nvme]
+	nonNvmeDisksInfo := diskInfoByType[disk.NonNvme]
+	nvmeDisksInfo := diskInfoByType[disk.Nvme]
 	irqCPUMask, err := cpuMasks.CpuMaskForIRQs(effectiveMode, finalCpuMask)
 	if err != nil {
 		return nil, err
 	}
 	devicesIRQsDistribution := make(map[int]string)
-	if len(nonNvmeDisksInfo.devices) > 0 {
+	if len(nonNvmeDisksInfo.Devices) > 0 {
 		IRQsDist, err := cpuMasks.GetIRQsDistributionMasks(
-			nonNvmeDisksInfo.irqs, irqCPUMask)
+			nonNvmeDisksInfo.Irqs, irqCPUMask)
 		if err != nil {
 			return nil, err
 		}
@@ -221,9 +221,9 @@ func GetExpectedIRQsDistribution(
 		}
 	}
 
-	if len(nvmeDisksInfo.devices) > 0 {
+	if len(nvmeDisksInfo.Devices) > 0 {
 		IRQsDist, err := cpuMasks.GetIRQsDistributionMasks(
-			nvmeDisksInfo.irqs, finalCpuMask)
+			nvmeDisksInfo.Irqs, finalCpuMask)
 		if err != nil {
 			return nil, err
 		}
@@ -237,13 +237,13 @@ func GetExpectedIRQsDistribution(
 
 func GetDefaultMode(
 	cpuMask string,
-	diskInfoByType map[diskType]devicesIRQs,
+	diskInfoByType map[disk.DiskType]disk.DevicesIRQs,
 	cpuMasks irq.CpuMasks,
 ) (irq.Mode, error) {
 
 	log.Debug("Calculating default mode for Disk IRQs")
-	nonNvmeDiskIRQs := diskInfoByType[nonNvme]
-	if len(nonNvmeDiskIRQs.devices) == 0 {
+	nonNvmeDiskIRQs := diskInfoByType[disk.NonNvme]
+	if len(nonNvmeDiskIRQs.Devices) == 0 {
 		return irq.Mq, nil
 	}
 	numOfCores, err := cpuMasks.GetNumberOfCores(cpuMask)

@@ -4,19 +4,18 @@ import (
 	"errors"
 	"reflect"
 	"testing"
-	"vectorized/pkg/checkers"
 )
 
 type checkerMock struct {
-	checkers.Checker
-	checkFunction func() *checkers.CheckResult
+	Checker
+	checkFunction func() *CheckResult
 }
 
 func (c *checkerMock) GetDesc() string {
 	return "mocked checker"
 }
 
-func (c *checkerMock) Check() *checkers.CheckResult {
+func (c *checkerMock) Check() *CheckResult {
 	return c.checkFunction()
 }
 
@@ -26,7 +25,7 @@ func (c *checkerMock) GetRequiredAsString() string {
 
 func Test_checkTunable_Tune(t *testing.T) {
 	type fields struct {
-		checker         checkers.Checker
+		checker         Checker
 		tuneAction      func() TuneResult
 		supportedAction func() (supported bool, reason string)
 	}
@@ -43,8 +42,8 @@ func Test_checkTunable_Tune(t *testing.T) {
 			name: "should not execute tuner when condition is already met",
 			fields: fields{
 				checker: &checkerMock{
-					checkFunction: func() *checkers.CheckResult {
-						return &checkers.CheckResult{
+					checkFunction: func() *CheckResult {
+						return &CheckResult{
 							IsOk: true,
 						}
 					},
@@ -64,8 +63,8 @@ func Test_checkTunable_Tune(t *testing.T) {
 			name: "should not execute tuner when condition is already met",
 			fields: fields{
 				checker: &checkerMock{
-					checkFunction: func() *checkers.CheckResult {
-						res := &checkers.CheckResult{
+					checkFunction: func() *CheckResult {
+						res := &CheckResult{
 							IsOk: checkCallsCnt > 0,
 						}
 						checkCallsCnt++
@@ -87,8 +86,8 @@ func Test_checkTunable_Tune(t *testing.T) {
 			name: "Tune result should contain an error if tuning was not successfull",
 			fields: fields{
 				checker: &checkerMock{
-					checkFunction: func() *checkers.CheckResult {
-						res := &checkers.CheckResult{
+					checkFunction: func() *CheckResult {
+						res := &CheckResult{
 							IsOk:    false,
 							Current: "smth",
 						}

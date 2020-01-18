@@ -1,10 +1,9 @@
-package iotune
+package tuners
 
 import (
 	"time"
 	"vectorized/pkg/os"
-	"vectorized/pkg/redpanda"
-	"vectorized/pkg/tuners"
+	"vectorized/pkg/tuners/iotune"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
@@ -16,10 +15,10 @@ func NewIoTuneTuner(
 	ioConfigFile string,
 	duration int,
 	timeout time.Duration,
-) tuners.Tunable {
-	return tuners.NewCheckedTunable(
-		redpanda.NewIOConfigFileExistanceChecker(fs, ioConfigFile),
-		func() tuners.TuneResult {
+) Tunable {
+	return NewCheckedTunable(
+		NewIOConfigFileExistanceChecker(fs, ioConfigFile),
+		func() TuneResult {
 			return tune(evalDirectories, ioConfigFile, duration, timeout)
 		},
 		func() (bool, string) {
@@ -40,11 +39,11 @@ func tune(
 	ioConfigFile string,
 	duration int,
 	timeout time.Duration,
-) tuners.TuneResult {
-	ioTune := NewIoTune(os.NewProc(), timeout)
-	args := IoTuneArgs{
+) TuneResult {
+	ioTune := iotune.NewIoTune(os.NewProc(), timeout)
+	args := iotune.IoTuneArgs{
 		Dirs:           evalDirectories,
-		Format:         Seastar,
+		Format:         iotune.Seastar,
 		PropertiesFile: ioConfigFile,
 		Duration:       duration,
 		FsCheck:        false,
@@ -54,7 +53,7 @@ func tune(
 		log.Debug(outLine)
 	}
 	if err != nil {
-		return tuners.NewTuneError(err)
+		return NewTuneError(err)
 	}
-	return tuners.NewTuneResult(false)
+	return NewTuneResult(false)
 }

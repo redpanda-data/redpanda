@@ -6,12 +6,12 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-	"vectorized/pkg/checkers"
 	"vectorized/pkg/cli"
 	"vectorized/pkg/cloud"
 	"vectorized/pkg/config"
 	"vectorized/pkg/os"
 	"vectorized/pkg/redpanda"
+	"vectorized/pkg/tuners"
 	"vectorized/pkg/tuners/factory"
 	"vectorized/pkg/tuners/hwloc"
 	"vectorized/pkg/tuners/iotune"
@@ -170,7 +170,7 @@ func prestart(
 	timeout time.Duration,
 ) error {
 	if prestartCfg.checkEnabled {
-		checkersMap, err := redpanda.RedpandaCheckers(fs,
+		checkersMap, err := tuners.RedpandaCheckers(fs,
 			args.SeastarFlags["io-properties-file"], conf, timeout)
 		if err != nil {
 			return err
@@ -324,13 +324,13 @@ func tuneAll(
 	return nil
 }
 
-type checkFailedAction func(*checkers.CheckResult)
+type checkFailedAction func(*tuners.CheckResult)
 
 func checkFailedActions(
 	args *redpanda.RedpandaArgs,
-) map[redpanda.CheckerID]checkFailedAction {
-	return map[redpanda.CheckerID]checkFailedAction{
-		redpanda.SwapChecker: func(*checkers.CheckResult) {
+) map[tuners.CheckerID]checkFailedAction {
+	return map[tuners.CheckerID]checkFailedAction{
+		tuners.SwapChecker: func(*tuners.CheckResult) {
 			// Do not set --lock-memory flag when swap is disabled
 			args.SeastarFlags["lock-memory"] = "false"
 		},
@@ -338,14 +338,14 @@ func checkFailedActions(
 }
 
 func check(
-	checkersMap map[redpanda.CheckerID][]checkers.Checker,
-	checkFailedActions map[redpanda.CheckerID]checkFailedAction,
+	checkersMap map[tuners.CheckerID][]tuners.Checker,
+	checkFailedActions map[tuners.CheckerID]checkFailedAction,
 ) error {
 	for checkerID, checkersSlice := range checkersMap {
 		for _, checker := range checkersSlice {
 			result := checker.Check()
 			if result.Err != nil {
-				if checker.GetSeverity() == checkers.Fatal {
+				if checker.GetSeverity() == tuners.Fatal {
 					return result.Err
 				}
 				log.Warnf("System check '%s' failed with non-fatal error '%s'", checker.GetDesc(), result.Err)
@@ -356,7 +356,7 @@ func check(
 				}
 				msg := fmt.Sprintf("System check '%s' failed. Required: %v, Current %v",
 					checker.GetDesc(), checker.GetRequiredAsString(), result.Current)
-				if checker.GetSeverity() == checkers.Fatal {
+				if checker.GetSeverity() == tuners.Fatal {
 					return fmt.Errorf(msg)
 				}
 				log.Warn(msg)

@@ -6,11 +6,11 @@ import (
 	"path/filepath"
 	"sort"
 	"time"
-	"vectorized/pkg/checkers"
 	"vectorized/pkg/cli"
 	"vectorized/pkg/cli/ui"
 	"vectorized/pkg/config"
 	"vectorized/pkg/redpanda"
+	"vectorized/pkg/tuners"
 
 	"github.com/fatih/color"
 	"github.com/olekukonko/tablewriter"
@@ -78,7 +78,7 @@ func executeCheck(
 		return err
 	}
 	ioConfigFile := redpanda.GetIOConfigPath(filepath.Dir(configFile))
-	checkersMap, err := redpanda.RedpandaCheckers(fs, ioConfigFile, conf, timeout)
+	checkersMap, err := tuners.RedpandaCheckers(fs, ioConfigFile, conf, timeout)
 	if err != nil {
 		return err
 	}
@@ -96,7 +96,7 @@ func executeCheck(
 		for _, c := range checkersSlice {
 			result := c.Check()
 			if result.Err != nil {
-				if c.GetSeverity() == checkers.Fatal {
+				if c.GetSeverity() == tuners.Fatal {
 					return result.Err
 				}
 				log.Warnf("System check '%s' failed with non-fatal error '%s'", c.GetDesc(), result.Err)
@@ -123,14 +123,14 @@ func executeCheck(
 	return nil
 }
 
-func printResult(sev checkers.Severity, isOk bool) string {
+func printResult(sev tuners.Severity, isOk bool) string {
 	if isOk {
 		return color.GreenString("%v", isOk)
 	}
 	switch sev {
-	case checkers.Fatal:
+	case tuners.Fatal:
 		return color.RedString("%v", isOk)
-	case checkers.Warning:
+	case tuners.Warning:
 		return color.YellowString("%v", isOk)
 	}
 

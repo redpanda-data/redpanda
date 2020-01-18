@@ -1,11 +1,9 @@
-package sys
+package tuners
 
 import (
 	"fmt"
 	"strconv"
 	"strings"
-	"vectorized/pkg/checkers"
-	"vectorized/pkg/tuners"
 	"vectorized/pkg/tuners/executors"
 	"vectorized/pkg/tuners/executors/commands"
 
@@ -15,10 +13,10 @@ import (
 
 const maxAIOEvents = 1048576
 
-func NewMaxAIOEventsChecker(fs afero.Fs) checkers.Checker {
-	return checkers.NewEqualityChecker(
+func NewMaxAIOEventsChecker(fs afero.Fs) Checker {
+	return NewEqualityChecker(
 		"Max AIO Events",
-		checkers.Warning,
+		Warning,
 		1024*1024,
 		func() (interface{}, error) {
 			content, err := afero.ReadFile(fs, "/proc/sys/fs/aio-max-nr")
@@ -32,19 +30,19 @@ func NewMaxAIOEventsChecker(fs afero.Fs) checkers.Checker {
 
 func NewMaxAIOEventsTuner(
 	fs afero.Fs, executor executors.Executor,
-) tuners.Tunable {
-	return tuners.NewCheckedTunable(
+) Tunable {
+	return NewCheckedTunable(
 		NewMaxAIOEventsChecker(fs),
-		func() tuners.TuneResult {
+		func() TuneResult {
 
 			log.Debugf("Setting max AIO events to %d", maxAIOEvents)
 			err := executor.Execute(
 				commands.NewWriteFileCmd(
 					fs, "/proc/sys/fs/aio-max-nr", fmt.Sprint(maxAIOEvents)))
 			if err != nil {
-				return tuners.NewTuneError(err)
+				return NewTuneError(err)
 			}
-			return tuners.NewTuneResult(false)
+			return NewTuneResult(false)
 		},
 		func() (bool, string) {
 			return true, ""
