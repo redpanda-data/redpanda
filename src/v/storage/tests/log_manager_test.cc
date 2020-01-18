@@ -41,14 +41,13 @@ SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
       model::topic_partition{model::topic("tp1"), model::partition_id(11)}};
     directories::initialize("test_dir/" + ntp.path()).get();
     // Empty file
-    auto&& [seg, app] = m.make_log_segment(
-                           ntp,
-                           model::offset(10),
-                           model::term_id(1),
-                           ss::default_priority_class())
-                          .get0();
-    seg->close().get();
-    app->close().get();
+    auto seg = m.make_log_segment(
+                  ntp,
+                  model::offset(10),
+                  model::term_id(1),
+                  ss::default_priority_class())
+                 .get0();
+    seg.close().get();
 
     auto ntp2 = model::ntp{
       model::ns("ns1"),
@@ -60,29 +59,27 @@ SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
       model::ns("ns1"),
       model::topic_partition{model::topic("tp2"), model::partition_id(33)}};
     directories::initialize("test_dir/" + ntp3.path()).get();
-    auto&& [seg3, app3] = m.make_log_segment(
-                             ntp3,
-                             model::offset(20),
-                             model::term_id(1),
-                             ss::default_priority_class())
-                            .get0();
-    write_batches(app3);
-    seg3->close().get();
-    app3->close().get();
+    auto seg3 = m.make_log_segment(
+                   ntp3,
+                   model::offset(20),
+                   model::term_id(1),
+                   ss::default_priority_class())
+                  .get0();
+    write_batches(seg3.appender());
+    seg3.close().get();
 
     auto ntp4 = model::ntp{
       model::ns("ns2"),
       model::topic_partition{model::topic("tp1"), model::partition_id(50)}};
     directories::initialize("test_dir/" + ntp4.path()).get();
-    auto&& [seg4, app4] = m.make_log_segment(
-                             ntp4,
-                             model::offset(2),
-                             model::term_id(1),
-                             ss::default_priority_class())
-                            .get0();
-    write_garbage(app4);
-    seg4->close().get();
-    app4->close().get();
+    auto seg4 = m.make_log_segment(
+                   ntp4,
+                   model::offset(2),
+                   model::term_id(1),
+                   ss::default_priority_class())
+                  .get0();
+    write_garbage(seg4.appender());
+    seg4.close().get();
 
     m.manage(ntp).get();
     m.manage(ntp2).get();
@@ -93,8 +90,9 @@ SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
     BOOST_CHECK_EQUAL(m.get(ntp2)->segment_count(), 0);
     BOOST_CHECK_EQUAL(m.get(ntp3)->segment_count(), 1);
     BOOST_CHECK_EQUAL(m.get(ntp4)->segment_count(), 0);
-    BOOST_CHECK(!file_exists(seg->get_filename()).get0());
-    BOOST_CHECK(file_exists(seg3->get_filename()).get0());
-    BOOST_CHECK(!file_exists(seg4->get_filename()).get0());
-    BOOST_CHECK(file_exists(seg4->get_filename() + ".cannotrecover").get0());
+    BOOST_CHECK(!file_exists(seg.reader()->get_filename()).get0());
+    BOOST_CHECK(file_exists(seg3.reader()->get_filename()).get0());
+    BOOST_CHECK(!file_exists(seg4.reader()->get_filename()).get0());
+    BOOST_CHECK(
+      file_exists(seg4.reader()->get_filename() + ".cannotrecover").get0());
 }

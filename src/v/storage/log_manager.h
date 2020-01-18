@@ -3,8 +3,7 @@
 #include "model/fundamental.h"
 #include "seastarx.h"
 #include "storage/log.h"
-#include "storage/log_segment_appender.h"
-#include "storage/log_segment_reader.h"
+#include "storage/segment.h"
 #include "storage/version.h"
 
 #include <seastar/core/future.hh>
@@ -65,11 +64,7 @@ public:
 
     ss::future<> stop();
 
-    struct log_handles {
-        segment_reader_ptr reader;
-        segment_appender_ptr appender;
-    };
-    ss::future<log_handles> make_log_segment(
+    ss::future<segment> make_log_segment(
       const model::ntp&,
       model::offset,
       model::term_id,
