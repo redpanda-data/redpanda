@@ -188,7 +188,7 @@ bool log_reader::is_done() {
 static inline segment_reader_ptr find_in_set(log_set& s, model::offset o) {
     segment_reader_ptr ret = nullptr;
     if (auto it = s.lower_bound(o); it != s.end()) {
-        ret = *it;
+        ret = it->reader();
     }
     return ret;
 }
