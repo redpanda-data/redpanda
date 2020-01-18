@@ -18,9 +18,12 @@ func (s Severity) String() string {
 }
 
 type CheckResult struct {
-	IsOk    bool
-	Err     error
-	Current string
+	IsOk     bool
+	Err      error
+	Current  string
+	Desc     string
+	Severity Severity
+	Required string
 }
 
 type Checker interface {
