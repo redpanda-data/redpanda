@@ -16,6 +16,7 @@ v_cc_library(
     log_set.cc
     segment.cc
     segment_offset_index.cc
+    segment_offset_index_utils.cc
   DEPS
     Seastar::seastar
     v::bytes
