@@ -29,9 +29,11 @@ func Test_floatChecker_Check(t *testing.T) {
 				severity:       Warning,
 			},
 			want: &CheckResult{
-				IsOk:    true,
-				Err:     nil,
-				Current: "0.00",
+				IsOk:     true,
+				Current:  "0.00",
+				Desc:     "Some desc",
+				Severity: Warning,
+				Required: ">= 0.0",
 			},
 		},
 		{
@@ -44,9 +46,12 @@ func Test_floatChecker_Check(t *testing.T) {
 				severity:       Warning,
 			},
 			want: &CheckResult{
-				IsOk:    false,
-				Err:     nil,
-				Current: "1.10",
+				IsOk:     false,
+				Err:      nil,
+				Current:  "1.10",
+				Desc:     "Some desc",
+				Severity: Warning,
+				Required: "0.1",
 			},
 		},
 		{
@@ -58,8 +63,10 @@ func Test_floatChecker_Check(t *testing.T) {
 				severity:       Warning,
 			},
 			want: &CheckResult{
-				IsOk: false,
-				Err:  errors.New("err"),
+				IsOk:     false,
+				Err:      errors.New("err"),
+				Severity: Warning,
+				Required: "< 10",
 			},
 		},
 	}

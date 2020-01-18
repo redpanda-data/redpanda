@@ -40,15 +40,17 @@ func (c *floatChecker) GetRequiredAsString() string {
 }
 
 func (c *floatChecker) Check() *CheckResult {
+	res := &CheckResult{
+		Desc:     c.GetDesc(),
+		Severity: c.GetSeverity(),
+		Required: c.GetRequiredAsString(),
+	}
 	current, err := c.getCurrent()
 	if err != nil {
-		return &CheckResult{
-			IsOk: false,
-			Err:  err,
-		}
+		res.Err = err
+		return res
 	}
-	return &CheckResult{
-		IsOk:    c.check(current),
-		Current: fmt.Sprintf("%.2f", current),
-	}
+	res.IsOk = c.check(current)
+	res.Current = fmt.Sprintf("%.2f", current)
+	return res
 }

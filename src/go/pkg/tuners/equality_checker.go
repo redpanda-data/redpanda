@@ -43,15 +43,17 @@ func (c *equalityChecker) GetRequiredAsString() string {
 }
 
 func (c *equalityChecker) Check() *CheckResult {
+	res := &CheckResult{
+		Desc:     c.GetDesc(),
+		Severity: c.GetSeverity(),
+		Required: c.GetRequiredAsString(),
+	}
 	current, err := c.getCurrent()
 	if err != nil {
-		return &CheckResult{
-			IsOk: false,
-			Err:  err,
-		}
+		res.Err = err
+		return res
 	}
-	return &CheckResult{
-		IsOk:    reflect.DeepEqual(c.required, current),
-		Current: fmt.Sprint(current),
-	}
+	res.IsOk = reflect.DeepEqual(c.required, current)
+	res.Current = fmt.Sprint(current)
+	return res
 }

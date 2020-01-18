@@ -29,9 +29,11 @@ func Test_intChecker_Check(t *testing.T) {
 				severity:       Warning,
 			},
 			want: &CheckResult{
-				IsOk:    true,
-				Err:     nil,
-				Current: "0",
+				IsOk:     true,
+				Current:  "0",
+				Desc:     "Some desc",
+				Severity: Warning,
+				Required: "0",
 			},
 		},
 		{
@@ -44,9 +46,11 @@ func Test_intChecker_Check(t *testing.T) {
 				severity:       Warning,
 			},
 			want: &CheckResult{
-				IsOk:    false,
-				Err:     nil,
-				Current: "1",
+				IsOk:     false,
+				Current:  "1",
+				Desc:     "Some desc",
+				Severity: Warning,
+				Required: "0",
 			},
 		},
 		{
@@ -58,8 +62,10 @@ func Test_intChecker_Check(t *testing.T) {
 				severity:       Warning,
 			},
 			want: &CheckResult{
-				IsOk: false,
-				Err:  errors.New("err"),
+				IsOk:     false,
+				Err:      errors.New("err"),
+				Severity: Warning,
+				Required: "0",
 			},
 		},
 	}

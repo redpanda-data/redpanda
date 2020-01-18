@@ -40,15 +40,17 @@ func (c *intChecker) GetRequiredAsString() string {
 }
 
 func (c *intChecker) Check() *CheckResult {
+	res := &CheckResult{
+		Desc:     c.GetDesc(),
+		Severity: c.GetSeverity(),
+		Required: c.GetRequiredAsString(),
+	}
 	current, err := c.getCurrent()
 	if err != nil {
-		return &CheckResult{
-			IsOk: false,
-			Err:  err,
-		}
+		res.Err = err
+		return res
 	}
-	return &CheckResult{
-		IsOk:    c.check(current),
-		Current: strconv.Itoa(current),
-	}
+	res.IsOk = c.check(current)
+	res.Current = strconv.Itoa(current)
+	return res
 }

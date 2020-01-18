@@ -27,9 +27,12 @@ func Test_equalityChecker_Check(t *testing.T) {
 				severity:   Warning,
 			},
 			want: &CheckResult{
-				IsOk:    true,
-				Err:     nil,
-				Current: "STR_1",
+				IsOk:     true,
+				Err:      nil,
+				Current:  "STR_1",
+				Required: "STR_1",
+				Severity: Warning,
+				Desc:     "Some desc",
 			},
 		},
 		{
@@ -41,9 +44,12 @@ func Test_equalityChecker_Check(t *testing.T) {
 				severity:   Warning,
 			},
 			want: &CheckResult{
-				IsOk:    true,
-				Err:     nil,
-				Current: "true",
+				IsOk:     true,
+				Err:      nil,
+				Current:  "true",
+				Required: "true",
+				Severity: Warning,
+				Desc:     "Some desc",
 			},
 		},
 		{
@@ -55,9 +61,12 @@ func Test_equalityChecker_Check(t *testing.T) {
 				severity:   Warning,
 			},
 			want: &CheckResult{
-				IsOk:    false,
-				Err:     nil,
-				Current: "STR_1",
+				IsOk:     false,
+				Err:      nil,
+				Current:  "STR_1",
+				Required: "STR_2",
+				Severity: Warning,
+				Desc:     "Some desc",
 			},
 		},
 		{
@@ -68,8 +77,10 @@ func Test_equalityChecker_Check(t *testing.T) {
 				severity:   Warning,
 			},
 			want: &CheckResult{
-				IsOk: false,
-				Err:  errors.New("e"),
+				IsOk:     false,
+				Err:      errors.New("e"),
+				Required: "STR_2",
+				Severity: Warning,
 			},
 		},
 	}
