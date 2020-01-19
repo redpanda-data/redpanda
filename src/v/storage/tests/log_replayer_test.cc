@@ -1,18 +1,56 @@
+#include "random/generators.h"
 #include "storage/disk_log_appender.h"
 #include "storage/log_replayer.h"
 #include "storage/log_segment_reader.h"
+#include "storage/segment_offset_index.h"
 #include "storage/tests/random_batch.h"
 #include "utils/file_sanitizer.h"
 
 #include <seastar/core/thread.hh>
 #include <seastar/testing/thread_test_case.hh>
 
+#include <memory>
+
 using namespace storage; // NOLINT
 
 struct context {
-    segment_reader_ptr log_seg;
+    std::unique_ptr<segment> _seg;
     std::optional<log_replayer> replayer_opt;
 
+    void initialize(model::offset base) {
+        ss::sstring base_name = "test."
+                                + random_generators::gen_alphanum_string(20);
+        auto fd = ss::open_file_dma(
+                    base_name,
+                    ss::open_flags::truncate | ss::open_flags::create
+                      | ss::open_flags::rw)
+                    .get0();
+        auto fidx = ss::open_file_dma(
+                      base_name + ".offset_index",
+                      ss::open_flags::truncate | ss::open_flags::create
+                        | ss::open_flags::rw)
+                      .get0();
+        fd = ss::file(ss::make_shared(file_io_sanitizer(std::move(fd))));
+        fidx = ss::file(ss::make_shared(file_io_sanitizer(std::move(fidx))));
+
+        auto appender = std::make_unique<log_segment_appender>(
+          fd,
+          log_segment_appender::options(ss::default_priority_class()));
+        auto indexer = std::make_unique<segment_offset_index>(
+          base_name + ".offset_index", std::move(fidx), base, 4096);
+        auto reader = ss::make_lw_shared<log_segment_reader>(
+          base_name,
+          // file.dup() _must_ be for read only. the opposite order between
+          // appender and reader is a bug.
+          ss::file(fd.dup()),
+          model::term_id(0),
+          base,
+          appender->file_byte_offset(),
+          128);
+        _seg = std::make_unique<segment>(
+          reader, std::move(indexer), std::move(appender));
+    }
+    ~context() { _seg->close().get(); }
     void write_garbage() {
         do_write(
           [](log_segment_appender& appender) {
@@ -34,27 +72,15 @@ struct context {
 
     template<typename Writer>
     void do_write(Writer&& w, model::offset base) {
-        auto fd = ss::open_file_dma(
-                    "test", ss::open_flags::create | ss::open_flags::rw)
-                    .get0();
-        fd = ss::file(ss::make_shared(file_io_sanitizer(std::move(fd))));
-        auto appender = log_segment_appender(
-          fd, log_segment_appender::options(ss::default_priority_class()));
-        w(appender);
-        appender.flush().get();
-        log_seg = ss::make_lw_shared<log_segment_reader>(
-          "test",
-          std::move(fd),
-          model::term_id(0),
-          base,
-          appender.file_byte_offset(),
-          128);
-        replayer_opt = log_replayer(log_seg);
+        initialize(base);
+        w(*_seg->appender());
+        _seg->flush().get();
+        _seg->reader()->set_last_visible_byte_offset(
+          _seg->appender()->file_byte_offset());
+        replayer_opt = log_replayer(*_seg);
     }
 
     log_replayer& replayer() { return *replayer_opt; }
-
-    ~context() { log_seg->close().get(); }
 };
 
 SEASTAR_THREAD_TEST_CASE(test_can_recover_single_batch) {
@@ -64,7 +90,7 @@ SEASTAR_THREAD_TEST_CASE(test_can_recover_single_batch) {
     ctx.write(batches);
     auto recovered = ctx.replayer().recover_in_thread(
       ss::default_priority_class());
-    BOOST_CHECK(bool(recovered));
+    BOOST_REQUIRE(bool(recovered));
     BOOST_CHECK(bool(recovered.last_valid_offset()));
     BOOST_CHECK_EQUAL(recovered.last_valid_offset().value(), last_offset);
 }

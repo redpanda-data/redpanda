@@ -26,21 +26,6 @@ public:
     static constexpr bool is_nothrow_v
       = std::is_nothrow_move_constructible_v<underlying_t>;
 
-    template<typename Iterator>
-    static underlying_t readers_as_handles(Iterator begin, Iterator end) {
-        underlying_t ret;
-        ret.reserve(std::distance(begin, end));
-        while (begin != end) {
-            ret.push_back(segment(*begin));
-            ++begin;
-        }
-        return ret;
-    }
-    static underlying_t
-    readers_as_handles(std::initializer_list<segment_reader_ptr> c) {
-        return readers_as_handles(std::begin(c), std::end(c));
-    }
-
     explicit log_set(underlying_t) noexcept(is_nothrow_v);
     log_set(log_set&&) noexcept = default;
     log_set& operator=(log_set&&) noexcept = default;
@@ -56,6 +41,7 @@ public:
 
     void pop_back();
 
+    underlying_t release() && { return std::move(_handles); }
     segment& back() { return _handles.back(); }
     const segment& back() const { return _handles.back(); }
     const segment& front() const { return _handles.front(); }

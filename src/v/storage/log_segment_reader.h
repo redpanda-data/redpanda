@@ -37,7 +37,7 @@ public:
     void set_last_visible_byte_offset(uint64_t o) { _file_size = o; }
 
     /// file name
-    ss::sstring get_filename() const { return _filename; }
+    const ss::sstring& filename() const { return _filename; }
 
     /// current term
     model::term_id term() const { return _term; }

@@ -59,13 +59,17 @@ std::optional<size_t> segment_offset_index::lower_bound(model::offset o) {
     return std::nullopt;
 }
 
-ss::future<> segment_offset_index::materialize_index() {
+ss::future<bool> segment_offset_index::materialize_index() {
     return _out.size()
       .then([this](uint64_t size) mutable {
           return _out.dma_read_bulk<char>(0, size);
       })
       .then([this](ss::temporary_buffer<char> buf) {
+          if (buf.empty()) {
+              return false;
+          }
           _positions = offset_index_from_buf(std::move(buf));
+          return true;
       });
 }
 
@@ -75,7 +79,6 @@ ss::future<> segment_offset_index::flush() {
     }
     _needs_persistence = false;
     return _out.truncate(0).then([this] {
-        _positions.shrink_to_fit();
         auto b = offset_index_to_buf(_positions);
         auto out = ss::make_lw_shared<ss::output_stream<char>>(
           ss::make_file_output_stream(ss::file(_out.dup())));
@@ -87,6 +90,18 @@ ss::future<> segment_offset_index::flush() {
 }
 ss::future<> segment_offset_index::close() {
     return flush().then([this] { return _out.close(); });
+}
+std::ostream& operator<<(std::ostream& o, const segment_offset_index& i) {
+    return o << "{file:" << i.filename() << ", base_offset:" << i.base_offset()
+             << ", indexed_offsets:" << i.indexed_offsets()
+             << ", step:" << i.step()
+             << ", needs_persistence:" << i.needs_persistence() << "}";
+}
+std::ostream& operator<<(std::ostream& o, const segment_offset_index_ptr& i) {
+    if (i) {
+        return o << "{ptr=" << *i << "}";
+    }
+    return o << "{ptr=nullptr}";
 }
 
 } // namespace storage
