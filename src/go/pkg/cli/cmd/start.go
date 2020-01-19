@@ -90,7 +90,7 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			err = prestart(fs, rpArgs, conf, prestartCfg, timeout)
+			err = prestart(fs, rpArgs, configFile, conf, prestartCfg, timeout)
 			if err != nil {
 				return err
 			}
@@ -165,17 +165,13 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 func prestart(
 	fs afero.Fs,
 	args *redpanda.RedpandaArgs,
+	configFile string,
 	conf *config.Config,
 	prestartCfg prestartConfig,
 	timeout time.Duration,
 ) error {
 	if prestartCfg.checkEnabled {
-		checkersMap, err := tuners.RedpandaCheckers(fs,
-			args.SeastarFlags["io-properties-file"], conf, timeout)
-		if err != nil {
-			return err
-		}
-		err = check(checkersMap, checkFailedActions(args))
+		err := check(fs, configFile, conf, timeout, checkFailedActions(args))
 		if err != nil {
 			return err
 		}
@@ -338,29 +334,27 @@ func checkFailedActions(
 }
 
 func check(
-	checkersMap map[tuners.CheckerID][]tuners.Checker,
+	fs afero.Fs,
+	configFile string,
+	conf *config.Config,
+	timeout time.Duration,
 	checkFailedActions map[tuners.CheckerID]checkFailedAction,
 ) error {
-	for checkerID, checkersSlice := range checkersMap {
-		for _, checker := range checkersSlice {
-			result := checker.Check()
-			if result.Err != nil {
-				if checker.GetSeverity() == tuners.Fatal {
-					return result.Err
-				}
-				log.Warnf("System check '%s' failed with non-fatal error '%s'", checker.GetDesc(), result.Err)
+	results, err := tuners.Check(fs, configFile, conf, timeout)
+	if err != nil {
+		return err
+	}
+	for _, result := range results {
+		if !result.IsOk {
+			if action, exists := checkFailedActions[result.CheckerId]; exists {
+				action(&result)
 			}
-			if !result.IsOk {
-				if action, exists := checkFailedActions[checkerID]; exists {
-					action(result)
-				}
-				msg := fmt.Sprintf("System check '%s' failed. Required: %v, Current %v",
-					checker.GetDesc(), checker.GetRequiredAsString(), result.Current)
-				if checker.GetSeverity() == tuners.Fatal {
-					return fmt.Errorf(msg)
-				}
-				log.Warn(msg)
+			msg := fmt.Sprintf("System check '%s' failed. Required: %v, Current %v",
+				result.Desc, result.Required, result.Current)
+			if result.Severity == tuners.Fatal {
+				return fmt.Errorf(msg)
 			}
+			log.Warn(msg)
 		}
 	}
 	return nil
