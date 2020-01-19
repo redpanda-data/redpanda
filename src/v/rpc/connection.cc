@@ -23,12 +23,13 @@ ss::future<> connection::shutdown() {
     _probe.connection_closed();
     try {
         _fd.shutdown_input();
+        _fd.shutdown_output();
     } catch (...) {
         _probe.connection_close_error();
         rpclog.debug(
           "Failed to shutdown connection: {}", std::current_exception());
     }
-    return _out.stop();
+    return ss::make_ready_future<>();
 }
 ss::future<> connection::write(ss::scattered_message<char> msg) {
     _probe.add_bytes_sent(msg.size());

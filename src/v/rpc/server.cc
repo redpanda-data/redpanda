@@ -175,11 +175,10 @@ ss::future<> server::stop() {
     rpclog.debug("Service probes {}", _probe);
     rpclog.info("Shutting down {} connections", _connections.size());
     _as.request_abort();
-    // dispatch the gate first, wait for all connections to drain
-    return _conn_gate.close().then([this] {
-        return ss::do_for_each(
-          _connections, [](connection& c) { return c.shutdown(); });
-    });
+    // close the connections and wait for all dispatches to finish
+    return ss::do_for_each(
+             _connections, [](connection& c) { return c.shutdown(); })
+      .then([this] { return _conn_gate.close(); });
 }
 void server::setup_metrics() {
     namespace sm = ss::metrics;
