@@ -208,6 +208,7 @@ ss::future<> transport::dispatch(header h) {
     if (it == _correlations.end()) {
         // We removed correlation already
         _probe.server_correlation_error();
+        return ss::make_ready_future<>();
     }
     _probe.add_bytes_received(header_size + h.size);
     auto ctx = std::make_unique<client_context_impl>(*this, std::move(h));
