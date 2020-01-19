@@ -50,9 +50,10 @@ func (c *equalityChecker) GetRequiredAsString() string {
 
 func (c *equalityChecker) Check() *CheckResult {
 	res := &CheckResult{
-		Desc:     c.GetDesc(),
-		Severity: c.GetSeverity(),
-		Required: c.GetRequiredAsString(),
+		CheckerId: c.Id(),
+		Desc:      c.GetDesc(),
+		Severity:  c.GetSeverity(),
+		Required:  c.GetRequiredAsString(),
 	}
 	current, err := c.getCurrent()
 	if err != nil {
