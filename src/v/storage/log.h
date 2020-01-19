@@ -88,8 +88,7 @@ public:
 
     // Truncate log at offset specified
     //
-    // Provided index is the last index that will be preserved after
-    // truncation.
+    // Provided index is the first index that will be truncated
     //
     //
     // Example
@@ -102,13 +101,13 @@ public:
     //
     // segment: {[10,10][11,30][31,100][101,103]}
     //
-    // Truncate at offset 30 will result in
+    // Truncate at offset 31 will result in
     //
     // segment: {[10,10][11,30]}
     //
-    // Truncate at offset 29 will result in
+    // Truncate at offset 11 will result in
     //
-    // segment: {[10,10][11,30]}
+    // segment: {[10,10]}
 
     ss::future<> truncate(model::offset offset) {
         return _impl->truncate(offset);
