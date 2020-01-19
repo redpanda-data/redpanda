@@ -44,14 +44,6 @@ func NewCheckCommand(fs afero.Fs) *cobra.Command {
 	return command
 }
 
-type row struct {
-	desc     string
-	required string
-	current  string
-	severity string
-	result   string
-}
-
 func appendToTable(t *tablewriter.Table, r tuners.CheckResult) {
 	t.Append([]string{
 		r.Desc,
