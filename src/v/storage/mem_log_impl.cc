@@ -2,38 +2,56 @@
 #include "model/timeout_clock.h"
 #include "seastarx.h"
 #include "storage/log.h"
+#include "storage/logger.h"
 
 #include <seastar/core/future-util.hh>
 
+#include <boost/intrusive/list_hook.hpp>
 namespace storage {
 struct mem_log_impl;
-
 // makes a copy of every batch starting at some iterator
-class mem_iter_reader final : public model::record_batch_reader::impl {
+class mem_iter_reader final
+  : public model::record_batch_reader::impl
+  , public boost::intrusive::list_base_hook<> {
 public:
     using map_t = std::map<model::offset, model::record_batch>;
     using iterator = typename map_t::iterator;
-    mem_iter_reader(iterator begin, iterator end, model::offset eof)
-      : _cur(begin)
+    mem_iter_reader(
+      boost::intrusive::list<mem_iter_reader>& hook,
+      iterator begin,
+      iterator end,
+      model::offset eof)
+      : _hook(hook)
+      , _cur(begin)
       , _end(end)
-      , _endoffset(eof) {}
+      , _endoffset(eof) {
+        _hook.get().push_back(*this);
+    }
     mem_iter_reader(const mem_iter_reader&) = delete;
     mem_iter_reader& operator=(const mem_iter_reader&) = delete;
     mem_iter_reader(mem_iter_reader&&) noexcept = default;
     mem_iter_reader& operator=(mem_iter_reader&&) noexcept = default;
-
+    ~mem_iter_reader() override {
+        _hook.get().erase(_hook.get().iterator_to(*this));
+    }
     ss::future<span> do_load_slice(model::timeout_clock::time_point) final {
-        std::next(_cur);
-        if (_cur == _end || _cur->first > _endoffset) {
+        if (_invalidated || _cur == _end || _cur->first > _endoffset) {
             _end_of_stream = true;
             return ss::make_ready_future<span>();
         }
         _data = _cur->second.share();
         model::record_batch* x = &_data.value();
+        _cur = std::next(_cur);
         return ss::make_ready_future<span>(span(x, 1));
     }
 
+    model::offset end_offset() { return _endoffset; }
+
+    void invalidate() { _invalidated = true; }
+
 private:
+    bool _invalidated = false;
+    std::reference_wrapper<boost::intrusive::list<mem_iter_reader>> _hook;
     std::optional<model::record_batch> _data;
     iterator _cur;
     iterator _end;
@@ -72,6 +90,16 @@ struct mem_log_impl final : log::impl {
     ss::future<> flush() final { return ss::make_ready_future<>(); }
 
     ss::future<> truncate(model::offset offset) final {
+        stlog.debug("Truncating {} log at {}", ntp(), offset);
+        if (__builtin_expect(offset < model::offset(0), false)) {
+            throw std::invalid_argument("cannot truncate at negative offset");
+        }
+        for (auto& reader : _readers) {
+            if (reader.end_offset() >= offset) {
+                reader.invalidate();
+            }
+        }
+
         auto it = _data.find(offset);
         _data.erase(it, _data.end());
         return ss::make_ready_future<>();
@@ -79,8 +107,10 @@ struct mem_log_impl final : log::impl {
 
     model::record_batch_reader make_reader(log_reader_config cfg) final {
         auto it = _data.find(cfg.start_offset);
-        return model::record_batch_reader(
-          std::make_unique<mem_iter_reader>(it, _data.end(), cfg.max_offset));
+        auto reader = model::record_batch_reader(
+          std::make_unique<mem_iter_reader>(
+            _readers, it, _data.end(), cfg.max_offset));
+        return reader;
     }
 
     log_appender make_appender(log_append_config cfg) final {
@@ -100,7 +130,7 @@ struct mem_log_impl final : log::impl {
         if (_data.empty()) {
             return model::offset{};
         }
-        return _data.begin()->first;
+        return _data.begin()->second.base_offset();
     }
     model::offset max_offset() const final {
         // default value
@@ -108,19 +138,28 @@ struct mem_log_impl final : log::impl {
             return model::offset{};
         }
         auto it = _data.end();
-        return std::prev(it)->first;
+        return std::prev(it)->second.last_offset();
     }
 
     model::offset committed_offset() const final { return max_offset(); }
-
+    boost::intrusive::list<mem_iter_reader> _readers;
     std::map<model::offset, model::record_batch> _data;
 };
 
-ss::future<ss::stop_iteration> mem_log_appender::
-operator()(model::record_batch&& batch) {
-    model::offset cur = _cur_offset;
-    _cur_offset = _cur_offset + model::offset(1);
-    _log._data.emplace(cur, std::move(batch));
+ss::future<ss::stop_iteration>
+mem_log_appender::operator()(model::record_batch&& batch) {
+    batch.set_base_offset(_cur_offset);
+
+    stlog.trace(
+      "Wrting to {} batch of {} records offsets [{},{}]",
+      _log.ntp(),
+      batch.size(),
+      batch.base_offset(),
+      batch.last_offset(),
+      batch.compressed());
+    auto offset = _cur_offset;
+    _cur_offset = batch.last_offset() + model::offset(1);
+    _log._data.emplace(offset, std::move(batch));
     return ss::make_ready_future<ss::stop_iteration>(ss::stop_iteration::no);
 }
 
