@@ -13,6 +13,7 @@ const prefferedClkSource = "tsc"
 
 func NewClockSourceChecker(fs afero.Fs) Checker {
 	return NewEqualityChecker(
+		ClockSource,
 		"Clock Source",
 		Warning,
 		prefferedClkSource,

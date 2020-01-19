@@ -9,12 +9,14 @@ import (
 // returned by getCurrent function is equal to required value. This checker uses
 // reflect.DeepEqual to comparte the values
 func NewEqualityChecker(
+	id CheckerID,
 	desc string,
 	severity Severity,
 	required interface{},
 	getCurrent func() (interface{}, error),
 ) Checker {
 	return &equalityChecker{
+		id:         id,
 		desc:       desc,
 		required:   required,
 		getCurrent: getCurrent,
@@ -23,11 +25,15 @@ func NewEqualityChecker(
 }
 
 type equalityChecker struct {
-	Checker
+	id         CheckerID
 	desc       string
 	severity   Severity
 	required   interface{}
 	getCurrent func() (interface{}, error)
+}
+
+func (c *equalityChecker) Id() CheckerID {
+	return c.id
 }
 
 func (c *equalityChecker) GetDesc() string {

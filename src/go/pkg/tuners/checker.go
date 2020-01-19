@@ -27,6 +27,7 @@ type CheckResult struct {
 }
 
 type Checker interface {
+	Id() CheckerID
 	GetDesc() string
 	Check() *CheckResult
 	GetRequiredAsString() string

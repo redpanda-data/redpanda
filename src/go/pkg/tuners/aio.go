@@ -15,6 +15,7 @@ const maxAIOEvents = 1048576
 
 func NewMaxAIOEventsChecker(fs afero.Fs) Checker {
 	return NewEqualityChecker(
+		MaxAIOEvents,
 		"Max AIO Events",
 		Warning,
 		1024*1024,

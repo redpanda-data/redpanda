@@ -3,6 +3,7 @@ package tuners
 import "strconv"
 
 func NewIntChecker(
+	id CheckerID,
 	desc string,
 	severity Severity,
 	check func(int) bool,
@@ -10,6 +11,7 @@ func NewIntChecker(
 	getCurrent func() (int, error),
 ) Checker {
 	return &intChecker{
+		id:             id,
 		desc:           desc,
 		check:          check,
 		renderRequired: renderRequired,
@@ -19,12 +21,16 @@ func NewIntChecker(
 }
 
 type intChecker struct {
-	Checker
+	id             CheckerID
 	desc           string
 	check          func(int) bool
 	renderRequired func() string
 	getCurrent     func() (int, error)
 	severity       Severity
+}
+
+func (c *intChecker) Id() CheckerID {
+	return c.id
 }
 
 func (c *intChecker) GetDesc() string {

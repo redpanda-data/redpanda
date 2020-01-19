@@ -18,6 +18,7 @@ const (
 
 func NewSwappinessChecker(fs afero.Fs) Checker {
 	return NewEqualityChecker(
+		Swappiness,
 		"Swappiness",
 		Warning,
 		ExpectedSwappiness,
@@ -37,7 +38,6 @@ func NewSwappinessTuner(
 	return NewCheckedTunable(
 		NewSwappinessChecker(fs),
 		func() TuneResult {
-
 			log.Debugf("Setting swappiness to %d", ExpectedSwappiness)
 			err := executor.Execute(
 				commands.NewWriteFileCmd(

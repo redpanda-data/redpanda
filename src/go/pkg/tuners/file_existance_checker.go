@@ -5,9 +5,10 @@ import (
 )
 
 func NewFileExistanceChecker(
-	fs afero.Fs, desc string, severity Severity, filePath string,
+	fs afero.Fs, id CheckerID, desc string, severity Severity, filePath string,
 ) Checker {
 	return NewEqualityChecker(
+		id,
 		desc,
 		severity,
 		true,

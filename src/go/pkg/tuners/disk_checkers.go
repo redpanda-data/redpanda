@@ -29,6 +29,7 @@ func NewDeviceNomergesChecker(
 	fs afero.Fs, device string, schedulerInfo disk.SchedulerInfo,
 ) Checker {
 	return NewEqualityChecker(
+		NomergesChecker,
 		fmt.Sprintf("Disk %s nomerges tuned", device),
 		Warning,
 		true,
@@ -62,6 +63,7 @@ func NewDeviceSchedulerChecker(
 	fs afero.Fs, device string, schedulerInfo disk.SchedulerInfo,
 ) Checker {
 	return NewEqualityChecker(
+		SchedulerChecker,
 		fmt.Sprintf("Disk %s scheduler tuned", device),
 		Warning,
 		true,
@@ -101,6 +103,7 @@ func NewDisksIRQAffinityStaticChecker(
 	balanceService irq.BalanceService,
 ) Checker {
 	return NewEqualityChecker(
+		DiskIRQsAffinityStaticChecker,
 		"Disks IRQs affinity static",
 		Warning,
 		true,
@@ -141,6 +144,7 @@ func NewDisksIRQAffinityChecker(
 	cpuMasks irq.CpuMasks,
 ) Checker {
 	return NewEqualityChecker(
+		DiskIRQsAffinityChecker,
 		"Disks IRQs affinity set",
 		Warning,
 		true,

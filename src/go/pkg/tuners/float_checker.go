@@ -3,6 +3,7 @@ package tuners
 import "fmt"
 
 func NewFloatChecker(
+	id CheckerID,
 	desc string,
 	severity Severity,
 	check func(float64) bool,
@@ -10,6 +11,7 @@ func NewFloatChecker(
 	getCurrent func() (float64, error),
 ) Checker {
 	return &floatChecker{
+		id:             id,
 		desc:           desc,
 		check:          check,
 		renderRequired: renderRequired,
@@ -19,12 +21,16 @@ func NewFloatChecker(
 }
 
 type floatChecker struct {
-	Checker
+	id             CheckerID
 	desc           string
 	check          func(float64) bool
 	renderRequired func() string
 	getCurrent     func() (float64, error)
 	severity       Severity
+}
+
+func (c *floatChecker) Id() CheckerID {
+	return c.id
 }
 
 func (c *floatChecker) GetDesc() string {

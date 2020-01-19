@@ -37,6 +37,7 @@ const (
 	NicRfsChecker
 	NicXpsChecker
 	NicRpsChecker
+	NicNTupleChecker
 	RfsTableEntriesChecker
 	ListenBacklogChecker
 	SynBacklogChecker
@@ -47,6 +48,7 @@ const (
 
 func NewConfigChecker(conf *config.Config) Checker {
 	return NewEqualityChecker(
+		ConfigFileChecker,
 		"Config file valid",
 		Fatal,
 		true,
@@ -58,6 +60,7 @@ func NewConfigChecker(conf *config.Config) Checker {
 
 func NewDataDirWritableChecker(fs afero.Fs, path string) Checker {
 	return NewEqualityChecker(
+		DataDirAccessChecker,
 		"Data directory is writable",
 		Fatal,
 		true,
@@ -68,6 +71,7 @@ func NewDataDirWritableChecker(fs afero.Fs, path string) Checker {
 
 func NewFreeDiskSpaceChecker(path string) Checker {
 	return NewFloatChecker(
+		DiskSpaceChecker,
 		"Data partition free space [GB]",
 		Warning,
 		func(current float64) bool {
@@ -83,6 +87,7 @@ func NewFreeDiskSpaceChecker(path string) Checker {
 
 func NewMemoryChecker(fs afero.Fs) Checker {
 	return NewIntChecker(
+		FreeMemChecker,
 		"Free memory [MB]",
 		Warning,
 		func(current int) bool {
@@ -99,6 +104,7 @@ func NewMemoryChecker(fs afero.Fs) Checker {
 
 func NewSwapChecker(fs afero.Fs) Checker {
 	return NewEqualityChecker(
+		SwapChecker,
 		"Swap enabled",
 		Warning,
 		true,
@@ -110,6 +116,7 @@ func NewSwapChecker(fs afero.Fs) Checker {
 
 func NewFilesystemTypeChecker(path string) Checker {
 	return NewEqualityChecker(
+		FsTypeChecker,
 		"Data directory filesystem type",
 		Warning,
 		filesystem.Xfs,
@@ -123,6 +130,7 @@ func NewIOConfigFileExistanceChecker(
 ) Checker {
 	return NewFileExistanceChecker(
 		fs,
+		IoConfigFileChecker,
 		"I/O config file present",
 		Warning,
 		filePath)
@@ -130,6 +138,7 @@ func NewIOConfigFileExistanceChecker(
 
 func NewTransparentHugePagesChecker(fs afero.Fs) Checker {
 	return NewEqualityChecker(
+		TransparentHugePagesChecker,
 		"Transparent huge pages active",
 		Warning,
 		true,
@@ -140,6 +149,7 @@ func NewTransparentHugePagesChecker(fs afero.Fs) Checker {
 
 func NewNTPSyncChecker(timeout time.Duration, fs afero.Fs) Checker {
 	return NewEqualityChecker(
+		NtpChecker,
 		"NTP Synced",
 		Warning,
 		true,

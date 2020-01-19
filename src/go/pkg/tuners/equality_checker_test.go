@@ -87,6 +87,7 @@ func Test_equalityChecker_Check(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			v := NewEqualityChecker(
+				0,
 				tt.fields.desc,
 				tt.fields.severity,
 				tt.fields.required,

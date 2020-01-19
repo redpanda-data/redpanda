@@ -61,6 +61,7 @@ func (f *netCheckersFactory) NewNicIRQAffinityStaticChecker(
 	interfaces []string,
 ) Checker {
 	return NewEqualityChecker(
+		NicIRQsAffinitStaticChecker,
 		"NIC IRQs affinity static",
 		Warning,
 		true,
@@ -83,6 +84,7 @@ func (f *netCheckersFactory) NewNicIRQAffinityChecker(
 	nic network.Nic, mode irq.Mode, cpuMask string,
 ) Checker {
 	return NewEqualityChecker(
+		NicIRQsAffinitChecker,
 		fmt.Sprintf("NIC %s IRQ affinity set", nic.Name()),
 		Warning,
 		true,
@@ -134,6 +136,7 @@ func (f *netCheckersFactory) NewNicRpsSetChecker(
 	nic network.Nic, mode irq.Mode, cpuMask string,
 ) Checker {
 	return NewEqualityChecker(
+		NicRpsChecker,
 		fmt.Sprintf("NIC %s RPS set", nic.Name()),
 		Warning,
 		true,
@@ -174,6 +177,7 @@ func (f *netCheckersFactory) NewNicRfsCheckers(
 
 func (f *netCheckersFactory) NewNicRfsChecker(nic network.Nic) Checker {
 	return NewEqualityChecker(
+		NicRfsChecker,
 		fmt.Sprintf("NIC %s RFS set", nic.Name()),
 		Warning,
 		true,
@@ -207,6 +211,7 @@ func (f *netCheckersFactory) NewNicNTupleCheckers(
 
 func (f *netCheckersFactory) NewNicNTupleChecker(nic network.Nic) Checker {
 	return NewEqualityChecker(
+		NicNTupleChecker,
 		fmt.Sprintf("NIC %s NTuple set", nic.Name()),
 		Warning,
 		true,
@@ -233,6 +238,7 @@ func (f *netCheckersFactory) NewNicXpsCheckers(
 
 func (f *netCheckersFactory) NewNicXpsChecker(nic network.Nic) Checker {
 	return NewEqualityChecker(
+		NicXpsChecker,
 		fmt.Sprintf("NIC %s XPS set", nic.Name()),
 		Warning,
 		true,
@@ -279,6 +285,7 @@ func readIntFromFile(fs afero.Fs, file string) (int, error) {
 
 func (f *netCheckersFactory) NewRfsTableSizeChecker() Checker {
 	return NewEqualityChecker(
+		RfsTableEntriesChecker,
 		"RFS Table entries",
 		Warning,
 		network.RfsTableSize,
@@ -293,6 +300,7 @@ func (f *netCheckersFactory) NewRfsTableSizeChecker() Checker {
 
 func (f *netCheckersFactory) NewListenBacklogChecker() Checker {
 	return NewEqualityChecker(
+		ListenBacklogChecker,
 		"Socket listen() backlog size",
 		Warning,
 		network.ListenBacklogSize,
@@ -303,6 +311,7 @@ func (f *netCheckersFactory) NewListenBacklogChecker() Checker {
 
 func (f *netCheckersFactory) NewSynBacklogChecker() Checker {
 	return NewEqualityChecker(
+		SynBacklogChecker,
 		"Max syn backlog size",
 		Warning,
 		network.SynBacklogSize,
