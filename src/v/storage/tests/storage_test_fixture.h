@@ -46,6 +46,10 @@ struct random_batches_generator {
     }
 };
 
+constexpr inline static std::array<storage::log_manager::storage_type, 2>
+  storage_types = {storage::log_manager::storage_type::memory,
+                   storage::log_manager::storage_type::disk};
+
 class storage_test_fixture {
 public:
     ss::sstring test_dir = "test_data_"
