@@ -29,20 +29,31 @@ struct context {
                         "test" + ss::to_sstring(id++),
                         ss::open_flags::create | ss::open_flags::rw)
                         .get0();
+            auto fidx = ss::open_file_dma(
+                          "test" + ss::to_sstring(id) + ".offset_index",
+                          ss::open_flags::create | ss::open_flags::rw)
+                          .get0();
             fd = ss::file(ss::make_shared(file_io_sanitizer(std::move(fd))));
+            fidx = ss::file(
+              ss::make_shared(file_io_sanitizer(std::move(fidx))));
             auto appender = log_segment_appender(
               fd, log_segment_appender::options(ss::default_priority_class()));
             storage::write(appender, batch).get();
             appender.flush().get();
             auto log_seg = ss::make_lw_shared<log_segment_reader>(
-              "test",
+              "test" + ss::to_sstring(id),
               std::move(fd),
               model::term_id(0),
               batches.begin()->base_offset(),
               appender.file_byte_offset(),
               128);
+            auto log_idx = std::make_unique<segment_offset_index>(
+              "test" + ss::to_sstring(id) + ".offset_index",
+              std::move(fidx),
+              batches.begin()->base_offset(),
+              4096);
             log_seg->set_last_written_offset(batch.last_offset());
-            logs.add(segment(log_seg));
+            logs.add(segment(log_seg, std::move(log_idx), nullptr));
         }
     }
 

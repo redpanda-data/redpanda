@@ -47,9 +47,12 @@ void crc_record_header_and_key(crc32& crc, const model::record& r) {
     crc.extend(r.key());
 }
 
-class checksumming_consumer : public batch_consumer {
+class checksumming_consumer final : public batch_consumer {
 public:
-    virtual skip consume_batch_start(
+    explicit checksumming_consumer(segment* s)
+      : _seg(s) {}
+
+    skip consume_batch_start(
       model::record_batch_header header, size_t num_records) override {
         _current_batch_crc = header.crc;
         _last_offset = header.last_offset();
@@ -58,7 +61,7 @@ public:
         return skip::no;
     }
 
-    virtual skip consume_record_key(
+    skip consume_record_key(
       size_t size_bytes,
       model::record_attributes attributes,
       int32_t timestamp_delta,
@@ -69,15 +72,15 @@ public:
         return skip::no;
     }
 
-    virtual void consume_record_value(iobuf&& value_and_headers) override {
+    void consume_record_value(iobuf&& value_and_headers) override {
         _crc.extend(value_and_headers);
     }
 
-    virtual void consume_compressed_records(iobuf&& records) override {
+    void consume_compressed_records(iobuf&& records) override {
         _crc.extend(records);
     }
 
-    virtual ss::stop_iteration consume_batch_end() override {
+    ss::stop_iteration consume_batch_end() override {
         if (recovered()) {
             _last_valid_offset = _last_offset;
             return ss::stop_iteration::no;
@@ -90,8 +93,12 @@ public:
     std::optional<model::offset> last_valid_offset() const {
         return _last_valid_offset;
     }
+    ~checksumming_consumer() noexcept override = default;
 
 private:
+    // TODO(agallego) - add indexing recovery logic
+    // https://app.asana.com/0/1149841353291489/1157795002664849/f
+    segment* _seg;
     uint32_t _current_batch_crc = -1;
     crc32 _crc;
     model::offset _last_offset;
@@ -101,21 +108,20 @@ private:
 // Called in the context of a ss::thread
 log_replayer::recovered
 log_replayer::recover_in_thread(const ss::io_priority_class& prio) {
-    stlog.debug("Recovering segment {}", _seg->get_filename());
-    auto data_stream = _seg->data_stream(0, prio);
+    stlog.debug("Recovering segment {}", *_seg);
+    auto data_stream = _seg->reader()->data_stream(0, prio);
     auto d = ss::defer([&data_stream] { data_stream.close().get(); });
-    auto consumer = checksumming_consumer();
+    auto consumer = checksumming_consumer(_seg);
     auto parser = continuous_batch_parser(consumer, data_stream);
     try {
         parser.consume().get();
         return recovered{consumer.recovered(), consumer.last_valid_offset()};
     } catch (const malformed_batch_stream_exception& e) {
-        stlog.debug(
-          "Failed to recover segment {} with {}", _seg->get_filename(), e);
+        stlog.debug("Failed to recover segment {} with {}", *_seg, e);
     } catch (...) {
         stlog.warn(
           "Failed to recover segment {} with {}",
-          _seg->get_filename(),
+          *_seg,
           std::current_exception());
     }
     return recovered{false, std::nullopt};

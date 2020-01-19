@@ -36,12 +36,21 @@ public:
 
     segment_offset_index(
       ss::sstring filename, ss::file, model::offset base, size_t step);
+    segment_offset_index(segment_offset_index&&) noexcept = default;
+    segment_offset_index& operator=(segment_offset_index&&) noexcept = default;
+    segment_offset_index(const segment_offset_index&) = delete;
+    segment_offset_index& operator=(const segment_offset_index&) = delete;
 
     void maybe_track(model::offset o, size_t pos, size_t data_size);
     std::optional<size_t> lower_bound(model::offset o);
+
+    model::offset base_offset() const { return _base; }
+    bool needs_persistence() const { return _needs_persistence; }
+    size_t indexed_offsets() const { return _positions.size(); }
     size_t step() const { return _step; }
     const ss::sstring& filename() const { return _name; }
-    ss::future<> materialize_index();
+
+    ss::future<bool> materialize_index();
     ss::future<> close();
     ss::future<> flush();
 
@@ -49,12 +58,13 @@ private:
     ss::sstring _name;
     ss::file _out;
     model::offset _base;
-    const size_t _step;
+    size_t _step;
     size_t _acc{0};
     bool _needs_persistence{false};
     std::vector<std::pair<uint32_t, uint32_t>> _positions;
 };
 
 using segment_offset_index_ptr = std::unique_ptr<segment_offset_index>;
-
+std::ostream& operator<<(std::ostream&, const segment_offset_index&);
+std::ostream& operator<<(std::ostream&, const segment_offset_index_ptr&);
 } // namespace storage
