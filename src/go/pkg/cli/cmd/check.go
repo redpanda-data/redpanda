@@ -3,18 +3,14 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"path/filepath"
-	"sort"
 	"time"
 	"vectorized/pkg/cli"
 	"vectorized/pkg/cli/ui"
 	"vectorized/pkg/config"
-	"vectorized/pkg/redpanda"
 	"vectorized/pkg/tuners"
 
 	"github.com/fatih/color"
 	"github.com/olekukonko/tablewriter"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
@@ -56,13 +52,13 @@ type row struct {
 	result   string
 }
 
-func (r row) appendToTable(t *tablewriter.Table) {
+func appendToTable(t *tablewriter.Table, r tuners.CheckResult) {
 	t.Append([]string{
-		r.desc,
-		r.required,
-		r.current,
-		r.severity,
-		r.result,
+		r.Desc,
+		r.Required,
+		r.Current,
+		fmt.Sprint(r.Severity),
+		fmt.Sprint(printResult(r.Severity, r.IsOk)),
 	})
 }
 
@@ -77,8 +73,7 @@ func executeCheck(
 	if err != nil {
 		return err
 	}
-	ioConfigFile := redpanda.GetIOConfigPath(filepath.Dir(configFile))
-	checkersMap, err := tuners.RedpandaCheckers(fs, ioConfigFile, conf, timeout)
+	results, err := tuners.Check(fs, configFile, conf, timeout)
 	if err != nil {
 		return err
 	}
@@ -91,34 +86,10 @@ func executeCheck(
 		"Passed",
 	})
 
-	var rows []row
-	for _, checkersSlice := range checkersMap {
-		for _, c := range checkersSlice {
-			result := c.Check()
-			if result.Err != nil {
-				if c.GetSeverity() == tuners.Fatal {
-					return result.Err
-				}
-				log.Warnf("System check '%s' failed with non-fatal error '%s'", c.GetDesc(), result.Err)
-			}
-			log.Debugf("Checker '%s' result %+v", c.GetDesc(), result)
-			rows = append(rows, row{
-				desc:     c.GetDesc(),
-				required: fmt.Sprint(c.GetRequiredAsString()),
-				current:  result.Current,
-				severity: fmt.Sprint(c.GetSeverity()),
-				result:   fmt.Sprint(printResult(c.GetSeverity(), result.IsOk)),
-			})
-
-		}
+	for _, res := range results {
+		appendToTable(table, res)
 	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i].desc < rows[j].desc })
-	for _, row := range rows {
-		row.appendToTable(table)
-	}
-	fmt.Println()
-	fmt.Println("System check results")
-	fmt.Println()
+	fmt.Printf("\nSystem check results\n")
 	table.Render()
 	return nil
 }
