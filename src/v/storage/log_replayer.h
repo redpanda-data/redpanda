@@ -2,7 +2,7 @@
 
 #include "model/fundamental.h"
 #include "seastarx.h"
-#include "storage/log_segment_reader.h"
+#include "storage/segment.h"
 
 #include <seastar/core/io_queue.hh>
 #include <seastar/util/bool_class.hh>
@@ -11,8 +11,8 @@ namespace storage {
 
 class log_replayer {
 public:
-    explicit log_replayer(segment_reader_ptr seg) noexcept
-      : _seg(std::move(seg)) {}
+    explicit log_replayer(segment& seg) noexcept
+      : _seg(&seg) {}
 
     class [[nodiscard]] recovered {
         explicit recovered(
@@ -38,7 +38,7 @@ public:
     recovered recover_in_thread(const ss::io_priority_class&);
 
 private:
-    segment_reader_ptr _seg;
+    segment* _seg;
 };
 
 } // namespace storage

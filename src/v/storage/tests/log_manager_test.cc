@@ -90,9 +90,9 @@ SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
     BOOST_CHECK_EQUAL(m.get(ntp2)->segment_count(), 0);
     BOOST_CHECK_EQUAL(m.get(ntp3)->segment_count(), 1);
     BOOST_CHECK_EQUAL(m.get(ntp4)->segment_count(), 0);
-    BOOST_CHECK(!file_exists(seg.reader()->get_filename()).get0());
-    BOOST_CHECK(file_exists(seg3.reader()->get_filename()).get0());
-    BOOST_CHECK(!file_exists(seg4.reader()->get_filename()).get0());
+    BOOST_CHECK(!file_exists(seg.reader()->filename()).get0());
+    BOOST_CHECK(file_exists(seg3.reader()->filename()).get0());
+    BOOST_CHECK(!file_exists(seg4.reader()->filename()).get0());
     BOOST_CHECK(
-      file_exists(seg4.reader()->get_filename() + ".cannotrecover").get0());
+      file_exists(seg4.reader()->filename() + ".cannotrecover").get0());
 }

@@ -96,7 +96,7 @@ disk_log_impl::make_reader(log_reader_config config) {
 //     while (first_to_remove != _segs.end()) {
 //         auto truncated = _segs.back().reader;
 //         stlog.debug(
-//           "Truncated whole log segment {}", truncated->get_filename());
+//           "Truncated whole log segment {}", truncated->filename());
 //         truncated_logs.push_back(truncated);
 //         _segs.pop_back();
 //     }
@@ -105,7 +105,7 @@ disk_log_impl::make_reader(log_reader_config config) {
 //              truncated_logs,
 //              [](const segment_reader_ptr& seg) {
 //                  return seg->close().then(
-//                    [seg] { return remove_file(seg->get_filename()); });
+//                    [seg] { return remove_file(seg->filename()); });
 //              })
 //       .then([d = _manager.config().base_dir] { return sync_directory(d); });
 // }
@@ -172,7 +172,7 @@ ss::future<> disk_log_impl::do_truncate(model::offset o) {
     //             .then([this, o, to_truncate](uint64_t f_pos) {
     //                 stlog.debug(
     //                   "Truncating segment {} of size {} at {}",
-    //                   to_truncate->get_filename(),
+    //                   to_truncate->filename(),
     //                   to_truncate->file_size(),
     //                   f_pos);
 
@@ -186,7 +186,7 @@ ss::future<> disk_log_impl::do_truncate(model::offset o) {
     //                 }
     //                 // truncate old segment and roll
     //                 const auto flags = ss::open_flags::rw;
-    //                 return ss::open_file_dma(to_truncate->get_filename(),
+    //                 return ss::open_file_dma(to_truncate->filename(),
     //                 flags)
     //                   .then([this, f_pos](ss::file f) {
     //                       return f.truncate(f_pos)
