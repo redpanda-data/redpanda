@@ -28,6 +28,7 @@ require (
 	github.com/opencontainers/image-spec v1.0.1 // indirect
 	github.com/pkg/errors v0.8.1 // indirect
 	github.com/safchain/ethtool v0.0.0-20190326074333-42ed695e3de8
+	github.com/shirou/gopsutil v2.19.12+incompatible
 	github.com/sirupsen/logrus v1.4.2
 	github.com/spf13/afero v1.2.2
 	github.com/spf13/cobra v0.0.5
