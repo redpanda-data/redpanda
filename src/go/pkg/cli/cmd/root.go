@@ -53,6 +53,7 @@ func init() {
 	cobraRoot.AddCommand(NewStartCommand(fs))
 	cobraRoot.AddCommand(NewModeCommand(fs))
 	cobraRoot.AddCommand(NewConfigCommand(fs))
+	cobraRoot.AddCommand(NewStatusCommand(fs))
 }
 
 // initConfig reads in config file and ENV variables if set.
