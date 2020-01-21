@@ -82,6 +82,7 @@ private:
 };
 
 struct mem_log_impl final : log::impl {
+    using data_t = std::map<model::offset, model::record_batch>;
     // forward ctor
     explicit mem_log_impl(model::ntp n, ss::sstring workdir)
       : log::impl(std::move(n), std::move(workdir)) {}
@@ -115,12 +116,36 @@ struct mem_log_impl final : log::impl {
 
     log_appender make_appender(log_append_config cfg) final {
         auto o = max_offset();
+        _term = cfg.term;
         if (o() < 0) {
             o = model::offset(0);
         } else {
             o = o + model::offset(1);
         }
         return log_appender(std::make_unique<mem_log_appender>(*this, o));
+    }
+
+    struct entries_ordering {
+        bool operator()(
+          const data_t::value_type& e1, const data_t::value_type& e2) const {
+            return e1.first <= e2.first;
+        }
+        bool
+        operator()(const data_t::value_type& e1, model::offset value) const {
+            return e1.second.last_offset() < value;
+        }
+    };
+
+    std::optional<model::term_id> get_term(model::offset o) const final {
+        if (o != model::offset{}) {
+            auto it = std::lower_bound(
+              std::cbegin(_data), std::cend(_data), o, entries_ordering{});
+            if (it != _data.end()) {
+                return it->second.term();
+            }
+        }
+
+        return std::nullopt;
     }
 
     size_t segment_count() const final { return 1; }
@@ -143,20 +168,21 @@ struct mem_log_impl final : log::impl {
 
     model::offset committed_offset() const final { return max_offset(); }
     boost::intrusive::list<mem_iter_reader> _readers;
-    std::map<model::offset, model::record_batch> _data;
+    data_t _data;
+    model::term_id _term;
 };
 
 ss::future<ss::stop_iteration>
 mem_log_appender::operator()(model::record_batch&& batch) {
     batch.set_base_offset(_cur_offset);
-
+    batch.set_term(_log._term);
     stlog.trace(
-      "Wrting to {} batch of {} records offsets [{},{}]",
+      "Wrting to {} batch of {} records offsets [{},{}], term {}",
       _log.ntp(),
       batch.size(),
       batch.base_offset(),
       batch.last_offset(),
-      batch.compressed());
+      batch.term());
     auto offset = _cur_offset;
     _cur_offset = batch.last_offset() + model::offset(1);
     _log._data.emplace(offset, std::move(batch));

@@ -157,8 +157,7 @@ static void set_max_offsets(log_set& segments) {
     }
 }
 
-ss::future<segment>
-log_manager::open_segment(const std::filesystem::path& path, size_t buf_size) {
+ss::future<segment> log_manager::open_segment(const std::filesystem::path& path, size_t buf_size) {
     auto const meta = segment_path::parse_segment_filename(
       path.filename().string());
     if (meta->version != record_version_type::v1) {
@@ -172,12 +171,13 @@ log_manager::open_segment(const std::filesystem::path& path, size_t buf_size) {
     // note: this file _must_ be open in `ro` mode only. Seastar uses dma files
     // with no shared buffer cache around them. When we use a writer w/ dma
     // at the same time as the reader, we need a way to synchronize filesytem
-    // metadata. In order to prevent expensive synchronization primitives fsyncing
-    // both *reads* and *writes* we open this file in ro mode and if raft requires
-    // truncation, we open yet-another handle w/ rw mode just for the truncation
-    // which gives us all the benefits of preventing x-file synchronization
-    // This is fine, because truncation to sealed segments are supposed to be very
-    // rare events. The hotpath of truncating the appender, is optimized.
+    // metadata. In order to prevent expensive synchronization primitives
+    // fsyncing both *reads* and *writes* we open this file in ro mode and if
+    // raft requires truncation, we open yet-another handle w/ rw mode just for
+    // the truncation which gives us all the benefits of preventing x-file
+    // synchronization This is fine, because truncation to sealed segments are
+    // supposed to be very rare events. The hotpath of truncating the appender,
+    // is optimized.
     return ss::open_file_dma(path.string(), ss::open_flags::ro)
       .then([](ss::file f) {
           return f.stat().then([f](struct stat s) {
