@@ -24,27 +24,6 @@ constexpr model::offset expected_last(model::offset t_offset) {
 
 // FIXME: Add test for on disk implementation
 
-FIXTURE_TEST(test_rolling_term, storage_test_fixture) {
-    for (auto type : {log_manager::storage_type::disk}) {
-        storage::log_manager mgr = make_log_manager();
-        auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
-        auto ntp = make_ntp("default", "test", 0);
-        auto log = mgr.manage(ntp, type).get0();
-        std::vector<model::record_batch_header> headers;
-        for (auto i = 0; i < 5; i++) {
-            auto part = append_random_batches(log, 1, model::term_id(i));
-            log.flush().get();
-            std::move(part.begin(), part.end(), std::back_inserter(headers));
-        }
-
-        auto read_batches = read_and_validate_all_batches(log);
-        BOOST_REQUIRE_EQUAL(
-          log.max_offset(), read_batches.back().last_offset());
-        BOOST_REQUIRE_EQUAL(
-          log.committed_offset(), read_batches.back().last_offset());
-    }
-};
-
 FIXTURE_TEST(test_truncate_whole, storage_test_fixture) {
     for (auto type : {log_manager::storage_type::disk}) {
         storage::log_manager mgr = make_log_manager();
