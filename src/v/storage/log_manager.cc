@@ -276,9 +276,11 @@ log_manager::manage(model::ntp ntp, log_manager::storage_type type) {
     }
     ss::sstring path = fmt::format("{}/{}", _config.base_dir, ntp.path());
     if (type == storage_type::memory) {
-        auto l = storage::make_memory_backed_log(ntp, std::move(path));
+        auto l = storage::make_memory_backed_log(ntp, path);
         _logs.emplace(std::move(ntp), l);
-        return ss::make_ready_future<log>(l);
+        // raft uses the directory so it have to be created for in mem
+        // implementation
+        return recursive_touch_directory(path).then([l] { return l; });
     }
     return recursive_touch_directory(path)
       .then([this, path] { return open_segments(path); })
