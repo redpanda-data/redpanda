@@ -33,39 +33,52 @@ void log_set::add(segment&& h) {
 
 void log_set::pop_back() { _handles.pop_back(); }
 
-static inline bool is_offset_in_range(segment& s, model::offset o) {
-    if (s.empty()) {
+template<typename Iterator>
+static inline bool is_offset_in_range(Iterator s, model::offset o) {
+    if (s->empty()) {
         return false;
     }
     // must use max_offset
-    return o <= s.reader()->max_offset() && o >= s.reader()->base_offset();
+    return o <= s->reader()->max_offset() && o >= s->reader()->base_offset();
 }
 
-/// lower_bound returns the element that is _strictly_ greater than or equal to
-/// bucket->max_offset() - see comparator above
-/// because our offsets are _inclusive_ we must check the previous iterator
-/// in the case that we are at the end, we also check the last element.
-log_set::iterator log_set::lower_bound(model::offset offset) {
+template<typename Iterator>
+static Iterator
+segments_lower_bound(Iterator begin, Iterator end, model::offset offset) {
     vassert(offset() >= 0, "cannot find negative logical offsets");
-    if (_handles.empty()) {
-        return _handles.end();
+    if (std::distance(begin, end) == 0) {
+        return end;
     }
-    auto it = std::lower_bound(
-      std::begin(_handles), std::end(_handles), offset, base_offset_ordering{});
-    if (it == _handles.end()) {
+    auto it = std::lower_bound(begin, end, offset, base_offset_ordering{});
+    if (it == end) {
         it = std::prev(it);
     }
-    if (is_offset_in_range(*it, offset)) {
+    if (is_offset_in_range(it, offset)) {
         return it;
     }
-    if (std::distance(_handles.begin(), it) > 0) {
+    if (std::distance(begin, it) > 0) {
         it = std::prev(it);
     }
-    if (is_offset_in_range(*it, offset)) {
+    if (is_offset_in_range(it, offset)) {
         return it;
     }
-    return _handles.end();
+    return end;
 }
+
+/// lower_bound returns the element that is _strictly_ greater than or equal
+/// to bucket->max_offset() - see comparator above because our offsets are
+/// _inclusive_ we must check the previous iterator in the case that we are at
+/// the end, we also check the last element.
+log_set::iterator log_set::lower_bound(model::offset offset) {
+    return segments_lower_bound(
+      std::begin(_handles), std::end(_handles), offset);
+}
+
+log_set::const_iterator log_set::lower_bound(model::offset offset) const {
+    return segments_lower_bound(
+      std::cbegin(_handles), std::cend(_handles), offset);
+}
+
 std::ostream& operator<<(std::ostream& o, const log_set& s) {
     o << "{size: " << s.size() << ", [";
     for (auto& p : s) {
