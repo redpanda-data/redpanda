@@ -41,7 +41,7 @@ FIXTURE_TEST(
 FIXTURE_TEST(append_twice_to_same_segment, storage_test_fixture) {
     for (auto type : storage_types) {
         storage::log_manager mgr = make_log_manager();
-
+        auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
         auto ntp = make_ntp("default", "test", 0);
         auto log = mgr.manage(ntp, type).get0();
         auto headers = append_random_batches(log, 10);
@@ -59,7 +59,6 @@ FIXTURE_TEST(append_twice_to_same_segment, storage_test_fixture) {
         BOOST_REQUIRE_EQUAL(
           log.committed_offset(), batches.back().last_offset());
 
-        mgr.stop().get0();
     }
 };
 
@@ -68,6 +67,7 @@ FIXTURE_TEST(test_assigning_offsets_in_multiple_segment, storage_test_fixture) {
         auto cfg = default_log_config(test_dir);
         cfg.max_segment_size = 1_kb;
         storage::log_manager mgr = make_log_manager(std::move(cfg));
+        auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
         auto ntp = make_ntp("default", "test", 0);
         auto log = mgr.manage(ntp, type).get0();
         auto headers = append_random_batches(log, 10);
@@ -79,7 +79,6 @@ FIXTURE_TEST(test_assigning_offsets_in_multiple_segment, storage_test_fixture) {
         BOOST_REQUIRE_EQUAL(
           log.committed_offset(), batches.back().last_offset());
         validate_offsets(model::offset(0), headers, batches);
-        mgr.stop().get0();
     }
 };
 
@@ -88,6 +87,7 @@ FIXTURE_TEST(test_single_record_per_segment, storage_test_fixture) {
         auto cfg = default_log_config(test_dir);
         cfg.max_segment_size = 10;
         storage::log_manager mgr = make_log_manager(std::move(cfg));
+        auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
         auto ntp = make_ntp("default", "test", 0);
         auto log = mgr.manage(ntp, type).get0();
         auto headers = append_random_batches(log, 10, model::term_id(1), []() {
@@ -104,7 +104,6 @@ FIXTURE_TEST(test_single_record_per_segment, storage_test_fixture) {
         BOOST_REQUIRE_EQUAL(
           log.committed_offset(), batches.back().last_offset());
         validate_offsets(model::offset(0), headers, batches);
-        mgr.stop().get0();
     }
 };
 
@@ -113,19 +112,10 @@ FIXTURE_TEST(test_reading_range_from_a_log, storage_test_fixture) {
         storage::log_manager mgr = make_log_manager();
         auto ntp = make_ntp("default", "test", 0);
         auto log = mgr.manage(ntp, type).get0();
+        auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
         auto headers = append_random_batches(log, 10);
         log.flush().get0();
         auto batches = read_and_validate_all_batches(log);
-
-        storage::log_reader_config read_range_cfg{
-          .start_offset = batches[3].base_offset(),
-          .max_bytes = std::numeric_limits<size_t>::max(),
-          .min_bytes = 0,
-          .prio = ss::default_priority_class(),
-          .type_filter = {},
-          .max_offset = batches[7].last_offset()};
-
-        auto reader = log.make_reader(read_range_cfg);
 
         // range from base of beging to last of end
         auto range = read_range_to_vector(
@@ -148,7 +138,5 @@ FIXTURE_TEST(test_reading_range_from_a_log, storage_test_fixture) {
         BOOST_REQUIRE_EQUAL(range.size(), 5);
         BOOST_REQUIRE_EQUAL(range.front().crc(), batches[3].crc());
         BOOST_REQUIRE_EQUAL(range.back().crc(), batches[7].crc());
-
-        mgr.stop().get0();
     }
 };
