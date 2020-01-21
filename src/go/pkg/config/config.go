@@ -12,8 +12,10 @@ import (
 )
 
 type Config struct {
-	Redpanda *RedpandaConfig
-	Rpk      *RpkConfig `yaml:"rpk,omitempty"`
+	Organization string `yaml:"organization,omitempty"`
+	ClusterId    string `yaml:"cluster_id,omitempty"`
+	Redpanda     *RedpandaConfig
+	Rpk          *RpkConfig `yaml:"rpk,omitempty"`
 }
 
 type RedpandaConfig struct {
