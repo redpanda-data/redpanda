@@ -70,3 +70,26 @@ pipeline does.
 
 [gcloud-install]: https://cloud.google.com/sdk/install
 [gcb-local-install]: https://cloud.google.com/cloud-build/docs/build-debug-locally
+
+## reproduce a build
+
+We achieve bitwise reproducibility via Docker and only support 
+(re)building commits that have previously gone through the GCB 
+pipeline (see previous section), as this process generates a docker 
+image that has all build dependencies needed to reproduce the build. 
+Note that we only persist images for tagged commits and only 
+clang-release builds. To build the `redpanda` binary for an arbitrary 
+commit (e.g. `release-0.1`):
+
+```bash
+cd v
+git checkout release-0.1
+vtools dbuild --ref release-0.1
+```
+
+The above builds the `release-0.1` commit using the container image 
+that was used to produce that build. The same frozen toolchain can be 
+used to build other commits but keep in mind that successfully 
+building depends on how far off the checked out working directory is 
+with respect to the docker image (e.g. a new 3rd-party dependency 
+might not be available in the image).
