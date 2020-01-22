@@ -130,6 +130,12 @@ FIXTURE_TEST(test_reading_range_from_a_log, storage_test_fixture) {
         BOOST_REQUIRE_EQUAL(range.size(), 5);
         BOOST_REQUIRE_EQUAL(range.front().crc(), batches[3].crc());
         BOOST_REQUIRE_EQUAL(range.back().crc(), batches[7].crc());
+
+        range = read_range_to_vector(
+          log, batches[3].last_offset(), batches[7].base_offset());
+        BOOST_REQUIRE_EQUAL(range.size(), 5);
+        BOOST_REQUIRE_EQUAL(range.front().crc(), batches[3].crc());
+        BOOST_REQUIRE_EQUAL(range.back().crc(), batches[7].crc());
         // range from base of beging to the middle of end
         range = read_range_to_vector(
           log,

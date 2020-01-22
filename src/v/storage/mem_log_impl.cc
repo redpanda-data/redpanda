@@ -105,9 +105,24 @@ struct mem_log_impl final : log::impl {
         _data.erase(it, _data.end());
         return ss::make_ready_future<>();
     }
+    struct entries_ordering {
+        bool operator()(
+          const data_t::value_type& e1, const data_t::value_type& e2) const {
+            return e1.first <= e2.first;
+        }
+        bool
+        operator()(const data_t::value_type& e1, model::offset value) const {
+            return e1.second.last_offset() < value;
+        }
+    };
 
     model::record_batch_reader make_reader(log_reader_config cfg) final {
-        auto it = _data.find(cfg.start_offset);
+        auto it = std::lower_bound(
+          std::begin(_data),
+          std::end(_data),
+          cfg.start_offset,
+          entries_ordering{});
+
         auto reader = model::record_batch_reader(
           std::make_unique<mem_iter_reader>(
             _readers, it, _data.end(), cfg.max_offset));
@@ -124,17 +139,6 @@ struct mem_log_impl final : log::impl {
         }
         return log_appender(std::make_unique<mem_log_appender>(*this, o));
     }
-
-    struct entries_ordering {
-        bool operator()(
-          const data_t::value_type& e1, const data_t::value_type& e2) const {
-            return e1.first <= e2.first;
-        }
-        bool
-        operator()(const data_t::value_type& e1, model::offset value) const {
-            return e1.second.last_offset() < value;
-        }
-    };
 
     std::optional<model::term_id> get_term(model::offset o) const final {
         if (o != model::offset{}) {
