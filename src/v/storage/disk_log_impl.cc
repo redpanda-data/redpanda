@@ -209,6 +209,10 @@ std::ostream& disk_log_impl::print(std::ostream& o) const {
     return o << "{term=" << _term << ", logs=" << _segs << "}";
 }
 
+std::ostream& operator<<(std::ostream& o, const disk_log_impl& d) {
+    return d.print(o);
+}
+
 log make_disk_backed_log(model::ntp ntp, log_manager& manager, log_set segs) {
     auto workdir = fmt::format("{}/{}", manager.config().base_dir, ntp.path());
     auto ptr = ss::make_shared<disk_log_impl>(
