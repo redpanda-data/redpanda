@@ -65,13 +65,7 @@ ss::future<> disk_log_impl::flush() {
     if (_segs.empty()) {
         return ss::make_ready_future<>();
     }
-    return _segs.back().flush().then([this] {
-        _tracker.update_committed_offset(_tracker.dirty_offset());
-        _segs.back().reader()->set_last_written_offset(
-          _tracker.committed_offset());
-        _segs.back().reader()->set_last_visible_byte_offset(
-          _segs.back().appender()->file_byte_offset());
-    });
+    return _segs.back().flush();
 }
 ss::future<> disk_log_impl::do_roll() {
     return flush()
