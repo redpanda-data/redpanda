@@ -97,7 +97,6 @@ SEASTAR_THREAD_TEST_CASE(log_set_expects_monotonic_adds) {
       nullptr);
     log_set segs = log_set({});
     segs.add(std::move(s1));
-    BOOST_REQUIRE_THROW(segs.add(std::move(s0)), std::runtime_error);
     BOOST_CHECK_EQUAL(segs.back().reader()->base_offset(), model::offset(1));
 }
 
