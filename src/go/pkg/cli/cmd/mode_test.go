@@ -195,28 +195,30 @@ func TestModeCommand(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		path, err := tt.before(tt.fs)
-		if err != nil {
-			t.Errorf("got an error while setting up the test: %v", err)
-		}
-		var out bytes.Buffer
-		cmd := NewModeCommand(tt.fs)
-		cmd.SetArgs(tt.args)
-		logrus.SetOutput(&out)
-		err = cmd.Execute()
-		if tt.expectedErrMsg != "" && tt.expectedErrMsg != err.Error() {
-			t.Errorf("expected error message:\n%v\ngot:\n%v", tt.expectedErrMsg, err.Error())
-		}
-		output := out.String()
-		if tt.expectedOutput != output {
-			t.Errorf("expected output:\n\"%v\"\ngot:\n\"%v\"", tt.expectedOutput, output)
-		}
-		conf, err := config.ReadConfigFromPath(tt.fs, path)
-		if err != nil {
-			t.Errorf("got an unexpected error while reading the %s: %v", configPath, err)
-		}
-		if !reflect.DeepEqual(conf, &tt.expectedConfig) {
-			t.Errorf("got %v, expected %v", conf, tt.expectedConfig)
-		}
+		t.Run(tt.name, func(t *testing.T) {
+			path, err := tt.before(tt.fs)
+			if err != nil {
+				t.Errorf("got an error while setting up the test: %v", err)
+			}
+			var out bytes.Buffer
+			cmd := NewModeCommand(tt.fs)
+			cmd.SetArgs(tt.args)
+			logrus.SetOutput(&out)
+			err = cmd.Execute()
+			if tt.expectedErrMsg != "" && tt.expectedErrMsg != err.Error() {
+				t.Errorf("expected error message:\n%v\ngot:\n%v", tt.expectedErrMsg, err.Error())
+			}
+			output := out.String()
+			if tt.expectedOutput != output {
+				t.Errorf("expected output:\n\"%v\"\ngot:\n\"%v\"", tt.expectedOutput, output)
+			}
+			conf, err := config.ReadConfigFromPath(tt.fs, path)
+			if err != nil {
+				t.Errorf("got an unexpected error while reading the %s: %v", configPath, err)
+			}
+			if !reflect.DeepEqual(conf, &tt.expectedConfig) {
+				t.Errorf("got %v, expected %v", conf, tt.expectedConfig)
+			}
+		})
 	}
 }
