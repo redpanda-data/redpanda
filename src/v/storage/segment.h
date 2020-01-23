@@ -49,7 +49,7 @@ public:
     segment_appender_ptr& appender() { return _appender; }
     const segment_appender_ptr& appender() const { return _appender; }
     bool has_appender() const { return bool(_appender); }
-    operator bool() const { return bool(_reader); }
+    explicit operator bool() const { return bool(_reader); }
 
 private:
     // last offset of the last batch, i.e.: batch.last_offset()

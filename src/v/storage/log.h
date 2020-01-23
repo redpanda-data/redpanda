@@ -9,6 +9,8 @@
 
 #include <seastar/core/shared_ptr.hh>
 
+#include <utility>
+
 /// \brief Non-synchronized log management class.
 ///
 /// Offset management
@@ -82,7 +84,7 @@ public:
 
 public:
     explicit log(ss::shared_ptr<impl> i)
-      : _impl(i) {}
+      : _impl(std::move(i)) {}
     ss::future<> close() { return _impl->close(); }
     ss::future<> flush() { return _impl->flush(); }
 
@@ -140,7 +142,7 @@ private:
     ss::shared_ptr<impl> _impl;
 };
 
-inline std::ostream& operator<<(std::ostream& o, storage::log lg) {
+inline std::ostream& operator<<(std::ostream& o, const storage::log& lg) {
     o << "{start:" << lg.start_offset() << ", max:" << lg.max_offset()
       << ", committed:" << lg.committed_offset() << ", ";
     return lg.print(o) << "}";

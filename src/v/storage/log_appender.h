@@ -16,7 +16,7 @@ class log_appender {
 public:
     class impl {
     public:
-        virtual ~impl() {}
+        virtual ~impl() = default;
 
         virtual ss::future<> initialize() = 0;
         virtual ss::future<ss::stop_iteration>
