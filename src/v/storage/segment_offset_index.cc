@@ -1,5 +1,6 @@
 #include "storage/segment_offset_index.h"
 
+#include "storage/logger.h"
 #include "storage/segment_offset_index_utils.h"
 #include "vassert.h"
 
@@ -41,20 +42,37 @@ void segment_offset_index::maybe_track(
     }
 }
 struct base_comparator {
+    // lower bound bool
     bool
     operator()(const std::pair<uint32_t, uint32_t>& p, uint32_t needle) const {
         return p.first < needle;
     }
+    // upper bound bool
+    bool
+    operator()(uint32_t needle, const std::pair<uint32_t, uint32_t>& p) const {
+        return needle < p.first;
+    }
 };
 std::optional<size_t> segment_offset_index::lower_bound(model::offset o) {
-    if (o < _base) {
-        return std::nullopt;
-    }
+    vassert(
+      o >= _base,
+      "segment_offset::index::lower_bound cannot find offset:{} below:{}",
+      o,
+      _base);
     const uint32_t i = o() - _base();
     if (auto it = std::lower_bound(
-          _positions.begin(), _positions.end(), i, base_comparator{});
+          std::begin(_positions), std::end(_positions), i, base_comparator{});
         it != _positions.end()) {
-        return it->second;
+        if (it->first <= i) {
+            return it->second;
+        }
+
+        if (std::distance(_positions.begin(), it) > 0) {
+            it = std::prev(it);
+        }
+        if (it->first <= i) {
+            return it->second;
+        }
     }
     return std::nullopt;
 }
