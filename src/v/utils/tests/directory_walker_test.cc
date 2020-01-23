@@ -7,7 +7,7 @@
 #include <fmt/format.h>
 
 SEASTAR_THREAD_TEST_CASE(empty_dir) {
-    auto dir = "test_dir_" + random_generators::gen_alphanum_string(4);
+    auto dir = "test.dir_" + random_generators::gen_alphanum_string(4);
     ss::recursive_touch_directory(dir).get();
 
     int count = 0;
@@ -20,7 +20,7 @@ SEASTAR_THREAD_TEST_CASE(empty_dir) {
 }
 
 SEASTAR_THREAD_TEST_CASE(non_empty_dir) {
-    auto dir = "test_dir_" + random_generators::gen_alphanum_string(4);
+    auto dir = "test.dir_" + random_generators::gen_alphanum_string(4);
     ss::recursive_touch_directory(dir).get();
 
     // sees directories
@@ -55,7 +55,7 @@ SEASTAR_THREAD_TEST_CASE(non_empty_dir) {
 }
 
 SEASTAR_THREAD_TEST_CASE(exceptional_future) {
-    auto dir = "test_dir_" + random_generators::gen_alphanum_string(4);
+    auto dir = "test.dir_" + random_generators::gen_alphanum_string(4);
     ss::recursive_touch_directory(dir).get();
 
     // make sure we have some files in the directory
