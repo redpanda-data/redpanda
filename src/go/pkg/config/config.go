@@ -18,6 +18,7 @@ type Config struct {
 	Organization string `yaml:"organization,omitempty"`
 	ClusterId    string `yaml:"cluster_id,omitempty"`
 	ConfigFile   string `yaml:"config_file,omitempty"`
+	PidFile      string `yaml:"pid_file"`
 	Redpanda     *RedpandaConfig
 	Rpk          *RpkConfig `yaml:"rpk,omitempty"`
 }

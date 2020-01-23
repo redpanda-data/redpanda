@@ -15,6 +15,7 @@ import (
 
 func getValidConfig() *Config {
 	return &Config{
+		PidFile: "/var/lib/redpanda/pid",
 		Redpanda: &RedpandaConfig{
 			Directory: "/var/lib/redpanda/data",
 			RPCServer: SocketAddress{
@@ -139,6 +140,7 @@ func TestWriteConfig(t *testing.T) {
 			},
 			wantErr: false,
 			expected: `config_file: /redpanda.yaml
+pid_file: /var/lib/redpanda/pid
 redpanda:
   data_directory: /var/lib/redpanda/data
   rpc_server:
@@ -192,6 +194,7 @@ redpanda:
 			},
 			wantErr: false,
 			expected: `config_file: /redpanda.yaml
+pid_file: /var/lib/redpanda/pid
 redpanda:
   data_directory: /var/lib/redpanda/data
   rpc_server:
