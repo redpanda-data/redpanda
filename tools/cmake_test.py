@@ -17,6 +17,9 @@ formatter = logging.Formatter(fmt_string)
 for h in logging.getLogger().handlers:
     h.setFormatter(formatter)
 
+COMMON_TEST_ARGS = ["--blocked-reactor-notify-ms 2000000"]
+
+
 class TestRunner():
     def __init__(self, prepare_command, post_command, binary, repeat,
                  copy_files, *args):
@@ -28,20 +31,22 @@ class TestRunner():
         self.root = "/dev/shm/vectorized_io"
         os.makedirs(self.root, exist_ok=True)
 
+        # make args a list
+        if len(args) == 0: args = []
+        else: args = list(map(str, args))
+
         if "rpunit" in binary:
-            self.test_args = " ".join([
-                "--" if len(args) == 0 else " ".join(map(str, args)),
+            unit_args = [
                 "--overprovisioned", "--unsafe-bypass-fsync 1",
-                "--blocked-reactor-notify-ms 2000000"
-            ])
+                "--default-log-level=trace",
+                "--logger-log-level='exception=debug'"
+            ] + COMMON_TEST_ARGS
+            if "--" in args: args = args + unit_args
+            else: args = args + ["--"] + unit_args
         elif "rpbench" in binary:
-            # benchmarks have no boost wrapper which needs the silly `--` hack
-            self.test_args = " ".join([
-                " ".join(map(str, args)),
-                "--blocked-reactor-notify-ms 2000000"
-            ])
-        else:
-            self.test_args = "" if len(args) == 0 else " ".join(map(str, args))
+            args = args + COMMON_TEST_ARGS
+        # aggregated args for test
+        self.test_args = " ".join(args)
 
     def _gen_alphanum(self, x=16):
         return ''.join(random.choice(string.ascii_letters) for _ in range(x))
@@ -55,7 +60,8 @@ class TestRunner():
         env = os.environ.copy()
         env["TEST_DIR"] = test_dir
         env["BOOST_TEST_LOG_LEVEL"] = "test_suite"
-        env["BOOST_TEST_COLOR_OUTPUT"] = "0"
+        if "CI" in env:
+            env["BOOST_TEST_COLOR_OUTPUT"] = "0"
         env["BOOST_TEST_CATCH_SYSTEM_ERRORS"] = "no"
         env["BOOST_TEST_REPORT_LEVEL"] = "no"
         env["BOOST_LOGGER"] = "HRF,test_suite"
@@ -69,7 +75,7 @@ class TestRunner():
             shutil.copy(src, "%s/%s" % (test_dir, os.path.basename(dst)))
 
         cmd = Template(
-            "(cd $test_dir && $prepare_command && $binary $args && $post_command; e=$$?; "
+            "(cd $test_dir; $prepare_command; $binary $args; $post_command; e=$$?; "
             "rm -rf $test_dir; echo \"Test Exit code $$e\"; exit $$e)"
         ).substitute(test_dir=test_dir,
                      prepare_command=" && ".join(self.prepare_command)
@@ -78,7 +84,7 @@ class TestRunner():
                      binary=self.binary,
                      args=self.test_args)
         logger.info(cmd)
-        os.execle("/bin/bash", "/bin/bash", "-c", cmd, env)
+        os.execle("/bin/bash", "/bin/bash", "-exc", cmd, env)
 
 
 def main():

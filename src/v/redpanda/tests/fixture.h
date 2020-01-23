@@ -35,7 +35,7 @@ public:
     config::configuration& lconf() { return config::shard_local_cfg(); }
 
     void configure() {
-        data_dir = fmt::format("test_dir_{}", time(0));
+        data_dir = fmt::format("test.dir_{}", time(0));
         ss::smp::invoke_on_all([this] {
             auto& config = config::shard_local_cfg();
             config.get("developer_mode").set_value(true);

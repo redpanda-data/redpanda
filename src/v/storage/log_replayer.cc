@@ -8,6 +8,8 @@
 
 #include <seastar/util/defer.hh>
 
+#include <limits>
+
 namespace storage {
 
 void crc_batch_header(
@@ -49,11 +51,28 @@ void crc_record_header_and_key(crc32& crc, const model::record& r) {
 
 class checksumming_consumer final : public batch_consumer {
 public:
+    static constexpr size_t max_segment_size = static_cast<size_t>(
+      std::numeric_limits<uint32_t>::max());
     explicit checksumming_consumer(segment* s)
       : _seg(s) {}
 
     skip consume_batch_start(
-      model::record_batch_header header, size_t num_records) override {
+      model::record_batch_header header,
+      size_t num_records,
+      size_t physical_base_offset,
+      size_t size_on_disk) override {
+        const auto filesize = _seg->reader()->file_size();
+        if (
+          // the following prevents malformed payload; see
+          // log_replay_test.cc::malformed_segment
+          header.base_offset() < 0 || size_on_disk >= max_segment_size
+          || size_on_disk > filesize || !header.attrs.is_valid_compression()
+          || (header.size_bytes + physical_base_offset) > filesize) {
+            _last_valid_offset = {};
+            return skip::yes;
+        }
+        _seg->oindex()->maybe_track(
+          header.base_offset, physical_base_offset, size_on_disk);
         _current_batch_crc = header.crc;
         _last_offset = header.last_offset();
         _crc = crc32();
@@ -96,8 +115,6 @@ public:
     ~checksumming_consumer() noexcept override = default;
 
 private:
-    // TODO(agallego) - add indexing recovery logic
-    // https://app.asana.com/0/1149841353291489/1157795002664849/f
     segment* _seg;
     uint32_t _current_batch_crc = -1;
     crc32 _crc;
@@ -109,6 +126,7 @@ private:
 log_replayer::recovered
 log_replayer::recover_in_thread(const ss::io_priority_class& prio) {
     stlog.debug("Recovering segment {}", *_seg);
+    // explicitly not using the index to recover the full file
     auto data_stream = _seg->reader()->data_stream(0, prio);
     auto d = ss::defer([&data_stream] { data_stream.close().get(); });
     auto consumer = checksumming_consumer(_seg);

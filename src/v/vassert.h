@@ -1,5 +1,6 @@
 #pragma once
 
+#include <seastar/util/backtrace.hh>
 #include <seastar/util/log.hh>
 
 namespace detail {
@@ -27,6 +28,8 @@ static dummyassert g_assert_log;
               __FILE__,                                                        \
               __LINE__,                                                        \
               ##args);                                                         \
+            ::detail::g_assert_log.l.error(                                    \
+              "Backtrace below:\n{}", ss::current_backtrace());                \
             std::terminate();                                                  \
         }                                                                      \
     } while (0)

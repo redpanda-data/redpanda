@@ -19,8 +19,6 @@ disk_log_impl::disk_log_impl(
   , _segs(std::move(segs)) {
     _probe.setup_metrics(this->ntp());
     if (!_segs.empty()) {
-        _tracker.update_committed_offset(_segs.back().reader()->max_offset());
-        _tracker.update_dirty_offset(_segs.back().reader()->max_offset());
         _term = _segs.back().reader()->term();
     } else {
         _term = model::term_id(0);
@@ -31,21 +29,34 @@ ss::future<> disk_log_impl::close() {
     return ss::parallel_for_each(_segs, [](segment& h) { return h.close(); });
 }
 
+ss::future<> disk_log_impl::remove_empty_segments() {
+    return ss::do_until(
+      [this] { return _segs.empty() || !_segs.back().empty(); },
+      [this] {
+          return _segs.back().close().then([this] { _segs.pop_back(); });
+      });
+}
+
 ss::future<> disk_log_impl::new_segment(
   model::offset o, model::term_id term, const ss::io_priority_class& pc) {
     return _manager.make_log_segment(ntp(), o, term, pc)
-      .then([this, pc](segment handles) {
-          _segs.add(std::move(handles));
-          _probe.segment_created();
+      .then([this, pc](segment handles) mutable {
+          return remove_empty_segments().then(
+            [this, h = std::move(handles)]() mutable {
+                _segs.add(std::move(h));
+                _probe.segment_created();
+            });
       });
 }
 
 // config timeout is for the one calling reader consumer
 log_appender disk_log_impl::make_appender(log_append_config cfg) {
     auto now = log_clock::now();
-    auto base = _tracker.dirty_offset() >= model::offset(0)
-                  ? _tracker.dirty_offset() + model::offset(1)
-                  : model::offset(0);
+    model::offset base(0);
+    if (auto o = max_offset(); o() >= 0) {
+        // start at *next* valid and inclusive offset!
+        base = o + model::offset(1);
+    }
     return log_appender(
       std::make_unique<disk_log_appender>(*this, cfg, now, base));
 }
@@ -54,39 +65,36 @@ ss::future<> disk_log_impl::flush() {
     if (_segs.empty()) {
         return ss::make_ready_future<>();
     }
-    return _segs.back().flush().then([this] {
-        _tracker.update_committed_offset(_tracker.dirty_offset());
-        _segs.back().reader()->set_last_written_offset(
-          _tracker.committed_offset());
-        _segs.back().reader()->set_last_visible_byte_offset(
-          _segs.back().appender()->file_byte_offset());
-    });
+    return _segs.back().flush();
 }
 ss::future<> disk_log_impl::do_roll() {
     return flush()
       // FIXME(agallego) - figure out how to not forward to segment
       //.then([this] { return _segs.back().appender()->close(); })
       .then([this] {
-          auto offset = _tracker.committed_offset() + model::offset(1);
-          stlog.trace("Rolling log segment offset {}, term {}", offset, _term);
+          model::offset base(0);
+          if (auto o = max_offset(); o() >= 0) {
+              // start at *next* valid and inclusive offset!
+              base = o + model::offset(1);
+          }
+          stlog.trace("Rolling log segment offset {}, term {}", base, _term);
           return new_segment(
-            offset, _term, _segs.back().appender()->priority_class());
+            base, _term, _segs.back().appender()->priority_class());
       });
 }
-ss::future<> disk_log_impl::maybe_roll(model::offset current_offset) {
+ss::future<> disk_log_impl::maybe_roll() {
     if (
       _segs.back().appender()->file_byte_offset()
       < _manager.max_segment_size()) {
         return ss::make_ready_future<>();
     }
-    _tracker.update_dirty_offset(current_offset);
     return do_roll();
 }
 
 model::record_batch_reader
 disk_log_impl::make_reader(log_reader_config config) {
     return model::make_record_batch_reader<log_reader>(
-      _segs, _tracker, std::move(config), _probe);
+      _segs, std::move(config), _probe);
 }
 
 // ss::future<> disk_log_impl::truncate_whole_segments(
@@ -202,6 +210,10 @@ ss::future<> disk_log_impl::do_truncate(model::offset o) {
 
 std::ostream& disk_log_impl::print(std::ostream& o) const {
     return o << "{term=" << _term << ", logs=" << _segs << "}";
+}
+
+std::ostream& operator<<(std::ostream& o, const disk_log_impl& d) {
+    return d.print(o);
 }
 
 log make_disk_backed_log(model::ntp ntp, log_manager& manager, log_set segs) {

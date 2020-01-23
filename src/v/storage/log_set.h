@@ -21,6 +21,7 @@ class log_set {
 public:
     using underlying_t = std::vector<segment>;
     using const_iterator = underlying_t::const_iterator;
+    using reverse_iterator = underlying_t::reverse_iterator;
     using const_reverse_iterator = underlying_t::const_reverse_iterator;
     using iterator = underlying_t::iterator;
     static constexpr bool is_nothrow_v
@@ -37,7 +38,7 @@ public:
     bool empty() const { return _handles.empty(); }
 
     /// must be monotonically increasing in base offset
-    void add(segment);
+    void add(segment&&);
 
     void pop_back();
 
@@ -46,7 +47,12 @@ public:
     const segment& back() const { return _handles.back(); }
     const segment& front() const { return _handles.front(); }
 
-    const_iterator lower_bound(model::offset) const;
+    iterator lower_bound(model::offset o);
+
+    reverse_iterator rbegin() { return _handles.rbegin(); }
+    reverse_iterator rend() { return _handles.rend(); }
+    const_reverse_iterator rbegin() const { return _handles.crbegin(); }
+    const_reverse_iterator rend() const { return _handles.crend(); }
 
     const_iterator cbegin() const { return _handles.cbegin(); }
     const_iterator cend() const { return _handles.cend(); }

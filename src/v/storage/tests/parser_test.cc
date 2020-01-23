@@ -3,6 +3,7 @@
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "storage/disk_log_appender.h"
+#include "storage/log_segment_appender_utils.h"
 #include "storage/log_segment_reader.h"
 #include "storage/parser.h"
 #include "storage/tests/random_batch.h"
@@ -21,7 +22,10 @@ public:
       , _stop_at_batch(stop_at_batch) {}
 
     virtual skip consume_batch_start(
-      model::record_batch_header header, size_t num_records) override {
+      model::record_batch_header header,
+      size_t num_records,
+      size_t /*physical_base_offset*/,
+      size_t /*size_on_disk*/) override {
         _header = std::move(header);
         _num_records = num_records;
         if (_header.attrs.compression() == model::compression::none) {

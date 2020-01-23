@@ -6,7 +6,6 @@
 #include "storage/log_reader.h"
 #include "storage/log_segment_appender.h"
 #include "storage/log_segment_reader.h"
-#include "storage/offset_tracker.h"
 #include "storage/probe.h"
 
 namespace storage {
@@ -26,10 +25,9 @@ public:
     // External synchronization: only one append can be performed at a time.
     log_appender make_appender(log_append_config cfg) final;
 
-    /// flushes the _tracker.dirty_offset into _tracker.committed_offset
     ss::future<> flush() final;
 
-    ss::future<> maybe_roll(model::offset);
+    ss::future<> maybe_roll();
 
     [[gnu::always_inline]] ss::future<> truncate(model::offset offset) final {
         return _failure_probes.truncate().then(
@@ -46,10 +44,22 @@ public:
         }
         return _segs.front().reader()->base_offset();
     }
-    model::offset max_offset() const final { return _tracker.dirty_offset(); }
+    model::offset max_offset() const final {
+        for (auto it = _segs.rbegin(); it != _segs.rend(); it++) {
+            if (!it->empty()) {
+                return it->reader()->max_offset();
+            }
+        }
+        return model::offset{};
+    }
 
     model::offset committed_offset() const final {
-        return _tracker.committed_offset();
+        for (auto it = _segs.rbegin(); it != _segs.rend(); it++) {
+            if (!it->empty()) {
+                return it->dirty_offset();
+            }
+        }
+        return model::offset{};
     }
     std::ostream& print(std::ostream&) const final;
 
@@ -57,11 +67,13 @@ private:
     friend class log_builder;
     friend class disk_log_appender;
 
+    ss::future<> remove_empty_segments();
+
     ss::future<>
     new_segment(model::offset, model::term_id, const ss::io_priority_class&);
 
     /// \brief forces a flush() on the last segment & rotates given the current
-    /// _term && (tracker.committed_offset+1)
+    /// _term @ committed_offset + 1
     ss::future<> do_roll();
 
     ss::future<> do_truncate(model::offset);
@@ -72,7 +84,6 @@ private:
     model::term_id _term;
     log_manager& _manager;
     log_set _segs;
-    offset_tracker _tracker;
     storage::probe _probe;
     failure_probes _failure_probes;
 };

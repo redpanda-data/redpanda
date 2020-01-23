@@ -109,30 +109,39 @@ static ss::future<log_set> do_recover(log_set&& segments) {
         good.erase(
           good_end, good.end()); // remove all the ones we copied into recover
 
-        for (auto& s : to_recover) {
+        for (segment& s : to_recover) {
             auto stat = s.reader()->stat().get0();
+            if (stat.st_size == 0) {
+                stlog.info("Removing empty segment: {}", s);
+                s.close().get();
+                ss::remove_file(s.reader()->filename()).get();
+                ss::remove_file(s.oindex()->filename()).get();
+                continue;
+            }
             auto replayer = log_replayer(s);
             auto recovered = replayer.recover_in_thread(
               ss::default_priority_class());
-            if (recovered) {
-                // Max offset is inclusive
-                s.reader()->set_last_written_offset(
-                  *recovered.last_valid_offset());
-                // persist index to file
-                s.oindex()->flush().get();
-                good.push_back(std::move(s));
-            } else {
+            if (!recovered) {
+                stlog.info("Unable to recover segment: {}", s);
                 s.close().get();
-                if (stat.st_size == 0) {
-                    ss::remove_file(s.reader()->filename()).get();
-                    ss::remove_file(s.oindex()->filename()).get();
-                } else {
-                    ss::rename_file(
-                      s.reader()->filename(),
-                      s.reader()->filename() + ".cannotrecover")
-                      .get();
-                }
+                ss::rename_file(
+                  s.reader()->filename(),
+                  s.reader()->filename() + ".cannotrecover")
+                  .get();
+                continue;
             }
+            // Max offset is inclusive
+            s.reader()->set_last_written_offset(*recovered.last_valid_offset());
+            if (s.reader()->empty()) {
+                // it means there was only one file to recover and the index
+                // has the right value
+                s.reader()->set_last_written_offset(
+                  s.oindex()->last_seen_offset());
+            }
+            // persist index
+            s.oindex()->flush().get();
+            stlog.info("Recovered: {}", s);
+            good.emplace_back(std::move(s));
         }
         return log_set(std::move(good));
     });

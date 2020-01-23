@@ -6,6 +6,7 @@
 #include "storage/disk_log_appender.h"
 #include "storage/log_reader.h"
 #include "storage/log_segment_appender.h"
+#include "storage/log_segment_appender_utils.h"
 #include "storage/log_segment_reader.h"
 #include "storage/log_set.h"
 #include "storage/tests/random_batch.h"
@@ -17,10 +18,8 @@
 #include <limits>
 
 using namespace storage; // NOLINT
-
 struct context {
     log_set logs = log_set({});
-    offset_tracker tracker;
     probe prb;
     void write(std::vector<model::record_batch>& batches) {
         unsigned id = 0;
@@ -64,7 +63,7 @@ struct context {
         auto cfg = log_reader_config{
           start, max_bytes, 0, ss::default_priority_class(), {}, max_offset};
         return model::make_record_batch_reader<log_reader>(
-          logs, tracker, std::move(cfg), prb);
+          logs, std::move(cfg), prb);
     }
 
     ~context() {
@@ -96,23 +95,10 @@ void check_batches(
       actual.begin(), actual.end(), expected.begin(), expected.end());
 }
 
-SEASTAR_THREAD_TEST_CASE(test_can_read_batches_smaller_offset) {
-    context ctx;
-    auto batches = test::make_random_batches(model::offset(1), 3);
-    ctx.write(batches);
-    ctx.tracker.update_committed_offset(model::offset(1000));
-    {
-        auto reader = ctx.reader(model::offset(0));
-        auto res = reader.consume(consumer(), model::no_timeout).get0();
-        check_batches(res, batches);
-    }
-}
-
 SEASTAR_THREAD_TEST_CASE(test_can_read_batches_same_offset) {
     context ctx;
     auto batches = test::make_random_batches(model::offset(1), 3);
     ctx.write(batches);
-    ctx.tracker.update_committed_offset(model::offset(1000));
     {
         auto reader = ctx.reader(model::offset(1));
         auto res = reader.consume(consumer(), model::no_timeout).get0();
@@ -124,9 +110,8 @@ SEASTAR_THREAD_TEST_CASE(test_does_not_read_past_committed_offset_one_segment) {
     context ctx;
     auto batches = test::make_random_batches(model::offset(2), 1);
     ctx.write(batches);
-    ctx.tracker.update_committed_offset(model::offset(1));
     {
-        auto reader = ctx.reader(model::offset(0));
+        auto reader = ctx.reader(model::offset(3));
         auto res = reader.consume(consumer(), model::no_timeout).get0();
         BOOST_REQUIRE(res.empty());
     }
@@ -138,9 +123,8 @@ SEASTAR_THREAD_TEST_CASE(
     auto batches = test::make_random_batches(model::offset(1), 3);
     ctx.write(batches);
     auto o = std::next(batches.begin())->last_offset();
-    ctx.tracker.update_committed_offset(o);
     {
-        auto reader = ctx.reader(model::offset(0));
+        auto reader = ctx.reader(model::offset(o));
         auto res = reader.consume(consumer(), model::no_timeout).get0();
         std::vector<model::record_batch> first;
         first.push_back(std::move(*batches.begin()));
@@ -154,10 +138,9 @@ SEASTAR_THREAD_TEST_CASE(test_does_not_read_past_max_bytes) {
     auto batches = test::make_random_batches(model::offset(1), 3);
     ctx.write(batches);
     auto o = batches.begin()->last_offset();
-    ctx.tracker.update_committed_offset(model::offset(1000));
     {
         auto reader = ctx.reader(
-          model::offset(0),
+          model::offset(1),
           batches.begin()->size_bytes()
             + std::next(batches.begin())->size_bytes());
         auto res = reader.consume(consumer(), model::no_timeout).get0();
@@ -177,7 +160,6 @@ SEASTAR_THREAD_TEST_CASE(test_does_not_read_past_max_offset_multiple_batches) {
     batches.push_back(test::make_random_batch(model::offset(100), 100));
     batches.push_back(test::make_random_batch(model::offset(200), 100));
     ctx.write(batches);
-    ctx.tracker.update_committed_offset(model::offset(299));
 
     // max reader offset is 200
     auto maxbytes = std::numeric_limits<size_t>::max();
@@ -199,9 +181,8 @@ SEASTAR_THREAD_TEST_CASE(test_reads_at_least_one_batch) {
     auto batches = test::make_random_batches(model::offset(1), 2);
     ctx.write(batches);
     auto o = batches.begin()->last_offset();
-    ctx.tracker.update_committed_offset(model::offset(1000));
     {
-        auto reader = ctx.reader(model::offset(0), 1);
+        auto reader = ctx.reader(model::offset(1), 1);
         auto res = reader.consume(consumer(), model::no_timeout).get0();
         std::vector<model::record_batch> first;
         first.push_back(std::move(*batches.begin()));

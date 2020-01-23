@@ -23,16 +23,6 @@ public:
     model::term_id prev_log_term() const { return _prev_log_term; }
     const raft::group_configuration& config() const { return _config; }
     raft::group_configuration&& release_config() { return std::move(_config); }
-    bool is_finished() const {
-        if (_end_of_log) {
-            return true;
-        }
-        // we must have seen at least 2 records
-        return _prev_log_index != _commit_index
-               && _prev_log_index != model::offset{0}
-               // we *must* have seen one configuration
-               && _log_config_offset_tracker != model::offset{0};
-    }
     void set_term(model::term_id t) { _term = t; }
     void set_end_of_log() { _end_of_log = true; }
     uint32_t data_batches_seen() const { return _data_batches_seen; }
