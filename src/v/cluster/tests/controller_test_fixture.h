@@ -44,7 +44,7 @@ public:
       int32_t kafka_port,
       int32_t rpc_port,
       std::vector<config::seed_server> seeds)
-      : _base_dir("test_dir_" + random_generators::gen_alphanum_string(4))
+      : _base_dir("test.dir_" + random_generators::gen_alphanum_string(4))
       , _current_node(
           model::node_id(node_id),
           unresolved_address("127.0.0.1", kafka_port),
