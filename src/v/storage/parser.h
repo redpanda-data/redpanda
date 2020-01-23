@@ -17,18 +17,21 @@ namespace storage {
 
 class batch_consumer {
 public:
-    using skip = ss::bool_class<class skip_tag>;
+    using skip_batch = ss::bool_class<struct skip_batch_tag>;
+    using stop_parser = ss::bool_class<struct stop_parser_tag>;
+
+    using consume_result = std::variant<stop_parser, skip_batch>;
 
     virtual ~batch_consumer() = default;
 
-    virtual skip consume_batch_start(
+    virtual consume_result consume_batch_start(
       model::record_batch_header,
       size_t num_records,
       size_t physical_base_offset,
       size_t size_on_disk)
       = 0;
 
-    virtual skip consume_record_key(
+    virtual consume_result consume_record_key(
       size_t size_bytes,
       model::record_attributes attributes,
       int32_t timestamp_delta,
@@ -40,7 +43,7 @@ public:
 
     virtual void consume_compressed_records(iobuf&&) = 0;
 
-    virtual ss::stop_iteration consume_batch_end() = 0;
+    virtual stop_parser consume_batch_end() = 0;
 };
 
 namespace detail {
@@ -212,7 +215,7 @@ private:
         int32_t int32;
         int16_t int16;
         int8_t int8;
-    } _read_int; // NOLINT
+    } _read_int{0}; // NOLINT
     // state for reading fragmented bytes
     size_t _ftb_size{0};
     std::vector<ss::temporary_buffer<char>> _read_bytes;

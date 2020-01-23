@@ -19,9 +19,9 @@ void crc_batch_header(
     crc.extend(header.first_timestamp.value());
     crc.extend(header.max_timestamp.value());
     // Unused Kafka fields
-    std::array<uint8_t, 14> unused;
+    std::array<uint8_t, 14> unused{};
     unused.fill(-1);
-    crc.extend(&unused[0], sizeof(unused));
+    crc.extend(&unused[0], unused.size());
     crc.extend(int32_t(num_records));
 }
 
@@ -56,7 +56,7 @@ public:
     explicit checksumming_consumer(segment* s)
       : _seg(s) {}
 
-    skip consume_batch_start(
+    consume_result consume_batch_start(
       model::record_batch_header header,
       size_t num_records,
       size_t physical_base_offset,
@@ -69,7 +69,9 @@ public:
           || size_on_disk > filesize || !header.attrs.is_valid_compression()
           || (header.size_bytes + physical_base_offset) > filesize) {
             _last_valid_offset = {};
-            return skip::yes;
+            stlog.info("checksumming_consumer::consume_batch_start:: invalid "
+                       "record batch header. Stopping parsing");
+            return stop_parser::yes;
         }
         _seg->oindex()->maybe_track(
           header.base_offset, physical_base_offset, size_on_disk);
@@ -77,10 +79,10 @@ public:
         _last_offset = header.last_offset();
         _crc = crc32();
         crc_batch_header(_crc, header, num_records);
-        return skip::no;
+        return skip_batch::no;
     }
 
-    skip consume_record_key(
+    consume_result consume_record_key(
       size_t size_bytes,
       model::record_attributes attributes,
       int32_t timestamp_delta,
@@ -88,7 +90,7 @@ public:
       iobuf&& key) override {
         crc_record_header_and_key(
           _crc, size_bytes, attributes, timestamp_delta, offset_delta, key);
-        return skip::no;
+        return skip_batch::no;
     }
 
     void consume_record_value(iobuf&& value_and_headers) override {
@@ -99,12 +101,12 @@ public:
         _crc.extend(records);
     }
 
-    ss::stop_iteration consume_batch_end() override {
+    stop_parser consume_batch_end() override {
         if (recovered()) {
             _last_valid_offset = _last_offset;
-            return ss::stop_iteration::no;
+            return stop_parser::no;
         }
-        return ss::stop_iteration::yes;
+        return stop_parser::yes;
     }
 
     bool recovered() const { return _current_batch_crc == _crc.value(); }

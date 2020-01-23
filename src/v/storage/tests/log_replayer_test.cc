@@ -7,6 +7,7 @@
 #include "storage/tests/random_batch.h"
 #include "utils/file_sanitizer.h"
 
+#include <seastar/core/fstream.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/testing/thread_test_case.hh>
 
@@ -17,19 +18,16 @@ using namespace storage; // NOLINT
 struct context {
     std::unique_ptr<segment> _seg;
     std::optional<log_replayer> replayer_opt;
+    ss::sstring base_name = "test."
+                            + random_generators::gen_alphanum_string(20);
 
     void initialize(model::offset base) {
-        ss::sstring base_name = "test."
-                                + random_generators::gen_alphanum_string(20);
         auto fd = ss::open_file_dma(
-                    base_name,
-                    ss::open_flags::truncate | ss::open_flags::create
-                      | ss::open_flags::rw)
+                    base_name, ss::open_flags::create | ss::open_flags::rw)
                     .get0();
         auto fidx = ss::open_file_dma(
                       base_name + ".offset_index",
-                      ss::open_flags::truncate | ss::open_flags::create
-                        | ss::open_flags::rw)
+                      ss::open_flags::create | ss::open_flags::rw)
                       .get0();
         fd = ss::file(ss::make_shared(file_io_sanitizer(std::move(fd))));
         fidx = ss::file(ss::make_shared(file_io_sanitizer(std::move(fidx))));
@@ -47,16 +45,21 @@ struct context {
           128);
         _seg = std::make_unique<segment>(
           reader, std::move(indexer), std::move(appender));
+        replayer_opt = log_replayer(*_seg);
     }
-    ~context() { _seg->close().get(); }
+    ~context() {
+            _seg->close().get();
+    }
     void write_garbage() {
-        do_write(
-          [](log_segment_appender& appender) {
-              auto b = test::make_buffer(100);
-              appender.append(b.get(), b.size()).get();
-              appender.flush().get();
-          },
-          model::offset(0));
+        auto fd = ss::open_file_dma(
+                    base_name, ss::open_flags::create | ss::open_flags::rw)
+                    .get0();
+        fd = ss::file(ss::make_shared(file_io_sanitizer(std::move(fd))));
+        auto out = ss::make_file_output_stream(std::move(fd));
+        auto b = test::make_buffer(100);
+        out.write(b.get(), b.size()).get();
+        out.flush().get();
+        out.close().get();
     }
 
     void write(std::vector<model::record_batch>& batches) {
@@ -76,7 +79,6 @@ struct context {
         _seg->flush().get();
         _seg->reader()->set_last_visible_byte_offset(
           _seg->appender()->file_byte_offset());
-        replayer_opt = log_replayer(*_seg);
     }
 
     log_replayer& replayer() { return *replayer_opt; }
@@ -121,6 +123,7 @@ SEASTAR_THREAD_TEST_CASE(test_unrecovered_single_batch) {
 SEASTAR_THREAD_TEST_CASE(test_malformed_segment) {
     context ctx;
     ctx.write_garbage();
+    ctx.initialize(model::offset(0));
     auto recovered = ctx.replayer().recover_in_thread(
       ss::default_priority_class());
     BOOST_CHECK(!bool(recovered));

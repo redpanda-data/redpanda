@@ -21,7 +21,7 @@ public:
       , _record_skips(record_skips)
       , _stop_at_batch(stop_at_batch) {}
 
-    virtual skip consume_batch_start(
+    consume_result consume_batch_start(
       model::record_batch_header header,
       size_t num_records,
       size_t /*physical_base_offset*/,
@@ -33,12 +33,12 @@ public:
             _records = model::record_batch::uncompressed_records();
         } else if (_batch_skips) {
             _batch_skips--;
-            return skip::yes;
+            return skip_batch::yes;
         }
-        return skip::no;
+        return skip_batch::no;
     }
 
-    virtual skip consume_record_key(
+     consume_result consume_record_key(
       size_t size_bytes,
       model::record_attributes attributes,
       int32_t timestamp_delta,
@@ -46,17 +46,17 @@ public:
       iobuf&& key) override {
         if (_record_skips) {
             _record_skips--;
-            return skip::yes;
+            return skip_batch::yes;
         }
         _record_size_bytes = size_bytes;
         _record_attributes = attributes;
         _record_timestamp_delta = timestamp_delta;
         _record_offset_delta = offset_delta;
         _record_key = std::move(key);
-        return skip::no;
+        return skip_batch::no;
     }
 
-    virtual void consume_record_value(iobuf&& value_and_headers) override {
+     void consume_record_value(iobuf&& value_and_headers) override {
         std::get<model::record_batch::uncompressed_records>(_records)
           .emplace_back(
             _record_size_bytes,
@@ -67,14 +67,14 @@ public:
             std::move(value_and_headers));
     }
 
-    virtual void consume_compressed_records(iobuf&& records) override {
+     void consume_compressed_records(iobuf&& records) override {
         _records = model::record_batch::compressed_records(
           _num_records, std::move(records));
     }
 
-    virtual ss::stop_iteration consume_batch_end() override {
+     stop_parser consume_batch_end() override {
         batches.emplace_back(std::move(_header), std::move(_records));
-        return ss::stop_iteration(_stop_at_batch);
+        return stop_parser(_stop_at_batch);
     }
 
     std::vector<model::record_batch> batches;
