@@ -82,13 +82,13 @@ parse_result
 continuous_batch_parser::do_process(ss::temporary_buffer<char>& data) {
     switch (_state) {
     case state::batch_start: {
-        if (read_vint(data) != read_status::ready) {
+        if (read_int<int32_t>(data) != read_status::ready) {
             _state = state::base_offset;
             break;
         }
     }
     case state::base_offset: {
-        _header.size_bytes = _64;
+        _header.size_bytes = _32;
         if (read_int<int64_t>(data) != read_status::ready) {
             _state = state::batch_type;
             break;
@@ -150,8 +150,14 @@ continuous_batch_parser::do_process(ss::temporary_buffer<char>& data) {
         auto remaining_batch_bytes = _header.size_bytes - packed_header_size;
         _compressed_batch = _header.attrs.compression()
                             != model::compression::none;
+        const auto size_on_disk = _header.size_bytes + 4;
         auto should_skip = _consumer->consume_batch_start(
-          std::move(_header), _num_records);
+          std::move(_header),
+          _num_records,
+          _physical_base_offset,
+          size_on_disk);
+        // store the next one!
+        _physical_base_offset += size_on_disk;
         if (__builtin_expect(bool(should_skip), false)) {
             _state = state::batch_start;
             return ss::skip_bytes(remaining_batch_bytes);

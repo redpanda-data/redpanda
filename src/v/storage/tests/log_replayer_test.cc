@@ -1,6 +1,7 @@
 #include "random/generators.h"
 #include "storage/disk_log_appender.h"
 #include "storage/log_replayer.h"
+#include "storage/log_segment_appender_utils.h"
 #include "storage/log_segment_reader.h"
 #include "storage/segment_offset_index.h"
 #include "storage/tests/random_batch.h"
@@ -34,15 +35,12 @@ struct context {
         fidx = ss::file(ss::make_shared(file_io_sanitizer(std::move(fidx))));
 
         auto appender = std::make_unique<log_segment_appender>(
-          fd,
-          log_segment_appender::options(ss::default_priority_class()));
+          fd, log_segment_appender::options(ss::default_priority_class()));
         auto indexer = std::make_unique<segment_offset_index>(
           base_name + ".offset_index", std::move(fidx), base, 4096);
         auto reader = ss::make_lw_shared<log_segment_reader>(
           base_name,
-          // file.dup() _must_ be for read only. the opposite order between
-          // appender and reader is a bug.
-          ss::file(fd.dup()),
+          ss::open_file_dma(base_name, ss::open_flags::ro).get0(),
           model::term_id(0),
           base,
           appender->file_byte_offset(),
@@ -56,6 +54,7 @@ struct context {
           [](log_segment_appender& appender) {
               auto b = test::make_buffer(100);
               appender.append(b.get(), b.size()).get();
+              appender.flush().get();
           },
           model::offset(0));
     }
@@ -121,8 +120,6 @@ SEASTAR_THREAD_TEST_CASE(test_unrecovered_single_batch) {
 
 SEASTAR_THREAD_TEST_CASE(test_malformed_segment) {
     context ctx;
-    auto batches = test::make_random_batches(model::offset(1), 1);
-    batches.back().get_header_for_testing().crc = 10;
     ctx.write_garbage();
     auto recovered = ctx.replayer().recover_in_thread(
       ss::default_priority_class());

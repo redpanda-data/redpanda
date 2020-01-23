@@ -52,7 +52,6 @@ FIXTURE_TEST(recover_multiple_topics, controller_tests_fixture) {
     validate_topic_metadata(get_local_cache(), "topic_1", 2);
     validate_topic_metadata(get_local_cache(), "topic_2", 2);
 }
-#endif
 
 FIXTURE_TEST(recover_complex, controller_tests_fixture) {
     persist_test_batches(make_complex_topics());
@@ -65,3 +64,5 @@ FIXTURE_TEST(recover_complex, controller_tests_fixture) {
     BOOST_REQUIRE_EQUAL(
       cntrl.get_highest_group_id()(), complex_partitions_count);
 }
+
+#endif

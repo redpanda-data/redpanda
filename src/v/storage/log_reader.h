@@ -5,7 +5,6 @@
 #include "model/record_batch_reader.h"
 #include "storage/log_segment_reader.h"
 #include "storage/log_set.h"
-#include "storage/offset_tracker.h"
 #include "storage/parser.h"
 #include "storage/probe.h"
 #include "storage/types.h"
@@ -17,7 +16,7 @@ namespace storage {
 
 class log_segment_batch_reader;
 
-class skipping_consumer : public batch_consumer {
+class skipping_consumer final : public batch_consumer {
 public:
     explicit skipping_consumer(
       log_segment_batch_reader& reader, model::offset start_offset) noexcept
@@ -29,7 +28,10 @@ public:
     }
 
     skip consume_batch_start(
-      model::record_batch_header, size_t num_records) override;
+      model::record_batch_header,
+      size_t num_records,
+      size_t physical_base_offset,
+      size_t bytes_on_disk) override;
 
     skip consume_record_key(
       size_t size_bytes,
@@ -66,8 +68,8 @@ class log_segment_batch_reader : public model::record_batch_reader::impl {
 
 public:
     log_segment_batch_reader(
-      segment_reader_ptr seg,
-      offset_tracker& tracker,
+      segment& seg,
+      model::offset base_offset,
       log_reader_config config,
       probe& probe) noexcept;
     log_segment_batch_reader(log_segment_batch_reader&&) noexcept = default;
@@ -86,17 +88,11 @@ private:
 
     bool is_buffer_full() const;
 
-    /// reset_state() allows further reads to happen on a reader
-    /// that previously reached the end of the stream. Useful to
-    /// implement cached readers that can continue a read where
-    /// it left off.
-    void reset_state();
-
     friend class log_reader;
 
 private:
-    segment_reader_ptr _seg;
-    offset_tracker& _tracker;
+    segment& _seg;
+    model::offset _base;
     log_reader_config _config;
     size_t _bytes_read = 0;
     skipping_consumer _consumer;
@@ -104,7 +100,6 @@ private:
     continuous_batch_parser_opt _parser;
     std::vector<model::record_batch> _buffer;
     size_t _buffer_size = 0;
-    bool _over_committed_offset = false;
     probe& _probe;
 
     friend class skipping_consumer;
@@ -114,11 +109,7 @@ class log_reader : public model::record_batch_reader::impl {
 public:
     using span = model::record_batch_reader::impl::span;
 
-    // Note: The offset tracker will contain base offsets,
-    //       and will never point to an offset within a
-    //       batch, that is, of an individual record. This
-    //       is because batchs are atomically made visible.
-    log_reader(log_set&, offset_tracker&, log_reader_config, probe&) noexcept;
+    log_reader(log_set&, log_reader_config, probe&) noexcept;
 
     ss::future<span> do_load_slice(model::timeout_clock::time_point) override;
 
@@ -131,7 +122,6 @@ private:
 
 private:
     log_set& _set;
-    offset_tracker& _offset_tracker;
     log_reader_config _config;
     probe& _probe;
     std::optional<log_segment_batch_reader> _current_reader;
