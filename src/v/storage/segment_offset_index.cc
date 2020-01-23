@@ -92,7 +92,8 @@ ss::future<> segment_offset_index::close() {
     return flush().then([this] { return _out.close(); });
 }
 std::ostream& operator<<(std::ostream& o, const segment_offset_index& i) {
-    return o << "{file:" << i.filename() << ", base_offset:" << i.base_offset()
+    return o << "{file:" << i.filename() << ", offsets:" << i.base_offset()
+             << "-" << i.last_seen_offset()
              << ", indexed_offsets:" << i.indexed_offsets()
              << ", step:" << i.step()
              << ", needs_persistence:" << i.needs_persistence() << "}";
