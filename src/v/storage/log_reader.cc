@@ -17,19 +17,19 @@ bool skipping_consumer::skip_batch_type(model::record_batch_type type) {
     return it == std::cend(type_filter);
 }
 
-batch_consumer::skip skipping_consumer::consume_batch_start(
+batch_consumer::consume_result skipping_consumer::consume_batch_start(
   model::record_batch_header header,
   size_t num_records,
   size_t /*physical_base_offset*/,
   size_t /*bytes_on_disk*/) {
     if (header.last_offset() < _start_offset) {
-        return skip::yes;
+        return skip_batch::yes;
     }
     if (header.base_offset() > _reader._config.max_offset) {
-        return skip::yes;
+        return skip_batch::yes;
     }
     if (skip_batch_type(header.type)) {
-        return skip::yes;
+        return skip_batch::yes;
     }
     if (header.attrs.compression() == model::compression::none) {
         // Reset the variant.
@@ -39,10 +39,10 @@ batch_consumer::skip skipping_consumer::consume_batch_start(
     }
     _header = std::move(header);
     _num_records = num_records;
-    return skip::no;
+    return skip_batch::no;
 }
 
-batch_consumer::skip skipping_consumer::consume_record_key(
+batch_consumer::consume_result skipping_consumer::consume_record_key(
   size_t size_bytes,
   model::record_attributes attributes,
   int32_t timestamp_delta,
@@ -53,7 +53,7 @@ batch_consumer::skip skipping_consumer::consume_record_key(
     _record_timestamp_delta = timestamp_delta;
     _record_offset_delta = offset_delta;
     _record_key = std::move(key);
-    return skip::no;
+    return skip_batch::no;
 }
 
 void skipping_consumer::consume_record_value(iobuf&& value_and_headers) {
@@ -71,7 +71,7 @@ void skipping_consumer::consume_compressed_records(iobuf&& records) {
       _num_records, std::move(records));
 }
 
-ss::stop_iteration skipping_consumer::consume_batch_end() {
+batch_consumer::stop_parser skipping_consumer::consume_batch_end() {
     auto& batch = _reader._buffer.emplace_back(
       std::move(_header), std::move(_records));
     auto mem = batch.memory_usage();
@@ -82,15 +82,15 @@ ss::stop_iteration skipping_consumer::consume_batch_end() {
       batch.base_offset() > _reader._seg.committed_offset()
       || batch.last_offset() > _reader._config.max_offset) {
         _reader._end_of_stream = true;
-        return ss::stop_iteration::yes;
+        return stop_parser::yes;
     }
     if (
       _reader._bytes_read >= _reader._config.max_bytes
       || model::timeout_clock::now() >= _timeout) {
         _reader._end_of_stream = true;
-        return ss::stop_iteration::yes;
+        return stop_parser::yes;
     }
-    return ss::stop_iteration(_reader.is_buffer_full());
+    return stop_parser(_reader.is_buffer_full());
 }
 
 log_segment_batch_reader::log_segment_batch_reader(

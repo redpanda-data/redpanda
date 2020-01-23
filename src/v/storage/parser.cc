@@ -2,14 +2,17 @@
 
 #include "model/fundamental.h"
 #include "storage/constants.h"
+#include "storage/logger.h"
 
 #include <seastar/core/byteorder.hh>
+#include <seastar/core/future-util.hh>
 
 #include <boost/range/iterator_range.hpp>
 
 #include <algorithm>
 #include <cstdint>
 #include <stdexcept>
+#include <variant>
 
 namespace storage {
 
@@ -151,16 +154,22 @@ continuous_batch_parser::do_process(ss::temporary_buffer<char>& data) {
         _compressed_batch = _header.attrs.compression()
                             != model::compression::none;
         const auto size_on_disk = _header.size_bytes + 4;
-        auto should_skip = _consumer->consume_batch_start(
-          std::move(_header),
-          _num_records,
-          _physical_base_offset,
-          size_on_disk);
+        auto ret = _consumer->consume_batch_start(
+          _header, _num_records, _physical_base_offset, size_on_disk);
         // store the next one!
         _physical_base_offset += size_on_disk;
-        if (__builtin_expect(bool(should_skip), false)) {
-            _state = state::batch_start;
-            return ss::skip_bytes(remaining_batch_bytes);
+        if (std::holds_alternative<batch_consumer::skip_batch>(ret)) {
+            auto sk = std::get<batch_consumer::skip_batch>(ret);
+            if (__builtin_expect(bool(sk), false)) {
+                _state = state::batch_start;
+                return ss::skip_bytes(remaining_batch_bytes);
+            }
+        } else if (std::holds_alternative<batch_consumer::stop_parser>(ret)) {
+            auto st = std::get<batch_consumer::stop_parser>(ret);
+            if (st) {
+                _state = state::batch_start;
+                return ss::stop_iteration::yes;
+            }
         }
         if (_compressed_batch) {
             _record_size = remaining_batch_bytes;
@@ -222,19 +231,27 @@ continuous_batch_parser::do_process(ss::temporary_buffer<char>& data) {
               buf.size_bytes(),
               _64));
         }
-        auto should_skip = _consumer->consume_record_key(
+        auto ret = _consumer->consume_record_key(
           _record_size,
           _record_attributes,
           _timestamp_delta,
           _offset_delta,
           std::move(buf));
-        if (should_skip) {
-            if (--_num_records) {
-                _state = state::record_start;
-            } else {
-                _state = state::batch_end;
+        if (std::holds_alternative<batch_consumer::skip_batch>(ret)) {
+            if (std::get<batch_consumer::skip_batch>(ret)) {
+                if (--_num_records) {
+                    _state = state::record_start;
+                } else {
+                    _state = state::batch_end;
+                }
+                return ss::skip_bytes(_value_and_headers_size);
             }
-            return ss::skip_bytes(_value_and_headers_size);
+        } else if (std::holds_alternative<batch_consumer::stop_parser>(ret)) {
+            auto st = std::get<batch_consumer::stop_parser>(ret);
+            if (st) {
+                _state = state::batch_start;
+                return ss::stop_iteration::yes;
+            }
         }
     }
     case state::value_and_headers: {
@@ -281,7 +298,8 @@ continuous_batch_parser::do_process(ss::temporary_buffer<char>& data) {
     }
     case state::batch_end:
         _state = state::batch_start;
-        return _consumer->consume_batch_end();
+        return _consumer->consume_batch_end() ? ss::stop_iteration::yes
+                                              : ss::stop_iteration::no;
     }
     return ss::stop_iteration::no;
 }

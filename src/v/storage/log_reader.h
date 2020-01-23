@@ -27,13 +27,13 @@ public:
         _timeout = timeout;
     }
 
-    skip consume_batch_start(
+    consume_result consume_batch_start(
       model::record_batch_header,
       size_t num_records,
       size_t physical_base_offset,
       size_t bytes_on_disk) override;
 
-    skip consume_record_key(
+    consume_result consume_record_key(
       size_t size_bytes,
       model::record_attributes attributes,
       int32_t timestamp_delta,
@@ -44,7 +44,7 @@ public:
 
     void consume_compressed_records(iobuf&&) override;
 
-    ss::stop_iteration consume_batch_end() override;
+    stop_parser consume_batch_end() override;
 
 private:
     bool skip_batch_type(model::record_batch_type type);
