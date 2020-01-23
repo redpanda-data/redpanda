@@ -41,6 +41,10 @@ static inline bool is_offset_in_range(segment& s, model::offset o) {
     return o <= s.reader()->max_offset() && o >= s.reader()->base_offset();
 }
 
+/// lower_bound returns the element that is _strictly_ greater than or equal to
+/// bucket->max_offset() - see comparator above
+/// because our offsets are _inclusive_ we must check the previous iterator
+/// in the case that we are at the end, we also check the last element.
 log_set::iterator log_set::lower_bound(model::offset offset) {
     vassert(offset() >= 0, "cannot find negative logical offsets");
     if (_handles.empty()) {
