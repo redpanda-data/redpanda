@@ -54,6 +54,7 @@ private:
 class record {
 public:
     record() = default;
+    ~record() noexcept = default;
     record(record&&) noexcept = default;
     record& operator=(record&&) noexcept = default;
     record(const record&) = delete;
@@ -120,10 +121,10 @@ public:
     friend std::ostream& operator<<(std::ostream&, const record&);
 
 private:
-    uint32_t _size_bytes;
+    uint32_t _size_bytes{0};
     record_attributes _attributes;
-    int32_t _timestamp_delta;
-    int32_t _offset_delta;
+    int32_t _timestamp_delta{0};
+    int32_t _offset_delta{0};
     iobuf _key;
     // Already contains the varint encoding of the
     // value size and of the header size.
@@ -224,12 +225,12 @@ struct record_batch_header {
     };
 
     // Size of the batch minus this field.
-    uint32_t size_bytes;
+    uint32_t size_bytes{0};
     offset base_offset;
     record_batch_type type;
-    int32_t crc;
+    int32_t crc{0};
     record_batch_attributes attrs;
-    int32_t last_offset_delta;
+    int32_t last_offset_delta{0};
     timestamp first_timestamp;
     timestamp max_timestamp;
     /// context object with opaque environment data
@@ -307,7 +308,7 @@ public:
     using records_type = std::variant<uncompressed_records, compressed_records>;
 
     record_batch(record_batch_header header, records_type&& records) noexcept
-      : _header(std::move(header))
+      : _header(header)
       , _records(std::move(records)) {}
     record_batch(const record_batch& o) = delete;
     record_batch& operator=(const record_batch&) = delete;
@@ -421,7 +422,7 @@ public:
           std::back_inserter(r),
           [](record& rec) -> record { return rec.share(); });
 
-        return record_batch(std::move(h), std::move(r));
+        return record_batch(h, std::move(r));
     }
 
 private:
