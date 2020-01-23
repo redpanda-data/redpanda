@@ -51,9 +51,7 @@ public:
     uint64_t file_size() const { return _file_size; }
 
     bool empty() const {
-        // because they are inclusive offsets, empty means that base_offset is
-        // strictly larger than _max_offset
-        return _base_offset > _max_offset;
+        return _max_offset() < 0;
     }
 
     /// close the underlying file handle

@@ -147,7 +147,13 @@ public:
     bool is_transactional() const {
         return _attributes.test(is_transactional_bit);
     }
-
+    bool is_valid_compression() const {
+        auto at = _attributes.to_ulong() & compression_mask;
+        if (at >= 0 && at <= 4) {
+            return true;
+        }
+        return false;
+    }
     model::compression compression() const {
         switch (_attributes.to_ulong() & compression_mask) {
         case 0:

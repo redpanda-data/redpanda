@@ -52,8 +52,8 @@ constexpr inline static std::array<storage::log_manager::storage_type, 2>
 
 class storage_test_fixture {
 public:
-    ss::sstring test_dir = "test_data_"
-                           + random_generators::gen_alphanum_string(5);
+    ss::sstring test_dir = "test_data."
+                           + random_generators::gen_alphanum_string(10);
 
     storage_test_fixture() { configure_unit_test_logging(); }
 
@@ -180,7 +180,7 @@ public:
                          .consume(
                            log.make_appender(append_cfg), append_cfg.timeout)
                          .get0();
-
+            log.flush().get();
             // Check if after append offset was updated correctly
             auto expected_offset = model::offset(total_records - 1)
                                    + base_offset;
@@ -207,8 +207,10 @@ public:
           .prio = ss::default_priority_class(),
           .type_filter = {},
           .max_offset = end};
+        tlog.info("read_range_to_vector: {}", cfg);
         auto reader = log.make_reader(std::move(cfg));
-        return reader.consume(batch_validating_consumer(), model::no_timeout)
+        return std::move(reader)
+          .consume(batch_validating_consumer(), model::no_timeout)
           .get0();
     }
 };

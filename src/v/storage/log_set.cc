@@ -1,6 +1,7 @@
 #include "storage/log_set.h"
 
 #include "storage/logger.h"
+#include "vassert.h"
 
 #include <fmt/format.h>
 
@@ -19,29 +20,52 @@ log_set::log_set(log_set::underlying_t segs) noexcept(log_set::is_nothrow_v)
     std::sort(_handles.begin(), _handles.end(), base_offset_ordering{});
 }
 
-void log_set::add(segment h) {
-    if (
-      !_handles.empty()
-      && h.reader()->base_offset() < _handles.back().reader()->base_offset()) {
-        throw std::runtime_error(fmt::format(
-          "New segments must be monotonically increasing 'base_offset()' "
-          "ptr->base_offset():{} must be > last:{}",
-          h.reader()->base_offset(),
-          _handles.back().reader()->base_offset()));
+void log_set::add(segment&& h) {
+    if (!_handles.empty()) {
+        vassert(
+          h.reader()->base_offset() > _handles.back().reader()->max_offset(),
+          "New segments must be monotonically increasing. Got:{} - Current:{}",
+          h,
+          *this);
     }
-    _handles.push_back(std::move(h));
+    _handles.emplace_back(std::move(h));
 }
 
 void log_set::pop_back() { _handles.pop_back(); }
 
-log_set::const_iterator log_set::lower_bound(model::offset offset) const {
-    return std::lower_bound(
-      std::cbegin(_handles),
-      std::cend(_handles),
-      offset,
-      base_offset_ordering{});
+static inline bool is_offset_in_range(segment& s, model::offset o) {
+    if (s.empty()) {
+        return false;
+    }
+    // must use max_offset
+    return o <= s.reader()->max_offset() && o >= s.reader()->base_offset();
 }
 
+/// lower_bound returns the element that is _strictly_ greater than or equal to
+/// bucket->max_offset() - see comparator above
+/// because our offsets are _inclusive_ we must check the previous iterator
+/// in the case that we are at the end, we also check the last element.
+log_set::iterator log_set::lower_bound(model::offset offset) {
+    vassert(offset() >= 0, "cannot find negative logical offsets");
+    if (_handles.empty()) {
+        return _handles.end();
+    }
+    auto it = std::lower_bound(
+      std::begin(_handles), std::end(_handles), offset, base_offset_ordering{});
+    if (it == _handles.end()) {
+        it = std::prev(it);
+    }
+    if (is_offset_in_range(*it, offset)) {
+        return it;
+    }
+    if (std::distance(_handles.begin(), it) > 0) {
+        it = std::prev(it);
+    }
+    if (is_offset_in_range(*it, offset)) {
+        return it;
+    }
+    return _handles.end();
+}
 std::ostream& operator<<(std::ostream& o, const log_set& s) {
     o << "{size: " << s.size() << ", [";
     for (auto& p : s) {

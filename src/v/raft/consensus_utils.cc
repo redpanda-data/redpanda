@@ -271,27 +271,32 @@ read_bootstrap_state(storage::log log) {
         auto retval = configuration_bootstrap_state{};
         model::offset it = log.start_offset();
         const model::offset end = log.max_offset();
-        if (it == end) {
-            retval.set_end_of_log();
+        if (end() < 0) {
+            // empty log
+            return retval;
         }
-        while (it < end) {
-            storage::log_reader_config rcfg{.start_offset = it,
-                                            .max_bytes = 1024 * 1024 /*1MB*/,
-                                            .min_bytes = 0, // ok to be empty
-                                            .prio = raft_priority(),
-                                            .max_offset = end};
+        do {
+            auto rcfg = storage::log_reader_config{
+              .start_offset = it,
+              .max_bytes = 1024 * 1024 /*1MB*/,
+              .min_bytes = 1,
+              .prio = raft_priority(),
+              .max_offset = end};
             auto reader = log.make_reader(rcfg);
             auto batches = reader
                              .consume(
                                memory_batch_consumer(), model::no_timeout)
                              .get0();
-            it = it + model::offset(batches.size());
+            if (batches.empty()) {
+                return retval;
+            }
+            it = batches.back().last_offset() + model::offset(1);
             for (auto& batch : batches) {
                 retval.process_batch_in_thread(std::move(batch));
             }
-        }
+        } while (it < end);
 
-        return retval;
+          return retval;
     });
 }
 

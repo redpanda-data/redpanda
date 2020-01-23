@@ -45,6 +45,15 @@ public:
     std::optional<size_t> lower_bound(model::offset o);
 
     model::offset base_offset() const { return _base; }
+    model::offset last_indexed_offset() const {
+        if (_positions.empty()) {
+            return _base;
+        }
+        return _base + model::offset(_positions.back().first);
+    }
+    model::offset last_seen_offset() const {
+        return _last_seen_offset;
+    }
     bool needs_persistence() const { return _needs_persistence; }
     size_t indexed_offsets() const { return _positions.size(); }
     size_t step() const { return _step; }
@@ -58,6 +67,7 @@ private:
     ss::sstring _name;
     ss::file _out;
     model::offset _base;
+    model::offset _last_seen_offset;
     size_t _step;
     size_t _acc{0};
     bool _needs_persistence{false};

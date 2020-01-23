@@ -65,7 +65,7 @@ private:
 
     static ss::sstring make_dir() {
         return fmt::format(
-          "test_dir_{}", random_generators::gen_alphanum_string(7));
+          "test.dir_{}", random_generators::gen_alphanum_string(7));
     }
 
     static model::ntp make_ntp() {
