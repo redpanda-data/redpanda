@@ -1,0 +1,13 @@
+[Unit]
+Description=Redpanda Status Timer
+After=local-fs.target network-online.target
+Requires=local-fs.target network-online.target
+
+[Timer]
+Unit=redpanda-status.service
+OnActiveSec=30s
+OnUnitActiveSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
