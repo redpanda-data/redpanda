@@ -21,8 +21,11 @@ public:
 
     virtual ~batch_consumer() = default;
 
-    virtual skip
-    consume_batch_start(model::record_batch_header, size_t num_records)
+    virtual skip consume_batch_start(
+      model::record_batch_header,
+      size_t num_records,
+      size_t physical_base_offset,
+      size_t size_on_disk)
       = 0;
 
     virtual skip consume_record_key(
@@ -224,6 +227,7 @@ private:
     int32_t _offset_delta{0};
     size_t _value_and_headers_size{0};
     size_t _bytes_consumed{0};
+    size_t _physical_base_offset{0};
     failure_probes _fprobe;
 };
 

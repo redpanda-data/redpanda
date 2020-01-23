@@ -2,6 +2,7 @@
 
 #include "bytes/iobuf.h"
 #include "storage/logger.h"
+#include "vassert.h"
 
 #include <fmt/ostream.h>
 
@@ -17,8 +18,14 @@ bool skipping_consumer::skip_batch_type(model::record_batch_type type) {
 }
 
 batch_consumer::skip skipping_consumer::consume_batch_start(
-  model::record_batch_header header, size_t num_records) {
+  model::record_batch_header header,
+  size_t num_records,
+  size_t /*physical_base_offset*/,
+  size_t /*bytes_on_disk*/) {
     if (header.last_offset() < _start_offset) {
+        return skip::yes;
+    }
+    if (header.base_offset() > _reader._config.max_offset) {
         return skip::yes;
     }
     if (skip_batch_type(header.type)) {
@@ -72,10 +79,9 @@ ss::stop_iteration skipping_consumer::consume_batch_end() {
     _reader._buffer_size += mem;
     // We keep the batch in the buffer so that the reader can be cached.
     if (
-      batch.base_offset() > _reader._tracker.committed_offset()
-      || batch.base_offset() > _reader._config.max_offset) {
+      batch.base_offset() > _reader._seg.committed_offset()
+      || batch.last_offset() > _reader._config.max_offset) {
         _reader._end_of_stream = true;
-        _reader._over_committed_offset = true;
         return ss::stop_iteration::yes;
     }
     if (
@@ -88,13 +94,13 @@ ss::stop_iteration skipping_consumer::consume_batch_end() {
 }
 
 log_segment_batch_reader::log_segment_batch_reader(
-  segment_reader_ptr seg,
-  offset_tracker& tracker,
+  segment& seg,
+  model::offset base,
   log_reader_config config,
   probe& probe) noexcept
   : model::record_batch_reader::impl()
-  , _seg(std::move(seg))
-  , _tracker(tracker)
+  , _seg(seg)
+  , _base(base)
   , _config(std::move(config))
   , _consumer(skipping_consumer(*this, config.start_offset))
   , _probe(probe) {
@@ -104,7 +110,7 @@ log_segment_batch_reader::log_segment_batch_reader(
 bool log_segment_batch_reader::is_initialized() const { return bool(_parser); }
 
 ss::future<> log_segment_batch_reader::initialize() {
-    _input = _seg->data_stream(0, _config.prio);
+    _input = _seg.offset_data_stream(_base, _config.prio);
     _parser = continuous_batch_parser(_consumer, _input);
     return ss::make_ready_future<>();
 }
@@ -113,22 +119,10 @@ bool log_segment_batch_reader::is_buffer_full() const {
     return _buffer_size >= max_buffer_size;
 }
 
-// Called for cached readers.
-void log_segment_batch_reader::reset_state() {
-    if (__builtin_expect(_over_committed_offset, false)) {
-        _buffer_size = _buffer.back().memory_usage();
-        if (_buffer.back().last_offset() > _tracker.committed_offset()) {
-            return;
-        }
-        _over_committed_offset = false;
-    }
-    _end_of_stream = false;
-}
-
 ss::future<log_segment_batch_reader::span>
 log_segment_batch_reader::do_load_slice(
   model::timeout_clock::time_point timeout) {
-    if (_end_of_stream || _over_committed_offset) {
+    if (_end_of_stream) {
         return ss::make_ready_future<span>();
     }
     if (!is_initialized()) {
@@ -155,19 +149,14 @@ log_segment_batch_reader::do_load_slice(
                   return span();
               }
               _probe.add_batches_read(int32_t(_buffer.size()));
-              return span{&_buffer[0],
-                          int32_t(_buffer.size()) - _over_committed_offset};
+              return span{&_buffer[0], int32_t(_buffer.size())};
           });
       });
 }
 
 log_reader::log_reader(
-  log_set& seg_set,
-  offset_tracker& tracker,
-  log_reader_config config,
-  probe& probe) noexcept
+  log_set& seg_set, log_reader_config config, probe& probe) noexcept
   : _set(seg_set)
-  , _offset_tracker(tracker)
   , _config(std::move(config))
   , _probe(probe) {
     _end_of_stream = seg_set.empty();
@@ -185,40 +174,52 @@ bool log_reader::is_done() {
     return _end_of_stream || !maybe_create_segment_reader();
 }
 
-static inline segment_reader_ptr find_in_set(log_set& s, model::offset o) {
-    segment_reader_ptr ret = nullptr;
+static inline segment* find_in_set(log_set& s, model::offset o) {
+    vassert(o() >= 0, "cannot find negative logical offsets");
+    segment* ret = nullptr;
     if (auto it = s.lower_bound(o); it != s.end()) {
-        ret = it->reader();
+        ret = &(*it);
     }
     return ret;
+}
+
+static inline bool is_finished_offset(log_set& s, model::offset o) {
+    if (s.empty()) {
+        return true;
+    }
+    for (auto it = s.rbegin(); it != s.rend(); it++) {
+        if (!it->empty()) {
+            stlog.info("offset: {}, dirty:{}", o, it->dirty_offset());
+            return o > it->dirty_offset();
+        }
+    }
+    return true;
 }
 
 log_reader::reader_available log_reader::maybe_create_segment_reader() {
     if (_current_reader && !_current_reader->end_of_stream()) {
         return reader_available::yes;
     }
-    segment_reader_ptr seg;
+    model::offset base = _config.start_offset;
     if (_current_reader) {
         auto bytes_read = _current_reader->bytes_read();
+        // The max offset is inclusive, we have to select next segment
+        base = _current_reader->_seg.committed_offset() + model::offset(1);
         if (
-          bytes_read >= _config.max_bytes
-          || _current_reader->_over_committed_offset) {
+          bytes_read >= _config.max_bytes || base > _config.max_offset
+          || is_finished_offset(_set, base)) {
             _end_of_stream = true;
             return reader_available::no;
         }
         _config.max_bytes -= bytes_read;
         _config.min_bytes -= std::min(bytes_read, _config.min_bytes);
-        // The max offset is inclusive, we have to select next segment
-        seg = find_in_set(
-          _set, _current_reader->_seg->max_offset() + model::offset(1));
-    } else {
-        seg = find_in_set(_set, _config.start_offset);
     }
+    segment* seg = find_in_set(_set, base);
     if (!seg) {
         _end_of_stream = true;
         return reader_available::no;
     }
-    _current_reader.emplace(std::move(seg), _offset_tracker, _config, _probe);
+    _current_reader.emplace(*seg, base, _config, _probe);
     return reader_available::yes;
 }
 

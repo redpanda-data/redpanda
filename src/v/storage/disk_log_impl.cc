@@ -19,8 +19,6 @@ disk_log_impl::disk_log_impl(
   , _segs(std::move(segs)) {
     _probe.setup_metrics(this->ntp());
     if (!_segs.empty()) {
-        _tracker.update_committed_offset(_segs.back().reader()->max_offset());
-        _tracker.update_dirty_offset(_segs.back().reader()->max_offset());
         _term = _segs.back().reader()->term();
     } else {
         _term = model::term_id(0);
@@ -54,9 +52,11 @@ ss::future<> disk_log_impl::new_segment(
 // config timeout is for the one calling reader consumer
 log_appender disk_log_impl::make_appender(log_append_config cfg) {
     auto now = log_clock::now();
-    auto base = _tracker.dirty_offset() >= model::offset(0)
-                  ? _tracker.dirty_offset() + model::offset(1)
-                  : model::offset(0);
+    model::offset base(0);
+    if (auto o = max_offset(); o() >= 0) {
+        // start at *next* valid and inclusive offset!
+        base = o + model::offset(1);
+    }
     return log_appender(
       std::make_unique<disk_log_appender>(*this, cfg, now, base));
 }
@@ -72,26 +72,29 @@ ss::future<> disk_log_impl::do_roll() {
       // FIXME(agallego) - figure out how to not forward to segment
       //.then([this] { return _segs.back().appender()->close(); })
       .then([this] {
-          auto offset = _tracker.committed_offset() + model::offset(1);
-          stlog.trace("Rolling log segment offset {}, term {}", offset, _term);
+          model::offset base(0);
+          if (auto o = max_offset(); o() >= 0) {
+              // start at *next* valid and inclusive offset!
+              base = o + model::offset(1);
+          }
+          stlog.trace("Rolling log segment offset {}, term {}", base, _term);
           return new_segment(
-            offset, _term, _segs.back().appender()->priority_class());
+            base, _term, _segs.back().appender()->priority_class());
       });
 }
-ss::future<> disk_log_impl::maybe_roll(model::offset current_offset) {
+ss::future<> disk_log_impl::maybe_roll() {
     if (
       _segs.back().appender()->file_byte_offset()
       < _manager.max_segment_size()) {
         return ss::make_ready_future<>();
     }
-    _tracker.update_dirty_offset(current_offset);
     return do_roll();
 }
 
 model::record_batch_reader
 disk_log_impl::make_reader(log_reader_config config) {
     return model::make_record_batch_reader<log_reader>(
-      _segs, _tracker, std::move(config), _probe);
+      _segs, std::move(config), _probe);
 }
 
 // ss::future<> disk_log_impl::truncate_whole_segments(

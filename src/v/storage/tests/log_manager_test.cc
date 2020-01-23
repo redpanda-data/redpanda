@@ -3,6 +3,7 @@
 #include "storage/disk_log_appender.h"
 #include "storage/log_manager.h"
 #include "storage/log_segment_appender.h"
+#include "storage/log_segment_appender_utils.h"
 #include "storage/log_segment_reader.h"
 #include "storage/tests/random_batch.h"
 #include "utils/file_sanitizer.h"
@@ -14,18 +15,18 @@
 using namespace storage; // NOLINT
 
 void write_garbage(segment_appender_ptr& ptr) {
-    auto batches = test::make_random_batches(model::offset(1), 1);
     auto b = test::make_buffer(100);
     ptr->append(b.get(), b.size()).get();
     ptr->flush().get();
 }
 
-void write_batches(segment_appender_ptr& seg) {
-    auto batches = test::make_random_batches(model::offset(1), 1);
+void write_batches(segment& seg) {
+    auto batches = test::make_random_batches(
+      seg.reader()->base_offset() + model::offset(1), 1);
     for (auto& b : batches) {
-        storage::write(*seg, b).get();
+        (void)seg.append(std::move(b)).get0();
     }
-    seg->flush().get();
+    seg.flush().get();
 }
 
 log_config make_config() {
@@ -65,7 +66,7 @@ SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
                    model::term_id(1),
                    ss::default_priority_class())
                   .get0();
-    write_batches(seg3.appender());
+    write_batches(seg3);
     seg3.close().get();
 
     auto ntp4 = model::ntp{
