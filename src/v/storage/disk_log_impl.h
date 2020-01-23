@@ -46,10 +46,22 @@ public:
         }
         return _segs.front().reader()->base_offset();
     }
-    model::offset max_offset() const final { return _tracker.dirty_offset(); }
+    model::offset max_offset() const final {
+        for (auto it = _segs.rbegin(); it != _segs.rend(); it++) {
+            if (!it->empty()) {
+                return it->reader()->max_offset();
+            }
+        }
+        return model::offset{};
+    }
 
     model::offset committed_offset() const final {
-        return _tracker.committed_offset();
+        for (auto it = _segs.rbegin(); it != _segs.rend(); it++) {
+            if (!it->empty()) {
+                return it->dirty_offset();
+            }
+        }
+        return model::offset{};
     }
     std::ostream& print(std::ostream&) const final;
 
