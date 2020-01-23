@@ -31,12 +31,23 @@ ss::future<> disk_log_impl::close() {
     return ss::parallel_for_each(_segs, [](segment& h) { return h.close(); });
 }
 
+ss::future<> disk_log_impl::remove_empty_segments() {
+    return ss::do_until(
+      [this] { return _segs.empty() || !_segs.back().empty(); },
+      [this] {
+          return _segs.back().close().then([this] { _segs.pop_back(); });
+      });
+}
+
 ss::future<> disk_log_impl::new_segment(
   model::offset o, model::term_id term, const ss::io_priority_class& pc) {
     return _manager.make_log_segment(ntp(), o, term, pc)
-      .then([this, pc](segment handles) {
-          _segs.add(std::move(handles));
-          _probe.segment_created();
+      .then([this, pc](segment handles) mutable {
+          return remove_empty_segments().then(
+            [this, h = std::move(handles)]() mutable {
+                _segs.add(std::move(h));
+                _probe.segment_created();
+            });
       });
 }
 
