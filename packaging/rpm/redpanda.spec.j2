@@ -56,6 +56,8 @@ install -m644 %{_topdir}/common/systemd/50-redpanda.preset -Dt "%{buildroot}%{_p
 install -m644 %{_topdir}/common/systemd/redpanda.slice -Dt "%{buildroot}%{_prefix}/lib/systemd/system"
 install -m644 %{_topdir}/common/systemd/redpanda.service -Dt "%{buildroot}%{_prefix}/lib/systemd/system"
 install -m644 %{_topdir}/common/systemd/redpanda-tuner.service -Dt "%{buildroot}%{_prefix}/lib/systemd/system"
+install -m644 %{_topdir}/common/systemd/redpanda-status.service -Dt "%{buildroot}%{_prefix}/lib/systemd/system"
+install -m644 %{_topdir}/common/systemd/redpanda-status.timer -Dt "%{buildroot}%{_prefix}/lib/systemd/system"
 install -m644 %{_topdir}/common/redpanda.d/*.conf -Dt "%{buildroot}/etc/redpanda.d"
 install -m644 %{_topdir}/common/sysconfig/redpanda -Dt "%{buildroot}/etc/sysconfig"
 install -m644 %{_topdir}/common/sysctl.d/*  -Dt "%{buildroot}%{_prefix}/lib/sysctl.d"
@@ -95,6 +97,8 @@ install -m755 %{_topdir}/common/scripts/* -Dt "%{buildroot}/%{_prefix}/lib/redpa
 %{_prefix}/lib/systemd/system/redpanda.slice
 %{_prefix}/lib/systemd/system/redpanda.service
 %{_prefix}/lib/systemd/system/redpanda-tuner.service
+%{_prefix}/lib/systemd/system/redpanda-status.service
+%{_prefix}/lib/systemd/system/redpanda-status.timer
 %{_prefix}/lib/sysctl.d/99-redpanda-sched.conf
 %{_prefix}/lib/sysctl.d/99-redpanda-aio.conf
 /etc/redpanda/admin-api-doc/config.json
@@ -111,10 +115,10 @@ install -m755 %{_topdir}/common/scripts/* -Dt "%{buildroot}/%{_prefix}/lib/redpa
 /usr/bin/systemctl daemon-reload ||:
 
 %preun
-%systemd_preun redpanda.slice redpanda.service redpanda-tuner.service
+%systemd_preun redpanda.slice redpanda.service redpanda-tuner.service redpanda-status.timer redpanda-status.service
 
 %postun
-%systemd_postun redpanda.slice redpanda.service redpanda-tuner.service
+%systemd_postun redpanda.slice redpanda.service redpanda-tuner.service redpanda-status.timer redpanda-status.service
 
 %posttrans
 ln -sfT /etc/redpanda /var/lib/redpanda/conf
