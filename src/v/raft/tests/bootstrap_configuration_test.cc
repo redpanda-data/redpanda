@@ -27,20 +27,16 @@ struct bootstrap_fixture : raft::simple_record_fixture {
         (void)_mngr.manage(_ntp).get0();
     }
     std::vector<storage::append_result> write_n(const std::size_t n) {
-        auto cfg = storage::log_append_config{
+        const auto cfg = storage::log_append_config{
           storage::log_append_config::fsync::no,
           ss::default_priority_class(),
           model::no_timeout,
           model::term_id{0}};
         std::vector<storage::append_result> res;
         res.push_back(
-          datas(n)
-            .consume(get_log().make_appender(cfg), cfg.timeout)
-            .get0());
+          datas(n).consume(get_log().make_appender(cfg), cfg.timeout).get0());
         res.push_back(
-          configs(n)
-            .consume(get_log().make_appender(cfg), cfg.timeout)
-            .get0());
+          configs(n).consume(get_log().make_appender(cfg), cfg.timeout).get0());
         get_log().flush().get();
         return res;
     }
@@ -67,11 +63,12 @@ FIXTURE_TEST(write_configs, bootstrap_fixture) {
     }
     auto cfg = raft::details::read_bootstrap_state(get_log()).get0();
     info(
-      "data batches:{}, config batches:{}",
+      "data batches:{}, config batches: {}, data batches:{}, config batches:{}",
+      replies[0],
+      replies[1],
       cfg.data_batches_seen(),
       cfg.config_batches_seen());
 
-    BOOST_REQUIRE(cfg.is_finished());
     for (auto& n : cfg.config().nodes) {
         BOOST_REQUIRE(n.id() >= 0 && n.id() <= bootstrap_fixture::active_nodes);
     }
@@ -85,7 +82,6 @@ FIXTURE_TEST(write_configs, bootstrap_fixture) {
 FIXTURE_TEST(empty_log, bootstrap_fixture) {
     auto cfg = raft::details::read_bootstrap_state(get_log()).get0();
 
-    BOOST_REQUIRE(cfg.is_finished());
     BOOST_REQUIRE_EQUAL(cfg.data_batches_seen(), 0);
     BOOST_REQUIRE_EQUAL(cfg.config_batches_seen(), 0);
 }
