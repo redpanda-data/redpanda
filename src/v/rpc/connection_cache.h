@@ -3,6 +3,7 @@
 #include "model/metadata.h"
 #include "rpc/connection.h"
 #include "rpc/reconnect_transport.h"
+#include "rpc/types.h"
 
 #include <seastar/core/shared_ptr.hh>
 
@@ -25,7 +26,10 @@ public:
 
     /// \brief needs to be a future, because mutations may come from different
     /// fibers and they need to be synchronized
-    ss::future<> emplace(model::node_id n, rpc::transport_configuration c);
+    ss::future<> emplace(
+      model::node_id n,
+      rpc::transport_configuration c,
+      clock_type::duration base_backoff = std::chrono::seconds(1));
     ss::future<> remove(model::node_id n);
 
     /// \brief closes all connections
