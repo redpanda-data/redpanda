@@ -39,14 +39,15 @@ def publish_packages(vconfig, access_token):
     supported_distros = {
         "deb": {
             "debian": ["jessie", "stretch", "buster", "bullseye"],
-            "ubuntu": ["trusty", "utopic", "vivid", "wily", "xenial",
-                       "yakkety", "zesty", "artful", "bionic", "cosmic",
-                       "disco", "eoan"]
+            "ubuntu": [
+                "trusty", "utopic", "vivid", "wily", "xenial", "yakkety",
+                "zesty", "artful", "bionic", "cosmic", "disco", "eoan"
+            ]
         },
         "rpm": {
-            "el": ["6", "7", "8"], # red hat enterprise linux
+            "el": ["6", "7", "8"],  # red hat enterprise linux
             "fedora": ["30", "31"],
-            "ol": ["7"], # oracle linux
+            "ol": ["7"],  # oracle linux
         }
     }
 
@@ -73,8 +74,12 @@ def _get_packagecloud_distro_metadata(token, vconfig, supported_distros):
 
         for distro_name, releases in distros.items():
             for release_name in releases:
-                md = {'fmt': fmt, 'name': distro_name, 'release': release_name,
-                      'files': package_files}
+                md = {
+                    'fmt': fmt,
+                    'name': distro_name,
+                    'release': release_name,
+                    'files': package_files
+                }
 
                 for d in pc_distros[fmt]:
                     if d['index_name'] == distro_name:
@@ -115,9 +120,7 @@ def _push_pkg(token, distro_md):
         data = {
             'package[distro_version_id]': distro_md['id'],
         }
-        files = {
-            'package[package_file]': (str(f), f.open('rb'))
-        }
+        files = {'package[package_file]': (str(f), f.open('rb'))}
         res = requests.post(url, auth=(token, ''), data=data, files=files)
         logging.debug(res.text)
         res.raise_for_status()

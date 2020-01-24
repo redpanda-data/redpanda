@@ -19,46 +19,53 @@ request_types = \
             produce.ProduceRequest_v4,
             produce.ProduceRequest_v5]
 
+
 def random_int16():
-    return random.randint(-2**15, 2**15-1)
+    return random.randint(-2**15, 2**15 - 1)
+
 
 def random_int32():
-    return random.randint(-2**31, 2**31-1)
+    return random.randint(-2**31, 2**31 - 1)
+
 
 def random_int64():
-    return random.randint(-2**63, 2**63-1)
+    return random.randint(-2**63, 2**63 - 1)
+
 
 def random_string():
     return "".join(random.choice(string.printable) for _ in range(50))
 
+
 def random_bytes(allow_none=False):
     if allow_none and random.choice((True, False)):
         return None
-    return bytes(bytearray(random.getrandbits(8) for _ in
-        range(random.randint(0, 256))))
+    return bytes(
+        bytearray(
+            random.getrandbits(8) for _ in range(random.randint(0, 256))))
+
 
 def random_record_batch():
     builder = DefaultRecordBatchBuilder(
-            magic=2,
-            compression_type=DefaultRecordBatch.CODEC_NONE,
-            is_transactional=False,
-            producer_id=-1, #random_int64(), disable idempotent
-            producer_epoch=random_int16(),
-            base_sequence=random_int32(),
-            batch_size=9999999999)
+        magic=2,
+        compression_type=DefaultRecordBatch.CODEC_NONE,
+        is_transactional=False,
+        producer_id=-1,  #random_int64(), disable idempotent
+        producer_epoch=random_int16(),
+        base_sequence=random_int32(),
+        batch_size=9999999999)
 
-    builder.append(
-            offset=random_int32(),
-            timestamp=random_int64(),
-            key=random_bytes(True),
-            value=random_bytes(True),
-            headers=())
+    builder.append(offset=random_int32(),
+                   timestamp=random_int64(),
+                   key=random_bytes(True),
+                   value=random_bytes(True),
+                   headers=())
 
     return builder.build()
 
+
 def random_field_value(field, req_type):
     if field is types.Int8:
-        return random.randint(-2**7, 2**7-1)
+        return random.randint(-2**7, 2**7 - 1)
 
     elif field is types.Int16:
         return random_int16()
@@ -88,24 +95,26 @@ def random_field_value(field, req_type):
 
     elif isinstance(field, types.Array):
         if isinstance(field.array_of, types.Schema):
-            generator = lambda: tuple(map(functools.partial(random_field_value,
-                req_type=req_type), field.array_of.fields))
+            generator = lambda: tuple(
+                map(functools.partial(random_field_value, req_type=req_type),
+                    field.array_of.fields))
         else:
             generator = lambda: random_field_value(field.array_of, req_type)
-        return tuple(generator()
-            for _ in range(random.randint(0, 10)))
+        return tuple(generator() for _ in range(random.randint(0, 10)))
 
     raise Exception("unhandled type: {}".format(field))
 
+
 def random_request():
     req_type = random.choice(request_types)
-    req_args = map(functools.partial(random_field_value,
-        req_type=req_type), req_type.SCHEMA.fields)
+    req_args = map(functools.partial(random_field_value, req_type=req_type),
+                   req_type.SCHEMA.fields)
     request = req_type(*req_args)
     correlation_id = random_int32()
     client_id = random_string()
     header = api.RequestHeader(request, correlation_id, client_id)
     return header, request
+
 
 if __name__ == "__main__":
     import sys

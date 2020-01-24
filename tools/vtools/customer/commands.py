@@ -18,8 +18,7 @@ def customer():
 @click.option(
     '--customer-id',
     help=('A unique string to identify the customer by. Used to create unique'
-          'resources such as the package repo tokens, the docs bucket, etc.')
-)
+          'resources such as the package repo tokens, the docs bucket, etc.'))
 @click.option('--docs-out-dir',
               default='.',
               help='The directory where the rendered docs will be output')

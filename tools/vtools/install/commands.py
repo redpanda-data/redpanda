@@ -21,8 +21,7 @@ def install():
               help=('Build configuration to select. If none given, the '
                     '`build.default_type` option from the vtools YAML config '
                     'is used (an error is thrown if not defined).'),
-              type=click.Choice(['debug', 'release'],
-                                case_sensitive=False),
+              type=click.Choice(['debug', 'release'], case_sensitive=False),
               default=None)
 @click.option('--conf',
               help=('Path to configuration file. If not given, a .vtools.yml '
@@ -34,7 +33,8 @@ def install():
                     'and libc++abi.'),
               is_flag=True)
 def cpp_deps(build_type, conf, clang):
-    vconfig = config.VConfig(config_file=conf, build_type=build_type,
+    vconfig = config.VConfig(config_file=conf,
+                             build_type=build_type,
                              clang=clang)
 
     cmake.configure_build(vconfig,
@@ -60,10 +60,9 @@ def clang(conf):
               default=None)
 def go_deps(conf):
     vconfig = config.VConfig(conf)
-    shell.run_subprocess(
-        f'cd {vconfig.go_src_dir} && '
-        f'{vconfig.gobin} mod download && '
-        f'{vconfig.gobin} get github.com/cockroachdb/crlfmt')
+    shell.run_subprocess(f'cd {vconfig.go_src_dir} && '
+                         f'{vconfig.gobin} mod download && '
+                         f'{vconfig.gobin} get github.com/cockroachdb/crlfmt')
 
 
 @install.command(short_help='install the go compiler.')
@@ -79,8 +78,7 @@ def go_compiler(version, conf):
     vconfig = config.VConfig(conf)
 
     if os.path.isfile(f'{vconfig.gobin}'):
-        logging.info(
-            f'Found go binary in {vconfig.gobin}. Skipping install.')
+        logging.info(f'Found go binary in {vconfig.gobin}. Skipping install.')
         return
 
     url = f'https://dl.google.com/go/go{version}.linux-amd64.tar.gz'
