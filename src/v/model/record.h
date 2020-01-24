@@ -366,6 +366,10 @@ public:
     model::term_id term() const { return _header.ctx.term; }
     void set_term(model::term_id term) { _header.ctx.term = term; }
 
+    bool contains(model::offset offset) const {
+        return base_offset() <= offset && offset <= last_offset();
+    }
+
     // Can only be called if this holds a set of uncompressed records.
     uncompressed_records::const_iterator begin() const {
         return std::get<uncompressed_records>(_records).begin();
