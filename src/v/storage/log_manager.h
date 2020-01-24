@@ -2,6 +2,7 @@
 
 #include "model/fundamental.h"
 #include "seastarx.h"
+#include "storage/batch_cache.h"
 #include "storage/log.h"
 #include "storage/segment.h"
 #include "storage/version.h"
@@ -116,6 +117,7 @@ private:
 
     log_config _config;
     logs_type _logs;
+    batch_cache _batch_cache;
 };
 
 } // namespace storage
