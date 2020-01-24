@@ -87,7 +87,10 @@ class VConfig(object):
   src_dir: {self.src_dir}
   build_dir: {self.build_dir}
   external_path: {self.external_path}
+  compiler: {self.compiler}
+  build_type: {self.build_type}
   go_path: {self.go_path}
+  gobin: {self.gobin}
   go_src_dir: {self.go_src_dir}
   go_out_dir: {self.go_src_dir}
   clang_path: {self.clang_path}""")
