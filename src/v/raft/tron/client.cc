@@ -1,6 +1,7 @@
 #include "raft/tron/logger.h"
 #include "raft/tron/service.h"
 #include "random/generators.h"
+#include "reflection/adl.h"
 #include "storage/record_batch_builder.h"
 #include "syschecks/syschecks.h"
 #include "utils/hdr_hist.h"

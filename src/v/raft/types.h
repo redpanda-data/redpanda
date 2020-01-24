@@ -3,10 +3,13 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record_batch_reader.h"
+#include "model/timeout_clock.h"
 #include "rpc/models.h"
 #include "utils/named_type.h"
 
 #include <seastar/net/socket_defs.hh>
+
+#include <boost/range/irange.hpp>
 
 #include <cstdint>
 
@@ -201,9 +204,56 @@ operator<<(std::ostream& o, const heartbeat_reply& r) {
 
 } // namespace raft
 
-namespace rpc {
+namespace reflection {
+
+struct rpc_model_reader_consumer {
+    explicit rpc_model_reader_consumer(iobuf& oref)
+      : ref(oref) {}
+    ss::future<ss::stop_iteration> operator()(model::record_batch batch) {
+        reflection::serialize(ref, batch.release_header(), batch.size());
+        if (!batch.compressed()) {
+            reflection::serialize<int8_t>(ref, 0);
+            for (model::record& r : batch) {
+                reflection::serialize(ref, std::move(r));
+            }
+        } else {
+            reflection::serialize<int8_t>(ref, 1);
+            reflection::serialize(ref, std::move(batch).release().release());
+        }
+        return ss::make_ready_future<ss::stop_iteration>(
+          ss::stop_iteration::no);
+    }
+    void end_of_stream(){};
+    iobuf& ref;
+};
+
 template<>
-void serialize(iobuf&, raft::entry&&);
-template<>
-ss::future<raft::entry> deserialize(source&);
-} // namespace rpc
+struct adl<raft::entry> {
+    void to(iobuf& out, raft::entry&& r) {
+        auto batches = r.reader().release_buffered_batches();
+        reflection::adl<model::record_batch_type>{}.to(out, r.entry_type());
+        reflection::adl<uint32_t>{}.to(out, batches.size());
+        for (auto& batch : batches) {
+            reflection::serialize(out, std::move(batch));
+        }
+    }
+
+    raft::entry from(iobuf io) {
+        return reflection::from_iobuf<raft::entry>(std::move(io));
+    }
+
+    raft::entry from(iobuf_parser& in) {
+        auto batchType = reflection::adl<model::record_batch_type>{}.from(in);
+        auto batchCount = reflection::adl<uint32_t>{}.from(in);
+        auto batches = std::vector<model::record_batch>{};
+        batches.reserve(batchCount);
+        for (int i = 0; i < batchCount; ++i) {
+            batches.push_back(adl<model::record_batch>{}.from(in));
+        }
+
+        auto rdr = model::make_memory_record_batch_reader(std::move(batches));
+        return raft::entry(batchType, std::move(rdr));
+    }
+};
+
+} // namespace reflection

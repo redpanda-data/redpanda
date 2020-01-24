@@ -13,7 +13,7 @@ SEASTAR_THREAD_TEST_CASE(topic_config_rt_test) {
     using namespace std::chrono_literals;
     cfg.retention = 10h;
     cfg.retention_bytes = (1 >> 30);
-    auto d = serialize_roundtrip_rpc(std::move(cfg)).get0();
+    auto d = serialize_roundtrip_rpc(std::move(cfg));
 
     BOOST_REQUIRE_EQUAL(model::ns("test"), d.ns);
     BOOST_REQUIRE_EQUAL(model::topic("a_topic"), d.topic);
@@ -37,7 +37,7 @@ SEASTAR_THREAD_TEST_CASE(broker_metadata_rt_test) {
         .available_disk = static_cast<uint32_t>(10000000000),
         .mount_paths = {"/", "/var/lib"},
         .etc_props = {{"max_segment_size", "1233451"}}});
-    auto d = serialize_roundtrip_rpc(std::move(b)).get0();
+    auto d = serialize_roundtrip_rpc(std::move(b));
 
     BOOST_REQUIRE_EQUAL(d.id(), model::node_id(0));
     BOOST_REQUIRE_EQUAL(d.kafka_api_address().host(), "127.0.0.1");
@@ -66,7 +66,7 @@ SEASTAR_THREAD_TEST_CASE(partition_assignment_rt_test) {
       .ntp = test_ntp,
       .replicas = {{.node_id = model::node_id(0), .shard = 1}}};
 
-    auto d = serialize_roundtrip_rpc(std::move(p_as)).get0();
+    auto d = serialize_roundtrip_rpc(std::move(p_as));
 
     BOOST_REQUIRE_EQUAL(d.group, raft::group_id(2));
     BOOST_REQUIRE_EQUAL(d.ntp, test_ntp);

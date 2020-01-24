@@ -191,9 +191,8 @@ FIXTURE_TEST(truncate_before_read, storage_test_fixture) {
         // truncate
         log.truncate(model::offset{0}).get0();
         // consume
-        reader.consume(batch_validating_consumer{},
-        model::no_timeout).get0(); auto read_batches =
-        read_and_validate_all_batches(log);
+        reader.consume(batch_validating_consumer{}, model::no_timeout).get0();
+        auto read_batches = read_and_validate_all_batches(log);
         BOOST_REQUIRE_EQUAL(read_batches.size(), 0);
         BOOST_REQUIRE_EQUAL(log.committed_offset(), model::offset{});
         BOOST_REQUIRE_EQUAL(log.max_offset(), model::offset{});

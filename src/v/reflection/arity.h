@@ -14,7 +14,7 @@
 // https://stackoverflow.com/questions/35463646/arity-of-aggregate-in-logarithmic-time
 // https://stackoverflow.com/questions/38393302/returning-variadic-aggregates-struct-and-syntax-for-c17-variadic-template-c
 
-namespace rpc {
+namespace reflection {
 
 namespace detail {
 
@@ -45,4 +45,4 @@ constexpr std::size_t arity() {
     return detail::arity_impl<std::decay_t<T>>().size();
 }
 
-} // namespace rpc
+} // namespace reflection

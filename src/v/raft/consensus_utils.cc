@@ -340,9 +340,9 @@ ss::future<raft::group_configuration> extract_configuration(raft::entry e) {
                                      "unsupported"));
                              }
                              auto it = std::prev(b.end());
-                             auto val = it->share_packed_value_and_headers();
-                             return rpc::deserialize<cfg_t>(std::move(val))
-                               .then([&cfg](cfg_t c) { cfg = std::move(c); });
+                             cfg = reflection::adl<cfg_t>{}.from(
+                               it->share_packed_value_and_headers());
+                             return ss::make_ready_future<>();
                          })
                   .then([&cfg] { return std::move(cfg); });
             });
@@ -353,7 +353,7 @@ raft::entry serialize_configuration(group_configuration cfg) {
     auto batch = std::move(
                    storage::record_batch_builder(
                      raft::configuration_batch_type, model::offset(0))
-                     .add_raw_kv(iobuf(), rpc::serialize(std::move(cfg))))
+                     .add_raw_kv(iobuf(), reflection::to_iobuf(std::move(cfg))))
                    .build();
     std::vector<model::record_batch> batches;
     batches.push_back(std::move(batch));
