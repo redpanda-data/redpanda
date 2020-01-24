@@ -50,9 +50,7 @@ public:
 
     uint64_t file_size() const { return _file_size; }
 
-    bool empty() const {
-        return _max_offset() < 0;
-    }
+    bool empty() const { return _max_offset() < 0; }
 
     /// close the underlying file handle
     ss::future<> close() { return _data_file.close(); }

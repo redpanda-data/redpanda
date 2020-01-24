@@ -38,7 +38,7 @@ public:
         return skip_batch::no;
     }
 
-     consume_result consume_record_key(
+    consume_result consume_record_key(
       size_t size_bytes,
       model::record_attributes attributes,
       int32_t timestamp_delta,
@@ -56,7 +56,7 @@ public:
         return skip_batch::no;
     }
 
-     void consume_record_value(iobuf&& value_and_headers) override {
+    void consume_record_value(iobuf&& value_and_headers) override {
         std::get<model::record_batch::uncompressed_records>(_records)
           .emplace_back(
             _record_size_bytes,
@@ -67,12 +67,12 @@ public:
             std::move(value_and_headers));
     }
 
-     void consume_compressed_records(iobuf&& records) override {
+    void consume_compressed_records(iobuf&& records) override {
         _records = model::record_batch::compressed_records(
           _num_records, std::move(records));
     }
 
-     stop_parser consume_batch_end() override {
+    stop_parser consume_batch_end() override {
         batches.emplace_back(std::move(_header), std::move(_records));
         return stop_parser(_stop_at_batch);
     }

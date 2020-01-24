@@ -47,9 +47,7 @@ struct context {
           reader, std::move(indexer), std::move(appender));
         replayer_opt = log_replayer(*_seg);
     }
-    ~context() {
-            _seg->close().get();
-    }
+    ~context() { _seg->close().get(); }
     void write_garbage() {
         auto fd = ss::open_file_dma(
                     base_name, ss::open_flags::create | ss::open_flags::rw)

@@ -51,9 +51,7 @@ public:
         }
         return _base + model::offset(_positions.back().first);
     }
-    model::offset last_seen_offset() const {
-        return _last_seen_offset;
-    }
+    model::offset last_seen_offset() const { return _last_seen_offset; }
     bool needs_persistence() const { return _needs_persistence; }
     size_t indexed_offsets() const { return _positions.size(); }
     size_t step() const { return _step; }

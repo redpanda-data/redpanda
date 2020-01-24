@@ -296,7 +296,7 @@ read_bootstrap_state(storage::log log) {
             }
         } while (it < end);
 
-          return retval;
+        return retval;
     });
 }
 
