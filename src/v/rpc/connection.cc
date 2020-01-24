@@ -19,17 +19,19 @@ connection::connection(
 }
 connection::~connection() { _hook.get().erase(_hook.get().iterator_to(*this)); }
 
-ss::future<> connection::shutdown() {
-    _probe.connection_closed();
+void connection::shutdown_input() {
     try {
         _fd.shutdown_input();
-        _fd.shutdown_output();
     } catch (...) {
         _probe.connection_close_error();
         rpclog.debug(
           "Failed to shutdown connection: {}", std::current_exception());
     }
-    return ss::make_ready_future<>();
+}
+
+ss::future<> connection::shutdown() {
+    _probe.connection_closed();
+    return _out.stop();
 }
 ss::future<> connection::write(ss::scattered_message<char> msg) {
     _probe.add_bytes_sent(msg.size());
