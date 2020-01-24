@@ -32,7 +32,7 @@ struct simple_record_fixture {
     model::record_batch config_batch() {
         storage::record_batch_builder bldr(
           raft::configuration_batch_type, _base_offset);
-        bldr.add_raw_kv(rand_iobuf(), rpc::serialize(rand_config()));
+        bldr.add_raw_kv(rand_iobuf(), reflection::to_iobuf(rand_config()));
         ++_base_offset;
         return std::move(bldr).build();
     }

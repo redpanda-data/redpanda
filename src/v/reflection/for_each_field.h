@@ -2,13 +2,13 @@
 
 // Credits: originally taken from cista.rocks (MIT License)
 
-#include "rpc/arity.h"
-#include "rpc/to_tuple.h"
+#include "reflection/arity.h"
+#include "reflection/to_tuple.h"
 
 #include <type_traits>
 #include <utility>
 
-namespace rpc {
+namespace reflection {
 
 template<typename T, typename Fn>
 inline void for_each_field(T& t, Fn&& fn) {
@@ -29,4 +29,4 @@ inline void for_each_field(Fn&& fn) {
     for_each_field<T>(t, std::forward<Fn>(fn));
 }
 
-} // namespace rpc
+} // namespace reflection

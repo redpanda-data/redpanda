@@ -35,10 +35,8 @@ log_segment_reader::data_stream(uint64_t pos, const ss::io_priority_class& pc) {
 }
 
 std::ostream& operator<<(std::ostream& os, const log_segment_reader& seg) {
-    return os << "{log_segment:" << seg.filename() << ", empty:" << seg.empty()
-              << ", bytes: " << seg.file_size()
-              << ", offsets:" << seg.base_offset() << "-" << seg.max_offset()
-              << "}";
+    return os << "{log_segment:" << seg.filename() << ", " << seg.base_offset()
+              << "-" << seg.max_offset() << "}";
 }
 
 std::ostream& operator<<(std::ostream& os, segment_reader_ptr seg) {

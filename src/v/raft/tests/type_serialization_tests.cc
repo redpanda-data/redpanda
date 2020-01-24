@@ -50,7 +50,7 @@ SEASTAR_THREAD_TEST_CASE(entry) {
 
     std::vector<raft::entry> entries
       = raft::details::share_one_entry(std::move(e), 2, false).get0();
-    auto d = serialize_roundtrip_rpc(std::move(entries.back())).get0();
+    auto d = serialize_roundtrip_rpc(std::move(entries.back()));
     entries.pop_back();
 
     d.reader()

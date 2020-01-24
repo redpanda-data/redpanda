@@ -5,10 +5,10 @@ rpcgen(
   OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/raftgen_service.h
   INCLUDES ${CMAKE_BINARY_DIR}/src/v
   )
+
 v_cc_library(
   NAME raft
   SRCS
-    type_serializers.cc
     consensus.cc
     consensus_utils.cc
     heartbeat_manager.cc

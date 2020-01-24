@@ -1,6 +1,8 @@
 #include "raft/configuration_bootstrap_state.h"
 
-#include "rpc/deserialize.h"
+#include "reflection/adl.h"
+
+#include <fmt/format.h>
 
 namespace raft {
 void configuration_bootstrap_state::process_configuration_in_thread(
@@ -21,9 +23,8 @@ void configuration_bootstrap_state::process_configuration_in_thread(
         _log_config_offset_tracker = last_offset;
         process_offsets(b.base_offset(), last_offset);
         for (model::record& rec : b) {
-            _config = std::move(rpc::deserialize<group_configuration>(
-                                  rec.share_packed_value_and_headers())
-                                  .get0());
+            _config = reflection::adl<group_configuration>{}.from(
+              rec.share_packed_value_and_headers());
         }
     }
 }
