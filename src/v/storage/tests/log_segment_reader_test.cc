@@ -156,8 +156,7 @@ SEASTAR_THREAD_TEST_CASE(
     ctx.write(copy(batches));
     auto o = batches.begin()->last_offset();
     {
-        auto reader = ctx.reader(
-          batches.back().last_offset());
+        auto reader = ctx.reader(batches.back().last_offset());
         auto res = reader.consume(consumer(), model::no_timeout).get0();
         std::vector<model::record_batch> first;
         first.push_back(std::move(*batches.rbegin()));

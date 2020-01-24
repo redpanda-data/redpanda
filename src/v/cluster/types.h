@@ -3,8 +3,8 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
-#include "reflection/adl.h"
 #include "raft/types.h"
+#include "reflection/adl.h"
 #include "rpc/models.h"
 
 namespace raft {
@@ -109,38 +109,32 @@ struct brokers_diff {
 
 namespace reflection {
 
-template<>
-struct adl<cluster::topic_configuration> {
-  void to(iobuf& out, cluster::topic_configuration&& t) {
-    reflection::serialize(out,
-                   ss::sstring(std::move(t.ns)),
-                   ss::sstring(std::move(t.topic)),
-                   t.partition_count,
-                   t.replication_factor,
-                   t.compression,
-                   t.compaction,
-                   t.retention_bytes,
-                   t.retention);
+template <> struct adl<cluster::topic_configuration> {
+  void to(iobuf &out, cluster::topic_configuration &&t) {
+    reflection::serialize(out, ss::sstring(std::move(t.ns)),
+                          ss::sstring(std::move(t.topic)), t.partition_count,
+                          t.replication_factor, t.compression, t.compaction,
+                          t.retention_bytes, t.retention);
   }
 
-  cluster::topic_configuration from(iobuf_parser& in) {
-    auto ns = model::ns(adl<ss::sstring>{}.from(in));
+  cluster::topic_configuration from(iobuf_parser &in) {
+    auto ns    = model::ns(adl<ss::sstring>{}.from(in));
     auto topic = model::topic(adl<ss::sstring>{}.from(in));
     auto count = adl<int32_t>{}.from(in);
-    auto rf = adl<int16_t>{}.from(in);
-    auto tp_cfg =  cluster::topic_configuration(std::move(ns), std::move(topic), count, rf);
+    auto rf    = adl<int16_t>{}.from(in);
+    auto tp_cfg =
+      cluster::topic_configuration(std::move(ns), std::move(topic), count, rf);
 
-    tp_cfg.compression = adl<model::compression>{}.from(in);
-    tp_cfg.compaction = adl<model::topic_partition::compaction>{}.from(in);
+    tp_cfg.compression     = adl<model::compression>{}.from(in);
+    tp_cfg.compaction      = adl<model::topic_partition::compaction>{}.from(in);
     tp_cfg.retention_bytes = adl<uint64_t>{}.from(in);
-    tp_cfg.retention = adl<model::timeout_clock::duration>{}.from(in);
+    tp_cfg.retention       = adl<model::timeout_clock::duration>{}.from(in);
     return tp_cfg;
   }
 };
 
-template<>
-struct adl<cluster::join_request> {
-  void to(iobuf& out, cluster::join_request&& r) {
+template <> struct adl<cluster::join_request> {
+  void to(iobuf &out, cluster::join_request &&r) {
     adl<model::broker>().to(out, std::move(r.node));
   }
 
@@ -148,7 +142,7 @@ struct adl<cluster::join_request> {
     return reflection::from_iobuf<cluster::join_request>(std::move(io));
   }
 
-  cluster::join_request from(iobuf_parser& in) {
+  cluster::join_request from(iobuf_parser &in) {
     return cluster::join_request(adl<model::broker>().from(in));
   }
 };
