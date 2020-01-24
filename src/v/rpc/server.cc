@@ -160,8 +160,8 @@ server::dispatch_method_once(header h, ss::lw_shared_ptr<connection> conn) {
                     view.size());
                   return ss::make_ready_future<>();
               }
-              return conn->write(std::move(view)).finally([m = std::move(m)] {
-              });
+              return conn->write(std::move(view))
+                .finally([m = std::move(m), ctx] {});
           })
           .finally([&p = _probe, conn] { p.request_completed(); });
     });
