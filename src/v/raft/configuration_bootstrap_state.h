@@ -43,7 +43,7 @@ private:
 
     // we need to keep track of what we have processed in case we re-reprocess a
     // multiple segments
-    model::offset _log_config_offset_tracker{0};
-    model::offset _commit_index_base_batch_offset{0};
+    model::offset _log_config_offset_tracker;
+    model::offset _commit_index_base_batch_offset;
 };
 } // namespace raft
