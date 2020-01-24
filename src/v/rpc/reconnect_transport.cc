@@ -13,18 +13,18 @@
 namespace rpc {
 namespace ch = std::chrono; // NOLINT
 
-static inline bool
-has_backoff_expired(rpc::clock_type::time_point stamp, int32_t backoff) {
+static inline bool has_backoff_expired(
+  rpc::clock_type::time_point stamp, clock_type::duration backoff) {
     auto now = rpc::clock_type::now();
     if (now < stamp) {
         return false;
     }
-    auto const secs = ch::duration_cast<ch::seconds>(now - stamp).count();
-    return secs >= backoff;
+
+    return now > (stamp + backoff);
 }
 
 ss::future<> reconnect_transport::stop() {
-    _backoff_secs = std::numeric_limits<uint32_t>::max();
+    _backoff_multiplier = std::numeric_limits<uint32_t>::max();
     return _dispatch_gate.close().then([this] { return _transport.stop(); });
 }
 
@@ -37,7 +37,7 @@ ss::future<result<transport*>> reconnect_transport::get_connected() {
 
 ss::future<result<transport*>> reconnect_transport::reconnect() {
     using ret_t = result<transport*>;
-    if (!has_backoff_expired(_stamp, _backoff_secs)) {
+    if (!has_backoff_expired(_stamp, _backoff_multiplier * _backoff_step)) {
         return ss::make_ready_future<ret_t>(errc::exponential_backoff);
     }
     _stamp = rpc::clock_type::now();
@@ -51,10 +51,10 @@ ss::future<result<transport*>> reconnect_transport::reconnect() {
                     f.get();
                     rpclog.debug(
                       "connected to {}", _transport.server_address());
-                    _backoff_secs = 0;
+                    _backoff_multiplier = 0;
                     return ss::make_ready_future<ret_t>(&_transport);
                 } catch (...) {
-                    _backoff_secs = next_backoff(_backoff_secs);
+                    _backoff_multiplier = next_backoff(_backoff_multiplier);
                     rpclog.trace(
                       "error reconnecting {}", std::current_exception());
                     return ss::make_ready_future<ret_t>(
