@@ -12,6 +12,7 @@ import (
 )
 
 type Config struct {
+	NodeUuid     string `yaml:"node_uuid,omitempty"`
 	Organization string `yaml:"organization,omitempty"`
 	ClusterId    string `yaml:"cluster_id,omitempty"`
 	ConfigFile   string `yaml:"config_file,omitempty"`
