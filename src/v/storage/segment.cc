@@ -12,10 +12,12 @@ namespace storage {
 segment::segment(
   segment_reader_ptr r,
   segment_offset_index_ptr i,
-  segment_appender_ptr a) noexcept
+  segment_appender_ptr a,
+  batch_cache_index_ptr cache) noexcept
   : _reader(std::move(r))
   , _oidx(std::move(i))
-  , _appender(std::move(a)) {
+  , _appender(std::move(a))
+  , _cache(std::move(cache)) {
     // TODO(agallego) - add these asserts once we migrate tests
     // vassert(_reader, "segments must have valid readers");
     // vassert(_oidx, "segments must have valid offset index");

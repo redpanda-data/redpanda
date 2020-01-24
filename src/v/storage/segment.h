@@ -1,5 +1,6 @@
 #pragma once
 
+#include "storage/batch_cache.h"
 #include "storage/log_segment_appender.h"
 #include "storage/log_segment_reader.h"
 #include "storage/segment_offset_index.h"
@@ -13,7 +14,8 @@ public:
     segment(
       segment_reader_ptr,
       segment_offset_index_ptr,
-      segment_appender_ptr) noexcept;
+      segment_appender_ptr,
+      batch_cache_index_ptr) noexcept;
 
     segment(segment&&) noexcept = default;
     segment& operator=(segment&&) noexcept = default;
@@ -30,6 +32,8 @@ public:
     ss::future<append_result> append(model::record_batch);
 
     /// main read interface
+    // TODO move most of the log segment batch reader here. this should return a
+    // batch reader interface.
     ss::input_stream<char>
       offset_data_stream(model::offset, ss::io_priority_class);
 
@@ -64,6 +68,7 @@ private:
     segment_reader_ptr _reader;
     segment_offset_index_ptr _oidx;
     segment_appender_ptr _appender = nullptr;
+    batch_cache_index_ptr _cache;
 };
 
 std::ostream& operator<<(std::ostream&, const segment&);
