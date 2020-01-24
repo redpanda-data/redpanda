@@ -157,7 +157,8 @@ transport::send(netbuf b, rpc::clock_type::time_point timeout) {
           it->second.with_timeout(timeout, [this, idx] {
               auto it = _correlations.find(idx);
               if (__builtin_expect(it != _correlations.end(), true)) {
-                  rpclog.warn("Request timeout");
+                  rpclog.warn("Request timeout, correlation id: {}", idx);
+                  _probe.request_error();
                   _correlations.erase(it);
               }
           });
@@ -208,7 +209,10 @@ ss::future<> transport::dispatch(header h) {
     if (it == _correlations.end()) {
         // We removed correlation already
         _probe.server_correlation_error();
-        return ss::make_ready_future<>();
+        rpclog.debug(
+          "Unable to find handler for correlation {}", h.correlation_id);
+        // we have to skip received bytes to make input stream state correct
+        return _in.skip(h.size);
     }
     _probe.add_bytes_received(header_size + h.size);
     auto ctx = std::make_unique<client_context_impl>(*this, std::move(h));
