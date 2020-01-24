@@ -22,6 +22,7 @@ override_dh_installinit:
 	# installed in redpanda.install.
 	dh_installinit --name=redpanda
 	dh_installinit --name=redpanda-tuner
+	dh_installinit --name=redpanda-status
 	dh_systemd_enable
 
 override_dh_makeshlibs:

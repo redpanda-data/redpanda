@@ -3,6 +3,7 @@ common/redpanda.d/*.conf etc/redpanda.d
 common/sysconfig/redpanda etc/default
 common/sysctl.d/*.conf usr/lib/sysctl.d
 common/systemd/*.slice /lib/systemd/system
+common/systemd/*.timer /lib/systemd/system
 common/scripts/* usr/lib/redpanda
 bin/* opt/redpanda/bin
 lib/* opt/redpanda/lib
