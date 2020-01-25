@@ -5,8 +5,8 @@ steps:
   args:
   - '-c'
   - |
-    if [ ! -d ".git/" ]; then
-      if [ "$_GITHUB_API_TOKEN" == "na" ]; then
+    if [[ ! -d ".git/" ]]; then
+      if [[ "$_GITHUB_API_TOKEN" == "na" ]]; then
         echo "Expecting value for _GITHUB_API_TOKEN"
         exit 1
       fi

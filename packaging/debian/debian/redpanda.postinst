@@ -6,18 +6,18 @@ set -e
 
 . /etc/os-release
 
-if [ "$1" = configure ]; then
+if [[ "$1" = configure ]]; then
     getent passwd redpanda || NOUSR=1
     getent group redpanda || NOGRP=1
 
-    if [ $NOUSR ]; then
+    if [[ $NOUSR ]]; then
         adduser --system \
                 --quiet \
                 --home /var/lib/redpanda \
                 --no-create-home \
                 --disabled-password \
                 --group redpanda
-    elif [ $NOGRP ]; then
+    elif [[ $NOGRP ]]; then
         addgroup --system redpanda
         adduser redpanda redpanda
     fi

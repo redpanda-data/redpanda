@@ -7,7 +7,7 @@ packagecloud_token=$1
 set_up () {
     distro=$1
     existing_pkg=$(find . | grep 'deb\|rpm' | sort | tail -1)
-    if [ -n "${existing_pkg}" ]; then
+    if [[ -n "${existing_pkg}" ]]; then
         rpm_cmd="sudo rpm -ivh ${existing_pkg}"
         deb_cmd="sudo apt install -y ${existing_pkg}"
         run_for_distro "${distro}" "${rpm_cmd}" "${deb_cmd}"
@@ -47,7 +47,7 @@ run_for_distro () {
 
 release_file=/etc/os-release
 
-if [ -f  ${release_file} ]; then
+if [[ -f  ${release_file} ]]; then
     . ${release_file}
 else
     echo "ERROR: ${release_file} doesn't exist. Can't determine what the current distribution is"
