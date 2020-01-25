@@ -13,9 +13,10 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-func getValidConfig(rpkFill bool) config.Config {
+func getValidConfig(configFile string, rpkFill bool) config.Config {
 	rpk := fillRpkConfig(rpkFill)
 	return config.Config{
+		ConfigFile: configFile,
 		Redpanda: &config.RedpandaConfig{
 			Directory: "/var/lib/redpanda/data",
 			RPCServer: config.SocketAddress{
@@ -65,6 +66,11 @@ func fillRpkConfig(val bool) config.RpkConfig {
 
 func TestModeCommand(t *testing.T) {
 	configPath := "/etc/redpanda/redpanda.yaml"
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wdConfigPath := fmt.Sprintf("%s/redpanda.yaml", dir)
 	tests := []struct {
 		name           string
 		args           []string
@@ -79,13 +85,13 @@ func TestModeCommand(t *testing.T) {
 			args: []string{"development", "--redpanda-cfg", configPath},
 			fs:   afero.NewMemMapFs(),
 			before: func(fs afero.Fs) (string, error) {
-				bs, err := yaml.Marshal(getValidConfig(true))
+				bs, err := yaml.Marshal(getValidConfig(configPath, true))
 				if err != nil {
 					return "", err
 				}
 				return configPath, afero.WriteFile(fs, configPath, bs, 0644)
 			},
-			expectedConfig: getValidConfig(false),
+			expectedConfig: getValidConfig(configPath, false),
 			expectedOutput: fmt.Sprintf("Writing 'development' mode defaults to '%s'\n", configPath),
 			expectedErrMsg: "",
 		},
@@ -94,13 +100,13 @@ func TestModeCommand(t *testing.T) {
 			args: []string{"production", "--redpanda-cfg", configPath},
 			fs:   afero.NewMemMapFs(),
 			before: func(fs afero.Fs) (string, error) {
-				bs, err := yaml.Marshal(getValidConfig(false))
+				bs, err := yaml.Marshal(getValidConfig(configPath, false))
 				if err != nil {
 					return "", err
 				}
 				return configPath, afero.WriteFile(fs, configPath, bs, 0644)
 			},
-			expectedConfig: getValidConfig(true),
+			expectedConfig: getValidConfig(configPath, true),
 			expectedOutput: fmt.Sprintf("Writing 'production' mode defaults to '%s'\n", configPath),
 			expectedErrMsg: "",
 		},
@@ -109,13 +115,13 @@ func TestModeCommand(t *testing.T) {
 			args: []string{"dev", "--redpanda-cfg", configPath},
 			fs:   afero.NewMemMapFs(),
 			before: func(fs afero.Fs) (string, error) {
-				bs, err := yaml.Marshal(getValidConfig(true))
+				bs, err := yaml.Marshal(getValidConfig(configPath, true))
 				if err != nil {
 					return "", err
 				}
 				return configPath, afero.WriteFile(fs, configPath, bs, 0644)
 			},
-			expectedConfig: getValidConfig(false),
+			expectedConfig: getValidConfig(configPath, false),
 			expectedOutput: fmt.Sprintf("Writing 'dev' mode defaults to '%s'\n", configPath),
 			expectedErrMsg: "",
 		},
@@ -124,13 +130,13 @@ func TestModeCommand(t *testing.T) {
 			args: []string{"prod", "--redpanda-cfg", configPath},
 			fs:   afero.NewMemMapFs(),
 			before: func(fs afero.Fs) (string, error) {
-				bs, err := yaml.Marshal(getValidConfig(false))
+				bs, err := yaml.Marshal(getValidConfig(configPath, false))
 				if err != nil {
 					return "", err
 				}
 				return configPath, afero.WriteFile(fs, configPath, bs, 0644)
 			},
-			expectedConfig: getValidConfig(true),
+			expectedConfig: getValidConfig(configPath, true),
 			expectedOutput: fmt.Sprintf("Writing 'prod' mode defaults to '%s'\n", configPath),
 			expectedErrMsg: "",
 		},
@@ -139,13 +145,13 @@ func TestModeCommand(t *testing.T) {
 			args: []string{"prod"},
 			fs:   afero.NewMemMapFs(),
 			before: func(fs afero.Fs) (string, error) {
-				bs, err := yaml.Marshal(getValidConfig(false))
+				bs, err := yaml.Marshal(getValidConfig(configPath, false))
 				if err != nil {
 					return "", err
 				}
 				return configPath, afero.WriteFile(fs, configPath, bs, 0644)
 			},
-			expectedConfig: getValidConfig(true),
+			expectedConfig: getValidConfig(configPath, true),
 			expectedOutput: fmt.Sprintf("Writing 'prod' mode defaults to '%s'\n", configPath),
 			expectedErrMsg: "",
 		},
@@ -154,18 +160,13 @@ func TestModeCommand(t *testing.T) {
 			args: []string{"development"},
 			fs:   afero.NewMemMapFs(),
 			before: func(fs afero.Fs) (string, error) {
-				bs, err := yaml.Marshal(getValidConfig(false))
+				bs, err := yaml.Marshal(getValidConfig(wdConfigPath, false))
 				if err != nil {
 					return "", err
 				}
-				dir, err := os.Getwd()
-				if err != nil {
-					return "", err
-				}
-				path := fmt.Sprintf("%s/redpanda.yaml", dir)
-				return path, afero.WriteFile(fs, path, bs, 0644)
+				return wdConfigPath, afero.WriteFile(fs, wdConfigPath, bs, 0644)
 			},
-			expectedConfig: getValidConfig(false),
+			expectedConfig: getValidConfig(wdConfigPath, false),
 			expectedOutput: (func() string {
 				dir, _ := os.Getwd()
 				return fmt.Sprintf("Writing 'development' mode defaults to '%s/redpanda.yaml'\n", dir)
@@ -177,18 +178,13 @@ func TestModeCommand(t *testing.T) {
 			args: []string{"invalidmode"},
 			fs:   afero.NewMemMapFs(),
 			before: func(fs afero.Fs) (string, error) {
-				bs, err := yaml.Marshal(getValidConfig(false))
+				bs, err := yaml.Marshal(getValidConfig(wdConfigPath, false))
 				if err != nil {
 					return "", err
 				}
-				dir, err := os.Getwd()
-				if err != nil {
-					return "", err
-				}
-				path := fmt.Sprintf("%s/redpanda.yaml", dir)
-				return path, afero.WriteFile(fs, path, bs, 0644)
+				return wdConfigPath, afero.WriteFile(fs, wdConfigPath, bs, 0644)
 			},
-			expectedConfig: getValidConfig(false),
+			expectedConfig: getValidConfig(wdConfigPath, false),
 			expectedOutput: "",
 			expectedErrMsg: "invalidmode is not a supported mode. Available modes: dev, prod, development, production",
 		},

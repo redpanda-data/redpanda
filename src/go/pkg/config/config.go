@@ -14,6 +14,7 @@ import (
 type Config struct {
 	Organization string `yaml:"organization,omitempty"`
 	ClusterId    string `yaml:"cluster_id,omitempty"`
+	ConfigFile   string `yaml:"config_file,omitempty"`
 	Redpanda     *RedpandaConfig
 	Rpk          *RpkConfig `yaml:"rpk,omitempty"`
 }
@@ -53,6 +54,7 @@ type RpkConfig struct {
 
 // Checks config and writes it to the given path.
 func WriteConfig(fs afero.Fs, config *Config, path string) error {
+	config.ConfigFile = path
 	ok, errs := CheckConfig(config)
 	if !ok {
 		reasons := []string{}

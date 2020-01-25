@@ -138,7 +138,8 @@ func TestWriteConfig(t *testing.T) {
 				},
 			},
 			wantErr: false,
-			expected: `redpanda:
+			expected: `config_file: /redpanda.yaml
+redpanda:
   data_directory: /var/lib/redpanda/data
   rpc_server:
     address: 127.0.0.1
@@ -190,7 +191,8 @@ func TestWriteConfig(t *testing.T) {
 				conf: getValidConfig,
 			},
 			wantErr: false,
-			expected: `redpanda:
+			expected: `config_file: /redpanda.yaml
+redpanda:
   data_directory: /var/lib/redpanda/data
   rpc_server:
     address: 127.0.0.1
