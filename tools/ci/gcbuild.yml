@@ -53,13 +53,10 @@ steps:
   - 'SHORT_SHA=$SHORT_SHA'
   - 'TAG_NAME=$TAG_NAME'
 
-- id: 'publish distro package'
-  name: 'gcr.io/$PROJECT_ID/packagecloud'
-  entrypoint: '/bin/bash'
-  args: ['tools/ci/scripts/packagecloud-push.sh']
+- id: 'publish distro packages'
+  name: 'gcr.io/$PROJECT_ID/builder-$_COMPILER-$_BUILD_TYPE:$SHORT_SHA'
+  args: ['vtools', 'publish', '--conf=tools/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml']
   env:
-  - 'COMPILER=$_COMPILER'
-  - 'BUILD_TYPE=$_BUILD_TYPE'
   - 'TAG_NAME=$TAG_NAME'
   - 'PACKAGECLOUD_TOKEN=$_PACKAGECLOUD_TOKEN'
 

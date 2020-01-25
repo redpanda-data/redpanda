@@ -56,11 +56,9 @@ def cpp(build_type, conf, clang, args):
         os.environ['LD_LIBRARY_PATH'] = ld_path
 
     args = f' {args}' if args else '-R \".*_rp(unit|bench|int)$\"'
-    shell.run_subprocess(
-        f'cd {vconfig.build_dir} && '
-        f'ctest '
-        f' {"-V" if os.environ.get("CI") else ""} '
-        + args)
+    shell.run_subprocess(f'cd {vconfig.build_dir} && '
+                         f'ctest '
+                         f' {"-V" if os.environ.get("CI") else ""} ' + args)
 
 
 @test.command(short_help='print runtime dependencies of a binary')

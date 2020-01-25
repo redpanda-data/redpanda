@@ -186,8 +186,8 @@ def _render_systemd_templates(dest_path, ctx, src_dir):
     files = ['redpanda.slice', 'redpanda.service', 'redpanda-tuner.service']
     for f in files:
         tmpl = f'{src_dir}/{root_dir}{f}{jinja_ext}'
-        templates.render_to_file(
-            tmpl, os.path.join(dest_path, 'systemd', f), ctx)
+        templates.render_to_file(tmpl, os.path.join(dest_path, 'systemd', f),
+                                 ctx)
 
 
 def create_packages(vconfig, formats, build_type):

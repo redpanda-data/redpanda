@@ -19,8 +19,7 @@ def build():
               help=('Build configuration to select. If none given, the '
                     '`build.default_type` option from the vtools YAML config '
                     'is used (an error is thrown if not defined).'),
-              type=click.Choice(['debug', 'release'],
-                                case_sensitive=False),
+              type=click.Choice(['debug', 'release'], case_sensitive=False),
               default=None)
 @click.option('--skip-external',
               help='Do not build external projects.',
@@ -54,7 +53,8 @@ def cpp(build_type, conf, skip_external, clang, reconfigure):
     expected to be in the default folder inside the build root (v_deps_install/
     folder).
     """
-    vconfig = config.VConfig(config_file=conf, build_type=build_type,
+    vconfig = config.VConfig(config_file=conf,
+                             build_type=build_type,
                              clang=clang)
 
     if not cmake.cache_exists(vconfig) or reconfigure:
@@ -89,13 +89,13 @@ def go(conf):
 @build.command(short_help='build tar, deb or rpm packages.')
 @click.option('--format',
               help="format to build ('rpm', 'deb' and 'tar').",
-              multiple=True, required=True)
+              multiple=True,
+              required=True)
 @click.option('--build-type',
               help=('Build configuration to select. If none given, the '
                     '`build.default_type` option from the vtools YAML config '
                     'is used (an error is thrown if not defined).'),
-              type=click.Choice(['debug', 'release'],
-                                case_sensitive=False),
+              type=click.Choice(['debug', 'release'], case_sensitive=False),
               default=None)
 @click.option('--clang',
               help='Use binary files that were compiled with clang.',
@@ -106,7 +106,8 @@ def go(conf):
                     'working directory'),
               default=None)
 def pkg(build_type, clang, conf, format):
-    vconfig = config.VConfig(config_file=conf, build_type=build_type,
+    vconfig = config.VConfig(config_file=conf,
+                             build_type=build_type,
                              clang=clang)
 
     for f in format:
