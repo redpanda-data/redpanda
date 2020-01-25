@@ -15,6 +15,7 @@ import (
 
 func getValidConfig() *Config {
 	return &Config{
+		PidFile: "/var/lib/redpanda/pid",
 		Redpanda: &RedpandaConfig{
 			Directory: "/var/lib/redpanda/data",
 			RPCServer: SocketAddress{
@@ -138,7 +139,9 @@ func TestWriteConfig(t *testing.T) {
 				},
 			},
 			wantErr: false,
-			expected: `redpanda:
+			expected: `config_file: /redpanda.yaml
+pid_file: /var/lib/redpanda/pid
+redpanda:
   data_directory: /var/lib/redpanda/data
   rpc_server:
     address: 127.0.0.1
@@ -190,7 +193,9 @@ func TestWriteConfig(t *testing.T) {
 				conf: getValidConfig,
 			},
 			wantErr: false,
-			expected: `redpanda:
+			expected: `config_file: /redpanda.yaml
+pid_file: /var/lib/redpanda/pid
+redpanda:
   data_directory: /var/lib/redpanda/data
   rpc_server:
     address: 127.0.0.1
@@ -431,5 +436,37 @@ func TestCheckConfig(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestWriteAndGenerateNodeUuid(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	baseDir := "/etc/redpanda"
+	path := baseDir + "/redpanda.yaml"
+	conf := getValidConfig()
+	conf.ConfigFile = path
+	bs, err := yaml.Marshal(conf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = fs.MkdirAll(baseDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = utils.WriteBytes(fs, bs, path); err != nil {
+		t.Fatal(err)
+	}
+	conf, err = GenerateAndWriteNodeUuid(fs, conf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conf.NodeUuid == "" {
+		t.Fatal("the NodeUuid field is empty")
+	}
+	readConf, err := ReadConfigFromPath(fs, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(conf, readConf) {
+		t.Fatalf("got\n'%v'\nexpected\n'%v'", readConf, conf)
 	}
 }

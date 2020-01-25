@@ -3,18 +3,21 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 	"vectorized/pkg/cli"
 	"vectorized/pkg/cloud"
 	"vectorized/pkg/config"
-	"vectorized/pkg/os"
+	vos "vectorized/pkg/os"
 	"vectorized/pkg/redpanda"
 	"vectorized/pkg/tuners"
 	"vectorized/pkg/tuners/factory"
 	"vectorized/pkg/tuners/hwloc"
 	"vectorized/pkg/tuners/iotune"
+	"vectorized/pkg/utils"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
@@ -99,6 +102,10 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 				if ccmd.Flags().Changed(flag) {
 					rpArgs.SeastarFlags[flag] = fmt.Sprint(val)
 				}
+			}
+			err = writePid(fs, conf.PidFile)
+			if err != nil {
+				return fmt.Errorf("couldn't write the PID file: %v", err)
 			}
 			launcher := redpanda.NewLauncher(installDirectory, rpArgs)
 			log.Info("Starting redpanda...")
@@ -281,7 +288,7 @@ func tuneAll(
 ) error {
 	params := &factory.TunerParams{}
 	tunerFactory := factory.NewDirectExecutorTunersFactory(fs, *conf, timeout)
-	hw := hwloc.NewHwLocCmd(os.NewProc(), timeout)
+	hw := hwloc.NewHwLocCmd(vos.NewProc(), timeout)
 	if cpuSet == "" {
 		cpuMask, err := hw.All()
 		if err != nil {
@@ -358,4 +365,12 @@ func check(
 		}
 	}
 	return nil
+}
+
+func writePid(fs afero.Fs, path string) error {
+	return utils.WriteFileLines(
+		fs,
+		[]string{strconv.Itoa(os.Getpid())},
+		path,
+	)
 }

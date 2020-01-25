@@ -1,4 +1,10 @@
 # Redpanda Queue configuration file
+
+# organization and cluster_id help Vectorized identify your system.
+organization: ""
+cluster_id: ""
+pid_file: "/var/lib/redpanda/pid"
+
 redpanda:
   # Data directory where all the files will be stored. 
   # This directory MUST resides on xfs partion.

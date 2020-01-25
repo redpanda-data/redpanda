@@ -3,17 +3,24 @@ package config
 import (
 	"errors"
 	"fmt"
+	"math/big"
 	"strings"
 	"vectorized/pkg/utils"
 	"vectorized/pkg/yaml"
 
+	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 )
 
 type Config struct {
-	Redpanda *RedpandaConfig
-	Rpk      *RpkConfig `yaml:"rpk,omitempty"`
+	NodeUuid     string `yaml:"node_uuid,omitempty"`
+	Organization string `yaml:"organization,omitempty"`
+	ClusterId    string `yaml:"cluster_id,omitempty"`
+	ConfigFile   string `yaml:"config_file,omitempty"`
+	PidFile      string `yaml:"pid_file"`
+	Redpanda     *RedpandaConfig
+	Rpk          *RpkConfig `yaml:"rpk,omitempty"`
 }
 
 type RedpandaConfig struct {
@@ -51,6 +58,7 @@ type RpkConfig struct {
 
 // Checks config and writes it to the given path.
 func WriteConfig(fs afero.Fs, config *Config, path string) error {
+	config.ConfigFile = path
 	ok, errs := CheckConfig(config)
 	if !ok {
 		reasons := []string{}
@@ -168,4 +176,51 @@ func checkRpkConfig(rpk *RpkConfig) []error {
 		errs = append(errs, errors.New(msg))
 	}
 	return errs
+}
+
+func GenerateAndWriteNodeUuid(fs afero.Fs, conf *Config) (*Config, error) {
+	id, err := uuid.NewUUID()
+	if err != nil {
+		return nil, err
+	}
+	conf.NodeUuid = base58Encode(id.String())
+	err = WriteConfig(fs, conf, conf.ConfigFile)
+	if err != nil {
+		return nil, err
+	}
+	return conf, nil
+}
+
+func base58Encode(s string) string {
+	b := []byte(s)
+
+	alphabet := "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+	alphabetIdx0 := byte('1')
+	bigRadix := big.NewInt(58)
+	bigZero := big.NewInt(0)
+	x := new(big.Int)
+	x.SetBytes(b)
+
+	answer := make([]byte, 0, len(b)*136/100)
+	for x.Cmp(bigZero) > 0 {
+		mod := new(big.Int)
+		x.DivMod(x, bigRadix, mod)
+		answer = append(answer, alphabet[mod.Int64()])
+	}
+
+	// leading zero bytes
+	for _, i := range b {
+		if i != 0 {
+			break
+		}
+		answer = append(answer, alphabetIdx0)
+	}
+
+	// reverse
+	alen := len(answer)
+	for i := 0; i < alen/2; i++ {
+		answer[i], answer[alen-1-i] = answer[alen-1-i], answer[i]
+	}
+
+	return string(answer)
 }
