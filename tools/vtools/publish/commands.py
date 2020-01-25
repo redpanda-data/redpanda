@@ -29,7 +29,8 @@ def publish(conf, access_token):
     tag_name = os.environ.get('TAG_NAME', None)
 
     if not tag_name:
-        logging.fatal("Expecting 'TAG_NAME' environment variable.")
+        logging.info("No 'TAG_NAME' environment variable defined, skipping.")
+        return
 
     if 'release-' not in tag_name:
         logging.info("We only upload 'release-*' builds to packagecloud.")
