@@ -435,3 +435,35 @@ func TestCheckConfig(t *testing.T) {
 		})
 	}
 }
+
+func TestWriteAndGenerateNodeUuid(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	baseDir := "/etc/redpanda"
+	path := baseDir + "/redpanda.yaml"
+	conf := getValidConfig()
+	conf.ConfigFile = path
+	bs, err := yaml.Marshal(conf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = fs.MkdirAll(baseDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = utils.WriteBytes(fs, bs, path); err != nil {
+		t.Fatal(err)
+	}
+	conf, err = GenerateAndWriteNodeUuid(fs, conf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conf.NodeUuid == "" {
+		t.Fatal("the NodeUuid field is empty")
+	}
+	readConf, err := ReadConfigFromPath(fs, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(conf, readConf) {
+		t.Fatalf("got\n'%v'\nexpected\n'%v'", readConf, conf)
+	}
+}
