@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-if [[ "$#" != 1 ]]; then
+if [[ $# != 1 ]]; then
   echo "Expecting one argument, the Slack webhook URL"
   exit 1
 fi

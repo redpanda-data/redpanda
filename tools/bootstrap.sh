@@ -33,7 +33,7 @@ fi
 # check gcc version
 gcc_installed="$(gcc -dumpversion)"
 gcc_required="9"
-if (( $gcc_installed < $gcc_required )); then
+if ((gcc_installed < gcc_required)); then
   echo "Expecting GCC 9, found $gcc_installed"
   exit 1
 fi
