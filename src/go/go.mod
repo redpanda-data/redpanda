@@ -33,16 +33,17 @@ require (
 	github.com/spf13/afero v1.2.2
 	github.com/spf13/cobra v0.0.5
 	github.com/spf13/viper v1.3.2
-	github.com/stretchr/testify v1.3.0
-	golang.org/x/crypto v0.0.0-20190621222207-cc06ce4a13d4
+	github.com/stretchr/testify v1.4.0
+	golang.org/x/crypto v0.0.0-20191002192127-34f69633bfdc
 	golang.org/x/net v0.0.0-20190628185345-da137c7871d7 // indirect
-	golang.org/x/sys v0.0.0-20190515120540-06a5c4944438
+	golang.org/x/sys v0.0.0-20191008105621-543471e840be
 	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4 // indirect
 	google.golang.org/grpc v1.22.0 // indirect
 	gopkg.in/jcmturner/goidentity.v3 v3.0.0 // indirect
 	gopkg.in/jcmturner/gokrb5.v7 v7.2.3
 	gopkg.in/yaml.v2 v2.2.2
 	gotest.tools v2.2.0+incompatible // indirect
+	mvdan.cc/sh/v3 v3.0.1 // indirect
 )
 
 go 1.13

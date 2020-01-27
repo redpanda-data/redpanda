@@ -15,6 +15,7 @@ from .install import commands as install
 from .build import commands as build
 from .test import commands as test
 from .publish import commands as publish
+from .dbuild import commands as dbuild
 
 logging.use_absl_handler()
 logging.set_verbosity(logging.INFO)
@@ -40,3 +41,4 @@ main.add_command(install.install)
 main.add_command(build.build)
 main.add_command(test.test)
 main.add_command(publish.publish)
+main.add_command(dbuild.dbuild)

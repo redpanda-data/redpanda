@@ -23,22 +23,22 @@ reading_maxvalue=0
 maxvalue=
 
 for var in $@; do
-	if [ $reading_SLA_NAME -eq 1 ]; then
+	if [[ $reading_SLA_NAME -eq 1 ]]; then
 		SLA_NAME=$var
 		reading_SLA_NAME=0
-	elif [ $reading_OUTPUT_NAME -eq 1 ]; then
+	elif [[ $reading_OUTPUT_NAME -eq 1 ]]; then
 		OUTPUT_FILENAME=$var
 		reading_OUTPUT_NAME=0
-	elif [ $reading_maxvalue -eq 1 ]; then
+	elif [[ $reading_maxvalue -eq 1 ]]; then
 		maxvalue="set yrange [0:$var]"
 		reading_maxvalue=0
-	elif [ $var = "-h" ]; then
+	elif [[ $var = "-h" ]]; then
 		helpFlagFound=1
-	elif [ $var = "-o" ]; then
+	elif [[ $var = "-o" ]]; then
 		reading_OUTPUT_NAME=1
-	elif [ $var = "-s" ]; then
+	elif [[ $var = "-s" ]]; then
 		reading_SLA_NAME=1
-	elif [ $var = "-m" ]; then
+	elif [[ $var = "-m" ]]; then
 		reading_maxvalue=1
 	else
 		FILES="$FILES $var"
@@ -50,7 +50,7 @@ message()
     echo "$@" >&2
 }
 
-if [ $helpFlagFound -eq 1 ]; then
+if [[ $helpFlagFound -eq 1 ]]; then
 	message "Usage: make_percentile_plot [-o output_file] [-s sla_file] histogram_file ..."
 	exit 255
 fi
@@ -69,7 +69,7 @@ for file in $FILES; do
 	IndividualFilePlotCommands="$IndividualFilePlotCommands, '$file' using 4:1 with lines"
 done
 
-if [ $SLA_NAME ]; then
+if [[ $SLA_NAME ]]; then
 	IndividualFilePlotCommands="$IndividualFilePlotCommands, '$SLA_NAME' with lines ls 1"
 	message plotting "{ " $FILES " }" with SLA $SLA_NAME
 else
@@ -82,7 +82,7 @@ message $IndividualFilePlotCommands
 (
     echo "#plot commands"
     echo "set terminal png size 1280,720"
-    if [ $OUTPUT_FILENAME ]; then
+    if [[ $OUTPUT_FILENAME ]]; then
         echo "set output '$OUTPUT_FILENAME'"
     fi
     echo "set logscale x"

@@ -5,8 +5,8 @@ steps:
   args:
   - '-c'
   - |
-    if [ ! -d ".git/" ]; then
-      if [ "$_GITHUB_API_TOKEN" == "na" ]; then
+    if [[ ! -d ".git/" ]]; then
+      if [[ "$_GITHUB_API_TOKEN" == "na" ]]; then
         echo "Expecting value for _GITHUB_API_TOKEN"
         exit 1
       fi
@@ -60,9 +60,17 @@ steps:
   - 'TAG_NAME=$TAG_NAME'
   - 'PACKAGECLOUD_TOKEN=$_PACKAGECLOUD_TOKEN'
 
-- id: 'delete builder image'
+- id: 'delete or tag builder image'
   name: 'gcr.io/cloud-builders/gcloud-slim'
-  args: ['container', 'images', 'delete', 'gcr.io/$PROJECT_ID/builder-$_COMPILER-$_BUILD_TYPE:$SHORT_SHA']
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    if [[ "$TAG_NAME" != "" ]] && [[ "$_BUILD_TYPE" == "release" ]] && [[ "$_COMPILER" == "clang" ]]; then
+      gcloud container images add-tag gcr.io/$PROJECT_ID/builder-$_COMPILER-$_BUILD_TYPE:$SHORT_SHA gcr.io/$PROJECT_ID/builder-$_COMPILER-$_BUILD_TYPE:$TAG_NAME
+    else
+      gcloud container images delete gcr.io/$PROJECT_ID/builder-$_COMPILER-$_BUILD_TYPE:$SHORT_SHA
+    fi
 
 timeout: 3600s
 

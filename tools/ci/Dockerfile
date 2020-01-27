@@ -33,6 +33,6 @@ RUN vtools install go-deps
 # clang/3rdparty
 COPY 3rdparty.cmake.in CMakeLists.txt /v/
 COPY cmake/caches/llvm.cmake /v/cmake/caches/
-RUN bash -c 'if [ "$COMPILER" == "clang" ]; then vtools install clang; fi' && \
+RUN bash -c 'if [[ "$COMPILER" == "clang" ]]; then vtools install clang; fi' && \
     vtools install cpp-deps && \
     rm -r /v/
