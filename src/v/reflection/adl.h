@@ -90,8 +90,6 @@ struct adl {
         }
     }
 
-    void to(iobuf& out, type& t) { adl<type>{}.to(out, std::move(t)); }
-
     void to(iobuf& out, type t) {
         if constexpr (is_named_type) {
             using value_type = typename type::type;
