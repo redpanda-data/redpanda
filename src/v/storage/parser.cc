@@ -150,7 +150,7 @@ ss::future<stop_parser> continuous_batch_parser::consume_records() {
 }
 
 size_t continuous_batch_parser::consumed_batch_bytes() const {
-    return _header.size_bytes +  4 /*batch size*/;
+    return _header.size_bytes + 4 /*batch size*/;
 }
 
 void continuous_batch_parser::add_bytes_and_reset() {
