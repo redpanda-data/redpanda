@@ -1,5 +1,6 @@
 #include "storage/tests/storage_test_fixture.h"
 
+#include <seastar/util/defer.hh>
 #include <boost/test/tools/old/interface.hpp>
 
 void validate_offsets(
@@ -22,6 +23,7 @@ FIXTURE_TEST(
   test_assinging_offsets_in_single_segment_log, storage_test_fixture) {
     for (auto type : storage_types) {
         storage::log_manager mgr = make_log_manager();
+        auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
         auto ntp = make_ntp("default", "test", 0);
         auto log = mgr.manage(ntp, type).get0();
         auto headers = append_random_batches(log, 10);
@@ -33,7 +35,6 @@ FIXTURE_TEST(
         BOOST_REQUIRE_EQUAL(
           log.committed_offset(), batches.back().last_offset());
         validate_offsets(model::offset(0), headers, batches);
-        mgr.stop().get0();
     }
 };
 
