@@ -45,6 +45,7 @@ func getValidConfig() *Config {
 			},
 		},
 		Rpk: &RpkConfig{
+			EnableUsageStats:    true,
 			TuneNetwork:         true,
 			TuneDiskScheduler:   true,
 			TuneNomerges:        true,
@@ -214,6 +215,7 @@ redpanda:
       port: 33146
     node_id: 2
 rpk:
+  enable_usage_stats: true
   tune_network: true
   tune_disk_scheduler: true
   tune_disk_nomerges: true

@@ -42,6 +42,7 @@ type SocketAddress struct {
 }
 
 type RpkConfig struct {
+	EnableUsageStats    bool   `yaml:"enable_usage_stats"`
 	TuneNetwork         bool   `yaml:"tune_network"`
 	TuneDiskScheduler   bool   `yaml:"tune_disk_scheduler"`
 	TuneNomerges        bool   `yaml:"tune_disk_nomerges"`
