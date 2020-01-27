@@ -110,3 +110,10 @@ rp_test(
   LIBRARIES Seastar::seastar_testing v::storage
   ARGS "-- -c 1"
 )
+rp_test(
+  UNIT_TEST
+  BINARY_NAME appender_chunk_manip
+  SOURCES appender_chunk_manipulations.cc
+  LIBRARIES Seastar::seastar_testing v::storage
+  ARGS "-- -c 1"
+)
