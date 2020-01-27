@@ -22,7 +22,8 @@ public:
 
     ss::future<> close();
     ss::future<> flush();
-    ss::future<> truncate(model::offset);
+    ss::future<> release_appender();
+    ss::future<> truncate(model::offset, size_t physical);
 
     /// main write interface
     /// auto indexes record_batch
