@@ -58,7 +58,10 @@ func executeStatus(fs afero.Fs, configFile string, timeout time.Duration, send b
 	if err != nil {
 		return err
 	}
-
+	if !conf.Rpk.EnableUsageStats {
+		log.Info("Usage stats are disabled. To enable them, set rpk.enable_usage_stats to true.")
+		return nil
+	}
 	metrics, errs := system.GatherMetrics(fs, timeout, *conf)
 	if len(errs) != 0 {
 		for _, err := range errs {
