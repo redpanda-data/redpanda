@@ -55,8 +55,8 @@ static std::vector<heartbeat_request> requests_for_range(
 }
 
 heartbeat_manager::heartbeat_manager(
-  duration_type timeout, ss::sharded<rpc::connection_cache>& cls)
-  : _election_duration(timeout)
+  duration_type interval, ss::sharded<rpc::connection_cache>& cls)
+  : _heartbeat_interval(interval)
   , _clients(cls) {
     _heartbeat_timer.set_callback([this] { dispatch_heartbeats(); });
 }
@@ -163,7 +163,7 @@ void heartbeat_manager::process_reply(
 }
 
 void heartbeat_manager::dispatch_heartbeats() {
-    auto next_timeout = clock_type::now() + _election_duration;
+    auto next_timeout = clock_type::now() + _heartbeat_interval;
     (void)with_gate(_bghbeats, [this, old = _hbeat, next_timeout] {
         return do_dispatch_heartbeats(old, next_timeout);
     });
