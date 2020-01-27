@@ -90,7 +90,7 @@ ss::future<result<append_entries_reply>>
 replicate_entries_stm::send_append_entries_request(
   model::node_id n, append_entries_request req) {
     using ret_t = result<append_entries_reply>;
-
+    _ptr->update_node_hbeat_timestamp(n);
     auto shard = rpc::connection_cache::shard_for(n);
     _ctxlog.trace("Sending append entries request {} to {}", req.meta, n);
     return ss::smp::submit_to(shard, [this, n, r = std::move(req)]() mutable {

@@ -534,4 +534,22 @@ consensus::disk_append(std::vector<entry>&& entries) {
           return ss::make_ready_future<ret_t>(std::move(ret));
       });
 }
+
+clock_type::time_point consensus::last_hbeat_timestamp(model::node_id id) {
+    return get_follower_stats(id).last_hbeat_timestamp;
+}
+
+void consensus::update_node_hbeat_timestamp(model::node_id id) {
+    get_follower_stats(id).last_hbeat_timestamp = clock_type::now();
+}
+
+follower_index_metadata& consensus::get_follower_stats(model::node_id id) {
+    auto it = _follower_stats.find(id);
+    if (__builtin_expect(it == _follower_stats.end(), false)) {
+        throw std::invalid_argument(
+          fmt::format("Node {} is not a group {} follower", id, _meta.group));
+    }
+    return it->second;
+}
+
 } // namespace raft
