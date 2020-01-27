@@ -108,9 +108,29 @@ ss::future<> log_segment_appender::append(const char* buf, const size_t n) {
 }
 
 ss::future<> log_segment_appender::truncate(size_t n) {
-    return flush().then([this, n] { return _out.truncate(n); }).then([this] {
-        return do_adaptive_fallocate();
-    });
+    return flush()
+      .then([this, n] { return _out.truncate(n); })
+      .then([this, n] {
+          for (auto& c : _chunks) {
+              c.reset();
+          }
+          _committed_offset = n;
+          _current = _chunks.begin();
+          const auto sz = ss::align_down<size_t>(
+            _committed_offset, _dma_write_alignment);
+          return _out.dma_read(
+            sz, _current->get_current(), _dma_write_alignment, _opts.priority);
+      })
+      .then([this, n](size_t actual) {
+          const size_t expected = n % _dma_write_alignment;
+          if (actual != expected) {
+              throw std::runtime_error(fmt::format(
+                "Error truncating file. Expected bytes:{}, read bytes:{}",
+                expected,
+                actual));
+          }
+          _current->set_position(actual);
+      });
 }
 ss::future<> log_segment_appender::close() {
     return flush()
