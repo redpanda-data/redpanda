@@ -199,7 +199,7 @@ def create_packages(vconfig, formats, build_type):
     if not REVISION:
         repo = git.Repo(os.getcwd(), search_parent_directories=True)
         if repo:
-            REVISION = repo.git.rev_parse(repo.head.object.hexsha, short=1)
+            REVISION = repo.git.rev_parse(repo.head.object.hexsha, short=7)
         else:
             REVISION = '000000'
 
