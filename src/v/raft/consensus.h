@@ -88,13 +88,22 @@ public:
     ss::future<result<replicate_result>> replicate(raft::entry&&);
     ss::future<result<replicate_result>> replicate(std::vector<raft::entry>&&);
 
+    ss::future<> step_down() {
+        if (is_leader()) {
+            trace("Resigned from leadership");
+            return seastar::with_semaphore(
+              _op_sem, 1, [this] { do_step_down(); });
+        }
+        return ss::make_ready_future<>();
+    }
+
 private:
     friend replicate_entries_stm;
     friend vote_stm;
     friend recovery_stm;
     // all these private functions assume that we are under exclusive operations
     // via the _op_sem
-    void step_down();
+    void do_step_down();
     ss::future<vote_reply> do_vote(vote_request&&);
     ss::future<append_entries_reply>
     do_append_entries(append_entries_request&&);
