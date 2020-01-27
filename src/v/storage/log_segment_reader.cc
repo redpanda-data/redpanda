@@ -1,5 +1,7 @@
 #include "storage/log_segment_reader.h"
 
+#include "vassert.h"
+
 #include <seastar/core/fstream.hh>
 #include <seastar/core/iostream.hh>
 #include <seastar/core/sstring.hh>
@@ -22,16 +24,15 @@ log_segment_reader::log_segment_reader(
 
 ss::input_stream<char>
 log_segment_reader::data_stream(uint64_t pos, const ss::io_priority_class& pc) {
+    vassert(pos <= _file_size, "cannot read negative bytes");
     ss::file_input_stream_options options;
     options.buffer_size = _buffer_size;
     options.io_priority_class = pc;
     options.read_ahead = 4;
     options.dynamic_adjustments = _history;
     return make_file_input_stream(
-      _data_file,
-      pos,
-      std::min(_file_size, _file_size - pos),
-      std::move(options));
+      _data_file, pos, _file_size - pos, std::move(options));
+}
 }
 
 std::ostream& operator<<(std::ostream& os, const log_segment_reader& seg) {
