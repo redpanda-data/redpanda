@@ -59,7 +59,6 @@ type RpkConfig struct {
 
 // Checks config and writes it to the given path.
 func WriteConfig(fs afero.Fs, config *Config, path string) error {
-	config.ConfigFile = path
 	ok, errs := CheckConfig(config)
 	if !ok {
 		reasons := []string{}
@@ -106,6 +105,7 @@ func ReadConfigFromPath(fs afero.Fs, path string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	config.ConfigFile = path
 	return config, nil
 }
 
