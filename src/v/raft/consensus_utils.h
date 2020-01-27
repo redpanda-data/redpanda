@@ -53,6 +53,20 @@ Iterator find_machine(Iterator begin, Iterator end, model::node_id id) {
       begin, end, [id](decltype(*begin) b) { return b.id() == id; });
 }
 
+inline constexpr model::offset next_offset(model::offset o) {
+    if (o < model::offset{0}) {
+        return model::offset{0};
+    }
+    return o + model::offset{1};
+}
+
+inline constexpr model::offset prev_offset(model::offset o) {
+    if (o <= model::offset{0}) {
+        return model::offset{};
+    }
+    return o - model::offset{1};
+}
+
 class memory_batch_consumer {
 public:
     ss::future<ss::stop_iteration> operator()(model::record_batch);
