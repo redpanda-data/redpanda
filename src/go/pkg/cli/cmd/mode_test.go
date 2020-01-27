@@ -51,6 +51,7 @@ func getValidConfig(configFile string, rpkFill bool) config.Config {
 
 func fillRpkConfig(val bool) config.RpkConfig {
 	return config.RpkConfig{
+		EnableUsageStats:    val,
 		TuneNetwork:         val,
 		TuneDiskScheduler:   val,
 		TuneNomerges:        val,
