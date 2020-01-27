@@ -5,6 +5,7 @@
 #include "vassert.h"
 
 #include <seastar/core/future-util.hh>
+#include <seastar/core/future.hh>
 
 namespace storage {
 
@@ -50,10 +51,19 @@ ss::future<> segment::flush() {
     }
     return ss::make_ready_future<>();
 }
-
-ss::future<> segment::truncate(model::offset) {
-    return ss::make_exception_future<>(
-      std::runtime_error("segment::truncate(model::offset) not implemented"));
+ss::future<>
+segment::truncate(model::offset prev_last_offset, size_t physical) {
+    _dirty_offset = prev_last_offset;
+    _reader->set_last_written_offset(_dirty_offset);
+    _reader->set_last_visible_byte_offset(physical);
+    auto f = _oidx->truncate(prev_last_offset);
+    // physical file only needs *one* truncation call
+    if (_appender) {
+        f = f.then([this, physical] { return _appender->truncate(physical); });
+    } else {
+        f = f.then([this, physical] { return _reader->truncate(physical); });
+    }
+    return f;
 }
 
 ss::future<append_result> segment::append(model::record_batch b) {
