@@ -112,11 +112,39 @@ bool log_segment_batch_reader::is_buffer_full() const {
 
 ss::future<size_t>
 log_segment_batch_reader::read(model::timeout_clock::time_point timeout) {
+    /*
+     * fetch batches from the cache covering the range [_base, end] where
+     * end is either the configured max offset or the end of the segment.
+     */
+    auto cache_read = _seg.cache_get(
+      _config.start_offset, _config.max_offset, max_buffer_size);
+    if (!cache_read.batches.empty()) {
+        _config.start_offset = cache_read.batches.back().last_offset()
+                               + model::offset(1);
+        _config.bytes_consumed += cache_read.memory_usage;
+        _buffer.swap(cache_read.batches);
+        return ss::make_ready_future<size_t>(cache_read.memory_usage);
+    }
+
     _buffer_size = 0;
     _buffer.clear();
     auto parser = initialize(timeout);
     auto ptr = parser.get();
-    return ptr->consume().finally([this, p = std::move(parser)] {});
+    return ptr->consume()
+      .then([this](size_t size) {
+          // insert batches from disk into the cache
+          std::vector<model::record_batch> copies;
+          copies.reserve(_buffer.size());
+          std::transform(
+            _buffer.begin(),
+            _buffer.end(),
+            std::back_inserter(copies),
+            [](model::record_batch& b) { return b.share(); });
+          _seg.cache_put(std::move(copies));
+
+          return size;
+      })
+      .finally([this, p = std::move(parser)] {});
 }
 
 log_reader::log_reader(
