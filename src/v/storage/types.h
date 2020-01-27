@@ -45,6 +45,7 @@ struct log_reader_config {
     std::vector<model::record_batch_type> type_filter;
     model::offset max_offset
       = model::model_limits<model::offset>::max(); // inclusive
+    size_t bytes_consumed{0};
 };
 
 inline std::ostream& operator<<(std::ostream& o, const log_reader_config& cfg) {
