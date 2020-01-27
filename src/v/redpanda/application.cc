@@ -159,9 +159,7 @@ void application::wire_up_services() {
     syschecks::systemd_message("Adding partition manager");
     construct_service(
       partition_manager,
-      // Have to be changed back to `yes` after after the task will be completed
-      // https://app.asana.com/0/1149841353291489/1152185368447609/f
-      storage::log_append_config::fsync::no,
+      storage::log_append_config::fsync::yes,
       std::chrono::seconds(10), // disk timeout
       std::ref(shard_table),
       std::ref(_raft_connection_cache))
