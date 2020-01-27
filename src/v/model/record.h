@@ -403,6 +403,7 @@ public:
     uncompressed_records& get_uncompressed_records_for_testing() {
         return std::get<uncompressed_records>(_records);
     }
+    const record_batch_header& header() const { return _header; }
 
     record_batch_header& get_header_for_testing() { return _header; }
 
