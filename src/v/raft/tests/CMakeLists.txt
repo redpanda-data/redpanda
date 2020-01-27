@@ -60,3 +60,17 @@ rp_test(
   SOURCES term_assigning_reader_test.cc
   LIBRARIES Seastar::seastar_testing v::raft
 )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME leadership_test
+  SOURCES leadership_test.cc
+  LIBRARIES Seastar::seastar_testing v::raft
+)
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME append_entries_test
+  SOURCES append_entries_test.cc
+  LIBRARIES Seastar::seastar_testing v::raft
+)
