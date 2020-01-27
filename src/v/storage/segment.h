@@ -32,7 +32,12 @@ public:
     ss::input_stream<char>
       offset_data_stream(model::offset, ss::io_priority_class);
 
-    bool empty() const { return _reader->empty(); }
+    bool empty() const {
+        if (_appender) {
+            return _dirty_offset() < 0;
+        }
+        return _reader->empty();
+    }
     model::offset committed_offset() const { return _reader->max_offset(); }
     model::offset dirty_offset() const {
         if (_appender) {
