@@ -73,6 +73,8 @@ struct follower_index_metadata {
     model::node_id node_id;
     model::term_id term{0};
     model::offset commit_index{0};
+    // timestamp of last append_entries_rpc call
+    clock_type::time_point last_hbeat_timestamp;
     uint64_t failed_appends{0};
     bool is_learner = false;
     bool is_recovering = false;

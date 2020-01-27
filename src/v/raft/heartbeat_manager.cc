@@ -13,8 +13,8 @@ ss::logger hbeatlog{"r/heartbeat"};
 using consensus_ptr = heartbeat_manager::consensus_ptr;
 using consensus_set = heartbeat_manager::consensus_set;
 
-static std::vector<heartbeat_request>
-requests_for_range(const consensus_set& c) {
+static std::vector<heartbeat_request> requests_for_range(
+  const consensus_set& c, clock_type::time_point last_heartbeat) {
     std::unordered_map<model::node_id, std::vector<protocol_metadata>>
       pending_beats;
 
@@ -26,6 +26,16 @@ requests_for_range(const consensus_set& c) {
         for (auto& n : group.nodes) {
             // do not send beat to self
             if (n.id() == ptr->self()) {
+                continue;
+            }
+            auto last_hbeat_timestamp = ptr->last_hbeat_timestamp(n.id());
+            if (last_hbeat_timestamp > last_heartbeat) {
+                hbeatlog.trace(
+                  "Skipping sending beat to {} last hb {}, last append {}",
+                  n.id(),
+                  last_heartbeat.time_since_epoch().count(),
+                  last_hbeat_timestamp.time_since_epoch().count());
+                // we already sent heartbeat, skip it
                 continue;
             }
             pending_beats[n.id()].push_back(ptr->meta());
@@ -53,7 +63,7 @@ heartbeat_manager::heartbeat_manager(
 
 ss::future<> heartbeat_manager::do_dispatch_heartbeats(
   clock_type::time_point last_timeout, clock_type::time_point next_timeout) {
-    auto reqs = requests_for_range(_consensus_groups);
+    auto reqs = requests_for_range(_consensus_groups, last_timeout);
     return ss::do_with(
       std::move(reqs),
       [this, next_timeout](std::vector<heartbeat_request>& reqs) {

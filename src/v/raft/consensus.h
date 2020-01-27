@@ -82,6 +82,8 @@ public:
     const model::ntp& ntp() const { return _log.ntp(); }
     clock_type::time_point last_heartbeat() const { return _hbeat; };
 
+    clock_type::time_point last_hbeat_timestamp(model::node_id);
+
     void process_heartbeat(model::node_id, result<append_entries_reply>);
     ss::future<result<replicate_result>> replicate(raft::entry&&);
     ss::future<result<replicate_result>> replicate(std::vector<raft::entry>&&);
@@ -122,6 +124,8 @@ private:
     ss::future<> process_configurations(std::vector<entry>&&);
 
     void arm_vote_timeout();
+    follower_index_metadata& get_follower_stats(model::node_id);
+    void update_node_hbeat_timestamp(model::node_id);
     // args
     model::node_id _self;
     timeout_jitter _jit;
