@@ -42,7 +42,7 @@ consensus::consensus(
         _follower_stats.emplace(n.id(), follower_index_metadata(n.id()));
     }
 }
-void consensus::step_down() {
+void consensus::do_step_down() {
     _probe.step_down();
     _voted_for = {};
     _vstate = vote_state::follower;
@@ -306,7 +306,7 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
         _probe.vote_request_term_newer();
         _meta.term = r.term;
         reply.term = _meta.term;
-        step_down();
+        do_step_down();
     }
 
     auto f = ss::make_ready_future<>();
