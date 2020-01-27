@@ -44,6 +44,9 @@ public:
     void maybe_track(model::offset o, size_t pos, size_t data_size);
     std::optional<size_t> lower_bound(model::offset o);
 
+    std::optional<std::pair<model::offset, size_t>>
+    lower_bound_pair(model::offset o);
+
     model::offset base_offset() const { return _base; }
     model::offset last_indexed_offset() const {
         if (_positions.empty()) {
@@ -60,6 +63,7 @@ public:
     ss::future<bool> materialize_index();
     ss::future<> close();
     ss::future<> flush();
+    ss::future<> truncate(model::offset);
 
 private:
     ss::sstring _name;

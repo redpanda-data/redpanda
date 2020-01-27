@@ -1,14 +1,22 @@
 #include "storage/disk_log_impl.h"
 
+#include "model/timeout_clock.h"
 #include "storage/disk_log_appender.h"
 #include "storage/log_manager.h"
 #include "storage/log_set.h"
+#include "storage/logger.h"
 #include "storage/offset_assignment.h"
+#include "storage/offset_to_filepos_consumer.h"
 #include "storage/version.h"
 
+#include <seastar/core/future-util.hh>
+#include <seastar/core/future.hh>
 #include <seastar/core/reactor.hh>
+#include <seastar/core/seastar.hh>
 
 #include <fmt/format.h>
+
+#include <iterator>
 
 namespace storage {
 
@@ -68,19 +76,15 @@ ss::future<> disk_log_impl::flush() {
     return _segs.back().flush();
 }
 ss::future<> disk_log_impl::do_roll() {
-    return flush()
-      // FIXME(agallego) - figure out how to not forward to segment
-      //.then([this] { return _segs.back().appender()->close(); })
-      .then([this] {
-          model::offset base(0);
-          if (auto o = max_offset(); o() >= 0) {
-              // start at *next* valid and inclusive offset!
-              base = o + model::offset(1);
-          }
-          stlog.trace("Rolling log segment offset {}, term {}", base, _term);
-          return new_segment(
-            base, _term, _segs.back().appender()->priority_class());
-      });
+    if (_segs.empty()) {
+        return ss::make_ready_future<>();
+    }
+    auto iopc = _segs.back().appender()->priority_class();
+    return _segs.back().release_appender().then([this, iopc] {
+        model::offset base = max_offset() + model::offset(1);
+        stlog.trace("Rolling log segment offset {}, term {}", base, _term);
+        return new_segment(base, _term, iopc);
+    });
 }
 ss::future<> disk_log_impl::maybe_roll() {
     if (
@@ -97,115 +101,91 @@ disk_log_impl::make_reader(log_reader_config config) {
       _segs, std::move(config), _probe);
 }
 
-// ss::future<> disk_log_impl::truncate_whole_segments(
-//   log_set::const_iterator first_to_remove) {
-//     std::vector<segment_reader_ptr> truncated_logs;
-//     truncated_logs.reserve(std::distance(first_to_remove, std::cend(_segs)));
-//     while (first_to_remove != _segs.end()) {
-//         auto truncated = _segs.back().reader;
-//         stlog.debug(
-//           "Truncated whole log segment {}", truncated->filename());
-//         truncated_logs.push_back(truncated);
-//         _segs.pop_back();
-//     }
-
-//     return parallel_for_each(
-//              truncated_logs,
-//              [](const segment_reader_ptr& seg) {
-//                  return seg->close().then(
-//                    [seg] { return remove_file(seg->filename()); });
-//              })
-//       .then([d = _manager.config().base_dir] { return sync_directory(d); });
-// }
-
+static ss::future<> delete_full_segments(std::vector<segment> to_remove) {
+    return ss::do_with(std::move(to_remove), [](std::vector<segment>& remove) {
+        return ss::do_for_each(remove, [](segment& s) {
+            return s.close()
+              .handle_exception([&s](std::exception_ptr e) {
+                  stlog.info("error:{} closing segment: {}", e, s);
+              })
+              .then([&s] { return ss::remove_file(s.reader()->filename()); })
+              .then([&s] { return ss::remove_file(s.oindex()->filename()); })
+              .handle_exception([&s](std::exception_ptr e) {
+                  stlog.info("error:{} removing segment files: {}", e, s);
+              });
+        });
+    });
+}
 ss::future<> disk_log_impl::do_truncate(model::offset o) {
-    return ss::make_ready_future<>();
-    // if (o < model::offset(0)) {
-    //     // remove all
-    //     stlog.trace("Truncating  whole log {}", ntp());
-    //     _tracker.update_dirty_offset(model::offset{});
-    //     _tracker.update_committed_offset(model::offset{});
-    //     return truncate_whole_segments(_segs.begin()).then([this] {
-    //         if (!_segs.back().appender) {
-    //             return ss::make_ready_future<>();
-    //         }
-    //         return flush()
-    //           .then([this] { return _segs.back().appender()->close(); })
-    //           .then([this] {
-    //               _segs.back().appender = nullptr;
-    //               _segs.back().reader = nullptr;
-    //           });
-    //     });
-    // }
-    // auto to_truncate_in_middle = _segs.lower_bound(o)->reader;
-    // if (to_truncate_in_middle == _segs.end()) {
-    //     return ss::make_exception_future<>(std::invalid_argument(
-    //       fmt::format("Unable to truncate as offset {} is not in the log",
-    //       o)));
-    // }
-
-    // // first remove whole segments
-    // auto first_to_remove = std::next(to_truncate_in_middle);
-    // auto f = truncate_whole_segments(first_to_remove);
-    // // truncate in the middle
-    // _tracker.update_dirty_offset(o);
-    // _tracker.update_committed_offset(o);
-    // struct file_offset_batch_consumer {
-    //     ss::future<ss::stop_iteration> operator()(model::record_batch batch)
-    //     {
-    //         f_pos += (batch.size_bytes() +
-    //         vint::vint_size(batch.size_bytes())); return
-    //         ss::make_ready_future<ss::stop_iteration>(
-    //           ss::stop_iteration::no);
-    //     }
-    //     uint64_t end_of_stream() { return f_pos; }
-    //     uint64_t f_pos{0};
-    // };
-
-    // return f.then([this, o, to_truncate = to_truncate_in_middle->reader] {
-    //     log_reader_config cfg{.start_offset = to_truncate->base_offset(),
-    //                           .max_bytes =
-    //                           std::numeric_limits<size_t>::max(), .min_bytes
-    //                           = 0, .prio = ss::default_priority_class(),
-    //                           .type_filter = {},
-    //                           .max_offset = o};
-    //     return ss::do_with(
-    //       file_offset_batch_consumer{},
-    //       model::make_record_batch_reader<log_segment_batch_reader>(
-    //         to_truncate, _tracker, std::move(cfg), _probe),
-    //       [this, o, to_truncate](
-    //         file_offset_batch_consumer& c,
-    //         model::record_batch_reader& reader) mutable {
-    //           return reader.consume(c, model::no_timeout)
-    //             .then([this, o, to_truncate](uint64_t f_pos) {
-    //                 stlog.debug(
-    //                   "Truncating segment {} of size {} at {}",
-    //                   to_truncate->filename(),
-    //                   to_truncate->file_size(),
-    //                   f_pos);
-
-    //                 if (_segs.back().reader()->base_offset() <= o) {
-    //                     // we have an appender to this segment,
-    //                     // truncate using the appender
-    //                     _segs.back().reader()->set_last_visible_byte_offset(
-    //                       f_pos);
-    //                     _segs.back().reader()->set_last_written_offset(o);
-    //                     return _segs.back().appender()->truncate(f_pos);
-    //                 }
-    //                 // truncate old segment and roll
-    //                 const auto flags = ss::open_flags::rw;
-    //                 return ss::open_file_dma(to_truncate->filename(),
-    //                 flags)
-    //                   .then([this, f_pos](ss::file f) {
-    //                       return f.truncate(f_pos)
-    //                         .then([f]() mutable { return f.flush(); })
-    //                         .finally([f]() mutable { return f.close(); })
-    //                         .finally([f] {});
-    //                   })
-    //                   .then([this] { return do_roll(); });
-    //             });
-    //       });
-    // });
+    if (o > max_offset() || o < start_offset()) {
+        // out of range
+        stlog.info("Truncate offset: '{}' is out of range for {}", o, *this);
+        return ss::make_ready_future<>();
+    }
+    std::vector<segment> to_remove;
+    auto begin_remove = _segs.lower_bound(o); // cannot be lower_bound
+    if (begin_remove != _segs.end()) {
+        if (begin_remove->reader()->base_offset() < o) {
+            begin_remove = std::next(begin_remove);
+        }
+    }
+    for (size_t i = 0, max = std::distance(begin_remove, _segs.end()); i < max;
+         ++i) {
+        stlog.info(
+          "Truncating full {}. tuncation offset request:{}", _segs.back(), o);
+        to_remove.push_back(std::move(_segs.back()));
+        _segs.pop_back();
+    }
+    using fpos_type = internal::offset_to_filepos_consumer::type;
+    return delete_full_segments(std::move(to_remove))
+      .then([this, o] {
+          if (_segs.empty()) {
+              return ss::make_ready_future<fpos_type>();
+          }
+          auto& last = _segs.back();
+          if (o <= last.dirty_offset() && o >= last.reader()->base_offset()) {
+              auto pidx = last.oindex()->lower_bound_pair(o);
+              model::offset start = last.oindex()->base_offset();
+              size_t initial_size = 0;
+              if (pidx) {
+                  start = pidx->first;
+                  initial_size = pidx->second;
+              }
+              auto rdr = make_reader(log_reader_config{
+                .start_offset = start,
+                .max_offset = o,
+                .max_bytes = std::numeric_limits<size_t>::max(),
+                .min_bytes = std::numeric_limits<size_t>::max(),
+                // TODO: pass a priority for truncate
+                .prio = ss::default_priority_class()});
+              return ss::do_with(
+                std::move(rdr),
+                [o, initial_size](model::record_batch_reader& rdr) {
+                    return rdr.consume(
+                      internal::offset_to_filepos_consumer(o, initial_size),
+                      model::no_timeout);
+                });
+          }
+          return ss::make_ready_future<fpos_type>();
+      })
+      .then([this, o](fpos_type phs) {
+          if (!phs) {
+              return ss::make_ready_future<>();
+          }
+          auto [prev_last_offset, file_position] = phs.value();
+          // the last offset, is one before this batch' base_offset
+          if (file_position == 0) {
+              std::vector<segment> rem;
+              rem.push_back(std::move(_segs.back()));
+              _segs.pop_back();
+              stlog.info(
+                "Truncating full segment, after indexing:{}, :{}",
+                prev_last_offset,
+                rem.back());
+              return delete_full_segments(std::move(rem));
+          }
+          return _segs.back().truncate(prev_last_offset, file_position);
+      });
 }
 
 std::ostream& disk_log_impl::print(std::ostream& o) const {

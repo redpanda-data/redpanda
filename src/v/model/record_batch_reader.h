@@ -131,15 +131,15 @@ public:
         template<typename Consumer>
         auto do_consume(Consumer& consumer, timeout_clock::time_point timeout) {
             return ss::repeat([this, timeout, &consumer] {
-                       if (end_of_stream() && is_slice_empty()) {
+                       if (__builtin_expect(!is_slice_empty(), true)) {
+                           return consumer(pop_batch());
+                       }
+                       if (end_of_stream()) {
                            return ss::make_ready_future<ss::stop_iteration>(
                              ss::stop_iteration::yes);
                        }
-                       if (is_slice_empty()) {
-                           return load_slice(timeout).then(
-                             [] { return ss::stop_iteration::no; });
-                       }
-                       return consumer(pop_batch());
+                       return load_slice(timeout).then(
+                         [] { return ss::stop_iteration::no; });
                    })
               .then([&consumer] { return consumer.end_of_stream(); });
         }

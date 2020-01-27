@@ -47,7 +47,7 @@ public:
     model::offset max_offset() const final {
         for (auto it = _segs.rbegin(); it != _segs.rend(); it++) {
             if (!it->empty()) {
-                return it->reader()->max_offset();
+                return it->dirty_offset();
             }
         }
         return model::offset{};
@@ -56,7 +56,7 @@ public:
     model::offset committed_offset() const final {
         for (auto it = _segs.rbegin(); it != _segs.rend(); it++) {
             if (!it->empty()) {
-                return it->dirty_offset();
+                return it->committed_offset();
             }
         }
         return model::offset{};
@@ -77,8 +77,6 @@ private:
     ss::future<> do_roll();
 
     ss::future<> do_truncate(model::offset);
-
-    ss::future<> truncate_whole_segments(log_set::const_iterator);
 
 private:
     model::term_id _term;

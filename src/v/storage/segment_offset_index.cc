@@ -31,6 +31,7 @@ void segment_offset_index::maybe_track(
             return;
         }
     }
+    _last_seen_offset = o;
     _acc += data_size;
     if (_acc >= _step) {
         _acc = 0;
@@ -53,28 +54,57 @@ struct base_comparator {
         return needle < p.first;
     }
 };
-std::optional<size_t> segment_offset_index::lower_bound(model::offset o) {
+std::optional<std::pair<model::offset, size_t>>
+segment_offset_index::lower_bound_pair(model::offset o) {
     vassert(
       o >= _base,
       "segment_offset::index::lower_bound cannot find offset:{} below:{}",
       o,
       _base);
+    if (_positions.empty()) {
+        return std::nullopt;
+    }
     const uint32_t i = o() - _base();
-    if (auto it = std::lower_bound(
-          std::begin(_positions), std::end(_positions), i, base_comparator{});
-        it != _positions.end()) {
-        if (it->first <= i) {
-            return it->second;
-        }
-
-        if (std::distance(_positions.begin(), it) > 0) {
-            it = std::prev(it);
-        }
-        if (it->first <= i) {
-            return it->second;
-        }
+    auto it = std::lower_bound(
+      std::begin(_positions), std::end(_positions), i, base_comparator{});
+    if (it == _positions.end()) {
+        it = std::prev(it);
+    }
+    if (it->first <= i) {
+        return std::make_pair(_base + model::offset(it->first), it->second);
+    }
+    if (std::distance(_positions.begin(), it) > 0) {
+        it = std::prev(it);
+    }
+    if (it->first <= i) {
+        return std::make_pair(_base + model::offset(it->first), it->second);
     }
     return std::nullopt;
+}
+
+std::optional<size_t> segment_offset_index::lower_bound(model::offset o) {
+    auto opt = lower_bound_pair(o);
+    if (opt) {
+        return opt->second;
+    }
+    return std::nullopt;
+}
+
+ss::future<> segment_offset_index::truncate(model::offset o) {
+    vassert(
+      o >= _base,
+      "segment_offset_index::truncate cannot find offset:{} below:{}",
+      o,
+      _base);
+    _last_seen_offset = o;
+    const uint32_t i = o() - _base();
+    auto it = std::lower_bound(
+      std::begin(_positions), std::end(_positions), i, base_comparator{});
+    if (it != _positions.end()) {
+        _needs_persistence = true;
+        _positions.erase(it, _positions.end());
+    }
+    return flush();
 }
 
 ss::future<bool> segment_offset_index::materialize_index() {
