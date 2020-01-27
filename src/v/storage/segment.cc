@@ -31,6 +31,14 @@ ss::future<> segment::close() {
     return f;
 }
 
+ss::future<> segment::release_appender() {
+    vassert(_appender, "cannot release a null appender");
+    return flush()
+      .then([this] { return _appender->close(); })
+      .then([this] { return _oidx->flush(); })
+      .then([this] { _appender = nullptr; });
+}
+
 ss::future<> segment::flush() {
     // should be outside of the appender block
     _reader->set_last_written_offset(dirty_offset());
