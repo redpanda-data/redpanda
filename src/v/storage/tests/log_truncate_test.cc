@@ -69,8 +69,11 @@ FIXTURE_TEST(test_truncate_in_the_middle_of_segment, storage_test_fixture) {
 
         BOOST_REQUIRE_EQUAL(log.committed_offset(), expected);
         BOOST_REQUIRE_EQUAL(log.max_offset(), expected);
-        BOOST_REQUIRE(!read_batches.empty());
-        BOOST_REQUIRE_EQUAL(read_batches.back().last_offset(), expected);
+        if (truncate_offset != model::offset(0)) {
+            BOOST_REQUIRE_EQUAL(read_batches.back().last_offset(), expected);
+        } else {
+            BOOST_REQUIRE_EQUAL(read_batches.empty(), true);
+        }
     }
 }
 
