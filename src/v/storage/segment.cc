@@ -39,7 +39,10 @@ ss::future<> segment::release_appender() {
     return flush()
       .then([this] { return _appender->close(); })
       .then([this] { return _oidx->flush(); })
-      .then([this] { _appender = nullptr; });
+      .then([this] {
+          _appender = nullptr;
+          _cache = nullptr;
+      });
 }
 
 ss::future<> segment::flush() {
@@ -58,6 +61,7 @@ segment::truncate(model::offset prev_last_offset, size_t physical) {
     _dirty_offset = prev_last_offset;
     _reader->set_last_written_offset(_dirty_offset);
     _reader->set_last_visible_byte_offset(physical);
+    cache_truncate(prev_last_offset + model::offset(1));
     auto f = _oidx->truncate(prev_last_offset);
     // physical file only needs *one* truncation call
     if (_appender) {
@@ -79,9 +83,11 @@ ss::future<append_result> segment::append(model::record_batch b) {
             // index the write
             _oidx->maybe_track(
               b.base_offset(), start_physical_offset, byte_size);
-            return append_result{.base_offset = b.base_offset(),
-                                 .last_offset = b.last_offset(),
-                                 .byte_size = byte_size};
+            auto ret = append_result{.base_offset = b.base_offset(),
+                                     .last_offset = b.last_offset(),
+                                     .byte_size = byte_size};
+            cache_put(std::move(b));
+            return ret;
         });
     });
 }
