@@ -52,7 +52,7 @@ constexpr inline static std::array<storage::log_manager::storage_type, 2>
 
 class storage_test_fixture {
 public:
-    ss::sstring test_dir = "test_data."
+    ss::sstring test_dir = "test.data."
                            + random_generators::gen_alphanum_string(10);
 
     storage_test_fixture() { configure_unit_test_logging(); }
@@ -130,6 +130,7 @@ public:
     read_and_validate_all_batches(storage::log log) {
         storage::log_reader_config cfg{
           .start_offset = model::offset(0),
+          .max_offset = log.committed_offset(),
           .max_bytes = std::numeric_limits<size_t>::max(),
           .min_bytes = 0,
           .prio = ss::default_priority_class(),
