@@ -127,8 +127,6 @@ ss::future<stop_parser> continuous_batch_parser::consume_records() {
               auto key = parser.share(key_length);
               auto value_length = record_size - key_length - kv - ov - tv
                                   - sizeof(model::record_attributes::type);
-              stlog.info(
-                "DOS:KeySize={},ValueSize{}", key_length, value_length);
               auto value = parser.share(value_length);
               auto ret = _consumer->consume_record(
                 record_size,
