@@ -50,7 +50,12 @@ public:
 
     uint64_t file_size() const { return _file_size; }
 
-    bool empty() const { return _max_offset() < 0; }
+    bool empty() const {
+        // Note cannot be _max_offset() < 0 because
+        // on truncation we set it to one past the base
+        // which needs to invalidate the file
+        return _max_offset() < _base_offset;
+    }
 
     /// close the underlying file handle
     ss::future<> close() { return _data_file.close(); }
