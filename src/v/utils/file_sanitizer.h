@@ -7,6 +7,7 @@
 #include <seastar/util/log.hh>
 
 #include <boost/intrusive/list.hpp>
+#include <fmt/format.h>
 
 #include <iostream>
 #include <optional>
@@ -17,16 +18,24 @@ namespace bi = boost::intrusive;
 
 #include "seastarx.h"
 
+struct sanitizer_op
+  : public bi::list_base_hook<bi::link_mode<bi::auto_unlink>> {
+    ss::sstring name_op;
+    ss::saved_backtrace bt;
+
+    explicit sanitizer_op(ss::sstring operation)
+      : name_op(std::move(operation))
+      , bt(ss::current_backtrace()) {}
+};
+
+inline std::ostream& operator<<(std::ostream& o, const sanitizer_op& s) {
+    return o << "{sanitizer_op: " << s.name_op << ", backtrace:\n"
+             << s.bt << "\n}";
+}
+
 /// Classed used to debug bad file accesses, by wrapping the file handle:
 /// auto fd = file(make_shared(file_io_sanitizer(original_fd)));
 class file_io_sanitizer : public ss::file_impl {
-    struct op : public bi::list_base_hook<bi::link_mode<bi::auto_unlink>> {
-        ss::saved_backtrace bt;
-
-        op()
-          : bt(ss::current_backtrace()) {}
-    };
-
 public:
     explicit file_io_sanitizer(ss::file f)
       : _file(f) {}
@@ -47,7 +56,10 @@ public:
       size_t len,
       const ss::io_priority_class& pc) override {
         assert_file_not_closed();
-        return with_op(get_file_impl(_file)->write_dma(pos, buffer, len, pc));
+        return with_op(
+          fmt::format(
+            "ss::future<size_t>::write_dma(pos:{}, *void, len:{})", pos, len),
+          get_file_impl(_file)->write_dma(pos, buffer, len, pc));
     }
 
     virtual ss::future<size_t> write_dma(
@@ -55,7 +67,12 @@ public:
       std::vector<iovec> iov,
       const ss::io_priority_class& pc) override {
         assert_file_not_closed();
-        return with_op(get_file_impl(_file)->write_dma(pos, iov, pc));
+        return with_op(
+          fmt::format(
+            "ss::future<size_t>::write_dma(pos:{}, vector<iovec>:{})",
+            pos,
+            iov.size()),
+          get_file_impl(_file)->write_dma(pos, iov, pc));
     }
 
     virtual ss::future<size_t> read_dma(
@@ -64,7 +81,12 @@ public:
       size_t len,
       const ss::io_priority_class& pc) override {
         assert_file_not_closed();
-        return with_op(get_file_impl(_file)->read_dma(pos, buffer, len, pc));
+        return with_op(
+          fmt::format(
+            "ss::future<size_t> read_dma(pos:{}, void* buffer, len:{})",
+            pos,
+            len),
+          get_file_impl(_file)->read_dma(pos, buffer, len, pc));
     }
 
     virtual ss::future<size_t> read_dma(
@@ -72,7 +94,13 @@ public:
       std::vector<iovec> iov,
       const ss::io_priority_class& pc) override {
         assert_file_not_closed();
-        return with_op(get_file_impl(_file)->read_dma(pos, iov, pc));
+        return with_op(
+          fmt::format(
+            "ss::future<size_t> read_dma(pos{}, std::vector<iovec>:{} , "
+            "const ss::io_priority_class& pc)",
+            pos,
+            iov.size()),
+          get_file_impl(_file)->read_dma(pos, iov, pc));
     }
 
     virtual ss::future<> flush(void) override {
@@ -81,32 +109,45 @@ public:
             std::cout << "flush() called concurrently with other operations.\n";
             output_pending_ops();
         }
-        return with_op(get_file_impl(_file)->flush());
+        return with_op(
+          fmt::format("ss::future<> flush(void)"),
+          get_file_impl(_file)->flush());
     }
 
     virtual ss::future<struct stat> stat(void) override {
         assert_file_not_closed();
-        return with_op(get_file_impl(_file)->stat());
+        return with_op(
+          fmt::format("ss::future<> stat(void)"), get_file_impl(_file)->stat());
     }
 
     virtual ss::future<> truncate(uint64_t length) override {
         assert_file_not_closed();
-        return with_op(get_file_impl(_file)->truncate(length));
+        return with_op(
+          fmt::format("ss::future<> truncate({})", length),
+          get_file_impl(_file)->truncate(length));
     }
 
     virtual ss::future<> discard(uint64_t offset, uint64_t length) override {
         assert_file_not_closed();
-        return with_op(get_file_impl(_file)->discard(offset, length));
+        return with_op(
+          fmt::format(
+            "ss::future<> discard(offset:{}, length:{})", offset, length),
+          get_file_impl(_file)->discard(offset, length));
     }
 
     virtual ss::future<> allocate(uint64_t position, uint64_t length) override {
         assert_file_not_closed();
-        return with_op(get_file_impl(_file)->allocate(position, length));
+        return with_op(
+          fmt::format(
+            "ss::future<> allocate(position:{}, length:{})", position, length),
+          get_file_impl(_file)->allocate(position, length));
     }
 
     virtual ss::future<uint64_t> size(void) override {
         assert_file_not_closed();
-        return with_op(get_file_impl(_file)->size());
+        return with_op(
+          fmt::format("ss::future<uint64_t> size(void)"),
+          get_file_impl(_file)->size());
     }
 
     virtual ss::future<> close() override {
@@ -139,13 +180,18 @@ public:
       const ss::io_priority_class& pc) override {
         assert_file_not_closed();
         return with_op(
+          fmt::format(
+            "ss::future<ss::temporary_buffer<uint8_t>> "
+            "dma_read_bulk(offset:{}, range_size:{}",
+            offset,
+            range_size),
           get_file_impl(_file)->dma_read_bulk(offset, range_size, pc));
     }
 
 private:
     template<typename Future>
-    Future with_op(Future&& f) {
-        auto pending = std::make_unique<op>();
+    Future with_op(ss::sstring name, Future&& f) {
+        auto pending = std::make_unique<sanitizer_op>(std::move(name));
         _pending_ops.push_back(*pending);
         return std::forward<Future>(f).finally(
           [pending = std::move(pending)] {});
@@ -153,8 +199,8 @@ private:
 
     void output_pending_ops() {
         std::cout << "  called from " << ss::current_backtrace();
-        for (auto&& op : _pending_ops) {
-            std::cout << "  pending op: " << op.bt;
+        for (sanitizer_op& op : _pending_ops) {
+            std::cout << "....pending op: " << op;
         }
         _pending_ops.clear();
     }
@@ -167,7 +213,8 @@ private:
     }
 
 private:
-    boost::intrusive::list<op, bi::constant_time_size<false>> _pending_ops;
+    boost::intrusive::list<sanitizer_op, bi::constant_time_size<false>>
+      _pending_ops;
     ss::file _file;
     std::optional<ss::saved_backtrace> _closed;
 };
