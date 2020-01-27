@@ -6,8 +6,6 @@
 #include "storage/parser.h"
 #include "utils/vint.h"
 
-#include <seastar/util/defer.hh>
-
 #include <limits>
 
 namespace storage {
@@ -49,12 +47,18 @@ void crc_record_header_and_key(crc32& crc, const model::record& r) {
     crc.extend(r.key());
 }
 
+struct checksumming_cfg {
+    std::optional<model::offset> last_offset;
+    bool is_valid_crc{false};
+};
+
 class checksumming_consumer final : public batch_consumer {
 public:
     static constexpr size_t max_segment_size = static_cast<size_t>(
       std::numeric_limits<uint32_t>::max());
-    explicit checksumming_consumer(segment* s)
-      : _seg(s) {}
+    explicit checksumming_consumer(segment* s, checksumming_cfg& c)
+      : _seg(s)
+      , _cfg(c) {}
 
     consume_result consume_batch_start(
       model::record_batch_header header,
@@ -68,7 +72,7 @@ public:
           header.base_offset() < 0 || size_on_disk >= max_segment_size
           || size_on_disk > filesize || !header.attrs.is_valid_compression()
           || (header.size_bytes + physical_base_offset) > filesize) {
-            _last_valid_offset = {};
+            _cfg.last_offset = {};
             stlog.info("checksumming_consumer::consume_batch_start:: invalid "
                        "record batch header. Stopping parsing");
             return stop_parser::yes;
@@ -82,28 +86,26 @@ public:
         return skip_batch::no;
     }
 
-    consume_result consume_record_key(
+    consume_result consume_record(
       size_t size_bytes,
       model::record_attributes attributes,
       int32_t timestamp_delta,
       int32_t offset_delta,
-      iobuf&& key) override {
+      iobuf&& key,
+      iobuf&& value_and_headers) override {
         crc_record_header_and_key(
           _crc, size_bytes, attributes, timestamp_delta, offset_delta, key);
+        _crc.extend(value_and_headers);
         return skip_batch::no;
     }
-
-    void consume_record_value(iobuf&& value_and_headers) override {
-        _crc.extend(value_and_headers);
-    }
-
     void consume_compressed_records(iobuf&& records) override {
         _crc.extend(records);
     }
 
     stop_parser consume_batch_end() override {
-        if (recovered()) {
-            _last_valid_offset = _last_offset;
+        _cfg.is_valid_crc = recovered();
+        if (_cfg.is_valid_crc) {
+            _cfg.last_offset = _last_offset;
             return stop_parser::no;
         }
         return stop_parser::yes;
@@ -111,17 +113,14 @@ public:
 
     bool recovered() const { return _current_batch_crc == _crc.value(); }
 
-    std::optional<model::offset> last_valid_offset() const {
-        return _last_valid_offset;
-    }
     ~checksumming_consumer() noexcept override = default;
 
 private:
     segment* _seg;
-    uint32_t _current_batch_crc = -1;
+    checksumming_cfg& _cfg;
+    int32_t _current_batch_crc;
     crc32 _crc;
     model::offset _last_offset;
-    std::optional<model::offset> _last_valid_offset;
 };
 
 // Called in the context of a ss::thread
@@ -129,13 +128,14 @@ log_replayer::recovered
 log_replayer::recover_in_thread(const ss::io_priority_class& prio) {
     stlog.debug("Recovering segment {}", *_seg);
     // explicitly not using the index to recover the full file
+    checksumming_cfg cfg;
     auto data_stream = _seg->reader()->data_stream(0, prio);
-    auto d = ss::defer([&data_stream] { data_stream.close().get(); });
-    auto consumer = checksumming_consumer(_seg);
-    auto parser = continuous_batch_parser(consumer, data_stream);
+    auto consumer = std::make_unique<checksumming_consumer>(_seg, cfg);
+    auto parser = continuous_batch_parser(
+      std::move(consumer), std::move(data_stream));
     try {
         parser.consume().get();
-        return recovered{consumer.recovered(), consumer.last_valid_offset()};
+        return recovered{cfg.is_valid_crc, cfg.last_offset};
     } catch (const malformed_batch_stream_exception& e) {
         stlog.debug("Failed to recover segment {} with {}", *_seg, e);
     } catch (...) {

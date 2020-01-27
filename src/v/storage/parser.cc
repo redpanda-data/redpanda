@@ -1,442 +1,193 @@
 #include "storage/parser.h"
 
-#include "model/fundamental.h"
+#include "bytes/iobuf.h"
+#include "bytes/iobuf_parser.h"
+#include "model/record.h"
+#include "reflection/adl.h"
 #include "storage/constants.h"
 #include "storage/logger.h"
+#include "storage/parser.h"
 
-#include <seastar/core/byteorder.hh>
-#include <seastar/core/future-util.hh>
+#include <seastar/util/variant_utils.hh>
 
-#include <boost/range/iterator_range.hpp>
-
-#include <algorithm>
-#include <cstdint>
-#include <stdexcept>
-#include <variant>
+#include <bits/stdint-uintn.h>
+#include <fmt/format.h>
 
 namespace storage {
+static constexpr size_t disk_header_size = packed_header_size + 4;
+using stop_parser = batch_consumer::stop_parser;
+using skip_batch = batch_consumer::skip_batch;
+std::pair<model::record_batch_header, uint32_t> header_from_iobuf(iobuf b) {
+    iobuf_parser parser(std::move(b));
+    auto sz = reflection::adl<uint32_t>{}.from(parser);
+    auto off = reflection::adl<model::offset>{}.from(parser);
+    auto type = reflection::adl<model::record_batch_type>{}.from(parser);
+    auto crc = reflection::adl<int32_t>{}.from(parser);
+    using attr_t = model::record_batch_attributes::type;
+    auto attrs = model::record_batch_attributes(
+      reflection::adl<attr_t>{}.from(parser));
+    auto delta = reflection::adl<int32_t>{}.from(parser);
+    using tmstmp_t = model::timestamp::type;
+    auto first = model::timestamp(reflection::adl<tmstmp_t>{}.from(parser));
+    auto max = model::timestamp(reflection::adl<tmstmp_t>{}.from(parser));
+    auto record_count = parser.consume_type<uint32_t>();
+    return {
+      model::record_batch_header{sz, off, type, crc, attrs, delta, first, max},
+      record_count};
+}
 
-ss::future<ss::consumption_result<char>>
-continuous_batch_parser::operator()(ss::temporary_buffer<char> data) {
-    auto orig_data_size = data.size();
-    auto result = process(data);
-    _bytes_consumed = orig_data_size - data.size();
-    return ss::visit(
-      result,
-      [this, orig_data_size, &data](ss::stop_iteration stop) {
-          if (stop) {
-              return ss::make_ready_future<ss::consumption_result<char>>(
-                ss::stop_consuming<char>(std::move(data)));
+static inline ss::future<std::optional<iobuf>> verify_read_iobuf(
+  ss::input_stream<char>& in, size_t expected, ss::sstring msg) {
+    return read_iobuf_exactly(in, expected)
+      .then([msg = std::move(msg), expected](iobuf b) {
+          if (__builtin_expect(b.size_bytes() == expected, true)) {
+              return ss::make_ready_future<std::optional<iobuf>>(std::move(b));
           }
-          if (!orig_data_size) {
-              // End of file
-              ensure_valid_end_state();
-              return ss::make_ready_future<ss::consumption_result<char>>(
-                ss::stop_consuming<char>(std::move(data)));
-          }
-          return ss::make_ready_future<ss::consumption_result<char>>(
-            ss::continue_consuming{});
-      },
-      [this, &data](ss::skip_bytes skip) {
-          auto n = skip.get_value();
-          auto skip_buf = std::min(n, data.size());
-          data.trim_front(skip_buf);
-          n -= skip_buf;
-          if (!n) {
-              return ss::make_ready_future<ss::consumption_result<char>>(
-                ss::stop_consuming<char>(std::move(data)));
-          }
-          return ss::make_ready_future<ss::consumption_result<char>>(
-            ss::skip_bytes(n));
+          stlog.error(
+            "Cannot continue parsing. recived size:{} bytes, expected:{} "
+            "bytes. context:{}",
+            b.size_bytes(),
+            expected,
+            msg);
+          return ss::make_ready_future<std::optional<iobuf>>();
       });
 }
 
-parse_result
-continuous_batch_parser::process(ss::temporary_buffer<char>& data) {
-    while (data || non_consuming()) {
-        process_sliced_data(data);
-        // If _prestate is set to something other than prestate::none
-        // after process_buffer was called, it means that data wasn't
-        // enough to complete the prestate.
-        if (__builtin_expect(_prestate != prestate::none, false)) {
-            if (data.size()) {
-                throw std::logic_error(
-                  "Expected all data from the buffer to have been consumed.");
-            }
-            return ss::stop_iteration::no;
-        }
-        auto ret = do_process(data);
-        if (__builtin_expect(ret != ss::stop_iteration::no, false)) {
-            return ret;
-        }
-    }
-    return ss::stop_iteration::no;
+using opt_hdr = std::optional<std::pair<model::record_batch_header, uint32_t>>;
+
+ss::future<stop_parser> continuous_batch_parser::consume_header() {
+    return verify_read_iobuf(_input, disk_header_size, "parser::header")
+      .then([this](std::optional<iobuf> b) {
+          if (!b) {
+              return ss::make_ready_future<opt_hdr>();
+          }
+          return ss::make_ready_future<opt_hdr>(
+            header_from_iobuf(std::move(b.value())));
+      })
+      .then([this](opt_hdr o) {
+          if (!o) {
+              return ss::make_ready_future<stop_parser>(stop_parser::yes);
+          }
+          auto& p = o.value();
+          _header = p.first;
+          auto num_records = p.second;
+          const auto size_on_disk = _header.size_bytes + 4;
+          auto ret = _consumer->consume_batch_start(
+            _header, num_records, _physical_base_offset, size_on_disk);
+          if (std::holds_alternative<skip_batch>(ret)) {
+              auto s = std::get<skip_batch>(ret);
+              if (__builtin_expect(bool(s), false)) {
+                  auto remaining = _header.size_bytes - packed_header_size;
+                  return verify_read_iobuf(
+                           _input, remaining, "parser::skip_batch")
+                    .then([this](std::optional<iobuf> b) {
+                        if (!b) {
+                            return ss::make_ready_future<stop_parser>(
+                              stop_parser::yes);
+                        }
+                        // start again
+                        add_bytes_and_reset();
+                        return consume_header();
+                    });
+              }
+          }
+          return ss::make_ready_future<stop_parser>(stop_parser::no);
+      });
 }
 
-// a state machine approach to parsing, with the following structure
-// case <current>: {
-//   _header.<previous> = _64 | _32 | _16 | _8; // depending on type
-//   if (read_int<self>(data) != read_status::ready) {
-//     _state = state::<next_type>;
-//     break;
-//   }
-// }
-parse_result
-continuous_batch_parser::do_process(ss::temporary_buffer<char>& data) {
-    switch (_state) {
-    case state::batch_start: {
-        if (read_int<int32_t>(data) != read_status::ready) {
-            _state = state::base_offset;
-            break;
+bool continuous_batch_parser::is_compressed_payload() const {
+    return _header.attrs.compression() != model::compression::none;
+}
+ss::future<stop_parser> continuous_batch_parser::consume_one() {
+    return consume_header().then([this](stop_parser st) {
+        if (st) {
+            return ss::make_ready_future<stop_parser>(st);
         }
-    }
-    case state::base_offset: {
-        _header.size_bytes = _32;
-        if (read_int<int64_t>(data) != read_status::ready) {
-            _state = state::batch_type;
-            break;
+        if (is_compressed_payload()) {
+            return consume_compressed_records();
         }
-    }
-    case state::batch_type: {
-        _header.base_offset = model::offset(_64);
-        if (
-          read_int<model::record_batch_type::type>(data)
-          != read_status::ready) {
-            _state = state::crc;
-            break;
-        }
-    }
-    case state::crc: {
-        _header.type = model::record_batch_type(_8);
-        if (read_int<int32_t>(data) != read_status::ready) {
-            _state = state::attributes;
-            break;
-        }
-    }
-    case state::attributes: {
-        _header.crc = _32;
-        if (read_int<int16_t>(data) != read_status::ready) {
-            _state = state::last_offset_delta;
-            break;
-        }
-    }
-    case state::last_offset_delta: {
-        _header.attrs = model::record_batch_attributes(_16);
-        if (read_int<int32_t>(data) != read_status::ready) {
-            _state = state::first_timestamp;
-            break;
-        }
-    }
-    case state::first_timestamp: {
-        _header.last_offset_delta = _32;
-        if (read_int<int64_t>(data) != read_status::ready) {
-            _state = state::max_timestamp;
-            break;
-        }
-    }
-    case state::max_timestamp: {
-        _header.first_timestamp = model::timestamp(_64);
-        if (read_int<int64_t>(data) != read_status::ready) {
-            _state = state::record_count;
-            break;
-        }
-    }
-    case state::record_count: {
-        _header.max_timestamp = model::timestamp(_64);
-        if (read_int<int32_t>(data) != read_status::ready) {
-            _state = state::header_done;
-            break;
-        }
-    }
-    case state::header_done: {
-        _num_records = _32;
-        auto remaining_batch_bytes = _header.size_bytes - packed_header_size;
-        _compressed_batch = _header.attrs.compression()
-                            != model::compression::none;
-        const auto size_on_disk = _header.size_bytes + 4;
-        auto ret = _consumer->consume_batch_start(
-          _header, _num_records, _physical_base_offset, size_on_disk);
-        // store the next one!
-        _physical_base_offset += size_on_disk;
-        if (std::holds_alternative<batch_consumer::skip_batch>(ret)) {
-            auto sk = std::get<batch_consumer::skip_batch>(ret);
-            if (__builtin_expect(bool(sk), false)) {
-                _state = state::batch_start;
-                return ss::skip_bytes(remaining_batch_bytes);
-            }
-        } else if (std::holds_alternative<batch_consumer::stop_parser>(ret)) {
-            auto st = std::get<batch_consumer::stop_parser>(ret);
-            if (st) {
-                _state = state::batch_start;
-                return ss::stop_iteration::yes;
-            }
-        }
-        if (_compressed_batch) {
-            _record_size = remaining_batch_bytes;
-            _state = state::compressed_records_start;
-            break;
-        }
-    }
-    case state::record_start: {
-        if (read_vint(data) != read_status::ready) {
-            _state = state::record_attributes;
-            break;
-        }
-    }
-    case state::record_attributes: {
-        _record_size = _64;
-        _value_and_headers_size = _64; // adjusted after each step below
-        if (read_int<int8_t>(data) != read_status::ready) {
-            _state = state::timestamp_delta;
-            break;
-        }
-    }
-    case state::timestamp_delta: {
-        _record_attributes = model::record_attributes(_8);
-        _value_and_headers_size -= sizeof(int8_t);
-        if (read_vint(data) != read_status::ready) {
-            _state = state::offset_delta;
-            break;
-        }
-    }
-    case state::offset_delta: {
-        _timestamp_delta = static_cast<int32_t>(_64);
-        _value_and_headers_size -= _varint_size;
-        if (read_vint(data) != read_status::ready) {
-            _state = state::key_length;
-            break;
-        }
-    }
-    case state::key_length: {
-        _offset_delta = static_cast<int32_t>(_64);
-        _value_and_headers_size -= _varint_size;
-        if (read_vint(data) != read_status::ready) {
-            _state = state::key_bytes;
-            break;
-        }
-    }
-    case state::key_bytes: {
-        _value_and_headers_size -= _varint_size;
-        _value_and_headers_size -= _64;
-        if (read_fragmented_bytes(data, _64) != read_status::ready) {
-            _state = state::key_done;
-            break;
-        }
-    }
-    case state::key_done: {
-        iobuf buf(std::exchange(_read_bytes, {}));
-        if (__builtin_expect(_64 != buf.size_bytes(), false)) {
-            throw std::runtime_error(fmt::format(
-              "Invalid state, parsing key. Got:{}, expected:{}",
-              buf.size_bytes(),
-              _64));
-        }
-        auto ret = _consumer->consume_record_key(
-          _record_size,
-          _record_attributes,
-          _timestamp_delta,
-          _offset_delta,
-          std::move(buf));
-        if (std::holds_alternative<batch_consumer::skip_batch>(ret)) {
-            if (std::get<batch_consumer::skip_batch>(ret)) {
-                if (--_num_records) {
-                    _state = state::record_start;
-                } else {
-                    _state = state::batch_end;
-                }
-                return ss::skip_bytes(_value_and_headers_size);
-            }
-        } else if (std::holds_alternative<batch_consumer::stop_parser>(ret)) {
-            auto st = std::get<batch_consumer::stop_parser>(ret);
-            if (st) {
-                _state = state::batch_start;
-                return ss::stop_iteration::yes;
-            }
-        }
-    }
-    case state::value_and_headers: {
-        if (
-          read_fragmented_bytes(data, _value_and_headers_size)
-          != read_status::ready) {
-            _state = state::record_end;
-            break;
-        }
-    }
-    case state::record_end: {
-        auto vhs = iobuf(std::exchange(_read_bytes, {}));
-        if (__builtin_expect(
-              vhs.size_bytes() != _value_and_headers_size, false)) {
-            throw std::runtime_error(fmt::format(
-              "Invalid state parsing record_end. Got:{}, expected:{}",
-              vhs.size_bytes(),
-              _value_and_headers_size));
-        }
-        _consumer->consume_record_value(std::move(vhs));
-        if (--_num_records) {
-            _state = state::record_start;
-        } else {
-            _state = state::batch_end;
-        }
-        break;
-    }
-    case state::compressed_records_start: {
-        if (read_fragmented_bytes(data, _record_size) != read_status::ready) {
-            _state = state::compressed_records_end;
-            break;
-        }
-    }
-    case state::compressed_records_end: {
-        auto record = iobuf(std::exchange(_read_bytes, {}));
-        if (__builtin_expect(record.size_bytes() != _record_size, false)) {
-            throw std::runtime_error(fmt::format(
-              "Invalid state parsing compressed_records_end. Got:{}, "
-              "expected:{}",
-              record.size_bytes(),
-              _record_size));
-        }
-        _consumer->consume_compressed_records(std::move(record));
-    }
-    case state::batch_end:
-        _state = state::batch_start;
-        return _consumer->consume_batch_end() ? ss::stop_iteration::yes
-                                              : ss::stop_iteration::no;
-    }
-    return ss::stop_iteration::no;
+        return consume_records();
+    });
+}
+ss::future<stop_parser> continuous_batch_parser::consume_records() {
+    auto sz = _header.size_bytes - packed_header_size;
+    return verify_read_iobuf(_input, sz, "parser::consume_records")
+      .then([this, sz](std::optional<iobuf> b) {
+          if (!b) {
+              return stop_parser::yes;
+          }
+          iobuf_parser parser(std::move(b.value()));
+          while (parser.bytes_left()) {
+              const auto start = parser.bytes_consumed();
+              auto [record_size, rv] = parser.read_varlong();
+              auto attr = parser.consume_type<model::record_attributes::type>();
+              auto [timestamp_delta, tv] = parser.read_varlong();
+              auto [offset_delta, ov] = parser.read_varlong();
+              auto [key_length, kv] = parser.read_varlong();
+              auto key = parser.share(key_length);
+              auto value_length = record_size - key_length - kv - ov - tv
+                                  - sizeof(model::record_attributes::type);
+              stlog.info(
+                "DOS:KeySize={},ValueSize{}", key_length, value_length);
+              auto value = parser.share(value_length);
+              auto ret = _consumer->consume_record(
+                record_size,
+                model::record_attributes(attr),
+                static_cast<int32_t>(timestamp_delta),
+                static_cast<int32_t>(offset_delta),
+                std::move(key),
+                std::move(value));
+              if (std::holds_alternative<skip_batch>(ret)) {
+                  if (std::get<skip_batch>(ret)) {
+                      return stop_parser::no;
+                  }
+              } else if (std::holds_alternative<stop_parser>(ret)) {
+                  if (std::get<stop_parser>(ret)) {
+                      return stop_parser::yes;
+                  }
+              }
+          }
+          return _consumer->consume_batch_end();
+      });
 }
 
-void continuous_batch_parser::process_sliced_data(
-  ss::temporary_buffer<char>& data) {
-    if (__builtin_expect(_prestate != prestate::none, false)) {
-        // We're in the middle of reading a basic type, which crossed
-        // an input buffer. Resume that read before continuing to
-        // handle the current state:
-        switch (_prestate) {
-        case prestate::none: {
-            __builtin_unreachable();
-            break;
-        }
-        case prestate::reading_vint: {
-            process_vint(data);
-            break;
-        }
-        case prestate::reading_8: {
-            if (process_int(data, sizeof(int8_t))) {
-                _8 = _read_int.int8;
-                _prestate = prestate::none;
-            }
-            break;
-        }
-        case prestate::reading_16: {
-            if (process_int(data, sizeof(int16_t))) {
-                _16 = ss::be_to_cpu(_read_int.int16);
-                _prestate = prestate::none;
-            }
-            break;
-        }
-        case prestate::reading_32: {
-            if (process_int(data, sizeof(int32_t))) {
-                _32 = ss::be_to_cpu(_read_int.int32);
-                _prestate = prestate::none;
-            }
-            break;
-        }
-        case prestate::reading_64: {
-            if (process_int(data, sizeof(int64_t))) {
-                _64 = ss::be_to_cpu(_read_int.int64);
-                _prestate = prestate::none;
-            }
-            break;
-        }
-        case prestate::reading_bytes: {
-            if (_pos >= _ftb_size) {
-                throw malformed_batch_stream_exception(
-                  "Overrun the amount of bytes to read");
-            }
-            auto n = std::min(size_t(_ftb_size - _pos), data.size());
-            _read_bytes.push_back(data.share(0, n));
-            data.trim_front(n);
-            _pos += n;
-            if (_pos == _ftb_size) {
-                _prestate = prestate::none;
-            }
-            break;
-        }
-        }
-    }
+size_t continuous_batch_parser::consumed_batch_bytes() const {
+    return _header.size_bytes +  4 /*batch size*/;
 }
 
-continuous_batch_parser::read_status
-continuous_batch_parser::read_vint(ss::temporary_buffer<char>& data) {
-    if (data.size() >= vint::max_length) {
-        auto [val, bytes_read] = vint::deserialize(data);
-        data.trim_front(bytes_read);
-        _64 = val;
-        _varint_size = bytes_read;
-        return read_status::ready;
-    }
-    _pos = 0;
-    _prestate = prestate::reading_vint;
-    return read_status::waiting;
+void continuous_batch_parser::add_bytes_and_reset() {
+    _bytes_consumed += consumed_batch_bytes();
+    _header = {}; // reset
+}
+ss::future<stop_parser> continuous_batch_parser::consume_compressed_records() {
+    auto sz = _header.size_bytes - packed_header_size;
+    return verify_read_iobuf(_input, sz, "parser::consume_compressed_records")
+      .then([this](std::optional<iobuf> record) {
+          if (!record) {
+              return stop_parser::yes;
+          }
+          _consumer->consume_compressed_records(std::move(record.value()));
+          return _consumer->consume_batch_end();
+      });
 }
 
-void continuous_batch_parser::process_vint(ss::temporary_buffer<char>& data) {
-    bool finished = false;
-    auto it = data.begin();
-    for (; it != data.end(); ++it) {
-        if (finished = !vint::has_more_bytes(*it); finished) {
-            ++it; // Increment so the iterator encompasses the last vint byte.
-            break;
-        }
-    }
-    std::copy(data.begin(), it, _read_int.bytes + _pos);
-    auto n = std::distance(data.begin(), it);
-    data.trim_front(n);
-    _pos += n;
-    if (finished) {
-        auto range = boost::make_iterator_range(
-          _read_int.bytes, _read_int.bytes + vint::max_length);
-        auto [val, bytes_read] = vint::deserialize(range);
-        _64 = val;
-        _varint_size = bytes_read;
-        _prestate = prestate::none;
-    }
+ss::future<size_t> continuous_batch_parser::consume() {
+    return ss::repeat([this] {
+               return consume_one().then([this](stop_parser s) {
+                   add_bytes_and_reset();
+                   return s ? ss::stop_iteration::yes : ss::stop_iteration::no;
+               });
+           })
+      .then_wrapped([this](ss::future<> f) {
+          try {
+              f.get();
+              return _input.close();
+          } catch (...) {
+              return _input.close().then([e = std::current_exception()] {
+                  return ss::make_exception_future<>(e);
+              });
+          }
+      })
+      .then([this] { return _bytes_consumed; });
 }
-
-// Reads bytes belonging to an integer of size len. Returns true
-// if a full integer is now available.
-bool continuous_batch_parser::process_int(
-  ss::temporary_buffer<char>& data, size_t len) {
-    if (_pos >= len) {
-        throw malformed_batch_stream_exception(
-          "Overrun the amount of bytes to read");
-    }
-    auto n = std::min((size_t)(len - _pos), data.size());
-    std::copy(data.begin(), data.begin() + n, _read_int.bytes + _pos);
-    data.trim_front(n);
-    _pos += n;
-    return _pos == len;
-}
-
-continuous_batch_parser::read_status
-continuous_batch_parser::read_fragmented_bytes(
-  ss::temporary_buffer<char>& data, size_t len) {
-    _read_bytes.push_back(data.share(0, std::min(len, data.size())));
-    if (data.size() >= len) {
-        data.trim_front(len);
-        return read_status::ready;
-    }
-    _ftb_size = len;
-    _pos = data.size();
-    data.trim(0);
-    _prestate = prestate::reading_bytes;
-    return read_status::waiting;
-}
-
-void continuous_batch_parser::ensure_valid_end_state() {
-    if (_state != state::batch_start) {
-        throw malformed_batch_stream_exception(
-          "end of input, but not end of batch");
-    }
-}
-
 } // namespace storage

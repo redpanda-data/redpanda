@@ -10,6 +10,7 @@
 #include <seastar/core/iostream.hh>
 #include <seastar/core/sstring.hh>
 
+#include <cstring>
 #include <deque>
 #include <numeric>
 
@@ -22,7 +23,7 @@ namespace storage {
 class log_segment_appender {
 public:
     static constexpr const size_t chunk_size = 128 * 1024; // 128KB
-    static constexpr const size_t chunks_no_buffer = (1024 * 1024) / chunk_size;
+    static constexpr const size_t chunks_no_buffer = 4;
     struct options {
         explicit options(ss::io_priority_class p)
           : priority(p) {}
@@ -44,47 +45,20 @@ public:
         bool is_empty() const { return _pos == 0; }
         size_t space_left() const { return chunk_size - _pos; }
         size_t size() const { return _pos; }
-        void reset() {
-            _pos = 0;
-            _flushed_pos = 0;
-        }
+        void reset() { _flushed_pos = _pos = 0; }
         const char* data() const { return _buf.get(); }
-        size_t append(const char* src, size_t len) {
-            const size_t sz = std::min(len, space_left());
-            std::copy_n(src, sz, get_current());
-            _pos += sz;
-            return sz;
-        }
-        const char* dma_ptr(size_t alignment) const {
-            // we must always write in hardware-aligned page multiples.
-            // alignment comes from the filesystem
-            const auto sz = ss::align_down<size_t>(_flushed_pos, alignment);
-            return _buf.get() + sz;
-        }
-        size_t dma_size(size_t alignment) const {
-            // We must write in page-size multiples, example:
-            //
-            // Assume alignment=4096, and internal state [_flushed_offset=4094,
-            // _pos=4104], i.e.: bytes_pending()=10
-            //
-            // We must flush 2 pages worth of bytes. The first page must be
-            // flushed from 0-4096 (2 bytes worth of content) and the second
-            // from 4096-8192 (8 bytes worth of content). Therefore the dma-size
-            // must be 8192 bytes, starting at the bottom of the _flushed_pos
-            // page, in this example, at offset 0.
-            //
-            const auto prev_sz = ss::align_down<size_t>(
-              _flushed_pos, alignment);
-            const size_t sz = _pos - prev_sz;
-            return ss::align_up<size_t>(sz, alignment);
-        }
+        size_t append(const char* src, size_t len);
+        const char* dma_ptr(size_t alignment) const;
+        void compact(size_t alignment);
+        size_t dma_size(size_t alignment) const;
         void flush() { _flushed_pos = _pos; }
         size_t bytes_pending() const { return _pos - _flushed_pos; }
         size_t flushed_pos() const { return _flushed_pos; }
+        char* get_current() { return _buf.get() + _pos; }
+        void set_position(size_t p) { _pos = p; }
 
     private:
         friend std::ostream& operator<<(std::ostream&, const chunk&);
-        char* get_current() { return _buf.get() + _pos; }
         std::unique_ptr<char[], ss::free_deleter> _buf;
         size_t _pos{0};
         size_t _flushed_pos{0};

@@ -1,7 +1,11 @@
 #include "storage/log_segment_reader.h"
 
+#include "vassert.h"
+
+#include <seastar/core/file.hh>
 #include <seastar/core/fstream.hh>
 #include <seastar/core/iostream.hh>
+#include <seastar/core/reactor.hh>
 #include <seastar/core/sstring.hh>
 
 namespace storage {
@@ -22,21 +26,29 @@ log_segment_reader::log_segment_reader(
 
 ss::input_stream<char>
 log_segment_reader::data_stream(uint64_t pos, const ss::io_priority_class& pc) {
+    vassert(pos <= _file_size, "cannot read negative bytes");
     ss::file_input_stream_options options;
     options.buffer_size = _buffer_size;
     options.io_priority_class = pc;
     options.read_ahead = 4;
     options.dynamic_adjustments = _history;
     return make_file_input_stream(
-      _data_file,
-      pos,
-      std::min(_file_size, _file_size - pos),
-      std::move(options));
+      _data_file, pos, _file_size - pos, std::move(options));
+}
+
+ss::future<> log_segment_reader::truncate(size_t n) {
+    return ss::open_file_dma(_filename, ss::open_flags::rw)
+      .then([n](ss::file f) {
+          return f.truncate(n)
+            .then([f]() mutable { return f.close(); })
+            .finally([f] {});
+      });
 }
 
 std::ostream& operator<<(std::ostream& os, const log_segment_reader& seg) {
     return os << "{log_segment:" << seg.filename() << ", " << seg.base_offset()
-              << "-" << seg.max_offset() << "}";
+              << "-" << seg.max_offset() << ", filesize:" << seg.file_size()
+              << "}";
 }
 
 std::ostream& operator<<(std::ostream& os, segment_reader_ptr seg) {

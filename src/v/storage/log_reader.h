@@ -15,17 +15,13 @@
 namespace storage {
 
 class log_segment_batch_reader;
-
 class skipping_consumer final : public batch_consumer {
 public:
     explicit skipping_consumer(
-      log_segment_batch_reader& reader, model::offset start_offset) noexcept
+      log_segment_batch_reader& reader,
+      model::timeout_clock::time_point timeout) noexcept
       : _reader(reader)
-      , _start_offset(start_offset) {}
-
-    void set_timeout(model::timeout_clock::time_point timeout) {
-        _timeout = timeout;
-    }
+      , _timeout(timeout) {}
 
     consume_result consume_batch_start(
       model::record_batch_header,
@@ -33,14 +29,13 @@ public:
       size_t physical_base_offset,
       size_t bytes_on_disk) override;
 
-    consume_result consume_record_key(
+    consume_result consume_record(
       size_t size_bytes,
       model::record_attributes attributes,
       int32_t timestamp_delta,
       int32_t offset_delta,
-      iobuf&& key) override;
-
-    void consume_record_value(iobuf&&) override;
+      iobuf&& key,
+      iobuf&& headers_and_value) override;
 
     void consume_compressed_records(iobuf&&) override;
 
@@ -50,57 +45,38 @@ private:
     bool skip_batch_type(model::record_batch_type type);
 
     log_segment_batch_reader& _reader;
-    model::offset _start_offset;
     model::record_batch_header _header;
-    size_t _record_size_bytes{0};
-    model::record_attributes _record_attributes;
-    int32_t _record_timestamp_delta{0};
-    int32_t _record_offset_delta{0};
-    iobuf _record_key;
     size_t _num_records{0};
     model::record_batch::records_type _records;
     model::timeout_clock::time_point _timeout;
 };
 
-class log_segment_batch_reader : public model::record_batch_reader::impl {
-    static constexpr size_t max_buffer_size = 8 * 1024;
-    using span = model::record_batch_reader::impl::span;
-
+class log_segment_batch_reader {
 public:
+    static constexpr size_t max_buffer_size = 32 * 1024; // 32KB
+
     log_segment_batch_reader(
       segment& seg,
-      model::offset base_offset,
-      log_reader_config config,
-      probe& probe) noexcept;
+      log_reader_config& config,
+      std::vector<model::record_batch>& recs) noexcept;
     log_segment_batch_reader(log_segment_batch_reader&&) noexcept = default;
     log_segment_batch_reader(const log_segment_batch_reader&) = delete;
     log_segment_batch_reader operator=(const log_segment_batch_reader&)
       = delete;
-    size_t bytes_read() const { return _bytes_read; }
 
-protected:
-    ss::future<span> do_load_slice(model::timeout_clock::time_point) override;
+    ss::future<size_t> read(model::timeout_clock::time_point);
 
 private:
-    ss::future<> initialize();
-
-    bool is_initialized() const;
+    std::unique_ptr<continuous_batch_parser>
+      initialize(model::timeout_clock::time_point);
 
     bool is_buffer_full() const;
 
-    friend class log_reader;
-
 private:
     segment& _seg;
-    model::offset _base;
-    log_reader_config _config;
-    size_t _bytes_read = 0;
-    skipping_consumer _consumer;
-    ss::input_stream<char> _input;
-    continuous_batch_parser_opt _parser;
-    std::vector<model::record_batch> _buffer;
+    log_reader_config& _config;
+    std::vector<model::record_batch>& _buffer;
     size_t _buffer_size = 0;
-    probe& _probe;
 
     friend class skipping_consumer;
 };
@@ -123,8 +99,9 @@ private:
 private:
     log_set& _set;
     log_reader_config _config;
+    std::vector<model::record_batch> _batches;
+    model::offset _last_base;
     probe& _probe;
-    std::optional<log_segment_batch_reader> _current_reader;
 };
 
 } // namespace storage
