@@ -25,7 +25,7 @@ constexpr model::offset expected_last(model::offset t_offset) {
 // FIXME: Add test for on disk implementation
 
 FIXTURE_TEST(test_rolling_term, storage_test_fixture) {
-    for (auto type : {log_manager::storage_type::memory}) {
+    for (auto type : {log_manager::storage_type::disk}) {
         storage::log_manager mgr = make_log_manager();
         auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
         auto ntp = make_ntp("default", "test", 0);
@@ -46,7 +46,7 @@ FIXTURE_TEST(test_rolling_term, storage_test_fixture) {
 };
 
 FIXTURE_TEST(test_truncate_whole, storage_test_fixture) {
-    for (auto type : {log_manager::storage_type::memory}) {
+    for (auto type : {log_manager::storage_type::disk}) {
         storage::log_manager mgr = make_log_manager();
         auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
         auto ntp = make_ntp("default", "test", 0);
@@ -67,32 +67,35 @@ FIXTURE_TEST(test_truncate_whole, storage_test_fixture) {
 }
 
 FIXTURE_TEST(test_truncate_in_the_middle_of_segment, storage_test_fixture) {
-    for (auto type : {log_manager::storage_type::memory}) {
+    for (auto type : {log_manager::storage_type::disk}) {
         storage::log_manager mgr = make_log_manager();
         auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
         auto ntp = make_ntp("default", "test", 0);
         auto log = mgr.manage(ntp, type).get0();
-        append_random_batches(log, 1, model::term_id(0));
+        append_random_batches(log, 6, model::term_id(0));
         log.flush().get0();
 
         auto all_batches = read_and_validate_all_batches(log);
-        auto truncate_offset
-          = all_batches[all_batches.size() / 2].base_offset();
+        auto truncate_offset = all_batches[4].last_offset();
 
         // truncate in the middle
+        info("Truncating at offset:{}", truncate_offset);
         log.truncate(truncate_offset).get0();
+        info("reading all batches");
         auto read_batches = read_and_validate_all_batches(log);
 
-        auto expected = expected_last(truncate_offset);
+        // one less
+        auto expected = all_batches[3].last_offset();
 
         BOOST_REQUIRE_EQUAL(log.committed_offset(), expected);
         BOOST_REQUIRE_EQUAL(log.max_offset(), expected);
+        BOOST_REQUIRE(!read_batches.empty());
         BOOST_REQUIRE_EQUAL(read_batches.back().last_offset(), expected);
     }
 }
 
 FIXTURE_TEST(test_truncate_empty_log, storage_test_fixture) {
-    for (auto type : {log_manager::storage_type::memory}) {
+    for (auto type : {log_manager::storage_type::disk}) {
         storage::log_manager mgr = make_log_manager();
         auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
         auto ntp = make_ntp("default", "test", 0);
@@ -107,48 +110,44 @@ FIXTURE_TEST(test_truncate_empty_log, storage_test_fixture) {
 }
 
 FIXTURE_TEST(test_truncate_middle_of_old_segment, storage_test_fixture) {
-    for (auto type : {log_manager::storage_type::memory}) {
+    std::cout.setf(std::ios::unitbuf);
+    for (auto type : {log_manager::storage_type::disk}) {
         storage::log_manager mgr = make_log_manager();
+        auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
         auto ntp = make_ntp("default", "test", 0);
         auto log = mgr.manage(ntp, type).get0();
 
-        model::offset truncate_offset{0};
-        size_t expected_batches = 0;
         for (auto i = 0; i < 10; i++) {
             auto part = append_random_batches(log, 1, model::term_id(i));
             log.flush().get();
-            if (i < 4) {
-                expected_batches += part.size();
-                for (auto& h : part) {
-                    truncate_offset += h.last_offset_delta + 1;
-                }
-            }
-            if (i == 4) {
-                // truncate in the middle of 4th term
-                expected_batches += part.size() / 2;
-                for (auto& h : boost::make_iterator_range_n(
-                       part.begin(), part.size() / 2)) {
-                    truncate_offset += h.last_offset_delta + 1;
-                }
-            }
         }
-        truncate_offset = truncate_offset;
+        auto all_batches = read_and_validate_all_batches(log);
+        for (size_t i
+             = 0,
+             max
+             = 2 + (all_batches.back().last_offset() % all_batches.size() - 5);
+             i < max;
+             ++i) {
+            all_batches.pop_back();
+        }
         // truncate @ offset that belongs to an old segment
-        log.truncate(truncate_offset).get0();
-        auto expected = expected_last(truncate_offset);
-
-        auto read_batches = read_and_validate_all_batches(log);
-        BOOST_REQUIRE_EQUAL(read_batches.size(), expected_batches);
-        BOOST_REQUIRE_EQUAL(log.committed_offset(), expected);
-        BOOST_REQUIRE_EQUAL(log.max_offset(), expected);
-        BOOST_REQUIRE_EQUAL(read_batches.back().last_offset(), expected);
-
-        mgr.stop().get0();
+        log.truncate(all_batches.back().last_offset()).get0();
+        all_batches.pop_back(); // we just removed the last one!
+        auto final_batches = read_and_validate_all_batches(log);
+        BOOST_REQUIRE_EQUAL(all_batches.size(), final_batches.size());
+        BOOST_REQUIRE_EQUAL(
+          log.committed_offset(), all_batches.back().last_offset());
+        BOOST_REQUIRE_EQUAL(log.max_offset(), all_batches.back().last_offset());
+        BOOST_REQUIRE_EQUAL_COLLECTIONS(
+          all_batches.begin(),
+          all_batches.end(),
+          final_batches.begin(),
+          final_batches.end());
     }
 }
 
 FIXTURE_TEST(truncate_whole_log_and_then_again, storage_test_fixture) {
-    for (auto type : {log_manager::storage_type::memory}) {
+    for (auto type : {log_manager::storage_type::disk}) {
         storage::log_manager mgr = make_log_manager();
         auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
         auto ntp = make_ntp("default", "test", 0);
@@ -170,7 +169,7 @@ FIXTURE_TEST(truncate_whole_log_and_then_again, storage_test_fixture) {
 }
 
 FIXTURE_TEST(truncate_before_read, storage_test_fixture) {
-    for (auto type : {log_manager::storage_type::memory}) {
+    for (auto type : {log_manager::storage_type::disk}) {
         storage::log_manager mgr = make_log_manager();
         auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
         auto ntp = make_ntp("default", "test", 0);
