@@ -130,11 +130,11 @@ public:
     read_and_validate_all_batches(storage::log log) {
         storage::log_reader_config cfg{
           .start_offset = model::offset(0),
-          .max_offset = log.committed_offset(),
           .max_bytes = std::numeric_limits<size_t>::max(),
           .min_bytes = 0,
           .prio = ss::default_priority_class(),
-          .type_filter = {}};
+          .type_filter = {},
+          .max_offset = log.committed_offset()};
 
         auto reader = log.make_reader(std::move(cfg));
         return reader.consume(batch_validating_consumer{}, model::no_timeout)
