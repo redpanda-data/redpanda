@@ -7,6 +7,7 @@
 
 #include <seastar/core/future-util.hh>
 
+#include <boost/container/flat_map.hpp>
 #include <boost/intrusive/list_hook.hpp>
 namespace storage {
 struct mem_log_impl;
@@ -48,7 +49,12 @@ public:
 
     model::offset end_offset() { return _endoffset; }
 
-    void invalidate() { _invalidated = true; }
+    iterator end() { return _end; }
+
+    void invalidate() {
+        _invalidated = true;
+        _end_of_stream = true;
+    }
 
 private:
     bool _invalidated = false;
@@ -97,12 +103,12 @@ struct mem_log_impl final : log::impl {
             throw std::invalid_argument("cannot truncate at negative offset");
         }
         for (auto& reader : _readers) {
-            if (reader.end_offset() >= offset) {
-                reader.invalidate();
-            }
+            reader.invalidate();
         }
 
-        auto it = _data.find(offset);
+        auto it = std::lower_bound(
+          std::begin(_data), std::end(_data), offset, entries_ordering{});
+
         _data.erase(it, _data.end());
         return ss::make_ready_future<>();
     }
