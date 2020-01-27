@@ -16,10 +16,11 @@ public:
       , _original_size(_io.size_bytes()) {}
     size_t bytes_left() const { return _original_size - _in.bytes_consumed(); }
     size_t bytes_consumed() const { return _in.bytes_consumed(); }
-    int64_t read_varlong() {
+
+    std::pair<int64_t, uint8_t> read_varlong() {
         auto [val, length_size] = vint::deserialize(_in);
         _in.skip(length_size);
-        return val;
+        return {val, length_size};
     }
     ss::sstring read_string(size_t len) {
         ss::sstring str(ss::sstring::initialized_later(), len);
