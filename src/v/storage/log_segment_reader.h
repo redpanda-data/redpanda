@@ -58,6 +58,12 @@ public:
     /// perform syscall stat
     ss::future<struct stat> stat() { return _data_file.stat(); }
 
+    /// truncates file starting at this phyiscal offset
+    ss::future<> truncate(size_t sz);
+
+    /// flushes the file metadata
+    ss::future<> flush() { return _data_file.flush(); }
+
     /// create an input stream _sharing_ the underlying file handle
     /// starting at position @pos
     ss::input_stream<char>

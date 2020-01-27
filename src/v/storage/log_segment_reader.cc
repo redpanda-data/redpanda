@@ -2,8 +2,10 @@
 
 #include "vassert.h"
 
+#include <seastar/core/file.hh>
 #include <seastar/core/fstream.hh>
 #include <seastar/core/iostream.hh>
+#include <seastar/core/reactor.hh>
 #include <seastar/core/sstring.hh>
 
 namespace storage {
@@ -33,11 +35,20 @@ log_segment_reader::data_stream(uint64_t pos, const ss::io_priority_class& pc) {
     return make_file_input_stream(
       _data_file, pos, _file_size - pos, std::move(options));
 }
+
+ss::future<> log_segment_reader::truncate(size_t n) {
+    return ss::open_file_dma(_filename, ss::open_flags::rw)
+      .then([n](ss::file f) {
+          return f.truncate(n)
+            .then([f]() mutable { return f.close(); })
+            .finally([f] {});
+      });
 }
 
 std::ostream& operator<<(std::ostream& os, const log_segment_reader& seg) {
     return os << "{log_segment:" << seg.filename() << ", " << seg.base_offset()
-              << "-" << seg.max_offset() << "}";
+              << "-" << seg.max_offset() << ", filesize:" << seg.file_size()
+              << "}";
 }
 
 std::ostream& operator<<(std::ostream& os, segment_reader_ptr seg) {
