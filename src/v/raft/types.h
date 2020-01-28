@@ -71,8 +71,12 @@ struct follower_index_metadata {
       : node_id(node) {}
 
     model::node_id node_id;
-    model::term_id term{0};
-    model::offset commit_index{0};
+    // index of last known log for this follower
+    model::offset last_log_index;
+    // index of log for which leader and follower logs matches
+    model::offset match_index;
+    // next index to send to this follower
+    model::offset next_index;
     // timestamp of last append_entries_rpc call
     clock_type::time_point last_hbeat_timestamp;
     uint64_t failed_appends{0};

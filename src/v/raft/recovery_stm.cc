@@ -21,7 +21,7 @@ recovery_stm::recovery_stm(
 
 ss::future<> recovery_stm::do_one_read() {
     storage::log_reader_config cfg{
-      .start_offset = _meta.commit_index,
+      .start_offset = _meta.match_index,
       .max_bytes = 1024 * 1024, // 1MB
       .min_bytes = 1,           // we know at least 1 entry
       .prio = _prio,
@@ -90,14 +90,13 @@ ss::future<> recovery_stm::replicate(std::vector<raft::entry> es) {
               return;
           }
           append_entries_reply reply = std::move(r.value());
-          _meta.commit_index = model::offset(reply.last_log_index);
-          _meta.term = model::term_id(reply.term);
+          _meta.match_index = model::offset(reply.last_log_index);
       });
 }
 ss::future<> recovery_stm::apply() {
     return ss::do_until(
              [this] {
-                 return _meta.commit_index == _ptr->_meta.commit_index
+                 return _meta.match_index == _ptr->_meta.commit_index
                         || _stop_requested;
              },
              [this] { return do_one_read(); })

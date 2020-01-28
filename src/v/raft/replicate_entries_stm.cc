@@ -128,7 +128,7 @@ ss::future<> replicate_entries_stm::dispatch_one(retry_meta& meta) {
                  [this, &meta] { return dispatch_retries(meta); }) // semaphore
           .then([this, &meta] {
               if (meta.value) {
-                  _ptr->process_heartbeat(meta.node, *meta.value);
+                  return _ptr->process_append_reply(meta.node, *meta.value);
               }
               return seastar::make_ready_future<>();
           });

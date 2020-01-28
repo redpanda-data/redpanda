@@ -83,6 +83,10 @@ public:
     clock_type::time_point last_heartbeat() const { return _hbeat; };
 
     clock_type::time_point last_hbeat_timestamp(model::node_id);
+    // clang-format off
+    ss::future<>
+    process_append_reply(model::node_id, result<append_entries_reply>);
+    // clang-format on
 
     void process_heartbeat(model::node_id, result<append_entries_reply>);
     ss::future<result<replicate_result>> replicate(raft::entry&&);
@@ -90,7 +94,7 @@ public:
 
     ss::future<> step_down() {
         if (is_leader()) {
-            trace("Resigned from leadership");
+            _ctxlog.trace("Resigned from leadership");
             return seastar::with_semaphore(
               _op_sem, 1, [this] { do_step_down(); });
         }
@@ -120,6 +124,11 @@ private:
 
     ss::future<std::vector<storage::append_result>>
     disk_append(std::vector<entry>&&);
+
+    ss::future<> successfull_append_entries_reply(
+      follower_index_metadata&, append_entries_reply);
+    void dispatch_recovery(follower_index_metadata&, append_entries_reply);
+    ss::future<> maybe_update_leader_commit_idx();
 
     ss::sstring voted_for_filename() const;
 
