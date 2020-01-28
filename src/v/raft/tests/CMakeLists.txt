@@ -59,3 +59,10 @@ rp_test(
   SOURCES batches_as_entries_tests.cc
   LIBRARIES Seastar::seastar_testing v::raft
 )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME term_assigning_reader_test
+  SOURCES term_assigning_reader_test.cc
+  LIBRARIES Seastar::seastar_testing v::raft
+)

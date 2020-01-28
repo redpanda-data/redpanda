@@ -1,5 +1,6 @@
 #pragma once
 
+#include "likely.h"
 #include "raft/configuration_bootstrap_state.h"
 #include "raft/consensus.h"
 
@@ -80,5 +81,46 @@ private:
 /// a different record_batch.type() as all raft entries _must_ be for the
 /// same record_batch type
 std::vector<raft::entry> batches_as_entries(std::vector<model::record_batch>);
+
+class term_assigning_reader : public model::record_batch_reader::impl {
+public:
+    term_assigning_reader(model::record_batch_reader r, model::term_id term)
+      : _source(std::move(r))
+      , _term(term) {
+        // source already has batches in the buffer, release them
+        if (!_source.should_load_slice()) {
+            release_source_batches();
+            _slice = span{_buffer};
+            _current = _slice.begin();
+        }
+    }
+
+    ss::future<span>
+    do_load_slice(model::timeout_clock::time_point tout) final {
+        auto f = ss::make_ready_future<>();
+
+        if (_source.should_load_slice()) {
+            f = _source.load_slice(tout);
+        }
+        return f.then([this] {
+            release_source_batches();
+            return span{&_buffer[0], int32_t(_buffer.size())};
+        });
+    }
+
+private:
+    void release_source_batches() {
+        _buffer = std::move(_source.release_buffered_batches());
+        for (auto& b : _buffer) {
+            b.set_term(_term);
+        }
+        if (_source.end_of_stream()) {
+            _end_of_stream = true;
+        }
+    }
+    model::record_batch_reader _source;
+    model::term_id _term;
+    std::vector<model::record_batch> _buffer;
+};
 
 } // namespace raft::details
