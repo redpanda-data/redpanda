@@ -5,3 +5,5 @@
 # is usually associated with 99-default-disable.preset, and prevents
 # enabling any services after it.
 enable redpanda.service
+enable redpanda-status.service
+enable redpanda-status.timer

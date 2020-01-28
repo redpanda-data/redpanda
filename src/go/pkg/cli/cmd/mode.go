@@ -79,6 +79,7 @@ func setDevelopment(conf *config.Config) *config.Config {
 
 func setProduction(conf *config.Config) *config.Config {
 	rpk := conf.Rpk
+	rpk.EnableUsageStats = true
 	rpk.TuneNetwork = true
 	rpk.TuneDiskScheduler = true
 	rpk.TuneNomerges = true

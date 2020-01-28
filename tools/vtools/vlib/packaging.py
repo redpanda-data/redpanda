@@ -133,9 +133,6 @@ def red_panda_rpm(input_tar, dest_path, src_dir):
     templates.render_to_file(spec_template, spec, package_ctx)
     _render_systemd_templates(os.path.join(dest_path, "rpm/common"),
                               {'redhat': True}, src_dir)
-    shutil.copy(
-        os.path.join("packaging", "common", "systemd", "50-redpanda.preset"),
-        os.path.join(dest_path, "systemd"))
     # build RPM
     nproc = os.cpu_count()
     shell.run_subprocess(
@@ -188,6 +185,15 @@ def _render_systemd_templates(dest_path, ctx, src_dir):
         tmpl = f'{src_dir}/{root_dir}{f}{jinja_ext}'
         templates.render_to_file(tmpl, os.path.join(dest_path, 'systemd', f),
                                  ctx)
+    shutil.copy(
+        os.path.join(root_dir, "50-redpanda.preset"),
+        os.path.join(dest_path, "systemd"))
+    shutil.copy(
+        os.path.join(root_dir, "redpanda-status.service"),
+        os.path.join(dest_path, "systemd"))
+    shutil.copy(
+        os.path.join(root_dir, "redpanda-status.timer"),
+        os.path.join(dest_path, "systemd"))
 
 
 def create_packages(vconfig, formats, build_type):

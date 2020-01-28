@@ -35,6 +35,9 @@ redpanda:
     port: 9644
 
 rpk:
+  # Enables sending environment and resource usage data to Vectorized.
+  enable_usage_stats: true
+
   # Available tuners
   tune_network: true
   tune_disk_scheduler: true
@@ -47,4 +50,4 @@ rpk:
   enable_memory_locking: true
   tune_coredump: true
 
-  coredump_dir: "/var/lib/redpanda/coredump" 
+  coredump_dir: "/var/lib/redpanda/coredump"

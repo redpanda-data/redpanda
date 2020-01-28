@@ -1,0 +1,17 @@
+[Unit]
+Description=Redpanda Status
+After=local-fs.target network-online.target
+Requires=local-fs.target network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/rpk status --send
+TimeoutStartSec=900
+KillMode=none
+User=root
+StandardOutput=syslog
+StandardError=syslog
+SyslogLevelPrefix=false
+
+[Install]
+WantedBy=multi-user.target

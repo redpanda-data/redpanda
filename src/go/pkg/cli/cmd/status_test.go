@@ -36,11 +36,14 @@ func getConfig() config.Config {
 				},
 			},
 		},
+		Rpk: &config.RpkConfig{
+			EnableUsageStats: true,
+		},
 	}
 }
 
 func writeConfig(fs afero.Fs, conf config.Config) error {
-	bs, err := yaml.Marshal(getConfig())
+	bs, err := yaml.Marshal(conf)
 	if err != nil {
 		return err
 	}
@@ -113,6 +116,15 @@ func TestStatus(t *testing.T) {
 				}
 				_, err = file.Write([]byte("Nope"))
 				return err
+			},
+		},
+		{
+			name:        "does nothing if enable_telemetry is set to false",
+			expectedOut: "Usage stats are disabled. To enable them, set rpk.enable_usage_stats to true.",
+			before: func(fs afero.Fs) error {
+				conf := getConfig()
+				conf.Rpk.EnableUsageStats = false
+				return writeConfig(fs, conf)
 			},
 		},
 	}
