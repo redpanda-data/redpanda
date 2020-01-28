@@ -53,6 +53,8 @@ public:
         return model::offset{};
     }
 
+    std::optional<model::term_id> get_term(model::offset) const final;
+
     model::offset committed_offset() const final {
         for (auto it = _segs.rbegin(); it != _segs.rend(); it++) {
             if (!it->empty()) {

@@ -363,6 +363,9 @@ public:
 
     offset last_offset() const { return _header.last_offset(); }
 
+    model::term_id term() const { return _header.ctx.term; }
+    void set_term(model::term_id term) { _header.ctx.term = term; }
+
     // Can only be called if this holds a set of uncompressed records.
     uncompressed_records::const_iterator begin() const {
         return std::get<uncompressed_records>(_records).begin();

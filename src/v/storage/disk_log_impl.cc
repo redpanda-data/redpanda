@@ -101,6 +101,15 @@ disk_log_impl::make_reader(log_reader_config config) {
       _segs, std::move(config), _probe);
 }
 
+std::optional<model::term_id> disk_log_impl::get_term(model::offset o) const {
+    auto it = _segs.lower_bound(o);
+    if (it != _segs.end()) {
+        return it->term();
+    }
+
+    return std::nullopt;
+}
+
 static ss::future<> delete_full_segments(std::vector<segment> to_remove) {
     return ss::do_with(std::move(to_remove), [](std::vector<segment>& remove) {
         return ss::do_for_each(remove, [](segment& s) {
@@ -116,6 +125,7 @@ static ss::future<> delete_full_segments(std::vector<segment> to_remove) {
         });
     });
 }
+
 ss::future<> disk_log_impl::do_truncate(model::offset o) {
     if (o > max_offset() || o < start_offset()) {
         // out of range
@@ -157,8 +167,7 @@ ss::future<> disk_log_impl::do_truncate(model::offset o) {
                 .min_bytes = std::numeric_limits<size_t>::max(),
                 // TODO: pass a priority for truncate
                 .prio = ss::default_priority_class(),
-                .max_offset = o
-              });
+                .max_offset = o});
               return ss::do_with(
                 std::move(rdr),
                 [o, initial_size](model::record_batch_reader& rdr) {

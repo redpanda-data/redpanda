@@ -76,6 +76,8 @@ public:
         virtual model::offset start_offset() const = 0;
         virtual model::offset committed_offset() const = 0;
         virtual std::ostream& print(std::ostream& o) const { return o; }
+        virtual std::optional<model::term_id>
+          get_term(model::offset) const = 0;
 
     private:
         model::ntp _ntp;
@@ -136,6 +138,11 @@ public:
     model::offset max_offset() const { return _impl->max_offset(); }
 
     model::offset committed_offset() const { return _impl->committed_offset(); }
+
+    std::optional<model::term_id> get_term(model::offset o) const {
+        return _impl->get_term(o);
+    }
+
     std::ostream& print(std::ostream& o) const { return _impl->print(o); }
 
 private:

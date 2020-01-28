@@ -48,6 +48,7 @@ public:
     const segment& front() const { return _handles.front(); }
 
     iterator lower_bound(model::offset o);
+    const_iterator lower_bound(model::offset o) const;
 
     reverse_iterator rbegin() { return _handles.rbegin(); }
     reverse_iterator rend() { return _handles.rend(); }
