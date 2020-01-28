@@ -78,6 +78,13 @@ batch_consumer::stop_parser skipping_consumer::consume_batch_end() {
       || _header.last_offset() >= _reader._config.max_offset) {
         return stop_parser::yes;
     }
+    /*
+     * if the very next batch is known to be cached, then stop parsing. the next
+     * read will with high probability experience a cache hit.
+     */
+    if (_next_cached_batch == (_header.last_offset() + model::offset(1))) {
+        return stop_parser::yes;
+    }
     if (
       _reader._config.bytes_consumed >= _reader._config.max_bytes
       || model::timeout_clock::now() >= _timeout) {
@@ -98,11 +105,13 @@ log_segment_batch_reader::log_segment_batch_reader(
     std::sort(std::begin(_config.type_filter), std::end(_config.type_filter));
 }
 
-std::unique_ptr<continuous_batch_parser>
-log_segment_batch_reader::initialize(model::timeout_clock::time_point timeout) {
+std::unique_ptr<continuous_batch_parser> log_segment_batch_reader::initialize(
+  model::timeout_clock::time_point timeout,
+  std::optional<model::offset> next_cached_batch) {
     auto input = _seg.offset_data_stream(_config.start_offset, _config.prio);
     return std::make_unique<continuous_batch_parser>(
-      std::make_unique<skipping_consumer>(*this, timeout), std::move(input));
+      std::make_unique<skipping_consumer>(*this, timeout, next_cached_batch),
+      std::move(input));
 }
 
 bool log_segment_batch_reader::is_buffer_full() const {
@@ -125,7 +134,7 @@ log_segment_batch_reader::read(model::timeout_clock::time_point timeout) {
 
     _buffer_size = 0;
     _buffer.clear();
-    auto parser = initialize(timeout);
+    auto parser = initialize(timeout, cache_read.next_batch);
     auto ptr = parser.get();
     return ptr->consume()
       .then([this](size_t size) {
