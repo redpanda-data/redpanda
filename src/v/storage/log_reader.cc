@@ -70,7 +70,6 @@ batch_consumer::stop_parser skipping_consumer::consume_batch_end() {
     // updates the next batch to consume
     _reader._buffer.emplace_back(
       model::record_batch(_header, std::exchange(_records, {})));
-    _reader._config.start_offset = _header.last_offset() + model::offset(1);
     _reader._config.bytes_consumed += _header.size_bytes;
     _reader._buffer_size += _header.size_bytes;
     // We keep the batch in the buffer so that the reader can be cached.
@@ -119,8 +118,6 @@ log_segment_batch_reader::read(model::timeout_clock::time_point timeout) {
     auto cache_read = _seg.cache_get(
       _config.start_offset, _config.max_offset, max_buffer_size);
     if (!cache_read.batches.empty()) {
-        _config.start_offset = cache_read.batches.back().last_offset()
-                               + model::offset(1);
         _config.bytes_consumed += cache_read.memory_usage;
         _buffer.swap(cache_read.batches);
         return ss::make_ready_future<size_t>(cache_read.memory_usage);
@@ -193,6 +190,8 @@ log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
           if (_batches.empty()) {
               return span();
           }
+          _config.start_offset = _batches.back().last_offset()
+                                 + model::offset(1);
           _probe.add_batches_read(int32_t(_batches.size()));
           return span{&_batches[0], int32_t(_batches.size())};
       })
