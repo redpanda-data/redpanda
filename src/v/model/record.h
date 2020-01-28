@@ -296,6 +296,11 @@ public:
             return !(*this == other);
         }
 
+        void clear() {
+            _size = 0;
+            _data = iobuf();
+        }
+
         friend std::ostream&
         operator<<(std::ostream&, const compressed_records&);
 
@@ -431,6 +436,10 @@ public:
           [](record& rec) -> record { return rec.share(); });
 
         return record_batch(h, std::move(r));
+    }
+
+    void clear() {
+        ss::visit(_records, [](auto& r) { r.clear(); });
     }
 
 private:
