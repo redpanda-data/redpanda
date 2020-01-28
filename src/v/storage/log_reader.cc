@@ -116,7 +116,7 @@ log_segment_batch_reader::read(model::timeout_clock::time_point timeout) {
     _buffer.clear();
     auto parser = initialize(timeout);
     auto ptr = parser.get();
-    return parser->consume().finally([this, p = std::move(parser)] {});
+    return ptr->consume().finally([this, p = std::move(parser)] {});
 }
 
 log_reader::log_reader(
