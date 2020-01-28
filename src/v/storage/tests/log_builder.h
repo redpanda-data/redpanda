@@ -1,10 +1,12 @@
 #pragma once
 #include "model/fundamental.h"
 #include "seastarx.h"
+#include "storage/disk_log_impl.h"
 #include "storage/log_manager.h"
 #include "storage/tests/random_batch.h"
 
 #include <seastar/core/sstring.hh>
+#include <tuple>
 
 namespace storage {
 
@@ -28,7 +30,7 @@ public:
       , ntp_(std::move(ntp)) {}
 
     log_builder& segment() {
-        segments_.push_back({});
+        segments_.push_back(std::pair(segment_spec{}, next_offset_));
         return *this;
     }
 
@@ -58,8 +60,8 @@ public:
      * The caller must ensure that the record batch offsets are valid.
      */
     log_builder& add_batch(model::record_batch batch) {
-        next_offset_ = model::offset(batch.last_offset()() + 1);
-        segments_.back().batches.push_back(std::move(batch));
+        next_offset_ = batch.last_offset() + model::offset(1);
+        segments_.back().first.batches.push_back(std::move(batch));
         return *this;
     }
 
@@ -106,7 +108,7 @@ public:
             }
         }
 
-        segments_.back().batches.push_back(spec);
+        segments_.back().first.batches.push_back(spec);
         return *this;
     }
 
@@ -152,7 +154,7 @@ private:
         std::vector<batch_type> batches;
     };
 
-    using segments_type = std::vector<segment_spec>;
+    using segments_type = std::vector<std::pair<segment_spec, model::offset>>;
 
     static model::record_batch make_record_batch(batch_spec spec) {
         /*
@@ -177,18 +179,24 @@ private:
 
     ss::future<> flush(storage::log log, segments_type& segments, bool roll) {
         return ss::do_for_each(
-          segments, [log, roll](segment_spec& segment) mutable {
-              auto reader = make_batch_reader(std::move(segment));
-              auto f = ss::make_ready_future<>();
-              return f.then([log, reader = std::move(reader)]() mutable {
-                  storage::log_append_config cfg{
-                    .should_fsync = storage::log_append_config::fsync::yes,
-                    .io_priority = ss::default_priority_class(),
-                    .timeout = model::no_timeout};
-                  return std::move(reader)
-                    .consume(log.make_appender(cfg), cfg.timeout)
-                    .discard_result();
-              });
+          segments,
+          [log, roll](std::pair<segment_spec, model::offset>& segment) mutable {
+              auto reader = make_batch_reader(std::move(segment.first));
+              auto disk_ptr = reinterpret_cast<disk_log_impl*>(log.get_impl());
+              return disk_ptr
+                ->new_segment(
+                  segment.second,
+                  model::term_id(0),
+                  ss::default_priority_class())
+                .then([log, reader = std::move(reader)]() mutable {
+                    storage::log_append_config cfg{
+                      .should_fsync = storage::log_append_config::fsync::yes,
+                      .io_priority = ss::default_priority_class(),
+                      .timeout = model::no_timeout};
+                    return std::move(reader)
+                      .consume(log.make_appender(cfg), cfg.timeout)
+                      .discard_result();
+                });
           });
     }
 
