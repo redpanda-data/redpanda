@@ -56,6 +56,7 @@ public:
     const segment_appender_ptr& appender() const { return _appender; }
     bool has_appender() const { return bool(_appender); }
     explicit operator bool() const { return bool(_reader); }
+    model::term_id term() const { return _reader->term(); }
 
 private:
     // last offset of the last batch, i.e.: batch.last_offset()
