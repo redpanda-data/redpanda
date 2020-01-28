@@ -144,6 +144,8 @@ public:
 
     std::ostream& print(std::ostream& o) const { return _impl->print(o); }
 
+    impl* get_impl() const { return _impl.get(); }
+
 private:
     ss::shared_ptr<impl> _impl;
 };
