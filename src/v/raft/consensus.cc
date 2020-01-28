@@ -12,6 +12,7 @@
 #include <seastar/core/future.hh>
 
 #include <boost/exception/diagnostic_information.hpp>
+
 #include <iterator>
 
 namespace raft {
@@ -57,61 +58,123 @@ ss::sstring consensus::voted_for_filename() const {
     return _log.work_directory() + "/voted_for";
 }
 
-void consensus::process_heartbeat(
+ss::future<> consensus::process_append_reply(
   model::node_id node, result<append_entries_reply> r) {
-    auto i = _follower_stats.find(node);
-    if (i == _follower_stats.end()) {
-        raftlog.error(
-          "node:{} does not belong to group:{}. had reply: {}",
-          node,
-          _meta.group,
-          r);
-        return;
+    if (node == _self) {
+        // We use similar path for replicate entries for both the current node
+        // and followers. We do not need to track state of self in follower
+        // index metadata as the same state is already tracked in
+        // consensus::_meta. However self node accounts to majority and after
+        // successful append on current node (which is done in parallel to
+        // append on remote nodes) we have to check what is the maximum offset
+        // replicated by the majority of nodes, successful replication on
+        // current node may change it.
+        return seastar::with_semaphore(_op_sem, 1, [this]() mutable {
+            return maybe_update_leader_commit_idx();
+        });
     }
     if (!r) {
-        raftlog.trace(
-          "Error sending heartbeat:{}, {}", node, r.error().message());
+        _ctxlog.debug("Error response from {}, {}", node, r.error().message());
         // add stats to group
-        return;
+        return ss::make_ready_future<>();
     }
-    follower_index_metadata& idx = i->second;
+
+    follower_index_metadata& idx = get_follower_stats(node);
     append_entries_reply& reply = r.value();
+
     if (unlikely(reply.group != _meta.group)) {
         // logic bug
         throw std::runtime_error(fmt::format(
-          "process_heartbeat was sent wrong group: {}", reply.group));
+          "process_append_reply was sent wrong group: {}", reply.group));
     }
-    if (reply.success && !idx.is_recovering) {
-        // ignore heartbeats while we are in a background fiber
-        idx.term = model::term_id(reply.term);
-        idx.commit_index = model::offset(reply.last_log_index);
+    _ctxlog.trace("append entries reply {}", reply);
+
+    // check preconditions for processing the reply
+    if (!is_leader()) {
+        return ss::make_ready_future<>();
     }
+    if (reply.term > _meta.term) {
+        return step_down();
+    }
+
+    // If recovery is in progress the recovery STM will handle follower index
+    // updates
+    if (!idx.is_recovering) {
+        _ctxlog.trace(
+          "Updated node {} last log idx: {}",
+          idx.node_id,
+          reply.last_log_index);
+        idx.last_log_index = model::offset(reply.last_log_index);
+        idx.next_index = details::next_offset(idx.last_log_index);
+    }
+
     if (reply.success) {
-        // all caught up w/ the logs. nothing to do
-        raftlog.trace("successful append {}", reply);
-        return;
+        return successfull_append_entries_reply(idx, std::move(reply));
     }
+
     if (idx.is_recovering) {
-        // we are not caught up but we're working on it
-        return;
+        // we are already recovering, do nothing
+        return ss::make_ready_future<>();
     }
-    if (reply.last_log_index < _meta.commit_index) {
-        idx.is_recovering = true;
-        raftlog.info(
-          "Starting recovery process for {} - current reply: {}", node, reply);
-        // background
-        (void)with_gate(_bg, [this, &idx] {
-            auto recovery = std::make_unique<recovery_stm>(
-              this, idx, _io_priority);
-            auto ptr = recovery.get();
-            return ptr->apply().finally([r = std::move(recovery)] {});
-        });
-        return;
+
+    if (idx.match_index < _log.max_offset()) {
+        // follower match_index is behind, we have to recover it
+        dispatch_recovery(idx, std::move(reply));
     }
+    return ss::make_ready_future<>();
     // TODO(agallego) - add target_replication_factor,
     // current_replication_factor to group_configuration so we can promote
     // learners to nodes and perform data movement to added replicas
-    //
+}
+
+ss::future<> consensus::successfull_append_entries_reply(
+  follower_index_metadata& idx, append_entries_reply reply) {
+    // follower and leader logs matches
+    idx.last_log_index = model::offset(reply.last_log_index);
+    idx.match_index = idx.last_log_index;
+    idx.next_index = details::next_offset(idx.match_index);
+    _ctxlog.trace(
+      "Updated node {} match {} and next {} indicies",
+      idx.node_id,
+      idx.match_index,
+      idx.next_index);
+    std::vector<model::offset> offsets;
+    return seastar::with_semaphore(
+      _op_sem, 1, [this, &idx, reply = std::move(reply)]() mutable {
+          return maybe_update_leader_commit_idx();
+      });
+}
+
+void consensus::dispatch_recovery(
+  follower_index_metadata& idx, append_entries_reply reply) {
+    auto log_max_offset = _log.max_offset();
+    if (idx.last_log_index >= log_max_offset) {
+        // follower is ahead of current leader
+        // try to send last batch that leader have
+        _ctxlog.trace(
+          "Follower {} is ahead of leader setting next offset to {}",
+          idx.next_index,
+          log_max_offset);
+        idx.next_index = log_max_offset;
+    }
+    idx.is_recovering = true;
+    _ctxlog.info(
+      "Starting recovery process for {} - current reply: {}",
+      idx.node_id,
+      reply);
+    // background
+    (void)with_gate(_bg, [this, &idx] {
+        auto recovery = std::make_unique<recovery_stm>(this, idx, _io_priority);
+        auto ptr = recovery.get();
+        return ptr->apply()
+          .handle_exception([this, &idx](const std::exception_ptr& e) {
+              _ctxlog.warn(
+                "Node {} recovery failed - {}",
+                idx.node_id,
+                boost::diagnostic_information(e));
+          })
+          .finally([r = std::move(recovery), this] {});
+    });
 }
 
 ss::future<result<replicate_result>> consensus::replicate(raft::entry&& e) {
@@ -360,7 +423,7 @@ consensus::do_append_entries(append_entries_request&& r) {
           r.meta.term,
           _meta.term);
         _probe.append_request_term_newer();
-        step_down();
+        do_step_down();
         _meta.term = r.meta.term;
         return do_append_entries(std::move(r));
     }
@@ -550,6 +613,30 @@ follower_index_metadata& consensus::get_follower_stats(model::node_id id) {
           fmt::format("Node {} is not a group {} follower", id, _meta.group));
     }
     return it->second;
+}
+
+ss::future<> consensus::maybe_update_leader_commit_idx() {
+    // Raft paper:
+    //
+    // If there exists an N such that N > commitIndex, a majority
+    // of matchIndex[i] ≥ N, and log[N].term == currentTerm:
+    // set commitIndex = N (§5.3, §5.4).
+
+    std::vector<model::offset> offsets;
+    auto majority = _conf.majority();
+    // self offsets
+    offsets.push_back(_log.max_offset());
+
+    for (const auto& [_, f_idx] : _follower_stats) {
+        offsets.push_back(f_idx.match_index);
+    }
+    std::sort(offsets.begin(), offsets.end());
+    auto majority_match = offsets.at((offsets.size() - 1) / 2);
+    if (majority_match > _meta.commit_index) {
+        _ctxlog.debug("Leader commit index updated {}", majority_match);
+        _meta.commit_index = majority_match;
+    }
+    return ss::make_ready_future<>();
 }
 
 } // namespace raft
