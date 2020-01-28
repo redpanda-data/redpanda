@@ -17,8 +17,10 @@ public:
           300, std::max<uint32_t>(1, current_backoff) << 1);
     }
 
-    explicit reconnect_transport(rpc::transport_configuration c)
-      : _transport(std::move(c)) {}
+    explicit reconnect_transport(
+      rpc::transport_configuration c, clock_type::duration backoff_step)
+      : _transport(std::move(c))
+      , _backoff_step(backoff_step) {}
 
     bool is_valid() const { return _transport.is_valid(); }
 
@@ -39,7 +41,17 @@ private:
     rpc::transport _transport;
     rpc::clock_type::time_point _stamp{rpc::clock_type::now()};
     ss::semaphore _connected_sem{1};
-    uint32_t _backoff_secs{0};
+    // backoff multiplier is a number that will be grown exponentially
+    uint32_t _backoff_multiplier{0};
     ss::gate _dispatch_gate;
+
+    // backoff step is a duration that multiplied by backoff multiplier will
+    // result in effective backoff timeout
+    // for example for backoff step equal to 1 second the backoffs sequence will
+    // be following:
+    // 1s,2s,4s,8s,16s,...
+    // for backoff step equals 200ms it will be:
+    // 200ms, 400ms, 1600ms, 3200ms,...
+    clock_type::duration _backoff_step;
 };
 } // namespace rpc

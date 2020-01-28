@@ -33,5 +33,6 @@ private:
     ss::semaphore _write_sem{1};
     size_t _cache_size{0};
     size_t _unflushed_bytes{0};
+    bool _closed = false;
 };
 } // namespace rpc

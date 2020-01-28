@@ -72,7 +72,8 @@ ss::future<> server::accept(ss::server_socket& s) {
           [this](ss::future<ss::accept_result> f_cs_sa) mutable {
               if (_as.abort_requested()) {
                   f_cs_sa.ignore_ready_future();
-                  return ss::stop_iteration::yes;
+                  return ss::make_ready_future<ss::stop_iteration>(
+                    ss::stop_iteration::yes);
               }
               auto [ar] = f_cs_sa.get();
               ar.connection.set_nodelay(true);
@@ -82,12 +83,16 @@ ss::future<> server::accept(ss::server_socket& s) {
                 std::move(ar.connection),
                 std::move(ar.remote_address),
                 _probe);
+              rpclog.trace("Incoming connection from {}", ar.remote_address);
               if (_conn_gate.is_closed()) {
-                  throw ss::gate_closed_exception();
+                  return conn->shutdown().then([] {
+                      return ss::make_exception_future<ss::stop_iteration>(
+                        ss::gate_closed_exception());
+                  });
               }
               (void)with_gate(_conn_gate, [this, conn]() mutable {
-                  return continous_method_dispath(conn).then_wrapped(
-                    [conn](ss::future<>&& f) {
+                  return continous_method_dispath(conn)
+                    .then_wrapped([conn](ss::future<>&& f) {
                         rpclog.debug("closing client: {}", conn->addr);
                         return conn->shutdown()
                           .then([f = std::move(f)]() mutable {
@@ -100,9 +105,11 @@ ss::future<> server::accept(ss::server_socket& s) {
                               }
                           })
                           .finally([conn] {});
-                    });
+                    })
+                    .finally([conn] {});
               });
-              return ss::stop_iteration::no;
+              return ss::make_ready_future<ss::stop_iteration>(
+                ss::stop_iteration::no);
           });
     });
 }
@@ -160,8 +167,8 @@ server::dispatch_method_once(header h, ss::lw_shared_ptr<connection> conn) {
                     view.size());
                   return ss::make_ready_future<>();
               }
-              return conn->write(std::move(view)).finally([m = std::move(m)] {
-              });
+              return conn->write(std::move(view))
+                .finally([m = std::move(m), ctx] {});
           })
           .finally([&p = _probe, conn] { p.request_completed(); });
     });
@@ -176,9 +183,13 @@ ss::future<> server::stop() {
     rpclog.info("Shutting down {} connections", _connections.size());
     _as.request_abort();
     // close the connections and wait for all dispatches to finish
-    return ss::do_for_each(
-             _connections, [](connection& c) { return c.shutdown(); })
-      .then([this] { return _conn_gate.close(); });
+    for (auto& c : _connections) {
+        c.shutdown_input();
+    }
+    return _conn_gate.close().then([this] {
+        return seastar::do_for_each(
+          _connections, [](connection& c) { return c.shutdown(); });
+    });
 }
 void server::setup_metrics() {
     namespace sm = ss::metrics;

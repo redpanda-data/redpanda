@@ -24,6 +24,7 @@ public:
     ss::input_stream<char>& input() { return _in; }
     ss::future<> write(ss::scattered_message<char> msg);
     ss::future<> shutdown();
+    void shutdown_input();
 
     const ss::socket_address addr;
 

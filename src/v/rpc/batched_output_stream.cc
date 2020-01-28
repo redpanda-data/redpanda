@@ -1,5 +1,7 @@
 #include "rpc/batched_output_stream.h"
 
+#include <seastar/core/future.hh>
+
 namespace rpc {
 batched_output_stream::batched_output_stream(
   ss::output_stream<char> o, size_t cache)
@@ -21,6 +23,10 @@ batched_output_stream::operator=(batched_output_stream&& o) noexcept {
 
 ss::future<> batched_output_stream::write(ss::scattered_message<char> msg) {
     return with_semaphore(_write_sem, 1, [this, v = std::move(msg)]() mutable {
+        if (__builtin_expect(_closed, false)) {
+            // skip dispatching writes as stream is already closed
+            return ss::make_ready_future<>();
+        }
         const size_t vbytes = v.size();
         return _out.write(std::move(v)).then([this, vbytes] {
             _unflushed_bytes += vbytes;
@@ -42,7 +48,10 @@ ss::future<> batched_output_stream::flush() {
     return with_semaphore(_write_sem, 1, [this] { return do_flush(); });
 }
 ss::future<> batched_output_stream::stop() {
-    return flush().then([this] { return _out.close(); });
+    _closed = true;
+    return with_semaphore(_write_sem, 1, [this] {
+        return do_flush().then([this] { return _out.close(); });
+    });
 }
 
 } // namespace rpc
