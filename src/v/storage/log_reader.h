@@ -102,6 +102,7 @@ private:
     std::vector<model::record_batch> _batches;
     model::offset _last_base;
     probe& _probe;
+    bool _seen_first_batch;
 };
 
 } // namespace storage

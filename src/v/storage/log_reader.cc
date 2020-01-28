@@ -148,7 +148,8 @@ log_reader::log_reader(
   log_set& seg_set, log_reader_config config, probe& probe) noexcept
   : _set(seg_set)
   , _config(std::move(config))
-  , _probe(probe) {
+  , _probe(probe)
+  , _seen_first_batch(false) {
     _end_of_stream = seg_set.empty();
 }
 
@@ -188,12 +189,33 @@ log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
       .then([this, ptr](size_t bytes_consumed) {
           _probe.add_bytes_read(bytes_consumed);
           if (_batches.empty()) {
-              return span();
+              return ss::make_ready_future<log_reader::span>();
           }
-          _config.start_offset = _batches.back().last_offset()
-                                 + model::offset(1);
           _probe.add_batches_read(int32_t(_batches.size()));
-          return span{&_batches[0], int32_t(_batches.size())};
+          /*
+           * this is a fast check of the batch offsets returned by the batch
+           * reader to check for holes. note that the update of start_offset is
+           * critical to correctness, even though it is used here to look for
+           * holes. before returning its value must be equal to
+           * _batches.last().last_offset() + model::offset(1).
+           */
+          if (!_seen_first_batch) {
+              _config.start_offset = _batches.front().base_offset();
+              _seen_first_batch = true;
+          }
+          for (const auto& batch : _batches) {
+              if (batch.base_offset() != _config.start_offset) {
+                  return ss::make_exception_future<log_reader::span>(
+                    fmt::format(
+                      "hole encountered reading from log: "
+                      "expected batch offset {} (actually {})",
+                      _config.start_offset,
+                      batch.base_offset()));
+              }
+              _config.start_offset = batch.last_offset() + model::offset(1);
+          }
+          return ss::make_ready_future<log_reader::span>(
+            span{&_batches[0], int32_t(_batches.size())});
       })
       .finally([sc = std::move(segc)] {});
 }
