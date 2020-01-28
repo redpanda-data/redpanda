@@ -36,3 +36,7 @@ KeepEmptyLinesAtTheStartOfBlocks: false
 PenaltyBreakAssignment: 100
 PenaltyBreakBeforeFirstCallParameter: 10
 PenaltyReturnTypeOnItsOwnLine: 60
+---
+Language: JavaScript
+# Use 100 columns for JS.
+ColumnLimit: 80
