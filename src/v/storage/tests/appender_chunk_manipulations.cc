@@ -2,6 +2,7 @@
 #include "storage/log_segment_appender.h"
 
 #include <seastar/testing/thread_test_case.hh>
+
 #include <boost/test/tools/old/interface.hpp>
 
 #include <cstring>

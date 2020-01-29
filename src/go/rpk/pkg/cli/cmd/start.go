@@ -255,8 +255,7 @@ func buildRedpandaFlags(
 }
 
 func resolveWellKnownIo(
-	conf *config.Config,
-	wellKnownIo string,
+	conf *config.Config, wellKnownIo string,
 ) (*iotune.IoProperties, error) {
 	var configuredWellKnownIo string
 	// The flags take precedence over the config file

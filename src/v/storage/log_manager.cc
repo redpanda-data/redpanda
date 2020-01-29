@@ -163,7 +163,8 @@ static void set_max_offsets(log_set& segments) {
     }
 }
 
-ss::future<segment> log_manager::open_segment(const std::filesystem::path& path, size_t buf_size) {
+ss::future<segment>
+log_manager::open_segment(const std::filesystem::path& path, size_t buf_size) {
     auto const meta = segment_path::parse_segment_filename(
       path.filename().string());
     if (meta->version != record_version_type::v1) {

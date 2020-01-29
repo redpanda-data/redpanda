@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# this whole bootstrap.sh script is idempotent so it can safely be re-executed 
-# from the top and only missing packages (or intermediary objects) will be 
+# this whole bootstrap.sh script is idempotent so it can safely be re-executed
+# from the top and only missing packages (or intermediary objects) will be
 # build/installed
 set -o errexit
 set -o nounset

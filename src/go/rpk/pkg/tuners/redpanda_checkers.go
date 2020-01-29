@@ -125,9 +125,7 @@ func NewFilesystemTypeChecker(path string) Checker {
 		})
 }
 
-func NewIOConfigFileExistanceChecker(
-	fs afero.Fs, filePath string,
-) Checker {
+func NewIOConfigFileExistanceChecker(fs afero.Fs, filePath string) Checker {
 	return NewFileExistanceChecker(
 		fs,
 		IoConfigFileChecker,
@@ -160,7 +158,10 @@ func NewNTPSyncChecker(timeout time.Duration, fs afero.Fs) Checker {
 }
 
 func RedpandaCheckers(
-	fs afero.Fs, ioConfigFile string, config *config.Config, timeout time.Duration,
+	fs afero.Fs,
+	ioConfigFile string,
+	config *config.Config,
+	timeout time.Duration,
 ) (map[CheckerID][]Checker, error) {
 	proc := os.NewProc()
 	ethtool, err := ethtool.NewEthtoolWrapper()
