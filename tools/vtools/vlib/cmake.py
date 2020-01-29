@@ -15,6 +15,20 @@ def rm_cache(vconfig):
         os.remove(_cache_file(vconfig))
 
 
+def _render_build_script(env, cmake_str, build_dir):
+    nl = "\n"
+    tpl = f"""#!/bin/env bash
+set -x
+{nl.join(["%s=%s" % (k, v) for k, v in env.items()])}
+
+{cmake_str}
+    """
+    with open(f"{build_dir}/rebuild.sh", 'w') as f:
+        os.fchmod(f.fileno(),
+                  stat.S_IRWXU | stat.S_IRWXG | stat.S_IROTH | stat.S_IXOTH)
+        f.write(tpl)
+
+
 def configure_build(vconfig, build_external=True, build_external_only=False):
 
     if vconfig.compiler == 'clang':
@@ -37,11 +51,12 @@ def configure_build(vconfig, build_external=True, build_external_only=False):
         cmake_flags.append('-DV_DEPS_ONLY=ON')
 
     os.makedirs(vconfig.build_dir, exist_ok=True)
-
-    shell.run_subprocess(f'cmake -GNinja'
-                         f'  {" ".join(cmake_flags)}'
-                         f'  -B{vconfig.build_dir}'
-                         f'  -H{vconfig.src_dir}')
+    cmake_str = (f'cmake -GNinja'
+                 f'  {" ".join(cmake_flags)}'
+                 f'  -B{vconfig.build_dir}'
+                 f'  -H{vconfig.src_dir}')
+    _render_build_script(os.environ, cmake_str, vconfig.build_dir)
+    shell.run_subprocess(f"sh {vconfig.build_dir}/rebuild.sh")
 
     # FIXME https://app.asana.com/0/1149841353291489/1153763539998305
     if build_external:
