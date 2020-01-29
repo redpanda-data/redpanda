@@ -132,7 +132,6 @@ struct mem_log_impl final : log::impl {
 
     log_appender make_appender(log_append_config cfg) final {
         auto o = max_offset();
-        _term = cfg.term;
         if (o() < 0) {
             o = model::offset(0);
         } else {
@@ -174,13 +173,11 @@ struct mem_log_impl final : log::impl {
     model::offset committed_offset() const final { return max_offset(); }
     boost::intrusive::list<mem_iter_reader> _readers;
     data_t _data;
-    model::term_id _term;
 };
 
 ss::future<ss::stop_iteration>
 mem_log_appender::operator()(model::record_batch&& batch) {
     batch.set_base_offset(_cur_offset);
-    batch.set_term(_log._term);
     stlog.trace(
       "Wrting to {} batch of {} records offsets [{},{}], term {}",
       _log.ntp(),
