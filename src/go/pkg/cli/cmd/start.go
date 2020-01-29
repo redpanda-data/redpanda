@@ -399,3 +399,15 @@ func writePid(fs afero.Fs, path string) error {
 		path,
 	)
 }
+
+func sendEnv(env api.EnvironmentPayload, conf *config.Config, err error) {
+	if err != nil {
+		env.ErrorMsg = err.Error()
+	}
+	if conf.Rpk.EnableUsageStats {
+		err := api.SendEnvironment(env, *conf)
+		if err != nil {
+			log.Infof("couldn't send environment data: %v", err)
+		}
+	}
+}
