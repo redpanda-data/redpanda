@@ -3,13 +3,12 @@ import io
 import os
 import requests
 import tarfile
-import sys
 
 from absl import logging
 from . import shell
 
-LLVM_GITREF = 'llvmorg-9.0.0'
-LLVM_TARBALL_MD5SUM = 'c5fbb6a232c907e912883fac8b221e2d'
+LLVM_GITREF = 'llvmorg-9.0.1'
+LLVM_TARBALL_MD5SUM = '39ef898ce652da712d9a15a7a334f35e'
 
 
 def find_or_install_clang(vconfig):
