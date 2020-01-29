@@ -39,7 +39,10 @@ consensus::consensus(
   , _ctxlog(_self, group) {
     _meta.group = group();
     _vote_timeout.set_callback([this] { dispatch_vote(); });
-    for (auto& n : initial_cfg.nodes) {
+    for (auto& n : _conf.nodes) {
+        if (n.id() == _self) {
+            continue;
+        }
         _follower_stats.emplace(n.id(), follower_index_metadata(n.id()));
     }
 }
