@@ -94,7 +94,14 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			err = prestart(fs, rpArgs, configFile, conf, prestartCfg, timeout)
+			_, _, err = prestart(
+				fs,
+				rpArgs,
+				configFile,
+				conf,
+				prestartCfg,
+				timeout,
+			)
 			if err != nil {
 				return err
 			}
@@ -177,22 +184,25 @@ func prestart(
 	conf *config.Config,
 	prestartCfg prestartConfig,
 	timeout time.Duration,
-) error {
+) ([]api.CheckPayload, []api.TunerPayload, error) {
+	var err error
+	checkPayloads := []api.CheckPayload{}
+	tunerPayloads := []api.TunerPayload{}
 	if prestartCfg.checkEnabled {
-		_, err := check(fs, configFile, conf, timeout, checkFailedActions(args))
+		checkPayloads, err = check(fs, configFile, conf, timeout, checkFailedActions(args))
 		if err != nil {
-			return err
+			return checkPayloads, tunerPayloads, err
 		}
 		log.Info("System check - PASSED")
 	}
 	if prestartCfg.tuneEnabled {
-		_, err := tuneAll(fs, args.SeastarFlags["cpuset"], conf, timeout)
+		tunerPayloads, err = tuneAll(fs, args.SeastarFlags["cpuset"], conf, timeout)
 		if err != nil {
-			return err
+			return checkPayloads, tunerPayloads, err
 		}
 		log.Info("System tune - PASSED")
 	}
-	return nil
+	return checkPayloads, tunerPayloads, nil
 }
 
 func buildRedpandaFlags(
