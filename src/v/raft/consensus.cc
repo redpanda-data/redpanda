@@ -309,14 +309,13 @@ ss::future<> consensus::start() {
         return details::read_voted_for(voted_for_filename())
           .then([this](voted_for_configuration r) {
               if (r.voted_for < 0) {
-                  raftlog.debug(
+                  _ctxlog.debug(
                     "Found default voted_for. Skipping term recovery");
                   _meta.term = 0;
                   return details::read_bootstrap_state(_log);
               }
-              raftlog.info(
-                "group '{}' recovered last leader: {} for term: {}",
-                _meta.group,
+              _ctxlog.info(
+                "recovered last voted for: {} for term: {}",
                 r.voted_for,
                 r.term);
               _voted_for = r.voted_for;
