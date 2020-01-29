@@ -22,24 +22,24 @@ public:
     ss::future<ss::stop_iteration> operator()(::model::record_batch batch) {
         _prev = _accumulator;
         _accumulator += batch.size_bytes() + sizeof(int32_t) /*see parser.cc*/;
-        if (_target_last_offset == batch.last_offset()) {
+        if (_target_last_offset == batch.base_offset()) {
             _filepos = {batch.base_offset() - model::offset(1), _prev};
             return ss::make_ready_future<ss::stop_iteration>(
               ss::stop_iteration::yes);
         }
-        if (_target_last_offset == batch.base_offset()) {
+        if (_target_last_offset == batch.last_offset()) {
             return ss::make_exception_future<ss::stop_iteration>(fmt::format(
-              "offset_to_filepos_consumer can only translate end_offsets. "
-              "Current batch's {}-{}. base_offset matches target offset:{}. "
+              "offset_to_filepos_consumer can only translate base_offsets. "
+              "Current batch's {}-{}. last_offset matches target offset:{}. "
               "accumulated bytes:{}",
               batch.base_offset(),
               batch.last_offset(),
               _target_last_offset,
               _accumulator));
         }
-        if (batch.last_offset() > _target_last_offset) {
+        if (batch.base_offset() > _target_last_offset) {
             return ss::make_exception_future<ss::stop_iteration>(fmt::format(
-              "offset_to_filepos_consumer can only translate last_offsets. "
+              "offset_to_filepos_consumer can only translate base_offsets. "
               "Current batch's {}-{}, exceeds target offset:{}. accumulated "
               "bytes:{}",
               batch.base_offset(),
