@@ -446,6 +446,17 @@ ExternalProject_Add(zstd
     -DZSTD_BUILD_SHARED=OFF
     -DZSTD_BUILD_PROGRAMS=OFF)
 
+ExternalProject_Add(snappy
+    URL https://storage.googleapis.com/vectorizedio-public/dependencies/snappy-1.1.8.tar.gz
+    URL_MD5 70e48cba7fecf289153d009791c9977f
+    INSTALL_DIR    @V_DEPS_INSTALL_DIR@
+    CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
+    DEPENDS ${default_depends}
+    CMAKE_ARGS
+    ${common_cmake_args}
+    -DSNAPPY_INSTALL=ON
+    -DSNAPPY_BUILD_TESTS=OFF)
+
 ExternalProject_Add(HdrHistogram
   URL https://storage.googleapis.com/vectorizedio-public/dependencies/hdrhistogram-7381c1b.tar.gz
   URL_MD5 7e9776c558fa9385776cb8c1e5ac7d1a
