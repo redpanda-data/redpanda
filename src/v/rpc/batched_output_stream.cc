@@ -1,5 +1,7 @@
 #include "rpc/batched_output_stream.h"
 
+#include "likely.h"
+
 #include <seastar/core/future.hh>
 
 namespace rpc {
@@ -23,7 +25,7 @@ batched_output_stream::operator=(batched_output_stream&& o) noexcept {
 
 ss::future<> batched_output_stream::write(ss::scattered_message<char> msg) {
     return with_semaphore(_write_sem, 1, [this, v = std::move(msg)]() mutable {
-        if (__builtin_expect(_closed, false)) {
+        if (unlikely(_closed)) {
             // skip dispatching writes as stream is already closed
             return ss::make_ready_future<>();
         }

@@ -1,5 +1,6 @@
 #include "raft/consensus.h"
 
+#include "likely.h"
 #include "raft/consensus_utils.h"
 #include "raft/logger.h"
 #include "raft/recovery_stm.h"
@@ -73,7 +74,7 @@ void consensus::process_heartbeat(
     }
     follower_index_metadata& idx = i->second;
     append_entries_reply& reply = r.value();
-    if (__builtin_expect(reply.group != _meta.group, false)) {
+    if (unlikely(reply.group != _meta.group)) {
         // logic bug
         throw std::runtime_error(fmt::format(
           "process_heartbeat was sent wrong group: {}", reply.group));

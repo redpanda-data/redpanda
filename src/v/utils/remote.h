@@ -1,5 +1,6 @@
 #pragma once
 
+#include "likely.h"
 #include "seastarx.h"
 
 #include <seastar/core/reactor.hh>
@@ -96,8 +97,7 @@ public:
     remote& operator=(remote&&) = default;
 
     ~remote() noexcept {
-        if (__builtin_expect(
-              _v && _origin_cpu != ss::engine().cpu_id(), false)) {
+        if (unlikely(_v && _origin_cpu != ss::engine().cpu_id())) {
             std::abort();
         }
     }

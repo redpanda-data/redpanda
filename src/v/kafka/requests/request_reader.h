@@ -2,6 +2,7 @@
 
 #include "bytes/bytes.h"
 #include "bytes/iobuf.h"
+#include "likely.h"
 #include "seastarx.h"
 #include "utils/concepts-enabled.h"
 #include "utils/utf8.h"
@@ -139,7 +140,7 @@ public:
 
 private:
     ss::sstring do_read_string(int16_t n) {
-        if (__builtin_expect(n < 0, false)) {
+        if (unlikely(n < 0)) {
             /// FIXME: maybe return empty string?
             throw std::out_of_range("Asked to read a negative byte string");
         }

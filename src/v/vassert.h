@@ -1,5 +1,7 @@
 #pragma once
 
+#include "likely.h"
+
 #include <seastar/util/backtrace.hh>
 #include <seastar/util/log.hh>
 
@@ -22,7 +24,7 @@ static dummyassert g_assert_log;
 #define vassert(x, msg, args...)                                               \
     do {                                                                       \
         /*The !(x) is not an error. see description above*/                    \
-        if (__builtin_expect(!(x), false)) {                                   \
+        if (unlikely(!(x))) {                                                  \
             ::detail::g_assert_log.l.error(                                    \
               "Assert failure: ({}:{}) '" #x "' " msg,                         \
               __FILE__,                                                        \

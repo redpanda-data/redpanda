@@ -1,5 +1,6 @@
 #include "rpc/transport.h"
 
+#include "likely.h"
 #include "rpc/logger.h"
 #include "rpc/parse_utils.h"
 
@@ -156,7 +157,7 @@ transport::send(netbuf b, rpc::clock_type::time_point timeout) {
           auto [it, placed] = _correlations.emplace(idx, std::move(item));
           it->second.with_timeout(timeout, [this, idx] {
               auto it = _correlations.find(idx);
-              if (__builtin_expect(it != _correlations.end(), true)) {
+              if (likely(it != _correlations.end())) {
                   rpclog.warn("Request timeout, correlation id: {}", idx);
                   _probe.request_error();
                   _correlations.erase(it);

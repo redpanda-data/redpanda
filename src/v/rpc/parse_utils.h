@@ -1,6 +1,7 @@
 #pragma once
 
 #include "hashing/xx.h"
+#include "likely.h"
 #include "reflection/adl.h"
 #include "rpc/types.h"
 #include "seastarx.h"
@@ -17,7 +18,7 @@
 namespace rpc {
 namespace detail {
 static inline void check_out_of_range(size_t got, size_t expected) {
-    if (__builtin_expect(got != expected, false)) {
+    if (unlikely(got != expected)) {
         // clang-format off
          throw std::out_of_range(fmt::format(
            "parse_utils out of range. got:{} bytes and expected:{}"

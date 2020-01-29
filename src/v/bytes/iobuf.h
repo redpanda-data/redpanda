@@ -1,4 +1,5 @@
 #pragma once
+#include "likely.h"
 #include "seastarx.h"
 #include "utils/concepts-enabled.h"
 
@@ -153,7 +154,7 @@ private:
 
 namespace details {
 static void check_out_of_range(size_t sz, size_t capacity) {
-    if (__builtin_expect(sz > capacity, false)) {
+    if (unlikely(sz > capacity)) {
         throw std::out_of_range("iobuf op: size > capacity");
     }
 }
@@ -364,7 +365,7 @@ public:
         size_t c = consume(n, [](const char*, size_t /*max*/) {
             return ss::stop_iteration::no;
         });
-        if (__builtin_expect(c != n, false)) {
+        if (unlikely(c != n)) {
             throw std::out_of_range("Invalid skip(n)");
         }
     }
@@ -375,7 +376,7 @@ public:
             out += max;
             return ss::stop_iteration::no;
         });
-        if (__builtin_expect(c != n, false)) {
+        if (unlikely(c != n)) {
             throw std::out_of_range("Invalid consume_to(n, out)");
         }
     }
@@ -396,7 +397,7 @@ public:
             ph.write(src, max);
             return ss::stop_iteration::no;
         });
-        if (__builtin_expect(c != n, false)) {
+        if (unlikely(c != n)) {
             throw std::out_of_range("Invalid consume_to(n, placeholder)");
         }
     }
@@ -607,7 +608,7 @@ inline iobuf::placeholder iobuf::reserve(size_t sz) {
     if (size == 0) {
         return;
     }
-    if (__builtin_expect(size <= available_bytes(), true)) {
+    if (likely(size <= available_bytes())) {
         _ctrl->size += _ctrl->frags.back().append(ptr, size);
         return;
     }

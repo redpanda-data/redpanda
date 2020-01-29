@@ -1,5 +1,6 @@
 #include "utils/hdr_hist.h"
 
+#include "likely.h"
 #include "utils/human.h"
 
 #include <fmt/format.h>
@@ -33,7 +34,7 @@ ss::temporary_buffer<char> hdr_hist::print_classic() const {
     char* buf = nullptr;
     std::size_t len = 0;
     FILE* fp = open_memstream(&buf, &len);
-    if (__builtin_expect(fp == nullptr, false)) {
+    if (unlikely(fp == nullptr)) {
         throw std::runtime_error("Failed to allocate filestream");
     }
     const int p_ret = ::hdr_percentiles_print(

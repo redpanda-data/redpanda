@@ -2,6 +2,7 @@
 
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
+#include "likely.h"
 #include "model/record.h"
 #include "reflection/adl.h"
 #include "storage/constants.h"
@@ -40,7 +41,7 @@ static inline ss::future<std::optional<iobuf>> verify_read_iobuf(
   ss::input_stream<char>& in, size_t expected, ss::sstring msg) {
     return read_iobuf_exactly(in, expected)
       .then([msg = std::move(msg), expected](iobuf b) {
-          if (__builtin_expect(b.size_bytes() == expected, true)) {
+          if (likely(b.size_bytes() == expected)) {
               return ss::make_ready_future<std::optional<iobuf>>(std::move(b));
           }
           stlog.error(
@@ -76,7 +77,7 @@ ss::future<stop_parser> continuous_batch_parser::consume_header() {
             _header, num_records, _physical_base_offset, size_on_disk);
           if (std::holds_alternative<skip_batch>(ret)) {
               auto s = std::get<skip_batch>(ret);
-              if (__builtin_expect(bool(s), false)) {
+              if (unlikely(bool(s))) {
                   auto remaining = _header.size_bytes - packed_header_size;
                   return verify_read_iobuf(
                            _input, remaining, "parser::skip_batch")

@@ -1,5 +1,6 @@
 #include "raft/configuration_bootstrap_state.h"
 
+#include "likely.h"
 #include "reflection/adl.h"
 
 #include <fmt/format.h>
@@ -8,13 +9,13 @@ namespace raft {
 void configuration_bootstrap_state::process_configuration_in_thread(
   model::record_batch b) {
     _config_batches_seen++;
-    if (__builtin_expect(b.type() != configuration_batch_type, false)) {
+    if (unlikely(b.type() != configuration_batch_type)) {
         throw std::runtime_error(fmt::format(
           "Logic error. Asked a configuration tracker to process an unknown "
           "record_batch_type: {}",
           b.type()));
     }
-    if (__builtin_expect(b.compressed(), false)) {
+    if (unlikely(b.compressed())) {
         throw std::runtime_error(
           "Compressed configuration records are unsupported");
     }
@@ -31,7 +32,7 @@ void configuration_bootstrap_state::process_configuration_in_thread(
 void configuration_bootstrap_state::process_data_offsets_in_thread(
   model::record_batch b) {
     _data_batches_seen++;
-    if (__builtin_expect(b.type() == configuration_batch_type, false)) {
+    if (unlikely(b.type() == configuration_batch_type)) {
         throw std::runtime_error(fmt::format(
           "Logic error. Asked a data tracker to process "
           "configuration_batch_type "

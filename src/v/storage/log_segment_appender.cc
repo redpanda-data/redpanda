@@ -1,5 +1,6 @@
 #include "storage/log_segment_appender.h"
 
+#include "likely.h"
 #include "storage/logger.h"
 
 #include <seastar/core/align.hh>
@@ -85,7 +86,7 @@ ss::future<> log_segment_appender::append(const char* buf, const size_t n) {
         //   [this, buf, n] { return append(buf, n); });
     }
     size_t written = 0;
-    while (__builtin_expect(_current != _chunks.end(), true)) {
+    while (likely(_current != _chunks.end())) {
         const size_t sz = _current->append(buf + written, n - written);
         written += sz;
         _bytes_flush_pending += sz;
@@ -139,7 +140,7 @@ ss::future<> log_segment_appender::close() {
 }
 
 static ss::future<> process_write_fut(size_t expected, size_t got) {
-    if (__builtin_expect(expected != got, false)) {
+    if (unlikely(expected != got)) {
         return ss::make_exception_future<>(fmt::format(
           "Could not flush file. Expected to write:{},but wrote:{}",
           expected,
@@ -183,7 +184,7 @@ ss::future<> log_segment_appender::flush() {
             break;
         }
     }
-    if (__builtin_expect(_bytes_flush_pending != 0, false)) {
+    if (unlikely(_bytes_flush_pending != 0)) {
         throw std::runtime_error(
           fmt::format("Invalid flush, pending bytes. Details:{}", *this));
     }
