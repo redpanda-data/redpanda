@@ -27,7 +27,7 @@ public:
     enum class vote_state { follower, candidate, leader };
     using leader_cb_t = ss::noncopyable_function<void(group_id)>;
     using append_entries_cb_t
-      = ss::noncopyable_function<void(std::vector<entry>&&)>;
+      = ss::noncopyable_function<ss::future<>(model::record_batch_reader&&)>;
 
     consensus(
       model::node_id,
@@ -89,9 +89,8 @@ public:
     process_append_reply(model::node_id, result<append_entries_reply>);
     // clang-format on
 
-    void process_heartbeat(model::node_id, result<append_entries_reply>);
-    ss::future<result<replicate_result>> replicate(raft::entry&&);
-    ss::future<result<replicate_result>> replicate(std::vector<raft::entry>&&);
+    ss::future<result<replicate_result>>
+    replicate(model::record_batch_reader&&);
 
     ss::future<> step_down() {
         if (is_leader()) {
@@ -113,18 +112,15 @@ private:
     ss::future<append_entries_reply>
     do_append_entries(append_entries_request&&);
 
-    /// advances our pointer in the log
-    append_entries_reply make_append_entries_reply(
-      protocol_metadata, std::vector<storage::append_result>);
+    append_entries_reply make_append_entries_reply(storage::append_result);
 
-    ss::future<append_entries_reply>
-      commit_entries(std::vector<entry>, append_entries_reply);
+    ss::future<> notify_entries_commited(model::record_batch_reader&&);
 
     ss::future<result<replicate_result>>
-    do_replicate(std::vector<raft::entry>&&);
+    do_replicate(model::record_batch_reader&&);
 
-    ss::future<std::vector<storage::append_result>>
-    disk_append(std::vector<entry>&&);
+    ss::future<storage::append_result>
+    disk_append(model::record_batch_reader&&);
 
     ss::future<> successfull_append_entries_reply(
       follower_index_metadata&, append_entries_reply);
@@ -132,7 +128,7 @@ private:
     ss::future<> maybe_update_leader_commit_idx();
 
     model::term_id get_term(model::offset);
-    
+
     ss::sstring voted_for_filename() const;
 
     /// used for timer callback to dispatch the vote_stm
@@ -142,7 +138,9 @@ private:
     ss::future<> replicate_configuration(group_configuration);
     /// After we append on disk, we must consume the entries
     /// to update our leader_id, nodes & learners configuration
-    ss::future<> process_configurations(std::vector<entry>&&);
+    ss::future<> process_configurations(model::record_batch_reader&&);
+
+    ss::future<> maybe_update_follower_commit_idx(model::offset);
 
     void arm_vote_timeout();
     follower_index_metadata& get_follower_stats(model::node_id);

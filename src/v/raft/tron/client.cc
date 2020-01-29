@@ -1,3 +1,4 @@
+#include "model/record_batch_reader.h"
 #include "raft/tron/logger.h"
 #include "raft/tron/service.h"
 #include "random/generators.h"
@@ -104,13 +105,11 @@ private:
         });
     }
 
-    raft::entry gen_entry() {
+    model::record_batch_reader gen_entry() {
         std::vector<model::record_batch> batches;
         batches.reserve(1);
         batches.push_back(data_batch());
-        return raft::entry(
-          raft::data_batch_type,
-          model::make_memory_record_batch_reader(std::move(batches)));
+        return model::make_memory_record_batch_reader(std::move(batches));
     }
     model::record_batch data_batch() {
         storage::record_batch_builder bldr(
