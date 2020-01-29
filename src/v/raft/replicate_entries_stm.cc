@@ -1,5 +1,6 @@
 #include "raft/replicate_entries_stm.h"
 
+#include "likely.h"
 #include "outcome_future_utils.h"
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
@@ -183,7 +184,7 @@ ss::future<result<replicate_result>> replicate_entries_stm::apply() {
                 _replies.cbegin(), _replies.cend(), [](const retry_meta& i) {
                     return i.is_success();
                 });
-              if (__builtin_expect(m == _replies.end(), false)) {
+              if (unlikely(m == _replies.end())) {
                   throw std::runtime_error(
                     "Logic error. cannot acknowledge commits");
               }

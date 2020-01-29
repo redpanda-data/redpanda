@@ -1,3 +1,4 @@
+#include "likely.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "seastarx.h"
@@ -92,7 +93,7 @@ struct mem_log_impl final : log::impl {
 
     ss::future<> truncate(model::offset offset) final {
         stlog.debug("Truncating {} log at {}", ntp(), offset);
-        if (__builtin_expect(offset < model::offset(0), false)) {
+        if (unlikely(offset < model::offset(0))) {
             throw std::invalid_argument("cannot truncate at negative offset");
         }
         for (auto& reader : _readers) {

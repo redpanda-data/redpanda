@@ -2,6 +2,7 @@
 
 #include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
+#include "likely.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>
@@ -91,7 +92,7 @@ struct fetch_request final {
         const_iterator(const_topic_iterator begin, const_topic_iterator end)
           : state_({.new_topic = true, .topic = begin})
           , t_end_(end) {
-            if (__builtin_expect(state_.topic != t_end_, true)) {
+            if (likely(state_.topic != t_end_)) {
                 state_.partition = state_.topic->partitions.cbegin();
                 normalize();
             }
@@ -214,7 +215,7 @@ struct op_context {
          * decode request and prepare the inital response
          */
         request.decode(rctx);
-        if (__builtin_expect(!request.topics.empty(), true)) {
+        if (likely(!request.topics.empty())) {
             response.partitions.reserve(request.topics.size());
         }
 

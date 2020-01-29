@@ -1,5 +1,6 @@
 #include "raft/consensus_utils.h"
 
+#include "likely.h"
 #include "resource_mgmt/io_priority.h"
 #include "storage/record_batch_builder.h"
 
@@ -96,7 +97,7 @@ std::vector<model::record_batch> memory_batch_consumer::end_of_stream() {
 }
 
 static inline void check_copy_out_of_range(size_t expected, size_t got) {
-    if (__builtin_expect(expected != got, false)) {
+    if (unlikely(expected != got)) {
         throw std::out_of_range("consensus_utils copy out of bounds");
     }
 }
@@ -302,8 +303,7 @@ read_bootstrap_state(storage::log log) {
 
 ss::future<raft::group_configuration> extract_configuration(raft::entry e) {
     using cfg_t = raft::group_configuration;
-    if (__builtin_expect(
-          e.entry_type() != raft::configuration_batch_type, false)) {
+    if (unlikely(e.entry_type() != raft::configuration_batch_type)) {
         return ss::make_exception_future<cfg_t>(std::runtime_error(fmt::format(
           "Configuration parser can only parse configs({}), asked "
           "to parse: {}",

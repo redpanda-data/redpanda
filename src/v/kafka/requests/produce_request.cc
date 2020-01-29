@@ -4,6 +4,7 @@
 #include "kafka/default_namespace.h"
 #include "kafka/errors.h"
 #include "kafka/requests/kafka_batch_adapter.h"
+#include "likely.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record_batch_reader.h"
@@ -196,7 +197,7 @@ static ss::future<produce_response::partition> produce_topic_partition(
      * the tp in the metadata cache so that this condition is unlikely
      * to pass.
      */
-    if (__builtin_expect(!octx.rctx.shards().contains(ntp), false)) {
+    if (unlikely(!octx.rctx.shards().contains(ntp))) {
         return make_partition_response_error(
           ntp.tp.partition, error_code::unknown_topic_or_partition);
     }

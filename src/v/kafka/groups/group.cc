@@ -2,6 +2,7 @@
 
 #include "bytes/bytes.h"
 #include "kafka/requests/sync_group_request.h"
+#include "likely.h"
 #include "utils/to_string.h"
 
 #include <seastar/core/future.hh>
@@ -129,7 +130,7 @@ group::duration_type group::rebalance_timeout() const {
       [](const member_map::value_type& a, const member_map::value_type& b) {
           return a.second->rebalance_timeout() < b.second->rebalance_timeout();
       });
-    if (__builtin_expect(it != _members.end(), true)) {
+    if (likely(it != _members.end())) {
         return it->second->rebalance_timeout();
     } else {
         throw std::runtime_error("no members in group");

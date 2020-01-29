@@ -1,5 +1,6 @@
 #pragma once
 
+#include "likely.h"
 #include "model/record.h"
 #include "model/timeout_clock.h"
 #include "seastarx.h"
@@ -131,7 +132,7 @@ public:
         template<typename Consumer>
         auto do_consume(Consumer& consumer, timeout_clock::time_point timeout) {
             return ss::repeat([this, timeout, &consumer] {
-                       if (__builtin_expect(!is_slice_empty(), true)) {
+                       if (likely(!is_slice_empty())) {
                            return consumer(pop_batch());
                        }
                        if (end_of_stream()) {

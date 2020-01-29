@@ -3,6 +3,7 @@
 #include "kafka/default_namespace.h"
 #include "kafka/errors.h"
 #include "kafka/requests/batch_consumer.h"
+#include "likely.h"
 #include "model/timeout_clock.h"
 #include "resource_mgmt/io_priority.h"
 #include "storage/tests/random_batch.h"
@@ -237,7 +238,7 @@ read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config) {
      * the tp in the metadata cache so that this condition is unlikely
      * to pass.
      */
-    if (__builtin_expect(!octx.rctx.shards().contains(ntp), false)) {
+    if (unlikely(!octx.rctx.shards().contains(ntp))) {
         return make_ready_partition_response_error(
           error_code::unknown_topic_or_partition);
     }
@@ -252,7 +253,7 @@ read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config) {
            * lookup the ntp's open log handle
            */
           auto optlog = mgr.log(ntp);
-          if (__builtin_expect(!optlog, false)) {
+          if (unlikely(!optlog)) {
               return make_ready_partition_response_error(
                 error_code::unknown_topic_or_partition);
           }

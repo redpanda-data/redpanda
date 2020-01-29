@@ -1,5 +1,6 @@
 #include "rpc/server.h"
 
+#include "likely.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "rpc/logger.h"
 #include "rpc/parse_utils.h"
@@ -143,7 +144,7 @@ server::dispatch_method_once(header h, ss::lw_shared_ptr<connection> conn) {
       [method_id](std::unique_ptr<service>& srvc) {
           return srvc->method_from_id(method_id) != nullptr;
       });
-    if (__builtin_expect(it == _services.end(), false)) {
+    if (unlikely(it == _services.end())) {
         _probe.method_not_found();
         throw std::runtime_error(
           fmt::format("received invalid rpc request: {}", h));

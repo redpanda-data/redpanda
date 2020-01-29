@@ -5,6 +5,7 @@
 #include "cluster/logger.h"
 #include "cluster/simple_batch_builder.h"
 #include "config/configuration.h"
+#include "likely.h"
 #include "model/record_batch_reader.h"
 #include "resource_mgmt/io_priority.h"
 #include "rpc/connection_cache.h"
@@ -16,7 +17,7 @@
 
 namespace cluster {
 static void verify_shard() {
-    if (__builtin_expect(ss::engine().cpu_id() != controller::shard, false)) {
+    if (unlikely(ss::engine().cpu_id() != controller::shard)) {
         throw std::runtime_error(fmt::format(
           "Attempted to access controller on core: {}", ss::engine().cpu_id()));
     }
@@ -120,7 +121,7 @@ ss::future<> controller::bootstrap_from_log(storage::log l) {
 }
 
 ss::future<> controller::process_raft0_batch(model::record_batch batch) {
-    if (__builtin_expect(batch.type() == raft::data_batch_type, false)) {
+    if (unlikely(batch.type() == raft::data_batch_type)) {
         // we are not intrested in data batches
         return ss::make_ready_future<>();
     }
@@ -365,7 +366,7 @@ controller::create_topic_cfg_entry(const topic_configuration& cfg) {
 
 void controller::leadership_notification() {
     (void)with_gate(_bg, [this]() mutable {
-        if (__builtin_expect(!_recovered, false)) {
+        if (unlikely(!_recovered)) {
             _leadership_notification_pending = true;
             return;
         }

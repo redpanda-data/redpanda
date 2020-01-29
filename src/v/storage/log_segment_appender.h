@@ -2,6 +2,7 @@
 
 #include "bytes/bytes.h"
 #include "bytes/iobuf.h"
+#include "likely.h"
 #include "seastarx.h"
 
 #include <seastar/core/aligned_buffer.hh>
@@ -92,7 +93,7 @@ public:
               f = f.then([this, src, sz] { return append(src, sz); });
               return ss::stop_iteration::no;
           });
-        if (__builtin_expect(c != io.size_bytes(), false)) {
+        if (unlikely(c != io.size_bytes())) {
             return ss::make_exception_future<>(
                      std::runtime_error("could not append data"))
               .then([f = std::move(f)]() mutable { return std::move(f); });

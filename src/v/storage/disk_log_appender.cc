@@ -1,5 +1,6 @@
 #include "storage/disk_log_appender.h"
 
+#include "likely.h"
 #include "storage/disk_log_impl.h"
 #include "storage/log_segment_appender.h"
 
@@ -23,8 +24,7 @@ ss::future<> disk_log_appender::initialize() {
     return _log._failure_probes.append().then([this] {
         auto f = ss::make_ready_future<>();
         // really this should just go into do_roll
-        if (__builtin_expect(
-              _log._segs.empty() || !_log._segs.back().has_appender(), false)) {
+        if (unlikely(_log._segs.empty() || !_log._segs.back().has_appender())) {
             _log._term = _config.term;
             f = f.then([this] {
                 return _log.new_segment(_idx, _log._term, _config.io_priority);

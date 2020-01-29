@@ -1,5 +1,6 @@
 #pragma once
 
+#include "likely.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>
@@ -71,7 +72,7 @@ void systemd_message(const char* fmt, Args&&... args) {
       "STATUS={}\n", fmt::format(fmt, std::forward<Args>(args)...));
     auto r = sd_notify(0, s.c_str());
     checklog().debug("sd_noify: {}", s);
-    if (__builtin_expect(r < 0, false)) {
+    if (unlikely(r < 0)) {
         checklog().trace(
           "Could not notify systemd sd_notify ready, error:{}", r);
     }
@@ -80,7 +81,7 @@ void systemd_message(const char* fmt, Args&&... args) {
 static inline void systemd_notify_ready() {
     auto r = sd_notify(0, "READY=1\nSTATUS=redpanda is ready; let's go!");
     checklog().info("sd_notify() READY=1");
-    if (__builtin_expect(r < 0, false)) {
+    if (unlikely(r < 0)) {
         checklog().trace(
           "Could not notify systemd sd_notify ready, error:{}", r);
     }

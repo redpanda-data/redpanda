@@ -4,6 +4,7 @@
 #include "cluster/types.h"
 #include "kafka/controller_dispatcher.h"
 #include "kafka/errors.h"
+#include "likely.h"
 #include "model/metadata.h"
 #include "utils/to_string.h"
 
@@ -290,7 +291,7 @@ metadata_api::process(request_context&& ctx, ss::smp_service_group g) {
         // list all topics if topics array is not present
         bool list_all_topics = !request.topics;
 
-        if (__builtin_expect(ctx.header().version == api_version(0), false)) {
+        if (unlikely(ctx.header().version == api_version(0))) {
             // For metadata API version 0, empty array requests all topics
             if (request.topics->empty()) {
                 list_all_topics = true;
