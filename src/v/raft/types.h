@@ -200,6 +200,16 @@ static inline std::ostream& operator<<(std::ostream& o, const vote_request& r) {
              << ", prev_log_term: " << r.prev_log_term << "}";
 }
 static inline std::ostream&
+operator<<(std::ostream& o, const follower_index_metadata& i) {
+    return o << "{node_id: " << i.node_id
+             << ", last_log_idx: " << i.last_log_index
+             << ", match_index: " << i.match_index
+             << ", next_index: " << i.next_index
+             << ", is_learner: " << i.is_learner
+             << ", is_recovering: " << i.is_recovering << "}";
+}
+
+static inline std::ostream&
 operator<<(std::ostream& o, const heartbeat_request& r) {
     o << "{node: " << r.node_id << ", meta: [";
     for (auto& m : r.meta) {
@@ -212,6 +222,21 @@ operator<<(std::ostream& o, const heartbeat_reply& r) {
     o << "{meta:[";
     for (auto& m : r.meta) {
         o << m << ",";
+    }
+    return o << "]}";
+}
+
+static inline std::ostream&
+operator<<(std::ostream& o, const group_configuration& c) {
+    o << "{group_configuration:[";
+    o << "leader_id: " << c.leader_id;
+    o << ", nodes: [";
+    for (auto& n : c.nodes) {
+        o << n.id();
+    }
+    o << "], learners: [";
+    for (auto& n : c.learners) {
+        o << n.id();
     }
     return o << "]}";
 }
