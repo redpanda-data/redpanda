@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"vectorized/pkg/api"
 	"vectorized/pkg/cli"
 	"vectorized/pkg/cloud"
 	"vectorized/pkg/config"
@@ -178,7 +179,7 @@ func prestart(
 	timeout time.Duration,
 ) error {
 	if prestartCfg.checkEnabled {
-		err := check(fs, configFile, conf, timeout, checkFailedActions(args))
+		_, err := check(fs, configFile, conf, timeout, checkFailedActions(args))
 		if err != nil {
 			return err
 		}
@@ -346,12 +347,22 @@ func check(
 	conf *config.Config,
 	timeout time.Duration,
 	checkFailedActions map[tuners.CheckerID]checkFailedAction,
-) error {
+) ([]api.CheckPayload, error) {
+	payloads := make([]api.CheckPayload, 0)
 	results, err := tuners.Check(fs, configFile, conf, timeout)
 	if err != nil {
-		return err
+		return payloads, err
 	}
 	for _, result := range results {
+		payload := api.CheckPayload{
+			Name:     result.Desc,
+			Current:  result.Current,
+			Required: result.Required,
+		}
+		if result.Err != nil {
+			payload.ErrorMsg = result.Err.Error()
+		}
+		payloads = append(payloads, payload)
 		if !result.IsOk {
 			if action, exists := checkFailedActions[result.CheckerId]; exists {
 				action(&result)
@@ -359,12 +370,12 @@ func check(
 			msg := fmt.Sprintf("System check '%s' failed. Required: %v, Current %v",
 				result.Desc, result.Required, result.Current)
 			if result.Severity == tuners.Fatal {
-				return fmt.Errorf(msg)
+				return payloads, fmt.Errorf(msg)
 			}
 			log.Warn(msg)
 		}
 	}
-	return nil
+	return payloads, nil
 }
 
 func writePid(fs afero.Fs, path string) error {
