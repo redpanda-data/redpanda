@@ -1,5 +1,6 @@
 #pragma once
 
+#include "model/fundamental.h"
 #include "raft/logger.h"
 #include "raft/probe.h"
 #include "raft/timeout_jitter.h"
@@ -130,6 +131,8 @@ private:
     void dispatch_recovery(follower_index_metadata&, append_entries_reply);
     ss::future<> maybe_update_leader_commit_idx();
 
+    model::term_id get_term(model::offset);
+    
     ss::sstring voted_for_filename() const;
 
     /// used for timer callback to dispatch the vote_stm
