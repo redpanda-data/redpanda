@@ -29,11 +29,13 @@ static constexpr const model::record_batch_type data_batch_type{1};
 /// by using the underlying::type we save 8 continuations per deserialization
 struct [[gnu::packed]] protocol_metadata {
     ss::unaligned<group_id::type> group = -1;
-    ss::unaligned<model::offset::type> commit_index = 0;
+    ss::unaligned<model::offset::type> commit_index
+      = std::numeric_limits<model::offset::type>::min();
     ss::unaligned<model::term_id::type> term = -1;
 
     /// \brief used for completeness
-    ss::unaligned<model::offset::type> prev_log_index = 0;
+    ss::unaligned<model::offset::type> prev_log_index
+      = std::numeric_limits<model::offset::type>::min();
     ss::unaligned<model::term_id::type> prev_log_term = -1;
 };
 
