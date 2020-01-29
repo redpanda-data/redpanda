@@ -168,10 +168,10 @@ func (f *tarballContainerFactory) CreateNodeContainer(
 	if err != nil {
 		return err
 	}
-	
+
 	containerConfig := container.Config{
 		Image: imageName,
-		User: user.Uid,
+		User:  user.Uid,
 		ExposedPorts: nat.PortSet{
 			rpcPort:   {},
 			kafkaPort: {},

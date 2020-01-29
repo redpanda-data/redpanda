@@ -32,9 +32,7 @@ func NewSwappinessChecker(fs afero.Fs) Checker {
 	)
 }
 
-func NewSwappinessTuner(
-	fs afero.Fs, executor executors.Executor,
-) Tunable {
+func NewSwappinessTuner(fs afero.Fs, executor executors.Executor) Tunable {
 	return NewCheckedTunable(
 		NewSwappinessChecker(fs),
 		func() TuneResult {

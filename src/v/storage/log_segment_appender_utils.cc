@@ -4,6 +4,7 @@
 #include "model/timestamp.h"
 #include "reflection/adl.h"
 #include "storage/constants.h"
+#include "storage/logger.h"
 #include "utils/vint.h"
 #include "vassert.h"
 
@@ -13,8 +14,6 @@
 
 #include <memory>
 #include <type_traits>
-
-#include "storage/logger.h"
 namespace storage {
 
 iobuf disk_header_to_iobuf(

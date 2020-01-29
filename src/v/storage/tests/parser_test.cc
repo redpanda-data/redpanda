@@ -11,6 +11,7 @@
 
 #include <seastar/core/thread.hh>
 #include <seastar/testing/thread_test_case.hh>
+
 #include <boost/outcome/boost_result.hpp>
 
 using namespace storage; // NOLINT
@@ -19,9 +20,7 @@ struct test_consumer_reporter {
     std::vector<model::record_batch> batches;
 };
 
-SEASTAR_THREAD_TEST_CASE(dummy) {
-    BOOST_REQUIRE(true);
-}
+SEASTAR_THREAD_TEST_CASE(dummy) { BOOST_REQUIRE(true); }
 #if 0
 class test_consumer : public batch_consumer {
 public:
