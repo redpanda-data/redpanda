@@ -172,6 +172,7 @@ public:
             // Collect batches offsets
             for (auto& b : batches) {
                 headers.push_back(b.get_header_for_testing());
+                b.set_term(term);
                 total_records += b.size();
             }
             // make expected offset inclusive
