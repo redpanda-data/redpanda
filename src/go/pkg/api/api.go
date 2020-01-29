@@ -16,12 +16,37 @@ type MetricsPayload struct {
 	CpuPercentage uint64 `json:"cpuPercentage"`
 }
 
+type EnvironmentPayload struct {
+	Checks   []CheckPayload `json:"checks"`
+	Tuners   []TunerPayload `json:"tuners"`
+	ErrorMsg string         `json:"errorMsg"`
+}
+
+type CheckPayload struct {
+	Name     string `json:"name"`
+	ErrorMsg string `json:"errorMsg"`
+	Current  string `json:"current"`
+	Required string `json:"required"`
+}
+
+type TunerPayload struct {
+	Name      string `json:"name"`
+	ErrorMsg  string `json:"errorMsg"`
+	Enabled   bool   `json:"enabled"`
+	Supported bool   `json:"supported"`
+}
+
 type metricsBody struct {
 	MetricsPayload
 	NodeUuid     string `json:"nodeUuid"`
 	Organization string `json:"organization"`
 	ClusterId    string `json:"clusterId"`
 	NodeId       int    `json:"nodeId"`
+}
+
+type environmentBody struct {
+	EnvironmentPayload
+	Config config.Config `json:"config"`
 }
 
 func SendMetrics(p MetricsPayload, conf config.Config) error {
