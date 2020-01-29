@@ -53,17 +53,19 @@ ss::future<std::vector<append_entries_request>>
 replicate_entries_stm::share_request_n(size_t n) {
     // one extra copy is needed for retries
     return with_semaphore(_share_sem, 1, [this, n] {
-        return details::foreign_share_n(std::move(_req.entries), n + 1)
-          .then([this](std::vector<std::vector<raft::entry>> es) {
+        return details::foreign_share_n(std::move(_req.batches), n + 1)
+          .then([this](std::vector<model::record_batch_reader> readers) {
               // keep a copy around until the end
-              _req.entries = std::move(es.back());
-              es.pop_back();
+              _req.batches = std::move(readers.back());
+              readers.pop_back();
               std::vector<append_entries_request> reqs;
-              reqs.reserve(es.size());
-              while (!es.empty()) {
-                  reqs.push_back(append_entries_request{
-                    _req.node_id, _req.meta, std::move(es.back())});
-                  es.pop_back();
+              reqs.reserve(readers.size());
+              while (!readers.empty()) {
+                  reqs.push_back(
+                    append_entries_request{_req.node_id,
+                                           _req.meta,
+                                           std::move(readers.back())});
+                  readers.pop_back();
               }
               return reqs;
           });
@@ -76,12 +78,11 @@ ss::future<result<append_entries_reply>> replicate_entries_stm::do_dispatch_one(
 
     if (n == _ptr->_self) {
         using reqs_t = std::vector<append_entries_request>;
-        using append_res_t = std::vector<storage::append_result>;
-        return _ptr->disk_append(std::move(req.entries))
+        using append_res_t = storage::append_result;
+        return _ptr->disk_append(std::move(req.batches))
           .then([this](append_res_t append_res) {
               return ss::make_ready_future<ret_t>(
-                _ptr->make_append_entries_reply(
-                  _req.meta, std::move(append_res)));
+                _ptr->make_append_entries_reply(std::move(append_res)));
           });
     }
     return send_append_entries_request(n, std::move(req));

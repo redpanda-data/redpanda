@@ -25,7 +25,7 @@ SEASTAR_THREAD_TEST_CASE(roundtrip_raft_configuration_entry) {
     auto new_cfg
       = raft::details::extract_configuration(std::move(entry)).get0();
 
-    BOOST_REQUIRE_EQUAL(leader, new_cfg.leader_id);
-    BOOST_REQUIRE_EQUAL(voters, new_cfg.nodes);
-    BOOST_REQUIRE_EQUAL(learners, new_cfg.learners);
+    BOOST_REQUIRE_EQUAL(leader, new_cfg->leader_id);
+    BOOST_REQUIRE_EQUAL(voters, new_cfg->nodes);
+    BOOST_REQUIRE_EQUAL(learners, new_cfg->learners);
 }

@@ -44,28 +44,13 @@ std::vector<model::record_batch> make_batches(Offsets... o) {
 }
 
 SEASTAR_THREAD_TEST_CASE(clone_entries_utils) {
-    static constexpr const size_t sz = 10;
-    std::vector<raft::entry> entries;
-    entries.reserve(sz);
-    for (size_t i = 0; i < sz; ++i) {
-        auto reader = model::make_memory_record_batch_reader(make_batches(
-          model::offset(1),
-          model::offset(2),
-          model::offset(3),
-          model::offset(4)));
-        entries.emplace_back(model::record_batch_type(1), std::move(reader));
-    }
-    auto v = raft::details::share_n(std::move(entries), 5).get0();
-    for (auto& i : v) {
-        BOOST_REQUIRE_EQUAL(i.size(), sz);
-    }
+    auto reader = model::make_memory_record_batch_reader(make_batches(
+      model::offset(1), model::offset(2), model::offset(3), model::offset(4)));
+
+    auto v = raft::details::share_n(std::move(reader), 5).get0();
     for (auto& i : v) {
         for (auto& j : v) {
-            for (size_t k = 0; k < i.size(); ++k) {
-                BOOST_REQUIRE_EQUAL(i[k].entry_type(), j[k].entry_type());
-                BOOST_REQUIRE_EQUAL(
-                  i[k].reader().peek_batch(), j[k].reader().peek_batch());
-            }
+            BOOST_REQUIRE_EQUAL(i.peek_batch(), j.peek_batch());
         }
     }
 }

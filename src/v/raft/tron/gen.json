@@ -9,7 +9,7 @@
         },
         {
             "name": "replicate",
-            "input_type": "::raft::entry",
+            "input_type": "model::record_batch_reader",
             "output_type": "put_reply"
         }
     ]
