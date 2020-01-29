@@ -334,6 +334,8 @@ ss::future<> consensus::start() {
               if (st.config_batches_seen() > 0) {
                   _conf = std::move(st.release_config());
               }
+              _meta.prev_log_index = _log.max_offset();
+              _meta.prev_log_term = get_term(_log.max_offset());
           })
           .then([this] {
               // Arm leader election timeout.
@@ -598,6 +600,13 @@ consensus::disk_append(std::vector<entry>&& entries) {
           }
           return ss::make_ready_future<ret_t>(std::move(ret));
       });
+}
+
+model::term_id consensus::get_term(model::offset o) {
+    if (unlikely(o < model::offset(0))) {
+        return model::term_id{};
+    }
+    return _log.get_term(o).value_or(model::term_id{});
 }
 
 clock_type::time_point consensus::last_hbeat_timestamp(model::node_id id) {
