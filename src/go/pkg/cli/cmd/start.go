@@ -186,7 +186,7 @@ func prestart(
 		log.Info("System check - PASSED")
 	}
 	if prestartCfg.tuneEnabled {
-		err := tuneAll(fs, args.SeastarFlags["cpuset"], conf, timeout)
+		_, err := tuneAll(fs, args.SeastarFlags["cpuset"], conf, timeout)
 		if err != nil {
 			return err
 		}
@@ -286,46 +286,60 @@ func tuneAll(
 	cpuSet string,
 	conf *config.Config,
 	timeout time.Duration,
-) error {
+) ([]api.TunerPayload, error) {
 	params := &factory.TunerParams{}
 	tunerFactory := factory.NewDirectExecutorTunersFactory(fs, *conf, timeout)
 	hw := hwloc.NewHwLocCmd(vos.NewProc(), timeout)
 	if cpuSet == "" {
 		cpuMask, err := hw.All()
 		if err != nil {
-			return err
+			return []api.TunerPayload{}, err
 		}
 		params.CpuMask = cpuMask
 	} else {
 		cpuMask, err := hwloc.TranslateToHwLocCpuSet(cpuSet)
 		if err != nil {
-			return err
+			return []api.TunerPayload{}, err
 		}
 		params.CpuMask = cpuMask
 	}
 
 	err := factory.FillTunerParamsWithValuesFromConfig(params, conf)
 	if err != nil {
-		return err
+		return []api.TunerPayload{}, err
 	}
 
-	for _, tunerName := range factory.AvailableTuners() {
-		if !factory.IsTunerEnabled(tunerName, conf.Rpk) {
+	availableTuners := factory.AvailableTuners()
+	tunerPayloads := make([]api.TunerPayload, len(availableTuners))
+
+	for _, tunerName := range availableTuners {
+		enabled := factory.IsTunerEnabled(tunerName, conf.Rpk)
+		tuner := tunerFactory.CreateTuner(tunerName, params)
+		supported, reason := tuner.CheckIfSupported()
+		payload := api.TunerPayload{
+			Name:      tunerName,
+			Enabled:   enabled,
+			Supported: supported,
+		}
+		if !enabled {
 			log.Infof("Skipping disabled tuner %s", tunerName)
+			tunerPayloads = append(tunerPayloads, payload)
 			continue
 		}
-		tuner := tunerFactory.CreateTuner(tunerName, params)
-		if supported, reason := tuner.CheckIfSupported(); supported {
-			log.Debugf("Tuner paramters %+v", params)
-			result := tuner.Tune()
-			if result.IsFailed() {
-				return result.Error()
-			}
-		} else {
+		if !supported {
 			log.Debugf("Tuner '%s' is not supported - %s", tunerName, reason)
+			tunerPayloads = append(tunerPayloads, payload)
+			continue
+		}
+		log.Debugf("Tuner parameters %+v", params)
+		result := tuner.Tune()
+		if result.IsFailed() {
+			payload.ErrorMsg = result.Error().Error()
+			tunerPayloads = append(tunerPayloads, payload)
+			return tunerPayloads, result.Error()
 		}
 	}
-	return nil
+	return tunerPayloads, nil
 }
 
 type checkFailedAction func(*tuners.CheckResult)
