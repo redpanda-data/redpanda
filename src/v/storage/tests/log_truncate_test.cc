@@ -25,7 +25,7 @@ constexpr model::offset expected_last(model::offset t_offset) {
 // FIXME: Add test for on disk implementation
 
 FIXTURE_TEST(test_truncate_whole, storage_test_fixture) {
-    for (auto type : {log_manager::storage_type::disk}) {
+    for (auto type : storage_types) {
         storage::log_manager mgr = make_log_manager();
         auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
         auto ntp = make_ntp("default", "test", 0);
@@ -46,7 +46,8 @@ FIXTURE_TEST(test_truncate_whole, storage_test_fixture) {
 }
 
 FIXTURE_TEST(test_truncate_in_the_middle_of_segment, storage_test_fixture) {
-    for (auto type : {log_manager::storage_type::disk}) {
+    for (auto type : storage_types) {
+        info("{}", type == log_manager::storage_type::disk ? "DISK" : "MEMORY");
         storage::log_manager mgr = make_log_manager();
         auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
         auto ntp = make_ntp("default", "test", 0);
@@ -55,7 +56,7 @@ FIXTURE_TEST(test_truncate_in_the_middle_of_segment, storage_test_fixture) {
         log.flush().get0();
 
         auto all_batches = read_and_validate_all_batches(log);
-        auto truncate_offset = all_batches[4].last_offset();
+        auto truncate_offset = all_batches[4].base_offset();
 
         // truncate in the middle
         info("Truncating at offset:{}", truncate_offset);
@@ -74,7 +75,7 @@ FIXTURE_TEST(test_truncate_in_the_middle_of_segment, storage_test_fixture) {
 }
 
 FIXTURE_TEST(test_truncate_empty_log, storage_test_fixture) {
-    for (auto type : {log_manager::storage_type::disk}) {
+    for (auto type : storage_types) {
         storage::log_manager mgr = make_log_manager();
         auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
         auto ntp = make_ntp("default", "test", 0);
@@ -90,7 +91,8 @@ FIXTURE_TEST(test_truncate_empty_log, storage_test_fixture) {
 
 FIXTURE_TEST(test_truncate_middle_of_old_segment, storage_test_fixture) {
     std::cout.setf(std::ios::unitbuf);
-    for (auto type : {log_manager::storage_type::disk}) {
+    for (auto type : storage_types) {
+        info("{}", type == log_manager::storage_type::disk ? "DISK" : "MEMORY");
         storage::log_manager mgr = make_log_manager();
         auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
         auto ntp = make_ntp("default", "test", 0);
@@ -110,7 +112,7 @@ FIXTURE_TEST(test_truncate_middle_of_old_segment, storage_test_fixture) {
             all_batches.pop_back();
         }
         // truncate @ offset that belongs to an old segment
-        log.truncate(all_batches.back().last_offset()).get0();
+        log.truncate(all_batches.back().base_offset()).get0();
         all_batches.pop_back(); // we just removed the last one!
         auto final_batches = read_and_validate_all_batches(log);
         BOOST_REQUIRE_EQUAL(all_batches.size(), final_batches.size());
@@ -126,7 +128,7 @@ FIXTURE_TEST(test_truncate_middle_of_old_segment, storage_test_fixture) {
 }
 
 FIXTURE_TEST(truncate_whole_log_and_then_again, storage_test_fixture) {
-    for (auto type : {log_manager::storage_type::disk}) {
+    for (auto type : storage_types) {
         storage::log_manager mgr = make_log_manager();
         auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
         auto ntp = make_ntp("default", "test", 0);
@@ -148,7 +150,7 @@ FIXTURE_TEST(truncate_whole_log_and_then_again, storage_test_fixture) {
 }
 
 FIXTURE_TEST(truncate_before_read, storage_test_fixture) {
-    for (auto type : {log_manager::storage_type::disk}) {
+    for (auto type : storage_types) {
         storage::log_manager mgr = make_log_manager();
         auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
         auto ntp = make_ntp("default", "test", 0);
