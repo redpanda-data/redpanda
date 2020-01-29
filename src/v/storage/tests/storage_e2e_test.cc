@@ -1,6 +1,7 @@
 #include "storage/tests/storage_test_fixture.h"
 
 #include <seastar/util/defer.hh>
+
 #include <boost/test/tools/old/interface.hpp>
 
 void validate_offsets(
@@ -58,7 +59,6 @@ FIXTURE_TEST(append_twice_to_same_segment, storage_test_fixture) {
         BOOST_REQUIRE_EQUAL(log.max_offset(), batches.back().last_offset());
         BOOST_REQUIRE_EQUAL(
           log.committed_offset(), batches.back().last_offset());
-
     }
 };
 
@@ -148,7 +148,7 @@ FIXTURE_TEST(test_reading_range_from_a_log, storage_test_fixture) {
 };
 
 FIXTURE_TEST(test_rolling_term, storage_test_fixture) {
-    for (auto type : {storage::log_manager::storage_type::memory}) {
+    for (auto type : storage_types) {
         storage::log_manager mgr = make_log_manager();
         auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
         auto ntp = make_ntp("default", "test", 0);
@@ -175,3 +175,54 @@ FIXTURE_TEST(test_rolling_term, storage_test_fixture) {
     }
 };
 
+FIXTURE_TEST(test_append_batches_from_multiple_terms, storage_test_fixture) {
+    //FIXME: Iterage over storage_types when disk impl will be ready.
+    for (auto type : {storage::log_manager::storage_type::memory}) {
+        storage::log_manager mgr = make_log_manager();
+        auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+        auto ntp = make_ntp("default", "test", 0);
+        auto log = mgr.manage(ntp, type).get0();
+        std::vector<model::record_batch_header> headers;
+        model::offset current_offset = model::offset{0};
+        std::vector<model::record_batch> batches;
+        std::vector<size_t> term_batches_counts;
+        for (auto i = 0; i < 5; i++) {
+            auto term_batches = storage::test::make_random_batches(
+              model::offset(0), 10);
+            for (auto& b : term_batches) {
+                b.set_term(model::term_id(i));
+            }
+            term_batches_counts.push_back(term_batches.size());
+            std::move(
+              std::begin(term_batches),
+              std::end(term_batches),
+              std::back_inserter(batches));
+        }
+        storage::log_append_config append_cfg{
+          storage::log_append_config::fsync::yes,
+          ss::default_priority_class(),
+          model::no_timeout};
+        auto reader = model::make_memory_record_batch_reader(
+          std::move(batches));
+        auto res = std::move(reader)
+                     .consume(log.make_appender(append_cfg), append_cfg.timeout)
+                     .get0();
+        log.flush().get();
+
+        auto read_batches = read_and_validate_all_batches(log);
+        BOOST_REQUIRE_EQUAL(
+          log.max_offset(), read_batches.back().last_offset());
+        BOOST_REQUIRE_EQUAL(
+          log.committed_offset(), read_batches.back().last_offset());
+        size_t next = 0;
+        int expected_term = 0;
+        for (auto c : term_batches_counts) {
+            for (size_t i = next; i < next + c; ++i) {
+                BOOST_REQUIRE_EQUAL(
+                  read_batches[i].term(), model::term_id(expected_term));
+            }
+            expected_term++;
+            next = next + c;
+        }
+    }
+}
