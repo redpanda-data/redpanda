@@ -21,7 +21,6 @@ sudo tools/install-deps.sh
 mkdir -p build/venv/
 python3 -mvenv build/venv/v/
 source build/venv/v/bin/activate
-pip install -r tools/requirements.txt
 pip install -e tools/
 mkdir -p build/bin/
 ln -sf "${vroot}/build/venv/v/bin/vtools" build/bin/

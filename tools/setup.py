@@ -22,7 +22,17 @@ setup(
     setup_requires=['setuptools'],
     package_data={'': ['*.md']},
     include_package_data=True,
-    install_requires=[],
+    install_requires=[
+        'click',
+        'gitpython',
+        'pylddwrap',
+        'requests',
+        'Jinja2',
+        'absl-py',
+        'paramiko',
+        'pyyaml',
+        'yapf',
+    ],
     scripts=[],
     entry_points={
         'console_scripts': [
