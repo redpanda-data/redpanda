@@ -80,8 +80,10 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			env := api.EnvironmentPayload{}
 			installDirectory, err := cli.GetOrFindInstallDir(fs, installDirFlag)
 			if err != nil {
+				sendEnv(env, conf, err)
 				return err
 			}
 			rpArgs, err := buildRedpandaFlags(
@@ -92,9 +94,10 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 				wellKnownIo,
 			)
 			if err != nil {
+				sendEnv(env, conf, err)
 				return err
 			}
-			_, _, err = prestart(
+			checkPayloads, tunerPayloads, err := prestart(
 				fs,
 				rpArgs,
 				configFile,
@@ -102,7 +105,10 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 				prestartCfg,
 				timeout,
 			)
+			env.Checks = checkPayloads
+			env.Tuners = tunerPayloads
 			if err != nil {
+				sendEnv(env, conf, err)
 				return err
 			}
 			// Override all the defaults when flags are explicitly set
@@ -113,8 +119,10 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 			}
 			err = writePid(fs, conf.PidFile)
 			if err != nil {
+				sendEnv(env, conf, err)
 				return fmt.Errorf("couldn't write the PID file: %v", err)
 			}
+			sendEnv(env, conf, nil)
 			launcher := redpanda.NewLauncher(installDirectory, rpArgs)
 			log.Info("Starting redpanda...")
 			return launcher.Start()
