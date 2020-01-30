@@ -18,7 +18,6 @@ struct log_append_config {
     fsync should_fsync;
     ss::io_priority_class io_priority;
     model::timeout_clock::time_point timeout;
-    model::term_id term;
 };
 struct append_result {
     log_clock::time_point append_time;

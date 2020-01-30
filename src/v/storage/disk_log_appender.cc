@@ -20,36 +20,23 @@ disk_log_appender::disk_log_appender(
   , _base_offset(offset)
   , _last_offset(log.max_offset()) {}
 
-ss::future<> disk_log_appender::initialize() {
-    return _log._failure_probes.append().then([this] {
-        auto f = ss::make_ready_future<>();
-        // really this should just go into do_roll
-        if (unlikely(_log._segs.empty() || !_log._segs.back().has_appender())) {
-            _log._term = _config.term;
-            f = f.then([this] {
-                return _log.new_segment(_idx, _log._term, _config.io_priority);
-            });
-        }
-        if (_log._term != _config.term) {
-            _log._term = _config.term;
-            f = f.then([this] { return _log.do_roll(); });
-        }
-        return f;
-    });
-}
-
 ss::future<ss::stop_iteration>
 disk_log_appender::operator()(model::record_batch&& batch) {
     batch.set_base_offset(_idx);
     _idx = batch.last_offset() + model::offset(1);
-    return _log._segs.back()
-      .append(std::move(batch))
-      .then([this](append_result r) {
-          _byte_size += r.byte_size;
-          // do not track base_offset, only the last one
-          _last_offset = r.last_offset;
-          _log.get_probe().add_bytes_written(r.byte_size);
-          return _log.maybe_roll().then([] { return ss::stop_iteration::no; });
+    auto term = batch.term();
+    auto next_offset = batch.base_offset();
+    return _log.maybe_roll(term, next_offset, _config.io_priority)
+      .then([this, batch = std::move(batch)]() mutable {
+          return _log._segs.back()
+            .append(std::move(batch))
+            .then([this](append_result r) {
+                _byte_size += r.byte_size;
+                // do not track base_offset, only the last one
+                _last_offset = r.last_offset;
+                _log.get_probe().add_bytes_written(r.byte_size);
+                return ss::stop_iteration::no;
+            });
       })
       .handle_exception([this](std::exception_ptr e) {
           _log.get_probe().batch_write_error(e);
