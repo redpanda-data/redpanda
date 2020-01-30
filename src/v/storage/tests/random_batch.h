@@ -44,6 +44,7 @@ static model::record_batch_header make_random_header(
     if (allow_compression && random_generators::get_int(0, 1)) {
         h.attrs = model::record_batch_attributes(4);
     }
+    h.ctx.term = model::term_id(0);
     return h;
 }
 
@@ -181,6 +182,7 @@ static std::vector<model::record_batch> make_random_batches(
     for (size_t i = 0; i < count; i++) {
         auto b = make_random_batch(o, allow_compression);
         o = b.last_offset() + model::offset(1);
+        b.set_term(model::term_id(0));
         ret.push_back(std::move(b));
     }
     return ret;
