@@ -24,8 +24,7 @@ set -x
 {cmake_str}
     """
     with open(f"{build_dir}/rebuild.sh", 'w') as f:
-        os.fchmod(f.fileno(),
-                  stat.S_IRWXU | stat.S_IRWXG | stat.S_IROTH | stat.S_IXOTH)
+        os.fchmod(f.fileno(), 0o744)
         f.write(tpl)
 
 
