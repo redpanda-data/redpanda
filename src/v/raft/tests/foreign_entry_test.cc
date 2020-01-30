@@ -29,8 +29,7 @@ struct foreign_entry_fixture {
         auto cfg = storage::log_append_config{
           storage::log_append_config::fsync::no,
           ss::default_priority_class(),
-          model::no_timeout
-          };
+          model::no_timeout};
         std::vector<storage::append_result> res;
         res.push_back(gen_data_record_batch_reader(n)
                         .consume(get_log().make_appender(cfg), cfg.timeout)

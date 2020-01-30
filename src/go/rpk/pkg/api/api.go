@@ -60,10 +60,7 @@ func SendMetrics(p MetricsPayload, conf config.Config) error {
 	return SendMetricsToUrl(b, defaultUrl)
 }
 
-func SendEnvironment(
-	env EnvironmentPayload,
-	conf config.Config,
-) error {
+func SendEnvironment(env EnvironmentPayload, conf config.Config) error {
 	return SendEnvironmentToUrl(
 		env,
 		conf,
@@ -94,9 +91,7 @@ func SendMetricsToUrl(b metricsBody, url string) error {
 }
 
 func SendEnvironmentToUrl(
-	env EnvironmentPayload,
-	conf config.Config,
-	url string,
+	env EnvironmentPayload, conf config.Config, url string,
 ) error {
 	body := environmentBody{env, conf}
 	bs, err := json.Marshal(body)

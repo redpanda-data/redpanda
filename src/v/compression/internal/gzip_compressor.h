@@ -3,7 +3,7 @@
 namespace compression::internal {
 
 struct gzip {
-    static iobuf compress(const iobuf&){
+    static iobuf compress(const iobuf&) {
         throw std::runtime_error("not implemented");
     }
     static iobuf uncompress(const iobuf&) {
