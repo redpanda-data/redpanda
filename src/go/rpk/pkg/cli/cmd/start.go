@@ -299,10 +299,7 @@ func resolveWellKnownIo(
 }
 
 func tuneAll(
-	fs afero.Fs,
-	cpuSet string,
-	conf *config.Config,
-	timeout time.Duration,
+	fs afero.Fs, cpuSet string, conf *config.Config, timeout time.Duration,
 ) ([]api.TunerPayload, error) {
 	params := &factory.TunerParams{}
 	tunerFactory := factory.NewDirectExecutorTunersFactory(fs, *conf, timeout)

@@ -61,10 +61,8 @@ replicate_entries_stm::share_request_n(size_t n) {
               std::vector<append_entries_request> reqs;
               reqs.reserve(readers.size());
               while (!readers.empty()) {
-                  reqs.push_back(
-                    append_entries_request{_req.node_id,
-                                           _req.meta,
-                                           std::move(readers.back())});
+                  reqs.push_back(append_entries_request{
+                    _req.node_id, _req.meta, std::move(readers.back())});
                   readers.pop_back();
               }
               return reqs;
