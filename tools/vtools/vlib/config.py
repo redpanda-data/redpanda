@@ -159,7 +159,7 @@ class VConfig(object):
     @property
     def go_src_dir(self):
         """Source folder for go programs."""
-        return f"{self._cfg['build']['src']}/src/go"
+        return f"{self._cfg['build']['src']}/src/go/rpk"
 
     @property
     def go_out_dir(self):
