@@ -27,7 +27,7 @@ COPY tools/ci/vtools-${COMPILER}-${BUILD_TYPE}.yml /v/.vtools.yml
 RUN vtools install go-compiler
 
 # rpk dependencies
-COPY src/go/rpk/go.mod src/go/rpk/go.sum /v/src/go/rpk
+COPY src/go/rpk/go.mod src/go/rpk/go.sum /v/src/go/rpk/
 RUN vtools install go-deps
 
 # clang/3rdparty
