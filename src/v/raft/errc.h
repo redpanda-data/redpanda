@@ -11,6 +11,9 @@ enum class errc {
     disconnected_endpoint,
     exponential_backoff,
     non_majority_replication,
+    not_leader,
+    vote_dispatch_error,
+    append_entries_dispatch_error,
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "raft::errc"; }
@@ -29,6 +32,12 @@ struct errc_category final : public std::error_category {
             return "raft::errc::exponential_backoff";
         case errc::non_majority_replication:
             return "raft::errc::non_majority_replication";
+        case errc::not_leader:
+            return "raft::errc::not_leader";
+        case errc::vote_dispatch_error:
+            return "raft::errc::vote_dispatch_error";
+        case errc::append_entries_dispatch_error:
+            return "raft::errc::append_entries_dispatch_error";
         default:
             return "raft::errc::unknown";
         }

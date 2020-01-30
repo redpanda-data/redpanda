@@ -29,11 +29,13 @@ static constexpr const model::record_batch_type data_batch_type{1};
 /// by using the underlying::type we save 8 continuations per deserialization
 struct [[gnu::packed]] protocol_metadata {
     ss::unaligned<group_id::type> group = -1;
-    ss::unaligned<model::offset::type> commit_index = 0;
+    ss::unaligned<model::offset::type> commit_index
+      = std::numeric_limits<model::offset::type>::min();
     ss::unaligned<model::term_id::type> term = -1;
 
     /// \brief used for completeness
-    ss::unaligned<model::offset::type> prev_log_index = 0;
+    ss::unaligned<model::offset::type> prev_log_index
+      = std::numeric_limits<model::offset::type>::min();
     ss::unaligned<model::term_id::type> prev_log_term = -1;
 };
 
@@ -71,36 +73,20 @@ struct follower_index_metadata {
       : node_id(node) {}
 
     model::node_id node_id;
-    model::term_id term{0};
-    model::offset commit_index{0};
+    // index of last known log for this follower
+    model::offset last_log_index;
+    // index of log for which leader and follower logs matches
+    model::offset match_index;
+    // next index to send to this follower
+    model::offset next_index;
+    // timestamp of last append_entries_rpc call
+    clock_type::time_point last_hbeat_timestamp;
     uint64_t failed_appends{0};
     bool is_learner = false;
     bool is_recovering = false;
 };
 
-/// \brief a *collection* of record_batch. In other words
-/// and array of array. This is done because the majority of
-/// batches will come from the Kafka API which is already batched
-/// Main constraint is that _all_ records and batches must be of the same type
-class entry final {
-public:
-    explicit entry(model::record_batch_type t, model::record_batch_reader r)
-      : _t(t)
-      , _rdr(std::move(r)) {}
-    entry(const entry&) = delete;
-    entry& operator=(const entry&) = delete;
-    entry(entry&&) noexcept = default;
-    entry& operator=(entry&&) noexcept = default;
-    model::record_batch_type entry_type() const { return _t; }
-    model::record_batch_reader& reader() { return _rdr; }
-
-private:
-    model::record_batch_type _t;
-    model::record_batch_reader _rdr;
-};
-
 struct append_entries_request {
-    append_entries_request() = default;
     append_entries_request(const append_entries_request&) = delete;
     append_entries_request& operator=(const append_entries_request&) = delete;
     append_entries_request(append_entries_request&&) noexcept = default;
@@ -109,7 +95,7 @@ struct append_entries_request {
 
     model::node_id node_id;
     protocol_metadata meta;
-    std::vector<entry> entries;
+    model::record_batch_reader batches;
 };
 
 struct [[gnu::packed]] append_entries_reply {
@@ -185,6 +171,22 @@ operator<<(std::ostream& o, const append_entries_reply& r) {
              << ", term:" << r.term << ", last_log_index:" << r.last_log_index
              << ", success: " << r.success << "}";
 }
+
+static inline std::ostream& operator<<(std::ostream& o, const vote_request& r) {
+    return o << "{node_id: " << r.node_id << ", group: " << r.group
+             << ", term:" << r.term << ", prev_log_index:" << r.prev_log_index
+             << ", prev_log_term: " << r.prev_log_term << "}";
+}
+static inline std::ostream&
+operator<<(std::ostream& o, const follower_index_metadata& i) {
+    return o << "{node_id: " << i.node_id
+             << ", last_log_idx: " << i.last_log_index
+             << ", match_index: " << i.match_index
+             << ", next_index: " << i.next_index
+             << ", is_learner: " << i.is_learner
+             << ", is_recovering: " << i.is_recovering << "}";
+}
+
 static inline std::ostream&
 operator<<(std::ostream& o, const heartbeat_request& r) {
     o << "{node: " << r.node_id << ", meta: [";
@@ -198,6 +200,21 @@ operator<<(std::ostream& o, const heartbeat_reply& r) {
     o << "{meta:[";
     for (auto& m : r.meta) {
         o << m << ",";
+    }
+    return o << "]}";
+}
+
+static inline std::ostream&
+operator<<(std::ostream& o, const group_configuration& c) {
+    o << "{group_configuration:[";
+    o << "leader_id: " << c.leader_id;
+    o << ", nodes: [";
+    for (auto& n : c.nodes) {
+        o << n.id();
+    }
+    o << "], learners: [";
+    for (auto& n : c.learners) {
+        o << n.id();
     }
     return o << "]}";
 }
@@ -228,31 +245,34 @@ struct rpc_model_reader_consumer {
 };
 
 template<>
-struct adl<raft::entry> {
-    void to(iobuf& out, raft::entry&& r) {
-        auto batches = r.reader().release_buffered_batches();
-        reflection::adl<model::record_batch_type>{}.to(out, r.entry_type());
+struct adl<raft::append_entries_request> {
+    void to(iobuf& out, raft::append_entries_request&& request) {
+        auto batches = request.batches.release_buffered_batches();
         reflection::adl<uint32_t>{}.to(out, batches.size());
         for (auto& batch : batches) {
             reflection::serialize(out, std::move(batch));
         }
+        reflection::serialize(out, request.meta, request.node_id);
     }
 
-    raft::entry from(iobuf io) {
-        return reflection::from_iobuf<raft::entry>(std::move(io));
+    raft::append_entries_request from(iobuf io) {
+        return reflection::from_iobuf<raft::append_entries_request>(
+          std::move(io));
     }
 
-    raft::entry from(iobuf_parser& in) {
-        auto batchType = reflection::adl<model::record_batch_type>{}.from(in);
+    raft::append_entries_request from(iobuf_parser& in) {
         auto batchCount = reflection::adl<uint32_t>{}.from(in);
         auto batches = std::vector<model::record_batch>{};
         batches.reserve(batchCount);
         for (int i = 0; i < batchCount; ++i) {
             batches.push_back(adl<model::record_batch>{}.from(in));
         }
-
-        auto rdr = model::make_memory_record_batch_reader(std::move(batches));
-        return raft::entry(batchType, std::move(rdr));
+        auto reader = model::make_memory_record_batch_reader(
+          std::move(batches));
+        auto meta = reflection::adl<raft::protocol_metadata>{}.from(in);
+        auto n = reflection::adl<model::node_id>{}.from(in);
+        return raft::append_entries_request{
+          .node_id = n, .meta = std::move(meta), .batches = std::move(reader)};
     }
 };
 

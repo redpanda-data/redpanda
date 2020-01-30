@@ -64,14 +64,14 @@ public:
     simple_group_manager(
       model::node_id self,
       ss::sstring directory,
-      std::chrono::milliseconds raft_timeout,
+      std::chrono::milliseconds raft_heartbeat_interval,
       ss::sharded<rpc::connection_cache>& clients)
       : _self(self)
       , _mngr(storage::log_config{
           .base_dir = directory,
           .max_segment_size = 1 << 30,
           .should_sanitize = storage::log_config::sanitize_files::yes})
-      , _hbeats(raft_timeout, clients)
+      , _hbeats(raft_heartbeat_interval, clients)
       , _clients(clients) {}
 
     raft::consensus& consensus_for(raft::group_id g) { return *_consensus; }

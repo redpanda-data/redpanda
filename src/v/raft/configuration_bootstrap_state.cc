@@ -8,7 +8,6 @@
 namespace raft {
 void configuration_bootstrap_state::process_configuration_in_thread(
   model::record_batch b) {
-    _config_batches_seen++;
     if (unlikely(b.type() != configuration_batch_type)) {
         throw std::runtime_error(fmt::format(
           "Logic error. Asked a configuration tracker to process an unknown "
@@ -21,6 +20,7 @@ void configuration_bootstrap_state::process_configuration_in_thread(
     }
     auto last_offset = b.last_offset();
     if (_log_config_offset_tracker < last_offset) {
+        _config_batches_seen++;
         _log_config_offset_tracker = last_offset;
         process_offsets(b.base_offset(), last_offset);
         for (model::record& rec : b) {

@@ -17,8 +17,9 @@ public:
     ss::future<> start() { return _raft->start(); }
     ss::future<> stop() { return _raft->stop(); }
 
-    ss::future<result<raft::replicate_result>> replicate(raft::entry&& e) {
-        return _raft->replicate(std::move(e));
+    ss::future<result<raft::replicate_result>>
+    replicate(model::record_batch_reader&& r) {
+        return _raft->replicate(std::move(r));
     }
     const model::ntp& ntp() const { return _raft->ntp(); }
 

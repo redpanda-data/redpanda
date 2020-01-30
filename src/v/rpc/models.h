@@ -170,7 +170,8 @@ struct adl<model::record_batch_header> {
           r.attrs.value(),
           r.last_offset_delta,
           r.first_timestamp.value(),
-          r.max_timestamp.value());
+          r.max_timestamp.value(),
+          r.ctx.term);
     }
 
     model::record_batch_header from(iobuf_parser& in) {
@@ -184,8 +185,17 @@ struct adl<model::record_batch_header> {
         using tmstmp_t = model::timestamp::type;
         auto first = model::timestamp(adl<tmstmp_t>{}.from(in));
         auto max = model::timestamp(adl<tmstmp_t>{}.from(in));
+        auto term_id = adl<model::term_id>{}.from(in);
         return model::record_batch_header{
-          sz, off, type, crc, attrs, delta, first, max};
+          sz,
+          off,
+          type,
+          crc,
+          attrs,
+          delta,
+          first,
+          max,
+          model::record_batch_header::context{.term = term_id}};
     }
 };
 

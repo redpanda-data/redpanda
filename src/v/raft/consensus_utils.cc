@@ -184,84 +184,45 @@ static inline std::vector<std::vector<model::record_batch>> share_n_batches(
     return data;
 }
 
-ss::future<std::vector<raft::entry>> share_one_entry(
-  raft::entry e, const size_t ncopies, const bool use_foreign_iobuf_share) {
-    auto t = e.entry_type();
+ss::future<std::vector<model::record_batch_reader>> share_reader(
+  model::record_batch_reader rdr,
+  const size_t ncopies,
+  const bool use_foreign_iobuf_share) {
     return ss::do_with(
-             std::move(e),
-             [ncopies, use_foreign_iobuf_share](raft::entry& e) {
-                 return e.reader()
-                   .consume(memory_batch_consumer(), model::no_timeout)
+             std::move(rdr),
+             [ncopies,
+              use_foreign_iobuf_share](model::record_batch_reader& rdr) {
+                 return rdr.consume(memory_batch_consumer(), model::no_timeout)
                    .then([=](std::vector<model::record_batch> batches) {
                        return share_n_batches(
                          std::move(batches), ncopies, use_foreign_iobuf_share);
                    });
              })
-      .then([t, ncopies, use_foreign_iobuf_share](
+      .then([ncopies, use_foreign_iobuf_share](
               std::vector<std::vector<model::record_batch>> batches) {
           check_copy_out_of_range(ncopies, batches.size());
-          std::vector<raft::entry> retval;
+          std::vector<model::record_batch_reader> retval;
           retval.reserve(ncopies);
-
           while (!batches.empty()) {
               std::vector<model::record_batch> dbatches = std::move(
                 batches.back());
               batches.pop_back();
-              auto reader = model::make_memory_record_batch_reader(
-                std::move(dbatches));
-              retval.emplace_back(t, std::move(reader));
+              retval.push_back(
+                model::make_memory_record_batch_reader(std::move(dbatches)));
           }
           check_copy_out_of_range(ncopies, retval.size());
           return retval;
       });
 }
 
-// don't move out of impl file - internal detail
-static inline ss::future<std::vector<std::vector<raft::entry>>> share_entries(
-  std::vector<raft::entry> r,
-  const std::size_t ncopies,
-  const bool use_foreign_iobuf_share) {
-    using T = std::vector<raft::entry>;
-    using ret_t = std::vector<T>;
-    if (ncopies <= 1 && !use_foreign_iobuf_share) {
-        ret_t ret;
-        ret.reserve(1);
-        ret.push_back(std::move(r));
-        return ss::make_ready_future<ret_t>(std::move(ret));
-    }
-    return ss::do_with(
-      std::move(r),
-      ret_t(ncopies),
-      [ncopies, use_foreign_iobuf_share](T& src, ret_t& dst) {
-          return ss::do_until(
-                   [&src] { return src.empty(); },
-                   [ncopies, use_foreign_iobuf_share, &src, &dst]() mutable {
-                       raft::entry e = std::move(src.back());
-                       src.pop_back();
-                       return share_one_entry(
-                                std::move(e), ncopies, use_foreign_iobuf_share)
-                         .then(
-                           [ncopies, &dst](std::vector<raft::entry> entries) {
-                               check_copy_out_of_range(ncopies, entries.size());
-                               // move one entry into each container
-                               for (std::vector<raft::entry>& i : dst) {
-                                   i.push_back(std::move(entries.back()));
-                                   entries.pop_back();
-                               }
-                           });
-                   })
-            .then([&dst] { return std::move(dst); });
-      });
+ss::future<std::vector<model::record_batch_reader>>
+foreign_share_n(model::record_batch_reader&& r, std::size_t ncopies) {
+    return share_reader(std::move(r), ncopies, true);
 }
 
-ss::future<std::vector<std::vector<raft::entry>>>
-foreign_share_n(std::vector<raft::entry> r, std::size_t ncopies) {
-    return share_entries(std::move(r), ncopies, true);
-}
-
-ss::future<std::vector<std::vector<raft::entry>>>
-share_n(std::vector<raft::entry> r, std::size_t ncopies) {
-    return share_entries(std::move(r), ncopies, false);
+ss::future<std::vector<model::record_batch_reader>>
+share_n(model::record_batch_reader&& r, std::size_t ncopies) {
+    return share_reader(std::move(r), ncopies, false);
 }
 
 ss::future<configuration_bootstrap_state>
@@ -301,55 +262,37 @@ read_bootstrap_state(storage::log log) {
     });
 }
 
-ss::future<raft::group_configuration> extract_configuration(raft::entry e) {
-    using cfg_t = raft::group_configuration;
-    if (unlikely(e.entry_type() != raft::configuration_batch_type)) {
-        return ss::make_exception_future<cfg_t>(std::runtime_error(fmt::format(
-          "Configuration parser can only parse configs({}), asked "
-          "to parse: {}",
-          raft::configuration_batch_type,
-          e.entry_type())));
-    }
+ss::future<std::optional<raft::group_configuration>>
+extract_configuration(model::record_batch_reader&& reader) {
+    using cfg_t = std::optional<raft::group_configuration>;
     return ss::do_with(
-             std::move(e),
-             [](raft::entry& e) {
-                 return e.reader().consume(
-                   memory_batch_consumer(), model::no_timeout);
-             })
-      .then([](std::vector<model::record_batch> batches) {
-          return ss::do_with(
-            std::move(batches),
-            cfg_t{},
-            [](std::vector<model::record_batch>& batches, cfg_t& cfg) {
-                if (batches.empty()) {
-                    return ss::make_exception_future<cfg_t>(std::runtime_error(
-                      "Invalid raft::entry configuration parsing"));
-                }
-                return ss::do_for_each(
-                         batches,
-                         [&cfg](model::record_batch& b) {
-                             if (b.type() != raft::configuration_batch_type) {
-                                 return ss::make_exception_future(
-                                   std::runtime_error(
-                                     "Inconsistent batch format for config"));
-                             }
-                             if (b.compressed()) {
-                                 return ss::make_exception_future(
-                                   std::runtime_error(
-                                     "Compressed configuration records are "
-                                     "unsupported"));
-                             }
-                             auto it = std::prev(b.end());
-                             cfg = reflection::adl<cfg_t>{}.from(
-                               it->share_packed_value_and_headers());
-                             return ss::make_ready_future<>();
-                         })
-                  .then([&cfg] { return std::move(cfg); });
-            });
+      std::move(reader),
+      cfg_t{},
+      [](model::record_batch_reader& reader, cfg_t& cfg) {
+          return reader
+            .consume(
+              do_for_each_batch_consumer([&cfg](model::record_batch b) mutable {
+                  // reader may contain different batches, skip the ones that
+                  // does not have configuration
+                  if (b.type() != raft::configuration_batch_type) {
+                      return ss::make_ready_future<>();
+                  }
+                  if (b.compressed()) {
+                      return ss::make_exception_future(std::runtime_error(
+                        "Compressed configuration records are "
+                        "unsupported"));
+                  }
+                  auto it = std::prev(b.end());
+                  cfg = reflection::adl<raft::group_configuration>{}.from(
+                    it->share_packed_value_and_headers());
+                  return ss::make_ready_future<>();
+              }),
+              model::no_timeout)
+            .then([&cfg]() mutable { return std::move(cfg); });
       });
 }
 
-raft::entry serialize_configuration(group_configuration cfg) {
+model::record_batch_reader serialize_configuration(group_configuration cfg) {
     auto batch = std::move(
                    storage::record_batch_builder(
                      raft::configuration_batch_type, model::offset(0))
@@ -357,9 +300,7 @@ raft::entry serialize_configuration(group_configuration cfg) {
                    .build();
     std::vector<model::record_batch> batches;
     batches.push_back(std::move(batch));
-    return raft::entry(
-      raft::configuration_batch_type,
-      model::make_memory_record_batch_reader(std::move(batches)));
+    return model::make_memory_record_batch_reader(std::move(batches));
 }
 
 static inline std::vector<std::pair<size_t, size_t>>
@@ -376,26 +317,4 @@ batch_type_positions(const std::vector<model::record_batch>& v) {
     }
     return ret;
 }
-/// in order traversal creates a raft::entry every time it encounters
-/// a different record_batch.type() as all raft entries _must_ be for the
-/// same record_batch type
-std::vector<raft::entry>
-batches_as_entries(std::vector<model::record_batch> batches) {
-    std::vector<raft::entry> ret;
-    const auto indices = batch_type_positions(batches);
-    for (auto& p : indices) {
-        std::vector<model::record_batch> b;
-        b.reserve(p.second - p.first);
-        std::move(
-          batches.begin() + p.first,
-          batches.begin() + p.second,
-          std::back_inserter(b));
-        const auto type = b.front().type();
-        auto e = raft::entry(
-          type, model::make_memory_record_batch_reader(std::move(b)));
-        ret.emplace_back(std::move(e));
-    }
-    return ret;
-}
-
 } // namespace raft::details

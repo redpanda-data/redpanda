@@ -70,9 +70,9 @@ ss::future<> controller::start() {
             })
             .then([this] {
                 _raft0->register_hook(
-                  [this](std::vector<raft::entry>&& entries) {
+                  [this](model::record_batch_reader&& reader) {
                       verify_shard();
-                      on_raft0_entries_commited(std::move(entries));
+                      return on_raft0_entries_commited(std::move(reader));
                   });
             })
             .then([this] { return join_raft0(); })
@@ -292,12 +292,12 @@ ss::future<std::vector<topic_result>> controller::create_topics(
             std::move(topics), topic_error_code::not_leader_controller));
     }
     std::vector<topic_result> errors;
-    std::vector<raft::entry> entries;
-    entries.reserve(topics.size());
+    std::vector<model::record_batch> batches;
+    batches.reserve(topics.size());
     for (const auto& t_cfg : topics) {
-        auto entry = create_topic_cfg_entry(t_cfg);
-        if (entry) {
-            entries.push_back(std::move(*entry));
+        auto batch = create_topic_cfg_batch(t_cfg);
+        if (batch) {
+            batches.push_back(std::move(*batch));
         } else {
             errors.emplace_back(
               t_cfg.topic, topic_error_code::invalid_partitions);
@@ -305,7 +305,9 @@ ss::future<std::vector<topic_result>> controller::create_topics(
     }
 
     // Do append entries to raft0 logs
-    auto f = _raft0->replicate(std::move(entries))
+    auto f = _raft0
+               ->replicate(
+                 model::make_memory_record_batch_reader(std::move(batches)))
                .then_wrapped([topics = std::move(topics)](
                                ss::future<result<raft::replicate_result>> f) {
                    bool success = true;
@@ -337,8 +339,8 @@ ss::future<std::vector<topic_result>> controller::create_topics(
     return with_timeout(timeout, std::move(f));
 } // namespace cluster
 
-std::optional<raft::entry>
-controller::create_topic_cfg_entry(const topic_configuration& cfg) {
+std::optional<model::record_batch>
+controller::create_topic_cfg_batch(const topic_configuration& cfg) {
     simple_batch_builder builder(
       controller::controller_record_batch_type,
       model::offset(_raft0->meta().commit_index));
@@ -357,11 +359,7 @@ controller::create_topic_cfg_entry(const topic_configuration& cfg) {
     for (auto const p_as : *assignments) {
         builder.add_kv(assignment_key, p_as);
     }
-    std::vector<model::record_batch> batches;
-    batches.push_back(std::move(builder).build());
-    return raft::entry(
-      controller_record_batch_type,
-      model::make_memory_record_batch_reader(std::move(batches)));
+    return std::move(builder).build();
 }
 
 void controller::leadership_notification() {
@@ -397,17 +395,15 @@ controller::update_brokers_cache(std::vector<model::broker> nodes) {
       });
 }
 
-void controller::on_raft0_entries_commited(std::vector<raft::entry>&& entries) {
+ss::future<>
+controller::on_raft0_entries_commited(model::record_batch_reader&& reader) {
     if (_bg.is_closed()) {
         throw ss::gate_closed_exception();
     }
-    (void)with_gate(_bg, [this, entries = std::move(entries)]() mutable {
+    return with_gate(_bg, [this, reader = std::move(reader)]() mutable {
         return ss::do_with(
-          std::move(entries), [this](std::vector<raft::entry>& entries) {
-              return ss::do_for_each(entries, [this](raft::entry& entry) {
-                  return entry.reader().consume(
-                    batch_consumer(this), model::no_timeout);
-              });
+          std::move(reader), [this](model::record_batch_reader& reader) {
+              return reader.consume(batch_consumer(this), model::no_timeout);
           });
     });
 }

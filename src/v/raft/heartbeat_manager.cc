@@ -13,8 +13,8 @@ ss::logger hbeatlog{"r/heartbeat"};
 using consensus_ptr = heartbeat_manager::consensus_ptr;
 using consensus_set = heartbeat_manager::consensus_set;
 
-static std::vector<heartbeat_request>
-requests_for_range(const consensus_set& c) {
+static std::vector<heartbeat_request> requests_for_range(
+  const consensus_set& c, clock_type::time_point last_heartbeat) {
     std::unordered_map<model::node_id, std::vector<protocol_metadata>>
       pending_beats;
 
@@ -26,6 +26,16 @@ requests_for_range(const consensus_set& c) {
         for (auto& n : group.nodes) {
             // do not send beat to self
             if (n.id() == ptr->self()) {
+                continue;
+            }
+            auto last_hbeat_timestamp = ptr->last_hbeat_timestamp(n.id());
+            if (last_hbeat_timestamp > last_heartbeat) {
+                hbeatlog.trace(
+                  "Skipping sending beat to {} last hb {}, last append {}",
+                  n.id(),
+                  last_heartbeat.time_since_epoch().count(),
+                  last_hbeat_timestamp.time_since_epoch().count());
+                // we already sent heartbeat, skip it
                 continue;
             }
             pending_beats[n.id()].push_back(ptr->meta());
@@ -45,15 +55,15 @@ requests_for_range(const consensus_set& c) {
 }
 
 heartbeat_manager::heartbeat_manager(
-  duration_type timeout, ss::sharded<rpc::connection_cache>& cls)
-  : _election_duration(timeout)
+  duration_type interval, ss::sharded<rpc::connection_cache>& cls)
+  : _heartbeat_interval(interval)
   , _clients(cls) {
     _heartbeat_timer.set_callback([this] { dispatch_heartbeats(); });
 }
 
 ss::future<> heartbeat_manager::do_dispatch_heartbeats(
   clock_type::time_point last_timeout, clock_type::time_point next_timeout) {
-    auto reqs = requests_for_range(_consensus_groups);
+    auto reqs = requests_for_range(_consensus_groups, last_timeout);
     return ss::do_with(
       std::move(reqs),
       [this, next_timeout](std::vector<heartbeat_request>& reqs) {
@@ -109,11 +119,11 @@ ss::future<> heartbeat_manager::do_heartbeat(
              })
       .then([node = r.node_id, groups = std::move(groups), this](
               result<heartbeat_reply> ret) mutable {
-          process_reply(node, std::move(groups), std::move(ret));
+          return process_reply(node, std::move(groups), std::move(ret));
       });
 }
 
-void heartbeat_manager::process_reply(
+ss::future<> heartbeat_manager::process_reply(
   model::node_id n, std::vector<group_id> groups, result<heartbeat_reply> r) {
     if (!r) {
         hbeatlog.info(
@@ -132,28 +142,30 @@ void heartbeat_manager::process_reply(
                 continue;
             }
             // propagte error
-            (*it)->process_heartbeat(
+            return (*it)->process_append_reply(
               n, result<append_entries_reply>(r.error()));
         }
-        return;
+        return ss::make_ready_future<>();
     }
     hbeatlog.trace("process_reply {}", r);
-    for (auto& m : r.value().meta) {
-        auto it = std::lower_bound(
-          _consensus_groups.begin(),
-          _consensus_groups.end(),
-          raft::group_id(m.group),
-          details::consensus_ptr_by_group_id{});
-        if (it == _consensus_groups.end()) {
-            hbeatlog.error("Could not find consensus for group:{}", m.group);
-            continue;
-        }
-        (*it)->process_heartbeat(n, result<append_entries_reply>(std::move(m)));
-    }
+    return ss::do_for_each(
+      r.value().meta.begin(), r.value().meta.end(), [this, n](auto& m) {
+          auto it = std::lower_bound(
+            _consensus_groups.begin(),
+            _consensus_groups.end(),
+            raft::group_id(m.group),
+            details::consensus_ptr_by_group_id{});
+          if (it == _consensus_groups.end()) {
+              hbeatlog.error("Could not find consensus for group:{}", m.group);
+              return seastar::make_ready_future<>();
+          }
+          return (*it)->process_append_reply(
+            n, result<append_entries_reply>(std::move(m)));
+      });
 }
 
 void heartbeat_manager::dispatch_heartbeats() {
-    auto next_timeout = clock_type::now() + _election_duration;
+    auto next_timeout = clock_type::now() + _heartbeat_interval;
     (void)with_gate(_bghbeats, [this, old = _hbeat, next_timeout] {
         return do_dispatch_heartbeats(old, next_timeout);
     });

@@ -100,24 +100,26 @@ struct foreign_entry_fixture {
         model::partition_id(random_generators::get_int(0, 24))}};
 };
 
-FIXTURE_TEST(sharing_one_entry, foreign_entry_fixture) {
-    std::vector<raft::entry> copies =
+FIXTURE_TEST(sharing_one_reader, foreign_entry_fixture) {
+    std::vector<model::record_batch_reader> copies =
       // clang-format off
-      raft::details::share_one_entry(
-        raft::entry(raft::configuration_batch_type,
-                    gen_config_record_batch_reader(3)),
-        ss::smp::count, true).get0();
+      raft::details::foreign_share_n(gen_config_record_batch_reader(3),
+        ss::smp::count).get0();
     // clang-format on
 
     BOOST_REQUIRE_EQUAL(copies.size(), ss::smp::count);
     for (ss::shard_id shard = 0; shard < ss::smp::count; ++shard) {
-        info("Submitting shared raft::entry to shard:{}", shard);
+        info("Submitting shared reader to shard:{}", shard);
         auto cfg =
           // MUST return the config; otherwise thread exception
-          ss::smp::submit_to(shard, [e = std::move(copies[shard])]() mutable {
-              info("extracting configuration");
-              return raft::details::extract_configuration(std::move(e));
-          }).get0();
+          ss::smp::submit_to(
+            shard,
+            [e = std::move(copies[shard])]() mutable {
+                info("extracting configuration");
+                return raft::details::extract_configuration(std::move(e));
+            })
+            .get0()
+            .value();
 
         for (auto& n : cfg.nodes) {
             BOOST_REQUIRE(
@@ -129,57 +131,36 @@ FIXTURE_TEST(sharing_one_entry, foreign_entry_fixture) {
     }
 }
 
-FIXTURE_TEST(copy_lots_of_entries, foreign_entry_fixture) {
-    std::vector<std::vector<raft::entry>> share_copies;
+FIXTURE_TEST(copy_lots_of_readers, foreign_entry_fixture) {
+    std::vector<model::record_batch_reader> share_copies;
     {
-        std::vector<raft::entry> entries;
-        entries.reserve(ss::smp::count);
-        for (size_t i = 0; i < ss::smp::count; ++i) {
-            entries.emplace_back(
-              raft::configuration_batch_type,
-              gen_config_record_batch_reader(1));
-        }
+        auto rdr = gen_config_record_batch_reader(1);
         share_copies = raft::details::foreign_share_n(
-                         std::move(entries), ss::smp::count)
+                         std::move(rdr), ss::smp::count)
                          .get0();
     }
     BOOST_REQUIRE_EQUAL(share_copies.size(), ss::smp::count);
-    BOOST_REQUIRE_EQUAL(
-      std::accumulate(
-        share_copies.begin(),
-        share_copies.end(),
-        size_t(0),
-        [](size_t acc, std::vector<raft::entry>& ex) {
-            return acc + ex.size();
-        }),
-      ss::smp::count * ss::smp::count);
 
     for (ss::shard_id shard = 0; shard < ss::smp::count; ++shard) {
         info("Submitting shared raft::entry to shard:{}", shard);
-        auto cfgs
-          = ss::smp::submit_to(
-              shard,
-              [es = std::move(share_copies[shard])]() mutable {
-                  return ss::do_with(
-                    std::move(es), [](std::vector<raft::entry>& es) {
-                        return copy_range<
-                          std::vector<raft::group_configuration>>(
-                          es, [](raft::entry& e) {
-                              info("(x) extracting configuration");
-                              return raft::details::extract_configuration(
-                                std::move(e));
-                          });
-                    });
-              })
-              .get0();
-        for (auto& cfg : cfgs) {
-            for (auto& n : cfg.nodes) {
-                BOOST_REQUIRE(
-                  n.id() >= 0 && n.id() <= foreign_entry_fixture::active_nodes);
-            }
-            for (auto& n : cfg.learners) {
-                BOOST_REQUIRE(n.id() > foreign_entry_fixture::active_nodes);
-            }
+        auto cfg = ss::smp::submit_to(
+                     shard,
+                     [es = std::move(share_copies[shard])]() mutable {
+                         return ss::do_with(
+                           std::move(es), [](model::record_batch_reader& es) {
+                               return raft::details::extract_configuration(
+                                 std::move(es));
+                           });
+                     })
+                     .get0()
+                     .value();
+
+        for (auto& n : cfg.nodes) {
+            BOOST_REQUIRE(
+              n.id() >= 0 && n.id() <= foreign_entry_fixture::active_nodes);
+        }
+        for (auto& n : cfg.learners) {
+            BOOST_REQUIRE(n.id() > foreign_entry_fixture::active_nodes);
         }
     }
 }
