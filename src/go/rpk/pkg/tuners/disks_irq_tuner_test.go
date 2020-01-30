@@ -44,7 +44,9 @@ func (m *blockDevicesMock) GetDirectoriesDevices(
 	return m.getDirectoriesDevices(directories)
 }
 
-func (m *blockDevicesMock) GetDeviceFromPath(path string) (disk.BlockDevice, error) {
+func (m *blockDevicesMock) GetDeviceFromPath(
+	path string,
+) (disk.BlockDevice, error) {
 	return m.getBlockDeviceFromPath(path)
 }
 

@@ -1,11 +1,13 @@
 package tuners
 
-import (
-	"github.com/spf13/afero"
-)
+import "github.com/spf13/afero"
 
 func NewFileExistanceChecker(
-	fs afero.Fs, id CheckerID, desc string, severity Severity, filePath string,
+	fs afero.Fs,
+	id CheckerID,
+	desc string,
+	severity Severity,
+	filePath string,
 ) Checker {
 	return NewEqualityChecker(
 		id,

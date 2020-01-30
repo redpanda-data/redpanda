@@ -49,7 +49,9 @@ func NewStatusCommand(fs afero.Fs) *cobra.Command {
 	return command
 }
 
-func executeStatus(fs afero.Fs, configFile string, timeout time.Duration, send bool) error {
+func executeStatus(
+	fs afero.Fs, configFile string, timeout time.Duration, send bool,
+) error {
 	configFile, err := cli.GetOrFindConfig(fs, configFile)
 	if err != nil {
 		return err

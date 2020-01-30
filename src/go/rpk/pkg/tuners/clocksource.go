@@ -28,9 +28,7 @@ func NewClockSourceChecker(fs afero.Fs) Checker {
 	)
 }
 
-func NewClockSourceTuner(
-	fs afero.Fs, executor executors.Executor,
-) Tunable {
+func NewClockSourceTuner(fs afero.Fs, executor executors.Executor) Tunable {
 	return NewCheckedTunable(
 		NewClockSourceChecker(fs),
 		func() TuneResult {
