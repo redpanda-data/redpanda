@@ -117,5 +117,13 @@ private:
     log_config _config;
     logs_type _logs;
 };
-
+inline std::ostream& operator<<(std::ostream& o, log_manager::storage_type t) {
+    switch (t) {
+    case log_manager::storage_type::memory:
+        return o << "{memory}";
+    case log_manager::storage_type::disk:
+        return o << "{disk}";
+    }
+    return o << "{unknown-storage-type}";
+}
 } // namespace storage

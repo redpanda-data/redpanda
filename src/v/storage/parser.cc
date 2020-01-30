@@ -174,7 +174,8 @@ ss::future<size_t> continuous_batch_parser::consume() {
     return ss::repeat([this] {
                return consume_one().then([this](stop_parser s) {
                    add_bytes_and_reset();
-                   return s ? ss::stop_iteration::yes : ss::stop_iteration::no;
+                   return s || _input.eof() ? ss::stop_iteration::yes
+                                            : ss::stop_iteration::no;
                });
            })
       .then_wrapped([this](ss::future<> f) {

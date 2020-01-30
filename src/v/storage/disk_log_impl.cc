@@ -1,5 +1,6 @@
 #include "storage/disk_log_impl.h"
 
+#include "model/fundamental.h"
 #include "model/timeout_clock.h"
 #include "storage/disk_log_appender.h"
 #include "storage/log_manager.h"
@@ -8,7 +9,9 @@
 #include "storage/offset_assignment.h"
 #include "storage/offset_to_filepos_consumer.h"
 #include "storage/version.h"
+#include "vassert.h"
 
+#include <seastar/core/fair_queue.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/reactor.hh>
@@ -26,11 +29,6 @@ disk_log_impl::disk_log_impl(
   , _manager(manager)
   , _segs(std::move(segs)) {
     _probe.setup_metrics(this->ntp());
-    if (!_segs.empty()) {
-        _term = _segs.back().reader()->term();
-    } else {
-        _term = model::term_id(0);
-    }
 }
 
 ss::future<> disk_log_impl::close() {
@@ -46,8 +44,10 @@ ss::future<> disk_log_impl::remove_empty_segments() {
 }
 
 ss::future<> disk_log_impl::new_segment(
-  model::offset o, model::term_id term, const ss::io_priority_class& pc) {
-    return _manager.make_log_segment(ntp(), o, term, pc)
+  model::offset o, model::term_id t, ss::io_priority_class pc) {
+    vassert(
+      o() >= 0 && t() >= 0, "offset:{} and term:{} must be initialized", o, t);
+    return _manager.make_log_segment(ntp(), o, t, pc)
       .then([this, pc](segment handles) mutable {
           return remove_empty_segments().then(
             [this, h = std::move(handles)]() mutable {
@@ -75,24 +75,23 @@ ss::future<> disk_log_impl::flush() {
     }
     return _segs.back().flush();
 }
-ss::future<> disk_log_impl::do_roll() {
-    if (_segs.empty()) {
-        return ss::make_ready_future<>();
-    }
-    auto iopc = _segs.back().appender()->priority_class();
-    return _segs.back().release_appender().then([this, iopc] {
-        model::offset base = max_offset() + model::offset(1);
-        stlog.trace("Rolling log segment offset {}, term {}", base, _term);
-        return new_segment(base, _term, iopc);
-    });
-}
-ss::future<> disk_log_impl::maybe_roll() {
+
+ss::future<> disk_log_impl::maybe_roll(
+  model::term_id t, model::offset next_offset, ss::io_priority_class iopc) {
+    vassert(t >= term(), "Term:{} must be greater than base:{}", t, term());
     if (
-      _segs.back().appender()->file_byte_offset()
-      < _manager.max_segment_size()) {
-        return ss::make_ready_future<>();
+      t != term() || _segs.empty() || !_segs.back().has_appender()
+      || _segs.back().appender()->file_byte_offset()
+           > _manager.max_segment_size()) {
+        auto f = ss::make_ready_future<>();
+        if (!_segs.empty() && _segs.back().has_appender()) {
+            f = _segs.back().release_appender();
+        }
+        return f.then([this, iopc, t, next_offset] {
+            return new_segment(next_offset, t, iopc);
+        });
     }
-    return do_roll();
+    return ss::make_ready_future<>();
 }
 
 model::record_batch_reader
@@ -199,7 +198,7 @@ ss::future<> disk_log_impl::do_truncate(model::offset o) {
 }
 
 std::ostream& disk_log_impl::print(std::ostream& o) const {
-    return o << "{term=" << _term << ", logs=" << _segs << "}";
+    return o << "{term=" << term() << ", logs=" << _segs << "}";
 }
 
 std::ostream& operator<<(std::ostream& o, const disk_log_impl& d) {
