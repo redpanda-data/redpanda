@@ -26,8 +26,8 @@ static ss::future<> persist_log_file(
                 storage::log_append_config cfg{
                   storage::log_append_config::fsync::yes,
                   ss::default_priority_class(),
-                  model::no_timeout,
-                  model::term_id(0)};
+                  model::no_timeout
+                  };
                 auto reader = model::make_memory_record_batch_reader(
                   std::move(b));
                 return std::move(reader).consume(

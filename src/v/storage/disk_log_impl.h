@@ -27,7 +27,8 @@ public:
 
     ss::future<> flush() final;
 
-    ss::future<> maybe_roll();
+    ss::future<> maybe_roll(
+      model::term_id, model::offset next_offset, ss::io_priority_class);
 
     [[gnu::always_inline]] ss::future<> truncate(model::offset offset) final {
         return _failure_probes.truncate().then(
@@ -52,6 +53,15 @@ public:
         }
         return model::offset{};
     }
+    model::term_id term() const {
+        if (_segs.empty()) {
+            // does not make sense to return unitinialized term
+            // if we have no term, default to the first term.
+            // the next append() will truncate if greater
+            return model::term_id{0};
+        }
+        return _segs.back().term();
+    }
 
     std::optional<model::term_id> get_term(model::offset) const final;
 
@@ -72,16 +82,11 @@ private:
     ss::future<> remove_empty_segments();
 
     ss::future<>
-    new_segment(model::offset, model::term_id, const ss::io_priority_class&);
-
-    /// \brief forces a flush() on the last segment & rotates given the current
-    /// _term @ committed_offset + 1
-    ss::future<> do_roll();
+      new_segment(model::offset, model::term_id, ss::io_priority_class);
 
     ss::future<> do_truncate(model::offset);
 
 private:
-    model::term_id _term;
     log_manager& _manager;
     log_set _segs;
     storage::probe _probe;

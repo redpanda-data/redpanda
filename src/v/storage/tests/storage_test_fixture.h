@@ -157,7 +157,7 @@ public:
       storage::log_append_config::fsync sync
       = storage::log_append_config::fsync::no) {
         storage::log_append_config append_cfg{
-          sync, ss::default_priority_class(), model::no_timeout, term};
+          sync, ss::default_priority_class(), model::no_timeout};
 
         model::offset base_offset = log.max_offset() < model::offset(0)
                                       ? model::offset(0)

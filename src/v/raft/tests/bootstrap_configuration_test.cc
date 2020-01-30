@@ -30,8 +30,7 @@ struct bootstrap_fixture : raft::simple_record_fixture {
         const auto cfg = storage::log_append_config{
           storage::log_append_config::fsync::no,
           ss::default_priority_class(),
-          model::no_timeout,
-          model::term_id{0}};
+          model::no_timeout};
         std::vector<storage::append_result> res;
         res.push_back(
           datas(n).consume(get_log().make_appender(cfg), cfg.timeout).get0());
