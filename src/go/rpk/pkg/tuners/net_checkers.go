@@ -169,9 +169,7 @@ func (f *netCheckersFactory) NewNicRpsSetChecker(
 	)
 }
 
-func (f *netCheckersFactory) NewNicRfsCheckers(
-	interfaces []string,
-) []Checker {
+func (f *netCheckersFactory) NewNicRfsCheckers(interfaces []string) []Checker {
 	return f.forNonVirtualInterfaces(interfaces, f.NewNicRfsChecker)
 }
 
@@ -230,9 +228,7 @@ func (f *netCheckersFactory) NewNicNTupleChecker(nic network.Nic) Checker {
 	)
 }
 
-func (f *netCheckersFactory) NewNicXpsCheckers(
-	interfaces []string,
-) []Checker {
+func (f *netCheckersFactory) NewNicXpsCheckers(interfaces []string) []Checker {
 	return f.forNonVirtualInterfaces(interfaces, f.NewNicXpsChecker)
 }
 
@@ -320,7 +316,9 @@ func (f *netCheckersFactory) NewSynBacklogChecker() Checker {
 		})
 }
 
-func isSet(nic network.Nic, hwCheckFunction func(network.Nic) (bool, error)) (bool, error) {
+func isSet(
+	nic network.Nic, hwCheckFunction func(network.Nic) (bool, error),
+) (bool, error) {
 	if nic.IsHwInterface() {
 		log.Debugf("'%s' is HW interface", nic.Name())
 		return hwCheckFunction(nic)

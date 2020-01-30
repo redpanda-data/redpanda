@@ -33,22 +33,28 @@ def dbuild():
 
 
 @dbuild.command(short_help='build the redpanda binary')
-@click.option('--ref', help="Version of toolchain to use (a git ref).",
-              default=None, required=True)
+@click.option('--ref',
+              help="Version of toolchain to use (a git ref).",
+              default=None,
+              required=True)
 def cpp(ref):
     _run_in_docker(ref, 'cpp')
 
 
 @dbuild.command(short_help='build the rpk binary')
-@click.option('--ref', help="Version of toolchain to use (a git ref).",
-              default=None, required=True)
+@click.option('--ref',
+              help="Version of toolchain to use (a git ref).",
+              default=None,
+              required=True)
 def go(ref):
     _run_in_docker(ref, 'go')
 
 
 @dbuild.command(short_help='create rpm and deb packages')
-@click.option('--ref', help="Version of toolchain to use (a git ref).",
-              default=None, required=True)
+@click.option('--ref',
+              help="Version of toolchain to use (a git ref).",
+              default=None,
+              required=True)
 def pkg(tag):
     _run_in_docker(tag, 'pkg', '--format deb --format rpm')
 

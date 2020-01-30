@@ -29,9 +29,7 @@ func NewMaxAIOEventsChecker(fs afero.Fs) Checker {
 	)
 }
 
-func NewMaxAIOEventsTuner(
-	fs afero.Fs, executor executors.Executor,
-) Tunable {
+func NewMaxAIOEventsTuner(fs afero.Fs, executor executors.Executor) Tunable {
 	return NewCheckedTunable(
 		NewMaxAIOEventsChecker(fs),
 		func() TuneResult {

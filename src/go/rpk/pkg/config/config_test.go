@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 	"vectorized/pkg/utils"
-
 	vyaml "vectorized/pkg/yaml"
 
 	"github.com/spf13/afero"

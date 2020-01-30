@@ -20,9 +20,7 @@ type Metrics struct {
 }
 
 func GatherMetrics(
-	fs afero.Fs,
-	timeout time.Duration,
-	conf config.Config,
+	fs afero.Fs, timeout time.Duration, conf config.Config,
 ) (*Metrics, []error) {
 	metrics := &Metrics{}
 	errs := []error{}

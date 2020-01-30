@@ -53,8 +53,12 @@ project.
 To build `redpanda`:
 
 ```bash
-vtools build cpp
+vtools build cpp [--reconfigure]
 ```
+
+The `--reconfigure` flag re-runs `cmake`, which might be needed after 
+fetching updates from git (e.g. after a `git pull`).
+
 
 By default, `vtools` assumes `release` and `gcc` options. To build 
 using clang:
@@ -74,6 +78,17 @@ For running other tasks:
 ```bash
 vtools <subcommand> --help
 ```
+
+> **NOTE**: if something unexpected happens with the build, you might 
+> want to resort to the "nuclear option":
+>
+> ```bash
+> rm -r ./build/<build-type>/<compiler>/
+> ```
+>
+> the above deletes the build folder for a build-type/compiler 
+> combination.
+
 
 ## Incremental build
 

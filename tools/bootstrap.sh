@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# this whole bootstrap.sh script is idempotent so it can safely be re-executed 
-# from the top and only missing packages (or intermediary objects) will be 
+# this whole bootstrap.sh script is idempotent so it can safely be re-executed
+# from the top and only missing packages (or intermediary objects) will be
 # build/installed
 set -o errexit
 set -o nounset
@@ -21,7 +21,6 @@ sudo tools/install-deps.sh
 mkdir -p build/venv/
 python3 -mvenv build/venv/v/
 source build/venv/v/bin/activate
-pip install -r tools/requirements.txt
 pip install -e tools/
 mkdir -p build/bin/
 ln -sf "${vroot}/build/venv/v/bin/vtools" build/bin/

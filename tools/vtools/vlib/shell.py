@@ -32,7 +32,7 @@ def _cleanup_whitespace(s):
 
 def raw_check_output(cmd):
     logging.debug("raw_check_output: %s", cmd)
-    ret = subprocess.check_output(cmd, shell=True)
+    ret = subprocess.check_output(cmd, shell=True, stderr=subprocess.DEVNULL)
     if ret is None: return ret
     return str(ret.decode("utf-8"))
 

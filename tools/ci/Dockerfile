@@ -13,11 +13,9 @@ RUN rm -f /etc/yum.repos.d/fedora-* && \
     dnf clean all
 
 # vtools
-COPY tools/setup.py tools/tox.ini tools/README.md tools/requirements.txt tools/requirements-dev.txt /v/tools/
+COPY tools/setup.py tools/README.md /v/tools/
 COPY tools/vtools/ /v/tools/vtools
-RUN pip install tox && \
-    tox -c /v/tools && \
-    mv /v/build/bin/vtools /usr/bin/ && \
+RUN pip install /v/tools && \
     rm -fr /v/build/
 
 # vtools config for CI

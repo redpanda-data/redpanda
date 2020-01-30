@@ -30,6 +30,16 @@ steps:
       --cache=true \
       --cache-ttl=12h
 
+- id: 'check formatting'
+  name: 'gcr.io/$PROJECT_ID/builder-$_COMPILER-$_BUILD_TYPE:$SHORT_SHA'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    if [[ "$_BUILD_TYPE" == "release" ]] && [[ "$_COMPILER" == "clang" ]]; then
+      vtools fmt all --conf=tools/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml --check
+    fi
+
 - id: 'build redpanda'
   name: 'gcr.io/$PROJECT_ID/builder-$_COMPILER-$_BUILD_TYPE:$SHORT_SHA'
   args: ['vtools', 'build', 'cpp', '--conf=tools/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml', '--skip-external']

@@ -205,9 +205,7 @@ func (f *netTunersFactory) NewNICsRfsTuner(interfaces []string) Tunable {
 	)
 }
 
-func (f *netTunersFactory) NewNICsNTupleTuner(
-	interfaces []string,
-) Tunable {
+func (f *netTunersFactory) NewNICsNTupleTuner(interfaces []string) Tunable {
 	return f.tuneNonVirtualInterfaces(
 		interfaces,
 		func(nic network.Nic) Checker {
