@@ -1,5 +1,6 @@
 #pragma once
 
+#include "raft/logger.h"
 #include "raft/probe.h"
 #include "raft/timeout_jitter.h"
 #include "rpc/connection_cache.h"
@@ -121,7 +122,6 @@ private:
     ss::future<> process_configurations(std::vector<entry>&&);
 
     void arm_vote_timeout();
-
     // args
     model::node_id _self;
     timeout_jitter _jit;
@@ -160,6 +160,7 @@ private:
     /// used for notifying when commits happened to log
     append_entries_cb_t _append_entries_notification;
     probe _probe;
+    raft_ctx_log _ctxlog;
 };
 
 } // namespace raft
