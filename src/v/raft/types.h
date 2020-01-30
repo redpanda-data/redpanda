@@ -185,6 +185,12 @@ operator<<(std::ostream& o, const append_entries_reply& r) {
              << ", term:" << r.term << ", last_log_index:" << r.last_log_index
              << ", success: " << r.success << "}";
 }
+
+static inline std::ostream& operator<<(std::ostream& o, const vote_request& r) {
+    return o << "{node_id: " << r.node_id << ", group: " << r.group
+             << ", term:" << r.term << ", prev_log_index:" << r.prev_log_index
+             << ", prev_log_term: " << r.prev_log_term << "}";
+}
 static inline std::ostream&
 operator<<(std::ostream& o, const heartbeat_request& r) {
     o << "{node: " << r.node_id << ", meta: [";
