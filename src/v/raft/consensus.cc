@@ -11,6 +11,7 @@
 #include <seastar/core/fstream.hh>
 #include <seastar/core/future.hh>
 
+#include <boost/exception/diagnostic_information.hpp>
 #include <iterator>
 
 namespace raft {
@@ -33,7 +34,8 @@ consensus::consensus(
   , _disk_timeout(disk_timeout)
   , _clients(clis)
   , _leader_notification(std::move(cb))
-  , _conf(std::move(initial_cfg)) {
+  , _conf(std::move(initial_cfg))
+  , _ctxlog(_self, group) {
     _meta.group = group();
     _vote_timeout.set_callback([this] { dispatch_vote(); });
     for (auto& n : initial_cfg.nodes) {
@@ -190,8 +192,16 @@ void consensus::dispatch_vote() {
         auto p = vstm.get();
 
         // CRITICAL: vote performs locking on behalf of consensus
-        return p->vote().then([this, p, vstm = std::move(vstm)]() mutable {
-            auto f = p->wait().finally([vstm = std::move(vstm)] {});
+        return p->vote().then_wrapped([this, p, vstm = std::move(vstm)](
+                                        ss::future<> vote_f) mutable {
+            try {
+                vote_f.get();
+            } catch (...) {
+                _ctxlog.warn(
+                  "Error returned from voting process {}",
+                  boost::diagnostic_information(std::current_exception()));
+            }
+            auto f = p->wait().finally([vstm = std::move(vstm), this] {});
             // make sure we wait for all futures when gate is closed
             if (_bg.is_closed()) {
                 return f;
@@ -269,13 +279,16 @@ ss::future<> consensus::start() {
 ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
     vote_reply reply;
     reply.term = _meta.term;
+    auto last_log_index = _meta.prev_log_index;
+    auto last_entry_term = _meta.prev_log_term;
     _probe.vote_requested();
+    _ctxlog.trace("Vote requested {}, voted for {}", r, _voted_for);
     /// set to true if the caller's log is as up to date as the recipient's
     /// - extension on raft. see Diego's phd dissertation, section 9.6
     /// - "Preventing disruptions when a server rejoins the cluster"
     reply.log_ok
-      = r.prev_log_term > _meta.term
-        || (r.prev_log_term == _meta.term && r.prev_log_index >= _meta.commit_index);
+      = r.prev_log_term > last_entry_term
+        || (r.prev_log_term == last_entry_term && r.prev_log_index >= last_log_index);
 
     // raft.pdf: reply false if term < currentTerm (§5.1)
     if (r.term < _meta.term) {
@@ -284,37 +297,39 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
     }
 
     if (r.term > _meta.term) {
-        raftlog.info(
-          "self node-id:{}, remote node-id:{}, group {} recevied vote with "
-          "larger term:{} than ours:{}",
-          _self,
+        _ctxlog.info(
+          "received vote response with larger term from node {}, received {}, "
+          "current {}",
           r.node_id,
-          _meta.group,
           r.term,
           _meta.term);
         _probe.vote_request_term_newer();
+        _meta.term = r.term;
+        reply.term = _meta.term;
         step_down();
     }
 
-    // raft.pdf: If votedFor is null or candidateId, and candidate’s log is
-    // atleast as up-to-date as receiver’s log, grant vote (§5.2, §5.4)
-    if (_voted_for() < 0 || (reply.log_ok && r.node_id == _voted_for)) {
-        _meta.term = r.term;
+    auto f = ss::make_ready_future<>();
+
+    if (reply.log_ok && _voted_for() < 0) {
         _voted_for = model::node_id(r.node_id);
-        reply.granted = true;
         _hbeat = clock_type::now();
-        return details::persist_voted_for(
-                 voted_for_filename(), {_voted_for, model::term_id(_meta.term)})
-          .then([reply = std::move(reply)] {
-              return ss::make_ready_future<vote_reply>(std::move(reply));
-          });
+        _ctxlog.trace("Voting for {} in term {}", r.node_id, _meta.term);
+        f = f.then([this] {
+            return details::persist_voted_for(
+              voted_for_filename(), {_voted_for, model::term_id(_meta.term)});
+        });
     }
+
     // vote for the same term, same server_id
     reply.granted = (r.node_id == _voted_for);
     if (reply.granted) {
         _hbeat = clock_type::now();
     }
-    return ss::make_ready_future<vote_reply>(std::move(reply));
+
+    return f.then([reply = std::move(reply)] {
+        return ss::make_ready_future<vote_reply>(std::move(reply));
+    });
 }
 
 template<typename Container>
