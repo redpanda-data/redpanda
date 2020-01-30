@@ -19,9 +19,11 @@ class skipping_consumer final : public batch_consumer {
 public:
     explicit skipping_consumer(
       log_segment_batch_reader& reader,
-      model::timeout_clock::time_point timeout) noexcept
+      model::timeout_clock::time_point timeout,
+      std::optional<model::offset> next_cached_batch) noexcept
       : _reader(reader)
-      , _timeout(timeout) {}
+      , _timeout(timeout)
+      , _next_cached_batch(next_cached_batch) {}
 
     consume_result consume_batch_start(
       model::record_batch_header,
@@ -49,6 +51,7 @@ private:
     size_t _num_records{0};
     model::record_batch::records_type _records;
     model::timeout_clock::time_point _timeout;
+    std::optional<model::offset> _next_cached_batch;
 };
 
 class log_segment_batch_reader {
@@ -67,8 +70,9 @@ public:
     ss::future<size_t> read(model::timeout_clock::time_point);
 
 private:
-    std::unique_ptr<continuous_batch_parser>
-      initialize(model::timeout_clock::time_point);
+    std::unique_ptr<continuous_batch_parser> initialize(
+      model::timeout_clock::time_point,
+      std::optional<model::offset> next_cached_batch);
 
     bool is_buffer_full() const;
 
@@ -102,6 +106,7 @@ private:
     std::vector<model::record_batch> _batches;
     model::offset _last_base;
     probe& _probe;
+    bool _seen_first_batch;
 };
 
 } // namespace storage
