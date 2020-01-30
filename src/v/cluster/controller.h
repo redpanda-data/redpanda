@@ -97,8 +97,8 @@ private:
     ss::future<> dispatch_record_recovery(log_record_key, iobuf&&);
     ss::future<>
     update_cache_with_partitions_assignment(const partition_assignment&);
-    std::optional<raft::entry>
-    create_topic_cfg_entry(const topic_configuration&);
+    std::optional<model::record_batch>
+    create_topic_cfg_batch(const topic_configuration&);
     void end_of_stream();
     void leadership_notification();
     ss::future<> update_brokers_cache(std::vector<model::broker>);
@@ -106,7 +106,7 @@ private:
       update_clients_cache(std::vector<broker_ptr>, std::vector<broker_ptr>);
     void create_partition_allocator();
     allocation_node local_allocation_node();
-    void on_raft0_entries_commited(std::vector<raft::entry>&&);
+    ss::future<> on_raft0_entries_commited(model::record_batch_reader&&);
 
     ss::future<> dispatch_manage_partition(
       model::ntp, raft::group_id, uint32_t, std::vector<model::broker_shard>);

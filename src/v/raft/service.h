@@ -53,7 +53,11 @@ public:
         std::vector<append_entries_request> reqs;
         reqs.reserve(r.meta.size());
         for (auto& m : r.meta) {
-            reqs.push_back(append_entries_request{r.node_id, std::move(m), {}});
+            reqs.push_back(raft::append_entries_request{
+              .node_id = r.node_id,
+              .meta = std::move(m),
+              .batches = model::make_memory_record_batch_reader(
+                std::vector<model::record_batch>{})});
         }
         return ss::do_with(
                  std::move(reqs),

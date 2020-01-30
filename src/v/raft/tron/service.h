@@ -1,5 +1,6 @@
 #pragma once
 
+#include "model/record_batch_reader.h"
 #include "raft/service.h"
 #include "raft/tron/logger.h"
 #include "raft/tron/trongen_service.h"
@@ -25,7 +26,7 @@ struct service final : trongen_service {
         return ss::make_ready_future<stats_reply>(stats_reply{});
     }
     ss::future<put_reply>
-    replicate(::raft::entry&& r, rpc::streaming_context&) final {
+    replicate(model::record_batch_reader&& r, rpc::streaming_context&) final {
         tronlog.info("replicating entry");
         auto shard = _shard_table.shard_for(raft::group_id(66));
         return with_scheduling_group(

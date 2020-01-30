@@ -155,9 +155,8 @@ static ss::future<produce_response::partition> partition_append(
   model::record_batch batch) {
     auto num_records = batch.size();
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
-    raft::entry e(raft::data_batch_type, std::move(reader));
 
-    return partition->replicate(std::move(e))
+    return partition->replicate(std::move(reader))
       .then_wrapped([id, num_records = num_records](
                       ss::future<result<raft::replicate_result>> f) {
           produce_response::partition p;

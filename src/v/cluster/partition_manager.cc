@@ -20,7 +20,7 @@ partition_manager::partition_manager(
       .base_dir = config::shard_local_cfg().data_directory().as_sstring(),
       .max_segment_size = config::shard_local_cfg().log_segment_size(),
       .should_sanitize = storage::log_config::sanitize_files::no})
-  , _hbeats(config::shard_local_cfg().raft_timeout(), clients)
+  , _hbeats(config::shard_local_cfg().raft_heartbeat_interval(), clients)
   , _shard_table(nlc)
   , _clients(clients) {}
 

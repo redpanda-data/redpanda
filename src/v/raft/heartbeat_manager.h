@@ -35,11 +35,11 @@ public:
       flat_set<consensus_ptr, details::consensus_ptr_by_group_id>;
 
     heartbeat_manager(
-      duration_type timeout, ss::sharded<rpc::connection_cache>&);
+      duration_type interval, ss::sharded<rpc::connection_cache>&);
 
     void register_group(ss::lw_shared_ptr<consensus>);
     void deregister_group(raft::group_id);
-    duration_type election_duration() const { return _election_duration; }
+    duration_type election_duration() const { return _heartbeat_interval * 2; }
 
     ss::future<> start();
     ss::future<> stop();
@@ -57,7 +57,7 @@ private:
     /// \param n the physical node that owns heart beats
     /// \param groups raft groups managed by \param n
     /// \param result if the node return successful heartbeats
-    void process_reply(
+    ss::future<> process_reply(
       model::node_id n,
       std::vector<group_id> groups,
       result<heartbeat_reply> result);
@@ -65,7 +65,7 @@ private:
     // private members
 
     clock_type::time_point _hbeat = clock_type::now();
-    duration_type _election_duration;
+    duration_type _heartbeat_interval;
     timer_type _heartbeat_timer;
     /// \brief used to wait for background ops before shutting down
     ss::gate _bghbeats;

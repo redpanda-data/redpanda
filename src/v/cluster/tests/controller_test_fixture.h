@@ -93,7 +93,7 @@ public:
         using namespace std::chrono_literals;
         _pm
           .start(
-            storage::log_append_config::fsync::no,
+            storage::log_append_config::fsync::yes,
             model::timeout_clock::duration(2s),
             std::ref(st),
             std::ref(_cli_cache))

@@ -3,6 +3,7 @@
 #include "model/timeout_clock.h"
 #include "raft/consensus_utils.h"
 #include "raft/types.h"
+#include "random/generators.h"
 #include "storage/record_batch_builder.h"
 #include "storage/tests/random_batch.h"
 #include "test_utils/rpc.h"
@@ -30,6 +31,7 @@ struct checking_consumer {
         BOOST_REQUIRE_EQUAL(current_batch->type(), batch.type());
         BOOST_REQUIRE_EQUAL(current_batch->size_bytes(), batch.size_bytes());
         BOOST_REQUIRE_EQUAL(current_batch->size(), batch.size());
+        BOOST_REQUIRE_EQUAL(current_batch->term(), batch.term());
         current_batch++;
         return ss::make_ready_future<ss::stop_iteration>(
           ss::stop_iteration::no);
@@ -41,22 +43,95 @@ struct checking_consumer {
     batches_iter current_batch;
 };
 
-SEASTAR_THREAD_TEST_CASE(entry) {
+SEASTAR_THREAD_TEST_CASE(append_entries_requests) {
     auto batches = storage::test::make_random_batches(
       model::offset(1), 3, false);
-    raft::entry e(
-      raft::data_batch_type,
-      model::make_memory_record_batch_reader(std::move(batches)));
 
-    std::vector<raft::entry> entries
-      = raft::details::share_one_entry(std::move(e), 2, false).get0();
-    auto d = serialize_roundtrip_rpc(std::move(entries.back()));
-    entries.pop_back();
+    for (auto& b : batches) {
+        b.set_term(model::term_id(123));
+    }
 
-    d.reader()
+    auto rdr = model::make_memory_record_batch_reader(std::move(batches));
+    auto readers = raft::details::share_n(std::move(rdr), 2).get0();
+    auto meta = raft::protocol_metadata{
+      .group = 1,
+      .commit_index = 100,
+      .term = 10,
+      .prev_log_index = 99,
+      .prev_log_term = -1,
+    };
+    raft::append_entries_request req{.node_id = model::node_id(1),
+                                     .meta = meta,
+                                     .batches = std::move(readers.back())};
+
+    readers.pop_back();
+    auto d = serialize_roundtrip_rpc(std::move(req));
+
+    BOOST_REQUIRE_EQUAL(d.node_id, model::node_id(1));
+    BOOST_REQUIRE_EQUAL(d.meta.group, meta.group);
+    BOOST_REQUIRE_EQUAL(d.meta.commit_index, meta.commit_index);
+    BOOST_REQUIRE_EQUAL(d.meta.term, meta.term);
+    BOOST_REQUIRE_EQUAL(d.meta.prev_log_index, meta.prev_log_index);
+    BOOST_REQUIRE_EQUAL(d.meta.prev_log_term, meta.prev_log_term);
+    d.batches
       .consume(
-        checking_consumer(
-          std::move(entries.back().reader().release_buffered_batches())),
+        checking_consumer(std::move(readers.back().release_buffered_batches())),
         model::no_timeout)
       .get0();
+}
+
+model::broker create_test_broker() {
+    return model::broker(
+      model::node_id(random_generators::get_int(1000)), // id
+      unresolved_address(
+        "127.0.0.1",
+        random_generators::get_int(10000, 20000)), // kafka api address
+      unresolved_address(
+        "127.0.0.1", random_generators::get_int(10000, 20000)), // rpc address
+      "some_rack",
+      model::broker_properties{
+        .cores = 8 // cores
+      });
+}
+
+SEASTAR_THREAD_TEST_CASE(group_configuration) {
+    std::vector<model::broker> nodes;
+    std::vector<model::broker> learners;
+    for (int i = 0; i < 10; ++i) {
+        nodes.push_back(create_test_broker());
+        learners.push_back(create_test_broker());
+    }
+
+    raft::group_configuration cfg{.leader_id = model::node_id(10),
+                                  .nodes = std::move(nodes),
+                                  .learners = std::move(learners)};
+    auto expected = cfg;
+
+    auto deser = serialize_roundtrip_rpc(std::move(cfg));
+
+    BOOST_REQUIRE_EQUAL(deser.leader_id, expected.leader_id);
+    BOOST_REQUIRE_EQUAL(deser.nodes, expected.nodes);
+    BOOST_REQUIRE_EQUAL(deser.learners, expected.learners);
+}
+
+SEASTAR_THREAD_TEST_CASE(serialize_configuration) {
+    std::vector<model::broker> nodes;
+    std::vector<model::broker> learners;
+    for (int i = 0; i < 10; ++i) {
+        nodes.push_back(create_test_broker());
+        learners.push_back(create_test_broker());
+    }
+
+    raft::group_configuration cfg{.leader_id = model::node_id(10),
+                                  .nodes = std::move(nodes),
+                                  .learners = std::move(learners)};
+    auto expected = cfg;
+
+    auto batch_reader = raft::details::serialize_configuration(std::move(cfg));
+    auto deser = raft::details::extract_configuration(std::move(batch_reader))
+                   .get0()
+                   .value();
+    BOOST_REQUIRE_EQUAL(deser.leader_id, expected.leader_id);
+    BOOST_REQUIRE_EQUAL(deser.nodes, expected.nodes);
+    BOOST_REQUIRE_EQUAL(deser.learners, expected.learners);
 }
