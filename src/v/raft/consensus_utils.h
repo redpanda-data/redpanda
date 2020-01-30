@@ -120,7 +120,8 @@ private:
 template<typename Func>
 CONCEPT(
     requires requires(Func f, model::record_batch b){
-        {f(b)} -> ss::future<>();
+        { f(std::move(b)) } 
+            -> ss::futurize_t<std::result_of_t<Func(model::record_batch&&)>>;
     }
 )
 // clang-format on
