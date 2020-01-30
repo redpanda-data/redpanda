@@ -184,8 +184,7 @@ private:
                   storage::log_append_config cfg{
                     .should_fsync = storage::log_append_config::fsync::yes,
                     .io_priority = ss::default_priority_class(),
-                    .timeout = model::no_timeout,
-                    .term = model::term_id(0)};
+                    .timeout = model::no_timeout};
                   return std::move(reader)
                     .consume(log.make_appender(cfg), cfg.timeout)
                     .discard_result();

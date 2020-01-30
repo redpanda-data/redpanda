@@ -176,8 +176,8 @@ FIXTURE_TEST(test_rolling_term, storage_test_fixture) {
 };
 
 FIXTURE_TEST(test_append_batches_from_multiple_terms, storage_test_fixture) {
-    //FIXME: Iterage over storage_types when disk impl will be ready.
-    for (auto type : {storage::log_manager::storage_type::memory}) {
+    for (auto type : storage_types) {
+        info("Testing type: {}", type);
         storage::log_manager mgr = make_log_manager();
         auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
         auto ntp = make_ntp("default", "test", 0);

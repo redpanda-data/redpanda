@@ -14,7 +14,9 @@ public:
       // expect the *next* valid (inclusive) offset
       model::offset offset) noexcept;
 
-    virtual ss::future<> initialize() override;
+    virtual ss::future<> initialize() override {
+        return ss::make_ready_future<>();
+    }
 
     virtual ss::future<ss::stop_iteration>
     operator()(model::record_batch&&) override;
