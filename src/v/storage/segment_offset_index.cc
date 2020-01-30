@@ -23,7 +23,11 @@ segment_offset_index::segment_offset_index(
 
 void segment_offset_index::maybe_track(
   model::offset o, size_t pos, size_t data_size) {
-    vassert(o >= _base, "cannot track offsets that are lower than our base");
+    vassert(
+      o >= _base,
+      "cannot track offsets that are lower than our base, o:{}, _base:{}",
+      o,
+      _base);
     if (!_positions.empty()) {
         // check if this is an earlier offset; ignore if so
         const uint32_t i = o() - _base();
