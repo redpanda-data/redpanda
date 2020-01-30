@@ -28,27 +28,39 @@ public:
 
 private:
     struct retry_meta {
+        enum class state {
+            in_progress,
+            success,
+            failed_response,
+            out_of_retries,
+            request_error
+        };
         retry_meta(model::node_id n, int32_t ret)
           : retries_left(ret)
           , node(n) {}
 
-        bool is_success() const {
-            if (!finished() || !value) {
-                return false;
-            }
-            auto& ref = *value;
-            return ref.has_value() && ref.value().success;
-        }
-
-        bool is_failure() const {
-            return finished() && value && value->has_error();
-        }
-
-        bool finished() const { return retries_left <= 0 || value; }
+        void cancel() { retries_left = 0; }
 
         void set_value(result<append_entries_reply> r) {
             value = std::make_unique<result<append_entries_reply>>(
               std::move(r));
+        }
+
+        bool finished() const { return get_state() != state::in_progress; }
+
+        state get_state() const {
+            if (!value) {
+                if (retries_left <= 0) {
+                    return state::out_of_retries;
+                }
+                return state::in_progress;
+            }
+            if (value->has_value()) {
+                return value->value().success ? state::success
+                                              : state::failed_response;
+            }
+
+            return state::request_error;
         }
 
         int32_t retries_left;
@@ -61,13 +73,19 @@ private:
     ss::future<std::vector<append_entries_request>> share_request_n(size_t n);
 
     ss::future<> dispatch_one(retry_meta&);
-
+    ss::future<> dispatch_retries(retry_meta&);
+    ss::future<> dispatch_single_retry(retry_meta&);
     ss::future<result<append_entries_reply>>
       do_dispatch_one(model::node_id, append_entries_request);
+
+    ss::future<result<append_entries_reply>>
+    send_append_entries_request(model::node_id n, append_entries_request req);
 
     ss::future<result<void>> process_replies();
 
     std::pair<int32_t, int32_t> partition_count() const;
+    // Sets retries left to 0 in order not retry when not required
+    void cancel_not_finished();
 
     consensus* _ptr;
     int32_t _max_retries;
@@ -78,6 +96,7 @@ private:
     ss::semaphore _sem;
     std::vector<retry_meta> _replies;
     ss::gate _req_bg;
+    raft_ctx_log _ctxlog;
 };
 
 } // namespace raft
