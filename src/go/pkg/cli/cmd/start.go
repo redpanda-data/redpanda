@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"vectorized/pkg/api"
 	"vectorized/pkg/cli"
 	"vectorized/pkg/cloud"
 	"vectorized/pkg/config"
@@ -79,8 +80,10 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			env := api.EnvironmentPayload{}
 			installDirectory, err := cli.GetOrFindInstallDir(fs, installDirFlag)
 			if err != nil {
+				sendEnv(env, conf, err)
 				return err
 			}
 			rpArgs, err := buildRedpandaFlags(
@@ -91,10 +94,21 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 				wellKnownIo,
 			)
 			if err != nil {
+				sendEnv(env, conf, err)
 				return err
 			}
-			err = prestart(fs, rpArgs, configFile, conf, prestartCfg, timeout)
+			checkPayloads, tunerPayloads, err := prestart(
+				fs,
+				rpArgs,
+				configFile,
+				conf,
+				prestartCfg,
+				timeout,
+			)
+			env.Checks = checkPayloads
+			env.Tuners = tunerPayloads
 			if err != nil {
+				sendEnv(env, conf, err)
 				return err
 			}
 			// Override all the defaults when flags are explicitly set
@@ -105,8 +119,10 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 			}
 			err = writePid(fs, conf.PidFile)
 			if err != nil {
+				sendEnv(env, conf, err)
 				return fmt.Errorf("couldn't write the PID file: %v", err)
 			}
+			sendEnv(env, conf, nil)
 			launcher := redpanda.NewLauncher(installDirectory, rpArgs)
 			log.Info("Starting redpanda...")
 			return launcher.Start()
@@ -176,22 +192,25 @@ func prestart(
 	conf *config.Config,
 	prestartCfg prestartConfig,
 	timeout time.Duration,
-) error {
+) ([]api.CheckPayload, []api.TunerPayload, error) {
+	var err error
+	checkPayloads := []api.CheckPayload{}
+	tunerPayloads := []api.TunerPayload{}
 	if prestartCfg.checkEnabled {
-		err := check(fs, configFile, conf, timeout, checkFailedActions(args))
+		checkPayloads, err = check(fs, configFile, conf, timeout, checkFailedActions(args))
 		if err != nil {
-			return err
+			return checkPayloads, tunerPayloads, err
 		}
 		log.Info("System check - PASSED")
 	}
 	if prestartCfg.tuneEnabled {
-		err := tuneAll(fs, args.SeastarFlags["cpuset"], conf, timeout)
+		tunerPayloads, err = tuneAll(fs, args.SeastarFlags["cpuset"], conf, timeout)
 		if err != nil {
-			return err
+			return checkPayloads, tunerPayloads, err
 		}
 		log.Info("System tune - PASSED")
 	}
-	return nil
+	return checkPayloads, tunerPayloads, nil
 }
 
 func buildRedpandaFlags(
@@ -285,46 +304,60 @@ func tuneAll(
 	cpuSet string,
 	conf *config.Config,
 	timeout time.Duration,
-) error {
+) ([]api.TunerPayload, error) {
 	params := &factory.TunerParams{}
 	tunerFactory := factory.NewDirectExecutorTunersFactory(fs, *conf, timeout)
 	hw := hwloc.NewHwLocCmd(vos.NewProc(), timeout)
 	if cpuSet == "" {
 		cpuMask, err := hw.All()
 		if err != nil {
-			return err
+			return []api.TunerPayload{}, err
 		}
 		params.CpuMask = cpuMask
 	} else {
 		cpuMask, err := hwloc.TranslateToHwLocCpuSet(cpuSet)
 		if err != nil {
-			return err
+			return []api.TunerPayload{}, err
 		}
 		params.CpuMask = cpuMask
 	}
 
 	err := factory.FillTunerParamsWithValuesFromConfig(params, conf)
 	if err != nil {
-		return err
+		return []api.TunerPayload{}, err
 	}
 
-	for _, tunerName := range factory.AvailableTuners() {
-		if !factory.IsTunerEnabled(tunerName, conf.Rpk) {
+	availableTuners := factory.AvailableTuners()
+	tunerPayloads := make([]api.TunerPayload, len(availableTuners))
+
+	for _, tunerName := range availableTuners {
+		enabled := factory.IsTunerEnabled(tunerName, conf.Rpk)
+		tuner := tunerFactory.CreateTuner(tunerName, params)
+		supported, reason := tuner.CheckIfSupported()
+		payload := api.TunerPayload{
+			Name:      tunerName,
+			Enabled:   enabled,
+			Supported: supported,
+		}
+		if !enabled {
 			log.Infof("Skipping disabled tuner %s", tunerName)
+			tunerPayloads = append(tunerPayloads, payload)
 			continue
 		}
-		tuner := tunerFactory.CreateTuner(tunerName, params)
-		if supported, reason := tuner.CheckIfSupported(); supported {
-			log.Debugf("Tuner paramters %+v", params)
-			result := tuner.Tune()
-			if result.IsFailed() {
-				return result.Error()
-			}
-		} else {
+		if !supported {
 			log.Debugf("Tuner '%s' is not supported - %s", tunerName, reason)
+			tunerPayloads = append(tunerPayloads, payload)
+			continue
+		}
+		log.Debugf("Tuner parameters %+v", params)
+		result := tuner.Tune()
+		if result.IsFailed() {
+			payload.ErrorMsg = result.Error().Error()
+			tunerPayloads = append(tunerPayloads, payload)
+			return tunerPayloads, result.Error()
 		}
 	}
-	return nil
+	return tunerPayloads, nil
 }
 
 type checkFailedAction func(*tuners.CheckResult)
@@ -346,12 +379,22 @@ func check(
 	conf *config.Config,
 	timeout time.Duration,
 	checkFailedActions map[tuners.CheckerID]checkFailedAction,
-) error {
+) ([]api.CheckPayload, error) {
+	payloads := make([]api.CheckPayload, 0)
 	results, err := tuners.Check(fs, configFile, conf, timeout)
 	if err != nil {
-		return err
+		return payloads, err
 	}
 	for _, result := range results {
+		payload := api.CheckPayload{
+			Name:     result.Desc,
+			Current:  result.Current,
+			Required: result.Required,
+		}
+		if result.Err != nil {
+			payload.ErrorMsg = result.Err.Error()
+		}
+		payloads = append(payloads, payload)
 		if !result.IsOk {
 			if action, exists := checkFailedActions[result.CheckerId]; exists {
 				action(&result)
@@ -359,12 +402,12 @@ func check(
 			msg := fmt.Sprintf("System check '%s' failed. Required: %v, Current %v",
 				result.Desc, result.Required, result.Current)
 			if result.Severity == tuners.Fatal {
-				return fmt.Errorf(msg)
+				return payloads, fmt.Errorf(msg)
 			}
 			log.Warn(msg)
 		}
 	}
-	return nil
+	return payloads, nil
 }
 
 func writePid(fs afero.Fs, path string) error {
@@ -373,4 +416,16 @@ func writePid(fs afero.Fs, path string) error {
 		[]string{strconv.Itoa(os.Getpid())},
 		path,
 	)
+}
+
+func sendEnv(env api.EnvironmentPayload, conf *config.Config, err error) {
+	if err != nil {
+		env.ErrorMsg = err.Error()
+	}
+	if conf.Rpk.EnableUsageStats {
+		err := api.SendEnvironment(env, *conf)
+		if err != nil {
+			log.Infof("couldn't send environment data: %v", err)
+		}
+	}
 }

@@ -14,47 +14,47 @@ import (
 )
 
 type Config struct {
-	NodeUuid     string `yaml:"node_uuid,omitempty"`
-	Organization string `yaml:"organization,omitempty"`
-	ClusterId    string `yaml:"cluster_id,omitempty"`
-	ConfigFile   string `yaml:"config_file,omitempty"`
-	PidFile      string `yaml:"pid_file"`
-	Redpanda     *RedpandaConfig
-	Rpk          *RpkConfig `yaml:"rpk,omitempty"`
+	NodeUuid     string          `yaml:"node_uuid,omitempty" json:"nodeUuid"`
+	Organization string          `yaml:"organization,omitempty" json:"organization"`
+	ClusterId    string          `yaml:"cluster_id,omitempty" json:"clusterId"`
+	ConfigFile   string          `yaml:"config_file,omitempty" json:"configFile"`
+	PidFile      string          `yaml:"pid_file" json:"pidFile"`
+	Redpanda     *RedpandaConfig `json:"redpanda"`
+	Rpk          *RpkConfig      `yaml:"rpk,omitempty" json:"rpk"`
 }
 
 type RedpandaConfig struct {
-	Directory   string        `yaml:"data_directory"`
-	RPCServer   SocketAddress `yaml:"rpc_server"`
-	KafkaApi    SocketAddress `yaml:"kafka_api"`
-	Id          int           `yaml:"node_id"`
-	SeedServers []*SeedServer `yaml:"seed_servers"`
+	Directory   string        `yaml:"data_directory" json:"directory"`
+	RPCServer   SocketAddress `yaml:"rpc_server" json:"rpcServer"`
+	KafkaApi    SocketAddress `yaml:"kafka_api" json:"kafkaApi"`
+	Id          int           `yaml:"node_id" json:"id"`
+	SeedServers []*SeedServer `yaml:"seed_servers" json:"seedServers"`
 }
 
 type SeedServer struct {
-	Host SocketAddress `yaml:"host"`
-	Id   int           `yaml:"node_id"`
+	Host SocketAddress `yaml:"host" json:"host"`
+	Id   int           `yaml:"node_id" json:"id"`
 }
 
 type SocketAddress struct {
-	Address string `yaml:"address"`
-	Port    int    `yaml:"port"`
+	Address string `yaml:"address" json:"address"`
+	Port    int    `yaml:"port" json:"port"`
 }
 
 type RpkConfig struct {
-	EnableUsageStats    bool   `yaml:"enable_usage_stats"`
-	TuneNetwork         bool   `yaml:"tune_network"`
-	TuneDiskScheduler   bool   `yaml:"tune_disk_scheduler"`
-	TuneNomerges        bool   `yaml:"tune_disk_nomerges"`
-	TuneDiskIrq         bool   `yaml:"tune_disk_irq"`
-	TuneCpu             bool   `yaml:"tune_cpu"`
-	TuneAioEvents       bool   `yaml:"tune_aio_events"`
-	TuneClocksource     bool   `yaml:"tune_clocksource"`
-	TuneSwappiness      bool   `yaml:"tune_swappiness"`
-	EnableMemoryLocking bool   `yaml:"enable_memory_locking"`
-	TuneCoredump        bool   `yaml:"tune_coredump"`
-	CoredumpDir         string `yaml:"coredump_dir"`
-	WellKnownIo         string `yaml:"well_known_io,omitempty"`
+	EnableUsageStats    bool   `yaml:"enable_usage_stats" json:"enableUsageStats"`
+	TuneNetwork         bool   `yaml:"tune_network" json:"tuneNetwork"`
+	TuneDiskScheduler   bool   `yaml:"tune_disk_scheduler" json:"tuneDiskScheduler"`
+	TuneNomerges        bool   `yaml:"tune_disk_nomerges" json:"tuneNomerges"`
+	TuneDiskIrq         bool   `yaml:"tune_disk_irq" json:"tuneDiskIrq"`
+	TuneCpu             bool   `yaml:"tune_cpu" json:"tuneCpu"`
+	TuneAioEvents       bool   `yaml:"tune_aio_events" json:"tuneAioEvents"`
+	TuneClocksource     bool   `yaml:"tune_clocksource" json:"tuneClocksource"`
+	TuneSwappiness      bool   `yaml:"tune_swappiness" json:"tuneSwappiness"`
+	EnableMemoryLocking bool   `yaml:"enable_memory_locking" json:"enableMemoryLocking"`
+	TuneCoredump        bool   `yaml:"tune_coredump" json:"tuneCoredump"`
+	CoredumpDir         string `yaml:"coredump_dir" json:"coredumpDir"`
+	WellKnownIo         string `yaml:"well_known_io,omitempty" json:"wellKnownIo"`
 }
 
 // Checks config and writes it to the given path.
