@@ -117,22 +117,3 @@ rp_test(
   LIBRARIES Seastar::seastar_testing v::storage
   ARGS "-- -c 1"
 )
-
-rp_test(
-  UNIT_TEST
-  BINARY_NAME batch_cache_test
-  SOURCES batch_cache_test.cc
-  LIBRARIES Seastar::seastar_testing v::storage
-)
-
-# this is only enabled for release builds because non-release builds use the
-# default allocator which doesn't support reclaim
-if(CMAKE_BUILD_TYPE STREQUAL "Release")
-rp_test(
-  UNIT_TEST
-  BINARY_NAME batch_cache_reclaim_test
-  SOURCES batch_cache_reclaim_test.cc
-  LIBRARIES Seastar::seastar_testing v::storage
-  ARGS "-- -c1 -m100"
-)
-endif()

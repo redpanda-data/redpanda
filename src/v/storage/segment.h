@@ -1,6 +1,5 @@
 #pragma once
 
-#include "storage/batch_cache.h"
 #include "storage/log_segment_appender.h"
 #include "storage/log_segment_reader.h"
 #include "storage/segment_offset_index.h"
@@ -14,8 +13,7 @@ public:
     segment(
       segment_reader_ptr,
       segment_offset_index_ptr,
-      segment_appender_ptr,
-      batch_cache_index_ptr) noexcept;
+      segment_appender_ptr) noexcept;
 
     segment(segment&&) noexcept = default;
     segment& operator=(segment&&) noexcept = default;
@@ -32,8 +30,6 @@ public:
     ss::future<append_result> append(model::record_batch);
 
     /// main read interface
-    // TODO move most of the log segment batch reader here. this should return a
-    // batch reader interface.
     ss::input_stream<char>
       offset_data_stream(model::offset, ss::io_priority_class);
 
@@ -62,39 +58,12 @@ public:
     explicit operator bool() const { return bool(_reader); }
     model::term_id term() const { return _reader->term(); }
 
-    batch_cache_index::read_result cache_get(
-      model::offset offset, model::offset max_offset, size_t max_bytes) {
-        if (likely(_cache != nullptr)) {
-            return _cache->read(offset, max_offset, max_bytes);
-        }
-        return batch_cache_index::read_result{};
-    }
-
-    void cache_put(std::vector<model::record_batch> batches) {
-        if (likely(_cache != nullptr)) {
-            _cache->put(std::move(batches));
-        }
-    }
-
-    void cache_put(model::record_batch&& batch) {
-        if (likely(_cache != nullptr)) {
-            _cache->put(std::move(batch));
-        }
-    }
-
-    void cache_truncate(model::offset offset) {
-        if (likely(_cache != nullptr)) {
-            _cache->truncate(offset);
-        }
-    }
-
 private:
     // last offset of the last batch, i.e.: batch.last_offset()
     model::offset _dirty_offset;
     segment_reader_ptr _reader;
     segment_offset_index_ptr _oidx;
     segment_appender_ptr _appender = nullptr;
-    batch_cache_index_ptr _cache;
 };
 
 std::ostream& operator<<(std::ostream&, const segment&);

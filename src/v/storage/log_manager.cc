@@ -59,26 +59,20 @@ ss::future<segment> log_manager::make_log_segment(
       })
       .then([this, buf_size, path](segment_appender_ptr a) {
           return open_segment(path, buf_size)
-            .then_wrapped(
-              [this, a = std::move(a)](ss::future<segment> s) mutable {
-                  try {
-                      auto seg = s.get0();
-                      seg.reader()->set_last_visible_byte_offset(0);
-                      auto cache = std::make_unique<batch_cache_index>(
-                        _batch_cache);
-                      return ss::make_ready_future<segment>(segment(
-                        seg.reader(),
-                        std::move(seg.oindex()),
-                        std::move(a),
-                        std::move(cache)));
-                  } catch (...) {
-                      auto raw = a.get();
-                      return raw->close().then(
-                        [a = std::move(a), e = std::current_exception()] {
-                            return ss::make_exception_future<segment>(e);
-                        });
-                  }
-              });
+            .then_wrapped([a = std::move(a)](ss::future<segment> s) mutable {
+                try {
+                    auto seg = s.get0();
+                    seg.reader()->set_last_visible_byte_offset(0);
+                    return ss::make_ready_future<segment>(segment(
+                      seg.reader(), std::move(seg.oindex()), std::move(a)));
+                } catch (...) {
+                    auto raw = a.get();
+                    return raw->close().then(
+                      [a = std::move(a), e = std::current_exception()] {
+                          return ss::make_exception_future<segment>(e);
+                      });
+                }
+            });
       });
 }
 
@@ -229,9 +223,8 @@ ss::future<segment> log_manager::open_segment(const std::filesystem::path& path,
                     f,
                     ptr->base_offset(),
                     segment_offset_index::default_data_buffer_step);
-                auto cache = std::make_unique<batch_cache_index>(_batch_cache);
                 return ss::make_ready_future<segment>(
-                  segment(ptr, std::move(idx), nullptr, std::move(cache)));
+                  segment(ptr, std::move(idx), nullptr));
             });
       });
 }

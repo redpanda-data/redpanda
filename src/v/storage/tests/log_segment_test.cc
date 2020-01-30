@@ -62,18 +62,15 @@ SEASTAR_THREAD_TEST_CASE(log_set_orders_segments) {
       ss::make_lw_shared<log_segment_reader>(
         "test", f, model::term_id(0), model::offset(1), 0, 1024),
       nullptr,
-      nullptr,
       nullptr));
     v.push_back(storage::segment(
       ss::make_lw_shared<log_segment_reader>(
         "test", f, model::term_id(0), model::offset(0), 0, 1024),
       nullptr,
-      nullptr,
       nullptr));
     v.push_back(storage::segment(
       ss::make_lw_shared<log_segment_reader>(
         "test", f, model::term_id(0), model::offset(2), 0, 1024),
-      nullptr,
       nullptr,
       nullptr));
 
@@ -92,12 +89,10 @@ SEASTAR_THREAD_TEST_CASE(log_set_expects_monotonic_adds) {
       ss::make_lw_shared<log_segment_reader>(
         "test", f, model::term_id(0), model::offset(1), 0, 1024),
       nullptr,
-      nullptr,
       nullptr);
     auto s0 = storage::segment(
       ss::make_lw_shared<log_segment_reader>(
         "test", f, model::term_id(0), model::offset(0), 0, 1024),
-      nullptr,
       nullptr,
       nullptr);
     log_set segs = log_set({});
@@ -121,9 +116,9 @@ SEASTAR_THREAD_TEST_CASE(test_log_seg_selector) {
     log_seg3->set_last_written_offset(model::offset(21));
 
     log_set segs = log_set({});
-    segs.add(storage::segment(log_seg1, nullptr, nullptr, nullptr));
-    segs.add(storage::segment(log_seg2, nullptr, nullptr, nullptr));
-    segs.add(storage::segment(log_seg3, nullptr, nullptr, nullptr));
+    segs.add(storage::segment(log_seg1, nullptr, nullptr));
+    segs.add(storage::segment(log_seg2, nullptr, nullptr));
+    segs.add(storage::segment(log_seg3, nullptr, nullptr));
 
     auto seg = segs.lower_bound(model::offset(0));
     BOOST_CHECK_EQUAL(seg->reader(), log_seg1);
@@ -149,15 +144,15 @@ SEASTAR_THREAD_TEST_CASE(test_log_seg_selector) {
       "test", f, model::term_id(0), model::offset(22), 0, 1024);
 
     log_seg4->set_last_written_offset(model::offset(25));
-    segs.add(segment(log_seg4, nullptr, nullptr, nullptr));
+    segs.add(segment(log_seg4, nullptr, nullptr));
     seg = segs.lower_bound(model::offset(22));
     BOOST_CHECK_EQUAL(seg->reader(), log_seg4);
 
     segs = log_set({});
-    segs.add(storage::segment(log_seg1, nullptr, nullptr, nullptr));
-    segs.add(storage::segment(log_seg2, nullptr, nullptr, nullptr));
-    segs.add(storage::segment(log_seg3, nullptr, nullptr, nullptr));
-    segs.add(storage::segment(log_seg4, nullptr, nullptr, nullptr));
+    segs.add(storage::segment(log_seg1, nullptr, nullptr));
+    segs.add(storage::segment(log_seg2, nullptr, nullptr));
+    segs.add(storage::segment(log_seg3, nullptr, nullptr));
+    segs.add(storage::segment(log_seg4, nullptr, nullptr));
     seg = segs.lower_bound(model::offset(12));
     BOOST_CHECK_EQUAL(seg->reader(), log_seg2);
 }

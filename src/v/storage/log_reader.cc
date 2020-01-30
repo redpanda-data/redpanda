@@ -70,19 +70,13 @@ batch_consumer::stop_parser skipping_consumer::consume_batch_end() {
     // updates the next batch to consume
     _reader._buffer.emplace_back(
       model::record_batch(_header, std::exchange(_records, {})));
+    _reader._config.start_offset = _header.last_offset() + model::offset(1);
     _reader._config.bytes_consumed += _header.size_bytes;
     _reader._buffer_size += _header.size_bytes;
     // We keep the batch in the buffer so that the reader can be cached.
     if (
       _header.last_offset() >= _reader._seg.committed_offset()
       || _header.last_offset() >= _reader._config.max_offset) {
-        return stop_parser::yes;
-    }
-    /*
-     * if the very next batch is known to be cached, then stop parsing. the next
-     * read will with high probability experience a cache hit.
-     */
-    if (_next_cached_batch == (_header.last_offset() + model::offset(1))) {
         return stop_parser::yes;
     }
     if (
@@ -105,13 +99,11 @@ log_segment_batch_reader::log_segment_batch_reader(
     std::sort(std::begin(_config.type_filter), std::end(_config.type_filter));
 }
 
-std::unique_ptr<continuous_batch_parser> log_segment_batch_reader::initialize(
-  model::timeout_clock::time_point timeout,
-  std::optional<model::offset> next_cached_batch) {
+std::unique_ptr<continuous_batch_parser>
+log_segment_batch_reader::initialize(model::timeout_clock::time_point timeout) {
     auto input = _seg.offset_data_stream(_config.start_offset, _config.prio);
     return std::make_unique<continuous_batch_parser>(
-      std::make_unique<skipping_consumer>(*this, timeout, next_cached_batch),
-      std::move(input));
+      std::make_unique<skipping_consumer>(*this, timeout), std::move(input));
 }
 
 bool log_segment_batch_reader::is_buffer_full() const {
@@ -120,45 +112,18 @@ bool log_segment_batch_reader::is_buffer_full() const {
 
 ss::future<size_t>
 log_segment_batch_reader::read(model::timeout_clock::time_point timeout) {
-    /*
-     * fetch batches from the cache covering the range [_base, end] where
-     * end is either the configured max offset or the end of the segment.
-     */
-    auto cache_read = _seg.cache_get(
-      _config.start_offset, _config.max_offset, max_buffer_size);
-    if (!cache_read.batches.empty()) {
-        _config.bytes_consumed += cache_read.memory_usage;
-        _buffer.swap(cache_read.batches);
-        return ss::make_ready_future<size_t>(cache_read.memory_usage);
-    }
-
     _buffer_size = 0;
     _buffer.clear();
-    auto parser = initialize(timeout, cache_read.next_batch);
+    auto parser = initialize(timeout);
     auto ptr = parser.get();
-    return ptr->consume()
-      .then([this](size_t size) {
-          // insert batches from disk into the cache
-          std::vector<model::record_batch> copies;
-          copies.reserve(_buffer.size());
-          std::transform(
-            _buffer.begin(),
-            _buffer.end(),
-            std::back_inserter(copies),
-            [](model::record_batch& b) { return b.share(); });
-          _seg.cache_put(std::move(copies));
-
-          return size;
-      })
-      .finally([this, p = std::move(parser)] {});
+    return ptr->consume().finally([this, p = std::move(parser)] {});
 }
 
 log_reader::log_reader(
   log_set& seg_set, log_reader_config config, probe& probe) noexcept
   : _set(seg_set)
   , _config(std::move(config))
-  , _probe(probe)
-  , _seen_first_batch(false) {
+  , _probe(probe) {
     _end_of_stream = seg_set.empty();
 }
 
@@ -198,33 +163,10 @@ log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
       .then([this, ptr](size_t bytes_consumed) {
           _probe.add_bytes_read(bytes_consumed);
           if (_batches.empty()) {
-              return ss::make_ready_future<log_reader::span>();
+              return span();
           }
           _probe.add_batches_read(int32_t(_batches.size()));
-          /*
-           * this is a fast check of the batch offsets returned by the batch
-           * reader to check for holes. note that the update of start_offset is
-           * critical to correctness, even though it is used here to look for
-           * holes. before returning its value must be equal to
-           * _batches.last().last_offset() + model::offset(1).
-           */
-          if (!_seen_first_batch) {
-              _config.start_offset = _batches.front().base_offset();
-              _seen_first_batch = true;
-          }
-          for (const auto& batch : _batches) {
-              if (batch.base_offset() != _config.start_offset) {
-                  return ss::make_exception_future<log_reader::span>(
-                    fmt::format(
-                      "hole encountered reading from log: "
-                      "expected batch offset {} (actually {})",
-                      _config.start_offset,
-                      batch.base_offset()));
-              }
-              _config.start_offset = batch.last_offset() + model::offset(1);
-          }
-          return ss::make_ready_future<log_reader::span>(
-            span{&_batches[0], int32_t(_batches.size())});
+          return span{&_batches[0], int32_t(_batches.size())};
       })
       .finally([sc = std::move(segc)] {});
 }

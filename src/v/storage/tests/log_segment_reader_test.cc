@@ -51,7 +51,7 @@ struct context {
           appender->file_byte_offset(),
           128);
         _seg = std::make_unique<segment>(
-          reader, std::move(indexer), std::move(appender), nullptr);
+          reader, std::move(indexer), std::move(appender));
     }
 
     void write(std::vector<model::record_batch> batches) {
