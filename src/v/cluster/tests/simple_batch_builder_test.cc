@@ -1,5 +1,6 @@
 #include "cluster/simple_batch_builder.h"
 #include "cluster/tests/batch_utils.h"
+#include "random/generators.h"
 #include "reflection/adl.h"
 #include "test_utils/logs.h"
 
@@ -58,7 +59,8 @@ SEASTAR_THREAD_TEST_CASE(round_trip_test) {
                      .add_kv(pa_key, create_test_assignment(2, 1)))
                    .build();
     int32_t current_crc = batch.crc();
-    ss::sstring base_dir = "./test_dir";
+    ss::sstring base_dir = "test.dir_"
+                           + random_generators::gen_alphanum_string(4);
     model::ntp test_ntp{.ns = model::ns("test_ns"),
                         .tp = {.topic = model::topic("test_topic"),
                                .partition = model::partition_id(0)}};
