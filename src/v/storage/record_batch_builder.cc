@@ -33,7 +33,9 @@ model::record_batch record_batch_builder::build() && {
       .attrs = model::record_batch_attributes{} |= model::compression::none,
       .last_offset_delta = static_cast<int32_t>(_records.size() - 1),
       .first_timestamp = model::timestamp(now_ts),
-      .max_timestamp = model::timestamp(now_ts)};
+      .max_timestamp = model::timestamp(now_ts),
+      .ctx = model::record_batch_header::context{
+        .term = model::term_id(0)}}; // namespace storage
 
     storage::crc_batch_header(crc, header, _records.size());
     for (auto& sr : _records) {
