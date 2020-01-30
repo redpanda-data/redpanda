@@ -296,6 +296,11 @@ public:
             return !(*this == other);
         }
 
+        void clear() {
+            _size = 0;
+            _data = iobuf();
+        }
+
         friend std::ostream&
         operator<<(std::ostream&, const compressed_records&);
 
@@ -366,6 +371,10 @@ public:
     model::term_id term() const { return _header.ctx.term; }
     void set_term(model::term_id term) { _header.ctx.term = term; }
 
+    bool contains(model::offset offset) const {
+        return base_offset() <= offset && offset <= last_offset();
+    }
+
     // Can only be called if this holds a set of uncompressed records.
     uncompressed_records::const_iterator begin() const {
         return std::get<uncompressed_records>(_records).begin();
@@ -427,6 +436,10 @@ public:
           [](record& rec) -> record { return rec.share(); });
 
         return record_batch(h, std::move(r));
+    }
+
+    void clear() {
+        ss::visit(_records, [](auto& r) { r.clear(); });
     }
 
 private:
