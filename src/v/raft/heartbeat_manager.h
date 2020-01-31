@@ -57,7 +57,7 @@ private:
     /// \param n the physical node that owns heart beats
     /// \param groups raft groups managed by \param n
     /// \param result if the node return successful heartbeats
-    ss::future<> process_reply(
+    void process_reply(
       model::node_id n,
       std::vector<group_id> groups,
       result<heartbeat_reply> result);
