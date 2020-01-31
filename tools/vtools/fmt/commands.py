@@ -150,7 +150,7 @@ def _fmt(vconfig, unstaged, exts, cmd, args, check):
     for f in _git_files(vconfig, exts, unstaged):
         try:
             ret = shell.raw_check_output(
-                    f'cd {vconfig.src_dir} && {cmd} {args} {f}')
+                f'cd {vconfig.src_dir} && {cmd} {args} {f}')
         except subprocess.CalledProcessError as e:
             # some formatters return non-zero if they find differences. So we
             # print whatever they have to tell us and fail
