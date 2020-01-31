@@ -42,7 +42,7 @@ struct foreign_entry_fixture {
     }
     template<typename Func>
     model::record_batch_reader reader_gen(std::size_t n, Func&& f) {
-        std::vector<model::record_batch> batches;
+        ss::circular_buffer<model::record_batch> batches;
         batches.reserve(n);
         while (n-- > 0) {
             batches.push_back(f());

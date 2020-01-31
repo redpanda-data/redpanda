@@ -5,7 +5,11 @@
 #include "utils/intrusive_list_helpers.h"
 #include "vassert.h"
 
+#include <seastar/core/circular_buffer.hh>
+
 #include <boost/container/flat_map.hpp>
+
+#include <type_traits>
 
 namespace storage {
 
@@ -203,7 +207,7 @@ class batch_cache_index {
 
 public:
     struct read_result {
-        std::vector<model::record_batch> batches;
+        ss::circular_buffer<model::record_batch> batches;
         size_t memory_usage{0};
         std::optional<model::offset> next_batch;
     };
@@ -226,7 +230,11 @@ public:
         _index.emplace(offset, std::move(p));
     }
 
-    void put(std::vector<model::record_batch>&& batches) {
+    template<typename Range>
+    void put(Range&& batches) {
+        static_assert(
+          std::is_rvalue_reference_v<decltype(batches)>,
+          "ensure you move your types to the cache");
         for (auto& batch : batches) {
             put(std::move(batch));
         }
@@ -262,7 +270,8 @@ public:
         read_result ret;
 
         for (auto it = find_first_contains(offset); it != _index.end();) {
-            auto& batch = ret.batches.emplace_back(it->second->batch.share());
+            ret.batches.emplace_back(it->second->batch.share());
+            auto& batch = ret.batches.back();
             ret.memory_usage += batch.memory_usage();
             _cache.touch(it->second);
 

@@ -16,31 +16,29 @@
 #include <vector>
 
 struct checking_consumer {
-    using batches_t = std::vector<model::record_batch>;
-    using batches_iter = std::vector<model::record_batch>::const_iterator;
+    using batches_t = ss::circular_buffer<model::record_batch>;
 
-    checking_consumer(std::vector<model::record_batch> exp)
-      : expected(std::move(exp))
-      , current_batch(expected.cbegin()) {}
+    checking_consumer(ss::circular_buffer<model::record_batch> exp)
+      : expected(std::move(exp)) {}
 
     ss::future<ss::stop_iteration> operator()(model::record_batch batch) {
-        BOOST_REQUIRE_EQUAL(current_batch->base_offset(), batch.base_offset());
-        BOOST_REQUIRE_EQUAL(current_batch->last_offset(), batch.last_offset());
-        BOOST_REQUIRE_EQUAL(current_batch->crc(), batch.crc());
-        BOOST_REQUIRE_EQUAL(current_batch->compressed(), batch.compressed());
-        BOOST_REQUIRE_EQUAL(current_batch->type(), batch.type());
-        BOOST_REQUIRE_EQUAL(current_batch->size_bytes(), batch.size_bytes());
-        BOOST_REQUIRE_EQUAL(current_batch->size(), batch.size());
-        BOOST_REQUIRE_EQUAL(current_batch->term(), batch.term());
-        current_batch++;
+        auto current_batch = std::move(expected.front());
+        expected.pop_front();
+        BOOST_REQUIRE_EQUAL(current_batch.base_offset(), batch.base_offset());
+        BOOST_REQUIRE_EQUAL(current_batch.last_offset(), batch.last_offset());
+        BOOST_REQUIRE_EQUAL(current_batch.crc(), batch.crc());
+        BOOST_REQUIRE_EQUAL(current_batch.compressed(), batch.compressed());
+        BOOST_REQUIRE_EQUAL(current_batch.type(), batch.type());
+        BOOST_REQUIRE_EQUAL(current_batch.size_bytes(), batch.size_bytes());
+        BOOST_REQUIRE_EQUAL(current_batch.size(), batch.size());
+        BOOST_REQUIRE_EQUAL(current_batch.term(), batch.term());
         return ss::make_ready_future<ss::stop_iteration>(
           ss::stop_iteration::no);
     }
 
-    void end_of_stream() { BOOST_CHECK(current_batch == expected.end()); }
+    void end_of_stream() { BOOST_REQUIRE(expected.empty()); }
 
     batches_t expected;
-    batches_iter current_batch;
 };
 
 SEASTAR_THREAD_TEST_CASE(append_entries_requests) {
@@ -65,7 +63,7 @@ SEASTAR_THREAD_TEST_CASE(append_entries_requests) {
                                      .batches = std::move(readers.back())};
 
     readers.pop_back();
-    auto d = serialize_roundtrip_rpc(std::move(req));
+    auto d = async_serialize_roundtrip_rpc(std::move(req)).get0();
 
     BOOST_REQUIRE_EQUAL(d.node_id, model::node_id(1));
     BOOST_REQUIRE_EQUAL(d.meta.group, meta.group);
@@ -73,10 +71,12 @@ SEASTAR_THREAD_TEST_CASE(append_entries_requests) {
     BOOST_REQUIRE_EQUAL(d.meta.term, meta.term);
     BOOST_REQUIRE_EQUAL(d.meta.prev_log_index, meta.prev_log_index);
     BOOST_REQUIRE_EQUAL(d.meta.prev_log_term, meta.prev_log_term);
+
+    auto batches_result = model::consume_reader_to_memory(
+                            std::move(readers.back()), model::no_timeout)
+                            .get0();
     d.batches
-      .consume(
-        checking_consumer(std::move(readers.back().release_buffered_batches())),
-        model::no_timeout)
+      .consume(checking_consumer(std::move(batches_result)), model::no_timeout)
       .get0();
 }
 
@@ -107,7 +107,7 @@ SEASTAR_THREAD_TEST_CASE(group_configuration) {
                                   .learners = std::move(learners)};
     auto expected = cfg;
 
-    auto deser = serialize_roundtrip_rpc(std::move(cfg));
+    auto deser = async_serialize_roundtrip_rpc(std::move(cfg)).get0();
 
     BOOST_REQUIRE_EQUAL(deser.leader_id, expected.leader_id);
     BOOST_REQUIRE_EQUAL(deser.nodes, expected.nodes);

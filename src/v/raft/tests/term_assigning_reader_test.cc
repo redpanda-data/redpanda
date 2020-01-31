@@ -13,12 +13,11 @@ SEASTAR_THREAD_TEST_CASE(test_assigning_batch_term) {
     auto term = model::term_id(11);
     auto src_reader = model::make_memory_record_batch_reader(
       std::move(batches));
-    auto assigning_reader = raft::details::term_assigning_reader(
-      std::move(src_reader), term);
-    auto batches_with_term = assigning_reader
-                               .consume(
-                                 raft::details::memory_batch_consumer(),
-                                 model::no_timeout)
+    auto assigning_reader
+      = model::make_record_batch_reader<raft::details::term_assigning_reader>(
+        std::move(src_reader), term);
+    auto batches_with_term = model::consume_reader_to_memory(
+                               std::move(assigning_reader), model::no_timeout)
                                .get0();
 
     BOOST_REQUIRE_EQUAL(batches_with_term.size(), 10);
@@ -32,9 +31,13 @@ SEASTAR_THREAD_TEST_CASE(test_assigning_batch_term_release) {
     auto term = model::term_id(11);
     auto src_reader = model::make_memory_record_batch_reader(
       std::move(batches));
-    auto assigning_reader = raft::details::term_assigning_reader(
-      std::move(src_reader), term);
-    auto batches_with_term = assigning_reader.release_buffered_batches();
+
+    auto assigning_reader
+      = model::make_record_batch_reader<raft::details::term_assigning_reader>(
+        std::move(src_reader), term);
+    auto batches_with_term = model::consume_reader_to_memory(
+                               std::move(assigning_reader), model::no_timeout)
+                               .get0();
 
     BOOST_REQUIRE_EQUAL(batches_with_term.size(), 10);
     for (auto& b : batches_with_term) {

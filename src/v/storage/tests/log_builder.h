@@ -71,7 +71,7 @@ public:
      *
      * The caller must ensure that the record batch offsets are valid.
      */
-    log_builder& add_batch(std::vector<model::record_batch> batches) {
+    log_builder& add_batch(ss::circular_buffer<model::record_batch> batches) {
         for (auto& b : batches) {
             add_batch(std::move(b));
         }
@@ -165,7 +165,7 @@ private:
     }
 
     static model::record_batch_reader make_batch_reader(segment_spec segment) {
-        std::vector<model::record_batch> batches;
+        ss::circular_buffer<model::record_batch> batches;
         for (auto& batch : segment.batches) {
             if (std::holds_alternative<model::record_batch>(batch)) {
                 batches.push_back(
