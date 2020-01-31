@@ -6,6 +6,7 @@
 #include "storage/tests/random_batch.h"
 
 #include <seastar/core/sstring.hh>
+
 #include <tuple>
 
 namespace storage {

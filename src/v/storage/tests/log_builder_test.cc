@@ -81,9 +81,7 @@ FIXTURE_TEST(kitchen_sink, log_builder_fixture) {
     auto extra = storage::test::make_random_batches(model::offset(102), 3);
 
     auto bspec = storage::log_builder::batch_spec{
-      .num_records = 2,
-      .compression = model::compression::none
-    };
+      .num_records = 2, .compression = model::compression::none};
 
     b.segment()                    // start a new segment
       .add_random_batch(100)       // add batch with 100 random record
