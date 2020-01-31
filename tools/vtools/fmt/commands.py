@@ -13,7 +13,7 @@ def fmt():
     pass
 
 
-@fmt.command()
+@fmt.command(short_help='runs crlfmt against go source code files.')
 @click.option('--conf',
               help=('Path to configuration file. If not given, a .vtools.yml '
                     'file is searched recursively starting from the current '
@@ -29,7 +29,7 @@ def go(conf, unstaged, check):
     _crlfmt(vconfig, unstaged, check)
 
 
-@fmt.command()
+@fmt.command(short_help='runs shfmt against shell scripts.')
 @click.option('--conf',
               help=('Path to configuration file. If not given, a .vtools.yml '
                     'file is searched recursively starting from the current '
@@ -45,7 +45,7 @@ def sh(conf, unstaged, check):
     _shfmt(vconfig, unstaged, check)
 
 
-@fmt.command()
+@fmt.command(short_help='runs clang-format against C++ source code.')
 @click.option('--conf',
               help=('Path to configuration file. If not given, a .vtools.yml '
                     'file is searched recursively starting from the current '
@@ -61,7 +61,7 @@ def cpp(conf, unstaged, check):
     _clangfmt(vconfig, unstaged, check)
 
 
-@fmt.command()
+@fmt.command(short_help='runs yapf for python source files.')
 @click.option('--conf',
               help=('Path to configuration file. If not given, a .vtools.yml '
                     'file is searched recursively starting from the current '
@@ -77,7 +77,7 @@ def py(conf, unstaged, check):
     _yapf(vconfig, unstaged, check)
 
 
-@fmt.command()
+@fmt.command(short_help='shortcut for applying all formatters.')
 @click.option('--conf',
               help=('Path to configuration file. If not given, a .vtools.yml '
                     'file is searched recursively starting from the current '
@@ -98,7 +98,7 @@ def all(conf, unstaged, check):
 
 def _clangfmt(vconfig, unstaged, check):
     logging.debug("Running clang-format")
-    cmd = f'cd {vconfig.src_dir} && {vconfig.clang_path}/bin/clang-format'
+    cmd = f'{vconfig.clang_path}/bin/clang-format'
     args = f'-style=file -fallback-style=none {"" if check else "-i"}'
     exts = [".cc", ".cpp", ".h", ".hpp", ".proto", ".java", ".js"]
     _fmt(vconfig, unstaged, exts, cmd, args, check)
@@ -106,7 +106,7 @@ def _clangfmt(vconfig, unstaged, check):
 
 def _crlfmt(vconfig, unstaged, check):
     logging.debug("Running crlfmt")
-    cmd = f'cd {vconfig.src_dir} && {vconfig.go_path}/bin/crlfmt'
+    cmd = f'{vconfig.go_path}/bin/crlfmt'
     args = f'-wrap=80 {"" if check else "-diff=false -w"}'
     _fmt(vconfig, unstaged, ['.go'], cmd, args, check)
 
@@ -117,14 +117,13 @@ def _yapf(vconfig, unstaged, check):
     if not os.path.exists(yapfbin):
         # assume is in PATH
         yapfbin = 'yapf'
-    cmd = f'cd {vconfig.src_dir} && {yapfbin}'
     args = f'{"-d" if check else "-i"}'
-    _fmt(vconfig, unstaged, ['.py'], cmd, args, check)
+    _fmt(vconfig, unstaged, ['.py'], yapfbin, args, check)
 
 
 def _shfmt(vconfig, unstaged, check):
     logging.debug("Running shfmt")
-    cmd = f'cd {vconfig.src_dir} && {vconfig.go_path}/bin/shfmt'
+    cmd = f'{vconfig.go_path}/bin/shfmt'
     args = f'-i 2 -ci -s {"-d" if check else "-w"}'
     _fmt(vconfig, unstaged, ['.sh'], cmd, args, check)
 
@@ -132,7 +131,8 @@ def _shfmt(vconfig, unstaged, check):
 def _fmt(vconfig, unstaged, exts, cmd, args, check):
     for f in _git_files(vconfig, exts, unstaged):
         try:
-            ret = shell.raw_check_output(f'{cmd} {args} {f}')
+            ret = shell.raw_check_output(
+                    f'cd {vconfig.src_dir} && {cmd} {args} {f}')
         except subprocess.CalledProcessError as e:
             # some formatters return non-zero if they find differences. So we
             # print whatever they have to tell us and fail
