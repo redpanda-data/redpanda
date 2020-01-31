@@ -292,7 +292,7 @@ ss::future<std::vector<topic_result>> controller::create_topics(
             std::move(topics), topic_error_code::not_leader_controller));
     }
     std::vector<topic_result> errors;
-    std::vector<model::record_batch> batches;
+    ss::circular_buffer<model::record_batch> batches;
     batches.reserve(topics.size());
     for (const auto& t_cfg : topics) {
         auto batch = create_topic_cfg_batch(t_cfg);

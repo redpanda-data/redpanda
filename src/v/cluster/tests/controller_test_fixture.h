@@ -75,7 +75,8 @@ public:
         }
     }
 
-    void persist_test_batches(std::vector<model::record_batch> batches) {
+    void
+    persist_test_batches(ss::circular_buffer<model::record_batch> batches) {
         tests::persist_log_file(
           _base_dir, cluster::controller::ntp, std::move(batches))
           .get0();
@@ -137,8 +138,8 @@ public:
                  .partition = model::partition_id(partition_id)}};
     }
 
-    std::vector<model::record_batch> single_topic_current_broker() {
-        std::vector<model::record_batch> ret;
+    ss::circular_buffer<model::record_batch> single_topic_current_broker() {
+        ss::circular_buffer<model::record_batch> ret;
 
         // topic with partition replicas on current broker
         auto b1 = std::move(
@@ -168,9 +169,9 @@ public:
         return ret;
     }
 
-    std::vector<model::record_batch>
+    ss::circular_buffer<model::record_batch>
     single_topic_other_broker(model::offset off = model::offset(0)) {
-        std::vector<model::record_batch> ret;
+        ss::circular_buffer<model::record_batch> ret;
 
         // topic with partition replicas on other broker
         auto b1 = std::move(
@@ -199,8 +200,8 @@ public:
         return ret;
     }
 
-    std::vector<model::record_batch> two_topics() {
-        std::vector<model::record_batch> ret;
+    ss::circular_buffer<model::record_batch> two_topics() {
+        ss::circular_buffer<model::record_batch> ret;
         auto first = single_topic_current_broker();
         auto second = single_topic_other_broker(model::offset(3));
         std::move(first.begin(), first.end(), std::back_inserter(ret));
@@ -208,8 +209,8 @@ public:
         return ret;
     }
 
-    std::vector<model::record_batch> make_complex_topics() {
-        std::vector<model::record_batch> ret;
+    ss::circular_buffer<model::record_batch> make_complex_topics() {
+        ss::circular_buffer<model::record_batch> ret;
 
         auto max_partitions = 20;
         std::array<model::node_id, 5> brokers{model::node_id(0),

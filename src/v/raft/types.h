@@ -2,8 +2,10 @@
 
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
+#include "reflection/async_adl.h"
 #include "rpc/models.h"
 #include "utils/named_type.h"
 
@@ -245,24 +247,23 @@ struct rpc_model_reader_consumer {
 };
 
 template<>
-struct adl<raft::append_entries_request> {
-    void to(iobuf& out, raft::append_entries_request&& request) {
-        auto batches = request.batches.release_buffered_batches();
-        reflection::adl<uint32_t>{}.to(out, batches.size());
-        for (auto& batch : batches) {
-            reflection::serialize(out, std::move(batch));
-        }
-        reflection::serialize(out, request.meta, request.node_id);
+struct async_adl<raft::append_entries_request> {
+    ss::future<> to(iobuf& out, raft::append_entries_request&& request) {
+        return model::consume_reader_to_memory(
+                 std::move(request.batches), model::no_timeout)
+          .then([&out, request = std::move(request)](
+                  ss::circular_buffer<model::record_batch> batches) {
+              reflection::adl<uint32_t>{}.to(out, batches.size());
+              for (auto& batch : batches) {
+                  reflection::serialize(out, std::move(batch));
+              }
+              reflection::serialize(out, request.meta, request.node_id);
+          });
     }
 
-    raft::append_entries_request from(iobuf io) {
-        return reflection::from_iobuf<raft::append_entries_request>(
-          std::move(io));
-    }
-
-    raft::append_entries_request from(iobuf_parser& in) {
+    ss::future<raft::append_entries_request> from(iobuf_parser& in) {
         auto batchCount = reflection::adl<uint32_t>{}.from(in);
-        auto batches = std::vector<model::record_batch>{};
+        auto batches = ss::circular_buffer<model::record_batch>{};
         batches.reserve(batchCount);
         for (int i = 0; i < batchCount; ++i) {
             batches.push_back(adl<model::record_batch>{}.from(in));
@@ -271,8 +272,10 @@ struct adl<raft::append_entries_request> {
           std::move(batches));
         auto meta = reflection::adl<raft::protocol_metadata>{}.from(in);
         auto n = reflection::adl<model::node_id>{}.from(in);
-        return raft::append_entries_request{
+        auto ret = raft::append_entries_request{
           .node_id = n, .meta = std::move(meta), .batches = std::move(reader)};
+        return ss::make_ready_future<raft::append_entries_request>(
+          std::move(ret));
     }
 };
 

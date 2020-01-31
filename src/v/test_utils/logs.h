@@ -16,7 +16,7 @@ static storage::log_manager make_log_mgr(ss::sstring base_dir) {
 static ss::future<> persist_log_file(
   ss::sstring base_dir,
   model::ntp file_ntp,
-  std::vector<model::record_batch> batches) {
+  ss::circular_buffer<model::record_batch> batches) {
     return ss::do_with(
       make_log_mgr(base_dir),
       [file_ntp = std::move(file_ntp),
@@ -48,15 +48,15 @@ struct to_vector_consumer {
           ss::stop_iteration::no);
     }
 
-    std::vector<model::record_batch> end_of_stream() {
+    ss::circular_buffer<model::record_batch> end_of_stream() {
         return std::move(_batches);
     }
 
 private:
-    std::vector<model::record_batch> _batches;
+    ss::circular_buffer<model::record_batch> _batches;
 };
 
-static ss::future<std::vector<model::record_batch>>
+static ss::future<ss::circular_buffer<model::record_batch>>
 read_log_file(ss::sstring base_dir, model::ntp file_ntp) {
     return ss::do_with(
       make_log_mgr(base_dir),

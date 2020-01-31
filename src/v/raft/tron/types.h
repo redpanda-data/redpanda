@@ -17,7 +17,9 @@ namespace reflection {
 template<>
 struct adl<model::record_batch_reader> {
     void to(iobuf& out, model::record_batch_reader&& rdr) {
-        auto batches = rdr.release_buffered_batches();
+        auto batches = model::consume_reader_to_memory(
+                         std::move(rdr), model::no_timeout)
+                         .get0();
         reflection::adl<uint32_t>{}.to(out, batches.size());
         for (auto& batch : batches) {
             reflection::serialize(out, std::move(batch));
@@ -31,7 +33,7 @@ struct adl<model::record_batch_reader> {
 
     model::record_batch_reader from(iobuf_parser& in) {
         auto batchCount = reflection::adl<uint32_t>{}.from(in);
-        auto batches = std::vector<model::record_batch>{};
+        auto batches = ss::circular_buffer<model::record_batch>{};
         batches.reserve(batchCount);
         for (int i = 0; i < batchCount; ++i) {
             batches.push_back(adl<model::record_batch>{}.from(in));

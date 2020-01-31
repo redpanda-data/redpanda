@@ -173,11 +173,11 @@ make_random_batch(model::offset o, bool allow_compression = true) {
     return make_random_batch(o, num_records, allow_compression);
 }
 
-static std::vector<model::record_batch> make_random_batches(
+static ss::circular_buffer<model::record_batch> make_random_batches(
   model::offset o,
   size_t count,
   bool allow_compression = true) { // start offset + count
-    std::vector<model::record_batch> ret;
+    ss::circular_buffer<model::record_batch> ret;
     ret.reserve(count);
     for (size_t i = 0; i < count; i++) {
         auto b = make_random_batch(o, allow_compression);
@@ -188,7 +188,7 @@ static std::vector<model::record_batch> make_random_batches(
     return ret;
 }
 
-static std::vector<model::record_batch>
+static ss::circular_buffer<model::record_batch>
 make_random_batches(model::offset o = model::offset(0)) {
     return make_random_batches(o, random_generators::get_int(2, 30));
 }
