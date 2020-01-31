@@ -96,6 +96,24 @@ def all(conf, unstaged, check):
     _shfmt(vconfig, unstaged, check)
 
 
+@fmt.command(short_help='runs clang-tidy against redpanda for clang builds.')
+@click.option('--conf',
+              help=('Path to configuration file. If not given, a .vtools.yml '
+                    'file is searched recursively starting from the current '
+                    'working directory'),
+              default=None)
+@click.option('--check',
+              help=('Do not format in-place; instead, check whether files are '
+                    'properly formatted and throw an error if they are not'),
+              is_flag=True)
+def tidy(conf, check):
+    vconfig = config.VConfig(conf, clang=True)
+    cmd = f'{vconfig.clang_path}/bin/clang-tidy'
+    args = f'-p compile_commands.json {vconfig.src_dir}/src/v/redpanda/main.cc'
+    args = f'{args} {"" if check else "--fix"}'
+    shell.raw_check_output(f'cd {vconfig.build_dir} && {cmd} {args}')
+
+
 def _clangfmt(vconfig, unstaged, check):
     logging.debug("Running clang-format")
     cmd = f'{vconfig.clang_path}/bin/clang-format'
