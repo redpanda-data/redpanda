@@ -119,11 +119,11 @@ ss::future<> heartbeat_manager::do_heartbeat(
              })
       .then([node = r.node_id, groups = std::move(groups), this](
               result<heartbeat_reply> ret) mutable {
-          return process_reply(node, std::move(groups), std::move(ret));
+          process_reply(node, std::move(groups), std::move(ret));
       });
 }
 
-ss::future<> heartbeat_manager::process_reply(
+void heartbeat_manager::process_reply(
   model::node_id n, std::vector<group_id> groups, result<heartbeat_reply> r) {
     if (!r) {
         hbeatlog.info(
@@ -141,27 +141,25 @@ ss::future<> heartbeat_manager::process_reply(
                 hbeatlog.error("cannot find consensus group:{}", g);
                 continue;
             }
-            // propagte error
-            return (*it)->process_append_reply(
+            // propagate error
+            (*it)->process_append_reply(
               n, result<append_entries_reply>(r.error()));
         }
-        return ss::make_ready_future<>();
     }
     hbeatlog.trace("process_reply {}", r);
-    return ss::do_for_each(
-      r.value().meta.begin(), r.value().meta.end(), [this, n](auto& m) {
-          auto it = std::lower_bound(
-            _consensus_groups.begin(),
-            _consensus_groups.end(),
-            raft::group_id(m.group),
-            details::consensus_ptr_by_group_id{});
-          if (it == _consensus_groups.end()) {
-              hbeatlog.error("Could not find consensus for group:{}", m.group);
-              return seastar::make_ready_future<>();
-          }
-          return (*it)->process_append_reply(
-            n, result<append_entries_reply>(std::move(m)));
-      });
+    for (auto& m : r.value().meta) {
+        auto it = std::lower_bound(
+          _consensus_groups.begin(),
+          _consensus_groups.end(),
+          raft::group_id(m.group),
+          details::consensus_ptr_by_group_id{});
+        if (it == _consensus_groups.end()) {
+            hbeatlog.error("Could not find consensus for group:{}", m.group);
+            continue;
+        }
+        (*it)->process_append_reply(
+          n, result<append_entries_reply>(std::move(m)));
+    }
 }
 
 void heartbeat_manager::dispatch_heartbeats() {
