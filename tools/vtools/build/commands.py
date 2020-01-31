@@ -77,13 +77,25 @@ def cpp(build_type, conf, skip_external, clang, reconfigure):
                     'file is searched recursively starting from the current '
                     'working directory'),
               default=None)
-def go(conf):
+@click.option('--targets',
+              help="target to build ('rpk', 'metrics').",
+              multiple=True)
+def go(conf, targets):
+    allowed_argets = ['rpk', 'metrics']
+    build_flags = '-buildmode=pie -v -a -tags netgo'
     vconfig = config.VConfig(conf)
     os.makedirs(vconfig.go_out_dir, exist_ok=True)
-    build_flags = '-buildmode=pie -v -a -tags netgo'
-    shell.run_subprocess(
-        f'cd {vconfig.go_src_dir} && '
-        f'{vconfig.gobin} build {build_flags} -o {vconfig.go_out_dir} ./...')
+
+    if len(targets) == 0:
+        targets = allowed_argets
+
+    for t in targets:
+        if t not in allowed_argets:
+            logging.fatal(f'Unknown target {t}')
+
+        shell.run_subprocess(
+            f'cd {vconfig.go_src_dir}/{t} && '
+            f'{vconfig.gobin} build {build_flags} -o {vconfig.go_out_dir} ./...')
 
 
 @build.command(short_help='build tar, deb or rpm packages.')
