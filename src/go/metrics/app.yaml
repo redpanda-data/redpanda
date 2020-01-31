@@ -1,0 +1,2 @@
+runtime: go113
+main: ./pkg/cmd/metrics
