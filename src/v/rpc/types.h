@@ -70,7 +70,7 @@ using method = ss::noncopyable_function<ss::future<netbuf>(
 template<typename T>
 struct client_context {
     explicit client_context(header h)
-      : hdr(h) {}
+      : hdr(std::move(h)) {}
     header hdr;
     T data;
 };
