@@ -111,7 +111,9 @@ def pr(ctx, fork, upstream, to):
         if not upstream:
             ctx.fail("Please configure an upstream branch. See --help output.")
         upstream = upstream.name
-    click.echo("Using upstream branch: {}".format(upstream))
+        ups_fetch = repo.remote(upstream)
+        logging.debug(f"fetching from {upstream}")
+        ups_fetch.fetch()
 
     # create name for remote branch. the expected name is {local_branch}-vV. a
     # local branch without a -vV suffix is an alias for a suffix of -v1.
