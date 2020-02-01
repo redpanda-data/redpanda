@@ -30,7 +30,7 @@ steps:
       --cache=true \
       --cache-ttl=12h
 
-- id: 'check formatting'
+- id: 'check source code formatting'
   name: 'gcr.io/$PROJECT_ID/builder-$_COMPILER-$_BUILD_TYPE:$SHORT_SHA'
   entrypoint: 'bash'
   args:
@@ -77,7 +77,7 @@ steps:
   - '-c'
   - |
     if [[ "$TAG_NAME" != "" ]] && [[ "$_BUILD_TYPE" == "release" ]] && [[ "$_COMPILER" == "clang" ]]; then
-      gcloud container images add-tag gcr.io/$PROJECT_ID/builder-$_COMPILER-$_BUILD_TYPE:$SHORT_SHA gcr.io/$PROJECT_ID/builder-$_COMPILER-$_BUILD_TYPE:$TAG_NAME
+      gcloud container images add-tag gcr.io/$PROJECT_ID/builder-$_COMPILER-$_BUILD_TYPE:$SHORT_SHA gcr.io/$PROJECT_ID/builder-frozen:$TAG_NAME
     else
       gcloud container images delete gcr.io/$PROJECT_ID/builder-$_COMPILER-$_BUILD_TYPE:$SHORT_SHA
     fi

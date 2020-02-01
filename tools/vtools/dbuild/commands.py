@@ -1,5 +1,7 @@
 import click
+import os
 
+from absl import logging
 from ..vlib import shell
 
 
@@ -9,7 +11,8 @@ def dbuild():
     deb/rpm packages) by using a frozen toolchain that has been previously used
     to produce binaries for tagged commits. Currently, only toolchains
     associated to clang-release builds are persisted (frozen) by the CI
-    pipeline.
+    pipeline. The folder used for these builds is $VROOT/dbuild and not build/
+    of non-containerized builds.
 
     Each command in this group operates in the following way: a Docker image is
     fetched, a container is instantiated from it, and the internal vtools
@@ -60,7 +63,13 @@ def pkg(tag):
 
 
 def _run_in_docker(tag, command, extra=''):
+    if not os.path.exists('.git/'):
+        logging.fatal(
+            "Unable to find .git/ folder. This command needs to be executed "
+            "from the project's root folder.")
     shell.run_oneline(
-        f'docker run --rm -ti -v $PWD:/workspace -w /workspace '
-        f'gcr.io/redpandaci/builder-clang-release:{tag} vtools build {command}'
-        f' --conf tools/ci/vtools-clang-release.yml --skip-external {extra}')
+        f'docker run --rm -ti'
+        f'  -w /workspace -v $PWD:/workspace -v $PWD/dbuild:/workspace/build'
+        f'  gcr.io/redpandaci/builder-clang-release:{tag}'
+        f'    vtools build {command} --conf tools/ci/vtools-clang-release.yml'
+        f'      --skip-external {extra}')
