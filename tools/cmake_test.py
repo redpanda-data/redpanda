@@ -39,7 +39,8 @@ class TestRunner():
             unit_args = [
                 "--overprovisioned", "--unsafe-bypass-fsync 1",
                 "--default-log-level=trace",
-                "--logger-log-level='exception=debug'"
+                "--logger-log-level='exception=debug'",
+                "--fail-on-abandoned-failed-futures"
             ] + COMMON_TEST_ARGS
             if "--" in args: args = args + unit_args
             else: args = args + ["--"] + unit_args
