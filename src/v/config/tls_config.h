@@ -28,8 +28,8 @@ public:
       std::optional<ss::sstring> truststore,
       bool require_client_auth)
       : _enabled(enabled)
-      , _key_cert(key_cert)
-      , _truststore_file(truststore)
+      , _key_cert(std::move(key_cert))
+      , _truststore_file(std::move(truststore))
       , _require_client_auth(require_client_auth) {}
 
     bool is_enabled() const { return _enabled; }
