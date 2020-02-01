@@ -18,6 +18,7 @@ v_cc_library(
     segment_offset_index.cc
     segment_offset_index_utils.cc
     log_segment_appender_utils.cc
+    batch_cache.cc
   DEPS
     Seastar::seastar
     v::bytes
