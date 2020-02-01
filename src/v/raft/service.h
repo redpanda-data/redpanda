@@ -57,7 +57,7 @@ public:
               .node_id = r.node_id,
               .meta = std::move(m),
               .batches = model::make_memory_record_batch_reader(
-                std::vector<model::record_batch>{})});
+                ss::circular_buffer<model::record_batch>{})});
         }
         return ss::do_with(
                  std::move(reqs),

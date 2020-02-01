@@ -1,5 +1,6 @@
 #pragma once
 
+#include "reflection/async_adl.h"
 #include "rpc/parse_utils.h"
 #include "rpc/types.h"
 #include "seastarx.h"
@@ -46,10 +47,11 @@ struct service::execution_helper {
                     return f(std::move(t), ctx);
                 })
                 .then([u = std::move(u), method_id](Output out) mutable {
-                    auto b = netbuf();
-                    b.serialize_type(std::move(out));
-                    b.set_service_method_id(method_id);
-                    return ss::make_ready_future<netbuf>(std::move(b));
+                    auto b = ss::make_lw_shared<netbuf>();
+                    b->set_service_method_id(method_id);
+                    return reflection::async_adl<Output>{}.to(
+                                  b->buffer(), std::move(out))
+                           .then([b] {return std::move(*b);});
                 });
           });
         // clang-format on

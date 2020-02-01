@@ -10,7 +10,7 @@ struct simple_record_fixture {
     static constexpr int active_nodes = 3;
     template<typename Func>
     model::record_batch_reader reader_gen(std::size_t n, Func&& f) {
-        std::vector<model::record_batch> batches;
+        ss::circular_buffer<model::record_batch> batches;
         batches.reserve(n);
         while (n-- > 0) {
             batches.push_back(f());

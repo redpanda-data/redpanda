@@ -60,7 +60,7 @@ struct context {
         out.close().get();
     }
 
-    void write(std::vector<model::record_batch>& batches) {
+    void write(ss::circular_buffer<model::record_batch>& batches) {
         do_write(
           [&batches](log_segment_appender& appender) {
               for (auto& b : batches) {

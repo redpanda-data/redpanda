@@ -1,4 +1,5 @@
 #include "config/config_store.h"
+#include "model/timeout_clock.h"
 #include "raft/consensus.h"
 #include "raft/consensus_utils.h"
 
@@ -37,8 +38,8 @@ model::record_batch make_batch(model::offset o) {
 }
 
 template<typename... Offsets>
-std::vector<model::record_batch> make_batches(Offsets... o) {
-    std::vector<model::record_batch> batches;
+ss::circular_buffer<model::record_batch> make_batches(Offsets... o) {
+    ss::circular_buffer<model::record_batch> batches;
     (batches.emplace_back(make_batch(o)), ...);
     return batches;
 }
@@ -48,6 +49,9 @@ SEASTAR_THREAD_TEST_CASE(clone_entries_utils) {
       model::offset(1), model::offset(2), model::offset(3), model::offset(4)));
 
     auto v = raft::details::share_n(std::move(reader), 5).get0();
+    for (auto& i : v) {
+        i.load_slice(model::no_timeout).get();
+    }
     for (auto& i : v) {
         for (auto& j : v) {
             BOOST_REQUIRE_EQUAL(i.peek_batch(), j.peek_batch());

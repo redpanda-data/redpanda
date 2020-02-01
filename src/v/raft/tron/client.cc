@@ -106,7 +106,7 @@ private:
     }
 
     model::record_batch_reader gen_entry() {
-        std::vector<model::record_batch> batches;
+        ss::circular_buffer<model::record_batch> batches;
         batches.reserve(1);
         batches.push_back(data_batch());
         return model::make_memory_record_batch_reader(std::move(batches));

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "reflection/async_adl.h"
 #include "rpc/batched_output_stream.h"
 #include "rpc/client_probe.h"
 #include "rpc/netbuf.h"
@@ -88,10 +89,11 @@ private:
 template<typename Input, typename Output>
 inline ss::future<client_context<Output>> transport::send_typed(
   Input r, uint32_t method_id, rpc::timer_type::time_point timeout) {
-    auto b = rpc::netbuf();
-    b.serialize_type(std::move(r));
-    b.set_service_method_id(method_id);
-    return send(std::move(b), timeout)
+    auto b = ss::make_lw_shared<rpc::netbuf>();
+    b->set_service_method_id(method_id);
+    return reflection::async_adl<Input>{}
+      .to(b->buffer(), std::move(r))
+      .then([this, b, timeout] { return send(std::move(*b), timeout); })
       .then([this](std::unique_ptr<streaming_context> sctx) mutable {
           return parse_type<Output>(_in, sctx->get_header())
             .then([sctx = std::move(sctx)](Output o) {

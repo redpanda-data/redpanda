@@ -2,7 +2,7 @@
 
 #include "hashing/xx.h"
 #include "likely.h"
-#include "reflection/adl.h"
+#include "reflection/async_adl.h"
 #include "rpc/types.h"
 #include "seastarx.h"
 
@@ -64,7 +64,10 @@ parse_type_wihout_compression(ss::input_stream<char>& in, const header& h) {
                 got_checksum,
                 header_checksum));
           }
-          return reflection::adl<T>{}.from(std::move(io));
+          auto p = std::make_unique<iobuf_parser>(std::move(io));
+          auto raw = p.get();
+          return reflection::async_adl<T>{}.from(*raw).finally(
+            [p = std::move(p)] {});
       });
 }
 template<typename T>
