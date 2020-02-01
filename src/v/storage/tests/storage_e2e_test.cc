@@ -7,7 +7,7 @@
 void validate_offsets(
   model::offset base,
   const std::vector<model::record_batch_header>& write_headers,
-  const std::vector<model::record_batch>& read_batches) {
+  const ss::circular_buffer<model::record_batch>& read_batches) {
     BOOST_REQUIRE_EQUAL(write_headers.size(), read_batches.size());
     auto it = read_batches.begin();
     model::offset next_base = base;
@@ -65,7 +65,7 @@ FIXTURE_TEST(append_twice_to_same_segment, storage_test_fixture) {
 FIXTURE_TEST(test_assigning_offsets_in_multiple_segment, storage_test_fixture) {
     for (auto type : storage_types) {
         auto cfg = default_log_config(test_dir);
-        cfg.max_segment_size = 1_kb;
+        cfg.max_segment_size = kbytes(1);
         storage::log_manager mgr = make_log_manager(std::move(cfg));
         auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
         auto ntp = make_ntp("default", "test", 0);
@@ -91,7 +91,7 @@ FIXTURE_TEST(test_single_record_per_segment, storage_test_fixture) {
         auto ntp = make_ntp("default", "test", 0);
         auto log = mgr.manage(ntp, type).get0();
         auto headers = append_random_batches(log, 10, model::term_id(1), []() {
-            std::vector<model::record_batch> batches;
+            ss::circular_buffer<model::record_batch> batches;
             batches.push_back(
               storage::test::make_random_batch(model::offset(0), 1, true));
             return batches;
@@ -184,7 +184,7 @@ FIXTURE_TEST(test_append_batches_from_multiple_terms, storage_test_fixture) {
         auto log = mgr.manage(ntp, type).get0();
         std::vector<model::record_batch_header> headers;
         model::offset current_offset = model::offset{0};
-        std::vector<model::record_batch> batches;
+        ss::circular_buffer<model::record_batch> batches;
         std::vector<size_t> term_batches_counts;
         for (auto i = 0; i < 5; i++) {
             auto term_batches = storage::test::make_random_batches(

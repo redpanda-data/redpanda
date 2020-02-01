@@ -5,6 +5,7 @@
 #include "storage/log.h"
 #include "storage/logger.h"
 
+#include <seastar/core/circular_buffer.hh>
 #include <seastar/core/future-util.hh>
 
 #include <boost/container/flat_map.hpp>
@@ -36,28 +37,32 @@ public:
     ~mem_iter_reader() override {
         _hook.get().erase(_hook.get().iterator_to(*this));
     }
-    ss::future<span> do_load_slice(model::timeout_clock::time_point) final {
-        if (_invalidated || _cur == _end || _cur->first > _endoffset) {
+
+    bool end_of_stream() const final {
+        return _end_of_stream || _cur == _end || _cur->first > _endoffset;
+    }
+
+    ss::future<ss::circular_buffer<model::record_batch>>
+    do_load_slice(model::timeout_clock::time_point) final {
+        ss::circular_buffer<model::record_batch> ret;
+        if (!end_of_stream()) {
+            ret.push_back(_cur->second.share());
+            _cur = std::next(_cur);
+        } else {
             _end_of_stream = true;
-            return ss::make_ready_future<span>();
         }
-        _data = _cur->second.share();
-        model::record_batch* x = &_data.value();
-        _cur = std::next(_cur);
-        return ss::make_ready_future<span>(span(x, 1));
+        return ss::make_ready_future<ss::circular_buffer<model::record_batch>>(
+          std::move(ret));
     }
 
     model::offset end_offset() { return _endoffset; }
 
     iterator end() { return _end; }
 
-    void invalidate() {
-        _invalidated = true;
-        _end_of_stream = true;
-    }
+    void invalidate() { _end_of_stream = true; }
 
 private:
-    bool _invalidated = false;
+    bool _end_of_stream = false;
     std::reference_wrapper<boost::intrusive::list<mem_iter_reader>> _hook;
     std::optional<model::record_batch> _data;
     iterator _cur;

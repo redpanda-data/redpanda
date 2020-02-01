@@ -23,10 +23,12 @@ public:
           ss::stop_iteration::no);
     }
 
-    std::vector<record_batch> end_of_stream() { return std::move(_result); }
+    ss::circular_buffer<record_batch> end_of_stream() {
+        return std::move(_result);
+    }
 
 private:
-    std::vector<record_batch> _result;
+    ss::circular_buffer<record_batch> _result;
     size_t _depth;
 };
 
@@ -53,7 +55,7 @@ public:
 
     struct consumer_ret {
         int init_count;
-        std::vector<record_batch> batches;
+        ss::circular_buffer<record_batch> batches;
     };
 
     consumer_ret end_of_stream() {
@@ -65,7 +67,7 @@ public:
 
 private:
     int _init_count;
-    std::vector<record_batch> _result;
+    ss::circular_buffer<record_batch> _result;
     size_t _depth;
 };
 
@@ -86,30 +88,32 @@ record_batch make_batch(offset o) {
 }
 
 template<typename... Offsets>
-std::vector<record_batch> make_batches(Offsets... o) {
-    std::vector<record_batch> batches;
+ss::circular_buffer<record_batch> make_batches(Offsets... o) {
+    ss::circular_buffer<record_batch> batches;
     (batches.emplace_back(make_batch(o)), ...);
     return batches;
 }
 
-record_batch_reader make_generating_reader(std::vector<record_batch> batches) {
-    return make_generating_record_batch_reader([batches = std::move(batches),
-                                                i = 0]() mutable {
-        if (i == batches.size()) {
-            return ss::make_ready_future<record_batch_opt>();
-        }
-        return ss::make_ready_future<record_batch_opt>(std::move(batches[i++]));
-    });
+record_batch_reader
+make_generating_reader(ss::circular_buffer<record_batch> batches) {
+    return make_generating_record_batch_reader(
+      [batches = std::move(batches)]() mutable {
+          if (batches.empty()) {
+              return ss::make_ready_future<record_batch_opt>();
+          }
+          auto batch = std::move(batches.front());
+          batches.pop_front();
+          return ss::make_ready_future<record_batch_opt>(std::move(batch));
+      });
 }
 
 SEASTAR_THREAD_TEST_CASE(test_pop) {
     auto reader = make_memory_record_batch_reader(
       make_batches(offset(1), offset(2), offset(3), offset(4)));
     {
-      //  Memory record batch reader comes with pre buffered data
-      // BOOST_REQUIRE(reader.should_load_slice());
-      // reader.load_slice(no_timeout).get();
-      // BOOST_REQUIRE(!reader.should_load_slice());
+        BOOST_REQUIRE(reader.should_load_slice());
+        reader.load_slice(no_timeout).get();
+        BOOST_REQUIRE(!reader.should_load_slice());
     };
     {
         auto& batch = reader.peek_batch();

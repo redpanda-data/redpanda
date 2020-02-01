@@ -1,7 +1,6 @@
 #pragma once
 
 #include "bytes/iobuf.h"
-#include "reflection/adl.h"
 #include "rpc/types.h"
 
 #include <seastar/core/scattered_message.hh>
@@ -16,10 +15,7 @@ public:
     void set_correlation_id(uint32_t);
     void set_service_method_id(uint32_t);
 
-    template<typename T>
-    void serialize_type(T&& t) {
-        reflection::serialize(_out, std::forward<T>(t));
-    }
+    iobuf& buffer() { return _out; }
 
 private:
     size_t payload_size() const { return _out.size_bytes() - sizeof(_hdr); }

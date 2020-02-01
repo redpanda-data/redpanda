@@ -33,13 +33,10 @@ ss::future<> recovery_stm::do_one_read() {
       .max_offset = model::offset(_ptr->_log.max_offset()) // inclusive
     };
 
-    return ss::do_with(
-             _ptr->_log.make_reader(cfg),
-             [this](model::record_batch_reader& reader) {
-                 return reader.consume(
-                   details::memory_batch_consumer(), model::no_timeout);
-             })
-      .then([this](std::vector<model::record_batch> batches) {
+    // TODO: add timeout of maybe 1minute?
+    return model::consume_reader_to_memory(
+             _ptr->_log.make_reader(cfg), model::no_timeout)
+      .then([this](ss::circular_buffer<model::record_batch> batches) {
           // wrap in a foreign core destructor
           _ctxlog.trace(
             "Read {} batches for {} node recovery",

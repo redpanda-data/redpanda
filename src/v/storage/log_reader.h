@@ -9,6 +9,7 @@
 #include "storage/probe.h"
 #include "storage/types.h"
 
+#include <seastar/core/circular_buffer.hh>
 #include <seastar/core/io_queue.hh>
 #include <seastar/util/optimized_optional.hh>
 
@@ -59,15 +60,14 @@ public:
     static constexpr size_t max_buffer_size = 32 * 1024; // 32KB
 
     log_segment_batch_reader(
-      segment& seg,
-      log_reader_config& config,
-      std::vector<model::record_batch>& recs) noexcept;
+      segment& seg, log_reader_config& config, probe& p) noexcept;
     log_segment_batch_reader(log_segment_batch_reader&&) noexcept = default;
     log_segment_batch_reader(const log_segment_batch_reader&) = delete;
     log_segment_batch_reader operator=(const log_segment_batch_reader&)
       = delete;
 
-    ss::future<size_t> read(model::timeout_clock::time_point);
+    ss::future<ss::circular_buffer<model::record_batch>>
+      read(model::timeout_clock::time_point);
 
 private:
     std::unique_ptr<continuous_batch_parser> initialize(
@@ -79,19 +79,21 @@ private:
 private:
     segment& _seg;
     log_reader_config& _config;
-    std::vector<model::record_batch>& _buffer;
+    probe& _probe;
+    ss::circular_buffer<model::record_batch> _buffer;
     size_t _buffer_size = 0;
 
     friend class skipping_consumer;
 };
 
-class log_reader : public model::record_batch_reader::impl {
+class log_reader final : public model::record_batch_reader::impl {
 public:
-    using span = model::record_batch_reader::impl::span;
-
     log_reader(log_set&, log_reader_config, probe&) noexcept;
 
-    ss::future<span> do_load_slice(model::timeout_clock::time_point) override;
+    bool end_of_stream() const final { return _end_of_stream; }
+
+    ss::future<ss::circular_buffer<model::record_batch>>
+      do_load_slice(model::timeout_clock::time_point) final;
 
 private:
     bool is_done();
@@ -101,9 +103,9 @@ private:
     reader_available maybe_create_segment_reader();
 
 private:
+    bool _end_of_stream{false};
     log_set& _set;
     log_reader_config _config;
-    std::vector<model::record_batch> _batches;
     model::offset _last_base;
     probe& _probe;
     bool _seen_first_batch;

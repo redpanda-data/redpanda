@@ -6,6 +6,7 @@
 #include "seastarx.h"
 #include "utils/concepts-enabled.h"
 
+#include <seastar/core/circular_buffer.hh>
 #include <seastar/core/do_with.hh>
 #include <seastar/core/future.hh>
 #include <seastar/util/noncopyable_function.hh>
@@ -44,6 +45,8 @@ CONCEPT(template<typename Consumer> concept bool BatchReaderConsumerInitialize()
 // in slices.
 class record_batch_reader final {
 public:
+    using storage_t = ss::circular_buffer<model::record_batch>;
+
     class impl {
         template<typename C, typename = int>
         struct has_initialize : std::false_type {};
@@ -52,33 +55,24 @@ public:
         struct has_initialize<C, decltype(&C::initialize, 0)>
           : std::true_type {};
 
-    protected:
-        // FIXME: In C++20, use std::span.
-        using span = gsl::span<record_batch>;
-
-        virtual ss::future<span> do_load_slice(timeout_clock::time_point) = 0;
-
     public:
+        impl() noexcept = default;
+        impl(impl&& o) noexcept = default;
+        impl& operator=(impl&& o) noexcept = default;
+        impl(const impl& o) = delete;
+        impl& operator=(const impl& o) = delete;
         virtual ~impl() = default;
 
-        bool end_of_stream() const { return _end_of_stream; }
+        virtual bool end_of_stream() const = 0;
 
-        bool is_slice_empty() const { return _current == _slice.end(); }
+        virtual ss::future<storage_t>
+          do_load_slice(timeout_clock::time_point) = 0;
+
+        bool is_slice_empty() const { return _slice.empty(); }
 
         virtual ss::future<> load_slice(timeout_clock::time_point timeout) {
-            return do_load_slice(timeout).then([this](span s) {
-                _slice = s;
-                _current = _slice.begin();
-            });
-        }
-
-        std::vector<record_batch> release_buffered_batches() {
-            std::vector<record_batch> retval;
-            retval.reserve(std::distance(_current, _slice.end()));
-            while (!is_slice_empty()) {
-                retval.push_back(pop_batch());
-            }
-            return retval;
+            return do_load_slice(timeout).then(
+              [this](storage_t s) { _slice = std::move(s); });
         }
 
         ss::future<record_batch_opt>
@@ -94,12 +88,12 @@ public:
         }
 
         record_batch pop_batch() {
-            auto& batch = *_current;
-            _current++;
-            return std::move(batch);
+            record_batch batch = std::move(_slice.front());
+            _slice.pop_front();
+            return batch;
         }
 
-        const record_batch& peek_batch() const { return *_current; }
+        const record_batch& peek_batch() const { return _slice.front(); }
 
         template<
           typename Consumer,
@@ -123,11 +117,6 @@ public:
               });
         }
 
-    protected:
-        bool _end_of_stream = false;
-        span _slice = span();
-        span::iterator _current = _slice.end();
-
     private:
         template<typename Consumer>
         auto do_consume(Consumer& consumer, timeout_clock::time_point timeout) {
@@ -144,6 +133,8 @@ public:
                    })
               .then([&consumer] { return consumer.end_of_stream(); });
         }
+
+        storage_t _slice;
     };
 
 public:
@@ -176,9 +167,6 @@ public:
         return _impl->is_slice_empty() && !_impl->end_of_stream();
     }
 
-    std::vector<record_batch> release_buffered_batches() {
-        return _impl->release_buffered_batches();
-    }
     // Stops when consumer returns stop_iteration::yes or end of stream is
     // reached. Next call will start from the next mutation_fragment in the
     // stream.
@@ -226,6 +214,8 @@ public:
         });
     }
 
+    std::unique_ptr<impl> release() && { return std::move(_impl); }
+
 private:
     std::unique_ptr<impl> _impl;
 
@@ -243,18 +233,18 @@ record_batch_reader make_record_batch_reader(Args&&... args) {
 }
 
 record_batch_reader
-  make_memory_record_batch_reader(std::vector<model::record_batch>);
+  make_memory_record_batch_reader(record_batch_reader::storage_t);
 
 inline record_batch_reader
 make_memory_record_batch_reader(model::record_batch b) {
-    std::vector<model::record_batch> batches;
-    batches.reserve(1);
+    record_batch_reader::storage_t batches;
     batches.push_back(std::move(b));
     return make_memory_record_batch_reader(std::move(batches));
 }
-// clang-format off
-record_batch_reader
-make_generating_record_batch_reader(ss::noncopyable_function<ss::future<record_batch_opt>()>);
-// clang-format on
+record_batch_reader make_generating_record_batch_reader(
+  ss::noncopyable_function<ss::future<record_batch_opt>()>);
+
+ss::future<record_batch_reader::storage_t> consume_reader_to_memory(
+  record_batch_reader, timeout_clock::time_point timeout);
 
 } // namespace model

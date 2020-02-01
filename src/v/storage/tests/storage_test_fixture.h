@@ -17,9 +17,9 @@ constexpr size_t kb = 1024;
 constexpr size_t mb = 1024 * kb;
 constexpr size_t gb = 1024 * mb;
 
-constexpr size_t operator""_kb(unsigned long long val) { return val * kb; }
-constexpr size_t operator""_mb(unsigned long long val) { return val * mb; }
-constexpr size_t operator""_gb(unsigned long long val) { return val * gb; }
+constexpr size_t kbytes(unsigned long long val) { return val * kb; }
+constexpr size_t mbytes(unsigned long long val) { return val * mb; }
+constexpr size_t gbytes(unsigned long long val) { return val * gb; }
 
 static ss::logger tlog{"test_log"};
 
@@ -40,7 +40,7 @@ inline void validate_batch_crc(model::record_batch& batch) {
 }
 
 struct random_batches_generator {
-    std::vector<model::record_batch> operator()() {
+    ss::circular_buffer<model::record_batch> operator()() {
         return storage::test::make_random_batches(
           model::offset(0), random_generators::get_int(1, 10));
     }
@@ -81,7 +81,7 @@ public:
 
     storage::log_config default_log_config(ss::sstring test_dir) {
         return storage::log_config{
-          test_dir, 200_mb, storage::log_config::sanitize_files::yes};
+          test_dir, mbytes(200), storage::log_config::sanitize_files::yes};
     }
 
     model::ntp
@@ -119,14 +119,14 @@ public:
               ss::stop_iteration::no);
         }
 
-        std::vector<model::record_batch> end_of_stream() {
+        ss::circular_buffer<model::record_batch> end_of_stream() {
             return std::move(batches);
         }
 
-        std::vector<model::record_batch> batches;
+        ss::circular_buffer<model::record_batch> batches;
     };
 
-    std::vector<model::record_batch>
+    ss::circular_buffer<model::record_batch>
     read_and_validate_all_batches(storage::log log) {
         storage::log_reader_config cfg{
           .start_offset = model::offset(0),
@@ -145,7 +145,7 @@ public:
     template<typename T = random_batches_generator>
     CONCEPT(
         requires requires (T generator) {
-            { generator() } -> std::vector<model::record_batch>;
+            { generator() } -> ss::circular_buffer<model::record_batch>;
         }
     )
     // clang-format on
@@ -200,7 +200,7 @@ public:
     // std::vector<model::record_batch_type> type_filter;
     // model::offset max_offset = model::model_limits<model::offset>::max(); //
     // inclusive
-    std::vector<model::record_batch> read_range_to_vector(
+    ss::circular_buffer<model::record_batch> read_range_to_vector(
       storage::log log, model::offset start, model::offset end) {
         storage::log_reader_config cfg{
           .start_offset = start,

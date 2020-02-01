@@ -1,8 +1,11 @@
 #include "storage/log_reader.h"
 
 #include "bytes/iobuf.h"
+#include "model/record.h"
 #include "storage/logger.h"
 #include "vassert.h"
+
+#include <seastar/core/circular_buffer.hh>
 
 #include <fmt/ostream.h>
 
@@ -96,12 +99,10 @@ batch_consumer::stop_parser skipping_consumer::consume_batch_end() {
 }
 
 log_segment_batch_reader::log_segment_batch_reader(
-  segment& seg,
-  log_reader_config& config,
-  std::vector<model::record_batch>& recs) noexcept
+  segment& seg, log_reader_config& config, probe& p) noexcept
   : _seg(seg)
   , _config(config)
-  , _buffer(recs) {
+  , _probe(p) {
     std::sort(std::begin(_config.type_filter), std::end(_config.type_filter));
 }
 
@@ -118,7 +119,7 @@ bool log_segment_batch_reader::is_buffer_full() const {
     return _buffer_size >= max_buffer_size;
 }
 
-ss::future<size_t>
+ss::future<ss::circular_buffer<model::record_batch>>
 log_segment_batch_reader::read(model::timeout_clock::time_point timeout) {
     /*
      * fetch batches from the cache covering the range [_base, end] where
@@ -128,27 +129,20 @@ log_segment_batch_reader::read(model::timeout_clock::time_point timeout) {
       _config.start_offset, _config.max_offset, max_buffer_size);
     if (!cache_read.batches.empty()) {
         _config.bytes_consumed += cache_read.memory_usage;
-        _buffer.swap(cache_read.batches);
-        return ss::make_ready_future<size_t>(cache_read.memory_usage);
+        _probe.add_bytes_read(cache_read.memory_usage);
+        return ss::make_ready_future<ss::circular_buffer<model::record_batch>>(
+          std::move(cache_read.batches));
     }
-
-    _buffer_size = 0;
-    _buffer.clear();
     auto parser = initialize(timeout, cache_read.next_batch);
     auto ptr = parser.get();
     return ptr->consume()
-      .then([this](size_t size) {
+      .then([this](size_t bytes_consumed) {
+          _probe.add_bytes_read(bytes_consumed);
           // insert batches from disk into the cache
-          std::vector<model::record_batch> copies;
-          copies.reserve(_buffer.size());
-          std::transform(
-            _buffer.begin(),
-            _buffer.end(),
-            std::back_inserter(copies),
-            [](model::record_batch& b) { return b.share(); });
-          _seg.cache_put(std::move(copies));
-
-          return size;
+          for (auto& b : _buffer) {
+              _seg.cache_put(b.share());
+          }
+          return std::move(_buffer);
       })
       .finally([this, p = std::move(parser)] {});
 }
@@ -171,36 +165,40 @@ static inline segment* find_in_set(log_set& s, model::offset o) {
     return ret;
 }
 
-ss::future<log_reader::span>
+ss::future<ss::circular_buffer<model::record_batch>>
 log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
     if (is_done()) {
         _end_of_stream = true;
-        return ss::make_ready_future<span>();
+        return ss::make_ready_future<
+          ss::circular_buffer<model::record_batch>>();
     }
     if (_last_base == _config.start_offset) {
         _end_of_stream = true;
-        return ss::make_ready_future<span>();
+        return ss::make_ready_future<
+          ss::circular_buffer<model::record_batch>>();
     }
     _last_base = _config.start_offset;
     segment* seg = find_in_set(_set, _config.start_offset);
     if (!seg) {
         _end_of_stream = true;
-        return ss::make_ready_future<span>();
+        return ss::make_ready_future<
+          ss::circular_buffer<model::record_batch>>();
     }
     auto segc = std::make_unique<log_segment_batch_reader>(
-      *seg, _config, _batches);
+      *seg, _config, _probe);
     auto ptr = segc.get();
     return ptr->read(timeout)
       .handle_exception([this](std::exception_ptr e) {
           _probe.batch_parse_error();
-          return ss::make_exception_future<size_t>(e);
+          return ss::make_exception_future<
+            ss::circular_buffer<model::record_batch>>(e);
       })
-      .then([this, ptr](size_t bytes_consumed) {
-          _probe.add_bytes_read(bytes_consumed);
-          if (_batches.empty()) {
-              return ss::make_ready_future<log_reader::span>();
+      .then([this, ptr](ss::circular_buffer<model::record_batch> recs) {
+          if (recs.empty()) {
+              return ss::make_ready_future<
+                ss::circular_buffer<model::record_batch>>();
           }
-          _probe.add_batches_read(int32_t(_batches.size()));
+          _probe.add_batches_read(recs.size());
           /*
            * this is a fast check of the batch offsets returned by the batch
            * reader to check for holes. note that the update of start_offset is
@@ -209,22 +207,22 @@ log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
            * _batches.last().last_offset() + model::offset(1).
            */
           if (!_seen_first_batch) {
-              _config.start_offset = _batches.front().base_offset();
+              _config.start_offset = recs.front().base_offset();
               _seen_first_batch = true;
           }
-          for (const auto& batch : _batches) {
+          for (const auto& batch : recs) {
               if (batch.base_offset() != _config.start_offset) {
-                  return ss::make_exception_future<log_reader::span>(
-                    fmt::format(
-                      "hole encountered reading from log: "
-                      "expected batch offset {} (actually {})",
-                      _config.start_offset,
-                      batch.base_offset()));
+                  return ss::make_exception_future<
+                    ss::circular_buffer<model::record_batch>>(fmt::format(
+                    "hole encountered reading from log: "
+                    "expected batch offset {} (actually {})",
+                    _config.start_offset,
+                    batch.base_offset()));
               }
               _config.start_offset = batch.last_offset() + model::offset(1);
           }
-          return ss::make_ready_future<log_reader::span>(
-            span{&_batches[0], int32_t(_batches.size())});
+          return ss::make_ready_future<
+            ss::circular_buffer<model::record_batch>>(std::move(recs));
       })
       .finally([sc = std::move(segc)] {});
 }
