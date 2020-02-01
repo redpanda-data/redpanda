@@ -111,15 +111,15 @@ def pr(ctx, fork, upstream, to):
         upstream = local_branch.tracking_branch()
         if not upstream:
             ctx.fail("Please configure an upstream branch. See --help output.")
+        logging.info(f"fetching from {upstream.remote_name}")
+        repo.remote(upstream.remote_name).fetch()
         upstream = upstream.name
-        ups_fetch = repo.remote(upstream)
-        logging.debug(f"fetching from {upstream}")
-        ups_fetch.fetch()
 
     logging.info("Using upstream branch: {}".format(upstream))
 
     # create name for remote branch. the expected name is {local_branch}-vV. a
     # local branch without a -vV suffix is an alias for a suffix of -v1.
+    remote_branch_prev = None
     m = re.match("^.+-v(?P<version>\d+)$", local_branch.name)
     if not m:
         version = 1
@@ -129,6 +129,9 @@ def pr(ctx, fork, upstream, to):
         version = int(m.group("version"))
         remote_branch = local_branch
         remote_branch_no_version = re.sub("-v\d+$", "", local_branch.name)
+        if version > 1:
+            remote_branch_prev = "{}-v{}".format(remote_branch_no_version,
+                                                 version - 1)
 
     # push up a remote branch with the changes that will be added to the cover
     # letter. if a remote branch has the same name, ask about force pushing.
@@ -152,11 +155,32 @@ def pr(ctx, fork, upstream, to):
         "git", "format-patch", "-v{}".format(version), "--cover-letter", "-o",
         staging_dir, upstream
     ]
-    logging.info("Generating patches: {}".format(" ".join(format_args)))
+    logging.info("Generating patches: {}".format(" ".join(map(
+        str, format_args))))
     subprocess.run(format_args)
 
     if len(os.listdir(staging_dir)) == 0:
         ctx.fail("No patches generated. Check configured upstream branch.")
+
+    if remote_branch_prev:
+        cover_letter_msg = "<< insert commentary (no prev notes found) >>"
+        remote_ref_prev = next(
+            (ref for ref in remote.refs
+             if ref.name == "{}/{}".format(fork, remote_branch_prev)), None)
+        if remote_ref_prev:
+            try:
+                cover_letter_msg = repo.git.notes("show",
+                                                  remote_ref_prev.commit)
+                cover_letter_msg += """
+
+Changed since v{}:
+  - what
+  - has
+  - changed""".format(version - 1)
+            except:
+                pass
+    else:
+        cover_letter_msg = "<< insert commentary >>"
 
     # Customize the cover letter. First we replace the subject with a machine
     # generated value that should remain constant across patch series versions,
@@ -170,7 +194,7 @@ def pr(ctx, fork, upstream, to):
     cover_letter = re.sub("\*\*\* SUBJECT HERE \*\*\*",
                           remote_branch_no_version, cover_letter)
 
-    cover_letter_template = """<< insert commentary >>
+    cover_letter_template = """REPLACE THIS WITH MESSAGE
 
 The following patches are available at:
 
@@ -187,10 +211,44 @@ Generated with `vtools pr` @ {sha1!s:7.7}"""
     with open(cover_letter_path, "w") as f:
         f.write(cover_letter)
 
+    # for creating diff
+    orig_cover_letter_path = "{}.orig".format(cover_letter_path)
+    shutil.copyfile(cover_letter_path, orig_cover_letter_path)
+
+    with open(cover_letter_path, "r") as f:
+        cover_letter = f.read()
+        cover_letter = re.sub("REPLACE THIS WITH MESSAGE", cover_letter_msg,
+                              cover_letter)
+    with open(cover_letter_path, "w") as f:
+        f.write(cover_letter)
+
     click.edit(filename=cover_letter_path)
+
+    # compute diff
+    diff = subprocess.run(
+        ("diff", "-u", orig_cover_letter_path, cover_letter_path),
+        capture_output=True,
+        check=False)
+    grep = subprocess.run(("grep", "^\+"),
+                          input=diff.stdout,
+                          capture_output=True,
+                          check=False)
+    assert grep.returncode in (0, 1)
+    sed = subprocess.check_output(("sed", "-E", "/^\+\+\+/d"),
+                                  input=grep.stdout)
+    note = subprocess.check_output(("sed", "-E", "s/^\+//"), input=sed)
+    os.remove(orig_cover_letter_path)
+
+    note_path = os.path.join(staging_dir, "note")
+    with open(note_path, "w") as f:
+        f.write(note.decode())
 
     do_send = click.confirm("Send patch set to {}?".format(to), default=True)
     if do_send:
+        # add notes to commit
+        repo.git.notes("add", "-f", "-F", note_path, local_branch.commit)
+        os.remove(note_path)
+
         send_mail_args = [
             "git", "send-email", "--confirm=never", "--suppress-cc=self",
             "--to", to, staging_dir
