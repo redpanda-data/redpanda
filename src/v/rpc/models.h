@@ -41,7 +41,7 @@ template<>
 struct adl<model::topic_partition> {
     void to(iobuf& out, model::topic_partition&& t) {
         auto str = ss::sstring(t.topic);
-        reflection::serialize(out, std::move(str), t.partition);
+        reflection::serialize(out, std::move(str), std::move(t.partition));
     }
 
     model::topic_partition from(iobuf_parser& in) {
@@ -201,8 +201,8 @@ struct adl<model::record_batch_header> {
 
 struct batch_header {
     model::record_batch_header bhdr;
-    uint32_t batch_size{0};
-    int8_t is_compressed{0};
+    uint32_t batch_size;
+    int8_t is_compressed;
 };
 
 template<>
@@ -223,7 +223,7 @@ struct adl<batch_header> {
         auto record = adl<model::record_batch_header>{}.from(in);
         auto batch_sz = adl<uint32_t>{}.from(in);
         auto is_compressed = adl<int8_t>{}.from(in);
-        return batch_header{record, batch_sz, is_compressed};
+        return batch_header{std::move(record), batch_sz, is_compressed};
     }
 };
 
@@ -234,7 +234,7 @@ struct adl<model::record_batch> {
           .bhdr = batch.release_header(),
           .batch_size = batch.size(),
           .is_compressed = static_cast<int8_t>(batch.compressed() ? 1 : 0)};
-        reflection::serialize(out, hdr);
+        reflection::serialize(out, std::move(hdr));
         if (batch.compressed()) {
             reflection::serialize(out, std::move(batch).release().release());
             return;
@@ -250,7 +250,7 @@ struct adl<model::record_batch> {
             auto io = reflection::adl<iobuf>{}.from(in);
 
             return model::record_batch(
-              hdr.bhdr,
+              std::move(hdr.bhdr),
               model::record_batch::compressed_records(
                 hdr.batch_size, std::move(io)));
         }
@@ -260,7 +260,7 @@ struct adl<model::record_batch> {
             recs.push_back(adl<model::record>{}.from(in));
         }
 
-        return model::record_batch(hdr.bhdr, std::move(recs));
+        return model::record_batch(std::move(hdr.bhdr), std::move(recs));
     }
 };
 

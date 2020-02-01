@@ -273,7 +273,7 @@ struct async_adl<raft::append_entries_request> {
         auto meta = reflection::adl<raft::protocol_metadata>{}.from(in);
         auto n = reflection::adl<model::node_id>{}.from(in);
         auto ret = raft::append_entries_request{
-          .node_id = n, .meta = meta, .batches = std::move(reader)};
+          .node_id = n, .meta = std::move(meta), .batches = std::move(reader)};
         return ss::make_ready_future<raft::append_entries_request>(
           std::move(ret));
     }

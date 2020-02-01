@@ -19,7 +19,6 @@
 #include <optional>
 #include <unordered_map>
 #include <unordered_set>
-#include <utility>
 #include <vector>
 
 namespace kafka {
@@ -88,7 +87,7 @@ public:
     using duration_type = clock_type::duration;
 
     group(kafka::group_id id, group_state s, config::configuration& conf)
-      : _id(std::move(id))
+      : _id(id)
       , _state(s)
       , _generation(0)
       , _num_members_joining(0)

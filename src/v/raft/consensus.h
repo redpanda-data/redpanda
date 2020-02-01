@@ -48,9 +48,11 @@ public:
     ss::future<> stop();
 
     ss::future<vote_reply> vote(vote_request&& r) {
-        return with_gate(_bg, [this, r = r]() mutable {
+        return with_gate(_bg, [this, r = std::move(r)]() mutable {
             return with_semaphore(
-              _op_sem, 1, [this, r = r]() mutable { return do_vote(r); });
+              _op_sem, 1, [this, r = std::move(r)]() mutable {
+                  return do_vote(std::move(r));
+              });
         });
     }
     ss::future<append_entries_reply>
