@@ -401,7 +401,7 @@ public:
     compressed_records&& release() && {
         return std::move(std::get<compressed_records>(_records));
     }
-    record_batch_header&& release_header() { return std::move(_header); }
+    record_batch_header&& release_header() { return _header; }
     bool operator==(const record_batch& other) const {
         return _header == other._header && _records == other._records;
     }

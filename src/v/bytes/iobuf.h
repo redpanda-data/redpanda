@@ -386,7 +386,7 @@ public:
       typename = std::enable_if_t<std::is_trivially_copyable_v<T>, T>>
     T consume_type() {
         constexpr size_t sz = sizeof(T);
-        T obj;
+        T obj{};
         char* dst = reinterpret_cast<char*>(&obj); // NOLINT
         consume_to(sz, dst);
         return obj;

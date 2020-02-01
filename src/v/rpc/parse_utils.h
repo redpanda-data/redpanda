@@ -38,7 +38,7 @@ parse_header(ss::input_stream<char>& in) {
           }
           header h;
           std::copy_n(b.get(), rpc_header_size, reinterpret_cast<char*>(&h));
-          return ss::make_ready_future<std::optional<header>>(std::move(h));
+          return ss::make_ready_future<std::optional<header>>(h);
       });
 }
 template<typename T>

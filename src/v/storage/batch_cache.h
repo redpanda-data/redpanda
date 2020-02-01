@@ -190,7 +190,7 @@ public:
         std::optional<model::offset> next_batch;
     };
 
-    batch_cache_index(batch_cache& cache)
+    explicit batch_cache_index(batch_cache& cache)
       : _cache(cache) {}
 
     ~batch_cache_index() {

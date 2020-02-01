@@ -4,6 +4,8 @@
 #include "raft/consensus.h"
 #include "raft/types.h"
 
+#include <utility>
+
 namespace cluster {
 class partition_manager;
 
@@ -12,7 +14,7 @@ class partition_manager;
 class partition {
 public:
     explicit partition(consensus_ptr r)
-      : _raft(r) {}
+      : _raft(std::move(r)) {}
     raft::group_id group() const { return raft::group_id(_raft->meta().group); }
     ss::future<> start() { return _raft->start(); }
     ss::future<> stop() { return _raft->stop(); }
