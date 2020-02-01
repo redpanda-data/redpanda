@@ -83,7 +83,7 @@ std::ostream& operator<<(std::ostream& o, const create_topics_response& r) {
 new_topic_configuration
 create_topics_request::read_topic_configuration(request_reader& r) {
     return new_topic_configuration{
-      .topic = model::topic_view(r.read_string_view()),
+      .topic = model::topic(r.read_string()),
       .partition_count = r.read_int32(),
       .replication_factor = r.read_int16(),
       .assignments = read_partiton_assignments(r),

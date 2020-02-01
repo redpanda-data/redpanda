@@ -19,22 +19,21 @@ static vint::result consume_vint(iobuf::iterator_consumer& in) {
 
 model::record_batch_header
 kafka_batch_adapter::read_header(iobuf::iterator_consumer& in) {
-    auto base_offset = model::offset(request_reader::_read_int64(in));
-    auto batch_length = request_reader::_read_int32(in);
+    auto base_offset = model::offset(in.consume_be_type<int64_t>());
+    auto batch_length = in.consume_be_type<int32_t>();
     in.skip(sizeof(int32_t)); // partition leader epoch
     auto magic = in.consume_type<int8_t>();
     has_non_v2_magic = has_non_v2_magic || magic != 2;
-    auto crc = request_reader::_read_int32(in);
+    auto crc = in.consume_be_type<int32_t>();
 
-    auto attrs = model::record_batch_attributes(
-      request_reader::_read_int16(in));
+    auto attrs = model::record_batch_attributes(in.consume_be_type<int16_t>());
     has_transactional = has_transactional || attrs.is_transactional();
 
-    auto last_offset_delta = request_reader::_read_int32(in);
-    auto first_timestamp = model::timestamp(request_reader::_read_int64(in));
-    auto max_timestamp = model::timestamp(request_reader::_read_int64(in));
+    auto last_offset_delta = in.consume_be_type<int32_t>();
+    auto first_timestamp = model::timestamp(in.consume_be_type<int64_t>());
+    auto max_timestamp = model::timestamp(in.consume_be_type<int64_t>());
 
-    auto producer_id = request_reader::_read_int64(in);
+    auto producer_id = in.consume_be_type<int64_t>();
     has_idempotent = has_idempotent || producer_id >= 0;
 
     in.skip(sizeof(int16_t) + sizeof(int32_t)); // producer epoch, base sequence
@@ -94,7 +93,7 @@ void kafka_batch_adapter::adapt(iobuf&& kbatch) {
     auto in = iobuf::iterator_consumer(kbatch.cbegin(), kbatch.cend());
     while (!in.is_finished()) {
         auto header = read_header(in);
-        int32_t num_records = request_reader::_read_int32(in);
+        int32_t num_records = in.consume_be_type<int32_t>();
 
         model::record_batch::records_type records;
         if (header.attrs.compression() != model::compression::none) {
