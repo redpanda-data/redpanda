@@ -111,10 +111,9 @@ def pr(ctx, fork, upstream, to):
         upstream = local_branch.tracking_branch()
         if not upstream:
             ctx.fail("Please configure an upstream branch. See --help output.")
+        logging.info(f"fetching from {upstream.remote_name}")
+        repo.remote(upstream.remote_name).fetch()
         upstream = upstream.name
-        ups_fetch = repo.remote(upstream)
-        logging.debug(f"fetching from {upstream}")
-        ups_fetch.fetch()
 
     logging.info("Using upstream branch: {}".format(upstream))
 
@@ -152,7 +151,7 @@ def pr(ctx, fork, upstream, to):
         "git", "format-patch", "-v{}".format(version), "--cover-letter", "-o",
         staging_dir, upstream
     ]
-    logging.info("Generating patches: {}".format(" ".join(format_args)))
+    logging.info("Generating patches: {}".format(" ".join(map(str, format_args))))
     subprocess.run(format_args)
 
     if len(os.listdir(staging_dir)) == 0:
