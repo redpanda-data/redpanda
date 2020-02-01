@@ -3,6 +3,7 @@
 #include "seastarx.h"
 #include "utils/concepts-enabled.h"
 
+#include <seastar/core/byteorder.hh>
 #include <seastar/core/deleter.hh>
 #include <seastar/core/do_with.hh>
 #include <seastar/core/future-util.hh>
@@ -391,7 +392,12 @@ public:
         consume_to(sz, dst);
         return obj;
     }
-
+    template<
+      typename T,
+      typename = std::enable_if_t<std::is_arithmetic_v<T>, T>>
+    T consume_be_type() {
+        return ss::be_to_cpu(consume_type<T>());
+    }
     [[gnu::always_inline]] void consume_to(size_t n, iobuf::placeholder& ph) {
         size_t c = consume(n, [&ph](const char* src, size_t max) {
             ph.write(src, max);

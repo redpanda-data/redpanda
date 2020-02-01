@@ -26,17 +26,11 @@ SEASTAR_THREAD_TEST_CASE(write_and_read_value_test) {
       static_cast<int32_t>(64000000), int32_t, &request_reader::read_int32);
     roundtrip_test(
       static_cast<int64_t>(45564000000), int64_t, &request_reader::read_int64);
-    roundtrip_test(
-      static_cast<uint32_t>(64000000), uint32_t, &request_reader::read_uint32);
     roundtrip_test(true, bool, &request_reader::read_bool);
     roundtrip_test(false, bool, &request_reader::read_bool);
     roundtrip_test(
       ss::sstring{"test_string"}, ss::sstring, &request_reader::read_string);
-    roundtrip_test(
-      ss::sstring{"test_string"},
-      std::string_view,
-      &request_reader::read_string_view);
-    roundtrip_test(
+        roundtrip_test(
       ss::sstring("test_string"),
       std::optional<ss::sstring>,
       &request_reader::read_nullable_string);
@@ -44,24 +38,6 @@ SEASTAR_THREAD_TEST_CASE(write_and_read_value_test) {
       static_cast<std::optional<ss::sstring>>(std::nullopt),
       std::optional<ss::sstring>,
       &request_reader::read_nullable_string);
-    roundtrip_test(
-      ss::sstring("test_string"),
-      std::optional<std::string_view>,
-      &request_reader::read_nullable_string_view);
-    roundtrip_test(
-      static_cast<std::optional<std::string_view>>(std::nullopt),
-      std::optional<std::string_view>,
-      &request_reader::read_nullable_string_view);
-    roundtrip_test(
-      random_generators::get_bytes(),
-      bytes_view,
-      &request_reader::read_bytes_view);
-    roundtrip_test(
-      random_generators::get_bytes(), bytes_view, &request_reader::read_bytes);
-    roundtrip_test(
-      random_generators::get_bytes(),
-      bytes_opt,
-      &request_reader::read_nullable_bytes);
     roundtrip_test(
       model::topic{"test_topic"}, ss::sstring, &request_reader::read_string);
 }
