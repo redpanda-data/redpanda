@@ -5,6 +5,7 @@ import subprocess
 import tempfile
 import click
 import git as g
+from absl import logging
 
 
 @click.group(short_help='git niceties')
@@ -25,7 +26,7 @@ def verify(path):
             raise click.ClickException(
                 f'Invalid email({email}), use @vectorized.io')
     git_root = r.git.rev_parse("--show-toplevel")
-    click.echo(f"valid repo settings for: {git_root}")
+    logging.info(f"valid repo settings for: {git_root}")
 
 
 @git.command(short_help='mildly opininated patch submission.')
@@ -89,10 +90,10 @@ def pr(ctx, fork, upstream, to):
 
     if "/" in local_branch.name:
         # TODO: something to investigate
-        click.echo("WARNING: forward-slash in branch name. YMMV")
+        logging.info("WARNING: forward-slash in branch name. YMMV")
 
     remote = repo.remote(fork)
-    click.echo("Updating remote references")
+    logging.info("Updating remote references")
     remote.fetch()
 
     # head against which patches will be created. if not specified it will
@@ -114,6 +115,8 @@ def pr(ctx, fork, upstream, to):
         ups_fetch = repo.remote(upstream)
         logging.debug(f"fetching from {upstream}")
         ups_fetch.fetch()
+
+    logging.info("Using upstream branch: {}".format(upstream))
 
     # create name for remote branch. the expected name is {local_branch}-vV. a
     # local branch without a -vV suffix is an alias for a suffix of -v1.
@@ -140,7 +143,7 @@ def pr(ctx, fork, upstream, to):
 
     if not remote_ref or force:
         refspec = "{}:{}".format(local_branch.name, remote_branch)
-        click.echo("Pushing remote({}) branch: {}".format(fork, refspec))
+        logging.info("Pushing remote({}) branch: {}".format(fork, refspec))
         remote.push(refspec, force=force)
 
     # build the patch series in a staging directory
@@ -149,7 +152,7 @@ def pr(ctx, fork, upstream, to):
         "git", "format-patch", "-v{}".format(version), "--cover-letter", "-o",
         staging_dir, upstream
     ]
-    click.echo("Generating patches: {}".format(" ".join(format_args)))
+    logging.info("Generating patches: {}".format(" ".join(format_args)))
     subprocess.run(format_args)
 
     if len(os.listdir(staging_dir)) == 0:
@@ -193,7 +196,7 @@ Generated with `vtools pr` @ {sha1!s:7.7}"""
             "--to", to, staging_dir
         ]
         subprocess.run(send_mail_args)
-        click.echo("Sending patches: {}".format(" ".join(send_mail_args)))
+        logging.info("Sending patches: {}".format(" ".join(send_mail_args)))
 
-    click.echo("Cleaning up staging dir: {}".format(staging_dir))
+    logging.info("Cleaning up staging dir: {}".format(staging_dir))
     shutil.rmtree(staging_dir)
