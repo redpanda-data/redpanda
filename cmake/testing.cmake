@@ -33,6 +33,7 @@ function (rp_test)
     LIBRARIES
     DEFINITIONS
     INPUT_FILES
+    LABELS
     ARGS)
   cmake_parse_arguments(RP_TEST "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
@@ -96,6 +97,7 @@ function (rp_test)
   foreach(i ${RP_TEST_DEFINITIONS})
     target_compile_definitions(${RP_TEST_BINARY_NAME} PRIVATE "${i}")
   endforeach()
+  set_tests_properties(${RP_TEST_BINARY_NAME} PROPERTIES LABELS "${RP_TEST_LABELS}")
     # save it to binary install dir
   install(TARGETS ${RP_TEST_BINARY_NAME} DESTINATION bin)
 endfunction()
