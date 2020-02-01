@@ -4,7 +4,7 @@ rp_test(
   BINARY_NAME log_segment_appender_test
   SOURCES log_segment_appender_test.cc
   LIBRARIES Seastar::seastar_testing v::storage
-
+  LABELS storage
   ARGS "-- -c 1"
 )
 
@@ -13,7 +13,7 @@ rp_test(
   BINARY_NAME log_segment_test
   SOURCES log_segment_test.cc
   LIBRARIES Seastar::seastar_testing v::storage
-
+  LABELS storage
   ARGS "-- -c 1"
 )
 
@@ -24,6 +24,7 @@ rp_test(
 #   SOURCES log_writer_test.cc
 #   LIBRARIES Seastar::seastar_testing v::storage
 #   ARGS "-- -c 1"
+#   LABELS storage
 # )
 
 rp_test(
@@ -31,7 +32,7 @@ rp_test(
   BINARY_NAME parser_test
   SOURCES parser_test.cc
   LIBRARIES Seastar::seastar_testing v::storage
-
+  LABELS storage
   ARGS "-- -c 1"
 )
 
@@ -40,7 +41,7 @@ rp_test(
   BINARY_NAME log_segment_reader_test
   SOURCES log_segment_reader_test.cc
   LIBRARIES Seastar::seastar_testing v::storage
-
+  LABELS storage
   ARGS "-- -c 1"
 )
 
@@ -51,6 +52,7 @@ rp_test(
 #   SOURCES log_reader_test.cc
 #   LIBRARIES Seastar::seastar_testing v::storage
 #   ARGS "-- -c 1"
+#   LABELS storage
 # )
 
 rp_test(
@@ -58,7 +60,7 @@ rp_test(
   BINARY_NAME log_replayer_test
   SOURCES log_replayer_test.cc
   LIBRARIES Seastar::seastar_testing v::storage
-
+  LABELS storage
   ARGS "-- -c 1"
 )
 
@@ -67,7 +69,7 @@ rp_test(
   BINARY_NAME log_manager_test
   SOURCES log_manager_test.cc
   LIBRARIES Seastar::seastar_testing v::storage
-
+  LABELS storage
   ARGS "-- -c 1"
 )
 
@@ -77,6 +79,7 @@ rp_test(
   SOURCES log_builder_test.cc
   LIBRARIES Seastar::seastar_testing v::storage
   ARGS "-- -c 1"
+  LABELS storage
  )
 
 rp_test(
@@ -85,6 +88,7 @@ rp_test(
   SOURCES offset_assignment_test.cc
   LIBRARIES Seastar::seastar_testing v::storage
   ARGS "-- -c 1"
+  LABELS storage
 )
 
 rp_test(
@@ -93,6 +97,7 @@ rp_test(
   SOURCES storage_e2e_test.cc
   LIBRARIES Seastar::seastar_testing v::storage
   ARGS "-- -c 1"
+  LABELS storage
 )
 
 rp_test(
@@ -101,6 +106,7 @@ rp_test(
   SOURCES log_truncate_test.cc
   LIBRARIES Seastar::seastar_testing v::storage
   ARGS "-- -c 1"
+  LABELS storage
 )
 rp_test(
   UNIT_TEST
@@ -108,6 +114,7 @@ rp_test(
   SOURCES offset_index_utils_tests.cc
   LIBRARIES Seastar::seastar_testing v::storage
   ARGS "-- -c 1"
+  LABELS storage
 )
 rp_test(
   UNIT_TEST
@@ -115,6 +122,7 @@ rp_test(
   SOURCES appender_chunk_manipulations.cc
   LIBRARIES Seastar::seastar_testing v::storage
   ARGS "-- -c 1"
+  LABELS storage
 )
 
 rp_test(
@@ -122,6 +130,7 @@ rp_test(
   BINARY_NAME batch_cache_test
   SOURCES batch_cache_test.cc
   LIBRARIES Seastar::seastar_testing v::storage
+  LABELS storage
 )
 
 # this is only enabled for release builds because non-release builds use the
@@ -133,5 +142,6 @@ rp_test(
   SOURCES batch_cache_reclaim_test.cc
   LIBRARIES Seastar::seastar_testing v::storage
   ARGS "-- -c1 -m100"
+  LABELS storage
 )
 endif()
