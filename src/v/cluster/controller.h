@@ -85,7 +85,6 @@ private:
     friend batch_consumer;
 
     ss::future<consensus_ptr> start_raft0();
-    ss::future<> bootstrap_from_log(storage::log);
     ss::future<> process_raft0_batch(model::record_batch);
     ss::future<> process_raft0_cfg_update(model::record);
     ss::future<> recover_record(model::record);
