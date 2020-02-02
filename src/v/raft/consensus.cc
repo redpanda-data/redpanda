@@ -26,7 +26,8 @@ consensus::consensus(
   ss::io_priority_class io_priority,
   model::timeout_clock::duration disk_timeout,
   ss::sharded<rpc::connection_cache>& clis,
-  consensus::leader_cb_t cb)
+  consensus::leader_cb_t cb,
+  std::optional<append_entries_cb_t>&& append_callback)
   : _self(std::move(nid))
   , _jit(std::move(jit))
   , _log(l)
@@ -36,7 +37,8 @@ consensus::consensus(
   , _clients(clis)
   , _leader_notification(std::move(cb))
   , _conf(std::move(initial_cfg))
-  , _ctxlog(_self, group) {
+  , _ctxlog(_self, group)
+  , _append_entries_notification(std::move(append_callback)) {
     _meta.group = group();
     _vote_timeout.set_callback([this] { dispatch_vote(); });
     for (auto& n : _conf.nodes) {
@@ -526,7 +528,7 @@ consensus::notify_entries_commited(model::record_batch_reader&& entries) {
           }
           if (!shared.empty() && _append_entries_notification) {
               n_futures.push_back(
-                _append_entries_notification(std::move(shared.back())));
+                _append_entries_notification.value()(std::move(shared.back())));
           }
           return ss::when_all(n_futures.begin(), n_futures.end())
             .discard_result();

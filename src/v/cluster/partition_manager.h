@@ -35,8 +35,11 @@ public:
 
     ss::future<> start();
     ss::future<> stop();
-    ss::future<consensus_ptr>
-      manage(model::ntp, raft::group_id, std::vector<model::broker>);
+    ss::future<consensus_ptr> manage(
+      model::ntp,
+      raft::group_id,
+      std::vector<model::broker>,
+      std::optional<raft::consensus::append_entries_cb_t>);
 
     void register_leadership_notification(leader_cb_t cb) {
         _notifications.push_back(std::move(cb));
@@ -48,7 +51,11 @@ public:
 
 private:
     void trigger_leadership_notification(raft::group_id);
-
+    ss::lw_shared_ptr<raft::consensus> make_consensus(
+      raft::group_id,
+      std::vector<model::broker>,
+      storage::log,
+      std::optional<raft::consensus::append_entries_cb_t>);
     model::node_id _self;
     storage::log_append_config::fsync _should_fsync;
     model::timeout_clock::duration _disk_timeout;

@@ -39,7 +39,8 @@ public:
       ss::io_priority_class io_priority,
       model::timeout_clock::duration disk_timeout,
       ss::sharded<rpc::connection_cache>&,
-      leader_cb_t);
+      leader_cb_t,
+      std::optional<append_entries_cb_t>&& = std::nullopt);
 
     /// Initial call. Allow for internal state recovery
     ss::future<> start();
@@ -63,14 +64,6 @@ public:
                   return do_append_entries(std::move(r));
               });
         });
-    }
-
-    void register_hook(append_entries_cb_t fn) {
-        if (_append_entries_notification) {
-            throw std::runtime_error(
-              "Raft entries already has append_entries hook");
-        }
-        _append_entries_notification = std::move(fn);
     }
 
     /// This method adds a member to the group and performs configuration update
@@ -181,7 +174,7 @@ private:
     /// is for the operation to touch the disk
     ss::semaphore _op_sem{1};
     /// used for notifying when commits happened to log
-    append_entries_cb_t _append_entries_notification;
+    std::optional<append_entries_cb_t> _append_entries_notification;
     probe _probe;
     raft_ctx_log _ctxlog;
 };

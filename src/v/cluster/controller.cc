@@ -68,13 +68,6 @@ ss::future<> controller::start() {
                 _raft0 = c.get();
                 return bootstrap_from_log(plog.value());
             })
-            .then([this] {
-                _raft0->register_hook(
-                  [this](model::record_batch_reader&& reader) {
-                      verify_shard();
-                      return on_raft0_entries_commited(std::move(reader));
-                  });
-            })
             .then([this] { return join_raft0(); })
             .then([this] {
                 clusterlog.info("Finished recovering cluster state");
@@ -94,7 +87,13 @@ ss::future<consensus_ptr> controller::start_raft0() {
         brokers.push_back(_self);
     }
     return _pm.local().manage(
-      controller::ntp, controller::group, std::move(brokers));
+      controller::ntp,
+      controller::group,
+      std::move(brokers),
+      [this](model::record_batch_reader&& reader) {
+          verify_shard();
+          return on_raft0_entries_commited(std::move(reader));
+      });
 }
 
 ss::future<> controller::stop() {
@@ -251,7 +250,8 @@ ss::future<> controller::manage_partition(
       .manage(
         ntp,
         raft_group,
-        get_replica_set_brokers(_md_cache.local(), std::move(replicas)))
+        get_replica_set_brokers(_md_cache.local(), std::move(replicas)),
+        std::nullopt)
       .then([path = ntp.path(), raft_group](consensus_ptr) {
           clusterlog.info("recovered: {}, raft group_id: {}", path, raft_group);
       });
