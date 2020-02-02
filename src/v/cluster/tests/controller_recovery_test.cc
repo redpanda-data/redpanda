@@ -20,6 +20,12 @@ FIXTURE_TEST(
     cntrl.start().get0();
     wait_for_leadership(cntrl);
     // Check topics are in cache
+    tests::cooperative_spin_wait_with_timeout(10s, [this] {
+        auto t_md = get_local_cache().get_topic_metadata(
+          model::topic_view("topic_1"));
+        return t_md && t_md->partitions.size() == 2;
+    });
+
     auto all_topics = get_local_cache().all_topics();
     BOOST_REQUIRE_EQUAL(all_topics.size(), 1);
     validate_topic_metadata(get_local_cache(), "topic_1", 2);

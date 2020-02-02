@@ -63,11 +63,7 @@ ss::future<> controller::start() {
       .then([this] {
           clusterlog.debug("Starting cluster recovery");
           return start_raft0()
-            .then([this](consensus_ptr c) {
-                auto plog = _pm.local().log(controller::ntp);
-                _raft0 = c.get();
-                return bootstrap_from_log(plog.value());
-            })
+            .then([this](consensus_ptr c) { _raft0 = c.get(); })
             .then([this] { return join_raft0(); })
             .then([this] {
                 clusterlog.info("Finished recovering cluster state");
@@ -105,18 +101,6 @@ ss::future<> controller::stop() {
     // leave the gate after observing that it is closed.
     _leadership_cond.broadcast();
     return _bg.close();
-}
-
-ss::future<> controller::bootstrap_from_log(storage::log l) {
-    storage::log_reader_config rcfg{
-      .start_offset = model::offset(0), // from begining
-      .max_bytes = std::numeric_limits<size_t>::max(),
-      .min_bytes = 0, // ok to be empty
-      .prio = controller_priority()};
-    return ss::do_with(
-      l.make_reader(rcfg), [this](model::record_batch_reader& reader) {
-          return reader.consume(batch_consumer(this), model::no_timeout);
-      });
 }
 
 ss::future<> controller::process_raft0_batch(model::record_batch batch) {
