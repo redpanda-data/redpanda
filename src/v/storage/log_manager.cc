@@ -283,6 +283,7 @@ log_manager::manage(model::ntp ntp, log_manager::storage_type type) {
           "log_manager:: cannot have empty config.base_dir"));
     }
     ss::sstring path = fmt::format("{}/{}", _config.base_dir, ntp.path());
+    vassert(_logs.find(ntp) == _logs.end(), "cannot double register same ntp");
     if (type == storage_type::memory) {
         auto l = storage::make_memory_backed_log(ntp, path);
         _logs.emplace(std::move(ntp), l);
