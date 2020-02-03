@@ -77,7 +77,10 @@ public:
     clock_type::time_point last_heartbeat() const { return _hbeat; };
 
     clock_type::time_point last_hbeat_timestamp(model::node_id);
-    void process_append_reply(model::node_id, result<append_entries_reply>);
+    // clang-format off
+    ss::future<>
+    process_append_reply(model::node_id, result<append_entries_reply>);
+    // clang-format on
 
     ss::future<result<replicate_result>>
     replicate(model::record_batch_reader&&);
@@ -112,11 +115,10 @@ private:
     ss::future<storage::append_result>
     disk_append(model::record_batch_reader&&);
 
-    void successfull_append_entries_reply(
+    ss::future<> successfull_append_entries_reply(
       follower_index_metadata&, append_entries_reply);
     void dispatch_recovery(follower_index_metadata&, append_entries_reply);
-    void maybe_update_leader_commit_idx();
-    ss::future<> do_maybe_update_leader_commit_idx();
+    ss::future<> maybe_update_leader_commit_idx();
 
     model::term_id get_term(model::offset);
 

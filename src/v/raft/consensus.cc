@@ -63,14 +63,8 @@ ss::sstring consensus::voted_for_filename() const {
     return _log.work_directory() + "/voted_for";
 }
 
-void consensus::process_append_reply(
+ss::future<> consensus::process_append_reply(
   model::node_id node, result<append_entries_reply> r) {
-    if (!r) {
-        _ctxlog.debug("Error response from {}, {}", node, r.error().message());
-        // add stats to group
-        return;
-    }
-
     if (node == _self) {
         // We use similar path for replicate entries for both the current node
         // and followers. We do not need to track state of self in follower
@@ -80,8 +74,14 @@ void consensus::process_append_reply(
         // append on remote nodes) we have to check what is the maximum offset
         // replicated by the majority of nodes, successful replication on
         // current node may change it.
-
-        return maybe_update_leader_commit_idx();
+        return seastar::with_semaphore(_op_sem, 1, [this]() mutable {
+            return maybe_update_leader_commit_idx();
+        });
+    }
+    if (!r) {
+        _ctxlog.debug("Error response from {}, {}", node, r.error().message());
+        // add stats to group
+        return ss::make_ready_future<>();
     }
 
     follower_index_metadata& idx = get_follower_stats(node);
@@ -96,11 +96,10 @@ void consensus::process_append_reply(
 
     // check preconditions for processing the reply
     if (!is_leader()) {
-        _ctxlog.debug("ignorring append entries reply, not leader");
-        return;
+        return ss::make_ready_future<>();
     }
     if (reply.term > _meta.term) {
-        return do_step_down();
+        return step_down();
     }
 
     // If recovery is in progress the recovery STM will handle follower index
@@ -120,19 +119,20 @@ void consensus::process_append_reply(
 
     if (idx.is_recovering) {
         // we are already recovering, do nothing
-        return;
+        return ss::make_ready_future<>();
     }
 
     if (idx.match_index < _log.max_offset()) {
         // follower match_index is behind, we have to recover it
         dispatch_recovery(idx, std::move(reply));
     }
+    return ss::make_ready_future<>();
     // TODO(agallego) - add target_replication_factor,
     // current_replication_factor to group_configuration so we can promote
     // learners to nodes and perform data movement to added replicas
 }
 
-void consensus::successfull_append_entries_reply(
+ss::future<> consensus::successfull_append_entries_reply(
   follower_index_metadata& idx, append_entries_reply reply) {
     // follower and leader logs matches
     idx.last_log_index = model::offset(reply.last_log_index);
@@ -143,7 +143,11 @@ void consensus::successfull_append_entries_reply(
       idx.node_id,
       idx.match_index,
       idx.next_index);
-    maybe_update_leader_commit_idx();
+    std::vector<model::offset> offsets;
+    return seastar::with_semaphore(
+      _op_sem, 1, [this, &idx, reply = std::move(reply)]() mutable {
+          return maybe_update_leader_commit_idx();
+      });
 }
 
 void consensus::dispatch_recovery(
@@ -628,15 +632,7 @@ follower_index_metadata& consensus::get_follower_stats(model::node_id id) {
     return it->second;
 }
 
-void consensus::maybe_update_leader_commit_idx() {
-    (void)with_gate(_bg, [this] {
-        return seastar::with_semaphore(_op_sem, 1, [this]() mutable {
-            return do_maybe_update_leader_commit_idx();
-        });
-    });
-}
-
-ss::future<> consensus::do_maybe_update_leader_commit_idx() {
+ss::future<> consensus::maybe_update_leader_commit_idx() {
     // Raft paper:
     //
     // If there exists an N such that N > commitIndex, a majority
