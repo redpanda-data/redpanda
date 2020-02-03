@@ -70,7 +70,7 @@ private:
 
     friend std::ostream& operator<<(std::ostream&, const retry_meta&);
 
-    ss::future<std::vector<append_entries_request>> share_request_n(size_t n);
+    ss::future<append_entries_request> share_request();
 
     ss::future<> dispatch_one(retry_meta&);
     ss::future<> dispatch_retries(retry_meta&);

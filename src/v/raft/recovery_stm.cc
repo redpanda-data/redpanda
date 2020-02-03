@@ -84,24 +84,22 @@ ss::future<> recovery_stm::replicate(model::record_batch_reader&& reader) {
             _stop_requested = true;
         }
 
-        return _ptr->process_append_reply(_meta.node_id, r.value())
-          .then([v = r.value(), this] {
-              // move the follower next index backward if recovery were not
-              // successfull
-              //
-              // Raft paper:
-              // If AppendEntries fails because of log inconsistency: decrement
-              // nextIndex and retry(§5.3)
+        _ptr->process_append_reply(_meta.node_id, r.value());
+        // move the follower next index backward if recovery were not
+        // successfull
+        //
+        // Raft paper:
+        // If AppendEntries fails because of log inconsistency: decrement
+        // nextIndex and retry(§5.3)
 
-              if (!v.success) {
-                  _meta.next_index = std::max(
-                    model::offset(0), details::prev_offset(_base_batch_offset));
-                  _ctxlog.trace(
-                    "Move node {} next index {} backward",
-                    _meta.node_id,
-                    _meta.next_index);
-              }
-          });
+        if (!r.value().success) {
+            _meta.next_index = std::max(
+              model::offset(0), details::prev_offset(_base_batch_offset));
+            _ctxlog.trace(
+              "Move node {} next index {} backward",
+              _meta.node_id,
+              _meta.next_index);
+        }
     });
 }
 
