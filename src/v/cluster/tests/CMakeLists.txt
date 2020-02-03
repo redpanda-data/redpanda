@@ -25,12 +25,12 @@ rp_test(
   LIBRARIES Seastar::seastar_testing v::cluster
   DEFINITIONS SEASTAR_TESTING_MAIN
 )
-# rp_test(
-#  UNIT_TEST
-#  BINARY_NAME controller_recovery_test
-#  SOURCES controller_recovery_test.cc
-#  LIBRARIES Seastar::seastar_testing v::cluster
-# )
+rp_test(
+ UNIT_TEST
+ BINARY_NAME controller_recovery_test
+ SOURCES controller_recovery_test.cc
+ LIBRARIES Seastar::seastar_testing v::cluster
+)
 rp_test(
   UNIT_TEST
   BINARY_NAME metadata_cache_tests
