@@ -194,22 +194,20 @@ ss::future<result<replicate_result>> replicate_entries_stm::apply() {
               return ss::make_ready_future<result<replicate_result>>(r.error());
           }
           // append only when we have majority
-          return share_request().then([this](reqs_t r) {
-              auto m = std::find_if(
-                _replies.cbegin(), _replies.cend(), [](const retry_meta& i) {
-                    return i.get_state() == retry_meta::state::success;
-                });
-              if (unlikely(m == _replies.end())) {
-                  throw std::runtime_error(
-                    "Logic error. cannot acknowledge commits");
-              }
-              auto last_offset = m->value->value().last_log_index;
+          auto m = std::find_if(
+            _replies.cbegin(), _replies.cend(), [](const retry_meta& i) {
+                return i.get_state() == retry_meta::state::success;
+            });
+          if (unlikely(m == _replies.end())) {
+              throw std::runtime_error(
+                "Logic error. cannot acknowledge commits");
+          }
+          auto last_offset = m->value->value().last_log_index;
 
-              return ss::make_ready_future<result<replicate_result>>(
-                replicate_result{
-                  .last_offset = model::offset(last_offset),
-                });
-          });
+          return ss::make_ready_future<result<replicate_result>>(
+            replicate_result{
+              .last_offset = model::offset(last_offset),
+            });
       });
 }
 
