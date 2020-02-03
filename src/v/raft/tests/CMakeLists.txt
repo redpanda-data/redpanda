@@ -68,18 +68,18 @@ rp_test(
   LABELS raft
 )
 
-# rp_test(
-#   UNIT_TEST
-#   BINARY_NAME leadership_test
-#   SOURCES leadership_test.cc
-#   LIBRARIES Seastar::seastar_testing v::raft
-#   LABELS raft
-# )
+rp_test(
+  UNIT_TEST
+  BINARY_NAME leadership_test
+  SOURCES leadership_test.cc
+  LIBRARIES Seastar::seastar_testing v::raft v::storage_test_utils
+  LABELS raft
+)
 
-# rp_test(
-#   UNIT_TEST
-#   BINARY_NAME append_entries_test
-#   SOURCES append_entries_test.cc
-#   LIBRARIES Seastar::seastar_testing v::raft
-#   LABELS raft
-# )
+rp_test(
+  UNIT_TEST
+  BINARY_NAME append_entries_test
+  SOURCES append_entries_test.cc
+  LIBRARIES Seastar::seastar_testing v::raft v::storage_test_utils
+  LABELS raft
+)

@@ -7,7 +7,7 @@
 #include "rpc/connection_cache.h"
 #include "rpc/server.h"
 #include "storage/log_manager.h"
-#include "storage/tests/random_batch.h"
+#include "storage/tests/utils/random_batch.h"
 #include "test_utils/fixture.h"
 
 #include <seastar/core/sleep.hh>
