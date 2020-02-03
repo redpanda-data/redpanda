@@ -1,4 +1,5 @@
 #include "storage/tests/storage_test_fixture.h"
+#include "storage/tests/utils/random_batch.h"
 
 #include <seastar/util/defer.hh>
 
@@ -121,29 +122,34 @@ FIXTURE_TEST(test_reading_range_from_a_log, storage_test_fixture) {
         auto range = read_range_to_vector(
           log, batches[3].base_offset(), batches[7].last_offset());
         BOOST_REQUIRE_EQUAL(range.size(), 5);
-        BOOST_REQUIRE_EQUAL(range.front().crc(), batches[3].crc());
-        BOOST_REQUIRE_EQUAL(range.back().crc(), batches[7].crc());
+        BOOST_REQUIRE_EQUAL(
+          range.front().header().crc, batches[3].header().crc);
+        BOOST_REQUIRE_EQUAL(range.back().header().crc, batches[7].header().crc);
         // Range is inclusive base offset points to batch[7] so it have to be
         // included
         range = read_range_to_vector(
           log, batches[3].base_offset(), batches[7].base_offset());
         BOOST_REQUIRE_EQUAL(range.size(), 5);
-        BOOST_REQUIRE_EQUAL(range.front().crc(), batches[3].crc());
-        BOOST_REQUIRE_EQUAL(range.back().crc(), batches[7].crc());
+        BOOST_REQUIRE_EQUAL(
+          range.front().header().crc, batches[3].header().crc);
+        BOOST_REQUIRE_EQUAL(range.back().header().crc, batches[7].header().crc);
 
         range = read_range_to_vector(
           log, batches[3].last_offset(), batches[7].base_offset());
         BOOST_REQUIRE_EQUAL(range.size(), 5);
-        BOOST_REQUIRE_EQUAL(range.front().crc(), batches[3].crc());
-        BOOST_REQUIRE_EQUAL(range.back().crc(), batches[7].crc());
+        BOOST_REQUIRE_EQUAL(
+          range.front().header().crc, batches[3].header().crc);
+        BOOST_REQUIRE_EQUAL(range.back().header().crc, batches[7].header().crc);
         // range from base of beging to the middle of end
         range = read_range_to_vector(
           log,
           batches[3].base_offset(),
-          batches[7].base_offset() + model::offset(batches[7].size() / 2));
+          batches[7].base_offset()
+            + model::offset(batches[7].record_count() / 2));
         BOOST_REQUIRE_EQUAL(range.size(), 5);
-        BOOST_REQUIRE_EQUAL(range.front().crc(), batches[3].crc());
-        BOOST_REQUIRE_EQUAL(range.back().crc(), batches[7].crc());
+        BOOST_REQUIRE_EQUAL(
+          range.front().header().crc, batches[3].header().crc);
+        BOOST_REQUIRE_EQUAL(range.back().header().crc, batches[7].header().crc);
     }
 };
 

@@ -22,7 +22,6 @@ bool skipping_consumer::skip_batch_type(model::record_batch_type type) {
 
 batch_consumer::consume_result skipping_consumer::consume_batch_start(
   model::record_batch_header header,
-  size_t num_records,
   size_t physical_base_offset,
   size_t bytes_on_disk) {
     if (header.last_offset() < _reader._config.start_offset) {
@@ -37,35 +36,23 @@ batch_consumer::consume_result skipping_consumer::consume_batch_start(
     if (header.attrs.compression() == model::compression::none) {
         // Reset the variant.
         auto r = model::record_batch::uncompressed_records();
-        r.reserve(num_records);
+        r.reserve(header.record_count);
         _records = std::move(r);
     }
     _header = header;
-    _num_records = num_records;
     _header.ctx.term = _reader._seg.reader()->term();
     return skip_batch::no;
 }
 
-batch_consumer::consume_result skipping_consumer::consume_record(
-  size_t size_bytes,
-  model::record_attributes attributes,
-  int32_t timestamp_delta,
-  int32_t offset_delta,
-  iobuf&& key,
-  iobuf&& value_and_headers) {
+batch_consumer::consume_result
+skipping_consumer::consume_record(model::record r) {
     std::get<model::record_batch::uncompressed_records>(_records).emplace_back(
-      size_bytes,
-      attributes,
-      timestamp_delta,
-      offset_delta,
-      std::move(key),
-      std::move(value_and_headers));
+      std::move(r));
     return skip_batch::no;
 }
 
 void skipping_consumer::consume_compressed_records(iobuf&& records) {
-    _records = model::record_batch::compressed_records(
-      _num_records, std::move(records));
+    _records = std::move(records);
 }
 
 batch_consumer::stop_parser skipping_consumer::consume_batch_end() {
@@ -94,7 +81,6 @@ batch_consumer::stop_parser skipping_consumer::consume_batch_end() {
         return stop_parser::yes;
     }
     _header = {};
-    _num_records = 0;
     return stop_parser(_reader.is_buffer_full());
 }
 

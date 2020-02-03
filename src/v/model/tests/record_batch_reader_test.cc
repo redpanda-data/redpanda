@@ -1,5 +1,6 @@
 #include "model/record.h"
 #include "model/record_batch_reader.h"
+#include "storage/tests/utils/random_batch.h"
 
 #include <seastar/core/thread.hh>
 #include <seastar/testing/thread_test_case.hh>
@@ -71,26 +72,10 @@ private:
     size_t _depth;
 };
 
-record_batch_header make_header(offset o) {
-    return record_batch_header{1,
-                               o,
-                               record_batch_type(1),
-                               1,
-                               record_batch_attributes(),
-                               0,
-                               model::timestamp(),
-                               model::timestamp()};
-}
-
-record_batch make_batch(offset o) {
-    return record_batch(
-      make_header(o), record_batch::compressed_records(1, {}));
-}
-
 template<typename... Offsets>
-ss::circular_buffer<record_batch> make_batches(Offsets... o) {
-    ss::circular_buffer<record_batch> batches;
-    (batches.emplace_back(make_batch(o)), ...);
+ss::circular_buffer<model::record_batch> make_batches(Offsets... o) {
+    ss::circular_buffer<model::record_batch> batches;
+    (batches.emplace_back(storage::test::make_random_batch(o, 1, true)), ...);
     return batches;
 }
 

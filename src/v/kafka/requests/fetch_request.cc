@@ -6,7 +6,6 @@
 #include "likely.h"
 #include "model/timeout_clock.h"
 #include "resource_mgmt/io_priority.h"
-#include "storage/tests/random_batch.h"
 #include "utils/to_string.h"
 
 #include <seastar/core/sleep.hh>

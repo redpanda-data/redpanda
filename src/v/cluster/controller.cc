@@ -104,7 +104,7 @@ ss::future<> controller::stop() {
 }
 
 ss::future<> controller::process_raft0_batch(model::record_batch batch) {
-    if (unlikely(batch.type() == raft::data_batch_type)) {
+    if (unlikely(batch.header().type == raft::data_batch_type)) {
         // we are not intrested in data batches
         return ss::make_ready_future<>();
     }
@@ -115,7 +115,7 @@ ss::future<> controller::process_raft0_batch(model::record_batch batch) {
           "We cannot process compressed record_batch'es yet, see #188"));
     }
 
-    if (batch.type() == raft::configuration_batch_type) {
+    if (batch.header().type == raft::configuration_batch_type) {
         return model::consume_records(
           std::move(batch), [this](model::record rec) mutable {
               return process_raft0_cfg_update(std::move(rec));
@@ -130,7 +130,7 @@ ss::future<> controller::process_raft0_batch(model::record_batch batch) {
 
 ss::future<> controller::process_raft0_cfg_update(model::record r) {
     auto cfg = reflection::adl<raft::group_configuration>().from(
-      r.share_packed_value_and_headers());
+      r.share_value());
     clusterlog.debug("Processing new raft-0 configuration");
     auto old_list = _md_cache.local().all_brokers();
     std::vector<broker_ptr> new_list;
@@ -151,8 +151,7 @@ ss::future<> controller::process_raft0_cfg_update(model::record r) {
 
 ss::future<> controller::recover_record(model::record r) {
     auto log_record = reflection::adl<log_record_key>{}.from(r.share_key());
-    return dispatch_record_recovery(
-      std::move(log_record), r.share_packed_value_and_headers());
+    return dispatch_record_recovery(std::move(log_record), r.share_value());
 }
 
 ss::future<>

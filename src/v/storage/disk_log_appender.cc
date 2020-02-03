@@ -22,7 +22,7 @@ disk_log_appender::disk_log_appender(
 
 ss::future<ss::stop_iteration>
 disk_log_appender::operator()(model::record_batch&& batch) {
-    batch.set_base_offset(_idx);
+    batch.header().base_offset = _idx;
     _idx = batch.last_offset() + model::offset(1);
     auto term = batch.term();
     auto next_offset = batch.base_offset();

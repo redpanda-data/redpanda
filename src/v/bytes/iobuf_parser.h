@@ -56,6 +56,16 @@ public:
         return ret;
     }
 
+    // clang-format off
+    template<typename Consumer>
+    CONCEPT(requires requires(Consumer c, const char* src, size_t max) {
+        { c(src, max) } -> ss::stop_iteration;
+    })
+    // clang-format on
+    size_t consume(const size_t n, Consumer&& f) {
+        return _in.consume(n, std::forward<Consumer>(f));
+    }
+
 private:
     iobuf _io;
     iobuf::iterator_consumer _in;

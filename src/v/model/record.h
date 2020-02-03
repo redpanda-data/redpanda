@@ -4,6 +4,7 @@
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
+#include "vassert.h"
 
 #include <seastar/util/optimized_optional.hh>
 
@@ -51,6 +52,44 @@ private:
     std::bitset<8> _attributes;
 };
 
+class record_header {
+public:
+    record_header(int32_t k_len, iobuf k, int32_t v_len, iobuf v)
+      : _key_size(k_len)
+      , _key(std::move(k))
+      , _val_size(v_len)
+      , _value(std::move(v)) {}
+
+    int32_t memory_usage() const {
+        return (sizeof(int32_t) * 2) + _key.size_bytes() + _value.size_bytes();
+    }
+    record_header share() {
+        return record_header(_key_size, share_key(), _val_size, share_value());
+    }
+    int32_t key_size() const { return _key_size; }
+    const iobuf& key() const { return _key; }
+    iobuf release_key() { return std::exchange(_key, {}); }
+    iobuf share_key() { return _key.share(0, _key.size_bytes()); }
+
+    int32_t value_size() const { return _val_size; }
+    const iobuf& value() const { return _value; }
+    iobuf release_value() { return std::exchange(_value, {}); }
+    iobuf share_value() { return _value.share(0, _value.size_bytes()); }
+
+    bool operator==(const record_header& rhs) const {
+        return _key_size == rhs._key_size && _key == rhs._key
+               && _val_size == rhs._val_size && _value == rhs._value;
+    }
+
+    friend std::ostream& operator<<(std::ostream&, const record_header&);
+
+private:
+    int32_t _key_size;
+    iobuf _key;
+    int32_t _val_size;
+    iobuf _value;
+};
+
 class record {
 public:
     record() = default;
@@ -60,27 +99,33 @@ public:
     record(const record&) = delete;
     record operator=(const record&) = delete;
     record(
-      uint32_t size_bytes,
+      int32_t size_bytes,
       record_attributes attributes,
       int32_t timestamp_delta,
       int32_t offset_delta,
+      int32_t key_size,
       iobuf key,
-      iobuf value_and_headers) noexcept
+      int32_t val_size,
+      iobuf value,
+      std::vector<record_header> hdrs) noexcept
       : _size_bytes(size_bytes)
       , _attributes(attributes)
       , _timestamp_delta(timestamp_delta)
       , _offset_delta(offset_delta)
+      , _key_size(key_size)
       , _key(std::move(key))
-      , _value_and_headers(std::move(value_and_headers)) {}
+      , _val_size(val_size)
+      , _value(std::move(value))
+      , _headers(std::move(hdrs)) {}
 
     // Size in bytes of everything except the size_bytes field.
-    uint32_t size_bytes() const { return _size_bytes; }
+    int32_t size_bytes() const { return _size_bytes; }
 
     // Used for acquiring units from semaphores limiting
     // memory resources.
-    uint32_t memory_usage() const {
-        return sizeof(*this) + _key.size_bytes()
-               + _value_and_headers.size_bytes();
+    int32_t memory_usage() const {
+        return sizeof(record) + (_headers.size() * sizeof(record_header))
+               + _size_bytes;
     }
 
     record_attributes attributes() const { return _attributes; }
@@ -89,31 +134,43 @@ public:
 
     int32_t offset_delta() const { return _offset_delta; }
 
+    int32_t key_size() const { return _key_size; }
     const iobuf& key() const { return _key; }
-    /// This method shares the underlying buffer sharing each fragment to
-    /// make the buffer consumable with stream
+    iobuf release_key() { return std::exchange(_key, {}); }
     iobuf share_key() { return _key.share(0, _key.size_bytes()); }
 
-    const iobuf& packed_value_and_headers() const { return _value_and_headers; }
-    /// This method shares the underlying buffer sharing each fragment to
-    /// make the buffer consumable with stream
-    iobuf share_packed_value_and_headers() {
-        return _value_and_headers.share(0, _value_and_headers.size_bytes());
-    }
+    int32_t value_size() const { return _val_size; }
+    const iobuf& value() const { return _value; }
+    iobuf release_value() { return std::exchange(_value, {}); }
+    iobuf share_value() { return _value.share(0, _value.size_bytes()); }
+
+    const std::vector<record_header>& headers() const { return _headers; }
+    std::vector<record_header>& headers() { return _headers; }
+
     record share() {
+        std::vector<record_header> copy;
+        copy.reserve(_headers.size());
+        for (auto& h : _headers) {
+            copy.push_back(h.share());
+        }
         return record(
           _size_bytes,
           _attributes,
           _timestamp_delta,
           _offset_delta,
+          _key_size,
           share_key(),
-          share_packed_value_and_headers());
+          _val_size,
+          share_value(),
+          std::move(copy));
     }
     bool operator==(const record& other) const {
         return _size_bytes == other._size_bytes
                && _timestamp_delta == other._timestamp_delta
                && _offset_delta == other._offset_delta && _key == other._key
-               && _value_and_headers == other._value_and_headers;
+               && _value == other._value
+               && _headers.size() == other._headers.size()
+               && _headers == other._headers;
     }
 
     bool operator!=(const record& other) const { return !(*this == other); }
@@ -121,20 +178,21 @@ public:
     friend std::ostream& operator<<(std::ostream&, const record&);
 
 private:
-    uint32_t _size_bytes{0};
+    int32_t _size_bytes{0};
     record_attributes _attributes;
     int32_t _timestamp_delta{0};
     int32_t _offset_delta{0};
+    int32_t _key_size{0};
     iobuf _key;
-    // Already contains the varint encoding of the
-    // value size and of the header size.
-    iobuf _value_and_headers;
+    int32_t _val_size{0};
+    iobuf _value;
+    std::vector<record_header> _headers;
 };
 
 class record_batch_attributes final {
 public:
-    static constexpr int16_t compression_mask = 0x7;
-    static constexpr int16_t timestamp_type_mask = 0x8;
+    static constexpr uint16_t compression_mask = 0x7;
+    static constexpr uint16_t timestamp_type_mask = 0x8;
     static constexpr size_t is_transactional_bit = 4;
     using type = int16_t;
 
@@ -149,14 +207,16 @@ public:
         return _attributes.test(is_transactional_bit);
     }
     bool is_valid_compression() const {
-        auto at = _attributes.to_ulong() & compression_mask;
+        auto at = static_cast<uint16_t>(_attributes.to_ulong())
+                  & compression_mask;
         if (at >= 0 && at <= 4) {
             return true;
         }
         return false;
     }
     model::compression compression() const {
-        switch (_attributes.to_ulong() & compression_mask) {
+        switch (static_cast<uint16_t>(_attributes.to_ulong())
+                & compression_mask) {
         case 0:
             return compression::none;
         case 1:
@@ -194,10 +254,8 @@ public:
     }
 
     record_batch_attributes& operator|=(model::timestamp_type ts_t) {
-        _attributes
-          |= (static_cast<std::underlying_type_t<model::timestamp_type>>(ts_t)
-              << 3)
-             & record_batch_attributes::timestamp_type_mask;
+        _attributes |= (static_cast<uint64_t>(ts_t) << uint64_t(3))
+                       & record_batch_attributes::timestamp_type_mask;
         return *this;
     }
 
@@ -224,15 +282,22 @@ struct record_batch_header {
         model::term_id term;
     };
 
-    // Size of the batch minus this field.
-    uint32_t size_bytes{0};
+    int32_t size_bytes{0};
     offset base_offset;
-    record_batch_type type;
+    record_batch_type type; // redpanda extension
     int32_t crc{0};
+
+    // -- below the CRC are checksummed
+
     record_batch_attributes attrs;
     int32_t last_offset_delta{0};
     timestamp first_timestamp;
     timestamp max_timestamp;
+    int64_t producer_id{0};
+    int16_t producer_epoch{0};
+    int32_t base_sequence{0};
+    int32_t record_count{0};
+
     /// context object with opaque environment data
     context ctx;
 
@@ -247,7 +312,8 @@ struct record_batch_header {
                && attrs == other.attrs
                && last_offset_delta == other.last_offset_delta
                && first_timestamp == other.first_timestamp
-               && max_timestamp == other.max_timestamp;
+               && max_timestamp == other.max_timestamp
+               && record_count == other.record_count;
     }
 
     bool operator!=(const record_batch_header& other) const {
@@ -259,57 +325,8 @@ struct record_batch_header {
 
 class record_batch {
 public:
-    // After moving, compressed_records is guaranteed to be empty().
-    class compressed_records {
-    public:
-        compressed_records(uint32_t size, iobuf data) noexcept
-          : _size(size)
-          , _data(std::move(data)) {}
-        compressed_records(const compressed_records&) = delete;
-        compressed_records& operator=(const compressed_records&) = delete;
-        compressed_records(compressed_records&&) noexcept = default;
-        compressed_records& operator=(compressed_records&&) noexcept = default;
-
-        uint32_t size() const { return _size; }
-
-        uint32_t size_bytes() const { return _data.size_bytes(); }
-
-        bool empty() const { return !_size; }
-
-        const iobuf& records() const { return _data; }
-
-        iobuf release() && {
-            _size = 0;
-            return std::move(_data);
-        }
-        /// This method shares the underlying buffer sharing each fragment to
-        /// make the buffer consumable with stream
-        compressed_records share() {
-            return compressed_records(
-              _size, _data.share(0, _data.size_bytes()));
-        }
-        bool operator==(const compressed_records& other) const {
-            return _size == other._size && _data == other._data;
-        }
-
-        bool operator!=(const compressed_records& other) const {
-            return !(*this == other);
-        }
-
-        void clear() {
-            _size = 0;
-            _data = iobuf();
-        }
-
-        friend std::ostream&
-        operator<<(std::ostream&, const compressed_records&);
-
-    private:
-        uint32_t _size;
-        iobuf _data;
-    };
-
     using uncompressed_records = std::vector<record>;
+    using compressed_records = iobuf;
     using records_type = std::variant<uncompressed_records, compressed_records>;
 
     record_batch(record_batch_header header, records_type&& records) noexcept
@@ -319,78 +336,59 @@ public:
     record_batch& operator=(const record_batch&) = delete;
     record_batch(record_batch&&) noexcept = default;
     record_batch& operator=(record_batch&&) noexcept = default;
+    ~record_batch() = default;
 
-    bool empty() const {
-        return ss::visit(_records, [](auto& e) { return e.empty(); });
-    }
+    bool empty() const { return _header.record_count <= 0; }
 
     bool compressed() const {
         return std::holds_alternative<compressed_records>(_records);
     }
 
-    uint32_t size() const {
-        return ss::visit(
-          _records, [](auto& e) { return static_cast<uint32_t>(e.size()); });
-    }
-
+    int32_t record_count() const { return _header.record_count; }
+    model::offset base_offset() const { return _header.base_offset; }
+    model::offset last_offset() const { return _header.last_offset(); }
+    model::term_id term() const { return _header.ctx.term; }
+    void set_term(model::term_id i) { _header.ctx.term = i; }
     // Size in bytes of the header plus records.
-    uint32_t size_bytes() const { return _header.size_bytes; }
+    int32_t size_bytes() const { return _header.size_bytes; }
 
-    uint32_t memory_usage() const {
+    int32_t memory_usage() const {
         return sizeof(*this)
                + ss::visit(
                  _records,
-                 [](const compressed_records& records) {
+                 [](const compressed_records& records) -> int32_t {
                      return records.size_bytes();
                  },
                  [](const uncompressed_records& records) {
                      return boost::accumulate(
-                       records,
-                       uint32_t(0),
-                       [](uint32_t usage, const record& r) {
+                       records, int32_t(0), [](int32_t usage, const record& r) {
                            return usage + r.memory_usage();
                        });
                  });
     }
 
-    offset base_offset() const { return _header.base_offset; }
-    void set_base_offset(model::offset offset) { _header.base_offset = offset; }
-    record_batch_type type() const { return _header.type; }
-    int32_t crc() const { return _header.crc; }
-
-    record_batch_attributes attributes() const { return _header.attrs; }
-
-    int32_t last_offset_delta() const { return _header.last_offset_delta; }
-
-    timestamp first_timestamp() const { return _header.first_timestamp; }
-
-    timestamp max_timestamp() const { return _header.max_timestamp; }
-
-    offset last_offset() const { return _header.last_offset(); }
-
-    model::term_id term() const { return _header.ctx.term; }
-    void set_term(model::term_id term) { _header.ctx.term = term; }
+    const record_batch_header& header() const { return _header; }
+    record_batch_header& header() { return _header; }
 
     bool contains(model::offset offset) const {
-        return base_offset() <= offset && offset <= last_offset();
+        return _header.base_offset() <= offset
+               && offset <= _header.last_offset();
     }
 
-    // Can only be called if this holds a set of uncompressed records.
     uncompressed_records::const_iterator begin() const {
+        verify_uncompressed_records();
         return std::get<uncompressed_records>(_records).begin();
     }
-
-    // Can only be called if this holds a set of uncompressed records.
     uncompressed_records::const_iterator end() const {
+        verify_uncompressed_records();
         return std::get<uncompressed_records>(_records).end();
     }
-    // Can only be called if this holds a set of uncompressed records.
     uncompressed_records::iterator begin() {
+        verify_uncompressed_records();
         return std::get<uncompressed_records>(_records).begin();
     }
-
-    // Can only be called if this holds a set of uncompressed records.
     uncompressed_records::iterator end() {
+        verify_uncompressed_records();
         return std::get<uncompressed_records>(_records).end();
     }
 
@@ -401,7 +399,6 @@ public:
     compressed_records&& release() && {
         return std::move(std::get<compressed_records>(_records));
     }
-    record_batch_header&& release_header() { return std::move(_header); }
     bool operator==(const record_batch& other) const {
         return _header == other._header && _records == other._records;
     }
@@ -413,17 +410,15 @@ public:
     friend std::ostream& operator<<(std::ostream&, const record_batch&);
 
     uncompressed_records& get_uncompressed_records_for_testing() {
+        verify_uncompressed_records();
         return std::get<uncompressed_records>(_records);
     }
-    const record_batch_header& header() const { return _header; }
-
-    record_batch_header& get_header_for_testing() { return _header; }
 
     record_batch share() {
         record_batch_header h = _header;
         if (compressed()) {
             auto& recs = std::get<compressed_records>(_records);
-            return record_batch(h, recs.share());
+            return record_batch(h, recs.share(0, recs.size_bytes()));
         }
         auto& originals = std::get<uncompressed_records>(_records);
         uncompressed_records r;
@@ -439,7 +434,10 @@ public:
     }
 
     void clear() {
-        ss::visit(_records, [](auto& r) { r.clear(); });
+        ss::visit(
+          _records,
+          [](compressed_records& r) { r = iobuf(); },
+          [](uncompressed_records& u) { u.clear(); });
     }
 
 private:
@@ -447,7 +445,12 @@ private:
     records_type _records;
 
     record_batch() = default;
-    explicit operator bool() const noexcept { return size(); }
+    void verify_uncompressed_records() const {
+        vassert(
+          std::holds_alternative<uncompressed_records>(_records),
+          "Iterators can only be called with uncompressed record variant.");
+    }
+    explicit operator bool() const noexcept { return !empty(); }
     friend class ss::optimized_optional<record_batch>;
 };
 

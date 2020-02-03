@@ -3,6 +3,7 @@ v_cc_library(
   SRCS
     model.cc
     record_batch_reader.cc
+    record_utils.cc
   DEPS
     Seastar::seastar
   )

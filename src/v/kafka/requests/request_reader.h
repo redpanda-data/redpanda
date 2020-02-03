@@ -48,8 +48,8 @@ public:
 
     bytes read_bytes() { return _parser.read_bytes(read_int32()); }
 
-    [[deprecated("replaced by read_nullable_iobuf()")]] std::optional<iobuf>
-    read_fragmented_nullable_bytes() {
+    // Stronly suggested to use read_nullable_iobuf
+    std::optional<iobuf> read_fragmented_nullable_bytes() {
         auto [io, count] = read_nullable_iobuf();
         if (count < 0) {
             return std::nullopt;

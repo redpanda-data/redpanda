@@ -38,38 +38,42 @@ private:
         auto size = batch.size_bytes()
                     - sizeof(model::record_batch_header::base_offset)
                     - sizeof(model::record_batch_type::type)
-                    + sizeof(int32_t)  // partition leader epoch
-                    + sizeof(int8_t)   // magic
-                    + sizeof(int64_t)  // producer id
-                    + sizeof(int16_t)  // producer epoch
-                    + sizeof(int32_t); // base sequence
+                    + sizeof(int32_t) // partition leader epoch
+                    + sizeof(int8_t); // magic
 
         _wr.write(int64_t(batch.base_offset()));
         _wr.write(int32_t(size)); // batch length
         _wr.write(int32_t(0));    // partition leader epoch
         _wr.write(int8_t(2));     // magic
-        _wr.write(batch.crc());   // crc
-        _wr.write(int16_t(
-          batch.attributes().value())); // attributes (fixed to no compression)
-        _wr.write(int32_t(batch.last_offset_delta()));
-        _wr.write(int64_t(batch.first_timestamp().value()));
-        _wr.write(int64_t(batch.max_timestamp().value()));
-        _wr.write(int64_t(0));            // producer id
-        _wr.write(int16_t(0));            // producer epoch
-        _wr.write(int32_t(0));            // base sequence
-        _wr.write(int32_t(batch.size())); // num records
+        _wr.write(batch.header().crc);
+        _wr.write(int16_t(batch.header().attrs.value()));
+        _wr.write(int32_t(batch.header().last_offset_delta));
+        _wr.write(int64_t(batch.header().first_timestamp.value()));
+        _wr.write(int64_t(batch.header().max_timestamp.value()));
+        _wr.write(int64_t(batch.header().producer_id));
+        _wr.write(int16_t(batch.header().producer_epoch));
+        _wr.write(int32_t(batch.header().base_sequence));
+        _wr.write(int32_t(batch.record_count()));
 
         if (batch.compressed()) {
-            _wr.write(std::move(batch).release().release());
+            _wr.write(std::move(batch).release());
         } else {
             for (auto& record : batch) {
                 _wr.write_varint(record.size_bytes());
                 _wr.write(int8_t(0));
                 _wr.write_varint(record.timestamp_delta());
                 _wr.write_varint(record.offset_delta());
-                _wr.write_varint(record.key().size_bytes());
+                _wr.write_varint(record.key_size());
                 _wr.write_direct(record.share_key());
-                _wr.write_direct(record.share_packed_value_and_headers());
+                _wr.write_varint(record.value_size());
+                _wr.write_direct(record.share_value());
+                _wr.write_varint(record.headers().size());
+                for (auto& h : record.headers()) {
+                    _wr.write_varint(h.key_size());
+                    _wr.write_direct(h.share_key());
+                    _wr.write_varint(h.value_size());
+                    _wr.write_direct(h.share_value());
+                }
             }
         }
     }

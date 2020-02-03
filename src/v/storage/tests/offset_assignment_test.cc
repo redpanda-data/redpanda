@@ -1,6 +1,6 @@
 
 #include "storage/offset_assignment.h"
-#include "storage/tests/random_batch.h"
+#include "storage/tests/utils/random_batch.h"
 
 #include <seastar/testing/thread_test_case.hh>
 
@@ -12,7 +12,7 @@ struct offset_validating_consumer {
 
     ss::future<ss::stop_iteration> operator()(model::record_batch&& batch) {
         BOOST_REQUIRE_EQUAL(batch.base_offset(), starting_offset);
-        starting_offset += batch.size();
+        starting_offset += batch.record_count();
         return ss::make_ready_future<ss::stop_iteration>(
           ss::stop_iteration::no);
     }

@@ -3,8 +3,8 @@ rp_test(
   UNIT_TEST
   BINARY_NAME record_batch_reader_test
   SOURCES record_batch_reader_test.cc
-  LIBRARIES Seastar::seastar_testing v::model
-
+  LIBRARIES Seastar::seastar_testing v::model v::storage_test_utils
+  LABELS model
   ARGS "-- -c 1"
 )
 rp_test(

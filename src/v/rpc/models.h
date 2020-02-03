@@ -128,6 +128,7 @@ struct adl<model::broker> {
     }
 };
 
+// TODO: optimize this transmition with varints
 template<>
 struct adl<model::record> {
     void to(iobuf& ref, model::record&& record) {
@@ -137,8 +138,19 @@ struct adl<model::record> {
           record.attributes().value(),
           record.timestamp_delta(),
           record.offset_delta(),
+          record.key_size(),
           record.share_key(),
-          record.share_packed_value_and_headers());
+          record.value_size(),
+          record.share_value(),
+          int32_t(record.headers().size()));
+        for (auto& h : record.headers()) {
+            reflection::serialize(
+              ref,
+              h.key_size(),
+              h.share_key(),
+              h.value_size(),
+              h.share_value());
+        }
     }
 
     model::record from(iobuf_parser& in) {
@@ -147,14 +159,31 @@ struct adl<model::record> {
         auto attributes = model::record_attributes(adl<attr_t>{}.from(in));
         auto timestamp = adl<int32_t>{}.from(in);
         auto offset_data = adl<int32_t>{}.from(in);
+        auto key_len = adl<int32_t>{}.from(in);
         auto key = adl<iobuf>{}.from(in);
-        auto value_and_headers = adl<iobuf>{}.from(in);
-        return model::record{sz_bytes,
-                             attributes,
-                             timestamp,
-                             offset_data,
-                             std::move(key),
-                             std::move(value_and_headers)};
+        auto value_len = adl<int32_t>{}.from(in);
+        auto value = adl<iobuf>{}.from(in);
+        auto hdr_size = adl<int32_t>{}.from(in);
+        std::vector<model::record_header> headers;
+        headers.reserve(hdr_size);
+        for (int i = 0; i < hdr_size; ++i) {
+            auto hkey_len = adl<int32_t>{}.from(in);
+            auto hkey = adl<iobuf>{}.from(in);
+            auto hvalue_len = adl<int32_t>{}.from(in);
+            auto hvalue = adl<iobuf>{}.from(in);
+            headers.emplace_back(model::record_header(
+              hkey_len, std::move(hkey), hvalue_len, std::move(hvalue)));
+        }
+        return model::record(
+          sz_bytes,
+          attributes,
+          timestamp,
+          offset_data,
+          key_len,
+          std::move(key),
+          value_len,
+          std::move(value),
+          std::move(headers));
     }
 };
 
@@ -171,11 +200,15 @@ struct adl<model::record_batch_header> {
           r.last_offset_delta,
           r.first_timestamp.value(),
           r.max_timestamp.value(),
+          r.producer_id,
+          r.producer_epoch,
+          r.base_sequence,
+          r.record_count,
           r.ctx.term);
     }
 
     model::record_batch_header from(iobuf_parser& in) {
-        auto sz = adl<uint32_t>{}.from(in);
+        auto sz = adl<int32_t>{}.from(in);
         auto off = adl<model::offset>{}.from(in);
         auto type = adl<model::record_batch_type>{}.from(in);
         auto crc = adl<int32_t>{}.from(in);
@@ -185,6 +218,10 @@ struct adl<model::record_batch_header> {
         using tmstmp_t = model::timestamp::type;
         auto first = model::timestamp(adl<tmstmp_t>{}.from(in));
         auto max = model::timestamp(adl<tmstmp_t>{}.from(in));
+        auto producer_id = adl<int64_t>{}.from(in);
+        auto producer_epoch = adl<int16_t>{}.from(in);
+        auto base_sequence = adl<int32_t>{}.from(in);
+        auto record_count = adl<int32_t>{}.from(in);
         auto term_id = adl<model::term_id>{}.from(in);
         return model::record_batch_header{
           sz,
@@ -195,35 +232,29 @@ struct adl<model::record_batch_header> {
           delta,
           first,
           max,
+          producer_id,
+          producer_epoch,
+          base_sequence,
+          record_count,
           model::record_batch_header::context{.term = term_id}};
     }
 };
 
 struct batch_header {
     model::record_batch_header bhdr;
-    uint32_t batch_size;
     int8_t is_compressed;
 };
 
 template<>
 struct adl<batch_header> {
     void to(iobuf& out, batch_header&& header) {
-        reflection::serialize(
-          out, header.bhdr, header.batch_size, header.is_compressed);
-        /*
-        This is ambiguous --> Fron adl.h line 92
-        to(iobuf& out, type& t) and
-        to(iobuf& out, type t)
-        adl<model::record_batch_header>{}.to(out, header.bhdr);
-        adl<uint32_t>{}.to(out, header.batch_size);
-        adl<int8_t>{}.to(out, header.is_compressed); */
+        reflection::serialize(out, header.bhdr, header.is_compressed);
     }
 
     batch_header from(iobuf_parser& in) {
         auto record = adl<model::record_batch_header>{}.from(in);
-        auto batch_sz = adl<uint32_t>{}.from(in);
         auto is_compressed = adl<int8_t>{}.from(in);
-        return batch_header{std::move(record), batch_sz, is_compressed};
+        return batch_header{record, is_compressed};
     }
 };
 
@@ -231,12 +262,11 @@ template<>
 struct adl<model::record_batch> {
     void to(iobuf& out, model::record_batch&& batch) {
         batch_header hdr{
-          .bhdr = batch.release_header(),
-          .batch_size = batch.size(),
+          .bhdr = batch.header(),
           .is_compressed = static_cast<int8_t>(batch.compressed() ? 1 : 0)};
-        reflection::serialize(out, std::move(hdr));
+        reflection::serialize(out, hdr);
         if (batch.compressed()) {
-            reflection::serialize(out, std::move(batch).release().release());
+            reflection::serialize(out, std::move(batch).release());
             return;
         }
         for (model::record& r : batch) {
@@ -248,19 +278,14 @@ struct adl<model::record_batch> {
         auto hdr = reflection::adl<batch_header>{}.from(in);
         if (hdr.is_compressed == 1) {
             auto io = reflection::adl<iobuf>{}.from(in);
-
-            return model::record_batch(
-              std::move(hdr.bhdr),
-              model::record_batch::compressed_records(
-                hdr.batch_size, std::move(io)));
+            return model::record_batch(hdr.bhdr, std::move(io));
         }
         auto recs = std::vector<model::record>{};
-        recs.reserve(hdr.batch_size);
-        for (int i = 0; i < hdr.batch_size; ++i) {
+        recs.reserve(hdr.bhdr.record_count);
+        for (int i = 0; i < hdr.bhdr.record_count; ++i) {
             recs.push_back(adl<model::record>{}.from(in));
         }
-
-        return model::record_batch(std::move(hdr.bhdr), std::move(recs));
+        return model::record_batch(hdr.bhdr, std::move(recs));
     }
 };
 

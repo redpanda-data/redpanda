@@ -153,7 +153,7 @@ static ss::future<produce_response::partition> partition_append(
   model::partition_id id,
   ss::lw_shared_ptr<cluster::partition> partition,
   model::record_batch batch) {
-    auto num_records = batch.size();
+    auto num_records = batch.record_count();
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
 
     return partition->replicate(std::move(reader))

@@ -5,8 +5,8 @@
 #include "storage/log.h"
 #include "storage/log_manager.h"
 #include "storage/log_segment_reader.h"
-#include "storage/tests/log_builder.h"
-#include "storage/tests/random_batch.h"
+#include "storage/tests/utils/log_builder.h"
+#include "storage/tests/utils/random_batch.h"
 #include "test_utils/fixture.h"
 
 #include <seastar/core/byteorder.hh>
@@ -52,7 +52,7 @@ private:
     struct stat_consumer {
         ss::future<ss::stop_iteration> operator()(model::record_batch&& batch) {
             stats_.batch_count++;
-            stats_.record_count += batch.size();
+            stats_.record_count += batch.record_count();
             return ss::make_ready_future<ss::stop_iteration>(
               ss::stop_iteration::no);
         }

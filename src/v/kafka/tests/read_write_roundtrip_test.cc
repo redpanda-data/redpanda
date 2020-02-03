@@ -30,7 +30,7 @@ SEASTAR_THREAD_TEST_CASE(write_and_read_value_test) {
     roundtrip_test(false, bool, &request_reader::read_bool);
     roundtrip_test(
       ss::sstring{"test_string"}, ss::sstring, &request_reader::read_string);
-        roundtrip_test(
+    roundtrip_test(
       ss::sstring("test_string"),
       std::optional<ss::sstring>,
       &request_reader::read_nullable_string);

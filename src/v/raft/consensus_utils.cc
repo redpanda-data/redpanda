@@ -1,6 +1,7 @@
 #include "raft/consensus_utils.h"
 
 #include "likely.h"
+#include "model/record.h"
 #include "resource_mgmt/io_priority.h"
 #include "storage/record_batch_builder.h"
 
@@ -93,6 +94,27 @@ static inline void check_copy_out_of_range(size_t expected, size_t got) {
     }
 }
 
+static std::vector<std::vector<model::record_header>> share_n_headers(
+  std::vector<model::record_header> hdr,
+  size_t copies,
+  bool use_foreign_iobuf_share) {
+    std::vector<std::vector<model::record_header>> ret(copies);
+    for (auto& h : hdr) {
+        auto kvec = iobuf_share_foreign_n(h.release_key(), copies);
+        auto vvec = iobuf_share_foreign_n(h.release_value(), copies);
+        for (auto i = 0; i < copies; ++i) {
+            ret[i].emplace_back(model::record_header(
+              h.key_size(),
+              std::move(kvec.back()),
+              h.value_size(),
+              std::move(vvec.back())));
+            kvec.pop_back();
+            vvec.pop_back();
+        }
+    }
+    return ret;
+}
+
 static inline ss::circular_buffer<model::record_batch> share_n_record_batch(
   model::record_batch batch,
   const size_t copies,
@@ -110,16 +132,12 @@ static inline ss::circular_buffer<model::record_batch> share_n_record_batch(
     // foreign share
 
     if (batch.compressed()) {
-        const auto hdr = batch.release_header();
-        auto recs = std::move(batch).release();
-        size_t recs_sz = recs.size();
-        iobuf io = std::move(recs).release();
+        auto hdr = batch.header();
+        auto io = std::move(batch).release();
+        size_t recs_sz = hdr.record_count;
         auto vec = iobuf_share_foreign_n(std::move(io), copies);
         while (!vec.empty()) {
-            ret.emplace_back(
-              hdr,
-              model::record_batch::compressed_records(
-                recs_sz, std::move(vec.back())));
+            ret.emplace_back(hdr, std::move(vec.back()));
             vec.pop_back();
         }
         return ret;
@@ -131,25 +149,32 @@ static inline ss::circular_buffer<model::record_batch> share_n_record_batch(
         auto const attributes = r.attributes();
         auto const timestamp_delta = r.timestamp_delta();
         auto const offset_delta = r.offset_delta();
-        auto kvec = iobuf_share_foreign_n(r.share_key(), copies);
-        auto vvec = iobuf_share_foreign_n(
-          std::move(r).share_packed_value_and_headers(), copies);
+        auto const k_size = r.key_size();
+        auto const v_size = r.value_size();
+        auto kvec = iobuf_share_foreign_n(r.release_key(), copies);
+        auto vvec = iobuf_share_foreign_n(r.release_value(), copies);
+        auto hvec = share_n_headers(
+          std::move(r.headers()), copies, use_foreign_iobuf_share);
         for (auto& d : data) {
             iobuf key = std::move(kvec.back());
             iobuf val = std::move(vvec.back());
+            auto h = std::move(hvec.back());
             kvec.pop_back();
             vvec.pop_back();
-
-            d.push_back(model::record(
+            hvec.pop_back();
+            d.emplace_back(model::record(
               size_bytes,
               attributes,
               timestamp_delta,
               offset_delta,
+              k_size,
               std::move(key),
-              std::move(val)));
+              v_size,
+              std::move(val),
+              std::move(h)));
         }
     }
-    const auto hdr = batch.release_header();
+    auto hdr = batch.header();
     while (!data.empty()) {
         ret.emplace_back(hdr, std::move(data.back()));
         data.pop_back();
@@ -258,7 +283,7 @@ extract_configuration(model::record_batch_reader&& reader) {
               do_for_each_batch_consumer([&cfg](model::record_batch b) mutable {
                   // reader may contain different batches, skip the ones that
                   // does not have configuration
-                  if (b.type() != raft::configuration_batch_type) {
+                  if (b.header().type != raft::configuration_batch_type) {
                       return ss::make_ready_future<>();
                   }
                   if (b.compressed()) {
@@ -268,7 +293,7 @@ extract_configuration(model::record_batch_reader&& reader) {
                   }
                   auto it = std::prev(b.end());
                   cfg = reflection::adl<raft::group_configuration>{}.from(
-                    it->share_packed_value_and_headers());
+                    it->share_value());
                   return ss::make_ready_future<>();
               }),
               model::no_timeout)

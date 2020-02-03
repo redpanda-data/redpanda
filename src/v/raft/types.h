@@ -229,7 +229,7 @@ struct rpc_model_reader_consumer {
     explicit rpc_model_reader_consumer(iobuf& oref)
       : ref(oref) {}
     ss::future<ss::stop_iteration> operator()(model::record_batch batch) {
-        reflection::serialize(ref, batch.release_header(), batch.size());
+        reflection::serialize(ref, batch.header());
         if (!batch.compressed()) {
             reflection::serialize<int8_t>(ref, 0);
             for (model::record& r : batch) {
@@ -237,7 +237,7 @@ struct rpc_model_reader_consumer {
             }
         } else {
             reflection::serialize<int8_t>(ref, 1);
-            reflection::serialize(ref, std::move(batch).release().release());
+            reflection::serialize(ref, std::move(batch).release());
         }
         return ss::make_ready_future<ss::stop_iteration>(
           ss::stop_iteration::no);

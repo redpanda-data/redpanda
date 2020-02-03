@@ -1,3 +1,4 @@
+#include "bytes/iobuf.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -62,22 +63,34 @@ std::ostream& operator<<(std::ostream& os, timestamp_type ts) {
     throw std::runtime_error("Unknown timestamp type");
 }
 
-std::ostream& operator<<(std::ostream& os, const record& record) {
-    return ss::fmt_print(
-      os,
-      "{{record: size_bytes={}, timestamp_delta={}, "
-      "offset_delta={}, key={} bytes, value_and_headers={} bytes}}",
-      record._size_bytes,
-      record._timestamp_delta,
-      record._offset_delta,
-      record._key.size_bytes(),
-      record._value_and_headers.size_bytes());
+std::ostream& operator<<(std::ostream& o, const record_header& h) {
+    return o << "{key_size=" << h.key_size() << ", key=" << h.key()
+             << ", value_size=" << h.value_size() << ", value=" << h.value()
+             << "}";
+}
+
+std::ostream& operator<<(std::ostream& o, const record_attributes& a) {
+    return o << "{" << a._attributes << "}";
+}
+std::ostream& operator<<(std::ostream& o, const record& r) {
+    return o << "{record: size_bytes=" << r.size_bytes()
+             << ", attributes=" << r.attributes()
+             << ", timestamp_delta=" << r._timestamp_delta
+             << ", offset_delta=" << r._offset_delta
+             << ", key_size= " << r._key_size << ", key=" << r.key()
+             << ", value_size=" << r.value()
+             << ", header_size:" << r.headers().size() << ", headers=[";
+
+    for (auto& h : r.headers()) {
+        o << h;
+    }
+    return o << "]}";
 }
 
 std::ostream&
-operator<<(std::ostream& os, const record_batch_attributes& attrs) {
-    return ss::fmt_print(
-      os, "{}:{}", attrs.compression(), attrs.timestamp_type());
+operator<<(std::ostream& o, const record_batch_attributes& attrs) {
+    return o << "{compression:" << attrs.compression()
+             << ",type=" << attrs.timestamp_type() << "}";
 }
 
 std::ostream& operator<<(std::ostream& os, const record_batch_header& header) {
@@ -101,10 +114,10 @@ operator<<(std::ostream& os, const record_batch::compressed_records& records) {
 }
 
 std::ostream& operator<<(std::ostream& os, const record_batch& batch) {
-    fmt::print(
-      os, "{{record_batch: {}, count={},records=", batch._header, batch.size());
+    os << "{record_batch=" << batch.header() << ", records=";
     if (batch.compressed()) {
-        os << batch.get_compressed_records();
+        os << "{compressed=" << batch.get_compressed_records().size_bytes()
+           << "bytes}";
     } else {
         os << "{";
         for (auto& r : batch) {

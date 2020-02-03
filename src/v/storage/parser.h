@@ -25,20 +25,11 @@ public:
 
     virtual consume_result consume_batch_start(
       model::record_batch_header,
-      size_t num_records,
       size_t physical_base_offset,
       size_t size_on_disk)
       = 0;
 
-    virtual consume_result consume_record(
-      size_t size_bytes,
-      model::record_attributes attributes,
-      int32_t timestamp_delta,
-      int32_t offset_delta,
-      iobuf&& key,
-      iobuf&& value_and_headers)
-      = 0;
-
+    virtual consume_result consume_record(model::record) = 0;
     virtual void consume_compressed_records(iobuf&&) = 0;
     virtual stop_parser consume_batch_end() = 0;
 };
