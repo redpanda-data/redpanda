@@ -181,3 +181,42 @@ FIXTURE_TEST(truncate_before_read, storage_test_fixture) {
         BOOST_REQUIRE_EQUAL(log.max_offset(), model::offset{});
     }
 }
+
+FIXTURE_TEST(
+  test_truncate_in_the_middle_of_segment_and_append, storage_test_fixture) {
+    for (auto type : {log_manager::storage_type::memory}) {
+        info("{}", type == log_manager::storage_type::disk ? "DISK" : "MEMORY");
+        storage::log_manager mgr = make_log_manager();
+        auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+        auto ntp = make_ntp("default", "test", 0);
+        auto log = mgr.manage(ntp, type).get0();
+        append_random_batches(log, 6, model::term_id(0));
+        log.flush().get0();
+
+        auto all_batches = read_and_validate_all_batches(log);
+        auto truncate_offset = all_batches[4].base_offset();
+
+        // truncate in the middle
+        info("Truncating at offset:{}", truncate_offset);
+        log.truncate(truncate_offset).get0();
+        info("reading all batches");
+        auto read_batches = read_and_validate_all_batches(log);
+
+        // one less
+        auto expected = all_batches[3].last_offset();
+
+        BOOST_REQUIRE_EQUAL(log.committed_offset(), expected);
+        BOOST_REQUIRE_EQUAL(log.max_offset(), expected);
+        if (truncate_offset != model::offset(0)) {
+            BOOST_REQUIRE_EQUAL(read_batches.back().last_offset(), expected);
+        } else {
+            BOOST_REQUIRE_EQUAL(read_batches.empty(), true);
+        }
+        // Append new batches
+        auto headers = append_random_batches(log, 6, model::term_id(0));
+        log.flush().get0();
+        auto read_after_append = read_and_validate_all_batches(log);
+        // 4 batches were not truncated
+        BOOST_REQUIRE_EQUAL(read_after_append.size(), headers.size() + 4);
+    }
+}
