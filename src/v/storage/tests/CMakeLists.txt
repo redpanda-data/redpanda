@@ -144,9 +144,8 @@ rp_test(
   LABELS storage
 )
 
-# this is only enabled for release builds because non-release builds use the
+# this test is only run on release builds because non-release builds use the
 # default allocator which doesn't support reclaim
-if(CMAKE_BUILD_TYPE STREQUAL "Release")
 rp_test(
   UNIT_TEST
   BINARY_NAME batch_cache_reclaim_test
@@ -154,5 +153,5 @@ rp_test(
   LIBRARIES Seastar::seastar_testing v::storage_test_utils
   ARGS "-- -c1 -m100"
   LABELS storage
+  SKIP_BUILD_TYPES "Debug"
 )
-endif()
