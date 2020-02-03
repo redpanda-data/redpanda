@@ -49,27 +49,19 @@ ss::future<result<void>> replicate_entries_stm::process_replies() {
     return ss::make_ready_future<result<void>>(outcome::success());
 }
 
-ss::future<std::vector<append_entries_request>>
-replicate_entries_stm::share_request_n(size_t n) {
+ss::future<append_entries_request> replicate_entries_stm::share_request() {
     // one extra copy is needed for retries
-    return with_semaphore(_share_sem, 1, [this, n] {
-        return details::foreign_share_n(std::move(_req.batches), n + 1)
+    return with_semaphore(_share_sem, 1, [this] {
+        return details::foreign_share_n(std::move(_req.batches), 2)
           .then([this](std::vector<model::record_batch_reader> readers) {
               // keep a copy around until the end
               _req.batches = std::move(readers.back());
               readers.pop_back();
-              std::vector<append_entries_request> reqs;
-              reqs.reserve(readers.size());
-              while (!readers.empty()) {
-                  reqs.push_back(append_entries_request{
-                    _req.node_id, _req.meta, std::move(readers.back())});
-                  readers.pop_back();
-              }
-              return reqs;
+              return append_entries_request{
+                _req.node_id, _req.meta, std::move(readers.back())};
           });
     });
 }
-
 ss::future<result<append_entries_reply>> replicate_entries_stm::do_dispatch_one(
   model::node_id n, append_entries_request req) {
     using ret_t = result<append_entries_reply>;
@@ -140,10 +132,9 @@ ss::future<> replicate_entries_stm::dispatch_retries(retry_meta& meta) {
 }
 
 ss::future<> replicate_entries_stm::dispatch_single_retry(retry_meta& meta) {
-    using reqs_t = std::vector<append_entries_request>;
-    return share_request_n(1)
-      .then([this, &meta](reqs_t r) mutable {
-          return do_dispatch_one(meta.node, std::move(r.back()))
+    return share_request()
+      .then([this, &meta](append_entries_request r) mutable {
+          return do_dispatch_one(meta.node, std::move(r))
             .handle_exception([this](const std::exception_ptr& e) {
                 _ctxlog.warn(
                   "Error while replication entries {}",
@@ -161,7 +152,7 @@ ss::future<> replicate_entries_stm::dispatch_single_retry(retry_meta& meta) {
 }
 
 ss::future<result<replicate_result>> replicate_entries_stm::apply() {
-    using reqs_t = std::vector<append_entries_request>;
+    using reqs_t = append_entries_request;
     using append_res_t = std::vector<storage::append_result>;
     for (auto& n : _ptr->_conf.nodes) {
         _replies.emplace_back(n.id(), _max_retries);
@@ -203,7 +194,7 @@ ss::future<result<replicate_result>> replicate_entries_stm::apply() {
               return ss::make_ready_future<result<replicate_result>>(r.error());
           }
           // append only when we have majority
-          return share_request_n(1).then([this](reqs_t r) {
+          return share_request().then([this](reqs_t r) {
               auto m = std::find_if(
                 _replies.cbegin(), _replies.cend(), [](const retry_meta& i) {
                     return i.get_state() == retry_meta::state::success;
