@@ -73,13 +73,12 @@ std::ostream& operator<<(std::ostream& o, const record_attributes& a) {
     return o << "{" << a._attributes << "}";
 }
 std::ostream& operator<<(std::ostream& o, const record& r) {
-    return o << "{record: size_bytes=" << r.size_bytes()
-             << ", attributes=" << r.attributes()
-             << ", timestamp_delta=" << r._timestamp_delta
-             << ", offset_delta=" << r._offset_delta
-             << ", key_size= " << r._key_size << ", key=" << r.key()
-             << ", value_size=" << r.value()
-             << ", header_size:" << r.headers().size() << ", headers=[";
+    o << "{record: size_bytes=" << r.size_bytes()
+      << ", attributes=" << r.attributes()
+      << ", timestamp_delta=" << r._timestamp_delta
+      << ", offset_delta=" << r._offset_delta << ", key_size= " << r._key_size
+      << ", key=" << r.key() << ", value_size=" << r.value()
+      << ", header_size:" << r.headers().size() << ", headers=[";
 
     for (auto& h : r.headers()) {
         o << h;
