@@ -3,10 +3,10 @@
 #include "hashing/crc32c.h"
 #include "model/fundamental.h"
 #include "model/record.h"
+#include "model/record_utils.h"
 #include "random/generators.h"
-#include "storage/crc_record.h"
 #include "storage/log_manager.h"
-#include "storage/tests/random_batch.h"
+#include "storage/tests/utils/random_batch.h"
 #include "test_utils/fixture.h"
 
 #include <boost/range/irange.hpp>
@@ -24,19 +24,7 @@ constexpr size_t gbytes(unsigned long long val) { return val * gb; }
 static ss::logger tlog{"test_log"};
 
 inline void validate_batch_crc(model::record_batch& batch) {
-    crc32 crc;
-    storage::crc_batch_header(
-      crc, batch.get_header_for_testing(), batch.size());
-    if (batch.compressed()) {
-        crc.extend(batch.get_compressed_records().records());
-    } else {
-        for (model::record& r : batch.get_uncompressed_records_for_testing()) {
-            storage::crc_record_header_and_key(crc, r);
-            crc.extend(r.packed_value_and_headers());
-        }
-    }
-
-    BOOST_REQUIRE_EQUAL(batch.crc(), crc.value());
+    BOOST_REQUIRE_EQUAL(batch.header().crc, model::crc_record_batch(batch));
 }
 
 struct random_batches_generator {
@@ -108,9 +96,9 @@ public:
               b.base_offset(),
               b.last_offset(),
               b.size_bytes(),
-              b.size(),
+              b.record_count(),
               b.compressed(),
-              b.crc());
+              b.header().crc);
 
             validate_batch_crc(b);
             tlog.debug("Finished validating crc");
@@ -171,9 +159,9 @@ public:
             auto batches = batch_generator();
             // Collect batches offsets
             for (auto& b : batches) {
-                headers.push_back(b.get_header_for_testing());
+                headers.push_back(b.header());
                 b.set_term(term);
-                total_records += b.size();
+                total_records += b.record_count();
             }
             // make expected offset inclusive
             auto reader = model::make_memory_record_batch_reader(

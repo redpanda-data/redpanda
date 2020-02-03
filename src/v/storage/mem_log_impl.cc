@@ -124,7 +124,7 @@ struct mem_log_impl final : log::impl {
         }
         bool
         operator()(const data_t::value_type& e1, model::offset value) const {
-            return e1.second.last_offset() < value;
+            return e1.second.header().last_offset() < value;
         }
     };
 
@@ -188,11 +188,11 @@ struct mem_log_impl final : log::impl {
 
 ss::future<ss::stop_iteration>
 mem_log_appender::operator()(model::record_batch&& batch) {
-    batch.set_base_offset(_cur_offset);
+    batch.header().base_offset = _cur_offset;
     stlog.trace(
       "Wrting to {} batch of {} records offsets [{},{}], term {}",
       _log.ntp(),
-      batch.size(),
+      batch.header().size_bytes,
       batch.base_offset(),
       batch.last_offset(),
       batch.term());

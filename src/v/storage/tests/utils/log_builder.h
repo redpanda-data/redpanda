@@ -1,9 +1,11 @@
 #pragma once
 #include "model/fundamental.h"
+#include "random/generators.h"
 #include "seastarx.h"
 #include "storage/disk_log_impl.h"
 #include "storage/log_manager.h"
-#include "storage/tests/random_batch.h"
+#include "storage/tests/utils/random_batch.h"
+#include "vassert.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -61,6 +63,10 @@ public:
      * The caller must ensure that the record batch offsets are valid.
      */
     log_builder& add_batch(model::record_batch batch) {
+        vassert(
+          batch.term() != model::term_id{},
+          "Batch must have valid term set, but got:{}",
+          batch.term());
         next_offset_ = batch.last_offset() + model::offset(1);
         segments_.back().first.batches.push_back(std::move(batch));
         return *this;
@@ -161,7 +167,8 @@ private:
         /*
          * TODO: upstream batch is pending to control compression choice
          */
-        return test::make_random_batch(*spec.offset, *spec.num_records, true);
+        return storage::test::make_random_batch(
+          *spec.offset, *spec.num_records, true);
     }
 
     static model::record_batch_reader make_batch_reader(segment_spec segment) {

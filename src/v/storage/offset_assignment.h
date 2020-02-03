@@ -13,7 +13,7 @@ public:
       , _offset(offset) {}
 
     ss::future<ss::stop_iteration> operator()(model::record_batch&& batch) {
-        batch.set_base_offset(_offset);
+        batch.header().base_offset = _offset;
         _offset = batch.last_offset() + model::offset(1);
         return _c(std::move(batch));
     }

@@ -8,11 +8,11 @@
 namespace raft {
 void configuration_bootstrap_state::process_configuration_in_thread(
   model::record_batch b) {
-    if (unlikely(b.type() != configuration_batch_type)) {
+    if (unlikely(b.header().type != configuration_batch_type)) {
         throw std::runtime_error(fmt::format(
           "Logic error. Asked a configuration tracker to process an unknown "
           "record_batch_type: {}",
-          b.type()));
+          b.header().type));
     }
     if (unlikely(b.compressed())) {
         throw std::runtime_error(
@@ -25,19 +25,19 @@ void configuration_bootstrap_state::process_configuration_in_thread(
         process_offsets(b.base_offset(), last_offset);
         for (model::record& rec : b) {
             _config = reflection::adl<group_configuration>{}.from(
-              rec.share_packed_value_and_headers());
+              rec.share_value());
         }
     }
 }
 void configuration_bootstrap_state::process_data_offsets_in_thread(
   model::record_batch b) {
     _data_batches_seen++;
-    if (unlikely(b.type() == configuration_batch_type)) {
+    if (unlikely(b.header().type == configuration_batch_type)) {
         throw std::runtime_error(fmt::format(
           "Logic error. Asked a data tracker to process "
           "configuration_batch_type "
           "record_batch_type: {}",
-          b.type()));
+          b.header().type));
     }
     process_offsets(b.base_offset(), b.last_offset());
 }
@@ -64,7 +64,7 @@ void configuration_bootstrap_state::process_offsets(
 
 void configuration_bootstrap_state::process_batch_in_thread(
   model::record_batch b) {
-    switch (b.type()) {
+    switch (b.header().type) {
     case configuration_batch_type:
         process_configuration_in_thread(std::move(b));
         break;

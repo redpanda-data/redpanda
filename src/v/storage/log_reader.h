@@ -28,17 +28,10 @@ public:
 
     consume_result consume_batch_start(
       model::record_batch_header,
-      size_t num_records,
       size_t physical_base_offset,
       size_t bytes_on_disk) override;
 
-    consume_result consume_record(
-      size_t size_bytes,
-      model::record_attributes attributes,
-      int32_t timestamp_delta,
-      int32_t offset_delta,
-      iobuf&& key,
-      iobuf&& headers_and_value) override;
+    consume_result consume_record(model::record) override;
 
     void consume_compressed_records(iobuf&&) override;
 
@@ -49,7 +42,6 @@ private:
 
     log_segment_batch_reader& _reader;
     model::record_batch_header _header;
-    size_t _num_records{0};
     model::record_batch::records_type _records;
     model::timeout_clock::time_point _timeout;
     std::optional<model::offset> _next_cached_batch;

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "bytes/iobuf.h"
+#include "bytes/iobuf_parser.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "utils/vint.h"
@@ -23,18 +23,20 @@ constexpr size_t kafka_header_size = sizeof(int64_t) + // base offset
                                      sizeof(int32_t) + // base sequence
                                      sizeof(int32_t);  // num records
 
-constexpr size_t kafka_header_overhead = sizeof(int32_t) + // The batch length
-                                         sizeof(int32_t)
-                                         + // The partition leader epoch
-                                         sizeof(int8_t) +  // The magic value
-                                         sizeof(int64_t) + // The producer id
-                                         sizeof(int16_t) + // The producer epoch
-                                         sizeof(int32_t);  // The base sequence
+constexpr size_t kafka_header_overhead =
+  // The batch length - is not not accounted for
+  sizeof(int32_t) +
+  // partition leader epoch is ignored in our on-disk-format
+  sizeof(int32_t) +
+  // The magic value is ignored in our on-disk-format
+  sizeof(int8_t);
 
 } // namespace internal
 
 class kafka_batch_adapter {
 public:
+    // TODO: change adapt to return a value of whether or not parsing
+    // was successful. at the moment we use exceptions to abort parsing
     void adapt(iobuf&&);
 
     bool has_transactional = false;
@@ -43,7 +45,7 @@ public:
     std::vector<model::record_batch> batches;
 
 private:
-    model::record_batch_header read_header(iobuf::iterator_consumer& in);
+    model::record_batch_header read_header(iobuf_parser&);
 };
 
 } // namespace kafka

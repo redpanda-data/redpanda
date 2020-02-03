@@ -1,5 +1,5 @@
 #include "cluster/simple_batch_builder.h"
-#include "cluster/tests/batch_utils.h"
+#include "model/record_utils.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
 #include "test_utils/logs.h"
@@ -38,10 +38,10 @@ SEASTAR_THREAD_TEST_CASE(simple_batch_builder_batch_test) {
                      .add_kv(pa_key, create_test_assignment(2, 1)))
                    .build();
 
-    BOOST_REQUIRE_EQUAL(batch.size(), 4);
-    BOOST_REQUIRE_EQUAL(batch.last_offset_delta(), 3);
+    BOOST_REQUIRE_EQUAL(batch.record_count(), 4);
+    BOOST_REQUIRE_EQUAL(batch.header().last_offset_delta, 3);
 
-    BOOST_REQUIRE_EQUAL(batch.crc(), checksum_batch(batch));
+    BOOST_REQUIRE_EQUAL(batch.header().crc, model::crc_record_batch(batch));
 }
 SEASTAR_THREAD_TEST_CASE(round_trip_test) {
     auto pa_key = cluster::log_record_key{
@@ -58,7 +58,7 @@ SEASTAR_THREAD_TEST_CASE(round_trip_test) {
                      .add_kv(pa_key, create_test_assignment(1, 1))
                      .add_kv(pa_key, create_test_assignment(2, 1)))
                    .build();
-    int32_t current_crc = batch.crc();
+    int32_t current_crc = batch.header().crc;
     ss::sstring base_dir = "test.dir_"
                            + random_generators::gen_alphanum_string(4);
     model::ntp test_ntp{.ns = model::ns("test_ns"),
@@ -71,6 +71,6 @@ SEASTAR_THREAD_TEST_CASE(round_trip_test) {
     auto read = tests::read_log_file(base_dir, test_ntp).get0();
 
     BOOST_REQUIRE_EQUAL(read.size(), 1);
-    BOOST_REQUIRE_EQUAL(read[0].last_offset_delta(), 3);
-    BOOST_REQUIRE_EQUAL(read[0].crc(), current_crc);
+    BOOST_REQUIRE_EQUAL(read[0].header().last_offset_delta, 3);
+    BOOST_REQUIRE_EQUAL(read[0].header().crc, current_crc);
 }

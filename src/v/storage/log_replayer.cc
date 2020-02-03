@@ -2,51 +2,15 @@
 
 #include "hashing/crc32c.h"
 #include "model/record.h"
+#include "model/record_utils.h"
 #include "storage/logger.h"
 #include "storage/parser.h"
 #include "utils/vint.h"
 
 #include <limits>
+#include <type_traits>
 
 namespace storage {
-
-void crc_batch_header(
-  crc32& crc, const model::record_batch_header& header, size_t num_records) {
-    crc.extend(header.attrs.value());
-    crc.extend(header.last_offset_delta);
-    crc.extend(header.first_timestamp.value());
-    crc.extend(header.max_timestamp.value());
-    // Unused Kafka fields
-    std::array<uint8_t, 14> unused{};
-    unused.fill(-1);
-    crc.extend(&unused[0], unused.size());
-    crc.extend(int32_t(num_records));
-}
-
-void crc_record_header_and_key(
-  crc32& crc,
-  size_t size_bytes,
-  const model::record_attributes& attributes,
-  int32_t timestamp_delta,
-  int32_t offset_delta,
-  const iobuf& key) {
-    crc.extend_vint(size_bytes);
-    crc.extend(attributes.value());
-    crc.extend_vint(timestamp_delta);
-    crc.extend_vint(offset_delta);
-    crc.extend_vint(key.size_bytes());
-    crc.extend(key);
-}
-
-void crc_record_header_and_key(crc32& crc, const model::record& r) {
-    crc.extend_vint(r.size_bytes());
-    crc.extend_vint(r.attributes().value());
-    crc.extend_vint(r.timestamp_delta());
-    crc.extend_vint(r.offset_delta());
-    crc.extend_vint(r.key().size_bytes());
-    crc.extend(r.key());
-}
-
 struct checksumming_cfg {
     std::optional<model::offset> last_offset;
     bool is_valid_crc{false};
@@ -62,7 +26,6 @@ public:
 
     consume_result consume_batch_start(
       model::record_batch_header header,
-      size_t num_records,
       size_t physical_base_offset,
       size_t size_on_disk) override {
         const auto filesize = _seg->reader()->file_size();
@@ -82,20 +45,12 @@ public:
         _current_batch_crc = header.crc;
         _last_offset = header.last_offset();
         _crc = crc32();
-        crc_batch_header(_crc, header, num_records);
+        model::crc_record_batch_header(_crc, header);
         return skip_batch::no;
     }
 
-    consume_result consume_record(
-      size_t size_bytes,
-      model::record_attributes attributes,
-      int32_t timestamp_delta,
-      int32_t offset_delta,
-      iobuf&& key,
-      iobuf&& value_and_headers) override {
-        crc_record_header_and_key(
-          _crc, size_bytes, attributes, timestamp_delta, offset_delta, key);
-        _crc.extend(value_and_headers);
+    consume_result consume_record(model::record r) override {
+        model::crc_record(_crc, r);
         return skip_batch::no;
     }
     void consume_compressed_records(iobuf&& records) override {

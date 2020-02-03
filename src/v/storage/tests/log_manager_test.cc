@@ -1,11 +1,12 @@
 #include "model/fundamental.h"
+#include "random/generators.h"
 #include "storage/directories.h"
 #include "storage/disk_log_appender.h"
 #include "storage/log_manager.h"
 #include "storage/log_segment_appender.h"
 #include "storage/log_segment_appender_utils.h"
 #include "storage/log_segment_reader.h"
-#include "storage/tests/random_batch.h"
+#include "storage/tests/utils/random_batch.h"
 #include "utils/file_sanitizer.h"
 
 #include <seastar/core/thread.hh>
@@ -15,8 +16,9 @@
 using namespace storage; // NOLINT
 
 void write_garbage(segment_appender_ptr& ptr) {
-    auto b = test::make_buffer(100);
-    ptr->append(b.get(), b.size()).get();
+    auto b = random_generators::get_bytes(100);
+    // NOLINTNEXTLINE
+    ptr->append(reinterpret_cast<const char*>(b.data()), b.size()).get();
     ptr->flush().get();
 }
 

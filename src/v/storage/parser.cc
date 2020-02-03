@@ -18,9 +18,9 @@ namespace storage {
 static constexpr size_t disk_header_size = packed_header_size + 4;
 using stop_parser = batch_consumer::stop_parser;
 using skip_batch = batch_consumer::skip_batch;
-std::pair<model::record_batch_header, uint32_t> header_from_iobuf(iobuf b) {
+model::record_batch_header header_from_iobuf(iobuf b) {
     iobuf_parser parser(std::move(b));
-    auto sz = reflection::adl<uint32_t>{}.from(parser);
+    auto sz = reflection::adl<int32_t>{}.from(parser);
     auto off = reflection::adl<model::offset>{}.from(parser);
     auto type = reflection::adl<model::record_batch_type>{}.from(parser);
     auto crc = reflection::adl<int32_t>{}.from(parser);
@@ -31,10 +31,27 @@ std::pair<model::record_batch_header, uint32_t> header_from_iobuf(iobuf b) {
     using tmstmp_t = model::timestamp::type;
     auto first = model::timestamp(reflection::adl<tmstmp_t>{}.from(parser));
     auto max = model::timestamp(reflection::adl<tmstmp_t>{}.from(parser));
-    auto record_count = parser.consume_type<uint32_t>();
-    return {
-      model::record_batch_header{sz, off, type, crc, attrs, delta, first, max},
-      record_count};
+    auto producer_id = parser.consume_type<int64_t>();
+    auto producer_epoch = parser.consume_type<int16_t>();
+    auto base_sequence = parser.consume_type<int32_t>();
+    auto record_count = parser.consume_type<int32_t>();
+    vassert(
+      parser.bytes_consumed() == disk_header_size,
+      "Error in header parsing. Must consume:{} bytes, but consumed:{}",
+      disk_header_size,
+      parser.bytes_consumed());
+    return model::record_batch_header{sz,
+                                      off,
+                                      type,
+                                      crc,
+                                      attrs,
+                                      delta,
+                                      first,
+                                      max,
+                                      producer_id,
+                                      producer_epoch,
+                                      base_sequence,
+                                      record_count};
 }
 
 static inline ss::future<std::optional<iobuf>> verify_read_iobuf(
@@ -54,10 +71,24 @@ static inline ss::future<std::optional<iobuf>> verify_read_iobuf(
       });
 }
 
-using opt_hdr = std::optional<std::pair<model::record_batch_header, uint32_t>>;
+using opt_hdr = std::optional<model::record_batch_header>;
 
 ss::future<stop_parser> continuous_batch_parser::consume_header() {
-    return verify_read_iobuf(_input, disk_header_size, "parser::header")
+    return read_iobuf_exactly(_input, disk_header_size)
+      .then([this](iobuf b) -> std::optional<iobuf> {
+          if (b.empty()) {
+              // expected when end of stream
+              return std::nullopt;
+          }
+          if (b.size_bytes() != disk_header_size) {
+              stlog.error(
+                "Could not parse header. Expected:{}, but Got:{}",
+                disk_header_size,
+                b.size_bytes());
+              return std::nullopt;
+          }
+          return std::move(b);
+      })
       .then([this](std::optional<iobuf> b) {
           if (!b) {
               return ss::make_ready_future<opt_hdr>();
@@ -69,12 +100,10 @@ ss::future<stop_parser> continuous_batch_parser::consume_header() {
           if (!o) {
               return ss::make_ready_future<stop_parser>(stop_parser::yes);
           }
-          auto& p = o.value();
-          _header = p.first;
-          auto num_records = p.second;
+          _header = o.value();
           const auto size_on_disk = _header.size_bytes + 4;
           auto ret = _consumer->consume_batch_start(
-            _header, num_records, _physical_base_offset, size_on_disk);
+            _header, _physical_base_offset, size_on_disk);
           if (std::holds_alternative<skip_batch>(ret)) {
               auto s = std::get<skip_batch>(ret);
               if (unlikely(bool(s))) {
@@ -110,6 +139,27 @@ ss::future<stop_parser> continuous_batch_parser::consume_one() {
         return consume_records();
     });
 }
+static std::vector<model::record_header>
+parse_record_headers(iobuf_parser& parser) {
+    std::vector<model::record_header> headers;
+    auto [header_count, _] = parser.read_varlong();
+    for (int i = 0; i < header_count; ++i) {
+        auto [key_length, kv] = parser.read_varlong();
+        iobuf key;
+        if (key_length > 0) {
+            key = parser.share(key_length);
+        }
+        auto [value_length, vv] = parser.read_varlong();
+        iobuf value;
+        if (value_length > 0) {
+            value = parser.share(value_length);
+        }
+        headers.emplace_back(model::record_header(
+          key_length, std::move(key), value_length, std::move(value)));
+    }
+    return headers;
+}
+
 ss::future<stop_parser> continuous_batch_parser::consume_records() {
     auto sz = _header.size_bytes - packed_header_size;
     return verify_read_iobuf(_input, sz, "parser::consume_records")
@@ -125,17 +175,26 @@ ss::future<stop_parser> continuous_batch_parser::consume_records() {
               auto [timestamp_delta, tv] = parser.read_varlong();
               auto [offset_delta, ov] = parser.read_varlong();
               auto [key_length, kv] = parser.read_varlong();
-              auto key = parser.share(key_length);
-              auto value_length = record_size - key_length - kv - ov - tv
-                                  - sizeof(model::record_attributes::type);
-              auto value = parser.share(value_length);
-              auto ret = _consumer->consume_record(
+              iobuf key;
+              if (key_length > 0) {
+                  key = parser.share(key_length);
+              }
+              auto [value_length, vv] = parser.read_varlong();
+              iobuf value;
+              if (value_length > 0) {
+                  value = parser.share(value_length);
+              }
+              auto headers = parse_record_headers(parser);
+              auto ret = _consumer->consume_record(model::record(
                 record_size,
                 model::record_attributes(attr),
                 static_cast<int32_t>(timestamp_delta),
                 static_cast<int32_t>(offset_delta),
+                key_length,
                 std::move(key),
-                std::move(value));
+                value_length,
+                std::move(value),
+                std::move(headers)));
               if (std::holds_alternative<skip_batch>(ret)) {
                   if (std::get<skip_batch>(ret)) {
                       return stop_parser::no;

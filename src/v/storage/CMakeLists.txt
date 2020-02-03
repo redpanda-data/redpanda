@@ -24,6 +24,8 @@ v_cc_library(
     v::bytes
     v::config
     v::rphashing
-    v::finjector)
+    v::finjector
+  PUBLIC
+)
 
 add_subdirectory(tests)

@@ -5,7 +5,7 @@
 #include "raft/types.h"
 #include "random/generators.h"
 #include "storage/record_batch_builder.h"
-#include "storage/tests/random_batch.h"
+#include "storage/tests/utils/random_batch.h"
 #include "test_utils/rpc.h"
 
 #include <seastar/core/future.hh>
@@ -26,11 +26,11 @@ struct checking_consumer {
         expected.pop_front();
         BOOST_REQUIRE_EQUAL(current_batch.base_offset(), batch.base_offset());
         BOOST_REQUIRE_EQUAL(current_batch.last_offset(), batch.last_offset());
-        BOOST_REQUIRE_EQUAL(current_batch.crc(), batch.crc());
+        BOOST_REQUIRE_EQUAL(current_batch.header().crc, batch.header().crc);
         BOOST_REQUIRE_EQUAL(current_batch.compressed(), batch.compressed());
-        BOOST_REQUIRE_EQUAL(current_batch.type(), batch.type());
+        BOOST_REQUIRE_EQUAL(current_batch.header().type, batch.header().type);
         BOOST_REQUIRE_EQUAL(current_batch.size_bytes(), batch.size_bytes());
-        BOOST_REQUIRE_EQUAL(current_batch.size(), batch.size());
+        BOOST_REQUIRE_EQUAL(current_batch.record_count(), batch.record_count());
         BOOST_REQUIRE_EQUAL(current_batch.term(), batch.term());
         return ss::make_ready_future<ss::stop_iteration>(
           ss::stop_iteration::no);

@@ -203,7 +203,7 @@ public:
     bool empty() const { return _index.empty(); }
 
     void put(model::record_batch&& batch) {
-        auto offset = batch.base_offset();
+        auto offset = batch.header().base_offset();
         auto p = _cache.put(std::move(batch));
         _index.emplace(offset, std::move(p));
     }

@@ -3,8 +3,8 @@
 #include "kafka/default_namespace.h"
 #include "redpanda/application.h"
 #include "storage/directories.h"
-#include "storage/tests/log_builder.h"
-#include "storage/tests/random_batch.h"
+#include "storage/tests/utils/log_builder.h"
+#include "storage/tests/utils/random_batch.h"
 #include "test_utils/fixture.h"
 #include "test_utils/logs.h"
 

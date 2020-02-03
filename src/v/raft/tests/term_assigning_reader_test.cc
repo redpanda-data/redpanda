@@ -2,7 +2,7 @@
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "raft/consensus_utils.h"
-#include "storage/tests/random_batch.h"
+#include "storage/tests/utils/random_batch.h"
 
 #include <seastar/testing/thread_test_case.hh>
 
