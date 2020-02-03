@@ -15,6 +15,8 @@
 # rpk
 !/src/go/rpk/go.mod
 !/src/go/rpk/go.sum
+!/src/go/metrics/go.mod
+!/src/go/metrics/go.sum
 
 # clang
 !/cmake/caches/llvm.cmake
