@@ -184,7 +184,7 @@ FIXTURE_TEST(truncate_before_read, storage_test_fixture) {
 
 FIXTURE_TEST(
   test_truncate_in_the_middle_of_segment_and_append, storage_test_fixture) {
-    for (auto type : {log_manager::storage_type::memory}) {
+    for (auto type : storage_types) {
         info("{}", type == log_manager::storage_type::disk ? "DISK" : "MEMORY");
         storage::log_manager mgr = make_log_manager();
         auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
