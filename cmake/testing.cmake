@@ -34,7 +34,8 @@ function (rp_test)
     DEFINITIONS
     INPUT_FILES
     LABELS
-    ARGS)
+    ARGS
+    SKIP_BUILD_TYPES)
   cmake_parse_arguments(RP_TEST "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
   if(RP_TEST_UNIT_TEST AND RP_ENABLE_UNIT_TESTS)
@@ -82,24 +83,37 @@ function (rp_test)
   endif()
   target_link_libraries(
     ${RP_TEST_BINARY_NAME} "${RP_TEST_LIBRARIES}" $<TARGET_NAME_IF_EXISTS:Libcxx::libcxx>)
-  add_test (
-    NAME ${RP_TEST_BINARY_NAME}
-    COMMAND bash -c "${RUNNER} --binary=$<TARGET_FILE:${RP_TEST_BINARY_NAME}> ${prepare_command} ${post_command} ${files_to_copy} ${RP_TEST_ARGS} "
-    )
 
-  if(RP_TEST_TIMEOUT)
-    set_tests_properties(${RP_TEST_BINARY_NAME}
-      PROPERTIES TIMEOUT ${RP_TEST_TIMEOUT})
-  endif()
   foreach(i ${RP_TEST_INCLUDES})
     target_include_directories(${RP_TEST_BINARY_NAME} PUBLIC ${i})
   endforeach()
+
   foreach(i ${RP_TEST_DEFINITIONS})
     target_compile_definitions(${RP_TEST_BINARY_NAME} PRIVATE "${i}")
   endforeach()
-  set_tests_properties(${RP_TEST_BINARY_NAME} PROPERTIES LABELS "${RP_TEST_LABELS}")
-    # save it to binary install dir
+
   install(TARGETS ${RP_TEST_BINARY_NAME} DESTINATION bin)
+
+  # all tests are compiled for every build type
+  # some tests are not run for every build type
+  set(skip_test FALSE)
+  foreach(type ${RP_TEST_SKIP_BUILD_TYPES})
+    if(CMAKE_BUILD_TYPE STREQUAL ${type})
+      set(skip_test TRUE)
+    endif()
+  endforeach()
+
+  if(NOT skip_test)
+    add_test (
+      NAME ${RP_TEST_BINARY_NAME}
+      COMMAND bash -c "${RUNNER} --binary=$<TARGET_FILE:${RP_TEST_BINARY_NAME}> ${prepare_command} ${post_command} ${files_to_copy} ${RP_TEST_ARGS} "
+      )
+    set_tests_properties(${RP_TEST_BINARY_NAME} PROPERTIES LABELS "${RP_TEST_LABELS}")
+    if(RP_TEST_TIMEOUT)
+      set_tests_properties(${RP_TEST_BINARY_NAME}
+        PROPERTIES TIMEOUT ${RP_TEST_TIMEOUT})
+    endif()
+  endif()
 endfunction()
 
 if(RP_ENABLE_TESTS)
