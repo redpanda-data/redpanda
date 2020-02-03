@@ -39,7 +39,8 @@ public:
       ss::io_priority_class io_priority,
       model::timeout_clock::duration disk_timeout,
       ss::sharded<rpc::connection_cache>&,
-      leader_cb_t);
+      leader_cb_t,
+      std::optional<append_entries_cb_t>&& = std::nullopt);
 
     /// Initial call. Allow for internal state recovery
     ss::future<> start();
@@ -65,14 +66,6 @@ public:
         });
     }
 
-    void register_hook(append_entries_cb_t fn) {
-        if (_append_entries_notification) {
-            throw std::runtime_error(
-              "Raft entries already has append_entries hook");
-        }
-        _append_entries_notification = std::move(fn);
-    }
-
     /// This method adds a member to the group and performs configuration update
     ss::future<> add_group_member(model::broker node);
 
@@ -84,10 +77,7 @@ public:
     clock_type::time_point last_heartbeat() const { return _hbeat; };
 
     clock_type::time_point last_hbeat_timestamp(model::node_id);
-    // clang-format off
-    ss::future<>
-    process_append_reply(model::node_id, result<append_entries_reply>);
-    // clang-format on
+    void process_append_reply(model::node_id, result<append_entries_reply>);
 
     ss::future<result<replicate_result>>
     replicate(model::record_batch_reader&&);
@@ -122,10 +112,11 @@ private:
     ss::future<storage::append_result>
     disk_append(model::record_batch_reader&&);
 
-    ss::future<> successfull_append_entries_reply(
+    void successfull_append_entries_reply(
       follower_index_metadata&, append_entries_reply);
     void dispatch_recovery(follower_index_metadata&, append_entries_reply);
-    ss::future<> maybe_update_leader_commit_idx();
+    void maybe_update_leader_commit_idx();
+    ss::future<> do_maybe_update_leader_commit_idx();
 
     model::term_id get_term(model::offset);
 
@@ -181,7 +172,7 @@ private:
     /// is for the operation to touch the disk
     ss::semaphore _op_sem{1};
     /// used for notifying when commits happened to log
-    append_entries_cb_t _append_entries_notification;
+    std::optional<append_entries_cb_t> _append_entries_notification;
     probe _probe;
     raft_ctx_log _ctxlog;
 };

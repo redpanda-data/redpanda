@@ -11,12 +11,14 @@
 #include "rpc/server.h"
 #include "seastarx.h"
 #include "storage/directories.h"
+#include "test_utils/async.h"
 #include "test_utils/logs.h"
 #include "utils/unresolved_address.h"
 
 #include <seastar/net/socket_defs.hh>
 
 using lrk = cluster::log_record_key;
+using namespace std::chrono_literals;
 
 template<typename T>
 void set_configuration(ss::sstring p_name, T v) {
@@ -265,16 +267,7 @@ private:
 };
 // Waits for controller to become a leader it poll every 200ms
 void wait_for_leadership(cluster::controller& cntrl) {
-    with_timeout(
-      model::timeout_clock::now() + std::chrono::seconds(30),
-      ss::repeat([&cntrl] {
-          if (cntrl.is_leader()) {
-              return ss::make_ready_future<ss::stop_iteration>(
-                ss::stop_iteration::yes);
-          }
-          return ss::sleep(std::chrono::milliseconds(200)).then([] {
-              return ss::stop_iteration::no;
-          });
-      }))
-      .get();
+    using namespace std::chrono_literals;
+    tests::cooperative_spin_wait_with_timeout(
+      10s, [&cntrl] { return cntrl.is_leader(); });
 }

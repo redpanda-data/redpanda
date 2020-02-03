@@ -2,9 +2,13 @@
 
 #include "cluster/logger.h"
 #include "config/configuration.h"
+#include "model/metadata.h"
+#include "raft/consensus.h"
+#include "raft/types.h"
 #include "resource_mgmt/io_priority.h"
 
 #include <seastar/core/reactor.hh>
+#include <seastar/core/shared_ptr.hh>
 
 namespace cluster {
 
@@ -49,35 +53,50 @@ void partition_manager::trigger_leadership_notification(raft::group_id group) {
 ss::future<consensus_ptr> partition_manager::manage(
   model::ntp ntp,
   raft::group_id group,
-  std::vector<model::broker> initial_nodes) {
+  std::vector<model::broker> initial_nodes,
+  std::optional<raft::consensus::append_entries_cb_t> ap_entries_cb) {
     return _mngr.manage(std::move(ntp))
-      .then([this, group, nodes = std::move(initial_nodes)](storage::log log) {
-          auto c = ss::make_lw_shared<raft::consensus>(
-            _self,
-            group,
-            raft::group_configuration{.nodes = std::move(nodes)},
-            raft::timeout_jitter(_hbeats.election_duration()),
-            log,
-            _should_fsync,
-            raft_priority(),
-            _disk_timeout,
-            _clients,
-            [this](raft::group_id g) { trigger_leadership_notification(g); });
-          auto p = ss::make_lw_shared<partition>(c);
-          _ntp_table.emplace(log.ntp(), p);
-          _raft_table.emplace(group, p);
-          if (_bg.is_closed()) {
-              return ss::make_exception_future<consensus_ptr>(
-                ss::gate_closed_exception());
-          }
-          return with_gate(_bg, [this, p, c, group] {
-              clusterlog.debug("Recovering raft group: {}", group);
-              return p->start().then([this, c]() mutable {
-                  _hbeats.register_group(c);
-                  return c;
-              });
-          });
-      });
+      .then(
+        [this,
+         group,
+         nodes = std::move(initial_nodes),
+         ap_entries_cb = std::move(ap_entries_cb)](storage::log log) mutable {
+            auto c = make_consensus(
+              group, std::move(nodes), log, std::move(ap_entries_cb));
+            auto p = ss::make_lw_shared<partition>(c);
+            _ntp_table.emplace(log.ntp(), p);
+            _raft_table.emplace(group, p);
+            if (_bg.is_closed()) {
+                return ss::make_exception_future<consensus_ptr>(
+                  ss::gate_closed_exception());
+            }
+            return with_gate(_bg, [this, p, c, group] {
+                clusterlog.debug("Recovering raft group: {}", group);
+                return p->start().then([this, c]() mutable {
+                    _hbeats.register_group(c);
+                    return c;
+                });
+            });
+        });
+}
+
+ss::lw_shared_ptr<raft::consensus> partition_manager::make_consensus(
+  raft::group_id gr,
+  std::vector<model::broker> nodes,
+  storage::log log,
+  std::optional<raft::consensus::append_entries_cb_t> append_entries_cb) {
+    return ss::make_lw_shared<raft::consensus>(
+      _self,
+      gr,
+      raft::group_configuration{.nodes = std::move(nodes)},
+      raft::timeout_jitter(_hbeats.election_duration()),
+      log,
+      _should_fsync,
+      raft_priority(),
+      _disk_timeout,
+      _clients,
+      [this](raft::group_id g) { trigger_leadership_notification(g); },
+      std::move(append_entries_cb));
 }
 
 } // namespace cluster
