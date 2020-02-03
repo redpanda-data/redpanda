@@ -64,10 +64,10 @@ def go_deps(conf):
         for fd in it:
             if not fd.name.startswith('.') and fd.is_dir():
                 shell.run_subprocess(f'cd {vconfig.go_src_dir}/{fd.name} && '
-                         f'{vconfig.gobin} mod download && '
-                         f'{vconfig.gobin} get '
-                         f'  github.com/cockroachdb/crlfmt '
-                         f'  mvdan.cc/sh/v3/cmd/shfmt')
+                                     f'{vconfig.gobin} mod download && '
+                                     f'{vconfig.gobin} get '
+                                     f'  github.com/cockroachdb/crlfmt '
+                                     f'  mvdan.cc/sh/v3/cmd/shfmt')
 
 
 @install.command(short_help='install the go compiler.')
