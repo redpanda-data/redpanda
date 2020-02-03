@@ -56,7 +56,7 @@ public:
         size_t bytes_pending() const { return _pos - _flushed_pos; }
         size_t flushed_pos() const { return _flushed_pos; }
         char* get_current() { return _buf.get() + _pos; }
-        void set_position(size_t p) { _pos = p; }
+        void set_position(size_t p) { _flushed_pos = _pos = p; }
 
     private:
         friend std::ostream& operator<<(std::ostream&, const chunk&);
