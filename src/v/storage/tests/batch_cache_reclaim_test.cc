@@ -48,9 +48,7 @@ FIXTURE_TEST(reclaim, fixture) {
         size_t buf_size = ss::memory::page_size - sizeof(model::record_batch);
         iobuf buf;
         buf.append(ss::temporary_buffer<char>(buf_size));
-        model::record_batch batch(
-          model::record_batch_header{},
-          model::record_batch::compressed_records(buf_size, std::move(buf)));
+        model::record_batch batch(model::record_batch_header{}, std::move(buf));
         auto e = cache.put(std::move(batch));
         cache_entries.emplace_back(std::move(e));
     }
@@ -72,9 +70,7 @@ FIXTURE_TEST(reclaim, fixture) {
         size_t buf_size = ss::memory::page_size - sizeof(model::record_batch);
         iobuf buf;
         buf.append(ss::temporary_buffer<char>(buf_size));
-        model::record_batch batch(
-          model::record_batch_header{},
-          model::record_batch::compressed_records(buf_size, std::move(buf)));
+        model::record_batch batch(model::record_batch_header{}, std::move(buf));
         auto e = cache.put(std::move(batch));
         BOOST_REQUIRE((bool)e);
         cache_entries.emplace_back(std::move(e));
