@@ -17,16 +17,20 @@ def fmt():
 @click.option('--conf',
               help=('Path to configuration file. If not given, a .vtools.yml '
                     'file is searched recursively starting from the current '
-                    'working directory'),
+                    'working directory.'),
               default=None)
 @click.option('--check',
               help=('Do not format in-place; instead, check whether files are '
-                    'properly formatted and throw an error if they are not'),
+                    'properly formatted and throw an error if they are not.'),
               is_flag=True)
-@click.option('--unstaged', help='Only work on unstaged files.', is_flag=True)
-def go(conf, unstaged, check):
+@click.option('--ref',
+              help=('Obtain list of files to process by comparing the current '
+                    'state of the repository and compare it against the given '
+                    'gitref.'),
+              default=None)
+def go(conf, ref, check):
     vconfig = config.VConfig(conf)
-    _crlfmt(vconfig, unstaged, check)
+    _crlfmt(vconfig, ref, check)
 
 
 @fmt.command(short_help='runs shfmt against shell scripts.')
@@ -39,10 +43,14 @@ def go(conf, unstaged, check):
               help=('Do not format in-place; instead, check whether files are '
                     'properly formatted and throw an error if they are not'),
               is_flag=True)
-@click.option('--unstaged', help='Only work on unstaged files.', is_flag=True)
-def sh(conf, unstaged, check):
+@click.option('--ref',
+              help=('Obtain list of files to process by comparing the current '
+                    'state of the repository and compare it against the given '
+                    'gitref.'),
+              default=None)
+def sh(conf, ref, check):
     vconfig = config.VConfig(conf)
-    _shfmt(vconfig, unstaged, check)
+    _shfmt(vconfig, ref, check)
 
 
 @fmt.command(short_help='runs clang-format against C++ source code.')
@@ -55,10 +63,14 @@ def sh(conf, unstaged, check):
               help=('Do not format in-place; instead, check whether files are '
                     'properly formatted and throw an error if they are not'),
               is_flag=True)
-@click.option('--unstaged', help='Only work on unstaged files.', is_flag=True)
-def cpp(conf, unstaged, check):
+@click.option('--ref',
+              help=('Obtain list of files to process by comparing the current '
+                    'state of the repository and compare it against the given '
+                    'gitref.'),
+              default=None)
+def cpp(conf, ref, check):
     vconfig = config.VConfig(conf, clang=True)
-    _clangfmt(vconfig, unstaged, check)
+    _clangfmt(vconfig, ref, check)
 
 
 @fmt.command(short_help='runs yapf for python source files.')
@@ -71,10 +83,14 @@ def cpp(conf, unstaged, check):
               help=('Do not format in-place; instead, check whether files are '
                     'properly formatted and throw an error if they are not'),
               is_flag=True)
-@click.option('--unstaged', help='Only work on unstaged files.', is_flag=True)
-def py(conf, unstaged, check):
+@click.option('--ref',
+              help=('Obtain list of files to process by comparing the current '
+                    'state of the repository and compare it against the given '
+                    'gitref.'),
+              default=None)
+def py(conf, ref, check):
     vconfig = config.VConfig(conf)
-    _yapf(vconfig, unstaged, check)
+    _yapf(vconfig, ref, check)
 
 
 @fmt.command(short_help='shortcut for applying all formatters.')
@@ -87,13 +103,21 @@ def py(conf, unstaged, check):
               help=('Do not format in-place; instead, check whether files are '
                     'properly formatted and throw an error if they are not'),
               is_flag=True)
-@click.option('--unstaged', help='Only work on unstaged files.', is_flag=True)
-def all(conf, unstaged, check):
+@click.option('--ref',
+              help=('Obtain list of files to process by comparing the current '
+                    'state of the repository and compare it against the given '
+                    'gitref.'),
+              default=None)
+def all(conf, ref, check):
+    all_changed(conf, ref=ref, check=check)
+
+
+def all_changed(conf, ref=None, check=True):
     vconfig = config.VConfig(conf, clang=True)
-    _clangfmt(vconfig, unstaged, check)
-    _crlfmt(vconfig, unstaged, check)
-    _yapf(vconfig, unstaged, check)
-    _shfmt(vconfig, unstaged, check)
+    _clangfmt(vconfig, ref, check)
+    _crlfmt(vconfig, ref, check)
+    _yapf(vconfig, ref, check)
+    _shfmt(vconfig, ref, check)
 
 
 @fmt.command(short_help='runs clang-tidy against redpanda for clang builds.')
@@ -114,40 +138,40 @@ def tidy(conf, check):
     shell.raw_check_output(f'cd {vconfig.build_dir} && {cmd} {args}')
 
 
-def _clangfmt(vconfig, unstaged, check):
+def _clangfmt(vconfig, ref, check):
     logging.debug("Running clang-format")
     cmd = f'{vconfig.clang_path}/bin/clang-format'
     args = f'-style=file -fallback-style=none {"" if check else "-i"}'
     exts = [".cc", ".cpp", ".h", ".hpp", ".proto", ".java", ".js"]
-    _fmt(vconfig, unstaged, exts, cmd, args, check)
+    _fmt(vconfig, exts, cmd, args, ref, check)
 
 
-def _crlfmt(vconfig, unstaged, check):
+def _crlfmt(vconfig, ref, check):
     logging.debug("Running crlfmt")
     cmd = f'{vconfig.go_path}/bin/crlfmt'
     args = f'-wrap=80 {"" if check else "-diff=false -w"}'
-    _fmt(vconfig, unstaged, ['.go'], cmd, args, check)
+    _fmt(vconfig, ['.go'], cmd, args, ref, check)
 
 
-def _yapf(vconfig, unstaged, check):
+def _yapf(vconfig, ref, check):
     logging.debug("Running yapf")
     yapfbin = f'{vconfig.build_root}/venv/v/bin/yapf'
     if not os.path.exists(yapfbin):
         # assume is in PATH
         yapfbin = 'yapf'
     args = f'{"-d" if check else "-i"}'
-    _fmt(vconfig, unstaged, ['.py'], yapfbin, args, check)
+    _fmt(vconfig, ['.py'], yapfbin, args, ref, check)
 
 
-def _shfmt(vconfig, unstaged, check):
+def _shfmt(vconfig, ref, check):
     logging.debug("Running shfmt")
     cmd = f'{vconfig.go_path}/bin/shfmt'
     args = f'-i 2 -ci -s {"-d" if check else "-w"}'
-    _fmt(vconfig, unstaged, ['.sh'], cmd, args, check)
+    _fmt(vconfig, ['.sh'], cmd, args, ref, check)
 
 
-def _fmt(vconfig, unstaged, exts, cmd, args, check):
-    for f in _git_files(vconfig, exts, unstaged):
+def _fmt(vconfig, exts, cmd, args, ref, check):
+    for f in _git_files(vconfig, exts, ref):
         try:
             ret = shell.raw_check_output(
                 f'cd {vconfig.src_dir} && {cmd} {args} {f}')
@@ -184,11 +208,11 @@ def _fmt(vconfig, unstaged, exts, cmd, args, check):
             logging.fatal(ret)
 
 
-def _git_files(vconfig, exts, unstaged):
-    if unstaged:
-        cmd = f'git diff --name-only --diff-filter=d'
+def _git_files(vconfig, exts, ref):
+    if ref:
+        cmd = f'git diff --name-only {ref}'
     else:
-        cmd = f'git ls-files --full-name'
+        cmd = 'git ls-files --full-name'
     ret = shell.raw_check_output(cmd)
 
     # FIXME: remove once clang-format bug is solved (treated as objective-C)
