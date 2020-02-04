@@ -6,6 +6,7 @@ import tempfile
 import click
 import git as g
 from absl import logging
+from ..fmt import commands as fmt
 
 
 @click.group(short_help='git niceties')
@@ -29,7 +30,7 @@ def verify(path):
     logging.info(f"valid repo settings for: {git_root}")
 
 
-@git.command(short_help='mildly opininated patch submission.')
+@git.command(short_help='mildly opinionated patch submission.')
 @click.option("-f",
               "--fork",
               default="origin",
@@ -44,15 +45,21 @@ def verify(path):
               default="v-dev@vectorized.io",
               show_default=True,
               help="Where to send patches")
+@click.option('--conf',
+              help=('Path to configuration file. If not given, a .vtools.yml '
+                    'file is searched recursively starting from the current '
+                    'working directory'),
+              default='')
+@click.option('--skip-fmt', help='Do not format files (fmt all).', is_flag=True)
 @click.pass_context
-def pr(ctx, fork, upstream, to):
-    """Mildly opininated patch submission utility.
+def pr(ctx, fork, upstream, to, conf, skip_fmt):
+    """Mildly opinionated patch submission utility.
 
     This command prepares a feature branch as a patch series and sends the
     patches to the v-dev mailing list for review. It takes care of some of the
     detailed work like ensuring that a remote branch is list the cover letter.
 
-    The tool is opininated but configurable. Here is an example workflow:
+    The tool is opinionated but configurable. Here is an example workflow:
 
        \b
        git checkout -b my-feature-x upstream/master
@@ -116,6 +123,10 @@ def pr(ctx, fork, upstream, to):
         upstream = upstream.name
 
     logging.info("Using upstream branch: {}".format(upstream))
+
+    if not skip_fmt:
+        logging.info("Checking proper formatting of source code.")
+        fmt.all_changed(conf, check=True, ref=upstream)
 
     # create name for remote branch. the expected name is {local_branch}-vV. a
     # local branch without a -vV suffix is an alias for a suffix of -v1.
