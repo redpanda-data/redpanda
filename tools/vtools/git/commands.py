@@ -50,7 +50,9 @@ def verify(path):
                     'file is searched recursively starting from the current '
                     'working directory'),
               default='')
-@click.option('--skip-fmt', help='Do not format files (fmt all).', is_flag=True)
+@click.option('--skip-fmt',
+              help='Do not format files (fmt all).',
+              is_flag=True)
 @click.pass_context
 def pr(ctx, fork, upstream, to, conf, skip_fmt):
     """Mildly opinionated patch submission utility.

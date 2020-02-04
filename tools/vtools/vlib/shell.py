@@ -34,7 +34,8 @@ def _cleanup_whitespace(s):
 def raw_check_output(cmd):
     logging.debug("raw_check_output: %s", cmd)
     try:
-        ret = subprocess.check_output(cmd, shell=True,
+        ret = subprocess.check_output(cmd,
+                                      shell=True,
                                       stderr=subprocess.DEVNULL)
     except Exception as e:
         logging.error(str(e))
