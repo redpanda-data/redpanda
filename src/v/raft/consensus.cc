@@ -596,19 +596,17 @@ consensus::disk_append(model::record_batch_reader&& reader) {
             model::timeout_clock::now() + _disk_timeout};
 
           return in.consume(_log.make_appender(cfg), cfg.timeout)
-            .then([this](ret_t result) {
-                _probe.entries_appended(1);
-                _meta.prev_log_index = result.last_offset;
-                _meta.prev_log_term = get_term(result.last_offset);
-
-                return result;
-            })
             .then([this](ret_t ret) {
                 // TODO
                 // if we rolled a log segment. write current configuration for
                 // speedy recovery in the background
+
+                // NOTE: raft can only work with fsync enabled
                 if (_should_fsync) {
-                    return _log.flush().then([ret = std::move(ret)] {
+                    return _log.flush().then([ret = std::move(ret), this] {
+                        _probe.entries_appended(1);
+                        _meta.prev_log_index = ret.last_offset;
+                        _meta.prev_log_term = get_term(ret.last_offset);
                         return ss::make_ready_future<ret_t>(std::move(ret));
                     });
                 }
