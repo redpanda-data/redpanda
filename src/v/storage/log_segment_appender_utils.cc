@@ -20,7 +20,7 @@ namespace storage {
 iobuf disk_header_to_iobuf(const model::record_batch_header& h) {
     constexpr size_t hdr_size = packed_header_size + sizeof(h.size_bytes);
     iobuf b;
-    reflection::serialize(
+    reflection::serialize_cpu_to_le(
       b,
       h.size_bytes,
       h.base_offset,
