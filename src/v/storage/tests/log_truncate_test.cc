@@ -10,6 +10,7 @@
 #include <boost/range/iterator_range_core.hpp>
 #include <boost/test/tools/old/interface.hpp>
 
+#include <iostream>
 #include <iterator>
 #include <numeric>
 
@@ -101,17 +102,14 @@ FIXTURE_TEST(test_truncate_middle_of_old_segment, storage_test_fixture) {
         auto ntp = make_ntp("default", "test", 0);
         auto log = mgr.manage(ntp, type).get0();
 
+        // Generate from 10 up to 100 batches
         for (auto i = 0; i < 10; i++) {
             auto part = append_random_batches(log, 1, model::term_id(i));
             log.flush().get();
         }
         auto all_batches = read_and_validate_all_batches(log);
-        for (size_t i
-             = 0,
-             max
-             = 2 + (all_batches.back().last_offset() % all_batches.size() - 5);
-             i < max;
-             ++i) {
+
+        for (size_t i = 0, max = (all_batches.size() / 2); i < max; ++i) {
             all_batches.pop_back();
         }
         // truncate @ offset that belongs to an old segment
