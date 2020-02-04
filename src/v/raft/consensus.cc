@@ -175,6 +175,8 @@ void consensus::dispatch_recovery(
                 boost::diagnostic_information(e));
           })
           .finally([r = std::move(recovery), this] {});
+    }).handle_exception([this](const std::exception_ptr& e) {
+        _ctxlog.warn("Recovery error - {}", boost::diagnostic_information(e));
     });
 }
 
@@ -216,6 +218,10 @@ consensus::do_replicate(model::record_batch_reader&& rdr) {
             // background
             (void)with_gate(_bg, [this, stm, f = std::move(f)]() mutable {
                 return std::move(f);
+            }).handle_exception([this](const std::exception_ptr& e) {
+                _ctxlog.warn(
+                  "Replication exception - {}",
+                  boost::diagnostic_information(e));
             });
             return ss::make_ready_future<>();
         });
@@ -247,28 +253,35 @@ void consensus::dispatch_vote() {
         auto p = vstm.get();
 
         // CRITICAL: vote performs locking on behalf of consensus
-        return p->vote().then_wrapped([this, p, vstm = std::move(vstm)](
-                                        ss::future<> vote_f) mutable {
-            try {
-                vote_f.get();
-            } catch (...) {
-                _ctxlog.warn(
-                  "Error returned from voting process {}",
-                  boost::diagnostic_information(std::current_exception()));
-            }
-            auto f = p->wait().finally([vstm = std::move(vstm), this] {});
-            // make sure we wait for all futures when gate is closed
-            if (_bg.is_closed()) {
-                return std::move(f);
-            }
-            // background
-            (void)with_gate(
-              _bg, [this, vstm = std::move(vstm), f = std::move(f)]() mutable {
-                  return std::move(f);
-              });
+        return p->vote()
+          .then_wrapped(
+            [this, p, vstm = std::move(vstm)](ss::future<> vote_f) mutable {
+                try {
+                    vote_f.get();
+                } catch (...) {
+                    _ctxlog.warn(
+                      "Error returned from voting process {}",
+                      boost::diagnostic_information(std::current_exception()));
+                }
+                auto f = p->wait().finally([vstm = std::move(vstm), this] {});
+                // make sure we wait for all futures when gate is closed
+                if (_bg.is_closed()) {
+                    return std::move(f);
+                }
+                // background
+                (void)with_gate(
+                  _bg,
+                  [this, vstm = std::move(vstm), f = std::move(f)]() mutable {
+                      return std::move(f);
+                  });
 
-            return ss::make_ready_future<>();
-        });
+                return ss::make_ready_future<>();
+            })
+          .handle_exception([this](const std::exception_ptr& e) {
+              _ctxlog.warn(
+                "Exception while voting - {}",
+                boost::diagnostic_information(e));
+          });
     });
 }
 void consensus::arm_vote_timeout() {
@@ -633,6 +646,10 @@ void consensus::maybe_update_leader_commit_idx() {
         return seastar::with_semaphore(_op_sem, 1, [this]() mutable {
             return do_maybe_update_leader_commit_idx();
         });
+    }).handle_exception([this](const std::exception_ptr& e) {
+        _ctxlog.warn(
+          "Error updating leader commit index",
+          boost::diagnostic_information(e));
     });
 }
 

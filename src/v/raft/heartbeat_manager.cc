@@ -6,6 +6,7 @@
 #include "rpc/reconnect_transport.h"
 #include "rpc/types.h"
 
+#include <boost/exception/diagnostic_information.hpp>
 #include <boost/range/iterator_range.hpp>
 
 namespace raft {
@@ -167,6 +168,9 @@ void heartbeat_manager::dispatch_heartbeats() {
     auto next_timeout = clock_type::now() + _heartbeat_interval;
     (void)with_gate(_bghbeats, [this, old = _hbeat, next_timeout] {
         return do_dispatch_heartbeats(old, next_timeout);
+    }).handle_exception([](const std::exception_ptr& e) {
+        hbeatlog.warn(
+          "Error dispatching hearbeats - {}", boost::diagnostic_information(e));
     });
     if (!_bghbeats.is_closed()) {
         _heartbeat_timer.arm(next_timeout);
