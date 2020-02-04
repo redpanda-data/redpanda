@@ -42,12 +42,20 @@ ss::future<> recovery_stm::do_one_read() {
             "Read {} batches for {} node recovery",
             batches.size(),
             _meta.node_id);
+          if (batches.empty()) {
+              return ss::make_ready_future<
+                std::vector<model::record_batch_reader>>();
+          }
           _base_batch_offset = batches.begin()->base_offset();
           _last_batch_offset = batches.back().last_offset();
           return details::foreign_share_n(
             model::make_memory_record_batch_reader(std::move(batches)), 1);
       })
       .then([this](std::vector<model::record_batch_reader> readers) {
+          // Stall recovery, ignore it
+          if (readers.empty()) {
+              return ss::make_ready_future<>();
+          }
           return replicate(std::move(readers.back()));
       });
 }
