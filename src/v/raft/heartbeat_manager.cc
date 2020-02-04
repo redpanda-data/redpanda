@@ -144,8 +144,8 @@ void heartbeat_manager::process_reply(
             // propagate error
             (*it)->process_append_reply(
               n, result<append_entries_reply>(r.error()));
-            return;
         }
+        return;
     }
     hbeatlog.trace("process_reply {}", r);
     for (auto& m : r.value().meta) {
