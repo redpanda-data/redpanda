@@ -24,6 +24,7 @@ struct append_result {
     model::offset base_offset;
     model::offset last_offset;
     size_t byte_size;
+    model::term_id last_term;
 };
 /**
  * Log reader configuration.

@@ -606,7 +606,7 @@ consensus::disk_append(model::record_batch_reader&& reader) {
                     return _log.flush().then([ret = std::move(ret), this] {
                         _probe.entries_appended(1);
                         _meta.prev_log_index = ret.last_offset;
-                        _meta.prev_log_term = get_term(ret.last_offset);
+                        _meta.prev_log_term = ret.last_term;
                         return ss::make_ready_future<ret_t>(std::move(ret));
                     });
                 }
