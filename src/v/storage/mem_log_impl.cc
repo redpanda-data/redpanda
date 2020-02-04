@@ -7,6 +7,7 @@
 
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/core/future-util.hh>
+#include <seastar/core/lowres_clock.hh>
 
 #include <boost/container/flat_map.hpp>
 #include <boost/intrusive/list_hook.hpp>
@@ -91,6 +92,7 @@ private:
     mem_log_impl& _log;
     model::offset _min_offset;
     model::offset _cur_offset;
+    size_t _byte_size{0};
 };
 
 struct mem_log_impl final : log::impl {
@@ -189,6 +191,7 @@ struct mem_log_impl final : log::impl {
 ss::future<ss::stop_iteration>
 mem_log_appender::operator()(model::record_batch&& batch) {
     batch.header().base_offset = _cur_offset;
+    _byte_size += batch.header().size_bytes;
     stlog.trace(
       "Wrting to {} batch of {} records offsets [{},{}], term {}",
       _log.ntp(),
@@ -203,11 +206,11 @@ mem_log_appender::operator()(model::record_batch&& batch) {
 }
 
 ss::future<append_result> mem_log_appender::end_of_stream() {
-    // TODO(agallego) missing .append_time
-    append_result ret{
-      .base_offset = _min_offset,
-      .last_offset = _cur_offset - model::offset(1),
-    };
+    append_result ret{.append_time = ss::lowres_clock::now(),
+                      .base_offset = _min_offset,
+                      .last_offset = _cur_offset - model::offset(1),
+                      .byte_size = _byte_size,
+                      .last_term = _log._data.rbegin()->second.term()};
     return ss::make_ready_future<append_result>(ret);
 }
 

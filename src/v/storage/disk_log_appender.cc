@@ -24,9 +24,9 @@ ss::future<ss::stop_iteration>
 disk_log_appender::operator()(model::record_batch&& batch) {
     batch.header().base_offset = _idx;
     _idx = batch.last_offset() + model::offset(1);
-    auto term = batch.term();
+    _last_term = batch.term();
     auto next_offset = batch.base_offset();
-    return _log.maybe_roll(term, next_offset, _config.io_priority)
+    return _log.maybe_roll(_last_term, next_offset, _config.io_priority)
       .then([this, batch = std::move(batch)]() mutable {
           return _log._segs.back()
             .append(std::move(batch))
@@ -56,7 +56,8 @@ ss::future<append_result> disk_log_appender::end_of_stream() {
         return append_result{.append_time = _append_time,
                              .base_offset = _base_offset,
                              .last_offset = _last_offset,
-                             .byte_size = _byte_size};
+                             .byte_size = _byte_size,
+                             .last_term = _last_term};
     });
 }
 

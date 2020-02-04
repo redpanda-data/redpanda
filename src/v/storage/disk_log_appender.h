@@ -32,6 +32,7 @@ private:
     // below are just copied from append
     model::offset _base_offset;
     model::offset _last_offset;
+    model::term_id _last_term;
     size_t _byte_size{0};
 };
 
