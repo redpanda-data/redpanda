@@ -20,21 +20,25 @@ using stop_parser = batch_consumer::stop_parser;
 using skip_batch = batch_consumer::skip_batch;
 model::record_batch_header header_from_iobuf(iobuf b) {
     iobuf_parser parser(std::move(b));
-    auto sz = reflection::adl<int32_t>{}.from(parser);
-    auto off = reflection::adl<model::offset>{}.from(parser);
+    auto sz = ss::le_to_cpu(reflection::adl<int32_t>{}.from(parser));
+    using offset_t = model::offset::type;
+    auto off = model::offset(
+      ss::le_to_cpu(reflection::adl<offset_t>{}.from(parser)));
     auto type = reflection::adl<model::record_batch_type>{}.from(parser);
-    auto crc = reflection::adl<int32_t>{}.from(parser);
+    auto crc = ss::le_to_cpu(reflection::adl<int32_t>{}.from(parser));
     using attr_t = model::record_batch_attributes::type;
     auto attrs = model::record_batch_attributes(
-      reflection::adl<attr_t>{}.from(parser));
-    auto delta = reflection::adl<int32_t>{}.from(parser);
+      ss::le_to_cpu(reflection::adl<attr_t>{}.from(parser)));
+    auto delta = ss::le_to_cpu(reflection::adl<int32_t>{}.from(parser));
     using tmstmp_t = model::timestamp::type;
-    auto first = model::timestamp(reflection::adl<tmstmp_t>{}.from(parser));
-    auto max = model::timestamp(reflection::adl<tmstmp_t>{}.from(parser));
-    auto producer_id = parser.consume_type<int64_t>();
-    auto producer_epoch = parser.consume_type<int16_t>();
-    auto base_sequence = parser.consume_type<int32_t>();
-    auto record_count = parser.consume_type<int32_t>();
+    auto first = model::timestamp(
+      ss::le_to_cpu(reflection::adl<tmstmp_t>{}.from(parser)));
+    auto max = model::timestamp(
+      ss::le_to_cpu(reflection::adl<tmstmp_t>{}.from(parser)));
+    auto producer_id = ss::le_to_cpu(parser.consume_type<int64_t>());
+    auto producer_epoch = ss::le_to_cpu(parser.consume_type<int16_t>());
+    auto base_sequence = ss::le_to_cpu(parser.consume_type<int32_t>());
+    auto record_count = ss::le_to_cpu(parser.consume_type<int32_t>());
     vassert(
       parser.bytes_consumed() == disk_header_size,
       "Error in header parsing. Must consume:{} bytes, but consumed:{}",

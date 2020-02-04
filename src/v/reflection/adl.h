@@ -6,6 +6,7 @@
 #include "seastarx.h"
 #include "utils/named_type.h"
 
+#include <seastar/core/byteorder.hh>
 #include <seastar/core/sstring.hh>
 
 #include <optional>
@@ -155,6 +156,12 @@ template<typename... T>
 void serialize(iobuf& out, T&&... args) {
     (adl<std::decay_t<T>>{}.to(out, std::move(args)), ...);
 }
+
+template<typename... T>
+static void serialize_cpu_to_le(iobuf& out, T... args) {
+    serialize(out, ss::cpu_to_le(args)...);
+}
+
 template<typename T>
 iobuf to_iobuf(T&& val) {
     iobuf out;
