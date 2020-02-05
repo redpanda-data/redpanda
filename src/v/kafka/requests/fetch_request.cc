@@ -203,13 +203,14 @@ make_ready_partition_response_error(error_code error) {
  */
 static ss::future<fetch_response::partition_response>
 read_from_log(storage::log log, fetch_config config) {
-    storage::log_reader_config reader_config{
-      .start_offset = config.start_offset,
-      .max_bytes = config.max_bytes,
-      .min_bytes = 0,
-      .prio = kafka_read_priority(),
-      .type_filter = {raft::data_batch_type},
-    };
+    storage::log_reader_config reader_config(
+      config.start_offset,
+      model::model_limits<model::offset>::max(),
+      0,
+      config.max_bytes,
+      kafka_read_priority(),
+      {raft::data_batch_type});
+
     auto reader = log.make_reader(std::move(reader_config));
     return ss::do_with(
       std::move(reader),
