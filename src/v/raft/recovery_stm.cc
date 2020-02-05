@@ -21,17 +21,11 @@ recovery_stm::recovery_stm(
   , _ctxlog(_ptr->_self, raft::group_id(_ptr->_meta.group)) {}
 
 ss::future<> recovery_stm::do_one_read() {
-    storage::log_reader_config cfg{
-      .start_offset = _meta.next_index, // next entry
-      .max_bytes = 1024 * 1024,         // 1MB
-      .min_bytes = 1,                   // we know at least 1 entry
-      .prio = _prio,
-      .type_filter = {},
-      // We have to send all the records that leader have, event those that are
-      // beyond commit index, thanks to that after majority have recovered
-      // leader can update its commit index
-      .max_offset = model::offset(_ptr->_log.max_offset()) // inclusive
-    };
+    // We have to send all the records that leader have, event those that are
+    // beyond commit index, thanks to that after majority have recovered
+    // leader can update its commit index
+    storage::log_reader_config cfg(
+      _meta.next_index, model::offset(_ptr->_log.max_offset()), _prio);
 
     // TODO: add timeout of maybe 1minute?
     return model::consume_reader_to_memory(

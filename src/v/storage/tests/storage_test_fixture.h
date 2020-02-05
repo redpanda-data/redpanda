@@ -116,14 +116,10 @@ public:
 
     ss::circular_buffer<model::record_batch>
     read_and_validate_all_batches(storage::log log) {
-        storage::log_reader_config cfg{
-          .start_offset = model::offset(0),
-          .max_bytes = std::numeric_limits<size_t>::max(),
-          .min_bytes = 0,
-          .prio = ss::default_priority_class(),
-          .type_filter = {},
-          .max_offset = log.committed_offset()};
-
+        storage::log_reader_config cfg(
+          model::offset(0),
+          log.committed_offset(),
+          ss::default_priority_class());
         auto reader = log.make_reader(std::move(cfg));
         return reader.consume(batch_validating_consumer{}, model::no_timeout)
           .get0();
@@ -190,13 +186,8 @@ public:
     // inclusive
     ss::circular_buffer<model::record_batch> read_range_to_vector(
       storage::log log, model::offset start, model::offset end) {
-        storage::log_reader_config cfg{
-          .start_offset = start,
-          .max_bytes = std::numeric_limits<size_t>::max(),
-          .min_bytes = 0,
-          .prio = ss::default_priority_class(),
-          .type_filter = {},
-          .max_offset = end};
+        storage::log_reader_config cfg(
+          start, end, ss::default_priority_class());
         tlog.info("read_range_to_vector: {}", cfg);
         auto reader = log.make_reader(std::move(cfg));
         return std::move(reader)

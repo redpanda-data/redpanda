@@ -248,12 +248,7 @@ read_bootstrap_state(storage::log log) {
             return retval;
         }
         do {
-            auto rcfg = storage::log_reader_config{
-              .start_offset = it,
-              .max_bytes = 1024 * 1024 /*1MB*/,
-              .min_bytes = 1,
-              .prio = raft_priority(),
-              .max_offset = end};
+            auto rcfg = storage::log_reader_config(it, end, raft_priority());
             auto reader = log.make_reader(rcfg);
             auto batches = model::consume_reader_to_memory(
                              std::move(reader), model::no_timeout)

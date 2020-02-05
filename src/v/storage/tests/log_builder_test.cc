@@ -29,12 +29,10 @@ public:
     ss::future<log_stats> get_stats() {
         return b.with_log([](storage::log log) {
             fixturelog.info("log : {}", log);
-            auto reader = log.make_reader(storage::log_reader_config{
-              .start_offset = model::offset(0),
-              .max_bytes = std::numeric_limits<size_t>::max(),
-              .min_bytes = 0,
-              .prio = ss::default_priority_class(),
-            });
+            auto reader = log.make_reader(storage::log_reader_config(
+              model::offset(0),
+              model::model_limits<model::offset>::max(),
+              ss::default_priority_class()));
             return ss::do_with(
               std::move(reader), [log](model::record_batch_reader& reader) {
                   return reader.consume(stat_consumer(), model::no_timeout)
