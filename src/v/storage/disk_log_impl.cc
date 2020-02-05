@@ -160,13 +160,9 @@ ss::future<> disk_log_impl::do_truncate(model::offset o) {
                   start = pidx->first;
                   initial_size = pidx->second;
               }
-              auto rdr = make_reader(log_reader_config{
-                .start_offset = start,
-                .max_bytes = std::numeric_limits<size_t>::max(),
-                .min_bytes = std::numeric_limits<size_t>::max(),
-                // TODO: pass a priority for truncate
-                .prio = ss::default_priority_class(),
-                .max_offset = o});
+              // TODO: pass a priority for truncate
+              auto rdr = make_reader(
+                log_reader_config(start, o, ss::default_priority_class()));
               return ss::do_with(
                 std::move(rdr),
                 [o, initial_size](model::record_batch_reader& rdr) {

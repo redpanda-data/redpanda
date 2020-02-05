@@ -161,12 +161,11 @@ FIXTURE_TEST(truncate_before_read, storage_test_fixture) {
             append_random_batches(log, 1, model::term_id(i));
             log.flush().get();
         }
-        storage::log_reader_config cfg{
-          .start_offset = model::offset(0),
-          .max_bytes = std::numeric_limits<size_t>::max(),
-          .min_bytes = 0,
-          .prio = ss::default_priority_class(),
-          .type_filter = {}};
+        storage::log_reader_config cfg(
+          model::offset(0),
+          model::model_limits<model::offset>::max(),
+          ss::default_priority_class());
+
         // first create the reader
         auto reader = log.make_reader(std::move(cfg));
         // truncate

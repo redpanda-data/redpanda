@@ -673,12 +673,10 @@ ss::future<> consensus::do_maybe_update_leader_commit_idx() {
         auto range_start = details::next_offset(model::offset(old_commit_idx));
         _ctxlog.trace(
           "Commiting entries from {} to {}", range_start, _meta.commit_index);
-        auto reader = _log.make_reader(storage::log_reader_config{
-          .start_offset = details::next_offset(
-            model::offset(old_commit_idx)), // next batch
-          .prio = _io_priority,
-          .type_filter = {},
-          .max_offset = model::offset(_meta.commit_index)});
+        auto reader = _log.make_reader(storage::log_reader_config(
+          details::next_offset(model::offset(old_commit_idx)), // next batch
+          model::offset(_meta.commit_index),
+          _io_priority));
 
         return notify_entries_commited(std::move(reader));
     }
@@ -697,12 +695,11 @@ consensus::maybe_update_follower_commit_idx(model::offset request_commit_idx) {
             _meta.commit_index = new_commit_idx;
             _ctxlog.debug(
               "Follower commit index updated {}", _meta.commit_index);
-            auto reader = _log.make_reader(storage::log_reader_config{
-              .start_offset = details::next_offset(
+            auto reader = _log.make_reader(storage::log_reader_config(
+              details::next_offset(
                 model::offset(previous_commit_idx)), // next batch
-              .prio = _io_priority,
-              .type_filter = {},
-              .max_offset = model::offset(_meta.commit_index)});
+              model::offset(_meta.commit_index),
+              _io_priority));
 
             return notify_entries_commited(std::move(reader));
         }
