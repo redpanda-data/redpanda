@@ -525,20 +525,11 @@ consensus::notify_entries_commited(model::record_batch_reader&& entries) {
 
     return details::share_n(std::move(entries), entries_copies)
       .then([this](entries_t shared) mutable {
-          using ret_t = append_entries_reply;
-          std::vector<ss::future<>> n_futures;
-
-          if (!shared.empty()) {
-              n_futures.push_back(
-                process_configurations(std::move(shared.back())));
+          if (_append_entries_notification) {
+              _append_entries_notification.value()(std::move(shared.back()));
               shared.pop_back();
           }
-          if (!shared.empty() && _append_entries_notification) {
-              n_futures.push_back(
-                _append_entries_notification.value()(std::move(shared.back())));
-          }
-          return ss::when_all(n_futures.begin(), n_futures.end())
-            .discard_result();
+          return process_configurations(std::move(shared.back()));
       });
 }
 

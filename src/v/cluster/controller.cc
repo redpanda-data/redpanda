@@ -88,7 +88,7 @@ ss::future<consensus_ptr> controller::start_raft0() {
       std::move(brokers),
       [this](model::record_batch_reader&& reader) {
           verify_shard();
-          return on_raft0_entries_commited(std::move(reader));
+          on_raft0_entries_comitted(std::move(reader));
       });
 }
 
@@ -381,16 +381,21 @@ controller::update_brokers_cache(std::vector<model::broker> nodes) {
       });
 }
 
-ss::future<>
-controller::on_raft0_entries_commited(model::record_batch_reader&& reader) {
-    if (_bg.is_closed()) {
-        throw ss::gate_closed_exception();
-    }
-    return with_gate(_bg, [this, reader = std::move(reader)]() mutable {
-        return ss::do_with(
-          std::move(reader), [this](model::record_batch_reader& reader) {
-              return reader.consume(batch_consumer(this), model::no_timeout);
+void controller::on_raft0_entries_comitted(
+  model::record_batch_reader&& reader) {
+    (void)with_gate(_bg, [this, reader = std::move(reader)]() mutable {
+        return with_semaphore(
+          _raft_append_notification_sem,
+          1,
+          [this, reader = std::move(reader)]() mutable {
+              if (_bg.is_closed()) {
+                  return ss::make_ready_future<>();
+              }
+              return std::move(reader).consume(
+                batch_consumer(this), model::no_timeout);
           });
+    }).handle_exception_type([](const ss::gate_closed_exception&) {
+        clusterlog.info("On shutdown... ignoring append_entries notification");
     });
 }
 
