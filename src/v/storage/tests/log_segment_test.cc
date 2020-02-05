@@ -58,19 +58,19 @@ SEASTAR_THREAD_TEST_CASE(test_read_write) {
 SEASTAR_THREAD_TEST_CASE(log_set_orders_segments) {
     ss::file f(nullptr);
     auto v = log_set::underlying_t();
-    v.push_back(storage::segment(
+    v.push_back(std::make_unique<storage::segment>(
       ss::make_lw_shared<log_segment_reader>(
         "test", f, model::term_id(0), model::offset(1), 0, 1024),
       nullptr,
       nullptr,
       nullptr));
-    v.push_back(storage::segment(
+    v.push_back(std::make_unique<storage::segment>(
       ss::make_lw_shared<log_segment_reader>(
         "test", f, model::term_id(0), model::offset(0), 0, 1024),
       nullptr,
       nullptr,
       nullptr));
-    v.push_back(storage::segment(
+    v.push_back(std::make_unique<storage::segment>(
       ss::make_lw_shared<log_segment_reader>(
         "test", f, model::term_id(0), model::offset(2), 0, 1024),
       nullptr,
@@ -81,14 +81,14 @@ SEASTAR_THREAD_TEST_CASE(log_set_orders_segments) {
     log_set segs = log_set(std::move(v));
     auto o = model::offset(0);
     for (auto& seg : segs) {
-        BOOST_CHECK_EQUAL(seg.reader()->base_offset(), o);
+        BOOST_CHECK_EQUAL(seg->reader()->base_offset(), o);
         o += 1;
     }
 }
 
 SEASTAR_THREAD_TEST_CASE(log_set_expects_monotonic_adds) {
     ss::file f(nullptr);
-    auto s1 = storage::segment(
+    auto s1 = std::make_unique<storage::segment>(
       ss::make_lw_shared<log_segment_reader>(
         "test", f, model::term_id(0), model::offset(1), 0, 1024),
       nullptr,
@@ -102,7 +102,7 @@ SEASTAR_THREAD_TEST_CASE(log_set_expects_monotonic_adds) {
       nullptr);
     log_set segs = log_set({});
     segs.add(std::move(s1));
-    BOOST_CHECK_EQUAL(segs.back().reader()->base_offset(), model::offset(1));
+    BOOST_CHECK_EQUAL(segs.back()->reader()->base_offset(), model::offset(1));
 }
 
 SEASTAR_THREAD_TEST_CASE(test_log_seg_selector) {
@@ -121,27 +121,30 @@ SEASTAR_THREAD_TEST_CASE(test_log_seg_selector) {
     log_seg3->set_last_written_offset(model::offset(21));
 
     log_set segs = log_set({});
-    segs.add(storage::segment(log_seg1, nullptr, nullptr, nullptr));
-    segs.add(storage::segment(log_seg2, nullptr, nullptr, nullptr));
-    segs.add(storage::segment(log_seg3, nullptr, nullptr, nullptr));
+    segs.add(
+      std::make_unique<storage::segment>(log_seg1, nullptr, nullptr, nullptr));
+    segs.add(
+      std::make_unique<storage::segment>(log_seg2, nullptr, nullptr, nullptr));
+    segs.add(
+      std::make_unique<storage::segment>(log_seg3, nullptr, nullptr, nullptr));
 
     auto seg = segs.lower_bound(model::offset(0));
-    BOOST_CHECK_EQUAL(seg->reader(), log_seg1);
+    BOOST_CHECK_EQUAL((*seg)->reader(), log_seg1);
 
     seg = segs.lower_bound(model::offset(10));
-    BOOST_CHECK_EQUAL(seg->reader(), log_seg1);
+    BOOST_CHECK_EQUAL((*seg)->reader(), log_seg1);
 
     seg = segs.lower_bound(model::offset(11));
-    BOOST_CHECK_EQUAL(seg->reader(), log_seg2);
+    BOOST_CHECK_EQUAL((*seg)->reader(), log_seg2);
 
     seg = segs.lower_bound(model::offset(15));
-    BOOST_CHECK_EQUAL(seg->reader(), log_seg2);
+    BOOST_CHECK_EQUAL((*seg)->reader(), log_seg2);
 
     seg = segs.lower_bound(model::offset(20));
-    BOOST_CHECK_EQUAL(seg->reader(), log_seg2);
+    BOOST_CHECK_EQUAL((*seg)->reader(), log_seg2);
 
     seg = segs.lower_bound(model::offset(21));
-    BOOST_CHECK_EQUAL(seg->reader(), log_seg3);
+    BOOST_CHECK_EQUAL((*seg)->reader(), log_seg3);
 
     BOOST_CHECK(segs.lower_bound(model::offset(22)) == segs.end());
 
@@ -149,15 +152,19 @@ SEASTAR_THREAD_TEST_CASE(test_log_seg_selector) {
       "test", f, model::term_id(0), model::offset(22), 0, 1024);
 
     log_seg4->set_last_written_offset(model::offset(25));
-    segs.add(segment(log_seg4, nullptr, nullptr, nullptr));
+    segs.add(std::make_unique<segment>(log_seg4, nullptr, nullptr, nullptr));
     seg = segs.lower_bound(model::offset(22));
-    BOOST_CHECK_EQUAL(seg->reader(), log_seg4);
+    BOOST_CHECK_EQUAL((*seg)->reader(), log_seg4);
 
     segs = log_set({});
-    segs.add(storage::segment(log_seg1, nullptr, nullptr, nullptr));
-    segs.add(storage::segment(log_seg2, nullptr, nullptr, nullptr));
-    segs.add(storage::segment(log_seg3, nullptr, nullptr, nullptr));
-    segs.add(storage::segment(log_seg4, nullptr, nullptr, nullptr));
+    segs.add(
+      std::make_unique<storage::segment>(log_seg1, nullptr, nullptr, nullptr));
+    segs.add(
+      std::make_unique<storage::segment>(log_seg2, nullptr, nullptr, nullptr));
+    segs.add(
+      std::make_unique<storage::segment>(log_seg3, nullptr, nullptr, nullptr));
+    segs.add(
+      std::make_unique<storage::segment>(log_seg4, nullptr, nullptr, nullptr));
     seg = segs.lower_bound(model::offset(12));
-    BOOST_CHECK_EQUAL(seg->reader(), log_seg2);
+    BOOST_CHECK_EQUAL((*seg)->reader(), log_seg2);
 }
