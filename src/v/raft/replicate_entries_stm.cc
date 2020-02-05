@@ -203,11 +203,12 @@ ss::future<result<replicate_result>> replicate_entries_stm::apply() {
                 "Logic error. cannot acknowledge commits");
           }
           auto last_offset = m->value->value().last_log_index;
-
-          return ss::make_ready_future<result<replicate_result>>(
-            replicate_result{
-              .last_offset = model::offset(last_offset),
-            });
+          return _ptr->do_maybe_update_leader_commit_idx().then([last_offset] {
+              return ss::make_ready_future<result<replicate_result>>(
+                replicate_result{
+                  .last_offset = model::offset(last_offset),
+                });
+          });
       });
 }
 
