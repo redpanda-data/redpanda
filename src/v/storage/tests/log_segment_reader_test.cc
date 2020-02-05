@@ -226,35 +226,6 @@ SEASTAR_THREAD_TEST_CASE(test_read_batch_range) {
     }
 };
 
-SEASTAR_THREAD_TEST_CASE(test_seeks_to_first_relevant_batch) {
-    context ctx;
-    auto batches = test::make_random_batches(model::offset(0), 10);
-    ctx.write(copy(batches));
-    for (auto& b : batches) {
-        // seeks to batch with same base offset
-        auto reader = ctx.reader(b.base_offset(), 1);
-        auto res = reader.consume(consumer(), model::no_timeout).get0();
-        BOOST_TEST(!res.empty());
-        BOOST_TEST(res.front() == b);
-
-        // seeks to batch with a middle-ish offset
-        if (b.size() >= 3) {
-            auto offset = model::offset(
-              b.base_offset() + model::offset((b.size() / 2)));
-            reader = ctx.reader(offset, 1);
-            res = reader.consume(consumer(), model::no_timeout).get0();
-            BOOST_TEST(!res.empty());
-            BOOST_TEST(res.front() == b);
-        }
-
-        // seeks to batch with same last_offset
-        reader = ctx.reader(b.last_offset(), 1);
-        res = reader.consume(consumer(), model::no_timeout).get0();
-        BOOST_TEST(!res.empty());
-        BOOST_TEST(res.front() == b);
-    }
-}
-
 SEASTAR_THREAD_TEST_CASE(test_batch_type_filter) {
     // write some batches with various types
     auto batches = test::make_random_batches(model::offset(0), 5);
