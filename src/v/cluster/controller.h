@@ -140,7 +140,7 @@ private:
     std::unique_ptr<partition_allocator> _allocator;
     ss::condition_variable _leadership_cond;
     ss::gate _bg;
-    ss::semaphore _raft_append_notification_sem{1};
+    ss::semaphore _raft_notification_sem{1};
     model::offset _raft0_cfg_offset;
 };
 } // namespace cluster
