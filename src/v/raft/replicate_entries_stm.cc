@@ -112,17 +112,26 @@ replicate_entries_stm::send_append_entries_request(
 }
 
 ss::future<> replicate_entries_stm::dispatch_one(retry_meta& meta) {
-    return with_gate(_req_bg, [this, &meta] {
-        return with_semaphore(
-                 _sem,
-                 1,
-                 [this, &meta] { return dispatch_retries(meta); }) // semaphore
-          .then([this, &meta] {
-              if (meta.value) {
-                  _ptr->process_append_reply(meta.node, *meta.value);
-              }
-          });
-    }); // gate
+    return with_gate(
+             _req_bg,
+             [this, &meta] {
+                 return with_semaphore(
+                          _sem,
+                          1,
+                          [this, &meta] {
+                              return dispatch_retries(meta);
+                          }) // semaphore
+                   .then([this, &meta] {
+                       if (meta.value) {
+                           _ptr->process_append_reply(meta.node, *meta.value);
+                       }
+                   });
+             })
+      .handle_exception([](std::exception_ptr e) {
+          raftlog.warn(
+            "Exception thrown while replicating entries - {}",
+            boost::diagnostic_information(e));
+      });
 }
 
 ss::future<> replicate_entries_stm::dispatch_retries(retry_meta& meta) {
@@ -134,14 +143,14 @@ ss::future<> replicate_entries_stm::dispatch_retries(retry_meta& meta) {
 ss::future<> replicate_entries_stm::dispatch_single_retry(retry_meta& meta) {
     return share_request()
       .then([this, &meta](append_entries_request r) mutable {
-          return do_dispatch_one(meta.node, std::move(r))
-            .handle_exception([this](const std::exception_ptr& e) {
-                _ctxlog.warn(
-                  "Error while replication entries {}",
-                  boost::diagnostic_information(e));
-                return result<append_entries_reply>(
-                  errc::append_entries_dispatch_error);
-            });
+          return do_dispatch_one(meta.node, std::move(r));
+      })
+      .handle_exception([this](const std::exception_ptr& e) {
+          _ctxlog.warn(
+            "Error while replicating entries {}",
+            boost::diagnostic_information(e));
+          return result<append_entries_reply>(
+            errc::append_entries_dispatch_error);
       })
       .then([this, &meta](result<append_entries_reply> reply) mutable {
           --meta.retries_left;
