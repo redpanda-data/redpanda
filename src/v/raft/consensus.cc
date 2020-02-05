@@ -672,7 +672,7 @@ ss::future<> consensus::do_maybe_update_leader_commit_idx() {
         _meta.commit_index = majority_match;
         auto range_start = details::next_offset(model::offset(old_commit_idx));
         _ctxlog.trace(
-          "Commiting entries from {} to {}", range_start, _meta.commit_index);
+          "Committing entries from {} to {}", range_start, _meta.commit_index);
         auto reader = _log.make_reader(storage::log_reader_config(
           details::next_offset(model::offset(old_commit_idx)), // next batch
           model::offset(_meta.commit_index),
