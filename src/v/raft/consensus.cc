@@ -11,8 +11,6 @@
 #include <seastar/core/fstream.hh>
 #include <seastar/core/future.hh>
 
-#include <boost/exception/diagnostic_information.hpp>
-
 #include <iterator>
 
 namespace raft {
@@ -179,14 +177,11 @@ void consensus::dispatch_recovery(
         auto ptr = recovery.get();
         return ptr->apply()
           .handle_exception([this, &idx](const std::exception_ptr& e) {
-              _ctxlog.warn(
-                "Node {} recovery failed - {}",
-                idx.node_id,
-                boost::diagnostic_information(e));
+              _ctxlog.warn("Node {} recovery failed - {}", idx.node_id, e);
           })
           .finally([r = std::move(recovery), this] {});
     }).handle_exception([this](const std::exception_ptr& e) {
-        _ctxlog.warn("Recovery error - {}", boost::diagnostic_information(e));
+        _ctxlog.warn("Recovery error - {}", e);
     });
 }
 
@@ -229,9 +224,7 @@ consensus::do_replicate(model::record_batch_reader&& rdr) {
             (void)with_gate(_bg, [this, stm, f = std::move(f)]() mutable {
                 return std::move(f);
             }).handle_exception([this](const std::exception_ptr& e) {
-                _ctxlog.warn(
-                  "Replication exception - {}",
-                  boost::diagnostic_information(e));
+                _ctxlog.warn("Replication exception - {}", e);
             });
             return ss::make_ready_future<>();
         });
@@ -271,7 +264,7 @@ void consensus::dispatch_vote() {
                 } catch (...) {
                     _ctxlog.warn(
                       "Error returned from voting process {}",
-                      boost::diagnostic_information(std::current_exception()));
+                      std::current_exception());
                 }
                 auto f = p->wait().finally([vstm = std::move(vstm), this] {});
                 // make sure we wait for all futures when gate is closed
@@ -288,9 +281,7 @@ void consensus::dispatch_vote() {
                 return ss::make_ready_future<>();
             })
           .handle_exception([this](const std::exception_ptr& e) {
-              _ctxlog.warn(
-                "Exception while voting - {}",
-                boost::diagnostic_information(e));
+              _ctxlog.warn("Exception while voting - {}", e);
           });
     });
 }
@@ -655,9 +646,7 @@ void consensus::maybe_update_leader_commit_idx() {
             return do_maybe_update_leader_commit_idx();
         });
     }).handle_exception([this](const std::exception_ptr& e) {
-        _ctxlog.warn(
-          "Error updating leader commit index",
-          boost::diagnostic_information(e));
+        _ctxlog.warn("Error updating leader commit index", e);
     });
 }
 

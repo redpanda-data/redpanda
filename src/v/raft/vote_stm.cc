@@ -6,7 +6,6 @@
 #include "raft/logger.h"
 #include "raft/raftgen_service.h"
 
-#include <boost/exception/diagnostic_information.hpp>
 namespace raft {
 std::ostream& operator<<(std::ostream& o, const vote_stm::vmeta& m) {
     o << "{node: " << m.node << ", value: ";
