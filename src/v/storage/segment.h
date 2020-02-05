@@ -98,4 +98,5 @@ private:
 };
 
 std::ostream& operator<<(std::ostream&, const segment&);
+std::ostream& operator<<(std::ostream&, const std::unique_ptr<segment>&);
 } // namespace storage
