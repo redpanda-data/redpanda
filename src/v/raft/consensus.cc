@@ -636,7 +636,8 @@ ss::future<> consensus::do_maybe_update_leader_commit_idx() {
         offsets.push_back(f_idx.match_index);
     }
     std::sort(offsets.begin(), offsets.end());
-    auto majority_match = offsets.at((offsets.size() - 1) / 2);
+    size_t majority_match_idx = (offsets.size() - 1) / 2;
+    auto majority_match = offsets[majority_match_idx];
     if (majority_match > _meta.commit_index) {
         _ctxlog.debug("Leader commit index updated {}", majority_match);
         auto old_commit_idx = _meta.commit_index;
