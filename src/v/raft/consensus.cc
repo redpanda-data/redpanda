@@ -11,8 +11,6 @@
 #include <seastar/core/fstream.hh>
 #include <seastar/core/future.hh>
 
-#include <boost/exception/diagnostic_information.hpp>
-
 #include <iterator>
 
 namespace raft {
@@ -38,15 +36,11 @@ consensus::consensus(
   , _leader_notification(std::move(cb))
   , _conf(std::move(initial_cfg))
   , _ctxlog(_self, group)
-  , _append_entries_notification(std::move(append_callback)) {
+  , _append_entries_notification(std::move(append_callback))
+  , _fstats({}) {
     _meta.group = group();
+    update_follower_stats(_conf);
     _vote_timeout.set_callback([this] { dispatch_vote(); });
-    for (auto& n : _conf.nodes) {
-        if (n.id() == _self) {
-            continue;
-        }
-        _follower_stats.emplace(n.id(), follower_index_metadata(n.id()));
-    }
 }
 void consensus::do_step_down() {
     _probe.step_down();
@@ -63,12 +57,12 @@ ss::sstring consensus::voted_for_filename() const {
     return _log.work_directory() + "/voted_for";
 }
 
-void consensus::process_append_reply(
+consensus::success_reply consensus::process_append_reply(
   model::node_id node, result<append_entries_reply> r) {
     if (!r) {
         _ctxlog.debug("Error response from {}, {}", node, r.error().message());
         // add stats to group
-        return;
+        return success_reply::no;
     }
 
     if (node == _self) {
@@ -80,11 +74,10 @@ void consensus::process_append_reply(
         // append on remote nodes) we have to check what is the maximum offset
         // replicated by the majority of nodes, successful replication on
         // current node may change it.
-
-        return maybe_update_leader_commit_idx();
+        return success_reply::yes;
     }
 
-    follower_index_metadata& idx = get_follower_stats(node);
+    follower_index_metadata& idx = _fstats.get(node);
     append_entries_reply& reply = r.value();
 
     if (unlikely(reply.group != _meta.group)) {
@@ -97,10 +90,11 @@ void consensus::process_append_reply(
     // check preconditions for processing the reply
     if (!is_leader()) {
         _ctxlog.debug("ignorring append entries reply, not leader");
-        return;
+        return success_reply::no;
     }
     if (reply.term > _meta.term) {
-        return do_step_down();
+        do_step_down();
+        return success_reply::no;
     }
 
     // If recovery is in progress the recovery STM will handle follower index
@@ -115,21 +109,32 @@ void consensus::process_append_reply(
     }
 
     if (reply.success) {
-        return successfull_append_entries_reply(idx, std::move(reply));
+        successfull_append_entries_reply(idx, std::move(reply));
+        return success_reply::yes;
     }
 
     if (idx.is_recovering) {
         // we are already recovering, do nothing
-        return;
+        return success_reply::no;
     }
 
     if (idx.match_index < _log.max_offset()) {
         // follower match_index is behind, we have to recover it
         dispatch_recovery(idx, std::move(reply));
+        return success_reply::no;
     }
+    return success_reply::no;
     // TODO(agallego) - add target_replication_factor,
     // current_replication_factor to group_configuration so we can promote
     // learners to nodes and perform data movement to added replicas
+}
+
+void consensus::process_heartbeat_response(
+  model::node_id node, result<append_entries_reply> r) {
+    auto is_success = process_append_reply(node, std::move(r));
+    if (is_success) {
+        maybe_update_leader_commit_idx();
+    }
 }
 
 void consensus::successfull_append_entries_reply(
@@ -143,7 +148,6 @@ void consensus::successfull_append_entries_reply(
       idx.node_id,
       idx.match_index,
       idx.next_index);
-    maybe_update_leader_commit_idx();
 }
 
 void consensus::dispatch_recovery(
@@ -169,14 +173,11 @@ void consensus::dispatch_recovery(
         auto ptr = recovery.get();
         return ptr->apply()
           .handle_exception([this, &idx](const std::exception_ptr& e) {
-              _ctxlog.warn(
-                "Node {} recovery failed - {}",
-                idx.node_id,
-                boost::diagnostic_information(e));
+              _ctxlog.warn("Node {} recovery failed - {}", idx.node_id, e);
           })
           .finally([r = std::move(recovery), this] {});
     }).handle_exception([this](const std::exception_ptr& e) {
-        _ctxlog.warn("Recovery error - {}", boost::diagnostic_information(e));
+        _ctxlog.warn("Recovery error - {}", e);
     });
 }
 
@@ -219,9 +220,7 @@ consensus::do_replicate(model::record_batch_reader&& rdr) {
             (void)with_gate(_bg, [this, stm, f = std::move(f)]() mutable {
                 return std::move(f);
             }).handle_exception([this](const std::exception_ptr& e) {
-                _ctxlog.warn(
-                  "Replication exception - {}",
-                  boost::diagnostic_information(e));
+                _ctxlog.warn("Replication exception - {}", e);
             });
             return ss::make_ready_future<>();
         });
@@ -261,7 +260,7 @@ void consensus::dispatch_vote() {
                 } catch (...) {
                     _ctxlog.warn(
                       "Error returned from voting process {}",
-                      boost::diagnostic_information(std::current_exception()));
+                      std::current_exception());
                 }
                 auto f = p->wait().finally([vstm = std::move(vstm), this] {});
                 // make sure we wait for all futures when gate is closed
@@ -278,9 +277,7 @@ void consensus::dispatch_vote() {
                 return ss::make_ready_future<>();
             })
           .handle_exception([this](const std::exception_ptr& e) {
-              _ctxlog.warn(
-                "Exception while voting - {}",
-                boost::diagnostic_information(e));
+              _ctxlog.warn("Exception while voting - {}", e);
           });
     });
 }
@@ -327,6 +324,7 @@ ss::future<> consensus::start() {
           .then([this](configuration_bootstrap_state st) {
               if (st.config_batches_seen() > 0) {
                   _conf = std::move(st.release_config());
+                  update_follower_stats(_conf);
               }
               _meta.prev_log_index = _log.max_offset();
               _meta.prev_log_term = get_term(_log.max_offset());
@@ -487,6 +485,13 @@ consensus::do_append_entries(append_entries_request&& r) {
 
     // section 3
     if (r.meta.prev_log_index < last_log_offset) {
+        if (unlikely(r.meta.prev_log_index < _meta.commit_index)) {
+            reply.success = true;
+            _ctxlog.info("Stale append entries request processed, entry is "
+                         "already present");
+            return ss::make_ready_future<append_entries_reply>(
+              std::move(reply));
+        }
         auto truncate_at = details::next_offset(
           model::offset(r.meta.prev_log_index));
         _ctxlog.debug(
@@ -497,10 +502,6 @@ consensus::do_append_entries(append_entries_request&& r) {
           _log.max_offset(),
           truncate_at);
         _probe.append_request_log_truncate();
-        if (unlikely(r.meta.prev_log_index < _meta.commit_index)) {
-            return ss::make_exception_future<append_entries_reply>(
-              std::logic_error("Cannot truncate beyond commit index"));
-        }
         return _log.truncate(truncate_at)
           .then([this, r = std::move(r)]() mutable {
               _meta.prev_log_index = r.meta.prev_log_index;
@@ -527,20 +528,11 @@ consensus::notify_entries_commited(model::record_batch_reader&& entries) {
 
     return details::share_n(std::move(entries), entries_copies)
       .then([this](entries_t shared) mutable {
-          using ret_t = append_entries_reply;
-          std::vector<ss::future<>> n_futures;
-
-          if (!shared.empty()) {
-              n_futures.push_back(
-                process_configurations(std::move(shared.back())));
+          if (_append_entries_notification) {
+              _append_entries_notification.value()(std::move(shared.back()));
               shared.pop_back();
           }
-          if (!shared.empty() && _append_entries_notification) {
-              n_futures.push_back(
-                _append_entries_notification.value()(std::move(shared.back())));
-          }
-          return ss::when_all(n_futures.begin(), n_futures.end())
-            .discard_result();
+          return process_configurations(std::move(shared.back()));
       });
 }
 
@@ -549,19 +541,9 @@ consensus::process_configurations(model::record_batch_reader&& rdr) {
     return details::extract_configuration(std::move(rdr))
       .then([this](std::optional<group_configuration> cfg) {
           if (cfg) {
+              update_follower_stats(*cfg);
               _conf = std::move(*cfg);
               _ctxlog.info("configuration updated {}", _conf);
-              for (auto& n : _conf.all_brokers()) {
-                  if (n.id() == _self) {
-                      // skip
-                      continue;
-                  }
-                  if (auto it = _follower_stats.find(n.id());
-                      it == _follower_stats.end()) {
-                      _follower_stats.emplace(
-                        n.id(), follower_index_metadata(n.id()));
-                  }
-              }
           }
       });
 }
@@ -623,20 +605,11 @@ model::term_id consensus::get_term(model::offset o) {
 }
 
 clock_type::time_point consensus::last_hbeat_timestamp(model::node_id id) {
-    return get_follower_stats(id).last_hbeat_timestamp;
+    return _fstats.get(id).last_hbeat_timestamp;
 }
 
 void consensus::update_node_hbeat_timestamp(model::node_id id) {
-    get_follower_stats(id).last_hbeat_timestamp = clock_type::now();
-}
-
-follower_index_metadata& consensus::get_follower_stats(model::node_id id) {
-    auto it = _follower_stats.find(id);
-    if (__builtin_expect(it == _follower_stats.end(), false)) {
-        throw std::invalid_argument(
-          fmt::format("Node {} is not a group {} follower", id, _meta.group));
-    }
-    return it->second;
+    _fstats.get(id).last_hbeat_timestamp = clock_type::now();
 }
 
 void consensus::maybe_update_leader_commit_idx() {
@@ -645,9 +618,7 @@ void consensus::maybe_update_leader_commit_idx() {
             return do_maybe_update_leader_commit_idx();
         });
     }).handle_exception([this](const std::exception_ptr& e) {
-        _ctxlog.warn(
-          "Error updating leader commit index",
-          boost::diagnostic_information(e));
+        _ctxlog.warn("Error updating leader commit index", e);
     });
 }
 
@@ -661,7 +632,7 @@ ss::future<> consensus::do_maybe_update_leader_commit_idx() {
     std::vector<model::offset> offsets;
     // self offsets
     offsets.push_back(_log.max_offset());
-    for (const auto& [_, f_idx] : _follower_stats) {
+    for (const auto& [_, f_idx] : _fstats) {
         offsets.push_back(f_idx.match_index);
     }
     std::sort(offsets.begin(), offsets.end());
@@ -672,7 +643,7 @@ ss::future<> consensus::do_maybe_update_leader_commit_idx() {
         _meta.commit_index = majority_match;
         auto range_start = details::next_offset(model::offset(old_commit_idx));
         _ctxlog.trace(
-          "Commiting entries from {} to {}", range_start, _meta.commit_index);
+          "Committing entries from {} to {}", range_start, _meta.commit_index);
         auto reader = _log.make_reader(storage::log_reader_config(
           details::next_offset(model::offset(old_commit_idx)), // next batch
           model::offset(_meta.commit_index),
@@ -705,5 +676,23 @@ consensus::maybe_update_follower_commit_idx(model::offset request_commit_idx) {
         }
     }
     return ss::make_ready_future<>();
+}
+
+void consensus::update_follower_stats(const group_configuration& cfg) {
+    for (auto& n : cfg.nodes) {
+        if (n.id() == _self || _fstats.contains(n.id())) {
+            continue;
+        }
+        _fstats.emplace(n.id(), follower_index_metadata(n.id()));
+    }
+
+    for (auto& n : cfg.learners) {
+        if (n.id() == _self || _fstats.contains(n.id())) {
+            continue;
+        }
+        auto idx = follower_index_metadata(n.id());
+        idx.is_learner = true;
+        _fstats.emplace(n.id(), idx);
+    }
 }
 } // namespace raft

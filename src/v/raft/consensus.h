@@ -1,6 +1,7 @@
 #pragma once
 
 #include "model/fundamental.h"
+#include "raft/follower_stats.h"
 #include "raft/logger.h"
 #include "raft/probe.h"
 #include "raft/timeout_jitter.h"
@@ -9,8 +10,7 @@
 #include "storage/log.h"
 
 #include <seastar/core/sharded.hh>
-
-#include <boost/container/flat_map.hpp>
+#include <seastar/util/bool_class.hh>
 
 namespace raft {
 class replicate_entries_stm;
@@ -27,7 +27,7 @@ public:
     enum class vote_state { follower, candidate, leader };
     using leader_cb_t = ss::noncopyable_function<void(group_id)>;
     using append_entries_cb_t
-      = ss::noncopyable_function<ss::future<>(model::record_batch_reader&&)>;
+      = ss::noncopyable_function<void(model::record_batch_reader&&)>;
 
     consensus(
       model::node_id,
@@ -77,7 +77,9 @@ public:
     clock_type::time_point last_heartbeat() const { return _hbeat; };
 
     clock_type::time_point last_hbeat_timestamp(model::node_id);
-    void process_append_reply(model::node_id, result<append_entries_reply>);
+
+    void
+      process_heartbeat_response(model::node_id, result<append_entries_reply>);
 
     ss::future<result<replicate_result>>
     replicate(model::record_batch_reader&&);
@@ -112,6 +114,10 @@ private:
     ss::future<storage::append_result>
     disk_append(model::record_batch_reader&&);
 
+    using success_reply = ss::bool_class<struct successfull_reply_tag>;
+
+    success_reply
+      process_append_reply(model::node_id, result<append_entries_reply>);
     void successfull_append_entries_reply(
       follower_index_metadata&, append_entries_reply);
     void dispatch_recovery(follower_index_metadata&, append_entries_reply);
@@ -134,8 +140,9 @@ private:
     ss::future<> maybe_update_follower_commit_idx(model::offset);
 
     void arm_vote_timeout();
-    follower_index_metadata& get_follower_stats(model::node_id);
     void update_node_hbeat_timestamp(model::node_id);
+
+    void update_follower_stats(const group_configuration&);
     // args
     model::node_id _self;
     timeout_jitter _jit;
@@ -162,8 +169,7 @@ private:
     timer_type _vote_timeout;
 
     /// used for keepint tally on followers
-    boost::container::flat_map<model::node_id, follower_index_metadata>
-      _follower_stats;
+    follower_stats _fstats;
 
     /// used to wait for background ops before shutting down
     ss::gate _bg;

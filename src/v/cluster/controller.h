@@ -86,7 +86,8 @@ private:
 
     ss::future<consensus_ptr> start_raft0();
     ss::future<> process_raft0_batch(model::record_batch);
-    ss::future<> process_raft0_cfg_update(model::record);
+    ss::future<> process_raft0_cfg_update(model::record, model::offset);
+    ss::future<> apply_raft0_cfg_update(raft::group_configuration);
     ss::future<> recover_record(model::record);
     ss::future<> recover_replica(
       model::ntp, raft::group_id, uint32_t, std::vector<model::broker_shard>);
@@ -105,7 +106,7 @@ private:
       update_clients_cache(std::vector<broker_ptr>, std::vector<broker_ptr>);
     void create_partition_allocator();
     allocation_node local_allocation_node();
-    ss::future<> on_raft0_entries_commited(model::record_batch_reader&&);
+    void on_raft0_entries_comitted(model::record_batch_reader&&);
 
     ss::future<> dispatch_manage_partition(
       model::ntp, raft::group_id, uint32_t, std::vector<model::broker_shard>);
@@ -139,5 +140,7 @@ private:
     std::unique_ptr<partition_allocator> _allocator;
     ss::condition_variable _leadership_cond;
     ss::gate _bg;
+    ss::semaphore _raft_append_notification_sem{1};
+    model::offset _raft0_cfg_offset;
 };
 } // namespace cluster

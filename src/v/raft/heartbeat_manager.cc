@@ -6,7 +6,6 @@
 #include "rpc/reconnect_transport.h"
 #include "rpc/types.h"
 
-#include <boost/exception/diagnostic_information.hpp>
 #include <boost/range/iterator_range.hpp>
 
 namespace raft {
@@ -143,7 +142,7 @@ void heartbeat_manager::process_reply(
                 continue;
             }
             // propagate error
-            (*it)->process_append_reply(
+            (*it)->process_heartbeat_response(
               n, result<append_entries_reply>(r.error()));
         }
         return;
@@ -159,7 +158,7 @@ void heartbeat_manager::process_reply(
             hbeatlog.error("Could not find consensus for group:{}", m.group);
             continue;
         }
-        (*it)->process_append_reply(
+        (*it)->process_heartbeat_response(
           n, result<append_entries_reply>(std::move(m)));
     }
 }
@@ -169,8 +168,7 @@ void heartbeat_manager::dispatch_heartbeats() {
     (void)with_gate(_bghbeats, [this, old = _hbeat, next_timeout] {
         return do_dispatch_heartbeats(old, next_timeout);
     }).handle_exception([](const std::exception_ptr& e) {
-        hbeatlog.warn(
-          "Error dispatching hearbeats - {}", boost::diagnostic_information(e));
+        hbeatlog.warn("Error dispatching hearbeats - {}", e);
     });
     if (!_bghbeats.is_closed()) {
         _heartbeat_timer.arm(next_timeout);

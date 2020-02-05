@@ -64,6 +64,11 @@ ss::future<> controller::start() {
           clusterlog.debug("Starting cluster recovery");
           return start_raft0()
             .then([this](consensus_ptr c) { _raft0 = c.get(); })
+            .then([this] {
+                _raft0_cfg_offset = model::offset(
+                  _raft0->meta().prev_log_index);
+                return apply_raft0_cfg_update(_raft0->config());
+            })
             .then([this] { return join_raft0(); })
             .then([this] {
                 clusterlog.info("Finished recovering cluster state");
@@ -88,7 +93,7 @@ ss::future<consensus_ptr> controller::start_raft0() {
       std::move(brokers),
       [this](model::record_batch_reader&& reader) {
           verify_shard();
-          return on_raft0_entries_commited(std::move(reader));
+          on_raft0_entries_comitted(std::move(reader));
       });
 }
 
@@ -116,9 +121,12 @@ ss::future<> controller::process_raft0_batch(model::record_batch batch) {
     }
 
     if (batch.header().type == raft::configuration_batch_type) {
+        auto base_offset = batch.header().base_offset;
         return model::consume_records(
-          std::move(batch), [this](model::record rec) mutable {
-              return process_raft0_cfg_update(std::move(rec));
+          std::move(batch), [this, base_offset](model::record rec) mutable {
+              auto rec_offset = model::offset(
+                base_offset() + rec.offset_delta());
+              return process_raft0_cfg_update(std::move(rec), rec_offset);
           });
     }
 
@@ -128,10 +136,7 @@ ss::future<> controller::process_raft0_batch(model::record_batch batch) {
       });
 }
 
-ss::future<> controller::process_raft0_cfg_update(model::record r) {
-    auto cfg = reflection::adl<raft::group_configuration>().from(
-      r.share_value());
-    clusterlog.debug("Processing new raft-0 configuration");
+ss::future<> controller::apply_raft0_cfg_update(raft::group_configuration cfg) {
     auto old_list = _md_cache.local().all_brokers();
     std::vector<broker_ptr> new_list;
     auto all_new_nodes = cfg.all_brokers();
@@ -147,6 +152,18 @@ ss::future<> controller::process_raft0_cfg_update(model::record r) {
       .then([this, nodes = std::move(cfg.nodes)] {
           return update_brokers_cache(std::move(nodes));
       });
+}
+
+ss::future<>
+controller::process_raft0_cfg_update(model::record r, model::offset o) {
+    if (o <= _raft0_cfg_offset) {
+        return seastar::make_ready_future<>();
+    }
+    clusterlog.debug("Processing new raft-0 configuration");
+    _raft0_cfg_offset = o;
+    auto cfg = reflection::adl<raft::group_configuration>().from(
+      r.share_value());
+    return apply_raft0_cfg_update(std::move(cfg));
 }
 
 ss::future<> controller::recover_record(model::record r) {
@@ -354,6 +371,9 @@ void controller::leadership_notification() {
         clusterlog.info("Local controller became a leader");
         create_partition_allocator();
         _leadership_cond.broadcast();
+    }).handle_exception([](std::exception_ptr e) {
+        clusterlog.warn(
+          "Exception thrown while processing leadership notification - {}", e);
     });
 }
 
@@ -378,16 +398,21 @@ controller::update_brokers_cache(std::vector<model::broker> nodes) {
       });
 }
 
-ss::future<>
-controller::on_raft0_entries_commited(model::record_batch_reader&& reader) {
-    if (_bg.is_closed()) {
-        throw ss::gate_closed_exception();
-    }
-    return with_gate(_bg, [this, reader = std::move(reader)]() mutable {
-        return ss::do_with(
-          std::move(reader), [this](model::record_batch_reader& reader) {
-              return reader.consume(batch_consumer(this), model::no_timeout);
+void controller::on_raft0_entries_comitted(
+  model::record_batch_reader&& reader) {
+    (void)with_gate(_bg, [this, reader = std::move(reader)]() mutable {
+        return with_semaphore(
+          _raft_append_notification_sem,
+          1,
+          [this, reader = std::move(reader)]() mutable {
+              if (_bg.is_closed()) {
+                  return ss::make_ready_future<>();
+              }
+              return std::move(reader).consume(
+                batch_consumer(this), model::no_timeout);
           });
+    }).handle_exception_type([](const ss::gate_closed_exception&) {
+        clusterlog.info("On shutdown... ignoring append_entries notification");
     });
 }
 

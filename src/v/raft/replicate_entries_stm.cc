@@ -112,17 +112,24 @@ replicate_entries_stm::send_append_entries_request(
 }
 
 ss::future<> replicate_entries_stm::dispatch_one(retry_meta& meta) {
-    return with_gate(_req_bg, [this, &meta] {
-        return with_semaphore(
-                 _sem,
-                 1,
-                 [this, &meta] { return dispatch_retries(meta); }) // semaphore
-          .then([this, &meta] {
-              if (meta.value) {
-                  _ptr->process_append_reply(meta.node, *meta.value);
-              }
-          });
-    }); // gate
+    return with_gate(
+             _req_bg,
+             [this, &meta] {
+                 return with_semaphore(
+                          _sem,
+                          1,
+                          [this, &meta] {
+                              return dispatch_retries(meta);
+                          }) // semaphore
+                   .then([this, &meta] {
+                       if (meta.value) {
+                           _ptr->process_append_reply(meta.node, *meta.value);
+                       }
+                   });
+             })
+      .handle_exception([](std::exception_ptr e) {
+          raftlog.warn("Exception thrown while replicating entries - {}", e);
+      });
 }
 
 ss::future<> replicate_entries_stm::dispatch_retries(retry_meta& meta) {
@@ -134,14 +141,12 @@ ss::future<> replicate_entries_stm::dispatch_retries(retry_meta& meta) {
 ss::future<> replicate_entries_stm::dispatch_single_retry(retry_meta& meta) {
     return share_request()
       .then([this, &meta](append_entries_request r) mutable {
-          return do_dispatch_one(meta.node, std::move(r))
-            .handle_exception([this](const std::exception_ptr& e) {
-                _ctxlog.warn(
-                  "Error while replication entries {}",
-                  boost::diagnostic_information(e));
-                return result<append_entries_reply>(
-                  errc::append_entries_dispatch_error);
-            });
+          return do_dispatch_one(meta.node, std::move(r));
+      })
+      .handle_exception([this](const std::exception_ptr& e) {
+          _ctxlog.warn("Error while replicating entries {}", e);
+          return result<append_entries_reply>(
+            errc::append_entries_dispatch_error);
       })
       .then([this, &meta](result<append_entries_reply> reply) mutable {
           --meta.retries_left;
@@ -161,23 +166,22 @@ ss::future<result<replicate_result>> replicate_entries_stm::apply() {
         (void)dispatch_one(m); // background
     }
     const size_t majority = _ptr->_conf.majority();
+    const size_t all = _ptr->_conf.nodes.size();
     return _sem.wait(majority)
-      .then([this, majority] {
+      .then([this, majority, all] {
           return ss::do_until(
-            [this, majority] {
+            [this, majority, all] {
                 auto [success, failure] = partition_count();
-                _ctxlog.debug(
-                  "Partitions count s:{}, f:{}, m: {}",
+                _ctxlog.trace(
+                  "Replicate results [success:{}, failures:{}, majority: {}]",
                   success,
                   failure,
                   majority);
-                return success >= majority || failure >= majority;
+                return success >= majority || failure >= majority
+                       || (success + failure) >= all;
             },
             [this] {
-                return ss::with_gate(_req_bg, [this] {
-                    _ctxlog.debug("Waiting for the next");
-                    return _sem.wait(1);
-                });
+                return ss::with_gate(_req_bg, [this] { return _sem.wait(1); });
             });
       })
       .then([this] {
@@ -203,18 +207,16 @@ ss::future<result<replicate_result>> replicate_entries_stm::apply() {
                 "Logic error. cannot acknowledge commits");
           }
           auto last_offset = m->value->value().last_log_index;
-
-          return ss::make_ready_future<result<replicate_result>>(
-            replicate_result{
-              .last_offset = model::offset(last_offset),
-            });
+          return _ptr->do_maybe_update_leader_commit_idx().then([last_offset] {
+              return ss::make_ready_future<result<replicate_result>>(
+                replicate_result{
+                  .last_offset = model::offset(last_offset),
+                });
+          });
       });
 }
 
-ss::future<> replicate_entries_stm::wait() {
-    _ctxlog.debug("WAIT replicate, gate: {}", _req_bg.get_count());
-    return _req_bg.close();
-}
+ss::future<> replicate_entries_stm::wait() { return _req_bg.close(); }
 
 replicate_entries_stm::replicate_entries_stm(
   consensus* p, int32_t max_retries, append_entries_request r)
