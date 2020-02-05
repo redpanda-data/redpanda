@@ -8,6 +8,7 @@
 #include "storage/version.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/core/gate.hh>
 #include <seastar/core/sstring.hh>
 
 #include <array>
@@ -90,6 +91,15 @@ public:
 private:
     using logs_type = std::unordered_map<model::ntp, log>;
 
+    ss::future<log> do_manage(model::ntp, storage_type type);
+    ss::future<segment> do_make_log_segment(
+      const model::ntp&,
+      model::offset,
+      model::term_id,
+      ss::io_priority_class pc,
+      record_version_type,
+      size_t buffer_size);
+
     /**
      * \brief Create a segment reader for the specified file.
      *
@@ -118,7 +128,7 @@ private:
     log_config _config;
     logs_type _logs;
     batch_cache _batch_cache;
+    ss::gate _open_gate;
 };
 std::ostream& operator<<(std::ostream& o, log_manager::storage_type t);
-
 } // namespace storage

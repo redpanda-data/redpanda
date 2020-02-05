@@ -14,6 +14,7 @@
 #include "utils/file_sanitizer.h"
 
 #include <seastar/core/file.hh>
+#include <seastar/core/gate.hh>
 #include <seastar/core/print.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/core/thread.hh>
@@ -29,11 +30,27 @@ log_manager::log_manager(log_config config) noexcept
   : _config(std::move(config)) {}
 
 ss::future<> log_manager::stop() {
-    return ss::parallel_for_each(
-      _logs, [](logs_type::value_type& entry) { return entry.second.close(); });
+    return _open_gate.close().then([this] {
+        return ss::parallel_for_each(_logs, [](logs_type::value_type& entry) {
+            return entry.second.close();
+        });
+    });
 }
 
 ss::future<segment> log_manager::make_log_segment(
+  const model::ntp& ntp,
+  model::offset base_offset,
+  model::term_id term,
+  ss::io_priority_class pc,
+  record_version_type version,
+  size_t buf_size) {
+    return ss::with_gate(
+      _open_gate, [this, &ntp, base_offset, term, pc, version, buf_size] {
+          return do_make_log_segment(
+            ntp, base_offset, term, pc, version, buf_size);
+      });
+}
+ss::future<segment> log_manager::do_make_log_segment(
   const model::ntp& ntp,
   model::offset base_offset,
   model::term_id term,
@@ -278,6 +295,14 @@ ss::future<std::vector<segment>> log_manager::open_segments(ss::sstring dir) {
 
 ss::future<log>
 log_manager::manage(model::ntp ntp, log_manager::storage_type type) {
+    return ss::with_gate(
+      _open_gate, [this, ntp = std::move(ntp), type]() mutable {
+          return do_manage(std::move(ntp), type);
+      });
+}
+
+ss::future<log>
+log_manager::do_manage(model::ntp ntp, log_manager::storage_type type) {
     if (_config.base_dir.empty()) {
         return ss::make_exception_future<log>(std::runtime_error(
           "log_manager:: cannot have empty config.base_dir"));
