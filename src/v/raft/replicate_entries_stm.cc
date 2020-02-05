@@ -128,9 +128,7 @@ ss::future<> replicate_entries_stm::dispatch_one(retry_meta& meta) {
                    });
              })
       .handle_exception([](std::exception_ptr e) {
-          raftlog.warn(
-            "Exception thrown while replicating entries - {}",
-            boost::diagnostic_information(e));
+          raftlog.warn("Exception thrown while replicating entries - {}", e);
       });
 }
 
@@ -146,9 +144,7 @@ ss::future<> replicate_entries_stm::dispatch_single_retry(retry_meta& meta) {
           return do_dispatch_one(meta.node, std::move(r));
       })
       .handle_exception([this](const std::exception_ptr& e) {
-          _ctxlog.warn(
-            "Error while replicating entries {}",
-            boost::diagnostic_information(e));
+          _ctxlog.warn("Error while replicating entries {}", e);
           return result<append_entries_reply>(
             errc::append_entries_dispatch_error);
       })
@@ -220,9 +216,7 @@ ss::future<result<replicate_result>> replicate_entries_stm::apply() {
       });
 }
 
-ss::future<> replicate_entries_stm::wait() {
-    return _req_bg.close();
-}
+ss::future<> replicate_entries_stm::wait() { return _req_bg.close(); }
 
 replicate_entries_stm::replicate_entries_stm(
   consensus* p, int32_t max_retries, append_entries_request r)
