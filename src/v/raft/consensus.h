@@ -1,6 +1,7 @@
 #pragma once
 
 #include "model/fundamental.h"
+#include "raft/follower_stats.h"
 #include "raft/logger.h"
 #include "raft/probe.h"
 #include "raft/timeout_jitter.h"
@@ -141,8 +142,9 @@ private:
     ss::future<> maybe_update_follower_commit_idx(model::offset);
 
     void arm_vote_timeout();
-    follower_index_metadata& get_follower_stats(model::node_id);
     void update_node_hbeat_timestamp(model::node_id);
+
+    void update_follower_stats(const group_configuration&);
     // args
     model::node_id _self;
     timeout_jitter _jit;
@@ -169,8 +171,7 @@ private:
     timer_type _vote_timeout;
 
     /// used for keepint tally on followers
-    boost::container::flat_map<model::node_id, follower_index_metadata>
-      _follower_stats;
+    follower_stats _fstats;
 
     /// used to wait for background ops before shutting down
     ss::gate _bg;
