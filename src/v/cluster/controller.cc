@@ -354,6 +354,9 @@ void controller::leadership_notification() {
         clusterlog.info("Local controller became a leader");
         create_partition_allocator();
         _leadership_cond.broadcast();
+    }).handle_exception([](std::exception_ptr e) {
+        clusterlog.warn(
+          "Exception thrown while processing leadership notification - {}", e);
     });
 }
 
