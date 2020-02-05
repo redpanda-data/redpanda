@@ -9,6 +9,7 @@
 #include "storage/log.h"
 
 #include <seastar/core/sharded.hh>
+#include <seastar/util/bool_class.hh>
 
 #include <boost/container/flat_map.hpp>
 
@@ -77,7 +78,9 @@ public:
     clock_type::time_point last_heartbeat() const { return _hbeat; };
 
     clock_type::time_point last_hbeat_timestamp(model::node_id);
-    void process_append_reply(model::node_id, result<append_entries_reply>);
+
+    void
+      process_heartbeat_response(model::node_id, result<append_entries_reply>);
 
     ss::future<result<replicate_result>>
     replicate(model::record_batch_reader&&);
@@ -112,6 +115,10 @@ private:
     ss::future<storage::append_result>
     disk_append(model::record_batch_reader&&);
 
+    using success_reply = ss::bool_class<struct successfull_reply_tag>;
+
+    success_reply
+      process_append_reply(model::node_id, result<append_entries_reply>);
     void successfull_append_entries_reply(
       follower_index_metadata&, append_entries_reply);
     void dispatch_recovery(follower_index_metadata&, append_entries_reply);

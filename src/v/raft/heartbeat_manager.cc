@@ -143,7 +143,7 @@ void heartbeat_manager::process_reply(
                 continue;
             }
             // propagate error
-            (*it)->process_append_reply(
+            (*it)->process_heartbeat_response(
               n, result<append_entries_reply>(r.error()));
         }
         return;
@@ -159,7 +159,7 @@ void heartbeat_manager::process_reply(
             hbeatlog.error("Could not find consensus for group:{}", m.group);
             continue;
         }
-        (*it)->process_append_reply(
+        (*it)->process_heartbeat_response(
           n, result<append_entries_reply>(std::move(m)));
     }
 }

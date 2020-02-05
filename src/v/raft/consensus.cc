@@ -63,12 +63,12 @@ ss::sstring consensus::voted_for_filename() const {
     return _log.work_directory() + "/voted_for";
 }
 
-void consensus::process_append_reply(
+consensus::success_reply consensus::process_append_reply(
   model::node_id node, result<append_entries_reply> r) {
     if (!r) {
         _ctxlog.debug("Error response from {}, {}", node, r.error().message());
         // add stats to group
-        return;
+        return success_reply::no;
     }
 
     if (node == _self) {
@@ -80,8 +80,7 @@ void consensus::process_append_reply(
         // append on remote nodes) we have to check what is the maximum offset
         // replicated by the majority of nodes, successful replication on
         // current node may change it.
-
-        return maybe_update_leader_commit_idx();
+        return success_reply::yes;
     }
 
     follower_index_metadata& idx = get_follower_stats(node);
@@ -97,10 +96,11 @@ void consensus::process_append_reply(
     // check preconditions for processing the reply
     if (!is_leader()) {
         _ctxlog.debug("ignorring append entries reply, not leader");
-        return;
+        return success_reply::no;
     }
     if (reply.term > _meta.term) {
-        return do_step_down();
+        do_step_down();
+        return success_reply::no;
     }
 
     // If recovery is in progress the recovery STM will handle follower index
@@ -115,21 +115,32 @@ void consensus::process_append_reply(
     }
 
     if (reply.success) {
-        return successfull_append_entries_reply(idx, std::move(reply));
+        successfull_append_entries_reply(idx, std::move(reply));
+        return success_reply::yes;
     }
 
     if (idx.is_recovering) {
         // we are already recovering, do nothing
-        return;
+        return success_reply::no;
     }
 
     if (idx.match_index < _log.max_offset()) {
         // follower match_index is behind, we have to recover it
         dispatch_recovery(idx, std::move(reply));
+        return success_reply::no;
     }
+    return success_reply::no;
     // TODO(agallego) - add target_replication_factor,
     // current_replication_factor to group_configuration so we can promote
     // learners to nodes and perform data movement to added replicas
+}
+
+void consensus::process_heartbeat_response(
+  model::node_id node, result<append_entries_reply> r) {
+    auto is_success = process_append_reply(node, std::move(r));
+    if (is_success) {
+        maybe_update_leader_commit_idx();
+    }
 }
 
 void consensus::successfull_append_entries_reply(
@@ -143,7 +154,6 @@ void consensus::successfull_append_entries_reply(
       idx.node_id,
       idx.match_index,
       idx.next_index);
-    maybe_update_leader_commit_idx();
 }
 
 void consensus::dispatch_recovery(
