@@ -23,7 +23,7 @@ using namespace std::chrono_literals; // NOLINT
 
 inline static auto heartbeat_interval = 40ms;
 constexpr inline static auto default_storage_type
-  = storage::log_manager::storage_type::memory;
+  = storage::log_manager::storage_type::disk;
 
 struct test_raft_manager {
     explicit test_raft_manager(raft::consensus* ptr)

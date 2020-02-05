@@ -29,7 +29,7 @@ disk_log_appender::operator()(model::record_batch&& batch) {
     return _log.maybe_roll(_last_term, next_offset, _config.io_priority)
       .then([this, batch = std::move(batch)]() mutable {
           return _log._segs.back()
-            .append(std::move(batch))
+            ->append(std::move(batch))
             .then([this](append_result r) {
                 _byte_size += r.byte_size;
                 // do not track base_offset, only the last one

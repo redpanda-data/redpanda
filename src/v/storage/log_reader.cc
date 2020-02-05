@@ -146,7 +146,7 @@ static inline segment* find_in_set(log_set& s, model::offset o) {
     vassert(o() >= 0, "cannot find negative logical offsets");
     segment* ret = nullptr;
     if (auto it = s.lower_bound(o); it != s.end()) {
-        ret = &(*it);
+        ret = it->get();
     }
     return ret;
 }
@@ -218,8 +218,8 @@ static inline bool is_finished_offset(log_set& s, model::offset o) {
         return true;
     }
     for (auto it = s.rbegin(); it != s.rend(); it++) {
-        if (!it->empty()) {
-            return o > it->committed_offset();
+        if (!(*it)->empty()) {
+            return o > (*it)->committed_offset();
         }
     }
     return true;

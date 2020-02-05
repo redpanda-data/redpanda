@@ -7,11 +7,12 @@
 
 namespace storage {
 struct base_offset_ordering {
-    bool operator()(const segment& seg1, const segment& seg2) const {
-        return seg1.reader()->base_offset() < seg2.reader()->base_offset();
+    using type = std::unique_ptr<segment>;
+    bool operator()(const type& seg1, const type& seg2) const {
+        return seg1->reader()->base_offset() < seg2->reader()->base_offset();
     }
-    bool operator()(const segment& seg, model::offset value) const {
-        return seg.reader()->max_offset() < value;
+    bool operator()(const type& seg, model::offset value) const {
+        return seg->reader()->max_offset() < value;
     }
 };
 
@@ -20,12 +21,12 @@ log_set::log_set(log_set::underlying_t segs) noexcept(log_set::is_nothrow_v)
     std::sort(_handles.begin(), _handles.end(), base_offset_ordering{});
 }
 
-void log_set::add(segment&& h) {
+void log_set::add(std::unique_ptr<segment> h) {
     if (!_handles.empty()) {
         vassert(
-          h.reader()->base_offset() > _handles.back().reader()->max_offset(),
+          h->reader()->base_offset() > _handles.back()->reader()->max_offset(),
           "New segments must be monotonically increasing. Got:{} - Current:{}",
-          h,
+          *h,
           *this);
     }
     _handles.emplace_back(std::move(h));
@@ -34,12 +35,13 @@ void log_set::add(segment&& h) {
 void log_set::pop_back() { _handles.pop_back(); }
 
 template<typename Iterator>
-static inline bool is_offset_in_range(Iterator s, model::offset o) {
-    if (s->empty()) {
+static inline bool is_offset_in_range(Iterator ptr, model::offset o) {
+    auto& s = **ptr;
+    if (s.empty()) {
         return false;
     }
     // must use max_offset
-    return o <= s->reader()->max_offset() && o >= s->reader()->base_offset();
+    return o <= s.reader()->max_offset() && o >= s.reader()->base_offset();
 }
 
 template<typename Iterator>

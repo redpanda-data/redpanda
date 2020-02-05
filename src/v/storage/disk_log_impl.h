@@ -15,7 +15,7 @@ class disk_log_impl final : public log::impl {
 
 public:
     disk_log_impl(model::ntp, ss::sstring, log_manager&, log_set);
-    ~disk_log_impl() override = default;
+    ~disk_log_impl() override;
     ss::future<> close() final;
 
     const log_set& segments() const { return _segs; }
@@ -43,12 +43,12 @@ public:
         if (_segs.empty()) {
             return model::offset{};
         }
-        return _segs.front().reader()->base_offset();
+        return _segs.front()->reader()->base_offset();
     }
     model::offset max_offset() const final {
         for (auto it = _segs.rbegin(); it != _segs.rend(); it++) {
-            if (!it->empty()) {
-                return it->dirty_offset();
+            if (!(*it)->empty()) {
+                return (*it)->dirty_offset();
             }
         }
         return model::offset{};
@@ -60,15 +60,15 @@ public:
             // the next append() will truncate if greater
             return model::term_id{0};
         }
-        return _segs.back().term();
+        return _segs.back()->term();
     }
 
     std::optional<model::term_id> get_term(model::offset) const final;
 
     model::offset committed_offset() const final {
         for (auto it = _segs.rbegin(); it != _segs.rend(); it++) {
-            if (!it->empty()) {
-                return it->committed_offset();
+            if (!(*it)->empty()) {
+                return (*it)->committed_offset();
             }
         }
         return model::offset{};
@@ -87,6 +87,7 @@ private:
     ss::future<> do_truncate(model::offset);
 
 private:
+    bool _closed{false};
     log_manager& _manager;
     log_set _segs;
     storage::probe _probe;

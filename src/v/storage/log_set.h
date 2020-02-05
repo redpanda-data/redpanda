@@ -19,7 +19,10 @@ namespace storage {
  */
 class log_set {
 public:
-    using underlying_t = std::vector<segment>;
+    // type _must_ offer stable segment addresses
+    // for readers and writers taking refs.
+    using type = std::unique_ptr<segment>;
+    using underlying_t = std::vector<type>;
     using const_iterator = underlying_t::const_iterator;
     using reverse_iterator = underlying_t::reverse_iterator;
     using const_reverse_iterator = underlying_t::const_reverse_iterator;
@@ -28,6 +31,7 @@ public:
       = std::is_nothrow_move_constructible_v<underlying_t>;
 
     explicit log_set(underlying_t) noexcept(is_nothrow_v);
+    ~log_set() = default;
     log_set(log_set&&) noexcept = default;
     log_set& operator=(log_set&&) noexcept = default;
     log_set(const log_set&) = delete;
@@ -38,14 +42,14 @@ public:
     bool empty() const { return _handles.empty(); }
 
     /// must be monotonically increasing in base offset
-    void add(segment&&);
+    void add(std::unique_ptr<segment>);
 
     void pop_back();
 
     underlying_t release() && { return std::move(_handles); }
-    segment& back() { return _handles.back(); }
-    const segment& back() const { return _handles.back(); }
-    const segment& front() const { return _handles.front(); }
+    type& back() { return _handles.back(); }
+    const type& back() const { return _handles.back(); }
+    const type& front() const { return _handles.front(); }
 
     iterator lower_bound(model::offset o);
     const_iterator lower_bound(model::offset o) const;
