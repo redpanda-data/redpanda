@@ -12,8 +12,6 @@
 #include <seastar/core/sharded.hh>
 #include <seastar/util/bool_class.hh>
 
-#include <boost/container/flat_map.hpp>
-
 namespace raft {
 class replicate_entries_stm;
 class vote_stm;
@@ -29,7 +27,7 @@ public:
     enum class vote_state { follower, candidate, leader };
     using leader_cb_t = ss::noncopyable_function<void(group_id)>;
     using append_entries_cb_t
-      = ss::noncopyable_function<ss::future<>(model::record_batch_reader&&)>;
+      = ss::noncopyable_function<void(model::record_batch_reader&&)>;
 
     consensus(
       model::node_id,
