@@ -19,6 +19,7 @@ def run_subprocess(cmd, env=os.environ):
         sys.stderr.flush()
     except Exception as e:
         proc.kill()
+        logging.error(str(e))
         raise
     if return_code != 0:
         raise subprocess.CalledProcessError(return_code, cmd)
@@ -32,13 +33,22 @@ def _cleanup_whitespace(s):
 
 def raw_check_output(cmd):
     logging.debug("raw_check_output: %s", cmd)
-    ret = subprocess.check_output(cmd, shell=True, stderr=subprocess.DEVNULL)
-    if ret is None: return ret
+    try:
+        ret = subprocess.check_output(cmd,
+                                      shell=True,
+                                      stderr=subprocess.DEVNULL)
+    except Exception as e:
+        logging.error(str(e))
+        raise
+
+    if ret is None:
+        return ret
     return str(ret.decode("utf-8"))
 
 
 def run_oneline(cmd):
     logging.debug("run_oneline: %s", cmd)
     ret = raw_check_output(cmd)
-    if ret is None: return ret
+    if ret is None:
+        return ret
     return _cleanup_whitespace(ret)
