@@ -364,13 +364,15 @@ controller::create_topic_cfg_batch(const topic_configuration& cfg) {
 
 void controller::leadership_notification() {
     (void)with_gate(_bg, [this]() mutable {
-        if (unlikely(!_recovered)) {
-            _leadership_notification_pending = true;
-            return;
-        }
-        clusterlog.info("Local controller became a leader");
-        create_partition_allocator();
-        _leadership_cond.broadcast();
+        return with_semaphore(_raft_notification_sem, 1, [this] {
+            if (unlikely(!_recovered)) {
+                _leadership_notification_pending = true;
+                return;
+            }
+            clusterlog.info("Local controller became a leader");
+            create_partition_allocator();
+            _leadership_cond.broadcast();
+        });
     }).handle_exception([](std::exception_ptr e) {
         clusterlog.warn(
           "Exception thrown while processing leadership notification - {}", e);
@@ -402,7 +404,7 @@ void controller::on_raft0_entries_comitted(
   model::record_batch_reader&& reader) {
     (void)with_gate(_bg, [this, reader = std::move(reader)]() mutable {
         return with_semaphore(
-          _raft_append_notification_sem,
+          _raft_notification_sem,
           1,
           [this, reader = std::move(reader)]() mutable {
               if (_bg.is_closed()) {
