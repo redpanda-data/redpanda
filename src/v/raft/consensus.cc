@@ -36,15 +36,11 @@ consensus::consensus(
   , _leader_notification(std::move(cb))
   , _conf(std::move(initial_cfg))
   , _ctxlog(_self, group)
-  , _append_entries_notification(std::move(append_callback)) {
+  , _append_entries_notification(std::move(append_callback))
+  , _fstats({}) {
     _meta.group = group();
+    update_follower_stats(_conf);
     _vote_timeout.set_callback([this] { dispatch_vote(); });
-    for (auto& n : _conf.nodes) {
-        if (n.id() == _self) {
-            continue;
-        }
-        _follower_stats.emplace(n.id(), follower_index_metadata(n.id()));
-    }
 }
 void consensus::do_step_down() {
     _probe.step_down();
@@ -81,7 +77,7 @@ consensus::success_reply consensus::process_append_reply(
         return success_reply::yes;
     }
 
-    follower_index_metadata& idx = get_follower_stats(node);
+    follower_index_metadata& idx = _fstats.get(node);
     append_entries_reply& reply = r.value();
 
     if (unlikely(reply.group != _meta.group)) {
@@ -328,6 +324,7 @@ ss::future<> consensus::start() {
           .then([this](configuration_bootstrap_state st) {
               if (st.config_batches_seen() > 0) {
                   _conf = std::move(st.release_config());
+                  update_follower_stats(_conf);
               }
               _meta.prev_log_index = _log.max_offset();
               _meta.prev_log_term = get_term(_log.max_offset());
@@ -550,19 +547,9 @@ consensus::process_configurations(model::record_batch_reader&& rdr) {
     return details::extract_configuration(std::move(rdr))
       .then([this](std::optional<group_configuration> cfg) {
           if (cfg) {
+              update_follower_stats(*cfg);
               _conf = std::move(*cfg);
               _ctxlog.info("configuration updated {}", _conf);
-              for (auto& n : _conf.all_brokers()) {
-                  if (n.id() == _self) {
-                      // skip
-                      continue;
-                  }
-                  if (auto it = _follower_stats.find(n.id());
-                      it == _follower_stats.end()) {
-                      _follower_stats.emplace(
-                        n.id(), follower_index_metadata(n.id()));
-                  }
-              }
           }
       });
 }
@@ -624,20 +611,11 @@ model::term_id consensus::get_term(model::offset o) {
 }
 
 clock_type::time_point consensus::last_hbeat_timestamp(model::node_id id) {
-    return get_follower_stats(id).last_hbeat_timestamp;
+    return _fstats.get(id).last_hbeat_timestamp;
 }
 
 void consensus::update_node_hbeat_timestamp(model::node_id id) {
-    get_follower_stats(id).last_hbeat_timestamp = clock_type::now();
-}
-
-follower_index_metadata& consensus::get_follower_stats(model::node_id id) {
-    auto it = _follower_stats.find(id);
-    if (__builtin_expect(it == _follower_stats.end(), false)) {
-        throw std::invalid_argument(
-          fmt::format("Node {} is not a group {} follower", id, _meta.group));
-    }
-    return it->second;
+    _fstats.get(id).last_hbeat_timestamp = clock_type::now();
 }
 
 void consensus::maybe_update_leader_commit_idx() {
@@ -660,7 +638,7 @@ ss::future<> consensus::do_maybe_update_leader_commit_idx() {
     std::vector<model::offset> offsets;
     // self offsets
     offsets.push_back(_log.max_offset());
-    for (const auto& [_, f_idx] : _follower_stats) {
+    for (const auto& [_, f_idx] : _fstats) {
         offsets.push_back(f_idx.match_index);
     }
     std::sort(offsets.begin(), offsets.end());
@@ -704,5 +682,23 @@ consensus::maybe_update_follower_commit_idx(model::offset request_commit_idx) {
         }
     }
     return ss::make_ready_future<>();
+}
+
+void consensus::update_follower_stats(const group_configuration& cfg) {
+    for (auto& n : cfg.nodes) {
+        if (n.id() == _self || _fstats.contains(n.id())) {
+            continue;
+        }
+        _fstats.emplace(n.id(), follower_index_metadata(n.id()));
+    }
+
+    for (auto& n : cfg.learners) {
+        if (n.id() == _self || _fstats.contains(n.id())) {
+            continue;
+        }
+        auto idx = follower_index_metadata(n.id());
+        idx.is_learner = true;
+        _fstats.emplace(n.id(), idx);
+    }
 }
 } // namespace raft
