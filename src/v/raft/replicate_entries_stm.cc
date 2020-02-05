@@ -166,18 +166,15 @@ ss::future<result<replicate_result>> replicate_entries_stm::apply() {
           return ss::do_until(
             [this, majority] {
                 auto [success, failure] = partition_count();
-                _ctxlog.debug(
-                  "Partitions count s:{}, f:{}, m: {}",
+                _ctxlog.trace(
+                  "Replicate results [success:{}, failures:{}, majority: {}]",
                   success,
                   failure,
                   majority);
                 return success >= majority || failure >= majority;
             },
             [this] {
-                return ss::with_gate(_req_bg, [this] {
-                    _ctxlog.debug("Waiting for the next");
-                    return _sem.wait(1);
-                });
+                return ss::with_gate(_req_bg, [this] { return _sem.wait(1); });
             });
       })
       .then([this] {
@@ -213,7 +210,6 @@ ss::future<result<replicate_result>> replicate_entries_stm::apply() {
 }
 
 ss::future<> replicate_entries_stm::wait() {
-    _ctxlog.debug("WAIT replicate, gate: {}", _req_bg.get_count());
     return _req_bg.close();
 }
 
