@@ -485,6 +485,13 @@ consensus::do_append_entries(append_entries_request&& r) {
 
     // section 3
     if (r.meta.prev_log_index < last_log_offset) {
+        if (unlikely(r.meta.prev_log_index < _meta.commit_index)) {
+            reply.success = true;
+            _ctxlog.info("Stale append entries request processed, entry is "
+                         "already present");
+            return ss::make_ready_future<append_entries_reply>(
+              std::move(reply));
+        }
         auto truncate_at = details::next_offset(
           model::offset(r.meta.prev_log_index));
         _ctxlog.debug(
@@ -495,10 +502,6 @@ consensus::do_append_entries(append_entries_request&& r) {
           _log.max_offset(),
           truncate_at);
         _probe.append_request_log_truncate();
-        if (unlikely(r.meta.prev_log_index < _meta.commit_index)) {
-            return ss::make_exception_future<append_entries_reply>(
-              std::logic_error("Cannot truncate beyond commit index"));
-        }
         return _log.truncate(truncate_at)
           .then([this, r = std::move(r)]() mutable {
               _meta.prev_log_index = r.meta.prev_log_index;
