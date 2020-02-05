@@ -18,6 +18,7 @@ v_cc_library(
     replicate_entries_stm.cc
     vote_stm.cc
     recovery_stm.cc
+    follower_stats.cc
   DEPS
     v::storage
     raft_rpc

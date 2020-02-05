@@ -6,7 +6,6 @@
 #include "raft/logger.h"
 #include "raft/raftgen_service.h"
 
-#include <boost/exception/diagnostic_information.hpp>
 namespace raft {
 std::ostream& operator<<(std::ostream& o, const vote_stm::vmeta& m) {
     o << "{node: " << m.node << ", value: ";
@@ -148,12 +147,19 @@ ss::future<> vote_stm::do_vote() {
     }
     // wait until majority or all
     const size_t majority = cfg.majority();
+    const size_t all = cfg.nodes.size();
     return _sem.wait(majority)
-      .then([this, majority] {
+      .then([this, majority, all] {
           return ss::do_until(
-            [this, majority] {
+            [this, majority, all] {
                 auto [success, failure] = partition_count();
-                return success >= majority || failure >= majority;
+                _ctxlog.trace(
+                  "Vote results [success:{}, failures:{}, majority: {}]",
+                  success,
+                  failure,
+                  majority);
+                return success >= majority || failure >= majority
+                       || (success + failure) >= all;
             },
             [this] {
                 return with_gate(_vote_bg, [this] { return _sem.wait(1); });
