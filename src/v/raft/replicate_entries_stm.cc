@@ -170,17 +170,19 @@ ss::future<result<replicate_result>> replicate_entries_stm::apply() {
         (void)dispatch_one(m); // background
     }
     const size_t majority = _ptr->_conf.majority();
+    const size_t all = _ptr->_conf.nodes.size();
     return _sem.wait(majority)
-      .then([this, majority] {
+      .then([this, majority, all] {
           return ss::do_until(
-            [this, majority] {
+            [this, majority, all] {
                 auto [success, failure] = partition_count();
                 _ctxlog.trace(
                   "Replicate results [success:{}, failures:{}, majority: {}]",
                   success,
                   failure,
                   majority);
-                return success >= majority || failure >= majority;
+                return success >= majority || failure >= majority
+                       || (success + failure) >= all;
             },
             [this] {
                 return ss::with_gate(_req_bg, [this] { return _sem.wait(1); });
