@@ -86,7 +86,8 @@ private:
 
     ss::future<consensus_ptr> start_raft0();
     ss::future<> process_raft0_batch(model::record_batch);
-    ss::future<> process_raft0_cfg_update(model::record);
+    ss::future<> process_raft0_cfg_update(model::record, model::offset);
+    ss::future<> apply_raft0_cfg_update(raft::group_configuration);
     ss::future<> recover_record(model::record);
     ss::future<> recover_replica(
       model::ntp, raft::group_id, uint32_t, std::vector<model::broker_shard>);
@@ -140,5 +141,6 @@ private:
     ss::condition_variable _leadership_cond;
     ss::gate _bg;
     ss::semaphore _raft_append_notification_sem{1};
+    model::offset _raft0_cfg_offset;
 };
 } // namespace cluster
