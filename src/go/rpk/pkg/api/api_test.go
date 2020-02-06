@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"testing"
+	"time"
 	"vectorized/pkg/config"
 )
 
@@ -15,6 +16,7 @@ func TestSendMetrics(t *testing.T) {
 		NodeUuid:     "asdfas-asdf2w23sd-907asdf",
 		Organization: "io.vectorized",
 		NodeId:       1,
+		SentAt:       time.Now(),
 		MetricsPayload: MetricsPayload{
 			FreeMemory:    100,
 			FreeSpace:     200,
@@ -75,6 +77,7 @@ func TestSendEnvironment(t *testing.T) {
 			},
 			ErrorMsg: "tuner 2 failed",
 		},
+		SentAt: time.Now(),
 		Config: config.Config{
 			NodeUuid:  "abc123-hu234-234kh",
 			ClusterId: "cluster 1",
@@ -101,8 +104,7 @@ func TestSendEnvironment(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 		}))
 	defer ts.Close()
-
-	err = SendEnvironmentToUrl(body.EnvironmentPayload, body.Config, ts.URL)
+	err = SendEnvironmentToUrl(body, ts.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
