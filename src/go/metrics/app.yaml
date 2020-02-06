@@ -1,2 +1,6 @@
 runtime: go113
 main: ./pkg/cmd/metrics
+includes:
+  - env.yaml
+env_variables:
+  DB_MIGRATIONS_URL: 'file://./migrations'

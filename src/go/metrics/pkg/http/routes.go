@@ -1,11 +1,14 @@
 package http
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"metrics/pkg/storage"
 	"net/http"
 	"path"
 	"strings"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -16,8 +19,12 @@ type Server struct {
 	Env     *EnvHandler
 }
 
-type MetricsHandler struct{}
-type EnvHandler struct{}
+type MetricsHandler struct {
+	Repo storage.Repository
+}
+type EnvHandler struct {
+	Repo storage.Repository
+}
 
 func (s *Server) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 	var head string
@@ -44,6 +51,18 @@ func (h *MetricsHandler) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 		return
 	}
 	log.Info(string(bs))
+	metrics := &storage.Metrics{}
+	err = json.Unmarshal(bs, metrics)
+	if err != nil {
+		http.Error(res, err.Error(), http.StatusBadRequest)
+		return
+	}
+	metrics.ReceivedAt = time.Now()
+	err = h.Repo.SaveMetrics(*metrics)
+	if err != nil {
+		http.Error(res, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	res.WriteHeader(http.StatusOK)
 }
 
