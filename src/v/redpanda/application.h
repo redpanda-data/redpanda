@@ -42,7 +42,7 @@ public:
     ss::sharded<kafka::controller_dispatcher> cntrl_dispatcher;
     ss::sharded<cluster::shard_table> shard_table;
     ss::sharded<cluster::partition_manager> partition_manager;
-    std::unique_ptr<cluster::controller> controller;
+    ss::sharded<cluster::controller> controller;
 
 private:
     using deferred_actions

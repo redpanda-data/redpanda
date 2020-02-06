@@ -32,7 +32,7 @@ public:
           node_id, cores, kafka_port, rpc_port, seeds));
     }
 
-    cluster::controller& get_controller(int idx) {
+    ss::sharded<cluster::controller>& get_controller(int idx) {
         return _instances[idx]->get_controller();
     }
 

@@ -17,8 +17,8 @@ FIXTURE_TEST(
     persist_test_batches(single_topic_current_broker());
 
     auto& cntrl = get_controller();
-    cntrl.start().get0();
-    wait_for_leadership(cntrl);
+    cntrl.invoke_on_all(&cluster::controller::start).get();
+    wait_for_leadership(cntrl.local());
     // Check topics are in cache
     tests::cooperative_spin_wait_with_timeout(10s, [this] {
         auto t_md = get_local_cache().get_topic_metadata(
