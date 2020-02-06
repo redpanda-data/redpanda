@@ -13,13 +13,13 @@ FIXTURE_TEST(test_join_single_node, cluster_test_fixture) {
       {{.id = model::node_id{1},
         .addr = unresolved_address("127.0.0.1", 11000)}});
     auto& cntrl = get_controller(0);
-    cntrl.start().get0();
-    wait_for_leadership(cntrl);
+    cntrl.invoke_on_all(&cluster::controller::start).get();
+    wait_for_leadership(cntrl.local());
 
     auto brokers = get_local_cache(0).all_brokers();
 
     // single broker
-    BOOST_REQUIRE_EQUAL(cntrl.is_leader(), true);
+    BOOST_REQUIRE_EQUAL(cntrl.local().is_leader(), true);
     BOOST_REQUIRE_EQUAL(brokers.size(), 1);
     BOOST_REQUIRE_EQUAL(brokers[0]->id(), model::node_id(1));
 }

@@ -94,7 +94,7 @@ public:
                     mdc.add_topic(as.ntp.tp.topic);
                 })
                 .then([this, &as] {
-                    return app.controller->recover_assignment(as);
+                    return app.controller.local().recover_assignment(as);
                 });
           });
     }

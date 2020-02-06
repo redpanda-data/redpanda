@@ -38,7 +38,9 @@ controller::controller(
   , _highest_group_id(0) {}
 
 ss::future<> controller::start() {
-    verify_shard();
+    if (ss::engine().cpu_id() != controller::shard) {
+        return ss::make_ready_future<>();
+    }
     _pm.local().register_leadership_notification(
       [this](ss::lw_shared_ptr<partition> p) {
           if (p->ntp() == controller::ntp) {
@@ -98,13 +100,14 @@ ss::future<consensus_ptr> controller::start_raft0() {
 }
 
 ss::future<> controller::stop() {
-    verify_shard();
-    // in a multi-threaded app this would look like a deadlock waiting to
-    // happen, but it works in seastar: broadcast here only makes the waiters
-    // runnable. they won't actually have a chance to run until after the closed
-    // flag within the gate is set, ensuring that when they wake up they'll
-    // leave the gate after observing that it is closed.
-    _leadership_cond.broadcast();
+    if (ss::engine().cpu_id() == controller::shard) {
+        // in a multi-threaded app this would look like a deadlock waiting to
+        // happen, but it works in seastar: broadcast here only makes the
+        // waiters runnable. they won't actually have a chance to run until
+        // after the closed flag within the gate is set, ensuring that when they
+        // wake up they'll leave the gate after observing that it is closed.
+        _leadership_cond.broadcast();
+    }
     return _bg.close();
 }
 

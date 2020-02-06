@@ -72,8 +72,8 @@ public:
         st.stop().get0();
         _md_cache.stop().get0();
         _cli_cache.stop().get0();
-        if (_controller) {
-            _controller->stop().get0();
+        if (_controller_started) {
+            _controller.stop().get();
         }
     }
 
@@ -84,7 +84,7 @@ public:
           .get0();
     }
 
-    cluster::controller& get_controller() {
+    ss::sharded<cluster::controller>& get_controller() {
         config::data_directory_path data_dir_path{
           .path = std::filesystem::path(_base_dir)};
         set_configuration("data_directory", data_dir_path);
@@ -101,11 +101,14 @@ public:
             std::ref(st),
             std::ref(_cli_cache))
           .get0();
-        _controller = std::make_unique<cluster::controller>(
-          std::ref(_pm),
-          std::ref(st),
-          std::ref(_md_cache),
-          std::ref(_cli_cache));
+        _controller
+          .start(
+            std::ref(_pm),
+            std::ref(st),
+            std::ref(_md_cache),
+            std::ref(_cli_cache))
+          .get();
+        _controller_started = true;
 
         rpc::server_configuration rpc_cfg;
         auto rpc_sa = _current_node.rpc_address().resolve().get0();
@@ -126,11 +129,11 @@ public:
               s.register_service<cluster::service>(
                 ss::default_scheduling_group(),
                 ss::default_smp_service_group(),
-                *_controller);
+                std::ref(_controller));
           })
           .get();
         _rpc.invoke_on_all(&rpc::server::start).get();
-        return *_controller;
+        return _controller;
     }
 
     model::ntp make_ntp(const ss::sstring& topic, int32_t partition_id) {
@@ -263,7 +266,8 @@ private:
     ss::sharded<cluster::shard_table> st;
     ss::sharded<cluster::partition_manager> _pm;
     ss::sharded<rpc::server> _rpc;
-    std::unique_ptr<cluster::controller> _controller;
+    bool _controller_started = false;
+    ss::sharded<cluster::controller> _controller;
 };
 // Waits for controller to become a leader it poll every 200ms
 void wait_for_leadership(cluster::controller& cntrl) {

@@ -6,7 +6,7 @@ namespace kafka {
 class controller_dispatcher {
 public:
     controller_dispatcher(
-      cluster::controller& controller,
+      ss::sharded<cluster::controller>& controller,
       ss::smp_service_group ssg,
       ss::scheduling_group sg)
       : _controller(controller)
@@ -18,18 +18,18 @@ public:
     dispatch_to_controller(Func&& f) {
         return with_scheduling_group(
           _sg, [this, f = std::forward<Func>(f)]() mutable {
-              return ss::smp::submit_to(
+              return _controller.invoke_on(
                 cluster::controller::shard,
                 _ssg,
-                [this, f = std::forward<Func>(f)]() mutable {
-                    return f(_controller);
+                [f = std::forward<Func>(f)](cluster::controller& c) mutable {
+                    return f(c);
                 });
           });
     }
 
 private:
     // controller lives on core 0, do not use it directly
-    cluster::controller& _controller;
+    ss::sharded<cluster::controller>& _controller;
     ss::smp_service_group _ssg;
     ss::scheduling_group _sg;
 };
