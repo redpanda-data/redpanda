@@ -8,7 +8,7 @@ import (
 	"vectorized/pkg/config"
 )
 
-const defaultUrl = "https://metrics.redpanda.vectorized.io"
+const defaultUrl = "https://m.rp.vectorized.io"
 
 type MetricsPayload struct {
 	FreeMemory    uint64 `json:"freeMemory"`
