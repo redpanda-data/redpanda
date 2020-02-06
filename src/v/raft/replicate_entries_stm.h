@@ -97,6 +97,7 @@ private:
     std::vector<retry_meta> _replies;
     ss::gate _req_bg;
     raft_ctx_log _ctxlog;
+    ss::promise<> _self_append_done;
 };
 
 } // namespace raft
