@@ -183,3 +183,6 @@ tags
 
 # Configuration
 *.bk
+
+# metrics API
+src/go/metrics/env.yaml
