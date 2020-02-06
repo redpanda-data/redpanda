@@ -37,21 +37,68 @@ controller::controller(
   , _raft0(nullptr)
   , _highest_group_id(0) {}
 
+/**
+ * The controller is a sharded service. However, all of the primary state and
+ * computation occurs exclusively on the single controller::shard core. The
+ * service is sharded in order to safely coordinate communication between cores.
+ * Unless otherwise specificed, access to any controller::* is only valid on the
+ * controller::shard core.
+ *
+ * Shutdown
+ * ========
+ *
+ * On controller shutdown the controller::_bg gate on each core is closed.
+ *
+ * Leadership notification
+ * =======================
+ *
+ * Leadership notifications occur on the node where a raft group is assigned,
+ * and in general this is not the controller::shard core. In order control
+ * sequencing of operations on controller state, each leadership notification is
+ * forwarded to the controller::shard core for handling.
+ *
+ * Locking for leadership notifications is:
+ *
+ *          core-0                    core-i
+ *             │                         │
+ *             │                         ▼
+ *             │                 leadership notify
+ *             │                         │
+ *             │                         ▼
+ *             │                 with_gate(core-i)
+ *             ▼                         │
+ *     with_gate(core-0)  ◀──────────────┘
+ *             │
+ *             ▼
+ *     with_sem(core-0)
+ *             │
+ *              ─ ─ ─ ─ ─ ─ ─ ─ ─▶ metadata update
+ *               invoke_on_all
+ *
+ * It's important to grab the gate on both the source and destination cores of
+ * the x-core forwarding of the notification. Acquiring the gate on the source
+ * core keeps the service from being fully shutdown and destroyed. The
+ * continuation run on the destination core may encounter a closed gate when
+ * racing with shutdown, but successfully acquiring the gate will guarantee that
+ * the service instance on that core won't be fully shutdown while the
+ * continuation is running.
+ */
 ss::future<> controller::start() {
     if (ss::engine().cpu_id() != controller::shard) {
         return ss::make_ready_future<>();
     }
-    _pm.local().register_leadership_notification(
-      [this](ss::lw_shared_ptr<partition> p) {
-          if (p->ntp() == controller::ntp) {
-              verify_shard();
-              leadership_notification();
-          }
-      });
     return _pm
-      .invoke_on_all([](partition_manager& pm) {
-          // start the partition managers first...
-          return pm.start();
+      .invoke_on_all([this](partition_manager& pm) {
+          pm.register_leadership_notification(
+            [this](ss::lw_shared_ptr<partition> p) {
+                handle_leadership_notification(p->ntp());
+            });
+      })
+      .then([this] {
+          return _pm.invoke_on_all([](partition_manager& pm) {
+              // start the partition managers first...
+              return pm.start();
+          });
       })
       .then([this] {
           // add raft0 to shard table
@@ -76,7 +123,7 @@ ss::future<> controller::start() {
                 clusterlog.info("Finished recovering cluster state");
                 _recovered = true;
                 if (_leadership_notification_pending) {
-                    leadership_notification();
+                    handle_leadership_notification(controller::ntp);
                     _leadership_notification_pending = false;
                 }
             });
@@ -365,17 +412,41 @@ controller::create_topic_cfg_batch(const topic_configuration& cfg) {
     return std::move(builder).build();
 }
 
-void controller::leadership_notification() {
-    (void)with_gate(_bg, [this]() mutable {
-        return with_semaphore(_raft_notification_sem, 1, [this] {
-            if (unlikely(!_recovered)) {
-                _leadership_notification_pending = true;
-                return;
-            }
-            clusterlog.info("Local controller became a leader");
-            create_partition_allocator();
-            _leadership_cond.broadcast();
-        });
+ss::future<> controller::do_leadership_notification(model::ntp ntp) {
+    verify_shard();
+    // gate is reentrant making it ok if leadership notification originated on
+    // the the controller::shard core.
+    return with_gate(_bg, [this, ntp = std::move(ntp)]() mutable {
+        return with_semaphore(
+          _raft_notification_sem, 1, [this, ntp = std::move(ntp)]() mutable {
+              if (ntp == controller::ntp) {
+                  if (unlikely(!_recovered)) {
+                      _leadership_notification_pending = true;
+                      return ss::make_ready_future<>();
+                  }
+                  clusterlog.info("Local controller became a leader");
+                  create_partition_allocator();
+                  _leadership_cond.broadcast();
+                  return ss::make_ready_future<>();
+              } else {
+                  return _md_cache.invoke_on_all(
+                    [ntp, self = _self.id()](metadata_cache& md) {
+                        md.update_partition_leader(
+                          ntp.tp.topic, ntp.tp.partition, self);
+                    });
+              }
+          });
+    });
+}
+
+void controller::handle_leadership_notification(model::ntp ntp) {
+    // gate for this core's controller instance
+    (void)with_gate(_bg, [this, ntp = std::move(ntp)]() mutable {
+        // forward notification to controller's home core
+        return container().invoke_on(
+          controller::shard, [ntp = std::move(ntp)](controller& c) mutable {
+              return c.do_leadership_notification(std::move(ntp));
+          });
     }).handle_exception([](std::exception_ptr e) {
         clusterlog.warn(
           "Exception thrown while processing leadership notification - {}", e);
