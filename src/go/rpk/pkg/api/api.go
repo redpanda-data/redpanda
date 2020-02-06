@@ -5,10 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 	"vectorized/pkg/config"
 )
 
-const defaultUrl = "https://metrics.redpanda.vectorized.io"
+const defaultUrl = "https://m.rp.vectorized.io"
 
 type MetricsPayload struct {
 	FreeMemory    uint64 `json:"freeMemory"`
@@ -38,20 +39,23 @@ type TunerPayload struct {
 
 type metricsBody struct {
 	MetricsPayload
-	NodeUuid     string `json:"nodeUuid"`
-	Organization string `json:"organization"`
-	ClusterId    string `json:"clusterId"`
-	NodeId       int    `json:"nodeId"`
+	SentAt       time.Time `json:"sentAt"`
+	NodeUuid     string    `json:"nodeUuid"`
+	Organization string    `json:"organization"`
+	ClusterId    string    `json:"clusterId"`
+	NodeId       int       `json:"nodeId"`
 }
 
 type environmentBody struct {
 	EnvironmentPayload
+	SentAt time.Time     `json:"sentAt"`
 	Config config.Config `json:"config"`
 }
 
 func SendMetrics(p MetricsPayload, conf config.Config) error {
 	b := metricsBody{
 		p,
+		time.Now(),
 		conf.NodeUuid,
 		conf.Organization,
 		conf.ClusterId,
@@ -61,9 +65,9 @@ func SendMetrics(p MetricsPayload, conf config.Config) error {
 }
 
 func SendEnvironment(env EnvironmentPayload, conf config.Config) error {
+	b := environmentBody{env, time.Now(), conf}
 	return SendEnvironmentToUrl(
-		env,
-		conf,
+		b,
 		fmt.Sprintf("%s%s", defaultUrl, "/env"),
 	)
 }
@@ -90,10 +94,7 @@ func SendMetricsToUrl(b metricsBody, url string) error {
 	return nil
 }
 
-func SendEnvironmentToUrl(
-	env EnvironmentPayload, conf config.Config, url string,
-) error {
-	body := environmentBody{env, conf}
+func SendEnvironmentToUrl(body environmentBody, url string) error {
 	bs, err := json.Marshal(body)
 	if err != nil {
 		return err
