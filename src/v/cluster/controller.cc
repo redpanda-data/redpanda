@@ -353,7 +353,10 @@ ss::future<std::vector<topic_result>> controller::create_topics(
               t_cfg.topic, topic_error_code::invalid_partitions);
         }
     }
-
+    if (batches.empty()) {
+        return ss::make_ready_future<std::vector<topic_result>>(
+          std::move(errors));
+    }
     // Do append entries to raft0 logs
     auto f = _raft0
                ->replicate(
