@@ -75,7 +75,7 @@ private:
         } else {
             for (auto& record : batch) {
                 _wr.write_varint(record.size_bytes());
-                _wr.write(int8_t(0));
+                _wr.write(int8_t(record.attributes().value()));
                 _wr.write_varint(record.timestamp_delta());
                 _wr.write_varint(record.offset_delta());
                 _wr.write_varint(record.key_size());
