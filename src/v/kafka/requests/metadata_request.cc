@@ -212,7 +212,7 @@ metadata_response::topic metadata_response::topic::make_from_topic_metadata(
           metadata_response::partition p;
           p.err_code = error_code::none;
           p.index = p_md.id;
-          p.leader = p_md.leader_node;
+          p.leader = p_md.leader_node.value_or(model::node_id(-1));
           p.leader_epoch = 0;
           p.replica_nodes = std::move(replicas);
           p.offline_replicas = {};

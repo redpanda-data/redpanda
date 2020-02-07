@@ -101,7 +101,7 @@ struct partition_metadata {
       : id(p) {}
     partition_id id;
     std::vector<broker_shard> replicas;
-    model::node_id leader_node;
+    std::optional<model::node_id> leader_node;
 };
 
 struct topic_metadata {
