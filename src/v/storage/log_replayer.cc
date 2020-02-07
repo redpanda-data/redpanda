@@ -29,15 +29,32 @@ public:
       size_t physical_base_offset,
       size_t size_on_disk) override {
         const auto filesize = _seg->reader()->file_size();
-        if (
-          // the following prevents malformed payload; see
-          // log_replay_test.cc::malformed_segment
-          header.base_offset() < 0 || size_on_disk >= max_segment_size
-          || size_on_disk > filesize || !header.attrs.is_valid_compression()
-          || (header.size_bytes + physical_base_offset) > filesize) {
+        if (header.base_offset() < 0) {
             _cfg.last_offset = {};
-            stlog.info("checksumming_consumer::consume_batch_start:: invalid "
-                       "record batch header. Stopping parsing");
+            stlog.info(
+              "Invalid base offset detected:{}, stopping parser",
+              header.base_offset());
+            return stop_parser::yes;
+        }
+        if (size_on_disk > max_segment_size) {
+            _cfg.last_offset = {};
+            stlog.info(
+              "Invalid batch size:{}, file_size:{}, stopping parser",
+              size_on_disk,
+              filesize);
+            return stop_parser::yes;
+        }
+        if (!header.attrs.is_valid_compression()) {
+            _cfg.last_offset = {};
+            stlog.info("Invalid compression:{}. stopping parser", header.attrs);
+            return stop_parser::yes;
+        }
+        if ((header.size_bytes + physical_base_offset) > filesize) {
+            _cfg.last_offset = {};
+            stlog.info(
+              "offset + batch_size:{} exceeds filesize:{}, Stopping parsing",
+              (header.size_bytes + physical_base_offset),
+              header);
             return stop_parser::yes;
         }
         _seg->oindex()->maybe_track(
