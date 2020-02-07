@@ -1,5 +1,6 @@
 #pragma once
 #include "bytes/iobuf.h"
+#include "kafka/requests/kafka_batch_adapter.h"
 #include "kafka/requests/response_writer.h"
 #include "model/record.h"
 #include "seastarx.h"
@@ -34,12 +35,25 @@ public:
 
 private:
     void write_batch(model::record_batch&& batch) {
-        // adjust the batch size to match the kafka wire size
-        auto size = batch.size_bytes()
-                    - sizeof(model::record_batch_header::base_offset)
-                    - sizeof(model::record_batch_type::type)
-                    + sizeof(int32_t) // partition leader epoch
-                    + sizeof(int8_t); // magic
+        /*
+         * calculate batch size expected by kafka client.
+         *
+         * 1. records_size = batch.size_bytes() - RP header size;
+         * 2. kafka_total = records_size + kafka header size;
+         * 3. batch_size = kafka_total - sizeof(offset) - sizeof(length);
+         *
+         * The records size in (1) is computed correctly because RP batch size
+         * is defined as the RP header size plus the size of the records. Unlike
+         * the kafka batch size described below, RP batch size includes the size
+         * of the length field itself.
+         *
+         * The adjustment in (3) is because the batch size given in the kafka
+         * header does not include the offset preceeding the length field nor
+         * the size of the length field itself.
+         */
+        auto size = batch.size_bytes() - model::packed_record_batch_header_size
+                    + internal::kafka_header_size - sizeof(int64_t)
+                    - sizeof(int32_t);
 
         _wr.write(int64_t(batch.base_offset()));
         _wr.write(int32_t(size)); // batch length
