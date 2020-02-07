@@ -233,8 +233,11 @@ public:
      * next available batch in the cache. This offset may then be used to
      * optimize for returning to the cache to satisfy reads.
      */
-    read_result
-    read(model::offset offset, model::offset max_offset, size_t max_bytes);
+    read_result read(
+      model::offset offset,
+      model::offset max_offset,
+      const std::vector<model::record_batch_type>& type_filter,
+      size_t max_bytes);
 
     /**
      * Removes all batches that _may_ contain the specified offset.
