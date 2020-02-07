@@ -32,8 +32,40 @@ func set(fs afero.Fs) *cobra.Command {
 		Use:   "set <field>",
 		Short: "Set configuration values, such as the node IDs or the list of seed servers",
 	}
+	c.AddCommand(statsId(fs))
 	c.AddCommand(id(fs))
 	c.AddCommand(seedNodes(fs))
+	return c
+}
+
+func statsId(fs afero.Fs) *cobra.Command {
+	var (
+		org       string
+		clusterId string
+	)
+	c := &cobra.Command{
+		Use:   "stats-id [FLAGS]",
+		Short: "Set this node's ID",
+		RunE: func(c *cobra.Command, args []string) error {
+			_, conf, err := loadConfig(c, fs)
+			if err != nil {
+				return err
+			}
+			conf.Organization = org
+			conf.ClusterId = clusterId
+			return config.WriteConfig(fs, conf, conf.ConfigFile)
+		},
+	}
+	c.Flags().StringVar(&org,
+		"organization",
+		"",
+		"Your organization's name. It's recommended to use a reverse domain.",
+	)
+	c.Flags().StringVar(&clusterId,
+		"cluster-id",
+		"",
+		"The cluster name. Can be your team's name.",
+	)
 	return c
 }
 
