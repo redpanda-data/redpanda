@@ -102,8 +102,10 @@ private:
     std::optional<model::record_batch>
     create_topic_cfg_batch(const topic_configuration&);
     void end_of_stream();
-    ss::future<> do_leadership_notification(model::ntp);
-    void handle_leadership_notification(model::ntp);
+    ss::future<>
+      do_leadership_notification(model::ntp, std::optional<model::node_id>);
+    void
+      handle_leadership_notification(model::ntp, std::optional<model::node_id>);
     ss::future<> update_brokers_cache(std::vector<model::broker>);
     ss::future<>
       update_clients_cache(std::vector<broker_ptr>, std::vector<broker_ptr>);

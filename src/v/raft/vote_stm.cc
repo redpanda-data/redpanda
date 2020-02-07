@@ -115,6 +115,7 @@ ss::future<> vote_stm::vote() {
                  // 5.2.1
                  _ptr->_vstate = consensus::vote_state::candidate;
                  _ptr->_leader_id = std::nullopt;
+                 _ptr->trigger_leadership_notification();
                  // 5.2.1.2
                  m.term = m.term + 1;
 
@@ -206,8 +207,8 @@ ss::future<> vote_stm::process_replies() {
 
     _ctxlog.info("became the leader term:{}", _ptr->_meta.term);
 
-    return replicate_config_as_new_leader().finally(
-      [this] { _ptr->_leader_notification(group_id(_ptr->_meta.group)); });
+    _ptr->trigger_leadership_notification();
+    return replicate_config_as_new_leader();
 }
 
 ss::future<> vote_stm::replicate_config_as_new_leader() {

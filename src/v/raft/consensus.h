@@ -25,7 +25,7 @@ public:
         model::term_id term{0};
     };
     enum class vote_state { follower, candidate, leader };
-    using leader_cb_t = ss::noncopyable_function<void(group_id)>;
+    using leader_cb_t = ss::noncopyable_function<void(leadership_status)>;
     using append_entries_cb_t
       = ss::noncopyable_function<void(model::record_batch_reader&&)>;
 
@@ -144,6 +144,7 @@ private:
     void update_node_hbeat_timestamp(model::node_id);
 
     void update_follower_stats(const group_configuration&);
+    void trigger_leadership_notification();
     // args
     model::node_id _self;
     timeout_jitter _jit;
