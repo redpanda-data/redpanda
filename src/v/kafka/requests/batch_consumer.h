@@ -70,7 +70,8 @@ private:
         _wr.write(int32_t(batch.record_count()));
 
         if (batch.compressed()) {
-            _wr.write(std::move(batch).release());
+            // the records blob size is inferred from the batch size
+            _wr.write_direct(std::move(batch).release());
         } else {
             for (auto& record : batch) {
                 _wr.write_varint(record.size_bytes());
