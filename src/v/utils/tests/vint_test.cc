@@ -21,7 +21,7 @@ std::mt19937 random_generator() {
     return std::mt19937(seed);
 }
 
-void check_roundtrip_sweep(std::size_t count) {
+void check_roundtrip_sweep(int count) {
     auto verify_round_trip = [](vint::value_type value) {
         static bytes encoding_buffer(
           bytes::initialized_later(), vint::max_length);
@@ -33,7 +33,7 @@ void check_roundtrip_sweep(std::size_t count) {
     };
     std::uniform_int_distribution<vint::value_type> distribution;
     auto rng = random_generator();
-    for (std::size_t i = 0; i < count; ++i) {
+    for (int i = -100; i < count; ++i) {
         verify_round_trip(distribution(rng));
     }
 }
