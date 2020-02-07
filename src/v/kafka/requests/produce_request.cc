@@ -166,6 +166,7 @@ static ss::future<produce_response::partition> partition_append(
               if (r) {
                   p.base_offset = model::offset(
                     r.value().last_offset() - num_records);
+                  p.error = error_code::none;
               } else {
                   p.error = error_code::unknown_server_error;
               }
