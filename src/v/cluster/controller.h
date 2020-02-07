@@ -47,7 +47,9 @@ public:
 
     bool is_leader() const { return _recovered && _raft0->is_leader(); }
 
-    model::node_id get_leader_id() const { return _raft0->config().leader_id; }
+    std::optional<model::node_id> get_leader_id() const {
+        return _raft0->get_leader_id();
+    }
 
     ss::future<> process_join_request(model::broker broker);
 

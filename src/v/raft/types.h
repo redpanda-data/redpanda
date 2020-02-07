@@ -46,7 +46,6 @@ struct group_configuration {
     using iterator = brokers_t::iterator;
     using const_iterator = brokers_t::const_iterator;
 
-    model::node_id leader_id;
     brokers_t nodes;
     brokers_t learners;
     group_configuration() = default;
@@ -217,9 +216,7 @@ operator<<(std::ostream& o, const heartbeat_reply& r) {
 
 static inline std::ostream&
 operator<<(std::ostream& o, const group_configuration& c) {
-    o << "{group_configuration:[";
-    o << "leader_id: " << c.leader_id;
-    o << ", nodes: [";
+    o << "{group_configuration: nodes: [";
     for (auto& n : c.nodes) {
         o << n.id();
     }
