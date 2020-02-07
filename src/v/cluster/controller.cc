@@ -611,7 +611,13 @@ ss::futurize_t<std::result_of_t<Func(controller_client_protocol&)>>
 controller::dispatch_rpc_to_leader(Func&& f) {
     using ret_t
       = ss::futurize<std::result_of_t<Func(controller_client_protocol&)>>;
-    auto leader = _raft0->config().find_in_nodes(_raft0->config().leader_id);
+    auto leader_id = get_leader_id();
+    if (!leader_id) {
+        return ret_t::make_exception_future(
+          std::runtime_error("There is no leader controller in cluster"));
+    }
+    auto leader = _raft0->config().find_in_nodes(*leader_id);
+
     if (leader == _raft0->config().nodes.end()) {
         return ret_t::make_exception_future(
           std::runtime_error("There is no leader controller in cluster"));
