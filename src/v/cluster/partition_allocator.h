@@ -102,6 +102,8 @@ public:
         _machines.emplace(n->id(), std::move(n));
     }
 
+    bool contains_node(model::node_id n) { return _machines.contains(n); }
+
     /// best effort placement.
     /// kafka/common/protocol/Errors.java does not have a way to
     /// represent failed allocation yet. Up to caller to interpret

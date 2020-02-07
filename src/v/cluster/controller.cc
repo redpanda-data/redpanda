@@ -3,7 +3,9 @@
 #include "cluster/cluster_utils.h"
 #include "cluster/controller_service.h"
 #include "cluster/logger.h"
+#include "cluster/partition_manager.h"
 #include "cluster/simple_batch_builder.h"
+#include "cluster/types.h"
 #include "config/configuration.h"
 #include "likely.h"
 #include "model/record_batch_reader.h"
@@ -192,6 +194,9 @@ ss::future<> controller::apply_raft0_cfg_update(raft::group_configuration cfg) {
     auto old_list = _md_cache.local().all_brokers();
     std::vector<broker_ptr> new_list;
     auto all_new_nodes = cfg.all_brokers();
+    if (is_leader()) {
+        update_partition_allocator(all_new_nodes);
+    }
     new_list.reserve(all_new_nodes.size());
     std::transform(
       std::begin(all_new_nodes),
@@ -477,6 +482,17 @@ void controller::create_partition_allocator() {
     }
     _allocator->update_allocation_state(
       _md_cache.local().all_topics_metadata());
+}
+
+void controller::update_partition_allocator(
+  const std::vector<model::broker>& brokers) {
+    for (auto& b : brokers) {
+        // FIXME: handle removing brokers
+        if (!_allocator->contains_node(b.id())) {
+            _allocator->register_node(std::make_unique<allocation_node>(
+              allocation_node(b.id(), b.properties().cores, {})));
+        }
+    }
 }
 
 ss::future<>
