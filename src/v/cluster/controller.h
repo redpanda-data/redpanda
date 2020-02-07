@@ -110,6 +110,7 @@ private:
     ss::future<>
       update_clients_cache(std::vector<broker_ptr>, std::vector<broker_ptr>);
     void create_partition_allocator();
+    void update_partition_allocator(const std::vector<model::broker>&);
     allocation_node local_allocation_node();
     void on_raft0_entries_comitted(model::record_batch_reader&&);
 
