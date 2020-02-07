@@ -11,15 +11,6 @@
 
 namespace storage {
 
-bool skipping_consumer::skip_batch_type(model::record_batch_type type) {
-    auto& type_filter = _reader._config.type_filter;
-    if (type_filter.empty()) {
-        return false;
-    }
-    auto it = std::find(std::cbegin(type_filter), std::cend(type_filter), type);
-    return it == std::cend(type_filter);
-}
-
 batch_consumer::consume_result skipping_consumer::consume_batch_start(
   model::record_batch_header header,
   size_t physical_base_offset,
@@ -30,7 +21,7 @@ batch_consumer::consume_result skipping_consumer::consume_batch_start(
     if (header.base_offset() > _reader._config.max_offset) {
         return stop_parser::yes;
     }
-    if (skip_batch_type(header.type)) {
+    if (!filter_batch_type(_reader._config.type_filter, header.type)) {
         return skip_batch::yes;
     }
     if (header.attrs.compression() == model::compression::none) {
@@ -112,7 +103,10 @@ log_segment_batch_reader::read(model::timeout_clock::time_point timeout) {
      * end is either the configured max offset or the end of the segment.
      */
     auto cache_read = _seg.cache_get(
-      _config.start_offset, _config.max_offset, max_buffer_size);
+      _config.start_offset,
+      _config.max_offset,
+      _config.type_filter,
+      max_buffer_size);
     if (!cache_read.batches.empty()) {
         _config.bytes_consumed += cache_read.memory_usage;
         _probe.add_bytes_read(cache_read.memory_usage);

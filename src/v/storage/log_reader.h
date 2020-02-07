@@ -38,8 +38,6 @@ public:
     stop_parser consume_batch_end() override;
 
 private:
-    bool skip_batch_type(model::record_batch_type type);
-
     log_segment_batch_reader& _reader;
     model::record_batch_header _header;
     model::record_batch::records_type _records;
@@ -102,5 +100,15 @@ private:
     probe& _probe;
     bool _seen_first_batch;
 };
+
+static inline bool filter_batch_type(
+  const std::vector<model::record_batch_type>& filter,
+  const model::record_batch_type batch_type) {
+    if (filter.empty()) {
+        return true;
+    }
+    return std::find(filter.cbegin(), filter.cend(), batch_type)
+           != filter.cend();
+}
 
 } // namespace storage
