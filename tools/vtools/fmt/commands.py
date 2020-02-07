@@ -210,7 +210,7 @@ def _fmt(vconfig, exts, cmd, args, ref, check):
 
 def _git_files(vconfig, exts, ref):
     if ref:
-        cmd = f'git diff --name-only {ref}'
+        cmd = f'git diff --diff-filter=AM --name-only {ref}'
     else:
         cmd = 'git ls-files --full-name'
     ret = shell.raw_check_output(cmd)
