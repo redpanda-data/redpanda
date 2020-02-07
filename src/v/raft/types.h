@@ -153,6 +153,15 @@ struct [[gnu::packed]] vote_reply {
     ss::unaligned<bool> log_ok = false;
 };
 
+/// This structure is used by consensus to notify other systems about group
+/// leadership changes.
+struct leadership_status {
+    // Group for which leader have changed
+    group_id group;
+    // Empty when there is no known leader in the group
+    std::optional<model::node_id> current_leader;
+};
+
 struct replicate_result {
     model::offset last_offset;
 };
