@@ -44,6 +44,83 @@ func getValidConfig() config.Config {
 	}
 }
 
+func TestSetStatsId(t *testing.T) {
+	configPath := "/etc/redpanda/redpanda.yaml"
+	tests := []struct {
+		name         string
+		organization string
+		clusterId    string
+		args         []string
+		expectErr    bool
+	}{
+		{
+			name:         "it should set the organization, ",
+			organization: "io.vectorized",
+		},
+		{
+			name:      "it should set the cluster ID",
+			clusterId: "test",
+		},
+		{
+			name:      "it should fail if the given path to the config doesn't exist",
+			args:      []string{"--redpanda-cfg", "/does/not/exist.yml"},
+			expectErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fs := afero.NewMemMapFs()
+			bs, err := yaml.Marshal(getValidConfig())
+			if err != nil {
+				t.Error(err.Error())
+			}
+			err = afero.WriteFile(fs, configPath, bs, 0644)
+			if err != nil {
+				t.Error(err.Error())
+			}
+
+			c := cmd.NewConfigCommand(fs)
+			args := []string{"set", "stats-id"}
+			if tt.organization != "" {
+				args = append(args, "--organization", tt.organization)
+			}
+			if tt.clusterId != "" {
+				args = append(args, "--cluster-id", tt.clusterId)
+			}
+			c.SetArgs(append(args, tt.args...))
+			err = c.Execute()
+			if tt.expectErr {
+				if err == nil {
+					t.Fatal("expected an error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("got an unexpected error: %v", err.Error())
+			}
+			conf, err := config.ReadConfigFromPath(fs, configPath)
+			if err != nil {
+				t.Fatalf("got an unexpected error while reading %s: %v", configPath, err)
+			}
+			if fmt.Sprint(conf.Organization) != tt.organization {
+				t.Errorf(
+					"got %v, expected %v",
+					conf.Organization,
+					tt.organization,
+				)
+			}
+			if fmt.Sprint(conf.ClusterId) != tt.clusterId {
+				t.Errorf(
+					"got %v, expected %v",
+					conf.ClusterId,
+					tt.clusterId,
+				)
+			}
+		})
+	}
+}
+
 func TestSetId(t *testing.T) {
 	configPath := "/etc/redpanda/redpanda.yaml"
 	tests := []struct {
