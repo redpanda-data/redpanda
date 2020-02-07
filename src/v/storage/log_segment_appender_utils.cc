@@ -3,7 +3,6 @@
 #include "model/record.h"
 #include "model/timestamp.h"
 #include "reflection/adl.h"
-#include "storage/constants.h"
 #include "storage/logger.h"
 #include "utils/vint.h"
 #include "vassert.h"
@@ -18,13 +17,12 @@
 namespace storage {
 
 iobuf disk_header_to_iobuf(const model::record_batch_header& h) {
-    constexpr size_t hdr_size = packed_header_size + sizeof(h.size_bytes);
     iobuf b;
     reflection::serialize_cpu_to_le(
       b,
       h.size_bytes,
-      h.base_offset,
-      h.type,
+      h.base_offset(),
+      h.type(),
       h.crc,
       h.attrs.value(),
       h.last_offset_delta,
@@ -35,9 +33,9 @@ iobuf disk_header_to_iobuf(const model::record_batch_header& h) {
       h.base_sequence,
       h.record_count);
     vassert(
-      b.size_bytes() == hdr_size,
+      b.size_bytes() == model::packed_record_batch_header_size,
       "disk headers must be of static size:{}, but got{}",
-      hdr_size,
+      model::packed_record_batch_header_size,
       b.size_bytes());
     return b;
 }

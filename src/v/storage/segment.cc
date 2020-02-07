@@ -79,6 +79,12 @@ ss::future<append_result> segment::append(model::record_batch b) {
         return write(*_appender, b).then([this, &b, start_physical_offset] {
             _dirty_offset = b.last_offset();
             const auto end_physical_offset = _appender->file_byte_offset();
+            vassert(
+              end_physical_offset
+                == start_physical_offset + b.header().size_bytes,
+              "size must be deterministic: end_offset:{}, expected:{}",
+              end_physical_offset,
+              start_physical_offset + b.header().size_bytes);
             const auto byte_size = end_physical_offset - start_physical_offset;
             // index the write
             _oidx->maybe_track(

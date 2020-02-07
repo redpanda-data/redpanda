@@ -6,7 +6,6 @@
 #include "model/record_batch_reader.h"
 #include "model/record_utils.h"
 #include "random/generators.h"
-#include "storage/constants.h"
 #include "utils/vint.h"
 
 #include <random>
@@ -83,7 +82,7 @@ make_random_batch(model::offset o, int num_records, bool allow_compression) {
       .base_sequence = 0,
       .record_count = num_records};
 
-    auto size = packed_header_size;
+    auto size = model::packed_record_batch_header_size;
     model::record_batch::records_type records;
     if (header.attrs.compression() != model::compression::none) {
         auto blob = make_iobuf(get_int(1024, 4096));
