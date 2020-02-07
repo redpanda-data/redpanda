@@ -17,8 +17,8 @@ public:
       ss::sharded<cluster::shard_table>& nlc,
       ss::sharded<rpc::connection_cache>& clients);
 
-    using leader_cb_t
-      = ss::noncopyable_function<void(ss::lw_shared_ptr<partition>)>;
+    using leader_cb_t = ss::noncopyable_function<void(
+      ss::lw_shared_ptr<partition>, std::optional<model::node_id>)>;
 
     inline ss::lw_shared_ptr<partition> get(const model::ntp& ntp) const {
         return _ntp_table.find(ntp)->second;
@@ -50,7 +50,7 @@ public:
     }
 
 private:
-    void trigger_leadership_notification(raft::group_id);
+    void trigger_leadership_notification(raft::leadership_status);
     ss::lw_shared_ptr<raft::consensus> make_consensus(
       raft::group_id,
       std::vector<model::broker>,

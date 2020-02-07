@@ -89,8 +89,15 @@ public:
                 ss::default_priority_class(),
                 std::chrono::seconds(1),
                 _clients,
-                [this](raft::group_id g) {
-                    tronlog.info("Took leadership of: {}", g);
+                [this](raft::leadership_status st) {
+                    if (!st.current_leader) {
+                        tronlog.info("No leader in group {}", st.group);
+                        return;
+                    }
+                    tronlog.info(
+                      "New leader {} elected in group {}",
+                      st.current_leader.value(),
+                      st.group);
                 });
               _hbeats.register_group(_consensus);
               return _consensus->start();
