@@ -23,7 +23,7 @@ class connection_cache;
 namespace cluster {
 
 // all ops must belong to shard0
-class controller final {
+class controller final : public ss::peering_sharded_service<controller> {
 public:
     static constexpr const ss::shard_id shard = 0;
     static constexpr const raft::group_id group{0};
@@ -100,7 +100,8 @@ private:
     std::optional<model::record_batch>
     create_topic_cfg_batch(const topic_configuration&);
     void end_of_stream();
-    void leadership_notification();
+    ss::future<> do_leadership_notification(model::ntp);
+    void handle_leadership_notification(model::ntp);
     ss::future<> update_brokers_cache(std::vector<model::broker>);
     ss::future<>
       update_clients_cache(std::vector<broker_ptr>, std::vector<broker_ptr>);

@@ -171,9 +171,13 @@ void application::wire_up_services() {
     construct_service(metadata_cache).get();
 
     syschecks::systemd_message("Creating cluster::controller");
-    controller = std::make_unique<cluster::controller>(
-      partition_manager, shard_table, metadata_cache, _raft_connection_cache);
-    _deferred.emplace_back([this] { controller->stop().get(); });
+    construct_service(
+      controller,
+      std::ref(partition_manager),
+      std::ref(shard_table),
+      std::ref(metadata_cache),
+      std::ref(_raft_connection_cache))
+      .get();
 
     // group membership
     syschecks::systemd_message("Creating partition manager");
@@ -209,7 +213,7 @@ void application::wire_up_services() {
     syschecks::systemd_message("Building kafka controller dispatcher");
     construct_service(
       cntrl_dispatcher,
-      std::ref(*controller),
+      std::ref(controller),
       _smp_groups.kafka_smp_sg(),
       _scheduling_groups.kafka_sg())
       .get();
@@ -217,7 +221,7 @@ void application::wire_up_services() {
 
 void application::start() {
     syschecks::systemd_message("Starting controller");
-    controller->start().get();
+    controller.invoke_on_all(&cluster::controller::start).get();
 
     syschecks::systemd_message("Starting RPC");
     _rpc
@@ -231,7 +235,7 @@ void application::start() {
           s.register_service<cluster::service>(
             _scheduling_groups.cluster_sg(),
             _smp_groups.cluster_smp_sg(),
-            *controller);
+            std::ref(controller));
       })
       .get();
     auto& conf = config::shard_local_cfg();
