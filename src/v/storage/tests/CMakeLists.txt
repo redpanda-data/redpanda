@@ -28,16 +28,6 @@ rp_test(
   ARGS "-- -c 1"
 )
 
-# FIXME(agallego)
-# rp_test(
-#   UNIT_TEST
-#   BINARY_NAME log_writer_test
-#   SOURCES log_writer_test.cc
-#   LIBRARIES Seastar::seastar_testing v::storage_test_utils
-#   ARGS "-- -c 1"
-#   LABELS storage
-# )
-
 rp_test(
   UNIT_TEST
   BINARY_NAME parser_test
