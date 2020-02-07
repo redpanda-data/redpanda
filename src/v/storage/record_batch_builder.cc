@@ -3,7 +3,6 @@
 #include "model/record.h"
 #include "model/record_utils.h"
 #include "model/timeout_clock.h"
-#include "storage/constants.h"
 
 namespace storage {
 
@@ -16,7 +15,7 @@ record_batch_builder::~record_batch_builder() {}
 
 model::record_batch record_batch_builder::build() && {
     int32_t offset_delta = 0;
-    uint32_t batch_size = storage::packed_header_size;
+    int32_t batch_size = model::packed_record_batch_header_size;
     using ms = std::chrono::milliseconds;
     auto now_ts = std::chrono::duration_cast<ms>(
                     model::timeout_clock::now().time_since_epoch())

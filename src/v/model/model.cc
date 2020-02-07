@@ -92,18 +92,17 @@ operator<<(std::ostream& o, const record_batch_attributes& attrs) {
              << ",type=" << attrs.timestamp_type() << "}";
 }
 
-std::ostream& operator<<(std::ostream& os, const record_batch_header& header) {
-    return ss::fmt_print(
-      os,
-      "{{header: size_bytes={}, base_offset={}, crc={}, attrs={}, "
-      "last_offset_delta={}, first_timestamp={}, max_timestamp={}}}",
-      header.size_bytes,
-      header.base_offset,
-      header.crc,
-      header.attrs,
-      header.last_offset_delta,
-      header.first_timestamp,
-      header.max_timestamp);
+std::ostream& operator<<(std::ostream& o, const record_batch_header& h) {
+    return o << "{size_bytes:" << h.size_bytes
+             << ", base_offset:" << h.base_offset << ", type:" << h.type
+             << ", crc:" << h.crc << ", attrs:" << h.attrs
+             << ", last_offset_delta:" << h.last_offset_delta
+             << ", first_timestamp:" << h.first_timestamp
+             << ", max_timestamp:" << h.max_timestamp
+             << ", producer_id:" << h.producer_id
+             << ", producer_epoch:" << h.producer_epoch
+             << ", base_sequence:" << h.base_sequence
+             << ", record_count:" << h.record_count << "}";
 }
 
 std::ostream&

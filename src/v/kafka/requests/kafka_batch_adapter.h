@@ -23,14 +23,6 @@ constexpr size_t kafka_header_size = sizeof(int64_t) + // base offset
                                      sizeof(int32_t) + // base sequence
                                      sizeof(int32_t);  // num records
 
-constexpr size_t kafka_header_overhead =
-  // The batch length - is not not accounted for
-  sizeof(int32_t) +
-  // partition leader epoch is ignored in our on-disk-format
-  sizeof(int32_t) +
-  // The magic value is ignored in our on-disk-format
-  sizeof(int8_t);
-
 } // namespace internal
 
 class kafka_batch_adapter {

@@ -1,7 +1,6 @@
 #include "bytes/iobuf.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
-#include "storage/constants.h"
 #include "storage/log.h"
 #include "storage/log_manager.h"
 #include "storage/log_segment_reader.h"

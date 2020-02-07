@@ -42,8 +42,12 @@ model::record_batch_header kafka_batch_adapter::read_header(iobuf_parser& in) {
     // note that we are wire compatible with Kafka with everything below the CRC
     // Note:
     //   if you change this, please remember to change batch_consumer.h
-    int32_t size_bytes = batch_length - internal::kafka_header_overhead
-                         + sizeof(model::record_batch_type::type);
+    int32_t size_bytes
+      = batch_length - internal::kafka_header_size
+        + model::packed_record_batch_header_size
+        // Kafka *does not* include the first 2 fields in the size calculation
+        // they build the types bottoms up, not top down
+        + sizeof(base_offset) + sizeof(batch_length);
 
     auto record_count = in.consume_be_type<int32_t>();
     auto header = model::record_batch_header{

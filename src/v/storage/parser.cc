@@ -5,7 +5,6 @@
 #include "likely.h"
 #include "model/record.h"
 #include "reflection/adl.h"
-#include "storage/constants.h"
 #include "storage/logger.h"
 #include "storage/parser.h"
 
@@ -15,7 +14,6 @@
 #include <fmt/format.h>
 
 namespace storage {
-static constexpr size_t disk_header_size = packed_header_size + 4;
 using stop_parser = batch_consumer::stop_parser;
 using skip_batch = batch_consumer::skip_batch;
 model::record_batch_header header_from_iobuf(iobuf b) {
@@ -40,9 +38,9 @@ model::record_batch_header header_from_iobuf(iobuf b) {
     auto base_sequence = ss::le_to_cpu(parser.consume_type<int32_t>());
     auto record_count = ss::le_to_cpu(parser.consume_type<int32_t>());
     vassert(
-      parser.bytes_consumed() == disk_header_size,
+      parser.bytes_consumed() == model::packed_record_batch_header_size,
       "Error in header parsing. Must consume:{} bytes, but consumed:{}",
-      disk_header_size,
+      model::packed_record_batch_header_size,
       parser.bytes_consumed());
     return model::record_batch_header{sz,
                                       off,
@@ -78,16 +76,16 @@ static inline ss::future<std::optional<iobuf>> verify_read_iobuf(
 using opt_hdr = std::optional<model::record_batch_header>;
 
 ss::future<stop_parser> continuous_batch_parser::consume_header() {
-    return read_iobuf_exactly(_input, disk_header_size)
+    return read_iobuf_exactly(_input, model::packed_record_batch_header_size)
       .then([this](iobuf b) -> std::optional<iobuf> {
           if (b.empty()) {
               // expected when end of stream
               return std::nullopt;
           }
-          if (b.size_bytes() != disk_header_size) {
+          if (b.size_bytes() != model::packed_record_batch_header_size) {
               stlog.error(
                 "Could not parse header. Expected:{}, but Got:{}",
-                disk_header_size,
+                model::packed_record_batch_header_size,
                 b.size_bytes());
               return std::nullopt;
           }
@@ -111,7 +109,8 @@ ss::future<stop_parser> continuous_batch_parser::consume_header() {
           if (std::holds_alternative<skip_batch>(ret)) {
               auto s = std::get<skip_batch>(ret);
               if (unlikely(bool(s))) {
-                  auto remaining = _header.size_bytes - packed_header_size;
+                  auto remaining = _header.size_bytes
+                                   - model::packed_record_batch_header_size;
                   return verify_read_iobuf(
                            _input, remaining, "parser::skip_batch")
                     .then([this](std::optional<iobuf> b) {
@@ -165,15 +164,14 @@ parse_record_headers(iobuf_parser& parser) {
 }
 
 ss::future<stop_parser> continuous_batch_parser::consume_records() {
-    auto sz = _header.size_bytes - packed_header_size;
+    auto sz = _header.size_bytes - model::packed_record_batch_header_size;
     return verify_read_iobuf(_input, sz, "parser::consume_records")
       .then([this, sz](std::optional<iobuf> b) {
           if (!b) {
               return stop_parser::yes;
           }
           iobuf_parser parser(std::move(b.value()));
-          while (parser.bytes_left()) {
-              const auto start = parser.bytes_consumed();
+          for (int i = 0; i < _header.record_count; ++i) {
               auto [record_size, rv] = parser.read_varlong();
               auto attr = parser.consume_type<model::record_attributes::type>();
               auto [timestamp_delta, tv] = parser.read_varlong();
@@ -209,6 +207,10 @@ ss::future<stop_parser> continuous_batch_parser::consume_records() {
                   }
               }
           }
+          vassert(
+            parser.bytes_left() == 0,
+            "{} bytes left in to parse, but reached end",
+            parser.bytes_left());
           return _consumer->consume_batch_end();
       });
 }
@@ -222,7 +224,7 @@ void continuous_batch_parser::add_bytes_and_reset() {
     _header = {}; // reset
 }
 ss::future<stop_parser> continuous_batch_parser::consume_compressed_records() {
-    auto sz = _header.size_bytes - packed_header_size;
+    auto sz = _header.size_bytes - model::packed_record_batch_header_size;
     return verify_read_iobuf(_input, sz, "parser::consume_compressed_records")
       .then([this](std::optional<iobuf> record) {
           if (!record) {
