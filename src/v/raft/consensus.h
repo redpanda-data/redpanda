@@ -70,6 +70,7 @@ public:
     ss::future<> add_group_member(model::broker node);
 
     bool is_leader() const { return _vstate == vote_state::leader; }
+    std::optional<model::node_id> get_leader_id() const { return _leader_id; }
     model::node_id self() const { return _self; }
     const protocol_metadata& meta() const { return _meta; }
     const group_configuration& config() const { return _conf; }
@@ -181,6 +182,8 @@ private:
     std::optional<append_entries_cb_t> _append_entries_notification;
     probe _probe;
     raft_ctx_log _ctxlog;
+
+    std::optional<model::node_id> _leader_id;
 };
 
 } // namespace raft

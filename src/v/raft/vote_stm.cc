@@ -114,7 +114,7 @@ ss::future<> vote_stm::vote() {
                  auto& m = _ptr->_meta;
                  // 5.2.1
                  _ptr->_vstate = consensus::vote_state::candidate;
-
+                 _ptr->_leader_id = std::nullopt;
                  // 5.2.1.2
                  m.term = m.term + 1;
 
@@ -203,6 +203,7 @@ ss::future<> vote_stm::process_replies() {
     // section vote:5.2.2
     _ptr->_conf.leader_id = _ptr->_self;
     _ptr->_vstate = consensus::vote_state::leader;
+    _ptr->_leader_id = _ptr->self();
 
     _ctxlog.info("became the leader term:{}", _ptr->_meta.term);
 
