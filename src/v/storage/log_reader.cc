@@ -79,9 +79,7 @@ log_segment_batch_reader::log_segment_batch_reader(
   segment& seg, log_reader_config& config, probe& p) noexcept
   : _seg(seg)
   , _config(config)
-  , _probe(p) {
-    std::sort(std::begin(_config.type_filter), std::end(_config.type_filter));
-}
+  , _probe(p) {}
 
 std::unique_ptr<continuous_batch_parser> log_segment_batch_reader::initialize(
   model::timeout_clock::time_point timeout,
@@ -133,6 +131,7 @@ log_reader::log_reader(
   , _config(std::move(config))
   , _probe(probe)
   , _seen_first_batch(false) {
+    std::sort(begin(_config.type_filter), end(_config.type_filter));
     _end_of_stream = seg_set.empty();
 }
 
