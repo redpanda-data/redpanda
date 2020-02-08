@@ -124,7 +124,7 @@ private:
       std::vector<model::broker_shard>);
 
     ss::future<> dispatch_join_to_seed_server(seed_iterator it);
-    ss::future<> join_raft0();
+    void join_raft0();
 
     template<typename Func>
     ss::futurize_t<std::result_of_t<Func(controller_client_protocol&)>>
