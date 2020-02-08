@@ -169,7 +169,8 @@ void kafka_batch_adapter::adapt(iobuf&& kbatch) {
     verify_crc(header.crc, std::move(crcparser));
     model::record_batch::records_type records;
     if (header.attrs.compression() != model::compression::none) {
-        auto records_size = header.size_bytes;
+        auto records_size = header.size_bytes
+                            - model::packed_record_batch_header_size;
         records = parser.share(records_size);
     } else {
         records = read_records(parser, header.record_count);
