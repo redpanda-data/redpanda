@@ -70,7 +70,7 @@ public:
     /// It is not yet used by the controller, it will be used when controller
     /// will process leadership change notifications
     void update_partition_leader(
-      model::topic_view, model::partition_id, model::node_id);
+      model::topic_view, model::partition_id, std::optional<model::node_id>);
 
 private:
     broker_cache_t _brokers_cache;

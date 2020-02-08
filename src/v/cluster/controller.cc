@@ -3,7 +3,9 @@
 #include "cluster/cluster_utils.h"
 #include "cluster/controller_service.h"
 #include "cluster/logger.h"
+#include "cluster/partition_manager.h"
 #include "cluster/simple_batch_builder.h"
+#include "cluster/types.h"
 #include "config/configuration.h"
 #include "likely.h"
 #include "model/record_batch_reader.h"
@@ -90,8 +92,10 @@ ss::future<> controller::start() {
     return _pm
       .invoke_on_all([this](partition_manager& pm) {
           pm.register_leadership_notification(
-            [this](ss::lw_shared_ptr<partition> p) {
-                handle_leadership_notification(p->ntp());
+            [this](
+              ss::lw_shared_ptr<partition> p,
+              std::optional<model::node_id> leader_id) {
+                handle_leadership_notification(p->ntp(), std::move(leader_id));
             });
       })
       .then([this] {
@@ -123,7 +127,7 @@ ss::future<> controller::start() {
                 clusterlog.info("Finished recovering cluster state");
                 _recovered = true;
                 if (_leadership_notification_pending) {
-                    handle_leadership_notification(controller::ntp);
+                    handle_leadership_notification(controller::ntp, _self.id());
                     _leadership_notification_pending = false;
                 }
             });
@@ -190,6 +194,9 @@ ss::future<> controller::apply_raft0_cfg_update(raft::group_configuration cfg) {
     auto old_list = _md_cache.local().all_brokers();
     std::vector<broker_ptr> new_list;
     auto all_new_nodes = cfg.all_brokers();
+    if (is_leader()) {
+        update_partition_allocator(all_new_nodes);
+    }
     new_list.reserve(all_new_nodes.size());
     std::transform(
       std::begin(all_new_nodes),
@@ -353,7 +360,10 @@ ss::future<std::vector<topic_result>> controller::create_topics(
               t_cfg.topic, topic_error_code::invalid_partitions);
         }
     }
-
+    if (batches.empty()) {
+        return ss::make_ready_future<std::vector<topic_result>>(
+          std::move(errors));
+    }
     // Do append entries to raft0 logs
     auto f = _raft0
                ->replicate(
@@ -412,14 +422,21 @@ controller::create_topic_cfg_batch(const topic_configuration& cfg) {
     return std::move(builder).build();
 }
 
-ss::future<> controller::do_leadership_notification(model::ntp ntp) {
+ss::future<> controller::do_leadership_notification(
+  model::ntp ntp, std::optional<model::node_id> lid) {
     verify_shard();
     // gate is reentrant making it ok if leadership notification originated on
     // the the controller::shard core.
-    return with_gate(_bg, [this, ntp = std::move(ntp)]() mutable {
+    return with_gate(_bg, [this, ntp = std::move(ntp), lid]() mutable {
         return with_semaphore(
-          _raft_notification_sem, 1, [this, ntp = std::move(ntp)]() mutable {
+          _raft_notification_sem,
+          1,
+          [this, ntp = std::move(ntp), lid]() mutable {
               if (ntp == controller::ntp) {
+                  if (lid != _self.id()) {
+                      // for now do nothing if we are not the leader
+                      return ss::make_ready_future<>();
+                  }
                   if (unlikely(!_recovered)) {
                       _leadership_notification_pending = true;
                       return ss::make_ready_future<>();
@@ -430,22 +447,24 @@ ss::future<> controller::do_leadership_notification(model::ntp ntp) {
                   return ss::make_ready_future<>();
               } else {
                   return _md_cache.invoke_on_all(
-                    [ntp, self = _self.id()](metadata_cache& md) {
+                    [ntp, lid](metadata_cache& md) {
                         md.update_partition_leader(
-                          ntp.tp.topic, ntp.tp.partition, self);
+                          ntp.tp.topic, ntp.tp.partition, lid);
                     });
               }
           });
     });
 }
 
-void controller::handle_leadership_notification(model::ntp ntp) {
+void controller::handle_leadership_notification(
+  model::ntp ntp, std::optional<model::node_id> lid) {
     // gate for this core's controller instance
-    (void)with_gate(_bg, [this, ntp = std::move(ntp)]() mutable {
+    (void)with_gate(_bg, [this, ntp = std::move(ntp), lid]() mutable {
         // forward notification to controller's home core
         return container().invoke_on(
-          controller::shard, [ntp = std::move(ntp)](controller& c) mutable {
-              return c.do_leadership_notification(std::move(ntp));
+          controller::shard,
+          [ntp = std::move(ntp), lid](controller& c) mutable {
+              return c.do_leadership_notification(std::move(ntp), lid);
           });
     }).handle_exception([](std::exception_ptr e) {
         clusterlog.warn(
@@ -463,6 +482,17 @@ void controller::create_partition_allocator() {
     }
     _allocator->update_allocation_state(
       _md_cache.local().all_topics_metadata());
+}
+
+void controller::update_partition_allocator(
+  const std::vector<model::broker>& brokers) {
+    for (auto& b : brokers) {
+        // FIXME: handle removing brokers
+        if (!_allocator->contains_node(b.id())) {
+            _allocator->register_node(std::make_unique<allocation_node>(
+              allocation_node(b.id(), b.properties().cores, {})));
+        }
+    }
 }
 
 ss::future<>
@@ -608,7 +638,13 @@ ss::futurize_t<std::result_of_t<Func(controller_client_protocol&)>>
 controller::dispatch_rpc_to_leader(Func&& f) {
     using ret_t
       = ss::futurize<std::result_of_t<Func(controller_client_protocol&)>>;
-    auto leader = _raft0->config().find_in_nodes(_raft0->config().leader_id);
+    auto leader_id = get_leader_id();
+    if (!leader_id) {
+        return ret_t::make_exception_future(
+          std::runtime_error("There is no leader controller in cluster"));
+    }
+    auto leader = _raft0->config().find_in_nodes(*leader_id);
+
     if (leader == _raft0->config().nodes.end()) {
         return ret_t::make_exception_future(
           std::runtime_error("There is no leader controller in cluster"));

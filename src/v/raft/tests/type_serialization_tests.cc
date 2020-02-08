@@ -102,14 +102,12 @@ SEASTAR_THREAD_TEST_CASE(group_configuration) {
         learners.push_back(create_test_broker());
     }
 
-    raft::group_configuration cfg{.leader_id = model::node_id(10),
-                                  .nodes = std::move(nodes),
+    raft::group_configuration cfg{.nodes = std::move(nodes),
                                   .learners = std::move(learners)};
     auto expected = cfg;
 
     auto deser = async_serialize_roundtrip_rpc(std::move(cfg)).get0();
 
-    BOOST_REQUIRE_EQUAL(deser.leader_id, expected.leader_id);
     BOOST_REQUIRE_EQUAL(deser.nodes, expected.nodes);
     BOOST_REQUIRE_EQUAL(deser.learners, expected.learners);
 }
@@ -122,8 +120,7 @@ SEASTAR_THREAD_TEST_CASE(serialize_configuration) {
         learners.push_back(create_test_broker());
     }
 
-    raft::group_configuration cfg{.leader_id = model::node_id(10),
-                                  .nodes = std::move(nodes),
+    raft::group_configuration cfg{.nodes = std::move(nodes),
                                   .learners = std::move(learners)};
     auto expected = cfg;
 
@@ -131,7 +128,6 @@ SEASTAR_THREAD_TEST_CASE(serialize_configuration) {
     auto deser = raft::details::extract_configuration(std::move(batch_reader))
                    .get0()
                    .value();
-    BOOST_REQUIRE_EQUAL(deser.leader_id, expected.leader_id);
     BOOST_REQUIRE_EQUAL(deser.nodes, expected.nodes);
     BOOST_REQUIRE_EQUAL(deser.learners, expected.learners);
 }

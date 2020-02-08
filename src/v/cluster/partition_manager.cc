@@ -43,10 +43,11 @@ ss::future<> partition_manager::stop() {
       .then([this] { return _mngr.stop(); });
 }
 
-void partition_manager::trigger_leadership_notification(raft::group_id group) {
-    auto ptr = _raft_table.find(group)->second;
+void partition_manager::trigger_leadership_notification(
+  raft::leadership_status st) {
+    auto ptr = _raft_table.find(st.group)->second;
     for (auto& cb : _notifications) {
-        cb(ptr);
+        cb(ptr, st.current_leader);
     }
 }
 
@@ -95,7 +96,9 @@ ss::lw_shared_ptr<raft::consensus> partition_manager::make_consensus(
       raft_priority(),
       _disk_timeout,
       _clients,
-      [this](raft::group_id g) { trigger_leadership_notification(g); },
+      [this](raft::leadership_status st) {
+          trigger_leadership_notification(std::move(st));
+      },
       std::move(append_entries_cb));
 }
 
