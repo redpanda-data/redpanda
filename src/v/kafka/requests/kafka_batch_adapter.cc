@@ -133,17 +133,15 @@ read_records(iobuf_parser& parser, size_t num_records) {
 }
 
 static void verify_crc(int32_t expected_crc, iobuf_parser in) {
-    constexpr size_t bytes_to_skip = 13;
-
     auto crc = crc32();
 
     // 1. move the cursor to correct endpoint
-
-    in.consume_be_type<int64_t>();                     /*base_offset*/
-    auto batch_length = in.consume_be_type<int32_t>(); /*needed for crc*/
-    in.consume_be_type<int32_t>(); /*partition_leader_epoch*/
-    in.consume_type<int8_t>();     /*magic*/
-    in.consume_be_type<int32_t>(); /*crc*/
+    //   - 8 base offset
+    //   - 4 batch length
+    //   - 4 partition leader epoch
+    //   - 1 magic
+    //   - 4 exepcted crc
+    in.skip(21);
 
     // 2. consume & checksum the CRC
     const auto consumed = in.consume(
