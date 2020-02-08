@@ -16,8 +16,7 @@ SEASTAR_THREAD_TEST_CASE(roundtrip_raft_configuration_entry) {
     auto voters = random_brokers();
     auto learners = random_brokers();
     auto leader = model::node_id(random_generators::get_int(1, 10));
-    raft::group_configuration cfg = {
-      .leader_id = leader, .nodes = voters, .learners = learners};
+    raft::group_configuration cfg = {.nodes = voters, .learners = learners};
 
     // serialize to entry
     auto entry = raft::details::serialize_configuration(std::move(cfg));
@@ -25,7 +24,6 @@ SEASTAR_THREAD_TEST_CASE(roundtrip_raft_configuration_entry) {
     auto new_cfg
       = raft::details::extract_configuration(std::move(entry)).get0();
 
-    BOOST_REQUIRE_EQUAL(leader, new_cfg->leader_id);
     BOOST_REQUIRE_EQUAL(voters, new_cfg->nodes);
     BOOST_REQUIRE_EQUAL(learners, new_cfg->learners);
 }

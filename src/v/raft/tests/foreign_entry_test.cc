@@ -82,11 +82,8 @@ struct foreign_entry_fixture {
             learners.push_back(tests::random_broker(
               active_nodes + 1, active_nodes * active_nodes));
         }
-        return raft::group_configuration{
-          .leader_id = model::node_id(
-            random_generators::get_int(0, active_nodes)),
-          .nodes = std::move(nodes),
-          .learners = std::move(learners)};
+        return raft::group_configuration{.nodes = std::move(nodes),
+                                         .learners = std::move(learners)};
     }
     ~foreign_entry_fixture() { _mngr.stop().get(); }
     model::offset _base_offset{0};

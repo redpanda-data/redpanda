@@ -101,7 +101,7 @@ void metadata_cache::update_partition_assignment(
 void metadata_cache::update_partition_leader(
   model::topic_view topic,
   model::partition_id partition_id,
-  model::node_id leader_id) {
+  std::optional<model::node_id> leader_id) {
     auto it = find_topic_metadata(topic);
     auto p = find_partition(it->second, partition_id);
     if (!p) {

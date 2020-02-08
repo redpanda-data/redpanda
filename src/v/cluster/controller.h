@@ -47,7 +47,9 @@ public:
 
     bool is_leader() const { return _recovered && _raft0->is_leader(); }
 
-    model::node_id get_leader_id() const { return _raft0->config().leader_id; }
+    std::optional<model::node_id> get_leader_id() const {
+        return _raft0->get_leader_id();
+    }
 
     ss::future<> process_join_request(model::broker broker);
 
@@ -100,12 +102,15 @@ private:
     std::optional<model::record_batch>
     create_topic_cfg_batch(const topic_configuration&);
     void end_of_stream();
-    ss::future<> do_leadership_notification(model::ntp);
-    void handle_leadership_notification(model::ntp);
+    ss::future<>
+      do_leadership_notification(model::ntp, std::optional<model::node_id>);
+    void
+      handle_leadership_notification(model::ntp, std::optional<model::node_id>);
     ss::future<> update_brokers_cache(std::vector<model::broker>);
     ss::future<>
       update_clients_cache(std::vector<broker_ptr>, std::vector<broker_ptr>);
     void create_partition_allocator();
+    void update_partition_allocator(const std::vector<model::broker>&);
     allocation_node local_allocation_node();
     void on_raft0_entries_comitted(model::record_batch_reader&&);
 

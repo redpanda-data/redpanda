@@ -425,6 +425,10 @@ consensus::do_append_entries(append_entries_request&& r) {
     // raft.pdf:If AppendEntries RPC received from new leader: convert to
     // follower (§5.2)
     _vstate = vote_state::follower;
+    if (unlikely(_leader_id != r.node_id)) {
+        _leader_id = r.node_id;
+        trigger_leadership_notification();
+    }
 
     // raft.pdf: Reply false if log doesn’t contain an entry at
     // prevLogIndex whose term matches prevLogTerm (§5.3)
@@ -696,4 +700,10 @@ void consensus::update_follower_stats(const group_configuration& cfg) {
         _fstats.emplace(n.id(), idx);
     }
 }
+
+void consensus::trigger_leadership_notification() {
+    _leader_notification(leadership_status{.group = group_id(_meta.group),
+                                           .current_leader = _leader_id});
+}
+
 } // namespace raft

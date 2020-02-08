@@ -152,7 +152,8 @@ SEASTAR_THREAD_TEST_CASE(test_updating_partition_leader) {
 
     auto md = cache.get_topic_metadata(model::topic("test_topic"));
     BOOST_REQUIRE_EQUAL(md.has_value(), true);
-    BOOST_REQUIRE_EQUAL(md->partitions[0].leader_node, model::node_id(1));
+    BOOST_REQUIRE_EQUAL(
+      md->partitions[0].leader_node.value(), model::node_id(1));
 }
 
 SEASTAR_THREAD_TEST_CASE(test_updating_brokers_cache) {

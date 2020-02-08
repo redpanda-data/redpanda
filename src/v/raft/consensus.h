@@ -25,7 +25,7 @@ public:
         model::term_id term{0};
     };
     enum class vote_state { follower, candidate, leader };
-    using leader_cb_t = ss::noncopyable_function<void(group_id)>;
+    using leader_cb_t = ss::noncopyable_function<void(leadership_status)>;
     using append_entries_cb_t
       = ss::noncopyable_function<void(model::record_batch_reader&&)>;
 
@@ -70,6 +70,7 @@ public:
     ss::future<> add_group_member(model::broker node);
 
     bool is_leader() const { return _vstate == vote_state::leader; }
+    std::optional<model::node_id> get_leader_id() const { return _leader_id; }
     model::node_id self() const { return _self; }
     const protocol_metadata& meta() const { return _meta; }
     const group_configuration& config() const { return _conf; }
@@ -143,6 +144,7 @@ private:
     void update_node_hbeat_timestamp(model::node_id);
 
     void update_follower_stats(const group_configuration&);
+    void trigger_leadership_notification();
     // args
     model::node_id _self;
     timeout_jitter _jit;
@@ -181,6 +183,8 @@ private:
     std::optional<append_entries_cb_t> _append_entries_notification;
     probe _probe;
     raft_ctx_log _ctxlog;
+
+    std::optional<model::node_id> _leader_id;
 };
 
 } // namespace raft
