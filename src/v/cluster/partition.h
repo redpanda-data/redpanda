@@ -33,6 +33,13 @@ public:
         return _raft->make_reader(std::move(config));
     }
 
+    /**
+     * The returned value of last committed offset should not be used to
+     * do things like initialize a reader (use partition::make_reader). Instead
+     * it can be used to report upper offset bounds to clients.
+     */
+    model::offset committed_offset() const { return _raft->committed_offset(); }
+
     const model::ntp& ntp() const { return _raft->ntp(); }
 
 private:
