@@ -573,14 +573,35 @@ ss::future<join_reply> controller::dispatch_join_to_remote(
       });
 }
 
-ss::future<> controller::join_raft0() {
-    if (_raft0->config().contains_broker(_self.id())) {
-        clusterlog.debug(
-          "Current node '{}' is already raft0 group member", _self.id());
-        return ss::make_ready_future<>();
-    }
-    return retry_with_backoff(8, [this] {
-        return dispatch_join_to_seed_server(std::cbegin(_seed_servers));
+void controller::join_raft0() {
+    (void)ss::with_gate(_bg, [this] {
+        return ss::repeat([this] {
+            if (_bg.is_closed()) {
+                return ss::make_ready_future<ss::stop_iteration>(
+                  ss::stop_iteration::yes);
+            }
+            if (_raft0->config().contains_broker(_self.id())) {
+                clusterlog.debug(
+                  "Current node '{}' is already raft0 group member",
+                  _self.id());
+                return ss::make_ready_future<ss::stop_iteration>(
+                  ss::stop_iteration::yes);
+            }
+
+            clusterlog.debug("Trying to join the cluster");
+            return dispatch_join_to_seed_server(std::cbegin(_seed_servers))
+              .then([] {
+                  // Joined successfully, stop here
+                  return ss::stop_iteration::yes;
+              })
+              .handle_exception([](std::exception_ptr e) {
+                  clusterlog.warn("Error joining cluster - {}", e);
+                  using namespace std::chrono_literals;
+                  // wait before next attempt
+                  return ss::sleep(5s).then(
+                    [] { return ss::stop_iteration::no; });
+              });
+        });
     });
 }
 
