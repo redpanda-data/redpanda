@@ -1,10 +1,14 @@
 #include "kafka/requests/fetch_request.h"
 #include "redpanda/tests/fixture.h"
 #include "resource_mgmt/io_priority.h"
+#include "test_utils/async.h"
 
 #include <seastar/core/smp.hh>
 
+#include <chrono>
 #include <limits>
+
+using namespace std::chrono_literals;
 
 SEASTAR_THREAD_TEST_CASE(partition_iterator) {
     /*
@@ -181,6 +185,15 @@ FIXTURE_TEST(read_from_ntp_max_bytes, redpanda_thread_fixture) {
 
     auto ntp = make_data();
 
+    auto shard = app.shard_table.local().shard_for(ntp);
+    tests::cooperative_spin_wait_with_timeout(10s, [this, shard, ntp = ntp] {
+        return app.partition_manager.invoke_on(
+          shard, [ntp](cluster::partition_manager& mgr) {
+              auto partition = mgr.get(ntp);
+              return partition->committed_offset() >= model::offset(1);
+          });
+    }).get();
+
     auto zero = do_read(ntp, 0).record_set->size_bytes();
     auto one = do_read(ntp, 1).record_set->size_bytes();
     auto maxlimit = do_read(ntp, std::numeric_limits<size_t>::max())
@@ -199,6 +212,18 @@ FIXTURE_TEST(fetch_one, redpanda_thread_fixture) {
     auto builder = make_tp_log_builder(topic, pid);
     builder.segment().add_random_batch(1).flush().get();
     recover_ntp(builder.ntp()).get();
+
+    auto shard = app.shard_table.local().shard_for(builder.ntp());
+    tests::cooperative_spin_wait_with_timeout(
+      10s,
+      [this, shard, ntp = builder.ntp()] {
+          return app.partition_manager.invoke_on(
+            shard, [ntp](cluster::partition_manager& mgr) {
+                auto partition = mgr.get(ntp);
+                return partition->committed_offset() >= model::offset(1);
+            });
+      })
+      .get();
 
     kafka::fetch_request req;
     req.max_bytes = std::numeric_limits<int32_t>::max();
