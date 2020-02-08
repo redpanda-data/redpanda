@@ -123,13 +123,13 @@ void produce_response::encode(const request_context& ctx, response& resp) {
     writer.write(int32_t(throttle.count()));
 }
 
-struct op_context {
+struct produce_ctx {
     request_context rctx;
     ss::smp_service_group ssg;
     produce_request request;
     produce_response response;
 
-    op_context(request_context&& rctx, ss::smp_service_group ssg)
+    produce_ctx(request_context&& rctx, ss::smp_service_group ssg)
       : rctx(std::move(rctx))
       , ssg(ssg) {
         request.decode(rctx);
@@ -181,7 +181,7 @@ static ss::future<produce_response::partition> partition_append(
  * \brief handle writing to a single topic partition.
  */
 static ss::future<produce_response::partition> produce_topic_partition(
-  op_context& octx,
+  produce_ctx& octx,
   produce_request::topic& topic,
   produce_request::partition& part) {
     auto ntp = model::ntp{
@@ -235,7 +235,7 @@ static ss::future<produce_response::partition> produce_topic_partition(
  * \brief Dispatch and collect topic partition produce responses
  */
 static ss::future<produce_response::topic>
-produce_topic(op_context& octx, produce_request::topic& topic) {
+produce_topic(produce_ctx& octx, produce_request::topic& topic) {
     // partition response placeholders
     std::vector<ss::future<produce_response::partition>> partitions;
     partitions.reserve(topic.partitions.size());
@@ -260,7 +260,7 @@ produce_topic(op_context& octx, produce_request::topic& topic) {
  * \brief Dispatch and collect topic produce responses
  */
 static std::vector<ss::future<produce_response::topic>>
-produce_topics(op_context& octx) {
+produce_topics(produce_ctx& octx) {
     // topic response placeholders
     std::vector<ss::future<produce_response::topic>> topics;
     topics.reserve(octx.request.topics.size());
@@ -276,7 +276,7 @@ produce_topics(op_context& octx) {
 /**
  * \brief Construct a generic octx error response.
  */
-void make_error_response(op_context& octx, error_code error) {
+void make_error_response(produce_ctx& octx, error_code error) {
     for (const auto& topic : octx.request.topics) {
         produce_response::topic t{
           .name = topic.name,
@@ -295,7 +295,7 @@ void make_error_response(op_context& octx, error_code error) {
 /**
  * \brief Encode the final response from the octx response structure.
  */
-static ss::future<response_ptr> make_response(op_context& octx) {
+static ss::future<response_ptr> make_response(produce_ctx& octx) {
     auto resp = std::make_unique<response>();
     octx.response.encode(octx.rctx, *resp.get());
     return ss::make_ready_future<response_ptr>(std::move(resp));
@@ -303,7 +303,7 @@ static ss::future<response_ptr> make_response(op_context& octx) {
 
 ss::future<response_ptr>
 produce_api::process(request_context&& ctx, ss::smp_service_group ssg) {
-    return ss::do_with(op_context(std::move(ctx), ssg), [](op_context& octx) {
+    return ss::do_with(produce_ctx(std::move(ctx), ssg), [](produce_ctx& octx) {
         kreq_log.debug("handling produce request {}", octx.request);
 
         if (octx.request.has_transactional) {
