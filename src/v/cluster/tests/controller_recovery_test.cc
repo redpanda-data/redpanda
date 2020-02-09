@@ -24,7 +24,7 @@ FIXTURE_TEST(
         auto t_md = get_local_cache().get_topic_metadata(
           model::topic_view("topic_1"));
         return t_md && t_md->partitions.size() == 2;
-    });
+    }).get();
 
     auto all_topics = get_local_cache().all_topics();
     BOOST_REQUIRE_EQUAL(all_topics.size(), 1);
