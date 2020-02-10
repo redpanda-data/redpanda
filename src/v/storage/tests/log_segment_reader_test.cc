@@ -17,7 +17,6 @@ using namespace storage; // NOLINT
 
 SEASTAR_THREAD_TEST_CASE(dummy_smaller_offset) { BOOST_REQUIRE(true); }
 
-#if 0
 struct context {
     std::unique_ptr<segment> _seg;
     probe prb;
@@ -70,6 +69,14 @@ struct context {
       size_t max_bytes = std::numeric_limits<size_t>::max()) {
         auto cfg = log_reader_config{
           start, end, 0, max_bytes, ss::default_priority_class()};
+        if (_seg) {
+            logs.add(std::move(_seg));
+        }
+        return model::make_record_batch_reader<log_reader>(
+          logs, std::move(cfg), prb);
+    }
+
+    model::record_batch_reader reader(log_reader_config cfg) {
         if (_seg) {
             logs.add(std::move(_seg));
         }
@@ -130,7 +137,7 @@ SEASTAR_THREAD_TEST_CASE(test_can_read_single_batch_same_offset) {
     ctx.write(copy(batches));
     {
         auto reader = ctx.reader(
-                      batches.front().base_offset(), batches.front().last_offset());
+          batches.front().base_offset(), batches.front().last_offset());
         auto res = reader.consume(consumer(), model::no_timeout).get0();
         check_batches(res, batches);
     }
@@ -142,7 +149,7 @@ SEASTAR_THREAD_TEST_CASE(test_can_read_multiple_batches) {
     ctx.write(copy(batches));
     {
         auto reader = ctx.reader(
-        batches.front().base_offset(), batches.back().last_offset());
+          batches.front().base_offset(), batches.back().last_offset());
         auto res = reader.consume(consumer(), model::no_timeout).get0();
         check_batches(res, batches);
     }
@@ -154,8 +161,8 @@ SEASTAR_THREAD_TEST_CASE(test_does_not_read_past_committed_offset_one_segment) {
     ctx.write(copy(batches));
     {
         auto reader = ctx.reader(
-         batches.back().last_offset() + model::offset(1),
-         batches.back().last_offset() + model::offset(1));
+          batches.back().last_offset() + model::offset(1),
+          batches.back().last_offset() + model::offset(1));
         auto res = reader.consume(consumer(), model::no_timeout).get0();
         BOOST_REQUIRE(res.empty());
     }
@@ -233,33 +240,33 @@ SEASTAR_THREAD_TEST_CASE(test_batch_type_filter) {
     // write some batches with various types
     auto batches = test::make_random_batches(model::offset(0), 5);
     for (auto i = 0u; i < batches.size(); i++) {
-        batches[i].get_header_for_testing().type = model::record_batch_type(i);
+        batches[i].header().type = model::record_batch_type(i);
     }
     context ctx;
     ctx.write(copy(batches));
 
     // read and extract types with optional type filter
-    auto read_types = [&ctx](std::vector<int> types_wanted) {
+    auto read_types = [&ctx, &batches](std::vector<int> types_wanted) {
         std::vector<model::record_batch_type> type_filter;
         for (auto type : types_wanted) {
             type_filter.push_back(model::record_batch_type(type));
         }
 
         auto config = log_reader_config{
-          .start_offset = model::offset(0),
-          .max_bytes = std::numeric_limits<size_t>::max(),
+          .start_offset = batches.front().base_offset(),
+          .last_offset = batches.back().last_offset(),
           .min_bytes = 0,
+          .max_bytes = std::numeric_limits<size_t>::max(),
           .prio = ss::default_priority_class(),
           .type_filter = std::move(type_filter),
         };
 
-        auto reader = model::make_record_batch_reader<log_segment_batch_reader>(
-          *ctx._seg, model::offset(0), std::move(config), ctx.prb);
-        auto batches = reader.consume(consumer(), model::no_timeout).get0();
+        auto reader = ctx.reader(std::move(config));
+        auto res = reader.consume(consumer(), model::no_timeout).get0();
 
         std::set<int> types;
-        for (auto& batch : batches) {
-            types.insert(batch.type()());
+        for (auto& batch : res) {
+            types.insert(batch.header().type);
         }
         return types;
     };
@@ -282,4 +289,3 @@ SEASTAR_THREAD_TEST_CASE(test_batch_type_filter) {
     types = read_types({3, 2, 4, 0});
     BOOST_TEST(types == std::set<int>({0, 2, 3, 4}));
 }
-#endif
