@@ -1,4 +1,5 @@
 #pragma once
+#include "model/metadata.h"
 #include "model/record_batch_reader.h"
 #include "raft/consensus.h"
 #include "raft/heartbeat_manager.h"
@@ -50,7 +51,8 @@ struct consume_to_vector {
 struct raft_node {
     using log_t = std::vector<model::record_batch>;
     using consensus_ptr = ss::lw_shared_ptr<raft::consensus>;
-    using leader_clb_t = ss::noncopyable_function<void(model::node_id)>;
+    using leader_clb_t
+      = ss::noncopyable_function<void(raft::leadership_status)>;
 
     raft_node(
       model::broker broker,
@@ -71,7 +73,7 @@ struct raft_node {
           seastar::default_priority_class(),
           std::chrono::seconds(10),
           cache,
-          [this](raft::group_id id) { leadership_changed(id); }))
+          [this](raft::leadership_status st) { leader_callback(st); }))
       , leader_callback(std::move(l_clb)) {
         // init cache
         cache.start().get();
@@ -158,8 +160,6 @@ struct raft_node {
               started = false;
           });
     }
-
-    void leadership_changed(raft::group_id id) { leader_callback(broker.id()); }
 
     ss::shard_id shard_for(raft::group_id) { return ss::shard_id(0); }
 
@@ -257,7 +257,9 @@ struct raft_group {
           },
           raft::timeout_jitter(heartbeat_interval * 2),
           *log_optional,
-          [this](model::node_id id) { election_callback(id); });
+          [this, node_id](raft::leadership_status st) {
+              election_callback(node_id, st);
+          });
         it->second.start();
     }
 
@@ -288,8 +290,13 @@ struct raft_group {
         return leader_id;
     }
 
-    void election_callback(model::node_id id) {
-        tstlog.info("New leader elected in group {}. Broker {}", _id, id);
+    void election_callback(model::node_id src, raft::leadership_status st) {
+        if (st.current_leader != src) {
+            // only accept election callbacks from current leader.
+            return;
+        }
+        tstlog.info(
+          "Group {} has new leader {}", st.group, st.current_leader.value());
         _election_sem.signal();
         _elections_count++;
     }
