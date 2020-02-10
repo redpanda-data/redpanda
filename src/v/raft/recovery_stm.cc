@@ -139,8 +139,14 @@ recovery_stm::dispatch_append_entries(append_entries_request&& r) {
 }
 
 bool recovery_stm::is_recovery_finished() {
-    return _meta.match_index == _ptr->_log.max_offset() // fully caught up
-           || _stop_requested                           // stop requested
+    auto max_offset = _ptr->_log.max_offset();
+    _ctxlog.trace(
+      "Recovery status - node {}, match idx: {}, max offset: {}",
+      _meta.node_id,
+      _meta.match_index,
+      max_offset);
+    return _meta.match_index == max_offset // fully caught up
+           || _stop_requested              // stop requested
            || _ptr->_vstate
                 != consensus::vote_state::leader; // not a leader anymore
 }
