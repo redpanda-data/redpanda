@@ -67,7 +67,7 @@ ss::future<> recovery_stm::replicate(model::record_batch_reader&& reader) {
       static_cast<model::offset::type>(_ptr->_meta.commit_index));
     // build request
     auto r = append_entries_request{
-      .node_id = _meta.node_id,
+      .node_id = _ptr->self(),
       .meta = protocol_metadata{.group = _ptr->_meta.group,
                                 .commit_index = commit_idx,
                                 .term = _ptr->_meta.term,
