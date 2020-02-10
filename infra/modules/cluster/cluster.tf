@@ -76,8 +76,6 @@ resource "aws_instance" "node" {
       "/tmp/init.sh ${var.packagecloud_token}",
       "sudo rpk config set id ${count.index}",
       "sudo rpk config set seed-nodes --hosts ${join(",", aws_eip.elastic_ip.*.public_ip)}",
-      "sudo systemctl start redpanda-tuner",
-      "sudo systemctl start redpanda"
     ]
   }
 
