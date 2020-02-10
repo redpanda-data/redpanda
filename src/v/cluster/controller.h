@@ -148,5 +148,6 @@ private:
     ss::gate _bg;
     ss::semaphore _raft_notification_sem{1};
     model::offset _raft0_cfg_offset;
+    partition_manager::notification_id_type _leader_notify_handle;
 };
 } // namespace cluster
