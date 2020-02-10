@@ -91,7 +91,7 @@ ss::future<> controller::start() {
     }
     return _pm
       .invoke_on_all([this](partition_manager& pm) {
-          pm.register_leadership_notification(
+          _leader_notify_handle = pm.register_leadership_notification(
             [this](
               ss::lw_shared_ptr<partition> p,
               std::optional<model::node_id> leader_id) {
@@ -151,6 +151,10 @@ ss::future<consensus_ptr> controller::start_raft0() {
 }
 
 ss::future<> controller::stop() {
+    _pm.local().unregister_leadership_notification(_leader_notify_handle);
+    if (ss::engine().cpu_id() == controller::shard && _raft0) {
+        _raft0->remove_append_entries_callback();
+    }
     if (ss::engine().cpu_id() == controller::shard) {
         // in a multi-threaded app this would look like a deadlock waiting to
         // happen, but it works in seastar: broadcast here only makes the

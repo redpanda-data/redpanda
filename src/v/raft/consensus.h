@@ -104,6 +104,10 @@ public:
         return ss::make_ready_future<>();
     }
 
+    void remove_append_entries_callback() {
+        _append_entries_notification.reset();
+    }
+
 private:
     friend replicate_entries_stm;
     friend vote_stm;
