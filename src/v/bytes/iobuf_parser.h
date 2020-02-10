@@ -50,6 +50,8 @@ public:
         return _in.consume_be_type<T>();
     }
 
+    void skip(size_t n) { _in.skip(n); }
+
     iobuf share(size_t len) {
         auto ret = _io.share(_in.bytes_consumed(), len);
         _in.skip(len);
