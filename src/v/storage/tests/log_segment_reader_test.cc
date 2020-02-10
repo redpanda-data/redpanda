@@ -15,8 +15,6 @@
 
 using namespace storage; // NOLINT
 
-SEASTAR_THREAD_TEST_CASE(dummy_smaller_offset) { BOOST_REQUIRE(true); }
-
 struct context {
     std::unique_ptr<segment> _seg;
     probe prb;
