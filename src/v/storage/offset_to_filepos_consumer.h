@@ -21,7 +21,7 @@ public:
       , _prev(initial) {}
     ss::future<ss::stop_iteration> operator()(::model::record_batch batch) {
         _prev = _accumulator;
-        _accumulator += batch.size_bytes() + sizeof(int32_t) /*see parser.cc*/;
+        _accumulator += batch.size_bytes();
         if (_target_last_offset == batch.base_offset()) {
             _filepos = {batch.base_offset() - model::offset(1), _prev};
             return ss::make_ready_future<ss::stop_iteration>(
