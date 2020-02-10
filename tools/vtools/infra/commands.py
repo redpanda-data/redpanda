@@ -1,11 +1,16 @@
 import os
 import click
+
 import git
 from datetime import date
+import json
 from absl import logging
+import paramiko
+from ..vlib import rotate_ssh_keys as keys
 from ..vlib import shell
 from ..vlib import rotate_ssh_keys as keys
 from ..vlib import config
+from ..vlib import ssh
 from . import install_deps as deps
 
 
@@ -30,12 +35,21 @@ def infra():
               help='The path where of the SSH to use (the key will be' +
               'generated if it doesn\'t exist)',
               default='~/.ssh/infra-key')
+@click.option('--ssh-port', default=22, help='The SSH port on the remote host')
+@click.option('--ssh-timeout',
+              default=60,
+              help='The amount of time (in secs) to wait for an SSH connection'
+              )
+@click.option('--ssh-retries',
+              default=3,
+              help='How many times to retry the SSH connection')
 @click.option('--log',
               default='info',
               type=click.Choice(['debug', 'info', 'warning', 'error', 'fatal'],
                                 case_sensitive=False))
 @click.argument('tfvars', nargs=-1)
-def deploy(conf, module, install_deps, ssh_key, log, tfvars):
+def deploy(conf, module, install_deps, ssh_key, ssh_port, ssh_timeout,
+           ssh_retries, log, tfvars):
     vconfig = config.VConfig(conf)
     abs_path = os.path.abspath(os.path.expanduser(ssh_key))
     comment = _get_ssh_metadata(vconfig)
@@ -43,6 +57,21 @@ def deploy(conf, module, install_deps, ssh_key, log, tfvars):
     tfvars = tfvars + (f'private_key_path={key_path}',
                        f'public_key_path={pub_key_path}')
     _run_terraform_cmd(vconfig, 'apply', module, install_deps, log, tfvars)
+    outputs = _get_tf_outputs(vconfig, module)
+    ssh_user = outputs['ssh_user']['value']
+    private_ips = outputs['private_ips']['value']
+    public_ips = outputs['ip']['value']
+    joined_private_ips = ','.join(private_ips)
+    for i in range(len(private_ips)):
+        ip = private_ips[i]
+        pub_ip = public_ips[i]
+        cmd = f'''sudo rpk config set seed-nodes --hosts {joined_private_ips} && \
+sudo rpk config set kafka-api --ip {ip} --port 9092  && \
+sudo rpk config set rpc-server --ip {ip} --port 33145  && \
+sudo rpk config set stats-id --organization io.vectorized --cluster-id test  && \
+sudo systemctl start redpanda'''
+        ssh.add_known_host(pub_ip, ssh_port, ssh_timeout, ssh_retries)
+        ssh.run_subprocess(pub_ip, ssh_user, key_path, cmd)
 
 
 @infra.command(short_help='destroy redpanda deployment.')
@@ -98,6 +127,15 @@ def _get_tf_vars(tfvars):
     if tfvars == None:
         return ''
     return ' '.join([f'-var {v}' for v in tfvars])
+
+
+def _get_tf_outputs(vconfig, module):
+    module_dir = os.path.join(vconfig.src_dir, 'infra', 'modules', module)
+    tf_bin = os.path.join(vconfig.infra_bin_dir, 'terraform')
+    cmd = f'cd {module_dir} && {tf_bin} output -json'
+    logging.info(f'Running {cmd}')
+    out = shell.raw_check_output(cmd)
+    return json.loads(out)
 
 
 def _check_deps(vconfig, force_install):

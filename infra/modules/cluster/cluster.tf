@@ -75,7 +75,6 @@ resource "aws_instance" "node" {
       "chmod +x /tmp/init.sh",
       "/tmp/init.sh ${var.packagecloud_token}",
       "sudo rpk config set id ${count.index}",
-      "sudo rpk config set seed-nodes --hosts ${join(",", aws_eip.elastic_ip.*.public_ip)}",
     ]
   }
 
