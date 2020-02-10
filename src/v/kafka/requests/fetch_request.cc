@@ -201,8 +201,8 @@ make_ready_partition_response_error(error_code error) {
 /**
  * Low-level handler for reading from an ntp. Runs on ntp's home core.
  */
-static ss::future<fetch_response::partition_response>
-read_from_log(storage::log log, fetch_config config) {
+static ss::future<fetch_response::partition_response> read_from_partition(
+  ss::lw_shared_ptr<cluster::partition> partition, fetch_config config) {
     storage::log_reader_config reader_config(
       config.start_offset,
       model::model_limits<model::offset>::max(),
@@ -211,7 +211,7 @@ read_from_log(storage::log log, fetch_config config) {
       kafka_read_priority(),
       {raft::data_batch_type});
 
-    auto reader = log.make_reader(std::move(reader_config));
+    auto reader = partition->make_reader(reader_config);
     return ss::do_with(
       std::move(reader),
       [timeout = config.timeout](model::record_batch_reader& reader) {
@@ -250,19 +250,17 @@ read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config) {
       [ntp = std::move(ntp),
        config = std::move(config)](cluster::partition_manager& mgr) {
           /*
-           * lookup the ntp's open log handle
+           * lookup the ntp's partition
            */
-          auto optlog = mgr.log(ntp);
-          if (unlikely(!optlog)) {
+          auto partition = mgr.get(ntp);
+          if (unlikely(!partition)) {
               return make_ready_partition_response_error(
                 error_code::unknown_topic_or_partition);
           }
-          auto log = optlog.value();
-          // low-level read
-          return read_from_log(log, std::move(config))
-            .then([log](fetch_response::partition_response&& resp) {
-                resp.last_stable_offset = log.committed_offset();
-                resp.high_watermark = log.committed_offset();
+          return read_from_partition(partition, std::move(config))
+            .then([partition](fetch_response::partition_response&& resp) {
+                resp.last_stable_offset = partition->committed_offset();
+                resp.high_watermark = partition->committed_offset();
                 return std::move(resp);
             });
       });

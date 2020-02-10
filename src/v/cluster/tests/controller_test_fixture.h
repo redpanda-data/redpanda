@@ -272,6 +272,7 @@ private:
 // Waits for controller to become a leader it poll every 200ms
 void wait_for_leadership(cluster::controller& cntrl) {
     using namespace std::chrono_literals;
-    tests::cooperative_spin_wait_with_timeout(
-      10s, [&cntrl] { return cntrl.is_leader(); });
+    tests::cooperative_spin_wait_with_timeout(10s, [&cntrl] {
+        return cntrl.is_leader();
+    }).get();
 }

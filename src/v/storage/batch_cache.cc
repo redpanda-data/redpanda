@@ -1,5 +1,7 @@
 #include "batch_cache.h"
 
+#include "log_reader.h"
+
 namespace storage {
 
 batch_cache::entry_ptr batch_cache::put(model::record_batch batch) {
@@ -38,7 +40,10 @@ batch_cache_index::get(model::offset offset) {
 }
 
 batch_cache_index::read_result batch_cache_index::read(
-  model::offset offset, model::offset max_offset, size_t max_bytes) {
+  model::offset offset,
+  model::offset max_offset,
+  const std::vector<model::record_batch_type>& type_filter,
+  size_t max_bytes) {
     if (unlikely(offset > max_offset)) {
         return {};
     }
@@ -46,10 +51,13 @@ batch_cache_index::read_result batch_cache_index::read(
     read_result ret;
 
     for (auto it = find_first_contains(offset); it != _index.end();) {
-        ret.batches.emplace_back(it->second->batch.share());
-        auto& batch = ret.batches.back();
-        ret.memory_usage += batch.memory_usage();
-        _cache.touch(it->second);
+        auto& batch = it->second->batch;
+
+        if (filter_batch_type(type_filter, batch.header().type)) {
+            ret.batches.emplace_back(batch.share());
+            ret.memory_usage += batch.memory_usage();
+            _cache.touch(it->second);
+        }
 
         offset = batch.last_offset() + model::offset(1);
 

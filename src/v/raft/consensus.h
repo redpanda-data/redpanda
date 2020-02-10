@@ -85,6 +85,16 @@ public:
     ss::future<result<replicate_result>>
     replicate(model::record_batch_reader&&);
 
+    model::record_batch_reader make_reader(storage::log_reader_config config) {
+        config.max_offset = std::min(
+          config.max_offset, model::offset(_meta.commit_index));
+        return _log.make_reader(std::move(config));
+    }
+
+    model::offset committed_offset() const {
+        return model::offset(_meta.commit_index);
+    }
+
     ss::future<> step_down() {
         if (is_leader()) {
             _ctxlog.trace("Resigned from leadership");
