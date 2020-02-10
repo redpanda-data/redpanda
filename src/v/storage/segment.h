@@ -70,7 +70,9 @@ public:
         if (likely(_cache != nullptr)) {
             return _cache->read(offset, max_offset, type_filter, max_bytes);
         }
-        return batch_cache_index::read_result{};
+        return batch_cache_index::read_result{
+          .next_batch = offset,
+        };
     }
 
     void cache_put(std::vector<model::record_batch> batches) {

@@ -15,6 +15,18 @@ batch_consumer::consume_result skipping_consumer::consume_batch_start(
   model::record_batch_header header,
   size_t physical_base_offset,
   size_t bytes_on_disk) {
+    // check for holes in the offset range on disk
+    if (unlikely(
+          _expected_next_batch() >= 0
+          && header.base_offset != _expected_next_batch)) {
+        throw std::runtime_error(fmt::format(
+          "hole encountered reading from disk log: "
+          "expected batch offset {} (actual {})",
+          _expected_next_batch,
+          header.base_offset()));
+    }
+    _expected_next_batch = header.last_offset() + model::offset(1);
+
     if (header.last_offset() < _reader._config.start_offset) {
         return skip_batch::yes;
     }
@@ -22,6 +34,7 @@ batch_consumer::consume_result skipping_consumer::consume_batch_start(
         return stop_parser::yes;
     }
     if (!filter_batch_type(_reader._config.type_filter, header.type)) {
+        _reader._config.start_offset = header.last_offset() + model::offset(1);
         return skip_batch::yes;
     }
     if (header.attrs.compression() == model::compression::none) {
@@ -51,6 +64,7 @@ batch_consumer::stop_parser skipping_consumer::consume_batch_end() {
     // updates the next batch to consume
     _reader._buffer.emplace_back(
       model::record_batch(_header, std::exchange(_records, {})));
+    _reader._config.start_offset = _header.last_offset() + model::offset(1);
     _reader._config.bytes_consumed += _header.size_bytes;
     _reader._buffer_size += _header.size_bytes;
     // We keep the batch in the buffer so that the reader can be cached.
@@ -105,13 +119,18 @@ log_segment_batch_reader::read(model::timeout_clock::time_point timeout) {
       _config.max_offset,
       _config.type_filter,
       max_buffer_size);
+
+    // handles cases where the type filter skipped batches. see
+    // batch_cache_index::read for more details.
+    _config.start_offset = cache_read.next_batch;
+
     if (!cache_read.batches.empty()) {
         _config.bytes_consumed += cache_read.memory_usage;
         _probe.add_bytes_read(cache_read.memory_usage);
         return ss::make_ready_future<ss::circular_buffer<model::record_batch>>(
           std::move(cache_read.batches));
     }
-    auto parser = initialize(timeout, cache_read.next_batch);
+    auto parser = initialize(timeout, cache_read.next_cached_batch);
     auto ptr = parser.get();
     return ptr->consume()
       .then([this](size_t bytes_consumed) {
@@ -129,8 +148,7 @@ log_reader::log_reader(
   log_set& seg_set, log_reader_config config, probe& probe) noexcept
   : _set(seg_set)
   , _config(std::move(config))
-  , _probe(probe)
-  , _seen_first_batch(false) {
+  , _probe(probe) {
     std::sort(begin(_config.type_filter), end(_config.type_filter));
     _end_of_stream = seg_set.empty();
 }
@@ -178,28 +196,6 @@ log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
                 ss::circular_buffer<model::record_batch>>();
           }
           _probe.add_batches_read(recs.size());
-          /*
-           * this is a fast check of the batch offsets returned by the batch
-           * reader to check for holes. note that the update of start_offset is
-           * critical to correctness, even though it is used here to look for
-           * holes. before returning its value must be equal to
-           * _batches.last().last_offset() + model::offset(1).
-           */
-          if (!_seen_first_batch) {
-              _config.start_offset = recs.front().base_offset();
-              _seen_first_batch = true;
-          }
-          for (const auto& batch : recs) {
-              if (batch.base_offset() != _config.start_offset) {
-                  return ss::make_exception_future<
-                    ss::circular_buffer<model::record_batch>>(fmt::format(
-                    "hole encountered reading from log: "
-                    "expected batch offset {} (actually {})",
-                    _config.start_offset,
-                    batch.base_offset()));
-              }
-              _config.start_offset = batch.last_offset() + model::offset(1);
-          }
           return ss::make_ready_future<
             ss::circular_buffer<model::record_batch>>(std::move(recs));
       })

@@ -43,6 +43,7 @@ private:
     model::record_batch::records_type _records;
     model::timeout_clock::time_point _timeout;
     std::optional<model::offset> _next_cached_batch;
+    model::offset _expected_next_batch;
 };
 
 class log_segment_batch_reader {
@@ -98,7 +99,6 @@ private:
     log_reader_config _config;
     model::offset _last_base;
     probe& _probe;
-    bool _seen_first_batch;
 };
 
 static inline bool filter_batch_type(
