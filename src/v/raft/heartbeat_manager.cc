@@ -13,11 +13,14 @@ ss::logger hbeatlog{"r/heartbeat"};
 using consensus_ptr = heartbeat_manager::consensus_ptr;
 using consensus_set = heartbeat_manager::consensus_set;
 
-static std::vector<heartbeat_request> requests_for_range(
+static std::vector<heartbeat_manager::node_heartbeat> requests_for_range(
   const consensus_set& c, clock_type::time_point last_heartbeat) {
     std::unordered_map<model::node_id, std::vector<protocol_metadata>>
       pending_beats;
-
+    if (c.empty()) {
+        return {};
+    }
+    auto self = (*c.begin())->self();
     for (auto& ptr : c) {
         if (!ptr->is_leader()) {
             continue;
@@ -45,10 +48,11 @@ static std::vector<heartbeat_request> requests_for_range(
         }
     }
 
-    std::vector<heartbeat_request> reqs;
+    std::vector<heartbeat_manager::node_heartbeat> reqs;
     reqs.reserve(pending_beats.size());
     for (auto& p : pending_beats) {
-        reqs.push_back(heartbeat_request{p.first, std::move(p.second)});
+        reqs.emplace_back(
+          p.first, heartbeat_request{self, std::move(p.second)});
     }
 
     return reqs;
@@ -65,12 +69,9 @@ ss::future<> heartbeat_manager::do_dispatch_heartbeats(
   clock_type::time_point last_timeout, clock_type::time_point next_timeout) {
     auto reqs = requests_for_range(_consensus_groups, last_timeout);
     return ss::do_with(
-      std::move(reqs),
-      [this, next_timeout](std::vector<heartbeat_request>& reqs) {
+      std::move(reqs), [this, next_timeout](std::vector<node_heartbeat>& reqs) {
           return ss::parallel_for_each(
-            reqs.begin(),
-            reqs.end(),
-            [this, next_timeout](heartbeat_request& r) {
+            reqs.begin(), reqs.end(), [this, next_timeout](node_heartbeat& r) {
                 return do_heartbeat(std::move(r), next_timeout);
             });
       });
@@ -79,20 +80,20 @@ ss::future<> heartbeat_manager::do_dispatch_heartbeats(
 static ss::future<result<heartbeat_reply>> send_beat(
   rpc::connection_cache& local,
   clock_type::time_point tmo,
-  heartbeat_request&& r) {
+  heartbeat_manager::node_heartbeat&& r) {
     using ret_t = result<heartbeat_reply>;
-    if (!local.contains(r.node_id)) {
+    if (!local.contains(r.target)) {
         return ss::make_ready_future<ret_t>(errc::missing_tcp_client);
     }
 
-    return local.get(r.node_id)->get_connected().then(
+    return local.get(r.target)->get_connected().then(
       [tmo, r = std::move(r)](result<rpc::transport*> t) mutable {
           if (!t) {
               return ss::make_ready_future<ret_t>(t.error());
           }
-          hbeatlog.trace("sending hbeats {}", r);
+          hbeatlog.trace("sending hbeats to {} - {}", r.target, r.request);
           auto f = raftgen_client_protocol(*(t.value()))
-                     .heartbeat(std::move(r), tmo);
+                     .heartbeat(std::move(r.request), tmo);
           return wrap_exception_with_result<rpc::request_timeout_exception>(
                    errc::timeout, std::move(f))
             .then([](auto r) {
@@ -106,18 +107,18 @@ static ss::future<result<heartbeat_reply>> send_beat(
 }
 
 ss::future<> heartbeat_manager::do_heartbeat(
-  heartbeat_request&& r, clock_type::time_point next_timeout) {
-    auto shard = rpc::connection_cache::shard_for(r.node_id);
-    std::vector<group_id> groups(r.meta.size());
+  node_heartbeat&& r, clock_type::time_point next_timeout) {
+    auto shard = rpc::connection_cache::shard_for(r.target);
+    std::vector<group_id> groups(r.request.meta.size());
     for (size_t i = 0; i < groups.size(); ++i) {
-        groups[i] = group_id(r.meta[i].group);
+        groups[i] = group_id(r.request.meta[i].group);
     }
     return ss::smp::submit_to(
              shard,
              [this, r = std::move(r), next_timeout]() mutable {
                  return send_beat(_clients.local(), next_timeout, std::move(r));
              })
-      .then([node = r.node_id, groups = std::move(groups), this](
+      .then([node = r.target, groups = std::move(groups), this](
               result<heartbeat_reply> ret) mutable {
           process_reply(node, std::move(groups), std::move(ret));
       });
