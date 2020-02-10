@@ -103,7 +103,7 @@ ss::future<stop_parser> continuous_batch_parser::consume_header() {
               return ss::make_ready_future<stop_parser>(stop_parser::yes);
           }
           _header = o.value();
-          const auto size_on_disk = _header.size_bytes + 4;
+          const auto size_on_disk = _header.size_bytes;
           auto ret = _consumer->consume_batch_start(
             _header, _physical_base_offset, size_on_disk);
           if (std::holds_alternative<skip_batch>(ret)) {
@@ -216,7 +216,7 @@ ss::future<stop_parser> continuous_batch_parser::consume_records() {
 }
 
 size_t continuous_batch_parser::consumed_batch_bytes() const {
-    return _header.size_bytes + 4 /*batch size*/;
+    return _header.size_bytes;
 }
 
 void continuous_batch_parser::add_bytes_and_reset() {
