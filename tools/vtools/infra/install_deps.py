@@ -7,21 +7,16 @@ from absl import logging
 from ..vlib import shell
 
 
-def get_terraform_path(v_root):
-    return os.path.join(_get_install_dir(v_root), 'terraform')
+def check_deps_installed(vconfig):
+    return _check_installed(
+        vconfig.infra_bin_dir, 'terraform') and _check_installed(
+            vconfig.infra_bin_dir, os.path.join('v2', 'current', 'bin', 'aws'))
 
 
-def check_deps_installed(v_root):
-    install_dir = _get_install_dir(v_root)
-    return _check_installed(install_dir, 'terraform') and _check_installed(
-        install_dir, os.path.join('v2', 'current', 'bin', 'aws'))
-
-
-def install_deps(v_root):
-    install_dir = _get_install_dir(v_root)
-    os.makedirs(install_dir, exist_ok=True)
-    _install_awscli(install_dir)
-    _install_terraform(install_dir)
+def install_deps(vconfig):
+    os.makedirs(vconfig.infra_bin_dir, exist_ok=True)
+    _install_awscli(vconfig.infra_bin_dir)
+    _install_terraform(vconfig.infra_bin_dir)
 
 
 def _install_awscli(install_dir):
@@ -62,7 +57,3 @@ def _download_and_extract(url, dest, extract_to):
     # See https://bugs.python.org/issue15795
     shell.run_subprocess(f'unzip -o -d {extract_to} {dest}')
     os.remove(dest)
-
-
-def _get_install_dir(v_root):
-    return os.path.abspath(os.path.join(v_root, 'build', 'infra'))

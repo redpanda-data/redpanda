@@ -5,6 +5,7 @@ from datetime import date
 from absl import logging
 from ..vlib import shell
 from ..vlib import rotate_ssh_keys as keys
+from ..vlib import config
 from . import install_deps as deps
 
 
@@ -14,13 +15,17 @@ def infra():
 
 
 @infra.command(short_help='deploy redpanda.')
+@click.option('--conf',
+              help=('Path to configuration file. If not given, a .vtools.yml '
+                    'file is searched recursively starting from the current '
+                    'working directory.'),
+              default=None)
 @click.option('--module',
               help='The name of the module to deploy',
               required=True)
 @click.option('--install-deps',
               default=False,
               help='Download and install the dependencies')
-@click.option('--v-root', help='The path to the v repo', required=True)
 @click.option('--ssh-key',
               help='The path where of the SSH to use (the key will be' +
               'generated if it doesn\'t exist)',
@@ -30,23 +35,28 @@ def infra():
               type=click.Choice(['debug', 'info', 'warning', 'error', 'fatal'],
                                 case_sensitive=False))
 @click.argument('tfvars', nargs=-1)
-def deploy(module, install_deps, v_root, ssh_key, log, tfvars):
+def deploy(conf, module, install_deps, ssh_key, log, tfvars):
+    vconfig = config.VConfig(conf)
     abs_path = os.path.abspath(os.path.expanduser(ssh_key))
-    comment = _get_ssh_metadata(v_root)
+    comment = _get_ssh_metadata(vconfig)
     key_path, pub_key_path = keys.generate_key(abs_path, comment, '""')
     tfvars = tfvars + (f'private_key_path={key_path}',
                        f'public_key_path={pub_key_path}')
-    _run_terraform_cmd('apply', module, install_deps, v_root, log, tfvars)
+    _run_terraform_cmd(vconfig, 'apply', module, install_deps, log, tfvars)
 
 
 @infra.command(short_help='destroy redpanda deployment.')
+@click.option('--conf',
+              help=('Path to configuration file. If not given, a .vtools.yml '
+                    'file is searched recursively starting from the current '
+                    'working directory.'),
+              default=None)
 @click.option('--module',
               help='The name of the module to deploy',
               required=True)
 @click.option('--install-deps',
               default=False,
               help='Download and install the dependencies')
-@click.option('--v-root', help='The path to the v repo', required=True)
 @click.option('--ssh-key',
               help='The path to the SSH key',
               default='~/.ssh/infra-key')
@@ -55,26 +65,27 @@ def deploy(module, install_deps, v_root, ssh_key, log, tfvars):
               type=click.Choice(['debug', 'info', 'warning', 'error', 'fatal'],
                                 case_sensitive=False))
 @click.argument('tfvars', nargs=-1)
-def destroy(module, install_deps, v_root, ssh_key, log, tfvars):
+def destroy(conf, module, install_deps, ssh_key, log, tfvars):
+    vconfig = config.VConfig(conf)
     abs_path = os.path.abspath(os.path.expanduser(ssh_key))
-    comment = _get_ssh_metadata(v_root)
+    comment = _get_ssh_metadata(vconfig)
     key_path, pub_key_path = keys.generate_key(abs_path, comment, '""')
     tfvars = tfvars + (f'private_key_path={key_path}',
                        f'public_key_path={pub_key_path}')
-    _run_terraform_cmd('destroy', module, install_deps, v_root, log, tfvars)
+    _run_terraform_cmd(vconfig, 'destroy', module, install_deps, log, tfvars)
 
 
-def _run_terraform_cmd(action, module, install_deps, v_root, log, tfvars):
+def _run_terraform_cmd(vconfig, action, module, install_deps, log, tfvars):
     logging.set_verbosity(log)
-    _check_deps(v_root, install_deps)
+    _check_deps(vconfig, install_deps)
 
     terraform_vars = _get_tf_vars(tfvars)
-    _run_terraform(action, module, terraform_vars, v_root)
+    _run_terraform(vconfig, action, module, terraform_vars)
 
 
-def _run_terraform(action, module, tf_vars, v_root):
-    module_dir = os.path.join(v_root, 'infra', 'modules', module)
-    tf_bin = deps.get_terraform_path(v_root)
+def _run_terraform(vconfig, action, module, tf_vars):
+    module_dir = os.path.join(vconfig.src_dir, 'infra', 'modules', module)
+    tf_bin = os.path.join(vconfig.infra_bin_dir, 'terraform')
     base_cmd = f'cd {module_dir} && {tf_bin}'
     init_cmd = f'{base_cmd} init'
     shell.run_subprocess(init_cmd)
@@ -89,14 +100,14 @@ def _get_tf_vars(tfvars):
     return ' '.join([f'-var {v}' for v in tfvars])
 
 
-def _check_deps(v_root, force_install):
-    deps_installed = deps.check_deps_installed(v_root)
+def _check_deps(vconfig, force_install):
+    deps_installed = deps.check_deps_installed(vconfig)
     if not deps_installed or force_install:
-        deps.install_deps(v_root)
+        deps.install_deps(vconfig)
 
 
-def _get_ssh_metadata(v_root):
-    r = git.Repo(v_root, search_parent_directories=True)
+def _get_ssh_metadata(vconfig):
+    r = git.Repo(vconfig.src_dir, search_parent_directories=True)
     reader = r.config_reader()
     email = reader.get_value("user", "email")
     today = date.today()
