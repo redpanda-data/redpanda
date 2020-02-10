@@ -81,7 +81,7 @@ batch_cache_index::read_result batch_cache_index::read(
                   return bool(e.second);
               });
             if (next_batch != _index.end()) {
-                ret.next_batch = next_batch->second->batch.base_offset();
+                ret.next_cached_batch = next_batch->second->batch.base_offset();
             }
             break;
         }
@@ -95,6 +95,7 @@ batch_cache_index::read_result batch_cache_index::read(
         }
     }
 
+    ret.next_batch = offset;
     return ret;
 }
 

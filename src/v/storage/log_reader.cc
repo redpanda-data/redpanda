@@ -111,7 +111,7 @@ log_segment_batch_reader::read(model::timeout_clock::time_point timeout) {
         return ss::make_ready_future<ss::circular_buffer<model::record_batch>>(
           std::move(cache_read.batches));
     }
-    auto parser = initialize(timeout, cache_read.next_batch);
+    auto parser = initialize(timeout, cache_read.next_cached_batch);
     auto ptr = parser.get();
     return ptr->consume()
       .then([this](size_t bytes_consumed) {
