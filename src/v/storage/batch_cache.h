@@ -187,7 +187,8 @@ public:
     struct read_result {
         ss::circular_buffer<model::record_batch> batches;
         size_t memory_usage{0};
-        std::optional<model::offset> next_batch;
+        model::offset next_batch;
+        std::optional<model::offset> next_cached_batch;
     };
 
     batch_cache_index(batch_cache& cache)
@@ -230,8 +231,13 @@ public:
      * from the specified offset up until the given max offset. A partial
      * result will be returned if any cache miss occurs or max bytes is
      * exceeded. If applicable, the result will include the base offset of the
-     * next available batch in the cache. This offset may then be used to
-     * optimize for returning to the cache to satisfy reads.
+     * next available batch in the cache (`.next_cached_batch`). This offset may
+     * then be used to optimize for returning to the cache to satisfy reads.
+     *
+     * The `.next_batch` field in the result is defined to be the base offset of
+     * the next batch in the log. This value should be used to initialize any
+     * iteration over the log, even when no cached results are returned because
+     * the type filter may cause cached batches to be skipped.
      */
     read_result read(
       model::offset offset,
