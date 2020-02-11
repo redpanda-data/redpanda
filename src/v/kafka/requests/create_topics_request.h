@@ -66,7 +66,7 @@ struct create_topics_response final {
         std::optional<ss::sstring> error_message; // >= v1
     };
 
-    std::chrono::milliseconds throttle; // >= v2
+    std::chrono::milliseconds throttle = std::chrono::milliseconds(0); // >= v2
     std::vector<topic> topics;
 
     void decode(iobuf buf, api_version version);

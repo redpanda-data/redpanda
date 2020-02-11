@@ -50,7 +50,8 @@ struct join_group_response final {
         bytes metadata;
     };
 
-    std::chrono::milliseconds throttle_time; // >= v2
+    std::chrono::milliseconds throttle_time = std::chrono::milliseconds(
+      0); // >= v2
     kafka::error_code error;
     kafka::generation_id generation_id;
     kafka::protocol_name protocol_name;

@@ -72,7 +72,7 @@ struct produce_response final {
     };
 
     std::vector<topic> topics;
-    std::chrono::milliseconds throttle;
+    std::chrono::milliseconds throttle = std::chrono::milliseconds(0);
 
     void encode(const request_context& ctx, response& resp);
 };

@@ -51,7 +51,8 @@ struct sync_group_request final {
 std::ostream& operator<<(std::ostream&, const sync_group_request&);
 
 struct sync_group_response final {
-    std::chrono::milliseconds throttle_time; // >= v1
+    std::chrono::milliseconds throttle_time = std::chrono::milliseconds(
+      0); // >= v1
     error_code error;
     bytes assignment;
 
