@@ -15,30 +15,30 @@ struct put_reply {
 namespace reflection {
 
 template<>
-struct adl<model::record_batch_reader> {
-    void to(iobuf& out, model::record_batch_reader&& rdr) {
-        auto batches = model::consume_reader_to_memory(
-                         std::move(rdr), model::no_timeout)
-                         .get0();
-        reflection::adl<uint32_t>{}.to(out, batches.size());
-        for (auto& batch : batches) {
-            reflection::serialize(out, std::move(batch));
-        }
+struct async_adl<model::record_batch_reader> {
+    ss::future<> to(iobuf& out, model::record_batch_reader&& request) {
+        return model::consume_reader_to_memory(
+                 std::move(request), model::no_timeout)
+          .then([&out](ss::circular_buffer<model::record_batch> batches) {
+              reflection::adl<uint32_t>{}.to(out, batches.size());
+              for (auto& batch : batches) {
+                  reflection::serialize(out, std::move(batch));
+              }
+          });
     }
 
-    model::record_batch_reader from(iobuf io) {
-        return reflection::from_iobuf<model::record_batch_reader>(
-          std::move(io));
-    }
-
-    model::record_batch_reader from(iobuf_parser& in) {
+    ss::future<model::record_batch_reader> from(iobuf_parser& in) {
         auto batchCount = reflection::adl<uint32_t>{}.from(in);
         auto batches = ss::circular_buffer<model::record_batch>{};
         batches.reserve(batchCount);
         for (int i = 0; i < batchCount; ++i) {
             batches.push_back(adl<model::record_batch>{}.from(in));
         }
-        return model::make_memory_record_batch_reader(std::move(batches));
+        auto reader = model::make_memory_record_batch_reader(
+          std::move(batches));
+        return ss::make_ready_future<model::record_batch_reader>(
+          std::move(reader));
     }
 };
+
 } // namespace reflection
