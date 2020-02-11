@@ -3,5 +3,5 @@ output "ip" {
 }
 
 output "ssh_cmd" {
-  value = formatlist("ssh -F ${abspath(dirname("."))}/ssh_config ${var.distro_ssh_user[var.distro]}@%s", aws_eip.elastic_ip.*.public_ip)
+  value = formatlist("ssh -F ${abspath(dirname("."))}/${local.ssh_config_file} ${var.distro_ssh_user[var.distro]}@%s", aws_eip.elastic_ip.*.public_ip)
 }

@@ -1,3 +1,21 @@
+resource "random_uuid" "cluster" {}
+
+locals {
+  timestamp = timestamp()
+}
+
+locals {
+  uuid = random_uuid.cluster.result
+}
+
+locals {
+  deployment_id = "${random_uuid.cluster.result}-${local.timestamp}"
+}
+
+locals {
+  ssh_config_file = "ssh_config-${local.uuid}"
+}
+
 provider "aws" {
   profile = "default"
   region  = "us-west-1"
@@ -29,13 +47,18 @@ resource "aws_instance" "node" {
   }
 
   provisioner "local-exec" {
+    command = "echo 'IdentityFile ${var.private_key_path}\nCompression yes' > ${local.ssh_config_file}"
+  }
+
+  provisioner "local-exec" {
     environment = {
-      PKG_PATH = var.local_package_abs_path
-      SSH_KEY  = var.private_key_path
-      SSH_USER = var.distro_ssh_user[var.distro]
-      IP       = self.public_ip
-      TIMEOUT  = var.ssh_timeout
-      RETRIES  = var.ssh_retries
+      PKG_PATH        = var.local_package_abs_path
+      SSH_KEY         = var.private_key_path
+      SSH_USER        = var.distro_ssh_user[var.distro]
+      SSH_CONFIG_FILE = local.ssh_config_file
+      IP              = self.public_ip
+      TIMEOUT         = var.ssh_timeout
+      RETRIES         = var.ssh_retries
     }
 
     command = "./scp_local_pkg.sh"
@@ -57,10 +80,16 @@ resource "aws_instance" "node" {
       "sudo systemctl start redpanda"
     ]
   }
+
+  provisioner "local-exec" {
+    when       = destroy
+    on_failure = continue
+    command    = "rm ${local.ssh_config_file}"
+  }
 }
 
 resource "aws_security_group" "node_sec_group" {
-  name        = "node-sec-group"
+  name        = "node-sec-group-${local.deployment_id}"
   description = "redpanda ports"
 
   # SSH access from anywhere
@@ -105,6 +134,6 @@ resource "aws_security_group" "node_sec_group" {
 }
 
 resource "aws_key_pair" "ssh" {
-  key_name   = "key"
+  key_name   = "key-${local.deployment_id}"
   public_key = file(var.public_key_path)
 }
