@@ -64,8 +64,10 @@ def _run_terraform(action, module, tf_vars, v_root):
     pub_key_path = os.path.join(keys_dir, pub_key_relpath)
     module_dir = os.path.join(v_root, 'infra', 'modules', module)
     tf_bin = deps.get_terraform_path(v_root)
-    cmd = f'''cd {module_dir} && \
-{tf_bin} {action} -auto-approve \
+    base_cmd = f'cd {module_dir} && {tf_bin}'
+    init_cmd = f'{base_cmd} init'
+    shell.run_subprocess(init_cmd)
+    cmd = f'''{base_cmd} {action} -auto-approve \
 -var 'private_key_path={priv_key_path}' \
 -var 'public_key_path={pub_key_path}' \
 {tf_vars}'''
