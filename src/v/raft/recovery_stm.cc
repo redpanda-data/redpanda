@@ -67,7 +67,7 @@ ss::future<> recovery_stm::replicate(model::record_batch_reader&& reader) {
       static_cast<model::offset::type>(_ptr->_meta.commit_index));
     // build request
     auto r = append_entries_request{
-      .node_id = _meta.node_id,
+      .node_id = _ptr->self(),
       .meta = protocol_metadata{.group = _ptr->_meta.group,
                                 .commit_index = commit_idx,
                                 .term = _ptr->_meta.term,
@@ -139,8 +139,14 @@ recovery_stm::dispatch_append_entries(append_entries_request&& r) {
 }
 
 bool recovery_stm::is_recovery_finished() {
-    return _meta.match_index == _ptr->_log.max_offset() // fully caught up
-           || _stop_requested                           // stop requested
+    auto max_offset = _ptr->_log.max_offset();
+    _ctxlog.trace(
+      "Recovery status - node {}, match idx: {}, max offset: {}",
+      _meta.node_id,
+      _meta.match_index,
+      max_offset);
+    return _meta.match_index == max_offset // fully caught up
+           || _stop_requested              // stop requested
            || _ptr->_vstate
                 != consensus::vote_state::leader; // not a leader anymore
 }
