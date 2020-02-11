@@ -29,7 +29,8 @@ struct leave_group_request final {
 std::ostream& operator<<(std::ostream&, const leave_group_request&);
 
 struct leave_group_response final {
-    std::chrono::milliseconds throttle_time; // >= v1
+    std::chrono::milliseconds throttle_time = std::chrono::milliseconds(
+      0); // >= v1
     error_code error;
 
     explicit leave_group_response(error_code error)

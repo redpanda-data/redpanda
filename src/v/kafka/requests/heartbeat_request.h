@@ -31,7 +31,8 @@ struct heartbeat_request final {
 std::ostream& operator<<(std::ostream&, const heartbeat_request&);
 
 struct heartbeat_response final {
-    std::chrono::milliseconds throttle_time; // >= v1
+    std::chrono::milliseconds throttle_time = std::chrono::milliseconds(
+      0); // >= v1
     error_code error;
 
     explicit heartbeat_response(error_code error)

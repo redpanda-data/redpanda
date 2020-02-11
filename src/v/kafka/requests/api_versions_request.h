@@ -46,7 +46,7 @@ struct api_versions_response final {
 
     error_code error;
     std::vector<api> apis;
-    std::chrono::milliseconds throttle; // >= v1
+    std::chrono::milliseconds throttle = std::chrono::milliseconds(0); // >= v1
 
     void encode(const request_context& ctx, response& resp);
     void decode(iobuf buf, api_version version);
