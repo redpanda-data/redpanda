@@ -572,43 +572,28 @@ ss::future<join_reply> controller::dispatch_join_to_remote(
             });
       });
 }
-
 void controller::join_raft0() {
     (void)ss::with_gate(_bg, [this] {
-        return ss::repeat([this] {
-            if (_bg.is_closed()) {
-                return ss::make_ready_future<ss::stop_iteration>(
-                  ss::stop_iteration::yes);
-            }
-            if (_raft0->config().contains_broker(_self.id())) {
-                clusterlog.debug(
-                  "Current node '{}' is already raft0 group member",
-                  _self.id());
-                return ss::make_ready_future<ss::stop_iteration>(
-                  ss::stop_iteration::yes);
-            }
-
-            clusterlog.debug("Trying to join the cluster");
-            return dispatch_join_to_seed_server(std::cbegin(_seed_servers))
-              .then([] {
-                  // Joined successfully, stop here
-                  return ss::stop_iteration::yes;
-              })
-              .handle_exception([](std::exception_ptr e) {
-                  clusterlog.warn("Error joining cluster - {}", e);
-                  using namespace std::chrono_literals;
-                  // wait before next attempt
-                  return ss::sleep(5s).then(
-                    [] { return ss::stop_iteration::no; });
-              });
-        });
+        return ss::do_until(
+          [this] {
+              // stop if we are already cluster member or gate is closed
+              return _raft0->config().contains_broker(_self.id())
+                     || _bg.is_closed();
+          },
+          [this] {
+              clusterlog.debug("Trying to join the cluster");
+              return dispatch_join_to_seed_server(std::cbegin(_seed_servers))
+                .finally([] {
+                    using namespace std::chrono_literals; // NOLINT
+                    return ss::sleep(5s);
+                });
+          });
     });
 }
 
 ss::future<> controller::dispatch_join_to_seed_server(seed_iterator it) {
     if (it == std::cend(_seed_servers)) {
-        return ss::make_exception_future<>(
-          std::runtime_error("Error registering node in the cluster"));
+        return ss::make_ready_future<>();
     }
     // Current node is a seed server, just call the method
     if (it->id == _self.id()) {
