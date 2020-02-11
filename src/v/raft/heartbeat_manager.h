@@ -33,7 +33,14 @@ public:
     using consensus_ptr = ss::lw_shared_ptr<consensus>;
     using consensus_set = boost::container::
       flat_set<consensus_ptr, details::consensus_ptr_by_group_id>;
+    struct node_heartbeat {
+        node_heartbeat(model::node_id t, heartbeat_request req)
+          : target(t)
+          , request(std::move(req)) {}
 
+        model::node_id target;
+        heartbeat_request request;
+    };
     heartbeat_manager(
       duration_type interval, ss::sharded<rpc::connection_cache>&);
 
@@ -51,7 +58,7 @@ private:
       clock_type::time_point last_timeout, clock_type::time_point next_timeout);
 
     /// \brief sends a batch to one node
-    ss::future<> do_heartbeat(heartbeat_request&&, clock_type::time_point);
+    ss::future<> do_heartbeat(node_heartbeat&&, clock_type::time_point);
 
     /// \brief notifies the consensus groups about append_entries log offsets
     /// \param n the physical node that owns heart beats
