@@ -14,7 +14,7 @@ def get_terraform_path(v_root):
 def check_deps_installed(v_root):
     install_dir = _get_install_dir(v_root)
     return _check_installed(install_dir, 'terraform') and _check_installed(
-        install_dir, 'aws2')
+        install_dir, os.path.join('v2', 'current', 'bin', 'aws'))
 
 
 def install_deps(v_root):
@@ -30,14 +30,16 @@ def _install_awscli(install_dir):
     install_cmd = f"""{os.path.join(install_dir, 'aws', 'install')} \
     --install-dir {install_dir} \
     --bin-dir {install_dir}"""
-    logging.info('Downloading AWS CLI v2...')
+    logging.info('Downloading AWS CLI...')
     _download_and_extract(awscli_url, awscli_zip, install_dir)
-    if _check_installed('aws2'):
-        logging.info('Found existing AWS CLI v2 installation. Updating...')
+    installed = os.path.isfile(
+        os.path.join(install_dir, 'v2', 'current', 'bin', 'aws'))
+    if installed:
+        logging.info('Found existing AWS CLI installation. Updating...')
         shell.run_subprocess(f'{install_cmd} --update')
     else:
         shell.run_subprocess(install_cmd)
-        shell.run_subprocess(f'{os.path.join(install_dir, "aws2")} configure')
+        shell.run_subprocess(f'{os.path.join(install_dir, "aws")} configure')
     shutil.rmtree(os.path.join(install_dir, 'aws'))
 
 

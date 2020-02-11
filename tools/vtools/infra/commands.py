@@ -91,4 +91,4 @@ def _check_keys():
 def _check_deps(v_root, force_install):
     deps_installed = deps.check_deps_installed(v_root)
     if not deps_installed or force_install:
-        deps.install_deps()
+        deps.install_deps(v_root)
