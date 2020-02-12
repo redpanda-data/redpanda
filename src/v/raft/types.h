@@ -14,6 +14,7 @@
 #include <boost/range/irange.hpp>
 
 #include <cstdint>
+#include <exception>
 
 namespace raft {
 using clock_type = ss::lowres_clock;
@@ -100,6 +101,8 @@ struct append_entries_request {
 };
 
 struct [[gnu::packed]] append_entries_reply {
+    enum class status : uint8_t { success, failure, group_unavailable };
+
     /// \brief callee's node_id; work-around for batched heartbeats
     ss::unaligned<model::node_id::type> node_id = -1;
     ss::unaligned<group_id::type> group = -1;
@@ -110,7 +113,7 @@ struct [[gnu::packed]] append_entries_reply {
     /// nextIndex with a follower that is far behind a leader
     ss::unaligned<model::offset::type> last_log_index = 0;
     /// \brief did the rpc succeed or not
-    ss::unaligned<bool> success = false;
+    ss::unaligned<status> result = status::failure;
 };
 
 /// \brief this is our _biggest_ modification to how raft works
@@ -175,11 +178,28 @@ static inline std::ostream& operator<<(std::ostream& o, const vote_reply& r) {
     return o << "{term:" << r.term << ", vote_granted: " << r.granted
              << ", log_ok:" << r.log_ok << "}";
 }
+
+static inline std::ostream&
+operator<<(std::ostream& o, const append_entries_reply::status& r) {
+    switch (r) {
+    case append_entries_reply::status::success:
+        o << "failure";
+        return o;
+    case append_entries_reply::status::failure:
+        o << "failure";
+        return o;
+    case append_entries_reply::status::group_unavailable:
+        o << "group_unavailable";
+        return o;
+    default:
+        std::terminate();
+    }
+}
 static inline std::ostream&
 operator<<(std::ostream& o, const append_entries_reply& r) {
     return o << "{node_id: " << r.node_id << ", group: " << r.group
              << ", term:" << r.term << ", last_log_index:" << r.last_log_index
-             << ", success: " << r.success << "}";
+             << ", result: " << r.result << "}";
 }
 
 static inline std::ostream& operator<<(std::ostream& o, const vote_request& r) {
