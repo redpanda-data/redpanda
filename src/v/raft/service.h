@@ -13,7 +13,7 @@ CONCEPT(
     template<typename ConsensusManager>
     concept bool RaftGroupManager() {
         return requires(ConsensusManager m, group_id g) {
-            { m.consensus_for(g) } -> consensus&;
+            { m.consensus_for(g) } -> ss::lw_shared_ptr<consensus>
     };
 })
 CONCEPT(
@@ -21,6 +21,7 @@ CONCEPT(
     concept bool ShardLookupManager() {
         return requires(ShardLookup m, group_id g) {
             { m.shard_for(g) } -> ss::shard_id;
+            { m.contains(g) } -> bool;
     };
 })
 // clang-format on
@@ -90,30 +91,58 @@ public:
     }
 
 private:
+    ss::future<vote_reply> make_failed_vote_reply() {
+        return ss::make_ready_future<vote_reply>(vote_reply{
+          .term = model::term_id{}(), .granted = false, .log_ok = false});
+    }
+
     ss::future<vote_reply> do_vote(vote_request&& r, rpc::streaming_context&) {
-        auto shard = _shard_table.shard_for(group_id(r.group));
+        auto group = group_id(r.group);
+        if (unlikely(!_shard_table.contains(group))) {
+            return make_failed_vote_reply();
+        }
+        auto shard = _shard_table.shard_for(group);
         return with_scheduling_group(
           get_scheduling_group(), [this, shard, r = std::move(r)]() mutable {
               return _group_manager.invoke_on(
                 shard,
                 get_smp_service_group(),
                 [this, r = std::move(r)](ConsensusManager& m) mutable {
-                    return m.consensus_for(group_id(r.group))
-                      .vote(std::move(r));
+                    auto c = m.consensus_for(group_id(r.group));
+                    if (unlikely(!c)) {
+                        return make_failed_vote_reply();
+                    }
+                    return c->vote(std::move(r));
                 });
           });
     }
+
+    ss::future<append_entries_reply>
+    make_missing_group_reply(raft::group_id group) {
+        return ss::make_ready_future<append_entries_reply>(append_entries_reply{
+          .group = group(),
+          .result = append_entries_reply::status::group_unavailable});
+    }
+
     ss::future<append_entries_reply>
     do_append_entries(append_entries_request&& r, rpc::streaming_context&) {
-        auto shard = _shard_table.shard_for(group_id(r.meta.group));
+        auto group = group_id(r.meta.group);
+        if (unlikely(!_shard_table.contains(group))) {
+            return make_missing_group_reply(group);
+        }
+        auto shard = _shard_table.shard_for(group);
         return with_scheduling_group(
           get_scheduling_group(), [this, shard, r = std::move(r)]() mutable {
               return _group_manager.invoke_on(
                 shard,
                 get_smp_service_group(),
                 [this, r = std::move(r)](ConsensusManager& m) mutable {
-                    return m.consensus_for(group_id(r.meta.group))
-                      .append_entries(std::move(r));
+                    auto group = group_id(r.meta.group);
+                    auto c = m.consensus_for(group);
+                    if (unlikely(!c)) {
+                        return make_missing_group_reply(group);
+                    }
+                    return c->append_entries(std::move(r));
                 });
           });
     }
