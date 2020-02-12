@@ -34,6 +34,14 @@ def add_known_host(host, port, timeout, retries):
     hostkeys.save(known_hosts_file)
 
 
+def run_subprocess(ip, ssh_user, ssh_key_path, cmd):
+    client = paramiko.SSHClient()
+    client.load_host_keys(known_hosts_file)
+    k = paramiko.RSAKey.from_private_key_file(ssh_key_path)
+    client.connect(ip, pkey=k, username=ssh_user)
+    return client.exec_command(cmd)
+
+
 def _scan_host(host, port, timeout=10, retries=0):
     exception = Exception('Maximum retries reached')
     while retries > 0:
