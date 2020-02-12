@@ -7,5 +7,5 @@ if [[ -n $PKG_PATH ]]; then
     --host "${IP}" \
     --retries "${RETRIES}" \
     --timeout "${TIMEOUT}"
-  scp -F ./ssh_config "${PKG_PATH}" "${SSH_USER}"@"${IP}":~
+  scp -F "${SSH_CONFIG_FILE}" "${PKG_PATH}" "${SSH_USER}"@"${IP}":~
 fi
