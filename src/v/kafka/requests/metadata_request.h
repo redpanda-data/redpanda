@@ -5,6 +5,7 @@
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>
+
 #include <chrono>
 
 namespace kafka {
@@ -65,7 +66,8 @@ struct metadata_response {
         static topic make_from_topic_metadata(model::topic_metadata&& tp_md);
     };
 
-    std::chrono::milliseconds throttle_time = std::chrono::milliseconds(0); // version >= 3
+    std::chrono::milliseconds throttle_time = std::chrono::milliseconds(
+      0); // version >= 3
     std::vector<broker> brokers;
     std::optional<ss::sstring> cluster_id; // version >= 2
     model::node_id controller_id;          // version >= 1
