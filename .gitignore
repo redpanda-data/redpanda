@@ -186,3 +186,6 @@ tags
 
 # metrics API
 src/go/metrics/env.yaml
+
+# Infra
+infra/modules/cluster/ssh_config*
