@@ -11,6 +11,7 @@
 #include "storage/tests/utils/random_batch.h"
 #include "test_utils/fixture.h"
 
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/net/socket_defs.hh>
 #include <seastar/util/noncopyable_function.hh>
@@ -26,12 +27,10 @@ inline static auto heartbeat_interval = 40ms;
 constexpr inline static auto default_storage_type
   = storage::log_manager::storage_type::disk;
 
+using consensus_ptr = ss::lw_shared_ptr<raft::consensus>;
 struct test_raft_manager {
-    explicit test_raft_manager(raft::consensus* ptr)
-      : consensus_ptr(ptr) {}
-    raft::consensus& consensus_for(raft::group_id) { return *consensus_ptr; };
-
-    raft::consensus* consensus_ptr;
+    consensus_ptr consensus_for(raft::group_id) { return c; };
+    consensus_ptr c = nullptr;
 };
 
 struct consume_to_vector {
@@ -50,7 +49,6 @@ struct consume_to_vector {
 
 struct raft_node {
     using log_t = std::vector<model::record_batch>;
-    using consensus_ptr = ss::lw_shared_ptr<raft::consensus>;
     using leader_clb_t
       = ss::noncopyable_function<void(raft::leadership_status)>;
 
@@ -110,7 +108,10 @@ struct raft_node {
             .disable_metrics = rpc::metrics_disabled::yes,
           })
           .get0();
-        raft_manager.start(consensus.get()).get0();
+        raft_manager.start().get0();
+        raft_manager
+          .invoke_on(0, [this](test_raft_manager& mgr) { mgr.c = consensus; })
+          .get0();
         server
           .invoke_on_all([this](rpc::server& s) {
               return s
@@ -162,6 +163,8 @@ struct raft_node {
     }
 
     ss::shard_id shard_for(raft::group_id) { return ss::shard_id(0); }
+
+    bool contains(raft::group_id) { return true; }
 
     ss::future<log_t> read_log() {
         auto max_offset = model::offset(consensus->meta().commit_index);
@@ -222,7 +225,7 @@ struct raft_group {
         }
     };
 
-    raft_node::consensus_ptr member_consensus(model::node_id node) {
+    consensus_ptr member_consensus(model::node_id node) {
         return _members.find(node)->second.consensus;
     }
 

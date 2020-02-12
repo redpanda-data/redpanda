@@ -32,8 +32,11 @@ public:
     }
 
     /// \brief raw api for raft/service.h
-    inline raft::consensus& consensus_for(raft::group_id group) const {
-        return *(_raft_table.find(group)->second->raft());
+    inline consensus_ptr consensus_for(raft::group_id group) const {
+        if (auto it = _raft_table.find(group); it != _raft_table.end()) {
+            return it->second->raft();
+        }
+        return nullptr;
     }
 
     ss::future<> start();
