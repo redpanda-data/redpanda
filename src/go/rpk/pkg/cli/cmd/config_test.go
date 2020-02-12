@@ -190,6 +190,91 @@ func TestSetId(t *testing.T) {
 	}
 }
 
+func TestSetKafkaApi(t *testing.T) {
+	configPath := "/etc/redpanda/redpanda.yaml"
+	tests := []struct {
+		name      string
+		ip        string
+		port      string
+		args      []string
+		expectErr bool
+	}{
+		{
+			name: "it should set the ip and port, ",
+			ip:   "172.34.56.87",
+			port: "33246",
+		},
+		{
+			name:      "it should fail if the ip is missing",
+			port:      "1723",
+			expectErr: true,
+		},
+		{
+			name:      "it should fail if the port is missing",
+			ip:        "172.34.56.87",
+			expectErr: true,
+		},
+		{
+			name:      "it should fail if the port isn't numeric",
+			port:      "what",
+			expectErr: true,
+		},
+		{
+			name:      "it should fail if the given path to the config doesn't exist",
+			ip:        "172.34.56.87",
+			port:      "33246",
+			args:      []string{"--redpanda-cfg", "/does/not/exist.yml"},
+			expectErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fs := afero.NewMemMapFs()
+			bs, err := yaml.Marshal(getValidConfig())
+			if err != nil {
+				t.Error(err.Error())
+			}
+			err = afero.WriteFile(fs, configPath, bs, 0644)
+			if err != nil {
+				t.Error(err.Error())
+			}
+
+			c := cmd.NewConfigCommand(fs)
+			args := []string{"set", "kafka-api", "--ip", tt.ip, "--port", tt.port}
+			c.SetArgs(append(args, tt.args...))
+			err = c.Execute()
+			if tt.expectErr {
+				if err == nil {
+					t.Fatal("expected an error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("got an unexpected error: %v", err.Error())
+			}
+			conf, err := config.ReadConfigFromPath(fs, configPath)
+			if err != nil {
+				t.Fatalf("got an unexpected error while reading %s: %v", configPath, err)
+			}
+			if conf.Redpanda.KafkaApi.Address != tt.ip {
+				t.Errorf(
+					"got %s, expected %s",
+					conf.Redpanda.KafkaApi.Address,
+					tt.ip,
+				)
+			}
+			if fmt.Sprint(conf.Redpanda.KafkaApi.Port) != tt.port {
+				t.Errorf(
+					"got %d, expected %s",
+					conf.Redpanda.KafkaApi.Port,
+					tt.port,
+				)
+			}
+		})
+	}
+}
+
 func TestSetSeedNodes(t *testing.T) {
 	configPath := "/etc/redpanda/redpanda.yaml"
 	tests := []struct {
