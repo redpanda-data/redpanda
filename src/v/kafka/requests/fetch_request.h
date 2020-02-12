@@ -178,7 +178,8 @@ struct fetch_response final {
     fetch_response()
       : throttle_time(0) {}
 
-    std::chrono::milliseconds throttle_time = std::chrono::milliseconds(0); // >= v1
+    std::chrono::milliseconds throttle_time = std::chrono::milliseconds(
+      0); // >= v1
     std::vector<partition> partitions;
 
     void encode(const request_context& ctx, response& resp);
