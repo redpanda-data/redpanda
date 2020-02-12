@@ -2,7 +2,8 @@ import git
 import glob
 import io
 import os
-import re
+import pathlib
+import lddwrap
 import shutil
 import subprocess
 import tarfile
@@ -24,22 +25,33 @@ REVISION = "0000000"
 RELEASE = "1"
 
 
-def _get_dependencies(binary):
+def _get_dependencies(binary, vconfig):
     logging.debug(f"Getting dependencies of {binary}")
-    pattern = r'(.*) => (.*) \(0x[0-9a-f]{16}\)'
+
+    if vconfig.compiler == 'clang':
+        libasan_path = shell.run_oneline(
+            'clang -print-file-name=libclang_rt.asan-x86_64.so')
+    else:
+        libasan_path = shell.run_oneline('gcc -print-file-name=libasan.so')
+    compiler_libs_path = os.path.dirname(libasan_path)
+
+    env = os.environ.copy()
+    env['LD_LIBRARY_PATH'] = (f'{vconfig.external_path}/lib:'
+                              f'{vconfig.external_path}/lib64:'
+                              f'{compiler_libs_path}')
+    deps = lddwrap.list_dependencies(path=pathlib.Path(binary), env=env)
+
     libs = {}
-    raw_lines = shell.raw_check_output(f"ldd {binary}").splitlines()
-    lines = map(lambda line: line.strip(), raw_lines)
-    for ldd_line in lines:
-        match = re.search(pattern, ldd_line)
-        if match is not None:
-            libs[match.group(1)] = os.path.realpath(match.group(2))
-        elif 'ld-' in ldd_line:
-            libs['ld.so'] = os.path.realpath(ldd_line.split(' ')[0])
+    for dep in deps:
+        if not dep.found:
+            logging.fatal(f"Cannot find location for {dep.soname}")
+        if dep.soname:
+            # linux libs have soname=None
+            libs[dep.soname] = os.path.realpath(dep.path)
     return libs
 
 
-def _relocable_tar_package(dest, execs, configs, admin_api_swag):
+def _relocable_tar_package(dest, execs, configs, admin_api_swag, vconfig):
     logging.info(f"Creating relocable tar package {dest}")
     gzip_process = subprocess.Popen(f"pigz -f > {dest}",
                                     shell=True,
@@ -74,7 +86,7 @@ exec -a "$0" "$ldso" "$realexe" "$@"
         ti.linkname = '../lib/ld.so'
         ti.mtime = os.stat(exe).st_mtime
         ar.addfile(ti)
-        all_libs.update(_get_dependencies(exe))
+        all_libs.update(_get_dependencies(exe, vconfig))
     for lib, location in all_libs.items():
         logging.debug(f"Adding '{location}' lib to relocable tar")
         ar.add(location, arcname="lib/" + lib)
@@ -229,7 +241,7 @@ def create_packages(vconfig, formats, build_type):
 
     tar_name = 'redpanda.tar.gz'
     tar_path = f"{dist_path}/{tar_name}"
-    _relocable_tar_package(tar_path, execs, configs, admin_api_swag)
+    _relocable_tar_package(tar_path, execs, configs, admin_api_swag, vconfig)
 
     if 'tar' in formats:
         red_panda_tar(tar_path, dist_path, vconfig.src_dir)
