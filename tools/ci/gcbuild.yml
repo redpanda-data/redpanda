@@ -36,7 +36,7 @@ steps:
   args:
   - '-c'
   - |
-    if [[ "$_BUILD_TYPE" == "release" ]] && [[ "$_COMPILER" == "clang" ]]; then
+    if [[ "$_COMPILER" == "clang" ]]; then
       vtools fmt all --conf=tools/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml --check
     fi
 
