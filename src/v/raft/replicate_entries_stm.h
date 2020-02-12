@@ -56,8 +56,10 @@ private:
                 return state::in_progress;
             }
             if (value->has_value()) {
-                return value->value().success ? state::success
-                                              : state::failed_response;
+                return value->value().result
+                           == append_entries_reply::status::success
+                         ? state::success
+                         : state::failed_response;
             }
 
             return state::request_error;

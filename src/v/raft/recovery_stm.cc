@@ -94,7 +94,7 @@ ss::future<> recovery_stm::replicate(model::record_batch_reader&& reader) {
         // If AppendEntries fails because of log inconsistency: decrement
         // nextIndex and retry(§5.3)
 
-        if (!r.value().success) {
+        if (r.value().result == append_entries_reply::status::failure) {
             _meta.next_index = std::max(
               model::offset(0), details::prev_offset(_base_batch_offset));
             _ctxlog.trace(

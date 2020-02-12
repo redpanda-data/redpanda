@@ -79,7 +79,13 @@ consensus::success_reply consensus::process_append_reply(
 
     follower_index_metadata& idx = _fstats.get(node);
     append_entries_reply& reply = r.value();
-
+    if (unlikely(
+          reply.result == append_entries_reply::status::group_unavailable)) {
+        // ignore this response since group is not yet bootstrapped at the
+        // follower
+        _ctxlog.debug("Consensus not present at node {}", node);
+        return success_reply::no;
+    }
     if (unlikely(reply.group != _meta.group)) {
         // logic bug
         throw std::runtime_error(fmt::format(
@@ -108,7 +114,7 @@ consensus::success_reply consensus::process_append_reply(
         idx.next_index = details::next_offset(idx.last_log_index);
     }
 
-    if (reply.success) {
+    if (reply.result == append_entries_reply::status::success) {
         successfull_append_entries_reply(idx, std::move(reply));
         return success_reply::yes;
     }
@@ -398,7 +404,7 @@ consensus::do_append_entries(append_entries_request&& r) {
     reply.group = r.meta.group;
     reply.term = _meta.term;
     reply.last_log_index = _meta.prev_log_index;
-    reply.success = false;
+    reply.result = append_entries_reply::status::failure;
     _probe.append_requested();
 
     // no need to trigger timeout
@@ -408,7 +414,7 @@ consensus::do_append_entries(append_entries_request&& r) {
     // raft.pdf: Reply false if term < currentTerm (§5.1)
     if (r.meta.term < _meta.term) {
         _probe.append_request_term_older();
-        reply.success = false;
+        reply.result = append_entries_reply::status::failure;
         return ss::make_ready_future<append_entries_reply>(std::move(reply));
     }
 
@@ -461,7 +467,7 @@ consensus::do_append_entries(append_entries_request&& r) {
           last_log_term,
           r.meta.prev_log_index);
         _probe.append_request_log_term_older();
-        reply.success = false;
+        reply.result = append_entries_reply::status::failure;
         return ss::make_ready_future<append_entries_reply>(std::move(reply));
     }
 
@@ -472,7 +478,7 @@ consensus::do_append_entries(append_entries_request&& r) {
         _ctxlog.trace("Empty append entries, meta {}", r.meta);
         if (r.meta.prev_log_index < last_log_offset) {
             // do not tuncate on heartbeat just response with false
-            reply.success = false;
+            reply.result = append_entries_reply::status::failure;
             return ss::make_ready_future<append_entries_reply>(
               std::move(reply));
         }
@@ -480,7 +486,7 @@ consensus::do_append_entries(append_entries_request&& r) {
         return maybe_update_follower_commit_idx(
                  model::offset(r.meta.commit_index))
           .then([this, reply = std::move(reply)]() mutable {
-              reply.success = true;
+              reply.result = append_entries_reply::status::success;
               _probe.append_request_heartbeat();
               return ss::make_ready_future<append_entries_reply>(
                 std::move(reply));
@@ -490,7 +496,7 @@ consensus::do_append_entries(append_entries_request&& r) {
     // section 3
     if (r.meta.prev_log_index < last_log_offset) {
         if (unlikely(r.meta.prev_log_index < _meta.commit_index)) {
-            reply.success = true;
+            reply.result = append_entries_reply::status::success;
             _ctxlog.info("Stale append entries request processed, entry is "
                          "already present");
             return ss::make_ready_future<append_entries_reply>(
@@ -565,7 +571,7 @@ consensus::make_append_entries_reply(storage::append_result disk_results) {
     reply.group = _meta.group;
     reply.term = _meta.term;
     reply.last_log_index = disk_results.last_offset;
-    reply.success = true;
+    reply.result = append_entries_reply::status::success;
     return reply;
 }
 
