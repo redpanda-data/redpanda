@@ -36,7 +36,7 @@ struct service final : trongen_service {
                 get_smp_service_group(),
                 [this, r = std::move(r)](ConsensusManager& m) mutable {
                     return m.consensus_for(group_id(66))
-                      .replicate(std::move(r))
+                      ->replicate(std::move(r))
                       .then_wrapped([](ss::future<result<replicate_result>> f) {
                           put_reply ret;
                           try {

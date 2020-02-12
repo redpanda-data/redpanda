@@ -57,6 +57,7 @@ void cli_opts(po::options_description_easy_init o) {
 
 struct simple_shard_lookup {
     ss::shard_id shard_for(raft::group_id g) { return g() % ss::smp::count; }
+    ss::shard_id contains(raft::group_id g) { return true; }
 };
 
 class simple_group_manager {
@@ -74,7 +75,9 @@ public:
       , _hbeats(raft_heartbeat_interval, clients)
       , _clients(clients) {}
 
-    raft::consensus& consensus_for(raft::group_id g) { return *_consensus; }
+    ss::lw_shared_ptr<raft::consensus> consensus_for(raft::group_id) {
+        return _consensus;
+    }
 
     ss::future<> start(raft::group_configuration init_cfg) {
         return _mngr.manage(_ntp)
