@@ -5,12 +5,15 @@
 #include "model/metadata.h"
 #include "raft/heartbeat_manager.h"
 #include "storage/log_manager.h"
+#include "utils/named_type.h"
 
 #include <unordered_map>
 
 namespace cluster {
 class partition_manager {
 public:
+    using notification_id_type = named_type<int32_t, struct notification_id>;
+
     partition_manager(
       storage::log_append_config::fsync should_fsync,
       model::timeout_clock::duration disk_timeout,
@@ -41,8 +44,22 @@ public:
       std::vector<model::broker>,
       std::optional<raft::consensus::append_entries_cb_t>);
 
-    void register_leadership_notification(leader_cb_t cb) {
-        _notifications.push_back(std::move(cb));
+    notification_id_type register_leadership_notification(leader_cb_t cb) {
+        auto id = _notification_id++;
+        _notifications.push_back(std::make_pair(id, std::move(cb)));
+        return id;
+    }
+
+    void unregister_leadership_notification(notification_id_type id) {
+        auto it = std::find_if(
+          _notifications.begin(),
+          _notifications.end(),
+          [id](const std::pair<notification_id_type, leader_cb_t>& n) {
+              return n.first == id;
+          });
+        if (it != _notifications.end()) {
+            _notifications.erase(it);
+        }
     }
 
     std::optional<storage::log> log(const model::ntp& ntp) {
@@ -68,7 +85,8 @@ private:
     ss::sharded<cluster::shard_table>& _shard_table;
     ss::sharded<rpc::connection_cache>& _clients;
 
-    std::vector<leader_cb_t> _notifications;
+    notification_id_type _notification_id{0};
+    std::vector<std::pair<notification_id_type, leader_cb_t>> _notifications;
     // XXX use intrusive containers here
     std::unordered_map<model::ntp, ss::lw_shared_ptr<partition>> _ntp_table;
     std::unordered_map<raft::group_id, ss::lw_shared_ptr<partition>>
