@@ -65,8 +65,8 @@ struct context {
       model::offset start,
       model::offset end,
       size_t max_bytes = std::numeric_limits<size_t>::max()) {
-        auto cfg = log_reader_config{
-          start, end, 0, max_bytes, ss::default_priority_class()};
+        auto cfg = log_reader_config(
+          start, end, 0, max_bytes, ss::default_priority_class());
         if (_seg) {
             logs.add(std::move(_seg));
         }
@@ -250,14 +250,13 @@ SEASTAR_THREAD_TEST_CASE(test_batch_type_filter) {
             type_filter.push_back(model::record_batch_type(type));
         }
 
-        auto config = log_reader_config{
-          .start_offset = batches.front().base_offset(),
-          .last_offset = batches.back().last_offset(),
-          .min_bytes = 0,
-          .max_bytes = std::numeric_limits<size_t>::max(),
-          .prio = ss::default_priority_class(),
-          .type_filter = std::move(type_filter),
-        };
+        auto config = log_reader_config(
+          batches.front().base_offset(),
+          batches.back().last_offset(),
+          0,
+          std::numeric_limits<size_t>::max(),
+          ss::default_priority_class(),
+          std::move(type_filter));
 
         auto reader = ctx.reader(std::move(config));
         auto res = reader.consume(consumer(), model::no_timeout).get0();
