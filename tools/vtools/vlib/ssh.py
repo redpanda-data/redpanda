@@ -1,4 +1,5 @@
 import os
+import time
 import paramiko
 
 from absl import logging
@@ -53,4 +54,5 @@ def _scan_host(host, port, timeout=10, retries=0):
         except Exception as e:
             logging.error(str(e))
             logging.info(f'Retries left: {retries}')
+            time.sleep(2)
     raise exception
