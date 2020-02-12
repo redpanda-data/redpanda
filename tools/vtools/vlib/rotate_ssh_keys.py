@@ -68,10 +68,20 @@ def generate_keys():
     for key_type in KEY_TYPES:
         comment = get_key_comment()
         output_file = "%s/%s_key" % (root, key_type)
-        cmd = "ssh-keygen -t rsa -b 4096 -f %s -C %s" % (output_file, comment)
-        if not os.path.exists(output_file): shell.run_subprocess(cmd)
-        else: logging.info("File already exists: %s" % output_file)
+        generate_key(output_file, comment)
     return root
+
+
+def generate_key(path, comment, password=None):
+    cmd = f'ssh-keygen -t rsa -b 4096 -f {path} -C {comment}'
+    pub_path = f'{path}.pub'
+    if password is not None:
+        cmd = f'{cmd} -P {password}'
+    if not os.path.exists(path):
+        shell.run_subprocess(cmd)
+    else:
+        logging.info(f'File already exists: {path}')
+    return path, pub_path
 
 
 def _fprint():
