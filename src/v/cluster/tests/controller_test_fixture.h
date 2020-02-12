@@ -68,13 +68,13 @@ public:
 
     ~controller_tests_fixture() {
         _rpc.stop().get0();
+        if (_controller_started) {
+            _controller.stop().get();
+        }
         _pm.stop().get0();
         st.stop().get0();
         _md_cache.stop().get0();
         _cli_cache.stop().get0();
-        if (_controller_started) {
-            _controller.stop().get();
-        }
     }
 
     void

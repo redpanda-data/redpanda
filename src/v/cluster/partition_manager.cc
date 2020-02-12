@@ -47,7 +47,7 @@ void partition_manager::trigger_leadership_notification(
   raft::leadership_status st) {
     auto ptr = _raft_table.find(st.group)->second;
     for (auto& cb : _notifications) {
-        cb(ptr, st.current_leader);
+        cb.second(ptr, st.current_leader);
     }
 }
 
