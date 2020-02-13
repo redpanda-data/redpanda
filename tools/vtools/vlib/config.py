@@ -175,3 +175,8 @@ class VConfig(object):
     def gobin(self):
         """Path to go executable."""
         return f'{self._gopath}/bin/go'
+
+    @property
+    def infra_bin_dir(self):
+        """Path to infra binaries."""
+        return os.path.join(self.build_root, 'infra')
