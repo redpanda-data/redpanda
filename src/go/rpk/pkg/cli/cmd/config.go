@@ -34,6 +34,8 @@ func set(fs afero.Fs) *cobra.Command {
 	}
 	c.AddCommand(statsId(fs))
 	c.AddCommand(id(fs))
+	c.AddCommand(kafkaApi(fs))
+	c.AddCommand(rpcServer(fs))
 	c.AddCommand(seedNodes(fs))
 	return c
 }
@@ -95,6 +97,72 @@ func id(fs afero.Fs) *cobra.Command {
 			return config.WriteConfig(fs, conf, configFile)
 		},
 	}
+	return c
+}
+
+func kafkaApi(fs afero.Fs) *cobra.Command {
+	var (
+		ip   string
+		port int
+	)
+	c := &cobra.Command{
+		Use:   "kafka-api [FLAGS]",
+		Short: "Set this node's Kafka API IP and port",
+		RunE: func(c *cobra.Command, args []string) error {
+			_, conf, err := loadConfig(c, fs)
+			if err != nil {
+				return err
+			}
+			conf.Redpanda.KafkaApi.Address = ip
+			conf.Redpanda.KafkaApi.Port = port
+			return config.WriteConfig(fs, conf, conf.ConfigFile)
+		},
+	}
+	c.Flags().StringVar(&ip,
+		"ip",
+		"",
+		"The IP to bind the Kafka API server to.",
+	)
+	cobra.MarkFlagRequired(c.Flags(), "ip")
+	c.Flags().IntVar(&port,
+		"port",
+		0,
+		"The port to listen in.",
+	)
+	cobra.MarkFlagRequired(c.Flags(), "port")
+	return c
+}
+
+func rpcServer(fs afero.Fs) *cobra.Command {
+	var (
+		ip   string
+		port int
+	)
+	c := &cobra.Command{
+		Use:   "rpc-server [FLAGS]",
+		Short: "Set this node's RPC server IP and port",
+		RunE: func(c *cobra.Command, args []string) error {
+			_, conf, err := loadConfig(c, fs)
+			if err != nil {
+				return err
+			}
+			conf.Redpanda.RPCServer.Address = ip
+			conf.Redpanda.RPCServer.Port = port
+			return config.WriteConfig(fs, conf, conf.ConfigFile)
+		},
+	}
+	c.Flags().StringVar(&ip,
+		"ip",
+		"",
+		"The IP to bind the Kafka API server to.",
+	)
+	cobra.MarkFlagRequired(c.Flags(), "ip")
+	c.Flags().IntVar(&port,
+		"port",
+		0,
+		"The port to listen in.",
+	)
+	cobra.MarkFlagRequired(c.Flags(), "port")
 	return c
 }
 
