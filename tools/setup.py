@@ -32,6 +32,7 @@ setup(
         'paramiko',
         'pyyaml',
         'yapf',
+        'crc32c',
     ],
     scripts=[],
     entry_points={
