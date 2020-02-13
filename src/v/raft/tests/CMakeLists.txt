@@ -34,7 +34,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME foreign_entry_sharing
   SOURCES foreign_entry_test.cc
-  LIBRARIES Seastar::seastar_testing v::raft
+  LIBRARIES Seastar::seastar_testing v::raft  v::storage_test_utils
   LABELS raft
 )
 rp_test(

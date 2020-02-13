@@ -66,6 +66,17 @@ public:
     record_header share() {
         return record_header(_key_size, share_key(), _val_size, share_value());
     }
+
+    record_header foreign_share() {
+        auto sh_key = iobuf_share_foreign_n(share_key(), 1);
+        auto sh_val = iobuf_share_foreign_n(share_value(), 1);
+        return record_header(
+          _key_size,
+          std::move(sh_key.back()),
+          _val_size,
+          std::move(sh_val.back()));
+    }
+
     int32_t key_size() const { return _key_size; }
     const iobuf& key() const { return _key; }
     iobuf release_key() { return std::exchange(_key, {}); }
@@ -162,6 +173,26 @@ public:
           share_key(),
           _val_size,
           share_value(),
+          std::move(copy));
+    }
+
+    record foreign_share() {
+        std::vector<record_header> copy;
+        copy.reserve(_headers.size());
+        for (auto& h : _headers) {
+            copy.push_back(h.foreign_share());
+        }
+        auto sh_key = iobuf_share_foreign_n(share_key(), 1);
+        auto sh_val = iobuf_share_foreign_n(share_value(), 1);
+        return record(
+          _size_bytes,
+          _attributes,
+          _timestamp_delta,
+          _offset_delta,
+          _key_size,
+          std::move(sh_key.back()),
+          _val_size,
+          std::move(sh_val.back()),
           std::move(copy));
     }
     bool operator==(const record& other) const {
@@ -444,6 +475,27 @@ public:
           originals.end(),
           std::back_inserter(r),
           [](record& rec) -> record { return rec.share(); });
+
+        return record_batch(h, std::move(r));
+    }
+
+    record_batch foreign_share() {
+        record_batch_header h = _header;
+        if (compressed()) {
+            auto& recs = std::get<compressed_records>(_records);
+            auto r_sh = iobuf_share_foreign_n(
+              recs.share(0, recs.size_bytes()), 1);
+            return record_batch(h, std::move(r_sh.back()));
+        }
+        auto& originals = std::get<uncompressed_records>(_records);
+        uncompressed_records r;
+        r.reserve(originals.size());
+        // share all individual records
+        std::transform(
+          originals.begin(),
+          originals.end(),
+          std::back_inserter(r),
+          [](record& rec) -> record { return rec.foreign_share(); });
 
         return record_batch(h, std::move(r));
     }

@@ -11,6 +11,9 @@
 
 #include <yaml-cpp/yaml.h>
 
+#include <algorithm>
+#include <iterator>
+
 namespace YAML {
 template<>
 struct convert<::raft::consensus::voted_for_configuration> {
@@ -119,87 +122,52 @@ static inline ss::circular_buffer<model::record_batch> share_n_record_batch(
   model::record_batch batch,
   const size_t copies,
   const bool use_foreign_iobuf_share) {
-    ss::circular_buffer<model::record_batch> ret;
+    using ret_t = ss::circular_buffer<model::record_batch>;
+    ret_t ret;
     ret.reserve(copies);
     // the fast path
     if (!use_foreign_iobuf_share) {
-        for (size_t i = 0; i < copies; ++i) {
-            ret.push_back(batch.share());
-        }
+        std::generate_n(
+          std::back_inserter(ret),
+          copies,
+          [batch = std::move(batch)]() mutable { return batch.share(); });
         return ret;
     }
 
     // foreign share
-
-    if (batch.compressed()) {
-        auto hdr = batch.header();
-        auto io = std::move(batch).release();
-        size_t recs_sz = hdr.record_count;
-        auto vec = iobuf_share_foreign_n(std::move(io), copies);
-        while (!vec.empty()) {
-            ret.emplace_back(hdr, std::move(vec.back()));
-            vec.pop_back();
-        }
-        return ret;
-    }
-
-    std::vector<std::vector<model::record>> data(copies);
-    for (model::record& r : batch) {
-        auto const size_bytes = r.size_bytes();
-        auto const attributes = r.attributes();
-        auto const timestamp_delta = r.timestamp_delta();
-        auto const offset_delta = r.offset_delta();
-        auto const k_size = r.key_size();
-        auto const v_size = r.value_size();
-        auto kvec = iobuf_share_foreign_n(r.release_key(), copies);
-        auto vvec = iobuf_share_foreign_n(r.release_value(), copies);
-        auto hvec = share_n_headers(
-          std::move(r.headers()), copies, use_foreign_iobuf_share);
-        for (auto& d : data) {
-            iobuf key = std::move(kvec.back());
-            iobuf val = std::move(vvec.back());
-            auto h = std::move(hvec.back());
-            kvec.pop_back();
-            vvec.pop_back();
-            hvec.pop_back();
-            d.emplace_back(model::record(
-              size_bytes,
-              attributes,
-              timestamp_delta,
-              offset_delta,
-              k_size,
-              std::move(key),
-              v_size,
-              std::move(val),
-              std::move(h)));
-        }
-    }
-    auto hdr = batch.header();
-    while (!data.empty()) {
-        ret.emplace_back(hdr, std::move(data.back()));
-        data.pop_back();
-    }
-    check_copy_out_of_range(ret.size(), copies);
+    std::generate_n(
+      std::back_inserter(ret), copies, [batch = std::move(batch)]() mutable {
+          return batch.foreign_share();
+      });
     return ret;
 }
 
-static inline std::vector<ss::circular_buffer<model::record_batch>>
+static inline ss::future<std::vector<ss::circular_buffer<model::record_batch>>>
 share_n_batches(
   ss::circular_buffer<model::record_batch> batches,
   const size_t copies,
   const bool use_foreign_iobuf_share) {
-    const size_t batches_size = batches.size();
-    std::vector<ss::circular_buffer<model::record_batch>> data(copies);
-    for (auto& b : batches) {
-        auto n_batches = share_n_record_batch(
-          std::move(b), copies, use_foreign_iobuf_share);
-        for (auto& d : data) {
-            d.push_back(std::move(n_batches.back()));
-            n_batches.pop_back();
-        }
-    }
-    return data;
-}
+    using ret_t = std::vector<ss::circular_buffer<model::record_batch>>;
+    return do_with(
+      std::move(batches),
+      ret_t(copies),
+      [copies, use_foreign_iobuf_share](
+        ss::circular_buffer<model::record_batch>& batches, ret_t& data) {
+          return ss::do_for_each(
+                   batches,
+                   [copies, use_foreign_iobuf_share, &data](
+                     model::record_batch& b) mutable {
+                       auto shared_batches = share_n_record_batch(
+                         std::move(b), copies, use_foreign_iobuf_share);
+
+                       for (auto& buf : data) {
+                           buf.push_back(std::move(shared_batches.back()));
+                           shared_batches.pop_back();
+                       }
+                   })
+            .then([&data]() mutable { return std::move(data); });
+      });
+} // namespace raft::details
 
 ss::future<std::vector<model::record_batch_reader>> share_reader(
   model::record_batch_reader rdr,
@@ -239,31 +207,23 @@ ss::future<configuration_bootstrap_state>
 read_bootstrap_state(storage::log log) {
     // TODO(agallego, michal) - iterate the log in reverse
     // as an optimization
-    return ss::async([log]() mutable {
-        auto retval = configuration_bootstrap_state{};
-        model::offset it = log.start_offset();
-        const model::offset end = log.max_offset();
-        if (end() < 0) {
-            // empty log
-            return retval;
-        }
-        do {
-            auto rcfg = storage::log_reader_config(it, end, raft_priority());
-            auto reader = log.make_reader(rcfg);
-            auto batches = model::consume_reader_to_memory(
-                             std::move(reader), model::no_timeout)
-                             .get0();
-            if (batches.empty()) {
-                return retval;
-            }
-            it = batches.back().last_offset() + model::offset(1);
-            for (auto& batch : batches) {
-                retval.process_batch_in_thread(std::move(batch));
-            }
-        } while (it < end);
-
-        return retval;
-    });
+    auto rcfg = storage::log_reader_config(
+      log.start_offset(), log.max_offset(), raft_priority());
+    return ss::do_with(
+      configuration_bootstrap_state{},
+      log.make_reader(std::move(rcfg)),
+      [](
+        configuration_bootstrap_state& retval,
+        model::record_batch_reader& rdr) {
+          return rdr
+            .consume(
+              do_for_each_batch_consumer([&retval](model::record_batch batch) {
+                  retval.process_batch(std::move(batch));
+                  return ss::make_ready_future<>();
+              }),
+              model::no_timeout)
+            .then([&retval]() mutable { return std::move(retval); });
+      });
 }
 
 ss::future<std::optional<raft::group_configuration>>

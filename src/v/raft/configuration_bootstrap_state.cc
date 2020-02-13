@@ -6,7 +6,7 @@
 #include <fmt/format.h>
 
 namespace raft {
-void configuration_bootstrap_state::process_configuration_in_thread(
+void configuration_bootstrap_state::process_configuration(
   model::record_batch b) {
     if (unlikely(b.header().type != configuration_batch_type)) {
         throw std::runtime_error(fmt::format(
@@ -29,7 +29,7 @@ void configuration_bootstrap_state::process_configuration_in_thread(
         }
     }
 }
-void configuration_bootstrap_state::process_data_offsets_in_thread(
+void configuration_bootstrap_state::process_data_offsets(
   model::record_batch b) {
     _data_batches_seen++;
     if (unlikely(b.header().type == configuration_batch_type)) {
@@ -62,14 +62,13 @@ void configuration_bootstrap_state::process_offsets(
     }
 }
 
-void configuration_bootstrap_state::process_batch_in_thread(
-  model::record_batch b) {
+void configuration_bootstrap_state::process_batch(model::record_batch b) {
     switch (b.header().type) {
     case configuration_batch_type:
-        process_configuration_in_thread(std::move(b));
+        process_configuration(std::move(b));
         break;
     default:
-        process_data_offsets_in_thread(std::move(b));
+        process_data_offsets(std::move(b));
         break;
     }
 }

@@ -8,6 +8,7 @@
 #include "storage/log.h"
 #include "storage/log_manager.h"
 #include "storage/record_batch_builder.h"
+#include "storage/tests/utils/random_batch.h"
 #include "test_utils/randoms.h"
 #include "utils/copy_range.h"
 // testing
@@ -123,6 +124,31 @@ FIXTURE_TEST(sharing_one_reader, foreign_entry_fixture) {
         }
         for (auto& n : cfg.learners) {
             BOOST_REQUIRE(n.id() > foreign_entry_fixture::active_nodes);
+        }
+    }
+}
+
+FIXTURE_TEST(sharing_correcteness_test, foreign_entry_fixture) {
+    auto copies = 5;
+    auto batches = storage::test::make_random_batches(
+      model::offset(0), 50, true);
+    auto rdr = model::make_memory_record_batch_reader(std::move(batches));
+    auto refs = raft::details::share_n(std::move(rdr), 2).get0();
+    auto shared = raft::details::foreign_share_n(
+                    std::move(refs.back()), ss::smp::count)
+                    .get0();
+    refs.pop_back();
+    auto reference_batches = model::consume_reader_to_memory(
+                               std::move(refs.back()), model::no_timeout)
+                               .get0();
+
+    BOOST_REQUIRE_EQUAL(shared.size(), ss::smp::count);
+    for (auto& copy : shared) {
+        auto shared = model::consume_reader_to_memory(
+                        std::move(copy), model::no_timeout)
+                        .get0();
+        for (int i = 0; i < reference_batches.size(); ++i) {
+            BOOST_REQUIRE_EQUAL(shared[i], reference_batches[i]);
         }
     }
 }
