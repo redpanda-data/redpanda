@@ -329,6 +329,7 @@ ss::future<> consensus::start() {
           })
           .then([this](configuration_bootstrap_state st) {
               if (st.config_batches_seen() > 0) {
+                  _last_seen_config_offset = st.prev_log_index();
                   _conf = std::move(st.release_config());
                   update_follower_stats(_conf);
               }
@@ -531,28 +532,39 @@ consensus::do_append_entries(append_entries_request&& r) {
       });
 }
 
-ss::future<>
-consensus::notify_entries_commited(model::record_batch_reader&& entries) {
-    using entries_t = std::vector<model::record_batch_reader>;
-    const uint32_t entries_copies = 1 + (_append_entries_notification ? 1 : 0);
-
-    return details::share_n(std::move(entries), entries_copies)
-      .then([this](entries_t shared) mutable {
-          if (_append_entries_notification) {
-              _append_entries_notification.value()(std::move(shared.back()));
-              shared.pop_back();
-          }
-          return process_configurations(std::move(shared.back()));
-      });
+ss::future<> consensus::notify_entries_commited(
+  model::offset start_offset, model::offset end_offset) {
+    if (_append_entries_notification) {
+        _ctxlog.debug(
+          "Append entries notification range [{},{}]",
+          start_offset,
+          end_offset);
+        auto data_reader = _log.make_reader(
+          storage::log_reader_config(start_offset, end_offset, _io_priority));
+        _append_entries_notification.value()(std::move(data_reader));
+    }
+    auto config_reader = _log.make_reader(storage::log_reader_config(
+      _last_seen_config_offset,
+      end_offset,
+      0,
+      std::numeric_limits<size_t>::max(),
+      _io_priority,
+      {raft::configuration_batch_type}));
+    _ctxlog.debug(
+      "Process configurations range [{},{}]",
+      _last_seen_config_offset,
+      end_offset);
+    return process_configurations(std::move(config_reader), end_offset);
 }
 
-ss::future<>
-consensus::process_configurations(model::record_batch_reader&& rdr) {
+ss::future<> consensus::process_configurations(
+  model::record_batch_reader&& rdr, model::offset last_config_offset) {
     return details::extract_configuration(std::move(rdr))
-      .then([this](std::optional<group_configuration> cfg) {
+      .then([this, last_config_offset](std::optional<group_configuration> cfg) {
           if (cfg) {
               update_follower_stats(*cfg);
               _conf = std::move(*cfg);
+              _last_seen_config_offset = last_config_offset;
               _ctxlog.info("configuration updated {}", _conf);
           }
       });
@@ -656,12 +668,10 @@ ss::future<> consensus::do_maybe_update_leader_commit_idx() {
         auto range_start = details::next_offset(model::offset(old_commit_idx));
         _ctxlog.trace(
           "Committing entries from {} to {}", range_start, _meta.commit_index);
-        auto reader = _log.make_reader(storage::log_reader_config(
-          details::next_offset(model::offset(old_commit_idx)), // next batch
-          model::offset(_meta.commit_index),
-          _io_priority));
 
-        return notify_entries_commited(std::move(reader));
+        return notify_entries_commited(
+          details::next_offset(model::offset(old_commit_idx)),
+          model::offset(_meta.commit_index));
     }
     return ss::make_ready_future<>();
 }
@@ -678,13 +688,10 @@ consensus::maybe_update_follower_commit_idx(model::offset request_commit_idx) {
             _meta.commit_index = new_commit_idx;
             _ctxlog.debug(
               "Follower commit index updated {}", _meta.commit_index);
-            auto reader = _log.make_reader(storage::log_reader_config(
-              details::next_offset(
-                model::offset(previous_commit_idx)), // next batch
-              model::offset(_meta.commit_index),
-              _io_priority));
 
-            return notify_entries_commited(std::move(reader));
+            return notify_entries_commited(
+              details::next_offset(model::offset(previous_commit_idx)),
+              model::offset(_meta.commit_index));
         }
     }
     return ss::make_ready_future<>();
