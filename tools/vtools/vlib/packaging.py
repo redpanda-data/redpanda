@@ -46,9 +46,16 @@ def _get_dependencies(binary, vconfig):
     for dep in deps:
         if not dep.found:
             logging.fatal(f"Cannot find location for {dep.soname}")
-        if dep.soname:
+
+        if not dep.soname:
             # linux libs have soname=None
-            libs[dep.soname] = os.path.realpath(dep.path)
+            if 'ld-' in str(dep.path):
+                # we ignore all but the loader
+                libs['ld.so'] = os.path.realpath(dep.path)
+            continue
+
+        libs[dep.soname] = os.path.realpath(dep.path)
+
     return libs
 
 
