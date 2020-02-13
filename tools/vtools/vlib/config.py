@@ -1,3 +1,4 @@
+import json
 import os
 import yaml
 
@@ -77,15 +78,19 @@ class VConfig(object):
                 f'{self.build_dir}/v_deps_install')
 
         self._kv = kv.vectorized_kv(self._cfg['build']['src'])
-
-        # Set Go-specific environment variables (GOPATH and PATH). This
-        # modifies environment for the current process and its children.
         self._gopath = f"{self._cfg['build']['gopath']}/go"
-        os.environ.pop('GOROOT', None)
-        os.environ.pop('GOBIN', None)
-        os.environ.pop('GOEXE', None)
-        os.environ['GOPATH'] = self._gopath
-        os.environ['PATH'] = f"{self._gopath}/bin:{os.environ['PATH']}"
+
+        # create a dict with minimal set of environment variables
+        self._environ = {
+            "PATH": f"{self._gopath}/bin:{os.environ['PATH']}",
+            "COMPILER": self.compiler,
+            "BUILD_TYPE": self.build_type,
+            "HOME": os.environ["HOME"],
+            "GOPATH": self._gopath,
+            "GOBIN": f'{self._gopath}/bin',
+            "LC_CTYPE": "C.UTF-8",
+            "CI": os.environ.get("CI", "0"),
+        }
 
         logging.debug(f"""Configuration:
   src_dir: {self.src_dir}
@@ -98,7 +103,7 @@ class VConfig(object):
   go_src_dir: {self.go_src_dir}
   go_out_dir: {self.go_src_dir}
   clang_path: {self.clang_path}""")
-        logging.debug(f'Environment: {os.environ}')
+        logging.debug(f'Environment: {json.dumps(self.environ, indent=4)}')
 
     @staticmethod
     def __find_config_file(curr_dir=os.getcwd()):
@@ -173,6 +178,11 @@ class VConfig(object):
     def go_out_dir(self):
         """Output to binary output folder for go programs."""
         return f"{self._cfg['build']['root']}/go/bin"
+
+    @property
+    def environ(self):
+        """Sanitized environment variables."""
+        return self._environ
 
     @property
     def go_path(self):
