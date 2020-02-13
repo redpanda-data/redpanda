@@ -123,6 +123,11 @@ ss::future<stop_parser> continuous_batch_parser::consume_header() {
                         return consume_header();
                     });
               }
+              return ss::make_ready_future<stop_parser>(stop_parser::no);
+          }
+          auto s = std::get<stop_parser>(ret);
+          if (unlikely(bool(s))) {
+              return ss::make_ready_future<stop_parser>(stop_parser::yes);
           }
           return ss::make_ready_future<stop_parser>(stop_parser::no);
       });
