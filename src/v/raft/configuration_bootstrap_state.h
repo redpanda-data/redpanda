@@ -13,9 +13,9 @@ public:
     operator=(configuration_bootstrap_state&&) noexcept
       = default;
 
-    void process_batch_in_thread(model::record_batch);
-    void process_configuration_in_thread(model::record_batch);
-    void process_data_offsets_in_thread(model::record_batch);
+    void process_batch(model::record_batch);
+    void process_configuration(model::record_batch);
+    void process_data_offsets(model::record_batch);
 
     model::offset commit_index() const { return _commit_index; }
     model::term_id term() const { return _term; }

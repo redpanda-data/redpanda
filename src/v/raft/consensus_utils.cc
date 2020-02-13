@@ -207,31 +207,23 @@ ss::future<configuration_bootstrap_state>
 read_bootstrap_state(storage::log log) {
     // TODO(agallego, michal) - iterate the log in reverse
     // as an optimization
-    return ss::async([log]() mutable {
-        auto retval = configuration_bootstrap_state{};
-        model::offset it = log.start_offset();
-        const model::offset end = log.max_offset();
-        if (end() < 0) {
-            // empty log
-            return retval;
-        }
-        do {
-            auto rcfg = storage::log_reader_config(it, end, raft_priority());
-            auto reader = log.make_reader(rcfg);
-            auto batches = model::consume_reader_to_memory(
-                             std::move(reader), model::no_timeout)
-                             .get0();
-            if (batches.empty()) {
-                return retval;
-            }
-            it = batches.back().last_offset() + model::offset(1);
-            for (auto& batch : batches) {
-                retval.process_batch_in_thread(std::move(batch));
-            }
-        } while (it < end);
-
-        return retval;
-    });
+    auto rcfg = storage::log_reader_config(
+      log.start_offset(), log.max_offset(), raft_priority());
+    return ss::do_with(
+      configuration_bootstrap_state{},
+      log.make_reader(std::move(rcfg)),
+      [](
+        configuration_bootstrap_state& retval,
+        model::record_batch_reader& rdr) {
+          return rdr
+            .consume(
+              do_for_each_batch_consumer([&retval](model::record_batch batch) {
+                  retval.process_batch(std::move(batch));
+                  return ss::make_ready_future<>();
+              }),
+              model::no_timeout)
+            .then([&retval]() mutable { return std::move(retval); });
+      });
 }
 
 ss::future<std::optional<raft::group_configuration>>
