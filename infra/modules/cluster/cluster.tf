@@ -13,7 +13,7 @@ locals {
 }
 
 locals {
-  ssh_config_file = "ssh_config-${local.uuid}"
+  ssh_config_file = "${abspath(dirname("."))}/ssh_config-${local.uuid}"
 }
 
 provider "aws" {
