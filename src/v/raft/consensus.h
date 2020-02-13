@@ -121,7 +121,8 @@ private:
 
     append_entries_reply make_append_entries_reply(storage::append_result);
 
-    ss::future<> notify_entries_commited(model::record_batch_reader&&);
+    ss::future<> notify_entries_commited(
+      model::offset start_offset, model::offset end_offset);
 
     ss::future<result<replicate_result>>
     do_replicate(model::record_batch_reader&&);
@@ -150,7 +151,8 @@ private:
     ss::future<> replicate_configuration(group_configuration);
     /// After we append on disk, we must consume the entries
     /// to update our leader_id, nodes & learners configuration
-    ss::future<> process_configurations(model::record_batch_reader&&);
+    ss::future<>
+    process_configurations(model::record_batch_reader&&, model::offset);
 
     ss::future<> maybe_update_follower_commit_idx(model::offset);
 
@@ -168,7 +170,7 @@ private:
     model::timeout_clock::duration _disk_timeout;
     ss::sharded<rpc::connection_cache>& _clients;
     leader_cb_t _leader_notification;
-
+    model::offset _last_seen_config_offset;
     // _conf is set *both* in ctor with initial configuration
     // and it is overriden to the last one found the in the last log segment
     group_configuration _conf;
