@@ -19,10 +19,10 @@ def _render_build_script(env, cmake_str, build_dir):
     nl = "\n"
     tpl = f"""#!/bin/env bash
 set -x
-{nl.join(["%s=%s" % (k, v) for k, v in env.items()])}
+{nl.join(["export %s=%s" % (k, v) for k, v in env.items()])}
 
 {cmake_str}
-    """
+"""
     with open(f"{build_dir}/rebuild.sh", 'w') as f:
         os.fchmod(f.fileno(), 0o744)
         f.write(tpl)
