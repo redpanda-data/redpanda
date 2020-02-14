@@ -4,6 +4,8 @@ import yaml
 from absl import logging
 from pathlib import Path
 
+from . import kv
+
 
 class VConfig(object):
     """Holds configuration options. Expected structure of .vtools.yml file:
@@ -74,6 +76,8 @@ class VConfig(object):
             self._cfg['build']['external'] = (
                 f'{self.build_dir}/v_deps_install')
 
+        self._kv = kv.vectorized_kv(self._cfg['build']['src'])
+
         # Set Go-specific environment variables (GOPATH and PATH). This
         # modifies environment for the current process and its children.
         self._gopath = f"{self._cfg['build']['gopath']}/go"
@@ -113,6 +117,10 @@ class VConfig(object):
             return search_vtools(os.path.dirname(thedir))
 
         return search_vtools(curr_dir)
+
+    @property
+    def kv(self):
+        return self._kv
 
     @property
     def src_dir(self):
