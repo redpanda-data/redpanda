@@ -97,27 +97,6 @@ static inline void check_copy_out_of_range(size_t expected, size_t got) {
     }
 }
 
-static std::vector<std::vector<model::record_header>> share_n_headers(
-  std::vector<model::record_header> hdr,
-  size_t copies,
-  bool use_foreign_iobuf_share) {
-    std::vector<std::vector<model::record_header>> ret(copies);
-    for (auto& h : hdr) {
-        auto kvec = iobuf_share_foreign_n(h.release_key(), copies);
-        auto vvec = iobuf_share_foreign_n(h.release_value(), copies);
-        for (auto i = 0; i < copies; ++i) {
-            ret[i].emplace_back(model::record_header(
-              h.key_size(),
-              std::move(kvec.back()),
-              h.value_size(),
-              std::move(vvec.back())));
-            kvec.pop_back();
-            vvec.pop_back();
-        }
-    }
-    return ret;
-}
-
 static inline ss::circular_buffer<model::record_batch> share_n_record_batch(
   model::record_batch batch,
   const size_t copies,
