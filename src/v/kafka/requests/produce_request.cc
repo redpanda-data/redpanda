@@ -219,18 +219,18 @@ static ss::future<produce_response::partition> produce_topic_partition(
           ntp.tp.partition, error_code::unknown_topic_or_partition);
     }
 
+    /*
+     * The remainder of work for this partition is handled on its home core.
+     */
     return octx.rctx.partition_manager().invoke_on(
       *shard,
       octx.ssg,
       [&part, ntp = std::move(ntp)](cluster::partition_manager& mgr) {
-          /*
-           * look up partition on the remote shard
-           */
-          if (!mgr.contains(ntp)) {
+          auto partition = mgr.get(ntp);
+          if (!partition) {
               return make_partition_response_error(
                 ntp.tp.partition, error_code::unknown_topic_or_partition);
           }
-          auto partition = mgr.get(ntp);
 
           // produce version >= 3 requires exactly one record batch per
           // request and it must use the v2 format.
