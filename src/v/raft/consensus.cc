@@ -543,8 +543,10 @@ ss::future<> consensus::notify_entries_commited(
           storage::log_reader_config(start_offset, end_offset, _io_priority));
         _append_entries_notification.value()(std::move(data_reader));
     }
+    auto cfg_reader_start_offset = details::next_offset(
+      _last_seen_config_offset);
     auto config_reader = _log.make_reader(storage::log_reader_config(
-      _last_seen_config_offset,
+      cfg_reader_start_offset,
       end_offset,
       0,
       std::numeric_limits<size_t>::max(),
@@ -552,7 +554,7 @@ ss::future<> consensus::notify_entries_commited(
       {raft::configuration_batch_type}));
     _ctxlog.debug(
       "Process configurations range [{},{}]",
-      _last_seen_config_offset,
+      cfg_reader_start_offset,
       end_offset);
     return process_configurations(std::move(config_reader), end_offset);
 }
