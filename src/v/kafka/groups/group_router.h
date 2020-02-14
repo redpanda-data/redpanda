@@ -70,7 +70,7 @@ public:
         return with_scheduling_group(
           _sg, [this, shard, request = std::move(request)]() mutable {
               return _group_manager.invoke_on(
-                shard,
+                *shard,
                 _ssg,
                 [request = std::move(request)](GroupMgr& m) mutable {
                     return m.join_group(std::move(request));
@@ -83,7 +83,7 @@ public:
         return with_scheduling_group(
           _sg, [this, shard, request = std::move(request)]() mutable {
               return _group_manager.invoke_on(
-                shard,
+                *shard,
                 _ssg,
                 [request = std::move(request)](GroupMgr& m) mutable {
                     return m.sync_group(std::move(request));
@@ -96,7 +96,7 @@ public:
         return with_scheduling_group(
           _sg, [this, shard, request = std::move(request)]() mutable {
               return _group_manager.invoke_on(
-                shard,
+                *shard,
                 _ssg,
                 [request = std::move(request)](GroupMgr& m) mutable {
                     return m.heartbeat(std::move(request));
@@ -110,7 +110,7 @@ public:
         return with_scheduling_group(
           _sg, [this, shard, request = std::move(request)]() mutable {
               return _group_manager.invoke_on(
-                shard,
+                *shard,
                 _ssg,
                 [request = std::move(request)](GroupMgr& m) mutable {
                     return m.leave_group(std::move(request));

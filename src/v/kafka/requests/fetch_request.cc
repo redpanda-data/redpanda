@@ -238,14 +238,14 @@ read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config) {
      * the tp in the metadata cache so that this condition is unlikely
      * to pass.
      */
-    if (unlikely(!octx.rctx.shards().contains(ntp))) {
+    auto shard = octx.rctx.shards().shard_for(ntp);
+    if (unlikely(!shard)) {
         return make_ready_partition_response_error(
           error_code::unknown_topic_or_partition);
     }
-    auto shard = octx.rctx.shards().shard_for(ntp);
 
     return octx.rctx.partition_manager().invoke_on(
-      shard,
+      *shard,
       octx.ssg,
       [ntp = std::move(ntp),
        config = std::move(config)](cluster::partition_manager& mgr) {

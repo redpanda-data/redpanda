@@ -27,7 +27,7 @@ public:
     explicit group_shard_mapper(Shards& shards)
       : _shards(shards) {}
 
-    ss::shard_id shard_for(const kafka::group_id& group) {
+    std::optional<ss::shard_id> shard_for(const kafka::group_id& group) {
         incremental_xxhash64 inc;
         inc.update(group);
         auto p = static_cast<model::partition_id::type>(

@@ -17,12 +17,15 @@ public:
     ss::shard_id shard_for(const raft::group_id& group) {
         return _group_idx.find(group)->second;
     }
-    bool contains(const model::ntp& ntp) const {
-        return _ntp_idx.find(ntp) != _ntp_idx.end();
-    }
-    /// \brief from storage::shard_assignment
-    ss::shard_id shard_for(const model::ntp& ntp) {
-        return _ntp_idx.find(ntp)->second;
+
+    /**
+     * \brief Lookup the owning shard for an ntp.
+     */
+    std::optional<ss::shard_id> shard_for(const model::ntp& ntp) {
+        if (auto it = _ntp_idx.find(ntp); it != _ntp_idx.end()) {
+            return it->second;
+        }
+        return std::nullopt;
     }
     void insert(model::ntp ntp, ss::shard_id i) {
         _ntp_idx.insert({std::move(ntp), i});

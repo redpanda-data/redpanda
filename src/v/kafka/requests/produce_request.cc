@@ -210,18 +210,17 @@ static ss::future<produce_response::partition> produce_topic_partition(
     };
 
     /*
-     * lookup the home shard for this ntp. the caller should check for
-     * the tp in the metadata cache so that this condition is unlikely
-     * to pass.
+     * A single produce request may contain record batches for many different
+     * partitions that are managed different cores.
      */
-    if (unlikely(!octx.rctx.shards().contains(ntp))) {
+    auto shard = octx.rctx.shards().shard_for(ntp);
+    if (!shard) {
         return make_partition_response_error(
           ntp.tp.partition, error_code::unknown_topic_or_partition);
     }
-    auto shard = octx.rctx.shards().shard_for(ntp);
 
     return octx.rctx.partition_manager().invoke_on(
-      shard,
+      *shard,
       octx.ssg,
       [&part, ntp = std::move(ntp)](cluster::partition_manager& mgr) {
           /*
