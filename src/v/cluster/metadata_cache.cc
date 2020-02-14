@@ -134,4 +134,18 @@ find_partition(metadata_cache::metadata& t_md, model::partition_id p_id) {
                std::reference_wrapper<model::partition_metadata>>(*it);
 }
 
+bool metadata_cache::contains(
+  const model::topic& topic, const model::partition_id pid) const {
+    if (auto it = _cache.find(topic); it != _cache.end()) {
+        const auto& partitions = it->second.partitions;
+        return std::any_of(
+          partitions.cbegin(),
+          partitions.cend(),
+          [&pid](const model::partition_metadata& partition) {
+              return partition.id == pid;
+          });
+    }
+    return false;
+}
+
 } // namespace cluster
