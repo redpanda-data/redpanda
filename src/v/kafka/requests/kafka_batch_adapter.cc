@@ -24,17 +24,18 @@ model::record_batch_header kafka_batch_adapter::read_header(iobuf_parser& in) {
     auto batch_length = in.consume_be_type<int32_t>();
     in.consume_be_type<int32_t>();          /*partition_leader_epoch - IGNORED*/
     auto magic = in.consume_type<int8_t>(); /*magic - IGNORED*/
-    has_non_v2_magic = has_non_v2_magic || magic != 2;
+    v2_format = magic == 2;
+    if (unlikely(!v2_format)) {
+        return {};
+    }
     auto crc = in.consume_be_type<int32_t>();
 
     auto attrs = model::record_batch_attributes(in.consume_be_type<int16_t>());
-    has_transactional = has_transactional || attrs.is_transactional();
 
     auto last_offset_delta = in.consume_be_type<int32_t>();
     auto first_timestamp = model::timestamp(in.consume_be_type<int64_t>());
     auto max_timestamp = model::timestamp(in.consume_be_type<int64_t>());
     auto producer_id = in.consume_be_type<int64_t>();
-    has_idempotent = has_idempotent || producer_id >= 0;
     auto producer_epoch = in.consume_be_type<int16_t>();
     auto base_sequence = in.consume_be_type<int32_t>();
 
@@ -132,7 +133,7 @@ read_records(iobuf_parser& parser, size_t num_records) {
     return rs;
 }
 
-static void verify_crc(int32_t expected_crc, iobuf_parser in) {
+void kafka_batch_adapter::verify_crc(int32_t expected_crc, iobuf_parser in) {
     auto crc = crc32();
 
     // 1. move the cursor to correct endpoint
@@ -150,21 +151,33 @@ static void verify_crc(int32_t expected_crc, iobuf_parser in) {
           crc.extend(reinterpret_cast<const uint8_t*>(src), n);
           return ss::stop_iteration::no;
       });
+
     if (unlikely(expected_crc != crc.value())) {
-        throw std::runtime_error(fmt::format(
+        valid_crc = false;
+        kreq_log.error(
           "Cannot validate Kafka record batch. Missmatching CRC. Expected:{}, "
           "Got:{}",
           expected_crc,
-          crc.value()));
+          crc.value());
+    } else {
+        valid_crc = true;
     }
 }
 
 void kafka_batch_adapter::adapt(iobuf&& kbatch) {
     auto crcparser = iobuf_parser(kbatch.control_share());
     auto parser = iobuf_parser(kbatch.control_share());
+
     auto header = read_header(parser);
+    if (unlikely(!v2_format)) {
+        return;
+    }
 
     verify_crc(header.crc, std::move(crcparser));
+    if (unlikely(!valid_crc)) {
+        return;
+    }
+
     model::record_batch::records_type records;
     if (header.attrs.compression() != model::compression::none) {
         auto records_size = header.size_bytes
@@ -173,14 +186,16 @@ void kafka_batch_adapter::adapt(iobuf&& kbatch) {
     } else {
         records = read_records(parser, header.record_count);
     }
-    batches.emplace_back(header, std::move(records));
 
     // Kafka guarantees - exactly one batch on the wire
     if (unlikely(parser.bytes_left())) {
-        throw std::runtime_error(fmt::format(
+        kreq_log.error(
           "Could not consume full record_batch. Bytes left on the wire:{}",
-          parser.bytes_left()));
+          parser.bytes_left());
+        return;
     }
+
+    batch = model::record_batch(header, std::move(records));
 }
 
 } // namespace kafka

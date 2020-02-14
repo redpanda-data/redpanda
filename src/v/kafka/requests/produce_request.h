@@ -29,11 +29,9 @@ class produce_response;
 struct produce_request final {
     struct partition {
         model::partition_id id;
+        // the wire format encodes batch data as a nullable byte array. this
+        // data is moved into the batch adapter immediately after its read.
         std::optional<iobuf> data;
-
-        // the kafka batch format on the wire is slightly different than what is
-        // managed by redpanda. this adapter is setup during request decoding,
-        // and is not involved in request encoding.
         kafka_batch_adapter adapter;
     };
 
