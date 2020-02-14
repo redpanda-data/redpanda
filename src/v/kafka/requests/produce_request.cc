@@ -62,9 +62,12 @@ void produce_request::decode(request_context& ctx) {
         for (auto& part : topic.partitions) {
             if (part.data) {
                 part.adapter.adapt(std::move(part.data.value()));
-                has_transactional = has_transactional
-                                    || part.adapter.has_transactional;
-                has_idempotent = has_idempotent || part.adapter.has_idempotent;
+                if (part.adapter.batch) {
+                    const auto& hdr = part.adapter.batch->header();
+                    has_transactional = has_transactional
+                                        || hdr.attrs.is_transactional();
+                    has_idempotent = has_idempotent || hdr.producer_id >= 0;
+                }
             }
         }
     }
@@ -227,20 +230,8 @@ static ss::future<produce_response::partition> produce_topic_partition(
                 produce_response::partition(
                   ntp.tp.partition, error_code::unknown_topic_or_partition));
           }
-
-          // produce version >= 3 requires exactly one record batch per
-          // request and it must use the v2 format.
-          if (
-            part.adapter.batches.size() != 1 || part.adapter.has_non_v2_magic) {
-              return ss::make_ready_future<produce_response::partition>(
-                produce_response::partition(
-                  ntp.tp.partition, error_code::invalid_record));
-          }
-
           return partition_append(
-            ntp.tp.partition,
-            partition,
-            std::move(part.adapter.batches.front()));
+            ntp.tp.partition, partition, std::move(*part.adapter.batch));
       });
 }
 
@@ -260,6 +251,25 @@ produce_topic(produce_ctx& octx, produce_request::topic& topic) {
                   part.id, error_code::unknown_topic_or_partition)));
             continue;
         }
+
+        if (unlikely(!part.adapter.valid_crc)) {
+            partitions.push_back(
+              ss::make_ready_future<produce_response::partition>(
+                produce_response::partition(
+                  part.id, error_code::corrupt_message)));
+            continue;
+        }
+
+        // produce version >= 3 (enforced for all produce requests) requires
+        // exactly one record batch per request and it must use the v2 format.
+        if (unlikely(!part.adapter.v2_format || !part.adapter.batch)) {
+            partitions.push_back(
+              ss::make_ready_future<produce_response::partition>(
+                produce_response::partition(
+                  part.id, error_code::invalid_record)));
+            continue;
+        }
+
         auto pr = produce_topic_partition(octx, topic, part);
         partitions.push_back(std::move(pr));
     }
