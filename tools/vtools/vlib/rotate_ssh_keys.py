@@ -1,19 +1,17 @@
-import sys
 import os
 import time
 import json
 from datetime import datetime, timedelta
 from git import Repo
 from absl import logging
-import random
 from . import shell
 from . import fs
 
 KEY_TYPES = ["external", "internal", "deploy"]
 
 
-def rotate_ssh_keys():
-    latest_dir = generate_keys()
+def rotate_ssh_keys(env=os.environ):
+    latest_dir = generate_keys(env)
     # make sure fingerprints match
     fingerprint_keys()
     # always check the symlinks
@@ -62,36 +60,36 @@ def get_key_comment():
     return "%s.%s" % (email, time.strftime("%Y.%m.%d"))
 
 
-def generate_keys():
+def generate_keys(env=os.environ):
     root = next_vectorized_ssh_keys_folder()
     fs.mkdir_p(root)
     for key_type in KEY_TYPES:
         comment = get_key_comment()
         output_file = "%s/%s_key" % (root, key_type)
-        generate_key(output_file, comment)
+        generate_key(output_file, comment, env=env)
     return root
 
 
-def generate_key(path, comment, password=None):
+def generate_key(path, comment, password=None, env=os.environ):
     cmd = f'ssh-keygen -t rsa -b 4096 -f {path} -C {comment}'
     pub_path = f'{path}.pub'
     if password is not None:
         cmd = f'{cmd} -P {password}'
     if not os.path.exists(path):
-        shell.run_subprocess(cmd)
+        shell.run_subprocess(cmd, env=env)
     else:
         logging.info(f'File already exists: {path}')
     return path, pub_path
 
 
-def _fprint():
+def _fprint(env):
     root = get_latest_keys_dir()
     retval = {}
     for key_type in KEY_TYPES:
         output_file = "%s/%s_key" % (root, key_type)
         logging.debug(f"fingerprint {output_file}")
         fprint_cmd = "ssh-keygen -l -E md5 -f %s.pub" % output_file
-        fprint = shell.run_oneline(fprint_cmd)
+        fprint = shell.run_oneline(fprint_cmd, env=env)
         retval[output_file] = fprint
     # return a map of the keys
     return retval
@@ -110,10 +108,10 @@ def _match_filesystem(fingerprints):
 
 # no validation
 # Should only be called after generate keys
-def fingerprint_keys():
+def fingerprint_keys(env):
     root = get_latest_keys_dir()
     fingerprint_file = "%s/fingerprint" % root
-    fprints = _fprint()
+    fprints = _fprint(env)
     if os.path.exists(fingerprint_file):
         if not _match_filesystem(fprints):
             os.remove(fingerprint_file)

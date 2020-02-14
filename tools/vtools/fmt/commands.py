@@ -135,7 +135,8 @@ def tidy(conf, check):
     cmd = f'{vconfig.clang_path}/bin/clang-tidy'
     args = f'-p compile_commands.json {vconfig.src_dir}/src/v/redpanda/main.cc'
     args = f'{args} {"" if check else "--fix"}'
-    shell.raw_check_output(f'cd {vconfig.build_dir} && {cmd} {args}')
+    shell.raw_check_output(f'cd {vconfig.build_dir} && {cmd} {args}',
+                           env=vconfig.environ)
 
 
 def _clangfmt(vconfig, ref, check):
@@ -174,7 +175,8 @@ def _fmt(vconfig, exts, cmd, args, ref, check):
     for f in _git_files(vconfig, exts, ref):
         try:
             ret = shell.raw_check_output(
-                f'cd {vconfig.src_dir} && {cmd} {args} {f}')
+                f'cd {vconfig.src_dir} && {cmd} {args} {f}',
+                env=vconfig.environ)
         except subprocess.CalledProcessError as e:
             # some formatters return non-zero if they find differences. So we
             # print whatever they have to tell us and fail
@@ -213,7 +215,7 @@ def _git_files(vconfig, exts, ref):
         cmd = f'git diff --diff-filter=AM --name-only {ref}'
     else:
         cmd = 'git ls-files --full-name'
-    ret = shell.raw_check_output(cmd)
+    ret = shell.raw_check_output(cmd, env=vconfig.environ)
 
     # FIXME: remove once clang-format bug is solved (treated as objective-C)
     objective_c_not = ['src/v/kafka/errors.h', 'src/v/cluster/types.h']

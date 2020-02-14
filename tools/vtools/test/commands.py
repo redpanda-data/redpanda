@@ -26,7 +26,8 @@ def go(conf):
             if not fd.name.startswith('.') and fd.is_dir():
                 shell.run_subprocess(
                     f'cd {vconfig.go_src_dir}/{fd.name}/pkg && '
-                    f'{vconfig.gobin} test ./...')
+                    f'{vconfig.gobin} test ./...',
+                    env=vconfig.environ)
 
 
 @test.command(short_help='execute redpanda unit tests')
@@ -62,7 +63,8 @@ def cpp(build_type, conf, clang, args):
     args = f' {args}' if args else '-R \".*_rp(unit|bench|int)$\"'
     shell.run_subprocess(f'cd {vconfig.build_dir} && '
                          f'ctest '
-                         f' {"-V" if os.environ.get("CI") else ""} ' + args)
+                         f' {"-V" if os.environ.get("CI") else ""} ' + args,
+                         env=vconfig.environ)
 
 
 @test.command(short_help='print runtime dependencies of a binary')

@@ -53,8 +53,9 @@ def configure_build(vconfig, build_external=True, build_external_only=False):
                  f'  {" ".join(cmake_flags)}'
                  f'  -B{vconfig.build_dir}'
                  f'  -H{vconfig.src_dir}')
-    _render_build_script(os.environ, cmake_str, vconfig.build_dir)
-    shell.run_subprocess(f"sh {vconfig.build_dir}/rebuild.sh")
+    _render_build_script(vconfig.environ, cmake_str, vconfig.build_dir)
+    shell.run_subprocess(f"sh {vconfig.build_dir}/rebuild.sh",
+                         env=vconfig.environ)
 
     # FIXME https://app.asana.com/0/1149841353291489/1153763539998305
     if build_external:

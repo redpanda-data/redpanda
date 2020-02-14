@@ -67,7 +67,8 @@ def go_deps(conf):
                                      f'{vconfig.gobin} mod download && '
                                      f'{vconfig.gobin} get '
                                      f'  github.com/cockroachdb/crlfmt '
-                                     f'  mvdan.cc/sh/v3/cmd/shfmt')
+                                     f'  mvdan.cc/sh/v3/cmd/shfmt',
+                                     env=vconfig.environ)
 
 
 @install.command(short_help='install the go compiler.')
