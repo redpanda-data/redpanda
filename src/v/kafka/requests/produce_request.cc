@@ -70,6 +70,25 @@ void produce_request::decode(request_context& ctx) {
     }
 }
 
+produce_response produce_request::make_error_response(error_code error) const {
+    produce_response response;
+
+    response.topics.reserve(topics.size());
+    for (const auto& topic : topics) {
+        produce_response::topic t;
+        t.name = topic.name;
+
+        t.partitions.reserve(topic.partitions.size());
+        for (const auto& partition : topic.partitions) {
+            t.partitions.emplace_back(partition.id, error);
+        }
+
+        response.topics.push_back(std::move(t));
+    }
+
+    return response;
+}
+
 static std::ostream&
 operator<<(std::ostream& o, const produce_request::partition& p) {
     return ss::fmt_print(o, "id {} payload {}", p.id, p.data);
@@ -129,11 +148,13 @@ struct produce_ctx {
     produce_request request;
     produce_response response;
 
-    produce_ctx(request_context&& rctx, ss::smp_service_group ssg)
+    produce_ctx(
+      request_context&& rctx,
+      produce_request&& request,
+      ss::smp_service_group ssg)
       : rctx(std::move(rctx))
-      , ssg(ssg) {
-        request.decode(rctx);
-    }
+      , request(std::move(request))
+      , ssg(ssg) {}
 };
 
 static ss::future<produce_response::partition>
@@ -270,21 +291,6 @@ produce_topics(produce_ctx& octx) {
 }
 
 /**
- * \brief Construct a generic octx error response.
- */
-void make_error_response(produce_ctx& octx, error_code error) {
-    for (const auto& topic : octx.request.topics) {
-        produce_response::topic t{
-          .name = topic.name,
-        };
-        for (const auto& part : topic.partitions) {
-            t.partitions.emplace_back(part.id, error);
-        }
-        octx.response.topics.push_back(std::move(t));
-    }
-}
-
-/**
  * \brief Encode the final response from the octx response structure.
  */
 static ss::future<response_ptr> make_response(produce_ctx& octx) {
@@ -293,30 +299,52 @@ static ss::future<response_ptr> make_response(produce_ctx& octx) {
     return ss::make_ready_future<response_ptr>(std::move(resp));
 }
 
+static ss::future<response_ptr>
+make_response(request_context& ctx, produce_response r) {
+    auto resp = std::make_unique<response>();
+    r.encode(ctx, *resp.get());
+    return ss::make_ready_future<response_ptr>(std::move(resp));
+}
+
 ss::future<response_ptr>
 produce_api::process(request_context&& ctx, ss::smp_service_group ssg) {
-    return ss::do_with(produce_ctx(std::move(ctx), ssg), [](produce_ctx& octx) {
-        kreq_log.debug("handling produce request {}", octx.request);
+    produce_request request(ctx);
 
-        if (octx.request.has_transactional) {
-            make_error_response(
-              octx, error_code::transactional_id_authorization_failed);
-            return make_response(octx);
-        } else if (octx.request.has_idempotent) {
-            make_error_response(octx, error_code::cluster_authorization_failed);
-            return make_response(octx);
-        }
+    /*
+     * Authorization
+     *
+     * Note that in kafka authorization is performed based on transactional id,
+     * producer id, and idempotency. Redpanda does not yet support these
+     * features, so we reject all such requests as if authorization failed.
+     */
+    if (request.has_transactional) {
+        return make_response(
+          ctx,
+          request.make_error_response(
+            error_code::transactional_id_authorization_failed));
 
-        // dispatch produce requests for each topic
-        auto topics = produce_topics(octx);
+    } else if (request.has_idempotent) {
+        return make_response(
+          ctx,
+          request.make_error_response(
+            error_code::cluster_authorization_failed));
+    }
 
-        // collect topic responses and build the final response message
-        return when_all_succeed(topics.begin(), topics.end())
-          .then([&octx](std::vector<produce_response::topic> topics) {
-              octx.response.topics = std::move(topics);
-              return make_response(octx);
-          });
-    });
+    return ss::do_with(
+      produce_ctx(std::move(ctx), std::move(request), ssg),
+      [](produce_ctx& octx) {
+          kreq_log.debug("handling produce request {}", octx.request);
+
+          // dispatch produce requests for each topic
+          auto topics = produce_topics(octx);
+
+          // collect topic responses and build the final response message
+          return when_all_succeed(topics.begin(), topics.end())
+            .then([&octx](std::vector<produce_response::topic> topics) {
+                octx.response.topics = std::move(topics);
+                return make_response(octx);
+            });
+      });
 }
 
 } // namespace kafka
