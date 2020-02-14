@@ -24,11 +24,10 @@ public:
       ss::lw_shared_ptr<partition>, std::optional<model::node_id>)>;
 
     inline ss::lw_shared_ptr<partition> get(const model::ntp& ntp) const {
-        return _ntp_table.find(ntp)->second;
-    }
-
-    inline bool contains(const model::ntp& ntp) const {
-        return _ntp_table.find(ntp) != _ntp_table.end();
+        if (auto it = _ntp_table.find(ntp); it != _ntp_table.end()) {
+            return it->second;
+        }
+        return nullptr;
     }
 
     /// \brief raw api for raft/service.h
