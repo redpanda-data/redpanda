@@ -224,7 +224,8 @@ class record_batch_attributes final {
 public:
     static constexpr uint16_t compression_mask = 0x7;
     static constexpr uint16_t timestamp_type_mask = 0x8;
-    static constexpr size_t is_transactional_bit = 4;
+    static constexpr uint16_t transactional_mask = 0x10;
+
     using type = int16_t;
 
     record_batch_attributes() noexcept = default;
@@ -235,19 +236,17 @@ public:
     type value() const { return static_cast<type>(_attributes.to_ulong()); }
 
     bool is_transactional() const {
-        return _attributes.test(is_transactional_bit);
+        return maskable_value() & transactional_mask;
     }
     bool is_valid_compression() const {
-        auto at = static_cast<uint16_t>(_attributes.to_ulong())
-                  & compression_mask;
+        auto at = maskable_value() & compression_mask;
         if (at >= 0 && at <= 4) {
             return true;
         }
         return false;
     }
     model::compression compression() const {
-        switch (static_cast<uint16_t>(_attributes.to_ulong())
-                & compression_mask) {
+        switch (maskable_value() & compression_mask) {
         case 0:
             return compression::none;
         case 1:
@@ -294,6 +293,10 @@ public:
     operator<<(std::ostream&, const record_batch_attributes&);
 
 private:
+    uint16_t maskable_value() const {
+        return static_cast<uint16_t>(_attributes.to_ulong());
+    }
+
     // Bits 4 and 5 are used by Kafka and thus reserved.
     std::bitset<16> _attributes;
 };
