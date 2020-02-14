@@ -329,6 +329,18 @@ produce_api::process(request_context&& ctx, ss::smp_service_group ssg) {
           ctx,
           request.make_error_response(
             error_code::cluster_authorization_failed));
+
+    } else if (request.acks < -1 || request.acks > 1) {
+        // from kafka source: "if required.acks is outside accepted range,
+        // something is wrong with the client Just return an error and don't
+        // handle the request at all"
+        kreq_log.error(
+          "unsupported acks {} see "
+          "https://docs.confluent.io/current/installation/configuration/"
+          "producer-configs.html",
+          request.acks);
+        return make_response(
+          ctx, request.make_error_response(error_code::invalid_required_acks));
     }
 
     return ss::do_with(
