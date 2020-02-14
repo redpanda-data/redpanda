@@ -77,7 +77,21 @@ struct raft_node {
         cache.start().get();
         // create connections to initial nodes
         for (const auto& broker : consensus->config().all_brokers()) {
-            create_connection_to(broker);
+            auto sh = rpc::connection_cache::shard_for(broker.id());
+            cache
+              .invoke_on(
+                sh,
+                [&broker, this](rpc::connection_cache& c) {
+                    if (c.contains(broker.id())) {
+                        return seastar::make_ready_future<>();
+                    }
+                    return broker.rpc_address().resolve().then(
+                      [this, &broker, &c](ss::socket_address addr) {
+                          return c.emplace(
+                            broker.id(), {.server_addr = addr}, 1ms);
+                      });
+                })
+              .get0();
         }
     }
 
@@ -170,23 +184,6 @@ struct raft_node {
 
     model::node_id id() { return broker.id(); }
 
-    void create_connection_to(const model::broker& broker) {
-        auto sh = rpc::connection_cache::shard_for(broker.id());
-        cache
-          .invoke_on(
-            sh,
-            [&broker, this](rpc::connection_cache& c) {
-                if (c.contains(broker.id())) {
-                    return seastar::make_ready_future<>();
-                }
-                return broker.rpc_address().resolve().then(
-                  [this, &broker, &c](ss::socket_address addr) {
-                      return c.emplace(broker.id(), {.server_addr = addr}, 1ms);
-                  });
-            })
-          .get0();
-    }
-
     bool started = false;
     model::broker broker;
     storage::log log;
@@ -267,39 +264,6 @@ struct raft_group {
               election_callback(node_id, st);
           });
         it->second.start();
-    }
-
-    model::broker create_new_node(model::node_id node_id) {
-        auto ntp = node_ntp(_id, node_id);
-        auto log_optional = _log_manager.local().get(ntp);
-        if (!log_optional) {
-            log_optional.emplace(
-              _log_manager.local()
-                .manage(node_ntp(_id, node_id), _storage_type)
-                .get0());
-        }
-
-        auto broker = make_broker(node_id);
-        tstlog.info("Enabling node {} in group {}", node_id, _id);
-        auto [it, _] = _members.try_emplace(
-          node_id,
-          broker,
-          _id,
-          raft::group_configuration{
-            .nodes = {},
-          },
-          raft::timeout_jitter(heartbeat_interval * 2),
-          *log_optional,
-          [this, node_id](raft::leadership_status st) {
-              election_callback(node_id, st);
-          });
-        it->second.start();
-
-        for (auto& [_, n] : _members) {
-            n.create_connection_to(broker);
-        }
-
-        return broker;
     }
 
     void disable_node(model::node_id node_id) {
