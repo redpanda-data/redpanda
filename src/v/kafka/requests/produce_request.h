@@ -24,6 +24,8 @@ public:
     process(request_context&&, ss::smp_service_group);
 };
 
+class produce_response;
+
 struct produce_request final {
     struct partition {
         model::partition_id id;
@@ -45,8 +47,19 @@ struct produce_request final {
     std::chrono::milliseconds timeout;
     std::vector<topic> topics;
 
+    produce_request(const produce_request&) = delete;
+    produce_request& operator=(const produce_request&) = delete;
+    produce_request(produce_request&&) = default;
+    produce_request& operator=(produce_request&&) = delete;
+    produce_request(request_context& ctx) { decode(ctx); }
+
     void encode(const request_context& ctx, response_writer& writer);
     void decode(request_context& ctx);
+
+    /**
+     * Build a generic error response for a given request.
+     */
+    produce_response make_error_response(error_code error) const;
 
     /// True if the request contains a batch with a transactional id.
     bool has_transactional = false;
