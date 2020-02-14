@@ -106,6 +106,7 @@ ss::future<stop_parser> continuous_batch_parser::consume_header() {
           const auto size_on_disk = _header.size_bytes;
           auto ret = _consumer->consume_batch_start(
             _header, _physical_base_offset, size_on_disk);
+          _physical_base_offset += size_on_disk;
           if (std::holds_alternative<skip_batch>(ret)) {
               auto s = std::get<skip_batch>(ret);
               if (unlikely(bool(s))) {
