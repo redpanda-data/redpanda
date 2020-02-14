@@ -33,6 +33,7 @@ setup(
         'pyyaml',
         'yapf',
         'crc32c',
+        'peewee',
     ],
     scripts=[],
     entry_points={
