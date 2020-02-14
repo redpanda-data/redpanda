@@ -157,12 +157,6 @@ struct produce_ctx {
       , ssg(ssg) {}
 };
 
-static ss::future<produce_response::partition>
-make_partition_response_error(model::partition_id id, error_code error) {
-    return ss::make_ready_future<produce_response::partition>(
-      produce_response::partition(id, error));
-}
-
 /*
  * Caller is expected to catch errors that may be thrown while the kafka batch
  * is being deserialized (see reader_from_kafka_batch).
@@ -215,8 +209,9 @@ static ss::future<produce_response::partition> produce_topic_partition(
      */
     auto shard = octx.rctx.shards().shard_for(ntp);
     if (!shard) {
-        return make_partition_response_error(
-          ntp.tp.partition, error_code::unknown_topic_or_partition);
+        return ss::make_ready_future<produce_response::partition>(
+          produce_response::partition(
+            ntp.tp.partition, error_code::unknown_topic_or_partition));
     }
 
     /*
@@ -228,16 +223,18 @@ static ss::future<produce_response::partition> produce_topic_partition(
       [&part, ntp = std::move(ntp)](cluster::partition_manager& mgr) {
           auto partition = mgr.get(ntp);
           if (!partition) {
-              return make_partition_response_error(
-                ntp.tp.partition, error_code::unknown_topic_or_partition);
+              return ss::make_ready_future<produce_response::partition>(
+                produce_response::partition(
+                  ntp.tp.partition, error_code::unknown_topic_or_partition));
           }
 
           // produce version >= 3 requires exactly one record batch per
           // request and it must use the v2 format.
           if (
             part.adapter.batches.size() != 1 || part.adapter.has_non_v2_magic) {
-              return make_partition_response_error(
-                ntp.tp.partition, error_code::invalid_record);
+              return ss::make_ready_future<produce_response::partition>(
+                produce_response::partition(
+                  ntp.tp.partition, error_code::invalid_record));
           }
 
           return partition_append(
@@ -257,8 +254,10 @@ produce_topic(produce_ctx& octx, produce_request::topic& topic) {
 
     for (auto& part : topic.partitions) {
         if (!octx.rctx.metadata_cache().contains(topic.name, part.id)) {
-            partitions.push_back(make_partition_response_error(
-              part.id, error_code::unknown_topic_or_partition));
+            partitions.push_back(
+              ss::make_ready_future<produce_response::partition>(
+                produce_response::partition(
+                  part.id, error_code::unknown_topic_or_partition)));
             continue;
         }
         auto pr = produce_topic_partition(octx, topic, part);
