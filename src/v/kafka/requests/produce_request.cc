@@ -253,11 +253,15 @@ static ss::future<produce_response::partition> produce_topic_partition(
  */
 static ss::future<produce_response::topic>
 produce_topic(produce_ctx& octx, produce_request::topic& topic) {
-    // partition response placeholders
     std::vector<ss::future<produce_response::partition>> partitions;
     partitions.reserve(topic.partitions.size());
 
     for (auto& part : topic.partitions) {
+        if (!octx.rctx.metadata_cache().contains(topic.name, part.id)) {
+            partitions.push_back(make_partition_response_error(
+              part.id, error_code::unknown_topic_or_partition));
+            continue;
+        }
         auto pr = produce_topic_partition(octx, topic, part);
         partitions.push_back(std::move(pr));
     }
