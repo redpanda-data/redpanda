@@ -543,8 +543,10 @@ ss::future<> consensus::notify_entries_commited(
           storage::log_reader_config(start_offset, end_offset, _io_priority));
         _append_entries_notification.value()(std::move(data_reader));
     }
+    auto cfg_reader_start_offset = details::next_offset(
+      _last_seen_config_offset);
     auto config_reader = _log.make_reader(storage::log_reader_config(
-      _last_seen_config_offset,
+      cfg_reader_start_offset,
       end_offset,
       0,
       std::numeric_limits<size_t>::max(),
@@ -552,19 +554,19 @@ ss::future<> consensus::notify_entries_commited(
       {raft::configuration_batch_type}));
     _ctxlog.debug(
       "Process configurations range [{},{}]",
-      _last_seen_config_offset,
+      cfg_reader_start_offset,
       end_offset);
     return process_configurations(std::move(config_reader), end_offset);
 }
 
 ss::future<> consensus::process_configurations(
   model::record_batch_reader&& rdr, model::offset last_config_offset) {
+    _last_seen_config_offset = last_config_offset;
     return details::extract_configuration(std::move(rdr))
       .then([this, last_config_offset](std::optional<group_configuration> cfg) {
           if (cfg) {
               update_follower_stats(*cfg);
               _conf = std::move(*cfg);
-              _last_seen_config_offset = last_config_offset;
               _ctxlog.info("configuration updated {}", _conf);
           }
       });
