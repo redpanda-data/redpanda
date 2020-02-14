@@ -278,7 +278,6 @@ produce_topic(produce_ctx& octx, produce_request::topic& topic) {
  */
 static std::vector<ss::future<produce_response::topic>>
 produce_topics(produce_ctx& octx) {
-    // topic response placeholders
     std::vector<ss::future<produce_response::topic>> topics;
     topics.reserve(octx.request.topics.size());
 
@@ -287,7 +286,7 @@ produce_topics(produce_ctx& octx) {
         topics.push_back(std::move(tr));
     }
 
-    return std::move(topics);
+    return topics;
 }
 
 /**
