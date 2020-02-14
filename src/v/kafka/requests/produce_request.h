@@ -64,6 +64,19 @@ struct produce_response final {
         model::offset base_offset;
         model::timestamp log_append_time;
         model::offset log_start_offset; // >= v5
+
+        explicit partition(model::partition_id id)
+          : id(id)
+          , base_offset(-1)
+          , log_append_time(-1)
+          , log_start_offset(-1) {}
+
+        partition(model::partition_id id, error_code error)
+          : id(id)
+          , error(error)
+          , base_offset(-1)
+          , log_append_time(-1)
+          , log_start_offset(-1) {}
     };
 
     struct topic {

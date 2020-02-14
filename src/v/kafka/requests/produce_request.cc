@@ -139,10 +139,7 @@ struct produce_ctx {
 static ss::future<produce_response::partition>
 make_partition_response_error(model::partition_id id, error_code error) {
     return ss::make_ready_future<produce_response::partition>(
-      produce_response::partition{
-        .id = id,
-        .error = error,
-      });
+      produce_response::partition(id, error));
 }
 
 /*
@@ -159,8 +156,7 @@ static ss::future<produce_response::partition> partition_append(
     return partition->replicate(std::move(reader))
       .then_wrapped([id, num_records = num_records](
                       ss::future<result<raft::replicate_result>> f) {
-          produce_response::partition p;
-          p.id = id;
+          produce_response::partition p(id);
           try {
               auto r = f.get0();
               if (r) {
@@ -282,11 +278,7 @@ void make_error_response(produce_ctx& octx, error_code error) {
           .name = topic.name,
         };
         for (const auto& part : topic.partitions) {
-            produce_response::partition p{
-              .id = part.id,
-              .error = error,
-            };
-            t.partitions.push_back(std::move(p));
+            t.partitions.emplace_back(part.id, error);
         }
         octx.response.topics.push_back(std::move(t));
     }
