@@ -56,15 +56,15 @@ def _build_clang(src_dir, build_dir, llvm_cache_file, install_prefix, env):
         return
     os.makedirs(build_dir, exist_ok=True)
     logging.info("Configuring LLVM build....")
-    shell.run_subprocess(f'cd {build_dir} && '
-                         f'cmake -G Ninja '
-                         f'  -C {llvm_cache_file} '
-                         f'  -DCMAKE_INSTALL_PREFIX={install_prefix}'
-                         f' {src_dir}/llvm',
-                         env=env)
+    shell.run_subprocess(
+        f'cd {build_dir} && '
+        f'cmake -G Ninja '
+        f'  -C {llvm_cache_file} '
+        f'  -DCMAKE_INSTALL_PREFIX={install_prefix}'
+        f' {src_dir}/llvm',
+        env=env)
     logging.info("Building LLVM...")
-    shell.run_subprocess(f'cd {build_dir} && ninja && ninja install',
-                         env=env)
+    shell.run_subprocess(f'cd {build_dir} && ninja && ninja install', env=env)
 
 
 def _download_checksum_and_extract_llvm_sources(src_dir):

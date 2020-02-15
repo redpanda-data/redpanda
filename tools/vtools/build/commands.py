@@ -97,8 +97,7 @@ def go(conf, targets):
         shell.run_subprocess(
             f'cd {vconfig.go_src_dir}/{t} && '
             f'{vconfig.gobin} build {build_flags} -o {vconfig.go_out_dir} ./...',
-            env=vconfig.environ
-        )
+            env=vconfig.environ)
 
 
 @build.command(short_help='build tar, deb or rpm packages.')

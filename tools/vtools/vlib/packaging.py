@@ -31,8 +31,7 @@ def _get_dependencies(binary, vconfig):
     if vconfig.compiler == 'clang':
         libasan_path = shell.run_oneline(
             f'{vconfig.clang_path}/bin/clang -print-file-name=libclang_rt.asan-x86_64.so',
-            env=vconfig.environ
-        )
+            env=vconfig.environ)
     else:
         libasan_path = shell.run_oneline('gcc -print-file-name=libasan.so',
                                          env=vconfig.environ)
@@ -160,8 +159,7 @@ def red_panda_rpm(input_tar, dest_path, src_dir, env):
     nproc = os.cpu_count()
     shell.run_subprocess(
         f'rpmbuild -bb --define \"_topdir {rpm_tree_root}\" --define \"_binary_payload w2T{nproc}.xzdio\" {spec}',
-        env=env
-    )
+        env=env)
 
 
 def red_panda_deb(input_tar, dest_path, src_dir, env):

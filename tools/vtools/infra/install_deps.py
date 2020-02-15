@@ -32,8 +32,8 @@ def _install_awscli(install_dir, env):
         shell.run_subprocess(f'{install_cmd} --update', env=env)
     else:
         shell.run_subprocess(install_cmd, env=env)
-        shell.run_subprocess(
-            f'{os.path.join(install_dir, "aws")} configure', env=env)
+        shell.run_subprocess(f'{os.path.join(install_dir, "aws")} configure',
+                             env=env)
     shutil.rmtree(os.path.join(install_dir, 'aws'))
 
 
