@@ -65,11 +65,14 @@ def go_deps(conf):
             if not fd.name.startswith('.') and fd.is_dir():
                 shell.run_subprocess(
                     f'cd {vconfig.go_src_dir}/{fd.name} && '
-                    f'{vconfig.gobin} mod download && '
-                    f'{vconfig.gobin} install '
-                    f'  github.com/cockroachdb/crlfmt '
-                    f'  mvdan.cc/sh/v3/cmd/shfmt',
+                    f'{vconfig.gobin} mod download',
                     env=vconfig.environ)
+    shell.run_subprocess(
+        f'cd {vconfig.go_src_dir}/rpk && '
+        f'{vconfig.gobin} install '
+        f'  github.com/cockroachdb/crlfmt '
+        f'  mvdan.cc/sh/v3/cmd/shfmt',
+        env=vconfig.environ)
 
 
 @install.command(short_help='install the go compiler.')
