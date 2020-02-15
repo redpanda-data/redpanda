@@ -240,11 +240,13 @@ Generated with `vtools pr` @ {sha1!s:7.7}"""
     # compute diff
     diff = subprocess.run(
         ("diff", "-u", orig_cover_letter_path, cover_letter_path),
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         check=False)
     grep = subprocess.run(("grep", "^\+"),
                           input=diff.stdout,
-                          capture_output=True,
+                          stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE,
                           check=False)
     assert grep.returncode in (0, 1)
     sed = subprocess.check_output(("sed", "-E", "/^\+\+\+/d"),
