@@ -4,6 +4,7 @@
 #include "raft/follower_stats.h"
 #include "raft/logger.h"
 #include "raft/probe.h"
+#include "raft/replicate_batcher.h"
 #include "raft/timeout_jitter.h"
 #include "rpc/connection_cache.h"
 #include "seastarx.h"
@@ -112,6 +113,8 @@ private:
     friend replicate_entries_stm;
     friend vote_stm;
     friend recovery_stm;
+    friend replicate_batcher;
+
     // all these private functions assume that we are under exclusive operations
     // via the _op_sem
     void do_step_down();
@@ -178,6 +181,7 @@ private:
     // read at `ss::future<> start()`
     model::node_id _voted_for;
     protocol_metadata _meta;
+    std::optional<model::node_id> _leader_id;
 
     /// useful for when we are not the leader
     clock_type::time_point _hbeat = clock_type::now();
@@ -189,6 +193,8 @@ private:
     /// used for keepint tally on followers
     follower_stats _fstats;
 
+    replicate_batcher _batcher;
+
     /// used to wait for background ops before shutting down
     ss::gate _bg;
 
@@ -199,8 +205,6 @@ private:
     std::optional<append_entries_cb_t> _append_entries_notification;
     probe _probe;
     raft_ctx_log _ctxlog;
-
-    std::optional<model::node_id> _leader_id;
 };
 
 } // namespace raft
