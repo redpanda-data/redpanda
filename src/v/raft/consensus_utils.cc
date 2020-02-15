@@ -234,16 +234,22 @@ extract_configuration(model::record_batch_reader&& reader) {
             .then([&cfg]() mutable { return std::move(cfg); });
       });
 }
-
-model::record_batch_reader serialize_configuration(group_configuration cfg) {
+ss::circular_buffer<model::record_batch>
+serialize_configuration_as_batches(group_configuration cfg) {
     auto batch = std::move(
                    storage::record_batch_builder(
                      raft::configuration_batch_type, model::offset(0))
                      .add_raw_kv(iobuf(), reflection::to_iobuf(std::move(cfg))))
                    .build();
     ss::circular_buffer<model::record_batch> batches;
+    batches.reserve(1);
     batches.push_back(std::move(batch));
-    return model::make_memory_record_batch_reader(std::move(batches));
+    return batches;
+}
+
+model::record_batch_reader serialize_configuration(group_configuration cfg) {
+    return model::make_memory_record_batch_reader(
+      serialize_configuration_as_batches(std::move(cfg)));
 }
 
 } // namespace raft::details
