@@ -29,23 +29,10 @@ set -x
 
 
 def configure_build(vconfig, build_external=True, build_external_only=False):
-    clean_env = {
-        "PATH": os.environ["PATH"],
-        "COMPILER": vconfig.compiler,
-        "BUILD_TYPE": vconfig.build_type,
-        "HOME": os.environ["HOME"],
-        "GOPATH": vconfig.go_path,
-        "GOBIN": vconfig.gobin,
-        "LC_CTYPE": "C.UTF-8",
-        "CI": os.environ.get("CI", "0"),
-    }
-
     if vconfig.compiler == 'clang':
         clang_path = clang.find_or_install_clang(vconfig)
         os.environ['CC'] = clang_path
         os.environ['CXX'] = f'{clang_path}++'
-        clean_env["CC"] = os.environ["CC"]
-        clean_env["CXX"] = os.environ["CXX"]
 
     logging.info(f"Configuring '{vconfig.build_type}' build.")
 
@@ -66,8 +53,9 @@ def configure_build(vconfig, build_external=True, build_external_only=False):
                  f'  {" ".join(cmake_flags)}'
                  f'  -B{vconfig.build_dir}'
                  f'  -H{vconfig.src_dir}')
-    _render_build_script(clean_env, cmake_str, vconfig.build_dir)
-    shell.run_subprocess(f"sh {vconfig.build_dir}/rebuild.sh")
+    _render_build_script(vconfig.environ, cmake_str, vconfig.build_dir)
+    shell.run_subprocess(f"sh {vconfig.build_dir}/rebuild.sh",
+                         env=vconfig.environ)
 
     # FIXME https://app.asana.com/0/1149841353291489/1153763539998305
     if build_external:

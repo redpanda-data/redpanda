@@ -68,7 +68,8 @@ def cpp(build_type, conf, skip_external, clang, reconfigure):
     total_memory = os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES')
     num_jobs = math.floor(total_memory / (2 * 1024.**3))
     num_jobs = min(num_jobs, os.sysconf('SC_NPROCESSORS_ONLN'))
-    shell.run_subprocess(f'cd {vconfig.build_dir} && ninja -j{num_jobs}')
+    shell.run_subprocess(f'cd {vconfig.build_dir} && ninja -j{num_jobs}',
+                         env=vconfig.environ)
 
 
 @build.command(short_help='build the rpk binary')
@@ -95,8 +96,8 @@ def go(conf, targets):
 
         shell.run_subprocess(
             f'cd {vconfig.go_src_dir}/{t} && '
-            f'{vconfig.gobin} build {build_flags} -o {vconfig.go_out_dir} ./...'
-        )
+            f'{vconfig.gobin} build {build_flags} -o {vconfig.go_out_dir} ./...',
+            env=vconfig.environ)
 
 
 @build.command(short_help='build tar, deb or rpm packages.')

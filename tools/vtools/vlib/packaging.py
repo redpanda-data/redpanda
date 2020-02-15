@@ -30,10 +30,11 @@ def _get_dependencies(binary, vconfig):
 
     if vconfig.compiler == 'clang':
         libasan_path = shell.run_oneline(
-            f'{vconfig.clang_path}/bin/clang -print-file-name=libclang_rt.asan-x86_64.so'
-        )
+            f'{vconfig.clang_path}/bin/clang -print-file-name=libclang_rt.asan-x86_64.so',
+            env=vconfig.environ)
     else:
-        libasan_path = shell.run_oneline('gcc -print-file-name=libasan.so')
+        libasan_path = shell.run_oneline('gcc -print-file-name=libasan.so',
+                                         env=vconfig.environ)
     compiler_libs_path = os.path.dirname(libasan_path)
 
     env = os.environ.copy()
@@ -63,6 +64,7 @@ def _relocable_tar_package(dest, execs, configs, admin_api_swag, vconfig):
     logging.info(f"Creating relocable tar package {dest}")
     gzip_process = subprocess.Popen(f"pigz -f > {dest}",
                                     shell=True,
+                                    env=vconfig.environ,
                                     stdin=subprocess.PIPE)
     thunk = b'''\
 #!/usr/bin/env bash
@@ -134,7 +136,7 @@ def _pkg_context():
     }
 
 
-def red_panda_rpm(input_tar, dest_path, src_dir):
+def red_panda_rpm(input_tar, dest_path, src_dir, env):
     logging.info("Creating RPM package")
     # prepare RPM sources
     rpm_tree_root = os.path.join(dest_path, "rpm")
@@ -156,11 +158,11 @@ def red_panda_rpm(input_tar, dest_path, src_dir):
     # build RPM
     nproc = os.cpu_count()
     shell.run_subprocess(
-        f'rpmbuild -bb --define \"_topdir {rpm_tree_root}\" --define \"_binary_payload w2T{nproc}.xzdio\" {spec}'
-    )
+        f'rpmbuild -bb --define \"_topdir {rpm_tree_root}\" --define \"_binary_payload w2T{nproc}.xzdio\" {spec}',
+        env=env)
 
 
-def red_panda_deb(input_tar, dest_path, src_dir):
+def red_panda_deb(input_tar, dest_path, src_dir, env):
     logging.info("Creating DEB package")
     debian_dir = os.path.join(dest_path, "debian/redpanda")
     os.makedirs(debian_dir, exist_ok=True)
@@ -189,8 +191,9 @@ def red_panda_deb(input_tar, dest_path, src_dir):
         control_tmpl,
         os.path.join(dest_path, "debian/redpanda/debian/control"), package_ctx)
     # build DEB
-    shell.raw_check_output(f"tar -C {debian_dir} -xpf {input_tar}")
-    shell.run_subprocess(f'cd {debian_dir} && debuild -rfakeroot -us -uc -b')
+    shell.raw_check_output(f"tar -C {debian_dir} -xpf {input_tar}", env=env)
+    shell.run_subprocess(f'cd {debian_dir} && debuild -rfakeroot -us -uc -b',
+                         env=env)
 
 
 def _is_template(source, files):
@@ -254,7 +257,7 @@ def create_packages(vconfig, formats, build_type):
     if 'tar' in formats:
         red_panda_tar(tar_path, dist_path, vconfig.src_dir)
     if 'deb' in formats:
-        red_panda_deb(tar_path, dist_path, vconfig.src_dir)
+        red_panda_deb(tar_path, dist_path, vconfig.src_dir, vconfig.environ)
     if 'rpm' in formats:
-        red_panda_rpm(tar_path, dist_path, vconfig.src_dir)
+        red_panda_rpm(tar_path, dist_path, vconfig.src_dir, vconfig.environ)
     os.remove(tar_path)

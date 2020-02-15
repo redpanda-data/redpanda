@@ -117,10 +117,10 @@ def _run_terraform(vconfig, action, module, tf_vars):
     tf_bin = os.path.join(vconfig.infra_bin_dir, 'terraform')
     base_cmd = f'cd {module_dir} && {tf_bin}'
     init_cmd = f'{base_cmd} init'
-    shell.run_subprocess(init_cmd)
+    shell.run_subprocess(init_cmd, env=vconfig.environ)
     cmd = f'{base_cmd} {action} -auto-approve {tf_vars}'
     logging.info(f'Running {cmd}')
-    shell.run_subprocess(cmd)
+    shell.run_subprocess(cmd, env=vconfig.environ)
 
 
 def _get_tf_vars(tfvars):
@@ -134,7 +134,7 @@ def _get_tf_outputs(vconfig, module):
     tf_bin = os.path.join(vconfig.infra_bin_dir, 'terraform')
     cmd = f'cd {module_dir} && {tf_bin} output -json'
     logging.info(f'Running {cmd}')
-    out = shell.raw_check_output(cmd)
+    out = shell.raw_check_output(cmd, env=vconfig.environ)
     return json.loads(out)
 
 

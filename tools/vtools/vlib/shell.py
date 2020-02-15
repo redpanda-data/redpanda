@@ -31,11 +31,12 @@ def _cleanup_whitespace(s):
     return re.sub(r' +', ' ', s.strip())
 
 
-def raw_check_output(cmd):
+def raw_check_output(cmd, env=os.environ):
     logging.debug("raw_check_output: %s", cmd)
     try:
         ret = subprocess.check_output(cmd,
                                       shell=True,
+                                      env=env,
                                       stderr=subprocess.DEVNULL)
     except Exception as e:
         logging.error(str(e))
@@ -46,9 +47,9 @@ def raw_check_output(cmd):
     return str(ret.decode("utf-8"))
 
 
-def run_oneline(cmd):
+def run_oneline(cmd, env=os.environ):
     logging.debug("run_oneline: %s", cmd)
-    ret = raw_check_output(cmd)
+    ret = raw_check_output(cmd, env=env)
     if ret is None:
         return ret
     return _cleanup_whitespace(ret)

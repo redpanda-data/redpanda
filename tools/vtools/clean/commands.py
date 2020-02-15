@@ -52,4 +52,5 @@ def build(build_type, clang, conf):
     vconfig = config.VConfig(config_file=conf,
                              build_type=build_type,
                              clang=clang)
-    shell.run_subprocess(f'cd {vconfig.build_dir} && ninja -t clean')
+    shell.run_subprocess(f'cd {vconfig.build_dir} && ninja -t clean',
+                         env=vconfig.environ)
