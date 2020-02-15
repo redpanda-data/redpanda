@@ -66,7 +66,7 @@ def go_deps(conf):
                 shell.run_subprocess(
                     f'cd {vconfig.go_src_dir}/{fd.name} && '
                     f'{vconfig.gobin} mod download && '
-                    f'{vconfig.gobin} get '
+                    f'{vconfig.gobin} install '
                     f'  github.com/cockroachdb/crlfmt '
                     f'  mvdan.cc/sh/v3/cmd/shfmt',
                     env=vconfig.environ)
