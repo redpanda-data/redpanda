@@ -5,7 +5,6 @@
 #include "raft/errc.h"
 #include "raft/logger.h"
 #include "raft/recovery_stm.h"
-#include "raft/replicate_entries_stm.h"
 #include "raft/vote_stm.h"
 
 #include <seastar/core/fstream.hh>
@@ -37,7 +36,8 @@ consensus::consensus(
   , _conf(std::move(initial_cfg))
   , _ctxlog(_self, group)
   , _append_entries_notification(std::move(append_callback))
-  , _fstats({}) {
+  , _fstats({})
+  , _batcher(this) {
     _meta.group = group();
     update_follower_stats(_conf);
     _vote_timeout.set_callback([this] { dispatch_vote(); });
@@ -189,48 +189,11 @@ void consensus::dispatch_recovery(
 
 ss::future<result<replicate_result>>
 consensus::replicate(model::record_batch_reader&& rdr) {
-    return with_semaphore(_op_sem, 1, [this, rdr = std::move(rdr)]() mutable {
-        return do_replicate(std::move(rdr));
-    });
-}
-
-ss::future<result<replicate_result>>
-consensus::do_replicate(model::record_batch_reader&& rdr) {
     if (!is_leader()) {
         return seastar::make_ready_future<result<replicate_result>>(
           errc::not_leader);
     }
-
-    if (_bg.is_closed()) {
-        return ss::make_exception_future<result<replicate_result>>(
-          ss::gate_closed_exception());
-    }
-    return with_gate(_bg, [this, rdr = std::move(rdr)]() mutable {
-        append_entries_request req{
-          .node_id = _self,
-          .meta = _meta,
-          .batches
-          = model::make_record_batch_reader<details::term_assigning_reader>(
-            std::move(rdr), model::term_id(_meta.term))};
-
-        auto stm = ss::make_lw_shared<replicate_entries_stm>(
-          this, 3, std::move(req));
-
-        return stm->apply().finally([this, stm] {
-            auto f = stm->wait().finally([stm] {});
-            // if gate is closed wait for all futures
-            if (_bg.is_closed()) {
-                return std::move(f);
-            }
-            // background
-            (void)with_gate(_bg, [this, stm, f = std::move(f)]() mutable {
-                return std::move(f);
-            }).handle_exception([this](const std::exception_ptr& e) {
-                _ctxlog.warn("Replication exception - {}", e);
-            });
-            return ss::make_ready_future<>();
-        });
-    });
+    return _batcher.replicate(std::move(rdr));
 }
 
 /// performs no raft-state mutation other than resetting the timer
@@ -573,9 +536,17 @@ ss::future<> consensus::process_configurations(
 }
 
 ss::future<> consensus::replicate_configuration(group_configuration cfg) {
+    // under the _op_sem lock
     _ctxlog.debug("Replicating group configuration {}", cfg);
-    return do_replicate(details::serialize_configuration(std::move(cfg)))
-      .discard_result();
+    auto batches = details::serialize_configuration_as_batches(std::move(cfg));
+    for (auto& b : batches) {
+        b.set_term(model::term_id(_meta.term));
+    }
+    append_entries_request req{
+      .node_id = _self,
+      .meta = _meta,
+      .batches = model::make_memory_record_batch_reader(std::move(batches))};
+    return _batcher.do_flush({}, std::move(req));
 }
 
 append_entries_reply
