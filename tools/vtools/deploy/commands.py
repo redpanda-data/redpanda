@@ -1,6 +1,7 @@
 import click
 
-from . import cluster
+from ..vlib import config
+from . import cluster as cl
 
 
 @click.group(short_help='execute infrastructure-related tasks.')
@@ -17,6 +18,9 @@ def deploy():
 @click.option('--install-deps',
               default=False,
               help='Download and install the dependencies')
+@click.option('--destroy',
+              default=False,
+              help='Tear down the deployed resources')
 @click.option('--ssh-key',
               help='The path where of the SSH to use (the key will be' +
               'generated if it doesn\'t exist)',
@@ -34,30 +38,11 @@ def deploy():
               type=click.Choice(['debug', 'info', 'warning', 'error', 'fatal'],
                                 case_sensitive=False))
 @click.argument('tfvars', nargs=-1)
-def cluster(conf, install_deps, ssh_key, ssh_port, ssh_timeout, ssh_retries,
-            log, tfvars):
+def cluster(conf, install_deps, destroy, ssh_key, ssh_port, ssh_timeout,
+            ssh_retries, log, tfvars):
     vconfig = config.VConfig(conf)
-    cluster.deploy(vconfig, install_deps, ssh_key, ssh_port, ssh_timeout,
-                   ssh_retries, log, tfvars)
-
-
-@deploy.command(short_help='destroy redpanda deployment.')
-@click.option('--conf',
-              help=('Path to configuration file. If not given, a .vtools.yml '
-                    'file is searched recursively starting from the current '
-                    'working directory.'),
-              default=None)
-@click.option('--install-deps',
-              default=False,
-              help='Download and install the dependencies')
-@click.option('--ssh-key',
-              help='The path to the SSH key',
-              default='~/.ssh/infra-key')
-@click.option('--log',
-              default='info',
-              type=click.Choice(['debug', 'info', 'warning', 'error', 'fatal'],
-                                case_sensitive=False))
-@click.argument('tfvars', nargs=-1)
-def destroy(conf, install_deps, ssh_key, log, tfvars):
-    vconfig = config.VConfig(conf)
-    cluster.destroy(vconfig, install_deps, ssh_key, log, tfvars)
+    if destroy:
+        cl.destroy(vconfig, install_deps, ssh_key, log, tfvars)
+        return
+    cl.deploy(vconfig, install_deps, ssh_key, ssh_port, ssh_timeout,
+              ssh_retries, log, tfvars)
