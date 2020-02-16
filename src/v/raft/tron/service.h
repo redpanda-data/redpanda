@@ -27,7 +27,6 @@ struct service final : trongen_service {
     }
     ss::future<put_reply>
     replicate(model::record_batch_reader&& r, rpc::streaming_context&) final {
-        tronlog.info("replicating entry");
         auto shard = _shard_table.shard_for(raft::group_id(66));
         return with_scheduling_group(
           get_scheduling_group(), [this, shard, r = std::move(r)]() mutable {

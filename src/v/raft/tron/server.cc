@@ -177,9 +177,11 @@ static model::broker broker_from_arg(ss::sstring peer) {
 static raft::group_configuration
 group_cfg_from_args(const po::variables_map& opts) {
     raft::group_configuration cfg;
-    auto peers = opts["peers"].as<std::vector<ss::sstring>>();
-    for (auto& arg : peers) {
-        cfg.nodes.push_back(broker_from_arg(arg));
+    if (opts.find("peers") != opts.end()) {
+        auto peers = opts["peers"].as<std::vector<ss::sstring>>();
+        for (auto& arg : peers) {
+            cfg.nodes.push_back(broker_from_arg(arg));
+        }
     }
     // add self
     cfg.nodes.push_back(model::broker(
@@ -231,9 +233,11 @@ int main(int args, char** argv, char** env) {
                   .get();
                 scfg.credentials = std::move(builder);
             }
-            initialize_connection_cache_in_thread(
-              connection_cache, cfg["peers"].as<std::vector<ss::sstring>>());
-
+            if (cfg.find("peers") != cfg.end()) {
+                initialize_connection_cache_in_thread(
+                  connection_cache,
+                  cfg["peers"].as<std::vector<ss::sstring>>());
+            }
             const ss::sstring workdir = fmt::format(
               "{}/greetings-{}",
               cfg["workdir"].as<ss::sstring>(),
