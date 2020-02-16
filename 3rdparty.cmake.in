@@ -180,8 +180,8 @@ if(@RP_ENABLE_DPDK@)
       T=${dpdk_quadruple})
 
     ExternalProject_Add(dpdk
-      URL https://storage.googleapis.com/vectorizedio-public/dependencies/dpdk-a177465.tar.gz
-      URL_MD5 2af337f9ed29955362845808d6cdaa3e
+      GIT_REPOSITORY https://github.com/vectorizedio/dpdk.git
+      GIT_TAG 71db32d74
       INSTALL_DIR @V_DEPS_INSTALL_DIR@
       DEPENDS ${default_depends}
       PATCH_COMMAND
@@ -393,7 +393,7 @@ ExternalProject_Add(lksctp-tools
 
 ExternalProject_Add(seastar
   GIT_REPOSITORY https://github.com/vectorizedio/seastar.git
-  GIT_TAG 2d9358031fe051ae3cc36b533978ec77ed6d0866
+  GIT_TAG cb319bd97
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
@@ -415,6 +415,7 @@ ExternalProject_Add(seastar
     -DSeastar_UNUSED_RESULT_ERROR=ON
   DEPENDS
     ${default_depends}
+    dpdk
     fmt
     boost
     protobuf
