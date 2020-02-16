@@ -67,24 +67,7 @@ log_segment_appender::~log_segment_appender() {
     }
 }
 
-ss::future<> log_segment_appender::do_adaptive_fallocate() {
-    const size_t next_falloc_max = _last_fallocated_offset
-                                   + _opts.adaptive_fallocation_size;
-    size_t last_offset = _last_fallocated_offset;
-    _last_fallocated_offset = next_falloc_max;
-    return _out.allocate(last_offset, next_falloc_max);
-}
 ss::future<> log_segment_appender::append(const char* buf, const size_t n) {
-    if (
-      _last_fallocated_offset == 0
-      || _committed_offset + n
-           >= _last_fallocated_offset - _opts.fallocation_free_space_size) {
-        // TODO(log_segment_reader, needs physical offset tracking)
-        //
-        // stlog.info("About to fallocate, currently: {}", *this);
-        // return do_adaptive_fallocate().then(
-        //   [this, buf, n] { return append(buf, n); });
-    }
     size_t written = 0;
     while (likely(_current != _chunks.end())) {
         const size_t sz = _current->append(buf + written, n - written);
@@ -212,12 +195,9 @@ operator<<(std::ostream& o, const log_segment_appender::chunk& c) {
 std::ostream& operator<<(std::ostream& out, const log_segment_appender& o) {
     return ss::fmt_print(
       out,
-      "[write_dma:{}, last_fallocated_offset:{}, "
-      "adaptive_fallocation_size:{}, bytes_written:{}, "
-      "committed_offset:{}, bytes_flush_pending:{}, chunk_index:{}]",
+      "[write_dma:{}, bytes_written:{}, committed_offset:{}, "
+      "bytes_flush_pending:{}, chunk_index:{}]",
       o._dma_write_alignment,
-      o._last_fallocated_offset,
-      o._opts.adaptive_fallocation_size,
       o.file_byte_offset(),
       o._committed_offset,
       o._bytes_flush_pending,
