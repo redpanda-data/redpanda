@@ -42,7 +42,7 @@ ss::future<response_ptr> do_process(
 ss::future<response_ptr>
 process_request(request_context&& ctx, ss::smp_service_group g) {
     // Eventually generate this with meta-classes.
-    kreq_log.debug("Processing request for {}", ctx.header().key);
+    kreq_log.debug("Processing request for API {}", ctx.header().key);
     switch (ctx.header().key) {
     case api_versions_api::key:
         return api_versions_api::process(std::move(ctx), std::move(g));
