@@ -24,14 +24,11 @@ namespace storage {
 class log_segment_appender {
 public:
     static constexpr const size_t chunk_size = 128 * 1024; // 128KB
-    static constexpr const size_t chunks_no_buffer = 4;
+    static constexpr const size_t chunks_no_buffer = 8;
     struct options {
         explicit options(ss::io_priority_class p)
           : priority(p) {}
         ss::io_priority_class priority;
-        size_t adaptive_fallocation_size = 1024 * 1024 * 8; // 8MB
-        /// when to dispatch the background fallocate
-        size_t fallocation_free_space_size = 1024 * 1024 * 2; // 2MB
     };
     class chunk {
     public:
@@ -106,13 +103,11 @@ public:
 
 protected:
     friend std::ostream& operator<<(std::ostream&, const log_segment_appender&);
-    ss::future<> do_adaptive_fallocate();
 
     ss::file _out;
     options _opts;
     size_t _dma_write_alignment{0};
 
-    size_t _last_fallocated_offset{0};
     uint64_t _committed_offset{0};
     uint64_t _bytes_flush_pending{0};
 
