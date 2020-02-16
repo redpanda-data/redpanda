@@ -21,7 +21,7 @@ public:
       consensus* ptr, size_t cache_size = default_batch_bytes);
 
     replicate_batcher(replicate_batcher&&) noexcept = default;
-    replicate_batcher& operator=(replicate_batcher&&) noexcept = default;
+    replicate_batcher& operator=(replicate_batcher&&) noexcept = delete;
     replicate_batcher(const replicate_batcher&) = delete;
     replicate_batcher& operator=(const replicate_batcher&) = delete;
     ~replicate_batcher() noexcept;
@@ -40,6 +40,7 @@ private:
     consensus* _ptr;
     size_t _max_batch_size{default_batch_bytes};
     size_t _pending_bytes{0};
+    timer_type _flush_timer;
 
     std::vector<item_ptr> _item_cache;
     ss::circular_buffer<model::record_batch> _data_cache;
