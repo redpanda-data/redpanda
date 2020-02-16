@@ -124,7 +124,9 @@ log_segment_batch_reader::read(model::timeout_clock::time_point timeout) {
     // batch_cache_index::read for more details.
     _config.start_offset = cache_read.next_batch;
 
-    if (!cache_read.batches.empty()) {
+    if (
+      !cache_read.batches.empty()
+      || _config.start_offset > _config.max_offset) {
         _config.bytes_consumed += cache_read.memory_usage;
         _probe.add_bytes_read(cache_read.memory_usage);
         return ss::make_ready_future<ss::circular_buffer<model::record_batch>>(

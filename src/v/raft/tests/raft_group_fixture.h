@@ -340,7 +340,10 @@ struct raft_group {
         _elections_count++;
     }
 
-    void wait_for_next_election() { _election_sem.wait().get0(); }
+    void wait_for_next_election() {
+        ss::thread::yield();
+        _election_sem.wait().get0();
+    }
 
     ss::future<std::vector<model::record_batch>>
     read_member_log(model::node_id member) {

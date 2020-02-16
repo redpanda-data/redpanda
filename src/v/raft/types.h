@@ -165,6 +165,8 @@ struct leadership_status {
 };
 
 struct replicate_result {
+    /// used by the kafka API to produce a kafka reply to produce request.
+    /// see produce_request.cc
     model::offset last_offset;
 };
 
