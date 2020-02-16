@@ -44,12 +44,11 @@ batch_cache_index::read_result batch_cache_index::read(
   model::offset max_offset,
   const std::vector<model::record_batch_type>& type_filter,
   size_t max_bytes) {
-    if (unlikely(offset > max_offset)) {
-        return {};
-    }
-
     read_result ret;
-
+    ret.next_batch = offset;
+    if (unlikely(offset > max_offset)) {
+        return ret;
+    }
     for (auto it = find_first_contains(offset); it != _index.end();) {
         auto& batch = it->second->batch;
 
