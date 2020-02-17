@@ -9,7 +9,7 @@
  * reads the next request from the input source as an iobuf
  */
 static ss::future<iobuf> get_request(ss::input_stream<char>& input) {
-    return input.read_exactly(sizeof(kafka::size_type))
+    return input.read_exactly(sizeof(int32_t))
       .then([&input](ss::temporary_buffer<char> buf) {
           if (!buf) { // eof?
               return ss::make_ready_future<iobuf>(iobuf());
@@ -36,7 +36,7 @@ get_request_context(application& app, ss::input_stream<char>&& input) {
         /*
          * read the request size prefix
          */
-        return input.read_exactly(sizeof(kafka::size_type))
+        return input.read_exactly(sizeof(int32_t))
           .then([&app, &input](ss::temporary_buffer<char> buf) {
               auto size = kafka::kafka_server::connection::process_size(
                 input, std::move(buf));
@@ -82,7 +82,7 @@ static iobuf handle_request(kafka::request_context&& ctx) {
     kafka::response_writer writer(os);
     writer.write(ctx.header().key);
     writer.write(ctx.header().version);
-    writer.write(ctx.header().correlation_id);
+    writer.write(ctx.header().correlation);
     writer.write(ctx.header().client_id);
 
     // decode and echo

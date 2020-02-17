@@ -170,14 +170,13 @@ ss::future<> kafka_server::connection::process() {
 // clang-format on
 
 ss::future<> kafka_server::connection::write_response(
-  response_ptr&& response, correlation_type correlation_id) {
+  response_ptr&& response, correlation_id correlation) {
     ss::sstring header(
       ss::sstring::initialized_later(), sizeof(raw_response_header));
     auto* raw_header = reinterpret_cast<raw_response_header*>(header.begin());
-    auto size = size_type(
-      sizeof(correlation_type) + response->buf().size_bytes());
+    auto size = int32_t(sizeof(correlation_id) + response->buf().size_bytes());
     raw_header->size = ss::cpu_to_be(size);
-    raw_header->correlation_id = ss::cpu_to_be(correlation_id);
+    raw_header->correlation_id = ss::cpu_to_be(correlation());
 
     ss::scattered_message<char> msg;
     msg.append(std::move(header));
@@ -196,7 +195,7 @@ ss::future<> kafka_server::connection::write_response(
 // processed in the order they are sent and responses will return in that order
 // as well.
 ss::future<> kafka_server::connection::process_request() {
-    return _read_buf.read_exactly(sizeof(size_type))
+    return _read_buf.read_exactly(sizeof(int32_t))
       .then([this](ss::temporary_buffer<char> buf) {
           if (!buf) {
               // EOF
@@ -274,7 +273,7 @@ ss::future<> kafka_server::connection::process_request() {
 
 void kafka_server::connection::do_process(
   request_context&& ctx, ss::semaphore_units<>&& units) {
-    auto correlation = ctx.header().correlation_id;
+    auto correlation = ctx.header().correlation;
     auto f = ::kafka::process_request(std::move(ctx), _server._smp_group);
     auto ready = std::move(_ready_to_respond);
     _ready_to_respond = f.then_wrapped(
@@ -301,8 +300,8 @@ size_t kafka_server::connection::process_size(
     if (src.eof()) {
         return 0;
     }
-    auto* raw = ss::unaligned_cast<const size_type*>(buf.get());
-    size_type size = be_to_cpu(*raw);
+    auto* raw = ss::unaligned_cast<const int32_t*>(buf.get());
+    int32_t size = be_to_cpu(*raw);
     if (size < 0) {
         throw std::runtime_error(
           fmt::format("Invalid request size of {}", size));
@@ -328,7 +327,7 @@ kafka_server::connection::read_header(ss::input_stream<char>& src) {
               return request_header{
                 api_key(ss::net::ntoh(raw_header->api_key)),
                 api_version(ss::net::ntoh(raw_header->api_version)),
-                ss::net::ntoh(raw_header->correlation_id)};
+                correlation_id(ss::net::ntoh(raw_header->correlation))};
           };
           if (client_id_size == 0) {
               auto header = make_header();
