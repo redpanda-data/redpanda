@@ -220,10 +220,14 @@ static ss::future<produce_response::partition> produce_topic_partition(
     /*
      * The remainder of work for this partition is handled on its home core.
      */
+    auto batch = ss::engine().cpu_id() != *shard
+                   ? part.adapter.batch->foreign_share()
+                   : part.adapter.batch->share();
     return octx.rctx.partition_manager().invoke_on(
       *shard,
       octx.ssg,
-      [&part, ntp = std::move(ntp)](cluster::partition_manager& mgr) {
+      [batch = std::move(batch),
+       ntp = std::move(ntp)](cluster::partition_manager& mgr) mutable {
           auto partition = mgr.get(ntp);
           if (!partition) {
               return ss::make_ready_future<produce_response::partition>(
@@ -231,7 +235,7 @@ static ss::future<produce_response::partition> produce_topic_partition(
                   ntp.tp.partition, error_code::unknown_topic_or_partition));
           }
           return partition_append(
-            ntp.tp.partition, partition, std::move(*part.adapter.batch));
+            ntp.tp.partition, partition, std::move(batch));
       });
 }
 
