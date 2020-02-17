@@ -4,6 +4,7 @@
 #include "kafka/probe.h"
 #include "kafka/quota_manager.h"
 #include "kafka/requests/request_context.h"
+#include "rpc/batched_output_stream.h"
 #include "seastarx.h"
 
 #include <seastar/core/abort_source.hh>
@@ -38,20 +39,18 @@ class controller_dispatcher;
 
 namespace kafka {
 
-using size_type = int32_t;
-
 // Fields may not be byte-aligned since we work
 // with the underlying network buffer.
 struct [[gnu::packed]] raw_request_header {
     ss::unaligned<int16_t> api_key;
     ss::unaligned<int16_t> api_version;
-    ss::unaligned<correlation_type> correlation_id;
+    ss::unaligned<correlation_id::type> correlation;
     ss::unaligned<int16_t> client_id_size;
 };
 
 struct [[gnu::packed]] raw_response_header {
-    ss::unaligned<size_type> size;
-    ss::unaligned<correlation_type> correlation_id;
+    ss::unaligned<int32_t> size;
+    ss::unaligned<correlation_id::type> correlation;
 };
 
 struct kafka_server_config {
@@ -77,6 +76,9 @@ public:
 
     class connection : public boost::intrusive::list_base_hook<> {
     public:
+        using sequence_id
+          = named_type<uint64_t, struct connection_sequence_type>;
+
         connection(
           kafka_server& server,
           ss::connected_socket&& fd,
@@ -94,15 +96,22 @@ public:
     private:
         ss::future<> process_request();
         void do_process(request_context&&, ss::semaphore_units<>&&);
-        ss::future<> write_response(response_ptr&&, correlation_type);
+        ss::future<> write_response(response_ptr&&, correlation_id);
+        ss::future<> process_response();
 
     private:
         kafka_server& _server;
         ss::connected_socket _fd;
         ss::socket_address _addr;
         ss::input_stream<char> _read_buf;
-        ss::output_stream<char> _write_buf;
-        ss::future<> _ready_to_respond = ss::make_ready_future<>();
+        rpc::batched_output_stream _write_buf;
+
+        sequence_id _next_response;
+        sequence_id _seq_idx;
+        std::unordered_map<
+          sequence_id,
+          std::pair<correlation_id, ss::future<response_ptr>>>
+          _responses;
     };
 
 private:

@@ -48,14 +48,14 @@ private:
         ph.write(raw_size, sizeof(be_total_size));
 
         return _out.write(iobuf_as_scattered(std::move(buf))).then([this] {
-            return _in.read_exactly(sizeof(kafka::size_type))
+            return _in.read_exactly(sizeof(int32_t))
               .then([this](ss::temporary_buffer<char> buf) {
                   auto size = kafka::kafka_server::connection::process_size(
                     _in, std::move(buf));
-                  return _in.read_exactly(sizeof(correlation_type))
+                  return _in.read_exactly(sizeof(correlation_id))
                     .then([this, size](ss::temporary_buffer<char> buf) {
                         // drops the correlation id on the floor
-                        auto remaining = size - sizeof(correlation_type);
+                        auto remaining = size - sizeof(correlation_id);
                         return read_iobuf_exactly(_in, remaining);
                     });
               });
@@ -103,12 +103,12 @@ private:
     void write_header(response_writer& wr, api_key key, api_version version) {
         wr.write(int16_t(key()));
         wr.write(int16_t(version()));
-        wr.write(int32_t(correlation_id_));
+        wr.write(int32_t(_correlation()));
         wr.write(std::string_view("test_client"));
-        correlation_id_++;
+        _correlation = _correlation + correlation_id(1);
     }
 
-    correlation_type correlation_id_{0};
+    correlation_id _correlation{0};
 };
 
 } // namespace kafka
