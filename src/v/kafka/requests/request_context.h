@@ -31,7 +31,7 @@ extern ss::logger kreq_log;
 struct request_header {
     api_key key;
     api_version version;
-    correlation_type correlation_id;
+    correlation_id correlation;
     ss::temporary_buffer<char> client_id_buffer;
     std::optional<std::string_view> client_id;
 };

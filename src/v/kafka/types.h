@@ -10,7 +10,7 @@
 namespace kafka {
 
 /// Kafka API request correlation.
-using correlation_type = int32_t;
+using correlation_id = named_type<int32_t, struct kafka_correlation_type>;
 
 /// Kafka API key.
 using api_key = named_type<int16_t, struct kafka_requests_api_key>;
