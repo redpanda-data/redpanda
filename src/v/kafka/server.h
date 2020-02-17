@@ -38,20 +38,18 @@ class controller_dispatcher;
 
 namespace kafka {
 
-using size_type = int32_t;
-
 // Fields may not be byte-aligned since we work
 // with the underlying network buffer.
 struct [[gnu::packed]] raw_request_header {
     ss::unaligned<int16_t> api_key;
     ss::unaligned<int16_t> api_version;
-    ss::unaligned<correlation_type> correlation_id;
+    ss::unaligned<correlation_id::type> correlation;
     ss::unaligned<int16_t> client_id_size;
 };
 
 struct [[gnu::packed]] raw_response_header {
-    ss::unaligned<size_type> size;
-    ss::unaligned<correlation_type> correlation_id;
+    ss::unaligned<int32_t> size;
+    ss::unaligned<correlation_id::type> correlation;
 };
 
 struct kafka_server_config {
@@ -94,7 +92,7 @@ public:
     private:
         ss::future<> process_request();
         void do_process(request_context&&, ss::semaphore_units<>&&);
-        ss::future<> write_response(response_ptr&&, correlation_type);
+        ss::future<> write_response(response_ptr&&, correlation_id);
 
     private:
         kafka_server& _server;
