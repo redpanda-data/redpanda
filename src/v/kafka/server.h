@@ -4,6 +4,7 @@
 #include "kafka/probe.h"
 #include "kafka/quota_manager.h"
 #include "kafka/requests/request_context.h"
+#include "rpc/batched_output_stream.h"
 #include "seastarx.h"
 
 #include <seastar/core/abort_source.hh>
@@ -75,6 +76,9 @@ public:
 
     class connection : public boost::intrusive::list_base_hook<> {
     public:
+        using sequence_id
+          = named_type<uint64_t, struct connection_sequence_type>;
+
         connection(
           kafka_server& server,
           ss::connected_socket&& fd,
@@ -93,14 +97,21 @@ public:
         ss::future<> process_request();
         void do_process(request_context&&, ss::semaphore_units<>&&);
         ss::future<> write_response(response_ptr&&, correlation_id);
+        ss::future<> process_response();
 
     private:
         kafka_server& _server;
         ss::connected_socket _fd;
         ss::socket_address _addr;
         ss::input_stream<char> _read_buf;
-        ss::output_stream<char> _write_buf;
-        ss::future<> _ready_to_respond = ss::make_ready_future<>();
+        rpc::batched_output_stream _write_buf;
+
+        sequence_id _next_response;
+        sequence_id _seq_idx;
+        std::unordered_map<
+          sequence_id,
+          std::pair<correlation_id, ss::future<response_ptr>>>
+          _responses;
     };
 
 private:

@@ -6,8 +6,10 @@
 #include "utils/utf8.h"
 
 #include <seastar/core/byteorder.hh>
+#include <seastar/core/future-util.hh>
 #include <seastar/core/metrics.hh>
 #include <seastar/core/scattered_message.hh>
+#include <seastar/core/semaphore.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/net/api.hh>
 #include <seastar/util/log.hh>
@@ -88,7 +90,7 @@ ss::future<> kafka_server::do_accepts(int which, bool keepalive) {
               fd.set_keepalive(keepalive);
               auto conn = std::make_unique<connection>(
                 *this, std::move(fd), std::move(addr));
-              (void)with_gate(
+              (void)ss::with_gate(
                 _listeners_and_connections,
                 [this, conn = std::move(conn)]() mutable {
                     auto f = conn->process();
@@ -162,9 +164,7 @@ ss::future<> kafka_server::connection::process() {
           });
       })
       .then([this] {
-          return _ready_to_respond.then([this] {
-              return _write_buf.close();
-          });
+              return _write_buf.stop();
       });
 }
 // clang-format on
@@ -176,7 +176,7 @@ ss::future<> kafka_server::connection::write_response(
     auto* raw_header = reinterpret_cast<raw_response_header*>(header.begin());
     auto size = int32_t(sizeof(correlation_id) + response->buf().size_bytes());
     raw_header->size = ss::cpu_to_be(size);
-    raw_header->correlation_id = ss::cpu_to_be(correlation());
+    raw_header->correlation = ss::cpu_to_be(correlation());
 
     ss::scattered_message<char> msg;
     msg.append(std::move(header));
@@ -186,8 +186,10 @@ ss::future<> kafka_server::connection::write_response(
     }
     msg.on_delete([response = std::move(response)] {});
     auto msg_size = msg.size();
-    return _write_buf.write(std::move(msg))
-      .then([this] { return _write_buf.flush(); })
+    return _write_buf
+      .write(std::move(msg))
+      // responses get batch-flushed at the end of process_response();
+      //.then([this] { return _write_buf.flush(); })
       .then([this, msg_size] { _server._probe.add_bytes_sent(msg_size); });
 }
 
@@ -270,28 +272,55 @@ ss::future<> kafka_server::connection::process_request() {
           });
       });
 }
+ss::future<> kafka_server::connection::process_response() {
+    return ss::repeat([this] {
+               auto it = _responses.find(_next_response);
+               if (it == _responses.end()) {
+                   return ss::make_ready_future<ss::stop_iteration>(
+                     ss::stop_iteration::yes);
+               }
+               // found one; increment counter
+               _next_response = _next_response + sequence_id(1);
+               try {
+                   correlation_id corr = it->second.first;
+                   response_ptr r = std::move(it->second.second).get0();
+                   _responses.erase(it);
+                   return write_response(std::move(r), corr).then([this] {
+                       _server._probe.request_served();
+                       return ss::make_ready_future<ss::stop_iteration>(
+                         ss::stop_iteration::no);
+                   });
+               } catch (...) {
+                   _server._probe.request_processing_error();
+                   klog.debug(
+                     "Failed to process request: {}", std::current_exception());
+               }
+               return ss::make_ready_future<ss::stop_iteration>(
+                 ss::stop_iteration::no);
+           })
+      .then([this] { return _write_buf.flush(); });
+}
 
 void kafka_server::connection::do_process(
   request_context&& ctx, ss::semaphore_units<>&& units) {
     auto correlation = ctx.header().correlation;
-    auto f = ::kafka::process_request(std::move(ctx), _server._smp_group);
-    auto ready = std::move(_ready_to_respond);
-    _ready_to_respond = f.then_wrapped(
-      [this, units = std::move(units), ready = std::move(ready), correlation](
-        ss::future<response_ptr>&& f) mutable {
-          try {
-              auto r = f.get0();
-              return ready
-                .then([this, r = std::move(r), correlation]() mutable {
-                    return write_response(std::move(r), correlation);
-                })
-                .then([this] { _server._probe.request_served(); });
-          } catch (...) {
-              _server._probe.request_processing_error();
-              klog.debug(
-                "Failed to process request: {}", std::current_exception());
-              return std::move(ready);
-          }
+    connection::sequence_id seq = _seq_idx;
+    _seq_idx = _seq_idx + sequence_id(1);
+    // background dispatch
+    (void)ss::with_gate(
+      _server._listeners_and_connections,
+      [this,
+       ctx = std::move(ctx),
+       u = std::move(units),
+       seq,
+       correlation]() mutable {
+          return kafka::process_request(std::move(ctx), _server._smp_group)
+            .then_wrapped([this, u = std::move(u), seq, correlation](
+                            ss::future<response_ptr> f) mutable {
+                _responses.insert(
+                  {seq, std::make_pair(correlation, std::move(f))});
+                return process_response().finally([u = std::move(u)] {});
+            });
       });
 }
 
