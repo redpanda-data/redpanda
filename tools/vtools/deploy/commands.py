@@ -42,7 +42,7 @@ def cluster(conf, install_deps, destroy, ssh_key, ssh_port, ssh_timeout,
             ssh_retries, log, tfvars):
     vconfig = config.VConfig(conf)
     if destroy:
-        cl.destroy(vconfig, install_deps, ssh_key, log, tfvars)
+        cl.destroy(vconfig, install_deps, ssh_key, log)
         return
     cl.deploy(vconfig, install_deps, ssh_key, ssh_port, ssh_timeout,
               ssh_retries, log, tfvars)
