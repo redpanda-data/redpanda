@@ -255,7 +255,7 @@ def create_packages(vconfig, formats, build_type):
     _relocable_tar_package(tar_path, execs, configs, admin_api_swag, vconfig)
 
     if 'tar' in formats:
-        red_panda_tar(tar_path, dist_path, vconfig.src_dir)
+        red_panda_tar(tar_path, dist_path)
     if 'deb' in formats:
         red_panda_deb(tar_path, dist_path, vconfig.src_dir, vconfig.environ)
     if 'rpm' in formats:
