@@ -72,6 +72,8 @@ public:
     void update_partition_leader(
       model::topic_view, model::partition_id, std::optional<model::node_id>);
 
+    bool contains(const model::topic&, model::partition_id) const;
+
 private:
     broker_cache_t _brokers_cache;
     cache_t _cache;

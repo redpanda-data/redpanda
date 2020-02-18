@@ -24,14 +24,14 @@ public:
     process(request_context&&, ss::smp_service_group);
 };
 
+class produce_response;
+
 struct produce_request final {
     struct partition {
         model::partition_id id;
+        // the wire format encodes batch data as a nullable byte array. this
+        // data is moved into the batch adapter immediately after its read.
         std::optional<iobuf> data;
-
-        // the kafka batch format on the wire is slightly different than what is
-        // managed by redpanda. this adapter is setup during request decoding,
-        // and is not involved in request encoding.
         kafka_batch_adapter adapter;
     };
 
@@ -45,8 +45,19 @@ struct produce_request final {
     std::chrono::milliseconds timeout;
     std::vector<topic> topics;
 
+    produce_request(const produce_request&) = delete;
+    produce_request& operator=(const produce_request&) = delete;
+    produce_request(produce_request&&) = default;
+    produce_request& operator=(produce_request&&) = delete;
+    produce_request(request_context& ctx) { decode(ctx); }
+
     void encode(const request_context& ctx, response_writer& writer);
     void decode(request_context& ctx);
+
+    /**
+     * Build a generic error response for a given request.
+     */
+    produce_response make_error_response(error_code error) const;
 
     /// True if the request contains a batch with a transactional id.
     bool has_transactional = false;
@@ -64,6 +75,19 @@ struct produce_response final {
         model::offset base_offset;
         model::timestamp log_append_time;
         model::offset log_start_offset; // >= v5
+
+        explicit partition(model::partition_id id)
+          : id(id)
+          , base_offset(-1)
+          , log_append_time(-1)
+          , log_start_offset(-1) {}
+
+        partition(model::partition_id id, error_code error)
+          : id(id)
+          , error(error)
+          , base_offset(-1)
+          , log_append_time(-1)
+          , log_start_offset(-1) {}
     };
 
     struct topic {

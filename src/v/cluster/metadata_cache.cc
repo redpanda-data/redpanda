@@ -128,10 +128,24 @@ find_partition(metadata_cache::metadata& t_md, model::partition_id p_id) {
       [p_id](const model::partition_metadata& p_md) {
           return p_md.id == p_id;
       });
-    return it == std::cend(t_md.partitions)
+    return it == std::end(t_md.partitions)
              ? std::nullopt
              : std::make_optional<
                std::reference_wrapper<model::partition_metadata>>(*it);
+}
+
+bool metadata_cache::contains(
+  const model::topic& topic, const model::partition_id pid) const {
+    if (auto it = _cache.find(topic); it != _cache.end()) {
+        const auto& partitions = it->second.partitions;
+        return std::any_of(
+          partitions.cbegin(),
+          partitions.cend(),
+          [&pid](const model::partition_metadata& partition) {
+              return partition.id == pid;
+          });
+    }
+    return false;
 }
 
 } // namespace cluster
