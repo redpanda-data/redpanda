@@ -39,7 +39,7 @@ requires(
 
 template<typename T>
 concept GroupShardMapper = requires(T m, const kafka::group_id& group_id) {
-    { m.shard_for(group_id) } -> ss::shard_id;
+    { m.shard_for(group_id) } -> std::optional<ss::shard_id>;
 };
 )
 // clang-format on
