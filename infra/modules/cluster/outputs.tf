@@ -11,5 +11,5 @@ output "ssh_cmd" {
 }
 
 output "ssh_user" {
-      value = var.distro_ssh_user[var.distro] 
+  value = var.distro_ssh_user[var.distro]
 }
