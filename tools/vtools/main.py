@@ -10,7 +10,7 @@ from .fmt import commands as fmt
 from .git import commands as git
 from .customer import commands as customer
 from .ssh import commands as ssh
-from .infra import commands as infra
+from .deploy import commands as deploy
 from .install import commands as install
 from .build import commands as build
 from .test import commands as test
@@ -37,7 +37,7 @@ main.add_command(fmt.fmt)
 main.add_command(git.git)
 main.add_command(customer.customer)
 main.add_command(ssh.ssh)
-main.add_command(infra.infra)
+main.add_command(deploy.deploy)
 main.add_command(install.install)
 main.add_command(build.build)
 main.add_command(test.test)
