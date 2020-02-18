@@ -58,7 +58,7 @@ def cpp(build_type, conf, clang, args):
                    f'{vconfig.external_path}/lib:'
                    f'{vconfig.external_path}/lib64')
         logging.info(f'Setting LD_LIBRARY_PATH={ld_path}')
-        os.environ['LD_LIBRARY_PATH'] = ld_path
+        vconfig.environ['LD_LIBRARY_PATH'] = ld_path
 
     args = f' {args}' if args else '-R \".*_rp(unit|bench|int)$\"'
     shell.run_subprocess(f'cd {vconfig.build_dir} && '
