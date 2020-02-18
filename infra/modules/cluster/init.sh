@@ -45,6 +45,10 @@ run_for_distro() {
   esac
 }
 
+sudo mkfs.xfs /dev/nvme0n1
+sudo mkdir -p /var/lib/redpanda
+sudo mount /dev/nvme0n1 /var/lib/redpanda
+
 release_file=/etc/os-release
 
 if [[ -f ${release_file} ]]; then
