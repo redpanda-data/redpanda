@@ -134,9 +134,7 @@ api_versions_api::process(request_context&& ctx, ss::smp_service_group) {
         r.apis = get_supported_apis();
     }
 
-    auto resp = std::make_unique<response>();
-    r.encode(ctx, *resp.get());
-    return ss::make_ready_future<response_ptr>(std::move(resp));
+    return ctx.respond(std::move(r));
 }
 
 } // namespace kafka

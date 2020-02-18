@@ -305,22 +305,6 @@ produce_topics(produce_ctx& octx) {
     return topics;
 }
 
-/**
- * \brief Encode the final response from the octx response structure.
- */
-static ss::future<response_ptr> make_response(produce_ctx& octx) {
-    auto resp = std::make_unique<response>();
-    octx.response.encode(octx.rctx, *resp.get());
-    return ss::make_ready_future<response_ptr>(std::move(resp));
-}
-
-static ss::future<response_ptr>
-make_response(request_context& ctx, produce_response r) {
-    auto resp = std::make_unique<response>();
-    r.encode(ctx, *resp.get());
-    return ss::make_ready_future<response_ptr>(std::move(resp));
-}
-
 ss::future<response_ptr>
 produce_api::process(request_context&& ctx, ss::smp_service_group ssg) {
     produce_request request(ctx);
@@ -333,16 +317,12 @@ produce_api::process(request_context&& ctx, ss::smp_service_group ssg) {
      * features, so we reject all such requests as if authorization failed.
      */
     if (request.has_transactional) {
-        return make_response(
-          ctx,
-          request.make_error_response(
-            error_code::transactional_id_authorization_failed));
+        return ctx.respond(request.make_error_response(
+          error_code::transactional_id_authorization_failed));
 
     } else if (request.has_idempotent) {
-        return make_response(
-          ctx,
-          request.make_error_response(
-            error_code::cluster_authorization_failed));
+        return ctx.respond(request.make_error_response(
+          error_code::cluster_authorization_failed));
 
     } else if (request.acks < -1 || request.acks > 1) {
         // from kafka source: "if required.acks is outside accepted range,
@@ -353,8 +333,8 @@ produce_api::process(request_context&& ctx, ss::smp_service_group ssg) {
           "https://docs.confluent.io/current/installation/configuration/"
           "producer-configs.html",
           request.acks);
-        return make_response(
-          ctx, request.make_error_response(error_code::invalid_required_acks));
+        return ctx.respond(
+          request.make_error_response(error_code::invalid_required_acks));
     }
 
     return ss::do_with(
@@ -369,7 +349,7 @@ produce_api::process(request_context&& ctx, ss::smp_service_group ssg) {
           return when_all_succeed(topics.begin(), topics.end())
             .then([&octx](std::vector<produce_response::topic> topics) {
                 octx.response.topics = std::move(topics);
-                return make_response(octx);
+                return octx.rctx.respond(std::move(octx.response));
             });
       });
 }
