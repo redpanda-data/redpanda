@@ -42,27 +42,34 @@ func (s *Server) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 
 func (h *MetricsHandler) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodPost {
-		http.Error(res, "Method not allowed", http.StatusMethodNotAllowed)
+		msg := "Method not allowed"
+		log.Error(msg)
+		http.Error(res, msg, http.StatusMethodNotAllowed)
 		return
 	}
 	bs, err := ioutil.ReadAll(req.Body)
 	if err != nil {
-		http.Error(res, "Corrupt body", http.StatusBadRequest)
+		msg := "Corrupt body"
+		log.Error(msg)
+		http.Error(res, msg, http.StatusBadRequest)
 		return
 	}
-	log.Info(string(bs))
+	log.Infof("Processing '%s'", string(bs))
 	metrics := &storage.Metrics{}
 	err = json.Unmarshal(bs, metrics)
 	if err != nil {
+		log.Error(err.Error())
 		http.Error(res, err.Error(), http.StatusBadRequest)
 		return
 	}
 	metrics.ReceivedAt = time.Now()
 	err = h.Repo.SaveMetrics(*metrics)
 	if err != nil {
+		log.Error(err.Error())
 		http.Error(res, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	log.Info("Saved %v+", metrics)
 	res.WriteHeader(http.StatusOK)
 }
 
