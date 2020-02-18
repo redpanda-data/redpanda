@@ -14,7 +14,7 @@ namespace kafka {
 CONCEPT(
 template<typename T>
 concept PartitionShardMapper = requires(T m, model::ntp ntp) {
-    { m.shard_for(ntp) } -> ss::shard_id;
+    { m.shard_for(ntp) } -> std::optional<ss::shard_id>;
 };
 )
 // clang-format on
