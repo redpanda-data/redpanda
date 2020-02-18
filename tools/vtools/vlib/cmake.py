@@ -31,8 +31,8 @@ set -x
 def configure_build(vconfig, build_external=True, build_external_only=False):
     if vconfig.compiler == 'clang':
         clang_path = clang.find_or_install_clang(vconfig)
-        os.environ['CC'] = clang_path
-        os.environ['CXX'] = f'{clang_path}++'
+        vconfig.environ['CC'] = clang_path
+        vconfig.environ['CXX'] = f'{clang_path}++'
 
     logging.info(f"Configuring '{vconfig.build_type}' build.")
 
