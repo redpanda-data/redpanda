@@ -117,20 +117,13 @@ std::ostream& operator<<(std::ostream& o, const join_group_response& r) {
       r.members);
 }
 
-static ss::future<response_ptr>
-make_response(request_context& ctx, join_group_response r) {
-    auto resp = std::make_unique<response>();
-    r.encode(ctx, *resp.get());
-    return ss::make_ready_future<response_ptr>(std::move(resp));
-}
-
 ss::future<response_ptr>
 join_group_api::process(request_context&& ctx, ss::smp_service_group g) {
     join_group_request request(ctx);
 
     if (request.group_instance_id) {
-        return make_response(
-          ctx, join_group_response(error_code::unsupported_version));
+        return ctx.respond(
+          join_group_response(error_code::unsupported_version));
     }
 
     return ss::do_with(
@@ -141,9 +134,7 @@ join_group_api::process(request_context&& ctx, ss::smp_service_group g) {
           return ctx.groups()
             .join_group(std::move(request))
             .then([&ctx](join_group_response&& reply) {
-                auto resp = std::make_unique<response>();
-                reply.encode(ctx, *resp.get());
-                return ss::make_ready_future<response_ptr>(std::move(resp));
+                return ctx.respond(std::move(reply));
             });
       });
 }
