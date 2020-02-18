@@ -48,6 +48,9 @@ the above makes `vtools` and `bootstrap` commands available in the
 current shell that can be executed from any subfolder within the 
 project.
 
+If you use `zsh` simply copy the `tools/alias.sh` to your 
+~/.oh-my-zsh/custom/vectorized.sh and never worry about this again!
+
 ## Build
 
 To build `redpanda`:
