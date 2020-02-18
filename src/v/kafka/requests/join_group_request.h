@@ -39,10 +39,6 @@ struct join_group_request final {
 
 std::ostream& operator<<(std::ostream&, const join_group_request&);
 
-/*
- * TODO
- * - auto fill throttle for all reply types
- */
 struct join_group_response final {
     struct member_config {
         kafka::member_id member_id;
@@ -50,8 +46,7 @@ struct join_group_response final {
         bytes metadata;
     };
 
-    std::chrono::milliseconds throttle_time = std::chrono::milliseconds(
-      0); // >= v2
+    std::chrono::milliseconds throttle_time; // >= v2
     kafka::error_code error;
     kafka::generation_id generation_id;
     kafka::protocol_name protocol_name;
