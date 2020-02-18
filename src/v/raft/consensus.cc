@@ -175,7 +175,8 @@ void consensus::dispatch_recovery(
       reply);
     // background
     (void)with_gate(_bg, [this, &idx] {
-        auto recovery = std::make_unique<recovery_stm>(this, idx, _io_priority);
+        auto recovery = std::make_unique<recovery_stm>(
+          this, idx.node_id, _io_priority);
         auto ptr = recovery.get();
         return ptr->apply()
           .handle_exception([this, &idx](const std::exception_ptr& e) {
