@@ -115,16 +115,17 @@ api_versions_api::process(request_context&& ctx, ss::smp_service_group) {
     // versions a server supports when this request is sent, so instead of
     // assuming the lowest supported version, it can use the most recent
     // version and only fallback to the old version when necessary.
-    api_versions_request request;
-    request.decode(ctx.reader(), ctx.header().version);
-
     api_versions_response r;
     if (ctx.header().version > max_supported) {
         r.error = error_code::unsupported_version;
-    } else if (!request.valid(ctx.header().version)) {
-        r.error = error_code::invalid_request;
     } else {
-        r.error = error_code::none;
+        api_versions_request request;
+        request.decode(ctx.reader(), ctx.header().version);
+        if (!request.valid(ctx.header().version)) {
+            r.error = error_code::invalid_request;
+        } else {
+            r.error = error_code::none;
+        }
     }
 
     if (
