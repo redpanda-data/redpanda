@@ -130,8 +130,7 @@ static iobuf handle_request(kafka::request_context&& ctx) {
     }
 
     case kafka::produce_api::key: {
-        kafka::produce_request r;
-        r.decode(ctx);
+        kafka::produce_request r(ctx);
         // TODO: once we have a tool/utility for rebuilding the
         // batch blob after decoding, swap that in here for extra
         // testing.

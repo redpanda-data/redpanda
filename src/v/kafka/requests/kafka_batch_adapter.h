@@ -25,18 +25,30 @@ constexpr size_t kafka_header_size = sizeof(int64_t) + // base offset
 
 } // namespace internal
 
+/**
+ * Usage:
+ *
+ *   kafka_batch_adapter kba;
+ *   kba.adapt(std::move(batch));
+ *
+ * 1. require that v2_format is true
+ * 2. require that valid_crc is true
+ * 3. if batch is empty then it signals that more data was on the wire than the
+ *    expected single batch. otherwise, its good to go.
+ *
+ * Note that the default constructed batch adapter is in an undefined state.
+ */
 class kafka_batch_adapter {
 public:
-    // TODO: change adapt to return a value of whether or not parsing
-    // was successful. at the moment we use exceptions to abort parsing
     void adapt(iobuf&&);
 
-    bool has_transactional = false;
-    bool has_idempotent = false;
-    bool has_non_v2_magic = false;
-    std::vector<model::record_batch> batches;
+    bool v2_format;
+    bool valid_crc;
+
+    std::optional<model::record_batch> batch;
 
 private:
+    void verify_crc(int32_t, iobuf_parser);
     model::record_batch_header read_header(iobuf_parser&);
 };
 

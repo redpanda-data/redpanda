@@ -62,12 +62,34 @@ void produce_request::decode(request_context& ctx) {
         for (auto& part : topic.partitions) {
             if (part.data) {
                 part.adapter.adapt(std::move(part.data.value()));
-                has_transactional = has_transactional
-                                    || part.adapter.has_transactional;
-                has_idempotent = has_idempotent || part.adapter.has_idempotent;
+                if (part.adapter.batch) {
+                    const auto& hdr = part.adapter.batch->header();
+                    has_transactional = has_transactional
+                                        || hdr.attrs.is_transactional();
+                    has_idempotent = has_idempotent || hdr.producer_id >= 0;
+                }
             }
         }
     }
+}
+
+produce_response produce_request::make_error_response(error_code error) const {
+    produce_response response;
+
+    response.topics.reserve(topics.size());
+    for (const auto& topic : topics) {
+        produce_response::topic t;
+        t.name = topic.name;
+
+        t.partitions.reserve(topic.partitions.size());
+        for (const auto& partition : topic.partitions) {
+            t.partitions.emplace_back(partition.id, error);
+        }
+
+        response.topics.push_back(std::move(t));
+    }
+
+    return response;
 }
 
 static std::ostream&
@@ -129,21 +151,14 @@ struct produce_ctx {
     produce_request request;
     produce_response response;
 
-    produce_ctx(request_context&& rctx, ss::smp_service_group ssg)
+    produce_ctx(
+      request_context&& rctx,
+      produce_request&& request,
+      ss::smp_service_group ssg)
       : rctx(std::move(rctx))
-      , ssg(ssg) {
-        request.decode(rctx);
-    }
+      , request(std::move(request))
+      , ssg(ssg) {}
 };
-
-static ss::future<produce_response::partition>
-make_partition_response_error(model::partition_id id, error_code error) {
-    return ss::make_ready_future<produce_response::partition>(
-      produce_response::partition{
-        .id = id,
-        .error = error,
-      });
-}
 
 /*
  * Caller is expected to catch errors that may be thrown while the kafka batch
@@ -159,8 +174,7 @@ static ss::future<produce_response::partition> partition_append(
     return partition->replicate(std::move(reader))
       .then_wrapped([id, num_records = num_records](
                       ss::future<result<raft::replicate_result>> f) {
-          produce_response::partition p;
-          p.id = id;
+          produce_response::partition p(id);
           try {
               auto r = f.get0();
               if (r) {
@@ -193,41 +207,35 @@ static ss::future<produce_response::partition> produce_topic_partition(
     };
 
     /*
-     * lookup the home shard for this ntp. the caller should check for
-     * the tp in the metadata cache so that this condition is unlikely
-     * to pass.
+     * A single produce request may contain record batches for many different
+     * partitions that are managed different cores.
      */
-    if (unlikely(!octx.rctx.shards().contains(ntp))) {
-        return make_partition_response_error(
-          ntp.tp.partition, error_code::unknown_topic_or_partition);
-    }
     auto shard = octx.rctx.shards().shard_for(ntp);
+    if (!shard) {
+        return ss::make_ready_future<produce_response::partition>(
+          produce_response::partition(
+            ntp.tp.partition, error_code::unknown_topic_or_partition));
+    }
 
+    /*
+     * The remainder of work for this partition is handled on its home core.
+     */
+    auto batch = ss::engine().cpu_id() != *shard
+                   ? part.adapter.batch->foreign_share()
+                   : part.adapter.batch->share();
     return octx.rctx.partition_manager().invoke_on(
-      shard,
+      *shard,
       octx.ssg,
-      [&part, ntp = std::move(ntp)](cluster::partition_manager& mgr) {
-          /*
-           * look up partition on the remote shard
-           */
-          if (!mgr.contains(ntp)) {
-              return make_partition_response_error(
-                ntp.tp.partition, error_code::unknown_topic_or_partition);
-          }
+      [batch = std::move(batch),
+       ntp = std::move(ntp)](cluster::partition_manager& mgr) mutable {
           auto partition = mgr.get(ntp);
-
-          // produce version >= 3 requires exactly one record batch per
-          // request and it must use the v2 format.
-          if (
-            part.adapter.batches.size() != 1 || part.adapter.has_non_v2_magic) {
-              return make_partition_response_error(
-                ntp.tp.partition, error_code::invalid_record);
+          if (!partition) {
+              return ss::make_ready_future<produce_response::partition>(
+                produce_response::partition(
+                  ntp.tp.partition, error_code::unknown_topic_or_partition));
           }
-
           return partition_append(
-            ntp.tp.partition,
-            partition,
-            std::move(part.adapter.batches.front()));
+            ntp.tp.partition, partition, std::move(batch));
       });
 }
 
@@ -236,11 +244,36 @@ static ss::future<produce_response::partition> produce_topic_partition(
  */
 static ss::future<produce_response::topic>
 produce_topic(produce_ctx& octx, produce_request::topic& topic) {
-    // partition response placeholders
     std::vector<ss::future<produce_response::partition>> partitions;
     partitions.reserve(topic.partitions.size());
 
     for (auto& part : topic.partitions) {
+        if (!octx.rctx.metadata_cache().contains(topic.name, part.id)) {
+            partitions.push_back(
+              ss::make_ready_future<produce_response::partition>(
+                produce_response::partition(
+                  part.id, error_code::unknown_topic_or_partition)));
+            continue;
+        }
+
+        if (unlikely(!part.adapter.valid_crc)) {
+            partitions.push_back(
+              ss::make_ready_future<produce_response::partition>(
+                produce_response::partition(
+                  part.id, error_code::corrupt_message)));
+            continue;
+        }
+
+        // produce version >= 3 (enforced for all produce requests) requires
+        // exactly one record batch per request and it must use the v2 format.
+        if (unlikely(!part.adapter.v2_format || !part.adapter.batch)) {
+            partitions.push_back(
+              ss::make_ready_future<produce_response::partition>(
+                produce_response::partition(
+                  part.id, error_code::invalid_record)));
+            continue;
+        }
+
         auto pr = produce_topic_partition(octx, topic, part);
         partitions.push_back(std::move(pr));
     }
@@ -261,7 +294,6 @@ produce_topic(produce_ctx& octx, produce_request::topic& topic) {
  */
 static std::vector<ss::future<produce_response::topic>>
 produce_topics(produce_ctx& octx) {
-    // topic response placeholders
     std::vector<ss::future<produce_response::topic>> topics;
     topics.reserve(octx.request.topics.size());
 
@@ -270,26 +302,7 @@ produce_topics(produce_ctx& octx) {
         topics.push_back(std::move(tr));
     }
 
-    return std::move(topics);
-}
-
-/**
- * \brief Construct a generic octx error response.
- */
-void make_error_response(produce_ctx& octx, error_code error) {
-    for (const auto& topic : octx.request.topics) {
-        produce_response::topic t{
-          .name = topic.name,
-        };
-        for (const auto& part : topic.partitions) {
-            produce_response::partition p{
-              .id = part.id,
-              .error = error,
-            };
-            t.partitions.push_back(std::move(p));
-        }
-        octx.response.topics.push_back(std::move(t));
-    }
+    return topics;
 }
 
 /**
@@ -301,30 +314,64 @@ static ss::future<response_ptr> make_response(produce_ctx& octx) {
     return ss::make_ready_future<response_ptr>(std::move(resp));
 }
 
+static ss::future<response_ptr>
+make_response(request_context& ctx, produce_response r) {
+    auto resp = std::make_unique<response>();
+    r.encode(ctx, *resp.get());
+    return ss::make_ready_future<response_ptr>(std::move(resp));
+}
+
 ss::future<response_ptr>
 produce_api::process(request_context&& ctx, ss::smp_service_group ssg) {
-    return ss::do_with(produce_ctx(std::move(ctx), ssg), [](produce_ctx& octx) {
-        kreq_log.debug("handling produce request {}", octx.request);
+    produce_request request(ctx);
 
-        if (octx.request.has_transactional) {
-            make_error_response(
-              octx, error_code::transactional_id_authorization_failed);
-            return make_response(octx);
-        } else if (octx.request.has_idempotent) {
-            make_error_response(octx, error_code::cluster_authorization_failed);
-            return make_response(octx);
-        }
+    /*
+     * Authorization
+     *
+     * Note that in kafka authorization is performed based on transactional id,
+     * producer id, and idempotency. Redpanda does not yet support these
+     * features, so we reject all such requests as if authorization failed.
+     */
+    if (request.has_transactional) {
+        return make_response(
+          ctx,
+          request.make_error_response(
+            error_code::transactional_id_authorization_failed));
 
-        // dispatch produce requests for each topic
-        auto topics = produce_topics(octx);
+    } else if (request.has_idempotent) {
+        return make_response(
+          ctx,
+          request.make_error_response(
+            error_code::cluster_authorization_failed));
 
-        // collect topic responses and build the final response message
-        return when_all_succeed(topics.begin(), topics.end())
-          .then([&octx](std::vector<produce_response::topic> topics) {
-              octx.response.topics = std::move(topics);
-              return make_response(octx);
-          });
-    });
+    } else if (request.acks < -1 || request.acks > 1) {
+        // from kafka source: "if required.acks is outside accepted range,
+        // something is wrong with the client Just return an error and don't
+        // handle the request at all"
+        kreq_log.error(
+          "unsupported acks {} see "
+          "https://docs.confluent.io/current/installation/configuration/"
+          "producer-configs.html",
+          request.acks);
+        return make_response(
+          ctx, request.make_error_response(error_code::invalid_required_acks));
+    }
+
+    return ss::do_with(
+      produce_ctx(std::move(ctx), std::move(request), ssg),
+      [](produce_ctx& octx) {
+          kreq_log.debug("handling produce request {}", octx.request);
+
+          // dispatch produce requests for each topic
+          auto topics = produce_topics(octx);
+
+          // collect topic responses and build the final response message
+          return when_all_succeed(topics.begin(), topics.end())
+            .then([&octx](std::vector<produce_response::topic> topics) {
+                octx.response.topics = std::move(topics);
+                return make_response(octx);
+            });
+      });
 }
 
 } // namespace kafka

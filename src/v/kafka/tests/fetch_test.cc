@@ -188,7 +188,7 @@ FIXTURE_TEST(read_from_ntp_max_bytes, redpanda_thread_fixture) {
     auto shard = app.shard_table.local().shard_for(ntp);
     tests::cooperative_spin_wait_with_timeout(10s, [this, shard, ntp = ntp] {
         return app.partition_manager.invoke_on(
-          shard, [ntp](cluster::partition_manager& mgr) {
+          *shard, [ntp](cluster::partition_manager& mgr) {
               auto partition = mgr.get(ntp);
               return partition->committed_offset() >= model::offset(1);
           });
@@ -218,7 +218,7 @@ FIXTURE_TEST(fetch_one, redpanda_thread_fixture) {
       10s,
       [this, shard, ntp = builder.ntp()] {
           return app.partition_manager.invoke_on(
-            shard, [ntp](cluster::partition_manager& mgr) {
+            *shard, [ntp](cluster::partition_manager& mgr) {
                 auto partition = mgr.get(ntp);
                 return partition->committed_offset() >= model::offset(1);
             });
