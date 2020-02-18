@@ -69,7 +69,7 @@ func (h *MetricsHandler) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 		http.Error(res, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	log.Info("Saved %v+", metrics)
+	log.Infof("Saved '%v+'", metrics)
 	res.WriteHeader(http.StatusOK)
 }
 
