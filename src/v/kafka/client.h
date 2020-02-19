@@ -1,9 +1,9 @@
+#include "kafka/protocol_utils.h"
 #include "kafka/requests/api_versions_request.h"
 #include "kafka/requests/create_topics_request.h"
 #include "kafka/requests/fetch_request.h"
 #include "kafka/requests/metadata_request.h"
 #include "kafka/requests/requests.h"
-#include "kafka/server.h"
 #include "rpc/transport.h"
 #include "seastarx.h"
 
@@ -48,10 +48,9 @@ private:
         ph.write(raw_size, sizeof(be_total_size));
 
         return _out.write(iobuf_as_scattered(std::move(buf))).then([this] {
-            return _in.read_exactly(sizeof(int32_t))
-              .then([this](ss::temporary_buffer<char> buf) {
-                  auto size = kafka::kafka_server::connection::process_size(
-                    _in, std::move(buf));
+            return kafka::parse_size(_in).then(
+              [this](std::optional<size_t> sz) {
+                  auto size = sz.value();
                   return _in.read_exactly(sizeof(correlation_id))
                     .then([this, size](ss::temporary_buffer<char> buf) {
                         // drops the correlation id on the floor

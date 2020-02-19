@@ -26,10 +26,12 @@ v_cc_library(
     ${request_srcs}
     ${group_srcs}
     errors.cc
-    server.cc
+    protocol.cc
+    protocol_utils.cc
  DEPS
     Seastar::seastar
     v::bytes
+    v::rpc
     v::cluster
 )
 add_subdirectory(tests)
