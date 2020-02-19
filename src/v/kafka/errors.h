@@ -1,5 +1,5 @@
 #pragma once
-#include "cluster/types.h"
+#include "cluster/errc.h"
 
 #include <cstdint>
 #include <iosfwd>
@@ -331,21 +331,19 @@ constexpr std::string_view error_code_names[] = {
 std::ostream &operator<<(std::ostream &, error_code);
 
 static constexpr inline error_code map_topic_error_code(
-  cluster::topic_error_code code) {
+  cluster::errc code) {
   switch (code) {
-  case cluster::topic_error_code::no_error:
+  case cluster::errc::success:
     return error_code::none;
-  case cluster::topic_error_code::unknown_error:
-    return error_code::unknown_server_error;
-  case cluster::topic_error_code::invalid_config:
+  case cluster::errc::topic_invalid_config:
     return error_code::invalid_config;
-  case cluster::topic_error_code::invalid_partitions:
+  case cluster::errc::topic_invalid_partitions:
     return error_code::invalid_partitions;
-  case cluster::topic_error_code::invalid_replication_factor:
+  case cluster::errc::topic_invalid_replication_factor:
     return error_code::invalid_replication_factor;
-  case cluster::topic_error_code::time_out:
+  case cluster::errc::notification_wait_timeout:
     return error_code::request_timed_out;
-  case cluster::topic_error_code::not_leader_controller:
+  case cluster::errc::not_leader_controller:
     return error_code::not_controller;
   default:
     return error_code::unknown_server_error;

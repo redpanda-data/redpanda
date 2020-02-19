@@ -1,5 +1,6 @@
 #pragma once
 
+#include "cluster/errc.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
@@ -65,36 +66,12 @@ struct topic_configuration {
   model::timeout_clock::duration retention       = model::max_duration;
 };
 
-enum class topic_error_code : int16_t {
-  no_error,
-  unknown_error,
-  time_out,
-  invalid_partitions,
-  invalid_replication_factor,
-  invalid_config,
-  not_leader_controller,
-  topic_error_code_min = no_error,
-  topic_error_code_max = not_leader_controller,
-};
-
-constexpr std::string_view topic_error_code_names[] = {
-  [(int16_t)topic_error_code::no_error]           = "no_error",
-  [(int16_t)topic_error_code::unknown_error]      = "unknown_error",
-  [(int16_t)topic_error_code::time_out]           = "time_out",
-  [(int16_t)topic_error_code::invalid_partitions] = "invalid_partitions",
-  [(int16_t)topic_error_code::invalid_replication_factor] =
-    "invalid_replication_factor",
-  [(int16_t)topic_error_code::invalid_config]        = "invalid_config",
-  [(int16_t)topic_error_code::not_leader_controller] = "not_leader_controller"};
-
-std::ostream &operator<<(std::ostream &, topic_error_code);
-
 struct topic_result {
-  explicit topic_result(model::topic     t,
-                        topic_error_code ec = topic_error_code::no_error)
-    : topic(std::move(t)), ec(ec) {}
-  model::topic     topic;
-  topic_error_code ec;
+    explicit topic_result(model::topic t, errc ec = errc::success)
+      : topic(std::move(t))
+      , ec(ec) {}
+    model::topic topic;
+    errc ec;
 };
 
 /// Structure representing difference between two set of brokers.
