@@ -5,10 +5,11 @@
 #include <seastar/core/metrics.hh>
 
 namespace rpc {
-void server_probe::setup_metrics(ss::metrics::metric_groups& mgs) {
+void server_probe::setup_metrics(
+  ss::metrics::metric_groups& mgs, const char* proto) {
     namespace sm = ss::metrics;
     mgs.add_group(
-      prometheus_sanitize::metrics_name("rpc"),
+      prometheus_sanitize::metrics_name(proto),
       {
         sm::make_gauge(
           "active_connections",
