@@ -2,10 +2,10 @@
 
 function vtools_reinstall() {
   tld=$(git rev-parse --show-toplevel 2>/dev/null)
-  mkdir -p build/venv/
+  mkdir -p "${tld}/build/venv/"
   python3 -mvenv "${tld}/build/venv/v/"
   source "${tld}/build/venv/v/bin/activate"
-  pip install -e tools/
+  pip install -e "${tld}/tools"
 }
 
 function vtools() {
