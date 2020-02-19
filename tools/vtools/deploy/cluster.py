@@ -1,4 +1,5 @@
 import os
+import re
 import git
 from datetime import date
 import json
@@ -12,6 +13,18 @@ from ..vlib import ssh
 from . import install_deps as deps
 
 tfvars_key = 'deploy.cluster.tf.vars'
+
+known_tfvars = [
+    'nodes',
+    'distro',
+    'instance_type',
+    'local_package_abs_path',
+    'ssh_timeout',
+    'ssh_retries',
+    'packagecloud_token',
+    'private_key_path',
+    'public_key_path',
+]
 
 
 def deploy(vconfig, install_deps, ssh_key, ssh_port, ssh_timeout, ssh_retries,
@@ -80,6 +93,15 @@ def _run_terraform(vconfig, action, module, tf_vars):
 def _parse_tf_vars(tfvars):
     if tfvars == None:
         return ''
+    for v in tfvars:
+        res = re.match('(\w+)=[.\d\S]+', v)
+        if res is None:
+            logging.fatal(
+                f'"{v}" does not match the required "key=value" format')
+        key = res.group(1)
+        if key not in known_tfvars:
+            logging.fatal(
+                f'Unrecognized variable "{key}". Allowed vars: {known_tfvars}')
     return ' '.join([f'-var {v}' for v in tfvars])
 
 
