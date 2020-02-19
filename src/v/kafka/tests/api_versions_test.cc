@@ -37,6 +37,8 @@ FIXTURE_TEST(validate_v0, redpanda_thread_fixture) {
     BOOST_TEST(response.apis == expected);
 }
 
+// version 3 is not supported
+#if 0
 FIXTURE_TEST(validate_v3, redpanda_thread_fixture) {
     auto client = make_kafka_client().get0();
     client.connect().get();
@@ -48,6 +50,7 @@ FIXTURE_TEST(validate_v3, redpanda_thread_fixture) {
     // invalid since name/version are empty in the request
     BOOST_TEST(response.error == kafka::error_code::invalid_request);
 }
+#endif
 
 FIXTURE_TEST(unsupported_version, redpanda_thread_fixture) {
     auto client = make_kafka_client().get0();
