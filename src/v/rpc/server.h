@@ -49,7 +49,7 @@ private:
 
     ss::semaphore _memory;
     std::vector<std::unique_ptr<service>> _services;
-    std::vector<ss::server_socket> _listeners;
+    std::vector<std::unique_ptr<ss::server_socket>> _listeners;
     boost::intrusive::list<connection> _connections;
     ss::abort_source _as;
     ss::gate _conn_gate;
