@@ -2,6 +2,7 @@
 
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/reactor.hh>
 
 class stop_signal {
 public:

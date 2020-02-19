@@ -9,6 +9,7 @@
 #include "random/generators.h"
 #include "resource_mgmt/memory_groups.h"
 #include "rpc/server.h"
+#include "rpc/simple_protocol.h"
 #include "seastarx.h"
 #include "storage/directories.h"
 #include "test_utils/async.h"
@@ -119,17 +120,19 @@ public:
         _rpc.start(rpc_cfg).get0();
         _rpc
           .invoke_on_all([this](rpc::server& s) {
-              s.register_service<raft::service<
+              auto proto = std::make_unique<rpc::simple_protocol>();
+              proto->register_service<raft::service<
                 cluster::partition_manager,
                 cluster::shard_table>>(
                 ss::default_scheduling_group(),
                 ss::default_smp_service_group(),
                 _pm,
                 st.local());
-              s.register_service<cluster::service>(
+              proto->register_service<cluster::service>(
                 ss::default_scheduling_group(),
                 ss::default_smp_service_group(),
                 std::ref(_controller));
+              s.set_protocol(std::move(proto));
           })
           .get();
         _rpc.invoke_on_all(&rpc::server::start).get();

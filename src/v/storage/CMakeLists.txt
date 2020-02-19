@@ -25,6 +25,7 @@ v_cc_library(
     v::config
     v::rphashing
     v::finjector
+    v::syschecks
   PUBLIC
 )
 

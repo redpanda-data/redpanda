@@ -7,6 +7,7 @@
 #include "random/generators.h"
 #include "rpc/connection_cache.h"
 #include "rpc/server.h"
+#include "rpc/simple_protocol.h"
 #include "storage/log_manager.h"
 #include "storage/tests/utils/random_batch.h"
 #include "test_utils/fixture.h"
@@ -100,12 +101,14 @@ struct raft_node {
           .get0();
         server
           .invoke_on_all([this](rpc::server& s) {
-              return s
-                .register_service<raft::service<test_raft_manager, raft_node>>(
+              auto proto = std::make_unique<rpc::simple_protocol>();
+              proto
+                ->register_service<raft::service<test_raft_manager, raft_node>>(
                   ss::default_scheduling_group(),
                   ss::default_smp_service_group(),
                   raft_manager,
                   *this);
+              s.set_protocol(std::move(proto));
           })
           .get0();
         server.invoke_on_all(&rpc::server::start).get0();
