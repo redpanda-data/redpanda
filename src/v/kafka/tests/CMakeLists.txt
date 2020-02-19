@@ -110,3 +110,11 @@ rp_test(
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES Seastar::seastar_testing v::application v::raft v::kafka v::config
 )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME find_coordinator_test
+  SOURCES find_coordinator_test.cc
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LIBRARIES Seastar::seastar_testing v::application v::raft v::kafka v::config
+)
