@@ -5,45 +5,30 @@
 #include "rpc/logger.h"
 #include "rpc/parse_utils.h"
 #include "rpc/types.h"
+#include "vassert.h"
 
 #include <seastar/core/metrics.hh>
+#include <seastar/core/reactor.hh>
 
 #include <fmt/format.h>
 
 namespace rpc {
-struct server_context_impl final : streaming_context {
-    server_context_impl(server& s, header h)
-      : _s(std::ref(s))
-      , _h(std::move(h)) {}
-    ss::future<ss::semaphore_units<>> reserve_memory(size_t ask) final {
-        auto fut = get_units(_s.get()._memory, ask);
-        if (_s.get()._memory.waiters()) {
-            _s.get()._probe.waiting_for_available_memory();
-        }
-        return fut;
-    }
-    const header& get_header() const final { return _h; }
-    void signal_body_parse() final { pr.set_value(); }
-    std::reference_wrapper<server> _s;
-    header _h;
-    ss::promise<> pr;
-};
 
 server::server(server_configuration c)
   : cfg(std::move(c))
   , _memory(cfg.max_service_memory_per_core)
   , _creds(
       cfg.credentials ? (*cfg.credentials).build_server_credentials()
-                      : nullptr) {
-    if (!cfg.disable_metrics) {
-        setup_metrics();
-        _probe.setup_metrics(_metrics);
-    }
-}
+                      : nullptr) {}
 
-server::~server() {}
+server::~server() = default;
 
 void server::start() {
+    vassert(_proto, "must have a registered protocol before starting");
+    if (!cfg.disable_metrics) {
+        setup_metrics();
+        _probe.setup_metrics(_metrics, _proto->name());
+    }
     for (auto addr : cfg.addrs) {
         ss::server_socket ss;
         try {
@@ -56,17 +41,38 @@ void server::start() {
             }
         } catch (...) {
             throw std::runtime_error(fmt::format(
-              "Error attempting to listen on {}: {}",
+              "{} - Error attempting to listen on {}: {}",
+              _proto->name(),
               addr,
               std::current_exception()));
         }
-        _listeners.emplace_back(std::move(ss));
-        ss::server_socket& ref = _listeners.back();
+        auto& b = _listeners.emplace_back(
+          std::make_unique<ss::server_socket>(std::move(ss)));
+        ss::server_socket& ref = *b;
         // background
         (void)with_gate(_conn_gate, [this, &ref] { return accept(ref); });
     }
 }
-
+static ss::future<> apply_proto(server::protocol* proto, server::resources rs) {
+    auto conn = rs.conn;
+    return proto->apply(rs)
+      .then_wrapped([proto, conn](ss::future<> f) {
+          rpclog.debug("{} - Closing client: {}", proto->name(), conn->addr);
+          return conn->shutdown()
+            .then([proto, f = std::move(f)]() mutable {
+                try {
+                    f.get();
+                } catch (...) {
+                    rpclog.error(
+                      "{} - Error dispatching method: {}",
+                      proto->name(),
+                      std::current_exception());
+                }
+            })
+            .finally([conn] {});
+      })
+      .finally([conn] {});
+}
 ss::future<> server::accept(ss::server_socket& s) {
     return ss::repeat([this, &s]() mutable {
         return s.accept().then_wrapped(
@@ -82,7 +88,7 @@ ss::future<> server::accept(ss::server_socket& s) {
               auto conn = ss::make_lw_shared<connection>(
                 _connections,
                 std::move(ar.connection),
-                std::move(ar.remote_address),
+                ar.remote_address,
                 _probe);
               rpclog.trace("Incoming connection from {}", ar.remote_address);
               if (_conn_gate.is_closed()) {
@@ -92,96 +98,23 @@ ss::future<> server::accept(ss::server_socket& s) {
                   });
               }
               (void)with_gate(_conn_gate, [this, conn]() mutable {
-                  return continous_method_dispath(conn)
-                    .then_wrapped([conn](ss::future<>&& f) {
-                        rpclog.debug("closing client: {}", conn->addr);
-                        return conn->shutdown()
-                          .then([f = std::move(f)]() mutable {
-                              try {
-                                  f.get();
-                              } catch (...) {
-                                  rpclog.error(
-                                    "Error dispatching method: {}",
-                                    std::current_exception());
-                              }
-                          })
-                          .finally([conn] {});
-                    })
-                    .finally([conn] {});
+                  return apply_proto(_proto.get(), resources(this, conn));
               });
               return ss::make_ready_future<ss::stop_iteration>(
                 ss::stop_iteration::no);
           });
     });
-}
+} // namespace rpc
 
-ss::future<>
-server::continous_method_dispath(ss::lw_shared_ptr<connection> conn) {
-    return ss::do_until(
-      [this, conn] { return conn->input().eof() || _as.abort_requested(); },
-      [this, conn] {
-          return parse_header(conn->input())
-            .then([this, conn](std::optional<header> h) {
-                if (!h) {
-                    rpclog.debug(
-                      "could not parse header from client: {}", conn->addr);
-                    _probe.header_corrupted();
-                    return ss::make_ready_future<>();
-                }
-                return dispatch_method_once(std::move(h.value()), conn);
-            });
-      });
-}
-
-ss::future<>
-server::dispatch_method_once(header h, ss::lw_shared_ptr<connection> conn) {
-    const auto method_id = h.meta;
-    constexpr size_t header_size = sizeof(header);
-    auto ctx = ss::make_lw_shared<server_context_impl>(*this, std::move(h));
-    auto it = std::find_if(
-      _services.begin(),
-      _services.end(),
-      [method_id](std::unique_ptr<service>& srvc) {
-          return srvc->method_from_id(method_id) != nullptr;
-      });
-    if (unlikely(it == _services.end())) {
-        _probe.method_not_found();
-        throw std::runtime_error(
-          fmt::format("received invalid rpc request: {}", h));
-    }
-    auto fut = ctx->pr.get_future();
-    method* m = it->get()->method_from_id(method_id);
-    _probe.add_bytes_received(header_size + h.size);
-    // background!
-    if (_conn_gate.is_closed()) {
-        return ss::make_exception_future<>(ss::gate_closed_exception());
-    }
-    (void)with_gate(_conn_gate, [this, conn, ctx, m]() mutable {
-        return (*m)(conn->input(), *ctx)
-          .then([this, ctx, conn, m = _hist.auto_measure()](netbuf n) mutable {
-              n.set_correlation_id(ctx->get_header().correlation_id);
-              auto view = std::move(n).as_scattered();
-              if (_conn_gate.is_closed()) {
-                  // do not write if gate is closed
-                  rpclog.debug(
-                    "Skipping write of {} bytes, connection is closed",
-                    view.size());
-                  return ss::make_ready_future<>();
-              }
-              return conn->write(std::move(view))
-                .finally([m = std::move(m), ctx] {});
-          })
-          .finally([&p = _probe, conn] { p.request_completed(); });
-    });
-    return fut;
-}
 ss::future<> server::stop() {
-    rpclog.info("Stopping {} listeners", _listeners.size());
+    rpclog.info(
+      "{} - Stopping {} listeners", _proto->name(), _listeners.size());
     for (auto&& l : _listeners) {
-        l.abort_accept();
+        l->abort_accept();
     }
-    rpclog.debug("Service probes {}", _probe);
-    rpclog.info("Shutting down {} connections", _connections.size());
+    rpclog.debug("{} - Service probes {}", _proto->name(), _probe);
+    rpclog.info(
+      "{} - Shutting down {} connections", _proto->name(), _connections.size());
     _as.request_abort();
     // close the connections and wait for all dispatches to finish
     for (auto& c : _connections) {
@@ -195,12 +128,8 @@ ss::future<> server::stop() {
 void server::setup_metrics() {
     namespace sm = ss::metrics;
     _metrics.add_group(
-      prometheus_sanitize::metrics_name("rpc"),
+      prometheus_sanitize::metrics_name(_proto->name()),
       {sm::make_gauge(
-         "services",
-         [this] { return _services.size(); },
-         sm::description("Number of registered services")),
-       sm::make_gauge(
          "max_service_mem",
          [this] { return cfg.max_service_memory_per_core; },
          sm::description("Maximum amount of memory used by service per core")),

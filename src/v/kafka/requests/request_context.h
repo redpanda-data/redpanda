@@ -11,6 +11,7 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/reactor.hh>
 #include <seastar/core/sharded.hh>
+#include <seastar/core/unaligned.hh>
 #include <seastar/util/log.hh>
 
 #include <memory>
@@ -27,6 +28,19 @@ using group_router_type = kafka::group_router<
 class controller_dispatcher;
 
 extern ss::logger kreq_log;
+// Fields may not be byte-aligned since we work
+// with the underlying network buffer.
+struct [[gnu::packed]] raw_request_header {
+    ss::unaligned<int16_t> api_key;
+    ss::unaligned<int16_t> api_version;
+    ss::unaligned<correlation_id::type> correlation;
+    ss::unaligned<int16_t> client_id_size;
+};
+
+struct [[gnu::packed]] raw_response_header {
+    ss::unaligned<int32_t> size;
+    ss::unaligned<correlation_id::type> correlation;
+};
 
 struct request_header {
     api_key key;

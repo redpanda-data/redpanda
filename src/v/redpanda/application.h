@@ -8,7 +8,7 @@
 #include "kafka/groups/group_manager.h"
 #include "kafka/groups/group_router.h"
 #include "kafka/groups/group_shard_mapper.h"
-#include "kafka/server.h"
+#include "kafka/quota_manager.h"
 #include "redpanda/admin/api-doc/config.json.h"
 #include "resource_mgmt/cpu_scheduling.h"
 #include "resource_mgmt/memory_groups.h"
@@ -19,8 +19,13 @@
 #include <seastar/core/app-template.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/http/httpd.hh>
+#include <seastar/util/defer.hh>
 
 namespace po = boost::program_options; // NOLINT
+using group_router_type = kafka::group_router<
+  kafka::group_manager,
+  kafka::group_shard_mapper<cluster::shard_table>>;
+
 class application {
 public:
     int run(int, char**);
@@ -38,7 +43,7 @@ public:
     }
 
     ss::sharded<cluster::metadata_cache> metadata_cache;
-    ss::sharded<kafka::group_router_type> group_router;
+    ss::sharded<group_router_type> group_router;
     ss::sharded<kafka::controller_dispatcher> cntrl_dispatcher;
     ss::sharded<cluster::shard_table> shard_table;
     ss::sharded<cluster::partition_manager> partition_manager;
@@ -75,7 +80,7 @@ private:
     ss::sharded<rpc::server> _rpc;
     ss::sharded<ss::http_server> _admin;
     ss::sharded<kafka::quota_manager> _quota_mgr;
-    ss::sharded<kafka::kafka_server> _kafka_server;
+    ss::sharded<rpc::server> _kafka_server;
 
     // run these first on destruction
     deferred_actions _deferred;

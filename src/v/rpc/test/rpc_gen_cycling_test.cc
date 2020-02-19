@@ -8,7 +8,7 @@ using namespace std::chrono_literals; // NOLINT
 
 FIXTURE_TEST(rpcgen_integration, rpc_integration_fixture) {
     configure_server();
-    register_movistar();
+    register_services();
     start_server();
     info("started");
     auto cli = rpc::client<cycling::team_movistar_client_protocol>(
@@ -33,7 +33,7 @@ FIXTURE_TEST(rpcgen_tls_integration, rpc_integration_fixture) {
                            .get_credentials_builder()
                            .get0();
     configure_server(creds_builder);
-    register_movistar();
+    register_services();
     start_server();
     info("started");
     auto cli = rpc::client<cycling::team_movistar_client_protocol>(
@@ -52,8 +52,7 @@ FIXTURE_TEST(rpcgen_tls_integration, rpc_integration_fixture) {
 FIXTURE_TEST(client_muxing, rpc_integration_fixture) {
     configure_server();
     // Two services @ single server
-    register_movistar();
-    register_echo();
+    register_services();
     start_server();
 
     rpc::
@@ -72,7 +71,7 @@ FIXTURE_TEST(client_muxing, rpc_integration_fixture) {
 
 FIXTURE_TEST(timeout_test, rpc_integration_fixture) {
     configure_server();
-    register_echo();
+    register_services();
     start_server();
 
     rpc::client<echo::echo_client_protocol> client(client_config());

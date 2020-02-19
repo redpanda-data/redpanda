@@ -1,8 +1,10 @@
 #include "redpanda/application.h"
 
 #include "cluster/service.h"
+#include "kafka/protocol.h"
 #include "platform/stop_signal.h"
 #include "raft/service.h"
+#include "rpc/simple_protocol.h"
 #include "storage/directories.h"
 #include "syschecks/syschecks.h"
 #include "test_utils/logs.h"
@@ -203,8 +205,20 @@ void application::wire_up_services() {
     auto rpc_server_addr
       = config::shard_local_cfg().rpc_server().resolve().get0();
     rpc_cfg.addrs.push_back(rpc_server_addr);
-    syschecks::systemd_message("Starting internal RPC {}", rpc_server_addr);
+    syschecks::systemd_message("Starting internal RPC {}", rpc_cfg);
     construct_service(_rpc, rpc_cfg).get();
+
+    rpc::server_configuration kafka_cfg;
+    kafka_cfg.max_service_memory_per_core = memory_groups::kafka_total_memory();
+    auto kafka_addr = config::shard_local_cfg().kafka_api().resolve().get0();
+    kafka_cfg.addrs.push_back(kafka_addr);
+    syschecks::systemd_message("Building TLS credentials for kafka");
+    kafka_cfg.credentials = config::shard_local_cfg()
+                              .kafka_api_tls()
+                              .get_credentials_builder()
+                              .get0();
+    syschecks::systemd_message("Starting kafka RPC {}", kafka_cfg);
+    construct_service(_kafka_server, kafka_cfg).get();
 
     // metrics and quota management
     syschecks::systemd_message("Adding kafka quota manager");
@@ -226,16 +240,18 @@ void application::start() {
     syschecks::systemd_message("Starting RPC");
     _rpc
       .invoke_on_all([this](rpc::server& s) {
-          s.register_service<
+          auto proto = std::make_unique<rpc::simple_protocol>();
+          proto->register_service<
             raft::service<cluster::partition_manager, cluster::shard_table>>(
             _scheduling_groups.raft_sg(),
             _smp_groups.raft_smp_sg(),
             partition_manager,
             shard_table.local());
-          s.register_service<cluster::service>(
+          proto->register_service<cluster::service>(
             _scheduling_groups.cluster_sg(),
             _smp_groups.cluster_smp_sg(),
             std::ref(controller));
+          s.set_protocol(std::move(proto));
       })
       .get();
     auto& conf = config::shard_local_cfg();
@@ -245,40 +261,21 @@ void application::start() {
     _quota_mgr.invoke_on_all(&kafka::quota_manager::start).get();
 
     // Kafka API
-    syschecks::systemd_message("Building TLS credentials for kafka");
-    auto kafka_creds = conf.kafka_api_tls().get_credentials_builder().get0();
-    kafka::kafka_server_config server_config = {
-      // FIXME: Add memory manager
-      ss::memory::stats().total_memory() / 10,
-      _smp_groups.kafka_smp_sg(),
-      kafka_creds};
-
-    construct_service(
-      _kafka_server,
-      kafka::probe(),
-      std::ref(metadata_cache),
-      std::ref(cntrl_dispatcher),
-      std::move(server_config),
-      std::ref(_quota_mgr),
-      std::ref(group_router),
-      std::ref(shard_table),
-      std::ref(partition_manager))
-      .get();
-
-    syschecks::systemd_message("Starting kafka api");
-    config::shard_local_cfg()
-      .kafka_api()
-      .resolve()
-      .then([this](ss::socket_address kafka_api_addr) {
-          return _kafka_server.invoke_on_all(
-            [this, kafka_api_addr = std::move(kafka_api_addr)](
-              kafka::kafka_server& server) mutable {
-                // FIXME: Configure keepalive.
-                return server.listen(kafka_api_addr, false);
-            });
+    _kafka_server
+      .invoke_on_all([this](rpc::server& s) {
+          _log.info("adding kafka protocol to kafka server");
+          auto proto = std::make_unique<kafka::protocol>(
+            _smp_groups.kafka_smp_sg(),
+            metadata_cache,
+            cntrl_dispatcher,
+            _quota_mgr,
+            group_router,
+            shard_table,
+            partition_manager);
+          s.set_protocol(std::move(proto));
       })
       .get();
-
+    _kafka_server.invoke_on_all(&rpc::server::start).get();
     _log.info("Started Kafka API server listening at {}", conf.kafka_api());
     syschecks::systemd_message("redpanda ready!");
     syschecks::systemd_notify_ready();
