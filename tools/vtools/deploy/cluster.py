@@ -41,6 +41,7 @@ Please run `vtools deploy cluster --destroy true` before deploying again.''')
 sudo rpk config set kafka-api --ip {ip} --port 9092  && \
 sudo rpk config set rpc-server --ip {ip} --port 33145  && \
 sudo rpk config set stats-id --organization io.vectorized --cluster-id test  && \
+sudo systemctl start redpanda-tuner && \
 sudo systemctl start redpanda'''
         ssh.add_known_host(pub_ip, ssh_port, ssh_timeout, ssh_retries)
         ssh.run_subprocess(pub_ip, ssh_user, key_path, cmd)
