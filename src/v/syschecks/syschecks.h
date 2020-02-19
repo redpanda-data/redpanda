@@ -1,15 +1,12 @@
 #pragma once
 
-#include "likely.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>
-#include <seastar/core/memory.hh>
-#include <seastar/core/seastar.hh>
+#include <seastar/util/log.hh>
 
 #include <fmt/format.h>
 #include <fmt/ostream.h>
-#include <systemd/sd-daemon.h>
 
 #include <cpuid.h>
 #include <cstdint>
@@ -17,10 +14,7 @@
 
 namespace syschecks {
 
-inline ss::logger& checklog() {
-    static ss::logger _syslgr{"syschecks"};
-    return _syslgr;
-}
+extern ss::logger checklog;
 
 static inline void initialize_intrinsics() {
     // https://gcc.gnu.org/onlinedocs/gcc/x86-Built-in-Functions.html#index-_005f_005fbuiltin_005fcpu_005finit-1
@@ -39,52 +33,19 @@ static inline void cpu() {
     }
 }
 
-static inline ss::future<> disk(const ss::sstring& path) {
-    return check_direct_io_support(path).then([path] {
-        return file_system_at(path).then([path](auto fs) {
-            if (fs != ss::fs_type::xfs) {
-                checklog().error(
-                  "Path: `{}' is not on XFS. This is a non-supported setup. "
-                  "Expect poor performance.",
-                  path);
-            }
-        });
-    });
-}
+ss::future<> disk(const ss::sstring& path);
 
-static inline void memory(bool ignore) {
-    static const uint64_t kMinMemory = 1 << 30;
-    const auto shard_mem = ss::memory::stats().total_memory();
-    if (shard_mem >= kMinMemory) {
-        return;
-    }
-    auto line = fmt::format(
-      "Memory: '{}' below recommended: '{}'", kMinMemory, shard_mem);
-    checklog().error(line.c_str());
-    if (!ignore) {
-        throw std::runtime_error(line);
-    }
-}
+void memory(bool ignore);
+
+void systemd_raw_message(const ss::sstring& out);
+
+void systemd_notify_ready();
 
 template<typename... Args>
 void systemd_message(const char* fmt, Args&&... args) {
-    auto s = fmt::format(
+    ss::sstring s = fmt::format(
       "STATUS={}\n", fmt::format(fmt, std::forward<Args>(args)...));
-    auto r = sd_notify(0, s.c_str());
-    checklog().debug("sd_noify: {}", s);
-    if (unlikely(r < 0)) {
-        checklog().trace(
-          "Could not notify systemd sd_notify ready, error:{}", r);
-    }
-}
-
-static inline void systemd_notify_ready() {
-    auto r = sd_notify(0, "READY=1\nSTATUS=redpanda is ready; let's go!");
-    checklog().info("sd_notify() READY=1");
-    if (unlikely(r < 0)) {
-        checklog().trace(
-          "Could not notify systemd sd_notify ready, error:{}", r);
-    }
+    systemd_raw_message(s);
 }
 
 } // namespace syschecks
