@@ -34,6 +34,9 @@ std::vector<topic_result> create_topic_results(
     return results;
 }
 
+std::vector<topic_result>
+create_topic_results(const std::vector<model::topic>& topics, errc error_code);
+
 std::vector<model::broker> get_replica_set_brokers(
   const metadata_cache& md_cache, std::vector<model::broker_shard> replicas);
 
