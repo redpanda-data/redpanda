@@ -371,6 +371,10 @@ ss::future<std::vector<topic_result>> controller::create_topics(
     ss::circular_buffer<model::record_batch> batches;
     batches.reserve(topics.size());
     for (const auto& t_cfg : topics) {
+        if (_md_cache.local().get_topic_metadata(t_cfg.topic)) {
+            errors.emplace_back(t_cfg.topic, errc::topic_already_exists);
+            continue;
+        }
         auto batch = create_topic_cfg_batch(t_cfg);
         if (batch) {
             batches.push_back(std::move(*batch));

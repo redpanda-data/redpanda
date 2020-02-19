@@ -24,6 +24,9 @@ BOOST_AUTO_TEST_CASE(error_mapping_test) {
     BOOST_REQUIRE_EQUAL(
       kafka::map_topic_error_code(cluster::errc::not_leader_controller),
       kafka::error_code::not_controller);
+    BOOST_REQUIRE_EQUAL(
+      kafka::map_topic_error_code(cluster::errc::topic_already_exists),
+      kafka::error_code::topic_already_exists);
 };
 
 BOOST_AUTO_TEST_CASE(mapping_unknow_error) {
