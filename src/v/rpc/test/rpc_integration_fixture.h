@@ -2,6 +2,7 @@
 #include "config/tls_config.h"
 #include "rpc/server.h"
 #include "rpc/service.h"
+#include "rpc/simple_protocol.h"
 #include "rpc/transport.h"
 #include "rpc/types.h"
 
@@ -70,14 +71,12 @@ public:
                                             .credentials = credentials};
     }
 
-    void register_movistar() {
+    void register_services() {
         check_server();
-        _server->register_service<movistar>(_sg, _ssg);
-    }
-
-    void register_echo() {
-        check_server();
-        _server->register_service<echo_impl>(_sg, _ssg);
+        auto proto = std::make_unique<rpc::simple_protocol>();
+        proto->register_service<movistar>(_sg, _ssg);
+        proto->register_service<echo_impl>(_sg, _ssg);
+        _server->set_protocol(std::move(proto));
     }
 
     void configure_server(
