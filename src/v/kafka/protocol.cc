@@ -44,16 +44,17 @@ ss::future<> protocol::apply(rpc::server::resources rs) {
                     return ss::make_ready_future<>();
                 }
                 return parse_header(rs.conn->input())
-                  .then([this, s = *sz, rs](
+                  // GCC-9 workaround; r = rs is not really needed
+                  .then([this, s = *sz, r = rs](
                           std::optional<request_header> h) mutable {
                       if (!h) {
                           klog.debug(
                             "could not parse header from client: {}",
-                            rs.conn->addr);
-                          rs.probe().header_corrupted();
+                            r.conn->addr);
+                          r.probe().header_corrupted();
                           return ss::make_ready_future<>();
                       }
-                      return dispatch_method_once(std::move(h.value()), s, rs);
+                      return dispatch_method_once(std::move(h.value()), s, r);
                   });
             });
       });
