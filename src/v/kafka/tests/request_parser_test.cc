@@ -14,8 +14,7 @@ static ss::future<iobuf> get_request(ss::input_stream<char>& input) {
           if (!buf) { // eof?
               return ss::make_ready_future<iobuf>(iobuf());
           }
-          auto size = kafka::kafka_server::connection::process_size(
-            input, buf.share());
+          auto size = kafka::parse_size_buffer(buf);
           return input.read_exactly(size).then(
             [size_buf = std::move(buf)](
               ss::temporary_buffer<char> buf) mutable {
@@ -38,13 +37,14 @@ get_request_context(application& app, ss::input_stream<char>&& input) {
          */
         return input.read_exactly(sizeof(int32_t))
           .then([&app, &input](ss::temporary_buffer<char> buf) {
-              auto size = kafka::kafka_server::connection::process_size(
-                input, std::move(buf));
+              auto size = kafka::parse_size_buffer(buf);
               /*
                * ready the request header
                */
-              return kafka::kafka_server::connection::read_header(input).then(
-                [&app, &input, size](kafka::request_header header) {
+              return kafka::parse_header(input).then(
+                [&app, &input, size](
+                  std::optional<kafka::request_header> oheader) {
+                    auto header = std::move(oheader.value());
                     auto remaining = size - sizeof(kafka::raw_request_header)
                                      - header.client_id_buffer.size();
                     /*
