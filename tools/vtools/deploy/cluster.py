@@ -62,7 +62,7 @@ def _run_terraform_cmd(vconfig, action, module, install_deps, log, tfvars):
     logging.set_verbosity(log)
     _check_deps(vconfig, install_deps)
 
-    terraform_vars = _get_tf_vars(tfvars)
+    terraform_vars = _parse_tf_vars(tfvars)
     _run_terraform(vconfig, action, module, terraform_vars)
 
 
@@ -77,7 +77,7 @@ def _run_terraform(vconfig, action, module, tf_vars):
     shell.run_subprocess(cmd, env=vconfig.environ)
 
 
-def _get_tf_vars(tfvars):
+def _parse_tf_vars(tfvars):
     if tfvars == None:
         return ''
     return ' '.join([f'-var {v}' for v in tfvars])
