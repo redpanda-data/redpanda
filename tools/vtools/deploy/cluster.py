@@ -39,9 +39,11 @@ Please run `vtools deploy cluster --destroy true` before deploying again.''')
     key_path, pub_key_path = keys.generate_key(abs_path, comment, '""')
     tfvars = tfvars + (f'private_key_path={key_path}',
                        f'public_key_path={pub_key_path}')
-    vconfig.kv[tfvars_key] = tfvars
+    terraform_vars = _parse_tf_vars(tfvars)
+    vconfig.kv[tfvars_key] = terraform_vars
     module = 'cluster'
-    _run_terraform_cmd(vconfig, 'apply', module, install_deps, log, tfvars)
+    _run_terraform_cmd(vconfig, 'apply', module, install_deps, log,
+                       terraform_vars)
     outputs = _get_tf_outputs(vconfig, module)
     ssh_user = outputs['ssh_user']['value']
     private_ips = outputs['private_ips']['value']
@@ -75,8 +77,7 @@ def _run_terraform_cmd(vconfig, action, module, install_deps, log, tfvars):
     logging.set_verbosity(log)
     _check_deps(vconfig, install_deps)
 
-    terraform_vars = _parse_tf_vars(tfvars)
-    _run_terraform(vconfig, action, module, terraform_vars)
+    _run_terraform(vconfig, action, module, tfvars)
 
 
 def _run_terraform(vconfig, action, module, tf_vars):
