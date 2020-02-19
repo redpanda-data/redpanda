@@ -1,8 +1,6 @@
 #pragma once
 
 #include "rpc/connection.h"
-#include "rpc/netbuf.h"
-#include "rpc/service.h"
 #include "rpc/types.h"
 #include "utils/hdr_hist.h"
 
@@ -18,37 +16,65 @@
 #include <vector>
 
 namespace rpc {
-class server_context_impl;
 
 class server {
 public:
-    explicit server(server_configuration c);
+    // always guaranteed non-null
+    class resources final {
+    public:
+        resources(server* s, ss::lw_shared_ptr<connection> c)
+          : conn(std::move(c))
+          , _s(s) {}
+
+        // NOLINTNEXTLINE
+        ss::lw_shared_ptr<connection> conn;
+
+        server_probe& probe() { return _s->_probe; }
+        ss::semaphore& memory() { return _s->_memory; }
+        hdr_hist& hist() { return _s->_hist; }
+        ss::gate& conn_gate() { return _s->_conn_gate; }
+        bool abort_requested() const { return _s->_as.abort_requested(); }
+
+    private:
+        server* _s;
+    };
+    struct protocol {
+        protocol() noexcept = default;
+        protocol(protocol&&) noexcept = default;
+        protocol& operator=(protocol&&) noexcept = default;
+        protocol(const protocol&) = delete;
+        protocol& operator=(const protocol&) = delete;
+
+        virtual ~protocol() noexcept = default;
+        virtual const char* name() const = 0;
+        // the lifetime of all references here are guaranteed to live
+        // until the end of the server (container/parent)
+        virtual ss::future<> apply(server::resources) = 0;
+    };
+
+    explicit server(server_configuration);
+    server(server&&) noexcept = default;
+    server& operator=(server&&) noexcept = delete;
     server(const server&) = delete;
+    server& operator=(const server&) = delete;
     ~server();
 
+    void set_protocol(std::unique_ptr<protocol> proto) {
+        _proto = std::move(proto);
+    }
     void start();
     ss::future<> stop();
 
-    template<typename T, typename... Args>
-    void register_service(Args&&... args) {
-        static_assert(std::is_base_of_v<service, T>, "must extend service.h");
-        _services.push_back(std::make_unique<T>(std::forward<Args>(args)...));
-    }
-
-    const server_configuration cfg;
+    const server_configuration cfg; // NOLINT
     const hdr_hist& histogram() const { return _hist; }
 
 private:
-    friend server_context_impl;
-
+    friend resources;
     ss::future<> accept(ss::server_socket&);
-    ss::future<> continous_method_dispath(ss::lw_shared_ptr<connection>);
-    ss::future<> dispatch_method_once(header, ss::lw_shared_ptr<connection>);
-    ss::future<> handle_connection(ss::lw_shared_ptr<connection>);
     void setup_metrics();
 
+    std::unique_ptr<protocol> _proto;
     ss::semaphore _memory;
-    std::vector<std::unique_ptr<service>> _services;
     std::vector<std::unique_ptr<ss::server_socket>> _listeners;
     boost::intrusive::list<connection> _connections;
     ss::abort_source _as;

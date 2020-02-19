@@ -2,6 +2,7 @@
 
 #include "rpc/demo/demo_utils.h"
 #include "rpc/demo/simple_service.h"
+#include "rpc/simple_protocol.h"
 #include "syschecks/syschecks.h"
 
 #include <seastar/core/app-template.hh>
@@ -86,9 +87,11 @@ int main(int args, char** argv, char** env) {
             lgr.info("registering service on all cores");
             serv
               .invoke_on_all([](rpc::server& s) {
-                  s.register_service<service>(
+                  auto proto = std::make_unique<rpc::simple_protocol>();
+                  proto->register_service<service>(
                     ss::default_scheduling_group(),
                     ss::default_smp_service_group());
+                  s.set_protocol(std::move(proto));
               })
               .get();
             lgr.info("Invoking rpc start on all cores");

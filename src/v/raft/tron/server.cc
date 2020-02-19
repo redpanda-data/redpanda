@@ -9,6 +9,7 @@
 #include "raft/tron/service.h"
 #include "raft/types.h"
 #include "rpc/connection_cache.h"
+#include "rpc/simple_protocol.h"
 #include "storage/log_manager.h"
 #include "storage/logger.h"
 #include "syschecks/syschecks.h"
@@ -259,19 +260,21 @@ int main(int args, char** argv, char** env) {
             simple_shard_lookup shard_table;
             serv
               .invoke_on_all([&shard_table, &group_manager](rpc::server& s) {
-                  s.register_service<raft::tron::service<
+                  auto proto = std::make_unique<rpc::simple_protocol>();
+                  proto->register_service<raft::tron::service<
                     simple_group_manager,
                     simple_shard_lookup>>(
                     ss::default_scheduling_group(),
                     ss::default_smp_service_group(),
                     group_manager,
                     shard_table);
-                  s.register_service<
+                  proto->register_service<
                     raft::service<simple_group_manager, simple_shard_lookup>>(
                     ss::default_scheduling_group(),
                     ss::default_smp_service_group(),
                     group_manager,
                     shard_table);
+                  s.set_protocol(std::move(proto));
               })
               .get();
             tronlog.info("Invoking rpc start on all cores");

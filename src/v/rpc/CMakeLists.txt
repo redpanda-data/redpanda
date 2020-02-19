@@ -11,6 +11,7 @@ v_cc_library(
     logger.cc
     reconnect_transport.cc
     connection_cache.cc
+    simple_protocol.cc
   DEPS
     Seastar::seastar
     v::bytes

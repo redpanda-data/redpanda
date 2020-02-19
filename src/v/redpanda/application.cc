@@ -3,6 +3,7 @@
 #include "cluster/service.h"
 #include "platform/stop_signal.h"
 #include "raft/service.h"
+#include "rpc/simple_protocol.h"
 #include "storage/directories.h"
 #include "syschecks/syschecks.h"
 #include "test_utils/logs.h"
@@ -226,16 +227,18 @@ void application::start() {
     syschecks::systemd_message("Starting RPC");
     _rpc
       .invoke_on_all([this](rpc::server& s) {
-          s.register_service<
+          auto proto = std::make_unique<rpc::simple_protocol>();
+          proto->register_service<
             raft::service<cluster::partition_manager, cluster::shard_table>>(
             _scheduling_groups.raft_sg(),
             _smp_groups.raft_smp_sg(),
             partition_manager,
             shard_table.local());
-          s.register_service<cluster::service>(
+          proto->register_service<cluster::service>(
             _scheduling_groups.cluster_sg(),
             _smp_groups.cluster_smp_sg(),
             std::ref(controller));
+          s.set_protocol(std::move(proto));
       })
       .get();
     auto& conf = config::shard_local_cfg();
