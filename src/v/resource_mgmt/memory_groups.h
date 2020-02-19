@@ -1,6 +1,7 @@
 #pragma once
 
 #include "seastarx.h"
+
 #include <seastar/core/memory.hh>
 
 // centralized unit for memory management

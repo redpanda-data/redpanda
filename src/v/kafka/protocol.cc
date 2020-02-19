@@ -18,7 +18,6 @@
 namespace kafka {
 static ss::logger klog("kafka");
 
-
 protocol::protocol(
   ss::smp_service_group smp,
   ss::sharded<cluster::metadata_cache>& meta,
