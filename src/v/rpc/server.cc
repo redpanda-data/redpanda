@@ -60,8 +60,9 @@ void server::start() {
               addr,
               std::current_exception()));
         }
-        _listeners.emplace_back(std::move(ss));
-        ss::server_socket& ref = _listeners.back();
+        auto& b = _listeners.emplace_back(
+          std::make_unique<ss::server_socket>(std::move(ss)));
+        ss::server_socket& ref = *b;
         // background
         (void)with_gate(_conn_gate, [this, &ref] { return accept(ref); });
     }
@@ -178,7 +179,7 @@ server::dispatch_method_once(header h, ss::lw_shared_ptr<connection> conn) {
 ss::future<> server::stop() {
     rpclog.info("Stopping {} listeners", _listeners.size());
     for (auto&& l : _listeners) {
-        l.abort_accept();
+        l->abort_accept();
     }
     rpclog.debug("Service probes {}", _probe);
     rpclog.info("Shutting down {} connections", _connections.size());
