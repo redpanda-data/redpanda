@@ -5,12 +5,15 @@
 #include "cluster/errc.h"
 #include "cluster/logger.h"
 #include "cluster/metadata_dissemination_service.h"
+#include "cluster/notification_latch.h"
 #include "cluster/partition_manager.h"
 #include "cluster/simple_batch_builder.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "likely.h"
+#include "model/fundamental.h"
 #include "model/record_batch_reader.h"
+#include "model/timeout_clock.h"
 #include "resource_mgmt/io_priority.h"
 #include "rpc/connection_cache.h"
 #include "rpc/types.h"
@@ -45,11 +48,11 @@ controller::controller(
   , _highest_group_id(0) {}
 
 /**
- * The controller is a sharded service. However, all of the primary state and
- * computation occurs exclusively on the single controller::shard core. The
- * service is sharded in order to safely coordinate communication between cores.
- * Unless otherwise specificed, access to any controller::* is only valid on the
- * controller::shard core.
+ * The controller is a sharded service. However, all of the primary state
+ * and computation occurs exclusively on the single controller::shard core.
+ * The service is sharded in order to safely coordinate communication
+ * between cores. Unless otherwise specificed, access to any controller::*
+ * is only valid on the controller::shard core.
  *
  * Shutdown
  * ========
@@ -59,10 +62,10 @@ controller::controller(
  * Leadership notification
  * =======================
  *
- * Leadership notifications occur on the node where a raft group is assigned,
- * and in general this is not the controller::shard core. In order control
- * sequencing of operations on controller state, each leadership notification is
- * forwarded to the controller::shard core for handling.
+ * Leadership notifications occur on the node where a raft group is
+ * assigned, and in general this is not the controller::shard core. In order
+ * control sequencing of operations on controller state, each leadership
+ * notification is forwarded to the controller::shard core for handling.
  *
  * Locking for leadership notifications is:
  *
@@ -82,13 +85,13 @@ controller::controller(
  *              ─ ─ ─ ─ ─ ─ ─ ─ ─▶ metadata update
  *               invoke_on_all
  *
- * It's important to grab the gate on both the source and destination cores of
- * the x-core forwarding of the notification. Acquiring the gate on the source
- * core keeps the service from being fully shutdown and destroyed. The
- * continuation run on the destination core may encounter a closed gate when
- * racing with shutdown, but successfully acquiring the gate will guarantee that
- * the service instance on that core won't be fully shutdown while the
- * continuation is running.
+ * It's important to grab the gate on both the source and destination cores
+ * of the x-core forwarding of the notification. Acquiring the gate on the
+ * source core keeps the service from being fully shutdown and destroyed.
+ * The continuation run on the destination core may encounter a closed gate
+ * when racing with shutdown, but successfully acquiring the gate will
+ * guarantee that the service instance on that core won't be fully shutdown
+ * while the continuation is running.
  */
 ss::future<> controller::start() {
     if (ss::engine().cpu_id() != controller::shard) {
@@ -168,11 +171,12 @@ ss::future<> controller::stop() {
         _raft0->remove_append_entries_callback();
     }
     if (ss::engine().cpu_id() == controller::shard) {
-        // in a multi-threaded app this would look like a deadlock waiting to
-        // happen, but it works in seastar: broadcast here only makes the
+        // in a multi-threaded app this would look like a deadlock waiting
+        // to happen, but it works in seastar: broadcast here only makes the
         // waiters runnable. they won't actually have a chance to run until
-        // after the closed flag within the gate is set, ensuring that when they
-        // wake up they'll leave the gate after observing that it is closed.
+        // after the closed flag within the gate is set, ensuring that when
+        // they wake up they'll leave the gate after observing that it is
+        // closed.
         _leadership_cond.broadcast();
     }
     return _bg.close();
@@ -189,21 +193,25 @@ ss::future<> controller::process_raft0_batch(model::record_batch batch) {
         return ss::make_exception_future<>(std::runtime_error(
           "We cannot process compressed record_batch'es yet, see #188"));
     }
-
+    auto last_offset = batch.last_offset();
+    auto f = ss::make_ready_future<>();
     if (batch.header().type == raft::configuration_batch_type) {
         auto base_offset = batch.header().base_offset;
-        return model::consume_records(
+        f = model::consume_records(
           std::move(batch), [this, base_offset](model::record rec) mutable {
               auto rec_offset = model::offset(
                 base_offset() + rec.offset_delta());
               return process_raft0_cfg_update(std::move(rec), rec_offset);
           });
+    } else {
+        f = model::consume_records(
+          std::move(batch), [this](model::record rec) mutable {
+              return recover_record(std::move(rec));
+          });
     }
 
-    return model::consume_records(
-      std::move(batch), [this](model::record rec) mutable {
-          return recover_record(std::move(rec));
-      });
+    return f.then(
+      [this, last_offset] { return _notification_latch.notify(last_offset); });
 }
 
 ss::future<> controller::apply_raft0_cfg_update(raft::group_configuration cfg) {
@@ -363,14 +371,60 @@ ss::future<std::vector<topic_result>> controller::create_topics(
   std::vector<topic_configuration> topics,
   model::timeout_clock::time_point timeout) {
     verify_shard();
-    if (!is_leader() || _allocator == nullptr) {
-        return ss::make_ready_future<std::vector<topic_result>>(
-          create_topic_results(std::move(topics), errc::not_leader_controller));
+
+    auto f = ss::get_units(_sem, 1).then(
+      [this, topics = std::move(topics), timeout](
+        ss::semaphore_units<> u) mutable {
+          return do_create_topics(std::move(u), std::move(topics), timeout);
+      });
+
+    return ss::with_timeout(timeout, std::move(f));
+}
+
+static ss::future<std::vector<topic_result>> process_create_topics_results(
+  std::vector<model::topic> valid_topics,
+  notification_latch& latch,
+  model::timeout_clock::time_point timeout,
+  ss::future<result<raft::replicate_result>> f) {
+    using ret_t = std::vector<topic_result>;
+    try {
+        auto result = f.get0();
+        if (result.has_value()) {
+            // success case
+            // wait for notification
+            return latch.wait_for(result.value().last_offset, timeout)
+              .then([valid_topics = std::move(valid_topics)](errc ec) {
+                  return create_topic_results(valid_topics, ec);
+              });
+        }
+    } catch (...) {
+        clusterlog.error(
+          "An error occurred while appending create topic entries: {}",
+          std::current_exception());
     }
-    std::vector<topic_result> errors;
+    return ss::make_ready_future<ret_t>(
+      create_topic_results(valid_topics, errc::replication_error));
+}
+
+ss::future<std::vector<topic_result>> controller::do_create_topics(
+  ss::semaphore_units<> units,
+  std::vector<topic_configuration> topics,
+  model::timeout_clock::time_point timeout) {
+    using ret_t = std::vector<topic_result>;
+    // Controller is not a leader fail all requests
+    if (!is_leader() || _allocator == nullptr) {
+        return ss::make_ready_future<ret_t>(
+          create_topic_results(topics, errc::not_leader_controller));
+    }
+
+    ret_t errors;
     ss::circular_buffer<model::record_batch> batches;
+    std::vector<model::topic> valid_topics;
+
     batches.reserve(topics.size());
-    for (const auto& t_cfg : topics) {
+    valid_topics.reserve(topics.size());
+
+    for (auto& t_cfg : topics) {
         if (_md_cache.local().get_topic_metadata(t_cfg.topic)) {
             errors.emplace_back(t_cfg.topic, errc::topic_already_exists);
             continue;
@@ -378,47 +432,36 @@ ss::future<std::vector<topic_result>> controller::create_topics(
         auto batch = create_topic_cfg_batch(t_cfg);
         if (batch) {
             batches.push_back(std::move(*batch));
+            valid_topics.push_back(std::move(t_cfg.topic));
         } else {
             errors.emplace_back(t_cfg.topic, errc::topic_invalid_partitions);
         }
     }
+    // Do not need to replicate all configurations are invalid
     if (batches.empty()) {
-        return ss::make_ready_future<std::vector<topic_result>>(
-          std::move(errors));
+        return ss::make_ready_future<ret_t>(std::move(errors));
     }
-    // Do append entries to raft0 logs
-    auto f = _raft0
-               ->replicate(
-                 model::make_memory_record_batch_reader(std::move(batches)))
-               .then_wrapped([topics = std::move(topics)](
-                               ss::future<result<raft::replicate_result>> f) {
-                   bool success = true;
-                   try {
-                       f.get();
-                   } catch (...) {
-                       auto e = std::current_exception();
-                       clusterlog.error(
-                         "An error occurred while "
-                         "appending create topic entries: {}",
-                         e);
-                       success = false;
-                   }
-                   return create_topic_results(
-                     std::move(topics),
-                     success ? errc::success : errc::replication_error);
-               })
-               .then([errors = std::move(errors)](
-                       std::vector<topic_result> results) {
-                   // merge results from both sources
-                   std::move(
-                     std::begin(errors),
-                     std::end(errors),
-                     std::back_inserter(results));
-                   return std::move(results);
-               });
 
-    return with_timeout(timeout, std::move(f));
-} // namespace cluster
+    auto rdr = model::make_memory_record_batch_reader(std::move(batches));
+    return _raft0->replicate(std::move(rdr))
+      .then_wrapped(
+        [this,
+         valid_topics = std::move(valid_topics),
+         units = std::move(units),
+         timeout](ss::future<result<raft::replicate_result>> f) mutable {
+            return process_create_topics_results(
+              std::move(valid_topics),
+              _notification_latch,
+              timeout,
+              std::move(f));
+        })
+      .then([errors = std::move(errors)](ret_t results) {
+          // merge results from both sources
+          std::move(
+            std::begin(errors), std::end(errors), std::back_inserter(results));
+          return std::move(results);
+      });
+}
 
 std::optional<model::record_batch>
 controller::create_topic_cfg_batch(const topic_configuration& cfg) {
@@ -446,13 +489,11 @@ controller::create_topic_cfg_batch(const topic_configuration& cfg) {
 ss::future<> controller::do_leadership_notification(
   model::ntp ntp, model::term_id term, std::optional<model::node_id> lid) {
     verify_shard();
-    // gate is reentrant making it ok if leadership notification originated on
-    // the the controller::shard core.
+    // gate is reentrant making it ok if leadership notification originated
+    // on the the controller::shard core.
     return with_gate(_bg, [this, ntp = std::move(ntp), lid, term]() mutable {
         return with_semaphore(
-          _raft_notification_sem,
-          1,
-          [this, ntp = std::move(ntp), lid, term]() mutable {
+          _sem, 1, [this, ntp = std::move(ntp), lid, term]() mutable {
               if (ntp == controller::ntp) {
                   if (lid != _self.id()) {
                       // for now do nothing if we are not the leader
@@ -539,9 +580,7 @@ void controller::on_raft0_entries_comitted(
   model::record_batch_reader&& reader) {
     (void)with_gate(_bg, [this, reader = std::move(reader)]() mutable {
         return with_semaphore(
-          _raft_notification_sem,
-          1,
-          [this, reader = std::move(reader)]() mutable {
+          _sem, 1, [this, reader = std::move(reader)]() mutable {
               if (_bg.is_closed()) {
                   return ss::make_ready_future<>();
               }
