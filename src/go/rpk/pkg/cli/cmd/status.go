@@ -94,7 +94,7 @@ func printMetrics(p *system.Metrics) {
 	t := ui.NewRpkTable(log.StandardLogger().Out)
 	t.SetHeader([]string{"Name", "Value"})
 	t.Append([]string{"CPU%", fmt.Sprint(p.CpuPercentage)})
-	t.Append([]string{"Free Memory", fmt.Sprint(p.FreeMemory)})
-	t.Append([]string{"Free Space", fmt.Sprint(p.FreeSpace)})
+	t.Append([]string{"Free Memory (MB)", fmt.Sprint(p.FreeMemory)})
+	t.Append([]string{"Free Space  (MB)", fmt.Sprint(p.FreeSpace)})
 	t.Render()
 }
