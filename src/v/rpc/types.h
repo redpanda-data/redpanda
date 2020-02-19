@@ -96,5 +96,6 @@ struct transport_configuration {
 };
 
 std::ostream& operator<<(std::ostream&, const header&);
+std::ostream& operator<<(std::ostream&, const server_configuration&);
 
 } // namespace rpc

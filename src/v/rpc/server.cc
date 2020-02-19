@@ -19,17 +19,16 @@ server::server(server_configuration c)
   , _memory(cfg.max_service_memory_per_core)
   , _creds(
       cfg.credentials ? (*cfg.credentials).build_server_credentials()
-                      : nullptr) {
-    if (!cfg.disable_metrics) {
-        setup_metrics();
-        _probe.setup_metrics(_metrics);
-    }
-}
+                      : nullptr) {}
 
 server::~server() = default;
 
 void server::start() {
     vassert(_proto, "must have a registered protocol before starting");
+    if (!cfg.disable_metrics) {
+        setup_metrics();
+        _probe.setup_metrics(_metrics, _proto->name());
+    }
     for (auto addr : cfg.addrs) {
         ss::server_socket ss;
         try {
@@ -129,7 +128,7 @@ ss::future<> server::stop() {
 void server::setup_metrics() {
     namespace sm = ss::metrics;
     _metrics.add_group(
-      prometheus_sanitize::metrics_name("rpc"),
+      prometheus_sanitize::metrics_name(_proto->name()),
       {sm::make_gauge(
          "max_service_mem",
          [this] { return cfg.max_service_memory_per_core; },
