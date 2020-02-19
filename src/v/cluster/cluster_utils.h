@@ -23,7 +23,7 @@ CONCEPT(requires requires(const T& req) {
 })
 // clang-format on
 std::vector<topic_result> create_topic_results(
-  const std::vector<T>& requests, topic_error_code error_code) {
+  const std::vector<T>& requests, errc error_code) {
     std::vector<topic_result> results;
     results.reserve(requests.size());
     std::transform(

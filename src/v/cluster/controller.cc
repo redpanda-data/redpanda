@@ -2,6 +2,7 @@
 
 #include "cluster/cluster_utils.h"
 #include "cluster/controller_service.h"
+#include "cluster/errc.h"
 #include "cluster/logger.h"
 #include "cluster/metadata_dissemination_service.h"
 #include "cluster/partition_manager.h"
@@ -364,8 +365,7 @@ ss::future<std::vector<topic_result>> controller::create_topics(
     verify_shard();
     if (!is_leader() || _allocator == nullptr) {
         return ss::make_ready_future<std::vector<topic_result>>(
-          create_topic_results(
-            std::move(topics), topic_error_code::not_leader_controller));
+          create_topic_results(std::move(topics), errc::not_leader_controller));
     }
     std::vector<topic_result> errors;
     ss::circular_buffer<model::record_batch> batches;
@@ -375,8 +375,7 @@ ss::future<std::vector<topic_result>> controller::create_topics(
         if (batch) {
             batches.push_back(std::move(*batch));
         } else {
-            errors.emplace_back(
-              t_cfg.topic, topic_error_code::invalid_partitions);
+            errors.emplace_back(t_cfg.topic, errc::topic_invalid_partitions);
         }
     }
     if (batches.empty()) {
@@ -402,8 +401,7 @@ ss::future<std::vector<topic_result>> controller::create_topics(
                    }
                    return create_topic_results(
                      std::move(topics),
-                     success ? topic_error_code::no_error
-                             : topic_error_code::unknown_error);
+                     success ? errc::success : errc::replication_error);
                })
                .then([errors = std::move(errors)](
                        std::vector<topic_result> results) {

@@ -20,7 +20,6 @@ v_cc_library(
     controller.cc
     metadata_cache.cc
     partition_manager.cc
-    types.cc
     partition_allocator.cc
     logger.cc
     cluster_utils.cc
