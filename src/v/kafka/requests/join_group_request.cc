@@ -126,6 +126,11 @@ join_group_api::process(request_context&& ctx, ss::smp_service_group g) {
           join_group_response(error_code::unsupported_version));
     }
 
+    if (request.group_id().empty()) {
+        return ctx.respond(
+          join_group_response(request.member_id, error_code::invalid_group_id));
+    }
+
     return ss::do_with(
       remote(std::move(ctx)),
       std::move(request),

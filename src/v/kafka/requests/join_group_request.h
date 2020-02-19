@@ -66,13 +66,16 @@ struct join_group_response final {
     kafka::member_id member_id;
     std::vector<member_config> members;
 
-    join_group_response(kafka::error_code error)
+    join_group_response(kafka::member_id member_id, kafka::error_code error)
       : throttle_time(0)
       , error(error)
       , generation_id(no_generation)
       , protocol_name(no_protocol)
       , leader_id(no_leader)
-      , member_id(no_member) {}
+      , member_id(member_id) {}
+
+    join_group_response(kafka::error_code error)
+      : join_group_response(no_member, error) {}
 
     join_group_response(
       kafka::error_code error,
