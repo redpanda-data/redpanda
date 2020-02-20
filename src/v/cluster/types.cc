@@ -42,4 +42,49 @@ cluster::join_request adl<cluster::join_request>::from(iobuf io) {
 cluster::join_request adl<cluster::join_request>::from(iobuf_parser& in) {
     return cluster::join_request(adl<model::broker>().from(in));
 }
+
+void adl<cluster::topic_result>::to(iobuf& out, cluster::topic_result&& t) {
+    reflection::serialize(out, std::move(t.topic), t.ec);
+}
+
+cluster::topic_result adl<cluster::topic_result>::from(iobuf_parser& in) {
+    auto topic = model::topic(adl<ss::sstring>{}.from(in));
+    auto ec = adl<cluster::errc>{}.from(in);
+    return cluster::topic_result(std::move(topic), ec);
+}
+
+void adl<cluster::create_topics_request>::to(
+  iobuf& out, cluster::create_topics_request&& r) {
+    reflection::serialize(out, std::move(r.topics), r.timeout.count());
+}
+
+cluster::create_topics_request
+adl<cluster::create_topics_request>::from(iobuf io) {
+    return reflection::from_iobuf<cluster::create_topics_request>(
+      std::move(io));
+}
+
+cluster::create_topics_request
+adl<cluster::create_topics_request>::from(iobuf_parser& in) {
+    using underlying_t = std::vector<cluster::topic_configuration>;
+    auto configs = adl<underlying_t>().from(in);
+    auto timeout = model::timeout_clock::duration(adl<uint64_t>().from(in));
+    return cluster::create_topics_request{std::move(configs), timeout};
+}
+
+void adl<cluster::create_topics_reply>::to(
+  iobuf& out, cluster::create_topics_reply&& r) {
+    reflection::serialize(out, std::move(r.results), std::move(r.metadata));
+}
+
+cluster::create_topics_reply adl<cluster::create_topics_reply>::from(iobuf io) {
+    return reflection::from_iobuf<cluster::create_topics_reply>(std::move(io));
+}
+
+cluster::create_topics_reply
+adl<cluster::create_topics_reply>::from(iobuf_parser& in) {
+    auto results = adl<std::vector<cluster::topic_result>>().from(in);
+    auto md = adl<std::vector<model::topic_metadata>>().from(in);
+    return cluster::create_topics_reply{std::move(results), std::move(md)};
+}
 } // namespace reflection
