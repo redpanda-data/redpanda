@@ -4,7 +4,6 @@
 #include "redpanda/application.h"
 #include "storage/directories.h"
 #include "storage/tests/utils/disk_log_builder.h"
-#include "storage/tests/utils/log_builder.h"
 #include "storage/tests/utils/random_batch.h"
 #include "test_utils/fixture.h"
 #include "test_utils/logs.h"
@@ -66,20 +65,6 @@ public:
                 .server_addr = addr,
               });
           });
-    }
-
-    /// Make a log builder that will flush to a specific topic partition.
-    storage::log_builder
-    make_tp_log_builder(model::topic topic, model::partition_id partition) {
-        auto ntp = model::ntp{
-          .ns = kafka::default_namespace(),
-          .tp = model::topic_partition{
-            .topic = model::topic(topic),
-            .partition = model::partition_id(partition),
-          },
-        };
-        return storage::log_builder(
-          lconf().data_directory().as_sstring(), std::move(ntp));
     }
 
     model::ntp
