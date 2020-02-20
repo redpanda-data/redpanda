@@ -2,9 +2,9 @@
 
 #include "bytes/iobuf.h"
 #include "cluster/controller.h"
+#include "kafka/groups/coordinator_ntp_mapper.h"
 #include "kafka/groups/group_manager.h"
 #include "kafka/groups/group_router.h"
-#include "kafka/groups/group_shard_mapper.h"
 #include "kafka/requests/request_reader.h"
 #include "seastarx.h"
 
@@ -21,9 +21,7 @@ class metadata_cache;
 }
 
 namespace kafka {
-using group_router_type = kafka::group_router<
-  kafka::group_manager,
-  kafka::group_shard_mapper<cluster::shard_table>>;
+using group_router_type = kafka::group_router<kafka::group_manager>;
 
 class controller_dispatcher;
 
@@ -51,6 +49,9 @@ struct request_header {
 };
 
 std::ostream& operator<<(std::ostream&, const request_header&);
+
+class response;
+using response_ptr = ss::foreign_ptr<std::unique_ptr<response>>;
 
 class request_context {
 public:
@@ -100,6 +101,19 @@ public:
         return _partition_manager;
     }
 
+    // clang-format off
+    template<typename ResponseType>
+    CONCEPT(requires requires (
+            ResponseType r, const request_context& ctx, response& resp) {
+        { r.encode(ctx, resp) } -> void;
+    })
+    // clang-format on
+    ss::future<response_ptr> respond(ResponseType r) {
+        auto resp = std::make_unique<response>();
+        r.encode(*this, *resp.get());
+        return ss::make_ready_future<response_ptr>(std::move(resp));
+    }
+
 private:
     ss::sharded<cluster::metadata_cache>& _metadata_cache;
     controller_dispatcher& _cntrl_dispatcher;
@@ -110,9 +124,6 @@ private:
     cluster::shard_table& _shard_table;
     ss::sharded<cluster::partition_manager>& _partition_manager;
 };
-
-class response;
-using response_ptr = ss::foreign_ptr<std::unique_ptr<response>>;
 
 // Executes the API call identified by the specified request_context.
 ss::future<response_ptr>

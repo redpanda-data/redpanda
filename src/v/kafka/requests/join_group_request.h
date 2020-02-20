@@ -29,6 +29,13 @@ struct join_group_request final {
     kafka::protocol_type protocol_type;
     std::vector<member_protocol> protocols;
 
+    join_group_request() = default;
+    explicit join_group_request(request_context& ctx) { decode(ctx); }
+    join_group_request(const join_group_request&) = delete;
+    join_group_request& operator=(const join_group_request&) = delete;
+    join_group_request(join_group_request&&) = default;
+    join_group_request& operator=(join_group_request&&) = delete;
+
     // extra context from request header
     api_version version;
     std::optional<ss::sstring> client_id;
@@ -39,10 +46,11 @@ struct join_group_request final {
 
 std::ostream& operator<<(std::ostream&, const join_group_request&);
 
-/*
- * TODO
- * - auto fill throttle for all reply types
- */
+static inline const kafka::member_id no_member("");
+static inline const kafka::member_id no_leader("");
+static constexpr kafka::generation_id no_generation(-1);
+static inline const kafka::protocol_name no_protocol("");
+
 struct join_group_response final {
     struct member_config {
         kafka::member_id member_id;
@@ -50,14 +58,24 @@ struct join_group_response final {
         bytes metadata;
     };
 
-    std::chrono::milliseconds throttle_time = std::chrono::milliseconds(
-      0); // >= v2
+    std::chrono::milliseconds throttle_time; // >= v2
     kafka::error_code error;
     kafka::generation_id generation_id;
     kafka::protocol_name protocol_name;
     kafka::member_id leader_id;
     kafka::member_id member_id;
     std::vector<member_config> members;
+
+    join_group_response(kafka::member_id member_id, kafka::error_code error)
+      : throttle_time(0)
+      , error(error)
+      , generation_id(no_generation)
+      , protocol_name(no_protocol)
+      , leader_id(no_leader)
+      , member_id(member_id) {}
+
+    join_group_response(kafka::error_code error)
+      : join_group_response(no_member, error) {}
 
     join_group_response(
       kafka::error_code error,
@@ -76,11 +94,6 @@ struct join_group_response final {
 
     void encode(const request_context& ctx, response& resp);
 };
-
-static inline const kafka::member_id no_member("");
-static inline const kafka::member_id no_leader("");
-static constexpr kafka::generation_id no_generation(-1);
-static inline const kafka::protocol_name no_protocol("");
 
 static inline join_group_response
 _make_join_error(kafka::member_id member_id, error_code error) {
