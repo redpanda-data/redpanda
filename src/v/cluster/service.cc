@@ -1,15 +1,18 @@
 #include "cluster/service.h"
 
 #include "cluster/controller.h"
+#include "cluster/metadata_cache.h"
 #include "cluster/types.h"
 
 namespace cluster {
 service::service(
   ss::scheduling_group sg,
   ss::smp_service_group ssg,
-  ss::sharded<controller>& c)
+  ss::sharded<controller>& c,
+  ss::sharded<metadata_cache>& cache)
   : controller_service(sg, ssg)
-  , _controller(c) {}
+  , _controller(c)
+  , _md_cache(cache) {}
 
 ss::future<join_reply>
 service::join(join_request&& req, rpc::streaming_context&) {
