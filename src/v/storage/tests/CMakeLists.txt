@@ -77,15 +77,6 @@ rp_test(
 
 rp_test(
   UNIT_TEST
-  BINARY_NAME log_builder_test
-  SOURCES log_builder_test.cc
-  LIBRARIES Seastar::seastar_testing v::storage_test_utils
-  ARGS "-- -c 1"
-  LABELS storage
-)
-
-rp_test(
-  UNIT_TEST
   BINARY_NAME offset_assignment_test
   SOURCES offset_assignment_test.cc
   LIBRARIES Seastar::seastar_testing v::storage_test_utils
