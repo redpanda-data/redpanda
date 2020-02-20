@@ -2,9 +2,9 @@
 
 #include "bytes/iobuf.h"
 #include "cluster/controller.h"
+#include "kafka/groups/coordinator_ntp_mapper.h"
 #include "kafka/groups/group_manager.h"
 #include "kafka/groups/group_router.h"
-#include "kafka/groups/group_shard_mapper.h"
 #include "kafka/requests/request_reader.h"
 #include "seastarx.h"
 
@@ -21,9 +21,7 @@ class metadata_cache;
 }
 
 namespace kafka {
-using group_router_type = kafka::group_router<
-  kafka::group_manager,
-  kafka::group_shard_mapper<cluster::shard_table>>;
+using group_router_type = kafka::group_router<kafka::group_manager>;
 
 class controller_dispatcher;
 

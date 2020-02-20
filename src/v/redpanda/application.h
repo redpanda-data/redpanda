@@ -5,9 +5,9 @@
 #include "cluster/partition_manager.h"
 #include "config/configuration.h"
 #include "kafka/controller_dispatcher.h"
+#include "kafka/groups/coordinator_ntp_mapper.h"
 #include "kafka/groups/group_manager.h"
 #include "kafka/groups/group_router.h"
-#include "kafka/groups/group_shard_mapper.h"
 #include "kafka/quota_manager.h"
 #include "redpanda/admin/api-doc/config.json.h"
 #include "resource_mgmt/cpu_scheduling.h"
@@ -22,9 +22,7 @@
 #include <seastar/util/defer.hh>
 
 namespace po = boost::program_options; // NOLINT
-using group_router_type = kafka::group_router<
-  kafka::group_manager,
-  kafka::group_shard_mapper<cluster::shard_table>>;
+using group_router_type = kafka::group_router<kafka::group_manager>;
 
 class application {
 public:
@@ -75,8 +73,7 @@ private:
     // ss::sharded services
     ss::sharded<rpc::connection_cache> _raft_connection_cache;
     ss::sharded<kafka::group_manager> _group_manager;
-    ss::sharded<kafka::group_shard_mapper<cluster::shard_table>>
-      _group_shard_mapper;
+    ss::sharded<kafka::coordinator_ntp_mapper> _coordinator_ntp_mapper;
     ss::sharded<rpc::server> _rpc;
     ss::sharded<ss::http_server> _admin;
     ss::sharded<kafka::quota_manager> _quota_mgr;
