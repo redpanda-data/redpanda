@@ -213,11 +213,9 @@ FIXTURE_TEST(fetch_one, redpanda_thread_fixture) {
     auto log_config = make_default_config();
     {
         using namespace storage;
-        disk_log_builder builder(log_config);
-        builder.start(ntp).get();
-        builder.add_segment(model::offset(0)).get();
-        builder.add_random_batch(model::offset(0), 10, compression::yes).get();
-        builder.stop().get();
+        storage::disk_log_builder builder(log_config);
+        builder | start(ntp) | add_segment(model::offset(0))
+          | add_random_batch(model::offset(0), 10, compression::yes) | stop();
     }
 
     recover_ntp(ntp).get();
