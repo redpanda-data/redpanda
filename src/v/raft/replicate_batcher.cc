@@ -1,8 +1,11 @@
 #include "raft/replicate_batcher.h"
 
+#include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 #include "raft/consensus_utils.h"
+#include "raft/errc.h"
 #include "raft/replicate_entries_stm.h"
+#include "raft/types.h"
 
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/sleep.hh>
@@ -57,22 +60,19 @@ ss::future<replicate_batcher::item_ptr>
 replicate_batcher::do_cache(model::record_batch_reader&& r) {
     return model::consume_reader_to_memory(std::move(r), model::no_timeout)
       .then([this](ss::circular_buffer<model::record_batch> batches) {
-          auto i = ss::make_lw_shared<item>();
-          if (_data_cache.empty()) {
-              i->ret.last_offset = model::offset(_ptr->_meta.prev_log_index);
-          } else {
-              i->ret.last_offset = _data_cache.back().last_offset();
-          }
-          size_t record_count = 0;
-          for (auto& b : batches) {
-              record_count += b.record_count();
-              _pending_bytes += b.size_bytes();
-              _data_cache.emplace_back(std::move(b));
-          }
-          i->ret.last_offset = details::next_offset(i->ret.last_offset)
-                               + model::offset(record_count - 1);
-          _item_cache.emplace_back(i);
-          return i;
+          return ss::with_semaphore(
+            _ptr->_op_sem, 1, [this, batches = std::move(batches)]() mutable {
+                auto i = ss::make_lw_shared<item>();
+                size_t record_count = 0;
+                for (auto& b : batches) {
+                    record_count += b.record_count();
+                    _pending_bytes += b.size_bytes();
+                    _data_cache.emplace_back(std::move(b));
+                }
+                i->record_count = record_count;
+                _item_cache.emplace_back(i);
+                return i;
+            });
       });
 }
 
@@ -108,6 +108,33 @@ ss::future<> replicate_batcher::flush() {
             });
       });
 }
+static void propagate_result(
+  result<replicate_result> r,
+  std::vector<replicate_batcher::item_ptr>& notifications) {
+    if (r.has_value()) {
+        // iterate backward to calculate last offsets
+        auto last_offset = r.value().last_offset;
+        for (auto it = notifications.rbegin(); it != notifications.rend();
+             ++it) {
+            (*it)->_promise.set_value(replicate_result{last_offset});
+            last_offset = last_offset - model::offset((*it)->record_count);
+        }
+        return;
+    }
+    // propagate an error
+    for (auto& n : notifications) {
+        n->_promise.set_value(r.error());
+    }
+}
+
+static void propagate_current_exception(
+  std::vector<replicate_batcher::item_ptr>& notifications) {
+    // iterate backward to calculate last offsets
+    auto e = std::current_exception();
+    for (auto& n : notifications) {
+        n->_promise.set_exception(e);
+    }
+}
 
 ss::future<> replicate_batcher::do_flush(
   std::vector<replicate_batcher::item_ptr>&& notifications,
@@ -119,14 +146,9 @@ ss::future<> replicate_batcher::do_flush(
         ss::future<result<replicate_result>> fut) mutable {
           try {
               auto ret = fut.get0();
-              for (auto& n : notifications) {
-                  n->_promise.set_value(n->ret);
-              }
+              propagate_result(ret, notifications);
           } catch (...) {
-              auto err = std::current_exception();
-              for (auto& n : notifications) {
-                  n->_promise.set_exception(err);
-              }
+              propagate_current_exception(notifications);
           }
           auto f = stm->wait().finally([stm] {});
           // if gate is closed wait for all futures
