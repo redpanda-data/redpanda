@@ -82,6 +82,15 @@ struct brokers_diff {
     std::vector<broker_ptr> removed;
 };
 
+struct create_topics_request {
+    std::vector<topic_configuration> topics;
+    model::timeout_clock::duration timeout;
+};
+
+struct create_topics_reply {
+    std::vector<topic_result> results;
+    std::vector<model::topic_metadata> metadata;
+};
 } // namespace cluster
 
 namespace reflection {
@@ -97,4 +106,25 @@ struct adl<cluster::join_request> {
     cluster::join_request from(iobuf);
     cluster::join_request from(iobuf_parser&);
 };
+
+template<>
+struct adl<cluster::topic_result> {
+    void to(iobuf&, cluster::topic_result&&);
+    cluster::topic_result from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::create_topics_request> {
+    void to(iobuf&, cluster::create_topics_request&&);
+    cluster::create_topics_request from(iobuf);
+    cluster::create_topics_request from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::create_topics_reply> {
+    void to(iobuf&, cluster::create_topics_reply&&);
+    cluster::create_topics_reply from(iobuf);
+    cluster::create_topics_reply from(iobuf_parser&);
+};
+
 } // namespace reflection
