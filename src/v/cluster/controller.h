@@ -60,6 +60,9 @@ public:
       std::vector<topic_configuration> topics,
       model::timeout_clock::time_point timeout);
 
+    ss::future<std::vector<topic_result>> autocreate_topics(
+      std::vector<topic_configuration>, model::timeout_clock::time_point);
+
     raft::group_id get_highest_group_id() const { return _highest_group_id; }
 
     ss::future<> recover_assignment(partition_assignment);
@@ -67,10 +70,11 @@ public:
     /**
      * \brief Wait on controller to become the leader.
      *
-     * Returns a future that resolves when this controller becomes the leader of
-     * the raft0 group. The future will also resolve when the controller is
-     * shutting down. This method serves only as a weak signal. Any caller must
-     * make sure to properly check for leadership again when necessary.
+     * Returns a future that resolves when this controller becomes the
+     * leader of the raft0 group. The future will also resolve when the
+     * controller is shutting down. This method serves only as a weak
+     * signal. Any caller must make sure to properly check for leadership
+     * again when necessary.
      */
     ss::future<> wait_for_leadership();
 

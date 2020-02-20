@@ -367,6 +367,35 @@ controller::recover_topic_configuration(topic_configuration t_cfg) {
       [tp = t_cfg.topic](metadata_cache& md_c) { md_c.add_topic(tp); });
 }
 
+ss::future<std::vector<topic_result>> controller::autocreate_topics(
+  std::vector<topic_configuration> topics,
+  model::timeout_clock::time_point timeout) {
+    if (is_leader()) {
+        // create topics locally
+        return create_topics(std::move(topics), timeout);
+    }
+    
+    return dispatch_rpc_to_leader([topics = std::move(topics), timeout](
+                                    controller_client_protocol& c) mutable {
+               return c.create_topics(
+                 create_topics_request{std::move(topics),
+                                       timeout - model::timeout_clock::now()},
+                 timeout);
+           })
+      .then([this](rpc::client_context<create_topics_reply> ctx) {
+          return _md_cache
+            .invoke_on_all(
+              [md = std::move(ctx.data.metadata)](metadata_cache& c) mutable {
+                  for (auto& m : md) {
+                      c.insert_topic(std::move(m));
+                  }
+              })
+            .then([res = std::move(ctx.data.results)]() mutable {
+                return std::move(res);
+            });
+      });
+}
+
 ss::future<std::vector<topic_result>> controller::create_topics(
   std::vector<topic_configuration> topics,
   model::timeout_clock::time_point timeout) {
