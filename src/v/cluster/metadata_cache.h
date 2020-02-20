@@ -84,6 +84,9 @@ public:
     /// Returns metadata of all topics in cache internal format
     const cache_t& all_metadata() const { return _cache; }
 
+    /// Directly inserts topic_metadata
+    void insert_topic(model::topic_metadata);
+
 private:
     broker_cache_t _brokers_cache;
     cache_t _cache;

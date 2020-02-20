@@ -1,6 +1,11 @@
 #include "cluster/metadata_cache.h"
 
+#include "model/metadata.h"
+
 #include <fmt/format.h>
+
+#include <algorithm>
+#include <iterator>
 
 namespace cluster {
 
@@ -165,6 +170,20 @@ bool metadata_cache::contains(
           });
     }
     return false;
+}
+
+void metadata_cache::insert_topic(model::topic_metadata md) {
+    std::vector<partition> partitions;
+    partitions.reserve(md.partitions.size());
+    std::transform(
+      std::begin(md.partitions),
+      std::end(md.partitions),
+      std::back_inserter(partitions),
+      [](model::partition_metadata& p_md) {
+          return partition{std::move(p_md)};
+      });
+
+    _cache.emplace(std::move(md.tp), topic_metadata{std::move(partitions)});
 }
 
 } // namespace cluster
