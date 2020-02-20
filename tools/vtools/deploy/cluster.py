@@ -1,4 +1,5 @@
 import os
+import re
 import git
 from datetime import date
 import json
@@ -13,6 +14,18 @@ from . import install_deps as deps
 
 tfvars_key = 'deploy.cluster.tf.vars'
 
+known_tfvars = [
+    'nodes',
+    'distro',
+    'instance_type',
+    'local_package_abs_path',
+    'ssh_timeout',
+    'ssh_retries',
+    'packagecloud_token',
+    'private_key_path',
+    'public_key_path',
+]
+
 
 def deploy(vconfig, install_deps, ssh_key, ssh_port, ssh_timeout, ssh_retries,
            log, tfvars):
@@ -26,9 +39,11 @@ Please run `vtools deploy cluster --destroy true` before deploying again.''')
     key_path, pub_key_path = keys.generate_key(abs_path, comment, '""')
     tfvars = tfvars + (f'private_key_path={key_path}',
                        f'public_key_path={pub_key_path}')
-    vconfig.kv[tfvars_key] = tfvars
+    terraform_vars = _parse_tf_vars(tfvars)
+    vconfig.kv[tfvars_key] = terraform_vars
     module = 'cluster'
-    _run_terraform_cmd(vconfig, 'apply', module, install_deps, log, tfvars)
+    _run_terraform_cmd(vconfig, 'apply', module, install_deps, log,
+                       terraform_vars)
     outputs = _get_tf_outputs(vconfig, module)
     ssh_user = outputs['ssh_user']['value']
     private_ips = outputs['private_ips']['value']
@@ -63,8 +78,7 @@ def _run_terraform_cmd(vconfig, action, module, install_deps, log, tfvars):
     logging.set_verbosity(log)
     _check_deps(vconfig, install_deps)
 
-    terraform_vars = _get_tf_vars(tfvars)
-    _run_terraform(vconfig, action, module, terraform_vars)
+    _run_terraform(vconfig, action, module, tfvars)
 
 
 def _run_terraform(vconfig, action, module, tf_vars):
@@ -78,9 +92,18 @@ def _run_terraform(vconfig, action, module, tf_vars):
     shell.run_subprocess(cmd, env=vconfig.environ)
 
 
-def _get_tf_vars(tfvars):
+def _parse_tf_vars(tfvars):
     if tfvars == None:
         return ''
+    for v in tfvars:
+        res = re.match('(\w+)=[.\d\S]+', v)
+        if res is None:
+            logging.fatal(
+                f'"{v}" does not match the required "key=value" format')
+        key = res.group(1)
+        if key not in known_tfvars:
+            logging.fatal(
+                f'Unrecognized variable "{key}". Allowed vars: {known_tfvars}')
     return ' '.join([f'-var {v}' for v in tfvars])
 
 
