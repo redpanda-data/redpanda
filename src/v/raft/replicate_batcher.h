@@ -12,6 +12,7 @@ public:
     struct item {
         ss::promise<result<replicate_result>> _promise;
         replicate_result ret;
+        size_t record_count;
     };
     using item_ptr = ss::lw_shared_ptr<item>;
     // 1MB default size
