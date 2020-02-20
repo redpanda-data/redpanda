@@ -66,3 +66,10 @@ rp_test(
   LIBRARIES Seastar::seastar_testing v::application
   DEFINITIONS SEASTAR_TESTING_MAIN
 )
+rp_test(
+  UNIT_TEST
+  BINARY_NAME notification_latch_test
+  SOURCES notification_latch_test.cc
+  LIBRARIES Seastar::seastar_testing v::cluster
+  DEFINITIONS SEASTAR_TESTING_MAIN
+)
