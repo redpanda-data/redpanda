@@ -41,12 +41,12 @@ void write(
 
 SEASTAR_THREAD_TEST_CASE(test_can_read_single_batch_smaller_offset) {
     disk_log_builder b;
-    b.start().get();
-    b.add_segment(model::offset(1)).get();
+    b | start() | add_segment(1);
     auto buf = test::make_random_batches(model::offset(1), 1);
     write(std::move(buf), b);
+    // To-do Kostas Add support for pipe consume!
     auto res = b.consume().get0();
-    b.stop().get();
+    b | stop();
     BOOST_REQUIRE(res.empty());
 }
 
@@ -60,14 +60,11 @@ SEASTAR_THREAD_TEST_CASE(test_can_read_single_batch_same_offset) {
       std::nullopt,
       std::nullopt);
     disk_log_builder b;
-    b.start().get();
-    b.add_segment(
-       model::offset(1), model::term_id(0), ss::default_priority_class())
-      .get();
+    b | start() | add_segment(1);
     auto batches = test::make_random_batches(model::offset(1), 1);
     write(copy(batches), b);
     auto res = b.consume(reader_config).get0();
-    b.stop().get();
+    b | stop();
     check_batches(res, batches);
 }
 
@@ -82,11 +79,10 @@ SEASTAR_THREAD_TEST_CASE(test_can_read_multiple_batches) {
       std::nullopt,
       std::nullopt);
     disk_log_builder b;
-    b.start().get();
-    b.add_segment(batches.front().base_offset()).get();
+    b | start() | add_segment(batches.front().base_offset());
     write(copy(batches), b);
     auto res = b.consume(reader_config).get0();
-    b.stop().get();
+    b | stop();
     check_batches(res, batches);
 }
 
@@ -101,11 +97,10 @@ SEASTAR_THREAD_TEST_CASE(test_does_not_read_past_committed_offset_one_segment) {
       std::nullopt,
       std::nullopt);
     disk_log_builder b;
-    b.start().get();
-    b.add_segment(batches.front().base_offset()).get();
+    b | start() | add_segment(batches.front().base_offset());
     write(copy(batches), b);
     auto res = b.consume(reader_config).get0();
-    b.stop().get();
+    b | stop();
     BOOST_REQUIRE(res.empty());
 }
 
@@ -121,11 +116,10 @@ SEASTAR_THREAD_TEST_CASE(
       std::nullopt,
       std::nullopt);
     disk_log_builder b;
-    b.start().get();
-    b.add_segment(batches.front().base_offset()).get();
+    b | start() | add_segment(batches.front().base_offset());
     write(copy(batches), b);
     auto res = b.consume(reader_config).get0();
-    b.stop().get();
+    b | stop();
     ss::circular_buffer<model::record_batch> first;
     first.push_back(std::move(batches.back()));
     check_batches(res, first);
@@ -142,11 +136,10 @@ SEASTAR_THREAD_TEST_CASE(test_does_not_read_past_max_bytes) {
       std::nullopt,
       std::nullopt);
     disk_log_builder b;
-    b.start().get();
-    b.add_segment(batches.front().base_offset()).get();
+    b | start() | add_segment(batches.front().base_offset());
     write(copy(batches), b);
     auto res = b.consume(reader_config).get0();
-    b.stop().get();
+    b | stop();
     ss::circular_buffer<model::record_batch> first;
     first.push_back(std::move(*batches.begin()));
     check_batches(res, first);
@@ -163,11 +156,10 @@ SEASTAR_THREAD_TEST_CASE(test_reads_at_least_one_batch) {
       std::nullopt,
       std::nullopt);
     disk_log_builder b;
-    b.start().get();
-    b.add_segment(batches.front().base_offset()).get();
+    b | start() | add_segment(batches.front().base_offset());
     write(copy(batches), b);
     auto res = b.consume(reader_config).get0();
-    b.stop().get();
+    b | stop();
     ss::circular_buffer<model::record_batch> first;
     first.push_back(std::move(batches.front()));
     check_batches(res, first);
@@ -184,11 +176,11 @@ SEASTAR_THREAD_TEST_CASE(test_read_batch_range) {
       std::nullopt,
       std::nullopt);
     disk_log_builder b;
-    b.start().get();
-    b.add_segment(batches.front().base_offset()).get();
+    b | start();
+    b | add_segment(batches.front().base_offset());
     write(copy(batches), b);
     auto res = b.consume(reader_config).get0();
-    b.stop().get();
+    b | stop();
     BOOST_REQUIRE_EQUAL_COLLECTIONS(
       std::next(res.begin(), 2),
       std::next(res.begin(), 7),
@@ -211,8 +203,7 @@ SEASTAR_THREAD_TEST_CASE(test_batch_type_filter) {
       std::nullopt,
       std::nullopt);
     disk_log_builder b;
-    b.start().get();
-    b.add_segment(batches.front().base_offset()).get();
+    b | start() | add_segment(batches.front().base_offset());
     write(copy(batches), b);
 
     // read and extract types with optional type filter
@@ -256,5 +247,5 @@ SEASTAR_THREAD_TEST_CASE(test_batch_type_filter) {
     types = read_types(4);
     BOOST_TEST(types == std::vector<int>({4}));
 
-    b.stop().get();
+    b | stop();
 }
