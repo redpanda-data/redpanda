@@ -3,6 +3,7 @@
 #include "kafka/default_namespace.h"
 #include "redpanda/application.h"
 #include "storage/directories.h"
+#include "storage/tests/utils/disk_log_builder.h"
 #include "storage/tests/utils/log_builder.h"
 #include "storage/tests/utils/random_batch.h"
 #include "test_utils/fixture.h"
@@ -79,6 +80,26 @@ public:
         };
         return storage::log_builder(
           lconf().data_directory().as_sstring(), std::move(ntp));
+    }
+
+    model::ntp
+    make_default_ntp(model::topic topic, model::partition_id partition) {
+        auto ntp = model::ntp{
+          .ns = kafka::default_namespace(),
+          .tp = model::topic_partition{
+            .topic = topic,
+            .partition = partition,
+          },
+        };
+        return ntp;
+    }
+
+    storage::log_config make_default_config() {
+        storage::log_config config{
+          .base_dir = lconf().data_directory().as_sstring(),
+          .max_segment_size = std::numeric_limits<size_t>::max(),
+          .should_sanitize = storage::log_config::sanitize_files::yes};
+        return config;
     }
 
     ss::future<> recover_ntp(const model::ntp& ntp) {

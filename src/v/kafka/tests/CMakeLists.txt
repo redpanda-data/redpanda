@@ -90,7 +90,8 @@ rp_test(
   BINARY_NAME fetch_test
   SOURCES fetch_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
-  LIBRARIES Seastar::seastar_testing v::application v::raft v::kafka v::config v::storage_test_utils
+  LIBRARIES Seastar::seastar_testing v::application v::raft v::kafka v::config 
+            v::storage_test_utils
   ARGS "-- -c 1"
 )
 

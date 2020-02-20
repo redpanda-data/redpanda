@@ -209,21 +209,27 @@ FIXTURE_TEST(fetch_one, redpanda_thread_fixture) {
     model::topic topic("foo");
     model::partition_id pid(2);
     model::offset offset(0);
-    auto builder = make_tp_log_builder(topic, pid);
-    builder.segment().add_random_batch(1).flush().get();
-    recover_ntp(builder.ntp()).get();
+    auto ntp = make_default_ntp(topic, pid);
+    auto log_config = make_default_config();
+    {
+        using namespace storage;
+        disk_log_builder builder(log_config);
+        builder.start(ntp).get();
+        builder.add_segment(model::offset(0)).get();
+        builder.add_random_batch(model::offset(0), 10, compression::yes).get();
+        builder.stop().get();
+    }
 
-    auto shard = app.shard_table.local().shard_for(builder.ntp());
-    tests::cooperative_spin_wait_with_timeout(
-      10s,
-      [this, shard, ntp = builder.ntp()] {
-          return app.partition_manager.invoke_on(
-            *shard, [ntp](cluster::partition_manager& mgr) {
-                auto partition = mgr.get(ntp);
-                return partition->committed_offset() >= model::offset(1);
-            });
-      })
-      .get();
+    recover_ntp(ntp).get();
+    auto shard = app.shard_table.local().shard_for(ntp);
+
+    tests::cooperative_spin_wait_with_timeout(10s, [this, shard, ntp] {
+        return app.partition_manager.invoke_on(
+          *shard, [ntp](cluster::partition_manager& mgr) {
+              auto partition = mgr.get(ntp);
+              return partition->committed_offset() >= model::offset(1);
+          });
+    }).get();
 
     kafka::fetch_request req;
     req.max_bytes = std::numeric_limits<int32_t>::max();
