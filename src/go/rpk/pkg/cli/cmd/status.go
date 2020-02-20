@@ -81,7 +81,7 @@ func executeStatus(
 			}
 		}
 		payload := api.MetricsPayload{
-			uint64(metrics.CpuPercentage),
+			metrics.CpuPercentage,
 			metrics.FreeMemoryMB,
 			metrics.FreeSpaceMB,
 		}
