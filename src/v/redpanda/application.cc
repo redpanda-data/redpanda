@@ -189,14 +189,15 @@ void application::wire_up_services() {
       std::ref(config::shard_local_cfg()))
       .get();
     syschecks::systemd_message("Creating kafka group shard mapper");
-    construct_service(_group_shard_mapper, std::ref(shard_table)).get();
+    construct_service(_coordinator_ntp_mapper).get();
     syschecks::systemd_message("Creating kafka group router");
     construct_service(
       group_router,
       _scheduling_groups.kafka_sg(),
       _smp_groups.kafka_smp_sg(),
       std::ref(_group_manager),
-      std::ref(_group_shard_mapper))
+      std::ref(shard_table),
+      std::ref(_coordinator_ntp_mapper))
       .get();
 
     // rpc

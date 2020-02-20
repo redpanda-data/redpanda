@@ -11,12 +11,6 @@ ss::future<join_group_response>
 group_manager::join_group(join_group_request&& r) {
     kglog.trace("join request {}", r);
 
-    if (r.group_instance_id) {
-        kglog.trace("static group membership is unsupported");
-        return make_join_error(
-          unknown_member_id, error_code::unsupported_version);
-    }
-
     auto error = validate_group_status(r.group_id, join_group_api::key);
     if (error != error_code::none) {
         kglog.trace("request validation failed with error={}", error);
