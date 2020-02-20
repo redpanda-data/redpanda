@@ -125,6 +125,14 @@ rp_test(
   LIBRARIES Seastar::seastar_testing v::storage_test_utils
   LABELS storage
 )
+rp_test(
+  UNIT_TEST
+  BINARY_NAME disk_log_builder_test
+  SOURCES disk_log_builder_test.cc
+  LIBRARIES Seastar::seastar_testing v::storage_test_utils
+  ARGS "-- -c 1"
+  LABELS storage
+)
 
 # this test is only run on release builds because non-release builds use the
 # default allocator which doesn't support reclaim
