@@ -29,6 +29,9 @@ A few important notes:
 * Contains a `remote:` tag so the maintainer can pull and merge
 * Contains a `since v1:` that allows the reviewers to focus on the
   new edits and ensure that their comments were addressed.
+* Incremental patches must also contain the history of `since`. For
+  example, patch v3 must contain both `since v2`, `since v1` (most
+  recent version first)
 
 ## Each individual commit should look like:
 
@@ -171,7 +174,7 @@ git config --global diff.renames copies
 
 ## Commiting your changes
 
-Your modifications are made in your own private branch:
+Your modifications are made under your own fork and private branch.
 
 ```
 $ git checkout -b features/foo # branches from master
@@ -198,9 +201,15 @@ For multiple patches, use:
 $ git format-patch -v1 -<N> --cover-letter -o patches
 ```
 
-where N is the number of commits to include. In the cover letter, include an
-overview about the series, and a URL pointing to a git tree that can be pulled 
-from and merged into the upstream repo.
+where N is the number of commits to include. If your fork is up to date with 
+upstream/master instead of listing individual comits you can:
+
+```
+$ git format-patch -v1 master..HEAD --cover-letter -o patches
+```
+
+In the cover letter, include an overview about the series, and a URL pointing
+to a git tree that can be pulled from and merged into the upstream repo.
 
 For a single patch, do:
 
@@ -257,10 +266,16 @@ $ git format-patch -v2 ...
 Add a brief summary of changes in the new version, for example:
 
 ```
+---
 since v3:
     - declared move constructor and move assignment operator as noexcept
     - used std::variant instead of a union
     ...
+since v2:
+    - 
+    .
+since v1
+    -
 ```
 
 The summary should appear in the cover letter, below the overview, or, in case
