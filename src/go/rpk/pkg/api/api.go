@@ -12,9 +12,9 @@ import (
 const defaultUrl = "https://m.rp.vectorized.io"
 
 type MetricsPayload struct {
-	FreeMemory    uint64 `json:"freeMemory"`
-	FreeSpace     uint64 `json:"freeSpace"`
-	CpuPercentage uint64 `json:"cpuPercentage"`
+	FreeMemory    float64 `json:"freeMemory"`
+	FreeSpace     float64 `json:"freeSpace"`
+	CpuPercentage float64 `json:"cpuPercentage"`
 }
 
 type EnvironmentPayload struct {

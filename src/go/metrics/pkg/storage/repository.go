@@ -9,9 +9,9 @@ type Metrics struct {
 	ClusterId     string    `json:"clusterId,omitempty"`
 	NodeId        int       `json:"nodeId,omitempty"`
 	NodeUuid      string    `json:"nodeUuid,omitempty"`
-	FreeMemory    uint64    `json:"freeMemory,omitempty"`
-	FreeSpace     uint64    `json:"freeSpace,omitempty"`
-	CpuPercentage uint64    `json:"cpuPercentage,omitempty"`
+	FreeMemory    float64   `json:"freeMemory,omitempty"`
+	FreeSpace     float64   `json:"freeSpace,omitempty"`
+	CpuPercentage float64   `json:"cpuPercentage,omitempty"`
 }
 
 type Repository interface {

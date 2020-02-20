@@ -15,8 +15,8 @@ import (
 
 type Metrics struct {
 	CpuPercentage float64
-	FreeMemoryMB  uint64 // In MB
-	FreeSpaceMB   uint64 // In MB
+	FreeMemoryMB  float64
+	FreeSpaceMB   float64
 }
 
 func GatherMetrics(
@@ -34,13 +34,13 @@ func GatherMetrics(
 	if err != nil {
 		errs = append(errs, err)
 	} else {
-		metrics.FreeMemoryMB = memInfo.Available / 1024
+		metrics.FreeMemoryMB = float64(memInfo.Available) / 1024.0
 	}
 	diskInfo, err := disk.Usage(conf.Redpanda.Directory)
 	if err != nil {
 		errs = append(errs, err)
 	} else {
-		metrics.FreeSpaceMB = diskInfo.Free / 1024
+		metrics.FreeSpaceMB = float64(diskInfo.Free) / 1024.0
 	}
 
 	return metrics, errs
