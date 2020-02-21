@@ -160,7 +160,7 @@ private:
     // partition metadata are updated atomically
     ss::semaphore _sem{1};
     model::offset _raft0_cfg_offset;
-    partition_manager::notification_id_type _leader_notify_handle;
+    cluster::notification_id_type _leader_notify_handle;
     notification_latch _notification_latch;
     ss::abort_source _as;
 };
