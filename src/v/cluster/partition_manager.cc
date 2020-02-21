@@ -4,6 +4,7 @@
 #include "config/configuration.h"
 #include "model/metadata.h"
 #include "raft/consensus.h"
+#include "raft/rpc_client_protocol.h"
 #include "raft/types.h"
 #include "resource_mgmt/io_priority.h"
 
@@ -24,9 +25,9 @@ partition_manager::partition_manager(
       .base_dir = config::shard_local_cfg().data_directory().as_sstring(),
       .max_segment_size = config::shard_local_cfg().log_segment_size(),
       .should_sanitize = storage::log_config::sanitize_files::no})
-  , _hbeats(config::shard_local_cfg().raft_heartbeat_interval(), clients)
-  , _shard_table(nlc)
-  , _clients(clients) {}
+  , _client(raft::make_rpc_client_protocol(clients))
+  , _hbeats(config::shard_local_cfg().raft_heartbeat_interval(), _client)
+  , _shard_table(nlc) {}
 
 ss::future<> partition_manager::start() { return _hbeats.start(); }
 
@@ -95,7 +96,7 @@ ss::lw_shared_ptr<raft::consensus> partition_manager::make_consensus(
       _should_fsync,
       raft_priority(),
       _disk_timeout,
-      _clients,
+      _client,
       [this](raft::leadership_status st) {
           trigger_leadership_notification(std::move(st));
       },

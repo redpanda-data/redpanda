@@ -2,8 +2,10 @@
 
 #include "platform/stop_signal.h"
 #include "raft/consensus.h"
+#include "raft/consensus_client_protocol.h"
 #include "raft/heartbeat_manager.h"
 #include "raft/logger.h"
+#include "raft/rpc_client_protocol.h"
 #include "raft/service.h"
 #include "raft/tron/logger.h"
 #include "raft/tron/service.h"
@@ -73,8 +75,8 @@ public:
           .base_dir = directory,
           .max_segment_size = 1 << 30,
           .should_sanitize = storage::log_config::sanitize_files::yes})
-      , _hbeats(raft_heartbeat_interval, clients)
-      , _clients(clients) {}
+      , _consensus_client_protocol(raft::make_rpc_client_protocol(clients))
+      , _hbeats(raft_heartbeat_interval, _consensus_client_protocol) {}
 
     ss::lw_shared_ptr<raft::consensus> consensus_for(raft::group_id) {
         return _consensus;
@@ -92,7 +94,7 @@ public:
                 storage::log_append_config::fsync::yes,
                 ss::default_priority_class(),
                 std::chrono::seconds(1),
-                _clients,
+                _consensus_client_protocol,
                 [this](raft::leadership_status st) {
                     if (!st.current_leader) {
                         tronlog.info("No leader in group {}", st.group);
@@ -116,9 +118,9 @@ public:
 
 private:
     model::node_id _self;
+    raft::consensus_client_protocol _consensus_client_protocol;
     storage::log_manager _mngr;
     raft::heartbeat_manager _hbeats;
-    ss::sharded<rpc::connection_cache>& _clients;
     model::ntp _ntp{
       model::ns("master_control_program"),
       model::topic_partition{model::topic("tron"),

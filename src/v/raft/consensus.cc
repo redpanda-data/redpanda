@@ -1,10 +1,12 @@
 #include "raft/consensus.h"
 
 #include "likely.h"
+#include "raft/consensus_client_protocol.h"
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
 #include "raft/logger.h"
 #include "raft/recovery_stm.h"
+#include "raft/rpc_client_protocol.h"
 #include "raft/vote_stm.h"
 
 #include <seastar/core/fstream.hh>
@@ -22,7 +24,7 @@ consensus::consensus(
   storage::log_append_config::fsync should_fsync,
   ss::io_priority_class io_priority,
   model::timeout_clock::duration disk_timeout,
-  ss::sharded<rpc::connection_cache>& clis,
+  consensus_client_protocol client,
   consensus::leader_cb_t cb,
   std::optional<append_entries_cb_t>&& append_callback)
   : _self(std::move(nid))
@@ -31,7 +33,7 @@ consensus::consensus(
   , _should_fsync(should_fsync)
   , _io_priority(io_priority)
   , _disk_timeout(disk_timeout)
-  , _clients(clis)
+  , _client_protocol(client)
   , _leader_notification(std::move(cb))
   , _conf(std::move(initial_cfg))
   , _ctxlog(_self, group)
