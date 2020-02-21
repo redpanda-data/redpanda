@@ -367,6 +367,51 @@ controller::recover_topic_configuration(topic_configuration t_cfg) {
       [tp = t_cfg.topic](metadata_cache& md_c) { md_c.add_topic(tp); });
 }
 
+/// Creates the topics, this method forwards the request to leader controller
+/// if current node is not a leader.
+///
+/// After this method returns caller has following guaranetees for successfully
+/// created topics:
+///
+/// - metadata for those topics are updated on each core
+/// - Configuration is successfully replicated to majority of cluster members
+///
+/// In order to give the caller guarantee that topics metadata are up to date
+/// the leader controller response contains created topics metadata. Requesting
+/// controller use these to update its metadata cache. Otherwise it would have
+/// to wait for raft-0 append entries notification
+///
+/// Following sequence is realized by this method, for the sequence on leader
+/// controller, see create_topics method documentation.
+///
+///            +------------+       +-------------+    +------------+
+///            | Controller |       |  Metadata   |    |   Leader   |
+///            |            |       |   Cache     |    | Controller |
+///            +------+-----+       +------+------+    +-----+------+
+///                   |                    |                 |
+///                   |                    |                 |
+///  autocreate topics|                    |                 |
+///+----------------->+ [RPC]create topics |                 |
+///                   +------------------------------------->+
+///                   |                    |                 |
+///                   |                    |                 |
+///                   |                    |                 |
+///                   |  [RPC] response    |                 |
+///                   +<-------------------------------------+
+///                   |                    |                 |
+///                   |                    |                 |
+///                   |                    |                 |
+///                   |   update cache     |                 |
+///                   +------------------->+                 |
+///    results        |                    |                 |
+/// <-----------------+                    |                 |
+///                   |                    |                 |
+///                   |                    |                 |
+///                   |                    |                 |
+///                   +                    +                 +
+///
+///
+
 ss::future<std::vector<topic_result>> controller::autocreate_topics(
   std::vector<topic_configuration> topics,
   model::timeout_clock::time_point timeout) {
@@ -395,6 +440,44 @@ ss::future<std::vector<topic_result>> controller::autocreate_topics(
             });
       });
 }
+
+/// Create topics API for Kafka API handler to call.
+/// After this method returns caller has following guaranetees for successfully
+/// created topics:
+///
+/// - metadata for those topics are updated on each core
+/// - Configuration is successfully replicated to majority of cluster members
+/// - Topic partitons abstractions are created and ready to use
+///
+/// Following sequence is realized by this method
+///
+///      +-------------+    +------------+    +-------------+    +------------+
+///      |             |    |            |    |             |    |  Metadata  |
+///      |  Kafka API  |    | Controller |    |   Raft 0    |    |   Cache    |
+///      |             |    |            |    |             |    |            |
+///      +------+------+    +------+-----+    +------+------+    +-----+------+
+///             |                  |                 |                 |
+/// create topics|                  |                 |                 |
+///------------>+ create topics    |                 |                 |
+///             +----------------->+  replicate      |                 |
+///             |                  +---------------->+                 |
+///             |                  |                 |                 |
+///             |                  |                 |                 |
+///             |                  |                 |                 |
+///             |                  | append upcall   |                 |
+///             |                  +<----------------+                 |
+///             |                  |                 |                 |
+///             |                  |                 |                 |
+///             |                  |                 |                 |
+///             |                  | update cache    |                 |
+///             |                  +---------------------------------->+
+///             |   results        |                 |                 |
+///             +<-----------------+                 |                 |
+///  <----------+                  |                 |                 |
+///             |                  |                 |                 |
+///             |                  |                 |                 |
+///             +                  +                 +                 +
+///
 
 ss::future<std::vector<topic_result>> controller::create_topics(
   std::vector<topic_configuration> topics,
