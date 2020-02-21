@@ -34,38 +34,13 @@ vote_stm::~vote_stm() {
 }
 ss::future<result<vote_reply>> vote_stm::do_dispatch_one(model::node_id n) {
     using ret_t = result<vote_reply>;
-
     _ctxlog.trace("Sending vote request to {}", n);
-    auto shard = rpc::connection_cache::shard_for(n);
-    return ss::smp::submit_to(shard, [this, n]() mutable {
-        auto& local = _ptr->_clients.local();
-        if (!local.contains(n)) {
-            return ss::make_ready_future<ret_t>(errc::missing_tcp_client);
-        }
-        // make a local copy of `this->_req`
-        return local.get(n)->get_connected().then(
-          [this, r = _req, n](result<rpc::transport*> t) mutable {
-              if (!t) {
-                  return ss::make_ready_future<ret_t>(t.error());
-              }
-              auto tout = clock_type::now() + _ptr->_jit.base_duration();
-              auto f
-                = raftgen_client_protocol(*t.value()).vote(std::move(r), tout);
-              return wrap_exception_with_result<rpc::request_timeout_exception>(
-                       errc::timeout, std::move(f))
-                .then([n, this](auto r) {
-                    if (!r) {
-                        _ctxlog.info(
-                          "Error {} getting vote from {}", r.error(), n);
-                        return ss::make_ready_future<ret_t>(r.error());
-                    }
-                    _ctxlog.trace(
-                      "Got vote response {} from {}", r.value().data, n);
-                    return ss::make_ready_future<ret_t>(r.value().data); // copy
-                });
-          });
-    });
+    auto tout = clock_type::now() + _ptr->_jit.base_duration();
+
+    auto r = _req;
+    return _ptr->_client_protocol.vote(n, std::move(r), tout);
 }
+
 ss::future<> vote_stm::dispatch_one(model::node_id n) {
     return with_gate(_vote_bg, [this, n] {
         return with_semaphore(_sem, 1, [this, n] {
