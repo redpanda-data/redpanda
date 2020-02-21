@@ -3,11 +3,12 @@ v_cc_library(
     storage_test_utils
   HDRS
     "utils/random_batch.h"
+    "utils/disk_log_builder.h"
   SRCS
     "utils/random_batch.cc"
+    "utils/disk_log_builder.cc"
   DEPS
     v::storage
-  PUBLIC
 )
 
 rp_test(
