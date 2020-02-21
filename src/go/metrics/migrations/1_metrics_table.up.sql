@@ -5,8 +5,8 @@ CREATE TABLE IF NOT EXISTS metrics (
   cluster_id     varchar,
   node_id        integer,
   node_uuid      varchar,
-  free_memory    integer,
-  free_space     integer,
-  cpu_percentage integer
+  free_memory_mb numeric,
+  free_space_mb  numeric,
+  cpu_percentage numeric
 );
 CREATE INDEX metrics_received_at_idx ON metrics (received_at);

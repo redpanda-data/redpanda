@@ -18,8 +18,8 @@ func TestSendMetrics(t *testing.T) {
 		NodeId:       1,
 		SentAt:       time.Now(),
 		MetricsPayload: MetricsPayload{
-			FreeMemory:    100,
-			FreeSpace:     200,
+			FreeMemoryMB:  100,
+			FreeSpaceMB:   200,
 			CpuPercentage: 89,
 		},
 	}

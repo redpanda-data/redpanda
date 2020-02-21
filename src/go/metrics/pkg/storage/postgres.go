@@ -35,8 +35,8 @@ func (r *PostgresRepo) SaveMetrics(m Metrics) error {
 		" cluster_id," +
 		" node_id," +
 		" node_uuid," +
-		" free_memory," +
-		" free_space," +
+		" free_memory_mb," +
+		" free_space_mb," +
 		" cpu_percentage)" +
 		" VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9);"
 	stmt, err := r.Db.Prepare(query)
@@ -50,8 +50,8 @@ func (r *PostgresRepo) SaveMetrics(m Metrics) error {
 		m.ClusterId,
 		m.NodeId,
 		m.NodeUuid,
-		m.FreeMemory,
-		m.FreeSpace,
+		m.FreeMemoryMB,
+		m.FreeSpaceMB,
 		m.CpuPercentage,
 	)
 	if err != nil {
