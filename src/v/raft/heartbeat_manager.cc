@@ -1,6 +1,7 @@
 #include "raft/heartbeat_manager.h"
 
 #include "outcome_future_utils.h"
+#include "raft/consensus_client_protocol.h"
 #include "raft/errc.h"
 #include "raft/raftgen_service.h"
 #include "rpc/reconnect_transport.h"
@@ -59,9 +60,9 @@ static std::vector<heartbeat_manager::node_heartbeat> requests_for_range(
 }
 
 heartbeat_manager::heartbeat_manager(
-  duration_type interval, ss::sharded<rpc::connection_cache>& cls)
+  duration_type interval, consensus_client_protocol proto)
   : _heartbeat_interval(interval)
-  , _clients(cls) {
+  , _client_protocol(proto) {
     _heartbeat_timer.set_callback([this] { dispatch_heartbeats(); });
 }
 
@@ -77,35 +78,6 @@ ss::future<> heartbeat_manager::do_dispatch_heartbeats(
       });
 }
 
-static ss::future<result<heartbeat_reply>> send_beat(
-  rpc::connection_cache& local,
-  clock_type::time_point tmo,
-  heartbeat_manager::node_heartbeat&& r) {
-    using ret_t = result<heartbeat_reply>;
-    if (!local.contains(r.target)) {
-        return ss::make_ready_future<ret_t>(errc::missing_tcp_client);
-    }
-
-    return local.get(r.target)->get_connected().then(
-      [tmo, r = std::move(r)](result<rpc::transport*> t) mutable {
-          if (!t) {
-              return ss::make_ready_future<ret_t>(t.error());
-          }
-          hbeatlog.trace("sending hbeats to {} - {}", r.target, r.request);
-          auto f = raftgen_client_protocol(*(t.value()))
-                     .heartbeat(std::move(r.request), tmo);
-          return wrap_exception_with_result<rpc::request_timeout_exception>(
-                   errc::timeout, std::move(f))
-            .then([](auto r) {
-                if (!r) {
-                    return ss::make_ready_future<ret_t>(r.error());
-                }
-                // TODO: wrap in foreign ptr
-                return ss::make_ready_future<ret_t>(std::move(r.value().data));
-            });
-      });
-}
-
 ss::future<> heartbeat_manager::do_heartbeat(
   node_heartbeat&& r, clock_type::time_point next_timeout) {
     auto shard = rpc::connection_cache::shard_for(r.target);
@@ -113,11 +85,8 @@ ss::future<> heartbeat_manager::do_heartbeat(
     for (size_t i = 0; i < groups.size(); ++i) {
         groups[i] = group_id(r.request.meta[i].group);
     }
-    return ss::smp::submit_to(
-             shard,
-             [this, r = std::move(r), next_timeout]() mutable {
-                 return send_beat(_clients.local(), next_timeout, std::move(r));
-             })
+    return _client_protocol
+      .heartbeat(r.target, std::move(r.request), next_timeout)
       .then([node = r.target, groups = std::move(groups), this](
               result<heartbeat_reply> ret) mutable {
           process_reply(node, std::move(groups), std::move(ret));

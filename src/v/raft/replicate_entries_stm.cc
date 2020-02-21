@@ -82,33 +82,9 @@ replicate_entries_stm::send_append_entries_request(
   model::node_id n, append_entries_request req) {
     using ret_t = result<append_entries_reply>;
     _ptr->update_node_hbeat_timestamp(n);
-    auto shard = rpc::connection_cache::shard_for(n);
     _ctxlog.trace("Sending append entries request {} to {}", req.meta, n);
-    return ss::smp::submit_to(shard, [this, n, r = std::move(req)]() mutable {
-        auto& local = _ptr->_clients.local();
-        if (!local.contains(n)) {
-            return ss::make_ready_future<ret_t>(errc::missing_tcp_client);
-        }
-
-        return local.get(n)->get_connected().then(
-          [this, r = std::move(r)](result<rpc::transport*> t) mutable {
-              if (!t) {
-                  return ss::make_ready_future<ret_t>(t.error());
-              }
-              auto timeout = raft::clock_type::now()
-                             + _ptr->_jit.base_duration();
-              auto f = raftgen_client_protocol(*t.value())
-                         .append_entries(std::move(r), timeout);
-              return wrap_exception_with_result<rpc::request_timeout_exception>(
-                       errc::timeout, std::move(f))
-                .then([](auto r) {
-                    if (!r) {
-                        return ss::make_ready_future<ret_t>(r.error());
-                    }
-                    return ss::make_ready_future<ret_t>(r.value().data); // copy
-                });
-          });
-    });
+    auto timeout = raft::clock_type::now() + _ptr->_jit.base_duration();
+    return _ptr->_client_protocol.append_entries(n, std::move(req), timeout);
 }
 
 ss::future<> replicate_entries_stm::dispatch_one(retry_meta& meta) {

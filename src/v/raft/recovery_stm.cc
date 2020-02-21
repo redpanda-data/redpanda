@@ -117,34 +117,8 @@ ss::future<> recovery_stm::replicate(model::record_batch_reader&& reader) {
 
 ss::future<result<append_entries_reply>>
 recovery_stm::dispatch_append_entries(append_entries_request&& r) {
-    using ret_t = result<append_entries_reply>;
-    auto shard = rpc::connection_cache::shard_for(_node_id);
-    return ss::smp::submit_to(shard, [this, r = std::move(r)]() mutable {
-        auto& local = _ptr->_clients.local();
-        if (!local.contains(_node_id)) {
-            return ss::make_ready_future<ret_t>(errc::missing_tcp_client);
-        }
-        return local.get(_node_id)->get_connected().then(
-          [r = std::move(r)](result<rpc::transport*> cli) mutable {
-              if (!cli) {
-                  return ss::make_ready_future<ret_t>(cli.error());
-              }
-              // TODO: Make timeout configurable
-              auto f = raftgen_client_protocol(*cli.value())
-                         .append_entries(
-                           std::move(r), raft::clock_type::now() + 1s);
-              using rpc_ret_t
-                = result<rpc::client_context<append_entries_reply>, raft::errc>;
-              return wrap_exception_with_result<rpc::request_timeout_exception>(
-                       errc::timeout, std::move(f))
-                .then([](rpc_ret_t r) {
-                    if (!r) {
-                        return ss::make_ready_future<ret_t>(r.error());
-                    }
-                    return ss::make_ready_future<ret_t>(r.value().data);
-                });
-          });
-    });
+    return _ptr->_client_protocol.append_entries(
+      _node_id, std::move(r), raft::clock_type::now() + 1s);
 }
 
 bool recovery_stm::is_recovery_finished() {

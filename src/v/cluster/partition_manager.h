@@ -3,6 +3,7 @@
 #include "cluster/partition.h"
 #include "cluster/shard_table.h"
 #include "model/metadata.h"
+#include "raft/consensus_client_protocol.h"
 #include "raft/heartbeat_manager.h"
 #include "storage/log_manager.h"
 #include "utils/named_type.h"
@@ -80,12 +81,12 @@ private:
     model::timeout_clock::duration _disk_timeout;
 
     storage::log_manager _mngr;
+    raft::consensus_client_protocol _client;
     raft::heartbeat_manager _hbeats;
     /// used to wait for concurrent recoveries
     ss::gate _bg;
 
     ss::sharded<cluster::shard_table>& _shard_table;
-    ss::sharded<rpc::connection_cache>& _clients;
 
     notification_id_type _notification_id{0};
     std::vector<std::pair<notification_id_type, leader_cb_t>> _notifications;
