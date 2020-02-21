@@ -1,6 +1,7 @@
 #pragma once
 
 #include "model/fundamental.h"
+#include "raft/consensus_client_protocol.h"
 #include "raft/follower_stats.h"
 #include "raft/logger.h"
 #include "raft/probe.h"
@@ -39,7 +40,7 @@ public:
       storage::log_append_config::fsync should_fsync,
       ss::io_priority_class io_priority,
       model::timeout_clock::duration disk_timeout,
-      ss::sharded<rpc::connection_cache>&,
+      consensus_client_protocol,
       leader_cb_t,
       std::optional<append_entries_cb_t>&& = std::nullopt);
 
@@ -171,7 +172,7 @@ private:
     storage::log_append_config::fsync _should_fsync;
     ss::io_priority_class _io_priority;
     model::timeout_clock::duration _disk_timeout;
-    ss::sharded<rpc::connection_cache>& _clients;
+    consensus_client_protocol _client_protocol;
     leader_cb_t _leader_notification;
     model::offset _last_seen_config_offset;
     // _conf is set *both* in ctor with initial configuration

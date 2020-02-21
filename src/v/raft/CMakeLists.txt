@@ -20,6 +20,7 @@ v_cc_library(
     recovery_stm.cc
     follower_stats.cc
     replicate_batcher.cc
+    rpc_client_protocol.cc
   DEPS
     v::storage
     raft_rpc

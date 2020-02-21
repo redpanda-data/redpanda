@@ -2,7 +2,9 @@
 #include "model/metadata.h"
 #include "model/record_batch_reader.h"
 #include "raft/consensus.h"
+#include "raft/consensus_client_protocol.h"
 #include "raft/heartbeat_manager.h"
+#include "raft/rpc_client_protocol.h"
 #include "raft/service.h"
 #include "random/generators.h"
 #include "rpc/connection_cache.h"
@@ -71,7 +73,7 @@ struct raft_node {
           storage::log_append_config::fsync::yes,
           seastar::default_priority_class(),
           std::chrono::seconds(10),
-          cache,
+          raft::make_rpc_client_protocol(cache),
           [this](raft::leadership_status st) { leader_callback(st); }))
       , leader_callback(std::move(l_clb)) {
         // init cache
@@ -113,7 +115,7 @@ struct raft_node {
           .get0();
         server.invoke_on_all(&rpc::server::start).get0();
         hbeats = std::make_unique<raft::heartbeat_manager>(
-          heartbeat_interval, cache);
+          heartbeat_interval, raft::make_rpc_client_protocol(cache));
         hbeats->start().get0();
         consensus->start().get0();
         hbeats->register_group(consensus);

@@ -2,6 +2,7 @@
 
 #include "outcome.h"
 #include "raft/consensus.h"
+#include "raft/consensus_client_protocol.h"
 #include "raft/types.h"
 #include "rpc/connection_cache.h"
 
@@ -41,8 +42,7 @@ public:
         model::node_id target;
         heartbeat_request request;
     };
-    heartbeat_manager(
-      duration_type interval, ss::sharded<rpc::connection_cache>&);
+    heartbeat_manager(duration_type interval, consensus_client_protocol);
 
     void register_group(ss::lw_shared_ptr<consensus>);
     void deregister_group(raft::group_id);
@@ -79,6 +79,6 @@ private:
     /// insertion/deletion happens very infrequently.
     /// this is optimized for traversal + finding
     consensus_set _consensus_groups;
-    ss::sharded<rpc::connection_cache>& _clients;
+    consensus_client_protocol _client_protocol;
 };
 } // namespace raft
