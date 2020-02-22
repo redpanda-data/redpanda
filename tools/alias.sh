@@ -6,6 +6,7 @@ function vtools_reinstall() {
   python3 -mvenv "${tld}/build/venv/v/"
   source "${tld}/build/venv/v/bin/activate"
   pip install -e "${tld}/tools"
+  deactivate
 }
 
 function vtools() {
