@@ -14,31 +14,24 @@ public:
     explicit log_replayer(segment& seg) noexcept
       : _seg(&seg) {}
 
-    class [[nodiscard]] recovered {
-        explicit recovered(
-          bool good, std::optional<model::offset> offset) noexcept
-          : _good(good)
-          , _last_valid_offset(std::move(offset)) {}
-
-    public:
-        operator bool() const { return _good; }
-
-        std::optional<model::offset> last_valid_offset() const {
-            return _last_valid_offset;
+    struct checkpoint {
+        std::optional<model::offset> last_offset;
+        std::optional<size_t> truncate_file_pos;
+        explicit operator bool() const {
+            return last_offset && truncate_file_pos;
         }
-
-    private:
-        bool _good;
-        std::optional<model::offset> _last_valid_offset;
-
-        friend class log_replayer;
     };
 
+    const checkpoint& last_checkpoint() const { return _ckpt; }
+
     // Must be called in the context of a ss::thread
-    recovered recover_in_thread(const ss::io_priority_class&);
+    checkpoint recover_in_thread(const ss::io_priority_class&);
 
 private:
+    checkpoint _ckpt;
     segment* _seg;
 };
+
+std::ostream& operator<<(std::ostream&, const log_replayer::checkpoint&);
 
 } // namespace storage
