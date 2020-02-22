@@ -78,7 +78,8 @@ class VConfig(object):
                 f'{self.build_dir}/v_deps_install')
 
         self._kv = kv.vectorized_kv(self._cfg['build']['src'])
-        self._gopath = f"{self._cfg['build']['gopath']}/go"
+        self._gopath = os.path.abspath(f"{self._cfg['build']['gopath']}/go")
+        self._src_dir = os.path.abspath(self._cfg['build']['src'])
 
         # create a dict with minimal set of environment variables
         self._environ = {
@@ -130,7 +131,7 @@ class VConfig(object):
     @property
     def src_dir(self):
         """Path to source directory folder."""
-        return self._cfg['build']['src']
+        return self._src_dir
 
     @property
     def build_root(self):
