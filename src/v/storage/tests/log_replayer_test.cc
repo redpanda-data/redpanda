@@ -87,11 +87,10 @@ SEASTAR_THREAD_TEST_CASE(test_can_recover_single_batch) {
     auto batches = test::make_random_batches(model::offset(1), 1);
     auto last_offset = batches.back().last_offset();
     ctx.write(batches);
-    auto recovered = ctx.replayer().recover_in_thread(
-      ss::default_priority_class());
+    storage::log_replayer::checkpoint recovered
+      = ctx.replayer().recover_in_thread(ss::default_priority_class());
     BOOST_REQUIRE(bool(recovered));
-    BOOST_CHECK(bool(recovered.last_valid_offset()));
-    BOOST_CHECK_EQUAL(recovered.last_valid_offset().value(), last_offset);
+    BOOST_CHECK_EQUAL(recovered.last_offset.value(), last_offset);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_unrecovered_single_batch) {
@@ -103,7 +102,6 @@ SEASTAR_THREAD_TEST_CASE(test_unrecovered_single_batch) {
         auto recovered = ctx.replayer().recover_in_thread(
           ss::default_priority_class());
         BOOST_CHECK(!bool(recovered));
-        BOOST_CHECK(!bool(recovered.last_valid_offset()));
     }
     {
         context ctx;
@@ -113,7 +111,6 @@ SEASTAR_THREAD_TEST_CASE(test_unrecovered_single_batch) {
         auto recovered = ctx.replayer().recover_in_thread(
           ss::default_priority_class());
         BOOST_CHECK(!bool(recovered));
-        BOOST_CHECK(!bool(recovered.last_valid_offset()));
     }
 }
 
@@ -124,7 +121,6 @@ SEASTAR_THREAD_TEST_CASE(test_malformed_segment) {
     auto recovered = ctx.replayer().recover_in_thread(
       ss::default_priority_class());
     BOOST_CHECK(!bool(recovered));
-    BOOST_CHECK(!bool(recovered.last_valid_offset()));
 }
 
 SEASTAR_THREAD_TEST_CASE(test_can_recover_multiple_batches) {
@@ -135,12 +131,12 @@ SEASTAR_THREAD_TEST_CASE(test_can_recover_multiple_batches) {
     auto recovered = ctx.replayer().recover_in_thread(
       ss::default_priority_class());
     BOOST_CHECK(bool(recovered));
-    BOOST_CHECK(bool(recovered.last_valid_offset()));
-    BOOST_CHECK_EQUAL(recovered.last_valid_offset().value(), last_offset);
+    BOOST_CHECK_EQUAL(recovered.last_offset.value(), last_offset);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_unrecovered_multiple_batches) {
     {
+        // bad crc test
         context ctx;
         auto batches = test::make_random_batches(model::offset(1), 10);
         batches.back().header().crc = 10;
@@ -148,11 +144,11 @@ SEASTAR_THREAD_TEST_CASE(test_unrecovered_multiple_batches) {
         ctx.write(batches);
         auto recovered = ctx.replayer().recover_in_thread(
           ss::default_priority_class());
-        BOOST_CHECK(!bool(recovered));
-        BOOST_CHECK(bool(recovered.last_valid_offset()));
-        BOOST_CHECK_EQUAL(recovered.last_valid_offset().value(), last_offset);
+        BOOST_CHECK(bool(recovered));
+        BOOST_CHECK_EQUAL(recovered.last_offset.value(), last_offset);
     }
     {
+        // timestamp test
         context ctx;
         auto batches = test::make_random_batches(model::offset(1), 10);
         batches.back().header().first_timestamp = model::timestamp(10);
@@ -160,8 +156,7 @@ SEASTAR_THREAD_TEST_CASE(test_unrecovered_multiple_batches) {
         ctx.write(batches);
         auto recovered = ctx.replayer().recover_in_thread(
           ss::default_priority_class());
-        BOOST_CHECK(!bool(recovered));
-        BOOST_CHECK(bool(recovered.last_valid_offset()));
-        BOOST_CHECK_EQUAL(recovered.last_valid_offset().value(), last_offset);
+        BOOST_CHECK(bool(recovered));
+        BOOST_CHECK_EQUAL(recovered.last_offset.value(), last_offset);
     }
 }

@@ -37,6 +37,7 @@ log_segment_reader::data_stream(uint64_t pos, const ss::io_priority_class& pc) {
 }
 
 ss::future<> log_segment_reader::truncate(size_t n) {
+    _file_size = n;
     return ss::open_file_dma(_filename, ss::open_flags::rw)
       .then([n](ss::file f) {
           return f.truncate(n)

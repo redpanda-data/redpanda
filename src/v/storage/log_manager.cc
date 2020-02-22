@@ -156,15 +156,10 @@ static ss::future<log_set> do_recover(log_set&& segments) {
                   .get();
                 continue;
             }
-            // Max offset is inclusive
-            s->reader()->set_last_written_offset(
-              *recovered.last_valid_offset());
-            if (s->reader()->empty()) {
-                // it means there was only one file to recover and the index
-                // has the right value
-                s->reader()->set_last_written_offset(
-                  s->oindex()->last_seen_offset());
-            }
+            s->truncate(
+               recovered.last_offset.value(),
+               recovered.truncate_file_pos.value())
+              .get();
             // persist index
             s->oindex()->flush().get();
             stlog.info("Recovered: {}", s);
