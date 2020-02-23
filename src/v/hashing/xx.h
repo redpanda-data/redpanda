@@ -36,6 +36,10 @@ public:
     void update(T t) {
         update((const char*)&t, sizeof(T));
     }
+    template<typename... T>
+    void update_all(T... t) {
+        (update(t), ...);
+    }
 
     uint64_t digest() { return XXH64_digest(&_state); }
 
