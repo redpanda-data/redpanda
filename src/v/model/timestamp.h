@@ -25,6 +25,7 @@ public:
       : _v(v) {}
 
     constexpr type value() const noexcept { return _v; }
+    constexpr type operator()() const noexcept { return _v; }
 
     constexpr static timestamp min() noexcept { return timestamp(0); }
 
