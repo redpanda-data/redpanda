@@ -15,8 +15,7 @@ v_cc_library(
     log_segment_appender.cc
     log_set.cc
     segment.cc
-    segment_offset_index.cc
-    segment_offset_index_utils.cc
+    segment_index.cc
     log_segment_appender_utils.cc
     batch_cache.cc
     index_state.cc

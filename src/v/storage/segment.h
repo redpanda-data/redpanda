@@ -3,7 +3,7 @@
 #include "storage/batch_cache.h"
 #include "storage/log_segment_appender.h"
 #include "storage/log_segment_reader.h"
-#include "storage/segment_offset_index.h"
+#include "storage/segment_index.h"
 #include "storage/types.h"
 
 #include <seastar/core/file.hh>
@@ -13,7 +13,7 @@ class segment {
 public:
     segment(
       segment_reader_ptr,
-      segment_offset_index_ptr,
+      segment_index_ptr,
       segment_appender_ptr,
       batch_cache_index_ptr) noexcept;
 
@@ -54,8 +54,8 @@ public:
     // please use higher level API's when possible
 
     segment_reader_ptr reader() const { return _reader; }
-    segment_offset_index_ptr& oindex() { return _oidx; }
-    const segment_offset_index_ptr& oindex() const { return _oidx; }
+    segment_index_ptr& index() { return _idx; }
+    const segment_index_ptr& index() const { return _idx; }
     segment_appender_ptr& appender() { return _appender; }
     const segment_appender_ptr& appender() const { return _appender; }
     bool has_appender() const { return bool(_appender); }
@@ -97,7 +97,7 @@ private:
     // last offset of the last batch, i.e.: batch.last_offset()
     model::offset _dirty_offset;
     segment_reader_ptr _reader;
-    segment_offset_index_ptr _oidx;
+    segment_index_ptr _idx;
     segment_appender_ptr _appender = nullptr;
     batch_cache_index_ptr _cache;
 };

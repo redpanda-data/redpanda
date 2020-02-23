@@ -124,7 +124,7 @@ delete_full_segments(std::vector<std::unique_ptr<segment>> to_remove) {
                     stlog.info("error:{} closing segment: {}", e, *s);
                 })
                 .then([&s] { return ss::remove_file(s->reader()->filename()); })
-                .then([&s] { return ss::remove_file(s->oindex()->filename()); })
+                .then([&s] { return ss::remove_file(s->index()->filename()); })
                 .handle_exception([&s](std::exception_ptr e) {
                     stlog.info("error:{} removing segment files: {}", e, *s);
                 });
@@ -160,12 +160,12 @@ ss::future<> disk_log_impl::do_truncate(model::offset o) {
           }
           auto& last = *_segs.back();
           if (o <= last.dirty_offset() && o >= last.reader()->base_offset()) {
-              auto pidx = last.oindex()->lower_bound_pair(o);
-              model::offset start = last.oindex()->base_offset();
+              auto pidx = last.index()->find_nearest(o);
+              model::offset start = last.index()->base_offset();
               size_t initial_size = 0;
               if (pidx) {
-                  start = pidx->first;
-                  initial_size = pidx->second;
+                  start = pidx->offset;
+                  initial_size = pidx->filepos;
               }
               // TODO: pass a priority for truncate
               auto rdr = make_reader(
