@@ -48,8 +48,7 @@ public:
               header);
             return stop_parser::yes;
         }
-        _seg->oindex()->maybe_track(
-          header.base_offset, physical_base_offset, size_on_disk);
+        _seg->index()->maybe_track(header, physical_base_offset);
         _current_batch_crc = header.crc;
         _file_pos_to_end_of_batch = size_on_disk + physical_base_offset;
         _last_offset = header.last_offset();

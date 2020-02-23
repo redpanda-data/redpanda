@@ -9,7 +9,7 @@
 #include "storage/log_set.h"
 #include "storage/logger.h"
 #include "storage/segment.h"
-#include "storage/segment_offset_index.h"
+#include "storage/segment_index.h"
 #include "utils/directory_walker.h"
 #include "utils/file_sanitizer.h"
 
@@ -86,7 +86,7 @@ ss::future<std::unique_ptr<segment>> log_manager::do_make_log_segment(
                     return ss::make_ready_future<std::unique_ptr<segment>>(
                       std::make_unique<segment>(
                         seg->reader(),
-                        std::move(seg->oindex()),
+                        std::move(seg->index()),
                         std::move(a),
                         std::move(cache)));
                 } catch (...) {
@@ -117,12 +117,12 @@ static ss::future<log_set> do_recover(log_set&& segments) {
           good.begin(), good.end(), [](std::unique_ptr<segment>& ss) {
               auto& s = *ss;
               try {
-                  return s.oindex()->materialize_index().get0();
+                  return s.index()->materialize_index().get0();
               } catch (...) {
                   stlog.info(
                     "Error materializing index:{}. Recovering parent "
                     "segment:{}. Details:{}",
-                    s.oindex()->filename(),
+                    s.index()->filename(),
                     s.reader()->filename(),
                     std::current_exception());
               }
@@ -141,7 +141,7 @@ static ss::future<log_set> do_recover(log_set&& segments) {
                 stlog.info("Removing empty segment: {}", s);
                 s->close().get();
                 ss::remove_file(s->reader()->filename()).get();
-                ss::remove_file(s->oindex()->filename()).get();
+                ss::remove_file(s->index()->filename()).get();
                 continue;
             }
             auto replayer = log_replayer(*s);
@@ -161,7 +161,7 @@ static ss::future<log_set> do_recover(log_set&& segments) {
                recovered.truncate_file_pos.value())
               .get();
             // persist index
-            s->oindex()->flush().get();
+            s->index()->flush().get();
             stlog.info("Recovered: {}", s);
             good.emplace_back(std::move(s));
         }
@@ -221,10 +221,10 @@ log_manager::open_segment(const std::filesystem::path& path, size_t buf_size) {
             buf_size);
       })
       .then([this](segment_reader_ptr ptr) {
-          auto oindex_name = ptr->filename() + ".offset_index";
+          auto index_name = ptr->filename() + ".offset_index";
           return ss::open_file_dma(
-                   oindex_name, ss::open_flags::create | ss::open_flags::rw)
-            .then_wrapped([ptr, oindex_name](ss::future<ss::file> f) {
+                   index_name, ss::open_flags::create | ss::open_flags::rw)
+            .then_wrapped([ptr, index_name](ss::future<ss::file> f) {
                 try {
                     auto fd = f.get0();
                     return ss::make_ready_future<ss::file>(fd);
@@ -235,17 +235,16 @@ log_manager::open_segment(const std::filesystem::path& path, size_t buf_size) {
                       });
                 }
             })
-            .then([this, ptr, oindex_name](ss::file f) {
+            .then([this, ptr, index_name](ss::file f) {
                 if (_config.should_sanitize) {
                     f = ss::file(
                       ss::make_shared(file_io_sanitizer(std::move(f))));
                 }
-                segment_offset_index_ptr idx
-                  = std::make_unique<segment_offset_index>(
-                    oindex_name,
-                    f,
-                    ptr->base_offset(),
-                    segment_offset_index::default_data_buffer_step);
+                segment_index_ptr idx = std::make_unique<segment_index>(
+                  index_name,
+                  f,
+                  ptr->base_offset(),
+                  segment_index::default_data_buffer_step);
                 auto cache = std::make_unique<batch_cache_index>(_batch_cache);
                 return ss::make_ready_future<std::unique_ptr<segment>>(
                   std::make_unique<segment>(

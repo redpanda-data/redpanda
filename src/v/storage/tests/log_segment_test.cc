@@ -1,6 +1,6 @@
 #include "storage/log_segment_reader.h"
 #include "storage/log_set.h"
-#include "storage/segment_offset_index.h"
+#include "storage/segment_index.h"
 
 #include <seastar/core/simple-stream.hh>
 #include <seastar/core/thread.hh>
@@ -24,7 +24,7 @@ SEASTAR_THREAD_TEST_CASE(test_read_write) {
       model::offset(0),
       0,
       1024);
-    auto log_idx = std::make_unique<segment_offset_index>(
+    auto log_idx = std::make_unique<segment_index>(
       "test.offset_index",
       ss::open_file_dma(
         "test.offset_index", ss::open_flags::create | ss::open_flags::rw)
