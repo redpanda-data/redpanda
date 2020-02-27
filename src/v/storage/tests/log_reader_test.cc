@@ -29,7 +29,7 @@ struct context {
                         ss::open_flags::create | ss::open_flags::rw)
                         .get0();
             auto fidx = ss::open_file_dma(
-                          "test" + ss::to_sstring(id) + ".offset_index",
+                          "test" + ss::to_sstring(id) + ".index",
                           ss::open_flags::create | ss::open_flags::rw)
                           .get0();
             fd = ss::file(ss::make_shared(file_io_sanitizer(std::move(fd))));
@@ -46,8 +46,8 @@ struct context {
               batches.begin()->base_offset(),
               appender.file_byte_offset(),
               128);
-            auto log_idx = std::make_unique<segment_offset_index>(
-              "test" + ss::to_sstring(id) + ".offset_index",
+            auto log_idx = std::make_unique<segment_index>(
+              "test" + ss::to_sstring(id) + ".index",
               std::move(fidx),
               batches.begin()->base_offset(),
               4096);

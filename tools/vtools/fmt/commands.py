@@ -173,6 +173,7 @@ def _shfmt(vconfig, ref, check):
 
 def _fmt(vconfig, exts, cmd, args, ref, check):
     for f in _git_files(vconfig, exts, ref):
+        f = f'{vconfig.src_dir}/{f}'
         try:
             ret = shell.raw_check_output(
                 f'cd {vconfig.src_dir} && {cmd} {args} {f}',
