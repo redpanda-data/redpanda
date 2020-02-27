@@ -1,6 +1,6 @@
 # Redpanda Documentation
 
-{{client_name}}, {{date}}
+{{customer_name}}, {{date}}
 
 ## Installation
 To get started with redpanda, first set up the package repository:

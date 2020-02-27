@@ -31,7 +31,7 @@ def onboard(access_token, customer_name, customer_id, docs_out_dir):
         f'{os.path.dirname(__file__)}/docs-template.md',
         f'{docs_out_dir}/docs.md', {
             'customer_name': customer_name,
-            'master_token': master_token,
+            'master_token': master_token['value'],
             'date': date.today()
         })
 
