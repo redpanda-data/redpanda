@@ -3,7 +3,7 @@
 #include "storage/log_replayer.h"
 #include "storage/log_segment_appender_utils.h"
 #include "storage/log_segment_reader.h"
-#include "storage/segment_offset_index.h"
+#include "storage/segment_index.h"
 #include "storage/tests/utils/random_batch.h"
 #include "utils/file_sanitizer.h"
 
@@ -26,7 +26,7 @@ struct context {
                     base_name, ss::open_flags::create | ss::open_flags::rw)
                     .get0();
         auto fidx = ss::open_file_dma(
-                      base_name + ".offset_index",
+                      base_name + ".index",
                       ss::open_flags::create | ss::open_flags::rw)
                       .get0();
         fd = ss::file(ss::make_shared(file_io_sanitizer(std::move(fd))));
@@ -34,8 +34,8 @@ struct context {
 
         auto appender = std::make_unique<log_segment_appender>(
           fd, log_segment_appender::options(ss::default_priority_class()));
-        auto indexer = std::make_unique<segment_offset_index>(
-          base_name + ".offset_index", std::move(fidx), base, 4096);
+        auto indexer = std::make_unique<segment_index>(
+          base_name + ".index", std::move(fidx), base, 4096);
         auto reader = ss::make_lw_shared<log_segment_reader>(
           base_name,
           ss::open_file_dma(base_name, ss::open_flags::ro).get0(),

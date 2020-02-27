@@ -38,7 +38,7 @@ struct context {
 
         auto appender = std::make_unique<log_segment_appender>(
           fd, log_segment_appender::options(ss::default_priority_class()));
-        auto indexer = std::make_unique<segment_offset_index>(
+        auto indexer = std::make_unique<segment_index>(
           base_name + ".offset_index", std::move(fidx), base, 4096);
         auto reader = ss::make_lw_shared<log_segment_reader>(
           base_name,
