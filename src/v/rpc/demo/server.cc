@@ -4,6 +4,7 @@
 #include "rpc/demo/simple_service.h"
 #include "rpc/simple_protocol.h"
 #include "syschecks/syschecks.h"
+#include "vlog.h"
 
 #include <seastar/core/app-template.hh>
 #include <seastar/core/sharded.hh>
@@ -84,7 +85,7 @@ int main(int args, char** argv, char** env) {
                 scfg.credentials = std::move(builder);
             }
             serv.start(scfg).get();
-            lgr.info("registering service on all cores");
+            vlog(lgr.info, "registering service on all cores");
             serv
               .invoke_on_all([](rpc::server& s) {
                   auto proto = std::make_unique<rpc::simple_protocol>();
@@ -94,7 +95,7 @@ int main(int args, char** argv, char** env) {
                   s.set_protocol(std::move(proto));
               })
               .get();
-            lgr.info("Invoking rpc start on all cores");
+            vlog(lgr.info, "Invoking rpc start on all cores");
             serv.invoke_on_all(&rpc::server::start).get();
         });
     });

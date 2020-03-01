@@ -1,5 +1,7 @@
 #include "finjector/hbadger.h"
 
+#include "vlog.h"
+
 #include <seastar/util/log.hh>
 
 namespace finjector {
@@ -8,10 +10,10 @@ ss::logger log{"fault_injector"};
 
 void honey_badger::register_probe(std::string_view view, probe* p) {
     if (p && p->is_enabled()) {
-        log.trace("Probe registration: {}", view);
+        vlog(log.trace, "Probe registration: {}", view);
         _probes.insert({ss::sstring(view), p});
     } else {
-        log.debug("Invalid probe: {}", view);
+        vlog(log.debug, "Invalid probe: {}", view);
     }
 }
 void honey_badger::deregister_probe(std::string_view view) {
@@ -26,7 +28,7 @@ void honey_badger::set_exception(
   const ss::sstring& module, const ss::sstring& point) {
     if (auto it = _probes.find(module); it != _probes.end()) {
         auto& [_, p] = *it;
-        log.debug("Setting exception probe: {}-{}", module, point);
+        vlog(log.debug, "Setting exception probe: {}-{}", module, point);
         p->set_exception(point);
     }
 }
@@ -34,7 +36,7 @@ void honey_badger::set_delay(
   const ss::sstring& module, const ss::sstring& point) {
     if (auto it = _probes.find(module); it != _probes.end()) {
         auto& [_, p] = *it;
-        log.debug("Setting delay probe: {}-{}", module, point);
+        vlog(log.debug, "Setting delay probe: {}-{}", module, point);
         p->set_delay(point);
     }
 }
@@ -42,14 +44,14 @@ void honey_badger::set_termination(
   const ss::sstring& module, const ss::sstring& point) {
     if (auto it = _probes.find(module); it != _probes.end()) {
         auto& [_, p] = *it;
-        log.debug("Setting termination probe: {}-{}", module, point);
+        vlog(log.debug, "Setting termination probe: {}-{}", module, point);
         p->set_termination(point);
     }
 }
 void honey_badger::unset(const ss::sstring& module, const ss::sstring& point) {
     if (auto it = _probes.find(module); it != _probes.end()) {
         auto& [_, p] = *it;
-        log.debug("Unsetting probes: {}-{}", module, point);
+        vlog(log.debug, "Unsetting probes: {}-{}", module, point);
         p->unset(point);
     }
 }

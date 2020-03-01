@@ -6,6 +6,7 @@
 #include "storage/logger.h"
 #include "storage/parser.h"
 #include "utils/vint.h"
+#include "vlog.h"
 
 #include <limits>
 #include <type_traits>
@@ -25,24 +26,30 @@ public:
       size_t size_on_disk) override {
         const auto filesize = _seg->reader()->file_size();
         if (header.base_offset() < 0) {
-            stlog.info(
+            vlog(
+              stlog.info,
               "Invalid base offset detected:{}, stopping parser",
               header.base_offset());
             return stop_parser::yes;
         }
         if (size_on_disk > max_segment_size) {
-            stlog.info(
+            vlog(
+              stlog.info,
               "Invalid batch size:{}, file_size:{}, stopping parser",
               size_on_disk,
               filesize);
             return stop_parser::yes;
         }
         if (!header.attrs.is_valid_compression()) {
-            stlog.info("Invalid compression:{}. stopping parser", header.attrs);
+            vlog(
+              stlog.info,
+              "Invalid compression:{}. stopping parser",
+              header.attrs);
             return stop_parser::yes;
         }
         if ((header.size_bytes + physical_base_offset) > filesize) {
-            stlog.info(
+            vlog(
+              stlog.info,
               "offset + batch_size:{} exceeds filesize:{}, Stopping parsing",
               (header.size_bytes + physical_base_offset),
               header);

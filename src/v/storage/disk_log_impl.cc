@@ -10,6 +10,7 @@
 #include "storage/offset_to_filepos_consumer.h"
 #include "storage/version.h"
 #include "vassert.h"
+#include "vlog.h"
 
 #include <seastar/core/fair_queue.hh>
 #include <seastar/core/future-util.hh>
@@ -121,12 +122,13 @@ delete_full_segments(std::vector<std::unique_ptr<segment>> to_remove) {
           return ss::do_for_each(remove, [](std::unique_ptr<segment>& s) {
               return s->close()
                 .handle_exception([&s](std::exception_ptr e) {
-                    stlog.info("error:{} closing segment: {}", e, *s);
+                    vlog(stlog.info, "error:{} closing segment: {}", e, *s);
                 })
                 .then([&s] { return ss::remove_file(s->reader()->filename()); })
                 .then([&s] { return ss::remove_file(s->index()->filename()); })
                 .handle_exception([&s](std::exception_ptr e) {
-                    stlog.info("error:{} removing segment files: {}", e, *s);
+                    vlog(
+                      stlog.info, "error:{} removing segment files: {}", e, *s);
                 });
           });
       });
@@ -135,7 +137,8 @@ delete_full_segments(std::vector<std::unique_ptr<segment>> to_remove) {
 ss::future<> disk_log_impl::do_truncate(model::offset o) {
     if (o > max_offset() || o < start_offset()) {
         // out of range
-        stlog.info("Truncate offset: '{}' is out of range for {}", o, *this);
+        vlog(
+          stlog.info, "Truncate offset: '{}' is out of range for {}", o, *this);
         return ss::make_ready_future<>();
     }
     std::vector<std::unique_ptr<segment>> to_remove;
@@ -147,8 +150,11 @@ ss::future<> disk_log_impl::do_truncate(model::offset o) {
     }
     for (size_t i = 0, max = std::distance(begin_remove, _segs.end()); i < max;
          ++i) {
-        stlog.info(
-          "Truncating full {}. tuncation offset request:{}", _segs.back(), o);
+        vlog(
+          stlog.info,
+          "Truncating full {}. tuncation offset request:{}",
+          _segs.back(),
+          o);
         to_remove.emplace_back(std::move(_segs.back()));
         _segs.pop_back();
     }
@@ -190,7 +196,8 @@ ss::future<> disk_log_impl::do_truncate(model::offset o) {
               std::vector<std::unique_ptr<segment>> rem;
               rem.emplace_back(std::move(_segs.back()));
               _segs.pop_back();
-              stlog.info(
+              vlog(
+                stlog.info,
                 "Truncating full segment, after indexing:{}, :{}",
                 prev_last_offset,
                 rem.back());
