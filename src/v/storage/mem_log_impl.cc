@@ -13,14 +13,28 @@
 #include <boost/container/flat_map.hpp>
 #include <boost/intrusive/list_hook.hpp>
 namespace storage {
+struct entries_ordering {
+    bool operator()(
+      const model::record_batch& e1, const model::record_batch& e2) const {
+        return e1.base_offset() < e2.base_offset();
+    }
+    bool operator()(const model::record_batch& e1, model::offset value) const {
+        return e1.header().last_offset() < value;
+    }
+    bool
+    operator()(const model::record_batch& e1, model::timestamp value) const {
+        return e1.header().first_timestamp < value;
+    }
+};
+
 struct mem_log_impl;
 // makes a copy of every batch starting at some iterator
 class mem_iter_reader final
   : public model::record_batch_reader::impl
   , public boost::intrusive::list_base_hook<> {
 public:
-    using map_t = std::map<model::offset, model::record_batch>;
-    using iterator = typename map_t::iterator;
+    using underlying_t = std::vector<model::record_batch>;
+    using iterator = typename underlying_t::iterator;
     mem_iter_reader(
       boost::intrusive::list<mem_iter_reader>& hook,
       iterator begin,
@@ -36,19 +50,20 @@ public:
     mem_iter_reader& operator=(const mem_iter_reader&) = delete;
     mem_iter_reader(mem_iter_reader&&) noexcept = default;
     mem_iter_reader& operator=(mem_iter_reader&&) noexcept = default;
-    ~mem_iter_reader() override {
+    ~mem_iter_reader() final {
         _hook.get().erase(_hook.get().iterator_to(*this));
     }
 
     bool end_of_stream() const final {
-        return _end_of_stream || _cur == _end || _cur->first > _endoffset;
+        return _end_of_stream || _cur == _end
+               || _cur->base_offset() > _endoffset;
     }
 
     ss::future<ss::circular_buffer<model::record_batch>>
     do_load_slice(model::timeout_clock::time_point) final {
         ss::circular_buffer<model::record_batch> ret;
         if (!end_of_stream()) {
-            ret.push_back(_cur->second.share());
+            ret.push_back(_cur->share());
             _cur = std::next(_cur);
         } else {
             _end_of_stream = true;
@@ -80,14 +95,12 @@ public:
       , _min_offset(min_offset)
       , _cur_offset(min_offset) {}
 
-    virtual ss::future<> initialize() override {
-        return ss::make_ready_future<>();
-    }
+    ss::future<> initialize() final { return ss::make_ready_future<>(); }
 
-    virtual inline ss::future<ss::stop_iteration>
-    operator()(model::record_batch&&) override;
+    inline ss::future<ss::stop_iteration>
+    operator()(model::record_batch&&) final;
 
-    virtual inline ss::future<append_result> end_of_stream() override;
+    inline ss::future<append_result> end_of_stream() final;
 
 private:
     mem_log_impl& _log;
@@ -97,16 +110,29 @@ private:
 };
 
 struct mem_log_impl final : log::impl {
-    using data_t = std::map<model::offset, model::record_batch>;
+    using underlying_t = std::vector<model::record_batch>;
     // forward ctor
     explicit mem_log_impl(model::ntp n, ss::sstring workdir)
       : log::impl(std::move(n), std::move(workdir)) {}
     ~mem_log_impl() override = default;
+    mem_log_impl(const mem_log_impl&) = delete;
+    mem_log_impl& operator=(const mem_log_impl&) = delete;
+    mem_log_impl(mem_log_impl&&) noexcept = default;
+    mem_log_impl& operator=(mem_log_impl&&) noexcept = default;
     ss::future<> close() final { return ss::make_ready_future<>(); }
     ss::future<> flush() final { return ss::make_ready_future<>(); }
+
     ss::future<std::optional<model::offset>>
-    get_offset(model::timestamp) final {
-        return ss::make_ready_future<std::optional<model::offset>>();
+    get_offset(model::timestamp t) final {
+        std::optional<model::offset> ret;
+        if (t != model::timestamp{}) {
+            auto it = std::lower_bound(
+              std::cbegin(_data), std::cend(_data), t, entries_ordering{});
+            if (it != _data.end()) {
+                ret = it->header().base_offset;
+            }
+        }
+        return ss::make_ready_future<std::optional<model::offset>>(ret);
     }
 
     ss::future<> truncate(model::offset offset) final {
@@ -124,16 +150,6 @@ struct mem_log_impl final : log::impl {
         _data.erase(it, _data.end());
         return ss::make_ready_future<>();
     }
-    struct entries_ordering {
-        bool operator()(
-          const data_t::value_type& e1, const data_t::value_type& e2) const {
-            return e1.first <= e2.first;
-        }
-        bool
-        operator()(const data_t::value_type& e1, model::offset value) const {
-            return e1.second.header().last_offset() < value;
-        }
-    };
 
     model::record_batch_reader make_reader(log_reader_config cfg) final {
         auto it = std::lower_bound(
@@ -163,7 +179,7 @@ struct mem_log_impl final : log::impl {
             auto it = std::lower_bound(
               std::cbegin(_data), std::cend(_data), o, entries_ordering{});
             if (it != _data.end()) {
-                return it->second.term();
+                return it->term();
             }
         }
 
@@ -177,7 +193,7 @@ struct mem_log_impl final : log::impl {
         if (_data.empty()) {
             return model::offset{};
         }
-        return _data.begin()->second.base_offset();
+        return _data.begin()->base_offset();
     }
     model::offset max_offset() const final {
         // default value
@@ -185,12 +201,12 @@ struct mem_log_impl final : log::impl {
             return model::offset{};
         }
         auto it = _data.end();
-        return std::prev(it)->second.last_offset();
+        return std::prev(it)->last_offset();
     }
 
     model::offset committed_offset() const final { return max_offset(); }
     boost::intrusive::list<mem_iter_reader> _readers;
-    data_t _data;
+    underlying_t _data;
 };
 
 ss::future<ss::stop_iteration>
@@ -206,7 +222,7 @@ mem_log_appender::operator()(model::record_batch&& batch) {
       batch.term());
     auto offset = _cur_offset;
     _cur_offset = batch.last_offset() + model::offset(1);
-    _log._data.emplace(offset, std::move(batch));
+    _log._data.emplace_back(std::move(batch));
     return ss::make_ready_future<ss::stop_iteration>(ss::stop_iteration::no);
 }
 
@@ -215,7 +231,7 @@ ss::future<append_result> mem_log_appender::end_of_stream() {
                       .base_offset = _min_offset,
                       .last_offset = _cur_offset - model::offset(1),
                       .byte_size = _byte_size,
-                      .last_term = _log._data.rbegin()->second.term()};
+                      .last_term = _log._data.rbegin()->term()};
     return ss::make_ready_future<append_result>(ret);
 }
 
