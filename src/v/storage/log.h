@@ -2,6 +2,7 @@
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
+#include "model/timestamp.h"
 #include "seastarx.h"
 #include "storage/log_appender.h"
 #include "storage/log_segment_reader.h"
@@ -67,6 +68,9 @@ public:
         virtual log_appender make_appender(log_append_config) = 0;
         virtual ss::future<> close() = 0;
         virtual ss::future<> flush() = 0;
+
+        virtual ss::future<std::optional<model::offset>>
+          get_offset(model::timestamp) = 0;
 
         const model::ntp& ntp() const { return _ntp; }
         const ss::sstring& work_directory() const { return _workdir; }
