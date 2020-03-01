@@ -34,6 +34,10 @@ public:
         return _failure_probes.truncate().then(
           [this, offset]() mutable { return do_truncate(offset); });
     }
+    ss::future<std::optional<model::offset>>
+    get_offset(model::timestamp) final {
+        return ss::make_ready_future<std::optional<model::offset>>();
+    }
 
     probe& get_probe() { return _probe; }
 

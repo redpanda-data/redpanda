@@ -7,6 +7,7 @@
 
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/core/future-util.hh>
+#include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>
 
 #include <boost/container/flat_map.hpp>
@@ -103,6 +104,10 @@ struct mem_log_impl final : log::impl {
     ~mem_log_impl() override = default;
     ss::future<> close() final { return ss::make_ready_future<>(); }
     ss::future<> flush() final { return ss::make_ready_future<>(); }
+    ss::future<std::optional<model::offset>>
+    get_offset(model::timestamp) final {
+        return ss::make_ready_future<std::optional<model::offset>>();
+    }
 
     ss::future<> truncate(model::offset offset) final {
         stlog.debug("Truncating {} log at {}", ntp(), offset);
