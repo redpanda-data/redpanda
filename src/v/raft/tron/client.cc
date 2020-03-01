@@ -6,6 +6,7 @@
 #include "storage/record_batch_builder.h"
 #include "syschecks/syschecks.h"
 #include "utils/hdr_hist.h"
+#include "vlog.h"
 
 #include <seastar/core/app-template.hh>
 #include <seastar/core/fstream.hh>
@@ -65,7 +66,7 @@ public:
     client_loadgen(load_gen_cfg cfg)
       : _cfg(std::move(cfg))
       , _mem(ss::memory::stats().total_memory() * .9) {
-        tronlog.debug("Mem for loadgen: {}", _mem.available_units());
+        vlog(tronlog.debug, "Mem for loadgen: {}", _mem.available_units());
         for (std::size_t i = 0; i < _cfg.parallelism; ++i) {
             _clients.push_back(std::make_unique<cli>(_cfg.client_cfg));
         }
@@ -98,8 +99,10 @@ private:
                   try {
                       (void)f.get0();
                   } catch (...) {
-                      tronlog.info(
-                        "Error sending payload:{}", std::current_exception());
+                      vlog(
+                        tronlog.info,
+                        "Error sending payload:{}",
+                        std::current_exception());
                   }
               });
         });
@@ -141,7 +144,7 @@ inline load_gen_cfg cfg_from_opts_in_thread(
         auto builder = ss::tls::credentials_builder();
         // FIXME
         // builder.set_dh_level(tls::dh_params::level::MEDIUM);
-        tronlog.info("Using {} as CA root certificate", ca_cert);
+        vlog(tronlog.info, "Using {} as CA root certificate", ca_cert);
         builder.set_x509_trust_file(ca_cert, ss::tls::x509_crt_format::PEM)
           .get0();
         client_cfg.credentials = std::move(builder);
@@ -178,21 +181,21 @@ int main(int args, char** argv, char** env) {
     return app.run(args, argv, [&] {
         return ss::async([&] {
             auto& cfg = app.configuration();
-            tronlog.info("constructing histogram");
+            vlog(tronlog.info, "constructing histogram");
             hist.start().get();
             auto hd = ss::defer([&hist] { hist.stop().get(); });
             const load_gen_cfg lcfg = cfg_from_opts_in_thread(cfg, &hist);
-            tronlog.info("config:{}", lcfg);
-            tronlog.info("constructing client");
+            vlog(tronlog.info, "config:{}", lcfg);
+            vlog(tronlog.info, "constructing client");
             client.start(lcfg).get();
             auto cd = ss::defer([&client] { client.stop().get(); });
-            tronlog.info("connecting clients");
+            vlog(tronlog.info, "connecting clients");
             client.invoke_on_all(&client_loadgen::connect).get();
-            tronlog.info("invoking loadgen");
+            vlog(tronlog.info, "invoking loadgen");
             client.invoke_on_all(&client_loadgen::execute_loadgen).get();
-            tronlog.info("writing results");
+            vlog(tronlog.info, "writing results");
             write_latency_in_thread(hist);
-            tronlog.info("stopping");
+            vlog(tronlog.info, "stopping");
         });
     });
 }

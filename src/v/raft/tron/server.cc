@@ -17,6 +17,7 @@
 #include "syschecks/syschecks.h"
 #include "utils/hdr_hist.h"
 #include "utils/unresolved_address.h"
+#include "vlog.h"
 
 #include <seastar/core/app-template.hh>
 #include <seastar/core/sharded.hh>
@@ -97,10 +98,11 @@ public:
                 _consensus_client_protocol,
                 [this](raft::leadership_status st) {
                     if (!st.current_leader) {
-                        tronlog.info("No leader in group {}", st.group);
+                        vlog(tronlog.info, "No leader in group {}", st.group);
                         return;
                     }
-                    tronlog.info(
+                    vlog(
+                      tronlog.info,
                       "New leader {} elected in group {}",
                       st.current_leader.value(),
                       st.group);
@@ -148,7 +150,12 @@ static void initialize_connection_cache_in_thread(
         auto [node, cfg] = extract_peer(i);
         auto shard = rpc::connection_cache::shard_for(node);
         ss::smp::submit_to(shard, [&cache, shard, n = node, config = cfg] {
-            tronlog.info("shard: {} owns {}->{}", shard, n, config.server_addr);
+            vlog(
+              tronlog.info,
+              "shard: {} owns {}->{}",
+              shard,
+              n,
+              config.server_addr);
             return cache.local().emplace(n, config);
         }).get();
     }
@@ -245,7 +252,7 @@ int main(int args, char** argv, char** env) {
               "{}/greetings-{}",
               cfg["workdir"].as<ss::sstring>(),
               cfg["node-id"].as<int32_t>());
-            tronlog.info("Work directory:{}", workdir);
+            vlog(tronlog.info, "Work directory:{}", workdir);
 
             // initialize group_manager
             group_manager
@@ -258,7 +265,7 @@ int main(int args, char** argv, char** env) {
               .get();
             serv.start(scfg).get();
             auto dserv = ss::defer([&serv] { serv.stop().get(); });
-            tronlog.info("registering service on all cores");
+            vlog(tronlog.info, "registering service on all cores");
             simple_shard_lookup shard_table;
             serv
               .invoke_on_all([&shard_table, &group_manager](rpc::server& s) {
@@ -279,9 +286,9 @@ int main(int args, char** argv, char** env) {
                   s.set_protocol(std::move(proto));
               })
               .get();
-            tronlog.info("Invoking rpc start on all cores");
+            vlog(tronlog.info, "Invoking rpc start on all cores");
             serv.invoke_on_all(&rpc::server::start).get();
-            tronlog.info("Starting group manager");
+            vlog(tronlog.info, "Starting group manager");
             group_manager
               .invoke_on_all([&cfg](simple_group_manager& m) {
                   return m.start(group_cfg_from_args(cfg));

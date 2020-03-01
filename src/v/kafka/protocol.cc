@@ -4,6 +4,7 @@
 #include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
 #include "utils/utf8.h"
+#include "vlog.h"
 
 #include <seastar/core/byteorder.hh>
 #include <seastar/core/future-util.hh>
@@ -48,7 +49,8 @@ ss::future<> protocol::apply(rpc::server::resources rs) {
                   .then([this, s = *sz, r = rs](
                           std::optional<request_header> h) mutable {
                       if (!h) {
-                          klog.debug(
+                          vlog(
+                            klog.debug,
                             "could not parse header from client: {}",
                             r.conn->addr);
                           r.probe().header_corrupted();
@@ -162,8 +164,10 @@ ss::future<> protocol::process_next_response(rpc::server::resources rs) {
                   ss::stop_iteration::no);
             });
         } catch (...) {
-            klog.debug(
-              "Failed to process request: {}", std::current_exception());
+            vlog(
+              klog.debug,
+              "Failed to process request: {}",
+              std::current_exception());
         }
         return ss::make_ready_future<ss::stop_iteration>(
           ss::stop_iteration::no);

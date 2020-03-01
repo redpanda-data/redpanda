@@ -6,6 +6,7 @@
 #include "rpc/parse_utils.h"
 #include "rpc/types.h"
 #include "vassert.h"
+#include "vlog.h"
 
 #include <seastar/core/metrics.hh>
 #include <seastar/core/reactor.hh>
@@ -57,13 +58,15 @@ static ss::future<> apply_proto(server::protocol* proto, server::resources rs) {
     auto conn = rs.conn;
     return proto->apply(rs)
       .then_wrapped([proto, conn](ss::future<> f) {
-          rpclog.debug("{} - Closing client: {}", proto->name(), conn->addr);
+          vlog(
+            rpclog.debug, "{} - Closing client: {}", proto->name(), conn->addr);
           return conn->shutdown()
             .then([proto, f = std::move(f)]() mutable {
                 try {
                     f.get();
                 } catch (...) {
-                    rpclog.error(
+                    vlog(
+                      rpclog.error,
                       "{} - Error dispatching method: {}",
                       proto->name(),
                       std::current_exception());
@@ -90,7 +93,8 @@ ss::future<> server::accept(ss::server_socket& s) {
                 std::move(ar.connection),
                 ar.remote_address,
                 _probe);
-              rpclog.trace("Incoming connection from {}", ar.remote_address);
+              vlog(
+                rpclog.trace, "Incoming connection from {}", ar.remote_address);
               if (_conn_gate.is_closed()) {
                   return conn->shutdown().then([] {
                       return ss::make_exception_future<ss::stop_iteration>(
@@ -107,14 +111,20 @@ ss::future<> server::accept(ss::server_socket& s) {
 } // namespace rpc
 
 ss::future<> server::stop() {
-    rpclog.info(
-      "{} - Stopping {} listeners", _proto->name(), _listeners.size());
+    vlog(
+      rpclog.info,
+      "{} - Stopping {} listeners",
+      _proto->name(),
+      _listeners.size());
     for (auto&& l : _listeners) {
         l->abort_accept();
     }
-    rpclog.debug("{} - Service probes {}", _proto->name(), _probe);
-    rpclog.info(
-      "{} - Shutting down {} connections", _proto->name(), _connections.size());
+    vlog(rpclog.debug, "{} - Service probes {}", _proto->name(), _probe);
+    vlog(
+      rpclog.info,
+      "{} - Shutting down {} connections",
+      _proto->name(),
+      _connections.size());
     _as.request_abort();
     // close the connections and wait for all dispatches to finish
     for (auto& c : _connections) {

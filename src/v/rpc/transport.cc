@@ -3,6 +3,7 @@
 #include "likely.h"
 #include "rpc/logger.h"
 #include "rpc/parse_utils.h"
+#include "vlog.h"
 
 #include <seastar/core/reactor.hh>
 
@@ -107,8 +108,10 @@ void base_transport::shutdown() {
             _fd.reset();
         }
     } catch (...) {
-        rpclog.debug(
-          "Failed to shutdown transport: {}", std::current_exception());
+        vlog(
+          rpclog.debug,
+          "Failed to shutdown transport: {}",
+          std::current_exception());
     }
 }
 
@@ -192,8 +195,10 @@ ss::future<> transport::do_reads() {
       [this] {
           return parse_header(_in).then([this](std::optional<header> h) {
               if (!h) {
-                  rpclog.debug(
-                    "could not parse header from server: {}", server_address());
+                  vlog(
+                    rpclog.debug,
+                    "could not parse header from server: {}",
+                    server_address());
                   _probe.header_corrupted();
                   return ss::make_ready_future<>();
               }
@@ -210,8 +215,10 @@ ss::future<> transport::dispatch(header h) {
     if (it == _correlations.end()) {
         // We removed correlation already
         _probe.server_correlation_error();
-        rpclog.debug(
-          "Unable to find handler for correlation {}", h.correlation_id);
+        vlog(
+          rpclog.debug,
+          "Unable to find handler for correlation {}",
+          h.correlation_id);
         // we have to skip received bytes to make input stream state correct
         return _in.skip(h.size);
     }
@@ -231,7 +238,7 @@ void transport::setup_metrics(const std::optional<ss::sstring>& service_name) {
 }
 
 transport::~transport() {
-    rpclog.debug("RPC Client probes: {}", _probe);
+    vlog(rpclog.debug, "RPC Client probes: {}", _probe);
     if (is_valid()) {
         rpclog.error(
           "connection '{}' is still valid. must call stop() before destroying",
