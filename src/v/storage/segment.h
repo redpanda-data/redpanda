@@ -32,8 +32,6 @@ public:
     ss::future<append_result> append(model::record_batch);
 
     /// main read interface
-    // TODO move most of the log segment batch reader here. this should return a
-    // batch reader interface.
     ss::input_stream<char>
       offset_data_stream(model::offset, ss::io_priority_class);
 
