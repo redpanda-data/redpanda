@@ -512,6 +512,7 @@ ExternalProject_Add(abseil
   GIT_TAG bcefbdcd
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
+  DEPENDS ${default_depends}
   CMAKE_ARGS
     ${common_cmake_args}
     -DABSL_ENABLE_INSTALL=ON
