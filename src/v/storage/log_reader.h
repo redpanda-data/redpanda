@@ -48,14 +48,17 @@ private:
 
 class log_segment_batch_reader {
 public:
-    static constexpr size_t max_buffer_size = 32 * 1024; // 32KB
+    static constexpr size_t max_buffer_size = 128 * 1024; // 128KB
 
     log_segment_batch_reader(
       segment& seg, log_reader_config& config, probe& p) noexcept;
     log_segment_batch_reader(log_segment_batch_reader&&) noexcept = default;
-    log_segment_batch_reader(const log_segment_batch_reader&) = delete;
-    log_segment_batch_reader operator=(const log_segment_batch_reader&)
+    log_segment_batch_reader& operator=(log_segment_batch_reader&&) noexcept
       = delete;
+    log_segment_batch_reader(const log_segment_batch_reader&) = delete;
+    log_segment_batch_reader& operator=(const log_segment_batch_reader&)
+      = delete;
+    ~log_segment_batch_reader() noexcept = default;
 
     ss::future<ss::circular_buffer<model::record_batch>>
       read(model::timeout_clock::time_point);
@@ -100,15 +103,5 @@ private:
     model::offset _last_base;
     probe& _probe;
 };
-
-static inline bool filter_batch_type(
-  const std::vector<model::record_batch_type>& filter,
-  const model::record_batch_type batch_type) {
-    if (filter.empty()) {
-        return true;
-    }
-    return std::find(filter.cbegin(), filter.cend(), batch_type)
-           != filter.cend();
-}
 
 } // namespace storage

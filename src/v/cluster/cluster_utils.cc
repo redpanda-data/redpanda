@@ -3,6 +3,7 @@
 #include "cluster/logger.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/types.h"
+#include "vlog.h"
 
 namespace cluster {
 brokers_diff calculate_changed_brokers(
@@ -59,8 +60,11 @@ std::vector<model::broker> get_replica_set_brokers(
 ss::future<> remove_broker_client(
   ss::sharded<rpc::connection_cache>& clients, model::node_id id) {
     auto shard = rpc::connection_cache::shard_for(id);
-    clusterlog.debug(
-      "Removing {} broker client from cache at shard {}", id, shard);
+    vlog(
+      clusterlog.debug,
+      "Removing {} broker client from cache at shard {}",
+      id,
+      shard);
     return clients.invoke_on(
       shard, [id](rpc::connection_cache& cache) { return cache.remove(id); });
 }
@@ -70,8 +74,11 @@ ss::future<> update_broker_client(
   model::node_id node,
   unresolved_address addr) {
     auto shard = rpc::connection_cache::shard_for(node);
-    clusterlog.debug(
-      "Updating {} broker client cache at shard {} ", node, shard);
+    vlog(
+      clusterlog.debug,
+      "Updating {} broker client cache at shard {} ",
+      node,
+      shard);
     return clients.invoke_on(
       shard,
       [node, rpc_address = std::move(addr)](rpc::connection_cache& cache) {

@@ -209,7 +209,8 @@ static ss::future<fetch_response::partition_response> read_from_partition(
       0,
       config.max_bytes,
       kafka_read_priority(),
-      {raft::data_batch_type});
+      raft::data_batch_type,
+      std::nullopt);
 
     auto reader = partition->make_reader(reader_config);
     return ss::do_with(

@@ -14,6 +14,7 @@
 #include "rpc/types.h"
 #include "storage/shard_assignment.h"
 #include "utils/retry.h"
+#include "vlog.h"
 
 #include <seastar/net/inet_address.hh>
 
@@ -114,7 +115,7 @@ ss::future<> controller::start() {
           return update_brokers_cache({_self});
       })
       .then([this] {
-          clusterlog.debug("Starting cluster recovery");
+          vlog(clusterlog.debug, "Starting cluster recovery");
           return start_raft0()
             .then([this](consensus_ptr c) { _raft0 = c.get(); })
             .then([this] {
@@ -124,7 +125,7 @@ ss::future<> controller::start() {
             })
             .then([this] { return join_raft0(); })
             .then([this] {
-                clusterlog.info("Finished recovering cluster state");
+                vlog(clusterlog.info, "Finished recovering cluster state");
                 _recovered = true;
                 if (_leadership_notification_pending) {
                     handle_leadership_notification(controller::ntp, _self.id());
@@ -137,7 +138,7 @@ ss::future<> controller::start() {
 ss::future<consensus_ptr> controller::start_raft0() {
     std::vector<model::broker> brokers;
     if (_seed_servers.front().id() == _self.id()) {
-        clusterlog.info("Current node is cluster root");
+        vlog(clusterlog.info, "Current node is cluster root");
         brokers.push_back(_self);
     }
     return _pm.local().manage(
@@ -220,7 +221,7 @@ controller::process_raft0_cfg_update(model::record r, model::offset o) {
     if (o <= _raft0_cfg_offset) {
         return seastar::make_ready_future<>();
     }
-    clusterlog.debug("Processing new raft-0 configuration");
+    vlog(clusterlog.debug, "Processing new raft-0 configuration");
     _raft0_cfg_offset = o;
     auto cfg = reflection::adl<raft::group_configuration>().from(
       r.share_value());
@@ -314,7 +315,11 @@ ss::future<> controller::manage_partition(
         get_replica_set_brokers(_md_cache.local(), std::move(replicas)),
         std::nullopt)
       .then([path = ntp.path(), raft_group](consensus_ptr) {
-          clusterlog.info("recovered: {}, raft group_id: {}", path, raft_group);
+          vlog(
+            clusterlog.info,
+            "recovered: {}, raft group_id: {}",
+            path,
+            raft_group);
       });
 }
 
@@ -445,7 +450,7 @@ ss::future<> controller::do_leadership_notification(
                       _leadership_notification_pending = true;
                       return ss::make_ready_future<>();
                   }
-                  clusterlog.info("Local controller became a leader");
+                  vlog(clusterlog.info, "Local controller became a leader");
                   create_partition_allocator();
                   _leadership_cond.broadcast();
                   return ss::make_ready_future<>();
@@ -522,7 +527,9 @@ void controller::on_raft0_entries_comitted(
                 batch_consumer(this), model::no_timeout);
           });
     }).handle_exception_type([](const ss::gate_closed_exception&) {
-        clusterlog.info("On shutdown... ignoring append_entries notification");
+        vlog(
+          clusterlog.info,
+          "On shutdown... ignoring append_entries notification");
     });
 }
 
@@ -560,7 +567,11 @@ ss::future<> controller::wait_for_leadership() {
 
 ss::future<join_reply> controller::dispatch_join_to_remote(
   const config::seed_server& target, model::broker joining_node) {
-    clusterlog.info("Sending join request to {} @ {}", target.id, target.addr);
+    vlog(
+      clusterlog.info,
+      "Sending join request to {} @ {}",
+      target.id,
+      target.addr);
     return dispatch_rpc(
       _connection_cache,
       target.id,
@@ -585,7 +596,7 @@ void controller::join_raft0() {
                      || _bg.is_closed();
           },
           [this] {
-              clusterlog.debug("Trying to join the cluster");
+              vlog(clusterlog.debug, "Trying to join the cluster");
               return dispatch_join_to_seed_server(std::cbegin(_seed_servers))
                 .finally([] {
                     using namespace std::chrono_literals; // NOLINT
@@ -601,7 +612,7 @@ ss::future<> controller::dispatch_join_to_seed_server(seed_iterator it) {
     }
     // Current node is a seed server, just call the method
     if (it->id == _self.id()) {
-        clusterlog.debug("Using current node as a seed server");
+        vlog(clusterlog.debug, "Using current node as a seed server");
         return process_join_request(_self).handle_exception(
           [this, it](std::exception_ptr e) {
               clusterlog.warn("Error processing join request at current node");
@@ -626,7 +637,7 @@ ss::future<> controller::dispatch_join_to_seed_server(seed_iterator it) {
 
 ss::future<> controller::process_join_request(model::broker broker) {
     verify_shard();
-    clusterlog.info("Processing node '{}' join request", broker.id());
+    vlog(clusterlog.info, "Processing node '{}' join request", broker.id());
     // curent node is a leader
     if (is_leader()) {
         // Just update raft0 configuration

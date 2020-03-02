@@ -32,8 +32,6 @@ public:
     ss::future<append_result> append(model::record_batch);
 
     /// main read interface
-    // TODO move most of the log segment batch reader here. this should return a
-    // batch reader interface.
     ss::input_stream<char>
       offset_data_stream(model::offset, ss::io_priority_class);
 
@@ -65,7 +63,7 @@ public:
     batch_cache_index::read_result cache_get(
       model::offset offset,
       model::offset max_offset,
-      const std::vector<model::record_batch_type>& type_filter,
+      std::optional<model::record_batch_type> type_filter,
       size_t max_bytes) {
         if (likely(_cache != nullptr)) {
             return _cache->read(offset, max_offset, type_filter, max_bytes);

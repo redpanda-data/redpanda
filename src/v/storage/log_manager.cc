@@ -12,6 +12,7 @@
 #include "storage/segment_index.h"
 #include "utils/directory_walker.h"
 #include "utils/file_sanitizer.h"
+#include "vlog.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/core/gate.hh>
@@ -119,7 +120,8 @@ static ss::future<log_set> do_recover(log_set&& segments) {
               try {
                   return s.index()->materialize_index().get0();
               } catch (...) {
-                  stlog.info(
+                  vlog(
+                    stlog.info,
                     "Error materializing index:{}. Recovering parent "
                     "segment:{}. Details:{}",
                     s.index()->filename(),
@@ -138,7 +140,7 @@ static ss::future<log_set> do_recover(log_set&& segments) {
         for (auto& s : to_recover) {
             auto stat = s->reader()->stat().get0();
             if (stat.st_size == 0) {
-                stlog.info("Removing empty segment: {}", s);
+                vlog(stlog.info, "Removing empty segment: {}", s);
                 s->close().get();
                 ss::remove_file(s->reader()->filename()).get();
                 ss::remove_file(s->index()->filename()).get();
@@ -148,7 +150,7 @@ static ss::future<log_set> do_recover(log_set&& segments) {
             auto recovered = replayer.recover_in_thread(
               ss::default_priority_class());
             if (!recovered) {
-                stlog.info("Unable to recover segment: {}", s);
+                vlog(stlog.info, "Unable to recover segment: {}", s);
                 s->close().get();
                 ss::rename_file(
                   s->reader()->filename(),
@@ -162,7 +164,7 @@ static ss::future<log_set> do_recover(log_set&& segments) {
               .get();
             // persist index
             s->index()->flush().get();
-            stlog.info("Recovered: {}", s);
+            vlog(stlog.info, "Recovered: {}", s);
             good.emplace_back(std::move(s));
         }
         return log_set(std::move(good));

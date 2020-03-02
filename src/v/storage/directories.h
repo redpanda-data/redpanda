@@ -3,6 +3,7 @@
 #include "seastarx.h"
 #include "storage/logger.h"
 #include "syschecks/syschecks.h"
+#include "vlog.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/seastar.hh>
@@ -18,7 +19,7 @@ static ss::future<> initialize(ss::sstring dir) {
           return ss::make_exception_future<>(std::move(ep));
       })
       .then([dir] {
-          stlog.info("Checking `{}` for supported filesystems", dir);
+          vlog(stlog.info, "Checking `{}` for supported filesystems", dir);
           return syschecks::disk(dir);
       });
 }

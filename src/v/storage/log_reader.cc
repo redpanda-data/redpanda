@@ -4,17 +4,21 @@
 #include "model/record.h"
 #include "storage/logger.h"
 #include "vassert.h"
+#include "vlog.h"
 
 #include <seastar/core/circular_buffer.hh>
 
 #include <fmt/ostream.h>
 
 namespace storage {
+static constexpr size_t max_segment_size = static_cast<size_t>(
+  std::numeric_limits<uint32_t>::max());
 
 batch_consumer::consume_result skipping_consumer::consume_batch_start(
   model::record_batch_header header,
   size_t physical_base_offset,
-  size_t bytes_on_disk) {
+  size_t size_on_disk) {
+    const auto filesize = _reader._seg.reader()->file_size();
     // check for holes in the offset range on disk
     if (unlikely(
           _expected_next_batch() >= 0
@@ -25,6 +29,24 @@ batch_consumer::consume_result skipping_consumer::consume_batch_start(
           _expected_next_batch,
           header.base_offset()));
     }
+    if (unlikely(
+          header.size_bytes != size_on_disk
+          || size_on_disk > max_segment_size)) {
+        vlog(
+          stlog.info,
+          "Invalid record size:{} > max_segment_size:{}. Possible corruption",
+          size_on_disk,
+          max_segment_size);
+        return stop_parser::yes;
+    }
+    if (unlikely((header.size_bytes + physical_base_offset) > filesize)) {
+        vlog(
+          stlog.info,
+          "offset + batch_size:{} exceeds filesize:{}. Possible corruption",
+          (header.size_bytes + physical_base_offset),
+          filesize);
+        return stop_parser::yes;
+    }
     _expected_next_batch = header.last_offset() + model::offset(1);
 
     if (header.last_offset() < _reader._config.start_offset) {
@@ -33,7 +55,17 @@ batch_consumer::consume_result skipping_consumer::consume_batch_start(
     if (header.base_offset() > _reader._config.max_offset) {
         return stop_parser::yes;
     }
-    if (!filter_batch_type(_reader._config.type_filter, header.type)) {
+    if (
+      _reader._config.type_filter
+      && _reader._config.type_filter != header.type) {
+        _reader._config.start_offset = header.last_offset() + model::offset(1);
+        return skip_batch::yes;
+    }
+    if (
+      _reader._config.first_timestamp
+      && _reader._config.first_timestamp < header.first_timestamp) {
+        // kakfa needs to guarantee that the returned record is >=
+        // first_timestamp
         _reader._config.start_offset = header.last_offset() + model::offset(1);
         return skip_batch::yes;
     }
@@ -149,9 +181,8 @@ log_segment_batch_reader::read(model::timeout_clock::time_point timeout) {
 log_reader::log_reader(
   log_set& seg_set, log_reader_config config, probe& probe) noexcept
   : _set(seg_set)
-  , _config(std::move(config))
+  , _config(config)
   , _probe(probe) {
-    std::sort(begin(_config.type_filter), end(_config.type_filter));
     _end_of_stream = seg_set.empty();
 }
 
