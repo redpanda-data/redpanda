@@ -21,9 +21,13 @@ CONCEPT(requires ss::ApplyReturns<Predicate, bool> ||
 ss::future<> cooperative_spin_wait_with_timeout(
   std::chrono::duration<Rep, Period> timeout, Predicate p) {
     using futurator = ss::futurize<std::result_of_t<Predicate()>>;
+    auto tout = model::timeout_clock::now() + timeout;
     return ss::with_timeout(
-      model::timeout_clock::now() + timeout,
-      ss::repeat([p = std::forward<Predicate>(p)]() {
+      tout, ss::repeat([tout, p = std::forward<Predicate>(p)]() {
+          if (model::timeout_clock::now() > tout) {
+              return ss::make_exception_future<ss::stop_iteration>(
+                ss::timed_out_error());
+          }
           auto f = futurator::apply(p);
           return f.then([](bool stop) {
               if (stop) {
