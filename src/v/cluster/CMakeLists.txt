@@ -23,5 +23,6 @@ v_cc_library(
     controller_rpc
     v::raft
     Roaring::roaring
+    absl::flat_hash_map
   )
 add_subdirectory(tests)

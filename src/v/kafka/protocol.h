@@ -13,6 +13,8 @@
 #include <seastar/core/metrics_registration.hh>
 #include <seastar/core/sharded.hh>
 
+#include <absl/container/flat_hash_map.h>
+
 #include <cstdint>
 #include <optional>
 #include <vector>
@@ -56,7 +58,7 @@ private:
 private:
     sequence_id _next_response;
     sequence_id _seq_idx;
-    std::unordered_map<sequence_id, std::pair<correlation_id, response_ptr>>
+    absl::flat_hash_map<sequence_id, std::pair<correlation_id, response_ptr>>
       _responses;
 
     ss::smp_service_group _smp_group;

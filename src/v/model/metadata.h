@@ -7,7 +7,6 @@
 
 #include <seastar/core/sstring.hh>
 
-#include <boost/container/flat_map.hpp>
 #include <boost/functional/hash.hpp>
 
 #include <optional>

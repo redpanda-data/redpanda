@@ -4,6 +4,8 @@
 
 #include <seastar/util/log.hh>
 
+#include <absl/container/flat_hash_map.h>
+
 namespace finjector {
 
 ss::logger log{"fault_injector"};
@@ -55,9 +57,9 @@ void honey_badger::unset(const ss::sstring& module, const ss::sstring& point) {
         p->unset(point);
     }
 }
-std::unordered_map<ss::sstring, std::vector<ss::sstring>>
+absl::flat_hash_map<ss::sstring, std::vector<ss::sstring>>
 honey_badger::points() const {
-    std::unordered_map<ss::sstring, std::vector<ss::sstring>> retval;
+    absl::flat_hash_map<ss::sstring, std::vector<ss::sstring>> retval;
     for (auto& [module, probe] : _probes) {
         retval.insert({module, probe->points()});
     }

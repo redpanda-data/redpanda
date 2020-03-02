@@ -15,10 +15,11 @@
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/util/log.hh>
 
+#include <absl/container/flat_hash_map.h>
+#include <absl/container/flat_hash_set.h>
+
 #include <iosfwd>
 #include <optional>
-#include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 namespace kafka {
@@ -343,8 +344,8 @@ public:
     handle_leave_group(leave_group_request&& r);
 
 private:
-    using member_map = std::unordered_map<kafka::member_id, member_ptr>;
-    using protocol_support = std::unordered_map<kafka::protocol_name, int>;
+    using member_map = absl::flat_hash_map<kafka::member_id, member_ptr>;
+    using protocol_support = absl::flat_hash_map<kafka::protocol_name, int>;
 
     kafka::group_id _id;
     group_state _state;
@@ -353,7 +354,7 @@ private:
     protocol_support _supported_protocols;
     member_map _members;
     size_t _num_members_joining;
-    std::unordered_set<kafka::member_id> _pending_members;
+    absl::flat_hash_set<kafka::member_id> _pending_members;
     std::optional<kafka::protocol_type> _protocol_type;
     std::optional<kafka::protocol_name> _protocol;
     std::optional<kafka::member_id> _leader;

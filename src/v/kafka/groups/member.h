@@ -176,6 +176,8 @@ public:
 
     ss::timer<clock_type>& expire_timer() { return _expire_timer; }
 
+    ~group_member() noexcept { _expire_timer.cancel(); }
+
 private:
     using join_promise = ss::promise<join_group_response>;
     using sync_promise = ss::promise<sync_group_response>;

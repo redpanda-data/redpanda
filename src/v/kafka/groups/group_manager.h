@@ -11,6 +11,7 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/sharded.hh>
 
+#include <absl/container/flat_hash_map.h>
 #include <cluster/partition_manager.h>
 
 namespace kafka {
@@ -67,7 +68,7 @@ private:
 
     cluster::partition_manager& _partitions;
     config::configuration& _conf;
-    std::unordered_map<group_id, group_ptr> _groups;
+    absl::flat_hash_map<group_id, group_ptr> _groups;
 };
 
 } // namespace kafka

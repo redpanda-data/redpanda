@@ -11,8 +11,9 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/sstring.hh>
 
+#include <absl/container/flat_hash_map.h>
+
 #include <array>
-#include <unordered_map>
 
 namespace storage {
 
@@ -89,7 +90,7 @@ public:
     }
 
 private:
-    using logs_type = std::unordered_map<model::ntp, log>;
+    using logs_type = absl::flat_hash_map<model::ntp, log>;
 
     ss::future<log> do_manage(model::ntp, storage_type type);
     ss::future<std::unique_ptr<segment>> do_make_log_segment(
