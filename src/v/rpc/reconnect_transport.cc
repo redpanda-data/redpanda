@@ -19,8 +19,7 @@ static inline bool has_backoff_expired(
     if (now < stamp) {
         return false;
     }
-
-    return now > (stamp + backoff);
+    return now >= (stamp + backoff);
 }
 
 ss::future<> reconnect_transport::stop() {
