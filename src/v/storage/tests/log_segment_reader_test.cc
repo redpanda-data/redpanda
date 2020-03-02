@@ -250,9 +250,12 @@ SEASTAR_THREAD_TEST_CASE(test_batch_type_filter) {
     ctx.write(copy(batches));
 
     // read and extract types with optional type filter
-    auto read_types = [&ctx, &batches](int type_wanted) {
-        std::optional<model::record_batch_type> type_filter
-          = model::record_batch_type(type_wanted);
+    auto read_types =
+      [&ctx, &batches](std::optional<int> type_wanted) -> std::vector<int> {
+        std::optional<model::record_batch_type> type_filter;
+        if (type_wanted) {
+            type_filter = model::record_batch_type(type_wanted.value());
+        }
 
         auto config = log_reader_config(
           batches.front().base_offset(),
@@ -270,21 +273,21 @@ SEASTAR_THREAD_TEST_CASE(test_batch_type_filter) {
         for (auto& batch : res) {
             types.insert(batch.header().type);
         }
-        return types;
+        return {types.begin(), types.end()};
     };
 
-    auto types = read_types({});
-    BOOST_TEST(types == std::set<int>({0, 1, 2, 3, 4}));
+    std::vector<int> types = read_types({});
+    BOOST_CHECK_EQUAL(types, std::vector<int>({0, 1, 2, 3, 4}));
 
     types = read_types(1);
-    BOOST_TEST(types == std::set<int>({1}));
+    BOOST_TEST(types == std::vector<int>({1}));
 
     types = read_types(0);
-    BOOST_TEST(types == std::set<int>({0}));
+    BOOST_TEST(types == std::vector<int>({0}));
 
     types = read_types(2);
-    BOOST_TEST(types == std::set<int>({2}));
+    BOOST_TEST(types == std::vector<int>({2}));
 
     types = read_types(4);
-    BOOST_TEST(types == std::set<int>({4}));
+    BOOST_TEST(types == std::vector<int>({4}));
 }
