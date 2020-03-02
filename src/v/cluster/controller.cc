@@ -628,7 +628,8 @@ ss::future<> controller::dispatch_join_to_seed_server(seed_iterator it) {
                   return ss::make_ready_future<>();
               }
           } catch (...) {
-              clusterlog.error("Error sending join request");
+              clusterlog.error(
+                "Error sending join request - {}", std::current_exception());
           }
           // Dispatch to next server
           return dispatch_join_to_seed_server(std::next(it));

@@ -73,8 +73,10 @@ ss::futurize_t<std::result_of_t<Func(controller_client_protocol&)>>
                    id](result<rpc::transport*> r) mutable {
                       if (!r) {
                           return ret_t::make_exception_future(
-                            std::runtime_error(
-                              fmt::format("Error connecting node {}", id)));
+                            std::runtime_error(fmt::format(
+                              "Error connecting node {} - {}",
+                              id,
+                              r.error().message())));
                       }
                       return ss::do_with(
                         rpc_protocol(*r.value()),
