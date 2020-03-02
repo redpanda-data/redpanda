@@ -82,7 +82,8 @@ private:
     void setup_metrics(const std::optional<ss::sstring>&);
 
     ss::semaphore _memory;
-    absl::flat_hash_map<uint32_t, internal::response_handler> _correlations;
+    absl::flat_hash_map<uint32_t, std::unique_ptr<internal::response_handler>>
+      _correlations;
     uint32_t _correlation_idx{0};
     ss::metrics::metric_groups _metrics;
 };

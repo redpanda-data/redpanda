@@ -13,7 +13,13 @@ public:
     using promise_t = ss::promise<response_ptr>;
     using timer_ptr = std::unique_ptr<rpc::timer_type>;
 
-    response_handler() = default;
+    response_handler() noexcept = default;
+    ~response_handler() noexcept = default;
+    response_handler(response_handler&&) noexcept = default;
+    response_handler& operator=(response_handler&&) noexcept = default;
+    response_handler(const response_handler&) = delete;
+    response_handler& operator=(const response_handler&) = delete;
+
     // clang-format off
     template<typename Func>
     CONCEPT(requires requires(Func f){
@@ -28,9 +34,6 @@ public:
           });
         _timeout_timer->arm(timeout);
     }
-
-    response_handler(response_handler&&) = default;
-    response_handler& operator=(response_handler&&) = default;
 
     ss::future<response_ptr> get_future() { return _promise.get_future(); }
 

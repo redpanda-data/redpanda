@@ -27,7 +27,7 @@ struct client_context_impl final : streaming_context {
 };
 
 base_transport::base_transport(configuration c)
-  : _server_addr(std::move(c.server_addr))
+  : _server_addr(c.server_addr)
   , _creds(
       c.credentials ? c.credentials->build_certificate_credentials()
                     : nullptr) {}
@@ -96,7 +96,7 @@ void transport::fail_outstanding_futures() {
     // must close the socket
     shutdown();
     for (auto& [_, p] : _correlations) {
-        p.set_exception(std::runtime_error("failing outstanding futures"));
+        p->set_exception(std::runtime_error("failing outstanding futures"));
     }
     _correlations.clear();
 }
@@ -151,14 +151,15 @@ transport::send(netbuf b, rpc::clock_type::time_point timeout) {
                 "Invalid transport state. Doubly registered correlation_id");
           }
           const uint32_t idx = ++_correlation_idx;
-          internal::response_handler item;
+          auto item = std::make_unique<internal::response_handler>();
+          auto it = item.get();
           // capture the future _before_ inserting promise in the map
           // in case there is a concurrent error w/ the connection and it fails
           // the future before we return from this function
-          auto fut = item.get_future();
+          auto fut = it->get_future();
           b.set_correlation_id(idx);
-          auto [it, placed] = _correlations.emplace(idx, std::move(item));
-          it->second.with_timeout(timeout, [this, idx] {
+          _correlations.emplace(idx, std::move(item));
+          it->with_timeout(timeout, [this, idx] {
               auto it = _correlations.find(idx);
               if (likely(it != _correlations.end())) {
                   rpclog.warn("Request timeout, correlation id: {}", idx);
@@ -223,13 +224,13 @@ ss::future<> transport::dispatch(header h) {
         return _in.skip(h.size);
     }
     _probe.add_bytes_received(header_size + h.size);
-    auto ctx = std::make_unique<client_context_impl>(*this, std::move(h));
+    auto ctx = std::make_unique<client_context_impl>(*this, h);
     auto fut = ctx->pr.get_future();
     // delete before setting value so that we don't run into nested exceptions
     // of broken promises
     auto pr = std::move(it->second);
     _correlations.erase(it);
-    pr.set_value(std::move(ctx));
+    pr->set_value(std::move(ctx));
     return fut.then([this] { _probe.request_completed(); });
 }
 
