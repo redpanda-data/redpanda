@@ -4,17 +4,21 @@
 #include "model/record.h"
 #include "storage/logger.h"
 #include "vassert.h"
+#include "vlog.h"
 
 #include <seastar/core/circular_buffer.hh>
 
 #include <fmt/ostream.h>
 
 namespace storage {
+static constexpr size_t max_segment_size = static_cast<size_t>(
+  std::numeric_limits<uint32_t>::max());
 
 batch_consumer::consume_result skipping_consumer::consume_batch_start(
   model::record_batch_header header,
   size_t physical_base_offset,
-  size_t bytes_on_disk) {
+  size_t size_on_disk) {
+    const auto filesize = _reader._seg.reader()->file_size();
     // check for holes in the offset range on disk
     if (unlikely(
           _expected_next_batch() >= 0
@@ -24,6 +28,24 @@ batch_consumer::consume_result skipping_consumer::consume_batch_start(
           "expected batch offset {} (actual {})",
           _expected_next_batch,
           header.base_offset()));
+    }
+    if (unlikely(
+          header.size_bytes != size_on_disk
+          || size_on_disk > max_segment_size)) {
+        vlog(
+          stlog.info,
+          "Invalid record size:{} > max_segment_size:{}. Possible corruption",
+          size_on_disk,
+          max_segment_size);
+        return stop_parser::yes;
+    }
+    if (unlikely((header.size_bytes + physical_base_offset) > filesize)) {
+        vlog(
+          stlog.info,
+          "offset + batch_size:{} exceeds filesize:{}. Possible corruption",
+          (header.size_bytes + physical_base_offset),
+          filesize);
+        return stop_parser::yes;
     }
     _expected_next_batch = header.last_offset() + model::offset(1);
 
