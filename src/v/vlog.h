@@ -27,7 +27,7 @@ struct log_basename_start {
 // NOLINTNEXTLINE
 #define vlog(method, fmt, args...)                                             \
     method(                                                                    \
-      "{}:{} " fmt,                                                            \
+      "{}:{} - " fmt,                                                          \
       (const char*)&__FILE__[vlog_internal::log_basename_start<                \
         vlog_internal::basename_index(__FILE__)>::value],                      \
       __LINE__,                                                                \
