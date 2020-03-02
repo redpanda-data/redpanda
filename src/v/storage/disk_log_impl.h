@@ -35,6 +35,8 @@ public:
           [this, offset]() mutable { return do_truncate(offset); });
     }
 
+    ss::future<std::optional<model::offset>> get_offset(model::timestamp) final;
+
     probe& get_probe() { return _probe; }
 
     size_t segment_count() const final { return _segs.size(); }

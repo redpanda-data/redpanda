@@ -3,6 +3,7 @@
 #include "rpc/types.h"
 #include "syschecks/syschecks.h"
 #include "utils/hdr_hist.h"
+#include "vlog.h"
 
 #include <seastar/core/app-template.hh>
 #include <seastar/core/fstream.hh>
@@ -168,7 +169,7 @@ cfg_from(boost::program_options::variables_map& m, ss::sharded<hdr_hist>* h) {
         auto builder = ss::tls::credentials_builder();
         // FIXME
         // builder.set_dh_level(tls::dh_params::level::MEDIUM);
-        lgr.info("Using {} as CA root certificate", ca_cert);
+        vlog(lgr.info, "Using {} as CA root certificate", ca_cert);
         builder.set_x509_trust_file(ca_cert, ss::tls::x509_crt_format::PEM)
           .get0();
         client_cfg.credentials = std::move(builder);
@@ -250,25 +251,25 @@ int main(int args, char** argv, char** env) {
     return app.run(args, argv, [&] {
         auto& cfg = app.configuration();
         return ss::async([&] {
-            lgr.info("constructing histogram");
+            vlog(lgr.info, "constructing histogram");
             hist.start().get();
             auto hd = ss::defer([&hist] { hist.stop().get(); });
             const load_gen_cfg lcfg = cfg_from(cfg, &hist);
-            lgr.info("config:{}", lcfg);
-            lgr.info("constructing client");
+            vlog(lgr.info, "config:{}", lcfg);
+            vlog(lgr.info, "constructing client");
             client.start(lcfg).get();
             auto cd = ss::defer([&client] { client.stop().get(); });
-            lgr.info("connecting clients");
+            vlog(lgr.info, "connecting clients");
             client.invoke_on_all(&client_loadgen::connect).get();
             auto tp = throughput(lcfg.global_total_requests());
-            lgr.info("invoking loadgen");
+            vlog(lgr.info, "invoking loadgen");
             client.invoke_on_all(&client_loadgen::execute_loadgen).get();
             tp.stop();
-            lgr.info("{}", tp);
-            lgr.info("writing results");
+            vlog(lgr.info, "{}", tp);
+            vlog(lgr.info, "writing results");
             write_configuration_in_thread(tp, lcfg);
             write_latency_in_thread(hist);
-            lgr.info("stopping");
+            vlog(lgr.info, "stopping");
         });
     });
 }

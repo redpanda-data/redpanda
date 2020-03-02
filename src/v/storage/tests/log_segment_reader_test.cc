@@ -66,7 +66,13 @@ struct context {
       model::offset end,
       size_t max_bytes = std::numeric_limits<size_t>::max()) {
         auto cfg = log_reader_config(
-          start, end, 0, max_bytes, ss::default_priority_class());
+          start,
+          end,
+          0,
+          max_bytes,
+          ss::default_priority_class(),
+          std::nullopt,
+          std::nullopt);
         if (_seg) {
             logs.add(std::move(_seg));
         }
@@ -244,10 +250,11 @@ SEASTAR_THREAD_TEST_CASE(test_batch_type_filter) {
     ctx.write(copy(batches));
 
     // read and extract types with optional type filter
-    auto read_types = [&ctx, &batches](std::vector<int> types_wanted) {
-        std::vector<model::record_batch_type> type_filter;
-        for (auto type : types_wanted) {
-            type_filter.push_back(model::record_batch_type(type));
+    auto read_types =
+      [&ctx, &batches](std::optional<int> type_wanted) -> std::vector<int> {
+        std::optional<model::record_batch_type> type_filter;
+        if (type_wanted) {
+            type_filter = model::record_batch_type(type_wanted.value());
         }
 
         auto config = log_reader_config(
@@ -256,33 +263,31 @@ SEASTAR_THREAD_TEST_CASE(test_batch_type_filter) {
           0,
           std::numeric_limits<size_t>::max(),
           ss::default_priority_class(),
-          std::move(type_filter));
+          type_filter,
+          std::nullopt);
 
-        auto reader = ctx.reader(std::move(config));
+        auto reader = ctx.reader(config);
         auto res = reader.consume(consumer(), model::no_timeout).get0();
 
         std::set<int> types;
         for (auto& batch : res) {
             types.insert(batch.header().type);
         }
-        return types;
+        return {types.begin(), types.end()};
     };
 
-    auto types = read_types({});
-    BOOST_TEST(types == std::set<int>({0, 1, 2, 3, 4}));
+    std::vector<int> types = read_types({});
+    BOOST_CHECK_EQUAL(types, std::vector<int>({0, 1, 2, 3, 4}));
 
-    types = read_types({1});
-    BOOST_TEST(types == std::set<int>({1}));
+    types = read_types(1);
+    BOOST_TEST(types == std::vector<int>({1}));
 
-    types = read_types({0, 1});
-    BOOST_TEST(types == std::set<int>({0, 1}));
+    types = read_types(0);
+    BOOST_TEST(types == std::vector<int>({0}));
 
-    types = read_types({1, 0});
-    BOOST_TEST(types == std::set<int>({0, 1}));
+    types = read_types(2);
+    BOOST_TEST(types == std::vector<int>({2}));
 
-    types = read_types({0, 2, 3, 4});
-    BOOST_TEST(types == std::set<int>({0, 2, 3, 4}));
-
-    types = read_types({3, 2, 4, 0});
-    BOOST_TEST(types == std::set<int>({0, 2, 3, 4}));
+    types = read_types(4);
+    BOOST_TEST(types == std::vector<int>({4}));
 }

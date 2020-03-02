@@ -9,6 +9,7 @@
 #include "syschecks/syschecks.h"
 #include "test_utils/logs.h"
 #include "utils/file_io.h"
+#include "vlog.h"
 
 #include <seastar/core/prometheus.hh>
 #include <seastar/core/thread.hh>
@@ -23,7 +24,8 @@ int application::run(int ac, char** av) {
     init_env();
     struct ::utsname buf;
     ::uname(&buf);
-    _log.info(
+    vlog(
+      _log.info,
       "kernel={}, nodename={}, machine={}",
       buf.release,
       buf.nodename,
@@ -48,7 +50,7 @@ int application::run(int ac, char** av) {
             wire_up_services();
             start();
             app_signal.wait().get();
-            _log.info("Stopping...");
+            vlog(_log.info, "Stopping...");
         });
     });
 }
@@ -90,7 +92,7 @@ void application::hydrate_config(const po::variables_map& cfg) {
     auto in = iobuf::iterator_consumer(buf.cbegin(), buf.cend());
     in.consume_to(buf.size_bytes(), workaround.begin());
     YAML::Node config = YAML::Load(workaround);
-    _log.info("Configuration:\n\n{}\n\n", config);
+    vlog(_log.info, "Configuration:\n\n{}\n\n", config);
     ss::smp::invoke_on_all([config] {
         config::shard_local_cfg().read_yaml(config);
     }).get0();
@@ -148,7 +150,7 @@ void application::configure_admin_server() {
           });
     }).get();
 
-    _log.info("Started HTTP admin service listening at {}", conf.admin());
+    vlog(_log.info, "Started HTTP admin service listening at {}", conf.admin());
 }
 
 // add additional services in here
@@ -166,7 +168,7 @@ void application::wire_up_services() {
       std::ref(shard_table),
       std::ref(_raft_connection_cache))
       .get();
-    _log.info("Partition manager started");
+    vlog(_log.info, "Partition manager started");
 
     // controller
     syschecks::systemd_message("Creating kafka metadata cache");
@@ -257,14 +259,13 @@ void application::start() {
       .get();
     auto& conf = config::shard_local_cfg();
     _rpc.invoke_on_all(&rpc::server::start).get();
-    _log.info("Started RPC server listening at {}", conf.rpc_server());
+    vlog(_log.info, "Started RPC server listening at {}", conf.rpc_server());
 
     _quota_mgr.invoke_on_all(&kafka::quota_manager::start).get();
 
     // Kafka API
     _kafka_server
       .invoke_on_all([this](rpc::server& s) {
-          _log.info("adding kafka protocol to kafka server");
           auto proto = std::make_unique<kafka::protocol>(
             _smp_groups.kafka_smp_sg(),
             metadata_cache,
@@ -277,7 +278,8 @@ void application::start() {
       })
       .get();
     _kafka_server.invoke_on_all(&rpc::server::start).get();
-    _log.info("Started Kafka API server listening at {}", conf.kafka_api());
+    vlog(
+      _log.info, "Started Kafka API server listening at {}", conf.kafka_api());
     syschecks::systemd_message("redpanda ready!");
     syschecks::systemd_notify_ready();
 }

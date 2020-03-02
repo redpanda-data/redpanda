@@ -7,6 +7,7 @@
 #include "raft/rpc_client_protocol.h"
 #include "raft/types.h"
 #include "resource_mgmt/io_priority.h"
+#include "vlog.h"
 
 #include <seastar/core/reactor.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -73,7 +74,7 @@ ss::future<consensus_ptr> partition_manager::manage(
                   ss::gate_closed_exception());
             }
             return with_gate(_bg, [this, p, c, group] {
-                clusterlog.debug("Recovering raft group: {}", group);
+                vlog(clusterlog.debug, "Recovering raft group: {}", group);
                 return p->start().then([this, c]() mutable {
                     _hbeats.register_group(c);
                     return c;
