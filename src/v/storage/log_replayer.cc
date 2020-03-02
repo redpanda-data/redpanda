@@ -52,7 +52,7 @@ public:
               stlog.info,
               "offset + batch_size:{} exceeds filesize:{}, Stopping parsing",
               (header.size_bytes + physical_base_offset),
-              header);
+              filesize);
             return stop_parser::yes;
         }
         _seg->index()->maybe_track(header, physical_base_offset);
