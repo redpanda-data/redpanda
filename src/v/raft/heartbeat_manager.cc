@@ -7,6 +7,7 @@
 #include "rpc/reconnect_transport.h"
 #include "rpc/types.h"
 
+#include <absl/container/flat_hash_map.h>
 #include <boost/range/iterator_range.hpp>
 
 namespace raft {
@@ -16,7 +17,7 @@ using consensus_set = heartbeat_manager::consensus_set;
 
 static std::vector<heartbeat_manager::node_heartbeat> requests_for_range(
   const consensus_set& c, clock_type::time_point last_heartbeat) {
-    std::unordered_map<model::node_id, std::vector<protocol_metadata>>
+    absl::flat_hash_map<model::node_id, std::vector<protocol_metadata>>
       pending_beats;
     if (c.empty()) {
         return {};

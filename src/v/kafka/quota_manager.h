@@ -8,10 +8,11 @@
 #include <seastar/core/sstring.hh>
 #include <seastar/core/timer.hh>
 
+#include <absl/container/flat_hash_map.h>
+
 #include <chrono>
 #include <optional>
 #include <string_view>
-#include <unordered_map>
 
 namespace kafka {
 
@@ -118,13 +119,10 @@ private:
         auto now = clock::now();
         auto expire_age = full_window * 10;
         // c++20: replace with std::erase_if
-        for (auto it = _quotas.begin(); it != _quotas.end();) {
-            if ((now - it->second.last_seen) > expire_age) {
-                it = _quotas.erase(it);
-            } else {
-                it++;
-            }
-        }
+        absl::erase_if(
+          _quotas, [now, expire_age](const std::pair<ss::sstring, quota>& q) {
+              return (now - q.second.last_seen) > expire_age;
+          });
     }
 
 private:
@@ -141,7 +139,7 @@ private:
     const clock::duration _default_window_width;
 
     const uint32_t _target_tp_rate;
-    std::unordered_map<ss::sstring, quota> _quotas;
+    absl::flat_hash_map<ss::sstring, quota> _quotas;
 
     ss::timer<> _gc_timer;
     const clock::duration _gc_freq;

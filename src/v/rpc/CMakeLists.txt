@@ -18,6 +18,7 @@ v_cc_library(
     v::rphashing
     v::utils
     v::reflection
+    absl::flat_hash_map
   )
 add_subdirectory(test)
 add_subdirectory(demo)

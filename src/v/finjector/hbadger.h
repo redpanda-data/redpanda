@@ -5,7 +5,7 @@
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sstring.hh>
 
-#include <unordered_map>
+#include <absl/container/flat_hash_map.h>
 
 namespace finjector {
 
@@ -58,10 +58,10 @@ public:
     void set_delay(const ss::sstring& module, const ss::sstring& point);
     void set_termination(const ss::sstring& module, const ss::sstring& point);
     void unset(const ss::sstring& module, const ss::sstring& point);
-    std::unordered_map<ss::sstring, std::vector<ss::sstring>> points() const;
+    absl::flat_hash_map<ss::sstring, std::vector<ss::sstring>> points() const;
 
 private:
-    std::unordered_map<ss::sstring, probe*> _probes;
+    absl::flat_hash_map<ss::sstring, probe*> _probes;
 };
 
 honey_badger& shard_local_badger();

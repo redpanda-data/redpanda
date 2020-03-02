@@ -6,6 +6,8 @@
 
 #include <seastar/core/reactor.hh> // shard_id
 
+#include <absl/container/flat_hash_map.h>
+
 namespace cluster {
 /// \brief this is populated by consensus::controller
 /// every core will have a _full_ copy of all indexes
@@ -34,8 +36,8 @@ public:
 
 private:
     // kafka index
-    std::unordered_map<model::ntp, ss::shard_id> _ntp_idx;
+    absl::flat_hash_map<model::ntp, ss::shard_id> _ntp_idx;
     // raft index
-    std::unordered_map<raft::group_id, ss::shard_id> _group_idx;
+    absl::flat_hash_map<raft::group_id, ss::shard_id> _group_idx;
 };
 } // namespace cluster

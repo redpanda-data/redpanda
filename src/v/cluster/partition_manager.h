@@ -8,7 +8,7 @@
 #include "storage/log_manager.h"
 #include "utils/named_type.h"
 
-#include <unordered_map>
+#include <absl/container/flat_hash_map.h>
 
 namespace cluster {
 class partition_manager {
@@ -91,8 +91,8 @@ private:
     notification_id_type _notification_id{0};
     std::vector<std::pair<notification_id_type, leader_cb_t>> _notifications;
     // XXX use intrusive containers here
-    std::unordered_map<model::ntp, ss::lw_shared_ptr<partition>> _ntp_table;
-    std::unordered_map<raft::group_id, ss::lw_shared_ptr<partition>>
+    absl::flat_hash_map<model::ntp, ss::lw_shared_ptr<partition>> _ntp_table;
+    absl::flat_hash_map<raft::group_id, ss::lw_shared_ptr<partition>>
       _raft_table;
 };
 } // namespace cluster

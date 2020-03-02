@@ -7,7 +7,8 @@
 
 #include <seastar/core/circular_buffer.hh>
 
-#include <boost/container/flat_map.hpp>
+#include <absl/container/btree_map.h>
+#include <absl/container/flat_hash_map.h>
 
 #include <type_traits>
 
@@ -180,8 +181,7 @@ private:
 };
 
 class batch_cache_index {
-    using index_type
-      = boost::container::flat_map<model::offset, batch_cache::entry_ptr>;
+    using index_type = absl::btree_map<model::offset, batch_cache::entry_ptr>;
 
 public:
     struct read_result {

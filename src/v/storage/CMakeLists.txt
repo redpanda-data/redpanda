@@ -26,6 +26,8 @@ v_cc_library(
     v::rphashing
     v::finjector
     v::syschecks
+    absl::flat_hash_map
+    absl::btree
   PUBLIC
 )
 

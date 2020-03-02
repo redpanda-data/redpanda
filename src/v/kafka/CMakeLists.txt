@@ -33,5 +33,7 @@ v_cc_library(
     v::bytes
     v::rpc
     v::cluster
+    absl::flat_hash_map
+    absl::flat_hash_set
 )
 add_subdirectory(tests)

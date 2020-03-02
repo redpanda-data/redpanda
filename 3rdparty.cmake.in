@@ -507,17 +507,15 @@ ExternalProject_Add(pcg
   COMMAND ${CMAKE_COMMAND} -E copy <SOURCE_DIR>/include/pcg_uint128.hpp <INSTALL_DIR>/include/pcg_uint128.hpp
   )
 
-ExternalProject_Add(bytellhashmap
-  URL https://storage.googleapis.com/vectorizedio-public/dependencies/bytellhashmap-2c46874.tar.gz
-  URL_MD5 0ed67930d4b3795d3fb2ab6ac721b66d
+ExternalProject_Add(abseil
+  GIT_REPOSITORY https://github.com/vectorizedio/abseil-cpp.git
+  GIT_TAG bcefbdcd
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
-  PATCH_COMMAND ""
-  CONFIGURE_COMMAND ""
-  BUILD_COMMAND ""
-  INSTALL_COMMAND
-  COMMAND ${CMAKE_COMMAND} -E copy <SOURCE_DIR>/bytell_hash_map.hpp <INSTALL_DIR>/include/bytell_hash_map.hpp
-  COMMAND ${CMAKE_COMMAND} -E copy <SOURCE_DIR>/flat_hash_map.hpp <INSTALL_DIR>/include/flat_hash_map.hpp
-  )
+  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
+  CMAKE_ARGS
+    ${common_cmake_args}
+    -DABSL_ENABLE_INSTALL=ON
+)
 
 ExternalProject_Add(json
   URL https://storage.googleapis.com/vectorizedio-public/dependencies/json-v3.7.0.zip

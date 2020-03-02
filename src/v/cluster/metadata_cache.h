@@ -6,9 +6,7 @@
 
 #include <seastar/core/future.hh>
 
-#include <boost/container/flat_map.hpp>
-
-#include <unordered_map>
+#include <absl/container/flat_hash_map.h>
 
 namespace cluster {
 
@@ -18,9 +16,8 @@ public:
     struct metadata {
         std::vector<model::partition_metadata> partitions;
     };
-    using broker_cache_t
-      = boost::container::flat_map<model::node_id, broker_ptr>;
-    using cache_t = std::unordered_map<model::topic, metadata>;
+    using broker_cache_t = absl::flat_hash_map<model::node_id, broker_ptr>;
+    using cache_t = absl::flat_hash_map<model::topic, metadata>;
 
     metadata_cache() = default;
     ss::future<> stop() { return ss::make_ready_future<>(); }

@@ -584,15 +584,10 @@ void group::complete_join() {
 
     // <kafka>remove dynamic members who haven't joined the group yet</kafka>
     // this is the old group->remove_unjoined_members();
-    for (auto it = _members.begin(); it != _members.end();) {
-        if (!it->second->is_joining()) {
-            kglog.trace("removing unjoined member {}", it->first);
-            it->second->expire_timer().cancel();
-            it = _members.erase(it);
-        } else {
-            it++;
-        }
-    }
+    absl::erase_if(
+      _members, [](const std::pair<kafka::member_id, member_ptr>& m) {
+          return !m.second->is_joining();
+      });
 
     if (in_state(group_state::dead)) {
         kglog.trace("skipping join completion because group is dead");

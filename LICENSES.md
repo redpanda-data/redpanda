@@ -7,39 +7,39 @@ please keep this up to date with every new library use.
 
 # Native deps _used_ in production (exclude all test dependencies)
 
-| software        | license                                   |
-| :----------     | :------------                             |
-| clang           | Apache License 2                          |
-| libcxx          | Apache License 2                          |
-| libcxxabi       | Apache License 2                          |
-| boost libraries | Boost Software License Version 1.0        |
-| fmt             | BSD                                       |
-| zlib            | Zlib                                      |
-| protobuf        | Apache License 2                          |
-| DPDK            | BSD                                       |
-| c-ares          | MIT                                       |
-| yaml-cpp        | MIT                                       |
-| gmp             | LGPL v3                                   |
-| nettle          | LGPL v3                                   |
-| gnutls          | LGPL v2.1                                 |
-| lz4             | BSD 2                                     |
-| libnumactl      | LGPL v2.1                                 |
-| libpciaccess    | MIT                                       |
-| hwloc           | BSD                                       |
-| xz:liblzma      | Public Domain                             |
-| xml2            | MIT                                       |
-| cryptopp        | Public Domain                             |
-| lksctp-tools    | LGPL v2.1                                 |
-| seastar         | Apache License 2                          |
-| zstd            | BSD                                       |
-| HdrHistogram    | BSD 2                                     |
-| xxhash          | BSD                                       |
-| GSL             | MIT                                       |
-| pcg             | Apache License 2                          |
-| bytellhashmap   | Boost Software License Version 1.0        |
-| nlohmann-json   | MIT                                       |
-| crc32c          | BSD 3                                     |
-| CRoaring        | Apache License 2                          |
+| software        | license                            |
+| :----------     | :------------                      |
+| clang           | Apache License 2                   |
+| libcxx          | Apache License 2                   |
+| libcxxabi       | Apache License 2                   |
+| boost libraries | Boost Software License Version 1.0 |
+| fmt             | BSD                                |
+| zlib            | Zlib                               |
+| protobuf        | Apache License 2                   |
+| DPDK            | BSD                                |
+| c-ares          | MIT                                |
+| yaml-cpp        | MIT                                |
+| gmp             | LGPL v3                            |
+| nettle          | LGPL v3                            |
+| gnutls          | LGPL v2.1                          |
+| lz4             | BSD 2                              |
+| libnumactl      | LGPL v2.1                          |
+| libpciaccess    | MIT                                |
+| hwloc           | BSD                                |
+| xz:liblzma      | Public Domain                      |
+| xml2            | MIT                                |
+| cryptopp        | Public Domain                      |
+| lksctp-tools    | LGPL v2.1                          |
+| seastar         | Apache License 2                   |
+| zstd            | BSD                                |
+| HdrHistogram    | BSD 2                              |
+| xxhash          | BSD                                |
+| GSL             | MIT                                |
+| pcg             | Apache License 2                   |
+| abseil          | Apache License 2                   |
+| nlohmann-json   | MIT                                |
+| crc32c          | BSD 3                              |
+| CRoaring        | Apache License 2                   |
  
 # Golang deps _used_ in production (exclude all test dependencies)
 
