@@ -114,6 +114,32 @@ std::optional<model::term_id> disk_log_impl::get_term(model::offset o) const {
 
     return std::nullopt;
 }
+ss::future<std::optional<model::offset>>
+disk_log_impl::get_offset(model::timestamp time) {
+    if (_segs.empty()) {
+        return ss::make_ready_future<std::optional<model::offset>>();
+    }
+    // TODO(agallego) - pass priority
+    auto rdr = make_reader(log_reader_config(
+      _segs.front()->reader()->base_offset(),
+      _segs.back()->committed_offset(),
+      0,
+      2048, // We just need one record batch
+      ss::default_priority_class(),
+      std::nullopt,
+      time));
+    return model::consume_reader_to_memory(std::move(rdr), model::no_timeout)
+      .then(
+        [time](model::record_batch_reader::storage_t batches)
+          -> std::optional<model::offset> {
+            if (
+              !batches.empty()
+              && batches.front().header().first_timestamp >= time) {
+                return batches.front().base_offset();
+            }
+            return std::nullopt;
+        });
+}
 
 static ss::future<>
 delete_full_segments(std::vector<std::unique_ptr<segment>> to_remove) {
