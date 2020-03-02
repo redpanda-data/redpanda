@@ -53,9 +53,12 @@ public:
     log_segment_batch_reader(
       segment& seg, log_reader_config& config, probe& p) noexcept;
     log_segment_batch_reader(log_segment_batch_reader&&) noexcept = default;
-    log_segment_batch_reader(const log_segment_batch_reader&) = delete;
-    log_segment_batch_reader operator=(const log_segment_batch_reader&)
+    log_segment_batch_reader& operator=(log_segment_batch_reader&&) noexcept
       = delete;
+    log_segment_batch_reader(const log_segment_batch_reader&) = delete;
+    log_segment_batch_reader& operator=(const log_segment_batch_reader&)
+      = delete;
+    ~log_segment_batch_reader() noexcept = default;
 
     ss::future<ss::circular_buffer<model::record_batch>>
       read(model::timeout_clock::time_point);
