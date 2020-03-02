@@ -517,7 +517,8 @@ ss::future<> consensus::notify_entries_commited(
       0,
       std::numeric_limits<size_t>::max(),
       _io_priority,
-      {raft::configuration_batch_type}));
+      raft::configuration_batch_type,
+      std::nullopt));
     _ctxlog.debug(
       "Process configurations range [{},{}]",
       cfg_reader_start_offset,

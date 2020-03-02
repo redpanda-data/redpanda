@@ -104,14 +104,4 @@ private:
     probe& _probe;
 };
 
-static inline bool filter_batch_type(
-  const std::vector<model::record_batch_type>& filter,
-  const model::record_batch_type batch_type) {
-    if (filter.empty()) {
-        return true;
-    }
-    return std::find(filter.cbegin(), filter.cend(), batch_type)
-           != filter.cend();
-}
-
 } // namespace storage
