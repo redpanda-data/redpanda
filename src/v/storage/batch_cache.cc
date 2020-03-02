@@ -42,7 +42,7 @@ batch_cache_index::get(model::offset offset) {
 batch_cache_index::read_result batch_cache_index::read(
   model::offset offset,
   model::offset max_offset,
-  const std::vector<model::record_batch_type>& type_filter,
+  std::optional<model::record_batch_type> type_filter,
   size_t max_bytes) {
     read_result ret;
     ret.next_batch = offset;
@@ -52,7 +52,7 @@ batch_cache_index::read_result batch_cache_index::read(
     for (auto it = find_first_contains(offset); it != _index.end();) {
         auto& batch = it->second->batch;
 
-        if (filter_batch_type(type_filter, batch.header().type)) {
+        if (!type_filter || type_filter == batch.header().type) {
             ret.batches.emplace_back(batch.share());
             ret.memory_usage += batch.memory_usage();
             _cache.touch(it->second);
@@ -93,7 +93,6 @@ batch_cache_index::read_result batch_cache_index::read(
             break;
         }
     }
-
     ret.next_batch = offset;
     return ret;
 }
@@ -109,6 +108,18 @@ void batch_cache_index::truncate(model::offset offset) {
         });
         _index.erase(it, _index.end());
     }
+}
+
+std::ostream&
+operator<<(std::ostream& o, const batch_cache_index::read_result& c) {
+    o << "{batches:" << c.batches.size() << ", memory_usage:" << c.memory_usage
+      << ", next_batch:" << c.next_batch << ", next_cache_batch:";
+    if (c.next_cached_batch) {
+        o << *c.next_cached_batch;
+    } else {
+        o << "nullopt";
+    }
+    return o << "}";
 }
 
 } // namespace storage

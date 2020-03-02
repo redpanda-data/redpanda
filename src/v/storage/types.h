@@ -45,7 +45,11 @@ struct log_reader_config {
     size_t min_bytes;
     size_t max_bytes;
     ss::io_priority_class prio;
-    std::vector<model::record_batch_type> type_filter;
+    std::optional<model::record_batch_type> type_filter;
+
+    /// \brief gurantees first_timestamp >= record_batch.first_timestamp
+    /// it is the std::lower_bound
+    std::optional<model::timestamp> first_timestamp;
 
     // used by log reader
     size_t bytes_consumed{0};
@@ -56,13 +60,15 @@ struct log_reader_config {
       size_t min_bytes,
       size_t max_bytes,
       ss::io_priority_class prio,
-      std::vector<model::record_batch_type> type_filter = {})
+      std::optional<model::record_batch_type> type_filter,
+      std::optional<model::timestamp> time)
       : start_offset(start_offset)
       , max_offset(max_offset)
       , min_bytes(min_bytes)
       , max_bytes(max_bytes)
       , prio(prio)
-      , type_filter(std::move(type_filter)) {}
+      , type_filter(type_filter)
+      , first_timestamp(time) {}
 
     /**
      * Read offsets [start, end].
@@ -72,16 +78,31 @@ struct log_reader_config {
       model::offset max_offset,
       ss::io_priority_class prio)
       : log_reader_config(
-        start_offset, max_offset, 0, std::numeric_limits<size_t>::max(), prio) {
-    }
+        start_offset,
+        max_offset,
+        0,
+        std::numeric_limits<size_t>::max(),
+        prio,
+        std::nullopt,
+        std::nullopt) {}
 };
 
 inline std::ostream& operator<<(std::ostream& o, const log_reader_config& cfg) {
-    return o << "{start_offset:" << cfg.start_offset
-             << ", max_offset:" << cfg.max_offset
-             << ", min_bytes:" << cfg.min_bytes
-             << ", max_bytes:" << cfg.max_bytes
-             << ", type_filter_size:" << cfg.type_filter.size() << "}";
+    o << "{start_offset:" << cfg.start_offset
+      << ", max_offset:" << cfg.max_offset << ", min_bytes:" << cfg.min_bytes
+      << ", max_bytes:" << cfg.max_bytes << ", type_filter:";
+    if (cfg.type_filter) {
+        o << *cfg.type_filter;
+    } else {
+        o << "nullopt";
+    }
+    o << ", first_timestamp:";
+    if (cfg.first_timestamp) {
+        o << *cfg.first_timestamp;
+    } else {
+        o << "nullopt";
+    }
+    return o << "}";
 }
 
 inline std::ostream& operator<<(std::ostream& o, const append_result& a) {

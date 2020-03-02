@@ -55,7 +55,17 @@ batch_consumer::consume_result skipping_consumer::consume_batch_start(
     if (header.base_offset() > _reader._config.max_offset) {
         return stop_parser::yes;
     }
-    if (!filter_batch_type(_reader._config.type_filter, header.type)) {
+    if (
+      _reader._config.type_filter
+      && _reader._config.type_filter != header.type) {
+        _reader._config.start_offset = header.last_offset() + model::offset(1);
+        return skip_batch::yes;
+    }
+    if (
+      _reader._config.first_timestamp
+      && _reader._config.first_timestamp < header.first_timestamp) {
+        // kakfa needs to guarantee that the returned record is >=
+        // first_timestamp
         _reader._config.start_offset = header.last_offset() + model::offset(1);
         return skip_batch::yes;
     }
@@ -171,9 +181,8 @@ log_segment_batch_reader::read(model::timeout_clock::time_point timeout) {
 log_reader::log_reader(
   log_set& seg_set, log_reader_config config, probe& probe) noexcept
   : _set(seg_set)
-  , _config(std::move(config))
+  , _config(config)
   , _probe(probe) {
-    std::sort(begin(_config.type_filter), end(_config.type_filter));
     _end_of_stream = seg_set.empty();
 }
 

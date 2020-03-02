@@ -189,6 +189,8 @@ public:
         size_t memory_usage{0};
         model::offset next_batch;
         std::optional<model::offset> next_cached_batch;
+
+        friend std::ostream& operator<<(std::ostream&, const read_result&);
     };
 
     batch_cache_index(batch_cache& cache)
@@ -242,7 +244,7 @@ public:
     read_result read(
       model::offset offset,
       model::offset max_offset,
-      const std::vector<model::record_batch_type>& type_filter,
+      std::optional<model::record_batch_type> type_filter,
       size_t max_bytes);
 
     /**
