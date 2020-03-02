@@ -4,6 +4,7 @@
 #include "model/limits.h"
 #include "model/record.h"
 #include "model/timeout_clock.h"
+#include "model/timestamp.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/util/bool_class.hh>
@@ -26,6 +27,21 @@ struct append_result {
     size_t byte_size;
     model::term_id last_term;
 };
+struct timequery_config {
+    timequery_config(model::timestamp t, ss::io_priority_class iop) noexcept
+      : time(t)
+      , prio(iop) {}
+    model::timestamp time;
+    ss::io_priority_class prio;
+};
+struct timequery_result {
+    timequery_result(model::offset o, model::timestamp t) noexcept
+      : offset(o)
+      , time(t) {}
+    model::offset offset;
+    model::timestamp time;
+};
+
 /**
  * Log reader configuration.
  *
