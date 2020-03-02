@@ -122,17 +122,21 @@ struct mem_log_impl final : log::impl {
     ss::future<> close() final { return ss::make_ready_future<>(); }
     ss::future<> flush() final { return ss::make_ready_future<>(); }
 
-    ss::future<std::optional<model::offset>>
-    get_offset(model::timestamp t) final {
-        std::optional<model::offset> ret;
-        if (t != model::timestamp{}) {
+    ss::future<std::optional<timequery_result>>
+    timequery(timequery_config cfg) final {
+        using ret_t = std::optional<timequery_result>;
+        if (cfg.time != model::timestamp{}) {
             auto it = std::lower_bound(
-              std::cbegin(_data), std::cend(_data), t, entries_ordering{});
+              std::cbegin(_data),
+              std::cend(_data),
+              cfg.time,
+              entries_ordering{});
             if (it != _data.end()) {
-                ret = it->header().base_offset;
+                return ss::make_ready_future<ret_t>(timequery_result(
+                  it->header().base_offset, it->header().first_timestamp));
             }
         }
-        return ss::make_ready_future<std::optional<model::offset>>(ret);
+        return ss::make_ready_future<ret_t>();
     }
 
     ss::future<> truncate(model::offset offset) final {

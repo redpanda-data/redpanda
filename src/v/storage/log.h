@@ -69,8 +69,8 @@ public:
         virtual ss::future<> close() = 0;
         virtual ss::future<> flush() = 0;
 
-        virtual ss::future<std::optional<model::offset>>
-          get_offset(model::timestamp) = 0;
+        virtual ss::future<std::optional<timequery_result>>
+          timequery(timequery_config) = 0;
 
         const model::ntp& ntp() const { return _ntp; }
         const ss::sstring& work_directory() const { return _workdir; }
@@ -144,6 +144,10 @@ public:
 
     std::optional<model::term_id> get_term(model::offset o) const {
         return _impl->get_term(o);
+    }
+    ss::future<std::optional<timequery_result>>
+    timequery(timequery_config cfg) {
+        return _impl->timequery(cfg);
     }
 
     std::ostream& print(std::ostream& o) const { return _impl->print(o); }

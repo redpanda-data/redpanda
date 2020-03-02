@@ -114,10 +114,10 @@ std::optional<model::term_id> disk_log_impl::get_term(model::offset o) const {
 
     return std::nullopt;
 }
-ss::future<std::optional<model::offset>>
-disk_log_impl::get_offset(model::timestamp time) {
+ss::future<std::optional<timequery_result>>
+disk_log_impl::timequery(timequery_config cfg) {
     if (_segs.empty()) {
-        return ss::make_ready_future<std::optional<model::offset>>();
+        return ss::make_ready_future<std::optional<timequery_result>>();
     }
     // TODO(agallego) - pass priority
     auto rdr = make_reader(log_reader_config(
@@ -125,20 +125,21 @@ disk_log_impl::get_offset(model::timestamp time) {
       _segs.back()->committed_offset(),
       0,
       2048, // We just need one record batch
-      ss::default_priority_class(),
+      cfg.prio,
       std::nullopt,
-      time));
+      cfg.time));
     return model::consume_reader_to_memory(std::move(rdr), model::no_timeout)
-      .then(
-        [time](model::record_batch_reader::storage_t batches)
-          -> std::optional<model::offset> {
-            if (
-              !batches.empty()
-              && batches.front().header().first_timestamp >= time) {
-                return batches.front().base_offset();
-            }
-            return std::nullopt;
-        });
+      .then([cfg](model::record_batch_reader::storage_t batches) {
+          using ret_t = std::optional<timequery_result>;
+          if (
+            !batches.empty()
+            && batches.front().header().first_timestamp >= cfg.time) {
+              return ret_t(timequery_result(
+                batches.front().base_offset(),
+                batches.front().header().first_timestamp));
+          }
+          return ret_t();
+      });
 }
 
 static ss::future<>

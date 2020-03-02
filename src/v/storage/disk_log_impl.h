@@ -35,7 +35,8 @@ public:
           [this, offset]() mutable { return do_truncate(offset); });
     }
 
-    ss::future<std::optional<model::offset>> get_offset(model::timestamp) final;
+    ss::future<std::optional<timequery_result>>
+    timequery(timequery_config cfg) final;
 
     probe& get_probe() { return _probe; }
 
