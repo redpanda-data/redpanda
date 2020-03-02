@@ -45,17 +45,7 @@ public:
 
     storage_test_fixture() { configure_unit_test_logging(); }
 
-    void configure_unit_test_logging() {
-        ss::global_logger_registry().set_all_loggers_level(
-          ss::log_level::trace);
-        ss::global_logger_registry().set_logger_level(
-          "exception", ss::log_level::debug);
-
-        ss::apply_logging_settings(ss::logging_settings{
-          .logger_levels = {{"exception", ss::log_level::debug}},
-          .default_level = ss::log_level::trace,
-          .stdout_timestamp_style = ss::logger_timestamp_style::real});
-    }
+    void configure_unit_test_logging() { std::cout.setf(std::ios::unitbuf); }
 
     /// Creates a log manager in test directory
     storage::log_manager make_log_manager(storage::log_config cfg) {
