@@ -48,8 +48,11 @@ configuration::configuration()
   , seed_servers(
       *this,
       "seed_servers",
-      "Seed server address in form <address>:<rpc_port>",
-      required::yes)
+      "List of the seed servers used to join current cluster. If the "
+      "seed_server list is empty the node will be a cluster root and it will "
+      "form a new cluster",
+      required::no,
+      {})
   , min_version(*this, "min_version", "TBD", required::no, 0)
   , max_version(*this, "max_version", "TBD", required::no, 1)
   , kafka_api(

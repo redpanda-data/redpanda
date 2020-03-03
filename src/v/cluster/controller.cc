@@ -157,7 +157,9 @@ ss::future<> controller::start() {
 
 ss::future<consensus_ptr> controller::start_raft0() {
     std::vector<model::broker> brokers;
-    if (_seed_servers.front().id() == _self.id()) {
+    // When seed server property is empty it means that current node is cluster
+    // root, otherwise it will use one of the seed servers to join the cluster
+    if (_seed_servers.empty()) {
         vlog(clusterlog.info, "Current node is cluster root");
         brokers.push_back(_self);
     }
