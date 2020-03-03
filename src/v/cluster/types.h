@@ -41,7 +41,6 @@ struct partition_assignment {
   model::partition_metadata create_partition_metadata() const {
     auto p_md     = model::partition_metadata(ntp.tp.partition);
     p_md.replicas = replicas;
-    ;
     return p_md;
   }
 };
