@@ -158,6 +158,8 @@ struct [[gnu::packed]] vote_reply {
 /// This structure is used by consensus to notify other systems about group
 /// leadership changes.
 struct leadership_status {
+    // Current term
+    model::term_id term;
     // Group for which leader have changed
     group_id group;
     // Empty when there is no known leader in the group
