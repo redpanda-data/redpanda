@@ -52,3 +52,10 @@ rp_test(
   LIBRARIES Seastar::seastar_testing v::application
   DEFINITIONS SEASTAR_TESTING_MAIN
 )
+rp_test(
+  UNIT_TEST
+  BINARY_NAME metadata_dissemination_utils_test
+  SOURCES metadata_dissemination_utils_test.cc
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LIBRARIES Boost::unit_test_framework v::cluster
+)

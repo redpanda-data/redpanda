@@ -157,7 +157,13 @@ configuration::configuration()
       "group_new_member_join_timeout",
       "Timeout for new member joins",
       required::no,
-      30'000ms) {}
+      30'000ms)
+  , metadata_dissemination_interval(
+      *this,
+      "metadata_dissemination_interval",
+      "Interaval for metadata dissemination batching",
+      required::no,
+      3'000ms) {}
 
 void configuration::read_yaml(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {
