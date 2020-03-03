@@ -114,6 +114,8 @@ public:
         return _log.timequery(cfg);
     }
 
+    model::offset start_offset() const { return _log.start_offset(); }
+
 private:
     friend replicate_entries_stm;
     friend vote_stm;

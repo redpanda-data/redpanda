@@ -33,6 +33,8 @@ public:
         return _raft->make_reader(std::move(config));
     }
 
+    model::offset start_offset() const { return _raft->start_offset(); }
+
     /**
      * The returned value of last committed offset should not be used to
      * do things like initialize a reader (use partition::make_reader). Instead
