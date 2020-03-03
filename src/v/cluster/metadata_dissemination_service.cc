@@ -24,7 +24,7 @@ metadata_dissemination_service::metadata_dissemination_service(
   , _dissemination_interval(
       config::shard_local_cfg().metadata_dissemination_interval) {
     _dispatch_timer.set_callback([this] {
-        return ss::with_gate(
+        (void)ss::with_gate(
           _bg, [this] { return dispatch_disseminate_leadership(); });
     });
     _dispatch_timer.arm_periodic(_dissemination_interval);
