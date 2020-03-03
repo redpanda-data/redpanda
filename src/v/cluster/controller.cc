@@ -3,6 +3,7 @@
 #include "cluster/cluster_utils.h"
 #include "cluster/controller_service.h"
 #include "cluster/logger.h"
+#include "cluster/metadata_dissemination_service.h"
 #include "cluster/partition_manager.h"
 #include "cluster/simple_batch_builder.h"
 #include "cluster/types.h"
@@ -30,13 +31,15 @@ controller::controller(
   ss::sharded<partition_manager>& pm,
   ss::sharded<shard_table>& st,
   ss::sharded<metadata_cache>& md_cache,
-  ss::sharded<rpc::connection_cache>& connection_cache)
+  ss::sharded<rpc::connection_cache>& connection_cache,
+  ss::sharded<metadata_dissemination_service>& md_dissemination)
   : _self(config::make_self_broker(config::shard_local_cfg()))
   , _seed_servers(config::shard_local_cfg().seed_servers())
   , _pm(pm)
   , _st(st)
   , _md_cache(md_cache)
   , _connection_cache(connection_cache)
+  , _md_dissemination_service(md_dissemination)
   , _raft0(nullptr)
   , _highest_group_id(0) {}
 
@@ -135,6 +138,10 @@ ss::future<> controller::start() {
                     _leadership_notification_pending = false;
                 }
             });
+      })
+      .then([this] {
+          return _md_dissemination_service.local()
+            .initialize_leadership_metadata();
       });
 }
 
@@ -458,11 +465,21 @@ ss::future<> controller::do_leadership_notification(
                   _leadership_cond.broadcast();
                   return ss::make_ready_future<>();
               } else {
-                  return _md_cache.invoke_on_all(
+                  auto f = _md_cache.invoke_on_all(
                     [ntp, lid, term](metadata_cache& md) {
                         md.update_partition_leader(
                           ntp.tp.topic, ntp.tp.partition, term, lid);
                     });
+                  if (lid == _self.id()) {
+                      // only disseminate from current leader
+                      f = f.then(
+                        [this, ntp = std::move(ntp), term, lid]() mutable {
+                            return _md_dissemination_service.local()
+                              .disseminate_leadership(
+                                std::move(ntp), term, lid);
+                        });
+                  }
+                  return f;
               }
           });
     });
