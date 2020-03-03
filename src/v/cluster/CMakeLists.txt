@@ -26,6 +26,8 @@ v_cc_library(
     cluster_utils.cc
     service.cc
     metadata_dissemination_handler.cc
+    metadata_dissemination_service.cc
+    metadata_dissemination_utils.cc
   DEPS
     Seastar::seastar
     controller_rpc
