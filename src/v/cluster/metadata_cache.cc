@@ -48,6 +48,18 @@ std::vector<broker_ptr> metadata_cache::all_brokers() const {
     return brokers;
 }
 
+std::vector<model::node_id> metadata_cache::all_broker_ids() const {
+    std::vector<model::node_id> ids;
+    ids.reserve(_brokers_cache.size());
+    std::transform(
+      std::cbegin(_brokers_cache),
+      std::cend(_brokers_cache),
+      std::back_inserter(ids),
+      [](const broker_cache_t::value_type& b) { return b.first; });
+
+    return ids;
+}
+
 /// Returns single broker if exists in cache
 std::optional<broker_ptr> metadata_cache::get_broker(model::node_id id) const {
     if (auto it = _brokers_cache.find(id); it != _brokers_cache.end()) {

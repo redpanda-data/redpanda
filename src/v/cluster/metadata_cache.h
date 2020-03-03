@@ -41,6 +41,9 @@ public:
     /// Returns all brokers, returns copy as the content of broker can change
     std::vector<broker_ptr> all_brokers() const;
 
+    /// Returns all broker ids
+    std::vector<model::node_id> all_broker_ids() const;
+
     /// Returns single broker if exists in cache,returns copy as the content of
     /// broker can change
     std::optional<broker_ptr> get_broker(model::node_id) const;
@@ -77,6 +80,9 @@ public:
       std::optional<model::node_id>);
 
     bool contains(const model::topic&, model::partition_id) const;
+
+    /// Returns metadata of all topics in cache internal format
+    const cache_t& all_metadata() const { return _cache; }
 
 private:
     broker_cache_t _brokers_cache;
