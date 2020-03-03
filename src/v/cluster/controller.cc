@@ -95,8 +95,10 @@ ss::future<> controller::start() {
           _leader_notify_handle = pm.register_leadership_notification(
             [this](
               ss::lw_shared_ptr<partition> p,
+              model::term_id term,
               std::optional<model::node_id> leader_id) {
-                handle_leadership_notification(p->ntp(), std::move(leader_id));
+                handle_leadership_notification(
+                  p->ntp(), term, std::move(leader_id));
             });
       })
       .then([this] {
@@ -128,7 +130,8 @@ ss::future<> controller::start() {
                 vlog(clusterlog.info, "Finished recovering cluster state");
                 _recovered = true;
                 if (_leadership_notification_pending) {
-                    handle_leadership_notification(controller::ntp, _self.id());
+                    handle_leadership_notification(
+                      controller::ntp, model::term_id{}, _self.id());
                     _leadership_notification_pending = false;
                 }
             });
@@ -432,15 +435,15 @@ controller::create_topic_cfg_batch(const topic_configuration& cfg) {
 }
 
 ss::future<> controller::do_leadership_notification(
-  model::ntp ntp, std::optional<model::node_id> lid) {
+  model::ntp ntp, model::term_id term, std::optional<model::node_id> lid) {
     verify_shard();
     // gate is reentrant making it ok if leadership notification originated on
     // the the controller::shard core.
-    return with_gate(_bg, [this, ntp = std::move(ntp), lid]() mutable {
+    return with_gate(_bg, [this, ntp = std::move(ntp), lid, term]() mutable {
         return with_semaphore(
           _raft_notification_sem,
           1,
-          [this, ntp = std::move(ntp), lid]() mutable {
+          [this, ntp = std::move(ntp), lid, term]() mutable {
               if (ntp == controller::ntp) {
                   if (lid != _self.id()) {
                       // for now do nothing if we are not the leader
@@ -456,9 +459,9 @@ ss::future<> controller::do_leadership_notification(
                   return ss::make_ready_future<>();
               } else {
                   return _md_cache.invoke_on_all(
-                    [ntp, lid](metadata_cache& md) {
+                    [ntp, lid, term](metadata_cache& md) {
                         md.update_partition_leader(
-                          ntp.tp.topic, ntp.tp.partition, lid);
+                          ntp.tp.topic, ntp.tp.partition, term, lid);
                     });
               }
           });
@@ -466,14 +469,14 @@ ss::future<> controller::do_leadership_notification(
 }
 
 void controller::handle_leadership_notification(
-  model::ntp ntp, std::optional<model::node_id> lid) {
+  model::ntp ntp, model::term_id term, std::optional<model::node_id> lid) {
     // gate for this core's controller instance
-    (void)with_gate(_bg, [this, ntp = std::move(ntp), lid]() mutable {
+    (void)with_gate(_bg, [this, ntp = std::move(ntp), lid, term]() mutable {
         // forward notification to controller's home core
         return container().invoke_on(
           controller::shard,
-          [ntp = std::move(ntp), lid](controller& c) mutable {
-              return c.do_leadership_notification(std::move(ntp), lid);
+          [ntp = std::move(ntp), lid, term](controller& c) mutable {
+              return c.do_leadership_notification(std::move(ntp), term, lid);
           });
     }).handle_exception([](std::exception_ptr e) {
         clusterlog.warn(
