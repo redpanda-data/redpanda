@@ -7,6 +7,13 @@ rpcgen(
   INCLUDES ${CMAKE_BINARY_DIR}/src/v
 )
 
+rpcgen(
+  TARGET metadata_rpc
+  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/metadata_dissemination_rpc.json
+  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/metadata_dissemination_rpc_service.h
+  INCLUDES ${CMAKE_BINARY_DIR}/src/v
+)
+
 v_cc_library(
   NAME cluster
   SRCS
@@ -18,9 +25,11 @@ v_cc_library(
     logger.cc
     cluster_utils.cc
     service.cc
+    metadata_dissemination_handler.cc
   DEPS
     Seastar::seastar
     controller_rpc
+    metadata_rpc
     v::raft
     Roaring::roaring
     absl::flat_hash_map
