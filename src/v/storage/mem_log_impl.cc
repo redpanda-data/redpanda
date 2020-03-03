@@ -131,7 +131,8 @@ struct mem_log_impl final : log::impl {
               std::cend(_data),
               cfg.time,
               entries_ordering{});
-            if (it != _data.end()) {
+            if (
+              it != _data.end() && it->header().base_offset <= cfg.max_offset) {
                 return ss::make_ready_future<ret_t>(timequery_result(
                   it->header().base_offset, it->header().first_timestamp));
             }

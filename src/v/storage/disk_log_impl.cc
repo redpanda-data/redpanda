@@ -122,7 +122,7 @@ disk_log_impl::timequery(timequery_config cfg) {
     // TODO(agallego) - pass priority
     auto rdr = make_reader(log_reader_config(
       _segs.front()->reader()->base_offset(),
-      _segs.back()->committed_offset(),
+      cfg.max_offset,
       0,
       2048, // We just need one record batch
       cfg.prio,

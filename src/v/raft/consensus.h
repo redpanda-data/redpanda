@@ -109,6 +109,10 @@ public:
     void remove_append_entries_callback() {
         _append_entries_notification.reset();
     }
+    ss::future<std::optional<storage::timequery_result>>
+    timequery(storage::timequery_config cfg) {
+        return _log.timequery(cfg);
+    }
 
 private:
     friend replicate_entries_stm;
