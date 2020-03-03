@@ -234,6 +234,11 @@ static ss::future<produce_response::partition> produce_topic_partition(
                 produce_response::partition(
                   ntp.tp.partition, error_code::unknown_topic_or_partition));
           }
+          if (unlikely(!partition->is_leader())) {
+              return ss::make_ready_future<produce_response::partition>(
+                produce_response::partition(
+                  ntp.tp.partition, error_code::not_leader_for_partition));
+          }
           return partition_append(
             ntp.tp.partition, partition, std::move(batch));
       });

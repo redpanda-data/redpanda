@@ -33,6 +33,8 @@ public:
         return _raft->make_reader(std::move(config));
     }
 
+    model::offset start_offset() const { return _raft->start_offset(); }
+
     /**
      * The returned value of last committed offset should not be used to
      * do things like initialize a reader (use partition::make_reader). Instead
@@ -47,6 +49,8 @@ public:
         storage::timequery_config cfg(t, _raft->committed_offset(), p);
         return _raft->timequery(cfg);
     }
+
+    bool is_leader() const { return _raft->is_leader(); }
 
 private:
     friend partition_manager;
