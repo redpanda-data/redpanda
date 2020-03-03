@@ -50,6 +50,11 @@ struct topic_partition {
     bool operator!=(const topic_partition& other) const {
         return !(*this == other);
     }
+
+    bool operator<(const topic_partition& other) const {
+        return topic < other.topic
+               || (topic == other.topic && partition < other.partition);
+    }
 };
 
 std::ostream& operator<<(std::ostream&, const topic_partition&);

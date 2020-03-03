@@ -258,6 +258,10 @@ read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config) {
               return make_ready_partition_response_error(
                 error_code::unknown_topic_or_partition);
           }
+          if (unlikely(!partition->is_leader())) {
+              return make_ready_partition_response_error(
+                error_code::not_leader_for_partition);
+          }
           return read_from_partition(partition, std::move(config))
             .then([partition](fetch_response::partition_response&& resp) {
                 resp.last_stable_offset = partition->committed_offset();
