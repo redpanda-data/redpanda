@@ -693,7 +693,8 @@ void consensus::update_follower_stats(const group_configuration& cfg) {
 }
 
 void consensus::trigger_leadership_notification() {
-    _leader_notification(leadership_status{.group = group_id(_meta.group),
+    _leader_notification(leadership_status{.term = model::term_id(_meta.term),
+                                           .group = group_id(_meta.group),
                                            .current_leader = _leader_id});
 }
 
