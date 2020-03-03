@@ -42,6 +42,12 @@ public:
 
     const model::ntp& ntp() const { return _raft->ntp(); }
 
+    ss::future<std::optional<storage::timequery_result>>
+    timequery(model::timestamp t, ss::io_priority_class p) {
+        storage::timequery_config cfg(t, _raft->committed_offset(), p);
+        return _raft->timequery(cfg);
+    }
+
 private:
     friend partition_manager;
 

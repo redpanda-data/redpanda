@@ -28,10 +28,13 @@ struct append_result {
     model::term_id last_term;
 };
 struct timequery_config {
-    timequery_config(model::timestamp t, ss::io_priority_class iop) noexcept
+    timequery_config(
+      model::timestamp t, model::offset o, ss::io_priority_class iop) noexcept
       : time(t)
+      , max_offset(o)
       , prio(iop) {}
     model::timestamp time;
+    model::offset max_offset;
     ss::io_priority_class prio;
 };
 struct timequery_result {
