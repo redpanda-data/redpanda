@@ -28,9 +28,17 @@
 namespace storage {
 
 log_manager::log_manager(log_config config) noexcept
-  : _config(std::move(config)) {}
+  : _config(std::move(config)) {
+    _compaction_timer.set_callback([this] { compact_segments_in_thread(); });
+    _compaction_timer.arm_periodic(_config.compaction_interval);
+}
+
+void log_manager::compact_segments_in_thread() {
+    vlog(stlog.info, "starting compaction loop");
+}
 
 ss::future<> log_manager::stop() {
+    _compaction_timer.cancel();
     return _open_gate.close().then([this] {
         return ss::parallel_for_each(_logs, [](logs_type::value_type& entry) {
             return entry.second.close();

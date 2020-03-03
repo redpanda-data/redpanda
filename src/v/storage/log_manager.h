@@ -14,6 +14,7 @@
 #include <absl/container/flat_hash_map.h>
 
 #include <array>
+#include <chrono>
 
 namespace storage {
 
@@ -25,6 +26,7 @@ struct log_config {
     // used for testing: keeps a backtrace of operations for debugging
     using sanitize_files = ss::bool_class<struct sanitize_files_tag>;
     sanitize_files should_sanitize;
+    std::chrono::milliseconds compaction_interval = std::chrono::minutes(1);
 };
 
 /**
@@ -127,7 +129,14 @@ private:
     ss::future<std::vector<std::unique_ptr<segment>>>
     open_segments(ss::sstring path);
 
+    /**
+     * \brief delete old segments and trigger compacted segments
+     *        runs inside a seastar thread
+     */
+    void compact_segments_in_thread();
+
     log_config _config;
+    ss::timer<> _compaction_timer;
     logs_type _logs;
     batch_cache _batch_cache;
     ss::gate _open_gate;
