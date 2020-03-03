@@ -65,8 +65,10 @@ model::record make_random_record(int index) {
 
 model::record_batch
 make_random_batch(model::offset o, int num_records, bool allow_compression) {
-    auto ts = model::timestamp(get_int<model::timestamp::type>(
-      model::timestamp::min().value(), model::timestamp::min().value() + 2));
+    auto now = ss::lowres_clock::now().time_since_epoch();
+    auto now_ms
+      = std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
+    auto ts = model::timestamp(now_ms);
     auto header = model::record_batch_header{
       .size_bytes = 0, // computed later
       .base_offset = o,
