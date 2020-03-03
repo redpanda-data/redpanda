@@ -201,7 +201,7 @@ FIXTURE_TEST(read_from_ntp_max_bytes, redpanda_thread_fixture) {
 
     BOOST_TEST(zero > 0); // read something
     BOOST_TEST(zero == one);
-    BOOST_TEST(one < maxlimit); // read more
+    BOOST_TEST(one <= maxlimit); // read more
 }
 
 FIXTURE_TEST(fetch_one, redpanda_thread_fixture) {
