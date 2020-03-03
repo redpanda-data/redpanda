@@ -3,11 +3,12 @@ v_cc_library(
     storage_test_utils
   HDRS
     "utils/random_batch.h"
+    "utils/disk_log_builder.h"
   SRCS
     "utils/random_batch.cc"
+    "utils/disk_log_builder.cc"
   DEPS
     v::storage
-  PUBLIC
 )
 
 rp_test(
@@ -76,15 +77,6 @@ rp_test(
 
 rp_test(
   UNIT_TEST
-  BINARY_NAME log_builder_test
-  SOURCES log_builder_test.cc
-  LIBRARIES Seastar::seastar_testing v::storage_test_utils
-  ARGS "-- -c 1"
-  LABELS storage
-)
-
-rp_test(
-  UNIT_TEST
   BINARY_NAME offset_assignment_test
   SOURCES offset_assignment_test.cc
   LIBRARIES Seastar::seastar_testing v::storage_test_utils
@@ -131,6 +123,14 @@ rp_test(
   BINARY_NAME batch_cache_test
   SOURCES batch_cache_test.cc
   LIBRARIES Seastar::seastar_testing v::storage_test_utils
+  LABELS storage
+)
+rp_test(
+  UNIT_TEST
+  BINARY_NAME disk_log_builder_test
+  SOURCES disk_log_builder_test.cc
+  LIBRARIES Seastar::seastar_testing v::storage_test_utils
+  ARGS "-- -c 1"
   LABELS storage
 )
 

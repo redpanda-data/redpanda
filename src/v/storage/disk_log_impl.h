@@ -81,6 +81,9 @@ public:
 private:
     friend class log_builder;
     friend class disk_log_appender;
+    friend class disk_log_builder;
+
+    log_set& segments() { return _segs; }
 
     ss::future<> remove_empty_segments();
 
