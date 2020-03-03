@@ -101,6 +101,7 @@ void metadata_cache::update_partition_assignment(
 void metadata_cache::update_partition_leader(
   model::topic_view topic,
   model::partition_id partition_id,
+  model::term_id term,
   std::optional<model::node_id> leader_id) {
     auto it = find_topic_metadata(topic);
     auto p = find_partition(it->second, partition_id);
@@ -110,7 +111,12 @@ void metadata_cache::update_partition_leader(
           topic(),
           partition_id()));
     }
+    if (p->term_id > term) {
+        // Do nothing if update term is older
+        return;
+    }
     p->p_md.leader_node = leader_id;
+    p->term_id = term;
 }
 
 model::topic_metadata
