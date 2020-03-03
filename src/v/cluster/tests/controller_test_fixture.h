@@ -1,5 +1,7 @@
 #pragma once
 #include "cluster/controller.h"
+#include "cluster/metadata_dissemination_handler.h"
+#include "cluster/metadata_dissemination_service.h"
 #include "cluster/service.h"
 #include "cluster/tests/utils.h"
 #include "config/configuration.h"
@@ -72,6 +74,7 @@ public:
         if (_controller_started) {
             _controller.stop().get();
         }
+        _metadata_dissemination_service.stop().get0();
         _pm.stop().get0();
         st.stop().get0();
         _md_cache.stop().get0();
@@ -102,12 +105,16 @@ public:
             std::ref(st),
             std::ref(_cli_cache))
           .get0();
+        _metadata_dissemination_service
+          .start(std::ref(_md_cache), std::ref(_cli_cache))
+          .get0();
         _controller
           .start(
             std::ref(_pm),
             std::ref(st),
             std::ref(_md_cache),
-            std::ref(_cli_cache))
+            std::ref(_cli_cache),
+            std::ref(_metadata_dissemination_service))
           .get();
         _controller_started = true;
 
@@ -132,6 +139,10 @@ public:
                 ss::default_scheduling_group(),
                 ss::default_smp_service_group(),
                 std::ref(_controller));
+              proto->register_service<cluster::metadata_dissemination_handler>(
+                ss::default_scheduling_group(),
+                ss::default_smp_service_group(),
+                std::ref(_md_cache));
               s.set_protocol(std::move(proto));
           })
           .get();
@@ -270,6 +281,8 @@ private:
     ss::sharded<cluster::partition_manager> _pm;
     ss::sharded<rpc::server> _rpc;
     bool _controller_started = false;
+    ss::sharded<cluster::metadata_dissemination_service>
+      _metadata_dissemination_service;
     ss::sharded<cluster::controller> _controller;
 };
 // Waits for controller to become a leader it poll every 200ms
