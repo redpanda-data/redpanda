@@ -13,11 +13,15 @@ namespace cluster {
 class metadata_cache {
 public:
     // struct holding the cache content
-    struct metadata {
-        std::vector<model::partition_metadata> partitions;
+    struct partition {
+        model::partition_metadata p_md;
+        model::term_id term_id{};
+    };
+    struct topic_metadata {
+        std::vector<partition> partitions;
     };
     using broker_cache_t = absl::flat_hash_map<model::node_id, broker_ptr>;
-    using cache_t = absl::flat_hash_map<model::topic, metadata>;
+    using cache_t = absl::flat_hash_map<model::topic, topic_metadata>;
 
     metadata_cache() = default;
     ss::future<> stop() { return ss::make_ready_future<>(); }
@@ -81,7 +85,7 @@ model::topic_metadata
 create_topic_metadata(const metadata_cache::cache_t::value_type&);
 
 /// Looks for partition with requested id in topic_metadata type.
-std::optional<std::reference_wrapper<model::partition_metadata>>
-find_partition(metadata_cache::metadata&, model::partition_id);
+metadata_cache::partition*
+find_partition(metadata_cache::topic_metadata&, model::partition_id);
 
 } // namespace cluster
