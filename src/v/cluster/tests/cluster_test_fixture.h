@@ -20,6 +20,8 @@ void wait_for(model::timeout_clock::duration timeout, Pred&& p) {
 
 class cluster_test_fixture {
 public:
+    using fixture_ptr = std::unique_ptr<controller_tests_fixture>;
+
     cluster_test_fixture() { set_configuration("disable_metrics", true); }
 
     void add_controller(
@@ -40,6 +42,18 @@ public:
         return _instances[idx]->get_local_cache();
     }
 
+    cluster::controller& create_controller(model::node_id node_id) {
+        add_controller(
+          node_id,
+          ss::smp::count,
+          9092 + node_id(),
+          11000 + node_id(),
+          {{.id = model::node_id{0},
+            .addr = unresolved_address("127.0.0.1", 11000)}});
+
+        return get_controller(node_id()).local();
+    }
+
 private:
-    std::vector<std::unique_ptr<controller_tests_fixture>> _instances;
+    std::vector<fixture_ptr> _instances;
 };

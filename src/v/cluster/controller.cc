@@ -3,6 +3,7 @@
 #include "cluster/cluster_utils.h"
 #include "cluster/controller_service.h"
 #include "cluster/logger.h"
+#include "cluster/metadata_dissemination_service.h"
 #include "cluster/partition_manager.h"
 #include "cluster/simple_batch_builder.h"
 #include "cluster/types.h"
@@ -30,13 +31,15 @@ controller::controller(
   ss::sharded<partition_manager>& pm,
   ss::sharded<shard_table>& st,
   ss::sharded<metadata_cache>& md_cache,
-  ss::sharded<rpc::connection_cache>& connection_cache)
+  ss::sharded<rpc::connection_cache>& connection_cache,
+  ss::sharded<metadata_dissemination_service>& md_dissemination)
   : _self(config::make_self_broker(config::shard_local_cfg()))
   , _seed_servers(config::shard_local_cfg().seed_servers())
   , _pm(pm)
   , _st(st)
   , _md_cache(md_cache)
   , _connection_cache(connection_cache)
+  , _md_dissemination_service(md_dissemination)
   , _raft0(nullptr)
   , _highest_group_id(0) {}
 
@@ -95,8 +98,10 @@ ss::future<> controller::start() {
           _leader_notify_handle = pm.register_leadership_notification(
             [this](
               ss::lw_shared_ptr<partition> p,
+              model::term_id term,
               std::optional<model::node_id> leader_id) {
-                handle_leadership_notification(p->ntp(), std::move(leader_id));
+                handle_leadership_notification(
+                  p->ntp(), term, std::move(leader_id));
             });
       })
       .then([this] {
@@ -128,10 +133,15 @@ ss::future<> controller::start() {
                 vlog(clusterlog.info, "Finished recovering cluster state");
                 _recovered = true;
                 if (_leadership_notification_pending) {
-                    handle_leadership_notification(controller::ntp, _self.id());
+                    handle_leadership_notification(
+                      controller::ntp, model::term_id{}, _self.id());
                     _leadership_notification_pending = false;
                 }
             });
+      })
+      .then([this] {
+          return _md_dissemination_service.local()
+            .initialize_leadership_metadata();
       });
 }
 
@@ -432,15 +442,15 @@ controller::create_topic_cfg_batch(const topic_configuration& cfg) {
 }
 
 ss::future<> controller::do_leadership_notification(
-  model::ntp ntp, std::optional<model::node_id> lid) {
+  model::ntp ntp, model::term_id term, std::optional<model::node_id> lid) {
     verify_shard();
     // gate is reentrant making it ok if leadership notification originated on
     // the the controller::shard core.
-    return with_gate(_bg, [this, ntp = std::move(ntp), lid]() mutable {
+    return with_gate(_bg, [this, ntp = std::move(ntp), lid, term]() mutable {
         return with_semaphore(
           _raft_notification_sem,
           1,
-          [this, ntp = std::move(ntp), lid]() mutable {
+          [this, ntp = std::move(ntp), lid, term]() mutable {
               if (ntp == controller::ntp) {
                   if (lid != _self.id()) {
                       // for now do nothing if we are not the leader
@@ -455,25 +465,35 @@ ss::future<> controller::do_leadership_notification(
                   _leadership_cond.broadcast();
                   return ss::make_ready_future<>();
               } else {
-                  return _md_cache.invoke_on_all(
-                    [ntp, lid](metadata_cache& md) {
+                  auto f = _md_cache.invoke_on_all(
+                    [ntp, lid, term](metadata_cache& md) {
                         md.update_partition_leader(
-                          ntp.tp.topic, ntp.tp.partition, lid);
+                          ntp.tp.topic, ntp.tp.partition, term, lid);
                     });
+                  if (lid == _self.id()) {
+                      // only disseminate from current leader
+                      f = f.then(
+                        [this, ntp = std::move(ntp), term, lid]() mutable {
+                            return _md_dissemination_service.local()
+                              .disseminate_leadership(
+                                std::move(ntp), term, lid);
+                        });
+                  }
+                  return f;
               }
           });
     });
 }
 
 void controller::handle_leadership_notification(
-  model::ntp ntp, std::optional<model::node_id> lid) {
+  model::ntp ntp, model::term_id term, std::optional<model::node_id> lid) {
     // gate for this core's controller instance
-    (void)with_gate(_bg, [this, ntp = std::move(ntp), lid]() mutable {
+    (void)with_gate(_bg, [this, ntp = std::move(ntp), lid, term]() mutable {
         // forward notification to controller's home core
         return container().invoke_on(
           controller::shard,
-          [ntp = std::move(ntp), lid](controller& c) mutable {
-              return c.do_leadership_notification(std::move(ntp), lid);
+          [ntp = std::move(ntp), lid, term](controller& c) mutable {
+              return c.do_leadership_notification(std::move(ntp), term, lid);
           });
     }).handle_exception([](std::exception_ptr e) {
         clusterlog.warn(
@@ -628,7 +648,8 @@ ss::future<> controller::dispatch_join_to_seed_server(seed_iterator it) {
                   return ss::make_ready_future<>();
               }
           } catch (...) {
-              clusterlog.error("Error sending join request");
+              clusterlog.error(
+                "Error sending join request - {}", std::current_exception());
           }
           // Dispatch to next server
           return dispatch_join_to_seed_server(std::next(it));

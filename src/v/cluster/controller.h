@@ -2,6 +2,7 @@
 
 #include "cluster/controller_service.h"
 #include "cluster/metadata_cache.h"
+#include "cluster/metadata_dissemination_service.h"
 #include "cluster/partition_allocator.h"
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
@@ -40,7 +41,8 @@ public:
       ss::sharded<partition_manager>&,
       ss::sharded<shard_table>&,
       ss::sharded<metadata_cache>&,
-      ss::sharded<rpc::connection_cache>&);
+      ss::sharded<rpc::connection_cache>&,
+      ss::sharded<metadata_dissemination_service>&);
 
     ss::future<> start();
     ss::future<> stop();
@@ -102,10 +104,10 @@ private:
     std::optional<model::record_batch>
     create_topic_cfg_batch(const topic_configuration&);
     void end_of_stream();
-    ss::future<>
-      do_leadership_notification(model::ntp, std::optional<model::node_id>);
-    void
-      handle_leadership_notification(model::ntp, std::optional<model::node_id>);
+    ss::future<> do_leadership_notification(
+      model::ntp, model::term_id, std::optional<model::node_id>);
+    void handle_leadership_notification(
+      model::ntp, model::term_id, std::optional<model::node_id>);
     ss::future<> update_brokers_cache(std::vector<model::broker>);
     ss::future<>
       update_clients_cache(std::vector<broker_ptr>, std::vector<broker_ptr>);
@@ -139,6 +141,7 @@ private:
     ss::sharded<shard_table>& _st;
     ss::sharded<metadata_cache>& _md_cache;
     ss::sharded<rpc::connection_cache>& _connection_cache;
+    ss::sharded<metadata_dissemination_service>& _md_dissemination_service;
     raft::consensus* _raft0;
     raft::group_id _highest_group_id;
     bool _recovered = false;

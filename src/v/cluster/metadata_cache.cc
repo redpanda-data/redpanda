@@ -48,6 +48,18 @@ std::vector<broker_ptr> metadata_cache::all_brokers() const {
     return brokers;
 }
 
+std::vector<model::node_id> metadata_cache::all_broker_ids() const {
+    std::vector<model::node_id> ids;
+    ids.reserve(_brokers_cache.size());
+    std::transform(
+      std::cbegin(_brokers_cache),
+      std::cend(_brokers_cache),
+      std::back_inserter(ids),
+      [](const broker_cache_t::value_type& b) { return b.first; });
+
+    return ids;
+}
+
 /// Returns single broker if exists in cache
 std::optional<broker_ptr> metadata_cache::get_broker(model::node_id id) const {
     if (auto it = _brokers_cache.find(id); it != _brokers_cache.end()) {
@@ -67,7 +79,7 @@ void metadata_cache::update_brokers_cache(
 }
 
 void metadata_cache::add_topic(model::topic_view topic) {
-    _cache.emplace(topic, metadata{});
+    _cache.emplace(topic, topic_metadata{});
 }
 
 void metadata_cache::remove_topic(model::topic_view topic) {
@@ -87,20 +99,21 @@ metadata_cache::find_topic_metadata(model::topic_view topic) {
 void metadata_cache::update_partition_assignment(
   const partition_assignment& p_as) {
     auto it = find_topic_metadata(p_as.ntp.tp.topic);
-    auto partition = find_partition(it->second, p_as.ntp.tp.partition);
+    auto p = find_partition(it->second, p_as.ntp.tp.partition);
     auto p_md = p_as.create_partition_metadata();
-    if (partition) {
+    if (p) {
         // This partition already exists, update it
-        partition->get() = std::move(p_md);
+        p->p_md = std::move(p_md);
     } else {
         // This partition is new for this topic, just add it
-        it->second.partitions.push_back(std::move(p_md));
+        it->second.partitions.push_back(partition{std::move(p_md)});
     }
 }
 
 void metadata_cache::update_partition_leader(
   model::topic_view topic,
   model::partition_id partition_id,
+  model::term_id term,
   std::optional<model::node_id> leader_id) {
     auto it = find_topic_metadata(topic);
     auto p = find_partition(it->second, partition_id);
@@ -110,28 +123,34 @@ void metadata_cache::update_partition_leader(
           topic(),
           partition_id()));
     }
-    p->get().leader_node = leader_id;
+    if (p->term_id > term) {
+        // Do nothing if update term is older
+        return;
+    }
+    p->p_md.leader_node = leader_id;
+    p->term_id = term;
 }
 
 model::topic_metadata
 create_topic_metadata(const metadata_cache::cache_t::value_type& tp_md_pair) {
     model::topic_metadata tp_md(tp_md_pair.first);
-    tp_md.partitions = tp_md_pair.second.partitions;
+    std::transform(
+      std::cbegin(tp_md_pair.second.partitions),
+      std::cend(tp_md_pair.second.partitions),
+      std::back_inserter(tp_md.partitions),
+      [](const metadata_cache::partition& p) { return p.p_md; });
     return tp_md;
 }
 
-std::optional<std::reference_wrapper<model::partition_metadata>>
-find_partition(metadata_cache::metadata& t_md, model::partition_id p_id) {
+metadata_cache::partition*
+find_partition(metadata_cache::topic_metadata& t_md, model::partition_id p_id) {
     auto it = std::find_if(
       std::begin(t_md.partitions),
       std::end(t_md.partitions),
-      [p_id](const model::partition_metadata& p_md) {
-          return p_md.id == p_id;
+      [p_id](const metadata_cache::partition& p_md) {
+          return p_md.p_md.id == p_id;
       });
-    return it == std::end(t_md.partitions)
-             ? std::nullopt
-             : std::make_optional<
-               std::reference_wrapper<model::partition_metadata>>(*it);
+    return it == std::end(t_md.partitions) ? nullptr : &(*it);
 }
 
 bool metadata_cache::contains(
@@ -141,8 +160,8 @@ bool metadata_cache::contains(
         return std::any_of(
           partitions.cbegin(),
           partitions.cend(),
-          [&pid](const model::partition_metadata& partition) {
-              return partition.id == pid;
+          [&pid](const metadata_cache::partition& partition) {
+              return partition.p_md.id == pid;
           });
     }
     return false;
