@@ -48,6 +48,8 @@ public:
         return _raft->timequery(cfg);
     }
 
+    bool is_leader() const { return _raft->is_leader(); }
+
 private:
     friend partition_manager;
 
