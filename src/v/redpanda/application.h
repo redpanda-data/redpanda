@@ -2,6 +2,7 @@
 
 #include "cluster/controller.h"
 #include "cluster/metadata_cache.h"
+#include "cluster/metadata_dissemination_service.h"
 #include "cluster/partition_manager.h"
 #include "config/configuration.h"
 #include "kafka/controller_dispatcher.h"
@@ -45,6 +46,8 @@ public:
     ss::sharded<kafka::controller_dispatcher> cntrl_dispatcher;
     ss::sharded<cluster::shard_table> shard_table;
     ss::sharded<cluster::partition_manager> partition_manager;
+    ss::sharded<cluster::metadata_dissemination_service>
+      md_dissemination_service;
     ss::sharded<cluster::controller> controller;
 
 private:

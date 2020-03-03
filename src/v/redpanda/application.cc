@@ -1,5 +1,6 @@
 #include "redpanda/application.h"
 
+#include "cluster/metadata_dissemination_handler.h"
 #include "cluster/service.h"
 #include "kafka/protocol.h"
 #include "platform/stop_signal.h"
@@ -173,6 +174,12 @@ void application::wire_up_services() {
     // controller
     syschecks::systemd_message("Creating kafka metadata cache");
     construct_service(metadata_cache).get();
+    syschecks::systemd_message("Creating metadata dissemination service");
+    construct_service(
+      md_dissemination_service,
+      std::ref(metadata_cache),
+      std::ref(_raft_connection_cache))
+      .get();
 
     syschecks::systemd_message("Creating cluster::controller");
     construct_service(
@@ -180,7 +187,8 @@ void application::wire_up_services() {
       std::ref(partition_manager),
       std::ref(shard_table),
       std::ref(metadata_cache),
-      std::ref(_raft_connection_cache))
+      std::ref(_raft_connection_cache),
+      std::ref(md_dissemination_service))
       .get();
 
     // group membership
@@ -254,6 +262,10 @@ void application::start() {
             _scheduling_groups.cluster_sg(),
             _smp_groups.cluster_smp_sg(),
             std::ref(controller));
+          proto->register_service<cluster::metadata_dissemination_handler>(
+            _scheduling_groups.cluster_sg(),
+            _smp_groups.cluster_smp_sg(),
+            std::ref(metadata_cache));
           s.set_protocol(std::move(proto));
       })
       .get();

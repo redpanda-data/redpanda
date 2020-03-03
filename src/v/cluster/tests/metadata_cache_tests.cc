@@ -148,7 +148,10 @@ SEASTAR_THREAD_TEST_CASE(test_updating_partition_leader) {
     cache.update_partition_assignment(
       create_test_assignment("test_topic", 0, {{0, 0}}, 1));
     cache.update_partition_leader(
-      model::topic("test_topic"), model::partition_id(0), model::node_id(1));
+      model::topic("test_topic"),
+      model::partition_id(0),
+      model::term_id{1},
+      model::node_id(1));
 
     auto md = cache.get_topic_metadata(model::topic("test_topic"));
     BOOST_REQUIRE_EQUAL(md.has_value(), true);

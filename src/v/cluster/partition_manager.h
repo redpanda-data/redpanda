@@ -22,7 +22,9 @@ public:
       ss::sharded<rpc::connection_cache>& clients);
 
     using leader_cb_t = ss::noncopyable_function<void(
-      ss::lw_shared_ptr<partition>, std::optional<model::node_id>)>;
+      ss::lw_shared_ptr<partition>,
+      model::term_id,
+      std::optional<model::node_id>)>;
 
     inline ss::lw_shared_ptr<partition> get(const model::ntp& ntp) const {
         if (auto it = _ntp_table.find(ntp); it != _ntp_table.end()) {

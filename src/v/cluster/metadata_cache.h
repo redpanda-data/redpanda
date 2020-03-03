@@ -13,11 +13,15 @@ namespace cluster {
 class metadata_cache {
 public:
     // struct holding the cache content
-    struct metadata {
-        std::vector<model::partition_metadata> partitions;
+    struct partition {
+        model::partition_metadata p_md;
+        model::term_id term_id{};
+    };
+    struct topic_metadata {
+        std::vector<partition> partitions;
     };
     using broker_cache_t = absl::flat_hash_map<model::node_id, broker_ptr>;
-    using cache_t = absl::flat_hash_map<model::topic, metadata>;
+    using cache_t = absl::flat_hash_map<model::topic, topic_metadata>;
 
     metadata_cache() = default;
     ss::future<> stop() { return ss::make_ready_future<>(); }
@@ -36,6 +40,9 @@ public:
 
     /// Returns all brokers, returns copy as the content of broker can change
     std::vector<broker_ptr> all_brokers() const;
+
+    /// Returns all broker ids
+    std::vector<model::node_id> all_broker_ids() const;
 
     /// Returns single broker if exists in cache,returns copy as the content of
     /// broker can change
@@ -67,9 +74,15 @@ public:
     /// It is not yet used by the controller, it will be used when controller
     /// will process leadership change notifications
     void update_partition_leader(
-      model::topic_view, model::partition_id, std::optional<model::node_id>);
+      model::topic_view,
+      model::partition_id,
+      model::term_id,
+      std::optional<model::node_id>);
 
     bool contains(const model::topic&, model::partition_id) const;
+
+    /// Returns metadata of all topics in cache internal format
+    const cache_t& all_metadata() const { return _cache; }
 
 private:
     broker_cache_t _brokers_cache;
@@ -81,7 +94,7 @@ model::topic_metadata
 create_topic_metadata(const metadata_cache::cache_t::value_type&);
 
 /// Looks for partition with requested id in topic_metadata type.
-std::optional<std::reference_wrapper<model::partition_metadata>>
-find_partition(metadata_cache::metadata&, model::partition_id);
+metadata_cache::partition*
+find_partition(metadata_cache::topic_metadata&, model::partition_id);
 
 } // namespace cluster
