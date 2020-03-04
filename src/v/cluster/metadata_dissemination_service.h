@@ -7,6 +7,7 @@
 #include "raft/types.h"
 #include "rpc/connection_cache.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/sharded.hh>
 
 #include <absl/container/flat_hash_map.h>
@@ -59,7 +60,7 @@ public:
     void disseminate_leadership(
       model::ntp, model::term_id, std::optional<model::node_id>);
 
-    ss::future<> initialize_leadership_metadata();
+    void initialize_leadership_metadata();
 
     ss::future<> stop();
 
@@ -69,6 +70,8 @@ private:
     void collect_pending_updates();
     ss::future<> dispatch_disseminate_leadership();
     ss::future<> dispatch_one_update(model::node_id, const ntp_leaders&);
+    ss::future<> dispatch_get_metadata_update(model::node_id);
+    ss::future<> update_metadata_with_retries(std::vector<model::node_id>);
 
     ss::sharded<metadata_cache>& _md_cache;
     ss::sharded<rpc::connection_cache>& _clients;
@@ -77,6 +80,7 @@ private:
     std::vector<ntp_leader> _requests;
     broker_updates_t _pending_updates;
     ss::timer<> _dispatch_timer;
+    ss::abort_source _as;
     ss::gate _bg;
 };
 
