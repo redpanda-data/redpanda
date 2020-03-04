@@ -37,7 +37,7 @@ disk_log_impl::~disk_log_impl() {
 ss::future<> disk_log_impl::close() {
     _closed = true;
     return ss::parallel_for_each(
-      _segs, [](std::unique_ptr<segment>& h) { return h->close(); });
+      _segs, [](ss::lw_shared_ptr<segment>& h) { return h->close(); });
 }
 
 ss::future<> disk_log_impl::remove_empty_segments() {
@@ -53,7 +53,7 @@ ss::future<> disk_log_impl::new_segment(
     vassert(
       o() >= 0 && t() >= 0, "offset:{} and term:{} must be initialized", o, t);
     return _manager.make_log_segment(ntp(), o, t, pc)
-      .then([this, pc](std::unique_ptr<segment> handles) mutable {
+      .then([this, pc](ss::lw_shared_ptr<segment> handles) mutable {
           return remove_empty_segments().then(
             [this, h = std::move(handles)]() mutable {
                 vassert(!_closed, "cannot add log segment to closed log");
@@ -142,11 +142,10 @@ disk_log_impl::timequery(timequery_config cfg) {
       });
 }
 
-static ss::future<>
-delete_full_segments(std::vector<std::unique_ptr<segment>> to_remove) {
+static ss::future<> delete_full_segments(segment_set::underlying_t to_remove) {
     return ss::do_with(
-      std::move(to_remove), [](std::vector<std::unique_ptr<segment>>& remove) {
-          return ss::do_for_each(remove, [](std::unique_ptr<segment>& s) {
+      std::move(to_remove), [](segment_set::underlying_t& remove) {
+          return ss::do_for_each(remove, [](ss::lw_shared_ptr<segment>& s) {
               return s->close()
                 .handle_exception([&s](std::exception_ptr e) {
                     vlog(stlog.info, "error:{} closing segment: {}", e, *s);
@@ -168,7 +167,7 @@ ss::future<> disk_log_impl::do_truncate(model::offset o) {
           stlog.info, "Truncate offset: '{}' is out of range for {}", o, *this);
         return ss::make_ready_future<>();
     }
-    std::vector<std::unique_ptr<segment>> to_remove;
+    segment_set::underlying_t to_remove;
     auto begin_remove = _segs.lower_bound(o); // cannot be lower_bound
     if (begin_remove != _segs.end()) {
         if ((*begin_remove)->reader()->base_offset() < o) {
@@ -220,7 +219,7 @@ ss::future<> disk_log_impl::do_truncate(model::offset o) {
           auto [prev_last_offset, file_position] = phs.value();
           // the last offset, is one before this batch' base_offset
           if (file_position == 0) {
-              std::vector<std::unique_ptr<segment>> rem;
+              segment_set::underlying_t rem;
               rem.emplace_back(std::move(_segs.back()));
               _segs.pop_back();
               vlog(

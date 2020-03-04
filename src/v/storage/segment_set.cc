@@ -7,7 +7,7 @@
 
 namespace storage {
 struct base_offset_ordering {
-    using type = std::unique_ptr<segment>;
+    using type = ss::lw_shared_ptr<segment>;
     bool operator()(const type& seg1, const type& seg2) const {
         return seg1->reader()->base_offset() < seg2->reader()->base_offset();
     }
@@ -22,7 +22,7 @@ segment_set::segment_set(segment_set::underlying_t segs) noexcept(
     std::sort(_handles.begin(), _handles.end(), base_offset_ordering{});
 }
 
-void segment_set::add(std::unique_ptr<segment> h) {
+void segment_set::add(ss::lw_shared_ptr<segment> h) {
     if (!_handles.empty()) {
         vassert(
           h->reader()->base_offset() > _handles.back()->reader()->max_offset(),
