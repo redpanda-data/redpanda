@@ -144,8 +144,8 @@ ss::future<> controller::start() {
             });
       })
       .then([this] {
-          return _md_dissemination_service.local()
-            .initialize_leadership_metadata();
+          // done in background fibre
+          _md_dissemination_service.local().initialize_leadership_metadata();
       });
 }
 
