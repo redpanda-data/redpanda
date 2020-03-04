@@ -219,7 +219,7 @@ def _git_files(vconfig, exts, ref):
     ret = shell.raw_check_output(cmd, env=vconfig.environ)
 
     # FIXME: remove once clang-format bug is solved (treated as objective-C)
-    objective_c_not = ['src/v/kafka/errors.h', 'src/v/cluster/types.h']
+    objective_c_not = ['src/v/kafka/errors.h']
     for f in ret.split("\n"):
         for e in exts:
             if f.endswith(e) and f not in objective_c_not:

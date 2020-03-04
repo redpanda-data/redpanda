@@ -10,6 +10,21 @@
 
 namespace cluster {
 
+/// The metadata cache keep tracks of all topics and brokers metadata in the
+/// system it is updated by the controller basing on raft-0 state updates
+/// delivered through append entries & leadership notifications. The metadata
+/// cache never expires. Metadata are removed from the cache every time the
+/// topic is removed or cluster member is decommissioned. In current
+/// architecture metada cache contains the *whole copy* of metadata on *every
+/// core*
+///
+/// +-Core 0-------------+  +-Core 1-------------+     +-Core n-------------+
+/// |  +--------------+  |  |  +--------------+  |     |  +--------------+  |
+/// |  |   Metadata   |  |  |  |   Metadata   |  | ... |  |   Metadata   |  |
+/// |  |    Cache     |  |  |  |    Cache     |  |     |  |    Cache     |  |
+/// |  +--------------+  |  |  +--------------+  |     |  +--------------+  |
+/// +--------------------+  +--------------------+     +--------------------+
+
 class metadata_cache {
 public:
     // struct holding the cache content
@@ -83,6 +98,9 @@ public:
 
     /// Returns metadata of all topics in cache internal format
     const cache_t& all_metadata() const { return _cache; }
+
+    /// Directly inserts topic_metadata
+    void insert_topic(model::topic_metadata);
 
 private:
     broker_cache_t _brokers_cache;

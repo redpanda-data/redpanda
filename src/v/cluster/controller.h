@@ -3,6 +3,7 @@
 #include "cluster/controller_service.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/metadata_dissemination_service.h"
+#include "cluster/notification_latch.h"
 #include "cluster/partition_allocator.h"
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
@@ -59,6 +60,9 @@ public:
       std::vector<topic_configuration> topics,
       model::timeout_clock::time_point timeout);
 
+    ss::future<std::vector<topic_result>> autocreate_topics(
+      std::vector<topic_configuration>, model::timeout_clock::time_point);
+
     raft::group_id get_highest_group_id() const { return _highest_group_id; }
 
     ss::future<> recover_assignment(partition_assignment);
@@ -66,10 +70,11 @@ public:
     /**
      * \brief Wait on controller to become the leader.
      *
-     * Returns a future that resolves when this controller becomes the leader of
-     * the raft0 group. The future will also resolve when the controller is
-     * shutting down. This method serves only as a weak signal. Any caller must
-     * make sure to properly check for leadership again when necessary.
+     * Returns a future that resolves when this controller becomes the
+     * leader of the raft0 group. The future will also resolve when the
+     * controller is shutting down. This method serves only as a weak
+     * signal. Any caller must make sure to properly check for leadership
+     * again when necessary.
      */
     ss::future<> wait_for_leadership();
 
@@ -103,6 +108,11 @@ private:
     update_cache_with_partitions_assignment(const partition_assignment&);
     std::optional<model::record_batch>
     create_topic_cfg_batch(const topic_configuration&);
+    ss::future<std::vector<topic_result>> do_create_topics(
+      ss::semaphore_units<> units,
+      std::vector<topic_configuration> topics,
+      model::timeout_clock::time_point timeout);
+
     void end_of_stream();
     ss::future<> do_leadership_notification(
       model::ntp, model::term_id, std::optional<model::node_id>);
@@ -149,8 +159,11 @@ private:
     std::unique_ptr<partition_allocator> _allocator;
     ss::condition_variable _leadership_cond;
     ss::gate _bg;
-    ss::semaphore _raft_notification_sem{1};
+    // Semaphore used to make sure that the controller state i.e. topics and
+    // partition metadata are updated atomically
+    ss::semaphore _sem{1};
     model::offset _raft0_cfg_offset;
     partition_manager::notification_id_type _leader_notify_handle;
+    notification_latch _notification_latch;
 };
 } // namespace cluster

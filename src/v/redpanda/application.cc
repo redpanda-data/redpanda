@@ -261,7 +261,8 @@ void application::start() {
           proto->register_service<cluster::service>(
             _scheduling_groups.cluster_sg(),
             _smp_groups.cluster_smp_sg(),
-            std::ref(controller));
+            std::ref(controller),
+            std::ref(metadata_cache));
           proto->register_service<cluster::metadata_dissemination_handler>(
             _scheduling_groups.cluster_sg(),
             _smp_groups.cluster_smp_sg(),
