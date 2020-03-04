@@ -9,6 +9,11 @@
             "name": "join",
             "input_type": "join_request",
             "output_type": "join_reply"
+        },
+        {
+            "name": "create_topics",
+            "input_type": "create_topics_request",
+            "output_type": "create_topics_reply"
         }
     ]
 }

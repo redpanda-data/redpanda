@@ -23,7 +23,7 @@ CONCEPT(requires requires(const T& req) {
 })
 // clang-format on
 std::vector<topic_result> create_topic_results(
-  const std::vector<T>& requests, topic_error_code error_code) {
+  const std::vector<T>& requests, errc error_code) {
     std::vector<topic_result> results;
     results.reserve(requests.size());
     std::transform(
@@ -33,6 +33,9 @@ std::vector<topic_result> create_topic_results(
       [error_code](const T& r) { return topic_result(r.topic, error_code); });
     return results;
 }
+
+std::vector<topic_result>
+create_topic_results(const std::vector<model::topic>& topics, errc error_code);
 
 std::vector<model::broker> get_replica_set_brokers(
   const metadata_cache& md_cache, std::vector<model::broker_shard> replicas);

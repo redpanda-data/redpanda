@@ -391,7 +391,7 @@ private:
 };
 
 struct raft_test_fixture {
-    raft_test_fixture() { configure_unit_test_logging(); }
+    raft_test_fixture() {}
 
     model::record_batch_reader random_batches_entry(int max_batches) {
         auto batches = storage::test::make_random_batches(
@@ -526,17 +526,5 @@ struct raft_test_fixture {
         BOOST_TEST(
           before = gr.get_elections_count(),
           "Group leadership is required to be stable");
-    }
-
-    void configure_unit_test_logging() {
-        ss::global_logger_registry().set_all_loggers_level(
-          ss::log_level::trace);
-        ss::global_logger_registry().set_logger_level(
-          "exception", ss::log_level::debug);
-
-        ss::apply_logging_settings(ss::logging_settings{
-          .logger_levels = {{"exception", ss::log_level::debug}},
-          .default_level = ss::log_level::trace,
-          .stdout_timestamp_style = ss::logger_timestamp_style::real});
     }
 };

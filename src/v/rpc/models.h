@@ -289,4 +289,36 @@ struct adl<model::record_batch> {
     }
 };
 
+template<>
+struct adl<model::partition_metadata> {
+    void to(iobuf& out, model::partition_metadata&& md) {
+        reflection::serialize(
+          out, md.id, std::move(md.replicas), md.leader_node);
+    }
+
+    model::partition_metadata from(iobuf_parser& in) {
+        auto md = model::partition_metadata(
+          reflection::adl<model::partition_id>{}.from(in));
+        md.replicas = reflection::adl<std::vector<model::broker_shard>>{}.from(
+          in);
+        md.leader_node = reflection::adl<std::optional<model::node_id>>{}.from(
+          in);
+        return md;
+    };
+};
+
+template<>
+struct adl<model::topic_metadata> {
+    void to(iobuf& out, model::topic_metadata&& md) {
+        reflection::serialize(out, md.tp, std::move(md.partitions));
+    }
+
+    model::topic_metadata from(iobuf_parser& in) {
+        auto md = model::topic_metadata(
+          reflection::adl<model::topic>{}.from(in));
+        md.partitions
+          = reflection::adl<std::vector<model::partition_metadata>>{}.from(in);
+        return md;
+    };
+};
 } // namespace reflection

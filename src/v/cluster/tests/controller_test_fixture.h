@@ -138,7 +138,8 @@ public:
               proto->register_service<cluster::service>(
                 ss::default_scheduling_group(),
                 ss::default_smp_service_group(),
-                std::ref(_controller));
+                std::ref(_controller),
+                std::ref(_md_cache));
               proto->register_service<cluster::metadata_dissemination_handler>(
                 ss::default_scheduling_group(),
                 ss::default_smp_service_group(),

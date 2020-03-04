@@ -20,7 +20,6 @@ v_cc_library(
     controller.cc
     metadata_cache.cc
     partition_manager.cc
-    types.cc
     partition_allocator.cc
     logger.cc
     cluster_utils.cc
@@ -28,6 +27,8 @@ v_cc_library(
     metadata_dissemination_handler.cc
     metadata_dissemination_service.cc
     metadata_dissemination_utils.cc
+    types.cc
+    notification_latch.cc
   DEPS
     Seastar::seastar
     controller_rpc
