@@ -25,7 +25,9 @@ public:
       model::offset base_offset,
       uint64_t file_size,
       size_t buffer_size) noexcept;
+    ~log_segment_reader() noexcept = default;
     log_segment_reader(log_segment_reader&&) noexcept = default;
+    log_segment_reader& operator=(log_segment_reader&&) noexcept = default;
     log_segment_reader(const log_segment_reader&) = delete;
     log_segment_reader& operator=(const log_segment_reader&) = delete;
 
