@@ -10,6 +10,7 @@
 #include "kafka/requests/list_groups_request.h"
 #include "kafka/requests/list_offsets_request.h"
 #include "kafka/requests/metadata_request.h"
+#include "kafka/requests/offset_commit_request.h"
 #include "kafka/requests/offset_fetch_request.h"
 #include "kafka/requests/produce_request.h"
 #include "kafka/requests/request_context.h"
@@ -58,6 +59,8 @@ process_request(request_context&& ctx, ss::smp_service_group g) {
         return do_process<produce_api>(std::move(ctx), std::move(g));
     case list_offsets_api::key:
         return do_process<list_offsets_api>(std::move(ctx), std::move(g));
+    case offset_commit_api::key:
+        return do_process<offset_commit_api>(std::move(ctx), std::move(g));
     case fetch_api::key:
         return do_process<fetch_api>(std::move(ctx), std::move(g));
     case join_group_api::key:
