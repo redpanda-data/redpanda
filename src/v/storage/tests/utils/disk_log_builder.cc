@@ -51,16 +51,17 @@ disk_log_impl& disk_log_builder::get_disk_log_impl() {
     return *reinterpret_cast<disk_log_impl*>(_log->get_impl());
 }
 
-log_set& disk_log_builder::get_log_segments() {
-    auto& log_set = get_disk_log_impl().segments();
-    vassert(!log_set.empty(), "There are no segments in the log_set");
-    return log_set;
+segment_set& disk_log_builder::get_log_segments() {
+    auto& segment_set = get_disk_log_impl().segments();
+    vassert(!segment_set.empty(), "There are no segments in the segment_set");
+    return segment_set;
 }
 
 segment& disk_log_builder::get_segment(size_t index) {
-    auto& log_set = get_log_segments();
-    vassert(index < log_set.size(), "There are no segments in the log_set");
-    return *std::next(log_set.begin(), index)->get();
+    auto& segment_set = get_log_segments();
+    vassert(
+      index < segment_set.size(), "There are no segments in the segment_set");
+    return *std::next(segment_set.begin(), index)->get();
 }
 
 segment_index_ptr& disk_log_builder::get_seg_index_ptr(size_t index) {

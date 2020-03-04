@@ -4,12 +4,12 @@
 #include "storage/fs_utils.h"
 #include "storage/log.h"
 #include "storage/log_replayer.h"
-#include "storage/log_set.h"
 #include "storage/logger.h"
 #include "storage/segment.h"
 #include "storage/segment_appender.h"
 #include "storage/segment_index.h"
 #include "storage/segment_reader.h"
+#include "storage/segment_set.h"
 #include "utils/directory_walker.h"
 #include "utils/file_sanitizer.h"
 #include "vlog.h"
@@ -113,13 +113,13 @@ ss::future<std::unique_ptr<segment>> log_manager::do_make_log_segment(
 // Recover the last segment. Whenever we close a segment, we will likely
 // open a new one to which we will direct new writes. That new segment
 // might be empty. To optimize log replay, implement #140.
-static ss::future<log_set> do_recover(log_set&& segments) {
+static ss::future<segment_set> do_recover(segment_set&& segments) {
     return ss::async([segments = std::move(segments)]() mutable {
         if (segments.empty()) {
             return std::move(segments);
         }
-        log_set::underlying_t good = std::move(segments).release();
-        log_set::underlying_t to_recover;
+        segment_set::underlying_t good = std::move(segments).release();
+        segment_set::underlying_t to_recover;
         to_recover.push_back(std::move(good.back()));
         good.pop_back(); // always recover last segment
         auto good_end = std::partition(
@@ -175,11 +175,11 @@ static ss::future<log_set> do_recover(log_set&& segments) {
             vlog(stlog.info, "Recovered: {}", s);
             good.emplace_back(std::move(s));
         }
-        return log_set(std::move(good));
+        return segment_set(std::move(good));
     });
 }
 
-static void set_max_offsets(log_set& segments) {
+static void set_max_offsets(segment_set& segments) {
     for (auto it = segments.begin(); it != segments.end(); ++it) {
         auto next = std::next(it);
         if (next != segments.end()) {
@@ -330,10 +330,10 @@ log_manager::do_manage(model::ntp ntp, log_manager::storage_type type) {
     return recursive_touch_directory(path)
       .then([this, path] { return open_segments(path); })
       .then([this, ntp](std::vector<std::unique_ptr<segment>> segs) {
-          auto segments = log_set(std::move(segs));
+          auto segments = segment_set(std::move(segs));
           set_max_offsets(segments);
           return do_recover(std::move(segments))
-            .then([this, ntp](log_set segments) mutable {
+            .then([this, ntp](segment_set segments) mutable {
                 auto ptr = storage::make_disk_backed_log(
                   ntp, *this, std::move(segments));
                 _logs.emplace(std::move(ntp), ptr);
