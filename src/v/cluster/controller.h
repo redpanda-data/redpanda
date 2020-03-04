@@ -14,6 +14,7 @@
 #include "seastarx.h"
 #include "storage/log_manager.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/condition-variable.hh>
 
 #include <chrono>
@@ -165,5 +166,6 @@ private:
     model::offset _raft0_cfg_offset;
     partition_manager::notification_id_type _leader_notify_handle;
     notification_latch _notification_latch;
+    ss::abort_source _as;
 };
 } // namespace cluster
