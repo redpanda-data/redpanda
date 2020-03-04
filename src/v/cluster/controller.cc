@@ -419,7 +419,7 @@ ss::future<std::vector<topic_result>> controller::autocreate_topics(
         // create topics locally
         return create_topics(std::move(topics), timeout);
     }
-    
+
     return dispatch_rpc_to_leader([topics = std::move(topics), timeout](
                                     controller_client_protocol& c) mutable {
                return c.create_topics(
