@@ -1,4 +1,5 @@
 #pragma once
+#include "bytes/iobuf.h"
 #include "kafka/errors.h"
 #include "kafka/requests/fwd.h"
 #include "kafka/types.h"
