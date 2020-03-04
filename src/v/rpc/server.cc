@@ -8,6 +8,7 @@
 #include "vassert.h"
 #include "vlog.h"
 
+#include <seastar/core/future.hh>
 #include <seastar/core/metrics.hh>
 #include <seastar/core/reactor.hh>
 
@@ -111,19 +112,17 @@ ss::future<> server::accept(ss::server_socket& s) {
 } // namespace rpc
 
 ss::future<> server::stop() {
+    ss::sstring proto_name = _proto ? _proto->name() : "protocol not set";
     vlog(
-      rpclog.info,
-      "{} - Stopping {} listeners",
-      _proto->name(),
-      _listeners.size());
+      rpclog.info, "{} - Stopping {} listeners", proto_name, _listeners.size());
     for (auto&& l : _listeners) {
         l->abort_accept();
     }
-    vlog(rpclog.debug, "{} - Service probes {}", _proto->name(), _probe);
+    vlog(rpclog.debug, "{} - Service probes {}", proto_name, _probe);
     vlog(
       rpclog.info,
       "{} - Shutting down {} connections",
-      _proto->name(),
+      proto_name,
       _connections.size());
     _as.request_abort();
     // close the connections and wait for all dispatches to finish
