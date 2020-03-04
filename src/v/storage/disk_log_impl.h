@@ -5,7 +5,7 @@
 #include "storage/log.h"
 #include "storage/log_reader.h"
 #include "storage/log_segment_appender.h"
-#include "storage/log_segment_reader.h"
+#include "storage/segment_reader.h"
 #include "storage/probe.h"
 
 namespace storage {

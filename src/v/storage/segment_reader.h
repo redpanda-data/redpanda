@@ -16,20 +16,20 @@
 
 namespace storage {
 
-class log_segment_reader {
+class segment_reader {
 public:
-    log_segment_reader(
+    segment_reader(
       ss::sstring filename,
       ss::file,
       model::term_id term,
       model::offset base_offset,
       uint64_t file_size,
       size_t buffer_size) noexcept;
-    ~log_segment_reader() noexcept = default;
-    log_segment_reader(log_segment_reader&&) noexcept = default;
-    log_segment_reader& operator=(log_segment_reader&&) noexcept = default;
-    log_segment_reader(const log_segment_reader&) = delete;
-    log_segment_reader& operator=(const log_segment_reader&) = delete;
+    ~segment_reader() noexcept = default;
+    segment_reader(segment_reader&&) noexcept = default;
+    segment_reader& operator=(segment_reader&&) noexcept = default;
+    segment_reader(const segment_reader&) = delete;
+    segment_reader& operator=(const segment_reader&) = delete;
 
     /// mutating method for keeping track of the last offset from
     /// the active log_segment_appender
@@ -88,8 +88,8 @@ private:
       = ss::make_lw_shared<ss::file_input_stream_history>();
 };
 
-using segment_reader_ptr = ss::lw_shared_ptr<log_segment_reader>;
+using segment_reader_ptr = ss::lw_shared_ptr<segment_reader>;
 
-std::ostream& operator<<(std::ostream&, const log_segment_reader&);
+std::ostream& operator<<(std::ostream&, const segment_reader&);
 std::ostream& operator<<(std::ostream&, segment_reader_ptr);
 } // namespace storage

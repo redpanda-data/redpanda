@@ -5,7 +5,7 @@
 #include "model/timestamp.h"
 #include "seastarx.h"
 #include "storage/log_appender.h"
-#include "storage/log_segment_reader.h"
+#include "storage/segment_reader.h"
 #include "storage/types.h"
 
 #include <seastar/core/shared_ptr.hh>

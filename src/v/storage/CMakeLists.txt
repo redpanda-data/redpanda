@@ -1,7 +1,7 @@
 v_cc_library(
   NAME storage
   SRCS
-    log_segment_reader.cc
+    segment_reader.cc
     log_manager.cc
     mem_log_impl.cc
     disk_log_impl.cc
