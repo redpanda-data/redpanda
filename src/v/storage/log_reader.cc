@@ -18,7 +18,7 @@ batch_consumer::consume_result skipping_consumer::consume_batch_start(
   model::record_batch_header header,
   size_t physical_base_offset,
   size_t size_on_disk) {
-    const auto filesize = _reader._seg.reader()->file_size();
+    const auto filesize = _reader._seg.reader().file_size();
     // check for holes in the offset range on disk
     if (unlikely(
           _expected_next_batch() >= 0
@@ -76,7 +76,7 @@ batch_consumer::consume_result skipping_consumer::consume_batch_start(
         _records = std::move(r);
     }
     _header = header;
-    _header.ctx.term = _reader._seg.reader()->term();
+    _header.ctx.term = _reader._seg.reader().term();
     return skip_batch::no;
 }
 

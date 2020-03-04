@@ -32,19 +32,22 @@ struct context {
         fd = ss::file(ss::make_shared(file_io_sanitizer(std::move(fd))));
         fidx = ss::file(ss::make_shared(file_io_sanitizer(std::move(fidx))));
 
-        auto appender = std::make_unique<segment_appender>(
+        auto appender = segment_appender(
           fd, segment_appender::options(ss::default_priority_class()));
-        auto indexer = std::make_unique<segment_index>(
+        auto indexer = segment_index(
           base_name + ".index", std::move(fidx), base, 4096);
-        auto reader = ss::make_lw_shared<segment_reader>(
+        auto reader = segment_reader(
           base_name,
           ss::open_file_dma(base_name, ss::open_flags::ro).get0(),
           model::term_id(0),
           base,
-          appender->file_byte_offset(),
+          appender.file_byte_offset(),
           128);
         _seg = ss::make_lw_shared<segment>(
-          reader, std::move(indexer), std::move(appender), nullptr);
+          std::move(reader),
+          std::move(indexer),
+          std::move(appender),
+          std::nullopt);
         replayer_opt = log_replayer(*_seg);
     }
     ~context() { _seg->close().get(); }
@@ -73,10 +76,10 @@ struct context {
     template<typename Writer>
     void do_write(Writer&& w, model::offset base) {
         initialize(base);
-        w(*_seg->appender());
+        w(_seg->appender());
         _seg->flush().get();
-        _seg->reader()->set_last_visible_byte_offset(
-          _seg->appender()->file_byte_offset());
+        _seg->reader().set_last_visible_byte_offset(
+          _seg->appender().file_byte_offset());
     }
 
     log_replayer& replayer() { return *replayer_opt; }

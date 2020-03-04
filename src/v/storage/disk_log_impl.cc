@@ -87,7 +87,7 @@ ss::future<> disk_log_impl::maybe_roll(
     vassert(t >= term(), "Term:{} must be greater than base:{}", t, term());
     if (
       t != term() || _segs.empty() || !_segs.back()->has_appender()
-      || _segs.back()->appender()->file_byte_offset()
+      || _segs.back()->appender().file_byte_offset()
            > _manager.max_segment_size()) {
         auto f = ss::make_ready_future<>();
         if (!_segs.empty() && _segs.back()->has_appender()) {
@@ -121,7 +121,7 @@ disk_log_impl::timequery(timequery_config cfg) {
     }
     // TODO(agallego) - pass priority
     auto rdr = make_reader(log_reader_config(
-      _segs.front()->reader()->base_offset(),
+      _segs.front()->reader().base_offset(),
       cfg.max_offset,
       0,
       2048, // We just need one record batch
@@ -150,8 +150,8 @@ static ss::future<> delete_full_segments(segment_set::underlying_t to_remove) {
                 .handle_exception([&s](std::exception_ptr e) {
                     vlog(stlog.info, "error:{} closing segment: {}", e, *s);
                 })
-                .then([&s] { return ss::remove_file(s->reader()->filename()); })
-                .then([&s] { return ss::remove_file(s->index()->filename()); })
+                .then([&s] { return ss::remove_file(s->reader().filename()); })
+                .then([&s] { return ss::remove_file(s->index().filename()); })
                 .handle_exception([&s](std::exception_ptr e) {
                     vlog(
                       stlog.info, "error:{} removing segment files: {}", e, *s);
@@ -170,7 +170,7 @@ ss::future<> disk_log_impl::do_truncate(model::offset o) {
     segment_set::underlying_t to_remove;
     auto begin_remove = _segs.lower_bound(o); // cannot be lower_bound
     if (begin_remove != _segs.end()) {
-        if ((*begin_remove)->reader()->base_offset() < o) {
+        if ((*begin_remove)->reader().base_offset() < o) {
             begin_remove = std::next(begin_remove);
         }
     }
@@ -191,9 +191,9 @@ ss::future<> disk_log_impl::do_truncate(model::offset o) {
               return ss::make_ready_future<fpos_type>();
           }
           auto& last = *_segs.back();
-          if (o <= last.dirty_offset() && o >= last.reader()->base_offset()) {
-              auto pidx = last.index()->find_nearest(o);
-              model::offset start = last.index()->base_offset();
+          if (o <= last.dirty_offset() && o >= last.reader().base_offset()) {
+              auto pidx = last.index().find_nearest(o);
+              model::offset start = last.index().base_offset();
               size_t initial_size = 0;
               if (pidx) {
                   start = pidx->offset;

@@ -190,7 +190,7 @@ public:
     segment_set& get_log_segments();
     // Index range is [0....total_segments)
     segment& get_segment(size_t index);
-    segment_index_ptr& get_seg_index_ptr(size_t index);
+    segment_index& get_seg_index_ptr(size_t index);
 
     // Create segments
     ss::future<> add_segment(
