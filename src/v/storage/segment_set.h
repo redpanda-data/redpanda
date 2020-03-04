@@ -8,7 +8,7 @@ namespace storage {
 /*
  * A container for log_segment_reader's. Usage:
  *
- * log_set l;
+ * segment_set l;
  * l.add(some_log_segment);
  * ...
  * l.add(another_log_segment);
@@ -17,7 +17,7 @@ namespace storage {
  *   // Do something with the segment
  * }
  */
-class log_set {
+class segment_set {
 public:
     // type _must_ offer stable segment addresses
     // for readers and writers taking refs.
@@ -30,12 +30,12 @@ public:
     static constexpr bool is_nothrow_v
       = std::is_nothrow_move_constructible_v<underlying_t>;
 
-    explicit log_set(underlying_t) noexcept(is_nothrow_v);
-    ~log_set() = default;
-    log_set(log_set&&) noexcept = default;
-    log_set& operator=(log_set&&) noexcept = default;
-    log_set(const log_set&) = delete;
-    log_set& operator=(const log_set&) = delete;
+    explicit segment_set(underlying_t) noexcept(is_nothrow_v);
+    ~segment_set() = default;
+    segment_set(segment_set&&) noexcept = default;
+    segment_set& operator=(segment_set&&) noexcept = default;
+    segment_set(const segment_set&) = delete;
+    segment_set& operator=(const segment_set&) = delete;
 
     size_t size() const { return _handles.size(); }
 
@@ -70,6 +70,6 @@ private:
     underlying_t _handles;
 };
 
-std::ostream& operator<<(std::ostream&, const log_set&);
+std::ostream& operator<<(std::ostream&, const segment_set&);
 
 } // namespace storage

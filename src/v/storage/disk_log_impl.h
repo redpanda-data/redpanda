@@ -14,11 +14,11 @@ class disk_log_impl final : public log::impl {
     using failure_probes = storage::log_failure_probes;
 
 public:
-    disk_log_impl(model::ntp, ss::sstring, log_manager&, log_set);
+    disk_log_impl(model::ntp, ss::sstring, log_manager&, segment_set);
     ~disk_log_impl() override;
     ss::future<> close() final;
 
-    const log_set& segments() const { return _segs; }
+    const segment_set& segments() const { return _segs; }
 
     model::record_batch_reader make_reader(log_reader_config) final;
 
@@ -83,7 +83,7 @@ private:
     friend class disk_log_appender;
     friend class disk_log_builder;
 
-    log_set& segments() { return _segs; }
+    segment_set& segments() { return _segs; }
 
     ss::future<> remove_empty_segments();
 
@@ -95,7 +95,7 @@ private:
 private:
     bool _closed{false};
     log_manager& _manager;
-    log_set _segs;
+    segment_set _segs;
     storage::probe _probe;
     failure_probes _failure_probes;
 };

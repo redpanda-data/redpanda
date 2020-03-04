@@ -4,10 +4,10 @@
 #include "model/timeout_clock.h"
 #include "storage/disk_log_appender.h"
 #include "storage/log_manager.h"
-#include "storage/log_set.h"
 #include "storage/logger.h"
 #include "storage/offset_assignment.h"
 #include "storage/offset_to_filepos_consumer.h"
+#include "storage/segment_set.h"
 #include "storage/version.h"
 #include "vassert.h"
 #include "vlog.h"
@@ -25,7 +25,7 @@
 namespace storage {
 
 disk_log_impl::disk_log_impl(
-  model::ntp ntp, ss::sstring workdir, log_manager& manager, log_set segs)
+  model::ntp ntp, ss::sstring workdir, log_manager& manager, segment_set segs)
   : log::impl(std::move(ntp), std::move(workdir))
   , _manager(manager)
   , _segs(std::move(segs)) {
@@ -242,7 +242,8 @@ std::ostream& operator<<(std::ostream& o, const disk_log_impl& d) {
     return d.print(o);
 }
 
-log make_disk_backed_log(model::ntp ntp, log_manager& manager, log_set segs) {
+log make_disk_backed_log(
+  model::ntp ntp, log_manager& manager, segment_set segs) {
     auto workdir = fmt::format("{}/{}", manager.config().base_dir, ntp.path());
     auto ptr = ss::make_shared<disk_log_impl>(
       std::move(ntp), std::move(workdir), manager, std::move(segs));

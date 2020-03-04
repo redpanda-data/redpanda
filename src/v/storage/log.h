@@ -165,8 +165,8 @@ inline std::ostream& operator<<(std::ostream& o, const storage::log& lg) {
 }
 
 class log_manager;
-class log_set;
+class segment_set;
 log make_memory_backed_log(model::ntp, ss::sstring);
-log make_disk_backed_log(model::ntp, log_manager&, log_set);
+log make_disk_backed_log(model::ntp, log_manager&, segment_set);
 
 } // namespace storage

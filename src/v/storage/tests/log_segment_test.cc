@@ -1,4 +1,4 @@
-#include "storage/log_set.h"
+#include "storage/segment_set.h"
 #include "storage/segment_index.h"
 #include "storage/segment_reader.h"
 
@@ -55,9 +55,9 @@ SEASTAR_THREAD_TEST_CASE(test_read_write) {
     bytes_file.close().get();
 }
 
-SEASTAR_THREAD_TEST_CASE(log_set_orders_segments) {
+SEASTAR_THREAD_TEST_CASE(segment_set_orders_segments) {
     ss::file f(nullptr);
-    auto v = log_set::underlying_t();
+    auto v = segment_set::underlying_t();
     v.push_back(std::make_unique<storage::segment>(
       ss::make_lw_shared<segment_reader>(
         "test", f, model::term_id(0), model::offset(1), 0, 1024),
@@ -78,7 +78,7 @@ SEASTAR_THREAD_TEST_CASE(log_set_orders_segments) {
       nullptr));
 
     // The test is inserting s1 *before* s0 so the ctor gurantees ordering
-    log_set segs = log_set(std::move(v));
+    segment_set segs = segment_set(std::move(v));
     auto o = model::offset(0);
     for (auto& seg : segs) {
         BOOST_CHECK_EQUAL(seg->reader()->base_offset(), o);
@@ -86,7 +86,7 @@ SEASTAR_THREAD_TEST_CASE(log_set_orders_segments) {
     }
 }
 
-SEASTAR_THREAD_TEST_CASE(log_set_expects_monotonic_adds) {
+SEASTAR_THREAD_TEST_CASE(segment_set_expects_monotonic_adds) {
     ss::file f(nullptr);
     auto s1 = std::make_unique<storage::segment>(
       ss::make_lw_shared<segment_reader>(
@@ -100,7 +100,7 @@ SEASTAR_THREAD_TEST_CASE(log_set_expects_monotonic_adds) {
       nullptr,
       nullptr,
       nullptr);
-    log_set segs = log_set({});
+    segment_set segs = segment_set({});
     segs.add(std::move(s1));
     BOOST_CHECK_EQUAL(segs.back()->reader()->base_offset(), model::offset(1));
 }
@@ -120,7 +120,7 @@ SEASTAR_THREAD_TEST_CASE(test_log_seg_selector) {
       "test", f, model::term_id(0), model::offset(21), 0, 1024);
     log_seg3->set_last_written_offset(model::offset(21));
 
-    log_set segs = log_set({});
+    segment_set segs = segment_set({});
     segs.add(
       std::make_unique<storage::segment>(log_seg1, nullptr, nullptr, nullptr));
     segs.add(
@@ -156,7 +156,7 @@ SEASTAR_THREAD_TEST_CASE(test_log_seg_selector) {
     seg = segs.lower_bound(model::offset(22));
     BOOST_CHECK_EQUAL((*seg)->reader(), log_seg4);
 
-    segs = log_set({});
+    segs = segment_set({});
     segs.add(
       std::make_unique<storage::segment>(log_seg1, nullptr, nullptr, nullptr));
     segs.add(

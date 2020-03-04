@@ -5,10 +5,10 @@
 #include "model/timeout_clock.h"
 #include "storage/disk_log_appender.h"
 #include "storage/log_reader.h"
-#include "storage/log_set.h"
 #include "storage/segment_appender.h"
 #include "storage/segment_appender_utils.h"
 #include "storage/segment_reader.h"
+#include "storage/segment_set.h"
 #include "storage/tests/random_batch.h"
 #include "utils/file_sanitizer.h"
 
@@ -19,7 +19,7 @@
 
 using namespace storage; // NOLINT
 struct context {
-    log_set logs = log_set({});
+    segment_set logs = segment_set({});
     probe prb;
     void write(std::vector<model::record_batch>& batches) {
         unsigned id = 0;

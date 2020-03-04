@@ -1,4 +1,4 @@
-#include "storage/log_set.h"
+#include "storage/segment_set.h"
 
 #include "storage/logger.h"
 #include "vassert.h"
@@ -16,12 +16,13 @@ struct base_offset_ordering {
     }
 };
 
-log_set::log_set(log_set::underlying_t segs) noexcept(log_set::is_nothrow_v)
+segment_set::segment_set(segment_set::underlying_t segs) noexcept(
+  segment_set::is_nothrow_v)
   : _handles(std::move(segs)) {
     std::sort(_handles.begin(), _handles.end(), base_offset_ordering{});
 }
 
-void log_set::add(std::unique_ptr<segment> h) {
+void segment_set::add(std::unique_ptr<segment> h) {
     if (!_handles.empty()) {
         vassert(
           h->reader()->base_offset() > _handles.back()->reader()->max_offset(),
@@ -32,7 +33,7 @@ void log_set::add(std::unique_ptr<segment> h) {
     _handles.emplace_back(std::move(h));
 }
 
-void log_set::pop_back() { _handles.pop_back(); }
+void segment_set::pop_back() { _handles.pop_back(); }
 
 template<typename Iterator>
 static inline bool is_offset_in_range(Iterator ptr, model::offset o) {
@@ -71,17 +72,18 @@ segments_lower_bound(Iterator begin, Iterator end, model::offset offset) {
 /// to bucket->max_offset() - see comparator above because our offsets are
 /// _inclusive_ we must check the previous iterator in the case that we are at
 /// the end, we also check the last element.
-log_set::iterator log_set::lower_bound(model::offset offset) {
+segment_set::iterator segment_set::lower_bound(model::offset offset) {
     return segments_lower_bound(
       std::begin(_handles), std::end(_handles), offset);
 }
 
-log_set::const_iterator log_set::lower_bound(model::offset offset) const {
+segment_set::const_iterator
+segment_set::lower_bound(model::offset offset) const {
     return segments_lower_bound(
       std::cbegin(_handles), std::cend(_handles), offset);
 }
 
-std::ostream& operator<<(std::ostream& o, const log_set& s) {
+std::ostream& operator<<(std::ostream& o, const segment_set& s) {
     o << "{size: " << s.size() << ", [";
     for (auto& p : s) {
         o << p;
