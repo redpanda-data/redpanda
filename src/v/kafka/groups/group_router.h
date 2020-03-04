@@ -5,6 +5,7 @@
 #include "kafka/requests/join_group_request.h"
 #include "kafka/requests/leave_group_request.h"
 #include "kafka/requests/offset_commit_request.h"
+#include "kafka/requests/offset_fetch_request.h"
 #include "kafka/requests/sync_group_request.h"
 #include "kafka/types.h"
 #include "seastarx.h"
@@ -26,7 +27,8 @@ requires(
   sync_group_request&& sync_request,
   heartbeat_request&& heartbeat_request,
   leave_group_request&& leave_request,
-  offset_commit_request&& offset_commit_request) {
+  offset_commit_request&& offset_commit_request,
+  offset_fetch_request&& offset_fetch_request) {
 
     { m.join_group(std::move(join_request)) } ->
         ss::future<join_group_response>;
@@ -42,6 +44,9 @@ requires(
 
     { m.offset_commit(std::move(offset_commit_request)) } ->
         ss::future<offset_commit_response>;
+
+    { m.offset_fetch(std::move(offset_fetch_request)) } ->
+        ss::future<offset_fetch_response>;
 };
 )
 // clang-format on
@@ -154,6 +159,24 @@ public:
                 _ssg,
                 [request = std::move(request)](GroupMgr& m) mutable {
                     return m.offset_commit(std::move(request));
+                });
+          });
+    }
+
+    ss::future<offset_fetch_response>
+    offset_fetch(offset_fetch_request&& request) {
+        auto shard = shard_for(request.group_id);
+        if (!shard) {
+            return ss::make_ready_future<offset_fetch_response>(
+              offset_fetch_response(error_code::not_coordinator));
+        }
+        return with_scheduling_group(
+          _sg, [this, shard = *shard, request = std::move(request)]() mutable {
+              return _group_manager.invoke_on(
+                shard,
+                _ssg,
+                [request = std::move(request)](GroupMgr& m) mutable {
+                    return m.offset_fetch(std::move(request));
                 });
           });
     }

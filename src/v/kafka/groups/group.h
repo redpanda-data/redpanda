@@ -6,6 +6,7 @@
 #include "kafka/requests/join_group_request.h"
 #include "kafka/requests/leave_group_request.h"
 #include "kafka/requests/offset_commit_request.h"
+#include "kafka/requests/offset_fetch_request.h"
 #include "kafka/requests/sync_group_request.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
@@ -350,6 +351,14 @@ public:
     ss::future<leave_group_response>
     handle_leave_group(leave_group_request&& r);
 
+    std::optional<offset_metadata>
+    offset(const model::topic_partition& tp) const {
+        if (auto it = _offsets.find(tp); it != _offsets.end()) {
+            return it->second;
+        }
+        return std::nullopt;
+    }
+
     void complete_offset_commit(
       const model::topic_partition& tp, const offset_metadata& md);
 
@@ -360,6 +369,9 @@ public:
 
     ss::future<offset_commit_response>
     handle_offset_commit(offset_commit_request&& r);
+
+    ss::future<offset_fetch_response>
+    handle_offset_fetch(offset_fetch_request&& r);
 
 private:
     using member_map = absl::flat_hash_map<kafka::member_id, member_ptr>;

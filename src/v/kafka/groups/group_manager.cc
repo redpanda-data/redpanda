@@ -156,6 +156,23 @@ group_manager::offset_commit(offset_commit_request&& r) {
     return group->handle_offset_commit(std::move(r));
 }
 
+ss::future<offset_fetch_response>
+group_manager::offset_fetch(offset_fetch_request&& r) {
+    auto error = validate_group_status(r.group_id, offset_fetch_api::key);
+    if (error != error_code::none) {
+        return ss::make_ready_future<offset_fetch_response>(
+          offset_fetch_response(error));
+    }
+
+    auto group = get_group(r.group_id);
+    if (!group) {
+        return ss::make_ready_future<offset_fetch_response>(
+          offset_fetch_response(r.topics));
+    }
+
+    return group->handle_offset_fetch(std::move(r));
+}
+
 bool group_manager::valid_group_id(group_id group, api_key api) {
     switch (api) {
     case offset_commit_api::key:
