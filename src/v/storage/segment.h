@@ -2,8 +2,8 @@
 
 #include "storage/batch_cache.h"
 #include "storage/segment_appender.h"
-#include "storage/segment_reader.h"
 #include "storage/segment_index.h"
+#include "storage/segment_reader.h"
 #include "storage/types.h"
 
 #include <seastar/core/file.hh>
@@ -101,5 +101,5 @@ private:
 };
 
 std::ostream& operator<<(std::ostream&, const segment&);
-std::ostream& operator<<(std::ostream&, const std::unique_ptr<segment>&);
+std::ostream& operator<<(std::ostream&, const ss::lw_shared_ptr<segment>&);
 } // namespace storage

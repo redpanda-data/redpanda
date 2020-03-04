@@ -69,7 +69,7 @@ public:
 
     ss::future<> stop();
 
-    ss::future<std::unique_ptr<segment>> make_log_segment(
+    ss::future<ss::lw_shared_ptr<segment>> make_log_segment(
       const model::ntp&,
       model::offset,
       model::term_id,
@@ -95,7 +95,7 @@ private:
     using logs_type = absl::flat_hash_map<model::ntp, log>;
 
     ss::future<log> do_manage(model::ntp, storage_type type);
-    ss::future<std::unique_ptr<segment>> do_make_log_segment(
+    ss::future<ss::lw_shared_ptr<segment>> do_make_log_segment(
       const model::ntp&,
       model::offset,
       model::term_id,
@@ -116,7 +116,7 @@ private:
      * Returns an open segment if the segment was successfully opened.
      * Including a valid index and recovery for the index if one does not exist
      */
-    ss::future<std::unique_ptr<segment>> open_segment(
+    ss::future<ss::lw_shared_ptr<segment>> open_segment(
       const std::filesystem::path& path,
       size_t buf_size = default_read_buffer_size);
 
@@ -126,7 +126,7 @@ private:
      * Returns an exceptional future if any error occured opening a segment.
      * Otherwise all open segment readers are returned.
      */
-    ss::future<std::vector<std::unique_ptr<segment>>>
+    ss::future<std::vector<ss::lw_shared_ptr<segment>>>
     open_segments(ss::sstring path);
 
     /**

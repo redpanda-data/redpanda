@@ -22,7 +22,7 @@ void write_garbage(segment_appender_ptr& ptr) {
     ptr->flush().get();
 }
 
-void write_batches(std::unique_ptr<segment>& seg) {
+void write_batches(ss::lw_shared_ptr<segment> seg) {
     auto batches = test::make_random_batches(
       seg->reader()->base_offset() + model::offset(1), 1);
     for (auto& b : batches) {

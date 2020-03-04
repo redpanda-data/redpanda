@@ -116,7 +116,7 @@ std::ostream& operator<<(std::ostream& o, const segment& h) {
     }
     return o << ", index=" << h.index() << "}";
 }
-std::ostream& operator<<(std::ostream& o, const std::unique_ptr<segment>& p) {
+std::ostream& operator<<(std::ostream& o, const ss::lw_shared_ptr<segment>& p) {
     if (!p) {
         return o << "{nullptr}";
     }

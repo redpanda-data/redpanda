@@ -21,7 +21,7 @@ class segment_set {
 public:
     // type _must_ offer stable segment addresses
     // for readers and writers taking refs.
-    using type = std::unique_ptr<segment>;
+    using type = ss::lw_shared_ptr<segment>;
     using underlying_t = std::vector<type>;
     using const_iterator = underlying_t::const_iterator;
     using reverse_iterator = underlying_t::reverse_iterator;
@@ -42,7 +42,7 @@ public:
     bool empty() const { return _handles.empty(); }
 
     /// must be monotonically increasing in base offset
-    void add(std::unique_ptr<segment>);
+    void add(ss::lw_shared_ptr<segment>);
 
     void pop_back();
 

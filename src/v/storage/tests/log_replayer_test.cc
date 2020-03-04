@@ -16,7 +16,7 @@
 using namespace storage; // NOLINT
 
 struct context {
-    std::unique_ptr<segment> _seg;
+    ss::lw_shared_ptr<segment> _seg;
     std::optional<log_replayer> replayer_opt;
     ss::sstring base_name = "test."
                             + random_generators::gen_alphanum_string(20);
@@ -43,7 +43,7 @@ struct context {
           base,
           appender->file_byte_offset(),
           128);
-        _seg = std::make_unique<segment>(
+        _seg = ss::make_lw_shared<segment>(
           reader, std::move(indexer), std::move(appender), nullptr);
         replayer_opt = log_replayer(*_seg);
     }

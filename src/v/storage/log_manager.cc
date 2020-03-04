@@ -46,7 +46,7 @@ ss::future<> log_manager::stop() {
     });
 }
 
-ss::future<std::unique_ptr<segment>> log_manager::make_log_segment(
+ss::future<ss::lw_shared_ptr<segment>> log_manager::make_log_segment(
   const model::ntp& ntp,
   model::offset base_offset,
   model::term_id term,
@@ -59,7 +59,7 @@ ss::future<std::unique_ptr<segment>> log_manager::make_log_segment(
             ntp, base_offset, term, pc, version, buf_size);
       });
 }
-ss::future<std::unique_ptr<segment>> log_manager::do_make_log_segment(
+ss::future<ss::lw_shared_ptr<segment>> log_manager::do_make_log_segment(
   const model::ntp& ntp,
   model::offset base_offset,
   model::term_id term,
@@ -86,14 +86,14 @@ ss::future<std::unique_ptr<segment>> log_manager::do_make_log_segment(
       .then([this, buf_size, path](segment_appender_ptr a) {
           return open_segment(path, buf_size)
             .then_wrapped([this, a = std::move(a)](
-                            ss::future<std::unique_ptr<segment>> s) mutable {
+                            ss::future<ss::lw_shared_ptr<segment>> s) mutable {
                 try {
                     auto seg = s.get0();
                     seg->reader()->set_last_visible_byte_offset(0);
                     auto cache = std::make_unique<batch_cache_index>(
                       _batch_cache);
-                    return ss::make_ready_future<std::unique_ptr<segment>>(
-                      std::make_unique<segment>(
+                    return ss::make_ready_future<ss::lw_shared_ptr<segment>>(
+                      ss::make_lw_shared<segment>(
                         seg->reader(),
                         std::move(seg->index()),
                         std::move(a),
@@ -103,7 +103,7 @@ ss::future<std::unique_ptr<segment>> log_manager::do_make_log_segment(
                     return raw->close().then(
                       [a = std::move(a), e = std::current_exception()] {
                           return ss::make_exception_future<
-                            std::unique_ptr<segment>>(e);
+                            ss::lw_shared_ptr<segment>>(e);
                       });
                 }
             });
@@ -123,7 +123,7 @@ static ss::future<segment_set> do_recover(segment_set&& segments) {
         to_recover.push_back(std::move(good.back()));
         good.pop_back(); // always recover last segment
         auto good_end = std::partition(
-          good.begin(), good.end(), [](std::unique_ptr<segment>& ss) {
+          good.begin(), good.end(), [](ss::lw_shared_ptr<segment>& ss) {
               auto& s = *ss;
               try {
                   return s.index()->materialize_index().get0();
@@ -189,12 +189,12 @@ static void set_max_offsets(segment_set& segments) {
     }
 }
 
-ss::future<std::unique_ptr<segment>>
+ss::future<ss::lw_shared_ptr<segment>>
 log_manager::open_segment(const std::filesystem::path& path, size_t buf_size) {
     auto const meta = segment_path::parse_segment_filename(
       path.filename().string());
     if (meta->version != record_version_type::v1) {
-        return ss::make_exception_future<std::unique_ptr<segment>>(
+        return ss::make_exception_future<ss::lw_shared_ptr<segment>>(
           std::runtime_error(fmt::format(
             "Segment has invalid version {} != {} path {}",
             meta->version,
@@ -256,16 +256,16 @@ log_manager::open_segment(const std::filesystem::path& path, size_t buf_size) {
                   ptr->base_offset(),
                   segment_index::default_data_buffer_step);
                 auto cache = std::make_unique<batch_cache_index>(_batch_cache);
-                return ss::make_ready_future<std::unique_ptr<segment>>(
-                  std::make_unique<segment>(
+                return ss::make_ready_future<ss::lw_shared_ptr<segment>>(
+                  ss::make_lw_shared<segment>(
                     ptr, std::move(idx), nullptr, std::move(cache)));
             });
       });
 }
 
-ss::future<std::vector<std::unique_ptr<segment>>>
+ss::future<segment_set::underlying_t>
 log_manager::open_segments(ss::sstring dir) {
-    using segs_type = std::vector<std::unique_ptr<segment>>;
+    using segs_type = segment_set::underlying_t;
     return ss::do_with(
       segs_type{}, [this, dir = std::move(dir)](segs_type& segs) {
           auto f = directory_walker::walk(
@@ -290,7 +290,7 @@ log_manager::open_segments(ss::sstring dir) {
                     return ss::make_ready_future<>();
                 }
                 return open_segment(std::move(path))
-                  .then([&segs](std::unique_ptr<segment> p) {
+                  .then([&segs](ss::lw_shared_ptr<segment> p) {
                       segs.push_back(std::move(p));
                   });
             });
@@ -329,7 +329,7 @@ log_manager::do_manage(model::ntp ntp, log_manager::storage_type type) {
     }
     return recursive_touch_directory(path)
       .then([this, path] { return open_segments(path); })
-      .then([this, ntp](std::vector<std::unique_ptr<segment>> segs) {
+      .then([this, ntp](segment_set::underlying_t segs) {
           auto segments = segment_set(std::move(segs));
           set_max_offsets(segments);
           return do_recover(std::move(segments))
