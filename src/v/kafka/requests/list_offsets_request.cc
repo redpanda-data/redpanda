@@ -94,7 +94,6 @@ void list_offsets_response::decode(iobuf buf, api_version version) {
         throttle_time_ms = std::chrono::milliseconds(reader.read_int32());
     }
     topics = reader.read_array([version](request_reader& reader) {
-        kreq_log.info("VVV c");
         auto name = model::topic(reader.read_string());
         auto partitions = reader.read_array([version](request_reader& reader) {
             auto id = model::partition_id(reader.read_int32());
