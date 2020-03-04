@@ -1,7 +1,7 @@
 #pragma once
 
 #include "storage/batch_cache.h"
-#include "storage/log_segment_appender.h"
+#include "storage/segment_appender.h"
 #include "storage/segment_reader.h"
 #include "storage/segment_index.h"
 #include "storage/types.h"

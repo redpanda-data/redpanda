@@ -2,7 +2,7 @@
 
 #include "likely.h"
 #include "storage/disk_log_impl.h"
-#include "storage/log_segment_appender.h"
+#include "storage/segment_appender.h"
 
 #include <type_traits>
 

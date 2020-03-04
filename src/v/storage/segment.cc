@@ -1,7 +1,7 @@
 #include "storage/segment.h"
 
-#include "storage/log_segment_appender_utils.h"
 #include "storage/logger.h"
+#include "storage/segment_appender_utils.h"
 #include "vassert.h"
 
 #include <seastar/core/future-util.hh>
@@ -75,7 +75,7 @@ segment::truncate(model::offset prev_last_offset, size_t physical) {
 ss::future<append_result> segment::append(model::record_batch b) {
     return ss::do_with(std::move(b), [this](model::record_batch& b) {
         const auto start_physical_offset = _appender->file_byte_offset();
-        // proxy serialization to log_segment_appender_utils
+        // proxy serialization to segment_appender_utils
         return write(*_appender, b).then([this, &b, start_physical_offset] {
             _dirty_offset = b.last_offset();
             const auto end_physical_offset = _appender->file_byte_offset();

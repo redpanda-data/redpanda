@@ -49,7 +49,7 @@
 ///
 ///   log <- log::impl                 (main log interface)
 ///     log_appender <- log_appender::impl (log appending interface)
-///       log_segment_appender
+///       segment_appender
 ///
 namespace storage {
 

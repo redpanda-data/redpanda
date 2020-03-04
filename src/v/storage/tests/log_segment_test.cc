@@ -11,12 +11,12 @@ using namespace storage; // NOLINT
 SEASTAR_THREAD_TEST_CASE(test_read_write) {
     uint64_t value = 0x1234'5678'abcd'ef02ull;
     auto data = bytes(bytes::initialized_later(), sizeof(value));
-    auto appender = log_segment_appender(
+    auto appender = segment_appender(
       ss::open_file_dma(
         "test",
         ss::open_flags::create | ss::open_flags::rw | ss::open_flags::truncate)
         .get0(),
-      log_segment_appender::options(ss::default_priority_class()));
+      segment_appender::options(ss::default_priority_class()));
     auto log_seg = segment_reader(
       "test",
       ss::open_file_dma("test", ss::open_flags::ro).get0(),
