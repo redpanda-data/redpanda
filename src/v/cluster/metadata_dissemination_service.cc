@@ -13,8 +13,14 @@
 #include "model/timeout_clock.h"
 #include "rpc/connection_cache.h"
 #include "rpc/types.h"
+#include "utils/retry.h"
+#include "vassert.h"
 #include "vlog.h"
 
+#include <seastar/core/abort_source.hh>
+#include <seastar/core/sleep.hh>
+
+#include <chrono>
 namespace cluster {
 metadata_dissemination_service::metadata_dissemination_service(
   ss::sharded<metadata_cache>& mc, ss::sharded<rpc::connection_cache>& clients)
@@ -43,19 +49,75 @@ void metadata_dissemination_service::disseminate_leadership(
     _requests.push_back(ntp_leader{std::move(ntp), term, leader_id});
 }
 
-ss::future<> metadata_dissemination_service::initialize_leadership_metadata() {
+void metadata_dissemination_service::initialize_leadership_metadata() {
     auto ids = _md_cache.local().all_broker_ids();
-    auto it = std::find_if(
-      std::cbegin(ids), std::cend(ids), [this](model::node_id id) {
-          return id != _self;
-      });
-
-    if (it == ids.end()) {
-        return ss::make_ready_future<>();
+    // Do nothing, single node case
+    if (ids.size() <= 1) {
+        return;
     }
-    vlog(clusterlog.debug, "Initializing metadata using broker {}", *it);
+
+    (void)ss::with_gate(_bg, [this, ids = std::move(ids)]() mutable {
+        // We do not want to send requst to self
+        auto it = std::find(std::cbegin(ids), std::cend(ids), _self);
+        vassert(it != ids.cend(), "Current node have to be member of cluster");
+        ids.erase(it);
+
+        return update_metadata_with_retries(std::move(ids));
+    });
+}
+
+[[gnu::always_inline]] static ss::future<>
+wait_for_next_retry(std::chrono::seconds sleep_for, ss::abort_source& as) {
+    return ss::sleep_abortable(sleep_for, as)
+      .handle_exception_type([](const ss::sleep_aborted&) {
+          vlog(clusterlog.debug, "Getting metadata cancelled");
+      });
+}
+
+ss::future<> metadata_dissemination_service::update_metadata_with_retries(
+  std::vector<model::node_id> ids) {
+    using vec_t = std::vector<model::node_id>;
+    struct retry_meta {
+        vec_t ids;
+        bool success = false;
+        vec_t::const_iterator next;
+        exp_backoff_policy backoff_policy;
+    };
+    return ss::do_with(
+      retry_meta{.ids = std::move(ids)}, [this](retry_meta& meta) {
+          meta.next = std::cbegin(meta.ids);
+          return ss::do_until(
+            [this, &meta] { return meta.success || _bg.is_closed(); },
+            [this, &meta]() mutable {
+                return dispatch_get_metadata_update(*meta.next)
+                  .then([this, &meta] { meta.success = true; })
+                  .handle_exception(
+                    [this, &meta](const std::exception_ptr& ex) {
+                        vlog(
+                          clusterlog.warn,
+                          "Unable to initialize metadata using node {} - {}",
+                          *meta.next,
+                          ex);
+                        meta.next++;
+                        if (meta.next != meta.ids.end()) {
+                            return ss::make_ready_future<>();
+                        }
+                        // start from the beggining, after backoff elapsed
+                        meta.next = std::cbegin(meta.ids);
+                        return wait_for_next_retry(
+                          std::chrono::seconds(
+                            meta.backoff_policy.next_backoff()),
+                          _as);
+                    });
+            });
+      });
+} // namespace cluster
+
+ss::future<> metadata_dissemination_service::dispatch_get_metadata_update(
+  model::node_id id) {
+    vlog(clusterlog.debug, "Requesting metadata update from node {}", id);
     return dispatch_rpc<metadata_dissemination_rpc_client_protocol>(
-      _clients, *it, [this](metadata_dissemination_rpc_client_protocol& c) {
+      _clients, id, [this](metadata_dissemination_rpc_client_protocol& c) {
           return c
             .get_leadership(
               get_leadership_request{},
@@ -137,6 +199,7 @@ ss::future<> metadata_dissemination_service::dispatch_one_update(
 }
 
 ss::future<> metadata_dissemination_service::stop() {
+    _as.request_abort();
     _dispatch_timer.cancel();
     return _bg.close();
 }

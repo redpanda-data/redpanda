@@ -10,8 +10,9 @@
 class exp_backoff_policy {
 public:
     inline uint32_t next_backoff() {
-        return std::min<uint32_t>(
+        _current_backoff = std::min<uint32_t>(
           300, std::max<uint32_t>(1, _current_backoff) << 1);
+        return _current_backoff;
     }
 
 private:
