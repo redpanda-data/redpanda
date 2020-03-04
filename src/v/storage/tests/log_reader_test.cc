@@ -5,9 +5,9 @@
 #include "model/timeout_clock.h"
 #include "storage/disk_log_appender.h"
 #include "storage/log_reader.h"
-#include "storage/log_segment_appender.h"
-#include "storage/log_segment_appender_utils.h"
 #include "storage/log_set.h"
+#include "storage/segment_appender.h"
+#include "storage/segment_appender_utils.h"
 #include "storage/segment_reader.h"
 #include "storage/tests/random_batch.h"
 #include "utils/file_sanitizer.h"
@@ -35,8 +35,8 @@ struct context {
             fd = ss::file(ss::make_shared(file_io_sanitizer(std::move(fd))));
             fidx = ss::file(
               ss::make_shared(file_io_sanitizer(std::move(fidx))));
-            auto appender = log_segment_appender(
-              fd, log_segment_appender::options(ss::default_priority_class()));
+            auto appender = segment_appender(
+              fd, segment_appender::options(ss::default_priority_class()));
             storage::write(appender, batch).get();
             appender.flush().get();
             auto log_seg = ss::make_lw_shared<segment_reader>(

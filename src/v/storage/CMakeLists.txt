@@ -12,11 +12,11 @@ v_cc_library(
     probe.cc
     record_batch_builder.cc
     logger.cc
-    log_segment_appender.cc
+    segment_appender.cc
     log_set.cc
     segment.cc
     segment_index.cc
-    log_segment_appender_utils.cc
+    segment_appender_utils.cc
     batch_cache.cc
     index_state.cc
   DEPS

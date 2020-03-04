@@ -3,10 +3,10 @@
 #include "bytes/iobuf.h"
 #include "model/limits.h"
 #include "model/record_batch_reader.h"
-#include "storage/segment_reader.h"
 #include "storage/log_set.h"
 #include "storage/parser.h"
 #include "storage/probe.h"
+#include "storage/segment_reader.h"
 #include "storage/types.h"
 
 #include <seastar/core/circular_buffer.hh>

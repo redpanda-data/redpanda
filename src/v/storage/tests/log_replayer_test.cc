@@ -1,7 +1,7 @@
 #include "random/generators.h"
 #include "storage/disk_log_appender.h"
 #include "storage/log_replayer.h"
-#include "storage/log_segment_appender_utils.h"
+#include "storage/segment_appender_utils.h"
 #include "storage/segment_index.h"
 #include "storage/segment_reader.h"
 #include "storage/tests/utils/random_batch.h"
@@ -32,8 +32,8 @@ struct context {
         fd = ss::file(ss::make_shared(file_io_sanitizer(std::move(fd))));
         fidx = ss::file(ss::make_shared(file_io_sanitizer(std::move(fidx))));
 
-        auto appender = std::make_unique<log_segment_appender>(
-          fd, log_segment_appender::options(ss::default_priority_class()));
+        auto appender = std::make_unique<segment_appender>(
+          fd, segment_appender::options(ss::default_priority_class()));
         auto indexer = std::make_unique<segment_index>(
           base_name + ".index", std::move(fidx), base, 4096);
         auto reader = ss::make_lw_shared<segment_reader>(
@@ -62,7 +62,7 @@ struct context {
 
     void write(ss::circular_buffer<model::record_batch>& batches) {
         do_write(
-          [&batches](log_segment_appender& appender) {
+          [&batches](segment_appender& appender) {
               for (auto& b : batches) {
                   storage::write(appender, b).get();
               }

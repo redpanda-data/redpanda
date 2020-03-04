@@ -2,7 +2,6 @@
 
 #include "model/fundamental.h"
 #include "seastarx.h"
-#include "storage/log_segment_appender.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/core/fstream.hh>
@@ -32,7 +31,7 @@ public:
     segment_reader& operator=(const segment_reader&) = delete;
 
     /// mutating method for keeping track of the last offset from
-    /// the active log_segment_appender
+    /// the active segment_appender
     void set_last_written_offset(model::offset o) { _max_offset = o; }
 
     /// max physical byte that this reader is allowed to fetch

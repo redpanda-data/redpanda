@@ -4,9 +4,9 @@
 #include "storage/failure_probes.h"
 #include "storage/log.h"
 #include "storage/log_reader.h"
-#include "storage/log_segment_appender.h"
-#include "storage/segment_reader.h"
 #include "storage/probe.h"
+#include "storage/segment_appender.h"
+#include "storage/segment_reader.h"
 
 namespace storage {
 

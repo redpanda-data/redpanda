@@ -4,12 +4,12 @@
 #include "storage/fs_utils.h"
 #include "storage/log.h"
 #include "storage/log_replayer.h"
-#include "storage/log_segment_appender.h"
-#include "storage/segment_reader.h"
 #include "storage/log_set.h"
 #include "storage/logger.h"
 #include "storage/segment.h"
+#include "storage/segment_appender.h"
 #include "storage/segment_index.h"
+#include "storage/segment_reader.h"
 #include "utils/directory_walker.h"
 #include "utils/file_sanitizer.h"
 #include "vlog.h"
@@ -80,8 +80,8 @@ ss::future<std::unique_ptr<segment>> log_manager::do_make_log_segment(
               writer = ss::file(
                 ss::make_shared(file_io_sanitizer(std::move(writer))));
           }
-          return std::make_unique<log_segment_appender>(
-            writer, log_segment_appender::options(pc));
+          return std::make_unique<segment_appender>(
+            writer, segment_appender::options(pc));
       })
       .then([this, buf_size, path](segment_appender_ptr a) {
           return open_segment(path, buf_size)
