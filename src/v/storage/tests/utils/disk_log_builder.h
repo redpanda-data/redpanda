@@ -17,14 +17,14 @@
 
 namespace storage {
 
-inline static ss::sstring dir() {
+inline static ss::sstring random_dir() {
     return ss::sstring(
       fmt::format("test.dir_{}", random_generators::gen_alphanum_string(7)));
 }
 
 inline static log_config log_builder_config() {
     return log_config{
-      .base_dir = dir(),
+      .base_dir = random_dir(),
       .max_segment_size = (1 << 30),
       .should_sanitize = storage::log_config::sanitize_files::yes};
 }
