@@ -21,6 +21,7 @@
 #include "utils/retry.h"
 #include "vlog.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/net/inet_address.hh>
 
 namespace cluster {
@@ -179,6 +180,7 @@ ss::future<> controller::stop() {
         // closed.
         _leadership_cond.broadcast();
     }
+    _as.request_abort();
     return _bg.close();
 }
 
@@ -760,6 +762,16 @@ ss::future<join_reply> controller::dispatch_join_to_remote(
             });
       });
 }
+
+[[gnu::always_inline]] static ss::future<>
+wait_for_next_join_retry(ss::abort_source& as) {
+    using namespace std::chrono_literals; // NOLINT
+    return ss::sleep_abortable(5s, as).handle_exception_type(
+      [](const ss::sleep_aborted&) {
+          vlog(clusterlog.debug, "Aborting join sequence");
+      });
+}
+
 void controller::join_raft0() {
     (void)ss::with_gate(_bg, [this] {
         return ss::do_until(
@@ -771,10 +783,7 @@ void controller::join_raft0() {
           [this] {
               vlog(clusterlog.debug, "Trying to join the cluster");
               return dispatch_join_to_seed_server(std::cbegin(_seed_servers))
-                .finally([] {
-                    using namespace std::chrono_literals; // NOLINT
-                    return ss::sleep(5s);
-                });
+                .finally([this] { return wait_for_next_join_retry(_as); });
           });
     });
 }
