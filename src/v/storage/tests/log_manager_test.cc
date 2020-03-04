@@ -5,7 +5,7 @@
 #include "storage/log_manager.h"
 #include "storage/log_segment_appender.h"
 #include "storage/log_segment_appender_utils.h"
-#include "storage/log_segment_reader.h"
+#include "storage/segment_reader.h"
 #include "storage/tests/utils/random_batch.h"
 #include "utils/file_sanitizer.h"
 

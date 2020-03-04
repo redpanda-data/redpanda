@@ -4,8 +4,8 @@
 #include "model/record.h"
 #include "storage/disk_log_appender.h"
 #include "storage/log_segment_appender_utils.h"
-#include "storage/log_segment_reader.h"
 #include "storage/parser.h"
+#include "storage/segment_reader.h"
 #include "storage/tests/utils/random_batch.h"
 #include "utils/file_sanitizer.h"
 
@@ -123,7 +123,7 @@ struct context {
             storage::write(appender, b).get();
         }
         appender.flush().get();
-        log_seg = log_segment_reader(
+        log_seg = segment_reader(
           "test",
           std::move(fd),
           model::term_id(0),

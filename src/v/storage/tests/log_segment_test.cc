@@ -1,6 +1,6 @@
-#include "storage/log_segment_reader.h"
 #include "storage/log_set.h"
 #include "storage/segment_index.h"
+#include "storage/segment_reader.h"
 
 #include <seastar/core/simple-stream.hh>
 #include <seastar/core/thread.hh>
@@ -17,7 +17,7 @@ SEASTAR_THREAD_TEST_CASE(test_read_write) {
         ss::open_flags::create | ss::open_flags::rw | ss::open_flags::truncate)
         .get0(),
       log_segment_appender::options(ss::default_priority_class()));
-    auto log_seg = log_segment_reader(
+    auto log_seg = segment_reader(
       "test",
       ss::open_file_dma("test", ss::open_flags::ro).get0(),
       model::term_id(0),
@@ -59,19 +59,19 @@ SEASTAR_THREAD_TEST_CASE(log_set_orders_segments) {
     ss::file f(nullptr);
     auto v = log_set::underlying_t();
     v.push_back(std::make_unique<storage::segment>(
-      ss::make_lw_shared<log_segment_reader>(
+      ss::make_lw_shared<segment_reader>(
         "test", f, model::term_id(0), model::offset(1), 0, 1024),
       nullptr,
       nullptr,
       nullptr));
     v.push_back(std::make_unique<storage::segment>(
-      ss::make_lw_shared<log_segment_reader>(
+      ss::make_lw_shared<segment_reader>(
         "test", f, model::term_id(0), model::offset(0), 0, 1024),
       nullptr,
       nullptr,
       nullptr));
     v.push_back(std::make_unique<storage::segment>(
-      ss::make_lw_shared<log_segment_reader>(
+      ss::make_lw_shared<segment_reader>(
         "test", f, model::term_id(0), model::offset(2), 0, 1024),
       nullptr,
       nullptr,
@@ -89,13 +89,13 @@ SEASTAR_THREAD_TEST_CASE(log_set_orders_segments) {
 SEASTAR_THREAD_TEST_CASE(log_set_expects_monotonic_adds) {
     ss::file f(nullptr);
     auto s1 = std::make_unique<storage::segment>(
-      ss::make_lw_shared<log_segment_reader>(
+      ss::make_lw_shared<segment_reader>(
         "test", f, model::term_id(0), model::offset(1), 0, 1024),
       nullptr,
       nullptr,
       nullptr);
     auto s0 = storage::segment(
-      ss::make_lw_shared<log_segment_reader>(
+      ss::make_lw_shared<segment_reader>(
         "test", f, model::term_id(0), model::offset(0), 0, 1024),
       nullptr,
       nullptr,
@@ -108,15 +108,15 @@ SEASTAR_THREAD_TEST_CASE(log_set_expects_monotonic_adds) {
 SEASTAR_THREAD_TEST_CASE(test_log_seg_selector) {
     ss::file f(nullptr);
 
-    auto log_seg1 = ss::make_lw_shared<log_segment_reader>(
+    auto log_seg1 = ss::make_lw_shared<segment_reader>(
       "test", f, model::term_id(0), model::offset(0), 0, 1024);
     log_seg1->set_last_written_offset(model::offset(10));
 
-    auto log_seg2 = ss::make_lw_shared<log_segment_reader>(
+    auto log_seg2 = ss::make_lw_shared<segment_reader>(
       "test", f, model::term_id(0), model::offset(11), 0, 1024);
     log_seg2->set_last_written_offset(model::offset(20));
 
-    auto log_seg3 = ss::make_lw_shared<log_segment_reader>(
+    auto log_seg3 = ss::make_lw_shared<segment_reader>(
       "test", f, model::term_id(0), model::offset(21), 0, 1024);
     log_seg3->set_last_written_offset(model::offset(21));
 
@@ -148,7 +148,7 @@ SEASTAR_THREAD_TEST_CASE(test_log_seg_selector) {
 
     BOOST_CHECK(segs.lower_bound(model::offset(22)) == segs.end());
 
-    auto log_seg4 = ss::make_lw_shared<log_segment_reader>(
+    auto log_seg4 = ss::make_lw_shared<segment_reader>(
       "test", f, model::term_id(0), model::offset(22), 0, 1024);
 
     log_seg4->set_last_written_offset(model::offset(25));

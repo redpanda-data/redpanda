@@ -5,7 +5,7 @@
 #include "storage/log.h"
 #include "storage/log_replayer.h"
 #include "storage/log_segment_appender.h"
-#include "storage/log_segment_reader.h"
+#include "storage/segment_reader.h"
 #include "storage/log_set.h"
 #include "storage/logger.h"
 #include "storage/segment.h"
@@ -222,7 +222,7 @@ log_manager::open_segment(const std::filesystem::path& path, size_t buf_size) {
           if (_config.should_sanitize) {
               fd = ss::file(ss::make_shared(file_io_sanitizer(std::move(fd))));
           }
-          return ss::make_lw_shared<log_segment_reader>(
+          return ss::make_lw_shared<segment_reader>(
             path.string(),
             std::move(fd),
             model::term_id(meta->term),
