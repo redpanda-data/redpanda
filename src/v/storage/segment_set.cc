@@ -9,10 +9,10 @@ namespace storage {
 struct base_offset_ordering {
     using type = ss::lw_shared_ptr<segment>;
     bool operator()(const type& seg1, const type& seg2) const {
-        return seg1->reader()->base_offset() < seg2->reader()->base_offset();
+        return seg1->reader().base_offset() < seg2->reader().base_offset();
     }
     bool operator()(const type& seg, model::offset value) const {
-        return seg->reader()->max_offset() < value;
+        return seg->reader().max_offset() < value;
     }
 };
 
@@ -25,7 +25,7 @@ segment_set::segment_set(segment_set::underlying_t segs) noexcept(
 void segment_set::add(ss::lw_shared_ptr<segment> h) {
     if (!_handles.empty()) {
         vassert(
-          h->reader()->base_offset() > _handles.back()->reader()->max_offset(),
+          h->reader().base_offset() > _handles.back()->reader().max_offset(),
           "New segments must be monotonically increasing. Got:{} - Current:{}",
           *h,
           *this);
@@ -42,7 +42,7 @@ static inline bool is_offset_in_range(Iterator ptr, model::offset o) {
         return false;
     }
     // must use max_offset
-    return o <= s.reader()->max_offset() && o >= s.reader()->base_offset();
+    return o <= s.reader().max_offset() && o >= s.reader().base_offset();
 }
 
 template<typename Iterator>

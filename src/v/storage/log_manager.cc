@@ -89,14 +89,13 @@ ss::future<ss::lw_shared_ptr<segment>> log_manager::do_make_log_segment(
                             ss::future<ss::lw_shared_ptr<segment>> s) mutable {
                 try {
                     auto seg = s.get0();
-                    seg->reader()->set_last_visible_byte_offset(0);
-                    auto cache = std::make_unique<batch_cache_index>(
-                      _batch_cache);
+                    seg->reader().set_last_visible_byte_offset(0);
+                    auto cache = batch_cache_index(_batch_cache);
                     return ss::make_ready_future<ss::lw_shared_ptr<segment>>(
                       ss::make_lw_shared<segment>(
-                        seg->reader(),
+                        std::move(seg->reader()),
                         std::move(seg->index()),
-                        std::move(a),
+                        std::move(*a),
                         std::move(cache)));
                 } catch (...) {
                     auto raw = a.get();
@@ -126,14 +125,14 @@ static ss::future<segment_set> do_recover(segment_set&& segments) {
           good.begin(), good.end(), [](ss::lw_shared_ptr<segment>& ss) {
               auto& s = *ss;
               try {
-                  return s.index()->materialize_index().get0();
+                  return s.index().materialize_index().get0();
               } catch (...) {
                   vlog(
                     stlog.info,
                     "Error materializing index:{}. Recovering parent "
                     "segment:{}. Details:{}",
-                    s.index()->filename(),
-                    s.reader()->filename(),
+                    s.index().filename(),
+                    s.reader().filename(),
                     std::current_exception());
               }
               return false;
@@ -146,12 +145,12 @@ static ss::future<segment_set> do_recover(segment_set&& segments) {
           good_end, good.end()); // remove all the ones we copied into recover
 
         for (auto& s : to_recover) {
-            auto stat = s->reader()->stat().get0();
+            auto stat = s->reader().stat().get0();
             if (stat.st_size == 0) {
                 vlog(stlog.info, "Removing empty segment: {}", s);
                 s->close().get();
-                ss::remove_file(s->reader()->filename()).get();
-                ss::remove_file(s->index()->filename()).get();
+                ss::remove_file(s->reader().filename()).get();
+                ss::remove_file(s->index().filename()).get();
                 continue;
             }
             auto replayer = log_replayer(*s);
@@ -161,8 +160,8 @@ static ss::future<segment_set> do_recover(segment_set&& segments) {
                 vlog(stlog.info, "Unable to recover segment: {}", s);
                 s->close().get();
                 ss::rename_file(
-                  s->reader()->filename(),
-                  s->reader()->filename() + ".cannotrecover")
+                  s->reader().filename(),
+                  s->reader().filename() + ".cannotrecover")
                   .get();
                 continue;
             }
@@ -171,7 +170,7 @@ static ss::future<segment_set> do_recover(segment_set&& segments) {
                recovered.truncate_file_pos.value())
               .get();
             // persist index
-            s->index()->flush().get();
+            s->index().flush().get();
             vlog(stlog.info, "Recovered: {}", s);
             good.emplace_back(std::move(s));
         }
@@ -183,8 +182,8 @@ static void set_max_offsets(segment_set& segments) {
     for (auto it = segments.begin(); it != segments.end(); ++it) {
         auto next = std::next(it);
         if (next != segments.end()) {
-            (*it)->reader()->set_last_written_offset(
-              (*next)->reader()->base_offset() - model::offset(1));
+            (*it)->reader().set_last_written_offset(
+              (*next)->reader().base_offset() - model::offset(1));
         }
     }
 }
@@ -222,7 +221,7 @@ log_manager::open_segment(const std::filesystem::path& path, size_t buf_size) {
           if (_config.should_sanitize) {
               fd = ss::file(ss::make_shared(file_io_sanitizer(std::move(fd))));
           }
-          return ss::make_lw_shared<segment_reader>(
+          return std::make_unique<segment_reader>(
             path.string(),
             std::move(fd),
             model::term_id(meta->term),
@@ -230,35 +229,40 @@ log_manager::open_segment(const std::filesystem::path& path, size_t buf_size) {
             size,
             buf_size);
       })
-      .then([this](segment_reader_ptr ptr) {
+      .then([this](std::unique_ptr<segment_reader> rdr) {
+          auto ptr = rdr.get();
           auto index_name = ptr->filename() + ".offset_index";
           return ss::open_file_dma(
                    index_name, ss::open_flags::create | ss::open_flags::rw)
-            .then_wrapped([ptr, index_name](ss::future<ss::file> f) {
+            .then_wrapped([ptr, rdr = std::move(rdr), index_name](
+                            ss::future<ss::file> f) mutable {
                 try {
                     auto fd = f.get0();
                     return ss::make_ready_future<ss::file>(fd);
                 } catch (...) {
                     return ptr->close().then(
-                      [ptr, e = std::current_exception()] {
+                      [rdr = std::move(rdr), e = std::current_exception()] {
                           return ss::make_exception_future<ss::file>(e);
                       });
                 }
             })
-            .then([this, ptr, index_name](ss::file f) {
+            .then([this, rdr = std::move(rdr), index_name](ss::file f) mutable {
                 if (_config.should_sanitize) {
                     f = ss::file(
                       ss::make_shared(file_io_sanitizer(std::move(f))));
                 }
-                segment_index_ptr idx = std::make_unique<segment_index>(
+                auto idx = segment_index(
                   index_name,
                   f,
-                  ptr->base_offset(),
+                  rdr->base_offset(),
                   segment_index::default_data_buffer_step);
-                auto cache = std::make_unique<batch_cache_index>(_batch_cache);
+                auto cache = batch_cache_index(_batch_cache);
                 return ss::make_ready_future<ss::lw_shared_ptr<segment>>(
                   ss::make_lw_shared<segment>(
-                    ptr, std::move(idx), nullptr, std::move(cache)));
+                    std::move(*rdr),
+                    std::move(idx),
+                    std::nullopt,
+                    std::move(cache)));
             });
       });
 }

@@ -46,7 +46,7 @@ public:
         if (_segs.empty()) {
             return model::offset{};
         }
-        return _segs.front()->reader()->base_offset();
+        return _segs.front()->reader().base_offset();
     }
     model::offset max_offset() const final {
         for (auto it = _segs.rbegin(); it != _segs.rend(); it++) {

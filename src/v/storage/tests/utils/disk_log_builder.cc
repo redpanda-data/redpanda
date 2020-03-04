@@ -64,7 +64,7 @@ segment& disk_log_builder::get_segment(size_t index) {
     return *std::next(segment_set.begin(), index)->get();
 }
 
-segment_index_ptr& disk_log_builder::get_seg_index_ptr(size_t index) {
+segment_index& disk_log_builder::get_seg_index_ptr(size_t index) {
     return get_segment(index).index();
 }
 
