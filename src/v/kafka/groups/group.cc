@@ -1120,6 +1120,60 @@ group::handle_offset_commit(offset_commit_request&& r) {
     }
 }
 
+ss::future<offset_fetch_response>
+group::handle_offset_fetch(offset_fetch_request&& r) {
+    if (in_state(group_state::dead)) {
+        return ss::make_ready_future<offset_fetch_response>(
+          offset_fetch_response(r.topics));
+    }
+
+    offset_fetch_response resp;
+    resp.error = error_code::none;
+
+    // retrieve all topics available
+    if (!r.topics) {
+        absl::flat_hash_map<
+          model::topic,
+          std::vector<offset_fetch_response::partition>>
+          tmp;
+        for (const auto& e : _offsets) {
+            tmp[e.first.topic].push_back({e.first.partition,
+                                          e.second.offset,
+                                          e.second.metadata,
+                                          error_code::none});
+        }
+        for (auto& e : tmp) {
+            resp.topics.push_back(
+              {.name = e.first, .partitions = std::move(e.second)});
+        }
+
+        return ss::make_ready_future<offset_fetch_response>(std::move(resp));
+    }
+
+    // retrieve for the topics specified in the request
+    for (const auto& topic : *r.topics) {
+        offset_fetch_response::topic t;
+        t.name = topic.name;
+        for (auto id : topic.partitions) {
+            model::topic_partition tp{
+              .topic = topic.name,
+              .partition = id,
+            };
+            auto res = offset(tp);
+            if (res) {
+                t.partitions.push_back(
+                  {id, res->offset, res->metadata, error_code::none});
+            } else {
+                t.partitions.push_back(
+                  {id, model::offset(-1), "", error_code::none});
+            }
+        }
+        resp.topics.push_back(std::move(t));
+    }
+
+    return ss::make_ready_future<offset_fetch_response>(std::move(resp));
+}
+
 kafka::member_id group::generate_member_id(const join_group_request& r) {
     auto client_id = r.client_id ? *r.client_id : "";
     auto id = r.group_instance_id ? (*r.group_instance_id)() : client_id;
