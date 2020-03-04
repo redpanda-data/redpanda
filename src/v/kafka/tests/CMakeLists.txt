@@ -127,3 +127,11 @@ rp_test(
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES Seastar::seastar_testing v::application v::raft v::kafka v::config v::storage_test_utils
 )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME offset_commit_test
+  SOURCES offset_commit_test.cc
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LIBRARIES Seastar::seastar_testing v::application v::raft v::kafka v::config v::storage_test_utils
+)
