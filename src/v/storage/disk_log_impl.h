@@ -11,8 +11,6 @@
 
 #include <seastar/core/gate.hh>
 
-#include <seastar/core/gate.hh>
-
 namespace storage {
 
 class disk_log_impl final : public log::impl {
@@ -53,6 +51,7 @@ public:
     segment_set& segments() { return _segs; }
     const segment_set& segments() const { return _segs; }
     size_t bytes_left_before_roll() const;
+
 private:
     friend class disk_log_appender;
     friend class disk_log_builder;
