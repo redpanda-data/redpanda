@@ -63,13 +63,13 @@ read_log_file(ss::sstring base_dir, model::ntp file_ntp) {
       [file_ntp = std::move(file_ntp)](storage::log_manager& mgr) mutable {
           return mgr.manage(file_ntp)
             .then([](storage::log log) mutable {
-                auto reader = log.make_reader(storage::log_reader_config(
-                  model::offset(0),
-                  model::model_limits<model::offset>::max(),
-                  ss::default_priority_class()));
-                return ss::do_with(
-                  std::move(reader), [](model::record_batch_reader& reader) {
-                      return reader.consume(
+                return log
+                  .make_reader(storage::log_reader_config(
+                    model::offset(0),
+                    model::model_limits<model::offset>::max(),
+                    ss::default_priority_class()))
+                  .then([](model::record_batch_reader reader) {
+                      return std::move(reader).consume(
                         to_vector_consumer(), model::no_timeout);
                   });
             })

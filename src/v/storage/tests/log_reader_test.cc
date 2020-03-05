@@ -5,10 +5,10 @@
 #include "model/timeout_clock.h"
 #include "storage/disk_log_appender.h"
 #include "storage/log_reader.h"
-#include "storage/log_segment_appender.h"
-#include "storage/log_segment_appender_utils.h"
-#include "storage/log_segment_reader.h"
-#include "storage/log_set.h"
+#include "storage/segment_appender.h"
+#include "storage/segment_appender_utils.h"
+#include "storage/segment_reader.h"
+#include "storage/segment_set.h"
 #include "storage/tests/random_batch.h"
 #include "utils/file_sanitizer.h"
 
@@ -19,7 +19,7 @@
 
 using namespace storage; // NOLINT
 struct context {
-    log_set logs = log_set({});
+    segment_set logs = segment_set({});
     probe prb;
     void write(std::vector<model::record_batch>& batches) {
         unsigned id = 0;
@@ -35,11 +35,11 @@ struct context {
             fd = ss::file(ss::make_shared(file_io_sanitizer(std::move(fd))));
             fidx = ss::file(
               ss::make_shared(file_io_sanitizer(std::move(fidx))));
-            auto appender = log_segment_appender(
-              fd, log_segment_appender::options(ss::default_priority_class()));
+            auto appender = segment_appender(
+              fd, segment_appender::options(ss::default_priority_class()));
             storage::write(appender, batch).get();
             appender.flush().get();
-            auto log_seg = ss::make_lw_shared<log_segment_reader>(
+            auto log_seg = ss::make_lw_shared<segment_reader>(
               "test" + ss::to_sstring(id),
               std::move(fd),
               model::term_id(0),

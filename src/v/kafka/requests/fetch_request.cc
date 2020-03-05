@@ -212,11 +212,10 @@ static ss::future<fetch_response::partition_response> read_from_partition(
       raft::data_batch_type,
       std::nullopt);
 
-    auto reader = partition->make_reader(reader_config);
-    return ss::do_with(
-      std::move(reader),
-      [timeout = config.timeout](model::record_batch_reader& reader) {
-          return reader.consume(kafka_batch_serializer(), timeout)
+    return partition->make_reader(reader_config)
+      .then([timeout = config.timeout](model::record_batch_reader reader) {
+          return std::move(reader)
+            .consume(kafka_batch_serializer(), timeout)
             .then([](iobuf res) {
                 /*
                  * return path will fill in other response fields.

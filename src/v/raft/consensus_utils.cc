@@ -188,20 +188,19 @@ read_bootstrap_state(storage::log log) {
     // as an optimization
     auto rcfg = storage::log_reader_config(
       log.start_offset(), log.max_offset(), raft_priority());
-    return ss::do_with(
-      configuration_bootstrap_state{},
-      log.make_reader(std::move(rcfg)),
-      [](
-        configuration_bootstrap_state& retval,
-        model::record_batch_reader& rdr) {
-          return rdr
+    auto cfg_state = std::make_unique<configuration_bootstrap_state>();
+    return log.make_reader(rcfg).then(
+      [state = std::move(cfg_state)](
+        model::record_batch_reader reader) mutable {
+          auto raw = state.get();
+          return std::move(reader)
             .consume(
-              do_for_each_batch_consumer([&retval](model::record_batch batch) {
-                  retval.process_batch(std::move(batch));
+              do_for_each_batch_consumer([raw](model::record_batch batch) {
+                  raw->process_batch(std::move(batch));
                   return ss::make_ready_future<>();
               }),
               model::no_timeout)
-            .then([&retval]() mutable { return std::move(retval); });
+            .then([s = std::move(state)]() mutable { return std::move(*s); });
       });
 }
 

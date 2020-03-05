@@ -87,10 +87,11 @@ public:
     ss::future<result<replicate_result>>
     replicate(model::record_batch_reader&&);
 
-    model::record_batch_reader make_reader(storage::log_reader_config config) {
+    ss::future<model::record_batch_reader>
+    make_reader(storage::log_reader_config config) {
         config.max_offset = std::min(
           config.max_offset, model::offset(_meta.commit_index));
-        return _log.make_reader(std::move(config));
+        return _log.make_reader(config);
     }
 
     model::offset committed_offset() const {
