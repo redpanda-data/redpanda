@@ -91,6 +91,7 @@ class VConfig(object):
             "GOBIN": f'{self._gopath}/bin',
             "LC_CTYPE": "C.UTF-8",
             "CI": os.environ.get("CI", "0"),
+            "CCACHE_DIR": os.environ.get("CCACHE_DIR", ""),
         }
 
         logging.debug(f"""Configuration:
