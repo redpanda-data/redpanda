@@ -35,8 +35,11 @@ ss::future<> recovery_stm::do_one_read() {
       meta.value()->next_index, model::offset(_ptr->_log.max_offset()), _prio);
 
     // TODO: add timeout of maybe 1minute?
-    return model::consume_reader_to_memory(
-             _ptr->_log.make_reader(cfg), model::no_timeout)
+    return _ptr->_log.make_reader(cfg)
+      .then([](model::record_batch_reader reader) {
+          return model::consume_reader_to_memory(
+            std::move(reader), model::no_timeout);
+      })
       .then([this](ss::circular_buffer<model::record_batch> batches) {
           // wrap in a foreign core destructor
           _ctxlog.trace(

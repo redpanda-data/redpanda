@@ -1,4 +1,4 @@
-#include "storage/log_segment_reader.h"
+#include "storage/segment_reader.h"
 
 #include "vassert.h"
 
@@ -10,7 +10,7 @@
 
 namespace storage {
 
-log_segment_reader::log_segment_reader(
+segment_reader::segment_reader(
   ss::sstring filename,
   ss::file data_file,
   model::term_id term,
@@ -25,7 +25,7 @@ log_segment_reader::log_segment_reader(
   , _buffer_size(buffer_size) {}
 
 ss::input_stream<char>
-log_segment_reader::data_stream(uint64_t pos, const ss::io_priority_class& pc) {
+segment_reader::data_stream(uint64_t pos, const ss::io_priority_class& pc) {
     vassert(pos <= _file_size, "cannot read negative bytes");
     ss::file_input_stream_options options;
     options.buffer_size = _buffer_size;
@@ -36,7 +36,7 @@ log_segment_reader::data_stream(uint64_t pos, const ss::io_priority_class& pc) {
       _data_file, pos, _file_size - pos, std::move(options));
 }
 
-ss::future<> log_segment_reader::truncate(size_t n) {
+ss::future<> segment_reader::truncate(size_t n) {
     _file_size = n;
     return ss::open_file_dma(_filename, ss::open_flags::rw)
       .then([n](ss::file f) {
@@ -46,7 +46,7 @@ ss::future<> log_segment_reader::truncate(size_t n) {
       });
 }
 
-std::ostream& operator<<(std::ostream& os, const log_segment_reader& seg) {
+std::ostream& operator<<(std::ostream& os, const segment_reader& seg) {
     return os << "{log_segment:" << seg.filename() << ", " << seg.base_offset()
               << "-" << seg.max_offset() << ", filesize:" << seg.file_size()
               << "}";

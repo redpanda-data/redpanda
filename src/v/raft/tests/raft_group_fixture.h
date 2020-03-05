@@ -161,15 +161,15 @@ struct raft_node {
         auto max_offset = model::offset(consensus->meta().commit_index);
         storage::log_reader_config cfg(
           model::offset(0), max_offset, ss::default_priority_class());
-        return ss::do_with(
-          log.make_reader(std::move(cfg)),
-          [this, max_offset](model::record_batch_reader& rdr) {
+        return log.make_reader(cfg).then(
+          [this, max_offset](model::record_batch_reader rdr) {
               tstlog.debug(
                 "Reading logs from {} max offset {}, log max offset {}",
                 id(),
                 max_offset,
                 log.max_offset());
-              return rdr.consume(consume_to_vector{}, model::no_timeout);
+              return std::move(rdr).consume(
+                consume_to_vector{}, model::no_timeout);
           });
     }
 

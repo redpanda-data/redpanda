@@ -35,26 +35,26 @@ inline std::ostream& operator<<(std::ostream& o, const sanitizer_op& s) {
 
 /// Classed used to debug bad file accesses, by wrapping the file handle:
 /// auto fd = file(make_shared(file_io_sanitizer(original_fd)));
-class file_io_sanitizer : public ss::file_impl {
+class file_io_sanitizer final : public ss::file_impl {
 public:
     explicit file_io_sanitizer(ss::file f)
-      : _file(f) {}
-
-    ~file_io_sanitizer() {
+      : _file(std::move(f)) {}
+    ~file_io_sanitizer() final {
         if (!_closed && _file) {
             std::cout << "File destroying without being closed!" << std::endl;
             output_pending_ops();
         }
     }
+    file_io_sanitizer(const file_io_sanitizer&) = delete;
+    file_io_sanitizer& operator=(const file_io_sanitizer&) = delete;
+    file_io_sanitizer(file_io_sanitizer&& o) noexcept = default;
+    file_io_sanitizer& operator=(file_io_sanitizer&&) noexcept = default;
 
-    file_io_sanitizer(file_io_sanitizer&&) = default;
-    file_io_sanitizer& operator=(file_io_sanitizer&&) = default;
-
-    virtual ss::future<size_t> write_dma(
+    ss::future<size_t> write_dma(
       uint64_t pos,
       const void* buffer,
       size_t len,
-      const ss::io_priority_class& pc) override {
+      const ss::io_priority_class& pc) final {
         assert_file_not_closed();
         return with_op(
           fmt::format(
@@ -62,10 +62,10 @@ public:
           get_file_impl(_file)->write_dma(pos, buffer, len, pc));
     }
 
-    virtual ss::future<size_t> write_dma(
+    ss::future<size_t> write_dma(
       uint64_t pos,
       std::vector<iovec> iov,
-      const ss::io_priority_class& pc) override {
+      const ss::io_priority_class& pc) final {
         assert_file_not_closed();
         return with_op(
           fmt::format(
@@ -75,11 +75,11 @@ public:
           get_file_impl(_file)->write_dma(pos, iov, pc));
     }
 
-    virtual ss::future<size_t> read_dma(
+    ss::future<size_t> read_dma(
       uint64_t pos,
       void* buffer,
       size_t len,
-      const ss::io_priority_class& pc) override {
+      const ss::io_priority_class& pc) final {
         assert_file_not_closed();
         return with_op(
           fmt::format(
@@ -89,10 +89,10 @@ public:
           get_file_impl(_file)->read_dma(pos, buffer, len, pc));
     }
 
-    virtual ss::future<size_t> read_dma(
+    ss::future<size_t> read_dma(
       uint64_t pos,
       std::vector<iovec> iov,
-      const ss::io_priority_class& pc) override {
+      const ss::io_priority_class& pc) final {
         assert_file_not_closed();
         return with_op(
           fmt::format(
@@ -103,7 +103,7 @@ public:
           get_file_impl(_file)->read_dma(pos, iov, pc));
     }
 
-    virtual ss::future<> flush(void) override {
+    ss::future<> flush(void) final {
         assert_file_not_closed();
         if (!_pending_ops.empty()) {
             std::cout << "flush() called concurrently with other operations.\n";
@@ -114,20 +114,20 @@ public:
           get_file_impl(_file)->flush());
     }
 
-    virtual ss::future<struct stat> stat(void) override {
+    ss::future<struct stat> stat(void) final {
         assert_file_not_closed();
         return with_op(
           fmt::format("ss::future<> stat(void)"), get_file_impl(_file)->stat());
     }
 
-    virtual ss::future<> truncate(uint64_t length) override {
+    ss::future<> truncate(uint64_t length) final {
         assert_file_not_closed();
         return with_op(
           fmt::format("ss::future<> truncate({})", length),
           get_file_impl(_file)->truncate(length));
     }
 
-    virtual ss::future<> discard(uint64_t offset, uint64_t length) override {
+    ss::future<> discard(uint64_t offset, uint64_t length) final {
         assert_file_not_closed();
         return with_op(
           fmt::format(
@@ -135,7 +135,7 @@ public:
           get_file_impl(_file)->discard(offset, length));
     }
 
-    virtual ss::future<> allocate(uint64_t position, uint64_t length) override {
+    ss::future<> allocate(uint64_t position, uint64_t length) final {
         assert_file_not_closed();
         return with_op(
           fmt::format(
@@ -143,14 +143,14 @@ public:
           get_file_impl(_file)->allocate(position, length));
     }
 
-    virtual ss::future<uint64_t> size(void) override {
+    ss::future<uint64_t> size(void) final {
         assert_file_not_closed();
         return with_op(
           fmt::format("ss::future<uint64_t> size(void)"),
           get_file_impl(_file)->size());
     }
 
-    virtual ss::future<> close() override {
+    ss::future<> close() final {
         if (_closed) {
             std::cout << "close() called again, from "
                       << ss::current_backtrace() << std::endl;
@@ -163,21 +163,21 @@ public:
         return get_file_impl(_file)->close();
     }
 
-    virtual std::unique_ptr<ss::file_handle_impl> dup() override {
+    std::unique_ptr<ss::file_handle_impl> dup() final {
         assert_file_not_closed();
         return get_file_impl(_file)->dup();
     }
 
-    virtual ss::subscription<ss::directory_entry> list_directory(
-      std::function<ss::future<>(ss::directory_entry de)> next) override {
+    ss::subscription<ss::directory_entry> list_directory(
+      std::function<ss::future<>(ss::directory_entry de)> next) final {
         assert_file_not_closed();
         return get_file_impl(_file)->list_directory(next);
     }
 
-    virtual ss::future<ss::temporary_buffer<uint8_t>> dma_read_bulk(
+    ss::future<ss::temporary_buffer<uint8_t>> dma_read_bulk(
       uint64_t offset,
       size_t range_size,
-      const ss::io_priority_class& pc) override {
+      const ss::io_priority_class& pc) final {
         assert_file_not_closed();
         return with_op(
           fmt::format(

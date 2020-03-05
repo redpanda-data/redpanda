@@ -24,7 +24,7 @@ public:
       model::record_batch_header header,
       size_t physical_base_offset,
       size_t size_on_disk) override {
-        const auto filesize = _seg->reader()->file_size();
+        const auto filesize = _seg->reader().file_size();
         if (header.base_offset() < 0) {
             vlog(
               stlog.info,
@@ -55,7 +55,7 @@ public:
               filesize);
             return stop_parser::yes;
         }
-        _seg->index()->maybe_track(header, physical_base_offset);
+        _seg->index().maybe_track(header, physical_base_offset);
         _current_batch_crc = header.crc;
         _file_pos_to_end_of_batch = size_on_disk + physical_base_offset;
         _last_offset = header.last_offset();
@@ -101,7 +101,7 @@ log_replayer::checkpoint
 log_replayer::recover_in_thread(const ss::io_priority_class& prio) {
     stlog.debug("Recovering segment {}", *_seg);
     // explicitly not using the index to recover the full file
-    auto data_stream = _seg->reader()->data_stream(0, prio);
+    auto data_stream = _seg->reader().data_stream(0, prio);
     auto consumer = std::make_unique<checksumming_consumer>(_seg, _ckpt);
     auto parser = continuous_batch_parser(
       std::move(consumer), std::move(data_stream));
@@ -110,7 +110,7 @@ log_replayer::recover_in_thread(const ss::io_priority_class& prio) {
     } catch (...) {
         stlog.warn(
           "{} partial recovery to {}, with: {}",
-          _seg->reader()->filename(),
+          _seg->reader().filename(),
           _ckpt,
           std::current_exception());
     }

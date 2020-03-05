@@ -13,6 +13,7 @@
 #include <iostream>
 #include <iterator>
 #include <numeric>
+#include <stdexcept>
 
 using namespace storage; // NOLINT
 
@@ -167,11 +168,22 @@ FIXTURE_TEST(truncate_before_read, storage_test_fixture) {
           ss::default_priority_class());
 
         // first create the reader
-        auto reader = log.make_reader(std::move(cfg));
+        auto reader = log.make_reader(std::move(cfg)).get0();
         // truncate
         log.truncate(model::offset{0}).get0();
-        // consume
-        reader.consume(batch_validating_consumer{}, model::no_timeout).get0();
+        if (type == storage::log_manager::storage_type::disk) {
+            // consume MUST throw because we've closed the segment _AND_
+            // the reader above is HOLDING a lock preventing truncation
+            // until it goes out of scope
+            BOOST_CHECK_THROW(
+              reader.consume(batch_validating_consumer{}, model::no_timeout)
+                .get0(),
+              std::runtime_error);
+        } else {
+            // Memory log works fine
+            reader.consume(batch_validating_consumer{}, model::no_timeout)
+              .get0();
+        }
         auto read_batches = read_and_validate_all_batches(log);
         BOOST_REQUIRE_EQUAL(read_batches.size(), 0);
         BOOST_REQUIRE_EQUAL(log.committed_offset(), model::offset{});

@@ -110,7 +110,7 @@ public:
           model::offset(0),
           log.committed_offset(),
           ss::default_priority_class());
-        auto reader = log.make_reader(std::move(cfg));
+        auto reader = log.make_reader(std::move(cfg)).get0();
         return reader.consume(batch_validating_consumer{}, model::no_timeout)
           .get0();
     }
@@ -179,7 +179,7 @@ public:
         storage::log_reader_config cfg(
           start, end, ss::default_priority_class());
         tlog.info("read_range_to_vector: {}", cfg);
-        auto reader = log.make_reader(std::move(cfg));
+        auto reader = log.make_reader(std::move(cfg)).get0();
         return std::move(reader)
           .consume(batch_validating_consumer(), model::no_timeout)
           .get0();
