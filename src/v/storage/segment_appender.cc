@@ -181,8 +181,7 @@ ss::future<> segment_appender::flush() {
     });
 }
 
-std::ostream&
-operator<<(std::ostream& o, const segment_appender::chunk& c) {
+std::ostream& operator<<(std::ostream& o, const segment_appender::chunk& c) {
     return ss::fmt_print(
       o,
       "[bytes_pending:{}, _pos:{}, _flushed_pos:{}, _ptr: {}, pos_ptr: {}]",
