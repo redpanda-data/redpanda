@@ -500,30 +500,42 @@ consensus::do_append_entries(append_entries_request&& r) {
 
 ss::future<> consensus::notify_entries_commited(
   model::offset start_offset, model::offset end_offset) {
+    auto fut = ss::make_ready_future<>();
     if (_append_entries_notification) {
         _ctxlog.debug(
           "Append entries notification range [{},{}]",
           start_offset,
           end_offset);
-        auto data_reader = _log.make_reader(
-          storage::log_reader_config(start_offset, end_offset, _io_priority));
-        _append_entries_notification.value()(std::move(data_reader));
+        fut = fut.then([this, start_offset, end_offset]() {
+            return _log
+              .make_reader(storage::log_reader_config(
+                start_offset, end_offset, _io_priority))
+              .then([this](model::record_batch_reader reader) {
+                  _append_entries_notification.value()(std::move(reader));
+              });
+        });
     }
     auto cfg_reader_start_offset = details::next_offset(
       _last_seen_config_offset);
-    auto config_reader = _log.make_reader(storage::log_reader_config(
-      cfg_reader_start_offset,
-      end_offset,
-      0,
-      std::numeric_limits<size_t>::max(),
-      _io_priority,
-      raft::configuration_batch_type,
-      std::nullopt));
-    _ctxlog.debug(
-      "Process configurations range [{},{}]",
-      cfg_reader_start_offset,
-      end_offset);
-    return process_configurations(std::move(config_reader), end_offset);
+    fut = fut.then([this, cfg_reader_start_offset, end_offset] {
+        _ctxlog.debug(
+          "Process configurations range [{},{}]",
+          cfg_reader_start_offset,
+          end_offset);
+        return _log
+          .make_reader(storage::log_reader_config(
+            cfg_reader_start_offset,
+            end_offset,
+            0,
+            std::numeric_limits<size_t>::max(),
+            _io_priority,
+            raft::configuration_batch_type,
+            std::nullopt))
+          .then([this, end_offset](model::record_batch_reader reader) {
+              return process_configurations(std::move(reader), end_offset);
+          });
+    });
+    return fut;
 }
 
 ss::future<> consensus::process_configurations(

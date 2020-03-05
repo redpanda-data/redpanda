@@ -156,7 +156,8 @@ struct mem_log_impl final : log::impl {
         return ss::make_ready_future<>();
     }
 
-    model::record_batch_reader make_reader(log_reader_config cfg) final {
+    ss::future<model::record_batch_reader>
+    make_reader(log_reader_config cfg) final {
         auto it = std::lower_bound(
           std::begin(_data),
           std::end(_data),
@@ -166,10 +167,11 @@ struct mem_log_impl final : log::impl {
         auto reader = model::record_batch_reader(
           std::make_unique<mem_iter_reader>(
             _readers, it, _data.end(), cfg.max_offset));
-        return reader;
+        return ss::make_ready_future<model::record_batch_reader>(
+          std::move(reader));
     }
 
-    log_appender make_appender(log_append_config cfg) final {
+    log_appender make_appender(log_append_config) final {
         auto o = max_offset();
         if (o() < 0) {
             o = model::offset(0);

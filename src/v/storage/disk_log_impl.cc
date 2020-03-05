@@ -4,10 +4,10 @@
 #include "model/timeout_clock.h"
 #include "storage/disk_log_appender.h"
 #include "storage/log_manager.h"
-#include "storage/log_set.h"
 #include "storage/logger.h"
 #include "storage/offset_assignment.h"
 #include "storage/offset_to_filepos_consumer.h"
+#include "storage/segment_set.h"
 #include "storage/version.h"
 #include "vassert.h"
 #include "vlog.h"
@@ -17,6 +17,7 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/reactor.hh>
 #include <seastar/core/seastar.hh>
+#include <seastar/core/shared_ptr.hh>
 
 #include <fmt/format.h>
 
@@ -25,10 +26,11 @@
 namespace storage {
 
 disk_log_impl::disk_log_impl(
-  model::ntp ntp, ss::sstring workdir, log_manager& manager, log_set segs)
+  model::ntp ntp, ss::sstring workdir, log_manager& manager, segment_set segs)
   : log::impl(std::move(ntp), std::move(workdir))
   , _manager(manager)
-  , _segs(std::move(segs)) {
+  , _segs(std::move(segs))
+  , _lock_mngr(_segs) {
     _probe.setup_metrics(this->ntp());
 }
 disk_log_impl::~disk_log_impl() {
@@ -36,8 +38,10 @@ disk_log_impl::~disk_log_impl() {
 }
 ss::future<> disk_log_impl::close() {
     _closed = true;
-    return ss::parallel_for_each(
-      _segs, [](std::unique_ptr<segment>& h) { return h->close(); });
+    return _lgate.close().then([this] {
+        return ss::parallel_for_each(
+          _segs, [](ss::lw_shared_ptr<segment>& h) { return h->close(); });
+    });
 }
 
 ss::future<> disk_log_impl::remove_empty_segments() {
@@ -47,13 +51,45 @@ ss::future<> disk_log_impl::remove_empty_segments() {
           return _segs.back()->close().then([this] { _segs.pop_back(); });
       });
 }
+model::offset disk_log_impl::start_offset() const {
+    if (_segs.empty()) {
+        return model::offset{};
+    }
+    return _segs.front()->reader().base_offset();
+}
+model::offset disk_log_impl::max_offset() const {
+    for (auto it = _segs.rbegin(); it != _segs.rend(); it++) {
+        if (!(*it)->empty()) {
+            return (*it)->dirty_offset();
+        }
+    }
+    return model::offset{};
+}
+model::term_id disk_log_impl::term() const {
+    if (_segs.empty()) {
+        // does not make sense to return unitinialized term
+        // if we have no term, default to the first term.
+        // the next append() will truncate if greater
+        return model::term_id{0};
+    }
+    return _segs.back()->term();
+}
+
+model::offset disk_log_impl::committed_offset() const {
+    for (auto it = _segs.rbegin(); it != _segs.rend(); it++) {
+        if (!(*it)->empty()) {
+            return (*it)->committed_offset();
+        }
+    }
+    return model::offset{};
+}
 
 ss::future<> disk_log_impl::new_segment(
   model::offset o, model::term_id t, ss::io_priority_class pc) {
     vassert(
       o() >= 0 && t() >= 0, "offset:{} and term:{} must be initialized", o, t);
     return _manager.make_log_segment(ntp(), o, t, pc)
-      .then([this, pc](std::unique_ptr<segment> handles) mutable {
+      .then([this, pc](ss::lw_shared_ptr<segment> handles) mutable {
           return remove_empty_segments().then(
             [this, h = std::move(handles)]() mutable {
                 vassert(!_closed, "cannot add log segment to closed log");
@@ -82,12 +118,24 @@ ss::future<> disk_log_impl::flush() {
     return _segs.back()->flush();
 }
 
+size_t disk_log_impl::bytes_left_before_roll() const {
+    if (_segs.empty()) {
+        return 0;
+    }
+    auto fo = _segs.back()->appender().file_byte_offset();
+    auto max = _manager.max_segment_size();
+    if (fo >= max) {
+        return 0;
+    }
+    return max - fo;
+}
+
 ss::future<> disk_log_impl::maybe_roll(
   model::term_id t, model::offset next_offset, ss::io_priority_class iopc) {
     vassert(t >= term(), "Term:{} must be greater than base:{}", t, term());
     if (
       t != term() || _segs.empty() || !_segs.back()->has_appender()
-      || _segs.back()->appender()->file_byte_offset()
+      || _segs.back()->appender().file_byte_offset()
            > _manager.max_segment_size()) {
         auto f = ss::make_ready_future<>();
         if (!_segs.empty() && _segs.back()->has_appender()) {
@@ -100,10 +148,13 @@ ss::future<> disk_log_impl::maybe_roll(
     return ss::make_ready_future<>();
 }
 
-model::record_batch_reader
+ss::future<model::record_batch_reader>
 disk_log_impl::make_reader(log_reader_config config) {
-    return model::make_record_batch_reader<log_reader>(
-      _segs, std::move(config), _probe);
+    return _lock_mngr.range_lock(config).then(
+      [this, cfg = config](std::unique_ptr<lock_manager::lease> lease) {
+          return model::make_record_batch_reader<log_reader>(
+            std::move(lease), cfg, _probe);
+      });
 }
 
 std::optional<model::term_id> disk_log_impl::get_term(model::offset o) const {
@@ -119,120 +170,95 @@ disk_log_impl::timequery(timequery_config cfg) {
     if (_segs.empty()) {
         return ss::make_ready_future<std::optional<timequery_result>>();
     }
-    // TODO(agallego) - pass priority
-    auto rdr = make_reader(log_reader_config(
-      _segs.front()->reader()->base_offset(),
-      cfg.max_offset,
-      0,
-      2048, // We just need one record batch
-      cfg.prio,
-      std::nullopt,
-      cfg.time));
-    return model::consume_reader_to_memory(std::move(rdr), model::no_timeout)
-      .then([cfg](model::record_batch_reader::storage_t batches) {
-          using ret_t = std::optional<timequery_result>;
-          if (
-            !batches.empty()
-            && batches.front().header().first_timestamp >= cfg.time) {
-              return ret_t(timequery_result(
-                batches.front().base_offset(),
-                batches.front().header().first_timestamp));
-          }
-          return ret_t();
+    return make_reader(log_reader_config(
+                         _segs.front()->reader().base_offset(),
+                         cfg.max_offset,
+                         0,
+                         2048, // We just need one record batch
+                         cfg.prio,
+                         std::nullopt,
+                         cfg.time))
+      .then([this, cfg](model::record_batch_reader reader) {
+          return model::consume_reader_to_memory(
+                   std::move(reader), model::no_timeout)
+            .then([cfg](model::record_batch_reader::storage_t batches) {
+                using ret_t = std::optional<timequery_result>;
+                if (
+                  !batches.empty()
+                  && batches.front().header().first_timestamp >= cfg.time) {
+                    return ret_t(timequery_result(
+                      batches.front().base_offset(),
+                      batches.front().header().first_timestamp));
+                }
+                return ret_t();
+            });
       });
 }
 
-static ss::future<>
-delete_full_segments(std::vector<std::unique_ptr<segment>> to_remove) {
-    return ss::do_with(
-      std::move(to_remove), [](std::vector<std::unique_ptr<segment>>& remove) {
-          return ss::do_for_each(remove, [](std::unique_ptr<segment>& s) {
-              return s->close()
-                .handle_exception([&s](std::exception_ptr e) {
-                    vlog(stlog.info, "error:{} closing segment: {}", e, *s);
-                })
-                .then([&s] { return ss::remove_file(s->reader()->filename()); })
-                .then([&s] { return ss::remove_file(s->index()->filename()); })
-                .handle_exception([&s](std::exception_ptr e) {
-                    vlog(
-                      stlog.info, "error:{} removing segment files: {}", e, *s);
-                });
-          });
-      });
+void disk_log_impl::dispatch_remove(ss::lw_shared_ptr<segment> s) {
+    vlog(stlog.info, "marking segment tombstone: {}", s);
+    // background close
+    s->tombstone();
+    (void)ss::with_gate(_lgate, [s] {
+        return s->close().finally([s] {});
+    }).handle_exception([](std::exception_ptr e) {
+        vlog(stlog.info, "Ignoring exception on shutdown: {}", e);
+    });
 }
-
 ss::future<> disk_log_impl::do_truncate(model::offset o) {
     if (o > max_offset() || o < start_offset()) {
-        // out of range
         vlog(
-          stlog.info, "Truncate offset: '{}' is out of range for {}", o, *this);
+          stlog.error,
+          "log::truncate out of range: {}, {}-{}",
+          o,
+          start_offset(),
+          max_offset());
         return ss::make_ready_future<>();
     }
-    std::vector<std::unique_ptr<segment>> to_remove;
-    auto begin_remove = _segs.lower_bound(o); // cannot be lower_bound
-    if (begin_remove != _segs.end()) {
-        if ((*begin_remove)->reader()->base_offset() < o) {
-            begin_remove = std::next(begin_remove);
+    for (auto i = _segs.rbegin(), end = _segs.rend(); i != end; i++) {
+        ss::lw_shared_ptr<segment> ptr = *i;
+        if (ptr->reader().base_offset() >= o) {
+            dispatch_remove(ptr);
+            _segs.pop_back();
+        } else {
+            break;
         }
     }
-    for (size_t i = 0, max = std::distance(begin_remove, _segs.end()); i < max;
-         ++i) {
-        vlog(
-          stlog.info,
-          "Truncating full {}. tuncation offset request:{}",
-          _segs.back(),
-          o);
-        to_remove.emplace_back(std::move(_segs.back()));
-        _segs.pop_back();
+    if (_segs.empty()) {
+        return ss::make_ready_future<>();
     }
-    using fpos_type = internal::offset_to_filepos_consumer::type;
-    return delete_full_segments(std::move(to_remove))
-      .then([this, o] {
-          if (_segs.empty()) {
-              return ss::make_ready_future<fpos_type>();
-          }
-          auto& last = *_segs.back();
-          if (o <= last.dirty_offset() && o >= last.reader()->base_offset()) {
-              auto pidx = last.index()->find_nearest(o);
-              model::offset start = last.index()->base_offset();
-              size_t initial_size = 0;
-              if (pidx) {
-                  start = pidx->offset;
-                  initial_size = pidx->filepos;
-              }
-              // TODO: pass a priority for truncate
-              auto rdr = make_reader(
-                log_reader_config(start, o, ss::default_priority_class()));
-              return ss::do_with(
-                std::move(rdr),
-                [o, initial_size](model::record_batch_reader& rdr) {
-                    return rdr.consume(
-                      internal::offset_to_filepos_consumer(o, initial_size),
-                      model::no_timeout);
-                });
-          }
-          return ss::make_ready_future<fpos_type>();
+    auto& last = *_segs.back();
+    if (o >= last.dirty_offset()) {
+        return ss::make_ready_future<>();
+    }
+    auto pidx = last.index().find_nearest(o);
+    model::offset start = last.index().base_offset();
+    size_t initial_size = 0;
+    if (pidx) {
+        start = pidx->offset;
+        initial_size = pidx->filepos;
+    }
+    // TODO: pass a priority for truncate
+    return make_reader(
+             log_reader_config(start, o, ss::default_priority_class()))
+      .then([o, initial_size](model::record_batch_reader reader) {
+          return std::move(reader).consume(
+            internal::offset_to_filepos_consumer(o, initial_size),
+            model::no_timeout);
       })
-      .then([this, o](fpos_type phs) {
+      .then([this, o](std::optional<std::pair<model::offset, size_t>> phs) {
           if (!phs) {
               return ss::make_ready_future<>();
           }
           auto [prev_last_offset, file_position] = phs.value();
-          // the last offset, is one before this batch' base_offset
           if (file_position == 0) {
-              std::vector<std::unique_ptr<segment>> rem;
-              rem.emplace_back(std::move(_segs.back()));
+              dispatch_remove(_segs.back());
               _segs.pop_back();
-              vlog(
-                stlog.info,
-                "Truncating full segment, after indexing:{}, :{}",
-                prev_last_offset,
-                rem.back());
-              return delete_full_segments(std::move(rem));
+              return ss::make_ready_future<>();
           }
           return _segs.back()->truncate(prev_last_offset, file_position);
       });
-}
+} // namespace storage
 
 std::ostream& disk_log_impl::print(std::ostream& o) const {
     return o << "{term=" << term() << ", logs=" << _segs << "}";
@@ -242,7 +268,8 @@ std::ostream& operator<<(std::ostream& o, const disk_log_impl& d) {
     return d.print(o);
 }
 
-log make_disk_backed_log(model::ntp ntp, log_manager& manager, log_set segs) {
+log make_disk_backed_log(
+  model::ntp ntp, log_manager& manager, segment_set segs) {
     auto workdir = fmt::format("{}/{}", manager.config().base_dir, ntp.path());
     auto ptr = ss::make_shared<disk_log_impl>(
       std::move(ntp), std::move(workdir), manager, std::move(segs));
