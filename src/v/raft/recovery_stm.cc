@@ -32,7 +32,13 @@ ss::future<> recovery_stm::do_one_read() {
     }
 
     storage::log_reader_config cfg(
-      meta.value()->next_index, model::offset(_ptr->_log.max_offset()), _prio);
+      meta.value()->next_index,
+      model::offset(_ptr->_log.max_offset()),
+      1,
+      1024 * 1024, // 1MB
+      _prio,
+      std::nullopt,
+      std::nullopt);
 
     // TODO: add timeout of maybe 1minute?
     return _ptr->_log.make_reader(cfg)
