@@ -22,15 +22,6 @@ rp_test(
 
 rp_test(
   UNIT_TEST
-  BINARY_NAME log_segment_test
-  SOURCES log_segment_test.cc
-  LIBRARIES Seastar::seastar_testing v::storage_test_utils
-  LABELS storage
-  ARGS "-- -c 1"
-)
-
-rp_test(
-  UNIT_TEST
   BINARY_NAME parser_test
   SOURCES parser_test.cc
   LIBRARIES Seastar::seastar_testing v::storage_test_utils

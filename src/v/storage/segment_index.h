@@ -38,7 +38,7 @@ public:
 
     segment_index(
       ss::sstring filename, ss::file, model::offset base, size_t step);
-
+    ~segment_index() noexcept = default;
     segment_index(segment_index&&) noexcept = default;
     segment_index& operator=(segment_index&&) noexcept = default;
     segment_index(const segment_index&) = delete;
