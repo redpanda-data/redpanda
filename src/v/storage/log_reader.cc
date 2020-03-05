@@ -18,7 +18,7 @@ batch_consumer::consume_result skipping_consumer::consume_batch_start(
   model::record_batch_header header,
   size_t physical_base_offset,
   size_t size_on_disk) {
-    const auto filesize = _reader._seg.reader().file_size();
+    const auto filesize = _reader._seg.reader()->file_size();
     // check for holes in the offset range on disk
     if (unlikely(
           _expected_next_batch() >= 0
@@ -76,7 +76,7 @@ batch_consumer::consume_result skipping_consumer::consume_batch_start(
         _records = std::move(r);
     }
     _header = header;
-    _header.ctx.term = _reader._seg.reader().term();
+    _header.ctx.term = _reader._seg.reader()->term();
     return skip_batch::no;
 }
 
@@ -179,14 +179,14 @@ log_segment_batch_reader::read(model::timeout_clock::time_point timeout) {
 }
 
 log_reader::log_reader(
-  segment_set& seg_set, log_reader_config config, probe& probe) noexcept
+  log_set& seg_set, log_reader_config config, probe& probe) noexcept
   : _set(seg_set)
   , _config(config)
   , _probe(probe) {
     _end_of_stream = seg_set.empty();
 }
 
-static inline segment* find_in_set(segment_set& s, model::offset o) {
+static inline segment* find_in_set(log_set& s, model::offset o) {
     vassert(o() >= 0, "cannot find negative logical offsets");
     segment* ret = nullptr;
     if (auto it = s.lower_bound(o); it != s.end()) {
@@ -235,7 +235,7 @@ log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
       .finally([sc = std::move(segc)] {});
 }
 
-static inline bool is_finished_offset(segment_set& s, model::offset o) {
+static inline bool is_finished_offset(log_set& s, model::offset o) {
     if (s.empty()) {
         return true;
     }

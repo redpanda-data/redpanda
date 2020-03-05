@@ -187,10 +187,10 @@ public:
     // Access log impl
     log& get_log();
     disk_log_impl& get_disk_log_impl();
-    segment_set& get_log_segments();
+    log_set& get_log_segments();
     // Index range is [0....total_segments)
     segment& get_segment(size_t index);
-    segment_index& get_seg_index_ptr(size_t index);
+    segment_index_ptr& get_seg_index_ptr(size_t index);
 
     // Create segments
     ss::future<> add_segment(

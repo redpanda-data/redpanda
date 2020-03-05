@@ -14,7 +14,6 @@
 #include <absl/container/flat_hash_map.h>
 
 #include <array>
-#include <chrono>
 
 namespace storage {
 
@@ -26,7 +25,6 @@ struct log_config {
     // used for testing: keeps a backtrace of operations for debugging
     using sanitize_files = ss::bool_class<struct sanitize_files_tag>;
     sanitize_files should_sanitize;
-    std::chrono::milliseconds compaction_interval = std::chrono::minutes(1);
 };
 
 /**
@@ -69,7 +67,7 @@ public:
 
     ss::future<> stop();
 
-    ss::future<ss::lw_shared_ptr<segment>> make_log_segment(
+    ss::future<std::unique_ptr<segment>> make_log_segment(
       const model::ntp&,
       model::offset,
       model::term_id,
@@ -95,7 +93,7 @@ private:
     using logs_type = absl::flat_hash_map<model::ntp, log>;
 
     ss::future<log> do_manage(model::ntp, storage_type type);
-    ss::future<ss::lw_shared_ptr<segment>> do_make_log_segment(
+    ss::future<std::unique_ptr<segment>> do_make_log_segment(
       const model::ntp&,
       model::offset,
       model::term_id,
@@ -116,7 +114,7 @@ private:
      * Returns an open segment if the segment was successfully opened.
      * Including a valid index and recovery for the index if one does not exist
      */
-    ss::future<ss::lw_shared_ptr<segment>> open_segment(
+    ss::future<std::unique_ptr<segment>> open_segment(
       const std::filesystem::path& path,
       size_t buf_size = default_read_buffer_size);
 
@@ -126,17 +124,10 @@ private:
      * Returns an exceptional future if any error occured opening a segment.
      * Otherwise all open segment readers are returned.
      */
-    ss::future<std::vector<ss::lw_shared_ptr<segment>>>
+    ss::future<std::vector<std::unique_ptr<segment>>>
     open_segments(ss::sstring path);
 
-    /**
-     * \brief delete old segments and trigger compacted segments
-     *        runs inside a seastar thread
-     */
-    void compact_segments_in_thread();
-
     log_config _config;
-    ss::timer<> _compaction_timer;
     logs_type _logs;
     batch_cache _batch_cache;
     ss::gate _open_gate;

@@ -1,9 +1,9 @@
 #include "random/generators.h"
 #include "storage/disk_log_appender.h"
 #include "storage/log_replayer.h"
-#include "storage/segment_appender_utils.h"
+#include "storage/log_segment_appender_utils.h"
+#include "storage/log_segment_reader.h"
 #include "storage/segment_index.h"
-#include "storage/segment_reader.h"
 #include "storage/tests/utils/random_batch.h"
 #include "utils/file_sanitizer.h"
 
@@ -16,7 +16,7 @@
 using namespace storage; // NOLINT
 
 struct context {
-    ss::lw_shared_ptr<segment> _seg;
+    std::unique_ptr<segment> _seg;
     std::optional<log_replayer> replayer_opt;
     ss::sstring base_name = "test."
                             + random_generators::gen_alphanum_string(20);
@@ -32,22 +32,19 @@ struct context {
         fd = ss::file(ss::make_shared(file_io_sanitizer(std::move(fd))));
         fidx = ss::file(ss::make_shared(file_io_sanitizer(std::move(fidx))));
 
-        auto appender = segment_appender(
-          fd, segment_appender::options(ss::default_priority_class()));
-        auto indexer = segment_index(
+        auto appender = std::make_unique<log_segment_appender>(
+          fd, log_segment_appender::options(ss::default_priority_class()));
+        auto indexer = std::make_unique<segment_index>(
           base_name + ".index", std::move(fidx), base, 4096);
-        auto reader = segment_reader(
+        auto reader = ss::make_lw_shared<log_segment_reader>(
           base_name,
           ss::open_file_dma(base_name, ss::open_flags::ro).get0(),
           model::term_id(0),
           base,
-          appender.file_byte_offset(),
+          appender->file_byte_offset(),
           128);
-        _seg = ss::make_lw_shared<segment>(
-          std::move(reader),
-          std::move(indexer),
-          std::move(appender),
-          std::nullopt);
+        _seg = std::make_unique<segment>(
+          reader, std::move(indexer), std::move(appender), nullptr);
         replayer_opt = log_replayer(*_seg);
     }
     ~context() { _seg->close().get(); }
@@ -65,7 +62,7 @@ struct context {
 
     void write(ss::circular_buffer<model::record_batch>& batches) {
         do_write(
-          [&batches](segment_appender& appender) {
+          [&batches](log_segment_appender& appender) {
               for (auto& b : batches) {
                   storage::write(appender, b).get();
               }
@@ -76,10 +73,10 @@ struct context {
     template<typename Writer>
     void do_write(Writer&& w, model::offset base) {
         initialize(base);
-        w(_seg->appender());
+        w(*_seg->appender());
         _seg->flush().get();
-        _seg->reader().set_last_visible_byte_offset(
-          _seg->appender().file_byte_offset());
+        _seg->reader()->set_last_visible_byte_offset(
+          _seg->appender()->file_byte_offset());
     }
 
     log_replayer& replayer() { return *replayer_opt; }

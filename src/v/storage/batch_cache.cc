@@ -121,8 +121,5 @@ operator<<(std::ostream& o, const batch_cache_index::read_result& c) {
     }
     return o << "}";
 }
-std::ostream& operator<<(std::ostream& o, const batch_cache_index& c) {
-    return o << "{cache_size=" << c._index.size() << "}";
-}
 
 } // namespace storage

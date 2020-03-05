@@ -3,7 +3,7 @@
 #include "model/record_batch_reader.h"
 #include "storage/log.h"
 #include "storage/log_manager.h"
-#include "storage/segment_reader.h"
+#include "storage/log_segment_reader.h"
 #include "storage/tests/utils/disk_log_builder.h"
 #include "storage/tests/utils/random_batch.h"
 #include "test_utils/fixture.h"
