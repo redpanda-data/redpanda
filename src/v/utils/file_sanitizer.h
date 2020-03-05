@@ -39,7 +39,7 @@ class file_io_sanitizer final : public ss::file_impl {
 public:
     explicit file_io_sanitizer(ss::file f)
       : _file(std::move(f)) {}
-    ~file_io_sanitizer() final {
+    ~file_io_sanitizer() override {
         if (!_closed && _file) {
             std::cout << "File destroying without being closed!" << std::endl;
             output_pending_ops();
@@ -47,8 +47,17 @@ public:
     }
     file_io_sanitizer(const file_io_sanitizer&) = delete;
     file_io_sanitizer& operator=(const file_io_sanitizer&) = delete;
-    file_io_sanitizer(file_io_sanitizer&& o) noexcept = default;
-    file_io_sanitizer& operator=(file_io_sanitizer&&) noexcept = default;
+    file_io_sanitizer(file_io_sanitizer&& o) noexcept
+      : _pending_ops(std::move(o._pending_ops))
+      , _file(std::move(o._file))
+      , _closed(std::move(o._closed)) {}
+    file_io_sanitizer& operator=(file_io_sanitizer&& o) noexcept {
+        if (this != &o) {
+            this->~file_io_sanitizer();
+            new (this) file_io_sanitizer(std::move(o));
+        }
+        return *this;
+    }
 
     ss::future<size_t> write_dma(
       uint64_t pos,
