@@ -91,8 +91,12 @@ class VConfig(object):
             "GOBIN": f'{self._gopath}/bin',
             "LC_CTYPE": "C.UTF-8",
             "CI": os.environ.get("CI", "0"),
-            "CCACHE_DIR": os.environ.get("CCACHE_DIR", ""),
         }
+        if "CCACHE_DIR" in os.environ:
+            self._environ["CCACHE_DIR"] = os.environ.get("CCACHE_DIR")
+        # check if /dev/shm/ exists
+        if "CCACHE_DIR" not in os.environ and os.path.exists("/dev/shm"):
+            self._environ["CCACHE_DIR"] = "/dev/shm/ccache"
 
         logging.debug(f"""Configuration:
   src_dir: {self.src_dir}
