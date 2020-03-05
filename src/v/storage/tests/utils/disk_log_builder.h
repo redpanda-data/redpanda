@@ -187,10 +187,10 @@ public:
     // Access log impl
     log& get_log();
     disk_log_impl& get_disk_log_impl();
-    log_set& get_log_segments();
+    segment_set& get_log_segments();
     // Index range is [0....total_segments)
     segment& get_segment(size_t index);
-    segment_index_ptr& get_seg_index_ptr(size_t index);
+    segment_index& get_seg_index_ptr(size_t index);
 
     // Create segments
     ss::future<> add_segment(
@@ -201,9 +201,11 @@ public:
     // Read interface
     // Default consume
     auto consume(log_reader_config config = reader_config()) {
-        auto reader = _log->make_reader(config);
-        return model::consume_reader_to_memory(
-          std::move(reader), model::no_timeout);
+        return _log->make_reader(config).then(
+          [](model::record_batch_reader reader) {
+              return model::consume_reader_to_memory(
+                std::move(reader), model::no_timeout);
+          });
     }
 
     // Consumer with config
@@ -226,8 +228,10 @@ public:
 private:
     template<typename Consumer>
     auto consume_impl(Consumer c, log_reader_config config) {
-        auto reader = _log->make_reader(config);
-        return std::move(reader).consume(std::move(c), model::no_timeout);
+        return _log->make_reader(config).then(
+          [c = std::move(c)](model::record_batch_reader reader) mutable {
+              return std::move(reader).consume(std::move(c), model::no_timeout);
+          });
     }
 
     ss::future<> write(

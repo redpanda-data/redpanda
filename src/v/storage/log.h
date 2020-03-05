@@ -5,7 +5,7 @@
 #include "model/timestamp.h"
 #include "seastarx.h"
 #include "storage/log_appender.h"
-#include "storage/log_segment_reader.h"
+#include "storage/segment_reader.h"
 #include "storage/types.h"
 
 #include <seastar/core/shared_ptr.hh>
@@ -49,7 +49,7 @@
 ///
 ///   log <- log::impl                 (main log interface)
 ///     log_appender <- log_appender::impl (log appending interface)
-///       log_segment_appender
+///       segment_appender
 ///
 namespace storage {
 
@@ -64,7 +64,8 @@ public:
 
         virtual ss::future<> truncate(model::offset) = 0;
 
-        virtual model::record_batch_reader make_reader(log_reader_config) = 0;
+        virtual ss::future<model::record_batch_reader>
+          make_reader(log_reader_config) = 0;
         virtual log_appender make_appender(log_append_config) = 0;
         virtual ss::future<> close() = 0;
         virtual ss::future<> flush() = 0;
@@ -120,7 +121,7 @@ public:
         return _impl->truncate(offset);
     }
 
-    model::record_batch_reader make_reader(log_reader_config cfg) {
+    ss::future<model::record_batch_reader> make_reader(log_reader_config cfg) {
         return _impl->make_reader(std::move(cfg));
     }
 
@@ -165,8 +166,8 @@ inline std::ostream& operator<<(std::ostream& o, const storage::log& lg) {
 }
 
 class log_manager;
-class log_set;
+class segment_set;
 log make_memory_backed_log(model::ntp, ss::sstring);
-log make_disk_backed_log(model::ntp, log_manager&, log_set);
+log make_disk_backed_log(model::ntp, log_manager&, segment_set);
 
 } // namespace storage

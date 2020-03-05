@@ -1,24 +1,27 @@
 #pragma once
 
 #include "storage/batch_cache.h"
-#include "storage/log_segment_appender.h"
-#include "storage/log_segment_reader.h"
+#include "storage/segment_appender.h"
 #include "storage/segment_index.h"
+#include "storage/segment_reader.h"
 #include "storage/types.h"
 
 #include <seastar/core/file.hh>
+#include <seastar/core/rwlock.hh>
+
+#include <optional>
 
 namespace storage {
 class segment {
 public:
     segment(
-      segment_reader_ptr,
-      segment_index_ptr,
-      segment_appender_ptr,
-      batch_cache_index_ptr) noexcept;
-
+      segment_reader,
+      segment_index,
+      std::optional<segment_appender>,
+      std::optional<batch_cache_index>) noexcept;
+    ~segment() noexcept = default;
     segment(segment&&) noexcept = default;
-    segment& operator=(segment&&) noexcept = default;
+    segment& operator=(segment&&) noexcept = delete;
     segment(const segment&) = delete;
     segment& operator=(const segment&) = delete;
 
@@ -39,9 +42,9 @@ public:
         if (_appender) {
             return _dirty_offset() < 0;
         }
-        return _reader->empty();
+        return _reader.empty();
     }
-    model::offset committed_offset() const { return _reader->max_offset(); }
+    model::offset committed_offset() const { return _reader.max_offset(); }
     model::offset dirty_offset() const {
         if (_appender) {
             return _dirty_offset;
@@ -51,21 +54,21 @@ public:
     // low level api's are discouraged and might be deprecated
     // please use higher level API's when possible
 
-    segment_reader_ptr reader() const { return _reader; }
-    segment_index_ptr& index() { return _idx; }
-    const segment_index_ptr& index() const { return _idx; }
-    segment_appender_ptr& appender() { return _appender; }
-    const segment_appender_ptr& appender() const { return _appender; }
+    segment_reader& reader() { return _reader; }
+    const segment_reader& reader() const { return _reader; }
+    segment_index& index() { return _idx; }
+    const segment_index& index() const { return _idx; }
+    segment_appender& appender() { return *_appender; }
+    const segment_appender& appender() const { return *_appender; }
     bool has_appender() const { return bool(_appender); }
-    explicit operator bool() const { return bool(_reader); }
-    model::term_id term() const { return _reader->term(); }
+    model::term_id term() const { return _reader.term(); }
 
     batch_cache_index::read_result cache_get(
       model::offset offset,
       model::offset max_offset,
       std::optional<model::record_batch_type> type_filter,
       size_t max_bytes) {
-        if (likely(_cache != nullptr)) {
+        if (likely(bool(_cache))) {
             return _cache->read(offset, max_offset, type_filter, max_bytes);
         }
         return batch_cache_index::read_result{
@@ -74,32 +77,46 @@ public:
     }
 
     void cache_put(std::vector<model::record_batch> batches) {
-        if (likely(_cache != nullptr)) {
+        if (likely(bool(_cache))) {
             _cache->put(std::move(batches));
         }
     }
 
     void cache_put(model::record_batch&& batch) {
-        if (likely(_cache != nullptr)) {
+        if (likely(bool(_cache))) {
             _cache->put(std::move(batch));
         }
     }
 
-    void cache_truncate(model::offset offset) {
-        if (likely(_cache != nullptr)) {
-            _cache->truncate(offset);
-        }
+    ss::future<ss::rwlock::holder> read_lock(
+      ss::semaphore::time_point timeout = ss::semaphore::time_point::max()) {
+        return _destructive_ops.hold_read_lock(timeout);
     }
 
+    ss::future<ss::rwlock::holder> write_lock(
+      ss::semaphore::time_point timeout = ss::semaphore::time_point::max()) {
+        return _destructive_ops.hold_write_lock(timeout);
+    }
+
+    void tombstone() { _tombstone = true; }
+
 private:
+    void cache_truncate(model::offset offset);
+    void check_segment_not_closed(const char* msg);
+    ss::future<> do_truncate(model::offset prev_last_offset, size_t physical);
+    ss::future<> do_close();
+
     // last offset of the last batch, i.e.: batch.last_offset()
     model::offset _dirty_offset;
-    segment_reader_ptr _reader;
-    segment_index_ptr _idx;
-    segment_appender_ptr _appender = nullptr;
-    batch_cache_index_ptr _cache;
+    segment_reader _reader;
+    segment_index _idx;
+    std::optional<segment_appender> _appender;
+    std::optional<batch_cache_index> _cache;
+    ss::rwlock _destructive_ops;
+    bool _tombstone = false;
+    bool _closed = false;
+
+    friend std::ostream& operator<<(std::ostream&, const segment&);
 };
 
-std::ostream& operator<<(std::ostream&, const segment&);
-std::ostream& operator<<(std::ostream&, const std::unique_ptr<segment>&);
 } // namespace storage

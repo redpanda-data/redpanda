@@ -38,7 +38,7 @@ public:
 
     segment_index(
       ss::sstring filename, ss::file, model::offset base, size_t step);
-
+    ~segment_index() noexcept = default;
     segment_index(segment_index&&) noexcept = default;
     segment_index& operator=(segment_index&&) noexcept = default;
     segment_index(const segment_index&) = delete;
@@ -50,6 +50,7 @@ public:
 
     model::offset base_offset() const { return _state.base_offset; }
     model::timestamp max_timestamp() const { return _state.max_timestamp; }
+    model::timestamp base_timestamp() const { return _state.base_timestamp; }
     const ss::sstring& filename() const { return _name; }
 
     ss::future<bool> materialize_index();

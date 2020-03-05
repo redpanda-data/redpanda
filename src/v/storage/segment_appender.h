@@ -21,7 +21,7 @@ namespace storage {
 /// other classes can add behavior and still be treated as
 /// an appender.
 /// Note: The functions in this call cannot be called concurrently.
-class log_segment_appender {
+class segment_appender {
 public:
     static constexpr const size_t chunk_size = 128 * 1024; // 128KB
     static constexpr const size_t chunks_no_buffer = 8;
@@ -65,12 +65,29 @@ public:
     using iterator = typename underlying_t::iterator;
     using const_iterator = typename underlying_t::const_iterator;
 
-    log_segment_appender(ss::file f, options opts);
-    ~log_segment_appender();
-    log_segment_appender(log_segment_appender&&) noexcept = default;
-    log_segment_appender& operator=(log_segment_appender&&) noexcept = default;
-    log_segment_appender(const log_segment_appender&) = delete;
-    log_segment_appender& operator=(const log_segment_appender&) = delete;
+    segment_appender(ss::file f, options opts);
+    ~segment_appender();
+    // need to set current pointers to internal chunks
+    segment_appender(segment_appender&& o) noexcept
+      : _out(std::move(o._out))
+      , _opts(o._opts)
+      , _dma_write_alignment(o._dma_write_alignment)
+      , _committed_offset(o._committed_offset)
+      , _bytes_flush_pending(o._bytes_flush_pending)
+      , _chunks(std::move(o._chunks))
+      , _current(
+          std::find_if(_chunks.begin(), _chunks.end(), [](const chunk& c) {
+              return !c.is_full();
+          })) {}
+    segment_appender& operator=(segment_appender&& o) noexcept {
+        if (this != &o) {
+            this->~segment_appender();
+            new (this) segment_appender(std::move(o));
+        }
+        return *this;
+    }
+    segment_appender(const segment_appender&) = delete;
+    segment_appender& operator=(const segment_appender&) = delete;
 
     uint64_t file_byte_offset() const {
         return _committed_offset + _bytes_flush_pending;
@@ -102,7 +119,7 @@ public:
     ss::future<> flush();
 
 protected:
-    friend std::ostream& operator<<(std::ostream&, const log_segment_appender&);
+    friend std::ostream& operator<<(std::ostream&, const segment_appender&);
 
     ss::file _out;
     options _opts;
@@ -111,10 +128,10 @@ protected:
     uint64_t _committed_offset{0};
     uint64_t _bytes_flush_pending{0};
 
-    iterator _current;
     std::array<chunk, chunks_no_buffer> _chunks;
+    iterator _current;
 };
 
-using segment_appender_ptr = std::unique_ptr<log_segment_appender>;
+using segment_appender_ptr = std::unique_ptr<segment_appender>;
 
 } // namespace storage
