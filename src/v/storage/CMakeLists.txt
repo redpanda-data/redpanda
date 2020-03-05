@@ -1,7 +1,7 @@
 v_cc_library(
   NAME storage
   SRCS
-    log_segment_reader.cc
+    segment_reader.cc
     log_manager.cc
     mem_log_impl.cc
     disk_log_impl.cc
@@ -12,11 +12,11 @@ v_cc_library(
     probe.cc
     record_batch_builder.cc
     logger.cc
-    log_segment_appender.cc
-    log_set.cc
+    segment_appender.cc
+    segment_set.cc
     segment.cc
     segment_index.cc
-    log_segment_appender_utils.cc
+    segment_appender_utils.cc
     batch_cache.cc
     index_state.cc
   DEPS

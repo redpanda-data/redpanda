@@ -4,10 +4,10 @@
 #include "model/timeout_clock.h"
 #include "storage/disk_log_appender.h"
 #include "storage/log_manager.h"
-#include "storage/log_set.h"
 #include "storage/logger.h"
 #include "storage/offset_assignment.h"
 #include "storage/offset_to_filepos_consumer.h"
+#include "storage/segment_set.h"
 #include "storage/version.h"
 #include "vassert.h"
 #include "vlog.h"
@@ -25,7 +25,7 @@
 namespace storage {
 
 disk_log_impl::disk_log_impl(
-  model::ntp ntp, ss::sstring workdir, log_manager& manager, log_set segs)
+  model::ntp ntp, ss::sstring workdir, log_manager& manager, segment_set segs)
   : log::impl(std::move(ntp), std::move(workdir))
   , _manager(manager)
   , _segs(std::move(segs)) {
@@ -37,7 +37,7 @@ disk_log_impl::~disk_log_impl() {
 ss::future<> disk_log_impl::close() {
     _closed = true;
     return ss::parallel_for_each(
-      _segs, [](std::unique_ptr<segment>& h) { return h->close(); });
+      _segs, [](ss::lw_shared_ptr<segment>& h) { return h->close(); });
 }
 
 ss::future<> disk_log_impl::remove_empty_segments() {
@@ -53,7 +53,7 @@ ss::future<> disk_log_impl::new_segment(
     vassert(
       o() >= 0 && t() >= 0, "offset:{} and term:{} must be initialized", o, t);
     return _manager.make_log_segment(ntp(), o, t, pc)
-      .then([this, pc](std::unique_ptr<segment> handles) mutable {
+      .then([this, pc](ss::lw_shared_ptr<segment> handles) mutable {
           return remove_empty_segments().then(
             [this, h = std::move(handles)]() mutable {
                 vassert(!_closed, "cannot add log segment to closed log");
@@ -87,7 +87,7 @@ ss::future<> disk_log_impl::maybe_roll(
     vassert(t >= term(), "Term:{} must be greater than base:{}", t, term());
     if (
       t != term() || _segs.empty() || !_segs.back()->has_appender()
-      || _segs.back()->appender()->file_byte_offset()
+      || _segs.back()->appender().file_byte_offset()
            > _manager.max_segment_size()) {
         auto f = ss::make_ready_future<>();
         if (!_segs.empty() && _segs.back()->has_appender()) {
@@ -121,7 +121,7 @@ disk_log_impl::timequery(timequery_config cfg) {
     }
     // TODO(agallego) - pass priority
     auto rdr = make_reader(log_reader_config(
-      _segs.front()->reader()->base_offset(),
+      _segs.front()->reader().base_offset(),
       cfg.max_offset,
       0,
       2048, // We just need one record batch
@@ -142,17 +142,16 @@ disk_log_impl::timequery(timequery_config cfg) {
       });
 }
 
-static ss::future<>
-delete_full_segments(std::vector<std::unique_ptr<segment>> to_remove) {
+static ss::future<> delete_full_segments(segment_set::underlying_t to_remove) {
     return ss::do_with(
-      std::move(to_remove), [](std::vector<std::unique_ptr<segment>>& remove) {
-          return ss::do_for_each(remove, [](std::unique_ptr<segment>& s) {
+      std::move(to_remove), [](segment_set::underlying_t& remove) {
+          return ss::do_for_each(remove, [](ss::lw_shared_ptr<segment>& s) {
               return s->close()
                 .handle_exception([&s](std::exception_ptr e) {
                     vlog(stlog.info, "error:{} closing segment: {}", e, *s);
                 })
-                .then([&s] { return ss::remove_file(s->reader()->filename()); })
-                .then([&s] { return ss::remove_file(s->index()->filename()); })
+                .then([&s] { return ss::remove_file(s->reader().filename()); })
+                .then([&s] { return ss::remove_file(s->index().filename()); })
                 .handle_exception([&s](std::exception_ptr e) {
                     vlog(
                       stlog.info, "error:{} removing segment files: {}", e, *s);
@@ -168,10 +167,10 @@ ss::future<> disk_log_impl::do_truncate(model::offset o) {
           stlog.info, "Truncate offset: '{}' is out of range for {}", o, *this);
         return ss::make_ready_future<>();
     }
-    std::vector<std::unique_ptr<segment>> to_remove;
+    segment_set::underlying_t to_remove;
     auto begin_remove = _segs.lower_bound(o); // cannot be lower_bound
     if (begin_remove != _segs.end()) {
-        if ((*begin_remove)->reader()->base_offset() < o) {
+        if ((*begin_remove)->reader().base_offset() < o) {
             begin_remove = std::next(begin_remove);
         }
     }
@@ -192,9 +191,9 @@ ss::future<> disk_log_impl::do_truncate(model::offset o) {
               return ss::make_ready_future<fpos_type>();
           }
           auto& last = *_segs.back();
-          if (o <= last.dirty_offset() && o >= last.reader()->base_offset()) {
-              auto pidx = last.index()->find_nearest(o);
-              model::offset start = last.index()->base_offset();
+          if (o <= last.dirty_offset() && o >= last.reader().base_offset()) {
+              auto pidx = last.index().find_nearest(o);
+              model::offset start = last.index().base_offset();
               size_t initial_size = 0;
               if (pidx) {
                   start = pidx->offset;
@@ -220,7 +219,7 @@ ss::future<> disk_log_impl::do_truncate(model::offset o) {
           auto [prev_last_offset, file_position] = phs.value();
           // the last offset, is one before this batch' base_offset
           if (file_position == 0) {
-              std::vector<std::unique_ptr<segment>> rem;
+              segment_set::underlying_t rem;
               rem.emplace_back(std::move(_segs.back()));
               _segs.pop_back();
               vlog(
@@ -242,7 +241,8 @@ std::ostream& operator<<(std::ostream& o, const disk_log_impl& d) {
     return d.print(o);
 }
 
-log make_disk_backed_log(model::ntp ntp, log_manager& manager, log_set segs) {
+log make_disk_backed_log(
+  model::ntp ntp, log_manager& manager, segment_set segs) {
     auto workdir = fmt::format("{}/{}", manager.config().base_dir, ntp.path());
     auto ptr = ss::make_shared<disk_log_impl>(
       std::move(ntp), std::move(workdir), manager, std::move(segs));
