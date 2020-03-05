@@ -3,10 +3,10 @@
 #include "bytes/iobuf.h"
 #include "model/limits.h"
 #include "model/record_batch_reader.h"
+#include "storage/log_segment_reader.h"
+#include "storage/log_set.h"
 #include "storage/parser.h"
 #include "storage/probe.h"
-#include "storage/segment_reader.h"
-#include "storage/segment_set.h"
 #include "storage/types.h"
 
 #include <seastar/core/circular_buffer.hh>
@@ -82,7 +82,7 @@ private:
 
 class log_reader final : public model::record_batch_reader::impl {
 public:
-    log_reader(segment_set&, log_reader_config, probe&) noexcept;
+    log_reader(log_set&, log_reader_config, probe&) noexcept;
 
     bool end_of_stream() const final { return _end_of_stream; }
 
@@ -98,7 +98,7 @@ private:
 
 private:
     bool _end_of_stream{false};
-    segment_set& _set;
+    log_set& _set;
     log_reader_config _config;
     model::offset _last_base;
     probe& _probe;

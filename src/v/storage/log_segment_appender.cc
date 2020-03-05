@@ -1,4 +1,4 @@
-#include "storage/segment_appender.h"
+#include "storage/log_segment_appender.h"
 
 #include "likely.h"
 #include "storage/logger.h"
@@ -9,7 +9,7 @@
 #include <fmt/format.h>
 
 namespace storage {
-using chunk = segment_appender::chunk;
+using chunk = log_segment_appender::chunk;
 
 size_t chunk::append(const char* src, size_t len) {
     const size_t sz = std::min(len, space_left());
@@ -51,14 +51,14 @@ size_t chunk::dma_size(size_t alignment) const {
     return curr_sz - prev_sz;
 }
 
-segment_appender::segment_appender(ss::file f, options opts)
+log_segment_appender::log_segment_appender(ss::file f, options opts)
   : _out(std::move(f))
   , _opts(std::move(opts))
   , _dma_write_alignment(_out.disk_write_dma_alignment()) {
     _current = _chunks.begin();
 }
 
-segment_appender::~segment_appender() {
+log_segment_appender::~log_segment_appender() {
     if (_bytes_flush_pending != 0) {
         stlog.error(
           "Must flush log segment appender before deleting. {} bytes pending",
@@ -67,7 +67,7 @@ segment_appender::~segment_appender() {
     }
 }
 
-ss::future<> segment_appender::append(const char* buf, const size_t n) {
+ss::future<> log_segment_appender::append(const char* buf, const size_t n) {
     size_t written = 0;
     while (likely(_current != _chunks.end())) {
         const size_t sz = _current->append(buf + written, n - written);
@@ -91,7 +91,7 @@ ss::future<> segment_appender::append(const char* buf, const size_t n) {
       });
 }
 
-ss::future<> segment_appender::truncate(size_t n) {
+ss::future<> log_segment_appender::truncate(size_t n) {
     return flush()
       .then([this, n] { return _out.truncate(n); })
       .then([this, n] {
@@ -116,7 +116,7 @@ ss::future<> segment_appender::truncate(size_t n) {
           _current->set_position(actual);
       });
 }
-ss::future<> segment_appender::close() {
+ss::future<> log_segment_appender::close() {
     return flush()
       .then([this] { return _out.truncate(_committed_offset); })
       .then([this] { return _out.close(); });
@@ -132,7 +132,7 @@ static ss::future<> process_write_fut(size_t expected, size_t got) {
     return ss::make_ready_future<>();
 }
 
-ss::future<> segment_appender::flush() {
+ss::future<> log_segment_appender::flush() {
     if (_bytes_flush_pending == 0) {
         return ss::make_ready_future<>();
     }
@@ -182,7 +182,7 @@ ss::future<> segment_appender::flush() {
 }
 
 std::ostream&
-operator<<(std::ostream& o, const segment_appender::chunk& c) {
+operator<<(std::ostream& o, const log_segment_appender::chunk& c) {
     return ss::fmt_print(
       o,
       "[bytes_pending:{}, _pos:{}, _flushed_pos:{}, _ptr: {}, pos_ptr: {}]",
@@ -192,7 +192,7 @@ operator<<(std::ostream& o, const segment_appender::chunk& c) {
       fmt::ptr(c._buf.get()),
       fmt::ptr(c._buf.get() + c._flushed_pos));
 }
-std::ostream& operator<<(std::ostream& out, const segment_appender& o) {
+std::ostream& operator<<(std::ostream& out, const log_segment_appender& o) {
     return ss::fmt_print(
       out,
       "[write_dma:{}, bytes_written:{}, committed_offset:{}, "
@@ -202,6 +202,6 @@ std::ostream& operator<<(std::ostream& out, const segment_appender& o) {
       o._committed_offset,
       o._bytes_flush_pending,
       std::distance(
-        o._chunks.begin(), segment_appender::const_iterator(o._current)));
+        o._chunks.begin(), log_segment_appender::const_iterator(o._current)));
 }
 } // namespace storage

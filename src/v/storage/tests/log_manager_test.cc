@@ -3,9 +3,9 @@
 #include "storage/directories.h"
 #include "storage/disk_log_appender.h"
 #include "storage/log_manager.h"
-#include "storage/segment_appender.h"
-#include "storage/segment_appender_utils.h"
-#include "storage/segment_reader.h"
+#include "storage/log_segment_appender.h"
+#include "storage/log_segment_appender_utils.h"
+#include "storage/log_segment_reader.h"
 #include "storage/tests/utils/random_batch.h"
 #include "utils/file_sanitizer.h"
 
@@ -15,16 +15,16 @@
 
 using namespace storage; // NOLINT
 
-void write_garbage(segment_appender& ptr) {
+void write_garbage(segment_appender_ptr& ptr) {
     auto b = random_generators::get_bytes(100);
     // NOLINTNEXTLINE
-    ptr.append(reinterpret_cast<const char*>(b.data()), b.size()).get();
-    ptr.flush().get();
+    ptr->append(reinterpret_cast<const char*>(b.data()), b.size()).get();
+    ptr->flush().get();
 }
 
-void write_batches(ss::lw_shared_ptr<segment> seg) {
+void write_batches(std::unique_ptr<segment>& seg) {
     auto batches = test::make_random_batches(
-      seg->reader().base_offset() + model::offset(1), 1);
+      seg->reader()->base_offset() + model::offset(1), 1);
     for (auto& b : batches) {
         (void)seg->append(std::move(b)).get0();
     }
@@ -93,9 +93,9 @@ SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
     BOOST_CHECK_EQUAL(m.get(ntp2)->segment_count(), 0);
     BOOST_CHECK_EQUAL(m.get(ntp3)->segment_count(), 1);
     BOOST_CHECK_EQUAL(m.get(ntp4)->segment_count(), 0);
-    BOOST_CHECK(!file_exists(seg->reader().filename()).get0());
-    BOOST_CHECK(file_exists(seg3->reader().filename()).get0());
-    BOOST_CHECK(!file_exists(seg4->reader().filename()).get0());
+    BOOST_CHECK(!file_exists(seg->reader()->filename()).get0());
+    BOOST_CHECK(file_exists(seg3->reader()->filename()).get0());
+    BOOST_CHECK(!file_exists(seg4->reader()->filename()).get0());
     BOOST_CHECK(
-      file_exists(seg4->reader().filename() + ".cannotrecover").get0());
+      file_exists(seg4->reader()->filename() + ".cannotrecover").get0());
 }

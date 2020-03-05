@@ -1,5 +1,5 @@
 #include "random/generators.h"
-#include "storage/segment_appender.h"
+#include "storage/log_segment_appender.h"
 
 #include <seastar/testing/thread_test_case.hh>
 
@@ -7,7 +7,7 @@
 
 #include <cstring>
 
-using chunk = storage::segment_appender::chunk;
+using chunk = storage::log_segment_appender::chunk;
 static constexpr size_t alignment = 4096;
 
 SEASTAR_THREAD_TEST_CASE(chunk_manipulation) {
@@ -16,7 +16,8 @@ SEASTAR_THREAD_TEST_CASE(chunk_manipulation) {
     {
         c.append(b.data(), c.space_left());
         BOOST_REQUIRE(c.is_full());
-        BOOST_REQUIRE_EQUAL(c.size(), storage::segment_appender::chunk_size);
+        BOOST_REQUIRE_EQUAL(
+          c.size(), storage::log_segment_appender::chunk_size);
         c.reset();
     }
     {

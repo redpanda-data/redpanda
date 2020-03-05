@@ -1,4 +1,4 @@
-#include "storage/segment_appender_utils.h"
+#include "storage/log_segment_appender_utils.h"
 
 #include "model/record.h"
 #include "model/timestamp.h"
@@ -42,13 +42,13 @@ iobuf disk_header_to_iobuf(const model::record_batch_header& h) {
 
 template<typename T>
 typename std::enable_if_t<std::is_integral<T>::value, ss::future<>>
-write(segment_appender& out, T i) {
+write(log_segment_appender& out, T i) {
     // NOLINTNEXTLINE
     auto p = reinterpret_cast<const char*>(&i);
     return out.append(p, sizeof(T));
 }
 
-ss::future<> write_vint(segment_appender& out, vint::value_type v) {
+ss::future<> write_vint(log_segment_appender& out, vint::value_type v) {
     auto encoding_buffer
       = std::make_unique<std::array<bytes::value_type, vint::max_length>>();
     auto p = encoding_buffer->data();
@@ -58,12 +58,12 @@ ss::future<> write_vint(segment_appender& out, vint::value_type v) {
       .finally([e = std::move(encoding_buffer)] {});
 }
 
-ss::future<> write(segment_appender& out, const iobuf& buf) {
+ss::future<> write(log_segment_appender& out, const iobuf& buf) {
     return out.append(buf);
 }
 
-ss::future<>
-write(segment_appender& out, const std::vector<model::record_header>& headers) {
+ss::future<> write(
+  log_segment_appender& out, const std::vector<model::record_header>& headers) {
     return write_vint(out, headers.size()).then([&] {
         if (!headers.empty()) {
             return ss::do_for_each(headers, [&](const model::record_header& h) {
@@ -88,7 +88,7 @@ write(segment_appender& out, const std::vector<model::record_header>& headers) {
 
 } // namespace storage
 
-ss::future<> write(segment_appender& out, const model::record& record) {
+ss::future<> write(log_segment_appender& out, const model::record& record) {
     return write_vint(out, record.size_bytes())
       .then([&] { return write(out, record.attributes().value()); })
       .then([&] { return write_vint(out, record.timestamp_delta()); })
@@ -111,7 +111,7 @@ ss::future<> write(segment_appender& out, const model::record& record) {
 }
 
 ss::future<>
-write(segment_appender& appender, const model::record_batch& batch) {
+write(log_segment_appender& appender, const model::record_batch& batch) {
     auto hdrbuf = disk_header_to_iobuf(batch.header());
     // control_share is *very* cheap
     return write(appender, hdrbuf.control_share())

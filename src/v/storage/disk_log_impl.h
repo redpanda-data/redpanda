@@ -4,9 +4,9 @@
 #include "storage/failure_probes.h"
 #include "storage/log.h"
 #include "storage/log_reader.h"
+#include "storage/log_segment_appender.h"
+#include "storage/log_segment_reader.h"
 #include "storage/probe.h"
-#include "storage/segment_appender.h"
-#include "storage/segment_reader.h"
 
 namespace storage {
 
@@ -14,11 +14,11 @@ class disk_log_impl final : public log::impl {
     using failure_probes = storage::log_failure_probes;
 
 public:
-    disk_log_impl(model::ntp, ss::sstring, log_manager&, segment_set);
+    disk_log_impl(model::ntp, ss::sstring, log_manager&, log_set);
     ~disk_log_impl() override;
     ss::future<> close() final;
 
-    const segment_set& segments() const { return _segs; }
+    const log_set& segments() const { return _segs; }
 
     model::record_batch_reader make_reader(log_reader_config) final;
 
@@ -46,7 +46,7 @@ public:
         if (_segs.empty()) {
             return model::offset{};
         }
-        return _segs.front()->reader().base_offset();
+        return _segs.front()->reader()->base_offset();
     }
     model::offset max_offset() const final {
         for (auto it = _segs.rbegin(); it != _segs.rend(); it++) {
@@ -83,7 +83,7 @@ private:
     friend class disk_log_appender;
     friend class disk_log_builder;
 
-    segment_set& segments() { return _segs; }
+    log_set& segments() { return _segs; }
 
     ss::future<> remove_empty_segments();
 
@@ -95,7 +95,7 @@ private:
 private:
     bool _closed{false};
     log_manager& _manager;
-    segment_set _segs;
+    log_set _segs;
     storage::probe _probe;
     failure_probes _failure_probes;
 };

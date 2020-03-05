@@ -193,18 +193,15 @@ public:
         friend std::ostream& operator<<(std::ostream&, const read_result&);
     };
 
-    explicit batch_cache_index(batch_cache& cache)
+    batch_cache_index(batch_cache& cache)
       : _cache(cache) {}
+
     ~batch_cache_index() {
         std::for_each(
           _index.begin(), _index.end(), [this](index_type::value_type& e) {
               _cache.evict(std::move(e.second));
           });
     }
-    batch_cache_index(batch_cache_index&&) noexcept = default;
-    batch_cache_index& operator=(batch_cache_index&&) noexcept = delete;
-    batch_cache_index(const batch_cache_index&) = delete;
-    batch_cache_index& operator=(const batch_cache_index&) = delete;
 
     bool empty() const { return _index.empty(); }
 
@@ -308,8 +305,6 @@ private:
 
     batch_cache& _cache;
     index_type _index;
-
-    friend std::ostream& operator<<(std::ostream&, const batch_cache_index&);
 };
 
 using batch_cache_index_ptr = std::unique_ptr<batch_cache_index>;

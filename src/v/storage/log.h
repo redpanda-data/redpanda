@@ -5,7 +5,7 @@
 #include "model/timestamp.h"
 #include "seastarx.h"
 #include "storage/log_appender.h"
-#include "storage/segment_reader.h"
+#include "storage/log_segment_reader.h"
 #include "storage/types.h"
 
 #include <seastar/core/shared_ptr.hh>
@@ -49,7 +49,7 @@
 ///
 ///   log <- log::impl                 (main log interface)
 ///     log_appender <- log_appender::impl (log appending interface)
-///       segment_appender
+///       log_segment_appender
 ///
 namespace storage {
 
@@ -165,8 +165,8 @@ inline std::ostream& operator<<(std::ostream& o, const storage::log& lg) {
 }
 
 class log_manager;
-class segment_set;
+class log_set;
 log make_memory_backed_log(model::ntp, ss::sstring);
-log make_disk_backed_log(model::ntp, log_manager&, segment_set);
+log make_disk_backed_log(model::ntp, log_manager&, log_set);
 
 } // namespace storage
