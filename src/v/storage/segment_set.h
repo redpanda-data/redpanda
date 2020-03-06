@@ -22,7 +22,7 @@ public:
     // type _must_ offer stable segment addresses
     // for readers and writers taking refs.
     using type = ss::lw_shared_ptr<segment>;
-    using underlying_t = std::vector<type>;
+    using underlying_t = std::deque<type>;
     using const_iterator = underlying_t::const_iterator;
     using reverse_iterator = underlying_t::reverse_iterator;
     using const_reverse_iterator = underlying_t::const_reverse_iterator;
@@ -45,6 +45,7 @@ public:
     void add(ss::lw_shared_ptr<segment>);
 
     void pop_back();
+    void pop_front();
 
     underlying_t release() && { return std::move(_handles); }
     type& back() { return _handles.back(); }

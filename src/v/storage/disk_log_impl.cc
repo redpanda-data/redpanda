@@ -44,7 +44,15 @@ ss::future<> disk_log_impl::close() {
     });
 }
 
-ss::future<> disk_log_impl::gc(model::timestamp /*collection_upper_bound*/) {
+ss::future<> disk_log_impl::gc(model::timestamp collection_upper_bound) {
+    while (!_segs.empty()) {
+        if (_segs.front()->index().max_timestamp() <= collection_upper_bound) {
+            dispatch_remove(_segs.front());
+            _segs.pop_front();
+        } else {
+            break;
+        }
+    }
     return ss::make_ready_future<>();
 }
 
@@ -200,7 +208,7 @@ disk_log_impl::timequery(timequery_config cfg) {
 }
 
 void disk_log_impl::dispatch_remove(ss::lw_shared_ptr<segment> s) {
-    vlog(stlog.info, "marking segment tombstone: {}", s);
+    vlog(stlog.info, "Tombstone & delete segment: {}", s);
     // background close
     s->tombstone();
     (void)ss::with_gate(_lgate, [s] {
