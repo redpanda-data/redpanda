@@ -1,6 +1,7 @@
 #include "likely.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
+#include "model/timestamp.h"
 #include "seastarx.h"
 #include "storage/log.h"
 #include "storage/logger.h"
@@ -33,7 +34,7 @@ class mem_iter_reader final
   : public model::record_batch_reader::impl
   , public boost::intrusive::list_base_hook<> {
 public:
-    using underlying_t = std::vector<model::record_batch>;
+    using underlying_t = std::deque<model::record_batch>;
     using iterator = typename underlying_t::iterator;
     mem_iter_reader(
       boost::intrusive::list<mem_iter_reader>& hook,
@@ -110,7 +111,7 @@ private:
 };
 
 struct mem_log_impl final : log::impl {
-    using underlying_t = std::vector<model::record_batch>;
+    using underlying_t = std::deque<model::record_batch>;
     // forward ctor
     explicit mem_log_impl(model::ntp n, ss::sstring workdir)
       : log::impl(std::move(n), std::move(workdir)) {}
@@ -153,6 +154,16 @@ struct mem_log_impl final : log::impl {
           std::begin(_data), std::end(_data), offset, entries_ordering{});
 
         _data.erase(it, _data.end());
+        return ss::make_ready_future<>();
+    }
+
+    ss::future<> gc(model::timestamp collection_upper_bound) final {
+        for (const model::record_batch& b : _data) {
+            if (b.header().max_timestamp <= collection_upper_bound) {
+                _data.pop_front();
+            }
+        }
+        _data.shrink_to_fit();
         return ss::make_ready_future<>();
     }
 
@@ -238,7 +249,7 @@ ss::future<append_result> mem_log_appender::end_of_stream() {
                       .base_offset = _min_offset,
                       .last_offset = _cur_offset - model::offset(1),
                       .byte_size = _byte_size,
-                      .last_term = _log._data.rbegin()->term()};
+                      .last_term = _log._data.back().term()};
     return ss::make_ready_future<append_result>(ret);
 }
 

@@ -44,6 +44,10 @@ ss::future<> disk_log_impl::close() {
     });
 }
 
+ss::future<> disk_log_impl::gc(model::timestamp /*collection_upper_bound*/) {
+    return ss::make_ready_future<>();
+}
+
 ss::future<> disk_log_impl::remove_empty_segments() {
     return ss::do_until(
       [this] { return _segs.empty() || !_segs.back()->empty(); },

@@ -26,6 +26,7 @@ public:
 
     ss::future<> close() final;
     ss::future<> flush() final;
+    ss::future<> gc(model::timestamp collection_upper_bound) final;
     ss::future<> truncate(model::offset offset) final {
         return _failure_probes.truncate().then(
           [this, offset]() mutable { return do_truncate(offset); });
