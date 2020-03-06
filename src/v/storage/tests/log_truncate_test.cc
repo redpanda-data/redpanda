@@ -229,3 +229,34 @@ FIXTURE_TEST(
         BOOST_REQUIRE_EQUAL(read_after_append.size(), headers.size() + 4);
     }
 }
+
+
+FIXTURE_TEST(test_truncate_last_single_record_batch, storage_test_fixture) {
+    for (auto type : storage_types) {
+        info("{}", type == log_manager::storage_type::disk ? "DISK" : "MEMORY");
+        storage::log_manager mgr = make_log_manager();
+        auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+        auto ntp = make_ntp("default", "test", 0);
+        auto log = mgr.manage(ntp, type).get0();
+        auto headers = append_random_batches(log, 15, model::term_id(0), [] {
+            ss::circular_buffer<model::record_batch> ret;
+            ret.push_back(
+              storage::test::make_random_batch(model::offset(0), 1, true));
+            return ret;
+        });
+        log.flush().get0();
+
+        while (log.max_offset() > model::offset{}) {
+            auto truncate_offset = log.max_offset();
+            log.truncate(truncate_offset).get0();
+            auto all_batches = read_and_validate_all_batches(log);
+            auto expected = truncate_offset - headers.back().record_count;
+            headers.pop_back();
+            if (!headers.empty()) {
+                BOOST_REQUIRE_EQUAL(all_batches.back().last_offset(), expected);
+            } else {
+                BOOST_REQUIRE_EQUAL(all_batches.empty(), true);
+            }
+        }
+    }
+}
