@@ -230,7 +230,6 @@ FIXTURE_TEST(
     }
 }
 
-
 FIXTURE_TEST(test_truncate_last_single_record_batch, storage_test_fixture) {
     for (auto type : storage_types) {
         info("{}", type == log_manager::storage_type::disk ? "DISK" : "MEMORY");
