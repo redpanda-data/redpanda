@@ -61,6 +61,7 @@ struct log_config {
  */
 class log_manager {
 public:
+    // TODO: move storage_type into log_config
     enum class storage_type { memory, disk };
 
     explicit log_manager(log_config) noexcept;
