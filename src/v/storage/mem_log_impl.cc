@@ -1,4 +1,5 @@
 #include "likely.h"
+#include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
@@ -26,6 +27,12 @@ struct entries_ordering {
     operator()(const model::record_batch& e1, model::timestamp value) const {
         return e1.header().first_timestamp < value;
     }
+};
+
+struct mem_probe {
+    void add_bytes_written(size_t sz) { partition_bytes += sz; }
+    void remove_bytes_written(size_t sz) { partition_bytes -= sz; }
+    size_t partition_bytes{0};
 };
 
 struct mem_log_impl;
@@ -152,16 +159,29 @@ struct mem_log_impl final : log::impl {
 
         auto it = std::lower_bound(
           std::begin(_data), std::end(_data), offset, entries_ordering{});
-
-        _data.erase(it, _data.end());
+        if (it != _data.end()) {
+            _probe.remove_bytes_written(std::accumulate(
+              it,
+              _data.end(),
+              size_t(0),
+              [](size_t acc, const model::record_batch& b) {
+                  return acc += b.size_bytes();
+              }));
+            _data.erase(it, _data.end());
+        }
         return ss::make_ready_future<>();
     }
 
     ss::future<> gc(
       model::timestamp collection_upper_bound,
       std::optional<size_t> max_partition_retention_size) final {
+        const size_t max = max_partition_retention_size.value_or(
+          std::numeric_limits<size_t>::max());
         for (const model::record_batch& b : _data) {
-            if (b.header().max_timestamp <= collection_upper_bound) {
+            if (
+              b.header().max_timestamp <= collection_upper_bound
+              || _probe.partition_bytes > max) {
+                _probe.remove_bytes_written(_data.front().size_bytes());
                 _data.pop_front();
             }
         }
@@ -227,6 +247,8 @@ struct mem_log_impl final : log::impl {
     model::offset committed_offset() const final { return max_offset(); }
     boost::intrusive::list<mem_iter_reader> _readers;
     underlying_t _data;
+
+    mem_probe _probe;
 };
 
 ss::future<ss::stop_iteration>
@@ -242,6 +264,7 @@ mem_log_appender::operator()(model::record_batch&& batch) {
       batch.term());
     auto offset = _cur_offset;
     _cur_offset = batch.last_offset() + model::offset(1);
+    _log._probe.add_bytes_written(batch.size_bytes());
     _log._data.emplace_back(std::move(batch));
     return ss::make_ready_future<ss::stop_iteration>(ss::stop_iteration::no);
 }
