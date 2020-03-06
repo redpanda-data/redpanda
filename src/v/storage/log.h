@@ -66,8 +66,8 @@ public:
         impl& operator=(const impl&) = delete;
         virtual ~impl() noexcept = default;
 
+        virtual ss::future<> gc(model::timestamp collection_upper_bound) = 0;
         virtual ss::future<> truncate(model::offset) = 0;
-
         virtual ss::future<model::record_batch_reader>
           make_reader(log_reader_config) = 0;
         virtual log_appender make_appender(log_append_config) = 0;
@@ -153,6 +153,10 @@ public:
     ss::future<std::optional<timequery_result>>
     timequery(timequery_config cfg) {
         return _impl->timequery(cfg);
+    }
+
+    ss::future<> gc(model::timestamp collection_upper_bound) {
+        return _impl->gc(collection_upper_bound);
     }
 
     std::ostream& print(std::ostream& o) const { return _impl->print(o); }
