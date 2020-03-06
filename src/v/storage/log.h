@@ -60,6 +60,10 @@ public:
         explicit impl(model::ntp n, ss::sstring log_directory) noexcept
           : _ntp(std::move(n))
           , _workdir(std::move(log_directory)) {}
+        impl(impl&&) noexcept = default;
+        impl& operator=(impl&&) noexcept = default;
+        impl(const impl&) = delete;
+        impl& operator=(const impl&) = delete;
         virtual ~impl() noexcept = default;
 
         virtual ss::future<> truncate(model::offset) = 0;
