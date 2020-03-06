@@ -228,7 +228,7 @@ ss::future<> disk_log_impl::do_truncate(model::offset o) {
         return ss::make_ready_future<>();
     }
     auto& last = *_segs.back();
-    if (o >= last.dirty_offset()) {
+    if (o > last.dirty_offset()) {
         return ss::make_ready_future<>();
     }
     auto pidx = last.index().find_nearest(o);
