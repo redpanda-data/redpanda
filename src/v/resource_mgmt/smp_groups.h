@@ -40,7 +40,6 @@ public:
     ss::future<> destroy_groups() {
         return destroy_smp_service_group(*_kafka)
           .then([this] { return destroy_smp_service_group(*_raft); })
-          .then([this] { return destroy_smp_service_group(*_kafka); })
           .then([this] { return destroy_smp_service_group(*_cluster); });
     }
 
