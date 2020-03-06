@@ -134,7 +134,8 @@ private:
      * \brief delete old segments and trigger compacted segments
      *        runs inside a seastar thread
      */
-    void compact_segments_in_thread();
+    void trigger_housekeeping();
+    ss::future<> housekeeping();
 
     log_config _config;
     ss::timer<> _compaction_timer;
