@@ -66,7 +66,11 @@ public:
         impl& operator=(const impl&) = delete;
         virtual ~impl() noexcept = default;
 
-        virtual ss::future<> gc(model::timestamp collection_upper_bound) = 0;
+        virtual ss::future<> gc(
+          model::timestamp collection_upper_bound,
+          std::optional<size_t> max_partition_retention_size)
+          = 0;
+
         virtual ss::future<> truncate(model::offset) = 0;
         virtual ss::future<model::record_batch_reader>
           make_reader(log_reader_config) = 0;
@@ -155,8 +159,13 @@ public:
         return _impl->timequery(cfg);
     }
 
-    ss::future<> gc(model::timestamp collection_upper_bound) {
-        return _impl->gc(collection_upper_bound);
+    /**
+     * garbage collection method for this ntp
+     */
+    ss::future<> gc(
+      model::timestamp collection_upper_bound,
+      std::optional<size_t> max_partition_retention_size) {
+        return _impl->gc(collection_upper_bound, max_partition_retention_size);
     }
 
     std::ostream& print(std::ostream& o) const { return _impl->print(o); }

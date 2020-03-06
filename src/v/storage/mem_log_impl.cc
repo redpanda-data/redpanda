@@ -157,7 +157,9 @@ struct mem_log_impl final : log::impl {
         return ss::make_ready_future<>();
     }
 
-    ss::future<> gc(model::timestamp collection_upper_bound) final {
+    ss::future<> gc(
+      model::timestamp collection_upper_bound,
+      std::optional<size_t> max_partition_retention_size) final {
         for (const model::record_batch& b : _data) {
             if (b.header().max_timestamp <= collection_upper_bound) {
                 _data.pop_front();
