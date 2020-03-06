@@ -49,7 +49,10 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> group_initial_rebalance_delay;
     property<std::chrono::milliseconds> group_new_member_join_timeout;
     property<std::chrono::milliseconds> metadata_dissemination_interval;
-
+    // same as delete.retention.ms in kafka
+    property<std::chrono::milliseconds> delete_retention_ms;
+    // same as retention.size in kafka - TODO: size not implemented
+    property<size_t> retention_bytes;
     configuration();
 
     void read_yaml(const YAML::Node& root_node) override;
