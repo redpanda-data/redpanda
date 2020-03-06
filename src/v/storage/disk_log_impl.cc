@@ -44,7 +44,9 @@ ss::future<> disk_log_impl::close() {
     });
 }
 
-ss::future<> disk_log_impl::gc(model::timestamp collection_upper_bound) {
+ss::future<> disk_log_impl::gc(
+  model::timestamp collection_upper_bound,
+  std::optional<size_t> max_partition_retention_size) {
     while (!_segs.empty()) {
         if (_segs.front()->index().max_timestamp() <= collection_upper_bound) {
             dispatch_remove(_segs.front());

@@ -175,7 +175,7 @@ configuration::configuration()
       "retention_bytes",
       "max bytes per partition on disk before triggering a compaction",
       required::no,
-      std::numeric_limits<size_t>::max())
+      std::nullopt)
 
 {}
 

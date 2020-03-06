@@ -48,9 +48,11 @@ static inline model::timestamp collection_threshold_time() {
 ss::future<> log_manager::housekeeping() {
     vlog(stlog.info, "starting compaction loop");
     auto collection_threshold = collection_threshold_time();
+    auto retention_bytes = config::shard_local_cfg().retention_bytes();
     return ss::do_for_each(
-      _logs, [this, collection_threshold](logs_type::value_type& l) {
-          return l.second.gc(collection_threshold);
+      _logs,
+      [this, collection_threshold, retention_bytes](logs_type::value_type& l) {
+          return l.second.gc(collection_threshold, retention_bytes);
       });
 }
 
