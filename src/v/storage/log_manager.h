@@ -127,7 +127,7 @@ private:
      * Returns an exceptional future if any error occured opening a segment.
      * Otherwise all open segment readers are returned.
      */
-    ss::future<std::vector<ss::lw_shared_ptr<segment>>>
+    ss::future<std::deque<ss::lw_shared_ptr<segment>>>
     open_segments(ss::sstring path);
 
     /**
