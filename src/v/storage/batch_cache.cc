@@ -1,4 +1,5 @@
 #include "batch_cache.h"
+
 #include "log_reader.h"
 
 namespace storage {
