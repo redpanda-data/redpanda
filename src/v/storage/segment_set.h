@@ -22,18 +22,14 @@ public:
     // type _must_ offer stable segment addresses
     // for readers and writers taking refs.
     using type = ss::lw_shared_ptr<segment>;
-    using underlying_t = std::deque<type>;
+    using underlying_t = ss::circular_buffer<type>;
     using const_iterator = underlying_t::const_iterator;
-    using reverse_iterator = underlying_t::reverse_iterator;
-    using const_reverse_iterator = underlying_t::const_reverse_iterator;
     using iterator = underlying_t::iterator;
-    static constexpr bool is_nothrow_v
-      = std::is_nothrow_move_constructible_v<underlying_t>;
 
-    explicit segment_set(underlying_t) noexcept(is_nothrow_v);
-    ~segment_set() = default;
+    explicit segment_set(underlying_t);
+    ~segment_set() noexcept = default;
     segment_set(segment_set&&) noexcept = default;
-    segment_set& operator=(segment_set&&) noexcept = default;
+    segment_set& operator=(segment_set&& o) noexcept = default;
     segment_set(const segment_set&) = delete;
     segment_set& operator=(const segment_set&) = delete;
 
@@ -51,16 +47,13 @@ public:
     type& back() { return _handles.back(); }
     const type& back() const { return _handles.back(); }
     const type& front() const { return _handles.front(); }
+    type& operator[](size_t i) { return _handles[i]; }
+    const type& operator[](size_t i) const { return _handles[i]; }
 
     iterator lower_bound(model::offset o);
     const_iterator lower_bound(model::offset o) const;
     iterator lower_bound(model::timestamp o);
     const_iterator lower_bound(model::timestamp o) const;
-
-    reverse_iterator rbegin() { return _handles.rbegin(); }
-    reverse_iterator rend() { return _handles.rend(); }
-    const_reverse_iterator rbegin() const { return _handles.crbegin(); }
-    const_reverse_iterator rend() const { return _handles.crend(); }
 
     const_iterator cbegin() const { return _handles.cbegin(); }
     const_iterator cend() const { return _handles.cend(); }

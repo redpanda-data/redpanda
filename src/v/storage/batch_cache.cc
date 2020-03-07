@@ -1,5 +1,4 @@
 #include "batch_cache.h"
-
 #include "log_reader.h"
 
 namespace storage {
@@ -33,7 +32,7 @@ size_t batch_cache::reclaim(size_t size) {
 std::optional<model::record_batch>
 batch_cache_index::get(model::offset offset) {
     if (auto it = find_first_contains(offset); it != _index.end()) {
-        _cache.touch(it->second);
+        _cache->touch(it->second);
         return it->second->batch.share();
     }
     return std::nullopt;
@@ -55,7 +54,7 @@ batch_cache_index::read_result batch_cache_index::read(
         if (!type_filter || type_filter == batch.header().type) {
             ret.batches.emplace_back(batch.share());
             ret.memory_usage += batch.memory_usage();
-            _cache.touch(it->second);
+            _cache->touch(it->second);
         }
 
         offset = batch.last_offset() + model::offset(1);
@@ -104,7 +103,7 @@ void batch_cache_index::truncate(model::offset offset) {
             ++it;
         }
         std::for_each(it, _index.end(), [this](index_type::value_type& e) {
-            _cache.evict(std::move(e.second));
+            _cache->evict(std::move(e.second));
         });
         _index.erase(it, _index.end());
     }

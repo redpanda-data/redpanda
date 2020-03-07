@@ -7,6 +7,7 @@
 #include "storage/segment.h"
 #include "storage/version.h"
 
+#include <seastar/core/circular_buffer.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/sstring.hh>
@@ -127,7 +128,7 @@ private:
      * Returns an exceptional future if any error occured opening a segment.
      * Otherwise all open segment readers are returned.
      */
-    ss::future<std::deque<ss::lw_shared_ptr<segment>>>
+    ss::future<ss::circular_buffer<ss::lw_shared_ptr<segment>>>
     open_segments(ss::sstring path);
 
     /**
