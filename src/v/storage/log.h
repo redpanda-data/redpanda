@@ -60,10 +60,18 @@ public:
         explicit impl(model::ntp n, ss::sstring log_directory) noexcept
           : _ntp(std::move(n))
           , _workdir(std::move(log_directory)) {}
+        impl(impl&&) noexcept = default;
+        impl& operator=(impl&&) noexcept = default;
+        impl(const impl&) = delete;
+        impl& operator=(const impl&) = delete;
         virtual ~impl() noexcept = default;
 
-        virtual ss::future<> truncate(model::offset) = 0;
+        virtual ss::future<> gc(
+          model::timestamp collection_upper_bound,
+          std::optional<size_t> max_partition_retention_size)
+          = 0;
 
+        virtual ss::future<> truncate(model::offset) = 0;
         virtual ss::future<model::record_batch_reader>
           make_reader(log_reader_config) = 0;
         virtual log_appender make_appender(log_append_config) = 0;
@@ -149,6 +157,15 @@ public:
     ss::future<std::optional<timequery_result>>
     timequery(timequery_config cfg) {
         return _impl->timequery(cfg);
+    }
+
+    /**
+     * garbage collection method for this ntp
+     */
+    ss::future<> gc(
+      model::timestamp collection_upper_bound,
+      std::optional<size_t> max_partition_retention_size) {
+        return _impl->gc(collection_upper_bound, max_partition_retention_size);
     }
 
     std::ostream& print(std::ostream& o) const { return _impl->print(o); }

@@ -26,6 +26,11 @@ public:
 
     ss::future<> close() final;
     ss::future<> flush() final;
+
+    ss::future<> gc(
+      model::timestamp collection_upper_bound,
+      std::optional<size_t> max_partition_retention_size) final;
+
     ss::future<> truncate(model::offset offset) final {
         return _failure_probes.truncate().then(
           [this, offset]() mutable { return do_truncate(offset); });

@@ -61,6 +61,7 @@ struct log_config {
  */
 class log_manager {
 public:
+    // TODO: move storage_type into log_config
     enum class storage_type { memory, disk };
 
     explicit log_manager(log_config) noexcept;
@@ -126,14 +127,15 @@ private:
      * Returns an exceptional future if any error occured opening a segment.
      * Otherwise all open segment readers are returned.
      */
-    ss::future<std::vector<ss::lw_shared_ptr<segment>>>
+    ss::future<std::deque<ss::lw_shared_ptr<segment>>>
     open_segments(ss::sstring path);
 
     /**
      * \brief delete old segments and trigger compacted segments
      *        runs inside a seastar thread
      */
-    void compact_segments_in_thread();
+    void trigger_housekeeping();
+    ss::future<> housekeeping();
 
     log_config _config;
     ss::timer<> _compaction_timer;
