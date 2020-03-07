@@ -57,6 +57,18 @@ ss::future<> disk_log_impl::gc(
             _segs.pop_front();
         }
     }
+    // The following compaction has a Kafka behavior compatibility bug. for
+    // which we defer do nothing at the moment, possibly crashing the machine
+    // and running out of disk. Kafka uses the same logic below as of
+    // March-6th-2020. The problem is that you can construct a case where the
+    // first log segment max_timestamp is infinity and this loop will never
+    // trigger a compaction since the data is coming from the clients.
+    //
+    // A workaround is to have production systems set both, the max
+    // retention.bytes and the max retention.ms setting in the configuration
+    // files so that size-based retention eventually evicts the problematic
+    // segment, preventing a crash.
+    //
     while (
       !_segs.empty()
       && (_segs.front()->index().max_timestamp() <= collection_upper_bound)) {
