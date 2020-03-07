@@ -59,7 +59,7 @@ void adl<storage::index_state>::to(iobuf& out, storage::index_state&& r) {
         + (r.relative_offset_index.size() * (sizeof(uint32_t) * 3));
     r.size = final_size;
     r.checksum = storage::index_state::checksum_state(r);
-    reflection::serialize_cpu_to_le(
+    reflection::serialize(
       out,
       r.size,
       r.checksum,

@@ -18,7 +18,7 @@ namespace storage {
 
 iobuf disk_header_to_iobuf(const model::record_batch_header& h) {
     iobuf b;
-    reflection::serialize_cpu_to_le(
+    reflection::serialize(
       b,
       h.size_bytes,
       h.base_offset(),
