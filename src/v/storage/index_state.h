@@ -14,22 +14,11 @@ namespace storage {
    8 bytes - based_offset
    8 bytes - base_time
    4 bytes - index.size()
-   []index_state::entry - array of 3 32-bit integers per item
+   [] relative_offset_index
+   [] relative_time_index
+   [] position_index
  */
 struct index_state {
-    struct entry {
-        entry(uint32_t relof, uint32_t reltim, uint32_t pos) noexcept
-          : relative_offset(relof)
-          , relative_time(reltim)
-          , filepos(pos) {}
-        /// \brief relative to the base offset of the segment
-        uint32_t relative_offset;
-        /// \brief relative to base_time
-        uint32_t relative_time;
-        /// \brief absolute physical offset from 0 to the start of the batch
-        /// i.e.: the batch starts exactly at this position
-        uint32_t filepos;
-    };
     /// \brief sizeof the index in bytes
     uint32_t size{0};
     /// \brief currently xxhash64
@@ -39,31 +28,32 @@ struct index_state {
     model::offset base_offset{0};
     model::timestamp base_timestamp{0};
     model::timestamp max_timestamp{0};
-    std::vector<entry> index;
+
+    /// breaking indexes into their own has a 6x latency reduction
+    std::vector<uint32_t> relative_offset_index;
+    std::vector<uint32_t> relative_time_index;
+    std::vector<uint32_t> position_index;
+
+    bool empty() const { return relative_offset_index.empty(); }
+
+    void
+    add_entry(uint32_t relative_offset, uint32_t relative_time, uint32_t pos) {
+        relative_offset_index.push_back(relative_offset);
+        relative_time_index.push_back(relative_time);
+        position_index.push_back(pos);
+    }
+    void pop_back() {
+        relative_offset_index.pop_back();
+        relative_time_index.pop_back();
+        position_index.pop_back();
+    }
+    std::tuple<uint32_t, uint32_t, uint32_t> get_entry(size_t i) {
+        return {
+          relative_offset_index[i], relative_time_index[i], position_index[i]};
+    }
 
     static uint64_t checksum_state(const index_state&);
     friend std::ostream& operator<<(std::ostream&, const index_state&);
-};
-
-struct index_state_offset_comparator {
-    // lower bound bool
-    bool operator()(const index_state::entry& p, uint32_t needle) const {
-        return p.relative_offset < needle;
-    }
-    // upper bound bool
-    bool operator()(uint32_t needle, const index_state::entry& p) const {
-        return needle < p.relative_offset;
-    }
-};
-struct index_state_timestamp_comparator {
-    // lower bound bool
-    bool operator()(const index_state::entry& p, uint32_t needle) const {
-        return p.relative_time < needle;
-    }
-    // upper bound bool
-    bool operator()(uint32_t needle, const index_state::entry& p) const {
-        return needle < p.relative_time;
-    }
 };
 
 } // namespace storage
@@ -72,10 +62,5 @@ template<>
 struct adl<storage::index_state> {
     void to(iobuf&, storage::index_state&&);
     storage::index_state from(iobuf_parser&);
-};
-template<>
-struct adl<storage::index_state::entry> {
-    void to(iobuf&, storage::index_state::entry&&);
-    storage::index_state::entry from(iobuf_parser&);
 };
 } // namespace reflection

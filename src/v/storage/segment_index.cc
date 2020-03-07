@@ -14,12 +14,13 @@
 
 namespace storage {
 
-static inline segment_index::entry
-translate_index_entry(const index_state& s, const index_state::entry& e) {
+static inline segment_index::entry translate_index_entry(
+  const index_state& s, std::tuple<uint32_t, uint32_t, uint32_t> entry) {
+    auto [relative_offset, relative_time, filepos] = entry;
     return segment_index::entry{
-      .offset = model::offset(e.relative_offset + s.base_offset()),
-      .timestamp = model::timestamp(e.relative_time + s.base_timestamp()),
-      .filepos = e.filepos,
+      .offset = model::offset(relative_offset + s.base_offset()),
+      .timestamp = model::timestamp(relative_time + s.base_timestamp()),
+      .filepos = filepos,
     };
 }
 
@@ -40,7 +41,7 @@ void segment_index::maybe_track(
       hdr.base_offset,
       _state.base_offset);
 
-    if (_state.index.empty()) {
+    if (_state.empty()) {
         _state.base_timestamp = hdr.first_timestamp;
     }
 
@@ -52,17 +53,34 @@ void segment_index::maybe_track(
     if (_acc >= _step) {
         _acc = 0;
         // We know that a segment cannot be > 4GB
-        _state.index.emplace_back(index_state::entry(
+        _state.add_entry(
           hdr.base_offset() - _state.base_offset(),
           hdr.max_timestamp() - _state.base_timestamp(),
-          filepos));
+          filepos);
     }
 }
 
 std::optional<segment_index::entry>
-segment_index::find_nearest(model::timestamp) {
-    vassert(false, "find(model::timestamp) not implemented");
+segment_index::find_nearest(model::timestamp t) {
+    if (t < _state.base_timestamp) {
+        return std::nullopt;
+    }
+    if (_state.empty()) {
+        return std::nullopt;
+    }
+    const uint32_t i = t() - _state.base_timestamp();
+    auto it = std::lower_bound(
+      std::begin(_state.relative_time_index),
+      std::end(_state.relative_time_index),
+      i,
+      std::less<uint32_t>{});
+    if (it == _state.relative_offset_index.end()) {
+        return std::nullopt;
+    }
+    auto dist = std::distance(_state.relative_offset_index.begin(), it);
+    return translate_index_entry(_state, _state.get_entry(dist));
 }
+
 std::optional<segment_index::entry>
 segment_index::find_nearest(model::offset o) {
     vassert(
@@ -70,26 +88,28 @@ segment_index::find_nearest(model::offset o) {
       "segment_offset::index::lower_bound cannot find offset:{} below:{}",
       o,
       _state.base_offset);
-    if (_state.index.empty()) {
+    if (_state.empty()) {
         return std::nullopt;
     }
     const uint32_t i = o() - _state.base_offset();
     auto it = std::lower_bound(
-      std::begin(_state.index),
-      std::end(_state.index),
+      std::begin(_state.relative_offset_index),
+      std::end(_state.relative_offset_index),
       i,
-      index_state_offset_comparator{});
-    if (it == _state.index.end()) {
+      std::less<uint32_t>{});
+    if (it == _state.relative_offset_index.end()) {
         it = std::prev(it);
     }
-    if (it->relative_offset <= i) {
-        return translate_index_entry(_state, *it);
+    size_t dist = std::distance(_state.relative_offset_index.begin(), it);
+    if (*it <= i) {
+        return translate_index_entry(_state, _state.get_entry(dist));
     }
-    if (std::distance(_state.index.begin(), it) > 0) {
+    dist = std::distance(_state.relative_offset_index.begin(), it);
+    if (dist > 0) {
         it = std::prev(it);
     }
-    if (it->relative_offset <= i) {
-        return translate_index_entry(_state, *it);
+    if (*it <= i) {
+        return translate_index_entry(_state, _state.get_entry(dist));
     }
     return std::nullopt;
 }
@@ -102,19 +122,24 @@ ss::future<> segment_index::truncate(model::offset o) {
       _state.base_offset);
     const uint32_t i = o() - _state.base_offset();
     auto it = std::lower_bound(
-      std::begin(_state.index),
-      std::end(_state.index),
+      std::begin(_state.relative_offset_index),
+      std::end(_state.relative_offset_index),
       i,
-      index_state_offset_comparator{});
-    if (it != _state.index.end()) {
+      std::less<uint32_t>{});
+
+    if (it != _state.relative_offset_index.end()) {
         _needs_persistence = true;
-        if (_state.index.empty()) {
+        int remove_back_elems = std::distance(
+          it, _state.relative_offset_index.end());
+        while (remove_back_elems-- > 0) {
+            _state.pop_back();
+        }
+        if (_state.empty()) {
             _state.max_timestamp = _state.base_timestamp;
         } else {
             _state.max_timestamp = model::timestamp(
-              _state.index.back().relative_time + _state.base_timestamp());
+              _state.relative_time_index.back() + _state.base_timestamp());
         }
-        _state.index.erase(it, _state.index.end());
     }
     return flush();
 }
@@ -164,8 +189,7 @@ ss::future<> segment_index::close() {
 }
 std::ostream& operator<<(std::ostream& o, const segment_index& i) {
     return o << "{file:" << i.filename() << ", offsets:" << i.base_offset()
-             << ", indexed_offsets:" << i._state.index.size()
-             << ", step:" << i._step
+             << ", index:" << i._state << ", step:" << i._step
              << ", needs_persistence:" << i._needs_persistence << "}";
 }
 std::ostream& operator<<(std::ostream& o, const segment_index_ptr& i) {
