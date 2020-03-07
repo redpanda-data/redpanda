@@ -9,6 +9,18 @@
 
 namespace cluster {
 
+ss::future<> metadata_cache::stop() {
+    while (!_leader_promises.empty()) {
+        auto it = _leader_promises.begin();
+        for (auto& promise : it->second) {
+            promise.set_exception(
+              std::make_exception_ptr(ss::timed_out_error()));
+        }
+        _leader_promises.erase(it);
+    }
+    return ss::make_ready_future<>();
+}
+
 std::vector<model::topic> metadata_cache::all_topics() const {
     std::vector<model::topic> topics;
     topics.reserve(_cache.size());
@@ -134,6 +146,27 @@ void metadata_cache::update_partition_leader(
     }
     p->p_md.leader_node = leader_id;
     p->term_id = term;
+
+    // notify waiters if update is setting the leader
+    if (!leader_id) {
+        return;
+    }
+
+    // TODO: temporarily normalized until md cache supports namespaces
+    model::ntp ntp{
+        .ns = model::ns(""),
+        .tp = model::topic_partition{
+            .topic = topic,
+            .partition = partition_id,
+        },
+    };
+
+    if (auto it = _leader_promises.find(ntp); it != _leader_promises.end()) {
+        for (auto& promise : it->second) {
+            promise.set_value(*leader_id);
+        }
+        _leader_promises.erase(it);
+    }
 }
 
 model::topic_metadata
@@ -184,6 +217,27 @@ void metadata_cache::insert_topic(model::topic_metadata md) {
       });
 
     _cache.emplace(std::move(md.tp), topic_metadata{std::move(partitions)});
+}
+
+ss::future<model::node_id> metadata_cache::get_leader(
+  const model::ntp& ntp, ss::lowres_clock::time_point timeout) {
+    if (auto md = get_topic_metadata(ntp.tp.topic); md) {
+        if (ntp.tp.partition() < md->partitions.size()) {
+            auto& p = md->partitions[ntp.tp.partition()];
+            if (p.leader_node) {
+                return ss::make_ready_future<model::node_id>(*p.leader_node);
+            }
+        }
+    }
+
+    // TODO: temporarily normalized until md cache supports namespaces. remove
+    // when metadata cache support ntp.
+    auto tmp = ntp;
+    tmp.ns = model::ns("");
+
+    auto& promise = _leader_promises[tmp].emplace_back();
+    return promise.get_future_with_timeout(
+      timeout, [] { return std::make_exception_ptr(ss::timed_out_error()); });
 }
 
 } // namespace cluster

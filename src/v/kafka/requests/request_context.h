@@ -83,6 +83,10 @@ public:
         return _metadata_cache.local();
     }
 
+    cluster::metadata_cache& metadata_cache() {
+        return _metadata_cache.local();
+    }
+
     controller_dispatcher& cntrl_dispatcher() const {
         return _cntrl_dispatcher;
     }
