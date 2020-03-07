@@ -60,7 +60,7 @@ FIXTURE_TEST(index_round_trip, context) {
     iobuf_parser p(std::move(b));
     auto raw_idx = reflection::adl<storage::index_state>{}.from(p);
     info("verifying tracking info");
-    BOOST_REQUIRE_EQUAL(raw_idx.index.size(), 1024);
+    BOOST_REQUIRE_EQUAL(raw_idx.relative_offset_index.size(), 1024);
 }
 
 FIXTURE_TEST(bucket_bug1, context) {
