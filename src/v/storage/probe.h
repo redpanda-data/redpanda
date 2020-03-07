@@ -1,15 +1,20 @@
 #pragma once
 #include "model/fundamental.h"
 #include "storage/logger.h"
+#include "storage/segment.h"
 
 #include <seastar/core/metrics_registration.hh>
+#include <seastar/core/shared_ptr.hh>
 
 #include <cstdint>
 
 namespace storage {
 class probe {
 public:
-    void add_bytes_written(uint64_t written) { _bytes_written += written; }
+    void add_bytes_written(uint64_t written) {
+        _partition_bytes += written;
+        _bytes_written += written;
+    }
 
     void add_bytes_read(uint64_t read) { _bytes_written += read; }
 
@@ -28,7 +33,14 @@ public:
 
     void setup_metrics(const model::ntp&);
 
+    void delete_segment(const segment&);
+
+    size_t partition_size() const { return _partition_bytes; }
+    void add_initial_segment(const segment&);
+    void remove_partition_bytes(size_t remove) { _partition_bytes -= remove; }
+
 private:
+    size_t _partition_bytes{0};
     uint64_t _bytes_written = 0;
     uint64_t _batches_written = 0;
     uint64_t _bytes_read = 0;

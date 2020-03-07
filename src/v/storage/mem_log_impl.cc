@@ -1,6 +1,8 @@
 #include "likely.h"
+#include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
+#include "model/timestamp.h"
 #include "seastarx.h"
 #include "storage/log.h"
 #include "storage/logger.h"
@@ -27,13 +29,19 @@ struct entries_ordering {
     }
 };
 
+struct mem_probe {
+    void add_bytes_written(size_t sz) { partition_bytes += sz; }
+    void remove_bytes_written(size_t sz) { partition_bytes -= sz; }
+    size_t partition_bytes{0};
+};
+
 struct mem_log_impl;
 // makes a copy of every batch starting at some iterator
 class mem_iter_reader final
   : public model::record_batch_reader::impl
   , public boost::intrusive::list_base_hook<> {
 public:
-    using underlying_t = std::vector<model::record_batch>;
+    using underlying_t = std::deque<model::record_batch>;
     using iterator = typename underlying_t::iterator;
     mem_iter_reader(
       boost::intrusive::list<mem_iter_reader>& hook,
@@ -110,7 +118,7 @@ private:
 };
 
 struct mem_log_impl final : log::impl {
-    using underlying_t = std::vector<model::record_batch>;
+    using underlying_t = std::deque<model::record_batch>;
     // forward ctor
     explicit mem_log_impl(model::ntp n, ss::sstring workdir)
       : log::impl(std::move(n), std::move(workdir)) {}
@@ -151,8 +159,33 @@ struct mem_log_impl final : log::impl {
 
         auto it = std::lower_bound(
           std::begin(_data), std::end(_data), offset, entries_ordering{});
+        if (it != _data.end()) {
+            _probe.remove_bytes_written(std::accumulate(
+              it,
+              _data.end(),
+              size_t(0),
+              [](size_t acc, const model::record_batch& b) {
+                  return acc += b.size_bytes();
+              }));
+            _data.erase(it, _data.end());
+        }
+        return ss::make_ready_future<>();
+    }
 
-        _data.erase(it, _data.end());
+    ss::future<> gc(
+      model::timestamp collection_upper_bound,
+      std::optional<size_t> max_partition_retention_size) final {
+        const size_t max = max_partition_retention_size.value_or(
+          std::numeric_limits<size_t>::max());
+        for (const model::record_batch& b : _data) {
+            if (
+              b.header().max_timestamp <= collection_upper_bound
+              || _probe.partition_bytes > max) {
+                _probe.remove_bytes_written(_data.front().size_bytes());
+                _data.pop_front();
+            }
+        }
+        _data.shrink_to_fit();
         return ss::make_ready_future<>();
     }
 
@@ -214,6 +247,8 @@ struct mem_log_impl final : log::impl {
     model::offset committed_offset() const final { return max_offset(); }
     boost::intrusive::list<mem_iter_reader> _readers;
     underlying_t _data;
+
+    mem_probe _probe;
 };
 
 ss::future<ss::stop_iteration>
@@ -229,6 +264,7 @@ mem_log_appender::operator()(model::record_batch&& batch) {
       batch.term());
     auto offset = _cur_offset;
     _cur_offset = batch.last_offset() + model::offset(1);
+    _log._probe.add_bytes_written(batch.size_bytes());
     _log._data.emplace_back(std::move(batch));
     return ss::make_ready_future<ss::stop_iteration>(ss::stop_iteration::no);
 }
@@ -238,7 +274,7 @@ ss::future<append_result> mem_log_appender::end_of_stream() {
                       .base_offset = _min_offset,
                       .last_offset = _cur_offset - model::offset(1),
                       .byte_size = _byte_size,
-                      .last_term = _log._data.rbegin()->term()};
+                      .last_term = _log._data.back().term()};
     return ss::make_ready_future<append_result>(ret);
 }
 

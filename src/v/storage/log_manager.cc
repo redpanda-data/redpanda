@@ -1,5 +1,6 @@
 #include "storage/log_manager.h"
 
+#include "config/configuration.h"
 #include "model/fundamental.h"
 #include "storage/fs_utils.h"
 #include "storage/log.h"
@@ -15,6 +16,7 @@
 #include "vlog.h"
 
 #include <seastar/core/file.hh>
+#include <seastar/core/future-util.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/print.hh>
 #include <seastar/core/seastar.hh>
@@ -29,12 +31,29 @@ namespace storage {
 
 log_manager::log_manager(log_config config) noexcept
   : _config(std::move(config)) {
-    _compaction_timer.set_callback([this] { compact_segments_in_thread(); });
+    _compaction_timer.set_callback([this] { trigger_housekeeping(); });
     _compaction_timer.arm_periodic(_config.compaction_interval);
 }
 
-void log_manager::compact_segments_in_thread() {
+void log_manager::trigger_housekeeping() {
+    (void)ss::with_gate(_open_gate, [this] { return housekeeping(); });
+}
+
+static inline model::timestamp collection_threshold_time() {
+    return model::timestamp(
+      model::new_timestamp().value()
+      - config::shard_local_cfg().delete_retention_ms().count());
+}
+
+ss::future<> log_manager::housekeeping() {
     vlog(stlog.info, "starting compaction loop");
+    auto collection_threshold = collection_threshold_time();
+    auto retention_bytes = config::shard_local_cfg().retention_bytes();
+    return ss::do_for_each(
+      _logs,
+      [this, collection_threshold, retention_bytes](logs_type::value_type& l) {
+          return l.second.gc(collection_threshold, retention_bytes);
+      });
 }
 
 ss::future<> log_manager::stop() {

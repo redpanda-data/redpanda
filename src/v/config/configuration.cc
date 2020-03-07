@@ -163,7 +163,21 @@ configuration::configuration()
       "metadata_dissemination_interval",
       "Interaval for metadata dissemination batching",
       required::no,
-      3'000ms) {}
+      3'000ms)
+  , delete_retention_ms(
+      *this,
+      "delete_retention_ms",
+      "delete segments older than this",
+      required::no,
+      86400000ms)
+  , retention_bytes(
+      *this,
+      "retention_bytes",
+      "max bytes per partition on disk before triggering a compaction",
+      required::no,
+      std::nullopt)
+
+{}
 
 void configuration::read_yaml(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {

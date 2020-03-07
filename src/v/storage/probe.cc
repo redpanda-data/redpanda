@@ -60,4 +60,11 @@ void probe::setup_metrics(const model::ntp& ntp) {
           labels),
       });
 }
+
+void probe::add_initial_segment(const segment& s) {
+    _partition_bytes += s.reader().file_size();
+}
+void probe::delete_segment(const segment& s) {
+    _partition_bytes -= s.reader().file_size();
+}
 } // namespace storage

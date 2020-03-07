@@ -31,6 +31,9 @@ disk_log_impl::disk_log_impl(
   , _manager(manager)
   , _segs(std::move(segs))
   , _lock_mngr(_segs) {
+    for (auto& s : segs) {
+        _probe.add_initial_segment(*s);
+    }
     _probe.setup_metrics(this->ntp());
 }
 disk_log_impl::~disk_log_impl() {
@@ -42,6 +45,37 @@ ss::future<> disk_log_impl::close() {
         return ss::parallel_for_each(
           _segs, [](ss::lw_shared_ptr<segment>& h) { return h->close(); });
     });
+}
+
+ss::future<> disk_log_impl::gc(
+  model::timestamp collection_upper_bound,
+  std::optional<size_t> max_partition_retention_size) {
+    if (max_partition_retention_size) {
+        size_t max = max_partition_retention_size.value();
+        while (!_segs.empty() && _probe.partition_size() > max) {
+            dispatch_remove(_segs.front());
+            _segs.pop_front();
+        }
+    }
+    // The following compaction has a Kafka behavior compatibility bug. for
+    // which we defer do nothing at the moment, possibly crashing the machine
+    // and running out of disk. Kafka uses the same logic below as of
+    // March-6th-2020. The problem is that you can construct a case where the
+    // first log segment max_timestamp is infinity and this loop will never
+    // trigger a compaction since the data is coming from the clients.
+    //
+    // A workaround is to have production systems set both, the max
+    // retention.bytes and the max retention.ms setting in the configuration
+    // files so that size-based retention eventually evicts the problematic
+    // segment, preventing a crash.
+    //
+    while (
+      !_segs.empty()
+      && (_segs.front()->index().max_timestamp() <= collection_upper_bound)) {
+        dispatch_remove(_segs.front());
+        _segs.pop_front();
+    }
+    return ss::make_ready_future<>();
 }
 
 ss::future<> disk_log_impl::remove_empty_segments() {
@@ -196,7 +230,9 @@ disk_log_impl::timequery(timequery_config cfg) {
 }
 
 void disk_log_impl::dispatch_remove(ss::lw_shared_ptr<segment> s) {
-    vlog(stlog.info, "marking segment tombstone: {}", s);
+    vlog(stlog.info, "Tombstone & delete segment: {}", s);
+    // stats accounting must happen synchronously
+    _probe.delete_segment(*s);
     // background close
     s->tombstone();
     (void)ss::with_gate(_lgate, [s] {
@@ -251,12 +287,15 @@ ss::future<> disk_log_impl::do_truncate(model::offset o) {
               return ss::make_ready_future<>();
           }
           auto [prev_last_offset, file_position] = phs.value();
+          auto last = _segs.back();
           if (file_position == 0) {
-              dispatch_remove(_segs.back());
+              dispatch_remove(last);
               _segs.pop_back();
               return ss::make_ready_future<>();
           }
-          return _segs.back()->truncate(prev_last_offset, file_position);
+          _probe.remove_partition_bytes(
+            last->reader().file_size() - file_position);
+          return last->truncate(prev_last_offset, file_position);
       });
 } // namespace storage
 
