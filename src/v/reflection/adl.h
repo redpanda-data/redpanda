@@ -171,15 +171,6 @@ void serialize(iobuf& out, T&&... args) {
     (adl<std::decay_t<T>>{}.to(out, std::move(args)), ...);
 }
 
-template<typename T, typename = std::enable_if_t<std::is_arithmetic_v<T>, T>>
-inline void serialize_cpu_to_le_one(iobuf& out, T i) {
-    serialize(out, ss::cpu_to_le(i));
-}
-template<typename... T>
-static void serialize_cpu_to_le(iobuf& out, T... args) {
-    (serialize_cpu_to_le_one(out, args), ...);
-}
-
 template<typename T>
 iobuf to_iobuf(T&& val) {
     iobuf out;
