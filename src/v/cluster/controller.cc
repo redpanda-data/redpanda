@@ -763,8 +763,7 @@ ss::future<join_reply> controller::dispatch_join_to_remote(
       });
 }
 
-[[gnu::always_inline]] static ss::future<>
-wait_for_next_join_retry(ss::abort_source& as) {
+static inline ss::future<> wait_for_next_join_retry(ss::abort_source& as) {
     using namespace std::chrono_literals; // NOLINT
     return ss::sleep_abortable(5s, as).handle_exception_type(
       [](const ss::sleep_aborted&) {
