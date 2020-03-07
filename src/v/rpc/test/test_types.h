@@ -9,28 +9,48 @@
 #include <cstdint>
 #include <vector>
 
-struct [[gnu::packed]] pod {
-    ss::unaligned<int16_t> x = 1;
-    // MISSING int16_t alignment here
-    ss::unaligned<int32_t> y = 2;
-    ss::unaligned<int64_t> z = 3;
+struct pod {
+    int16_t x = 1;
+    int32_t y = 2;
+    int64_t z = 3;
 };
-struct [[gnu::packed]] very_packed_pod {
-    ss::unaligned<int16_t> x = 1;
-    ss::unaligned<int8_t> y = 2;
-};
+
+inline constexpr size_t pod_bytes() {
+    return sizeof(int16_t)    // pod::x
+           + sizeof(int32_t)  // pod::y
+           + sizeof(int64_t); // pod::z
+}
+
 struct complex_custom {
     pod pit;
     iobuf oi;
 };
+
+inline constexpr size_t complex_custom_bytes() {
+    return pod_bytes() + sizeof(int32_t); // blob of iobuf
+}
+
 struct pod_with_vector {
     pod pit;
     std::vector<int> v{1, 2, 3};
 };
+
+inline constexpr size_t pod_with_vector_bytes() {
+    return pod_bytes()
+           + (sizeof(int) * 3) // Size of each int times size of vector
+           + sizeof(int32_t);  // blob for vector
+}
+
 struct pod_with_array {
     pod pit;
     std::array<int, 3> v{1, 2, 3};
 };
+
+inline constexpr size_t pod_with_arr_bytes() {
+    return pod_bytes()
+           + sizeof(int) * 3; // Size of each int times the number of elements
+}
+
 struct kv {
     ss::sstring k;
     iobuf v;

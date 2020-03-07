@@ -36,6 +36,13 @@ template<typename T>
 inline constexpr bool is_named_type_v = is_named_type<T>::value;
 
 template<typename T>
+struct is_ss_bool : std::false_type {};
+template<typename T>
+struct is_ss_bool<ss::bool_class<T>> : std::true_type {};
+template<typename T>
+inline constexpr bool is_ss_bool_v = is_ss_bool<T>::value;
+
+template<typename T>
 struct adl {
     using type = std::remove_reference_t<std::decay_t<T>>;
     static constexpr bool is_optional = is_std_optional_v<type>;
@@ -44,11 +51,17 @@ struct adl {
     static constexpr bool is_named_type = is_named_type_v<type>;
     static constexpr bool is_iobuf = std::is_same_v<type, iobuf>;
     static constexpr bool is_standard_layout = std::is_standard_layout_v<type>;
+    static constexpr bool is_not_floating_point
+      = !std::is_floating_point_v<type>;
     static constexpr bool is_trivially_copyable
       = std::is_trivially_copyable_v<type>;
+    static constexpr bool is_enum = std::is_enum_v<T>;
+    static constexpr bool is_ss_bool = is_ss_bool_v<T>;
+
     static_assert(
       is_optional || is_sstring || is_vector || is_named_type || is_iobuf
-        || is_standard_layout || is_trivially_copyable,
+        || is_standard_layout || is_trivially_copyable || is_not_floating_point
+        || is_enum || is_ss_bool,
       "rpc: no adl registered");
 
     type from(iobuf io) {
@@ -79,8 +92,13 @@ struct adl {
             return ret;
         } else if constexpr (is_iobuf) {
             return in.share(in.consume_type<int32_t>());
-        } else if constexpr (is_standard_layout && is_trivially_copyable) {
-            return in.consume_type<T>();
+        } else if constexpr (is_enum) {
+            using e_type = std::underlying_type_t<type>;
+            return static_cast<type>(adl<e_type>{}.from(in));
+        } else if constexpr (std::is_integral_v<type>) {
+            return ss::le_to_cpu(in.consume_type<type>());
+        } else if constexpr (is_ss_bool) {
+            return type(adl<int8_t>{}.from(in));
         } else if constexpr (is_standard_layout) {
             T t;
             reflection::for_each_field(t, [&in](auto& field) mutable {
@@ -123,19 +141,15 @@ struct adl {
             adl<int32_t>{}.to(out, t.size_bytes());
             out.append(std::move(t));
             return;
-        } else if constexpr (is_standard_layout && is_trivially_copyable) {
-            // std::is_pod_v is deprecated
-            // Deprecating the notion of “plain old data” (POD). It has been
-            // replaced with two more nuanced categories of types, “trivial” and
-            // “standard-layout”. “POD” is equivalent to “trivial and standard
-            // layout”, but for many code patterns, a narrower restriction to
-            // just “trivial” or just “standard layout” is appropriate; to
-            // encourage such precision, the notion of “POD” was therefore
-            // deprecated. The library trait is_pod has also been deprecated
-            // correspondingly.
-            constexpr auto sz = sizeof(T);
-            out.append(reinterpret_cast<const char*>(&t), sz);
+        } else if constexpr (is_enum) {
+            using e_type = std::underlying_type_t<type>;
+            adl<e_type>{}.to(out, static_cast<e_type>(t));
+        } else if constexpr (std::is_integral_v<type>) {
+            auto le_t = ss::cpu_to_le(t);
+            out.append(reinterpret_cast<const char*>(&le_t), sizeof(type));
             return;
+        } else if constexpr (is_ss_bool) {
+            adl<int8_t>{}.to(out, static_cast<int8_t>(bool(t)));
         } else if constexpr (is_standard_layout) {
             /*
             std::apply(

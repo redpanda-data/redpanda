@@ -73,7 +73,7 @@ cluster::topic_result adl<cluster::topic_result>::from(iobuf_parser& in) {
 
 void adl<cluster::create_topics_request>::to(
   iobuf& out, cluster::create_topics_request&& r) {
-    reflection::serialize(out, std::move(r.topics), r.timeout.count());
+    reflection::serialize(out, std::move(r.topics), r.timeout);
 }
 
 cluster::create_topics_request
@@ -86,7 +86,7 @@ cluster::create_topics_request
 adl<cluster::create_topics_request>::from(iobuf_parser& in) {
     using underlying_t = std::vector<cluster::topic_configuration>;
     auto configs = adl<underlying_t>().from(in);
-    auto timeout = model::timeout_clock::duration(adl<uint64_t>().from(in));
+    auto timeout = adl<model::timeout_clock::duration>().from(in);
     return cluster::create_topics_request{std::move(configs), timeout};
 }
 
@@ -104,5 +104,21 @@ adl<cluster::create_topics_reply>::from(iobuf_parser& in) {
     auto results = adl<std::vector<cluster::topic_result>>().from(in);
     auto md = adl<std::vector<model::topic_metadata>>().from(in);
     return cluster::create_topics_reply{std::move(results), std::move(md)};
+}
+
+void adl<model::timeout_clock::duration>::to(iobuf& out, duration dur) {
+    // This is a clang bug that cause ss::cpu_to_le to become ambiguous
+    // because rep has type of long long
+    // adl<rep>{}.to(out, dur.count());
+    adl<uint64_t>{}.to(out, dur.count());
+}
+
+model::timeout_clock::duration
+adl<model::timeout_clock::duration>::from(iobuf_parser& in) {
+    // This is a clang bug that cause ss::cpu_to_le to become ambiguous
+    // because rep has type of long long
+    // auto rp = adl<rep>{}.from(in);
+    auto rp = adl<uint64_t>{}.from(in);
+    return duration(rp);
 }
 } // namespace reflection
