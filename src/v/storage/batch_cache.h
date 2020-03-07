@@ -194,15 +194,15 @@ public:
     };
 
     explicit batch_cache_index(batch_cache& cache)
-      : _cache(cache) {}
+      : _cache(&cache) {}
     ~batch_cache_index() {
         std::for_each(
           _index.begin(), _index.end(), [this](index_type::value_type& e) {
-              _cache.evict(std::move(e.second));
+              _cache->evict(std::move(e.second));
           });
     }
     batch_cache_index(batch_cache_index&&) noexcept = default;
-    batch_cache_index& operator=(batch_cache_index&&) noexcept = delete;
+    batch_cache_index& operator=(batch_cache_index&&) noexcept = default;
     batch_cache_index(const batch_cache_index&) = delete;
     batch_cache_index& operator=(const batch_cache_index&) = delete;
 
@@ -210,7 +210,7 @@ public:
 
     void put(model::record_batch&& batch) {
         auto offset = batch.header().base_offset();
-        auto p = _cache.put(std::move(batch));
+        auto p = _cache->put(std::move(batch));
         _index.emplace(offset, std::move(p));
     }
 
@@ -262,7 +262,7 @@ public:
      */
     void testing_evict_from_cache(model::offset offset) {
         if (auto it = _index.find(offset); it != _index.end()) {
-            _cache.evict(std::move(it->second));
+            _cache->evict(std::move(it->second));
         }
     }
 
@@ -306,7 +306,7 @@ private:
         return _index.end();
     }
 
-    batch_cache& _cache;
+    batch_cache* _cache;
     index_type _index;
 
     friend std::ostream& operator<<(std::ostream&, const batch_cache_index&);

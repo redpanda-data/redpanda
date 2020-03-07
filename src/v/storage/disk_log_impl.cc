@@ -92,9 +92,12 @@ model::offset disk_log_impl::start_offset() const {
     return _segs.front()->reader().base_offset();
 }
 model::offset disk_log_impl::max_offset() const {
-    for (auto it = _segs.rbegin(); it != _segs.rend(); it++) {
-        if (!(*it)->empty()) {
-            return (*it)->dirty_offset();
+    if (!_segs.empty()) {
+        for (int i = (int)_segs.size() - 1; i >= 0; --i) {
+            auto& seg = _segs[i];
+            if (!seg->empty()) {
+                return seg->dirty_offset();
+            }
         }
     }
     return model::offset{};
@@ -110,9 +113,12 @@ model::term_id disk_log_impl::term() const {
 }
 
 model::offset disk_log_impl::committed_offset() const {
-    for (auto it = _segs.rbegin(); it != _segs.rend(); it++) {
-        if (!(*it)->empty()) {
-            return (*it)->committed_offset();
+    if (!_segs.empty()) {
+        for (int i = (int)_segs.size() - 1; i >= 0; --i) {
+            auto& seg = _segs[i];
+            if (!seg->empty()) {
+                return seg->committed_offset();
+            }
         }
     }
     return model::offset{};
@@ -251,8 +257,11 @@ ss::future<> disk_log_impl::do_truncate(model::offset o) {
           max_offset());
         return ss::make_ready_future<>();
     }
-    for (auto i = _segs.rbegin(), end = _segs.rend(); i != end; i++) {
-        ss::lw_shared_ptr<segment> ptr = *i;
+    if (_segs.empty()) {
+        return ss::make_ready_future<>();
+    }
+    for (int i = (int)_segs.size() - 1; i >= 0; --i) {
+        ss::lw_shared_ptr<segment> ptr = _segs[i];
         if (ptr->reader().base_offset() >= o) {
             dispatch_remove(ptr);
             _segs.pop_back();

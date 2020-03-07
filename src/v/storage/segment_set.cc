@@ -19,8 +19,7 @@ struct segment_ordering {
     }
 };
 
-segment_set::segment_set(segment_set::underlying_t segs) noexcept(
-  segment_set::is_nothrow_v)
+segment_set::segment_set(segment_set::underlying_t segs)
   : _handles(std::move(segs)) {
     std::sort(_handles.begin(), _handles.end(), segment_ordering{});
 }

@@ -235,9 +235,11 @@ static inline bool is_finished_offset(segment_set& s, model::offset o) {
     if (s.empty()) {
         return true;
     }
-    for (auto it = s.rbegin(); it != s.rend(); it++) {
-        if (!(*it)->empty()) {
-            return o > (*it)->committed_offset();
+
+    for (int i = (int)s.size() - 1; i >= 0; --i) {
+        auto& seg = s[i];
+        if (!seg->empty()) {
+            return o > seg->committed_offset();
         }
     }
     return true;
