@@ -60,7 +60,7 @@ using compression = ss::bool_class<struct allow_compression_builder_tag>;
 
 template<size_t arg_size, size_t min_args, size_t max_args>
 inline void arg_3_way_assert() {
-    static_assert(min_args <= arg_size && arg_size <= max_args, "");
+    static_assert(arg_size >= min_args && arg_size <= max_args);
 }
 
 inline constexpr auto start = [](auto&&... args) {
