@@ -136,3 +136,12 @@ rp_test(
   LABELS storage
   SKIP_BUILD_TYPES "Debug"
 )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME log_retention_test
+  SOURCES log_retention_tests.cc
+  LIBRARIES Seastar::seastar_testing v::storage_test_utils
+  ARGS "-- -c 1"
+  LABELS storage
+)
