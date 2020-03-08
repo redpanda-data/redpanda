@@ -49,6 +49,8 @@ public:
 
     friend std::ostream& operator<<(std::ostream&, timestamp);
 
+    static timestamp now();
+
 private:
     type _v = missing().value();
 };
@@ -59,4 +61,5 @@ static inline timestamp new_timestamp() {
     return timestamp(timestamp_clock::now().time_since_epoch().count());
 }
 
+inline timestamp timestamp::now() { return new_timestamp(); }
 } // namespace model
