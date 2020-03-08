@@ -43,9 +43,10 @@ inline static log_append_config append_config() {
 }
 
 inline static model::ntp log_builder_ntp() {
-    return model::ntp{.ns = model::ns("ns"),
-                      .tp = {.topic = model::topic("topic"),
-                             .partition = model::partition_id(0)}};
+    return model::ntp{
+      .ns = model::ns("test.log_builder"),
+      .tp = {.topic = model::topic(random_generators::gen_alphanum_string(8)),
+             .partition = model::partition_id(0)}};
 }
 
 // Tags
