@@ -92,7 +92,7 @@ public:
      * balanced for these cases. the reclaimer needs to be fully recreated here,
      * and the moved from reclaimer will deregister itself properly.
      */
-    batch_cache(batch_cache&& o)
+    batch_cache(batch_cache&& o) noexcept
       : _lru(std::move(o._lru))
       , _pool(std::move(o._pool))
       , _reclaimer(
@@ -106,7 +106,9 @@ public:
 
     /// Removes all entries from the cache and entry pool.
     void clear() {
+        // NOLINTNEXTLINE
         _lru.clear_and_dispose([](entry* e) { delete e; });
+        // NOLINTNEXTLINE
         _pool.clear_and_dispose([](entry* e) { delete e; });
     }
 
