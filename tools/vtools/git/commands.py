@@ -53,8 +53,13 @@ def verify(path):
 @click.option('--skip-fmt',
               help='Do not format files (fmt all).',
               is_flag=True)
+@click.option('-s',
+              '--suppress-cc',
+              default='self',
+              show_default=True,
+              help='allow a configurable --suppress-cc=self git option')
 @click.pass_context
-def pr(ctx, fork, upstream, to, conf, skip_fmt):
+def pr(ctx, fork, upstream, to, conf, skip_fmt, suppress_cc):
     """Mildly opinionated patch submission utility.
 
     This command prepares a feature branch as a patch series and sends the
@@ -265,9 +270,10 @@ Generated with `vtools pr` @ {sha1!s:7.7}"""
         os.remove(note_path)
 
         send_mail_args = [
-            "git", "send-email", "--confirm=never", "--suppress-cc=self",
-            "--to", to, staging_dir
+            "git", "send-email", "--confirm=never", "--to", to, staging_dir
         ]
+        if len(suppress_cc) > 0:
+            send_mail_args.append(f"--suppress-cc={suppress_cc}")
         subprocess.run(send_mail_args)
         logging.info("Sending patches: {}".format(" ".join(send_mail_args)))
 
