@@ -39,6 +39,16 @@ ss::future<> disk_log_builder::start(model::ntp ntp) {
     return _mgr.manage(ntp).then([this](log l) { _log = std::move(l); });
 }
 
+ss::future<> disk_log_builder::truncate(model::offset o) {
+    return get_log().truncate(o);
+}
+
+ss::future<> disk_log_builder::gc(
+  model::timestamp collection_upper_bound,
+  std::optional<size_t> max_partition_retention_size) {
+    return get_log().gc(collection_upper_bound, max_partition_retention_size);
+}
+
 ss::future<> disk_log_builder::stop() { return _mgr.stop(); }
 // Low lever interface access
 // Access log impl
