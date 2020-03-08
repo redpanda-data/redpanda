@@ -52,6 +52,8 @@ inline static model::ntp log_builder_ntp() {
 // Tags
 struct add_random_batch_tag {};
 struct add_random_batches_tag {};
+struct truncate_log_tag {};
+struct garbage_collect_tag {};
 struct start_tag {};
 struct stop_tag {};
 struct add_segment_tag {};
@@ -88,6 +90,18 @@ inline constexpr auto add_random_batches = [](auto&&... args) {
       add_random_batches_tag(), std::forward<decltype(args)>(args)...);
 };
 
+inline constexpr auto garbage_collect = [](auto&&... args) {
+    arg_3_way_assert<sizeof...(args), 2, 2>();
+    return std::make_tuple(
+      garbage_collect_tag{}, std::forward<decltype(args)>(args)...);
+};
+
+inline constexpr auto truncate_log = [](auto&&... args) {
+    arg_3_way_assert<sizeof...(args), 1, 1>();
+    return std::make_tuple(
+      truncate_log_tag{}, std::forward<decltype(args)>(args)...);
+};
+
 class disk_log_builder {
 public:
     // Constructors
@@ -109,6 +123,10 @@ public:
             }
         } else if constexpr (std::is_same_v<type, stop_tag>) {
             stop().get();
+        } else if constexpr (std::is_same_v<type, truncate_log_tag>) {
+            truncate(model::offset(std::get<1>(args))).get();
+        } else if constexpr (std::is_same_v<type, garbage_collect_tag>) {
+            gc(std::get<1>(args), std::get<2>(args)).get();
         } else if constexpr (std::is_same_v<type, add_segment_tag>) {
             if constexpr (size == 2) {
                 add_segment(model::offset(std::get<1>(args))).get();
@@ -179,7 +197,10 @@ public:
       log_append_config config = append_config());
     ss::future<> add_random_batches(
       model::offset offset, log_append_config config = append_config());
-
+    ss::future<> truncate(model::offset);
+    ss::future<> gc(
+      model::timestamp collection_upper_bound,
+      std::optional<size_t> max_partition_retention_size);
     //  Log managment
     ss::future<> start(model::ntp ntp = log_builder_ntp());
     ss::future<> stop();
