@@ -53,7 +53,7 @@ ss::future<> disk_log_impl::gc(
     if (max_partition_retention_size) {
         size_t max = max_partition_retention_size.value();
         while (!_segs.empty() && _probe.partition_size() > max) {
-            dispatch_remove(_segs.front());
+            dispatch_remove(_segs.front(), "gc[size_based_retention]");
             _segs.pop_front();
         }
     }
@@ -72,7 +72,7 @@ ss::future<> disk_log_impl::gc(
     while (
       !_segs.empty()
       && (_segs.front()->index().max_timestamp() <= collection_upper_bound)) {
-        dispatch_remove(_segs.front());
+        dispatch_remove(_segs.front(), "gc[time_based_retention]");
         _segs.pop_front();
     }
     return ss::make_ready_future<>();
@@ -235,8 +235,9 @@ disk_log_impl::timequery(timequery_config cfg) {
       });
 }
 
-void disk_log_impl::dispatch_remove(ss::lw_shared_ptr<segment> s) {
-    vlog(stlog.info, "Tombstone & delete segment: {}", s);
+void disk_log_impl::dispatch_remove(
+  ss::lw_shared_ptr<segment> s, std::string_view ctx) {
+    vlog(stlog.info, "{} - tombstone & delete segment: {}", ctx, s);
     // stats accounting must happen synchronously
     _probe.delete_segment(*s);
     // background close
@@ -263,7 +264,7 @@ ss::future<> disk_log_impl::do_truncate(model::offset o) {
     for (int i = (int)_segs.size() - 1; i >= 0; --i) {
         ss::lw_shared_ptr<segment> ptr = _segs[i];
         if (ptr->reader().base_offset() >= o) {
-            dispatch_remove(ptr);
+            dispatch_remove(ptr, "truncate[back-iterator]");
             _segs.pop_back();
         } else {
             break;
@@ -298,7 +299,7 @@ ss::future<> disk_log_impl::do_truncate(model::offset o) {
           auto [prev_last_offset, file_position] = phs.value();
           auto last = _segs.back();
           if (file_position == 0) {
-              dispatch_remove(last);
+              dispatch_remove(last, "truncate[post-translation]");
               _segs.pop_back();
               return ss::make_ready_future<>();
           }
