@@ -62,7 +62,7 @@ private:
     friend class disk_log_builder;
 
     ss::future<> remove_empty_segments();
-    void dispatch_remove(ss::lw_shared_ptr<segment>);
+    void dispatch_remove(ss::lw_shared_ptr<segment>, std::string_view msg);
     ss::future<>
       new_segment(model::offset, model::term_id, ss::io_priority_class);
 
