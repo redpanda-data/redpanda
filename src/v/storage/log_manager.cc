@@ -31,8 +31,10 @@ namespace storage {
 
 log_manager::log_manager(log_config config) noexcept
   : _config(std::move(config)) {
-    _compaction_timer.set_callback([this] { trigger_housekeeping(); });
-    _compaction_timer.arm_periodic(_config.compaction_interval);
+    // TODO: re-enable when we imlement proper timestamp setting on the server
+    // side the default kafka producer bench uses that API
+    // _compaction_timer.set_callback([this] { trigger_housekeeping(); });
+    // _compaction_timer.arm_periodic(_config.compaction_interval);
 }
 
 void log_manager::trigger_housekeeping() {
