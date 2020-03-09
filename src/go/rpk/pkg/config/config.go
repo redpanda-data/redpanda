@@ -42,19 +42,20 @@ type SocketAddress struct {
 }
 
 type RpkConfig struct {
-	EnableUsageStats    bool   `yaml:"enable_usage_stats" json:"enableUsageStats"`
-	TuneNetwork         bool   `yaml:"tune_network" json:"tuneNetwork"`
-	TuneDiskScheduler   bool   `yaml:"tune_disk_scheduler" json:"tuneDiskScheduler"`
-	TuneNomerges        bool   `yaml:"tune_disk_nomerges" json:"tuneNomerges"`
-	TuneDiskIrq         bool   `yaml:"tune_disk_irq" json:"tuneDiskIrq"`
-	TuneCpu             bool   `yaml:"tune_cpu" json:"tuneCpu"`
-	TuneAioEvents       bool   `yaml:"tune_aio_events" json:"tuneAioEvents"`
-	TuneClocksource     bool   `yaml:"tune_clocksource" json:"tuneClocksource"`
-	TuneSwappiness      bool   `yaml:"tune_swappiness" json:"tuneSwappiness"`
-	EnableMemoryLocking bool   `yaml:"enable_memory_locking" json:"enableMemoryLocking"`
-	TuneCoredump        bool   `yaml:"tune_coredump" json:"tuneCoredump"`
-	CoredumpDir         string `yaml:"coredump_dir" json:"coredumpDir"`
-	WellKnownIo         string `yaml:"well_known_io,omitempty" json:"wellKnownIo"`
+	AdditionalStartFlags []string `yaml:"additional_start_flags,omitempty" json:"additionalStartFlags"`
+	EnableUsageStats     bool     `yaml:"enable_usage_stats" json:"enableUsageStats"`
+	TuneNetwork          bool     `yaml:"tune_network" json:"tuneNetwork"`
+	TuneDiskScheduler    bool     `yaml:"tune_disk_scheduler" json:"tuneDiskScheduler"`
+	TuneNomerges         bool     `yaml:"tune_disk_nomerges" json:"tuneNomerges"`
+	TuneDiskIrq          bool     `yaml:"tune_disk_irq" json:"tuneDiskIrq"`
+	TuneCpu              bool     `yaml:"tune_cpu" json:"tuneCpu"`
+	TuneAioEvents        bool     `yaml:"tune_aio_events" json:"tuneAioEvents"`
+	TuneClocksource      bool     `yaml:"tune_clocksource" json:"tuneClocksource"`
+	TuneSwappiness       bool     `yaml:"tune_swappiness" json:"tuneSwappiness"`
+	EnableMemoryLocking  bool     `yaml:"enable_memory_locking" json:"enableMemoryLocking"`
+	TuneCoredump         bool     `yaml:"tune_coredump" json:"tuneCoredump"`
+	CoredumpDir          string   `yaml:"coredump_dir" json:"coredumpDir"`
+	WellKnownIo          string   `yaml:"well_known_io,omitempty" json:"wellKnownIo"`
 }
 
 // Checks config and writes it to the given path.
