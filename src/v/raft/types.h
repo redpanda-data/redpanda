@@ -187,7 +187,7 @@ static inline std::ostream&
 operator<<(std::ostream& o, const append_entries_reply::status& r) {
     switch (r) {
     case append_entries_reply::status::success:
-        o << "failure";
+        o << "success";
         return o;
     case append_entries_reply::status::failure:
         o << "failure";
