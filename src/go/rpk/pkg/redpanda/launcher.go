@@ -74,6 +74,8 @@ func collectRedpandaArgs(args *RedpandaArgs) []string {
 	for flag, value := range args.SeastarFlags {
 		if value != "" {
 			redpandaArgs = append(redpandaArgs, "--"+flag, value)
+		} else {
+			redpandaArgs = append(redpandaArgs, "--"+flag)
 		}
 	}
 	return redpandaArgs
