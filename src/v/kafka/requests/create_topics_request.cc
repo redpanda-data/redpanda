@@ -1,7 +1,6 @@
 #include "kafka/requests/create_topics_request.h"
 
 #include "kafka/controller_dispatcher.h"
-#include "kafka/default_namespace.h"
 #include "kafka/errors.h"
 #include "kafka/requests/timeout.h"
 #include "kafka/requests/topics/topic_result_utils.h"

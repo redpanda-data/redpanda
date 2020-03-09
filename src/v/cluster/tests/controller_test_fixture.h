@@ -2,6 +2,7 @@
 #include "cluster/controller.h"
 #include "cluster/metadata_dissemination_handler.h"
 #include "cluster/metadata_dissemination_service.h"
+#include "cluster/namespace.h"
 #include "cluster/service.h"
 #include "cluster/tests/utils.h"
 #include "config/configuration.h"
@@ -84,7 +85,7 @@ public:
     void
     persist_test_batches(ss::circular_buffer<model::record_batch> batches) {
         tests::persist_log_file(
-          _base_dir, cluster::controller::ntp, std::move(batches))
+          _base_dir, cluster::controller_ntp, std::move(batches))
           .get0();
     }
 

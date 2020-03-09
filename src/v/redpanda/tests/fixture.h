@@ -1,6 +1,6 @@
 #pragma once
+#include "cluster/namespace.h"
 #include "kafka/client.h"
-#include "kafka/default_namespace.h"
 #include "redpanda/application.h"
 #include "storage/directories.h"
 #include "storage/tests/utils/disk_log_builder.h"
@@ -70,7 +70,7 @@ public:
     model::ntp
     make_default_ntp(model::topic topic, model::partition_id partition) {
         auto ntp = model::ntp{
-          .ns = kafka::default_namespace(),
+          .ns = cluster::kafka_namespace,
           .tp = model::topic_partition{
             .topic = topic,
             .partition = partition,
@@ -112,7 +112,7 @@ public:
           model::offset(0), 20, false);
 
         auto ntp = model::ntp{
-          .ns = kafka::default_namespace(),
+          .ns = cluster::kafka_namespace,
           .tp = model::topic_partition{.topic = model::topic(topic_name),
                                        .partition = model::partition_id(0)}};
         tests::persist_log_file(
