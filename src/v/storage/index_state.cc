@@ -83,15 +83,15 @@ void adl<storage::index_state>::to(iobuf& out, storage::index_state&& r) {
 
 storage::index_state adl<storage::index_state>::from(iobuf_parser& in) {
     storage::index_state ret;
-    ret.size = ss::le_to_cpu(reflection::adl<uint32_t>{}.from(in));
-    ret.checksum = ss::le_to_cpu(reflection::adl<uint64_t>{}.from(in));
-    ret.bitflags = ss::le_to_cpu(reflection::adl<uint32_t>{}.from(in));
+    ret.size = reflection::adl<uint32_t>{}.from(in);
+    ret.checksum = reflection::adl<uint64_t>{}.from(in);
+    ret.bitflags = reflection::adl<uint32_t>{}.from(in);
     ret.base_offset = model::offset(
-      ss::le_to_cpu(reflection::adl<model::offset::type>{}.from(in)));
+      reflection::adl<model::offset::type>{}.from(in));
     ret.base_timestamp = model::timestamp(
-      ss::le_to_cpu(reflection::adl<model::timestamp::type>{}.from(in)));
+      reflection::adl<model::timestamp::type>{}.from(in));
     ret.max_timestamp = model::timestamp(
-      ss::le_to_cpu(reflection::adl<model::timestamp::type>{}.from(in)));
+      reflection::adl<model::timestamp::type>{}.from(in));
 
     const uint32_t vsize = ss::le_to_cpu(reflection::adl<uint32_t>{}.from(in));
     ret.relative_offset_index.reserve(vsize);
