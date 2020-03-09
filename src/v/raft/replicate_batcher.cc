@@ -94,6 +94,18 @@ ss::future<> replicate_batcher::flush() {
             [this,
              data = std::move(data),
              notifications = std::move(notifications)]() mutable {
+                // we have to check if we are the leader
+                // it is critical as term could have been updated already by
+                // vote request and entries from current node could be accepted
+                // by the followers while it is no longer a leader
+                // this problem caused truncation failure.
+                
+                if (!_ptr->is_leader()) {
+                    for (auto& n : notifications) {
+                        n->_promise.set_value(errc::not_leader);
+                    }
+                    return ss::make_ready_future<>();
+                }
                 const auto& meta = _ptr->_meta;
                 auto const term = model::term_id(meta.term);
                 for (auto& b : data) {
