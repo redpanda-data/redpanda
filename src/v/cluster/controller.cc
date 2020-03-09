@@ -5,6 +5,7 @@
 #include "cluster/errc.h"
 #include "cluster/logger.h"
 #include "cluster/metadata_dissemination_service.h"
+#include "cluster/namespace.h"
 #include "cluster/notification_latch.h"
 #include "cluster/partition_manager.h"
 #include "cluster/simple_batch_builder.h"
@@ -118,7 +119,7 @@ ss::future<> controller::start() {
       .then([this] {
           // add raft0 to shard table
           return assign_group_to_shard(
-            controller::ntp, controller::group, controller::shard);
+            controller_ntp, controller::group, controller::shard);
       })
       .then([this] {
           // add current node to brokers cache
@@ -139,7 +140,7 @@ ss::future<> controller::start() {
                 _recovered = true;
                 if (_leadership_notification_pending) {
                     handle_leadership_notification(
-                      controller::ntp, model::term_id{}, _self.id());
+                      controller_ntp, model::term_id{}, _self.id());
                     _leadership_notification_pending = false;
                 }
             });
@@ -157,7 +158,7 @@ ss::future<consensus_ptr> controller::start_raft0() {
         brokers.push_back(_self);
     }
     return _pm.local().manage(
-      controller::ntp,
+      controller_ntp,
       controller::group,
       std::move(brokers),
       [this](model::record_batch_reader&& reader) {
@@ -608,7 +609,7 @@ ss::future<> controller::do_leadership_notification(
     return with_gate(_bg, [this, ntp = std::move(ntp), lid, term]() mutable {
         return with_semaphore(
           _sem, 1, [this, ntp = std::move(ntp), lid, term]() mutable {
-              if (ntp == controller::ntp) {
+              if (ntp == controller_ntp) {
                   if (lid != _self.id()) {
                       // for now do nothing if we are not the leader
                       return ss::make_ready_future<>();

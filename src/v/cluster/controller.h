@@ -32,10 +32,6 @@ public:
     static constexpr const raft::group_id group{0};
     /// \brief used to distinguished log messages
     static constexpr model::record_batch_type controller_record_batch_type{3};
-    static inline const model::ntp ntp{
-      model::ns("redpanda"),
-      model::topic_partition{model::topic("controller"),
-                             model::partition_id(0)}};
     // FIXME: make it configurable
     static constexpr auto join_timeout = std::chrono::seconds(5);
 

@@ -1,7 +1,7 @@
 #include "kafka/requests/produce_request.h"
 
 #include "bytes/iobuf.h"
-#include "kafka/default_namespace.h"
+#include "cluster/namespace.h"
 #include "kafka/errors.h"
 #include "kafka/requests/kafka_batch_adapter.h"
 #include "likely.h"
@@ -199,7 +199,7 @@ static ss::future<produce_response::partition> produce_topic_partition(
   produce_request::topic& topic,
   produce_request::partition& part) {
     auto ntp = model::ntp{
-      .ns = default_namespace(),
+      .ns = cluster::kafka_namespace,
       .tp = model::topic_partition{
         .topic = topic.name,
         .partition = part.id,
