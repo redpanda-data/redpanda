@@ -13,4 +13,7 @@ inline const model::ntp controller_ntp{
 
 inline const model::ns kafka_namespace("kafka");
 
+inline const model::ns kafka_internal_namespace("kafka_internal");
+inline const model::topic kafka_group_topic("group");
+
 } // namespace cluster

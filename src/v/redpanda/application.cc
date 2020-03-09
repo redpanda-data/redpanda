@@ -199,7 +199,7 @@ void application::wire_up_services() {
       std::ref(config::shard_local_cfg()))
       .get();
     syschecks::systemd_message("Creating kafka group shard mapper");
-    construct_service(_coordinator_ntp_mapper).get();
+    construct_service(_coordinator_ntp_mapper, std::ref(metadata_cache)).get();
     syschecks::systemd_message("Creating kafka group router");
     construct_service(
       group_router,
