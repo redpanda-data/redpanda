@@ -53,6 +53,11 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> delete_retention_ms;
     // same as retention.size in kafka - TODO: size not implemented
     property<std::optional<size_t>> retention_bytes;
+    property<int32_t> group_topic_partitions;
+    property<int16_t> default_topic_replication;
+    property<std::chrono::milliseconds> create_topic_timeout_ms;
+    property<std::chrono::milliseconds> wait_for_leader_timeout_ms;
+
     configuration();
 
     void read_yaml(const YAML::Node& root_node) override;
