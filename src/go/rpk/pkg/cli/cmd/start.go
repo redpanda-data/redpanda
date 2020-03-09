@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -123,6 +124,7 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 				return fmt.Errorf("couldn't write the PID file: %v", err)
 			}
 			sendEnv(env, conf, nil)
+			rpArgs.SeastarFlags = mergeFlags(rpArgs.SeastarFlags, conf.Rpk.AdditionalStartFlags)
 			launcher := redpanda.NewLauncher(installDirectory, rpArgs)
 			log.Info("Starting redpanda...")
 			return launcher.Start()
@@ -252,6 +254,26 @@ func buildRedpandaFlags(
 		log.Warn(err)
 	}
 	return rpArgs, nil
+}
+
+func mergeFlags(
+	current map[string]string, overrides []string,
+) map[string]string {
+	overridesMap := map[string]string{}
+	for _, o := range overrides {
+		pattern := regexp.MustCompile(`[\s=]+`)
+		parts := pattern.Split(o, 2)
+		flagName := strings.ReplaceAll(parts[0], "--", "")
+		if len(parts) == 2 {
+			overridesMap[flagName] = parts[1]
+		} else {
+			overridesMap[flagName] = ""
+		}
+	}
+	for k, v := range overridesMap {
+		current[k] = v
+	}
+	return current
 }
 
 func resolveWellKnownIo(
