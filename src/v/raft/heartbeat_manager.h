@@ -80,5 +80,24 @@ private:
     /// this is optimized for traversal + finding
     consensus_set _consensus_groups;
     consensus_client_protocol _client_protocol;
+
+    /// In redpanda heartbeats are send independently to append entries requests
+    /// this can lead to sending heartbeat more than once per given heartbeat
+    /// interval as append entries requests reset the heartbeat timer.
+    /// In order to skip some heartbeats that would be send in close temporal
+    /// proximity to previous append entries request introduced the threshold
+    /// used to decide when heartbeat manager can skip sending heartbeat to
+    /// particular group. The heartbeat manager will only skip sending heartbeat
+    /// to the group if append entries occurred not earlier than last heartbeat
+    /// + threashold. This will guarantee that election timer on on the
+    /// followers will be reset and that the maximum effective interval between
+    /// heartbeat would be 
+    ///
+    ///    (_heartbeat_interval - _skip_hbeat_threshold) + _heartbeat_interval
+    /// or:
+    ///     (2 - hbeat_threshold_ratio)*_heartbeat_interval;
+    ///
+    static constexpr auto hbeat_threshold_ratio = 0.8;
+    uint64_t _skip_hbeat_threshold;
 };
 } // namespace raft

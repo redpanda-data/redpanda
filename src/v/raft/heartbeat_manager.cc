@@ -8,6 +8,7 @@
 #include "rpc/types.h"
 
 #include <absl/container/flat_hash_map.h>
+#include <bits/stdint-uintn.h>
 #include <boost/range/iterator_range.hpp>
 
 namespace raft {
@@ -16,7 +17,9 @@ using consensus_ptr = heartbeat_manager::consensus_ptr;
 using consensus_set = heartbeat_manager::consensus_set;
 
 static std::vector<heartbeat_manager::node_heartbeat> requests_for_range(
-  const consensus_set& c, clock_type::time_point last_heartbeat) {
+  const consensus_set& c,
+  clock_type::time_point last_heartbeat,
+  uint64_t threshold) {
     absl::flat_hash_map<model::node_id, std::vector<protocol_metadata>>
       pending_beats;
     if (c.empty()) {
@@ -33,11 +36,16 @@ static std::vector<heartbeat_manager::node_heartbeat> requests_for_range(
             if (n.id() == ptr->self()) {
                 continue;
             }
+
             auto last_hbeat_timestamp = ptr->last_hbeat_timestamp(n.id());
-            if (last_hbeat_timestamp > last_heartbeat) {
+            if (
+              last_hbeat_timestamp.time_since_epoch().count()
+              > (last_heartbeat.time_since_epoch().count() + threshold)) {
                 hbeatlog.trace(
-                  "Skipping sending beat to {} last hb {}, last append {}",
+                  "Skipping sending beat to {} gr: {} last hb {}, last append "
+                  "{}",
                   n.id(),
+                  ptr->meta().group,
                   last_heartbeat.time_since_epoch().count(),
                   last_hbeat_timestamp.time_since_epoch().count());
                 // we already sent heartbeat, skip it
@@ -63,13 +71,15 @@ static std::vector<heartbeat_manager::node_heartbeat> requests_for_range(
 heartbeat_manager::heartbeat_manager(
   duration_type interval, consensus_client_protocol proto)
   : _heartbeat_interval(interval)
-  , _client_protocol(proto) {
+  , _client_protocol(proto)
+  , _skip_hbeat_threshold(hbeat_threshold_ratio * _heartbeat_interval.count()) {
     _heartbeat_timer.set_callback([this] { dispatch_heartbeats(); });
 }
 
 ss::future<> heartbeat_manager::do_dispatch_heartbeats(
   clock_type::time_point last_timeout, clock_type::time_point next_timeout) {
-    auto reqs = requests_for_range(_consensus_groups, last_timeout);
+    auto reqs = requests_for_range(
+      _consensus_groups, last_timeout, _skip_hbeat_threshold);
     return ss::do_with(
       std::move(reqs), [this, next_timeout](std::vector<node_heartbeat>& reqs) {
           return ss::parallel_for_each(
