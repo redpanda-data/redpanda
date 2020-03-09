@@ -41,7 +41,8 @@ public:
       ss::sharded<quota_manager>&,
       ss::sharded<kafka::group_router_type>&,
       ss::sharded<cluster::shard_table>&,
-      ss::sharded<cluster::partition_manager>&) noexcept;
+      ss::sharded<cluster::partition_manager>&,
+      ss::sharded<coordinator_ntp_mapper>& coordinator_mapper) noexcept;
 
     ~protocol() noexcept override = default;
     const char* name() const final { return "kafka rpc protocol"; }
@@ -70,6 +71,7 @@ private:
     ss::sharded<kafka::group_router_type>& _group_router;
     ss::sharded<cluster::shard_table>& _shard_table;
     ss::sharded<cluster::partition_manager>& _partition_manager;
+    ss::sharded<kafka::coordinator_ntp_mapper>& _coordinator_mapper;
 };
 
 } // namespace kafka

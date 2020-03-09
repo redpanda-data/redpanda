@@ -147,7 +147,8 @@ static kafka::request_context make_request_context(application& app) {
       std::chrono::milliseconds(0),
       app.group_router.local(),
       app.shard_table.local(),
-      app.partition_manager);
+      app.partition_manager,
+      app.coordinator_ntp_mapper);
 
     iobuf buf;
     kafka::fetch_request request;
@@ -162,7 +163,8 @@ static kafka::request_context make_request_context(application& app) {
       std::chrono::milliseconds(0),
       app.group_router.local(),
       app.shard_table.local(),
-      app.partition_manager);
+      app.partition_manager,
+      app.coordinator_ntp_mapper);
 }
 
 // TODO: when we have a more precise log builder tool we can make these finer

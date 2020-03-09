@@ -63,7 +63,8 @@ public:
       ss::lowres_clock::duration throttle_delay,
       kafka::group_router_type& group_router,
       cluster::shard_table& shard_table,
-      ss::sharded<cluster::partition_manager>& partition_manager) noexcept
+      ss::sharded<cluster::partition_manager>& partition_manager,
+      ss::sharded<coordinator_ntp_mapper>& coordinator_mapper) noexcept
       : _metadata_cache(metadata_cache)
       , _cntrl_dispatcher(cntrl_dispatcher)
       , _header(std::move(header))
@@ -71,7 +72,8 @@ public:
       , _throttle_delay(throttle_delay)
       , _group_router(group_router)
       , _shard_table(shard_table)
-      , _partition_manager(partition_manager) {}
+      , _partition_manager(partition_manager)
+      , _coordinator_mapper(coordinator_mapper) {}
 
     request_context(request_context&&) noexcept = default;
 
@@ -118,6 +120,10 @@ public:
         return ss::make_ready_future<response_ptr>(std::move(resp));
     }
 
+    ss::sharded<kafka::coordinator_ntp_mapper>& coordinator_mapper() {
+        return _coordinator_mapper;
+    }
+
 private:
     ss::sharded<cluster::metadata_cache>& _metadata_cache;
     controller_dispatcher& _cntrl_dispatcher;
@@ -127,6 +133,7 @@ private:
     kafka::group_router_type& _group_router;
     cluster::shard_table& _shard_table;
     ss::sharded<cluster::partition_manager>& _partition_manager;
+    ss::sharded<kafka::coordinator_ntp_mapper>& _coordinator_mapper;
 };
 
 // Executes the API call identified by the specified request_context.
