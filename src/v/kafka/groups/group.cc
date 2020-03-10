@@ -372,10 +372,6 @@ group::join_group_known_member(join_group_request&& r) {
 
     } else if (contains_pending_member(r.member_id)) {
         kglog.trace("making pending member a regular member");
-        if (r.group_instance_id) {
-            throw std::runtime_error(
-              fmt::format("unexpected static pending member {}", r.member_id));
-        }
         kafka::member_id new_member_id = std::move(r.member_id);
         return add_member_and_rebalance(std::move(new_member_id), std::move(r));
 
