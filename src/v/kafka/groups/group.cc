@@ -343,10 +343,7 @@ group::join_group_unknown_member(join_group_request&& r) {
 
     // <kafka>Only return MEMBER_ID_REQUIRED error if joinGroupRequest version
     // is >= 4 and groupInstanceId is configured to unknown.</kafka>
-    auto require_member_id = r.version >= api_version(4)
-                             && !r.group_instance_id;
-
-    if (require_member_id) {
+    if (r.version >= api_version(4) && !r.group_instance_id) {
         // <kafka>If member id required (dynamic membership), register the
         // member in the pending member list and send back a response to
         // call for another join group request with allocated member id.
