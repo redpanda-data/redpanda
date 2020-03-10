@@ -26,14 +26,16 @@ protocol::protocol(
   ss::sharded<quota_manager>& quota,
   ss::sharded<kafka::group_router_type>& router,
   ss::sharded<cluster::shard_table>& tbl,
-  ss::sharded<cluster::partition_manager>& pm) noexcept
+  ss::sharded<cluster::partition_manager>& pm,
+  ss::sharded<coordinator_ntp_mapper>& coordinator_mapper) noexcept
   : _smp_group(smp)
   , _metadata_cache(meta)
   , _cntrl_dispatcher(ctrl)
   , _quota_mgr(quota)
   , _group_router(router)
   , _shard_table(tbl)
-  , _partition_manager(pm) {}
+  , _partition_manager(pm)
+  , _coordinator_mapper(coordinator_mapper) {}
 
 ss::future<> protocol::apply(rpc::server::resources rs) {
     return ss::do_until(
@@ -118,7 +120,8 @@ ss::future<> protocol::dispatch_method_once(
                     delay.duration,
                     _group_router.local(),
                     _shard_table.local(),
-                    _partition_manager);
+                    _partition_manager,
+                    _coordinator_mapper);
                   // background process this one full request
                   (void)ss::with_gate(
                     rs.conn_gate(),

@@ -1,6 +1,6 @@
 #include "kafka/requests/fetch_request.h"
 
-#include "kafka/default_namespace.h"
+#include "cluster/namespace.h"
 #include "kafka/errors.h"
 #include "kafka/requests/batch_consumer.h"
 #include "likely.h"
@@ -348,7 +348,7 @@ static ss::future<> fetch_topic_partitions(op_context& octx) {
           }
 
           auto ntp = model::ntp{
-            .ns = default_namespace(),
+            .ns = cluster::kafka_namespace,
             .tp = model::topic_partition{
               .topic = topic.name,
               .partition = part.id,

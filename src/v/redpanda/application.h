@@ -49,6 +49,7 @@ public:
     ss::sharded<cluster::metadata_dissemination_service>
       md_dissemination_service;
     ss::sharded<cluster::controller> controller;
+    ss::sharded<kafka::coordinator_ntp_mapper> coordinator_ntp_mapper;
 
 private:
     using deferred_actions
@@ -76,7 +77,6 @@ private:
     // ss::sharded services
     ss::sharded<rpc::connection_cache> _raft_connection_cache;
     ss::sharded<kafka::group_manager> _group_manager;
-    ss::sharded<kafka::coordinator_ntp_mapper> _coordinator_ntp_mapper;
     ss::sharded<rpc::server> _rpc;
     ss::sharded<ss::http_server> _admin;
     ss::sharded<kafka::quota_manager> _quota_mgr;

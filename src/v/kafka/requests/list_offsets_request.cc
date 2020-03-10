@@ -1,6 +1,6 @@
 #include "kafka/requests/list_offsets_request.h"
 
-#include "kafka/default_namespace.h"
+#include "cluster/namespace.h"
 #include "kafka/errors.h"
 #include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
@@ -127,7 +127,7 @@ static ss::future<list_offsets_response::partition> list_offsets_partition(
   list_offsets_request::topic& topic,
   list_offsets_request::partition& part) {
     auto ntp = model::ntp{
-      .ns = default_namespace(),
+      .ns = cluster::kafka_namespace,
       .tp = model::topic_partition{
         .topic = topic.name,
         .partition = part.id,

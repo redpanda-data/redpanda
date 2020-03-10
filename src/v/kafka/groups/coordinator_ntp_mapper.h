@@ -1,8 +1,11 @@
 #pragma once
+#include "cluster/metadata_cache.h"
+#include "cluster/namespace.h"
 #include "hashing/jump_consistent_hash.h"
 #include "hashing/xx.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
+#include "seastar/core/sharded.hh"
 #include "seastarx.h"
 #include "utils/concepts-enabled.h"
 
@@ -29,21 +32,33 @@ namespace kafka {
  */
 class coordinator_ntp_mapper {
 public:
-    model::ntp ntp_for(const kafka::group_id& group) const {
+    coordinator_ntp_mapper(ss::sharded<cluster::metadata_cache>& md)
+      : _md(md)
+      , _ns(cluster::kafka_internal_namespace)
+      , _topic(cluster::kafka_group_topic) {}
+
+    std::optional<model::ntp> ntp_for(const kafka::group_id& group) const {
+        auto md = _md.local().get_topic_metadata(_topic);
+        if (!md) {
+            return std::nullopt;
+        }
         incremental_xxhash64 inc;
         inc.update(group);
         auto p = static_cast<model::partition_id::type>(
-          jump_consistent_hash(inc.digest(), _num_partitions));
+          jump_consistent_hash(inc.digest(), md->partitions.size()));
         return model::ntp{
           .ns = _ns,
           .tp = model::topic_partition{_topic, model::partition_id{p}},
         };
     }
 
+    const model::ns& ns() const { return _ns; }
+    const model::topic& topic() const { return _topic; }
+
 private:
+    ss::sharded<cluster::metadata_cache>& _md;
     model::ns _ns;
     model::topic _topic;
-    model::partition_id::type _num_partitions{};
 };
 
 } // namespace kafka

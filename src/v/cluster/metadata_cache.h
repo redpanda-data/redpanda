@@ -3,6 +3,7 @@
 #include "cluster/types.h"
 #include "model/metadata.h"
 #include "seastarx.h"
+#include "utils/expiring_promise.h"
 
 #include <seastar/core/future.hh>
 
@@ -39,7 +40,7 @@ public:
     using cache_t = absl::flat_hash_map<model::topic, topic_metadata>;
 
     metadata_cache() = default;
-    ss::future<> stop() { return ss::make_ready_future<>(); }
+    ss::future<> stop();
 
     /// Returns list of all topics that exists in the cluster.
     std::vector<model::topic> all_topics() const;
@@ -102,10 +103,27 @@ public:
     /// Directly inserts topic_metadata
     void insert_topic(model::topic_metadata);
 
+    /**
+     * Return the leader of a partition with a timeout.
+     *
+     * If the partition leader is set then the leader's node id is returned as a
+     * ready future. Otherwise, wait up to the specified timeout for a leader to
+     * be elected.
+     */
+    ss::future<model::node_id>
+    get_leader(const model::ntp& ntp, ss::lowres_clock::time_point timeout);
+
 private:
     broker_cache_t _brokers_cache;
     cache_t _cache;
     cache_t::iterator find_topic_metadata(model::topic_view);
+
+    // per-ntp notifications for leadership election. note that the namespace is
+    // currently ignored pending an update to the metadata cache that attaches a
+    // namespace to all topics partition references.
+    absl::
+      flat_hash_map<model::ntp, std::vector<expiring_promise<model::node_id>>>
+        _leader_promises;
 };
 
 model::topic_metadata

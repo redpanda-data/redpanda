@@ -1,6 +1,6 @@
 #pragma once
+#include "cluster/namespace.h"
 #include "cluster/types.h"
-#include "kafka/default_namespace.h"
 #include "kafka/errors.h"
 #include "model/fundamental.h"
 
@@ -52,7 +52,7 @@ struct new_topic_configuration {
 
     cluster::topic_configuration to_cluster_type() const {
         cluster::topic_configuration cfg(
-          default_namespace(),
+          cluster::kafka_namespace,
           model::topic{ss::sstring(topic())},
           partition_count,
           replication_factor);

@@ -183,8 +183,10 @@ public:
 
 private:
     std::optional<ss::shard_id> shard_for(group_id group) {
-        auto ntp = _coordinators.local().ntp_for(group);
-        return _shards.local().shard_for(ntp);
+        if (auto ntp = _coordinators.local().ntp_for(group); ntp) {
+            return _shards.local().shard_for(*ntp);
+        }
+        return std::nullopt;
     }
 
     ss::scheduling_group _sg;
