@@ -5,6 +5,8 @@
 #include "kafka/requests/heartbeat_request.h"
 #include "kafka/requests/join_group_request.h"
 #include "kafka/requests/leave_group_request.h"
+#include "kafka/requests/offset_commit_request.h"
+#include "kafka/requests/offset_fetch_request.h"
 #include "kafka/requests/sync_group_request.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
@@ -86,6 +88,12 @@ class group {
 public:
     using clock_type = ss::lowres_clock;
     using duration_type = clock_type::duration;
+
+    struct offset_metadata {
+        model::offset log_offset;
+        model::offset offset;
+        ss::sstring metadata;
+    };
 
     group(kafka::group_id id, group_state s, config::configuration& conf)
       : _id(id)
@@ -343,6 +351,28 @@ public:
     ss::future<leave_group_response>
     handle_leave_group(leave_group_request&& r);
 
+    std::optional<offset_metadata>
+    offset(const model::topic_partition& tp) const {
+        if (auto it = _offsets.find(tp); it != _offsets.end()) {
+            return it->second;
+        }
+        return std::nullopt;
+    }
+
+    void complete_offset_commit(
+      const model::topic_partition& tp, const offset_metadata& md);
+
+    void fail_offset_commit(
+      const model::topic_partition& tp, const offset_metadata& md);
+
+    ss::future<offset_commit_response> store_offsets(offset_commit_request&& r);
+
+    ss::future<offset_commit_response>
+    handle_offset_commit(offset_commit_request&& r);
+
+    ss::future<offset_fetch_response>
+    handle_offset_fetch(offset_fetch_request&& r);
+
 private:
     using member_map = absl::flat_hash_map<kafka::member_id, member_ptr>;
     using protocol_support = absl::flat_hash_map<kafka::protocol_name, int>;
@@ -361,6 +391,9 @@ private:
     ss::timer<clock_type> _join_timer;
     bool _new_member_added;
     config::configuration& _conf;
+    absl::flat_hash_map<model::topic_partition, offset_metadata> _offsets;
+    absl::flat_hash_map<model::topic_partition, offset_metadata>
+      _pending_offset_commits;
 };
 
 using group_ptr = ss::lw_shared_ptr<group>;

@@ -1,6 +1,7 @@
 #include "kafka/groups/group.h"
 
 #include "bytes/bytes.h"
+#include "cluster/partition.h"
 #include "kafka/requests/sync_group_request.h"
 #include "likely.h"
 #include "utils/to_string.h"
@@ -966,6 +967,211 @@ group::handle_leave_group(leave_group_request&& r) {
         remove_member(member);
         return make_leave_error(error_code::none);
     }
+}
+
+void group::complete_offset_commit(
+  const model::topic_partition& tp, const offset_metadata& md) {
+    // check if tp is pending
+    auto p_it = _pending_offset_commits.find(tp);
+    if (p_it != _pending_offset_commits.end()) {
+        // save the tp commit if it hasn't yet been seen, or we are completing
+        // for an instance that is newer based on log offset
+        auto o_it = _offsets.find(tp);
+        if (o_it == _offsets.end() || o_it->second.log_offset < md.log_offset) {
+            _offsets[tp] = md;
+        }
+
+        // clear pending for this tp
+        if (p_it->second.offset == md.offset) {
+            _pending_offset_commits.erase(p_it);
+        }
+    }
+}
+
+void group::fail_offset_commit(
+  const model::topic_partition& tp, const offset_metadata& md) {
+    auto p_it = _pending_offset_commits.find(tp);
+    if (p_it != _pending_offset_commits.end()) {
+        // clear pending for this tp
+        if (p_it->second.offset == md.offset) {
+            _pending_offset_commits.erase(p_it);
+        }
+    }
+}
+
+ss::future<offset_commit_response>
+group::store_offsets(offset_commit_request&& r) {
+    // build the offset metadata structures for each topic partition that
+    // we'll keep in the group cache and write into the underlying
+    // partition.
+    absl::flat_hash_map<model::topic_partition, offset_metadata> offset_commits;
+    for (const auto& t : r.topics) {
+        for (const auto& p : t.partitions) {
+            model::topic_partition tp{
+              .topic = t.name,
+              .partition = p.id,
+            };
+            offset_metadata md{
+              .offset = p.committed,
+              .metadata = p.metadata.value_or(""),
+            };
+            offset_commits[tp] = md;
+        }
+    }
+
+    // record the offset commits as pending commits which will be inspected
+    // after the append to catch concurrent updates.
+    for (const auto& e : offset_commits) {
+        _pending_offset_commits[e.first] = e.second;
+    }
+
+    /*
+     * TODO: package up offset commit data into a batch and append to the
+     * underlying partition.
+     */
+#if 0
+    return partition->replicate(std::move(e))
+#else
+    auto partition = ss::make_ready_future<>();
+    return partition
+#endif
+    .then(
+      [this, r = std::move(r), commits = std::move(offset_commits)]() mutable {
+          /*
+           * TODO: unwrap replication result and inspect for errors
+           */
+          model::offset last_offset;
+          error_code error = error_code::none;
+#if 0
+        try {
+            auto r = f.get0();
+            if (r) {
+                last_offset = r.value().last_offset;
+            } else {
+                error = error_code::unknown_server_error;
+            }
+        } catch (...) {
+            error = error_code::unknown_server_error;
+        }
+#endif
+
+          if (in_state(group_state::dead)) {
+              return ss::make_ready_future<offset_commit_response>(
+                offset_commit_response(r, error));
+          }
+
+          if (error == error_code::none) {
+              for (auto& e : commits) {
+                  e.second.log_offset = last_offset;
+                  complete_offset_commit(e.first, e.second);
+              }
+          } else {
+              for (const auto& e : commits) {
+                  fail_offset_commit(e.first, e.second);
+              }
+          }
+
+          return ss::make_ready_future<offset_commit_response>(
+            offset_commit_response(r, error));
+      });
+}
+
+ss::future<offset_commit_response>
+group::handle_offset_commit(offset_commit_request&& r) {
+    if (in_state(group_state::dead)) {
+        return ss::make_ready_future<offset_commit_response>(
+          offset_commit_response(r, error_code::coordinator_not_available));
+
+    } else if (r.generation_id < 0 && in_state(group_state::empty)) {
+        // <kafka>The group is only using Kafka to store offsets.</kafka>
+        return store_offsets(std::move(r));
+
+    } else if (!contains_member(r.member_id)) {
+        return ss::make_ready_future<offset_commit_response>(
+          offset_commit_response(r, error_code::unknown_member_id));
+
+    } else if (r.generation_id != generation()) {
+        return ss::make_ready_future<offset_commit_response>(
+          offset_commit_response(r, error_code::illegal_generation));
+    }
+
+    switch (state()) {
+    case group_state::stable:
+        [[fallthrough]];
+
+    case group_state::preparing_rebalance: {
+        auto member = get_member(r.member_id);
+        schedule_next_heartbeat_expiration(member);
+        return store_offsets(std::move(r));
+    }
+
+    case group_state::completing_rebalance:
+        // <kafka>We should not receive a commit request if the group has
+        // not completed rebalance; but since the consumer's member.id and
+        // generation is valid, it means it has received the latest group
+        // generation information from the JoinResponse. So let's return a
+        // REBALANCE_IN_PROGRESS to let consumer handle it
+        // gracefully.</kafka>
+        return ss::make_ready_future<offset_commit_response>(
+          offset_commit_response(r, error_code::rebalance_in_progress));
+
+    default:
+        std::terminate(); // make gcc happy
+    }
+}
+
+ss::future<offset_fetch_response>
+group::handle_offset_fetch(offset_fetch_request&& r) {
+    if (in_state(group_state::dead)) {
+        return ss::make_ready_future<offset_fetch_response>(
+          offset_fetch_response(r.topics));
+    }
+
+    offset_fetch_response resp;
+    resp.error = error_code::none;
+
+    // retrieve all topics available
+    if (!r.topics) {
+        absl::flat_hash_map<
+          model::topic,
+          std::vector<offset_fetch_response::partition>>
+          tmp;
+        for (const auto& e : _offsets) {
+            tmp[e.first.topic].push_back({e.first.partition,
+                                          e.second.offset,
+                                          e.second.metadata,
+                                          error_code::none});
+        }
+        for (auto& e : tmp) {
+            resp.topics.push_back(
+              {.name = e.first, .partitions = std::move(e.second)});
+        }
+
+        return ss::make_ready_future<offset_fetch_response>(std::move(resp));
+    }
+
+    // retrieve for the topics specified in the request
+    for (const auto& topic : *r.topics) {
+        offset_fetch_response::topic t;
+        t.name = topic.name;
+        for (auto id : topic.partitions) {
+            model::topic_partition tp{
+              .topic = topic.name,
+              .partition = id,
+            };
+            auto res = offset(tp);
+            if (res) {
+                t.partitions.push_back(
+                  {id, res->offset, res->metadata, error_code::none});
+            } else {
+                t.partitions.push_back(
+                  {id, model::offset(-1), "", error_code::none});
+            }
+        }
+        resp.topics.push_back(std::move(t));
+    }
+
+    return ss::make_ready_future<offset_fetch_response>(std::move(resp));
 }
 
 kafka::member_id group::generate_member_id(const join_group_request& r) {

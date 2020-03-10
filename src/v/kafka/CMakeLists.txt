@@ -13,7 +13,8 @@ set(request_srcs
   requests/heartbeat_request.cc
   requests/leave_group_request.cc
   requests/sync_group_request.cc
-  requests/create_topics_request.cc)
+  requests/create_topics_request.cc
+  requests/offset_commit_request.cc)
 
 set(group_srcs
   groups/member.cc

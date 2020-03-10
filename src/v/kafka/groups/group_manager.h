@@ -5,6 +5,8 @@
 #include "kafka/requests/heartbeat_request.h"
 #include "kafka/requests/join_group_request.h"
 #include "kafka/requests/leave_group_request.h"
+#include "kafka/requests/offset_commit_request.h"
+#include "kafka/requests/offset_fetch_request.h"
 #include "kafka/requests/sync_group_request.h"
 #include "seastarx.h"
 
@@ -53,6 +55,14 @@ public:
 
     /// \brief Handle a LeaveGroup request
     ss::future<leave_group_response> leave_group(leave_group_request&& request);
+
+    /// \brief Handle a OffsetCommit request
+    ss::future<offset_commit_response>
+    offset_commit(offset_commit_request&& request);
+
+    /// \brief Handle a OffsetFetch request
+    ss::future<offset_fetch_response>
+    offset_fetch(offset_fetch_request&& request);
 
 public:
     static error_code validate_group_status(group_id group, api_key api);

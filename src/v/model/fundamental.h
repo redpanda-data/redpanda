@@ -85,6 +85,16 @@ struct hash<model::topic> {
 };
 
 template<>
+struct hash<model::topic_partition> {
+    size_t operator()(const model::topic_partition& tp) const {
+        size_t h = 0;
+        boost::hash_combine(h, hash<ss::sstring>()(tp.topic));
+        boost::hash_combine(h, hash<model::partition_id>()(tp.partition));
+        return h;
+    }
+};
+
+template<>
 struct hash<model::ntp> {
     size_t operator()(const model::ntp& ntp) const {
         size_t h = 0;
