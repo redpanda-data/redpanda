@@ -182,7 +182,7 @@ public:
     }
 
 private:
-    std::optional<ss::shard_id> shard_for(group_id group) {
+    std::optional<ss::shard_id> shard_for(const group_id& group) {
         if (auto ntp = _coordinators.local().ntp_for(group); ntp) {
             return _shards.local().shard_for(*ntp);
         }
