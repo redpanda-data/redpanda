@@ -3,6 +3,7 @@
 #include "storage/log.h"
 #include "storage/log_manager.h"
 #include "storage/tests/storage_test_fixture.h"
+#include "storage/tests/utils/disk_log_builder.h"
 #include "test_utils/fixture.h"
 
 #include <seastar/util/defer.hh>
@@ -23,8 +24,6 @@ constexpr model::offset expected_last(model::offset t_offset) {
     return t_offset > model::offset(0) ? t_offset - model::offset(1)
                                        : model::offset{};
 }
-
-// FIXME: Add test for on disk implementation
 
 FIXTURE_TEST(test_truncate_whole, storage_test_fixture) {
     for (auto type : storage_types) {
@@ -258,4 +257,53 @@ FIXTURE_TEST(test_truncate_last_single_record_batch, storage_test_fixture) {
             }
         }
     }
+}
+
+FIXTURE_TEST(test_truncate, storage_test_fixture) {
+    storage::disk_log_builder builder;
+    builder | storage::start() | storage::add_segment(0)
+      | storage::add_random_batch(0, 1, storage::compression::yes)
+      | storage::add_random_batch(1, 5, storage::compression::yes)
+      | storage::add_random_batch(6, 14, storage::compression::yes)
+      | storage::add_random_batch(20, 30, storage::compression::yes)
+      | storage::add_random_batch(50, 18, storage::compression::yes)
+      | storage::add_random_batch(68, 11, storage::compression::yes)
+      | storage::truncate_log(68)
+      | storage::add_random_batch(68, 11, storage::compression::yes)
+      | storage::add_random_batch(79, 13, storage::compression::yes)
+      | storage::add_random_batch(92, 4, storage::compression::yes)
+      | storage::add_random_batch(96, 12, storage::compression::yes)
+      | storage::add_random_batch(108, 3, storage::compression::yes)
+      | storage::add_random_batch(111, 25, storage::compression::yes)
+      | storage::truncate_log(79)
+      | storage::add_random_batch(79, 13, storage::compression::yes)
+      | storage::add_random_batch(92, 4, storage::compression::yes)
+      | storage::add_random_batch(96, 12, storage::compression::yes)
+      | storage::add_random_batch(108, 3, storage::compression::yes)
+      | storage::add_random_batch(111, 25, storage::compression::yes)
+      | storage::add_random_batch(136, 20, storage::compression::yes)
+      | storage::add_random_batch(156, 7, storage::compression::yes)
+      | storage::add_random_batch(163, 22, storage::compression::yes)
+      | storage::add_random_batch(185, 29, storage::compression::yes)
+      | storage::add_random_batch(214, 6, storage::compression::yes)
+      | storage::truncate_log(136)
+      | storage::add_random_batch(136, 20, storage::compression::yes)
+      | storage::add_random_batch(156, 7, storage::compression::yes)
+      | storage::add_random_batch(163, 22, storage::compression::yes)
+      | storage::add_random_batch(185, 29, storage::compression::yes)
+      | storage::add_random_batch(214, 6, storage::compression::yes)
+      | storage::add_random_batch(220, 20, storage::compression::yes)
+      | storage::add_random_batch(240, 16, storage::compression::yes)
+      | storage::add_random_batch(256, 23, storage::compression::yes)
+      | storage::add_random_batch(279, 17, storage::compression::yes)
+      | storage::add_random_batch(296, 7, storage::compression::yes)
+      | storage::add_random_batch(303, 16, storage::compression::yes)
+      | storage::add_random_batch(319, 2, storage::compression::yes)
+      | storage::add_random_batch(321, 17, storage::compression::yes)
+      | storage::add_random_batch(338, 27, storage::compression::yes)
+      | storage::add_random_batch(365, 2, storage::compression::yes)
+      | storage::truncate_log(220);
+
+    BOOST_REQUIRE_EQUAL(builder.get_log().max_offset(), model::offset(219));
+    builder | storage::stop();
 }
