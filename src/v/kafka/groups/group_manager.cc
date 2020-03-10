@@ -173,7 +173,7 @@ group_manager::offset_fetch(offset_fetch_request&& r) {
     return group->handle_offset_fetch(std::move(r));
 }
 
-bool group_manager::valid_group_id(group_id group, api_key api) {
+bool group_manager::valid_group_id(const group_id& group, api_key api) {
     switch (api) {
     case offset_commit_api::key:
         [[fallthrough]];
@@ -202,7 +202,8 @@ bool group_manager::valid_group_id(group_id group, api_key api) {
  * - check for group being recovered
  * - check coordinator for correct leader
  */
-error_code group_manager::validate_group_status(group_id group, api_key api) {
+error_code
+group_manager::validate_group_status(const group_id& group, api_key api) {
     if (!valid_group_id(group, api)) {
         return error_code::invalid_group_id;
     }
