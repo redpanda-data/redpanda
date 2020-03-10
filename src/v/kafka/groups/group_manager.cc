@@ -129,6 +129,50 @@ group_manager::leave_group(leave_group_request&& r) {
     }
 }
 
+ss::future<offset_commit_response>
+group_manager::offset_commit(offset_commit_request&& r) {
+    auto error = validate_group_status(r.group_id, offset_commit_api::key);
+    if (error != error_code::none) {
+        return ss::make_ready_future<offset_commit_response>(
+          offset_commit_response(r, error));
+    }
+
+    auto group = get_group(r.group_id);
+    if (!group) {
+        if (r.generation_id < 0) {
+            // <kafka>the group is not relying on Kafka for group management, so
+            // allow the commit</kafka>
+            group = ss::make_lw_shared<kafka::group>(
+              r.group_id, group_state::empty, _conf);
+            _groups.emplace(r.group_id, group);
+        } else {
+            // <kafka>or this is a request coming from an older generation.
+            // either way, reject the commit</kafka>
+            return ss::make_ready_future<offset_commit_response>(
+              offset_commit_response(r, error_code::illegal_generation));
+        }
+    }
+
+    return group->handle_offset_commit(std::move(r));
+}
+
+ss::future<offset_fetch_response>
+group_manager::offset_fetch(offset_fetch_request&& r) {
+    auto error = validate_group_status(r.group_id, offset_fetch_api::key);
+    if (error != error_code::none) {
+        return ss::make_ready_future<offset_fetch_response>(
+          offset_fetch_response(error));
+    }
+
+    auto group = get_group(r.group_id);
+    if (!group) {
+        return ss::make_ready_future<offset_fetch_response>(
+          offset_fetch_response(r.topics));
+    }
+
+    return group->handle_offset_fetch(std::move(r));
+}
+
 bool group_manager::valid_group_id(group_id group, api_key api) {
     switch (api) {
     case offset_commit_api::key:

@@ -9,6 +9,7 @@
 #include "kafka/requests/list_groups_request.h"
 #include "kafka/requests/list_offsets_request.h"
 #include "kafka/requests/metadata_request.h"
+#include "kafka/requests/offset_commit_request.h"
 #include "kafka/requests/offset_fetch_request.h"
 #include "kafka/requests/produce_request.h"
 #include "kafka/requests/request_context.h"
@@ -86,7 +87,8 @@ using request_types = make_request_types<
   heartbeat_api,
   leave_group_api,
   sync_group_api,
-  create_topics_api>;
+  create_topics_api,
+  offset_commit_api>;
 
 template<typename RequestType>
 static auto make_api() {
