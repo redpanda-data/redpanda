@@ -24,8 +24,9 @@ FIXTURE_TEST(find_coordinator_unsupported_key, redpanda_thread_fixture) {
     BOOST_TEST(resp.port == -1);
 }
 
-// temporary test with fixed return value
 FIXTURE_TEST(find_coordinator, redpanda_thread_fixture) {
+    wait_for_controller_leadership().get();
+
     auto client = make_kafka_client().get0();
     client.connect().get();
 
@@ -35,7 +36,7 @@ FIXTURE_TEST(find_coordinator, redpanda_thread_fixture) {
     client.stop().then([&client] { client.shutdown(); }).get();
 
     BOOST_TEST(resp.error == kafka::error_code::none);
-    BOOST_TEST(resp.node == model::node_id(0));
-    BOOST_TEST(resp.host == "localhost");
+    BOOST_TEST(resp.node == model::node_id(1));
+    BOOST_TEST(resp.host == "127.0.0.1");
     BOOST_TEST(resp.port == 9092);
 }

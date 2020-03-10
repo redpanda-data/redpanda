@@ -176,6 +176,30 @@ configuration::configuration()
       "max bytes per partition on disk before triggering a compaction",
       required::no,
       std::nullopt)
+  , group_topic_partitions(
+      *this,
+      "group_topic_partitions",
+      "Number of partitions in the internal group membership topic",
+      required::no,
+      1)
+  , default_topic_replication(
+      *this,
+      "default_topic_replications",
+      "Default replication factor for new topics",
+      required::no,
+      1)
+  , create_topic_timeout_ms(
+      *this,
+      "create_topic_timeout_ms",
+      "Timeout (ms) to wait for new topic creation",
+      required::no,
+      2'000ms)
+  , wait_for_leader_timeout_ms(
+      *this,
+      "wait_for_leader_timeout_ms",
+      "Timeout (ms) to wait for leadership in metadata cache",
+      required::no,
+      5'000ms)
 
 {}
 
