@@ -178,17 +178,19 @@ bool group_manager::valid_group_id(group_id group, api_key api) {
     case offset_commit_api::key:
         [[fallthrough]];
     case offset_fetch_api::key:
-        [[fallthrough]];
-    case describe_groups_api::key:
-        [[fallthrough]];
-    case delete_groups_api::key:
         // <kafka> For backwards compatibility, we support the offset commit
         // APIs for the empty groupId, and also in DescribeGroups and
         // DeleteGroups so that users can view and delete state of all
         // groups.</kafka>
+        return true;
 
-        // return true;
-        return false; // these apis are not yet implemented
+    // currently unsupported apis
+    case describe_groups_api::key:
+        [[fallthrough]];
+    case delete_groups_api::key:
+        return false;
+
+    // join-group etc... require non-empty group ids
     default:
         return !group().empty();
     }
