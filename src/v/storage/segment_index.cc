@@ -104,10 +104,10 @@ segment_index::find_nearest(model::offset o) {
     if (*it <= i) {
         return translate_index_entry(_state, _state.get_entry(dist));
     }
-    dist = std::distance(_state.relative_offset_index.begin(), it);
     if (dist > 0) {
         it = std::prev(it);
     }
+    dist = std::distance(_state.relative_offset_index.begin(), it);
     if (*it <= i) {
         return translate_index_entry(_state, _state.get_entry(dist));
     }
