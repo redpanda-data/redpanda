@@ -91,26 +91,23 @@ segment_index::find_nearest(model::offset o) {
     if (_state.empty()) {
         return std::nullopt;
     }
-    const uint32_t i = o() - _state.base_offset();
+    const uint32_t needle = o() - _state.base_offset();
     auto it = std::lower_bound(
       std::begin(_state.relative_offset_index),
       std::end(_state.relative_offset_index),
-      i,
+      needle,
       std::less<uint32_t>{});
     if (it == _state.relative_offset_index.end()) {
         it = std::prev(it);
     }
-    size_t dist = std::distance(_state.relative_offset_index.begin(), it);
-    if (*it <= i) {
-        return translate_index_entry(_state, _state.get_entry(dist));
-    }
-    if (dist > 0) {
-        it = std::prev(it);
-    }
-    dist = std::distance(_state.relative_offset_index.begin(), it);
-    if (*it <= i) {
-        return translate_index_entry(_state, _state.get_entry(dist));
-    }
+    // make it signed so it can be negative
+    int i = std::distance(_state.relative_offset_index.begin(), it);
+    do {
+        if (_state.relative_offset_index[i] <= needle) {
+            return translate_index_entry(_state, _state.get_entry(i));
+        }
+    } while (i-- > 0);
+
     return std::nullopt;
 }
 
