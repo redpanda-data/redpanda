@@ -402,7 +402,7 @@ group::join_group_known_member(join_group_request&& r) {
 
             join_group_response response(
               error_code::none,
-              kafka::generation_id(-1),
+              generation(),
               protocol().value_or(protocol_name("")),
               leader().value_or(member_id("")),
               std::move(r.member_id),
