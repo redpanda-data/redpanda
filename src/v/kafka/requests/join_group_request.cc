@@ -132,10 +132,9 @@ join_group_api::process(request_context&& ctx, ss::smp_service_group g) {
     }
 
     return ss::do_with(
-      remote(std::move(ctx)),
+      std::move(ctx),
       std::move(request),
-      [g](remote<request_context>& remote_ctx, join_group_request& request) {
-          auto& ctx = remote_ctx.get();
+      [g](request_context& ctx, join_group_request& request) {
           return ctx.groups()
             .join_group(std::move(request))
             .then([&ctx](join_group_response&& reply) {
