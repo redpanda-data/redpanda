@@ -25,7 +25,9 @@ partition_manager::partition_manager(
   , _mngr(storage::log_config{
       .base_dir = config::shard_local_cfg().data_directory().as_sstring(),
       .max_segment_size = config::shard_local_cfg().log_segment_size(),
-      .should_sanitize = storage::log_config::sanitize_files::no})
+      .should_sanitize = storage::log_config::sanitize_files::no,
+      .disable_cache = storage::log_config::disable_batch_cache(
+        config::shard_local_cfg().disable_batch_cache())})
   , _client(raft::make_rpc_client_protocol(clients))
   , _hbeats(config::shard_local_cfg().raft_heartbeat_interval(), _client)
   , _shard_table(nlc) {}

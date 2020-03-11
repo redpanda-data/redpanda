@@ -58,6 +58,7 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> create_topic_timeout_ms;
     property<std::chrono::milliseconds> wait_for_leader_timeout_ms;
     property<int32_t> default_topic_partitions;
+    property<bool> disable_batch_cache;
 
     configuration();
 

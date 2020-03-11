@@ -1,7 +1,9 @@
 #include "storage/log_manager.h"
 
 #include "config/configuration.h"
+#include "likely.h"
 #include "model/fundamental.h"
+#include "storage/batch_cache.h"
 #include "storage/fs_utils.h"
 #include "storage/log.h"
 #include "storage/log_replayer.h"
@@ -26,6 +28,7 @@
 
 #include <exception>
 #include <filesystem>
+#include <optional>
 
 namespace storage {
 
@@ -111,13 +114,12 @@ ss::future<ss::lw_shared_ptr<segment>> log_manager::do_make_log_segment(
                 try {
                     auto seg = s.get0();
                     seg->reader().set_last_visible_byte_offset(0);
-                    auto cache = batch_cache_index(_batch_cache);
                     return ss::make_ready_future<ss::lw_shared_ptr<segment>>(
                       ss::make_lw_shared<segment>(
                         std::move(seg->reader()),
                         std::move(seg->index()),
                         std::move(*a),
-                        std::move(cache)));
+                        create_cache()));
                 } catch (...) {
                     auto raw = a.get();
                     return raw->close().then(
@@ -128,6 +130,14 @@ ss::future<ss::lw_shared_ptr<segment>> log_manager::do_make_log_segment(
                 }
             });
       });
+}
+
+std::optional<batch_cache_index> log_manager::create_cache() {
+    if (unlikely(static_cast<bool>(_config.disable_cache))) {
+        return std::nullopt;
+    }
+
+    return batch_cache_index(_batch_cache);
 }
 
 // Recover the last segment. Whenever we close a segment, we will likely
@@ -281,7 +291,7 @@ log_manager::open_segment(const std::filesystem::path& path, size_t buf_size) {
                     std::move(*rdr),
                     std::move(idx),
                     std::nullopt,
-                    batch_cache_index(_batch_cache)));
+                    create_cache()));
             });
       });
 }
