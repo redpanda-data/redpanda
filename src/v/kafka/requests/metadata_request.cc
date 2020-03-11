@@ -28,6 +28,13 @@ void metadata_request::decode(request_context& ctx) {
         include_cluster_authorized_operations = reader.read_bool();
         include_topic_authorized_operations = reader.read_bool();
     }
+
+    if (ctx.header().version > api_version(0)) {
+        list_all_topics = !topics;
+    } else {
+        // For metadata API version 0, empty array requests all topics
+        list_all_topics = topics->empty();
+    }
 }
 
 void metadata_request::encode(response_writer& writer, api_version version) {
@@ -289,17 +296,7 @@ metadata_api::process(request_context&& ctx, ss::smp_service_group g) {
         // FIXME:  #95 Cluster Id
         reply.cluster_id = std::nullopt;
 
-        // list all topics if topics array is not present
-        bool list_all_topics = !request.topics;
-
-        if (unlikely(ctx.header().version == api_version(0))) {
-            // For metadata API version 0, empty array requests all topics
-            if (request.topics->empty()) {
-                list_all_topics = true;
-            }
-        }
-
-        if (list_all_topics) {
+        if (request.list_all_topics) {
             // need to return all topics for empty request list
             auto topics = ctx.metadata_cache().all_topics_metadata();
             std::transform(
