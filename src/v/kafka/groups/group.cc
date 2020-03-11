@@ -343,10 +343,7 @@ group::join_group_unknown_member(join_group_request&& r) {
 
     // <kafka>Only return MEMBER_ID_REQUIRED error if joinGroupRequest version
     // is >= 4 and groupInstanceId is configured to unknown.</kafka>
-    auto require_member_id = r.version >= api_version(4)
-                             && !r.group_instance_id;
-
-    if (require_member_id) {
+    if (r.version >= api_version(4) && !r.group_instance_id) {
         // <kafka>If member id required (dynamic membership), register the
         // member in the pending member list and send back a response to
         // call for another join group request with allocated member id.
@@ -375,10 +372,6 @@ group::join_group_known_member(join_group_request&& r) {
 
     } else if (contains_pending_member(r.member_id)) {
         kglog.trace("making pending member a regular member");
-        if (r.group_instance_id) {
-            throw std::runtime_error(
-              fmt::format("unexpected static pending member {}", r.member_id));
-        }
         kafka::member_id new_member_id = std::move(r.member_id);
         return add_member_and_rebalance(std::move(new_member_id), std::move(r));
 
@@ -409,7 +402,7 @@ group::join_group_known_member(join_group_request&& r) {
 
             join_group_response response(
               error_code::none,
-              kafka::generation_id(-1),
+              generation(),
               protocol().value_or(protocol_name("")),
               leader().value_or(member_id("")),
               std::move(r.member_id),
