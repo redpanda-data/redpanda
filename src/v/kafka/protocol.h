@@ -45,23 +45,49 @@ public:
       ss::sharded<coordinator_ntp_mapper>& coordinator_mapper) noexcept;
 
     ~protocol() noexcept override = default;
+    protocol(const protocol&) = delete;
+    protocol& operator=(const protocol&&) = delete;
+    protocol(protocol&&) noexcept = default;
+    protocol& operator=(protocol&&) noexcept = delete;
+
     const char* name() const final { return "kafka rpc protocol"; }
     // the lifetime of all references here are guaranteed to live
     // until the end of the server (container/parent)
     ss::future<> apply(rpc::server::resources) final;
 
 private:
-    ss::future<>
-    dispatch_method_once(request_header, size_t sz, rpc::server::resources);
-    ss::future<> do_process(request_context, rpc::server::resources);
-    ss::future<> process_next_response(rpc::server::resources);
+    using map_t = absl::
+      flat_hash_map<sequence_id, std::pair<correlation_id, response_ptr>>;
+
+    class connection_context {
+    public:
+        connection_context(protocol& p, rpc::server::resources&& r) noexcept
+          : _proto(p)
+          , _rs(std::move(r)) {}
+        ~connection_context() noexcept = default;
+        connection_context(const connection_context&) = delete;
+        connection_context(connection_context&&) = delete;
+        connection_context& operator=(const connection_context&) = delete;
+        connection_context& operator=(connection_context&&) = delete;
+
+        ss::future<> process_one_request();
+        bool is_finished_parsing() const;
+
+    private:
+        ss::future<> dispatch_method_once(request_header, size_t sz);
+        ss::future<> process_next_response();
+        ss::future<> do_process(request_context);
+
+    private:
+        protocol& _proto;
+        rpc::server::resources _rs;
+        sequence_id _next_response;
+        sequence_id _seq_idx;
+        map_t _responses;
+    };
+    friend connection_context;
 
 private:
-    sequence_id _next_response;
-    sequence_id _seq_idx;
-    absl::flat_hash_map<sequence_id, std::pair<correlation_id, response_ptr>>
-      _responses;
-
     ss::smp_service_group _smp_group;
 
     // services needed by kafka proto
