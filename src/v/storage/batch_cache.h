@@ -62,9 +62,13 @@ public:
     public:
         explicit entry(model::record_batch&& batch)
           : batch(std::move(batch)) {}
+        ~entry() noexcept = default;
+        entry(entry&&) noexcept = delete;
+        entry& operator=(entry&&) noexcept = delete;
         entry(const entry&) = delete;
         entry& operator=(const entry&) = delete;
 
+        // NOLINTNEXTLINE
         model::record_batch batch;
 
     private:
@@ -79,7 +83,7 @@ public:
     batch_cache()
       : _reclaimer(
         [this](reclaimer::request r) { return reclaim(r); },
-        reclaim_scope::async) {}
+        reclaim_scope::sync) {}
 
     batch_cache(const batch_cache&) = delete;
     batch_cache& operator=(const batch_cache&) = delete;
@@ -163,7 +167,28 @@ public:
      */
     size_t reclaim(size_t size);
 
+    /**
+     * returns true if there is an active reclaim happening
+     */
+    bool is_memory_reclaiming() const { return _is_reclaiming; }
+
 private:
+    struct batch_reclaiming_lock {
+        explicit batch_reclaiming_lock(batch_cache& b) noexcept
+          : ref(b)
+          , prev(ref._is_reclaiming) {
+            ref._is_reclaiming = true;
+        }
+        ~batch_reclaiming_lock() noexcept { ref._is_reclaiming = prev; }
+        batch_reclaiming_lock(const batch_reclaiming_lock&) = delete;
+        batch_reclaiming_lock(batch_reclaiming_lock&&) = delete;
+        batch_reclaiming_lock& operator=(const batch_reclaiming_lock&) = delete;
+        batch_reclaiming_lock& operator=(batch_reclaiming_lock&&) = delete;
+
+        batch_cache& ref;
+        bool prev;
+    };
+    friend batch_reclaiming_lock;
     /*
      * The entry point for the Seastar upcall for relcaiming memory. The
      * reclaimer is configured to perform the upcall asynchronously in a new
@@ -171,15 +196,21 @@ private:
      * synchronously with memory allocation is also possible.
      */
     ss::memory::reclaiming_result reclaim(reclaimer::request r) {
-        auto size = std::max(r.bytes_to_reclaim, min_reclaim_size);
-        auto reclaimed = reclaim(size);
-        return reclaimed ? reclaim_result::reclaimed_something
-                         : reclaim_result::reclaimed_nothing;
+        const size_t lower_bound = std::max(
+          r.bytes_to_reclaim, min_reclaim_size);
+        // _attempt_ to reclaim lower_bound. stop at greater than or equal to
+        // lower_bound
+        const size_t reclaimed = reclaim(lower_bound);
+        return reclaimed != 0 ? reclaim_result::reclaimed_something
+                              : reclaim_result::reclaimed_nothing;
     }
 
     intrusive_list<entry, &entry::_hook> _lru;
     intrusive_list<entry, &entry::_hook> _pool;
     reclaimer _reclaimer;
+    bool _is_reclaiming{false};
+
+    friend std::ostream& operator<<(std::ostream&, const batch_cache&);
 };
 
 class batch_cache_index {
