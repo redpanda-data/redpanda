@@ -55,6 +55,10 @@ public:
               filesize);
             return stop_parser::yes;
         }
+        if (header.size_bytes == 0) {
+            vlog(stlog.info, "batch of size 0, Stopping parsing", filesize);
+            return stop_parser::yes;
+        }
         _seg->index().maybe_track(header, physical_base_offset);
         _current_batch_crc = header.crc;
         _file_pos_to_end_of_batch = size_on_disk + physical_base_offset;
