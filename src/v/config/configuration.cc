@@ -200,6 +200,12 @@ configuration::configuration()
       "Timeout (ms) to wait for leadership in metadata cache",
       required::no,
       5'000ms)
+  , default_topic_partitions(
+      *this,
+      "default_topic_partitions",
+      "Default number of partitions per topic",
+      required::no,
+      1)
 
 {}
 
