@@ -28,9 +28,11 @@ struct metadata_request {
     using api_type = metadata_api;
 
     std::optional<std::vector<model::topic>> topics;
-    bool allow_auto_topic_creation = false;             // version >= 4
+    bool allow_auto_topic_creation = true;              // version >= 4
     bool include_cluster_authorized_operations = false; // version >= 8
     bool include_topic_authorized_operations = false;   // version >= 8
+
+    bool list_all_topics;
 
     void encode(response_writer& writer, api_version version);
     void decode(request_context& ctx);

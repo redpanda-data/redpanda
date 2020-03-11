@@ -8,6 +8,7 @@
 #include "model/metadata.h"
 #include "utils/to_string.h"
 
+#include <seastar/core/future-util.hh>
 #include <seastar/core/thread.hh>
 
 #include <fmt/ostream.h>
@@ -21,11 +22,19 @@ void metadata_request::decode(request_context& ctx) {
     topics = reader.read_nullable_array(
       [](request_reader& r) { return model::topic(r.read_string()); });
 
-    allow_auto_topic_creation = version >= api_version(4) ? reader.read_bool()
-                                                          : false;
+    if (version >= api_version(4)) {
+        allow_auto_topic_creation = reader.read_bool();
+    }
     if (version >= api_version(8)) {
         include_cluster_authorized_operations = reader.read_bool();
         include_topic_authorized_operations = reader.read_bool();
+    }
+
+    if (ctx.header().version > api_version(0)) {
+        list_all_topics = !topics;
+    } else {
+        // For metadata API version 0, empty array requests all topics
+        list_all_topics = topics->empty();
     }
 }
 
@@ -263,90 +272,133 @@ std::ostream& operator<<(std::ostream& o, const metadata_response& resp) {
       resp.cluster_authorized_operations);
 }
 
+static ss::future<metadata_response::topic>
+create_topic(request_context& ctx, model::topic&& topic) {
+    return ctx.cntrl_dispatcher().dispatch_to_controller(
+      [topic = std::move(topic)](cluster::controller& c) mutable {
+          auto timeout = ss::lowres_clock::now()
+                         + config::shard_local_cfg().create_topic_timeout_ms();
+
+          // default topic configuration
+          cluster::topic_configuration cfg{
+            cluster::kafka_namespace,
+            topic,
+            config::shard_local_cfg().default_topic_partitions(),
+            config::shard_local_cfg().default_topic_replication()};
+
+          return c.autocreate_topics({std::move(cfg)}, timeout)
+            .then([](std::vector<cluster::topic_result> res) {
+                vassert(res.size() == 1, "expected single result");
+                metadata_response::topic t;
+                t.name = std::move(res[0].topic);
+                if (
+                  res[0].ec == cluster::errc::success
+                  || res[0].ec == cluster::errc::topic_already_exists) {
+                    /*
+                     * currently kafka instructs the client to retry. we may be
+                     * able to be more optimistic here and return some of the
+                     * metadata immediately after topic creation.
+                     */
+                    t.err_code = error_code::leader_not_available;
+                } else {
+                    t.err_code = map_topic_error_code(res[0].ec);
+                }
+                return t;
+            })
+            .handle_exception(
+              [topic = std::move(topic)](std::exception_ptr e) mutable {
+                  metadata_response::topic t;
+                  t.name = std::move(topic);
+                  t.err_code = error_code::request_timed_out;
+                  return t;
+              });
+      });
+}
+
+static ss::future<std::vector<metadata_response::topic>>
+get_topic_metadata(request_context& ctx, metadata_request& request) {
+    std::vector<metadata_response::topic> res;
+
+    // request can be served from whatever happens to be in the cache
+    if (request.list_all_topics) {
+        auto topics = ctx.metadata_cache().all_topics_metadata();
+        std::transform(
+          topics.begin(),
+          topics.end(),
+          std::back_inserter(res),
+          [](model::topic_metadata& t_md) {
+              return metadata_response::topic::make_from_topic_metadata(
+                std::move(t_md));
+          });
+        return ss::make_ready_future<std::vector<metadata_response::topic>>(
+          std::move(res));
+    }
+
+    std::vector<ss::future<metadata_response::topic>> new_topics;
+
+    for (auto& topic : *request.topics) {
+        if (auto md = ctx.metadata_cache().get_topic_metadata(topic); md) {
+            res.push_back(metadata_response::topic::make_from_topic_metadata(
+              std::move(*md)));
+            continue;
+        }
+
+        if (!request.allow_auto_topic_creation) {
+            metadata_response::topic t;
+            t.name = std::move(topic);
+            t.err_code = error_code::unknown_topic_or_partition;
+            res.push_back(std::move(t));
+            continue;
+        }
+
+        new_topics.push_back(create_topic(ctx, std::move(topic)));
+    }
+
+    return ss::when_all_succeed(new_topics.begin(), new_topics.end())
+      .then([res = std::move(res)](
+              std::vector<metadata_response::topic> topics) mutable {
+          res.insert(res.end(), topics.begin(), topics.end());
+          return res;
+      });
+}
+
 ss::future<response_ptr>
 metadata_api::process(request_context&& ctx, ss::smp_service_group g) {
-    return ss::do_with(std::move(ctx), [g](request_context& ctx) {
-        metadata_request request;
-        request.decode(ctx);
-        auto f = ctx.cntrl_dispatcher().dispatch_to_controller(
-          [](cluster::controller& cntrl) { return cntrl.get_leader_id(); });
+    return ss::do_with(
+      std::move(ctx),
+      metadata_response{},
+      [g](request_context& ctx, metadata_response& reply) {
+          auto brokers = ctx.metadata_cache().all_brokers();
+          std::transform(
+            brokers.begin(),
+            brokers.end(),
+            std::back_inserter(reply.brokers),
+            [](cluster::broker_ptr b) {
+                return metadata_response::broker{
+                  .node_id = b->id(),
+                  .host = b->kafka_api_address().host(),
+                  .port = b->kafka_api_address().port(),
+                  .rack = b->rack()};
+            });
 
-        metadata_response reply;
-        auto brokers = ctx.metadata_cache().all_brokers();
-        std::transform(
-          brokers.begin(),
-          brokers.end(),
-          std::back_inserter(reply.brokers),
-          [](cluster::broker_ptr b) {
-              return metadata_response::broker{
-                .node_id = b->id(),
-                .host = b->kafka_api_address().host(),
-                .port = b->kafka_api_address().port(),
-                .rack = b->rack()};
-          });
+          // FIXME:  #95 Cluster Id
+          reply.cluster_id = std::nullopt;
 
-        // FIXME:  #95 Cluster Id
-        reply.cluster_id = std::nullopt;
-
-        // list all topics if topics array is not present
-        bool list_all_topics = !request.topics;
-
-        if (unlikely(ctx.header().version == api_version(0))) {
-            // For metadata API version 0, empty array requests all topics
-            if (request.topics->empty()) {
-                list_all_topics = true;
-            }
-        }
-
-        if (list_all_topics) {
-            // need to return all topics for empty request list
-            auto topics = ctx.metadata_cache().all_topics_metadata();
-            std::transform(
-              topics.begin(),
-              topics.end(),
-              std::back_inserter(reply.topics),
-              [](model::topic_metadata& t_md) {
-                  return metadata_response::topic::make_from_topic_metadata(
-                    std::move(t_md));
-              });
-        } else {
-            // ask cache for each topic separatelly
-            std::transform(
-              std::cbegin(*request.topics),
-              std::cend(*request.topics),
-              std::back_inserter(reply.topics),
-              [&ctx, &request](const model::topic& tp) {
-                  auto opt = ctx.metadata_cache().get_topic_metadata(tp);
-                  if (opt) {
-                      return metadata_response::topic::make_from_topic_metadata(
-                        std::move(*opt));
-                  }
-                  if (request.allow_auto_topic_creation) {
-                      // we do not yet support creation of topics with Metadata
-                      // API
-                      kreq_log.warn(
-                        "Topic autocreation with Metadata API is "
-                        "not yet supported. Topic {} will not be created",
-                        tp());
-                      // TODO: Dispatch topic creation request to leader
-                      //       controller
-                  }
-                  metadata_response::topic r_tp{};
-                  r_tp.name = std::move(tp);
-                  r_tp.err_code = error_code::unknown_topic_or_partition;
-                  return r_tp;
-              });
-        }
-
-        return f.then([&ctx, reply = std::move(reply)](
-                        std::optional<model::node_id> leader_id) mutable {
-            reply.controller_id = leader_id.value_or(model::node_id(-1));
-            response resp;
-            reply.encode(ctx, resp);
-            return ss::make_ready_future<response_ptr>(
-              std::make_unique<response>(std::move(resp)));
-        });
-    });
+          return ctx.cntrl_dispatcher()
+            .dispatch_to_controller([&reply](cluster::controller& cntrl) {
+                auto leader_id = cntrl.get_leader_id();
+                reply.controller_id = leader_id.value_or(model::node_id(-1));
+            })
+            .then([&ctx, &reply]() {
+                metadata_request request;
+                request.decode(ctx);
+                return get_topic_metadata(ctx, request)
+                  .then([&reply](std::vector<metadata_response::topic> topics) {
+                      reply.topics = std::move(topics);
+                  });
+            })
+            .then([&ctx, &reply] { return ctx.respond(std::move(reply)); });
+      });
 }
 
 } // namespace kafka
