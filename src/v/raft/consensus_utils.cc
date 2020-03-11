@@ -72,11 +72,7 @@ ss::future<> writefile(ss::sstring name, ss::temporary_buffer<char> buf) {
             .then([out] { return out->close(); })
             .finally([out] {});
       })
-      .then([tmp_name, name] {
-          return ss::rename_file(tmp_name, name).then([tmp_name] {
-              return ss::remove_file(tmp_name);
-          });
-      })
+      .then([tmp_name, name] { return ss::rename_file(tmp_name, name); })
       .then([path = std::filesystem::path(name.c_str())] {
           return ss::sync_directory(path.parent_path().string());
       });
