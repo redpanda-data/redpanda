@@ -206,8 +206,12 @@ configuration::configuration()
       "Default number of partitions per topic",
       required::no,
       1)
-
-{}
+  , disable_batch_cache(
+      *this,
+      "disable_batch_cache",
+      "Disable batch cache in log manager",
+      required::no,
+      false) {}
 
 void configuration::read_yaml(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {

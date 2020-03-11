@@ -16,6 +16,7 @@
 
 #include <array>
 #include <chrono>
+#include <optional>
 
 namespace storage {
 
@@ -26,8 +27,10 @@ struct log_config {
     size_t max_segment_size;
     // used for testing: keeps a backtrace of operations for debugging
     using sanitize_files = ss::bool_class<struct sanitize_files_tag>;
+    using disable_batch_cache = ss::bool_class<struct disable_cache_tag>;
     sanitize_files should_sanitize;
     std::chrono::milliseconds compaction_interval = std::chrono::minutes(1);
+    disable_batch_cache disable_cache = disable_batch_cache::no;
 };
 
 /**
@@ -138,6 +141,8 @@ private:
     void trigger_housekeeping();
     ss::future<> housekeeping();
 
+    std::optional<batch_cache_index> create_cache();
+    
     log_config _config;
     ss::timer<> _compaction_timer;
     logs_type _logs;
