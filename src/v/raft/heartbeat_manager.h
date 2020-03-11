@@ -91,7 +91,7 @@ private:
     /// to the group if append entries occurred not earlier than last heartbeat
     /// + threashold. This will guarantee that election timer on on the
     /// followers will be reset and that the maximum effective interval between
-    /// heartbeat would be 
+    /// heartbeat would be
     ///
     ///    (_heartbeat_interval - _skip_hbeat_threshold) + _heartbeat_interval
     /// or:

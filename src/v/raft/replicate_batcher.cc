@@ -99,7 +99,7 @@ ss::future<> replicate_batcher::flush() {
                 // vote request and entries from current node could be accepted
                 // by the followers while it is no longer a leader
                 // this problem caused truncation failure.
-                
+
                 if (!_ptr->is_leader()) {
                     for (auto& n : notifications) {
                         n->_promise.set_value(errc::not_leader);
