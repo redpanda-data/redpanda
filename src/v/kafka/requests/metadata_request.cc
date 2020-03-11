@@ -21,8 +21,9 @@ void metadata_request::decode(request_context& ctx) {
     topics = reader.read_nullable_array(
       [](request_reader& r) { return model::topic(r.read_string()); });
 
-    allow_auto_topic_creation = version >= api_version(4) ? reader.read_bool()
-                                                          : false;
+    if (version >= api_version(4)) {
+        allow_auto_topic_creation = reader.read_bool();
+    }
     if (version >= api_version(8)) {
         include_cluster_authorized_operations = reader.read_bool();
         include_topic_authorized_operations = reader.read_bool();
