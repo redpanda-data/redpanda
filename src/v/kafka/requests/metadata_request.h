@@ -32,7 +32,7 @@ struct metadata_request {
     bool include_cluster_authorized_operations = false; // version >= 8
     bool include_topic_authorized_operations = false;   // version >= 8
 
-    bool list_all_topics;
+    bool list_all_topics{false};
 
     void encode(response_writer& writer, api_version version);
     void decode(request_context& ctx);
