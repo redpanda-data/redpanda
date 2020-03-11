@@ -57,6 +57,7 @@ struct configuration final : public config_store {
     property<int16_t> default_topic_replication;
     property<std::chrono::milliseconds> create_topic_timeout_ms;
     property<std::chrono::milliseconds> wait_for_leader_timeout_ms;
+    property<int32_t> default_topic_partitions;
 
     configuration();
 
