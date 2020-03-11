@@ -66,7 +66,7 @@ void metadata_dissemination_service::initialize_leadership_metadata() {
     });
 }
 
-[[gnu::always_inline]] static ss::future<>
+static inline ss::future<>
 wait_for_next_retry(std::chrono::seconds sleep_for, ss::abort_source& as) {
     return ss::sleep_abortable(sleep_for, as)
       .handle_exception_type([](const ss::sleep_aborted&) {
