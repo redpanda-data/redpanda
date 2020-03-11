@@ -70,16 +70,19 @@ ss::scattered_message<char>
 response_as_scattered(response_ptr response, correlation_id correlation) {
     ss::sstring header(
       ss::sstring::initialized_later(), sizeof(raw_response_header));
-    auto* raw_header = reinterpret_cast<raw_response_header*>(header.begin());
-    auto size = int32_t(sizeof(correlation_id) + response->buf().size_bytes());
+    // NOLINTNEXTLINE
+    auto* raw_header = reinterpret_cast<raw_response_header*>(header.data());
+    auto size = int32_t(sizeof(correlation) + response->buf().size_bytes());
     raw_header->size = ss::cpu_to_be(size);
     raw_header->correlation = ss::cpu_to_be(correlation());
 
     ss::scattered_message<char> msg;
     msg.append(std::move(header));
-    for (auto&& chunk : response->buf()) {
+    for (const auto& chunk : response->buf()) {
         msg.append_static(
-          reinterpret_cast<const char*>(chunk.get()), chunk.size());
+          // NOLINTNEXTLINE
+          reinterpret_cast<const char*>(chunk.get()),
+          chunk.size());
     }
     msg.on_delete([response = std::move(response)] {});
     return msg;
