@@ -2,6 +2,7 @@
 #include "kafka/errors.h"
 #include "kafka/requests/fwd.h"
 #include "kafka/types.h"
+#include "model/fundamental.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>
@@ -39,6 +40,9 @@ struct join_group_request final {
     // extra context from request header
     api_version version;
     std::optional<ss::sstring> client_id;
+
+    // set during request processing after mapping group to ntp
+    model::ntp ntp;
 
     void encode(const request_context& ctx, response_writer& writer);
     void decode(request_context& ctx);
