@@ -2,10 +2,14 @@
 
 #include "likely.h"
 #include "model/record.h"
+#include "random/generators.h"
 #include "resource_mgmt/io_priority.h"
 #include "storage/record_batch_builder.h"
 
+#include <seastar/core/seastar.hh>
 #include <seastar/core/thread.hh>
+
+#include <filesystem>
 // delete
 #include <seastar/core/future-util.hh>
 
@@ -57,7 +61,9 @@ ss::future<ss::temporary_buffer<char>> readfile(ss::sstring name) {
 ss::future<> writefile(ss::sstring name, ss::temporary_buffer<char> buf) {
     auto flags = ss::open_flags::wo | ss::open_flags::create
                  | ss::open_flags::truncate;
-    return ss::open_file_dma(std::move(name), flags)
+    auto tmp_name = fmt::format(
+      "{}.atomic.{}", name, random_generators::gen_alphanum_string(8));
+    return ss::open_file_dma(tmp_name, flags)
       .then([b = std::move(buf)](ss::file f) {
           auto out = ss::make_lw_shared<ss::output_stream<char>>(
             make_file_output_stream(std::move(f)));
@@ -65,6 +71,14 @@ ss::future<> writefile(ss::sstring name, ss::temporary_buffer<char> buf) {
             .then([out] { return out->flush(); })
             .then([out] { return out->close(); })
             .finally([out] {});
+      })
+      .then([tmp_name, name] {
+          return ss::rename_file(tmp_name, name).then([tmp_name] {
+              return ss::remove_file(tmp_name);
+          });
+      })
+      .then([path = std::filesystem::path(name.c_str())] {
+          return ss::sync_directory(path.parent_path().string());
       });
 }
 ss::future<>
