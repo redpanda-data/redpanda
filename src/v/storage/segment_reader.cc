@@ -26,7 +26,11 @@ segment_reader::segment_reader(
 
 ss::input_stream<char>
 segment_reader::data_stream(uint64_t pos, const ss::io_priority_class& pc) {
-    vassert(pos <= _file_size, "cannot read negative bytes");
+    vassert(
+      pos <= _file_size,
+      "cannot read negative bytes. Asked to read at position: '{}' - {}",
+      pos,
+      *this);
     ss::file_input_stream_options options;
     options.buffer_size = _buffer_size;
     options.io_priority_class = pc;
