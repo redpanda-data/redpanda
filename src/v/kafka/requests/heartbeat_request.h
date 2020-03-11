@@ -2,6 +2,7 @@
 #include "kafka/errors.h"
 #include "kafka/requests/fwd.h"
 #include "kafka/types.h"
+#include "model/fundamental.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>
@@ -23,6 +24,9 @@ struct heartbeat_request final {
     kafka::generation_id generation_id;
     kafka::member_id member_id;
     std::optional<kafka::group_instance_id> group_instance_id; // >= v3
+
+    // set during request processing after mapping group to ntp
+    model::ntp ntp;
 
     void encode(const request_context& ctx, response_writer& writer);
     void decode(request_context& ctx);

@@ -82,8 +82,12 @@ public:
               join_group_response(
                 request.member_id, error_code::not_coordinator));
         }
+        request.ntp = std::move(shard->first);
         return with_scheduling_group(
-          _sg, [this, shard = *shard, request = std::move(request)]() mutable {
+          _sg,
+          [this,
+           shard = shard->second,
+           request = std::move(request)]() mutable {
               return _group_manager.invoke_on(
                 shard,
                 _ssg,
@@ -99,8 +103,12 @@ public:
             return ss::make_ready_future<sync_group_response>(
               sync_group_response(error_code::not_coordinator));
         }
+        request.ntp = std::move(shard->first);
         return with_scheduling_group(
-          _sg, [this, shard = *shard, request = std::move(request)]() mutable {
+          _sg,
+          [this,
+           shard = shard->second,
+           request = std::move(request)]() mutable {
               return _group_manager.invoke_on(
                 shard,
                 _ssg,
@@ -116,8 +124,12 @@ public:
             return ss::make_ready_future<heartbeat_response>(
               heartbeat_response(error_code::not_coordinator));
         }
+        request.ntp = std::move(shard->first);
         return with_scheduling_group(
-          _sg, [this, shard = *shard, request = std::move(request)]() mutable {
+          _sg,
+          [this,
+           shard = shard->second,
+           request = std::move(request)]() mutable {
               return _group_manager.invoke_on(
                 shard,
                 _ssg,
@@ -134,8 +146,12 @@ public:
             return ss::make_ready_future<leave_group_response>(
               leave_group_response(error_code::not_coordinator));
         }
+        request.ntp = std::move(shard->first);
         return with_scheduling_group(
-          _sg, [this, shard = *shard, request = std::move(request)]() mutable {
+          _sg,
+          [this,
+           shard = shard->second,
+           request = std::move(request)]() mutable {
               return _group_manager.invoke_on(
                 shard,
                 _ssg,
@@ -152,8 +168,12 @@ public:
             return ss::make_ready_future<offset_commit_response>(
               offset_commit_response(request, error_code::not_coordinator));
         }
+        request.ntp = std::move(shard->first);
         return with_scheduling_group(
-          _sg, [this, shard = *shard, request = std::move(request)]() mutable {
+          _sg,
+          [this,
+           shard = shard->second,
+           request = std::move(request)]() mutable {
               return _group_manager.invoke_on(
                 shard,
                 _ssg,
@@ -170,8 +190,12 @@ public:
             return ss::make_ready_future<offset_fetch_response>(
               offset_fetch_response(error_code::not_coordinator));
         }
+        request.ntp = std::move(shard->first);
         return with_scheduling_group(
-          _sg, [this, shard = *shard, request = std::move(request)]() mutable {
+          _sg,
+          [this,
+           shard = shard->second,
+           request = std::move(request)]() mutable {
               return _group_manager.invoke_on(
                 shard,
                 _ssg,
@@ -182,9 +206,12 @@ public:
     }
 
 private:
-    std::optional<ss::shard_id> shard_for(const group_id& group) {
+    std::optional<std::pair<model::ntp, ss::shard_id>>
+    shard_for(const group_id& group) {
         if (auto ntp = _coordinators.local().ntp_for(group); ntp) {
-            return _shards.local().shard_for(*ntp);
+            if (auto shard_id = _shards.local().shard_for(*ntp); shard_id) {
+                return std::make_pair(std::move(*ntp), *shard_id);
+            }
         }
         return std::nullopt;
     }
