@@ -12,7 +12,10 @@ namespace raft::details {
 /// reads all into the tmpbuf to file
 ss::future<ss::temporary_buffer<char>> readfile(ss::sstring name);
 
-/// writes the tmpbuf to file
+/// writes the tmpbuf to file atomically.
+/// first we create a temporary file with <name>.atomic.xxxxxxx where .xxxxxx
+/// are 8 random ascii chars. if the write was successful, we rename the files
+/// and remove the temporary waste.
 ss::future<> writefile(ss::sstring name, ss::temporary_buffer<char> buf);
 
 /// writes a yaml file with voted_for and term of the vote
