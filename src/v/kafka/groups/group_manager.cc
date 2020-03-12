@@ -43,7 +43,7 @@ ss::future<join_group_response>
 group_manager::join_group(join_group_request&& r) {
     kglog.trace("join request {}", r);
 
-    auto error = validate_group_status(r.group_id, join_group_api::key);
+    auto error = validate_group_status(r.ntp, r.group_id, join_group_api::key);
     if (error != error_code::none) {
         kglog.trace("request validation failed with error={}", error);
         return make_join_error(r.member_id, error);
@@ -89,7 +89,7 @@ group_manager::sync_group(sync_group_request&& r) {
         return make_sync_error(error_code::unsupported_version);
     }
 
-    auto error = validate_group_status(r.group_id, sync_group_api::key);
+    auto error = validate_group_status(r.ntp, r.group_id, sync_group_api::key);
     if (error != error_code::none) {
         kglog.trace("invalid group status {}", error);
         if (error == error_code::coordinator_load_in_progress) {
@@ -122,7 +122,7 @@ ss::future<heartbeat_response> group_manager::heartbeat(heartbeat_request&& r) {
         return make_heartbeat_error(error_code::unsupported_version);
     }
 
-    auto error = validate_group_status(r.group_id, heartbeat_api::key);
+    auto error = validate_group_status(r.ntp, r.group_id, heartbeat_api::key);
     if (error != error_code::none) {
         kglog.trace("invalid group status {}", error);
         if (error == error_code::coordinator_load_in_progress) {
@@ -146,7 +146,7 @@ ss::future<leave_group_response>
 group_manager::leave_group(leave_group_request&& r) {
     kglog.trace("leave request {}", r);
 
-    auto error = validate_group_status(r.group_id, leave_group_api::key);
+    auto error = validate_group_status(r.ntp, r.group_id, leave_group_api::key);
     if (error != error_code::none) {
         kglog.trace("invalid group status error={}", error);
         return make_leave_error(error);
@@ -163,7 +163,8 @@ group_manager::leave_group(leave_group_request&& r) {
 
 ss::future<offset_commit_response>
 group_manager::offset_commit(offset_commit_request&& r) {
-    auto error = validate_group_status(r.group_id, offset_commit_api::key);
+    auto error = validate_group_status(
+      r.ntp, r.group_id, offset_commit_api::key);
     if (error != error_code::none) {
         return ss::make_ready_future<offset_commit_response>(
           offset_commit_response(r, error));
@@ -190,7 +191,8 @@ group_manager::offset_commit(offset_commit_request&& r) {
 
 ss::future<offset_fetch_response>
 group_manager::offset_fetch(offset_fetch_request&& r) {
-    auto error = validate_group_status(r.group_id, offset_fetch_api::key);
+    auto error = validate_group_status(
+      r.ntp, r.group_id, offset_fetch_api::key);
     if (error != error_code::none) {
         return ss::make_ready_future<offset_fetch_response>(
           offset_fetch_response(error));
@@ -231,15 +233,29 @@ bool group_manager::valid_group_id(const group_id& group, api_key api) {
 /*
  * TODO
  * - check for group being shutdown
- * - check for group being recovered
- * - check coordinator for correct leader
  */
-error_code
-group_manager::validate_group_status(const group_id& group, api_key api) {
+error_code group_manager::validate_group_status(
+  const model::ntp& ntp, const group_id& group, api_key api) {
     if (!valid_group_id(group, api)) {
         return error_code::invalid_group_id;
     }
-    return error_code::none;
+
+    if (const auto it = _partitions.find(ntp); it != _partitions.end()) {
+        if (!it->second->partition->is_leader()) {
+            kglog.trace("group partition is not leader {}/{}", group, ntp);
+            return error_code::not_coordinator;
+        }
+
+        if (it->second->loading) {
+            kglog.trace("group is loading {}/{}", group, ntp);
+            return error_code::coordinator_load_in_progress;
+        }
+
+        return error_code::none;
+    }
+
+    kglog.trace("group operation misdirected {}/{}", group, ntp);
+    return error_code::not_coordinator;
 }
 
 } // namespace kafka
