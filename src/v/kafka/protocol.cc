@@ -17,7 +17,8 @@
 #include <limits>
 
 namespace kafka {
-static ss::logger klog("kafka");
+static ss::logger klog("kafka"); // NOLINT
+using sequence_id = protocol::sequence_id;
 
 protocol::protocol(
   ss::smp_service_group smp,
@@ -38,34 +39,41 @@ protocol::protocol(
   , _coordinator_mapper(coordinator_mapper) {}
 
 ss::future<> protocol::apply(rpc::server::resources rs) {
+    auto ctx = ss::make_lw_shared<protocol::connection_context>(
+      *this, std::move(rs));
     return ss::do_until(
-      [this, rs] { return rs.conn->input().eof() || rs.abort_requested(); },
-      [this, rs] {
-          return parse_size(rs.conn->input())
-            .then([this, rs](std::optional<size_t> sz) mutable {
-                if (!sz) {
-                    return ss::make_ready_future<>();
-                }
-                return parse_header(rs.conn->input())
-                  // GCC-9 workaround; r = rs is not really needed
-                  .then([this, s = *sz, r = rs](
-                          std::optional<request_header> h) mutable {
-                      if (!h) {
-                          vlog(
-                            klog.debug,
-                            "could not parse header from client: {}",
-                            r.conn->addr);
-                          r.probe().header_corrupted();
-                          return ss::make_ready_future<>();
-                      }
-                      return dispatch_method_once(std::move(h.value()), s, r);
-                  });
-            });
+             [this, ctx] { return ctx->is_finished_parsing(); },
+             [this, ctx] { return ctx->process_one_request(); })
+      .finally([ctx] {});
+}
+
+ss::future<> protocol::connection_context::process_one_request() {
+    return parse_size(_rs.conn->input())
+      .then([this](std::optional<size_t> sz) mutable {
+          if (!sz) {
+              return ss::make_ready_future<>();
+          }
+          return parse_header(_rs.conn->input())
+            .then(
+              [this, s = sz.value()](std::optional<request_header> h) mutable {
+                  if (!h) {
+                      vlog(
+                        klog.debug,
+                        "could not parse header from client: {}",
+                        _rs.conn->addr);
+                      _rs.probe().header_corrupted();
+                      return ss::make_ready_future<>();
+                  }
+                  return dispatch_method_once(std::move(h.value()), s);
+              });
       });
 }
 
-ss::future<> protocol::dispatch_method_once(
-  request_header hdr, size_t size, rpc::server::resources rs) {
+bool protocol::connection_context::is_finished_parsing() const {
+    return _rs.conn->input().eof() || _rs.abort_requested();
+}
+ss::future<> protocol::connection_context::dispatch_method_once(
+  request_header hdr, size_t size) {
     // Allow for extra copies and bookkeeping
     auto mem_estimate = size * 2 + 8000;
     if (mem_estimate >= (size_t)std::numeric_limits<int32_t>::max()) {
@@ -75,11 +83,11 @@ ss::future<> protocol::dispatch_method_once(
           size,
           mem_estimate));
     }
-    auto fut = ss::get_units(rs.memory(), mem_estimate);
-    if (rs.memory().waiters()) {
-        rs.probe().waiting_for_available_memory();
+    auto fut = ss::get_units(_rs.memory(), mem_estimate);
+    if (_rs.memory().waiters()) {
+        _rs.probe().waiting_for_available_memory();
     }
-    return fut.then([this, header = std::move(hdr), size, rs](
+    return fut.then([this, header = std::move(hdr), size](
                       ss::semaphore_units<> units) mutable {
         // update the throughput tracker for this client using the
         // size of the current request and return any computed delay
@@ -92,7 +100,7 @@ ss::future<> protocol::dispatch_method_once(
         // distinguish throttling delays from real delays. delays
         // applied to subsequent messages allow backpressure to take
         // affect.
-        auto delay = _quota_mgr.local().record_tp_and_throttle(
+        auto delay = _proto._quota_mgr.local().record_tp_and_throttle(
           header.client_id, size);
 
         // apply the throttling delay, if any.
@@ -100,33 +108,31 @@ ss::future<> protocol::dispatch_method_once(
                                                     : ss::sleep(delay.duration);
         return throttle_delay.then([this,
                                     size,
-                                    rs,
                                     header = std::move(header),
                                     units = std::move(units),
-                                    delay = std::move(delay)]() mutable {
+                                    delay = delay]() mutable {
             auto remaining = size - sizeof(raw_request_header)
                              - header.client_id_buffer.size();
-            return read_iobuf_exactly(rs.conn->input(), remaining)
+            return read_iobuf_exactly(_rs.conn->input(), remaining)
               .then([this,
-                     rs,
                      header = std::move(header),
                      units = std::move(units),
-                     delay = std::move(delay)](iobuf buf) mutable {
-                  auto ctx = request_context(
-                    _metadata_cache,
-                    _cntrl_dispatcher.local(),
+                     delay = delay](iobuf buf) mutable {
+                  auto rctx = request_context(
+                    _proto._metadata_cache,
+                    _proto._cntrl_dispatcher.local(),
                     std::move(header),
                     std::move(buf),
                     delay.duration,
-                    _group_router.local(),
-                    _shard_table.local(),
-                    _partition_manager,
-                    _coordinator_mapper);
+                    _proto._group_router.local(),
+                    _proto._shard_table.local(),
+                    _proto._partition_manager,
+                    _proto._coordinator_mapper);
                   // background process this one full request
                   (void)ss::with_gate(
-                    rs.conn_gate(),
-                    [this, ctx = std::move(ctx), rs]() mutable {
-                        return do_process(std::move(ctx), rs);
+                    _rs.conn_gate(),
+                    [this, rctx = std::move(rctx)]() mutable {
+                        return do_process(std::move(rctx));
                     })
                     .finally([units = std::move(units)] {});
               });
@@ -134,20 +140,25 @@ ss::future<> protocol::dispatch_method_once(
     });
 }
 
-ss::future<>
-protocol::do_process(request_context ctx, rpc::server::resources rs) {
-    auto correlation = ctx.header().correlation;
-    sequence_id seq = _seq_idx;
+ss::future<> protocol::connection_context::do_process(request_context ctx) {
+    const auto correlation = ctx.header().correlation;
+    const sequence_id seq = _seq_idx;
+    vlog(klog.info, "do_process: correlation:{}, seq:{}", correlation, seq);
     _seq_idx = _seq_idx + sequence_id(1);
-    return kafka::process_request(std::move(ctx), _smp_group)
-      .then([this, rs, seq, correlation](response_ptr f) mutable {
+    return kafka::process_request(std::move(ctx), _proto._smp_group)
+      .then([this, seq, correlation](response_ptr f) mutable {
+          vlog(
+            klog.info,
+            "do_process.then(): correlation:{}, seq:{}",
+            correlation,
+            seq);
           _responses.insert({seq, std::make_pair(correlation, std::move(f))});
-          return process_next_response(rs);
+          return process_next_response();
       });
 }
 
-ss::future<> protocol::process_next_response(rpc::server::resources rs) {
-    return ss::repeat([this, rs]() mutable {
+ss::future<> protocol::connection_context::process_next_response() {
+    return ss::repeat([this]() mutable {
         auto it = _responses.find(_next_response);
         if (it == _responses.end()) {
             return ss::make_ready_future<ss::stop_iteration>(
@@ -156,13 +167,13 @@ ss::future<> protocol::process_next_response(rpc::server::resources rs) {
         // found one; increment counter
         _next_response = _next_response + sequence_id(1);
         try {
-            correlation_id corr = it->second.first;
+            const correlation_id corr = it->second.first;
             response_ptr r = std::move(it->second.second);
             _responses.erase(it);
             auto msg = response_as_scattered(std::move(r), corr);
-            rs.probe().add_bytes_sent(msg.size());
-            rs.probe().request_completed();
-            return rs.conn->write(std::move(msg)).then([this] {
+            _rs.probe().add_bytes_sent(msg.size());
+            _rs.probe().request_completed();
+            return _rs.conn->write(std::move(msg)).then([this] {
                 return ss::make_ready_future<ss::stop_iteration>(
                   ss::stop_iteration::no);
             });
