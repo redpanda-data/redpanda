@@ -34,6 +34,7 @@ setup(
         'yapf',
         'crc32c',
         'peewee',
+        'ansible',
     ],
     scripts=[],
     entry_points={
