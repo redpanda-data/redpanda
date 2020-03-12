@@ -54,6 +54,7 @@ group_state group::set_state(group_state s) {
     if (!valid_previous_state(s)) {
         std::terminate();
     }
+    _state_timestamp = clock_type::now();
     return std::exchange(_state, s);
 }
 
