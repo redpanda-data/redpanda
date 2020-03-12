@@ -98,6 +98,7 @@ public:
     group(kafka::group_id id, group_state s, config::configuration& conf)
       : _id(id)
       , _state(s)
+      , _state_timestamp(clock_type::now())
       , _generation(0)
       , _num_members_joining(0)
       , _new_member_added(false)
@@ -379,6 +380,7 @@ private:
 
     kafka::group_id _id;
     group_state _state;
+    clock_type::time_point _state_timestamp;
     model::ntp _ntp;
     kafka::generation_id _generation;
     protocol_support _supported_protocols;
