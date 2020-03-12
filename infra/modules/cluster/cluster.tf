@@ -34,42 +34,12 @@ resource "aws_instance" "node" {
     private_key = file(var.private_key_path)
   }
 
-  provisioner "local-exec" {
-    command = "echo 'IdentityFile ${var.private_key_path}\nCompression yes' > ${local.ssh_config_file}"
-  }
-
-  provisioner "local-exec" {
-    environment = {
-      PKG_PATH        = var.local_package_abs_path
-      SSH_KEY         = var.private_key_path
-      SSH_USER        = var.distro_ssh_user[var.distro]
-      SSH_CONFIG_FILE = local.ssh_config_file
-      IP              = self.public_ip
-      TIMEOUT         = var.ssh_timeout
-      RETRIES         = var.ssh_retries
-    }
-
-    command = "./scp_local_pkg.sh"
-  }
-
-  provisioner "file" {
-    source      = "init.sh"
-    destination = "/tmp/init.sh"
-  }
-
+  # allow ssh as root
   provisioner "remote-exec" {
     inline = [
-      "set -ex",
-      "chmod +x /tmp/init.sh",
-      "/tmp/init.sh ${var.packagecloud_token}",
-      "sudo rpk config set id ${count.index}",
+      "sudo cp /home/${var.distro_ssh_user[var.distro]}/.ssh/* /root/.ssh/",
+      "sudo bash -c 'echo PermitRootLogin yes >> /etc/ssh/sshd_config'",
     ]
-  }
-
-  provisioner "local-exec" {
-    when       = destroy
-    on_failure = continue
-    command    = "rm ${local.ssh_config_file}"
   }
 }
 

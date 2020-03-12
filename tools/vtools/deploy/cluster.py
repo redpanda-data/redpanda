@@ -4,12 +4,8 @@ import git
 from datetime import date
 import json
 from absl import logging
-import paramiko
 from ..vlib import rotate_ssh_keys as keys
 from ..vlib import shell
-from ..vlib import rotate_ssh_keys as keys
-from ..vlib import config
-from ..vlib import ssh
 from . import install_deps as deps
 
 tfvars_key = 'deploy.cluster.tf.vars'
@@ -44,22 +40,6 @@ Please run `vtools deploy cluster --destroy true` before deploying again.''')
     module = 'cluster'
     _run_terraform_cmd(vconfig, 'apply', module, install_deps, log,
                        terraform_vars)
-    outputs = _get_tf_outputs(vconfig, module)
-    ssh_user = outputs['ssh_user']['value']
-    private_ips = outputs['private_ips']['value']
-    public_ips = outputs['ip']['value']
-    joined_private_ips = ','.join(private_ips)
-    for i in range(len(private_ips)):
-        ip = private_ips[i]
-        pub_ip = public_ips[i]
-        cmd = f'''sudo rpk config set seed-nodes --hosts {joined_private_ips} && \
-sudo rpk config set kafka-api --ip {ip} --port 9092  && \
-sudo rpk config set rpc-server --ip {ip} --port 33145  && \
-sudo rpk config set stats-id --organization io.vectorized --cluster-id test  && \
-sudo systemctl start redpanda-tuner && \
-sudo systemctl start redpanda'''
-        ssh.add_known_host(pub_ip, ssh_port, ssh_timeout, ssh_retries)
-        ssh.run_subprocess(pub_ip, ssh_user, key_path, cmd)
 
 
 def destroy(vconfig, install_deps, ssh_key, log):
@@ -93,10 +73,10 @@ def _run_terraform(vconfig, action, module, tf_vars):
 
 
 def _parse_tf_vars(tfvars):
-    if tfvars == None:
+    if tfvars is None:
         return ''
     for v in tfvars:
-        res = re.match('(\w+)=[.\d\S]+', v)
+        res = re.match(r'(\w+)=[.\d\S]+', v)
         if res is None:
             logging.fatal(
                 f'"{v}" does not match the required "key=value" format')

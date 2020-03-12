@@ -1,0 +1,32 @@
+- hosts: all
+  tasks:
+  - name: create filesystem
+    filesystem:
+      fstype: xfs
+      dev: /dev/nvme0n1
+
+  - name: mount nvme device
+    mount:
+      path: /var/lib/redpanda
+      src: /dev/nvme0n1
+      fstype: xfs
+      opts: noatime
+      state: present
+
+  - name: copy package
+    copy:
+      src: '{{ redpanda_pkg_file }}'
+      dest: '/tmp/{{ redpanda_pkg_file | basename }}'
+    when: 'redpanda_pkg_file is defined'
+
+  - name: install package with rpm
+    command: 'rpm -i /tmp/{{ redpanda_pkg_file | basename }}'
+    when:
+    - 'redpanda_pkg_file is defined'
+    - '".rpm" in redpanda_pkg_file'
+
+  - name: install package with dpkg
+    command: 'dpkg -i /tmp/{{ redpanda_pkg_file | basename }}'
+    when:
+    - 'redpanda_pkg_file is defined'
+    - '".deb" in redpanda_pkg_file'
