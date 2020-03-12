@@ -1,11 +1,5 @@
 #pragma once
 
-#ifndef NO_CONCEPTS
+#include <seastar/util/gcc6-concepts.hh>
 
-#define CONCEPT(x...) x
-
-#else
-
-#define CONCEPT(x...)
-
-#endif
+#define CONCEPT(...) GCC6_CONCEPT(__VA_ARGS__)

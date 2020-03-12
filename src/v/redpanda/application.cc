@@ -89,7 +89,7 @@ ss::app_template application::setup_app_template() {
 void application::hydrate_config(const po::variables_map& cfg) {
     auto buf = read_fully(cfg["redpanda-cfg"].as<std::string>()).get0();
     // see https://github.com/jbeder/yaml-cpp/issues/765
-    ss::sstring workaround(ss::sstring::initialized_later(), buf.size_bytes());
+    auto workaround = ss::uninitialized_string(buf.size_bytes());
     auto in = iobuf::iterator_consumer(buf.cbegin(), buf.cend());
     in.consume_to(buf.size_bytes(), workaround.begin());
     YAML::Node config = YAML::Load(workaround);

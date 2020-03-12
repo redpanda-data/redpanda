@@ -408,11 +408,12 @@ public:
         }
     }
 
-    // clang-format off
     template<typename Consumer>
+    // clang-format off
     CONCEPT(requires requires(Consumer c, const char* src, size_t max) {
-        { c(src, max) } -> ss::stop_iteration;
-    })
+                    { c(src, max) } -> ss::stop_iteration;
+            }
+    )
     // clang-format on
     /// takes a Consumer object and iteraters over the chunks in oder, from the
     /// given buffer index position. Use a stop_iteration::yes for early exit;

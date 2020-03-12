@@ -82,7 +82,7 @@ function (rp_test)
     target_compile_definitions(${RP_TEST_BINARY_NAME} PUBLIC -DSEASTAR_TESTING_MAIN)
   endif()
   target_link_libraries(
-    ${RP_TEST_BINARY_NAME} "${RP_TEST_LIBRARIES}" $<TARGET_NAME_IF_EXISTS:Libcxx::libcxx>)
+    ${RP_TEST_BINARY_NAME} PUBLIC "${RP_TEST_LIBRARIES}" $<TARGET_NAME_IF_EXISTS:Libcxx::libcxx>)
 
   foreach(i ${RP_TEST_INCLUDES})
     target_include_directories(${RP_TEST_BINARY_NAME} PUBLIC ${i})

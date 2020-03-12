@@ -20,6 +20,7 @@ inline std::random_device::result_type get_seed() {
     auto seed = rd();
     return seed;
 }
+// NOLINTNEXTLINE
 static thread_local std::default_random_engine gen(internal::get_seed());
 } // namespace internal
 
@@ -41,18 +42,18 @@ T get_int(T max) {
 }
 
 inline bytes get_bytes(size_t n = 128 * 1024) {
-    bytes b(bytes::initialized_later(), n);
+    auto b = ss::uninitialized_string<bytes>(n);
     std::generate_n(b.begin(), n, [] { return get_int<bytes::value_type>(); });
     return b;
 }
 
 inline ss::sstring gen_alphanum_string(size_t n) {
-    static constexpr char chars[]
+    static constexpr std::string_view chars
       = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     // do not include \0
-    static constexpr std::size_t max_index = sizeof(chars) - 2;
+    static constexpr std::size_t max_index = chars.size() - 2;
     std::uniform_int_distribution<size_t> dist(0, max_index);
-    ss::sstring s(ss::sstring::initialized_later(), n);
+    auto s = ss::uninitialized_string(n);
     std::generate_n(
       s.begin(), n, [&dist] { return chars[dist(internal::gen)]; });
     return s;

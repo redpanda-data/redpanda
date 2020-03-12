@@ -82,7 +82,7 @@ BOOST_AUTO_TEST_CASE(test_empty_istream) {
 
     BOOST_CHECK_THROW(in.consume_type<char>(), std::out_of_range);
 
-    bytes b(bytes::initialized_later(), 10);
+    bytes b = ss::uninitialized_string<bytes>(10);
     BOOST_CHECK_THROW(in.consume_to(1, b.begin()), std::out_of_range);
     in.consume_to(0, b.begin());
 }
@@ -174,7 +174,7 @@ BOOST_AUTO_TEST_CASE(traver_all_bytes_one_at_a_time) {
     const char* str = "alex";
     io.append(str, std::strlen(str));
     BOOST_CHECK_EQUAL(io.size_bytes(), std::strlen(str));
-    ss::sstring expected(ss::sstring::initialized_later(), std::strlen(str));
+    auto expected = ss::uninitialized_string(std::strlen(str));
     BOOST_CHECK_EQUAL(expected.size(), std::strlen(str));
     auto begin = iobuf::byte_iterator(io.cbegin(), io.cend());
     auto end = iobuf::byte_iterator(io.cend(), io.cend());

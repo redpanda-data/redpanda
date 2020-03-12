@@ -21,7 +21,8 @@ public:
       std::optional<batch_cache_index>) noexcept;
     ~segment() noexcept = default;
     segment(segment&&) noexcept = default;
-    segment& operator=(segment&&) noexcept = default;
+    // rwlock does not have move-assignment
+    segment& operator=(segment&&) noexcept = delete;
     segment(const segment&) = delete;
     segment& operator=(const segment&) = delete;
 

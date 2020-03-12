@@ -108,6 +108,11 @@ struct fetch_request final {
             normalize();
             return *this;
         }
+        const_iterator operator++(int) {
+            const_iterator tmp = *this;
+            ++(*this);
+            return tmp;
+        }
 
         bool operator==(const const_iterator& o) const noexcept {
             if (state_.topic == o.state_.topic) {

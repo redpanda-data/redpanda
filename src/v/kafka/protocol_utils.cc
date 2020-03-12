@@ -68,8 +68,7 @@ ss::future<std::optional<size_t>> parse_size(ss::input_stream<char>& src) {
 
 ss::scattered_message<char>
 response_as_scattered(response_ptr response, correlation_id correlation) {
-    ss::sstring header(
-      ss::sstring::initialized_later(), sizeof(raw_response_header));
+    auto header = ss::uninitialized_string(sizeof(raw_response_header));
     // NOLINTNEXTLINE
     auto* raw_header = reinterpret_cast<raw_response_header*>(header.data());
     auto size = int32_t(sizeof(correlation) + response->buf().size_bytes());
