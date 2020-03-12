@@ -16,6 +16,7 @@
 #include "kafka/requests/request_context.h"
 #include "kafka/requests/sync_group_request.h"
 #include "utils/to_string.h"
+#include "vlog.h"
 
 #include <seastar/core/print.hh>
 #include <seastar/util/log.hh>
@@ -43,7 +44,12 @@ ss::future<response_ptr> do_process(
 ss::future<response_ptr>
 process_request(request_context&& ctx, ss::smp_service_group g) {
     // Eventually generate this with meta-classes.
-    kreq_log.debug("Processing request for API {}", ctx.header().key);
+    vlog(
+      kreq_log.debug,
+      "Processing request for API {} {}",
+      ctx.header().key,
+      ctx.header().client_id.value_or(std::string_view("unset-client-id")));
+
     switch (ctx.header().key) {
     case api_versions_api::key:
         return api_versions_api::process(std::move(ctx), std::move(g));
