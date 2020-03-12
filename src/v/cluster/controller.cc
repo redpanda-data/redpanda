@@ -589,8 +589,7 @@ controller::create_topic_cfg_batch(const topic_configuration& cfg) {
 
     auto assignments = _allocator->allocate(cfg);
     if (!assignments) {
-        clusterlog.error(
-          "Unable to allocate partitions for topic '{}'", cfg.topic());
+        vlog(clusterlog.error, "Unable to allocate partitions for {}", cfg);
         return std::nullopt;
     }
     log_record_key assignment_key = {

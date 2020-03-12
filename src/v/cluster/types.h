@@ -65,6 +65,7 @@ struct topic_configuration {
       = model::topic_partition::compaction::no;
     uint64_t retention_bytes = 0;
     model::timeout_clock::duration retention = model::max_duration;
+    friend std::ostream& operator<<(std::ostream&, const topic_configuration&);
 };
 
 struct topic_result {

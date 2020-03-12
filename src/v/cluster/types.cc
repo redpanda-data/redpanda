@@ -1,5 +1,23 @@
 #include "cluster/types.h"
 
+#include <chrono>
+
+namespace cluster {
+
+std::ostream& operator<<(std::ostream& o, const topic_configuration& cfg) {
+    return o << "{ns:" << cfg.ns << ", topic:" << cfg.topic
+             << ", partition_count:" << cfg.partition_count
+             << ", replication_factor:" << cfg.replication_factor
+             << ", compression" << cfg.compression
+             << ", retention_bytes: " << cfg.retention_bytes
+             << ", retention_duration_hours:"
+             << std::chrono::duration_cast<std::chrono::hours>(cfg.retention)
+                  .count()
+             << "}";
+}
+
+} // namespace cluster
+
 namespace reflection {
 void adl<cluster::topic_configuration>::to(
   iobuf& out, cluster::topic_configuration&& t) {
