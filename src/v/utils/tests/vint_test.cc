@@ -23,8 +23,8 @@ std::mt19937 random_generator() {
 
 void check_roundtrip_sweep(int count) {
     auto verify_round_trip = [](vint::value_type value) {
-        static bytes encoding_buffer(
-          bytes::initialized_later(), vint::max_length);
+        static auto encoding_buffer = ss::uninitialized_string<bytes>(
+          vint::max_length);
         const auto size = vint::serialize(value, encoding_buffer.begin());
         const auto view = bytes_view(encoding_buffer.data(), size);
         const auto [deserialized, _] = vint::deserialize(view);

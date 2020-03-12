@@ -74,8 +74,7 @@ if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
         -D_LIBCPP_ENABLE_CXX17_REMOVED_AUTO_PTR
         -DSEASTAR_USE_STD_OPTIONAL_VARIANT_STRINGVIEW
         ${LLVM_LIBCPP_INCLUDE_FLAG}
-        --stdlib=libc++
-        -DNO_CONCEPTS)
+        --stdlib=libc++)
 elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
     if ("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
         # Add gdb-index option only for GCC and Debug build

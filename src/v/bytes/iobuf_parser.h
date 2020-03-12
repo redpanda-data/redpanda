@@ -26,14 +26,14 @@ public:
     }
 
     ss::sstring read_string(size_t len) {
-        ss::sstring str(ss::sstring::initialized_later(), len);
+        ss::sstring str = ss::uninitialized_string(len);
         _in.consume_to(str.size(), str.begin());
         validate_utf8(str);
         return str;
     }
 
     bytes read_bytes(size_t n) {
-        bytes b(bytes::initialized_later(), n);
+        auto b = ss::uninitialized_string<bytes>(n);
         _in.consume_to(n, b.begin());
         return b;
     }
