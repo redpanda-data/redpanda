@@ -143,15 +143,9 @@ ss::future<> protocol::connection_context::dispatch_method_once(
 ss::future<> protocol::connection_context::do_process(request_context ctx) {
     const auto correlation = ctx.header().correlation;
     const sequence_id seq = _seq_idx;
-    vlog(klog.info, "do_process: correlation:{}, seq:{}", correlation, seq);
     _seq_idx = _seq_idx + sequence_id(1);
     return kafka::process_request(std::move(ctx), _proto._smp_group)
       .then([this, seq, correlation](response_ptr f) mutable {
-          vlog(
-            klog.info,
-            "do_process.then(): correlation:{}, seq:{}",
-            correlation,
-            seq);
           _responses.insert({seq, std::make_pair(correlation, std::move(f))});
           return process_next_response();
       });
