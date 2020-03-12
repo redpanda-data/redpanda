@@ -79,6 +79,8 @@ private:
 
     // for partition_allocator
     safe_intrusive_list_hook _hook;
+
+    friend std::ostream& operator<<(std::ostream&, const allocation_node&);
 };
 
 struct partition_allocator_tester;

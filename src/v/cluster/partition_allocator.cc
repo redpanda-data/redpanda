@@ -1,9 +1,13 @@
 #include "cluster/partition_allocator.h"
 
+#include "cluster/logger.h"
+#include "vlog.h"
+
 #include <boost/container_hash/hash.hpp>
 #include <roaring/roaring.hh>
 
 #include <algorithm>
+#include <numeric>
 #include <random>
 
 namespace cluster {
@@ -68,7 +72,7 @@ partition_allocator::allocate_replicas(int16_t replication_factor) {
         }
         const uint32_t cpu = machine.allocate();
         model::broker_shard bs{.node_id = machine.id(), .shard = cpu};
-        replicas.push_back(std::move(bs));
+        replicas.push_back(bs);
         if (machine.is_full()) {
             _available_machines.erase(_available_machines.iterator_to(machine));
         }
@@ -84,6 +88,21 @@ partition_allocator::allocate_replicas(int16_t replication_factor) {
 std::optional<std::vector<partition_assignment>>
 partition_allocator::allocate(const topic_configuration& cfg) {
     if (_available_machines.empty()) {
+        return std::nullopt;
+    }
+    const int32_t cap = std::accumulate(
+      _available_machines.begin(),
+      _available_machines.end(),
+      int32_t(0),
+      [](int32_t acc, const allocation_node& n) {
+          return acc + n.partition_capacity();
+      });
+    if (cap < cfg.partition_count) {
+        vlog(
+          clusterlog.info,
+          "Cannot allocate request: {}. Exceeds maximum capacity left:{}",
+          cfg,
+          cap);
         return std::nullopt;
     }
     std::vector<partition_assignment> ret;
@@ -186,4 +205,15 @@ partition_allocator::test_only_max_cluster_allocation_partition_capacity()
           return acc + n.partition_capacity();
       });
 }
+
+std::ostream& operator<<(std::ostream& o, const allocation_node& n) {
+    o << "{ node:" << n._id << ", max_partitions_per_core: "
+      << allocation_node::max_allocations_per_core
+      << ", partition_capacity:" << n._partition_capacity << ", weights: [";
+    for (auto w : n._weights) {
+        o << "(" << w << ")";
+    }
+    return o << "]}";
+}
+
 } // namespace cluster
