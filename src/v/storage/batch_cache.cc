@@ -18,13 +18,20 @@ batch_cache::entry_ptr batch_cache::put(model::record_batch batch) {
 }
 
 size_t batch_cache::reclaim(size_t size) {
+    if (is_memory_reclaiming()) {
+        return 0;
+    }
+    batch_reclaiming_lock lock(*this);
     size_t reclaimed = 0;
+
     while (reclaimed < size && !_lru.empty()) {
         reclaimed += _lru.front().batch.memory_usage();
+        // NOLINTNEXTLINE
         _lru.pop_front_and_dispose([](entry* e) { delete e; });
     }
     while (reclaimed < size && !_pool.empty()) {
         reclaimed += _pool.front().batch.memory_usage();
+        // NOLINTNEXTLINE
         _pool.pop_front_and_dispose([](entry* e) { delete e; });
     }
     return reclaimed;
@@ -110,6 +117,11 @@ void batch_cache_index::truncate(model::offset offset) {
     }
 }
 
+std::ostream& operator<<(std::ostream& o, const batch_cache& b) {
+    // NOTE: intrusive list have a O(N) for size.
+    // Do _not_ print size of _lru or _pool
+    return o << "{ is_reclaiming:" << b.is_memory_reclaiming() << "}";
+}
 std::ostream&
 operator<<(std::ostream& o, const batch_cache_index::read_result& c) {
     o << "{batches:" << c.batches.size() << ", memory_usage:" << c.memory_usage
