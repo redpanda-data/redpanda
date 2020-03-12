@@ -414,10 +414,11 @@ public:
                     { c(src, max) } -> ss::stop_iteration;
             }
     )
-    // clang-format on
-    /// takes a Consumer object and iteraters over the chunks in oder, from the
-    /// given buffer index position. Use a stop_iteration::yes for early exit;
-    size_t consume(const size_t n, Consumer&& f) {
+      // clang-format on
+      /// takes a Consumer object and iteraters over the chunks in oder, from
+      /// the given buffer index position. Use a stop_iteration::yes for early
+      /// exit;
+      size_t consume(const size_t n, Consumer&& f) {
         size_t i = 0;
         while (i < n) {
             if (_frag == _frag_end) {
