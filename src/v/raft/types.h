@@ -34,12 +34,14 @@ struct [[gnu::packed]] protocol_metadata {
     ss::unaligned<group_id::type> group = -1;
     ss::unaligned<model::offset::type> commit_index
       = std::numeric_limits<model::offset::type>::min();
-    ss::unaligned<model::term_id::type> term = -1;
+    ss::unaligned<model::term_id::type> term
+      = std::numeric_limits<model::term_id::type>::min();
 
     /// \brief used for completeness
     ss::unaligned<model::offset::type> prev_log_index
       = std::numeric_limits<model::offset::type>::min();
-    ss::unaligned<model::term_id::type> prev_log_term = -1;
+    ss::unaligned<model::term_id::type> prev_log_term
+      = std::numeric_limits<model::term_id::type>::min();
 };
 
 struct group_configuration {
@@ -107,7 +109,8 @@ struct [[gnu::packed]] append_entries_reply {
     ss::unaligned<model::node_id::type> node_id = -1;
     ss::unaligned<group_id::type> group = -1;
     /// \brief callee's term, for the caller to upate itself
-    ss::unaligned<model::term_id::type> term = -1;
+    ss::unaligned<model::term_id::type> term
+      = std::numeric_limits<model::term_id::type>::min();
     /// \brief The recipient's last log index after it applied changes to
     /// the log. This is used to speed up finding the correct value for the
     /// nextIndex with a follower that is far behind a leader
@@ -136,15 +139,18 @@ struct [[gnu::packed]] vote_request {
     ss::unaligned<model::node_id::type> node_id = 0;
     ss::unaligned<group_id::type> group = -1;
     /// \brief current term
-    ss::unaligned<model::term_id::type> term = -1;
+    ss::unaligned<model::term_id::type> term
+      = std::numeric_limits<model::term_id::type>::min();
     /// \brief used to compare completeness
     ss::unaligned<model::offset::type> prev_log_index = 0;
-    ss::unaligned<model::term_id::type> prev_log_term = -1;
+    ss::unaligned<model::term_id::type> prev_log_term
+      = std::numeric_limits<model::term_id::type>::min();
 };
 
 struct [[gnu::packed]] vote_reply {
     /// \brief callee's term, for the caller to upate itself
-    ss::unaligned<model::term_id::type> term = -1;
+    ss::unaligned<model::term_id::type> term
+      = std::numeric_limits<model::term_id::type>::min();
 
     /// True if the follower granted the candidate it's vote, false otherwise
     ss::unaligned<bool> granted = false;
