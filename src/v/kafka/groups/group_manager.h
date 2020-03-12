@@ -53,7 +53,9 @@ public:
     offset_fetch(offset_fetch_request&& request);
 
 public:
-    static error_code validate_group_status(const group_id& group, api_key api);
+    error_code validate_group_status(
+      const model::ntp& ntp, const group_id& group, api_key api);
+
     static bool valid_group_id(const group_id& group, api_key api);
 
 private:
