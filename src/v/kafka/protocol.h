@@ -11,6 +11,7 @@
 
 #include <seastar/core/future.hh>
 #include <seastar/core/metrics_registration.hh>
+#include <seastar/core/scattered_message.hh>
 #include <seastar/core/sharded.hh>
 
 #include <absl/container/flat_hash_map.h>
@@ -56,8 +57,7 @@ public:
     ss::future<> apply(rpc::server::resources) final;
 
 private:
-    using map_t = absl::
-      flat_hash_map<sequence_id, std::pair<correlation_id, response_ptr>>;
+    using map_t = absl::flat_hash_map<sequence_id, ss::scattered_message<char>>;
 
     class connection_context {
     public:

@@ -33,7 +33,7 @@ replicate_batcher::replicate(model::record_batch_reader&& r) {
                  return do_cache(std::move(r));
              })
       .then([this](item_ptr i) {
-          if (_pending_bytes < _max_batch_size) {
+          if (_pending_bytes < _max_batch_size || !_flush_timer.armed()) {
               _flush_timer.rearm(clock_type::now() + 4ms);
           }
           return i->_promise.get_future();
