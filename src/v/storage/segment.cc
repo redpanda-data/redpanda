@@ -84,15 +84,17 @@ ss::future<> segment::release_appender() {
 
 ss::future<> segment::flush() {
     check_segment_not_closed("flush()");
-    // should be outside of the appender block
-    _reader.set_last_written_offset(dirty_offset());
-    if (_appender) {
-        return _appender->flush().then([this] {
-            _reader.set_last_visible_byte_offset(_appender->file_byte_offset());
-        });
+    if (!_appender) {
+        return ss::make_ready_future<>();
     }
-    return ss::make_ready_future<>();
+    auto o = dirty_offset();
+    auto bytes = _appender->file_byte_offset();
+    return _appender->flush().then([this, o, bytes] {
+        _reader.set_last_written_offset(o);
+        _reader.set_last_visible_byte_offset(bytes);
+    });
 }
+
 ss::future<>
 segment::truncate(model::offset prev_last_offset, size_t physical) {
     check_segment_not_closed("truncate()");
