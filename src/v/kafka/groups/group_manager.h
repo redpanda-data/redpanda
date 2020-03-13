@@ -94,7 +94,7 @@ private:
  * the opaque key field is decoded based on the actual type.
  */
 struct group_log_record_key {
-    enum class type : int8_t { group_metadata };
+    enum class type : int8_t { group_metadata, offset_commit };
 
     type record_type;
     iobuf key;
@@ -119,6 +119,24 @@ struct group_log_group_metadata {
     std::optional<kafka::member_id> leader;
     int32_t state_timestamp;
     std::vector<member> members;
+};
+
+/**
+ * the key type for offset commit records.
+ */
+struct group_log_offset_key {
+    kafka::group_id group;
+    model::topic topic;
+    model::partition_id partition;
+};
+
+/**
+ * the value type for offset commit records.
+ */
+struct group_log_offset_metadata {
+    model::offset offset;
+    int32_t leader_epoch;
+    std::optional<ss::sstring> metadata;
 };
 
 } // namespace kafka

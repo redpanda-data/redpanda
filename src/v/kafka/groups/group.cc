@@ -1041,68 +1041,55 @@ void group::fail_offset_commit(
 
 ss::future<offset_commit_response>
 group::store_offsets(offset_commit_request&& r) {
-    // build the offset metadata structures for each topic partition that
-    // we'll keep in the group cache and write into the underlying
-    // partition.
-    absl::flat_hash_map<model::topic_partition, offset_metadata> offset_commits;
+    cluster::simple_batch_builder builder(
+      raft::data_batch_type, model::offset(0));
+
+    std::vector<std::pair<model::topic_partition, offset_metadata>>
+      offset_commits;
+
     for (const auto& t : r.topics) {
         for (const auto& p : t.partitions) {
+            group_log_record_key key{
+              .record_type = group_log_record_key::type::offset_commit,
+              .key = reflection::to_iobuf(
+                group_log_offset_key{_id, t.name, p.id}),
+            };
+            group_log_offset_metadata val{
+              p.committed, p.leader_epoch, p.metadata};
+            builder.add_kv(std::move(key), std::move(val));
+
             model::topic_partition tp{
               .topic = t.name,
               .partition = p.id,
             };
+
             offset_metadata md{
               .offset = p.committed,
               .metadata = p.metadata.value_or(""),
             };
-            offset_commits[tp] = md;
+
+            offset_commits.push_back(std::make_pair(tp, md));
+
+            // record the offset commits as pending commits which will be
+            // inspected after the append to catch concurrent updates.
+            _pending_offset_commits[tp] = md;
         }
     }
 
-    // record the offset commits as pending commits which will be inspected
-    // after the append to catch concurrent updates.
-    for (const auto& e : offset_commits) {
-        _pending_offset_commits[e.first] = e.second;
-    }
+    auto batch = std::move(builder).build();
+    auto reader = model::make_memory_record_batch_reader(std::move(batch));
 
-    /*
-     * TODO: package up offset commit data into a batch and append to the
-     * underlying partition.
-     */
-#if 0
-    return partition->replicate(std::move(e))
-#else
-    auto partition = ss::make_ready_future<>();
-    return partition
-#endif
-    .then(
-      [this, r = std::move(r), commits = std::move(offset_commits)]() mutable {
-          /*
-           * TODO: unwrap replication result and inspect for errors
-           */
-          model::offset last_offset;
-          error_code error = error_code::none;
-#if 0
-        try {
-            auto r = f.get0();
-            if (r) {
-                last_offset = r.value().last_offset;
-            } else {
-                error = error_code::unknown_server_error;
-            }
-        } catch (...) {
-            error = error_code::unknown_server_error;
-        }
-#endif
-
+    return _partition->replicate(std::move(reader))
+      .then([this, req = std::move(r), commits = std::move(offset_commits)](
+              result<raft::replicate_result> r) mutable {
+          error_code error = r ? error_code::none : error_code::not_coordinator;
           if (in_state(group_state::dead)) {
-              return ss::make_ready_future<offset_commit_response>(
-                offset_commit_response(r, error));
+              return offset_commit_response(req, error);
           }
 
           if (error == error_code::none) {
               for (auto& e : commits) {
-                  e.second.log_offset = last_offset;
+                  e.second.log_offset = r.value().last_offset;
                   complete_offset_commit(e.first, e.second);
               }
           } else {
@@ -1111,8 +1098,7 @@ group::store_offsets(offset_commit_request&& r) {
               }
           }
 
-          return ss::make_ready_future<offset_commit_response>(
-            offset_commit_response(r, error));
+          return offset_commit_response(req, error);
       });
 }
 
