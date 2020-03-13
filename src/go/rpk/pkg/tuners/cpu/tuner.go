@@ -58,19 +58,6 @@ func (tuner *tuner) Tune() tuners.TuneResult {
 		return tuners.NewTuneError(err)
 	}
 
-	if tuner.isHtEnabled() {
-		err = tuner.disableHt()
-		if err != nil {
-			return tuners.NewTuneError(err)
-		}
-		if tuner.rebootAllowed {
-			err = tuner.addNoHtBootOption()
-			if err != nil {
-				return tuners.NewTuneError(err)
-			}
-			grubUpdated = true
-		}
-	}
 	if tuner.rebootAllowed {
 		maxCState, err := tuner.getMaxCState()
 		if err != nil {
@@ -117,39 +104,6 @@ func (tuner *tuner) CheckIfSupported() (supported bool, reason string) {
 		return false, "Unable to find 'hwloc' library"
 	}
 	return true, ""
-}
-
-func (tuner *tuner) isHtEnabled() bool {
-	log.Debug("Checking Intel Hyper Threading status")
-	return tuner.cores != tuner.pus
-}
-
-func (tuner *tuner) disableHt() error {
-	log.Debug("Disabling Hyper Threading")
-	for i := uint(0); i < tuner.cores; i = i + 1 {
-		coreIds, err := tuner.cpuMasks.GetLogicalCoreIdsFromPhysCore(i)
-		if err != nil {
-			return err
-		}
-		if len(coreIds) != 2 {
-			return fmt.Errorf("number of PU per core different than 2, " +
-				"Unable to disable HT")
-		}
-		toDisable := coreIds[1]
-		log.Debugf("Disabling virtual core '%d'", toDisable)
-		err = tuner.executor.Execute(
-			commands.NewWriteFileCmd(tuner.fs,
-				fmt.Sprintf("/sys/devices/system/cpu/cpu%d/online", toDisable),
-				"0"))
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (tuner *tuner) addNoHtBootOption() error {
-	return tuner.grub.AddCommandLineOptions([]string{"noht"})
 }
 
 func (tuner *tuner) getMaxCState() (uint, error) {
