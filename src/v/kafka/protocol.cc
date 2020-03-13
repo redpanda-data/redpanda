@@ -145,8 +145,9 @@ ss::future<> protocol::connection_context::do_process(request_context ctx) {
     const sequence_id seq = _seq_idx;
     _seq_idx = _seq_idx + sequence_id(1);
     return kafka::process_request(std::move(ctx), _proto._smp_group)
-      .then([this, seq, correlation](response_ptr f) mutable {
-          _responses.insert({seq, std::make_pair(correlation, std::move(f))});
+      .then([this, seq, correlation](response_ptr r) mutable {
+          auto msg = response_as_scattered(std::move(r), correlation);
+          _responses.insert({seq, std::move(msg)});
           return process_next_response();
       });
 }
@@ -161,10 +162,8 @@ ss::future<> protocol::connection_context::process_next_response() {
         // found one; increment counter
         _next_response = _next_response + sequence_id(1);
         try {
-            const correlation_id corr = it->second.first;
-            response_ptr r = std::move(it->second.second);
+            auto msg = std::move(it->second);
             _responses.erase(it);
-            auto msg = response_as_scattered(std::move(r), corr);
             _rs.probe().add_bytes_sent(msg.size());
             _rs.probe().request_completed();
             return _rs.conn->write(std::move(msg)).then([this] {
