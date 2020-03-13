@@ -16,10 +16,7 @@ record_batch_builder::~record_batch_builder() {}
 model::record_batch record_batch_builder::build() && {
     int32_t offset_delta = 0;
     int32_t batch_size = model::packed_record_batch_header_size;
-    using ms = std::chrono::milliseconds;
-    auto now_ts = std::chrono::duration_cast<ms>(
-                    model::timeout_clock::now().time_since_epoch())
-                    .count();
+    auto now_ts = model::timestamp::now();
     std::vector<model::record> records;
     records.reserve(_records.size());
 
@@ -30,14 +27,13 @@ model::record_batch record_batch_builder::build() && {
       .crc = 0, // crc computed later
       .attrs = model::record_batch_attributes{} |= model::compression::none,
       .last_offset_delta = static_cast<int32_t>(_records.size() - 1),
-      .first_timestamp = model::timestamp(now_ts),
-      .max_timestamp = model::timestamp(now_ts),
+      .first_timestamp = now_ts,
+      .max_timestamp = now_ts,
       .producer_id = -1,
       .producer_epoch = -1,
       .base_sequence = -1,
       .record_count = static_cast<int32_t>(_records.size()),
-      .ctx = model::record_batch_header::context{
-        .term = model::term_id(0)}}; // namespace storage
+      .ctx = model::record_batch_header::context{.term = model::term_id(0)}};
 
     for (auto& sr : _records) {
         auto rec_sz = record_size(offset_delta, sr);
