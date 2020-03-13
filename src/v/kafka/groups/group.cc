@@ -2,6 +2,8 @@
 
 #include "bytes/bytes.h"
 #include "cluster/partition.h"
+#include "cluster/simple_batch_builder.h"
+#include "kafka/groups/group_manager.h"
 #include "kafka/requests/sync_group_request.h"
 #include "likely.h"
 #include "utils/to_string.h"
@@ -574,6 +576,12 @@ void group::try_prepare_rebalance() {
     }
 }
 
+/*
+ * TODO: complete_join may dispatch a background write to raft. we need to (1)
+ * gate that and (2) protect the group update in general with a semaphore since
+ * atomicity spans continuations. this will be completed when the recovery code
+ * is added.
+ */
 void group::complete_join() {
     kglog.trace("completing join for group {}", *this);
 
@@ -605,11 +613,11 @@ void group::complete_join() {
         advance_generation();
 
         if (in_state(group_state::empty)) {
-            /*
-             * TODO
-             * Package up the empty group state and replicate to raft.
-             */
-            return;
+            auto batch = checkpoint(assignments_type{});
+            auto reader = model::make_memory_record_batch_reader(
+              std::move(batch));
+            (void)_partition->replicate(std::move(reader))
+              .then([this](result<raft::replicate_result> r) {});
         } else {
             std::for_each(
               std::cbegin(_members),
@@ -819,6 +827,53 @@ group::handle_sync_group(sync_group_request&& r) {
     }
 }
 
+model::record_batch group::checkpoint(const assignments_type& assignments) {
+    group_log_group_metadata gr;
+
+    gr.protocol_type = protocol_type().value_or(kafka::protocol_type(""));
+    gr.generation = generation();
+    gr.protocol = protocol();
+    gr.leader = leader();
+    auto state_timestamp = _state_timestamp.time_since_epoch();
+    gr.state_timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+                           state_timestamp)
+                           .count();
+
+    for (const auto& it : _members) {
+        auto& member = it.second;
+        group_log_group_metadata::member m;
+        m.id = member->id();
+        m.session_timeout_ms
+          = std::chrono::duration_cast<std::chrono::milliseconds>(
+              member->session_timeout())
+              .count();
+        m.rebalance_timeout_ms
+          = std::chrono::duration_cast<std::chrono::milliseconds>(
+              member->rebalance_timeout())
+              .count();
+        m.instance_id = member->group_instance_id();
+        auto sub = member->metadata(protocol().value());
+        m.subscription.append(
+          reinterpret_cast<const char*>(sub.c_str()), sub.size());
+        auto as = assignments.at(member->id());
+        m.assignment.append(
+          reinterpret_cast<const char*>(as.c_str()), as.size());
+        gr.members.push_back(std::move(m));
+    }
+
+    cluster::simple_batch_builder builder(
+      raft::data_batch_type, model::offset(0));
+
+    group_log_record_key key{
+      .record_type = group_log_record_key::type::group_metadata,
+      .key = reflection::to_iobuf(_id),
+    };
+
+    builder.add_kv(std::move(key), std::move(gr));
+
+    return std::move(builder).build();
+}
+
 ss::future<sync_group_response> group::sync_group_completing_rebalance(
   member_ptr member, sync_group_request&& r) {
     // this response will be set by the leader when it arrives. the leader also
@@ -840,56 +895,47 @@ ss::future<sync_group_response> group::sync_group_completing_rebalance(
     auto assignments = std::move(r).member_assignments();
     add_missing_assignments(assignments);
 
-    /*
-     * TODO
-     * Package up the member assignments and other group state into this
-     * entry and send it off to be replicated on the group metadata
-     * partition.
-     */
-#if 0
-    raft::entry e(
-      model::record_batch_type(1), model::record_batch_reader(nullptr));
+    auto batch = checkpoint(assignments);
+    auto reader = model::make_memory_record_batch_reader(std::move(batch));
 
-    auto part = _partitions.get(group->ntp());
-    return part->replicate(std::move(e))
-#else
-    auto part = ss::make_ready_future<>();
-    return part
-#endif
-    .then([this,
-           response = std::move(response),
-           expected_generation = generation(),
-           assignments = std::move(assignments)]() mutable {
-        // the group's state changed while waiting for this completion to
-        // run. for example, another member joined. there's nothing to do
-        // now except wait for an update.
-        if (
-          !in_state(group_state::completing_rebalance)
-          || expected_generation != generation()) {
-            return std::move(response);
-        }
+    return _partition->replicate(std::move(reader))
+      .then([this,
+             response = std::move(response),
+             expected_generation = generation(),
+             assignments = std::move(assignments)](
+              result<raft::replicate_result> r) mutable {
+          /*
+           * the group's state has changed (e.g. another member joined). there's
+           * nothing to do now except have the client wait for an update.
+           */
+          if (
+            !in_state(group_state::completing_rebalance)
+            || expected_generation != generation()) {
+              kglog.trace("sync group state changed");
+              return std::move(response);
+          }
 
-        // TODO: this is the error code from raft
-        auto error = error_code::none;
+          if (r) {
+              kglog.trace("sync group state success {}", id());
+              // the group state was successfully persisted:
+              //   - save the member assignments; clients may re-request
+              //   - unblock any clients waiting on their assignment
+              //   - transition the group to the stable state
+              set_assignments(std::move(assignments));
+              finish_syncing_members(error_code::none);
+              set_state(group_state::stable);
+          } else {
+              kglog.trace("sync group state failure {}", id());
+              // an error was encountered persisting the group state:
+              //   - clear all the member assignments
+              //   - propogate error back to waiting clients
+              clear_assignments();
+              finish_syncing_members(error_code::not_coordinator);
+              try_prepare_rebalance();
+          }
 
-        if (error == error_code::none) {
-            // the group state was successfully persisted:
-            //   - save the member assignments; clients may re-request
-            //   - unblock any clients waiting on their assignment
-            //   - transition the group to the stable state
-            set_assignments(std::move(assignments));
-            finish_syncing_members(error_code::none);
-            set_state(group_state::stable);
-        } else {
-            // an error was encountered persisting the group state:
-            //   - clear all the member assignments
-            //   - propogate error back to waiting clients
-            clear_assignments();
-            finish_syncing_members(error);
-        }
-
-        return std::move(response);
-    });
+          return std::move(response);
+      });
 }
 
 ss::future<heartbeat_response> group::handle_heartbeat(heartbeat_request&& r) {
@@ -1176,7 +1222,7 @@ kafka::member_id group::generate_member_id(const join_group_request& r) {
 }
 
 std::ostream& operator<<(std::ostream& o, const group& g) {
-    return fmt_print(
+    return ss::fmt_print(
       o,
       "id={} state={} gen={} ntp={} proto_type={} proto={} leader={} "
       "empty={}",
