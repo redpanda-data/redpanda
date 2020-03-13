@@ -13,6 +13,5 @@ struct inherit_complex_pod : complex_custom {
 BOOST_AUTO_TEST_CASE(verify_airty) {
     BOOST_CHECK_EQUAL(reflection::arity<pod>(), 3);
     BOOST_CHECK_EQUAL(reflection::arity<complex_custom>(), 2);
-    BOOST_CHECK_EQUAL(reflection::arity<very_packed_pod>(), 2);
     // BOOST_CHECK_EQUAL(reflection::arity<inherit_complex_pod>(), 4);
 }

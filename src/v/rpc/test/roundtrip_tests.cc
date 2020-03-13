@@ -13,15 +13,6 @@ SEASTAR_THREAD_TEST_CASE(roundtrip_pod) {
     BOOST_REQUIRE_EQUAL(z, 3);
 }
 
-SEASTAR_THREAD_TEST_CASE(roundtrip_packed_struct) {
-    auto expected = reflection::adl<very_packed_pod>{}.from(
-      reflection::to_iobuf(very_packed_pod{}));
-
-    auto [x, y] = reflection::to_tuple(expected);
-    BOOST_REQUIRE_EQUAL(x, 1);
-    BOOST_REQUIRE_EQUAL(y, 2);
-}
-
 SEASTAR_THREAD_TEST_CASE(roundtrip_with_fragmented_buffer) {
     std::cout.setf(std::ios::unitbuf);
     auto b = iobuf();

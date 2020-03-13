@@ -28,19 +28,16 @@ using group_id = named_type<int64_t, struct raft_group_id_type>;
 static constexpr const model::record_batch_type configuration_batch_type{2};
 static constexpr const model::record_batch_type data_batch_type{1};
 
-/// special case. it uses underlying type because it is the most used type
-/// by using the underlying::type we save 8 continuations per deserialization
-struct [[gnu::packed]] protocol_metadata {
-    ss::unaligned<group_id::type> group = -1;
-    ss::unaligned<model::offset::type> commit_index
+struct protocol_metadata {
+    group_id::type group = -1;
+    model::offset::type commit_index
       = std::numeric_limits<model::offset::type>::min();
-    ss::unaligned<model::term_id::type> term
+    model::term_id::type term
       = std::numeric_limits<model::term_id::type>::min();
-
     /// \brief used for completeness
-    ss::unaligned<model::offset::type> prev_log_index
+    model::offset::type prev_log_index
       = std::numeric_limits<model::offset::type>::min();
-    ss::unaligned<model::term_id::type> prev_log_term
+    model::term_id::type prev_log_term
       = std::numeric_limits<model::term_id::type>::min();
 };
 
@@ -102,21 +99,21 @@ struct append_entries_request {
     model::record_batch_reader batches;
 };
 
-struct [[gnu::packed]] append_entries_reply {
+struct append_entries_reply {
     enum class status : uint8_t { success, failure, group_unavailable };
 
     /// \brief callee's node_id; work-around for batched heartbeats
-    ss::unaligned<model::node_id::type> node_id = -1;
-    ss::unaligned<group_id::type> group = -1;
+    model::node_id::type node_id = -1;
+    group_id::type group = -1;
     /// \brief callee's term, for the caller to upate itself
-    ss::unaligned<model::term_id::type> term
+    model::term_id::type term
       = std::numeric_limits<model::term_id::type>::min();
     /// \brief The recipient's last log index after it applied changes to
     /// the log. This is used to speed up finding the correct value for the
     /// nextIndex with a follower that is far behind a leader
-    ss::unaligned<model::offset::type> last_log_index = 0;
+    model::offset::type last_log_index = 0;
     /// \brief did the rpc succeed or not
-    ss::unaligned<status> result = status::failure;
+    status result = status::failure;
 };
 
 /// \brief this is our _biggest_ modification to how raft works
@@ -133,32 +130,30 @@ struct heartbeat_reply {
     std::vector<append_entries_reply> meta;
 };
 
-/// \brief special use of underlying::type to save continuations on the
-/// deserialization step
-struct [[gnu::packed]] vote_request {
-    ss::unaligned<model::node_id::type> node_id = 0;
-    ss::unaligned<group_id::type> group = -1;
+struct vote_request {
+    model::node_id::type node_id = 0;
+    group_id::type group = -1;
     /// \brief current term
-    ss::unaligned<model::term_id::type> term
+    model::term_id::type term
       = std::numeric_limits<model::term_id::type>::min();
     /// \brief used to compare completeness
-    ss::unaligned<model::offset::type> prev_log_index = 0;
-    ss::unaligned<model::term_id::type> prev_log_term
+    model::offset::type prev_log_index = 0;
+    model::term_id::type prev_log_term
       = std::numeric_limits<model::term_id::type>::min();
 };
 
-struct [[gnu::packed]] vote_reply {
+struct vote_reply {
     /// \brief callee's term, for the caller to upate itself
-    ss::unaligned<model::term_id::type> term
+    model::term_id::type term
       = std::numeric_limits<model::term_id::type>::min();
 
     /// True if the follower granted the candidate it's vote, false otherwise
-    ss::unaligned<bool> granted = false;
+    bool granted = false;
 
     /// set to true if the caller's log is as up to date as the recipient's
     /// - extension on raft. see Diego's phd dissertation, section 9.6
     /// - "Preventing disruptions when a server rejoins the cluster"
-    ss::unaligned<bool> log_ok = false;
+    bool log_ok = false;
 };
 
 /// This structure is used by consensus to notify other systems about group
@@ -260,7 +255,6 @@ operator<<(std::ostream& o, const group_configuration& c) {
 } // namespace raft
 
 namespace reflection {
-
 struct rpc_model_reader_consumer {
     explicit rpc_model_reader_consumer(iobuf& oref)
       : ref(oref) {}
@@ -314,5 +308,4 @@ struct async_adl<raft::append_entries_request> {
           std::move(ret));
     }
 };
-
 } // namespace reflection

@@ -95,6 +95,16 @@ struct create_topics_reply {
 } // namespace cluster
 
 namespace reflection {
+
+template<>
+struct adl<model::timeout_clock::duration> {
+    using rep = model::timeout_clock::rep;
+    using duration = model::timeout_clock::duration;
+
+    void to(iobuf& out, duration dur);
+    duration from(iobuf_parser& in);
+};
+
 template<>
 struct adl<cluster::topic_configuration> {
     void to(iobuf&, cluster::topic_configuration&&);

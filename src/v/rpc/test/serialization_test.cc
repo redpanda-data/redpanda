@@ -11,50 +11,42 @@ BOOST_AUTO_TEST_CASE(serialize_pod) {
     auto b = iobuf();
     pod it;
     reflection::serialize(b, std::move(it));
-    BOOST_CHECK_EQUAL(b.size_bytes(), sizeof(it));
-}
-BOOST_AUTO_TEST_CASE(serialize_packed_struct) {
-    auto b = iobuf();
-    very_packed_pod it;
-    reflection::serialize(b, std::move(it));
-    BOOST_CHECK_EQUAL(b.size_bytes(), 3);
+    BOOST_CHECK_EQUAL(b.size_bytes(), pod_bytes());
 }
 
 BOOST_AUTO_TEST_CASE(verify_airty) {
     BOOST_CHECK_EQUAL(reflection::arity<pod>(), 3);
     BOOST_CHECK_EQUAL(reflection::arity<complex_custom>(), 2);
-    BOOST_CHECK_EQUAL(reflection::arity<very_packed_pod>(), 2);
 }
+
 BOOST_AUTO_TEST_CASE(serialize_with_fragmented_buffer) {
+    // Each field of a pod struct is serialized by it's type
+    // So the total bytes written for a given type T is the sum:
+    // sizeof(member1) + .... + sizeof(member n) + sizeof(blob)
+    // where blob's size depends on the type serialized. For example
+    // blob for ss::string is sizeof(int32_t) which denotes the number
+    // of bytes to follow for the given string.
     auto b = iobuf();
     complex_custom it;
     it.oi.append(ss::temporary_buffer<char>(55));
     reflection::serialize(b, std::move(it));
-    BOOST_CHECK_EQUAL(
-      b.size_bytes(),
-      55 + sizeof(it.pit)
-        + sizeof(int32_t) /*size prefix of fragmented_buffer*/);
+    BOOST_CHECK_EQUAL(b.size_bytes(), 55 + complex_custom_bytes());
 }
+
 BOOST_AUTO_TEST_CASE(serialize_pod_with_vector) {
     auto b = iobuf();
     pod_with_vector it;
     reflection::serialize(b, std::move(it));
-    BOOST_CHECK_EQUAL(
-      b.size_bytes(),
-      sizeof(pod)
-        /*2 bytes of padding missing*/
-        + (sizeof(int32_t) * 3 /*3 times*/) + sizeof(int32_t) /*prefix size*/);
+    BOOST_CHECK_EQUAL(b.size_bytes(), pod_with_vector_bytes());
 }
+
 BOOST_AUTO_TEST_CASE(serialize_pod_with_array) {
     auto b = iobuf();
     pod_with_array it;
     reflection::serialize(b, std::move(it));
-    BOOST_CHECK_EQUAL(
-      b.size_bytes(),
-      sizeof(pod)
-        - 2 /*2 bytes of padding missing*/ + (sizeof(int32_t) * 3 /*3 times*/)
-        + sizeof(int32_t) /*prefix size*/);
+    BOOST_CHECK_EQUAL(b.size_bytes(), pod_with_arr_bytes());
 }
+
 BOOST_AUTO_TEST_CASE(serialize_sstring_vector) {
     auto b = iobuf();
     test_rpc_header it;

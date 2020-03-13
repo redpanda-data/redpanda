@@ -18,25 +18,22 @@ using stop_parser = batch_consumer::stop_parser;
 using skip_batch = batch_consumer::skip_batch;
 model::record_batch_header header_from_iobuf(iobuf b) {
     iobuf_parser parser(std::move(b));
-    auto sz = ss::le_to_cpu(reflection::adl<int32_t>{}.from(parser));
+    auto sz = reflection::adl<int32_t>{}.from(parser);
     using offset_t = model::offset::type;
-    auto off = model::offset(
-      ss::le_to_cpu(reflection::adl<offset_t>{}.from(parser)));
+    auto off = model::offset(reflection::adl<offset_t>{}.from(parser));
     auto type = reflection::adl<model::record_batch_type>{}.from(parser);
-    auto crc = ss::le_to_cpu(reflection::adl<int32_t>{}.from(parser));
+    auto crc = reflection::adl<int32_t>{}.from(parser);
     using attr_t = model::record_batch_attributes::type;
     auto attrs = model::record_batch_attributes(
-      ss::le_to_cpu(reflection::adl<attr_t>{}.from(parser)));
-    auto delta = ss::le_to_cpu(reflection::adl<int32_t>{}.from(parser));
+      reflection::adl<attr_t>{}.from(parser));
+    auto delta = reflection::adl<int32_t>{}.from(parser);
     using tmstmp_t = model::timestamp::type;
-    auto first = model::timestamp(
-      ss::le_to_cpu(reflection::adl<tmstmp_t>{}.from(parser)));
-    auto max = model::timestamp(
-      ss::le_to_cpu(reflection::adl<tmstmp_t>{}.from(parser)));
-    auto producer_id = ss::le_to_cpu(parser.consume_type<int64_t>());
-    auto producer_epoch = ss::le_to_cpu(parser.consume_type<int16_t>());
-    auto base_sequence = ss::le_to_cpu(parser.consume_type<int32_t>());
-    auto record_count = ss::le_to_cpu(parser.consume_type<int32_t>());
+    auto first = model::timestamp(reflection::adl<tmstmp_t>{}.from(parser));
+    auto max = model::timestamp(reflection::adl<tmstmp_t>{}.from(parser));
+    auto producer_id = reflection::adl<int64_t>{}.from(parser);
+    auto producer_epoch = reflection::adl<int16_t>{}.from(parser);
+    auto base_sequence = reflection::adl<int32_t>{}.from(parser);
+    auto record_count = reflection::adl<int32_t>{}.from(parser);
     vassert(
       parser.bytes_consumed() == model::packed_record_batch_header_size,
       "Error in header parsing. Must consume:{} bytes, but consumed:{}",
@@ -179,7 +176,8 @@ ss::future<stop_parser> continuous_batch_parser::consume_records() {
           iobuf_parser parser(std::move(b.value()));
           for (int i = 0; i < _header.record_count; ++i) {
               auto [record_size, rv] = parser.read_varlong();
-              auto attr = parser.consume_type<model::record_attributes::type>();
+              auto attr = reflection::adl<model::record_attributes::type>{}
+                            .from(parser);
               auto [timestamp_delta, tv] = parser.read_varlong();
               auto [offset_delta, ov] = parser.read_varlong();
               auto [key_length, kv] = parser.read_varlong();
