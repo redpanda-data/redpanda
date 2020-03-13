@@ -55,8 +55,11 @@ public:
               filesize);
             return stop_parser::yes;
         }
-        if (header.size_bytes == 0) {
-            vlog(stlog.info, "batch of size 0, Stopping parsing", filesize);
+        if (header.size_bytes <= 0) {
+            vlog(
+              stlog.info,
+              "Invalid batch size:{}, Stopping parsing",
+              header.size_bytes);
             return stop_parser::yes;
         }
         _seg->index().maybe_track(header, physical_base_offset);
