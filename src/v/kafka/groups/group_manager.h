@@ -88,4 +88,37 @@ private:
     absl::flat_hash_map<group_id, group_ptr> _groups;
 };
 
+/**
+ * the key type for group membership log records.
+ *
+ * the opaque key field is decoded based on the actual type.
+ */
+struct group_log_record_key {
+    enum class type : int8_t { group_metadata };
+
+    type record_type;
+    iobuf key;
+};
+
+/**
+ * the value type of a group metadata log record.
+ */
+struct group_log_group_metadata {
+    struct member {
+        kafka::member_id id;
+        int32_t session_timeout_ms;
+        int32_t rebalance_timeout_ms;
+        std::optional<kafka::group_instance_id> instance_id;
+        iobuf subscription;
+        iobuf assignment;
+    };
+
+    kafka::protocol_type protocol_type;
+    kafka::generation_id generation;
+    std::optional<kafka::protocol_name> protocol;
+    std::optional<kafka::member_id> leader;
+    int32_t state_timestamp;
+    std::vector<member> members;
+};
+
 } // namespace kafka

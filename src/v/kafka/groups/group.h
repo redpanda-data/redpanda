@@ -11,6 +11,7 @@
 #include "kafka/requests/sync_group_request.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
+#include "model/record.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>
@@ -383,6 +384,8 @@ public:
 private:
     using member_map = absl::flat_hash_map<kafka::member_id, member_ptr>;
     using protocol_support = absl::flat_hash_map<kafka::protocol_name, int>;
+
+    model::record_batch checkpoint(const assignments_type& assignments);
 
     kafka::group_id _id;
     group_state _state;
