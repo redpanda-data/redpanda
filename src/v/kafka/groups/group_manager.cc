@@ -71,8 +71,9 @@ group_manager::join_group(join_group_request&& r) {
               "join request rejected for known member and unknown group");
             return make_join_error(r.member_id, error_code::unknown_member_id);
         }
+        auto p = _partitions.find(r.ntp)->second->partition;
         group = ss::make_lw_shared<kafka::group>(
-          r.group_id, group_state::empty, _conf);
+          r.group_id, group_state::empty, _conf, p);
         _groups.emplace(r.group_id, group);
         kglog.trace("created new group {}", group);
     }
@@ -175,8 +176,9 @@ group_manager::offset_commit(offset_commit_request&& r) {
         if (r.generation_id < 0) {
             // <kafka>the group is not relying on Kafka for group management, so
             // allow the commit</kafka>
+            auto p = _partitions.find(r.ntp)->second->partition;
             group = ss::make_lw_shared<kafka::group>(
-              r.group_id, group_state::empty, _conf);
+              r.group_id, group_state::empty, _conf, p);
             _groups.emplace(r.group_id, group);
         } else {
             // <kafka>or this is a request coming from an older generation.

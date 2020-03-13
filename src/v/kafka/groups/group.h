@@ -1,4 +1,5 @@
 #pragma once
+#include "cluster/partition.h"
 #include "config/configuration.h"
 #include "kafka/errors.h"
 #include "kafka/groups/member.h"
@@ -95,14 +96,19 @@ public:
         ss::sstring metadata;
     };
 
-    group(kafka::group_id id, group_state s, config::configuration& conf)
+    group(
+      kafka::group_id id,
+      group_state s,
+      config::configuration& conf,
+      ss::lw_shared_ptr<cluster::partition> partition)
       : _id(id)
       , _state(s)
       , _state_timestamp(clock_type::now())
       , _generation(0)
       , _num_members_joining(0)
       , _new_member_added(false)
-      , _conf(conf) {}
+      , _conf(conf)
+      , _partition(partition) {}
 
     /// Get the group id.
     const kafka::group_id& id() const { return _id; }
@@ -393,6 +399,7 @@ private:
     ss::timer<clock_type> _join_timer;
     bool _new_member_added;
     config::configuration& _conf;
+    ss::lw_shared_ptr<cluster::partition> _partition;
     absl::flat_hash_map<model::topic_partition, offset_metadata> _offsets;
     absl::flat_hash_map<model::topic_partition, offset_metadata>
       _pending_offset_commits;
