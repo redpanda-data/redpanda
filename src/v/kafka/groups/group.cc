@@ -1112,6 +1112,10 @@ group::handle_offset_commit(offset_commit_request&& r) {
         // <kafka>The group is only using Kafka to store offsets.</kafka>
         return store_offsets(std::move(r));
 
+    } else if (in_state(group_state::completing_rebalance)) {
+        return ss::make_ready_future<offset_commit_response>(
+          offset_commit_response(r, error_code::rebalance_in_progress));
+
     } else if (!contains_member(r.member_id)) {
         return ss::make_ready_future<offset_commit_response>(
           offset_commit_response(r, error_code::unknown_member_id));
@@ -1121,29 +1125,9 @@ group::handle_offset_commit(offset_commit_request&& r) {
           offset_commit_response(r, error_code::illegal_generation));
     }
 
-    switch (state()) {
-    case group_state::stable:
-        [[fallthrough]];
-
-    case group_state::preparing_rebalance: {
-        auto member = get_member(r.member_id);
-        schedule_next_heartbeat_expiration(member);
-        return store_offsets(std::move(r));
-    }
-
-    case group_state::completing_rebalance:
-        // <kafka>We should not receive a commit request if the group has
-        // not completed rebalance; but since the consumer's member.id and
-        // generation is valid, it means it has received the latest group
-        // generation information from the JoinResponse. So let's return a
-        // REBALANCE_IN_PROGRESS to let consumer handle it
-        // gracefully.</kafka>
-        return ss::make_ready_future<offset_commit_response>(
-          offset_commit_response(r, error_code::rebalance_in_progress));
-
-    default:
-        std::terminate(); // make gcc happy
-    }
+    auto member = get_member(r.member_id);
+    schedule_next_heartbeat_expiration(member);
+    return store_offsets(std::move(r));
 }
 
 ss::future<offset_fetch_response>
