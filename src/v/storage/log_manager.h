@@ -142,7 +142,7 @@ private:
     ss::future<> housekeeping();
 
     std::optional<batch_cache_index> create_cache();
-    
+
     log_config _config;
     ss::timer<> _compaction_timer;
     logs_type _logs;
