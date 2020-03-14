@@ -27,6 +27,8 @@ setup(
         'ansible',
         'click',
         'crc32c',
+        'docker',
+        'docker-compose',
         'gitpython',
         'Jinja2',
         'paramiko',
