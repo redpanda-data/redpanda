@@ -59,6 +59,34 @@ type RpkConfig struct {
 	WellKnownIo          string   `yaml:"well_known_io,omitempty" json:"wellKnownIo"`
 }
 
+func DefaultConfig() Config {
+	return Config{
+		ConfigFile: "/etc/redpanda/redpanda.yaml",
+		PidFile:    "/var/lib/redpanda/pid",
+		Redpanda: &RedpandaConfig{
+			Directory: "/var/lib/redpanda/data",
+			RPCServer: SocketAddress{"0.0.0.0", 33145},
+			KafkaApi:  SocketAddress{"0.0.0.0", 9092},
+			AdminApi:  SocketAddress{"0.0.0.0", 9644},
+			Id:        0,
+		},
+		Rpk: &RpkConfig{
+			EnableUsageStats:    true,
+			TuneNetwork:         true,
+			TuneDiskScheduler:   true,
+			TuneNomerges:        true,
+			TuneDiskIrq:         true,
+			TuneCpu:             true,
+			TuneAioEvents:       true,
+			TuneClocksource:     true,
+			TuneSwappiness:      true,
+			EnableMemoryLocking: true,
+			TuneCoredump:        true,
+			CoredumpDir:         "/var/lib/redpanda/coredump",
+		},
+	}
+}
+
 // Checks config and writes it to the given path.
 func WriteConfig(fs afero.Fs, config *Config, path string) error {
 	ok, errs := CheckConfig(config)
