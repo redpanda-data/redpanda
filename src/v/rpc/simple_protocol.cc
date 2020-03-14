@@ -1,23 +1,24 @@
 #include "rpc/simple_protocol.h"
 
 #include "rpc/logger.h"
+#include "rpc/types.h"
 
 namespace rpc {
 struct server_context_impl final : streaming_context {
     server_context_impl(server::resources s, header h)
-      : _s(std::ref(s))
-      , _h(h) {}
+      : res(std::move(s))
+      , hdr(h) {}
     ss::future<ss::semaphore_units<>> reserve_memory(size_t ask) final {
-        auto fut = get_units(_s.memory(), ask);
-        if (_s.memory().waiters()) {
-            _s.probe().waiting_for_available_memory();
+        auto fut = get_units(res.memory(), ask);
+        if (res.memory().waiters()) {
+            res.probe().waiting_for_available_memory();
         }
         return fut;
     }
-    const header& get_header() const final { return _h; }
+    const header& get_header() const final { return hdr; }
     void signal_body_parse() final { pr.set_value(); }
-    server::resources _s;
-    header _h;
+    server::resources res;
+    header hdr;
     ss::promise<> pr;
 };
 
@@ -41,7 +42,6 @@ ss::future<> simple_protocol::apply(server::resources rs) {
 ss::future<>
 simple_protocol::dispatch_method_once(header h, server::resources rs) {
     const auto method_id = h.meta;
-    constexpr size_t header_size = sizeof(header);
     auto ctx = ss::make_lw_shared<server_context_impl>(rs, h);
     auto it = std::find_if(
       _services.begin(),
@@ -56,28 +56,28 @@ simple_protocol::dispatch_method_once(header h, server::resources rs) {
     }
     auto fut = ctx->pr.get_future();
     method* m = it->get()->method_from_id(method_id);
-    rs.probe().add_bytes_received(header_size + h.size);
+    rs.probe().add_bytes_received(size_of_rpc_header + h.payload_size);
     // background!
     if (rs.conn_gate().is_closed()) {
         return ss::make_exception_future<>(ss::gate_closed_exception());
     }
-    (void)with_gate(rs.conn_gate(), [this, rs, ctx, m]() mutable {
-        return (*m)(rs.conn->input(), *ctx)
+    (void)with_gate(rs.conn_gate(), [this, ctx, m]() mutable {
+        return (*m)(ctx->res.conn->input(), *ctx)
           .then(
-            [this, ctx, rs, m = rs.hist().auto_measure()](netbuf n) mutable {
+            [this, ctx, m = ctx->res.hist().auto_measure()](netbuf n) mutable {
                 n.set_correlation_id(ctx->get_header().correlation_id);
                 auto view = std::move(n).as_scattered();
-                if (rs.conn_gate().is_closed()) {
+                if (ctx->res.conn_gate().is_closed()) {
                     // do not write if gate is closed
                     rpclog.debug(
                       "Skipping write of {} bytes, connection is closed",
                       view.size());
                     return ss::make_ready_future<>();
                 }
-                return rs.conn->write(std::move(view))
+                return ctx->res.conn->write(std::move(view))
                   .finally([m = std::move(m), ctx] {});
             })
-          .finally([rs]() mutable { rs.probe().request_completed(); });
+          .finally([ctx]() mutable { ctx->res.probe().request_completed(); });
     });
     return fut;
 }

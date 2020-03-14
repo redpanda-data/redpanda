@@ -13,12 +13,12 @@ public:
     ss::scattered_message<char> as_scattered() &&;
 
     void set_correlation_id(uint32_t);
+    void set_compression(rpc::compression_type c);
     void set_service_method_id(uint32_t);
 
     iobuf& buffer() { return _out; }
 
 private:
-    size_t payload_size() const { return _out.size_bytes() - sizeof(_hdr); }
     header _hdr;
     iobuf _out;
 };

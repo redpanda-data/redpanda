@@ -3,20 +3,15 @@
 #include "rpc/server.h"
 #include "rpc/service.h"
 #include "rpc/simple_protocol.h"
+#include "rpc/test/cycling_service.h"
+#include "rpc/test/echo_service.h"
 #include "rpc/transport.h"
 #include "rpc/types.h"
+#include "seastarx.h"
 
 #include <seastar/core/sleep.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/net/inet_address.hh>
-
-// manually generated via:
-// rpcgen.py --service_file test_definitions.json --output_file rpcgen.h
-#include "rpc/test/rpcgen.h"
-
-// rpcgen.py --service_file echo_service.json --output_file echo_gen.h
-#include "rpc/test/echo_gen.h"
-#include "seastarx.h"
 
 // Test services
 struct movistar final : cycling::team_movistar_service {
@@ -49,9 +44,9 @@ struct echo_impl final : echo::echo_service {
     }
 
     ss::future<echo::echo_resp>
-    sleep_5s(echo::echo_req&& req, rpc::streaming_context&) final {
+    sleep_1s(echo::echo_req&& req, rpc::streaming_context&) final {
         using namespace std::chrono_literals;
-        return ss::sleep(5s).then(
+        return ss::sleep(1s).then(
           []() { return echo::echo_resp{.str = "Zzz..."}; });
     }
 };
@@ -94,7 +89,9 @@ public:
     }
 
     ~rpc_integration_fixture() {
-        _server->stop().get();
+        if (_server) {
+            _server->stop().get();
+        }
         destroy_smp_service_group(_ssg).get0();
         destroy_scheduling_group(_sg).get0();
     }

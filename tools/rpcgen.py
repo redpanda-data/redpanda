@@ -82,8 +82,9 @@ public:
     /// \\brief {{method.input_type}} -> {{method.output_type}}
     virtual ss::future<rpc::netbuf>
     raw_{{method.name}}(ss::input_stream<char>& in, rpc::streaming_context& ctx) {
-      auto fapply = execution_helper<{{method.input_type}}, {{method.output_type}}>();
-      return fapply.exec(in, ctx, {{method.id}}, [this](
+      return execution_helper<{{method.input_type}},
+                              {{method.output_type}}>::exec(in, ctx, {{method.id}},
+      [this](
           {{method.input_type}}&& t, rpc::streaming_context& ctx) -> ss::future<{{method.output_type}}> {
           return {{method.name}}(std::move(t), ctx);
       });
