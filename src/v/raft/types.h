@@ -1,12 +1,12 @@
 #pragma once
 
+#include "model/adl_serde.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "reflection/async_adl.h"
-#include "rpc/models.h"
 #include "utils/named_type.h"
 
 #include <seastar/net/socket_defs.hh>
