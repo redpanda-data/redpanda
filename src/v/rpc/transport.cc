@@ -3,6 +3,7 @@
 #include "likely.h"
 #include "rpc/logger.h"
 #include "rpc/parse_utils.h"
+#include "rpc/types.h"
 #include "vlog.h"
 
 #include <seastar/core/reactor.hh>
@@ -211,7 +212,6 @@ ss::future<> transport::do_reads() {
 /// - this needs a streaming_context.
 ///
 ss::future<> transport::dispatch(header h) {
-    static constexpr auto header_size = sizeof(header);
     auto it = _correlations.find(h.correlation_id);
     if (it == _correlations.end()) {
         // We removed correlation already
@@ -221,9 +221,9 @@ ss::future<> transport::dispatch(header h) {
           "Unable to find handler for correlation {}",
           h.correlation_id);
         // we have to skip received bytes to make input stream state correct
-        return _in.skip(h.size);
+        return _in.skip(h.payload_size);
     }
-    _probe.add_bytes_received(header_size + h.size);
+    _probe.add_bytes_received(size_of_rpc_header + h.payload_size);
     auto ctx = std::make_unique<client_context_impl>(*this, h);
     auto fut = ctx->pr.get_future();
     // delete before setting value so that we don't run into nested exceptions

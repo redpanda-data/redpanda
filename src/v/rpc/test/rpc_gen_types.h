@@ -1,5 +1,7 @@
 #pragma once
 
+#include "seastarx.h"
+
 #include <seastar/core/sstring.hh>
 
 #include <cstdint>

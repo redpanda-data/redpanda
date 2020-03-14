@@ -53,6 +53,7 @@ public:
     class fragment;
     using container = std::list<fragment>;
     using iterator = typename container::iterator;
+    using reverse_iterator = typename container::reverse_iterator;
     using const_iterator = typename container::const_iterator;
     class iterator_consumer;
     class byte_iterator;
@@ -115,6 +116,10 @@ public:
     /// the reservation size here
     placeholder reserve(size_t reservation);
 
+    /// only ensures that a segment of at least reservation is avaible
+    /// as an empty fragment
+    void reserve_memory(size_t reservation);
+
     /// append src + len into storage
     void append(const char*, size_t);
     /// appends the contents of buffer; might pack values into existing space
@@ -125,7 +130,8 @@ public:
     void append(iobuf);
     /// prepends the _the buffer_ as iobuf::fragment::full{}
     void prepend(ss::temporary_buffer<char>);
-
+    /// prepends the arg to this as iobuf::fragment::full{}
+    void prepend(iobuf);
     /// used for iostreams
     void pop_front();
     void trim_front(size_t n);
@@ -140,6 +146,8 @@ public:
 
     iterator begin();
     iterator end();
+    reverse_iterator rbegin();
+    reverse_iterator rend();
     const_iterator begin() const;
     const_iterator end() const;
     const_iterator cbegin() const;
@@ -509,6 +517,8 @@ inline iobuf::iobuf(iobuf::control_ptr c, ss::deleter del) noexcept
 
 inline iobuf::iterator iobuf::begin() { return _ctrl->frags.begin(); }
 inline iobuf::iterator iobuf::end() { return _ctrl->frags.end(); }
+inline iobuf::reverse_iterator iobuf::rbegin() { return _ctrl->frags.rbegin(); }
+inline iobuf::reverse_iterator iobuf::rend() { return _ctrl->frags.rend(); }
 inline iobuf::const_iterator iobuf::begin() const {
     return _ctrl->frags.cbegin();
 }
@@ -594,23 +604,33 @@ inline void iobuf::create_new_fragment(size_t sz) {
       ss::temporary_buffer<char>(asz), iobuf::fragment::empty{}));
 }
 inline iobuf::placeholder iobuf::reserve(size_t sz) {
-    if (auto b = available_bytes(); b < sz) {
-        if (b > 0) {
-            _ctrl->frags.back().trim();
-        }
-        create_new_fragment(sz); // make space if not enough
-    }
+    reserve_memory(sz);
     _ctrl->size += sz;
     auto it = std::prev(_ctrl->frags.end());
     placeholder p(it, it->size(), sz);
     it->reserve(sz);
     return p;
 }
+/// only ensures that a segment of at least reservation is avaible
+/// as an empty fragment
+inline void iobuf::reserve_memory(size_t reservation) {
+    if (auto b = available_bytes(); b < reservation) {
+        if (b > 0) {
+            _ctrl->frags.back().trim();
+        }
+        create_new_fragment(reservation); // make space if not enough
+    }
+}
 
 [[gnu::always_inline]] void inline iobuf::prepend(
   ss::temporary_buffer<char> b) {
     _ctrl->size += b.size();
     _ctrl->frags.emplace_front(std::move(b), iobuf::fragment::full{});
+}
+[[gnu::always_inline]] void inline iobuf::prepend(iobuf b) {
+    for (auto start = b.rbegin(), end = b.rend(); start != end; start++) {
+        prepend(start->share());
+    }
 }
 [[gnu::always_inline]] void inline iobuf::append(const char* ptr, size_t size) {
     if (size == 0) {
