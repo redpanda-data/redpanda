@@ -23,7 +23,7 @@ type CobraRoot struct {
 var cobraRoot = &CobraRoot{
 	Command: &cobra.Command{
 		Use:   "rpk",
-		Short: "This is a Red Panda queue Swiss Army Knife CLI",
+		Short: "rpk is the Redpanda CLI & toolbox",
 		Long:  "",
 	},
 }
