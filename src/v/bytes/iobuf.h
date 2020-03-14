@@ -116,6 +116,10 @@ public:
     /// the reservation size here
     placeholder reserve(size_t reservation);
 
+    /// only ensures that a segment of at least reservation is avaible
+    /// as an empty fragment
+    void reserve_memory(size_t reservation);
+
     /// append src + len into storage
     void append(const char*, size_t);
     /// appends the contents of buffer; might pack values into existing space
@@ -599,17 +603,22 @@ inline void iobuf::create_new_fragment(size_t sz) {
       ss::temporary_buffer<char>(asz), iobuf::fragment::empty{}));
 }
 inline iobuf::placeholder iobuf::reserve(size_t sz) {
-    if (auto b = available_bytes(); b < sz) {
-        if (b > 0) {
-            _ctrl->frags.back().trim();
-        }
-        create_new_fragment(sz); // make space if not enough
-    }
+    reserve_memory(sz);
     _ctrl->size += sz;
     auto it = std::prev(_ctrl->frags.end());
     placeholder p(it, it->size(), sz);
     it->reserve(sz);
     return p;
+}
+/// only ensures that a segment of at least reservation is avaible
+/// as an empty fragment
+inline void iobuf::reserve_memory(size_t reservation) {
+    if (auto b = available_bytes(); b < reservation) {
+        if (b > 0) {
+            _ctrl->frags.back().trim();
+        }
+        create_new_fragment(reservation); // make space if not enough
+    }
 }
 
 [[gnu::always_inline]] void inline iobuf::prepend(
