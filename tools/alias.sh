@@ -49,11 +49,12 @@ function gcb_trigger() {
 
   tld=$(git rev-parse --show-toplevel 2>/dev/null)
 
-  (cd $tld && \
-  gcloud builds submit \
-    --async \
-    --project=redpandaci \
-    --config tools/ci/gcbuild.yml \
-    --substitutions="SHORT_SHA=$(git rev-parse --short HEAD),TAG_NAME=na,_COMPILER=$1,_BUILD_TYPE=$2" \
+  (
+    cd $tld &&
+      gcloud builds submit \
+        --async \
+        --project=redpandaci \
+        --config tools/ci/gcbuild.yml \
+        --substitutions="SHORT_SHA=$(git rev-parse --short HEAD),TAG_NAME=na,_COMPILER=$1,_BUILD_TYPE=$2"
   )
 }
