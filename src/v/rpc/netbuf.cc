@@ -19,7 +19,6 @@ static iobuf header_as_iobuf(const header& h) {
 /// \brief used to send the bytes down the wire
 /// we re-compute the header-checksum on every call
 ss::scattered_message<char> netbuf::as_scattered() && {
-    constexpr const size_t size_header = sizeof(header);
     if (_hdr.correlation_id == 0 || _hdr.meta == 0) {
         throw std::runtime_error(
           "cannot compose scattered view with incomplete header. missing "
