@@ -91,17 +91,19 @@ private:
 template<typename Input, typename Output>
 inline ss::future<client_context<Output>> transport::send_typed(
   Input r, uint32_t method_id, rpc::timer_type::time_point timeout) {
-    auto b = ss::make_lw_shared<rpc::netbuf>();
-    b->set_service_method_id(method_id);
+    auto b = std::make_unique<rpc::netbuf>();
+    auto raw_b = b.get();
+    raw_b->set_service_method_id(method_id);
     return reflection::async_adl<Input>{}
-      .to(b->buffer(), std::move(r))
-      .then([this, b, timeout] { return send(std::move(*b), timeout); })
+      .to(raw_b->buffer(), std::move(r))
+      .then([this, b = std::move(b), timeout] {
+          return send(std::move(*b), timeout);
+      })
       .then([this](std::unique_ptr<streaming_context> sctx) mutable {
           return parse_type<Output>(_in, sctx->get_header())
             .then([sctx = std::move(sctx)](Output o) {
                 sctx->signal_body_parse();
                 using ctx_t = rpc::client_context<Output>;
-                // TODO - don't copy the header
                 ctx_t ctx(sctx->get_header());
                 std::swap(ctx.data, o);
                 return ss::make_ready_future<ctx_t>(std::move(ctx));
