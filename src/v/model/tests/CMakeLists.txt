@@ -42,6 +42,5 @@ rp_test(
   UNIT_TEST
   BINARY_NAME model_serialization_test
   SOURCES model_serialization_test.cc
-  LIBRARIES Seastar::seastar_testing
-  LABELS rpc
+  LIBRARIES Seastar::seastar_testing v::model
 )

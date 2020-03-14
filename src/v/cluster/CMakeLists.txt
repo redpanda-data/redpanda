@@ -36,5 +36,6 @@ v_cc_library(
     v::raft
     Roaring::roaring
     absl::flat_hash_map
+    v::model
   )
 add_subdirectory(tests)

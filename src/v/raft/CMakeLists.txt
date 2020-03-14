@@ -25,6 +25,7 @@ v_cc_library(
     v::storage
     raft_rpc
     v::finjector
+    v::model
   )
 add_subdirectory(tests)
 add_subdirectory(tron)
