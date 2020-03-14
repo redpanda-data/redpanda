@@ -1,12 +1,12 @@
 #pragma once
 
 #include "cluster/errc.h"
+#include "model/adl_serde.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
 #include "raft/types.h"
 #include "reflection/adl.h"
-#include "rpc/models.h"
 
 namespace raft {
 class consensus;
