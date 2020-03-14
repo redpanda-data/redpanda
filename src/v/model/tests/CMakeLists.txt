@@ -37,3 +37,10 @@ rp_test(
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES Boost::unit_test_framework v::model
 )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME model_serialization_test
+  SOURCES model_serialization_test.cc
+  LIBRARIES Seastar::seastar_testing v::model
+)
