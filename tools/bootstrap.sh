@@ -17,6 +17,9 @@ cd "${vroot}"
 # install OS package deps
 sudo tools/install-deps.sh
 
+# install docker
+sudo tools/install-docker.sh
+
 # install vtools
 mkdir -p build/venv/
 python3 -mvenv build/venv/v/
