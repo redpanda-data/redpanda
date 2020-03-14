@@ -1,0 +1,19 @@
+{
+    "namespace": "cycling",
+    "service_name": "team_movistar",
+    "includes": [
+        "rpc/test/rpc_gen_types.h"
+    ],
+    "methods": [
+        {
+            "name": "canyon",
+            "input_type": "ultimate_cf_slx",
+            "output_type": "nairo_quintana"
+        },
+        {
+            "name": "ibis_hakka",
+            "input_type": "san_francisco",
+            "output_type": "mount_tamalpais"
+        }
+    ]
+}

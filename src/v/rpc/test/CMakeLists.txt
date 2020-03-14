@@ -1,3 +1,28 @@
+include(rpcgen)
+rpcgen(
+  TARGET cycling_gen
+  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/cycling_service.json
+  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/cycling_service.h
+  INCLUDES ${CMAKE_BINARY_DIR}/src/v
+  )
+
+rpcgen(
+  TARGET echo_gen
+  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/echo_service.json
+  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/echo_service.h
+  INCLUDES ${CMAKE_BINARY_DIR}/src/v
+  )
+
+v_cc_library(
+  NAME
+    rpc_testing
+  HDRS
+    "test/rpc_integration_fixture.h"
+  DEPS
+    echo_gen
+    cycling_gen
+  )
+
 
 rp_test(
   UNIT_TEST
@@ -27,7 +52,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME rpcgenerator_cycling
   SOURCES rpc_gen_cycling_test.cc
-  LIBRARIES Seastar::seastar_testing v::rpc
+  LIBRARIES Seastar::seastar_testing v::rpc_testing
   LABELS rpc
   INPUT_FILES ${CMAKE_CURRENT_SOURCE_DIR}/redpanda.crt
               ${CMAKE_CURRENT_SOURCE_DIR}/redpanda.key

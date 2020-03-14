@@ -16,7 +16,7 @@
             "output_type": "echo_resp"
         },
         {
-            "name": "sleep_5s",
+            "name": "sleep_1s",
             "input_type": "echo_req",
             "output_type": "echo_resp"
         }

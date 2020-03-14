@@ -1,5 +1,6 @@
 #include "rpc/exceptions.h"
 #include "rpc/test/rpc_integration_fixture.h"
+#include "rpc/types.h"
 #include "test_utils/fixture.h"
 
 #include <boost/test/tools/old/interface.hpp>
@@ -16,7 +17,8 @@ FIXTURE_TEST(rpcgen_integration, rpc_integration_fixture) {
     info("client connecting");
     cli.connect().get();
     info("client calling method");
-    auto ret = cli.ibis_hakka(cycling::san_francisco{66}).get0();
+    auto ret
+      = cli.ibis_hakka(cycling::san_francisco{66}, rpc::no_timeout).get0();
     info("client stopping");
     cli.stop().get();
     info("service stopping");
@@ -41,7 +43,8 @@ FIXTURE_TEST(rpcgen_tls_integration, rpc_integration_fixture) {
     info("client connecting");
     cli.connect().get();
     info("client calling method");
-    auto ret = cli.ibis_hakka(cycling::san_francisco{66}).get0();
+    auto ret
+      = cli.ibis_hakka(cycling::san_francisco{66}, rpc::no_timeout).get0();
     info("client stopping");
     cli.stop().get();
     info("service stopping");
@@ -60,10 +63,13 @@ FIXTURE_TEST(client_muxing, rpc_integration_fixture) {
         client(client_config());
     client.connect().get();
     info("Calling movistar method");
-    auto ret = client.ibis_hakka(cycling::san_francisco{66}).get0();
+    auto ret
+      = client.ibis_hakka(cycling::san_francisco{66}, rpc::no_timeout).get0();
     info("Calling echo method");
-    auto echo_resp
-      = client.suffix_echo(echo::echo_req{.str = "testing..."}).get0();
+    auto echo_resp = client
+                       .suffix_echo(
+                         echo::echo_req{.str = "testing..."}, rpc::no_timeout)
+                       .get0();
     client.stop().get();
 
     BOOST_REQUIRE_EQUAL(echo_resp.data.str, "testing..._suffix");
@@ -77,7 +83,7 @@ FIXTURE_TEST(timeout_test, rpc_integration_fixture) {
     rpc::client<echo::echo_client_protocol> client(client_config());
     client.connect().get();
     info("Calling echo method");
-    auto echo_resp = client.sleep_5s(
+    auto echo_resp = client.sleep_1s(
       echo::echo_req{.str = "testing..."}, rpc::clock_type::now() + 100ms);
     BOOST_REQUIRE_THROW(echo_resp.get0(), rpc::request_timeout_exception);
     client.stop().get();
