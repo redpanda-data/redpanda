@@ -32,30 +32,29 @@ struct service::execution_helper {
     using output = Output;
 
     template<typename Func>
-    inline ss::future<netbuf> exec(
+    static ss::future<netbuf> exec(
       ss::input_stream<char>& in,
       streaming_context& ctx,
       uint32_t method_id,
       Func&& f) {
-        // clang-format off
         return ctx.reserve_memory(ctx.get_header().payload_size)
-          .then([f = std::forward<Func>(f), method_id, &in, &ctx] (
-                 ss::semaphore_units<> u) mutable {
+          .then([f = std::forward<Func>(f), method_id, &in, &ctx](
+                  ss::semaphore_units<> u) mutable {
               return parse_type<Input>(in, ctx.get_header())
-                .then([f = std::forward<Func>(f), method_id,
-                       &in, &ctx, u = std::move(u)](Input t) mutable {
+                .then([f = std::forward<Func>(f), &ctx](Input t) mutable {
                     ctx.signal_body_parse();
                     return f(std::move(t), ctx);
                 })
-                .then([u = std::move(u), method_id](Output out) mutable {
-                    auto b = ss::make_lw_shared<netbuf>();
-                    b->set_service_method_id(method_id);
-                    return reflection::async_adl<Output>{}.to(
-                                  b->buffer(), std::move(out))
-                           .then([b] {return std::move(*b);});
-                });
+                .then([method_id](Output out) mutable {
+                    auto b = std::make_unique<netbuf>();
+                    auto raw_b = b.get();
+                    raw_b->set_service_method_id(method_id);
+                    return reflection::async_adl<Output>{}
+                      .to(raw_b->buffer(), std::move(out))
+                      .then([b = std::move(b)] { return std::move(*b); });
+                })
+                .finally([u = std::move(u)] {});
           });
-        // clang-format on
     }
 };
 } // namespace rpc
