@@ -2,9 +2,20 @@
 
 #include "bytes/iobuf.h"
 #include "hashing/xx.h"
+#include "reflection/adl.h"
+#include "rpc/types.h"
+#include "vassert.h"
 
 namespace rpc {
-
+static iobuf header_as_iobuf(const header& h) {
+    iobuf b;
+    b.reserve_memory(size_of_rpc_header);
+    reflection::adl<rpc::header>{}.to(b, h);
+    vassert(
+      b.size_bytes() == size_of_rpc_header,
+      "Header size must be known and exact");
+    return b;
+}
 /// \brief used to send the bytes down the wire
 /// we re-compute the header-checksum on every call
 ss::scattered_message<char> netbuf::as_scattered() && {
@@ -20,16 +31,16 @@ ss::scattered_message<char> netbuf::as_scattered() && {
         h.update(src, sz);
         return ss::stop_iteration::no;
     });
-    _hdr.checksum = h.digest();
-    _hdr.size = _out.size_bytes();
-    // update the header
-    ss::temporary_buffer<char> hdr_payload(
-      reinterpret_cast<const char*>(&_hdr), size_header);
-    _out.prepend(std::move(hdr_payload));
+    _hdr.payload_checksum = h.digest();
+    _hdr.payload_size = _out.size_bytes();
+    _hdr.header_checksum = rpc::checksum_header_only(_hdr);
+    _out.prepend(header_as_iobuf(_hdr));
 
     // prepare for output
     return iobuf_as_scattered(std::move(_out));
 }
+
+void netbuf::set_compression(rpc::compression_type c) { _hdr.compression = c; }
 void netbuf::set_correlation_id(uint32_t x) { _hdr.correlation_id = x; }
 void netbuf::set_service_method_id(uint32_t x) { _hdr.meta = x; }
 

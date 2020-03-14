@@ -7,7 +7,6 @@
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/timer.hh>
-#include <seastar/core/unaligned.hh>
 #include <seastar/net/api.hh>
 #include <seastar/net/socket_defs.hh>
 #include <seastar/net/tls.hh>
@@ -16,6 +15,7 @@
 #include <chrono>
 #include <cstdint>
 #include <iostream>
+#include <type_traits>
 #include <vector>
 
 namespace rpc {
@@ -27,28 +27,47 @@ using timer_type = ss::timer<clock_type>;
 static constexpr clock_type::time_point no_timeout
   = clock_type::time_point::max();
 
+enum class compression_type : uint8_t { none = 0, zstd };
+
 struct negotiation_frame {
     int8_t version = 0;
     /// \brief 0 - no compression
     ///        1 - zstd
-    int8_t compression = 0;
+    compression_type compression = compression_type::none;
 };
 
 /// \brief core struct for communications. sent with _each_ payload
-struct [[gnu::packed]] header {
-    /// \brief size of the payload _after_ this header
-    ss::unaligned<uint32_t> size = 0;
+struct header {
+    /// \brief version is unused. always 0. can be used for bitflags as well
+    uint8_t version{0};
+    /// \brief everything below the checksum is hashed with crc-16-ccitt
+    uint16_t header_checksum{0};
+    /// \breif compression on the wire
+    compression_type compression{0};
+    /// \brief size of the payload
+    uint32_t payload_size{0};
     /// \brief used to find the method id on the server side
-    ss::unaligned<uint32_t> meta = 0;
+    uint32_t meta{0};
     /// \brief every client/tcp connection will need to match
     /// the ss::future<> that dispatched the method
-    ss::unaligned<uint32_t> correlation_id = 0;
-    /// \bitflags for payload
-    ss::unaligned<uint32_t> bitflags = 0;
+    uint32_t correlation_id{0};
     /// \brief xxhash64
-    ss::unaligned<uint64_t> checksum = 0;
+    uint64_t payload_checksum{0};
 };
-static_assert(sizeof(header) == 24, "This is expensive. Expand gently");
+
+static constexpr size_t size_of_rpc_header
+  = sizeof(header::version)                            // 1
+    + sizeof(header::header_checksum)                  // 2
+    + sizeof(std::underlying_type_t<compression_type>) // 1
+    + sizeof(header::payload_size)                     // 4
+    + sizeof(header::meta)                             // 4
+    + sizeof(header::correlation_id)                   // 4
+    + sizeof(header::payload_checksum)                 // 8
+  ;
+static_assert(
+  size_of_rpc_header == 24, "Be gentil when extending this header. expensive");
+
+uint16_t checksum_header_only(const header& h);
 
 /// \brief used to pass environment context to the class
 /// actually doing the work
@@ -97,5 +116,4 @@ struct transport_configuration {
 
 std::ostream& operator<<(std::ostream&, const header&);
 std::ostream& operator<<(std::ostream&, const server_configuration&);
-
 } // namespace rpc

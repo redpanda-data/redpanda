@@ -38,7 +38,7 @@ struct service::execution_helper {
       uint32_t method_id,
       Func&& f) {
         // clang-format off
-        return ctx.reserve_memory(ctx.get_header().size)
+        return ctx.reserve_memory(ctx.get_header().payload_size)
           .then([f = std::forward<Func>(f), method_id, &in, &ctx] (
                  ss::semaphore_units<> u) mutable {
               return parse_type<Input>(in, ctx.get_header())
