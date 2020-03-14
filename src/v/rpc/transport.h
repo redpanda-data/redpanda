@@ -31,8 +31,11 @@ public:
     };
 
     explicit base_transport(configuration c);
-    virtual ~base_transport() = default;
-    base_transport(base_transport&&) = default;
+    virtual ~base_transport() noexcept = default;
+    base_transport(base_transport&&) noexcept = default;
+    base_transport& operator=(base_transport&&) noexcept = default;
+    base_transport(const base_transport&) = delete;
+    base_transport& operator=(const base_transport&) = delete;
 
     virtual ss::future<> connect();
     ss::future<> stop();
@@ -63,8 +66,13 @@ public:
     explicit transport(
       transport_configuration c,
       std::optional<ss::sstring> service_name = std::nullopt);
-    transport(transport&&) = default;
     ~transport() override;
+    transport(transport&&) noexcept = default;
+    // semaphore is not move assignable
+    transport& operator=(transport&&) noexcept = delete;
+    transport(const transport&) = delete;
+    transport& operator=(const transport&) = delete;
+
     ss::future<> connect() final;
     ss::future<std::unique_ptr<streaming_context>>
       send(netbuf, rpc::timer_type::time_point);
