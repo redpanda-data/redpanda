@@ -19,7 +19,6 @@ public:
     iobuf& buffer() { return _out; }
 
 private:
-    size_t payload_size() const { return _out.size_bytes() - sizeof(_hdr); }
     header _hdr;
     iobuf _out;
 };
