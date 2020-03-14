@@ -6,7 +6,7 @@
 namespace rpc {
 struct server_context_impl final : streaming_context {
     server_context_impl(server::resources s, header h)
-      : _s(std::ref(s))
+      : _s(std::move(s))
       , _h(h) {}
     ss::future<ss::semaphore_units<>> reserve_memory(size_t ask) final {
         auto fut = get_units(_s.memory(), ask);
