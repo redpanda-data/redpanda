@@ -28,3 +28,32 @@ function bootstrap() {
     echo "[error: cannot find tools/bootstrap.sh]"
   fi
 }
+
+# gcb_trigger <gcc|clang> <release|debug>
+function gcb_trigger() {
+
+  if [[ $# != 2 ]]; then
+    echo "expecting two arguments"
+    return 1
+  fi
+
+  if [[ $1 != "gcc" ]] && [[ $1 != "clang" ]]; then
+    echo "expecting first argument to be 'clang' or 'gcc'"
+    return 1
+  fi
+
+  if [[ $2 != "release" ]] && [[ $2 != "debug" ]]; then
+    echo "expecting second argument to be 'release' or 'debug'"
+    return 1
+  fi
+
+  tld=$(git rev-parse --show-toplevel 2>/dev/null)
+
+  (cd $tld && \
+  gcloud builds submit \
+    --async \
+    --project=redpandaci \
+    --config tools/ci/gcbuild.yml \
+    --substitutions="SHORT_SHA=$(git rev-parse --short HEAD),TAG_NAME=na,_COMPILER=$1,_BUILD_TYPE=$2" \
+  )
+}
