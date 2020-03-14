@@ -1,5 +1,6 @@
 #pragma once
 
+#include "config/configuration.h"
 #include "outcome.h"
 #include "raft/consensus.h"
 #include "raft/consensus_client_protocol.h"
@@ -46,7 +47,6 @@ public:
 
     void register_group(ss::lw_shared_ptr<consensus>);
     void deregister_group(raft::group_id);
-    duration_type election_duration() const { return _heartbeat_interval * 2; }
 
     ss::future<> start();
     ss::future<> stop();

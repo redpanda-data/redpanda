@@ -211,7 +211,13 @@ configuration::configuration()
       "disable_batch_cache",
       "Disable batch cache in log manager",
       required::no,
-      false) {}
+      false)
+  , raft_election_timeout_ms(
+      *this,
+      "election_timeout_ms",
+      "Election timeout expressed in milliseconds",
+      required::no,
+      1'500ms) {}
 
 void configuration::read_yaml(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {

@@ -94,7 +94,8 @@ ss::lw_shared_ptr<raft::consensus> partition_manager::make_consensus(
       _self,
       gr,
       raft::group_configuration{.nodes = std::move(nodes)},
-      raft::timeout_jitter(_hbeats.election_duration()),
+      raft::timeout_jitter(
+        config::shard_local_cfg().raft_election_timeout_ms()),
       log,
       _should_fsync,
       raft_priority(),

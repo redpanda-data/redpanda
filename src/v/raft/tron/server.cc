@@ -90,7 +90,8 @@ public:
                 _self,
                 raft::group_id(66),
                 std::move(cfg),
-                raft::timeout_jitter(_hbeats.election_duration()),
+                raft::timeout_jitter(
+                  config::shard_local_cfg().raft_election_timeout_ms()),
                 log,
                 storage::log_append_config::fsync::yes,
                 ss::default_priority_class(),
