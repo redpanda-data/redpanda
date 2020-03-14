@@ -27,6 +27,10 @@ func getValidConfig() *Config {
 				Port:    9092,
 				Address: "127.0.0.1",
 			},
+			AdminApi: SocketAddress{
+				Port:    9644,
+				Address: "127.0.0.1",
+			},
 			SeedServers: []*SeedServer{
 				&SeedServer{
 					Host: SocketAddress{
@@ -150,6 +154,9 @@ redpanda:
   kafka_api:
     address: 127.0.0.1
     port: 9092
+  admin:
+    address: 127.0.0.1
+    port: 9644
   node_id: 1
   seed_servers:
   - host:
@@ -204,6 +211,9 @@ redpanda:
   kafka_api:
     address: 127.0.0.1
     port: 9092
+  admin:
+    address: 127.0.0.1
+    port: 9644
   node_id: 1
   seed_servers:
   - host:

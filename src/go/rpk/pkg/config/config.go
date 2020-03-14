@@ -27,6 +27,7 @@ type RedpandaConfig struct {
 	Directory   string        `yaml:"data_directory" json:"directory"`
 	RPCServer   SocketAddress `yaml:"rpc_server" json:"rpcServer"`
 	KafkaApi    SocketAddress `yaml:"kafka_api" json:"kafkaApi"`
+	AdminApi    SocketAddress `yaml:"admin" json:"admin"`
 	Id          int           `yaml:"node_id" json:"id"`
 	SeedServers []*SeedServer `yaml:"seed_servers" json:"seedServers"`
 }
