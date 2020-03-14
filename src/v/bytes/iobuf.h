@@ -130,7 +130,8 @@ public:
     void append(iobuf);
     /// prepends the _the buffer_ as iobuf::fragment::full{}
     void prepend(ss::temporary_buffer<char>);
-
+    /// prepends the arg to this as iobuf::fragment::full{}
+    void prepend(iobuf);
     /// used for iostreams
     void pop_front();
     void trim_front(size_t n);
@@ -625,6 +626,11 @@ inline void iobuf::reserve_memory(size_t reservation) {
   ss::temporary_buffer<char> b) {
     _ctrl->size += b.size();
     _ctrl->frags.emplace_front(std::move(b), iobuf::fragment::full{});
+}
+[[gnu::always_inline]] void inline iobuf::prepend(iobuf b) {
+    for (auto start = b.rbegin(), end = b.rend(); start != end; start++) {
+        prepend(start->share());
+    }
 }
 [[gnu::always_inline]] void inline iobuf::append(const char* ptr, size_t size) {
     if (size == 0) {
