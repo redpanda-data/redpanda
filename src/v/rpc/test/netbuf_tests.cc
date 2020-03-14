@@ -13,14 +13,8 @@ namespace rpc {
 /// \brief expects the inputstream to be prefixed by an rpc::header
 template<typename T>
 ss::future<T> parse_framed(ss::input_stream<char>& in) {
-    return parse_header(in).then([&in](std::optional<header> o) {
-        auto h = std::move(o.value());
-        if (h.bitflags == 0) {
-            return rpc::parse_type_wihout_compression<T>(in, h);
-        }
-        throw std::runtime_error(
-          fmt::format("no compression supported. header: {}", h));
-    });
+    return parse_header(in).then(
+      [&in](std::optional<header> o) { return parse_type<T>(in, o.value()); });
 }
 } // namespace rpc
 

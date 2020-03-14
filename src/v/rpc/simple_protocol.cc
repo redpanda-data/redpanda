@@ -1,6 +1,7 @@
 #include "rpc/simple_protocol.h"
 
 #include "rpc/logger.h"
+#include "rpc/types.h"
 
 namespace rpc {
 struct server_context_impl final : streaming_context {
@@ -41,7 +42,6 @@ ss::future<> simple_protocol::apply(server::resources rs) {
 ss::future<>
 simple_protocol::dispatch_method_once(header h, server::resources rs) {
     const auto method_id = h.meta;
-    constexpr size_t header_size = sizeof(header);
     auto ctx = ss::make_lw_shared<server_context_impl>(rs, h);
     auto it = std::find_if(
       _services.begin(),
@@ -56,7 +56,7 @@ simple_protocol::dispatch_method_once(header h, server::resources rs) {
     }
     auto fut = ctx->pr.get_future();
     method* m = it->get()->method_from_id(method_id);
-    rs.probe().add_bytes_received(header_size + h.size);
+    rs.probe().add_bytes_received(size_of_rpc_header + h.payload_size);
     // background!
     if (rs.conn_gate().is_closed()) {
         return ss::make_exception_future<>(ss::gate_closed_exception());
