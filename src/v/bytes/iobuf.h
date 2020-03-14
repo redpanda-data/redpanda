@@ -53,6 +53,7 @@ public:
     class fragment;
     using container = std::list<fragment>;
     using iterator = typename container::iterator;
+    using reverse_iterator = typename container::reverse_iterator;
     using const_iterator = typename container::const_iterator;
     class iterator_consumer;
     class byte_iterator;
@@ -140,6 +141,8 @@ public:
 
     iterator begin();
     iterator end();
+    reverse_iterator rbegin();
+    reverse_iterator rend();
     const_iterator begin() const;
     const_iterator end() const;
     const_iterator cbegin() const;
@@ -509,6 +512,8 @@ inline iobuf::iobuf(iobuf::control_ptr c, ss::deleter del) noexcept
 
 inline iobuf::iterator iobuf::begin() { return _ctrl->frags.begin(); }
 inline iobuf::iterator iobuf::end() { return _ctrl->frags.end(); }
+inline iobuf::reverse_iterator iobuf::rbegin() { return _ctrl->frags.rbegin(); }
+inline iobuf::reverse_iterator iobuf::rend() { return _ctrl->frags.rend(); }
 inline iobuf::const_iterator iobuf::begin() const {
     return _ctrl->frags.cbegin();
 }
