@@ -42,9 +42,8 @@ ss::future<> protocol::apply(rpc::server::resources rs) {
     auto ctx = ss::make_lw_shared<protocol::connection_context>(
       *this, std::move(rs));
     return ss::do_until(
-             [this, ctx] { return ctx->is_finished_parsing(); },
-             [this, ctx] { return ctx->process_one_request(); })
-      .finally([ctx] {});
+      [this, ctx] { return ctx->is_finished_parsing(); },
+      [this, ctx] { return ctx->process_one_request(); });
 }
 
 ss::future<> protocol::connection_context::process_one_request() {
@@ -129,12 +128,13 @@ ss::future<> protocol::connection_context::dispatch_method_once(
                     _proto._partition_manager,
                     _proto._coordinator_mapper);
                   // background process this one full request
+                  auto self = shared_from_this();
                   (void)ss::with_gate(
                     _rs.conn_gate(),
                     [this, rctx = std::move(rctx)]() mutable {
                         return do_process(std::move(rctx));
                     })
-                    .finally([units = std::move(units)] {});
+                    .finally([units = std::move(units), self] {});
               });
         });
     });

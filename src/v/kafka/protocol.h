@@ -13,6 +13,7 @@
 #include <seastar/core/metrics_registration.hh>
 #include <seastar/core/scattered_message.hh>
 #include <seastar/core/sharded.hh>
+#include <seastar/core/shared_ptr.hh>
 
 #include <absl/container/flat_hash_map.h>
 
@@ -59,7 +60,8 @@ public:
 private:
     using map_t = absl::flat_hash_map<sequence_id, ss::scattered_message<char>>;
 
-    class connection_context {
+    class connection_context final
+      : public ss::enable_lw_shared_from_this<connection_context> {
     public:
         connection_context(protocol& p, rpc::server::resources&& r) noexcept
           : _proto(p)
