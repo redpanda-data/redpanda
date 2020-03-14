@@ -71,13 +71,33 @@ uint16_t checksum_header_only(const header& h);
 
 /// \brief used to pass environment context to the class
 /// actually doing the work
-struct streaming_context {
+class streaming_context {
+public:
+    streaming_context() noexcept = default;
+    streaming_context(streaming_context&&) noexcept = default;
+    streaming_context& operator=(streaming_context&&) noexcept = default;
+    streaming_context(const streaming_context&) = delete;
+    streaming_context& operator=(const streaming_context&) = delete;
+
     virtual ~streaming_context() noexcept = default;
     virtual ss::future<ss::semaphore_units<>> reserve_memory(size_t) = 0;
     virtual const header& get_header() const = 0;
     /// \brief because we parse the input as a _stream_ we need to signal
     /// to the dispatching thread that it can resume parsing for a new RPC
     virtual void signal_body_parse() = 0;
+
+    /// \brief keep these units until destruction of context.
+    /// usually, we want to keep the reservation of the memory size permanently
+    /// until destruction of object without doing a .finally() and moving things
+    /// around
+    ss::future<> permanent_memory_reservation(size_t n) {
+        return reserve_memory(n).then([this](ss::semaphore_units<> units) {
+            _reservations.push_back(std::move(units));
+        });
+    }
+
+private:
+    std::vector<ss::semaphore_units<>> _reservations;
 };
 
 /// \brief most method implementations will be codegenerated

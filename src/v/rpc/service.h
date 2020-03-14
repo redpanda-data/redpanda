@@ -37,9 +37,8 @@ struct service::execution_helper {
       streaming_context& ctx,
       uint32_t method_id,
       Func&& f) {
-        return ctx.reserve_memory(ctx.get_header().payload_size)
-          .then([f = std::forward<Func>(f), method_id, &in, &ctx](
-                  ss::semaphore_units<> u) mutable {
+        return ctx.permanent_memory_reservation(ctx.get_header().payload_size)
+          .then([f = std::forward<Func>(f), method_id, &in, &ctx]() mutable {
               return parse_type<Input>(in, ctx.get_header())
                 .then([f = std::forward<Func>(f), &ctx](Input t) mutable {
                     ctx.signal_body_parse();
@@ -52,8 +51,7 @@ struct service::execution_helper {
                     return reflection::async_adl<Output>{}
                       .to(raw_b->buffer(), std::move(out))
                       .then([b = std::move(b)] { return std::move(*b); });
-                })
-                .finally([u = std::move(u)] {});
+                });
           });
     }
 };
