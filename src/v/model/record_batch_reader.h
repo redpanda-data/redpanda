@@ -63,7 +63,7 @@ public:
         impl& operator=(const impl& o) = delete;
         virtual ~impl() = default;
 
-        virtual bool end_of_stream() const = 0;
+        virtual bool is_end_of_stream() const = 0;
 
         virtual ss::future<storage_t>
           do_load_slice(timeout_clock::time_point) = 0;
@@ -80,7 +80,7 @@ public:
             if (!is_slice_empty()) {
                 return ss::make_ready_future<record_batch_opt>(pop_batch());
             }
-            if (end_of_stream()) {
+            if (is_end_of_stream()) {
                 return ss::make_ready_future<record_batch_opt>();
             }
             return load_slice(timeout).then(
@@ -124,7 +124,7 @@ public:
                        if (likely(!is_slice_empty())) {
                            return consumer(pop_batch());
                        }
-                       if (end_of_stream()) {
+                       if (is_end_of_stream()) {
                            return ss::make_ready_future<ss::stop_iteration>(
                              ss::stop_iteration::yes);
                        }
@@ -159,12 +159,12 @@ public:
         return _impl->load_slice(timeout);
     }
 
-    bool end_of_stream() const {
-        return _impl->is_slice_empty() && _impl->end_of_stream();
+    bool is_end_of_stream() const {
+        return _impl->is_slice_empty() && _impl->is_end_of_stream();
     }
 
     bool should_load_slice() const {
-        return _impl->is_slice_empty() && !_impl->end_of_stream();
+        return _impl->is_slice_empty() && !_impl->is_end_of_stream();
     }
 
     // Stops when consumer returns stop_iteration::yes or end of stream is
