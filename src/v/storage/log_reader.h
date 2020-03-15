@@ -14,6 +14,29 @@
 #include <seastar/core/io_queue.hh>
 #include <seastar/util/optimized_optional.hh>
 
+/**
+storage/log_reader: use iterator-style traversal for reading
+
+segment 1                                   segment 2
++--+--+--+--+-----+------+--+--+----+---+   +--+--+--+--+-----+---------+
+|  |  |  |  |     |      |  |  |    |   |   |  |  |  |  |     |         |
++--+--+--+--+-----+---------+--+----+---+   +--+--+--+--+-----+---------+
+^                        ^
+|                        |
+|                        | log_reader::iterator<continous_batch_parser>
+|                        |
+|                        +
+| log_reader::iterator::reader<log_segment_batch_reader>
+|
+|
++ log_reader::iterator::next_seg<segment_set::iterator>
+
+Instead of closing the log_segment_batch_reader which reads _one_ segment
+after every invocation of `record_batch_reader::load_batches()`
+    we keep the pair of iterators around.
+
+    The tradeoff is that we now _must_ close the parser manually
+*/
 namespace storage {
 
 class log_segment_batch_reader;
@@ -49,7 +72,7 @@ private:
 
 class log_segment_batch_reader {
 public:
-    static constexpr size_t max_buffer_size = 128 * 1024; // 128KB
+    static constexpr size_t max_buffer_size = 32 * 1024; // 32KB
 
     log_segment_batch_reader(
       segment&, log_reader_config& config, probe& p) noexcept;
@@ -62,7 +85,9 @@ public:
     ~log_segment_batch_reader() noexcept = default;
 
     ss::future<ss::circular_buffer<model::record_batch>>
-      read(model::timeout_clock::time_point);
+      read_some(model::timeout_clock::time_point);
+
+    ss::future<> close();
 
 private:
     std::unique_ptr<continuous_batch_parser> initialize(
@@ -72,12 +97,18 @@ private:
     bool is_buffer_full() const;
 
 private:
+    struct tmp_state {
+        ss::circular_buffer<model::record_batch> buffer;
+        size_t buffer_size = 0;
+        bool is_full() const { return buffer_size == max_buffer_size; }
+    };
+
     segment& _seg;
     log_reader_config& _config;
     probe& _probe;
-    ss::circular_buffer<model::record_batch> _buffer;
-    size_t _buffer_size = 0;
 
+    std::unique_ptr<continuous_batch_parser> _iterator;
+    tmp_state _state;
     friend class skipping_consumer;
 };
 
@@ -86,24 +117,40 @@ public:
     log_reader(
       std::unique_ptr<lock_manager::lease>, log_reader_config, probe&) noexcept;
 
-    bool end_of_stream() const final {
-        return _next_seg == _lease->range.end();
+    bool is_end_of_stream() const final {
+        return _iterator.next_seg == _lease->range.end();
     }
 
     ss::future<ss::circular_buffer<model::record_batch>>
       do_load_slice(model::timeout_clock::time_point) final;
 
 private:
-    void set_end_of_stream() { _next_seg = _lease->range.end(); }
+    void set_end_of_stream() { _iterator.next_seg = _lease->range.end(); }
     bool is_done();
+    ss::future<> next_iterator();
 
     using reader_available = ss::bool_class<struct create_reader_tag>;
-
     reader_available maybe_create_segment_reader();
 
 private:
+    struct iterator_pair {
+        iterator_pair(segment_set::iterator i)
+          : next_seg(i) {}
+
+        segment_set::iterator next_seg;
+        std::unique_ptr<log_segment_batch_reader> reader = nullptr;
+
+        explicit operator bool() { return bool(reader); }
+        ss::future<> close() {
+            if (reader) {
+                return reader->close().then([this] { reader = nullptr; });
+            }
+            return ss::make_ready_future<>();
+        }
+    };
+
     std::unique_ptr<lock_manager::lease> _lease;
-    segment_set::iterator _next_seg;
+    iterator_pair _iterator;
     log_reader_config _config;
     model::offset _last_base;
     probe& _probe;

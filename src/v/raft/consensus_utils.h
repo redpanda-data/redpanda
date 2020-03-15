@@ -80,7 +80,7 @@ public:
       : _source(std::move(r).release())
       , _term(term) {}
 
-    bool end_of_stream() const final { return _source->end_of_stream(); }
+    bool is_end_of_stream() const final { return _source->is_end_of_stream(); }
 
     ss::future<ss::circular_buffer<model::record_batch>>
     do_load_slice(model::timeout_clock::time_point tout) final {

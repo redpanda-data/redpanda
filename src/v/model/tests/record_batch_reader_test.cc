@@ -112,7 +112,7 @@ SEASTAR_THREAD_TEST_CASE(test_pop) {
     }
     {
         BOOST_REQUIRE(!reader.should_load_slice());
-        BOOST_REQUIRE(!reader.end_of_stream());
+        BOOST_REQUIRE(!reader.is_end_of_stream());
     }
     {
         auto batch = reader.pop_batch();
@@ -120,7 +120,7 @@ SEASTAR_THREAD_TEST_CASE(test_pop) {
     }
     {
         BOOST_REQUIRE(!reader.should_load_slice());
-        BOOST_REQUIRE(reader.end_of_stream());
+        BOOST_REQUIRE(reader.is_end_of_stream());
     }
 }
 
@@ -150,13 +150,13 @@ SEASTAR_THREAD_TEST_CASE(test_pop_multiple_slices) {
         reader.load_slice(no_timeout).get();
         auto batch = reader.pop_batch();
         BOOST_CHECK_EQUAL(batch.base_offset(), offset(4));
-        BOOST_REQUIRE(!reader.end_of_stream());
+        BOOST_REQUIRE(!reader.is_end_of_stream());
     }
     {
         BOOST_REQUIRE(reader.should_load_slice());
         reader.load_slice(no_timeout).get();
         BOOST_REQUIRE(!reader.should_load_slice());
-        BOOST_REQUIRE(reader.end_of_stream());
+        BOOST_REQUIRE(reader.is_end_of_stream());
     }
 }
 

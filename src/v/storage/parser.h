@@ -45,8 +45,10 @@ public:
     continuous_batch_parser& operator=(continuous_batch_parser&&) = default;
     ~continuous_batch_parser() = default;
 
-    // closes the input stream before returning
+    // continues to parse until stop_parser is reached or end of stream
     ss::future<size_t> consume();
+    bool eof() const { return _input.eof(); }
+    ss::future<> close() { return _input.close(); }
 
 private:
     ss::future<batch_consumer::stop_parser> consume_one();

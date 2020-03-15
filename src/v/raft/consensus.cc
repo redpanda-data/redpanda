@@ -441,7 +441,7 @@ consensus::do_append_entries(append_entries_request&& r) {
     // special case heartbeat case
     // we need to handle it early (before executing truncation)
     // as timeouts are asynchronous to append calls and can have stall data
-    if (r.batches.end_of_stream()) {
+    if (r.batches.is_end_of_stream()) {
         _ctxlog.trace("Empty append entries, meta {}", r.meta);
         if (r.meta.prev_log_index < last_log_offset) {
             // do not tuncate on heartbeat just response with false
