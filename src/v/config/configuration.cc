@@ -19,9 +19,9 @@ configuration::configuration()
   , log_segment_size(
       *this,
       "log_segment_size",
-      "How large in bytes should each log segment be (1<<31)",
+      "How large in bytes should each log segment be (default 1G)",
       required::no,
-      1 << 31)
+      1 << 30)
   , rpc_server(
       *this,
       "rpc_server",
