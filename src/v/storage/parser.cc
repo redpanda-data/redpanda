@@ -113,6 +113,11 @@ ss::future<stop_parser> continuous_batch_parser::consume_header() {
                 o.value());
               return ss::make_ready_future<stop_parser>(stop_parser::yes);
           }
+          if (unlikely(o.value().header_crc == 0)) {
+              // CRC of 0's is always 0, so we need to check we've reached a
+              // fallocated file segment
+              return ss::make_ready_future<stop_parser>(stop_parser::yes);
+          }
           _header = o.value();
           const auto size_on_disk = _header.size_bytes;
           auto ret = _consumer->consume_batch_start(
