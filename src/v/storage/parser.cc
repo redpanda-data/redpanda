@@ -247,16 +247,6 @@ ss::future<size_t> continuous_batch_parser::consume() {
                                             : ss::stop_iteration::no;
                });
            })
-      .then_wrapped([this](ss::future<> f) {
-          try {
-              f.get();
-              return _input.close();
-          } catch (...) {
-              return _input.close().then([e = std::current_exception()] {
-                  return ss::make_exception_future<>(e);
-              });
-          }
-      })
       .then([this] { return _bytes_consumed; });
 }
 } // namespace storage
