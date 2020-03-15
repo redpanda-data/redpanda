@@ -24,7 +24,7 @@ def _install_awscli(install_dir, env):
     --install-dir {install_dir} \
     --bin-dir {install_dir}"""
     logging.info('Downloading AWS CLI...')
-    _download_and_extract(awscli_url, awscli_zip, install_dir)
+    _download_and_extract(awscli_url, awscli_zip, install_dir, env=env)
     installed = os.path.isfile(
         os.path.join(install_dir, 'v2', 'current', 'bin', 'aws'))
     if installed:
