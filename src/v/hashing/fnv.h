@@ -1,7 +1,9 @@
 #pragma once
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <string>
+
 /*
  * Fowler / Noll / Vo (FNV) Hash
  *     http://www.isthe.com/chongo/tech/comp/fnv/
