@@ -30,6 +30,7 @@ fi
 if [[ $1 == "consume" ]]; then
   bin/kafka-consumer-perf-test.sh --broker-list=${servers} \
     --fetch-size=$((1024 * 1024)) \
+    --timeout=1000 \
     --messages=${record_count} \
     --topic=${topic} \
     --threads 1
