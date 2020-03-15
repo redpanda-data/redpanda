@@ -93,7 +93,8 @@ operator<<(std::ostream& o, const record_batch_attributes& attrs) {
 }
 
 std::ostream& operator<<(std::ostream& o, const record_batch_header& h) {
-    return o << "{size_bytes:" << h.size_bytes
+    return o << "{header_crc:" << h.header_crc
+             << ", size_bytes:" << h.size_bytes
              << ", base_offset:" << h.base_offset << ", type:" << h.type
              << ", crc:" << h.crc << ", attrs:" << h.attrs
              << ", last_offset_delta:" << h.last_offset_delta

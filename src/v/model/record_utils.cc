@@ -19,6 +19,42 @@ static inline void crc_extend_vint(crc32& crc, vint::value_type v) {
 }
 
 template<typename T, typename = std::enable_if_t<std::is_arithmetic_v<T>, T>>
+void crc_extend_cpu_to_le(crc32& crc, T i) {
+    auto j = ss::cpu_to_le(i);
+    crc.extend(j);
+}
+
+template<typename... T>
+void crc_extend_all_cpu_to_le(crc32& crc, T... t) {
+    ((crc_extend_cpu_to_le(crc, t)), ...);
+}
+
+/// \brief uint32_t because that's what crc32c uses
+/// it is *only* record_batch_header.header_crc;
+uint32_t internal_header_only_crc(const record_batch_header& header) {
+    auto c = crc32();
+    crc_extend_all_cpu_to_le(
+      c,
+      /*Additional fields*/
+      header.size_bytes,
+      header.base_offset(),
+      header.type(),
+      header.crc,
+
+      /*Below are same fields as kafka - but at no cost on x86 since they are
+         hashed as little endian*/
+      header.attrs.value(),
+      header.last_offset_delta,
+      header.first_timestamp.value(),
+      header.max_timestamp.value(),
+      header.producer_id,
+      header.producer_epoch,
+      header.base_sequence,
+      header.record_count);
+    return c.value();
+}
+
+template<typename T, typename = std::enable_if_t<std::is_arithmetic_v<T>, T>>
 void crc_extend_cpu_to_be(crc32& crc, T i) {
     auto j = ss::cpu_to_be(i);
     crc.extend(j);

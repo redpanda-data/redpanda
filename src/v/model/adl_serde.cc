@@ -154,6 +154,7 @@ void adl<model::record_batch_header>::to(
   iobuf& out, model::record_batch_header&& r) {
     reflection::serialize(
       out,
+      r.header_crc,
       r.size_bytes,
       r.base_offset,
       r.type,
@@ -171,6 +172,7 @@ void adl<model::record_batch_header>::to(
 
 model::record_batch_header
 adl<model::record_batch_header>::from(iobuf_parser& in) {
+    auto header_crc = adl<uint32_t>{}.from(in);
     auto sz = adl<int32_t>{}.from(in);
     auto off = adl<model::offset>{}.from(in);
     auto type = adl<model::record_batch_type>{}.from(in);
@@ -187,18 +189,19 @@ adl<model::record_batch_header>::from(iobuf_parser& in) {
     auto record_count = adl<int32_t>{}.from(in);
     auto term_id = adl<model::term_id>{}.from(in);
     return model::record_batch_header{
-      sz,
-      off,
-      type,
-      crc,
-      attrs,
-      delta,
-      first,
-      max,
-      producer_id,
-      producer_epoch,
-      base_sequence,
-      record_count,
+      .header_crc = header_crc,
+      .size_bytes = sz,
+      .base_offset = off,
+      .type = type,
+      .crc = crc,
+      .attrs = attrs,
+      .last_offset_delta = delta,
+      .first_timestamp = first,
+      .max_timestamp = max,
+      .producer_id = producer_id,
+      .producer_epoch = producer_epoch,
+      .base_sequence = base_sequence,
+      .record_count = record_count,
       model::record_batch_header::context{.term = term_id}};
 }
 

@@ -316,12 +316,19 @@ struct record_batch_header {
         model::term_id term;
     };
 
+    /// \brief every thing below this field gets CRC, except `context`
+    /// which is excluded from the on-disk-format as well.
+    /// Note: this is included first because the size of the header is fixed.
+    /// it is encoded in little endian format.
+    uint32_t header_crc{0};
+
     int32_t size_bytes{0};
     offset base_offset;
-    record_batch_type type; // redpanda extension
+    /// \brief redpanda extension
+    record_batch_type type;
     int32_t crc{0};
 
-    // -- below the CRC are checksummed
+    // -- below the CRC are checksummed by the kafka crc. see @crc field
 
     record_batch_attributes attrs;
     int32_t last_offset_delta{0};
@@ -359,7 +366,8 @@ struct record_batch_header {
 
 // 57 bytes
 constexpr uint32_t packed_record_batch_header_size
-  = sizeof(model::record_batch_header::size_bytes)          // 4
+  = sizeof(model::record_batch_header::header_crc)          // 4
+    + sizeof(model::record_batch_header::size_bytes)        // 4
     + sizeof(model::record_batch_header::base_offset)       // 8
     + sizeof(model::record_batch_type::type)                // 1
     + sizeof(model::record_batch_header::crc)               // 4
