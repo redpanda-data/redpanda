@@ -17,9 +17,13 @@
 namespace storage {
 
 iobuf disk_header_to_iobuf(const model::record_batch_header& h) {
+#ifndef NDEBUG
+    vassert(h.header_crc != 0, "Header cannot have an unset crc:{}", h);
+#endif
     iobuf b;
     reflection::serialize(
       b,
+      h.header_crc,
       h.size_bytes,
       h.base_offset(),
       h.type(),

@@ -1,3 +1,4 @@
+#include "model/record_utils.h"
 #include "random/generators.h"
 #include "storage/disk_log_appender.h"
 #include "storage/log_replayer.h"
@@ -67,6 +68,8 @@ struct context {
         do_write(
           [&batches](segment_appender& appender) {
               for (auto& b : batches) {
+                  b.header().header_crc = model::internal_header_only_crc(
+                    b.header());
                   storage::write(appender, b).get();
               }
           },
