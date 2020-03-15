@@ -12,6 +12,14 @@
 #include <type_traits>
 
 namespace storage {
+static inline void crc_extend_iobuf(crc32& crc, const iobuf& buf) {
+    auto in = iobuf::iterator_consumer(buf.cbegin(), buf.cend());
+    (void)in.consume(buf.size_bytes(), [&crc](const char* src, size_t sz) {
+        // NOLINTNEXTLINE
+        crc.extend(reinterpret_cast<const uint8_t*>(src), sz);
+        return ss::stop_iteration::no;
+    });
+}
 class checksumming_consumer final : public batch_consumer {
 public:
     static constexpr size_t max_segment_size = static_cast<size_t>(
@@ -76,7 +84,7 @@ public:
         return skip_batch::no;
     }
     void consume_compressed_records(iobuf&& records) override {
-        _crc.extend(records);
+        crc_extend_iobuf(_crc, records);
     }
 
     stop_parser consume_batch_end() override {
@@ -114,6 +122,7 @@ log_replayer::recover_in_thread(const ss::io_priority_class& prio) {
       std::move(consumer), std::move(data_stream));
     try {
         parser.consume().get();
+        parser.close().get();
     } catch (...) {
         stlog.warn(
           "{} partial recovery to {}, with: {}",

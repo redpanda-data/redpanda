@@ -62,7 +62,7 @@ public:
         _hook.get().erase(_hook.get().iterator_to(*this));
     }
 
-    bool end_of_stream() const final {
+    bool is_end_of_stream() const final {
         return _end_of_stream || _cur == _end
                || _cur->base_offset() > _endoffset;
     }
@@ -70,7 +70,7 @@ public:
     ss::future<ss::circular_buffer<model::record_batch>>
     do_load_slice(model::timeout_clock::time_point) final {
         ss::circular_buffer<model::record_batch> ret;
-        if (!end_of_stream()) {
+        if (!is_end_of_stream()) {
             ret.push_back(_cur->share());
             _cur = std::next(_cur);
         } else {

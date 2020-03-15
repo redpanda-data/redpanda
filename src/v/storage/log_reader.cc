@@ -14,6 +14,8 @@ namespace storage {
 static constexpr size_t max_segment_size = static_cast<size_t>(
   std::numeric_limits<uint32_t>::max());
 
+using records_t = ss::circular_buffer<model::record_batch>;
+
 batch_consumer::consume_result skipping_consumer::consume_batch_start(
   model::record_batch_header header,
   size_t physical_base_offset,
@@ -30,11 +32,13 @@ batch_consumer::consume_result skipping_consumer::consume_batch_start(
           header.base_offset()));
     }
     if (unlikely(
-          header.size_bytes != size_on_disk
-          || size_on_disk > max_segment_size)) {
+          header.size_bytes != size_on_disk || size_on_disk > max_segment_size
+          || header.size_bytes <= 0)) {
         vlog(
           stlog.info,
-          "Invalid record size:{} > max_segment_size:{}. Possible corruption",
+          "Invalid batch size:{}, on-disk-size:{}, max_segment_size:{}. "
+          "Possible corruption",
+          header.size_bytes,
           size_on_disk,
           max_segment_size);
         return stop_parser::yes;
@@ -94,11 +98,11 @@ void skipping_consumer::consume_compressed_records(iobuf&& records) {
 batch_consumer::stop_parser skipping_consumer::consume_batch_end() {
     // Note: This is what keeps the train moving. the `_reader.*` transitively
     // updates the next batch to consume
-    _reader._buffer.emplace_back(
+    _reader._state.buffer.emplace_back(
       model::record_batch(_header, std::exchange(_records, {})));
     _reader._config.start_offset = _header.last_offset() + model::offset(1);
     _reader._config.bytes_consumed += _header.size_bytes;
-    _reader._buffer_size += _header.size_bytes;
+    _reader._state.buffer_size += _header.size_bytes;
     // We keep the batch in the buffer so that the reader can be cached.
     if (
       _header.last_offset() >= _reader._seg.committed_offset()
@@ -118,7 +122,7 @@ batch_consumer::stop_parser skipping_consumer::consume_batch_end() {
         return stop_parser::yes;
     }
     _header = {};
-    return stop_parser(_reader.is_buffer_full());
+    return stop_parser(_reader._state.is_full());
 }
 
 log_segment_batch_reader::log_segment_batch_reader(
@@ -136,12 +140,14 @@ std::unique_ptr<continuous_batch_parser> log_segment_batch_reader::initialize(
       std::move(input));
 }
 
-bool log_segment_batch_reader::is_buffer_full() const {
-    return _buffer_size >= max_buffer_size;
+ss::future<> log_segment_batch_reader::close() {
+    if (_iterator) {
+        return _iterator->close();
+    }
+    return ss::make_ready_future<>();
 }
-
-ss::future<ss::circular_buffer<model::record_batch>>
-log_segment_batch_reader::read(model::timeout_clock::time_point timeout) {
+ss::future<records_t>
+log_segment_batch_reader::read_some(model::timeout_clock::time_point timeout) {
     /*
      * fetch batches from the cache covering the range [_base, end] where
      * end is either the configured max offset or the end of the segment.
@@ -161,21 +167,21 @@ log_segment_batch_reader::read(model::timeout_clock::time_point timeout) {
       || _config.start_offset > _config.max_offset) {
         _config.bytes_consumed += cache_read.memory_usage;
         _probe.add_bytes_read(cache_read.memory_usage);
-        return ss::make_ready_future<ss::circular_buffer<model::record_batch>>(
-          std::move(cache_read.batches));
+        return ss::make_ready_future<records_t>(std::move(cache_read.batches));
     }
-    auto parser = initialize(timeout, cache_read.next_cached_batch);
-    auto ptr = parser.get();
-    return ptr->consume()
-      .then([this](size_t bytes_consumed) {
-          _probe.add_bytes_read(bytes_consumed);
-          // insert batches from disk into the cache
-          for (auto& b : _buffer) {
-              _seg.cache_put(b.share());
-          }
-          return std::move(_buffer);
-      })
-      .finally([this, p = std::move(parser)] {});
+    if (!_iterator) {
+        _iterator = initialize(timeout, cache_read.next_cached_batch);
+    }
+    auto ptr = _iterator.get();
+    return ptr->consume().then([this](size_t bytes_consumed) {
+        _probe.add_bytes_read(bytes_consumed);
+        // insert batches from disk into the cache
+        for (auto& b : _state.buffer) {
+            _seg.cache_put(b.share());
+        }
+        auto tmp = std::exchange(_state, {});
+        return std::move(tmp.buffer);
+    });
 }
 
 log_reader::log_reader(
@@ -183,52 +189,72 @@ log_reader::log_reader(
   log_reader_config config,
   probe& probe) noexcept
   : _lease(std::move(l))
-  , _next_seg(_lease->range.begin())
   , _config(config)
-  , _probe(probe) {}
+  , _iterator(_lease->range.begin())
+  , _probe(probe) {
+    if (_iterator.next_seg != _lease->range.end()) {
+        _iterator.reader = std::make_unique<log_segment_batch_reader>(
+          **_iterator.next_seg, _config, _probe);
+    }
+}
 
-ss::future<ss::circular_buffer<model::record_batch>>
+ss::future<> log_reader::next_iterator() {
+    if (_config.start_offset <= (**_iterator.next_seg).committed_offset()) {
+        return ss::make_ready_future<>();
+    }
+    std::unique_ptr<log_segment_batch_reader> tmp_reader = nullptr;
+    while (_config.start_offset > (**_iterator.next_seg).committed_offset()
+           && !is_end_of_stream()) {
+        _iterator.next_seg++;
+        if (!tmp_reader) {
+            tmp_reader = std::move(_iterator.reader);
+        }
+    }
+    if (_iterator.next_seg != _lease->range.end()) {
+        _iterator.reader = std::make_unique<log_segment_batch_reader>(
+          **_iterator.next_seg, _config, _probe);
+    }
+    if (tmp_reader) {
+        auto raw = tmp_reader.get();
+        return raw->close().finally([r = std::move(tmp_reader)] {});
+    }
+    return ss::make_ready_future<>();
+}
+
+ss::future<records_t>
 log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
     if (is_done()) {
         // must keep this function because, the segment might not be done
         // but offsets might have exceeded the read
         set_end_of_stream();
-        return ss::make_ready_future<
-          ss::circular_buffer<model::record_batch>>();
+        return _iterator.close().then(
+          [] { return ss::make_ready_future<records_t>(); });
     }
     if (_last_base == _config.start_offset) {
         set_end_of_stream();
-        return ss::make_ready_future<
-          ss::circular_buffer<model::record_batch>>();
+        return _iterator.close().then(
+          [] { return ss::make_ready_future<records_t>(); });
     }
     _last_base = _config.start_offset;
-    while (_config.start_offset > (**_next_seg).committed_offset()
-           && !end_of_stream()) {
-        _next_seg = std::next(_next_seg);
+    ss::future<> fut = next_iterator();
+    if (is_end_of_stream()) {
+        return fut.then([] { return ss::make_ready_future<records_t>(); });
     }
-    if (end_of_stream()) {
-        return ss::make_ready_future<
-          ss::circular_buffer<model::record_batch>>();
-    }
-    auto segc = std::make_unique<log_segment_batch_reader>(
-      **_next_seg, _config, _probe);
-    auto ptr = segc.get();
-    return ptr->read(timeout)
+    return fut
+      .then([this, timeout] { return _iterator.reader->read_some(timeout); })
       .handle_exception([this](std::exception_ptr e) {
           _probe.batch_parse_error();
-          return ss::make_exception_future<
-            ss::circular_buffer<model::record_batch>>(e);
+          return _iterator.close().then(
+            [e] { return ss::make_exception_future<records_t>(e); });
       })
-      .then([this, ptr](ss::circular_buffer<model::record_batch> recs) {
+      .then([this](records_t recs) {
           if (recs.empty()) {
-              return ss::make_ready_future<
-                ss::circular_buffer<model::record_batch>>();
+              return _iterator.close().then(
+                [] { return ss::make_ready_future<records_t>(); });
           }
           _probe.add_batches_read(recs.size());
-          return ss::make_ready_future<
-            ss::circular_buffer<model::record_batch>>(std::move(recs));
-      })
-      .finally([sc = std::move(segc)] {});
+          return ss::make_ready_future<records_t>(std::move(recs));
+      });
 }
 
 static inline bool is_finished_offset(segment_set& s, model::offset o) {
@@ -245,7 +271,7 @@ static inline bool is_finished_offset(segment_set& s, model::offset o) {
     return true;
 }
 bool log_reader::is_done() {
-    return end_of_stream()
+    return is_end_of_stream()
            || is_finished_offset(_lease->range, _config.start_offset)
            || _config.start_offset > _config.max_offset
            || _config.bytes_consumed > _config.max_bytes;

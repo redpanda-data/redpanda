@@ -9,7 +9,7 @@ make_memory_record_batch_reader(record_batch_reader::storage_t batches) {
         explicit reader(record_batch_reader::storage_t batches)
           : _batches(std::move(batches)) {}
 
-        bool end_of_stream() const final { return _batches.empty(); }
+        bool is_end_of_stream() const final { return _batches.empty(); }
 
     protected:
         ss::future<record_batch_reader::storage_t>
@@ -33,7 +33,7 @@ record_batch_reader make_generating_record_batch_reader(
           ss::noncopyable_function<ss::future<record_batch_opt>()> gen)
           : _gen(std::move(gen)) {}
 
-        bool end_of_stream() const final { return _end_of_stream; }
+        bool is_end_of_stream() const final { return _end_of_stream; }
 
     protected:
         ss::future<record_batch_reader::storage_t>
