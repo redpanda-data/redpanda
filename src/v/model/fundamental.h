@@ -10,6 +10,7 @@
 
 #include <cstdint>
 #include <limits>
+#include <ostream>
 #include <string_view>
 
 namespace model {
