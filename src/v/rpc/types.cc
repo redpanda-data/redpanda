@@ -1,5 +1,6 @@
 #include "rpc/types.h"
 
+#include "hashing/crc32c.h"
 #include "reflection/for_each_field.h"
 
 #include <seastar/core/byteorder.hh>
@@ -9,24 +10,21 @@
 
 namespace rpc {
 template<typename T, typename = std::enable_if_t<std::is_integral_v<T>>>
-void crc_16_one(boost::crc_ccitt_type& crc, T t) {
+void crc_one(crc32& crc, T t) {
     T args_le = ss::cpu_to_le(t);
-    crc.process_bytes(
-      // NOLINTNEXTLINE
-      reinterpret_cast<const char*>(&args_le),
-      sizeof(t));
+    crc.extend(args_le);
 }
 
 uint16_t checksum_header_only(const header& h) {
-    boost::crc_ccitt_type crc;
-    crc_16_one(
+    auto crc = crc32();
+    crc_one(
       crc,
       static_cast<std::underlying_type_t<compression_type>>(h.compression));
-    crc_16_one(crc, h.payload_size);
-    crc_16_one(crc, h.meta);
-    crc_16_one(crc, h.correlation_id);
-    crc_16_one(crc, h.payload_checksum);
-    return crc.checksum();
+    crc_one(crc, h.payload_size);
+    crc_one(crc, h.meta);
+    crc_one(crc, h.correlation_id);
+    crc_one(crc, h.payload_checksum);
+    return crc.value();
 }
 
 std::ostream& operator<<(std::ostream& o, const header& h) {

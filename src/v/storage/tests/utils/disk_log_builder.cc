@@ -94,7 +94,7 @@ ss::future<> disk_log_builder::write(
     auto reader = model::make_memory_record_batch_reader(std::move(buff));
     return std::move(reader)
       .consume(_log->make_appender(config), config.timeout)
-      .then([this](auto res) { return _log->flush(); });
+      .then([this](auto) { return _log->flush(); });
 }
 
 } // namespace storage

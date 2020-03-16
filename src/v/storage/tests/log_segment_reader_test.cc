@@ -1,5 +1,6 @@
 #include "model/record.h"
 #include "model/record_batch_reader.h"
+#include "model/record_utils.h"
 #include "model/timeout_clock.h"
 #include "random/generators.h"
 #include "storage/disk_log_appender.h"
@@ -34,6 +35,7 @@ void write(
   ss::circular_buffer<model::record_batch> batches, disk_log_builder& builder) {
     auto seg = builder.get_log_segments().front().get();
     for (auto& b : batches) {
+        b.header().header_crc = model::internal_header_only_crc(b.header());
         seg->append(std::move(b)).get();
     }
     seg->flush().get();

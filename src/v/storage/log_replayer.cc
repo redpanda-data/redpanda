@@ -1,6 +1,7 @@
 #include "storage/log_replayer.h"
 
 #include "hashing/crc32c.h"
+#include "likely.h"
 #include "model/record.h"
 #include "model/record_utils.h"
 #include "storage/logger.h"
@@ -33,41 +34,11 @@ public:
       size_t physical_base_offset,
       size_t size_on_disk) override {
         const auto filesize = _seg->reader().file_size();
-        if (header.base_offset() < 0) {
+        if (unlikely(header.base_offset() < 0)) {
             vlog(
               stlog.info,
-              "Invalid base offset detected:{}, stopping parser",
+              "Unrecoverable. Invalid base offset detected:{}, stopping parser",
               header.base_offset());
-            return stop_parser::yes;
-        }
-        if (size_on_disk > max_segment_size) {
-            vlog(
-              stlog.info,
-              "Invalid batch size:{}, file_size:{}, stopping parser",
-              size_on_disk,
-              filesize);
-            return stop_parser::yes;
-        }
-        if (!header.attrs.is_valid_compression()) {
-            vlog(
-              stlog.info,
-              "Invalid compression:{}. stopping parser",
-              header.attrs);
-            return stop_parser::yes;
-        }
-        if ((header.size_bytes + physical_base_offset) > filesize) {
-            vlog(
-              stlog.info,
-              "offset + batch_size:{} exceeds filesize:{}, Stopping parsing",
-              (header.size_bytes + physical_base_offset),
-              filesize);
-            return stop_parser::yes;
-        }
-        if (header.size_bytes <= 0) {
-            vlog(
-              stlog.info,
-              "Invalid batch size:{}, Stopping parsing",
-              header.size_bytes);
             return stop_parser::yes;
         }
         _seg->index().maybe_track(header, physical_base_offset);
