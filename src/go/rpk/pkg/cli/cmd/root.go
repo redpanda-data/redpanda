@@ -33,26 +33,26 @@ func Execute() {
 		initConfig(fs, cfgFile)
 	})
 
-	cobraRoot := &cobra.Command{
+	rootCmd := &cobra.Command{
 		Use:   "rpk",
 		Short: "rpk is the Redpanda CLI & toolbox",
 		Long:  "",
 	}
 
-	cobraRoot.PersistentFlags().StringVar(&cfgFile, "config",
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config",
 		"", "config file (default is $HOME/.rpk.yaml)")
-	cobraRoot.PersistentFlags().BoolVarP(&verbose, "verbose",
+	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose",
 		"v", false, "enable verbose logging (default false)")
-	cobraRoot.AddCommand(NewTuneCommand(fs))
-	cobraRoot.AddCommand(NewSandboxCommand(fs))
-	cobraRoot.AddCommand(NewCheckCommand(fs))
-	cobraRoot.AddCommand(NewIoTuneCmd(fs))
-	cobraRoot.AddCommand(NewStartCommand(fs))
-	cobraRoot.AddCommand(NewModeCommand(fs))
-	cobraRoot.AddCommand(NewConfigCommand(fs))
-	cobraRoot.AddCommand(NewStatusCommand(fs))
+	rootCmd.AddCommand(NewTuneCommand(fs))
+	rootCmd.AddCommand(NewSandboxCommand(fs))
+	rootCmd.AddCommand(NewCheckCommand(fs))
+	rootCmd.AddCommand(NewIoTuneCmd(fs))
+	rootCmd.AddCommand(NewStartCommand(fs))
+	rootCmd.AddCommand(NewModeCommand(fs))
+	rootCmd.AddCommand(NewConfigCommand(fs))
+	rootCmd.AddCommand(NewStatusCommand(fs))
 
-	if err := cobraRoot.Execute(); err != nil {
+	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
 }
