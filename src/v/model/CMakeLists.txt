@@ -6,6 +6,7 @@ v_cc_library(
     record_utils.cc
     adl_serde.cc
   DEPS
+    v::bytes
     v::rphashing
     v::reflection
     Seastar::seastar
