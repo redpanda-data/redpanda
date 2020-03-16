@@ -7,6 +7,38 @@
 
 namespace kafka {
 
+ss::future<> group_manager::start() {
+    /*
+     * receive notifications when group-metadata partitions come under
+     * management on this core. note that the notify callback will be
+     * synchronously invoked for all existing partitions that match the query.
+     */
+    _manage_notify_handle = _pm.local().register_manage_notification(
+      cluster::kafka_internal_namespace,
+      cluster::kafka_group_topic,
+      [this](ss::lw_shared_ptr<cluster::partition> p) { attach_partition(p); });
+
+    return ss::make_ready_future<>();
+}
+
+ss::future<> group_manager::stop() {
+    // prevent new partition attachments
+    _pm.local().unregister_manage_notification(_manage_notify_handle);
+
+    return _gate.close();
+}
+
+void group_manager::attach_partition(ss::lw_shared_ptr<cluster::partition> p) {
+    (void)with_gate(_gate, [this, p = std::move(p)]() {
+        kglog.debug("attaching group metadata partition {}", p->ntp());
+        auto attached = ss::make_lw_shared<attached_partition>(p);
+        auto res = _partitions.try_emplace(p->ntp(), attached);
+        vassert(res.second, "double ntp registration");
+    }).handle_exception_type([p](const ss::gate_closed_exception&) {
+        kglog.info("ignored partition attach during shutdown {}", p);
+    });
+}
+
 ss::future<join_group_response>
 group_manager::join_group(join_group_request&& r) {
     kglog.trace("join request {}", r);
