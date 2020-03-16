@@ -160,6 +160,8 @@ private:
 
     control_ptr _ctrl;
     ss::deleter _deleter;
+
+    friend std::ostream& operator<<(std::ostream&, const iobuf&);
 };
 
 namespace details {
@@ -797,9 +799,4 @@ static inline ss::scattered_message<char> iobuf_as_scattered(iobuf b) {
     });
     msg.on_delete([b = std::move(b)] {});
     return msg;
-}
-
-inline std::ostream& operator<<(std::ostream& o, const iobuf& io) {
-    return o << "{bytes=" << io.size_bytes()
-             << ", fragments=" << std::distance(io.cbegin(), io.cend()) << "}";
 }
