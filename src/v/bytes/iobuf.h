@@ -12,6 +12,8 @@
 #include <seastar/core/smp.hh>
 #include <seastar/core/temporary_buffer.hh>
 
+#include <fmt/format.h>
+
 #include <list>
 #include <stdexcept>
 #include <type_traits>
@@ -161,9 +163,13 @@ private:
 };
 
 namespace details {
-static void check_out_of_range(size_t sz, size_t capacity) {
+[[noreturn]] [[gnu::cold]] static void
+throw_out_of_range(const char* fmt, size_t A, size_t B) {
+    throw std::out_of_range(fmt::format(fmt, A, B));
+}
+static inline void check_out_of_range(size_t sz, size_t capacity) {
     if (unlikely(sz > capacity)) {
-        throw std::out_of_range("iobuf op: size > capacity");
+        throw_out_of_range("iobuf op: size:{} > capacity:{}", sz, capacity);
     }
 }
 } // namespace details
@@ -374,7 +380,8 @@ public:
             return ss::stop_iteration::no;
         });
         if (unlikely(c != n)) {
-            throw std::out_of_range("Invalid skip(n)");
+            details::throw_out_of_range(
+              "Invalid skip(n). Expected:{}, but skipped:{}", n, c);
         }
     }
     template<typename Output>
@@ -385,7 +392,8 @@ public:
             return ss::stop_iteration::no;
         });
         if (unlikely(c != n)) {
-            throw std::out_of_range("Invalid consume_to(n, out)");
+            details::throw_out_of_range(
+              "Invalid consume_to(n, out), expected:{}, but consumed:{}", n, c);
         }
     }
 
@@ -411,7 +419,11 @@ public:
             return ss::stop_iteration::no;
         });
         if (unlikely(c != n)) {
-            throw std::out_of_range("Invalid consume_to(n, placeholder)");
+            details::throw_out_of_range(
+              "Invalid consume_to(n, placeholder), expected:{}, but "
+              "consumed:{}",
+              n,
+              c);
         }
     }
 
