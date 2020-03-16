@@ -4,9 +4,11 @@
 #include "bytes/iobuf_parser.h"
 #include "likely.h"
 #include "model/record.h"
+#include "model/record_utils.h"
 #include "reflection/adl.h"
 #include "storage/logger.h"
 #include "storage/parser.h"
+#include "vlog.h"
 
 #include <seastar/util/variant_utils.hh>
 
@@ -18,6 +20,7 @@ using stop_parser = batch_consumer::stop_parser;
 using skip_batch = batch_consumer::skip_batch;
 model::record_batch_header header_from_iobuf(iobuf b) {
     iobuf_parser parser(std::move(b));
+    auto header_crc = reflection::adl<uint32_t>{}.from(parser);
     auto sz = reflection::adl<int32_t>{}.from(parser);
     using offset_t = model::offset::type;
     auto off = model::offset(reflection::adl<offset_t>{}.from(parser));
@@ -39,18 +42,19 @@ model::record_batch_header header_from_iobuf(iobuf b) {
       "Error in header parsing. Must consume:{} bytes, but consumed:{}",
       model::packed_record_batch_header_size,
       parser.bytes_consumed());
-    return model::record_batch_header{sz,
-                                      off,
-                                      type,
-                                      crc,
-                                      attrs,
-                                      delta,
-                                      first,
-                                      max,
-                                      producer_id,
-                                      producer_epoch,
-                                      base_sequence,
-                                      record_count};
+    return model::record_batch_header{.header_crc = header_crc,
+                                      .size_bytes = sz,
+                                      .base_offset = off,
+                                      .type = type,
+                                      .crc = crc,
+                                      .attrs = attrs,
+                                      .last_offset_delta = delta,
+                                      .first_timestamp = first,
+                                      .max_timestamp = max,
+                                      .producer_id = producer_id,
+                                      .producer_epoch = producer_epoch,
+                                      .base_sequence = base_sequence,
+                                      .record_count = record_count};
 }
 
 static inline ss::future<std::optional<iobuf>> verify_read_iobuf(
@@ -97,6 +101,21 @@ ss::future<stop_parser> continuous_batch_parser::consume_header() {
       })
       .then([this](opt_hdr o) {
           if (!o) {
+              return ss::make_ready_future<stop_parser>(stop_parser::yes);
+          }
+          if (auto computed_crc = model::internal_header_only_crc(o.value());
+              unlikely(o.value().header_crc != computed_crc)) {
+              vlog(
+                stlog.info,
+                "detected header corruption. stopping parser. Expected CRC of "
+                "{}, but got header: {}",
+                computed_crc,
+                o.value());
+              return ss::make_ready_future<stop_parser>(stop_parser::yes);
+          }
+          if (unlikely(o.value().header_crc == 0)) {
+              // CRC of 0's is always 0, so we need to check we've reached a
+              // fallocated file segment
               return ss::make_ready_future<stop_parser>(stop_parser::yes);
           }
           _header = o.value();

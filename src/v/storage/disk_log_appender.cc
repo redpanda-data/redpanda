@@ -1,6 +1,7 @@
 #include "storage/disk_log_appender.h"
 
 #include "likely.h"
+#include "model/record_utils.h"
 #include "storage/disk_log_impl.h"
 #include "storage/segment_appender.h"
 
@@ -23,6 +24,7 @@ disk_log_appender::disk_log_appender(
 ss::future<ss::stop_iteration>
 disk_log_appender::operator()(model::record_batch&& batch) {
     batch.header().base_offset = _idx;
+    batch.header().header_crc = model::internal_header_only_crc(batch.header());
     _idx = batch.last_offset() + model::offset(1);
     _last_term = batch.term();
     auto next_offset = batch.base_offset();

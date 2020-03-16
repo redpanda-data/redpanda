@@ -18,8 +18,8 @@ using records_t = ss::circular_buffer<model::record_batch>;
 
 batch_consumer::consume_result skipping_consumer::consume_batch_start(
   model::record_batch_header header,
-  size_t physical_base_offset,
-  size_t size_on_disk) {
+  size_t /*physical_base_offset*/,
+  size_t /*size_on_disk*/) {
     const auto filesize = _reader._seg.reader().file_size();
     // check for holes in the offset range on disk
     if (unlikely(
@@ -30,26 +30,6 @@ batch_consumer::consume_result skipping_consumer::consume_batch_start(
           "expected batch offset {} (actual {})",
           _expected_next_batch,
           header.base_offset()));
-    }
-    if (unlikely(
-          header.size_bytes != size_on_disk || size_on_disk > max_segment_size
-          || header.size_bytes <= 0)) {
-        vlog(
-          stlog.info,
-          "Invalid batch size:{}, on-disk-size:{}, max_segment_size:{}. "
-          "Possible corruption",
-          header.size_bytes,
-          size_on_disk,
-          max_segment_size);
-        return stop_parser::yes;
-    }
-    if (unlikely((header.size_bytes + physical_base_offset) > filesize)) {
-        vlog(
-          stlog.info,
-          "offset + batch_size:{} exceeds filesize:{}. Possible corruption",
-          (header.size_bytes + physical_base_offset),
-          filesize);
-        return stop_parser::yes;
     }
     _expected_next_batch = header.last_offset() + model::offset(1);
 
