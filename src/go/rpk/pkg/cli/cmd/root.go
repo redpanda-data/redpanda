@@ -13,39 +13,36 @@ import (
 	"golang.org/x/crypto/ssh/terminal"
 )
 
-type CobraRoot struct {
-	*cobra.Command
-	cfgFile string
-	verbose bool
-}
-
-// cobraRoot represents the base command when called without any subcommands
-var cobraRoot = &CobraRoot{
-	Command: &cobra.Command{
-		Use:   "rpk",
-		Short: "rpk is the Redpanda CLI & toolbox",
-		Long:  "",
-	},
-}
-
 func Execute() {
-	if err := cobraRoot.Execute(); err != nil {
-		os.Exit(1)
-	}
-}
+	cfgFile := ""
+	verbose := false
+	fs := afero.NewOsFs()
 
-func init() {
 	if !terminal.IsTerminal(int(os.Stdout.Fd())) {
 		color.NoColor = true
 	}
 	log.SetFormatter(cli.NewRpkLogFormatter())
-	cobra.OnInitialize(cobraRoot.initConfig)
+	cobra.OnInitialize(func() {
+		// This is only executed when a subcommand (e.g. rpk check) is
+		// specified.
+		if verbose {
+			log.SetLevel(log.DebugLevel)
+		} else {
+			log.SetLevel(log.InfoLevel)
+		}
+		initConfig(fs, cfgFile)
+	})
 
-	cobraRoot.PersistentFlags().StringVar(&cobraRoot.cfgFile, "config",
+	cobraRoot := &cobra.Command{
+		Use:   "rpk",
+		Short: "rpk is the Redpanda CLI & toolbox",
+		Long:  "",
+	}
+
+	cobraRoot.PersistentFlags().StringVar(&cfgFile, "config",
 		"", "config file (default is $HOME/.rpk.yaml)")
-	cobraRoot.PersistentFlags().BoolVarP(&cobraRoot.verbose, "verbose",
+	cobraRoot.PersistentFlags().BoolVarP(&verbose, "verbose",
 		"v", false, "enable verbose logging (default false)")
-	fs := afero.NewOsFs()
 	cobraRoot.AddCommand(NewTuneCommand(fs))
 	cobraRoot.AddCommand(NewSandboxCommand(fs))
 	cobraRoot.AddCommand(NewCheckCommand(fs))
@@ -54,13 +51,17 @@ func init() {
 	cobraRoot.AddCommand(NewModeCommand(fs))
 	cobraRoot.AddCommand(NewConfigCommand(fs))
 	cobraRoot.AddCommand(NewStatusCommand(fs))
+
+	if err := cobraRoot.Execute(); err != nil {
+		os.Exit(1)
+	}
 }
 
 // initConfig reads in config file and ENV variables if set.
-func (root *CobraRoot) initConfig() {
-	if root.cfgFile != "" {
+func initConfig(fs afero.Fs, configFile string) {
+	if configFile != "" {
 		// Use config file from the flag.
-		viper.SetConfigFile(root.cfgFile)
+		viper.SetConfigFile(configFile)
 	} else {
 		// Find home directory.
 		home, err := homedir.Dir()
@@ -79,11 +80,5 @@ func (root *CobraRoot) initConfig() {
 	// If a config file is found, read it in.
 	if err := viper.ReadInConfig(); err == nil {
 		log.Info("Using config file:", viper.ConfigFileUsed())
-	}
-
-	if root.verbose {
-		log.SetLevel(log.DebugLevel)
-	} else {
-		log.SetLevel(log.InfoLevel)
 	}
 }
