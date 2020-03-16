@@ -1,12 +1,11 @@
 #pragma once
 
+#include "bytes/iobuf.h"
 #include "seastarx.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/core/temporary_buffer.hh>
-
-#include <bytes/iobuf.h>
 
 static inline ss::future<ss::temporary_buffer<char>>
 read_fully_tmpbuf(ss::sstring name) {
