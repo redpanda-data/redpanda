@@ -24,7 +24,7 @@ def _install_awscli(install_dir, env):
     --install-dir {install_dir} \
     --bin-dir {install_dir}"""
     logging.info('Downloading AWS CLI...')
-    _download_and_extract(awscli_url, awscli_zip, install_dir)
+    _download_and_extract(awscli_url, awscli_zip, install_dir, env=env)
     installed = os.path.isfile(
         os.path.join(install_dir, 'v2', 'current', 'bin', 'aws'))
     if installed:
@@ -39,7 +39,7 @@ def _install_awscli(install_dir, env):
 
 def _install_terraform(install_dir, env):
     tf_zip = os.path.join(install_dir, 'terraform.zip')
-    tf_url = 'https://releases.hashicorp.com/terraform/0.12.15/terraform_0.12.15_linux_amd64.zip'
+    tf_url = 'https://releases.hashicorp.com/terraform/0.12.23/terraform_0.12.23_linux_amd64.zip'
     logging.info('Downloading Terraform...')
     _download_and_extract(tf_url, tf_zip, install_dir, env)
 

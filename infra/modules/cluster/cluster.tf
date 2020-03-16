@@ -79,6 +79,14 @@ resource "aws_security_group" "node_sec_group" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  # HTTP access to the trogdor agent and controller ports
+  ingress {
+    from_port   = 8888
+    to_port     = 8889
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
   # outbound internet access
   egress {
     from_port   = 0
