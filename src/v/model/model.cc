@@ -13,6 +13,8 @@
 
 #include <fmt/ostream.h>
 
+#include <iostream>
+
 namespace model {
 
 std::ostream& operator<<(std::ostream& os, const compression& c) {
