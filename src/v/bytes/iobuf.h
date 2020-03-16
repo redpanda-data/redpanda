@@ -561,45 +561,6 @@ inline size_t iobuf::available_bytes() const {
 
 inline iobuf iobuf::control_share() { return iobuf(_ctrl, _deleter.share()); }
 
-inline iobuf iobuf::share(size_t pos, size_t len) {
-    auto alloc = allocate_control();
-    auto c = alloc.ctrl;
-    c->size = len;
-    c->alloc_sz = _ctrl->alloc_sz;
-    size_t left = len;
-    for (auto& frag : _ctrl->frags) {
-        if (left == 0) {
-            break;
-        }
-        if (pos >= frag.size()) {
-            pos -= frag.size();
-            continue;
-        }
-        size_t left_in_frag = frag.size() - pos;
-        if (left >= left_in_frag) {
-            left -= left_in_frag;
-        } else {
-            left_in_frag = left;
-            left = 0;
-        }
-        c->frags.emplace_back(frag.share(pos, left_in_frag), fragment::full{});
-        pos = 0;
-    }
-    return iobuf(c, std::move(alloc.del));
-}
-
-inline iobuf iobuf::copy() const {
-    // make sure we pass in our learned allocation strategy _ctrl->alloc_sz
-    auto alloc = allocate_control();
-    iobuf ret(alloc.ctrl, std::move(alloc.del));
-    ret._ctrl->alloc_sz = _ctrl->alloc_sz;
-    auto in = iobuf::iterator_consumer(cbegin(), cend());
-    in.consume(_ctrl->size, [&ret](const char* src, size_t sz) {
-        ret.append(src, sz);
-        return ss::stop_iteration::no;
-    });
-    return ret;
-}
 inline void iobuf::create_new_fragment(size_t sz) {
     auto asz = _ctrl->alloc_sz.next_allocation_size(sz);
     _ctrl->frags.push_back(iobuf::fragment(
