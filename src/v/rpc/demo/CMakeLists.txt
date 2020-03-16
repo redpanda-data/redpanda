@@ -7,7 +7,7 @@ rpcgen(
   )
 
 add_executable(demo_server server.cc)
-target_link_libraries(demo_server PUBLIC demo_gen)
+target_link_libraries(demo_server PUBLIC demo_gen v::model)
 set_property(TARGET demo_server PROPERTY POSITION_INDEPENDENT_CODE ON)
 
 if(NOT CMAKE_BUILD_TYPE MATCHES Debug)
@@ -22,7 +22,7 @@ endif()
 
 # client
 add_executable(demo_client client.cc)
-target_link_libraries(demo_client PUBLIC demo_gen)
+target_link_libraries(demo_client PUBLIC demo_gen v::model)
 set_property(TARGET demo_client PROPERTY POSITION_INDEPENDENT_CODE ON)
 
 
@@ -30,6 +30,6 @@ rp_test(
   UNIT_TEST
   BINARY_NAME roundtrip_demo_types
   SOURCES type_tests.cc
-  LIBRARIES Seastar::seastar_testing demo_gen
+  LIBRARIES Seastar::seastar_testing demo_gen v::model
   ARGS "-- -c 1"
 )
