@@ -45,7 +45,7 @@ public:
     ss::future<> start();
     ss::future<> stop();
 
-    bool is_leader() const { return _recovered && _raft0->is_leader(); }
+    bool is_leader() const { return _raft0->is_leader() && _is_leader; }
 
     std::optional<model::node_id> get_leader_id() const {
         return _raft0->get_leader_id();
@@ -113,6 +113,8 @@ private:
     void end_of_stream();
     ss::future<> do_leadership_notification(
       model::ntp, model::term_id, std::optional<model::node_id>);
+    ss::future<> handle_controller_leadership_notification(
+      ss::semaphore_units<>, model::term_id, std::optional<model::node_id>);
     void handle_leadership_notification(
       model::ntp, model::term_id, std::optional<model::node_id>);
     ss::future<> update_brokers_cache(std::vector<model::broker>);
@@ -151,8 +153,7 @@ private:
     ss::sharded<metadata_dissemination_service>& _md_dissemination_service;
     raft::consensus* _raft0;
     raft::group_id _highest_group_id;
-    bool _recovered = false;
-    bool _leadership_notification_pending = false;
+    bool _is_leader = false;
     std::unique_ptr<partition_allocator> _allocator;
     ss::condition_variable _leadership_cond;
     ss::gate _bg;
