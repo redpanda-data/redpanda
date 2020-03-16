@@ -393,17 +393,6 @@ func TestCheckConfig(t *testing.T) {
 			expected: []string{"redpanda.kafka_api.address can't be empty"},
 		},
 		{
-			name: "shall return an error when the seed servers list is empty",
-			args: args{
-				conf: func() *Config {
-					c := getValidConfig()
-					c.Redpanda.SeedServers = []*SeedServer{}
-					return c
-				},
-			},
-			expected: []string{"redpanda.seed_servers can't be empty"},
-		},
-		{
 			name: "shall return an error when one of the seed servers' address is empty",
 			args: args{
 				conf: func() *Config {

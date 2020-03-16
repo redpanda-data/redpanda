@@ -169,9 +169,7 @@ func checkRedpandaConfig(config *RedpandaConfig) []error {
 		checkSocketAddress(config.KafkaApi, "redpanda.kafka_api")...,
 	)
 	seedServersPath := "redpanda.seed_servers"
-	if len(config.SeedServers) == 0 {
-		errs = append(errs, fmt.Errorf(seedServersPath+" can't be empty"))
-	} else {
+	if len(config.SeedServers) != 0 {
 		for i, seed := range config.SeedServers {
 			errs = append(
 				errs,
