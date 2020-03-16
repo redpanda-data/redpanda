@@ -40,8 +40,8 @@ struct negotiation_frame {
 struct header {
     /// \brief version is unused. always 0. can be used for bitflags as well
     uint8_t version{0};
-    /// \brief everything below the checksum is hashed with crc-16-ccitt
-    uint16_t header_checksum{0};
+    /// \brief everything below the checksum is hashed with crc32
+    uint32_t header_checksum{0};
     /// \breif compression on the wire
     compression_type compression{0};
     /// \brief size of the payload
@@ -57,7 +57,7 @@ struct header {
 
 static constexpr size_t size_of_rpc_header
   = sizeof(header::version)                            // 1
-    + sizeof(header::header_checksum)                  // 2
+    + sizeof(header::header_checksum)                  // 4
     + sizeof(std::underlying_type_t<compression_type>) // 1
     + sizeof(header::payload_size)                     // 4
     + sizeof(header::meta)                             // 4
@@ -65,7 +65,7 @@ static constexpr size_t size_of_rpc_header
     + sizeof(header::payload_checksum)                 // 8
   ;
 static_assert(
-  size_of_rpc_header == 24, "Be gentil when extending this header. expensive");
+  size_of_rpc_header == 26, "Be gentil when extending this header. expensive");
 
 uint16_t checksum_header_only(const header& h);
 
