@@ -17,7 +17,11 @@ namespace cluster {
 using consensus_ptr = ss::lw_shared_ptr<raft::consensus>;
 using broker_ptr = ss::lw_shared_ptr<model::broker>;
 struct log_record_key {
-    enum class type : int8_t { partition_assignment, topic_configuration };
+    enum class type : int8_t {
+        partition_assignment,
+        topic_configuration,
+        checkpoint,
+    };
 
     type record_type;
 };

@@ -49,6 +49,18 @@ controller::controller(
   , _raft0(nullptr)
   , _highest_group_id(0) {}
 
+model::record_batch create_checkpoint_batch() {
+    const static log_record_key checkpoint_key{
+      .record_type = log_record_key::type::checkpoint};
+
+    storage::record_batch_builder builder(
+      controller::controller_record_batch_type, model::offset(0));
+    iobuf key_buf;
+    reflection::adl<log_record_key>{}.to(key_buf, checkpoint_key);
+    builder.add_raw_kv(std::move(key_buf), iobuf{});
+    return std::move(builder).build();
+}
+
 /**
  * The controller is a sharded service. However, all of the primary state
  * and computation occurs exclusively on the single controller::shard core.
@@ -134,16 +146,7 @@ ss::future<> controller::start() {
                   _raft0->meta().prev_log_index);
                 return apply_raft0_cfg_update(_raft0->config());
             })
-            .then([this] { return join_raft0(); })
-            .then([this] {
-                vlog(clusterlog.info, "Finished recovering cluster state");
-                _recovered = true;
-                if (_leadership_notification_pending) {
-                    handle_leadership_notification(
-                      controller_ntp, model::term_id{}, _self.id());
-                    _leadership_notification_pending = false;
-                }
-            });
+            .then([this] { return join_raft0(); });
       })
       .then([this] {
           // done in background fibre
@@ -264,6 +267,8 @@ controller::dispatch_record_recovery(log_record_key key, iobuf&& v_buf) {
     case log_record_key::type::topic_configuration:
         return recover_topic_configuration(
           reflection::from_iobuf<topic_configuration>(std::move(v_buf)));
+    case log_record_key::type::checkpoint:
+        return ss::make_ready_future<>();
     default:
         return ss::make_exception_future<>(
           std::runtime_error("Not supported record type in controller batch"));
@@ -606,21 +611,12 @@ ss::future<> controller::do_leadership_notification(
     // gate is reentrant making it ok if leadership notification originated
     // on the the controller::shard core.
     return with_gate(_bg, [this, ntp = std::move(ntp), lid, term]() mutable {
-        return with_semaphore(
-          _sem, 1, [this, ntp = std::move(ntp), lid, term]() mutable {
+        auto f = ss::get_units(_sem, 1).then(
+          [this, ntp = std::move(ntp), lid, term](
+            ss::semaphore_units<> u) mutable {
               if (ntp == controller_ntp) {
-                  if (lid != _self.id()) {
-                      // for now do nothing if we are not the leader
-                      return ss::make_ready_future<>();
-                  }
-                  if (unlikely(!_recovered)) {
-                      _leadership_notification_pending = true;
-                      return ss::make_ready_future<>();
-                  }
-                  vlog(clusterlog.info, "Local controller became a leader");
-                  create_partition_allocator();
-                  _leadership_cond.broadcast();
-                  return ss::make_ready_future<>();
+                  return handle_controller_leadership_notification(
+                    std::move(u), term, lid);
               } else {
                   auto f = _md_cache.invoke_on_all(
                     [ntp, lid, term](metadata_cache& md) {
@@ -628,17 +624,48 @@ ss::future<> controller::do_leadership_notification(
                     });
                   if (lid == _self.id()) {
                       // only disseminate from current leader
-                      f = f.then(
-                        [this, ntp = std::move(ntp), term, lid]() mutable {
-                            return _md_dissemination_service.local()
-                              .disseminate_leadership(
-                                std::move(ntp), term, lid);
-                        });
+                      f = f.then([this,
+                                  ntp = std::move(ntp),
+                                  term,
+                                  lid,
+                                  u = std::move(u)]() mutable {
+                          return _md_dissemination_service.local()
+                            .disseminate_leadership(std::move(ntp), term, lid);
+                      });
                   }
                   return f;
               }
           });
     });
+}
+
+ss::future<> controller::handle_controller_leadership_notification(
+  ss::semaphore_units<> u,
+  model::term_id term,
+  std::optional<model::node_id> lid) {
+    if (lid != _self.id()) {
+        _is_leader = false;
+        return ss::make_ready_future<>();
+    }
+
+    return _raft0
+      ->replicate(
+        model::make_memory_record_batch_reader({create_checkpoint_batch()}))
+      .then([this, u = std::move(u)](result<raft::replicate_result> res) {
+          return _notification_latch
+            .wait_for(res.value().last_offset, model::no_timeout)
+            .then([this](errc ec) {
+                if (ec != errc::success) {
+                    vlog(
+                      clusterlog.warn, "Unable to replicate data as a leader");
+                    return;
+                }
+                vlog(clusterlog.info, "Local controller became a leader");
+                create_partition_allocator();
+                _is_leader = true;
+                _leadership_cond.broadcast();
+            });
+      });
 }
 
 void controller::handle_leadership_notification(
