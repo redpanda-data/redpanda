@@ -34,10 +34,7 @@ metadata_dissemination_handler::do_update_leadership(
       .invoke_on_all([req = std::move(req)](metadata_cache& cache) mutable {
           for (auto& leader : req.leaders) {
               cache.update_partition_leader(
-                leader.ntp.tp.topic,
-                leader.ntp.tp.partition,
-                leader.term,
-                leader.leader_id);
+                leader.ntp, leader.term, leader.leader_id);
           }
       })
       .then([] { return ss::make_ready_future<update_leadership_reply>(); });
@@ -47,11 +44,11 @@ static get_leadership_reply
 make_get_leadership_reply(const metadata_cache& cache) {
     auto all_md = cache.all_metadata();
     ntp_leaders leaders;
-    for (auto& [tp, md] : all_md) {
+    for (auto& [tp_ns, md] : all_md) {
         for (auto& p : md.partitions) {
             leaders.emplace_back(ntp_leader{
-              model::ntp{.ns = model::ns("default"),
-                         .tp = model::topic_partition{.topic = tp,
+              model::ntp{.ns = tp_ns.ns,
+                         .tp = model::topic_partition{.topic = tp_ns.tp,
                                                       .partition = p.p_md.id}},
               .term = p.term_id,
               .leader_id = p.p_md.leader_node});

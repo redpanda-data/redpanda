@@ -30,8 +30,8 @@ std::vector<model::node_id> get_partition_members(
   model::partition_id pid, const model::topic_metadata& tp_md) {
     std::vector<model::node_id> members;
     if (unlikely(pid() >= tp_md.partitions.size())) {
-        throw std::invalid_argument(
-          fmt::format("Topic {} does not contain partion {}", tp_md.tp, pid));
+        throw std::invalid_argument(fmt::format(
+          "Topic {} does not contain partion {}", tp_md.tp_ns, pid));
     }
     auto& replicas = tp_md.partitions[pid()].replicas;
     std::transform(

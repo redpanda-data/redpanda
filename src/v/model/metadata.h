@@ -187,6 +187,12 @@ struct topic_namespace_eq {
     }
 };
 
+struct topic_metadata {
+    explicit topic_metadata(topic_namespace v) noexcept
+      : tp_ns(std::move(v)) {}
+    topic_namespace tp_ns;
+    std::vector<partition_metadata> partitions;
+};
 } // namespace model
 
 namespace std {

@@ -49,12 +49,10 @@ struct partition_assignment {
 
 struct topic_configuration {
     topic_configuration(model::ns n, model::topic t, int32_t count, int16_t rf)
-      : ns(std::move(n))
-      , topic(std::move(t))
+      : tp_ns(std::move(n), std::move(t))
       , partition_count(count)
       , replication_factor(rf) {}
-    model::ns ns;
-    model::topic topic;
+    model::topic_namespace tp_ns;
     // using signed integer because Kafka protocol defines it as signed int
     int32_t partition_count;
     // using signed integer because Kafka protocol defines it as signed int
@@ -69,10 +67,10 @@ struct topic_configuration {
 };
 
 struct topic_result {
-    explicit topic_result(model::topic t, errc ec = errc::success)
-      : topic(std::move(t))
+    explicit topic_result(model::topic_namespace t, errc ec = errc::success)
+      : tp_ns(std::move(t))
       , ec(ec) {}
-    model::topic topic;
+    model::topic_namespace tp_ns;
     errc ec;
 };
 

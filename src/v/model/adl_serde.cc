@@ -271,11 +271,12 @@ model::topic_namespace adl<model::topic_namespace>::from(iobuf_parser& in) {
 }
 
 void adl<model::topic_metadata>::to(iobuf& out, model::topic_metadata&& md) {
-    reflection::serialize(out, md.tp, std::move(md.partitions));
+    reflection::serialize(out, md.tp_ns, std::move(md.partitions));
 }
 
 model::topic_metadata adl<model::topic_metadata>::from(iobuf_parser& in) {
-    auto md = model::topic_metadata(reflection::adl<model::topic>{}.from(in));
+    auto md = model::topic_metadata(
+      reflection::adl<model::topic_namespace>{}.from(in));
     md.partitions
       = reflection::adl<std::vector<model::partition_metadata>>{}.from(in);
     return md;

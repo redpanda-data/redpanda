@@ -207,7 +207,9 @@ list_offsets_topic(list_offsets_ctx& octx, list_offsets_request::topic& topic) {
             continue;
         }
 
-        if (!octx.rctx.metadata_cache().contains(topic.name, part.id)) {
+        if (!octx.rctx.metadata_cache().contains(
+              model::topic_namespace_view(cluster::kafka_namespace, topic.name),
+              part.id)) {
             partitions.push_back(
               ss::make_ready_future<list_offsets_response::partition>(
                 list_offsets_response::partition(

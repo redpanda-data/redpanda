@@ -128,10 +128,7 @@ ss::future<> metadata_dissemination_service::dispatch_get_metadata_update(
                     metadata_cache& cache) mutable {
                       for (auto& l : reply.leaders) {
                           cache.update_partition_leader(
-                            l.ntp.tp.topic,
-                            l.ntp.tp.partition,
-                            l.term,
-                            l.leader_id);
+                            l.ntp, l.term, l.leader_id);
                       }
                   });
             });
@@ -142,7 +139,7 @@ void metadata_dissemination_service::collect_pending_updates() {
     auto brokers = _md_cache.local().all_broker_ids();
     for (auto& ntp_leader : _requests) {
         auto tp_md = _md_cache.local().get_topic_metadata(
-          ntp_leader.ntp.tp.topic);
+          model::topic_namespace_view(ntp_leader.ntp));
         if (!tp_md) {
             // Topic metadata is not there anymore
             throw std::runtime_error(fmt::format(
