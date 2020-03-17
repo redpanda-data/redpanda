@@ -1,5 +1,6 @@
 #include "bytes/bytes.h"
 #include "bytes/iobuf.h"
+#include "bytes/iobuf_ostreambuf.h"
 #include "bytes/tests/utils.h"
 
 #include <seastar/testing/thread_test_case.hh>

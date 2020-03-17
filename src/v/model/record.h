@@ -12,6 +12,7 @@
 
 #include <bitset>
 #include <cstdint>
+#include <iostream>
 #include <variant>
 #include <vector>
 

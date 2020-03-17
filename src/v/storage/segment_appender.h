@@ -38,6 +38,7 @@ public:
         chunk& operator=(chunk&&) noexcept = default;
         explicit chunk(const size_t alignment = 4096)
           : _buf(ss::allocate_aligned_buffer<char>(chunk_size, alignment)) {}
+        ~chunk() noexcept = default;
 
         bool is_full() const { return _pos == chunk_size; }
         bool is_empty() const { return _pos == 0; }
