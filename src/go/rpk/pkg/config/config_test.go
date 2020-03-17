@@ -314,6 +314,68 @@ rpk:
 	}
 }
 
+func TestInitConfig(t *testing.T) {
+	tests := []struct {
+		name        string
+		setup       func(afero.Fs) error
+		configFile  string
+		expectError bool
+	}{
+		{
+			name:       "it should generate a config file at the given location",
+			configFile: DefaultConfig().ConfigFile,
+		},
+		{
+			name: "it shouldn't fail if there's a config file already",
+			setup: func(fs afero.Fs) error {
+				conf := DefaultConfig()
+				return WriteConfig(fs, &conf, conf.ConfigFile)
+			},
+			configFile: DefaultConfig().ConfigFile,
+		},
+		{
+			name: "it should fail if the existing config file's content isn't valid yaml",
+			setup: func(fs afero.Fs) error {
+				bs := []byte(`redpanda:
+- something`)
+				return vyaml.Persist(fs, bs, DefaultConfig().ConfigFile)
+			},
+			configFile:  DefaultConfig().ConfigFile,
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fs := afero.NewMemMapFs()
+			if tt.setup != nil {
+				if err := tt.setup(fs); err != nil {
+					t.Fatalf(
+						"got an error while running setup: %v",
+						err,
+					)
+				}
+			}
+			_, err := ReadOrGenerate(fs, tt.configFile)
+			if err != nil {
+				if !tt.expectError {
+					t.Fatalf("got an unexpected error: %v", err)
+				} else {
+					return
+				}
+			} else {
+				if tt.expectError {
+					t.Fatalf("expected an error, but got nil")
+				}
+			}
+			_, err = ReadConfigFromPath(fs, tt.configFile)
+			if err != nil {
+				t.Fatalf("got an error reading the config: %v", err)
+			}
+		})
+	}
+}
+
 func TestCheckConfig(t *testing.T) {
 	type args struct {
 		conf func() *Config
