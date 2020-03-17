@@ -546,7 +546,19 @@ inline bool iobuf::operator==(const iobuf& o) const {
     if (_ctrl->size != o._ctrl->size) {
         return false;
     }
-    return std::equal(cbegin(), cend(), o.cbegin());
+    auto lhs_begin = iobuf::byte_iterator(cbegin(), cend());
+    auto lhs_end = iobuf::byte_iterator(cend(), cend());
+    auto rhs = iobuf::byte_iterator(o.cbegin(), o.cend());
+    while (lhs_begin != lhs_end) {
+        char l = *lhs_begin;
+        char r = *rhs;
+        if (l != r) {
+            return false;
+        }
+        ++lhs_begin;
+        ++rhs;
+    }
+    return true;
 }
 inline bool iobuf::operator!=(const iobuf& o) const { return !(*this == o); }
 inline bool iobuf::empty() const { return _ctrl->frags.empty(); }
