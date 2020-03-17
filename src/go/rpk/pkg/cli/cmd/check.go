@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"time"
-	"vectorized/pkg/cli"
 	"vectorized/pkg/cli/ui"
 	"vectorized/pkg/config"
 	"vectorized/pkg/tuners"
@@ -17,8 +16,8 @@ import (
 
 func NewCheckCommand(fs afero.Fs) *cobra.Command {
 	var (
-		redpandaConfigFile string
-		timeout            time.Duration
+		configFile string
+		timeout    time.Duration
 	)
 	command := &cobra.Command{
 		Use:          "check",
@@ -26,12 +25,16 @@ func NewCheckCommand(fs afero.Fs) *cobra.Command {
 		Long:         "",
 		SilenceUsage: true,
 		RunE: func(ccmd *cobra.Command, args []string) error {
-			return executeCheck(fs, redpandaConfigFile, timeout)
+			return executeCheck(fs, configFile, timeout)
 		},
 	}
-	command.Flags().StringVar(&redpandaConfigFile,
-		"redpanda-cfg", "", "Redpanda config file, if not set the file will be "+
-			"searched for in default locations")
+	command.Flags().StringVar(
+		&configFile,
+		"config",
+		config.DefaultConfig().ConfigFile,
+		"Redpanda config file, if not set the file will be searched for"+
+			" in the default locations",
+	)
 	command.Flags().DurationVar(
 		&timeout,
 		"timeout",
@@ -54,14 +57,8 @@ func appendToTable(t *tablewriter.Table, r tuners.CheckResult) {
 	})
 }
 
-func executeCheck(
-	fs afero.Fs, configFileFlag string, timeout time.Duration,
-) error {
-	configFile, err := cli.GetOrFindConfig(fs, configFileFlag)
-	if err != nil {
-		return err
-	}
-	conf, err := config.ReadConfigFromPath(fs, configFile)
+func executeCheck(fs afero.Fs, configFile string, timeout time.Duration) error {
+	conf, err := config.ReadOrGenerate(fs, configFile)
 	if err != nil {
 		return err
 	}
