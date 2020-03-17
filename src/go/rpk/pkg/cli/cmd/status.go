@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"time"
 	"vectorized/pkg/api"
-	"vectorized/pkg/cli"
 	"vectorized/pkg/cli/ui"
 	"vectorized/pkg/config"
 	"vectorized/pkg/system"
@@ -29,9 +28,13 @@ func NewStatusCommand(fs afero.Fs) *cobra.Command {
 			return executeStatus(fs, configFile, timeout, send)
 		},
 	}
-	command.Flags().StringVar(&configFile,
-		"redpanda-cfg", "", "Redpanda config file, if not set the file will be "+
-			"searched for in default locations")
+	command.Flags().StringVar(
+		&configFile,
+		"config",
+		config.DefaultConfig().ConfigFile,
+		"Redpanda config file, if not set the file will be searched for"+
+			" in the default locations",
+	)
 	command.Flags().BoolVar(
 		&send,
 		"send",
@@ -52,11 +55,7 @@ func NewStatusCommand(fs afero.Fs) *cobra.Command {
 func executeStatus(
 	fs afero.Fs, configFile string, timeout time.Duration, send bool,
 ) error {
-	configFile, err := cli.GetOrFindConfig(fs, configFile)
-	if err != nil {
-		return err
-	}
-	conf, err := config.ReadConfigFromPath(fs, configFile)
+	conf, err := config.ReadOrGenerate(fs, configFile)
 	if err != nil {
 		return err
 	}
