@@ -259,6 +259,17 @@ adl<model::partition_metadata>::from(iobuf_parser& in) {
     return md;
 }
 
+void adl<model::topic_namespace>::to(
+  iobuf& out, model::topic_namespace&& tp_ns) {
+    reflection::serialize(out, std::move(tp_ns.ns), std::move(tp_ns.tp));
+}
+
+model::topic_namespace adl<model::topic_namespace>::from(iobuf_parser& in) {
+    auto ns = reflection::adl<model::ns>{}.from(in);
+    auto tp = reflection::adl<model::topic>{}.from(in);
+    return model::topic_namespace(ns, tp);
+}
+
 void adl<model::topic_metadata>::to(iobuf& out, model::topic_metadata&& md) {
     reflection::serialize(out, md.tp, std::move(md.partitions));
 }
