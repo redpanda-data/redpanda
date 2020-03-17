@@ -257,7 +257,9 @@ produce_topic(produce_ctx& octx, produce_request::topic& topic) {
     partitions.reserve(topic.partitions.size());
 
     for (auto& part : topic.partitions) {
-        if (!octx.rctx.metadata_cache().contains(topic.name, part.id)) {
+        if (!octx.rctx.metadata_cache().contains(
+              model::topic_namespace_view(cluster::kafka_namespace, topic.name),
+              part.id)) {
             partitions.push_back(
               ss::make_ready_future<produce_response::partition>(
                 produce_response::partition(

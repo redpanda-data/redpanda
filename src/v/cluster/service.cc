@@ -56,7 +56,7 @@ service::fetch_metadata(const std::vector<topic_result>& res) {
     md.reserve(res.size());
     for (const auto& r : res) {
         if (r.ec == errc::success) {
-            auto topic_md = _md_cache.local().get_topic_metadata(r.topic);
+            auto topic_md = _md_cache.local().get_topic_metadata(r.tp_ns);
             if (topic_md) {
                 md.push_back(std::move(topic_md.value()));
             }

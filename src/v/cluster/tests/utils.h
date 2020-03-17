@@ -1,6 +1,8 @@
 #pragma once
 #include "cluster/types.h"
 
+static const model::ns test_ns = model::ns("test-namespace");
+
 cluster::partition_assignment create_test_assignment(
   const ss::sstring& topic,
   int partition_id,
@@ -9,7 +11,7 @@ cluster::partition_assignment create_test_assignment(
     cluster::partition_assignment p_as{
       .group = raft::group_id(group_id),
       .ntp = model::ntp{
-        .ns = model::ns("test"),
+        .ns = test_ns,
         .tp = {.topic = model::topic(topic),
                .partition = model::partition_id(partition_id)}}};
     std::transform(

@@ -21,8 +21,8 @@ ss::future<> metadata_cache::stop() {
     return ss::make_ready_future<>();
 }
 
-std::vector<model::topic> metadata_cache::all_topics() const {
-    std::vector<model::topic> topics;
+std::vector<model::topic_namespace> metadata_cache::all_topics() const {
+    std::vector<model::topic_namespace> topics;
     topics.reserve(_cache.size());
     std::transform(
       std::cbegin(_cache),
@@ -33,8 +33,8 @@ std::vector<model::topic> metadata_cache::all_topics() const {
 }
 
 std::optional<model::topic_metadata>
-metadata_cache::get_topic_metadata(model::topic_view topic) const {
-    if (auto it = _cache.find(topic); it != std::cend(_cache)) {
+metadata_cache::get_topic_metadata(model::topic_namespace_view tp) const {
+    if (auto it = _cache.find(tp); it != std::cend(_cache)) {
         return create_topic_metadata(*it);
     }
     return std::nullopt;
@@ -95,16 +95,16 @@ void metadata_cache::update_brokers_cache(
     }
 }
 
-void metadata_cache::add_topic(model::topic_view topic) {
+void metadata_cache::add_topic(model::topic_namespace_view topic) {
     _cache.emplace(topic, topic_metadata{});
 }
 
-void metadata_cache::remove_topic(model::topic_view topic) {
+void metadata_cache::remove_topic(model::topic_namespace_view topic) {
     _cache.erase(topic);
 }
 
 metadata_cache::cache_t::iterator
-metadata_cache::find_topic_metadata(model::topic_view topic) {
+metadata_cache::find_topic_metadata(model::topic_namespace_view topic) {
     if (auto it = _cache.find(topic); it != _cache.end()) {
         return it;
     }
@@ -115,7 +115,7 @@ metadata_cache::find_topic_metadata(model::topic_view topic) {
 
 void metadata_cache::update_partition_assignment(
   const partition_assignment& p_as) {
-    auto it = find_topic_metadata(p_as.ntp.tp.topic);
+    auto it = find_topic_metadata(model::topic_namespace_view(p_as.ntp));
     auto p = find_partition(it->second, p_as.ntp.tp.partition);
     auto p_md = p_as.create_partition_metadata();
     if (p) {
@@ -128,17 +128,14 @@ void metadata_cache::update_partition_assignment(
 }
 
 void metadata_cache::update_partition_leader(
-  model::topic_view topic,
-  model::partition_id partition_id,
+  const model::ntp& ntp,
   model::term_id term,
   std::optional<model::node_id> leader_id) {
-    auto it = find_topic_metadata(topic);
-    auto p = find_partition(it->second, partition_id);
+    auto it = find_topic_metadata(model::topic_namespace_view(ntp));
+    auto p = find_partition(it->second, ntp.tp.partition);
     if (!p) {
-        throw std::runtime_error(fmt::format(
-          "Requested topic {} partion {} does not exist in cache",
-          topic(),
-          partition_id()));
+        throw std::runtime_error(
+          fmt::format("Requested ntp {} does not exist in cache", ntp));
     }
     if (p->term_id > term) {
         // Do nothing if update term is older
@@ -151,15 +148,6 @@ void metadata_cache::update_partition_leader(
     if (!leader_id) {
         return;
     }
-
-    // TODO: temporarily normalized until md cache supports namespaces
-    model::ntp ntp{
-        .ns = model::ns(""),
-        .tp = model::topic_partition{
-            .topic = topic,
-            .partition = partition_id,
-        },
-    };
 
     if (auto it = _leader_promises.find(ntp); it != _leader_promises.end()) {
         for (auto& promise : it->second) {
@@ -192,7 +180,7 @@ find_partition(metadata_cache::topic_metadata& t_md, model::partition_id p_id) {
 }
 
 bool metadata_cache::contains(
-  const model::topic& topic, const model::partition_id pid) const {
+  model::topic_namespace_view topic, const model::partition_id pid) const {
     if (auto it = _cache.find(topic); it != _cache.end()) {
         const auto& partitions = it->second.partitions;
         return std::any_of(
@@ -216,12 +204,12 @@ void metadata_cache::insert_topic(model::topic_metadata md) {
           return partition{std::move(p_md)};
       });
 
-    _cache.emplace(std::move(md.tp), topic_metadata{std::move(partitions)});
+    _cache.emplace(std::move(md.tp_ns), topic_metadata{std::move(partitions)});
 }
 
 ss::future<model::node_id> metadata_cache::get_leader(
   const model::ntp& ntp, ss::lowres_clock::time_point timeout) {
-    if (auto md = get_topic_metadata(ntp.tp.topic); md) {
+    if (auto md = get_topic_metadata(model::topic_namespace_view(ntp)); md) {
         if (ntp.tp.partition() < md->partitions.size()) {
             auto& p = md->partitions[ntp.tp.partition()];
             if (p.leader_node) {
@@ -230,12 +218,7 @@ ss::future<model::node_id> metadata_cache::get_leader(
         }
     }
 
-    // TODO: temporarily normalized until md cache supports namespaces. remove
-    // when metadata cache support ntp.
-    auto tmp = ntp;
-    tmp.ns = model::ns("");
-
-    auto& promise = _leader_promises[tmp].emplace_back();
+    auto& promise = _leader_promises[ntp].emplace_back();
     return promise.get_future_with_timeout(
       timeout, [] { return std::make_exception_ptr(ss::timed_out_error()); });
 }

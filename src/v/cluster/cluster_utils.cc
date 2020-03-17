@@ -104,15 +104,15 @@ ss::future<> update_broker_client(
       });
 }
 
-std::vector<topic_result>
-create_topic_results(const std::vector<model::topic>& topics, errc error_code) {
+std::vector<topic_result> create_topic_results(
+  const std::vector<model::topic_namespace>& topics, errc error_code) {
     std::vector<topic_result> results;
     results.reserve(topics.size());
     std::transform(
       std::cbegin(topics),
       std::cend(topics),
       std::back_inserter(results),
-      [error_code](const model::topic& t) {
+      [error_code](const model::topic_namespace& t) {
           return topic_result(t, error_code);
       });
     return results;

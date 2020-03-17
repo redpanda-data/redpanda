@@ -97,7 +97,7 @@ public:
           std::move(as), [this](cluster::partition_assignment& as) {
               return app.metadata_cache
                 .invoke_on_all([&as](cluster::metadata_cache& mdc) {
-                    mdc.add_topic(as.ntp.tp.topic);
+                    mdc.add_topic(model::topic_namespace_view(as.ntp));
                 })
                 .then([this, &as] {
                     return app.controller.local().recover_assignment(as);
