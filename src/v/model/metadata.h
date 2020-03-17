@@ -7,6 +7,7 @@
 
 #include <seastar/core/sstring.hh>
 
+#include <absl/hash/hash.h>
 #include <boost/functional/hash.hpp>
 
 #include <optional>
@@ -103,33 +104,88 @@ struct partition_metadata {
     std::optional<model::node_id> leader_node;
 };
 
-struct topic_metadata {
-    explicit topic_metadata(topic v) noexcept
-      : tp(std::move(v)) {}
-    topic tp;
-    std::vector<partition_metadata> partitions;
+struct topic_namespace_view {
+    topic_namespace_view(const model::ns& n, const model::topic& t)
+      : ns(n)
+      , tp(t) {}
+
+    explicit topic_namespace_view(const ntp& ntp)
+      : topic_namespace_view(ntp.ns, ntp.tp.topic) {}
+
+    template<typename H>
+    friend H AbslHashValue(H h, const topic_namespace_view& tp_ns) {
+        return H::combine(std::move(h), tp_ns.ns, tp_ns.tp);
+    }
+
+    const model::ns& ns;
+    const model::topic& tp;
 };
 
-namespace internal {
-struct hash_by_topic_name {
-    size_t operator()(const topic_metadata& tm) const {
-        return std::hash<model::topic>()(tm.tp);
+struct topic_namespace {
+    topic_namespace(model::ns n, model::topic t)
+      : ns(std::move(n))
+      , tp(std::move(t)) {}
+
+    explicit topic_namespace(topic_namespace_view view)
+      : ns(view.ns)
+      , tp(view.tp) {}
+
+    operator topic_namespace_view() { return topic_namespace_view(ns, tp); }
+
+    operator topic_namespace_view() const {
+        return topic_namespace_view(ns, tp);
+    }
+
+    bool operator==(const topic_namespace_view& other) const {
+        return tp == other.tp && ns == other.ns;
+    }
+
+    template<typename H>
+    friend H AbslHashValue(H h, const topic_namespace& tp_ns) {
+        return H::combine(std::move(h), tp_ns.ns, tp_ns.tp);
+    }
+
+    model::ns ns;
+    model::topic tp;
+};
+
+std::ostream& operator<<(std::ostream&, const topic_namespace&);
+std::ostream& operator<<(std::ostream&, const topic_namespace_view&);
+
+struct topic_namespace_hash {
+    using is_transparent = void;
+
+    size_t operator()(topic_namespace_view v) const {
+        return absl::Hash<topic_namespace_view>{}(v);
+    }
+
+    size_t operator()(const topic_namespace& v) const {
+        return absl::Hash<topic_namespace>{}(v);
     }
 };
 
-struct equals_by_topic_name {
+struct topic_namespace_eq {
+    using is_transparent = void;
+
+    bool operator()(topic_namespace_view lhs, topic_namespace_view rhs) const {
+        return lhs.ns == rhs.ns && lhs.tp == rhs.tp;
+    }
+
     bool
-    operator()(const topic_metadata& tm1, const topic_metadata& tm2) const {
-        return tm1.tp == tm2.tp;
+    operator()(const topic_namespace& lhs, const topic_namespace& rhs) const {
+        return lhs.ns == rhs.ns && lhs.tp == rhs.tp;
+    }
+
+    bool
+    operator()(const topic_namespace& lhs, topic_namespace_view rhs) const {
+        return lhs.ns == rhs.ns && lhs.tp == rhs.tp;
+    }
+
+    bool
+    operator()(topic_namespace_view lhs, const topic_namespace& rhs) const {
+        return lhs.ns == rhs.ns && lhs.tp == rhs.tp;
     }
 };
-
-} // namespace internal
-
-using topic_metadata_map = std::unordered_set<
-  topic_metadata,
-  internal::hash_by_topic_name,
-  internal::equals_by_topic_name>;
 
 } // namespace model
 
@@ -167,5 +223,4 @@ struct hash<model::broker> {
         return h;
     }
 };
-
 } // namespace std
