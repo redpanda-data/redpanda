@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"os"
 	"path/filepath"
 	"strings"
 	"vectorized/pkg/utils"
@@ -169,6 +170,39 @@ func ReadConfigFromPath(fs afero.Fs, path string) (*Config, error) {
 	}
 	config.ConfigFile = path
 	return config, nil
+}
+
+// Tries reading a config file at the given path, or generates a default config
+// and writes it to the path.
+func ReadOrGenerate(fs afero.Fs, configFile string) (*Config, error) {
+	conf, err := ReadConfigFromPath(fs, configFile)
+	if err == nil {
+		// The config file's there, there's nothing to do.
+		return conf, nil
+	}
+	if os.IsNotExist(err) {
+		log.Debug(err)
+		log.Infof(
+			"Couldn't find config file at %s. Generating it.",
+			configFile,
+		)
+		conf := DefaultConfig()
+		conf.ConfigFile = configFile
+		err = WriteConfig(fs, &conf, configFile)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"Couldn't write config to %s: %v",
+				configFile,
+				err,
+			)
+		}
+		return &conf, nil
+	}
+	return nil, fmt.Errorf(
+		"An error happened while trying to read %s: %v",
+		configFile,
+		err,
+	)
 }
 
 func CheckConfig(config *Config) (bool, []error) {
