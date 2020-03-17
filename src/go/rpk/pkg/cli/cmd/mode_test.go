@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 	"vectorized/pkg/config"
 
@@ -93,7 +94,7 @@ func TestModeCommand(t *testing.T) {
 				return configPath, afero.WriteFile(fs, configPath, bs, 0644)
 			},
 			expectedConfig: getValidConfig(configPath, false),
-			expectedOutput: fmt.Sprintf("Writing 'development' mode defaults to '%s'\n", configPath),
+			expectedOutput: fmt.Sprintf("Writing 'development' mode defaults to '%s'", configPath),
 			expectedErrMsg: "",
 		},
 		{
@@ -108,7 +109,7 @@ func TestModeCommand(t *testing.T) {
 				return configPath, afero.WriteFile(fs, configPath, bs, 0644)
 			},
 			expectedConfig: getValidConfig(configPath, true),
-			expectedOutput: fmt.Sprintf("Writing 'production' mode defaults to '%s'\n", configPath),
+			expectedOutput: fmt.Sprintf("Writing 'production' mode defaults to '%s'", configPath),
 			expectedErrMsg: "",
 		},
 		{
@@ -123,7 +124,7 @@ func TestModeCommand(t *testing.T) {
 				return configPath, afero.WriteFile(fs, configPath, bs, 0644)
 			},
 			expectedConfig: getValidConfig(configPath, false),
-			expectedOutput: fmt.Sprintf("Writing 'dev' mode defaults to '%s'\n", configPath),
+			expectedOutput: fmt.Sprintf("Writing 'dev' mode defaults to '%s'", configPath),
 			expectedErrMsg: "",
 		},
 		{
@@ -138,7 +139,7 @@ func TestModeCommand(t *testing.T) {
 				return configPath, afero.WriteFile(fs, configPath, bs, 0644)
 			},
 			expectedConfig: getValidConfig(configPath, true),
-			expectedOutput: fmt.Sprintf("Writing 'prod' mode defaults to '%s'\n", configPath),
+			expectedOutput: fmt.Sprintf("Writing 'prod' mode defaults to '%s'", configPath),
 			expectedErrMsg: "",
 		},
 		{
@@ -153,7 +154,7 @@ func TestModeCommand(t *testing.T) {
 				return configPath, afero.WriteFile(fs, configPath, bs, 0644)
 			},
 			expectedConfig: getValidConfig(configPath, true),
-			expectedOutput: fmt.Sprintf("Writing 'prod' mode defaults to '%s'\n", configPath),
+			expectedOutput: fmt.Sprintf("Writing 'prod' mode defaults to '%s'", configPath),
 			expectedErrMsg: "",
 		},
 		{
@@ -170,7 +171,7 @@ func TestModeCommand(t *testing.T) {
 			expectedConfig: getValidConfig(wdConfigPath, false),
 			expectedOutput: (func() string {
 				dir, _ := os.Getwd()
-				return fmt.Sprintf("Writing 'development' mode defaults to '%s/redpanda.yaml'\n", dir)
+				return fmt.Sprintf("Writing 'development' mode defaults to '%s/redpanda.yaml'", dir)
 			})(),
 			expectedErrMsg: "",
 		},
@@ -206,15 +207,15 @@ func TestModeCommand(t *testing.T) {
 				t.Errorf("expected error message:\n%v\ngot:\n%v", tt.expectedErrMsg, err.Error())
 			}
 			output := out.String()
-			if tt.expectedOutput != output {
-				t.Errorf("expected output:\n\"%v\"\ngot:\n\"%v\"", tt.expectedOutput, output)
+			if !strings.Contains(strings.TrimSpace(output), tt.expectedOutput) {
+				t.Fatalf("expected output:\n\"%s\"\nto contain\n\"%s\"", output, tt.expectedOutput)
 			}
 			conf, err := config.ReadConfigFromPath(tt.fs, path)
 			if err != nil {
-				t.Errorf("got an unexpected error while reading the %s: %v", configPath, err)
+				t.Fatalf("got an unexpected error while reading the %s: %v", configPath, err)
 			}
 			if !reflect.DeepEqual(conf, &tt.expectedConfig) {
-				t.Errorf("got %v, expected %v", conf, tt.expectedConfig)
+				t.Fatalf("got %v, expected %v", conf, tt.expectedConfig)
 			}
 		})
 	}
