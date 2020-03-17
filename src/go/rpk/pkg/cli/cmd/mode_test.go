@@ -84,7 +84,7 @@ func TestModeCommand(t *testing.T) {
 	}{
 		{
 			name: "development mode should disable all fields in the rpk config",
-			args: []string{"development", "--redpanda-cfg", configPath},
+			args: []string{"development", "--config", configPath},
 			fs:   afero.NewMemMapFs(),
 			before: func(fs afero.Fs) (string, error) {
 				bs, err := yaml.Marshal(getValidConfig(configPath, true))
@@ -99,7 +99,7 @@ func TestModeCommand(t *testing.T) {
 		},
 		{
 			name: "production mode should enable all fields in the rpk config",
-			args: []string{"production", "--redpanda-cfg", configPath},
+			args: []string{"production", "--config", configPath},
 			fs:   afero.NewMemMapFs(),
 			before: func(fs afero.Fs) (string, error) {
 				bs, err := yaml.Marshal(getValidConfig(configPath, false))
@@ -114,7 +114,7 @@ func TestModeCommand(t *testing.T) {
 		},
 		{
 			name: "the development mode alias, 'dev', should work the same",
-			args: []string{"dev", "--redpanda-cfg", configPath},
+			args: []string{"dev", "--config", configPath},
 			fs:   afero.NewMemMapFs(),
 			before: func(fs afero.Fs) (string, error) {
 				bs, err := yaml.Marshal(getValidConfig(configPath, true))
@@ -129,7 +129,7 @@ func TestModeCommand(t *testing.T) {
 		},
 		{
 			name: "the production mode alias, 'prod', should work the same",
-			args: []string{"prod", "--redpanda-cfg", configPath},
+			args: []string{"prod", "--config", configPath},
 			fs:   afero.NewMemMapFs(),
 			before: func(fs afero.Fs) (string, error) {
 				bs, err := yaml.Marshal(getValidConfig(configPath, false))
@@ -143,7 +143,7 @@ func TestModeCommand(t *testing.T) {
 			expectedErrMsg: "",
 		},
 		{
-			name: "mode should work if --redpanda-cfg isn't passed, but the file is in /etc/redpanda/redpanda.yaml",
+			name: "mode should work if --config isn't passed, but the file is in /etc/redpanda/redpanda.yaml",
 			args: []string{"prod"},
 			fs:   afero.NewMemMapFs(),
 			before: func(fs afero.Fs) (string, error) {
@@ -155,24 +155,6 @@ func TestModeCommand(t *testing.T) {
 			},
 			expectedConfig: getValidConfig(configPath, true),
 			expectedOutput: fmt.Sprintf("Writing 'prod' mode defaults to '%s'", configPath),
-			expectedErrMsg: "",
-		},
-		{
-			name: "mode should work if --redpanda-cfg isn't passed, but the file is in the current dir",
-			args: []string{"development"},
-			fs:   afero.NewMemMapFs(),
-			before: func(fs afero.Fs) (string, error) {
-				bs, err := yaml.Marshal(getValidConfig(wdConfigPath, false))
-				if err != nil {
-					return "", err
-				}
-				return wdConfigPath, afero.WriteFile(fs, wdConfigPath, bs, 0644)
-			},
-			expectedConfig: getValidConfig(wdConfigPath, false),
-			expectedOutput: (func() string {
-				dir, _ := os.Getwd()
-				return fmt.Sprintf("Writing 'development' mode defaults to '%s/redpanda.yaml'", dir)
-			})(),
 			expectedErrMsg: "",
 		},
 		{
