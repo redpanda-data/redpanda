@@ -1,9 +1,9 @@
 #define BOOST_TEST_MODULE model
-#include "boost/lexical_cast.hpp"
 #include "model/compression.h"
 
 #include <seastar/core/sstring.hh>
 
+#include <boost/lexical_cast.hpp>
 #include <boost/test/unit_test.hpp>
 
 BOOST_AUTO_TEST_CASE(test_cast_from_string) {
