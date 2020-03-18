@@ -2,6 +2,7 @@
 #include "kafka/errors.h"
 #include "kafka/requests/fwd.h"
 #include "kafka/types.h"
+#include "model/fundamental.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>
@@ -21,6 +22,9 @@ struct leave_group_api final {
 struct leave_group_request final {
     kafka::group_id group_id;
     kafka::member_id member_id;
+
+    // set during request processing after mapping group to ntp
+    model::ntp ntp;
 
     void encode(const request_context& ctx, response_writer& writer);
     void decode(request_context& ctx);

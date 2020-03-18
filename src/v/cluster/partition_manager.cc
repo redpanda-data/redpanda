@@ -71,6 +71,7 @@ ss::future<consensus_ptr> partition_manager::manage(
             auto p = ss::make_lw_shared<partition>(c);
             _ntp_table.emplace(log.ntp(), p);
             _raft_table.emplace(group, p);
+            _manage_watchers.notify(p->ntp(), p);
             if (_bg.is_closed()) {
                 return ss::make_exception_future<consensus_ptr>(
                   ss::gate_closed_exception());

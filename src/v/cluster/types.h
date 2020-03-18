@@ -92,6 +92,10 @@ struct create_topics_reply {
     std::vector<topic_result> results;
     std::vector<model::topic_metadata> metadata;
 };
+
+// generic type used for various registration handles such as in ntp_callbacks.h
+using notification_id_type = named_type<int32_t, struct notification_id>;
+
 } // namespace cluster
 
 namespace reflection {
