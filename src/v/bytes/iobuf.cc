@@ -1,5 +1,8 @@
 #include "bytes/iobuf.h"
 
+#include <seastar/core/do_with.hh>
+#include <seastar/core/future-util.hh>
+
 #include <iostream>
 
 std::ostream& operator<<(std::ostream& o, const iobuf& io) {
@@ -16,7 +19,7 @@ ss::scattered_message<char> iobuf_as_scattered(iobuf b) {
     msg.on_delete([b = std::move(b)] {});
     return msg;
 }
-std::vector<iobuf> iobuf_share_foreign_n(iobuf&& og, size_t n) {
+std::vector<iobuf> iobuf_share_foreign_n(iobuf og, size_t n) {
     const auto shard = ss::this_shard_id();
     std::vector<iobuf> retval(n);
     for (auto& frag : og) {
@@ -109,12 +112,9 @@ ss::input_stream<char> make_iobuf_input_stream(iobuf io) {
     return ss::input_stream<char>(std::move(ds));
 }
 iobuf iobuf::copy() const {
-    // make sure we pass in our learned allocation strategy _ctrl->alloc_sz
-    auto alloc = allocate_control();
-    iobuf ret(alloc.ctrl, std::move(alloc.del));
-    ret._ctrl->alloc_sz = _ctrl->alloc_sz;
+    iobuf ret;
     auto in = iobuf::iterator_consumer(cbegin(), cend());
-    in.consume(_ctrl->size, [&ret](const char* src, size_t sz) {
+    in.consume(_size, [&ret](const char* src, size_t sz) {
         ret.append(src, sz);
         return ss::stop_iteration::no;
     });
@@ -122,12 +122,9 @@ iobuf iobuf::copy() const {
 }
 
 iobuf iobuf::share(size_t pos, size_t len) {
-    auto alloc = allocate_control();
-    auto c = alloc.ctrl;
-    c->size = len;
-    c->alloc_sz = _ctrl->alloc_sz;
+    iobuf ret;
     size_t left = len;
-    for (auto& frag : _ctrl->frags) {
+    for (auto& frag : _frags) {
         if (left == 0) {
             break;
         }
@@ -142,8 +139,8 @@ iobuf iobuf::share(size_t pos, size_t len) {
             left_in_frag = left;
             left = 0;
         }
-        c->frags.emplace_back(frag.share(pos, left_in_frag), fragment::full{});
+        ret.append(frag.share(pos, left_in_frag));
         pos = 0;
     }
-    return iobuf(c, std::move(alloc.del));
+    return ret;
 }

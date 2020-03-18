@@ -54,7 +54,7 @@ public:
         if (count < 0) {
             return std::nullopt;
         }
-        return io.control_share();
+        return std::move(io);
     }
     std::pair<iobuf, int32_t> read_nullable_iobuf() {
         auto len = read_int32();

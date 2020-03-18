@@ -116,10 +116,10 @@ ss::future<> write(segment_appender& out, const model::record& record) {
 
 ss::future<>
 write(segment_appender& appender, const model::record_batch& batch) {
-    auto hdrbuf = disk_header_to_iobuf(batch.header());
-    // control_share is *very* cheap
-    return write(appender, hdrbuf.control_share())
-      .then([&appender, &batch, cpy = hdrbuf.control_share()] {
+    auto hdrbuf = std::make_unique<iobuf>(disk_header_to_iobuf(batch.header()));
+    auto ptr = hdrbuf.get();
+    return write(appender, *ptr)
+      .then([&appender, &batch, cpy = std::move(hdrbuf)] {
           if (batch.compressed()) {
               return write(appender, batch.get_compressed_records());
           }

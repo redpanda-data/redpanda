@@ -154,7 +154,8 @@ void kafka_batch_adapter::verify_crc(int32_t expected_crc, iobuf_parser in) {
 
     if (unlikely(expected_crc != crc.value())) {
         valid_crc = false;
-        kreq_log.error(
+        vlog(
+          kreq_log.error,
           "Cannot validate Kafka record batch. Missmatching CRC. Expected:{}, "
           "Got:{}",
           expected_crc,
@@ -165,8 +166,8 @@ void kafka_batch_adapter::verify_crc(int32_t expected_crc, iobuf_parser in) {
 }
 
 void kafka_batch_adapter::adapt(iobuf&& kbatch) {
-    auto crcparser = iobuf_parser(kbatch.control_share());
-    auto parser = iobuf_parser(kbatch.control_share());
+    auto crcparser = iobuf_parser(kbatch.share(0, kbatch.size_bytes()));
+    auto parser = iobuf_parser(std::move(kbatch));
 
     auto header = read_header(parser);
     if (unlikely(!v2_format)) {
