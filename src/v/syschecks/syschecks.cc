@@ -46,7 +46,11 @@ void systemd_notify_ready() {
 // by adding a macro around sd_notify to disable at compile time
 void systemd_raw_message(const ss::sstring& out) {
     auto r = sd_notify(0, out.c_str());
-    checklog.debug("{}", out);
+    if (out.back() == '\n') {
+        checklog.debug("{}", std::string_view(out.c_str(), out.size() - 1));
+    } else {
+        checklog.debug("{}", out);
+    }
     if (unlikely(r < 0)) {
         checklog.trace("Could not notify systemd sd_notify ready, error:{}", r);
     }
