@@ -1,4 +1,5 @@
 #pragma once
+#include "cluster/partition.h"
 #include "config/configuration.h"
 #include "kafka/errors.h"
 #include "kafka/groups/member.h"
@@ -10,6 +11,7 @@
 #include "kafka/requests/sync_group_request.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
+#include "model/record.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>
@@ -95,13 +97,19 @@ public:
         ss::sstring metadata;
     };
 
-    group(kafka::group_id id, group_state s, config::configuration& conf)
+    group(
+      kafka::group_id id,
+      group_state s,
+      config::configuration& conf,
+      ss::lw_shared_ptr<cluster::partition> partition)
       : _id(id)
       , _state(s)
+      , _state_timestamp(clock_type::now())
       , _generation(0)
       , _num_members_joining(0)
       , _new_member_added(false)
-      , _conf(conf) {}
+      , _conf(conf)
+      , _partition(partition) {}
 
     /// Get the group id.
     const kafka::group_id& id() const { return _id; }
@@ -377,8 +385,11 @@ private:
     using member_map = absl::flat_hash_map<kafka::member_id, member_ptr>;
     using protocol_support = absl::flat_hash_map<kafka::protocol_name, int>;
 
+    model::record_batch checkpoint(const assignments_type& assignments);
+
     kafka::group_id _id;
     group_state _state;
+    clock_type::time_point _state_timestamp;
     model::ntp _ntp;
     kafka::generation_id _generation;
     protocol_support _supported_protocols;
@@ -391,6 +402,7 @@ private:
     ss::timer<clock_type> _join_timer;
     bool _new_member_added;
     config::configuration& _conf;
+    ss::lw_shared_ptr<cluster::partition> _partition;
     absl::flat_hash_map<model::topic_partition, offset_metadata> _offsets;
     absl::flat_hash_map<model::topic_partition, offset_metadata>
       _pending_offset_commits;

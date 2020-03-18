@@ -37,6 +37,9 @@ struct offset_fetch_request final {
     kafka::group_id group_id;
     std::optional<std::vector<topic>> topics;
 
+    // set during request processing after mapping group to ntp
+    model::ntp ntp;
+
     offset_fetch_request() = default;
     offset_fetch_request(request_context& ctx) { decode(ctx); }
 

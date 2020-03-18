@@ -245,6 +245,9 @@ void application::wire_up_services() {
 }
 
 void application::start() {
+    syschecks::systemd_message("Starting Kafka group manager");
+    _group_manager.invoke_on_all(&kafka::group_manager::start).get();
+
     syschecks::systemd_message("Starting controller");
     controller.invoke_on_all(&cluster::controller::start).get();
 

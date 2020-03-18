@@ -35,7 +35,7 @@ static bool is_uuid(const ss::sstring& uuid) {
  */
 static group get() {
     static config::configuration conf;
-    return group(kafka::group_id("g"), group_state::empty, conf);
+    return group(kafka::group_id("g"), group_state::empty, conf, nullptr);
 }
 
 static const std::vector<member_protocol> test_protos = {

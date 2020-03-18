@@ -46,6 +46,9 @@ struct offset_commit_request final {
     std::optional<kafka::group_instance_id> group_instance_id; // >= v7
     std::vector<topic> topics;
 
+    // set during request processing after mapping group to ntp
+    model::ntp ntp;
+
     offset_commit_request() = default;
     offset_commit_request(request_context& ctx) { decode(ctx); }
 

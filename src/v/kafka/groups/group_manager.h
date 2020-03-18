@@ -1,4 +1,6 @@
 #pragma once
+#include "cluster/namespace.h"
+#include "cluster/partition_manager.h"
 #include "config/configuration.h"
 #include "kafka/errors.h"
 #include "kafka/groups/group.h"
@@ -22,26 +24,12 @@ namespace kafka {
 class group_manager {
 public:
     group_manager(
-      ss::sharded<cluster::partition_manager>& partitions,
-      config::configuration& conf)
-      : _partitions(partitions.local())
+      ss::sharded<cluster::partition_manager>& pm, config::configuration& conf)
+      : _pm(pm)
       , _conf(conf) {}
 
-    ss::future<> start() {
-        // TODO setup partition manager hooks when this shard becomes a
-        // partition leader for the group membership topic then group state will
-        // need to be recovered. this will happen for instance at startup, and
-        // in response to failovers.
-        return ss::make_ready_future<>();
-    }
-
-    ss::future<> stop() {
-        // TODO clean up groups and members and timers. in flight requests may
-        // be holding references to groups/members--so here we mark groups as
-        // being cleaned up. we can also use semaphore / guards here, but this
-        // integration is evolving.
-        return ss::make_ready_future<>();
-    }
+    ss::future<> start();
+    ss::future<> stop();
 
 public:
     /// \brief Handle a JoinGroup request
@@ -65,7 +53,9 @@ public:
     offset_fetch(offset_fetch_request&& request);
 
 public:
-    static error_code validate_group_status(const group_id& group, api_key api);
+    error_code validate_group_status(
+      const model::ntp& ntp, const group_id& group, api_key api);
+
     static bool valid_group_id(const group_id& group, api_key api);
 
 private:
@@ -76,9 +66,77 @@ private:
         return nullptr;
     }
 
-    cluster::partition_manager& _partitions;
+    cluster::notification_id_type _manage_notify_handle;
+    ss::gate _gate;
+
+    void attach_partition(ss::lw_shared_ptr<cluster::partition>);
+
+    struct attached_partition {
+        bool loading;
+        ss::lw_shared_ptr<cluster::partition> partition;
+
+        attached_partition(ss::lw_shared_ptr<cluster::partition> p)
+          : loading(true)
+          , partition(std::move(p)) {}
+    };
+
+    absl::flat_hash_map<model::ntp, ss::lw_shared_ptr<attached_partition>>
+      _partitions;
+
+    ss::sharded<cluster::partition_manager>& _pm;
     config::configuration& _conf;
     absl::flat_hash_map<group_id, group_ptr> _groups;
+};
+
+/**
+ * the key type for group membership log records.
+ *
+ * the opaque key field is decoded based on the actual type.
+ */
+struct group_log_record_key {
+    enum class type : int8_t { group_metadata, offset_commit };
+
+    type record_type;
+    iobuf key;
+};
+
+/**
+ * the value type of a group metadata log record.
+ */
+struct group_log_group_metadata {
+    struct member {
+        kafka::member_id id;
+        int32_t session_timeout_ms;
+        int32_t rebalance_timeout_ms;
+        std::optional<kafka::group_instance_id> instance_id;
+        iobuf subscription;
+        iobuf assignment;
+    };
+
+    kafka::protocol_type protocol_type;
+    kafka::generation_id generation;
+    std::optional<kafka::protocol_name> protocol;
+    std::optional<kafka::member_id> leader;
+    int32_t state_timestamp;
+    std::vector<member> members;
+};
+
+/**
+ * the key type for offset commit records.
+ */
+struct group_log_offset_key {
+    kafka::group_id group;
+    model::topic topic;
+    model::partition_id partition;
+};
+
+/**
+ * the value type for offset commit records.
+ */
+struct group_log_offset_metadata {
+    model::offset offset;
+    int32_t leader_epoch;
+    std::optional<ss::sstring> metadata;
 };
 
 } // namespace kafka
