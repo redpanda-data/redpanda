@@ -18,7 +18,7 @@ static inline void crc_extend_vint(crc32& crc, vint::value_type v) {
     crc.extend(reinterpret_cast<const uint8_t*>(encoding_buffer.data()), size);
 }
 
-template<typename T, typename = std::enable_if_t<std::is_arithmetic_v<T>, T>>
+template<typename T, typename = std::enable_if_t<std::is_integral_v<T>, T>>
 void crc_extend_cpu_to_le(crc32& crc, T i) {
     auto j = ss::cpu_to_le(i);
     crc.extend(j);
@@ -54,7 +54,7 @@ uint32_t internal_header_only_crc(const record_batch_header& header) {
     return c.value();
 }
 
-template<typename T, typename = std::enable_if_t<std::is_arithmetic_v<T>, T>>
+template<typename T, typename = std::enable_if_t<std::is_integral_v<T>, T>>
 void crc_extend_cpu_to_be(crc32& crc, T i) {
     auto j = ss::cpu_to_be(i);
     crc.extend(j);

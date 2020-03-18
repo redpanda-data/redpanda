@@ -412,7 +412,7 @@ public:
     }
     template<
       typename T,
-      typename = std::enable_if_t<std::is_arithmetic_v<T>, T>>
+      typename = std::enable_if_t<std::is_integral_v<T>, T>>
     T consume_be_type() {
         return ss::be_to_cpu(consume_type<T>());
     }
