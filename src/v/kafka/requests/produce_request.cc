@@ -4,6 +4,7 @@
 #include "cluster/namespace.h"
 #include "kafka/errors.h"
 #include "kafka/requests/kafka_batch_adapter.h"
+#include "kafka/requests/response_writer_utils.h"
 #include "likely.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -34,7 +35,9 @@ void produce_request::encode(
         writer.write_array(
           t.partitions, [](partition& part, response_writer& writer) {
               writer.write(part.id());
-              writer.write(std::move(part.data));
+              writer.write(part.adapter.batch->size_bytes());
+              writer_serialize_batch(
+                writer, std::move(part.adapter.batch.value()));
           });
     });
 }

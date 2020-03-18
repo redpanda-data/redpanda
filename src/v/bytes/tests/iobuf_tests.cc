@@ -202,14 +202,6 @@ BOOST_AUTO_TEST_CASE(not_equal_by_size) {
     b.append("b", 1);
     BOOST_CHECK(a != b);
 }
-BOOST_AUTO_TEST_CASE(correct_control_structure_sharing) {
-    auto a = iobuf();
-    a.append("a", 1);
-    auto b = a.control_share();
-    b.append("b", 1);
-    BOOST_CHECK_EQUAL(a.size_bytes(), b.size_bytes());
-    BOOST_CHECK_EQUAL(a, b);
-}
 BOOST_AUTO_TEST_CASE(test_prepend) {
     auto a = iobuf();
     a.append("a", 1);

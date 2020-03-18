@@ -144,7 +144,7 @@ public:
     record_batch_reader& operator=(const record_batch_reader&) = delete;
     record_batch_reader(record_batch_reader&&) noexcept = default;
     record_batch_reader& operator=(record_batch_reader&&) noexcept = default;
-
+    ~record_batch_reader() noexcept = default;
     ss::future<record_batch_opt> operator()(timeout_clock::time_point timeout) {
         return _impl->operator()(timeout);
     }

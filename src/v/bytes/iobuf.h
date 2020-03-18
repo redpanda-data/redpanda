@@ -1,14 +1,17 @@
 #pragma once
+#include "bytes/details/io_allocation_size.h"
+#include "bytes/details/io_byte_iterator.h"
+#include "bytes/details/io_fragment.h"
+#include "bytes/details/io_iterator_consumer.h"
+#include "bytes/details/io_placeholder.h"
+#include "bytes/details/out_of_range.h"
 #include "likely.h"
 #include "seastarx.h"
-#include "utils/concepts-enabled.h"
+#include "utils/intrusive_list_helpers.h"
 
-#include <seastar/core/byteorder.hh>
-#include <seastar/core/deleter.hh>
-#include <seastar/core/do_with.hh>
-#include <seastar/core/future-util.hh>
 #include <seastar/core/iostream.hh>
 #include <seastar/core/scattered_message.hh>
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/temporary_buffer.hh>
 
@@ -24,124 +27,102 @@
 /// operations in the middle. It provides a forward iterator for
 /// byte scanning and parsing. This is intended to be the workhorse
 /// of our data path.
-/// Operations:
-/// Append      - ammortized O(1); O(N) when vector at capacity; N== # fragments
-/// operator==  - O(N) - N == bytes
-/// operator!=  - O(N) - N == bytes
+/// Noteworthy Operations:
+/// Append/Prepend - O(1)
+/// operator==, operator!=  - O(N)
+///
 class iobuf {
     // Not a lightweight object.
-    // 24 bytes for std::list
-    // 8  bytes for _ctrl->alloc_sz
+    // 16 bytes for std::list
+    // 8  bytes for _alloc_sz
     // 8  bytes for _size_bytes
     // -----------------------
     //
-    // 40 bytes total.
+    // 32 bytes total.
 
-    // 32 bytes per fragment
-    // 24 of ss::temporary_buffer<> + 8 for capacity tracking
+    // Each fragment:
+    // 24  of ss::temporary_buffer<>
+    // 16  for left,right pointers
+    // 8   for consumed capacity
+    // -----------------------
+    //
+    // 48 bytes total
 
 public:
-    class allocation_size {
-    public:
-        static constexpr size_t max_chunk_size = 128 * 1024;
-        static constexpr size_t default_chunk_size = 512;
-        size_t next_allocation_size(size_t data_size);
-        size_t current_allocation_size() const;
-        void reset();
-
-    private:
-        size_t _next_alloc_sz{default_chunk_size};
-    };
-    class fragment;
-    using container = std::list<fragment>;
+    using fragment = details::io_fragment;
+    using container = intrusive_list<fragment, &fragment::hook>;
     using iterator = typename container::iterator;
     using reverse_iterator = typename container::reverse_iterator;
     using const_iterator = typename container::const_iterator;
-    class iterator_consumer;
-    class byte_iterator;
-    class placeholder;
-    struct control {
-        container frags;
-        size_t size{0};
-        allocation_size alloc_sz;
-    };
-    using control_ptr = control*;
-    struct control_allocation {
-        control_ptr ctrl;
-        ss::deleter del;
-    };
-    static control_allocation allocate_control();
+    using iterator_consumer = details::io_iterator_consumer;
+    using byte_iterator = details::io_byte_iterator;
+    using placeholder = details::io_placeholder;
 
-    iobuf();
-    iobuf(control_ptr, ss::deleter) noexcept;
-    ~iobuf() = default;
-    iobuf(iobuf&& x) noexcept = default;
+    iobuf() noexcept = default;
+    ~iobuf() noexcept;
+    iobuf(iobuf&& x) noexcept
+      : _frags(std::move(x._frags))
+      , _size(x._size)
+      , _alloc_sz(x._alloc_sz) {
+        x.clear();
+    }
+    iobuf& operator=(iobuf&& x) noexcept {
+        if (this != &x) {
+            this->~iobuf();
+            new (this) iobuf(std::move(x));
+        }
+        return *this;
+    }
     iobuf(const iobuf&) = delete;
     iobuf& operator=(const iobuf&) = delete;
-    iobuf& operator=(iobuf&& x) noexcept = default;
 
     /// override to pass in any container of temp bufs
     template<
       typename Range,
-      // clang-format off
       typename = std::enable_if<
-        std::is_same_v<typename Range::value_type, fragment> ||
-        std::is_same_v<typename Range::value_type, ss::temporary_buffer<char>>,
-        Range>
-      // clang-format on
-      >
+        std::is_same_v<typename Range::value_type, ss::temporary_buffer<char>>>>
     explicit iobuf(Range&& r) {
         static_assert(
           std::is_rvalue_reference_v<decltype(r)>,
           "Must be an rvalue. Use std::move()");
-        auto alloc = allocate_control();
-        _ctrl = alloc.ctrl;
-        _deleter = std::move(alloc.del);
-        using value_t = typename Range::value_type;
-        std::for_each(std::begin(r), std::end(r), [this](value_t& b) {
-            append(std::move(b));
-        });
+        for (auto& buf : r) {
+            append(std::move(buf));
+        }
     }
 
-    /// makes no stability claims. pre-pending, or appending
-    /// might relocate buffers at will. It is intended for read only
-    iobuf control_share();
-    /// shares _individual_ fragments, not the top level structure
-    /// it allocates a _new_ control structure
+    /// shares the underlying temporary buffers
     iobuf share(size_t pos, size_t len);
     /// makes a copy of the data
     iobuf copy() const;
 
     /// makes a reservation with the internal storage. adds a layer of
-    /// indirection instead of raw byte pointer to allow the fragments to
-    /// internally compact buffers as long as they don't violate
-    /// the reservation size here
+    /// indirection instead of raw byte pointer to allow the
+    /// details::io_fragments to internally compact buffers as long as they
+    /// don't violate the reservation size here
     placeholder reserve(size_t reservation);
 
     /// only ensures that a segment of at least reservation is avaible
-    /// as an empty fragment
+    /// as an empty details::io_fragment
     void reserve_memory(size_t reservation);
 
     /// append src + len into storage
     void append(const char*, size_t);
     /// appends the contents of buffer; might pack values into existing space
-    void append(fragment);
-    /// appends the contents of buffer; might pack values into existing space
     void append(ss::temporary_buffer<char>);
     /// appends the contents of buffer; might pack values into existing space
     void append(iobuf);
-    /// prepends the _the buffer_ as iobuf::fragment::full{}
+    /// prepends the _the buffer_ as iobuf::details::io_fragment::full{}
     void prepend(ss::temporary_buffer<char>);
-    /// prepends the arg to this as iobuf::fragment::full{}
+    /// prepends the arg to this as iobuf::details::io_fragment::full{}
     void prepend(iobuf);
     /// used for iostreams
     void pop_front();
     void trim_front(size_t n);
-
+    void clear();
     size_t size_bytes() const;
     bool empty() const;
     /// compares that the _content_ is the same;
-    /// ignores allocation strategy, and number of fragments
+    /// ignores allocation strategy, and number of details::io_fragments
     /// it is a byte-per-byte comparator
     bool operator==(const iobuf&) const;
     bool operator!=(const iobuf&) const;
@@ -159,396 +140,39 @@ private:
     size_t available_bytes() const;
     void create_new_fragment(size_t);
 
-    control_ptr _ctrl;
-    ss::deleter _deleter;
+    container _frags;
+    size_t _size{0};
+    details::io_allocation_size _alloc_sz;
 
     friend std::ostream& operator<<(std::ostream&, const iobuf&);
 };
 
-namespace details {
-[[noreturn]] [[gnu::cold]] static void
-throw_out_of_range(const char* fmt, size_t A, size_t B) {
-    throw std::out_of_range(fmt::format(fmt, A, B));
-}
-static inline void check_out_of_range(size_t sz, size_t capacity) {
-    if (unlikely(sz > capacity)) {
-        throw_out_of_range("iobuf op: size:{} > capacity:{}", sz, capacity);
-    }
-}
-} // namespace details
-
-inline iobuf::control_allocation iobuf::allocate_control() {
-    auto data = std::make_unique<iobuf::control>();
-    iobuf::control_ptr raw = data.get();
-    return control_allocation{raw,
-                              ss::make_deleter([data = std::move(data)] {})};
-}
-class iobuf::fragment {
-public:
-    struct full {};
-    struct empty {};
-    fragment(ss::temporary_buffer<char> buf, full)
-      : _buf(std::move(buf))
-      , _used_bytes(_buf.size()) {}
-    fragment(ss::temporary_buffer<char> buf, empty)
-      : _buf(std::move(buf))
-      , _used_bytes(0) {}
-    fragment(fragment&& o) noexcept = default;
-    fragment& operator=(fragment&& o) noexcept = default;
-    fragment(const fragment& o) = delete;
-    fragment& operator=(const fragment& o) = delete;
-
-    ~fragment() = default;
-
-    bool operator==(const fragment& o) const {
-        return _used_bytes == o._used_bytes && _buf == o._buf;
-    }
-    bool operator!=(const fragment& o) const { return !(*this == o); }
-    bool is_empty() const { return _used_bytes == 0; }
-    size_t available_bytes() const { return _buf.size() - _used_bytes; }
-    void reserve(size_t reservation) {
-        details::check_out_of_range(reservation, available_bytes());
-        _used_bytes += reservation;
-    }
-    size_t size() const { return _used_bytes; }
-    const char* get() const {
-        // required for the networking layer to conver to
-        // scattered message without copying data
-        return _buf.get();
-    }
-    size_t append(const char* src, size_t len) {
-        const size_t sz = std::min(len, available_bytes());
-        std::copy_n(src, sz, get_current());
-        _used_bytes += sz;
-        return sz;
-    }
-    ss::temporary_buffer<char> share() {
-        // needed for output_stream<char> wrapper
-        return _buf.share(0, _used_bytes);
-    }
-    ss::temporary_buffer<char> share(size_t pos, size_t len) {
-        return _buf.share(pos, len);
-    }
-
-    /// destructive move. place special care when calling this method
-    /// on a shared iobuf. most of the time you want share() instead of release
-    ss::temporary_buffer<char> release() && {
-        trim();
-        return std::move(_buf);
-    }
-    void trim() {
-        if (_used_bytes == _buf.size()) {
-            return;
-        }
-        size_t half = _buf.size() / 2;
-        if (_used_bytes <= half) {
-            // this is an important optimization. often times during RPC
-            // serialization we append some small controll bytes, _right_
-            // before we append a full new chain of iobufs
-            _buf = std::move(
-              ss::temporary_buffer<char>(_buf.get(), _used_bytes));
-        } else {
-            _buf.trim(_used_bytes);
-        }
-    }
-    void trim_front(size_t pos) {
-        // required by input_stream<char> converter
-        _buf.trim_front(pos);
-    }
-
-private:
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-    char* get_current() { return _buf.get_write() + _used_bytes; }
-
-    friend iobuf::placeholder;
-
-    ss::temporary_buffer<char> _buf;
-    size_t _used_bytes;
-};
-
-class iobuf::placeholder {
-public:
-    using iterator = iobuf::iterator;
-
-    placeholder() noexcept = default;
-
-    placeholder(iterator iter, size_t initial_index, size_t max_size_to_write)
-      : _iter(iter)
-      , _byte_index(initial_index)
-      , _remaining_size(max_size_to_write) {}
-
-    [[gnu::always_inline]] void write(const char* src, size_t len) {
-        details::check_out_of_range(len, _remaining_size);
-        std::copy_n(src, len, mutable_index());
-        _remaining_size -= len;
-        _byte_index += len;
-    }
-
-    size_t remaining_size() const { return _remaining_size; }
-
-    // the first byte of the _current_ iterator + offset
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-    const char* index() const { return _iter->_buf.get() + _byte_index; }
-
-private:
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-    char* mutable_index() { return _iter->_buf.get_write() + _byte_index; }
-
-    iterator _iter;
-    size_t _byte_index{0};
-    size_t _remaining_size{0};
-};
-class iobuf::byte_iterator {
-public:
-    // iterator_traits
-    using difference_type = void;
-    using value_type = char;
-    using pointer = const char*;
-    using reference = const char&;
-    using iterator_category = std::forward_iterator_tag;
-
-    byte_iterator(
-      iobuf::const_iterator begin, iobuf::const_iterator end) noexcept
-      : _frag(begin)
-      , _frag_end(end) {
-        if (_frag != _frag_end) {
-            _frag_index = _frag->get();
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-            _frag_index_end = _frag->get() + _frag->size();
-        } else {
-            _frag_index = nullptr;
-            _frag_index_end = nullptr;
-        }
-    }
-    byte_iterator(
-      iobuf::const_iterator begin,
-      iobuf::const_iterator end,
-      const char* frag_index,
-      const char* frag_index_end) noexcept
-      : _frag(begin)
-      , _frag_end(end)
-      , _frag_index(frag_index)
-      , _frag_index_end(frag_index_end) {}
-
-    pointer get() const { return _frag_index; }
-    reference operator*() const noexcept { return *_frag_index; }
-    pointer operator->() const noexcept { return _frag_index; }
-    /// true if pointing to the byte-value (not necessarily the same address)
-    bool operator==(const byte_iterator& o) const noexcept {
-        return _frag_index == o._frag_index;
-    }
-    bool operator!=(const byte_iterator& o) const noexcept {
-        return !(*this == o);
-    }
-    byte_iterator& operator++() {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-        if (++_frag_index == _frag_index_end) {
-            next_fragment();
-        }
-        return *this;
-    }
-
-private:
-    void next_fragment() {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-        if (++_frag != _frag_end) {
-            _frag_index = _frag->get();
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-            _frag_index_end = _frag->get() + _frag->size();
-        } else {
-            _frag_index = nullptr;
-            _frag_index_end = nullptr;
-        }
-    }
-
-    iobuf::const_iterator _frag_end;
-    iobuf::const_iterator _frag;
-    const char* _frag_index = nullptr;
-    const char* _frag_index_end = nullptr;
-};
-class iobuf::iterator_consumer {
-public:
-    iterator_consumer(
-      iobuf::const_iterator begin, iobuf::const_iterator end) noexcept
-      : _frag(begin)
-      , _frag_end(end) {
-        if (_frag != _frag_end) {
-            _frag_index = _frag->get();
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-            _frag_index_end = _frag->get() + _frag->size();
-        }
-    }
-    void skip(size_t n) {
-        size_t c = consume(n, [](const char*, size_t /*max*/) {
-            return ss::stop_iteration::no;
+inline void iobuf::clear() {
+    while (!_frags.empty()) {
+        _frags.pop_back_and_dispose([](fragment* f) {
+            delete f; // NOLINT
         });
-        if (unlikely(c != n)) {
-            details::throw_out_of_range(
-              "Invalid skip(n). Expected:{}, but skipped:{}", n, c);
-        }
     }
-    template<typename Output>
-    [[gnu::always_inline]] void consume_to(size_t n, Output out) {
-        size_t c = consume(n, [&out](const char* src, size_t max) {
-            std::copy_n(src, max, out);
-            out += max;
-            return ss::stop_iteration::no;
-        });
-        if (unlikely(c != n)) {
-            details::throw_out_of_range(
-              "Invalid consume_to(n, out), expected:{}, but consumed:{}", n, c);
-        }
-    }
-
-    template<
-      typename T,
-      typename = std::enable_if_t<std::is_trivially_copyable_v<T>, T>>
-    T consume_type() {
-        constexpr size_t sz = sizeof(T);
-        T obj;
-        char* dst = reinterpret_cast<char*>(&obj); // NOLINT
-        consume_to(sz, dst);
-        return obj;
-    }
-    template<
-      typename T,
-      typename = std::enable_if_t<std::is_integral_v<T>, T>>
-    T consume_be_type() {
-        return ss::be_to_cpu(consume_type<T>());
-    }
-    [[gnu::always_inline]] void consume_to(size_t n, iobuf::placeholder& ph) {
-        size_t c = consume(n, [&ph](const char* src, size_t max) {
-            ph.write(src, max);
-            return ss::stop_iteration::no;
-        });
-        if (unlikely(c != n)) {
-            details::throw_out_of_range(
-              "Invalid consume_to(n, placeholder), expected:{}, but "
-              "consumed:{}",
-              n,
-              c);
-        }
-    }
-
-    template<typename Consumer>
-    // clang-format off
-    CONCEPT(requires requires(Consumer c, const char* src, size_t max) {
-                    { c(src, max) } -> ss::stop_iteration;
-            }
-    )
-      // clang-format on
-      /// takes a Consumer object and iteraters over the chunks in oder, from
-      /// the given buffer index position. Use a stop_iteration::yes for early
-      /// exit;
-      size_t consume(const size_t n, Consumer&& f) {
-        size_t i = 0;
-        while (i < n) {
-            if (_frag == _frag_end) {
-                return i;
-            }
-            const size_t bytes_left = segment_bytes_left();
-            if (bytes_left == 0) {
-                // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-                if (++_frag != _frag_end) {
-                    _frag_index = _frag->get();
-                    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-                    _frag_index_end = _frag->get() + _frag->size();
-                }
-                continue;
-            }
-            const size_t step = std::min(n - i, bytes_left);
-            const ss::stop_iteration stop = f(_frag_index, step);
-            i += step;
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-            _frag_index += step;
-            _bytes_consumed += step;
-            if (stop == ss::stop_iteration::yes) {
-                break;
-            }
-        }
-
-        if (_frag_index == _frag_index_end) {
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-            if (_frag != _frag_end && ++_frag != _frag_end) {
-                _frag_index = _frag->get();
-                // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-                _frag_index_end = _frag->get() + _frag->size();
-            } else {
-                _frag_index = nullptr;
-                _frag_index_end = nullptr;
-            }
-        }
-
-        return i;
-    }
-    size_t bytes_consumed() const { return _bytes_consumed; }
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-    size_t segment_bytes_left() const { return _frag_index_end - _frag_index; }
-    bool is_finished() const { return _frag == _frag_end; }
-
-    /// starts a new iterator byte-for-byte starting at *this* index
-    /// useful for varint decoding that need to peek ahead
-    iobuf::byte_iterator begin() const {
-        return iobuf::byte_iterator(
-          _frag, _frag_end, _frag_index, _frag_index_end);
-    }
-    iobuf::byte_iterator end() const {
-        return iobuf::byte_iterator(_frag_end, _frag_end, nullptr, nullptr);
-    }
-
-private:
-    iobuf::const_iterator _frag;
-    iobuf::const_iterator _frag_end;
-    const char* _frag_index = nullptr;
-    const char* _frag_index_end = nullptr;
-    size_t _bytes_consumed{0};
-};
-
-//   - try to not exceed max_chunk_size
-//   - must be enough for data_size
-//   - uses folly::vector of 1.5 growth without using double conversions
-inline size_t iobuf::allocation_size::next_allocation_size(size_t data_size) {
-    size_t next_size = ((_next_alloc_sz * 3) + 1) / 2;
-    next_size = std::min(next_size, max_chunk_size);
-    return _next_alloc_sz = std::max(next_size, data_size);
+    _size = 0;
+    _alloc_sz.reset();
 }
-inline size_t iobuf::allocation_size::current_allocation_size() const {
-    return _next_alloc_sz;
-}
-inline void iobuf::allocation_size::reset() {
-    _next_alloc_sz = default_chunk_size;
-}
-
-inline iobuf::iobuf() {
-    auto alloc = allocate_control();
-    _ctrl = alloc.ctrl;
-    _deleter = std::move(alloc.del);
-}
-/// constructor used for sharing
-inline iobuf::iobuf(iobuf::control_ptr c, ss::deleter del) noexcept
-  : _ctrl(c)
-  , _deleter(std::move(del)) {}
-
-inline iobuf::iterator iobuf::begin() { return _ctrl->frags.begin(); }
-inline iobuf::iterator iobuf::end() { return _ctrl->frags.end(); }
-inline iobuf::reverse_iterator iobuf::rbegin() { return _ctrl->frags.rbegin(); }
-inline iobuf::reverse_iterator iobuf::rend() { return _ctrl->frags.rend(); }
-inline iobuf::const_iterator iobuf::begin() const {
-    return _ctrl->frags.cbegin();
-}
-inline iobuf::const_iterator iobuf::end() const { return _ctrl->frags.cend(); }
-inline iobuf::const_iterator iobuf::cbegin() const {
-    return _ctrl->frags.cbegin();
-}
-inline iobuf::const_iterator iobuf::cend() const { return _ctrl->frags.cend(); }
+inline iobuf::~iobuf() noexcept { clear(); }
+inline iobuf::iterator iobuf::begin() { return _frags.begin(); }
+inline iobuf::iterator iobuf::end() { return _frags.end(); }
+inline iobuf::reverse_iterator iobuf::rbegin() { return _frags.rbegin(); }
+inline iobuf::reverse_iterator iobuf::rend() { return _frags.rend(); }
+inline iobuf::const_iterator iobuf::begin() const { return _frags.cbegin(); }
+inline iobuf::const_iterator iobuf::end() const { return _frags.cend(); }
+inline iobuf::const_iterator iobuf::cbegin() const { return _frags.cbegin(); }
+inline iobuf::const_iterator iobuf::cend() const { return _frags.cend(); }
 
 inline bool iobuf::operator==(const iobuf& o) const {
-    if (_ctrl->size != o._ctrl->size) {
+    if (_size != o._size) {
         return false;
     }
-    auto lhs_begin = iobuf::byte_iterator(cbegin(), cend());
-    auto lhs_end = iobuf::byte_iterator(cend(), cend());
-    auto rhs = iobuf::byte_iterator(o.cbegin(), o.cend());
+    auto lhs_begin = byte_iterator(cbegin(), cend());
+    auto lhs_end = byte_iterator(cend(), cend());
+    auto rhs = byte_iterator(o.cbegin(), o.cend());
     while (lhs_begin != lhs_end) {
         char l = *lhs_begin;
         char r = *rhs;
@@ -561,37 +185,35 @@ inline bool iobuf::operator==(const iobuf& o) const {
     return true;
 }
 inline bool iobuf::operator!=(const iobuf& o) const { return !(*this == o); }
-inline bool iobuf::empty() const { return _ctrl->frags.empty(); }
-inline size_t iobuf::size_bytes() const { return _ctrl->size; }
+inline bool iobuf::empty() const { return _frags.empty(); }
+inline size_t iobuf::size_bytes() const { return _size; }
 
 inline size_t iobuf::available_bytes() const {
-    if (_ctrl->frags.empty()) {
+    if (_frags.empty()) {
         return 0;
     }
-    return _ctrl->frags.back().available_bytes();
+    return _frags.back().available_bytes();
 }
 
-inline iobuf iobuf::control_share() { return iobuf(_ctrl, _deleter.share()); }
-
 inline void iobuf::create_new_fragment(size_t sz) {
-    auto asz = _ctrl->alloc_sz.next_allocation_size(sz);
-    _ctrl->frags.push_back(iobuf::fragment(
-      ss::temporary_buffer<char>(asz), iobuf::fragment::empty{}));
+    auto asz = _alloc_sz.next_allocation_size(sz);
+    auto f = new fragment(ss::temporary_buffer<char>(asz), fragment::empty{});
+    _frags.push_back(*f);
 }
 inline iobuf::placeholder iobuf::reserve(size_t sz) {
     reserve_memory(sz);
-    _ctrl->size += sz;
-    auto it = std::prev(_ctrl->frags.end());
+    _size += sz;
+    auto it = std::prev(_frags.end());
     placeholder p(it, it->size(), sz);
     it->reserve(sz);
     return p;
 }
 /// only ensures that a segment of at least reservation is avaible
-/// as an empty fragment
+/// as an empty details::io_fragment
 inline void iobuf::reserve_memory(size_t reservation) {
     if (auto b = available_bytes(); b < reservation) {
         if (b > 0) {
-            _ctrl->frags.back().trim();
+            _frags.back().trim();
         }
         create_new_fragment(reservation); // make space if not enough
     }
@@ -599,12 +221,16 @@ inline void iobuf::reserve_memory(size_t reservation) {
 
 [[gnu::always_inline]] void inline iobuf::prepend(
   ss::temporary_buffer<char> b) {
-    _ctrl->size += b.size();
-    _ctrl->frags.emplace_front(std::move(b), iobuf::fragment::full{});
+    _size += b.size();
+    auto f = new fragment(std::move(b), fragment::full{});
+    _frags.push_front(*f);
 }
 [[gnu::always_inline]] void inline iobuf::prepend(iobuf b) {
-    for (auto start = b.rbegin(), end = b.rend(); start != end; start++) {
-        prepend(start->share());
+    while (!b._frags.empty()) {
+        b._frags.pop_back_and_dispose([this](fragment* f) {
+            prepend(f->share());
+            delete f; // NOLINT
+        });
     }
 }
 [[gnu::always_inline]] void inline iobuf::append(const char* ptr, size_t size) {
@@ -612,7 +238,7 @@ inline void iobuf::reserve_memory(size_t reservation) {
         return;
     }
     if (likely(size <= available_bytes())) {
-        _ctrl->size += _ctrl->frags.back().append(ptr, size);
+        _size += _frags.back().append(ptr, size);
         return;
     }
     size_t i = 0;
@@ -621,8 +247,8 @@ inline void iobuf::reserve_memory(size_t reservation) {
             create_new_fragment(size);
         }
         // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-        const size_t sz = _ctrl->frags.back().append(ptr + i, size);
-        _ctrl->size += sz;
+        const size_t sz = _frags.back().append(ptr + i, size);
+        _size += sz;
         i += sz;
         size -= sz;
     }
@@ -635,33 +261,43 @@ inline void iobuf::reserve_memory(size_t reservation) {
         return;
     }
     if (available_bytes() > 0) {
-        if (_ctrl->frags.back().is_empty()) {
-            _ctrl->frags.pop_back();
+        if (_frags.back().is_empty()) {
+            _frags.pop_back();
         } else {
             // happens when we are merge iobufs
-            _ctrl->frags.back().trim();
-            _ctrl->alloc_sz.reset();
+            _frags.back().trim();
+            _alloc_sz.reset();
         }
     }
-    _ctrl->size += b.size();
-    _ctrl->frags.emplace_back(std::move(b), iobuf::fragment::full{});
+    _size += b.size();
+    // intrusive list manages the lifetime
+    auto f = new fragment(std::move(b), fragment::full{});
+    _frags.push_back(*f);
 }
 /// appends the contents of buffer; might pack values into existing space
 inline void iobuf::append(iobuf o) {
-    for (auto& f : o) {
-        append(f.share());
+    if (available_bytes()) {
+        _frags.back().trim();
+    }
+    while (!o._frags.empty()) {
+        o._frags.pop_front_and_dispose([this](fragment* f) {
+            append(f->share());
+            delete f; // NOLINT
+        });
     }
 }
 /// used for iostreams
 inline void iobuf::pop_front() {
-    _ctrl->size -= _ctrl->frags.front().size();
-    _ctrl->frags.pop_front();
+    _size -= _frags.front().size();
+    _frags.pop_front_and_dispose([](fragment* f) {
+        delete f; // NOLINT
+    });
 }
 inline void iobuf::trim_front(size_t n) {
-    while (!_ctrl->frags.empty()) {
-        auto& f = _ctrl->frags.front();
+    while (!_frags.empty()) {
+        auto& f = _frags.front();
         if (f.size() > n) {
-            _ctrl->size -= n;
+            _size -= n;
             f.trim_front(n);
             return;
         }
@@ -678,9 +314,9 @@ ss::output_stream<char> make_iobuf_output_stream(iobuf io);
 /// \brief exactly like input_stream<char>::read_exactly but returns iobuf
 ss::future<iobuf> read_iobuf_exactly(ss::input_stream<char>& in, size_t n);
 
-/// \brief shares each temporary buffer & fragment n times
-std::vector<iobuf> iobuf_share_foreign_n(iobuf&& og, size_t n);
-
 /// \brief keeps the iobuf in the deferred destructor of scattered_msg<char>
-/// and wraps each fragment as a scattered_message<char>::static() const char*
+/// and wraps each details::io_fragment as a scattered_message<char>::static()
+/// const char*
 ss::scattered_message<char> iobuf_as_scattered(iobuf b);
+
+std::vector<iobuf> iobuf_share_foreign_n(iobuf, size_t n);

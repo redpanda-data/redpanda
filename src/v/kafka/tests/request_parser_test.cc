@@ -4,6 +4,10 @@
 #include "redpanda/tests/fixture.h"
 #include "test_utils/fixture.h"
 #include "utils/file_io.h"
+#include "vlog.h"
+
+// logger
+static ss::logger rlog("request_parser");
 
 /*
  * reads the next request from the input source as an iobuf
@@ -15,6 +19,7 @@ static ss::future<iobuf> get_request(ss::input_stream<char>& input) {
               return ss::make_ready_future<iobuf>(iobuf());
           }
           auto size = kafka::parse_size_buffer(buf);
+          vlog(rlog.info, "read: {}, size of kafka is:{}", buf.size(), size);
           return input.read_exactly(size).then(
             [size_buf = std::move(buf)](
               ss::temporary_buffer<char> buf) mutable {
@@ -89,6 +94,7 @@ static iobuf handle_request(kafka::request_context&& ctx) {
     // decode and echo
     switch (ctx.header().key) {
     case kafka::join_group_api::key: {
+        vlog(rlog.info, "kafka::join_group_api::key");
         kafka::join_group_request r;
         r.decode(ctx);
         r.encode(ctx, writer);
@@ -96,6 +102,7 @@ static iobuf handle_request(kafka::request_context&& ctx) {
     }
 
     case kafka::sync_group_api::key: {
+        vlog(rlog.info, "kafka::sync_group_api::key");
         kafka::sync_group_request r;
         r.decode(ctx);
         r.encode(ctx, writer);
@@ -103,6 +110,7 @@ static iobuf handle_request(kafka::request_context&& ctx) {
     }
 
     case kafka::heartbeat_api::key: {
+        vlog(rlog.info, "kafka::heartbeat_api::key");
         kafka::heartbeat_request r;
         r.decode(ctx);
         r.encode(ctx, writer);
@@ -110,6 +118,7 @@ static iobuf handle_request(kafka::request_context&& ctx) {
     }
 
     case kafka::leave_group_api::key: {
+        vlog(rlog.info, "kafka::leave_group_api::key");
         kafka::leave_group_request r;
         r.decode(ctx);
         r.encode(ctx, writer);
@@ -117,6 +126,7 @@ static iobuf handle_request(kafka::request_context&& ctx) {
     }
 
     case kafka::fetch_api::key: {
+        vlog(rlog.info, "kafka::fetch_api::key");
         kafka::fetch_request r;
         r.decode(ctx);
         r.encode(writer, ctx.header().version);
@@ -124,6 +134,7 @@ static iobuf handle_request(kafka::request_context&& ctx) {
     }
 
     case kafka::metadata_api::key: {
+        vlog(rlog.info, "kafka::metadata_api::key");
         kafka::metadata_request r;
         r.decode(ctx);
         r.encode(writer, ctx.header().version);
@@ -131,6 +142,7 @@ static iobuf handle_request(kafka::request_context&& ctx) {
     }
 
     case kafka::produce_api::key: {
+        vlog(rlog.info, "kafka::produce_api::key");
         kafka::produce_request r(ctx);
         // TODO: once we have a tool/utility for rebuilding the
         // batch blob after decoding, swap that in here for extra
@@ -177,7 +189,10 @@ FIXTURE_TEST(request_test, redpanda_thread_fixture) {
                             kafka::request_context ctx) mutable {
                         auto output = handle_request(std::move(ctx));
                         if (output != request) {
-                            throw std::runtime_error("test failed");
+                            throw std::runtime_error(fmt::format(
+                              "Test failed. Input({})  not match output({})",
+                              request,
+                              output));
                         }
                     });
               });
