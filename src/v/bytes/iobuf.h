@@ -58,7 +58,11 @@ public:
     using byte_iterator = details::io_byte_iterator;
     using placeholder = details::io_placeholder;
 
-    iobuf() noexcept = default;
+    // NOLINTNEXTLINE
+    iobuf() noexcept {
+        // nothing allocates memory, but boost intrusive list is not marked as
+        // noexcept
+    }
     ~iobuf() noexcept;
     iobuf(iobuf&& x) noexcept
       : _frags(std::move(x._frags))
