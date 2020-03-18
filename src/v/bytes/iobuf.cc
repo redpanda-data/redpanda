@@ -38,7 +38,7 @@ std::vector<iobuf> iobuf_share_foreign_n(iobuf og, size_t n) {
     return retval;
 }
 ss::future<iobuf> read_iobuf_exactly(ss::input_stream<char>& in, size_t n) {
-    return ss::do_with(iobuf(), n, [&in](iobuf& b, size_t& n) {
+    return ss::do_with(iobuf{}, n, [&in](iobuf& b, size_t& n) {
         return ss::do_until(
                  [&n] { return n == 0; },
                  [&n, &in, &b] {
@@ -118,7 +118,7 @@ iobuf iobuf::copy() const {
         ret.append(src, sz);
         return ss::stop_iteration::no;
     });
-    return ret;
+    return std::move(ret);
 }
 
 iobuf iobuf::share(size_t pos, size_t len) {
@@ -142,5 +142,5 @@ iobuf iobuf::share(size_t pos, size_t len) {
         ret.append(frag.share(pos, left_in_frag));
         pos = 0;
     }
-    return ret;
+    return std::move(ret);
 }
