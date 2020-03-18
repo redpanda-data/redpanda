@@ -32,7 +32,7 @@ public:
 
     template<
       typename T,
-      class = typename std::enable_if<std::is_arithmetic_v<T>, T>>
+      class = typename std::enable_if<std::is_integral_v<T>, T>>
     void update(T t) {
         update((const char*)&t, sizeof(T));
     }
