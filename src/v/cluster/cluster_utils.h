@@ -19,7 +19,7 @@ brokers_diff calculate_changed_brokers(
 // clang-format off
 template<typename T>
 CONCEPT(requires requires(const T& req) {
-    { req.topic } -> model::topic;
+    { req.tp_ns } -> model::topic_namespace;
 })
 // clang-format on
 std::vector<topic_result> create_topic_results(
