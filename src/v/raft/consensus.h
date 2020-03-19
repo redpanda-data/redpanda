@@ -122,6 +122,8 @@ private:
     friend vote_stm;
     friend recovery_stm;
     friend replicate_batcher;
+    using allow_flush_after_write
+      = ss::bool_class<struct allow_flush_after_write_tag>;
 
     // all these private functions assume that we are under exclusive operations
     // via the _op_sem
@@ -139,7 +141,7 @@ private:
     do_replicate(model::record_batch_reader&&);
 
     ss::future<storage::append_result>
-    disk_append(model::record_batch_reader&&);
+    disk_append(model::record_batch_reader&&, allow_flush_after_write);
 
     using success_reply = ss::bool_class<struct successfull_reply_tag>;
 
