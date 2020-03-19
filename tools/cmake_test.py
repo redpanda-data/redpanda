@@ -34,7 +34,6 @@ class TestRunner():
         # make args a list
         if len(args) == 0: args = []
         else: args = list(map(str, args))
-
         if "rpunit" in binary:
             unit_args = [
                 "--overprovisioned", "--unsafe-bypass-fsync 1",
@@ -42,10 +41,16 @@ class TestRunner():
                 "--logger-log-level='exception=debug'",
                 "--fail-on-abandoned-failed-futures"
             ] + COMMON_TEST_ARGS
+            if "CI" in os.environ:
+                if "-c" not in args:
+                    # hypervisors are 4-1 cores. sometimes running out of aio-max-nr events
+                    unit_args.append(f"-c {int(os.cpu_count()/2)}")
             if "--" in args: args = args + unit_args
             else: args = args + ["--"] + unit_args
         elif "rpbench" in binary:
-            args = args + COMMON_TEST_ARGS
+            args.append("-c 1")
+            args.append(COMMON_TEST_ARGS)
+
         # aggregated args for test
         self.test_args = " ".join(args)
 
