@@ -8,6 +8,8 @@
 #include "random/generators.h"
 #include "utils/vint.h"
 
+#include <seastar/core/smp.hh>
+
 #include <random>
 #include <vector>
 
@@ -98,7 +100,8 @@ make_random_batch(model::offset o, int num_records, bool allow_compression) {
         records = std::move(rs);
     }
     // TODO: expose term setting
-    header.ctx.term = model::term_id(0);
+    header.ctx = model::record_batch_header::context(
+      model::term_id(0), ss::this_shard_id());
     header.size_bytes = size;
     auto batch = model::record_batch(header, std::move(records));
     batch.header().crc = model::crc_record_batch(batch);

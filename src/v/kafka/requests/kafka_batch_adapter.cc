@@ -8,6 +8,8 @@
 #include "raft/types.h"
 #include "vassert.h"
 
+#include <seastar/core/smp.hh>
+
 #include <stdexcept>
 
 namespace kafka {
@@ -74,6 +76,7 @@ model::record_batch_header kafka_batch_adapter::read_header(iobuf_parser& in) {
           internal::kafka_header_size,
           total_bytes_consumed));
     }
+    header.ctx.owner_shard = ss::this_shard_id();
     return header;
 }
 
