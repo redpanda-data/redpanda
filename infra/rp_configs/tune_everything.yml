@@ -1,0 +1,16 @@
+rpk:
+  tune_network: true
+  tune_network: true
+  tune_disk_scheduler: true
+  tune_disk_nomerges: true
+  tune_disk_irq: true
+  tune_cpu: true
+  tune_aio_events: true
+  tune_clocksource: true
+  tune_swappiness: true
+  enable_memory_locking: true
+  tune_coredump: true
+  additional_start_flags: [
+    "--overprovision",
+    "--default-log-level=trace",
+  ]
