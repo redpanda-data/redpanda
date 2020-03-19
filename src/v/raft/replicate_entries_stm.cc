@@ -1,7 +1,9 @@
 #include "raft/replicate_entries_stm.h"
 
 #include "likely.h"
+#include "model/fundamental.h"
 #include "outcome_future_utils.h"
+#include "raft/consensus.h"
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
 #include "raft/logger.h"
@@ -12,42 +14,6 @@
 
 namespace raft {
 using namespace std::chrono_literals;
-
-std::ostream&
-operator<<(std::ostream& o, const replicate_entries_stm::retry_meta& m) {
-    o << "{node: " << m.node << ", retries_left: " << m.retries_left
-      << ", value: ";
-    if (m.value) {
-        if (m.value->has_error()) {
-            auto& e = m.value->error();
-            o << "{" << *m.value << ", message: " << e.message() << "}";
-        } else {
-            o << "[" << *m.value << "]";
-        }
-    } else {
-        o << "nullptr";
-    }
-    return o << "}";
-}
-
-ss::future<result<void>> replicate_entries_stm::process_replies() {
-    auto [success, failure] = partition_count();
-    const auto& cfg = _ptr->_conf;
-    if (success < cfg.majority()) {
-        _ctxlog.info(
-          "Could not get majority append_entries() including retries."
-          "Replicated success:{}, failure:{}, majority:{}, nodes:{}",
-          success,
-          failure,
-          cfg.majority(),
-          cfg.nodes.size());
-        return ss::make_ready_future<result<void>>(
-          errc::non_majority_replication);
-    }
-    _ctxlog.trace(
-      "Successful append with: {} acks out of: {}", success, cfg.nodes.size());
-    return ss::make_ready_future<result<void>>(outcome::success());
-}
 
 ss::future<append_entries_request> replicate_entries_stm::share_request() {
     // one extra copy is needed for retries
@@ -67,14 +33,25 @@ ss::future<result<append_entries_reply>> replicate_entries_stm::do_dispatch_one(
     using ret_t = result<append_entries_reply>;
 
     if (n == _ptr->_self) {
-        using reqs_t = std::vector<append_entries_request>;
-        using append_res_t = storage::append_result;
-        return _ptr
-          ->disk_append(std::move(req.batches), allow_flush_after_write::yes)
-          .then([this](append_res_t append_res) {
-              return ss::make_ready_future<ret_t>(
-                _ptr->make_append_entries_reply(std::move(append_res)));
+        auto f = ss::with_semaphore(
+          _ptr->_op_sem, 1, [this, req = std::move(req)]() mutable {
+              using append_res_t = storage::append_result;
+              return _ptr->_log.flush()
+                .then([this]() {
+                    append_entries_reply reply;
+                    reply.node_id = _ptr->_self;
+                    reply.group = _ptr->_meta.group;
+                    reply.term = _ptr->_meta.term;
+                    reply.last_log_index = _ptr->_log.max_offset();
+                    reply.result = append_entries_reply::status::success;
+                    return ret_t(std::move(reply));
+                })
+                .handle_exception([this](const std::exception_ptr& ex) {
+                    return ret_t(errc::leader_flush_failed);
+                });
           });
+        _dispatch_sem.signal();
+        return f;
     }
     return send_append_entries_request(n, std::move(req));
 }
@@ -85,169 +62,123 @@ replicate_entries_stm::send_append_entries_request(
     _ptr->update_node_hbeat_timestamp(n);
     _ctxlog.trace("Sending append entries request {} to {}", req.meta, n);
     auto timeout = raft::clock_type::now() + _ptr->_jit.base_duration();
-    return _ptr->_client_protocol.append_entries(
+
+    auto f = _ptr->_client_protocol.append_entries(
       n, std::move(req), rpc::client_opts(timeout));
+    _dispatch_sem.signal();
+    return f;
 }
 
-ss::future<> replicate_entries_stm::dispatch_one(retry_meta& meta) {
-    return with_gate(
+ss::future<> replicate_entries_stm::dispatch_one(model::node_id id) {
+    return ss::with_gate(
              _req_bg,
-             [this, &meta] {
-                 return with_semaphore(
-                          _sem,
-                          1,
-                          [this, &meta] {
-                              return dispatch_retries(meta);
-                          }) // semaphore
-                   .then([this, &meta] {
-                       if (meta.value) {
-                           _ptr->process_append_reply(meta.node, *meta.value);
-                       }
+             [this, id] {
+                 return dispatch_single_retry(id).then(
+                   [this, id](result<append_entries_reply> reply) {
+                       _ptr->process_heartbeat_response(id, reply);
                    });
              })
-      .handle_exception([](std::exception_ptr e) {
-          raftlog.warn("Exception thrown while replicating entries - {}", e);
-      });
+      .handle_exception_type([](const ss::gate_closed_exception&) {});
 }
 
-ss::future<> replicate_entries_stm::dispatch_retries(retry_meta& meta) {
-    return ss::do_until(
-      [&meta] { return meta.finished(); },
-      [this, &meta] { return dispatch_single_retry(meta); });
-}
-
-ss::future<> replicate_entries_stm::dispatch_single_retry(retry_meta& meta) {
+ss::future<result<append_entries_reply>>
+replicate_entries_stm::dispatch_single_retry(model::node_id id) {
     return share_request()
-      .then([this, &meta](append_entries_request r) mutable {
-          return do_dispatch_one(meta.node, std::move(r));
+      .then([this, id](append_entries_request r) mutable {
+          return do_dispatch_one(id, std::move(r));
       })
       .handle_exception([this](const std::exception_ptr& e) {
           _ctxlog.warn("Error while replicating entries {}", e);
           return result<append_entries_reply>(
             errc::append_entries_dispatch_error);
-      })
-      .then([this, &meta](result<append_entries_reply> reply) mutable {
-          --meta.retries_left;
-          if (reply || meta.retries_left == 0) {
-              meta.set_value(std::move(reply));
-          }
-          if (meta.node == _ptr->self()) {
-              // notify that entries was appended at the leader
-              _self_append_done.set_value();
-          }
       });
 }
 
-ss::future<result<replicate_result>> replicate_entries_stm::apply() {
-    using reqs_t = append_entries_request;
-    using append_res_t = std::vector<storage::append_result>;
-    for (auto& n : _ptr->_conf.nodes) {
-        _replies.emplace_back(n.id(), _max_retries);
-    }
-    for (auto& m : _replies) {
-        (void)dispatch_one(m); // background
-    }
-
-    return _self_append_done.get_future().then([this] {
-        const size_t majority = _ptr->_conf.majority();
-        const size_t all = _ptr->_conf.nodes.size();
-        return _sem.wait(majority)
-          .then([this, majority, all] {
-              return ss::do_until(
-                [this, majority, all] {
-                    auto [success, failure] = partition_count();
-                    _ctxlog.trace(
-                      "Replicate results [success:{}, failures:{}, majority: "
-                      "{}]",
-                      success,
-                      failure,
-                      majority);
-                    return success >= majority || failure >= majority
-                           || (success + failure) >= all;
-                },
-                [this] {
-                    return ss::with_gate(
-                      _req_bg, [this] { return _sem.wait(1); });
-                });
-          })
-          .then([this] {
-              // If not cancelled even after successfull replication replicate
-              // caller would have to wait for failing dispatches to exhaust
-              // replies counter, after having majority of either success or
-              // failures we no longer have to wait for slow retries to finish,
-              // therefore we can set their reply_counter to 0
-              cancel_not_finished();
-          })
-          .then([this] { return process_replies(); })
-          .then([this](result<void> r) {
-              if (!r) {
-                  return ss::make_ready_future<result<replicate_result>>(
-                    r.error());
-              }
-              // append only when we have majority
-              auto m = std::find_if(
-                _replies.cbegin(), _replies.cend(), [](const retry_meta& i) {
-                    return i.get_state() == retry_meta::state::success;
-                });
-              if (unlikely(m == _replies.end())) {
-                  throw std::runtime_error(
-                    "Logic error. cannot acknowledge commits");
-              }
-              auto last_offset = m->value->value().last_log_index;
-              return _ptr->do_maybe_update_leader_commit_idx().then(
-                [last_offset] {
-                    return ss::make_ready_future<result<replicate_result>>(
-                      replicate_result{
-                        .last_offset = model::offset(last_offset),
-                      });
-                });
-          });
+ss::future<storage::append_result> replicate_entries_stm::append_to_self() {
+    return share_request().then([this](append_entries_request req) mutable {
+        _ctxlog.trace("Self append entries - {}", req.meta);
+        return _ptr->disk_append(
+          std::move(req.batches), consensus::allow_flush_after_write::no);
     });
+}
+
+ss::future<result<replicate_result>>
+replicate_entries_stm::apply(ss::semaphore_units<> u) {
+    using ret_t = result<replicate_result>;
+    // first append lo leader log, no flushing
+    return append_to_self()
+      .then(
+        [this, u = std::move(u)](storage::append_result append_result) mutable {
+            // dispatch requests to followers & leader flush
+            for (auto& n : _ptr->_conf.nodes) {
+                // TODO: Do not send append_entries request to followers that
+                // are to far behind the leader
+                (void)dispatch_one(n.id()); // background
+            }
+            // Wait until all RPCs will be dispatched
+            return _dispatch_sem.wait(_ptr->_conf.nodes.size())
+              .then([u = std::move(u), append_result]() mutable {
+                  return append_result;
+              });
+        })
+      .then([this](storage::append_result append_result) {
+          // this is happening outside of _opsem
+          // store offset and term of an appended entry
+          auto appended_offset = append_result.last_offset;
+          auto appended_term = append_result.last_term;
+
+          auto stop_cond = [this, appended_offset, appended_term] {
+              return _ptr->_meta.commit_index >= appended_offset
+                     || appended_term != _ptr->_meta.term;
+          };
+          return _ptr->_commit_index_updated.wait(stop_cond).then(
+            [this, appended_offset, appended_term] {
+                return process_result(appended_offset, appended_term);
+            });
+      });
+}
+
+result<replicate_result> replicate_entries_stm::process_result(
+  model::offset appended_offset, model::term_id appended_term) {
+    using ret_t = result<replicate_result>;
+    _ctxlog.trace(
+      "Replication result [offset: {}, term: {}, commit_idx: "
+      "{}, "
+      "current_term: {}]",
+      appended_offset,
+      appended_term,
+      _ptr->_meta.commit_index,
+      _ptr->_meta.term);
+
+    // if term has changed we have to check if entry was
+    // replicated
+    if (appended_term != _ptr->_meta.term) {
+        if (_ptr->_log.get_term(appended_offset) != appended_term) {
+            return ret_t(errc::replicated_entry_truncated);
+        }
+    }
+    _ctxlog.trace(
+      "Replication success, last offset: {}, term: {}",
+      appended_offset,
+      appended_term);
+    return ret_t(
+      replicate_result{.last_offset = model::offset(appended_offset)});
 }
 
 ss::future<> replicate_entries_stm::wait() { return _req_bg.close(); }
 
 replicate_entries_stm::replicate_entries_stm(
-  consensus* p, int32_t max_retries, append_entries_request r)
+  consensus* p, append_entries_request r)
   : _ptr(p)
-  , _max_retries(max_retries)
   , _req(std::move(r))
   , _share_sem(1)
-  , _sem(_ptr->_conf.nodes.size())
   , _ctxlog(_ptr->_self, raft::group_id(_ptr->_meta.group)) {}
-
-void replicate_entries_stm::cancel_not_finished() {
-    for (auto& m : _replies) {
-        if (!m.finished()) {
-            m.cancel();
-        }
-    }
-}
-
-std::pair<int32_t, int32_t> replicate_entries_stm::partition_count() const {
-    int32_t success = 0;
-    int32_t failure = 0;
-    for (auto& m : _replies) {
-        auto state = m.get_state();
-        if (state == retry_meta::state::success) {
-            ++success;
-        } else if (state != retry_meta::state::in_progress) {
-            ++failure;
-        }
-    }
-    return {success, failure};
-}
 
 replicate_entries_stm::~replicate_entries_stm() {
     auto gate_not_closed = _req_bg.get_count() > 0 && !_req_bg.is_closed();
-    auto [success, failures] = partition_count();
-    if (gate_not_closed || (success + failures) != _replies.size()) {
+    if (gate_not_closed) {
         _ctxlog.error(
-          "Must call replicate_entries_stm::wait(). success: {}, "
-          "failures:{}, total:{}, is_gate_closed:{}",
-          success,
-          failures,
-          _replies.size(),
+          "Must call replicate_entries_stm::wait(). is_gate_closed:{}",
           _req_bg.is_closed());
         std::terminate();
     }

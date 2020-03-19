@@ -160,8 +160,9 @@ private:
     /// used for timer callback to dispatch the vote_stm
     void dispatch_vote();
     /// Replicates configuration to other nodes,
-    //  it have to be called under ops semaphore
-    ss::future<> replicate_configuration(group_configuration);
+    //  caller have to pass in _op_sem semaphore units
+    ss::future<>
+    replicate_configuration(ss::semaphore_units<> u, group_configuration);
     /// After we append on disk, we must consume the entries
     /// to update our leader_id, nodes & learners configuration
     ss::future<>
@@ -215,6 +216,7 @@ private:
     std::optional<append_entries_cb_t> _append_entries_notification;
     probe _probe;
     raft_ctx_log _ctxlog;
+    ss::condition_variable _commit_index_updated;
 };
 
 } // namespace raft

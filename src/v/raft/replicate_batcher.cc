@@ -60,19 +60,16 @@ ss::future<replicate_batcher::item_ptr>
 replicate_batcher::do_cache(model::record_batch_reader&& r) {
     return model::consume_reader_to_memory(std::move(r), model::no_timeout)
       .then([this](ss::circular_buffer<model::record_batch> batches) {
-          return ss::with_semaphore(
-            _ptr->_op_sem, 1, [this, batches = std::move(batches)]() mutable {
-                auto i = ss::make_lw_shared<item>();
-                size_t record_count = 0;
-                for (auto& b : batches) {
-                    record_count += b.record_count();
-                    _pending_bytes += b.size_bytes();
-                    _data_cache.emplace_back(std::move(b));
-                }
-                i->record_count = record_count;
-                _item_cache.emplace_back(i);
-                return i;
-            });
+          auto i = ss::make_lw_shared<item>();
+          size_t record_count = 0;
+          for (auto& b : batches) {
+              record_count += b.record_count();
+              _pending_bytes += b.size_bytes();
+              _data_cache.emplace_back(std::move(b));
+          }
+          i->record_count = record_count;
+          _item_cache.emplace_back(i);
+          return i;
       });
 }
 
@@ -88,12 +85,11 @@ ss::future<> replicate_batcher::flush() {
       [this,
        data = std::move(data),
        notifications = std::move(notifications)]() mutable {
-          return ss::with_semaphore(
-            _ptr->_op_sem,
-            1,
-            [this,
-             data = std::move(data),
-             notifications = std::move(notifications)]() mutable {
+          return ss::get_units(_ptr->_op_sem, 1)
+            .then([this,
+                   data = std::move(data),
+                   notifications = std::move(notifications)](
+                    ss::semaphore_units<> u) mutable {
                 // we have to check if we are the leader
                 // it is critical as term could have been updated already by
                 // vote request and entries from current node could be accepted
@@ -116,7 +112,8 @@ ss::future<> replicate_batcher::flush() {
                   .meta = meta,
                   .batches = model::make_memory_record_batch_reader(
                     std::move(data))};
-                return do_flush(std::move(notifications), std::move(req));
+                return do_flush(
+                  std::move(notifications), std::move(req), std::move(u));
             });
       });
 }
@@ -150,12 +147,12 @@ static void propagate_current_exception(
 
 ss::future<> replicate_batcher::do_flush(
   std::vector<replicate_batcher::item_ptr>&& notifications,
-  append_entries_request&& req) {
-    auto stm = ss::make_lw_shared<replicate_entries_stm>(
-      _ptr, 3, std::move(req));
-    return stm->apply().then_wrapped(
-      [this, stm, notifications = std::move(notifications)](
-        ss::future<result<replicate_result>> fut) mutable {
+  append_entries_request&& req,
+  ss::semaphore_units<> u) {
+    auto stm = ss::make_lw_shared<replicate_entries_stm>(_ptr, std::move(req));
+    return stm->apply(std::move(u))
+      .then_wrapped([this, stm, notifications = std::move(notifications)](
+                      ss::future<result<replicate_result>> fut) mutable {
           try {
               auto ret = fut.get0();
               propagate_result(ret, notifications);
