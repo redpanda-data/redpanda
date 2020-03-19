@@ -10,10 +10,8 @@ COPY tools/install-deps.sh /
 RUN rm -f /etc/yum.repos.d/fedora-* && \
     /install-deps.sh && \
     rm /install-deps.sh && \
-    dnf clean all
-
-# TODO: add aio-nr events
-#    echo 1048576 > /proc/sys/fs/aio-nr
+    dnf clean all && \
+    sysctl -w fs.aio-max-nr=1048576
 
 # vtools
 COPY tools/setup.py tools/README.md /v/tools/
