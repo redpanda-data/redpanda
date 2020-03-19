@@ -518,7 +518,7 @@ ss::future<> consensus::notify_entries_commited(
     auto cfg_reader_start_offset = details::next_offset(
       _last_seen_config_offset);
     fut = fut.then([this, cfg_reader_start_offset, end_offset] {
-        _ctxlog.debug(
+        _ctxlog.trace(
           "Process configurations range [{},{}]",
           cfg_reader_start_offset,
           end_offset);
@@ -653,7 +653,7 @@ ss::future<> consensus::do_maybe_update_leader_commit_idx() {
     if (
       majority_match > _meta.commit_index
       && _log.get_term(majority_match) == _meta.term) {
-        _ctxlog.debug("Leader commit index updated {}", majority_match);
+        _ctxlog.trace("Leader commit index updated {}", majority_match);
         auto old_commit_idx = _meta.commit_index;
         _meta.commit_index = majority_match;
         auto range_start = details::next_offset(model::offset(old_commit_idx));

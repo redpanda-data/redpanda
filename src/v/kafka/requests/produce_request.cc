@@ -13,6 +13,7 @@
 #include "storage/shard_assignment.h"
 #include "utils/remote.h"
 #include "utils/to_string.h"
+#include "vlog.h"
 
 #include <seastar/core/execution_stage.hh>
 #include <seastar/util/log.hh>
@@ -348,7 +349,7 @@ produce_api::process(request_context&& ctx, ss::smp_service_group ssg) {
     return ss::do_with(
       produce_ctx(std::move(ctx), std::move(request), ssg),
       [](produce_ctx& octx) {
-          kreq_log.debug("handling produce request {}", octx.request);
+          vlog(kreq_log.trace, "handling produce request {}", octx.request);
 
           // dispatch produce requests for each topic
           auto topics = produce_topics(octx);
