@@ -32,8 +32,9 @@ public:
 
     ss::future<> flush();
 
-    // does not have any locking guarantee
-    ss::future<> do_flush(std::vector<item_ptr>&&, append_entries_request&&);
+    // it will lock on behalf of caller to append entries to leader log.
+    ss::future<> do_flush(
+      std::vector<item_ptr>&&, append_entries_request&&, ss::semaphore_units<>);
 
 private:
     ss::future<item_ptr> do_cache(model::record_batch_reader&&);

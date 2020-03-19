@@ -143,13 +143,15 @@ ss::future<> vote_stm::do_vote() {
       })
       // porcess results
       .then([this]() {
-          return with_semaphore(
-            _ptr->_op_sem, 1, [this] { return process_replies(); });
+          return ss::get_units(_ptr->_op_sem, 1)
+            .then([this](ss::semaphore_units<> u) {
+                return process_replies(std::move(u));
+            });
       });
 }
 ss::future<> vote_stm::wait() { return _vote_bg.close(); }
 
-ss::future<> vote_stm::process_replies() {
+ss::future<> vote_stm::process_replies(ss::semaphore_units<> u) {
     const size_t majority = _ptr->_conf.majority();
     auto [success, failure] = partition_count();
     if (_ptr->_vstate != consensus::vote_state::candidate) {
@@ -183,11 +185,11 @@ ss::future<> vote_stm::process_replies() {
     _ctxlog.info("became the leader term:{}", _ptr->_meta.term);
 
     _ptr->trigger_leadership_notification();
-    return replicate_config_as_new_leader();
+    return replicate_config_as_new_leader(std::move(u));
 }
 
-ss::future<> vote_stm::replicate_config_as_new_leader() {
-    return _ptr->replicate_configuration(_ptr->_conf);
+ss::future<> vote_stm::replicate_config_as_new_leader(ss::semaphore_units<> u) {
+    return _ptr->replicate_configuration(std::move(u), _ptr->_conf);
 }
 
 ss::future<> vote_stm::self_vote() {
