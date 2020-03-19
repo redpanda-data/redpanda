@@ -1,3 +1,4 @@
+#include "model/metadata.h"
 #define BOOST_TEST_MODULE utils
 #include "cluster/types.h"
 #include "kafka/requests/topics/types.h"
@@ -13,7 +14,7 @@ BOOST_AUTO_TEST_CASE(test_no_additional_options) {
 
     auto cluster_tp_config = no_options.to_cluster_type();
     BOOST_REQUIRE_EQUAL(
-      cluster_tp_config.topic, ss::sstring(no_options.topic()));
+      cluster_tp_config.tp_ns.tp, ss::sstring(no_options.topic()));
     BOOST_REQUIRE_EQUAL(
       cluster_tp_config.partition_count, no_options.partition_count);
     BOOST_REQUIRE_EQUAL(
@@ -34,7 +35,7 @@ BOOST_AUTO_TEST_CASE(test_all_additional_options) {
 
     auto cluster_tp_config = all_options.to_cluster_type();
     BOOST_REQUIRE_EQUAL(
-      cluster_tp_config.topic, ss::sstring(all_options.topic()));
+      cluster_tp_config.tp_ns.tp, ss::sstring(all_options.topic()));
     BOOST_REQUIRE_EQUAL(
       cluster_tp_config.partition_count, all_options.partition_count);
     BOOST_REQUIRE_EQUAL(

@@ -34,11 +34,10 @@ class coordinator_ntp_mapper {
 public:
     coordinator_ntp_mapper(ss::sharded<cluster::metadata_cache>& md)
       : _md(md)
-      , _ns(cluster::kafka_internal_namespace)
-      , _topic(cluster::kafka_group_topic) {}
+      , _tp_ns(cluster::kafka_internal_namespace, cluster::kafka_group_topic) {}
 
     std::optional<model::ntp> ntp_for(const kafka::group_id& group) const {
-        auto md = _md.local().get_topic_metadata(_topic);
+        auto md = _md.local().get_topic_metadata(_tp_ns);
         if (!md) {
             return std::nullopt;
         }
@@ -47,18 +46,17 @@ public:
         auto p = static_cast<model::partition_id::type>(
           jump_consistent_hash(inc.digest(), md->partitions.size()));
         return model::ntp{
-          .ns = _ns,
-          .tp = model::topic_partition{_topic, model::partition_id{p}},
+          .ns = _tp_ns.ns,
+          .tp = model::topic_partition{_tp_ns.tp, model::partition_id{p}},
         };
     }
 
-    const model::ns& ns() const { return _ns; }
-    const model::topic& topic() const { return _topic; }
+    const model::ns& ns() const { return _tp_ns.ns; }
+    const model::topic& topic() const { return _tp_ns.tp; }
 
 private:
     ss::sharded<cluster::metadata_cache>& _md;
-    model::ns _ns;
-    model::topic _topic;
+    model::topic_namespace _tp_ns;
 };
 
 } // namespace kafka

@@ -52,7 +52,17 @@ std::ostream& operator<<(std::ostream& os, const topic_partition& tp) {
 }
 
 std::ostream& operator<<(std::ostream& os, const ntp& n) {
-    return ss::fmt_print(os, "{{ntp: {}:{}}}", n.ns, n.tp);
+    fmt::print(os, "{{ntp: {}:{}:{}}}", n.ns, n.tp.topic, n.tp.partition);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& o, const model::topic_namespace& tp_ns) {
+    return ss::fmt_print(o, "{{ns: {}, topic: {}}}", tp_ns.ns, tp_ns.tp);
+}
+
+std::ostream&
+operator<<(std::ostream& o, const model::topic_namespace_view& tp_ns) {
+    return ss::fmt_print(o, "{{ns: {}, topic: {}}}", tp_ns.ns, tp_ns.tp);
 }
 
 std::ostream& operator<<(std::ostream& os, timestamp_type ts) {

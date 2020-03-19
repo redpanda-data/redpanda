@@ -91,6 +91,12 @@ struct adl<model::partition_metadata> {
 };
 
 template<>
+struct adl<model::topic_namespace> {
+    void to(iobuf& out, model::topic_namespace&& md);
+    model::topic_namespace from(iobuf_parser& in);
+};
+
+template<>
 struct adl<model::topic_metadata> {
     void to(iobuf& out, model::topic_metadata&& md);
     model::topic_metadata from(iobuf_parser& in);

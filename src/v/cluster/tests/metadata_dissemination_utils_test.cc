@@ -44,7 +44,8 @@ BOOST_AUTO_TEST_CASE(test_calculation_non_overlapping_nodes) {
 };
 
 BOOST_AUTO_TEST_CASE(test_get_partition_members) {
-    model::topic_metadata tp_md(model::topic("test_tp"));
+    model::topic_metadata tp_md(
+      model::topic_namespace(model::ns("test-ns"), model::topic("test_tp")));
 
     auto p0 = model::partition_metadata(model::partition_id(0));
     p0.replicas = {

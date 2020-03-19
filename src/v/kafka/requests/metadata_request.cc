@@ -204,7 +204,7 @@ metadata_response::topic metadata_response::topic::make_from_topic_metadata(
   model::topic_metadata&& tp_md) {
     metadata_response::topic tp;
     tp.err_code = error_code::none;
-    tp.name = std::move(tp_md.tp);
+    tp.name = std::move(tp_md.tp_ns.tp);
     tp.is_internal = false; // no internal topics yet
     std::transform(
       tp_md.partitions.begin(),
@@ -290,7 +290,7 @@ create_topic(request_context& ctx, model::topic&& topic) {
             .then([](std::vector<cluster::topic_result> res) {
                 vassert(res.size() == 1, "expected single result");
                 metadata_response::topic t;
-                t.name = std::move(res[0].topic);
+                t.name = std::move(res[0].tp_ns.tp);
                 if (
                   res[0].ec == cluster::errc::success
                   || res[0].ec == cluster::errc::topic_already_exists) {
@@ -337,7 +337,9 @@ get_topic_metadata(request_context& ctx, metadata_request& request) {
     std::vector<ss::future<metadata_response::topic>> new_topics;
 
     for (auto& topic : *request.topics) {
-        if (auto md = ctx.metadata_cache().get_topic_metadata(topic); md) {
+        if (auto md = ctx.metadata_cache().get_topic_metadata(
+              model::topic_namespace_view(cluster::kafka_namespace, topic));
+            md) {
             res.push_back(metadata_response::topic::make_from_topic_metadata(
               std::move(*md)));
             continue;

@@ -367,7 +367,7 @@ ss::future<>
 controller::recover_topic_configuration(topic_configuration t_cfg) {
     // broadcast to all caches
     return _md_cache.invoke_on_all(
-      [tp = t_cfg.topic](metadata_cache& md_c) { md_c.add_topic(tp); });
+      [tp_ns = t_cfg.tp_ns](metadata_cache& md_c) { md_c.add_topic(tp_ns); });
 }
 
 /// Creates the topics, this method forwards the request to leader controller
@@ -497,7 +497,7 @@ ss::future<std::vector<topic_result>> controller::create_topics(
 }
 
 static ss::future<std::vector<topic_result>> process_create_topics_results(
-  std::vector<model::topic> valid_topics,
+  std::vector<model::topic_namespace> valid_topics,
   notification_latch& latch,
   model::timeout_clock::time_point timeout,
   ss::future<result<raft::replicate_result>> f) {
@@ -534,22 +534,22 @@ ss::future<std::vector<topic_result>> controller::do_create_topics(
 
     ret_t errors;
     ss::circular_buffer<model::record_batch> batches;
-    std::vector<model::topic> valid_topics;
+    std::vector<model::topic_namespace> valid_topics;
 
     batches.reserve(topics.size());
     valid_topics.reserve(topics.size());
 
     for (auto& t_cfg : topics) {
-        if (_md_cache.local().get_topic_metadata(t_cfg.topic)) {
-            errors.emplace_back(t_cfg.topic, errc::topic_already_exists);
+        if (_md_cache.local().get_topic_metadata(t_cfg.tp_ns)) {
+            errors.emplace_back(t_cfg.tp_ns, errc::topic_already_exists);
             continue;
         }
         auto batch = create_topic_cfg_batch(t_cfg);
         if (batch) {
             batches.push_back(std::move(*batch));
-            valid_topics.push_back(std::move(t_cfg.topic));
+            valid_topics.push_back(std::move(t_cfg.tp_ns));
         } else {
-            errors.emplace_back(t_cfg.topic, errc::topic_invalid_partitions);
+            errors.emplace_back(t_cfg.tp_ns, errc::topic_invalid_partitions);
         }
     }
     // Do not need to replicate all configurations are invalid
@@ -624,8 +624,7 @@ ss::future<> controller::do_leadership_notification(
               } else {
                   auto f = _md_cache.invoke_on_all(
                     [ntp, lid, term](metadata_cache& md) {
-                        md.update_partition_leader(
-                          ntp.tp.topic, ntp.tp.partition, term, lid);
+                        md.update_partition_leader(ntp, term, lid);
                     });
                   if (lid == _self.id()) {
                       // only disseminate from current leader

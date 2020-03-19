@@ -24,7 +24,8 @@ wait_for_leaders_updates(int id, cluster::metadata_cache& cache) {
       std::chrono::seconds(10),
       [&cache, &leaders, id] {
           leaders.clear();
-          auto tp_md = cache.get_topic_metadata(model::topic("test_1"));
+          auto tp_md = cache.get_topic_metadata(model::topic_namespace(
+            model::ns("default"), model::topic("test_1")));
           if (!tp_md) {
               return false;
           }

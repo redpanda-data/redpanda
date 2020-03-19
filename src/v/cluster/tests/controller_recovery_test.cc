@@ -2,14 +2,18 @@
 #include "cluster/tests/controller_test_fixture.h"
 #include "test_utils/fixture.h"
 
+model::topic_namespace topic_ns(model::topic topic) {
+    return model::topic_namespace(test_ns, std::move(topic));
+}
+
 void validate_topic_metadata(
   cluster::metadata_cache& cache,
   const ss::sstring& topic,
   int partition_count) {
-    auto tp_md = cache.get_topic_metadata(model::topic(topic));
+    auto tp_md = cache.get_topic_metadata(topic_ns(model::topic(topic)));
     BOOST_REQUIRE_EQUAL(tp_md.has_value(), true);
     BOOST_REQUIRE_EQUAL(tp_md->partitions.size(), partition_count);
-    BOOST_REQUIRE_EQUAL(tp_md->tp, model::topic(topic));
+    BOOST_REQUIRE_EQUAL(tp_md->tp_ns.tp, model::topic(topic));
 }
 
 FIXTURE_TEST(
@@ -22,7 +26,7 @@ FIXTURE_TEST(
     // Check topics are in cache
     tests::cooperative_spin_wait_with_timeout(10s, [this] {
         auto t_md = get_local_cache().get_topic_metadata(
-          model::topic_view("topic_1"));
+          topic_ns(model::topic("topic_1")));
         return t_md && t_md->partitions.size() == 2;
     }).get();
 
@@ -43,7 +47,7 @@ FIXTURE_TEST(
     wait_for_leadership(cntrl);
     auto all_topics = get_local_cache().all_topics();
     BOOST_REQUIRE_EQUAL(all_topics.size(), 1);
-    auto tp_md = get_local_cache().get_topic_metadata(model::topic("topic_2"));
+    auto tp_md = get_local_cache().get_topic_metadata(topic_ns(model::topic("topic_2")));
     validate_topic_metadata(get_local_cache(), "topic_2", 2);
 }
 

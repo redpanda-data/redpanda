@@ -37,19 +37,23 @@ public:
         std::vector<partition> partitions;
     };
     using broker_cache_t = absl::flat_hash_map<model::node_id, broker_ptr>;
-    using cache_t = absl::flat_hash_map<model::topic, topic_metadata>;
+    using cache_t = absl::flat_hash_map<
+      model::topic_namespace,
+      topic_metadata,
+      model::topic_namespace_hash,
+      model::topic_namespace_eq>;
 
     metadata_cache() = default;
     ss::future<> stop();
 
     /// Returns list of all topics that exists in the cluster.
-    std::vector<model::topic> all_topics() const;
+    std::vector<model::topic_namespace> all_topics() const;
 
     ///\brief Returns metadata of single topic.
     ///
     /// If topic does not exists it returns an empty optional
     std::optional<model::topic_metadata>
-      get_topic_metadata(model::topic_view) const;
+      get_topic_metadata(model::topic_namespace_view) const;
 
     /// Returns metadata of all topics.
     std::vector<model::topic_metadata> all_topics_metadata() const;
@@ -72,12 +76,12 @@ public:
     ///
     /// This api is used when controller is recovering (or is notified)
     /// topic_configuration record type
-    void add_topic(model::topic_view);
+    void add_topic(model::topic_namespace_view);
 
     ///\brief Removes the topic from cache
     ///
     /// Not yet used by the controller as removing topics is not yet supported
-    void remove_topic(model::topic_view);
+    void remove_topic(model::topic_namespace_view);
 
     ///\brief Updates the assignment of topic partion
     ///
@@ -90,12 +94,9 @@ public:
     /// It is not yet used by the controller, it will be used when controller
     /// will process leadership change notifications
     void update_partition_leader(
-      model::topic_view,
-      model::partition_id,
-      model::term_id,
-      std::optional<model::node_id>);
+      const model::ntp& ntp, model::term_id, std::optional<model::node_id>);
 
-    bool contains(const model::topic&, model::partition_id) const;
+    bool contains(model::topic_namespace_view, model::partition_id) const;
 
     /// Returns metadata of all topics in cache internal format
     const cache_t& all_metadata() const { return _cache; }
@@ -116,7 +117,7 @@ public:
 private:
     broker_cache_t _brokers_cache;
     cache_t _cache;
-    cache_t::iterator find_topic_metadata(model::topic_view);
+    cache_t::iterator find_topic_metadata(model::topic_namespace_view);
 
     // per-ntp notifications for leadership election. note that the namespace is
     // currently ignored pending an update to the metadata cache that attaches a

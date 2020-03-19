@@ -154,7 +154,7 @@ public:
 
     model::ntp make_ntp(const ss::sstring& topic, int32_t partition_id) {
         return model::ntp{
-          .ns = _test_ns,
+          .ns = test_ns,
           .tp = {.topic = model::topic(topic),
                  .partition = model::partition_id(partition_id)}};
     }
@@ -170,7 +170,7 @@ public:
                       .add_kv(
                         lrk{lrk::type::topic_configuration},
                         cluster::topic_configuration(
-                          _test_ns, model::topic("topic_1"), 2, 1))
+                          test_ns, model::topic("topic_1"), 2, 1))
                       // partition 0
                       .add_kv(
                         lrk{lrk::type::partition_assignment},
@@ -201,7 +201,7 @@ public:
                       .add_kv(
                         lrk{lrk::type::topic_configuration},
                         cluster::topic_configuration(
-                          _test_ns, model::topic("topic_2"), 2, 3))
+                          test_ns, model::topic("topic_2"), 2, 3))
                       // partition 0
                       .add_kv(
                         lrk{lrk::type::partition_assignment},
@@ -248,7 +248,7 @@ public:
             builder.add_kv(
               lrk{lrk::type::topic_configuration},
               cluster::topic_configuration(
-                _test_ns, model::topic(tp), partitions, 1));
+                test_ns, model::topic(tp), partitions, 1));
             offset++;
 
             for (int p = 0; p < partitions; p++) {
@@ -273,7 +273,6 @@ public:
 
 private:
     static constexpr size_t _max_segment_size = 100'000;
-    model::ns _test_ns{"test_ns"};
     std::vector<config::seed_server> _seeds;
     ss::sstring _base_dir;
     model::broker _current_node;
