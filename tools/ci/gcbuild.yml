@@ -46,11 +46,12 @@ steps:
 
 - id: 'test redpanda'
   name: 'gcr.io/$PROJECT_ID/builder-$_COMPILER-$_BUILD_TYPE:$SHORT_SHA'
+  entrypoint: 'bash'
   args:
-    - '-c'
-    - |
-      sysctl -w  fs.aio-max-nr=1048576
-      vtools test cpp --conf=tools/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml
+  - '-c'
+  - |
+    sysctl -w  fs.aio-max-nr=1048576
+    vtools test cpp --conf=tools/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml
 
 - id: 'test rpk'
   name: 'gcr.io/$PROJECT_ID/builder-$_COMPILER-$_BUILD_TYPE:$SHORT_SHA'
