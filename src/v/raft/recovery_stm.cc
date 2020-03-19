@@ -35,7 +35,11 @@ ss::future<> recovery_stm::do_one_read() {
       meta.value()->next_index,
       model::offset(_ptr->_log.max_offset()),
       1,
-      1024 * 1024, // 1MB
+      // 32KB is a modest estimate. It has good batching and it also prevents an
+      // OOM situation where we have a lot of raft groups recovering at the same
+      // time and all drawing from memory. If this setting proves difficult,
+      // we'll need to throttle with a core-local semaphore
+      32 * 1024,
       _prio,
       std::nullopt,
       std::nullopt);
