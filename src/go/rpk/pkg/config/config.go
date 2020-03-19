@@ -110,9 +110,15 @@ func WriteConfig(fs afero.Fs, config *Config, path string) error {
 		}
 	}
 	log.Debugf("Backing up the current configuration to '%s'", backup)
-	err = fs.Rename(path, backup)
+	exists, err = afero.Exists(fs, path)
 	if err != nil {
 		return err
+	}
+	if exists {
+		err = fs.Rename(path, backup)
+		if err != nil {
+			return err
+		}
 	}
 	log.Debugf("Writing the new redpanda config to '%s'", path)
 	err = yaml.Persist(fs, config, path)
