@@ -103,7 +103,9 @@ public:
           _clients.begin(), _clients.end(), [this](auto& c) {
               return ss::parallel_for_each(
                 boost::irange(std::size_t(0), _cfg.concurrency),
-                [this, &c](std::size_t) mutable { return execute_one(c); });
+                [this, &c](std::size_t) mutable {
+                    return execute_one(c.get());
+                });
           });
     }
     ss::future<> connect() {
@@ -118,14 +120,14 @@ public:
     }
 
 private:
-    ss::future<> execute_one(std::unique_ptr<cli>& c) {
+    ss::future<> execute_one(cli* const c) {
         if (_cfg.test_case < 1 && _cfg.test_case > 3) {
             throw std::runtime_error(fmt::format(
               "Unknown test:{}, bad config:{}", _cfg.test_case, _cfg));
         }
         if (_cfg.test_case == 1) {
             return get_units(_mem, _cfg.data_size)
-              .then([this, &c](ss::semaphore_units<> u) {
+              .then([this, c](ss::semaphore_units<> u) {
                   return c
                     ->put(
                       demo::gen_simple_request(_cfg.data_size, _cfg.chunk_size),
