@@ -9,6 +9,7 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/reactor.hh>
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/core/smp.hh>
 
 #include <stdexcept>
 
@@ -147,7 +148,16 @@ ss::future<append_result> segment::append(model::record_batch b) {
             auto ret = append_result{.base_offset = b.base_offset(),
                                      .last_offset = b.last_offset(),
                                      .byte_size = (size_t)b.size_bytes()};
-            cache_put(std::move(b));
+            vassert(
+              b.header().ctx.owner_shard,
+              "Shard not set when writing to: {} - header: {}",
+              *this,
+              b.header());
+            if (b.header().ctx.owner_shard == ss::this_shard_id()) {
+                cache_put(std::move(b));
+            } else {
+                // TODO: copy the batch and put in the batch
+            }
             return ret;
         });
     });

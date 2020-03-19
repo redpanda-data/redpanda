@@ -1,5 +1,7 @@
 #include "model/adl_serde.h"
 
+#include <seastar/core/smp.hh>
+
 namespace reflection {
 
 void adl<model::topic>::to(iobuf& out, model::topic&& t) {
@@ -202,7 +204,7 @@ adl<model::record_batch_header>::from(iobuf_parser& in) {
       .producer_epoch = producer_epoch,
       .base_sequence = base_sequence,
       .record_count = record_count,
-      model::record_batch_header::context{.term = term_id}};
+      .ctx = model::record_batch_header::context(term_id, ss::this_shard_id())};
 }
 
 void adl<batch_header>::to(iobuf& out, batch_header&& header) {
