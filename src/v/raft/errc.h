@@ -14,6 +14,8 @@ enum class errc {
     not_leader,
     vote_dispatch_error,
     append_entries_dispatch_error,
+    replicated_entry_truncated,
+    leader_flush_failed,
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "raft::errc"; }
@@ -38,6 +40,10 @@ struct errc_category final : public std::error_category {
             return "raft::errc::vote_dispatch_error";
         case errc::append_entries_dispatch_error:
             return "raft::errc::append_entries_dispatch_error";
+        case errc::replicated_entry_truncated:
+            return "raft::errc::replicated_entry_truncated";
+        case errc::leader_flush_failed:
+            return "raft::errc::leader_flush_failed";
         default:
             return "raft::errc::unknown";
         }
