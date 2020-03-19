@@ -1,7 +1,7 @@
 package config
 
 import (
-	"fmt"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -275,7 +275,8 @@ rpk:
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// WriteConfig needs the file at the given path to exist.
+			// Write the config file so that WriteConfig backs it up
+			// when the new one is written.
 			err := vyaml.Persist(tt.args.fs, tt.args.conf(), tt.args.path)
 			if err != nil {
 				t.Fatal(err.Error())
@@ -301,7 +302,10 @@ rpk:
 					strings.ReplaceAll(content, " ", "·"),
 				)
 			}
-			backup := fmt.Sprintf("%s.bk", tt.args.path)
+			backup, err := findBackup(tt.args.fs, filepath.Dir(tt.args.path))
+			if err != nil {
+				t.Fatal(err)
+			}
 			_, err = tt.args.fs.Stat(backup)
 			if err != nil {
 				t.Errorf("got an error while stat'ing %v: %v", backup, err)
