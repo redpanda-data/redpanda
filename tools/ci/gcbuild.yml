@@ -17,7 +17,7 @@ steps:
     fi
 
 - id: 'build builder image'
-  name: 'gcr.io/kaniko-project/executor:debug-v0.13.0'
+  name: 'gcr.io/kaniko-project/executor:debug-v0.19.0'
   entrypoint: '/busybox/sh'
   args:
   - '-c'
