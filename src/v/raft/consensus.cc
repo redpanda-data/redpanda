@@ -489,7 +489,7 @@ consensus::do_append_entries(append_entries_request&& r) {
 
     // success. copy entries for each subsystem
     using offsets_ret = storage::append_result;
-    return disk_append(std::move(r.batches))
+    return disk_append(std::move(r.batches), allow_flush_after_write::yes)
       .then([this, m = r.meta](offsets_ret ofs) mutable {
           return maybe_update_follower_commit_idx(model::offset(m.commit_index))
             .then([this, m, ofs = std::move(ofs)]() mutable {
@@ -576,11 +576,11 @@ consensus::make_append_entries_reply(storage::append_result disk_results) {
     return reply;
 }
 
-ss::future<storage::append_result>
-consensus::disk_append(model::record_batch_reader&& reader) {
+ss::future<storage::append_result> consensus::disk_append(
+  model::record_batch_reader&& reader, allow_flush_after_write allow_flush) {
     using ret_t = storage::append_result;
     return ss::do_with(
-      std::move(reader), [this](model::record_batch_reader& in) {
+      std::move(reader), [this, allow_flush](model::record_batch_reader& in) {
           auto cfg = storage::log_append_config{
             // no fsync explicit on a per write, we verify at the end to
             // batch fsync
@@ -589,7 +589,7 @@ consensus::disk_append(model::record_batch_reader&& reader) {
             model::timeout_clock::now() + _disk_timeout};
 
           return in.consume(_log.make_appender(cfg), cfg.timeout)
-            .then([this](ret_t ret) {
+            .then([this, allow_flush](ret_t ret) {
                 // TODO
                 // if we rolled a log segment. write current configuration for
                 // speedy recovery in the background
@@ -599,7 +599,7 @@ consensus::disk_append(model::record_batch_reader&& reader) {
                 _meta.prev_log_index = ret.last_offset;
                 _meta.prev_log_term = ret.last_term;
 
-                if (_should_fsync) {
+                if (_should_fsync && allow_flush) {
                     return _log.flush().then([ret = std::move(ret), this] {
                         return ss::make_ready_future<ret_t>(std::move(ret));
                     });

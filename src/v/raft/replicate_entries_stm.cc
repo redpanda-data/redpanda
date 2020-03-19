@@ -69,7 +69,8 @@ ss::future<result<append_entries_reply>> replicate_entries_stm::do_dispatch_one(
     if (n == _ptr->_self) {
         using reqs_t = std::vector<append_entries_request>;
         using append_res_t = storage::append_result;
-        return _ptr->disk_append(std::move(req.batches))
+        return _ptr
+          ->disk_append(std::move(req.batches), allow_flush_after_write::yes)
           .then([this](append_res_t append_res) {
               return ss::make_ready_future<ret_t>(
                 _ptr->make_append_entries_reply(std::move(append_res)));
