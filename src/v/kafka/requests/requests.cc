@@ -45,7 +45,7 @@ ss::future<response_ptr>
 process_request(request_context&& ctx, ss::smp_service_group g) {
     // Eventually generate this with meta-classes.
     vlog(
-      kreq_log.debug,
+      kreq_log.trace,
       "Processing request for API {} {}",
       ctx.header().key,
       ctx.header().client_id.value_or(std::string_view("unset-client-id")));
