@@ -109,7 +109,8 @@ partition_allocator::allocate(const topic_configuration& cfg) {
     ret.reserve(cfg.partition_count);
     for (int32_t i = 0; i < cfg.partition_count; ++i) {
         model::ntp ntp = model::ntp{
-          cfg.ns, model::topic_partition{cfg.topic, model::partition_id(i)}};
+          cfg.tp_ns.ns,
+          model::topic_partition{cfg.tp_ns.tp, model::partition_id(i)}};
         // all replicas must belong to the same raft group
         raft::group_id partition_group = raft::group_id(_highest_group() + 1);
         auto replicas_assignment = allocate_replicas(cfg.replication_factor);

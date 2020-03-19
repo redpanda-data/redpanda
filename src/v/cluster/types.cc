@@ -1,11 +1,13 @@
 #include "cluster/types.h"
 
+#include "model/metadata.h"
+
 #include <chrono>
 
 namespace cluster {
 
 std::ostream& operator<<(std::ostream& o, const topic_configuration& cfg) {
-    return o << "{ns:" << cfg.ns << ", topic:" << cfg.topic
+    return o << "{topic: " << cfg.tp_ns
              << ", partition_count:" << cfg.partition_count
              << ", replication_factor:" << cfg.replication_factor
              << ", compression" << cfg.compression
@@ -23,8 +25,7 @@ void adl<cluster::topic_configuration>::to(
   iobuf& out, cluster::topic_configuration&& t) {
     reflection::serialize(
       out,
-      ss::sstring(std::move(t.ns)),
-      ss::sstring(std::move(t.topic)),
+      t.tp_ns,
       t.partition_count,
       t.replication_factor,
       t.compression,
@@ -62,13 +63,13 @@ cluster::join_request adl<cluster::join_request>::from(iobuf_parser& in) {
 }
 
 void adl<cluster::topic_result>::to(iobuf& out, cluster::topic_result&& t) {
-    reflection::serialize(out, std::move(t.topic), t.ec);
+    reflection::serialize(out, std::move(t.tp_ns), t.ec);
 }
 
 cluster::topic_result adl<cluster::topic_result>::from(iobuf_parser& in) {
-    auto topic = model::topic(adl<ss::sstring>{}.from(in));
+    auto tp_ns = adl<model::topic_namespace>{}.from(in);
     auto ec = adl<cluster::errc>{}.from(in);
-    return cluster::topic_result(std::move(topic), ec);
+    return cluster::topic_result(std::move(tp_ns), ec);
 }
 
 void adl<cluster::create_topics_request>::to(

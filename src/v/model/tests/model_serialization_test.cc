@@ -19,11 +19,13 @@ SEASTAR_THREAD_TEST_CASE(topic_metadata_rt_test) {
                       model::broker_shard{model::node_id(4), 5},
                       model::broker_shard{model::node_id(5), 6}};
 
-    model::topic_metadata t_md(model::topic("topic_1"));
+    model::topic_metadata t_md(
+      model::topic_namespace(model::ns("test-ns"), model::topic("topic_1")));
     t_md.partitions = {p_md0, p_md1};
 
     auto r = serialize_roundtrip_rpc(std::move(t_md));
-    BOOST_REQUIRE_EQUAL(r.tp, model::topic("topic_1"));
+    BOOST_REQUIRE_EQUAL(r.tp_ns.ns, model::ns("test-ns"));
+    BOOST_REQUIRE_EQUAL(r.tp_ns.tp, model::topic("topic_1"));
     BOOST_REQUIRE_EQUAL(
       r.partitions[0].leader_node.value(), p_md0.leader_node.value());
     BOOST_REQUIRE_EQUAL(

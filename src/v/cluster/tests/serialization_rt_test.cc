@@ -1,4 +1,5 @@
 #include "cluster/types.h"
+#include "model/metadata.h"
 #include "test_utils/rpc.h"
 
 #include <seastar/testing/thread_test_case.hh>
@@ -15,8 +16,8 @@ SEASTAR_THREAD_TEST_CASE(topic_config_rt_test) {
     cfg.retention_bytes = (1 >> 30);
     auto d = serialize_roundtrip_rpc(std::move(cfg));
 
-    BOOST_REQUIRE_EQUAL(model::ns("test"), d.ns);
-    BOOST_REQUIRE_EQUAL(model::topic("a_topic"), d.topic);
+    BOOST_REQUIRE_EQUAL(model::ns("test"), d.tp_ns.ns);
+    BOOST_REQUIRE_EQUAL(model::topic("a_topic"), d.tp_ns.tp);
     BOOST_REQUIRE_EQUAL(3, d.partition_count);
     BOOST_REQUIRE_EQUAL(1, d.replication_factor);
     BOOST_REQUIRE_EQUAL(model::topic_partition::compaction::yes, d.compaction);
@@ -86,14 +87,17 @@ SEASTAR_THREAD_TEST_CASE(create_topics_request) {
     BOOST_CHECK(res.timeout == std::chrono::seconds(1));
     BOOST_REQUIRE_EQUAL(res.topics[0].partition_count, 12);
     BOOST_REQUIRE_EQUAL(res.topics[0].replication_factor, 3);
-    BOOST_REQUIRE_EQUAL(res.topics[0].topic, model::topic("tp-1"));
+    BOOST_REQUIRE_EQUAL(res.topics[0].tp_ns.ns, model::ns("default"));
+    BOOST_REQUIRE_EQUAL(res.topics[0].tp_ns.tp, model::topic("tp-1"));
     BOOST_REQUIRE_EQUAL(res.topics[1].partition_count, 6);
     BOOST_REQUIRE_EQUAL(res.topics[1].replication_factor, 5);
-    BOOST_REQUIRE_EQUAL(res.topics[1].topic, model::topic("tp-2"));
+    BOOST_REQUIRE_EQUAL(res.topics[0].tp_ns.ns, model::ns("default"));
+    BOOST_REQUIRE_EQUAL(res.topics[1].tp_ns.tp, model::topic("tp-2"));
 }
 
 SEASTAR_THREAD_TEST_CASE(create_topics_reply) {
-    auto md1 = model::topic_metadata(model::topic("tp-1"));
+    auto md1 = model::topic_metadata(
+      model::topic_namespace(model::ns("test-ns"), model::topic("tp-1")));
     auto pmd1 = model::partition_metadata(model::partition_id(0));
     pmd1.leader_node = model::node_id(10);
     pmd1.replicas.push_back(model::broker_shard{model::node_id(10), 0});
@@ -102,19 +106,22 @@ SEASTAR_THREAD_TEST_CASE(create_topics_reply) {
     md1.partitions = {pmd1};
     cluster::create_topics_reply req{
       .results
-      = {cluster::topic_result(model::topic("tp-1"), cluster::errc::success),
+      = {cluster::topic_result(
+           model::topic_namespace(model::ns("default"), model::topic("tp-1")),
+           cluster::errc::success),
          cluster::topic_result(
-           model::topic("tp-2"), cluster::errc::notification_wait_timeout)},
+           model::topic_namespace(model::ns("default"), model::topic("tp-2")),
+           cluster::errc::notification_wait_timeout)},
       .metadata = {md1}};
 
     auto res = serialize_roundtrip_rpc(std::move(req));
 
-    BOOST_REQUIRE_EQUAL(res.results[0].topic, model::topic("tp-1"));
+    BOOST_REQUIRE_EQUAL(res.results[0].tp_ns.tp, model::topic("tp-1"));
     BOOST_REQUIRE_EQUAL(res.results[0].ec, cluster::errc::success);
-    BOOST_REQUIRE_EQUAL(res.results[1].topic, model::topic("tp-2"));
+    BOOST_REQUIRE_EQUAL(res.results[1].tp_ns.tp, model::topic("tp-2"));
     BOOST_REQUIRE_EQUAL(
       res.results[1].ec, cluster::errc::notification_wait_timeout);
-    BOOST_REQUIRE_EQUAL(res.metadata[0].tp, md1.tp);
+    BOOST_REQUIRE_EQUAL(res.metadata[0].tp_ns.tp, md1.tp_ns.tp);
     BOOST_REQUIRE_EQUAL(res.metadata[0].partitions[0].id, pmd1.id);
     BOOST_REQUIRE_EQUAL(
       res.metadata[0].partitions[0].leader_node.value(),
