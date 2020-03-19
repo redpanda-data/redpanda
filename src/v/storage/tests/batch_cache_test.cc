@@ -1,10 +1,8 @@
-#define BOOST_TEST_MODULE batch_cache_test
-
 #include "cluster/simple_batch_builder.h"
 #include "model/record.h"
 #include "storage/batch_cache.h"
 
-#include <boost/test/unit_test.hpp>
+#include <seastar/testing/thread_test_case.hh>
 
 static model::record_batch
 make_batch(size_t size = 10, model::offset offset = model::offset(0)) {
@@ -15,12 +13,12 @@ make_batch(size_t size = 10, model::offset offset = model::offset(0)) {
     return std::move(b).build();
 }
 
-BOOST_AUTO_TEST_CASE(initially_empty) {
+SEASTAR_THREAD_TEST_CASE(initially_empty) {
     storage::batch_cache c;
     BOOST_CHECK(c.empty());
 }
 
-BOOST_AUTO_TEST_CASE(evict) {
+SEASTAR_THREAD_TEST_CASE(evict) {
     storage::batch_cache c;
 
     auto b = make_batch(100);
@@ -30,7 +28,7 @@ BOOST_AUTO_TEST_CASE(evict) {
     BOOST_CHECK(c.empty());
 }
 
-BOOST_AUTO_TEST_CASE(reclaim_zero_is_noop) {
+SEASTAR_THREAD_TEST_CASE(reclaim_zero_is_noop) {
     storage::batch_cache c;
 
     auto b = make_batch(100);
@@ -41,7 +39,7 @@ BOOST_AUTO_TEST_CASE(reclaim_zero_is_noop) {
     BOOST_CHECK(!c.empty());
 }
 
-BOOST_AUTO_TEST_CASE(reclaim_rounds_up) {
+SEASTAR_THREAD_TEST_CASE(reclaim_rounds_up) {
     storage::batch_cache c;
 
     auto b = make_batch(100);
@@ -55,7 +53,7 @@ BOOST_AUTO_TEST_CASE(reclaim_rounds_up) {
     BOOST_CHECK(c.empty());
 }
 
-BOOST_AUTO_TEST_CASE(reclaim_removes_multiple) {
+SEASTAR_THREAD_TEST_CASE(reclaim_removes_multiple) {
     storage::batch_cache c;
 
     auto b = make_batch(100);
@@ -82,7 +80,7 @@ BOOST_AUTO_TEST_CASE(reclaim_removes_multiple) {
     BOOST_CHECK(c.empty());
 }
 
-BOOST_AUTO_TEST_CASE(weakness) {
+SEASTAR_THREAD_TEST_CASE(weakness) {
     storage::batch_cache c;
 
     model::record_batch_header h{
@@ -113,7 +111,7 @@ BOOST_AUTO_TEST_CASE(weakness) {
     BOOST_CHECK(!b2);
 }
 
-BOOST_AUTO_TEST_CASE(touch) {
+SEASTAR_THREAD_TEST_CASE(touch) {
     {
         storage::batch_cache c;
         auto b0 = c.put(make_batch(10));
@@ -140,7 +138,7 @@ BOOST_AUTO_TEST_CASE(touch) {
     }
 }
 
-BOOST_AUTO_TEST_CASE(index_get_empty) {
+SEASTAR_THREAD_TEST_CASE(index_get_empty) {
     storage::batch_cache cache;
     storage::batch_cache_index index(cache);
 
@@ -150,7 +148,7 @@ BOOST_AUTO_TEST_CASE(index_get_empty) {
     BOOST_CHECK(index.empty());
 }
 
-BOOST_AUTO_TEST_CASE(index_get) {
+SEASTAR_THREAD_TEST_CASE(index_get) {
     storage::batch_cache cache;
     storage::batch_cache_index index(cache);
     storage::batch_cache_index index2(cache);
@@ -202,7 +200,7 @@ BOOST_AUTO_TEST_CASE(index_get) {
     BOOST_CHECK(!index2.get(model::offset(40)));
 }
 
-BOOST_AUTO_TEST_CASE(index_truncate_smoke) {
+SEASTAR_THREAD_TEST_CASE(index_truncate_smoke) {
     storage::batch_cache cache;
     storage::batch_cache_index index(cache);
 
@@ -226,7 +224,7 @@ BOOST_AUTO_TEST_CASE(index_truncate_smoke) {
     }
 }
 
-BOOST_AUTO_TEST_CASE(index_truncate_hole) {
+SEASTAR_THREAD_TEST_CASE(index_truncate_hole) {
     storage::batch_cache cache;
     storage::batch_cache_index index(cache);
 
@@ -241,7 +239,7 @@ BOOST_AUTO_TEST_CASE(index_truncate_hole) {
     BOOST_CHECK(!index.get(model::offset(41)));
 }
 
-BOOST_AUTO_TEST_CASE(index_truncate_hole_missing_prev) {
+SEASTAR_THREAD_TEST_CASE(index_truncate_hole_missing_prev) {
     storage::batch_cache cache;
     storage::batch_cache_index index(cache);
 
