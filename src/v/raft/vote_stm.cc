@@ -175,7 +175,7 @@ ss::future<> vote_stm::process_replies() {
             acks.emplace_back(r.node);
         }
     }
-    _ctxlog.info("vote acks in term {} from: {}", _ptr->_meta.term, acks);
+    _ctxlog.trace("vote acks in term {} from: {}", _ptr->_meta.term, acks);
     // section vote:5.2.2
     _ptr->_vstate = consensus::vote_state::leader;
     _ptr->_leader_id = _ptr->self();

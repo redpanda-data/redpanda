@@ -4,6 +4,8 @@
 #include "model/record_utils.h"
 #include "model/timeout_clock.h"
 
+#include <seastar/core/smp.hh>
+
 namespace storage {
 
 record_batch_builder::record_batch_builder(
@@ -33,7 +35,8 @@ model::record_batch record_batch_builder::build() && {
       .producer_epoch = -1,
       .base_sequence = -1,
       .record_count = static_cast<int32_t>(_records.size()),
-      .ctx = model::record_batch_header::context{.term = model::term_id(0)}};
+      .ctx = model::record_batch_header::context(
+        model::term_id(0), ss::this_shard_id())};
 
     for (auto& sr : _records) {
         auto rec_sz = record_size(offset_delta, sr);

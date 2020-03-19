@@ -44,7 +44,7 @@ ss::future<result<void>> replicate_entries_stm::process_replies() {
         return ss::make_ready_future<result<void>>(
           errc::non_majority_replication);
     }
-    _ctxlog.debug(
+    _ctxlog.trace(
       "Successful append with: {} acks out of: {}", success, cfg.nodes.size());
     return ss::make_ready_future<result<void>>(outcome::success());
 }

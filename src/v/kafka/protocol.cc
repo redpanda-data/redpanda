@@ -14,6 +14,7 @@
 
 #include <fmt/format.h>
 
+#include <exception>
 #include <limits>
 
 namespace kafka {
@@ -133,6 +134,13 @@ ss::future<> protocol::connection_context::dispatch_method_once(
                     _rs.conn_gate(),
                     [this, rctx = std::move(rctx)]() mutable {
                         return do_process(std::move(rctx));
+                    })
+                    .handle_exception([self](std::exception_ptr e) {
+                        vlog(
+                          klog.info,
+                          "Detected error processing request: {}",
+                          e);
+                        self->_rs.conn->shutdown_input();
                     })
                     .finally([units = std::move(units), self] {});
               });

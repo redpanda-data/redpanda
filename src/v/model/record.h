@@ -6,6 +6,7 @@
 #include "model/timestamp.h"
 #include "vassert.h"
 
+#include <seastar/core/smp.hh>
 #include <seastar/util/optimized_optional.hh>
 
 #include <boost/range/numeric.hpp>
@@ -13,6 +14,7 @@
 #include <bitset>
 #include <cstdint>
 #include <iostream>
+#include <limits>
 #include <variant>
 #include <vector>
 
@@ -314,7 +316,13 @@ static constexpr std::array<record_batch_type, 4> well_known_record_batch_types{
 /** expect all fields to be serialized, except context fields */
 struct record_batch_header {
     struct context {
+        context() noexcept = default;
+        context(model::term_id t, ss::shard_id i)
+          : term(t)
+          , owner_shard(i) {}
+
         model::term_id term;
+        std::optional<ss::shard_id> owner_shard;
     };
 
     /// \brief every thing below this field gets CRC, except `context`
