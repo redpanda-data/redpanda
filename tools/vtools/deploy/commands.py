@@ -1,5 +1,4 @@
 import click
-import json
 import os
 
 from ..vlib import config
@@ -12,7 +11,7 @@ def deploy():
     pass
 
 
-@deploy.command(short_help='deploy redpanda.')
+@deploy.command(short_help='Deploy a set of nodes.')
 @click.option('--conf',
               help=('Path to configuration file. If not given, a .vtools.yml '
                     'file is searched recursively starting from the current '
@@ -51,7 +50,7 @@ def cluster(conf, install_deps, destroy, ssh_key, ssh_port, ssh_timeout,
               ssh_retries, log, tfvars)
 
 
-@deploy.command(short_help='deploy redpanda.')
+@deploy.command(short_help='Run ansible against a cluster.')
 @click.option('--conf',
               help=('Path to configuration file. If not given, a .vtools.yml '
                     'file is searched recursively starting from the current '
@@ -61,29 +60,35 @@ def cluster(conf, install_deps, destroy, ssh_key, ssh_port, ssh_timeout,
               help='The path where of the SSH to use (the key will be' +
               'generated if it doesn\'t exist)',
               default='~/.ssh/infra-key')
-@click.option('--package-file',
-              help='The path to the package to be installed',
-              default=None)
 @click.option('--playbook', help='Ansible playbook to run', required=True)
-def ansible(conf, playbook, ssh_key, package_file):
+@click.option('--var',
+              help='Ansible variable in FOO=BAR format',
+              multiple=True,
+              required=False)
+def ansible(conf, playbook, ssh_key, var):
+    """Runs a playbook against a cluster deployed with 'vtools deploy cluster'
+    """
     vconfig = config.VConfig(conf)
 
-    module_dir = os.path.join(vconfig.src_dir, 'infra', 'modules', 'cluster')
-    tf_bin = os.path.join(vconfig.infra_bin_dir, 'terraform')
-    cmd = f'cd {module_dir} && {tf_bin} output -json ip'
-    out = shell.run_oneline(cmd, env=vconfig.environ)
-    ips = json.loads(out)
+    tf_out = cl._get_tf_outputs(vconfig, 'cluster')
 
+    # write hosts.ini
     os.makedirs(f'{vconfig.build_root}/ansible/', exist_ok=True)
     invfile = f'{vconfig.build_root}/ansible/hosts.ini'
     with open(invfile, 'w') as f:
-        for ip in ips:
-            f.write(f'{ip} ansible_user=root ansible_become=True\n')
+        zipped = zip(tf_out['ip']['value'], tf_out['private_ips']['value'])
+        for i, (ip, pip) in enumerate(zipped):
+            f.write(f'{ip} ansible_user=root ansible_become=True '
+                    f'private_ip={pip} id={i+1}\n')
 
+    # create extra vars flags
+    evar = f'-e {" -e ".join(var)}' if var else ''
+
+    # run given playbook
     ansbin = f'{vconfig.build_root}/venv/v/bin/ansible-playbook'
-    cmd = f'{ansbin} --private-key {ssh_key} -i {invfile} -v {playbook}'
+    cmd = f'{ansbin} --private-key {ssh_key} {evar} -i {invfile} -v {playbook}'
 
-    if package_file:
-        cmd += f' -e redpanda_pkg_file={package_file}'
+    print(f'command: {cmd}')
+
     vconfig.environ.update({'ANSIBLE_HOST_KEY_CHECKING': 'False'})
     shell.run_subprocess(cmd, env=vconfig.environ)
