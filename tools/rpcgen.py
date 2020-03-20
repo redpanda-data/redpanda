@@ -112,8 +112,8 @@ public:
     }
     {%- for method in methods %}
     virtual inline ss::future<rpc::client_context<{{method.output_type}}>>
-    {{method.name}}({{method.input_type}}&& r, rpc::clock_type::time_point timeout) {
-       return _transport.send_typed<{{method.input_type}}, {{method.output_type}}>(std::move(r), {{method.id}}, timeout);
+    {{method.name}}({{method.input_type}}&& r, rpc::client_opts opts) {
+       return _transport.send_typed<{{method.input_type}}, {{method.output_type}}>(std::move(r), {{method.id}}, opts);
     }
     {%- endfor %}
 

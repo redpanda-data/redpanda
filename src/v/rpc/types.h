@@ -69,6 +69,26 @@ static_assert(
 
 uint16_t checksum_header_only(const header& h);
 
+struct client_opts {
+    client_opts(
+      clock_type::time_point client_send_timeout,
+      bool seq_dispatch,
+      compression_type ct,
+      size_t compression_bytes) noexcept
+      : timeout(client_send_timeout)
+      , force_sequantial_dispatch(seq_dispatch)
+      , compression(ct)
+      , min_compression_bytes(compression_bytes) {}
+
+    client_opts(clock_type::time_point client_send_timeout) noexcept
+      : client_opts(client_send_timeout, false, compression_type::none, 1024) {}
+
+    clock_type::time_point timeout;
+    bool force_sequantial_dispatch;
+    compression_type compression;
+    size_t min_compression_bytes;
+};
+
 /// \brief used to pass environment context to the class
 /// actually doing the work
 class streaming_context {
