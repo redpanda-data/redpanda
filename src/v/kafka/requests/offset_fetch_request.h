@@ -47,6 +47,8 @@ struct offset_fetch_request final {
     void decode(request_context& ctx);
 };
 
+std::ostream& operator<<(std::ostream&, const offset_fetch_request&);
+
 struct offset_fetch_response final {
     struct partition {
         model::partition_id id;
