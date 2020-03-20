@@ -1,6 +1,10 @@
 - hosts: all
   tasks:
 
+  - assert:
+      that:
+      - "rp_pkg is defined"
+
   - name: create xfs filesystem
     filesystem:
       fstype: xfs
@@ -15,23 +19,20 @@
 
   - name: copy redpanda package
     copy:
-      src: '{{ redpanda_pkg_file }}'
-      dest: '/tmp/{{ redpanda_pkg_file | basename }}'
-    when: 'redpanda_pkg_file is defined'
+      src: '{{ rp_pkg }}'
+      dest: '/tmp/{{ rp_pkg | basename }}'
   - name: install package with rpm
     yum:
-      name: '/tmp/{{ redpanda_pkg_file | basename }}'
+      name: '/tmp/{{ rp_pkg | basename }}'
       state: present
     when:
-    - 'redpanda_pkg_file is defined'
-    - '".rpm" in redpanda_pkg_file'
+    - '".rpm" in rp_pkg'
   - name: install package with dpkg
     apt:
-      deb: '/tmp/{{ redpanda_pkg_file | basename }}'
+      deb: '/tmp/{{ rp_pkg | basename }}'
       state: present
     when:
-    - 'redpanda_pkg_file is defined'
-    - '".deb" in redpanda_pkg_file'
+    - '".deb" in rp_pkg'
 
   - name: install jdk on redhat-based distros
     package:
