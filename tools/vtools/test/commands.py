@@ -10,7 +10,6 @@ import time
 import yaml
 
 from absl import logging
-from pathlib import Path
 
 from ..vlib import config
 from ..vlib import shell
@@ -90,13 +89,17 @@ def cpp(build_type, conf, clang, args):
 @click.option('--use-existing-cluster',
               help='Use existing cluster that has been deployed with vtools.',
               is_flag=True)
+@click.option('--rp-extra-conf',
+              help=('Path to configuration options to use to extend or '
+                    'override the default options used in tests.'),
+              default=None)
 @click.option('--conf',
-              help=('Path to configuration file. If not given, a .vtools.yml '
-                    'file is searched recursively starting from the current '
-                    'working directory'),
+              help=('Path to vtools configuration file. If not given, a '
+                    '.vtools.yml file is searched recursively starting from '
+                    'the current working directory'),
               default=None)
 def pz(build_type, conf, clang, skip_build_img, tests, nodes,
-       use_existing_cluster):
+       use_existing_cluster, rp_extra_conf):
     vconfig = config.VConfig(config_file=conf,
                              build_type=build_type,
                              clang=clang)
@@ -109,10 +112,9 @@ def pz(build_type, conf, clang, skip_build_img, tests, nodes,
     os.makedirs(f'{vconfig.build_root}/tests/', exist_ok=True)
 
     if not skip_build_img:
-        # TODO: ensure only one tarball exists; build if it doesn't exist
-        for f in glob.glob(f'{vconfig.build_dir}/dist/tar/*.tar.gz'):
-            logging.debug(f'Copying {vconfig.build_dir}/dist/tar/*.tar.gz')
-            shutil.copy(f, f'{docker_dir}/redpanda.tar.gz')
+        # when the ducktape container has been previously executed, some .pyc
+        # files are left that are owned by root, so we change their ownership
+        shell.run_oneline(f'sudo chown $USER:$USER -R {vconfig.src_dir}/tests')
 
         # docker-py does not support custom context dir AND custom path for
         # Dockerfile, so we need to shell out
@@ -121,10 +123,18 @@ def pz(build_type, conf, clang, skip_build_img, tests, nodes,
         shell.run_oneline(cmd, env=vconfig.environ)
 
         if not use_existing_cluster:
+            # TODO: ensure only one tarball exists
+            # TODO: build if it doesn't exist
+            for f in glob.glob(f'{vconfig.build_dir}/dist/tar/*.tar.gz'):
+                logging.debug(f'Copying {vconfig.build_dir}/dist/tar/*.tar.gz')
+                shutil.copy(f, f'{docker_dir}/redpanda.tar.gz')
+
             # only build panda-node if we're running cluster locally
             cmd = (f'docker build -t panda-node '
                    f'-f {docker_dir}/Dockerfile.panda-node {docker_dir}')
             shell.run_oneline(cmd, env=vconfig.environ)
+
+            os.remove(f'{docker_dir}/redpanda.tar.gz')
 
     if use_existing_cluster:
         # we assume a cluster has already been deployed with 'vtools deploy'
@@ -145,7 +155,7 @@ def pz(build_type, conf, clang, skip_build_img, tests, nodes,
 
         # bring cluster up (compose doesn't have a python API, so we shell)
         cmd = (f'cd {vconfig.build_root}/tests && '
-               f'{composebin} -p rp up --force-recreate -d')
+               f'{composebin} -p rp up --force-recreate -t 1 -d')
         shell.run_oneline(cmd, env=vconfig.environ)
 
         # wait for cluster to be up
@@ -159,18 +169,23 @@ def pz(build_type, conf, clang, skip_build_img, tests, nodes,
             curr += 1
 
     # run ducktape tests
-    dt_ret = _run_ducktape_tests(vconfig, d, tests, use_existing_cluster)
+    dt_ret = _run_ducktape_tests(vconfig, d, tests, use_existing_cluster,
+                                 rp_extra_conf)
 
     if not use_existing_cluster:
         # teardown compose cluster
-        cmd = f'cd {docker_dir} && {composebin} -p rp down -t 1'
+        cmd = f'cd {vconfig.build_root}/tests/ && {composebin} -p rp down -t 1'
         shell.run_oneline(cmd, env=vconfig.environ)
 
     if dt_ret != 0:
         logging.fatal(f'ducktape returned non-zero code {dt_ret}')
 
 
-def _run_ducktape_tests(vconfig, docker_client, tests, use_existing=False):
+def _run_ducktape_tests(vconfig,
+                        docker_client,
+                        tests,
+                        use_existing=False,
+                        rp_extra_conf=None):
     volumes = {
         f'{vconfig.build_root}/tests/ducktape-config': {
             'bind': '/root/.ducktape',
@@ -186,6 +201,16 @@ def _run_ducktape_tests(vconfig, docker_client, tests, use_existing=False):
         },
     }
 
+    environment = {}
+    if rp_extra_conf:
+        volumes.update({
+            rp_extra_conf: {
+                'bind': '/root/rp-extra-config.yml',
+                'mode': 'ro'
+            }
+        })
+        environment.update({'RP_EXTRA_CONF': '/root/rp-extra-config.yml'})
+
     # NOTE: these paths are within the container (see volumes above)
     dt_flags = [
         '--results-root=/build/tests/results',
@@ -195,18 +220,16 @@ def _run_ducktape_tests(vconfig, docker_client, tests, use_existing=False):
     ]
 
     if use_existing:
-        # when we use existing deployed cluster, we bind-mount the ssh folder
-        volumes.update(
-            {f'{str(Path.home())}/.ssh': {
-                'bind': '/root/.ssh',
-                'mode': 'rw'
-            }})
+        network = 'host'
+    else:
+        network = 'rp'
 
     container = docker_client.containers.run('ducktape',
                                              command=dt_flags,
                                              name='dt',
-                                             network='rp',
+                                             network=network,
                                              volumes=volumes,
+                                             environment=environment,
                                              working_dir='/root',
                                              detach=True)
 
@@ -224,7 +247,10 @@ def _generate_docker_compose_config(num_nodes=0, filename=None):
     nodes = {}
 
     for i in range(1, num_nodes + 1):
-        node = {'image': 'panda-node'}
+        node = {
+            'image': 'panda-node',
+            'volumes': [f'./data/n{i}:/var/lib/redpanda:']
+        }
         if i > 1:
             # so that n1 gets first IP in range, n2 second, etc..
             node.update({'depends_on': [f'n{i-1}']})
@@ -263,26 +289,45 @@ def _generate_ducktape_cluster_config(vconfig,
     nodes = []
 
     if use_existing:
-        # obtain config using terraform and return
-        tfbin = f'{vconfig.build_root}/infra/terraform'
-        cmd = f'cd {vconfig.src_dir}/infra/modules/cluster/ && {tfbin}'
-        shell.run_oneline(f'{cmd} output -json ducktape > {filename}',
-                          env=vconfig.environ)
-        return
+        # generate configuration from terraform output data
+        module_dir = f'{vconfig.src_dir}/infra/modules/cluster'
+        tf_bin = os.path.join(vconfig.infra_bin_dir, 'terraform')
+        cmd = f'cd {module_dir} && {tf_bin} output -json ip'
+        out = shell.run_oneline(cmd, env=vconfig.environ)
+        ips = json.loads(out)
+        cmd = f'cd {module_dir} && {tf_bin} output -json private_ips'
+        out = shell.run_oneline(cmd, env=vconfig.environ)
+        pips = json.loads(out)
 
-    # generate configuration for the docker-compose cluster
-    for i in range(1, num_nodes + 1):
-        nodes.append({
-            'externally_routable_ip': f'192.168.52.{i+1}',
-            'ssh_config': {
-                'host': f'n{i}',
-                'hostname': f'n{i}',
-                'identityfile': f'/root/.ssh/id_rsa',
-                'password': '',
-                'port': 22,
-                'user': 'root'
-            }
-        })
+        os.makedirs(f'{vconfig.build_root}/ansible/', exist_ok=True)
+        invfile = f'{vconfig.build_root}/ansible/hosts.ini'
+        with open(invfile, 'w') as f:
+            for ip, pip in zip(ips, pips):
+                nodes.append({
+                    'externally_routable_ip': f'{ip}',
+                    'ssh_config': {
+                        'host': f'{ip}',
+                        'hostname': f'{pip}',
+                        'identityfile': f'/root/.ssh/id_rsa',
+                        'password': '',
+                        'port': 22,
+                        'user': 'root'
+                    }
+                })
+    else:
+        # generate configuration for the docker-compose cluster
+        for i in range(1, num_nodes + 1):
+            nodes.append({
+                'externally_routable_ip': f'192.168.52.{i+1}',
+                'ssh_config': {
+                    'host': f'n{i}',
+                    'hostname': f'n{i}',
+                    'identityfile': f'/root/.ssh/id_rsa',
+                    'password': '',
+                    'port': 22,
+                    'user': 'root'
+                }
+            })
 
     with open(filename, 'w') as f:
         json.dump({'nodes': nodes}, f)

@@ -13,21 +13,3 @@ output "ssh_cmd" {
 output "ssh_user" {
   value = var.distro_ssh_user[var.distro]
 }
-
-output "ducktape" {
-  value = {
-    "nodes" = [
-      for n in aws_instance.node: {
-        "externally_routable_ip" = n.public_ip,
-        "ssh_config" = {
-          "host" = n.public_ip,
-          "hostname" = n.public_ip,
-          "identityfile" = "/root/.ssh/infra-key",
-          "password" = "",
-          "port" = 22,
-          "user" = "root"
-        }
-      }
-    ]
-  }
-}
