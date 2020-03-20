@@ -69,7 +69,9 @@ public:
     record_header share() {
         return record_header(_key_size, share_key(), _val_size, share_value());
     }
-
+    record_header copy() const {
+        return record_header(_key_size, _key.copy(), _val_size, _value.copy());
+    }
     record_header foreign_share() {
         auto sh_key = iobuf_share_foreign_n(share_key(), 1);
         auto sh_val = iobuf_share_foreign_n(share_value(), 1);
@@ -180,10 +182,10 @@ public:
     }
 
     record foreign_share() {
-        std::vector<record_header> copy;
-        copy.reserve(_headers.size());
+        std::vector<record_header> cp;
+        cp.reserve(_headers.size());
         for (auto& h : _headers) {
-            copy.push_back(h.foreign_share());
+            cp.push_back(h.foreign_share());
         }
         auto sh_key = iobuf_share_foreign_n(share_key(), 1);
         auto sh_val = iobuf_share_foreign_n(share_value(), 1);
@@ -196,7 +198,24 @@ public:
           std::move(sh_key.back()),
           _val_size,
           std::move(sh_val.back()),
-          std::move(copy));
+          std::move(cp));
+    }
+    record copy() const {
+        std::vector<record_header> cp;
+        cp.reserve(_headers.size());
+        for (auto& h : _headers) {
+            cp.push_back(h.copy());
+        }
+        return record(
+          _size_bytes,
+          _attributes,
+          _timestamp_delta,
+          _offset_delta,
+          _key_size,
+          _key.copy(),
+          _val_size,
+          _value.copy(),
+          std::move(cp));
     }
     bool operator==(const record& other) const {
         return _size_bytes == other._size_bytes
@@ -355,7 +374,11 @@ struct record_batch_header {
     offset last_offset() const {
         return base_offset + offset(last_offset_delta);
     }
-
+    record_batch_header copy() const {
+        record_batch_header h = *this;
+        h.ctx.owner_shard = ss::this_shard_id();
+        return h;
+    }
     bool operator==(const record_batch_header& other) const {
         return size_bytes == other.size_bytes
                && base_offset == other.base_offset && crc == other.crc
@@ -408,6 +431,24 @@ public:
 
     bool compressed() const {
         return std::holds_alternative<compressed_records>(_records);
+    }
+    record_batch copy() const {
+        // copy sets shard id
+        record_batch_header h = _header.copy();
+        if (compressed()) {
+            auto& recs = std::get<compressed_records>(_records);
+            return record_batch(h, recs.copy());
+        }
+        auto& originals = std::get<uncompressed_records>(_records);
+        uncompressed_records r;
+        r.reserve(originals.size());
+        // share all individual records
+        std::transform(
+          originals.begin(),
+          originals.end(),
+          std::back_inserter(r),
+          [](const record& rec) -> record { return rec.copy(); });
+        return record_batch(h, std::move(r));
     }
 
     int32_t record_count() const { return _header.record_count; }
