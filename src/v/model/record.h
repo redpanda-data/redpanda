@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <iostream>
 #include <limits>
+#include <numeric>
 #include <variant>
 #include <vector>
 
@@ -64,12 +65,14 @@ public:
       , _value(std::move(v)) {}
 
     int32_t memory_usage() const {
-        return (sizeof(int32_t) * 2) + _key.size_bytes() + _value.size_bytes();
+        return sizeof(*this) + _key.size_bytes() + _value.size_bytes();
     }
     record_header share() {
         return record_header(_key_size, share_key(), _val_size, share_value());
     }
-
+    record_header copy() const {
+        return record_header(_key_size, _key.copy(), _val_size, _value.copy());
+    }
     record_header foreign_share() {
         auto sh_key = iobuf_share_foreign_n(share_key(), 1);
         auto sh_val = iobuf_share_foreign_n(share_value(), 1);
@@ -138,8 +141,14 @@ public:
     // Used for acquiring units from semaphores limiting
     // memory resources.
     int32_t memory_usage() const {
-        return sizeof(record) + (_headers.size() * sizeof(record_header))
-               + _size_bytes;
+        return sizeof(*this) + _key.size_bytes() + _value.size_bytes()
+               + std::accumulate(
+                 _headers.begin(),
+                 _headers.end(),
+                 int32_t(0),
+                 [](int32_t acc, const record_header& h) {
+                     return acc + h.memory_usage();
+                 });
     }
 
     record_attributes attributes() const { return _attributes; }
@@ -180,10 +189,10 @@ public:
     }
 
     record foreign_share() {
-        std::vector<record_header> copy;
-        copy.reserve(_headers.size());
+        std::vector<record_header> cp;
+        cp.reserve(_headers.size());
         for (auto& h : _headers) {
-            copy.push_back(h.foreign_share());
+            cp.push_back(h.foreign_share());
         }
         auto sh_key = iobuf_share_foreign_n(share_key(), 1);
         auto sh_val = iobuf_share_foreign_n(share_value(), 1);
@@ -196,7 +205,24 @@ public:
           std::move(sh_key.back()),
           _val_size,
           std::move(sh_val.back()),
-          std::move(copy));
+          std::move(cp));
+    }
+    record copy() const {
+        std::vector<record_header> cp;
+        cp.reserve(_headers.size());
+        for (auto& h : _headers) {
+            cp.push_back(h.copy());
+        }
+        return record(
+          _size_bytes,
+          _attributes,
+          _timestamp_delta,
+          _offset_delta,
+          _key_size,
+          _key.copy(),
+          _val_size,
+          _value.copy(),
+          std::move(cp));
     }
     bool operator==(const record& other) const {
         return _size_bytes == other._size_bytes
@@ -355,7 +381,11 @@ struct record_batch_header {
     offset last_offset() const {
         return base_offset + offset(last_offset_delta);
     }
-
+    record_batch_header copy() const {
+        record_batch_header h = *this;
+        h.ctx.owner_shard = ss::this_shard_id();
+        return h;
+    }
     bool operator==(const record_batch_header& other) const {
         return size_bytes == other.size_bytes
                && base_offset == other.base_offset && crc == other.crc
@@ -408,6 +438,24 @@ public:
 
     bool compressed() const {
         return std::holds_alternative<compressed_records>(_records);
+    }
+    record_batch copy() const {
+        // copy sets shard id
+        record_batch_header h = _header.copy();
+        if (compressed()) {
+            auto& recs = std::get<compressed_records>(_records);
+            return record_batch(h, recs.copy());
+        }
+        auto& originals = std::get<uncompressed_records>(_records);
+        uncompressed_records r;
+        r.reserve(originals.size());
+        // share all individual records
+        std::transform(
+          originals.begin(),
+          originals.end(),
+          std::back_inserter(r),
+          [](const record& rec) -> record { return rec.copy(); });
+        return record_batch(h, std::move(r));
     }
 
     int32_t record_count() const { return _header.record_count; }
@@ -521,10 +569,7 @@ public:
     }
 
     void clear() {
-        ss::visit(
-          _records,
-          [](compressed_records& r) { r = iobuf(); },
-          [](uncompressed_records& u) { u.clear(); });
+        ss::visit(_records, [](auto& r) { r.clear(); });
     }
 
 private:
