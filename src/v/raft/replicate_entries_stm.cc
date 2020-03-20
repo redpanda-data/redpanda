@@ -84,7 +84,8 @@ replicate_entries_stm::send_append_entries_request(
     _ptr->update_node_hbeat_timestamp(n);
     _ctxlog.trace("Sending append entries request {} to {}", req.meta, n);
     auto timeout = raft::clock_type::now() + _ptr->_jit.base_duration();
-    return _ptr->_client_protocol.append_entries(n, std::move(req), timeout);
+    return _ptr->_client_protocol.append_entries(
+      n, std::move(req), rpc::client_opts(timeout));
 }
 
 ss::future<> replicate_entries_stm::dispatch_one(retry_meta& meta) {

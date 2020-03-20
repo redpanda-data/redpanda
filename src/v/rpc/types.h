@@ -80,7 +80,7 @@ struct client_opts {
       , compression(ct)
       , min_compression_bytes(compression_bytes) {}
 
-    client_opts(clock_type::time_point client_send_timeout) noexcept
+    explicit client_opts(clock_type::time_point client_send_timeout) noexcept
       : client_opts(client_send_timeout, false, compression_type::none, 1024) {}
 
     clock_type::time_point timeout;

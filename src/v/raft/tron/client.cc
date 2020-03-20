@@ -94,7 +94,10 @@ private:
     ss::future<> execute_one(std::unique_ptr<cli>& c) {
         auto mem_sz = _cfg.key_size + _cfg.value_size + 20;
         return with_semaphore(_mem, mem_sz, [this, &c] {
-            return c->replicate(gen_entry(), rpc::no_timeout)
+            return c
+              ->replicate(
+                gen_entry(),
+                rpc::client_opts(rpc::client_opts(rpc::no_timeout)))
               .then_wrapped([m = _cfg.hist->local().auto_measure()](auto f) {
                   try {
                       (void)f.get0();

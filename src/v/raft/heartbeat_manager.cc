@@ -97,7 +97,7 @@ ss::future<> heartbeat_manager::do_heartbeat(
         groups[i] = group_id(r.request.meta[i].group);
     }
     return _client_protocol
-      .heartbeat(r.target, std::move(r.request), next_timeout)
+      .heartbeat(r.target, std::move(r.request), rpc::client_opts(next_timeout))
       .then([node = r.target, groups = std::move(groups), this](
               result<heartbeat_reply> ret) mutable {
           process_reply(node, std::move(groups), std::move(ret));
