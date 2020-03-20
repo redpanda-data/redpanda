@@ -20,6 +20,13 @@ void offset_commit_request::encode(
     writer.write(group_id());
     writer.write(generation_id);
     writer.write(member_id());
+    if (version >= api_version(2) && version < api_version(5)) {
+        if (retention_time_ms) {
+            writer.write(int32_t(retention_time_ms->count()));
+        } else {
+            writer.write(int32_t(-1));
+        }
+    }
     if (version >= api_version(7)) {
         writer.write(group_instance_id);
     }
@@ -46,6 +53,9 @@ void offset_commit_request::decode(request_context& ctx) {
     group_id = kafka::group_id(reader.read_string());
     generation_id = kafka::generation_id(reader.read_int32());
     member_id = kafka::member_id(reader.read_string());
+    if (version >= api_version(2) && version < api_version(5)) {
+        retention_time_ms = std::chrono::milliseconds(reader.read_int32());
+    }
     if (version >= api_version(7)) {
         auto tmp = reader.read_nullable_string();
         if (tmp) {
@@ -77,7 +87,9 @@ void offset_commit_response::encode(
     auto& writer = resp.writer();
     const auto version = ctx.header().version;
 
-    writer.write(int32_t(throttle_time_ms.count()));
+    if (version >= api_version(3)) {
+        writer.write(int32_t(throttle_time_ms.count()));
+    }
     writer.write_array(
       topics, [version](topic& topic, response_writer& writer) {
           writer.write(topic.name);
@@ -93,7 +105,9 @@ void offset_commit_response::encode(
 void offset_commit_response::decode(iobuf buf, api_version version) {
     request_reader reader(std::move(buf));
 
-    throttle_time_ms = std::chrono::milliseconds(reader.read_int32());
+    if (version >= api_version(3)) {
+        throttle_time_ms = std::chrono::milliseconds(reader.read_int32());
+    }
     topics = reader.read_array([version](request_reader& reader) {
         auto name = model::topic(reader.read_string());
         auto partitions = reader.read_array([version](request_reader& reader) {
