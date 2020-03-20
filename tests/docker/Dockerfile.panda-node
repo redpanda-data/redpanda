@@ -22,7 +22,7 @@ RUN echo 'PermitUserEnvironment yes' >> /etc/ssh/sshd_config && \
     bash -c "echo 'export PATH=$PATH:/usr/java/openjdk-14/bin/' > /etc/environment" && \
     mkdir /opt/kafka-dev && curl -s "$KAFKA_MIRROR/kafka_2.12-2.3.1.tgz" | tar xz --strip-components=1 -C /opt/kafka-dev && \
     mkdir /mnt/trogdor && \
-    mkdir /etc/redpanda
+    mkdir /etc/redpanda /var/lib/redpanda
 
 # install redpanda
 ADD redpanda.tar.gz /usr/local/
