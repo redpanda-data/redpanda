@@ -60,6 +60,7 @@ struct configuration final : public config_store {
     property<int32_t> default_topic_partitions;
     property<bool> disable_batch_cache;
     property<std::chrono::milliseconds> raft_election_timeout_ms;
+    property<std::chrono::milliseconds> kafka_group_recovery_timeout_ms;
 
     configuration();
 
