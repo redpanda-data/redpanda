@@ -12,6 +12,7 @@
 #include "kafka/requests/sync_group_request.h"
 #include "seastarx.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/sharded.hh>
 
@@ -20,13 +21,84 @@
 
 namespace kafka {
 
-/// \brief Manages the Kafka group lifecycle.
+struct recovery_batch_consumer;
+
+/*
+ * \brief Manages the Kafka group lifecycle.
+ *
+ * Dynamic partition attachment
+ * ============================
+ *
+ * When a partition belonging to the internal group metadata topic comes under
+ * management on a node it is dynamically registered with the group manager. The
+ * set of partitions is managed in the group manager in an index:
+ *
+ *     [ntp -> attached_partition]
+ *
+ * Where `attached_partition` is a struct with an initial state of:
+ *
+ *     { loading = true, semaphore(1), abort_source, partition }
+ *
+ * Leadership changes
+ * ==================
+ *
+ * The group manager handles leadership changes by transitioning the state of
+ * attached partitions, either by recovering state or clearing state from cache.
+ *
+ * On leadership change notification
+ *
+ *     1. Do nothing if notification is for a non-registered partition
+ *     2. While holding the attached partition's semaphore
+ *     3. Recover or unload (see below)
+ *
+ * Leadership change notifications current occur for _all_ partitions on the
+ * current {node, core} pair (not just group metadata partitions). Hence, we do
+ * nothing for non-registered partitions. See dynamic partition attachment
+ * discussion above regarding registration.
+ *
+ * In order to support (1) parallel partition recovery (important during
+ * start-up) and (2) flapping leadership we grab a per-partition semaphore to
+ * queue state transitions on the registered partition.
+ *
+ * The semaphore is used to serialize recovery/unload requests which are
+ * themselves an asynchronous fiber. The controller/raft dispatches these
+ * requests as leadership changes, and the requests are sync upcalls that can't
+ * be handled synchronously without blocking raft.
+ *
+ * When a new upcall is received, we use the abort source to request that any
+ * on-going recovery/unload is stopped promptly.
+ *
+ * Recovery (background)
+ * =====================
+ *
+ * - Both recovery and partition unload are serialized per-partition
+ * - Recovery occurs when the local node is leader, else unload (below)
+ *
+ * The recovery process reads the entire log and deduplicates entries into the
+ * `recovery_batch_consumer` object.
+ *
+ * After the log is read the deduplicated state is used to re-populate the
+ * in-memory cache of groups/commits through.
+ *
+ * Unload (background)
+ * ===================
+ *
+ * - Both recovery and partition unload are serialized per-partition
+ * - Unloading occurs when the local node loses partition leadership
+ *
+ * This process involves identifying the groups/commits that map to a partition
+ * for which the local node is no longer a leader. The in-memory cache will be
+ * cleared.
+ *
+ *     - This is not yet implemented.
+ */
 class group_manager {
 public:
     group_manager(
       ss::sharded<cluster::partition_manager>& pm, config::configuration& conf)
       : _pm(pm)
-      , _conf(conf) {}
+      , _conf(conf)
+      , _self(config::make_self_broker(config::shard_local_cfg())) {}
 
     ss::future<> start();
     ss::future<> stop();
@@ -73,6 +145,8 @@ private:
 
     struct attached_partition {
         bool loading;
+        ss::semaphore sem{1};
+        ss::abort_source as;
         ss::lw_shared_ptr<cluster::partition> partition;
 
         attached_partition(ss::lw_shared_ptr<cluster::partition> p)
@@ -83,18 +157,40 @@ private:
     absl::flat_hash_map<model::ntp, ss::lw_shared_ptr<attached_partition>>
       _partitions;
 
+    cluster::notification_id_type _leader_notify_handle;
+
+    void handle_leader_change(
+      ss::lw_shared_ptr<cluster::partition>, std::optional<model::node_id>);
+
+    ss::future<> handle_partition_leader_change(
+      ss::lw_shared_ptr<attached_partition>,
+      std::optional<model::node_id> leader_id);
+
+    ss::future<> recover_partition(
+      ss ::lw_shared_ptr<cluster::partition>, recovery_batch_consumer);
+
+    ss::future<> inject_noop(
+      ss::lw_shared_ptr<cluster::partition> p,
+      ss::lowres_clock::time_point timeout);
+
     ss::sharded<cluster::partition_manager>& _pm;
     config::configuration& _conf;
     absl::flat_hash_map<group_id, group_ptr> _groups;
+    model::broker _self;
 };
 
 /**
  * the key type for group membership log records.
  *
  * the opaque key field is decoded based on the actual type.
+ *
+ * TODO: The `noop` type indicates a control structure used to synchronize raft
+ * state in a transition to leader state so that a consistent read is made. this
+ * is a temporary work-around until we fully address consistency semantics in
+ * raft.
  */
 struct group_log_record_key {
-    enum class type : int8_t { group_metadata, offset_commit };
+    enum class type : int8_t { group_metadata, offset_commit, noop };
 
     type record_type;
     iobuf key;
@@ -128,6 +224,11 @@ struct group_log_offset_key {
     kafka::group_id group;
     model::topic topic;
     model::partition_id partition;
+
+    bool operator==(const group_log_offset_key& other) const {
+        return group == other.group && topic == other.topic
+               && partition == other.partition;
+    }
 };
 
 /**
@@ -137,6 +238,55 @@ struct group_log_offset_metadata {
     model::offset offset;
     int32_t leader_epoch;
     std::optional<ss::sstring> metadata;
+};
+
+} // namespace kafka
+
+namespace std {
+template<>
+struct hash<kafka::group_log_offset_key> {
+    size_t operator()(const kafka::group_log_offset_key& key) const {
+        size_t h = 0;
+        boost::hash_combine(h, hash<ss::sstring>()(key.group));
+        boost::hash_combine(h, hash<ss::sstring>()(key.topic));
+        boost::hash_combine(h, hash<model::partition_id>()(key.partition));
+        return h;
+    }
+};
+} // namespace std
+
+namespace kafka {
+
+/*
+ * This batch consumer is used during partition recovery to read, index, and
+ * deduplicate both group and commit metadata snapshots.
+ */
+struct recovery_batch_consumer {
+    recovery_batch_consumer(ss::abort_source* as)
+      : as(as) {}
+
+    ss::future<ss::stop_iteration> operator()(model::record_batch batch);
+
+    ss::future<> handle_record(model::record);
+    ss::future<> handle_group_metadata(iobuf key_buf, iobuf val_buf);
+    ss::future<> handle_offset_metadata(iobuf key_buf, iobuf val_buf);
+
+    recovery_batch_consumer end_of_stream() { return std::move(*this); }
+
+    model::offset batch_base_offset;
+
+    absl::flat_hash_map<kafka::group_id, group_log_group_metadata>
+      loaded_groups;
+
+    absl::flat_hash_set<kafka::group_id> removed_groups;
+
+    absl::flat_hash_map<
+      group_log_offset_key,
+      std::pair<model::offset, group_log_offset_metadata>>
+      loaded_offsets;
+
+    // this is invalid after end_of_stream() is invoked
+    ss::abort_source* as;
 };
 
 } // namespace kafka
