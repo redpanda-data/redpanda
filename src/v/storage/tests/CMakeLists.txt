@@ -38,16 +38,6 @@ rp_test(
   ARGS "-- -c 1"
 )
 
-# obsolete test
-# rp_test(
-#   UNIT_TEST
-#   BINARY_NAME log_reader_test
-#   SOURCES log_reader_test.cc
-#   LIBRARIES Seastar::seastar_testing v::storage_test_utils
-#   ARGS "-- -c 1"
-#   LABELS storage
-# )
-
 rp_test(
   UNIT_TEST
   BINARY_NAME log_replayer_test
