@@ -82,6 +82,33 @@ void offset_commit_request::decode(request_context& ctx) {
     });
 }
 
+static std::ostream&
+operator<<(std::ostream& o, const offset_commit_request::partition& p) {
+    return ss::fmt_print(
+      o,
+      "id={} offset={} epoch={} md={}",
+      p.id,
+      p.committed,
+      p.leader_epoch,
+      p.metadata);
+}
+
+static std::ostream&
+operator<<(std::ostream& o, const offset_commit_request::topic& t) {
+    return ss::fmt_print(o, "name={} partitions={}", t.name, t.partitions);
+}
+
+std::ostream& operator<<(std::ostream& o, const offset_commit_request& r) {
+    return ss::fmt_print(
+      o,
+      "group={} gen={} mem={} inst={} topics={}",
+      r.group_id,
+      r.generation_id,
+      r.member_id,
+      r.group_instance_id,
+      r.topics);
+}
+
 void offset_commit_response::encode(
   const request_context& ctx, response& resp) {
     auto& writer = resp.writer();
@@ -136,6 +163,7 @@ struct offset_commit_ctx {
 ss::future<response_ptr>
 offset_commit_api::process(request_context&& ctx, ss::smp_service_group ssg) {
     offset_commit_request request(ctx);
+    kreq_log.trace("Handling request {}", request);
 
     if (request.group_instance_id) {
         return ctx.respond(

@@ -57,6 +57,8 @@ struct offset_commit_request final {
     void decode(request_context& ctx);
 };
 
+std::ostream& operator<<(std::ostream&, const offset_commit_request&);
+
 struct offset_commit_response final {
     struct partition {
         model::partition_id id;
