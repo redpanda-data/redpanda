@@ -10,6 +10,7 @@
 #include <seastar/net/api.hh>
 #include <seastar/net/socket_defs.hh>
 #include <seastar/net/tls.hh>
+#include <seastar/util/bool_class.hh>
 #include <seastar/util/noncopyable_function.hh>
 
 #include <chrono>
@@ -70,21 +71,31 @@ static_assert(
 uint16_t checksum_header_only(const header& h);
 
 struct client_opts {
+    /// \brief used to gurantee that we serialize writes. Holds a lock, until
+    /// we dispatch the write to the batch_output_stream, then releases the lock
+    using sequential_dispatch
+      = ss::bool_class<struct rpc_client_sequential_send>;
+
     client_opts(
       clock_type::time_point client_send_timeout,
-      bool seq_dispatch,
+      sequential_dispatch disp,
       compression_type ct,
       size_t compression_bytes) noexcept
       : timeout(client_send_timeout)
-      , force_sequantial_dispatch(seq_dispatch)
+      , dispatch(disp)
       , compression(ct)
       , min_compression_bytes(compression_bytes) {}
 
+    client_opts(
+      clock_type::time_point client_send_timeout,
+      sequential_dispatch sq) noexcept
+      : client_opts(client_send_timeout, sq, compression_type::none, 1024) {}
+
     explicit client_opts(clock_type::time_point client_send_timeout) noexcept
-      : client_opts(client_send_timeout, false, compression_type::none, 1024) {}
+      : client_opts(client_send_timeout, sequential_dispatch::no) {}
 
     clock_type::time_point timeout;
-    bool force_sequantial_dispatch;
+    sequential_dispatch dispatch;
     compression_type compression;
     size_t min_compression_bytes;
 };
