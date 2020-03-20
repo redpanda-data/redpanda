@@ -251,3 +251,21 @@ SEASTAR_THREAD_TEST_CASE(test_batch_type_filter) {
 
     b | stop();
 }
+
+SEASTAR_THREAD_TEST_CASE(test_does_not_read_past_max_offset) {
+    auto batches = test::make_random_batches(model::offset(1), 3);
+    storage::log_reader_config reader_config(
+      batches.front().base_offset(),
+      batches.back().last_offset(),
+      0,
+      std::numeric_limits<size_t>::max(),
+      ss::default_priority_class(),
+      std::nullopt,
+      std::nullopt);
+    disk_log_builder b;
+    b | start() | add_segment(batches.front().base_offset());
+    write(copy(batches), b);
+    auto res = b.consume(reader_config).get0();
+    b | stop();
+    check_batches(res, batches);
+}
