@@ -217,7 +217,15 @@ configuration::configuration()
       "election_timeout_ms",
       "Election timeout expressed in milliseconds",
       required::no,
-      1'500ms) {}
+      1'500ms)
+  , kafka_group_recovery_timeout_ms(
+      *this,
+      "kafka_group_recovery_timeout_ms",
+      "Kafka group recovery timeout expressed in milliseconds",
+      required::no,
+      30'000ms)
+
+{}
 
 void configuration::read_yaml(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {

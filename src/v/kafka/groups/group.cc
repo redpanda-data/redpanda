@@ -31,6 +31,69 @@ namespace kafka {
 
 using member_config = join_group_response::member_config;
 
+group::group(
+  kafka::group_id id,
+  group_state s,
+  config::configuration& conf,
+  ss::lw_shared_ptr<cluster::partition> partition)
+  : _id(id)
+  , _state(s)
+  , _state_timestamp(clock_type::now())
+  , _generation(0)
+  , _num_members_joining(0)
+  , _new_member_added(false)
+  , _conf(conf)
+  , _partition(partition) {}
+
+group::group(
+  kafka::group_id id,
+  group_log_group_metadata& md,
+  config::configuration& conf,
+  ss::lw_shared_ptr<cluster::partition> partition)
+  : _id(id)
+  , _conf(conf)
+  , _partition(partition) {
+    _state = md.members.empty() ? group_state::empty : group_state::stable;
+    _generation = md.generation;
+    _protocol_type = md.protocol_type;
+    _protocol = md.protocol;
+    _leader = md.leader;
+    _state_timestamp = clock_type::time_point(
+      std::chrono::milliseconds(md.state_timestamp));
+
+    for (auto& m : md.members) {
+        // TODO: replace `bytes` with iobuf.
+        auto sub = ss::uninitialized_string<bytes>(m.subscription.size_bytes());
+        {
+            iobuf::iterator_consumer in(
+              m.subscription.cbegin(), m.subscription.cend());
+            in.consume_to(m.subscription.size_bytes(), sub.begin());
+        }
+
+        // TODO: replace `bytes` with iobuf.
+        auto assignment = ss::uninitialized_string<bytes>(
+          m.assignment.size_bytes());
+        {
+            iobuf::iterator_consumer in(
+              m.assignment.cbegin(), m.assignment.cend());
+            in.consume_to(m.assignment.size_bytes(), assignment.begin());
+        }
+
+        auto member = ss::make_lw_shared<group_member>(
+          m.id,
+          id,
+          m.instance_id,
+          std::chrono::milliseconds(m.session_timeout_ms),
+          std::chrono::milliseconds(m.rebalance_timeout_ms),
+          *_protocol_type,
+          std::vector<member_protocol>{{*_protocol, std::move(sub)}});
+
+        member->set_assignment(std::move(assignment));
+
+        add_member_no_join(member);
+    }
+}
+
 bool group::valid_previous_state(group_state s) const {
     using g = group_state;
 
@@ -82,7 +145,7 @@ bool group::supports_protocols(const join_group_request& r) {
       });
 }
 
-ss::future<join_group_response> group::add_member(member_ptr member) {
+void group::add_member_no_join(member_ptr member) {
     if (_members.empty()) {
         _protocol_type = member->protocol_type();
     }
@@ -99,10 +162,10 @@ ss::future<join_group_response> group::add_member(member_ptr member) {
 
     member->for_each_protocol(
       [this](const member_protocol& p) { _supported_protocols[p.name]++; });
+}
 
-    // TODO
-    //  - when restoring persisted group state members are created and added but
-    //  there will be no associated request/context to account for.
+ss::future<join_group_response> group::add_member(member_ptr member) {
+    add_member_no_join(member);
     _num_members_joining++;
     return member->get_join_response();
 }
