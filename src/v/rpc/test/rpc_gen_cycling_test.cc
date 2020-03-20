@@ -99,3 +99,27 @@ FIXTURE_TEST(timeout_test, rpc_integration_fixture) {
     BOOST_REQUIRE_THROW(echo_resp.get0(), rpc::request_timeout_exception);
     client.stop().get();
 }
+
+FIXTURE_TEST(ordering_test, rpc_integration_fixture) {
+    configure_server();
+    register_services();
+    start_server();
+    rpc::client<echo::echo_client_protocol> client(client_config());
+    client.connect().get();
+    std::vector<ss::future<>> futures;
+    futures.reserve(10);
+    for (uint64_t i = 0; i < 10; ++i) {
+        futures.push_back(
+          client
+            .counter(
+              echo::cnt_req{i},
+              rpc::client_opts(
+                rpc::no_timeout, rpc::client_opts::sequential_dispatch::yes))
+            .then([i](rpc::client_context<echo::cnt_resp> r) {
+                BOOST_REQUIRE_EQUAL(r.data.current, i);
+                BOOST_REQUIRE_EQUAL(r.data.expected, i);
+            }));
+    }
+    ss::when_all_succeed(futures.begin(), futures.end()).get0();
+    client.stop().get();
+}
