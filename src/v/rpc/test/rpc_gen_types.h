@@ -29,4 +29,14 @@ struct echo_req {
 struct echo_resp {
     ss::sstring str;
 };
+
+struct cnt_req {
+    uint64_t expected;
+};
+
+struct cnt_resp {
+    uint64_t expected;
+    uint64_t current;
+};
+
 } // namespace echo

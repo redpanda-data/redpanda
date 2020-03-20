@@ -428,7 +428,7 @@ ss::future<std::vector<topic_result>> controller::autocreate_topics(
                return c.create_topics(
                  create_topics_request{std::move(topics),
                                        timeout - model::timeout_clock::now()},
-                 timeout);
+                 rpc::client_opts(timeout));
            })
       .then([this](rpc::client_context<create_topics_reply> ctx) {
           return _md_cache
@@ -755,7 +755,7 @@ ss::future<join_reply> controller::dispatch_join_to_remote(
           return c
             .join(
               join_request(std::move(joining_node)),
-              rpc::clock_type::now() + join_timeout)
+              rpc::client_opts(rpc::clock_type::now() + join_timeout))
             .then([](rpc::client_context<join_reply> ctx) {
                 return std::move(ctx.data);
             });
@@ -830,7 +830,7 @@ ss::future<> controller::process_join_request(model::broker broker) {
                                     controller_client_protocol& c) mutable {
                return c.join(
                  join_request(std::move(broker)),
-                 rpc::clock_type::now() + join_timeout);
+                 rpc::client_opts(rpc::clock_type::now() + join_timeout));
            })
       .discard_result();
 }

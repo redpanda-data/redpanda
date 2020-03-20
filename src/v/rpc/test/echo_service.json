@@ -19,6 +19,11 @@
             "name": "sleep_1s",
             "input_type": "echo_req",
             "output_type": "echo_resp"
+        },
+        {
+            "name": "counter",
+            "input_type": "cnt_req",
+            "output_type": "cnt_resp"
         }
     ]
 }

@@ -5,10 +5,12 @@
 #include "rpc/simple_protocol.h"
 #include "rpc/test/cycling_service.h"
 #include "rpc/test/echo_service.h"
+#include "rpc/test/rpc_gen_types.h"
 #include "rpc/transport.h"
 #include "rpc/types.h"
 #include "seastarx.h"
 
+#include <seastar/core/future.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/net/inet_address.hh>
@@ -49,6 +51,14 @@ struct echo_impl final : echo::echo_service {
         return ss::sleep(1s).then(
           []() { return echo::echo_resp{.str = "Zzz..."}; });
     }
+
+    ss::future<echo::cnt_resp>
+    counter(echo::cnt_req&& req, rpc::streaming_context&) final {
+        return ss::make_ready_future<echo::cnt_resp>(
+          echo::cnt_resp{.current = cnt++, .expected = req.expected});
+    }
+
+    uint64_t cnt = 0;
 };
 
 class rpc_integration_fixture {

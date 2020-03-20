@@ -121,7 +121,8 @@ ss::future<> metadata_dissemination_service::dispatch_get_metadata_update(
           return c
             .get_leadership(
               get_leadership_request{},
-              rpc::clock_type::now() + _dissemination_interval)
+              rpc::client_opts(
+                rpc::clock_type::now() + _dissemination_interval))
             .then([this](rpc::client_context<get_leadership_reply> reply) {
                 return _md_cache.invoke_on_all(
                   [reply = std::move(reply.data)](
@@ -182,7 +183,8 @@ ss::future<> metadata_dissemination_service::dispatch_one_update(
                  return proto
                    .update_leadership(
                      update_leadership_request{leaders},
-                     _dissemination_interval + rpc::clock_type::now())
+                     rpc::client_opts(
+                       _dissemination_interval + rpc::clock_type::now()))
                    .then([](rpc::client_context<update_leadership_reply> ctx) {
                        return std::move(ctx.data);
                    });
