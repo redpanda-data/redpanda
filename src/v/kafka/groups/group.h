@@ -28,6 +28,8 @@
 
 namespace kafka {
 
+struct group_log_group_metadata;
+
 inline ss::logger kglog{"k/group"};
 
 /**
@@ -101,15 +103,14 @@ public:
       kafka::group_id id,
       group_state s,
       config::configuration& conf,
-      ss::lw_shared_ptr<cluster::partition> partition)
-      : _id(id)
-      , _state(s)
-      , _state_timestamp(clock_type::now())
-      , _generation(0)
-      , _num_members_joining(0)
-      , _new_member_added(false)
-      , _conf(conf)
-      , _partition(partition) {}
+      ss::lw_shared_ptr<cluster::partition> partition);
+
+    // constructor used when loading state from log
+    group(
+      kafka::group_id id,
+      group_log_group_metadata& md,
+      config::configuration& conf,
+      ss::lw_shared_ptr<cluster::partition> partition);
 
     /// Get the group id.
     const kafka::group_id& id() const { return _id; }
@@ -163,6 +164,13 @@ public:
         return _pending_members.find(member) != _pending_members.end();
     }
 
+    /// Reschedule all members' heartbeat expiration
+    void reschedule_all_member_heartbeats() {
+        for (auto& e : _members) {
+            schedule_next_heartbeat_expiration(e.second);
+        }
+    }
+
     void remove_pending_member(const kafka::member_id& member_id);
 
     /// Check if a member id refers to the group leader.
@@ -206,6 +214,12 @@ public:
      * \returns join response promise set at the end of the join phase.
      */
     ss::future<join_group_response> add_member(member_ptr member);
+
+    /**
+     * Same as add_member but without returning the join promise. Used when
+     * restoring member state from persistent storage.
+     */
+    void add_member_no_join(member_ptr member);
 
     /**
      * \brief Update the set of protocols supported by a group member.
@@ -380,6 +394,10 @@ public:
 
     ss::future<offset_fetch_response>
     handle_offset_fetch(offset_fetch_request&& r);
+
+    void insert_offset(model::topic_partition tp, offset_metadata md) {
+        _offsets[std::move(tp)] = std::move(md);
+    }
 
 private:
     using member_map = absl::flat_hash_map<kafka::member_id, member_ptr>;
