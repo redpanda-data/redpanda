@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <iostream>
 #include <limits>
+#include <numeric>
 #include <variant>
 #include <vector>
 
@@ -64,7 +65,7 @@ public:
       , _value(std::move(v)) {}
 
     int32_t memory_usage() const {
-        return (sizeof(int32_t) * 2) + _key.size_bytes() + _value.size_bytes();
+        return sizeof(*this) + _key.size_bytes() + _value.size_bytes();
     }
     record_header share() {
         return record_header(_key_size, share_key(), _val_size, share_value());
@@ -140,8 +141,14 @@ public:
     // Used for acquiring units from semaphores limiting
     // memory resources.
     int32_t memory_usage() const {
-        return sizeof(record) + (_headers.size() * sizeof(record_header))
-               + _size_bytes;
+        return sizeof(*this) + _key.size_bytes() + _value.size_bytes()
+               + std::accumulate(
+                 _headers.begin(),
+                 _headers.end(),
+                 int32_t(0),
+                 [](int32_t acc, const record_header& h) {
+                     return acc + h.memory_usage();
+                 });
     }
 
     record_attributes attributes() const { return _attributes; }
@@ -562,10 +569,7 @@ public:
     }
 
     void clear() {
-        ss::visit(
-          _records,
-          [](compressed_records& r) { r = iobuf(); },
-          [](uncompressed_records& u) { u.clear(); });
+        ss::visit(_records, [](auto& r) { r.clear(); });
     }
 
 private:

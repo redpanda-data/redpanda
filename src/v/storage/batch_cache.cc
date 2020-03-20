@@ -1,20 +1,46 @@
 #include "batch_cache.h"
 
-#include "log_reader.h"
+#include "vassert.h"
 
 namespace storage {
 
-batch_cache::entry_ptr batch_cache::put(model::record_batch batch) {
+batch_cache::entry_ptr batch_cache::put(model::record_batch&& batch) {
+#ifdef SEASTAR_DEFAULT_ALLOCATOR
+    static const size_t threshold = ss::memory::stats().total_memory() * .2;
+    while (_size_bytes > threshold) {
+        reclaim(1);
+    }
+#endif
+    _size_bytes += batch.memory_usage();
     entry* e;
     if (_pool.empty()) {
         e = new entry(std::move(batch));
     } else {
         e = &_pool.front();
         _pool.pop_front();
+        _size_bytes -= e->batch.memory_usage();
         e->batch = std::move(batch);
     }
     _lru.push_back(*e);
     return e->weak_from_this();
+}
+
+batch_cache::~batch_cache() noexcept {
+    clear();
+    vassert(
+      _size_bytes == 0 && _lru.empty() && _pool.empty(),
+      "Detected incorrect batch_cache accounting. {}",
+      *this);
+}
+void batch_cache::evict(entry_ptr&& e) {
+    if (e) {
+        auto p = std::exchange(e, {});
+        p->_hook.unlink();
+        _size_bytes -= p->batch.memory_usage();
+        p->batch.clear();
+        _size_bytes += p->batch.memory_usage();
+        _pool.push_back(*p);
+    }
 }
 
 size_t batch_cache::reclaim(size_t size) {
@@ -34,6 +60,7 @@ size_t batch_cache::reclaim(size_t size) {
         // NOLINTNEXTLINE
         _pool.pop_front_and_dispose([](entry* e) { delete e; });
     }
+    _size_bytes -= reclaimed;
     return reclaimed;
 }
 
@@ -120,7 +147,10 @@ void batch_cache_index::truncate(model::offset offset) {
 std::ostream& operator<<(std::ostream& o, const batch_cache& b) {
     // NOTE: intrusive list have a O(N) for size.
     // Do _not_ print size of _lru or _pool
-    return o << "{ is_reclaiming:" << b.is_memory_reclaiming() << "}";
+    return o << "{is_reclaiming:" << b.is_memory_reclaiming()
+             << ", size_bytes: " << b._size_bytes
+             << ", lru_empty:" << b._lru.empty()
+             << ", pool_empty:" << b._pool.empty() << "}";
 }
 std::ostream&
 operator<<(std::ostream& o, const batch_cache_index::read_result& c) {
