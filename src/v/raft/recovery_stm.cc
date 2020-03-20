@@ -131,7 +131,7 @@ ss::future<> recovery_stm::replicate(model::record_batch_reader&& reader) {
 ss::future<result<append_entries_reply>>
 recovery_stm::dispatch_append_entries(append_entries_request&& r) {
     return _ptr->_client_protocol.append_entries(
-      _node_id, std::move(r), raft::clock_type::now() + 1s);
+      _node_id, std::move(r), rpc::client_opts(raft::clock_type::now() + 1s));
 }
 
 bool recovery_stm::is_recovery_finished() {

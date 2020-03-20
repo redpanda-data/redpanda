@@ -38,7 +38,7 @@ ss::future<result<vote_reply>> vote_stm::do_dispatch_one(model::node_id n) {
     auto tout = clock_type::now() + _ptr->_jit.base_duration();
 
     auto r = _req;
-    return _ptr->_client_protocol.vote(n, std::move(r), tout);
+    return _ptr->_client_protocol.vote(n, std::move(r), rpc::client_opts(tout));
 }
 
 ss::future<> vote_stm::dispatch_one(model::node_id n) {

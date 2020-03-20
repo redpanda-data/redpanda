@@ -3,6 +3,7 @@
 #include "model/timeout_clock.h"
 #include "outcome.h"
 #include "raft/types.h"
+#include "rpc/types.h"
 
 #include <seastar/core/shared_ptr.hh>
 
@@ -15,15 +16,14 @@ class consensus_client_protocol final {
 public:
     struct impl {
         virtual ss::future<result<vote_reply>>
-        vote(model::node_id, vote_request&&, clock_type::time_point) = 0;
+        vote(model::node_id, vote_request&&, rpc::client_opts) = 0;
 
         virtual ss::future<result<append_entries_reply>> append_entries(
-          model::node_id, append_entries_request&&, clock_type::time_point)
+          model::node_id, append_entries_request&&, rpc::client_opts)
           = 0;
 
         virtual ss::future<result<heartbeat_reply>>
-        heartbeat(model::node_id, heartbeat_request&&, clock_type::time_point)
-          = 0;
+        heartbeat(model::node_id, heartbeat_request&&, rpc::client_opts) = 0;
 
         virtual ~impl() noexcept = default;
     };
@@ -31,25 +31,21 @@ public:
 public:
     explicit consensus_client_protocol(ss::shared_ptr<impl> i)
       : _impl(std::move(i)) {}
-    ss::future<result<vote_reply>> vote(
-      model::node_id targe_node,
-      vote_request&& r,
-      model::timeout_clock::time_point timeout) {
-        return _impl->vote(targe_node, std::move(r), timeout);
+    ss::future<result<vote_reply>>
+    vote(model::node_id targe_node, vote_request&& r, rpc::client_opts opts) {
+        return _impl->vote(targe_node, std::move(r), opts);
     }
 
     ss::future<result<append_entries_reply>> append_entries(
       model::node_id targe_node,
       append_entries_request&& r,
-      model::timeout_clock::time_point timeout) {
-        return _impl->append_entries(targe_node, std::move(r), timeout);
+      rpc::client_opts opts) {
+        return _impl->append_entries(targe_node, std::move(r), opts);
     }
 
     ss::future<result<heartbeat_reply>> heartbeat(
-      model::node_id targe_node,
-      heartbeat_request&& r,
-      model::timeout_clock::time_point timeout) {
-        return _impl->heartbeat(targe_node, std::move(r), timeout);
+      model::node_id targe_node, heartbeat_request&& r, rpc::client_opts opts) {
+        return _impl->heartbeat(targe_node, std::move(r), opts);
     }
 
 private:

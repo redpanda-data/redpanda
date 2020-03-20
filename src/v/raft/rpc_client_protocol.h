@@ -20,13 +20,13 @@ public:
       : _connection_cache(cache) {}
 
     ss::future<result<vote_reply>>
-    vote(model::node_id, vote_request&&, clock_type::time_point) final;
+    vote(model::node_id, vote_request&&, rpc::client_opts) final;
 
     ss::future<result<append_entries_reply>> append_entries(
-      model::node_id, append_entries_request&&, clock_type::time_point) final;
+      model::node_id, append_entries_request&&, rpc::client_opts) final;
 
-    ss::future<result<heartbeat_reply>> heartbeat(
-      model::node_id, heartbeat_request&&, clock_type::time_point) final;
+    ss::future<result<heartbeat_reply>>
+    heartbeat(model::node_id, heartbeat_request&&, rpc::client_opts) final;
 
 private:
     ss::sharded<rpc::connection_cache>& _connection_cache;
