@@ -10,6 +10,7 @@
 #include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_map.h>
 
+#include <limits>
 #include <type_traits>
 
 namespace storage {
@@ -101,20 +102,20 @@ public:
       , _pool(std::move(o._pool))
       , _reclaimer(
           [this](reclaimer::request r) { return reclaim(r); },
-          reclaim_scope::async) {}
+          reclaim_scope::sync)
+      , _is_reclaiming(o._is_reclaiming)
+      , _size_bytes(o._size_bytes) {
+        o._size_bytes = 0;
+        o._is_reclaiming = false;
+    }
 
-    ~batch_cache() { clear(); }
+    ~batch_cache() noexcept;
 
     /// Returns true if the cache is empty, and false otherwise.
     bool empty() const { return _lru.empty(); }
 
     /// Removes all entries from the cache and entry pool.
-    void clear() {
-        // NOLINTNEXTLINE
-        _lru.clear_and_dispose([](entry* e) { delete e; });
-        // NOLINTNEXTLINE
-        _pool.clear_and_dispose([](entry* e) { delete e; });
-    }
+    void clear() { reclaim(std::numeric_limits<size_t>::max()); }
 
     /**
      * Insert a batch into the LRU cache.
@@ -122,7 +123,7 @@ public:
      * The returned weak_ptr will be invalidated if its memory is reclaimed. To
      * evict the entry, move it into batch_cache::evict().
      */
-    entry_ptr put(model::record_batch batch);
+    entry_ptr put(model::record_batch&&);
 
     /**
      * \brief Remove a batch from the cache.
@@ -138,14 +139,7 @@ public:
      * relevant for the reclaim interface. Reclaim fully deletes cache entries
      * which does invoke weak_ptr invalidation.
      */
-    void evict(entry_ptr&& e) {
-        if (e) {
-            auto p = std::exchange(e, {});
-            p->_hook.unlink();
-            p->batch.clear();
-            _pool.push_back(*p);
-        }
-    }
+    void evict(entry_ptr&& e);
 
     /**
      * Notify the cache that the specified entry was recently used.
@@ -209,6 +203,7 @@ private:
     intrusive_list<entry, &entry::_hook> _pool;
     reclaimer _reclaimer;
     bool _is_reclaiming{false};
+    size_t _size_bytes{0};
 
     friend std::ostream& operator<<(std::ostream&, const batch_cache&);
 };
