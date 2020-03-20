@@ -51,6 +51,7 @@ auto with_node_client(
 
 ss::future<result<vote_reply>> rpc_client_protocol::vote(
   model::node_id n, vote_request&& r, rpc::client_opts opts) {
+    opts.dispatch = rpc::client_opts::sequential_dispatch::yes;
     return with_node_client(
       _connection_cache,
       n,
@@ -64,6 +65,7 @@ ss::future<result<vote_reply>> rpc_client_protocol::vote(
 
 ss::future<result<append_entries_reply>> rpc_client_protocol::append_entries(
   model::node_id n, append_entries_request&& r, rpc::client_opts opts) {
+    opts.dispatch = rpc::client_opts::sequential_dispatch::yes;
     return with_node_client(
       _connection_cache,
       n,
@@ -77,6 +79,7 @@ ss::future<result<append_entries_reply>> rpc_client_protocol::append_entries(
 
 ss::future<result<heartbeat_reply>> rpc_client_protocol::heartbeat(
   model::node_id n, heartbeat_request&& r, rpc::client_opts opts) {
+    opts.dispatch = rpc::client_opts::sequential_dispatch::yes;
     return with_node_client(
       _connection_cache,
       n,
