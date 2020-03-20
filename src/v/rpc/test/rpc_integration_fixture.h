@@ -55,7 +55,7 @@ struct echo_impl final : echo::echo_service {
     ss::future<echo::cnt_resp>
     counter(echo::cnt_req&& req, rpc::streaming_context&) final {
         return ss::make_ready_future<echo::cnt_resp>(
-          echo::cnt_resp{.current = cnt++, .expected = req.expected});
+          echo::cnt_resp{.expected = req.expected, .current = cnt++});
     }
 
     uint64_t cnt = 0;
