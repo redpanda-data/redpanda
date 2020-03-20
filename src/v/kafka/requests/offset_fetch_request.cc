@@ -72,7 +72,9 @@ void offset_fetch_response::encode(const request_context& ctx, response& resp) {
                 writer.write(partition.error);
             });
       });
-    writer.write(error);
+    if (version >= api_version(2)) {
+        writer.write(error);
+    }
 }
 
 void offset_fetch_response::decode(iobuf buf, api_version version) {
