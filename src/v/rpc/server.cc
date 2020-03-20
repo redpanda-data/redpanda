@@ -55,25 +55,31 @@ void server::start() {
         (void)with_gate(_conn_gate, [this, &ref] { return accept(ref); });
     }
 }
-static ss::future<> apply_proto(server::protocol* proto, server::resources rs) {
+
+// inline to get more context
+[[gnu::always_inline]] void print_exceptional_future(
+  server::protocol* proto, ss::future<> f, const char* ctx) {
+    try {
+        f.get();
+    } catch (...) {
+        vlog(
+          rpclog.error,
+          "{} - Error ( {} ): {}",
+          proto->name(),
+          ctx,
+          std::current_exception());
+    }
+}
+static ss::future<>
+apply_proto(server::protocol* proto, server::resources&& rs) {
     auto conn = rs.conn;
-    return proto->apply(rs)
+    return proto->apply(std::move(rs))
       .then_wrapped([proto, conn](ss::future<> f) {
-          vlog(
-            rpclog.debug, "{} - Closing client: {}", proto->name(), conn->addr);
-          return conn->shutdown()
-            .then([proto, f = std::move(f)]() mutable {
-                try {
-                    f.get();
-                } catch (...) {
-                    vlog(
-                      rpclog.error,
-                      "{} - Error dispatching method: {}",
-                      proto->name(),
-                      std::current_exception());
-                }
-            })
-            .finally([conn] {});
+          print_exceptional_future(proto, std::move(f), "applying proto");
+          vlog(rpclog.debug, "{} Closing: {}", proto->name(), conn->addr);
+          return conn->shutdown().then_wrapped([proto](ss::future<> f) {
+              print_exceptional_future(proto, std::move(f), "shutting down");
+          });
       })
       .finally([conn] {});
 }
