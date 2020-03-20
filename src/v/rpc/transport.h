@@ -75,11 +75,11 @@ public:
 
     ss::future<> connect() final;
     ss::future<std::unique_ptr<streaming_context>>
-      send(netbuf, rpc::timer_type::time_point);
+      send(netbuf, rpc::client_opts);
 
     template<typename Input, typename Output>
-    ss::future<client_context<Output>> send_typed(
-      Input, uint32_t, rpc::timer_type::time_point = rpc::no_timeout);
+    ss::future<client_context<Output>>
+      send_typed(Input, uint32_t, rpc::client_opts);
 
 private:
     friend client_context_impl;
@@ -97,16 +97,15 @@ private:
 };
 
 template<typename Input, typename Output>
-inline ss::future<client_context<Output>> transport::send_typed(
-  Input r, uint32_t method_id, rpc::timer_type::time_point timeout) {
+inline ss::future<client_context<Output>>
+transport::send_typed(Input r, uint32_t method_id, rpc::client_opts opts) {
     auto b = std::make_unique<rpc::netbuf>();
     auto raw_b = b.get();
     raw_b->set_service_method_id(method_id);
     return reflection::async_adl<Input>{}
       .to(raw_b->buffer(), std::move(r))
-      .then([this, b = std::move(b), timeout] {
-          return send(std::move(*b), timeout);
-      })
+      .then(
+        [this, b = std::move(b), opts] { return send(std::move(*b), opts); })
       .then([this](std::unique_ptr<streaming_context> sctx) mutable {
           return parse_type<Output>(_in, sctx->get_header())
             .then([sctx = std::move(sctx)](Output o) {

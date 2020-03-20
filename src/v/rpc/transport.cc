@@ -135,7 +135,7 @@ ss::future<> transport::connect() {
 }
 
 ss::future<std::unique_ptr<streaming_context>>
-transport::send(netbuf b, rpc::clock_type::time_point timeout) {
+transport::send(netbuf b, rpc::client_opts opts) {
     // hold invariant of always having a valid connection _and_ a working
     // dispatch gate where we can wait for async futures
     if (!is_valid() || _dispatch_gate.is_closed()) {
@@ -145,7 +145,7 @@ transport::send(netbuf b, rpc::clock_type::time_point timeout) {
             server_address())));
     }
     return ss::with_gate(
-      _dispatch_gate, [this, b = std::move(b), timeout]() mutable {
+      _dispatch_gate, [this, b = std::move(b), opts]() mutable {
           if (_correlations.find(_correlation_idx + 1) != _correlations.end()) {
               _probe.client_correlation_error();
               throw std::runtime_error(
@@ -160,7 +160,7 @@ transport::send(netbuf b, rpc::clock_type::time_point timeout) {
           auto fut = it->get_future();
           b.set_correlation_id(idx);
           _correlations.emplace(idx, std::move(item));
-          it->with_timeout(timeout, [this, idx] {
+          it->with_timeout(opts.timeout, [this, idx] {
               auto it = _correlations.find(idx);
               if (likely(it != _correlations.end())) {
                   rpclog.warn("Request timeout, correlation id: {}", idx);
