@@ -52,6 +52,7 @@ void consensus::do_step_down() {
 
 ss::future<> consensus::stop() {
     _vote_timeout.cancel();
+    _commit_index_updated.broken();
     return _bg.close();
 }
 
@@ -259,20 +260,21 @@ void consensus::arm_vote_timeout() {
     }
 }
 ss::future<> consensus::add_group_member(model::broker node) {
-    return with_semaphore(_op_sem, 1, [this, node = std::move(node)]() mutable {
-        auto cfg = _conf;
-        // check once again under the lock
-        if (!cfg.contains_broker(node.id())) {
-            // New broker
-            // FIXME: Change this so that the node is added to followers
-            //        not the nodes directly
-            cfg.nodes.push_back(std::move(node));
+    return ss::get_units(_op_sem, 1)
+      .then([this, node = std::move(node)](ss::semaphore_units<> u) mutable {
+          auto cfg = _conf;
+          // check once again under the lock
+          if (!cfg.contains_broker(node.id())) {
+              // New broker
+              // FIXME: Change this so that the node is added to followers
+              //        not the nodes directly
+              cfg.nodes.push_back(std::move(node));
 
-            // append new configuration to log
-            return replicate_configuration(std::move(cfg));
-        }
-        return ss::make_ready_future<>();
-    });
+              // append new configuration to log
+              return replicate_configuration(std::move(u), std::move(cfg));
+          }
+          return ss::make_ready_future<>();
+      });
 }
 
 ss::future<> consensus::start() {
@@ -489,7 +491,7 @@ consensus::do_append_entries(append_entries_request&& r) {
 
     // success. copy entries for each subsystem
     using offsets_ret = storage::append_result;
-    return disk_append(std::move(r.batches))
+    return disk_append(std::move(r.batches), allow_flush_after_write::yes)
       .then([this, m = r.meta](offsets_ret ofs) mutable {
           return maybe_update_follower_commit_idx(model::offset(m.commit_index))
             .then([this, m, ofs = std::move(ofs)]() mutable {
@@ -551,7 +553,8 @@ ss::future<> consensus::process_configurations(
       });
 }
 
-ss::future<> consensus::replicate_configuration(group_configuration cfg) {
+ss::future<> consensus::replicate_configuration(
+  ss::semaphore_units<> u, group_configuration cfg) {
     // under the _op_sem lock
     _ctxlog.debug("Replicating group configuration {}", cfg);
     auto batches = details::serialize_configuration_as_batches(std::move(cfg));
@@ -562,7 +565,7 @@ ss::future<> consensus::replicate_configuration(group_configuration cfg) {
       .node_id = _self,
       .meta = _meta,
       .batches = model::make_memory_record_batch_reader(std::move(batches))};
-    return _batcher.do_flush({}, std::move(req));
+    return _batcher.do_flush({}, std::move(req), std::move(u));
 }
 
 append_entries_reply
@@ -576,11 +579,11 @@ consensus::make_append_entries_reply(storage::append_result disk_results) {
     return reply;
 }
 
-ss::future<storage::append_result>
-consensus::disk_append(model::record_batch_reader&& reader) {
+ss::future<storage::append_result> consensus::disk_append(
+  model::record_batch_reader&& reader, allow_flush_after_write allow_flush) {
     using ret_t = storage::append_result;
     return ss::do_with(
-      std::move(reader), [this](model::record_batch_reader& in) {
+      std::move(reader), [this, allow_flush](model::record_batch_reader& in) {
           auto cfg = storage::log_append_config{
             // no fsync explicit on a per write, we verify at the end to
             // batch fsync
@@ -589,7 +592,7 @@ consensus::disk_append(model::record_batch_reader&& reader) {
             model::timeout_clock::now() + _disk_timeout};
 
           return in.consume(_log.make_appender(cfg), cfg.timeout)
-            .then([this](ret_t ret) {
+            .then([this, allow_flush](ret_t ret) {
                 // TODO
                 // if we rolled a log segment. write current configuration for
                 // speedy recovery in the background
@@ -599,7 +602,7 @@ consensus::disk_append(model::record_batch_reader&& reader) {
                 _meta.prev_log_index = ret.last_offset;
                 _meta.prev_log_term = ret.last_term;
 
-                if (_should_fsync) {
+                if (_should_fsync && allow_flush) {
                     return _log.flush().then([ret = std::move(ret), this] {
                         return ss::make_ready_future<ret_t>(std::move(ret));
                     });
@@ -659,7 +662,7 @@ ss::future<> consensus::do_maybe_update_leader_commit_idx() {
         auto range_start = details::next_offset(model::offset(old_commit_idx));
         _ctxlog.trace(
           "Committing entries from {} to {}", range_start, _meta.commit_index);
-
+        _commit_index_updated.broadcast();
         return notify_entries_commited(
           details::next_offset(model::offset(old_commit_idx)),
           model::offset(_meta.commit_index));
@@ -679,7 +682,7 @@ consensus::maybe_update_follower_commit_idx(model::offset request_commit_idx) {
             _meta.commit_index = new_commit_idx;
             _ctxlog.debug(
               "Follower commit index updated {}", _meta.commit_index);
-
+            _commit_index_updated.broadcast();
             return notify_entries_commited(
               details::next_offset(model::offset(previous_commit_idx)),
               model::offset(_meta.commit_index));

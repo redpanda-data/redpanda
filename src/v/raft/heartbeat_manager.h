@@ -57,6 +57,11 @@ private:
     ss::future<> do_dispatch_heartbeats(
       clock_type::time_point last_timeout, clock_type::time_point next_timeout);
 
+    ss::future<> send_heartbeats(
+      clock_type::time_point next_timeout,
+      std::vector<ss::semaphore_units<>>,
+      std::vector<node_heartbeat>);
+
     /// \brief sends a batch to one node
     ss::future<> do_heartbeat(node_heartbeat&&, clock_type::time_point);
 
@@ -80,6 +85,7 @@ private:
     /// this is optimized for traversal + finding
     consensus_set _consensus_groups;
     consensus_client_protocol _client_protocol;
+    ss::semaphore _dispatch_sem{0};
 
     /// In redpanda heartbeats are send independently to append entries requests
     /// this can lead to sending heartbeat more than once per given heartbeat
