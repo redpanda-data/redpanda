@@ -1,0 +1,52 @@
+- hosts: all
+  tasks:
+  - name: ensure /etc/redpanda exists
+    file:
+      path: /etc/redpanda
+      state: directory
+  - name: create default config
+    copy:
+        dest: "/etc/redpanda/redpanda.yaml"
+        content: |
+          organization: "vectorized-test"
+          cluster_id: "vectorized-cluster"
+          pid_file: "/var/lib/redpanda/pid"
+
+          redpanda:
+              data_directory: "/var/lib/redpanda/data"
+              node_id: {{ hostvars[inventory_hostname].id }}
+              rpc_server:
+                  address: "{{ hostvars[inventory_hostname].private_ip }}"
+                  port: 33145
+              kafka_api:
+                  address: "{{ hostvars[inventory_hostname].private_ip }}"
+                  port: 9092
+              admin:
+                  address: "{{ hostvars[inventory_hostname].private_ip }}"
+                  port: 9644
+              seed_servers:
+          {% for host in ansible_play_batch%}
+                - node_id: {{ hostvars[host].id }}
+                  host:
+                    address: "{{ hostvars[host].private_ip }}"
+                    port: 33145
+          {% endfor %}
+
+          rpk:
+              enable_usage_stats: false
+              tune_network: true
+              tune_disk_scheduler: true
+              tune_disk_nomerges: true
+              tune_disk_irq: true
+              tune_cpu: true
+              tune_aio_events: true
+              tune_clocksource: true
+              tune_swappiness: true
+              enable_memory_locking: true
+              tune_coredump: false
+
+              coredump_dir: "/var/lib/redpanda/coredump"
+  - name: restart
+    systemd:
+      name: redpanda
+      state: restarted
