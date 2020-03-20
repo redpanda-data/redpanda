@@ -57,7 +57,7 @@ void server::start() {
 }
 
 // inline to get more context
-[[gnu::always_inline]] void print_exceptional_future(
+static inline void print_exceptional_future(
   server::protocol* proto, ss::future<> f, const char* ctx) {
     try {
         f.get();
