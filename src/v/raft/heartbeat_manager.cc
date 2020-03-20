@@ -16,6 +16,32 @@ ss::logger hbeatlog{"r/heartbeat"};
 using consensus_ptr = heartbeat_manager::consensus_ptr;
 using consensus_set = heartbeat_manager::consensus_set;
 
+static ss::future<std::vector<ss::semaphore_units<>>>
+locks_for_range(const consensus_set& c) {
+    using units_t = ss::semaphore_units<>;
+    using opt_t = std::optional<units_t>;
+
+    return ss::map_reduce(
+      std::cbegin(c),
+      std::cend(c),
+      [](consensus_ptr ptr) {
+          if (!ptr->is_leader()) {
+              // we are only interested in leaders
+              return ss::make_ready_future<opt_t>();
+          }
+          return ptr->op_lock_unit().then([ptr](units_t u) {
+              return std::make_optional<units_t>(std::move(u));
+          });
+      },
+      std::vector<units_t>{},
+      [](std::vector<units_t> locks, opt_t u) {
+          if (u) {
+              locks.push_back(std::move(*u));
+          }
+          return std::move(locks);
+      });
+}
+
 static std::vector<heartbeat_manager::node_heartbeat> requests_for_range(
   const consensus_set& c,
   clock_type::time_point last_heartbeat,
@@ -76,16 +102,39 @@ heartbeat_manager::heartbeat_manager(
     _heartbeat_timer.set_callback([this] { dispatch_heartbeats(); });
 }
 
+ss::future<> heartbeat_manager::send_heartbeats(
+  clock_type::time_point next_timeout,
+  std::vector<ss::semaphore_units<>> locks,
+  std::vector<node_heartbeat> reqs) {
+    return ss::do_with(
+             std::move(reqs),
+             [this, next_timeout, u = std::move(locks)](
+               std::vector<node_heartbeat>& reqs) mutable {
+                 std::vector<ss::future<>> futures;
+                 futures.reserve(reqs.size());
+                 for (auto& r : reqs) {
+                     futures.push_back(
+                       do_heartbeat(std::move(r), next_timeout));
+                 }
+                 return _dispatch_sem.wait(reqs.size())
+                   .then([u = std::move(u), f = std::move(futures)]() mutable {
+                       return std::move(f);
+                   });
+             })
+      .then([](std::vector<ss::future<>> f) {
+          return ss::when_all_succeed(f.begin(), f.end());
+      });
+}
+
 ss::future<> heartbeat_manager::do_dispatch_heartbeats(
   clock_type::time_point last_timeout, clock_type::time_point next_timeout) {
-    auto reqs = requests_for_range(
-      _consensus_groups, last_timeout, _skip_hbeat_threshold);
-    return ss::do_with(
-      std::move(reqs), [this, next_timeout](std::vector<node_heartbeat>& reqs) {
-          return ss::parallel_for_each(
-            reqs.begin(), reqs.end(), [this, next_timeout](node_heartbeat& r) {
-                return do_heartbeat(std::move(r), next_timeout);
-            });
+    return locks_for_range(_consensus_groups)
+      .then([this, last_timeout, next_timeout](
+              std::vector<ss::semaphore_units<>> locks) {
+          auto reqs = requests_for_range(
+            _consensus_groups, last_timeout, _skip_hbeat_threshold);
+          return send_heartbeats(
+            next_timeout, std::move(locks), std::move(reqs));
       });
 }
 
@@ -96,12 +145,13 @@ ss::future<> heartbeat_manager::do_heartbeat(
     for (size_t i = 0; i < groups.size(); ++i) {
         groups[i] = group_id(r.request.meta[i].group);
     }
-    return _client_protocol
-      .heartbeat(r.target, std::move(r.request), rpc::client_opts(next_timeout))
-      .then([node = r.target, groups = std::move(groups), this](
-              result<heartbeat_reply> ret) mutable {
-          process_reply(node, std::move(groups), std::move(ret));
-      });
+    auto f = _client_protocol.heartbeat(
+      r.target, std::move(r.request), rpc::client_opts(next_timeout));
+    _dispatch_sem.signal();
+    return f.then([node = r.target, groups = std::move(groups), this](
+                    result<heartbeat_reply> ret) mutable {
+        process_reply(node, std::move(groups), std::move(ret));
+    });
 }
 
 void heartbeat_manager::process_reply(

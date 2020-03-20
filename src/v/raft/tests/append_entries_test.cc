@@ -153,7 +153,13 @@ FIXTURE_TEST(test_recovery_of_crashed_leader_truncation, raft_test_fixture) {
     }
     // append some entries to leader log
     auto leader_raft = gr.get_member(first_leader_id).consensus;
-    auto res = leader_raft->replicate(random_batches_entry(2)).get0();
+    auto f = leader_raft->replicate(random_batches_entry(2));
+    // since replicate doesn't accept timeout client have to deal with it.
+    auto v = ss::with_timeout(model::timeout_clock::now() + 1s, std::move(f))
+               .handle_exception_type([](const ss::timed_out_error&) {
+                   return result<raft::replicate_result>(raft::errc::timeout);
+               })
+               .get0();
 
     // shut down the leader
     gr.disable_node(first_leader_id);
@@ -168,7 +174,7 @@ FIXTURE_TEST(test_recovery_of_crashed_leader_truncation, raft_test_fixture) {
 
     // append some entries via new leader so old one has some data to
     // truncate
-    res = leader_raft->replicate(random_batches_entry(2)).get0();
+    auto res = leader_raft->replicate(random_batches_entry(2)).get0();
 
     validate_logs_replication(gr);
 
