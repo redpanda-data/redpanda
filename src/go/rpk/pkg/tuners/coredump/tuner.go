@@ -14,7 +14,7 @@ import (
 const (
 	corePatternFilePath string = "/proc/sys/kernel/core_pattern"
 	scriptFilePath      string = "/var/lib/redpanda/save_coredump"
-	coredumpPattern     string = "| " + scriptFilePath + " %e %t %p"
+	coredumpPattern     string = "|" + scriptFilePath + " %e %t %p"
 	coredumpScriptTmpl  string = `#!/bin/bash
 set -o errexit
 set -o nounset
