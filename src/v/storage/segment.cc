@@ -156,7 +156,9 @@ ss::future<append_result> segment::append(model::record_batch b) {
             if (b.header().ctx.owner_shard == ss::this_shard_id()) {
                 cache_put(std::move(b));
             } else {
-                // TODO: copy the batch and put in the batch
+                // not in our core, so we cannot hold onto the memory
+                // must copy and put into cache
+                cache_put(b.copy());
             }
             return ret;
         });
