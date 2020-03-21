@@ -29,7 +29,7 @@ rp_test(
   BINARY_NAME rpc_serialization_tests
   SOURCES serialization_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
-  LIBRARIES Boost::unit_test_framework v::rpc
+  LIBRARIES Seastar::seastar_testing v::rpc
   LABELS rpc
 )
 rp_test(
