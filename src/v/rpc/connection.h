@@ -19,17 +19,22 @@ public:
       ss::connected_socket f,
       ss::socket_address a,
       server_probe& p);
-    ~connection();
+    ~connection() noexcept;
     connection(const connection&) = delete;
+    connection& operator=(const connection&) = delete;
+    connection(connection&&) noexcept = default;
+    connection& operator=(connection&&) noexcept = delete;
+
     ss::input_stream<char>& input() { return _in; }
     ss::future<> write(ss::scattered_message<char> msg);
     ss::future<> shutdown();
     void shutdown_input();
 
+    // NOLINTNEXTLINE
     const ss::socket_address addr;
 
 private:
-    std::reference_wrapper<boost::intrusive::list<connection>> _hook;
+    boost::intrusive::list<connection>& _hook;
     ss::connected_socket _fd;
     ss::input_stream<char> _in;
     batched_output_stream _out;
