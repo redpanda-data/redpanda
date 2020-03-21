@@ -19,7 +19,8 @@ from absl import logging
 # note that the crc that is stored is the crc reported by kafka which happens to
 # be computed over the big endian encoding of the same data. thus to verify the
 # crc we need to rebuild part of the header in big endian before adding to crc.
-HDR_FMT_RP_PREFIX = "<iqbI"
+HDR_FMT_RP_PREFIX_NO_CRC = "iqbi"
+HDR_FMT_RP_PREFIX = "<I" + HDR_FMT_RP_PREFIX_NO_CRC
 
 # below the crc redpanda and kafka have the same layout
 #   - little endian encoded
@@ -30,14 +31,20 @@ HDR_FMT_RP = HDR_FMT_RP_PREFIX + HDR_FMT_CRC
 HEADER_SIZE = struct.calcsize(HDR_FMT_RP)
 
 Header = collections.namedtuple(
-    'Header',
-    ('batch_size', 'base_offset', 'type', 'crc', 'attrs', 'delta', 'first_ts',
-     'max_ts', 'producer_id', 'producer_epoch', 'base_seq', 'record_count'))
+    'Header', ('header_crc', 'batch_size', 'base_offset', 'type', 'crc',
+               'attrs', 'delta', 'first_ts', 'max_ts', 'producer_id',
+               'producer_epoch', 'base_seq', 'record_count'))
 
 
 class Batch:
     def __init__(self, header, records):
         self.header = header
+
+        header_crc_bytes = struct.pack(
+            "<" + HDR_FMT_RP_PREFIX_NO_CRC + HDR_FMT_CRC, *self.header[1:])
+        header_crc = crc32c.crc32(header_crc_bytes)
+        assert self.header.header_crc == header_crc
+
         crc = crc32c.crc32(self._crc_header_be_bytes())
         crc = crc32c.crc32(records, crc)
         assert self.header.crc == crc
@@ -47,7 +54,7 @@ class Batch:
 
     def _crc_header_be_bytes(self):
         # encode header back to big-endian for crc calculation
-        return struct.pack(">" + HDR_FMT_CRC, *self.header[4:])
+        return struct.pack(">" + HDR_FMT_CRC, *self.header[5:])
 
     @staticmethod
     def from_file(f):
