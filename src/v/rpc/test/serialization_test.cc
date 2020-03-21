@@ -1,25 +1,23 @@
-#define BOOST_TEST_MODULE rpc
-
 #include "bytes/iobuf.h"
 #include "reflection/adl.h"
 #include "reflection/arity.h"
 #include "rpc/test/test_types.h"
 
-#include <boost/test/unit_test.hpp>
+#include <seastar/testing/thread_test_case.hh>
 
-BOOST_AUTO_TEST_CASE(serialize_pod) {
+SEASTAR_THREAD_TEST_CASE(serialize_pod) {
     auto b = iobuf();
     pod it;
     reflection::serialize(b, std::move(it));
     BOOST_CHECK_EQUAL(b.size_bytes(), pod_bytes());
 }
 
-BOOST_AUTO_TEST_CASE(verify_airty) {
+SEASTAR_THREAD_TEST_CASE(verify_airty) {
     BOOST_CHECK_EQUAL(reflection::arity<pod>(), 3);
     BOOST_CHECK_EQUAL(reflection::arity<complex_custom>(), 2);
 }
 
-BOOST_AUTO_TEST_CASE(serialize_with_fragmented_buffer) {
+SEASTAR_THREAD_TEST_CASE(serialize_with_fragmented_buffer) {
     // Each field of a pod struct is serialized by it's type
     // So the total bytes written for a given type T is the sum:
     // sizeof(member1) + .... + sizeof(member n) + sizeof(blob)
@@ -33,21 +31,21 @@ BOOST_AUTO_TEST_CASE(serialize_with_fragmented_buffer) {
     BOOST_CHECK_EQUAL(b.size_bytes(), 55 + complex_custom_bytes());
 }
 
-BOOST_AUTO_TEST_CASE(serialize_pod_with_vector) {
+SEASTAR_THREAD_TEST_CASE(serialize_pod_with_vector) {
     auto b = iobuf();
     pod_with_vector it;
     reflection::serialize(b, std::move(it));
     BOOST_CHECK_EQUAL(b.size_bytes(), pod_with_vector_bytes());
 }
 
-BOOST_AUTO_TEST_CASE(serialize_pod_with_array) {
+SEASTAR_THREAD_TEST_CASE(serialize_pod_with_array) {
     auto b = iobuf();
     pod_with_array it;
     reflection::serialize(b, std::move(it));
     BOOST_CHECK_EQUAL(b.size_bytes(), pod_with_arr_bytes());
 }
 
-BOOST_AUTO_TEST_CASE(serialize_sstring_vector) {
+SEASTAR_THREAD_TEST_CASE(serialize_sstring_vector) {
     auto b = iobuf();
     test_rpc_header it;
     kv x;

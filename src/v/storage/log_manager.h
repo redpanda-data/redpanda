@@ -148,6 +148,9 @@ private:
     logs_type _logs;
     batch_cache _batch_cache;
     ss::gate _open_gate;
+
+    friend std::ostream& operator<<(std::ostream&, const log_manager&);
 };
 std::ostream& operator<<(std::ostream& o, log_manager::storage_type t);
+std::ostream& operator<<(std::ostream& o, const log_config&);
 } // namespace storage

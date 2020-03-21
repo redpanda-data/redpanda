@@ -35,6 +35,9 @@ std::ostream& operator<<(std::ostream& os, const compression& c) {
     case compression::zstd:
         os << "zstd";
         break;
+    default:
+        os << "ERROR";
+        break;
     }
     return os << "}";
 }
@@ -72,7 +75,7 @@ std::ostream& operator<<(std::ostream& os, timestamp_type ts) {
     case timestamp_type::create_time:
         return os << "{create_time}";
     }
-    throw std::runtime_error("Unknown timestamp type");
+    return os << "{unknown timestamp:" << static_cast<int>(ts) << "}";
 }
 
 std::ostream& operator<<(std::ostream& o, const record_header& h) {
@@ -100,8 +103,14 @@ std::ostream& operator<<(std::ostream& o, const record& r) {
 
 std::ostream&
 operator<<(std::ostream& o, const record_batch_attributes& attrs) {
-    return o << "{compression:" << attrs.compression()
-             << ",type=" << attrs.timestamp_type() << "}";
+    o << "{compression:";
+    if (attrs.is_valid_compression()) {
+        // this method... sadly, just throws
+        o << attrs.compression();
+    } else {
+        o << "invalid compression";
+    }
+    return o << ", type:" << attrs.timestamp_type() << "}";
 }
 
 std::ostream& operator<<(std::ostream& o, const record_batch_header& h) {

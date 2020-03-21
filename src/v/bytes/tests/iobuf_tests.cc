@@ -9,13 +9,13 @@
 #include <boost/test/unit_test.hpp>
 #include <fmt/format.h>
 
-BOOST_AUTO_TEST_CASE(test_appended_data_is_retained) {
+SEASTAR_THREAD_TEST_CASE(test_appended_data_is_retained) {
     iobuf buf;
     append_sequence(buf, 5);
     BOOST_CHECK_EQUAL(buf.size_bytes(), (5 * characters_per_append));
 }
 
-BOOST_AUTO_TEST_CASE(test_move_assignment) {
+SEASTAR_THREAD_TEST_CASE(test_move_assignment) {
     iobuf buf;
     append_sequence(buf, 7);
 
@@ -27,7 +27,7 @@ BOOST_AUTO_TEST_CASE(test_move_assignment) {
     BOOST_REQUIRE(buf2.size_bytes() == 7 * characters_per_append);
 }
 
-BOOST_AUTO_TEST_CASE(test_move_constructor) {
+SEASTAR_THREAD_TEST_CASE(test_move_constructor) {
     iobuf buf;
     append_sequence(buf, 5);
 
@@ -36,13 +36,13 @@ BOOST_AUTO_TEST_CASE(test_move_constructor) {
     BOOST_REQUIRE(buf2.size_bytes() == 5 * characters_per_append);
 }
 
-BOOST_AUTO_TEST_CASE(test_size) {
+SEASTAR_THREAD_TEST_CASE(test_size) {
     iobuf buf;
     append_sequence(buf, 5);
     BOOST_REQUIRE_EQUAL(buf.size_bytes(), characters_per_append * 5);
 }
 
-BOOST_AUTO_TEST_CASE(test_fragment_iteration) {
+SEASTAR_THREAD_TEST_CASE(test_fragment_iteration) {
     size_t count = 52;
 
     iobuf buf;
@@ -55,7 +55,7 @@ BOOST_AUTO_TEST_CASE(test_fragment_iteration) {
     BOOST_CHECK_EQUAL(buf.size_bytes(), buf2.size_bytes());
 }
 
-BOOST_AUTO_TEST_CASE(test_writing_placeholders) {
+SEASTAR_THREAD_TEST_CASE(test_writing_placeholders) {
     iobuf buf;
     ss::sstring s = "hello world";
     const int32_t val = 55;
@@ -70,13 +70,13 @@ BOOST_AUTO_TEST_CASE(test_writing_placeholders) {
     BOOST_REQUIRE_EQUAL(buf.size_bytes(), 15);
 }
 
-BOOST_AUTO_TEST_CASE(test_temporary_buffs) {
+SEASTAR_THREAD_TEST_CASE(test_temporary_buffs) {
     iobuf buf;
     ss::temporary_buffer<char> x(55);
     buf.append(std::move(x));
     BOOST_REQUIRE(buf.size_bytes() == 55);
 }
-BOOST_AUTO_TEST_CASE(test_empty_istream) {
+SEASTAR_THREAD_TEST_CASE(test_empty_istream) {
     auto fbuf = iobuf();
     auto in = iobuf::iterator_consumer(fbuf.cbegin(), fbuf.cend());
     BOOST_CHECK_EQUAL(in.bytes_consumed(), 0);
@@ -87,7 +87,7 @@ BOOST_AUTO_TEST_CASE(test_empty_istream) {
     BOOST_CHECK_THROW(in.consume_to(1, b.begin()), std::out_of_range);
     in.consume_to(0, b.begin());
 }
-BOOST_AUTO_TEST_CASE(test_read_pod) {
+SEASTAR_THREAD_TEST_CASE(test_read_pod) {
     struct pod {
         int x = -1;
         int y = -33;
@@ -107,7 +107,7 @@ BOOST_AUTO_TEST_CASE(test_read_pod) {
     BOOST_CHECK_THROW(in.consume_type<pod>(), std::out_of_range);
 }
 
-BOOST_AUTO_TEST_CASE(test_consume_to) {
+SEASTAR_THREAD_TEST_CASE(test_consume_to) {
     // read 75 bytes * i number of times
     // cumulative
     auto fbuf = iobuf();
@@ -123,7 +123,7 @@ BOOST_AUTO_TEST_CASE(test_consume_to) {
         BOOST_CHECK_EQUAL(in.bytes_consumed(), fbuf.size_bytes());
     }
 }
-BOOST_AUTO_TEST_CASE(test_linearization) {
+SEASTAR_THREAD_TEST_CASE(test_linearization) {
     // read 75 bytes * i number of times
     // cumulative
     auto fbuf = iobuf();
@@ -141,7 +141,7 @@ BOOST_AUTO_TEST_CASE(test_linearization) {
     BOOST_CHECK_EQUAL(in.bytes_consumed(), fbuf.size_bytes());
     BOOST_CHECK_EQUAL(ph.remaining_size(), 0);
 }
-BOOST_AUTO_TEST_CASE(share_with_byte_comparator) {
+SEASTAR_THREAD_TEST_CASE(share_with_byte_comparator) {
     auto fbuf = iobuf();
     for (size_t i = 1; i < 10; ++i) {
         ss::temporary_buffer<char> x(136);
@@ -150,7 +150,7 @@ BOOST_AUTO_TEST_CASE(share_with_byte_comparator) {
     }
     BOOST_CHECK_EQUAL(fbuf.share(0, fbuf.size_bytes()), fbuf);
 }
-BOOST_AUTO_TEST_CASE(copy_iobuf_equality_comparator) {
+SEASTAR_THREAD_TEST_CASE(copy_iobuf_equality_comparator) {
     auto fbuf = iobuf();
     for (size_t i = 1; i < 10; ++i) {
         ss::temporary_buffer<char> x(136);
@@ -160,7 +160,7 @@ BOOST_AUTO_TEST_CASE(copy_iobuf_equality_comparator) {
     auto fbuf2 = fbuf.copy();
     BOOST_CHECK_EQUAL(fbuf, fbuf2);
 }
-BOOST_AUTO_TEST_CASE(gen_bytes_view) {
+SEASTAR_THREAD_TEST_CASE(gen_bytes_view) {
     auto fbuf = iobuf();
     auto b = random_generators::get_bytes();
     auto bv = bytes_view(b);
@@ -170,7 +170,7 @@ BOOST_AUTO_TEST_CASE(gen_bytes_view) {
     fbuf.append(reinterpret_cast<const char*>(b.data()), b.size());
     BOOST_CHECK_EQUAL(fbuf.size_bytes(), (2 * 128 * 1024) + sizeof(x));
 }
-BOOST_AUTO_TEST_CASE(traver_all_bytes_one_at_a_time) {
+SEASTAR_THREAD_TEST_CASE(traver_all_bytes_one_at_a_time) {
     auto io = iobuf();
     const char* str = "alex";
     io.append(str, std::strlen(str));
@@ -195,20 +195,20 @@ BOOST_AUTO_TEST_CASE(traver_all_bytes_one_at_a_time) {
     }
     BOOST_CHECK_EQUAL(str, expected.data());
 }
-BOOST_AUTO_TEST_CASE(not_equal_by_size) {
+SEASTAR_THREAD_TEST_CASE(not_equal_by_size) {
     auto a = iobuf();
     auto b = iobuf();
     a.append("a", 1);
     b.append("b", 1);
     BOOST_CHECK(a != b);
 }
-BOOST_AUTO_TEST_CASE(test_prepend) {
+SEASTAR_THREAD_TEST_CASE(test_prepend) {
     auto a = iobuf();
     a.append("a", 1);
     a.prepend(ss::temporary_buffer<char>(1));
     BOOST_CHECK_EQUAL(a.size_bytes(), 2);
 }
-BOOST_AUTO_TEST_CASE(append_each_other) {
+SEASTAR_THREAD_TEST_CASE(append_each_other) {
     ss::temporary_buffer<char> buf(100);
     auto a = iobuf();
     auto b = iobuf();
@@ -226,7 +226,7 @@ SEASTAR_THREAD_TEST_CASE(iobuf_cross_shard) {
     auto f = ss::smp::submit_to(shard, [data] {
         iobuf src;
         src.append(data.data(), data.size());
-        return src;
+        return std::move(iobuf_share_foreign_n(std::move(src), 1).back());
     });
     auto from = f.get0();
     BOOST_REQUIRE(from.size_bytes() == data.size());
@@ -263,7 +263,7 @@ SEASTAR_THREAD_TEST_CASE(iobuf_foreign_copy) {
       .get();
 }
 
-BOOST_AUTO_TEST_CASE(share) {
+SEASTAR_THREAD_TEST_CASE(share) {
     const auto data = random_generators::gen_alphanum_string(1024);
 
     iobuf buf;
@@ -284,7 +284,7 @@ BOOST_AUTO_TEST_CASE(share) {
     }
 }
 
-BOOST_AUTO_TEST_CASE(iterator_relationships) {
+SEASTAR_THREAD_TEST_CASE(iterator_relationships) {
     iobuf buf;
     BOOST_REQUIRE(buf.begin() == buf.end());
     BOOST_REQUIRE(buf.cbegin() == buf.cend());
@@ -296,7 +296,7 @@ BOOST_AUTO_TEST_CASE(iterator_relationships) {
     BOOST_REQUIRE(std::next(buf.cbegin()) == buf.cend());
 }
 
-BOOST_AUTO_TEST_CASE(is_finished) {
+SEASTAR_THREAD_TEST_CASE(is_finished) {
     iobuf buf;
     auto in0 = iobuf::iterator_consumer(buf.cbegin(), buf.cend());
     BOOST_CHECK(in0.is_finished());
@@ -310,7 +310,7 @@ BOOST_AUTO_TEST_CASE(is_finished) {
     BOOST_CHECK(in1.is_finished());
 }
 
-BOOST_AUTO_TEST_CASE(iobuf_as_scattered_message) {
+SEASTAR_THREAD_TEST_CASE(iobuf_as_scattered_message) {
     const auto b = random_generators::gen_alphanum_string(512);
     for (size_t size = 0; size < b.size(); size++) {
         iobuf buf;
@@ -324,7 +324,7 @@ BOOST_AUTO_TEST_CASE(iobuf_as_scattered_message) {
         BOOST_TEST(std::memcmp(frag.base, b.data(), size) == 0);
     }
 }
-BOOST_AUTO_TEST_CASE(iobuf_as_ostream_basic) {
+SEASTAR_THREAD_TEST_CASE(iobuf_as_ostream_basic) {
     const auto b = random_generators::gen_alphanum_string(512);
     iobuf underlying;
     iobuf_ostreambuf obuf(underlying);
@@ -333,7 +333,7 @@ BOOST_AUTO_TEST_CASE(iobuf_as_ostream_basic) {
     BOOST_REQUIRE_EQUAL(underlying.size_bytes(), 12);
 }
 
-BOOST_AUTO_TEST_CASE(iobuf_as_ostream) {
+SEASTAR_THREAD_TEST_CASE(iobuf_as_ostream) {
     const auto b = random_generators::gen_alphanum_string(512);
     iobuf underlying;
     iobuf_ostreambuf obuf(underlying);

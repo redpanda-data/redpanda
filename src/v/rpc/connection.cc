@@ -14,10 +14,10 @@ connection::connection(
   , _in(_fd.input())
   , _out(_fd.output())
   , _probe(p) {
-    _hook.get().push_back(*this);
+    _hook.push_back(*this);
     _probe.connection_established();
 }
-connection::~connection() { _hook.get().erase(_hook.get().iterator_to(*this)); }
+connection::~connection() noexcept { _hook.erase(_hook.iterator_to(*this)); }
 
 void connection::shutdown_input() {
     try {

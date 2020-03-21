@@ -383,4 +383,18 @@ std::ostream& operator<<(std::ostream& o, log_manager::storage_type t) {
     }
     return o << "{unknown-storage-type}";
 }
+
+std::ostream& operator<<(std::ostream& o, const log_config& c) {
+    return o << "{base_dir:" << c.base_dir
+             << ", max_segment.size:" << c.max_segment_size
+             << ", should_sanitize:" << c.should_sanitize
+             << ", compaction_interval_ms:" << c.compaction_interval.count()
+             << ", disable_cache:" << c.disable_cache << "}";
+}
+std::ostream& operator<<(std::ostream& o, const log_manager& m) {
+    return o << "{config:" << m._config << ", logs.size:" << m._logs.size()
+             << ", cache:" << m._batch_cache
+             << ", compaction_timer.armed:" << m._compaction_timer.armed()
+             << "}";
+}
 } // namespace storage
