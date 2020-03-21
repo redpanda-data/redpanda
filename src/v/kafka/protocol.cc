@@ -90,6 +90,10 @@ ss::future<> protocol::connection_context::dispatch_method_once(
     }
     return fut.then([this, header = std::move(hdr), size](
                       ss::semaphore_units<> units) mutable {
+        if (_rs.abort_requested()) {
+            // protect against shutdown behavior
+            return ss::make_ready_future<>();
+        }
         // update the throughput tracker for this client using the
         // size of the current request and return any computed delay
         // to apply for quota throttling.
@@ -119,6 +123,10 @@ ss::future<> protocol::connection_context::dispatch_method_once(
                      header = std::move(header),
                      units = std::move(units),
                      delay = delay](iobuf buf) mutable {
+                  if (_rs.abort_requested()) {
+                      // _proto._cntrl etc might not be alive
+                      return;
+                  }
                   auto rctx = request_context(
                     _proto._metadata_cache,
                     _proto._cntrl_dispatcher.local(),
