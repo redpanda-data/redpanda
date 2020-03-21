@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 	"vectorized/pkg/config"
 
@@ -83,7 +84,7 @@ func TestModeCommand(t *testing.T) {
 	}{
 		{
 			name: "development mode should disable all fields in the rpk config",
-			args: []string{"development", "--redpanda-cfg", configPath},
+			args: []string{"development", "--config", configPath},
 			fs:   afero.NewMemMapFs(),
 			before: func(fs afero.Fs) (string, error) {
 				bs, err := yaml.Marshal(getValidConfig(configPath, true))
@@ -93,12 +94,12 @@ func TestModeCommand(t *testing.T) {
 				return configPath, afero.WriteFile(fs, configPath, bs, 0644)
 			},
 			expectedConfig: getValidConfig(configPath, false),
-			expectedOutput: fmt.Sprintf("Writing 'development' mode defaults to '%s'\n", configPath),
+			expectedOutput: fmt.Sprintf("Writing 'development' mode defaults to '%s'", configPath),
 			expectedErrMsg: "",
 		},
 		{
 			name: "production mode should enable all fields in the rpk config",
-			args: []string{"production", "--redpanda-cfg", configPath},
+			args: []string{"production", "--config", configPath},
 			fs:   afero.NewMemMapFs(),
 			before: func(fs afero.Fs) (string, error) {
 				bs, err := yaml.Marshal(getValidConfig(configPath, false))
@@ -108,12 +109,12 @@ func TestModeCommand(t *testing.T) {
 				return configPath, afero.WriteFile(fs, configPath, bs, 0644)
 			},
 			expectedConfig: getValidConfig(configPath, true),
-			expectedOutput: fmt.Sprintf("Writing 'production' mode defaults to '%s'\n", configPath),
+			expectedOutput: fmt.Sprintf("Writing 'production' mode defaults to '%s'", configPath),
 			expectedErrMsg: "",
 		},
 		{
 			name: "the development mode alias, 'dev', should work the same",
-			args: []string{"dev", "--redpanda-cfg", configPath},
+			args: []string{"dev", "--config", configPath},
 			fs:   afero.NewMemMapFs(),
 			before: func(fs afero.Fs) (string, error) {
 				bs, err := yaml.Marshal(getValidConfig(configPath, true))
@@ -123,12 +124,12 @@ func TestModeCommand(t *testing.T) {
 				return configPath, afero.WriteFile(fs, configPath, bs, 0644)
 			},
 			expectedConfig: getValidConfig(configPath, false),
-			expectedOutput: fmt.Sprintf("Writing 'dev' mode defaults to '%s'\n", configPath),
+			expectedOutput: fmt.Sprintf("Writing 'dev' mode defaults to '%s'", configPath),
 			expectedErrMsg: "",
 		},
 		{
 			name: "the production mode alias, 'prod', should work the same",
-			args: []string{"prod", "--redpanda-cfg", configPath},
+			args: []string{"prod", "--config", configPath},
 			fs:   afero.NewMemMapFs(),
 			before: func(fs afero.Fs) (string, error) {
 				bs, err := yaml.Marshal(getValidConfig(configPath, false))
@@ -138,11 +139,11 @@ func TestModeCommand(t *testing.T) {
 				return configPath, afero.WriteFile(fs, configPath, bs, 0644)
 			},
 			expectedConfig: getValidConfig(configPath, true),
-			expectedOutput: fmt.Sprintf("Writing 'prod' mode defaults to '%s'\n", configPath),
+			expectedOutput: fmt.Sprintf("Writing 'prod' mode defaults to '%s'", configPath),
 			expectedErrMsg: "",
 		},
 		{
-			name: "mode should work if --redpanda-cfg isn't passed, but the file is in /etc/redpanda/redpanda.yaml",
+			name: "mode should work if --config isn't passed, but the file is in /etc/redpanda/redpanda.yaml",
 			args: []string{"prod"},
 			fs:   afero.NewMemMapFs(),
 			before: func(fs afero.Fs) (string, error) {
@@ -153,25 +154,7 @@ func TestModeCommand(t *testing.T) {
 				return configPath, afero.WriteFile(fs, configPath, bs, 0644)
 			},
 			expectedConfig: getValidConfig(configPath, true),
-			expectedOutput: fmt.Sprintf("Writing 'prod' mode defaults to '%s'\n", configPath),
-			expectedErrMsg: "",
-		},
-		{
-			name: "mode should work if --redpanda-cfg isn't passed, but the file is in the current dir",
-			args: []string{"development"},
-			fs:   afero.NewMemMapFs(),
-			before: func(fs afero.Fs) (string, error) {
-				bs, err := yaml.Marshal(getValidConfig(wdConfigPath, false))
-				if err != nil {
-					return "", err
-				}
-				return wdConfigPath, afero.WriteFile(fs, wdConfigPath, bs, 0644)
-			},
-			expectedConfig: getValidConfig(wdConfigPath, false),
-			expectedOutput: (func() string {
-				dir, _ := os.Getwd()
-				return fmt.Sprintf("Writing 'development' mode defaults to '%s/redpanda.yaml'\n", dir)
-			})(),
+			expectedOutput: fmt.Sprintf("Writing 'prod' mode defaults to '%s'", configPath),
 			expectedErrMsg: "",
 		},
 		{
@@ -206,15 +189,15 @@ func TestModeCommand(t *testing.T) {
 				t.Errorf("expected error message:\n%v\ngot:\n%v", tt.expectedErrMsg, err.Error())
 			}
 			output := out.String()
-			if tt.expectedOutput != output {
-				t.Errorf("expected output:\n\"%v\"\ngot:\n\"%v\"", tt.expectedOutput, output)
+			if !strings.Contains(strings.TrimSpace(output), tt.expectedOutput) {
+				t.Fatalf("expected output:\n\"%s\"\nto contain\n\"%s\"", output, tt.expectedOutput)
 			}
 			conf, err := config.ReadConfigFromPath(tt.fs, path)
 			if err != nil {
-				t.Errorf("got an unexpected error while reading the %s: %v", configPath, err)
+				t.Fatalf("got an unexpected error while reading the %s: %v", configPath, err)
 			}
 			if !reflect.DeepEqual(conf, &tt.expectedConfig) {
-				t.Errorf("got %v, expected %v", conf, tt.expectedConfig)
+				t.Fatalf("got %v, expected %v", conf, tt.expectedConfig)
 			}
 		})
 	}
