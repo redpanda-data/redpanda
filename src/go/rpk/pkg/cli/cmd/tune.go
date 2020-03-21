@@ -1,11 +1,12 @@
 package cmd
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"time"
-	"vectorized/pkg/cli"
 	"vectorized/pkg/config"
 	"vectorized/pkg/tuners/factory"
 	"vectorized/pkg/tuners/hwloc"
@@ -20,10 +21,11 @@ import (
 func NewTuneCommand(fs afero.Fs) *cobra.Command {
 	tunerParams := factory.TunerParams{}
 	var (
-		redpandaConfigFile string
-		outTuneScriptFile  string
-		cpuSet             string
-		timeout            time.Duration
+		configFile        string
+		outTuneScriptFile string
+		cpuSet            string
+		timeout           time.Duration
+		interactive       bool
 	)
 	command := &cobra.Command{
 		Use: "tune <list_of_elements_to_tune>",
@@ -48,8 +50,8 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 			}
 			return nil
 		},
-		RunE: func(_ *cobra.Command, args []string) error {
-			if !tunerParamsEmpty(&tunerParams) && redpandaConfigFile != "" {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !tunerParamsEmpty(&tunerParams) && configFile != "" {
 				return errors.New("Use either tuner params or redpanda config file")
 			}
 			var tuners []string
@@ -63,13 +65,25 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 				return err
 			}
 			tunerParams.CpuMask = cpuMask
-			configFile, err := cli.GetOrFindConfig(fs, redpandaConfigFile)
+			conf, err := config.ReadOrGenerate(fs, configFile)
 			if err != nil {
-				return err
-			}
-			conf, err := config.ReadConfigFromPath(fs, configFile)
-			if err != nil {
-				return err
+				log.Debug(err)
+				if interactive {
+					msg := fmt.Sprintf(
+						`Couldn't read or generate the config at %s.
+Would you like to continue with the default configuration?`,
+						configFile,
+					)
+					confirmed, cerr := promptConfirmation(msg, cmd.InOrStdin())
+					if cerr != nil {
+						return cerr
+					}
+					if !confirmed {
+						return nil
+					}
+				}
+				defaultConf := config.DefaultConfig()
+				conf = &defaultConf
 			}
 			var tunerFactory factory.TunersFactory
 			if outTuneScriptFile != "" {
@@ -103,9 +117,13 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 	command.Flags().BoolVar(&tunerParams.RebootAllowed,
 		"reboot-allowed", false, "If set will allow tuners to tune boot paramters "+
 			" and request system reboot")
-	command.Flags().StringVar(&redpandaConfigFile,
-		"redpanda-cfg", "", "If set, pointed redpanda config file will be used "+
-			"to populate tuner parameters")
+	command.Flags().StringVar(
+		&configFile,
+		"config",
+		config.DefaultConfig().ConfigFile,
+		"Redpanda config file, if not set the file will be searched for"+
+			" in the default locations",
+	)
 	command.Flags().StringVar(&outTuneScriptFile,
 		"output-script", "", "If set tuners will generate tuning file that "+
 			"can later be used to tune the system")
@@ -118,8 +136,40 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 			"fraction and a unit suffix, such as '300ms', '1.5s' or '2h45m'. "+
 			"Valid time units are 'ns', 'us' (or 'µs'), 'ms', 's', 'm', 'h'",
 	)
+	command.Flags().BoolVar(
+		&interactive,
+		"interactive",
+		false,
+		"Ask for confirmation on every step (e.g. tuner execution,"+
+			" configuration generation)",
+	)
 	command.AddCommand(newHelpCommand())
 	return command
+}
+
+func promptConfirmation(msg string, in io.Reader) (bool, error) {
+	scanner := bufio.NewScanner(in)
+	for {
+		log.Info(fmt.Sprintf("%s (y/n/q)", msg))
+		scanner.Scan()
+		log.Info(scanner.Text())
+		if scanner.Err() != nil {
+			return false, scanner.Err()
+		}
+		text := strings.ToLower(scanner.Text())
+		switch text {
+		case "y":
+			return true, nil
+		case "n":
+			return false, nil
+		case "q":
+			return false, errors.New("user exited")
+		default:
+			log.Infof("Unrecognized option '%s'", text)
+			continue
+		}
+
+	}
 }
 
 func newHelpCommand() *cobra.Command {

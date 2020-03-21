@@ -59,10 +59,6 @@ func TestStatus(t *testing.T) {
 		before      func(afero.Fs) error
 	}{
 		{
-			name:        "fails if no config file is found",
-			expectedErr: "Unable to find redpanda config file in default locations",
-		},
-		{
 			name:        "doesn't print the CPU% if no pid file is found",
 			expectedOut: "No PID present",
 			before: func(fs afero.Fs) error {

@@ -49,10 +49,10 @@ type seastarFlags struct {
 func NewStartCommand(fs afero.Fs) *cobra.Command {
 	prestartCfg := prestartConfig{}
 	var (
-		configFilePathFlag string
-		installDirFlag     string
-		timeout            time.Duration
-		wellKnownIo        string
+		configFile     string
+		installDirFlag string
+		timeout        time.Duration
+		wellKnownIo    string
 	)
 	sFlags := seastarFlags{}
 	sFlagsMap := map[string]interface{}{
@@ -73,11 +73,7 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 		Use:   "start",
 		Short: "Start redpanda",
 		RunE: func(ccmd *cobra.Command, args []string) error {
-			configFile, err := cli.GetOrFindConfig(fs, configFilePathFlag)
-			if err != nil {
-				return err
-			}
-			conf, err := config.ReadConfigFromPath(fs, configFile)
+			conf, err := config.ReadOrGenerate(fs, configFile)
 			if err != nil {
 				return err
 			}
@@ -130,10 +126,13 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 			return launcher.Start()
 		},
 	}
-	command.Flags().StringVar(&configFilePathFlag,
-		"redpanda-cfg", "",
-		" Redpanda config file, if not set the file will be searched for"+
-			"in default locations")
+	command.Flags().StringVar(
+		&configFile,
+		"config",
+		config.DefaultConfig().ConfigFile,
+		"Redpanda config file, if not set the file will be searched for"+
+			" in the default locations",
+	)
 	command.Flags().StringVar(&sFlags.memory,
 		"memory", "", "Amount of memory for redpanda to use, "+
 			"if not specified redpanda will use all available memory")

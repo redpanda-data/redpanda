@@ -3,7 +3,6 @@ package cmd
 import (
 	"path/filepath"
 	"time"
-	"vectorized/pkg/cli"
 	"vectorized/pkg/config"
 	"vectorized/pkg/redpanda"
 	"vectorized/pkg/tuners"
@@ -15,22 +14,18 @@ import (
 
 func NewIoTuneCmd(fs afero.Fs) *cobra.Command {
 	var (
-		configFileFlag string
-		duration       int
-		directories    []string
-		timeout        time.Duration
+		configFile  string
+		duration    int
+		directories []string
+		timeout     time.Duration
 	)
 	command := &cobra.Command{
 		Use:   "iotune",
 		Short: "Measure filesystem performance and create IO configuration file",
 		RunE: func(ccmd *cobra.Command, args []string) error {
 			timeout += time.Duration(duration) * time.Second
-			configFile, err := cli.GetOrFindConfig(fs, configFileFlag)
-			if err != nil {
-				return err
-			}
 			ioConfigFile := redpanda.GetIOConfigPath(filepath.Dir(configFile))
-			conf, err := config.ReadConfigFromPath(fs, configFile)
+			conf, err := config.ReadOrGenerate(fs, configFile)
 			if err != nil {
 				return err
 			}
@@ -46,9 +41,13 @@ func NewIoTuneCmd(fs afero.Fs) *cobra.Command {
 			return execIoTune(fs, evalDirectories, ioConfigFile, duration, timeout)
 		},
 	}
-	command.Flags().StringVar(&configFileFlag,
-		"redpanda-cfg", "", "Redpanda config file, if not set the file "+
-			"will be searched for in default locations")
+	command.Flags().StringVar(
+		&configFile,
+		"config",
+		config.DefaultConfig().ConfigFile,
+		"Redpanda config file, if not set the file will be searched for"+
+			" in the default locations",
+	)
 	command.Flags().StringSliceVar(&directories,
 		"directories", nil, "List of directories to evaluate")
 	command.Flags().IntVar(&duration,

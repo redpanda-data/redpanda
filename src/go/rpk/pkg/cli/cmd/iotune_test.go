@@ -69,7 +69,7 @@ func TestTimeoutDuration(t *testing.T) {
 				t.Errorf("got an error creating the config file: %v", err)
 			}
 			cmd := cmd.NewIoTuneCmd(fs)
-			args := []string{"--redpanda-cfg", configPath}
+			args := []string{"--config", configPath}
 			if len(tt.duration) > 0 {
 				args = append(args, "--duration", tt.duration)
 			}

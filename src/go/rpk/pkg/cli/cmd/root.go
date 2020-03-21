@@ -5,85 +5,48 @@ import (
 	"vectorized/pkg/cli"
 
 	"github.com/fatih/color"
-	"github.com/mitchellh/go-homedir"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 	"golang.org/x/crypto/ssh/terminal"
 )
 
-type CobraRoot struct {
-	*cobra.Command
-	cfgFile string
-	verbose bool
-}
-
-// cobraRoot represents the base command when called without any subcommands
-var cobraRoot = &CobraRoot{
-	Command: &cobra.Command{
-		Use:   "rpk",
-		Short: "This is a Red Panda queue Swiss Army Knife CLI",
-		Long:  "",
-	},
-}
-
 func Execute() {
-	if err := cobraRoot.Execute(); err != nil {
-		os.Exit(1)
-	}
-}
+	verbose := false
+	fs := afero.NewOsFs()
 
-func init() {
 	if !terminal.IsTerminal(int(os.Stdout.Fd())) {
 		color.NoColor = true
 	}
 	log.SetFormatter(cli.NewRpkLogFormatter())
-	cobra.OnInitialize(cobraRoot.initConfig)
-
-	cobraRoot.PersistentFlags().StringVar(&cobraRoot.cfgFile, "config",
-		"", "config file (default is $HOME/.rpk.yaml)")
-	cobraRoot.PersistentFlags().BoolVarP(&cobraRoot.verbose, "verbose",
-		"v", false, "enable verbose logging (default false)")
-	fs := afero.NewOsFs()
-	cobraRoot.AddCommand(NewTuneCommand(fs))
-	cobraRoot.AddCommand(NewSandboxCommand(fs))
-	cobraRoot.AddCommand(NewCheckCommand(fs))
-	cobraRoot.AddCommand(NewIoTuneCmd(fs))
-	cobraRoot.AddCommand(NewStartCommand(fs))
-	cobraRoot.AddCommand(NewModeCommand(fs))
-	cobraRoot.AddCommand(NewConfigCommand(fs))
-	cobraRoot.AddCommand(NewStatusCommand(fs))
-}
-
-// initConfig reads in config file and ENV variables if set.
-func (root *CobraRoot) initConfig() {
-	if root.cfgFile != "" {
-		// Use config file from the flag.
-		viper.SetConfigFile(root.cfgFile)
-	} else {
-		// Find home directory.
-		home, err := homedir.Dir()
-		if err != nil {
-			log.Error(err)
-			os.Exit(1)
+	cobra.OnInitialize(func() {
+		// This is only executed when a subcommand (e.g. rpk check) is
+		// specified.
+		if verbose {
+			log.SetLevel(log.DebugLevel)
+		} else {
+			log.SetLevel(log.InfoLevel)
 		}
+	})
 
-		// Search config in home directory with name ".rpk" (without extension).
-		viper.AddConfigPath(home)
-		viper.SetConfigName(".rpk")
+	rootCmd := &cobra.Command{
+		Use:   "rpk",
+		Short: "rpk is the Redpanda CLI & toolbox",
+		Long:  "",
 	}
 
-	viper.AutomaticEnv() // read in environment variables that match
-	viper.SetEnvPrefix("RP")
-	// If a config file is found, read it in.
-	if err := viper.ReadInConfig(); err == nil {
-		log.Info("Using config file:", viper.ConfigFileUsed())
-	}
+	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose",
+		"v", false, "enable verbose logging (default false)")
+	rootCmd.AddCommand(NewTuneCommand(fs))
+	rootCmd.AddCommand(NewSandboxCommand(fs))
+	rootCmd.AddCommand(NewCheckCommand(fs))
+	rootCmd.AddCommand(NewIoTuneCmd(fs))
+	rootCmd.AddCommand(NewStartCommand(fs))
+	rootCmd.AddCommand(NewModeCommand(fs))
+	rootCmd.AddCommand(NewConfigCommand(fs))
+	rootCmd.AddCommand(NewStatusCommand(fs))
 
-	if root.verbose {
-		log.SetLevel(log.DebugLevel)
-	} else {
-		log.SetLevel(log.InfoLevel)
+	if err := rootCmd.Execute(); err != nil {
+		os.Exit(1)
 	}
 }

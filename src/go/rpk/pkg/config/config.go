@@ -4,9 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"os"
+	"path/filepath"
 	"strings"
 	"vectorized/pkg/utils"
-	"vectorized/pkg/yaml"
+	vyaml "vectorized/pkg/yaml"
 
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
@@ -27,6 +29,7 @@ type RedpandaConfig struct {
 	Directory   string        `yaml:"data_directory" json:"directory"`
 	RPCServer   SocketAddress `yaml:"rpc_server" json:"rpcServer"`
 	KafkaApi    SocketAddress `yaml:"kafka_api" json:"kafkaApi"`
+	AdminApi    SocketAddress `yaml:"admin" json:"admin"`
 	Id          int           `yaml:"node_id" json:"id"`
 	SeedServers []*SeedServer `yaml:"seed_servers" json:"seedServers"`
 }
@@ -58,6 +61,34 @@ type RpkConfig struct {
 	WellKnownIo          string   `yaml:"well_known_io,omitempty" json:"wellKnownIo"`
 }
 
+func DefaultConfig() Config {
+	return Config{
+		ConfigFile: "/etc/redpanda/redpanda.yaml",
+		PidFile:    "/var/lib/redpanda/pid",
+		Redpanda: &RedpandaConfig{
+			Directory: "/var/lib/redpanda/data",
+			RPCServer: SocketAddress{"0.0.0.0", 33145},
+			KafkaApi:  SocketAddress{"0.0.0.0", 9092},
+			AdminApi:  SocketAddress{"0.0.0.0", 9644},
+			Id:        0,
+		},
+		Rpk: &RpkConfig{
+			EnableUsageStats:    true,
+			TuneNetwork:         true,
+			TuneDiskScheduler:   true,
+			TuneNomerges:        true,
+			TuneDiskIrq:         true,
+			TuneCpu:             true,
+			TuneAioEvents:       true,
+			TuneClocksource:     true,
+			TuneSwappiness:      true,
+			EnableMemoryLocking: true,
+			TuneCoredump:        true,
+			CoredumpDir:         "/var/lib/redpanda/coredump",
+		},
+	}
+}
+
 // Checks config and writes it to the given path.
 func WriteConfig(fs afero.Fs, config *Config, path string) error {
 	ok, errs := CheckConfig(config)
@@ -68,30 +99,41 @@ func WriteConfig(fs afero.Fs, config *Config, path string) error {
 		}
 		return errors.New(strings.Join(reasons, ", "))
 	}
-	backup := fmt.Sprintf("%s.bk", path)
-	exists, err := afero.Exists(fs, backup)
+	lastBackupFile, err := findBackup(fs, filepath.Dir(path))
 	if err != nil {
 		return err
 	}
-	if exists {
-		log.Debug("Removing current backup file")
-		err = fs.Remove(backup)
+	exists, err := afero.Exists(fs, path)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		// If the config doesn't exist, just write it.
+		return vyaml.Persist(fs, config, path)
+	}
+	// Otherwise, backup the current config file, write the new one, and
+	// try to recover if there's an error.
+	log.Debug("Backing up the current config")
+	backup, err := utils.BackupFile(fs, path)
+	if err != nil {
+		return err
+	}
+	log.Debugf("Backed up the current config to %s", backup)
+	if lastBackupFile != "" {
+		log.Debug("Removing previous backup file")
+		err = fs.Remove(lastBackupFile)
 		if err != nil {
 			return err
 		}
 	}
-	log.Debugf("Backing up the current configuration to '%s'", backup)
-	err = fs.Rename(path, backup)
-	if err != nil {
-		return err
-	}
 	log.Debugf("Writing the new redpanda config to '%s'", path)
-	err = yaml.Persist(fs, config, path)
+	err = vyaml.Persist(fs, config, path)
 	if err != nil {
-		log.Debugf("Recovering the previous confing from %s", backup)
+		log.Infof("Recovering the previous confing from %s", backup)
 		recErr := utils.CopyFile(fs, backup, path)
 		if recErr != nil {
-			msg := "couldn't persist the new config due to '%v', nor recover the backup due to '%v"
+			msg := "couldn't persist the new config due to '%v'," +
+				"nor recover the backup due to '%v"
 			return fmt.Errorf(msg, err, recErr)
 		}
 		return err
@@ -99,15 +141,68 @@ func WriteConfig(fs afero.Fs, config *Config, path string) error {
 	return nil
 }
 
+func findBackup(fs afero.Fs, dir string) (string, error) {
+	exists, err := afero.Exists(fs, dir)
+	if err != nil {
+		return "", err
+	}
+	if !exists {
+		return "", nil
+	}
+	files, err := afero.ReadDir(fs, dir)
+	if err != nil {
+		return "", err
+	}
+	for _, f := range files {
+		if strings.HasSuffix(f.Name(), ".bk") {
+			return fmt.Sprintf("%s/%s", dir, f.Name()), nil
+		}
+	}
+	return "", nil
+}
+
 func ReadConfigFromPath(fs afero.Fs, path string) (*Config, error) {
 	log.Debugf("Reading Redpanda config file from '%s'", path)
 	config := &Config{}
-	err := yaml.Read(fs, config, path)
+	err := vyaml.Read(fs, config, path)
 	if err != nil {
 		return nil, err
 	}
 	config.ConfigFile = path
 	return config, nil
+}
+
+// Tries reading a config file at the given path, or generates a default config
+// and writes it to the path.
+func ReadOrGenerate(fs afero.Fs, configFile string) (*Config, error) {
+	conf, err := ReadConfigFromPath(fs, configFile)
+	if err == nil {
+		// The config file's there, there's nothing to do.
+		return conf, nil
+	}
+	if os.IsNotExist(err) {
+		log.Debug(err)
+		log.Infof(
+			"Couldn't find config file at %s. Generating it.",
+			configFile,
+		)
+		conf := DefaultConfig()
+		conf.ConfigFile = configFile
+		err = WriteConfig(fs, &conf, configFile)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"Couldn't write config to %s: %v",
+				configFile,
+				err,
+			)
+		}
+		return &conf, nil
+	}
+	return nil, fmt.Errorf(
+		"An error happened while trying to read %s: %v",
+		configFile,
+		err,
+	)
 }
 
 func CheckConfig(config *Config) (bool, []error) {
@@ -140,9 +235,7 @@ func checkRedpandaConfig(config *RedpandaConfig) []error {
 		checkSocketAddress(config.KafkaApi, "redpanda.kafka_api")...,
 	)
 	seedServersPath := "redpanda.seed_servers"
-	if len(config.SeedServers) == 0 {
-		errs = append(errs, fmt.Errorf(seedServersPath+" can't be empty"))
-	} else {
+	if len(config.SeedServers) != 0 {
 		for i, seed := range config.SeedServers {
 			errs = append(
 				errs,

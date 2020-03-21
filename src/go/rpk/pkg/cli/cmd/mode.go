@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"strings"
-	"vectorized/pkg/cli"
 	"vectorized/pkg/config"
 
 	log "github.com/sirupsen/logrus"
@@ -19,7 +18,7 @@ var availableModes []string = []string{
 }
 
 func NewModeCommand(fs afero.Fs) *cobra.Command {
-	var redpandaConfigFile string
+	var configFile string
 	command := &cobra.Command{
 		Use:   "mode <mode>",
 		Short: "Enable a default configuration mode",
@@ -40,24 +39,21 @@ func NewModeCommand(fs afero.Fs) *cobra.Command {
 		},
 		RunE: func(_ *cobra.Command, args []string) error {
 			// Safe to access args[0] because it was validated in Args
-			return executeMode(fs, redpandaConfigFile, args[0])
+			return executeMode(fs, configFile, args[0])
 		},
 	}
 	command.Flags().StringVar(
-		&redpandaConfigFile,
-		"redpanda-cfg",
-		"",
-		"Redpanda config file, if not set the file will be searched for in default locations",
+		&configFile,
+		"config",
+		config.DefaultConfig().ConfigFile,
+		"Redpanda config file, if not set the file will be searched for"+
+			" in the default locations",
 	)
 	return command
 }
 
-func executeMode(fs afero.Fs, redpandaConfigFile string, mode string) error {
-	configFile, err := cli.GetOrFindConfig(fs, redpandaConfigFile)
-	if err != nil {
-		return err
-	}
-	conf, err := config.ReadConfigFromPath(fs, configFile)
+func executeMode(fs afero.Fs, configFile string, mode string) error {
+	conf, err := config.ReadOrGenerate(fs, configFile)
 	if err != nil {
 		return err
 	}

@@ -1,7 +1,7 @@
 package config
 
 import (
-	"fmt"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -25,6 +25,10 @@ func getValidConfig() *Config {
 			Id: 1,
 			KafkaApi: SocketAddress{
 				Port:    9092,
+				Address: "127.0.0.1",
+			},
+			AdminApi: SocketAddress{
+				Port:    9644,
 				Address: "127.0.0.1",
 			},
 			SeedServers: []*SeedServer{
@@ -59,6 +63,38 @@ func getValidConfig() *Config {
 			CoredumpDir:         "/var/lib/redpanda/coredumps",
 			WellKnownIo:         "vendor:vm:storage",
 		},
+	}
+}
+
+func TestDefaultConfig(t *testing.T) {
+	defaultConfig := DefaultConfig()
+	expected := Config{
+		ConfigFile: "/etc/redpanda/redpanda.yaml",
+		PidFile:    "/var/lib/redpanda/pid",
+		Redpanda: &RedpandaConfig{
+			Directory: "/var/lib/redpanda/data",
+			RPCServer: SocketAddress{"0.0.0.0", 33145},
+			KafkaApi:  SocketAddress{"0.0.0.0", 9092},
+			AdminApi:  SocketAddress{"0.0.0.0", 9644},
+			Id:        0,
+		},
+		Rpk: &RpkConfig{
+			EnableUsageStats:    true,
+			TuneNetwork:         true,
+			TuneDiskScheduler:   true,
+			TuneNomerges:        true,
+			TuneDiskIrq:         true,
+			TuneCpu:             true,
+			TuneAioEvents:       true,
+			TuneClocksource:     true,
+			TuneSwappiness:      true,
+			EnableMemoryLocking: true,
+			TuneCoredump:        true,
+			CoredumpDir:         "/var/lib/redpanda/coredump",
+		},
+	}
+	if !reflect.DeepEqual(defaultConfig, expected) {
+		t.Fatalf("got:\n%v+\nexpected\n%v+", defaultConfig, expected)
 	}
 }
 
@@ -150,6 +186,9 @@ redpanda:
   kafka_api:
     address: 127.0.0.1
     port: 9092
+  admin:
+    address: 127.0.0.1
+    port: 9644
   node_id: 1
   seed_servers:
   - host:
@@ -204,6 +243,9 @@ redpanda:
   kafka_api:
     address: 127.0.0.1
     port: 9092
+  admin:
+    address: 127.0.0.1
+    port: 9644
   node_id: 1
   seed_servers:
   - host:
@@ -233,7 +275,8 @@ rpk:
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// WriteConfig needs the file at the given path to exist.
+			// Write the config file so that WriteConfig backs it up
+			// when the new one is written.
 			err := vyaml.Persist(tt.args.fs, tt.args.conf(), tt.args.path)
 			if err != nil {
 				t.Fatal(err.Error())
@@ -259,10 +302,75 @@ rpk:
 					strings.ReplaceAll(content, " ", "·"),
 				)
 			}
-			backup := fmt.Sprintf("%s.bk", tt.args.path)
+			backup, err := findBackup(tt.args.fs, filepath.Dir(tt.args.path))
+			if err != nil {
+				t.Fatal(err)
+			}
 			_, err = tt.args.fs.Stat(backup)
 			if err != nil {
 				t.Errorf("got an error while stat'ing %v: %v", backup, err)
+			}
+		})
+	}
+}
+
+func TestInitConfig(t *testing.T) {
+	tests := []struct {
+		name        string
+		setup       func(afero.Fs) error
+		configFile  string
+		expectError bool
+	}{
+		{
+			name:       "it should generate a config file at the given location",
+			configFile: DefaultConfig().ConfigFile,
+		},
+		{
+			name: "it shouldn't fail if there's a config file already",
+			setup: func(fs afero.Fs) error {
+				conf := DefaultConfig()
+				return WriteConfig(fs, &conf, conf.ConfigFile)
+			},
+			configFile: DefaultConfig().ConfigFile,
+		},
+		{
+			name: "it should fail if the existing config file's content isn't valid yaml",
+			setup: func(fs afero.Fs) error {
+				bs := []byte(`redpanda:
+- something`)
+				return vyaml.Persist(fs, bs, DefaultConfig().ConfigFile)
+			},
+			configFile:  DefaultConfig().ConfigFile,
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fs := afero.NewMemMapFs()
+			if tt.setup != nil {
+				if err := tt.setup(fs); err != nil {
+					t.Fatalf(
+						"got an error while running setup: %v",
+						err,
+					)
+				}
+			}
+			_, err := ReadOrGenerate(fs, tt.configFile)
+			if err != nil {
+				if !tt.expectError {
+					t.Fatalf("got an unexpected error: %v", err)
+				} else {
+					return
+				}
+			} else {
+				if tt.expectError {
+					t.Fatalf("expected an error, but got nil")
+				}
+			}
+			_, err = ReadConfigFromPath(fs, tt.configFile)
+			if err != nil {
+				t.Fatalf("got an error reading the config: %v", err)
 			}
 		})
 	}
@@ -349,17 +457,6 @@ func TestCheckConfig(t *testing.T) {
 				},
 			},
 			expected: []string{"redpanda.kafka_api.address can't be empty"},
-		},
-		{
-			name: "shall return an error when the seed servers list is empty",
-			args: args{
-				conf: func() *Config {
-					c := getValidConfig()
-					c.Redpanda.SeedServers = []*SeedServer{}
-					return c
-				},
-			},
-			expected: []string{"redpanda.seed_servers can't be empty"},
 		},
 		{
 			name: "shall return an error when one of the seed servers' address is empty",
