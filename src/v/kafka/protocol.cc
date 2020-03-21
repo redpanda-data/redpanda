@@ -43,8 +43,9 @@ ss::future<> protocol::apply(rpc::server::resources rs) {
     auto ctx = ss::make_lw_shared<protocol::connection_context>(
       *this, std::move(rs));
     return ss::do_until(
-      [this, ctx] { return ctx->is_finished_parsing(); },
-      [this, ctx] { return ctx->process_one_request(); });
+             [this, ctx] { return ctx->is_finished_parsing(); },
+             [this, ctx] { return ctx->process_one_request(); })
+      .finally([ctx] {});
 }
 
 ss::future<> protocol::connection_context::process_one_request() {
