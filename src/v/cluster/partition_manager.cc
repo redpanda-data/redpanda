@@ -11,6 +11,7 @@
 
 #include <seastar/core/reactor.hh>
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/core/smp.hh>
 
 namespace cluster {
 
@@ -108,4 +109,11 @@ ss::lw_shared_ptr<raft::consensus> partition_manager::make_consensus(
       std::move(append_entries_cb));
 }
 
+std::ostream& operator<<(std::ostream& o, const partition_manager& pm) {
+    return o << "{shard:" << ss::this_shard_id() << ", mngr:{}" << pm._mngr
+             << ", notification_sequence:" << pm._notification_id
+             << ", notifications.size:" << pm._notifications.size()
+             << ", ntp_table.size:" << pm._ntp_table.size()
+             << ", raft_table.size:" << pm._raft_table.size() << "}";
+}
 } // namespace cluster

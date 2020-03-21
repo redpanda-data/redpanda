@@ -131,5 +131,7 @@ private:
     absl::flat_hash_map<model::ntp, ss::lw_shared_ptr<partition>> _ntp_table;
     absl::flat_hash_map<raft::group_id, ss::lw_shared_ptr<partition>>
       _raft_table;
+
+    friend std::ostream& operator<<(std::ostream&, const partition_manager&);
 };
 } // namespace cluster
