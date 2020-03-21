@@ -3,6 +3,9 @@
 #include "likely.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/core/scattered_message.hh>
+
+#include <fmt/format.h>
 
 namespace rpc {
 batched_output_stream::batched_output_stream(
@@ -10,9 +13,18 @@ batched_output_stream::batched_output_stream(
   : _out(std::move(o))
   , _cache_size(cache)
   , _write_sem(std::make_unique<ss::semaphore>(1)) {}
+
+[[gnu::cold]] static ss::future<>
+already_closed_error(ss::scattered_message<char>& msg) {
+    return ss::make_exception_future<>(std::runtime_error(fmt::format(
+      "batched_output_stream is already closed. Ignoring: {} bytes",
+      msg.size())));
 }
 
 ss::future<> batched_output_stream::write(ss::scattered_message<char> msg) {
+    if (unlikely(_closed)) {
+        return already_closed_error(msg);
+    }
     return ss::with_semaphore(
       *_write_sem, 1, [this, v = std::move(msg)]() mutable {
           if (unlikely(_closed)) {
