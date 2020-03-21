@@ -6,6 +6,7 @@
 #include "bytes/details/io_placeholder.h"
 #include "bytes/details/out_of_range.h"
 #include "likely.h"
+#include "oncore.h"
 #include "seastarx.h"
 #include "utils/intrusive_list_helpers.h"
 
@@ -67,7 +68,11 @@ public:
     iobuf(iobuf&& x) noexcept
       : _frags(std::move(x._frags))
       , _size(x._size)
-      , _alloc_sz(x._alloc_sz) {
+      , _alloc_sz(x._alloc_sz)
+#ifndef NDEBUG
+      , _verify_shard(std::move(x._verify_shard))
+#endif
+    {
         x.clear();
     }
     iobuf& operator=(iobuf&& x) noexcept {
@@ -147,7 +152,7 @@ private:
     container _frags;
     size_t _size{0};
     details::io_allocation_size _alloc_sz;
-
+    expression_in_debug_mode(oncore _verify_shard);
     friend std::ostream& operator<<(std::ostream&, const iobuf&);
 };
 
@@ -193,6 +198,7 @@ inline bool iobuf::empty() const { return _frags.empty(); }
 inline size_t iobuf::size_bytes() const { return _size; }
 
 inline size_t iobuf::available_bytes() const {
+    oncore_debug_verify(_verify_shard);
     if (_frags.empty()) {
         return 0;
     }
@@ -200,11 +206,13 @@ inline size_t iobuf::available_bytes() const {
 }
 
 inline void iobuf::create_new_fragment(size_t sz) {
+    oncore_debug_verify(_verify_shard);
     auto asz = _alloc_sz.next_allocation_size(sz);
     auto f = new fragment(ss::temporary_buffer<char>(asz), fragment::empty{});
     _frags.push_back(*f);
 }
 inline iobuf::placeholder iobuf::reserve(size_t sz) {
+    oncore_debug_verify(_verify_shard);
     reserve_memory(sz);
     _size += sz;
     auto it = std::prev(_frags.end());
@@ -215,6 +223,7 @@ inline iobuf::placeholder iobuf::reserve(size_t sz) {
 /// only ensures that a segment of at least reservation is avaible
 /// as an empty details::io_fragment
 inline void iobuf::reserve_memory(size_t reservation) {
+    oncore_debug_verify(_verify_shard);
     if (auto b = available_bytes(); b < reservation) {
         if (b > 0) {
             _frags.back().trim();
@@ -225,11 +234,13 @@ inline void iobuf::reserve_memory(size_t reservation) {
 
 [[gnu::always_inline]] void inline iobuf::prepend(
   ss::temporary_buffer<char> b) {
+    oncore_debug_verify(_verify_shard);
     _size += b.size();
     auto f = new fragment(std::move(b), fragment::full{});
     _frags.push_front(*f);
 }
 [[gnu::always_inline]] void inline iobuf::prepend(iobuf b) {
+    oncore_debug_verify(_verify_shard);
     while (!b._frags.empty()) {
         b._frags.pop_back_and_dispose([this](fragment* f) {
             prepend(f->share());
@@ -238,6 +249,7 @@ inline void iobuf::reserve_memory(size_t reservation) {
     }
 }
 [[gnu::always_inline]] void inline iobuf::append(const char* ptr, size_t size) {
+    oncore_debug_verify(_verify_shard);
     if (size == 0) {
         return;
     }
@@ -260,6 +272,7 @@ inline void iobuf::reserve_memory(size_t reservation) {
 
 /// appends the contents of buffer; might pack values into existing space
 [[gnu::always_inline]] inline void iobuf::append(ss::temporary_buffer<char> b) {
+    oncore_debug_verify(_verify_shard);
     if (b.size() <= available_bytes()) {
         append(b.get(), b.size());
         return;
@@ -280,6 +293,7 @@ inline void iobuf::reserve_memory(size_t reservation) {
 }
 /// appends the contents of buffer; might pack values into existing space
 inline void iobuf::append(iobuf o) {
+    oncore_debug_verify(_verify_shard);
     if (available_bytes()) {
         _frags.back().trim();
     }
@@ -292,12 +306,14 @@ inline void iobuf::append(iobuf o) {
 }
 /// used for iostreams
 inline void iobuf::pop_front() {
+    oncore_debug_verify(_verify_shard);
     _size -= _frags.front().size();
     _frags.pop_front_and_dispose([](fragment* f) {
         delete f; // NOLINT
     });
 }
 inline void iobuf::trim_front(size_t n) {
+    oncore_debug_verify(_verify_shard);
     while (!_frags.empty()) {
         auto& f = _frags.front();
         if (f.size() > n) {

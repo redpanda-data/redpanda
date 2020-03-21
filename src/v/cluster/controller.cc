@@ -249,13 +249,13 @@ controller::process_raft0_cfg_update(model::record r, model::offset o) {
     vlog(clusterlog.debug, "Processing new raft-0 configuration");
     _raft0_cfg_offset = o;
     auto cfg = reflection::adl<raft::group_configuration>().from(
-      r.share_value());
+      r.value().copy());
     return apply_raft0_cfg_update(std::move(cfg));
 }
 
 ss::future<> controller::recover_record(model::record r) {
-    auto log_record = reflection::adl<log_record_key>{}.from(r.share_key());
-    return dispatch_record_recovery(std::move(log_record), r.share_value());
+    auto log_record = reflection::adl<log_record_key>{}.from(r.key().copy());
+    return dispatch_record_recovery(std::move(log_record), r.value().copy());
 }
 
 ss::future<>

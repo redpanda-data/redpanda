@@ -17,8 +17,13 @@ public:
     batched_output_stream() = default;
     explicit batched_output_stream(
       ss::output_stream<char>, size_t cache = default_max_unflushed_bytes);
-    batched_output_stream(batched_output_stream&&) noexcept;
-    batched_output_stream& operator=(batched_output_stream&&) noexcept;
+    ~batched_output_stream() noexcept = default;
+    batched_output_stream(batched_output_stream&&) noexcept = default;
+    batched_output_stream& operator=(batched_output_stream&&) noexcept
+      = default;
+    batched_output_stream(const batched_output_stream&) = delete;
+    batched_output_stream& operator=(const batched_output_stream&) = delete;
+
     ss::future<> write(ss::scattered_message<char> msg);
     ss::future<> flush();
 
@@ -30,7 +35,7 @@ private:
     ss::future<> do_flush();
 
     ss::output_stream<char> _out;
-    ss::semaphore _write_sem{1};
+    std::unique_ptr<ss::semaphore> _write_sem;
     size_t _cache_size{0};
     size_t _unflushed_bytes{0};
     bool _closed = false;
