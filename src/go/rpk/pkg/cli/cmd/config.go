@@ -10,7 +10,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const configFileFlag = "redpanda-cfg"
+const configFileFlag = "config"
 
 func NewConfigCommand(fs afero.Fs) *cobra.Command {
 	root := &cobra.Command{

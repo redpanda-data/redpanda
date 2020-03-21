@@ -63,7 +63,7 @@ func TestSetStatsId(t *testing.T) {
 		},
 		{
 			name:      "it should fail if the given path to the config doesn't exist",
-			args:      []string{"--redpanda-cfg", "/does/not/exist.yml"},
+			args:      []string{"--config", "/does/not/exist.yml"},
 			expectErr: true,
 		},
 	}
@@ -150,7 +150,7 @@ func TestSetId(t *testing.T) {
 		{
 			name:      "it should fail if the given path to the config doesn't exist",
 			id:        "12",
-			args:      []string{"--redpanda-cfg", "/does/not/exist.yml"},
+			args:      []string{"--config", "/does/not/exist.yml"},
 			expectErr: true,
 		},
 	}
@@ -223,7 +223,7 @@ func TestSetKafkaApi(t *testing.T) {
 			name:      "it should fail if the given path to the config doesn't exist",
 			ip:        "172.34.56.87",
 			port:      "33246",
-			args:      []string{"--redpanda-cfg", "/does/not/exist.yml"},
+			args:      []string{"--config", "/does/not/exist.yml"},
 			expectErr: true,
 		},
 	}
@@ -308,7 +308,7 @@ func TestSetRpcServer(t *testing.T) {
 			name:      "it should fail if the given path to the config doesn't exist",
 			ip:        "172.34.56.87",
 			port:      "33246",
-			args:      []string{"--redpanda-cfg", "/does/not/exist.yml"},
+			args:      []string{"--config", "/does/not/exist.yml"},
 			expectErr: true,
 		},
 	}
@@ -439,7 +439,7 @@ func TestSetSeedNodes(t *testing.T) {
 		{
 			name:      "it should fail if the given path to the config doesn't exist",
 			hosts:     []string{"127.0.0.0", "some.domain.com"},
-			args:      []string{"--redpanda-cfg", "/does/not/exist.yml"},
+			args:      []string{"--config", "/does/not/exist.yml"},
 			expectErr: true,
 		},
 	}
