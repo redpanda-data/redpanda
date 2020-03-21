@@ -13,7 +13,7 @@ acks=1
 if [[ $1 == "create" ]]; then
   bin/kafka-topics.sh --bootstrap-server ${servers} \
     --create --topic sanfrancisco --partitions ${partitions} \
-    --replication-factor ${replication}
+    --replication-factor ${replication} "${@:2:99}"
 fi
 
 if [[ $1 == "produce" ]]; then
@@ -24,7 +24,7 @@ if [[ $1 == "produce" ]]; then
     --throughput ${throughput} \
     --producer-props "acks=${acks}" \
     bootstrap.servers=${servers} \
-    buffer.memory=$((1024 * 1024))
+    buffer.memory=$((1024 * 1024)) "${@:2:99}"
 fi
 
 if [[ $1 == "consume" ]]; then
@@ -33,5 +33,5 @@ if [[ $1 == "consume" ]]; then
     --timeout=1000 \
     --messages=${record_count} \
     --topic=${topic} \
-    --threads 1
+    --threads 1 "${@:2:99}"
 fi
