@@ -157,12 +157,17 @@ func promptConfirmation(msg string, in io.Reader) (bool, error) {
 			return false, scanner.Err()
 		}
 		text := strings.ToLower(scanner.Text())
-		switch text {
-		case "y":
+		if len(text) == 0 {
+			log.Infof("Please choose an option")
+			continue
+		}
+		opt := text[0]
+		switch opt {
+		case 'y':
 			return true, nil
-		case "n":
+		case 'n':
 			return false, nil
-		case "q":
+		case 'q':
 			return false, errors.New("user exited")
 		default:
 			log.Infof("Unrecognized option '%s'", text)

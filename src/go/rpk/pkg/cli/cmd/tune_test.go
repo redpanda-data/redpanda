@@ -39,6 +39,11 @@ func TestInteractive(t *testing.T) {
 			input:          "what\ny\n",
 			expectedOutput: "Unrecognized option 'what'",
 		},
+		{
+			name:           "it should prompt again if the user just hits 'return'",
+			input:          "\ny\n",
+			expectedOutput: "Please choose an option",
+		},
 	}
 
 	for _, tt := range tests {
