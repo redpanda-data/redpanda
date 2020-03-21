@@ -83,7 +83,7 @@ func DefaultConfig() Config {
 			TuneClocksource:     true,
 			TuneSwappiness:      true,
 			EnableMemoryLocking: true,
-			TuneCoredump:        true,
+			TuneCoredump:        false,
 			CoredumpDir:         "/var/lib/redpanda/coredump",
 		},
 	}
