@@ -18,9 +18,20 @@ public:
     explicit batched_output_stream(
       ss::output_stream<char>, size_t cache = default_max_unflushed_bytes);
     ~batched_output_stream() noexcept = default;
-    batched_output_stream(batched_output_stream&&) noexcept = default;
-    batched_output_stream& operator=(batched_output_stream&&) noexcept
-      = default;
+    // NOTE: explicitly defined for a gcc
+    batched_output_stream(batched_output_stream&& o) noexcept
+      : _out(std::move(o._out))
+      , _write_sem(std::move(o._write_sem))
+      , _cache_size(o._cache_size)
+      , _unflushed_bytes(o._unflushed_bytes)
+      , _closed(o._closed) {}
+    batched_output_stream& operator=(batched_output_stream&& o) noexcept {
+        if (this != &o) {
+            this->~batched_output_stream();
+            new (this) batched_output_stream(std::move(o));
+        }
+        return *this;
+    }
     batched_output_stream(const batched_output_stream&) = delete;
     batched_output_stream& operator=(const batched_output_stream&) = delete;
 
