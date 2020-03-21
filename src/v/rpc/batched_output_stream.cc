@@ -50,6 +50,9 @@ ss::future<> batched_output_stream::flush() {
     return with_semaphore(_write_sem, 1, [this] { return do_flush(); });
 }
 ss::future<> batched_output_stream::stop() {
+    if (_closed) {
+        return ss::make_ready_future<>();
+    }
     _closed = true;
     return with_semaphore(_write_sem, 1, [this] {
         return do_flush().then([this] { return _out.close(); });
