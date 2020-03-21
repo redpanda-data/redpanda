@@ -89,7 +89,7 @@ func TestDefaultConfig(t *testing.T) {
 			TuneClocksource:     true,
 			TuneSwappiness:      true,
 			EnableMemoryLocking: true,
-			TuneCoredump:        true,
+			TuneCoredump:        false,
 			CoredumpDir:         "/var/lib/redpanda/coredump",
 		},
 	}
