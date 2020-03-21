@@ -5,12 +5,15 @@ ARG COMPILER=gcc
 ENV CI=1
 WORKDIR /v
 
-# OS package dependencies
+# OS package dependencies and docker client
 COPY tools/install-deps.sh /
 RUN rm -f /etc/yum.repos.d/fedora-* && \
     /install-deps.sh && \
     rm /install-deps.sh && \
-    dnf clean all
+    dnf clean all && \
+    curl -fsSLO https://download.docker.com/linux/static/stable/x86_64/docker-19.03.8.tgz && \
+    tar xzvf docker-19.03.8.tgz --strip 1 -C /usr/local/bin docker/docker && \
+    rm docker-19.03.8.tgz
 
 # vtools
 COPY tools/setup.py tools/README.md /v/tools/
