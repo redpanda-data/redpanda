@@ -61,7 +61,6 @@ func fillRpkConfig(val bool) config.RpkConfig {
 		TuneAioEvents:       val,
 		TuneClocksource:     val,
 		EnableMemoryLocking: val,
-		TuneCoredump:        val,
 		CoredumpDir:         "/redpanda/coredumps/",
 	}
 }
