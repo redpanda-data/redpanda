@@ -61,11 +61,6 @@ func TestSetStatsId(t *testing.T) {
 			name:      "it should set the cluster ID",
 			clusterId: "test",
 		},
-		{
-			name:      "it should fail if the given path to the config doesn't exist",
-			args:      []string{"--config", "/does/not/exist.yml"},
-			expectErr: true,
-		},
 	}
 
 	for _, tt := range tests {
@@ -147,12 +142,6 @@ func TestSetId(t *testing.T) {
 			id:        "12.4",
 			expectErr: true,
 		},
-		{
-			name:      "it should fail if the given path to the config doesn't exist",
-			id:        "12",
-			args:      []string{"--config", "/does/not/exist.yml"},
-			expectErr: true,
-		},
 	}
 
 	for _, tt := range tests {
@@ -217,13 +206,6 @@ func TestSetKafkaApi(t *testing.T) {
 		{
 			name:      "it should fail if the port isn't numeric",
 			port:      "what",
-			expectErr: true,
-		},
-		{
-			name:      "it should fail if the given path to the config doesn't exist",
-			ip:        "172.34.56.87",
-			port:      "33246",
-			args:      []string{"--config", "/does/not/exist.yml"},
 			expectErr: true,
 		},
 	}
@@ -302,13 +284,6 @@ func TestSetRpcServer(t *testing.T) {
 		{
 			name:      "it should fail if the port isn't numeric",
 			port:      "what",
-			expectErr: true,
-		},
-		{
-			name:      "it should fail if the given path to the config doesn't exist",
-			ip:        "172.34.56.87",
-			port:      "33246",
-			args:      []string{"--config", "/does/not/exist.yml"},
 			expectErr: true,
 		},
 	}
@@ -434,12 +409,6 @@ func TestSetSeedNodes(t *testing.T) {
 			name:      "it should fail if the ports aren't ints",
 			hosts:     []string{"127.0.0.0", "some.domain.com"},
 			ids:       []string{"12e-10", "12.3"},
-			expectErr: true,
-		},
-		{
-			name:      "it should fail if the given path to the config doesn't exist",
-			hosts:     []string{"127.0.0.0", "some.domain.com"},
-			args:      []string{"--config", "/does/not/exist.yml"},
 			expectErr: true,
 		},
 	}

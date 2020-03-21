@@ -3,7 +3,6 @@ package cmd
 import (
 	"errors"
 	"strconv"
-	"vectorized/pkg/cli"
 	"vectorized/pkg/config"
 
 	"github.com/spf13/afero"
@@ -19,8 +18,8 @@ func NewConfigCommand(fs afero.Fs) *cobra.Command {
 	}
 	root.PersistentFlags().String(
 		configFileFlag,
-		"",
-		"Redpanda config file, if not set the file will be searched for in default locations",
+		config.DefaultConfig().ConfigFile,
+		"Redpanda config file, if not set the file will be searched for in default location",
 	)
 	root.AddCommand(set(fs))
 
@@ -228,14 +227,10 @@ elements must be separated by commas.`,
 }
 
 func loadConfig(c *cobra.Command, fs afero.Fs) (string, *config.Config, error) {
-	redpandaConfigFile, err := c.Flags().GetString(configFileFlag)
+	configFile, err := c.Flags().GetString(configFileFlag)
 	if err != nil {
 		return "", nil, err
 	}
-	configFile, err := cli.GetOrFindConfig(fs, redpandaConfigFile)
-	if err != nil {
-		return "", nil, err
-	}
-	config, err := config.ReadConfigFromPath(fs, configFile)
-	return configFile, config, err
+	conf, err := config.ReadOrGenerate(fs, configFile)
+	return configFile, conf, err
 }
