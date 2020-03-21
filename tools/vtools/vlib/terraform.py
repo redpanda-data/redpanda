@@ -1,12 +1,15 @@
 import os
 import re
+
 import git
-from datetime import date
 import json
+
 from absl import logging
+from datetime import date
+
 from ..vlib import rotate_ssh_keys as keys
 from ..vlib import shell
-from . import install_deps as deps
+from ..vlib import install_deps as deps
 
 tfvars_key = 'deploy.cluster.tf.vars'
 
@@ -63,8 +66,7 @@ def _run_terraform_cmd(vconfig, action, module, install_deps, log, tfvars):
 
 def _run_terraform(vconfig, action, module, tf_vars):
     module_dir = os.path.join(vconfig.src_dir, 'infra', 'modules', module)
-    tf_bin = os.path.join(vconfig.infra_bin_dir, 'terraform')
-    base_cmd = f'cd {module_dir} && {tf_bin}'
+    base_cmd = f'cd {module_dir} && terraform'
     init_cmd = f'{base_cmd} init'
     shell.run_subprocess(init_cmd, env=vconfig.environ)
     cmd = f'{base_cmd} {action} -auto-approve {tf_vars}'
@@ -89,8 +91,7 @@ def _parse_tf_vars(tfvars):
 
 def _get_tf_outputs(vconfig, module):
     module_dir = os.path.join(vconfig.src_dir, 'infra', 'modules', module)
-    tf_bin = os.path.join(vconfig.infra_bin_dir, 'terraform')
-    cmd = f'cd {module_dir} && {tf_bin} output -json'
+    cmd = f'cd {module_dir} && terraform output -json'
     logging.info(f'Running {cmd}')
     out = shell.raw_check_output(cmd, env=vconfig.environ)
     return json.loads(out)

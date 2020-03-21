@@ -33,8 +33,7 @@ def go(conf):
         for fd in it:
             if not fd.name.startswith('.') and fd.is_dir():
                 shell.run_subprocess(
-                    f'cd {vconfig.go_src_dir}/{fd.name}/pkg && '
-                    f'{vconfig.gobin} test ./...',
+                    f'cd {vconfig.go_src_dir}/{fd.name}/pkg && go test ./...',
                     env=vconfig.environ)
 
 
@@ -107,7 +106,6 @@ def pz(build_type, conf, clang, skip_build_img, tests, nodes,
     d = docker.from_env()
     tests_dir = f'{vconfig.src_dir}/tests'
     docker_dir = f'{tests_dir}/docker'
-    composebin = f'{vconfig.build_root}/venv/v/bin/docker-compose'
 
     # ensure output temp dir exists
     os.makedirs(f'{vconfig.build_root}/tests/', exist_ok=True)
@@ -156,7 +154,7 @@ def pz(build_type, conf, clang, skip_build_img, tests, nodes,
 
         # bring cluster up (compose doesn't have a python API, so we shell)
         cmd = (f'cd {vconfig.build_root}/tests && '
-               f'{composebin} -p rp up --force-recreate -t 1 -d')
+               f'docker-compose -p rp up --force-recreate -t 1 -d')
         shell.run_oneline(cmd, env=vconfig.environ)
 
         # wait for cluster to be up
@@ -175,7 +173,8 @@ def pz(build_type, conf, clang, skip_build_img, tests, nodes,
 
     if not use_existing_cluster:
         # teardown compose cluster
-        cmd = f'cd {vconfig.build_root}/tests/ && {composebin} -p rp down -t 1'
+        cmd = (f'cd {vconfig.build_root}/tests/ && '
+               'docker-compose -p rp down -t 1')
         shell.run_oneline(cmd, env=vconfig.environ)
 
     if dt_ret != 0:
@@ -296,7 +295,8 @@ def _generate_ducktape_cluster_config(vconfig,
         os.makedirs(f'{vconfig.build_root}/ansible/', exist_ok=True)
         invfile = f'{vconfig.build_root}/ansible/hosts.ini'
         with open(invfile, 'w') as f:
-            for ip, pip in zip(ips, pips):
+            zipped = zip(tf_out['ip']['value'], tf_out['private_ips']['value'])
+            for ip, pip in zipped:
                 nodes.append({
                     'externally_routable_ip': f'{ip}',
                     'ssh_config': {
