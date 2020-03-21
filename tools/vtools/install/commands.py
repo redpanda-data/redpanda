@@ -64,12 +64,11 @@ def go_deps(conf):
         for fd in it:
             if not fd.name.startswith('.') and fd.is_dir():
                 shell.run_subprocess(
-                    f'cd {vconfig.go_src_dir}/{fd.name} && '
-                    f'{vconfig.gobin} mod download',
+                    f'cd {vconfig.go_src_dir}/{fd.name} && go mod download',
                     env=vconfig.environ)
     shell.run_subprocess(
         f'cd {vconfig.go_src_dir}/rpk && '
-        f'{vconfig.gobin} install '
+        f'go install '
         f'  github.com/cockroachdb/crlfmt '
         f'  mvdan.cc/sh/v3/cmd/shfmt',
         env=vconfig.environ)
@@ -87,8 +86,8 @@ def go_deps(conf):
 def go_compiler(version, conf):
     vconfig = config.VConfig(conf)
 
-    if os.path.isfile(f'{vconfig.gobin}'):
-        logging.info(f'Found go binary in {vconfig.gobin}. Skipping install.')
+    if os.path.isfile(f'{vconfig.go_path}/bin/go'):
+        logging.info(f'Found {vconfig.go_path}/bin/go. Skipping installation.')
         return
 
     url = f'https://dl.google.com/go/go{version}.linux-amd64.tar.gz'

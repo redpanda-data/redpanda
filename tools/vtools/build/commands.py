@@ -96,7 +96,7 @@ def go(conf, targets):
 
         shell.run_subprocess(
             f'cd {vconfig.go_src_dir}/{t} && '
-            f'{vconfig.gobin} build {build_flags} -o {vconfig.go_out_dir} ./...',
+            f'go build {build_flags} -o {vconfig.go_out_dir} ./...',
             env=vconfig.environ)
 
 

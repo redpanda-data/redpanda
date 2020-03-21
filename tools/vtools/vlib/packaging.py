@@ -30,7 +30,7 @@ def _get_dependencies(binary, vconfig):
 
     if vconfig.compiler == 'clang':
         libasan_path = shell.run_oneline(
-            f'{vconfig.clang_path}/bin/clang -print-file-name=libclang_rt.asan-x86_64.so',
+            f'clang -print-file-name=libclang_rt.asan-x86_64.so',
             env=vconfig.environ)
     else:
         libasan_path = shell.run_oneline('gcc -print-file-name=libasan.so',
