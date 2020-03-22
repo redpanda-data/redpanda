@@ -1,5 +1,6 @@
 #include "model/record_utils.h"
 
+#include "model/record.h"
 #include "utils/vint.h"
 
 namespace model {
