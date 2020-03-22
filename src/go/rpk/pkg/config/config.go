@@ -217,6 +217,17 @@ func CheckConfig(config *Config) (bool, []error) {
 	return ok, errs
 }
 
+func recover(fs afero.Fs, backup, path string, err error) error {
+	log.Infof("Recovering the previous confing from %s", backup)
+	recErr := utils.CopyFile(fs, backup, path)
+	if recErr != nil {
+		msg := "couldn't persist the new config due to '%v'," +
+			"nor recover the backup due to '%v"
+		return fmt.Errorf(msg, err, recErr)
+	}
+	return fmt.Errorf("couldn't persist the new config due to '%v'", err)
+}
+
 func write(fs afero.Fs, conf map[string]interface{}, path string) error {
 	v := viper.New()
 	v.SetFs(fs)
