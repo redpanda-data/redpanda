@@ -4,6 +4,7 @@
 #include "kafka/errors.h"
 #include "model/fundamental.h"
 
+#include <boost/algorithm/string.hpp>
 #include <boost/lexical_cast.hpp>
 
 namespace kafka {
@@ -76,6 +77,12 @@ struct new_topic_configuration {
             it != config_entries.end()) {
             cfg.retention = std::chrono::milliseconds(
               boost::lexical_cast<uint64_t>((*it).second));
+        }
+        if (auto it = config_entries.find("message.timestamp.type");
+            it != config_entries.end()) {
+            if (boost::iequals(it->second, "logappendtime")) {
+                cfg.message_timestamp_type = model::timestamp_type::append_time;
+            }
         }
         return cfg;
     }
