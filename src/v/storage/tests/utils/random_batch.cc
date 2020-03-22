@@ -105,6 +105,7 @@ make_random_batch(model::offset o, int num_records, bool allow_compression) {
     header.size_bytes = size;
     auto batch = model::record_batch(header, std::move(records));
     batch.header().crc = model::crc_record_batch(batch);
+    batch.header().header_crc = model::internal_header_only_crc(batch.header());
     return batch;
 }
 
