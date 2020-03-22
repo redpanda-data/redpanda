@@ -322,6 +322,13 @@ ss::future<> controller::dispatch_manage_partition(
   raft::group_id raft_group,
   uint32_t shard,
   std::vector<model::broker_shard> replicas) {
+    vassert(
+      shard <= ss::smp::count,
+      "Inconsistency between restarts detected. Cannot start machine with "
+      "lower core count than a previous run. Core count can only increase. "
+      "Old shard-assignment: {}. Active core-count:{}",
+      shard,
+      ss::smp::count);
     return _pm.invoke_on(
       shard,
       [this, raft_group, ntp = std::move(ntp), replicas = std::move(replicas)](
