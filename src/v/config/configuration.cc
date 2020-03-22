@@ -106,9 +106,9 @@ configuration::configuration()
   , target_quota_byte_rate(
       *this,
       "target_quota_byte_rate",
-      "Target quota byte rate (bytes per second)",
+      "Target quota byte rate (bytes per second) - 64MB default",
       required::no,
-      10 << 20)
+      64 << 20)
   , _advertised_kafka_api(
       *this,
       "advertised_kafka_api",
