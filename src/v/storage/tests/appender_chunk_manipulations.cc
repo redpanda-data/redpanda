@@ -22,29 +22,29 @@ SEASTAR_THREAD_TEST_CASE(chunk_manipulation) {
     {
         c.append(b.data(), alignment - 2);
         c.append(b.data(), 4);
-        BOOST_REQUIRE_EQUAL(c.dma_size(alignment), 8192);
+        BOOST_REQUIRE_EQUAL(c.dma_size(), 8192);
         c.reset();
     }
     {
         size_t i = (alignment * 3) + 10;
         c.append(b.data(), i);
-        BOOST_REQUIRE_EQUAL(c.dma_size(alignment), alignment * 4);
-        const char* dptr = c.dma_ptr(alignment);
+        BOOST_REQUIRE_EQUAL(c.dma_size(), alignment * 4);
+        const char* dptr = c.dma_ptr();
         const char* eptr = b.data();
         BOOST_REQUIRE(std::memcmp(dptr, eptr, i) == 0);
         c.flush();
         // same after flush
-        BOOST_REQUIRE_EQUAL(c.dma_size(alignment), alignment);
+        BOOST_REQUIRE_EQUAL(c.dma_size(), alignment);
         BOOST_REQUIRE_EQUAL(c.flushed_pos() % alignment, 10);
         c.append(b.data() + i, alignment + 10);
         i += alignment + 10;
         // we appended 4096+10, but had 10 left from prev
-        BOOST_REQUIRE_EQUAL(c.dma_size(alignment), alignment * 2);
+        BOOST_REQUIRE_EQUAL(c.dma_size(), alignment * 2);
         c.flush();
-        c.compact(alignment);
+        c.compact();
         BOOST_REQUIRE_EQUAL(c.size(), 20);
         BOOST_REQUIRE_EQUAL(c.flushed_pos(), 20);
-        dptr = c.dma_ptr(alignment);
+        dptr = c.dma_ptr();
         eptr = b.data() + i - 20;
         BOOST_REQUIRE(std::memcmp(dptr, eptr, 20) == 0);
         c.reset();
