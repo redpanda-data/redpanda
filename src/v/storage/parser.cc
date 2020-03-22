@@ -111,9 +111,9 @@ ss::future<stop_parser> continuous_batch_parser::consume_header() {
               vlog(
                 stlog.info,
                 "detected header corruption. stopping parser. Expected CRC of "
-                "{}, but got header: {}",
+                "{}, but got header CRC: {}",
                 computed_crc,
-                o.value());
+                o.value().header_crc);
               return ss::make_ready_future<stop_parser>(stop_parser::yes);
           }
           if (unlikely(o.value().header_crc == 0)) {
@@ -233,10 +233,13 @@ ss::future<stop_parser> continuous_batch_parser::consume_records() {
                   }
               }
           }
-          vassert(
-            parser.bytes_left() == 0,
-            "{} bytes left in to parse, but reached end",
-            parser.bytes_left());
+          if (unlikely(parser.bytes_left() != 0)) {
+              vlog(
+                stlog.error,
+                "{} bytes left in to parse, but reached end",
+                parser.bytes_left());
+              return stop_parser::yes;
+          }
           return _consumer->consume_batch_end();
       });
 }
