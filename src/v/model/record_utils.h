@@ -1,9 +1,12 @@
 #pragma once
 
 #include "hashing/crc32c.h"
-#include "model/record.h"
 
 namespace model {
+
+struct record_batch_header;
+class record_batch;
+class record;
 
 void crc_record_batch_header(crc32&, const record_batch_header&);
 
