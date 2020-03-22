@@ -5,6 +5,7 @@
 #include "raft/tron/logger.h"
 #include "raft/tron/trongen_service.h"
 #include "raft/tron/types.h"
+#include "raft/types.h"
 #include "seastarx.h"
 
 namespace raft::tron {
@@ -35,7 +36,10 @@ struct service final : trongen_service {
                 get_smp_service_group(),
                 [this, r = std::move(r)](ConsensusManager& m) mutable {
                     return m.consensus_for(group_id(66))
-                      ->replicate(std::move(r))
+                      ->replicate(
+                        std::move(r),
+                        raft::replicate_options(
+                          raft::consistency_level::quorum_ack))
                       .then_wrapped([](ss::future<result<replicate_result>> f) {
                           put_reply ret;
                           try {

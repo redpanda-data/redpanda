@@ -84,7 +84,7 @@ public:
       process_heartbeat_response(model::node_id, result<append_entries_reply>);
 
     ss::future<result<replicate_result>>
-    replicate(model::record_batch_reader&&);
+    replicate(model::record_batch_reader&&, replicate_options);
 
     ss::future<model::record_batch_reader>
     make_reader(storage::log_reader_config config) {
