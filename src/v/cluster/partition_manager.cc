@@ -16,12 +16,10 @@
 namespace cluster {
 
 partition_manager::partition_manager(
-  storage::log_append_config::fsync should_fsync,
   model::timeout_clock::duration disk_timeout,
   ss::sharded<cluster::shard_table>& nlc,
   ss::sharded<rpc::connection_cache>& clients)
   : _self(config::shard_local_cfg().node_id())
-  , _should_fsync(should_fsync)
   , _disk_timeout(disk_timeout)
   , _mngr(storage::log_config{
       .base_dir = config::shard_local_cfg().data_directory().as_sstring(),
@@ -99,7 +97,6 @@ ss::lw_shared_ptr<raft::consensus> partition_manager::make_consensus(
       raft::timeout_jitter(
         config::shard_local_cfg().raft_election_timeout_ms()),
       log,
-      _should_fsync,
       raft_priority(),
       _disk_timeout,
       _client,
