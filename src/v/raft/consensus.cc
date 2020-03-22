@@ -190,12 +190,33 @@ void consensus::dispatch_recovery(
 }
 
 ss::future<result<replicate_result>>
-consensus::replicate(model::record_batch_reader&& rdr) {
+consensus::replicate(model::record_batch_reader&& rdr, replicate_options opts) {
     if (!is_leader()) {
         return seastar::make_ready_future<result<replicate_result>>(
           errc::not_leader);
     }
-    return _batcher.replicate(std::move(rdr));
+
+    if (opts.consistency == consistency_level::quorum_ack) {
+        return _batcher.replicate(std::move(rdr));
+    }
+
+    // For relaxed consistency, append data to leader disk without flush
+    // asynchronous replication is provided by Raft protocol recovery mechanism.
+    return ss::with_semaphore(
+      _op_sem, 1, [this, rdr = std::move(rdr)]() mutable {
+          if (!is_leader()) {
+              return seastar::make_ready_future<result<replicate_result>>(
+                errc::not_leader);
+          }
+
+          return disk_append(model::make_record_batch_reader<
+                               details::term_assigning_reader>(
+                               std::move(rdr), model::term_id(_meta.term)))
+            .then([](storage::append_result res) {
+                return result<replicate_result>(
+                  replicate_result{.last_offset = res.last_offset});
+            });
+      });
 }
 
 /// performs no raft-state mutation other than resetting the timer

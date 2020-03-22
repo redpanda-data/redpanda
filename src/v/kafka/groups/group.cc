@@ -679,7 +679,10 @@ void group::complete_join() {
             auto batch = checkpoint(assignments_type{});
             auto reader = model::make_memory_record_batch_reader(
               std::move(batch));
-            (void)_partition->replicate(std::move(reader))
+            (void)_partition
+              ->replicate(
+                std::move(reader),
+                raft::replicate_options(raft::consistency_level::quorum_ack))
               .then([this](result<raft::replicate_result> r) {});
         } else {
             std::for_each(
@@ -961,7 +964,10 @@ ss::future<sync_group_response> group::sync_group_completing_rebalance(
     auto batch = checkpoint(assignments);
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
 
-    return _partition->replicate(std::move(reader))
+    return _partition
+      ->replicate(
+        std::move(reader),
+        raft::replicate_options(raft::consistency_level::quorum_ack))
       .then([this,
              response = std::move(response),
              expected_generation = generation(),
@@ -1142,7 +1148,10 @@ group::store_offsets(offset_commit_request&& r) {
     auto batch = std::move(builder).build();
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
 
-    return _partition->replicate(std::move(reader))
+    return _partition
+      ->replicate(
+        std::move(reader),
+        raft::replicate_options(raft::consistency_level::quorum_ack))
       .then([this, req = std::move(r), commits = std::move(offset_commits)](
               result<raft::replicate_result> r) mutable {
           error_code error = r ? error_code::none : error_code::not_coordinator;

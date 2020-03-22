@@ -20,8 +20,8 @@ public:
     ss::future<> stop() { return _raft->stop(); }
 
     ss::future<result<raft::replicate_result>>
-    replicate(model::record_batch_reader&& r) {
-        return _raft->replicate(std::move(r));
+    replicate(model::record_batch_reader&& r, raft::replicate_options opts) {
+        return _raft->replicate(std::move(r), std::move(opts));
     }
 
     /**
