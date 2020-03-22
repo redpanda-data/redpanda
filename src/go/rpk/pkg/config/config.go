@@ -111,7 +111,11 @@ func WriteConfig(fs afero.Fs, config *Config, path string) error {
 	}
 	if !exists {
 		// If the config doesn't exist, just write it.
-		return vyaml.Persist(fs, config, path)
+		confMap, err := toMap(config)
+		if err != nil {
+			return err
+		}
+		return write(fs, confMap, path)
 	}
 	// Otherwise, backup the current config file, write the new one, and
 	// try to recover if there's an error.
@@ -128,17 +132,19 @@ func WriteConfig(fs afero.Fs, config *Config, path string) error {
 			return err
 		}
 	}
-	log.Debugf("Writing the new redpanda config to '%s'", path)
-	err = vyaml.Persist(fs, config, path)
+	currentConf, err := read(fs, backup)
 	if err != nil {
-		log.Infof("Recovering the previous confing from %s", backup)
-		recErr := utils.CopyFile(fs, backup, path)
-		if recErr != nil {
-			msg := "couldn't persist the new config due to '%v'," +
-				"nor recover the backup due to '%v"
-			return fmt.Errorf(msg, err, recErr)
-		}
-		return err
+		return recover(fs, backup, path, err)
+	}
+	log.Debugf("Writing the new redpanda config to '%s'", path)
+	mapConf, err := toMap(config)
+	if err != nil {
+		return recover(fs, backup, path, err)
+	}
+	merged := merge(currentConf, mapConf)
+	err = write(fs, merged, path)
+	if err != nil {
+		return recover(fs, backup, path, err)
 	}
 	return nil
 }
