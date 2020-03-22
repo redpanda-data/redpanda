@@ -13,6 +13,8 @@ import (
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
+	"github.com/spf13/viper"
+	"gopkg.in/yaml.v2"
 )
 
 type Config struct {
@@ -213,6 +215,42 @@ func CheckConfig(config *Config) (bool, []error) {
 	)
 	ok := len(errs) == 0
 	return ok, errs
+}
+
+func write(fs afero.Fs, conf map[string]interface{}, path string) error {
+	v := viper.New()
+	v.SetFs(fs)
+	v.MergeConfigMap(conf)
+	return v.WriteConfigAs(path)
+}
+
+func merge(current, new map[string]interface{}) map[string]interface{} {
+	v := viper.New()
+	v.MergeConfigMap(current)
+	v.MergeConfigMap(new)
+	return v.AllSettings()
+}
+
+func read(fs afero.Fs, path string) (map[string]interface{}, error) {
+	v := viper.New()
+	v.SetFs(fs)
+	v.SetConfigFile(path)
+	v.SetConfigType("yaml")
+	err := v.ReadInConfig()
+	if err != nil {
+		return nil, err
+	}
+	return v.AllSettings(), nil
+}
+
+func toMap(conf *Config) (map[string]interface{}, error) {
+	mapConf := make(map[string]interface{})
+	bs, err := yaml.Marshal(conf)
+	if err != nil {
+		return mapConf, err
+	}
+	err = yaml.Unmarshal(bs, &mapConf)
+	return mapConf, err
 }
 
 func checkRedpandaConfig(config *RedpandaConfig) []error {
