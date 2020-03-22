@@ -4,6 +4,7 @@
 #include "model/metadata.h"
 #include "random/fast_prng.h"
 #include "utils/intrusive_list_helpers.h"
+#include "vassert.h"
 
 #include <boost/container/flat_map.hpp>
 #include <fmt/ostream.h>
@@ -59,10 +60,20 @@ private:
         return std::distance(_weights.begin(), it);
     }
     void deallocate(uint32_t core) {
+        vassert(
+          core < _weights.size(),
+          "Tried to deallocate a non-existing core:{} - {}",
+          core,
+          *this);
         _partition_capacity++;
         _weights[core]--;
     }
     void allocate(uint32_t core) {
+        vassert(
+          core < _weights.size(),
+          "Tried to allocate a non-existing core:{} - {}",
+          core,
+          *this);
         _weights[core]++;
         _partition_capacity--;
     }
