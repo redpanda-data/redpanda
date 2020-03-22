@@ -13,6 +13,7 @@ v_cc_library(
     record_batch_builder.cc
     logger.cc
     segment_appender.cc
+    segment_appender_chunk.cc
     segment_set.cc
     segment.cc
     segment_index.cc

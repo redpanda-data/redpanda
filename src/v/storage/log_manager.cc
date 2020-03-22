@@ -105,7 +105,8 @@ ss::future<ss::lw_shared_ptr<segment>> log_manager::do_make_log_segment(
                 ss::make_shared(file_io_sanitizer(std::move(writer))));
           }
           return std::make_unique<segment_appender>(
-            writer, segment_appender::options(pc));
+            writer,
+            segment_appender::options(pc, segment_appender::chunks_no_buffer));
       })
       .then([this, buf_size, path](segment_appender_ptr a) {
           return open_segment(path, buf_size)

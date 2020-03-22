@@ -34,7 +34,7 @@ struct context {
         fidx = ss::file(ss::make_shared(file_io_sanitizer(std::move(fidx))));
 
         auto appender = segment_appender(
-          fd, segment_appender::options(ss::default_priority_class()));
+          fd, segment_appender::options(ss::default_priority_class(), 1));
         auto indexer = segment_index(
           base_name + ".index", std::move(fidx), base, 4096);
         auto reader = segment_reader(
