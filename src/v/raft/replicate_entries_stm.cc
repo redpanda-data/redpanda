@@ -97,8 +97,7 @@ replicate_entries_stm::dispatch_single_retry(model::node_id id) {
 ss::future<storage::append_result> replicate_entries_stm::append_to_self() {
     return share_request().then([this](append_entries_request req) mutable {
         _ctxlog.trace("Self append entries - {}", req.meta);
-        return _ptr->disk_append(
-          std::move(req.batches), consensus::allow_flush_after_write::no);
+        return _ptr->disk_append(std::move(req.batches));
     });
 }
 

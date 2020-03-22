@@ -70,7 +70,6 @@ struct raft_node {
           std::move(cfg),
           std::move(jit),
           log,
-          storage::log_append_config::fsync::yes,
           seastar::default_priority_class(),
           std::chrono::seconds(10),
           raft::make_rpc_client_protocol(cache),
