@@ -93,7 +93,6 @@ public:
                 raft::timeout_jitter(
                   config::shard_local_cfg().raft_election_timeout_ms()),
                 log,
-                storage::log_append_config::fsync::yes,
                 ss::default_priority_class(),
                 std::chrono::seconds(1),
                 _consensus_client_protocol,

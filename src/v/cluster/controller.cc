@@ -15,6 +15,7 @@
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
+#include "raft/types.h"
 #include "resource_mgmt/io_priority.h"
 #include "rpc/connection_cache.h"
 #include "rpc/types.h"
@@ -563,7 +564,9 @@ ss::future<std::vector<topic_result>> controller::do_create_topics(
     }
 
     auto rdr = model::make_memory_record_batch_reader(std::move(batches));
-    return _raft0->replicate(std::move(rdr))
+    return _raft0
+      ->replicate(
+        std::move(rdr), raft::replicate_options(default_consistency_level))
       .then_wrapped(
         [this,
          valid_topics = std::move(valid_topics),
@@ -650,7 +653,8 @@ ss::future<> controller::handle_controller_leadership_notification(
 
     return _raft0
       ->replicate(
-        model::make_memory_record_batch_reader({create_checkpoint_batch()}))
+        model::make_memory_record_batch_reader({create_checkpoint_batch()}),
+        raft::replicate_options(default_consistency_level))
       .then([this, u = std::move(u)](result<raft::replicate_result> res) {
           return _notification_latch
             .wait_for(res.value().last_offset, model::no_timeout)

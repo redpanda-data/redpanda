@@ -86,7 +86,11 @@ ss::future<> group_manager::inject_noop(
 
     // synchronization provided by raft after future resolves is sufficient to
     // get an up-to-date commit offset as an upperbound for our reader.
-    return p->replicate(std::move(reader)).discard_result();
+    return p
+      ->replicate(
+        std::move(reader),
+        raft::replicate_options(raft::consistency_level::quorum_ack))
+      .discard_result();
 }
 
 ss::future<> group_manager::handle_partition_leader_change(

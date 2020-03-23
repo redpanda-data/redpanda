@@ -6,7 +6,9 @@ FIXTURE_TEST(add_one_node_to_single_node_cluster, raft_test_fixture) {
     gr.enable_all();
     auto leader_id = wait_for_group_leader(gr);
     auto leader_raft = gr.get_member(leader_id).consensus;
-    auto res = leader_raft->replicate(random_batches_entry(1)).get0();
+    auto res = leader_raft
+                 ->replicate(random_batches_entry(1), default_replicate_opts)
+                 .get0();
     auto new_node = gr.create_new_node(model::node_id(2));
     leader_raft->add_group_member(new_node).get0();
     validate_logs_replication(gr);
@@ -20,7 +22,9 @@ FIXTURE_TEST(
     gr.enable_all();
     auto leader_id = wait_for_group_leader(gr);
     auto leader_raft = gr.get_member(leader_id).consensus;
-    auto res = leader_raft->replicate(random_batches_entry(1)).get0();
+    auto res = leader_raft
+                 ->replicate(random_batches_entry(1), default_replicate_opts)
+                 .get0();
     auto new_node_1 = gr.create_new_node(model::node_id(2));
     auto new_node_2 = gr.create_new_node(model::node_id(3));
     leader_raft->add_group_member(new_node_1).get0();
