@@ -53,7 +53,17 @@ class ProduceBenchTest(Test):
             inactive_topics=self.inactive_topics,
             active_topics=self.active_topics)
         workload1 = self.trogdor.create_task("workload1", spec)
+
+        # the trogdor service logs all requests() operations to INFO level,
+        # which is too verbose. We explicitly change the level to WARNING and
+        # set it back after the wait_for_done function returns
+        self.trogdor.logger.setLevel('WARNING')
+
         workload1.wait_for_done(timeout_sec=360)
+
+        # set it back to info
+        self.trogdor.logger.setLevel('INFO')
+
         tasks = self.trogdor.tasks()
         self.logger.info("TASKS: %s\n" %
                          json.dumps(tasks, sort_keys=True, indent=2))
