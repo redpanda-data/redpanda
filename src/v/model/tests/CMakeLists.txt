@@ -24,10 +24,10 @@ rp_test(
 
 rp_test(
   UNIT_TEST
-  BINARY_NAME record_batch_attributes_test
-  SOURCES record_batch_attributes_test.cc
+  BINARY_NAME record_batch_test
+  SOURCES record_batch_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
-  LIBRARIES Boost::unit_test_framework v::model
+  LIBRARIES Seastar::seastar_testing v::model v::model v::storage_test_utils
 )
 
 rp_test(

@@ -1,5 +1,9 @@
-#define BOOST_TEST_MODULE model
 #include "model/record.h"
+#include "model/record_utils.h"
+#include "model/timestamp.h"
+#include "storage/tests/utils/random_batch.h"
+
+#include <seastar/testing/thread_test_case.hh>
 
 #include <boost/test/data/monomorphic.hpp>
 #include <boost/test/data/test_case.hpp>
@@ -37,4 +41,30 @@ BOOST_DATA_TEST_CASE(
 
     BOOST_REQUIRE_EQUAL(attrs.compression(), c);
     BOOST_REQUIRE_EQUAL(attrs.timestamp_type(), ts_tp);
+}
+
+SEASTAR_THREAD_TEST_CASE(set_max_timestamp) {
+    auto batch = storage::test::make_random_batch(model::offset(0), 10, true);
+
+    // nothing changes if set to same values
+    auto crc = batch.header().crc;
+    auto hdr_crc = batch.header().header_crc;
+    batch.set_max_timestamp(
+      batch.header().attrs.timestamp_type(), batch.header().max_timestamp);
+    BOOST_TEST(crc == batch.header().crc);
+    BOOST_TEST(hdr_crc == batch.header().header_crc);
+
+    // ts change updates crcs
+    batch.set_max_timestamp(
+      model::timestamp_type::append_time,
+      model::timestamp(batch.header().max_timestamp() + 1));
+    BOOST_TEST(crc != batch.header().crc);
+    BOOST_TEST(hdr_crc != batch.header().header_crc);
+
+    // same ts produces orig crcs
+    batch.set_max_timestamp(
+      model::timestamp_type::create_time,
+      model::timestamp(batch.header().max_timestamp() - 1));
+    BOOST_TEST(crc == batch.header().crc);
+    BOOST_TEST(hdr_crc == batch.header().header_crc);
 }

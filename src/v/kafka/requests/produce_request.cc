@@ -187,6 +187,17 @@ static ss::future<produce_response::partition> partition_append(
   ss::lw_shared_ptr<cluster::partition> partition,
   model::record_batch batch,
   int16_t acks) {
+    /*
+     * TODO: grab timestamp type topic configuration option out of the metadata
+     * cache.
+     */
+    if (false) {
+        auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+          ss::lowres_clock::now().time_since_epoch());
+        batch.set_max_timestamp(
+          model::timestamp_type::append_time, model::timestamp(now.count()));
+    }
+
     auto num_records = batch.record_count();
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
 
