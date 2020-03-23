@@ -39,6 +39,16 @@ struct partition_count_must_be_positive {
     }
 };
 
+struct replication_factor_must_be_odd {
+    static constexpr error_code ec = error_code::invalid_replication_factor;
+    static constexpr const char* error_message
+      = "Replication factor must be an odd number - 1,3,5,7,9,11...";
+
+    static bool is_valid(const new_topic_configuration& c) {
+        return (c.replication_factor % 2) == 1;
+    }
+};
+
 struct replication_factor_must_be_positive {
     static constexpr error_code ec = error_code::invalid_replication_factor;
     static constexpr const char* error_message
