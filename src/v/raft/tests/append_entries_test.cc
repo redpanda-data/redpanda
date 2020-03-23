@@ -16,7 +16,9 @@ FIXTURE_TEST(test_entries_are_replicated_to_all_nodes, raft_test_fixture) {
 
     auto leader_id = wait_for_group_leader(gr);
     auto leader_raft = gr.get_member(leader_id).consensus;
-    auto res = leader_raft->replicate(random_batches_entry(1)).get0();
+    auto res = leader_raft
+                 ->replicate(random_batches_entry(1), default_replicate_opts)
+                 .get0();
 
     validate_logs_replication(gr);
 };
@@ -28,7 +30,10 @@ FIXTURE_TEST(test_replicate_multiple_entries_single_node, raft_test_fixture) {
     auto leader_raft = gr.get_member(leader_id).consensus;
     for (int i = 0; i < 5; ++i) {
         if (leader_raft->is_leader()) {
-            auto res = leader_raft->replicate(random_batches_entry(5)).get0();
+            auto res = leader_raft
+                         ->replicate(
+                           random_batches_entry(5), default_replicate_opts)
+                         .get0();
         }
     }
 
@@ -47,7 +52,10 @@ FIXTURE_TEST(test_replicate_multiple_entries, raft_test_fixture) {
     auto leader_raft = gr.get_member(leader_id).consensus;
     for (int i = 0; i < 5; ++i) {
         if (leader_raft->is_leader()) {
-            auto res = leader_raft->replicate(random_batches_entry(5)).get0();
+            auto res = leader_raft
+                         ->replicate(
+                           random_batches_entry(5), default_replicate_opts)
+                         .get0();
         }
     }
 
@@ -75,7 +83,10 @@ FIXTURE_TEST(test_single_node_recovery, raft_test_fixture) {
     // append some entries
     for (int i = 0; i < 5; ++i) {
         if (leader_raft->is_leader()) {
-            auto res = leader_raft->replicate(random_batches_entry(5)).get0();
+            auto res = leader_raft
+                         ->replicate(
+                           random_batches_entry(5), default_replicate_opts)
+                         .get0();
         }
     }
     validate_logs_replication(gr);
@@ -109,7 +120,10 @@ FIXTURE_TEST(test_single_node_recovery_multi_terms, raft_test_fixture) {
     // append some entries in current term
     for (int i = 0; i < 5; ++i) {
         if (leader_raft->is_leader()) {
-            auto res = leader_raft->replicate(random_batches_entry(5)).get0();
+            auto res = leader_raft
+                         ->replicate(
+                           random_batches_entry(5), default_replicate_opts)
+                         .get0();
         }
     }
 
@@ -120,7 +134,10 @@ FIXTURE_TEST(test_single_node_recovery_multi_terms, raft_test_fixture) {
     // append some entries in next term
     for (int i = 0; i < 5; ++i) {
         if (leader_raft->is_leader()) {
-            auto res = leader_raft->replicate(random_batches_entry(5)).get0();
+            auto res = leader_raft
+                         ->replicate(
+                           random_batches_entry(5), default_replicate_opts)
+                         .get0();
         }
     }
 
@@ -153,7 +170,8 @@ FIXTURE_TEST(test_recovery_of_crashed_leader_truncation, raft_test_fixture) {
     }
     // append some entries to leader log
     auto leader_raft = gr.get_member(first_leader_id).consensus;
-    auto f = leader_raft->replicate(random_batches_entry(2));
+    auto f = leader_raft->replicate(
+      random_batches_entry(2), default_replicate_opts);
     // since replicate doesn't accept timeout client have to deal with it.
     auto v = ss::with_timeout(model::timeout_clock::now() + 1s, std::move(f))
                .handle_exception_type([](const ss::timed_out_error&) {
@@ -174,7 +192,9 @@ FIXTURE_TEST(test_recovery_of_crashed_leader_truncation, raft_test_fixture) {
 
     // append some entries via new leader so old one has some data to
     // truncate
-    auto res = leader_raft->replicate(random_batches_entry(2)).get0();
+    auto res = leader_raft
+                 ->replicate(random_batches_entry(2), default_replicate_opts)
+                 .get0();
 
     validate_logs_replication(gr);
 

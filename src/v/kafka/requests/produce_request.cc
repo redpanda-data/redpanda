@@ -10,6 +10,7 @@
 #include "model/metadata.h"
 #include "model/record_batch_reader.h"
 #include "model/timestamp.h"
+#include "raft/types.h"
 #include "storage/shard_assignment.h"
 #include "utils/remote.h"
 #include "utils/to_string.h"
@@ -164,6 +165,19 @@ struct produce_ctx {
       , ssg(ssg) {}
 };
 
+static raft::replicate_options acks_to_replicate_options(int16_t acks) {
+    switch (acks) {
+    case -1:
+        return raft::replicate_options(raft::consistency_level::quorum_ack);
+    case 0:
+        return raft::replicate_options(raft::consistency_level::no_ack);
+    case 1:
+        return raft::replicate_options(raft::consistency_level::leader_ack);
+    default:
+        throw std::invalid_argument("Not supported ack level");
+    };
+}
+
 /*
  * Caller is expected to catch errors that may be thrown while the kafka batch
  * is being deserialized (see reader_from_kafka_batch).
@@ -171,11 +185,13 @@ struct produce_ctx {
 static ss::future<produce_response::partition> partition_append(
   model::partition_id id,
   ss::lw_shared_ptr<cluster::partition> partition,
-  model::record_batch batch) {
+  model::record_batch batch,
+  int16_t acks) {
     auto num_records = batch.record_count();
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
 
-    return partition->replicate(std::move(reader))
+    return partition
+      ->replicate(std::move(reader), acks_to_replicate_options(acks))
       .then_wrapped([id, num_records = num_records](
                       ss::future<result<raft::replicate_result>> f) {
           produce_response::partition p(id);
@@ -231,7 +247,8 @@ static ss::future<produce_response::partition> produce_topic_partition(
       *shard,
       octx.ssg,
       [batch = std::move(batch),
-       ntp = std::move(ntp)](cluster::partition_manager& mgr) mutable {
+       ntp = std::move(ntp),
+       acks = octx.request.acks](cluster::partition_manager& mgr) mutable {
           auto partition = mgr.get(ntp);
           if (!partition) {
               return ss::make_ready_future<produce_response::partition>(
@@ -244,7 +261,7 @@ static ss::future<produce_response::partition> produce_topic_partition(
                   ntp.tp.partition, error_code::not_leader_for_partition));
           }
           return partition_append(
-            ntp.tp.partition, partition, std::move(batch));
+            ntp.tp.partition, partition, std::move(batch), acks);
       });
 }
 

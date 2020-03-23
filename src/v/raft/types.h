@@ -173,6 +173,33 @@ struct replicate_result {
     model::offset last_offset;
 };
 
+enum class consistency_level { quorum_ack, leader_ack, no_ack };
+
+struct replicate_options {
+    explicit replicate_options(consistency_level l)
+      : consistency(l) {}
+
+    consistency_level consistency;
+};
+
+static inline std::ostream&
+operator<<(std::ostream& o, const consistency_level& l) {
+    switch (l) {
+    case consistency_level::quorum_ack:
+        o << "consistency_level::quorum_ack";
+        break;
+    case consistency_level::leader_ack:
+        o << "consistency_level::leader_ack";
+        break;
+    case consistency_level::no_ack:
+        o << "consistency_level::no_ack";
+        break;
+    default:
+        o << "unknown consistency_level";
+    }
+    return o;
+}
+
 static inline std::ostream&
 operator<<(std::ostream& o, const protocol_metadata& m) {
     return o << "{raft_group:" << m.group << ", commit_index:" << m.commit_index

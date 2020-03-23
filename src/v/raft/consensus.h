@@ -37,7 +37,6 @@ public:
       group_configuration,
       timeout_jitter,
       storage::log,
-      storage::log_append_config::fsync should_fsync,
       ss::io_priority_class io_priority,
       model::timeout_clock::duration disk_timeout,
       consensus_client_protocol,
@@ -85,7 +84,7 @@ public:
       process_heartbeat_response(model::node_id, result<append_entries_reply>);
 
     ss::future<result<replicate_result>>
-    replicate(model::record_batch_reader&&);
+    replicate(model::record_batch_reader&&, replicate_options);
 
     ss::future<model::record_batch_reader>
     make_reader(storage::log_reader_config config) {
@@ -126,8 +125,6 @@ private:
     friend vote_stm;
     friend recovery_stm;
     friend replicate_batcher;
-    using allow_flush_after_write
-      = ss::bool_class<struct allow_flush_after_write_tag>;
 
     // all these private functions assume that we are under exclusive operations
     // via the _op_sem
@@ -145,7 +142,7 @@ private:
     do_replicate(model::record_batch_reader&&);
 
     ss::future<storage::append_result>
-    disk_append(model::record_batch_reader&&, allow_flush_after_write);
+    disk_append(model::record_batch_reader&&);
 
     using success_reply = ss::bool_class<struct successfull_reply_tag>;
 
@@ -183,7 +180,6 @@ private:
     model::node_id _self;
     timeout_jitter _jit;
     storage::log _log;
-    storage::log_append_config::fsync _should_fsync;
     ss::io_priority_class _io_priority;
     model::timeout_clock::duration _disk_timeout;
     consensus_client_protocol _client_protocol;

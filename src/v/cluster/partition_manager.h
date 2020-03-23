@@ -15,7 +15,6 @@ namespace cluster {
 class partition_manager {
 public:
     partition_manager(
-      storage::log_append_config::fsync should_fsync,
       model::timeout_clock::duration disk_timeout,
       ss::sharded<cluster::shard_table>& nlc,
       ss::sharded<rpc::connection_cache>& clients);
@@ -113,7 +112,6 @@ private:
       storage::log,
       std::optional<raft::consensus::append_entries_cb_t>);
     model::node_id _self;
-    storage::log_append_config::fsync _should_fsync;
     model::timeout_clock::duration _disk_timeout;
 
     storage::log_manager _mngr;

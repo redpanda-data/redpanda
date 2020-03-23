@@ -30,6 +30,9 @@ inline static auto heartbeat_interval = 40ms;
 constexpr inline static auto default_storage_type
   = storage::log_manager::storage_type::disk;
 
+inline static const raft::replicate_options
+  default_replicate_opts(raft::consistency_level::quorum_ack);
+
 using consensus_ptr = ss::lw_shared_ptr<raft::consensus>;
 struct test_raft_manager {
     consensus_ptr consensus_for(raft::group_id) { return c; };
@@ -70,7 +73,6 @@ struct raft_node {
           std::move(cfg),
           std::move(jit),
           log,
-          storage::log_append_config::fsync::yes,
           seastar::default_priority_class(),
           std::chrono::seconds(10),
           raft::make_rpc_client_protocol(cache),

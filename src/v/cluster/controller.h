@@ -164,5 +164,7 @@ private:
     cluster::notification_id_type _leader_notify_handle;
     notification_latch _notification_latch;
     ss::abort_source _as;
+    static constexpr raft::consistency_level default_consistency_level
+      = raft::consistency_level::quorum_ack;
 };
 } // namespace cluster
