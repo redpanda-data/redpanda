@@ -44,6 +44,15 @@ void offset_fetch_request::decode(request_context& ctx) {
     });
 }
 
+static std::ostream&
+operator<<(std::ostream& o, const offset_fetch_request::topic& t) {
+    return ss::fmt_print(o, "topic={} partitions={}", t.name, t.partitions);
+}
+
+std::ostream& operator<<(std::ostream& o, const offset_fetch_request& r) {
+    return ss::fmt_print(o, "group={} topics={}", r.group_id, r.topics);
+}
+
 void offset_fetch_response::encode(const request_context& ctx, response& resp) {
     auto& writer = resp.writer();
     const auto version = ctx.header().version;
@@ -63,7 +72,9 @@ void offset_fetch_response::encode(const request_context& ctx, response& resp) {
                 writer.write(partition.error);
             });
       });
-    writer.write(error);
+    if (version >= api_version(2)) {
+        writer.write(error);
+    }
 }
 
 void offset_fetch_response::decode(iobuf buf, api_version version) {
@@ -104,6 +115,7 @@ struct offset_fetch_ctx {
 ss::future<response_ptr>
 offset_fetch_api::process(request_context&& ctx, ss::smp_service_group ssg) {
     offset_fetch_request request(ctx);
+    kreq_log.trace("Handling request {}", request);
     return ss::do_with(
       offset_fetch_ctx(std::move(ctx), std::move(request), ssg),
       [](offset_fetch_ctx& octx) {

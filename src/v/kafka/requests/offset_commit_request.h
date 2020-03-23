@@ -18,7 +18,7 @@ struct offset_commit_api final {
 
     static constexpr const char* name = "offset commit";
     static constexpr api_key key = api_key(8);
-    static constexpr api_version min_supported = api_version(5);
+    static constexpr api_version min_supported = api_version(2);
     static constexpr api_version max_supported = api_version(7);
 
     static ss::future<response_ptr>
@@ -43,7 +43,8 @@ struct offset_commit_request final {
     kafka::group_id group_id;
     kafka::generation_id generation_id;
     kafka::member_id member_id;
-    std::optional<kafka::group_instance_id> group_instance_id; // >= v7
+    std::optional<std::chrono::milliseconds> retention_time_ms; // >= v2, < v5
+    std::optional<kafka::group_instance_id> group_instance_id;  // >= v7
     std::vector<topic> topics;
 
     // set during request processing after mapping group to ntp
@@ -56,6 +57,8 @@ struct offset_commit_request final {
     void decode(request_context& ctx);
 };
 
+std::ostream& operator<<(std::ostream&, const offset_commit_request&);
+
 struct offset_commit_response final {
     struct partition {
         model::partition_id id;
@@ -67,7 +70,7 @@ struct offset_commit_response final {
         std::vector<partition> partitions;
     };
 
-    std::chrono::milliseconds throttle_time_ms{0};
+    std::chrono::milliseconds throttle_time_ms{0}; // >= v3
     std::vector<topic> topics;
 
     offset_commit_response() = default;
