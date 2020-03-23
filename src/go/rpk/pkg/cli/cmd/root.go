@@ -11,6 +11,9 @@ import (
 	"golang.org/x/crypto/ssh/terminal"
 )
 
+const feedbackMsg = `We'd love to hear about your experience with redpanda:
+https://vectorizedio.typeform.com/to/oeLrrn`
+
 func Execute() {
 	verbose := false
 	fs := afero.NewOsFs()
@@ -46,7 +49,16 @@ func Execute() {
 	rootCmd.AddCommand(NewConfigCommand(fs))
 	rootCmd.AddCommand(NewStatusCommand(fs))
 
-	if err := rootCmd.Execute(); err != nil {
+	err := rootCmd.Execute()
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "check":
+			fallthrough
+		case "tune":
+			log.Info(feedbackMsg)
+		}
+	}
+	if err != nil {
 		os.Exit(1)
 	}
 }
