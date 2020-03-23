@@ -19,7 +19,7 @@ public:
 
     static constexpr const char* name = "offset fetch";
     static constexpr api_key key = api_key(9);
-    static constexpr api_version min_supported = api_version(2);
+    static constexpr api_version min_supported = api_version(1);
     static constexpr api_version max_supported = api_version(4);
 
     static ss::future<response_ptr>
@@ -47,6 +47,8 @@ struct offset_fetch_request final {
     void decode(request_context& ctx);
 };
 
+std::ostream& operator<<(std::ostream&, const offset_fetch_request&);
+
 struct offset_fetch_response final {
     struct partition {
         model::partition_id id;
@@ -62,7 +64,7 @@ struct offset_fetch_response final {
 
     std::chrono::milliseconds throttle_time_ms{0}; // >= v3
     std::vector<topic> topics;
-    error_code error;
+    error_code error; // >= v2
 
     offset_fetch_response() = default;
 
