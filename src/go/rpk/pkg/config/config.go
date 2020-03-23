@@ -13,6 +13,8 @@ import (
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
+	"github.com/spf13/viper"
+	"gopkg.in/yaml.v2"
 )
 
 type Config struct {
@@ -109,7 +111,11 @@ func WriteConfig(fs afero.Fs, config *Config, path string) error {
 	}
 	if !exists {
 		// If the config doesn't exist, just write it.
-		return vyaml.Persist(fs, config, path)
+		confMap, err := toMap(config)
+		if err != nil {
+			return err
+		}
+		return write(fs, confMap, path)
 	}
 	// Otherwise, backup the current config file, write the new one, and
 	// try to recover if there's an error.
@@ -126,17 +132,19 @@ func WriteConfig(fs afero.Fs, config *Config, path string) error {
 			return err
 		}
 	}
-	log.Debugf("Writing the new redpanda config to '%s'", path)
-	err = vyaml.Persist(fs, config, path)
+	currentConf, err := read(fs, backup)
 	if err != nil {
-		log.Infof("Recovering the previous confing from %s", backup)
-		recErr := utils.CopyFile(fs, backup, path)
-		if recErr != nil {
-			msg := "couldn't persist the new config due to '%v'," +
-				"nor recover the backup due to '%v"
-			return fmt.Errorf(msg, err, recErr)
-		}
-		return err
+		return recover(fs, backup, path, err)
+	}
+	log.Debugf("Writing the new redpanda config to '%s'", path)
+	mapConf, err := toMap(config)
+	if err != nil {
+		return recover(fs, backup, path, err)
+	}
+	merged := merge(currentConf, mapConf)
+	err = write(fs, merged, path)
+	if err != nil {
+		return recover(fs, backup, path, err)
 	}
 	return nil
 }
@@ -213,6 +221,53 @@ func CheckConfig(config *Config) (bool, []error) {
 	)
 	ok := len(errs) == 0
 	return ok, errs
+}
+
+func recover(fs afero.Fs, backup, path string, err error) error {
+	log.Infof("Recovering the previous confing from %s", backup)
+	recErr := utils.CopyFile(fs, backup, path)
+	if recErr != nil {
+		msg := "couldn't persist the new config due to '%v'," +
+			"nor recover the backup due to '%v"
+		return fmt.Errorf(msg, err, recErr)
+	}
+	return fmt.Errorf("couldn't persist the new config due to '%v'", err)
+}
+
+func write(fs afero.Fs, conf map[string]interface{}, path string) error {
+	v := viper.New()
+	v.SetFs(fs)
+	v.MergeConfigMap(conf)
+	return v.WriteConfigAs(path)
+}
+
+func merge(current, new map[string]interface{}) map[string]interface{} {
+	v := viper.New()
+	v.MergeConfigMap(current)
+	v.MergeConfigMap(new)
+	return v.AllSettings()
+}
+
+func read(fs afero.Fs, path string) (map[string]interface{}, error) {
+	v := viper.New()
+	v.SetFs(fs)
+	v.SetConfigFile(path)
+	v.SetConfigType("yaml")
+	err := v.ReadInConfig()
+	if err != nil {
+		return nil, err
+	}
+	return v.AllSettings(), nil
+}
+
+func toMap(conf *Config) (map[string]interface{}, error) {
+	mapConf := make(map[string]interface{})
+	bs, err := yaml.Marshal(conf)
+	if err != nil {
+		return mapConf, err
+	}
+	err = yaml.Unmarshal(bs, &mapConf)
+	return mapConf, err
 }
 
 func checkRedpandaConfig(config *RedpandaConfig) []error {
