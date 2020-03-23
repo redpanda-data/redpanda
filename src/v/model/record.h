@@ -3,6 +3,7 @@
 #include "bytes/iobuf.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
+#include "model/record_utils.h"
 #include "model/timestamp.h"
 #include "vassert.h"
 
@@ -295,6 +296,10 @@ public:
                                    : timestamp_type::create_time;
     }
 
+    void set_timestamp_type(model::timestamp_type t) {
+        _attributes.set(3, t == timestamp_type::append_time);
+    }
+
     bool operator==(const record_batch_attributes& other) const {
         return _attributes == other._attributes;
     }
@@ -570,6 +575,25 @@ public:
 
     void clear() {
         ss::visit(_records, [](auto& r) { r.clear(); });
+    }
+
+    /**
+     * Set the batch max timestamp and recalculate checksums.
+     *
+     * The primary use case for this interface is supporting kafka's log append
+     * time option which causes the max timestamp to be set at append time,
+     * rather than at create time by the client.
+     */
+    void set_max_timestamp(timestamp_type ts_type, timestamp ts) {
+        if (
+          _header.attrs.timestamp_type() == ts_type
+          && _header.max_timestamp == ts) {
+            return;
+        }
+        _header.attrs.set_timestamp_type(ts_type);
+        _header.max_timestamp = ts;
+        _header.crc = model::crc_record_batch(*this);
+        _header.header_crc = model::internal_header_only_crc(_header);
     }
 
 private:
