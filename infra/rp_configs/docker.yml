@@ -1,0 +1,7 @@
+rpk:
+  additional_start_flags: [
+    "--overprovisioned",
+    "--smp=2",
+    "--memory=4G",
+    "--default-log-level=trace",
+  ]
