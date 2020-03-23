@@ -209,8 +209,10 @@ static ss::future<produce_response::partition> partition_append(
           try {
               auto r = f.get0();
               if (r) {
+                  // have to subtract num_of_records - 1 as base_offset is
+                  // inclusive
                   p.base_offset = model::offset(
-                    r.value().last_offset() - num_records);
+                    r.value().last_offset() - (num_records - 1));
                   p.error = error_code::none;
               } else {
                   p.error = error_code::unknown_server_error;
