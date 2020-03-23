@@ -154,9 +154,10 @@ func TestReadConfigFromPath(t *testing.T) {
 func TestWriteConfig(t *testing.T) {
 	const path string = "/redpanda.yaml"
 	type args struct {
-		conf func() *Config
-		fs   afero.Fs
-		path string
+		existingConf string
+		conf         func() *Config
+		fs           afero.Fs
+		path         string
 	}
 	tests := []struct {
 		name     string
@@ -179,17 +180,17 @@ func TestWriteConfig(t *testing.T) {
 			expected: `config_file: /etc/redpanda/redpanda.yaml
 pid_file: /var/lib/redpanda/pid
 redpanda:
-  data_directory: /var/lib/redpanda/data
-  rpc_server:
-    address: 127.0.0.1
-    port: 33145
-  kafka_api:
-    address: 127.0.0.1
-    port: 9092
   admin:
     address: 127.0.0.1
     port: 9644
+  data_directory: /var/lib/redpanda/data
+  kafka_api:
+    address: 127.0.0.1
+    port: 9092
   node_id: 1
+  rpc_server:
+    address: 127.0.0.1
+    port: 33145
   seed_servers:
   - host:
       address: 127.0.0.1
@@ -236,17 +237,17 @@ redpanda:
 			expected: `config_file: /etc/redpanda/redpanda.yaml
 pid_file: /var/lib/redpanda/pid
 redpanda:
-  data_directory: /var/lib/redpanda/data
-  rpc_server:
-    address: 127.0.0.1
-    port: 33145
-  kafka_api:
-    address: 127.0.0.1
-    port: 9092
   admin:
     address: 127.0.0.1
     port: 9644
+  data_directory: /var/lib/redpanda/data
+  kafka_api:
+    address: 127.0.0.1
+    port: 9092
   node_id: 1
+  rpc_server:
+    address: 127.0.0.1
+    port: 33145
   seed_servers:
   - host:
       address: 127.0.0.1
@@ -257,31 +258,119 @@ redpanda:
       port: 33146
     node_id: 2
 rpk:
+  coredump_dir: /var/lib/redpanda/coredumps
+  enable_memory_locking: true
   enable_usage_stats: true
-  tune_network: true
-  tune_disk_scheduler: true
-  tune_disk_nomerges: true
-  tune_disk_irq: true
-  tune_cpu: true
   tune_aio_events: true
   tune_clocksource: true
-  tune_swappiness: true
-  enable_memory_locking: true
   tune_coredump: true
-  coredump_dir: /var/lib/redpanda/coredumps
+  tune_cpu: true
+  tune_disk_irq: true
+  tune_disk_nomerges: true
+  tune_disk_scheduler: true
+  tune_network: true
+  tune_swappiness: true
   well_known_io: vendor:vm:storage
+`,
+		},
+		{
+			name: "shall leave unrecognized fields untouched",
+			args: args{
+				existingConf: `config_file: /etc/redpanda/redpanda.yaml
+pid_file: /var/lib/redpanda/pid
+redpanda:
+  admin:
+    address: 127.0.0.1
+    port: 9644
+  admin_api_doc_dir: /etc/redpanda/doc
+  data_directory: /var/lib/redpanda/data
+  default_window_sec: 100
+  kafka_api:
+    address: 127.0.0.1
+    port: 9092
+  node_id: 1
+  rpc_server:
+    address: 127.0.0.1
+    port: 33145
+  seed_servers:
+  - host:
+      address: 127.0.0.1
+      port: 33145
+    node_id: 1
+  - host:
+      address: 127.0.0.1
+      port: 33146
+    node_id: 2
+  target_quota_byte_rate: 1000000
+unrecognized_top_field:
+  child: true
+`,
+				fs:   afero.NewMemMapFs(),
+				path: path,
+				conf: getValidConfig,
+			},
+			wantErr: false,
+			expected: `config_file: /etc/redpanda/redpanda.yaml
+pid_file: /var/lib/redpanda/pid
+redpanda:
+  admin:
+    address: 127.0.0.1
+    port: 9644
+  admin_api_doc_dir: /etc/redpanda/doc
+  data_directory: /var/lib/redpanda/data
+  default_window_sec: 100
+  kafka_api:
+    address: 127.0.0.1
+    port: 9092
+  node_id: 1
+  rpc_server:
+    address: 127.0.0.1
+    port: 33145
+  seed_servers:
+  - host:
+      address: 127.0.0.1
+      port: 33145
+    node_id: 1
+  - host:
+      address: 127.0.0.1
+      port: 33146
+    node_id: 2
+  target_quota_byte_rate: 1000000
+rpk:
+  coredump_dir: /var/lib/redpanda/coredumps
+  enable_memory_locking: true
+  enable_usage_stats: true
+  tune_aio_events: true
+  tune_clocksource: true
+  tune_coredump: true
+  tune_cpu: true
+  tune_disk_irq: true
+  tune_disk_nomerges: true
+  tune_disk_scheduler: true
+  tune_network: true
+  tune_swappiness: true
+  well_known_io: vendor:vm:storage
+unrecognized_top_field:
+  child: true
 `,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Write the config file so that WriteConfig backs it up
-			// when the new one is written.
-			err := vyaml.Persist(tt.args.fs, tt.args.conf(), tt.args.path)
-			if err != nil {
-				t.Fatal(err.Error())
+			if tt.args.existingConf != "" {
+				_, err := utils.WriteBytes(tt.args.fs, []byte(tt.args.existingConf), tt.args.path)
+				if err != nil {
+					t.Fatal(err.Error())
+				}
+			} else {
+				// Write the config file so that WriteConfig backs it up
+				// when the new one is written.
+				err := vyaml.Persist(tt.args.fs, tt.args.conf(), tt.args.path)
+				if err != nil {
+					t.Fatal(err.Error())
+				}
 			}
-			err = WriteConfig(tt.args.fs, tt.args.conf(), tt.args.path)
+			err := WriteConfig(tt.args.fs, tt.args.conf(), tt.args.path)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected an error, got nil")
