@@ -10,6 +10,7 @@
 #include "model/metadata.h"
 #include "model/record_batch_reader.h"
 #include "model/timestamp.h"
+#include "raft/types.h"
 #include "storage/shard_assignment.h"
 #include "utils/remote.h"
 #include "utils/to_string.h"
@@ -163,6 +164,19 @@ struct produce_ctx {
       , request(std::move(request))
       , ssg(ssg) {}
 };
+
+static raft::replicate_options acks_to_replicate_options(int16_t acks) {
+    switch (acks) {
+    case -1:
+        return raft::replicate_options(raft::consistency_level::quorum_ack);
+    case 0:
+        return raft::replicate_options(raft::consistency_level::no_ack);
+    case 1:
+        return raft::replicate_options(raft::consistency_level::leader_ack);
+    default:
+        throw std::invalid_argument("Not supported ack level");
+    };
+}
 
 /*
  * Caller is expected to catch errors that may be thrown while the kafka batch
