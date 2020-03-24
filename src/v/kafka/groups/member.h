@@ -8,13 +8,14 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/shared_ptr.hh>
 
+#include <absl/container/flat_hash_set.h>
+
 #include <algorithm>
 #include <chrono>
 #include <iosfwd>
 #include <iterator>
 #include <memory>
 #include <optional>
-#include <set>
 #include <utility>
 #include <vector>
 
@@ -133,8 +134,8 @@ public:
      *
      * \throws std::out_of_range if no candidate is supported.
      */
-    const kafka::protocol_name&
-    vote_for_protocol(const std::set<protocol_name>& candidates) const;
+    const kafka::protocol_name& vote_for_protocol(
+      const absl::flat_hash_set<protocol_name>& candidates) const;
 
     /**
      * \brief Get the member's protocol metadata by name.

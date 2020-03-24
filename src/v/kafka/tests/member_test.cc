@@ -118,7 +118,7 @@ SEASTAR_THREAD_TEST_CASE(response_futs) {
 BOOST_AUTO_TEST_CASE(vote) {
     auto m = get_member();
 
-    std::set<protocol_name> c;
+    absl::flat_hash_set<protocol_name> c;
     BOOST_CHECK_THROW(m.vote_for_protocol(c), std::out_of_range);
 
     c.insert(kafka::protocol_name("n1"));
