@@ -94,55 +94,10 @@ func DefaultConfig() Config {
 // Checks config and writes it to the given path.
 func WriteConfig(fs afero.Fs, config *Config, path string) error {
 	confMap, err := toMap(config)
-	ok, errs := check(confMap)
-	if !ok {
-		reasons := []string{}
-		for _, err := range errs {
-			reasons = append(reasons, err.Error())
-		}
-		return errors.New(strings.Join(reasons, ", "))
-	}
-	lastBackupFile, err := findBackup(fs, filepath.Dir(path))
 	if err != nil {
 		return err
 	}
-	exists, err := afero.Exists(fs, path)
-	if err != nil {
-		return err
-	}
-	if !exists {
-		// If the config doesn't exist, just write it.
-		return write(fs, confMap, path)
-	}
-	// Otherwise, backup the current config file, write the new one, and
-	// try to recover if there's an error.
-	log.Debug("Backing up the current config")
-	backup, err := utils.BackupFile(fs, path)
-	if err != nil {
-		return err
-	}
-	log.Debugf("Backed up the current config to %s", backup)
-	if lastBackupFile != "" {
-		log.Debug("Removing previous backup file")
-		err = fs.Remove(lastBackupFile)
-		if err != nil {
-			return err
-		}
-	}
-	currentConf, err := read(fs, backup)
-	if err != nil {
-		return recover(fs, backup, path, err)
-	}
-	log.Debugf("Writing the new redpanda config to '%s'", path)
-	if err != nil {
-		return recover(fs, backup, path, err)
-	}
-	merged := merge(currentConf, confMap)
-	err = write(fs, merged, path)
-	if err != nil {
-		return recover(fs, backup, path, err)
-	}
-	return nil
+	return checkAndWrite(fs, confMap, path)
 }
 
 func findBackup(fs afero.Fs, dir string) (string, error) {
@@ -226,6 +181,58 @@ func recover(fs afero.Fs, backup, path string, err error) error {
 		return fmt.Errorf(msg, err, recErr)
 	}
 	return fmt.Errorf("couldn't persist the new config due to '%v'", err)
+}
+
+func checkAndWrite(fs afero.Fs, conf map[string]interface{}, path string) error {
+	ok, errs := check(conf)
+	if !ok {
+		reasons := []string{}
+		for _, err := range errs {
+			reasons = append(reasons, err.Error())
+		}
+		return errors.New(strings.Join(reasons, ", "))
+	}
+	lastBackupFile, err := findBackup(fs, filepath.Dir(path))
+	if err != nil {
+		return err
+	}
+	exists, err := afero.Exists(fs, path)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		// If the config doesn't exist, just write it.
+		return write(fs, conf, path)
+	}
+	// Otherwise, backup the current config file, write the new one, and
+	// try to recover if there's an error.
+	log.Debug("Backing up the current config")
+	backup, err := utils.BackupFile(fs, path)
+	if err != nil {
+		return err
+	}
+	log.Debugf("Backed up the current config to %s", backup)
+	if lastBackupFile != "" {
+		log.Debug("Removing previous backup file")
+		err = fs.Remove(lastBackupFile)
+		if err != nil {
+			return err
+		}
+	}
+	currentConf, err := read(fs, backup)
+	if err != nil {
+		return recover(fs, backup, path, err)
+	}
+	log.Debugf("Writing the new redpanda config to '%s'", path)
+	if err != nil {
+		return recover(fs, backup, path, err)
+	}
+	merged := merge(currentConf, conf)
+	err = write(fs, merged, path)
+	if err != nil {
+		return recover(fs, backup, path, err)
+	}
+	return nil
 }
 
 func write(fs afero.Fs, conf map[string]interface{}, path string) error {
