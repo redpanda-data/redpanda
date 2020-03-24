@@ -107,6 +107,11 @@ public:
     // Constructors
     explicit disk_log_builder(
       storage::log_config config = log_builder_config());
+    ~disk_log_builder() noexcept = default;
+    disk_log_builder(const disk_log_builder&) = delete;
+    disk_log_builder& operator=(const disk_log_builder&) = delete;
+    disk_log_builder(disk_log_builder&&) noexcept = default;
+    disk_log_builder& operator=(disk_log_builder&&) noexcept = delete;
 
     // Syntactic sugar for pipes
     template<typename... Args>
