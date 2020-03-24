@@ -57,11 +57,13 @@ struct adl {
       = std::is_trivially_copyable_v<type>;
     static constexpr bool is_enum = std::is_enum_v<T>;
     static constexpr bool is_ss_bool = is_ss_bool_v<T>;
+    static constexpr bool is_chrono_milliseconds
+      = std::is_same_v<type, std::chrono::milliseconds>;
 
     static_assert(
       is_optional || is_sstring || is_vector || is_named_type || is_iobuf
         || is_standard_layout || is_trivially_copyable || is_not_floating_point
-        || is_enum || is_ss_bool,
+        || is_enum || is_ss_bool || is_chrono_milliseconds,
       "rpc: no adl registered");
 
     type from(iobuf io) {
@@ -99,6 +101,9 @@ struct adl {
             return ss::le_to_cpu(in.consume_type<type>());
         } else if constexpr (is_ss_bool) {
             return type(adl<int8_t>{}.from(in));
+        } else if constexpr (is_chrono_milliseconds) {
+            return std::chrono::milliseconds(
+              ss::le_to_cpu(in.consume_type<int64_t>()));
         } else if constexpr (is_standard_layout) {
             T t;
             reflection::for_each_field(t, [&in](auto& field) mutable {
@@ -150,6 +155,9 @@ struct adl {
             return;
         } else if constexpr (is_ss_bool) {
             adl<int8_t>{}.to(out, static_cast<int8_t>(bool(t)));
+        } else if constexpr (is_chrono_milliseconds) {
+            adl<int64_t>{}.to(out, t.count());
+            return;
         } else if constexpr (is_standard_layout) {
             /*
             std::apply(
