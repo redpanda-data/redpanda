@@ -3,6 +3,7 @@
 #include <seastar/core/align.hh>
 
 #include <algorithm>
+#include <cstring>
 
 namespace storage {
 
