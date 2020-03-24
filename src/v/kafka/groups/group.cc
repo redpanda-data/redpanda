@@ -12,6 +12,7 @@
 #include <seastar/core/print.hh>
 #include <seastar/core/sstring.hh>
 
+#include <absl/container/flat_hash_set.h>
 #include <boost/uuid/random_generator.hpp>
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_io.hpp>
@@ -284,7 +285,7 @@ kafka::protocol_name group::select_protocol() const {
     kglog.trace("selecting group protocol");
 
     // index of protocols supported by all members
-    std::set<kafka::protocol_name> candidates;
+    absl::flat_hash_set<kafka::protocol_name> candidates;
     std::for_each(
       std::cbegin(_supported_protocols),
       std::cend(_supported_protocols),
