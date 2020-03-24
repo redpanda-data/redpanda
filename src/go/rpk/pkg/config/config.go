@@ -1,11 +1,13 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"vectorized/pkg/utils"
 	vyaml "vectorized/pkg/yaml"
@@ -89,6 +91,51 @@ func DefaultConfig() Config {
 			CoredumpDir:         "/var/lib/redpanda/coredump",
 		},
 	}
+}
+
+func Set(fs afero.Fs, key, value, format, path string) error {
+	confMap, err := read(fs, path)
+	if err != nil {
+		return err
+	}
+	v := viper.New()
+	v.MergeConfigMap(confMap)
+	var newConfValue interface{}
+	switch strings.ToLower(format) {
+	case "single":
+		v.Set(key, parse(value))
+		return checkAndWrite(fs, v.AllSettings(), path)
+	case "yaml":
+		err := yaml.Unmarshal([]byte(value), &newConfValue)
+		if err != nil {
+			return err
+		}
+	case "json":
+		err := json.Unmarshal([]byte(value), &newConfValue)
+		if err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("unsupported format %s", format)
+	}
+
+	newV := viper.New()
+	newV.Set(key, newConfValue)
+	v.MergeConfigMap(newV.AllSettings())
+	return checkAndWrite(fs, v.AllSettings(), path)
+}
+
+func parse(val string) interface{} {
+	if b, err := strconv.ParseBool(val); err == nil {
+		return b
+	}
+	if i, err := strconv.Atoi(val); err == nil {
+		return i
+	}
+	if f, err := strconv.ParseFloat(val, 64); err == nil {
+		return f
+	}
+	return val
 }
 
 // Checks config and writes it to the given path.
@@ -183,7 +230,9 @@ func recover(fs afero.Fs, backup, path string, err error) error {
 	return fmt.Errorf("couldn't persist the new config due to '%v'", err)
 }
 
-func checkAndWrite(fs afero.Fs, conf map[string]interface{}, path string) error {
+func checkAndWrite(
+	fs afero.Fs, conf map[string]interface{}, path string,
+) error {
 	ok, errs := check(conf)
 	if !ok {
 		reasons := []string{}
@@ -319,7 +368,6 @@ func checkRedpandaConfig(v *viper.Viper) []error {
 			s := viper.New()
 			s.MergeConfigMap(seed)
 			host := s.Sub("host")
-			fmt.Println(host.AllSettings())
 			if host == nil {
 				err := fmt.Errorf(
 					"%s.%d.host can't be empty",
@@ -329,7 +377,6 @@ func checkRedpandaConfig(v *viper.Viper) []error {
 				errs = append(errs, err)
 				continue
 			}
-			log.Info(host.AllSettings())
 			configPath := fmt.Sprintf(
 				"%s.%d.host",
 				seedServersPath,

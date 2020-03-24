@@ -9,6 +9,7 @@ import (
 	vyaml "vectorized/pkg/yaml"
 
 	"github.com/spf13/afero"
+	"github.com/spf13/viper"
 	"gopkg.in/yaml.v2"
 )
 
@@ -63,6 +64,151 @@ func getValidConfig() *Config {
 			CoredumpDir:         "/var/lib/redpanda/coredumps",
 			WellKnownIo:         "vendor:vm:storage",
 		},
+	}
+}
+
+func TestSet(t *testing.T) {
+	tests := []struct {
+		name      string
+		key       string
+		value     string
+		format    string
+		expected  interface{}
+		expectErr bool
+	}{
+		{
+			name:     "it should set single integer fields",
+			key:      "redpanda.node_id",
+			value:    "54312",
+			format:   "single",
+			expected: 54312,
+		},
+		{
+			name:     "it should set single float fields",
+			key:      "redpanda.float_field",
+			value:    "42.3",
+			format:   "single",
+			expected: 42.3,
+		},
+		{
+			name:     "it should set single string fields",
+			key:      "redpanda.data_directory",
+			value:    "'/var/lib/differentdir'",
+			format:   "single",
+			expected: "'/var/lib/differentdir'",
+		},
+		{
+			name:     "it should set single bool fields",
+			key:      "rpk.enable_usage_stats",
+			value:    "true",
+			format:   "single",
+			expected: true,
+		},
+		{
+			name:   "it should partially set map fields (yaml)",
+			key:    "rpk",
+			value:  `tune_disk_irq: false`,
+			format: "yaml",
+			expected: map[string]interface{}{
+				"enable_usage_stats":    true,
+				"tune_network":          true,
+				"tune_disk_scheduler":   true,
+				"tune_disk_nomerges":    true,
+				"tune_disk_irq":         false,
+				"tune_cpu":              true,
+				"tune_aio_events":       true,
+				"tune_clocksource":      true,
+				"tune_swappiness":       true,
+				"enable_memory_locking": true,
+				"tune_coredump":         false,
+				"coredump_dir":          "/var/lib/redpanda/coredump",
+			},
+		},
+		{
+			name: "it should partially set map fields (json)",
+			key:  "redpanda.kafka_api",
+			value: `{
+  "address": "192.168.54.2"
+}`,
+			format: "json",
+			expected: map[string]interface{}{
+				"address": "192.168.54.2",
+				"port":    9092,
+			},
+		},
+		{
+			name:      "it should fail if the new value is invalid",
+			key:       "redpanda",
+			value:     `{"data_directory": ""}`,
+			format:    "json",
+			expectErr: true,
+		},
+		{
+			name:      "it should fail if the value isn't well formatted (json)",
+			key:       "redpanda",
+			value:     `{"seed_servers": []`,
+			format:    "json",
+			expectErr: true,
+		},
+		{
+			name: "it should fail if the value isn't well formatted (yaml)",
+			key:  "redpanda",
+			value: `seed_servers:
+- host:
+  address: "123.`,
+			format:    "yaml",
+			expectErr: true,
+		},
+		{
+			name:      "it should fail if the format isn't supported",
+			key:       "redpanda",
+			value:     "node_id=1",
+			format:    "toml",
+			expectErr: true,
+		},
+		{
+			name:      "it should fail if no key is passed",
+			value:     `node_id=1`,
+			expectErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fs := afero.NewMemMapFs()
+			conf := DefaultConfig()
+			err := WriteConfig(fs, &conf, conf.ConfigFile)
+			if err != nil {
+				t.Error(err.Error())
+			}
+			err = Set(fs, tt.key, tt.value, tt.format, conf.ConfigFile)
+			if tt.expectErr {
+				if err == nil {
+					t.Fatal("expected an error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("got an unexpected error: %v", err.Error())
+			}
+			v := viper.New()
+			v.SetFs(fs)
+			v.SetConfigType("yaml")
+			v.SetConfigFile(conf.ConfigFile)
+			err = v.ReadInConfig()
+			if err != nil {
+				t.Fatal(err)
+			}
+			val := v.Get(tt.key)
+			if !reflect.DeepEqual(val, tt.expected) {
+				t.Fatalf(
+					"expected: \n'%+v'\n but got: \n'%+v'\n for key '%s'",
+					tt.expected,
+					val,
+					tt.key,
+				)
+			}
+		})
 	}
 }
 
