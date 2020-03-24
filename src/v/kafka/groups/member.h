@@ -84,17 +84,6 @@ public:
         _protocols = std::move(protocols);
     }
 
-    /// Apply the given function to each member protocol.
-    // clang-format off
-    template<typename ProtocolFn>
-    CONCEPT(requires requires(ProtocolFn fn, const member_protocol& p) {
-        { fn(p) } -> void;
-    })
-    // clang-format on
-    void for_each_protocol(ProtocolFn fn) const {
-        std::for_each(std::cbegin(_protocols), std::cend(_protocols), fn);
-    }
-
     /// Update the is_new flag.
     void set_new(bool is_new) { _is_new = is_new; }
 
