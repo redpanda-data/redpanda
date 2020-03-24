@@ -7,8 +7,62 @@ partitions=6
 servers="localhost:9092"
 record_count=$((1 << 31))
 record_size=1024
-throughput=-1
+throughput=$((1024 * 64))
 acks=1
+client_names=(
+  SKOBIE
+  AVENUE
+  JOREL
+  GIZMO
+  GILB
+  MONTAGUE
+  FRANSWA
+  BUTCHIE
+  SERENITY
+  WATTS
+  TILLER
+  WELFIE
+  RAURI
+  ICHIBOD
+  CHUMI
+  EMORY
+  SAPHRIS
+  MCGREGOR
+  WALKEN
+  UBALDO
+  MAYKAYLA
+  DIOGGIE
+  LARES
+  WEASEL
+  ARAGON
+  ALPHA
+  CHORIZO
+  MARLIE
+  SCRIBBLES
+  ROXSY
+  SAMIR
+  BABY-BELLO
+  NORWAY
+  CAELAN
+  ESSENCE
+  LUCKLY
+  TARKA
+  DHALYA
+  NAOKI
+  MERQUJUQ
+  DEFIANCE
+  GUSTO
+  SPANKY
+  PORGY
+  KILLIAN
+  HIROHITO
+  SALLYWAGS
+  MOWGLEY
+  PETROVICH
+  SEPHY
+  BENTO
+)
+client_id=${client_names[$(date +%s) % ${#client_names[@]}]}
 
 if [[ $1 == "create" ]]; then
   bin/kafka-topics.sh --bootstrap-server ${servers} \
@@ -23,6 +77,7 @@ if [[ $1 == "produce" ]]; then
     --num-records ${record_count} \
     --throughput ${throughput} \
     --producer-props "acks=${acks}" \
+    --producer-props "client.id=${client_id}" \
     bootstrap.servers=${servers} \
     buffer.memory=$((1024 * 1024)) "${@:2:99}"
 fi

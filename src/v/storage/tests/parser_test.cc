@@ -118,7 +118,7 @@ struct context {
                     .get0();
         fd = ss::file(make_shared(file_io_sanitizer(std::move(fd))));
         auto appender = segment_appender(
-          fd, segment_appender::options(ss::default_priority_class()));
+                        fd, segment_appender::options(ss::default_priority_class(),1));
         for (auto& b : batches) {
             storage::write(appender, b).get();
         }

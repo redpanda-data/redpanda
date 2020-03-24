@@ -74,20 +74,15 @@ disk_log_appender::operator()(model::record_batch&& batch) {
 }
 
 ss::future<append_result> disk_log_appender::end_of_stream() {
-    auto f = ss::make_ready_future<>();
-    /// fsync, means we fsync _every_ record_batch
-    /// most API's will want to batch the fsync, at least
-    /// to the record_batch_reader level
-    if (_config.should_fsync) {
-        f = _log.flush();
+    auto retval = append_result{.append_time = _append_time,
+                                .base_offset = _base_offset,
+                                .last_offset = _last_offset,
+                                .byte_size = _byte_size,
+                                .last_term = _last_term};
+    if (_config.should_fsync == storage::log_append_config::fsync::no) {
+        return ss::make_ready_future<append_result>(retval);
     }
-    return f.then([this] {
-        return append_result{.append_time = _append_time,
-                             .base_offset = _base_offset,
-                             .last_offset = _last_offset,
-                             .byte_size = _byte_size,
-                             .last_term = _last_term};
-    });
+    return _log.flush().then([retval] { return retval; });
 }
 
 } // namespace storage

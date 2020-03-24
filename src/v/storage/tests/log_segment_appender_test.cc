@@ -20,7 +20,7 @@ SEASTAR_THREAD_TEST_CASE(test_can_append_multiple_flushes) {
                  | ss::open_flags::truncate)
                .get0();
     auto appender = segment_appender(
-      f, segment_appender::options(ss::default_priority_class()));
+      f, segment_appender::options(ss::default_priority_class(), 1));
 
     iobuf expected;
     ss::sstring data = "123456789\n";
@@ -55,12 +55,11 @@ SEASTAR_THREAD_TEST_CASE(test_can_append_mixed) {
                  | ss::open_flags::truncate)
                .get0();
     auto appender = segment_appender(
-      f, segment_appender::options(ss::default_priority_class()));
-
+      f, segment_appender::options(ss::default_priority_class(), 1));
+    auto alignment = f.disk_write_dma_alignment();
     for (size_t i = 0, acc = 0; i < 100; ++i) {
         iobuf original;
-        const size_t step = random_generators::get_int<size_t>(
-                              0, appender.dma_write_alignment() * 2)
+        const size_t step = random_generators::get_int<size_t>(0, alignment * 2)
                             + 1;
         {
             const auto data = random_generators::gen_alphanum_string(step - 1);
@@ -117,7 +116,7 @@ SEASTAR_THREAD_TEST_CASE(test_can_append_10MB) {
                  | ss::open_flags::truncate)
                .get0();
     auto appender = segment_appender(
-      f, segment_appender::options(ss::default_priority_class()));
+      f, segment_appender::options(ss::default_priority_class(), 1));
 
     for (size_t i = 0; i < 10; ++i) {
         iobuf original;
@@ -147,7 +146,7 @@ SEASTAR_THREAD_TEST_CASE(
                  | ss::open_flags::truncate)
                .get0();
     auto appender = segment_appender(
-      f, segment_appender::options(ss::default_priority_class()));
+      f, segment_appender::options(ss::default_priority_class(), 1));
 
     // write sequential. then read all
     iobuf original;
@@ -176,11 +175,10 @@ SEASTAR_THREAD_TEST_CASE(test_can_append_little_data) {
                  | ss::open_flags::truncate)
                .get0();
     auto appender = segment_appender(
-      f, segment_appender::options(ss::default_priority_class()));
-
+      f, segment_appender::options(ss::default_priority_class(), 1));
+    auto alignment = f.disk_write_dma_alignment();
     // at least 1 page and some 20 bytes to test boundary conditions
-    const auto data = random_generators::gen_alphanum_string(
-      appender.dma_write_alignment() + 20);
+    const auto data = random_generators::gen_alphanum_string(alignment + 20);
     for (size_t i = 0; i < data.size(); ++i) {
         char c = data[i];
         appender.append(&c, 1).get();
