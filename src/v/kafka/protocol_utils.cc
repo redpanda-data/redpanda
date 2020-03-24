@@ -68,23 +68,16 @@ ss::future<std::optional<size_t>> parse_size(ss::input_stream<char>& src) {
 
 ss::scattered_message<char>
 response_as_scattered(response_ptr response, correlation_id correlation) {
-    auto header = ss::uninitialized_string(sizeof(raw_response_header));
+    auto header = ss::temporary_buffer<char>(sizeof(raw_response_header));
     // NOLINTNEXTLINE
-    auto* raw_header = reinterpret_cast<raw_response_header*>(header.data());
+    auto* raw_header = reinterpret_cast<raw_response_header*>(
+      header.get_write());
     auto size = int32_t(sizeof(correlation) + response->buf().size_bytes());
     raw_header->size = ss::cpu_to_be(size);
     raw_header->correlation = ss::cpu_to_be(correlation());
-
-    ss::scattered_message<char> msg;
-    msg.append(std::move(header));
-    for (const auto& chunk : response->buf()) {
-        msg.append_static(
-          // NOLINTNEXTLINE
-          reinterpret_cast<const char*>(chunk.get()),
-          chunk.size());
-    }
-    msg.on_delete([response = std::move(response)] {});
-    return msg;
+    auto buf = std::move(*response).release();
+    buf.prepend(std::move(header));
+    return iobuf_as_scattered(std::move(buf));
 }
 
 } // namespace kafka

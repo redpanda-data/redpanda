@@ -1,4 +1,5 @@
 #include "bytes/bytes.h"
+#include "bytes/details/io_allocation_size.h"
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_ostreambuf.h"
 #include "bytes/tests/utils.h"
@@ -343,4 +344,45 @@ SEASTAR_THREAD_TEST_CASE(iobuf_as_ostream) {
     // second insertion
     os << b;
     BOOST_REQUIRE_EQUAL(underlying.size_bytes(), 1024);
+}
+
+SEASTAR_THREAD_TEST_CASE(alloctor_forward_progress) {
+    static constexpr std::array<uint32_t, 14> src = {{
+      512,
+      768,
+      1152,
+      1728,
+      2592,
+      3888,
+      5832,
+      8748,
+      13122,
+      19683,
+      29525,
+      44288,
+      66432,
+      99648,
+    }};
+    static constexpr std::array<uint32_t, 14> expected = {{
+      768,
+      1152,
+      1728,
+      2592,
+      3888,
+      5832,
+      8748,
+      13122,
+      19683,
+      29525,
+      44288,
+      66432,
+      99648,
+      131072,
+    }};
+    BOOST_REQUIRE_EQUAL(src.size(), expected.size());
+    for (size_t i = 0; i < src.size(); ++i) {
+        BOOST_REQUIRE_EQUAL(
+          details::io_allocation_size::next_allocation_size(src[i]),
+          expected[i]);
+    }
 }
