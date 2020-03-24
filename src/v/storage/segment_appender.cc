@@ -78,6 +78,7 @@ ss::future<> segment_appender::append(const iobuf& io) {
           return ss::stop_iteration::no;
       });
     if (unlikely(c != io.size_bytes())) {
+        // TODO: fixme
         return ss::make_exception_future<>(
                  std::runtime_error("could not append data"))
           .then([f = std::move(f)]() mutable { return std::move(f); });
@@ -184,8 +185,10 @@ ss::future<> segment_appender::flush() {
     if (_bytes_flush_pending == 0) {
         return ss::make_ready_future<>();
     }
+    bool half_page = false;
     if (!_free_chunks.empty()) {
-        if (!head().is_empty()) {
+        if (head().bytes_pending()) {
+            half_page = true;
             dispatch_background_head_write();
         }
     }
@@ -197,7 +200,13 @@ ss::future<> segment_appender::flush() {
     return ss::with_semaphore(
       _concurrent_flushes,
       _opts.number_of_chunks,
-      [this, suspend = std::move(suspend)]() mutable {
+      [this, suspend = std::move(suspend), half_page]() mutable {
+          if (half_page) {
+              // make sure it's the front
+              auto& c = _free_chunks.back();
+              c.hook.unlink();
+              _free_chunks.push_front(c);
+          }
           return _out.flush().finally(
             [this, suspend = std::move(suspend)]() mutable {
                 while (!suspend.empty()) {
