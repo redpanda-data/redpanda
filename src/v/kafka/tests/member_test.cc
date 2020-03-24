@@ -49,11 +49,6 @@ BOOST_AUTO_TEST_CASE(constructor) {
 
     BOOST_TEST(!m.is_joining());
     BOOST_TEST(!m.is_syncing());
-
-    BOOST_TEST(m.metadata(test_protos[0].name) == test_protos[0].metadata);
-    BOOST_TEST(m.metadata(test_protos[1].name) == test_protos[1].metadata);
-    BOOST_CHECK_THROW(
-      m.metadata(kafka::protocol_name("dne")), std::out_of_range);
 }
 
 BOOST_AUTO_TEST_CASE(assignment) {
@@ -66,6 +61,16 @@ BOOST_AUTO_TEST_CASE(assignment) {
 
     m.clear_assignment();
     BOOST_TEST(m.assignment() == bytes());
+}
+
+BOOST_AUTO_TEST_CASE(get_protocol_metadata) {
+    auto m = get_member();
+    BOOST_TEST(
+      m.get_protocol_metadata(test_protos[0].name) == test_protos[0].metadata);
+    BOOST_TEST(
+      m.get_protocol_metadata(test_protos[1].name) == test_protos[1].metadata);
+    BOOST_CHECK_THROW(
+      m.get_protocol_metadata(kafka::protocol_name("dne")), std::out_of_range);
 }
 
 BOOST_AUTO_TEST_CASE(protocols) {

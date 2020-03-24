@@ -224,7 +224,7 @@ std::vector<member_config> group::member_metadata() const {
       std::back_inserter(out),
       [this](const member_map::value_type& m) {
           auto& group_inst = m.second->group_instance_id();
-          auto metadata = m.second->metadata(*_protocol);
+          auto metadata = m.second->get_protocol_metadata(*_protocol);
           return member_config{.member_id = m.first,
                                .group_instance_id = group_inst,
                                .metadata = std::move(metadata)};
@@ -923,7 +923,7 @@ model::record_batch group::checkpoint(const assignments_type& assignments) {
               member->rebalance_timeout())
               .count();
         m.instance_id = member->group_instance_id();
-        auto sub = member->metadata(protocol().value());
+        auto sub = member->get_protocol_metadata(protocol().value());
         m.subscription.append(
           reinterpret_cast<const char*>(sub.c_str()), sub.size());
         auto as = assignments.at(member->id());
