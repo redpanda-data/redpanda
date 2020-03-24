@@ -139,9 +139,14 @@ public:
     /**
      * \brief Get the member's protocol metadata by name.
      *
+     * This method has linear cost since the underlying container is a vector,
+     * sorted by priority, rather than by protocol name. A member should always
+     * have very few protocols in this container.
+     *
      * \throws std::out_of_range if the protocol is not found.
      */
-    const bytes& metadata(const kafka::protocol_name& protocol) const;
+    const bytes&
+    get_protocol_metadata(const kafka::protocol_name& protocol) const;
 
     bool should_keep_alive(
       clock_type::time_point deadline, clock_type::duration new_join_timeout) {

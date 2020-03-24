@@ -39,13 +39,8 @@ group_member::vote(const std::set<protocol_name>& candidates) const {
     }
 }
 
-/*
- * linear in the number of member protocols. the protocols vector implicitly
- * encodes priority, so sorting it would mean a search for priority elsewhere or
- * keeping a parallel data structure.
- */
-const bytes&
-group_member::metadata(const kafka::protocol_name& protocol) const {
+const bytes& group_member::get_protocol_metadata(
+  const kafka::protocol_name& protocol) const {
     auto it = std::find_if(
       std::cbegin(_protocols),
       std::cend(_protocols),
