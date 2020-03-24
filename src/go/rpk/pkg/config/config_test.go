@@ -501,7 +501,7 @@ func TestCheckConfig(t *testing.T) {
 					return c
 				},
 			},
-			expected: []string{"redpanda.id can't be a negative integer"},
+			expected: []string{"redpanda.node_id can't be a negative integer"},
 		},
 		{
 			name: "shall return an error when the RPC server port is 0",
