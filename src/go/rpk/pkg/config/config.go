@@ -93,7 +93,8 @@ func DefaultConfig() Config {
 
 // Checks config and writes it to the given path.
 func WriteConfig(fs afero.Fs, config *Config, path string) error {
-	ok, errs := CheckConfig(config)
+	confMap, err := toMap(config)
+	ok, errs := check(confMap)
 	if !ok {
 		reasons := []string{}
 		for _, err := range errs {
@@ -111,10 +112,6 @@ func WriteConfig(fs afero.Fs, config *Config, path string) error {
 	}
 	if !exists {
 		// If the config doesn't exist, just write it.
-		confMap, err := toMap(config)
-		if err != nil {
-			return err
-		}
 		return write(fs, confMap, path)
 	}
 	// Otherwise, backup the current config file, write the new one, and
@@ -137,11 +134,10 @@ func WriteConfig(fs afero.Fs, config *Config, path string) error {
 		return recover(fs, backup, path, err)
 	}
 	log.Debugf("Writing the new redpanda config to '%s'", path)
-	mapConf, err := toMap(config)
 	if err != nil {
 		return recover(fs, backup, path, err)
 	}
-	merged := merge(currentConf, mapConf)
+	merged := merge(currentConf, confMap)
 	err = write(fs, merged, path)
 	if err != nil {
 		return recover(fs, backup, path, err)
@@ -214,13 +210,11 @@ func ReadOrGenerate(fs afero.Fs, configFile string) (*Config, error) {
 }
 
 func CheckConfig(config *Config) (bool, []error) {
-	errs := checkRedpandaConfig(config.Redpanda)
-	errs = append(
-		errs,
-		checkRpkConfig(config.Rpk)...,
-	)
-	ok := len(errs) == 0
-	return ok, errs
+	configMap, err := toMap(config)
+	if err != nil {
+		return false, []error{err}
+	}
+	return check(configMap)
 }
 
 func recover(fs afero.Fs, backup, path string, err error) error {
@@ -270,33 +264,75 @@ func toMap(conf *Config) (map[string]interface{}, error) {
 	return mapConf, err
 }
 
-func checkRedpandaConfig(config *RedpandaConfig) []error {
+func check(conf map[string]interface{}) (bool, []error) {
+	v := viper.New()
+	v.MergeConfigMap(conf)
+	errs := checkRedpandaConfig(v)
+	errs = append(
+		errs,
+		checkRpkConfig(v)...,
+	)
+	ok := len(errs) == 0
+	return ok, errs
+}
+
+func checkRedpandaConfig(v *viper.Viper) []error {
 	errs := []error{}
-	if config == nil {
+	rp := v.Sub("redpanda")
+	if rp == nil {
 		return []error{errors.New("the redpanda config is missing")}
 	}
-	if config.Directory == "" {
+	if rp.GetString("data_directory") == "" {
 		errs = append(errs, fmt.Errorf("redpanda.data_directory can't be empty"))
 	}
-	if config.Id < 0 {
-		errs = append(errs, fmt.Errorf("redpanda.id can't be a negative integer"))
+	if rp.GetInt("node_id") < 0 {
+		errs = append(errs, fmt.Errorf("redpanda.node_id can't be a negative integer"))
 	}
 	errs = append(
 		errs,
-		checkSocketAddress(config.RPCServer, "redpanda.rpc_server")...,
+		checkSocketAddress(rp.Sub("rpc_server"), "redpanda.rpc_server")...,
 	)
 	errs = append(
 		errs,
-		checkSocketAddress(config.KafkaApi, "redpanda.kafka_api")...,
+		checkSocketAddress(rp.Sub("kafka_api"), "redpanda.kafka_api")...,
 	)
-	seedServersPath := "redpanda.seed_servers"
-	if len(config.SeedServers) != 0 {
-		for i, seed := range config.SeedServers {
+	var seedServersSlice []map[string]interface{}
+	err := rp.UnmarshalKey("seed_servers", &seedServersSlice)
+	if err != nil {
+		log.Error(err)
+		msg := "redpanda.seed_servers doesn't have the expected structure"
+		return append(
+			errs,
+			errors.New(msg),
+		)
+	}
+	if len(seedServersSlice) > 0 {
+		seedServersPath := "redpanda.seed_servers"
+		for i, seed := range seedServersSlice {
+			s := viper.New()
+			s.MergeConfigMap(seed)
+			host := s.Sub("host")
+			fmt.Println(host.AllSettings())
+			if host == nil {
+				err := fmt.Errorf(
+					"%s.%d.host can't be empty",
+					seedServersPath,
+					i,
+				)
+				errs = append(errs, err)
+				continue
+			}
+			log.Info(host.AllSettings())
+			configPath := fmt.Sprintf(
+				"%s.%d.host",
+				seedServersPath,
+				i,
+			)
 			errs = append(
 				errs,
 				checkSocketAddress(
-					seed.Host,
-					fmt.Sprintf("%s.%d.host", seedServersPath, i),
+					host,
+					configPath,
 				)...,
 			)
 		}
@@ -304,23 +340,24 @@ func checkRedpandaConfig(config *RedpandaConfig) []error {
 	return errs
 }
 
-func checkSocketAddress(socketAddr SocketAddress, configPath string) []error {
+func checkSocketAddress(v *viper.Viper, configPath string) []error {
 	errs := []error{}
-	if socketAddr.Port == 0 {
+	if v.GetInt("port") == 0 {
 		errs = append(errs, fmt.Errorf("%s.port can't be 0", configPath))
 	}
-	if socketAddr.Address == "" {
+	if v.GetString("address") == "" {
 		errs = append(errs, fmt.Errorf("%s.address can't be empty", configPath))
 	}
 	return errs
 }
 
-func checkRpkConfig(rpk *RpkConfig) []error {
+func checkRpkConfig(v *viper.Viper) []error {
 	errs := []error{}
+	rpk := v.Sub("rpk")
 	if rpk == nil {
 		return errs
 	}
-	if rpk.TuneCoredump && rpk.CoredumpDir == "" {
+	if rpk.GetBool("tune_coredump") && rpk.GetString("coredump_dir") == "" {
 		msg := "if rpk.tune_coredump is set to true," +
 			"rpk.coredump_dir can't be empty"
 		errs = append(errs, errors.New(msg))
