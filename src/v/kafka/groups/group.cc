@@ -63,34 +63,7 @@ group::group(
       std::chrono::milliseconds(md.state_timestamp));
 
     for (auto& m : md.members) {
-        // TODO: replace `bytes` with iobuf.
-        auto sub = ss::uninitialized_string<bytes>(m.subscription.size_bytes());
-        {
-            iobuf::iterator_consumer in(
-              m.subscription.cbegin(), m.subscription.cend());
-            in.consume_to(m.subscription.size_bytes(), sub.begin());
-        }
-
-        // TODO: replace `bytes` with iobuf.
-        auto assignment = ss::uninitialized_string<bytes>(
-          m.assignment.size_bytes());
-        {
-            iobuf::iterator_consumer in(
-              m.assignment.cbegin(), m.assignment.cend());
-            in.consume_to(m.assignment.size_bytes(), assignment.begin());
-        }
-
-        auto member = ss::make_lw_shared<group_member>(
-          m.id,
-          id,
-          m.instance_id,
-          std::chrono::milliseconds(m.session_timeout_ms),
-          std::chrono::milliseconds(m.rebalance_timeout_ms),
-          *_protocol_type,
-          std::vector<member_protocol>{{*_protocol, std::move(sub)}});
-
-        member->set_assignment(std::move(assignment));
-
+        auto member = ss::make_lw_shared<group_member>(std::move(m), id);
         add_member_no_join(member);
     }
 }
@@ -913,24 +886,11 @@ model::record_batch group::checkpoint(const assignments_type& assignments) {
 
     for (const auto& it : _members) {
         auto& member = it.second;
-        group_log_group_metadata::member m;
-        m.id = member->id();
-        m.session_timeout_ms
-          = std::chrono::duration_cast<std::chrono::milliseconds>(
-              member->session_timeout())
-              .count();
-        m.rebalance_timeout_ms
-          = std::chrono::duration_cast<std::chrono::milliseconds>(
-              member->rebalance_timeout())
-              .count();
-        m.instance_id = member->group_instance_id();
-        auto sub = member->get_protocol_metadata(protocol().value());
-        m.subscription.append(
-          reinterpret_cast<const char*>(sub.c_str()), sub.size());
-        auto as = assignments.at(member->id());
-        m.assignment.append(
-          reinterpret_cast<const char*>(as.c_str()), as.size());
-        gr.members.push_back(std::move(m));
+        auto state = it.second->state().copy();
+        // this is not coming from the member itself because the checkpoint
+        // occurs right before the members go live and get their assignments.
+        state.assignment = bytes_to_iobuf(assignments.at(member->id()));
+        gr.members.push_back(std::move(state));
     }
 
     cluster::simple_batch_builder builder(

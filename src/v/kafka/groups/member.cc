@@ -23,12 +23,12 @@ namespace kafka {
 const kafka::protocol_name& group_member::vote_for_protocol(
   const absl::flat_hash_set<protocol_name>& candidates) const {
     auto it = std::find_if(
-      std::cbegin(_protocols),
-      std::cend(_protocols),
+      _state.protocols.cbegin(),
+      _state.protocols.cend(),
       [&candidates](const member_protocol& p) {
           return candidates.find(p.name) != candidates.end();
       });
-    if (it == _protocols.end()) {
+    if (it == _state.protocols.cend()) {
         throw std::out_of_range("no matching protocol found");
     } else {
         return it->name;
@@ -38,10 +38,10 @@ const kafka::protocol_name& group_member::vote_for_protocol(
 const bytes& group_member::get_protocol_metadata(
   const kafka::protocol_name& protocol) const {
     auto it = std::find_if(
-      std::cbegin(_protocols),
-      std::cend(_protocols),
+      _state.protocols.cbegin(),
+      _state.protocols.cend(),
       [&protocol](const member_protocol& p) { return p.name == protocol; });
-    if (it == _protocols.end()) {
+    if (it == _state.protocols.cend()) {
         throw std::out_of_range(fmt::format("protocol {} not found", protocol));
     } else {
         return it->metadata;
@@ -60,7 +60,7 @@ std::ostream& operator<<(std::ostream& o, const group_member& m) {
       m.assignment().size(),
       m.session_timeout(),
       m.rebalance_timeout(),
-      m._protocols);
+      m._state.protocols);
 }
 
 } // namespace kafka
