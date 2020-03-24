@@ -35,11 +35,10 @@
 class iobuf {
     // Not a lightweight object.
     // 16 bytes for std::list
-    // 8  bytes for _alloc_sz
     // 8  bytes for _size_bytes
     // -----------------------
     //
-    // 32 bytes total.
+    // 24 bytes total.
 
     // Each fragment:
     // 24  of ss::temporary_buffer<>
@@ -68,7 +67,6 @@ public:
     iobuf(iobuf&& x) noexcept
       : _frags(std::move(x._frags))
       , _size(x._size)
-      , _alloc_sz(x._alloc_sz)
 #ifndef NDEBUG
       , _verify_shard(std::move(x._verify_shard))
 #endif
@@ -151,7 +149,6 @@ private:
 
     container _frags;
     size_t _size{0};
-    details::io_allocation_size _alloc_sz;
     expression_in_debug_mode(oncore _verify_shard);
     friend std::ostream& operator<<(std::ostream&, const iobuf&);
 };
@@ -163,7 +160,6 @@ inline void iobuf::clear() {
         });
     }
     _size = 0;
-    _alloc_sz.reset();
 }
 inline iobuf::~iobuf() noexcept { clear(); }
 inline iobuf::iterator iobuf::begin() { return _frags.begin(); }
@@ -207,7 +203,11 @@ inline size_t iobuf::available_bytes() const {
 
 inline void iobuf::create_new_fragment(size_t sz) {
     oncore_debug_verify(_verify_shard);
-    auto asz = _alloc_sz.next_allocation_size(sz);
+    auto chunk_max = std::max(
+      sz,
+      _frags.empty() ? details::io_allocation_size::default_chunk_size
+                     : _frags.back().size());
+    auto asz = details::io_allocation_size::next_allocation_size(chunk_max);
     auto f = new fragment(ss::temporary_buffer<char>(asz), fragment::empty{});
     _frags.push_back(*f);
 }
@@ -273,7 +273,9 @@ inline void iobuf::reserve_memory(size_t reservation) {
 /// appends the contents of buffer; might pack values into existing space
 [[gnu::always_inline]] inline void iobuf::append(ss::temporary_buffer<char> b) {
     oncore_debug_verify(_verify_shard);
-    if (b.size() <= available_bytes()) {
+    if (
+      b.size() <= available_bytes()
+      || b.size() <= details::io_allocation_size::default_chunk_size) {
         append(b.get(), b.size());
         return;
     }
@@ -281,9 +283,7 @@ inline void iobuf::reserve_memory(size_t reservation) {
         if (_frags.back().is_empty()) {
             _frags.pop_back();
         } else {
-            // happens when we are merge iobufs
             _frags.back().trim();
-            _alloc_sz.reset();
         }
     }
     _size += b.size();
