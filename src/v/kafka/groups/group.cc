@@ -160,8 +160,9 @@ void group::add_member_no_join(member_ptr member) {
           fmt::format("group already contains member {}", member));
     }
 
-    member->for_each_protocol(
-      [this](const member_protocol& p) { _supported_protocols[p.name]++; });
+    for (auto& p : member->protocols()) {
+        _supported_protocols[p.name]++;
+    }
 }
 
 ss::future<join_group_response> group::add_member(member_ptr member) {
@@ -172,14 +173,18 @@ ss::future<join_group_response> group::add_member(member_ptr member) {
 
 ss::future<join_group_response> group::update_member(
   member_ptr member, std::vector<member_protocol>&& new_protocols) {
-    // subtract out old protocols
-    member->for_each_protocol(
-      [this](const member_protocol& p) { _supported_protocols[p.name]--; });
-
-    // add in the new protocols
+    /*
+     * before updating the member, subtract its existing protocols from
+     * group-level aggregate tracking. finally, update the group to reflect the
+     * new protocols.
+     */
+    for (auto& p : member->protocols()) {
+        _supported_protocols[p.name]--;
+    }
     member->set_protocols(std::move(new_protocols));
-    member->for_each_protocol(
-      [this](const member_protocol& p) { _supported_protocols[p.name]++; });
+    for (auto& p : member->protocols()) {
+        _supported_protocols[p.name]++;
+    }
 
     if (!member->is_joining()) {
         _num_members_joining++;
@@ -781,12 +786,12 @@ void group::remove_member(member_ptr member) {
     auto it = _members.find(member->id());
     if (it != _members.end()) {
         auto member = it->second;
-        member->for_each_protocol([this, member](const member_protocol& p) {
+        for (auto& p : member->protocols()) {
             _supported_protocols[p.name]--;
             if (member->is_joining()) {
                 _num_members_joining--;
             }
-        });
+        }
         _members.erase(it);
     }
 

@@ -47,10 +47,6 @@ BOOST_AUTO_TEST_CASE(constructor) {
     BOOST_TEST(m.rebalance_timeout() == std::chrono::milliseconds(2));
     BOOST_TEST(m.protocol_type() == "p");
 
-    std::vector<member_protocol> out;
-    m.for_each_protocol([&out](const member_protocol& p) { out.push_back(p); });
-    BOOST_TEST(out == test_protos);
-
     BOOST_TEST(!m.is_joining());
     BOOST_TEST(!m.is_syncing());
 
@@ -88,10 +84,6 @@ BOOST_AUTO_TEST_CASE(protocols) {
     BOOST_TEST(m.protocols() != r.protocols);
     r.protocols = test_protos2;
     BOOST_TEST(m.protocols() == r.protocols);
-
-    std::vector<member_protocol> out;
-    m.for_each_protocol([&out](const member_protocol& p) { out.push_back(p); });
-    BOOST_TEST(out == test_protos2);
 }
 
 SEASTAR_THREAD_TEST_CASE(response_futs) {
