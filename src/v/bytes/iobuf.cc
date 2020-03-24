@@ -1,9 +1,12 @@
 #include "bytes/iobuf.h"
 
+#include "vassert.h"
+
 #include <seastar/core/do_with.hh>
 #include <seastar/core/future-util.hh>
 
 #include <iostream>
+#include <limits>
 
 std::ostream& operator<<(std::ostream& o, const iobuf& io) {
     return o << "{bytes=" << io.size_bytes()
@@ -12,10 +15,18 @@ std::ostream& operator<<(std::ostream& o, const iobuf& io) {
 ss::scattered_message<char> iobuf_as_scattered(iobuf b) {
     ss::scattered_message<char> msg;
     auto in = iobuf::iterator_consumer(b.cbegin(), b.cend());
-    in.consume(b.size_bytes(), [&msg](const char* src, size_t sz) {
+    int32_t chunk_no = 0;
+    in.consume(b.size_bytes(), [&msg, &chunk_no](const char* src, size_t sz) {
+        ++chunk_no;
         msg.append_static(src, sz);
         return ss::stop_iteration::no;
     });
+    vassert(
+      chunk_no <= std::numeric_limits<int16_t>::max(),
+      "Found scattered_message with fragment count:{}. Usually a bug with "
+      "small append() to iobuf. {}",
+      chunk_no,
+      b);
     msg.on_delete([b = std::move(b)] {});
     return msg;
 }
