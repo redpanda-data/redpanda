@@ -144,3 +144,11 @@ rp_test(
   ARGS "-- -c 1"
   LABELS storage
 )
+rp_test(
+  UNIT_TEST
+  BINARY_NAME half_page_write_test
+  SOURCES half_page_concurrent_dispatch.cc
+  LIBRARIES Seastar::seastar_testing v::storage_test_utils
+  ARGS "-- -c 1"
+  LABELS storage
+  )

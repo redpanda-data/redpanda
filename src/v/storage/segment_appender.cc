@@ -145,6 +145,10 @@ ss::future<> segment_appender::close() {
 
 void segment_appender::dispatch_background_head_write() {
     auto& h = head();
+    vassert(
+      h.bytes_pending() > 0,
+      "There must be data to write to disk to advance the offset. {}",
+      *this);
     h.hook.unlink();
     _full_chunks.push_back(h);
 
