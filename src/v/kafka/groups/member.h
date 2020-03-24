@@ -134,7 +134,7 @@ public:
      * \throws std::out_of_range if no candidate is supported.
      */
     const kafka::protocol_name&
-    vote(const std::set<protocol_name>& candidates) const;
+    vote_for_protocol(const std::set<protocol_name>& candidates) const;
 
     /**
      * \brief Get the member's protocol metadata by name.

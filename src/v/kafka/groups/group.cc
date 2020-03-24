@@ -301,7 +301,7 @@ kafka::protocol_name group::select_protocol() const {
       std::cbegin(_members),
       std::cend(_members),
       [&votes, &candidates](const member_map::value_type& m) mutable {
-          auto& choice = m.second->vote(candidates);
+          auto& choice = m.second->vote_for_protocol(candidates);
           auto total = ++votes[choice];
           kglog.trace(
             "member {} votes for protocol {} ({})", m.first, choice, total);
