@@ -77,17 +77,17 @@ BOOST_AUTO_TEST_CASE(protocols) {
     r.protocols = test_protos;
 
     auto m = get_member();
-    BOOST_TEST(m.matching_protocols(r));
+    BOOST_TEST(m.protocols() == r.protocols);
     r.protocols[0].name = kafka::protocol_name("x");
-    BOOST_TEST(!m.matching_protocols(r));
+    BOOST_TEST(m.protocols() != r.protocols);
 
     std::vector<member_protocol> test_protos2 = {
       {kafka::protocol_name("n1"), "d1"}};
     m.set_protocols(test_protos2);
     r.protocols = test_protos;
-    BOOST_TEST(!m.matching_protocols(r));
+    BOOST_TEST(m.protocols() != r.protocols);
     r.protocols = test_protos2;
-    BOOST_TEST(m.matching_protocols(r));
+    BOOST_TEST(m.protocols() == r.protocols);
 
     std::vector<member_protocol> out;
     m.for_each_protocol([&out](const member_protocol& p) { out.push_back(p); });

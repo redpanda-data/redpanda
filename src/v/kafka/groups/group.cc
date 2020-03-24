@@ -453,7 +453,7 @@ group::join_group_known_member(join_group_request&& r) {
         return update_member_and_rebalance(member, std::move(r));
 
     case group_state::completing_rebalance:
-        if (member->matching_protocols(r)) {
+        if (r.protocols == member->protocols()) {
             // <kafka>member is joining with the same metadata (which could be
             // because it failed to receive the initial JoinGroup response), so
             // just return current group information for the current
@@ -484,7 +484,7 @@ group::join_group_known_member(join_group_request&& r) {
         }
 
     case group_state::stable:
-        if (is_leader(r.member_id) || !member->matching_protocols(r)) {
+        if (is_leader(r.member_id) || r.protocols != member->protocols()) {
             // <kafka>force a rebalance if a member has changed metadata or if
             // the leader sends JoinGroup. The latter allows the leader to
             // trigger rebalances for changes affecting assignment which do not
