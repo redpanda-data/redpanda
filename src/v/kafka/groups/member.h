@@ -1,5 +1,6 @@
 #pragma once
 #include "bytes/bytes.h"
+#include "bytes/iobuf.h"
 #include "kafka/requests/join_group_request.h"
 #include "kafka/requests/sync_group_request.h"
 #include "kafka/types.h"
@@ -24,6 +25,35 @@ namespace kafka {
 /// \addtogroup kafka-groups
 /// @{
 
+/**
+ * Member state.
+ *
+ * This structure is used in-memory at runtime to hold member state. It is also
+ * serialized to stable storage to checkpoint group state, and is therefore
+ * sensitive to change.
+ */
+struct member_state {
+    kafka::member_id id;
+    std::chrono::milliseconds session_timeout;
+    std::chrono::milliseconds rebalance_timeout;
+    std::optional<kafka::group_instance_id> instance_id;
+    kafka::protocol_type protocol_type;
+    std::vector<member_protocol> protocols;
+    iobuf assignment;
+
+    member_state copy() const {
+        return member_state{
+          .id = id,
+          .session_timeout = session_timeout,
+          .rebalance_timeout = rebalance_timeout,
+          .instance_id = instance_id,
+          .protocol_type = protocol_type,
+          .protocols = protocols,
+          .assignment = assignment.copy(),
+        };
+    }
+};
+
 /// \brief A Kafka group member.
 class group_member {
 public:
@@ -38,51 +68,66 @@ public:
       duration_type rebalance_timeout,
       kafka::protocol_type protocol_type,
       std::vector<member_protocol> protocols)
-      : _id(std::move(member_id))
+      : group_member(
+        member_state({
+          std::move(member_id),
+          session_timeout,
+          rebalance_timeout,
+          std::move(group_instance_id),
+          std::move(protocol_type),
+          std::move(protocols),
+        }),
+        std::move(group_id)) {}
+
+    group_member(kafka::member_state state, kafka::group_id group_id)
+      : _state(std::move(state))
       , _group_id(std::move(group_id))
-      , _group_instance_id(std::move(group_instance_id))
-      , _session_timeout(session_timeout)
-      , _rebalance_timeout(rebalance_timeout)
-      , _protocol_type(std::move(protocol_type))
-      , _protocols(std::move(protocols))
       , _is_new(false) {}
 
+    ~group_member() noexcept { _expire_timer.cancel(); }
+
+    const member_state& state() const { return _state; }
+
     /// Get the member id.
-    const kafka::member_id& id() const { return _id; }
+    const kafka::member_id& id() const { return _state.id; }
 
     /// Get the id of the member's group.
     const kafka::group_id& group_id() const { return _group_id; }
 
     /// Get the instance id of the member's group.
     const std::optional<kafka::group_instance_id>& group_instance_id() const {
-        return _group_instance_id;
+        return _state.instance_id;
     }
 
     /// Get the member's session timeout.
-    duration_type session_timeout() const { return _session_timeout; }
+    duration_type session_timeout() const { return _state.session_timeout; }
 
     /// Get the member's rebalance timeout.
-    duration_type rebalance_timeout() const { return _rebalance_timeout; }
+    duration_type rebalance_timeout() const { return _state.rebalance_timeout; }
 
     /// Get the member's protocol type.
-    const kafka::protocol_type& protocol_type() const { return _protocol_type; }
+    const kafka::protocol_type& protocol_type() const {
+        return _state.protocol_type;
+    }
 
     /// Get the member's assignment.
-    const bytes& assignment() const { return _assignment; }
+    const bytes assignment() const { return iobuf_to_bytes(_state.assignment); }
 
     /// Set the member's assignment.
     void set_assignment(bytes assignment) {
-        _assignment = std::move(assignment);
+        _state.assignment = bytes_to_iobuf(assignment);
     }
 
     /// Clear the member's assignment.
-    void clear_assignment() { _assignment.reset(); }
+    void clear_assignment() { _state.assignment.clear(); }
 
-    const std::vector<member_protocol>& protocols() const { return _protocols; }
+    const std::vector<member_protocol>& protocols() const {
+        return _state.protocols;
+    }
 
     /// Update the set of protocols supported by the member.
     void set_protocols(std::vector<member_protocol> protocols) {
-        _protocols = std::move(protocols);
+        _state.protocols = std::move(protocols);
     }
 
     /// Update the is_new flag.
@@ -156,7 +201,7 @@ public:
         }
 
         if (is_syncing()) {
-            return (_latest_heartbeat + _session_timeout) > deadline;
+            return (_latest_heartbeat + session_timeout()) > deadline;
         }
 
         return false;
@@ -168,22 +213,15 @@ public:
 
     ss::timer<clock_type>& expire_timer() { return _expire_timer; }
 
-    ~group_member() noexcept { _expire_timer.cancel(); }
-
 private:
     using join_promise = ss::promise<join_group_response>;
     using sync_promise = ss::promise<sync_group_response>;
 
     friend std::ostream& operator<<(std::ostream&, const group_member&);
 
-    kafka::member_id _id;
+    member_state _state;
     kafka::group_id _group_id;
-    std::optional<kafka::group_instance_id> _group_instance_id;
-    duration_type _session_timeout;
-    duration_type _rebalance_timeout;
-    kafka::protocol_type _protocol_type;
-    bytes _assignment;
-    std::vector<member_protocol> _protocols;
+
     bool _is_new;
     clock_type::time_point _latest_heartbeat;
     ss::timer<clock_type> _expire_timer;
