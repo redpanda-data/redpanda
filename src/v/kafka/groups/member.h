@@ -77,10 +77,7 @@ public:
     /// Clear the member's assignment.
     void clear_assignment() { _assignment.reset(); }
 
-    /// Return true if the request protocols match the member's protocols.
-    bool matching_protocols(const join_group_request& r) const {
-        return r.protocols == _protocols;
-    }
+    const std::vector<member_protocol>& protocols() const { return _protocols; }
 
     /// Update the set of protocols supported by the member.
     void set_protocols(std::vector<member_protocol> protocols) {
