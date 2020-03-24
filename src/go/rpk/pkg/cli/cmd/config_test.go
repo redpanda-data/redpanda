@@ -1,87 +1,138 @@
 package cmd_test
 
 import (
-	"fmt"
-	"strings"
+	"reflect"
 	"testing"
 	"vectorized/pkg/cli/cmd"
 	"vectorized/pkg/config"
 
 	"github.com/spf13/afero"
-	"gopkg.in/yaml.v2"
+	"github.com/spf13/viper"
 )
 
-func getValidConfig() config.Config {
-	return config.Config{
-		Redpanda: &config.RedpandaConfig{
-			Directory: "/var/lib/redpanda/data",
-			RPCServer: config.SocketAddress{
-				Port:    33145,
-				Address: "127.0.0.1",
-			},
-			Id: 1,
-			KafkaApi: config.SocketAddress{
-				Port:    9092,
-				Address: "127.0.0.1",
-			},
-			SeedServers: []*config.SeedServer{
-				&config.SeedServer{
-					Host: config.SocketAddress{
-						Port:    33145,
-						Address: "127.0.0.1",
-					},
-					Id: 1,
-				},
-				&config.SeedServer{
-					Host: config.SocketAddress{
-						Port:    33146,
-						Address: "127.0.0.1",
-					},
-					Id: 2,
-				},
-			},
-		},
-	}
-}
-
-func TestSetStatsId(t *testing.T) {
-	configPath := "/etc/redpanda/redpanda.yaml"
+func TestSet(t *testing.T) {
 	tests := []struct {
-		name         string
-		organization string
-		clusterId    string
-		args         []string
-		expectErr    bool
+		name      string
+		key       string
+		value     string
+		args      []string
+		expected  interface{}
+		expectErr bool
 	}{
 		{
-			name:         "it should set the organization, ",
-			organization: "io.vectorized",
+			name:     "it should set single integer fields",
+			key:      "redpanda.node_id",
+			value:    "54312",
+			expected: 54312,
 		},
 		{
-			name:      "it should set the cluster ID",
-			clusterId: "test",
+			name:     "it should set single float fields",
+			key:      "redpanda.float_field",
+			value:    "42.3",
+			expected: 42.3,
+		},
+		{
+			name:     "it should set single string fields",
+			key:      "redpanda.data_directory",
+			value:    "'/var/lib/differentdir'",
+			expected: "'/var/lib/differentdir'",
+		},
+		{
+			name:     "it should set single bool fields",
+			key:      "rpk.enable_usage_stats",
+			value:    "true",
+			expected: true,
+		},
+		{
+			name:  "it should partially set map fields (yaml)",
+			key:   "rpk",
+			value: `tune_disk_irq: false`,
+			args:  []string{"--format", "yaml"},
+			expected: map[string]interface{}{
+				"enable_usage_stats":    true,
+				"tune_network":          true,
+				"tune_disk_scheduler":   true,
+				"tune_disk_nomerges":    true,
+				"tune_disk_irq":         false,
+				"tune_cpu":              true,
+				"tune_aio_events":       true,
+				"tune_clocksource":      true,
+				"tune_swappiness":       true,
+				"enable_memory_locking": true,
+				"tune_coredump":         false,
+				"coredump_dir":          "/var/lib/redpanda/coredump",
+			},
+		},
+		{
+			name: "it should partially set map fields (json)",
+			key:  "redpanda.kafka_api",
+			value: `{
+  "address": "192.168.54.2"
+}`,
+			args: []string{"--format", "json"},
+			expected: map[string]interface{}{
+				"address": "192.168.54.2",
+				"port":    9092,
+			},
+		},
+		{
+			name:      "it should fail if the new value is invalid",
+			key:       "redpanda",
+			value:     `{"data_directory": ""}`,
+			args:      []string{"--format", "json"},
+			expectErr: true,
+		},
+		{
+			name:      "it should fail if the value isn't well formatted (json)",
+			key:       "redpanda",
+			value:     `{"seed_servers": []`,
+			args:      []string{"--format", "json"},
+			expectErr: true,
+		},
+		{
+			name: "it should fail if the value isn't well formatted (yaml)",
+			key:  "redpanda",
+			value: `seed_servers:
+- host:
+  address: "123.`,
+			args:      []string{"--format", "yaml"},
+			expectErr: true,
+		},
+		{
+			name:      "it should fail if the format isn't supported",
+			key:       "redpanda",
+			value:     `node_id=1`,
+			args:      []string{"--format", "toml"},
+			expectErr: true,
+		},
+		{
+			name:      "it should fail if no key is passed",
+			value:     `node_id=1`,
+			expectErr: true,
+		},
+		{
+			name:      "it should fail if no value is passed",
+			key:       "rpk.tune_coredump",
+			expectErr: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fs := afero.NewMemMapFs()
-			bs, err := yaml.Marshal(getValidConfig())
-			if err != nil {
-				t.Error(err.Error())
-			}
-			err = afero.WriteFile(fs, configPath, bs, 0644)
+			conf := config.DefaultConfig()
+			err := config.WriteConfig(fs, &conf, conf.ConfigFile)
 			if err != nil {
 				t.Error(err.Error())
 			}
 
 			c := cmd.NewConfigCommand(fs)
-			args := []string{"set", "stats-id"}
-			if tt.organization != "" {
-				args = append(args, "--organization", tt.organization)
+			args := []string{"set"}
+			if tt.key != "" {
+				args = append(args, tt.key)
 			}
-			if tt.clusterId != "" {
-				args = append(args, "--cluster-id", tt.clusterId)
+			if tt.value != "" {
+				args = append(args, tt.value)
 			}
 			c.SetArgs(append(args, tt.args...))
 			err = c.Execute()
@@ -94,405 +145,22 @@ func TestSetStatsId(t *testing.T) {
 			if err != nil {
 				t.Fatalf("got an unexpected error: %v", err.Error())
 			}
-			conf, err := config.ReadConfigFromPath(fs, configPath)
+			v := viper.New()
+			v.SetFs(fs)
+			v.SetConfigType("yaml")
+			v.SetConfigFile(conf.ConfigFile)
+			err = v.ReadInConfig()
 			if err != nil {
-				t.Fatalf("got an unexpected error while reading %s: %v", configPath, err)
+				t.Fatal(err)
 			}
-			if fmt.Sprint(conf.Organization) != tt.organization {
-				t.Errorf(
-					"got %v, expected %v",
-					conf.Organization,
-					tt.organization,
+			val := v.Get(tt.key)
+			if !reflect.DeepEqual(val, tt.expected) {
+				t.Fatalf(
+					"expected: \n'%+v'\n but got: \n'%+v'\n for key '%s'",
+					tt.expected,
+					val,
+					tt.key,
 				)
-			}
-			if fmt.Sprint(conf.ClusterId) != tt.clusterId {
-				t.Errorf(
-					"got %v, expected %v",
-					conf.ClusterId,
-					tt.clusterId,
-				)
-			}
-		})
-	}
-}
-
-func TestSetId(t *testing.T) {
-	configPath := "/etc/redpanda/redpanda.yaml"
-	tests := []struct {
-		name      string
-		id        string
-		args      []string
-		expectErr bool
-	}{
-		{
-			name: "it should set the given id",
-			id:   "2",
-		},
-		{
-			name:      "it should fail if no id is given",
-			expectErr: true,
-		},
-		{
-			name:      "it should fail if the id isn't numeric",
-			id:        "nope",
-			expectErr: true,
-		},
-		{
-			name:      "it should fail if the id is not an int",
-			id:        "12.4",
-			expectErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			fs := afero.NewMemMapFs()
-			bs, err := yaml.Marshal(getValidConfig())
-			if err != nil {
-				t.Error(err.Error())
-			}
-			err = afero.WriteFile(fs, configPath, bs, 0644)
-			if err != nil {
-				t.Error(err.Error())
-			}
-
-			c := cmd.NewConfigCommand(fs)
-			c.SetArgs(append([]string{"set", "id", tt.id}, tt.args...))
-			err = c.Execute()
-			if tt.expectErr {
-				if err == nil {
-					t.Fatal("expected an error, got nil")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("got an unexpected error: %v", err.Error())
-			}
-			conf, err := config.ReadConfigFromPath(fs, configPath)
-			if err != nil {
-				t.Fatalf("got an unexpected error while reading %s: %v", configPath, err)
-			}
-			if fmt.Sprint(conf.Redpanda.Id) != tt.id {
-				t.Errorf("got %v, expected %v", conf.Redpanda.Id, tt.id)
-			}
-		})
-	}
-}
-
-func TestSetKafkaApi(t *testing.T) {
-	configPath := "/etc/redpanda/redpanda.yaml"
-	tests := []struct {
-		name      string
-		ip        string
-		port      string
-		args      []string
-		expectErr bool
-	}{
-		{
-			name: "it should set the ip and port, ",
-			ip:   "172.34.56.87",
-			port: "33246",
-		},
-		{
-			name:      "it should fail if the ip is missing",
-			port:      "1723",
-			expectErr: true,
-		},
-		{
-			name:      "it should fail if the port is missing",
-			ip:        "172.34.56.87",
-			expectErr: true,
-		},
-		{
-			name:      "it should fail if the port isn't numeric",
-			port:      "what",
-			expectErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			fs := afero.NewMemMapFs()
-			bs, err := yaml.Marshal(getValidConfig())
-			if err != nil {
-				t.Error(err.Error())
-			}
-			err = afero.WriteFile(fs, configPath, bs, 0644)
-			if err != nil {
-				t.Error(err.Error())
-			}
-
-			c := cmd.NewConfigCommand(fs)
-			args := []string{"set", "kafka-api", "--ip", tt.ip, "--port", tt.port}
-			c.SetArgs(append(args, tt.args...))
-			err = c.Execute()
-			if tt.expectErr {
-				if err == nil {
-					t.Fatal("expected an error, got nil")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("got an unexpected error: %v", err.Error())
-			}
-			conf, err := config.ReadConfigFromPath(fs, configPath)
-			if err != nil {
-				t.Fatalf("got an unexpected error while reading %s: %v", configPath, err)
-			}
-			if conf.Redpanda.KafkaApi.Address != tt.ip {
-				t.Errorf(
-					"got %s, expected %s",
-					conf.Redpanda.KafkaApi.Address,
-					tt.ip,
-				)
-			}
-			if fmt.Sprint(conf.Redpanda.KafkaApi.Port) != tt.port {
-				t.Errorf(
-					"got %d, expected %s",
-					conf.Redpanda.KafkaApi.Port,
-					tt.port,
-				)
-			}
-		})
-	}
-}
-
-func TestSetRpcServer(t *testing.T) {
-	configPath := "/etc/redpanda/redpanda.yaml"
-	tests := []struct {
-		name      string
-		ip        string
-		port      string
-		args      []string
-		expectErr bool
-	}{
-		{
-			name: "it should set the ip and port, ",
-			ip:   "172.34.56.87",
-			port: "33246",
-		},
-		{
-			name:      "it should fail if the ip is missing",
-			port:      "1723",
-			expectErr: true,
-		},
-		{
-			name:      "it should fail if the port is missing",
-			ip:        "172.34.56.87",
-			expectErr: true,
-		},
-		{
-			name:      "it should fail if the port isn't numeric",
-			port:      "what",
-			expectErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			fs := afero.NewMemMapFs()
-			bs, err := yaml.Marshal(getValidConfig())
-			if err != nil {
-				t.Error(err.Error())
-			}
-			err = afero.WriteFile(fs, configPath, bs, 0644)
-			if err != nil {
-				t.Error(err.Error())
-			}
-
-			c := cmd.NewConfigCommand(fs)
-			args := []string{"set", "rpc-server", "--ip", tt.ip, "--port", tt.port}
-			c.SetArgs(append(args, tt.args...))
-			err = c.Execute()
-			if tt.expectErr {
-				if err == nil {
-					t.Fatal("expected an error, got nil")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("got an unexpected error: %v", err.Error())
-			}
-			conf, err := config.ReadConfigFromPath(fs, configPath)
-			if err != nil {
-				t.Fatalf("got an unexpected error while reading %s: %v", configPath, err)
-			}
-			if conf.Redpanda.RPCServer.Address != tt.ip {
-				t.Errorf(
-					"got %s, expected %s",
-					conf.Redpanda.RPCServer.Address,
-					tt.ip,
-				)
-			}
-			if fmt.Sprint(conf.Redpanda.RPCServer.Port) != tt.port {
-				t.Errorf(
-					"got %d, expected %s",
-					conf.Redpanda.RPCServer.Port,
-					tt.port,
-				)
-			}
-		})
-	}
-}
-
-func TestSetSeedNodes(t *testing.T) {
-	configPath := "/etc/redpanda/redpanda.yaml"
-	tests := []struct {
-		name      string
-		hosts     []string
-		ids       []string
-		ports     []string
-		args      []string
-		expectErr bool
-	}{
-		{
-			name:  "it should set the given seed nodes",
-			hosts: []string{"127.0.0.0", "some.domain.com"},
-		},
-		{
-			name:      "it should fail if no hosts are given",
-			expectErr: true,
-		},
-		{
-			name:  "it should succeed if there are enough ports",
-			hosts: []string{"127.0.0.0", "some.domain.com"},
-			ports: []string{"1234", "2345"},
-		},
-		{
-			name:      "it should fail if there aren't enough ports",
-			hosts:     []string{"127.0.0.0", "some.domain.com"},
-			ports:     []string{"1234"},
-			expectErr: true,
-		},
-		{
-			name:      "it should fail if there are more ports than hosts",
-			hosts:     []string{"127.0.0.0", "some.domain.com"},
-			ports:     []string{"1234", "2345", "3456"},
-			expectErr: true,
-		},
-		{
-			name:  "it should succeed if there are enough ids",
-			hosts: []string{"127.0.0.0", "some.domain.com"},
-			ids:   []string{"1", "2"},
-		},
-		{
-			name:      "it should fail if there aren't enough ids",
-			hosts:     []string{"127.0.0.0", "some.domain.com"},
-			ids:       []string{"1"},
-			expectErr: true,
-		},
-		{
-			name:      "it should fail if there are more ids than hosts",
-			hosts:     []string{"127.0.0.0", "some.domain.com"},
-			ids:       []string{"1", "2", "3"},
-			expectErr: true,
-		},
-		{
-			name:      "it should fail if the ids aren't numeric",
-			hosts:     []string{"127.0.0.0", "some.domain.com"},
-			ids:       []string{"not", "numbers"},
-			expectErr: true,
-		},
-		{
-			name:      "it should fail if the ids aren't ints",
-			hosts:     []string{"127.0.0.0", "some.domain.com"},
-			ids:       []string{"12e-10", "12.3"},
-			expectErr: true,
-		},
-		{
-			name:      "it should fail if the ports aren't numeric",
-			hosts:     []string{"127.0.0.0", "some.domain.com"},
-			ids:       []string{"not", "numbers"},
-			expectErr: true,
-		},
-		{
-			name:      "it should fail if the ports aren't ints",
-			hosts:     []string{"127.0.0.0", "some.domain.com"},
-			ids:       []string{"12e-10", "12.3"},
-			expectErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			fs := afero.NewMemMapFs()
-			bs, err := yaml.Marshal(getValidConfig())
-			if err != nil {
-				t.Error(err.Error())
-			}
-			err = afero.WriteFile(fs, configPath, bs, 0644)
-			if err != nil {
-				t.Error(err.Error())
-			}
-
-			c := cmd.NewConfigCommand(fs)
-			args := []string{"set", "seed-nodes"}
-			if len(tt.hosts) > 0 {
-				hosts := strings.Join(tt.hosts, ",")
-				args = append(args, "--hosts", hosts)
-			}
-			if len(tt.ids) > 0 {
-				ids := strings.Join(tt.ids, ",")
-				args = append(args, "--ids", ids)
-			}
-			if len(tt.ports) > 0 {
-				ports := strings.Join(tt.ports, ",")
-				args = append(args, "--ports", ports)
-			}
-			args = append(args, tt.args...)
-			t.Log(args)
-			c.SetArgs(append([]string{"set", "seed-nodes"}, args...))
-			err = c.Execute()
-			if tt.expectErr {
-				if err == nil {
-					t.Fatal("expected an error, got nil")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("got an unexpected error: %v", err.Error())
-			}
-			conf, err := config.ReadConfigFromPath(fs, configPath)
-			if err != nil {
-				t.Fatalf("got an unexpected error while reading %s: %v", configPath, err)
-			}
-			for i, h := range conf.Redpanda.SeedServers {
-				if fmt.Sprint(h.Host.Address) != tt.hosts[i] {
-					t.Fatalf(
-						"expected host '%s' but got '%s' for node #%d",
-						tt.hosts[i],
-						h.Host.Address,
-						i,
-					)
-				}
-				var expectedId string
-				if len(tt.ids) != 0 {
-					expectedId = tt.ids[i]
-				} else {
-					expectedId = fmt.Sprint(i)
-				}
-				if fmt.Sprint(h.Id) != expectedId {
-					t.Fatalf(
-						"expected node ID '%s' but got '%d' for node #%d",
-						expectedId,
-						h.Id,
-						i,
-					)
-				}
-				var expectedPort string
-				if len(tt.ports) != 0 {
-					expectedPort = fmt.Sprint(tt.ports[i])
-				} else {
-					expectedPort = "33145"
-				}
-				if fmt.Sprint(h.Host.Port) != expectedPort {
-					t.Fatalf(
-						"expected port '%s' but got '%d' for node #%d",
-						expectedPort,
-						h.Host.Port,
-						i,
-					)
-				}
 			}
 		})
 	}
