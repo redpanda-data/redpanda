@@ -119,20 +119,20 @@ BOOST_AUTO_TEST_CASE(vote) {
     auto m = get_member();
 
     std::set<protocol_name> c;
-    BOOST_CHECK_THROW(m.vote(c), std::out_of_range);
+    BOOST_CHECK_THROW(m.vote_for_protocol(c), std::out_of_range);
 
     c.insert(kafka::protocol_name("n1"));
-    BOOST_TEST(m.vote(c) == "n1");
+    BOOST_TEST(m.vote_for_protocol(c) == "n1");
 
     c.clear();
     c.insert(kafka::protocol_name("n0"));
     c.insert(kafka::protocol_name("n1"));
-    BOOST_TEST(m.vote(c) == "n0");
+    BOOST_TEST(m.vote_for_protocol(c) == "n0");
 
     c.clear();
     c.insert(kafka::protocol_name("n2"));
     c.insert(kafka::protocol_name("n1"));
-    BOOST_TEST(m.vote(c) == "n1");
+    BOOST_TEST(m.vote_for_protocol(c) == "n1");
 }
 
 BOOST_AUTO_TEST_CASE(output) {

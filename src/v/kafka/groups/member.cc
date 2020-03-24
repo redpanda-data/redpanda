@@ -24,8 +24,8 @@ namespace kafka {
  * priority ordered search in candidates. if candidates is always small it
  * should be faster to use a sorted vector.
  */
-const kafka::protocol_name&
-group_member::vote(const std::set<protocol_name>& candidates) const {
+const kafka::protocol_name& group_member::vote_for_protocol(
+  const std::set<protocol_name>& candidates) const {
     auto it = std::find_if(
       std::cbegin(_protocols),
       std::cend(_protocols),
