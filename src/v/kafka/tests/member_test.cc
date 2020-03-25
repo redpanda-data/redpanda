@@ -141,4 +141,18 @@ SEASTAR_THREAD_TEST_CASE(output) {
     BOOST_TEST(s.find("id={m}") != std::string::npos);
 }
 
+SEASTAR_THREAD_TEST_CASE(member_serde) {
+    // serialize a member's state to iobuf
+    auto m0 = get_member();
+    m0.set_assignment(bytes("assignment"));
+    auto m0_state = m0.state().copy();
+    auto m0_iobuf = reflection::to_iobuf(std::move(m0_state));
+
+    auto m1_state = reflection::adl<kafka::member_state>{}.from(
+      std::move(m0_iobuf));
+    auto m1 = kafka::group_member(std::move(m1_state), m0.group_id());
+
+    BOOST_REQUIRE(m1.state() == m0.state());
+}
+
 } // namespace kafka
