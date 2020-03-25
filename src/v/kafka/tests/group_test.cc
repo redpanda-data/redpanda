@@ -1,9 +1,9 @@
-#define BOOST_TEST_MODULE kafka group
 #include "config/configuration.h"
 #include "kafka/groups/group.h"
 #include "utils/to_string.h"
 
 #include <seastar/core/sstring.hh>
+#include <seastar/testing/thread_test_case.hh>
 
 #include <boost/test/unit_test.hpp>
 #include <boost/uuid/uuid.hpp>
@@ -62,22 +62,22 @@ static join_group_response join_resp() {
       kafka::member_id("m"));
 }
 
-BOOST_AUTO_TEST_CASE(id) {
+SEASTAR_THREAD_TEST_CASE(id) {
     auto g = get();
     BOOST_TEST(g.id() == "g");
 }
 
-BOOST_AUTO_TEST_CASE(state) {
+SEASTAR_THREAD_TEST_CASE(state) {
     auto g = get();
     BOOST_TEST(g.state() == group_state::empty);
 }
 
-BOOST_AUTO_TEST_CASE(in_state) {
+SEASTAR_THREAD_TEST_CASE(in_state) {
     auto g = get();
     BOOST_TEST(g.in_state(group_state::empty));
 }
 
-BOOST_AUTO_TEST_CASE(set_state) {
+SEASTAR_THREAD_TEST_CASE(set_state) {
     auto g = get();
     BOOST_TEST(g.in_state(group_state::empty));
     g.set_state(group_state::preparing_rebalance);
@@ -85,24 +85,24 @@ BOOST_AUTO_TEST_CASE(set_state) {
     BOOST_TEST(g.state() == group_state::preparing_rebalance);
 }
 
-BOOST_AUTO_TEST_CASE(get_generation) {
+SEASTAR_THREAD_TEST_CASE(get_generation) {
     auto g = get();
     BOOST_TEST(g.generation() == 0);
 }
 
-BOOST_AUTO_TEST_CASE(get_member_throws_on_empty) {
+SEASTAR_THREAD_TEST_CASE(get_member_throws_on_empty) {
     auto g = get();
     BOOST_CHECK_THROW(g.get_member(kafka::member_id("m")), std::out_of_range);
 }
 
-BOOST_AUTO_TEST_CASE(get_member_returns_member) {
+SEASTAR_THREAD_TEST_CASE(get_member_returns_member) {
     auto g = get();
     auto m = get_member();
     (void)g.add_member(m);
     BOOST_TEST(g.get_member(kafka::member_id("m")) == m);
 }
 
-BOOST_AUTO_TEST_CASE(contains_member) {
+SEASTAR_THREAD_TEST_CASE(contains_member) {
     auto g = get();
     BOOST_TEST(!g.contains_member(kafka::member_id("m")));
     auto m = get_member();
@@ -111,7 +111,7 @@ BOOST_AUTO_TEST_CASE(contains_member) {
     BOOST_TEST(!g.contains_member(kafka::member_id("n")));
 }
 
-BOOST_AUTO_TEST_CASE(has_members) {
+SEASTAR_THREAD_TEST_CASE(has_members) {
     auto g = get();
     BOOST_TEST(!g.has_members());
     auto m = get_member();
@@ -119,7 +119,7 @@ BOOST_AUTO_TEST_CASE(has_members) {
     BOOST_TEST(g.has_members());
 }
 
-BOOST_AUTO_TEST_CASE(pending_members) {
+SEASTAR_THREAD_TEST_CASE(pending_members) {
     auto g = get();
     BOOST_TEST(!g.contains_pending_member(kafka::member_id("m")));
     g.add_pending_member(kafka::member_id("m"));
@@ -128,12 +128,12 @@ BOOST_AUTO_TEST_CASE(pending_members) {
     BOOST_TEST(!g.contains_pending_member(kafka::member_id("m")));
 }
 
-BOOST_AUTO_TEST_CASE(rebalance_timeout_throws_when_empty) {
+SEASTAR_THREAD_TEST_CASE(rebalance_timeout_throws_when_empty) {
     auto g = get();
     BOOST_CHECK_THROW(g.rebalance_timeout(), std::runtime_error);
 }
 
-BOOST_AUTO_TEST_CASE(rebalance_timeout) {
+SEASTAR_THREAD_TEST_CASE(rebalance_timeout) {
     auto g = get();
 
     auto m0 = ss::make_lw_shared<group_member>(
@@ -161,7 +161,7 @@ BOOST_AUTO_TEST_CASE(rebalance_timeout) {
     BOOST_TEST(g.rebalance_timeout() == std::chrono::seconds(3));
 }
 
-BOOST_AUTO_TEST_CASE(add_member_sets_leader) {
+SEASTAR_THREAD_TEST_CASE(add_member_sets_leader) {
     auto g = get();
     BOOST_TEST(!g.is_leader(kafka::member_id("m")));
     BOOST_TEST(!g.leader());
@@ -174,7 +174,7 @@ BOOST_AUTO_TEST_CASE(add_member_sets_leader) {
     BOOST_TEST(*g.leader() == "m");
 }
 
-BOOST_AUTO_TEST_CASE(add_member_sets_protocol_type) {
+SEASTAR_THREAD_TEST_CASE(add_member_sets_protocol_type) {
     auto g = get();
     BOOST_TEST(!g.protocol_type());
 
@@ -185,7 +185,7 @@ BOOST_AUTO_TEST_CASE(add_member_sets_protocol_type) {
     BOOST_TEST(*g.protocol_type() == "p");
 }
 
-BOOST_AUTO_TEST_CASE(add_missing_assignments) {
+SEASTAR_THREAD_TEST_CASE(add_missing_assignments) {
     auto g = get();
 
     auto m = get_member("m");
@@ -209,7 +209,7 @@ BOOST_AUTO_TEST_CASE(add_missing_assignments) {
     BOOST_TEST(a[kafka::member_id("o")] == bytes("d2"));
 }
 
-BOOST_AUTO_TEST_CASE(set_and_clear_assignments) {
+SEASTAR_THREAD_TEST_CASE(set_and_clear_assignments) {
     auto g = get();
 
     auto m = get_member("m");
@@ -233,7 +233,7 @@ BOOST_AUTO_TEST_CASE(set_and_clear_assignments) {
     BOOST_TEST(m2->assignment() == bytes());
 }
 
-BOOST_AUTO_TEST_CASE(all_members_joined) {
+SEASTAR_THREAD_TEST_CASE(all_members_joined) {
     auto g = get();
     auto m = get_member();
     (void)g.add_member(m);
@@ -242,7 +242,7 @@ BOOST_AUTO_TEST_CASE(all_members_joined) {
     BOOST_TEST(!g.all_members_joined());
 }
 
-BOOST_AUTO_TEST_CASE(advance_generation_empty) {
+SEASTAR_THREAD_TEST_CASE(advance_generation_empty) {
     auto g = get();
     g.set_state(group_state::preparing_rebalance);
     g.advance_generation();
@@ -251,7 +251,7 @@ BOOST_AUTO_TEST_CASE(advance_generation_empty) {
     BOOST_TEST(!g.protocol());
 }
 
-BOOST_AUTO_TEST_CASE(advance_generation_non_empty) {
+SEASTAR_THREAD_TEST_CASE(advance_generation_non_empty) {
     auto g = get();
     auto m = get_member();
     (void)g.add_member(m);
@@ -263,7 +263,7 @@ BOOST_AUTO_TEST_CASE(advance_generation_non_empty) {
     BOOST_TEST(*g.protocol() == "n0");
 }
 
-BOOST_AUTO_TEST_CASE(member_metadata) {
+SEASTAR_THREAD_TEST_CASE(member_metadata) {
     auto g = get();
 
     auto protos = std::vector<member_protocol>{
@@ -294,7 +294,7 @@ BOOST_AUTO_TEST_CASE(member_metadata) {
     BOOST_TEST(conf[kafka::member_id("n")].metadata == bytes("bar"));
 }
 
-BOOST_AUTO_TEST_CASE(select_protocol) {
+SEASTAR_THREAD_TEST_CASE(select_protocol) {
     auto g = get();
 
     auto protos = std::vector<member_protocol>{
@@ -325,7 +325,7 @@ BOOST_AUTO_TEST_CASE(select_protocol) {
     BOOST_TEST(g.select_protocol() == "p2");
 }
 
-BOOST_AUTO_TEST_CASE(supports_protocols) {
+SEASTAR_THREAD_TEST_CASE(supports_protocols) {
     auto g = get();
 
     join_group_request r;
@@ -392,7 +392,7 @@ BOOST_AUTO_TEST_CASE(supports_protocols) {
     BOOST_TEST(!g.supports_protocols(r));
 }
 
-BOOST_AUTO_TEST_CASE(leader_rejoined) {
+SEASTAR_THREAD_TEST_CASE(leader_rejoined) {
     auto g = get();
 
     // no leader
@@ -419,7 +419,7 @@ BOOST_AUTO_TEST_CASE(leader_rejoined) {
     BOOST_TEST(g.leader() == "n");
 }
 
-BOOST_AUTO_TEST_CASE(generate_member_id) {
+SEASTAR_THREAD_TEST_CASE(generate_member_id) {
     join_group_request r;
 
     r.client_id = ss::sstring("dog");
@@ -437,13 +437,13 @@ BOOST_AUTO_TEST_CASE(generate_member_id) {
     BOOST_TEST(is_uuid(uuid));
 }
 
-BOOST_AUTO_TEST_CASE(group_output) {
+SEASTAR_THREAD_TEST_CASE(group_output) {
     auto g = get();
     auto s = fmt::format("{}", g);
     BOOST_TEST(s.find("id={g}") != std::string::npos);
 }
 
-BOOST_AUTO_TEST_CASE(group_state_output) {
+SEASTAR_THREAD_TEST_CASE(group_state_output) {
     auto s = fmt::format("{}", group_state::preparing_rebalance);
     BOOST_TEST(s == "preparing_rebalance");
 }

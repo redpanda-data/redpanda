@@ -37,7 +37,7 @@ static sync_group_response make_sync_response() {
     return sync_group_response(error_code::none, bytes("this is some bytes"));
 }
 
-BOOST_AUTO_TEST_CASE(constructor) {
+SEASTAR_THREAD_TEST_CASE(constructor) {
     auto m = get_member();
 
     BOOST_TEST(m.id() == "m");
@@ -51,7 +51,7 @@ BOOST_AUTO_TEST_CASE(constructor) {
     BOOST_TEST(!m.is_syncing());
 }
 
-BOOST_AUTO_TEST_CASE(assignment) {
+SEASTAR_THREAD_TEST_CASE(assignment) {
     auto m = get_member();
 
     BOOST_TEST(m.assignment() == bytes());
@@ -63,7 +63,7 @@ BOOST_AUTO_TEST_CASE(assignment) {
     BOOST_TEST(m.assignment() == bytes());
 }
 
-BOOST_AUTO_TEST_CASE(get_protocol_metadata) {
+SEASTAR_THREAD_TEST_CASE(get_protocol_metadata) {
     auto m = get_member();
     BOOST_TEST(
       m.get_protocol_metadata(test_protos[0].name) == test_protos[0].metadata);
@@ -73,7 +73,7 @@ BOOST_AUTO_TEST_CASE(get_protocol_metadata) {
       m.get_protocol_metadata(kafka::protocol_name("dne")), std::out_of_range);
 }
 
-BOOST_AUTO_TEST_CASE(protocols) {
+SEASTAR_THREAD_TEST_CASE(protocols) {
     auto r = join_group_request();
     r.protocols = test_protos;
 
@@ -115,7 +115,7 @@ SEASTAR_THREAD_TEST_CASE(response_futs) {
     BOOST_TEST(!m.is_syncing());
 }
 
-BOOST_AUTO_TEST_CASE(vote) {
+SEASTAR_THREAD_TEST_CASE(vote) {
     auto m = get_member();
 
     absl::flat_hash_set<protocol_name> c;
@@ -135,7 +135,7 @@ BOOST_AUTO_TEST_CASE(vote) {
     BOOST_TEST(m.vote_for_protocol(c) == "n1");
 }
 
-BOOST_AUTO_TEST_CASE(output) {
+SEASTAR_THREAD_TEST_CASE(output) {
     auto m = get_member();
     auto s = fmt::format("{}", m);
     BOOST_TEST(s.find("id={m}") != std::string::npos);
