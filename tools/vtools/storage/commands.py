@@ -19,7 +19,7 @@ from absl import logging
 # note that the crc that is stored is the crc reported by kafka which happens to
 # be computed over the big endian encoding of the same data. thus to verify the
 # crc we need to rebuild part of the header in big endian before adding to crc.
-HDR_FMT_RP_PREFIX_NO_CRC = "iqbi"
+HDR_FMT_RP_PREFIX_NO_CRC = "iqbI"
 HDR_FMT_RP_PREFIX = "<I" + HDR_FMT_RP_PREFIX_NO_CRC
 
 # below the crc redpanda and kafka have the same layout
