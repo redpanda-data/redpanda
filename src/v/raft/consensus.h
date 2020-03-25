@@ -87,11 +87,7 @@ public:
     replicate(model::record_batch_reader&&, replicate_options);
 
     ss::future<model::record_batch_reader>
-    make_reader(storage::log_reader_config config) {
-        config.max_offset = std::min(
-          config.max_offset, model::offset(_meta.commit_index));
-        return _log.make_reader(config);
-    }
+    make_reader(storage::log_reader_config config);
 
     model::offset committed_offset() const {
         return model::offset(_meta.commit_index);
@@ -176,6 +172,12 @@ private:
 
     void update_follower_stats(const group_configuration&);
     void trigger_leadership_notification();
+
+    /// \brief _does not_ hold the lock.
+    ss::future<> flush_log();
+    /// \brief called by the vote timer, to dispatch a write under
+    /// the ops semaphore
+    void dispatch_flush_with_lock();
     // args
     model::node_id _self;
     timeout_jitter _jit;
@@ -205,6 +207,7 @@ private:
     follower_stats _fstats;
 
     replicate_batcher _batcher;
+    bool _has_pending_flushes{false};
 
     /// used to wait for background ops before shutting down
     ss::gate _bg;
