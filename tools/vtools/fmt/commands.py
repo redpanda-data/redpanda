@@ -1,5 +1,6 @@
 import click
 import difflib
+import os
 import subprocess
 
 from absl import logging
@@ -131,35 +132,43 @@ def all_changed(conf, ref=None, check=True):
               is_flag=True)
 def tidy(conf, check):
     vconfig = config.VConfig(conf, clang=True)
+    cmd = f'{vconfig.clang_path}/bin/clang-tidy'
     args = f'-p compile_commands.json {vconfig.src_dir}/src/v/redpanda/main.cc'
     args = f'{args} {"" if check else "--fix"}'
-    shell.raw_check_output(f'cd {vconfig.build_dir} && clang-tidy {args}',
+    shell.raw_check_output(f'cd {vconfig.build_dir} && {cmd} {args}',
                            env=vconfig.environ)
 
 
 def _clangfmt(vconfig, ref, check):
     logging.debug("Running clang-format")
+    cmd = f'{vconfig.clang_path}/bin/clang-format'
     args = f'-style=file -fallback-style=none {"" if check else "-i"}'
     exts = [".cc", ".cpp", ".h", ".hpp", ".proto", ".java", ".js"]
-    _fmt(vconfig, exts, 'clang-format', args, ref, check)
+    _fmt(vconfig, exts, cmd, args, ref, check)
 
 
 def _crlfmt(vconfig, ref, check):
     logging.debug("Running crlfmt")
+    cmd = f'{vconfig.go_path}/bin/crlfmt'
     args = f'-wrap=80 {"" if check else "-diff=false -w"}'
-    _fmt(vconfig, ['.go'], 'crlfmt', args, ref, check)
+    _fmt(vconfig, ['.go'], cmd, args, ref, check)
 
 
 def _yapf(vconfig, ref, check):
     logging.debug("Running yapf")
+    yapfbin = f'{vconfig.build_root}/venv/v/bin/yapf'
+    if not os.path.exists(yapfbin):
+        # assume is in PATH
+        yapfbin = 'yapf'
     args = f'{"-d" if check else "-i"}'
-    _fmt(vconfig, ['.py'], 'yapf', args, ref, check)
+    _fmt(vconfig, ['.py'], yapfbin, args, ref, check)
 
 
 def _shfmt(vconfig, ref, check):
     logging.debug("Running shfmt")
+    cmd = f'{vconfig.go_path}/bin/shfmt'
     args = f'-i 2 -ci -s {"-d" if check else "-w"}'
-    _fmt(vconfig, ['.sh'], 'shfmt', args, ref, check)
+    _fmt(vconfig, ['.sh'], cmd, args, ref, check)
 
 
 def _fmt(vconfig, exts, cmd, args, ref, check):

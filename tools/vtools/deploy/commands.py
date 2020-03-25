@@ -85,8 +85,10 @@ def ansible(conf, playbook, ssh_key, var):
     evar = f'-e {" -e ".join(var)}' if var else ''
 
     # run given playbook
-    cmd = (f'ansible-playbook --private-key {ssh_key} '
-           f'{evar} -i {invfile} -v {playbook}')
+    ansbin = f'{vconfig.build_root}/venv/v/bin/ansible-playbook'
+    cmd = f'{ansbin} --private-key {ssh_key} {evar} -i {invfile} -v {playbook}'
+
+    print(f'command: {cmd}')
 
     vconfig.environ.update({'ANSIBLE_HOST_KEY_CHECKING': 'False'})
     shell.run_subprocess(cmd, env=vconfig.environ)

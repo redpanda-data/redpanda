@@ -2,7 +2,7 @@ import os
 import shutil
 from urllib import request
 from absl import logging
-from . import shell
+from ..vlib import shell
 
 
 def check_deps_installed(vconfig):
