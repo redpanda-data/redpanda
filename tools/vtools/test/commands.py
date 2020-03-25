@@ -203,7 +203,6 @@ def _run_ducktape_tests(vconfig,
 
     environment = {}
     if rp_extra_conf:
-        rp_extra_conf = os.path.abspath(rp_extra_conf)
         volumes.update({
             rp_extra_conf: {
                 'bind': '/root/rp-extra-config.yml',
@@ -250,9 +249,7 @@ def _generate_docker_compose_config(num_nodes=0, filename=None):
     for i in range(1, num_nodes + 1):
         node = {
             'image': 'panda-node',
-            'volumes': [f'./data/n{i}:/var/lib/redpanda'],
-            'cpus': 2,
-            'privileged': True,
+            'volumes': [f'./data/n{i}:/var/lib/redpanda:']
         }
         if i > 1:
             # so that n1 gets first IP in range, n2 second, etc..
@@ -262,7 +259,7 @@ def _generate_docker_compose_config(num_nodes=0, filename=None):
     with open(filename, 'w') as f:
         yaml.dump(
             {
-                'version': '2.4',
+                'version': '3',
                 'services': nodes,
                 'networks': {
                     'default': {
