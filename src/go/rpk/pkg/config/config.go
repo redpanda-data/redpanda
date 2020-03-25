@@ -1,11 +1,13 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"vectorized/pkg/utils"
 	vyaml "vectorized/pkg/yaml"
@@ -91,62 +93,58 @@ func DefaultConfig() Config {
 	}
 }
 
+func Set(fs afero.Fs, key, value, format, path string) error {
+	confMap, err := read(fs, path)
+	if err != nil {
+		return err
+	}
+	v := viper.New()
+	v.MergeConfigMap(confMap)
+	var newConfValue interface{}
+	switch strings.ToLower(format) {
+	case "single":
+		v.Set(key, parse(value))
+		return checkAndWrite(fs, v.AllSettings(), path)
+	case "yaml":
+		err := yaml.Unmarshal([]byte(value), &newConfValue)
+		if err != nil {
+			return err
+		}
+	case "json":
+		err := json.Unmarshal([]byte(value), &newConfValue)
+		if err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("unsupported format %s", format)
+	}
+
+	newV := viper.New()
+	newV.Set(key, newConfValue)
+	v.MergeConfigMap(newV.AllSettings())
+	return checkAndWrite(fs, v.AllSettings(), path)
+}
+
+func parse(val string) interface{} {
+	if b, err := strconv.ParseBool(val); err == nil {
+		return b
+	}
+	if i, err := strconv.Atoi(val); err == nil {
+		return i
+	}
+	if f, err := strconv.ParseFloat(val, 64); err == nil {
+		return f
+	}
+	return val
+}
+
 // Checks config and writes it to the given path.
 func WriteConfig(fs afero.Fs, config *Config, path string) error {
-	ok, errs := CheckConfig(config)
-	if !ok {
-		reasons := []string{}
-		for _, err := range errs {
-			reasons = append(reasons, err.Error())
-		}
-		return errors.New(strings.Join(reasons, ", "))
-	}
-	lastBackupFile, err := findBackup(fs, filepath.Dir(path))
+	confMap, err := toMap(config)
 	if err != nil {
 		return err
 	}
-	exists, err := afero.Exists(fs, path)
-	if err != nil {
-		return err
-	}
-	if !exists {
-		// If the config doesn't exist, just write it.
-		confMap, err := toMap(config)
-		if err != nil {
-			return err
-		}
-		return write(fs, confMap, path)
-	}
-	// Otherwise, backup the current config file, write the new one, and
-	// try to recover if there's an error.
-	log.Debug("Backing up the current config")
-	backup, err := utils.BackupFile(fs, path)
-	if err != nil {
-		return err
-	}
-	log.Debugf("Backed up the current config to %s", backup)
-	if lastBackupFile != "" {
-		log.Debug("Removing previous backup file")
-		err = fs.Remove(lastBackupFile)
-		if err != nil {
-			return err
-		}
-	}
-	currentConf, err := read(fs, backup)
-	if err != nil {
-		return recover(fs, backup, path, err)
-	}
-	log.Debugf("Writing the new redpanda config to '%s'", path)
-	mapConf, err := toMap(config)
-	if err != nil {
-		return recover(fs, backup, path, err)
-	}
-	merged := merge(currentConf, mapConf)
-	err = write(fs, merged, path)
-	if err != nil {
-		return recover(fs, backup, path, err)
-	}
-	return nil
+	return checkAndWrite(fs, confMap, path)
 }
 
 func findBackup(fs afero.Fs, dir string) (string, error) {
@@ -214,13 +212,11 @@ func ReadOrGenerate(fs afero.Fs, configFile string) (*Config, error) {
 }
 
 func CheckConfig(config *Config) (bool, []error) {
-	errs := checkRedpandaConfig(config.Redpanda)
-	errs = append(
-		errs,
-		checkRpkConfig(config.Rpk)...,
-	)
-	ok := len(errs) == 0
-	return ok, errs
+	configMap, err := toMap(config)
+	if err != nil {
+		return false, []error{err}
+	}
+	return check(configMap)
 }
 
 func recover(fs afero.Fs, backup, path string, err error) error {
@@ -232,6 +228,60 @@ func recover(fs afero.Fs, backup, path string, err error) error {
 		return fmt.Errorf(msg, err, recErr)
 	}
 	return fmt.Errorf("couldn't persist the new config due to '%v'", err)
+}
+
+func checkAndWrite(
+	fs afero.Fs, conf map[string]interface{}, path string,
+) error {
+	ok, errs := check(conf)
+	if !ok {
+		reasons := []string{}
+		for _, err := range errs {
+			reasons = append(reasons, err.Error())
+		}
+		return errors.New(strings.Join(reasons, ", "))
+	}
+	lastBackupFile, err := findBackup(fs, filepath.Dir(path))
+	if err != nil {
+		return err
+	}
+	exists, err := afero.Exists(fs, path)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		// If the config doesn't exist, just write it.
+		return write(fs, conf, path)
+	}
+	// Otherwise, backup the current config file, write the new one, and
+	// try to recover if there's an error.
+	log.Debug("Backing up the current config")
+	backup, err := utils.BackupFile(fs, path)
+	if err != nil {
+		return err
+	}
+	log.Debugf("Backed up the current config to %s", backup)
+	if lastBackupFile != "" {
+		log.Debug("Removing previous backup file")
+		err = fs.Remove(lastBackupFile)
+		if err != nil {
+			return err
+		}
+	}
+	currentConf, err := read(fs, backup)
+	if err != nil {
+		return recover(fs, backup, path, err)
+	}
+	log.Debugf("Writing the new redpanda config to '%s'", path)
+	if err != nil {
+		return recover(fs, backup, path, err)
+	}
+	merged := merge(currentConf, conf)
+	err = write(fs, merged, path)
+	if err != nil {
+		return recover(fs, backup, path, err)
+	}
+	return nil
 }
 
 func write(fs afero.Fs, conf map[string]interface{}, path string) error {
@@ -270,33 +320,73 @@ func toMap(conf *Config) (map[string]interface{}, error) {
 	return mapConf, err
 }
 
-func checkRedpandaConfig(config *RedpandaConfig) []error {
+func check(conf map[string]interface{}) (bool, []error) {
+	v := viper.New()
+	v.MergeConfigMap(conf)
+	errs := checkRedpandaConfig(v)
+	errs = append(
+		errs,
+		checkRpkConfig(v)...,
+	)
+	ok := len(errs) == 0
+	return ok, errs
+}
+
+func checkRedpandaConfig(v *viper.Viper) []error {
 	errs := []error{}
-	if config == nil {
+	rp := v.Sub("redpanda")
+	if rp == nil {
 		return []error{errors.New("the redpanda config is missing")}
 	}
-	if config.Directory == "" {
+	if rp.GetString("data_directory") == "" {
 		errs = append(errs, fmt.Errorf("redpanda.data_directory can't be empty"))
 	}
-	if config.Id < 0 {
-		errs = append(errs, fmt.Errorf("redpanda.id can't be a negative integer"))
+	if rp.GetInt("node_id") < 0 {
+		errs = append(errs, fmt.Errorf("redpanda.node_id can't be a negative integer"))
 	}
 	errs = append(
 		errs,
-		checkSocketAddress(config.RPCServer, "redpanda.rpc_server")...,
+		checkSocketAddress(rp.Sub("rpc_server"), "redpanda.rpc_server")...,
 	)
 	errs = append(
 		errs,
-		checkSocketAddress(config.KafkaApi, "redpanda.kafka_api")...,
+		checkSocketAddress(rp.Sub("kafka_api"), "redpanda.kafka_api")...,
 	)
-	seedServersPath := "redpanda.seed_servers"
-	if len(config.SeedServers) != 0 {
-		for i, seed := range config.SeedServers {
+	var seedServersSlice []map[string]interface{}
+	err := rp.UnmarshalKey("seed_servers", &seedServersSlice)
+	if err != nil {
+		log.Error(err)
+		msg := "redpanda.seed_servers doesn't have the expected structure"
+		return append(
+			errs,
+			errors.New(msg),
+		)
+	}
+	if len(seedServersSlice) > 0 {
+		seedServersPath := "redpanda.seed_servers"
+		for i, seed := range seedServersSlice {
+			s := viper.New()
+			s.MergeConfigMap(seed)
+			host := s.Sub("host")
+			if host == nil {
+				err := fmt.Errorf(
+					"%s.%d.host can't be empty",
+					seedServersPath,
+					i,
+				)
+				errs = append(errs, err)
+				continue
+			}
+			configPath := fmt.Sprintf(
+				"%s.%d.host",
+				seedServersPath,
+				i,
+			)
 			errs = append(
 				errs,
 				checkSocketAddress(
-					seed.Host,
-					fmt.Sprintf("%s.%d.host", seedServersPath, i),
+					host,
+					configPath,
 				)...,
 			)
 		}
@@ -304,23 +394,24 @@ func checkRedpandaConfig(config *RedpandaConfig) []error {
 	return errs
 }
 
-func checkSocketAddress(socketAddr SocketAddress, configPath string) []error {
+func checkSocketAddress(v *viper.Viper, configPath string) []error {
 	errs := []error{}
-	if socketAddr.Port == 0 {
+	if v.GetInt("port") == 0 {
 		errs = append(errs, fmt.Errorf("%s.port can't be 0", configPath))
 	}
-	if socketAddr.Address == "" {
+	if v.GetString("address") == "" {
 		errs = append(errs, fmt.Errorf("%s.address can't be empty", configPath))
 	}
 	return errs
 }
 
-func checkRpkConfig(rpk *RpkConfig) []error {
+func checkRpkConfig(v *viper.Viper) []error {
 	errs := []error{}
+	rpk := v.Sub("rpk")
 	if rpk == nil {
 		return errs
 	}
-	if rpk.TuneCoredump && rpk.CoredumpDir == "" {
+	if rpk.GetBool("tune_coredump") && rpk.GetString("coredump_dir") == "" {
 		msg := "if rpk.tune_coredump is set to true," +
 			"rpk.coredump_dir can't be empty"
 		errs = append(errs, errors.New(msg))
