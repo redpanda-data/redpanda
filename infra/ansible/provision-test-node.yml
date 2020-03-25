@@ -5,17 +5,51 @@
       that:
       - "rp_pkg is defined"
 
+  - name: install base deps redhat
+    package:
+      name:
+        - iotop
+        - xfsprogs
+        - java-11-openjdk-devel.x86_64
+      state: present
+    when: ansible_os_family == 'RedHat'
+  - name: install base deps - debian
+    package:
+      name:
+        - iotop
+        - xfsprogs
+        - openjdk-11-jdk-headless
+      state: present
+    when: ansible_os_family == 'Debian'
+
   - name: create xfs filesystem
     filesystem:
       fstype: xfs
       dev: /dev/nvme0n1
+
   - name: mount nvme device
     mount:
-      path: /var/lib/redpanda
+      path: /mnt/vectorized
       src: /dev/nvme0n1
       fstype: xfs
-      opts: noatime
-      state: present
+      state: mounted
+  - name: data path
+    file:
+      path: /mnt/vectorized/redpanda
+      state: directory
+      owner: root
+      group: root
+      mode: ugo=rwx
+
+  - name: set premissions
+    file:
+      dest: /var/lib/redpanda
+      src: /mnt/vectorized/redpanda
+      state: link
+      owner: root
+      group: root
+      mode: ugo=rwx
+
 
   - name: copy redpanda package
     copy:
@@ -33,17 +67,6 @@
       state: present
     when:
     - '".deb" in rp_pkg'
-
-  - name: install jdk on redhat-based distros
-    package:
-      name: java-11-openjdk-devel.x86_64
-      state: present
-    when: ansible_os_family == 'RedHat'
-  - name: install jdk on debian-based distros
-    package:
-      name: openjdk-11-jdk-headless
-      state: present
-    when: ansible_os_family == 'Debian'
 
   - name: install kafka binaries
     unarchive:
