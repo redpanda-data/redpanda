@@ -36,18 +36,26 @@ Header = collections.namedtuple(
                'producer_epoch', 'base_seq', 'record_count'))
 
 
+class CorruptBatchError(Exception):
+    def __init__(self, batch):
+        self.batch = batch
+
+
 class Batch:
-    def __init__(self, header, records):
+    def __init__(self, index, header, records):
+        self.index = index
         self.header = header
 
         header_crc_bytes = struct.pack(
             "<" + HDR_FMT_RP_PREFIX_NO_CRC + HDR_FMT_CRC, *self.header[1:])
         header_crc = crc32c.crc32(header_crc_bytes)
-        assert self.header.header_crc == header_crc
+        if self.header.header_crc != header_crc:
+            raise CorruptBatchError(self)
 
         crc = crc32c.crc32(self._crc_header_be_bytes())
         crc = crc32c.crc32(records, crc)
-        assert self.header.crc == crc
+        if self.header.crc != crc:
+            raise CorruptBatchError(self)
 
     def last_offset(self):
         return self.header.base_offset + self.header.record_count - 1
@@ -57,31 +65,30 @@ class Batch:
         return struct.pack(">" + HDR_FMT_CRC, *self.header[5:])
 
     @staticmethod
-    def from_file(f):
+    def from_file(f, index):
         data = f.read(HEADER_SIZE)
         if len(data) == HEADER_SIZE:
             header = Header(*struct.unpack(HDR_FMT_RP, data))
             records_size = header.batch_size - HEADER_SIZE
             data = f.read(records_size)
             assert len(data) == records_size
-            return Batch(header, data)
+            return Batch(index, header, data)
         assert len(data) == 0
 
 
 class Segment:
     def __init__(self, path):
         self.path = path
-        self.batches = []
         self.__read_batches()
 
     def __read_batches(self):
-        print(self.path)
+        index = 1
         with open(self.path, "rb") as f:
             while True:
-                batch = Batch.from_file(f)
+                batch = Batch.from_file(f, index)
                 if not batch:
                     break
-                self.batches.append(batch)
+                index += 1
 
     def dump(self):
         if self.batches:
@@ -108,16 +115,11 @@ class Ntp:
         self.partition = partition
         self.path = os.path.join(self.base_dir, self.nspace, self.topic,
                                  str(self.partition))
-        self.segments = []
-        self.__segments()
+        pattern = os.path.join(self.path, "*.log")
+        self.segments = glob.iglob(pattern)
 
     def __str__(self):
         return "{0.nspace}/{0.topic}/{0.partition}".format(self)
-
-    def __segments(self):
-        pattern = os.path.join(self.path, "*.log")
-        paths = glob.iglob(pattern)
-        self.segments = map(lambda p: Segment(p), paths)
 
 
 class Store:
@@ -147,5 +149,12 @@ def storage():
 def summary(path):
     store = Store(path)
     for ntp in store.ntps:
-        for segment in ntp.segments:
-            print(ntp)
+        for path in ntp.segments:
+            try:
+                s = Segment(path)
+            except CorruptBatchError as e:
+                print("corruption detected in batch {} of segment: {}".format(
+                    e.batch.index, path))
+                print("header of corrupt batch: {}".format(e.batch.header))
+                continue
+            print("successfully decoded segment: {}".format(path))
