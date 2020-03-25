@@ -185,6 +185,10 @@ transport::send(netbuf b, rpc::client_opts opts) {
                             _probe.request_sent();
                             _probe.add_bytes_sent(msg_size);
                         });
+                  })
+                  .handle_exception([this](std::exception_ptr e) {
+                      vlog(rpclog.info, "Error dispatching socket write:{}", e);
+                      fail_outstanding_futures();
                   });
                 return std::move(f);
             });

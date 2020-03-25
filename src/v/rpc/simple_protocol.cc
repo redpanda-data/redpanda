@@ -77,6 +77,10 @@ simple_protocol::dispatch_method_once(header h, server::resources rs) {
                 return ctx->res.conn->write(std::move(view))
                   .finally([m = std::move(m), ctx] {});
             })
+          .handle_exception([ctx](std::exception_ptr e) {
+              vlog(rpclog.info, "Error dispatching method: {}", e);
+              ctx->res.conn->shutdown_input();
+          })
           .finally([ctx]() mutable { ctx->res.probe().request_completed(); });
     });
     return fut;
