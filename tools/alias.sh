@@ -100,3 +100,14 @@ function gcb_local() {
         ./
   )
 }
+
+function vtools_dev_cluster() {
+  tld=$(git rev-parse --show-toplevel 2>/dev/null)
+  vtools build go
+  vtools build cpp --clang --build-type release
+  rm $tld/build/release/clang/dist/rpm/RPMS/x86_64/redpanda-0.0-dev.x86_64.rpm || true
+  vtools build pkg --format rpm --clang --build-type release
+  vtools deploy cluster nodes=3
+  vtools deploy ansible --playbook=$tld/infra/ansible/provision-test-node.yml --var "rp_pkg=$tld/build/release/clang/dist/rpm/RPMS/x86_64/redpanda-0.0-dev.x86_64.rpm"
+  vtools deploy ansible --playbook=$tld/infra/ansible/redpanda-start.yml
+}
