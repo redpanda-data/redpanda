@@ -18,6 +18,7 @@ private:
 public:
     ss::future<errc> wait_for(model::offset, model::timeout_clock::time_point);
     void notify(model::offset);
+    void stop();
 
 private:
     underlying_t _promises;

@@ -13,6 +13,7 @@ enum class errc {
     not_leader_controller,
     topic_already_exists,
     replication_error,
+    shutting_down
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::errc"; }
@@ -35,6 +36,8 @@ struct errc_category final : public std::error_category {
             return "cluster::errc::topic_already_exists";
         case errc::replication_error:
             return "cluster::errc::replication_error";
+        case errc::shutting_down:
+            return "cluster::errc::shutting_down";
         default:
             return "cluster::errc::unknown";
         }

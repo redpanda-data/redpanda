@@ -33,4 +33,10 @@ void notification_latch::notify(model::offset o) {
         _promises.erase(it);
     }
 }
+
+void notification_latch::stop() {
+    for (auto& [_, pr] : _promises) {
+        pr->set_value(errc::shutting_down);
+    }
+}
 } // namespace cluster
