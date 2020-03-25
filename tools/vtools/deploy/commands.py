@@ -3,7 +3,7 @@ import os
 
 from ..vlib import config
 from ..vlib import shell
-from ..vlib import terraform as tf
+from . import cluster as cl
 
 
 @click.group(short_help='execute infrastructure-related tasks.')
@@ -44,10 +44,10 @@ def cluster(conf, install_deps, destroy, ssh_key, ssh_port, ssh_timeout,
             ssh_retries, log, tfvars):
     vconfig = config.VConfig(conf)
     if destroy:
-        tf.destroy(vconfig, install_deps, ssh_key, log)
+        cl.destroy(vconfig, install_deps, ssh_key, log)
         return
-    tf.apply(vconfig, install_deps, ssh_key, ssh_port, ssh_timeout,
-             ssh_retries, log, tfvars)
+    cl.deploy(vconfig, install_deps, ssh_key, ssh_port, ssh_timeout,
+              ssh_retries, log, tfvars)
 
 
 @deploy.command(short_help='Run ansible against a cluster.')
@@ -70,7 +70,7 @@ def ansible(conf, playbook, ssh_key, var):
     """
     vconfig = config.VConfig(conf)
 
-    tf_out = tf._get_tf_outputs(vconfig, 'cluster')
+    tf_out = cl._get_tf_outputs(vconfig, 'cluster')
 
     # write hosts.ini
     os.makedirs(f'{vconfig.build_root}/ansible/', exist_ok=True)

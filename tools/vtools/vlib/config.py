@@ -44,7 +44,7 @@ class VConfig(object):
         with open(config_file, 'r') as f:
             self._cfg = yaml.safe_load(f)
 
-        # make relative paths (w.r.t. working directory) absolute
+        # make relative paths absolute (w.r.t. working directory)
         for k in self._cfg['build'].keys():
             if k == 'default_type':
                 # the only option that is not a path
@@ -81,17 +81,9 @@ class VConfig(object):
         self._gopath = os.path.abspath(f"{self._cfg['build']['gopath']}/go")
         self._src_dir = os.path.abspath(self._cfg['build']['src'])
 
-        # paths to dev utility binary folders (llvm, formatters, ansible, etc.)
-        v_path = (f"{self._gopath}/bin:"
-                  f"{self.build_root}/venv/v/bin:"
-                  f"{self.build_root}/infra:"
-                  "/bin:/usr/bin:/usr/local/bin:")
-        if self.compiler == 'clang':
-            v_path = f":{self.clang_path}/bin:{v_path}"
-
         # create a dict with minimal set of environment variables
         self._environ = {
-            "PATH": v_path,
+            "PATH": f"{self._gopath}/bin:{os.environ['PATH']}",
             "COMPILER": self.compiler,
             "BUILD_TYPE": self.build_type,
             "HOME": os.environ["HOME"],
@@ -114,6 +106,7 @@ class VConfig(object):
   compiler: {self.compiler}
   build_type: {self.build_type}
   go_path: {self.go_path}
+  gobin: {self.gobin}
   go_src_dir: {self.go_src_dir}
   go_out_dir: {self.go_src_dir}
   clang_path: {self.clang_path}""")
@@ -202,6 +195,11 @@ class VConfig(object):
     def go_path(self):
         """Path used for GOPATH variable."""
         return self._gopath
+
+    @property
+    def gobin(self):
+        """Path to go executable."""
+        return f'{self._gopath}/bin/go'
 
     @property
     def infra_bin_dir(self):
