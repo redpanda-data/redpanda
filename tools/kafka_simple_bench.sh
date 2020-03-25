@@ -87,6 +87,7 @@ if [[ $1 == "consume" ]]; then
     --fetch-size=$((1024 * 1024)) \
     --timeout=1000 \
     --messages=${record_count} \
+    --group="$client_id" \
     --topic=${topic} \
     --threads 1 "${@:2:99}"
 fi
