@@ -12,6 +12,7 @@ import yaml
 from absl import logging
 
 from ..vlib import config
+from ..vlib import terraform
 from ..vlib import shell
 
 
@@ -290,14 +291,7 @@ def _generate_ducktape_cluster_config(vconfig,
 
     if use_existing:
         # generate configuration from terraform output data
-        module_dir = f'{vconfig.src_dir}/infra/modules/cluster'
-        tf_bin = os.path.join(vconfig.infra_bin_dir, 'terraform')
-        cmd = f'cd {module_dir} && {tf_bin} output -json ip'
-        out = shell.run_oneline(cmd, env=vconfig.environ)
-        ips = json.loads(out)
-        cmd = f'cd {module_dir} && {tf_bin} output -json private_ips'
-        out = shell.run_oneline(cmd, env=vconfig.environ)
-        pips = json.loads(out)
+        tf_out = terraform._get_tf_outputs(vconfig, 'cluster')
 
         os.makedirs(f'{vconfig.build_root}/ansible/', exist_ok=True)
         invfile = f'{vconfig.build_root}/ansible/hosts.ini'

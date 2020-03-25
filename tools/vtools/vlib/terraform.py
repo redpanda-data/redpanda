@@ -23,8 +23,8 @@ known_tfvars = [
 ]
 
 
-def deploy(vconfig, install_deps, ssh_key, ssh_port, ssh_timeout, ssh_retries,
-           log, tfvars):
+def apply(vconfig, install_deps, ssh_key, ssh_port, ssh_timeout, ssh_retries,
+          log, tfvars):
     if tfvars_key in vconfig.kv:
         logging.error(
             f'''Found another deployment with vars {vconfig.kv[tfvars_key]}.
