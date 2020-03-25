@@ -25,15 +25,15 @@ def _install_awscli(install_dir, env):
     --bin-dir {install_dir}"""
     logging.info('Downloading AWS CLI...')
     _download_and_extract(awscli_url, awscli_zip, install_dir, env=env)
-    installed = os.path.isfile(
-        os.path.join(install_dir, 'v2', 'current', 'bin', 'aws'))
+
+    aws_bin = os.path.join(install_dir, 'v2', 'current', 'bin', 'aws')
+    installed = os.path.isfile(aws_bin)
     if installed:
         logging.info('Found existing AWS CLI installation. Updating...')
         shell.run_subprocess(f'{install_cmd} --update', env=env)
     else:
         shell.run_subprocess(install_cmd, env=env)
-        shell.run_subprocess(f'{os.path.join(install_dir, "aws")} configure',
-                             env=env)
+        shell.run_subprocess(f'aws configure', env=env)
     shutil.rmtree(os.path.join(install_dir, 'aws'))
 
 
