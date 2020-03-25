@@ -247,7 +247,7 @@ consensus::make_reader(storage::log_reader_config config) {
             if (_has_pending_flushes) {
                 f = flush_log();
             }
-            return f.then([this, config]() mutable {
+            return f.then([this, config = config]() mutable {
                 config.max_offset = std::min(
                   config.max_offset, _log.committed_offset());
                 return _log.make_reader(config);
