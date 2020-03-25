@@ -40,7 +40,10 @@ consensus::consensus(
   , _batcher(this) {
     _meta.group = group();
     update_follower_stats(_conf);
-    _vote_timeout.set_callback([this] { dispatch_vote(); });
+    _vote_timeout.set_callback([this] {
+        dispatch_flush_with_lock();
+        dispatch_vote();
+    });
 }
 void consensus::do_step_down() {
     _probe.step_down();
@@ -217,6 +220,41 @@ consensus::replicate(model::record_batch_reader&& rdr, replicate_options opts) {
                   replicate_result{.last_offset = res.last_offset});
             });
       });
+}
+
+void consensus::dispatch_flush_with_lock() {
+    if (!_has_pending_flushes) {
+        return;
+    }
+    (void)ss::with_gate(_bg, [this] {
+        return ss::with_semaphore(_op_sem, 1, [this] {
+            if (!_has_pending_flushes) {
+                return ss::make_ready_future<>();
+            }
+            return flush_log();
+        });
+    });
+}
+
+ss::future<model::record_batch_reader>
+consensus::make_reader(storage::log_reader_config config) {
+    config.max_offset = std::min(
+      config.max_offset, model::offset(_meta.commit_index));
+    if (_has_pending_flushes && config.start_offset > _log.committed_offset()) {
+        // support read-your-writes
+        return ss::with_semaphore(_op_sem, 1, [this, config] {
+            auto f = ss::make_ready_future<>();
+            if (_has_pending_flushes) {
+                f = flush_log();
+            }
+            return f.then([this, config]() mutable {
+                config.max_offset = std::min(
+                  config.max_offset, _log.committed_offset());
+                return _log.make_reader(config);
+            });
+        });
+    }
+    return _log.make_reader(config);
 }
 
 /// performs no raft-state mutation other than resetting the timer
@@ -598,6 +636,10 @@ consensus::make_append_entries_reply(storage::append_result disk_results) {
     return reply;
 }
 
+ss::future<> consensus::flush_log() {
+    return _log.flush().then([this] { _has_pending_flushes = false; });
+}
+
 ss::future<storage::append_result>
 consensus::disk_append(model::record_batch_reader&& reader) {
     using ret_t = storage::append_result;
@@ -612,6 +654,7 @@ consensus::disk_append(model::record_batch_reader&& reader) {
 
           return in.consume(_log.make_appender(cfg), cfg.timeout)
             .then([this](ret_t ret) {
+                _has_pending_flushes = true;
                 // TODO
                 // if we rolled a log segment. write current configuration
                 // for speedy recovery in the background
@@ -625,7 +668,7 @@ consensus::disk_append(model::record_batch_reader&& reader) {
                 // followers for other consistency flushes are done separately.
 
                 if (_vstate != vote_state::leader) {
-                    return _log.flush().then([ret = std::move(ret), this] {
+                    return flush_log().then([ret = std::move(ret), this] {
                         return ss::make_ready_future<ret_t>(std::move(ret));
                     });
                 }
