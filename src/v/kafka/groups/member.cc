@@ -48,6 +48,19 @@ const bytes& group_member::get_protocol_metadata(
     }
 }
 
+bool group_member::should_keep_alive(
+  clock_type::time_point deadline, clock_type::duration new_join_timeout) {
+    if (is_joining()) {
+        return _is_new || (_latest_heartbeat + new_join_timeout) > deadline;
+    }
+
+    if (is_syncing()) {
+        return (_latest_heartbeat + session_timeout()) > deadline;
+    }
+
+    return false;
+}
+
 std::ostream& operator<<(std::ostream& o, const group_member& m) {
     return fmt_print(
       o,
