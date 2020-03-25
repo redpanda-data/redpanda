@@ -77,7 +77,7 @@ if [[ $1 == "produce" ]]; then
     --num-records ${record_count} \
     --throughput ${throughput} \
     --producer-props "acks=${acks}" \
-    --producer-props "client.id=${client_id}" \
+    "client.id=${client_id}" \
     bootstrap.servers=${servers} \
     buffer.memory=$((1024 * 1024)) "${@:2:99}"
 fi
