@@ -36,7 +36,7 @@ ss::future<result<append_entries_reply>> replicate_entries_stm::do_dispatch_one(
         auto f = ss::with_semaphore(
           _ptr->_op_sem, 1, [this, req = std::move(req)]() mutable {
               using append_res_t = storage::append_result;
-              return _ptr->_log.flush()
+              return _ptr->flush_log()
                 .then([this]() {
                     append_entries_reply reply;
                     reply.node_id = _ptr->_self;
