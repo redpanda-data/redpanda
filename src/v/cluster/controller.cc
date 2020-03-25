@@ -874,7 +874,10 @@ ss::future<> controller::process_join_request(model::broker broker) {
                  join_request(std::move(broker)),
                  rpc::client_opts(rpc::clock_type::now() + join_timeout));
            })
-      .discard_result();
+      .discard_result()
+      .handle_exception([](const std::exception_ptr& e) {
+          clusterlog.info("Error sending cluster join request: {}", e);
+      });
 }
 
 template<typename Func>
