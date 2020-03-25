@@ -12,13 +12,6 @@ variable instance_type {
   default = "i3.large"
 }
 
-variable local_package_abs_path {
-  description = <<DESC
-  The absolute path to a local package to deploy and install into to the VMs.
-DESC
-  default     = ""
-}
-
 variable ssh_timeout {
   description = <<DESC
   The timeout for establishing an SSH connection to the created VMs.
