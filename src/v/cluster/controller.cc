@@ -186,7 +186,11 @@ ss::future<> controller::stop() {
         _leadership_cond.broadcast();
     }
     _as.request_abort();
-    return _bg.close();
+    return _bg.close().then([this] {
+        // After gate is close there will be no new promises in notification
+        // latch
+        _notification_latch.stop();
+    });
 }
 
 ss::future<> controller::process_raft0_batch(model::record_batch batch) {
