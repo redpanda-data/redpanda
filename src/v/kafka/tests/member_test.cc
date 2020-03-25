@@ -74,21 +74,19 @@ SEASTAR_THREAD_TEST_CASE(get_protocol_metadata) {
 }
 
 SEASTAR_THREAD_TEST_CASE(protocols) {
-    auto r = join_group_request();
-    r.protocols = test_protos;
-
+    // protocols compare equal
     auto m = get_member();
-    BOOST_TEST(m.protocols() == r.protocols);
-    r.protocols[0].name = kafka::protocol_name("x");
-    BOOST_TEST(m.protocols() != r.protocols);
+    BOOST_TEST(m.protocols() == test_protos);
 
-    std::vector<member_protocol> test_protos2 = {
-      {kafka::protocol_name("n1"), "d1"}};
-    m.set_protocols(test_protos2);
-    r.protocols = test_protos;
-    BOOST_TEST(m.protocols() != r.protocols);
-    r.protocols = test_protos2;
-    BOOST_TEST(m.protocols() == r.protocols);
+    // and the negative test
+    auto protos = test_protos;
+    protos[0].name = kafka::protocol_name("x");
+    BOOST_TEST(m.protocols() != protos);
+
+    // can set new protocols
+    m.set_protocols(protos);
+    BOOST_TEST(m.protocols() != test_protos);
+    BOOST_TEST(m.protocols() == protos);
 }
 
 SEASTAR_THREAD_TEST_CASE(response_futs) {
@@ -115,27 +113,36 @@ SEASTAR_THREAD_TEST_CASE(response_futs) {
     BOOST_TEST(!m.is_syncing());
 }
 
-SEASTAR_THREAD_TEST_CASE(vote) {
+SEASTAR_THREAD_TEST_CASE(vote_for_protocols) {
     auto m = get_member();
 
+    // no matching candidates (empty)
     absl::flat_hash_set<protocol_name> c;
     BOOST_CHECK_THROW(m.vote_for_protocol(c), std::out_of_range);
 
+    // no matching candidates (non-empty)
+    c.insert(kafka::protocol_name("n3"));
+    BOOST_CHECK_THROW(m.vote_for_protocol(c), std::out_of_range);
+
+    // single candidate wins
+    c.clear();
     c.insert(kafka::protocol_name("n1"));
     BOOST_TEST(m.vote_for_protocol(c) == "n1");
 
+    // priority order is respected
     c.clear();
     c.insert(kafka::protocol_name("n0"));
     c.insert(kafka::protocol_name("n1"));
     BOOST_TEST(m.vote_for_protocol(c) == "n0");
 
+    // ignores unsupported candidate
     c.clear();
     c.insert(kafka::protocol_name("n2"));
     c.insert(kafka::protocol_name("n1"));
     BOOST_TEST(m.vote_for_protocol(c) == "n1");
 }
 
-SEASTAR_THREAD_TEST_CASE(output) {
+SEASTAR_THREAD_TEST_CASE(output_stream) {
     auto m = get_member();
     auto s = fmt::format("{}", m);
     BOOST_TEST(s.find("id={m}") != std::string::npos);
