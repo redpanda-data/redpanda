@@ -295,8 +295,8 @@ def _generate_ducktape_cluster_config(vconfig,
         # generate configuration from terraform output data
         tf_out = terraform._get_tf_outputs(vconfig, 'cluster')
 
-        os.makedirs(f'{vconfig.build_root}/ansible/', exist_ok=True)
-        invfile = f'{vconfig.build_root}/ansible/hosts.ini'
+        os.makedirs(f'{vconfig.ansible_tmp_dir}', exist_ok=True)
+        invfile = f'{vconfig.ansible_tmp_dir}/hosts.ini'
         with open(invfile, 'w') as f:
             zipped = zip(tf_out['ip']['value'], tf_out['private_ips']['value'])
             for ip, pip in zipped:

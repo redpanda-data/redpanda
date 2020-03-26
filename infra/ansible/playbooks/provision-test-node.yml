@@ -1,0 +1,9 @@
+- include: prepare-data-dir-raid.yml
+  when: with_raid | default(False)
+
+- include: prepare-data-dir.yml
+  when: not (with_raid | default(False))
+
+- include: install-test-node-deps.yml
+
+- include: install-redpanda.yml

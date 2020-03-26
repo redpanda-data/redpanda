@@ -17,9 +17,6 @@ def deploy():
                     'file is searched recursively starting from the current '
                     'working directory.'),
               default=None)
-@click.option('--install-deps',
-              default=False,
-              help='Download and install the dependencies')
 @click.option('--destroy',
               default=False,
               help='Tear down the deployed resources')
@@ -40,14 +37,13 @@ def deploy():
               type=click.Choice(['debug', 'info', 'warning', 'error', 'fatal'],
                                 case_sensitive=False))
 @click.argument('tfvars', nargs=-1)
-def cluster(conf, install_deps, destroy, ssh_key, ssh_port, ssh_timeout,
-            ssh_retries, log, tfvars):
+def cluster(conf, destroy, ssh_key, ssh_port, ssh_timeout, ssh_retries, log,
+            tfvars):
     vconfig = config.VConfig(conf)
     if destroy:
-        tf.destroy(vconfig, install_deps, ssh_key, log)
+        tf.destroy(vconfig, ssh_key, log)
         return
-    tf.apply(vconfig, install_deps, ssh_key, ssh_port, ssh_timeout,
-             ssh_retries, log, tfvars)
+    tf.apply(vconfig, ssh_key, ssh_port, ssh_timeout, ssh_retries, log, tfvars)
 
 
 @deploy.command(short_help='Run ansible against a cluster.')
@@ -60,7 +56,10 @@ def cluster(conf, install_deps, destroy, ssh_key, ssh_port, ssh_timeout,
               help='The path where of the SSH to use (the key will be' +
               'generated if it doesn\'t exist)',
               default='~/.ssh/infra-key')
-@click.option('--playbook', help='Ansible playbook to run', required=True)
+@click.option('--playbook',
+              help='Ansible playbook to run',
+              required=True,
+              multiple=True)
 @click.option('--var',
               help='Ansible variable in FOO=BAR format',
               multiple=True,
@@ -72,9 +71,10 @@ def ansible(conf, playbook, ssh_key, var):
 
     tf_out = tf._get_tf_outputs(vconfig, 'cluster')
 
+    os.makedirs(vconfig.ansible_dir, exist_ok=True)
+
     # write hosts.ini
-    os.makedirs(f'{vconfig.build_root}/ansible/', exist_ok=True)
-    invfile = f'{vconfig.build_root}/ansible/hosts.ini'
+    invfile = f'{vconfig.ansible_tmp_dir}/hosts.ini'
     with open(invfile, 'w') as f:
         zipped = zip(tf_out['ip']['value'], tf_out['private_ips']['value'])
         for i, (ip, pip) in enumerate(zipped):
@@ -84,9 +84,8 @@ def ansible(conf, playbook, ssh_key, var):
     # create extra vars flags
     evar = f'-e {" -e ".join(var)}' if var else ''
 
-    # run given playbook
+    # run given playbooks
     cmd = (f'ansible-playbook --private-key {ssh_key} '
-           f'{evar} -i {invfile} -v {playbook}')
+           f'{evar} -i {invfile} -v {" ".join(playbook)}')
 
-    vconfig.environ.update({'ANSIBLE_HOST_KEY_CHECKING': 'False'})
     shell.run_subprocess(cmd, env=vconfig.environ)
