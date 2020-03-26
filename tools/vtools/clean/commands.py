@@ -15,7 +15,8 @@ def clean():
               help=('Build configuration to select. If none given, the '
                     '`build.default_type` option from the vtools YAML config '
                     'is used (an error is thrown if not defined).'),
-              type=click.Choice(['debug', 'release'], case_sensitive=False),
+              type=click.Choice(['debug', 'release', 'dev'],
+                                case_sensitive=False),
               default=None)
 @click.option('--clang',
               help='Build clang and install in <build-root>/llvm/llvm-bin.',
@@ -37,7 +38,7 @@ def build_config(build_type, clang, conf):
               help=('Build configuration to select. If none given, the '
                     '`build.default_type` option from the vtools YAML config '
                     'is used (an error is thrown if not defined).'),
-              type=click.Choice(['debug', 'release', None],
+              type=click.Choice(['debug', 'release', 'dev'],
                                 case_sensitive=False),
               default=None)
 @click.option('--clang',

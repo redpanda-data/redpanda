@@ -21,7 +21,8 @@ def install():
               help=('Build configuration to select. If none given, the '
                     '`build.default_type` option from the vtools YAML config '
                     'is used (an error is thrown if not defined).'),
-              type=click.Choice(['debug', 'release'], case_sensitive=False),
+              type=click.Choice(['debug', 'release', 'dev'],
+                                case_sensitive=False),
               default=None)
 @click.option('--conf',
               help=('Path to configuration file. If not given, a .vtools.yml '

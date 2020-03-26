@@ -42,7 +42,7 @@ def go(conf):
               help=('Build configuration to select. If none given, the '
                     '`build.default_type` option from the vtools YAML config '
                     'is used (an error is thrown if not defined).'),
-              type=click.Choice(['debug', 'release', None],
+              type=click.Choice(['debug', 'release', 'dev'],
                                 case_sensitive=False),
               default=None)
 @click.option('--clang',
@@ -80,7 +80,7 @@ def cpp(build_type, conf, clang, args):
               help=('Build configuration to select. If none given, the '
                     '`build.default_type` option from the vtools YAML config '
                     'is used (an error is thrown if not defined).'),
-              type=click.Choice(['debug', 'release', None],
+              type=click.Choice(['debug', 'release', 'dev'],
                                 case_sensitive=False),
               default=None)
 @click.option('-n', '--nodes', help='Num of nodes in the cluster', default=7)
@@ -175,7 +175,7 @@ def pz(build_type, conf, clang, skip_build_img, tests, nodes,
         # teardown compose cluster
         cmd = (f'cd {vconfig.build_root}/tests/ && '
                'docker-compose -p rp down -t 1')
-        shell.run_oneline(cmd, env=vconfig.environ)
+        # shell.run_oneline(cmd, env=vconfig.environ)
 
     if dt_ret != 0:
         logging.fatal(f'ducktape returned non-zero code {dt_ret}')
