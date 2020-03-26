@@ -223,6 +223,7 @@ log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
     return fut
       .then([this, timeout] { return _iterator.reader->read_some(timeout); })
       .handle_exception([this](std::exception_ptr e) {
+          set_end_of_stream();
           _probe.batch_parse_error();
           return _iterator.close().then(
             [e] { return ss::make_exception_future<records_t>(e); });
