@@ -99,6 +99,14 @@ produce_response produce_request::make_error_response(error_code error) const {
 
 static std::ostream&
 operator<<(std::ostream& o, const produce_request::partition& p) {
+    // if the batch has been adapted to our native format, report that.
+    if (p.adapter.batch) {
+        return ss::fmt_print(
+          o,
+          "id {} payload batch size {}",
+          p.id,
+          p.adapter.batch->size_bytes());
+    }
     return ss::fmt_print(o, "id {} payload {}", p.id, p.data);
 }
 
