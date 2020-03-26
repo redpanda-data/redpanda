@@ -48,6 +48,8 @@ fi
 vtools install go-compiler
 vtools install go-deps
 
+vtools install infra-deps
+
 vtools install clang
 
 vtools build cpp
