@@ -3,12 +3,12 @@ import io
 import os
 import tarfile
 import urllib
-import shutil
 
 from absl import logging
 from ..vlib import cmake
 from ..vlib import clang as llvm
 from ..vlib import config
+from ..vlib import install_deps
 from ..vlib import shell
 
 
@@ -163,3 +163,26 @@ def maven(version, conf):
     for member in tar.getmembers():
         member.name = member.name.replace(topdir, '')
         tar.extract(member, path=vconfig.maven_home_dir)
+
+
+@install.command(short_help='install infrastructure dependencies.')
+@click.option('--conf',
+              help=('Path to configuration file. If not given, a .vtools.yml '
+                    'file is searched recursively starting from the current '
+                    'working directory'),
+              default=None)
+def infra_deps(conf):
+    """Installs dependencies required to work with infrastructure. These
+    dependencies cannot be installed with the OS package manager or pip.
+    Specifically, this command installs terraform, the AWS CLI, and
+    ansible-galaxy roles.
+    """
+    vconfig = config.VConfig(conf)
+
+    # terraform and aws
+    install_deps.install_deps(vconfig)
+
+    # ansible roles
+    reqs = f'{vconfig.ansible_dir}/requirements.yml'
+    shell.run_subprocess(f'ansible-galaxy install -r {reqs}',
+                         env=vconfig.environ)
