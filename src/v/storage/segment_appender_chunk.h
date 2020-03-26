@@ -15,7 +15,7 @@ public:
 
     segment_appender_chunk(const segment_appender_chunk&) = delete;
     segment_appender_chunk& operator=(const segment_appender_chunk&) = delete;
-    segment_appender_chunk(segment_appender_chunk&&) noexcept = default;
+    segment_appender_chunk(segment_appender_chunk&&) noexcept = delete;
     segment_appender_chunk& operator=(segment_appender_chunk&&) noexcept
       = default;
     ~segment_appender_chunk() noexcept = default;
