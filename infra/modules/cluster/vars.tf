@@ -12,13 +12,6 @@ variable instance_type {
   default = "i3.large"
 }
 
-variable local_package_abs_path {
-  description = <<DESC
-  The absolute path to a local package to deploy and install into to the VMs.
-DESC
-  default     = ""
-}
-
 variable ssh_timeout {
   description = <<DESC
   The timeout for establishing an SSH connection to the created VMs.
@@ -50,7 +43,7 @@ variable "public_key_path" {}
 variable "distro_ami" {
   type = map(string)
   default = {
-    "fedora-31"      = "ami-087ba3b9eab3e9bfb"
+    "fedora-31"      = "ami-0e82cc6ce8f393d4b"
     "ubuntu-bionic"  = "ami-0dd655843c87b6930"
     "rhel-8"         = "ami-00896a8434a915866"
     "amazon-linux-2" = "ami-024c80694b5b3e51a"

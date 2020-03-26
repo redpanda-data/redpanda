@@ -85,6 +85,7 @@ class VConfig(object):
         v_path = (f"{self._gopath}/bin:"
                   f"{self.build_root}/venv/v/bin:"
                   f"{self.build_root}/infra:"
+                  f"{self.build_root}/infra/v2/current/bin:"
                   "/bin:/usr/bin:/usr/local/bin:")
         if self.compiler == 'clang':
             v_path = f":{self.clang_path}/bin:{v_path}"
