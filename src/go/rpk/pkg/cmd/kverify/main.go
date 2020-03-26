@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"os/signal"
 	"strings"
@@ -13,6 +14,12 @@ import (
 
 	"github.com/Shopify/sarama"
 )
+
+const charset = "abcdefghijklmnopqrstuvwxyz" +
+	"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+var seededRand *rand.Rand = rand.New(
+	rand.NewSource(time.Now().UnixNano()))
 
 const (
 	ExpectationBufferSize = 1000
@@ -30,6 +37,18 @@ var (
 	stats    = &Stats{}
 	shutdown = make(chan os.Signal, 1)
 )
+
+func StringWithCharset(length int, charset string) string {
+	b := make([]byte, length)
+	for i := range b {
+		b[i] = charset[seededRand.Intn(len(charset))]
+	}
+	return string(b)
+}
+
+func AlphanumString(length int) string {
+	return StringWithCharset(length, charset)
+}
 
 func monitor() {
 	ticker := time.NewTicker(1 * time.Second)
@@ -125,7 +144,7 @@ ProducerLoop:
 		msg := &sarama.ProducerMessage{
 			Topic:    *topic,
 			Key:      sarama.StringEncoder(fmt.Sprintf("%d", i)),
-			Value:    nil,
+			Value:    sarama.StringEncoder(AlphanumString(1024)),
 			Metadata: &MessageMetadata{Enqueued: time.Now()},
 		}
 
@@ -219,10 +238,10 @@ func partitionExpectationConsumer(
 		if string(key) != string(msg.Key) {
 			fmt.Printf("Unexpected key: %v!\n", msg.Key)
 		}
-		if msg.Value != nil {
+		val, _ := expectation.Value.Encode()
+		if string(val) != string(msg.Value) {
 			fmt.Printf("Unexpected value: %v!\n", msg.Value)
 		}
-
 		stats.LogConsumed(expectation)
 	}
 }
