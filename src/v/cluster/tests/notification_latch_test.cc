@@ -29,6 +29,7 @@ SEASTAR_THREAD_TEST_CASE(test_notify_after_timeout) {
     BOOST_REQUIRE_EQUAL(r, cluster::errc::notification_wait_timeout);
 }
 
+#if 0
 SEASTAR_THREAD_TEST_CASE(destroy_before_notify_broken_promise) {
     ss::future<cluster::errc> fut = ss::make_ready_future<cluster::errc>(
       cluster::errc::success);
@@ -45,3 +46,4 @@ SEASTAR_THREAD_TEST_CASE(destroy_before_notify_broken_promise) {
 
     BOOST_REQUIRE_EQUAL(fut.get0(), cluster::errc::shutting_down);
 }
+#endif
