@@ -9,6 +9,7 @@
 #include "oncore.h"
 #include "seastarx.h"
 #include "utils/intrusive_list_helpers.h"
+#include "vassert.h"
 
 #include <seastar/core/iostream.hh>
 #include <seastar/core/scattered_message.hh>
@@ -213,6 +214,7 @@ inline void iobuf::create_new_fragment(size_t sz) {
 }
 inline iobuf::placeholder iobuf::reserve(size_t sz) {
     oncore_debug_verify(_verify_shard);
+    vassert(sz, "zero length reservations are unsupported");
     reserve_memory(sz);
     _size += sz;
     auto it = std::prev(_frags.end());
@@ -281,7 +283,7 @@ inline void iobuf::reserve_memory(size_t reservation) {
     }
     if (available_bytes() > 0) {
         if (_frags.back().is_empty()) {
-            _frags.pop_back();
+            _frags.pop_back_and_dispose([](fragment* f) { delete f; });
         } else {
             _frags.back().trim();
         }
