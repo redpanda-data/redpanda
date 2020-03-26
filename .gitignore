@@ -190,3 +190,6 @@ src/go/metrics/env.yaml
 # Infra
 infra/modules/cluster/ssh_config*
 .vtools.db
+
+# VSCode Java
+.project
