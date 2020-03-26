@@ -23,6 +23,17 @@ set(CMAKE_C_FLAGS_MINSIZEREL "-Os -DNDEBUG")
 set(Boost_USE_STATIC_LIBS OFF CACHE BOOL "")
 set(Boost_NO_BOOST_CMAKE ON CACHE BOOL "")
 
+# add 'Dev' build-type
+set(CMAKE_CXX_FLAGS_DEV "-O1 -g" CACHE STRING "c++ dev builds." FORCE)
+set(CMAKE_C_FLAGS_DEV "-O1 -g" CACHE STRING "c dev builds." FORCE)
+set(CMAKE_EXE_LINKER_FLAGS_DEV "-O1 -g" CACHE STRING "dev builds." FORCE)
+set(CMAKE_SHARED_LINKER_FLAGS_DEV "-O1 -g" CACHE STRING "dev builds." FORCE)
+mark_as_advanced(
+    CMAKE_CXX_FLAGS_DEV
+    CMAKE_C_FLAGS_DEV
+    CMAKE_EXE_LINKER_FLAGS_DEV
+    CMAKE_SHARED_LINKER_FLAGS_DEV)
+
 # options
 set(RP_MARCH
   "-march=westmere"
