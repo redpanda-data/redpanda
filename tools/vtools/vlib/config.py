@@ -92,6 +92,10 @@ class VConfig(object):
         if self.compiler == 'clang':
             v_path = f":{self.clang_path}/bin:{v_path}"
 
+        # ansible
+        self._ansible_tmp_dir = f'{self.build_root}/ansible'
+        self._ansible_dir = f'{self.src_dir}/infra/ansible'
+
         # create a dict with minimal set of environment variables
         self._environ = {
             "PATH": v_path,
@@ -103,6 +107,7 @@ class VConfig(object):
             "LC_CTYPE": "C.UTF-8",
             "CI": os.environ.get("CI", "0"),
             "JAVA_HOME": self.java_home_dir,
+            "ANSIBLE_CONFIG": f'{self._ansible_dir}/ansible.cfg'
         }
         if self._environ["CI"] == "0":
             if "CCACHE_DIR" in os.environ:
@@ -236,3 +241,11 @@ class VConfig(object):
     def java_bin_dir(self):
         """Folder for java binaries"""
         return os.path.join(self.build_root, 'bin')
+    def ansible_dir(self):
+        """Path to ansible dir containing config, roles, playbooks, etc."""
+        return self._ansible_dir
+
+    @property
+    def ansible_tmp_dir(self):
+        """Path to folder within build/ for logs and related ansible files."""
+        return self._ansible_tmp_dir
