@@ -131,3 +131,31 @@ def pkg(build_type, clang, conf, format):
             logging.fatal(f'Unknown format {format}')
 
     packaging.create_packages(vconfig, format, vconfig.build_type)
+
+
+@build.command(short_help='build vectorized java applications')
+@click.option('--conf',
+              help=('Path to configuration file. If not given, a .vtools.yml '
+                    'file is searched recursively starting from the current '
+                    'working directory'),
+              default=None)
+@click.option('--targets',
+              help="target to build ('kafka-verifier').",
+              multiple=True)
+def java(conf, targets):
+    allowed_targets = ['kafka-verifier']
+    vconfig = config.VConfig(conf)
+    os.makedirs(vconfig.java_build_dir, exist_ok=True)
+    os.makedirs(vconfig.java_bin_dir, exist_ok=True)
+
+    if len(targets) == 0:
+        targets = allowed_targets
+
+    for t in targets:
+        if t not in allowed_targets:
+            logging.fatal(f'Unknown target {t}')
+
+        shell.run_subprocess(
+            f'cd {vconfig.java_src_dir}/{t} && '
+            f'mvn clean package --batch-mode -DbuildDir={vconfig.java_build_dir}/{t}',
+            env=vconfig.environ)

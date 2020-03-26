@@ -86,6 +86,8 @@ class VConfig(object):
                   f"{self.build_root}/venv/v/bin:"
                   f"{self.build_root}/infra:"
                   f"{self.build_root}/infra/v2/current/bin:"
+                  f"{self.java_home_dir}/bin:"
+                  f"{self.maven_home_dir}/bin:"
                   "/bin:/usr/bin:/usr/local/bin:")
         if self.compiler == 'clang':
             v_path = f":{self.clang_path}/bin:{v_path}"
@@ -100,6 +102,7 @@ class VConfig(object):
             "GOBIN": f'{self._gopath}/bin',
             "LC_CTYPE": "C.UTF-8",
             "CI": os.environ.get("CI", "0"),
+            "JAVA_HOME": self.java_home_dir,
         }
         if self._environ["CI"] == "0":
             if "CCACHE_DIR" in os.environ:
@@ -208,3 +211,28 @@ class VConfig(object):
     def infra_bin_dir(self):
         """Path to infra binaries."""
         return os.path.join(self.build_root, 'infra')
+
+    @property
+    def java_home_dir(self):
+        """Java home path"""
+        return os.path.join(self.build_root, 'java')
+
+    @property
+    def maven_home_dir(self):
+        """Maven home path"""
+        return os.path.join(self.build_root, 'maven')
+
+    @property
+    def java_src_dir(self):
+        """Source folder for java programs."""
+        return f"{self._cfg['build']['src']}/src/java"
+
+    @property
+    def java_build_dir(self):
+        """Build folder for java libraries"""
+        return os.path.join(self.build_root, 'java-build')
+
+    @property
+    def java_bin_dir(self):
+        """Folder for java binaries"""
+        return os.path.join(self.build_root, 'bin')
