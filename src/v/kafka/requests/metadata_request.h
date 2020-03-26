@@ -61,7 +61,7 @@ struct metadata_response {
     struct topic {
         error_code err_code;
         model::topic name;
-        bool is_internal; // version >= 1
+        bool is_internal{false}; // version >= 1
         std::vector<partition> partitions;
         int32_t topic_authorized_operations; // version >= 8
         void encode(api_version version, response_writer& rw) const;
