@@ -283,7 +283,7 @@ inline void iobuf::reserve_memory(size_t reservation) {
     }
     if (available_bytes() > 0) {
         if (_frags.back().is_empty()) {
-            _frags.pop_back();
+            _frags.pop_back_and_dispose([](fragment* f) { delete f; });
         } else {
             _frags.back().trim();
         }
