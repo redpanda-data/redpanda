@@ -9,7 +9,6 @@ from datetime import date
 
 from ..vlib import rotate_ssh_keys as keys
 from ..vlib import shell
-from ..vlib import install_deps as deps
 
 tfvars_key = 'deploy.cluster.tf.vars'
 
@@ -26,8 +25,7 @@ known_tfvars = [
 ]
 
 
-def apply(vconfig, install_deps, ssh_key, ssh_port, ssh_timeout, ssh_retries,
-          log, tfvars):
+def apply(vconfig, ssh_key, ssh_port, ssh_timeout, ssh_retries, log, tfvars):
     if tfvars_key in vconfig.kv:
         logging.error(
             f'''Found another deployment with vars {vconfig.kv[tfvars_key]}.
@@ -41,26 +39,23 @@ Please run `vtools deploy cluster --destroy true` before deploying again.''')
     terraform_vars = _parse_tf_vars(tfvars)
     vconfig.kv[tfvars_key] = terraform_vars
     module = 'cluster'
-    _run_terraform_cmd(vconfig, 'apply', module, install_deps, log,
-                       terraform_vars)
+    _run_terraform_cmd(vconfig, 'apply', module, log, terraform_vars)
 
 
-def destroy(vconfig, install_deps, ssh_key, log):
+def destroy(vconfig, ssh_key, log):
     if tfvars_key not in vconfig.kv:
         logging.info('No cluster deployments found. Nothing to destroy.')
         return
     abs_path = os.path.abspath(os.path.expanduser(ssh_key))
     comment = _get_ssh_metadata(vconfig)
     key_path, pub_key_path = keys.generate_key(abs_path, comment, '""')
-    _run_terraform_cmd(vconfig, 'destroy', 'cluster', install_deps, log,
+    _run_terraform_cmd(vconfig, 'destroy', 'cluster', log,
                        vconfig.kv[tfvars_key])
     del vconfig.kv[tfvars_key]
 
 
-def _run_terraform_cmd(vconfig, action, module, install_deps, log, tfvars):
+def _run_terraform_cmd(vconfig, action, module, log, tfvars):
     logging.set_verbosity(log)
-    _check_deps(vconfig, install_deps)
-
     _run_terraform(vconfig, action, module, tfvars)
 
 
@@ -95,12 +90,6 @@ def _get_tf_outputs(vconfig, module):
     logging.info(f'Running {cmd}')
     out = shell.raw_check_output(cmd, env=vconfig.environ)
     return json.loads(out)
-
-
-def _check_deps(vconfig, force_install):
-    deps_installed = deps.check_deps_installed(vconfig)
-    if not deps_installed or force_install:
-        deps.install_deps(vconfig)
 
 
 def _get_ssh_metadata(vconfig):
