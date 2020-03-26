@@ -13,7 +13,7 @@ export ACKS=-1
 
 root_path=$(git rev-parse --show-toplevel)
 java_path=${root_path}/build/java/bin/java
-jar_path=${root_path}/build/bin/kafka-verifier.jar
+jar_path=${root_path}/build/java-build/kafka-verifier/kafka-verifier.jar
 
 ${java_path} -jar ${jar_path} \
   --topic ${TOPIC} \
