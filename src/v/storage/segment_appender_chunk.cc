@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <iostream>
 
 namespace storage {
 
@@ -45,6 +46,10 @@ size_t segment_appender_chunk::dma_size() const {
     const auto prev_sz = ss::align_down<size_t>(_flushed_pos, _alignment);
     const auto curr_sz = ss::align_up<size_t>(_pos, _alignment);
     return curr_sz - prev_sz;
+}
+std::ostream& operator<<(std::ostream& o, const segment_appender_chunk& c) {
+    return o << "{_alignment:" << c._alignment << ", _pos:" << c._pos
+             << ", _flushed_pos:" << c._flushed_pos << "}";
 }
 
 } // namespace storage

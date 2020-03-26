@@ -42,7 +42,7 @@ public:
     intrusive_list_hook hook;
 
 private:
-    size_t _alignment;
+    size_t _alignment{0};
     size_t _pos{0};
     size_t _flushed_pos{0};
     std::unique_ptr<char[], ss::free_deleter> _buf;
