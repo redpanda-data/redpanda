@@ -1,0 +1,32 @@
+- hosts: all
+  tasks:
+  - name: ensure rp_pkg variable is defined
+    assert:
+      that:
+      - "rp_pkg is defined"
+
+  - name: copy redpanda package from absolute path
+    copy:
+      src: '{{ rp_pkg }}'
+      dest: '/tmp/{{ rp_pkg | basename }}'
+    when: rp_pkg.startswith('/')
+
+  - name: copy redpanda package from relative path
+    copy:
+      src: '{{ lookup("env","PWD") }}/{{ rp_pkg }}'
+      dest: '/tmp/{{ rp_pkg | basename }}'
+    when: not rp_pkg.startswith('/')
+
+  - name: install package with yum
+    yum:
+      name: '/tmp/{{ rp_pkg | basename }}'
+      state: present
+    when:
+    - '".rpm" in rp_pkg'
+
+  - name: install package with apt
+    apt:
+      deb: '/tmp/{{ rp_pkg | basename }}'
+      state: present
+    when:
+    - '".deb" in rp_pkg'

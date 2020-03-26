@@ -1,0 +1,33 @@
+- hosts: all
+  tasks:
+
+  - name: install base deps redhat
+    package:
+      name:
+        - iotop
+        - java-11-openjdk-devel.x86_64
+        - mdadm
+        - xfsprogs
+      state: present
+    when: ansible_os_family == 'RedHat'
+  - name: install base deps - debian
+    package:
+      name:
+        - iotop
+        - mdadm
+        - openjdk-11-jdk-headless
+        - xfsprogs
+      state: present
+    when: ansible_os_family == 'Debian'
+
+  - name: install kafka binaries
+    unarchive:
+      src: 'https://s3-us-west-2.amazonaws.com/kafka-packages/kafka_2.12-2.4.0.tgz'
+      dest: /opt/
+      remote_src: yes
+      creates: /opt/kafka_2.12-2.4.0
+  - name: create kafka-dev symlink directory referenced in tests
+    file:
+      src: /opt/kafka_2.12-2.4.0
+      dest: /opt/kafka-dev
+      state: link

@@ -1,0 +1,30 @@
+- hosts: all
+  tasks:
+
+  - name: create xfs filesystem
+    filesystem:
+      fstype: xfs
+      dev: /dev/nvme0n1
+
+  - name: mount nvme device
+    mount:
+      path: /mnt/vectorized
+      src: /dev/nvme0n1
+      fstype: xfs
+      state: mounted
+
+  - name: data path
+    file:
+      path: /mnt/vectorized/redpanda
+      state: directory
+      owner: root
+      group: root
+      mode: ugo=rwx
+  - name: set premissions
+    file:
+      dest: /var/lib/redpanda
+      src: /mnt/vectorized/redpanda
+      state: link
+      owner: root
+      group: root
+      mode: ugo=rwx
