@@ -88,16 +88,25 @@ func NewFreeDiskSpaceChecker(path string) Checker {
 func NewMemoryChecker(fs afero.Fs) Checker {
 	return NewIntChecker(
 		FreeMemChecker,
-		"Free memory [MB]",
+		"Free memory per CPU [MB]",
 		Warning,
 		func(current int) bool {
 			return current >= 2048
 		},
 		func() string {
-			return "2048"
+			return "2048 per CPU"
 		},
 		func() (int, error) {
-			return system.GetMemTotalMB(fs)
+			effCpus, err := system.ReadCgroupEffectiveCpusNo(fs)
+			if err != nil {
+				return 0, err
+			}
+			availableMem, err := system.GetMemTotalMB(fs)
+			if err != nil {
+				return 0, err
+			}
+			memPerCpu := availableMem / int(effCpus)
+			return memPerCpu, nil
 		},
 	)
 }
