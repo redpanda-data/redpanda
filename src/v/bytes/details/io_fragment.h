@@ -18,8 +18,8 @@ public:
     io_fragment(ss::temporary_buffer<char> buf, empty)
       : _buf(std::move(buf))
       , _used_bytes(0) {}
-    io_fragment(io_fragment&& o) noexcept = default;
-    io_fragment& operator=(io_fragment&& o) noexcept = default;
+    io_fragment(io_fragment&& o) noexcept = delete;
+    io_fragment& operator=(io_fragment&& o) noexcept = delete;
     io_fragment(const io_fragment& o) = delete;
     io_fragment& operator=(const io_fragment& o) = delete;
     ~io_fragment() noexcept = default;
