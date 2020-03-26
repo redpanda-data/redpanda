@@ -19,7 +19,8 @@ def build():
               help=('Build configuration to select. If none given, the '
                     '`build.default_type` option from the vtools YAML config '
                     'is used (an error is thrown if not defined).'),
-              type=click.Choice(['debug', 'release'], case_sensitive=False),
+              type=click.Choice(['debug', 'release', 'dev'],
+                                case_sensitive=False),
               default=None)
 @click.option('--skip-external',
               help='Do not build external projects.',
@@ -109,7 +110,8 @@ def go(conf, targets):
               help=('Build configuration to select. If none given, the '
                     '`build.default_type` option from the vtools YAML config '
                     'is used (an error is thrown if not defined).'),
-              type=click.Choice(['debug', 'release'], case_sensitive=False),
+              type=click.Choice(['debug', 'release', 'dev'],
+                                case_sensitive=False),
               default=None)
 @click.option('--clang',
               help='Use binary files that were compiled with clang.',
