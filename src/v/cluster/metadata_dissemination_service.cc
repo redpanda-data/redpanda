@@ -150,47 +150,61 @@ void metadata_dissemination_service::collect_pending_updates() {
           get_partition_members(ntp_leader.ntp.tp.partition, *tp_md), brokers);
         for (auto& id : non_overlapping) {
             if (!_pending_updates.contains(id)) {
-                _pending_updates.emplace(id, ntp_leaders{});
+                _pending_updates.emplace(id, retry_meta{ntp_leaders{}});
             }
-            _pending_updates[id].push_back(ntp_leader);
+            _pending_updates[id].updates.push_back(ntp_leader);
         }
     }
     _requests.clear();
 }
 
+void metadata_dissemination_service::cleanup_finished_updates() {
+    std::vector<model::node_id> _to_remove;
+    _to_remove.reserve(_pending_updates.size());
+    for (auto& [node_id, meta] : _pending_updates) {
+        if (meta.finished) {
+            _to_remove.push_back(node_id);
+        }
+    }
+    for (auto id : _to_remove) {
+        _pending_updates.erase(id);
+    }
+}
+
 ss::future<> metadata_dissemination_service::dispatch_disseminate_leadership() {
     collect_pending_updates();
-    return ss::do_for_each(
-      _pending_updates.begin(),
-      _pending_updates.end(),
-      [this](broker_updates_t::value_type& br_update) {
-          return dispatch_one_update(br_update.first, br_update.second);
-      });
+    return ss::parallel_for_each(
+             _pending_updates.begin(),
+             _pending_updates.end(),
+             [this](broker_updates_t::value_type& br_update) {
+                 return dispatch_one_update(br_update.first, br_update.second);
+             })
+      .then([this] { cleanup_finished_updates(); });
 }
 
 ss::future<> metadata_dissemination_service::dispatch_one_update(
-  model::node_id target_id, const ntp_leaders& leaders) {
+  model::node_id target_id, retry_meta& meta) {
     return cluster::dispatch_rpc<metadata_dissemination_rpc_client_protocol>(
              _clients,
              target_id,
-             [this, &leaders, target_id](
+             [this, &meta, target_id](
                metadata_dissemination_rpc_client_protocol& proto) mutable {
                  vlog(
                    clusterlog.trace,
                    "Sending {} metadata updates to {}",
-                   leaders.size(),
+                   meta.updates.size(),
                    target_id);
                  return proto
                    .update_leadership(
-                     update_leadership_request{leaders},
+                     update_leadership_request{meta.updates},
                      rpc::client_opts(
                        _dissemination_interval + rpc::clock_type::now()))
                    .then([](rpc::client_context<update_leadership_reply> ctx) {
                        return std::move(ctx.data);
                    });
              })
-      .then([this, target_id](update_leadership_reply) {
-          _pending_updates.erase(target_id);
+      .then([this, target_id, &meta](update_leadership_reply) {
+          meta.finished = true;
       })
       .handle_exception([](std::exception_ptr e) {
           vlog(clusterlog.warn, "Error when sending metadata update {}", e);

@@ -65,11 +65,19 @@ public:
     ss::future<> stop();
 
 private:
-    using broker_updates_t = absl::flat_hash_map<model::node_id, ntp_leaders>;
+    // Used to store pending updates
+    // When update was delivered successfully the finished flag is set to true
+    // and object is removed from pending updates map
+    struct retry_meta {
+        ntp_leaders updates;
+        bool finished = false;
+    };
+    using broker_updates_t = absl::flat_hash_map<model::node_id, retry_meta>;
 
     void collect_pending_updates();
+    void cleanup_finished_updates();
     ss::future<> dispatch_disseminate_leadership();
-    ss::future<> dispatch_one_update(model::node_id, const ntp_leaders&);
+    ss::future<> dispatch_one_update(model::node_id, retry_meta&);
     ss::future<> dispatch_get_metadata_update(model::node_id);
     ss::future<> update_metadata_with_retries(std::vector<model::node_id>);
 
