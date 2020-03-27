@@ -4,6 +4,7 @@
 
 #include <seastar/core/do_with.hh>
 #include <seastar/core/future-util.hh>
+#include <seastar/core/smp.hh>
 
 #include <iostream>
 #include <limits>
@@ -42,9 +43,15 @@ std::vector<iobuf> iobuf_share_foreign_n(iobuf og, size_t n) {
         for (iobuf& b : retval) {
             ss::deleter del_i = ss::make_deleter(
               [shard, d = del.share()]() mutable {
+                  if (shard == ss::this_shard_id()) {
+                      return;
+                  }
                   (void)ss::smp::submit_to(shard, [d = std::move(d)] {});
               });
-            b.append(ss::temporary_buffer<char>(src, sz, std::move(del_i)));
+            auto f = new iobuf::fragment(
+              ss::temporary_buffer<char>(src, sz, std::move(del_i)),
+              iobuf::fragment::full{});
+            b.append_take_ownership(f);
         }
     }
     return retval;
@@ -151,7 +158,8 @@ iobuf iobuf::share(size_t pos, size_t len) {
             left_in_frag = left;
             left = 0;
         }
-        ret.append(frag.share(pos, left_in_frag));
+        auto f = new fragment(frag.share(pos, left_in_frag), fragment::full{});
+        ret.append_take_ownership(f);
         pos = 0;
     }
     return std::move(ret);

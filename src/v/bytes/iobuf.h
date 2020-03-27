@@ -120,6 +120,10 @@ public:
     void append(ss::temporary_buffer<char>);
     /// appends the contents of buffer; might pack values into existing space
     void append(iobuf);
+    /// \brief trims the back, and appends direct.
+    void append_take_ownership(fragment*);
+    /// \brief trims the back, and appends direct.
+    void prepend_take_ownership(fragment*);
     /// prepends the _the buffer_ as iobuf::details::io_fragment::full{}
     void prepend(ss::temporary_buffer<char>);
     /// prepends the arg to this as iobuf::details::io_fragment::full{}
@@ -208,13 +212,26 @@ inline size_t iobuf::last_allocation_size() {
     return _frags.empty() ? details::io_allocation_size::default_chunk_size
                           : _frags.back().capacity();
 }
+/// \brief trims the back, and appends direct.
+inline void iobuf::append_take_ownership(fragment* f) {
+    if (!_frags.empty()) {
+        _frags.back().trim();
+    }
+    // NOTE: this _must_ be size and _not_ capacity
+    _size += f->size();
+    _frags.push_back(*f);
+}
+inline void iobuf::prepend_take_ownership(fragment* f) {
+    _size += f->size();
+    _frags.push_front(*f);
+}
 
 inline void iobuf::create_new_fragment(size_t sz) {
     oncore_debug_verify(_verify_shard);
     auto chunk_max = std::max(sz, last_allocation_size());
     auto asz = details::io_allocation_size::next_allocation_size(chunk_max);
     auto f = new fragment(ss::temporary_buffer<char>(asz), fragment::empty{});
-    _frags.push_back(*f);
+    append_take_ownership(f);
 }
 inline iobuf::placeholder iobuf::reserve(size_t sz) {
     oncore_debug_verify(_verify_shard);
@@ -241,9 +258,8 @@ inline void iobuf::reserve_memory(size_t reservation) {
 [[gnu::always_inline]] void inline iobuf::prepend(
   ss::temporary_buffer<char> b) {
     oncore_debug_verify(_verify_shard);
-    _size += b.size();
     auto f = new fragment(std::move(b), fragment::full{});
-    _frags.push_front(*f);
+    prepend_take_ownership(f);
 }
 [[gnu::always_inline]] void inline iobuf::prepend(iobuf b) {
     oncore_debug_verify(_verify_shard);
@@ -286,15 +302,16 @@ inline void iobuf::reserve_memory(size_t reservation) {
     }
     if (available_bytes() > 0) {
         if (_frags.back().is_empty()) {
-            _frags.pop_back_and_dispose([](fragment* f) { delete f; });
+            _frags.pop_back_and_dispose([](fragment* f) {
+                delete f; // NOLINT
+            });
         } else {
             _frags.back().trim();
         }
     }
-    _size += b.size();
     // intrusive list manages the lifetime
     auto f = new fragment(std::move(b), fragment::full{});
-    _frags.push_back(*f);
+    append_take_ownership(f);
 }
 /// appends the contents of buffer; might pack values into existing space
 inline void iobuf::append(iobuf o) {
