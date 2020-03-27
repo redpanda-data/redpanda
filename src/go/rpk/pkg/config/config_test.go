@@ -77,6 +77,13 @@ func TestSet(t *testing.T) {
 		expectErr bool
 	}{
 		{
+			name:     "it should parse '1' as an int and not as bool (true)",
+			key:      "redpanda.node_id",
+			value:    "1",
+			format:   "single",
+			expected: 1,
+		},
+		{
 			name:     "it should set single integer fields",
 			key:      "redpanda.node_id",
 			value:    "54312",
