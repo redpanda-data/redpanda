@@ -32,12 +32,19 @@ public:
         _partition_capacity = (cpus * max_allocations_per_core)
                               - core0_extra_weight;
     }
+
     allocation_node(allocation_node&& o) noexcept
       : _id(o._id)
       , _weights(std::move(o._weights))
       , _partition_capacity(o._partition_capacity)
-      , _machine_labels(std::move(o._machine_labels))
-      , _hook(std::move(o._hook)) {}
+      , _machine_labels(std::move(o._machine_labels)) {
+        _hook.swap_nodes(o._hook);
+    }
+
+    allocation_node& operator=(allocation_node&&) = delete;
+    allocation_node(const allocation_node&) = delete;
+    allocation_node& operator=(const allocation_node&) = delete;
+
     uint32_t cpus() const { return _weights.size(); }
     model::node_id id() const { return _id; }
     uint32_t partition_capacity() const { return _partition_capacity; }
