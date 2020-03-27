@@ -37,7 +37,7 @@ please keep this up to date with every new library use.
 | GSL             | MIT                                |
 | pcg             | Apache License 2                   |
 | abseil          | Apache License 2                   |
-| nlohmann-json   | MIT                                |
+| rapidjson       | MIT                                |
 | crc32c          | BSD 3                              |
 | CRoaring        | Apache License 2                   |
  
