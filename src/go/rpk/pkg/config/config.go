@@ -261,7 +261,7 @@ func checkAndWrite(
 		return err
 	}
 	log.Debugf("Backed up the current config to %s", backup)
-	if lastBackupFile != "" {
+	if lastBackupFile != "" && lastBackupFile != backup {
 		log.Debug("Removing previous backup file")
 		err = fs.Remove(lastBackupFile)
 		if err != nil {
