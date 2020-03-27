@@ -532,16 +532,6 @@ ExternalProject_Add(rapidjson
     -DRAPIDJSON_HAS_STDSTRING=ON
 )
 
-ExternalProject_Add(json
-  URL https://storage.googleapis.com/vectorizedio-public/dependencies/json-v3.7.0.zip
-  URL_MD5 482c9cd8b6ba9749e018c3f3664afb36
-  INSTALL_DIR    @V_DEPS_INSTALL_DIR@
-  PATCH_COMMAND ""
-  CONFIGURE_COMMAND ""
-  BUILD_COMMAND ""
-  INSTALL_COMMAND
-  COMMAND ${CMAKE_COMMAND} -E copy_directory <SOURCE_DIR>/nlohmann <INSTALL_DIR>/include/nlohmann)
-
 ExternalProject_Add(crc32c
   URL https://storage.googleapis.com/vectorizedio-public/dependencies/crc32c-fd33bcc.tar.gz
   URL_MD5 21c86fb3143fb748a52d11b9fee874de
