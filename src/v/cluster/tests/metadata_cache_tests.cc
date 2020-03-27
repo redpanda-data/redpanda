@@ -1,5 +1,6 @@
 #include "cluster/metadata_cache.h"
 #include "cluster/tests/utils.h"
+#include "cluster/types.h"
 
 #include <seastar/net/api.hh>
 #include <seastar/net/inet_address.hh>
@@ -12,10 +13,15 @@ model::topic_namespace create_topic_namespace(ss::sstring tp) {
     return model::topic_namespace(test_ns, model::topic(std::move(tp)));
 }
 
+cluster::topic_configuration create_topic_cfg(ss::sstring tp) {
+    return cluster::topic_configuration(
+      test_ns, model::topic(std::move(tp)), 1, 1);
+}
+
 cluster::metadata_cache create_test_cache() {
     cluster::metadata_cache cache;
     auto tp = model::topic("test_topic");
-    cache.add_topic(create_topic_namespace(tp));
+    cache.add_topic(create_topic_cfg(tp));
     return cache;
 }
 
@@ -59,9 +65,9 @@ SEASTAR_THREAD_TEST_CASE(test_getting_topic_metadata) {
 
 SEASTAR_THREAD_TEST_CASE(test_getting_topics_list) {
     cluster::metadata_cache cache;
-    cache.add_topic(create_topic_namespace("test_topic_1"));
-    cache.add_topic(create_topic_namespace("test_topic_2"));
-    cache.add_topic(create_topic_namespace("test_topic_3"));
+    cache.add_topic(create_topic_cfg("test_topic_1"));
+    cache.add_topic(create_topic_cfg("test_topic_2"));
+    cache.add_topic(create_topic_cfg("test_topic_3"));
     auto all_topics = cache.all_topics();
 
     auto find_topic = [&all_topics](const model::topic& tp) {

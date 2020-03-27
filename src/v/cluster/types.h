@@ -95,6 +95,7 @@ struct create_topics_request {
 struct create_topics_reply {
     std::vector<topic_result> results;
     std::vector<model::topic_metadata> metadata;
+    std::vector<topic_configuration> configs;
 };
 
 // generic type used for various registration handles such as in ntp_callbacks.h
