@@ -20,6 +20,11 @@
 
 namespace kafka {
 
+[[noreturn]] [[gnu::cold]] static void
+throw_out_of_range(const ss::sstring& msg) {
+    throw std::out_of_range(msg);
+}
+
 const kafka::protocol_name& group_member::vote_for_protocol(
   const absl::flat_hash_set<protocol_name>& candidates) const {
     auto it = std::find_if(
@@ -29,7 +34,7 @@ const kafka::protocol_name& group_member::vote_for_protocol(
           return candidates.find(p.name) != candidates.end();
       });
     if (it == _state.protocols.cend()) {
-        throw std::out_of_range("no matching protocol found");
+        throw_out_of_range("no matching protocol found");
     } else {
         return it->name;
     }
@@ -42,7 +47,7 @@ const bytes& group_member::get_protocol_metadata(
       _state.protocols.cend(),
       [&protocol](const member_protocol& p) { return p.name == protocol; });
     if (it == _state.protocols.cend()) {
-        throw std::out_of_range(fmt::format("protocol {} not found", protocol));
+        throw_out_of_range(fmt::format("protocol {} not found", protocol));
     } else {
         return it->metadata;
     }
