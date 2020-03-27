@@ -338,6 +338,7 @@ inline void iobuf::trim_front(size_t n) {
             f.trim_front(n);
             return;
         }
+        n -= f.size();
         pop_front();
     }
 }
