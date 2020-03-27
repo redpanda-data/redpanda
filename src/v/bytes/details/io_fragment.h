@@ -84,8 +84,8 @@ public:
     // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
     char* get_current() { return _buf.get_write() + _used_bytes; }
     char* get_write() { return _buf.get_write(); }
-    // intrusive list hook
-    intrusive_list_hook hook;
+
+    safe_intrusive_list_hook hook;
 
 private:
     ss::temporary_buffer<char> _buf;

@@ -7,7 +7,8 @@
 namespace details {
 class io_placeholder {
 public:
-    using iterator = intrusive_list<io_fragment, &io_fragment::hook>::iterator;
+    using iterator
+      = uncounted_intrusive_list<io_fragment, &io_fragment::hook>::iterator;
 
     io_placeholder() noexcept = default;
 

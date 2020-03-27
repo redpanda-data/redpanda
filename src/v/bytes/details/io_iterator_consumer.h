@@ -1,5 +1,6 @@
 #pragma once
 
+#include "bytes/details/io_byte_iterator.h"
 #include "bytes/details/io_fragment.h"
 #include "bytes/details/io_placeholder.h"
 #include "utils/concepts-enabled.h"
@@ -8,11 +9,13 @@
 #include <seastar/core/future-util.hh>
 
 #include <algorithm>
+
 namespace details {
 class io_iterator_consumer {
 public:
-    using io_const_iterator
-      = intrusive_list<io_fragment, &io_fragment::hook>::const_iterator;
+    using io_const_iterator = uncounted_intrusive_list<
+      io_fragment,
+      &io_fragment::hook>::const_iterator;
 
     io_iterator_consumer(
       io_const_iterator begin, io_const_iterator end) noexcept

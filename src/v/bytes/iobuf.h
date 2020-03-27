@@ -52,7 +52,7 @@ class iobuf {
 
 public:
     using fragment = details::io_fragment;
-    using container = intrusive_list<fragment, &fragment::hook>;
+    using container = uncounted_intrusive_list<fragment, &fragment::hook>;
     using iterator = typename container::iterator;
     using reverse_iterator = typename container::reverse_iterator;
     using const_iterator = typename container::const_iterator;
