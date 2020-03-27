@@ -161,11 +161,9 @@ private:
 };
 
 inline void iobuf::clear() {
-    while (!_frags.empty()) {
-        _frags.pop_back_and_dispose([](fragment* f) {
-            delete f; // NOLINT
-        });
-    }
+    _frags.clear_and_dispose([](fragment* f) {
+        delete f; // NOLINT
+    });
     _size = 0;
 }
 inline iobuf::~iobuf() noexcept { clear(); }
