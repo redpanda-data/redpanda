@@ -224,7 +224,7 @@ func recover(fs afero.Fs, backup, path string, err error) error {
 	recErr := utils.CopyFile(fs, backup, path)
 	if recErr != nil {
 		msg := "couldn't persist the new config due to '%v'," +
-			"nor recover the backup due to '%v"
+			" nor recover the backup due to '%v"
 		return fmt.Errorf(msg, err, recErr)
 	}
 	return fmt.Errorf("couldn't persist the new config due to '%v'", err)
@@ -268,7 +268,7 @@ func checkAndWrite(
 			return err
 		}
 	}
-	currentConf, err := read(fs, backup)
+	currentConf, err := read(fs, path)
 	if err != nil {
 		return recover(fs, backup, path, err)
 	}
