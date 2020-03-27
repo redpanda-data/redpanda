@@ -5,7 +5,6 @@
 #include "utils/to_string.h"
 
 #include <fmt/format.h>
-#include <nlohmann/json.hpp>
 
 #include <unordered_map>
 
@@ -56,12 +55,15 @@ public:
         return errors;
     }
 
-    const void to_json(nlohmann::json& j) const {
-        for (auto const& [name, property] : _properties) {
-            nlohmann::json tmp;
-            property->to_json(tmp);
-            j[std::string(name)] = tmp;
+    const void to_json(rapidjson::Writer<rapidjson::StringBuffer>& w) const {
+        w.StartObject();
+
+        for (const auto& [name, property] : _properties) {
+            w.Key(name.data(), name.size());
+            property->to_json(w);
         }
+
+        w.EndObject();
     }
 
     virtual ~config_store() noexcept = default;

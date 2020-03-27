@@ -1,5 +1,6 @@
 #pragma once
 #include "config/config_store.h"
+#include "config/data_directory_path.h"
 #include "config/seed_server.h"
 #include "config/tls_config.h"
 #include "model/metadata.h"
@@ -8,14 +9,7 @@
 #include <seastar/net/ip.hh>
 #include <seastar/net/socket_defs.hh>
 
-#include <cstdlib>
-#include <filesystem>
-
 namespace config {
-struct data_directory_path {
-    std::filesystem::path path;
-    ss::sstring as_sstring() const { return path.c_str(); }
-};
 
 struct configuration final : public config_store {
     // WAL
@@ -102,75 +96,6 @@ inline ostream& operator<<(ostream& o, const config::data_directory_path& p) {
     return o << "{data_directory=" << p.path << "}";
 }
 } // namespace std
-
-namespace nlohmann {
-template<>
-struct adl_serializer<ss::sstring> {
-    static void to_json(json& j, const ss::sstring& v) { j = std::string(v); }
-};
-
-template<>
-struct adl_serializer<ss::socket_address> {
-    static void to_json(json& j, const ss::socket_address& v) {
-        // seastar doesn't have a fmt::formatter for inet_address
-        std::ostringstream a;
-        a << v.addr();
-        j = {{"address", a.str()}, {"port", v.port()}};
-    }
-};
-
-template<>
-struct adl_serializer<unresolved_address> {
-    static void to_json(json& j, const unresolved_address& v) {
-        j = {{"address", v.host()}, {"port", v.port()}};
-    }
-};
-
-template<>
-struct adl_serializer<std::chrono::milliseconds> {
-    static void to_json(json& j, const std::chrono::milliseconds& v) {
-        j = v.count();
-    }
-};
-
-template<typename T>
-struct adl_serializer<std::optional<T>> {
-    static void to_json(json& j, const std::optional<T>& v) {
-        if (v) {
-            j = *v;
-        }
-    }
-};
-template<typename T, typename Tag>
-struct adl_serializer<named_type<T, Tag>> {
-    static void to_json(json& j, const named_type<T, Tag>& v) { j = v(); }
-};
-} // namespace nlohmann
-
-namespace config {
-static void to_json(nlohmann::json& j, const data_directory_path& v) {
-    j["data_directory"] = v.path.c_str();
-}
-
-static void to_json(nlohmann::json& j, const seed_server& v) {
-    j = {{"node_id", v.id()}, {"host", v.addr}};
-}
-
-static void to_json(nlohmann::json& j, const key_cert& v) {
-    j = {{"key_file", v.key_file}, {"cert_file", v.cert_file}};
-}
-
-static void to_json(nlohmann::json& j, const tls_config& v) {
-    j = {{"enabled", v.is_enabled()},
-         {"client_auth", v.get_require_client_auth()}};
-    if (v.get_key_cert_files()) {
-        j["key_cert"] = *(v.get_key_cert_files());
-    }
-    if (v.get_truststore_file()) {
-        j["truststore_file"] = *(v.get_truststore_file());
-    }
-}
-} // namespace config
 
 namespace YAML {
 template<>

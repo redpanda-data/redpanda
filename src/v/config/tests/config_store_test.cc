@@ -3,6 +3,8 @@
 #include <seastar/core/thread.hh>
 #include <seastar/testing/thread_test_case.hh>
 
+#include <rapidjson/document.h>
+
 #include <array>
 #include <cstdint>
 #include <iostream>
@@ -62,8 +64,17 @@ YAML::Node valid_cofniguration() {
                       " - three\n");
 }
 
-static void to_json(nlohmann::json& j, const custom_aggregate& v) {
-    j = {{"string_value", v.string_value}, {"int_value", v.int_value}};
+void rjson_serialize(
+  rapidjson::Writer<rapidjson::StringBuffer>& w, const custom_aggregate& v) {
+    w.StartObject();
+
+    w.Key("string_value");
+    w.String(v.string_value);
+
+    w.Key("int_value");
+    w.Int(v.int_value);
+
+    w.EndObject();
 }
 
 } // namespace
@@ -154,14 +165,35 @@ SEASTAR_THREAD_TEST_CASE(json_serialization) {
     auto cfg = test_config();
     cfg.read_yaml(valid_cofniguration());
 
+    // json data
+    const char* expected_result = "{"
+                                  "\"strings\": [\"one\", \"two\", \"three\"],"
+                                  "\"an_int64_t\": 55,"
+                                  "\"an_aggregate\": {"
+                                  "\"string_value\": \"some_value\","
+                                  "\"int_value\": 88"
+                                  "},"
+                                  "\"required_string\": \"test_value_2\","
+                                  "\"optional_int\": 3"
+                                  "}";
+
     // cfg -> json object -> json string
-    nlohmann::json j;
-    cfg.to_json(j);
-    auto jstr = j.dump();
+    rapidjson::StringBuffer cfg_sb;
+    rapidjson::Writer<rapidjson::StringBuffer> cfg_writer(cfg_sb);
+    cfg.to_json(cfg_writer);
+    auto jstr = cfg_sb.GetString();
 
     // json string -> json object
-    auto j2 = nlohmann::json::parse(jstr);
+    rapidjson::Document document;
+    document.Parse(expected_result);
+
+    rapidjson::StringBuffer doc_sb;
+    rapidjson::Writer<rapidjson::StringBuffer> doc_writer(doc_sb);
+    document.Accept(doc_writer);
 
     // test equivalence
-    BOOST_TEST(j2["required_string"] == "test_value_2");
+    BOOST_TEST(document["required_string"].IsString());
+    BOOST_TEST(document["required_string"].GetString() == "test_value_2");
+
+    BOOST_TEST(doc_sb.GetString() == jstr);
 }

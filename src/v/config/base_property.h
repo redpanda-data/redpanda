@@ -1,10 +1,10 @@
 #pragma once
+#include "config/rjson_serialization.h"
 #include "config/validation_error.h"
 #include "seastarx.h"
 
 #include <seastar/util/bool_class.hh>
 
-#include <nlohmann/json.hpp>
 #include <yaml-cpp/yaml.h>
 
 #include <any>
@@ -32,7 +32,8 @@ public:
     // this serializes the property value. a full configuration serialization is
     // performed in config_store::to_json where the json object key is taken
     // from the property name.
-    virtual void to_json(nlohmann::json& j) const = 0;
+    virtual void
+    to_json(rapidjson::Writer<rapidjson::StringBuffer>& w) const = 0;
 
     virtual void print(std::ostream&) const = 0;
     virtual void set_value(YAML::Node) = 0;

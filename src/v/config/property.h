@@ -1,8 +1,12 @@
 #pragma once
 #include "config/base_property.h"
+#include "config/rjson_serialization.h"
 #include "utils/to_string.h"
 
 #include <seastar/util/noncopyable_function.hh>
+
+#include <rapidjson/stringbuffer.h>
+#include <rapidjson/writer.h>
 
 namespace config {
 
@@ -38,7 +42,9 @@ public:
     // serialize the value. the key is taken from the property name at the
     // serialization point in config_store::to_json to avoid users from being
     // forced to consume the property as a json object.
-    void to_json(nlohmann::json& j) const override { j = _value; }
+    void to_json(rapidjson::Writer<rapidjson::StringBuffer>& w) const override {
+        rjson_serialize(w, _value);
+    }
 
     std::optional<validation_error> validate() const override {
         if (auto err = _validator(_value); err) {

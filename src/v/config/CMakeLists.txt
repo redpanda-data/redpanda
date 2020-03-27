@@ -3,6 +3,7 @@ v_cc_library(
   SRCS
     configuration.cc
     base_property.cc
+    rjson_serialization.cc
   DEPS
     Seastar::seastar
     v::model

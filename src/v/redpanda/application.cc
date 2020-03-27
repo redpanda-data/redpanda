@@ -17,6 +17,8 @@
 #include <seastar/http/api_docs.hh>
 
 #include <nlohmann/json.hpp>
+#include <rapidjson/stringbuffer.h>
+#include <rapidjson/writer.h>
 #include <sys/utsname.h>
 
 #include <chrono>
@@ -132,9 +134,10 @@ void application::configure_admin_server() {
               rb->register_api_file(server._routes, "config");
               ss::httpd::config_json::get_config.set(
                 server._routes, [this](ss::const_req req) {
-                    nlohmann::json jconf;
-                    config::shard_local_cfg().to_json(jconf);
-                    return ss::json::json_return_type(jconf.dump());
+                    rapidjson::StringBuffer buf;
+                    rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
+                    config::shard_local_cfg().to_json(writer);
+                    return ss::json::json_return_type(buf.GetString());
                 });
           })
           .get();
