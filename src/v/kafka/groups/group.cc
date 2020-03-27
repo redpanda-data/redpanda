@@ -7,11 +7,13 @@
 #include "kafka/requests/sync_group_request.h"
 #include "likely.h"
 #include "utils/to_string.h"
+#include "vassert.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/print.hh>
 #include <seastar/core/sstring.hh>
 
+#include <absl/container/flat_hash_set.h>
 #include <boost/uuid/random_generator.hpp>
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_io.hpp>
@@ -62,34 +64,7 @@ group::group(
       std::chrono::milliseconds(md.state_timestamp));
 
     for (auto& m : md.members) {
-        // TODO: replace `bytes` with iobuf.
-        auto sub = ss::uninitialized_string<bytes>(m.subscription.size_bytes());
-        {
-            iobuf::iterator_consumer in(
-              m.subscription.cbegin(), m.subscription.cend());
-            in.consume_to(m.subscription.size_bytes(), sub.begin());
-        }
-
-        // TODO: replace `bytes` with iobuf.
-        auto assignment = ss::uninitialized_string<bytes>(
-          m.assignment.size_bytes());
-        {
-            iobuf::iterator_consumer in(
-              m.assignment.cbegin(), m.assignment.cend());
-            in.consume_to(m.assignment.size_bytes(), assignment.begin());
-        }
-
-        auto member = ss::make_lw_shared<group_member>(
-          m.id,
-          id,
-          m.instance_id,
-          std::chrono::milliseconds(m.session_timeout_ms),
-          std::chrono::milliseconds(m.rebalance_timeout_ms),
-          *_protocol_type,
-          std::vector<member_protocol>{{*_protocol, std::move(sub)}});
-
-        member->set_assignment(std::move(assignment));
-
+        auto member = ss::make_lw_shared<group_member>(std::move(m), id);
         add_member_no_join(member);
     }
 }
@@ -160,8 +135,9 @@ void group::add_member_no_join(member_ptr member) {
           fmt::format("group already contains member {}", member));
     }
 
-    member->for_each_protocol(
-      [this](const member_protocol& p) { _supported_protocols[p.name]++; });
+    for (auto& p : member->protocols()) {
+        _supported_protocols[p.name]++;
+    }
 }
 
 ss::future<join_group_response> group::add_member(member_ptr member) {
@@ -172,14 +148,20 @@ ss::future<join_group_response> group::add_member(member_ptr member) {
 
 ss::future<join_group_response> group::update_member(
   member_ptr member, std::vector<member_protocol>&& new_protocols) {
-    // subtract out old protocols
-    member->for_each_protocol(
-      [this](const member_protocol& p) { _supported_protocols[p.name]--; });
-
-    // add in the new protocols
+    /*
+     * before updating the member, subtract its existing protocols from
+     * group-level aggregate tracking. finally, update the group to reflect the
+     * new protocols.
+     */
+    for (auto& p : member->protocols()) {
+        auto& count = _supported_protocols[p.name];
+        --count;
+        vassert(count >= 0, "supported protocols cannot be negative");
+    }
     member->set_protocols(std::move(new_protocols));
-    member->for_each_protocol(
-      [this](const member_protocol& p) { _supported_protocols[p.name]++; });
+    for (auto& p : member->protocols()) {
+        _supported_protocols[p.name]++;
+    }
 
     if (!member->is_joining()) {
         _num_members_joining++;
@@ -219,7 +201,7 @@ std::vector<member_config> group::member_metadata() const {
       std::back_inserter(out),
       [this](const member_map::value_type& m) {
           auto& group_inst = m.second->group_instance_id();
-          auto metadata = m.second->metadata(*_protocol);
+          auto metadata = m.second->get_protocol_metadata(*_protocol);
           return member_config{.member_id = m.first,
                                .group_instance_id = group_inst,
                                .metadata = std::move(metadata)};
@@ -279,7 +261,7 @@ kafka::protocol_name group::select_protocol() const {
     kglog.trace("selecting group protocol");
 
     // index of protocols supported by all members
-    std::set<kafka::protocol_name> candidates;
+    absl::flat_hash_set<kafka::protocol_name> candidates;
     std::for_each(
       std::cbegin(_supported_protocols),
       std::cend(_supported_protocols),
@@ -296,7 +278,7 @@ kafka::protocol_name group::select_protocol() const {
       std::cbegin(_members),
       std::cend(_members),
       [&votes, &candidates](const member_map::value_type& m) mutable {
-          auto& choice = m.second->vote(candidates);
+          auto& choice = m.second->vote_for_protocol(candidates);
           auto total = ++votes[choice];
           kglog.trace(
             "member {} votes for protocol {} ({})", m.first, choice, total);
@@ -453,7 +435,7 @@ group::join_group_known_member(join_group_request&& r) {
         return update_member_and_rebalance(member, std::move(r));
 
     case group_state::completing_rebalance:
-        if (member->matching_protocols(r)) {
+        if (r.protocols == member->protocols()) {
             // <kafka>member is joining with the same metadata (which could be
             // because it failed to receive the initial JoinGroup response), so
             // just return current group information for the current
@@ -484,7 +466,7 @@ group::join_group_known_member(join_group_request&& r) {
         }
 
     case group_state::stable:
-        if (is_leader(r.member_id) || !member->matching_protocols(r)) {
+        if (is_leader(r.member_id) || r.protocols != member->protocols()) {
             // <kafka>force a rebalance if a member has changed metadata or if
             // the leader sends JoinGroup. The latter allows the leader to
             // trigger rebalances for changes affecting assignment which do not
@@ -743,6 +725,7 @@ void group::try_finish_joining_member(
     if (member->is_joining()) {
         member->set_join_response(std::move(response));
         _num_members_joining--;
+        vassert(_num_members_joining >= 0, "negative members joining");
     }
 }
 
@@ -781,12 +764,15 @@ void group::remove_member(member_ptr member) {
     auto it = _members.find(member->id());
     if (it != _members.end()) {
         auto member = it->second;
-        member->for_each_protocol([this, member](const member_protocol& p) {
-            _supported_protocols[p.name]--;
+        for (auto& p : member->protocols()) {
+            auto& count = _supported_protocols[p.name];
+            --count;
+            vassert(count >= 0, "supported protocols cannot be negative");
             if (member->is_joining()) {
                 _num_members_joining--;
+                vassert(_num_members_joining >= 0, "negative members joining");
             }
-        });
+        }
         _members.erase(it);
     }
 
@@ -907,24 +893,11 @@ model::record_batch group::checkpoint(const assignments_type& assignments) {
 
     for (const auto& it : _members) {
         auto& member = it.second;
-        group_log_group_metadata::member m;
-        m.id = member->id();
-        m.session_timeout_ms
-          = std::chrono::duration_cast<std::chrono::milliseconds>(
-              member->session_timeout())
-              .count();
-        m.rebalance_timeout_ms
-          = std::chrono::duration_cast<std::chrono::milliseconds>(
-              member->rebalance_timeout())
-              .count();
-        m.instance_id = member->group_instance_id();
-        auto sub = member->metadata(protocol().value());
-        m.subscription.append(
-          reinterpret_cast<const char*>(sub.c_str()), sub.size());
-        auto as = assignments.at(member->id());
-        m.assignment.append(
-          reinterpret_cast<const char*>(as.c_str()), as.size());
-        gr.members.push_back(std::move(m));
+        auto state = it.second->state().copy();
+        // this is not coming from the member itself because the checkpoint
+        // occurs right before the members go live and get their assignments.
+        state.assignment = bytes_to_iobuf(assignments.at(member->id()));
+        gr.members.push_back(std::move(state));
     }
 
     cluster::simple_batch_builder builder(

@@ -412,7 +412,7 @@ private:
     kafka::generation_id _generation;
     protocol_support _supported_protocols;
     member_map _members;
-    size_t _num_members_joining;
+    int _num_members_joining;
     absl::flat_hash_set<kafka::member_id> _pending_members;
     std::optional<kafka::protocol_type> _protocol_type;
     std::optional<kafka::protocol_name> _protocol;

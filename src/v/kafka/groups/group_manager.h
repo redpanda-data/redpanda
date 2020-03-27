@@ -4,6 +4,7 @@
 #include "config/configuration.h"
 #include "kafka/errors.h"
 #include "kafka/groups/group.h"
+#include "kafka/groups/member.h"
 #include "kafka/requests/heartbeat_request.h"
 #include "kafka/requests/join_group_request.h"
 #include "kafka/requests/leave_group_request.h"
@@ -200,21 +201,12 @@ struct group_log_record_key {
  * the value type of a group metadata log record.
  */
 struct group_log_group_metadata {
-    struct member {
-        kafka::member_id id;
-        int32_t session_timeout_ms;
-        int32_t rebalance_timeout_ms;
-        std::optional<kafka::group_instance_id> instance_id;
-        iobuf subscription;
-        iobuf assignment;
-    };
-
     kafka::protocol_type protocol_type;
     kafka::generation_id generation;
     std::optional<kafka::protocol_name> protocol;
     std::optional<kafka::member_id> leader;
     int32_t state_timestamp;
-    std::vector<member> members;
+    std::vector<member_state> members;
 };
 
 /**
