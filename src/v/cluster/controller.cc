@@ -339,7 +339,7 @@ ss::future<> controller::dispatch_manage_partition(
     return _pm.invoke_on(
       shard,
       [this, raft_group, ntp = std::move(ntp), replicas = std::move(replicas)](
-        partition_manager& pm) {
+        partition_manager& pm) mutable {
           return manage_partition(
             pm, std::move(ntp), raft_group, std::move(replicas));
       });
@@ -369,7 +369,7 @@ ss::future<> controller::assign_group_to_shard(
   model::ntp ntp, raft::group_id raft_group, uint32_t shard) {
     // 1. update shard_table: broadcast
     return _st.invoke_on_all(
-      [ntp = std::move(ntp), raft_group, shard](shard_table& s) {
+      [ntp = std::move(ntp), raft_group, shard](shard_table& s) mutable {
           s.insert(std::move(ntp), shard);
           s.insert(raft_group, shard);
       });
@@ -839,7 +839,7 @@ ss::future<> controller::dispatch_join_to_seed_server(seed_iterator it) {
     if (it->id == _self.id()) {
         vlog(clusterlog.debug, "Using current node as a seed server");
         return process_join_request(_self).handle_exception(
-          [this, it](std::exception_ptr e) {
+          [this, it](const std::exception_ptr&) {
               clusterlog.warn("Error processing join request at current node");
               return dispatch_join_to_seed_server(std::next(it));
           });
