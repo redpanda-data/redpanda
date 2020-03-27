@@ -19,6 +19,7 @@
 
 #include <fmt/format.h>
 
+#include <cstddef>
 #include <list>
 #include <ostream>
 #include <stdexcept>
@@ -147,6 +148,7 @@ public:
 private:
     size_t available_bytes() const;
     void create_new_fragment(size_t);
+    size_t last_allocation_size();
 
     container _frags;
     size_t _size{0};
@@ -202,12 +204,14 @@ inline size_t iobuf::available_bytes() const {
     return _frags.back().available_bytes();
 }
 
+inline size_t iobuf::last_allocation_size() {
+    return _frags.empty() ? details::io_allocation_size::default_chunk_size
+                          : _frags.back().capacity();
+}
+
 inline void iobuf::create_new_fragment(size_t sz) {
     oncore_debug_verify(_verify_shard);
-    auto chunk_max = std::max(
-      sz,
-      _frags.empty() ? details::io_allocation_size::default_chunk_size
-                     : _frags.back().size());
+    auto chunk_max = std::max(sz, last_allocation_size());
     auto asz = details::io_allocation_size::next_allocation_size(chunk_max);
     auto f = new fragment(ss::temporary_buffer<char>(asz), fragment::empty{});
     _frags.push_back(*f);
@@ -275,9 +279,8 @@ inline void iobuf::reserve_memory(size_t reservation) {
 /// appends the contents of buffer; might pack values into existing space
 [[gnu::always_inline]] inline void iobuf::append(ss::temporary_buffer<char> b) {
     oncore_debug_verify(_verify_shard);
-    if (
-      b.size() <= available_bytes()
-      || b.size() <= details::io_allocation_size::default_chunk_size) {
+    const size_t last_asz = last_allocation_size();
+    if (b.size() <= available_bytes() || b.size() <= last_asz) {
         append(b.get(), b.size());
         return;
     }
@@ -296,9 +299,6 @@ inline void iobuf::reserve_memory(size_t reservation) {
 /// appends the contents of buffer; might pack values into existing space
 inline void iobuf::append(iobuf o) {
     oncore_debug_verify(_verify_shard);
-    if (available_bytes()) {
-        _frags.back().trim();
-    }
     while (!o._frags.empty()) {
         o._frags.pop_front_and_dispose([this](fragment* f) {
             append(f->share());
