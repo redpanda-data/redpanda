@@ -16,7 +16,6 @@
 #include <seastar/core/thread.hh>
 #include <seastar/http/api_docs.hh>
 
-#include <nlohmann/json.hpp>
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
 #include <sys/utsname.h>
