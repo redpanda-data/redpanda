@@ -4,6 +4,7 @@
 #include "bytes/iobuf_ostreambuf.h"
 #include "bytes/tests/utils.h"
 
+#include <seastar/core/temporary_buffer.hh>
 #include <seastar/testing/thread_test_case.hh>
 
 #include <boost/range/algorithm/for_each.hpp>
@@ -385,4 +386,35 @@ SEASTAR_THREAD_TEST_CASE(alloctor_forward_progress) {
           details::io_allocation_size::next_allocation_size(src[i]),
           expected[i]);
     }
+}
+
+SEASTAR_THREAD_TEST_CASE(test_next_chunk_allocation_append_temp_buf) {
+    const auto b = random_generators::gen_alphanum_string(1024);
+
+    iobuf buf;
+    for (size_t i = 0; i < 40000; i++) {
+        ss::temporary_buffer<char> tb(b.data(), b.size());
+        buf.append(std::move(tb));
+    }
+    auto msg = iobuf_as_scattered(std::move(buf));
+    auto packet = std::move(msg).release();
+    packet.linearize();
+    BOOST_TEST(packet.nr_frags() == 1);
+    auto& frag = packet.frag(0);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_next_chunk_allocation_append_iobuf) {
+    const auto b = random_generators::gen_alphanum_string(1024);
+
+    iobuf buf;
+    for (size_t i = 0; i < 40000; i++) {
+        iobuf tmp_buf;
+        tmp_buf.append(b.data(), b.size());
+        buf.append(std::move(tmp_buf));
+    }
+    auto msg = iobuf_as_scattered(std::move(buf));
+    auto packet = std::move(msg).release();
+    packet.linearize();
+    BOOST_TEST(packet.nr_frags() == 1);
+    auto& frag = packet.frag(0);
 }

@@ -35,6 +35,8 @@ public:
         _used_bytes += reservation;
     }
     size_t size() const { return _used_bytes; }
+    size_t capacity() const { return _buf.size(); }
+
     const char* get() const {
         // required for the networking layer to conver to
         // scattered message without copying data
