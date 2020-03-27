@@ -419,3 +419,93 @@ SEASTAR_THREAD_TEST_CASE(test_next_chunk_allocation_append_iobuf) {
     auto msg = iobuf_as_scattered(std::move(buf));
     BOOST_REQUIRE_EQUAL(msg.size(), sz);
 }
+
+/*
+ * testing various trim_front scenarios
+ *
+ * IMPORTANT: these tests use the leaky abstraction of prepend which as
+ * currently implemented unconditionally creates a new fragment compared to
+ * other interfaces that may perform coalescing.
+ */
+SEASTAR_THREAD_TEST_CASE(trim_front) {
+    // trimming empty buf
+    {
+        iobuf buf;
+        buf.trim_front(100);
+        BOOST_TEST(buf.empty());
+        BOOST_TEST(buf.size_bytes() == 0);
+    }
+
+    {
+        iobuf buf;
+        buf.trim_front(0);
+        BOOST_TEST(buf.empty());
+        BOOST_TEST(buf.size_bytes() == 0);
+    }
+
+    // trimming zero bytes
+    {
+        iobuf buf;
+        buf.prepend(ss::temporary_buffer<char>(100));
+        BOOST_TEST(buf.size_bytes() == 100);
+        buf.trim_front(0);
+        BOOST_TEST(buf.size_bytes() == 100);
+    }
+
+    {
+        iobuf buf;
+        buf.prepend(ss::temporary_buffer<char>(0));
+        BOOST_TEST(buf.size_bytes() == 0);
+        buf.trim_front(0);
+        BOOST_TEST(buf.size_bytes() == 0);
+    }
+
+    // iobuf frags{100}
+    // trim_front(99, 100, 101)
+    {
+        iobuf buf;
+        buf.prepend(ss::temporary_buffer<char>(100));
+        buf.trim_front(99);
+        BOOST_TEST(buf.size_bytes() == 1);
+    }
+
+    {
+        iobuf buf;
+        buf.prepend(ss::temporary_buffer<char>(100));
+        buf.trim_front(100);
+        BOOST_TEST(buf.size_bytes() == 0);
+    }
+
+    {
+        iobuf buf;
+        buf.prepend(ss::temporary_buffer<char>(100));
+        buf.trim_front(101);
+        BOOST_TEST(buf.size_bytes() == 0);
+    }
+
+    // iobuf frags{100, 100}
+    // trim_front(99, 100, 101)
+    {
+        iobuf buf;
+        buf.prepend(ss::temporary_buffer<char>(100));
+        buf.prepend(ss::temporary_buffer<char>(100));
+        buf.trim_front(99);
+        BOOST_TEST(buf.size_bytes() == 101);
+    }
+
+    {
+        iobuf buf;
+        buf.prepend(ss::temporary_buffer<char>(100));
+        buf.prepend(ss::temporary_buffer<char>(100));
+        buf.trim_front(100);
+        BOOST_TEST(buf.size_bytes() == 100);
+    }
+
+    {
+        iobuf buf;
+        buf.prepend(ss::temporary_buffer<char>(100));
+        buf.prepend(ss::temporary_buffer<char>(100));
+        buf.trim_front(101);
+        BOOST_TEST(buf.size_bytes() == 99);
+    }
+}
