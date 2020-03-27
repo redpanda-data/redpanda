@@ -20,41 +20,50 @@
 
 namespace kafka {
 
-/*
- * priority ordered search in candidates. if candidates is always small it
- * should be faster to use a sorted vector.
- */
-const kafka::protocol_name&
-group_member::vote(const std::set<protocol_name>& candidates) const {
+[[noreturn]] [[gnu::cold]] static void
+throw_out_of_range(const ss::sstring& msg) {
+    throw std::out_of_range(msg);
+}
+
+const kafka::protocol_name& group_member::vote_for_protocol(
+  const absl::flat_hash_set<protocol_name>& candidates) const {
     auto it = std::find_if(
-      std::cbegin(_protocols),
-      std::cend(_protocols),
+      _state.protocols.cbegin(),
+      _state.protocols.cend(),
       [&candidates](const member_protocol& p) {
           return candidates.find(p.name) != candidates.end();
       });
-    if (it == _protocols.end()) {
-        throw std::out_of_range("no matching protocol found");
+    if (it == _state.protocols.cend()) {
+        throw_out_of_range("no matching protocol found");
     } else {
         return it->name;
     }
 }
 
-/*
- * linear in the number of member protocols. the protocols vector implicitly
- * encodes priority, so sorting it would mean a search for priority elsewhere or
- * keeping a parallel data structure.
- */
-const bytes&
-group_member::metadata(const kafka::protocol_name& protocol) const {
+const bytes& group_member::get_protocol_metadata(
+  const kafka::protocol_name& protocol) const {
     auto it = std::find_if(
-      std::cbegin(_protocols),
-      std::cend(_protocols),
+      _state.protocols.cbegin(),
+      _state.protocols.cend(),
       [&protocol](const member_protocol& p) { return p.name == protocol; });
-    if (it == _protocols.end()) {
-        throw std::out_of_range(fmt::format("protocol {} not found", protocol));
+    if (it == _state.protocols.cend()) {
+        throw_out_of_range(fmt::format("protocol {} not found", protocol));
     } else {
         return it->metadata;
     }
+}
+
+bool group_member::should_keep_alive(
+  clock_type::time_point deadline, clock_type::duration new_join_timeout) {
+    if (is_joining()) {
+        return _is_new || (_latest_heartbeat + new_join_timeout) > deadline;
+    }
+
+    if (is_syncing()) {
+        return (_latest_heartbeat + session_timeout()) > deadline;
+    }
+
+    return false;
 }
 
 std::ostream& operator<<(std::ostream& o, const group_member& m) {
@@ -69,7 +78,7 @@ std::ostream& operator<<(std::ostream& o, const group_member& m) {
       m.assignment().size(),
       m.session_timeout(),
       m.rebalance_timeout(),
-      m._protocols);
+      m._state.protocols);
 }
 
 } // namespace kafka
