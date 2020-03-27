@@ -242,6 +242,7 @@ class VConfig(object):
         """Folder for java binaries"""
         return os.path.join(self.build_root, 'bin')
 
+    @property
     def ansible_dir(self):
         """Path to ansible dir containing config, roles, playbooks, etc."""
         return self._ansible_dir
