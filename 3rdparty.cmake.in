@@ -518,6 +518,20 @@ ExternalProject_Add(abseil
     -DABSL_ENABLE_INSTALL=ON
 )
 
+ExternalProject_Add(rapidjson
+  GIT_REPOSITORY https://github.com/vectorizedio/rapidjson.git
+  GIT_TAG 563fe5bbbea3505c930f233955bb420b799e86da
+  INSTALL_DIR    @V_DEPS_INSTALL_DIR@
+  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
+  DEPENDS ${default_depends}
+  CMAKE_ARGS
+    ${common_cmake_args}
+    -DRAPIDJSON_BUILD_EXAMPLES=OFF
+    -DRAPIDJSON_BUILD_TESTS=OFF
+    -DRAPIDJSON_BUILD_DOC=OFF
+    -DRAPIDJSON_HAS_STDSTRING=ON
+)
+
 ExternalProject_Add(json
   URL https://storage.googleapis.com/vectorizedio-public/dependencies/json-v3.7.0.zip
   URL_MD5 482c9cd8b6ba9749e018c3f3664afb36
