@@ -396,25 +396,26 @@ SEASTAR_THREAD_TEST_CASE(test_next_chunk_allocation_append_temp_buf) {
         ss::temporary_buffer<char> tb(b.data(), b.size());
         buf.append(std::move(tb));
     }
+    // slow but tha'ts life.
+    auto distance = std::distance(buf.begin(), buf.end());
+    BOOST_REQUIRE_EQUAL(distance, 324);
+    constexpr size_t sz = 40000 * 1024;
     auto msg = iobuf_as_scattered(std::move(buf));
-    auto packet = std::move(msg).release();
-    packet.linearize();
-    BOOST_TEST(packet.nr_frags() == 1);
-    auto& frag = packet.frag(0);
+    BOOST_REQUIRE_EQUAL(msg.size(), sz);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_next_chunk_allocation_append_iobuf) {
     const auto b = random_generators::gen_alphanum_string(1024);
-
     iobuf buf;
     for (size_t i = 0; i < 40000; i++) {
         iobuf tmp_buf;
         tmp_buf.append(b.data(), b.size());
         buf.append(std::move(tmp_buf));
     }
+    // slow but tha'ts life.
+    auto distance = std::distance(buf.begin(), buf.end());
+    BOOST_REQUIRE_EQUAL(distance, 324);
+    constexpr size_t sz = 40000 * 1024;
     auto msg = iobuf_as_scattered(std::move(buf));
-    auto packet = std::move(msg).release();
-    packet.linearize();
-    BOOST_TEST(packet.nr_frags() == 1);
-    auto& frag = packet.frag(0);
+    BOOST_REQUIRE_EQUAL(msg.size(), sz);
 }
