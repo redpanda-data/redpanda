@@ -34,6 +34,7 @@ public:
         model::term_id term_id{};
     };
     struct topic_metadata {
+        topic_configuration configuration;
         std::vector<partition> partitions;
     };
     using broker_cache_t = absl::flat_hash_map<model::node_id, broker_ptr>;
@@ -54,6 +55,12 @@ public:
     /// If topic does not exists it returns an empty optional
     std::optional<model::topic_metadata>
       get_topic_metadata(model::topic_namespace_view) const;
+
+    ///\brief Returns configuration of single topic.
+    ///
+    /// If topic does not exists it returns an empty optional
+    std::optional<topic_configuration>
+      get_topic_cfg(model::topic_namespace_view) const;
 
     /// Returns metadata of all topics.
     std::vector<model::topic_metadata> all_topics_metadata() const;
@@ -76,7 +83,7 @@ public:
     ///
     /// This api is used when controller is recovering (or is notified)
     /// topic_configuration record type
-    void add_topic(model::topic_namespace_view);
+    void add_topic(cluster::topic_configuration);
 
     ///\brief Removes the topic from cache
     ///
@@ -102,7 +109,7 @@ public:
     const cache_t& all_metadata() const { return _cache; }
 
     /// Directly inserts topic_metadata
-    void insert_topic(model::topic_metadata);
+    void insert_topic(model::topic_metadata, topic_configuration);
 
     /**
      * Return the leader of a partition with a timeout.

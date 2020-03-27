@@ -44,25 +44,29 @@ service::create_topics(create_topics_request&& r, rpc::streaming_context&) {
               })
             .then([this](std::vector<topic_result> res) {
                 // Fetch metadata from succesfully created topics
-                auto md = fetch_metadata(res);
-                return create_topics_reply{std::move(res), std::move(md)};
+                auto [md, cfg] = fetch_metadata_and_cfg(res);
+                return create_topics_reply{
+                  std::move(res), std::move(md), std::move(cfg)};
             });
       });
 }
 
-std::vector<model::topic_metadata>
-service::fetch_metadata(const std::vector<topic_result>& res) {
+std::pair<std::vector<model::topic_metadata>, std::vector<topic_configuration>>
+service::fetch_metadata_and_cfg(const std::vector<topic_result>& res) {
     std::vector<model::topic_metadata> md;
+    std::vector<topic_configuration> cfg;
     md.reserve(res.size());
     for (const auto& r : res) {
         if (r.ec == errc::success) {
             auto topic_md = _md_cache.local().get_topic_metadata(r.tp_ns);
-            if (topic_md) {
+            auto topic_cfg = _md_cache.local().get_topic_cfg(r.tp_ns);
+            if (topic_md && topic_cfg) {
                 md.push_back(std::move(topic_md.value()));
+                cfg.push_back(std::move(topic_cfg.value()));
             }
         }
     }
-    return md;
+    return {std::move(md), std::move(cfg)};
 }
 
 } // namespace cluster

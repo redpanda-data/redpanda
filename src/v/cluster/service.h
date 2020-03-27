@@ -1,5 +1,6 @@
 #pragma once
 #include "cluster/controller_service.h"
+#include "cluster/types.h"
 
 #include <seastar/core/sharded.hh>
 
@@ -24,8 +25,9 @@ public:
     create_topics(create_topics_request&&, rpc::streaming_context&) override;
 
 private:
-    std::vector<model::topic_metadata>
-    fetch_metadata(const std::vector<topic_result>&);
+    std::
+      pair<std::vector<model::topic_metadata>, std::vector<topic_configuration>>
+      fetch_metadata_and_cfg(const std::vector<topic_result>&);
 
     ss::sharded<controller>& _controller;
     ss::sharded<metadata_cache>& _md_cache;

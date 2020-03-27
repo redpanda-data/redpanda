@@ -1,5 +1,6 @@
 #include "cluster/metadata_cache.h"
 
+#include "cluster/types.h"
 #include "model/metadata.h"
 
 #include <fmt/format.h>
@@ -36,6 +37,13 @@ std::optional<model::topic_metadata>
 metadata_cache::get_topic_metadata(model::topic_namespace_view tp) const {
     if (auto it = _cache.find(tp); it != std::cend(_cache)) {
         return create_topic_metadata(*it);
+    }
+    return std::nullopt;
+}
+std::optional<topic_configuration>
+metadata_cache::get_topic_cfg(model::topic_namespace_view tp) const {
+    if (auto it = _cache.find(tp); it != std::cend(_cache)) {
+        return it->second.configuration;
     }
     return std::nullopt;
 }
@@ -95,8 +103,10 @@ void metadata_cache::update_brokers_cache(
     }
 }
 
-void metadata_cache::add_topic(model::topic_namespace_view topic) {
-    _cache.emplace(topic, topic_metadata{});
+void metadata_cache::add_topic(cluster::topic_configuration cfg) {
+    auto tp_ns = cfg.tp_ns;
+    _cache.emplace(
+      std::move(tp_ns), topic_metadata{.configuration = std::move(cfg)});
 }
 
 void metadata_cache::remove_topic(model::topic_namespace_view topic) {
@@ -193,7 +203,8 @@ bool metadata_cache::contains(
     return false;
 }
 
-void metadata_cache::insert_topic(model::topic_metadata md) {
+void metadata_cache::insert_topic(
+  model::topic_metadata md, topic_configuration cfg) {
     std::vector<partition> partitions;
     partitions.reserve(md.partitions.size());
     std::transform(
@@ -204,7 +215,10 @@ void metadata_cache::insert_topic(model::topic_metadata md) {
           return partition{std::move(p_md)};
       });
 
-    _cache.emplace(std::move(md.tp_ns), topic_metadata{std::move(partitions)});
+    _cache.emplace(
+      std::move(md.tp_ns),
+      topic_metadata{.partitions = std::move(partitions),
+                     .configuration = std::move(cfg)});
 }
 
 ss::future<model::node_id> metadata_cache::get_leader(
