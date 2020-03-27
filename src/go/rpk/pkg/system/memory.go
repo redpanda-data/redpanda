@@ -1,9 +1,6 @@
 package system
 
 import (
-	"strconv"
-	"strings"
-
 	"github.com/docker/go-units"
 	"github.com/spf13/afero"
 	"golang.org/x/sys/unix"
@@ -56,7 +53,7 @@ func getMemInfo(fs afero.Fs) (*MemInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	cGroupMemLimit, err := getCgroupMemLimitBytes(fs)
+	cGroupMemLimit, err := ReadCgroupMemLimitBytes(fs)
 	if err != nil {
 		return nil, err
 	}
@@ -66,20 +63,6 @@ func getMemInfo(fs afero.Fs) (*MemInfo, error) {
 		CGroupMemLimit: cGroupMemLimit,
 		SwapTotal:      si.Totalswap * uint64(si.Unit),
 	}, nil
-}
-
-func getCgroupMemLimitBytes(fs afero.Fs) (uint64, error) {
-	fileContent, err := afero.ReadFile(fs,
-		"/sys/fs/cgroup/memory/memory.limit_in_bytes")
-	if err != nil {
-		return 0, err
-	}
-	limit, err := strconv.ParseUint(
-		strings.TrimSpace(string(fileContent)), 10, 64)
-	if err != nil {
-		return 0, err
-	}
-	return limit, nil
 }
 
 func min(a, b uint64) uint64 {
