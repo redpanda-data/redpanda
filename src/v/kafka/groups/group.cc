@@ -7,6 +7,7 @@
 #include "kafka/requests/sync_group_request.h"
 #include "likely.h"
 #include "utils/to_string.h"
+#include "vassert.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/print.hh>
@@ -153,7 +154,9 @@ ss::future<join_group_response> group::update_member(
      * new protocols.
      */
     for (auto& p : member->protocols()) {
-        _supported_protocols[p.name]--;
+        auto& count = _supported_protocols[p.name];
+        --count;
+        vassert(count >= 0, "supported protocols cannot be negative");
     }
     member->set_protocols(std::move(new_protocols));
     for (auto& p : member->protocols()) {
@@ -722,6 +725,7 @@ void group::try_finish_joining_member(
     if (member->is_joining()) {
         member->set_join_response(std::move(response));
         _num_members_joining--;
+        vassert(_num_members_joining >= 0, "negative members joining");
     }
 }
 
@@ -761,9 +765,12 @@ void group::remove_member(member_ptr member) {
     if (it != _members.end()) {
         auto member = it->second;
         for (auto& p : member->protocols()) {
-            _supported_protocols[p.name]--;
+            auto& count = _supported_protocols[p.name];
+            --count;
+            vassert(count >= 0, "supported protocols cannot be negative");
             if (member->is_joining()) {
                 _num_members_joining--;
+                vassert(_num_members_joining >= 0, "negative members joining");
             }
         }
         _members.erase(it);
