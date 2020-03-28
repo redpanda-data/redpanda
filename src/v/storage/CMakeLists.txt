@@ -30,6 +30,7 @@ v_cc_library(
     v::syschecks
     absl::flat_hash_map
     absl::btree
+    absl::time
   PUBLIC
 )
 
