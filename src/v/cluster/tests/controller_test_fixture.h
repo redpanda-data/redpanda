@@ -37,12 +37,7 @@ public:
 
     controller_tests_fixture()
       : controller_tests_fixture(
-        model::node_id{1},
-        ss::smp::count,
-        9092,
-        9090,
-        {{.id = model::node_id{1},
-          .addr = unresolved_address("127.0.0.1", 9090)}}) {}
+        model::node_id{1}, ss::smp::count, 9092, 9090, {}) {}
 
     controller_tests_fixture(
       model::node_id node_id,

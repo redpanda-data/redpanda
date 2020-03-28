@@ -5,13 +5,7 @@
 using namespace std::chrono_literals; // NOLINT
 
 FIXTURE_TEST(test_join_single_node, cluster_test_fixture) {
-    add_controller(
-      model::node_id{1},
-      ss::smp::count,
-      9092,
-      11000,
-      {{.id = model::node_id{1},
-        .addr = unresolved_address("127.0.0.1", 11000)}});
+    add_controller(model::node_id{1}, ss::smp::count, 9092, 11000, {});
     auto& cntrl = get_controller(0);
     cntrl.invoke_on_all(&cluster::controller::start).get();
     wait_for_leadership(cntrl.local());
