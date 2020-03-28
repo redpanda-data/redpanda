@@ -1,6 +1,7 @@
 #pragma once
 
 #include "model/fundamental.h"
+#include "random/simple_time_jitter.h"
 #include "seastarx.h"
 #include "storage/batch_cache.h"
 #include "storage/log.h"
@@ -10,6 +11,7 @@
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sstring.hh>
 
 #include <absl/container/flat_hash_map.h>
@@ -29,7 +31,11 @@ struct log_config {
     using sanitize_files = ss::bool_class<struct sanitize_files_tag>;
     using disable_batch_cache = ss::bool_class<struct disable_cache_tag>;
     sanitize_files should_sanitize;
-    std::chrono::milliseconds compaction_interval = std::chrono::minutes(1);
+    // same as retention.bytes in kafka
+    std::optional<size_t> retention_bytes = std::nullopt;
+    std::chrono::milliseconds compaction_interval = std::chrono::minutes(10);
+    // same as delete.retention.ms in kafka - default 1 week
+    std::chrono::milliseconds delete_retention = std::chrono::minutes(10080);
     disable_batch_cache disable_cache = disable_batch_cache::no;
 };
 
@@ -139,12 +145,14 @@ private:
      *        runs inside a seastar thread
      */
     void trigger_housekeeping();
+    void arm_housekeeping();
     ss::future<> housekeeping();
 
     std::optional<batch_cache_index> create_cache();
 
     log_config _config;
-    ss::timer<> _compaction_timer;
+    simple_time_jitter<ss::lowres_clock> _jitter;
+    ss::timer<ss::lowres_clock> _compaction_timer;
     logs_type _logs;
     batch_cache _batch_cache;
     ss::gate _open_gate;

@@ -3,6 +3,7 @@
 #include "config/configuration.h"
 #include "likely.h"
 #include "model/fundamental.h"
+#include "model/timestamp.h"
 #include "storage/batch_cache.h"
 #include "storage/fs_utils.h"
 #include "storage/log.h"
@@ -24,8 +25,10 @@
 #include <seastar/core/seastar.hh>
 #include <seastar/core/thread.hh>
 
+#include <absl/time/time.h>
 #include <fmt/format.h>
 
+#include <chrono>
 #include <exception>
 #include <filesystem>
 #include <optional>
@@ -33,31 +36,40 @@
 namespace storage {
 
 log_manager::log_manager(log_config config) noexcept
-  : _config(std::move(config)) {
-    // TODO: re-enable when we imlement proper timestamp setting on the server
-    // side the default kafka producer bench uses that API
-    // _compaction_timer.set_callback([this] { trigger_housekeeping(); });
-    // _compaction_timer.arm_periodic(_config.compaction_interval);
+  : _config(std::move(config))
+  , _jitter(_config.compaction_interval) {
+    _compaction_timer.set_callback([this] { trigger_housekeeping(); });
+    arm_housekeeping();
+}
+void log_manager::arm_housekeeping() {
+    if (!_open_gate.is_closed()) {
+        auto time = _jitter.next_duration();
+        vlog(
+          stlog.debug,
+          "Arming housekeeping in: {}secs",
+          absl::ToInt64Seconds(absl::FromChrono(time)));
+        _compaction_timer.rearm(ss::lowres_clock::now() + time);
+    }
 }
 
 void log_manager::trigger_housekeeping() {
-    (void)ss::with_gate(_open_gate, [this] { return housekeeping(); });
-}
-
-static inline model::timestamp collection_threshold_time() {
-    return model::timestamp(
-      model::new_timestamp().value()
-      - config::shard_local_cfg().delete_retention_ms().count());
+    (void)ss::with_gate(_open_gate, [this] {
+        return housekeeping().finally([this] { arm_housekeeping(); });
+    }).handle_exception([](std::exception_ptr e) {
+        vlog(stlog.info, "Error processing housekeeping(): {}", e);
+    });
 }
 
 ss::future<> log_manager::housekeeping() {
-    vlog(stlog.info, "starting compaction loop");
-    auto collection_threshold = collection_threshold_time();
-    auto retention_bytes = config::shard_local_cfg().retention_bytes();
+    auto collection_threshold = model::timestamp(
+      model::timestamp::now().value() - _config.delete_retention.count());
+    vlog(
+      stlog.debug,
+      "Housekeeping. Evicting segments older than: {}",
+      absl::FromUnixMillis(collection_threshold.value()));
     return ss::do_for_each(
-      _logs,
-      [this, collection_threshold, retention_bytes](logs_type::value_type& l) {
-          return l.second.gc(collection_threshold, retention_bytes);
+      _logs, [this, collection_threshold](logs_type::value_type& l) {
+          return l.second.gc(collection_threshold, _config.retention_bytes);
       });
 }
 
