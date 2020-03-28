@@ -27,6 +27,7 @@
               admin:
                   address: "{{ hostvars[inventory_hostname].private_ip }}"
                   port: 9644
+          {% if hostvars[inventory_hostname].id > 1 %}
               seed_servers:
           {% for host in ansible_play_batch%}
                 - node_id: {{ hostvars[host].id }}
@@ -34,6 +35,7 @@
                     address: "{{ hostvars[host].private_ip }}"
                     port: 33145
           {% endfor %}
+          {% endif %}
 
           rpk:
               enable_usage_stats: false
