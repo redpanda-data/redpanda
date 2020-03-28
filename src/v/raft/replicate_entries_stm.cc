@@ -2,6 +2,7 @@
 
 #include "likely.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "outcome_future_utils.h"
 #include "raft/consensus.h"
 #include "raft/consensus_utils.h"
@@ -101,6 +102,10 @@ ss::future<storage::append_result> replicate_entries_stm::append_to_self() {
     });
 }
 
+inline bool replicate_entries_stm::is_follower_recovering(model::node_id id) {
+    return id != _ptr->self() && _ptr->_fstats.get(id).is_recovering;
+}
+
 ss::future<result<replicate_result>>
 replicate_entries_stm::apply(ss::semaphore_units<> u) {
     using ret_t = result<replicate_result>;
@@ -109,13 +114,21 @@ replicate_entries_stm::apply(ss::semaphore_units<> u) {
       .then(
         [this, u = std::move(u)](storage::append_result append_result) mutable {
             // dispatch requests to followers & leader flush
+            uint16_t requests_count;
             for (auto& n : _ptr->_conf.nodes) {
-                // TODO: Do not send append_entries request to followers that
-                // are to far behind the leader
+                // We are not dispatching request to followers that are
+                // recovering
+                if (is_follower_recovering(n.id())) {
+                    _ctxlog.trace(
+                      "Skipping sending append request to {}, recovering",
+                      n.id());
+                    continue;
+                }
+                ++requests_count;
                 (void)dispatch_one(n.id()); // background
             }
             // Wait until all RPCs will be dispatched
-            return _dispatch_sem.wait(_ptr->_conf.nodes.size())
+            return _dispatch_sem.wait(requests_count)
               .then([u = std::move(u), append_result]() mutable {
                   return append_result;
               });
