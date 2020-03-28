@@ -84,7 +84,7 @@ public:
       = delete;
     ~log_segment_batch_reader() noexcept = default;
 
-    ss::future<ss::circular_buffer<model::record_batch>>
+    ss::future<result<ss::circular_buffer<model::record_batch>>>
       read_some(model::timeout_clock::time_point);
 
     ss::future<> close();
