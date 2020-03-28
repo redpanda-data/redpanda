@@ -126,14 +126,14 @@ func Set(fs afero.Fs, key, value, format, path string) error {
 }
 
 func parse(val string) interface{} {
-	if b, err := strconv.ParseBool(val); err == nil {
-		return b
-	}
 	if i, err := strconv.Atoi(val); err == nil {
 		return i
 	}
 	if f, err := strconv.ParseFloat(val, 64); err == nil {
 		return f
+	}
+	if b, err := strconv.ParseBool(val); err == nil {
+		return b
 	}
 	return val
 }
