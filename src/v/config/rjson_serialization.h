@@ -3,6 +3,7 @@
 #include "config/data_directory_path.h"
 #include "config/seed_server.h"
 #include "config/tls_config.h"
+#include "likely.h"
 #include "model/metadata.h"
 
 #include <fmt/core.h>
@@ -10,9 +11,12 @@
 #define RAPIDJSON_HAS_STDSTRING 1
 #define RAPIDJSON_ASSERT(x)                                                    \
     do {                                                                       \
-        if (!(x))                                                              \
-            throw std::runtime_error(                                          \
-              fmt::format("JSON error: condition not met: {}", #x));           \
+        if (unlikely(!(x))) {                                                  \
+            std::cerr << "Rapidjson failure: " << __FILE__ << ":" << __LINE__  \
+                      << "' "                                                  \
+                      << #x << " '";                                           \
+            std::terminate();                                                  \
+        }                                                                      \
     } while (0)
 
 #include <seastar/net/inet_address.hh>
