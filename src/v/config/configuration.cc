@@ -170,6 +170,12 @@ configuration::configuration()
       "delete segments older than this",
       required::no,
       86400000ms)
+  , log_compaction_interval(
+      *this,
+      "log_compaction_interval",
+      "How often do we trigger background compaction",
+      required::no,
+      1min)
   , retention_bytes(
       *this,
       "retention_bytes",
