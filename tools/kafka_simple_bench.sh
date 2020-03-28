@@ -66,7 +66,7 @@ client_id=${client_names[$(date +%s) % ${#client_names[@]}]}
 
 if [[ $1 == "create" ]]; then
   bin/kafka-topics.sh --bootstrap-server ${servers} \
-    --create --topic sanfrancisco --partitions ${partitions} \
+    --create --topic ${topic} --partitions ${partitions} \
     --replication-factor ${replication} "${@:2:99}"
 fi
 
