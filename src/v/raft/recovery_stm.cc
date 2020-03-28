@@ -55,6 +55,7 @@ ss::future<> recovery_stm::do_one_read() {
           _ctxlog.trace(
             "Read {} batches for {} node recovery", batches.size(), _node_id);
           if (batches.empty()) {
+              _stop_requested = true;
               return ss::make_ready_future<
                 std::vector<model::record_batch_reader>>();
           }
