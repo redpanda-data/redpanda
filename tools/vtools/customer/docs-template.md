@@ -2,34 +2,64 @@
 
 {{customer_name}}, {{date}}
 
+## Infrastructure setup
+
+As you'll see in the next sections, installing redpanda and configuring it is
+quicker and easier than many other distributed queues (it does most of the work
+itself!). However, there are some steps you'll need to follow to configure the
+infrastructure.
+
+### IO
+
+First, to get the best IO performance, the data directory (`/var/lib/redpanda`,
+by default) should reside on an XFS partition in a local NVMe SSD. Networked IO
+is strongly discouraged, because the max IOPS are significantly lower.
+
+### Network
+
+Redpanda uses the default ports 33145 (RPC), 9092 (Kafka API), and 9644 (Admin
+API), so the firewall should allow inbound traffic on them.
+
+Additionally, every node in a cluster should be able to reach each other over
+TCP.
+
+Lastly, there's a periodically-executed service that sends resource usage and
+configuration metrics to Vectorized's metrics API. If you'd like to help us
+improve redpanda and allow this data to be sent, please allow outbound traffic
+to `https://m.rp.vectorized.io`. To learn more about metrics reporting, please
+see the **Monitoring** section.
+
 ## Installation
 To get started with redpanda, first set up the package repository:
 
 For RPM-based Linux distributions:
 
 ```
+# Set up the repository
 curl -s https://{{master_token}}:@packagecloud.io/install/repositories/vectorizedio/v/script.rpm.sh | sudo bash
+
+# Install the redpanda package
+sudo yum install -y redpanda
 ```
 
 For Debian-based distributions:
 
 ```
+# Set up the repository
 curl -s https://{{master_token}}:@packagecloud.io/install/repositories/vectorizedio/v/script.deb.sh | sudo bash
-```
 
-Then, install the redpanda package
-
-```
-sudo yum install -y redpanda
-```
-
-Or for Debian-based:
-
-```
+# Install the redpanda package
 sudo apt install -y redpanda
 ```
 
-## Running Redpanda
+## Single-Node Quickstart
+
+If you're just trying out redpanda on your personal computer, make sure to turn
+on _development_ mode, so that no permanent configuration changes are made to
+your OS:
+
+`sudo rpk mode dev`
+
 To make sure redpanda runs as fast as it can, first run the tuner
 service, which will autoconfigure your VM to guarantee the best
 performance.
@@ -50,15 +80,82 @@ You can inspect the logs by running
 journalctl -u redpanda
 ```
 
+## Starting a Redpanda Cluster
+
+> Before following along, make sure you followed the steps described in
+> **Installation** on every node.
+
+> All of the concepts and commands used in this guide are described in later
+> sections of the documentation. Please refer to them to learn more.
+
+> This guide assumes that you have configured your firewall to allow
+> traffic between the nodes. Please see the **Configuration** section for
+> reference on which ports should allow inbound traffic.
+
+For each new redpanda cluster, there will be one **root** node (not to be
+confused with a leader node). The root node is bootstrapped and then new nodes
+can join it to form a cluster.
+
+To start a cluster, pick a node to be the root and use `rpk config bootstrap`
+to bootstrap the configuration. For a root node, you only need to set its ID and
+the IP it should use for its API (usually its private IP). Each node's ID needs
+to be a unique positive integer.
+
+`sudo rpk config bootstrap --id <unique id> --self <ip>`
+
+Then for each node we'd like to join, we just have to set its ID and give it the
+root node's address:
+
+> rpk will try to discover a non-loopback IP it can use. However, if the host
+> has multiple addresses associated with it, you'll need to pass the --self
+> flag so it knows which one to use.
+
+`sudo rpk config bootstrap --id <unique id> --ips <root node ip>`
+
+Once you've run the above command in every non-root node, just run the tuner
+and redpanda in each of them:
+
+```
+sudo systemctl start redpanda-tuner
+sudo systemctl start redpanda
+```
+
+That's it! Your cluster should be up and running. You can check the logs with
+
+`journalctl -f -u redpanda`
+
+## Monitoring
+
+Redpanda exposes a Prometheus metrics endpoint in `/metrics` in port 9644.
+
+Our packages also ship with a systemd service, which executes periodically and
+reports resource usage and configuration data to Vectorized's metrics API. It is
+enabled by default, and the data is anonymous. If you'd like us to be able to
+identify your cluster's data, to be able to monitor it and alert you of possible
+issues, please set the `organization` (your company's domain) and `cluster_id`
+(usually your team's or project's name) configuration fields. For example:
+
+```
+rpk config set organization 'vectorized.io'
+rpk config set cluster_id 'metrics'
+```
+
+To opt out of all metrics reporting, set `rpk.enable_usage_stats` to `false`:
+```
+rpk config set rpk.enable_usage_stats false
+```
+
 ## Redpanda & Rpk
-Redpanda has a CLI tool called rpk, the Redpanda Keeper. As a user, you will always
-interact with it to auto-tune the OS and hardware settings, start redpanda (when not run
-as a systemd service) and enable configuration modes (described below).
+Redpanda has a CLI tool called rpk, the Redpanda Keeper, which is a CLI &
+toolbox for redpanda. As a user, you will always interact with it to auto-tune
+the OS and hardware settings, start redpanda (when not run as a systemd service)
+and edit the configuration.
 
 ## Configuration
-The redpanda configuration is loaded from and persisted to `/etc/redpanda/redpanda.conf`.
+The redpanda configuration is by default loaded from and persisted to
+`/etc/redpanda/redpanda.yaml`.
 
-It is divided into 2 sections, `redpanda` and `rpk`.
+It is broadly divided into 2 sections, `redpanda` and `rpk`.
  
 The `redpanda` section contains all the runtime configuration, such as the cluster
 member IPs, the node ID, data direcory, and so on.
@@ -69,6 +166,11 @@ run on.
 Here's a sample of what the config file looks like.
 
 ```yaml
+# organization and cluster_id help Vectorized identify your system.
+organization: ""
+cluster_id: ""
+pid_file: "/var/lib/redpanda/pid"
+
 redpanda:
   # The directory where the data will be stored. It must reside on an XFS
   # partition.
@@ -79,24 +181,25 @@ redpanda:
   
   # The inter-node RPC server config.
   rpc_server:
-    address: "127.0.0.1"
+    address: "0.0.0.0"
     port: 33145
   
   # The Kafka API config.
   kafka_api:
-    address: "127.0.0.1"
+    address: "0.0.0.0"
     port: 9092
     
-  # A list of `host` objects, holding known nodes' configuration.
+  # A list of `host` objects, holding known nodes' configuration. If empty, the
+  # node will be considered a root node and become available upon startup.
   seed_servers:
     - node_id: 1
       host:
-        address: "127.0.0.1"
+        address: "0.0.0.0"
         port: 33145
 
   # The admin API configuration
   admin:
-    address: "127.0.0.1"
+    address: "0.0.0.0"
     port: 9644
 
 rpk:
@@ -124,6 +227,8 @@ rpk:
   # if system reboot is allowed: disables Intel P-States, disables Intel C-States,
   # disables Turbo Boost
   tune_cpu: true
+  
+  # Increases the number of allowed asynchronous IO events
   tune_aio_events: true
   
   # Syncs NTP
@@ -196,6 +301,18 @@ Usage:
 Flags:
   -h, --help                  help for mode
       --redpanda-cfg string   Redpanda config file, if not set the file will be searched for in default locations
+```
+
+### `config set`
+Edit the configuration.
+```
+Usage:
+  rpk config set <key> <value> [flags]
+
+Flags:
+      --config string   Redpanda config file, if not set the file will be searched for in default location (default "/etc/redpanda/redpanda.yaml")
+      --format string   The value format. Can be 'single', for single values such as '/etc/redpanda' or 100; and 'json', 'toml', 'yaml','yml', 'properties', 'props', 'prop', or 'hcl' when partially or completely setting config objects (default "single")
+  -h, --help            help for set
 ```
 
 ### `iotune`
