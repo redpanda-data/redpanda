@@ -13,8 +13,7 @@
     do {                                                                       \
         if (unlikely(!(x))) {                                                  \
             std::cerr << "Rapidjson failure: " << __FILE__ << ":" << __LINE__  \
-                      << "' "                                                  \
-                      << #x << " '";                                           \
+                      << "' " << #x << " '";                                   \
             std::terminate();                                                  \
         }                                                                      \
     } while (0)
