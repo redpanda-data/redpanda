@@ -167,9 +167,9 @@ configuration::configuration()
   , delete_retention_ms(
       *this,
       "delete_retention_ms",
-      "delete segments older than this",
+      "delete segments older than this - default 1 week",
       required::no,
-      86400000ms)
+      10080min)
   , log_compaction_interval(
       *this,
       "log_compaction_interval",
