@@ -181,26 +181,45 @@ SEASTAR_THREAD_TEST_CASE(json_serialization) {
                                   "\"required_string\": \"test_value_2\""
                                   "}";
 
-    // cfg -> json object -> json string
+    // cfg -> json string
     rapidjson::StringBuffer cfg_sb;
     rapidjson::Writer<rapidjson::StringBuffer> cfg_writer(cfg_sb);
     cfg.to_json(cfg_writer);
     auto jstr = cfg_sb.GetString();
 
-    // json string -> json object
-    rapidjson::Document document;
-    document.Parse(expected_result);
+    // json string -> rapidjson doc
+    rapidjson::Document res_doc;
+    res_doc.Parse(jstr);
 
-    rapidjson::StringBuffer doc_sb;
-    rapidjson::Writer<rapidjson::StringBuffer> doc_writer(doc_sb);
-    document.Accept(doc_writer);
+    // json string -> rapidjson doc
+    rapidjson::Document exp_doc;
+    exp_doc.Parse(expected_result);
 
     // test equivalence
-    BOOST_TEST(document["required_string"].IsString());
-    BOOST_TEST(document["required_string"].GetString() == "test_value_2");
+    BOOST_TEST(res_doc["required_string"].IsString());
+    BOOST_TEST(
+      res_doc["required_string"].GetString()
+      == exp_doc["required_string"].GetString());
 
-    // TODO:
-    // This string is _compiler_ dependent. Enable when we have a reader *from*
-    // json that we can verify this.
-    // BOOST_TEST(doc_sb.GetString() == jstr);
+    BOOST_TEST(res_doc["optional_int"].IsInt());
+    BOOST_TEST(
+      res_doc["optional_int"].GetInt() == exp_doc["optional_int"].GetInt());
+
+    BOOST_TEST(res_doc["an_int64_t"].IsInt64());
+    BOOST_TEST(
+      res_doc["an_int64_t"].GetInt64() == exp_doc["an_int64_t"].GetInt64());
+
+    BOOST_TEST(res_doc["an_aggregate"].IsObject());
+
+    BOOST_TEST(res_doc["an_aggregate"]["int_value"].IsInt());
+    BOOST_TEST(
+      res_doc["an_aggregate"]["int_value"].GetInt()
+      == exp_doc["an_aggregate"]["int_value"].GetInt());
+
+    BOOST_TEST(res_doc["an_aggregate"]["string_value"].IsString());
+    BOOST_TEST(
+      res_doc["an_aggregate"]["string_value"].GetString()
+      == exp_doc["an_aggregate"]["string_value"].GetString());
+
+    BOOST_TEST(res_doc["strings"].IsArray());
 }
