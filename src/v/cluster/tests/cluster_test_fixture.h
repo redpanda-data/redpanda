@@ -1,5 +1,6 @@
 #pragma once
 #include "cluster/tests/controller_test_fixture.h"
+#include "config/seed_server.h"
 
 #include <seastar/core/metrics_api.hh>
 
@@ -43,13 +44,17 @@ public:
     }
 
     cluster::controller& create_controller(model::node_id node_id) {
+        std::vector<config::seed_server> seeds = {};
+        if (node_id != 0) {
+            seeds.push_back({.id = model::node_id{0},
+                             .addr = unresolved_address("127.0.0.1", 11000)});
+        }
         add_controller(
           node_id,
           ss::smp::count,
           9092 + node_id(),
           11000 + node_id(),
-          {{.id = model::node_id{0},
-            .addr = unresolved_address("127.0.0.1", 11000)}});
+          std::move(seeds));
 
         return get_controller(node_id()).local();
     }

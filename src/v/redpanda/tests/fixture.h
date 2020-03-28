@@ -46,10 +46,6 @@ public:
               .set_value(config::data_directory_path{.path = data_dir});
 
             config.get("node_id").set_value(model::node_id(1));
-
-            std::vector<config::seed_server> seed_servers = {
-              {model::node_id(1), unresolved_address("127.0.0.1", 33145)}};
-            config.get("seed_servers").set_value(seed_servers);
         }).get0();
     }
 
