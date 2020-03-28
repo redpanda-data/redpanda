@@ -23,10 +23,6 @@ constexpr size_t gbytes(unsigned long long val) { return val * gb; }
 
 static ss::logger tlog{"test_log"};
 
-inline void validate_batch_crc(model::record_batch& batch) {
-    BOOST_REQUIRE_EQUAL(batch.header().crc, model::crc_record_batch(batch));
-}
-
 struct random_batches_generator {
     ss::circular_buffer<model::record_batch> operator()() {
         return storage::test::make_random_batches(
@@ -80,18 +76,7 @@ public:
 
     struct batch_validating_consumer {
         ss::future<ss::stop_iteration> operator()(model::record_batch b) {
-            tlog.debug(
-              "Validating batch [{},{}] of size {} bytes and {} records, "
-              "compressed {}, CRC: [{}] ",
-              b.base_offset(),
-              b.last_offset(),
-              b.size_bytes(),
-              b.record_count(),
-              b.compressed(),
-              b.header().crc);
-
-            validate_batch_crc(b);
-            tlog.debug("Finished validating crc");
+            BOOST_REQUIRE_EQUAL(b.header().crc, model::crc_record_batch(b));
             batches.push_back(std::move(b));
             return ss::make_ready_future<ss::stop_iteration>(
               ss::stop_iteration::no);
