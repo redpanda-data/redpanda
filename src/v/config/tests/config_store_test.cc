@@ -2,6 +2,7 @@
 
 #include <seastar/core/thread.hh>
 #include <seastar/testing/thread_test_case.hh>
+#include <seastar/util/log.hh>
 
 #include <rapidjson/document.h>
 
@@ -12,6 +13,9 @@
 #include <utility>
 
 namespace {
+
+ss::logger lg("config test"); // NOLINT
+
 struct custom_aggregate {
     ss::sstring string_value;
     int int_value;
@@ -43,7 +47,7 @@ struct test_config : public config::config_store {
       , strings(*this, "strings", "Required strings vector") {}
 };
 
-YAML::Node minimal_valid_cofniguration() {
+YAML::Node minimal_valid_configuration() {
     return YAML::Load("required_string: test_value_1\n"
                       "strings:\n"
                       " - first\n"
@@ -51,7 +55,7 @@ YAML::Node minimal_valid_cofniguration() {
                       " - third\n");
 }
 
-YAML::Node valid_cofniguration() {
+YAML::Node valid_configuration() {
     return YAML::Load("optional_int: 3\n"
                       "required_string: test_value_2\n"
                       "an_int64_t: 55\n"
@@ -112,7 +116,7 @@ struct convert<custom_aggregate> {
 
 SEASTAR_THREAD_TEST_CASE(read_minimal_valid_configuration) {
     auto cfg = test_config();
-    cfg.read_yaml(minimal_valid_cofniguration());
+    cfg.read_yaml(minimal_valid_configuration());
 
     BOOST_TEST(cfg.optional_int() == 100);
     BOOST_TEST(cfg.required_string() == "test_value_1");
@@ -126,7 +130,7 @@ SEASTAR_THREAD_TEST_CASE(read_minimal_valid_configuration) {
 
 SEASTAR_THREAD_TEST_CASE(read_valid_configuration) {
     auto cfg = test_config();
-    cfg.read_yaml(valid_cofniguration());
+    cfg.read_yaml(valid_configuration());
 
     BOOST_TEST(cfg.optional_int() == 3);
     BOOST_TEST(cfg.required_string() == "test_value_2");
@@ -140,7 +144,7 @@ SEASTAR_THREAD_TEST_CASE(read_valid_configuration) {
 
 SEASTAR_THREAD_TEST_CASE(update_property_value) {
     auto cfg = test_config();
-    cfg.read_yaml(minimal_valid_cofniguration());
+    cfg.read_yaml(minimal_valid_configuration());
 
     BOOST_TEST(cfg.required_string() == "test_value_1");
     cfg.get("required_string").set_value(ss::sstring("new_string_value"));
@@ -149,32 +153,32 @@ SEASTAR_THREAD_TEST_CASE(update_property_value) {
 
 SEASTAR_THREAD_TEST_CASE(validate_valid_configuration) {
     auto cfg = test_config();
-    cfg.read_yaml(valid_cofniguration());
+    cfg.read_yaml(valid_configuration());
     auto errors = cfg.validate();
     BOOST_TEST(errors.size() == 0);
 }
 
 SEASTAR_THREAD_TEST_CASE(validate_invalid_configuration) {
     auto cfg = test_config();
-    cfg.read_yaml(valid_cofniguration());
+    cfg.read_yaml(valid_configuration());
     auto errors = cfg.validate();
     BOOST_TEST(errors.size() == 0);
 }
 
 SEASTAR_THREAD_TEST_CASE(json_serialization) {
     auto cfg = test_config();
-    cfg.read_yaml(valid_cofniguration());
-
+    cfg.read_yaml(valid_configuration());
+    lg.info("Config: {}", cfg);
     // json data
     const char* expected_result = "{"
                                   "\"strings\": [\"one\", \"two\", \"three\"],"
                                   "\"an_int64_t\": 55,"
+                                  "\"optional_int\": 3,"
                                   "\"an_aggregate\": {"
                                   "\"string_value\": \"some_value\","
                                   "\"int_value\": 88"
                                   "},"
-                                  "\"required_string\": \"test_value_2\","
-                                  "\"optional_int\": 3"
+                                  "\"required_string\": \"test_value_2\""
                                   "}";
 
     // cfg -> json object -> json string
