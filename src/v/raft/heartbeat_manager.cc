@@ -103,18 +103,15 @@ heartbeat_manager::heartbeat_manager(
 }
 
 ss::future<> heartbeat_manager::send_heartbeats(
-  clock_type::time_point next_timeout,
-  std::vector<ss::semaphore_units<>> locks,
-  std::vector<node_heartbeat> reqs) {
+  std::vector<ss::semaphore_units<>> locks, std::vector<node_heartbeat> reqs) {
     return ss::do_with(
              std::move(reqs),
-             [this, next_timeout, u = std::move(locks)](
-               std::vector<node_heartbeat>& reqs) mutable {
+             [this,
+              u = std::move(locks)](std::vector<node_heartbeat>& reqs) mutable {
                  std::vector<ss::future<>> futures;
                  futures.reserve(reqs.size());
                  for (auto& r : reqs) {
-                     futures.push_back(
-                       do_heartbeat(std::move(r), next_timeout));
+                     futures.push_back(do_heartbeat(std::move(r)));
                  }
                  return _dispatch_sem.wait(reqs.size())
                    .then([u = std::move(u), f = std::move(futures)]() mutable {
@@ -126,27 +123,26 @@ ss::future<> heartbeat_manager::send_heartbeats(
       });
 }
 
-ss::future<> heartbeat_manager::do_dispatch_heartbeats(
-  clock_type::time_point last_timeout, clock_type::time_point next_timeout) {
+ss::future<>
+heartbeat_manager::do_dispatch_heartbeats(clock_type::time_point last_timeout) {
     return locks_for_range(_consensus_groups)
-      .then([this, last_timeout, next_timeout](
-              std::vector<ss::semaphore_units<>> locks) {
+      .then([this, last_timeout](std::vector<ss::semaphore_units<>> locks) {
           auto reqs = requests_for_range(
             _consensus_groups, last_timeout, _skip_hbeat_threshold);
-          return send_heartbeats(
-            next_timeout, std::move(locks), std::move(reqs));
+          return send_heartbeats(std::move(locks), std::move(reqs));
       });
 }
 
-ss::future<> heartbeat_manager::do_heartbeat(
-  node_heartbeat&& r, clock_type::time_point next_timeout) {
+ss::future<> heartbeat_manager::do_heartbeat(node_heartbeat&& r) {
     auto shard = rpc::connection_cache::shard_for(r.target);
     std::vector<group_id> groups(r.request.meta.size());
     for (size_t i = 0; i < groups.size(); ++i) {
         groups[i] = group_id(r.request.meta[i].group);
     }
     auto f = _client_protocol.heartbeat(
-      r.target, std::move(r.request), rpc::client_opts(next_timeout));
+      r.target,
+      std::move(r.request),
+      rpc::client_opts(next_heartbeat_timeout()));
     _dispatch_sem.signal();
     return f.then([node = r.target, groups = std::move(groups), this](
                     result<heartbeat_reply> ret) mutable {
@@ -195,15 +191,17 @@ void heartbeat_manager::process_reply(
 }
 
 void heartbeat_manager::dispatch_heartbeats() {
-    auto next_timeout = clock_type::now() + _heartbeat_interval;
-    (void)with_gate(_bghbeats, [this, old = _hbeat, next_timeout] {
-        return do_dispatch_heartbeats(old, next_timeout);
-    }).handle_exception([](const std::exception_ptr& e) {
-        hbeatlog.warn("Error dispatching hearbeats - {}", e);
-    });
-    if (!_bghbeats.is_closed()) {
-        _heartbeat_timer.arm(next_timeout);
-    }
+    (void)with_gate(
+      _bghbeats, [this, old = _hbeat] { return do_dispatch_heartbeats(old); })
+      .handle_exception([](const std::exception_ptr& e) {
+          hbeatlog.warn("Error dispatching hearbeats - {}", e);
+      })
+      .then([this] {
+          if (!_bghbeats.is_closed()) {
+              _heartbeat_timer.arm(next_heartbeat_timeout());
+          }
+      });
+
     // update last
     _hbeat = clock_type::now();
 }
@@ -227,6 +225,10 @@ ss::future<> heartbeat_manager::start() {
 ss::future<> heartbeat_manager::stop() {
     _heartbeat_timer.cancel();
     return _bghbeats.close();
+}
+
+clock_type::time_point heartbeat_manager::next_heartbeat_timeout() {
+    return clock_type::now() + _heartbeat_interval;
 }
 
 } // namespace raft
