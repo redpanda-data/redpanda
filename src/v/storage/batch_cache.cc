@@ -4,13 +4,16 @@
 
 namespace storage {
 
-batch_cache::entry_ptr batch_cache::put(model::record_batch&& batch) {
+batch_cache::entry_ptr batch_cache::put(const model::record_batch& input) {
 #ifdef SEASTAR_DEFAULT_ALLOCATOR
     static const size_t threshold = ss::memory::stats().total_memory() * .2;
     while (_size_bytes > threshold) {
         reclaim(1);
     }
 #endif
+    // we must copy memory to prevent holding onto bigger memory from
+    // temporary buffers
+    auto batch = input.copy();
     _size_bytes += batch.memory_usage();
     entry* e;
     if (_pool.empty()) {

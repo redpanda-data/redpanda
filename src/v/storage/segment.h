@@ -77,15 +77,9 @@ public:
         };
     }
 
-    void cache_put(std::vector<model::record_batch> batches) {
+    void cache_put(const model::record_batch& batch) {
         if (likely(bool(_cache))) {
-            _cache->put(std::move(batches));
-        }
-    }
-
-    void cache_put(model::record_batch&& batch) {
-        if (likely(bool(_cache))) {
-            _cache->put(std::move(batch));
+            _cache->put(batch);
         }
     }
 

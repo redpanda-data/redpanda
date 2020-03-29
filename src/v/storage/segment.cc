@@ -156,13 +156,8 @@ ss::future<append_result> segment::append(model::record_batch b) {
               "Shard not set when writing to: {} - header: {}",
               *this,
               b.header());
-            if (b.header().ctx.owner_shard == ss::this_shard_id()) {
-                cache_put(std::move(b));
-            } else {
-                // not in our core, so we cannot hold onto the memory
-                // must copy and put into cache
-                cache_put(b.copy());
-            }
+            // cache always copies the batch
+            cache_put(std::move(b));
             return ret;
         });
     });

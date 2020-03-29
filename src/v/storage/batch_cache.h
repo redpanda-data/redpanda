@@ -118,12 +118,13 @@ public:
     void clear() { reclaim(std::numeric_limits<size_t>::max()); }
 
     /**
-     * Insert a batch into the LRU cache.
+     * Copies a batch into the LRU cache.
+     * Copying is needed to release memory references of underlying tempbufs.
      *
      * The returned weak_ptr will be invalidated if its memory is reclaimed. To
      * evict the entry, move it into batch_cache::evict().
      */
-    entry_ptr put(model::record_batch&&);
+    entry_ptr put(const model::record_batch&);
 
     /**
      * \brief Remove a batch from the cache.
@@ -236,20 +237,10 @@ public:
 
     bool empty() const { return _index.empty(); }
 
-    void put(model::record_batch&& batch) {
+    void put(const model::record_batch& batch) {
         auto offset = batch.header().base_offset();
-        auto p = _cache->put(std::move(batch));
+        auto p = _cache->put(batch);
         _index.emplace(offset, std::move(p));
-    }
-
-    template<typename Range>
-    void put(Range&& batches) {
-        static_assert(
-          std::is_rvalue_reference_v<decltype(batches)>,
-          "ensure you move your types to the cache");
-        for (auto& batch : batches) {
-            put(std::move(batch));
-        }
     }
 
     /**

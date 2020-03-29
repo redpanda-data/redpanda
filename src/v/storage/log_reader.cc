@@ -161,8 +161,8 @@ log_segment_batch_reader::read_some(model::timeout_clock::time_point timeout) {
           }
           _probe.add_bytes_read(bytes_consumed.value());
           // insert batches from disk into the cache
-          for (auto& b : _state.buffer) {
-              _seg.cache_put(b.share());
+          for (const auto& b : _state.buffer) {
+              _seg.cache_put(b);
           }
           auto tmp = std::exchange(_state, {});
           return result<records_t>(std::move(tmp.buffer));
