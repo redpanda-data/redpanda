@@ -1,13 +1,16 @@
 package cmd_test
 
 import (
+	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"vectorized/pkg/cli/cmd"
 	"vectorized/pkg/config"
 
 	"github.com/spf13/afero"
 	"github.com/spf13/viper"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSet(t *testing.T) {
@@ -162,6 +165,103 @@ func TestSet(t *testing.T) {
 					tt.key,
 				)
 			}
+		})
+	}
+}
+
+func TestBootstrap(t *testing.T) {
+	tests := []struct {
+		name        string
+		ips         []string
+		self        string
+		id          string
+		expectedErr string
+	}{
+		{
+			name: "it should set the root node config for a single node",
+			id:   "1",
+			self: "192.168.34.5",
+		},
+		{
+			name: "it should fill the seed servers",
+			ips:  []string{"187.89.76.3", "192.168.34.5", "192.168.45.8"},
+			self: "192.168.34.5",
+			id:   "1",
+		},
+		{
+			name:        "it should fail if any of the --ips IPs isn't valid",
+			ips:         []string{"187.89.9", "192.168.34.5", "192.168.45.8"},
+			self:        "192.168.34.5",
+			id:          "1",
+			expectedErr: "187.89.9 is not a valid IP.",
+		},
+		{
+			name:        "it should fail if --self isn't a valid IP",
+			ips:         []string{"187.89.9.78", "192.168.34.5", "192.168.45.8"},
+			self:        "www.host.com",
+			id:          "1",
+			expectedErr: "www.host.com is not a valid IP.",
+		},
+		{
+			name:        "it should fail if neither --self nor --ips is passed",
+			id:          "1",
+			expectedErr: "either --ips or --self must be passed.",
+		},
+		{
+			name:        "it should fail if --id isn't passed",
+			expectedErr: "required flag(s) \"id\" not set",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			configPath := config.DefaultConfig().ConfigFile
+			fs := afero.NewMemMapFs()
+			fs.MkdirAll(
+				filepath.Dir(configPath),
+				0644,
+			)
+			c := cmd.NewConfigCommand(fs)
+			args := []string{"bootstrap"}
+			if len(tt.ips) != 0 {
+				args = append(
+					args,
+					"--ips",
+					strings.Join(tt.ips, ","),
+				)
+			}
+			if tt.self != "" {
+				args = append(args, "--self", tt.self)
+			}
+			if tt.id != "" {
+				args = append(args, "--id", tt.id)
+			}
+			c.SetArgs(args)
+			err := c.Execute()
+			if tt.expectedErr != "" {
+				require.EqualError(t, err, tt.expectedErr)
+				return
+			}
+			require.NoError(t, err)
+			_, err = fs.Stat(configPath)
+			conf, err := config.ReadConfigFromPath(fs, configPath)
+			require.NoError(t, err)
+			require.Equal(t, conf.Redpanda.RPCServer.Address, tt.self)
+			require.Equal(t, conf.Redpanda.KafkaApi.Address, tt.self)
+			require.Equal(t, conf.Redpanda.AdminApi.Address, tt.self)
+			if len(tt.ips) == 1 {
+				require.Equal(
+					t,
+					[]*config.SeedServer{},
+					conf.Redpanda.SeedServers,
+				)
+				return
+			}
+			seedAddrs := []string{}
+			for _, seed := range conf.Redpanda.SeedServers {
+				seedAddrs = append(seedAddrs, seed.Host.Address)
+			}
+			require.ElementsMatch(t, tt.ips, seedAddrs)
 		})
 	}
 }
