@@ -126,7 +126,7 @@ ss::future<> log_segment_batch_reader::close() {
     }
     return ss::make_ready_future<>();
 }
-ss::future<records_t>
+ss::future<result<records_t>>
 log_segment_batch_reader::read_some(model::timeout_clock::time_point timeout) {
     /*
      * fetch batches from the cache covering the range [_base, end] where
@@ -147,21 +147,26 @@ log_segment_batch_reader::read_some(model::timeout_clock::time_point timeout) {
       || _config.start_offset > _config.max_offset) {
         _config.bytes_consumed += cache_read.memory_usage;
         _probe.add_bytes_read(cache_read.memory_usage);
-        return ss::make_ready_future<records_t>(std::move(cache_read.batches));
+        return ss::make_ready_future<result<records_t>>(
+          std::move(cache_read.batches));
     }
     if (!_iterator) {
         _iterator = initialize(timeout, cache_read.next_cached_batch);
     }
     auto ptr = _iterator.get();
-    return ptr->consume().then([this](size_t bytes_consumed) {
-        _probe.add_bytes_read(bytes_consumed);
-        // insert batches from disk into the cache
-        for (auto& b : _state.buffer) {
-            _seg.cache_put(b.share());
-        }
-        auto tmp = std::exchange(_state, {});
-        return std::move(tmp.buffer);
-    });
+    return ptr->consume().then(
+      [this](result<size_t> bytes_consumed) -> result<records_t> {
+          if (!bytes_consumed) {
+              return bytes_consumed.error();
+          }
+          _probe.add_bytes_read(bytes_consumed.value());
+          // insert batches from disk into the cache
+          for (auto& b : _state.buffer) {
+              _seg.cache_put(b.share());
+          }
+          auto tmp = std::exchange(_state, {});
+          return result<records_t>(std::move(tmp.buffer));
+      });
 }
 
 log_reader::log_reader(
@@ -222,19 +227,29 @@ log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
     }
     return fut
       .then([this, timeout] { return _iterator.reader->read_some(timeout); })
+      .then([this](result<records_t> recs) -> ss::future<records_t> {
+          if (!recs) {
+              set_end_of_stream();
+              vlog(
+                stlog.info,
+                "stopped reading stream: {}",
+                recs.error().message());
+              return _iterator.close().then(
+                [] { return ss::make_ready_future<records_t>(); });
+          }
+          if (recs.value().empty()) {
+              set_end_of_stream();
+              return _iterator.close().then(
+                [] { return ss::make_ready_future<records_t>(); });
+          }
+          _probe.add_batches_read(recs.value().size());
+          return ss::make_ready_future<records_t>(std::move(recs.value()));
+      })
       .handle_exception([this](std::exception_ptr e) {
           set_end_of_stream();
           _probe.batch_parse_error();
           return _iterator.close().then(
             [e] { return ss::make_exception_future<records_t>(e); });
-      })
-      .then([this](records_t recs) {
-          if (recs.empty()) {
-              return _iterator.close().then(
-                [] { return ss::make_ready_future<records_t>(); });
-          }
-          _probe.add_batches_read(recs.size());
-          return ss::make_ready_future<records_t>(std::move(recs));
       });
 }
 
