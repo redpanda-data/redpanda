@@ -72,7 +72,6 @@ class RedpandaService(Service):
                 'data_directory': "/var/lib/redpanda",
                 'node_id': node_idx,
                 'raft_heartbeat_interval': 2000,
-                'seed_servers': seed_servers,
                 'rpc_server': {
                     'address': "0.0.0.0",
                     'port': rpc_port,
@@ -97,6 +96,9 @@ class RedpandaService(Service):
                 ]
             }
         }
+        # Node 1 will be the root node, so it has an empty seed_servers list.
+        if node_idx > 1:
+            cfg['seed_servers'] = seed_servers
 
         # extra config
         cfg.update(self.extra_config)
