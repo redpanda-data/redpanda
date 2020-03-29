@@ -288,6 +288,9 @@ ss::future<result<size_t>> continuous_batch_parser::consume() {
                        _err = parser_errc(s.error().value());
                        return ss::stop_iteration::yes;
                    }
+                   if (s.value() == stop_parser::yes) {
+                       return ss::stop_iteration::yes;
+                   }
                    return ss::stop_iteration::no;
                });
            })
