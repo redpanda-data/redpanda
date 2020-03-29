@@ -74,13 +74,16 @@ ss::future<> segment::do_close() {
 
 ss::future<> segment::release_appender() {
     vassert(_appender, "cannot release a null appender");
-    return flush()
-      .then([this] { return _appender->close(); })
-      .then([this] { return _idx.flush(); })
-      .then([this] {
-          _appender = std::nullopt;
-          _cache = std::nullopt;
-      });
+    return write_lock().then([this](ss::rwlock::holder h) {
+        return flush()
+          .then([this] { return _appender->close(); })
+          .then([this] { return _idx.flush(); })
+          .then([this] {
+              _appender = std::nullopt;
+              _cache = std::nullopt;
+          })
+          .finally([h = std::move(h)] {});
+    });
 }
 
 ss::future<> segment::flush() {

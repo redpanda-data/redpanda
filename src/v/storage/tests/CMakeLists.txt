@@ -152,3 +152,11 @@ rp_test(
   ARGS "-- -c 1"
   LABELS storage
   )
+rp_test(
+  UNIT_TEST
+  BINARY_NAME disk_impl_race_condition
+  SOURCES disk_impl_race_condition_tests.cc
+  LIBRARIES Seastar::seastar_testing v::storage_test_utils
+  ARGS "-- -c 1"
+  LABELS storage
+  )
