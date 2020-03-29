@@ -78,11 +78,7 @@ void skipping_consumer::consume_compressed_records(iobuf&& records) {
 batch_consumer::stop_parser skipping_consumer::consume_batch_end() {
     // Note: This is what keeps the train moving. the `_reader.*` transitively
     // updates the next batch to consume
-    _reader._state.buffer.emplace_back(
-      model::record_batch(_header, std::exchange(_records, {})));
-    _reader._config.start_offset = _header.last_offset() + model::offset(1);
-    _reader._config.bytes_consumed += _header.size_bytes;
-    _reader._state.buffer_size += _header.size_bytes;
+    _reader.add_one(model::record_batch(_header, std::exchange(_records, {})));
     // We keep the batch in the buffer so that the reader can be cached.
     if (
       _header.last_offset() >= _reader._seg.committed_offset()
@@ -126,6 +122,15 @@ ss::future<> log_segment_batch_reader::close() {
     }
     return ss::make_ready_future<>();
 }
+
+void log_segment_batch_reader::add_one(model::record_batch&& batch) {
+    _state.buffer.emplace_back(std::move(batch));
+    const auto& b = _state.buffer.back();
+    _config.start_offset = b.header().last_offset() + model::offset(1);
+    _config.bytes_consumed += b.header().size_bytes;
+    _state.buffer_size += b.header().size_bytes;
+    _seg.cache_put(b);
+}
 ss::future<result<records_t>>
 log_segment_batch_reader::read_some(model::timeout_clock::time_point timeout) {
     /*
@@ -160,10 +165,6 @@ log_segment_batch_reader::read_some(model::timeout_clock::time_point timeout) {
               return bytes_consumed.error();
           }
           _probe.add_bytes_read(bytes_consumed.value());
-          // insert batches from disk into the cache
-          for (const auto& b : _state.buffer) {
-              _seg.cache_put(b);
-          }
           auto tmp = std::exchange(_state, {});
           return result<records_t>(std::move(tmp.buffer));
       });

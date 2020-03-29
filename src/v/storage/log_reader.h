@@ -95,6 +95,7 @@ private:
       std::optional<model::offset> next_cached_batch);
 
     bool is_buffer_full() const;
+    void add_one(model::record_batch&&);
 
 private:
     struct tmp_state {
