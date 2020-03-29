@@ -188,10 +188,11 @@ ss::future<> controller::stop() {
         _leadership_cond.broadcast();
     }
     _as.request_abort();
-    return _bg.close().then([this] {
-        // After gate is close there will be no new promises in notification
-        // latch
+    return ss::with_semaphore(_sem, 1, [this] {
+        // we have to stop latch first as there may be some futures waiting
+        // inside the gate for notification
         _notification_latch.stop();
+        return _bg.close();
     });
 }
 
