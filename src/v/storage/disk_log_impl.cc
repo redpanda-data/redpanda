@@ -184,13 +184,17 @@ ss::future<> disk_log_impl::maybe_roll(
       t != term() || _segs.empty() || !_segs.back()->has_appender()
       || _segs.back()->appender().file_byte_offset()
            > _manager.max_segment_size()) {
-        auto f = ss::make_ready_future<>();
         if (!_segs.empty() && _segs.back()->has_appender()) {
-            f = _segs.back()->release_appender();
+            auto ptr = _segs.back();
+            // we must wait for all ongoing operations - which
+            // might take a littlebit since we have to acquire a write_lock()
+            (void)ss::with_gate(_lgate, [ptr] {
+                return ptr->release_appender();
+            }).handle_exception([](std::exception_ptr e) {
+                vlog(stlog.info, "Error releasing appender: {}", e);
+            });
         }
-        return f.then([this, iopc, t, next_offset] {
-            return new_segment(next_offset, t, iopc);
-        });
+        return new_segment(next_offset, t, iopc);
     }
     return ss::make_ready_future<>();
 }
