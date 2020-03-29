@@ -114,7 +114,7 @@ replicate_entries_stm::apply(ss::semaphore_units<> u) {
       .then(
         [this, u = std::move(u)](storage::append_result append_result) mutable {
             // dispatch requests to followers & leader flush
-            uint16_t requests_count;
+            uint16_t requests_count = 0;
             for (auto& n : _ptr->_conf.nodes) {
                 // We are not dispatching request to followers that are
                 // recovering
