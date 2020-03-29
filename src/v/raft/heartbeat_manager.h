@@ -53,17 +53,17 @@ public:
 
 private:
     void dispatch_heartbeats();
+
+    clock_type::time_point next_heartbeat_timeout();
+
     /// \brief unprotected, must be used inside the gate & semaphore
-    ss::future<> do_dispatch_heartbeats(
-      clock_type::time_point last_timeout, clock_type::time_point next_timeout);
+    ss::future<> do_dispatch_heartbeats(clock_type::time_point last_timeout);
 
     ss::future<> send_heartbeats(
-      clock_type::time_point next_timeout,
-      std::vector<ss::semaphore_units<>>,
-      std::vector<node_heartbeat>);
+      std::vector<ss::semaphore_units<>>, std::vector<node_heartbeat>);
 
     /// \brief sends a batch to one node
-    ss::future<> do_heartbeat(node_heartbeat&&, clock_type::time_point);
+    ss::future<> do_heartbeat(node_heartbeat&&);
 
     /// \brief notifies the consensus groups about append_entries log offsets
     /// \param n the physical node that owns heart beats
