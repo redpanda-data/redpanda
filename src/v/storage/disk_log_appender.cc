@@ -21,6 +21,19 @@ disk_log_appender::disk_log_appender(
   , _base_offset(offset)
   , _last_offset(log.max_offset()) {}
 
+ss::future<> disk_log_appender::initialize() {
+    if (_log._segs.empty()) {
+        return ss::make_ready_future<>();
+    }
+    _cache = _log._segs.back();
+    _cache_lock = std::nullopt;
+    // appending is a non-destructive op. so acquire read lock
+    return _cache->read_lock().then([this](ss::rwlock::holder h) {
+        _cache_lock = std::move(h);
+        _bytes_left_in_cache_segment = _log.bytes_left_before_roll();
+    });
+}
+
 ss::future<ss::stop_iteration>
 disk_log_appender::operator()(model::record_batch&& batch) {
     batch.header().base_offset = _idx;
@@ -44,16 +57,7 @@ disk_log_appender::operator()(model::record_batch&& batch) {
           _bytes_left_in_cache_segment == 0 || _log.term() != batch.term()
           || _log._segs.empty() /*see above before removing this condition*/)) {
         f = _log.maybe_roll(_last_term, next_offset, _config.io_priority)
-              .then([this] {
-                  _cache = _log._segs.back();
-                  _cache_lock = std::nullopt;
-                  // appending is a non-destructive op. so acquire read lock
-                  return _cache->read_lock().then([this](ss::rwlock::holder h) {
-                      _cache_lock = std::move(h);
-                      _bytes_left_in_cache_segment
-                        = _log.bytes_left_before_roll();
-                  });
-              });
+              .then([this] { return initialize(); });
     }
     return f
       .then([this, batch = std::move(batch)]() mutable {
