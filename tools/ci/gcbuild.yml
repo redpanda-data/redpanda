@@ -68,9 +68,9 @@ steps:
   - 'SHORT_SHA=$SHORT_SHA'
   - 'TAG_NAME=$TAG_NAME'
 
-- id: 'run integration tests'
-  name: 'gcr.io/$PROJECT_ID/builder-$_COMPILER-$_BUILD_TYPE:$SHORT_SHA'
-  args: ['vtools', 'test', 'pz', '--rp-extra-conf=infra/rp_configs/docker.yml', '--conf=tools/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml']
+# - id: 'run integration tests'
+#   name: 'gcr.io/$PROJECT_ID/builder-$_COMPILER-$_BUILD_TYPE:$SHORT_SHA'
+#   args: ['vtools', 'test', 'pz', '--rp-extra-conf=infra/rp_configs/docker.yml', '--conf=tools/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml']
 
 - id: 'publish distro packages'
   name: 'gcr.io/$PROJECT_ID/builder-$_COMPILER-$_BUILD_TYPE:$SHORT_SHA'
