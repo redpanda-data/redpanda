@@ -72,7 +72,14 @@ ss::future<> disk_log_impl::gc(
     while (
       !_segs.empty()
       && (_segs.front()->index().max_timestamp() <= collection_upper_bound)) {
-        dispatch_remove(_segs.front(), "gc[time_based_retention]");
+        auto f = _segs.front();
+        vlog(
+          stlog.debug,
+          "Detected segment max_timestamp:{} older than collection upper "
+          "bound: {}",
+          f->index().max_timestamp(),
+          collection_upper_bound);
+        dispatch_remove(f, "gc[time_based_retention]");
         _segs.pop_front();
     }
     return ss::make_ready_future<>();

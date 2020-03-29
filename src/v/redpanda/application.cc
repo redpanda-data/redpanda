@@ -45,8 +45,9 @@ int application::run(int ac, char** av) {
                     deferred.pop_back();
                 }
             });
-            initialize();
+            // must initialize configuration before services
             hydrate_config(cfg);
+            initialize();
             check_environment();
             configure_admin_server();
             wire_up_services();

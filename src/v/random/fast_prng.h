@@ -6,17 +6,14 @@
 // dumb wrapper around pcg32
 class fast_prng {
 public:
-    fast_prng()
+    fast_prng() noexcept
       : _rng(pcg_extras::seed_seq_from<std::random_device>()) {}
-    fast_prng(fast_prng&& o) noexcept
-      : _rng(o._rng) {}
-    fast_prng& operator=(fast_prng&& o) noexcept {
-        if (this != &o) {
-            this->~fast_prng();
-            new (this) fast_prng(std::move(o));
-        }
-        return *this;
-    }
+    ~fast_prng() noexcept = default;
+    fast_prng(const fast_prng&) = delete;
+    fast_prng& operator=(const fast_prng&) = delete;
+    fast_prng(fast_prng&& o) noexcept = default;
+    fast_prng& operator=(fast_prng&& o) noexcept = default;
+
     inline uint32_t operator()() { return _rng(); }
 
 private:
