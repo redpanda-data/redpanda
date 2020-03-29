@@ -94,14 +94,13 @@ private:
       model::timeout_clock::time_point,
       std::optional<model::offset> next_cached_batch);
 
-    bool is_buffer_full() const;
     void add_one(model::record_batch&&);
 
 private:
     struct tmp_state {
         ss::circular_buffer<model::record_batch> buffer;
         size_t buffer_size = 0;
-        bool is_full() const { return buffer_size == max_buffer_size; }
+        bool is_full() const { return buffer_size >= max_buffer_size; }
     };
 
     segment& _seg;
