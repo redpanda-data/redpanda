@@ -120,7 +120,6 @@ function vtools_dev_cluster() {
     rm $tld/build/release/clang/dist/rpm/RPMS/x86_64/redpanda-0.0-dev.x86_64.rpm || true
     vtools build pkg --format rpm --clang --build-type release
     vtools deploy cluster "${deploy_args}" nodes=3
-    vtools deploy ansible --playbook=infra/ansible/playbooks/prepare-data-dir.yml
     vtools deploy ansible \
       --playbook=$tld/infra/ansible/playbooks/provision-test-node.yml \
       "${raid}" \
