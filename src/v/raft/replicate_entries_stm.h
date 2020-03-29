@@ -84,7 +84,7 @@ private:
     ss::future<result<append_entries_reply>>
     send_append_entries_request(model::node_id n, append_entries_request req);
     result<replicate_result> process_result(model::offset, model::term_id);
-
+    bool is_follower_recovering(model::node_id);
     /// This append will happen under the lock
     ss::future<storage::append_result> append_to_self();
     consensus* _ptr;
