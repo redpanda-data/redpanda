@@ -29,6 +29,12 @@ ss::future<> disk_log_appender::initialize() {
     _cache_lock = std::nullopt;
     // appending is a non-destructive op. so acquire read lock
     return _cache->read_lock().then([this](ss::rwlock::holder h) {
+        if (
+          _log._segs.back()->reader().filename()
+          != _cache->reader().filename()) {
+            // segment has just rolled. try again
+            return initialize();
+        }
         _cache_lock = std::move(h);
         _bytes_left_in_cache_segment = _log.bytes_left_before_roll();
     });
