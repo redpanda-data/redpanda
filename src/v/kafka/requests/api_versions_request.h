@@ -38,6 +38,8 @@ struct api_versions_request final {
 };
 
 struct api_versions_response final {
+    using api_type = api_versions_api;
+
     struct api {
         api_key key;
         api_version min_version;
@@ -51,6 +53,8 @@ struct api_versions_response final {
     void encode(const request_context& ctx, response& resp);
     void decode(iobuf buf, api_version version);
 };
+
+std::ostream& operator<<(std::ostream&, const api_versions_response&);
 
 static bool operator==(
   const api_versions_response::api& a, const api_versions_response::api& b) {

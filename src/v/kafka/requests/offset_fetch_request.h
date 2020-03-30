@@ -50,6 +50,8 @@ struct offset_fetch_request final {
 std::ostream& operator<<(std::ostream&, const offset_fetch_request&);
 
 struct offset_fetch_response final {
+    using api_type = offset_fetch_api;
+
     struct partition {
         model::partition_id id;
         model::offset offset;
@@ -88,5 +90,7 @@ struct offset_fetch_response final {
     void encode(const request_context& ctx, response& resp);
     void decode(iobuf buf, api_version version);
 };
+
+std::ostream& operator<<(std::ostream&, const offset_fetch_response&);
 
 } // namespace kafka

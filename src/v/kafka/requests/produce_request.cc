@@ -158,6 +158,30 @@ void produce_response::encode(const request_context& ctx, response& resp) {
     writer.write(int32_t(throttle.count()));
 }
 
+static std::ostream&
+operator<<(std::ostream& os, const produce_response::partition& p) {
+    fmt::print(
+      os,
+      "id {} error {} base_offset {} append_ts {} start_offset {}",
+      p.id,
+      p.error,
+      p.base_offset,
+      p.log_append_time,
+      p.log_start_offset);
+    return os;
+}
+
+static std::ostream&
+operator<<(std::ostream& os, const produce_response::topic& t) {
+    fmt::print(os, "name {} partitions {}", t.name, t.partitions);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, const produce_response& r) {
+    fmt::print(os, "topics {}", r.topics);
+    return os;
+}
+
 struct produce_ctx {
     request_context rctx;
     ss::smp_service_group ssg;

@@ -44,6 +44,8 @@ struct find_coordinator_request final {
 };
 
 struct find_coordinator_response final {
+    using api_type = find_coordinator_api;
+
     std::chrono::milliseconds throttle{0}; // >= v1
     error_code error;
     std::optional<ss::sstring> error_message; // >= v1
@@ -71,5 +73,7 @@ struct find_coordinator_response final {
     void encode(const request_context& ctx, response& resp);
     void decode(iobuf buf, api_version version);
 };
+
+std::ostream& operator<<(std::ostream&, const find_coordinator_response&);
 
 } // namespace kafka

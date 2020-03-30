@@ -98,6 +98,29 @@ void offset_fetch_response::decode(iobuf buf, api_version version) {
     error = error_code(reader.read_int16());
 }
 
+static std::ostream&
+operator<<(std::ostream& os, const offset_fetch_response::partition& p) {
+    fmt::print(
+      os,
+      "id {} offset {} metadata {} error {}",
+      p.id,
+      p.offset,
+      p.metadata,
+      p.error);
+    return os;
+}
+
+static std::ostream&
+operator<<(std::ostream& os, const offset_fetch_response::topic& t) {
+    fmt::print(os, "name {} partitions {}", t.name, t.partitions);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, const offset_fetch_response& r) {
+    fmt::print(os, "topics {}", r.topics);
+    return os;
+}
+
 struct offset_fetch_ctx {
     request_context rctx;
     ss::smp_service_group ssg;
