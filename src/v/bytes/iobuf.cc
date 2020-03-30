@@ -32,30 +32,7 @@ ss::scattered_message<char> iobuf_as_scattered(iobuf b) {
     msg.on_delete([b = std::move(b)] {});
     return msg;
 }
-std::vector<iobuf> iobuf_share_foreign_n(iobuf og, size_t n) {
-    const auto shard = ss::this_shard_id();
-    std::vector<iobuf> retval(n);
-    for (auto& frag : og) {
-        auto tmpbuf = std::move(frag).release();
-        char* src = tmpbuf.get_write();
-        const size_t sz = tmpbuf.size();
-        ss::deleter del = tmpbuf.release();
-        for (iobuf& b : retval) {
-            ss::deleter del_i = ss::make_deleter(
-              [shard, d = del.share()]() mutable {
-                  if (shard == ss::this_shard_id()) {
-                      return;
-                  }
-                  (void)ss::smp::submit_to(shard, [d = std::move(d)] {});
-              });
-            auto f = new iobuf::fragment(
-              ss::temporary_buffer<char>(src, sz, std::move(del_i)),
-              iobuf::fragment::full{});
-            b.append_take_ownership(f);
-        }
-    }
-    return retval;
-}
+
 ss::future<iobuf> read_iobuf_exactly(ss::input_stream<char>& in, size_t n) {
     return ss::do_with(iobuf{}, n, [&in](iobuf& b, size_t& n) {
         return ss::do_until(

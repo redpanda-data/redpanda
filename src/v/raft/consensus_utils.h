@@ -32,7 +32,7 @@ ss::future<std::vector<model::record_batch_reader>>
 share_n(model::record_batch_reader&&, std::size_t);
 
 /// copy all readers into N containers using the record_batch::share()
-/// it also wraps all the iobufs using the iobuf_share_foreign_n() method
+/// it also wraps all the iobufs using the ss::foreign_ptr<> method
 /// which wraps the deallocator w/ a ss::submit_to() call
 ss::future<std::vector<model::record_batch_reader>>
 foreign_share_n(model::record_batch_reader&&, std::size_t);
