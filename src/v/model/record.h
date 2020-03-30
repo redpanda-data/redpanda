@@ -523,9 +523,7 @@ public:
         return record_batch(h, std::move(r));
     }
 
-    void clear() {
-        ss::visit(_records, [](auto& r) { r.clear(); });
-    }
+    void clear() { _records = {}; }
 
     /**
      * Set the batch max timestamp and recalculate checksums.
