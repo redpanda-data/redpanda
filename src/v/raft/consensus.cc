@@ -643,37 +643,35 @@ ss::future<> consensus::flush_log() {
 ss::future<storage::append_result>
 consensus::disk_append(model::record_batch_reader&& reader) {
     using ret_t = storage::append_result;
-    return ss::do_with(
-      std::move(reader), [this](model::record_batch_reader& in) {
-          auto cfg = storage::log_append_config{
-            // no fsync explicit on a per write, we verify at the end to
-            // batch fsync
-            storage::log_append_config::fsync::no,
-            _io_priority,
-            model::timeout_clock::now() + _disk_timeout};
+    auto cfg = storage::log_append_config{
+      // no fsync explicit on a per write, we verify at the end to
+      // batch fsync
+      storage::log_append_config::fsync::no,
+      _io_priority,
+      model::timeout_clock::now() + _disk_timeout};
 
-          return in.consume(_log.make_appender(cfg), cfg.timeout)
-            .then([this](ret_t ret) {
-                _has_pending_flushes = true;
-                // TODO
-                // if we rolled a log segment. write current configuration
-                // for speedy recovery in the background
+    return std::move(reader)
+      .consume(_log.make_appender(cfg), cfg.timeout)
+      .then([this](ret_t ret) {
+          _has_pending_flushes = true;
+          // TODO
+          // if we rolled a log segment. write current configuration
+          // for speedy recovery in the background
 
-                _probe.entries_appended(1);
-                _meta.prev_log_index = ret.last_offset;
-                _meta.prev_log_term = ret.last_term;
+          _probe.entries_appended(1);
+          _meta.prev_log_index = ret.last_offset;
+          _meta.prev_log_term = ret.last_term;
 
-                // leader never flush just after write
-                // for quorum_ack it flush in parallel to dispatching RPCs to
-                // followers for other consistency flushes are done separately.
+          // leader never flush just after write
+          // for quorum_ack it flush in parallel to dispatching RPCs to
+          // followers for other consistency flushes are done separately.
 
-                if (_vstate != vote_state::leader) {
-                    return flush_log().then([ret = std::move(ret), this] {
-                        return ss::make_ready_future<ret_t>(std::move(ret));
-                    });
-                }
-                return ss::make_ready_future<ret_t>(std::move(ret));
-            });
+          if (_vstate != vote_state::leader) {
+              return flush_log().then([ret = std::move(ret), this] {
+                  return ss::make_ready_future<ret_t>(std::move(ret));
+              });
+          }
+          return ss::make_ready_future<ret_t>(std::move(ret));
       });
 }
 
