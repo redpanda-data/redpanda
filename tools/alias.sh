@@ -115,8 +115,8 @@ function vtools_dev_cluster() {
       deploy_args="instance_type=m5ad.4xlarge"
       raid=(--var 'with_raid=true')
     fi
-    vtools build go
-    vtools build cpp --clang --build-type release
+    vtools build go --targets rpk
+    vtools build cpp --clang --build-type release --targets=redpanda
     rm $tld/build/release/clang/dist/rpm/RPMS/x86_64/redpanda-0.0-dev.x86_64.rpm || true
     vtools build pkg --format rpm --clang --build-type release
     vtools deploy cluster "${deploy_args}" nodes=3
