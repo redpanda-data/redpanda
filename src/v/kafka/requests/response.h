@@ -18,7 +18,7 @@ public:
     response_writer& writer() { return _writer; }
 
     const iobuf& buf() const { return _buf; }
-
+    iobuf& buf() { return _buf; }
     iobuf release() && { return std::move(_buf); }
 
 private:

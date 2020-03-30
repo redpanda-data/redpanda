@@ -257,7 +257,6 @@ inline void iobuf::reserve_memory(size_t reservation) {
 
 [[gnu::always_inline]] void inline iobuf::prepend(
   ss::temporary_buffer<char> b) {
-    oncore_debug_verify(_verify_shard);
     auto f = new fragment(std::move(b), fragment::full{});
     prepend_take_ownership(f);
 }
