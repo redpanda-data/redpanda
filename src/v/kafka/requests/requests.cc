@@ -112,15 +112,18 @@ process_request(request_context&& ctx, ss::smp_service_group g) {
 }
 
 std::ostream& operator<<(std::ostream& os, const request_header& header) {
-    ss::fmt_print(
+    fmt::print(
       os,
       "{{request_header: {}, {}, {{correlation_id: {}}}, ",
       header.key,
-      header.version);
+      header.version,
+      header.correlation);
     if (header.client_id) {
-        return ss::fmt_print(os, "{{client_id: {}}}}}", header.client_id);
+        fmt::print(os, "{{client_id: {}}}}}", header.client_id);
+    } else {
+        return os << "{no client_id}}";
     }
-    return os << "{no client_id}}";
+    return os;
 }
 
 } // namespace kafka
