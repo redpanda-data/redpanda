@@ -254,6 +254,8 @@ static ss::future<produce_response::partition> produce_topic_partition(
             ntp.tp.partition, error_code::unknown_topic_or_partition));
     }
 
+    // steal the batch from the adapter
+    auto batch = std::move(part.adapter.batch.value());
     /*
      * TODO: grab timestamp type topic configuration option out of the metadata
      * cache.
@@ -261,12 +263,12 @@ static ss::future<produce_response::partition> produce_topic_partition(
     if (false) {
         auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
           ss::lowres_clock::now().time_since_epoch());
-        part.adapter.batch->set_max_timestamp(
+        batch.set_max_timestamp(
           model::timestamp_type::append_time, model::timestamp(now.count()));
     }
 
-    auto num_records = part.adapter.batch->record_count();
-    auto reader = reader_from_lcore_batch(part.adapter.batch->share());
+    auto num_records = batch.record_count();
+    auto reader = reader_from_lcore_batch(std::move(batch));
 
     return octx.rctx.partition_manager().invoke_on(
       *shard,
