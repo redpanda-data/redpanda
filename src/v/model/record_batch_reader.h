@@ -61,7 +61,7 @@ public:
         impl& operator=(impl&& o) noexcept = default;
         impl(const impl& o) = delete;
         impl& operator=(const impl& o) = delete;
-        virtual ~impl() = default;
+        virtual ~impl() noexcept = default;
 
         virtual bool is_end_of_stream() const = 0;
 
@@ -246,5 +246,8 @@ record_batch_reader make_generating_record_batch_reader(
 
 ss::future<record_batch_reader::storage_t> consume_reader_to_memory(
   record_batch_reader, timeout_clock::time_point timeout);
+
+/// \brief wraps a reader into a foreign_ptr<unique_ptr>
+record_batch_reader make_foreign_record_batch_reader(record_batch_reader&&);
 
 } // namespace model

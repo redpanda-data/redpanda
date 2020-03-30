@@ -1,6 +1,33 @@
 #include "model/record_batch_reader.h"
 
+#include <seastar/core/sharded.hh>
+
 namespace model {
+/// \brief wraps a reader into a foreign_ptr<unique_ptr>
+record_batch_reader make_foreign_record_batch_reader(record_batch_reader&& r) {
+    class foreign_reader final : public record_batch_reader::impl {
+    public:
+        explicit foreign_reader(std::unique_ptr<record_batch_reader::impl> i)
+          : _ptr(std::move(i)) {}
+        foreign_reader(const foreign_reader&) = delete;
+        foreign_reader& operator=(const foreign_reader&) = delete;
+        foreign_reader(foreign_reader&&) = delete;
+        foreign_reader& operator=(foreign_reader&&) = delete;
+        ~foreign_reader() override = default;
+
+        bool is_end_of_stream() const final { return _ptr->is_end_of_stream(); }
+
+        ss::future<record_batch_reader::storage_t>
+        do_load_slice(timeout_clock::time_point t) final {
+            return _ptr->do_load_slice(t);
+        }
+
+    private:
+        ss::foreign_ptr<std::unique_ptr<record_batch_reader::impl>> _ptr;
+    };
+    auto frn = std::make_unique<foreign_reader>(std::move(r).release());
+    return record_batch_reader(std::move(frn));
+}
 
 record_batch_reader
 make_memory_record_batch_reader(record_batch_reader::storage_t batches) {
