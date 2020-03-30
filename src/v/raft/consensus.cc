@@ -199,6 +199,7 @@ consensus::replicate(model::record_batch_reader&& rdr, replicate_options opts) {
           errc::not_leader);
     }
 
+    _last_replicate_consistency = opts.consistency;
     if (opts.consistency == consistency_level::quorum_ack) {
         return _batcher.replicate(std::move(rdr));
     }
@@ -238,23 +239,41 @@ void consensus::dispatch_flush_with_lock() {
 
 ss::future<model::record_batch_reader>
 consensus::make_reader(storage::log_reader_config config) {
-    config.max_offset = std::min(
-      config.max_offset, model::offset(_meta.commit_index));
-    if (_has_pending_flushes && config.start_offset > _log.committed_offset()) {
-        // support read-your-writes
-        return ss::with_semaphore(_op_sem, 1, [this, config] {
-            auto f = ss::make_ready_future<>();
-            if (_has_pending_flushes) {
-                f = flush_log();
-            }
-            return f.then([this, config = config]() mutable {
-                config.max_offset = std::min(
-                  config.max_offset, _log.committed_offset());
-                return _log.make_reader(config);
-            });
-        });
+    // for quroum acks level, limit reads to fully replicated entries. the
+    // covered offset range is guranteed to already be flushed and visible so we
+    // can build the reader immediately.
+    if (_last_replicate_consistency == consistency_level::quorum_ack) {
+        config.max_offset = std::min(
+          config.max_offset, model::offset(_meta.commit_index));
+        return _log.make_reader(config);
     }
-    return _log.make_reader(config);
+
+    // at relaxed consistency / safety levels we can read immediately if there
+    // is no pending writes or we'll read part of the log from an area that
+    // requires no flushing then build the reader immediately. in the later
+    // case, the intention is that the reader will either see the data because
+    // the pending data was flushed before the read made it to that non-flushed
+    // region or the reader will enounter the end of log adn the reader will
+    // flush and retry, making progress.
+    if (
+      !_has_pending_flushes || config.start_offset <= _log.committed_offset()) {
+        config.max_offset = std::min(
+          config.max_offset, _log.committed_offset());
+        return _log.make_reader(config);
+    }
+
+    // otherwise flush the log to make pending writes visible
+    return ss::with_semaphore(_op_sem, 1, [this, config] {
+        auto f = ss::make_ready_future<>();
+        if (_has_pending_flushes) {
+            f = flush_log();
+        }
+        return f.then([this, config = config]() mutable {
+            config.max_offset = std::min(
+              config.max_offset, _log.committed_offset());
+            return _log.make_reader(config);
+        });
+    });
 }
 
 /// performs no raft-state mutation other than resetting the timer
