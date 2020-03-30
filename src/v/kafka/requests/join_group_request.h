@@ -56,6 +56,8 @@ static constexpr kafka::generation_id no_generation(-1);
 static inline const kafka::protocol_name no_protocol("");
 
 struct join_group_response final {
+    using api_type = join_group_api;
+
     struct member_config {
         kafka::member_id member_id;
         std::optional<kafka::group_instance_id> group_instance_id; // >= v5

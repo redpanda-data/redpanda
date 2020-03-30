@@ -63,6 +63,8 @@ struct list_offsets_request final {
 };
 
 struct list_offsets_response final {
+    using api_type = list_offsets_api;
+
     struct partition {
         model::partition_id id;
         error_code error;
@@ -103,5 +105,7 @@ struct list_offsets_response final {
     void encode(const request_context& ctx, response& resp);
     void decode(iobuf buf, api_version version);
 };
+
+std::ostream& operator<<(std::ostream&, const list_offsets_response&);
 
 } // namespace kafka
