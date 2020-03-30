@@ -25,34 +25,61 @@ namespace kafka {
 
 ss::logger kreq_log("kafka api");
 
+/**
+ * Dispatch request with version bounds checking.
+ */
+template<typename Request>
+CONCEPT(requires(KafkaRequest<Request>))
+struct process_dispatch {
+    static ss::future<response_ptr>
+    process(request_context&& ctx, ss::smp_service_group g) {
+        if (
+          ctx.header().version < Request::min_supported
+          || ctx.header().version > Request::max_supported) {
+            return ss::make_exception_future<response_ptr>(
+              std::runtime_error(fmt::format(
+                "Unsupported version {} for {} API",
+                ctx.header().version,
+                Request::name)));
+        }
+        return Request::process(std::move(ctx), std::move(g));
+    }
+};
+
+/**
+ * Dispatch API versions request without version checks.
+ *
+ * The version bounds checks are not applied to this request because the client
+ * does not yet know what versions this server supports. The api versions
+ * request is used by a client to query this information.
+ */
+template<>
+struct process_dispatch<api_versions_api> {
+    static ss::future<response_ptr>
+    process(request_context&& ctx, ss::smp_service_group g) {
+        return api_versions_api::process(std::move(ctx), std::move(g));
+    }
+};
+
 template<typename Request>
 CONCEPT(requires(KafkaRequest<Request>))
 ss::future<response_ptr> do_process(
   request_context&& ctx, ss::smp_service_group g) {
-    if (
-      ctx.header().version < Request::min_supported
-      || ctx.header().version > Request::max_supported) {
-        return ss::make_exception_future<response_ptr>(
-          std::runtime_error(fmt::format(
-            "Unsupported version {} for {} API",
-            ctx.header().version,
-            Request::name)));
-    }
-    return Request::process(std::move(ctx), std::move(g));
+    vlog(
+      kreq_log.trace,
+      "Processing request for {}:{} {}",
+      ctx.header().key,
+      Request::name,
+      ctx.header().client_id.value_or(std::string_view("unset-client-id")));
+
+    return process_dispatch<Request>::process(std::move(ctx), std::move(g));
 }
 
 ss::future<response_ptr>
 process_request(request_context&& ctx, ss::smp_service_group g) {
-    // Eventually generate this with meta-classes.
-    vlog(
-      kreq_log.trace,
-      "Processing request for API {} {}",
-      ctx.header().key,
-      ctx.header().client_id.value_or(std::string_view("unset-client-id")));
-
     switch (ctx.header().key) {
     case api_versions_api::key:
-        return api_versions_api::process(std::move(ctx), std::move(g));
+        return do_process<api_versions_api>(std::move(ctx), std::move(g));
     case metadata_api::key:
         return do_process<metadata_api>(std::move(ctx), std::move(g));
     case list_groups_api::key:
