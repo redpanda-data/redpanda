@@ -1,12 +1,18 @@
 #include "model/record_batch_reader.h"
 
 #include <seastar/core/sharded.hh>
+#include <seastar/core/smp.hh>
+
+#include <memory>
 
 namespace model {
 /// \brief wraps a reader into a foreign_ptr<unique_ptr>
 record_batch_reader make_foreign_record_batch_reader(record_batch_reader&& r) {
     class foreign_reader final : public record_batch_reader::impl {
     public:
+        using storage_t = record_batch_reader::storage_t;
+        using remote_recs = ss::foreign_ptr<std::unique_ptr<storage_t>>;
+
         explicit foreign_reader(std::unique_ptr<record_batch_reader::impl> i)
           : _ptr(std::move(i)) {}
         foreign_reader(const foreign_reader&) = delete;
@@ -15,11 +21,30 @@ record_batch_reader make_foreign_record_batch_reader(record_batch_reader&& r) {
         foreign_reader& operator=(foreign_reader&&) = delete;
         ~foreign_reader() override = default;
 
-        bool is_end_of_stream() const final { return _ptr->is_end_of_stream(); }
+        bool is_end_of_stream() const final {
+            // ok to copy a bool
+            return _ptr->is_end_of_stream();
+        }
 
-        ss::future<record_batch_reader::storage_t>
-        do_load_slice(timeout_clock::time_point t) final {
-            return _ptr->do_load_slice(t);
+        ss::future<storage_t> do_load_slice(timeout_clock::time_point t) final {
+            // TODO: this function should take an SMP group
+            return ss::smp::submit_to(_ptr.get_owner_shard(), [this, t] {
+                // must convert it to a foreign remote
+                return _ptr->do_load_slice(t)
+                  .then([](storage_t recs) {
+                      auto p = std::make_unique<storage_t>(std::move(recs));
+                      return ss::make_foreign(std::move(p));
+                  })
+                  .then([](remote_recs recs) {
+                      // FIXME: copy them for now
+                      storage_t ret;
+                      ret.reserve(recs->size());
+                      for (auto& b : *recs) {
+                          ret.push_back(b.copy());
+                      }
+                      return ret;
+                  });
+            });
         }
 
     private:
