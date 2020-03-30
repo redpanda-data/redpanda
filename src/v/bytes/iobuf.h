@@ -73,7 +73,8 @@ public:
       , _verify_shard(std::move(x._verify_shard))
 #endif
     {
-        x.clear();
+        x._frags = container{};
+        x._size = 0;
     }
     iobuf& operator=(iobuf&& x) noexcept {
         if (this != &x) {
@@ -257,6 +258,7 @@ inline void iobuf::reserve_memory(size_t reservation) {
 
 [[gnu::always_inline]] void inline iobuf::prepend(
   ss::temporary_buffer<char> b) {
+    vassert(b.size(), "zero length prepends unsupported");
     auto f = new fragment(std::move(b), fragment::full{});
     prepend_take_ownership(f);
 }
