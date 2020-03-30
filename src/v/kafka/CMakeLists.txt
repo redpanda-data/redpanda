@@ -29,6 +29,7 @@ v_cc_library(
     errors.cc
     protocol.cc
     protocol_utils.cc
+    logger.cc
  DEPS
     Seastar::seastar
     v::bytes
