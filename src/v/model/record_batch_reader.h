@@ -208,10 +208,9 @@ public:
          * this would appear to be an example of a valid case where manual
          * memory management is necessary.
          */
-        auto i = _impl.release();
-        return i->consume(std::move(consumer), timeout).finally([i] {
-            delete i; // NOLINT
-        });
+        auto raw = _impl.get();
+        return raw->consume(std::move(consumer), timeout)
+          .finally([i = std::move(_impl)] {});
     }
 
     std::unique_ptr<impl> release() && { return std::move(_impl); }
