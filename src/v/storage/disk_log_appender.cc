@@ -27,27 +27,15 @@ ss::future<> disk_log_appender::initialize() {
     }
     _cache = _log._segs.back();
     _cache_lock = std::nullopt;
+    _bytes_left_in_cache_segment = 0;
     // appending is a non-destructive op. so acquire read lock
     return _cache->read_lock().then([this](ss::rwlock::holder h) {
-        if (
-          _log._segs.back()->reader().filename()
-          != _cache->reader().filename()) {
-            // segment has just rolled. try again
-            return initialize();
-        }
         _cache_lock = std::move(h);
         _bytes_left_in_cache_segment = _log.bytes_left_before_roll();
     });
 }
 
-ss::future<ss::stop_iteration>
-disk_log_appender::operator()(model::record_batch&& batch) {
-    batch.header().base_offset = _idx;
-    batch.header().header_crc = model::internal_header_only_crc(batch.header());
-    _idx = batch.last_offset() + model::offset(1);
-    _last_term = batch.term();
-    auto next_offset = batch.base_offset();
-    auto f = ss::make_ready_future<>();
+bool disk_log_appender::needs_to_roll_log(model::term_id batch_term) const {
     /**
      * _log._segs.empty() is a tricky condition. It is here to suppor concurrent
      * truncation (from 0) of an active log segment while we hold the lock of a
@@ -59,11 +47,35 @@ disk_log_appender::operator()(model::record_batch&& batch) {
      * _bytes_left_in_cache_segment is for initial condition
      *
      */
-    if (unlikely(
-          _bytes_left_in_cache_segment == 0 || _log.term() != batch.term()
-          || _log._segs.empty() /*see above before removing this condition*/)) {
-        f = _log.maybe_roll(_last_term, next_offset, _config.io_priority)
-              .then([this] { return initialize(); });
+    return _bytes_left_in_cache_segment == 0 || _log.term() != batch_term
+           || _log._segs.empty() /*see above before removing this condition*/;
+}
+
+ss::future<ss::stop_iteration>
+disk_log_appender::operator()(model::record_batch&& batch) {
+    batch.header().base_offset = _idx;
+    batch.header().header_crc = model::internal_header_only_crc(batch.header());
+    _idx = batch.last_offset() + model::offset(1);
+    _last_term = batch.term();
+    auto next_offset = batch.base_offset();
+    auto f = ss::make_ready_future<>();
+    if (unlikely(needs_to_roll_log(batch.term()))) {
+        f = ss::do_until(
+          [this, term = batch.term()] {
+              // we might actually have space in the current log, but the terms
+              // do not match for the current append, so we must roll
+              return !needs_to_roll_log(term)
+                     // we might have gotten the lock, but in a concurrency
+                     // situation - say a segment eviction we need to double
+                     // check that _after_ we got the lock, the segment wasn't
+                     // somehow closed before the append
+                     && _bytes_left_in_cache_segment > 0;
+          },
+          [this, next_offset] {
+              return _log
+                .maybe_roll(_last_term, next_offset, _config.io_priority)
+                .then([this] { return initialize(); });
+          });
     }
     return f
       .then([this, batch = std::move(batch)]() mutable {
