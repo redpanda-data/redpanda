@@ -173,7 +173,7 @@ void consensus::dispatch_recovery(
         idx.next_index = log_max_offset;
     }
     idx.is_recovering = true;
-    _ctxlog.info(
+    _ctxlog.trace(
       "Starting recovery process for {} - current reply: {}",
       idx.node_id,
       reply);
