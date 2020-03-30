@@ -152,7 +152,7 @@ public:
 private:
     size_t available_bytes() const;
     void create_new_fragment(size_t);
-    size_t last_allocation_size();
+    size_t last_allocation_size() const;
 
     container _frags;
     size_t _size{0};
@@ -208,7 +208,7 @@ inline size_t iobuf::available_bytes() const {
     return _frags.back().available_bytes();
 }
 
-inline size_t iobuf::last_allocation_size() {
+inline size_t iobuf::last_allocation_size() const {
     return _frags.empty() ? details::io_allocation_size::default_chunk_size
                           : _frags.back().capacity();
 }

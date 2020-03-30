@@ -109,6 +109,8 @@ ss::input_stream<char> make_iobuf_input_stream(iobuf io) {
 }
 iobuf iobuf::copy() const {
     iobuf ret;
+    // reduce allocations by starting at the last bucket
+    ret.reserve_memory(last_allocation_size());
     auto in = iobuf::iterator_consumer(cbegin(), cend());
     in.consume(_size, [&ret](const char* src, size_t sz) {
         ret.append(src, sz);
