@@ -288,7 +288,16 @@ func write(fs afero.Fs, conf map[string]interface{}, path string) error {
 	v := viper.New()
 	v.SetFs(fs)
 	v.MergeConfigMap(conf)
-	return v.WriteConfigAs(path)
+	err := v.WriteConfigAs(path)
+	if err != nil {
+		return err
+	}
+	log.Infof(
+		"Configuration written to %s. If redpanda is running, please"+
+			" restart it for the changes to take effect.",
+		path,
+	)
+	return nil
 }
 
 func merge(current, new map[string]interface{}) map[string]interface{} {
