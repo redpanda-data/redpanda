@@ -26,6 +26,10 @@ record_batch_reader make_foreign_record_batch_reader(record_batch_reader&& r) {
             return _ptr->is_end_of_stream();
         }
 
+        void print(std::ostream& os) final {
+            fmt::print(os, "foreign_reader. core:", _ptr.get_owner_shard());
+        }
+
         ss::future<storage_t> do_load_slice(timeout_clock::time_point t) final {
             // TODO: this function should take an SMP group
             return ss::smp::submit_to(_ptr.get_owner_shard(), [this, t] {
