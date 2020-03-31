@@ -143,3 +143,23 @@ iobuf iobuf::share(size_t pos, size_t len) {
     }
     return std::move(ret);
 }
+
+bool iobuf::operator==(const iobuf& o) const {
+    if (_size != o._size) {
+        return false;
+    }
+    auto lhs_begin = byte_iterator(cbegin(), cend());
+    auto lhs_end = byte_iterator(cend(), cend());
+    auto rhs = byte_iterator(o.cbegin(), o.cend());
+    auto rhs_end = byte_iterator(o.cend(), o.cend());
+    while (lhs_begin != lhs_end && rhs != rhs_end) {
+        char l = *lhs_begin;
+        char r = *rhs;
+        if (l != r) {
+            return false;
+        }
+        ++lhs_begin;
+        ++rhs;
+    }
+    return true;
+}
