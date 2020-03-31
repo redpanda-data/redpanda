@@ -51,6 +51,14 @@ ss::future<> disk_log_impl::close() {
 ss::future<> disk_log_impl::gc(
   model::timestamp collection_upper_bound,
   std::optional<size_t> max_partition_retention_size) {
+    // TODO: this a workaround until we have raft-snapshotting in the the
+    // controller so that we can still evict older data. At the moment we keep
+    // the full history.
+    constexpr std::string_view redpanda_ignored_ns = "redpanda";
+    constexpr std::string_view kafka_ignored_ns = "kafka_internal";
+    if (ntp().ns() == redpanda_ignored_ns || ntp().ns() == kafka_ignored_ns) {
+        return ss::make_ready_future<>();
+    }
     if (max_partition_retention_size) {
         size_t max = max_partition_retention_size.value();
         while (!_segs.empty() && _probe.partition_size() > max) {
