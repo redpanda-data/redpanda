@@ -244,7 +244,7 @@ ss::future<> controller::apply_raft0_cfg_update(raft::group_configuration cfg) {
           return ss::make_lw_shared<model::broker>(std::move(broker));
       });
     return update_clients_cache(std::move(new_list), std::move(old_list))
-      .then([this, nodes = std::move(cfg.nodes)] {
+      .then([this, nodes = std::move(cfg.nodes)]() mutable {
           return update_brokers_cache(std::move(nodes));
       });
 }
@@ -339,7 +339,7 @@ ss::future<> controller::dispatch_manage_partition(
     return _pm.invoke_on(
       shard,
       [this, raft_group, ntp = std::move(ntp), replicas = std::move(replicas)](
-        partition_manager& pm) {
+        partition_manager& pm) mutable {
           return manage_partition(
             pm, std::move(ntp), raft_group, std::move(replicas));
       });
@@ -369,7 +369,7 @@ ss::future<> controller::assign_group_to_shard(
   model::ntp ntp, raft::group_id raft_group, uint32_t shard) {
     // 1. update shard_table: broadcast
     return _st.invoke_on_all(
-      [ntp = std::move(ntp), raft_group, shard](shard_table& s) {
+      [ntp = std::move(ntp), raft_group, shard](shard_table& s) mutable {
           s.insert(std::move(ntp), shard);
           s.insert(raft_group, shard);
       });
@@ -387,7 +387,9 @@ ss::future<>
 controller::recover_topic_configuration(topic_configuration t_cfg) {
     // broadcast to all caches
     return _md_cache.invoke_on_all(
-      [tp_ns = t_cfg.tp_ns](metadata_cache& md_c) { md_c.add_topic(tp_ns); });
+      [t_cfg = std::move(t_cfg)](metadata_cache& md_c) mutable {
+          md_c.add_topic(std::move(t_cfg));
+      });
 }
 
 /// Creates the topics, this method forwards the request to leader controller
@@ -453,9 +455,14 @@ ss::future<std::vector<topic_result>> controller::autocreate_topics(
       .then([this](rpc::client_context<create_topics_reply> ctx) {
           return _md_cache
             .invoke_on_all(
-              [md = std::move(ctx.data.metadata)](metadata_cache& c) mutable {
-                  for (auto& m : md) {
-                      c.insert_topic(std::move(m));
+              [md = std::move(ctx.data)](metadata_cache& c) mutable {
+                  vassert(
+                    md.configs.size() == md.metadata.size(),
+                    "Response have to contain the same number of configs and "
+                    "metadata for topics");
+                  for (int i = 0; i < md.configs.size(); ++i) {
+                      c.insert_topic(
+                        std::move(md.metadata[i]), std::move(md.configs[i]));
                   }
               })
             .then([res = std::move(ctx.data.results)]() mutable {
@@ -839,7 +846,7 @@ ss::future<> controller::dispatch_join_to_seed_server(seed_iterator it) {
     if (it->id == _self.id()) {
         vlog(clusterlog.debug, "Using current node as a seed server");
         return process_join_request(_self).handle_exception(
-          [this, it](std::exception_ptr e) {
+          [this, it](const std::exception_ptr&) {
               clusterlog.warn("Error processing join request at current node");
               return dispatch_join_to_seed_server(std::next(it));
           });
