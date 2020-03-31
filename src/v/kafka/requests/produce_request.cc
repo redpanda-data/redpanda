@@ -272,6 +272,7 @@ static ss::future<produce_response::partition> produce_topic_partition(
      * partitions that are managed different cores.
      */
     auto shard = octx.rctx.shards().shard_for(ntp);
+
     if (!shard) {
         return ss::make_ready_future<produce_response::partition>(
           produce_response::partition(
@@ -281,10 +282,13 @@ static ss::future<produce_response::partition> produce_topic_partition(
     // steal the batch from the adapter
     auto batch = std::move(part.adapter.batch.value());
     /*
-     * TODO: grab timestamp type topic configuration option out of the metadata
-     * cache.
+     * grab timestamp type topic configuration option out of the metadata
+     * cache. For append time setting we have to recalculate the CRC.
      */
-    if (false) {
+    auto timestamp_type = octx.rctx.metadata_cache().get_topic_timestamp_type(
+      model::topic_namespace_view(cluster::kafka_namespace, topic.name));
+
+    if (timestamp_type == model::timestamp_type::append_time) {
         auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
           ss::lowres_clock::now().time_since_epoch());
         batch.set_max_timestamp(

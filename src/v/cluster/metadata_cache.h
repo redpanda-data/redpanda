@@ -2,6 +2,7 @@
 
 #include "cluster/types.h"
 #include "model/metadata.h"
+#include "model/timestamp.h"
 #include "seastarx.h"
 #include "utils/expiring_promise.h"
 
@@ -61,6 +62,12 @@ public:
     /// If topic does not exists it returns an empty optional
     std::optional<topic_configuration>
       get_topic_cfg(model::topic_namespace_view) const;
+
+    ///\brief Returns topics timestamp type
+    ///
+    /// If topic does not exists it returns an empty optional
+    std::optional<model::timestamp_type>
+      get_topic_timestamp_type(model::topic_namespace_view) const;
 
     /// Returns metadata of all topics.
     std::vector<model::topic_metadata> all_topics_metadata() const;
