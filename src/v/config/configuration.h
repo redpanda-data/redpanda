@@ -57,6 +57,11 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> raft_election_timeout_ms;
     property<std::chrono::milliseconds> kafka_group_recovery_timeout_ms;
 
+    property<size_t> reclaim_min_size;
+    property<size_t> reclaim_max_size;
+    property<std::chrono::milliseconds> reclaim_growth_window;
+    property<std::chrono::milliseconds> reclaim_stable_window;
+
     configuration();
 
     void read_yaml(const YAML::Node& root_node) override;
