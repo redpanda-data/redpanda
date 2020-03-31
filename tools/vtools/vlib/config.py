@@ -265,3 +265,8 @@ class VConfig(object):
     def node_package_name_dir(self):
         """Path to nodejs package."""
         return f"{self.build_root}/node-v12.16.1-linux-x64"
+
+    @property
+    def node_src_dir(self):
+        """Source folder for typescript/javascript programs."""
+        return f"{self._cfg['build']['src']}src/js"

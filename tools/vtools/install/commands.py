@@ -199,16 +199,24 @@ def js(conf):
     if os.path.exists(f'{vconfig.node_build_dir}/bin/node'):
         logging.info(
             f'Found {vconfig.node_build_dir}/bin/node. Skipping installation.')
-        return
+    else:
+        url = f'https://nodejs.org/dist/v12.16.1/node-v12.16.1-linux-x64.tar.xz'
+        logging.info("Downloading " + url)
+        handle = urllib.request.urlopen(url)
+        io_bytes = io.BytesIO(handle.read())
+        logging.info(f'Extracting node tarball to {vconfig.node_build_dir}')
+        tar = tarfile.open(fileobj=io_bytes, mode='r')
+        tar.extractall(vconfig.build_root)
 
-    url = f'https://nodejs.org/dist/v12.16.1/node-v12.16.1-linux-x64.tar.xz'
+        os.rename(vconfig.node_package_name_dir, vconfig.node_build_dir)
 
-    logging.info("Downloading " + url)
-    handle = urllib.request.urlopen(url)
-    io_bytes = io.BytesIO(handle.read())
-    logging.info(f'Extracting node tarball to {vconfig.node_build_dir}')
-    tar = tarfile.open(fileobj=io_bytes, mode='r')
-    mypath = os.path.dirname(vconfig.node_dir)
-    tar.extractall(vconfig.build_root)
-
-    os.rename(vconfig.node_package_name_dir, vconfig.node_dir)
+    #install nodejs dependencies
+    logging.info("Installing nodejs dependencies")
+    shell.run_subprocess(
+        f'cp {vconfig.node_src_dir}/packages/package.json '
+        f'{vconfig.node_build_dir} && '
+        f'cp {vconfig.node_src_dir}/packages/package-lock.json '
+        f'{vconfig.node_build_dir} && '
+        f'cd {vconfig.node_build_dir} && '
+        f'npm install',
+        env=vconfig.environ)
