@@ -19,6 +19,7 @@
 #include <seastar/core/seastar.hh>
 #include <seastar/core/shared_ptr.hh>
 
+#include <absl/time/time.h>
 #include <fmt/format.h>
 
 #include <iterator>
@@ -50,6 +51,14 @@ ss::future<> disk_log_impl::close() {
 ss::future<> disk_log_impl::gc(
   model::timestamp collection_upper_bound,
   std::optional<size_t> max_partition_retention_size) {
+    // TODO: this a workaround until we have raft-snapshotting in the the
+    // controller so that we can still evict older data. At the moment we keep
+    // the full history.
+    constexpr std::string_view redpanda_ignored_ns = "redpanda";
+    constexpr std::string_view kafka_ignored_ns = "kafka_internal";
+    if (ntp().ns() == redpanda_ignored_ns || ntp().ns() == kafka_ignored_ns) {
+        return ss::make_ready_future<>();
+    }
     if (max_partition_retention_size) {
         size_t max = max_partition_retention_size.value();
         while (!_segs.empty() && _probe.partition_size() > max) {
@@ -75,10 +84,9 @@ ss::future<> disk_log_impl::gc(
         auto f = _segs.front();
         vlog(
           stlog.debug,
-          "Detected segment max_timestamp:{} older than collection upper "
-          "bound: {}",
-          f->index().max_timestamp(),
-          collection_upper_bound);
+          "Detected segment max_timestamp:{} older than eviction time:{}",
+          absl::FromUnixMillis(f->index().max_timestamp().value()),
+          absl::FromUnixMillis(collection_upper_bound.value()));
         dispatch_remove(f, "gc[time_based_retention]");
         _segs.pop_front();
     }
