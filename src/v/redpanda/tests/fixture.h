@@ -1,5 +1,6 @@
 #pragma once
 #include "cluster/namespace.h"
+#include "cluster/types.h"
 #include "kafka/client.h"
 #include "redpanda/application.h"
 #include "storage/directories.h"
@@ -93,7 +94,8 @@ public:
           std::move(as), [this](cluster::partition_assignment& as) {
               return app.metadata_cache
                 .invoke_on_all([&as](cluster::metadata_cache& mdc) {
-                    mdc.add_topic(model::topic_namespace_view(as.ntp));
+                    mdc.add_topic(cluster::topic_configuration(
+                      as.ntp.ns, as.ntp.tp.topic, 1, 1));
                 })
                 .then([this, &as] {
                     return app.controller.local().recover_assignment(as);
