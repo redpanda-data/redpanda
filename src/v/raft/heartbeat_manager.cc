@@ -43,9 +43,7 @@ locks_for_range(const consensus_set& c) {
 }
 
 static std::vector<heartbeat_manager::node_heartbeat> requests_for_range(
-  const consensus_set& c,
-  clock_type::time_point last_heartbeat,
-  uint64_t threshold) {
+  const consensus_set& c, clock_type::time_point last_heartbeat) {
     absl::flat_hash_map<model::node_id, std::vector<protocol_metadata>>
       pending_beats;
     if (c.empty()) {
@@ -64,9 +62,7 @@ static std::vector<heartbeat_manager::node_heartbeat> requests_for_range(
             }
 
             auto last_hbeat_timestamp = ptr->last_hbeat_timestamp(n.id());
-            if (
-              last_hbeat_timestamp.time_since_epoch().count()
-              > (last_heartbeat.time_since_epoch().count() + threshold)) {
+            if (last_hbeat_timestamp > last_heartbeat) {
                 hbeatlog.trace(
                   "Skipping sending beat to {} gr: {} last hb {}, last append "
                   "{}",
@@ -97,8 +93,7 @@ static std::vector<heartbeat_manager::node_heartbeat> requests_for_range(
 heartbeat_manager::heartbeat_manager(
   duration_type interval, consensus_client_protocol proto)
   : _heartbeat_interval(interval)
-  , _client_protocol(proto)
-  , _skip_hbeat_threshold(hbeat_threshold_ratio * _heartbeat_interval.count()) {
+  , _client_protocol(proto) {
     _heartbeat_timer.set_callback([this] { dispatch_heartbeats(); });
 }
 
@@ -127,8 +122,7 @@ ss::future<>
 heartbeat_manager::do_dispatch_heartbeats(clock_type::time_point last_timeout) {
     return locks_for_range(_consensus_groups)
       .then([this, last_timeout](std::vector<ss::semaphore_units<>> locks) {
-          auto reqs = requests_for_range(
-            _consensus_groups, last_timeout, _skip_hbeat_threshold);
+          auto reqs = requests_for_range(_consensus_groups, last_timeout);
           return send_heartbeats(std::move(locks), std::move(reqs));
       });
 }
