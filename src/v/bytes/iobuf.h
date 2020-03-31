@@ -52,7 +52,7 @@ class iobuf {
 
 public:
     using fragment = details::io_fragment;
-    using container = intrusive_list<fragment, &fragment::hook>;
+    using container = uncounted_intrusive_list<fragment, &fragment::hook>;
     using iterator = typename container::iterator;
     using reverse_iterator = typename container::reverse_iterator;
     using const_iterator = typename container::const_iterator;
@@ -163,11 +163,9 @@ private:
 };
 
 inline void iobuf::clear() {
-    while (!_frags.empty()) {
-        _frags.pop_back_and_dispose([](fragment* f) {
-            delete f; // NOLINT
-        });
-    }
+    _frags.clear_and_dispose([](fragment* f) {
+        delete f; // NOLINT
+    });
     _size = 0;
 }
 inline iobuf::~iobuf() noexcept { clear(); }
@@ -332,6 +330,7 @@ inline void iobuf::trim_front(size_t n) {
             f.trim_front(n);
             return;
         }
+        n -= f.size();
         pop_front();
     }
 }

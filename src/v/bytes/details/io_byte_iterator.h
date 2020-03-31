@@ -7,8 +7,9 @@
 namespace details {
 class io_byte_iterator {
 public:
-    using io_const_iterator
-      = intrusive_list<io_fragment, &io_fragment::hook>::const_iterator;
+    using io_const_iterator = uncounted_intrusive_list<
+      io_fragment,
+      &io_fragment::hook>::const_iterator;
 
     // iterator_traits
     using difference_type = void;
