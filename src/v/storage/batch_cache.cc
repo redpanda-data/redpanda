@@ -111,9 +111,8 @@ batch_cache_index::read_result batch_cache_index::read(
         auto& batch = it->second->batch;
 
         if (!type_filter || type_filter == batch.header().type) {
-            it->second->pin();
+            auto g = batch_cache::entry::lock_guard(*it->second);
             ret.batches.emplace_back(batch.share());
-            it->second->unpin();
             ret.memory_usage += batch.memory_usage();
             _cache->touch(it->second);
         }
