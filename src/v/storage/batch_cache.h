@@ -92,6 +92,18 @@ public:
      */
     class entry : private ss::weakly_referencable<entry> {
     public:
+        class lock_guard {
+        public:
+            explicit lock_guard(entry& e) noexcept
+              : _e(e) {
+                _e.pin();
+            }
+            ~lock_guard() noexcept { _e.unpin(); }
+
+        private:
+            entry& _e;
+        };
+
         explicit entry(model::record_batch&& batch)
           : batch(std::move(batch)) {}
         ~entry() noexcept = default;
