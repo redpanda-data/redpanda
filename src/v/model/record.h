@@ -86,8 +86,8 @@ public:
     iobuf share_value() { return _value.share(0, _value.size_bytes()); }
 
     bool operator==(const record_header& rhs) const {
-        return _key_size == rhs._key_size && _key == rhs._key
-               && _val_size == rhs._val_size && _value == rhs._value;
+        return _key_size == rhs._key_size && _val_size == rhs._val_size
+               && _key == rhs._key && _value == rhs._value;
     }
 
     friend std::ostream& operator<<(std::ostream&, const record_header&);
@@ -200,9 +200,7 @@ public:
         return _size_bytes == other._size_bytes
                && _timestamp_delta == other._timestamp_delta
                && _offset_delta == other._offset_delta && _key == other._key
-               && _value == other._value
-               && _headers.size() == other._headers.size()
-               && _headers == other._headers;
+               && _value == other._value && _headers == other._headers;
     }
 
     bool operator!=(const record& other) const { return !(*this == other); }
