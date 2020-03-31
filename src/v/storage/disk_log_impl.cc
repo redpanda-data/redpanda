@@ -19,6 +19,7 @@
 #include <seastar/core/seastar.hh>
 #include <seastar/core/shared_ptr.hh>
 
+#include <absl/time/time.h>
 #include <fmt/format.h>
 
 #include <iterator>
@@ -75,10 +76,9 @@ ss::future<> disk_log_impl::gc(
         auto f = _segs.front();
         vlog(
           stlog.debug,
-          "Detected segment max_timestamp:{} older than collection upper "
-          "bound: {}",
-          f->index().max_timestamp(),
-          collection_upper_bound);
+          "Detected segment max_timestamp:{} older than eviction time:{}",
+          absl::FromUnixMillis(f->index().max_timestamp().value()),
+          absl::FromUnixMillis(collection_upper_bound.value()));
         dispatch_remove(f, "gc[time_based_retention]");
         _segs.pop_front();
     }
