@@ -59,9 +59,27 @@ size_t batch_cache::reclaim(size_t size) {
         return 0;
     }
     batch_reclaiming_lock lock(*this);
-    size_t reclaimed = 0;
 
-    for (auto it = _lru.cbegin(); it != _lru.cend() && reclaimed < size;) {
+    /*
+     * if the time since the last reclaim is < `reclaim_growth_window` --
+     * typically a small value such as 3 seconds, then increase the reclaim size
+     * by around 50%. this generally handles the the memory pressure and tight
+     * reclaim loops. otherwise, use the last guess if it has been less than
+     * `reclaim_stable_window` and reset the process if it has been longer.
+     */
+    auto elapsed = ss::lowres_clock::now() - _last_reclaim;
+    if (elapsed < _reclaim_opts.growth_window) {
+        _reclaim_size = (((_reclaim_size * 3) + 1) / 2);
+    } else if (elapsed > _reclaim_opts.stable_window) {
+        _reclaim_size = _reclaim_opts.min_size;
+    }
+
+    _reclaim_size = std::min(_reclaim_size, _reclaim_opts.max_size);
+    _reclaim_size = std::max(size, _reclaim_size);
+
+    size_t reclaimed = 0;
+    for (auto it = _lru.cbegin();
+         it != _lru.cend() && reclaimed < _reclaim_size;) {
         if (likely(!it->pinned())) {
             reclaimed += it->batch.memory_usage();
             // NOLINTNEXTLINE
@@ -71,7 +89,8 @@ size_t batch_cache::reclaim(size_t size) {
         }
     }
 
-    for (auto it = _pool.cbegin(); it != _pool.cend() && reclaimed < size;) {
+    for (auto it = _pool.cbegin();
+         it != _pool.cend() && reclaimed < _reclaim_size;) {
         if (likely(!it->pinned())) {
             reclaimed += it->batch.memory_usage();
             // NOLINTNEXTLINE
@@ -81,6 +100,7 @@ size_t batch_cache::reclaim(size_t size) {
         }
     }
 
+    _last_reclaim = ss::lowres_clock::now();
     _size_bytes -= reclaimed;
     return reclaimed;
 }
@@ -88,10 +108,9 @@ size_t batch_cache::reclaim(size_t size) {
 std::optional<model::record_batch>
 batch_cache_index::get(model::offset offset) {
     if (auto it = find_first_contains(offset); it != _index.end()) {
+        batch_cache::entry::lock_guard g(*it->second);
         _cache->touch(it->second);
-        it->second->pin();
         auto ret = it->second->batch.share();
-        it->second->unpin();
         return ret;
     }
     return std::nullopt;
@@ -111,7 +130,7 @@ batch_cache_index::read_result batch_cache_index::read(
         auto& batch = it->second->batch;
 
         if (!type_filter || type_filter == batch.header().type) {
-            auto g = batch_cache::entry::lock_guard(*it->second);
+            batch_cache::entry::lock_guard g(*it->second);
             ret.batches.emplace_back(batch.share());
             ret.memory_usage += batch.memory_usage();
             _cache->touch(it->second);

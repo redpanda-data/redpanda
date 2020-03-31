@@ -37,7 +37,8 @@ namespace storage {
 
 log_manager::log_manager(log_config config) noexcept
   : _config(std::move(config))
-  , _jitter(_config.compaction_interval) {
+  , _jitter(_config.compaction_interval)
+  , _batch_cache(config.reclaim_opts) {
     _compaction_timer.set_callback([this] { trigger_housekeeping(); });
     arm_housekeeping();
 }
