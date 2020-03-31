@@ -129,10 +129,14 @@ ss::future<> recovery_stm::replicate(model::record_batch_reader&& reader) {
     });
 }
 
+clock_type::time_point recovery_stm::append_entries_timeout() {
+    return raft::clock_type::now() + _ptr->_replicate_append_timeout;
+}
+
 ss::future<result<append_entries_reply>>
 recovery_stm::dispatch_append_entries(append_entries_request&& r) {
     return _ptr->_client_protocol.append_entries(
-      _node_id, std::move(r), rpc::client_opts(raft::clock_type::now() + 1s));
+      _node_id, std::move(r), rpc::client_opts(append_entries_timeout()));
 }
 
 bool recovery_stm::is_recovery_finished() {

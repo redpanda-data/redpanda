@@ -233,6 +233,19 @@ configuration::configuration()
       "Kafka group recovery timeout expressed in milliseconds",
       required::no,
       30'000ms)
+  , replicate_append_timeout_ms(
+      *this,
+      "replicate_append_timeout_ms",
+      "Timeout for append entries requests issued while replicating entries",
+      required::no,
+      3s)
+  , recovery_append_timeout_ms(
+      *this,
+      "recovery_append_timeout_ms",
+      "Timeout for append entries requests issued while updating stale "
+      "follower",
+      required::no,
+      5s)
 
 {}
 

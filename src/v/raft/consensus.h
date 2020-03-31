@@ -223,6 +223,8 @@ private:
 
     consistency_level _last_replicate_consistency{
       consistency_level::quorum_ack};
+    std::chrono::milliseconds _replicate_append_timeout;
+    std::chrono::milliseconds _recovery_append_timeout;
 };
 
 } // namespace raft

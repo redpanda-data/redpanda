@@ -9,6 +9,7 @@
 #include "raft/errc.h"
 #include "raft/logger.h"
 #include "raft/raftgen_service.h"
+#include "raft/types.h"
 #include "rpc/types.h"
 
 #include <chrono>
@@ -56,16 +57,20 @@ ss::future<result<append_entries_reply>> replicate_entries_stm::do_dispatch_one(
     }
     return send_append_entries_request(n, std::move(req));
 }
+
+clock_type::time_point replicate_entries_stm::append_entries_timeout() {
+    return raft::clock_type::now() + _ptr->_replicate_append_timeout;
+}
+
 ss::future<result<append_entries_reply>>
 replicate_entries_stm::send_append_entries_request(
   model::node_id n, append_entries_request req) {
     using ret_t = result<append_entries_reply>;
     _ptr->update_node_hbeat_timestamp(n);
     _ctxlog.trace("Sending append entries request {} to {}", req.meta, n);
-    auto timeout = raft::clock_type::now() + _ptr->_jit.base_duration();
 
     auto f = _ptr->_client_protocol.append_entries(
-      n, std::move(req), rpc::client_opts(timeout));
+      n, std::move(req), rpc::client_opts(append_entries_timeout()));
     _dispatch_sem.signal();
     return f;
 }
