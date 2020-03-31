@@ -146,6 +146,23 @@ void offset_commit_response::decode(iobuf buf, api_version version) {
     });
 }
 
+static std::ostream&
+operator<<(std::ostream& os, const offset_commit_response::partition& p) {
+    fmt::print(os, "id {} error {}", p.id, p.error);
+    return os;
+}
+
+static std::ostream&
+operator<<(std::ostream& os, const offset_commit_response::topic& t) {
+    fmt::print(os, "name {} partitions {}", t.name, t.partitions);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, const offset_commit_response& r) {
+    fmt::print(os, "topics {}", r.topics);
+    return os;
+}
+
 struct offset_commit_ctx {
     request_context rctx;
     ss::smp_service_group ssg;

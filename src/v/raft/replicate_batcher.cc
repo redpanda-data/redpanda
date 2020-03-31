@@ -9,6 +9,7 @@
 
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/sleep.hh>
+#include <seastar/core/smp.hh>
 
 #include <chrono>
 #include <exception>
@@ -65,7 +66,11 @@ replicate_batcher::do_cache(model::record_batch_reader&& r) {
           for (auto& b : batches) {
               record_count += b.record_count();
               _pending_bytes += b.size_bytes();
-              _data_cache.emplace_back(std::move(b));
+              if (b.header().ctx.owner_shard == ss::this_shard_id()) {
+                  _data_cache.emplace_back(std::move(b));
+              } else {
+                  _data_cache.emplace_back(b.copy());
+              }
           }
           i->record_count = record_count;
           _item_cache.emplace_back(i);

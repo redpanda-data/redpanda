@@ -135,6 +135,12 @@ public:
     })
     // clang-format on
     ss::future<response_ptr> respond(ResponseType r) {
+        vlog(
+          kreq_log.trace,
+          "sending {}:{} response {}",
+          ResponseType::api_type::key,
+          ResponseType::api_type::name,
+          r);
         auto resp = std::make_unique<response>();
         r.encode(*this, *resp.get());
         return ss::make_ready_future<response_ptr>(std::move(resp));

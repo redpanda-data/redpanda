@@ -32,30 +32,7 @@ ss::scattered_message<char> iobuf_as_scattered(iobuf b) {
     msg.on_delete([b = std::move(b)] {});
     return msg;
 }
-std::vector<iobuf> iobuf_share_foreign_n(iobuf og, size_t n) {
-    const auto shard = ss::this_shard_id();
-    std::vector<iobuf> retval(n);
-    for (auto& frag : og) {
-        auto tmpbuf = std::move(frag).release();
-        char* src = tmpbuf.get_write();
-        const size_t sz = tmpbuf.size();
-        ss::deleter del = tmpbuf.release();
-        for (iobuf& b : retval) {
-            ss::deleter del_i = ss::make_deleter(
-              [shard, d = del.share()]() mutable {
-                  if (shard == ss::this_shard_id()) {
-                      return;
-                  }
-                  (void)ss::smp::submit_to(shard, [d = std::move(d)] {});
-              });
-            auto f = new iobuf::fragment(
-              ss::temporary_buffer<char>(src, sz, std::move(del_i)),
-              iobuf::fragment::full{});
-            b.append_take_ownership(f);
-        }
-    }
-    return retval;
-}
+
 ss::future<iobuf> read_iobuf_exactly(ss::input_stream<char>& in, size_t n) {
     return ss::do_with(iobuf{}, n, [&in](iobuf& b, size_t& n) {
         return ss::do_until(
@@ -132,6 +109,8 @@ ss::input_stream<char> make_iobuf_input_stream(iobuf io) {
 }
 iobuf iobuf::copy() const {
     iobuf ret;
+    // reduce allocations by starting at the last bucket
+    ret.reserve_memory(last_allocation_size());
     auto in = iobuf::iterator_consumer(cbegin(), cend());
     in.consume(_size, [&ret](const char* src, size_t sz) {
         ret.append(src, sz);
@@ -163,4 +142,24 @@ iobuf iobuf::share(size_t pos, size_t len) {
         pos = 0;
     }
     return std::move(ret);
+}
+
+bool iobuf::operator==(const iobuf& o) const {
+    if (_size != o._size) {
+        return false;
+    }
+    auto lhs_begin = byte_iterator(cbegin(), cend());
+    auto lhs_end = byte_iterator(cend(), cend());
+    auto rhs = byte_iterator(o.cbegin(), o.cend());
+    auto rhs_end = byte_iterator(o.cend(), o.cend());
+    while (lhs_begin != lhs_end && rhs != rhs_end) {
+        char l = *lhs_begin;
+        char r = *rhs;
+        if (l != r) {
+            return false;
+        }
+        ++lhs_begin;
+        ++rhs;
+    }
+    return true;
 }

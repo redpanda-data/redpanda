@@ -15,11 +15,6 @@ size_missmatch_error(const char* ctx, size_t expected, size_t got) {
     return ss::make_exception_future<>(fmt::format(
       "{}. Size missmatch. Expected:{}, Got:{}", ctx, expected, got));
 }
-[[gnu::cold]] static ss::future<>
-appender_closed_error(const segment_appender& a) {
-    return ss::make_exception_future<>(
-      std::runtime_error(fmt::format("Appender is closed: {}", a)));
-}
 segment_appender::segment_appender(ss::file f, options opts)
   : _out(std::move(f))
   , _opts(std::move(opts))
@@ -86,9 +81,7 @@ ss::future<> segment_appender::append(const iobuf& io) {
     return f;
 }
 ss::future<> segment_appender::append(const char* buf, const size_t n) {
-    if (unlikely(_closed)) {
-        return appender_closed_error(*this);
-    }
+    vassert(!_closed, "append() on closed segment: {}", *this);
     size_t written = 0;
     while (likely(!_free_chunks.empty())) {
         const size_t sz = head().append(buf + written, n - written);
@@ -138,9 +131,7 @@ ss::future<> segment_appender::truncate(size_t n) {
     });
 }
 ss::future<> segment_appender::close() {
-    if (_closed) {
-        return ss::make_ready_future<>();
-    }
+    vassert(!_closed, "close() on closed segment: {}", *this);
     _closed = true;
     return flush()
       .then([this] { return _out.truncate(_committed_offset); })

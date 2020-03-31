@@ -75,9 +75,26 @@ response_as_scattered(response_ptr response, correlation_id correlation) {
     auto size = int32_t(sizeof(correlation) + response->buf().size_bytes());
     raw_header->size = ss::cpu_to_be(size);
     raw_header->correlation = ss::cpu_to_be(correlation());
-    auto buf = std::move(*response).release();
+    auto& buf = response->buf();
     buf.prepend(std::move(header));
-    return iobuf_as_scattered(std::move(buf));
+    ss::scattered_message<char> msg;
+    auto in = iobuf::iterator_consumer(buf.cbegin(), buf.cend());
+    int32_t chunk_no = 0;
+    in.consume(
+      buf.size_bytes(), [&msg, &chunk_no, &buf](const char* src, size_t sz) {
+          ++chunk_no;
+          vassert(
+            chunk_no <= std::numeric_limits<int16_t>::max(),
+            "Invalid construction of scattered_message. max count:{}. Usually "
+            "a bug with small append() to iobuf. {}",
+            chunk_no,
+            buf);
+          msg.append_static(src, sz);
+          return ss::stop_iteration::no;
+      });
+    // MUST be the foreign ptr not the iobuf
+    msg.on_delete([response = std::move(response)] {});
+    return msg;
 }
 
 } // namespace kafka

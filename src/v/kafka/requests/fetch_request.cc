@@ -214,6 +214,7 @@ static ss::future<fetch_response::partition_response> read_from_partition(
 
     return partition->make_reader(reader_config)
       .then([timeout = config.timeout](model::record_batch_reader reader) {
+          vlog(kreq_log.trace, "fetch reader {}", reader);
           return std::move(reader)
             .consume(kafka_batch_serializer(), timeout)
             .then([](iobuf res) {

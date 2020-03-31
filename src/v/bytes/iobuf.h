@@ -73,7 +73,8 @@ public:
       , _verify_shard(std::move(x._verify_shard))
 #endif
     {
-        x.clear();
+        x._frags = container{};
+        x._size = 0;
     }
     iobuf& operator=(iobuf&& x) noexcept {
         if (this != &x) {
@@ -122,8 +123,6 @@ public:
     void append(iobuf);
     /// \brief trims the back, and appends direct.
     void append_take_ownership(fragment*);
-    /// \brief trims the back, and appends direct.
-    void prepend_take_ownership(fragment*);
     /// prepends the _the buffer_ as iobuf::details::io_fragment::full{}
     void prepend(ss::temporary_buffer<char>);
     /// prepends the arg to this as iobuf::details::io_fragment::full{}
@@ -150,9 +149,12 @@ public:
     const_iterator cend() const;
 
 private:
+    /// \brief trims the back, and appends direct.
+    void prepend_take_ownership(fragment*);
+
     size_t available_bytes() const;
     void create_new_fragment(size_t);
-    size_t last_allocation_size();
+    size_t last_allocation_size() const;
 
     container _frags;
     size_t _size{0};
@@ -178,24 +180,6 @@ inline iobuf::const_iterator iobuf::end() const { return _frags.cend(); }
 inline iobuf::const_iterator iobuf::cbegin() const { return _frags.cbegin(); }
 inline iobuf::const_iterator iobuf::cend() const { return _frags.cend(); }
 
-inline bool iobuf::operator==(const iobuf& o) const {
-    if (_size != o._size) {
-        return false;
-    }
-    auto lhs_begin = byte_iterator(cbegin(), cend());
-    auto lhs_end = byte_iterator(cend(), cend());
-    auto rhs = byte_iterator(o.cbegin(), o.cend());
-    while (lhs_begin != lhs_end) {
-        char l = *lhs_begin;
-        char r = *rhs;
-        if (l != r) {
-            return false;
-        }
-        ++lhs_begin;
-        ++rhs;
-    }
-    return true;
-}
 inline bool iobuf::operator!=(const iobuf& o) const { return !(*this == o); }
 inline bool iobuf::empty() const { return _frags.empty(); }
 inline size_t iobuf::size_bytes() const { return _size; }
@@ -208,7 +192,7 @@ inline size_t iobuf::available_bytes() const {
     return _frags.back().available_bytes();
 }
 
-inline size_t iobuf::last_allocation_size() {
+inline size_t iobuf::last_allocation_size() const {
     return _frags.empty() ? details::io_allocation_size::default_chunk_size
                           : _frags.back().capacity();
 }
@@ -257,7 +241,9 @@ inline void iobuf::reserve_memory(size_t reservation) {
 
 [[gnu::always_inline]] void inline iobuf::prepend(
   ss::temporary_buffer<char> b) {
-    oncore_debug_verify(_verify_shard);
+    if (unlikely(!b.size())) {
+        return;
+    }
     auto f = new fragment(std::move(b), fragment::full{});
     prepend_take_ownership(f);
 }
@@ -271,6 +257,9 @@ inline void iobuf::reserve_memory(size_t reservation) {
     }
 }
 [[gnu::always_inline]] void inline iobuf::append(const char* ptr, size_t size) {
+    if (unlikely(!size)) {
+        return;
+    }
     oncore_debug_verify(_verify_shard);
     if (size == 0) {
         return;
@@ -294,6 +283,9 @@ inline void iobuf::reserve_memory(size_t reservation) {
 
 /// appends the contents of buffer; might pack values into existing space
 [[gnu::always_inline]] inline void iobuf::append(ss::temporary_buffer<char> b) {
+    if (unlikely(!b.size())) {
+        return;
+    }
     oncore_debug_verify(_verify_shard);
     const size_t last_asz = last_allocation_size();
     if (b.size() <= available_bytes() || b.size() <= last_asz) {
@@ -357,5 +349,3 @@ ss::future<iobuf> read_iobuf_exactly(ss::input_stream<char>& in, size_t n);
 /// and wraps each details::io_fragment as a scattered_message<char>::static()
 /// const char*
 ss::scattered_message<char> iobuf_as_scattered(iobuf b);
-
-std::vector<iobuf> iobuf_share_foreign_n(iobuf, size_t n);

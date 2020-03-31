@@ -221,48 +221,22 @@ SEASTAR_THREAD_TEST_CASE(append_each_other) {
         BOOST_CHECK(f.share() == buf);
     }
 }
-SEASTAR_THREAD_TEST_CASE(iobuf_cross_shard) {
-    // note: run tests w/  > 2 cores for test to exercise
-    auto shard = (ss::engine().cpu_id() + 1) % ss::smp::count;
-    const ss::sstring data("question authority");
-    auto f = ss::smp::submit_to(shard, [data] {
-        iobuf src;
-        src.append(data.data(), data.size());
-        return std::move(iobuf_share_foreign_n(std::move(src), 1).back());
-    });
-    auto from = f.get0();
-    BOOST_REQUIRE(from.size_bytes() == data.size());
-    auto in = iobuf::iterator_consumer(from.cbegin(), from.cend());
-    std::equal(data.cbegin(), data.cend(), in.begin());
-}
-SEASTAR_THREAD_TEST_CASE(iobuf_foreign_copy) {
-    iobuf og;
-    {
-        auto b = random_generators::gen_alphanum_string(1024 * 1024);
-        og.append(b.data(), b.size());
-    }
-    // main tests
-    std::vector<iobuf> bufs = iobuf_share_foreign_n(
-      std::move(og), ss::smp::count);
-    ss::parallel_for_each(
-      boost::irange(ss::shard_id(0), ss::smp::count),
-      [&bufs](ss::shard_id shard) {
-          iobuf io = std::move(bufs[shard]);
-          std::vector<iobuf> nested_bufs = iobuf_share_foreign_n(
-            std::move(io), ss::smp::count);
+SEASTAR_THREAD_TEST_CASE(append_empty) {
+    iobuf buf;
+    buf.prepend(ss::temporary_buffer<char>(0));
+    buf.prepend(ss::temporary_buffer<char>(0));
+    buf.prepend(ss::temporary_buffer<char>(0));
+    buf.append("alex", 0);
+    auto buf2 = buf.share(0, buf.size_bytes());
+    BOOST_REQUIRE_EQUAL(buf, buf2);
 
-          // transitive sharing
-          return ss::do_with(
-            std::move(nested_bufs), [](std::vector<iobuf>& bufs) {
-                return ss::parallel_for_each(
-                  boost::irange(ss::shard_id(0), ss::smp::count),
-                  [&bufs](ss::shard_id shard) {
-                      iobuf io = std::move(bufs[shard]);
-                      return ss::smp::submit_to(shard, [io = std::move(io)] {});
-                  });
-            });
-      })
-      .get();
+    iobuf buf3;
+    buf3.prepend(std::move(buf2));
+    BOOST_REQUIRE_EQUAL(buf, buf3);
+
+    iobuf buf4;
+    buf4.append(std::move(buf3));
+    BOOST_REQUIRE_EQUAL(buf, buf4);
 }
 
 SEASTAR_THREAD_TEST_CASE(share) {

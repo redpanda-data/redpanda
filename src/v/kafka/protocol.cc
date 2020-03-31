@@ -1,5 +1,6 @@
 #include "protocol.h"
 
+#include "kafka/logger.h"
 #include "kafka/protocol_utils.h"
 #include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
@@ -18,7 +19,6 @@
 #include <limits>
 
 namespace kafka {
-static ss::logger klog("kafka"); // NOLINT
 using sequence_id = protocol::sequence_id;
 
 protocol::protocol(

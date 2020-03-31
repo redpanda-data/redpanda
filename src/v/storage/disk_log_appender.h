@@ -25,6 +25,8 @@ public:
     ss::future<append_result> end_of_stream() final;
 
 private:
+    bool needs_to_roll_log(model::term_id) const;
+
     disk_log_impl& _log;
     log_append_config _config;
     log_clock::time_point _append_time;

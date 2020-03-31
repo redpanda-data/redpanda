@@ -173,7 +173,7 @@ void consensus::dispatch_recovery(
         idx.next_index = log_max_offset;
     }
     idx.is_recovering = true;
-    _ctxlog.info(
+    _ctxlog.trace(
       "Starting recovery process for {} - current reply: {}",
       idx.node_id,
       reply);
@@ -199,6 +199,7 @@ consensus::replicate(model::record_batch_reader&& rdr, replicate_options opts) {
           errc::not_leader);
     }
 
+    _last_replicate_consistency = opts.consistency;
     if (opts.consistency == consistency_level::quorum_ack) {
         return _batcher.replicate(std::move(rdr));
     }
@@ -238,23 +239,41 @@ void consensus::dispatch_flush_with_lock() {
 
 ss::future<model::record_batch_reader>
 consensus::make_reader(storage::log_reader_config config) {
-    config.max_offset = std::min(
-      config.max_offset, model::offset(_meta.commit_index));
-    if (_has_pending_flushes && config.start_offset > _log.committed_offset()) {
-        // support read-your-writes
-        return ss::with_semaphore(_op_sem, 1, [this, config] {
-            auto f = ss::make_ready_future<>();
-            if (_has_pending_flushes) {
-                f = flush_log();
-            }
-            return f.then([this, config = config]() mutable {
-                config.max_offset = std::min(
-                  config.max_offset, _log.committed_offset());
-                return _log.make_reader(config);
-            });
-        });
+    // for quroum acks level, limit reads to fully replicated entries. the
+    // covered offset range is guranteed to already be flushed and visible so we
+    // can build the reader immediately.
+    if (_last_replicate_consistency == consistency_level::quorum_ack) {
+        config.max_offset = std::min(
+          config.max_offset, model::offset(_meta.commit_index));
+        return _log.make_reader(config);
     }
-    return _log.make_reader(config);
+
+    // at relaxed consistency / safety levels we can read immediately if there
+    // is no pending writes or we'll read part of the log from an area that
+    // requires no flushing then build the reader immediately. in the later
+    // case, the intention is that the reader will either see the data because
+    // the pending data was flushed before the read made it to that non-flushed
+    // region or the reader will enounter the end of log adn the reader will
+    // flush and retry, making progress.
+    if (
+      !_has_pending_flushes || config.start_offset <= _log.committed_offset()) {
+        config.max_offset = std::min(
+          config.max_offset, _log.committed_offset());
+        return _log.make_reader(config);
+    }
+
+    // otherwise flush the log to make pending writes visible
+    return ss::with_semaphore(_op_sem, 1, [this, config] {
+        auto f = ss::make_ready_future<>();
+        if (_has_pending_flushes) {
+            f = flush_log();
+        }
+        return f.then([this, config = config]() mutable {
+            config.max_offset = std::min(
+              config.max_offset, _log.committed_offset());
+            return _log.make_reader(config);
+        });
+    });
 }
 
 /// performs no raft-state mutation other than resetting the timer
@@ -643,37 +662,35 @@ ss::future<> consensus::flush_log() {
 ss::future<storage::append_result>
 consensus::disk_append(model::record_batch_reader&& reader) {
     using ret_t = storage::append_result;
-    return ss::do_with(
-      std::move(reader), [this](model::record_batch_reader& in) {
-          auto cfg = storage::log_append_config{
-            // no fsync explicit on a per write, we verify at the end to
-            // batch fsync
-            storage::log_append_config::fsync::no,
-            _io_priority,
-            model::timeout_clock::now() + _disk_timeout};
+    auto cfg = storage::log_append_config{
+      // no fsync explicit on a per write, we verify at the end to
+      // batch fsync
+      storage::log_append_config::fsync::no,
+      _io_priority,
+      model::timeout_clock::now() + _disk_timeout};
 
-          return in.consume(_log.make_appender(cfg), cfg.timeout)
-            .then([this](ret_t ret) {
-                _has_pending_flushes = true;
-                // TODO
-                // if we rolled a log segment. write current configuration
-                // for speedy recovery in the background
+    return std::move(reader)
+      .consume(_log.make_appender(cfg), cfg.timeout)
+      .then([this](ret_t ret) {
+          _has_pending_flushes = true;
+          // TODO
+          // if we rolled a log segment. write current configuration
+          // for speedy recovery in the background
 
-                _probe.entries_appended(1);
-                _meta.prev_log_index = ret.last_offset;
-                _meta.prev_log_term = ret.last_term;
+          _probe.entries_appended(1);
+          _meta.prev_log_index = ret.last_offset;
+          _meta.prev_log_term = ret.last_term;
 
-                // leader never flush just after write
-                // for quorum_ack it flush in parallel to dispatching RPCs to
-                // followers for other consistency flushes are done separately.
+          // leader never flush just after write
+          // for quorum_ack it flush in parallel to dispatching RPCs to
+          // followers for other consistency flushes are done separately.
 
-                if (_vstate != vote_state::leader) {
-                    return flush_log().then([ret = std::move(ret), this] {
-                        return ss::make_ready_future<ret_t>(std::move(ret));
-                    });
-                }
-                return ss::make_ready_future<ret_t>(std::move(ret));
-            });
+          if (_vstate != vote_state::leader) {
+              return flush_log().then([ret = std::move(ret), this] {
+                  return ss::make_ready_future<ret_t>(std::move(ret));
+              });
+          }
+          return ss::make_ready_future<ret_t>(std::move(ret));
       });
 }
 
