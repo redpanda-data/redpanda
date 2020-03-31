@@ -1,5 +1,6 @@
 #include "raft/consensus.h"
 
+#include "config/configuration.h"
 #include "likely.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/consensus_utils.h"
@@ -37,7 +38,11 @@ consensus::consensus(
   , _ctxlog(_self, group)
   , _append_entries_notification(std::move(append_callback))
   , _fstats({})
-  , _batcher(this) {
+  , _batcher(this)
+  , _replicate_append_timeout(
+      config::shard_local_cfg().replicate_append_timeout_ms())
+  , _recovery_append_timeout(
+      config::shard_local_cfg().recovery_append_timeout_ms()) {
     _meta.group = group();
     update_follower_stats(_conf);
     _vote_timeout.set_callback([this] {

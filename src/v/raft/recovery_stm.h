@@ -17,6 +17,7 @@ private:
     ss::future<result<append_entries_reply>>
     dispatch_append_entries(append_entries_request&&);
     std::optional<follower_index_metadata*> get_follower_meta();
+    clock_type::time_point append_entries_timeout();
 
     bool is_recovery_finished();
 
