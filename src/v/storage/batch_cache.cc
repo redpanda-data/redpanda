@@ -88,10 +88,9 @@ size_t batch_cache::reclaim(size_t size) {
 std::optional<model::record_batch>
 batch_cache_index::get(model::offset offset) {
     if (auto it = find_first_contains(offset); it != _index.end()) {
+        batch_cache::entry::lock_guard g(*it->second);
         _cache->touch(it->second);
-        it->second->pin();
         auto ret = it->second->batch.share();
-        it->second->unpin();
         return ret;
     }
     return std::nullopt;
@@ -111,7 +110,7 @@ batch_cache_index::read_result batch_cache_index::read(
         auto& batch = it->second->batch;
 
         if (!type_filter || type_filter == batch.header().type) {
-            auto g = batch_cache::entry::lock_guard(*it->second);
+            batch_cache::entry::lock_guard g(*it->second);
             ret.batches.emplace_back(batch.share());
             ret.memory_usage += batch.memory_usage();
             _cache->touch(it->second);
