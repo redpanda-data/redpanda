@@ -290,14 +290,6 @@ public:
      */
     kafka::protocol_name select_protocol() const;
 
-    /**
-     * \brief Get the group's associated partition.
-     *
-     * TODO:
-     *   - integrate with raft persistence.
-     */
-    const model::ntp& ntp() const { return _ntp; }
-
     /// Check if moving to the given state is a valid transition.
     bool valid_previous_state(group_state s) const;
 
@@ -403,12 +395,13 @@ private:
     using member_map = absl::flat_hash_map<kafka::member_id, member_ptr>;
     using protocol_support = absl::flat_hash_map<kafka::protocol_name, int>;
 
+    friend std::ostream& operator<<(std::ostream&, const group&);
+
     model::record_batch checkpoint(const assignments_type& assignments);
 
     kafka::group_id _id;
     group_state _state;
     clock_type::time_point _state_timestamp;
-    model::ntp _ntp;
     kafka::generation_id _generation;
     protocol_support _supported_protocols;
     member_map _members;

@@ -69,6 +69,8 @@ struct produce_request final {
 std::ostream& operator<<(std::ostream&, const produce_request&);
 
 struct produce_response final {
+    using api_type = produce_api;
+
     struct partition {
         model::partition_id id;
         error_code error;
@@ -100,5 +102,7 @@ struct produce_response final {
 
     void encode(const request_context& ctx, response& resp);
 };
+
+std::ostream& operator<<(std::ostream&, const produce_response&);
 
 } // namespace kafka

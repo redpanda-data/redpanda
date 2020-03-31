@@ -80,6 +80,10 @@ public:
           std::move(ret));
     }
 
+    void print(std::ostream& os) final {
+        fmt::print(os, "{memory record reader}");
+    }
+
     model::offset end_offset() { return _endoffset; }
 
     iterator end() { return _end; }

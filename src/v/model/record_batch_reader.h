@@ -68,6 +68,8 @@ public:
         virtual ss::future<storage_t>
           do_load_slice(timeout_clock::time_point) = 0;
 
+        virtual void print(std::ostream&) = 0;
+
         bool is_slice_empty() const { return _slice.empty(); }
 
         virtual ss::future<> load_slice(timeout_clock::time_point timeout) {
@@ -221,6 +223,9 @@ private:
     record_batch_reader() = default;
     explicit operator bool() const noexcept { return bool(_impl); }
     friend class ss::optimized_optional<record_batch_reader>;
+
+    friend std::ostream&
+    operator<<(std::ostream& os, const record_batch_reader& r);
 };
 
 using record_batch_reader_opt = ss::optimized_optional<record_batch_reader>;
@@ -248,5 +253,6 @@ ss::future<record_batch_reader::storage_t> consume_reader_to_memory(
 
 /// \brief wraps a reader into a foreign_ptr<unique_ptr>
 record_batch_reader make_foreign_record_batch_reader(record_batch_reader&&);
+std::ostream& operator<<(std::ostream& os, const record_batch_reader& r);
 
 } // namespace model
