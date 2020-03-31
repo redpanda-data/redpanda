@@ -270,6 +270,8 @@ private:
     size_t _size_bytes{0};
 
     reclaim_options _reclaim_opts;
+    ss::lowres_clock::time_point _last_reclaim;
+    size_t _reclaim_size;
 
     friend std::ostream& operator<<(std::ostream&, const batch_cache&);
 };
