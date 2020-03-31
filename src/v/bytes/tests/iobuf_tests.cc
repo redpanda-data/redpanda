@@ -221,6 +221,23 @@ SEASTAR_THREAD_TEST_CASE(append_each_other) {
         BOOST_CHECK(f.share() == buf);
     }
 }
+SEASTAR_THREAD_TEST_CASE(append_empty) {
+    iobuf buf;
+    buf.prepend(ss::temporary_buffer<char>(0));
+    buf.prepend(ss::temporary_buffer<char>(0));
+    buf.prepend(ss::temporary_buffer<char>(0));
+    buf.append("alex", 0);
+    auto buf2 = buf.share(0, buf.size_bytes());
+    BOOST_REQUIRE_EQUAL(buf, buf2);
+
+    iobuf buf3;
+    buf3.prepend(std::move(buf2));
+    BOOST_REQUIRE_EQUAL(buf, buf3);
+
+    iobuf buf4;
+    buf4.append(std::move(buf3));
+    BOOST_REQUIRE_EQUAL(buf, buf4);
+}
 
 SEASTAR_THREAD_TEST_CASE(share) {
     const auto data = random_generators::gen_alphanum_string(1024);

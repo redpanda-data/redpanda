@@ -241,7 +241,9 @@ inline void iobuf::reserve_memory(size_t reservation) {
 
 [[gnu::always_inline]] void inline iobuf::prepend(
   ss::temporary_buffer<char> b) {
-    vassert(b.size(), "zero length prepends unsupported");
+    if (unlikely(!b.size())) {
+        return;
+    }
     auto f = new fragment(std::move(b), fragment::full{});
     prepend_take_ownership(f);
 }
@@ -255,6 +257,9 @@ inline void iobuf::reserve_memory(size_t reservation) {
     }
 }
 [[gnu::always_inline]] void inline iobuf::append(const char* ptr, size_t size) {
+    if (unlikely(!size)) {
+        return;
+    }
     oncore_debug_verify(_verify_shard);
     if (size == 0) {
         return;
@@ -278,6 +283,9 @@ inline void iobuf::reserve_memory(size_t reservation) {
 
 /// appends the contents of buffer; might pack values into existing space
 [[gnu::always_inline]] inline void iobuf::append(ss::temporary_buffer<char> b) {
+    if (unlikely(!b.size())) {
+        return;
+    }
     oncore_debug_verify(_verify_shard);
     const size_t last_asz = last_allocation_size();
     if (b.size() <= available_bytes() || b.size() <= last_asz) {
