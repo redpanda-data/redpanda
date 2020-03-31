@@ -97,3 +97,15 @@ using counted_intrusive_list = boost::intrusive::list<
   T,
   boost::intrusive::member_hook<T, safe_intrusive_list_hook, PtrToMember>,
   boost::intrusive::constant_time_size<true>>;
+
+/**
+ * A safe intrusive list with non-const-time size() method.
+ *
+ * Use this when you want a safe mode list, but don't want to pay the size cost
+ * of the extra field to track the size.
+ */
+template<typename T, safe_intrusive_list_hook T::*PtrToMember>
+using uncounted_intrusive_list = boost::intrusive::list<
+  T,
+  boost::intrusive::member_hook<T, safe_intrusive_list_hook, PtrToMember>,
+  boost::intrusive::constant_time_size<false>>;
