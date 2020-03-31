@@ -123,8 +123,6 @@ public:
     void append(iobuf);
     /// \brief trims the back, and appends direct.
     void append_take_ownership(fragment*);
-    /// \brief trims the back, and appends direct.
-    void prepend_take_ownership(fragment*);
     /// prepends the _the buffer_ as iobuf::details::io_fragment::full{}
     void prepend(ss::temporary_buffer<char>);
     /// prepends the arg to this as iobuf::details::io_fragment::full{}
@@ -151,6 +149,9 @@ public:
     const_iterator cend() const;
 
 private:
+    /// \brief trims the back, and appends direct.
+    void prepend_take_ownership(fragment*);
+
     size_t available_bytes() const;
     void create_new_fragment(size_t);
     size_t last_allocation_size() const;
