@@ -95,10 +95,17 @@ SEASTAR_THREAD_TEST_CASE(weakness) {
 }
 
 SEASTAR_THREAD_TEST_CASE(touch) {
+    static storage::batch_cache::reclaim_options opts = {
+      .growth_window = std::chrono::milliseconds(3000),
+      .stable_window = std::chrono::milliseconds(10000),
+      .min_size = 1,
+      .max_size = 1,
+    };
+
     {
         storage::batch_cache c(opts);
-        auto b0 = c.put(make_batch(256 << 10));
-        auto b1 = c.put(make_batch(256 << 10));
+        auto b0 = c.put(make_batch(10));
+        auto b1 = c.put(make_batch(10));
 
         // first one is invalid, second one still valid
         c.reclaim(1);
@@ -109,8 +116,8 @@ SEASTAR_THREAD_TEST_CASE(touch) {
     {
         // build the cache the same way
         storage::batch_cache c(opts);
-        auto b0 = c.put(make_batch(256 << 10));
-        auto b1 = c.put(make_batch(256 << 10));
+        auto b0 = c.put(make_batch(10));
+        auto b1 = c.put(make_batch(10));
 
         // the first one moves to the head
         c.touch(b0);
