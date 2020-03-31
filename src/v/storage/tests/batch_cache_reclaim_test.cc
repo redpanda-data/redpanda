@@ -11,12 +11,19 @@
 
 #include <algorithm>
 
+static storage::batch_cache::reclaim_options opts = {
+  .growth_window = std::chrono::milliseconds(3000),
+  .stable_window = std::chrono::milliseconds(10000),
+  .min_size = 128 << 10,
+  .max_size = 4 << 20,
+};
+
 class fixture {};
 
 FIXTURE_TEST(reclaim, fixture) {
     using namespace std::chrono_literals;
 
-    storage::batch_cache cache;
+    storage::batch_cache cache(opts);
     std::vector<storage::batch_cache::entry_ptr> cache_entries;
     cache_entries.reserve(30);
 

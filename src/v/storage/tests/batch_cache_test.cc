@@ -4,6 +4,13 @@
 
 #include <seastar/testing/thread_test_case.hh>
 
+static storage::batch_cache::reclaim_options opts = {
+  .growth_window = std::chrono::milliseconds(3000),
+  .stable_window = std::chrono::milliseconds(10000),
+  .min_size = 128 << 10,
+  .max_size = 4 << 20,
+};
+
 static model::record_batch
 make_batch(size_t size = 10, model::offset offset = model::offset(0)) {
     cluster::simple_batch_builder b(model::record_batch_type(1), offset);
@@ -14,12 +21,12 @@ make_batch(size_t size = 10, model::offset offset = model::offset(0)) {
 }
 
 SEASTAR_THREAD_TEST_CASE(initially_empty) {
-    storage::batch_cache c;
+    storage::batch_cache c(opts);
     BOOST_CHECK(c.empty());
 }
 
 SEASTAR_THREAD_TEST_CASE(evict) {
-    storage::batch_cache c;
+    storage::batch_cache c(opts);
 
     auto b = make_batch(100);
     auto w = c.put(std::move(b));
@@ -28,19 +35,8 @@ SEASTAR_THREAD_TEST_CASE(evict) {
     BOOST_CHECK(c.empty());
 }
 
-SEASTAR_THREAD_TEST_CASE(reclaim_zero_is_noop) {
-    storage::batch_cache c;
-
-    auto b = make_batch(100);
-    c.put(std::move(b));
-    BOOST_CHECK(!c.empty());
-
-    c.reclaim(0);
-    BOOST_CHECK(!c.empty());
-}
-
 SEASTAR_THREAD_TEST_CASE(reclaim_rounds_up) {
-    storage::batch_cache c;
+    storage::batch_cache c(opts);
 
     auto b = make_batch(100);
     auto b_size = b.memory_usage();
@@ -54,7 +50,7 @@ SEASTAR_THREAD_TEST_CASE(reclaim_rounds_up) {
 }
 
 SEASTAR_THREAD_TEST_CASE(reclaim_removes_multiple) {
-    storage::batch_cache c;
+    storage::batch_cache c(opts);
 
     auto b = make_batch(100);
     auto b_size = b.memory_usage();
@@ -68,20 +64,12 @@ SEASTAR_THREAD_TEST_CASE(reclaim_removes_multiple) {
     BOOST_CHECK(!c.empty());
 
     auto size = c.reclaim(b_size + 1);
-    BOOST_CHECK(size == (2 * b_size));
-    BOOST_CHECK(!c.empty());
-
-    size = c.reclaim(1);
-    BOOST_CHECK(size == b_size);
-    BOOST_CHECK(!c.empty());
-
-    size = c.reclaim(2 * b_size + 1);
-    BOOST_CHECK(size == (3 * b_size));
+    BOOST_CHECK(size > (2 * b_size));
     BOOST_CHECK(c.empty());
 }
 
 SEASTAR_THREAD_TEST_CASE(weakness) {
-    storage::batch_cache c;
+    storage::batch_cache c(opts);
 
     model::record_batch_header h{
       .size_bytes = 100,
@@ -102,20 +90,15 @@ SEASTAR_THREAD_TEST_CASE(weakness) {
 
     c.reclaim(1);
     BOOST_CHECK(!b0);
-    BOOST_CHECK(b1);
-    BOOST_CHECK(b2);
-
-    c.clear();
-    BOOST_CHECK(!b0);
     BOOST_CHECK(!b1);
     BOOST_CHECK(!b2);
 }
 
 SEASTAR_THREAD_TEST_CASE(touch) {
     {
-        storage::batch_cache c;
-        auto b0 = c.put(make_batch(10));
-        auto b1 = c.put(make_batch(10));
+        storage::batch_cache c(opts);
+        auto b0 = c.put(make_batch(256 << 10));
+        auto b1 = c.put(make_batch(256 << 10));
 
         // first one is invalid, second one still valid
         c.reclaim(1);
@@ -125,9 +108,9 @@ SEASTAR_THREAD_TEST_CASE(touch) {
 
     {
         // build the cache the same way
-        storage::batch_cache c;
-        auto b0 = c.put(make_batch(10));
-        auto b1 = c.put(make_batch(10));
+        storage::batch_cache c(opts);
+        auto b0 = c.put(make_batch(256 << 10));
+        auto b1 = c.put(make_batch(256 << 10));
 
         // the first one moves to the head
         c.touch(b0);
@@ -139,7 +122,7 @@ SEASTAR_THREAD_TEST_CASE(touch) {
 }
 
 SEASTAR_THREAD_TEST_CASE(index_get_empty) {
-    storage::batch_cache cache;
+    storage::batch_cache cache(opts);
     storage::batch_cache_index index(cache);
 
     BOOST_CHECK(index.empty());
@@ -149,7 +132,7 @@ SEASTAR_THREAD_TEST_CASE(index_get_empty) {
 }
 
 SEASTAR_THREAD_TEST_CASE(index_get) {
-    storage::batch_cache cache;
+    storage::batch_cache cache(opts);
     storage::batch_cache_index index(cache);
     storage::batch_cache_index index2(cache);
 
@@ -201,7 +184,7 @@ SEASTAR_THREAD_TEST_CASE(index_get) {
 }
 
 SEASTAR_THREAD_TEST_CASE(index_truncate_smoke) {
-    storage::batch_cache cache;
+    storage::batch_cache cache(opts);
     storage::batch_cache_index index(cache);
 
     // add batches of increasing size
@@ -225,7 +208,7 @@ SEASTAR_THREAD_TEST_CASE(index_truncate_smoke) {
 }
 
 SEASTAR_THREAD_TEST_CASE(index_truncate_hole) {
-    storage::batch_cache cache;
+    storage::batch_cache cache(opts);
     storage::batch_cache_index index(cache);
 
     // [10][11:20]  [41:50]
@@ -240,7 +223,7 @@ SEASTAR_THREAD_TEST_CASE(index_truncate_hole) {
 }
 
 SEASTAR_THREAD_TEST_CASE(index_truncate_hole_missing_prev) {
-    storage::batch_cache cache;
+    storage::batch_cache cache(opts);
     storage::batch_cache_index index(cache);
 
     // [10][11:20]  [41:50]
