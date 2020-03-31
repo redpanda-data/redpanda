@@ -80,6 +80,8 @@ class VConfig(object):
         self._kv = kv.vectorized_kv(self._cfg['build']['src'])
         self._gopath = os.path.abspath(f"{self._cfg['build']['gopath']}/go")
         self._src_dir = os.path.abspath(self._cfg['build']['src'])
+        self._node_build_dir = os.path.abspath(
+            f"{self._cfg['build']['root']}/node")
 
         # paths to dev utility binary folders (llvm, formatters, ansible, etc.)
         v_path = (f"{self._gopath}/bin:"
@@ -88,6 +90,7 @@ class VConfig(object):
                   f"{self.build_root}/infra/v2/current/bin:"
                   f"{self.java_home_dir}/bin:"
                   f"{self.maven_home_dir}/bin:"
+                  f"{self._node_build_dir}/bin:"
                   "/bin:/usr/bin:/usr/local/bin:")
         if self.compiler == 'clang':
             v_path = f":{self.clang_path}/bin:{v_path}"
@@ -125,7 +128,8 @@ class VConfig(object):
   go_path: {self.go_path}
   go_src_dir: {self.go_src_dir}
   go_out_dir: {self.go_src_dir}
-  clang_path: {self.clang_path}""")
+  clang_path: {self.clang_path}
+  node_build_dir: {self.node_build_dir}""")
         logging.debug(f'Environment: {json.dumps(self.environ, indent=4)}')
 
     @staticmethod
@@ -251,3 +255,13 @@ class VConfig(object):
     def ansible_tmp_dir(self):
         """Path to folder within build/ for logs and related ansible files."""
         return self._ansible_tmp_dir
+
+    @property
+    def node_build_dir(self):
+        """Path to folder within build/."""
+        return self._node_build_dir
+
+    @property
+    def node_package_name_dir(self):
+        """Path to nodejs package."""
+        return f"{self.build_root}/node-v12.16.1-linux-x64"

@@ -186,3 +186,29 @@ def infra_deps(conf):
     reqs = f'{vconfig.ansible_dir}/requirements.yml'
     shell.run_subprocess(f'ansible-galaxy install -r {reqs}',
                          env=vconfig.environ)
+
+
+@install.command(short_help='install nodejs')
+@click.option('--conf',
+              help=('Path to configuration file. If not given, a .vtools.yml '
+                    'file is searched recursively starting from the current '
+                    'working directory'),
+              default=None)
+def js(conf):
+    vconfig = config.VConfig(conf)
+    if os.path.exists(f'{vconfig.node_build_dir}/bin/node'):
+        logging.info(
+            f'Found {vconfig.node_build_dir}/bin/node. Skipping installation.')
+        return
+
+    url = f'https://nodejs.org/dist/v12.16.1/node-v12.16.1-linux-x64.tar.xz'
+
+    logging.info("Downloading " + url)
+    handle = urllib.request.urlopen(url)
+    io_bytes = io.BytesIO(handle.read())
+    logging.info(f'Extracting node tarball to {vconfig.node_build_dir}')
+    tar = tarfile.open(fileobj=io_bytes, mode='r')
+    mypath = os.path.dirname(vconfig.node_dir)
+    tar.extractall(vconfig.build_root)
+
+    os.rename(vconfig.node_package_name_dir, vconfig.node_dir)
