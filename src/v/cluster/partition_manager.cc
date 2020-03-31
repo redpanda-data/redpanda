@@ -30,7 +30,13 @@ partition_manager::partition_manager(
       = config::shard_local_cfg().log_compaction_interval(),
       .delete_retention = config::shard_local_cfg().delete_retention_ms(),
       .disable_cache = storage::log_config::disable_batch_cache(
-        config::shard_local_cfg().disable_batch_cache()),
+              config::shard_local_cfg().disable_batch_cache()),
+      .reclaim_opts = storage::batch_cache::reclaim_options{
+          .growth_window = config::shard_local_cfg().reclaim_growth_window(),
+          .stable_window = config::shard_local_cfg().reclaim_stable_window(),
+          .min_size = config::shard_local_cfg().reclaim_min_size(),
+          .max_size = config::shard_local_cfg().reclaim_max_size(),
+      },
     })
   , _client(raft::make_rpc_client_protocol(clients))
   , _hbeats(config::shard_local_cfg().raft_heartbeat_interval(), _client)

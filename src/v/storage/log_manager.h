@@ -37,6 +37,7 @@ struct log_config {
     // same as delete.retention.ms in kafka - default 1 week
     std::chrono::milliseconds delete_retention = std::chrono::minutes(10080);
     disable_batch_cache disable_cache = disable_batch_cache::no;
+    batch_cache::reclaim_options reclaim_opts;
 };
 
 /**

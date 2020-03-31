@@ -246,6 +246,30 @@ configuration::configuration()
       "follower",
       required::no,
       5s)
+  , reclaim_min_size(
+      *this,
+      "reclaim_min_size",
+      "Minimum batch cache reclaim size",
+      required::no,
+      128 << 10)
+  , reclaim_max_size(
+      *this,
+      "reclaim_max_size",
+      "Maximum batch cache reclaim size",
+      required::no,
+      4 << 20)
+  , reclaim_growth_window(
+      *this,
+      "reclaim_growth_window",
+      "Length of time in which reclaim sizes grow",
+      required::no,
+      3'000ms)
+  , reclaim_stable_window(
+      *this,
+      "reclaim_stable_window",
+      "Length of time above which growth is reset",
+      required::no,
+      10'000ms)
 
 {}
 
