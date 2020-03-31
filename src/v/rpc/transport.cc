@@ -163,7 +163,8 @@ transport::send(netbuf b, rpc::client_opts opts) {
           it->with_timeout(opts.timeout, [this, idx] {
               auto it = _correlations.find(idx);
               if (likely(it != _correlations.end())) {
-                  rpclog.warn("Request timeout, correlation id: {}", idx);
+                  vlog(
+                    rpclog.debug, "Request timeout, correlation id: {}", idx);
                   _probe.request_error();
                   _correlations.erase(it);
               }
