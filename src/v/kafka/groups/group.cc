@@ -1237,18 +1237,23 @@ kafka::member_id group::generate_member_id(const join_group_request& r) {
 }
 
 std::ostream& operator<<(std::ostream& o, const group& g) {
-    return ss::fmt_print(
+    fmt::print(
       o,
-      "id={} state={} gen={} ntp={} proto_type={} proto={} leader={} "
-      "empty={}",
+      "id={} state={} gen={} proto_type={} proto={} leader={} "
+      "empty={} ntp=",
       g.id(),
       g.state(),
       g.generation(),
-      g.ntp(),
       g.protocol_type(),
       g.protocol(),
       g.leader(),
       !g.has_members());
+    if (g._partition) {
+        o << g._partition->ntp();
+    } else {
+        o << "<none>";
+    }
+    return o;
 }
 
 std::ostream& operator<<(std::ostream& o, group_state gs) {

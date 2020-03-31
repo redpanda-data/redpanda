@@ -60,6 +60,8 @@ struct offset_commit_request final {
 std::ostream& operator<<(std::ostream&, const offset_commit_request&);
 
 struct offset_commit_response final {
+    using api_type = offset_commit_api;
+
     struct partition {
         model::partition_id id;
         error_code error;
@@ -89,5 +91,7 @@ struct offset_commit_response final {
     void encode(const request_context& ctx, response& resp);
     void decode(iobuf buf, api_version version);
 };
+
+std::ostream& operator<<(std::ostream&, const offset_commit_response&);
 
 } // namespace kafka

@@ -63,6 +63,18 @@ void find_coordinator_response::decode(iobuf buf, api_version version) {
     port = reader.read_int32();
 }
 
+std::ostream& operator<<(std::ostream& os, const find_coordinator_response& r) {
+    fmt::print(
+      os,
+      "error {} errmsg {} node {} host {} port {}",
+      r.error,
+      r.error_message,
+      r.node,
+      r.host,
+      r.port);
+    return os;
+}
+
 static ss::future<response_ptr>
 handle_leader(request_context& ctx, model::node_id leader) {
     auto broker = ctx.metadata_cache().get_broker(leader);

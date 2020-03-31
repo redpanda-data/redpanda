@@ -67,6 +67,17 @@ void api_versions_response::decode(iobuf buf, api_version version) {
     }
 }
 
+static std::ostream&
+operator<<(std::ostream& os, const api_versions_response::api& a) {
+    fmt::print(os, "key {} min {} max {}", a.key, a.min_version, a.max_version);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, const api_versions_response& r) {
+    fmt::print(os, "error {} apis {}", r.error, r.apis);
+    return os;
+}
+
 template<typename... Ts>
 struct type_list {};
 

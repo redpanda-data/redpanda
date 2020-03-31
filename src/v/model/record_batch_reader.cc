@@ -63,6 +63,10 @@ make_memory_record_batch_reader(record_batch_reader::storage_t batches) {
 
         bool is_end_of_stream() const final { return _batches.empty(); }
 
+        void print(std::ostream& os) final {
+            fmt::print(os, "memory reader {} batches", _batches.size());
+        }
+
     protected:
         ss::future<record_batch_reader::storage_t>
         do_load_slice(timeout_clock::time_point) final {
@@ -86,6 +90,10 @@ record_batch_reader make_generating_record_batch_reader(
           : _gen(std::move(gen)) {}
 
         bool is_end_of_stream() const final { return _end_of_stream; }
+
+        void print(std::ostream& os) final {
+            fmt::print(os, "{generating batch reader}");
+        }
 
     protected:
         ss::future<record_batch_reader::storage_t>
@@ -127,6 +135,11 @@ ss::future<record_batch_reader::storage_t> consume_reader_to_memory(
         ss::circular_buffer<model::record_batch> _result;
     };
     return std::move(reader).consume(memory_batch_consumer{}, timeout);
+}
+
+std::ostream& operator<<(std::ostream& os, const record_batch_reader& r) {
+    r._impl->print(os);
+    return os;
 }
 
 } // namespace model
