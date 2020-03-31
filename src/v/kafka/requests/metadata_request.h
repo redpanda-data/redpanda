@@ -41,6 +41,8 @@ struct metadata_request {
 std::ostream& operator<<(std::ostream&, const metadata_request&);
 
 struct metadata_response {
+    using api_type = metadata_api;
+
     struct broker {
         model::node_id node_id;
         ss::sstring host;

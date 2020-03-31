@@ -109,20 +109,20 @@ function vtools_dev_cluster() {
     set -o pipefail
     local arg=${1:-""}
     local deploy_args=""
-    local raid=""
+    local raid=()
     local tld=$(git rev-parse --show-toplevel 2>/dev/null)
     if [[ $arg == "raid" ]]; then
       deploy_args="instance_type=m5ad.4xlarge"
-      raid=(--var with_raid=true)
+      raid=(--var 'with_raid=true')
     fi
-    vtools build go
-    vtools build cpp --clang --build-type release
+    vtools build go --targets rpk
+    vtools build cpp --clang --build-type release --targets=redpanda
     rm $tld/build/release/clang/dist/rpm/RPMS/x86_64/redpanda-0.0-dev.x86_64.rpm || true
     vtools build pkg --format rpm --clang --build-type release
     vtools deploy cluster "${deploy_args}" nodes=3
     vtools deploy ansible \
       --playbook=$tld/infra/ansible/playbooks/provision-test-node.yml \
-      "${raid}" \
+      ${raid[@]} \
       --var "rp_pkg=$tld/build/release/clang/dist/rpm/RPMS/x86_64/redpanda-0.0-dev.x86_64.rpm"
 
     vtools deploy ansible \

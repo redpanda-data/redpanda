@@ -42,6 +42,37 @@ namespace storage {
  * occurs asynchronously, callers must check that their entries are valid before
  * dereferencing.
  *
+ * Reclaim concurrency
+ * ===================
+ *
+ * The synchronous reclaimer creates a challenge for the batch cache which
+ * internally causes allocations to occur which may invoke the reclaimer.
+ *
+ * Batch cache operations that hold a reference to an entry in the cache need to
+ * be careful that any heap allocation may cause the held reference to be
+ * _concurrently_ freed/invalidated.
+ *
+ * For example, given a live entry in the cache:
+ *
+ *    auto e = _index.find(..);
+ *    assert(e);
+ *
+ * doing something such as `e->batch.share()` internally causes allocations
+ * which may trigger the reclaimer. if the reclaimer selects `e` for reclaiming,
+ * then `e->batch.share()` will run concurrently with the destructor of the
+ * batch (not technically concurently--but interleaved with share() in ways that
+ * are not safe).
+ *
+ * If an operation may perform an allocation use entry::pin/unpin to guard the
+ * reference which will force the reclaimer to skip the entry.
+ *
+ * IMPORTANT: this is a viral leaky abstraction solution. it relies on all code
+ * paths whose call sites are inside the batch cache to have their allocation
+ * behavior known. that is generally an aspect of interfaces that are never
+ * guaranteed. so, good luck. if you find yourself with mysterious crashes in
+ * the future, consider other solutions like blocking the reclaimer or only
+ * allowing asynchronous reclaims while executing within the batch catch.
+ *
  * TODO:
  *  - add probes to track statistics
  */
@@ -61,6 +92,18 @@ public:
      */
     class entry : private ss::weakly_referencable<entry> {
     public:
+        class lock_guard {
+        public:
+            explicit lock_guard(entry& e) noexcept
+              : _e(e) {
+                _e.pin();
+            }
+            ~lock_guard() noexcept { _e.unpin(); }
+
+        private:
+            entry& _e;
+        };
+
         explicit entry(model::record_batch&& batch)
           : batch(std::move(batch)) {}
         ~entry() noexcept = default;
@@ -72,10 +115,15 @@ public:
         // NOLINTNEXTLINE
         model::record_batch batch;
 
+        void pin() { _pinned = true; }
+        void unpin() { _pinned = false; }
+        bool pinned() const { return _pinned; }
+
     private:
         friend class batch_cache;
         friend ss::weakly_referencable<entry>;
 
+        bool _pinned{false};
         intrusive_list_hook _hook;
     };
 

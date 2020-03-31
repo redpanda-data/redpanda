@@ -24,8 +24,12 @@ batch_cache::entry_ptr batch_cache::put(const model::record_batch& input) {
         _size_bytes -= e->batch.memory_usage();
         e->batch = std::move(batch);
     }
+
+    // if weak_from_this were to cause an allocation--which it shouldn't--`e`
+    // wouldn't be visible to the reclaimer since it isn't on a lru/pool list.
+    auto p = e->weak_from_this();
     _lru.push_back(*e);
-    return e->weak_from_this();
+    return p;
 }
 
 batch_cache::~batch_cache() noexcept {
@@ -35,8 +39,12 @@ batch_cache::~batch_cache() noexcept {
       "Detected incorrect batch_cache accounting. {}",
       *this);
 }
+
 void batch_cache::evict(entry_ptr&& e) {
     if (e) {
+        // it's necessary to cause `e` to be sinked so the move constructor
+        // invalidates the caller's entry_ptr. simply interacting with the
+        // r-value reference `e` wouldn't do that.
         auto p = std::exchange(e, {});
         p->_hook.unlink();
         _size_bytes -= p->batch.memory_usage();
@@ -53,16 +61,26 @@ size_t batch_cache::reclaim(size_t size) {
     batch_reclaiming_lock lock(*this);
     size_t reclaimed = 0;
 
-    while (reclaimed < size && !_lru.empty()) {
-        reclaimed += _lru.front().batch.memory_usage();
-        // NOLINTNEXTLINE
-        _lru.pop_front_and_dispose([](entry* e) { delete e; });
+    for (auto it = _lru.cbegin(); it != _lru.cend() && reclaimed < size;) {
+        if (likely(!it->pinned())) {
+            reclaimed += it->batch.memory_usage();
+            // NOLINTNEXTLINE
+            it = _lru.erase_and_dispose(it, [](entry* e) { delete e; });
+        } else {
+            it++;
+        }
     }
-    while (reclaimed < size && !_pool.empty()) {
-        reclaimed += _pool.front().batch.memory_usage();
-        // NOLINTNEXTLINE
-        _pool.pop_front_and_dispose([](entry* e) { delete e; });
+
+    for (auto it = _pool.cbegin(); it != _pool.cend() && reclaimed < size;) {
+        if (likely(!it->pinned())) {
+            reclaimed += it->batch.memory_usage();
+            // NOLINTNEXTLINE
+            it = _pool.erase_and_dispose(it, [](entry* e) { delete e; });
+        } else {
+            it++;
+        }
     }
+
     _size_bytes -= reclaimed;
     return reclaimed;
 }
@@ -71,7 +89,10 @@ std::optional<model::record_batch>
 batch_cache_index::get(model::offset offset) {
     if (auto it = find_first_contains(offset); it != _index.end()) {
         _cache->touch(it->second);
-        return it->second->batch.share();
+        it->second->pin();
+        auto ret = it->second->batch.share();
+        it->second->unpin();
+        return ret;
     }
     return std::nullopt;
 }
@@ -90,6 +111,7 @@ batch_cache_index::read_result batch_cache_index::read(
         auto& batch = it->second->batch;
 
         if (!type_filter || type_filter == batch.header().type) {
+            auto g = batch_cache::entry::lock_guard(*it->second);
             ret.batches.emplace_back(batch.share());
             ret.memory_usage += batch.memory_usage();
             _cache->touch(it->second);

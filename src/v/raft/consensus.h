@@ -220,6 +220,9 @@ private:
     probe _probe;
     raft_ctx_log _ctxlog;
     ss::condition_variable _commit_index_updated;
+
+    consistency_level _last_replicate_consistency{
+      consistency_level::quorum_ack};
 };
 
 } // namespace raft

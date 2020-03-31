@@ -124,6 +124,10 @@ public:
     ss::future<ss::circular_buffer<model::record_batch>>
       do_load_slice(model::timeout_clock::time_point) final;
 
+    void print(std::ostream& os) final {
+        fmt::print(os, "disk reader config {}", _config);
+    }
+
 private:
     void set_end_of_stream() { _iterator.next_seg = _lease->range.end(); }
     bool is_done();

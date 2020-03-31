@@ -36,7 +36,12 @@ def build():
                     'file is searched recursively starting from the current '
                     'working directory'),
               default=None)
-def cpp(build_type, conf, skip_external, clang, reconfigure):
+@click.option(
+    '--targets',
+    help=('ninja targets to build, for example, --targets=redpanda '
+          'will effectively invoke ninja -C build/<type>/clang redpanda'),
+    default=None)
+def cpp(build_type, conf, skip_external, clang, reconfigure, targets):
     """
     Build the `redpanda` binary using the system's default compiler. To use
     clang, the `build.clang` YAML configuration option needs to be specified,
@@ -69,8 +74,10 @@ def cpp(build_type, conf, skip_external, clang, reconfigure):
     total_memory = os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES')
     num_jobs = math.floor(total_memory / (2 * 1024.**3))
     num_jobs = min(num_jobs, os.sysconf('SC_NPROCESSORS_ONLN'))
-    shell.run_subprocess(f'cd {vconfig.build_dir} && ninja -j{num_jobs}',
-                         env=vconfig.environ)
+    cmd = f'cd {vconfig.build_dir} && ninja -j{num_jobs}'
+    if targets != None:
+        cmd = f"{cmd} {targets}"
+    shell.run_subprocess(cmd, env=vconfig.environ)
 
 
 @build.command(short_help='build the rpk binary')

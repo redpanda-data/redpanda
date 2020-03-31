@@ -61,7 +61,7 @@ public:
     const segment_index& index() const { return _idx; }
     segment_appender& appender() { return *_appender; }
     const segment_appender& appender() const { return *_appender; }
-    bool has_appender() const { return bool(_appender); }
+    bool has_appender() const { return _appender != std::nullopt; }
     model::term_id term() const { return _reader.term(); }
 
     batch_cache_index::read_result cache_get(

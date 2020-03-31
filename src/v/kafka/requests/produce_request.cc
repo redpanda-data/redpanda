@@ -158,6 +158,30 @@ void produce_response::encode(const request_context& ctx, response& resp) {
     writer.write(int32_t(throttle.count()));
 }
 
+static std::ostream&
+operator<<(std::ostream& os, const produce_response::partition& p) {
+    fmt::print(
+      os,
+      "id {} error {} base_offset {} append_ts {} start_offset {}",
+      p.id,
+      p.error,
+      p.base_offset,
+      p.log_append_time,
+      p.log_start_offset);
+    return os;
+}
+
+static std::ostream&
+operator<<(std::ostream& os, const produce_response::topic& t) {
+    fmt::print(os, "name {} partitions {}", t.name, t.partitions);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, const produce_response& r) {
+    fmt::print(os, "topics {}", r.topics);
+    return os;
+}
+
 struct produce_ctx {
     request_context rctx;
     ss::smp_service_group ssg;
@@ -186,6 +210,15 @@ static raft::replicate_options acks_to_replicate_options(int16_t acks) {
     };
 }
 
+static inline model::record_batch_reader
+reader_from_lcore_batch(model::record_batch&& batch) {
+    /*
+     * The remainder of work for this partition is handled on its home core.
+     */
+    return model::make_foreign_record_batch_reader(
+      model::make_memory_record_batch_reader(std::move(batch)));
+}
+
 /*
  * Caller is expected to catch errors that may be thrown while the kafka batch
  * is being deserialized (see reader_from_kafka_batch).
@@ -193,22 +226,9 @@ static raft::replicate_options acks_to_replicate_options(int16_t acks) {
 static ss::future<produce_response::partition> partition_append(
   model::partition_id id,
   ss::lw_shared_ptr<cluster::partition> partition,
-  model::record_batch batch,
-  int16_t acks) {
-    /*
-     * TODO: grab timestamp type topic configuration option out of the metadata
-     * cache.
-     */
-    if (false) {
-        auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
-          ss::lowres_clock::now().time_since_epoch());
-        batch.set_max_timestamp(
-          model::timestamp_type::append_time, model::timestamp(now.count()));
-    }
-
-    auto num_records = batch.record_count();
-    auto reader = model::make_memory_record_batch_reader(std::move(batch));
-
+  model::record_batch_reader reader,
+  int16_t acks,
+  int32_t num_records) {
     return partition
       ->replicate(std::move(reader), acks_to_replicate_options(acks))
       .then_wrapped([id, num_records = num_records](
@@ -258,17 +278,28 @@ static ss::future<produce_response::partition> produce_topic_partition(
             ntp.tp.partition, error_code::unknown_topic_or_partition));
     }
 
+    // steal the batch from the adapter
+    auto batch = std::move(part.adapter.batch.value());
     /*
-     * The remainder of work for this partition is handled on its home core.
+     * TODO: grab timestamp type topic configuration option out of the metadata
+     * cache.
      */
-    auto batch = ss::engine().cpu_id() != *shard
-                   ? part.adapter.batch->foreign_share()
-                   : part.adapter.batch->share();
+    if (false) {
+        auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+          ss::lowres_clock::now().time_since_epoch());
+        batch.set_max_timestamp(
+          model::timestamp_type::append_time, model::timestamp(now.count()));
+    }
+
+    auto num_records = batch.record_count();
+    auto reader = reader_from_lcore_batch(std::move(batch));
+
     return octx.rctx.partition_manager().invoke_on(
       *shard,
       octx.ssg,
-      [batch = std::move(batch),
+      [reader = std::move(reader),
        ntp = std::move(ntp),
+       num_records,
        acks = octx.request.acks](cluster::partition_manager& mgr) mutable {
           auto partition = mgr.get(ntp);
           if (!partition) {
@@ -282,7 +313,7 @@ static ss::future<produce_response::partition> produce_topic_partition(
                   ntp.tp.partition, error_code::not_leader_for_partition));
           }
           return partition_append(
-            ntp.tp.partition, partition, std::move(batch), acks);
+            ntp.tp.partition, partition, std::move(reader), acks, num_records);
       });
 }
 

@@ -106,6 +106,29 @@ void list_offsets_response::decode(iobuf buf, api_version version) {
     });
 }
 
+static std::ostream&
+operator<<(std::ostream& os, const list_offsets_response::partition& p) {
+    fmt::print(
+      os,
+      "id {} error {} ts {} offset {}",
+      p.id,
+      p.error,
+      p.timestamp,
+      p.offset);
+    return os;
+}
+
+static std::ostream&
+operator<<(std::ostream& os, const list_offsets_response::topic& t) {
+    fmt::print(os, "name {} partitions {}", t.name, t.partitions);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, const list_offsets_response& r) {
+    fmt::print(os, "topics {}", r.topics);
+    return os;
+}
+
 struct list_offsets_ctx {
     request_context rctx;
     ss::smp_service_group ssg;
