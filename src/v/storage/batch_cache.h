@@ -1,11 +1,13 @@
 #pragma once
+#include "config/configuration.h"
 #include "model/record.h"
-#include "seastar/core/memory.hh"
-#include "seastar/core/weak_ptr.hh"
 #include "utils/intrusive_list_helpers.h"
 #include "vassert.h"
 
 #include <seastar/core/circular_buffer.hh>
+#include <seastar/core/lowres_clock.hh>
+#include <seastar/core/memory.hh>
+#include <seastar/core/weak_ptr.hh>
 
 #include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_map.h>
@@ -85,6 +87,13 @@ class batch_cache {
     using reclaim_result = ss::memory::reclaiming_result;
 
 public:
+    struct reclaim_options {
+        ss::lowres_clock::duration growth_window;
+        ss::lowres_clock::duration stable_window;
+        size_t min_size;
+        size_t max_size;
+    };
+
     /*
      * An entry manages the lifetime of a cached record batch, and always exists
      * in either the LRU or the free pool. Any batches stored in the free pool
@@ -133,10 +142,11 @@ public:
 
     using entry_ptr = ss::weak_ptr<entry>;
 
-    batch_cache()
+    batch_cache(const reclaim_options& opts)
       : _reclaimer(
         [this](reclaimer::request r) { return reclaim(r); },
-        reclaim_scope::sync) {}
+        reclaim_scope::sync)
+      , _reclaim_opts(opts) {}
 
     batch_cache(const batch_cache&) = delete;
     batch_cache& operator=(const batch_cache&) = delete;
@@ -156,7 +166,8 @@ public:
           [this](reclaimer::request r) { return reclaim(r); },
           reclaim_scope::sync)
       , _is_reclaiming(o._is_reclaiming)
-      , _size_bytes(o._size_bytes) {
+      , _size_bytes(o._size_bytes)
+      , _reclaim_opts(o._reclaim_opts) {
         o._size_bytes = 0;
         o._is_reclaiming = false;
     }
@@ -257,6 +268,8 @@ private:
     reclaimer _reclaimer;
     bool _is_reclaiming{false};
     size_t _size_bytes{0};
+
+    reclaim_options _reclaim_opts;
 
     friend std::ostream& operator<<(std::ostream&, const batch_cache&);
 };
