@@ -33,6 +33,14 @@ set(cmake_build_env
   CXXFLAGS=-std=gnu++17\ ${cxx_flags}
   CPPFLAGS=-std=gnu++17\ ${cxx_flags}
   )
+# seastar needs explicit -g
+set(seastar_build_env
+  PKG_CONFIG_PATH=@PKG_CONFIG_PATH@
+  LDFLAGS=${ld_flags}
+  CFLAGS=${c_flags}
+  CXXFLAGS=-std=gnu++17\ ${cxx_flags}\ -g
+  CPPFLAGS=-std=gnu++17\ ${cxx_flags}\ -g
+  )
 # autotools
 set(build_env
   CFLAGS=${c_flags}
@@ -395,7 +403,7 @@ ExternalProject_Add(seastar
   GIT_REPOSITORY https://github.com/vectorizedio/seastar.git
   GIT_TAG 664c911b4
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
-  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
+  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${seastar_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
     ${common_cmake_args}
     -DBoost_USE_STATIC_LIBS=OFF
