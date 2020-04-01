@@ -37,9 +37,10 @@ void segment_index::maybe_track(
     vassert(
       hdr.base_offset >= _state.base_offset,
       "cannot track offsets that are lower than our base, o:{}, "
-      "_state.base_offset:{}",
+      "_state.base_offset:{} - index: {}",
       hdr.base_offset,
-      _state.base_offset);
+      _state.base_offset,
+      *this);
 
     if (_state.empty()) {
         _state.base_timestamp = hdr.first_timestamp;
@@ -85,9 +86,10 @@ std::optional<segment_index::entry>
 segment_index::find_nearest(model::offset o) {
     vassert(
       o >= _state.base_offset,
-      "segment_offset::index::lower_bound cannot find offset:{} below:{}",
+      "index::find_nearest cannot find offset:{} below:{} - index:{}",
       o,
-      _state.base_offset);
+      _state.base_offset,
+      *this);
     if (_state.empty()) {
         return std::nullopt;
     }
@@ -114,9 +116,10 @@ segment_index::find_nearest(model::offset o) {
 ss::future<> segment_index::truncate(model::offset o) {
     vassert(
       o >= _state.base_offset,
-      "segment_index::truncate cannot find offset:{} below:{}",
+      "segment_index::truncate cannot find offset:{} below:{} - index: {}",
       o,
-      _state.base_offset);
+      _state.base_offset,
+      *this);
     const uint32_t i = o() - _state.base_offset();
     auto it = std::lower_bound(
       std::begin(_state.relative_offset_index),
