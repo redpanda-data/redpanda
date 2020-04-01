@@ -593,30 +593,43 @@ void group::try_prepare_rebalance() {
         auto remaining = std::max(rebalance - initial, duration_type(0));
 
         _join_timer.cancel();
-        _join_timer.set_callback(
-          [this, initial, delay = initial, remaining]() mutable {
-              if (_new_member_added && remaining.count()) {
-                  _new_member_added = false;
-                  auto prev_delay = delay;
-                  delay = std::min(initial, remaining);
-                  remaining = std::max(
-                    remaining - prev_delay, duration_type(0));
-                  _join_timer.arm(delay);
-              } else {
-                  complete_join();
-              }
-          });
+        _join_timer.set_callback([this,
+                                  initial,
+                                  delay = initial,
+                                  remaining]() mutable {
+            if (_new_member_added && remaining.count()) {
+                _new_member_added = false;
+                auto prev_delay = delay;
+                delay = std::min(initial, remaining);
+                remaining = std::max(remaining - prev_delay, duration_type(0));
+                kglog.trace(
+                  "rearming debounce timer for {}ms after new member join. "
+                  "remaining {}ms",
+                  delay,
+                  remaining);
+                _join_timer.arm(delay);
+            } else {
+                kglog.trace("completing join after debounce timer expiration");
+                complete_join();
+            }
+        });
 
-        kglog.trace("debouncing join {}", initial);
+        kglog.trace("debouncing empty group join for {}ms", initial);
         _join_timer.arm(initial);
 
     } else if (all_members_joined()) {
         complete_join();
 
     } else {
+        kglog.trace(
+          "not all members have joined cur {} waiting {} pending {}",
+          _members.size(),
+          _num_members_joining,
+          _pending_members.size());
         auto timeout = rebalance_timeout();
         _join_timer.cancel();
         _join_timer.set_callback([this]() { complete_join(); });
+        kglog.trace("scheduling join completion for {}ms", timeout);
         _join_timer.arm(timeout);
     }
 }
