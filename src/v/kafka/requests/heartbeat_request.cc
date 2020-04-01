@@ -48,19 +48,17 @@ void heartbeat_response::encode(const request_context& ctx, response& resp) {
 
 ss::future<response_ptr>
 heartbeat_api::process(request_context&& ctx, ss::smp_service_group g) {
-    return ss::do_with(
-      remote(std::move(ctx)), [g](remote<request_context>& remote_ctx) {
-          auto& ctx = remote_ctx.get();
-          heartbeat_request request;
-          request.decode(ctx);
-          return ctx.groups()
-            .heartbeat(std::move(request))
-            .then([&ctx](heartbeat_response&& reply) {
-                auto resp = std::make_unique<response>();
-                reply.encode(ctx, *resp.get());
-                return ss::make_ready_future<response_ptr>(std::move(resp));
-            });
-      });
+    return ss::do_with(std::move(ctx), [g](request_context& ctx) {
+        heartbeat_request request;
+        request.decode(ctx);
+        return ctx.groups()
+          .heartbeat(std::move(request))
+          .then([&ctx](heartbeat_response&& reply) {
+              auto resp = std::make_unique<response>();
+              reply.encode(ctx, *resp.get());
+              return ss::make_ready_future<response_ptr>(std::move(resp));
+          });
+    });
 }
 
 std::ostream& operator<<(std::ostream& o, const heartbeat_request& r) {
