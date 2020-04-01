@@ -28,6 +28,10 @@ void fetch_request::encode(response_writer& writer, api_version version) {
     if (version >= api_version(4)) {
         writer.write(isolation_level);
     }
+    if (version >= api_version(7)) {
+        writer.write(session_id);
+        writer.write(session_epoch);
+    }
     writer.write_array(
       topics, [version](const topic& t, response_writer& writer) {
           writer.write(t.name());
@@ -35,10 +39,26 @@ void fetch_request::encode(response_writer& writer, api_version version) {
             t.partitions,
             [version](const partition& p, response_writer& writer) {
                 writer.write(p.id);
+                if (version >= api_version(9)) {
+                    writer.write(p.current_leader_epoch);
+                }
                 writer.write(int64_t(p.fetch_offset));
+                if (version >= api_version(5)) {
+                    writer.write(int64_t(p.log_start_offset));
+                }
                 writer.write(p.partition_max_bytes);
             });
       });
+    if (version >= api_version(7)) {
+        writer.write_array(
+          forgotten_topics,
+          [](const forgotten_topic& t, response_writer& writer) {
+              writer.write(t.name);
+              writer.write_array(
+                t.partitions,
+                [](int32_t p, response_writer& writer) { writer.write(p); });
+          });
+    }
 }
 
 void fetch_request::decode(request_context& ctx) {
@@ -54,18 +74,37 @@ void fetch_request::decode(request_context& ctx) {
     if (version >= api_version(4)) {
         isolation_level = reader.read_int8();
     }
-    topics = reader.read_array([](request_reader& reader) {
+    if (version >= api_version(7)) {
+        session_id = reader.read_int32();
+        session_epoch = reader.read_int32();
+    }
+    topics = reader.read_array([version](request_reader& reader) {
         return topic{
           .name = model::topic(reader.read_string()),
-          .partitions = reader.read_array([](request_reader& reader) {
-              return partition{
-                .id = model::partition_id(reader.read_int32()),
-                .fetch_offset = model::offset(reader.read_int64()),
-                .partition_max_bytes = reader.read_int32(),
-              };
+          .partitions = reader.read_array([version](request_reader& reader) {
+              partition p;
+              p.id = model::partition_id(reader.read_int32());
+              if (version >= api_version(9)) {
+                  p.current_leader_epoch = reader.read_int32();
+              }
+              p.fetch_offset = model::offset(reader.read_int64());
+              if (version >= api_version(5)) {
+                  p.log_start_offset = model::offset(reader.read_int64());
+              }
+              p.partition_max_bytes = reader.read_int32();
+              return p;
           }),
         };
     });
+    if (version >= api_version(7)) {
+        forgotten_topics = reader.read_array([](request_reader& reader) {
+            return forgotten_topic{
+              .name = model::topic(reader.read_string()),
+              .partitions = reader.read_array(
+                [](request_reader& reader) { return reader.read_int32(); }),
+            };
+        });
+    }
 }
 
 std::ostream& operator<<(std::ostream& o, const fetch_request::partition& p) {
@@ -98,6 +137,11 @@ void fetch_response::encode(const request_context& ctx, response& resp) {
         writer.write(int32_t(throttle_time.count()));
     }
 
+    if (version >= api_version(7)) {
+        writer.write(error);
+        writer.write(session_id);
+    }
+
     writer.write_array(
       partitions, [version](partition& p, response_writer& writer) {
           writer.write(p.name);
@@ -109,6 +153,11 @@ void fetch_response::encode(const request_context& ctx, response& resp) {
                 writer.write(int64_t(r.high_watermark));
                 if (version >= api_version(4)) {
                     writer.write(int64_t(r.last_stable_offset));
+                }
+                if (version >= api_version(5)) {
+                    writer.write(int64_t(r.log_start_offset));
+                }
+                if (version >= api_version(4)) {
                     writer.write_array(
                       r.aborted_transactions,
                       [](
