@@ -186,7 +186,7 @@ struct offset_commit_ctx {
 ss::future<response_ptr>
 offset_commit_api::process(request_context&& ctx, ss::smp_service_group ssg) {
     offset_commit_request request(ctx);
-    kreq_log.trace("Handling request {}", request);
+    klog.trace("Handling request {}", request);
 
     if (request.group_instance_id) {
         return ctx.respond(

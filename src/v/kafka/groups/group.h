@@ -3,6 +3,7 @@
 #include "config/configuration.h"
 #include "kafka/errors.h"
 #include "kafka/groups/member.h"
+#include "kafka/logger.h"
 #include "kafka/requests/heartbeat_request.h"
 #include "kafka/requests/join_group_request.h"
 #include "kafka/requests/leave_group_request.h"
@@ -29,8 +30,6 @@
 namespace kafka {
 
 struct group_log_group_metadata;
-
-inline ss::logger kglog{"k/group"};
 
 /**
  * \defgroup kafka-groups Kafka group membership API

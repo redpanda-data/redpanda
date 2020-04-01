@@ -1,10 +1,10 @@
 #pragma once
-
 #include "bytes/iobuf.h"
 #include "cluster/controller.h"
 #include "kafka/groups/coordinator_ntp_mapper.h"
 #include "kafka/groups/group_manager.h"
 #include "kafka/groups/group_router.h"
+#include "kafka/logger.h"
 #include "kafka/requests/request_reader.h"
 #include "seastarx.h"
 
@@ -25,7 +25,6 @@ using group_router_type = kafka::group_router<kafka::group_manager>;
 
 class controller_dispatcher;
 
-extern ss::logger kreq_log;
 // Fields may not be byte-aligned since we work
 // with the underlying network buffer.
 struct [[gnu::packed]] raw_request_header {
@@ -136,7 +135,7 @@ public:
     // clang-format on
     ss::future<response_ptr> respond(ResponseType r) {
         vlog(
-          kreq_log.trace,
+          klog.trace,
           "sending {}:{} response {}",
           ResponseType::api_type::key,
           ResponseType::api_type::name,

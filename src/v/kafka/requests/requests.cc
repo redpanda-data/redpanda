@@ -23,8 +23,6 @@
 
 namespace kafka {
 
-ss::logger kreq_log("kafka api");
-
 /**
  * Dispatch request with version bounds checking.
  */
@@ -66,7 +64,7 @@ CONCEPT(requires(KafkaRequest<Request>))
 ss::future<response_ptr> do_process(
   request_context&& ctx, ss::smp_service_group g) {
     vlog(
-      kreq_log.trace,
+      klog.trace,
       "Processing request {}({} v{}) for {}",
       Request::name,
       ctx.header().key,
