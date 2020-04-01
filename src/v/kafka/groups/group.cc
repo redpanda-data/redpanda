@@ -354,22 +354,44 @@ bool group::leader_rejoined() {
 }
 
 ss::future<join_group_response>
-group::handle_join_group(join_group_request&& r) {
+group::handle_join_group(join_group_request&& r, bool is_new_group) {
+    auto ret = ss::make_ready_future<join_group_response>(
+      join_group_response(error_code::none));
+
     if (r.member_id == unknown_member_id) {
-        return join_group_unknown_member(std::move(r));
+        ret = join_group_unknown_member(std::move(r));
+    } else {
+        ret = join_group_known_member(std::move(r));
     }
-    return join_group_known_member(std::move(r));
-    /*
-     * TODO
-     *   - after join_group completes the group may be in a state where the join
-     *   phase can complete immediately rather than waiting on the join timer to
-     *   fire. thus, we want to check if thats the case before returning.
-     *   however, we can also be in a completable state but want to delay anyway
-     *   for debouncing optimization. currently we debounce but we don't have a
-     *   way to distinguish between these scenarios. this identification is
-     *   needed in other area for optimization heuristics. it won't affect
-     *   correctness.
-     */
+
+    // TODO: move the logic in this method up to group manager to make the
+    // handling of is_new_group etc.. clearner rather than passing these flags
+    // down into the group-level handler.
+    if (!is_new_group && in_state(group_state::preparing_rebalance)) {
+        /*
+         * - after join_group completes the group may be in a state where the
+         * join phase can complete immediately rather than waiting on the join
+         * timer to fire. thus, we want to check if thats the case before
+         * returning. however, we can also be in a completable state but want to
+         * delay anyway for debouncing optimization. currently we debounce but
+         * we don't have a way to distinguish between these scenarios. this
+         * identification is needed in other area for optimization heuristics.
+         * it won't affect correctness.
+         *
+         * while it is true that it doesn't affect correctness, what i failed to
+         * take into account was the tolerance for timeouts by clients. this
+         * handles the case that all clients join after a rebalance, but the
+         * last client doesn't complete the join (see the case in
+         * try_complete_join where we return immedaitely rather than completing
+         * the join if we are in the preparing rebalance state). this check
+         * handles that before returning.
+         */
+        if (all_members_joined()) {
+            complete_join();
+        }
+    }
+
+    return ret;
 }
 
 ss::future<join_group_response>

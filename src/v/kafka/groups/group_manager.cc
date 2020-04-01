@@ -358,6 +358,7 @@ group_manager::join_group(join_group_request&& r) {
           r.member_id, error_code::invalid_session_timeout);
     }
 
+    bool is_new_group = false;
     auto group = get_group(r.group_id);
     if (!group) {
         // <kafka>only try to create the group if the group is UNKNOWN AND
@@ -373,9 +374,10 @@ group_manager::join_group(join_group_request&& r) {
           r.group_id, group_state::empty, _conf, p);
         _groups.emplace(r.group_id, group);
         kglog.trace("created new group {}", group);
+        is_new_group = true;
     }
 
-    return group->handle_join_group(std::move(r));
+    return group->handle_join_group(std::move(r), is_new_group);
 }
 
 ss::future<sync_group_response>
