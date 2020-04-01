@@ -55,6 +55,8 @@ struct sync_group_request final {
 std::ostream& operator<<(std::ostream&, const sync_group_request&);
 
 struct sync_group_response final {
+    using api_type = sync_group_api;
+
     std::chrono::milliseconds throttle_time = std::chrono::milliseconds(
       0); // >= v1
     error_code error;
