@@ -421,10 +421,6 @@ ss::future<response_ptr>
 fetch_api::process(request_context&& rctx, ss::smp_service_group ssg) {
     return ss::do_with(op_context(std::move(rctx), ssg), [](op_context& octx) {
         return fetch_topic_partitions(octx).then([&octx] {
-            // build the final response message
-            auto resp = std::make_unique<response>();
-            octx.response.encode(octx.rctx, *resp.get());
-
             /*
              * fast out
              */
@@ -432,7 +428,7 @@ fetch_api::process(request_context&& rctx, ss::smp_service_group ssg) {
               !octx.request.debounce_delay()
               || octx.response_size >= octx.request.min_bytes
               || octx.request.topics.empty() || octx.response_error) {
-                return ss::make_ready_future<response_ptr>(std::move(resp));
+                return octx.rctx.respond(std::move(octx.response));
             }
 
             /*
@@ -453,9 +449,7 @@ fetch_api::process(request_context&& rctx, ss::smp_service_group ssg) {
              */
             auto delay = octx.deadline - model::timeout_clock::now();
             return ss::sleep<model::timeout_clock>(delay).then(
-              [resp = std::move(resp)]() mutable {
-                  return ss::make_ready_future<response_ptr>(std::move(resp));
-              });
+              [&octx] { return octx.rctx.respond(std::move(octx.response)); });
         });
     });
 }
