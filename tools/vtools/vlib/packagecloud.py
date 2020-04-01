@@ -20,6 +20,13 @@ def create_master_token(token, customer_id):
     return req.json()
 
 
+def search_master_token(token, name):
+    url = f'{_get_api_repo_url()}/master_tokens/search?q={name}'
+    req = requests.get(url, auth=(token, ''))
+    req.raise_for_status()
+    return req.json()
+
+
 def create_read_token(token, master_token_id, name):
     url = (f'{_get_api_repo_url()}/master_tokens/'
            f'{master_token_id}/read_tokens.json')
