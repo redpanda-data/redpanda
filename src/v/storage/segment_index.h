@@ -60,6 +60,7 @@ public:
     /// \brief resets the state to 0, except for base_offset
     /// a destructive operation. Needed for node bootstrap
     void reset();
+    bool needs_persistence() const { return _needs_persistence; }
 
 private:
     ss::sstring _name;
