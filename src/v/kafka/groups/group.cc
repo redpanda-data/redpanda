@@ -667,10 +667,35 @@ void group::complete_join() {
 
     // <kafka>remove dynamic members who haven't joined the group yet</kafka>
     // this is the old group->remove_unjoined_members();
-    absl::erase_if(
-      _members, [](const std::pair<kafka::member_id, member_ptr>& m) {
-          return !m.second->is_joining();
-      });
+    for (auto it = _members.begin(); it != _members.end();) {
+        if (!it->second->is_joining()) {
+            vlog(klog.trace, "removing unjoined member {}", it->first);
+
+            // cancel the heartbeat timer
+            it->second->expire_timer().cancel();
+
+            // update supported protocols count
+            for (auto& p : it->second->protocols()) {
+                auto& count = _supported_protocols[p.name];
+                --count;
+                vassert(count >= 0, "supported protocols cannot be negative");
+            }
+
+            auto leader = is_leader(it->second->id());
+            _members.erase(it++);
+
+            if (leader) {
+                if (!_members.empty()) {
+                    _leader = _members.begin()->first;
+                } else {
+                    _leader = std::nullopt;
+                }
+            }
+
+        } else {
+            ++it;
+        }
+    }
 
     if (in_state(group_state::dead)) {
         klog.trace("skipping join completion because group is dead");
