@@ -25,10 +25,7 @@ if("${GIT_CLEAN_DIRTY}" STREQUAL "DIRTY")
 else()
   set(GIT_CLEAN_DIRTY "")
 endif()
-
-git_describe(GIT_VER_WITH_V --always)
-string(SUBSTRING ${GIT_VER_WITH_V} 1 -1 GIT_VER)
-
+git_describe(GIT_VER --always)
 configure_file(version.h.in version.h @ONLY)
 
 # main executables

@@ -388,6 +388,7 @@ group::handle_join_group(join_group_request&& r, bool is_new_group) {
          * handles that before returning.
          */
         if (all_members_joined()) {
+            _join_timer.cancel();
             complete_join();
         }
     }
@@ -650,7 +651,13 @@ void group::try_prepare_rebalance() {
           _pending_members.size());
         auto timeout = rebalance_timeout();
         _join_timer.cancel();
-        _join_timer.set_callback([this]() { complete_join(); });
+        _join_timer.set_callback([this]() {
+            vlog(
+              klog.trace,
+              "completing join on group rebalance timeout {}",
+              id());
+            complete_join();
+        });
         klog.trace("scheduling join completion for {}ms", timeout);
         _join_timer.arm(timeout);
     }
@@ -667,10 +674,35 @@ void group::complete_join() {
 
     // <kafka>remove dynamic members who haven't joined the group yet</kafka>
     // this is the old group->remove_unjoined_members();
-    absl::erase_if(
-      _members, [](const std::pair<kafka::member_id, member_ptr>& m) {
-          return !m.second->is_joining();
-      });
+    for (auto it = _members.begin(); it != _members.end();) {
+        if (!it->second->is_joining()) {
+            vlog(klog.trace, "removing unjoined member {}", it->first);
+
+            // cancel the heartbeat timer
+            it->second->expire_timer().cancel();
+
+            // update supported protocols count
+            for (auto& p : it->second->protocols()) {
+                auto& count = _supported_protocols[p.name];
+                --count;
+                vassert(count >= 0, "supported protocols cannot be negative");
+            }
+
+            auto leader = is_leader(it->second->id());
+            _members.erase(it++);
+
+            if (leader) {
+                if (!_members.empty()) {
+                    _leader = _members.begin()->first;
+                } else {
+                    _leader = std::nullopt;
+                }
+            }
+
+        } else {
+            ++it;
+        }
+    }
 
     if (in_state(group_state::dead)) {
         klog.trace("skipping join completion because group is dead");
@@ -686,7 +718,11 @@ void group::complete_join() {
         klog.trace("could not complete rebalance because no members rejoined");
         auto timeout = rebalance_timeout();
         _join_timer.cancel();
-        _join_timer.set_callback([this]() { complete_join(); });
+        _join_timer.set_callback([this]() {
+            vlog(
+              klog.trace, "completing join after waiting for leader {}", id());
+            complete_join();
+        });
         _join_timer.arm(timeout);
 
     } else {
@@ -750,6 +786,10 @@ void group::heartbeat_expire(
         auto member = get_member(member_id);
         if (!member->should_keep_alive(
               deadline, _conf.group_new_member_join_timeout())) {
+            vlog(
+              klog.trace,
+              "expired member heartbeat. removing member {}",
+              member->id());
             remove_member(member);
         }
     }
@@ -808,6 +848,7 @@ void group::remove_member(member_ptr member) {
                 vassert(_num_members_joining >= 0, "negative members joining");
             }
         }
+        vlog(klog.trace, "removing member {}", member->id());
         _members.erase(it);
     }
 
@@ -1078,7 +1119,7 @@ group::handle_leave_group(leave_group_request&& r) {
         return make_leave_error(error_code::unknown_member_id);
 
     } else {
-        klog.trace("member has left");
+        vlog(klog.trace, "member has left {}", r.member_id);
         auto member = get_member(r.member_id);
         member->expire_timer().cancel();
         remove_member(member);
