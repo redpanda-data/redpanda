@@ -54,9 +54,7 @@ heartbeat_api::process(request_context&& ctx, ss::smp_service_group g) {
         return ctx.groups()
           .heartbeat(std::move(request))
           .then([&ctx](heartbeat_response&& reply) {
-              auto resp = std::make_unique<response>();
-              reply.encode(ctx, *resp.get());
-              return ss::make_ready_future<response_ptr>(std::move(resp));
+              return ctx.respond(std::move(reply));
           });
     });
 }
