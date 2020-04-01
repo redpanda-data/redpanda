@@ -28,6 +28,10 @@ void fetch_request::encode(response_writer& writer, api_version version) {
     if (version >= api_version(4)) {
         writer.write(isolation_level);
     }
+    if (version >= api_version(7)) {
+        writer.write(session_id);
+        writer.write(session_epoch);
+    }
     writer.write_array(
       topics, [version](const topic& t, response_writer& writer) {
           writer.write(t.name());
@@ -35,10 +39,26 @@ void fetch_request::encode(response_writer& writer, api_version version) {
             t.partitions,
             [version](const partition& p, response_writer& writer) {
                 writer.write(p.id);
+                if (version >= api_version(9)) {
+                    writer.write(p.current_leader_epoch);
+                }
                 writer.write(int64_t(p.fetch_offset));
+                if (version >= api_version(5)) {
+                    writer.write(int64_t(p.log_start_offset));
+                }
                 writer.write(p.partition_max_bytes);
             });
       });
+    if (version >= api_version(7)) {
+        writer.write_array(
+          forgotten_topics,
+          [](const forgotten_topic& t, response_writer& writer) {
+              writer.write(t.name);
+              writer.write_array(
+                t.partitions,
+                [](int32_t p, response_writer& writer) { writer.write(p); });
+          });
+    }
 }
 
 void fetch_request::decode(request_context& ctx) {
@@ -54,18 +74,37 @@ void fetch_request::decode(request_context& ctx) {
     if (version >= api_version(4)) {
         isolation_level = reader.read_int8();
     }
-    topics = reader.read_array([](request_reader& reader) {
+    if (version >= api_version(7)) {
+        session_id = reader.read_int32();
+        session_epoch = reader.read_int32();
+    }
+    topics = reader.read_array([version](request_reader& reader) {
         return topic{
           .name = model::topic(reader.read_string()),
-          .partitions = reader.read_array([](request_reader& reader) {
-              return partition{
-                .id = model::partition_id(reader.read_int32()),
-                .fetch_offset = model::offset(reader.read_int64()),
-                .partition_max_bytes = reader.read_int32(),
-              };
+          .partitions = reader.read_array([version](request_reader& reader) {
+              partition p;
+              p.id = model::partition_id(reader.read_int32());
+              if (version >= api_version(9)) {
+                  p.current_leader_epoch = reader.read_int32();
+              }
+              p.fetch_offset = model::offset(reader.read_int64());
+              if (version >= api_version(5)) {
+                  p.log_start_offset = model::offset(reader.read_int64());
+              }
+              p.partition_max_bytes = reader.read_int32();
+              return p;
           }),
         };
     });
+    if (version >= api_version(7)) {
+        forgotten_topics = reader.read_array([](request_reader& reader) {
+            return forgotten_topic{
+              .name = model::topic(reader.read_string()),
+              .partitions = reader.read_array(
+                [](request_reader& reader) { return reader.read_int32(); }),
+            };
+        });
+    }
 }
 
 std::ostream& operator<<(std::ostream& o, const fetch_request::partition& p) {
@@ -98,6 +137,11 @@ void fetch_response::encode(const request_context& ctx, response& resp) {
         writer.write(int32_t(throttle_time.count()));
     }
 
+    if (version >= api_version(7)) {
+        writer.write(error);
+        writer.write(session_id);
+    }
+
     writer.write_array(
       partitions, [version](partition& p, response_writer& writer) {
           writer.write(p.name);
@@ -109,6 +153,11 @@ void fetch_response::encode(const request_context& ctx, response& resp) {
                 writer.write(int64_t(r.high_watermark));
                 if (version >= api_version(4)) {
                     writer.write(int64_t(r.last_stable_offset));
+                }
+                if (version >= api_version(5)) {
+                    writer.write(int64_t(r.log_start_offset));
+                }
+                if (version >= api_version(4)) {
                     writer.write_array(
                       r.aborted_transactions,
                       [](
@@ -291,8 +340,9 @@ handle_ntp_fetch(op_context& octx, model::ntp ntp, fetch_config config) {
               octx.add_partition_response(std::move(response));
           } catch (...) {
               /*
-               * TODO: this is where we will want to handle any storage specific
-               * errors and translate them into kafka response error codes.
+               * TODO: this is where we will want to handle any storage
+               * specific errors and translate them into kafka response
+               * error codes.
                */
               octx.response_error = true;
               octx.add_partition_response(make_partition_response_error(
@@ -371,10 +421,6 @@ ss::future<response_ptr>
 fetch_api::process(request_context&& rctx, ss::smp_service_group ssg) {
     return ss::do_with(op_context(std::move(rctx), ssg), [](op_context& octx) {
         return fetch_topic_partitions(octx).then([&octx] {
-            // build the final response message
-            auto resp = std::make_unique<response>();
-            octx.response.encode(octx.rctx, *resp.get());
-
             /*
              * fast out
              */
@@ -382,29 +428,28 @@ fetch_api::process(request_context&& rctx, ss::smp_service_group ssg) {
               !octx.request.debounce_delay()
               || octx.response_size >= octx.request.min_bytes
               || octx.request.topics.empty() || octx.response_error) {
-                return ss::make_ready_future<response_ptr>(std::move(resp));
+                return octx.rctx.respond(std::move(octx.response));
             }
 
             /*
              * debounce since not enough bytes were collected.
              *
              * TODO:
-             *   - actual debouncing would collect additional data if available,
-             *   but this only introduces the delay. the delay is still
-             *   important for now so that the client and server do not sit in
-             *   tight req/rep loop, and once the client gets an ack it can
-             *   retry. the implementation of debouncing should be done or at
-             *   least coordinated with the storage layer. Otherwise we'd have
-             *   to developer heuristics on top of storage for polling.
+             *   - actual debouncing would collect additional data if
+             * available, but this only introduces the delay. the delay is
+             * still important for now so that the client and server do
+             * not sit in tight req/rep loop, and once the client gets an
+             * ack it can retry. the implementation of debouncing should
+             * be done or at least coordinated with the storage layer.
+             * Otherwise we'd have to developer heuristics on top of
+             * storage for polling.
              *
-             *   - this needs to be abortable sleep coordinated with server
-             *   shutdown.
+             *   - this needs to be abortable sleep coordinated with
+             * server shutdown.
              */
             auto delay = octx.deadline - model::timeout_clock::now();
             return ss::sleep<model::timeout_clock>(delay).then(
-              [resp = std::move(resp)]() mutable {
-                  return ss::make_ready_future<response_ptr>(std::move(resp));
-              });
+              [&octx] { return octx.rctx.respond(std::move(octx.response)); });
         });
     });
 }
