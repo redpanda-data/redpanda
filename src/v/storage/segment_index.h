@@ -57,6 +57,9 @@ public:
     ss::future<> close();
     ss::future<> flush();
     ss::future<> truncate(model::offset);
+    /// \brief resets the state to 0, except for base_offset
+    /// a destructive operation. Needed for node bootstrap
+    void reset();
 
 private:
     ss::sstring _name;
