@@ -67,9 +67,10 @@ ss::future<response_ptr> do_process(
   request_context&& ctx, ss::smp_service_group g) {
     vlog(
       kreq_log.trace,
-      "Processing request for {}:{} {}",
-      ctx.header().key,
+      "Processing request {}({} v{}) for {}",
       Request::name,
+      ctx.header().key,
+      ctx.header().version,
       ctx.header().client_id.value_or(std::string_view("unset-client-id")));
 
     return process_dispatch<Request>::process(std::move(ctx), std::move(g));
