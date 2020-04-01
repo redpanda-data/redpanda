@@ -310,7 +310,8 @@ public:
     static kafka::member_id generate_member_id(const join_group_request& r);
 
     /// Handle join entry point.
-    ss::future<join_group_response> handle_join_group(join_group_request&& r);
+    ss::future<join_group_response>
+    handle_join_group(join_group_request&& r, bool is_new_group);
 
     /// Handle join of an unknown member.
     ss::future<join_group_response>
