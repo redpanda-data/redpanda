@@ -750,6 +750,10 @@ void group::heartbeat_expire(
         auto member = get_member(member_id);
         if (!member->should_keep_alive(
               deadline, _conf.group_new_member_join_timeout())) {
+            vlog(
+              klog.trace,
+              "expired member heartbeat. removing member {}",
+              member->id());
             remove_member(member);
         }
     }
@@ -808,6 +812,7 @@ void group::remove_member(member_ptr member) {
                 vassert(_num_members_joining >= 0, "negative members joining");
             }
         }
+        vlog(klog.trace, "removing member {}", member->id());
         _members.erase(it);
     }
 
@@ -1078,7 +1083,7 @@ group::handle_leave_group(leave_group_request&& r) {
         return make_leave_error(error_code::unknown_member_id);
 
     } else {
-        klog.trace("member has left");
+        vlog(klog.trace, "member has left {}", r.member_id);
         auto member = get_member(r.member_id);
         member->expire_timer().cancel();
         remove_member(member);
