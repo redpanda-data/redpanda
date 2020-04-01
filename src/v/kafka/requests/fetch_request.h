@@ -169,6 +169,8 @@ struct fetch_request final {
 std::ostream& operator<<(std::ostream&, const fetch_request&);
 
 struct fetch_response final {
+    using api_type = fetch_api;
+
     struct aborted_transaction {
         int64_t producer_id;
         model::offset first_offset;
