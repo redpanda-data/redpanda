@@ -38,7 +38,7 @@ public:
       model::record_batch_header header,
       size_t physical_base_offset,
       size_t size_on_disk) override {
-        _seg->index().maybe_track(header, physical_base_offset);
+        _header = header;
         _current_batch_crc = header.crc;
         _file_pos_to_end_of_batch = size_on_disk + physical_base_offset;
         _last_offset = header.last_offset();
@@ -59,6 +59,10 @@ public:
         if (is_valid_batch_crc()) {
             _cfg.last_offset = _last_offset;
             _cfg.truncate_file_pos = _file_pos_to_end_of_batch;
+            const auto physical_base_offset = _file_pos_to_end_of_batch
+                                              - _header.size_bytes;
+            _seg->index().maybe_track(_header, physical_base_offset);
+            _header = {};
             return stop_parser::no;
         }
         return stop_parser::yes;
@@ -69,12 +73,13 @@ public:
     }
 
 private:
+    model::record_batch_header _header;
     segment* _seg;
     log_replayer::checkpoint& _cfg;
-    int32_t _current_batch_crc;
+    int32_t _current_batch_crc{0};
     crc32 _crc;
     model::offset _last_offset;
-    size_t _file_pos_to_end_of_batch;
+    size_t _file_pos_to_end_of_batch{0};
 };
 
 // Called in the context of a ss::thread
