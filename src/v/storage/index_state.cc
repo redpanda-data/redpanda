@@ -31,9 +31,10 @@ uint64_t index_state::checksum_state(const index_state& r) {
 }
 
 std::ostream& operator<<(std::ostream& o, const index_state& s) {
-    return o << "{ size:" << s.size << ", checksum:" << s.checksum
-             << ", bitflags" << s.bitflags << ", base_offset:" << s.base_offset
-             << ", base_timestamp" << s.base_timestamp
+    return o << "{ header_size:" << s.size << ", header_checksum:" << s.checksum
+             << ", header_bitflags:" << s.bitflags
+             << ", base_offset:" << s.base_offset
+             << ", base_timestamp:" << s.base_timestamp
              << ", max_timestamp:" << s.max_timestamp << ", index("
              << s.relative_offset_index.size() << ","
              << s.relative_time_index.size() << "," << s.position_index.size()
