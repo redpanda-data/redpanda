@@ -651,7 +651,13 @@ void group::try_prepare_rebalance() {
           _pending_members.size());
         auto timeout = rebalance_timeout();
         _join_timer.cancel();
-        _join_timer.set_callback([this]() { complete_join(); });
+        _join_timer.set_callback([this]() {
+            vlog(
+              klog.trace,
+              "completing join on group rebalance timeout {}",
+              id());
+            complete_join();
+        });
         klog.trace("scheduling join completion for {}ms", timeout);
         _join_timer.arm(timeout);
     }
@@ -712,7 +718,11 @@ void group::complete_join() {
         klog.trace("could not complete rebalance because no members rejoined");
         auto timeout = rebalance_timeout();
         _join_timer.cancel();
-        _join_timer.set_callback([this]() { complete_join(); });
+        _join_timer.set_callback([this]() {
+            vlog(
+              klog.trace, "completing join after waiting for leader {}", id());
+            complete_join();
+        });
         _join_timer.arm(timeout);
 
     } else {
