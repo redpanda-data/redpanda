@@ -38,14 +38,6 @@ public:
       model::record_batch_header header,
       size_t physical_base_offset,
       size_t size_on_disk) override {
-        const auto filesize = _seg->reader().file_size();
-        if (unlikely(header.base_offset() < 0)) {
-            vlog(
-              stlog.info,
-              "Unrecoverable. Invalid base offset detected:{}, stopping parser",
-              header.base_offset());
-            return stop_parser::yes;
-        }
         _seg->index().maybe_track(header, physical_base_offset);
         _current_batch_crc = header.crc;
         _file_pos_to_end_of_batch = size_on_disk + physical_base_offset;
