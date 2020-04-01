@@ -24,6 +24,7 @@
 #include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/semaphore.hh>
 #include <seastar/net/inet_address.hh>
 
 namespace cluster {
@@ -440,18 +441,22 @@ controller::recover_topic_configuration(topic_configuration t_cfg) {
 ss::future<std::vector<topic_result>> controller::autocreate_topics(
   std::vector<topic_configuration> topics,
   model::timeout_clock::time_point timeout) {
+    using ret_t = std::vector<topic_result>;
+    clusterlog.trace("Autocreating topics {}", topics);
     if (is_leader()) {
         // create topics locally
         return create_topics(std::move(topics), timeout);
     }
 
-    return dispatch_rpc_to_leader([topics = std::move(topics), timeout](
-                                    controller_client_protocol& c) mutable {
-               return c.create_topics(
-                 create_topics_request{std::move(topics),
-                                       timeout - model::timeout_clock::now()},
-                 rpc::client_opts(timeout));
-           })
+    return dispatch_rpc_to_leader(
+             [topics, timeout](controller_client_protocol& c) mutable {
+                 clusterlog.trace(
+                   "Dispatching autocreate {} request to leader ", topics);
+                 return c.create_topics(
+                   create_topics_request{std::move(topics),
+                                         timeout - model::timeout_clock::now()},
+                   rpc::client_opts(timeout));
+             })
       .then([this](rpc::client_context<create_topics_reply> ctx) {
           return _md_cache
             .invoke_on_all(
@@ -468,6 +473,12 @@ ss::future<std::vector<topic_result>> controller::autocreate_topics(
             .then([res = std::move(ctx.data.results)]() mutable {
                 return std::move(res);
             });
+      })
+      .handle_exception([topics](const std::exception_ptr& e) {
+          // wasn't able to create topics
+          clusterlog.warn("Error autocreating topics {}", e);
+          return ss::make_ready_future<ret_t>(
+            create_topic_results(topics, errc::not_leader_controller));
       });
 }
 
@@ -553,6 +564,7 @@ ss::future<std::vector<topic_result>> controller::do_create_topics(
   std::vector<topic_configuration> topics,
   model::timeout_clock::time_point timeout) {
     using ret_t = std::vector<topic_result>;
+    clusterlog.trace("Create topics {}", topics);
     // Controller is not a leader fail all requests
     if (!is_leader() || _allocator == nullptr) {
         return ss::make_ready_future<ret_t>(
@@ -601,6 +613,8 @@ ss::future<std::vector<topic_result>> controller::do_create_topics(
         })
       .then([errors = std::move(errors)](ret_t results) {
           // merge results from both sources
+          clusterlog.error(
+            "Topic create errors: {}, results: {}", errors, results);
           std::move(
             std::begin(errors), std::end(errors), std::back_inserter(results));
           return std::move(results);

@@ -18,6 +18,10 @@ std::ostream& operator<<(std::ostream& o, const topic_configuration& cfg) {
              << "}";
 }
 
+std::ostream& operator<<(std::ostream& o, const topic_result& r) {
+    fmt::print(o, "topic: {}, result: {}", r.tp_ns, r.ec);
+    return o;
+}
 } // namespace cluster
 
 namespace reflection {

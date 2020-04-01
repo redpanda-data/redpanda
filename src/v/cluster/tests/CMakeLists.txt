@@ -73,3 +73,10 @@ rp_test(
   LIBRARIES Seastar::seastar_testing v::cluster
   DEFINITIONS SEASTAR_TESTING_MAIN
 )
+rp_test(
+  UNIT_TEST
+  BINARY_NAME autocreate_test
+  SOURCES autocreate_test.cc
+  LIBRARIES Seastar::seastar_testing v::cluster
+  DEFINITIONS SEASTAR_TESTING_MAIN
+)
