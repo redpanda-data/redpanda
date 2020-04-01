@@ -1,5 +1,6 @@
 from datetime import date
 import click
+from absl import logging
 from ..vlib import packagecloud as pc
 from ..vlib import templates as tmpl
 import os
@@ -23,13 +24,34 @@ def customer():
               default='.',
               help='The directory where the rendered docs will be output')
 def onboard(access_token, customer_name, customer_id, docs_out_dir):
-    token = pc.create_session_token(access_token)
-    master_token = pc.create_master_token(token, customer_id)
-    click.echo(master_token)
-    pc.create_read_token(token, master_token['id'], customer_id)
+    master_token = {'value': 'PLACEHOLDER'}
+    if access_token != "" and access_token is not None:
+        token = pc.create_session_token(access_token)
+        results = pc.search_master_token(token, customer_id)
+        results_length = len(results)
+        msg = f'No existing master token found for {customer_id}. Would you like to create it?'
+        if results == [] and click.confirm(msg):
+            master_token = pc.create_master_token(token, customer_id)
+            pc.create_read_token(token, master_token['id'], customer_id)
+
+        elif results_length == 1:
+            logging.info(f'Found an existing token for {customer_id}')
+            master_token = results[0]
+
+        else:
+            logging.info(f'Found multiple tokens matching "{customer_id}"')
+            for i in range(0, results_length):
+                click.echo(f'{i}: {results[i]["name"]}')
+
+            val = click.prompt(
+                f'Please select an option from the list above (0 - {results_length - 1})',
+                type=int)
+            master_token = results[val]
+
+    out_dir = f'{docs_out_dir}/redpanda-docs-{customer_id}.md'
+    logging.info(f'Writing docs to {out_dir}')
     tmpl.render_to_file(
-        f'{os.path.dirname(__file__)}/docs-template.md',
-        f'{docs_out_dir}/docs.md', {
+        f'{os.path.dirname(__file__)}/docs-template.md', out_dir, {
             'customer_name': customer_name,
             'master_token': master_token['value'],
             'date': date.today()
