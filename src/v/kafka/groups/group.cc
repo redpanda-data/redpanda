@@ -388,6 +388,7 @@ group::handle_join_group(join_group_request&& r, bool is_new_group) {
          * handles that before returning.
          */
         if (all_members_joined()) {
+            _join_timer.cancel();
             complete_join();
         }
     }
