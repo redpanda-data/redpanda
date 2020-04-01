@@ -340,8 +340,9 @@ handle_ntp_fetch(op_context& octx, model::ntp ntp, fetch_config config) {
               octx.add_partition_response(std::move(response));
           } catch (...) {
               /*
-               * TODO: this is where we will want to handle any storage specific
-               * errors and translate them into kafka response error codes.
+               * TODO: this is where we will want to handle any storage
+               * specific errors and translate them into kafka response
+               * error codes.
                */
               octx.response_error = true;
               octx.add_partition_response(make_partition_response_error(
@@ -438,16 +439,17 @@ fetch_api::process(request_context&& rctx, ss::smp_service_group ssg) {
              * debounce since not enough bytes were collected.
              *
              * TODO:
-             *   - actual debouncing would collect additional data if available,
-             *   but this only introduces the delay. the delay is still
-             *   important for now so that the client and server do not sit in
-             *   tight req/rep loop, and once the client gets an ack it can
-             *   retry. the implementation of debouncing should be done or at
-             *   least coordinated with the storage layer. Otherwise we'd have
-             *   to developer heuristics on top of storage for polling.
+             *   - actual debouncing would collect additional data if
+             * available, but this only introduces the delay. the delay is
+             * still important for now so that the client and server do
+             * not sit in tight req/rep loop, and once the client gets an
+             * ack it can retry. the implementation of debouncing should
+             * be done or at least coordinated with the storage layer.
+             * Otherwise we'd have to developer heuristics on top of
+             * storage for polling.
              *
-             *   - this needs to be abortable sleep coordinated with server
-             *   shutdown.
+             *   - this needs to be abortable sleep coordinated with
+             * server shutdown.
              */
             auto delay = octx.deadline - model::timeout_clock::now();
             return ss::sleep<model::timeout_clock>(delay).then(
