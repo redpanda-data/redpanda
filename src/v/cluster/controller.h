@@ -18,6 +18,7 @@
 #include <seastar/core/condition-variable.hh>
 
 #include <chrono>
+#include <optional>
 
 namespace raft {
 class connection_cache;
@@ -48,7 +49,11 @@ public:
     bool is_leader() const { return _raft0->is_leader() && _is_leader; }
 
     std::optional<model::node_id> get_leader_id() const {
-        return _raft0->get_leader_id();
+        auto leader_id = _raft0->get_leader_id();
+        if (leader_id == _self.id() && !_is_leader) {
+            return std::nullopt;
+        }
+        return leader_id;
     }
 
     ss::future<> process_join_request(model::broker broker);

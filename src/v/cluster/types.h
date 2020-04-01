@@ -8,6 +8,7 @@
 #include "raft/types.h"
 #include "reflection/adl.h"
 
+#include <fmt/ostream.h>
 namespace raft {
 class consensus;
 }
@@ -78,6 +79,7 @@ struct topic_result {
       , ec(ec) {}
     model::topic_namespace tp_ns;
     errc ec;
+    friend std::ostream& operator<<(std::ostream& o, const topic_result& r);
 };
 
 /// Structure representing difference between two set of brokers.
