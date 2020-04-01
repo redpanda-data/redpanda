@@ -10,6 +10,7 @@
 #include "syschecks/syschecks.h"
 #include "test_utils/logs.h"
 #include "utils/file_io.h"
+#include "version.h"
 #include "vlog.h"
 
 #include <seastar/core/prometheus.hh>
@@ -24,6 +25,7 @@
 
 int application::run(int ac, char** av) {
     init_env();
+    vlog(_log.info, "Redpanda version {}", redpanda_version());
     struct ::utsname buf;
     ::uname(&buf);
     vlog(

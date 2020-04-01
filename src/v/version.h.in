@@ -1,0 +1,6 @@
+#pragma once
+#include <string_view>
+
+static constexpr inline std::string_view redpanda_version() {
+    return std::string_view("v.@GIT_VER@ - @GIT_SHA1@ @GIT_CLEAN_DIRTY@");
+}

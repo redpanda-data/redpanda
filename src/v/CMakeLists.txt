@@ -17,6 +17,20 @@ add_subdirectory(cluster)
 add_subdirectory(kafka)
 add_subdirectory(reflection)
 
+include(GetGitRevisionDescription)
+get_git_head_revision(GIT_REFSPEC GIT_SHA1)
+git_local_changes(GIT_CLEAN_DIRTY)
+if("${GIT_CLEAN_DIRTY}" STREQUAL "DIRTY")
+  set(GIT_CLEAN_DIRTY "-dirty")
+else()
+  set(GIT_CLEAN_DIRTY "")
+endif()
+
+git_describe(GIT_VER_WITH_V --always)
+string(SUBSTRING ${GIT_VER_WITH_V} 1 -1 GIT_VER)
+
+configure_file(version.h.in version.h @ONLY)
+
 # main executables
 add_subdirectory(redpanda)
 
