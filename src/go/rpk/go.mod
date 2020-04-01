@@ -3,7 +3,7 @@ module vectorized
 require (
 	github.com/Azure/go-ansiterm v0.0.0-20170929234023-d6e3b3328b78 // indirect
 	github.com/Microsoft/go-winio v0.4.12 // indirect
-	github.com/Shopify/sarama v1.23.1
+	github.com/Shopify/sarama v1.26.1
 	github.com/aws/aws-sdk-go v1.25.43
 	github.com/cockroachdb/crlfmt v0.0.0-20200116191136-a78e1c207bc0 // indirect
 	github.com/cockroachdb/gostdlib v1.13.0 // indirect
@@ -34,14 +34,12 @@ require (
 	github.com/spf13/cobra v0.0.5
 	github.com/spf13/viper v1.3.2
 	github.com/stretchr/testify v1.4.0
-	golang.org/x/crypto v0.0.0-20191002192127-34f69633bfdc
-	golang.org/x/net v0.0.0-20190628185345-da137c7871d7 // indirect
+	golang.org/x/crypto v0.0.0-20200204104054-c9f3fb736b72
 	golang.org/x/sys v0.0.0-20191008105621-543471e840be
 	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4 // indirect
 	google.golang.org/grpc v1.22.0 // indirect
-	gopkg.in/jcmturner/goidentity.v3 v3.0.0 // indirect
-	gopkg.in/jcmturner/gokrb5.v7 v7.2.3
-	gopkg.in/yaml.v2 v2.2.2
+	gopkg.in/jcmturner/gokrb5.v7 v7.5.0
+	gopkg.in/yaml.v2 v2.2.8
 	gotest.tools v2.2.0+incompatible // indirect
 	mvdan.cc/sh/v3 v3.0.1 // indirect
 )
