@@ -59,19 +59,17 @@ void sync_group_response::encode(const request_context& ctx, response& resp) {
 
 ss::future<response_ptr>
 sync_group_api::process(request_context&& ctx, ss::smp_service_group g) {
-    return ss::do_with(
-      remote(std::move(ctx)), [g](remote<request_context>& remote_ctx) {
-          auto& ctx = remote_ctx.get();
-          sync_group_request request;
-          request.decode(ctx);
-          return ctx.groups()
-            .sync_group(std::move(request))
-            .then([&ctx](sync_group_response&& reply) {
-                auto resp = std::make_unique<response>();
-                reply.encode(ctx, *resp.get());
-                return ss::make_ready_future<response_ptr>(std::move(resp));
-            });
-      });
+    return ss::do_with(std::move(ctx), [g](request_context& ctx) {
+        sync_group_request request;
+        request.decode(ctx);
+        return ctx.groups()
+          .sync_group(std::move(request))
+          .then([&ctx](sync_group_response&& reply) {
+              auto resp = std::make_unique<response>();
+              reply.encode(ctx, *resp.get());
+              return ss::make_ready_future<response_ptr>(std::move(resp));
+          });
+    });
 }
 
 std::ostream&
