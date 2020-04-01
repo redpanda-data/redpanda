@@ -135,7 +135,9 @@ func main() {
 
 // Consumer represents a Sarama consumer group consumer
 type Consumer struct {
-	ready chan bool
+	ready      chan bool
+	counter    int64
+	valueBytes int64
 }
 
 // Setup is run at the beginning of a new session, before ConsumeClaim
@@ -160,11 +162,15 @@ func (consumer *Consumer) ConsumeClaim(
 	// The `ConsumeClaim` itself is called within a goroutine, see:
 	// https://github.com/Shopify/sarama/blob/master/consumer_group.go#L27-L29
 	for message := range claim.Messages() {
-		log.Printf(
-			"Message claimed: value = %s, timestamp = %v, topic = %s",
-			string(message.Value),
-			message.Timestamp,
-			message.Topic)
+		consumer.counter++
+		consumer.valueBytes += int64(len(message.Value))
+		if consumer.counter%1024 == 0 {
+			log.Printf("Messages parsed: %v, value bytes = %v, at timestamp = %v, topic = %s",
+				consumer.counter,
+				consumer.valueBytes,
+				message.Timestamp,
+				message.Topic)
+		}
 		session.MarkMessage(message, "")
 	}
 
