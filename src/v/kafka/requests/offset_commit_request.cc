@@ -38,6 +38,9 @@ void offset_commit_request::encode(
             [version](partition& partition, response_writer& writer) {
                 writer.write(partition.id);
                 writer.write(partition.committed);
+                if (version == api_version(1)) {
+                    writer.write(partition.commit_timestamp());
+                }
                 if (version >= api_version(6)) {
                     writer.write(partition.leader_epoch);
                 }
@@ -72,6 +75,9 @@ void offset_commit_request::decode(request_context& ctx) {
                 .id = id,
                 .committed = committed,
               };
+              if (version == api_version(1)) {
+                  p.commit_timestamp = model::timestamp(reader.read_int64());
+              }
               if (version >= api_version(6)) {
                   p.leader_epoch = reader.read_int32();
               }

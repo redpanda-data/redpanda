@@ -17,7 +17,7 @@ struct fetch_api final {
     static constexpr const char* name = "fetch";
     static constexpr api_key key = api_key(1);
     static constexpr api_version min_supported = api_version(4);
-    static constexpr api_version max_supported = api_version(4);
+    static constexpr api_version max_supported = api_version(10);
 
     static ss::future<response_ptr>
     process(request_context&&, ss::smp_service_group);
@@ -28,7 +28,10 @@ struct fetch_request final {
 
     struct partition {
         model::partition_id id;
+        int32_t current_leader_epoch; // >= v9
         model::offset fetch_offset;
+        // inter-broker data
+        model::offset log_start_offset; // >= v5
         int32_t partition_max_bytes;
     };
 
@@ -37,12 +40,20 @@ struct fetch_request final {
         std::vector<partition> partitions;
     };
 
+    struct forgotten_topic {
+        model::topic name;
+        std::vector<int32_t> partitions;
+    };
+
     model::node_id replica_id;
     std::chrono::milliseconds max_wait_time;
     int32_t min_bytes;
     int32_t max_bytes;      // >= v3
     int8_t isolation_level; // >= v4
+    int32_t session_id;     // >= v7
+    int32_t session_epoch;  // >= v7
     std::vector<topic> topics;
+    std::vector<forgotten_topic> forgotten_topics; // >= v7
 
     void encode(response_writer& writer, api_version version);
     void decode(request_context& ctx);
@@ -158,6 +169,8 @@ struct fetch_request final {
 std::ostream& operator<<(std::ostream&, const fetch_request&);
 
 struct fetch_response final {
+    using api_type = fetch_api;
+
     struct aborted_transaction {
         int64_t producer_id;
         model::offset first_offset;
@@ -168,6 +181,7 @@ struct fetch_response final {
         error_code error;
         model::offset high_watermark;
         model::offset last_stable_offset;                      // >= v4
+        model::offset log_start_offset;                        // >= v5
         std::vector<aborted_transaction> aborted_transactions; // >= v4
         std::optional<iobuf> record_set;
     };
@@ -184,7 +198,9 @@ struct fetch_response final {
       : throttle_time(0) {}
 
     std::chrono::milliseconds throttle_time = std::chrono::milliseconds(
-      0); // >= v1
+      0);               // >= v1
+    error_code error;   // >= v7
+    int32_t session_id; // >= v7
     std::vector<partition> partitions;
 
     void encode(const request_context& ctx, response& resp);
