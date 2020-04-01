@@ -28,6 +28,11 @@ public:
     checksumming_consumer(segment* s, log_replayer::checkpoint& c)
       : _seg(s)
       , _cfg(c) {}
+    checksumming_consumer(const checksumming_consumer&) = delete;
+    checksumming_consumer& operator=(const checksumming_consumer&) = delete;
+    checksumming_consumer(checksumming_consumer&&) noexcept = delete;
+    checksumming_consumer& operator=(checksumming_consumer&&) noexcept = delete;
+    ~checksumming_consumer() noexcept override = default;
 
     consume_result consume_batch_start(
       model::record_batch_header header,
@@ -70,8 +75,6 @@ public:
     bool is_valid_batch_crc() const {
         return _current_batch_crc == _crc.value();
     }
-
-    ~checksumming_consumer() noexcept override = default;
 
 private:
     segment* _seg;
