@@ -25,7 +25,7 @@
 
 int application::run(int ac, char** av) {
     init_env();
-    vlog(_log.info, "Redpanda version {}", redpanda_version());
+    vlog(_log.info, "Redpanda {}", redpanda_version());
     struct ::utsname buf;
     ::uname(&buf);
     vlog(
