@@ -32,6 +32,13 @@ segment_index::segment_index(
     _state.base_offset = base;
 }
 
+void segment_index::reset() {
+    auto base = _state.base_offset;
+    _state = {};
+    _state.base_offset = base;
+    _acc = 0;
+}
+
 void segment_index::maybe_track(
   const model::record_batch_header& hdr, size_t filepos) {
     vassert(
