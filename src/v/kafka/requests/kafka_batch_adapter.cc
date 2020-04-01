@@ -158,7 +158,7 @@ void kafka_batch_adapter::verify_crc(int32_t expected_crc, iobuf_parser in) {
     if (unlikely(expected_crc != crc.value())) {
         valid_crc = false;
         vlog(
-          kreq_log.error,
+          klog.error,
           "Cannot validate Kafka record batch. Missmatching CRC. Expected:{}, "
           "Got:{}",
           expected_crc,
@@ -193,7 +193,7 @@ void kafka_batch_adapter::adapt(iobuf&& kbatch) {
 
     // Kafka guarantees - exactly one batch on the wire
     if (unlikely(parser.bytes_left())) {
-        kreq_log.error(
+        klog.error(
           "Could not consume full record_batch. Bytes left on the wire:{}",
           parser.bytes_left());
         return;

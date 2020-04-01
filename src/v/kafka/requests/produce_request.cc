@@ -412,7 +412,7 @@ produce_api::process(request_context&& ctx, ss::smp_service_group ssg) {
         // from kafka source: "if required.acks is outside accepted range,
         // something is wrong with the client Just return an error and don't
         // handle the request at all"
-        kreq_log.error(
+        klog.error(
           "unsupported acks {} see "
           "https://docs.confluent.io/current/installation/configuration/"
           "producer-configs.html",
@@ -424,7 +424,7 @@ produce_api::process(request_context&& ctx, ss::smp_service_group ssg) {
     return ss::do_with(
       produce_ctx(std::move(ctx), std::move(request), ssg),
       [](produce_ctx& octx) {
-          vlog(kreq_log.trace, "handling produce request {}", octx.request);
+          vlog(klog.trace, "handling produce request {}", octx.request);
 
           // dispatch produce requests for each topic
           auto topics = produce_topics(octx);

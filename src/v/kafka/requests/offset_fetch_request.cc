@@ -138,7 +138,7 @@ struct offset_fetch_ctx {
 ss::future<response_ptr>
 offset_fetch_api::process(request_context&& ctx, ss::smp_service_group ssg) {
     offset_fetch_request request(ctx);
-    kreq_log.trace("Handling request {}", request);
+    klog.trace("Handling request {}", request);
     return ss::do_with(
       offset_fetch_ctx(std::move(ctx), std::move(request), ssg),
       [](offset_fetch_ctx& octx) {
