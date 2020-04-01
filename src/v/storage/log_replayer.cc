@@ -27,7 +27,10 @@ public:
       std::numeric_limits<uint32_t>::max());
     checksumming_consumer(segment* s, log_replayer::checkpoint& c)
       : _seg(s)
-      , _cfg(c) {}
+      , _cfg(c) {
+        // we'll reconstruct the state manually
+        _seg->index().reset();
+    }
     checksumming_consumer(const checksumming_consumer&) = delete;
     checksumming_consumer& operator=(const checksumming_consumer&) = delete;
     checksumming_consumer(checksumming_consumer&&) noexcept = delete;

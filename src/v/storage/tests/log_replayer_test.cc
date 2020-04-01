@@ -2,6 +2,7 @@
 #include "random/generators.h"
 #include "storage/disk_log_appender.h"
 #include "storage/log_replayer.h"
+#include "storage/logger.h"
 #include "storage/segment_appender_utils.h"
 #include "storage/segment_index.h"
 #include "storage/segment_reader.h"
@@ -51,10 +52,16 @@ struct context {
           std::nullopt);
         replayer_opt = log_replayer(*_seg);
     }
+
     ~context() { _seg->close().get(); }
-    void write_garbage() {
+
+    void write_garbage() { do_write_garbage(base_name); }
+
+    void write_garbage_index() { do_write_garbage(base_name + ".index"); }
+
+    void do_write_garbage(ss::sstring name) {
         auto fd = ss::open_file_dma(
-                    base_name, ss::open_flags::create | ss::open_flags::rw)
+                    name, ss::open_flags::create | ss::open_flags::rw)
                     .get0();
         fd = ss::file(ss::make_shared(file_io_sanitizer(std::move(fd))));
         auto out = ss::make_file_output_stream(std::move(fd));
@@ -63,7 +70,6 @@ struct context {
         out.flush().get();
         out.close().get();
     }
-
     void write(ss::circular_buffer<model::record_batch>& batches) {
         do_write(
           [&batches](segment_appender& appender) {
@@ -165,4 +171,18 @@ SEASTAR_THREAD_TEST_CASE(test_unrecovered_multiple_batches) {
         BOOST_CHECK(bool(recovered));
         BOOST_CHECK_EQUAL(recovered.last_offset.value(), last_offset);
     }
+}
+SEASTAR_THREAD_TEST_CASE(test_reset_index) {
+    // bad crc test
+    context ctx;
+    ctx.write_garbage_index(); // key
+    auto batches = test::make_random_batches(model::offset(1), 10);
+    auto last_offset = batches.back().last_offset();
+    ctx.write(batches);
+    auto recovered = ctx.replayer().recover_in_thread(
+      ss::default_priority_class());
+    BOOST_CHECK(bool(recovered));
+    BOOST_CHECK_EQUAL(recovered.last_offset.value(), last_offset);
+    storage::stlog.info("Recovered segment:{}", ctx._seg);
+    BOOST_CHECK(ctx._seg->index().needs_persistence());
 }
