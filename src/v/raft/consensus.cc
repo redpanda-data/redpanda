@@ -576,6 +576,9 @@ consensus::do_append_entries(append_entries_request&& r) {
       .then([this, m = r.meta](offsets_ret ofs) mutable {
           return maybe_update_follower_commit_idx(model::offset(m.commit_index))
             .then([this, m, ofs = std::move(ofs)]() mutable {
+                // we do not want to include our disk flush latency into the
+                // leader vote timeout
+                _hbeat = clock_type::now();
                 return make_append_entries_reply(std::move(ofs));
             });
       });
