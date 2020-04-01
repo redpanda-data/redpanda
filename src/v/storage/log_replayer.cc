@@ -85,7 +85,7 @@ private:
 // Called in the context of a ss::thread
 log_replayer::checkpoint
 log_replayer::recover_in_thread(const ss::io_priority_class& prio) {
-    stlog.debug("Recovering segment {}", *_seg);
+    vlog(stlog.debug, "Recovering segment {}", *_seg);
     // explicitly not using the index to recover the full file
     auto data_stream = _seg->reader().data_stream(0, prio);
     auto consumer = std::make_unique<checksumming_consumer>(_seg, _ckpt);
@@ -95,7 +95,8 @@ log_replayer::recover_in_thread(const ss::io_priority_class& prio) {
         parser.consume().get();
         parser.close().get();
     } catch (...) {
-        stlog.warn(
+        vlog(
+          stlog.warn,
           "{} partial recovery to {}, with: {}",
           _seg->reader().filename(),
           _ckpt,
