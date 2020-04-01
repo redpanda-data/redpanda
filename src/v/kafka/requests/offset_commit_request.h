@@ -5,6 +5,7 @@
 #include "kafka/requests/fwd.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
+#include "model/timestamp.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>
@@ -18,7 +19,7 @@ struct offset_commit_api final {
 
     static constexpr const char* name = "offset commit";
     static constexpr api_key key = api_key(8);
-    static constexpr api_version min_supported = api_version(2);
+    static constexpr api_version min_supported = api_version(1);
     static constexpr api_version max_supported = api_version(7);
 
     static ss::future<response_ptr>
@@ -31,7 +32,8 @@ struct offset_commit_request final {
     struct partition {
         model::partition_id id;
         model::offset committed;
-        int32_t leader_epoch; // >= v6
+        model::timestamp commit_timestamp; // == v1
+        int32_t leader_epoch;              // >= v6
         std::optional<ss::sstring> metadata;
     };
 
