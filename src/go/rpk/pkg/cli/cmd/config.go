@@ -42,9 +42,8 @@ func set(fs afero.Fs) *cobra.Command {
 		"format",
 		"single",
 		"The value format. Can be 'single', for single values such as"+
-			" '/etc/redpanda' or 100; and 'json', 'toml', 'yaml',"+
-			"'yml', 'properties', 'props', 'prop', or 'hcl'"+
-			" when partially or completely setting config objects",
+			" '/etc/redpanda' or 100; and 'json' and 'yaml' when"+
+			" partially or completely setting config objects",
 	)
 	c.Flags().StringVar(
 		&configPath,
@@ -64,10 +63,19 @@ func bootstrap(fs afero.Fs) *cobra.Command {
 		configPath string
 	)
 	c := &cobra.Command{
-		Use:   "bootstrap --ips <ip1,ip2,...> --id <id> [--self <ip>]",
+		Use:   "bootstrap --id <id> [--self <ip>] [--ips <ip1,ip2,...>]",
 		Short: "Initialize the configuration to bootstrap a cluster",
-		Long: `Initialize the configuration to bootstrap a cluster.
---ips is mandatory. Its elements must be separated by a comma, no spaces.`,
+		Long: "Initialize the configuration to bootstrap a cluster." +
+			" --id is mandatory. bootstrap will expect the machine" +
+			" it's running on to have only one non-loopback IP" +
+			" address associated to it, and use it in the" +
+			" configuration as the node's address. If it has multiple" +
+			" IPs, --self must be specified. In that case, the given" +
+			" IP will be used without checking whether it's among the" +
+			" machine's addresses or not. The elements in --ips must" +
+			" be separated by a comma, no spaces. If omitted, the" +
+			" node will be configured as a root node, that other" +
+			"ones can join later.",
 		Args: cobra.OnlyValidArgs,
 		RunE: func(c *cobra.Command, args []string) error {
 			defaultRpcPort := config.DefaultConfig().Redpanda.RPCServer.Port
@@ -116,7 +124,12 @@ func bootstrap(fs afero.Fs) *cobra.Command {
 			return config.WriteConfig(fs, conf, configPath)
 		},
 	}
-	c.Flags().StringSliceVar(&ips, "ips", []string{}, "The list of node addresses or hostnames")
+	c.Flags().StringSliceVar(
+		&ips,
+		"ips",
+		[]string{},
+		"The list of known node addresses or hostnames",
+	)
 	c.Flags().StringVar(
 		&configPath,
 		configFileFlag,
@@ -134,8 +147,7 @@ func bootstrap(fs afero.Fs) *cobra.Command {
 		&id,
 		"id",
 		-1,
-		"This node's ID. If omitted, the underlying integer"+
-			" representation of the node's IP will be used",
+		"This node's ID (required).",
 	)
 	cobra.MarkFlagRequired(c.Flags(), "id")
 	return c
