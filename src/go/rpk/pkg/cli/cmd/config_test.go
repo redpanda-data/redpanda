@@ -61,7 +61,7 @@ func TestSet(t *testing.T) {
 				"tune_aio_events":       true,
 				"tune_clocksource":      true,
 				"tune_swappiness":       true,
-				"enable_memory_locking": true,
+				"enable_memory_locking": false,
 				"tune_coredump":         false,
 				"coredump_dir":          "/var/lib/redpanda/coredump",
 			},
