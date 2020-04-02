@@ -33,7 +33,6 @@ vote_stm::~vote_stm() {
     }
 }
 ss::future<result<vote_reply>> vote_stm::do_dispatch_one(model::node_id n) {
-    using ret_t = result<vote_reply>;
     _ctxlog.trace("Sending vote request to {}", n);
     auto tout = clock_type::now() + _ptr->_jit.base_duration();
 

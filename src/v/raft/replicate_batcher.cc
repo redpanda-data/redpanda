@@ -169,7 +169,7 @@ ss::future<> replicate_batcher::do_flush(
           if (_ptr->_bg.is_closed()) {
               _ptr->_ctxlog.info(
                 "gate-closed, waiting to finish background requests");
-              return std::move(f);
+              return f;
           }
           // background
           (void)with_gate(_ptr->_bg, [this, stm, f = std::move(f)]() mutable {

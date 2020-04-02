@@ -322,7 +322,7 @@ struct async_adl<raft::append_entries_request> {
         auto batchCount = reflection::adl<uint32_t>{}.from(in);
         auto batches = ss::circular_buffer<model::record_batch>{};
         batches.reserve(batchCount);
-        for (int i = 0; i < batchCount; ++i) {
+        for (uint32_t i = 0; i < batchCount; ++i) {
             batches.push_back(adl<model::record_batch>{}.from(in));
         }
         auto reader = model::make_memory_record_batch_reader(
