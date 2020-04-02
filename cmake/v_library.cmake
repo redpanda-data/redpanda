@@ -2,6 +2,7 @@ include(CMakeParseArguments)
 
 set(V_CXX_STANDARD 17)
 set(V_DEFAULT_LINKOPTS)
+set(V_DEFAULT_COPTS -Wall -Wextra -Wno-missing-field-initializers)
 set(V_COMMON_INCLUDE_DIRS
   "${PROJECT_SOURCE_DIR}/src/v")
 # v_cc_library()
@@ -94,6 +95,7 @@ function(v_cc_library)
       # $<INSTALL_INTERFACE:${V_INSTALL_INCLUDEDIR}>
       )
     target_compile_options(${_NAME}
+      PRIVATE ${V_DEFAULT_COPTS}
       PRIVATE ${V_CC_LIB_COPTS})
     target_link_libraries(${_NAME}
       PUBLIC ${V_CC_LIB_DEPS}
