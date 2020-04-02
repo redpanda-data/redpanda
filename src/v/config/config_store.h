@@ -55,7 +55,7 @@ public:
         return errors;
     }
 
-    const void to_json(rapidjson::Writer<rapidjson::StringBuffer>& w) const {
+    void to_json(rapidjson::Writer<rapidjson::StringBuffer>& w) const {
         w.StartObject();
 
         for (const auto& [name, property] : _properties) {

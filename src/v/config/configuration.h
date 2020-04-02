@@ -30,8 +30,8 @@ struct configuration final : public config_store {
     property<tls_config> kafka_api_tls;
     property<bool> use_scheduling_groups;
     property<unresolved_address> admin;
-    property<ss::sstring> admin_api_doc_dir;
     property<bool> enable_admin_api;
+    property<ss::sstring> admin_api_doc_dir;
     property<int16_t> default_num_windows;
     property<std::chrono::milliseconds> default_window_sec;
     property<std::chrono::milliseconds> quota_manager_gc_sec;

@@ -94,13 +94,13 @@ private:
 }; // namespace config
 
 namespace std {
-static ostream& operator<<(ostream& o, const config::key_cert& c) {
+static inline ostream& operator<<(ostream& o, const config::key_cert& c) {
     o << "{ "
       << "key_file: " << c.key_file << " "
       << "cert_file: " << c.cert_file << " }";
     return o;
 }
-static ostream& operator<<(ostream& o, const config::tls_config& c) {
+static inline ostream& operator<<(ostream& o, const config::tls_config& c) {
     o << "{ "
       << "enabled: " << c.is_enabled()
       << "key/cert files: " << c.get_key_cert_files() << " "
