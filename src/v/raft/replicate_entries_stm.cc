@@ -37,7 +37,6 @@ ss::future<result<append_entries_reply>> replicate_entries_stm::do_dispatch_one(
     if (n == _ptr->_self) {
         auto f = ss::with_semaphore(
           _ptr->_op_sem, 1, [this, req = std::move(req)]() mutable {
-              using append_res_t = storage::append_result;
               return _ptr->flush_log()
                 .then([this]() {
                     append_entries_reply reply;
@@ -48,7 +47,7 @@ ss::future<result<append_entries_reply>> replicate_entries_stm::do_dispatch_one(
                     reply.result = append_entries_reply::status::success;
                     return ret_t(std::move(reply));
                 })
-                .handle_exception([this](const std::exception_ptr& ex) {
+                .handle_exception([]([[maybe_unused]] const std::exception_ptr& ex) {
                     return ret_t(errc::leader_flush_failed);
                 });
           });
@@ -65,7 +64,6 @@ clock_type::time_point replicate_entries_stm::append_entries_timeout() {
 ss::future<result<append_entries_reply>>
 replicate_entries_stm::send_append_entries_request(
   model::node_id n, append_entries_request req) {
-    using ret_t = result<append_entries_reply>;
     _ptr->update_node_hbeat_timestamp(n);
     _ctxlog.trace("Sending append entries request {} to {}", req.meta, n);
 
@@ -113,7 +111,6 @@ inline bool replicate_entries_stm::is_follower_recovering(model::node_id id) {
 
 ss::future<result<replicate_result>>
 replicate_entries_stm::apply(ss::semaphore_units<> u) {
-    using ret_t = result<replicate_result>;
     // first append lo leader log, no flushing
     return append_to_self()
       .then(

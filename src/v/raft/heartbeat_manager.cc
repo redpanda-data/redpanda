@@ -38,7 +38,7 @@ locks_for_range(const consensus_set& c) {
           if (u) {
               locks.push_back(std::move(*u));
           }
-          return std::move(locks);
+          return locks;
       });
 }
 
@@ -128,7 +128,6 @@ heartbeat_manager::do_dispatch_heartbeats(clock_type::time_point last_timeout) {
 }
 
 ss::future<> heartbeat_manager::do_heartbeat(node_heartbeat&& r) {
-    auto shard = rpc::connection_cache::shard_for(r.target);
     std::vector<group_id> groups(r.request.meta.size());
     for (size_t i = 0; i < groups.size(); ++i) {
         groups[i] = group_id(r.request.meta[i].group);

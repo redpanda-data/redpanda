@@ -89,7 +89,7 @@ public:
               for (auto& r : ret) {
                   r.set_term(t);
               }
-              return std::move(ret);
+              return ret;
           });
     }
 

@@ -35,10 +35,10 @@ consensus::consensus(
   , _client_protocol(client)
   , _leader_notification(std::move(cb))
   , _conf(std::move(initial_cfg))
-  , _ctxlog(_self, group)
-  , _append_entries_notification(std::move(append_callback))
   , _fstats({})
   , _batcher(this)
+  , _append_entries_notification(std::move(append_callback))
+  , _ctxlog(_self, group)
   , _replicate_append_timeout(
       config::shard_local_cfg().replicate_append_timeout_ms())
   , _recovery_append_timeout(
@@ -191,7 +191,7 @@ void consensus::dispatch_recovery(
           .handle_exception([this, &idx](const std::exception_ptr& e) {
               _ctxlog.warn("Node {} recovery failed - {}", idx.node_id, e);
           })
-          .finally([r = std::move(recovery), this] {});
+          .finally([r = std::move(recovery)] {});
     }).handle_exception([this](const std::exception_ptr& e) {
         _ctxlog.warn("Recovery error - {}", e);
     });
@@ -316,15 +316,15 @@ void consensus::dispatch_vote() {
                       "Error returned from voting process {}",
                       std::current_exception());
                 }
-                auto f = p->wait().finally([vstm = std::move(vstm), this] {});
+                auto f = p->wait().finally([vstm = std::move(vstm)] {});
                 // make sure we wait for all futures when gate is closed
                 if (_bg.is_closed()) {
-                    return std::move(f);
+                    return f;
                 }
                 // background
                 (void)with_gate(
                   _bg,
-                  [this, vstm = std::move(vstm), f = std::move(f)]() mutable {
+                  [vstm = std::move(vstm), f = std::move(f)]() mutable {
                       return std::move(f);
                   });
 
@@ -532,7 +532,6 @@ consensus::do_append_entries(append_entries_request&& r) {
             return ss::make_ready_future<append_entries_reply>(
               std::move(reply));
         }
-        auto previous_commit_idx = _meta.commit_index;
         return maybe_update_follower_commit_idx(
                  model::offset(r.meta.commit_index))
           .then([this, reply = std::move(reply)]() mutable {
@@ -575,7 +574,7 @@ consensus::do_append_entries(append_entries_request&& r) {
     return disk_append(std::move(r.batches))
       .then([this, m = r.meta](offsets_ret ofs) mutable {
           return maybe_update_follower_commit_idx(model::offset(m.commit_index))
-            .then([this, m, ofs = std::move(ofs)]() mutable {
+            .then([this, ofs = std::move(ofs)]() mutable {
                 // we do not want to include our disk flush latency into the
                 // leader vote timeout
                 _hbeat = clock_type::now();
@@ -628,7 +627,7 @@ ss::future<> consensus::process_configurations(
   model::record_batch_reader&& rdr, model::offset last_config_offset) {
     _last_seen_config_offset = last_config_offset;
     return details::extract_configuration(std::move(rdr))
-      .then([this, last_config_offset](std::optional<group_configuration> cfg) {
+      .then([this](std::optional<group_configuration> cfg) {
           if (cfg) {
               update_follower_stats(*cfg);
               _conf = std::move(*cfg);
@@ -694,7 +693,7 @@ consensus::disk_append(model::record_batch_reader&& reader) {
           // followers for other consistency flushes are done separately.
 
           if (_vstate != vote_state::leader) {
-              return flush_log().then([ret = std::move(ret), this] {
+              return flush_log().then([ret = std::move(ret)] {
                   return ss::make_ready_future<ret_t>(std::move(ret));
               });
           }
