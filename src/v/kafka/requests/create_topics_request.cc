@@ -114,7 +114,7 @@ model::node_id create_topics_request::read_node_id(request_reader& r) {
 }
 
 ss::future<response_ptr>
-create_topics_api::process(request_context&& ctx, ss::smp_service_group g) {
+create_topics_api::process(request_context&& ctx, [[maybe_unused]] ss::smp_service_group g) {
     auto request = create_topics_request::decode(ctx);
     return ss::do_with(
       std::move(ctx),

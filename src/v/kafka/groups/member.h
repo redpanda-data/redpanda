@@ -85,6 +85,7 @@ public:
           std::move(group_instance_id),
           std::move(protocol_type),
           std::move(protocols),
+          iobuf(),
         }),
         std::move(group_id)) {}
 

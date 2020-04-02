@@ -15,11 +15,11 @@ void list_offsets_request::encode(
         writer.write(int8_t(isolation_level));
     }
     writer.write_array(
-      topics, [version](topic& topic, response_writer& writer) {
+      topics, [](topic& topic, response_writer& writer) {
           writer.write(topic.name);
           writer.write_array(
             topic.partitions,
-            [version](partition& partition, response_writer& writer) {
+            [](partition& partition, response_writer& writer) {
                 writer.write(partition.id);
                 writer.write(partition.timestamp());
             });
@@ -34,10 +34,10 @@ void list_offsets_request::decode(request_context& ctx) {
     if (version >= api_version(2)) {
         isolation_level = reader.read_int8();
     }
-    topics = reader.read_array([version](request_reader& reader) {
+    topics = reader.read_array([](request_reader& reader) {
         return topic{
           .name = model::topic(reader.read_string()),
-          .partitions = reader.read_array([version](request_reader& reader) {
+          .partitions = reader.read_array([](request_reader& reader) {
               return partition{
                 .id = model::partition_id(reader.read_int32()),
                 .timestamp = model::timestamp(reader.read_int64()),
@@ -74,11 +74,11 @@ void list_offsets_response::encode(const request_context& ctx, response& resp) {
         writer.write(int32_t(throttle_time_ms.count()));
     }
     writer.write_array(
-      topics, [version](topic& topic, response_writer& writer) {
+      topics, [](topic& topic, response_writer& writer) {
           writer.write(topic.name);
           writer.write_array(
             topic.partitions,
-            [version](partition& partition, response_writer& writer) {
+            [](partition& partition, response_writer& writer) {
                 writer.write(partition.id);
                 writer.write(partition.error);
                 writer.write(partition.timestamp());
@@ -93,9 +93,9 @@ void list_offsets_response::decode(iobuf buf, api_version version) {
     if (version >= api_version(2)) {
         throttle_time_ms = std::chrono::milliseconds(reader.read_int32());
     }
-    topics = reader.read_array([version](request_reader& reader) {
+    topics = reader.read_array([](request_reader& reader) {
         auto name = model::topic(reader.read_string());
-        auto partitions = reader.read_array([version](request_reader& reader) {
+        auto partitions = reader.read_array([](request_reader& reader) {
             auto id = model::partition_id(reader.read_int32());
             auto error = error_code(reader.read_int16());
             auto time = model::timestamp(reader.read_int64());
@@ -131,9 +131,9 @@ std::ostream& operator<<(std::ostream& os, const list_offsets_response& r) {
 
 struct list_offsets_ctx {
     request_context rctx;
-    ss::smp_service_group ssg;
     list_offsets_request request;
     list_offsets_response response;
+    ss::smp_service_group ssg;
 
     list_offsets_ctx(
       request_context&& rctx,

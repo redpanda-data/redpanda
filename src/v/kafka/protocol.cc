@@ -31,8 +31,8 @@ protocol::protocol(
   ss::sharded<cluster::partition_manager>& pm,
   ss::sharded<coordinator_ntp_mapper>& coordinator_mapper) noexcept
   : _smp_group(smp)
-  , _metadata_cache(meta)
   , _cntrl_dispatcher(ctrl)
+  , _metadata_cache(meta)
   , _quota_mgr(quota)
   , _group_router(router)
   , _shard_table(tbl)
@@ -43,8 +43,8 @@ ss::future<> protocol::apply(rpc::server::resources rs) {
     auto ctx = ss::make_lw_shared<protocol::connection_context>(
       *this, std::move(rs));
     return ss::do_until(
-             [this, ctx] { return ctx->is_finished_parsing(); },
-             [this, ctx] { return ctx->process_one_request(); })
+             [ctx] { return ctx->is_finished_parsing(); },
+             [ctx] { return ctx->process_one_request(); })
       .finally([ctx] {});
 }
 
@@ -183,7 +183,7 @@ ss::future<> protocol::connection_context::process_next_response() {
             _responses.erase(it);
             _rs.probe().add_bytes_sent(msg.size());
             _rs.probe().request_completed();
-            return _rs.conn->write(std::move(msg)).then([this] {
+            return _rs.conn->write(std::move(msg)).then([] {
                 return ss::make_ready_future<ss::stop_iteration>(
                   ss::stop_iteration::no);
             });

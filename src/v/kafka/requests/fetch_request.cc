@@ -178,9 +178,9 @@ void fetch_response::decode(iobuf buf, api_version version) {
         throttle_time = std::chrono::milliseconds(reader.read_int32());
     }
 
-    partitions = reader.read_array([version](request_reader& reader) {
+    partitions = reader.read_array([](request_reader& reader) {
         partition p(model::topic(reader.read_string()));
-        p.responses = reader.read_array([version](request_reader& reader) {
+        p.responses = reader.read_array([](request_reader& reader) {
             return partition_response{
               .id = model::partition_id(reader.read_int32()),
               .error = error_code(reader.read_int16()),
@@ -423,10 +423,14 @@ fetch_api::process(request_context&& rctx, ss::smp_service_group ssg) {
         return fetch_topic_partitions(octx).then([&octx] {
             /*
              * fast out
+             *
+             * response_size is a size_t accumulated value that we track as we
+             * build the response. all of the kafka types (e.g. min_bytes) are
+             * annoyingly signed.
              */
             if (
               !octx.request.debounce_delay()
-              || octx.response_size >= octx.request.min_bytes
+              || (int32_t)octx.response_size >= octx.request.min_bytes
               || octx.request.topics.empty() || octx.response_error) {
                 return octx.rctx.respond(std::move(octx.response));
             }

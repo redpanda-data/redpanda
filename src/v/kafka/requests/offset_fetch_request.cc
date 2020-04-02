@@ -16,28 +16,27 @@
 namespace kafka {
 
 void offset_fetch_request::encode(
-  response_writer& writer, api_version version) {
+  response_writer& writer, [[maybe_unused]] api_version version) {
     writer.write(group_id());
     writer.write_nullable_array(
-      topics, [version](topic& topic, response_writer& writer) {
+      topics, [](topic& topic, response_writer& writer) {
           writer.write(topic.name);
           writer.write_array(
             topic.partitions,
-            [version](model::partition_id id, response_writer& writer) {
+            [](model::partition_id id, response_writer& writer) {
                 writer.write(id);
             });
       });
 }
 
 void offset_fetch_request::decode(request_context& ctx) {
-    const auto version = ctx.header().version;
     auto& reader = ctx.reader();
 
     group_id = kafka::group_id(reader.read_string());
-    topics = reader.read_nullable_array([version](request_reader& reader) {
+    topics = reader.read_nullable_array([](request_reader& reader) {
         return topic{
           .name = model::topic(reader.read_string()),
-          .partitions = reader.read_array([version](request_reader& reader) {
+          .partitions = reader.read_array([](request_reader& reader) {
               return model::partition_id(reader.read_int32());
           }),
         };
@@ -61,11 +60,11 @@ void offset_fetch_response::encode(const request_context& ctx, response& resp) {
         writer.write(int32_t(throttle_time_ms.count()));
     }
     writer.write_array(
-      topics, [version](topic& topic, response_writer& writer) {
+      topics, [](topic& topic, response_writer& writer) {
           writer.write(topic.name);
           writer.write_array(
             topic.partitions,
-            [version](partition& partition, response_writer& writer) {
+            [](partition& partition, response_writer& writer) {
                 writer.write(partition.id);
                 writer.write(partition.offset);
                 writer.write(partition.metadata);
@@ -83,9 +82,9 @@ void offset_fetch_response::decode(iobuf buf, api_version version) {
     if (version >= api_version(3)) {
         throttle_time_ms = std::chrono::milliseconds(reader.read_int32());
     }
-    topics = reader.read_array([version](request_reader& reader) {
+    topics = reader.read_array([](request_reader& reader) {
         auto name = model::topic(reader.read_string());
-        auto partitions = reader.read_array([version](request_reader& reader) {
+        auto partitions = reader.read_array([](request_reader& reader) {
             partition p;
             p.id = model::partition_id(reader.read_int32());
             p.offset = model::offset(reader.read_int64());
@@ -123,8 +122,8 @@ std::ostream& operator<<(std::ostream& os, const offset_fetch_response& r) {
 
 struct offset_fetch_ctx {
     request_context rctx;
-    ss::smp_service_group ssg;
     offset_fetch_request request;
+    ss::smp_service_group ssg;
 
     offset_fetch_ctx(
       request_context&& rctx,

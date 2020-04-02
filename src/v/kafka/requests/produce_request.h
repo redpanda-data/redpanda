@@ -24,7 +24,7 @@ public:
     process(request_context&&, ss::smp_service_group);
 };
 
-class produce_response;
+struct produce_response;
 
 struct produce_request final {
     struct partition {

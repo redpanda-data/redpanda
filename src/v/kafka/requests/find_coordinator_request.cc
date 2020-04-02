@@ -109,7 +109,7 @@ handle_ntp(request_context& ctx, std::optional<model::ntp> ntp) {
       .get_leader(std::move(*ntp), timeout)
       .then(
         [&ctx](model::node_id leader) { return handle_leader(ctx, leader); })
-      .handle_exception([&ctx](std::exception_ptr e) {
+      .handle_exception([&ctx]([[maybe_unused]] std::exception_ptr e) {
           return ctx.respond(
             find_coordinator_response(error_code::coordinator_not_available));
       });
@@ -137,7 +137,7 @@ create_topic(request_context& ctx, cluster::topic_configuration topic) {
                 }
                 return error_code::none;
             })
-            .handle_exception([](std::exception_ptr e) {
+            .handle_exception([]([[maybe_unused]] std::exception_ptr e) {
                 // various errors may returned such as a timeout, or if the
                 // controller group doesn't have a leader. client will retry.
                 return error_code::coordinator_not_available;
@@ -146,7 +146,7 @@ create_topic(request_context& ctx, cluster::topic_configuration topic) {
 }
 
 ss::future<response_ptr>
-find_coordinator_api::process(request_context&& ctx, ss::smp_service_group g) {
+find_coordinator_api::process(request_context&& ctx, [[maybe_unused]] ss::smp_service_group g) {
     find_coordinator_request request(ctx);
 
     // other types include txn coordinators which are unsupported

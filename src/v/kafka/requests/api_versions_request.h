@@ -56,7 +56,7 @@ struct api_versions_response final {
 
 std::ostream& operator<<(std::ostream&, const api_versions_response&);
 
-static bool operator==(
+static inline bool operator==(
   const api_versions_response::api& a, const api_versions_response::api& b) {
     return a.key == b.key && a.min_version == b.min_version
            && a.max_version == b.max_version;

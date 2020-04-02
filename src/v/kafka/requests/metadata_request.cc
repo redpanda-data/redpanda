@@ -306,7 +306,7 @@ create_topic(request_context& ctx, model::topic&& topic) {
                 return t;
             })
             .handle_exception(
-              [topic = std::move(topic)](std::exception_ptr e) mutable {
+              [topic = std::move(topic)]([[maybe_unused]] std::exception_ptr e) mutable {
                   metadata_response::topic t;
                   t.name = std::move(topic);
                   t.err_code = error_code::request_timed_out;
@@ -365,11 +365,11 @@ get_topic_metadata(request_context& ctx, metadata_request& request) {
 }
 
 ss::future<response_ptr>
-metadata_api::process(request_context&& ctx, ss::smp_service_group g) {
+metadata_api::process(request_context&& ctx, [[maybe_unused]] ss::smp_service_group g) {
     return ss::do_with(
       std::move(ctx),
       metadata_response{},
-      [g](request_context& ctx, metadata_response& reply) {
+      [](request_context& ctx, metadata_response& reply) {
           auto brokers = ctx.metadata_cache().all_brokers();
           std::transform(
             brokers.begin(),

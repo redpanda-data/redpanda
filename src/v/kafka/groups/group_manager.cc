@@ -18,7 +18,7 @@ ss::future<> group_manager::start() {
     _leader_notify_handle = _pm.local().register_leadership_notification(
       [this](
         ss::lw_shared_ptr<cluster::partition> p,
-        model::term_id term,
+        [[maybe_unused]] model::term_id term,
         std::optional<model::node_id> leader_id) {
           handle_leader_change(p, leader_id);
       });
@@ -74,7 +74,7 @@ void group_manager::handle_leader_change(
 
 ss::future<> group_manager::inject_noop(
   ss::lw_shared_ptr<cluster::partition> p,
-  ss::lowres_clock::time_point timeout) {
+  [[maybe_unused]] ss::lowres_clock::time_point timeout) {
     cluster::simple_batch_builder builder(
       raft::data_batch_type, model::offset(0));
     group_log_record_key key{
