@@ -65,5 +65,5 @@ wrap_exception_with_result(EC error, ss::future<T> f) {
     return f
       .then([](T t) { return ss::make_ready_future<ret_t>(std::move(t)); })
       .handle_exception_type(
-        [error](Ex& e) { return ss::make_ready_future<ret_t>(error); });
+        [error]([[maybe_unused]] Ex& e) { return ss::make_ready_future<ret_t>(error); });
 }

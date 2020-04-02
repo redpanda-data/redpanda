@@ -6,14 +6,14 @@
 
 namespace tests {
 
-static storage::log_manager make_log_mgr(ss::sstring base_dir) {
+static inline storage::log_manager make_log_mgr(ss::sstring base_dir) {
     return storage::log_manager(
       {.base_dir = base_dir,
        .max_segment_size = 1 << 30,
        .should_sanitize = storage::log_config::sanitize_files::yes});
 }
 
-static ss::future<> persist_log_file(
+static inline ss::future<> persist_log_file(
   ss::sstring base_dir,
   model::ntp file_ntp,
   ss::circular_buffer<model::record_batch> batches) {
@@ -56,7 +56,7 @@ private:
     ss::circular_buffer<model::record_batch> _batches;
 };
 
-static ss::future<ss::circular_buffer<model::record_batch>>
+static inline ss::future<ss::circular_buffer<model::record_batch>>
 read_log_file(ss::sstring base_dir, model::ntp file_ntp) {
     return ss::do_with(
       make_log_mgr(base_dir),
