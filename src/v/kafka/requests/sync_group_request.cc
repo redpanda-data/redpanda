@@ -58,8 +58,8 @@ void sync_group_response::encode(const request_context& ctx, response& resp) {
 }
 
 ss::future<response_ptr>
-sync_group_api::process(request_context&& ctx, ss::smp_service_group g) {
-    return ss::do_with(std::move(ctx), [g](request_context& ctx) {
+sync_group_api::process(request_context&& ctx, [[maybe_unused]] ss::smp_service_group g) {
+    return ss::do_with(std::move(ctx), [](request_context& ctx) {
         sync_group_request request;
         request.decode(ctx);
         return ctx.groups()

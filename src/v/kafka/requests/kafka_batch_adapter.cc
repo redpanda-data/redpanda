@@ -148,14 +148,16 @@ void kafka_batch_adapter::verify_crc(int32_t expected_crc, iobuf_parser in) {
     in.skip(21);
 
     // 2. consume & checksum the CRC
-    const auto consumed = in.consume(
+    in.consume(
       in.bytes_left(), [&crc](const char* src, size_t n) {
           // NOLINTNEXTLINE
           crc.extend(reinterpret_cast<const uint8_t*>(src), n);
           return ss::stop_iteration::no;
       });
 
-    if (unlikely(expected_crc != crc.value())) {
+    // the crc is calculated over the bytes we receive as a uint32_t, but the
+    // crc arrives off the wire as a signed 32-bit value.
+    if (unlikely((uint32_t)expected_crc != crc.value())) {
         valid_crc = false;
         vlog(
           klog.error,

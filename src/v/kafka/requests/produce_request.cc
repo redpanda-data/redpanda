@@ -26,9 +26,7 @@
 namespace kafka {
 
 void produce_request::encode(
-  const request_context& ctx, response_writer& writer) {
-    auto version = ctx.header().version;
-
+  [[maybe_unused]] const request_context& ctx, response_writer& writer) {
     writer.write(transactional_id);
     writer.write(int16_t(acks));
     writer.write(int32_t(timeout.count()));
@@ -46,7 +44,6 @@ void produce_request::encode(
 
 void produce_request::decode(request_context& ctx) {
     auto& reader = ctx.reader();
-    auto version = ctx.header().version;
 
     transactional_id = reader.read_nullable_string();
     acks = reader.read_int16();
@@ -184,9 +181,9 @@ std::ostream& operator<<(std::ostream& os, const produce_response& r) {
 
 struct produce_ctx {
     request_context rctx;
-    ss::smp_service_group ssg;
     produce_request request;
     produce_response response;
+    ss::smp_service_group ssg;
 
     produce_ctx(
       request_context&& rctx,

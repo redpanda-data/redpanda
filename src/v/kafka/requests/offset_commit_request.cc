@@ -124,11 +124,11 @@ void offset_commit_response::encode(
         writer.write(int32_t(throttle_time_ms.count()));
     }
     writer.write_array(
-      topics, [version](topic& topic, response_writer& writer) {
+      topics, [](topic& topic, response_writer& writer) {
           writer.write(topic.name);
           writer.write_array(
             topic.partitions,
-            [version](partition& partition, response_writer& writer) {
+            [](partition& partition, response_writer& writer) {
                 writer.write(partition.id);
                 writer.write(partition.error);
             });
@@ -141,9 +141,9 @@ void offset_commit_response::decode(iobuf buf, api_version version) {
     if (version >= api_version(3)) {
         throttle_time_ms = std::chrono::milliseconds(reader.read_int32());
     }
-    topics = reader.read_array([version](request_reader& reader) {
+    topics = reader.read_array([](request_reader& reader) {
         auto name = model::topic(reader.read_string());
-        auto partitions = reader.read_array([version](request_reader& reader) {
+        auto partitions = reader.read_array([](request_reader& reader) {
             auto id = model::partition_id(reader.read_int32());
             auto error = error_code(reader.read_int16());
             return partition{id, error};
@@ -171,8 +171,8 @@ std::ostream& operator<<(std::ostream& os, const offset_commit_response& r) {
 
 struct offset_commit_ctx {
     request_context rctx;
-    ss::smp_service_group ssg;
     offset_commit_request request;
+    ss::smp_service_group ssg;
 
     offset_commit_ctx(
       request_context&& rctx,

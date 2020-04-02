@@ -17,7 +17,7 @@ void leave_group_request::decode(request_context& ctx) {
 }
 
 void leave_group_request::encode(
-  const request_context& ctx, response_writer& writer) {
+  [[maybe_unused]] const request_context& ctx, response_writer& writer) {
     writer.write(group_id());
     writer.write(member_id());
 }
@@ -33,9 +33,9 @@ void leave_group_response::encode(const request_context& ctx, response& resp) {
 }
 
 ss::future<response_ptr>
-leave_group_api::process(request_context&& ctx, ss::smp_service_group g) {
+leave_group_api::process(request_context&& ctx, [[maybe_unused]] ss::smp_service_group g) {
     return ss::do_with(
-      remote(std::move(ctx)), [g](remote<request_context>& remote_ctx) {
+      remote(std::move(ctx)), [](remote<request_context>& remote_ctx) {
           auto& ctx = remote_ctx.get();
           leave_group_request request;
           request.decode(ctx);

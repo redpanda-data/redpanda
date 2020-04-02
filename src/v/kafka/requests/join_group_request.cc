@@ -90,7 +90,7 @@ void join_group_response::encode(const request_context& ctx, response& resp) {
     writer.write(member_id());
     writer.write_array(
       members,
-      [this, version](const member_config& m, response_writer& writer) {
+      [version](const member_config& m, response_writer& writer) {
           writer.write(m.member_id());
           if (version >= api_version(5)) {
               writer.write(m.group_instance_id);
@@ -118,7 +118,7 @@ std::ostream& operator<<(std::ostream& o, const join_group_response& r) {
 }
 
 ss::future<response_ptr>
-join_group_api::process(request_context&& ctx, ss::smp_service_group g) {
+join_group_api::process(request_context&& ctx, [[maybe_unused]] ss::smp_service_group g) {
     join_group_request request(ctx);
 
     if (request.group_instance_id) {
@@ -129,7 +129,7 @@ join_group_api::process(request_context&& ctx, ss::smp_service_group g) {
     return ss::do_with(
       std::move(ctx),
       std::move(request),
-      [g](request_context& ctx, join_group_request& request) {
+      [](request_context& ctx, join_group_request& request) {
           return ctx.groups()
             .join_group(std::move(request))
             .then([&ctx](join_group_response&& reply) {

@@ -117,7 +117,7 @@ bool group::supports_protocols(const join_group_request& r) {
       [this](const kafka::member_protocol& p) {
           auto it = _supported_protocols.find(p.name);
           return it != _supported_protocols.end()
-                 && it->second == _members.size();
+                 && (size_t)it->second == _members.size();
       });
 }
 
@@ -267,7 +267,7 @@ kafka::protocol_name group::select_protocol() const {
       std::cbegin(_supported_protocols),
       std::cend(_supported_protocols),
       [this, &candidates](const protocol_support::value_type& p) mutable {
-          if (p.second == _members.size()) {
+          if ((size_t)p.second == _members.size()) {
               candidates.insert(p.first);
               klog.trace("candidate: {}", p.first);
           }
@@ -736,7 +736,7 @@ void group::complete_join() {
               ->replicate(
                 std::move(reader),
                 raft::replicate_options(raft::consistency_level::quorum_ack))
-              .then([this](result<raft::replicate_result> r) {});
+              .then([]([[maybe_unused]] result<raft::replicate_result> r) {});
         } else {
             std::for_each(
               std::cbegin(_members),
