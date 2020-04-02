@@ -29,7 +29,7 @@ public:
           });
         auto f = _promise.get_future();
         _timer.arm(timeout);
-        return std::move(f);
+        return f;
     };
 
     void set_value(T val) {

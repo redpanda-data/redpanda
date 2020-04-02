@@ -4,6 +4,7 @@
 #include <chrono>
 #include <numeric>
 #include <vector>
+#include "seastarx.h"
 
 // rate_tracker tracks the rate of a metric over time using a sliding window
 // average. configure with number of windows and the width of each window.
@@ -15,6 +16,14 @@ class rate_tracker final {
 public:
     using clock = ss::lowres_clock;
 
+private:
+    struct window {
+        clock::time_point time;
+        double count{0.};
+        window() = default;
+    };
+
+public:
     rate_tracker(size_t num_windows, clock::duration window_size)
       : _windows(num_windows)
       , _window_size(window_size)
@@ -53,7 +62,8 @@ public:
         auto elapsed = now - oldest->time;
         auto num_windows = elapsed / _window_size;
         auto min_windows = _windows.size() - 1;
-        if (num_windows < min_windows) {
+        // chrono uses signed integers
+        if ((size_t)num_windows < min_windows) {
             elapsed += (min_windows - num_windows) * _window_size;
         }
 
@@ -72,12 +82,6 @@ private:
             curr.count = 0.;
         }
     }
-
-    struct window {
-        clock::time_point time;
-        double count{0.};
-        window() = default;
-    };
 
     std::vector<window> _windows;
     clock::duration _window_size;

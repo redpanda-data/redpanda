@@ -18,7 +18,7 @@ std::ostream& operator<<(std::ostream& os, const std::optional<T>& opt) {
     return os << "{}";
 }
 
-static std::ostream&
+static inline std::ostream&
 operator<<(std::ostream& o, const ss::lowres_clock::duration& d) {
     return ss::fmt_print(o, "{}", d.count());
 }
