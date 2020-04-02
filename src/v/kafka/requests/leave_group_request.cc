@@ -32,8 +32,8 @@ void leave_group_response::encode(const request_context& ctx, response& resp) {
     writer.write(error);
 }
 
-ss::future<response_ptr>
-leave_group_api::process(request_context&& ctx, [[maybe_unused]] ss::smp_service_group g) {
+ss::future<response_ptr> leave_group_api::process(
+  request_context&& ctx, [[maybe_unused]] ss::smp_service_group g) {
     return ss::do_with(
       remote(std::move(ctx)), [](remote<request_context>& remote_ctx) {
           auto& ctx = remote_ctx.get();

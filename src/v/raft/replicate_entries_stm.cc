@@ -47,9 +47,10 @@ ss::future<result<append_entries_reply>> replicate_entries_stm::do_dispatch_one(
                     reply.result = append_entries_reply::status::success;
                     return ret_t(std::move(reply));
                 })
-                .handle_exception([]([[maybe_unused]] const std::exception_ptr& ex) {
-                    return ret_t(errc::leader_flush_failed);
-                });
+                .handle_exception(
+                  []([[maybe_unused]] const std::exception_ptr& ex) {
+                      return ret_t(errc::leader_flush_failed);
+                  });
           });
         _dispatch_sem.signal();
         return f;

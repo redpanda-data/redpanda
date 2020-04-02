@@ -11,8 +11,8 @@
 
 namespace kafka {
 
-ss::future<response_ptr>
-list_groups_api::process(request_context&& ctx, [[maybe_unused]] ss::smp_service_group g) {
+ss::future<response_ptr> list_groups_api::process(
+  request_context&& ctx, [[maybe_unused]] ss::smp_service_group g) {
     auto resp = std::make_unique<response>();
     if (ctx.header().version >= api_version(1)) {
         resp->writer().write(int32_t(0));

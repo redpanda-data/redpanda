@@ -1,10 +1,11 @@
 #pragma once
+#include "seastarx.h"
+
 #include <seastar/core/lowres_clock.hh>
 
 #include <chrono>
 #include <numeric>
 #include <vector>
-#include "seastarx.h"
 
 // rate_tracker tracks the rate of a metric over time using a sliding window
 // average. configure with number of windows and the width of each window.

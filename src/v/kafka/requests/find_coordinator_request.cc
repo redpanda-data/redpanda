@@ -145,8 +145,8 @@ create_topic(request_context& ctx, cluster::topic_configuration topic) {
       });
 }
 
-ss::future<response_ptr>
-find_coordinator_api::process(request_context&& ctx, [[maybe_unused]] ss::smp_service_group g) {
+ss::future<response_ptr> find_coordinator_api::process(
+  request_context&& ctx, [[maybe_unused]] ss::smp_service_group g) {
     find_coordinator_request request(ctx);
 
     // other types include txn coordinators which are unsupported

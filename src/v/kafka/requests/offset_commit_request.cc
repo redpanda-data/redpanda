@@ -123,16 +123,14 @@ void offset_commit_response::encode(
     if (version >= api_version(3)) {
         writer.write(int32_t(throttle_time_ms.count()));
     }
-    writer.write_array(
-      topics, [](topic& topic, response_writer& writer) {
-          writer.write(topic.name);
-          writer.write_array(
-            topic.partitions,
-            [](partition& partition, response_writer& writer) {
-                writer.write(partition.id);
-                writer.write(partition.error);
-            });
-      });
+    writer.write_array(topics, [](topic& topic, response_writer& writer) {
+        writer.write(topic.name);
+        writer.write_array(
+          topic.partitions, [](partition& partition, response_writer& writer) {
+              writer.write(partition.id);
+              writer.write(partition.error);
+          });
+    });
 }
 
 void offset_commit_response::decode(iobuf buf, api_version version) {

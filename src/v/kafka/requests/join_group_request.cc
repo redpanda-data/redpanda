@@ -89,8 +89,7 @@ void join_group_response::encode(const request_context& ctx, response& resp) {
     writer.write(leader_id());
     writer.write(member_id());
     writer.write_array(
-      members,
-      [version](const member_config& m, response_writer& writer) {
+      members, [version](const member_config& m, response_writer& writer) {
           writer.write(m.member_id());
           if (version >= api_version(5)) {
               writer.write(m.group_instance_id);
@@ -117,8 +116,8 @@ std::ostream& operator<<(std::ostream& o, const join_group_response& r) {
       r.members);
 }
 
-ss::future<response_ptr>
-join_group_api::process(request_context&& ctx, [[maybe_unused]] ss::smp_service_group g) {
+ss::future<response_ptr> join_group_api::process(
+  request_context&& ctx, [[maybe_unused]] ss::smp_service_group g) {
     join_group_request request(ctx);
 
     if (request.group_instance_id) {

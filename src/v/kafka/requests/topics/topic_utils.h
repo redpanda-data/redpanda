@@ -86,8 +86,7 @@ Iter validate_requests_range(
   Iter begin,
   Iter end,
   ErrIter err_it,
-  validator_type_list<typename Iter::value_type, ValidatorTypes...>
-    ) {
+  validator_type_list<typename Iter::value_type, ValidatorTypes...>) {
     ((end = validate_requests_range(
         begin,
         end,

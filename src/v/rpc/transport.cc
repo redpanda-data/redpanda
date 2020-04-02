@@ -34,7 +34,8 @@ base_transport::base_transport(configuration c)
                     : nullptr) {}
 
 transport::transport(
-  transport_configuration c, [[maybe_unused]] std::optional<ss::sstring> service_name)
+  transport_configuration c,
+  [[maybe_unused]] std::optional<ss::sstring> service_name)
   : base_transport(base_transport::configuration{
     .server_addr = std::move(c.server_addr),
     .credentials = std::move(c.credentials),
@@ -65,8 +66,7 @@ ss::future<> base_transport::do_connect() {
       })
       .then_wrapped([this](ss::future<ss::connected_socket> f_fd) mutable {
           try {
-              _fd = std::make_unique<ss::connected_socket>(
-                f_fd.get0());
+              _fd = std::make_unique<ss::connected_socket>(f_fd.get0());
           } catch (...) {
               auto e = std::current_exception();
               _probe.connection_error(e);
