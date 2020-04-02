@@ -36,14 +36,14 @@ func TestTimeoutDuration(t *testing.T) {
 		timeout          string
 		duration         string
 		expectedTimeout  time.Duration
-		expectedDuration int
+		expectedDuration time.Duration
 	}{
 		{
 			name:             "the total timeout should equal the duration + the timeout",
 			timeout:          "1200ms",
-			duration:         "3600",
-			expectedTimeout:  3600*time.Second + 1200*time.Millisecond,
-			expectedDuration: 3600,
+			duration:         "3600ms",
+			expectedTimeout:  3600*time.Millisecond + 1200*time.Millisecond,
+			expectedDuration: 3600 * time.Millisecond,
 		},
 		{
 			name:             "the total timeout should be 1hr by default",
@@ -53,11 +53,11 @@ func TestTimeoutDuration(t *testing.T) {
 			expectedDuration: 0,
 		},
 		{
-			name:             "the default duration should be 30s",
+			name:             "the default duration should be 10m",
 			timeout:          "",
 			duration:         "",
-			expectedTimeout:  30*time.Second + 1*time.Hour,
-			expectedDuration: 30,
+			expectedTimeout:  10*time.Minute + 1*time.Hour,
+			expectedDuration: 10 * time.Minute,
 		},
 	}
 
@@ -90,7 +90,7 @@ func TestTimeoutDuration(t *testing.T) {
 			if tt.expectedTimeout != timeout {
 				t.Errorf("expected timeout:\n%v\ngot:\n%v", tt.expectedTimeout, timeout)
 			}
-			duration, err := cmd.Flags().GetInt("duration")
+			duration, err := cmd.Flags().GetDuration("duration")
 			if err != nil {
 				t.Errorf("got an error retrieving the duration flag value: %v", err)
 			}

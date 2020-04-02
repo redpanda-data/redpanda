@@ -13,8 +13,7 @@ func NewIoTuneTuner(
 	fs afero.Fs,
 	evalDirectories []string,
 	ioConfigFile string,
-	duration int,
-	timeout time.Duration,
+	duration, timeout time.Duration,
 ) Tunable {
 	return NewCheckedTunable(
 		NewIOConfigFileExistanceChecker(fs, ioConfigFile),
@@ -37,8 +36,7 @@ func checkIfIoTuneIsSupported(fs afero.Fs) (bool, string) {
 func tune(
 	evalDirectories []string,
 	ioConfigFile string,
-	duration int,
-	timeout time.Duration,
+	duration, timeout time.Duration,
 ) TuneResult {
 	ioTune := iotune.NewIoTune(os.NewProc(), timeout)
 	args := iotune.IoTuneArgs{
