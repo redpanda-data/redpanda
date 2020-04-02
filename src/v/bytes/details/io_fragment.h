@@ -71,8 +71,8 @@ public:
             // this is an important optimization. often times during RPC
             // serialization we append some small controll bytes, _right_
             // before we append a full new chain of iobufs
-            _buf = std::move(
-              ss::temporary_buffer<char>(_buf.get(), _used_bytes));
+            _buf =
+              ss::temporary_buffer<char>(_buf.get(), _used_bytes);
         } else {
             _buf.trim(_used_bytes);
         }

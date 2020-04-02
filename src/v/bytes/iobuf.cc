@@ -116,7 +116,7 @@ iobuf iobuf::copy() const {
         ret.append(src, sz);
         return ss::stop_iteration::no;
     });
-    return std::move(ret);
+    return ret;
 }
 
 iobuf iobuf::share(size_t pos, size_t len) {
@@ -141,7 +141,7 @@ iobuf iobuf::share(size_t pos, size_t len) {
         ret.append_take_ownership(f);
         pos = 0;
     }
-    return std::move(ret);
+    return ret;
 }
 
 bool iobuf::operator==(const iobuf& o) const {

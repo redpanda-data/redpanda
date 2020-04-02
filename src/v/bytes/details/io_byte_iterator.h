@@ -71,8 +71,8 @@ private:
         }
     }
 
-    io_const_iterator _frag_end;
     io_const_iterator _frag;
+    io_const_iterator _frag_end;
     const char* _frag_index = nullptr;
     const char* _frag_index_end = nullptr;
 };
