@@ -70,11 +70,12 @@ func DefaultConfig() Config {
 		ConfigFile: "/etc/redpanda/redpanda.yaml",
 		PidFile:    "/var/lib/redpanda/pid",
 		Redpanda: &RedpandaConfig{
-			Directory: "/var/lib/redpanda/data",
-			RPCServer: SocketAddress{"0.0.0.0", 33145},
-			KafkaApi:  SocketAddress{"0.0.0.0", 9092},
-			AdminApi:  SocketAddress{"0.0.0.0", 9644},
-			Id:        0,
+			Directory:   "/var/lib/redpanda/data",
+			RPCServer:   SocketAddress{"0.0.0.0", 33145},
+			KafkaApi:    SocketAddress{"0.0.0.0", 9092},
+			AdminApi:    SocketAddress{"0.0.0.0", 9644},
+			Id:          0,
+			SeedServers: []*SeedServer{},
 		},
 		Rpk: &RpkConfig{
 			EnableUsageStats:    true,
