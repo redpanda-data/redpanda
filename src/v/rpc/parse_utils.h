@@ -32,7 +32,7 @@ static inline void check_out_of_range(size_t got, size_t expected) {
 
 inline ss::future<std::optional<header>>
 parse_header(ss::input_stream<char>& in) {
-    return read_iobuf_exactly(in, size_of_rpc_header).then([&in](iobuf b) {
+    return read_iobuf_exactly(in, size_of_rpc_header).then([](iobuf b) {
         if (b.size_bytes() != size_of_rpc_header) {
             return ss::make_ready_future<std::optional<header>>();
         }
