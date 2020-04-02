@@ -83,7 +83,7 @@ func setProduction(conf *config.Config) *config.Config {
 	rpk.TuneCpu = true
 	rpk.TuneAioEvents = true
 	rpk.TuneClocksource = true
-	rpk.EnableMemoryLocking = true
+	rpk.EnableMemoryLocking = false
 	return conf
 }
 
