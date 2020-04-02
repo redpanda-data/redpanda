@@ -112,12 +112,6 @@ configuration::configuration()
       "Target quota byte rate (bytes per second) - 64MB default",
       required::no,
       64 << 20)
-  , _advertised_kafka_api(
-      *this,
-      "advertised_kafka_api",
-      "Address of Kafka API published to the clients",
-      required::no,
-      std::nullopt)
   , rack(*this, "rack", "Rack identifier", required::no, std::nullopt)
   , disable_metrics(
       *this,
@@ -125,12 +119,6 @@ configuration::configuration()
       "Disable registering metrics",
       required::no,
       false)
-  , _advertised_rpc_api(
-      *this,
-      "advertised_rpc_api",
-      "Address of RPC endpoint published to other cluster members",
-      required::no,
-      std::nullopt)
   , group_min_session_timeout_ms(
       *this,
       "group_min_session_timeout_ms",
@@ -270,6 +258,18 @@ configuration::configuration()
       "Length of time above which growth is reset",
       required::no,
       10'000ms)
+  , _advertised_kafka_api(
+      *this,
+      "advertised_kafka_api",
+      "Address of Kafka API published to the clients",
+      required::no,
+      std::nullopt)
+  , _advertised_rpc_api(
+      *this,
+      "advertised_rpc_api",
+      "Address of RPC endpoint published to other cluster members",
+      required::no,
+      std::nullopt)
 
 {}
 
