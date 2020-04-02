@@ -22,7 +22,7 @@
 #include <utility>
 
 namespace rpc {
-class client_context_impl;
+struct client_context_impl;
 
 class base_transport {
 public:

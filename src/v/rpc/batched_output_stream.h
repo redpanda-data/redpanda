@@ -21,8 +21,8 @@ public:
     // NOTE: explicitly defined for a gcc
     batched_output_stream(batched_output_stream&& o) noexcept
       : _out(std::move(o._out))
-      , _write_sem(std::move(o._write_sem))
       , _cache_size(o._cache_size)
+      , _write_sem(std::move(o._write_sem))
       , _unflushed_bytes(o._unflushed_bytes)
       , _closed(o._closed) {}
     batched_output_stream& operator=(batched_output_stream&& o) noexcept {
@@ -46,8 +46,8 @@ private:
     ss::future<> do_flush();
 
     ss::output_stream<char> _out;
-    std::unique_ptr<ss::semaphore> _write_sem;
     size_t _cache_size{0};
+    std::unique_ptr<ss::semaphore> _write_sem;
     size_t _unflushed_bytes{0};
     bool _closed = false;
 };

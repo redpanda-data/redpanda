@@ -24,7 +24,7 @@ struct server_context_impl final : streaming_context {
 
 ss::future<> simple_protocol::apply(server::resources rs) {
     return ss::do_until(
-      [this, rs] { return rs.conn->input().eof() || rs.abort_requested(); },
+      [rs] { return rs.conn->input().eof() || rs.abort_requested(); },
       [this, rs]() mutable {
           return parse_header(rs.conn->input())
             .then([this, rs](std::optional<header> h) mutable {
@@ -61,10 +61,10 @@ simple_protocol::dispatch_method_once(header h, server::resources rs) {
     if (rs.conn_gate().is_closed()) {
         return ss::make_exception_future<>(ss::gate_closed_exception());
     }
-    (void)with_gate(rs.conn_gate(), [this, ctx, m]() mutable {
+    (void)with_gate(rs.conn_gate(), [ctx, m]() mutable {
         return (*m)(ctx->res.conn->input(), *ctx)
           .then(
-            [this, ctx, m = ctx->res.hist().auto_measure()](netbuf n) mutable {
+            [ctx, m = ctx->res.hist().auto_measure()](netbuf n) mutable {
                 n.set_correlation_id(ctx->get_header().correlation_id);
                 auto view = std::move(n).as_scattered();
                 if (ctx->res.conn_gate().is_closed()) {
