@@ -70,7 +70,6 @@ private:
 
     std::unique_ptr<ss::app_template> _app;
     scheduling_groups _scheduling_groups;
-    memory_groups _memory_groups;
     smp_groups _smp_groups;
     ss::logger _log{"redpanda::main"};
 

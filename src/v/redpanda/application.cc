@@ -104,7 +104,6 @@ void application::hydrate_config(const po::variables_map& cfg) {
 }
 
 void application::check_environment() {
-    auto& cfg = config::shard_local_cfg();
     syschecks::systemd_message("checking environment (CPU, Mem)");
     syschecks::cpu();
     syschecks::memory(config::shard_local_cfg().developer_mode());
@@ -130,12 +129,12 @@ void application::configure_admin_server() {
         auto rb = ss::make_shared<ss::api_registry_builder20>(
           conf.admin_api_doc_dir(), "/v1");
         _admin
-          .invoke_on_all([rb, this](ss::http_server& server) {
+          .invoke_on_all([rb](ss::http_server& server) {
               rb->set_api_doc(server._routes);
               rb->register_api_file(server._routes, "header");
               rb->register_api_file(server._routes, "config");
               ss::httpd::config_json::get_config.set(
-                server._routes, [this](ss::const_req req) {
+                server._routes, []([[maybe_unused]] ss::const_req req) {
                     rapidjson::StringBuffer buf;
                     rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
                     config::shard_local_cfg().to_json(writer);
