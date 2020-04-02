@@ -14,16 +14,14 @@ void list_offsets_request::encode(
     if (version >= api_version(2)) {
         writer.write(int8_t(isolation_level));
     }
-    writer.write_array(
-      topics, [](topic& topic, response_writer& writer) {
-          writer.write(topic.name);
-          writer.write_array(
-            topic.partitions,
-            [](partition& partition, response_writer& writer) {
-                writer.write(partition.id);
-                writer.write(partition.timestamp());
-            });
-      });
+    writer.write_array(topics, [](topic& topic, response_writer& writer) {
+        writer.write(topic.name);
+        writer.write_array(
+          topic.partitions, [](partition& partition, response_writer& writer) {
+              writer.write(partition.id);
+              writer.write(partition.timestamp());
+          });
+    });
 }
 
 void list_offsets_request::decode(request_context& ctx) {
@@ -73,18 +71,16 @@ void list_offsets_response::encode(const request_context& ctx, response& resp) {
     if (version >= api_version(2)) {
         writer.write(int32_t(throttle_time_ms.count()));
     }
-    writer.write_array(
-      topics, [](topic& topic, response_writer& writer) {
-          writer.write(topic.name);
-          writer.write_array(
-            topic.partitions,
-            [](partition& partition, response_writer& writer) {
-                writer.write(partition.id);
-                writer.write(partition.error);
-                writer.write(partition.timestamp());
-                writer.write(partition.offset);
-            });
-      });
+    writer.write_array(topics, [](topic& topic, response_writer& writer) {
+        writer.write(topic.name);
+        writer.write_array(
+          topic.partitions, [](partition& partition, response_writer& writer) {
+              writer.write(partition.id);
+              writer.write(partition.error);
+              writer.write(partition.timestamp());
+              writer.write(partition.offset);
+          });
+    });
 }
 
 void list_offsets_response::decode(iobuf buf, api_version version) {

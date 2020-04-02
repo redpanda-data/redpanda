@@ -18,7 +18,8 @@ parse_header(ss::input_stream<char>& src) {
           auto header = request_header{
             .key = api_key(ss::net::ntoh(raw_header->api_key)),
             .version = api_version(ss::net::ntoh(raw_header->api_version)),
-            .correlation = correlation_id(ss::net::ntoh(raw_header->correlation))};
+            .correlation = correlation_id(
+              ss::net::ntoh(raw_header->correlation))};
 
           if (client_id_size == 0) {
               header.client_id = std::string_view();

@@ -323,8 +323,7 @@ void consensus::dispatch_vote() {
                 }
                 // background
                 (void)with_gate(
-                  _bg,
-                  [vstm = std::move(vstm), f = std::move(f)]() mutable {
+                  _bg, [vstm = std::move(vstm), f = std::move(f)]() mutable {
                       return std::move(f);
                   });
 

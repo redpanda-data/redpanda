@@ -63,20 +63,19 @@ simple_protocol::dispatch_method_once(header h, server::resources rs) {
     }
     (void)with_gate(rs.conn_gate(), [ctx, m]() mutable {
         return (*m)(ctx->res.conn->input(), *ctx)
-          .then(
-            [ctx, m = ctx->res.hist().auto_measure()](netbuf n) mutable {
-                n.set_correlation_id(ctx->get_header().correlation_id);
-                auto view = std::move(n).as_scattered();
-                if (ctx->res.conn_gate().is_closed()) {
-                    // do not write if gate is closed
-                    rpclog.debug(
-                      "Skipping write of {} bytes, connection is closed",
-                      view.size());
-                    return ss::make_ready_future<>();
-                }
-                return ctx->res.conn->write(std::move(view))
-                  .finally([m = std::move(m), ctx] {});
-            })
+          .then([ctx, m = ctx->res.hist().auto_measure()](netbuf n) mutable {
+              n.set_correlation_id(ctx->get_header().correlation_id);
+              auto view = std::move(n).as_scattered();
+              if (ctx->res.conn_gate().is_closed()) {
+                  // do not write if gate is closed
+                  rpclog.debug(
+                    "Skipping write of {} bytes, connection is closed",
+                    view.size());
+                  return ss::make_ready_future<>();
+              }
+              return ctx->res.conn->write(std::move(view))
+                .finally([m = std::move(m), ctx] {});
+          })
           .handle_exception([ctx](std::exception_ptr e) {
               vlog(rpclog.info, "Error dispatching method: {}", e);
               ctx->res.conn->shutdown_input();

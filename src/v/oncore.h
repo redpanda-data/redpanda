@@ -15,7 +15,8 @@
 
 class oncore final {
 public:
-    void verify_shard_source_location([[maybe_unused]] const char* file, [[maybe_unused]] int linenum) const {
+    void verify_shard_source_location(
+      [[maybe_unused]] const char* file, [[maybe_unused]] int linenum) const {
         expression_in_debug_mode(vassert(
           _owner_shard == ss::this_shard_id(),
           "{}:{} - Shard missmatch -  Operation on shard: {}. Owner shard:{}",
