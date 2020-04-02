@@ -265,8 +265,8 @@ private:
       ss::circular_buffer<model::record_batch> buff,
       const log_append_config& config);
 
-    log_manager _mgr;
     log_config _config;
+    log_manager _mgr;
     std::optional<log> _log;
     std::vector<std::vector<model::record_batch>> _batches;
 };

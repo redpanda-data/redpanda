@@ -144,7 +144,7 @@ ss::future<> disk_log_impl::new_segment(
     vassert(
       o() >= 0 && t() >= 0, "offset:{} and term:{} must be initialized", o, t);
     return _manager.make_log_segment(ntp(), o, t, pc)
-      .then([this, pc](ss::lw_shared_ptr<segment> handles) mutable {
+      .then([this](ss::lw_shared_ptr<segment> handles) mutable {
           return remove_empty_segments().then(
             [this, h = std::move(handles)]() mutable {
                 vassert(!_closed, "cannot add log segment to closed log");
@@ -241,7 +241,7 @@ disk_log_impl::timequery(timequery_config cfg) {
                          cfg.prio,
                          std::nullopt,
                          cfg.time))
-      .then([this, cfg](model::record_batch_reader reader) {
+      .then([cfg](model::record_batch_reader reader) {
           return model::consume_reader_to_memory(
                    std::move(reader), model::no_timeout)
             .then([cfg](model::record_batch_reader::storage_t batches) {
@@ -315,7 +315,7 @@ ss::future<> disk_log_impl::do_truncate(model::offset o) {
             internal::offset_to_filepos_consumer(o, initial_size),
             model::no_timeout);
       })
-      .then([this, o](std::optional<std::pair<model::offset, size_t>> phs) {
+      .then([this](std::optional<std::pair<model::offset, size_t>> phs) {
           if (!phs) {
               return ss::make_ready_future<>();
           }

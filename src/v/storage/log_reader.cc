@@ -11,8 +11,6 @@
 #include <fmt/ostream.h>
 
 namespace storage {
-static constexpr size_t max_segment_size = static_cast<size_t>(
-  std::numeric_limits<uint32_t>::max());
 
 using records_t = ss::circular_buffer<model::record_batch>;
 
@@ -20,7 +18,6 @@ batch_consumer::consume_result skipping_consumer::consume_batch_start(
   model::record_batch_header header,
   size_t /*physical_base_offset*/,
   size_t /*size_on_disk*/) {
-    const auto filesize = _reader._seg.reader().file_size();
     // check for holes in the offset range on disk
     if (unlikely(
           _expected_next_batch() >= 0
@@ -175,8 +172,8 @@ log_reader::log_reader(
   log_reader_config config,
   probe& probe) noexcept
   : _lease(std::move(l))
-  , _config(config)
   , _iterator(_lease->range.begin())
+  , _config(config)
   , _probe(probe) {
     if (_iterator.next_seg != _lease->range.end()) {
         _iterator.reader = std::make_unique<log_segment_batch_reader>(

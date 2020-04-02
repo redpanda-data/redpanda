@@ -35,7 +35,6 @@ private:
 
     model::record_batch_type _batch_type;
     model::offset _base_offset;
-    model::compression _compression;
     std::vector<serialized_record> _records;
 };
 } // namespace storage

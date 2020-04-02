@@ -119,7 +119,7 @@ make_random_batches(model::offset o, int count, bool allow_compression) {
     // start offset + count
     ss::circular_buffer<model::record_batch> ret;
     ret.reserve(count);
-    for (size_t i = 0; i < count; i++) {
+    for (int i = 0; i < count; i++) {
         auto b = make_random_batch(o, allow_compression);
         o = b.last_offset() + model::offset(1);
         b.set_term(model::term_id(0));

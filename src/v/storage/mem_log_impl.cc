@@ -266,7 +266,6 @@ mem_log_appender::operator()(model::record_batch&& batch) {
       batch.base_offset(),
       batch.last_offset(),
       batch.term());
-    auto offset = _cur_offset;
     _cur_offset = batch.last_offset() + model::offset(1);
     _log._probe.add_bytes_written(batch.size_bytes());
     _log._data.emplace_back(std::move(batch));
