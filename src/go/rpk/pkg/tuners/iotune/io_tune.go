@@ -21,7 +21,7 @@ type IoTuneArgs struct {
 	Format         OutputFormat
 	PropertiesFile string
 	IoConfFile     string
-	Duration       int
+	Duration       time.Duration
 	FsCheck        bool
 }
 
@@ -70,9 +70,9 @@ func ioTuneCommandLineArgs(args IoTuneArgs) ([]string, error) {
 		cmdArgs = append(cmdArgs, "--options-file")
 		cmdArgs = append(cmdArgs, args.IoConfFile)
 	}
-	if args.Duration > 0 {
+	if args.Duration.Seconds() > 0 {
 		cmdArgs = append(cmdArgs, "--duration")
-		cmdArgs = append(cmdArgs, strconv.Itoa(args.Duration))
+		cmdArgs = append(cmdArgs, strconv.Itoa(int(args.Duration.Seconds())))
 	}
 	if args.FsCheck {
 		cmdArgs = append(cmdArgs, "--fs-check")

@@ -15,7 +15,7 @@ import (
 func NewIoTuneCmd(fs afero.Fs) *cobra.Command {
 	var (
 		configFile  string
-		duration    int
+		duration    time.Duration
 		directories []string
 		timeout     time.Duration
 	)
@@ -23,7 +23,7 @@ func NewIoTuneCmd(fs afero.Fs) *cobra.Command {
 		Use:   "iotune",
 		Short: "Measure filesystem performance and create IO configuration file",
 		RunE: func(ccmd *cobra.Command, args []string) error {
-			timeout += time.Duration(duration) * time.Second
+			timeout += duration
 			ioConfigFile := redpanda.GetIOConfigPath(filepath.Dir(configFile))
 			conf, err := config.ReadOrGenerate(fs, configFile)
 			if err != nil {
@@ -50,8 +50,15 @@ func NewIoTuneCmd(fs afero.Fs) *cobra.Command {
 	)
 	command.Flags().StringSliceVar(&directories,
 		"directories", nil, "List of directories to evaluate")
-	command.Flags().IntVar(&duration,
-		"duration", 30, "Duration of tests in seconds")
+	command.Flags().DurationVar(
+		&duration,
+		"duration",
+		10*time.Minute,
+		"Duration of tests."+
+			"The value passed is a sequence of decimal numbers, each with optional "+
+			"fraction and a unit suffix, such as '300ms', '1.5s' or '2h45m'. "+
+			"Valid time units are 'ns', 'us' (or 'µs'), 'ms', 's', 'm', 'h'",
+	)
 	command.Flags().DurationVar(
 		&timeout,
 		"timeout",
@@ -68,10 +75,15 @@ func execIoTune(
 	fs afero.Fs,
 	directories []string,
 	ioConfigFile string,
-	duration int,
-	timeout time.Duration,
+	duration, timeout time.Duration,
 ) error {
-	tuner := tuners.NewIoTuneTuner(fs, directories, ioConfigFile, duration, timeout)
+	tuner := tuners.NewIoTuneTuner(
+		fs,
+		directories,
+		ioConfigFile,
+		duration,
+		timeout,
+	)
 	log.Info("Starting iotune...")
 	result := tuner.Tune()
 	if err := result.Error(); err != nil {
