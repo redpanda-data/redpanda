@@ -11,7 +11,6 @@ static ss::future<std::unique_ptr<lock_manager::lease>>
 range(segment_set::underlying_t segs) {
     auto ctx = std::make_unique<lock_manager::lease>(
       segment_set(std::move(segs)));
-    auto raw = ctx.get();
     std::vector<ss::future<ss::rwlock::holder>> dispatch;
     dispatch.reserve(ctx->range.size());
     for (auto& s : ctx->range) {

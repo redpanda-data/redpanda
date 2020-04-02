@@ -18,13 +18,13 @@ uint64_t index_state::checksum_state(const index_state& r) {
       r.max_timestamp(),
       uint32_t(r.relative_offset_index.size()));
     const uint32_t vsize = r.relative_offset_index.size();
-    for (auto i = 0; i < vsize; ++i) {
+    for (auto i = 0u; i < vsize; ++i) {
         xx.update(r.relative_offset_index[i]);
     }
-    for (auto i = 0; i < vsize; ++i) {
+    for (auto i = 0u; i < vsize; ++i) {
         xx.update(r.relative_time_index[i]);
     }
-    for (auto i = 0; i < vsize; ++i) {
+    for (auto i = 0u; i < vsize; ++i) {
         xx.update(r.position_index[i]);
     }
     return xx.digest();
@@ -70,13 +70,13 @@ void adl<storage::index_state>::to(iobuf& out, storage::index_state&& r) {
       r.max_timestamp(),
       uint32_t(r.relative_offset_index.size()));
     const uint32_t vsize = r.relative_offset_index.size();
-    for (auto i = 0; i < vsize; ++i) {
+    for (auto i = 0u; i < vsize; ++i) {
         reflection::adl<uint32_t>{}.to(out, r.relative_offset_index[i]);
     }
-    for (auto i = 0; i < vsize; ++i) {
+    for (auto i = 0u; i < vsize; ++i) {
         reflection::adl<uint32_t>{}.to(out, r.relative_time_index[i]);
     }
-    for (auto i = 0; i < vsize; ++i) {
+    for (auto i = 0u; i < vsize; ++i) {
         reflection::adl<uint32_t>{}.to(out, r.position_index[i]);
     }
 
@@ -98,14 +98,14 @@ storage::index_state adl<storage::index_state>::from(iobuf_parser& in) {
     ret.relative_offset_index.reserve(vsize);
     ret.relative_time_index.reserve(vsize);
     ret.position_index.reserve(vsize);
-    for (auto i = 0; i < vsize; ++i) {
+    for (auto i = 0u; i < vsize; ++i) {
         ret.relative_offset_index.push_back(
           reflection::adl<uint32_t>{}.from(in));
     }
-    for (auto i = 0; i < vsize; ++i) {
+    for (auto i = 0u; i < vsize; ++i) {
         ret.relative_time_index.push_back(reflection::adl<uint32_t>{}.from(in));
     }
-    for (auto i = 0; i < vsize; ++i) {
+    for (auto i = 0u; i < vsize; ++i) {
         ret.position_index.push_back(reflection::adl<uint32_t>{}.from(in));
     }
     if (unlikely(ret.checksum != storage::index_state::checksum_state(ret))) {

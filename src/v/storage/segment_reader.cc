@@ -19,8 +19,8 @@ segment_reader::segment_reader(
   size_t buffer_size) noexcept
   : _filename(std::move(filename))
   , _data_file(std::move(data_file))
-  , _term(term)
   , _base_offset(base_offset)
+  , _term(term)
   , _file_size(file_size)
   , _buffer_size(buffer_size) {}
 

@@ -83,7 +83,7 @@ static ss::future<result<iobuf>> verify_read_iobuf(
 
 ss::future<result<stop_parser>> continuous_batch_parser::consume_header() {
     return read_iobuf_exactly(_input, model::packed_record_batch_header_size)
-      .then([this](iobuf b) -> result<iobuf> {
+      .then([](iobuf b) -> result<iobuf> {
           if (b.empty()) {
               // benign outcome. happens at end of file
               return parser_errc::end_of_stream;
@@ -95,9 +95,9 @@ ss::future<result<stop_parser>> continuous_batch_parser::consume_header() {
                 b.size_bytes());
               return parser_errc::input_stream_not_enough_bytes;
           }
-          return std::move(b);
+          return b;
       })
-      .then([this](result<iobuf> b) {
+      .then([](result<iobuf> b) {
           if (!b) {
               return ss::make_ready_future<result<model::record_batch_header>>(
                 b.error());
@@ -199,7 +199,7 @@ parse_record_headers(iobuf_parser& parser) {
 ss::future<result<stop_parser>> continuous_batch_parser::consume_records() {
     auto sz = _header.size_bytes - model::packed_record_batch_header_size;
     return verify_read_iobuf(_input, sz, "parser::consume_records")
-      .then([this, sz](result<iobuf> b) -> result<stop_parser> {
+      .then([this](result<iobuf> b) -> result<stop_parser> {
           if (!b) {
               return b.error();
           }

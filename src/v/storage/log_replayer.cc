@@ -72,7 +72,9 @@ public:
     }
 
     bool is_valid_batch_crc() const {
-        return _current_batch_crc == _crc.value();
+        // crc is calculated as a uint32_t but because of kafka we carry around
+        // a signed type in the batch structure
+        return (uint32_t)_current_batch_crc == _crc.value();
     }
 
 private:

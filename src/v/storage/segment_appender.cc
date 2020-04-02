@@ -20,7 +20,7 @@ segment_appender::segment_appender(ss::file f, options opts)
   , _opts(std::move(opts))
   , _concurrent_flushes(_opts.number_of_chunks) {
     const auto align = _out.disk_write_dma_alignment();
-    for (auto i = 0; i < _opts.number_of_chunks; ++i) {
+    for (size_t i = 0; i < _opts.number_of_chunks; ++i) {
         auto c = new chunk(align); // NOLINT
         _free_chunks.push_back(*c);
     }
@@ -121,7 +121,7 @@ ss::future<> segment_appender::truncate(size_t n) {
         h.set_position(sz);
 
         return _out.dma_read(sz, buff, align, _opts.priority)
-          .then([this, n, align](size_t actual) {
+          .then([n, align](size_t actual) {
               const size_t expected = n % align;
               if (actual != expected) {
                   return size_missmatch_error("truncate::", expected, actual);
