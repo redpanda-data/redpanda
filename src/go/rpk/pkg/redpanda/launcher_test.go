@@ -2,8 +2,9 @@ package redpanda
 
 import (
 	"fmt"
-	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func Test_collectRedpandaArgs(t *testing.T) {
@@ -91,9 +92,8 @@ func Test_collectRedpandaArgs(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := collectRedpandaArgs(&tt.args); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("collectRedpandaArgs() = %v, want %v", got, tt.want)
-			}
+			got := collectRedpandaArgs(&tt.args)
+			require.Exactly(t, tt.want, got)
 		})
 	}
 }
