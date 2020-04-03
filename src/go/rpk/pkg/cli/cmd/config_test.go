@@ -2,7 +2,6 @@ package cmd_test
 
 import (
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 	"vectorized/pkg/cli/cmd"
@@ -125,9 +124,7 @@ func TestSet(t *testing.T) {
 			fs := afero.NewMemMapFs()
 			conf := config.DefaultConfig()
 			err := config.WriteConfig(fs, &conf, conf.ConfigFile)
-			if err != nil {
-				t.Error(err.Error())
-			}
+			require.NoError(t, err)
 
 			c := cmd.NewConfigCommand(fs)
 			args := []string{"set"}
@@ -140,31 +137,18 @@ func TestSet(t *testing.T) {
 			c.SetArgs(append(args, tt.args...))
 			err = c.Execute()
 			if tt.expectErr {
-				if err == nil {
-					t.Fatal("expected an error, got nil")
-				}
+				require.Error(t, err)
 				return
 			}
-			if err != nil {
-				t.Fatalf("got an unexpected error: %v", err.Error())
-			}
+			require.NoError(t, err)
 			v := viper.New()
 			v.SetFs(fs)
 			v.SetConfigType("yaml")
 			v.SetConfigFile(conf.ConfigFile)
 			err = v.ReadInConfig()
-			if err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, err)
 			val := v.Get(tt.key)
-			if !reflect.DeepEqual(val, tt.expected) {
-				t.Fatalf(
-					"expected: \n'%+v'\n but got: \n'%+v'\n for key '%s'",
-					tt.expected,
-					val,
-					tt.key,
-				)
-			}
+			require.Exactly(t, tt.expected, val)
 		})
 	}
 }
@@ -217,10 +201,11 @@ func TestBootstrap(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			configPath := config.DefaultConfig().ConfigFile
 			fs := afero.NewMemMapFs()
-			fs.MkdirAll(
+			err := fs.MkdirAll(
 				filepath.Dir(configPath),
 				0644,
 			)
+			require.NoError(t, err)
 			c := cmd.NewConfigCommand(fs)
 			args := []string{"bootstrap"}
 			if len(tt.ips) != 0 {
@@ -237,7 +222,7 @@ func TestBootstrap(t *testing.T) {
 				args = append(args, "--id", tt.id)
 			}
 			c.SetArgs(args)
-			err := c.Execute()
+			err = c.Execute()
 			if tt.expectedErr != "" {
 				require.EqualError(t, err, tt.expectedErr)
 				return
