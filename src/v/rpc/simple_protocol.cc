@@ -28,6 +28,7 @@ ss::future<> simple_protocol::apply(server::resources rs) {
       [this, rs]() mutable {
           return parse_header(rs.conn->input())
             .then([this, rs](std::optional<header> h) mutable {
+                rs.probe().request_received();
                 if (!h) {
                     rpclog.debug(
                       "could not parse header from client: {}", rs.conn->addr);
@@ -35,7 +36,8 @@ ss::future<> simple_protocol::apply(server::resources rs) {
                     return ss::make_ready_future<>();
                 }
                 return dispatch_method_once(h.value(), rs);
-            });
+            })
+            .finally([rs]() mutable { rs.probe().request_completed(); });
       });
 }
 
@@ -79,8 +81,7 @@ simple_protocol::dispatch_method_once(header h, server::resources rs) {
           .handle_exception([ctx](std::exception_ptr e) {
               vlog(rpclog.info, "Error dispatching method: {}", e);
               ctx->res.conn->shutdown_input();
-          })
-          .finally([ctx]() mutable { ctx->res.probe().request_completed(); });
+          });
     });
     return fut;
 }
