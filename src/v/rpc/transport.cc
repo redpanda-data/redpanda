@@ -167,7 +167,7 @@ transport::send(netbuf b, rpc::client_opts opts) {
               if (likely(it != _correlations.end())) {
                   vlog(
                     rpclog.debug, "Request timeout, correlation id: {}", idx);
-                  _probe.request_error();
+                  _probe.request_timeout();
                   _correlations.erase(it);
               }
           });
@@ -175,6 +175,7 @@ transport::send(netbuf b, rpc::client_opts opts) {
           // send
           auto view = std::move(b).as_scattered();
           const auto sz = view.size();
+          _probe.request();
           return get_units(_memory, sz)
             .then([this, v = std::move(view), f = std::move(fut)](
                     ss::semaphore_units<> units) mutable {
@@ -185,12 +186,12 @@ transport::send(netbuf b, rpc::client_opts opts) {
                       auto msg_size = v.size();
                       return _out.write(std::move(v))
                         .then([this, msg_size, u = std::move(u)] {
-                            _probe.request_sent();
                             _probe.add_bytes_sent(msg_size);
                         });
                   })
                   .handle_exception([this](std::exception_ptr e) {
                       vlog(rpclog.info, "Error dispatching socket write:{}", e);
+                      _probe.request_error();
                       fail_outstanding_futures();
                   });
                 return std::move(f);
@@ -211,7 +212,9 @@ ss::future<> transport::do_reads() {
                   _probe.header_corrupted();
                   return ss::make_ready_future<>();
               }
-              return dispatch(std::move(h.value()));
+              return dispatch(std::move(h.value())).then([this] {
+                  _probe.request_completed();
+              });
           });
       });
 }
@@ -238,7 +241,7 @@ ss::future<> transport::dispatch(header h) {
     auto pr = std::move(it->second);
     _correlations.erase(it);
     pr->set_value(std::move(ctx));
-    return fut.finally([this] { _probe.request_completed(); });
+    return fut;
 }
 
 void transport::setup_metrics(const std::optional<ss::sstring>& service_name) {
