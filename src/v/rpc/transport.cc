@@ -41,7 +41,9 @@ transport::transport(
     .credentials = std::move(c.credentials),
   })
   , _memory(c.max_queued_bytes) {
-    // setup_metrics(service_name);
+    if (!c.disable_metrics) {
+        setup_metrics(service_name);
+    }
 }
 
 ss::future<> base_transport::do_connect() {
@@ -70,7 +72,7 @@ ss::future<> base_transport::do_connect() {
           } catch (...) {
               auto e = std::current_exception();
               _probe.connection_error(e);
-              throw e;
+              std::rethrow_exception(e);
           }
           _probe.connection_established();
           _in = _fd->input();
@@ -236,7 +238,7 @@ ss::future<> transport::dispatch(header h) {
     auto pr = std::move(it->second);
     _correlations.erase(it);
     pr->set_value(std::move(ctx));
-    return fut.then([this] { _probe.request_completed(); });
+    return fut.finally([this] { _probe.request_completed(); });
 }
 
 void transport::setup_metrics(const std::optional<ss::sstring>& service_name) {

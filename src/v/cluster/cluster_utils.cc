@@ -3,6 +3,8 @@
 #include "cluster/logger.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/types.h"
+#include "config/configuration.h"
+#include "rpc/types.h"
 #include "vlog.h"
 
 namespace cluster {
@@ -98,7 +100,10 @@ ss::future<> update_broker_client(
                 return f.then([&cache, node, new_addr = std::move(new_addr)]() {
                     return cache.emplace(
                       node,
-                      rpc::transport_configuration{.server_addr = new_addr});
+                      rpc::transport_configuration{
+                        .server_addr = new_addr,
+                        .disable_metrics = rpc::metrics_disabled(
+                          config::shard_local_cfg().disable_metrics)});
                 });
             });
       });
