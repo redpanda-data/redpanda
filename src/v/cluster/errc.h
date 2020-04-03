@@ -13,7 +13,11 @@ enum class errc {
     not_leader_controller,
     topic_already_exists,
     replication_error,
-    shutting_down
+    shutting_down,
+    no_leader_controller,
+    join_request_dispatch_error,
+    seed_servers_exhausted,
+    auto_create_topics_exception
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::errc"; }
@@ -38,6 +42,14 @@ struct errc_category final : public std::error_category {
             return "cluster::errc::replication_error";
         case errc::shutting_down:
             return "cluster::errc::shutting_down";
+        case errc::no_leader_controller:
+            return "cluster::errc::no_leader_controller";
+        case errc::join_request_dispatch_error:
+            return "cluster::errc::join_request_dispatch_error";
+        case errc::seed_servers_exhausted:
+            return "cluster::errc::seed_servers_exhausted";
+        case errc::auto_create_topics_exception:
+            return "cluster::errc::auto_create_topics_exception";
         default:
             return "cluster::errc::unknown";
         }
