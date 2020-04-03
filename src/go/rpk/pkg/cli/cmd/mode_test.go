@@ -4,54 +4,20 @@ import (
 	"bytes"
 	"fmt"
 	"os"
-	"reflect"
 	"strings"
 	"testing"
 	"vectorized/pkg/config"
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
+	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
 )
 
-func getValidConfig(configFile string, rpkFill bool) config.Config {
-	rpk := fillRpkConfig(rpkFill)
-	return config.Config{
-		ConfigFile: configFile,
-		Redpanda: &config.RedpandaConfig{
-			Directory: "/var/lib/redpanda/data",
-			RPCServer: config.SocketAddress{
-				Port:    33145,
-				Address: "127.0.0.1",
-			},
-			Id: 1,
-			KafkaApi: config.SocketAddress{
-				Port:    9092,
-				Address: "127.0.0.1",
-			},
-			SeedServers: []*config.SeedServer{
-				&config.SeedServer{
-					Host: config.SocketAddress{
-						Port:    33145,
-						Address: "127.0.0.1",
-					},
-					Id: 1,
-				},
-				&config.SeedServer{
-					Host: config.SocketAddress{
-						Port:    33146,
-						Address: "127.0.0.1",
-					},
-					Id: 2,
-				},
-			},
-		},
-		Rpk: &rpk,
-	}
-}
-
-func fillRpkConfig(val bool) config.RpkConfig {
-	return config.RpkConfig{
+func fillRpkConfig(path string, val bool) config.Config {
+	conf := config.DefaultConfig()
+	conf.ConfigFile = path
+	conf.Rpk = &config.RpkConfig{
 		EnableUsageStats:  val,
 		TuneNetwork:       val,
 		TuneDiskScheduler: val,
@@ -62,6 +28,7 @@ func fillRpkConfig(val bool) config.RpkConfig {
 		TuneClocksource:   val,
 		CoredumpDir:       "/redpanda/coredumps/",
 	}
+	return conf
 }
 
 func TestModeCommand(t *testing.T) {
@@ -74,7 +41,6 @@ func TestModeCommand(t *testing.T) {
 	tests := []struct {
 		name           string
 		args           []string
-		fs             afero.Fs
 		before         func(afero.Fs) (string, error)
 		expectedConfig config.Config
 		expectedOutput string
@@ -83,90 +49,84 @@ func TestModeCommand(t *testing.T) {
 		{
 			name: "development mode should disable all fields in the rpk config",
 			args: []string{"development", "--config", configPath},
-			fs:   afero.NewMemMapFs(),
 			before: func(fs afero.Fs) (string, error) {
-				bs, err := yaml.Marshal(getValidConfig(configPath, true))
+				bs, err := yaml.Marshal(fillRpkConfig(configPath, true))
 				if err != nil {
 					return "", err
 				}
 				return configPath, afero.WriteFile(fs, configPath, bs, 0644)
 			},
-			expectedConfig: getValidConfig(configPath, false),
+			expectedConfig: fillRpkConfig(configPath, false),
 			expectedOutput: fmt.Sprintf("Writing 'development' mode defaults to '%s'", configPath),
 			expectedErrMsg: "",
 		},
 		{
 			name: "production mode should enable all fields in the rpk config",
 			args: []string{"production", "--config", configPath},
-			fs:   afero.NewMemMapFs(),
 			before: func(fs afero.Fs) (string, error) {
-				bs, err := yaml.Marshal(getValidConfig(configPath, false))
+				bs, err := yaml.Marshal(fillRpkConfig(configPath, false))
 				if err != nil {
 					return "", err
 				}
 				return configPath, afero.WriteFile(fs, configPath, bs, 0644)
 			},
-			expectedConfig: getValidConfig(configPath, true),
+			expectedConfig: fillRpkConfig(configPath, true),
 			expectedOutput: fmt.Sprintf("Writing 'production' mode defaults to '%s'", configPath),
 			expectedErrMsg: "",
 		},
 		{
 			name: "the development mode alias, 'dev', should work the same",
 			args: []string{"dev", "--config", configPath},
-			fs:   afero.NewMemMapFs(),
 			before: func(fs afero.Fs) (string, error) {
-				bs, err := yaml.Marshal(getValidConfig(configPath, true))
+				bs, err := yaml.Marshal(fillRpkConfig(configPath, true))
 				if err != nil {
 					return "", err
 				}
 				return configPath, afero.WriteFile(fs, configPath, bs, 0644)
 			},
-			expectedConfig: getValidConfig(configPath, false),
+			expectedConfig: fillRpkConfig(configPath, false),
 			expectedOutput: fmt.Sprintf("Writing 'dev' mode defaults to '%s'", configPath),
 			expectedErrMsg: "",
 		},
 		{
 			name: "the production mode alias, 'prod', should work the same",
 			args: []string{"prod", "--config", configPath},
-			fs:   afero.NewMemMapFs(),
 			before: func(fs afero.Fs) (string, error) {
-				bs, err := yaml.Marshal(getValidConfig(configPath, false))
+				bs, err := yaml.Marshal(fillRpkConfig(configPath, false))
 				if err != nil {
 					return "", err
 				}
 				return configPath, afero.WriteFile(fs, configPath, bs, 0644)
 			},
-			expectedConfig: getValidConfig(configPath, true),
+			expectedConfig: fillRpkConfig(configPath, true),
 			expectedOutput: fmt.Sprintf("Writing 'prod' mode defaults to '%s'", configPath),
 			expectedErrMsg: "",
 		},
 		{
 			name: "mode should work if --config isn't passed, but the file is in /etc/redpanda/redpanda.yaml",
 			args: []string{"prod"},
-			fs:   afero.NewMemMapFs(),
 			before: func(fs afero.Fs) (string, error) {
-				bs, err := yaml.Marshal(getValidConfig(configPath, false))
+				bs, err := yaml.Marshal(fillRpkConfig(configPath, false))
 				if err != nil {
 					return "", err
 				}
 				return configPath, afero.WriteFile(fs, configPath, bs, 0644)
 			},
-			expectedConfig: getValidConfig(configPath, true),
+			expectedConfig: fillRpkConfig(configPath, true),
 			expectedOutput: fmt.Sprintf("Writing 'prod' mode defaults to '%s'", configPath),
 			expectedErrMsg: "",
 		},
 		{
 			name: "mode lists the available modes if the one passed is not valid",
 			args: []string{"invalidmode"},
-			fs:   afero.NewMemMapFs(),
 			before: func(fs afero.Fs) (string, error) {
-				bs, err := yaml.Marshal(getValidConfig(wdConfigPath, false))
+				bs, err := yaml.Marshal(fillRpkConfig(wdConfigPath, false))
 				if err != nil {
 					return "", err
 				}
 				return wdConfigPath, afero.WriteFile(fs, wdConfigPath, bs, 0644)
 			},
-			expectedConfig: getValidConfig(wdConfigPath, false),
+			expectedConfig: fillRpkConfig(wdConfigPath, false),
 			expectedOutput: "",
 			expectedErrMsg: "invalidmode is not a supported mode. Available modes: dev, prod, development, production",
 		},
@@ -174,29 +134,24 @@ func TestModeCommand(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			path, err := tt.before(tt.fs)
-			if err != nil {
-				t.Errorf("got an error while setting up the test: %v", err)
-			}
+			fs := afero.NewMemMapFs()
+			path, err := tt.before(fs)
+			require.NoError(t, err)
 			var out bytes.Buffer
-			cmd := NewModeCommand(tt.fs)
+			cmd := NewModeCommand(fs)
 			cmd.SetArgs(tt.args)
 			logrus.SetOutput(&out)
 			err = cmd.Execute()
-			if tt.expectedErrMsg != "" && tt.expectedErrMsg != err.Error() {
-				t.Errorf("expected error message:\n%v\ngot:\n%v", tt.expectedErrMsg, err.Error())
+			if tt.expectedErrMsg != "" {
+				require.EqualError(t, err, tt.expectedErrMsg)
+				return
 			}
+			require.NoError(t, err)
 			output := out.String()
-			if !strings.Contains(strings.TrimSpace(output), tt.expectedOutput) {
-				t.Fatalf("expected output:\n\"%s\"\nto contain\n\"%s\"", output, tt.expectedOutput)
-			}
-			conf, err := config.ReadConfigFromPath(tt.fs, path)
-			if err != nil {
-				t.Fatalf("got an unexpected error while reading the %s: %v", configPath, err)
-			}
-			if !reflect.DeepEqual(conf, &tt.expectedConfig) {
-				t.Fatalf("got %v, expected %v", conf, tt.expectedConfig)
-			}
+			require.Contains(t, strings.TrimSpace(output), tt.expectedOutput)
+			conf, err := config.ReadConfigFromPath(fs, path)
+			require.NoError(t, err)
+			require.Exactly(t, tt.expectedConfig, *conf)
 		})
 	}
 }
