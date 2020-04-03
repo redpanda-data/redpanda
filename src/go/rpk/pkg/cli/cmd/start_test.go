@@ -1,6 +1,10 @@
 package cmd
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
 
 func TestMergeFlags(t *testing.T) {
 	tests := []struct {
@@ -45,19 +49,13 @@ func TestMergeFlags(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			flags := mergeFlags(tt.current, tt.overrides)
+			require.Equal(t, len(flags), len(tt.expected))
 			if len(flags) != len(tt.expected) {
 				t.Fatal("the flags dicts differ in size")
 			}
 
 			for k, v := range flags {
-				if tt.expected[k] != v {
-					t.Fatalf(
-						"expected value '%s' for key '%s', but got '%s'",
-						tt.expected[k],
-						k,
-						v,
-					)
-				}
+				require.Equal(t, tt.expected[k], v)
 			}
 		})
 	}
