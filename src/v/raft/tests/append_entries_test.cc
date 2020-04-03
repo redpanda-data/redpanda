@@ -175,7 +175,8 @@ FIXTURE_TEST(test_recovery_of_crashed_leader_truncation, raft_test_fixture) {
     // since replicate doesn't accept timeout client have to deal with it.
     auto v = ss::with_timeout(model::timeout_clock::now() + 1s, std::move(f))
                .handle_exception_type([](const ss::timed_out_error&) {
-                   return result<raft::replicate_result>(raft::errc::timeout);
+                   return result<raft::replicate_result>(
+                     rpc::errc::client_request_timeout);
                })
                .get0();
 
