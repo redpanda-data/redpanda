@@ -6,6 +6,7 @@
 #include "model/metadata.h"
 #include "raft/types.h"
 #include "rpc/connection_cache.h"
+#include "utils/retry.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/sharded.hh>
@@ -68,17 +69,34 @@ private:
     // Used to store pending updates
     // When update was delivered successfully the finished flag is set to true
     // and object is removed from pending updates map
-    struct retry_meta {
+    struct update_retry_meta {
         ntp_leaders updates;
         bool finished = false;
     };
-    using broker_updates_t = absl::flat_hash_map<model::node_id, retry_meta>;
+    // Used to track the process of requesting update when redpanda starts
+    // when update using a node from ids will fail we will try the next one
+    struct request_retry_meta {
+        using container_t = std::vector<model::node_id>;
+        using const_iterator = container_t::const_iterator;
+        container_t ids;
+        bool success = false;
+        const_iterator next;
+        exp_backoff_policy backoff_policy;
+    };
+
+    using broker_updates_t
+      = absl::flat_hash_map<model::node_id, update_retry_meta>;
 
     void collect_pending_updates();
     void cleanup_finished_updates();
     ss::future<> dispatch_disseminate_leadership();
-    ss::future<> dispatch_one_update(model::node_id, retry_meta&);
-    ss::future<> dispatch_get_metadata_update(model::node_id);
+    ss::future<> dispatch_one_update(model::node_id, update_retry_meta&);
+    ss::future<result<get_leadership_reply>>
+      dispatch_get_metadata_update(model::node_id);
+    ss::future<> do_request_metadata_update(request_retry_meta&);
+    ss::future<>
+    process_get_update_reply(result<get_leadership_reply>, request_retry_meta&);
+
     ss::future<> update_metadata_with_retries(std::vector<model::node_id>);
 
     ss::sharded<metadata_cache>& _md_cache;
