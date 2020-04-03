@@ -25,31 +25,37 @@ struct errc_category final : public std::error_category {
     std::string message(int c) const final {
         switch (static_cast<errc>(c)) {
         case errc::success:
-            return "cluster::errc::success";
+            return "Success";
         case errc::notification_wait_timeout:
-            return "cluster::errc::notification_wait_timeout";
+            return "Timeout waiting for append entries notification comming "
+                   "from raft 0";
         case errc::topic_invalid_partitions:
-            return "cluster::errc::topic_invalid_partitions";
+            return "Unable to assign topic partitions to current cluster "
+                   "resources";
         case errc::topic_invalid_replication_factor:
-            return "cluster::errc::topic_invalid_replication_factor";
+            return "Unable to allocate topic with given replication factor";
         case errc::topic_invalid_config:
-            return "cluster::errc::topic_invalid_config";
+            return "Topic configuration is either bogus or not supported";
         case errc::not_leader_controller:
-            return "cluster::errc::not_leader_controller";
+            return "This node is not raft-0 leader. i.e is not leader "
+                   "controller";
         case errc::topic_already_exists:
-            return "cluster::errc::topic_already_exists";
+            return "The topic has already been created";
         case errc::replication_error:
-            return "cluster::errc::replication_error";
+            return "Controller was unable to replicate given state across "
+                   "cluster nodes";
         case errc::shutting_down:
-            return "cluster::errc::shutting_down";
+            return "Application is shutting down";
         case errc::no_leader_controller:
-            return "cluster::errc::no_leader_controller";
+            return "Currently there is no leader controller elected in the "
+                   "cluster";
         case errc::join_request_dispatch_error:
-            return "cluster::errc::join_request_dispatch_error";
+            return "Error occurred when controller tried to join the cluster";
         case errc::seed_servers_exhausted:
-            return "cluster::errc::seed_servers_exhausted";
+            return "There are no seed servers left to try in this round, will "
+                   "retry after delay ";
         case errc::auto_create_topics_exception:
-            return "cluster::errc::auto_create_topics_exception";
+            return "An exception was thrown while auto creating topics";
         default:
             return "cluster::errc::unknown";
         }
