@@ -103,9 +103,9 @@ void client_probe::setup_metrics(
           sm::description("Connection attempts"),
           labels),
         sm::make_derive(
-          "requests_sent",
-          [this] { return _requests_sent; },
-          sm::description("Number of requests sent"),
+          "requests",
+          [this] { return _requests; },
+          sm::description("Number of requests"),
           labels),
         sm::make_derive(
           "requests_pending",
@@ -116,6 +116,11 @@ void client_probe::setup_metrics(
           "request_errors",
           [this] { return _request_errors; },
           sm::description("Number or requests errors"),
+          labels),
+        sm::make_derive(
+          "request_timeouts",
+          [this] { return _request_timeouts; },
+          sm::description("Number or requests timeouts"),
           labels),
         sm::make_total_bytes(
           "in_bytes",
@@ -163,7 +168,7 @@ void client_probe::setup_metrics(
 
 std::ostream& operator<<(std::ostream& o, const rpc::client_probe& p) {
     o << "{"
-      << " requests_sent: " << p._requests_sent
+      << " requests_sent: " << p._requests
       << ", requests_pending: " << p._requests_pending
       << ", requests_completed: " << p._requests_completed
       << ", request_errors: " << p._request_errors
