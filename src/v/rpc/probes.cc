@@ -3,6 +3,7 @@
 #include "rpc/server_probe.h"
 
 #include <seastar/core/metrics.hh>
+#include <seastar/net/inet_address.hh>
 
 namespace rpc {
 void server_probe::setup_metrics(
@@ -55,6 +56,10 @@ void server_probe::setup_metrics(
           sm::description(
             "Number of requests that have to"
             "wait for processing beacause of insufficient memory")),
+        sm::make_derive(
+          "requests_pending",
+          [this] { return _requests_received - _requests_completed; },
+          sm::description("Number of requests being processed by server")),
       });
 }
 
