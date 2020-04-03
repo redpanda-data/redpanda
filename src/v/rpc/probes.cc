@@ -79,7 +79,8 @@ void client_probe::setup_metrics(
   const ss::socket_address& target_addr) {
     namespace sm = ss::metrics;
     auto target = sm::label("target");
-    std::vector<sm::label_instance> labels = {target(target_addr)};
+    std::vector<sm::label_instance> labels = {
+      target(fmt::format("{}:{}", target_addr.addr(), target_addr.port()))};
     if (service_name) {
         labels.push_back(sm::label("service_name")(*service_name));
     }

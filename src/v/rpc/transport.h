@@ -29,6 +29,7 @@ public:
     struct configuration {
         ss::socket_address server_addr;
         std::optional<ss::tls::credentials_builder> credentials;
+        rpc::metrics_disabled disable_metrics = rpc::metrics_disabled::no;
     };
 
     explicit base_transport(configuration c);
