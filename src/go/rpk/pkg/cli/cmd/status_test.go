@@ -2,13 +2,13 @@ package cmd_test
 
 import (
 	"bytes"
-	"strings"
 	"testing"
 	"vectorized/pkg/cli/cmd"
 	"vectorized/pkg/config"
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
+	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
 )
 
@@ -18,28 +18,9 @@ const (
 )
 
 func getConfig() config.Config {
-	return config.Config{
-		PidFile: pidFile,
-		Redpanda: &config.RedpandaConfig{
-			Directory: "/var/lib/redpanda/data",
-			RPCServer: config.SocketAddress{"127.0.0.1", 33145},
-			Id:        1,
-			KafkaApi:  config.SocketAddress{"127.0.0.1", 33145},
-			SeedServers: []*config.SeedServer{
-				&config.SeedServer{
-					Host: config.SocketAddress{"127.0.0.1", 33145},
-					Id:   1,
-				},
-				&config.SeedServer{
-					Host: config.SocketAddress{"127.0.0.1", 33145},
-					Id:   2,
-				},
-			},
-		},
-		Rpk: &config.RpkConfig{
-			EnableUsageStats: true,
-		},
-	}
+	conf := config.DefaultConfig()
+	conf.Rpk.EnableUsageStats = true
+	return conf
 }
 
 func writeConfig(fs afero.Fs, conf config.Config) error {
@@ -129,37 +110,19 @@ func TestStatus(t *testing.T) {
 			fs := afero.NewMemMapFs()
 			if tt.before != nil {
 				err := tt.before(fs)
-				if err != nil {
-					t.Errorf("got an error while setting up the test: %v", err)
-				}
+				require.NoError(t, err)
 			}
 			var out bytes.Buffer
 			cmd := cmd.NewStatusCommand(fs)
 			logrus.SetOutput(&out)
 			err := cmd.Execute()
-			if err != nil {
-				if tt.expectedErr == "" {
-					t.Fatalf("got an unexpected error: %v", err)
-				}
-				if !strings.Contains(err.Error(), tt.expectedErr) {
-					t.Fatalf(
-						"expected error message:\n%v\nto contain:\n%v",
-						err.Error(),
-						tt.expectedErr,
-					)
-				}
+			if tt.expectedErr != "" {
+				require.EqualError(t, err, tt.expectedErr)
 				return
 			}
-			if tt.expectedErr != "" {
-				t.Fatal("expected an error, but got nil")
-			}
-
-			if tt.expectedOut != "" && !strings.Contains(out.String(), tt.expectedOut) {
-				t.Fatalf(
-					"expected output:\n%v\nto contain:\n%v",
-					out.String(),
-					tt.expectedOut,
-				)
+			require.NoError(t, err)
+			if tt.expectedOut != "" {
+				require.Contains(t, out.String(), tt.expectedOut)
 			}
 		})
 	}
