@@ -3,11 +3,11 @@ package system
 import (
 	"testing"
 	"time"
-	"vectorized/pkg/os"
+
+	"github.com/stretchr/testify/require"
 )
 
 type procMock struct {
-	os.Proc
 	runFunction func(string, ...string) ([]string, error)
 }
 
@@ -17,72 +17,53 @@ func (m *procMock) RunWithSystemLdPath(
 	return m.runFunction(command, args...)
 }
 
+func (*procMock) IsRunning(_ time.Duration, _ string) bool {
+	return true
+}
+
 func Test_ntpQuery_checkWithTimedateCtl(t *testing.T) {
-	type fields struct {
-		proc os.Proc
-	}
 	tests := []struct {
-		name    string
-		fields  fields
-		want    bool
-		wantErr bool
+		name      string
+		ntpOutput []string
+		want      bool
+		wantErr   bool
 	}{
 		{
 			name: "shall return true when clock is synced",
-			fields: fields{
-				proc: &procMock{
-					runFunction: func(string, ...string) ([]string, error) {
-						return []string{
-							"Local time: Tue 2019-07-23 07:17:38 UTC",
-							"Universal time: Tue 2019-07-23 07:17:38 UTC",
-							"RTC time: Tue 2019-07-23 07:17:38",
-							"Time zone: UTC (UTC, +0000)",
-							"System clock synchronized: yes",
-							"NTP service: active",
-							"RTC in local TZ: no",
-						}, nil
-					},
-				},
+			ntpOutput: []string{
+				"Local time: Tue 2019-07-23 07:17:38 UTC",
+				"Universal time: Tue 2019-07-23 07:17:38 UTC",
+				"RTC time: Tue 2019-07-23 07:17:38",
+				"Time zone: UTC (UTC, +0000)",
+				"System clock synchronized: yes",
+				"NTP service: active",
+				"RTC in local TZ: no",
 			},
-			want:    true,
-			wantErr: false,
+			want: true,
 		},
 		{
 			name: "shall parse timedatectl with legacy output",
-			fields: fields{
-				proc: &procMock{
-					runFunction: func(string, ...string) ([]string, error) {
-						return []string{
-							"Local time: Tue 2019-07-23 07:17:38 UTC",
-							"Universal time: Tue 2019-07-23 07:17:38 UTC",
-							"RTC time: Tue 2019-07-23 07:17:38",
-							"Time zone: UTC (UTC, +0000)",
-							"NTP synchronized: no",
-							"NTP service: active",
-							"RTC in local TZ: no",
-						}, nil
-					},
-				},
+			ntpOutput: []string{
+				"Local time: Tue 2019-07-23 07:17:38 UTC",
+				"Universal time: Tue 2019-07-23 07:17:38 UTC",
+				"RTC time: Tue 2019-07-23 07:17:38",
+				"Time zone: UTC (UTC, +0000)",
+				"NTP synchronized: no",
+				"NTP service: active",
+				"RTC in local TZ: no",
 			},
-			want:    false,
-			wantErr: false,
+			want: false,
 		},
 		{
 			name: "shall return an error when there is no" +
 				" info on synchronization in timedatectl output",
-			fields: fields{
-				proc: &procMock{
-					runFunction: func(string, ...string) ([]string, error) {
-						return []string{
-							"Local time: Tue 2019-07-23 07:17:38 UTC",
-							"Universal time: Tue 2019-07-23 07:17:38 UTC",
-							"RTC time: Tue 2019-07-23 07:17:38",
-							"Time zone: UTC (UTC, +0000)",
-							"NTP service: active",
-							"RTC in local TZ: no",
-						}, nil
-					},
-				},
+			ntpOutput: []string{
+				"Local time: Tue 2019-07-23 07:17:38 UTC",
+				"Universal time: Tue 2019-07-23 07:17:38 UTC",
+				"RTC time: Tue 2019-07-23 07:17:38",
+				"Time zone: UTC (UTC, +0000)",
+				"NTP service: active",
+				"RTC in local TZ: no",
 			},
 			want:    false,
 			wantErr: true,
@@ -90,17 +71,19 @@ func Test_ntpQuery_checkWithTimedateCtl(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			q := &ntpQuery{
-				proc: tt.fields.proc,
+			proc := &procMock{
+				func(_ string, _ ...string) ([]string, error) {
+					return tt.ntpOutput, nil
+				},
 			}
+			q := &ntpQuery{proc: proc}
 			got, err := q.checkWithTimedateCtl()
-			if (err != nil) != tt.wantErr {
-				t.Errorf("timeCtlNtpQuery.IsNtpSynced() error = %v, wantErr %v", err, tt.wantErr)
+			if tt.wantErr {
+				require.Error(t, err)
 				return
 			}
-			if got != tt.want {
-				t.Errorf("timeCtlNtpQuery.IsNtpSynced() = %v, want %v", got, tt.want)
-			}
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
 		})
 	}
 }
@@ -156,14 +139,12 @@ func TestCheckNtpqOutput(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			res, err := checkNtpqOutput(tt.output)
-			if err != nil && !tt.expectedError {
-				t.Errorf("got an unexpected error: %v", err)
-			} else if err == nil && tt.expectedError {
-				t.Error("expected an error but got nil")
+			if tt.expectedError {
+				require.Error(t, err)
+				return
 			}
-			if res != tt.expectedResult {
-				t.Errorf("expected:\n'%t'\ngot:\n'%t'", tt.expectedResult, res)
-			}
+			require.NoError(t, err)
+			require.Exactly(t, tt.expectedResult, res)
 		})
 	}
 }
