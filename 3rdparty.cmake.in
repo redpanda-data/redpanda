@@ -441,8 +441,8 @@ ExternalProject_Add(seastar
     zlib)
 
 ExternalProject_Add(zstd
-  URL https://storage.googleapis.com/vectorizedio-public/dependencies/zstd-470344d.tar.gz
-  URL_MD5 52368c486e11c0f21990c8f2d4b556f9
+  GIT_REPOSITORY https://github.com/vectorizedio/zstd
+  GIT_TAG 1665462
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   SOURCE_SUBDIR  build/cmake
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
