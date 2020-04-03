@@ -68,7 +68,7 @@ static constexpr size_t size_of_rpc_header
 static_assert(
   size_of_rpc_header == 26, "Be gentil when extending this header. expensive");
 
-uint16_t checksum_header_only(const header& h);
+uint32_t checksum_header_only(const header& h);
 
 struct client_opts {
     /// \brief used to gurantee that we serialize writes. Holds a lock, until

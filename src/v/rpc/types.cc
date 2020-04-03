@@ -15,7 +15,7 @@ void crc_one(crc32& crc, T t) {
     crc.extend(args_le);
 }
 
-uint16_t checksum_header_only(const header& h) {
+uint32_t checksum_header_only(const header& h) {
     auto crc = crc32();
     crc_one(
       crc,
