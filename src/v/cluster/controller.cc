@@ -63,6 +63,31 @@ model::record_batch create_checkpoint_batch() {
     return std::move(builder).build();
 }
 
+template<typename Func>
+auto controller::dispatch_rpc_to_leader(Func&& f) {
+    using inner_t = typename std::result_of_t<Func(controller_client_protocol)>;
+    using fut_t = ss::futurize<inner_t>;
+    using ret_t = result<
+      typename std::tuple_element<0, typename fut_t::value_type>::type>;
+
+    std::optional<model::node_id> leader_id = get_leader_id();
+    if (!leader_id) {
+        return ss::make_ready_future<ret_t>(errc::no_leader_controller);
+    }
+
+    auto leader = _raft0->config().find_in_nodes(*leader_id);
+
+    if (leader == _raft0->config().nodes.end()) {
+        return ss::make_ready_future<ret_t>(errc::no_leader_controller);
+    }
+
+    return with_client<controller_client_protocol, Func>(
+      _connection_cache,
+      *leader_id,
+      leader->rpc_address(),
+      std::forward<Func>(f));
+}
+
 /**
  * The controller is a sharded service. However, all of the primary state
  * and computation occurs exclusively on the single controller::shard core.
@@ -148,7 +173,11 @@ ss::future<> controller::start() {
                   _raft0->meta().prev_log_index);
                 return apply_raft0_cfg_update(_raft0->config());
             })
-            .then([this] { return join_raft0(); });
+            .then([this] {
+                if (!is_already_member()) {
+                    return join_raft0();
+                };
+            });
       })
       .then([this] {
           // done in background fibre
@@ -463,43 +492,65 @@ ss::future<std::vector<topic_result>> controller::autocreate_topics(
   std::vector<topic_configuration> topics,
   model::timeout_clock::time_point timeout) {
     using ret_t = std::vector<topic_result>;
-    clusterlog.trace("Autocreating topics {}", topics);
+    vlog(clusterlog.trace, "Autocreating topics {}", topics);
     if (is_leader()) {
         // create topics locally
         return create_topics(std::move(topics), timeout);
     }
 
-    return dispatch_rpc_to_leader(
-             [topics, timeout](controller_client_protocol& c) mutable {
-                 clusterlog.trace(
-                   "Dispatching autocreate {} request to leader ", topics);
-                 return c.create_topics(
+    return dispatch_rpc_to_leader([topics, timeout](
+                                    controller_client_protocol c) mutable {
+               vlog(
+                 clusterlog.trace,
+                 "Dispatching autocreate {} request to leader ",
+                 topics);
+               return c
+                 .create_topics(
                    create_topics_request{std::move(topics),
                                          timeout - model::timeout_clock::now()},
-                   rpc::client_opts(timeout));
-             })
-      .then([this](rpc::client_context<create_topics_reply> ctx) {
-          return _md_cache
-            .invoke_on_all(
-              [md = std::move(ctx.data)](metadata_cache& c) mutable {
-                  vassert(
-                    md.configs.size() == md.metadata.size(),
-                    "Response have to contain the same number of configs and "
-                    "metadata for topics");
-                  for (int i = 0; i < md.configs.size(); ++i) {
-                      c.insert_topic(
-                        std::move(md.metadata[i]), std::move(md.configs[i]));
-                  }
-              })
-            .then([res = std::move(ctx.data.results)]() mutable {
-                return std::move(res);
-            });
+                   rpc::client_opts(timeout))
+                 .then([](rpc::client_context<create_topics_reply> ctx) {
+                     return std::move(ctx.data);
+                 });
+           })
+      .then([this, topics](result<create_topics_reply> r) mutable {
+          return process_autocreate_response(std::move(topics), std::move(r));
       })
-      .handle_exception([topics](const std::exception_ptr& e) {
-          // wasn't able to create topics
-          clusterlog.warn("Error autocreating topics {}", e);
-          return ss::make_ready_future<ret_t>(
-            create_topic_results(topics, errc::not_leader_controller));
+      .handle_exception(
+        [topics = std::move(topics)](const std::exception_ptr& e) mutable {
+            // wasn't able to create topics
+            vlog(
+              clusterlog.warn, "Unknown error while autocreating topics {}", e);
+            return ss::make_ready_future<ret_t>(
+              create_topic_results(topics, errc::auto_create_topics_exception));
+        });
+    ;
+}
+
+ss::future<std::vector<topic_result>> controller::process_autocreate_response(
+  std::vector<topic_configuration> topics, result<create_topics_reply> r) {
+    using ret_t = std::vector<topic_result>;
+    if (!r) {
+        return ss::make_ready_future<ret_t>(
+          create_topic_results(topics, static_cast<errc>(r.error().value())));
+    }
+    return _md_cache
+      .invoke_on_all(
+        [cfg = std::move(r.value().configs),
+         md = std::move(r.value().metadata)](metadata_cache& c) mutable {
+            vassert(
+              cfg.size() == md.size(),
+              "Error processing auto create topics response. List of "
+              "configurations have to have the same size as list of metadata. "
+              "Topic configurations: {}, metadata: {}",
+              cfg,
+              md);
+            for (int i = 0; i < cfg.size(); ++i) {
+                c.insert_topic(std::move(md[i]), std::move(cfg[i]));
+            }
+        })
+      .then([res = std::move(r.value().results)]() mutable {
+          return std::move(res);
       });
 }
 
@@ -826,19 +877,20 @@ ss::future<> controller::wait_for_leadership() {
     });
 }
 
-ss::future<join_reply> controller::dispatch_join_to_remote(
+ss::future<result<join_reply>> controller::dispatch_join_to_remote(
   const config::seed_server& target, model::broker joining_node) {
     vlog(
       clusterlog.info,
       "Sending join request to {} @ {}",
       target.id,
       target.addr);
-    return dispatch_rpc(
+
+    return with_client<controller_client_protocol>(
       _connection_cache,
       target.id,
       target.addr,
       [joining_node = std::move(joining_node)](
-        controller_client_protocol& c) mutable {
+        controller_client_protocol c) mutable {
           return c
             .join(
               join_request(std::move(joining_node)),
@@ -851,6 +903,7 @@ ss::future<join_reply> controller::dispatch_join_to_remote(
 
 static inline ss::future<> wait_for_next_join_retry(ss::abort_source& as) {
     using namespace std::chrono_literals; // NOLINT
+    vlog(clusterlog.info, "Next cluster join attempt in 5 seconds");
     return ss::sleep_abortable(5s, as).handle_exception_type(
       [](const ss::sleep_aborted&) {
           vlog(clusterlog.debug, "Aborting join sequence");
@@ -859,93 +912,87 @@ static inline ss::future<> wait_for_next_join_retry(ss::abort_source& as) {
 
 void controller::join_raft0() {
     (void)ss::with_gate(_bg, [this] {
-        return ss::do_until(
-          [this] {
-              // stop if we are already cluster member or gate is closed
-              return _raft0->config().contains_broker(_self.id())
-                     || _bg.is_closed();
-          },
-          [this] {
-              vlog(clusterlog.debug, "Trying to join the cluster");
-              return dispatch_join_to_seed_server(std::cbegin(_seed_servers))
-                .finally([this] { return wait_for_next_join_retry(_as); });
-          });
+        vlog(clusterlog.debug, "Trying to join the cluster");
+        return ss::repeat([this] {
+            return dispatch_join_to_seed_server(std::cbegin(_seed_servers))
+              .then([this](result<join_reply> r) {
+                  bool success = r && r.value().success;
+                  // stop on success or closed gate
+                  if (success || _bg.is_closed() || is_already_member()) {
+                      return ss::make_ready_future<ss::stop_iteration>(
+                        ss::stop_iteration::yes);
+                  }
+
+                  return wait_for_next_join_retry(_as).then(
+                    [] { return ss::stop_iteration::no; });
+              });
+        });
     });
 }
 
-ss::future<> controller::dispatch_join_to_seed_server(seed_iterator it) {
+ss::future<result<join_reply>>
+controller::dispatch_join_to_seed_server(seed_iterator it) {
+    using ret_t = result<join_reply>;
+    auto f = ss::make_ready_future<ret_t>(errc::seed_servers_exhausted);
     if (it == std::cend(_seed_servers)) {
-        return ss::make_ready_future<>();
+        return f;
     }
     // Current node is a seed server, just call the method
     if (it->id == _self.id()) {
         vlog(clusterlog.debug, "Using current node as a seed server");
-        return process_join_request(_self).handle_exception(
-          [this, it](const std::exception_ptr&) {
-              clusterlog.warn("Error processing join request at current node");
-              return dispatch_join_to_seed_server(std::next(it));
-          });
+        f = process_join_request(_self);
+    } else {
+        // If seed is the other server then dispatch join requst to it
+        f = dispatch_join_to_remote(*it, _self);
     }
-    // If seed is the other server then dispatch join requst to it
-    return dispatch_join_to_remote(*it, _self)
-      .then_wrapped([it, this](ss::future<join_reply> f) {
-          try {
-              join_reply reply = f.get0();
-              if (reply.success) {
-                  return ss::make_ready_future<>();
-              }
-          } catch (...) {
-              clusterlog.error(
-                "Error sending join request - {}", std::current_exception());
-          }
-          // Dispatch to next server
-          return dispatch_join_to_seed_server(std::next(it));
-      });
+
+    return f.then_wrapped([it, this](ss::future<ret_t> fut) {
+        if (!fut.failed()) {
+            if (auto r = fut.get0(); r.has_value()) {
+                return ss::make_ready_future<ret_t>(std::move(r));
+            }
+        }
+        vlog(
+          clusterlog.info,
+          "Error joining cluster using {} seed server",
+          it->id);
+
+        // Dispatch to next server
+        return dispatch_join_to_seed_server(std::next(it));
+    });
 }
 
-ss::future<> controller::process_join_request(model::broker broker) {
+ss::future<result<join_reply>>
+controller::process_join_request(model::broker broker) {
     verify_shard();
+    using ret_t = result<join_reply>;
     vlog(clusterlog.info, "Processing node '{}' join request", broker.id());
     // curent node is a leader
     if (is_leader()) {
         // Just update raft0 configuration
-        return _raft0->add_group_member(std::move(broker));
+        return _raft0->add_group_member(std::move(broker)).then([] {
+            return ss::make_ready_future<ret_t>(join_reply{true});
+        });
     }
     // Current node is not the leader have to send an RPC to leader
     // controller
-    return dispatch_rpc_to_leader([this, broker = std::move(broker)](
-                                    controller_client_protocol& c) mutable {
-               return c.join(
-                 join_request(std::move(broker)),
-                 rpc::client_opts(rpc::clock_type::now() + join_timeout));
+    return dispatch_rpc_to_leader([broker = std::move(broker)](
+                                    controller_client_protocol c) mutable {
+               return c
+                 .join(
+                   join_request(std::move(broker)),
+                   rpc::client_opts(rpc::clock_type::now() + join_timeout))
+                 .then([](rpc::client_context<join_reply> reply) {
+                     return reply.data;
+                 });
            })
-      .discard_result()
       .handle_exception([](const std::exception_ptr& e) {
-          clusterlog.info("Error sending cluster join request: {}", e);
+          vlog(
+            clusterlog.warn,
+            "Error while dispatching join request to leader node - {}",
+            e);
+          return ss::make_ready_future<ret_t>(
+            errc::join_request_dispatch_error);
       });
-}
-
-template<typename Func>
-ss::futurize_t<std::result_of_t<Func(controller_client_protocol&)>>
-controller::dispatch_rpc_to_leader(Func&& f) {
-    using ret_t
-      = ss::futurize<std::result_of_t<Func(controller_client_protocol&)>>;
-    auto leader_id = get_leader_id();
-    if (!leader_id) {
-        return ret_t::make_exception_future(
-          std::runtime_error("There is no leader controller in cluster"));
-    }
-    auto leader = _raft0->config().find_in_nodes(*leader_id);
-
-    if (leader == _raft0->config().nodes.end()) {
-        return ret_t::make_exception_future(
-          std::runtime_error("There is no leader controller in cluster"));
-    }
-    // Dispatch request to current leader
-    return dispatch_rpc(
-      _connection_cache,
-      leader->id(),
-      leader->rpc_address(),
-      std::forward<Func>(f));
 }
 } // namespace cluster
