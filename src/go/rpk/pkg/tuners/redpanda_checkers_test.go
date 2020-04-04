@@ -7,7 +7,7 @@ import (
 	"vectorized/pkg/tuners"
 
 	"github.com/spf13/afero"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func setUpCgroup(fs afero.Fs, file, val string, v2 bool) error {
@@ -91,17 +91,10 @@ func setUpCgroupsV2(fs afero.Fs, file, val string) error {
 
 func TestNtpCheckTimeout(t *testing.T) {
 	timeout := time.Duration(0)
-
 	check := tuners.NewNTPSyncChecker(timeout, afero.NewMemMapFs())
-
 	res := check.Check()
-
-	if res.IsOk {
-		t.Errorf("the NTP check shouldn't have succeeded")
-	}
-	if res.Err == nil {
-		t.Errorf("the NTP check should have failed with an error")
-	}
+	require.False(t, res.IsOk, "the NTP check shouldn't have succeeded")
+	require.Error(t, res.Err, "the NTP check should have failed with an error")
 }
 
 func TestFreeMemoryChecker(t *testing.T) {
@@ -174,14 +167,14 @@ func TestFreeMemoryChecker(t *testing.T) {
 					tt.memoryLimit,
 					tt.cgroupsV2,
 				)
-				assert.NoError(t, err)
+				require.NoError(t, err)
 				err = setUpCgroup(
 					fs,
 					"/redpanda.slice/redpanda.service/cpuset.cpus.effective",
 					tt.effectiveCpus,
 					tt.cgroupsV2,
 				)
-				assert.NoError(t, err)
+				require.NoError(t, err)
 			} else {
 				err := setUpCgroup(
 					fs,
@@ -189,23 +182,23 @@ func TestFreeMemoryChecker(t *testing.T) {
 					tt.memoryLimit,
 					tt.cgroupsV2,
 				)
-				assert.NoError(t, err)
+				require.NoError(t, err)
 				err = setUpCgroup(
 					fs,
 					"/cpuset/cpuset.effective_cpus",
 					tt.effectiveCpus,
 					tt.cgroupsV2,
 				)
-				assert.NoError(t, err)
+				require.NoError(t, err)
 			}
 			c := tuners.NewMemoryChecker(fs)
 			res := c.Check()
 			if tt.expectedErr != "" {
-				assert.EqualError(t, res.Err, tt.expectedErr)
-			} else {
-				assert.NoError(t, res.Err, tt.name)
+				require.EqualError(t, res.Err, tt.expectedErr)
+				return
 			}
-			assert.Equal(t, tt.expectOk, res.IsOk)
+			require.NoError(t, res.Err, tt.name)
+			require.Equal(t, tt.expectOk, res.IsOk)
 		})
 	}
 }
