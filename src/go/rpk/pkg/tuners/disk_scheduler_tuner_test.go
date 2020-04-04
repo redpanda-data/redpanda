@@ -6,7 +6,7 @@ import (
 	"vectorized/pkg/tuners/executors"
 
 	"github.com/spf13/afero"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type schedulerInfoMock struct {
@@ -64,7 +64,7 @@ func TestDeviceSchedulerTuner_Tune(t *testing.T) {
 	tuner.Tune()
 	// then
 	setValue, _ := afero.ReadFile(fs, "/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake/queue/scheduler")
-	assert.Equal(t, "noop", string(setValue))
+	require.Equal(t, "noop", string(setValue))
 }
 
 func TestDeviceSchedulerTuner_IsSupported_Should_return_true(t *testing.T) {
@@ -86,7 +86,7 @@ func TestDeviceSchedulerTuner_IsSupported_Should_return_true(t *testing.T) {
 	// when
 	supported, _ := tuner.CheckIfSupported()
 	// then
-	assert.True(t, supported)
+	require.True(t, supported)
 }
 
 func TestDeviceSchedulerTuner_IsSupported_should_return_false(t *testing.T) {
@@ -108,7 +108,7 @@ func TestDeviceSchedulerTuner_IsSupported_should_return_false(t *testing.T) {
 	// when
 	supported, _ := tuner.CheckIfSupported()
 	// then
-	assert.False(t, supported)
+	require.False(t, supported)
 }
 
 func TestDeviceSchedulerTuner_Tune_should_prefer_none_over_noop(t *testing.T) {
@@ -131,5 +131,5 @@ func TestDeviceSchedulerTuner_Tune_should_prefer_none_over_noop(t *testing.T) {
 	tuner.Tune()
 	// then
 	setValue, _ := afero.ReadFile(fs, "/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake/queue/scheduler")
-	assert.Equal(t, "none", string(setValue))
+	require.Equal(t, "none", string(setValue))
 }
