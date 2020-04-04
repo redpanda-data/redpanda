@@ -1,10 +1,11 @@
 package tuners
 
 import (
-	"reflect"
 	"testing"
 	"vectorized/pkg/tuners/disk"
 	"vectorized/pkg/tuners/irq"
+
+	"github.com/stretchr/testify/require"
 )
 
 type cpuMasksMock struct {
@@ -134,13 +135,12 @@ func TestGetExpectedIRQsDistribution(t *testing.T) {
 			got, err := GetExpectedIRQsDistribution(
 				tt.args.devices, tt.args.blockDevices,
 				tt.args.mode, tt.args.cpuMask, tt.args.cpuMasks)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("GetExpectedIRQsDistribution() error = %v, wantErr %v", err, tt.wantErr)
+			if tt.wantErr {
+				require.Error(t, err)
 				return
 			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("GetExpectedIRQsDistribution() = %v, want %v", got, tt.want)
-			}
+			require.NoError(t, err)
+			require.Exactly(t, tt.want, got)
 		})
 	}
 }
