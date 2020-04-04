@@ -2,8 +2,9 @@ package tuners
 
 import (
 	"fmt"
-	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 type mockedTunable struct {
@@ -101,44 +102,36 @@ func Test_aggregatedTunable_Tune(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tunable := &aggregatedTunable{
-				tunables: tt.fields.tunables,
-			}
-			if got := tunable.Tune(); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("aggregatedTunable.Tune() = %v, want %v", got, tt.want)
-			}
+			tunable := &aggregatedTunable{tt.fields.tunables}
+			got := tunable.Tune()
+			require.Exactly(t, tt.want, got)
 		})
 	}
 }
 
 func Test_aggregatedTunable_CheckIfSupported(t *testing.T) {
-	type fields struct {
-		tunables []Tunable
-	}
 	tests := []struct {
 		name          string
-		fields        fields
+		tunables      []Tunable
 		wantSupported bool
 		wantReason    string
 	}{
 		{
 			name: "shall be supported when all tunables are",
-			fields: fields{
-				tunables: []Tunable{
-					&mockedTunable{
-						checkIfSupported: func() (bool, string) {
-							return true, ""
-						},
+			tunables: []Tunable{
+				&mockedTunable{
+					checkIfSupported: func() (bool, string) {
+						return true, ""
 					},
-					&mockedTunable{
-						checkIfSupported: func() (bool, string) {
-							return true, ""
-						},
+				},
+				&mockedTunable{
+					checkIfSupported: func() (bool, string) {
+						return true, ""
 					},
-					&mockedTunable{
-						checkIfSupported: func() (bool, string) {
-							return true, ""
-						},
+				},
+				&mockedTunable{
+					checkIfSupported: func() (bool, string) {
+						return true, ""
 					},
 				},
 			},
@@ -147,22 +140,20 @@ func Test_aggregatedTunable_CheckIfSupported(t *testing.T) {
 		},
 		{
 			name: "shall forward reson when one of tunables is not supported",
-			fields: fields{
-				tunables: []Tunable{
-					&mockedTunable{
-						checkIfSupported: func() (bool, string) {
-							return true, ""
-						},
+			tunables: []Tunable{
+				&mockedTunable{
+					checkIfSupported: func() (bool, string) {
+						return true, ""
 					},
-					&mockedTunable{
-						checkIfSupported: func() (bool, string) {
-							return false, "Why not"
-						},
+				},
+				&mockedTunable{
+					checkIfSupported: func() (bool, string) {
+						return false, "Why not"
 					},
-					&mockedTunable{
-						checkIfSupported: func() (bool, string) {
-							return true, ""
-						},
+				},
+				&mockedTunable{
+					checkIfSupported: func() (bool, string) {
+						return true, ""
 					},
 				},
 			},
@@ -172,16 +163,10 @@ func Test_aggregatedTunable_CheckIfSupported(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tunable := &aggregatedTunable{
-				tunables: tt.fields.tunables,
-			}
+			tunable := &aggregatedTunable{tt.tunables}
 			gotSupported, gotReason := tunable.CheckIfSupported()
-			if gotSupported != tt.wantSupported {
-				t.Errorf("aggregatedTunable.CheckIfSupported() gotSupported = %v, want %v", gotSupported, tt.wantSupported)
-			}
-			if gotReason != tt.wantReason {
-				t.Errorf("aggregatedTunable.CheckIfSupported() gotReason = %v, want %v", gotReason, tt.wantReason)
-			}
+			require.Equal(t, tt.wantSupported, gotSupported)
+			require.Equal(t, tt.wantReason, gotReason)
 		})
 	}
 }

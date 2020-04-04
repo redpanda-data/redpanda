@@ -1,37 +1,24 @@
 package system
 
 import (
-	"reflect"
+	"path/filepath"
 	"testing"
 
 	"github.com/spf13/afero"
+	"github.com/stretchr/testify/require"
 )
 
 func TestReadRuntineOptions(t *testing.T) {
-	type args struct {
-		fs   afero.Fs
-		path string
-	}
+	path := "/proc/test"
 	tests := []struct {
 		name    string
-		before  func(afero.Fs)
-		args    args
+		opts    []byte
 		want    *RuntimeOptions
 		wantErr bool
 	}{
 		{
 			name: "shall return correct set of options",
-			before: func(fs afero.Fs) {
-				fs.MkdirAll("/proc", 0755)
-				afero.WriteFile(
-					fs, "/proc/test",
-					[]byte("opt1 opt2 [opt3] opt4\n"),
-					0644)
-			},
-			args: args{
-				fs:   afero.NewMemMapFs(),
-				path: "/proc/test",
-			},
+			opts: []byte("opt1 opt2 [opt3] opt4\n"),
 			want: &RuntimeOptions{
 				optionsMap: map[string]bool{
 					"opt1": false,
@@ -40,21 +27,10 @@ func TestReadRuntineOptions(t *testing.T) {
 					"opt4": false,
 				},
 			},
-			wantErr: false,
 		},
 		{
 			name: "shall return correct set of options when last one is active",
-			before: func(fs afero.Fs) {
-				fs.MkdirAll("/proc", 0755)
-				afero.WriteFile(
-					fs, "/proc/test",
-					[]byte("opt1 opt2 [opt3]\n"),
-					0644)
-			},
-			args: args{
-				fs:   afero.NewMemMapFs(),
-				path: "/proc/test",
-			},
+			opts: []byte("opt1 opt2 [opt3]\n"),
 			want: &RuntimeOptions{
 				optionsMap: map[string]bool{
 					"opt1": false,
@@ -62,55 +38,34 @@ func TestReadRuntineOptions(t *testing.T) {
 					"opt3": true,
 				},
 			},
-			wantErr: false,
 		},
 		{
 			name: "shall return the option when there is only one string",
-			before: func(fs afero.Fs) {
-				fs.MkdirAll("/proc", 0755)
-				afero.WriteFile(
-					fs, "/proc/test",
-					[]byte("opt1\n"),
-					0644)
-			},
-			args: args{
-				fs:   afero.NewMemMapFs(),
-				path: "/proc/test",
-			},
+			opts: []byte("opt1\n"),
 			want: &RuntimeOptions{
-				optionsMap: map[string]bool{
-					"opt1": true,
-				},
+				optionsMap: map[string]bool{"opt1": true},
 			},
-			wantErr: false,
 		},
 		{
-			name: "shall return error when there are more than one line in file",
-			before: func(fs afero.Fs) {
-				fs.MkdirAll("/proc", 0755)
-				afero.WriteFile(
-					fs, "/proc/test",
-					[]byte("opt1 opt2 [opt3]\n second line\n"),
-					0644)
-			},
-			args: args{
-				fs:   afero.NewMemMapFs(),
-				path: "/proc/test",
-			},
+			name:    "shall return error when there are more than one line in file",
+			opts:    []byte("opt1 opt2 [opt3]\n second line\n"),
 			wantErr: true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.before(tt.args.fs)
-			got, err := ReadRuntineOptions(tt.args.fs, tt.args.path)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("ReadRuntineOptions() error = %v, wantErr %v", err, tt.wantErr)
+			fs := afero.NewMemMapFs()
+			err := fs.MkdirAll(filepath.Dir(path), 0755)
+			require.NoError(t, err)
+			err = afero.WriteFile(fs, path, tt.opts, 0644)
+			require.NoError(t, err)
+			got, err := ReadRuntineOptions(fs, path)
+			if tt.wantErr {
+				require.Error(t, err)
 				return
 			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("ReadRuntineOptions() = %v, want %v", got, tt.want)
-			}
+			require.NoError(t, err)
+			require.Exactly(t, tt.want, got)
 		})
 	}
 }

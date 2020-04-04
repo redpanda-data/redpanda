@@ -6,25 +6,19 @@ import (
 	"testing"
 
 	"github.com/spf13/afero"
+	"github.com/stretchr/testify/require"
 )
 
 func TestFindConfig(t *testing.T) {
-	type args struct {
-		fs afero.Fs
-	}
 	tests := []struct {
 		name    string
-		args    args
 		before  func(fs afero.Fs)
 		want    string
 		wantErr bool
 	}{
 		{
-			name:   "should return an error when config is not found",
-			before: func(afero.Fs) {},
-			args: args{
-				fs: afero.NewMemMapFs(),
-			},
+			name:    "should return an error when config is not found",
+			before:  func(afero.Fs) {},
 			want:    "",
 			wantErr: true,
 		},
@@ -33,14 +27,9 @@ func TestFindConfig(t *testing.T) {
 			before: func(fs afero.Fs) {
 				currentDir := currentDir()
 				fs.MkdirAll(currentDir, 0755)
-
 				createConfigIn(fs, filepath.Dir(currentDir))
 			},
-			args: args{
-				fs: afero.NewMemMapFs(),
-			},
-			want:    filepath.Join(filepath.Dir(currentDir()), "redpanda.yaml"),
-			wantErr: false,
+			want: filepath.Join(filepath.Dir(currentDir()), "redpanda.yaml"),
 		},
 		{
 			name: "should return config file from 'etc' directory",
@@ -48,14 +37,9 @@ func TestFindConfig(t *testing.T) {
 				createConfigIn(fs, "/etc/redpanda")
 				currentDir := currentDir()
 				fs.MkdirAll(currentDir, 0755)
-
 				createConfigIn(fs, filepath.Dir(currentDir))
 			},
-			args: args{
-				fs: afero.NewMemMapFs(),
-			},
-			want:    "/etc/redpanda/redpanda.yaml",
-			wantErr: false,
+			want: "/etc/redpanda/redpanda.yaml",
 		},
 		{
 			name: "should return config file from current directory",
@@ -66,24 +50,20 @@ func TestFindConfig(t *testing.T) {
 				createConfigIn(fs, filepath.Dir(currentDir))
 				createConfigIn(fs, currentDir)
 			},
-			args: args{
-				fs: afero.NewMemMapFs(),
-			},
-			want:    filepath.Join(currentDir(), "redpanda.yaml"),
-			wantErr: false,
+			want: filepath.Join(currentDir(), "redpanda.yaml"),
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.before(tt.args.fs)
-			got, err := FindConfig(tt.args.fs)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("FindConfig() error = %v, wantErr %v", err, tt.wantErr)
+			fs := afero.NewMemMapFs()
+			tt.before(fs)
+			got, err := FindConfig(fs)
+			if tt.wantErr {
+				require.Error(t, err)
 				return
 			}
-			if got != tt.want {
-				t.Errorf("FindConfig() = %v, want %v", got, tt.want)
-			}
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
 		})
 	}
 }

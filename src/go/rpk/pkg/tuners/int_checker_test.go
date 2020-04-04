@@ -2,67 +2,55 @@ package tuners
 
 import (
 	"errors"
-	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func Test_intChecker_Check(t *testing.T) {
-	type fields struct {
+	tests := []struct {
+		name           string
 		check          func(c int) bool
 		renderRequired func() string
 		getCurrent     func() (int, error)
 		desc           string
 		severity       Severity
-	}
-	tests := []struct {
-		name   string
-		fields fields
-		want   *CheckResult
+		want           *CheckResult
 	}{
 		{
-			name: "Shall return valid result when condition is met",
-			fields: fields{
-				check:          func(c int) bool { return c == 0 },
-				renderRequired: func() string { return "0" },
-				desc:           "Some desc",
-				getCurrent:     func() (int, error) { return 0, nil },
-				severity:       Warning,
-			},
+			name:           "Shall return valid result when condition is met",
+			check:          func(c int) bool { return c == 0 },
+			renderRequired: func() string { return "0" },
+			getCurrent:     func() (int, error) { return 0, nil },
 			want: &CheckResult{
 				IsOk:     true,
 				Current:  "0",
-				Desc:     "Some desc",
+				Desc:     "An int check",
 				Severity: Warning,
 				Required: "0",
 			},
 		},
 		{
-			name: "Shall return not valid result when condition is not met",
-			fields: fields{
-				check:          func(c int) bool { return c == 0 },
-				renderRequired: func() string { return "0" },
-				desc:           "Some desc",
-				getCurrent:     func() (int, error) { return 1, nil },
-				severity:       Warning,
-			},
+			name:           "Shall return not valid result when condition is not met",
+			check:          func(c int) bool { return c == 0 },
+			renderRequired: func() string { return "0" },
+			getCurrent:     func() (int, error) { return 1, nil },
 			want: &CheckResult{
 				IsOk:     false,
 				Current:  "1",
-				Desc:     "Some desc",
+				Desc:     "An int check",
 				Severity: Warning,
 				Required: "0",
 			},
 		},
 		{
-			name: "Shall return result with an error when getCurretn returns an error",
-			fields: fields{
-				check:          func(c int) bool { return c == 0 },
-				renderRequired: func() string { return "0" },
-				getCurrent:     func() (int, error) { return 0, errors.New("err") },
-				severity:       Warning,
-			},
+			name:           "Shall return result with an error when getCurretn returns an error",
+			check:          func(c int) bool { return c == 0 },
+			renderRequired: func() string { return "0" },
+			getCurrent:     func() (int, error) { return 0, errors.New("err") },
 			want: &CheckResult{
 				IsOk:     false,
+				Desc:     "An int check",
 				Err:      errors.New("err"),
 				Severity: Warning,
 				Required: "0",
@@ -71,16 +59,16 @@ func Test_intChecker_Check(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			v := &intChecker{
-				check:          tt.fields.check,
-				renderRequired: tt.fields.renderRequired,
-				getCurrent:     tt.fields.getCurrent,
-				desc:           tt.fields.desc,
-				severity:       tt.fields.severity,
-			}
-			if got := v.Check(); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("intChecker.Check() = %v, want %v", got, tt.want)
-			}
+			v := NewIntChecker(
+				0,
+				"An int check",
+				Warning,
+				tt.check,
+				tt.renderRequired,
+				tt.getCurrent,
+			)
+			got := v.Check()
+			require.Exactly(t, tt.want, got)
 		})
 	}
 }

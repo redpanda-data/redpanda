@@ -7,6 +7,7 @@ import (
 	"vectorized/pkg/cli/cmd"
 
 	"github.com/spf13/afero"
+	"github.com/stretchr/testify/require"
 )
 
 const validConfig string = `redpanda:
@@ -65,9 +66,7 @@ func TestTimeoutDuration(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			fs := afero.NewMemMapFs()
 			err := afero.WriteFile(fs, configPath, []byte(validConfig), 0644)
-			if err != nil {
-				t.Errorf("got an error creating the config file: %v", err)
-			}
+			require.NoError(t, err)
 			cmd := cmd.NewIoTuneCmd(fs)
 			args := []string{"--config", configPath}
 			if len(tt.duration) > 0 {
@@ -80,23 +79,20 @@ func TestTimeoutDuration(t *testing.T) {
 			var out bytes.Buffer
 			cmd.SetOut(&out)
 			err = cmd.Execute()
+			// If it fails, it should be because the iotune bin wasn't found.
 			if err != nil {
-				t.Logf("got an error executing the command: %v", err)
+				require.EqualError(
+					t,
+					err,
+					"err=exec: \"iotune\": executable file not found in $PATH, stderr=",
+				)
 			}
 			timeout, err := cmd.Flags().GetDuration("timeout")
-			if err != nil {
-				t.Errorf("got an error retrieving the timeout flag value: %v", err)
-			}
-			if tt.expectedTimeout != timeout {
-				t.Errorf("expected timeout:\n%v\ngot:\n%v", tt.expectedTimeout, timeout)
-			}
+			require.NoError(t, err, "got an error retrieving the timeout flag value")
+			require.Exactly(t, tt.expectedTimeout, timeout)
 			duration, err := cmd.Flags().GetDuration("duration")
-			if err != nil {
-				t.Errorf("got an error retrieving the duration flag value: %v", err)
-			}
-			if tt.expectedDuration != duration {
-				t.Errorf("expected duration:\n%v\ngot:\n%v", tt.expectedDuration, duration)
-			}
+			require.NoError(t, err)
+			require.Exactly(t, tt.expectedDuration, duration)
 		})
 	}
 }

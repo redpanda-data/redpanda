@@ -5,10 +5,11 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"testing"
 	"time"
 	"vectorized/pkg/config"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestSendMetrics(t *testing.T) {
@@ -24,27 +25,19 @@ func TestSendMetrics(t *testing.T) {
 		},
 	}
 	bs, err := json.Marshal(body)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	ts := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			b, err := ioutil.ReadAll(r.Body)
-			if err != nil {
-				t.Error(err)
-			}
-			if !reflect.DeepEqual(b, bs) {
-				t.Errorf("expected: %v, got %v", bs, b)
-			}
+			require.NoError(t, err)
+			require.Exactly(t, bs, b)
 			w.WriteHeader(http.StatusOK)
 		}))
 	defer ts.Close()
 
 	err = SendMetricsToUrl(body, ts.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 }
 
 func TestSendEnvironment(t *testing.T) {
@@ -88,24 +81,16 @@ func TestSendEnvironment(t *testing.T) {
 		},
 	}
 	bs, err := json.Marshal(body)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	ts := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			b, err := ioutil.ReadAll(r.Body)
-			if err != nil {
-				t.Error(err)
-			}
-			if !reflect.DeepEqual(b, bs) {
-				t.Errorf("expected: %v, got %v", bs, b)
-			}
+			require.NoError(t, err)
+			require.Exactly(t, bs, b)
 			w.WriteHeader(http.StatusOK)
 		}))
 	defer ts.Close()
 	err = SendEnvironmentToUrl(body, ts.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 }
