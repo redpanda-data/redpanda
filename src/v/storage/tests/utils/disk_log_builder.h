@@ -58,7 +58,8 @@ struct start_tag {};
 struct stop_tag {};
 struct add_segment_tag {};
 
-using compression = ss::bool_class<struct allow_compression_builder_tag>;
+using maybe_compress_batches
+  = ss::bool_class<struct allow_maybe_compress_batches_builder_tag>;
 
 template<size_t arg_size, size_t min_args, size_t max_args>
 inline void arg_3_way_assert() {
@@ -189,16 +190,16 @@ public:
     ss::future<> add_random_batch(
       model::offset offset,
       int num_records,
-      compression comp,
+      maybe_compress_batches comp,
       log_append_config config = append_config());
     ss::future<> add_random_batch(
       model::offset offset,
-      compression comp = compression::yes,
+      maybe_compress_batches comp = maybe_compress_batches::yes,
       log_append_config config = append_config());
     ss::future<> add_random_batches(
       model::offset offset,
       int count,
-      compression comp = compression::yes,
+      maybe_compress_batches comp = maybe_compress_batches::yes,
       log_append_config config = append_config());
     ss::future<> add_random_batches(
       model::offset offset, log_append_config config = append_config());

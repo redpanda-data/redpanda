@@ -19,6 +19,7 @@ v_cc_library(
     v::utils
     v::reflection
     absl::flat_hash_map
+    v::compression
   )
 add_subdirectory(test)
 add_subdirectory(demo)

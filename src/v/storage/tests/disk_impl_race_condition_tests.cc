@@ -17,7 +17,8 @@ struct fixture {
 
 FIXTURE_TEST(release_appender_race, fixture) {
     using namespace storage; // NOLINT
-    b | start() | add_segment(0) | add_random_batch(0, 100, compression::yes);
+    b | start() | add_segment(0)
+      | add_random_batch(0, 100, maybe_compress_batches::yes);
 
     auto& l = b.get_disk_log_impl();
     {

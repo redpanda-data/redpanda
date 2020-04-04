@@ -56,9 +56,10 @@ private:
 FIXTURE_TEST(kitchen_sink, log_builder_fixture) {
     using namespace storage; // NOLINT
 
-    b | start() | add_segment(0) | add_random_batch(0, 100, compression::yes)
-      | add_random_batch(100, 2, compression::yes) | add_segment(102)
-      | add_random_batch(102, 2, compression::yes) | add_segment(104)
+    b | start() | add_segment(0)
+      | add_random_batch(0, 100, maybe_compress_batches::yes)
+      | add_random_batch(100, 2, maybe_compress_batches::yes) | add_segment(102)
+      | add_random_batch(102, 2, maybe_compress_batches::yes) | add_segment(104)
       | add_random_batches(104, 3);
 
     auto stats = get_stats().get0();

@@ -10,7 +10,7 @@ disk_log_builder::disk_log_builder(storage::log_config config)
 ss::future<> disk_log_builder::add_random_batch(
   model::offset offset,
   int num_records,
-  compression comp,
+  maybe_compress_batches comp,
   log_append_config config) {
     auto buff = ss::circular_buffer<model::record_batch>();
     buff.push_back(test::make_random_batch(offset, num_records, bool(comp)));
@@ -18,14 +18,17 @@ ss::future<> disk_log_builder::add_random_batch(
 }
 
 ss::future<> disk_log_builder::add_random_batch(
-  model::offset offset, compression comp, log_append_config config) {
+  model::offset offset, maybe_compress_batches comp, log_append_config config) {
     auto buff = ss::circular_buffer<model::record_batch>();
     buff.push_back(test::make_random_batch(offset, bool(comp)));
     return write(std::move(buff), config);
 }
 
 ss::future<> disk_log_builder::add_random_batches(
-  model::offset offset, int count, compression comp, log_append_config config) {
+  model::offset offset,
+  int count,
+  maybe_compress_batches comp,
+  log_append_config config) {
     return write(test::make_random_batches(offset, count, bool(comp)), config);
 }
 

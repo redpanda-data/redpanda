@@ -17,10 +17,10 @@ FIXTURE_TEST(empty_log_garbage_collect, gc_fixture) {
 
 FIXTURE_TEST(retention_test_time, gc_fixture) {
     builder | storage::start() | storage::add_segment(0)
-      | storage::add_random_batch(0, 100, storage::compression::yes)
-      | storage::add_random_batch(100, 2, storage::compression::yes)
+      | storage::add_random_batch(0, 100, storage::maybe_compress_batches::yes)
+      | storage::add_random_batch(100, 2, storage::maybe_compress_batches::yes)
       | storage::add_segment(102)
-      | storage::add_random_batch(102, 2, storage::compression::yes)
+      | storage::add_random_batch(102, 2, storage::maybe_compress_batches::yes)
       | storage::add_segment(104) | storage::add_random_batches(104, 3);
 
     BOOST_TEST_MESSAGE(
@@ -46,10 +46,10 @@ FIXTURE_TEST(retention_test_time, gc_fixture) {
 
 FIXTURE_TEST(retention_test_size, gc_fixture) {
     builder | storage::start() | storage::add_segment(0)
-      | storage::add_random_batch(0, 100, storage::compression::yes)
-      | storage::add_random_batch(100, 2, storage::compression::yes)
+      | storage::add_random_batch(0, 100, storage::maybe_compress_batches::yes)
+      | storage::add_random_batch(100, 2, storage::maybe_compress_batches::yes)
       | storage::add_segment(102)
-      | storage::add_random_batch(102, 2, storage::compression::yes)
+      | storage::add_random_batch(102, 2, storage::maybe_compress_batches::yes)
       | storage::add_segment(104) | storage::add_random_batches(104, 3);
 
     BOOST_TEST_MESSAGE("Should not collect segments because size equal to "
@@ -75,7 +75,7 @@ FIXTURE_TEST(retention_test_size, gc_fixture) {
 FIXTURE_TEST(retention_test_after_truncation, gc_fixture) {
     BOOST_TEST_MESSAGE("Should be safe to garbage collect after truncation");
     builder | storage::start() | storage::add_segment(0)
-      | storage::add_random_batch(0, 100, storage::compression::yes)
+      | storage::add_random_batch(0, 100, storage::maybe_compress_batches::yes)
       | storage::truncate_log(model::offset(0))
       | storage::garbage_collect(model::timestamp::now(), std::nullopt)
       | storage::stop();
