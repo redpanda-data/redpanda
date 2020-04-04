@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/spf13/afero"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type blockDevicesMock struct {
@@ -60,8 +60,8 @@ func TestSchedulerInfo_GetScheduler(t *testing.T) {
 	// when
 	scheduler, err := schedulerInfo.GetScheduler("fake")
 	// then
-	assert.NoError(t, err)
-	assert.Equal(t, "noop", scheduler)
+	require.NoError(t, err)
+	require.Equal(t, "noop", scheduler)
 }
 
 func TestSchedulerInfo_GetSupportedScheduler(t *testing.T) {
@@ -83,11 +83,11 @@ func TestSchedulerInfo_GetSupportedScheduler(t *testing.T) {
 	// when
 	schedulers, err := schedulerInfo.GetSupportedSchedulers("fake")
 	// then
-	assert.NoError(t, err)
-	assert.Contains(t, schedulers, "noop")
-	assert.Contains(t, schedulers, "deadline")
-	assert.Contains(t, schedulers, "cfq")
-	assert.Len(t, schedulers, 3)
+	require.NoError(t, err)
+	require.Contains(t, schedulers, "noop")
+	require.Contains(t, schedulers, "deadline")
+	require.Contains(t, schedulers, "cfq")
+	require.Len(t, schedulers, 3)
 }
 
 func TestSchedulerInfo_GetNoMerges(t *testing.T) {
@@ -109,6 +109,6 @@ func TestSchedulerInfo_GetNoMerges(t *testing.T) {
 	// when
 	nomerges, err := schedulerInfo.GetNomerges("fake")
 	// then
-	assert.NoError(t, err)
-	assert.Equal(t, nomerges, 2)
+	require.NoError(t, err)
+	require.Equal(t, nomerges, 2)
 }
