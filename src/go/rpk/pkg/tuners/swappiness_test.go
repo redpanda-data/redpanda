@@ -2,26 +2,24 @@ package tuners_test
 
 import (
 	"fmt"
-	"strings"
 	"testing"
 	"vectorized/pkg/tuners"
 	"vectorized/pkg/tuners/executors"
 	"vectorized/pkg/utils"
 
 	"github.com/spf13/afero"
+	"github.com/stretchr/testify/require"
 )
 
 func TestChecker(t *testing.T) {
 	tests := []struct {
 		name      string
-		fs        afero.Fs
 		before    func(fs afero.Fs) error
 		expectOk  bool
 		expectErr bool
 	}{
 		{
 			name: "It should return true if the value is correct",
-			fs:   afero.NewMemMapFs(),
 			before: func(fs afero.Fs) error {
 				_, err := utils.WriteBytes(
 					fs,
@@ -34,7 +32,6 @@ func TestChecker(t *testing.T) {
 		},
 		{
 			name: "It should return false if the file exists but the value iswrong",
-			fs:   afero.NewMemMapFs(),
 			before: func(fs afero.Fs) error {
 				_, err := utils.WriteBytes(
 					fs,
@@ -47,31 +44,25 @@ func TestChecker(t *testing.T) {
 		},
 		{
 			name:      "It should fail if the file doesn't exist",
-			fs:        afero.NewMemMapFs(),
 			expectOk:  false,
 			expectErr: true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			fs := afero.NewMemMapFs()
 			if tt.before != nil {
-				err := tt.before(tt.fs)
-				if err != nil {
-					t.Errorf("got an error setting up the test: %v", err)
-				}
+				err := tt.before(fs)
+				require.NoError(t, err)
 			}
-			checker := tuners.NewSwappinessChecker(tt.fs)
+			checker := tuners.NewSwappinessChecker(fs)
 			res := checker.Check()
-			if !tt.expectErr && res.Err != nil {
-				t.Errorf("got an unexpected error: %v", res.Err)
+			if tt.expectErr {
+				require.Error(t, res.Err)
+				return
 			}
-			if tt.expectOk != res.IsOk {
-				t.Errorf(
-					"expected checker to return %t, but got %t",
-					tt.expectOk,
-					res.IsOk,
-				)
-			}
+			require.NoError(t, res.Err)
+			require.Equal(t, tt.expectOk, res.IsOk)
 		})
 	}
 }
@@ -79,13 +70,11 @@ func TestChecker(t *testing.T) {
 func TestTuner(t *testing.T) {
 	tests := []struct {
 		name      string
-		fs        afero.Fs
 		before    func(fs afero.Fs) error
 		expectErr bool
 	}{
 		{
 			name: "It should leave the same value if it was correct",
-			fs:   afero.NewMemMapFs(),
 			before: func(fs afero.Fs) error {
 				_, err := utils.WriteBytes(
 					fs,
@@ -97,7 +86,6 @@ func TestTuner(t *testing.T) {
 		},
 		{
 			name: "It should change the value if it was different",
-			fs:   afero.NewMemMapFs(),
 			before: func(fs afero.Fs) error {
 				_, err := utils.WriteBytes(
 					fs,
@@ -109,49 +97,27 @@ func TestTuner(t *testing.T) {
 		},
 		{
 			name:      "It should fail if the file doesn't exist",
-			fs:        afero.NewMemMapFs(),
 			expectErr: true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			fs := afero.NewMemMapFs()
 			if tt.before != nil {
-				err := tt.before(tt.fs)
-				if err != nil {
-					t.Errorf(
-						"got an error setting up the test: %v",
-						err,
-					)
-				}
+				err := tt.before(fs)
+				require.NoError(t, err)
 			}
-			tuner := tuners.NewSwappinessTuner(tt.fs, executors.NewDirectExecutor())
+			tuner := tuners.NewSwappinessTuner(fs, executors.NewDirectExecutor())
 			res := tuner.Tune()
-			if res.Error() != nil {
-				if !tt.expectErr {
-					t.Errorf(
-						"got an unexpected error: %v",
-						res.Error(),
-					)
-				}
+			if tt.expectErr {
+				require.Error(t, res.Error())
 				return
 			}
-			lines, err := utils.ReadFileLines(tt.fs, tuners.File)
-			if err != nil {
-				t.Errorf(
-					"got an error while reading back the file: %v",
-					err,
-				)
-			}
-			if len(lines) != 1 {
-				t.Errorf("expected 1 line, got %d", len(lines))
-				return
-			}
-			if lines[0] != fmt.Sprint(tuners.ExpectedSwappiness) {
-				t.Errorf(
-					"expected the file contents to be '1', but got '%s'",
-					strings.Join(lines, "\n"),
-				)
-			}
+			require.NoError(t, res.Error())
+			lines, err := utils.ReadFileLines(fs, tuners.File)
+			require.NoError(t, err)
+			require.Len(t, lines, 1)
+			require.Equal(t, fmt.Sprint(tuners.ExpectedSwappiness), lines[0])
 		})
 	}
 }
