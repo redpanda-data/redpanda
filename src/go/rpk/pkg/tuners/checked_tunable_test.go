@@ -2,128 +2,101 @@ package tuners
 
 import (
 	"errors"
-	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
-type checkerMock struct {
-	Checker
-	checkFunction func() *CheckResult
+type checkedTunerMock struct {
+	checkCalled bool
+	tuneCalled  bool
+	supported   func() (bool, string)
+	check       func() *CheckResult
+	tune        func() TuneResult
 }
 
-func (c *checkerMock) GetDesc() string {
-	return "mocked checker"
+func (c *checkedTunerMock) Id() CheckerID {
+	return 1
 }
 
-func (c *checkerMock) Check() *CheckResult {
-	return c.checkFunction()
+func (c *checkedTunerMock) GetDesc() string {
+	return "mocked check"
 }
 
-func (c *checkerMock) GetRequiredAsString() string {
+func (c *checkedTunerMock) Check() *CheckResult {
+	c.checkCalled = true
+	return c.check()
+}
+
+func (c *checkedTunerMock) GetSeverity() Severity {
+	return Fatal
+}
+
+func (c *checkedTunerMock) GetRequiredAsString() string {
 	return "r"
 }
 
-func Test_checkTunable_Tune(t *testing.T) {
-	type fields struct {
-		checker         Checker
-		tuneAction      func() TuneResult
-		supportedAction func() (supported bool, reason string)
-	}
-	var tuneCallsCnt int
-	var checkCallsCnt int
+func (c *checkedTunerMock) Tune() TuneResult {
+	c.tuneCalled = true
+	return c.tune()
+}
+
+func (c *checkedTunerMock) CheckIfSupported() (bool, string) {
+	return c.supported()
+}
+
+func TestTune(t *testing.T) {
 	tests := []struct {
-		name              string
-		tuneCallsCounter  int
-		fields            fields
-		want              TuneResult
-		numberOfTuneCalls int
+		name             string
+		check            func() *CheckResult
+		tune             func() TuneResult
+		want             TuneResult
+		expectTuneCalled bool
 	}{
 		{
 			name: "should not execute tuner when condition is already met",
-			fields: fields{
-				checker: &checkerMock{
-					checkFunction: func() *CheckResult {
-						return &CheckResult{
-							IsOk: true,
-						}
-					},
-				},
-				tuneAction: func() TuneResult {
-					tuneCallsCnt++
-					return NewTuneResult(false)
-				},
-				supportedAction: func() (supported bool, reason string) {
-					return true, ""
-				},
+			check: func() *CheckResult {
+				return &CheckResult{
+					IsOk: true,
+				}
 			},
-			want:              NewTuneResult(false),
-			numberOfTuneCalls: 0,
+			tune: func() TuneResult {
+				return NewTuneResult(false)
+			},
+			want:             NewTuneResult(false),
+			expectTuneCalled: false,
 		},
 		{
-			name: "should not execute tuner when condition is already met",
-			fields: fields{
-				checker: &checkerMock{
-					checkFunction: func() *CheckResult {
-						res := &CheckResult{
-							IsOk: checkCallsCnt > 0,
-						}
-						checkCallsCnt++
-						return res
-					},
-				},
-				tuneAction: func() TuneResult {
-					tuneCallsCnt++
-					return NewTuneResult(false)
-				},
-				supportedAction: func() (supported bool, reason string) {
-					return true, ""
-				},
+			name: "Tune result should contain an error if tuning was not successful",
+			check: func() *CheckResult {
+				return &CheckResult{
+					IsOk:    false,
+					Current: "smth",
+				}
 			},
-			want:              NewTuneResult(false),
-			numberOfTuneCalls: 1,
-		},
-		{
-			name: "Tune result should contain an error if tuning was not successfull",
-			fields: fields{
-				checker: &checkerMock{
-					checkFunction: func() *CheckResult {
-						res := &CheckResult{
-							IsOk:    false,
-							Current: "smth",
-						}
-						checkCallsCnt++
-						return res
-					},
-				},
-				tuneAction: func() TuneResult {
-					tuneCallsCnt++
-					return NewTuneResult(false)
-				},
-				supportedAction: func() (supported bool, reason string) {
-					return true, ""
-				},
+			tune: func() TuneResult {
+				return NewTuneResult(false)
 			},
-			want: NewTuneError(errors.New("System tuning was not succesfull, " +
-				"check 'mocked checker' failed, required: 'r', current 'smth'")),
-			numberOfTuneCalls: 1,
+			want: NewTuneError(errors.New(
+				"System tuning was not succesful. Check" +
+					" 'mocked check' failed. Required: 'r', current: 'smth'",
+			)),
+			expectTuneCalled: true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tunable := &checkedTunable{
-				checker:         tt.fields.checker,
-				tuneAction:      tt.fields.tuneAction,
-				supportedAction: tt.fields.supportedAction,
+			c := &checkedTunerMock{
+				supported: func() (bool, string) {
+					return true, ""
+				},
+				check: tt.check,
+				tune:  tt.tune,
 			}
-			if got := tunable.Tune(); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("checkTunable.Tune() = %v, want %v", got, tt.want)
-			}
-			if tuneCallsCnt != tt.numberOfTuneCalls {
-				t.Errorf("checkTunable.Tune() calls = %v, want %v",
-					tuneCallsCnt, tt.numberOfTuneCalls)
-			}
-			tuneCallsCnt = 0
-			checkCallsCnt = 0
+			ct := NewCheckedTunable(c, c.Tune, c.CheckIfSupported, false)
+			got := ct.Tune()
+			require.Equal(t, tt.expectTuneCalled, c.tuneCalled)
+			require.Equal(t, tt.want, got)
 		})
 	}
 }

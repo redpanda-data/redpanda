@@ -6,207 +6,172 @@ import (
 	"fmt"
 	"testing"
 	"time"
-	"vectorized/pkg/os"
 	"vectorized/pkg/tuners/executors"
 	"vectorized/pkg/utils"
 
 	"github.com/spf13/afero"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-type fields struct {
-	commands os.Commands
-	fs       afero.Fs
-	grubCfg  []string
-}
-
 func TestGrubAddCommandLineOptions(t *testing.T) {
-
-	type args struct {
-		opt []string
-	}
 	tests := []struct {
 		name    string
-		before  func(fields)
-		fields  fields
-		args    args
+		before  func(afero.Fs, []string)
+		grubCfg []string
+		opt     []string
 		wantErr bool
-		check   func(fields)
+		check   func(afero.Fs, []string)
 	}{
 		{
 			name:   "Shall add new value only flag to GRUB cfg",
 			before: persistGrubConfig,
-			fields: fields{
-				grubCfg: []string{
-					"GRUB_TIMEOUT=5",
-					"GRUB_DISTRIBUTOR=\"$(sed 's, release .*$,,g' /etc/system-release)\"",
-					"GRUB_TERMINAL_OUTPUT=\"console\"",
-					"GRUB_DEFAULT=saved",
-					"GRUB_CMDLINE_LINUX=\"resume=/dev/mapper/fedora-swap rd.lvm.lv=fedora/root\"",
-					"GRUB_DISABLE_SUBMENU=true",
-				},
-				fs: afero.NewMemMapFs(),
+			grubCfg: []string{
+				"GRUB_TIMEOUT=5",
+				"GRUB_DISTRIBUTOR=\"$(sed 's, release .*$,,g' /etc/system-release)\"",
+				"GRUB_TERMINAL_OUTPUT=\"console\"",
+				"GRUB_DEFAULT=saved",
+				"GRUB_CMDLINE_LINUX=\"resume=/dev/mapper/fedora-swap rd.lvm.lv=fedora/root\"",
+				"GRUB_DISABLE_SUBMENU=true",
 			},
-			args: args{
-				opt: []string{"noht"},
-			},
+			opt:     []string{"noht"},
 			wantErr: false,
-			check: func(fields fields) {
-				md5 := calcMd5(fields.grubCfg)
+			check: func(fs afero.Fs, grubCfg []string) {
+				md5 := calcMd5(grubCfg)
 				backupName := fmt.Sprintf("/etc/default/grub.vectorized.%s.bk", md5)
-				backup, err := utils.ReadFileLines(fields.fs, backupName)
-				assert.Nil(t, err)
-				assert.Equal(t, fields.grubCfg, backup)
-				lines, _ := utils.ReadFileLines(fields.fs, "/etc/default/grub")
-				assert.Len(t, lines, 6)
+				backup, err := utils.ReadFileLines(fs, backupName)
+				require.Nil(t, err)
+				require.Equal(t, grubCfg, backup)
+				lines, _ := utils.ReadFileLines(fs, "/etc/default/grub")
+				require.Len(t, lines, 6)
 				opts := getGrubCmdLineOptsLine(lines)
-				assert.Len(t, opts, 3)
-				assert.Contains(t, opts, "noht")
+				require.Len(t, opts, 3)
+				require.Contains(t, opts, "noht")
 			},
 		},
 		{
 			name:   "Shall add new key/value pair flag to GRUB cfg",
 			before: persistGrubConfig,
-			fields: fields{
-				grubCfg: []string{
-					"GRUB_TIMEOUT=5",
-					"GRUB_DISTRIBUTOR=\"$(sed 's, release .*$,,g' /etc/system-release)\"",
-					"GRUB_TERMINAL_OUTPUT=\"console\"",
-					"GRUB_DEFAULT=saved",
-					"GRUB_CMDLINE_LINUX=\"resume=/dev/mapper/fedora-swap rd.lvm.lv=fedora/root\"",
-					"GRUB_DISABLE_SUBMENU=true",
-				},
-				fs: afero.NewMemMapFs(),
+			grubCfg: []string{
+				"GRUB_TIMEOUT=5",
+				"GRUB_DISTRIBUTOR=\"$(sed 's, release .*$,,g' /etc/system-release)\"",
+				"GRUB_TERMINAL_OUTPUT=\"console\"",
+				"GRUB_DEFAULT=saved",
+				"GRUB_CMDLINE_LINUX=\"resume=/dev/mapper/fedora-swap rd.lvm.lv=fedora/root\"",
+				"GRUB_DISABLE_SUBMENU=true",
 			},
-			args: args{
-				opt: []string{"some_opt=2"},
-			},
+			opt:     []string{"some_opt=2"},
 			wantErr: false,
-			check: func(fields fields) {
-				md5 := calcMd5(fields.grubCfg)
+			check: func(fs afero.Fs, grubCfg []string) {
+				md5 := calcMd5(grubCfg)
 				backupName := fmt.Sprintf("/etc/default/grub.vectorized.%s.bk", md5)
-				backup, err := utils.ReadFileLines(fields.fs, backupName)
-				assert.Nil(t, err)
-				assert.Equal(t, fields.grubCfg, backup)
-				lines, _ := utils.ReadFileLines(fields.fs, "/etc/default/grub")
+				backup, err := utils.ReadFileLines(fs, backupName)
+				require.Nil(t, err)
+				require.Equal(t, grubCfg, backup)
+				lines, _ := utils.ReadFileLines(fs, "/etc/default/grub")
 				opts := getGrubCmdLineOptsLine(lines)
-				assert.Len(t, opts, 3)
-				assert.Contains(t, opts, "some_opt=2")
+				require.Len(t, opts, 3)
+				require.Contains(t, opts, "some_opt=2")
 			},
 		},
 		{
 			name:   "Shall not add the same value only flag twice",
 			before: persistGrubConfig,
-			fields: fields{
-				grubCfg: []string{
-					"GRUB_TIMEOUT=5",
-					"GRUB_DISTRIBUTOR=\"$(sed 's, release .*$,,g' /etc/system-release)\"",
-					"GRUB_TERMINAL_OUTPUT=\"console\"",
-					"GRUB_DEFAULT=saved",
-					"GRUB_CMDLINE_LINUX=\"resume=/dev/mapper/fedora-swap noht rd.lvm.lv=fedora/root\"",
-					"GRUB_DISABLE_SUBMENU=true",
-				},
-				fs: afero.NewMemMapFs(),
+			grubCfg: []string{
+				"GRUB_TIMEOUT=5",
+				"GRUB_DISTRIBUTOR=\"$(sed 's, release .*$,,g' /etc/system-release)\"",
+				"GRUB_TERMINAL_OUTPUT=\"console\"",
+				"GRUB_DEFAULT=saved",
+				"GRUB_CMDLINE_LINUX=\"resume=/dev/mapper/fedora-swap noht rd.lvm.lv=fedora/root\"",
+				"GRUB_DISABLE_SUBMENU=true",
 			},
-			args: args{
-				opt: []string{"noht"},
-			},
+			opt:     []string{"noht"},
 			wantErr: false,
-			check: func(fields fields) {
-				md5 := calcMd5(fields.grubCfg)
+			check: func(fs afero.Fs, grubCfg []string) {
+				md5 := calcMd5(grubCfg)
 				backupName := fmt.Sprintf("/etc/default/grub.vectorized.%s.bk", md5)
-				backupPresent, _ := afero.Exists(fields.fs, backupName)
-				assert.Equal(t, backupPresent, false)
-				lines, _ := utils.ReadFileLines(fields.fs, "/etc/default/grub")
-				assert.Len(t, lines, 6)
+				backupPresent, _ := afero.Exists(fs, backupName)
+				require.Equal(t, backupPresent, false)
+				lines, _ := utils.ReadFileLines(fs, "/etc/default/grub")
+				require.Len(t, lines, 6)
 				opts := getGrubCmdLineOptsLine(lines)
-				assert.Len(t, opts, 3)
+				require.Len(t, opts, 3)
 			},
 		},
 		{
 			name:   "Shall update the option value if it is already present",
 			before: persistGrubConfig,
-			fields: fields{
-				grubCfg: []string{
-					"GRUB_TIMEOUT=5",
-					"GRUB_DISTRIBUTOR=\"$(sed 's, release .*$,,g' /etc/system-release)\"",
-					"GRUB_TERMINAL_OUTPUT=\"console\"",
-					"GRUB_DEFAULT=saved",
-					"GRUB_CMDLINE_LINUX=\"resume=/dev/mapper/fedora-swap some_opt=1 rd.lvm.lv=fedora/root\"",
-					"GRUB_DISABLE_SUBMENU=true",
-				},
-				fs: afero.NewMemMapFs(),
+			grubCfg: []string{
+				"GRUB_TIMEOUT=5",
+				"GRUB_DISTRIBUTOR=\"$(sed 's, release .*$,,g' /etc/system-release)\"",
+				"GRUB_TERMINAL_OUTPUT=\"console\"",
+				"GRUB_DEFAULT=saved",
+				"GRUB_CMDLINE_LINUX=\"resume=/dev/mapper/fedora-swap some_opt=1 rd.lvm.lv=fedora/root\"",
+				"GRUB_DISABLE_SUBMENU=true",
 			},
-			args: args{
-				opt: []string{"some_opt=2"},
-			},
+			opt:     []string{"some_opt=2"},
 			wantErr: false,
-			check: func(fields fields) {
-				md5 := calcMd5(fields.grubCfg)
+			check: func(fs afero.Fs, grubCfg []string) {
+				md5 := calcMd5(grubCfg)
 				backupName := fmt.Sprintf("/etc/default/grub.vectorized.%s.bk", md5)
-				lines, _ := utils.ReadFileLines(fields.fs, "/etc/default/grub")
-				backup, err := utils.ReadFileLines(fields.fs, backupName)
-				assert.Nil(t, err)
-				assert.Equal(t, fields.grubCfg, backup)
-				assert.Len(t, lines, 6)
+				lines, _ := utils.ReadFileLines(fs, "/etc/default/grub")
+				backup, err := utils.ReadFileLines(fs, backupName)
+				require.Nil(t, err)
+				require.Equal(t, grubCfg, backup)
+				require.Len(t, lines, 6)
 				opts := getGrubCmdLineOptsLine(lines)
-				assert.Len(t, opts, 3)
-				assert.Contains(t, opts, "some_opt=2")
+				require.Len(t, opts, 3)
+				require.Contains(t, opts, "some_opt=2")
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			grub := NewGrub(nil, nil, tt.fields.fs, executors.NewDirectExecutor(), time.Duration(10)*time.Second)
-			tt.before(tt.fields)
-			if err := grub.AddCommandLineOptions(tt.args.opt); (err != nil) != tt.wantErr {
-				t.Errorf("grub.AddCommandLineOption() error = %v, wantErr %v", err, tt.wantErr)
+			fs := afero.NewMemMapFs()
+			grub := NewGrub(nil, nil, fs, executors.NewDirectExecutor(), time.Duration(10)*time.Second)
+			tt.before(fs, tt.grubCfg)
+			err := grub.AddCommandLineOptions(tt.opt)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
 			}
-			tt.check(tt.fields)
+			require.NoError(t, err)
+			tt.check(fs, tt.grubCfg)
 		})
 	}
 }
 
-func Test_optionsNeedChange(t *testing.T) {
+func TestOtionsNeedChange(t *testing.T) {
 	type args struct {
-		current   []string
-		requested []string
 	}
 	tests := []struct {
-		name string
-		args args
-		want bool
+		name      string
+		current   []string
+		requested []string
+		want      bool
 	}{
 		{
-			name: "shall return false for the same sets of options",
-			args: args{
-				current:   []string{"opt1=val1", "noht", "opt_2=val_2"},
-				requested: []string{"opt1=val1", "noht", "opt_2=val_2"},
-			},
-			want: false,
+			name:      "shall return false for the same sets of options",
+			current:   []string{"opt1=val1", "noht", "opt_2=val_2"},
+			requested: []string{"opt1=val1", "noht", "opt_2=val_2"},
+			want:      false,
 		},
 		{
-			name: "shall return true as flag option differs",
-			args: args{
-				current:   []string{"opt1=val1", "opt_2=val_2"},
-				requested: []string{"opt1=val1", "noht", "opt_2=val_2"},
-			},
-			want: true,
+			name:      "shall return true as flag option differs",
+			current:   []string{"opt1=val1", "opt_2=val_2"},
+			requested: []string{"opt1=val1", "noht", "opt_2=val_2"},
+			want:      true,
 		},
 		{
-			name: "shall return true as key/value option differes",
-			args: args{
-				current:   []string{"opt1=val1", "noht", "opt_2=val_2"},
-				requested: []string{"opt1=val1", "noht", "opt_2=val_3"},
-			},
-			want: true,
+			name:      "shall return true as key/value option differes",
+			current:   []string{"opt1=val1", "noht", "opt_2=val_2"},
+			requested: []string{"opt1=val1", "noht", "opt_2=val_3"},
+			want:      true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := optionsNeedChange(tt.args.current, tt.args.requested); got != tt.want {
-				t.Errorf("optionsNeedChange() = %v, want %v", got, tt.want)
-			}
+			got := optionsNeedChange(tt.current, tt.requested)
+			require.Equal(t, tt.want, got)
 		})
 	}
 }
@@ -231,6 +196,6 @@ func calcMd5(lines []string) string {
 	return hex.EncodeToString(hash[:16])
 }
 
-func persistGrubConfig(fields fields) {
-	utils.WriteFileLines(fields.fs, fields.grubCfg, "/etc/default/grub")
+func persistGrubConfig(fs afero.Fs, grubCfg []string) {
+	utils.WriteFileLines(fs, grubCfg, "/etc/default/grub")
 }

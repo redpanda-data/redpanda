@@ -2,11 +2,11 @@ package irq
 
 import (
 	"os"
-	"reflect"
 	"testing"
 	"vectorized/pkg/utils"
 
 	"github.com/spf13/afero"
+	"github.com/stretchr/testify/require"
 )
 
 type mockProcFile struct {
@@ -22,127 +22,87 @@ func (mockProcFile *mockProcFile) GetIRQProcFileLinesMap() (
 }
 
 func Test_DeviceInfo_GetIRQs(t *testing.T) {
-	type fields struct {
-		procFile ProcFile
-		fs       afero.Fs
-	}
-	type args struct {
+	tests := []struct {
+		name          string
+		procFile      ProcFile
+		before        func(afero.Fs)
 		irqConfigDir  string
 		xenDeviceName string
-	}
-	tests := []struct {
-		name    string
-		fields  fields
-		before  func(fields)
-		args    args
-		want    []int
-		wantErr bool
+		want          []int
 	}{
 		{
 			name: "Shall return the IRQs when device is using MSI IRQs",
-			fields: fields{
-				fs: afero.NewMemMapFs(),
+			before: func(fs afero.Fs) {
+				_ = afero.WriteFile(fs, "/irq_config/dev1/msi_irqs/1", []byte{}, os.ModePerm)
+				_ = afero.WriteFile(fs, "/irq_config/dev1/msi_irqs/2", []byte{}, os.ModePerm)
+				_ = afero.WriteFile(fs, "/irq_config/dev1/msi_irqs/5", []byte{}, os.ModePerm)
+				_ = afero.WriteFile(fs, "/irq_config/dev1/msi_irqs/8", []byte{}, os.ModePerm)
 			},
-			before: func(f fields) {
-				_ = afero.WriteFile(f.fs, "/irq_config/dev1/msi_irqs/1", []byte{}, os.ModePerm)
-				_ = afero.WriteFile(f.fs, "/irq_config/dev1/msi_irqs/2", []byte{}, os.ModePerm)
-				_ = afero.WriteFile(f.fs, "/irq_config/dev1/msi_irqs/5", []byte{}, os.ModePerm)
-				_ = afero.WriteFile(f.fs, "/irq_config/dev1/msi_irqs/8", []byte{}, os.ModePerm)
-			},
-			args: args{
-				irqConfigDir: "/irq_config/dev1",
-			},
-			want:    []int{1, 2, 5, 8},
-			wantErr: false,
+			irqConfigDir: "/irq_config/dev1",
+			want:         []int{1, 2, 5, 8},
 		},
 		{
 			name: "Shall return the IRQs when device is using INT#x IRQs",
-			fields: fields{
-				fs: afero.NewMemMapFs(),
-			},
-			before: func(f fields) {
-				_ = utils.WriteFileLines(f.fs, []string{"1", "2", "5", "8"},
+			before: func(fs afero.Fs) {
+				_ = utils.WriteFileLines(fs, []string{"1", "2", "5", "8"},
 					"/irq_config/dev1/irq")
 			},
-			args: args{
-				irqConfigDir: "/irq_config/dev1",
-			},
-			want:    []int{1, 2, 5, 8},
-			wantErr: false,
+			irqConfigDir: "/irq_config/dev1",
+			want:         []int{1, 2, 5, 8},
 		},
 		{
 			name: "Shall return the IRQs from virtio device",
-			fields: fields{
-				fs: afero.NewMemMapFs(),
-				procFile: &mockProcFile{
-					getIRQProcFileLinesMap: func() (map[int]string, error) {
-						return map[int]string{
-							1: "1:     184233          0          0       7985   IO-APIC   1-edge      i8042",
-							5: "5:          0          0          0          0   IO-APIC   5-edge      drv-virtio-1",
-							8: "8:          1          0          0          0   IO-APIC   8-edge      rtc0"}, nil
-					},
+			procFile: &mockProcFile{
+				getIRQProcFileLinesMap: func() (map[int]string, error) {
+					return map[int]string{
+						1: "1:     184233          0          0       7985   IO-APIC   1-edge      i8042",
+						5: "5:          0          0          0          0   IO-APIC   5-edge      drv-virtio-1",
+						8: "8:          1          0          0          0   IO-APIC   8-edge      rtc0"}, nil
 				},
 			},
-			before: func(f fields) {
-				_ = utils.WriteFileLines(f.fs,
+			before: func(fs afero.Fs) {
+				_ = utils.WriteFileLines(fs,
 					[]string{"virtio:v00008086d000024DBsv0000103Csd0000006Abc01sc01i8A"},
 					"/irq_config/dev1/modalias")
-				_ = utils.WriteFileLines(f.fs,
+				_ = utils.WriteFileLines(fs,
 					[]string{},
 					"/irq_config/dev1/driver/drv-virtio-1")
 			},
-			args: args{
-				irqConfigDir:  "/irq_config/dev1",
-				xenDeviceName: "dev1",
-			},
-			want:    []int{5},
-			wantErr: false,
+			irqConfigDir:  "/irq_config/dev1",
+			xenDeviceName: "dev1",
+			want:          []int{5},
 		},
 		{
 			name: "Shall return the IRQs using XEN device name",
-			fields: fields{
-				fs: afero.NewMemMapFs(),
-				procFile: &mockProcFile{
-					getIRQProcFileLinesMap: func() (map[int]string, error) {
-						return map[int]string{
-							1: "1:     184233          0          0       7985   IO-APIC   1-edge      xen-dev1",
-							5: "5:          0          0          0          0   IO-APIC   5-edge      drv-virtio-1",
-							8: "8:          1          0          0          0   IO-APIC   8-edge      rtc0"}, nil
-					},
+			procFile: &mockProcFile{
+				getIRQProcFileLinesMap: func() (map[int]string, error) {
+					return map[int]string{
+						1: "1:     184233          0          0       7985   IO-APIC   1-edge      xen-dev1",
+						5: "5:          0          0          0          0   IO-APIC   5-edge      drv-virtio-1",
+						8: "8:          1          0          0          0   IO-APIC   8-edge      rtc0"}, nil
 				},
 			},
-			before: func(f fields) {
-				_ = utils.WriteFileLines(f.fs,
+			before: func(fs afero.Fs) {
+				_ = utils.WriteFileLines(fs,
 					[]string{"xen:v00008086d000024DBsv0000103Csd0000006Abc01sc01i8A"},
 					"/irq_config/dev1/modalias")
-				_ = utils.WriteFileLines(f.fs,
+				_ = utils.WriteFileLines(fs,
 					[]string{},
 					"/irq_config/dev1/driver/drv-virtio-1")
 			},
-			args: args{
-				irqConfigDir:  "/irq_config/dev1",
-				xenDeviceName: "xen-dev1",
-			},
-			want:    []int{1},
-			wantErr: false,
+			irqConfigDir:  "/irq_config/dev1",
+			xenDeviceName: "xen-dev1",
+			want:          []int{1},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.before(tt.fields)
-			deviceInfo := NewDeviceInfo(
-				tt.fields.fs,
-				tt.fields.procFile,
-			)
-			got, err := deviceInfo.GetIRQs(tt.args.irqConfigDir,
-				tt.args.xenDeviceName)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("deviceInfo.GetIRQs() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("deviceInfo.GetIRQs() = %v, want %v", got, tt.want)
-			}
+			fs := afero.NewMemMapFs()
+			tt.before(fs)
+			deviceInfo := NewDeviceInfo(fs, tt.procFile)
+			got, err := deviceInfo.GetIRQs(tt.irqConfigDir, tt.xenDeviceName)
+			require.NoError(t, err)
+			require.Exactly(t, tt.want, got)
 		})
 	}
 }

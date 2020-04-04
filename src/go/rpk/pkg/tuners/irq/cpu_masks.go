@@ -206,7 +206,7 @@ func (masks *cpuMasks) GetAllCpusMask() (string, error) {
 
 func MasksEqual(a, b string) (bool, error) {
 	aParts := strings.Split(a, ",")
-	bParts := strings.Split(a, ",")
+	bParts := strings.Split(b, ",")
 
 	if len(aParts) != len(bParts) {
 		return false, nil

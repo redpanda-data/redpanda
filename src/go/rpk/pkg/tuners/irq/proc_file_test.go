@@ -5,7 +5,7 @@ import (
 	"vectorized/pkg/utils"
 
 	"github.com/spf13/afero"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 var procFileLines = []string{
@@ -63,11 +63,11 @@ func TestProcFile_GetIRQProcFileLinesMap(t *testing.T) {
 	// when
 	procFileLinesMap, err := procFile.GetIRQProcFileLinesMap()
 	// then
-	assert.NoError(t, err)
-	assert.Equal(t, len(procFileLinesMap), 3)
-	assert.Equal(t, procFileLinesMap[1], procFileLines[1])
-	assert.Equal(t, procFileLinesMap[5], procFileLines[2])
-	assert.Equal(t, procFileLinesMap[8], procFileLines[3])
+	require.NoError(t, err)
+	require.Equal(t, len(procFileLinesMap), 3)
+	require.Equal(t, procFileLinesMap[1], procFileLines[1])
+	require.Equal(t, procFileLinesMap[5], procFileLines[2])
+	require.Equal(t, procFileLinesMap[8], procFileLines[3])
 }
 
 func TestProcFile_GetIRQProcFileLinesMap_AWS(t *testing.T) {
@@ -78,6 +78,6 @@ func TestProcFile_GetIRQProcFileLinesMap_AWS(t *testing.T) {
 	// when
 	procFileLinesMap, err := procFile.GetIRQProcFileLinesMap()
 	// then
-	assert.NoError(t, err)
-	assert.Len(t, procFileLinesMap, 17)
+	require.NoError(t, err)
+	require.Len(t, procFileLinesMap, 17)
 }

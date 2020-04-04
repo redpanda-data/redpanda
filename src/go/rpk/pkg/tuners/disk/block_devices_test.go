@@ -6,7 +6,7 @@ import (
 	"vectorized/pkg/tuners/irq"
 
 	"github.com/spf13/afero"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type irqDeviceInfoMock struct {
@@ -42,8 +42,8 @@ func Test_blockDevices_getDeviceControllerPath(t *testing.T) {
 	// when
 	controllerPath, err := blockDevices.getDeviceControllerPath(devSystemPath)
 	// then
-	assert.Nil(t, err)
-	assert.Equal(t, "/sys/devices/pci0000:00/0000:00:1f.2", controllerPath)
+	require.Nil(t, err)
+	require.Equal(t, "/sys/devices/pci0000:00/0000:00:1f.2", controllerPath)
 }
 
 func Test_blockDevices_isIRQNvmeFastPathIRQ(t *testing.T) {
@@ -108,8 +108,8 @@ func Test_blockDevices_isIRQNvmeFastPathIRQ(t *testing.T) {
 			// when
 			isNvmeIRQ, err := blockDevices.isIRQNvmeFastPathIRQ(18, test.numCpus)
 			// then
-			assert.Nil(t, err)
-			assert.Equal(t, test.expected, isNvmeIRQ)
+			require.Nil(t, err)
+			require.Equal(t, test.expected, isNvmeIRQ)
 		})
 	}
 }
