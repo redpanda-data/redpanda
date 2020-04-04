@@ -32,7 +32,6 @@ func (t *checkedTunable) CheckIfSupported() (supported bool, reason string) {
 }
 
 func (t *checkedTunable) Tune() TuneResult {
-
 	log.Debugf("Checking '%s'", t.checker.GetDesc())
 	result := t.checker.Check()
 	if result.Err != nil {
@@ -40,7 +39,7 @@ func (t *checkedTunable) Tune() TuneResult {
 	}
 
 	if result.IsOk {
-		log.Debugf("Check '%s' passed, skipping tunning", t.checker.GetDesc())
+		log.Debugf("Check '%s' passed, skipping tuning", t.checker.GetDesc())
 		return NewTuneResult(false)
 	}
 
@@ -51,10 +50,13 @@ func (t *checkedTunable) Tune() TuneResult {
 	if !t.disablePostTuneCheck {
 		postTuneResult := t.checker.Check()
 		if !postTuneResult.IsOk {
-			err := fmt.Errorf("System tuning was not succesfull, "+
-				"check '%s' failed, required: '%s', current '%v'",
+			err := fmt.Errorf(
+				"System tuning was not succesful. Check '%s'"+
+					" failed. Required: '%s', current: '%v'",
 				t.checker.GetDesc(),
-				t.checker.GetRequiredAsString(), result.Current)
+				t.checker.GetRequiredAsString(),
+				result.Current,
+			)
 			return NewTuneError(err)
 		}
 	}
