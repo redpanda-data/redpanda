@@ -4,7 +4,6 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
-	"reflect"
 	"testing"
 	"time"
 	"vectorized/pkg/os"
@@ -12,7 +11,7 @@ import (
 	"vectorized/pkg/utils"
 
 	"github.com/spf13/afero"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type procMock struct {
@@ -50,229 +49,191 @@ func (m *balanceServiceMock) IsRunning() bool {
 }
 
 func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
-
-	running := func(processName string) bool {
+	irqFile := "/irqbalance"
+	running := func(_ string) bool {
 		return true
 	}
-
-	type fields struct {
-		proc       os.Proc
-		fs         afero.Fs
-		configFile []string
-	}
-	type args struct {
-		bannedIRQs []int
-	}
 	tests := []struct {
-		name   string
-		fields fields
-		args   args
-		before func(fields)
-		assert func(fields, error)
+		name       string
+		proc       os.Proc
+		configFile []string
+		bannedIRQs []int
+		dir        string
+		before     func(afero.Fs, string, []string)
+		assert     func(afero.Fs, string, []string, []string)
 	}{
 		{
 			name: "Shall update the config and then restart IRQ " +
-				"balance service with config  in /etc/sysconfig/irqbalance & systemd",
-			fields: fields{
-				proc: &procMock{
-					isRunning: running,
-					run: func(command string, args ...string) (strings []string, e error) {
-						assert.Equal(t, "systemctl", command)
-						assert.Equal(t, []string{"try-restart", "irqbalance"}, args)
-						return nil, nil
-					},
+				"balance service with config in /etc/sysconfig/irqbalance & systemd",
+			proc: &procMock{
+				isRunning: running,
+				run: func(command string, args ...string) ([]string, error) {
+					require.Equal(t, "systemctl", command)
+					require.Equal(t, []string{"try-restart", "irqbalance"}, args)
+					return nil, nil
 				},
-				configFile: []string{"ONE_SHOT=true", "#IRQBALANCE_BANNED_CPUS="},
-				fs:         afero.NewMemMapFs(),
 			},
-			args: args{
-				bannedIRQs: []int{5, 12, 15},
+			configFile: []string{"ONE_SHOT=true", "#IRQBALANCE_BANNED_CPUS="},
+			bannedIRQs: []int{5, 12, 15},
+			dir:        "/etc/sysconfig/",
+			before: func(fs afero.Fs, dir string, configFile []string) {
+				_ = utils.WriteFileLines(fs,
+					configFile,
+					dir+"/irqbalance",
+				)
 			},
-			before: func(fields fields) {
-				_ = utils.WriteFileLines(fields.fs,
-					fields.configFile,
-					"/etc/sysconfig/irqbalance")
-			},
-			assert: func(fields fields, err error) {
-				assert.Nil(t, err)
-				md5 := calcMd5(fields.configFile)
-				// Check if backup is created
-				backupFileContent, err := utils.ReadFileLines(
-					fields.fs, fmt.Sprintf("/etc/sysconfig/irqbalance.vectorized.%s.bk", md5))
-				assert.Equal(t, 2, len(backupFileContent))
+			assert: func(fs afero.Fs, dir string, configFile, backupContent []string) {
+				require.Equal(t, 2, len(backupContent))
 				// Check if IRQs were banned in the file
-				fileContent, err := utils.ReadFileLines(fields.fs, "/etc/sysconfig/irqbalance")
-				assert.Equal(t, 3, len(fileContent))
-				assert.Equal(t, "IRQBALANCE_ARGS=\" --banirq=5 --banirq=12 --banirq=15\"", fileContent[2])
+				fileContent, err := utils.ReadFileLines(fs, dir+irqFile)
+				require.NoError(t, err)
+				require.Equal(t, 3, len(fileContent))
+				require.Equal(t, "IRQBALANCE_ARGS=\" --banirq=5 --banirq=12 --banirq=15\"", fileContent[2])
 			},
 		},
 		{
 			name: "Shall add  IRQs to banned list leaving those that were already banned intact",
-			fields: fields{
-				proc: &procMock{
-					isRunning: running,
-					run: func(command string, args ...string) (strings []string, e error) {
-						assert.Equal(t, "systemctl", command)
-						assert.Equal(t, []string{"try-restart", "irqbalance"}, args)
-						return nil, nil
-					},
+			proc: &procMock{
+				isRunning: running,
+				run: func(command string, args ...string) ([]string, error) {
+					require.Equal(t, "systemctl", command)
+					require.Equal(t, []string{"try-restart", "irqbalance"}, args)
+					return nil, nil
 				},
-				configFile: []string{"ONE_SHOT=true",
-					"#IRQBALANCE_BANNED_CPUS=",
-					"IRQBALANCE_ARGS=\" --banirq=5\""},
-				fs: afero.NewMemMapFs(),
 			},
-			args: args{
-				bannedIRQs: []int{12, 15},
+			configFile: []string{"ONE_SHOT=true",
+				"#IRQBALANCE_BANNED_CPUS=",
+				"IRQBALANCE_ARGS=\" --banirq=5\""},
+			bannedIRQs: []int{12, 15},
+			dir:        "/etc/sysconfig",
+			before: func(fs afero.Fs, dir string, configFile []string) {
+				_ = utils.WriteFileLines(fs, configFile, dir+irqFile)
 			},
-			before: func(fields fields) {
-				_ = utils.WriteFileLines(fields.fs,
-					fields.configFile,
-					"/etc/sysconfig/irqbalance")
-			},
-			assert: func(fields fields, err error) {
-				assert.Nil(t, err)
-				md5 := calcMd5(fields.configFile)
-				// Check if backup is created
-				backupFileContent, err := utils.ReadFileLines(
-					fields.fs, fmt.Sprintf("/etc/sysconfig/irqbalance.vectorized.%s.bk", md5))
-				assert.Equal(t, 3, len(backupFileContent))
+			assert: func(fs afero.Fs, dir string, configFile, backupContent []string) {
+				require.Equal(t, 3, len(backupContent))
 				// Check if IRQs were banned in the file
-				fileContent, err := utils.ReadFileLines(fields.fs, "/etc/sysconfig/irqbalance")
-				assert.Equal(t, 3, len(fileContent))
-				assert.Equal(t, "IRQBALANCE_ARGS=\" --banirq=5 --banirq=12 --banirq=15\"", fileContent[2])
+				fileContent, err := utils.ReadFileLines(fs, dir+irqFile)
+				require.NoError(t, err)
+				require.Equal(t, 3, len(fileContent))
+				require.Equal(t, "IRQBALANCE_ARGS=\" --banirq=5 --banirq=12 --banirq=15\"", fileContent[2])
 			},
 		},
 		{
 			name: "Shall prevent duplicates in banned IRQs arguments",
-			fields: fields{
-				proc: &procMock{
-					isRunning: running,
-					run: func(command string, args ...string) (strings []string, e error) {
-						assert.Equal(t, "systemctl", command)
-						assert.Equal(t, []string{"try-restart", "irqbalance"}, args)
-						return nil, nil
-					},
+			proc: &procMock{
+				isRunning: running,
+				run: func(command string, args ...string) ([]string, error) {
+					require.Equal(t, "systemctl", command)
+					require.Equal(t, []string{"try-restart", "irqbalance"}, args)
+					return nil, nil
 				},
-				fs: afero.NewMemMapFs(),
-				configFile: []string{"ONE_SHOT=true",
-					"#IRQBALANCE_BANNED_CPUS=",
-					// IRQ 5 is already banned
-					"IRQBALANCE_ARGS=\" --banirq=5\""},
 			},
-			args: args{
-				bannedIRQs: []int{5, 12, 15},
+			configFile: []string{"ONE_SHOT=true",
+				"#IRQBALANCE_BANNED_CPUS=",
+				// IRQ 5 is already banned
+				"IRQBALANCE_ARGS=\" --banirq=5\""},
+			bannedIRQs: []int{5, 12, 15},
+			dir:        "/etc/sysconfig",
+			before: func(fs afero.Fs, dir string, configFile []string) {
+				_ = utils.WriteFileLines(fs,
+					configFile,
+					dir+irqFile)
 			},
-			before: func(fields fields) {
-				_ = utils.WriteFileLines(fields.fs,
-					fields.configFile,
-					"/etc/sysconfig/irqbalance")
-			},
-			assert: func(fields fields, err error) {
-				assert.Nil(t, err)
-				md5 := calcMd5(fields.configFile)
-				// Check if backup is created
-				backupFileContent, err := utils.ReadFileLines(
-					fields.fs, fmt.Sprintf("/etc/sysconfig/irqbalance.vectorized.%s.bk", md5))
-				assert.Equal(t, 3, len(backupFileContent))
+			assert: func(fs afero.Fs, dir string, configFile, backupContent []string) {
+				require.Equal(t, 3, len(backupContent))
 				// Check if IRQs were banned in the file
-				fileContent, err := utils.ReadFileLines(fields.fs, "/etc/sysconfig/irqbalance")
-				assert.Equal(t, 3, len(fileContent))
-				assert.Equal(t, "IRQBALANCE_ARGS=\" --banirq=5 --banirq=12 --banirq=15\"", fileContent[2])
+				fileContent, err := utils.ReadFileLines(fs, dir+irqFile)
+				require.NoError(t, err)
+				require.Equal(t, 3, len(fileContent))
+				require.Equal(t, "IRQBALANCE_ARGS=\" --banirq=5 --banirq=12 --banirq=15\"", fileContent[2])
 			},
 		},
 		{
 			name: "Shall update the config and then restart IRQ " +
 				"balance service with config in /etc/conf.d/irqbalance & systemd",
-			fields: fields{
-				proc: &procMock{
-					isRunning: running,
-					run: func(command string, args ...string) (strings []string, e error) {
-						assert.Equal(t, "systemctl", command)
-						assert.Equal(t, []string{"try-restart", "irqbalance"}, args)
-						return nil, nil
-					},
+			proc: &procMock{
+				isRunning: running,
+				run: func(command string, args ...string) ([]string, error) {
+					require.Equal(t, "systemctl", command)
+					require.Equal(t, []string{"try-restart", "irqbalance"}, args)
+					return nil, nil
 				},
-				configFile: []string{"ONE_SHOT=true", "#IRQBALANCE_BANNED_CPUS="},
-				fs:         afero.NewMemMapFs(),
 			},
-			args: args{
-				bannedIRQs: []int{5, 12, 15},
-			},
-			before: func(fields fields) {
-				_ = utils.WriteFileLines(fields.fs,
-					fields.configFile,
-					"/etc/conf.d/irqbalance")
-				_ = utils.WriteFileLines(fields.fs,
+			configFile: []string{"ONE_SHOT=true", "#IRQBALANCE_BANNED_CPUS="},
+			bannedIRQs: []int{5, 12, 15},
+			dir:        "/etc/conf.d",
+			before: func(fs afero.Fs, dir string, configFile []string) {
+				_ = utils.WriteFileLines(fs,
+					configFile,
+					dir+irqFile)
+				_ = utils.WriteFileLines(fs,
 					[]string{"systemd"},
 					"/proc/1/comm")
-
 			},
-			assert: func(fields fields, err error) {
-				assert.Nil(t, err)
-				md5 := calcMd5(fields.configFile)
-				// Check if backup is created
-				backupFileContent, err := utils.ReadFileLines(fields.fs,
-					fmt.Sprintf("/etc/conf.d/irqbalance.vectorized.%s.bk", md5))
-				assert.Equal(t, 2, len(backupFileContent))
+			assert: func(fs afero.Fs, dir string, configFile, backupContent []string) {
+				require.Equal(t, 2, len(backupContent))
 				// Check if IRQs were banned in the file
-				fileContent, err := utils.ReadFileLines(fields.fs, "/etc/conf.d/irqbalance")
-				assert.Equal(t, 3, len(fileContent))
-				assert.Equal(t, "IRQBALANCE_OPTS=\" --banirq=5 --banirq=12 --banirq=15\"", fileContent[2])
+				fileContent, err := utils.ReadFileLines(fs, dir+irqFile)
+				require.NoError(t, err)
+				require.Equal(t, 3, len(fileContent))
+				require.Equal(t, "IRQBALANCE_OPTS=\" --banirq=5 --banirq=12 --banirq=15\"", fileContent[2])
 			},
 		},
 		{
 			name: "Shall update the config and then restart IRQ " +
-				"balance service with config  in /etc/conf.d/irqbalance & init daemon",
-			fields: fields{
-				proc: &procMock{
-					isRunning: running,
-					run: func(command string, args ...string) (strings []string, e error) {
-						assert.Equal(t, "/etc/init.d/irqbalance", command)
-						assert.Equal(t, []string{"restart"}, args)
-						return nil, nil
-					},
+				"balance service with config in /etc/conf.d/irqbalance & init daemon",
+			proc: &procMock{
+				isRunning: running,
+				run: func(command string, args ...string) ([]string, error) {
+					require.Equal(t, "/etc/init.d/irqbalance", command)
+					require.Equal(t, []string{"restart"}, args)
+					return nil, nil
 				},
-				configFile: []string{"ONE_SHOT=true", "#IRQBALANCE_BANNED_CPUS="},
-				fs:         afero.NewMemMapFs(),
 			},
-			args: args{
-				bannedIRQs: []int{5, 12, 15},
-			},
-			before: func(fields fields) {
-				_ = utils.WriteFileLines(fields.fs,
-					fields.configFile,
-					"/etc/conf.d/irqbalance")
-				_ = utils.WriteFileLines(fields.fs,
+			configFile: []string{"ONE_SHOT=true", "#IRQBALANCE_BANNED_CPUS="},
+			bannedIRQs: []int{5, 12, 15},
+			dir:        "/etc/conf.d",
+			before: func(fs afero.Fs, dir string, configFile []string) {
+				_ = utils.WriteFileLines(fs,
+					configFile,
+					dir+irqFile)
+				_ = utils.WriteFileLines(fs,
 					[]string{"init"},
 					"/proc/1/comm")
 
 			},
-			assert: func(fields fields, err error) {
-				assert.Nil(t, err)
-				md5 := calcMd5(fields.configFile)
-				// Check if backup is created
-				backupFileContent, err := utils.ReadFileLines(
-					fields.fs, fmt.Sprintf("/etc/conf.d/irqbalance.vectorized.%s.bk", md5))
-				assert.Equal(t, 2, len(backupFileContent))
+			assert: func(fs afero.Fs, dir string, configFile, backupContent []string) {
+				require.Equal(t, 2, len(backupContent))
 				// Check if IRQs were banned in the file
-				fileContent, err := utils.ReadFileLines(fields.fs, "/etc/conf.d/irqbalance")
-				assert.Equal(t, 3, len(fileContent))
-				assert.Equal(t, "IRQBALANCE_OPTS=\" --banirq=5 --banirq=12 --banirq=15\"", fileContent[2])
+				fileContent, err := utils.ReadFileLines(fs, dir+irqFile)
+				require.NoError(t, err)
+				require.Equal(t, 3, len(fileContent))
+				require.Equal(t, "IRQBALANCE_OPTS=\" --banirq=5 --banirq=12 --banirq=15\"", fileContent[2])
 			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.before(tt.fields)
+			fs := afero.NewMemMapFs()
+			t.Log(tt.dir)
+			tt.before(fs, tt.dir, tt.configFile)
 			balanceService := NewBalanceService(
-				tt.fields.fs,
-				tt.fields.proc,
+				fs,
+				tt.proc,
 				executors.NewDirectExecutor(),
 				time.Duration(10)*time.Second,
 			)
-			tt.assert(tt.fields, balanceService.BanIRQsAndRestart(tt.args.bannedIRQs))
+			err := balanceService.BanIRQsAndRestart(tt.bannedIRQs)
+			require.NoError(t, err)
+			md5 := calcMd5(tt.configFile)
+			// Check if backup is created
+			backupFileContent, err := utils.ReadFileLines(
+				fs,
+				fmt.Sprintf(tt.dir+"/irqbalance.vectorized.%s.bk", md5),
+			)
+			require.NoError(t, err)
+			tt.assert(fs, tt.dir, tt.configFile, backupFileContent)
 
 		})
 	}
@@ -280,144 +241,105 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 
 func Test_balanceService_GetBannedIRQs(t *testing.T) {
 	type fields struct {
-		fs     afero.Fs
-		proc   os.Proc
-		before func(afero.Fs)
 	}
 	tests := []struct {
-		name    string
-		fields  fields
-		want    []int
-		wantErr bool
+		name   string
+		before func(afero.Fs)
+		want   []int
 	}{
 		{
 			name: "Shall return all banned irq",
-			fields: fields{
-				proc: &procMock{},
-				fs:   afero.NewMemMapFs(),
-				before: func(fs afero.Fs) {
-					_ = utils.WriteFileLines(fs,
-						[]string{"ONE_SHOT=true",
-							"#IRQBALANCE_BANNED_CPUS=",
-							"IRQBALANCE_ARGS=\"--other --banirq=123 --else=12" +
-								"--banirq=34 --banirq=48 --banirq=16\""},
-						"/etc/sysconfig/irqbalance")
-				},
+			before: func(fs afero.Fs) {
+				_ = utils.WriteFileLines(fs,
+					[]string{"ONE_SHOT=true",
+						"#IRQBALANCE_BANNED_CPUS=",
+						"IRQBALANCE_ARGS=\"--other --banirq=123 --else=12" +
+							"--banirq=34 --banirq=48 --banirq=16\""},
+					"/etc/sysconfig/irqbalance")
 			},
-			want:    []int{123, 34, 48, 16},
-			wantErr: false,
+			want: []int{123, 34, 48, 16},
 		},
 		{
 			name: "Shall return empty list as there are none banned IRQs",
-			fields: fields{
-				proc: &procMock{},
-				fs:   afero.NewMemMapFs(),
-				before: func(fs afero.Fs) {
-					_ = utils.WriteFileLines(fs,
-						[]string{"ONE_SHOT=true",
-							"#IRQBALANCE_BANNED_CPUS=",
-							"IRQBALANCE_ARGS=\"--other --else --third\""},
-						"/etc/sysconfig/irqbalance")
-				},
+			before: func(fs afero.Fs) {
+				_ = utils.WriteFileLines(fs,
+					[]string{"ONE_SHOT=true",
+						"#IRQBALANCE_BANNED_CPUS=",
+						"IRQBALANCE_ARGS=\"--other --else --third\""},
+					"/etc/sysconfig/irqbalance")
 			},
-			wantErr: false,
 		},
 		{
 			name: "Shall return empty list as there are no custom options line",
-			fields: fields{
-				proc: &procMock{},
-				fs:   afero.NewMemMapFs(),
-				before: func(fs afero.Fs) {
-					_ = utils.WriteFileLines(fs,
-						[]string{"ONE_SHOT=true",
-							"#IRQBALANCE_BANNED_CPUS="},
-						"/etc/sysconfig/irqbalance")
-				},
+			before: func(fs afero.Fs) {
+				_ = utils.WriteFileLines(fs,
+					[]string{"ONE_SHOT=true",
+						"#IRQBALANCE_BANNED_CPUS="},
+					"/etc/sysconfig/irqbalance")
 			},
-			wantErr: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			fs := afero.NewMemMapFs()
 			balanceService := &balanceService{
-				fs:   tt.fields.fs,
-				proc: tt.fields.proc,
+				fs:   fs,
+				proc: &procMock{},
 			}
-			tt.fields.before(tt.fields.fs)
+			tt.before(fs)
 			got, err := balanceService.GetBannedIRQs()
-			if (err != nil) != tt.wantErr {
-				t.Errorf("balanceService.GetBannedIRQs() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("balanceService.GetBannedIRQs() = %v, want %v", got, tt.want)
-			}
+			require.NoError(t, err)
+			require.Exactly(t, tt.want, got)
 		})
 	}
 }
 
 func TestAreIRQsStaticallyAssigned(t *testing.T) {
 	type args struct {
-		irqs           []int
-		balanceService BalanceService
 	}
 	tests := []struct {
-		name    string
-		args    args
-		want    bool
-		wantErr bool
+		name           string
+		irqs           []int
+		balanceService BalanceService
+		want           bool
 	}{
 		{
 			name: "Shall return true as all requested IRQs are banned",
-			args: args{
-				balanceService: &balanceServiceMock{
-					getBannedIRQs: func() ([]int, error) {
-						return []int{12, 56, 87, 34, 46}, nil
-					},
-					isRunning: true,
+			balanceService: &balanceServiceMock{
+				getBannedIRQs: func() ([]int, error) {
+					return []int{12, 56, 87, 34, 46}, nil
 				},
-				irqs: []int{12, 34},
+				isRunning: true,
 			},
-			want:    true,
-			wantErr: false,
+			irqs: []int{12, 34},
+			want: true,
 		},
 		{
 			name: "Shall return false when some of the requested IRQs are not banned",
-			args: args{
-				balanceService: &balanceServiceMock{
-					getBannedIRQs: func() ([]int, error) {
-						return []int{12, 56, 87, 34, 46}, nil
-					},
-					isRunning: true,
+			balanceService: &balanceServiceMock{
+				getBannedIRQs: func() ([]int, error) {
+					return []int{12, 56, 87, 34, 46}, nil
 				},
-				irqs: []int{12, 134},
+				isRunning: true,
 			},
-			want:    false,
-			wantErr: false,
+			irqs: []int{12, 134},
+			want: false,
 		},
 		{
 			name: "Shall always return true when irqbalance is not running",
-			args: args{
-				balanceService: &balanceServiceMock{
-					isRunning: false,
-				},
-				irqs: []int{12, 134},
+			balanceService: &balanceServiceMock{
+				isRunning: false,
 			},
-			want:    true,
-			wantErr: false,
+			irqs: []int{12, 134},
+			want: true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := AreIRQsStaticallyAssigned(tt.args.irqs, tt.args.balanceService)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("AreIRQsStaticallyAssigned() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if got != tt.want {
-				t.Errorf("AreIRQsStaticallyAssigned() = %v, want %v", got, tt.want)
-			}
+			got, err := AreIRQsStaticallyAssigned(tt.irqs, tt.balanceService)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
 		})
 	}
 }
