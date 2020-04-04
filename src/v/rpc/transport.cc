@@ -245,12 +245,19 @@ void transport::setup_metrics(const std::optional<ss::sstring>& service_name) {
 
 transport::~transport() {
     vlog(rpclog.debug, "RPC Client probes: {}", _probe);
-    if (is_valid()) {
-        rpclog.error(
-          "connection '{}' is still valid. must call stop() before destroying",
-          server_address());
-        std::terminate();
-    }
+    vassert(
+      !is_valid(),
+      "connection '{}' is still valid. must call stop() before destroying",
+      *this);
 }
 
+std::ostream& operator<<(std::ostream& o, const transport& t) {
+    fmt::print(
+      o,
+      "(server:{}, _correlations:{}, _correlation_idx:{})",
+      t.server_address(),
+      t._correlations.size(),
+      t._correlation_idx);
+    return o;
+}
 } // namespace rpc
