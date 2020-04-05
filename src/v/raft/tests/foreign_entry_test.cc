@@ -91,7 +91,7 @@ struct foreign_entry_fixture {
     storage::log get_log() { return _mngr.get(_ntp).value(); }
     storage::log_manager _mngr;
     model::ntp _ntp{
-      model::ns("bootstrap_test_" + random_generators::gen_alphanum_string(8)),
+      model::ns("test.bootstrap." + random_generators::gen_alphanum_string(8)),
       model::topic_partition{
         model::topic(random_generators::gen_alphanum_string(6)),
         model::partition_id(random_generators::get_int(0, 24))}};
