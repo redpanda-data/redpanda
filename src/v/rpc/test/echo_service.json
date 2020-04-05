@@ -6,6 +6,11 @@
     ],
     "methods": [
         {
+            "name": "echo",
+            "input_type": "echo_req",
+            "output_type": "echo_resp"
+        },
+        {
             "name": "prefix_echo",
             "input_type": "echo_req",
             "output_type": "echo_resp"
