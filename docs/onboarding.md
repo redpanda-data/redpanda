@@ -14,6 +14,7 @@
 
 ## Day 1
 
+- [ ] Read the [Company Identity](./identity.md)
 - [ ] Welcome e-mail
    * Primary focus area
    * Contact info
