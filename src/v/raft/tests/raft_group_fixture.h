@@ -224,7 +224,7 @@ struct raft_group {
       , _storage_type(storage_type) {
         _log_manager
           .start(storage::log_config{
-            .base_dir = "raft_test_"
+            .base_dir = "test.raft."
                         + random_generators::gen_alphanum_string(6),
             .max_segment_size = 100 * 1024 * 1024, // 100MB
             .should_sanitize = storage::log_config::sanitize_files::yes})
