@@ -135,7 +135,11 @@ ss::future<> heartbeat_manager::do_heartbeat(node_heartbeat&& r) {
     auto f = _client_protocol.heartbeat(
       r.target,
       std::move(r.request),
-      rpc::client_opts(next_heartbeat_timeout()));
+      rpc::client_opts(
+        next_heartbeat_timeout(),
+        rpc::client_opts::sequential_dispatch::yes,
+        rpc::compression_type::zstd,
+        512));
     _dispatch_sem.signal();
     return f.then([node = r.target, groups = std::move(groups), this](
                     result<heartbeat_reply> ret) mutable {
