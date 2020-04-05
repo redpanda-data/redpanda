@@ -43,6 +43,10 @@ Vectorized e-mail address.
 
 ## Background reading
 
+> All of the Red Panda (and other) design documents related to Vectorized software
+> can be found in the shared folder:
+> https://drive.google.com/drive/folders/1eXsW_ldmziIuLHtk5riB02peCQyDbtYP
+
 Quick introduction to logs and Kafka.
 
 1. https://engineering.linkedin.com/distributed-systems/log-what-every-software-engineer-should-know-about-real-time-datas-unifying
@@ -70,7 +74,3 @@ Some of the technologies Vectorized is using do this:
 1. [Seastar](http://seastar.io/) (and the amazing [Seastar tutorial](https://github.com/scylladb/seastar/blob/master/doc/tutorial.md))
 2. [Raft consensus](https://raft.github.io/)
 
-All of the Red Panda (and other) design documents related to Vectorized software
-can be found in the shared folder:
-
-https://drive.google.com/drive/folders/1eXsW_ldmziIuLHtk5riB02peCQyDbtYP
