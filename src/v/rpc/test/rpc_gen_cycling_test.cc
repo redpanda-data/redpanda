@@ -1,9 +1,11 @@
+#include "random/generators.h"
 #include "rpc/exceptions.h"
 #include "rpc/test/rpc_integration_fixture.h"
 #include "rpc/types.h"
 #include "test_utils/fixture.h"
 
 #include <boost/test/tools/old/interface.hpp>
+#include <boost/test/unit_test_log.hpp>
 
 using namespace std::chrono_literals; // NOLINT
 
@@ -121,5 +123,38 @@ FIXTURE_TEST(ordering_test, rpc_integration_fixture) {
             }));
     }
     ss::when_all_succeed(futures.begin(), futures.end()).get0();
+    client.stop().get();
+}
+
+FIXTURE_TEST(rpc_mixed_compression, rpc_integration_fixture) {
+    const auto data = random_generators::gen_alphanum_string(1024);
+    configure_server();
+    // Two services @ single server
+    register_services();
+    start_server();
+
+    using client_t = rpc::client<echo::echo_client_protocol>;
+    client_t client(client_config());
+    client.connect().get();
+    BOOST_TEST_MESSAGE("Calling echo method no compression");
+    auto echo_resp = client
+                       .echo(
+                         echo::echo_req{.str = data},
+                         rpc::client_opts(rpc::no_timeout))
+                       .get0();
+    BOOST_REQUIRE_EQUAL(echo_resp.data.str, data);
+    BOOST_TEST_MESSAGE("Calling echo method *WITH* compression");
+    echo_resp = client
+                  .echo(
+                    echo::echo_req{.str = data},
+                    rpc::client_opts(
+                      rpc::no_timeout,
+                      rpc::client_opts::sequential_dispatch::no,
+                      rpc::compression_type::zstd,
+                      0 /*min bytes compress*/))
+                  .get0();
+    BOOST_REQUIRE_EQUAL(echo_resp.data.str, data);
+
+    // close resources
     client.stop().get();
 }
