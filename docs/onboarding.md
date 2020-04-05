@@ -10,7 +10,7 @@
   - [ ] Get added to the `vectorizedio` project
 - [ ] [Setup AWS cloud account](https://vectorizedio.signin.aws.amazon.com/console)
 - [ ] Laptop (strong suggest: fedora:30)
-- [ ] [Setup Asana](https://app.asana.com)
+- [ ] [Setup clubhouse.io](https://clubhouse.io)
 
 ## Day 1
 
@@ -24,9 +24,8 @@
 - [ ] Fork [`v`](https://github.com/vectorizedio/v)
    * Compile `v` @ master (see the [readme](../README.md) for instructions)
 - [ ] Access to [`v-dev`](https://groups.google.com/a/vectorized.io/forum/#!forum/v-dev) and archives
-- [ ] [Starter issues on GitHub](https://github.com/vectorizedio/v/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
-   * Review the different tags' meaning in the [tag guide](github_tags.md).
 - [ ] [Development process](https://github.com/vectorizedio/v/blob/master/CONTRIBUTING.md)
+- [ ] Deploy a cluster as if you were a customer
 
 Be sure to change your notification settings in GitHub for the Vectorized
 organization so that Vectorized-related GitHub e-mails are delivered to your
