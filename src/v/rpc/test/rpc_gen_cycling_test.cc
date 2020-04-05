@@ -4,6 +4,8 @@
 #include "rpc/types.h"
 #include "test_utils/fixture.h"
 
+#include <seastar/util/defer.hh>
+
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test_log.hpp>
 
@@ -18,14 +20,13 @@ FIXTURE_TEST(rpcgen_integration, rpc_integration_fixture) {
       client_config());
     info("client connecting");
     cli.connect().get();
+    auto dcli = ss::defer([&cli] { cli.stop().get(); });
     info("client calling method");
     auto ret = cli
                  .ibis_hakka(
                    cycling::san_francisco{66},
                    rpc::client_opts(rpc::no_timeout))
                  .get0();
-    info("client stopping");
-    cli.stop().get();
     info("service stopping");
 
     BOOST_REQUIRE_EQUAL(ret.data.x, 66);
@@ -47,16 +48,13 @@ FIXTURE_TEST(rpcgen_tls_integration, rpc_integration_fixture) {
       client_config(creds_builder));
     info("client connecting");
     cli.connect().get();
+    auto dcli = ss::defer([&cli] { cli.stop().get(); });
     info("client calling method");
     auto ret = cli
                  .ibis_hakka(
                    cycling::san_francisco{66},
                    rpc::client_opts(rpc::no_timeout))
                  .get0();
-    info("client stopping");
-    cli.stop().get();
-    info("service stopping");
-
     BOOST_REQUIRE_EQUAL(ret.data.x, 66);
 }
 
