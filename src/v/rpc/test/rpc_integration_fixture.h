@@ -35,6 +35,11 @@ struct echo_impl final : echo::echo_service {
     echo_impl(ss::scheduling_group& sc, ss::smp_service_group& ssg)
       : echo::echo_service(sc, ssg) {}
     ss::future<echo::echo_resp>
+    echo(echo::echo_req&& req, rpc::streaming_context&) final {
+        return ss::make_ready_future<echo::echo_resp>(
+          echo::echo_resp{.str = req.str});
+    }
+    ss::future<echo::echo_resp>
     prefix_echo(echo::echo_req&& req, rpc::streaming_context&) final {
         return ss::make_ready_future<echo::echo_resp>(
           echo::echo_resp{.str = fmt::format("prefix_{}", req.str)});
