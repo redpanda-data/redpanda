@@ -10,6 +10,7 @@
 #include "rpc/connection_cache.h"
 #include "rpc/server.h"
 #include "rpc/simple_protocol.h"
+#include "rpc/types.h"
 #include "storage/log_manager.h"
 #include "storage/tests/utils/random_batch.h"
 #include "test_utils/fixture.h"
@@ -188,7 +189,11 @@ struct raft_node {
                 }
                 return broker.rpc_address().resolve().then(
                   [this, &broker, &c](ss::socket_address addr) {
-                      return c.emplace(broker.id(), {.server_addr = addr}, 1ms);
+                      return c.emplace(
+                        broker.id(),
+                        {.server_addr = addr,
+                         .disable_metrics = rpc::metrics_disabled::yes},
+                        1ms);
                   });
             })
           .get0();
