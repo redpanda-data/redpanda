@@ -6,11 +6,17 @@ v_cc_library(
     compression
   HDRS
     "compression.h"
+    "stream_zstd.h"
   SRCS
     "compression.cc"
+    "stream_zstd.cc"
   DEPS
     v::bytes
     Zstd::zstd
     LZ4::LZ4
     Snappy::snappy
+  DEFINES
+    -DZSTD_STATIC_LINKING_ONLY
 )
+
+add_subdirectory(tests)
