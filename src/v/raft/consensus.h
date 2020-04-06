@@ -80,8 +80,8 @@ public:
 
     clock_type::time_point last_hbeat_timestamp(model::node_id);
 
-    void
-      process_heartbeat_response(model::node_id, result<append_entries_reply>);
+    void process_append_entries_reply(
+      model::node_id, result<append_entries_reply>);
 
     ss::future<result<replicate_result>>
     replicate(model::record_batch_reader&&, replicate_options);
@@ -143,7 +143,7 @@ private:
     using success_reply = ss::bool_class<struct successfull_reply_tag>;
 
     success_reply
-      process_append_reply(model::node_id, result<append_entries_reply>);
+      update_follower_index(model::node_id, result<append_entries_reply>);
     void successfull_append_entries_reply(
       follower_index_metadata&, append_entries_reply);
     void dispatch_recovery(follower_index_metadata&, append_entries_reply);
