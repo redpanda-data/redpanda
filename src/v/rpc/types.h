@@ -28,7 +28,12 @@ using timer_type = ss::timer<clock_type>;
 static constexpr clock_type::time_point no_timeout
   = clock_type::time_point::max();
 
-enum class compression_type : uint8_t { none = 0, zstd };
+enum class compression_type : uint8_t {
+    none = 0,
+    zstd,
+    min = none,
+    max = zstd,
+};
 
 struct negotiation_frame {
     int8_t version = 0;

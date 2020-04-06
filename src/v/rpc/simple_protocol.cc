@@ -66,6 +66,8 @@ simple_protocol::dispatch_method_once(header h, server::resources rs) {
     (void)with_gate(rs.conn_gate(), [ctx, m]() mutable {
         return (*m)(ctx->res.conn->input(), *ctx)
           .then([ctx, m = ctx->res.hist().auto_measure()](netbuf n) mutable {
+              n.set_min_compression_bytes(1024);
+              n.set_compression(rpc::compression_type::zstd);
               n.set_correlation_id(ctx->get_header().correlation_id);
               auto view = std::move(n).as_scattered();
               if (ctx->res.conn_gate().is_closed()) {
