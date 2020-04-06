@@ -66,7 +66,7 @@ ss::sstring consensus::voted_for_filename() const {
     return _log.work_directory() + "/voted_for";
 }
 
-consensus::success_reply consensus::process_append_reply(
+consensus::success_reply consensus::update_follower_index(
   model::node_id node, result<append_entries_reply> r) {
     if (!r) {
         _ctxlog.debug("Error response from {}, {}", node, r.error().message());
@@ -98,7 +98,7 @@ consensus::success_reply consensus::process_append_reply(
     if (unlikely(reply.group != _meta.group)) {
         // logic bug
         throw std::runtime_error(fmt::format(
-          "process_append_reply was sent wrong group: {}", reply.group));
+          "update_follower_index was sent wrong group: {}", reply.group));
     }
     _ctxlog.trace("append entries reply {}", reply);
 
@@ -144,9 +144,9 @@ consensus::success_reply consensus::process_append_reply(
     // learners to nodes and perform data movement to added replicas
 }
 
-void consensus::process_heartbeat_response(
+void consensus::process_append_entries_reply(
   model::node_id node, result<append_entries_reply> r) {
-    auto is_success = process_append_reply(node, std::move(r));
+    auto is_success = update_follower_index(node, std::move(r));
     if (is_success) {
         maybe_update_leader_commit_idx();
     }

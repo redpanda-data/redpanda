@@ -1,5 +1,6 @@
 #include "raft/recovery_stm.h"
 
+#include "model/record_batch_reader.h"
 #include "outcome_future_utils.h"
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
@@ -56,20 +57,15 @@ ss::future<> recovery_stm::do_one_read() {
             "Read {} batches for {} node recovery", batches.size(), _node_id);
           if (batches.empty()) {
               _stop_requested = true;
-              return ss::make_ready_future<
-                std::vector<model::record_batch_reader>>();
+              return ss::make_ready_future<>();
           }
           _base_batch_offset = batches.begin()->base_offset();
           _last_batch_offset = batches.back().last_offset();
-          return details::foreign_share_n(
-            model::make_memory_record_batch_reader(std::move(batches)), 1);
-      })
-      .then([this](std::vector<model::record_batch_reader> readers) {
-          // Stall recovery, ignore it
-          if (readers.empty()) {
-              return ss::make_ready_future<>();
-          }
-          return replicate(std::move(readers.back()));
+
+          auto f_reader = model::make_foreign_record_batch_reader(
+            model::make_memory_record_batch_reader(std::move(batches)));
+
+          return replicate(std::move(f_reader));
       });
 }
 
@@ -105,7 +101,7 @@ ss::future<> recovery_stm::replicate(model::record_batch_reader&& reader) {
             _stop_requested = true;
         }
 
-        _ptr->process_append_reply(_node_id, r.value());
+        _ptr->process_append_entries_reply(_node_id, r.value());
         // move the follower next index backward if recovery were not
         // successfull
         //
