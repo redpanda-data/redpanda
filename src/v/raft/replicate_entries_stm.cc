@@ -80,7 +80,7 @@ ss::future<> replicate_entries_stm::dispatch_one(model::node_id id) {
              [this, id] {
                  return dispatch_single_retry(id).then(
                    [this, id](result<append_entries_reply> reply) {
-                       _ptr->process_heartbeat_response(id, reply);
+                       _ptr->process_append_entries_reply(id, reply);
                    });
              })
       .handle_exception_type([](const ss::gate_closed_exception&) {});
