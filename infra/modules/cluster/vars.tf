@@ -12,32 +12,6 @@ variable instance_type {
   default = "i3.large"
 }
 
-variable ssh_timeout {
-  description = <<DESC
-  The timeout for establishing an SSH connection to the created VMs.
-DESC
-  default     = "30"
-}
-
-variable ssh_retries {
-  description = <<DESC
-  The number of retries to attempt to establish an SSH connection to the created
-  VMs.
-DESC
-  default     = "3"
-}
-
-variable packagecloud_token {
-  description = <<DESC
-  A packagecloud master token, used to download and install the latest Redpanda
-  package into the VMs.
-  Not needed if local_package_abs_path
-DESC
-  default     = ""
-}
-
-variable "private_key_path" {}
-
 variable "public_key_path" {}
 
 variable "distro_ami" {
