@@ -10,6 +10,7 @@ from ..vlib import clang as llvm
 from ..vlib import config
 from ..vlib import install_deps
 from ..vlib import shell
+from ..vlib import http
 
 
 @click.group(short_help='install build dependencies')
@@ -121,17 +122,7 @@ def java(version, conf):
         return
 
     url = f'https://cdn.azul.com/zulu/bin/zulu{version}-ca-jdk11.0.6-linux_x64.tar.gz'
-    logging.info("Downloading " + url)
-    handle = urllib.request.urlopen(url)
-    io_bytes = io.BytesIO(handle.read())
-    logging.info(f'Extracting java tarball to {vconfig.java_home_dir}')
-
-    tar = tarfile.open(fileobj=io_bytes, mode='r')
-
-    topdir = tar.getmembers()[0].name
-    for member in tar.getmembers()[1:]:
-        member.name = member.name.replace(f'{topdir}/', "")
-        tar.extract(member, path=vconfig.java_home_dir)
+    http.download_and_extract(url, 'java', vconfig.java_home_dir, None, 1)
 
 
 # http://us.mirrors.quenda.co/apache/maven/maven-3/3.6.3/binaries/apache-maven-3.6.3-bin.tar.gz
@@ -152,17 +143,9 @@ def maven(version, conf):
             f'Found {vconfig.maven_home_dir}/bin/mvn Skipping installation.')
         return
 
-    url = f'http://us.mirrors.quenda.co/apache/maven/maven-3/3.6.3/binaries/apache-maven-{version}-bin.tar.gz'
-    logging.info("Downloading " + url)
-    handle = urllib.request.urlopen(url)
-    io_bytes = io.BytesIO(handle.read())
-    logging.info(f'Extracting maven tarball to {vconfig.maven_home_dir}')
-
-    tar = tarfile.open(fileobj=io_bytes, mode='r')
     topdir = f'apache-maven-{version}/'
-    for member in tar.getmembers():
-        member.name = member.name.replace(topdir, '')
-        tar.extract(member, path=vconfig.maven_home_dir)
+    url = f'http://us.mirrors.quenda.co/apache/maven/maven-3/3.6.3/binaries/apache-maven-{version}-bin.tar.gz'
+    http.download_and_extract(url, 'maven', vconfig.maven_home_dir, topdir)
 
 
 @install.command(short_help='install infrastructure dependencies.')
@@ -201,14 +184,9 @@ def js(conf):
             f'Found {vconfig.node_build_dir}/bin/node. Skipping installation.')
     else:
         url = f'https://nodejs.org/dist/v12.16.1/node-v12.16.1-linux-x64.tar.xz'
-        logging.info("Downloading " + url)
-        handle = urllib.request.urlopen(url)
-        io_bytes = io.BytesIO(handle.read())
-        logging.info(f'Extracting node tarball to {vconfig.node_build_dir}')
-        tar = tarfile.open(fileobj=io_bytes, mode='r')
-        tar.extractall(vconfig.build_root)
-
-        os.rename(vconfig.node_package_name_dir, vconfig.node_build_dir)
+        pkg = 'node-v12.16.1-linux-x64/'
+        http.download_and_extract(url, 'node', vconfig.node_build_dir, pkg)
+        os.rmdir(f'{vconfig.node_build_dir}/{pkg}')
 
     #install nodejs dependencies
     logging.info("Installing nodejs dependencies")
