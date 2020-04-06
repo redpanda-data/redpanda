@@ -101,7 +101,7 @@ ss::future<> recovery_stm::replicate(model::record_batch_reader&& reader) {
             _stop_requested = true;
         }
 
-        _ptr->process_append_reply(_node_id, r.value());
+        _ptr->process_append_entries_reply(_node_id, r.value());
         // move the follower next index backward if recovery were not
         // successfull
         //
