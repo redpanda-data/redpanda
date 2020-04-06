@@ -26,3 +26,6 @@
 
 # rp
 !/CMakeLists.txt
+
+# workaround for kaniko https://github.com/GoogleContainerTools/kaniko/issues/595
+!/vectorized
