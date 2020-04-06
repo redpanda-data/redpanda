@@ -3,6 +3,7 @@
 #include "rpc/server_probe.h"
 
 #include <seastar/core/metrics.hh>
+#include <seastar/net/inet_address.hh>
 
 namespace rpc {
 void server_probe::setup_metrics(
@@ -55,6 +56,10 @@ void server_probe::setup_metrics(
           sm::description(
             "Number of requests that have to"
             "wait for processing beacause of insufficient memory")),
+        sm::make_derive(
+          "requests_pending",
+          [this] { return _requests_received - _requests_completed; },
+          sm::description("Number of requests being processed by server")),
       });
 }
 
@@ -79,7 +84,8 @@ void client_probe::setup_metrics(
   const ss::socket_address& target_addr) {
     namespace sm = ss::metrics;
     auto target = sm::label("target");
-    std::vector<sm::label_instance> labels = {target(target_addr)};
+    std::vector<sm::label_instance> labels = {
+      target(fmt::format("{}:{}", target_addr.addr(), target_addr.port()))};
     if (service_name) {
         labels.push_back(sm::label("service_name")(*service_name));
     }
@@ -97,9 +103,9 @@ void client_probe::setup_metrics(
           sm::description("Connection attempts"),
           labels),
         sm::make_derive(
-          "requests_sent",
-          [this] { return _requests_sent; },
-          sm::description("Number of requests sent"),
+          "requests",
+          [this] { return _requests; },
+          sm::description("Number of requests"),
           labels),
         sm::make_derive(
           "requests_pending",
@@ -110,6 +116,11 @@ void client_probe::setup_metrics(
           "request_errors",
           [this] { return _request_errors; },
           sm::description("Number or requests errors"),
+          labels),
+        sm::make_derive(
+          "request_timeouts",
+          [this] { return _request_timeouts; },
+          sm::description("Number or requests timeouts"),
           labels),
         sm::make_total_bytes(
           "in_bytes",
@@ -157,7 +168,7 @@ void client_probe::setup_metrics(
 
 std::ostream& operator<<(std::ostream& o, const rpc::client_probe& p) {
     o << "{"
-      << " requests_sent: " << p._requests_sent
+      << " requests_sent: " << p._requests
       << ", requests_pending: " << p._requests_pending
       << ", requests_completed: " << p._requests_completed
       << ", request_errors: " << p._request_errors

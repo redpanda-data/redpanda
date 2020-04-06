@@ -23,6 +23,8 @@ public:
 
     void add_bytes_received(size_t recv) { _in_bytes += recv; }
 
+    void request_received() { ++_requests_received; }
+
     void request_completed() { ++_requests_completed; }
 
     void header_corrupted() {
@@ -44,6 +46,7 @@ private:
     uint64_t _in_bytes = 0;
     uint64_t _out_bytes = 0;
     uint64_t _connects = 0;
+    uint64_t _requests_received = 0;
     uint32_t _connections = 0;
     uint32_t _connection_close_error = 0;
     uint32_t _bad_requests = 0;

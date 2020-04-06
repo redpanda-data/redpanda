@@ -92,6 +92,7 @@ public:
         set_configuration("kafka_api", _current_node.kafka_api_address());
         set_configuration("rpc_server", _current_node.rpc_address());
         set_configuration("seed_servers", _seeds);
+        set_configuration("disable_metrics", true);
 
         using namespace std::chrono_literals;
         _pm

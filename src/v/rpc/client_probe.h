@@ -9,13 +9,18 @@
 namespace rpc {
 class client_probe {
 public:
-    void request_sent() {
-        ++_requests_sent;
+    void request() {
+        ++_requests;
         ++_requests_pending;
     }
 
     void request_completed() {
         ++_requests_completed;
+        --_requests_pending;
+    }
+
+    void request_timeout() {
+        ++_request_timeouts;
         --_requests_pending;
     }
 
@@ -62,9 +67,10 @@ public:
       const ss::socket_address& target_addr);
 
 private:
-    uint64_t _requests_sent = 0;
+    uint64_t _requests = 0;
     uint32_t _requests_pending = 0;
     uint32_t _request_errors = 0;
+    uint64_t _request_timeouts = 0;
     uint64_t _requests_completed = 0;
     uint64_t _in_bytes = 0;
     uint64_t _out_bytes = 0;
