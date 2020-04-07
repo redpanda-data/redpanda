@@ -24,26 +24,18 @@ def deploy():
               help='The path where of the SSH to use (the key will be' +
               'generated if it doesn\'t exist)',
               default='~/.ssh/infra-key')
-@click.option('--ssh-port', default=22, help='The SSH port on the remote host')
-@click.option('--ssh-timeout',
-              default=60,
-              help='The amount of time (in secs) to wait for an SSH connection'
-              )
-@click.option('--ssh-retries',
-              default=3,
-              help='How many times to retry the SSH connection')
 @click.option('--log',
               default='info',
               type=click.Choice(['debug', 'info', 'warning', 'error', 'fatal'],
                                 case_sensitive=False))
 @click.argument('tfvars', nargs=-1)
-def cluster(conf, destroy, ssh_key, ssh_port, ssh_timeout, ssh_retries, log,
+def cluster(conf, destroy, ssh_key, log,
             tfvars):
     vconfig = config.VConfig(conf)
     if destroy:
         tf.destroy(vconfig, ssh_key, log)
         return
-    tf.apply(vconfig, ssh_key, ssh_port, ssh_timeout, ssh_retries, log, tfvars)
+    tf.apply(vconfig, ssh_key, log, tfvars)
 
 
 @deploy.command(short_help='Run ansible against a cluster.')

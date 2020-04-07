@@ -25,7 +25,7 @@ known_tfvars = [
 ]
 
 
-def apply(vconfig, ssh_key, ssh_port, ssh_timeout, ssh_retries, log, tfvars):
+def apply(vconfig, ssh_key, log, tfvars):
     if tfvars_key in vconfig.kv:
         logging.error(
             f'''Found another deployment with vars {vconfig.kv[tfvars_key]}.
@@ -34,8 +34,7 @@ Please run `vtools deploy cluster --destroy true` before deploying again.''')
     abs_path = os.path.abspath(os.path.expanduser(ssh_key))
     comment = _get_ssh_metadata(vconfig)
     key_path, pub_key_path = keys.generate_key(abs_path, comment, '""')
-    tfvars = tfvars + (f'private_key_path={key_path}',
-                       f'public_key_path={pub_key_path}')
+    tfvars += (f'public_key_path={pub_key_path}',)
     terraform_vars = _parse_tf_vars(tfvars)
     vconfig.kv[tfvars_key] = terraform_vars
     module = 'cluster'
