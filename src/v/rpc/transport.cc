@@ -175,7 +175,6 @@ transport::send(netbuf b, rpc::client_opts opts) {
           // send
           auto view = std::move(b).as_scattered();
           const auto sz = view.size();
-          _probe.request();
           return get_units(_memory, sz)
             .then([this, v = std::move(view), f = std::move(fut)](
                     ss::semaphore_units<> units) mutable {
@@ -212,9 +211,7 @@ ss::future<> transport::do_reads() {
                   _probe.header_corrupted();
                   return ss::make_ready_future<>();
               }
-              return dispatch(std::move(h.value())).then([this] {
-                  _probe.request_completed();
-              });
+              return dispatch(std::move(h.value()));
           });
       });
 }
@@ -241,6 +238,7 @@ ss::future<> transport::dispatch(header h) {
     auto pr = std::move(it->second);
     _correlations.erase(it);
     pr->set_value(std::move(ctx));
+    _probe.request_completed();
     return fut;
 }
 
