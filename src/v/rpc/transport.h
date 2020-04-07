@@ -105,6 +105,7 @@ template<typename Input, typename Output>
 inline ss::future<client_context<Output>>
 transport::send_typed(Input r, uint32_t method_id, rpc::client_opts opts) {
     using opt_units = std::optional<ss::semaphore_units<>>;
+    _probe.request();
     auto fut = ss::make_ready_future<opt_units>();
     if (opts.dispatch == rpc::client_opts::sequential_dispatch::yes) {
         fut = ss::get_units(_sequential_dispatch, 1)
