@@ -284,19 +284,17 @@ consensus::make_reader(storage::log_reader_config config) {
 /// performs no raft-state mutation other than resetting the timer
 void consensus::dispatch_vote() {
     // 5.2.1.4 - prepare next timeout
-    arm_vote_timeout();
 
     auto now = clock_type::now();
     auto expiration = _hbeat + _jit.base_duration();
-    if (now < expiration) {
-        // nothing to do.
-        return;
-    }
-    if (_vstate == vote_state::leader) {
-        return;
-    }
-    // do not vote when there are no voters available
-    if (!_conf.has_voters()) {
+
+    bool skip_vote = false;
+    skip_vote |= now < expiration;              // nothing to do.
+    skip_vote |= _vstate == vote_state::leader; // already a leader
+    skip_vote |= !_conf.has_voters();           // no voters
+
+    if (skip_vote) {
+        arm_vote_timeout();
         return;
     }
 
@@ -331,7 +329,8 @@ void consensus::dispatch_vote() {
             })
           .handle_exception([this](const std::exception_ptr& e) {
               _ctxlog.warn("Exception while voting - {}", e);
-          });
+          })
+          .finally([this] { arm_vote_timeout(); });
     });
 }
 void consensus::arm_vote_timeout() {
