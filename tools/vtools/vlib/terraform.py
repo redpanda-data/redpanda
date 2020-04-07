@@ -1,7 +1,6 @@
 import os
 import re
 
-import git
 import json
 
 from absl import logging
@@ -21,6 +20,19 @@ known_tfvars = {
             'public_key_path',
             'distro_ami',
             'distro_ssh_user',
+        ],
+    },
+    'gcp': {
+        'cluster': [
+            'region',
+            'zone',
+            'owner',
+            'nodes',
+            'image',
+            'machine_type',
+            'ssh_user',
+            'public_key_path',
+            'ssh_user',
         ],
     },
 }
