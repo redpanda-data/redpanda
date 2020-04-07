@@ -166,3 +166,17 @@ def java(conf, targets):
             f'cd {vconfig.java_src_dir}/{t} && '
             f'mvn clean package --batch-mode -DbuildDir={vconfig.java_build_dir}/{t}',
             env=vconfig.environ)
+
+
+@build.command(short_help='build v/js applications')
+@click.option('--conf',
+              help=('Path to configuration file. If not given, a .vtools.yml '
+                    'file is searched recursively starting from the current '
+                    'working directory'),
+              default=None)
+def js(conf):
+    vconfig = config.VConfig(conf)
+
+    shell.run_subprocess(f'cd {vconfig.node_build_dir} && '
+                         f'npm run build',
+                         env=vconfig.environ)
