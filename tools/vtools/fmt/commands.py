@@ -215,3 +215,17 @@ def _git_files(vconfig, exts, ref):
         for e in exts:
             if f.endswith(e) and f not in objective_c_not:
                 yield f
+
+
+@fmt.command(short_help='runs npm fmt on v/js')
+@click.option('--conf',
+              help=('Path to configuration file. If not given, a .vtools.yml '
+                    'file is searched recursively starting from the current '
+                    'working directory'),
+              default=None)
+def js(conf):
+    vconfig = config.VConfig(conf)
+
+    shell.run_subprocess(f'cd {vconfig.node_build_dir} && '
+                         f'npm run fmt',
+                         env=vconfig.environ)
