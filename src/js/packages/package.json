@@ -10,6 +10,8 @@
     "@types/node": "13.9.8",
     "fast-crc32c": "2.0.0",
     "xxhash": "0.3.0",
+    "mocha": "7.1.1",
+    "@types/mocha": "7.0.2",
     "typescript-formatter": "7.2.2"
   }
 }
