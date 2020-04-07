@@ -15,6 +15,7 @@ from ..fmt import commands as fmt
 def git():
     pass
 
+
 def read_git_value(reader, config_section, config_name):
     """returns the git config value for config_name under config_section
     
@@ -25,7 +26,9 @@ def read_git_value(reader, config_section, config_name):
         return reader.get_value(config_section, config_name)
     except NoSectionError:
         raise click.ClickException(
-            f'failed to read {config_name} config under the {config_section} section (check your .git/config)')
+            f'failed to read {config_name} config under the {config_section} section (check your .git/config)'
+        )
+
 
 @git.command(short_help='verify git user and password end in vectorized.io')
 @click.option("--path", default=".", help="path to git repo")
