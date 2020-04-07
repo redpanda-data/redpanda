@@ -21,6 +21,7 @@ v_cc_library(
     batch_cache.cc
     index_state.cc
     lock_manager.cc
+    types.cc
   DEPS
     Seastar::seastar
     v::bytes
