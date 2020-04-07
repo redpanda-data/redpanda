@@ -4,6 +4,9 @@
   "version": "0.0.1",
   "keywords": [],
   "author": "hi@vectorized.io",
+  "scripts": {
+    "fmt": "./node_modules/typescript-formatter/bin/tsfmt --baseDir ../../src/js/ -r"
+  },
   "requires": true,
   "dependencies": {
     "typescript": "3.8.3",
