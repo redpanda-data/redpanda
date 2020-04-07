@@ -16,6 +16,7 @@ known_tfvars = {
         'cluster': [
             'nodes',
             'distro',
+            'owner',
             'instance_type',
             'public_key_path',
             'distro_ami',

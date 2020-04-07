@@ -4,6 +4,10 @@ variable "nodes" {
   default     = "1"
 }
 
+variable "owner" {
+  description = "Your vectorized username."
+}
+
 variable "distro" {
   default = "fedora-31"
 }

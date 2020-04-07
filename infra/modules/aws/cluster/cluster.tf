@@ -23,6 +23,9 @@ resource "aws_instance" "node" {
   instance_type          = var.instance_type
   key_name               = aws_key_pair.ssh.key_name
   vpc_security_group_ids = [aws_security_group.node_sec_group.id]
+  tags = {
+       owner: "${var.owner}-${local.deployment_id}"
+  }
 
   connection {
     user        = var.distro_ssh_user[var.distro]
@@ -42,7 +45,10 @@ SCRIPT
 }
 
 resource "aws_security_group" "node_sec_group" {
-  name        = "node-sec-group-${local.deployment_id}"
+  name        = "${var.owner}-${local.deployment_id}-node-sec-group"
+  tags = {
+       owner: "${var.owner}-${local.deployment_id}"
+  }
   description = "redpanda ports"
 
   # SSH access from anywhere
@@ -95,6 +101,6 @@ resource "aws_security_group" "node_sec_group" {
 }
 
 resource "aws_key_pair" "ssh" {
-  key_name   = "key-${local.deployment_id}"
+  key_name   = "${var.owner}-${local.deployment_id}-key"
   public_key = file(var.public_key_path)
 }
