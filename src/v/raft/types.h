@@ -29,44 +29,38 @@ static constexpr const model::record_batch_type configuration_batch_type{2};
 static constexpr const model::record_batch_type data_batch_type{1};
 
 struct protocol_metadata {
-    group_id::type group = -1;
-    model::offset::type commit_index
-      = std::numeric_limits<model::offset::type>::min();
-    model::term_id::type term
-      = std::numeric_limits<model::term_id::type>::min();
-    /// \brief used for completeness
-    model::offset::type prev_log_index
-      = std::numeric_limits<model::offset::type>::min();
-    model::term_id::type prev_log_term
-      = std::numeric_limits<model::term_id::type>::min();
+    group_id group;
+    model::offset commit_index;
+    model::term_id term;
+    model::offset prev_log_index;
+    model::term_id prev_log_term;
 };
 
 struct group_configuration {
+    group_configuration() noexcept = default;
+    ~group_configuration() noexcept = default;
+    group_configuration(const group_configuration&) = default;
+    group_configuration& operator=(const group_configuration&) = delete;
+    group_configuration(group_configuration&&) noexcept = default;
+    group_configuration& operator=(group_configuration&&) noexcept = default;
+
     using brokers_t = std::vector<model::broker>;
     using iterator = brokers_t::iterator;
     using const_iterator = brokers_t::const_iterator;
 
-    brokers_t nodes;
-    brokers_t learners;
-    group_configuration() = default;
-    group_configuration(const group_configuration&) = default;
-    group_configuration(group_configuration&&) noexcept = default;
-    group_configuration& operator=(group_configuration&&) noexcept = default;
-
     bool has_voters() const { return !nodes.empty(); }
-
     bool has_learners() const { return !learners.empty(); }
-
     size_t majority() const { return (nodes.size() / 2) + 1; }
-
     iterator find_in_nodes(model::node_id id);
     const_iterator find_in_nodes(model::node_id id) const;
-
     iterator find_in_learners(model::node_id id);
     const_iterator find_in_learners(model::node_id id) const;
-
     bool contains_broker(model::node_id id) const;
     brokers_t all_brokers() const;
+
+    // data
+    brokers_t nodes;
+    brokers_t learners;
 };
 
 struct follower_index_metadata {
@@ -88,6 +82,14 @@ struct follower_index_metadata {
 };
 
 struct append_entries_request {
+    append_entries_request(
+      model::node_id i,
+      protocol_metadata m,
+      model::record_batch_reader r) noexcept
+      : node_id(i)
+      , meta(m)
+      , batches(std::move(r)){};
+    ~append_entries_request() noexcept = default;
     append_entries_request(const append_entries_request&) = delete;
     append_entries_request& operator=(const append_entries_request&) = delete;
     append_entries_request(append_entries_request&&) noexcept = default;
@@ -101,17 +103,15 @@ struct append_entries_request {
 
 struct append_entries_reply {
     enum class status : uint8_t { success, failure, group_unavailable };
-
     /// \brief callee's node_id; work-around for batched heartbeats
-    model::node_id::type node_id = -1;
-    group_id::type group = -1;
+    model::node_id node_id;
+    group_id group;
     /// \brief callee's term, for the caller to upate itself
-    model::term_id::type term
-      = std::numeric_limits<model::term_id::type>::min();
+    model::term_id term;
     /// \brief The recipient's last log index after it applied changes to
     /// the log. This is used to speed up finding the correct value for the
     /// nextIndex with a follower that is far behind a leader
-    model::offset::type last_log_index = 0;
+    model::offset last_log_index;
     /// \brief did the rpc succeed or not
     status result = status::failure;
 };
@@ -131,21 +131,18 @@ struct heartbeat_reply {
 };
 
 struct vote_request {
-    model::node_id::type node_id = 0;
-    group_id::type group = -1;
+    model::node_id node_id;
+    group_id group;
     /// \brief current term
-    model::term_id::type term
-      = std::numeric_limits<model::term_id::type>::min();
+    model::term_id term;
     /// \brief used to compare completeness
-    model::offset::type prev_log_index = 0;
-    model::term_id::type prev_log_term
-      = std::numeric_limits<model::term_id::type>::min();
+    model::offset prev_log_index;
+    model::term_id prev_log_term;
 };
 
 struct vote_reply {
     /// \brief callee's term, for the caller to upate itself
-    model::term_id::type term
-      = std::numeric_limits<model::term_id::type>::min();
+    model::term_id term;
 
     /// True if the follower granted the candidate it's vote, false otherwise
     bool granted = false;
@@ -199,5 +196,15 @@ template<>
 struct async_adl<raft::append_entries_request> {
     ss::future<> to(iobuf& out, raft::append_entries_request&& request);
     ss::future<raft::append_entries_request> from(iobuf_parser& in);
+};
+template<>
+struct adl<raft::protocol_metadata> {
+    void to(iobuf& out, raft::protocol_metadata request);
+    raft::protocol_metadata from(iobuf_parser& in);
+};
+template<>
+struct async_adl<raft::heartbeat_request> {
+    ss::future<> to(iobuf& out, raft::heartbeat_request&& request);
+    ss::future<raft::heartbeat_request> from(iobuf_parser& in);
 };
 } // namespace reflection

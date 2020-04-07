@@ -112,11 +112,10 @@ ss::future<> replicate_batcher::flush() {
                 for (auto& b : data) {
                     b.set_term(term);
                 }
-                append_entries_request req{
-                  .node_id = _ptr->_self,
-                  .meta = meta,
-                  .batches = model::make_memory_record_batch_reader(
-                    std::move(data))};
+                append_entries_request req(
+                  _ptr->_self,
+                  meta,
+                  model::make_memory_record_batch_reader(std::move(data)));
                 return do_flush(
                   std::move(notifications), std::move(req), std::move(u));
             });

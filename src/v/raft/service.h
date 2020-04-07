@@ -44,7 +44,7 @@ public:
         finjector::shard_local_badger().register_probe(
           failure_probes::name(), &_probe);
     }
-    ~service() {
+    ~service() override {
         finjector::shard_local_badger().deregister_probe(
           failure_probes::name());
     }
@@ -54,11 +54,11 @@ public:
         std::vector<append_entries_request> reqs;
         reqs.reserve(r.meta.size());
         for (auto& m : r.meta) {
-            reqs.push_back(raft::append_entries_request{
-              .node_id = r.node_id,
-              .meta = std::move(m),
-              .batches = model::make_memory_record_batch_reader(
-                ss::circular_buffer<model::record_batch>{})});
+            reqs.emplace_back(raft::append_entries_request(
+              r.node_id,
+              m,
+              model::make_memory_record_batch_reader(
+                ss::circular_buffer<model::record_batch>{})));
         }
         return ss::do_with(
                  std::move(reqs),
@@ -93,7 +93,7 @@ public:
 private:
     ss::future<vote_reply> make_failed_vote_reply() {
         return ss::make_ready_future<vote_reply>(vote_reply{
-          .term = model::term_id{}(), .granted = false, .log_ok = false});
+          .term = model::term_id{}, .granted = false, .log_ok = false});
     }
 
     ss::future<vote_reply> do_vote(vote_request&& r, rpc::streaming_context&) {
@@ -120,7 +120,7 @@ private:
     ss::future<append_entries_reply>
     make_missing_group_reply(raft::group_id group) {
         return ss::make_ready_future<append_entries_reply>(append_entries_reply{
-          .group = group(),
+          .group = group,
           .result = append_entries_reply::status::group_unavailable});
     }
 
