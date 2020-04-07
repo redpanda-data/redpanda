@@ -338,3 +338,17 @@ def print_deps(binary):
     deps = lddwrap.list_dependencies(path=binpath)
     for dep in deps:
         click.echo("Found dep: %s" % dep)
+
+
+@test.command(short_help='runs npm test on build/node')
+@click.option('--conf',
+              help=('Path to configuration file. If not given, a .vtools.yml '
+                    'file is searched recursively starting from the current '
+                    'working directory'),
+              default=None)
+def js(conf):
+    vconfig = config.VConfig(conf)
+
+    shell.run_subprocess(f'cd {vconfig.node_build_dir} && '
+                         f'npm test',
+                         env=vconfig.environ)
