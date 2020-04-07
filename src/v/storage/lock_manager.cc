@@ -2,6 +2,7 @@
 
 #include <seastar/core/future-util.hh>
 #include <seastar/core/rwlock.hh>
+#include <seastar/core/shared_ptr.hh>
 
 #include <stdexcept>
 
@@ -24,31 +25,32 @@ range(segment_set::underlying_t segs) {
         });
 }
 
-template<typename Iterator>
-segment_set::underlying_t
-inclusive_copy(Iterator begin, Iterator end, Iterator real_end) {
-    segment_set::underlying_t tmp;
-    // inclusive
-    if (end != real_end) {
-        end = std::next(end);
-    }
-    std::copy(begin, end, std::back_inserter(tmp));
-    return tmp;
-}
-
 ss::future<std::unique_ptr<lock_manager::lease>>
 lock_manager::range_lock(const timequery_config& cfg) {
     segment_set::underlying_t tmp;
-    auto begin = _set.lower_bound(cfg.time);
-    auto end = _set.lower_bound(cfg.max_offset);
-    return range(inclusive_copy(begin, end, _set.end()));
+    std::copy_if(
+      _set.lower_bound(cfg.time),
+      _set.end(),
+      std::back_inserter(tmp),
+      [&cfg](ss::lw_shared_ptr<segment>& s) {
+          // must be base offset
+          return s->reader().base_offset() <= cfg.max_offset;
+      });
+    return range(std::move(tmp));
 }
 
 ss::future<std::unique_ptr<lock_manager::lease>>
 lock_manager::range_lock(const log_reader_config& cfg) {
-    auto begin = _set.lower_bound(cfg.start_offset);
-    auto end = _set.lower_bound(cfg.max_offset);
-    return range(inclusive_copy(begin, end, _set.end()));
+    segment_set::underlying_t tmp;
+    std::copy_if(
+      _set.lower_bound(cfg.start_offset),
+      _set.end(),
+      std::back_inserter(tmp),
+      [&cfg](ss::lw_shared_ptr<segment>& s) {
+          // must be base offset
+          return s->reader().base_offset() <= cfg.max_offset;
+      });
+    return range(std::move(tmp));
 }
 
 } // namespace storage
