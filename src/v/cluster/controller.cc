@@ -219,10 +219,15 @@ ss::future<> controller::process_raft0_batch(model::record_batch batch) {
               return process_raft0_cfg_update(std::move(rec), rec_offset);
           });
     } else {
+        auto records_to_recover = batch.record_count();
         f = model::consume_records(
-          std::move(batch), [this](model::record rec) mutable {
-              return recover_record(std::move(rec));
-          });
+              std::move(batch),
+              [this](model::record rec) mutable {
+                  return recover_record(std::move(rec));
+              })
+              .then([this, records_to_recover] {
+                  return _recovery_semaphore.wait(records_to_recover);
+              });
     }
 
     return f.then(
@@ -271,14 +276,18 @@ ss::future<>
 controller::dispatch_record_recovery(log_record_key key, iobuf&& v_buf) {
     switch (key.record_type) {
     case log_record_key::type::partition_assignment:
-        return recover_assignment(
+        recover_assignment_in_background(
           reflection::from_iobuf<partition_assignment>(std::move(v_buf)));
+        return ss::make_ready_future<>();
     case log_record_key::type::topic_configuration:
         return recover_topic_configuration(
-          reflection::from_iobuf<topic_configuration>(std::move(v_buf)));
+                 reflection::from_iobuf<topic_configuration>(std::move(v_buf)))
+          .then([this] { _recovery_semaphore.signal(); });
     case log_record_key::type::checkpoint:
-        return ss::make_ready_future<>();
+        return ss::make_ready_future<>().then(
+          [this] { _recovery_semaphore.signal(); });
     default:
+        _recovery_semaphore.signal();
         return ss::make_exception_future<>(
           std::runtime_error("Not supported record type in controller batch"));
     }
@@ -301,6 +310,18 @@ ss::future<> controller::recover_assignment(partition_assignment as) {
             }
             // Recover replica as it is replicated on current broker
             return recover_replica(as.ntp, as.group, it->shard, as.replicas);
+        });
+    });
+}
+
+void controller::recover_assignment_in_background(partition_assignment as) {
+    // We can recover partitition assignments in background as the state updates
+    // comming from single assignment are independent so we can parallelize
+    // updates
+    _highest_group_id = std::max(_highest_group_id, as.group);
+    (void)ss::with_gate(_bg, [this, as = std::move(as)]() mutable {
+        return recover_assignment(std::move(as)).then([this] {
+            _recovery_semaphore.signal();
         });
     });
 }
