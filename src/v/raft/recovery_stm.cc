@@ -77,18 +77,16 @@ ss::future<> recovery_stm::replicate(model::record_batch_reader&& reader) {
     // get term for prev_log_idx batch
     auto prev_log_term = _ptr->get_term(prev_log_idx);
     // calculate commit index for follower to update immediately
-    auto commit_idx = std::min(
-      _last_batch_offset(),
-      static_cast<model::offset::type>(_ptr->_meta.commit_index));
+    auto commit_idx = std::min(_last_batch_offset, _ptr->_meta.commit_index);
     // build request
-    auto r = append_entries_request{
-      .node_id = _ptr->self(),
-      .meta = protocol_metadata{.group = _ptr->_meta.group,
-                                .commit_index = commit_idx,
-                                .term = _ptr->_meta.term,
-                                .prev_log_index = prev_log_idx(),
-                                .prev_log_term = prev_log_term()},
-      .batches = std::move(reader)};
+    append_entries_request r(
+      _ptr->self(),
+      protocol_metadata{.group = _ptr->_meta.group,
+                        .commit_index = commit_idx,
+                        .term = _ptr->_meta.term,
+                        .prev_log_index = prev_log_idx,
+                        .prev_log_term = prev_log_term},
+      std::move(reader));
 
     _ptr->update_node_hbeat_timestamp(_node_id);
 
