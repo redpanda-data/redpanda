@@ -6,6 +6,7 @@
   "author": "hi@vectorized.io",
   "scripts": {
     "fmt": "./node_modules/typescript-formatter/bin/tsfmt --baseDir ../../src/js/ -r"
+    "test": "./node_modules/mocha/bin/mocha --recursive \"./output/test\""
   },
   "requires": true,
   "dependencies": {
