@@ -52,7 +52,10 @@ path_type_map = {}
 entity_type_map = dict()
 
 # mapping specified as a combination of native type and field name
-field_name_type_map = {}
+field_name_type_map = {
+    ("int16", "ErrorCode"): "kafka::error_code",
+    ("int32", "ThrottleTimeMs"): "std::chrono::milliseconds",
+}
 
 # primitive types
 basic_type_map = dict(
@@ -64,7 +67,10 @@ basic_type_map = dict(
 )
 
 # a listing of expected struct types
-STRUCT_TYPES = []
+STRUCT_TYPES = [
+    "ApiVersionsRequestKey",
+    "ApiVersionsResponseKey",
+]
 
 SCALAR_TYPES = list(basic_type_map.keys())
 ENTITY_TYPES = list(entity_type_map.keys())
