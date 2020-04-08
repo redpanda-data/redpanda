@@ -59,6 +59,8 @@ vtools build cpp --build-type dev --clang
 vtools build cpp --build-type debug
 vtools build cpp --build-type debug --clang
 
+vtools install js
+
 echo ""
 echo "###############################################"
 echo ""

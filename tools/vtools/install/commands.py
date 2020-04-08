@@ -10,6 +10,7 @@ from ..vlib import clang as llvm
 from ..vlib import config
 from ..vlib import install_deps
 from ..vlib import shell
+from ..vlib import http
 
 
 @click.group(short_help='install build dependencies')
@@ -121,17 +122,7 @@ def java(version, conf):
         return
 
     url = f'https://cdn.azul.com/zulu/bin/zulu{version}-ca-jdk11.0.6-linux_x64.tar.gz'
-    logging.info("Downloading " + url)
-    handle = urllib.request.urlopen(url)
-    io_bytes = io.BytesIO(handle.read())
-    logging.info(f'Extracting java tarball to {vconfig.java_home_dir}')
-
-    tar = tarfile.open(fileobj=io_bytes, mode='r')
-
-    topdir = tar.getmembers()[0].name
-    for member in tar.getmembers()[1:]:
-        member.name = member.name.replace(f'{topdir}/', "")
-        tar.extract(member, path=vconfig.java_home_dir)
+    http.download_and_extract(url, 'java', vconfig.java_home_dir, None, 1)
 
 
 # http://us.mirrors.quenda.co/apache/maven/maven-3/3.6.3/binaries/apache-maven-3.6.3-bin.tar.gz
@@ -152,17 +143,9 @@ def maven(version, conf):
             f'Found {vconfig.maven_home_dir}/bin/mvn Skipping installation.')
         return
 
-    url = f'http://us.mirrors.quenda.co/apache/maven/maven-3/3.6.3/binaries/apache-maven-{version}-bin.tar.gz'
-    logging.info("Downloading " + url)
-    handle = urllib.request.urlopen(url)
-    io_bytes = io.BytesIO(handle.read())
-    logging.info(f'Extracting maven tarball to {vconfig.maven_home_dir}')
-
-    tar = tarfile.open(fileobj=io_bytes, mode='r')
     topdir = f'apache-maven-{version}/'
-    for member in tar.getmembers():
-        member.name = member.name.replace(topdir, '')
-        tar.extract(member, path=vconfig.maven_home_dir)
+    url = f'http://us.mirrors.quenda.co/apache/maven/maven-3/3.6.3/binaries/apache-maven-{version}-bin.tar.gz'
+    http.download_and_extract(url, 'maven', vconfig.maven_home_dir, topdir)
 
 
 @install.command(short_help='install infrastructure dependencies.')
@@ -186,3 +169,32 @@ def infra_deps(conf):
     reqs = f'{vconfig.ansible_dir}/requirements.yml'
     shell.run_subprocess(f'ansible-galaxy install -r {reqs}',
                          env=vconfig.environ)
+
+
+@install.command(short_help='install nodejs')
+@click.option('--conf',
+              help=('Path to configuration file. If not given, a .vtools.yml '
+                    'file is searched recursively starting from the current '
+                    'working directory'),
+              default=None)
+def js(conf):
+    vconfig = config.VConfig(conf)
+    if os.path.exists(f'{vconfig.node_build_dir}/bin/node'):
+        logging.info(
+            f'Found {vconfig.node_build_dir}/bin/node. Skipping installation.')
+    else:
+        url = f'https://nodejs.org/dist/v12.16.1/node-v12.16.1-linux-x64.tar.xz'
+        pkg = 'node-v12.16.1-linux-x64/'
+        http.download_and_extract(url, 'node', vconfig.node_build_dir, pkg)
+        os.rmdir(f'{vconfig.node_build_dir}/{pkg}')
+
+    #install nodejs dependencies
+    logging.info("Installing nodejs dependencies")
+    shell.run_subprocess(
+        f'cp {vconfig.node_src_dir}/packages/package.json '
+        f'{vconfig.node_build_dir} && '
+        f'cp {vconfig.node_src_dir}/packages/package-lock.json '
+        f'{vconfig.node_build_dir} && '
+        f'cd {vconfig.node_build_dir} && '
+        f'npm install',
+        env=vconfig.environ)
