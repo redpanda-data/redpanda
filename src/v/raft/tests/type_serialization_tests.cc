@@ -1,3 +1,4 @@
+#include "compression/stream_zstd.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
@@ -12,6 +13,7 @@
 #include <seastar/testing/thread_test_case.hh>
 
 #include <boost/test/tools/old/interface.hpp>
+#include <boost/test/unit_test_log.hpp>
 
 #include <vector>
 
@@ -52,15 +54,14 @@ SEASTAR_THREAD_TEST_CASE(append_entries_requests) {
     auto rdr = model::make_memory_record_batch_reader(std::move(batches));
     auto readers = raft::details::share_n(std::move(rdr), 2).get0();
     auto meta = raft::protocol_metadata{
-      .group = 1,
-      .commit_index = 100,
-      .term = 10,
-      .prev_log_index = 99,
-      .prev_log_term = -1,
+      .group = raft::group_id(1),
+      .commit_index = model::offset(100),
+      .term = model::term_id(10),
+      .prev_log_index = model::offset(99),
+      .prev_log_term = model::term_id(-1),
     };
-    raft::append_entries_request req{.node_id = model::node_id(1),
-                                     .meta = meta,
-                                     .batches = std::move(readers.back())};
+    raft::append_entries_request req(
+      model::node_id(1), meta, std::move(readers.back()));
 
     readers.pop_back();
     auto d = async_serialize_roundtrip_rpc(std::move(req)).get0();
@@ -130,4 +131,66 @@ SEASTAR_THREAD_TEST_CASE(serialize_configuration) {
                    .value();
     BOOST_REQUIRE_EQUAL(deser.nodes, expected.nodes);
     BOOST_REQUIRE_EQUAL(deser.learners, expected.learners);
+}
+
+SEASTAR_THREAD_TEST_CASE(heartbeat_request_roundtrip) {
+    static constexpr int64_t one_k = 1'000;
+    raft::heartbeat_request req;
+    req.node_id = model::node_id(one_k);
+    req.meta = std::vector<raft::protocol_metadata>(one_k);
+    for (int64_t i = 0; i < one_k; ++i) {
+        req.meta[i].group = raft::group_id(i);
+        req.meta[i].commit_index = model::offset(i);
+        req.meta[i].term = model::term_id(i);
+        req.meta[i].prev_log_index = model::offset(i);
+        req.meta[i].prev_log_term = model::term_id(i);
+    }
+    iobuf buf;
+    reflection::async_adl<raft::heartbeat_request>{}
+      .to(buf, std::move(req))
+      .get();
+    BOOST_TEST_MESSAGE("Pre compression. Buffer size: " << buf);
+    compression::stream_zstd codec;
+    buf = codec.compress(std::move(buf));
+    BOOST_TEST_MESSAGE("Post compression. Buffer size: " << buf);
+    auto parser = iobuf_parser(codec.uncompress(std::move(buf)));
+    auto res
+      = reflection::async_adl<raft::heartbeat_request>{}.from(parser).get0();
+    for (int64_t i = 0; i < one_k; ++i) {
+        BOOST_REQUIRE_EQUAL(res.meta[i].group, raft::group_id(i));
+        BOOST_REQUIRE_EQUAL(res.meta[i].commit_index, model::offset(i));
+        BOOST_REQUIRE_EQUAL(res.meta[i].term, model::term_id(i));
+        BOOST_REQUIRE_EQUAL(res.meta[i].prev_log_index, model::offset(i));
+        BOOST_REQUIRE_EQUAL(res.meta[i].prev_log_term, model::term_id(i));
+    }
+}
+SEASTAR_THREAD_TEST_CASE(heartbeat_request_roundtrip_with_negative) {
+    static constexpr int64_t one_k = 10;
+    raft::heartbeat_request req;
+    req.node_id = model::node_id(one_k);
+    req.meta = std::vector<raft::protocol_metadata>(one_k);
+    for (int64_t i = 0; i < one_k; ++i) {
+        req.meta[i].group = raft::group_id(i);
+        req.meta[i].commit_index = model::offset(-i - 100);
+        req.meta[i].term = model::term_id(-i - 100);
+        req.meta[i].prev_log_index = model::offset(-i - 100);
+        req.meta[i].prev_log_term = model::term_id(-i - 100);
+    }
+    iobuf buf;
+    reflection::async_adl<raft::heartbeat_request>{}
+      .to(buf, std::move(req))
+      .get();
+    BOOST_TEST_MESSAGE("Pre compression. Buffer size: " << buf);
+    compression::stream_zstd codec;
+    buf = codec.compress(std::move(buf));
+    BOOST_TEST_MESSAGE("Post compression. Buffer size: " << buf);
+    auto parser = iobuf_parser(codec.uncompress(std::move(buf)));
+    auto res
+      = reflection::async_adl<raft::heartbeat_request>{}.from(parser).get0();
+    for (auto& m : res.meta) {
+        BOOST_REQUIRE_EQUAL(m.commit_index, model::offset(-1));
+        BOOST_REQUIRE_EQUAL(m.term, model::term_id(-1));
+        BOOST_REQUIRE_EQUAL(m.prev_log_index, model::offset(-1));
+        BOOST_REQUIRE_EQUAL(m.prev_log_term, model::term_id(-1));
+    }
 }

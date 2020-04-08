@@ -91,13 +91,13 @@ ss::future<> vote_stm::vote() {
                  _ptr->_leader_id = std::nullopt;
                  _ptr->trigger_leadership_notification();
                  // 5.2.1.2
-                 m.term = m.term + 1;
+                 m.term += model::term_id(1);
 
                  // vote is the only method under _op_sem
                  for (auto& n : _ptr->_conf.nodes) {
-                     _replies.push_back(vmeta(n.id()));
+                     _replies.emplace_back(vmeta(n.id()));
                  }
-                 _req = vote_request{_ptr->_self(),
+                 _req = vote_request{_ptr->_self,
                                      m.group,
                                      m.term,
                                      m.prev_log_index,

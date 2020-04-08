@@ -43,7 +43,7 @@ consensus::consensus(
       config::shard_local_cfg().replicate_append_timeout_ms())
   , _recovery_append_timeout(
       config::shard_local_cfg().recovery_append_timeout_ms()) {
-    _meta.group = group();
+    _meta.group = group;
     update_follower_stats(_conf);
     _vote_timeout.set_callback([this] {
         dispatch_flush_with_lock();
@@ -364,7 +364,7 @@ ss::future<> consensus::start() {
               if (r.voted_for < 0) {
                   _ctxlog.debug(
                     "Found default voted_for. Skipping term recovery");
-                  _meta.term = 0;
+                  _meta.term = model::term_id(0);
                   return details::read_bootstrap_state(_log);
               }
               _ctxlog.info(
@@ -449,7 +449,7 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
 ss::future<append_entries_reply>
 consensus::do_append_entries(append_entries_request&& r) {
     append_entries_reply reply;
-    reply.node_id = _self();
+    reply.node_id = _self;
     reply.group = r.meta.group;
     reply.term = _meta.term;
     reply.last_log_index = _meta.prev_log_index;
@@ -643,17 +643,15 @@ ss::future<> consensus::replicate_configuration(
     for (auto& b : batches) {
         b.set_term(model::term_id(_meta.term));
     }
-    append_entries_request req{
-      .node_id = _self,
-      .meta = _meta,
-      .batches = model::make_memory_record_batch_reader(std::move(batches))};
+    append_entries_request req(
+      _self, _meta, model::make_memory_record_batch_reader(std::move(batches)));
     return _batcher.do_flush({}, std::move(req), std::move(u));
 }
 
 append_entries_reply
 consensus::make_append_entries_reply(storage::append_result disk_results) {
     append_entries_reply reply;
-    reply.node_id = _self();
+    reply.node_id = _self;
     reply.group = _meta.group;
     reply.term = _meta.term;
     reply.last_log_index = disk_results.last_offset;

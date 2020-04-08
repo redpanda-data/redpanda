@@ -29,44 +29,38 @@ static constexpr const model::record_batch_type configuration_batch_type{2};
 static constexpr const model::record_batch_type data_batch_type{1};
 
 struct protocol_metadata {
-    group_id::type group = -1;
-    model::offset::type commit_index
-      = std::numeric_limits<model::offset::type>::min();
-    model::term_id::type term
-      = std::numeric_limits<model::term_id::type>::min();
-    /// \brief used for completeness
-    model::offset::type prev_log_index
-      = std::numeric_limits<model::offset::type>::min();
-    model::term_id::type prev_log_term
-      = std::numeric_limits<model::term_id::type>::min();
+    group_id group;
+    model::offset commit_index;
+    model::term_id term;
+    model::offset prev_log_index;
+    model::term_id prev_log_term;
 };
 
 struct group_configuration {
+    group_configuration() noexcept = default;
+    ~group_configuration() noexcept = default;
+    group_configuration(const group_configuration&) = default;
+    group_configuration& operator=(const group_configuration&) = delete;
+    group_configuration(group_configuration&&) noexcept = default;
+    group_configuration& operator=(group_configuration&&) noexcept = default;
+
     using brokers_t = std::vector<model::broker>;
     using iterator = brokers_t::iterator;
     using const_iterator = brokers_t::const_iterator;
 
-    brokers_t nodes;
-    brokers_t learners;
-    group_configuration() = default;
-    group_configuration(const group_configuration&) = default;
-    group_configuration(group_configuration&&) noexcept = default;
-    group_configuration& operator=(group_configuration&&) noexcept = default;
-
     bool has_voters() const { return !nodes.empty(); }
-
     bool has_learners() const { return !learners.empty(); }
-
     size_t majority() const { return (nodes.size() / 2) + 1; }
-
     iterator find_in_nodes(model::node_id id);
     const_iterator find_in_nodes(model::node_id id) const;
-
     iterator find_in_learners(model::node_id id);
     const_iterator find_in_learners(model::node_id id) const;
-
     bool contains_broker(model::node_id id) const;
     brokers_t all_brokers() const;
+
+    // data
+    brokers_t nodes;
+    brokers_t learners;
 };
 
 struct follower_index_metadata {
@@ -88,6 +82,14 @@ struct follower_index_metadata {
 };
 
 struct append_entries_request {
+    append_entries_request(
+      model::node_id i,
+      protocol_metadata m,
+      model::record_batch_reader r) noexcept
+      : node_id(i)
+      , meta(m)
+      , batches(std::move(r)){};
+    ~append_entries_request() noexcept = default;
     append_entries_request(const append_entries_request&) = delete;
     append_entries_request& operator=(const append_entries_request&) = delete;
     append_entries_request(append_entries_request&&) noexcept = default;
@@ -101,17 +103,15 @@ struct append_entries_request {
 
 struct append_entries_reply {
     enum class status : uint8_t { success, failure, group_unavailable };
-
     /// \brief callee's node_id; work-around for batched heartbeats
-    model::node_id::type node_id = -1;
-    group_id::type group = -1;
+    model::node_id node_id;
+    group_id group;
     /// \brief callee's term, for the caller to upate itself
-    model::term_id::type term
-      = std::numeric_limits<model::term_id::type>::min();
+    model::term_id term;
     /// \brief The recipient's last log index after it applied changes to
     /// the log. This is used to speed up finding the correct value for the
     /// nextIndex with a follower that is far behind a leader
-    model::offset::type last_log_index = 0;
+    model::offset last_log_index;
     /// \brief did the rpc succeed or not
     status result = status::failure;
 };
@@ -131,21 +131,18 @@ struct heartbeat_reply {
 };
 
 struct vote_request {
-    model::node_id::type node_id = 0;
-    group_id::type group = -1;
+    model::node_id node_id;
+    group_id group;
     /// \brief current term
-    model::term_id::type term
-      = std::numeric_limits<model::term_id::type>::min();
+    model::term_id term;
     /// \brief used to compare completeness
-    model::offset::type prev_log_index = 0;
-    model::term_id::type prev_log_term
-      = std::numeric_limits<model::term_id::type>::min();
+    model::offset prev_log_index;
+    model::term_id prev_log_term;
 };
 
 struct vote_reply {
     /// \brief callee's term, for the caller to upate itself
-    model::term_id::type term
-      = std::numeric_limits<model::term_id::type>::min();
+    model::term_id term;
 
     /// True if the follower granted the candidate it's vote, false otherwise
     bool granted = false;
@@ -182,157 +179,32 @@ struct replicate_options {
     consistency_level consistency;
 };
 
-static inline std::ostream&
-operator<<(std::ostream& o, const consistency_level& l) {
-    switch (l) {
-    case consistency_level::quorum_ack:
-        o << "consistency_level::quorum_ack";
-        break;
-    case consistency_level::leader_ack:
-        o << "consistency_level::leader_ack";
-        break;
-    case consistency_level::no_ack:
-        o << "consistency_level::no_ack";
-        break;
-    default:
-        o << "unknown consistency_level";
-    }
-    return o;
-}
-
-static inline std::ostream&
-operator<<(std::ostream& o, const protocol_metadata& m) {
-    return o << "{raft_group:" << m.group << ", commit_index:" << m.commit_index
-             << ", term:" << m.term << ", prev_log_index:" << m.prev_log_index
-             << ", prev_log_term:" << m.prev_log_term << "}";
-}
-static inline std::ostream& operator<<(std::ostream& o, const vote_reply& r) {
-    return o << "{term:" << r.term << ", vote_granted: " << r.granted
-             << ", log_ok:" << r.log_ok << "}";
-}
-
-static inline std::ostream&
-operator<<(std::ostream& o, const append_entries_reply::status& r) {
-    switch (r) {
-    case append_entries_reply::status::success:
-        o << "success";
-        return o;
-    case append_entries_reply::status::failure:
-        o << "failure";
-        return o;
-    case append_entries_reply::status::group_unavailable:
-        o << "group_unavailable";
-        return o;
-    default:
-        std::terminate();
-    }
-}
-static inline std::ostream&
-operator<<(std::ostream& o, const append_entries_reply& r) {
-    return o << "{node_id: " << r.node_id << ", group: " << r.group
-             << ", term:" << r.term << ", last_log_index:" << r.last_log_index
-             << ", result: " << r.result << "}";
-}
-
-static inline std::ostream& operator<<(std::ostream& o, const vote_request& r) {
-    return o << "{node_id: " << r.node_id << ", group: " << r.group
-             << ", term:" << r.term << ", prev_log_index:" << r.prev_log_index
-             << ", prev_log_term: " << r.prev_log_term << "}";
-}
-static inline std::ostream&
-operator<<(std::ostream& o, const follower_index_metadata& i) {
-    return o << "{node_id: " << i.node_id
-             << ", last_log_idx: " << i.last_log_index
-             << ", match_index: " << i.match_index
-             << ", next_index: " << i.next_index
-             << ", is_learner: " << i.is_learner
-             << ", is_recovering: " << i.is_recovering << "}";
-}
-
-static inline std::ostream&
-operator<<(std::ostream& o, const heartbeat_request& r) {
-    o << "{node: " << r.node_id << ", meta: [";
-    for (auto& m : r.meta) {
-        o << m << ",";
-    }
-    return o << "]}";
-}
-static inline std::ostream&
-operator<<(std::ostream& o, const heartbeat_reply& r) {
-    o << "{meta:[";
-    for (auto& m : r.meta) {
-        o << m << ",";
-    }
-    return o << "]}";
-}
-
-static inline std::ostream&
-operator<<(std::ostream& o, const group_configuration& c) {
-    o << "{group_configuration: nodes: [";
-    for (auto& n : c.nodes) {
-        o << n.id();
-    }
-    o << "], learners: [";
-    for (auto& n : c.learners) {
-        o << n.id();
-    }
-    return o << "]}";
-}
-
+std::ostream& operator<<(std::ostream& o, const consistency_level& l);
+std::ostream& operator<<(std::ostream& o, const protocol_metadata& m);
+std::ostream& operator<<(std::ostream& o, const vote_reply& r);
+std::ostream& operator<<(std::ostream& o, const append_entries_reply::status&);
+std::ostream& operator<<(std::ostream& o, const append_entries_reply& r);
+std::ostream& operator<<(std::ostream& o, const vote_request& r);
+std::ostream& operator<<(std::ostream& o, const follower_index_metadata& i);
+std::ostream& operator<<(std::ostream& o, const heartbeat_request& r);
+std::ostream& operator<<(std::ostream& o, const heartbeat_reply& r);
+std::ostream& operator<<(std::ostream& o, const group_configuration& c);
 } // namespace raft
 
 namespace reflection {
-struct rpc_model_reader_consumer {
-    explicit rpc_model_reader_consumer(iobuf& oref)
-      : ref(oref) {}
-    ss::future<ss::stop_iteration> operator()(model::record_batch batch) {
-        reflection::serialize(ref, batch.header());
-        if (!batch.compressed()) {
-            reflection::serialize<int8_t>(ref, 0);
-            for (model::record& r : batch) {
-                reflection::serialize(ref, std::move(r));
-            }
-        } else {
-            reflection::serialize<int8_t>(ref, 1);
-            reflection::serialize(ref, std::move(batch).release());
-        }
-        return ss::make_ready_future<ss::stop_iteration>(
-          ss::stop_iteration::no);
-    }
-    void end_of_stream(){};
-    iobuf& ref;
-};
-
 template<>
 struct async_adl<raft::append_entries_request> {
-    ss::future<> to(iobuf& out, raft::append_entries_request&& request) {
-        return model::consume_reader_to_memory(
-                 std::move(request.batches), model::no_timeout)
-          .then([&out, request = std::move(request)](
-                  ss::circular_buffer<model::record_batch> batches) {
-              reflection::adl<uint32_t>{}.to(out, batches.size());
-              for (auto& batch : batches) {
-                  reflection::serialize(out, std::move(batch));
-              }
-              reflection::serialize(out, request.meta, request.node_id);
-          });
-    }
-
-    ss::future<raft::append_entries_request> from(iobuf_parser& in) {
-        auto batchCount = reflection::adl<uint32_t>{}.from(in);
-        auto batches = ss::circular_buffer<model::record_batch>{};
-        batches.reserve(batchCount);
-        for (uint32_t i = 0; i < batchCount; ++i) {
-            batches.push_back(adl<model::record_batch>{}.from(in));
-        }
-        auto reader = model::make_memory_record_batch_reader(
-          std::move(batches));
-        auto meta = reflection::adl<raft::protocol_metadata>{}.from(in);
-        auto n = reflection::adl<model::node_id>{}.from(in);
-        auto ret = raft::append_entries_request{
-          .node_id = n, .meta = std::move(meta), .batches = std::move(reader)};
-        return ss::make_ready_future<raft::append_entries_request>(
-          std::move(ret));
-    }
+    ss::future<> to(iobuf& out, raft::append_entries_request&& request);
+    ss::future<raft::append_entries_request> from(iobuf_parser& in);
+};
+template<>
+struct adl<raft::protocol_metadata> {
+    void to(iobuf& out, raft::protocol_metadata request);
+    raft::protocol_metadata from(iobuf_parser& in);
+};
+template<>
+struct async_adl<raft::heartbeat_request> {
+    ss::future<> to(iobuf& out, raft::heartbeat_request&& request);
+    ss::future<raft::heartbeat_request> from(iobuf_parser& in);
 };
 } // namespace reflection
