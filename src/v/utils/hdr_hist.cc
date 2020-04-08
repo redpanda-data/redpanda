@@ -125,12 +125,15 @@ std::unique_ptr<hdr_hist::measurement> hdr_hist::auto_measure() {
     return std::make_unique<measurement>(*this);
 }
 
-hdr_hist::~hdr_hist() {
+hdr_hist::~hdr_hist() noexcept {
     for (auto& m : _probes) {
         m.detach_hdr_hist();
     }
 }
 
+std::ostream& operator<<(std::ostream& o, const hdr_hist::measurement& m) {
+    return o << "{duration:" << m.compute_duration_micros() << "us}";
+}
 std::ostream& operator<<(std::ostream& o, const hdr_hist& h) {
     return o << "{p10=" << human::latency{(double)h.get_value_at(.1)}
              << ",p50=" << human::latency{(double)h.get_value_at(.5)}
