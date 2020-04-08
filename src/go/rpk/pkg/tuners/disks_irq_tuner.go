@@ -157,10 +157,7 @@ func NewDiskIRQsAffinityTuner(
 			if err != nil {
 				return NewTuneError(err)
 			}
-			err = cpuMasks.DistributeIRQs(distribution)
-			if err != nil {
-				return NewTuneError(err)
-			}
+			cpuMasks.DistributeIRQs(distribution)
 			return NewTuneResult(false)
 		},
 		func() (bool, string) {
