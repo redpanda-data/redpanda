@@ -107,8 +107,13 @@ consensus::success_reply consensus::update_follower_index(
         _ctxlog.debug("ignorring append entries reply, not leader");
         return success_reply::no;
     }
+    // If RPC request or response contains term T > currentTerm:
+    // set currentTerm = T, convert to follower (Raft paper: §5.1)
     if (reply.term > _meta.term) {
-        do_step_down();
+        _meta.term = reply.term;
+        (void)with_gate(_bg, [this, term = reply.term] {
+            return step_down(model::term_id(term));
+        });
         return success_reply::no;
     }
 
