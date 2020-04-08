@@ -5,10 +5,14 @@
 #include "random/generators.h"
 #include "resource_mgmt/io_priority.h"
 #include "storage/record_batch_builder.h"
+#include "vassert.h"
 
+#include <seastar/core/file-types.hh>
+#include <seastar/core/file.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/core/thread.hh>
 
+#include <cstring>
 #include <filesystem>
 // delete
 #include <seastar/core/future-util.hh>
@@ -59,22 +63,29 @@ ss::future<ss::temporary_buffer<char>> readfile(ss::sstring name) {
 }
 
 ss::future<> writefile(ss::sstring name, ss::temporary_buffer<char> buf) {
+    // open the file in synchronous mode
+    vassert(
+      buf.size() <= 4096,
+      "This utility is inteded to save the voted_for file contents, which is "
+      "usually 16 bytes at most. but asked to save: {}",
+      buf.size());
     auto flags = ss::open_flags::wo | ss::open_flags::create
                  | ss::open_flags::truncate;
-    auto tmp_name = fmt::format(
-      "{}.atomic.{}", name, random_generators::gen_alphanum_string(8));
-    return ss::open_file_dma(tmp_name, flags)
+    return ss::open_file_dma(std::move(name), flags)
       .then([b = std::move(buf)](ss::file f) {
-          auto out = ss::make_lw_shared<ss::output_stream<char>>(
-            make_file_output_stream(std::move(f)));
-          return out->write(b.get(), b.size())
-            .then([out] { return out->flush(); })
-            .then([out] { return out->close(); })
-            .finally([out] {});
-      })
-      .then([tmp_name, name] { return ss::rename_file(tmp_name, name); })
-      .then([path = std::filesystem::path(name.c_str())] {
-          return ss::sync_directory(path.parent_path().string());
+          std::unique_ptr<char[], ss::free_deleter> buf(
+            ss::allocate_aligned_buffer<char>(4096, 4096));
+          std::memset(buf.get(), 0, 4096);
+          // copy the yaml file
+          const size_t yaml_size = b.size();
+          std::copy_n(b.get(), yaml_size, buf.get() /*destination*/);
+          auto ptr = buf.get();
+          return f.dma_write(0, ptr, 4096, ss::default_priority_class())
+            .then(
+              [buf = std::move(buf), f](size_t) mutable { return f.flush(); })
+            .then([f, yaml_size]() mutable { return f.truncate(yaml_size); })
+            .then([f]() mutable { return f.close(); })
+            .finally([f] {});
       });
 }
 ss::future<>
