@@ -1,0 +1,11 @@
+{
+  "name": "Depedencies",
+  "description": "Vectorized's materialized stream dependencies",
+  "version": "0.0.1",
+  "keywords": [],
+  "author": "hi@vectorized.io",
+  "requires": true,
+  "dependencies": {
+    "typescript": "3.8.3"
+  }
+}
