@@ -38,6 +38,8 @@ struct log_config {
     std::chrono::milliseconds delete_retention = std::chrono::minutes(10080);
     disable_batch_cache disable_cache = disable_batch_cache::no;
     batch_cache::reclaim_options reclaim_opts;
+
+    friend std::ostream& operator<<(std::ostream& o, const log_config&);
 };
 
 /**

@@ -30,6 +30,8 @@ public:
 private:
     checkpoint _ckpt;
     segment* _seg;
+
+    friend std::ostream& operator<<(std::ostream&, const checkpoint&);
 };
 
 std::ostream& operator<<(std::ostream&, const log_replayer::checkpoint&);

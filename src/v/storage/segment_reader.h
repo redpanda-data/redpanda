@@ -85,6 +85,8 @@ private:
     model::offset _max_offset;
     ss::lw_shared_ptr<ss::file_input_stream_history> _history
       = ss::make_lw_shared<ss::file_input_stream_history>();
+
+    friend std::ostream& operator<<(std::ostream&, const segment_reader&);
 };
 
 using segment_reader_ptr = ss::lw_shared_ptr<segment_reader>;

@@ -4,6 +4,8 @@
 
 #include <seastar/core/print.hh>
 
+namespace human {
+
 std::ostream& operator<<(std::ostream& o, const ::human::latency& l) {
     static const char* units[] = {"μs", "ms", "secs"};
     static constexpr double step = 1000;
@@ -28,3 +30,5 @@ std::ostream& operator<<(std::ostream& o, const ::human::bytes& l) {
     }
     return o << x << "uknown_units";
 }
+
+} // namespace human

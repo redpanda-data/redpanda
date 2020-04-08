@@ -174,6 +174,8 @@ public:
 
 private:
     ss::shared_ptr<impl> _impl;
+
+    friend std::ostream& operator<<(std::ostream& o, const log& lg);
 };
 
 inline std::ostream& operator<<(std::ostream& o, const storage::log& lg) {

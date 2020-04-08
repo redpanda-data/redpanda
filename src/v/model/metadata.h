@@ -81,6 +81,8 @@ private:
     unresolved_address _rpc_address;
     std::optional<ss::sstring> _rack;
     broker_properties _properties;
+
+    friend std::ostream& operator<<(std::ostream&, const broker&);
 };
 
 std::ostream& operator<<(std::ostream&, const broker&);
@@ -119,6 +121,8 @@ struct topic_namespace_view {
 
     const model::ns& ns;
     const model::topic& tp;
+
+    friend std::ostream& operator<<(std::ostream&, const topic_namespace_view&);
 };
 
 struct topic_namespace {
@@ -147,6 +151,8 @@ struct topic_namespace {
 
     model::ns ns;
     model::topic tp;
+
+    friend std::ostream& operator<<(std::ostream&, const topic_namespace&);
 };
 
 std::ostream& operator<<(std::ostream&, const topic_namespace&);

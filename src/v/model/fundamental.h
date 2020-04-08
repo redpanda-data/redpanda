@@ -56,6 +56,8 @@ struct topic_partition {
         return topic < other.topic
                || (topic == other.topic && partition < other.partition);
     }
+
+    friend std::ostream& operator<<(std::ostream&, const topic_partition&);
 };
 
 std::ostream& operator<<(std::ostream&, const topic_partition&);
@@ -71,6 +73,8 @@ struct ntp {
     bool operator!=(const ntp& other) const { return !(*this == other); }
 
     ss::sstring path() const;
+
+    friend std::ostream& operator<<(std::ostream&, const ntp&);
 };
 
 std::ostream& operator<<(std::ostream&, const ntp&);
