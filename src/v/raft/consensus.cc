@@ -414,6 +414,15 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
         return ss::make_ready_future<vote_reply>(std::move(reply));
     }
 
+    // Optimization, see Logcabin Raft protocol implementation
+    auto now = clock_type::now();
+    auto expiration = _hbeat + _jit.base_duration();
+    if (now < expiration) {
+        _ctxlog.trace("We already heard from the leader");
+        reply.granted = false;
+        return ss::make_ready_future<vote_reply>(std::move(reply));
+    }
+
     if (r.term > _meta.term) {
         _ctxlog.info(
           "received vote response with larger term from node {}, received {}, "
