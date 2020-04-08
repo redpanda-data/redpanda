@@ -128,10 +128,7 @@ func (f *netTunersFactory) NewNICsIRQsAffinityTuner(
 			if err != nil {
 				return NewTuneError(err)
 			}
-			err = f.cpuMasks.DistributeIRQs(dist)
-			if err != nil {
-				return NewTuneError(err)
-			}
+			f.cpuMasks.DistributeIRQs(dist)
 			return NewTuneResult(false)
 		},
 		func() (bool, string) {

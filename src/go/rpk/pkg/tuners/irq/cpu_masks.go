@@ -19,7 +19,7 @@ type CpuMasks interface {
 	SetMask(path string, mask string) error
 	ReadMask(path string) (string, error)
 	ReadIRQMask(IRQ int) (string, error)
-	DistributeIRQs(irqsDistribution map[int]string) error
+	DistributeIRQs(irqsDistribution map[int]string)
 	GetDistributionMasks(count uint) ([]string, error)
 	GetIRQsDistributionMasks(IRQs []int, cpuMask string) (map[int]string, error)
 	GetNumberOfCores(mask string) (uint, error)
@@ -113,7 +113,7 @@ func (masks *cpuMasks) CpuMaskForIRQs(
 
 func (masks *cpuMasks) SetMask(path string, mask string) error {
 	if _, err := masks.fs.Stat(path); err != nil {
-		return fmt.Errorf("configure file '%s' to set mask does not exist", path)
+		return fmt.Errorf("SMP affinity file '%s' not exist", path)
 	}
 	var formattedMask = strings.Replace(mask, "0x", "", -1)
 	for strings.Contains(formattedMask, ",,") {
@@ -122,7 +122,7 @@ func (masks *cpuMasks) SetMask(path string, mask string) error {
 
 	log.Infof("Setting mask '%s' in '%s'", formattedMask, path)
 	err := masks.executor.Execute(
-		commands.NewWriteFileCmd(masks.fs, path, formattedMask))
+		commands.NewWriteFileModeCmd(masks.fs, path, formattedMask, 0555))
 	if err != nil {
 		return err
 	}
@@ -147,15 +147,24 @@ func (masks *cpuMasks) GetIRQsDistributionMasks(
 	return irqsDistribution, nil
 }
 
-func (masks *cpuMasks) DistributeIRQs(irqsDistribution map[int]string) error {
+func (masks *cpuMasks) DistributeIRQs(irqsDistribution map[int]string) {
 	log.Infof("Distributing IRQs '%v' ", irqsDistribution)
+	errMsg := "An IRQ's affinity couldn't be set. This might be because the" +
+		" IRQ isn't IO-APIC compatible, or because the IRQ is managed" +
+		" by the kernel, and can be safely ignored."
 	for IRQ, mask := range irqsDistribution {
 		err := masks.SetMask(irqAffinityPath(IRQ), mask)
+		// IRQ SMP affinity is tuned on a best-effort basis. Most
+		// IO-APIC compatible IRQs allow their affinity to be set, but
+		// there are exceptions (such as IRQ 0, which is the timer IRQ).
+		// Likewise, if an IRQ isn't marked as IO-APIC-compatible, it
+		// doesn't mean its affinity can't be set. Therefore the errors
+		// are logged but otherwise ignored.
 		if err != nil {
-			return err
+			log.Debug(err)
+			log.Info(errMsg)
 		}
 	}
-	return nil
 }
 
 func irqAffinityPath(IRQ int) string {
