@@ -76,7 +76,7 @@ private:
     ss::future<result<vote_reply>> do_dispatch_one(model::node_id);
     std::pair<int32_t, int32_t> partition_count() const;
     ss::future<> process_replies(ss::semaphore_units<>);
-    ss::future<> replicate_config_as_new_leader(ss::semaphore_units<>);
+    void replicate_config_as_new_leader(ss::semaphore_units<>);
     // args
     consensus* _ptr;
     // make sure to always make a copy; never move() this struct
