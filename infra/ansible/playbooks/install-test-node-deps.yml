@@ -1,15 +1,25 @@
 - hosts: all
   tasks:
 
-  - name: install base deps redhat
-    package:
-      name:
-        - iotop
-        - java-11-openjdk-devel.x86_64
-        - mdadm
-        - xfsprogs
-      state: present
+  - name: fedora setup
     when: ansible_os_family == 'RedHat'
+    block:
+    - name: delete unused repos
+      file:
+        name: "{{item}}"
+        state: absent
+      with_items:
+        - /etc/yum.repos.d/fedora-updates-modular.repo
+        - /etc/yum.repos.d/fedora-cisco-openh264.repo
+    - name: install base deps
+      package:
+        name:
+          - iotop
+          - java-11-openjdk-devel.x86_64
+          - mdadm
+          - xfsprogs
+        state: present
+
   - name: install base deps - debian
     package:
       name:
