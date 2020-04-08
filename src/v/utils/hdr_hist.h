@@ -109,6 +109,7 @@ public:
 
 private:
     friend measurement;
+    friend std::ostream& operator<<(std::ostream& o, const hdr_hist& h);
 
     boost::intrusive::list<measurement> _probes;
     hist_internal::hdr_histogram_ptr _hist;

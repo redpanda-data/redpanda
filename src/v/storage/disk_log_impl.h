@@ -60,6 +60,7 @@ public:
 private:
     friend class disk_log_appender;
     friend class disk_log_builder;
+    friend std::ostream& operator<<(std::ostream& o, const disk_log_impl& d);
 
     ss::future<> remove_empty_segments();
     void dispatch_remove(ss::lw_shared_ptr<segment>, std::string_view msg);

@@ -64,6 +64,8 @@ public:
 
 private:
     underlying_t _handles;
+
+    friend std::ostream& operator<<(std::ostream&, const segment_set&);
 };
 
 std::ostream& operator<<(std::ostream&, const segment_set&);

@@ -26,6 +26,8 @@ struct sanitizer_op
     explicit sanitizer_op(ss::sstring operation)
       : name_op(std::move(operation))
       , bt(ss::current_backtrace()) {}
+
+    friend std::ostream& operator<<(std::ostream& o, const sanitizer_op& s);
 };
 
 inline std::ostream& operator<<(std::ostream& o, const sanitizer_op& s) {
