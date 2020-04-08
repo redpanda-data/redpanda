@@ -5,6 +5,7 @@
 #include "vassert.h"
 #include "vlog.h"
 
+#include <seastar/core/future-util.hh>
 #include <seastar/core/semaphore.hh>
 
 #include <fmt/format.h>
@@ -65,20 +66,10 @@ ss::future<> segment_appender::append(bytes_view s) {
 }
 
 ss::future<> segment_appender::append(const iobuf& io) {
-    auto in = iobuf::iterator_consumer(io.cbegin(), io.cend());
-    auto f = ss::make_ready_future<>();
-    auto c = in.consume(
-      io.size_bytes(), [this, &f](const char* src, size_t sz) {
-          f = f.then([this, src, sz] { return append(src, sz); });
-          return ss::stop_iteration::no;
+    return ss::do_for_each(
+      io.begin(), io.end(), [this](const iobuf::fragment& f) {
+          return append(f.get(), f.size());
       });
-    if (unlikely(c != io.size_bytes())) {
-        // TODO: fixme
-        return ss::make_exception_future<>(
-                 std::runtime_error("could not append data"))
-          .then([f = std::move(f)]() mutable { return std::move(f); });
-    }
-    return f;
 }
 ss::future<> segment_appender::append(const char* buf, const size_t n) {
     vassert(!_closed, "append() on closed segment: {}", *this);
