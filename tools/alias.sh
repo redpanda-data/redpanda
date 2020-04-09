@@ -146,9 +146,6 @@ function vtools_dev_cluster() {
     vtools deploy cluster ${deploy_args[@]} nodes=3
     vtools deploy ansible \
       --provider "$provider" \
-      --playbook=$tld/infra/ansible/playbooks/add-root-user.yml
-    vtools deploy ansible \
-      --provider "$provider" \
       --playbook=$tld/infra/ansible/playbooks/provision-test-node.yml \
       ${ansible_vars[@]} \
       --var "rp_pkg=$tld/build/release/clang/dist/rpm/RPMS/x86_64/redpanda-0.0-dev.x86_64.rpm"
