@@ -99,6 +99,13 @@ struct client_opts {
     explicit client_opts(clock_type::time_point client_send_timeout) noexcept
       : client_opts(client_send_timeout, sequential_dispatch::no) {}
 
+    client_opts(const client_opts&) = delete;
+    client_opts(client_opts&&) = default;
+
+    client_opts& operator=(const client_opts&) = delete;
+    client_opts& operator=(client_opts&&) = default;
+    ~client_opts() noexcept = default;
+
     clock_type::time_point timeout;
     sequential_dispatch dispatch;
     compression_type compression;

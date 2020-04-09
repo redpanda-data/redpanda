@@ -114,7 +114,8 @@ transport::send_typed(Input r, uint32_t method_id, rpc::client_opts opts) {
                 });
     }
     return fut
-      .then([this, r = std::move(r), method_id, opts](opt_units u) mutable {
+      .then([this, r = std::move(r), method_id, opts = std::move(opts)](
+              opt_units u) mutable {
           auto b = std::make_unique<rpc::netbuf>();
           b->set_compression(opts.compression);
           b->set_min_compression_bytes(opts.min_compression_bytes);
@@ -122,8 +123,8 @@ transport::send_typed(Input r, uint32_t method_id, rpc::client_opts opts) {
           raw_b->set_service_method_id(method_id);
           return reflection::async_adl<Input>{}
             .to(raw_b->buffer(), std::move(r))
-            .then([this, b = std::move(b), opts] {
-                return send(std::move(*b), opts);
+            .then([this, b = std::move(b), opts = std::move(opts)]() mutable {
+                return send(std::move(*b), std::move(opts));
             })
             .finally([u = std::move(u)] {});
       })
