@@ -135,6 +135,7 @@ function vtools_dev_cluster() {
       gcp)
         if [[ $raid == true ]]; then
           # TODO support RAID on GCP
+          echo ''
         fi
         ;;
     esac
@@ -143,7 +144,7 @@ function vtools_dev_cluster() {
     vtools build cpp --clang --build-type release --targets=redpanda
     rm $tld/build/release/clang/dist/rpm/RPMS/x86_64/redpanda-0.0-dev.x86_64.rpm || true
     vtools build pkg --format rpm --clang --build-type release
-    vtools deploy cluster ${deploy_args[@]} nodes=3
+    vtools deploy cluster ${deploy_args[@]} nodes=4
     vtools deploy ansible \
       --provider "$provider" \
       --playbook=$tld/infra/ansible/playbooks/provision-test-node.yml \
@@ -153,5 +154,9 @@ function vtools_dev_cluster() {
     vtools deploy ansible \
       --provider "$provider" \
       --playbook=$tld/infra/ansible/playbooks/redpanda-start.yml
+
+    vtools deploy ansible \
+      --provider "$provider" \
+      --playbook=$tld/infra/ansible/playbooks/deploy-prometheus-grafana.yml
   )
 }

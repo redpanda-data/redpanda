@@ -1,1 +1,3 @@
 - src: mrlesmithjr.mdadm
+- src: cloudalchemy.prometheus
+- src: cloudalchemy.grafana

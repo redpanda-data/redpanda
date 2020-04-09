@@ -1,4 +1,4 @@
-- hosts: all
+- hosts: redpanda
   tasks:
 
   - name: create xfs filesystem
