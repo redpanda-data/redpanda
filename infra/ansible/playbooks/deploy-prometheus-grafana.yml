@@ -1,0 +1,22 @@
+- hosts: monitor
+  roles:
+  - cloudalchemy.prometheus
+  vars:
+    prometheus_targets:
+      node:
+      - targets:
+        - "{{ groups['redpanda'][0] }}:9644"
+
+- hosts: monitor
+  roles:
+  - role: cloudalchemy.grafana
+  vars:
+    grafana_security:
+      admin_user: admin
+      admin_password: enter_your_secure_password
+    grafana_datasources:
+    - name: prometheus
+      type: prometheus
+      access: proxy
+      url: 'http://localhost:9090'
+      basicAuth: false
