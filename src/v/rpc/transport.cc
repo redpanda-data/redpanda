@@ -147,7 +147,8 @@ transport::send(netbuf b, rpc::client_opts opts) {
             server_address())));
     }
     return ss::with_gate(
-      _dispatch_gate, [this, b = std::move(b), opts]() mutable {
+      _dispatch_gate,
+      [this, b = std::move(b), opts = std::move(opts)]() mutable {
           if (_correlations.find(_correlation_idx + 1) != _correlations.end()) {
               _probe.client_correlation_error();
               throw std::runtime_error(
