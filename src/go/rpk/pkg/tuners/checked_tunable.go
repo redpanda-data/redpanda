@@ -1,6 +1,7 @@
 package tuners
 
 import (
+	"errors"
 	"fmt"
 
 	log "github.com/sirupsen/logrus"
@@ -50,14 +51,17 @@ func (t *checkedTunable) Tune() TuneResult {
 	if !t.disablePostTuneCheck {
 		postTuneResult := t.checker.Check()
 		if !postTuneResult.IsOk {
-			err := fmt.Errorf(
-				"System tuning was not succesful. Check '%s'"+
-					" failed. Required: '%s', current: '%v'",
+			severity := t.checker.GetSeverity()
+			msg := fmt.Sprintf(
+				"check '%s' failed after its associated tuners ran. Severity: %s, required value: '%s', current value: '%v'",
 				t.checker.GetDesc(),
+				severity,
 				t.checker.GetRequiredAsString(),
 				result.Current,
 			)
-			return NewTuneError(err)
+			if severity == Fatal {
+				return NewTuneError(errors.New(msg))
+			}
 		}
 	}
 	return tuneResult
