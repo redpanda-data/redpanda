@@ -184,11 +184,14 @@ ss::future<> vote_stm::process_replies(ss::semaphore_units<> u) {
     _ctxlog.info("became the leader term:{}", _ptr->_meta.term);
 
     _ptr->trigger_leadership_notification();
-    return replicate_config_as_new_leader(std::move(u));
+    replicate_config_as_new_leader(std::move(u));
+    return ss::make_ready_future<>();
 }
 
-ss::future<> vote_stm::replicate_config_as_new_leader(ss::semaphore_units<> u) {
-    return _ptr->replicate_configuration(std::move(u), _ptr->_conf);
+void vote_stm::replicate_config_as_new_leader(ss::semaphore_units<> u) {
+    (void)ss::with_gate(_ptr->_bg, [this, u = std::move(u)]() mutable {
+        return _ptr->replicate_configuration(std::move(u), _ptr->_conf);
+    });
 }
 
 ss::future<> vote_stm::self_vote() {

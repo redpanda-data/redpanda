@@ -31,31 +31,31 @@ ss::future<append_entries_request> replicate_entries_stm::share_request() {
     });
 }
 ss::future<result<append_entries_reply>> replicate_entries_stm::do_dispatch_one(
-  model::node_id n, append_entries_request req) {
+  model::node_id n,
+  append_entries_request req,
+  ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>> units) {
     using ret_t = result<append_entries_reply>;
 
     if (n == _ptr->_self) {
-        auto f = ss::with_semaphore(
-          _ptr->_op_sem, 1, [this, req = std::move(req)]() mutable {
-              return _ptr->flush_log()
-                .then([this]() {
-                    append_entries_reply reply;
-                    reply.node_id = _ptr->_self;
-                    reply.group = _ptr->_meta.group;
-                    reply.term = _ptr->_meta.term;
-                    reply.last_log_index = _ptr->_log.max_offset();
-                    reply.result = append_entries_reply::status::success;
-                    return ret_t(std::move(reply));
-                })
-                .handle_exception(
-                  []([[maybe_unused]] const std::exception_ptr& ex) {
-                      return ret_t(errc::leader_flush_failed);
-                  });
-          });
+        auto f = _ptr->flush_log()
+                   .then([this, units]() {
+                       append_entries_reply reply;
+                       reply.node_id = _ptr->_self;
+                       reply.group = _ptr->_meta.group;
+                       reply.term = _ptr->_meta.term;
+                       reply.last_log_index = _ptr->_log.max_offset();
+                       reply.result = append_entries_reply::status::success;
+                       return ret_t(std::move(reply));
+                   })
+                   .handle_exception(
+                     []([[maybe_unused]] const std::exception_ptr& ex) {
+                         return ret_t(errc::leader_flush_failed);
+                     });
+
         _dispatch_sem.signal();
         return f;
     }
-    return send_append_entries_request(n, std::move(req));
+    return send_append_entries_request(n, std::move(req), std::move(units));
 }
 
 clock_type::time_point replicate_entries_stm::append_entries_timeout() {
@@ -64,22 +64,26 @@ clock_type::time_point replicate_entries_stm::append_entries_timeout() {
 
 ss::future<result<append_entries_reply>>
 replicate_entries_stm::send_append_entries_request(
-  model::node_id n, append_entries_request req) {
+  model::node_id n,
+  append_entries_request req,
+  ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>> units) {
     _ptr->update_node_hbeat_timestamp(n);
     _ctxlog.trace("Sending append entries request {} to {}", req.meta, n);
 
     auto f = _ptr->_client_protocol.append_entries(
-      n, std::move(req), rpc::client_opts(append_entries_timeout()));
+      n, std::move(req), rpc::client_opts(append_entries_timeout(), units));
     _dispatch_sem.signal();
     return f;
 }
 
-ss::future<> replicate_entries_stm::dispatch_one(model::node_id id) {
+ss::future<> replicate_entries_stm::dispatch_one(
+  model::node_id id,
+  ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>> units) {
     return ss::with_gate(
              _req_bg,
-             [this, id] {
-                 return dispatch_single_retry(id).then(
-                   [this, id](result<append_entries_reply> reply) {
+             [this, id, units]() mutable {
+                 return dispatch_single_retry(id, std::move(units))
+                   .then([this, id](result<append_entries_reply> reply) {
                        _ptr->process_append_entries_reply(id, reply);
                    });
              })
@@ -87,10 +91,12 @@ ss::future<> replicate_entries_stm::dispatch_one(model::node_id id) {
 }
 
 ss::future<result<append_entries_reply>>
-replicate_entries_stm::dispatch_single_retry(model::node_id id) {
+replicate_entries_stm::dispatch_single_retry(
+  model::node_id id,
+  ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>> units) {
     return share_request()
-      .then([this, id](append_entries_request r) mutable {
-          return do_dispatch_one(id, std::move(r));
+      .then([this, id, units](append_entries_request r) mutable {
+          return do_dispatch_one(id, std::move(r), units);
       })
       .handle_exception([this](const std::exception_ptr& e) {
           _ctxlog.warn("Error while replicating entries {}", e);
@@ -117,6 +123,10 @@ replicate_entries_stm::apply(ss::semaphore_units<> u) {
       .then(
         [this, u = std::move(u)](storage::append_result append_result) mutable {
             // dispatch requests to followers & leader flush
+            std::vector<ss::semaphore_units<>> vec;
+            vec.push_back(std::move(u));
+            auto units = ss::make_lw_shared<std::vector<ss::semaphore_units<>>>(
+              std::move(vec));
             uint16_t requests_count = 0;
             for (auto& n : _ptr->_conf.nodes) {
                 // We are not dispatching request to followers that are
@@ -128,13 +138,11 @@ replicate_entries_stm::apply(ss::semaphore_units<> u) {
                     continue;
                 }
                 ++requests_count;
-                (void)dispatch_one(n.id()); // background
+                (void)dispatch_one(n.id(), units); // background
             }
             // Wait until all RPCs will be dispatched
             return _dispatch_sem.wait(requests_count)
-              .then([u = std::move(u), append_result]() mutable {
-                  return append_result;
-              });
+              .then([append_result, units]() mutable { return append_result; });
         })
       .then([this](storage::append_result append_result) {
           // this is happening outside of _opsem

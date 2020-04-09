@@ -149,6 +149,8 @@ private:
     ss::future<join_reply>
     dispatch_join_to_remote(const config::seed_server&, model::broker);
 
+    void recover_assignment_in_background(partition_assignment);
+
     model::broker _self;
     std::vector<config::seed_server> _seed_servers;
     ss::sharded<partition_manager>& _pm;
@@ -165,6 +167,7 @@ private:
     // Semaphore used to make sure that the controller state i.e. topics and
     // partition metadata are updated atomically
     ss::semaphore _sem{1};
+    ss::semaphore _recovery_semaphore{0};
     model::offset _raft0_cfg_offset;
     cluster::notification_id_type _leader_notify_handle;
     notification_latch _notification_latch;

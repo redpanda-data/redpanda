@@ -105,13 +105,18 @@ ss::future<> heartbeat_manager::send_heartbeats(
               u = std::move(locks)](std::vector<node_heartbeat>& reqs) mutable {
                  std::vector<ss::future<>> futures;
                  futures.reserve(reqs.size());
+                 auto units
+                   = ss::make_lw_shared<std::vector<ss::semaphore_units<>>>(
+                     std::move(u));
                  for (auto& r : reqs) {
-                     futures.push_back(do_heartbeat(std::move(r)));
+                     futures.push_back(do_heartbeat(std::move(r), units));
                  }
                  return _dispatch_sem.wait(reqs.size())
-                   .then([u = std::move(u), f = std::move(futures)]() mutable {
+                   .then([f = std::move(futures)]() mutable {
                        return std::move(f);
                    });
+                 return ss::make_ready_future<std::vector<ss::future<>>>(
+                   std::move(futures));
              })
       .then([](std::vector<ss::future<>> f) {
           return ss::when_all_succeed(f.begin(), f.end());
@@ -127,7 +132,9 @@ heartbeat_manager::do_dispatch_heartbeats(clock_type::time_point last_timeout) {
       });
 }
 
-ss::future<> heartbeat_manager::do_heartbeat(node_heartbeat&& r) {
+ss::future<> heartbeat_manager::do_heartbeat(
+  node_heartbeat&& r,
+  ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>> locks) {
     std::vector<group_id> groups(r.request.meta.size());
     for (size_t i = 0; i < groups.size(); ++i) {
         groups[i] = group_id(r.request.meta[i].group);
@@ -137,7 +144,7 @@ ss::future<> heartbeat_manager::do_heartbeat(node_heartbeat&& r) {
       std::move(r.request),
       rpc::client_opts(
         next_heartbeat_timeout(),
-        rpc::client_opts::sequential_dispatch::yes,
+        std::move(locks),
         rpc::compression_type::zstd,
         512));
     _dispatch_sem.signal();

@@ -6,6 +6,7 @@
 #include "storage/types.h"
 
 #include <seastar/core/semaphore.hh>
+#include <seastar/core/shared_ptr.hh>
 
 namespace raft {
 
@@ -75,14 +76,19 @@ public:
 private:
     ss::future<append_entries_request> share_request();
 
-    ss::future<> dispatch_one(model::node_id);
-    ss::future<result<append_entries_reply>>
-      dispatch_single_retry(model::node_id);
-    ss::future<result<append_entries_reply>>
-      do_dispatch_one(model::node_id, append_entries_request);
+    ss::future<> dispatch_one(
+      model::node_id, ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>>);
+    ss::future<result<append_entries_reply>> dispatch_single_retry(
+      model::node_id, ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>>);
+    ss::future<result<append_entries_reply>> do_dispatch_one(
+      model::node_id,
+      append_entries_request,
+      ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>>);
 
-    ss::future<result<append_entries_reply>>
-    send_append_entries_request(model::node_id n, append_entries_request req);
+    ss::future<result<append_entries_reply>> send_append_entries_request(
+      model::node_id,
+      append_entries_request,
+      ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>>);
     result<replicate_result> process_result(model::offset, model::term_id);
     bool is_follower_recovering(model::node_id);
     clock_type::time_point append_entries_timeout();

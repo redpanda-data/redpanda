@@ -93,13 +93,11 @@ public:
         return model::offset(_meta.commit_index);
     }
 
-    ss::future<> step_down() {
-        if (is_leader()) {
-            _ctxlog.trace("Resigned from leadership");
-            return seastar::with_semaphore(
-              _op_sem, 1, [this] { do_step_down(); });
-        }
-        return ss::make_ready_future<>();
+    ss::future<> step_down(model::term_id term) {
+        return seastar::with_semaphore(_op_sem, 1, [this, term] {
+            _meta.term = term;
+            do_step_down();
+        });
     }
 
     void remove_append_entries_callback() {

@@ -92,7 +92,6 @@ private:
     void setup_metrics(const std::optional<ss::sstring>&);
 
     ss::semaphore _memory;
-    ss::semaphore _sequential_dispatch{1};
     absl::flat_hash_map<uint32_t, std::unique_ptr<internal::response_handler>>
       _correlations;
     uint32_t _correlation_idx{0};
@@ -104,27 +103,17 @@ private:
 template<typename Input, typename Output>
 inline ss::future<client_context<Output>>
 transport::send_typed(Input r, uint32_t method_id, rpc::client_opts opts) {
-    using opt_units = std::optional<ss::semaphore_units<>>;
-    auto fut = ss::make_ready_future<opt_units>();
-    if (opts.dispatch == rpc::client_opts::sequential_dispatch::yes) {
-        fut = ss::get_units(_sequential_dispatch, 1)
-                .then([](ss::semaphore_units<> u) {
-                    return std::make_optional(std::move(u));
-                });
-    }
-    return fut
-      .then([this, r = std::move(r), method_id, opts](opt_units u) mutable {
-          auto b = std::make_unique<rpc::netbuf>();
-          b->set_compression(opts.compression);
-          b->set_min_compression_bytes(opts.min_compression_bytes);
-          auto raw_b = b.get();
-          raw_b->set_service_method_id(method_id);
-          return reflection::async_adl<Input>{}
-            .to(raw_b->buffer(), std::move(r))
-            .then([this, b = std::move(b), opts] {
-                return send(std::move(*b), opts);
-            })
-            .finally([u = std::move(u)] {});
+    _probe.request();
+
+    auto b = std::make_unique<rpc::netbuf>();
+    b->set_compression(opts.compression);
+    b->set_min_compression_bytes(opts.min_compression_bytes);
+    auto raw_b = b.get();
+    raw_b->set_service_method_id(method_id);
+    return reflection::async_adl<Input>{}
+      .to(raw_b->buffer(), std::move(r))
+      .then([this, b = std::move(b), opts = std::move(opts)]() mutable {
+          return send(std::move(*b), std::move(opts));
       })
       .then([this](std::unique_ptr<streaming_context> sctx) mutable {
           return parse_type<Output>(_in, sctx->get_header())

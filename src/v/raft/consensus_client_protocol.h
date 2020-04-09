@@ -33,19 +33,19 @@ public:
       : _impl(std::move(i)) {}
     ss::future<result<vote_reply>>
     vote(model::node_id targe_node, vote_request&& r, rpc::client_opts opts) {
-        return _impl->vote(targe_node, std::move(r), opts);
+        return _impl->vote(targe_node, std::move(r), std::move(opts));
     }
 
     ss::future<result<append_entries_reply>> append_entries(
       model::node_id targe_node,
       append_entries_request&& r,
       rpc::client_opts opts) {
-        return _impl->append_entries(targe_node, std::move(r), opts);
+        return _impl->append_entries(targe_node, std::move(r), std::move(opts));
     }
 
     ss::future<result<heartbeat_reply>> heartbeat(
       model::node_id targe_node, heartbeat_request&& r, rpc::client_opts opts) {
-        return _impl->heartbeat(targe_node, std::move(r), opts);
+        return _impl->heartbeat(targe_node, std::move(r), std::move(opts));
     }
 
 private:
