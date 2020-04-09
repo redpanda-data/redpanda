@@ -4,6 +4,7 @@ set(request_srcs
   requests/metadata_request.cc
   requests/list_groups_request.cc
   requests/find_coordinator_request.cc
+  requests/describe_configs_request.cc
   requests/offset_fetch_request.cc
   requests/kafka_batch_adapter.cc
   requests/produce_request.cc
