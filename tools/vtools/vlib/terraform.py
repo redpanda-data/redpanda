@@ -63,26 +63,16 @@ again.''')
 
 def destroy(vconfig, provider, module):
     deploy_key = _get_deployment_key(provider, module)
-    # Check the legacy key first, in case there's a remaining deployment using it.
-    # TODO remove this when everyone has updated to this version.
-    if tfvars_key not in vconfig.kv:
-        logging.info('No cluster deployments found. Nothing to destroy.')
-        return
-    else:
+
+    if deploy_key in vconfig.kv:
         _run_terraform_cmd(vconfig, 'destroy', provider, module,
-                           vconfig.kv[deploy_key])
+                       vconfig.kv[deploy_key])
         del vconfig.kv[deploy_key]
         return
 
-    if deploy_key not in vconfig.kv:
-        logging.info(
+    logging.info(
             f'''No cluster deployments found for module {module} in provider
 {provider}. Nothing to destroy.''')
-        return
-
-    _run_terraform_cmd(vconfig, 'destroy', provider, module,
-                       vconfig.kv[deploy_key])
-    del vconfig.kv[deploy_key]
 
 
 def _get_deployment_key(provider, module):
