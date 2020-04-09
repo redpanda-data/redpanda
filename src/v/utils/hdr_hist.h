@@ -1,5 +1,11 @@
 #pragma once
 
+// Must include first for a seastar transitive type only on GCC
+// where metrics_types needs cstdint as an include header
+#include <cstdint>
+
+// vectorized types. needed comment to allow clang-format
+// header sorting to not resort cstdint
 #include "seastarx.h"
 #include "static_deleter_fn.h"
 
@@ -10,7 +16,6 @@
 #include <hdr/hdr_histogram.h>
 
 #include <chrono>
-#include <cstdint>
 #include <memory>
 #include <utility>
 
