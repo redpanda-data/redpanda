@@ -63,7 +63,8 @@ private:
       std::vector<ss::semaphore_units<>>, std::vector<node_heartbeat>);
 
     /// \brief sends a batch to one node
-    ss::future<> do_heartbeat(node_heartbeat&&);
+    ss::future<> do_heartbeat(
+      node_heartbeat&&, ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>>);
 
     /// \brief notifies the consensus groups about append_entries log offsets
     /// \param n the physical node that owns heart beats

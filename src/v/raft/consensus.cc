@@ -107,8 +107,13 @@ consensus::success_reply consensus::update_follower_index(
         _ctxlog.debug("ignorring append entries reply, not leader");
         return success_reply::no;
     }
+    // If RPC request or response contains term T > currentTerm:
+    // set currentTerm = T, convert to follower (Raft paper: §5.1)
     if (reply.term > _meta.term) {
-        do_step_down();
+        _meta.term = reply.term;
+        (void)with_gate(_bg, [this, term = reply.term] {
+            return step_down(model::term_id(term));
+        });
         return success_reply::no;
     }
 
@@ -284,19 +289,17 @@ consensus::make_reader(storage::log_reader_config config) {
 /// performs no raft-state mutation other than resetting the timer
 void consensus::dispatch_vote() {
     // 5.2.1.4 - prepare next timeout
-    arm_vote_timeout();
 
     auto now = clock_type::now();
     auto expiration = _hbeat + _jit.base_duration();
-    if (now < expiration) {
-        // nothing to do.
-        return;
-    }
-    if (_vstate == vote_state::leader) {
-        return;
-    }
-    // do not vote when there are no voters available
-    if (!_conf.has_voters()) {
+
+    bool skip_vote = false;
+    skip_vote |= now < expiration;              // nothing to do.
+    skip_vote |= _vstate == vote_state::leader; // already a leader
+    skip_vote |= !_conf.has_voters();           // no voters
+
+    if (skip_vote) {
+        arm_vote_timeout();
         return;
     }
 
@@ -331,7 +334,8 @@ void consensus::dispatch_vote() {
             })
           .handle_exception([this](const std::exception_ptr& e) {
               _ctxlog.warn("Exception while voting - {}", e);
-          });
+          })
+          .finally([this] { arm_vote_timeout(); });
     });
 }
 void consensus::arm_vote_timeout() {
@@ -407,6 +411,15 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
     // raft.pdf: reply false if term < currentTerm (§5.1)
     if (r.term < _meta.term) {
         _probe.vote_request_term_older();
+        return ss::make_ready_future<vote_reply>(std::move(reply));
+    }
+
+    // Optimization, see Logcabin Raft protocol implementation
+    auto now = clock_type::now();
+    auto expiration = _hbeat + _jit.base_duration();
+    if (now < expiration) {
+        _ctxlog.trace("We already heard from the leader");
+        reply.granted = false;
         return ss::make_ready_future<vote_reply>(std::move(reply));
     }
 

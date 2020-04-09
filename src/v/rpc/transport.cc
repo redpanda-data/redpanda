@@ -147,7 +147,8 @@ transport::send(netbuf b, rpc::client_opts opts) {
             server_address())));
     }
     return ss::with_gate(
-      _dispatch_gate, [this, b = std::move(b), opts]() mutable {
+      _dispatch_gate,
+      [this, b = std::move(b), opts = std::move(opts)]() mutable {
           if (_correlations.find(_correlation_idx + 1) != _correlations.end()) {
               _probe.client_correlation_error();
               throw std::runtime_error(
@@ -175,17 +176,25 @@ transport::send(netbuf b, rpc::client_opts opts) {
           // send
           auto view = std::move(b).as_scattered();
           const auto sz = view.size();
-          _probe.request();
           return get_units(_memory, sz)
-            .then([this, v = std::move(view), f = std::move(fut)](
+            .then([this,
+                   v = std::move(view),
+                   f = std::move(fut),
+                   send_units = std::move(opts.send_units)](
                     ss::semaphore_units<> units) mutable {
                 /// background
                 (void)ss::with_gate(
                   _dispatch_gate,
-                  [this, v = std::move(v), u = std::move(units)]() mutable {
+                  [this,
+                   v = std::move(v),
+                   u = std::move(units),
+                   send_units = std::move(send_units)]() mutable {
                       auto msg_size = v.size();
                       return _out.write(std::move(v))
-                        .then([this, msg_size, u = std::move(u)] {
+                        .then([this,
+                               msg_size,
+                               u = std::move(u),
+                               send_units = std::move(send_units)] {
                             _probe.add_bytes_sent(msg_size);
                         });
                   })
@@ -212,9 +221,7 @@ ss::future<> transport::do_reads() {
                   _probe.header_corrupted();
                   return ss::make_ready_future<>();
               }
-              return dispatch(std::move(h.value())).then([this] {
-                  _probe.request_completed();
-              });
+              return dispatch(std::move(h.value()));
           });
       });
 }
@@ -241,6 +248,7 @@ ss::future<> transport::dispatch(header h) {
     auto pr = std::move(it->second);
     _correlations.erase(it);
     pr->set_value(std::move(ctx));
+    _probe.request_completed();
     return fut;
 }
 
