@@ -56,7 +56,7 @@ before deploying again.''')
 again.''')
         return
     terraform_vars = _parse_tf_vars(tfvars, provider, module)
-    vconfig.kv[_get_deployment_key] = terraform_vars
+    vconfig.kv[deploy_key] = terraform_vars
 
     _run_terraform_cmd(vconfig, 'apply', provider, module, terraform_vars)
 
