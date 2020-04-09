@@ -188,9 +188,7 @@ async_adl<raft::append_entries_request>::from(iobuf_parser& in) {
 
 void adl<raft::protocol_metadata>::to(
   iobuf& out, raft::protocol_metadata request) {
-    // NOTE: static to prevent allocation every time.
-    // this is an internal impl - follows the seastar model
-    static std::array<char, 5 * vint::max_length> staging{};
+    std::array<char, 5 * vint::max_length> staging{};
     auto idx = vint::serialize(request.group(), (int8_t*)staging.data());
     idx += vint::serialize(
       request.commit_index(), (int8_t*)staging.data() + idx);
@@ -242,9 +240,7 @@ struct hbeat_soa {
 
 template<typename T>
 void encode_one_vint(iobuf& out, const T& t) {
-    // NOTE: static to prevent allocation every time.
-    // internal structure to this function only - seastar memory model
-    static std::array<char, vint::max_length> staging{};
+    std::array<char, vint::max_length> staging{};
     // NOLINTNEXTLINE
     auto idx = vint::serialize(t(), (int8_t*)staging.data());
     out.append(staging.data(), idx);
