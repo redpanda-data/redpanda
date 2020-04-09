@@ -157,7 +157,7 @@ ss::future<append_result> segment::append(model::record_batch b) {
               *this,
               b.header());
             // cache always copies the batch
-            cache_put(std::move(b));
+            cache_put(b);
             return ret;
         });
     });

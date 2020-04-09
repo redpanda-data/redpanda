@@ -107,8 +107,10 @@ ss::future<ss::lw_shared_ptr<segment>> log_manager::do_make_log_segment(
       _config.base_dir, ntp, base_offset, term, version);
     stlog.trace("Creating new segment {}", path.string());
     ss::file_open_options opt{
-      .extent_allocation_size_hint = 32 << 20,
-      .sloppy_size = true,
+      /// We fallocate the full file segment
+      .extent_allocation_size_hint = 0,
+      /// don't allow truncate calls
+      .sloppy_size = false,
     };
     const auto flags = ss::open_flags::create | ss::open_flags::rw;
     return ss::open_file_dma(path.string(), flags, std::move(opt))

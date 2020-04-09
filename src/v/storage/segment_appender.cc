@@ -5,6 +5,7 @@
 #include "vassert.h"
 #include "vlog.h"
 
+#include <seastar/core/future-util.hh>
 #include <seastar/core/semaphore.hh>
 
 #include <fmt/format.h>
@@ -65,23 +66,17 @@ ss::future<> segment_appender::append(bytes_view s) {
 }
 
 ss::future<> segment_appender::append(const iobuf& io) {
-    auto in = iobuf::iterator_consumer(io.cbegin(), io.cend());
-    auto f = ss::make_ready_future<>();
-    auto c = in.consume(
-      io.size_bytes(), [this, &f](const char* src, size_t sz) {
-          f = f.then([this, src, sz] { return append(src, sz); });
-          return ss::stop_iteration::no;
+    return ss::do_for_each(
+      io.begin(), io.end(), [this](const iobuf::fragment& f) {
+          return append(f.get(), f.size());
       });
-    if (unlikely(c != io.size_bytes())) {
-        // TODO: fixme
-        return ss::make_exception_future<>(
-                 std::runtime_error("could not append data"))
-          .then([f = std::move(f)]() mutable { return std::move(f); });
-    }
-    return f;
 }
 ss::future<> segment_appender::append(const char* buf, const size_t n) {
     vassert(!_closed, "append() on closed segment: {}", *this);
+    if (_committed_offset + n > _fallocation_offset) {
+        return do_next_adaptive_fallocation().then(
+          [this, buf, n] { return append(buf, n); });
+    }
     size_t written = 0;
     while (likely(!_free_chunks.empty())) {
         const size_t sz = head().append(buf + written, n - written);
@@ -107,28 +102,38 @@ ss::future<> segment_appender::append(const char* buf, const size_t n) {
 }
 
 ss::future<> segment_appender::truncate(size_t n) {
-    return flush().then([this, n] { return _out.truncate(n); }).then([this, n] {
-        _committed_offset = n;
-        for (auto& c : _free_chunks) {
-            // reset any partial state, since after the truncate, it makes no
-            // sense to keep any old state/pointers/sizes, etc
-            c.reset();
-        }
-        auto& h = head();
-        const size_t align = h.alignment();
-        const size_t sz = ss::align_down<size_t>(_committed_offset, align);
-        char* buff = h.get_current();
-        h.set_position(sz);
+    return flush()
+      // NOTE: we do not tuncate on purpose. instead we rely on the
+      // header and payload checksum to detect if we've read past the end
+      // .then([this, n] { return _out.truncate(n); })
+      .then([this, n] {
+          _committed_offset = n;
+          for (auto& c : _free_chunks) {
+              // reset any partial state, since after the truncate, it makes no
+              // sense to keep any old state/pointers/sizes, etc
+              c.reset();
+          }
+          auto& h = head();
+          const size_t align = h.alignment();
+          const size_t sz = ss::align_down<size_t>(_committed_offset, align);
+          const size_t min_zero_pages = std::min(
+            align * 2, segment_appender_chunk::chunk_size);
+          char* buff = h.get_current();
+          std::memset(buff, 0, min_zero_pages);
+          h.set_position(sz);
 
-        return _out.dma_read(sz, buff, align, _opts.priority)
-          .then([n, align](size_t actual) {
-              const size_t expected = n % align;
-              if (actual != expected) {
-                  return size_missmatch_error("truncate::", expected, actual);
-              }
-              return ss::make_ready_future<>();
-          });
-    });
+          return _out.dma_read(sz, buff, align, _opts.priority)
+            .then([this, buff, sz, min_zero_pages, n, align](size_t actual) {
+                const size_t expected = n % align;
+                vassert(
+                  expected <= actual,
+                  "truncate read more than a page:{} - {}",
+                  actual,
+                  *this);
+                return _out.dma_write(sz, buff, min_zero_pages, _opts.priority)
+                  .then([this](size_t) { return _out.flush(); });
+            });
+      });
 }
 ss::future<> segment_appender::close() {
     vassert(!_closed, "close() on closed segment: {}", *this);
@@ -136,6 +141,25 @@ ss::future<> segment_appender::close() {
     return flush()
       .then([this] { return _out.truncate(_committed_offset); })
       .then([this] { return _out.close(); });
+}
+
+ss::future<> segment_appender::do_next_adaptive_fallocation() {
+    return ss::with_semaphore(
+             _concurrent_flushes,
+             _opts.number_of_chunks,
+             [this]() mutable {
+                 return _out.allocate(_fallocation_offset, _opts.falloc_step)
+                   .then([this] { _fallocation_offset += _opts.falloc_step; });
+             })
+      .handle_exception([this](std::exception_ptr e) {
+          vassert(
+            false,
+            "We failed to fallocate file. This usually means we have ran out "
+            "of disk space. Please check your data partition and ensure you "
+            "have enoufh space. Error: {} - {}",
+            e,
+            *this);
+      });
 }
 
 void segment_appender::dispatch_background_head_write() {
@@ -203,8 +227,10 @@ ss::future<> segment_appender::flush() {
                 // find the first  chunk, and move it to the front;
                 for (auto& c : _free_chunks) {
                     if (!c.is_empty()) {
-                        c.hook.unlink();            // remove from middle
-                        _free_chunks.push_front(c); // put in front half page
+                        // remove from middle
+                        c.hook.unlink();
+                        // put in front half page
+                        _free_chunks.push_front(c);
                         break;
                     }
                 }

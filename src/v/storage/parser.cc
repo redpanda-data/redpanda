@@ -112,7 +112,7 @@ ss::future<result<stop_parser>> continuous_batch_parser::consume_header() {
           if (auto computed_crc = model::internal_header_only_crc(o.value());
               unlikely(o.value().header_crc != computed_crc)) {
               vlog(
-                stlog.info,
+                stlog.trace,
                 "detected header corruption. stopping parser. Expected CRC of "
                 "{}, but got header CRC: {}",
                 computed_crc,
@@ -243,7 +243,7 @@ ss::future<result<stop_parser>> continuous_batch_parser::consume_records() {
           }
           if (unlikely(parser.bytes_left() != 0)) {
               vlog(
-                stlog.error,
+                stlog.trace,
                 "{} bytes left in to parse, but reached end",
                 parser.bytes_left());
               return storage::parser_errc::
