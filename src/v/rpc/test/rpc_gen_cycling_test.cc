@@ -4,6 +4,8 @@
 #include "rpc/types.h"
 #include "test_utils/fixture.h"
 
+#include <seastar/core/semaphore.hh>
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/util/defer.hh>
 
 #include <boost/test/tools/old/interface.hpp>
@@ -108,13 +110,16 @@ FIXTURE_TEST(ordering_test, rpc_integration_fixture) {
     client.connect().get();
     std::vector<ss::future<>> futures;
     futures.reserve(10);
+    ss::semaphore sem{1};
     for (uint64_t i = 0; i < 10; ++i) {
+        ss::semaphore_units<> u = ss::get_units(sem, 1).get0();
+        std::vector<ss::semaphore_units<>> units;
+        units.push_back(std::move(u));
+        auto units_ptr = ss::make_lw_shared(std::move(units));
         futures.push_back(
           client
             .counter(
-              echo::cnt_req{i},
-              rpc::client_opts(
-                rpc::no_timeout, rpc::client_opts::sequential_dispatch::yes))
+              echo::cnt_req{i}, rpc::client_opts(rpc::no_timeout, units_ptr))
             .then([i](rpc::client_context<echo::cnt_resp> r) {
                 BOOST_REQUIRE_EQUAL(r.data.current, i);
                 BOOST_REQUIRE_EQUAL(r.data.expected, i);
@@ -147,7 +152,7 @@ FIXTURE_TEST(rpc_mixed_compression, rpc_integration_fixture) {
                     echo::echo_req{.str = data},
                     rpc::client_opts(
                       rpc::no_timeout,
-                      rpc::client_opts::sequential_dispatch::no,
+                      {},
                       rpc::compression_type::zstd,
                       0 /*min bytes compress*/))
                   .get0();

@@ -6,6 +6,7 @@
 #include <seastar/core/iostream.hh>
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/semaphore.hh>
+#include <seastar/core/sharded.hh>
 #include <seastar/core/timer.hh>
 #include <seastar/net/api.hh>
 #include <seastar/net/socket_defs.hh>
@@ -76,28 +77,31 @@ static_assert(
 uint32_t checksum_header_only(const header& h);
 
 struct client_opts {
+    using container_t = std::vector<ss::semaphore_units<>>;
     /// \brief used to gurantee that we serialize writes. Holds a lock, until
-    /// we dispatch the write to the batch_output_stream, then releases the lock
-    using sequential_dispatch
-      = ss::bool_class<struct rpc_client_sequential_send>;
-
+    /// we dispatch the write to the batch_output_stream, then releases the
+    /// lock
     client_opts(
       clock_type::time_point client_send_timeout,
-      sequential_dispatch disp,
+      ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>> send_units,
       compression_type ct,
       size_t compression_bytes) noexcept
       : timeout(client_send_timeout)
-      , dispatch(disp)
       , compression(ct)
+      , send_units(ss::make_foreign(send_units))
       , min_compression_bytes(compression_bytes) {}
 
     client_opts(
       clock_type::time_point client_send_timeout,
-      sequential_dispatch sq) noexcept
-      : client_opts(client_send_timeout, sq, compression_type::none, 1024) {}
+      ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>> send_units) noexcept
+      : client_opts(
+        client_send_timeout,
+        std::move(send_units),
+        compression_type::none,
+        1024) {}
 
     explicit client_opts(clock_type::time_point client_send_timeout) noexcept
-      : client_opts(client_send_timeout, sequential_dispatch::no) {}
+      : client_opts(client_send_timeout, ss::make_lw_shared<container_t>({})) {}
 
     client_opts(const client_opts&) = delete;
     client_opts(client_opts&&) = default;
@@ -107,8 +111,8 @@ struct client_opts {
     ~client_opts() noexcept = default;
 
     clock_type::time_point timeout;
-    sequential_dispatch dispatch;
     compression_type compression;
+    ss::foreign_ptr<ss::lw_shared_ptr<container_t>> send_units;
     size_t min_compression_bytes;
 };
 
