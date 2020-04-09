@@ -31,8 +31,12 @@ record_batch_reader make_foreign_record_batch_reader(record_batch_reader&& r) {
         }
 
         ss::future<storage_t> do_load_slice(timeout_clock::time_point t) final {
+            auto shard = _ptr.get_owner_shard();
+            if (shard == ss::this_shard_id()) {
+                return _ptr->do_load_slice(t);
+            }
             // TODO: this function should take an SMP group
-            return ss::smp::submit_to(_ptr.get_owner_shard(), [this, t] {
+            return ss::smp::submit_to(shard, [this, t] {
                 // must convert it to a foreign remote
                 return _ptr->do_load_slice(t)
                   .then([](storage_t recs) {
