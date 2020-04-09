@@ -66,12 +66,12 @@ def destroy(vconfig, provider, module):
 
     if deploy_key in vconfig.kv:
         _run_terraform_cmd(vconfig, 'destroy', provider, module,
-                       vconfig.kv[deploy_key])
+                           vconfig.kv[deploy_key])
         del vconfig.kv[deploy_key]
         return
 
     logging.info(
-            f'''No cluster deployments found for module {module} in provider
+        f'''No cluster deployments found for module {module} in provider
 {provider}. Nothing to destroy.''')
 
 
