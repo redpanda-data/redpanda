@@ -28,13 +28,20 @@ public:
 
     static constexpr const size_t chunks_no_buffer = 8;
     static constexpr const size_t chunk_size = chunk::chunk_size;
+    static constexpr const size_t fallocation_step = 32 * (1 << 20); // 32MB
 
     struct options {
         options(ss::io_priority_class p, size_t chunks_no)
+          : options(p, chunks_no, fallocation_step) {}
+
+        options(ss::io_priority_class p, size_t chunks_no, size_t step)
           : priority(p)
-          , number_of_chunks(chunks_no) {}
+          , number_of_chunks(chunks_no)
+          , falloc_step(step) {}
+
         ss::io_priority_class priority;
         size_t number_of_chunks{chunks_no_buffer};
+        size_t falloc_step{fallocation_step};
     };
 
     segment_appender(ss::file f, options opts);
@@ -60,11 +67,13 @@ private:
     void clear();
     chunk& head() { return _free_chunks.front(); }
     void dispatch_background_head_write();
+    ss::future<> do_next_adaptive_fallocation();
 
     ss::file _out;
     options _opts;
     bool _closed{false};
     size_t _committed_offset{0};
+    size_t _fallocation_offset{0};
     size_t _bytes_flush_pending{0};
     ss::semaphore _concurrent_flushes{1};
     underlying_t _free_chunks;
