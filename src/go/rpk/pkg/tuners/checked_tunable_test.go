@@ -10,6 +10,7 @@ import (
 type checkedTunerMock struct {
 	checkCalled bool
 	tuneCalled  bool
+	severity    Severity
 	supported   func() (bool, string)
 	check       func() *CheckResult
 	tune        func() TuneResult
@@ -29,7 +30,7 @@ func (c *checkedTunerMock) Check() *CheckResult {
 }
 
 func (c *checkedTunerMock) GetSeverity() Severity {
-	return Fatal
+	return c.severity
 }
 
 func (c *checkedTunerMock) GetRequiredAsString() string {
@@ -50,6 +51,7 @@ func TestTune(t *testing.T) {
 		name             string
 		check            func() *CheckResult
 		tune             func() TuneResult
+		severity         Severity
 		want             TuneResult
 		expectTuneCalled bool
 	}{
@@ -63,6 +65,7 @@ func TestTune(t *testing.T) {
 			tune: func() TuneResult {
 				return NewTuneResult(false)
 			},
+			severity:         Fatal,
 			want:             NewTuneResult(false),
 			expectTuneCalled: false,
 		},
@@ -77,10 +80,25 @@ func TestTune(t *testing.T) {
 			tune: func() TuneResult {
 				return NewTuneResult(false)
 			},
+			severity: Fatal,
 			want: NewTuneError(errors.New(
-				"System tuning was not succesful. Check" +
-					" 'mocked check' failed. Required: 'r', current: 'smth'",
+				"check 'mocked check' failed after its associated tuners ran. Severity: Fatal, required value: 'r', current value: 'smth'",
 			)),
+			expectTuneCalled: true,
+		},
+		{
+			name: "should not fail if the checker fails and its severity is Warning",
+			check: func() *CheckResult {
+				return &CheckResult{
+					IsOk:    false,
+					Current: "smth",
+				}
+			},
+			tune: func() TuneResult {
+				return NewTuneResult(false)
+			},
+			severity:         Warning,
+			want:             NewTuneResult(false),
 			expectTuneCalled: true,
 		},
 	}
@@ -90,8 +108,9 @@ func TestTune(t *testing.T) {
 				supported: func() (bool, string) {
 					return true, ""
 				},
-				check: tt.check,
-				tune:  tt.tune,
+				check:    tt.check,
+				tune:     tt.tune,
+				severity: tt.severity,
 			}
 			ct := NewCheckedTunable(c, c.Tune, c.CheckIfSupported, false)
 			got := ct.Tune()
