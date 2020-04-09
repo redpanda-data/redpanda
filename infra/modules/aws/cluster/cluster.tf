@@ -32,16 +32,6 @@ resource "aws_instance" "node" {
     host        = self.public_ip
     private_key = file(var.private_key_path)
   }
-
-  user_data = <<SCRIPT
-#! /bin/bash
-set -ex
-sudo cp /home/${var.distro_ssh_user[var.distro]}/.ssh/* /root/.ssh/
-sudo sed -i 's/PermitRootLogin.*//' /etc/ssh/sshd_config
-sudo bash -c 'echo PermitRootLogin yes >> /etc/ssh/sshd_config'
-sudo systemctl restart sshd
-sudo bash -c 'echo ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCjTM1NUIW/5VeG3bmwl1bJ351iQKLydfjchmgL8YVJcuF01P18APhX2R5NuGaIb31ilE5QSkIm2EMNdKXSXGd/8cz27A84+pBVzrLUXyRd3ia9aK3RQX398TW0zYAUaps93+oLlr1ycENmJfyxhHhi7aOPg2kG+hfwpraNBxP+UmdY1bocU9MZ6v48ER2VYYGi1FvGj2vDa+bCSPKITn12nsvAsuAlrBEpBnVGrwJ73CXITWOnIEDtOgs6OsZVzWYy8YP0lHGDn5UDS0qHWKKhXw+cdFHYs43Qs/cf+9F3A7ftmEXuZajsiMMFtCXR+K3/qYEmelRH7YJ7g+Nqhilx ivo@box >> /root/.ssh/authorized_keys'
-SCRIPT
 }
 
 resource "aws_security_group" "node_sec_group" {
