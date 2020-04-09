@@ -188,7 +188,8 @@ tags
 src/go/metrics/env.yaml
 
 # Infra
-infra/modules/cluster/ssh_config*
+infra/modules/**/ssh_config*
+*tfstate*
 .vtools.db
 
 # VSCode Java

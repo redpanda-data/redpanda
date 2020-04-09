@@ -2,8 +2,8 @@ import os
 import time
 import json
 from datetime import datetime, timedelta
-from git import Repo
 from absl import logging
+from . import git
 from . import shell
 from . import fs
 
@@ -54,9 +54,7 @@ def is_ssh_key_path_timestamp_valid(path):
 
 
 def get_key_comment():
-    r = Repo('.', search_parent_directories=True)
-    reader = r.config_reader()
-    email = reader.get_value("user", "email")
+    email = git.get_email('.')
     return "%s.%s" % (email, time.strftime("%Y.%m.%d"))
 
 
@@ -70,7 +68,9 @@ def generate_keys(env=os.environ):
     return root
 
 
-def generate_key(path, comment, password=None, env=os.environ):
+def generate_key(path, comment=None, password='""', env=os.environ):
+    if comment is None:
+        comment = get_key_comment()
     cmd = f'ssh-keygen -t rsa -b 4096 -f {path} -C {comment}'
     pub_path = f'{path}.pub'
     if password is not None:

@@ -5,10 +5,9 @@ import subprocess
 import tempfile
 import click
 import git as g
-import sys
-from configparser import NoSectionError
 from absl import logging
 from ..fmt import commands as fmt
+from ..vlib import git as vgit
 
 
 @click.group(short_help='git niceties')
@@ -16,35 +15,11 @@ def git():
     pass
 
 
-def read_git_value(reader, config_section, config_name):
-    """returns the git config value for config_name under config_section
-    
-    If the value doesn't exist an exception is raised that will cause the
-    verification to exit with an error status.
-    """
-    try:
-        return reader.get_value(config_section, config_name)
-    except NoSectionError:
-        raise click.ClickException(
-            f'failed to read {config_name} config under the {config_section} section (check your .git/config)'
-        )
-
-
 @git.command(short_help='verify git user and password end in vectorized.io')
 @click.option("--path", default=".", help="path to git repo")
 def verify(path):
-    """verify the git user name and password end in vectorized.io"""
-    r = g.Repo(path, search_parent_directories=True)
-    reader = r.config_reader()
-    email = read_git_value(reader, "user", "email")
-    sendmail_smtp = read_git_value(reader, "sendemail", "smtpuser")
-
-    for mail in [email, sendmail_smtp]:
-        if not mail.endswith("@vectorized.io"):
-            raise click.ClickException(
-                f'Invalid email({email}), use @vectorized.io')
-    git_root = r.git.rev_parse("--show-toplevel")
-    logging.info(f"valid repo settings for: {git_root}")
+    root = vgit.verify(path)
+    logging.info(f"valid repo settings for: {root}")
 
 
 @git.command(short_help='mildly opinionated patch submission.')

@@ -105,27 +105,56 @@ function vtools_dev_cluster() {
   (
     set -x
     set -o errexit
-    set -o nounset
     set -o pipefail
-    local arg=${1:-""}
-    local deploy_args=""
-    local raid=()
+    local deploy_args=()
+    local ansible_vars=()
+    local raid=false
+    local provider="aws"
     local tld=$(git rev-parse --show-toplevel 2>/dev/null)
-    if [[ $arg == "raid" ]]; then
-      deploy_args="instance_type=m5ad.4xlarge"
-      raid=(--var 'with_raid=true')
-    fi
+    while [ -n "$1" ]; do
+      case "$1" in
+        --raid)
+          raid=true
+          ;;
+        --provider)
+          provider="$2"
+          shift
+          ;;
+      esac
+      shift
+    done
+
+    deploy_args=(--provider "$provider")
+    case "$provider" in
+      aws)
+        if [[ $raid == true ]]; then
+          deploy_args+=("instance_type=m5ad.4xlarge")
+          ansible_vars=(--var 'with_raid=true')
+        fi
+        ;;
+      gcp)
+        if [[ $raid == true ]]; then
+          # TODO support RAID on GCP
+        fi
+        ;;
+    esac
+    vtools git verify
     vtools build go --targets rpk
     vtools build cpp --clang --build-type release --targets=redpanda
     rm $tld/build/release/clang/dist/rpm/RPMS/x86_64/redpanda-0.0-dev.x86_64.rpm || true
     vtools build pkg --format rpm --clang --build-type release
-    vtools deploy cluster "${deploy_args}" nodes=3
+    vtools deploy cluster ${deploy_args[@]} nodes=3
     vtools deploy ansible \
+      --provider "$provider" \
+      --playbook=$tld/infra/ansible/playbooks/add-root-user.yml
+    vtools deploy ansible \
+      --provider "$provider" \
       --playbook=$tld/infra/ansible/playbooks/provision-test-node.yml \
-      ${raid[@]} \
+      ${ansible_vars[@]} \
       --var "rp_pkg=$tld/build/release/clang/dist/rpm/RPMS/x86_64/redpanda-0.0-dev.x86_64.rpm"
 
     vtools deploy ansible \
+      --provider "$provider" \
       --playbook=$tld/infra/ansible/playbooks/redpanda-start.yml
   )
 }
