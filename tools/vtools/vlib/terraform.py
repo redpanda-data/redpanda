@@ -39,24 +39,54 @@ known_tfvars = {
 
 
 def apply(vconfig, provider, module, tfvars):
+    # Check the legacy key first, in case there's a remaining deployment using it.
+    # TODO remove this when everyone has updated to this version.
     if tfvars_key in vconfig.kv:
         logging.error(
             f'''Found another deployment with vars {vconfig.kv[tfvars_key]}.
-Please run `vtools deploy cluster --destroy true` before deploying again.''')
+Please run `vtools deploy cluster --provider [gcp, aws] --destroy true`
+before deploying again.''')
+        return
+    deploy_key = _get_deployment_key(provider, module)
+    if deploy_key in vconfig.kv:
+        logging.error(
+            f'''Found another deployment for module {module} in provider
+{provider}, with vars {vconfig.kv[tfvars_key]}. Please run
+`vtools deploy cluster --provider {provider} --destroy true` before deploying
+again.''')
         return
     terraform_vars = _parse_tf_vars(tfvars, provider, module)
-    vconfig.kv[tfvars_key] = terraform_vars
+    vconfig.kv[_get_deployment_key] = terraform_vars
 
     _run_terraform_cmd(vconfig, 'apply', provider, module, terraform_vars)
 
 
 def destroy(vconfig, provider, module):
+    deploy_key = _get_deployment_key(provider, module)
+    # Check the legacy key first, in case there's a remaining deployment using it.
+    # TODO remove this when everyone has updated to this version.
     if tfvars_key not in vconfig.kv:
         logging.info('No cluster deployments found. Nothing to destroy.')
         return
+    else:
+        _run_terraform_cmd(vconfig, 'destroy', provider, module,
+                           vconfig.kv[deploy_key])
+        del vconfig.kv[deploy_key]
+        return
+
+    if deploy_key not in vconfig.kv:
+        logging.info(
+            f'''No cluster deployments found for module {module} in provider
+{provider}. Nothing to destroy.''')
+        return
+
     _run_terraform_cmd(vconfig, 'destroy', provider, module,
-                       vconfig.kv[tfvars_key])
-    del vconfig.kv[tfvars_key]
+                       vconfig.kv[deploy_key])
+    del vconfig.kv[deploy_key]
+
+
+def _get_deployment_key(provider, module):
+    return f'deploy.{provider}.{module}'
 
 
 def _run_terraform_cmd(vconfig, action, provider, module, tfvars):
