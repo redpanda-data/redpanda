@@ -20,3 +20,4 @@
       access: proxy
       url: 'http://localhost:9090'
       basicAuth: false
+    grafana_dashboards_dir: '{{ playbook_dir }}/grafana_dashboards'
