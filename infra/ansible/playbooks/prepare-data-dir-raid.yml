@@ -1,4 +1,4 @@
-- hosts: all
+- hosts: redpanda
   pre_tasks:
   - set_fact:
       device_info: "{{ hostvars[inventory_hostname].ansible_devices }}"

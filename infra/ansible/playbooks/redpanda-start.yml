@@ -1,4 +1,4 @@
-- hosts: all
+- hosts: redpanda
   tasks:
   - name: ensure /etc/redpanda exists
     file:

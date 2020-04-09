@@ -90,11 +90,15 @@ def ansible(conf, playbook, ssh_key, provider, log, var):
     ssh_user = tf_out['ssh_user']['value']
     os.makedirs(vconfig.ansible_dir, exist_ok=True)
 
-    # write hosts.ini
+    # write hosts.ini: n-1 redpanda machines; 1 monitor
     invfile = f'{vconfig.ansible_tmp_dir}/hosts.ini'
+    ips = tf_out['ip']['value']
+    pips = tf_out['private_ips']['value']
     with open(invfile, 'w') as f:
-        zipped = zip(tf_out['ip']['value'], tf_out['private_ips']['value'])
-        for i, (ip, pip) in enumerate(zipped):
+        f.write('[redpanda]\n')
+        for i, (ip, pip) in enumerate(zip(ips, pips)):
+            if i + 1 == len(ips):
+                f.write('[monitor]\n')
             f.write(f'{ip} ansible_user={ssh_user} ansible_become=True '
                     f'private_ip={pip} id={i+1}\n')
 

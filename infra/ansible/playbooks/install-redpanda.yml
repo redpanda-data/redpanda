@@ -1,4 +1,4 @@
-- hosts: all
+- hosts: redpanda
   tasks:
   - name: ensure rp_pkg variable is defined
     assert:
