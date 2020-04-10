@@ -49,3 +49,10 @@ rp_test(
   SOURCES directory_walker_test.cc
   LIBRARIES Seastar::seastar_testing
 )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME outcome_utils_test
+  SOURCES outcome_utils_test.cc
+  LIBRARIES Seastar::seastar_testing
+)
