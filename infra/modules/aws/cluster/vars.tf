@@ -37,7 +37,7 @@ variable "distro_ami" {
 variable "distro_ssh_user" {
   type = map(string)
   default = {
-    "debian-stretch" = "root"
+    "debian-stretch" = "admin"
     "fedora-31"      = "fedora"
     "ubuntu-bionic"  = "ubuntu"
     "rhel-8"         = "ec2-user"
