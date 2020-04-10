@@ -1,0 +1,21 @@
+{
+    "compilerOptions": {
+    "outDir": "../../build/node/output/",
+    "baseUrl": "../../build/node/node_modules/",
+    "paths": {
+        "*": ["*"],
+        "buffer": ["@types/node/"],
+        "mocha": ["@types/mocha/"]
+    },
+    "newLine": "lf"
+   },
+  "include": [
+      "modules/rpc",
+      "modules/hashing",
+      "test"
+  ],
+  "exclude": [
+      "node_modules/",
+      "packages/"
+  ]
+}
