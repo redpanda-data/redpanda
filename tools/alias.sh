@@ -142,21 +142,22 @@ function vtools_dev_cluster() {
     vtools git verify
     vtools build go --targets rpk
     vtools build cpp --clang --build-type release --targets=redpanda
-    rm $tld/build/release/clang/dist/rpm/RPMS/x86_64/redpanda-0.0-dev.x86_64.rpm || true
-    vtools build pkg --format rpm --clang --build-type release
+    rm -rf $tld/build/release/clang/dist/debian/redpanda || true
+    vtools build pkg --format deb --clang --build-type release
+    local pkg_file=$(find $tld/build/release/clang/dist/debian/ -iname "redpanda_*dev*.deb")
     vtools deploy cluster ${deploy_args[@]} nodes=4
     vtools deploy ansible \
       --provider "$provider" \
       --playbook=$tld/infra/ansible/playbooks/provision-test-node.yml \
       ${ansible_vars[@]} \
-      --var "rp_pkg=$tld/build/release/clang/dist/rpm/RPMS/x86_64/redpanda-0.0-dev.x86_64.rpm"
+      --var "rp_pkg=$pkg_file"
 
     vtools deploy ansible \
       --provider "$provider" \
       --playbook=$tld/infra/ansible/playbooks/redpanda-start.yml
 
-    vtools deploy ansible \
-      --provider "$provider" \
-      --playbook=$tld/infra/ansible/playbooks/deploy-prometheus-grafana.yml
+    # vtools deploy ansible \
+    #  --provider "$provider" \
+    #  --playbook=$tld/infra/ansible/playbooks/deploy-prometheus-grafana.yml
   )
 }
