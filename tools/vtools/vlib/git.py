@@ -27,11 +27,15 @@ def verify(path):
     sendmail_smtp = read_git_value(reader, "sendemail", "smtpuser")
 
     for mail in [email, sendmail_smtp]:
-        if not mail.endswith("@vectorized.io"):
+        if not verify_is_vectorized_address(mail):
             raise click.ClickException(
                 f'Invalid email({email}), use @vectorized.io')
     git_root = r.git.rev_parse("--show-toplevel")
     logging.info(f"valid repo settings for: {git_root}")
+
+
+def verify_is_vectorized_address(email):
+    return email is not None and email.endswith("@vectorized.io")
 
 
 def get_email(path):
