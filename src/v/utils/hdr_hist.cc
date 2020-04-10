@@ -135,10 +135,10 @@ std::ostream& operator<<(std::ostream& o, const hdr_hist::measurement& m) {
     return o << "{duration:" << m.compute_duration_micros() << "us}";
 }
 std::ostream& operator<<(std::ostream& o, const hdr_hist& h) {
-    return o << "{p10=" << human::latency{(double)h.get_value_at(.1)}
-             << ",p50=" << human::latency{(double)h.get_value_at(.5)}
-             << ",p90=" << human::latency{(double)h.get_value_at(.9)}
-             << ",p99=" << human::latency{(double)h.get_value_at(.99)}
-             << ",p999=" << human::latency{(double)h.get_value_at(.990)}
-             << ",max=" << human::latency{(double)h.get_value_at(1)} << "}";
+    return o << "{p10=" << human::latency{(double)h.get_value_at(10.0)}
+             << ",p50=" << human::latency{(double)h.get_value_at(50.0)}
+             << ",p90=" << human::latency{(double)h.get_value_at(90.0)}
+             << ",p99=" << human::latency{(double)h.get_value_at(99.0)}
+             << ",p999=" << human::latency{(double)h.get_value_at(99.9)}
+             << ",max=" << human::latency{(double)h.get_value_at(100.0)} << "}";
 };
