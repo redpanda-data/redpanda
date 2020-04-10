@@ -20,7 +20,7 @@ variable "nodes" {
 variable "image" {
   # See https://cloud.google.com/compute/docs/images#os-compute-support
   # for an updated list.
-  default = "rhel-cloud/rhel-8"
+  default = "debian-cloud/debian-9"
 }
 
 variable machine_type {

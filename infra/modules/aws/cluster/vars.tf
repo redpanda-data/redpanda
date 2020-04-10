@@ -9,7 +9,7 @@ variable "owner" {
 }
 
 variable "distro" {
-  default = "fedora-31"
+  default = "debian-stretch"
 }
 
 variable instance_type {
@@ -21,16 +21,23 @@ variable "public_key_path" {}
 variable "distro_ami" {
   type = map(string)
   default = {
+    # https://wiki.debian.org/Cloud/AmazonEC2Image/Stretch
+    "debian-stretch" = "ami-0d270a69ac13b22c3"
+
+    # https://alt.fedoraproject.org/cloud/
     "fedora-31"      = "ami-0e82cc6ce8f393d4b"
-    "ubuntu-bionic"  = "ami-0dd655843c87b6930"
-    "rhel-8"         = "ami-00896a8434a915866"
-    "amazon-linux-2" = "ami-024c80694b5b3e51a"
+
+    # https://us-west-2.console.aws.amazon.com/ec2/v2/home?region=us-west-2#LaunchInstanceWizard:
+    "ubuntu-bionic"  = "ami-09b69ac16c0287f96"
+    "rhel-8"         = "ami-087c2c50437d0b80d"
+    "amazon-linux-2" = "ami-0d6621c01e8c2de2c"
   }
 }
 
 variable "distro_ssh_user" {
   type = map(string)
   default = {
+    "debian-stretch" = "root"
     "fedora-31"      = "fedora"
     "ubuntu-bionic"  = "ubuntu"
     "rhel-8"         = "ec2-user"
