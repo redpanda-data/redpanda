@@ -30,3 +30,9 @@
       state: present
     when:
     - '".deb" in rp_pkg'
+
+  - name: set data dir file perms
+    file:
+      path: /var/lib/redpanda/data
+      owner: redpanda
+      group: redpanda 
