@@ -51,7 +51,7 @@ before deploying again.''')
     if deploy_key in vconfig.kv:
         logging.error(
             f'''Found another deployment for module {module} in provider
-{provider}, with vars {vconfig.kv[tfvars_key]}. Please run
+{provider}, with vars {vconfig.kv[deploy_key]}. Please run
 `vtools deploy cluster --provider {provider} --destroy true` before deploying
 again.''')
         return
