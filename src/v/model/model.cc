@@ -194,4 +194,26 @@ std::ostream& operator<<(std::ostream& o, const model::broker& b) {
       b.rack(),
       b.properties());
 }
+
+std::ostream& operator<<(std::ostream& o, const topic_metadata& t_md) {
+    fmt::print(
+      o, "{{topic_namespace: {}, partitons: {}}}", t_md.tp_ns, t_md.partitions);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const partition_metadata& p_md) {
+    fmt::print(
+      o,
+      "{{id: {}, leader_id: {}, replicas: {}}}",
+      p_md.id,
+      p_md.leader_node,
+      p_md.replicas);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const broker_shard& bs) {
+    fmt::print(o, "{{node_id: {}, shard: {}}}", bs.node_id, bs.shard);
+    return o;
+}
+
 } // namespace model

@@ -95,6 +95,7 @@ struct broker_shard {
     /// however, seastar uses unsized-ints (unsigned)
     /// and for predictability we need fixed-sized ints
     uint32_t shard;
+    friend std::ostream& operator<<(std::ostream&, const broker_shard&);
 };
 
 struct partition_metadata {
@@ -104,6 +105,8 @@ struct partition_metadata {
     partition_id id;
     std::vector<broker_shard> replicas;
     std::optional<model::node_id> leader_node;
+
+    friend std::ostream& operator<<(std::ostream&, const partition_metadata&);
 };
 
 struct topic_namespace_view {
@@ -198,6 +201,8 @@ struct topic_metadata {
       : tp_ns(std::move(v)) {}
     topic_namespace tp_ns;
     std::vector<partition_metadata> partitions;
+
+    friend std::ostream& operator<<(std::ostream&, const topic_metadata&);
 };
 } // namespace model
 

@@ -8,6 +8,8 @@ enum class errc {
     success = 0, // must be 0
     disconnected_endpoint,
     exponential_backoff,
+    missing_node_rpc_client,
+    client_request_timeout
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "rpc::errc"; }
@@ -20,6 +22,10 @@ struct errc_category final : public std::error_category {
             return "rpc::errc::disconnected_endpoint(node down)";
         case errc::exponential_backoff:
             return "rpc::errc::exponential_backoff";
+        case errc::missing_node_rpc_client:
+            return "rpc::errc::missing_node_rpc_client";
+        case errc::client_request_timeout:
+            return "rpc::errc::client_request_timeout";
         default:
             return "rpc::errc::unknown";
         }

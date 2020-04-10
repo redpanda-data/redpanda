@@ -4,6 +4,29 @@
 #include "seastarx.h"
 
 #include <seastar/core/future-util.hh>
+
+/// Helper to wrap type with a result if it is not one already. It works for
+/// both types being a result already and for futures returning result
+namespace internal {
+template<typename T>
+struct result_wrap {
+    using type = result<T>;
+};
+
+template<typename Inner>
+struct result_wrap<ss::future<Inner>> {
+    using type = ss::future<typename result_wrap<Inner>::type>;
+};
+
+template<typename Inner>
+struct result_wrap<result<Inner>> {
+    using type = result<Inner>;
+};
+} // namespace internal
+
+template<typename T>
+using result_wrap_t = typename internal::result_wrap<T>::type;
+
 /// \brief Wait for either a future, or a timeout, whichever comes first
 ///        same as ss::with_timeout(timeout, future); except that we
 ///        do not set the exception, only the result with default error code

@@ -6,8 +6,6 @@ namespace raft {
 
 enum class errc {
     success = 0, // must be 0
-    missing_tcp_client,
-    timeout,
     disconnected_endpoint,
     exponential_backoff,
     non_majority_replication,
@@ -24,10 +22,6 @@ struct errc_category final : public std::error_category {
         switch (static_cast<errc>(c)) {
         case errc::success:
             return "raft::errc::success";
-        case errc::missing_tcp_client:
-            return "raft::errc::missing_tcp_client";
-        case errc::timeout:
-            return "raft::errc::timeout";
         case errc::disconnected_endpoint:
             return "raft::errc::disconnected_endpoint(node down)";
         case errc::exponential_backoff:
