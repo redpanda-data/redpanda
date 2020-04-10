@@ -20,6 +20,12 @@
           - xfsprogs
         state: present
 
+  - name: add additional debian repos
+    when: ansible_os_family == 'Debian'
+    apt_repository:
+      repo: deb http://deb.debian.org/debian stretch-backports main
+      state: present
+
   - name: install base deps - debian
     package:
       name:
