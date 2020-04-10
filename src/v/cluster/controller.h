@@ -56,7 +56,7 @@ public:
         return leader_id;
     }
 
-    ss::future<> process_join_request(model::broker broker);
+    ss::future<result<join_reply>> process_join_request(model::broker);
 
     ss::future<std::vector<topic_result>> create_topics(
       std::vector<topic_configuration> topics,
@@ -139,17 +139,23 @@ private:
       raft::group_id,
       std::vector<model::broker_shard>);
 
-    ss::future<> dispatch_join_to_seed_server(seed_iterator it);
+    ss::future<result<join_reply>>
+    dispatch_join_to_seed_server(seed_iterator it);
+
     void join_raft0();
+    bool is_already_member() const {
+        return _raft0->config().contains_broker(_self.id());
+    }
 
     template<typename Func>
-    ss::futurize_t<std::result_of_t<Func(controller_client_protocol&)>>
-    dispatch_rpc_to_leader(Func&&);
+    auto dispatch_rpc_to_leader(Func&&);
 
-    ss::future<join_reply>
+    ss::future<result<join_reply>>
     dispatch_join_to_remote(const config::seed_server&, model::broker);
 
     void recover_assignment_in_background(partition_assignment);
+    ss::future<std::vector<topic_result>> process_autocreate_response(
+      std::vector<topic_configuration>, result<create_topics_reply>);
 
     model::broker _self;
     std::vector<config::seed_server> _seed_servers;

@@ -18,9 +18,11 @@
 #include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/future.hh>
 #include <seastar/core/sleep.hh>
 
 #include <chrono>
+#include <exception>
 namespace cluster {
 metadata_dissemination_service::metadata_dissemination_service(
   ss::sharded<metadata_cache>& mc, ss::sharded<rpc::connection_cache>& clients)
@@ -76,64 +78,80 @@ wait_for_next_retry(std::chrono::seconds sleep_for, ss::abort_source& as) {
 
 ss::future<> metadata_dissemination_service::update_metadata_with_retries(
   std::vector<model::node_id> ids) {
-    using vec_t = std::vector<model::node_id>;
-    struct retry_meta {
-        vec_t ids;
-        bool success = false;
-        vec_t::const_iterator next;
-        exp_backoff_policy backoff_policy;
-    };
     return ss::do_with(
-      retry_meta{.ids = std::move(ids)}, [this](retry_meta& meta) {
+      request_retry_meta{.ids = std::move(ids)},
+      [this](request_retry_meta& meta) {
           meta.next = std::cbegin(meta.ids);
           return ss::do_until(
             [this, &meta] { return meta.success || _bg.is_closed(); },
             [this, &meta]() mutable {
-                return dispatch_get_metadata_update(*meta.next)
-                  .then([this, &meta] { meta.success = true; })
-                  .handle_exception(
-                    [this, &meta](const std::exception_ptr& ex) {
-                        vlog(
-                          clusterlog.warn,
-                          "Unable to initialize metadata using node {} - {}",
-                          *meta.next,
-                          ex);
-                        meta.next++;
-                        if (meta.next != meta.ids.end()) {
-                            return ss::make_ready_future<>();
-                        }
-                        // start from the beggining, after backoff elapsed
-                        meta.next = std::cbegin(meta.ids);
-                        return wait_for_next_retry(
-                          std::chrono::seconds(
-                            meta.backoff_policy.next_backoff()),
-                          _as);
-                    });
+                return do_request_metadata_update(meta);
             });
       });
-} // namespace cluster
+}
 
-ss::future<> metadata_dissemination_service::dispatch_get_metadata_update(
+ss::future<> metadata_dissemination_service::do_request_metadata_update(
+  request_retry_meta& meta) {
+    return dispatch_get_metadata_update(*meta.next)
+      .then([this, &meta](result<get_leadership_reply> r) {
+          return process_get_update_reply(std::move(r), meta);
+      })
+      .handle_exception([](const std::exception_ptr& e) {
+          vlog(clusterlog.debug, "Metadata update error: {}", e);
+      })
+      .then([&meta, this] {
+          // Success case
+          if (meta.success) {
+              return ss::make_ready_future<>();
+          }
+          // Dispatch next retry
+          ++meta.next;
+          if (meta.next != meta.ids.end()) {
+              return ss::make_ready_future<>();
+          }
+          // start from the beggining, after backoff elapsed
+          meta.next = std::cbegin(meta.ids);
+          return wait_for_next_retry(
+            std::chrono::seconds(meta.backoff_policy.next_backoff()), _as);
+      });
+}
+
+ss::future<> metadata_dissemination_service::process_get_update_reply(
+  result<get_leadership_reply> reply_result, request_retry_meta& meta) {
+    if (!reply_result) {
+        vlog(
+          clusterlog.debug,
+          "Unable to initialize metadata using node {}",
+          *meta.next);
+        return ss::make_ready_future<>();
+    }
+    // Update all NTP leaders
+    return _md_cache
+      .invoke_on_all([reply = std::move(reply_result.value())](
+                       metadata_cache& cache) mutable {
+          for (auto& l : reply.leaders) {
+              cache.update_partition_leader(l.ntp, l.term, l.leader_id);
+          }
+      })
+      .then([&meta] { meta.success = true; });
+}
+
+ss::future<result<get_leadership_reply>>
+metadata_dissemination_service::dispatch_get_metadata_update(
   model::node_id id) {
     vlog(clusterlog.debug, "Requesting metadata update from node {}", id);
-    return dispatch_rpc<metadata_dissemination_rpc_client_protocol>(
-      _clients, id, [this](metadata_dissemination_rpc_client_protocol& c) {
-          return c
-            .get_leadership(
-              get_leadership_request{},
-              rpc::client_opts(
-                rpc::clock_type::now() + _dissemination_interval))
-            .then([this](rpc::client_context<get_leadership_reply> reply) {
-                return _md_cache.invoke_on_all(
-                  [reply = std::move(reply.data)](
-                    metadata_cache& cache) mutable {
-                      for (auto& l : reply.leaders) {
-                          cache.update_partition_leader(
-                            l.ntp, l.term, l.leader_id);
-                      }
-                  });
-            });
-      });
+    return _clients.local()
+      .with_node_client<metadata_dissemination_rpc_client_protocol>(
+        id, [this](metadata_dissemination_rpc_client_protocol c) {
+            return c
+              .get_leadership(
+                get_leadership_request{},
+                rpc::client_opts(
+                  rpc::clock_type::now() + _dissemination_interval))
+              .then([this](rpc::client_context<get_leadership_reply> ctx) {
+                  return std::move(ctx.data);
+              });
+        });
 }
 
 void metadata_dissemination_service::collect_pending_updates() {
@@ -150,7 +168,7 @@ void metadata_dissemination_service::collect_pending_updates() {
           get_partition_members(ntp_leader.ntp.tp.partition, *tp_md), brokers);
         for (auto& id : non_overlapping) {
             if (!_pending_updates.contains(id)) {
-                _pending_updates.emplace(id, retry_meta{ntp_leaders{}});
+                _pending_updates.emplace(id, update_retry_meta{ntp_leaders{}});
             }
             _pending_updates[id].updates.push_back(ntp_leader);
         }
@@ -183,28 +201,36 @@ ss::future<> metadata_dissemination_service::dispatch_disseminate_leadership() {
 }
 
 ss::future<> metadata_dissemination_service::dispatch_one_update(
-  model::node_id target_id, retry_meta& meta) {
-    return cluster::dispatch_rpc<metadata_dissemination_rpc_client_protocol>(
-             _clients,
-             target_id,
-             [this, &meta, target_id](
-               metadata_dissemination_rpc_client_protocol& proto) mutable {
-                 vlog(
-                   clusterlog.trace,
-                   "Sending {} metadata updates to {}",
-                   meta.updates.size(),
-                   target_id);
-                 return proto
-                   .update_leadership(
-                     update_leadership_request{meta.updates},
-                     rpc::client_opts(
-                       _dissemination_interval + rpc::clock_type::now()))
-                   .then([](rpc::client_context<update_leadership_reply> ctx) {
-                       return std::move(ctx.data);
-                   });
-             })
-      .then([this, target_id, &meta](update_leadership_reply) {
-          meta.finished = true;
+  model::node_id target_id, update_retry_meta& meta) {
+    return _clients.local()
+      .with_node_client<metadata_dissemination_rpc_client_protocol>(
+        target_id,
+        [this, &meta, target_id](
+          metadata_dissemination_rpc_client_protocol proto) mutable {
+            vlog(
+              clusterlog.trace,
+              "Sending {} metadata updates to {}",
+              meta.updates.size(),
+              target_id);
+            return proto
+              .update_leadership(
+                update_leadership_request{meta.updates},
+                rpc::client_opts(
+                  _dissemination_interval + rpc::clock_type::now()))
+              .then([](rpc::client_context<update_leadership_reply> ctx) {
+                  return std::move(ctx.data);
+              });
+        })
+      .then([this, target_id, &meta](result<update_leadership_reply> r) {
+          if (r) {
+              meta.finished = true;
+              return;
+          }
+          vlog(
+            clusterlog.warn,
+            "Error sending metadata update {} to {}",
+            r.error().message(),
+            target_id);
       })
       .handle_exception([](std::exception_ptr e) {
           vlog(clusterlog.warn, "Error when sending metadata update {}", e);

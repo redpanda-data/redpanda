@@ -25,7 +25,12 @@ service::join(join_request&& req, rpc::streaming_context&) {
               [this, broker = std::move(broker)](controller& c) mutable {
                   return c.process_join_request(std::move(broker));
               })
-            .then([] { return join_reply{true}; });
+            .then([](result<join_reply> r) {
+                if (!r) {
+                    return join_reply{false};
+                }
+                return r.value();
+            });
       });
 }
 
