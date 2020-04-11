@@ -144,7 +144,7 @@ function vtools_dev_cluster() {
     vtools build cpp --clang --build-type release --targets=redpanda
     rm -rf $tld/build/release/clang/dist/debian/redpanda || true
     vtools build pkg --format deb --clang --build-type release
-    local pkg_file=$(find $tld/build/release/clang/dist/debian/ -iname "redpanda_*dev*.deb")
+    local pkg_file=$(find $tld/build/release/clang/dist/debian/ -iname "redpanda_*dev*.deb" | head -n1)
     vtools deploy cluster ${deploy_args[@]} nodes=4
     vtools deploy ansible \
       --provider "$provider" \
