@@ -1,13 +1,13 @@
 import os
 import time
 import paramiko
-
 from absl import logging
+from ..vlib import shell
 
 known_hosts_file = os.path.expanduser("~/.ssh/known_hosts")
 
 
-def add_known_host(host, port, timeout, retries):
+def add_known_host(host, port=22, timeout=10, retries=1):
     """
     Adds the host and its public key to ~/.ssh/known_hosts.
 
@@ -33,6 +33,10 @@ def add_known_host(host, port, timeout, retries):
     hostkeys.load(known_hosts_file)
     hostkeys.add(host, key.get_name(), key)
     hostkeys.save(known_hosts_file)
+
+
+def remove_known_host(host):
+    shell.run_subprocess(f'ssh-keygen -R {host}')
 
 
 def run_subprocess(ip, ssh_user, ssh_key_path, cmd):
