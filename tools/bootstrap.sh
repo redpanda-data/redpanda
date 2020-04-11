@@ -45,6 +45,8 @@ if [[ ${PATH} != *"${vroot}/build/bin/"* ]]; then
   PATH="${PATH}:${vroot}/build/bin/"
 fi
 
+# ensure vtools works
+vtools test py
 vtools install go-compiler
 vtools install go-deps
 

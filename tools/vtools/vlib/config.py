@@ -40,7 +40,7 @@ class VConfig(object):
             # when config is found recursively, wd is config file's parent
             wd = os.path.dirname(config_file)
 
-        logging.info(f'Reading configuration file {config_file}.')
+        logging.debug(f'Reading configuration file {config_file}.')
         with open(config_file, 'r') as f:
             self._cfg = yaml.safe_load(f)
 
@@ -61,9 +61,9 @@ class VConfig(object):
             build_type = self._cfg['build'].get('default_type', None)
             if not build_type:
                 logging.fatal('Unable to determine build type.')
-            logging.info(f"Reading 'build_type' value from {config_file}")
+            logging.debug(f"Reading 'build_type' value from {config_file}")
         self._build_type = build_type
-        logging.info(f"Using '{self._build_type}' as build type.")
+        logging.debug(f"Using '{self._build_type}' as build type.")
 
         if self.clang_path and not clang:
             # if YAML file defines path for clang, it implies we want clang
@@ -143,7 +143,7 @@ class VConfig(object):
                 return None
 
             for f in Path(thedir).glob('.vtools.yml'):
-                logging.info(f'Found {f}.')
+                logging.debug(f'Found {f}.')
                 return f
 
             return search_vtools(os.path.dirname(thedir))

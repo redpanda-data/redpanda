@@ -37,6 +37,20 @@ def go(conf):
                     env=vconfig.environ)
 
 
+@test.command(short_help='python tests')
+@click.option('--conf',
+              help=('Path to configuration file. If not given, a .vtools.yml '
+                    'file is searched recursively starting from the current '
+                    'working directory'),
+              default=None)
+def py(conf):
+    vconfig = config.VConfig(conf)
+    shell.run_subprocess(
+        (f'python -m unittest discover -s {vconfig.src_dir}/tools/vtools'
+         ' -v -p "*_test.py"'),
+        env=vconfig.environ)
+
+
 @test.command(short_help='redpanda unit tests')
 @click.option('--build-type',
               help=('Build configuration to select. If none given, the '

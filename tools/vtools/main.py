@@ -21,7 +21,11 @@ from .storage import commands as storage
 logging.use_absl_handler()
 logging.set_verbosity(logging.INFO)
 
-if os.environ.get('CI', None):
+if os.environ.get("VTOOLS_LOG_LEVEL", None):
+    lvl = os.environ.get("VTOOLS_LOG_LEVEL")
+    lvl = getattr(logging, lvl.upper())
+    logging.set_verbosity(lvl)
+elif os.environ.get('CI', None):
     logging.set_verbosity(logging.DEBUG)
 
 

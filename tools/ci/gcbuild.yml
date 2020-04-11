@@ -30,6 +30,10 @@ steps:
       --cache=true \
       --cache-ttl=12h
 
+- id: 'test vtools itself'
+  name: 'gcr.io/$PROJECT_ID/builder-$_COMPILER-$_BUILD_TYPE:$SHORT_SHA'
+  args: ['vtools', 'test', 'py', '--conf=tools/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml']
+
 - id: 'check source code formatting'
   name: 'gcr.io/$PROJECT_ID/builder-$_COMPILER-$_BUILD_TYPE:$SHORT_SHA'
   entrypoint: 'bash'
