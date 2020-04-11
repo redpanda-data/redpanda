@@ -46,7 +46,7 @@ def go(conf):
 def py(conf):
     vconfig = config.VConfig(conf)
     shell.run_subprocess(
-        (f'python -m unittest discover -s {vconfig.src_dir}/tools/vtools'
+        (f'python3 -m unittest discover -s {vconfig.src_dir}/tools/vtools'
          ' -v -p "*_test.py"'),
         env=vconfig.environ)
 
