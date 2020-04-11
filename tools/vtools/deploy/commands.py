@@ -40,6 +40,10 @@ def cluster(conf, provider, destroy, ssh_key, log, tfvars):
     logging.set_verbosity(log)
     vconfig = config.VConfig(conf)
 
+    if destroy:
+        tf.destroy(vconfig, provider, 'cluster')
+        return
+
     git.verify(vconfig.src_dir)
     user_email = git.get_email(vconfig.src_dir)
     user = user_email.replace('@vectorized.io', '')
@@ -48,9 +52,6 @@ def cluster(conf, provider, destroy, ssh_key, log, tfvars):
     key_path, pub_key_path = keys.generate_key(abs_path)
 
     tfvars += (f'owner={user}', f'public_key_path={pub_key_path}')
-    if destroy:
-        tf.destroy(vconfig, provider, 'cluster')
-        return
 
     tf.apply(vconfig, provider, 'cluster', tfvars)
 
