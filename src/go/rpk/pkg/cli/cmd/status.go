@@ -80,9 +80,9 @@ func executeStatus(
 			}
 		}
 		payload := api.MetricsPayload{
-			metrics.CpuPercentage,
-			metrics.FreeMemoryMB,
-			metrics.FreeSpaceMB,
+			FreeMemoryMB:  metrics.FreeMemoryMB,
+			FreeSpaceMB:   metrics.FreeSpaceMB,
+			CpuPercentage: metrics.CpuPercentage,
 		}
 		return api.SendMetrics(payload, *conf)
 	}
@@ -92,7 +92,7 @@ func executeStatus(
 func printMetrics(p *system.Metrics) {
 	t := ui.NewRpkTable(log.StandardLogger().Out)
 	t.SetHeader([]string{"Name", "Value"})
-	t.Append([]string{"CPU%", fmt.Sprint(p.CpuPercentage)})
+	t.Append([]string{"CPU Usage %", fmt.Sprint(p.CpuPercentage)})
 	t.Append([]string{"Free Memory (MB)", fmt.Sprint(p.FreeMemoryMB)})
 	t.Append([]string{"Free Space  (MB)", fmt.Sprint(p.FreeSpaceMB)})
 	t.Render()
