@@ -9,3 +9,7 @@ output "private_ips" {
 output "ssh_user" {
   value = var.owner
 }
+
+output "public_key_path" {
+  value = var.public_key_path
+}
