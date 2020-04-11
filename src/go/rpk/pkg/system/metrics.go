@@ -65,5 +65,5 @@ func redpandaCpuPercentage(fs afero.Fs, pidFile string) (float64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return p.CPUPercent()
+	return p.Percent(1 * time.Second)
 }
