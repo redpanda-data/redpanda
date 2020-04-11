@@ -70,8 +70,7 @@ def destroy(vconfig, provider, module):
         del vconfig.kv[deploy_key]
         return
 
-    logging.info(
-        f'''No cluster deployments found for module {module} in provider
+    logging.info(f'''No deployment found for module {module} in provider
 {provider}. Nothing to destroy.''')
 
 
