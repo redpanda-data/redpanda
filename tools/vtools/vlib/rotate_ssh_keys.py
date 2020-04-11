@@ -1,4 +1,5 @@
 import os
+import pathlib
 import time
 import json
 from datetime import datetime, timedelta
@@ -73,6 +74,9 @@ def generate_key(path, comment=None, password='""', env=os.environ):
         comment = get_key_comment()
     cmd = f'ssh-keygen -t rsa -b 4096 -f {path} -C {comment}'
     pub_path = f'{path}.pub'
+    pathlib.Path(os.path.dirname(path)).mkdir(parents=True,
+                                              mode=0o700,
+                                              exist_ok=True)
     if password is not None:
         cmd = f'{cmd} -P {password}'
     if not os.path.exists(path):
