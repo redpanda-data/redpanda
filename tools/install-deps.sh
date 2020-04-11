@@ -18,6 +18,7 @@ function debs() {
   apt-get install -y \
     build-essential \
     binutils-dev \
+    docker.io \
     gcc-9 \
     g++-9 \
     libtool \
@@ -64,6 +65,7 @@ function rpms() {
   ${yumdnf} install -y \
     binutils-devel \
     gcc-c++ \
+    grubby \
     ninja-build \
     m4 \
     libtool \
