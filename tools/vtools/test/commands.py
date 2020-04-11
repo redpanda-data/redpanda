@@ -8,6 +8,7 @@ import pathlib
 import shutil
 import time
 import yaml
+import unittest
 
 from absl import logging
 
@@ -45,10 +46,11 @@ def go(conf):
               default=None)
 def py(conf):
     vconfig = config.VConfig(conf)
-    shell.run_subprocess(
-        (f'python3 -m unittest discover -s {vconfig.src_dir}/tools/vtools'
-         ' -v -p "*_test.py"'),
-        env=vconfig.environ)
+    test_loader = unittest.defaultTestLoader
+    test_runner = unittest.TextTestRunner(verbosity=3, failfast=True)
+    test_suite = test_loader.discover(
+        start_dir=f"{vconfig.src_dir}/tools/vtools", pattern="*_test.py")
+    test_runner.run(test_suite)
 
 
 @test.command(short_help='redpanda unit tests')
