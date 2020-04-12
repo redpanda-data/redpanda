@@ -115,7 +115,7 @@ ss::future<ss::lw_shared_ptr<segment>> log_manager::do_make_log_segment(
     const auto flags = ss::open_flags::create | ss::open_flags::rw;
     return ss::open_file_dma(path.string(), flags, std::move(opt))
       .then([pc, this](ss::file writer) {
-          if (_config.should_sanitize) {
+          if (_config.sanitize_fileops) {
               writer = ss::file(
                 ss::make_shared(file_io_sanitizer(std::move(writer))));
           }
@@ -149,7 +149,7 @@ ss::future<ss::lw_shared_ptr<segment>> log_manager::do_make_log_segment(
 }
 
 std::optional<batch_cache_index> log_manager::create_cache() {
-    if (unlikely(static_cast<bool>(_config.disable_cache))) {
+    if (unlikely(_config.cache == log_config::with_cache::no)) {
         return std::nullopt;
     }
 
@@ -265,7 +265,7 @@ log_manager::open_segment(const std::filesystem::path& path, size_t buf_size) {
       })
       .then([this, buf_size, path = std::move(path), meta](
               uint64_t size, ss::file fd) {
-          if (_config.should_sanitize) {
+          if (_config.sanitize_fileops) {
               fd = ss::file(ss::make_shared(file_io_sanitizer(std::move(fd))));
           }
           return std::make_unique<segment_reader>(
@@ -293,7 +293,7 @@ log_manager::open_segment(const std::filesystem::path& path, size_t buf_size) {
                             ss::lw_shared_ptr<segment>>(e);
                       });
                 }
-                if (_config.should_sanitize) {
+                if (_config.sanitize_fileops) {
                     fd = ss::file(
                       ss::make_shared(file_io_sanitizer(std::move(fd))));
                 }
@@ -353,59 +353,65 @@ log_manager::open_segments(ss::sstring dir) {
       });
 }
 
-ss::future<log>
-log_manager::manage(model::ntp ntp, log_manager::storage_type type) {
-    return ss::with_gate(
-      _open_gate, [this, ntp = std::move(ntp), type]() mutable {
-          return do_manage(std::move(ntp), type);
-      });
+ss::future<log> log_manager::manage(ntp_config cfg) {
+    return ss::with_gate(_open_gate, [this, cfg = std::move(cfg)]() mutable {
+        return do_manage(std::move(cfg));
+    });
 }
 
-ss::future<log>
-log_manager::do_manage(model::ntp ntp, log_manager::storage_type type) {
+ss::future<log> log_manager::do_manage(ntp_config cfg) {
     if (_config.base_dir.empty()) {
         return ss::make_exception_future<log>(std::runtime_error(
           "log_manager:: cannot have empty config.base_dir"));
     }
-    ss::sstring path = fmt::format("{}/{}", _config.base_dir, ntp.path());
-    vassert(_logs.find(ntp) == _logs.end(), "cannot double register same ntp");
-    if (type == storage_type::memory) {
-        auto l = storage::make_memory_backed_log(ntp, path);
-        _logs.emplace(std::move(ntp), l);
-        // raft uses the directory so it have to be created for in mem
-        // implementation
-        return recursive_touch_directory(path).then([l] { return l; });
+    ss::sstring path = cfg.work_directory;
+    vassert(
+      _logs.find(cfg.ntp) == _logs.end(), "cannot double register same ntp");
+    if (_config.stype == log_config::storage_type::memory) {
+        auto l = storage::make_memory_backed_log(std::move(cfg));
+        _logs.emplace(l.config().ntp, l);
+        // in-memory needs to write vote_for configuration
+        return ss::recursive_touch_directory(path).then([l] { return l; });
     }
-    return recursive_touch_directory(path)
+    return ss::recursive_touch_directory(path)
       .then([this, path] { return open_segments(path); })
-      .then([this, ntp](segment_set::underlying_t segs) {
-          auto segments = segment_set(std::move(segs));
-          set_max_offsets(segments);
-          return do_recover(std::move(segments))
-            .then([this, ntp](segment_set segments) mutable {
-                auto ptr = storage::make_disk_backed_log(
-                  ntp, *this, std::move(segments));
-                _logs.emplace(std::move(ntp), ptr);
-                return ptr;
-            });
-      });
+      .then(
+        [this, cfg = std::move(cfg)](segment_set::underlying_t segs) mutable {
+            auto segments = segment_set(std::move(segs));
+            set_max_offsets(segments);
+            return do_recover(std::move(segments))
+              .then([this, cfg = std::move(cfg)](segment_set segments) mutable {
+                  auto l = storage::make_disk_backed_log(
+                    std::move(cfg), *this, std::move(segments));
+                  _logs.emplace(l.config().ntp, l);
+                  return l;
+              });
+        });
 }
-std::ostream& operator<<(std::ostream& o, log_manager::storage_type t) {
+std::ostream& operator<<(std::ostream& o, log_config::storage_type t) {
     switch (t) {
-    case log_manager::storage_type::memory:
+    case log_config::storage_type::memory:
         return o << "{memory}";
-    case log_manager::storage_type::disk:
+    case log_config::storage_type::disk:
         return o << "{disk}";
     }
     return o << "{unknown-storage-type}";
 }
 
 std::ostream& operator<<(std::ostream& o, const log_config& c) {
-    return o << "{base_dir:" << c.base_dir
+    return o << "{type:" << c.stype << ", base_dir:" << c.base_dir
              << ", max_segment.size:" << c.max_segment_size
-             << ", should_sanitize:" << c.should_sanitize
-             << ", compaction_interval_ms:" << c.compaction_interval.count()
-             << ", disable_cache:" << c.disable_cache << "}";
+             << ", debug_sanitize_fileops:" << c.sanitize_fileops
+             << ", retention_bytes:";
+    if (c.retention_bytes) {
+        o << *c.retention_bytes;
+    } else {
+        o << "nullopt";
+    }
+    return o << ", compaction_interval_ms:" << c.compaction_interval.count()
+             << ", delete_reteion_ms:" << c.delete_retention.count()
+             << ", with_cache:" << c.cache
+             << ", relcaim_opts:" << c.reclaim_opts << "}";
 }
 std::ostream& operator<<(std::ostream& o, const log_manager& m) {
     return o << "{config:" << m._config << ", logs.size:" << m._logs.size()

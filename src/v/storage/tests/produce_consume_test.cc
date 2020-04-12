@@ -10,8 +10,8 @@ using namespace storage; // NOLINT
 
 SEASTAR_THREAD_TEST_CASE(produce_consume_concurrency) {
     auto cfg = log_builder_config();
-    cfg.disable_cache = storage::log_config::disable_batch_cache::yes;
-    storage::disk_log_builder builder(cfg);
+    cfg.cache = storage::log_config::with_cache::no;
+    storage::disk_log_builder builder(std::move(cfg));
     builder | storage::start();
 
     storage::log_append_config app_cfg{

@@ -114,4 +114,36 @@ struct log_reader_config {
     friend std::ostream& operator<<(std::ostream& o, const log_reader_config&);
 };
 
+struct ntp_config {
+    ntp_config(model::ntp n, ss::sstring workdir) noexcept
+      : ntp_config(
+        std::move(n), std::move(workdir), model::compaction_strategy::regular) {
+    }
+
+    ntp_config(
+      model::ntp n, ss::sstring workdir, model::compaction_strategy c) noexcept
+      : ntp_config(std::move(n), std::move(workdir), c, std::nullopt) {}
+
+    ntp_config(
+      model::ntp n,
+      ss::sstring workdir,
+      model::compaction_strategy c,
+      std::optional<size_t> segment_sz) noexcept
+      : ntp(std::move(n))
+      , work_directory(std::move(workdir))
+      , cstrategy(c)
+      , segment_size(segment_sz) {}
+
+    model::ntp ntp;
+    /// \brief currently this is the basedir + ntp path. In the future
+    /// this will be used to load balance on devices so that there is no
+    /// implicit hierarchy, simply directories with data
+    ss::sstring work_directory;
+    /// \brief
+    model::compaction_strategy cstrategy;
+    // if not set, use the log_manager's configuration
+    std::optional<size_t> segment_size;
+
+    friend std::ostream& operator<<(std::ostream&, const ntp_config&);
+};
 } // namespace storage

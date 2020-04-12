@@ -12,54 +12,20 @@
 
 #include <utility>
 
-/// \brief Non-synchronized log management class.
-///
-/// Offset management
-///
-/// Kafka records has the following offset-related fields
-/// Batch level:
-///
-/// FirstOffset [int64] - base offset of the batch equal to  offset of the
-///                       first record
-/// LastOffsetDelta [int32] - offset delta for last record in batch equals
-///                           FirstOffset + NumberOfMessages  + 1
-/// Record level:
-///
-/// OffsetDelta [varint] - record position in the batch starting from 0
-///
-/// For the batch with base offset 10 and 4 records the offsets are calculated
-/// as follows:
-///
-/// Batch header:
-///   FirstOffset: 10
-///   LastOffsetDelta: 3
-///
-///   Record #1:
-///     OffsetDelta: 0
-///   Record #2
-///     OffsetDelta: 1
-///   Record #3
-///     OffsetDelta: 2
-///   Record #4
-///     OffsetDelta: 3
-/// Subsequent batch will have offset 14.
-///
-///
-/// ownership
-///
-///   log <- log::impl                 (main log interface)
-///     log_appender <- log_appender::impl (log appending interface)
-///       segment_appender
-///
 namespace storage {
 
+/// \brief Non-synchronized log management class.
+/// The class follows the pimpl idiom for: appends,reads and concrete.
+/// there are 2 default implementations memory-backed and disk-backed
+///
+/// use like a seastar::shared_ptr<> (non-thread safe)
+///
 class log final {
 public:
     class impl {
     public:
-        explicit impl(model::ntp n, ss::sstring log_directory) noexcept
-          : _ntp(std::move(n))
-          , _workdir(std::move(log_directory)) {}
+        explicit impl(ntp_config cfg) noexcept
+          : _config(std::move(cfg)) {}
         impl(impl&&) noexcept = default;
         impl& operator=(impl&&) noexcept = default;
         impl(const impl&) = delete;
@@ -81,8 +47,7 @@ public:
         virtual ss::future<std::optional<timequery_result>>
           timequery(timequery_config) = 0;
 
-        const model::ntp& ntp() const { return _ntp; }
-        const ss::sstring& work_directory() const { return _workdir; }
+        const ntp_config& config() const { return _config; }
 
         virtual size_t segment_count() const = 0;
         virtual model::offset max_offset() const = 0;
@@ -92,8 +57,7 @@ public:
         virtual std::optional<model::term_id> get_term(model::offset) const = 0;
 
     private:
-        model::ntp _ntp;
-        ss::sstring _workdir;
+        ntp_config _config;
     };
 
 public:
@@ -102,29 +66,13 @@ public:
     ss::future<> close() { return _impl->close(); }
     ss::future<> flush() { return _impl->flush(); }
 
-    // Truncate log at offset specified
-    //
-    // Provided index is the first index that will be truncated
-    //
-    //
-    // Example
-    //
-    // {[base_1,last_1],[base_2,last_2]} denotes log segment with two batches
-    // 				  having base_1,last_1 and base_2,last_2
-    // 				  offset boundaries
-    //
-    // Having a segment:
-    //
-    // segment: {[10,10][11,30][31,100][101,103]}
-    //
-    // Truncate at offset 31 will result in
-    //
-    // segment: {[10,10][11,30]}
-    //
-    // Truncate at offset 11 will result in
-    //
-    // segment: {[10,10]}
-
+    /**
+     * \brief Truncate log at base offset
+     * Having a segment:
+     * segment: {[10,10][11,30][31,100][101,103]}
+     * Truncate at offset (31) will result in
+     * segment: {[10,10][11,30]}
+     */
     ss::future<> truncate(model::offset offset) {
         return _impl->truncate(offset);
     }
@@ -137,11 +85,7 @@ public:
         return _impl->make_appender(cfg);
     }
 
-    const model::ntp& ntp() const { return _impl->ntp(); }
-
-    const ss::sstring& work_directory() const {
-        return _impl->work_directory();
-    }
+    const ntp_config& config() const { return _impl->config(); }
 
     size_t segment_count() const { return _impl->segment_count(); }
 
@@ -186,7 +130,7 @@ inline std::ostream& operator<<(std::ostream& o, const storage::log& lg) {
 
 class log_manager;
 class segment_set;
-log make_memory_backed_log(model::ntp, ss::sstring);
-log make_disk_backed_log(model::ntp, log_manager&, segment_set);
+log make_memory_backed_log(ntp_config);
+log make_disk_backed_log(ntp_config, log_manager&, segment_set);
 
 } // namespace storage

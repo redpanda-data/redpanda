@@ -216,4 +216,18 @@ std::ostream& operator<<(std::ostream& o, const broker_shard& bs) {
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, compaction_strategy c) {
+    switch (c) {
+    case compaction_strategy::regular:
+        return o << "{compaction_strategy::regular}";
+    case compaction_strategy::offset:
+        return o << "{compaction_strategy::offset}";
+    case compaction_strategy::timestamp:
+        return o << "{compaction_strategy::timestamp}";
+    case compaction_strategy::header:
+        return o << "{compaction_strategy::header}";
+    }
+    return o << "{unknown model::compaction_strategy}";
+}
+
 } // namespace model

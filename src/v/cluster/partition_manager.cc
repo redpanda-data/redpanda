@@ -15,29 +15,32 @@
 
 namespace cluster {
 
+storage::log_config manager_config_from_global_config() {
+    return storage::log_config(
+      storage::log_config::storage_type::disk,
+      config::shard_local_cfg().data_directory().as_sstring(),
+      config::shard_local_cfg().log_segment_size(),
+      storage::log_config::debug_sanitize_files::no,
+      config::shard_local_cfg().retention_bytes(),
+      config::shard_local_cfg().log_compaction_interval(),
+      config::shard_local_cfg().delete_retention_ms(),
+      storage::log_config::with_cache(
+        config::shard_local_cfg().disable_batch_cache()),
+      storage::batch_cache::reclaim_options{
+        .growth_window = config::shard_local_cfg().reclaim_growth_window(),
+        .stable_window = config::shard_local_cfg().reclaim_stable_window(),
+        .min_size = config::shard_local_cfg().reclaim_min_size(),
+        .max_size = config::shard_local_cfg().reclaim_max_size(),
+      });
+}
+
 partition_manager::partition_manager(
   model::timeout_clock::duration disk_timeout,
   ss::sharded<cluster::shard_table>& nlc,
   ss::sharded<rpc::connection_cache>& clients)
   : _self(config::shard_local_cfg().node_id())
   , _disk_timeout(disk_timeout)
-  , _mngr(storage::log_config{
-      .base_dir = config::shard_local_cfg().data_directory().as_sstring(),
-      .max_segment_size = config::shard_local_cfg().log_segment_size(),
-      .should_sanitize = storage::log_config::sanitize_files::no,
-      .retention_bytes = config::shard_local_cfg().retention_bytes(),
-      .compaction_interval
-      = config::shard_local_cfg().log_compaction_interval(),
-      .delete_retention = config::shard_local_cfg().delete_retention_ms(),
-      .disable_cache = storage::log_config::disable_batch_cache(
-              config::shard_local_cfg().disable_batch_cache()),
-      .reclaim_opts = storage::batch_cache::reclaim_options{
-          .growth_window = config::shard_local_cfg().reclaim_growth_window(),
-          .stable_window = config::shard_local_cfg().reclaim_stable_window(),
-          .min_size = config::shard_local_cfg().reclaim_min_size(),
-          .max_size = config::shard_local_cfg().reclaim_max_size(),
-      },
-    })
+  , _mngr(manager_config_from_global_config())
   , _client(raft::make_rpc_client_protocol(clients))
   , _hbeats(config::shard_local_cfg().raft_heartbeat_interval(), _client)
   , _shard_table(nlc) {}
@@ -49,7 +52,7 @@ ss::future<> partition_manager::stop() {
     return _bg.close()
       .then([this] { return _hbeats.stop(); })
       .then([this] {
-          return parallel_for_each(_raft_table, [this](pair_t& pair) {
+          return parallel_for_each(_raft_table, [](pair_t& pair) {
               clusterlog.info("Shutting down raft group: {}", pair.first);
               return pair.second->stop();
           });
@@ -70,16 +73,18 @@ ss::future<consensus_ptr> partition_manager::manage(
   raft::group_id group,
   std::vector<model::broker> initial_nodes,
   std::optional<raft::consensus::append_entries_cb_t> ap_entries_cb) {
-    return _mngr.manage(std::move(ntp))
+    return _mngr
+      .manage(storage::ntp_config(
+        ntp, fmt::format("{}/{}", _mngr.config().base_dir, ntp.path())))
       .then(
         [this,
          group,
          nodes = std::move(initial_nodes),
-         ap_entries_cb = std::move(ap_entries_cb)](storage::log log) mutable {
+         ap_entries_cb = std::move(ap_entries_cb)](storage::log&& log) mutable {
             auto c = make_consensus(
               group, std::move(nodes), log, std::move(ap_entries_cb));
             auto p = ss::make_lw_shared<partition>(c);
-            _ntp_table.emplace(log.ntp(), p);
+            _ntp_table.emplace(log.config().ntp, p);
             _raft_table.emplace(group, p);
             _manage_watchers.notify(p->ntp(), p);
             if (_bg.is_closed()) {

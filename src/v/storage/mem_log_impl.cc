@@ -124,8 +124,8 @@ private:
 struct mem_log_impl final : log::impl {
     using underlying_t = std::deque<model::record_batch>;
     // forward ctor
-    explicit mem_log_impl(model::ntp n, ss::sstring workdir)
-      : log::impl(std::move(n), std::move(workdir)) {}
+    explicit mem_log_impl(ntp_config cfg)
+      : log::impl(std::move(cfg)) {}
     ~mem_log_impl() override = default;
     mem_log_impl(const mem_log_impl&) = delete;
     mem_log_impl& operator=(const mem_log_impl&) = delete;
@@ -153,7 +153,7 @@ struct mem_log_impl final : log::impl {
     }
 
     ss::future<> truncate(model::offset offset) final {
-        stlog.debug("Truncating {} log at {}", ntp(), offset);
+        stlog.debug("Truncating {} log at {}", config().ntp, offset);
         if (unlikely(offset < model::offset(0))) {
             throw std::invalid_argument("cannot truncate at negative offset");
         }
@@ -261,7 +261,7 @@ mem_log_appender::operator()(model::record_batch&& batch) {
     _byte_size += batch.header().size_bytes;
     stlog.trace(
       "Wrting to {} batch of {} records offsets [{},{}], term {}",
-      _log.ntp(),
+      _log.config().ntp,
       batch.header().size_bytes,
       batch.base_offset(),
       batch.last_offset(),
@@ -281,9 +281,8 @@ ss::future<append_result> mem_log_appender::end_of_stream() {
     return ss::make_ready_future<append_result>(ret);
 }
 
-log make_memory_backed_log(model::ntp ntp, ss::sstring workdir) {
-    auto ptr = ss::make_shared<mem_log_impl>(
-      std::move(ntp), std::move(workdir));
+log make_memory_backed_log(ntp_config cfg) {
+    auto ptr = ss::make_shared<mem_log_impl>(std::move(cfg));
     return storage::log(ptr);
 }
 } // namespace storage

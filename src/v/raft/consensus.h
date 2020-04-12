@@ -75,7 +75,7 @@ public:
     model::node_id self() const { return _self; }
     const protocol_metadata& meta() const { return _meta; }
     const group_configuration& config() const { return _conf; }
-    const model::ntp& ntp() const { return _log.ntp(); }
+    const model::ntp& ntp() const { return _log.config().ntp; }
     clock_type::time_point last_heartbeat() const { return _hbeat; };
 
     clock_type::time_point last_hbeat_timestamp(model::node_id);
