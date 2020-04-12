@@ -6,8 +6,15 @@ function debs() {
     apt-get update -y
     apt-get -y install software-properties-common
   fi
+
+  # repo for newer python versions (we need 3.7+)
+  add-apt-repository ppa:deadsnakes/ppa -y
+
+  # repo for newer gcc versions (we need 9.2+)
   add-apt-repository ppa:ubuntu-toolchain-r/test -y
+
   apt update -y
+
   apt-get install -y \
     build-essential \
     binutils-dev \
@@ -17,7 +24,6 @@ function debs() {
     m4 \
     ninja-build \
     automake \
-    cmake \
     pkg-config \
     xfslibs-dev \
     systemtap-sdt-dev \
@@ -54,18 +60,8 @@ function rpms() {
       $SUDO rm -f /etc/yum.repos.d/dl.fedoraproject.org*
       ;;
   esac
-  cmake="cmake"
-  case ${ID} in
-    centos | rhel)
-      MAJOR_VERSION="$(echo "$VERSION_ID" | cut -d. -f1)"
-      if test "$MAJOR_VERSION" = 7; then
-        cmake="cmake3"
-      fi
-      ;;
-  esac
 
   ${yumdnf} install -y \
-    ${cmake} \
     binutils-devel \
     gcc-c++ \
     ninja-build \
