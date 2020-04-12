@@ -7,10 +7,11 @@
 namespace tests {
 
 static inline storage::log_manager make_log_mgr(ss::sstring base_dir) {
-    return storage::log_manager(
-      {.base_dir = base_dir,
-       .max_segment_size = 1 << 30,
-       .should_sanitize = storage::log_config::sanitize_files::yes});
+    return storage::log_manager(storage::log_config(
+      storage::log_config::storage_type::disk,
+      std::move(base_dir),
+      1_GiB,
+      storage::log_config::debug_sanitize_files::yes));
 }
 
 static inline ss::future<> persist_log_file(
@@ -18,10 +19,13 @@ static inline ss::future<> persist_log_file(
   model::ntp file_ntp,
   ss::circular_buffer<model::record_batch> batches) {
     return ss::do_with(
-      make_log_mgr(base_dir),
+      make_log_mgr(std::move(base_dir)),
       [file_ntp = std::move(file_ntp),
        batches = std::move(batches)](storage::log_manager& mgr) mutable {
-          return mgr.manage(file_ntp)
+          return mgr
+            .manage(storage::ntp_config(
+              file_ntp,
+              fmt::format("{}/{}", mgr.config().base_dir, file_ntp.path())))
             .then([b = std::move(batches)](storage::log log) mutable {
                 storage::log_append_config cfg{
                   storage::log_append_config::fsync::yes,
@@ -59,9 +63,12 @@ private:
 static inline ss::future<ss::circular_buffer<model::record_batch>>
 read_log_file(ss::sstring base_dir, model::ntp file_ntp) {
     return ss::do_with(
-      make_log_mgr(base_dir),
+      make_log_mgr(std::move(base_dir)),
       [file_ntp = std::move(file_ntp)](storage::log_manager& mgr) mutable {
-          return mgr.manage(file_ntp)
+          return mgr
+            .manage(storage::ntp_config(
+              file_ntp,
+              fmt::format("{}/{}", mgr.config().base_dir, file_ntp.path())))
             .then([](storage::log log) mutable {
                 return log
                   .make_reader(storage::log_reader_config(

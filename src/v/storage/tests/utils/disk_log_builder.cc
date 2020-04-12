@@ -3,8 +3,7 @@
 // make_ntp, make_dir etc
 namespace storage {
 disk_log_builder::disk_log_builder(storage::log_config config)
-  : _config(config)
-  , _mgr(config) {}
+  : _mgr(std::move(config)) {}
 
 // Batch generation
 ss::future<> disk_log_builder::add_random_batch(
@@ -39,7 +38,10 @@ ss::future<> disk_log_builder::add_random_batches(
 
 // Log managment
 ss::future<> disk_log_builder::start(model::ntp ntp) {
-    return _mgr.manage(ntp).then([this](log l) { _log = std::move(l); });
+    return _mgr
+      .manage(ntp_config(
+        ntp, fmt::format("{}/{}", get_log_config().base_dir, ntp.path())))
+      .then([this](log l) { _log = std::move(l); });
 }
 
 ss::future<> disk_log_builder::truncate(model::offset o) {
@@ -88,7 +90,9 @@ ss::future<> disk_log_builder::add_segment(
 }
 
 // Configuration getters
-const log_config& disk_log_builder::get_log_config() const { return _config; }
+const log_config& disk_log_builder::get_log_config() const {
+    return _mgr.config();
+}
 
 // Common interface for appending batches
 ss::future<> disk_log_builder::write(

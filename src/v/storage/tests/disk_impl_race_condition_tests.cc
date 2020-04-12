@@ -6,12 +6,12 @@
 #include <seastar/core/temporary_buffer.hh>
 
 struct fixture {
-    storage::disk_log_builder b{storage::log_config{
-      .base_dir = storage::random_dir(),
-      .max_segment_size = (1 << 30),
-      .should_sanitize = storage::log_config::sanitize_files::yes,
-      .compaction_interval = std::chrono::minutes(1),
-      .disable_cache = storage::log_config::disable_batch_cache::yes}};
+    storage::disk_log_builder b{storage::log_config(
+      storage::log_config::storage_type::disk,
+      storage::random_dir(),
+      1_GiB,
+      storage::log_config::debug_sanitize_files::yes,
+      storage::log_config::with_cache::no)};
     ~fixture() { b.stop().get(); }
 };
 

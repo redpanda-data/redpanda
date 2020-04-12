@@ -72,10 +72,11 @@ public:
       std::chrono::milliseconds raft_heartbeat_interval,
       ss::sharded<rpc::connection_cache>& clients)
       : _self(self)
-      , _mngr(storage::log_config{
-          .base_dir = directory,
-          .max_segment_size = 1 << 30,
-          .should_sanitize = storage::log_config::sanitize_files::yes})
+      , _mngr(storage::log_config(
+          storage::log_config::storage_type::disk,
+          std::move(directory),
+          1_GiB,
+          storage::log_config::debug_sanitize_files::yes))
       , _consensus_client_protocol(raft::make_rpc_client_protocol(clients))
       , _hbeats(raft_heartbeat_interval, _consensus_client_protocol) {}
 
@@ -84,7 +85,9 @@ public:
     }
 
     ss::future<> start(raft::group_configuration init_cfg) {
-        return _mngr.manage(_ntp)
+        return _mngr
+          .manage(storage::ntp_config(
+            _ntp, fmt::format("{}/{}", _mngr.config().base_dir, _ntp.path())))
           .then([this, cfg = std::move(init_cfg)](storage::log log) mutable {
               _consensus = ss::make_lw_shared<raft::consensus>(
                 _self,
