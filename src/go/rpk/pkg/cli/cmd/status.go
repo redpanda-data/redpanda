@@ -60,21 +60,25 @@ func executeStatus(
 		return err
 	}
 	if !conf.Rpk.EnableUsageStats {
-		log.Info("Usage stats are disabled. To enable them, set rpk.enable_usage_stats to true.")
-		return nil
+		log.Warn("Usage stats reporting is disabled, so nothing will" +
+			" be sent. To enable it, run" +
+			" `rpk config set rpk.enable_usage_stats true`.")
 	}
 	metrics, errs := system.GatherMetrics(fs, timeout, *conf)
 	if len(errs) != 0 {
 		for _, err := range errs {
-			log.Error(err)
+			log.Info("Error gathering metrics: ", err)
 		}
 	}
 
 	printMetrics(metrics)
 
-	if send {
+	if conf.Rpk.EnableUsageStats && send {
 		if conf.NodeUuid == "" {
 			conf, err = config.GenerateAndWriteNodeUuid(fs, conf)
+			if err != nil {
+				log.Info("Error writing the node's UUID: ", err)
+			}
 			if err != nil {
 				return err
 			}
@@ -84,7 +88,10 @@ func executeStatus(
 			FreeSpaceMB:   metrics.FreeSpaceMB,
 			CpuPercentage: metrics.CpuPercentage,
 		}
-		return api.SendMetrics(payload, *conf)
+		err := api.SendMetrics(payload, *conf)
+		if err != nil {
+			log.Info("Error sending metrics: ", err)
+		}
 	}
 	return nil
 }
