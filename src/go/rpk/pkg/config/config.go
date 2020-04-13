@@ -94,6 +94,15 @@ func DefaultConfig() Config {
 	}
 }
 
+func ReadToJson(fs afero.Fs, path string) (string, error) {
+	confMap, err := read(fs, path)
+	if err != nil {
+		return "", err
+	}
+	bs, err := json.MarshalIndent(confMap, "", " ")
+	return string(bs), err
+}
+
 func Set(fs afero.Fs, key, value, format, path string) error {
 	confMap, err := read(fs, path)
 	if err != nil {
