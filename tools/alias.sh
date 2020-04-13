@@ -157,7 +157,7 @@ function vtools_dev_cluster() {
       --playbook=$tld/infra/ansible/playbooks/redpanda-start.yml
 
     vtools deploy ansible \
-     --provider "$provider" \
-     --playbook=$tld/infra/ansible/playbooks/deploy-prometheus-grafana.yml
+      --provider "$provider" \
+      --playbook=$tld/infra/ansible/playbooks/deploy-prometheus-grafana.yml
   )
 }
