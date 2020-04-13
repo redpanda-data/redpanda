@@ -77,11 +77,11 @@ public:
     }
 
     storage::log_config make_default_config() {
-        storage::log_config config{
-          .base_dir = lconf().data_directory().as_sstring(),
-          .max_segment_size = std::numeric_limits<size_t>::max(),
-          .should_sanitize = storage::log_config::sanitize_files::yes};
-        return config;
+        return storage::log_config(
+          storage::log_config::storage_type::disk,
+          lconf().data_directory().as_sstring(),
+          1_GiB,
+          storage::log_config::debug_sanitize_files::yes);
     }
 
     ss::future<> recover_ntp(const model::ntp& ntp) {

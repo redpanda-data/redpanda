@@ -19,11 +19,15 @@
 struct foreign_entry_fixture {
     static constexpr int active_nodes = 3;
     foreign_entry_fixture()
-      : _mngr(storage::log_config{
-        .base_dir = ".",
-        .max_segment_size = 1 << 30,
-        .should_sanitize = storage::log_config::sanitize_files::yes}) {
-        (void)_mngr.manage(_ntp).get0();
+      : _mngr(storage::log_config(
+        storage::log_config::storage_type::disk,
+        "test.dir",
+        1_GiB,
+        storage::log_config::debug_sanitize_files::yes)) {
+        (void)_mngr
+          .manage(
+            storage::ntp_config(_ntp, fmt::format("test.dir/{}", _ntp.path())))
+          .get0();
     }
 
     std::vector<storage::append_result> write_n(const std::size_t n) {

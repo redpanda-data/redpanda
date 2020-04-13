@@ -8,18 +8,11 @@
 #include "storage/log_manager.h"
 #include "storage/tests/utils/random_batch.h"
 #include "test_utils/fixture.h"
+#include "units.h"
 
 #include <boost/range/irange.hpp>
 #include <boost/test/tools/old/interface.hpp>
 #include <fmt/core.h>
-
-constexpr size_t kb = 1024;
-constexpr size_t mb = 1024 * kb;
-constexpr size_t gb = 1024 * mb;
-
-constexpr size_t kbytes(unsigned long long val) { return val * kb; }
-constexpr size_t mbytes(unsigned long long val) { return val * mb; }
-constexpr size_t gbytes(unsigned long long val) { return val * gb; }
 
 static ss::logger tlog{"test_log"};
 
@@ -29,10 +22,6 @@ struct random_batches_generator {
           model::offset(0), random_generators::get_int(1, 10));
     }
 };
-
-constexpr inline static std::array<storage::log_manager::storage_type, 2>
-  storage_types = {storage::log_manager::storage_type::memory,
-                   storage::log_manager::storage_type::disk};
 
 class storage_test_fixture {
 public:
@@ -53,9 +42,20 @@ public:
         return storage::log_manager(default_log_config(test_dir));
     }
 
+    /// \brief randomizes the configuration options
     storage::log_config default_log_config(ss::sstring test_dir) {
-        return storage::log_config{
-          test_dir, mbytes(200), storage::log_config::sanitize_files::yes};
+        auto i = random_generators::get_int(0, 100);
+        auto stype = i > 50 ? storage::log_config::storage_type::disk
+                            : storage::log_config::storage_type::memory;
+
+        auto cache = i > 50 ? storage::log_config::with_cache::yes
+                            : storage::log_config::with_cache::no;
+        return storage::log_config(
+          stype,
+          std::move(test_dir),
+          200_MiB,
+          storage::log_config::debug_sanitize_files::yes,
+          cache);
     }
 
     model::ntp
@@ -68,7 +68,7 @@ public:
 
     void
     create_topic_dir(ss::sstring ns, ss::sstring topic, size_t partition_id) {
-        auto ntp = make_ntp(ns, topic, partition_id);
+        auto ntp = make_ntp(std::move(ns), std::move(topic), partition_id);
         ss::recursive_touch_directory(
           fmt::format("{}/{}", test_dir, ntp.path()))
           .wait();

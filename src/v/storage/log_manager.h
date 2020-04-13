@@ -7,6 +7,7 @@
 #include "storage/log.h"
 #include "storage/segment.h"
 #include "storage/version.h"
+#include "units.h"
 
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/core/future.hh>
@@ -25,61 +26,119 @@ namespace storage {
 static constexpr size_t default_read_buffer_size = 128 * 1024;
 
 struct log_config {
+    enum class storage_type { memory, disk };
+    using debug_sanitize_files
+      = ss::bool_class<struct debug_sanitize_files_tag>;
+    using with_cache = ss::bool_class<struct log_cache_tag>;
+    log_config(
+      storage_type type,
+      ss::sstring directory,
+      size_t segment_size,
+      debug_sanitize_files should,
+      with_cache with) noexcept
+      : stype(type)
+      , base_dir(std::move(directory))
+      , max_segment_size(segment_size)
+      , sanitize_fileops(should)
+      , cache(with) {}
+    log_config(
+      storage_type type,
+      ss::sstring directory,
+      size_t segment_size,
+      debug_sanitize_files should) noexcept
+      : stype(type)
+      , base_dir(std::move(directory))
+      , max_segment_size(segment_size)
+      , sanitize_fileops(should) {}
+    log_config(
+      storage_type type,
+      ss::sstring directory,
+      size_t segment_size,
+      debug_sanitize_files should,
+      std::optional<size_t> ret_bytes,
+      std::chrono::milliseconds compaction_ival,
+      std::chrono::milliseconds del_ret,
+      with_cache c,
+      batch_cache::reclaim_options recopts) noexcept
+      : stype(type)
+      , base_dir(std::move(directory))
+      , max_segment_size(segment_size)
+      , sanitize_fileops(should)
+      , retention_bytes(ret_bytes)
+      , compaction_interval(compaction_ival)
+      , delete_retention(del_ret)
+      , cache(c)
+      , reclaim_opts(recopts) {}
+
+    ~log_config() noexcept = default;
+    // must be enabled so that we can do ss::sharded<>.start(config);
+    log_config(const log_config&) = default;
+    // must be enabled so that we can do ss::sharded<>.start(config);
+    log_config& operator=(const log_config&) = default;
+    log_config(log_config&&) noexcept = default;
+    log_config& operator=(log_config&&) noexcept = default;
+
+    storage_type stype;
     ss::sstring base_dir;
     size_t max_segment_size;
+
     // used for testing: keeps a backtrace of operations for debugging
-    using sanitize_files = ss::bool_class<struct sanitize_files_tag>;
-    using disable_batch_cache = ss::bool_class<struct disable_cache_tag>;
-    sanitize_files should_sanitize;
+    debug_sanitize_files sanitize_fileops
+      = log_config::debug_sanitize_files::no;
     // same as retention.bytes in kafka
     std::optional<size_t> retention_bytes = std::nullopt;
     std::chrono::milliseconds compaction_interval = std::chrono::minutes(10);
     // same as delete.retention.ms in kafka - default 1 week
     std::chrono::milliseconds delete_retention = std::chrono::minutes(10080);
-    disable_batch_cache disable_cache = disable_batch_cache::no;
-    batch_cache::reclaim_options reclaim_opts;
+    with_cache cache = log_config::with_cache::yes;
+    batch_cache::reclaim_options reclaim_opts{
+      .growth_window = std::chrono::seconds(3),
+      .stable_window = std::chrono::seconds(10),
+      .min_size = 128_KiB,
+      .max_size = 4_MiB,
+    };
 
     friend std::ostream& operator<<(std::ostream& o, const log_config&);
-};
+}; // namespace storage
 
 /**
  * \brief Create, track, and manage log instances.
  *
- * The log manager is the access point for creating, obtaining, and managing the
- * lifecycle of references to log instances each identified by a model::ntp.
+ * The log manager is the access point for creating, obtaining, and
+ * managing the lifecycle of references to log instances each identified
+ * by a model::ntp.
  *
- * Before a log may be accessed it must be brought under management using the
- * interface `manage(ntp)`. This will open the log if it exists on disk.
- * Otherwise, a new log will be initialized and then opened.
+ * Before a log may be accessed it must be brought under management using
+ * the interface `manage(ntp)`. This will open the log if it exists on
+ * disk. Otherwise, a new log will be initialized and then opened.
  *
- * The log manager uses the file system to organize log storage. All log data
- * (e.g. segments) for a given ntp is managed under a single directory:
+ * The log manager uses the file system to organize log storage. All log
+ * data (e.g. segments) for a given ntp is managed under a single
+ * directory:
  *
  *    <base>/<namespace>/<topic>/<partition>/
  *
- * where <base> is configured for each server (e.g. /var/lib/redpanda/data). Log
- * segments are stored in the ntp directory with the naming convention:
+ * where <base> is configured for each server (e.g.
+ * /var/lib/redpanda/data). Log segments are stored in the ntp directory
+ * with the naming convention:
  *
  *   <base offset>-<raft term>-<format version>.log
  *
- * where <base offset> is the smallest offset (inclusive) that maps to / is
- * managed by the segment, <format version> is the binary format of the segment,
- * and <raft term> is special metadata specified by raft as it interacts with
- * the log.
+ * where <base offset> is the smallest offset (inclusive) that maps to /
+ * is managed by the segment, <format version> is the binary format of
+ * the segment, and <raft term> is special metadata specified by raft as
+ * it interacts with the log.
  *
- * Generally the log manager is instantiated as part of a sharded service where
- * each core manages a distinct set of logs. When the service is shut down,
- * calling `stop` on the log manager will close all of the logs currently being
- * managed.
+ * Generally the log manager is instantiated as part of a sharded service
+ * where each core manages a distinct set of logs. When the service is
+ * shut down, calling `stop` on the log manager will close all of the
+ * logs currently being managed.
  */
 class log_manager {
 public:
-    // TODO: move storage_type into log_config
-    enum class storage_type { memory, disk };
-
     explicit log_manager(log_config) noexcept;
 
-    ss::future<log> manage(model::ntp, storage_type type = storage_type::disk);
+    ss::future<log> manage(ntp_config);
 
     ss::future<> stop();
 
@@ -108,7 +167,7 @@ public:
 private:
     using logs_type = absl::flat_hash_map<model::ntp, log>;
 
-    ss::future<log> do_manage(model::ntp, storage_type type);
+    ss::future<log> do_manage(ntp_config);
     ss::future<ss::lw_shared_ptr<segment>> do_make_log_segment(
       const model::ntp&,
       model::offset,
@@ -120,15 +179,17 @@ private:
     /**
      * \brief Create a segment reader for the specified file.
      *
-     * Returns an exceptional future if the segment cannot be opened. This may
-     * occur due to many reasons such as a file system error, or because the
-     * segment is corrupt or is stored in an unsupported format.
+     * Returns an exceptional future if the segment cannot be opened.
+     * This may occur due to many reasons such as a file system error, or
+     * because the segment is corrupt or is stored in an unsupported
+     * format.
      *
-     * Returns a ready future containing a nullptr value if the specified file
-     * is not a segment file.
+     * Returns a ready future containing a nullptr value if the specified
+     * file is not a segment file.
      *
      * Returns an open segment if the segment was successfully opened.
-     * Including a valid index and recovery for the index if one does not exist
+     * Including a valid index and recovery for the index if one does not
+     * exist
      */
     ss::future<ss::lw_shared_ptr<segment>> open_segment(
       const std::filesystem::path& path,
@@ -137,8 +198,8 @@ private:
     /**
      * \brief Open all segments in a directory.
      *
-     * Returns an exceptional future if any error occured opening a segment.
-     * Otherwise all open segment readers are returned.
+     * Returns an exceptional future if any error occured opening a
+     * segment. Otherwise all open segment readers are returned.
      */
     ss::future<ss::circular_buffer<ss::lw_shared_ptr<segment>>>
     open_segments(ss::sstring path);
@@ -162,6 +223,5 @@ private:
 
     friend std::ostream& operator<<(std::ostream&, const log_manager&);
 };
-std::ostream& operator<<(std::ostream& o, log_manager::storage_type t);
-std::ostream& operator<<(std::ostream& o, const log_config&);
+std::ostream& operator<<(std::ostream& o, log_config::storage_type t);
 } // namespace storage
