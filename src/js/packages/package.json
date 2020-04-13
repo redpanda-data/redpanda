@@ -5,7 +5,7 @@
   "keywords": [],
   "author": "hi@vectorized.io",
   "scripts": {
-    "fmt": "./node_modules/typescript-formatter/bin/tsfmt --baseDir ../../src/js/ -r"
+    "fmt": "./node_modules/typescript-formatter/bin/tsfmt --baseDir ../../src/js/ -r",
     "build": "./node_modules/typescript/bin/tsc --build ../../src/js/tsconfig.json",
     "test": "./node_modules/mocha/bin/mocha --recursive \"./output/test\""
   },
