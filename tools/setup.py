@@ -26,7 +26,6 @@ setup(
         'absl-py',
         'ansible',
         'click',
-        'cmake',
         'crc32c',
         'docker',
         'docker-compose',
