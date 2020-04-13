@@ -28,8 +28,6 @@ inline static ss::logger tstlog("raft_test");
 using namespace std::chrono_literals; // NOLINT
 
 inline static auto heartbeat_interval = 40ms;
-constexpr inline static auto default_storage_type
-  = storage::log_manager::storage_type::disk;
 
 inline static const raft::replicate_options
   default_replicate_opts(raft::consistency_level::quorum_ack);
@@ -224,15 +222,16 @@ struct raft_group {
     raft_group(
       raft::group_id id,
       int size,
-      storage::log_manager::storage_type storage_type = default_storage_type)
+      storage::log_config::storage_type storage_type
+      = storage::log_config::storage_type::disk)
       : _id(id)
       , _storage_type(storage_type) {
         _log_manager
-          .start(storage::log_config{
-            .base_dir = "test.raft."
-                        + random_generators::gen_alphanum_string(6),
-            .max_segment_size = 100 * 1024 * 1024, // 100MB
-            .should_sanitize = storage::log_config::sanitize_files::yes})
+          .start(storage::log_config(
+            _storage_type,
+            "test.raft." + random_generators::gen_alphanum_string(6),
+            100_MiB,
+            storage::log_config::debug_sanitize_files::yes))
           .get0();
         std::vector<model::broker> brokers;
         for (auto i : boost::irange(0, size)) {
@@ -259,10 +258,14 @@ struct raft_group {
         auto ntp = node_ntp(_id, node_id);
         auto log_optional = _log_manager.local().get(ntp);
         if (!log_optional) {
-            log_optional.emplace(
-              _log_manager.local()
-                .manage(node_ntp(_id, node_id), _storage_type)
-                .get0());
+            log_optional.emplace(_log_manager.local()
+                                   .manage(storage::ntp_config(
+                                     ntp,
+                                     fmt::format(
+                                       "{}/{}",
+                                       _log_manager.local().config().base_dir,
+                                       ntp.path())))
+                                   .get0());
         }
 
         tstlog.info("Enabling node {} in group {}", node_id, _id);
@@ -285,10 +288,14 @@ struct raft_group {
         auto ntp = node_ntp(_id, node_id);
         auto log_optional = _log_manager.local().get(ntp);
         if (!log_optional) {
-            log_optional.emplace(
-              _log_manager.local()
-                .manage(node_ntp(_id, node_id), _storage_type)
-                .get0());
+            log_optional.emplace(_log_manager.local()
+                                   .manage(storage::ntp_config(
+                                     ntp,
+                                     fmt::format(
+                                       "{}/{}",
+                                       _log_manager.local().config().base_dir,
+                                       ntp.path())))
+                                   .get0());
         }
 
         auto broker = make_broker(node_id);
@@ -394,7 +401,7 @@ private:
     ss::condition_variable _leader_elected;
     ss::semaphore _election_sem{0};
     uint32_t _elections_count{0};
-    storage::log_manager::storage_type _storage_type;
+    storage::log_config::storage_type _storage_type;
 };
 
 struct raft_test_fixture {

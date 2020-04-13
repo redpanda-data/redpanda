@@ -19,12 +19,17 @@ using namespace raft; // NOLINT
 struct bootstrap_fixture : raft::simple_record_fixture {
     using raft::simple_record_fixture::active_nodes;
     bootstrap_fixture()
-      : _mngr(storage::log_config{
-        .base_dir = ".",
-        .max_segment_size = 1 << 30,
-        .should_sanitize = storage::log_config::sanitize_files::yes}) {
+      : _mngr(storage::log_config(
+        storage::log_config::storage_type::disk,
+        "test.dir",
+        1_GiB,
+        storage::log_config::debug_sanitize_files::yes,
+        storage::log_config::with_cache::no)) {
         // ignore the get_log()
-        (void)_mngr.manage(_ntp).get0();
+        (void)_mngr
+          .manage(
+            storage::ntp_config(_ntp, fmt::format("test.dir/{}", _ntp.path())))
+          .get0();
     }
     std::vector<storage::append_result> write_n(const std::size_t n) {
         const auto cfg = storage::log_append_config{

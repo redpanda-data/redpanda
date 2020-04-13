@@ -1,5 +1,7 @@
 #include "storage/types.h"
 
+#include <fmt/core.h>
+
 namespace storage {
 std::ostream& operator<<(std::ostream& o, const log_reader_config& cfg) {
     o << "{start_offset:" << cfg.start_offset
@@ -33,6 +35,17 @@ std::ostream& operator<<(std::ostream& o, const timequery_result& a) {
 }
 std::ostream& operator<<(std::ostream& o, const timequery_config& a) {
     return o << "{max_offset:" << a.max_offset << ", time:" << a.time << "}";
+}
+
+std::ostream& operator<<(std::ostream& o, const ntp_config& a) {
+    o << "{ntp:" << a.ntp << ", compaction:" << a.cstrategy
+      << ", segment_size:";
+    if (a.segment_size) {
+        o << *a.segment_size;
+    } else {
+        o << "nullopt";
+    }
+    return o << "}";
 }
 
 } // namespace storage

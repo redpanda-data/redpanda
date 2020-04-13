@@ -27,15 +27,15 @@
 namespace storage {
 
 disk_log_impl::disk_log_impl(
-  model::ntp ntp, ss::sstring workdir, log_manager& manager, segment_set segs)
-  : log::impl(std::move(ntp), std::move(workdir))
+  ntp_config cfg, log_manager& manager, segment_set segs)
+  : log::impl(std::move(cfg))
   , _manager(manager)
   , _segs(std::move(segs))
   , _lock_mngr(_segs) {
     for (auto& s : segs) {
         _probe.add_initial_segment(*s);
     }
-    _probe.setup_metrics(this->ntp());
+    _probe.setup_metrics(this->config().ntp);
 }
 disk_log_impl::~disk_log_impl() {
     vassert(_closed, "log segment must be closed before deleting");
@@ -56,7 +56,9 @@ ss::future<> disk_log_impl::gc(
     // the full history.
     constexpr std::string_view redpanda_ignored_ns = "redpanda";
     constexpr std::string_view kafka_ignored_ns = "kafka_internal";
-    if (ntp().ns() == redpanda_ignored_ns || ntp().ns() == kafka_ignored_ns) {
+    if (
+      config().ntp.ns() == redpanda_ignored_ns
+      || config().ntp.ns() == kafka_ignored_ns) {
         return ss::make_ready_future<>();
     }
     if (max_partition_retention_size) {
@@ -143,7 +145,7 @@ ss::future<> disk_log_impl::new_segment(
   model::offset o, model::term_id t, ss::io_priority_class pc) {
     vassert(
       o() >= 0 && t() >= 0, "offset:{} and term:{} must be initialized", o, t);
-    return _manager.make_log_segment(ntp(), o, t, pc)
+    return _manager.make_log_segment(config().ntp, o, t, pc)
       .then([this](ss::lw_shared_ptr<segment> handles) mutable {
           return remove_empty_segments().then(
             [this, h = std::move(handles)]() mutable {
@@ -341,10 +343,9 @@ std::ostream& operator<<(std::ostream& o, const disk_log_impl& d) {
 }
 
 log make_disk_backed_log(
-  model::ntp ntp, log_manager& manager, segment_set segs) {
-    auto workdir = fmt::format("{}/{}", manager.config().base_dir, ntp.path());
+  ntp_config cfg, log_manager& manager, segment_set segs) {
     auto ptr = ss::make_shared<disk_log_impl>(
-      std::move(ntp), std::move(workdir), manager, std::move(segs));
+      std::move(cfg), manager, std::move(segs));
     return log(ptr);
 }
 

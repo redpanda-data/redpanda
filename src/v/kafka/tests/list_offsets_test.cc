@@ -11,11 +11,7 @@
 using namespace std::chrono_literals;
 
 FIXTURE_TEST(list_offsets, redpanda_thread_fixture) {
-    auto now = ss::lowres_clock::now().time_since_epoch();
-    auto now_ms
-      = std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
-    auto query_ts = model::timestamp(now_ms);
-
+    auto query_ts = model::timestamp::now();
     auto ntp = make_data();
     auto shard = app.shard_table.local().shard_for(ntp);
     tests::cooperative_spin_wait_with_timeout(10s, [this, shard, ntp = ntp] {

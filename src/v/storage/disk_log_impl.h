@@ -17,7 +17,7 @@ class disk_log_impl final : public log::impl {
     using failure_probes = storage::log_failure_probes;
 
 public:
-    disk_log_impl(model::ntp, ss::sstring, log_manager&, segment_set);
+    disk_log_impl(ntp_config, log_manager&, segment_set);
     ~disk_log_impl() override;
     disk_log_impl(disk_log_impl&&) noexcept = default;
     disk_log_impl& operator=(disk_log_impl&&) noexcept = delete;

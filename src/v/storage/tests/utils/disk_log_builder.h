@@ -6,6 +6,7 @@
 #include "storage/disk_log_impl.h"
 #include "storage/log_manager.h"
 #include "storage/tests/utils/random_batch.h"
+#include "units.h"
 #include "vassert.h"
 
 #include <seastar/core/sstring.hh>
@@ -14,7 +15,6 @@
 #include <tuple>
 #include <type_traits>
 #include <vector>
-
 namespace storage {
 
 inline static ss::sstring random_dir() {
@@ -23,10 +23,11 @@ inline static ss::sstring random_dir() {
 }
 
 inline static log_config log_builder_config() {
-    return log_config{
-      .base_dir = random_dir(),
-      .max_segment_size = (1 << 30),
-      .should_sanitize = storage::log_config::sanitize_files::yes};
+    return log_config(
+      log_config::storage_type::disk,
+      random_dir(),
+      100_MiB,
+      log_config::debug_sanitize_files::yes);
 }
 
 inline static log_reader_config reader_config() {
@@ -266,7 +267,6 @@ private:
       ss::circular_buffer<model::record_batch> buff,
       const log_append_config& config);
 
-    log_config _config;
     log_manager _mgr;
     std::optional<log> _log;
     std::vector<std::vector<model::record_batch>> _batches;

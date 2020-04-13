@@ -34,7 +34,14 @@ void write_batches(ss::lw_shared_ptr<segment> seg) {
 }
 
 log_config make_config() {
-    return log_config{"test_dir", 1024, log_config::sanitize_files::yes};
+    return log_config{log_config::storage_type::disk,
+                      "test.dir",
+                      1024,
+                      log_config::debug_sanitize_files::yes};
+}
+
+ntp_config config_from_ntp(const model::ntp& ntp) {
+    return ntp_config(ntp, fmt::format("test.dir/{}", ntp.path()));
 }
 
 SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
@@ -44,7 +51,7 @@ SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
     auto ntp = model::ntp{
       model::ns("ns1"),
       model::topic_partition{model::topic("tp1"), model::partition_id(11)}};
-    directories::initialize("test_dir/" + ntp.path()).get();
+    directories::initialize("test.dir/" + ntp.path()).get();
     // Empty file
     auto seg = m.make_log_segment(
                   ntp,
@@ -57,13 +64,13 @@ SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
     auto ntp2 = model::ntp{
       model::ns("ns1"),
       model::topic_partition{model::topic("tp1"), model::partition_id(1)}};
-    directories::initialize("test_dir/" + ntp2.path()).get();
+    directories::initialize("test.dir/" + ntp2.path()).get();
     // Empty dir
 
     auto ntp3 = model::ntp{
       model::ns("ns1"),
       model::topic_partition{model::topic("tp2"), model::partition_id(33)}};
-    directories::initialize("test_dir/" + ntp3.path()).get();
+    directories::initialize("test.dir/" + ntp3.path()).get();
     auto seg3 = m.make_log_segment(
                    ntp3,
                    model::offset(20),
@@ -76,7 +83,7 @@ SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
     auto ntp4 = model::ntp{
       model::ns("ns2"),
       model::topic_partition{model::topic("tp1"), model::partition_id(50)}};
-    directories::initialize("test_dir/" + ntp4.path()).get();
+    directories::initialize("test.dir/" + ntp4.path()).get();
     auto seg4 = m.make_log_segment(
                    ntp4,
                    model::offset(2),
@@ -86,10 +93,10 @@ SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
     write_garbage(seg4->appender());
     seg4->close().get();
 
-    m.manage(ntp).get();
-    m.manage(ntp2).get();
-    m.manage(ntp3).get();
-    m.manage(ntp4).get();
+    m.manage(config_from_ntp(ntp)).get();
+    m.manage(config_from_ntp(ntp2)).get();
+    m.manage(config_from_ntp(ntp3)).get();
+    m.manage(config_from_ntp(ntp4)).get();
     BOOST_CHECK_EQUAL(4, m.size());
     BOOST_CHECK_EQUAL(m.get(ntp)->segment_count(), 0);
     BOOST_CHECK_EQUAL(m.get(ntp2)->segment_count(), 0);
