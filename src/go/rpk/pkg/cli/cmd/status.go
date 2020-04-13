@@ -75,20 +75,13 @@ func executeStatus(
 
 	if conf.Rpk.EnableUsageStats && send {
 		if conf.NodeUuid == "" {
+			var err error
 			conf, err = config.GenerateAndWriteNodeUuid(fs, conf)
 			if err != nil {
 				log.Info("Error writing the node's UUID: ", err)
 			}
-			if err != nil {
-				return err
-			}
 		}
-		payload := api.MetricsPayload{
-			FreeMemoryMB:  metrics.FreeMemoryMB,
-			FreeSpaceMB:   metrics.FreeSpaceMB,
-			CpuPercentage: metrics.CpuPercentage,
-		}
-		err := api.SendMetrics(payload, *conf)
+		err := sendMetrics(fs, conf, metrics)
 		if err != nil {
 			log.Info("Error sending metrics: ", err)
 		}
@@ -103,4 +96,13 @@ func printMetrics(p *system.Metrics) {
 	t.Append([]string{"Free Memory (MB)", fmt.Sprint(p.FreeMemoryMB)})
 	t.Append([]string{"Free Space  (MB)", fmt.Sprint(p.FreeSpaceMB)})
 	t.Render()
+}
+
+func sendMetrics(fs afero.Fs, conf *config.Config, metrics *system.Metrics) error {
+	payload := api.MetricsPayload{
+		FreeMemoryMB:  metrics.FreeMemoryMB,
+		FreeSpaceMB:   metrics.FreeSpaceMB,
+		CpuPercentage: metrics.CpuPercentage,
+	}
+	return api.SendMetrics(payload, *conf)
 }
