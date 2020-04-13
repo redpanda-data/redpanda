@@ -2,6 +2,7 @@ package config
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 	"vectorized/pkg/utils"
 	vyaml "vectorized/pkg/yaml"
@@ -641,6 +642,70 @@ func TestCheckConfig(t *testing.T) {
 				errMsgs = append(errMsgs, err.Error())
 			}
 			require.Exactly(t, tt.expected, errMsgs)
+		})
+	}
+}
+
+func TestReadToJson(t *testing.T) {
+	tests := []struct {
+		name         string
+		src          string
+		expectedJson string
+	}{
+		{
+			name: "it should read the raw config as JSON",
+			src: `
+organization: ""
+cluster_id: ""
+pid_file: "/var/lib/redpanda/pid"
+redpanda:
+  data_directory: "/var/lib/redpanda/data"
+  node_id: 1
+  seed_servers: []
+  rpc_server:
+    address: "0.0.0.0"
+    port: 33145
+  kafka_api:
+    address: "0.0.0.0"
+    port: 9092
+  admin:
+    address: "0.0.0.0"
+    port: 9644
+rpk:
+  enable_usage_stats: true
+  tune_network: true
+  tune_disk_scheduler: true
+  tune_disk_nomerges: true
+  tune_disk_irq: true
+  tune_cpu: true
+  tune_aio_events: true
+  tune_clocksource: true
+  tune_swappiness: true
+  enable_memory_locking: false
+  tune_coredump: false
+  coredump_dir: "/var/lib/redpanda/coredump"
+`,
+			expectedJson: `{"cluster_id":"","organization":"","pid_file":"/var/lib/redpanda/pid","redpanda":{"admin":{"address":"0.0.0.0","port":9644},"data_directory":"/var/lib/redpanda/data","kafka_api":{"address":"0.0.0.0","port":9092},"node_id":1,"rpc_server":{"address":"0.0.0.0","port":33145},"seed_servers":[]},"rpk":{"coredump_dir":"/var/lib/redpanda/coredump","enable_memory_locking":false,"enable_usage_stats":true,"tune_aio_events":true,"tune_clocksource":true,"tune_coredump":false,"tune_cpu":true,"tune_disk_irq":true,"tune_disk_nomerges":true,"tune_disk_scheduler":true,"tune_network":true,"tune_swappiness":true}}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fs := afero.NewMemMapFs()
+			path := "/etc/redpanda/redpanda.yaml"
+			err := afero.WriteFile(
+				fs,
+				path,
+				[]byte(tt.src),
+				0644,
+			)
+			require.NoError(t, err)
+			jsonConf, err := ReadToJson(fs, path)
+			require.NoError(t, err)
+			trimmed := strings.ReplaceAll(jsonConf, " ", "")
+			trimmed = strings.ReplaceAll(trimmed, "\n", "")
+			trimmed = strings.ReplaceAll(trimmed, "\t", "")
+			require.Equal(t, tt.expectedJson, trimmed)
 		})
 	}
 }
