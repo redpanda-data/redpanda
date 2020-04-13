@@ -13,6 +13,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+type status struct {
+	metrics  *system.Metrics
+	jsonConf string
+}
+
 func NewStatusCommand(fs afero.Fs) *cobra.Command {
 	var (
 		configFile string
@@ -86,6 +91,14 @@ func executeStatus(
 			log.Info("Error sending metrics: ", err)
 		}
 	}
+
+	jsonConf, err := config.ReadToJson(fs, configFile)
+	if err != nil {
+		log.Info("Error reading or parsing configuration: ", err)
+	} else {
+		printConfig(jsonConf)
+	}
+
 	return nil
 }
 
@@ -95,6 +108,12 @@ func printMetrics(p *system.Metrics) {
 	t.Append([]string{"CPU Usage %", fmt.Sprint(p.CpuPercentage)})
 	t.Append([]string{"Free Memory (MB)", fmt.Sprint(p.FreeMemoryMB)})
 	t.Append([]string{"Free Space  (MB)", fmt.Sprint(p.FreeSpaceMB)})
+	t.Render()
+}
+
+func printConfig(jsonConfig string) {
+	t := ui.NewRpkTable(log.StandardLogger().Out)
+	t.Append([]string{"Current Config", jsonConfig})
 	t.Render()
 }
 
