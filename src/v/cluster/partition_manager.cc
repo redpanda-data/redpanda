@@ -36,14 +36,12 @@ storage::log_config manager_config_from_global_config() {
 
 partition_manager::partition_manager(
   model::timeout_clock::duration disk_timeout,
-  ss::sharded<cluster::shard_table>& nlc,
   ss::sharded<rpc::connection_cache>& clients)
   : _self(config::shard_local_cfg().node_id())
   , _disk_timeout(disk_timeout)
   , _mngr(manager_config_from_global_config())
   , _client(raft::make_rpc_client_protocol(clients))
-  , _hbeats(config::shard_local_cfg().raft_heartbeat_interval(), _client)
-  , _shard_table(nlc) {}
+  , _hbeats(config::shard_local_cfg().raft_heartbeat_interval(), _client) {}
 
 ss::future<> partition_manager::start() { return _hbeats.start(); }
 
