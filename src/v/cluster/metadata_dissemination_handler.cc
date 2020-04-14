@@ -20,7 +20,7 @@ metadata_dissemination_handler::metadata_dissemination_handler(
 
 ss::future<update_leadership_reply>
 metadata_dissemination_handler::update_leadership(
-  update_leadership_request&& req, rpc::streaming_context& sc) {
+  update_leadership_request&& req, rpc::streaming_context&) {
     return ss::with_scheduling_group(
       get_scheduling_group(), [this, req = std::move(req)]() mutable {
           return do_update_leadership(std::move(req));
@@ -58,7 +58,7 @@ make_get_leadership_reply(const metadata_cache& cache) {
 }
 
 ss::future<get_leadership_reply> metadata_dissemination_handler::get_leadership(
-  get_leadership_request&& req, rpc::streaming_context& sc) {
+  get_leadership_request&& req, rpc::streaming_context&) {
     return ss::with_scheduling_group(
       get_scheduling_group(), [this, req = std::move(req)]() mutable {
           return ss::make_ready_future<get_leadership_reply>(
