@@ -78,6 +78,10 @@ func executeStatus(
 			log.Info("Error gathering metrics: ", err)
 		}
 	}
+	osInfo, err := system.UnameAndDistro(timeout)
+	if err != nil {
+		log.Info("Error querying OS info: ", err)
+	}
 	cpuInfo, err := system.CpuInfo()
 	if err != nil {
 		log.Info("Error querying CPU info: ", err)
@@ -86,7 +90,7 @@ func executeStatus(
 	if len(cpuInfo) > 0 {
 		cpuModel = cpuInfo[0].ModelName
 	}
-	printMetrics(metrics, cpuModel)
+	printMetrics(metrics, osInfo, cpuModel)
 
 	if conf.Rpk.EnableUsageStats && send {
 		if conf.NodeUuid == "" {
@@ -121,9 +125,10 @@ func executeStatus(
 	return nil
 }
 
-func printMetrics(p *system.Metrics, cpuModel string) {
+func printMetrics(p *system.Metrics, osInfo, cpuModel string) {
 	t := ui.NewRpkTable(log.StandardLogger().Out)
 	t.SetHeader([]string{"Name", "Value"})
+	t.Append([]string{"OS", osInfo})
 	t.Append([]string{"CPU Model", cpuModel})
 	t.Append([]string{"CPU Usage %", fmt.Sprint(p.CpuPercentage)})
 	t.Append([]string{"Free Memory (MB)", fmt.Sprint(p.FreeMemoryMB)})
