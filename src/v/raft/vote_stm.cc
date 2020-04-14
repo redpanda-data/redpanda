@@ -67,9 +67,9 @@ ss::future<> vote_stm::dispatch_one(model::node_id n) {
     });
 }
 
-std::pair<int32_t, int32_t> vote_stm::partition_count() const {
-    int32_t success = 0;
-    int32_t failure = 0;
+std::pair<uint32_t, uint32_t> vote_stm::partition_count() const {
+    uint32_t success = 0;
+    uint32_t failure = 0;
     for (auto& m : _replies) {
         auto voting_state = m.get_state();
         if (voting_state == vmeta::state::vote_granted) {
