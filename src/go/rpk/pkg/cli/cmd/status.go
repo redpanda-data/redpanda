@@ -78,8 +78,15 @@ func executeStatus(
 			log.Info("Error gathering metrics: ", err)
 		}
 	}
-
-	printMetrics(metrics)
+	cpuInfo, err := system.CpuInfo()
+	if err != nil {
+		log.Info("Error querying CPU info: ", err)
+	}
+	cpuModel := ""
+	if len(cpuInfo) > 0 {
+		cpuModel = cpuInfo[0].ModelName
+	}
+	printMetrics(metrics, cpuModel)
 
 	if conf.Rpk.EnableUsageStats && send {
 		if conf.NodeUuid == "" {
@@ -114,9 +121,10 @@ func executeStatus(
 	return nil
 }
 
-func printMetrics(p *system.Metrics) {
+func printMetrics(p *system.Metrics, cpuModel string) {
 	t := ui.NewRpkTable(log.StandardLogger().Out)
 	t.SetHeader([]string{"Name", "Value"})
+	t.Append([]string{"CPU Model", cpuModel})
 	t.Append([]string{"CPU Usage %", fmt.Sprint(p.CpuPercentage)})
 	t.Append([]string{"Free Memory (MB)", fmt.Sprint(p.FreeMemoryMB)})
 	t.Append([]string{"Free Space  (MB)", fmt.Sprint(p.FreeSpaceMB)})
@@ -145,7 +153,9 @@ func printKafkaInfo(topics []*sarama.TopicMetadata) {
 	t.Render()
 }
 
-func sendMetrics(fs afero.Fs, conf *config.Config, metrics *system.Metrics) error {
+func sendMetrics(
+	fs afero.Fs, conf *config.Config, metrics *system.Metrics,
+) error {
 	payload := api.MetricsPayload{
 		FreeMemoryMB:  metrics.FreeMemoryMB,
 		FreeSpaceMB:   metrics.FreeSpaceMB,
