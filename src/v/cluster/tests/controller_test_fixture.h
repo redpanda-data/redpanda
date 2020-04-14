@@ -95,11 +95,7 @@ public:
         set_configuration("disable_metrics", true);
 
         using namespace std::chrono_literals;
-        _pm
-          .start(
-            model::timeout_clock::duration(2s),
-            std::ref(st),
-            std::ref(_cli_cache))
+        _pm.start(model::timeout_clock::duration(2s), std::ref(_cli_cache))
           .get0();
         _metadata_dissemination_service
           .start(std::ref(_md_cache), std::ref(_cli_cache))
