@@ -22,7 +22,7 @@ service::join(join_request&& req, rpc::streaming_context&) {
             .invoke_on(
               controller::shard,
               get_smp_service_group(),
-              [this, broker = std::move(broker)](controller& c) mutable {
+              [broker = std::move(broker)](controller& c) mutable {
                   return c.process_join_request(std::move(broker));
               })
             .then([](result<join_reply> r) {
@@ -42,7 +42,7 @@ service::create_topics(create_topics_request&& r, rpc::streaming_context&) {
             .invoke_on(
               controller::shard,
               get_smp_service_group(),
-              [this, r = std::move(r)](controller& c) mutable {
+              [r = std::move(r)](controller& c) mutable {
                   return c.create_topics(
                     std::move(r.topics),
                     model::timeout_clock::now() + r.timeout);

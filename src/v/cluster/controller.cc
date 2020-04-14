@@ -545,7 +545,7 @@ ss::future<std::vector<topic_result>> controller::process_autocreate_response(
               "Topic configurations: {}, metadata: {}",
               cfg,
               md);
-            for (int i = 0; i < cfg.size(); ++i) {
+            for (size_t i = 0; i < cfg.size(); ++i) {
                 c.insert_topic(std::move(md[i]), std::move(cfg[i]));
             }
         })
@@ -689,7 +689,7 @@ ss::future<std::vector<topic_result>> controller::do_create_topics(
             "Topic create errors: {}, results: {}", errors, results);
           std::move(
             std::begin(errors), std::end(errors), std::back_inserter(results));
-          return std::move(results);
+          return results;
       });
 }
 
@@ -750,9 +750,7 @@ ss::future<> controller::do_leadership_notification(
 }
 
 ss::future<> controller::handle_controller_leadership_notification(
-  ss::semaphore_units<> u,
-  model::term_id term,
-  std::optional<model::node_id> lid) {
+  ss::semaphore_units<> u, model::term_id, std::optional<model::node_id> lid) {
     if (lid != _self.id()) {
         _is_leader = false;
         return ss::make_ready_future<>();

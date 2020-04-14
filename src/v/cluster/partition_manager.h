@@ -16,7 +16,6 @@ class partition_manager {
 public:
     partition_manager(
       model::timeout_clock::duration disk_timeout,
-      ss::sharded<cluster::shard_table>& nlc,
       ss::sharded<rpc::connection_cache>& clients);
 
     using leader_cb_t = ss::noncopyable_function<void(
@@ -119,8 +118,6 @@ private:
     raft::heartbeat_manager _hbeats;
     /// used to wait for concurrent recoveries
     ss::gate _bg;
-
-    ss::sharded<cluster::shard_table>& _shard_table;
 
     notification_id_type _notification_id{0};
     std::vector<std::pair<notification_id_type, leader_cb_t>> _notifications;

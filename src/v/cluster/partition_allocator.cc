@@ -58,8 +58,8 @@ partition_allocator::allocate_replicas(int16_t replication_factor) {
     std::vector<model::broker_shard> replicas;
     replicas.reserve(replication_factor);
 
-    while (replicas.size() < replication_factor) {
-        const int16_t replicas_left = replication_factor - replicas.size();
+    while (replicas.size() < (size_t)replication_factor) {
+        const uint16_t replicas_left = replication_factor - replicas.size();
         if (_available_machines.size() < replicas_left) {
             rollback(replicas);
             return std::nullopt;
