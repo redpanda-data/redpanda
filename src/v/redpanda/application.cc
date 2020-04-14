@@ -169,7 +169,6 @@ void application::wire_up_services() {
     construct_service(
       partition_manager,
       std::chrono::seconds(10), // disk timeout
-      std::ref(shard_table),
       std::ref(_raft_connection_cache))
       .get();
     vlog(_log.info, "Partition manager started");
