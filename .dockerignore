@@ -1,16 +1,12 @@
 # ignore everything except toolchain stuff whitelisted below
 **/*
 
-# vtools
+# base
 !/tools/install-deps.sh
-!/tools/setup.py
-!/tools/tox.ini
-!/tools/README.md
-!/tools/requirements.txt
-!/tools/requirements-dev.txt
-!/tools/vtools
+
+# vtools configs
 !/tools/ci/vtools*.yml
-!/tools/ci/scripts/remove-zlib.sh
+!/tools/vtools/install/commands.py
 
 # rpk
 !/src/go/rpk/go.mod
@@ -20,9 +16,11 @@
 
 # clang
 !/cmake/caches/llvm.cmake
+!/tools/vtools/vlib/clang.py
 
 # external projects
 !/3rdparty.cmake.in
+!/tools/vtools/vlib/cmake.py
 
 # rp
 !/CMakeLists.txt
