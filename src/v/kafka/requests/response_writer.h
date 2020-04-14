@@ -118,6 +118,16 @@ public:
         return size;
     }
 
+    template<typename T, typename Tag>
+    uint32_t write(const named_type<T, Tag>& t) {
+        return write(t());
+    }
+
+    template<typename Rep, typename Period>
+    uint32_t write(const std::chrono::duration<Rep, Period>& d) {
+        return write(int32_t(d.count()));
+    }
+
     // clang-format off
     template<typename T, typename ElementWriter>
     CONCEPT(requires requires (ElementWriter writer,
