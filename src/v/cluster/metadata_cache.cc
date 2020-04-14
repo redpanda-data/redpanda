@@ -235,7 +235,7 @@ void metadata_cache::insert_topic(
 ss::future<model::node_id> metadata_cache::get_leader(
   const model::ntp& ntp, ss::lowres_clock::time_point timeout) {
     if (auto md = get_topic_metadata(model::topic_namespace_view(ntp)); md) {
-        if (ntp.tp.partition() < md->partitions.size()) {
+        if ((size_t)ntp.tp.partition() < md->partitions.size()) {
             auto& p = md->partitions[ntp.tp.partition()];
             if (p.leader_node) {
                 return ss::make_ready_future<model::node_id>(*p.leader_node);

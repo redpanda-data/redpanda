@@ -29,7 +29,7 @@ std::vector<model::node_id> calculate_non_overlapping_nodes(
 std::vector<model::node_id> get_partition_members(
   model::partition_id pid, const model::topic_metadata& tp_md) {
     std::vector<model::node_id> members;
-    if (unlikely(pid() >= tp_md.partitions.size())) {
+    if (unlikely((size_t)pid() >= tp_md.partitions.size())) {
         throw std::invalid_argument(fmt::format(
           "Topic {} does not contain partion {}", tp_md.tp_ns, pid));
     }
