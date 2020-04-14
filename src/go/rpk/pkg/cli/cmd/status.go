@@ -2,12 +2,14 @@ package cmd
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 	"vectorized/pkg/api"
 	"vectorized/pkg/cli/ui"
 	"vectorized/pkg/config"
 	"vectorized/pkg/system"
 
+	"github.com/Shopify/sarama"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
@@ -16,6 +18,7 @@ import (
 type status struct {
 	metrics  *system.Metrics
 	jsonConf string
+	topics   []*sarama.TopicMetadata
 }
 
 func NewStatusCommand(fs afero.Fs) *cobra.Command {
@@ -98,6 +101,15 @@ func executeStatus(
 	} else {
 		printConfig(jsonConf)
 	}
+	topics, err := topicsDetail(
+		conf.Redpanda.KafkaApi.Address,
+		conf.Redpanda.KafkaApi.Port,
+	)
+	if err != nil {
+		log.Info("Error fetching the Redpanda topic details: ", err)
+	} else if len(topics) > 0 {
+		printKafkaInfo(topics)
+	}
 
 	return nil
 }
@@ -117,6 +129,22 @@ func printConfig(jsonConfig string) {
 	t.Render()
 }
 
+func printKafkaInfo(topics []*sarama.TopicMetadata) {
+	t := ui.NewRpkTable(log.StandardLogger().Out)
+	t.SetHeader([]string{"Topic", "Partition", "Leader", "Replicas"})
+	for _, topic := range topics {
+		for _, p := range topic.Partitions {
+			t.Append([]string{
+				topic.Name,
+				strconv.Itoa(int(p.ID)),
+				strconv.Itoa(int(p.Leader)),
+				fmt.Sprintf("%v", p.Replicas),
+			})
+		}
+	}
+	t.Render()
+}
+
 func sendMetrics(fs afero.Fs, conf *config.Config, metrics *system.Metrics) error {
 	payload := api.MetricsPayload{
 		FreeMemoryMB:  metrics.FreeMemoryMB,
@@ -124,4 +152,30 @@ func sendMetrics(fs afero.Fs, conf *config.Config, metrics *system.Metrics) erro
 		CpuPercentage: metrics.CpuPercentage,
 	}
 	return api.SendMetrics(payload, *conf)
+}
+
+func topicsDetail(ip string, port int) ([]*sarama.TopicMetadata, error) {
+	saramaConf := sarama.NewConfig()
+	saramaConf.Version = sarama.V2_4_0_0
+	saramaConf.Producer.Return.Successes = true
+	saramaConf.Admin.Timeout = 1 * time.Second
+	selfAddr := fmt.Sprintf("%s:%d", ip, port)
+	client, err := sarama.NewClient([]string{selfAddr}, saramaConf)
+	if err != nil {
+		return nil, err
+	}
+	admin, err := sarama.NewClusterAdminFromClient(client)
+	if err != nil {
+		return nil, err
+	}
+	defer admin.Close()
+	topics, err := admin.ListTopics()
+	if err != nil {
+		return nil, err
+	}
+	topicNames := []string{}
+	for name, _ := range topics {
+		topicNames = append(topicNames, name)
+	}
+	return admin.DescribeTopics(topicNames)
 }
