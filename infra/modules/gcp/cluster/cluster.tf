@@ -18,19 +18,19 @@ locals {
 
 provider "google" {
   credentials = file(pathexpand("~/.gcp.json"))
-  project = "vectorized"
-  region  = var.region
-  zone    = "${var.region}-${var.zone}"
+  project     = "vectorized"
+  region      = var.region
+  zone        = "${var.region}-${var.zone}"
 }
 
 resource "google_compute_instance" "node" {
-  count        = var.nodes
-  name         = "${var.owner}-${local.uuid}-${count.index}"
+  count = var.nodes
+  name  = "${var.owner}-${local.uuid}-${count.index}"
   # The "test-clusters" VPC has specific firewall rules for nodes tagged with
   # "rp-node", allowing ingress traffic only on ports 22, 3000, 9090, 9092, 33145, 
   # 9644, 8888 and 8889.
   # https://console.cloud.google.com/networking/firewalls/details/test-clusters-rp-node-firewall?project=vectorized
-  tags = ["rp-node"]
+  tags         = ["rp-node"]
   machine_type = var.machine_type
 
   metadata = {
