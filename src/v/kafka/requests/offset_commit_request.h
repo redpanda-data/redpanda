@@ -3,6 +3,8 @@
 #include "bytes/iobuf.h"
 #include "kafka/errors.h"
 #include "kafka/requests/fwd.h"
+#include "kafka/requests/schemata/offset_commit_request.h"
+#include "kafka/requests/schemata/offset_commit_response.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
@@ -29,71 +31,58 @@ struct offset_commit_api final {
 struct offset_commit_request final {
     using api_type = offset_commit_api;
 
-    struct partition {
-        model::partition_id id;
-        model::offset committed;
-        model::timestamp commit_timestamp; // == v1
-        int32_t leader_epoch;              // >= v6
-        std::optional<ss::sstring> metadata;
-    };
-
-    struct topic {
-        model::topic name;
-        std::vector<partition> partitions;
-    };
-
-    kafka::group_id group_id;
-    kafka::generation_id generation_id;
-    kafka::member_id member_id;
-    std::optional<std::chrono::milliseconds> retention_time_ms; // >= v2, < v5
-    std::optional<kafka::group_instance_id> group_instance_id;  // >= v7
-    std::vector<topic> topics;
+    offset_commit_request_data data;
 
     // set during request processing after mapping group to ntp
     model::ntp ntp;
 
-    offset_commit_request() = default;
-    offset_commit_request(request_context& ctx) { decode(ctx); }
+    void encode(response_writer& writer, api_version version) {
+        data.encode(writer, version);
+    }
 
-    void encode(response_writer& writer, api_version version);
-    void decode(request_context& ctx);
+    void decode(request_reader& reader, api_version version) {
+        data.decode(reader, version);
+    }
 };
 
-std::ostream& operator<<(std::ostream&, const offset_commit_request&);
+static inline std::ostream&
+operator<<(std::ostream& os, const offset_commit_request& r) {
+    return os << r.data;
+}
 
 struct offset_commit_response final {
     using api_type = offset_commit_api;
 
-    struct partition {
-        model::partition_id id;
-        error_code error;
-    };
-
-    struct topic {
-        model::topic name;
-        std::vector<partition> partitions;
-    };
-
-    std::chrono::milliseconds throttle_time_ms{0}; // >= v3
-    std::vector<topic> topics;
+    offset_commit_response_data data;
 
     offset_commit_response() = default;
 
     offset_commit_response(
       const offset_commit_request& request, error_code error) {
-        for (const auto& t : request.topics) {
-            topic tmp{.name = t.name};
+        for (const auto& t : request.data.topics) {
+            offset_commit_response_topic tmp{.name = t.name};
             for (const auto& p : t.partitions) {
-                tmp.partitions.push_back({.id = p.id, error});
+                tmp.partitions.push_back({
+                  .partition_index = p.partition_index,
+                  .error_code = error,
+                });
             }
-            topics.push_back(std::move(tmp));
+            data.topics.push_back(std::move(tmp));
         }
     }
 
-    void encode(const request_context& ctx, response& resp);
-    void decode(iobuf buf, api_version version);
+    void encode(const request_context& ctx, response& resp) {
+        data.encode(ctx, resp);
+    }
+
+    void decode(iobuf buf, api_version version) {
+        data.decode(std::move(buf), version);
+    }
 };
 
-std::ostream& operator<<(std::ostream&, const offset_commit_response&);
+static inline std::ostream&
+operator<<(std::ostream& os, const offset_commit_response& r) {
+    return os << r.data;
+}
 
 } // namespace kafka
