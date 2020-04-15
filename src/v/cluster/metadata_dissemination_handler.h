@@ -2,7 +2,6 @@
 
 #include "cluster/metadata_cache.h"
 #include "cluster/metadata_dissemination_rpc_service.h"
-#include "kafka/groups/group.h"
 #include "raft/types.h"
 #include "rpc/connection_cache.h"
 

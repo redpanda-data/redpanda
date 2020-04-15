@@ -21,61 +21,15 @@
 
 namespace kafka {
 
-void api_versions_request::encode(
-  response_writer& writer, api_version version) {
-    if (version >= api_version(3)) {
-        writer.write(client_software_name);
-        writer.write(client_software_version);
-    }
-}
-
-void api_versions_request::decode(request_reader& reader, api_version version) {
-    if (version >= api_version(3)) {
-        client_software_name = reader.read_string();
-        client_software_version = reader.read_string();
-    }
-}
-
-void api_versions_response::encode(const request_context& ctx, response& resp) {
-    auto& writer = resp.writer();
-    auto version = ctx.header().version;
-
-    writer.write(int16_t(error));
-    writer.write_array(apis, [](const auto& api, response_writer& wr) {
-        wr.write(int16_t(api.key()));
-        wr.write(int16_t(api.min_version()));
-        wr.write(int16_t(api.max_version()));
-    });
-
-    if (version >= api_version(1)) {
-        writer.write(int32_t(throttle.count()));
-    }
-}
-
-void api_versions_response::decode(iobuf buf, api_version version) {
-    request_reader reader(std::move(buf));
-
-    error = error_code{reader.read_int16()};
-    apis = reader.read_array([](request_reader& reader) {
-        return api{
-          .key = api_key(reader.read_int16()),
-          .min_version = api_version(reader.read_int16()),
-          .max_version = api_version(reader.read_int16()),
-        };
-    });
-    if (version >= api_version(1)) {
-        throttle = std::chrono::milliseconds(reader.read_int32());
-    }
-}
-
 static std::ostream&
-operator<<(std::ostream& os, const api_versions_response::api& a) {
-    fmt::print(os, "key {} min {} max {}", a.key, a.min_version, a.max_version);
+operator<<(std::ostream& os, const api_versions_response_key& a) {
+    fmt::print(
+      os, "key {} min {} max {}", a.api_key, a.min_version, a.max_version);
     return os;
 }
 
 std::ostream& operator<<(std::ostream& os, const api_versions_response& r) {
-    fmt::print(os, "error {} apis {}", r.error, r.apis);
+    fmt::print(os, "error {} apis {}", r.data.error_code, r.data.api_keys);
     return os;
 }
 
@@ -105,19 +59,19 @@ using request_types = make_request_types<
 
 template<typename RequestType>
 static auto make_api() {
-    return api_versions_response::api{
+    return api_versions_response_key{
       RequestType::key, RequestType::min_supported, RequestType::max_supported};
 }
 
 template<typename... RequestTypes>
-static std::vector<api_versions_response::api>
+static std::vector<api_versions_response_key>
 serialize_apis(type_list<RequestTypes...>) {
-    std::vector<api_versions_response::api> apis;
+    std::vector<api_versions_response_key> apis;
     (apis.push_back(make_api<RequestTypes>()), ...);
     return apis;
 }
 
-std::vector<api_versions_response::api> get_supported_apis() {
+std::vector<api_versions_response_key> get_supported_apis() {
     return serialize_apis(request_types{});
 }
 
@@ -132,21 +86,17 @@ api_versions_api::process(request_context&& ctx, ss::smp_service_group) {
     // version and only fallback to the old version when necessary.
     api_versions_response r;
     if (ctx.header().version > max_supported) {
-        r.error = error_code::unsupported_version;
+        r.data.error_code = error_code::unsupported_version;
     } else {
         api_versions_request request;
         request.decode(ctx.reader(), ctx.header().version);
-        if (!request.valid(ctx.header().version)) {
-            r.error = error_code::invalid_request;
-        } else {
-            r.error = error_code::none;
-        }
+        r.data.error_code = error_code::none;
     }
 
     if (
-      r.error == error_code::none
-      || r.error == error_code::unsupported_version) {
-        r.apis = get_supported_apis();
+      r.data.error_code == error_code::none
+      || r.data.error_code == error_code::unsupported_version) {
+        r.data.api_keys = get_supported_apis();
     }
 
     return ctx.respond(std::move(r));

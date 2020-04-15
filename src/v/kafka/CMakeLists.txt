@@ -1,3 +1,5 @@
+add_subdirectory(requests/schemata)
+
 set(request_srcs
   requests/requests.cc
   requests/api_versions_request.cc
@@ -36,6 +38,7 @@ v_cc_library(
     v::bytes
     v::rpc
     v::cluster
+    v::kafka_request_schemata
     absl::flat_hash_map
     absl::flat_hash_set
 )

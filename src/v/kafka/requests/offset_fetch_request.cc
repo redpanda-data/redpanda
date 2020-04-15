@@ -15,106 +15,37 @@
 
 namespace kafka {
 
-void offset_fetch_request::encode(
-  response_writer& writer, [[maybe_unused]] api_version version) {
-    writer.write(group_id());
-    writer.write_nullable_array(
-      topics, [](topic& topic, response_writer& writer) {
-          writer.write(topic.name);
-          writer.write_array(
-            topic.partitions,
-            [](model::partition_id id, response_writer& writer) {
-                writer.write(id);
-            });
-      });
-}
-
-void offset_fetch_request::decode(request_context& ctx) {
-    auto& reader = ctx.reader();
-
-    group_id = kafka::group_id(reader.read_string());
-    topics = reader.read_nullable_array([](request_reader& reader) {
-        return topic{
-          .name = model::topic(reader.read_string()),
-          .partitions = reader.read_array([](request_reader& reader) {
-              return model::partition_id(reader.read_int32());
-          }),
-        };
-    });
-}
-
 static std::ostream&
-operator<<(std::ostream& o, const offset_fetch_request::topic& t) {
-    return ss::fmt_print(o, "topic={} partitions={}", t.name, t.partitions);
+operator<<(std::ostream& o, const offset_fetch_request_topic& t) {
+    return ss::fmt_print(
+      o, "topic={} partitions={}", t.name, t.partition_indexes);
 }
 
 std::ostream& operator<<(std::ostream& o, const offset_fetch_request& r) {
-    return ss::fmt_print(o, "group={} topics={}", r.group_id, r.topics);
-}
-
-void offset_fetch_response::encode(const request_context& ctx, response& resp) {
-    auto& writer = resp.writer();
-    const auto version = ctx.header().version;
-
-    if (version >= api_version(3)) {
-        writer.write(int32_t(throttle_time_ms.count()));
-    }
-    writer.write_array(topics, [](topic& topic, response_writer& writer) {
-        writer.write(topic.name);
-        writer.write_array(
-          topic.partitions, [](partition& partition, response_writer& writer) {
-              writer.write(partition.id);
-              writer.write(partition.offset);
-              writer.write(partition.metadata);
-              writer.write(partition.error);
-          });
-    });
-    if (version >= api_version(2)) {
-        writer.write(error);
-    }
-}
-
-void offset_fetch_response::decode(iobuf buf, api_version version) {
-    request_reader reader(std::move(buf));
-
-    if (version >= api_version(3)) {
-        throttle_time_ms = std::chrono::milliseconds(reader.read_int32());
-    }
-    topics = reader.read_array([](request_reader& reader) {
-        auto name = model::topic(reader.read_string());
-        auto partitions = reader.read_array([](request_reader& reader) {
-            partition p;
-            p.id = model::partition_id(reader.read_int32());
-            p.offset = model::offset(reader.read_int64());
-            p.metadata = reader.read_nullable_string();
-            p.error = error_code(reader.read_int16());
-            return p;
-        });
-        return topic{std::move(name), std::move(partitions)};
-    });
-    error = error_code(reader.read_int16());
+    return ss::fmt_print(
+      o, "group={} topics={}", r.data.group_id, r.data.topics);
 }
 
 static std::ostream&
-operator<<(std::ostream& os, const offset_fetch_response::partition& p) {
+operator<<(std::ostream& os, const offset_fetch_response_partition& p) {
     fmt::print(
       os,
       "id {} offset {} metadata {} error {}",
-      p.id,
-      p.offset,
+      p.partition_index,
+      p.committed_offset,
       p.metadata,
-      p.error);
+      p.error_code);
     return os;
 }
 
 static std::ostream&
-operator<<(std::ostream& os, const offset_fetch_response::topic& t) {
+operator<<(std::ostream& os, const offset_fetch_response_topic& t) {
     fmt::print(os, "name {} partitions {}", t.name, t.partitions);
     return os;
 }
 
 std::ostream& operator<<(std::ostream& os, const offset_fetch_response& r) {
-    fmt::print(os, "topics {}", r.topics);
+    fmt::print(os, "topics {}", r.data.topics);
     return os;
 }
 
@@ -134,7 +65,8 @@ struct offset_fetch_ctx {
 
 ss::future<response_ptr>
 offset_fetch_api::process(request_context&& ctx, ss::smp_service_group ssg) {
-    offset_fetch_request request(ctx);
+    offset_fetch_request request;
+    request.decode(ctx.reader(), ctx.header().version);
     klog.trace("Handling request {}", request);
     return ss::do_with(
       offset_fetch_ctx(std::move(ctx), std::move(request), ssg),
