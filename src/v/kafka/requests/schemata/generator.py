@@ -75,6 +75,7 @@ field_name_type_map = {
 # primitive types
 basic_type_map = dict(
     string=("ss::sstring", "read_string()", "read_nullable_string()"),
+    bytes=("bytes", "read_bytes()"),
     int8=("int8_t", "read_int8()"),
     int16=("int16_t", "read_int16()"),
     int32=("int32_t", "read_int32()"),
