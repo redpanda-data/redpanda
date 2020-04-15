@@ -2,6 +2,7 @@
 
 #include "raft/consensus.h"
 #include "raft/raftgen_service.h"
+#include "raft/types.h"
 #include "seastarx.h"
 #include "utils/copy_range.h"
 
@@ -132,7 +133,10 @@ private:
         }
         auto shard = _shard_table.shard_for(group);
         return with_scheduling_group(
-          get_scheduling_group(), [this, shard, r = std::move(r)]() mutable {
+          get_scheduling_group(),
+          [this,
+           shard,
+           r = append_entries_request::make_foreign(std::move(r))]() mutable {
               return _group_manager.invoke_on(
                 shard,
                 get_smp_service_group(),
