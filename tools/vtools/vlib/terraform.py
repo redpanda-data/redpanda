@@ -28,6 +28,7 @@ known_tfvars = {
             'zone',
             'owner',
             'nodes',
+            'disks',
             'image',
             'machine_type',
             'ssh_user',
@@ -72,6 +73,11 @@ def destroy(vconfig, provider, module):
 
     logging.info(f'''No deployment found for module {module} in provider
 {provider}. Nothing to destroy.''')
+
+
+def deployment_exists(vconfig, provider, module):
+    deploy_key = _get_deployment_key(provider, module)
+    return deploy_key in vconfig.kv
 
 
 def _get_deployment_key(provider, module):
