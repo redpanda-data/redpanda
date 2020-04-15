@@ -493,16 +493,16 @@ group_manager::offset_commit(offset_commit_request&& r) {
 ss::future<offset_fetch_response>
 group_manager::offset_fetch(offset_fetch_request&& r) {
     auto error = validate_group_status(
-      r.ntp, r.group_id, offset_fetch_api::key);
+      r.ntp, r.data.group_id, offset_fetch_api::key);
     if (error != error_code::none) {
         return ss::make_ready_future<offset_fetch_response>(
           offset_fetch_response(error));
     }
 
-    auto group = get_group(r.group_id);
+    auto group = get_group(r.data.group_id);
     if (!group) {
         return ss::make_ready_future<offset_fetch_response>(
-          offset_fetch_response(r.topics));
+          offset_fetch_response(r.data.topics));
     }
 
     return group->handle_offset_fetch(std::move(r));
