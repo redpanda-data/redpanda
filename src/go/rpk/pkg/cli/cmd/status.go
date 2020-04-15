@@ -2,16 +2,24 @@ package cmd
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 	"vectorized/pkg/api"
 	"vectorized/pkg/cli/ui"
 	"vectorized/pkg/config"
 	"vectorized/pkg/system"
 
+	"github.com/Shopify/sarama"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
+
+type status struct {
+	metrics  *system.Metrics
+	jsonConf string
+	topics   []*sarama.TopicMetadata
+}
 
 func NewStatusCommand(fs afero.Fs) *cobra.Command {
 	var (
@@ -60,40 +68,129 @@ func executeStatus(
 		return err
 	}
 	if !conf.Rpk.EnableUsageStats {
-		log.Info("Usage stats are disabled. To enable them, set rpk.enable_usage_stats to true.")
-		return nil
+		log.Warn("Usage stats reporting is disabled, so nothing will" +
+			" be sent. To enable it, run" +
+			" `rpk config set rpk.enable_usage_stats true`.")
 	}
 	metrics, errs := system.GatherMetrics(fs, timeout, *conf)
 	if len(errs) != 0 {
 		for _, err := range errs {
-			log.Error(err)
+			log.Info("Error gathering metrics: ", err)
 		}
 	}
+	osInfo, err := system.UnameAndDistro(timeout)
+	if err != nil {
+		log.Info("Error querying OS info: ", err)
+	}
+	cpuInfo, err := system.CpuInfo()
+	if err != nil {
+		log.Info("Error querying CPU info: ", err)
+	}
+	cpuModel := ""
+	if len(cpuInfo) > 0 {
+		cpuModel = cpuInfo[0].ModelName
+	}
+	printMetrics(metrics, osInfo, cpuModel)
 
-	printMetrics(metrics)
-
-	if send {
+	if conf.Rpk.EnableUsageStats && send {
 		if conf.NodeUuid == "" {
+			var err error
 			conf, err = config.GenerateAndWriteNodeUuid(fs, conf)
 			if err != nil {
-				return err
+				log.Info("Error writing the node's UUID: ", err)
 			}
 		}
-		payload := api.MetricsPayload{
-			FreeMemoryMB:  metrics.FreeMemoryMB,
-			FreeSpaceMB:   metrics.FreeSpaceMB,
-			CpuPercentage: metrics.CpuPercentage,
+		err := sendMetrics(fs, conf, metrics)
+		if err != nil {
+			log.Info("Error sending metrics: ", err)
 		}
-		return api.SendMetrics(payload, *conf)
 	}
+
+	jsonConf, err := config.ReadToJson(fs, configFile)
+	if err != nil {
+		log.Info("Error reading or parsing configuration: ", err)
+	} else {
+		printConfig(jsonConf)
+	}
+	topics, err := topicsDetail(
+		conf.Redpanda.KafkaApi.Address,
+		conf.Redpanda.KafkaApi.Port,
+	)
+	if err != nil {
+		log.Info("Error fetching the Redpanda topic details: ", err)
+	} else if len(topics) > 0 {
+		printKafkaInfo(topics)
+	}
+
 	return nil
 }
 
-func printMetrics(p *system.Metrics) {
+func printMetrics(p *system.Metrics, osInfo, cpuModel string) {
 	t := ui.NewRpkTable(log.StandardLogger().Out)
 	t.SetHeader([]string{"Name", "Value"})
+	t.Append([]string{"OS", osInfo})
+	t.Append([]string{"CPU Model", cpuModel})
 	t.Append([]string{"CPU Usage %", fmt.Sprint(p.CpuPercentage)})
 	t.Append([]string{"Free Memory (MB)", fmt.Sprint(p.FreeMemoryMB)})
 	t.Append([]string{"Free Space  (MB)", fmt.Sprint(p.FreeSpaceMB)})
 	t.Render()
+}
+
+func printConfig(jsonConfig string) {
+	t := ui.NewRpkTable(log.StandardLogger().Out)
+	t.Append([]string{"Current Config", jsonConfig})
+	t.Render()
+}
+
+func printKafkaInfo(topics []*sarama.TopicMetadata) {
+	t := ui.NewRpkTable(log.StandardLogger().Out)
+	t.SetHeader([]string{"Topic", "Partition", "Leader", "Replicas"})
+	for _, topic := range topics {
+		for _, p := range topic.Partitions {
+			t.Append([]string{
+				topic.Name,
+				strconv.Itoa(int(p.ID)),
+				strconv.Itoa(int(p.Leader)),
+				fmt.Sprintf("%v", p.Replicas),
+			})
+		}
+	}
+	t.Render()
+}
+
+func sendMetrics(
+	fs afero.Fs, conf *config.Config, metrics *system.Metrics,
+) error {
+	payload := api.MetricsPayload{
+		FreeMemoryMB:  metrics.FreeMemoryMB,
+		FreeSpaceMB:   metrics.FreeSpaceMB,
+		CpuPercentage: metrics.CpuPercentage,
+	}
+	return api.SendMetrics(payload, *conf)
+}
+
+func topicsDetail(ip string, port int) ([]*sarama.TopicMetadata, error) {
+	saramaConf := sarama.NewConfig()
+	saramaConf.Version = sarama.V2_4_0_0
+	saramaConf.Producer.Return.Successes = true
+	saramaConf.Admin.Timeout = 1 * time.Second
+	selfAddr := fmt.Sprintf("%s:%d", ip, port)
+	client, err := sarama.NewClient([]string{selfAddr}, saramaConf)
+	if err != nil {
+		return nil, err
+	}
+	admin, err := sarama.NewClusterAdminFromClient(client)
+	if err != nil {
+		return nil, err
+	}
+	defer admin.Close()
+	topics, err := admin.ListTopics()
+	if err != nil {
+		return nil, err
+	}
+	topicNames := []string{}
+	for name, _ := range topics {
+		topicNames = append(topicNames, name)
+	}
+	return admin.DescribeTopics(topicNames)
 }

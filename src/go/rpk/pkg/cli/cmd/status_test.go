@@ -96,8 +96,10 @@ func TestStatus(t *testing.T) {
 			},
 		},
 		{
-			name:        "does nothing if enable_telemetry is set to false",
-			expectedOut: "Usage stats are disabled. To enable them, set rpk.enable_usage_stats to true.",
+			name: "prints warning if enable_telemetry is set to false",
+			expectedOut: "Usage stats reporting is disabled, so" +
+				" nothing will be sent. To enable it, run" +
+				" `rpk config set rpk.enable_usage_stats true`.",
 			before: func(fs afero.Fs) error {
 				conf := getConfig()
 				conf.Rpk.EnableUsageStats = false
