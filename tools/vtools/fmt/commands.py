@@ -52,6 +52,26 @@ def sh(conf, ref, check):
     _shfmt(vconfig, ref, check)
 
 
+@fmt.command(short_help='runs terraform fmt against Terraform modules.')
+@click.option('--conf',
+              help=('Path to configuration file. If not given, a .vtools.yml '
+                    'file is searched recursively starting from the current '
+                    'working directory'),
+              default=None)
+@click.option('--check',
+              help=('Do not format in-place; instead, check whether files are '
+                    'properly formatted and throw an error if they are not'),
+              is_flag=True)
+@click.option('--ref',
+              help=('Obtain list of files to process by comparing the current '
+                    'state of the repository and compare it against the given '
+                    'gitref.'),
+              default=None)
+def tf(conf, ref, check):
+    vconfig = config.VConfig(conf)
+    _tffmt(vconfig, ref, check)
+
+
 @fmt.command(short_help='runs clang-format against C++ source code.')
 @click.option('--conf',
               help=('Path to configuration file. If not given, a .vtools.yml '
@@ -117,6 +137,7 @@ def all_changed(conf, ref=None, check=True):
     _crlfmt(vconfig, ref, check)
     _yapf(vconfig, ref, check)
     _shfmt(vconfig, ref, check)
+    _tffmt(vconfig, ref, check)
 
 
 @fmt.command(short_help='runs clang-tidy against redpanda for clang builds.')
@@ -160,6 +181,12 @@ def _shfmt(vconfig, ref, check):
     logging.debug("Running shfmt")
     args = f'-i 2 -ci -s {"-d" if check else "-w"}'
     _fmt(vconfig, ['.sh'], 'shfmt', args, ref, check)
+
+
+def _tffmt(vconfig, ref, check):
+    logging.debug("Running terraform fmt")
+    args = f'-recursive {"-check -diff" if check else ""}'
+    _fmt(vconfig, [".tf"], "terraform fmt", args, ref, check)
 
 
 def _fmt(vconfig, exts, cmd, args, ref, check):

@@ -24,7 +24,7 @@ resource "aws_instance" "node" {
   key_name               = aws_key_pair.ssh.key_name
   vpc_security_group_ids = [aws_security_group.node_sec_group.id]
   tags = {
-       owner: "${var.owner}-${local.deployment_id}"
+    owner : "${var.owner}-${local.deployment_id}"
   }
 
   connection {
@@ -35,9 +35,9 @@ resource "aws_instance" "node" {
 }
 
 resource "aws_security_group" "node_sec_group" {
-  name        = "${var.owner}-${local.deployment_id}-node-sec-group"
+  name = "${var.owner}-${local.deployment_id}-node-sec-group"
   tags = {
-       owner: "${var.owner}-${local.deployment_id}"
+    owner : "${var.owner}-${local.deployment_id}"
   }
   description = "redpanda ports"
 

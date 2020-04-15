@@ -25,7 +25,7 @@ variable "distro_ami" {
     "debian-stretch" = "ami-0d270a69ac13b22c3"
 
     # https://alt.fedoraproject.org/cloud/
-    "fedora-31"      = "ami-0e82cc6ce8f393d4b"
+    "fedora-31" = "ami-0e82cc6ce8f393d4b"
 
     # https://us-west-2.console.aws.amazon.com/ec2/v2/home?region=us-west-2#LaunchInstanceWizard:
     "ubuntu-bionic"  = "ami-09b69ac16c0287f96"
