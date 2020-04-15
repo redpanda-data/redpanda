@@ -1,0 +1,10 @@
+global:
+  scrape_interval: 3s
+  external_labels:
+    monitor: 'local-multinode'
+scrape_configs:
+  - job_name: 'redpanda'
+    static_configs:
+      - targets: ['127.0.0.1:9644']
+      - targets: ['127.0.0.1:9645']
+      - targets: ['127.0.0.1:9646']
