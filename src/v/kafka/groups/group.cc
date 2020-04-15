@@ -1255,26 +1255,29 @@ ss::future<offset_fetch_response>
 group::handle_offset_fetch(offset_fetch_request&& r) {
     if (in_state(group_state::dead)) {
         return ss::make_ready_future<offset_fetch_response>(
-          offset_fetch_response(r.topics));
+          offset_fetch_response(r.data.topics));
     }
 
     offset_fetch_response resp;
-    resp.error = error_code::none;
+    resp.data.error_code = error_code::none;
 
     // retrieve all topics available
-    if (!r.topics) {
+    if (!r.data.topics) {
         absl::flat_hash_map<
           model::topic,
-          std::vector<offset_fetch_response::partition>>
+          std::vector<offset_fetch_response_partition>>
           tmp;
         for (const auto& e : _offsets) {
-            tmp[e.first.topic].push_back({e.first.partition,
-                                          e.second.offset,
-                                          e.second.metadata,
-                                          error_code::none});
+            offset_fetch_response_partition p = {
+              .partition_index = e.first.partition,
+              .committed_offset = e.second.offset,
+              .metadata = e.second.metadata,
+              .error_code = error_code::none,
+            };
+            tmp[e.first.topic].push_back(std::move(p));
         }
         for (auto& e : tmp) {
-            resp.topics.push_back(
+            resp.data.topics.push_back(
               {.name = e.first, .partitions = std::move(e.second)});
         }
 
@@ -1282,24 +1285,34 @@ group::handle_offset_fetch(offset_fetch_request&& r) {
     }
 
     // retrieve for the topics specified in the request
-    for (const auto& topic : *r.topics) {
-        offset_fetch_response::topic t;
+    for (const auto& topic : *r.data.topics) {
+        offset_fetch_response_topic t;
         t.name = topic.name;
-        for (auto id : topic.partitions) {
+        for (auto id : topic.partition_indexes) {
             model::topic_partition tp{
               .topic = topic.name,
               .partition = id,
             };
             auto res = offset(tp);
             if (res) {
-                t.partitions.push_back(
-                  {id, res->offset, res->metadata, error_code::none});
+                offset_fetch_response_partition p = {
+                  .partition_index = id,
+                  .committed_offset = res->offset,
+                  .metadata = res->metadata,
+                  .error_code = error_code::none,
+                };
+                t.partitions.push_back(std::move(p));
             } else {
-                t.partitions.push_back(
-                  {id, model::offset(-1), "", error_code::none});
+                offset_fetch_response_partition p = {
+                  .partition_index = id,
+                  .committed_offset = model::offset(-1),
+                  .metadata = "",
+                  .error_code = error_code::none,
+                };
+                t.partitions.push_back(std::move(p));
             }
         }
-        resp.topics.push_back(std::move(t));
+        resp.data.topics.push_back(std::move(t));
     }
 
     return ss::make_ready_future<offset_fetch_response>(std::move(resp));

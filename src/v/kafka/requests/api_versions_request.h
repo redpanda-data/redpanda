@@ -2,6 +2,8 @@
 
 #include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
+#include "kafka/requests/schemata/api_versions_request.h"
+#include "kafka/requests/schemata/api_versions_response.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>
@@ -25,43 +27,39 @@ struct api_versions_api final {
 struct api_versions_request final {
     using api_type = api_versions_api;
 
-    ss::sstring client_software_name;    // >= v3
-    ss::sstring client_software_version; // >= v3
+    api_versions_request_data data;
 
-    bool valid(api_version version) {
-        return version < api_version(3)
-               || (!client_software_name.empty() && !client_software_version.empty());
+    void decode(request_reader& reader, api_version version) {
+        data.decode(reader, version);
     }
 
-    void decode(request_reader& reader, api_version version);
-    void encode(response_writer& writer, api_version version);
+    void encode(response_writer& writer, api_version version) {
+        data.encode(writer, version);
+    }
 };
 
 struct api_versions_response final {
     using api_type = api_versions_api;
 
-    struct api {
-        api_key key;
-        api_version min_version;
-        api_version max_version;
-    };
+    api_versions_response_data data;
 
-    error_code error;
-    std::vector<api> apis;
-    std::chrono::milliseconds throttle = std::chrono::milliseconds(0); // >= v1
+    void encode(const request_context& ctx, response& resp) {
+        data.encode(ctx, resp);
+    }
 
-    void encode(const request_context& ctx, response& resp);
-    void decode(iobuf buf, api_version version);
+    void decode(iobuf buf, api_version version) {
+        data.decode(std::move(buf), version);
+    }
 };
 
 std::ostream& operator<<(std::ostream&, const api_versions_response&);
 
 static inline bool operator==(
-  const api_versions_response::api& a, const api_versions_response::api& b) {
-    return a.key == b.key && a.min_version == b.min_version
+  const api_versions_response_key& a, const api_versions_response_key& b) {
+    return a.api_key == b.api_key && a.min_version == b.min_version
            && a.max_version == b.max_version;
 }
 
-std::vector<api_versions_response::api> get_supported_apis();
+std::vector<api_versions_response_key> get_supported_apis();
 
 } // namespace kafka

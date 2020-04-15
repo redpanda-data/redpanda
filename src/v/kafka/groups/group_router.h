@@ -185,7 +185,7 @@ public:
 
     ss::future<offset_fetch_response>
     offset_fetch(offset_fetch_request&& request) {
-        auto shard = shard_for(request.group_id);
+        auto shard = shard_for(request.data.group_id);
         if (!shard) {
             return ss::make_ready_future<offset_fetch_response>(
               offset_fetch_response(error_code::not_coordinator));
