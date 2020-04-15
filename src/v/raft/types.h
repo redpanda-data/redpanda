@@ -99,6 +99,12 @@ struct append_entries_request {
     model::node_id node_id;
     protocol_metadata meta;
     model::record_batch_reader batches;
+    static append_entries_request make_foreign(append_entries_request&& req) {
+        return append_entries_request(
+          req.node_id,
+          std::move(req.meta),
+          model::make_foreign_record_batch_reader(std::move(req.batches)));
+    }
 };
 
 struct append_entries_reply {
