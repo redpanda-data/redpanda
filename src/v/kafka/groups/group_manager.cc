@@ -464,21 +464,21 @@ group_manager::leave_group(leave_group_request&& r) {
 ss::future<offset_commit_response>
 group_manager::offset_commit(offset_commit_request&& r) {
     auto error = validate_group_status(
-      r.ntp, r.group_id, offset_commit_api::key);
+      r.ntp, r.data.group_id, offset_commit_api::key);
     if (error != error_code::none) {
         return ss::make_ready_future<offset_commit_response>(
           offset_commit_response(r, error));
     }
 
-    auto group = get_group(r.group_id);
+    auto group = get_group(r.data.group_id);
     if (!group) {
-        if (r.generation_id < 0) {
+        if (r.data.generation_id < 0) {
             // <kafka>the group is not relying on Kafka for group management, so
             // allow the commit</kafka>
             auto p = _partitions.find(r.ntp)->second->partition;
             group = ss::make_lw_shared<kafka::group>(
-              r.group_id, group_state::empty, _conf, p);
-            _groups.emplace(r.group_id, group);
+              r.data.group_id, group_state::empty, _conf, p);
+            _groups.emplace(r.data.group_id, group);
         } else {
             // <kafka>or this is a request coming from an older generation.
             // either way, reject the commit</kafka>

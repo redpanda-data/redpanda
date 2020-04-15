@@ -1165,25 +1165,31 @@ group::store_offsets(offset_commit_request&& r) {
     std::vector<std::pair<model::topic_partition, offset_metadata>>
       offset_commits;
 
-    for (const auto& t : r.topics) {
+    for (const auto& t : r.data.topics) {
         for (const auto& p : t.partitions) {
             group_log_record_key key{
               .record_type = group_log_record_key::type::offset_commit,
-              .key = reflection::to_iobuf(
-                group_log_offset_key{_id, t.name, p.id}),
+              .key = reflection::to_iobuf(group_log_offset_key{
+                _id,
+                t.name,
+                p.partition_index,
+              }),
             };
             group_log_offset_metadata val{
-              p.committed, p.leader_epoch, p.metadata};
+              p.committed_offset,
+              p.committed_leader_epoch,
+              p.committed_metadata,
+            };
             builder.add_kv(std::move(key), std::move(val));
 
             model::topic_partition tp{
               .topic = t.name,
-              .partition = p.id,
+              .partition = p.partition_index,
             };
 
             offset_metadata md{
-              .offset = p.committed,
-              .metadata = p.metadata.value_or(""),
+              .offset = p.committed_offset,
+              .metadata = p.committed_metadata.value_or(""),
             };
 
             offset_commits.push_back(std::make_pair(tp, md));
@@ -1229,7 +1235,7 @@ group::handle_offset_commit(offset_commit_request&& r) {
         return ss::make_ready_future<offset_commit_response>(
           offset_commit_response(r, error_code::coordinator_not_available));
 
-    } else if (r.generation_id < 0 && in_state(group_state::empty)) {
+    } else if (r.data.generation_id < 0 && in_state(group_state::empty)) {
         // <kafka>The group is only using Kafka to store offsets.</kafka>
         return store_offsets(std::move(r));
 
@@ -1237,16 +1243,16 @@ group::handle_offset_commit(offset_commit_request&& r) {
         return ss::make_ready_future<offset_commit_response>(
           offset_commit_response(r, error_code::rebalance_in_progress));
 
-    } else if (!contains_member(r.member_id)) {
+    } else if (!contains_member(r.data.member_id)) {
         return ss::make_ready_future<offset_commit_response>(
           offset_commit_response(r, error_code::unknown_member_id));
 
-    } else if (r.generation_id != generation()) {
+    } else if (r.data.generation_id != generation()) {
         return ss::make_ready_future<offset_commit_response>(
           offset_commit_response(r, error_code::illegal_generation));
     }
 
-    auto member = get_member(r.member_id);
+    auto member = get_member(r.data.member_id);
     schedule_next_heartbeat_expiration(member);
     return store_offsets(std::move(r));
 }

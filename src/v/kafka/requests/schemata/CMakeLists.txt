@@ -4,7 +4,9 @@ set(schemata
   api_versions_request.json
   api_versions_response.json
   offset_fetch_request.json
-  offset_fetch_response.json)
+  offset_fetch_response.json
+  offset_commit_request.json
+  offset_commit_response.json)
 
 set(srcs)
 foreach(schema ${schemata})

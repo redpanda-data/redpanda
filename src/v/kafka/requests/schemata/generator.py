@@ -58,6 +58,15 @@ path_type_map = {
             },
         }
     },
+    "OffsetCommitRequestData": {
+        "Topics": {
+            "Partitions": {
+                "PartitionIndex": ("model::partition_id", "int32"),
+                "CommittedOffset": ("model::offset", "int64"),
+            },
+        },
+        "MemberId": ("kafka::member_id", "string"),
+    },
 }
 
 # a few kafka field types specify an entity type
@@ -89,6 +98,10 @@ STRUCT_TYPES = [
     "OffsetFetchRequestTopic",
     "OffsetFetchResponseTopic",
     "OffsetFetchResponsePartition",
+    "OffsetCommitRequestTopic",
+    "OffsetCommitRequestPartition",
+    "OffsetCommitResponseTopic",
+    "OffsetCommitResponsePartition",
 ]
 
 SCALAR_TYPES = list(basic_type_map.keys())

@@ -163,7 +163,7 @@ public:
 
     ss::future<offset_commit_response>
     offset_commit(offset_commit_request&& request) {
-        auto shard = shard_for(request.group_id);
+        auto shard = shard_for(request.data.group_id);
         if (!shard) {
             return ss::make_ready_future<offset_commit_response>(
               offset_commit_response(request, error_code::not_coordinator));
