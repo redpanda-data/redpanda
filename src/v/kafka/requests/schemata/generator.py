@@ -46,10 +46,27 @@ import jinja2
 # will override a match in the entity_type_map.
 
 # nested dictionary path within a json document
-path_type_map = {}
+path_type_map = {
+    "OffsetFetchRequestData": {
+        "Topics": {
+            "PartitionIndexes": ("model::partition_id", "int32"),
+        }
+    },
+    "OffsetFetchResponseData": {
+        "Topics": {
+            "Partitions": {
+                "PartitionIndex": ("model::partition_id", "int32"),
+                "CommittedOffset": ("model::offset", "int64"),
+            },
+        }
+    },
+}
 
 # a few kafka field types specify an entity type
-entity_type_map = dict()
+entity_type_map = dict(
+    groupId=("kafka::group_id", "string"),
+    topicName=("model::topic", "string"),
+)
 
 # mapping specified as a combination of native type and field name
 field_name_type_map = {
@@ -70,6 +87,9 @@ basic_type_map = dict(
 STRUCT_TYPES = [
     "ApiVersionsRequestKey",
     "ApiVersionsResponseKey",
+    "OffsetFetchRequestTopic",
+    "OffsetFetchResponseTopic",
+    "OffsetFetchResponsePartition",
 ]
 
 SCALAR_TYPES = list(basic_type_map.keys())
