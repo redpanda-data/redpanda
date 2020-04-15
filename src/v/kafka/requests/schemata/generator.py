@@ -265,7 +265,7 @@ class Field:
         return self._versions
 
     def about(self):
-        return self._field["about"]
+        return self._field.get("about", "<no description>")
 
     def _redpanda_path_type(self):
         """
