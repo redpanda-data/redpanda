@@ -71,6 +71,11 @@ struct offset_fetch_response final {
                     };
                     partitions.push_back(std::move(p));
                 }
+                offset_fetch_response_topic t = {
+                  .name = topic.name,
+                  .partitions = std::move(partitions),
+                };
+                data.topics.push_back(std::move(t));
             }
         }
     }
