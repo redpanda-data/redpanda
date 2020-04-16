@@ -50,7 +50,7 @@ public:
         const ntp_config& config() const { return _config; }
 
         virtual size_t segment_count() const = 0;
-        virtual model::offset max_offset() const = 0;
+        virtual model::offset dirty_offset() const = 0;
         virtual model::offset start_offset() const = 0;
         virtual model::offset committed_offset() const = 0;
         virtual std::ostream& print(std::ostream& o) const { return o; }
@@ -91,7 +91,7 @@ public:
 
     model::offset start_offset() const { return _impl->start_offset(); }
 
-    model::offset max_offset() const { return _impl->max_offset(); }
+    model::offset dirty_offset() const { return _impl->dirty_offset(); }
 
     model::offset committed_offset() const { return _impl->committed_offset(); }
 
@@ -123,7 +123,7 @@ private:
 };
 
 inline std::ostream& operator<<(std::ostream& o, const storage::log& lg) {
-    o << "{start:" << lg.start_offset() << ", max:" << lg.max_offset()
+    o << "{start:" << lg.start_offset() << ", max:" << lg.dirty_offset()
       << ", committed:" << lg.committed_offset() << ", ";
     return lg.print(o) << "}";
 }

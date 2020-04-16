@@ -45,7 +45,7 @@ public:
         }
         return _reader.empty();
     }
-    model::offset committed_offset() const { return _reader.max_offset(); }
+    model::offset committed_offset() const { return _reader.dirty_offset(); }
     model::offset dirty_offset() const {
         if (_appender) {
             return _dirty_offset;

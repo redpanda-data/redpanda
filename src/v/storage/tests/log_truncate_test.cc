@@ -46,7 +46,7 @@ FIXTURE_TEST(test_truncate_whole, storage_test_fixture) {
     auto read_batches = read_and_validate_all_batches(log);
     BOOST_REQUIRE_EQUAL(read_batches.size(), 0);
     BOOST_REQUIRE_EQUAL(log.committed_offset(), model::offset{});
-    BOOST_REQUIRE_EQUAL(log.max_offset(), model::offset{});
+    BOOST_REQUIRE_EQUAL(log.dirty_offset(), model::offset{});
 }
 
 FIXTURE_TEST(test_truncate_in_the_middle_of_segment, storage_test_fixture) {
@@ -75,7 +75,7 @@ FIXTURE_TEST(test_truncate_in_the_middle_of_segment, storage_test_fixture) {
     auto expected = all_batches[3].last_offset();
 
     BOOST_REQUIRE_EQUAL(log.committed_offset(), expected);
-    BOOST_REQUIRE_EQUAL(log.max_offset(), expected);
+    BOOST_REQUIRE_EQUAL(log.dirty_offset(), expected);
     if (truncate_offset != model::offset(0)) {
         BOOST_REQUIRE_EQUAL(read_batches.back().last_offset(), expected);
     } else {
@@ -130,7 +130,7 @@ FIXTURE_TEST(test_truncate_middle_of_old_segment, storage_test_fixture) {
     BOOST_REQUIRE_EQUAL(all_batches.size(), final_batches.size());
     BOOST_REQUIRE_EQUAL(
       log.committed_offset(), all_batches.back().last_offset());
-    BOOST_REQUIRE_EQUAL(log.max_offset(), all_batches.back().last_offset());
+    BOOST_REQUIRE_EQUAL(log.dirty_offset(), all_batches.back().last_offset());
     BOOST_REQUIRE_EQUAL_COLLECTIONS(
       all_batches.begin(),
       all_batches.end(),
@@ -160,7 +160,7 @@ FIXTURE_TEST(truncate_whole_log_and_then_again, storage_test_fixture) {
     auto read_batches = read_and_validate_all_batches(log);
     BOOST_REQUIRE_EQUAL(read_batches.size(), 0);
     BOOST_REQUIRE_EQUAL(log.committed_offset(), model::offset{});
-    BOOST_REQUIRE_EQUAL(log.max_offset(), model::offset{});
+    BOOST_REQUIRE_EQUAL(log.dirty_offset(), model::offset{});
 }
 
 FIXTURE_TEST(truncate_before_read, storage_test_fixture) {
@@ -201,7 +201,7 @@ FIXTURE_TEST(truncate_before_read, storage_test_fixture) {
     auto read_batches = read_and_validate_all_batches(log);
     BOOST_REQUIRE_EQUAL(read_batches.size(), 0);
     BOOST_REQUIRE_EQUAL(log.committed_offset(), model::offset{});
-    BOOST_REQUIRE_EQUAL(log.max_offset(), model::offset{});
+    BOOST_REQUIRE_EQUAL(log.dirty_offset(), model::offset{});
 }
 
 FIXTURE_TEST(
@@ -231,7 +231,7 @@ FIXTURE_TEST(
     auto expected = all_batches[3].last_offset();
 
     BOOST_REQUIRE_EQUAL(log.committed_offset(), expected);
-    BOOST_REQUIRE_EQUAL(log.max_offset(), expected);
+    BOOST_REQUIRE_EQUAL(log.dirty_offset(), expected);
     if (truncate_offset != model::offset(0)) {
         BOOST_REQUIRE_EQUAL(read_batches.back().last_offset(), expected);
     } else {
@@ -263,8 +263,8 @@ FIXTURE_TEST(test_truncate_last_single_record_batch, storage_test_fixture) {
     });
     log.flush().get0();
 
-    while (log.max_offset() > model::offset{}) {
-        auto truncate_offset = log.max_offset();
+    while (log.dirty_offset() > model::offset{}) {
+        auto truncate_offset = log.dirty_offset();
         log.truncate(truncate_offset).get0();
         auto all_batches = read_and_validate_all_batches(log);
         auto expected = truncate_offset - headers.back().record_count;
@@ -322,6 +322,6 @@ FIXTURE_TEST(test_truncate, storage_test_fixture) {
       | storage::add_random_batch(365, 2, storage::maybe_compress_batches::yes)
       | storage::truncate_log(220);
 
-    BOOST_REQUIRE_EQUAL(builder.get_log().max_offset(), model::offset(219));
+    BOOST_REQUIRE_EQUAL(builder.get_log().dirty_offset(), model::offset(219));
     builder | storage::stop();
 }

@@ -168,7 +168,7 @@ struct raft_node {
                 "Reading logs from {} max offset {}, log max offset {}",
                 id(),
                 max_offset,
-                log.max_offset());
+                log.dirty_offset());
               return std::move(rdr).consume(
                 consume_to_vector{}, model::no_timeout);
           });

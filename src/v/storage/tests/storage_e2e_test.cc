@@ -37,7 +37,7 @@ FIXTURE_TEST(
     auto batches = read_and_validate_all_batches(log);
 
     BOOST_REQUIRE_EQUAL(headers.size(), batches.size());
-    BOOST_REQUIRE_EQUAL(log.max_offset(), batches.back().last_offset());
+    BOOST_REQUIRE_EQUAL(log.dirty_offset(), batches.back().last_offset());
     BOOST_REQUIRE_EQUAL(log.committed_offset(), batches.back().last_offset());
     validate_offsets(model::offset(0), headers, batches);
 };
@@ -61,7 +61,7 @@ FIXTURE_TEST(append_twice_to_same_segment, storage_test_fixture) {
     auto batches = read_and_validate_all_batches(log);
 
     BOOST_REQUIRE_EQUAL(headers.size(), batches.size());
-    BOOST_REQUIRE_EQUAL(log.max_offset(), batches.back().last_offset());
+    BOOST_REQUIRE_EQUAL(log.dirty_offset(), batches.back().last_offset());
     BOOST_REQUIRE_EQUAL(log.committed_offset(), batches.back().last_offset());
 };
 
@@ -82,7 +82,7 @@ FIXTURE_TEST(test_assigning_offsets_in_multiple_segment, storage_test_fixture) {
     auto batches = read_and_validate_all_batches(log);
 
     BOOST_REQUIRE_EQUAL(headers.size(), batches.size());
-    BOOST_REQUIRE_EQUAL(log.max_offset(), batches.back().last_offset());
+    BOOST_REQUIRE_EQUAL(log.dirty_offset(), batches.back().last_offset());
     BOOST_REQUIRE_EQUAL(log.committed_offset(), batches.back().last_offset());
     validate_offsets(model::offset(0), headers, batches);
 };
@@ -109,7 +109,7 @@ FIXTURE_TEST(test_single_record_per_segment, storage_test_fixture) {
     auto batches = read_and_validate_all_batches(log);
     info("Flushed log: {}", log);
     BOOST_REQUIRE_EQUAL(headers.size(), batches.size());
-    BOOST_REQUIRE_EQUAL(log.max_offset(), batches.back().last_offset());
+    BOOST_REQUIRE_EQUAL(log.dirty_offset(), batches.back().last_offset());
     BOOST_REQUIRE_EQUAL(log.committed_offset(), batches.back().last_offset());
     validate_offsets(model::offset(0), headers, batches);
 };
@@ -182,7 +182,7 @@ FIXTURE_TEST(test_rolling_term, storage_test_fixture) {
     }
 
     auto read_batches = read_and_validate_all_batches(log);
-    BOOST_REQUIRE_EQUAL(log.max_offset(), read_batches.back().last_offset());
+    BOOST_REQUIRE_EQUAL(log.dirty_offset(), read_batches.back().last_offset());
     BOOST_REQUIRE_EQUAL(
       log.committed_offset(), read_batches.back().last_offset());
 };
@@ -224,7 +224,7 @@ FIXTURE_TEST(test_append_batches_from_multiple_terms, storage_test_fixture) {
     log.flush().get();
 
     auto read_batches = read_and_validate_all_batches(log);
-    BOOST_REQUIRE_EQUAL(log.max_offset(), read_batches.back().last_offset());
+    BOOST_REQUIRE_EQUAL(log.dirty_offset(), read_batches.back().last_offset());
     BOOST_REQUIRE_EQUAL(
       log.committed_offset(), read_batches.back().last_offset());
     size_t next = 0;

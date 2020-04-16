@@ -12,7 +12,7 @@ struct segment_ordering {
         return seg1->reader().base_offset() < seg2->reader().base_offset();
     }
     bool operator()(const type& seg, model::offset value) const {
-        return seg->reader().max_offset() < value;
+        return seg->reader().dirty_offset() < value;
     }
     bool operator()(const type& seg, model::timestamp value) const {
         return seg->index().base_timestamp() < value;
@@ -27,7 +27,7 @@ segment_set::segment_set(segment_set::underlying_t segs)
 void segment_set::add(ss::lw_shared_ptr<segment> h) {
     if (!_handles.empty()) {
         vassert(
-          h->reader().base_offset() > _handles.back()->reader().max_offset(),
+          h->reader().base_offset() > _handles.back()->reader().dirty_offset(),
           "New segments must be monotonically increasing. Got:{} - Current:{}",
           *h,
           *this);
@@ -46,7 +46,7 @@ struct needle_in_range {
             return false;
         }
         // must use max_offset
-        return o <= s.reader().max_offset() && o >= s.reader().base_offset();
+        return o <= s.reader().dirty_offset() && o >= s.reader().base_offset();
     }
 
     bool operator()(Iterator ptr, model::timestamp t) {
@@ -82,7 +82,7 @@ Iterator segments_lower_bound(Iterator begin, Iterator end, Needle needle) {
 }
 
 /// lower_bound returns the element that is _strictly_ greater than or equal
-/// to bucket->max_offset() - see comparator above because our offsets are
+/// to bucket->dirty_offset() - see comparator above because our offsets are
 /// _inclusive_ we must check the previous iterator in the case that we are at
 /// the end, we also check the last element.
 segment_set::iterator segment_set::lower_bound(model::offset offset) {
