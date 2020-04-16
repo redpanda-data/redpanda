@@ -34,6 +34,7 @@
         - openjdk-11-jdk-headless
         - xfsprogs
       state: present
+      update_cache: yes
     when: ansible_os_family == 'Debian'
 
   - name: install kafka binaries
