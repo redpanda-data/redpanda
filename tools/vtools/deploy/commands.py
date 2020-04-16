@@ -39,16 +39,7 @@ def cluster(conf, provider, destroy, log, tfvars):
     module = 'cluster'
 
     if destroy:
-        tf_out = tf.get_tf_outputs(vconfig, provider, module)
-        if not tf_out:
-            logging.fatal(
-                f'No deployment found for module {module} in provider {provider}.'
-            )
-        pub_key_path = tf_out['public_key_path']['value']
-        key_path = pub_key_path.replace('.pub', '')
-        os.remove(pub_key_path)
-        os.remove(key_path)
-        tf.destroy(vconfig, provider, module)
+        destroy_deployment(vconfig, provider, module)
         return
 
     git.verify(vconfig.src_dir)
@@ -174,3 +165,17 @@ def ssh(conf, provider, module):
     os.execve('/usr/bin/ssh',
               ['/usr/bin/ssh', '-i', key, f'{ssh_user}@{chosen_ip}'],
               os.environ)
+
+
+def destroy_deployment(vconfig, provider, module):
+    if not tf.deployment_exists(vconfig, provider, module):
+        logging.fatal(
+            f'No deployment found for module {module} in provider {provider}.')
+    tf.destroy(vconfig, provider, module)
+    tf_out = tf.get_tf_outputs(vconfig, provider, module)
+    if tf_out:
+        pub_key_path = tf_out['public_key_path']['value']
+        key_path = pub_key_path.replace('.pub', '')
+        os.remove(pub_key_path)
+        os.remove(key_path)
+        return

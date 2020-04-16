@@ -17,6 +17,12 @@ variable "nodes" {
   default     = "1"
 }
 
+variable "disks" {
+  description = "The number of local disks on each machine."
+  type        = number
+  default     = 1
+}
+
 variable "image" {
   # See https://cloud.google.com/compute/docs/images#os-compute-support
   # for an updated list.

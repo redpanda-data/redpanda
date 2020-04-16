@@ -134,7 +134,8 @@ function vtools_dev_cluster() {
         ;;
       gcp)
         if [[ $raid == true ]]; then
-          # TODO support RAID on GCP
+          deploy_args+=("disks=2")
+          ansible_vars=(--var 'with_raid=true')
           echo ''
         fi
         ;;

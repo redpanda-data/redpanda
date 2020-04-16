@@ -45,9 +45,12 @@ KEYS
     }
   }
 
-  scratch_disk {
-    // 375 GB local SSD drive. 
-    interface = "NVME"
+  dynamic "scratch_disk" {
+    for_each = range(var.disks)
+    content {
+      // 375 GB local SSD drive.
+      interface = "NVME"
+    }
   }
 
   network_interface {
