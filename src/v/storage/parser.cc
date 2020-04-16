@@ -109,6 +109,11 @@ ss::future<result<stop_parser>> continuous_batch_parser::consume_header() {
           if (!o) {
               return ss::make_ready_future<result<stop_parser>>(o.error());
           }
+          if (o.value().header_crc == 0) {
+              // happens when we fallocate the file
+              return ss::make_ready_future<result<stop_parser>>(
+                parser_errc::end_of_stream);
+          }
           if (auto computed_crc = model::internal_header_only_crc(o.value());
               unlikely(o.value().header_crc != computed_crc)) {
               vlog(
