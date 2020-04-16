@@ -103,6 +103,11 @@ ss::future<> segment_appender::append(const char* buf, const size_t n) {
 }
 
 ss::future<> segment_appender::truncate(size_t n) {
+    vassert(
+      n <= file_byte_offset(),
+      "Cannot ask to truncate at:{} which is more bytes than we have:{} - {}",
+      file_byte_offset(),
+      *this);
     return flush().then([this, n] { return _out.truncate(n); }).then([this, n] {
         _committed_offset = n;
         _fallocation_offset = n;
@@ -116,14 +121,14 @@ ss::future<> segment_appender::truncate(size_t n) {
         const size_t sz = ss::align_down<size_t>(_committed_offset, align);
         char* buff = h.get_current();
         std::memset(buff, 0, align);
-        h.set_position(sz);
-        return _out.dma_read(sz, buff, align, _opts.priority)
-          .then([this, n, align](size_t actual) {
-              const size_t expected = n % align;
+        const size_t half_page_size = n % align;
+        h.set_position(half_page_size);
+        return _out.dma_read(sz, buff, half_page_size, _opts.priority)
+          .then([this, half_page_size](size_t actual) {
               vassert(
-                expected == actual,
+                half_page_size == actual,
                 "truncate incorrect page bytes: expected:{}, got:{} - {}",
-                expected,
+                half_page_size,
                 actual,
                 *this);
           });
