@@ -97,7 +97,7 @@ static iobuf handle_request(kafka::request_context&& ctx) {
         vlog(rlog.info, "kafka::join_group_api::key");
         kafka::join_group_request r;
         r.decode(ctx);
-        r.encode(ctx, writer);
+        r.encode(writer, ctx.header().version);
         break;
     }
 

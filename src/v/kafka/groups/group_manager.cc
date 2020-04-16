@@ -340,39 +340,41 @@ ss::future<join_group_response>
 group_manager::join_group(join_group_request&& r) {
     klog.trace("join request {}", r);
 
-    auto error = validate_group_status(r.ntp, r.group_id, join_group_api::key);
+    auto error = validate_group_status(
+      r.ntp, r.data.group_id, join_group_api::key);
     if (error != error_code::none) {
         klog.trace("request validation failed with error={}", error);
-        return make_join_error(r.member_id, error);
+        return make_join_error(r.data.member_id, error);
     }
 
     if (
-      r.session_timeout < _conf.group_min_session_timeout_ms()
-      || r.session_timeout > _conf.group_max_session_timeout_ms()) {
+      r.data.session_timeout_ms < _conf.group_min_session_timeout_ms()
+      || r.data.session_timeout_ms > _conf.group_max_session_timeout_ms()) {
         klog.trace(
           "join group request has invalid session timeout min={}/{}/max={}",
           _conf.group_min_session_timeout_ms(),
-          r.session_timeout,
+          r.data.session_timeout_ms,
           _conf.group_max_session_timeout_ms());
         return make_join_error(
-          r.member_id, error_code::invalid_session_timeout);
+          r.data.member_id, error_code::invalid_session_timeout);
     }
 
     bool is_new_group = false;
-    auto group = get_group(r.group_id);
+    auto group = get_group(r.data.group_id);
     if (!group) {
         // <kafka>only try to create the group if the group is UNKNOWN AND
         // the member id is UNKNOWN, if member is specified but group does
         // not exist we should reject the request.</kafka>
-        if (r.member_id != unknown_member_id) {
+        if (r.data.member_id != unknown_member_id) {
             klog.trace(
               "join request rejected for known member and unknown group");
-            return make_join_error(r.member_id, error_code::unknown_member_id);
+            return make_join_error(
+              r.data.member_id, error_code::unknown_member_id);
         }
         auto p = _partitions.find(r.ntp)->second->partition;
         group = ss::make_lw_shared<kafka::group>(
-          r.group_id, group_state::empty, _conf, p);
-        _groups.emplace(r.group_id, group);
+          r.data.group_id, group_state::empty, _conf, p);
+        _groups.emplace(r.data.group_id, group);
         klog.trace("created new group {}", group);
         is_new_group = true;
     }

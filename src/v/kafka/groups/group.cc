@@ -32,7 +32,7 @@
 
 namespace kafka {
 
-using member_config = join_group_response::member_config;
+using member_config = join_group_response_member;
 
 group::group(
   kafka::group_id id,
@@ -102,19 +102,19 @@ group_state group::set_state(group_state s) {
 bool group::supports_protocols(const join_group_request& r) {
     // first member decides so make sure its defined
     if (in_state(group_state::empty)) {
-        return !r.protocol_type().empty() && !r.protocols.empty();
+        return !r.data.protocol_type().empty() && !r.data.protocols.empty();
     }
 
-    if (!_protocol_type || *_protocol_type != r.protocol_type) {
+    if (!_protocol_type || *_protocol_type != r.data.protocol_type) {
         return false;
     }
 
     // check that at least one of the protocols in the request is supported
     // by all other group members.
     return std::any_of(
-      r.protocols.cbegin(),
-      r.protocols.cend(),
-      [this](const kafka::member_protocol& p) {
+      r.data.protocols.cbegin(),
+      r.data.protocols.cend(),
+      [this](const kafka::join_group_request_protocol& p) {
           auto it = _supported_protocols.find(p.name);
           return it != _supported_protocols.end()
                  && (size_t)it->second == _members.size();
@@ -359,7 +359,7 @@ group::handle_join_group(join_group_request&& r, bool is_new_group) {
     auto ret = ss::make_ready_future<join_group_response>(
       join_group_response(error_code::none));
 
-    if (r.member_id == unknown_member_id) {
+    if (r.data.member_id == unknown_member_id) {
         ret = join_group_unknown_member(std::move(r));
     } else {
         ret = join_group_known_member(std::move(r));
@@ -415,7 +415,7 @@ group::join_group_unknown_member(join_group_request&& r) {
 
     // <kafka>Only return MEMBER_ID_REQUIRED error if joinGroupRequest version
     // is >= 4 and groupInstanceId is configured to unknown.</kafka>
-    if (r.version >= api_version(4) && !r.group_instance_id) {
+    if (r.version >= api_version(4) && !r.data.group_instance_id) {
         // <kafka>If member id required (dynamic membership), register the
         // member in the pending member list and send back a response to
         // call for another join group request with allocated member id.
@@ -430,36 +430,36 @@ group::join_group_unknown_member(join_group_request&& r) {
 
 ss::future<join_group_response>
 group::join_group_known_member(join_group_request&& r) {
-    klog.trace("member {} joining group {}", r.member_id, *this);
+    klog.trace("member {} joining group {}", r.data.member_id, *this);
 
     if (in_state(group_state::dead)) {
         klog.trace("group is in the dead state");
         return make_join_error(
-          r.member_id, error_code::coordinator_not_available);
+          r.data.member_id, error_code::coordinator_not_available);
 
     } else if (!supports_protocols(r)) {
         klog.trace("requested protocols not supported by group");
         return make_join_error(
-          r.member_id, error_code::inconsistent_group_protocol);
+          r.data.member_id, error_code::inconsistent_group_protocol);
 
-    } else if (contains_pending_member(r.member_id)) {
+    } else if (contains_pending_member(r.data.member_id)) {
         klog.trace("making pending member a regular member");
-        kafka::member_id new_member_id = std::move(r.member_id);
+        kafka::member_id new_member_id = std::move(r.data.member_id);
         return add_member_and_rebalance(std::move(new_member_id), std::move(r));
 
-    } else if (!contains_member(r.member_id)) {
+    } else if (!contains_member(r.data.member_id)) {
         klog.trace("member is not registered in the group");
-        return make_join_error(r.member_id, error_code::unknown_member_id);
+        return make_join_error(r.data.member_id, error_code::unknown_member_id);
     }
 
-    auto member = get_member(r.member_id);
+    auto member = get_member(r.data.member_id);
 
     switch (state()) {
     case group_state::preparing_rebalance:
         return update_member_and_rebalance(member, std::move(r));
 
     case group_state::completing_rebalance:
-        if (r.protocols == member->protocols()) {
+        if (r.data.protocols == member->protocols()) {
             // <kafka>member is joining with the same metadata (which could be
             // because it failed to receive the initial JoinGroup response), so
             // just return current group information for the current
@@ -467,8 +467,8 @@ group::join_group_known_member(join_group_request&& r) {
             klog.trace("resending the member join group response");
 
             // the leader receives group member metadata
-            std::vector<join_group_response::member_config> members;
-            if (is_leader(r.member_id)) {
+            std::vector<member_config> members;
+            if (is_leader(r.data.member_id)) {
                 members = member_metadata();
             }
 
@@ -477,7 +477,7 @@ group::join_group_known_member(join_group_request&& r) {
               generation(),
               protocol().value_or(protocol_name("")),
               leader().value_or(member_id("")),
-              std::move(r.member_id),
+              std::move(r.data.member_id),
               std::move(members));
 
             return ss::make_ready_future<join_group_response>(
@@ -490,7 +490,9 @@ group::join_group_known_member(join_group_request&& r) {
         }
 
     case group_state::stable:
-        if (is_leader(r.member_id) || r.protocols != member->protocols()) {
+        if (
+          is_leader(r.data.member_id)
+          || r.data.protocols != member->protocols()) {
             // <kafka>force a rebalance if a member has changed metadata or if
             // the leader sends JoinGroup. The latter allows the leader to
             // trigger rebalances for changes affecting assignment which do not
@@ -498,7 +500,7 @@ group::join_group_known_member(join_group_request&& r) {
             // the consumer)</kafka>
             klog.trace(
               "member rejoining (leader={}) stable group causing rebalance",
-              (is_leader(r.member_id) ? "yes" : "no"));
+              (is_leader(r.data.member_id) ? "yes" : "no"));
 
             return update_member_and_rebalance(member, std::move(r));
 
@@ -513,7 +515,7 @@ group::join_group_known_member(join_group_request&& r) {
               generation(),
               protocol().value_or(protocol_name("")),
               leader().value_or(member_id("")),
-              std::move(r.member_id));
+              std::move(r.data.member_id));
 
             return ss::make_ready_future<join_group_response>(
               std::move(response));
@@ -524,8 +526,8 @@ group::join_group_known_member(join_group_request&& r) {
 
     case group_state::dead:
         klog.trace(
-          "member {} rejoin in unexpected state {}", r.member_id, state());
-        return make_join_error(r.member_id, error_code::unknown_member_id);
+          "member {} rejoin in unexpected state {}", r.data.member_id, state());
+        return make_join_error(r.data.member_id, error_code::unknown_member_id);
 
     default:
         std::terminate(); // make gcc happy
@@ -537,11 +539,11 @@ ss::future<join_group_response> group::add_member_and_rebalance(
     auto member = ss::make_lw_shared<group_member>(
       std::move(member_id),
       id(),
-      std::move(r.group_instance_id),
-      r.session_timeout,
-      r.rebalance_timeout,
-      std::move(r.protocol_type),
-      std::move(r.protocols));
+      std::move(r.data.group_instance_id),
+      r.data.session_timeout_ms,
+      r.data.rebalance_timeout_ms,
+      std::move(r.data.protocol_type),
+      r.native_member_protocols());
 
     // mark member as new. this is used in heartbeat expiration heuristics.
     member->set_new(true);
@@ -588,7 +590,7 @@ ss::future<join_group_response> group::add_member_and_rebalance(
 
 ss::future<join_group_response>
 group::update_member_and_rebalance(member_ptr member, join_group_request&& r) {
-    auto response = update_member(member, std::move(r.protocols));
+    auto response = update_member(member, r.native_member_protocols());
     try_prepare_rebalance();
     return response;
 }
@@ -1326,7 +1328,8 @@ group::handle_offset_fetch(offset_fetch_request&& r) {
 
 kafka::member_id group::generate_member_id(const join_group_request& r) {
     auto client_id = r.client_id ? *r.client_id : "";
-    auto id = r.group_instance_id ? (*r.group_instance_id)() : client_id;
+    auto id = r.data.group_instance_id ? (*r.data.group_instance_id)()
+                                       : client_id;
     boost::uuids::uuid uuid = boost::uuids::random_generator()();
     return kafka::member_id(fmt::format("{}-{}", id, uuid));
 }
