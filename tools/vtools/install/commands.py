@@ -46,13 +46,16 @@ def cpp_deps(build_type, conf, clang):
 
 
 @install.command(short_help='install clang from source.')
+@click.option('--fetch',
+              help=('Download and uncompress source; skip build.'),
+              is_flag=True)
 @click.option('--conf',
               help=('Path to configuration file. If not given, a .vtools.yml '
                     'file is searched recursively starting from the current '
                     'working directory'),
               default=None)
-def clang(conf):
-    llvm.install_clang(config.VConfig(conf, clang=True))
+def clang(conf, fetch):
+    llvm.install_clang(config.VConfig(conf, clang=True), download_only=fetch)
 
 
 @install.command(short_help='install go build dependencies.')

@@ -33,7 +33,7 @@ def find_or_install_clang(vconfig):
     return f"{vconfig.clang_path}/bin/clang"
 
 
-def install_clang(vconfig):
+def install_clang(vconfig, download_only=False):
     llvm_root = f"{vconfig.build_root}/llvm"
     src_dir = f"{llvm_root}/llvm-src"
 
@@ -41,6 +41,9 @@ def install_clang(vconfig):
         logging.info(f"Found source in {src_dir}, skipping download.")
     else:
         _download_checksum_and_extract_llvm_sources(src_dir)
+
+    if download_only:
+        return
 
     build_dir = f"{llvm_root}/llvm-build"
     install_prefix = vconfig.clang_path
