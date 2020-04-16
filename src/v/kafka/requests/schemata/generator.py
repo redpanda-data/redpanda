@@ -67,6 +67,24 @@ path_type_map = {
         },
         "MemberId": ("kafka::member_id", "string"),
     },
+    "JoinGroupRequestData": {
+        "MemberId": ("kafka::member_id", "string"),
+        "GroupInstanceId": ("kafka::group_instance_id", "string"),
+        "ProtocolType": ("kafka::protocol_type", "string"),
+        "Protocols": {
+            "Name": ("kafka::protocol_name", "string"),
+        },
+    },
+    "JoinGroupResponseData": {
+        "GenerationId": ("kafka::generation_id", "int32"),
+        "ProtocolName": ("kafka::protocol_name", "string"),
+        "Leader": ("kafka::member_id", "string"),
+        "MemberId": ("kafka::member_id", "string"),
+        "Members": {
+            "MemberId": ("kafka::member_id", "string"),
+            "GroupInstanceId": ("kafka::group_instance_id", "string"),
+        },
+    },
 }
 
 # a few kafka field types specify an entity type
@@ -79,6 +97,8 @@ entity_type_map = dict(
 field_name_type_map = {
     ("int16", "ErrorCode"): "kafka::error_code",
     ("int32", "ThrottleTimeMs"): "std::chrono::milliseconds",
+    ("int32", "SessionTimeoutMs"): "std::chrono::milliseconds",
+    ("int32", "RebalanceTimeoutMs"): "std::chrono::milliseconds",
 }
 
 # primitive types
@@ -102,6 +122,8 @@ STRUCT_TYPES = [
     "OffsetCommitRequestPartition",
     "OffsetCommitResponseTopic",
     "OffsetCommitResponsePartition",
+    "JoinGroupRequestProtocol",
+    "JoinGroupResponseMember",
 ]
 
 SCALAR_TYPES = list(basic_type_map.keys())

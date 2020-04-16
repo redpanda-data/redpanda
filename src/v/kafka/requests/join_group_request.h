@@ -1,6 +1,8 @@
 #pragma once
 #include "kafka/errors.h"
 #include "kafka/requests/fwd.h"
+#include "kafka/requests/schemata/join_group_request.h"
+#include "kafka/requests/schemata/join_group_response.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "seastarx.h"
@@ -22,13 +24,7 @@ struct join_group_api final {
 };
 
 struct join_group_request final {
-    kafka::group_id group_id;
-    std::chrono::milliseconds session_timeout;
-    std::chrono::milliseconds rebalance_timeout; // >= v1
-    kafka::member_id member_id;
-    std::optional<kafka::group_instance_id> group_instance_id; // >= v5
-    kafka::protocol_type protocol_type;
-    std::vector<member_protocol> protocols;
+    join_group_request_data data;
 
     join_group_request() = default;
     explicit join_group_request(request_context& ctx) { decode(ctx); }
@@ -37,18 +33,42 @@ struct join_group_request final {
     join_group_request(join_group_request&&) = default;
     join_group_request& operator=(join_group_request&&) = delete;
 
-    // extra context from request header
+    // extra context from request header set in decode
     api_version version;
     std::optional<ss::sstring> client_id;
 
     // set during request processing after mapping group to ntp
     model::ntp ntp;
 
-    void encode(const request_context& ctx, response_writer& writer);
+    /**
+     * Convert the request member protocol list into the type used internally to
+     * group membership. We maintain two different types because the internal
+     * type is also the type stored on disk and we do not want it to be tied to
+     * the type produced by code generation.
+     */
+    std::vector<member_protocol> native_member_protocols() const {
+        std::vector<member_protocol> res;
+        std::transform(
+          data.protocols.cbegin(),
+          data.protocols.cend(),
+          std::back_inserter(res),
+          [](const join_group_request_protocol& p) {
+              return member_protocol{p.name, p.metadata};
+          });
+        return res;
+    }
+
+    void encode(response_writer& writer, api_version version) {
+        data.encode(writer, version);
+    }
+
     void decode(request_context& ctx);
 };
 
-std::ostream& operator<<(std::ostream&, const join_group_request&);
+static inline std::ostream&
+operator<<(std::ostream& os, const join_group_request& r) {
+    return os << r.data;
+}
 
 static inline const kafka::member_id no_member("");
 static inline const kafka::member_id no_leader("");
@@ -58,27 +78,11 @@ static inline const kafka::protocol_name no_protocol("");
 struct join_group_response final {
     using api_type = join_group_api;
 
-    struct member_config {
-        kafka::member_id member_id;
-        std::optional<kafka::group_instance_id> group_instance_id; // >= v5
-        bytes metadata;
-    };
-
-    std::chrono::milliseconds throttle_time; // >= v2
-    kafka::error_code error;
-    kafka::generation_id generation_id;
-    kafka::protocol_name protocol_name;
-    kafka::member_id leader_id;
-    kafka::member_id member_id;
-    std::vector<member_config> members;
+    join_group_response_data data;
 
     join_group_response(kafka::member_id member_id, kafka::error_code error)
-      : throttle_time(0)
-      , error(error)
-      , generation_id(no_generation)
-      , protocol_name(no_protocol)
-      , leader_id(no_leader)
-      , member_id(member_id) {}
+      : join_group_response(
+        error, no_generation, no_protocol, no_leader, member_id) {}
 
     join_group_response(kafka::error_code error)
       : join_group_response(no_member, error) {}
@@ -89,16 +93,19 @@ struct join_group_response final {
       kafka::protocol_name protocol_name,
       kafka::member_id leader_id,
       kafka::member_id member_id,
-      std::vector<member_config> members = {})
-      : throttle_time(0)
-      , error(error)
-      , generation_id(generation_id)
-      , protocol_name(std::move(protocol_name))
-      , leader_id(std::move(leader_id))
-      , member_id(std::move(member_id))
-      , members(std::move(members)) {}
+      std::vector<join_group_response_member> members = {}) {
+        data.throttle_time_ms = std::chrono::milliseconds(0);
+        data.error_code = error;
+        data.generation_id = generation_id;
+        data.protocol_name = std::move(protocol_name);
+        data.leader = std::move(leader_id);
+        data.member_id = std::move(member_id);
+        data.members = std::move(members);
+    }
 
-    void encode(const request_context& ctx, response& resp);
+    void encode(const request_context& ctx, response& resp) {
+        data.encode(ctx, resp);
+    }
 };
 
 static inline join_group_response
@@ -113,6 +120,32 @@ make_join_error(kafka::member_id member_id, error_code error) {
       _make_join_error(std::move(member_id), error));
 }
 
-std::ostream& operator<<(std::ostream&, const join_group_response&);
+static inline std::ostream&
+operator<<(std::ostream& os, const join_group_response& r) {
+    return os << r.data;
+}
+
+// group membership helper to compare a protocol set from the wire with our
+// internal type without doing a full type conversion.
+static inline bool operator==(
+  const std::vector<join_group_request_protocol>& a,
+  const std::vector<member_protocol>& b) {
+    return std::equal(
+      a.cbegin(),
+      a.cend(),
+      b.cbegin(),
+      b.cend(),
+      [](const join_group_request_protocol& a, const member_protocol& b) {
+          return a.name == b.name && a.metadata == b.metadata;
+      });
+}
+
+// group membership helper to compare a protocol set from the wire with our
+// internal type without doing a full type conversion.
+static inline bool operator!=(
+  const std::vector<join_group_request_protocol>& a,
+  const std::vector<member_protocol>& b) {
+    return !(a == b);
+}
 
 } // namespace kafka

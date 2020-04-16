@@ -105,7 +105,8 @@ SEASTAR_THREAD_TEST_CASE(response_futs) {
     m.set_sync_response(make_sync_response());
 
     BOOST_TEST(
-      join_response.get0().generation_id == make_join_response().generation_id);
+      join_response.get0().data.generation_id
+      == make_join_response().data.generation_id);
     BOOST_TEST(
       sync_response.get0().assignment == make_sync_response().assignment);
 

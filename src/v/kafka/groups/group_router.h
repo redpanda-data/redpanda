@@ -76,11 +76,11 @@ public:
       , _coordinators(coordinators) {}
 
     ss::future<join_group_response> join_group(join_group_request&& request) {
-        auto shard = shard_for(request.group_id);
+        auto shard = shard_for(request.data.group_id);
         if (!shard) {
             return ss::make_ready_future<join_group_response>(
               join_group_response(
-                request.member_id, error_code::not_coordinator));
+                request.data.member_id, error_code::not_coordinator));
         }
         request.ntp = std::move(shard->first);
         return with_scheduling_group(
