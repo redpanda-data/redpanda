@@ -93,6 +93,11 @@ api_versions_api::process(request_context&& ctx, ss::smp_service_group) {
         r.data.error_code = error_code::none;
     }
 
+    if (ctx.header().version > api_version(1)) {
+        r.data.throttle_time_ms = std::chrono::milliseconds(
+          ctx.throttle_delay_ms());
+    }
+
     if (
       r.data.error_code == error_code::none
       || r.data.error_code == error_code::unsupported_version) {
