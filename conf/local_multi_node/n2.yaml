@@ -1,6 +1,6 @@
 ---
 redpanda:
-  data_directory: "~/.cluster.redpanda"
+  data_directory: "~/.cluster.redpanda/n2"
   node_id: 2
   rpc_server:
     address: "127.0.0.1"
