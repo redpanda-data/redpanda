@@ -57,12 +57,12 @@ void metadata_dissemination_service::initialize_leadership_metadata() {
     if (ids.size() <= 1) {
         return;
     }
-
     (void)ss::with_gate(_bg, [this, ids = std::move(ids)]() mutable {
         // We do not want to send requst to self
         auto it = std::find(std::cbegin(ids), std::cend(ids), _self);
-        vassert(it != ids.cend(), "Current node have to be member of cluster");
-        ids.erase(it);
+        if (it != ids.end()) {
+            ids.erase(it);
+        }
 
         return update_metadata_with_retries(std::move(ids));
     });

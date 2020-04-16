@@ -28,7 +28,7 @@ public:
 
     static constexpr const size_t chunks_no_buffer = 8;
     static constexpr const size_t chunk_size = chunk::chunk_size;
-    static constexpr const size_t fallocation_step = 32 * (1 << 20); // 32MB
+    static constexpr const size_t fallocation_step = 32_MiB;
 
     struct options {
         options(ss::io_priority_class p, size_t chunks_no)

@@ -81,8 +81,6 @@ private:
     uint32_t _requests_blocked_memory = 0;
     ss::metrics::metric_groups _metrics;
 
-    friend std::ostream&
-    operator<<(std::ostream& o, const rpc::client_probe& p);
+    friend std::ostream& operator<<(std::ostream& o, const client_probe& p);
 };
-std::ostream& operator<<(std::ostream& o, const rpc::client_probe& p);
 }; // namespace rpc

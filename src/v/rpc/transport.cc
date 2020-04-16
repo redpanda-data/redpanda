@@ -191,10 +191,10 @@ transport::send(netbuf b, rpc::client_opts opts) {
                    send_units = std::move(send_units)]() mutable {
                       auto msg_size = v.size();
                       return _out.write(std::move(v))
-                        .then([this,
-                               msg_size,
-                               u = std::move(u),
-                               send_units = std::move(send_units)] {
+                        .finally([this,
+                                  msg_size,
+                                  u = std::move(u),
+                                  send_units = std::move(send_units)] {
                             _probe.add_bytes_sent(msg_size);
                         });
                   })

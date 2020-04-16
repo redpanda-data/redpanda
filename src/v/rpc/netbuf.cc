@@ -8,7 +8,7 @@
 #include "vassert.h"
 
 namespace rpc {
-static iobuf header_as_iobuf(const header& h) {
+iobuf header_as_iobuf(const header& h) {
     iobuf b;
     b.reserve_memory(size_of_rpc_header);
     reflection::adl<rpc::header>{}.to(b, h);
