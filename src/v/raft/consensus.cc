@@ -69,7 +69,7 @@ ss::sstring consensus::voted_for_filename() const {
 consensus::success_reply consensus::update_follower_index(
   model::node_id node, result<append_entries_reply> r) {
     if (!r) {
-        _ctxlog.debug("Error response from {}, {}", node, r.error().message());
+        _ctxlog.trace("Error response from {}, {}", node, r.error().message());
         // add stats to group
         return success_reply::no;
     }
