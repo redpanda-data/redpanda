@@ -21,15 +21,8 @@
 
 namespace kafka {
 
-static std::ostream&
-operator<<(std::ostream& os, const api_versions_response_key& a) {
-    fmt::print(
-      os, "key {} min {} max {}", a.api_key, a.min_version, a.max_version);
-    return os;
-}
-
 std::ostream& operator<<(std::ostream& os, const api_versions_response& r) {
-    fmt::print(os, "error {} apis {}", r.data.error_code, r.data.api_keys);
+    os << r.data;
     return os;
 }
 
