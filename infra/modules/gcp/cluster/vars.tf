@@ -26,7 +26,7 @@ variable "disks" {
 variable "image" {
   # See https://cloud.google.com/compute/docs/images#os-compute-support
   # for an updated list.
-  default = "debian-cloud/debian-9"
+  default = "ubuntu-os-cloud/ubuntu-1804-lts"
 }
 
 variable machine_type {
