@@ -172,6 +172,7 @@ std::ostream& operator<<(std::ostream& o, const rpc::client_probe& p) {
       << ", requests_pending: " << p._requests_pending
       << ", requests_completed: " << p._requests_completed
       << ", request_errors: " << p._request_errors
+      << ", request_timeouts: " << p._request_timeouts
       << ", in_bytes: " << p._in_bytes << ", out_bytes: " << p._out_bytes
       << ", connects: " << p._connects << ", connections: " << p._connections
       << ", connection_errors: " << p._connection_errors

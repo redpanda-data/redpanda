@@ -52,7 +52,6 @@ public:
 
     void header_corrupted() {
         ++_corrupted_headers;
-        request_error();
     }
 
     void client_correlation_error() { ++_client_correlation_errors; }
