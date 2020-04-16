@@ -78,3 +78,24 @@ Some of the technologies Vectorized is using do this:
 1. [Seastar](http://seastar.io/) (and the amazing [Seastar tutorial](https://github.com/scylladb/seastar/blob/master/doc/tutorial.md))
 2. [Raft consensus](https://raft.github.io/)
 
+## Laptop Setup
+
+### Thinkpad p53
+
+1. Go into BIOS and make these changes:
+  * Display: discrete graphics
+  * Secure Boot: disabled
+  
+2. Install fedora 31
+  * Select "Custom" disk partitioning options, click automatically create partitions then change the / and /home partitions to be XFS.
+  
+3. Installing nvidia Drivers from rpmfusion
+  * Run the following command:
+    ```
+    sudo -- sh -c ' \
+    dnf install https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm && \
+    dnf update -y && \
+    dnf install -y akmod-nvidia'
+    ```
+  * Then reboot to enable the nvidia driver.
+  
