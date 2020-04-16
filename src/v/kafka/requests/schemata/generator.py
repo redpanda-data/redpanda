@@ -19,8 +19,6 @@
 #   ignorable flag on a field doesn't change the wire protocol, but gives
 #   instruction on how things should behave when there is missing data.
 #
-#   - Auto generate output operator
-#
 import io
 import json
 import functools
@@ -209,6 +207,11 @@ class StructType(FieldType):
     @property
     def is_struct(self):
         return True
+
+    @property
+    def format(self):
+        """Format string for output operator"""
+        return " ".join(map(lambda f: f"{f.name}={{}}", self.fields))
 
     def structs(self):
         """
@@ -406,7 +409,9 @@ class response;
 
 {% for struct in struct.structs() %}
 {{ render_struct(struct) }}
+    friend std::ostream& operator<<(std::ostream&, const {{ struct.name }}&);
 };
+
 {% endfor %}
 
 {{ render_struct(struct) }}
@@ -417,6 +422,8 @@ class response;
     void encode(const request_context& ctx, response& resp);
     void decode(iobuf buf, api_version version);
 {%- endif %}
+
+    friend std::ostream& operator<<(std::ostream&, const {{ struct.name }}&);
 };
 
 }
@@ -549,6 +556,18 @@ void {{ struct.name }}::decode(iobuf buf, api_version version) {
 }
 {%- endif %}
 
+{% set structs = struct.structs() + [struct] %}
+{% for struct in structs %}
+std::ostream& operator<<(std::ostream& o, const {{ struct.name }}& v) {
+    fmt::print(o,
+      "{{'{' + struct.format + '}'}}",
+      {%- for field in struct.fields %}
+      v.{{ field.name }}{% if not loop.last %},{% endif %}
+      {%- endfor %}
+    );
+    return o;
+}
+{% endfor %}
 }
 """
 
