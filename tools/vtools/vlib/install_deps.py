@@ -11,12 +11,6 @@ def check_deps_installed(vconfig):
             vconfig.infra_bin_dir, os.path.join('v2', 'current', 'bin', 'aws'))
 
 
-def install_deps(vconfig):
-    os.makedirs(vconfig.infra_bin_dir, exist_ok=True)
-    _install_awscli(vconfig.infra_bin_dir, vconfig.environ)
-    _install_terraform(vconfig.infra_bin_dir, vconfig.environ)
-
-
 def _install_awscli(install_dir, env):
     awscli_zip = os.path.join(install_dir, 'awscliv2.zip')
     awscli_url = 'https://d1vvhvl2y92vvt.cloudfront.net/awscli-exe-linux-x86_64.zip'
@@ -56,3 +50,17 @@ def _download_and_extract(url, dest, extract_to, env):
     # See https://bugs.python.org/issue15795
     shell.run_subprocess(f'unzip -o -d {extract_to} {dest}', env=env)
     os.remove(dest)
+
+
+deps_install_functions = {
+    'awscli': _install_awscli,
+    'terraform': _install_terraform,
+}
+
+
+def install_deps(vconfig, deps=['awscli', 'terraform']):
+    os.makedirs(vconfig.infra_bin_dir, exist_ok=True)
+    for dep in deps:
+        if dep not in deps_install_functions:
+            logging.fail('Unknown dependency {dep}')
+        deps_install_functions[dep](vconfig.infra_bin_dir, vconfig.environ)
