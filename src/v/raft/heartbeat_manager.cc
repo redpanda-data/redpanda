@@ -6,6 +6,7 @@
 #include "raft/raftgen_service.h"
 #include "rpc/reconnect_transport.h"
 #include "rpc/types.h"
+#include "vlog.h"
 
 #include <absl/container/flat_hash_map.h>
 #include <bits/stdint-uintn.h>
@@ -63,7 +64,8 @@ static std::vector<heartbeat_manager::node_heartbeat> requests_for_range(
 
             auto last_hbeat_timestamp = ptr->last_hbeat_timestamp(n.id());
             if (last_hbeat_timestamp > last_heartbeat) {
-                hbeatlog.trace(
+                vlog(
+                  hbeatlog.trace,
                   "Skipping sending beat to {} gr: {} last hb {}, last append "
                   "{}",
                   n.id(),
@@ -157,7 +159,8 @@ ss::future<> heartbeat_manager::do_heartbeat(
 void heartbeat_manager::process_reply(
   model::node_id n, std::vector<group_id> groups, result<heartbeat_reply> r) {
     if (!r) {
-        hbeatlog.info(
+        vlog(
+          hbeatlog.trace,
           "Could not send hearbeats to node:{}, reason:{}, message:{}",
           n,
           r,
@@ -169,7 +172,7 @@ void heartbeat_manager::process_reply(
               g,
               details::consensus_ptr_by_group_id{});
             if (it == _consensus_groups.end()) {
-                hbeatlog.error("cannot find consensus group:{}", g);
+                vlog(hbeatlog.error, "cannot find consensus group:{}", g);
                 continue;
             }
             // propagate error
@@ -178,7 +181,7 @@ void heartbeat_manager::process_reply(
         }
         return;
     }
-    hbeatlog.trace("process_reply {}", r);
+    vlog(hbeatlog.trace, "process_reply {}", r);
     for (auto& m : r.value().meta) {
         auto it = std::lower_bound(
           _consensus_groups.begin(),
@@ -186,7 +189,8 @@ void heartbeat_manager::process_reply(
           raft::group_id(m.group),
           details::consensus_ptr_by_group_id{});
         if (it == _consensus_groups.end()) {
-            hbeatlog.error("Could not find consensus for group:{}", m.group);
+            vlog(
+              hbeatlog.error, "Could not find consensus for group:{}", m.group);
             continue;
         }
         (*it)->process_append_entries_reply(
@@ -198,7 +202,7 @@ void heartbeat_manager::dispatch_heartbeats() {
     (void)with_gate(
       _bghbeats, [this, old = _hbeat] { return do_dispatch_heartbeats(old); })
       .handle_exception([](const std::exception_ptr& e) {
-          hbeatlog.warn("Error dispatching hearbeats - {}", e);
+          vlog(hbeatlog.warn, "Error dispatching hearbeats - {}", e);
       })
       .then([this] {
           if (!_bghbeats.is_closed()) {
