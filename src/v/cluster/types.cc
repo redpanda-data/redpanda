@@ -97,7 +97,8 @@ adl<cluster::create_topics_request>::from(iobuf_parser& in) {
 
 void adl<cluster::create_topics_reply>::to(
   iobuf& out, cluster::create_topics_reply&& r) {
-    reflection::serialize(out, std::move(r.results), std::move(r.metadata));
+    reflection::serialize(
+      out, std::move(r.results), std::move(r.metadata), std::move(r.configs));
 }
 
 cluster::create_topics_reply adl<cluster::create_topics_reply>::from(iobuf io) {
@@ -108,7 +109,9 @@ cluster::create_topics_reply
 adl<cluster::create_topics_reply>::from(iobuf_parser& in) {
     auto results = adl<std::vector<cluster::topic_result>>().from(in);
     auto md = adl<std::vector<model::topic_metadata>>().from(in);
-    return cluster::create_topics_reply{std::move(results), std::move(md)};
+    auto cfg = adl<std::vector<cluster::topic_configuration>>().from(in);
+    return cluster::create_topics_reply{
+      std::move(results), std::move(md), std::move(cfg)};
 }
 
 void adl<model::timeout_clock::duration>::to(iobuf& out, duration dur) {

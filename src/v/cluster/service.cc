@@ -48,7 +48,7 @@ service::create_topics(create_topics_request&& r, rpc::streaming_context&) {
                     model::timeout_clock::now() + r.timeout);
               })
             .then([this](std::vector<topic_result> res) {
-                // Fetch metadata from succesfully created topics
+                // Fetch metadata for successfully created topics
                 auto [md, cfg] = fetch_metadata_and_cfg(res);
                 return create_topics_reply{
                   std::move(res), std::move(md), std::move(cfg)};
