@@ -43,7 +43,7 @@ public:
     timequery(timequery_config cfg) final;
     size_t segment_count() const final { return _segs.size(); }
     model::offset start_offset() const final;
-    model::offset max_offset() const final;
+    model::offset dirty_offset() const final;
     std::optional<model::term_id> get_term(model::offset) const final;
     model::offset committed_offset() const final;
     std::ostream& print(std::ostream&) const final;

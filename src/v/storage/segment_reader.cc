@@ -52,7 +52,7 @@ ss::future<> segment_reader::truncate(size_t n) {
 
 std::ostream& operator<<(std::ostream& os, const segment_reader& seg) {
     return os << "{log_segment:" << seg.filename() << ", " << seg.base_offset()
-              << "-" << seg.max_offset() << ", filesize:" << seg.file_size()
+              << "-" << seg.dirty_offset() << ", filesize:" << seg.file_size()
               << "}";
 }
 

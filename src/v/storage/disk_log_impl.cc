@@ -108,7 +108,7 @@ model::offset disk_log_impl::start_offset() const {
     }
     return _segs.front()->reader().base_offset();
 }
-model::offset disk_log_impl::max_offset() const {
+model::offset disk_log_impl::dirty_offset() const {
     if (!_segs.empty()) {
         for (int i = (int)_segs.size() - 1; i >= 0; --i) {
             auto& seg = _segs[i];
@@ -160,7 +160,7 @@ ss::future<> disk_log_impl::new_segment(
 log_appender disk_log_impl::make_appender(log_append_config cfg) {
     auto now = log_clock::now();
     model::offset base(0);
-    if (auto o = max_offset(); o() >= 0) {
+    if (auto o = dirty_offset(); o() >= 0) {
         // start at *next* valid and inclusive offset!
         base = o + model::offset(1);
     }
@@ -274,13 +274,13 @@ void disk_log_impl::dispatch_remove(
     });
 }
 ss::future<> disk_log_impl::do_truncate(model::offset o) {
-    if (o > max_offset() || o < start_offset()) {
+    if (o > dirty_offset() || o < start_offset()) {
         vlog(
           stlog.error,
           "log::truncate out of range: {}, {}-{}",
           o,
           start_offset(),
-          max_offset());
+          dirty_offset());
         return ss::make_ready_future<>();
     }
     if (_segs.empty()) {
