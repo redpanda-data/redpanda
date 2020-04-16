@@ -420,6 +420,9 @@ static ss::future<> fetch_topic_partitions(op_context& octx) {
 ss::future<response_ptr>
 fetch_api::process(request_context&& rctx, ss::smp_service_group ssg) {
     return ss::do_with(op_context(std::move(rctx), ssg), [](op_context& octx) {
+        // top-level error is used for session-level errors, but we do not yet
+        // implement session management.
+        octx.response.error = error_code::none;
         return fetch_topic_partitions(octx).then([&octx] {
             /*
              * fast out
