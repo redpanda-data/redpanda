@@ -123,10 +123,10 @@ create_topic(request_context& ctx, cluster::topic_configuration topic) {
     // route request through controller home core
     return ctx.cntrl_dispatcher().dispatch_to_controller(
       [topic = std::move(topic)](cluster::controller& c) mutable {
-          auto timeout = ss::lowres_clock::now()
-                         + config::shard_local_cfg().create_topic_timeout_ms();
-
-          return c.autocreate_topics({std::move(topic)}, timeout)
+          return c
+            .autocreate_topics(
+              {std::move(topic)},
+              config::shard_local_cfg().create_topic_timeout_ms())
             .then([](std::vector<cluster::topic_result> res) {
                 /*
                  * kindly ask client to retry on error

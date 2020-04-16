@@ -490,29 +490,29 @@ controller::recover_topic_configuration(topic_configuration t_cfg) {
 
 ss::future<std::vector<topic_result>> controller::autocreate_topics(
   std::vector<topic_configuration> topics,
-  model::timeout_clock::time_point timeout) {
+  model::timeout_clock::duration timeout) {
     using ret_t = std::vector<topic_result>;
     vlog(clusterlog.trace, "Autocreating topics {}", topics);
     if (is_leader()) {
         // create topics locally
-        return create_topics(std::move(topics), timeout);
+        return create_topics(
+          std::move(topics), timeout + model::timeout_clock::now());
     }
 
-    return dispatch_rpc_to_leader([topics, timeout](
-                                    controller_client_protocol c) mutable {
-               vlog(
-                 clusterlog.trace,
-                 "Dispatching autocreate {} request to leader ",
-                 topics);
-               return c
-                 .create_topics(
-                   create_topics_request{std::move(topics),
-                                         timeout - model::timeout_clock::now()},
-                   rpc::client_opts(timeout))
-                 .then([](rpc::client_context<create_topics_reply> ctx) {
-                     return std::move(ctx.data);
-                 });
-           })
+    return dispatch_rpc_to_leader(
+             [topics, timeout](controller_client_protocol c) mutable {
+                 vlog(
+                   clusterlog.trace,
+                   "Dispatching autocreate {} request to leader ",
+                   topics);
+                 return c
+                   .create_topics(
+                     create_topics_request{std::move(topics), timeout},
+                     rpc::client_opts(timeout + model::timeout_clock::now()))
+                   .then([](rpc::client_context<create_topics_reply> ctx) {
+                       return std::move(ctx.data);
+                   });
+             })
       .then([this, topics](result<create_topics_reply> r) mutable {
           return process_autocreate_response(std::move(topics), std::move(r));
       })
