@@ -195,8 +195,6 @@ void segment_appender::dispatch_background_head_write() {
             .then([this, &h, expected](size_t got) {
                 if (h.is_full()) {
                     h.reset();
-                } else {
-                    h.compact();
                 }
                 if (unlikely(expected != got)) {
                     return size_missmatch_error("chunk::write", expected, got);

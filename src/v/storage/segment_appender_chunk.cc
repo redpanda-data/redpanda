@@ -30,17 +30,7 @@ const char* segment_appender_chunk::dma_ptr() const {
     const auto sz = ss::align_down<size_t>(_flushed_pos, _alignment);
     return _buf.get() + sz;
 }
-void segment_appender_chunk::compact() {
-    if (_pos < _alignment) {
-        return;
-    }
-    const size_t copy_sz = dma_size();
-    const char* copy_ptr = dma_ptr();
-    const size_t final_sz = (_buf.get() + _pos) - copy_ptr;
-    std::memmove(_buf.get(), copy_ptr, copy_sz);
-    // must be called after flush!
-    _flushed_pos = _pos = final_sz;
-}
+
 size_t segment_appender_chunk::dma_size() const {
     // We must write in page-size multiples, example:
     //
