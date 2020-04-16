@@ -137,7 +137,7 @@ def all_changed(conf, ref=None, check=True):
     _crlfmt(vconfig, ref, check)
     _yapf(vconfig, ref, check)
     _shfmt(vconfig, ref, check)
-    _tffmt(vconfig, ref, check)
+    # _tffmt(vconfig, ref, check)
 
 
 @fmt.command(short_help='runs clang-tidy against redpanda for clang builds.')
