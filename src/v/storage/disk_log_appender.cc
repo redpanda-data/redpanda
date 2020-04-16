@@ -19,7 +19,7 @@ disk_log_appender::disk_log_appender(
   , _append_time(append_time)
   , _idx(offset)
   , _base_offset(offset)
-  , _last_offset(log.max_offset()) {}
+  , _last_offset(log.dirty_offset()) {}
 
 ss::future<> disk_log_appender::initialize() {
     if (_log._segs.empty()) {
