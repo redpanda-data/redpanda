@@ -8,6 +8,7 @@
 
 #include <boost/test/tools/old/interface.hpp>
 
+#include <chrono>
 #include <vector>
 
 std::vector<cluster::topic_configuration> test_topics_configuration() {
@@ -42,7 +43,7 @@ FIXTURE_TEST(
 
     auto results = cntrl.local()
                      .autocreate_topics(
-                       test_topics_configuration(), model::no_timeout)
+                       test_topics_configuration(), std::chrono::seconds(10))
                      .get0();
 
     BOOST_REQUIRE_EQUAL(results.size(), 3);
@@ -84,7 +85,7 @@ FIXTURE_TEST(test_autocreate_on_non_leader, cluster_test_fixture) {
     }).get();
 
     cntrl_1.local()
-      .autocreate_topics(test_topics_configuration(), model::no_timeout)
+      .autocreate_topics(test_topics_configuration(), std::chrono::seconds(10))
       .get0();
 
     // Make sure caches are the same

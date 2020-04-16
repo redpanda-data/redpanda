@@ -276,9 +276,6 @@ static ss::future<metadata_response::topic>
 create_topic(request_context& ctx, model::topic&& topic) {
     return ctx.cntrl_dispatcher().dispatch_to_controller(
       [topic = std::move(topic)](cluster::controller& c) mutable {
-          auto timeout = ss::lowres_clock::now()
-                         + config::shard_local_cfg().create_topic_timeout_ms();
-
           // default topic configuration
           cluster::topic_configuration cfg{
             cluster::kafka_namespace,
@@ -286,7 +283,10 @@ create_topic(request_context& ctx, model::topic&& topic) {
             config::shard_local_cfg().default_topic_partitions(),
             config::shard_local_cfg().default_topic_replication()};
 
-          return c.autocreate_topics({std::move(cfg)}, timeout)
+          return c
+            .autocreate_topics(
+              {std::move(cfg)},
+              config::shard_local_cfg().create_topic_timeout_ms())
             .then([](std::vector<cluster::topic_result> res) {
                 vassert(res.size() == 1, "expected single result");
                 metadata_response::topic t;

@@ -63,7 +63,7 @@ public:
       model::timeout_clock::time_point timeout);
 
     ss::future<std::vector<topic_result>> autocreate_topics(
-      std::vector<topic_configuration>, model::timeout_clock::time_point);
+      std::vector<topic_configuration>, model::timeout_clock::duration);
 
     raft::group_id get_highest_group_id() const { return _highest_group_id; }
 
