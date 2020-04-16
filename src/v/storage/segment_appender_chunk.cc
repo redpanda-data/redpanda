@@ -9,9 +9,19 @@
 namespace storage {
 
 size_t segment_appender_chunk::append(const char* src, size_t len) {
-    const size_t sz = std::min(len, space_left());
+    size_t left = space_left();
+    const size_t sz = std::min(len, left);
     std::copy_n(src, sz, get_current());
     _pos += sz;
+    left -= sz;
+    // HACK: zero out the next 20 bytes, allows reuse of chunks
+    // There are multiple solutions to this problem, this seems
+    // to be the least accounting heavy
+    // 1. Before flushing a half page we can zero out the next few bytes
+    // 2. After reset() we can zero out the segment - one time cost.
+    // 3. This append() where on average we'll probably append some zeroes
+    //    more often, but it's very little work
+    std::memset(get_current(), 0, std::min<size_t>(left, 20));
     return sz;
 }
 const char* segment_appender_chunk::dma_ptr() const {
