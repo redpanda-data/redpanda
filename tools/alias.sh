@@ -162,3 +162,16 @@ function vtools_dev_cluster() {
       --playbook=$tld/infra/ansible/playbooks/deploy-prometheus-grafana.yml
   )
 }
+
+function vtools_prometheus() {
+  (
+    set -x
+    set -o errexit
+    set -o pipefail
+    tld=$(git rev-parse --show-toplevel 2>/dev/null)
+    # ensure data directory
+    vtools grafana create --url http://127.0.0.1:9644 2>/dev/null || true
+    prometheus --config.file ${tld}/conf/local_multi_node/prometheus.yaml \
+      --storage.tsdb.path ${tld}/build/pometheus_data/
+  )
+}

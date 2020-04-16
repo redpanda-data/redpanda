@@ -3,6 +3,8 @@ import os
 import json
 import requests
 
+from ..vlib import config
+
 import grafanalib.core
 
 from absl import logging
@@ -184,12 +186,15 @@ def grafana():
 @click.option('--url',
               help=('Redpanda metrics endpoint'),
               default="http://localhost:9644")
-@click.option('--output', required=False, default="redpanda.json")
+@click.option('--output', required=False, default=None)
 @click.option('--datasource',
               help=('Datasource for redpanda metrics'),
               default="prometheus")
 def create(conf, url, output, datasource):
+    vconfig = config.VConfig(conf)
     m = get_redpanda_metrics(url)
     d = create_dashboard(m, datasource)
+    if output is None:
+        output = f"{vconfig.build_root}/grafana_redpanda.json"
     with open(output, "w") as f:
         write_dashboard(d, f)

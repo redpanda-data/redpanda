@@ -5,6 +5,7 @@
 #include "vassert.h"
 #include "vlog.h"
 
+#include <seastar/core/align.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/semaphore.hh>
 
@@ -102,38 +103,36 @@ ss::future<> segment_appender::append(const char* buf, const size_t n) {
 }
 
 ss::future<> segment_appender::truncate(size_t n) {
-    return flush()
-      // NOTE: we do not tuncate on purpose. instead we rely on the
-      // header and payload checksum to detect if we've read past the end
-      // .then([this, n] { return _out.truncate(n); })
-      .then([this, n] {
-          _committed_offset = n;
-          for (auto& c : _free_chunks) {
-              // reset any partial state, since after the truncate, it makes no
-              // sense to keep any old state/pointers/sizes, etc
-              c.reset();
-          }
-          auto& h = head();
-          const size_t align = h.alignment();
-          const size_t sz = ss::align_down<size_t>(_committed_offset, align);
-          const size_t min_zero_pages = std::min(
-            align * 2, segment_appender_chunk::chunk_size);
-          char* buff = h.get_current();
-          std::memset(buff, 0, min_zero_pages);
-          h.set_position(sz);
-
-          return _out.dma_read(sz, buff, align, _opts.priority)
-            .then([this, buff, sz, min_zero_pages, n, align](size_t actual) {
-                const size_t expected = n % align;
-                vassert(
-                  expected <= actual,
-                  "truncate read more than a page:{} - {}",
-                  actual,
-                  *this);
-                return _out.dma_write(sz, buff, min_zero_pages, _opts.priority)
-                  .then([this](size_t) { return _out.flush(); });
-            });
-      });
+    vassert(
+      n <= file_byte_offset(),
+      "Cannot ask to truncate at:{} which is more bytes than we have:{} - {}",
+      file_byte_offset(),
+      *this);
+    return flush().then([this, n] { return _out.truncate(n); }).then([this, n] {
+        _committed_offset = n;
+        _fallocation_offset = n;
+        for (auto& c : _free_chunks) {
+            // reset any partial state, since after the truncate, it makes no
+            // sense to keep any old state/pointers/sizes, etc
+            c.reset();
+        }
+        auto& h = head();
+        const size_t align = h.alignment();
+        const size_t sz = ss::align_down<size_t>(_committed_offset, align);
+        char* buff = h.get_current();
+        std::memset(buff, 0, align);
+        const size_t half_page_size = n % align;
+        h.set_position(half_page_size);
+        return _out.dma_read(sz, buff, half_page_size, _opts.priority)
+          .then([this, half_page_size](size_t actual) {
+              vassert(
+                half_page_size == actual,
+                "truncate incorrect page bytes: expected:{}, got:{} - {}",
+                half_page_size,
+                actual,
+                *this);
+          });
+    });
 }
 ss::future<> segment_appender::close() {
     vassert(!_closed, "close() on closed segment: {}", *this);
@@ -148,8 +147,13 @@ ss::future<> segment_appender::do_next_adaptive_fallocation() {
              _concurrent_flushes,
              _opts.number_of_chunks,
              [this]() mutable {
-                 return _out.allocate(_fallocation_offset, _opts.falloc_step)
-                   .then([this] { _fallocation_offset += _opts.falloc_step; });
+                 // step - compute step rounded to 4096; this is needed because
+                 // during a truncation the follow up fallocation might not be
+                 // page aligned
+                 const auto step = _opts.falloc_step
+                                   + (_fallocation_offset % 4096);
+                 return _out.allocate(_fallocation_offset, step)
+                   .then([this, step] { _fallocation_offset += step; });
              })
       .handle_exception([this](std::exception_ptr e) {
           vassert(

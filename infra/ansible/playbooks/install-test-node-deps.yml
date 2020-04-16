@@ -21,7 +21,7 @@
         state: present
 
   - name: add additional debian repos
-    when: ansible_os_family == 'Debian'
+    when: ansible_distribution == 'Debian'
     apt_repository:
       repo: deb http://deb.debian.org/debian stretch-backports main
       state: present
@@ -34,6 +34,7 @@
         - openjdk-11-jdk-headless
         - xfsprogs
       state: present
+      update_cache: yes
     when: ansible_os_family == 'Debian'
 
   - name: install kafka binaries

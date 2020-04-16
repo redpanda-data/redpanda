@@ -83,7 +83,9 @@ disk_log_appender::operator()(model::record_batch&& batch) {
               _byte_size += r.byte_size;
               // do not track base_offset, only the last one
               _last_offset = r.last_offset;
-              _log.get_probe().add_bytes_written(r.byte_size);
+              auto& p = _log.get_probe();
+              p.add_bytes_written(r.byte_size);
+              p.batch_written();
               _bytes_left_in_cache_segment = std::min(
                 _bytes_left_in_cache_segment, r.byte_size);
               return ss::stop_iteration::no;

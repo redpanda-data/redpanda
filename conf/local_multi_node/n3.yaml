@@ -1,0 +1,18 @@
+---
+redpanda:
+  data_directory: "~/.cluster.redpanda"
+  node_id: 3
+  rpc_server:
+    address: "127.0.0.1"
+    port: 33147
+  kafka_api:
+    address: "127.0.0.1"
+    port: 9094
+  admin:
+    address: "127.0.0.1"
+    port: 9646
+  seed_servers:
+    - host:
+        address: "127.0.0.1"
+        port: 33145
+      node_id: 1
