@@ -50,9 +50,7 @@ public:
         ++_read_dispatch_errors;
     }
 
-    void header_corrupted() {
-        ++_corrupted_headers;
-    }
+    void header_corrupted() { ++_corrupted_headers; }
 
     void client_correlation_error() { ++_client_correlation_errors; }
 
