@@ -2,13 +2,14 @@
 set -x
 
 topic="sanfrancisco"
-replication=1
-partitions=6
+replication=3
+partitions=1
 servers="localhost:9092"
 record_count=$((1 << 31))
 record_size=1024
+batch_size=81960
 throughput=$((1024 * 64))
-acks=1
+acks=-1
 client_names=(
   SKOBIE
   AVENUE
@@ -79,6 +80,7 @@ if [[ $1 == "produce" ]]; then
     --producer-props "acks=${acks}" \
     "client.id=${client_id}" \
     bootstrap.servers=${servers} \
+    batch.size=${batch_size} \
     buffer.memory=$((1024 * 1024)) "${@:2:99}"
 fi
 
