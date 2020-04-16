@@ -782,7 +782,7 @@ consensus::maybe_update_follower_commit_idx(model::offset request_commit_idx) {
         if (new_commit_idx != _meta.commit_index) {
             auto previous_commit_idx = _meta.commit_index;
             _meta.commit_index = new_commit_idx;
-            _ctxlog.debug(
+            _ctxlog.trace(
               "Follower commit index updated {}", _meta.commit_index);
             _commit_index_updated.broadcast();
             return notify_entries_commited(
