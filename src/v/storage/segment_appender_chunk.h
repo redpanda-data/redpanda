@@ -1,5 +1,6 @@
 #pragma once
 #include "seastarx.h"
+#include "units.h"
 #include "utils/intrusive_list_helpers.h"
 
 #include <seastar/core/aligned_buffer.hh>
@@ -7,7 +8,7 @@
 namespace storage {
 class segment_appender_chunk {
 public:
-    static constexpr const size_t chunk_size = 128 * 1024; // 128KB
+    static constexpr const size_t chunk_size = 128_KiB;
 
     explicit segment_appender_chunk(size_t alignment)
       : _alignment(alignment)
