@@ -43,7 +43,7 @@ ss::future<result<append_entries_reply>> replicate_entries_stm::do_dispatch_one(
                        reply.node_id = _ptr->_self;
                        reply.group = _ptr->_meta.group;
                        reply.term = _ptr->_meta.term;
-                       reply.last_log_index = _ptr->_log.max_offset();
+                       reply.last_log_index = _ptr->_log.committed_offset();
                        reply.result = append_entries_reply::status::success;
                        return ret_t(std::move(reply));
                    })

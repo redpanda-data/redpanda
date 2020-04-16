@@ -209,7 +209,7 @@ struct mem_log_impl final : log::impl {
     }
 
     log_appender make_appender(log_append_config) final {
-        auto o = max_offset();
+        auto o = dirty_offset();
         if (o() < 0) {
             o = model::offset(0);
         } else {
@@ -239,7 +239,7 @@ struct mem_log_impl final : log::impl {
         }
         return _data.begin()->base_offset();
     }
-    model::offset max_offset() const final {
+    model::offset dirty_offset() const final {
         // default value
         if (_data.empty()) {
             return model::offset{};
@@ -248,7 +248,7 @@ struct mem_log_impl final : log::impl {
         return std::prev(it)->last_offset();
     }
 
-    model::offset committed_offset() const final { return max_offset(); }
+    model::offset committed_offset() const final { return dirty_offset(); }
     boost::intrusive::list<mem_iter_reader> _readers;
     underlying_t _data;
 

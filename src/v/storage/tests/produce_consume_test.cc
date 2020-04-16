@@ -36,10 +36,10 @@ SEASTAR_THREAD_TEST_CASE(produce_consume_concurrency) {
 
     auto consumer = ss::do_for_each(range.begin(), range.end(), [&log](int) {
         storage::log_reader_config rdr_cfg(
-          log.max_offset() < model::offset(0)
-            ? log.max_offset()
-            : log.max_offset() - model::offset(1),
-          std::max(model::offset(0), log.max_offset()),
+          log.dirty_offset() < model::offset(0)
+            ? log.dirty_offset()
+            : log.dirty_offset() - model::offset(1),
+          std::max(model::offset(0), log.dirty_offset()),
           ss::default_priority_class());
         return log.make_reader(rdr_cfg)
           .then([](model::record_batch_reader reader) {
