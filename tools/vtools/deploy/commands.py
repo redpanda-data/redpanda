@@ -171,11 +171,21 @@ def destroy_deployment(vconfig, provider, module):
     if not tf.deployment_exists(vconfig, provider, module):
         logging.fatal(
             f'No deployment found for module {module} in provider {provider}.')
-    tf.destroy(vconfig, provider, module)
     tf_out = tf.get_tf_outputs(vconfig, provider, module)
     if tf_out:
+        # Remove the ansible cache in case previous deployed VMs shared the same
+        # public IPs
+        _rm_ansible_cache(vconfig, tf_out['ip']['value'])
         pub_key_path = tf_out['public_key_path']['value']
         key_path = pub_key_path.replace('.pub', '')
         os.remove(pub_key_path)
         os.remove(key_path)
-        return
+    tf.destroy(vconfig, provider, module)
+
+
+def _rm_ansible_cache(vconfig, ips):
+    logging.debug(f'Removing ansible caches for {ips}')
+    for ip in ips:
+        path = f'/tmp/vectorizedio/ansible/cache/{ip}'
+        if os.path.exists(path):
+            os.remove(path)
