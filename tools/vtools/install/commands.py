@@ -162,13 +162,15 @@ def infra_deps(conf):
     """
     vconfig = config.VConfig(conf)
 
-    # terraform and aws
-    install_deps.install_deps(vconfig)
+    # install terraform
+    install_deps.install_deps(vconfig, deps=['terraform'])
 
-    # ansible roles
-    reqs = f'{vconfig.ansible_dir}/requirements.yml'
-    shell.run_subprocess(f'ansible-galaxy install -r {reqs}',
-                         env=vconfig.environ)
+    # awscli and ansible roles (skip in CI)
+    if vconfig.environ['CI'] == "0":
+        install_deps.install_deps(vconfig, deps=['awscli'])
+        reqs = f'{vconfig.ansible_dir}/requirements.yml'
+        shell.run_subprocess(f'ansible-galaxy install -r {reqs}',
+                             env=vconfig.environ)
 
 
 @install.command(short_help='install nodejs')
