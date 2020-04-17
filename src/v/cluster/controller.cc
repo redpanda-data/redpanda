@@ -171,7 +171,9 @@ ss::future<> controller::start() {
             .then([this] {
                 _raft0_cfg_offset = model::offset(
                   _raft0->meta().prev_log_index);
-                return apply_raft0_cfg_update(_raft0->config());
+                return ss::with_semaphore(_sem, 1, [this] {
+                    return apply_raft0_cfg_update(_raft0->config());
+                });
             })
             .then([this] {
                 if (!is_already_member()) {
