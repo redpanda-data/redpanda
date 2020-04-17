@@ -1108,21 +1108,21 @@ group::handle_leave_group(leave_group_request&& r) {
         klog.trace("group is dead");
         return make_leave_error(error_code::coordinator_not_available);
 
-    } else if (contains_pending_member(r.member_id)) {
+    } else if (contains_pending_member(r.data.member_id)) {
         // <kafka>if a pending member is leaving, it needs to be removed
         // from the pending list, heartbeat cancelled and if necessary,
         // prompt a JoinGroup completion.</kafka>
         klog.trace("pending member leaving group");
-        remove_pending_member(r.member_id);
+        remove_pending_member(r.data.member_id);
         return make_leave_error(error_code::none);
 
-    } else if (!contains_member(r.member_id)) {
+    } else if (!contains_member(r.data.member_id)) {
         klog.trace("member not found");
         return make_leave_error(error_code::unknown_member_id);
 
     } else {
-        vlog(klog.trace, "member has left {}", r.member_id);
-        auto member = get_member(r.member_id);
+        vlog(klog.trace, "member has left {}", r.data.member_id);
+        auto member = get_member(r.data.member_id);
         member->expire_timer().cancel();
         remove_member(member);
         return make_leave_error(error_code::none);

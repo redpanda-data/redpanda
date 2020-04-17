@@ -450,13 +450,14 @@ ss::future<leave_group_response>
 group_manager::leave_group(leave_group_request&& r) {
     klog.trace("leave request {}", r);
 
-    auto error = validate_group_status(r.ntp, r.group_id, leave_group_api::key);
+    auto error = validate_group_status(
+      r.ntp, r.data.group_id, leave_group_api::key);
     if (error != error_code::none) {
         klog.trace("invalid group status error={}", error);
         return make_leave_error(error);
     }
 
-    auto group = get_group(r.group_id);
+    auto group = get_group(r.data.group_id);
     if (group) {
         return group->handle_leave_group(std::move(r));
     } else {
