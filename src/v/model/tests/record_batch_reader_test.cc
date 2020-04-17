@@ -233,18 +233,3 @@ SEASTAR_THREAD_TEST_CASE(record_batch_sharing) {
         BOOST_CHECK(v1[i] == v2[i]);
     }
 }
-
-SEASTAR_THREAD_TEST_CASE(test_consume_init) {
-    auto reader = make_memory_record_batch_reader(
-      make_batches(offset(1), offset(2), offset(3), offset(4)));
-
-    auto ret = reader.consume(consumer_with_init(4), no_timeout).get0();
-    auto batches = std::move(ret.batches);
-    auto o = offset(1);
-    for (auto& batch : batches) {
-        BOOST_CHECK_EQUAL(batch.base_offset(), o);
-        o += 1;
-    }
-
-    BOOST_REQUIRE(ret.init_count == 1);
-}

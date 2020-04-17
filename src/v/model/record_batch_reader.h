@@ -19,23 +19,10 @@
 
 namespace model {
 
-/**
- * The BatchReaderConsumerInitialize is a batch reader consumer that contains an
- * initialization life cycle hook. The hook is called before the first call to
- * operator() and can be used to do things like initialize data on disk as is
- * the case fo the log_writer.
- */
 // clang-format off
 CONCEPT(template<typename Consumer> concept bool BatchReaderConsumer() {
     return requires(Consumer c, record_batch b) {
         { c(std::move(b)) } -> ss::future<ss::stop_iteration>;
-        c.end_of_stream();
-    };
-})
-CONCEPT(template<typename Consumer> concept bool BatchReaderConsumerInitialize() {
-    return requires(Consumer c, record_batch b) {
-        { c(std::move(b)) } -> ss::future<ss::stop_iteration>;
-        { c.initialize() } -> ss::future<>;
         c.end_of_stream();
     };
 })
@@ -48,13 +35,6 @@ public:
     using storage_t = ss::circular_buffer<model::record_batch>;
 
     class impl {
-        template<typename C, typename = int>
-        struct has_initialize : std::false_type {};
-
-        template<typename C>
-        struct has_initialize<C, decltype(&C::initialize, 0)>
-          : std::true_type {};
-
     public:
         impl() noexcept = default;
         impl(impl&& o) noexcept = default;
@@ -97,21 +77,7 @@ public:
 
         const record_batch& peek_batch() const { return _slice.front(); }
 
-        template<
-          typename Consumer,
-          typename std::enable_if_t<has_initialize<Consumer>::value, int> = 0>
-        auto consume(Consumer consumer, timeout_clock::time_point timeout) {
-            return ss::do_with(
-              std::move(consumer), [this, timeout](Consumer& consumer) {
-                  return consumer.initialize().then([this, timeout, &consumer] {
-                      return do_consume(consumer, timeout);
-                  });
-              });
-        }
-
-        template<
-          typename Consumer,
-          typename std::enable_if_t<!has_initialize<Consumer>::value, int> = 0>
+        template<typename Consumer>
         auto consume(Consumer consumer, timeout_clock::time_point timeout) {
             return ss::do_with(
               std::move(consumer), [this, timeout](Consumer& consumer) {
@@ -173,9 +139,7 @@ public:
     // reached. Next call will start from the next mutation_fragment in the
     // stream.
     template<typename Consumer>
-    CONCEPT(
-      requires BatchReaderConsumer<Consumer>()
-      || BatchReaderConsumerInitialize<Consumer>())
+    CONCEPT(requires BatchReaderConsumer<Consumer>())
     auto consume(Consumer consumer, timeout_clock::time_point timeout) & {
         return _impl->consume(std::move(consumer), timeout);
     }
@@ -196,9 +160,7 @@ public:
      * the consume method.
      */
     template<typename Consumer>
-    CONCEPT(
-      requires BatchReaderConsumer<Consumer>()
-      || BatchReaderConsumerInitialize<Consumer>())
+    CONCEPT(requires BatchReaderConsumer<Consumer>())
     auto consume(Consumer consumer, timeout_clock::time_point timeout) && {
         /*
          * ideally what we would do here is:
