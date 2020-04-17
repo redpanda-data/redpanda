@@ -4,6 +4,7 @@
 #include <seastar/testing/thread_test_case.hh>
 
 #include <boost/test/tools/old/interface.hpp>
+#include <boost/test/unit_test_log.hpp>
 
 #include <cstring>
 
@@ -35,18 +36,16 @@ SEASTAR_THREAD_TEST_CASE(chunk_manipulation) {
         c.flush();
         // same after flush
         BOOST_REQUIRE_EQUAL(c.dma_size(), alignment);
+        // 10 bytes on the next page
         BOOST_REQUIRE_EQUAL(c.flushed_pos() % alignment, 10);
+        BOOST_TEST_MESSAGE("10 bytes spill over: " << c);
         c.append(b.data() + i, alignment + 10);
-        i += alignment + 10;
-        // we appended 4096+10, but had 10 left from prev
-        BOOST_REQUIRE_EQUAL(c.dma_size(), alignment * 2);
-        c.flush();
-        c.compact();
-        BOOST_REQUIRE_EQUAL(c.size(), 20);
-        BOOST_REQUIRE_EQUAL(c.flushed_pos(), 20);
-        dptr = c.dma_ptr();
-        eptr = b.data() + i - 20;
-        BOOST_REQUIRE(std::memcmp(dptr, eptr, 20) == 0);
+        static_assert(chunk::chunk_size == 16_KiB);
+        BOOST_TEST_MESSAGE("Should be full: " << c.is_full() << ", " << c);
+        BOOST_REQUIRE(c.is_full());
+        // we flushed after 3 pages. so the dma_size() should be 1 page left
+        BOOST_REQUIRE_EQUAL(c.dma_size(), alignment);
         c.reset();
+        BOOST_REQUIRE_EQUAL(c.dma_size(), 0);
     }
 }
