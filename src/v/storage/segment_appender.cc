@@ -150,8 +150,11 @@ ss::future<> segment_appender::do_next_adaptive_fallocation() {
                  // step - compute step rounded to 4096; this is needed because
                  // during a truncation the follow up fallocation might not be
                  // page aligned
-                 const auto step = _opts.falloc_step
-                                   + (_fallocation_offset % 4096);
+                 auto step = _opts.falloc_step;
+                 if (_fallocation_offset % 4096 != 0) {
+                     // add left over bytes to a full page
+                     step += 4096 - (_fallocation_offset % 4096);
+                 }
                  return _out.allocate(_fallocation_offset, step)
                    .then([this, step] { _fallocation_offset += step; });
              })
