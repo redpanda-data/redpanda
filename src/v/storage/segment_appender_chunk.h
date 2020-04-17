@@ -8,7 +8,7 @@
 namespace storage {
 class segment_appender_chunk {
 public:
-    static constexpr const size_t chunk_size = 128_KiB;
+    static constexpr const size_t chunk_size = 16_KiB;
 
     explicit segment_appender_chunk(size_t alignment)
       : _alignment(alignment)

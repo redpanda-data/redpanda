@@ -26,7 +26,7 @@ public:
     using underlying_t = intrusive_list<chunk, &chunk::hook>;
     using iterator = typename underlying_t::iterator;
 
-    static constexpr const size_t chunks_no_buffer = 8;
+    static constexpr const size_t chunks_no_buffer = 1_MiB / chunk::chunk_size;
     static constexpr const size_t chunk_size = chunk::chunk_size;
     static constexpr const size_t fallocation_step = 32_MiB;
 

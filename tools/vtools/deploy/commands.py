@@ -113,8 +113,9 @@ def ansible(conf, playbook, ssh_key, provider, module, log, var):
     evar = f'-e {" -e ".join(var)}' if var else ''
 
     # run given playbooks
-    cmd = (f'ansible-playbook --private-key {ssh_key}'
-           f' {evar} -i {invfile} -v {" ".join(playbook)}')
+    cmd = (
+        f'cd {vconfig.ansible_dir} && ansible-playbook --private-key {ssh_key}'
+        f' {evar} -i {invfile} -v {" ".join(playbook)}')
 
     shell.run_subprocess(cmd, env=vconfig.environ)
 
