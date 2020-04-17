@@ -1,7 +1,9 @@
 #include "bytes/iobuf.h"
 #include "random/generators.h"
+#include "seastarx.h"
 #include "storage/segment_appender.h"
 
+#include <seastar/core/reactor.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/testing/thread_test_case.hh>
 

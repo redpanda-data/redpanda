@@ -129,7 +129,7 @@ private:
     model::ntp _ntp{
       model::ns("master_control_program"),
       model::topic_partition{model::topic("tron"),
-                             model::partition_id(ss::engine().cpu_id())}};
+                             model::partition_id(ss::this_shard_id())}};
     ss::lw_shared_ptr<raft::consensus> _consensus;
 };
 

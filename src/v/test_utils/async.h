@@ -28,7 +28,7 @@ ss::future<> cooperative_spin_wait_with_timeout(
               return ss::make_exception_future<ss::stop_iteration>(
                 ss::timed_out_error());
           }
-          auto f = futurator::apply(p);
+          auto f = futurator::invoke(p);
           return f.then([](bool stop) {
               if (stop) {
                   return ss::make_ready_future<ss::stop_iteration>(
