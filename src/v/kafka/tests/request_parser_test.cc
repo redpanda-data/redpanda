@@ -104,8 +104,8 @@ static iobuf handle_request(kafka::request_context&& ctx) {
     case kafka::sync_group_api::key: {
         vlog(rlog.info, "kafka::sync_group_api::key");
         kafka::sync_group_request r;
-        r.decode(ctx);
-        r.encode(ctx, writer);
+        r.decode(ctx.reader(), ctx.header().version);
+        r.encode(writer, ctx.header().version);
         break;
     }
 

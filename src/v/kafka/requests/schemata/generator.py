@@ -85,6 +85,14 @@ path_type_map = {
             "GroupInstanceId": ("kafka::group_instance_id", "string"),
         },
     },
+    "SyncGroupRequestData": {
+        "GenerationId": ("kafka::generation_id", "int32"),
+        "MemberId": ("kafka::member_id", "string"),
+        "GroupInstanceId": ("kafka::group_instance_id", "string"),
+        "Assignments": {
+            "MemberId": ("kafka::member_id", "string"),
+        },
+    },
 }
 
 # a few kafka field types specify an entity type
@@ -124,6 +132,7 @@ STRUCT_TYPES = [
     "OffsetCommitResponsePartition",
     "JoinGroupRequestProtocol",
     "JoinGroupResponseMember",
+    "SyncGroupRequestAssignment",
 ]
 
 SCALAR_TYPES = list(basic_type_map.keys())
