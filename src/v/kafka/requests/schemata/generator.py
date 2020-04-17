@@ -8,6 +8,10 @@
 #     https://github.com/apache/kafka/blob/2.4/clients/src/main/resources/common/message/README.md
 #
 # TODO:
+#   - It has become clear that for the vast majority of cases where are using the
+#   path_type_map to override types, it would be more efficient to specify the
+#   same mapping using the field_name_type_map + a whitelist of request types.
+#
 #   - The current version does not handle flexible versions. It will be some
 #   time before we encounter clients requiring this, but in principle this
 #   generator should be extensible (see type maps below). Note that when the
