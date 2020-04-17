@@ -73,10 +73,12 @@ and safety.
    * https://kafka.apache.org/documentation/#operations
    * Running a system doesn't need to be this complex
 
-Some of the technologies Vectorized is using do this:
+Some of the technologies Vectorized is using :
 
-1. [Seastar](http://seastar.io/) (and the amazing [Seastar tutorial](https://github.com/scylladb/seastar/blob/master/doc/tutorial.md))
-2. [Raft consensus](https://raft.github.io/)
+1. [Seastar](http://seastar.io/), a High performance server-side application framework(they have an amazing [tutorial](https://github.com/scylladb/seastar/blob/master/doc/tutorial.md))
+2. [Raft](https://raft.github.io/) an algorithm for solving the problem of distributed consensus. Here are some references to learn more about it:
+   * http://thesecretlivesofdata.com/raft/
+   * https://eli.thegreenplace.net/2020/implementing-raft-part-0-introduction/
 
 ## Laptop Setup
 
