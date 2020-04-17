@@ -465,7 +465,7 @@ struct raft_test_fixture {
           = gr.get_members().begin()->second.consensus->meta().commit_index;
         for (auto& [id, m] : gr.get_members()) {
             auto current = model::offset(m.consensus->meta().commit_index);
-            auto log_offset = m.log.committed_offset();
+            auto log_offset = m.log.dirty_offset();
             tstlog.debug(
               "Node {} commit index {}, log offset {}",
               id,
