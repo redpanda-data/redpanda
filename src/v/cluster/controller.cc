@@ -29,9 +29,9 @@
 
 namespace cluster {
 static void verify_shard() {
-    if (unlikely(ss::engine().cpu_id() != controller::shard)) {
+    if (unlikely(ss::this_shard_id() != controller::shard)) {
         throw std::runtime_error(fmt::format(
-          "Attempted to access controller on core: {}", ss::engine().cpu_id()));
+          "Attempted to access controller on core: {}", ss::this_shard_id()));
     }
 }
 
@@ -135,7 +135,7 @@ auto controller::dispatch_rpc_to_leader(Func&& f) {
  * while the continuation is running.
  */
 ss::future<> controller::start() {
-    if (ss::engine().cpu_id() != controller::shard) {
+    if (ss::this_shard_id() != controller::shard) {
         return ss::make_ready_future<>();
     }
     return _pm
@@ -207,10 +207,10 @@ ss::future<consensus_ptr> controller::start_raft0() {
 
 ss::future<> controller::stop() {
     _pm.local().unregister_leadership_notification(_leader_notify_handle);
-    if (ss::engine().cpu_id() == controller::shard && _raft0) {
+    if (ss::this_shard_id() == controller::shard && _raft0) {
         _raft0->remove_append_entries_callback();
     }
-    if (ss::engine().cpu_id() == controller::shard) {
+    if (ss::this_shard_id() == controller::shard) {
         // in a multi-threaded app this would look like a deadlock waiting
         // to happen, but it works in seastar: broadcast here only makes the
         // waiters runnable. they won't actually have a chance to run until

@@ -12,12 +12,12 @@ ss::future<> connection_cache::emplace(
   model::node_id n,
   rpc::transport_configuration c,
   clock_type::duration base_backoff) {
-    if (auto s = shard_for(n); s != ss::engine().cpu_id()) {
+    if (auto s = shard_for(n); s != ss::this_shard_id()) {
         throw std::runtime_error(fmt::format(
           "Cannot ::emplace, node:{}, belonging to shard:{}, on shard:{}",
           n,
           s,
-          ss::engine().cpu_id()));
+          ss::this_shard_id()));
     }
     return with_semaphore(
       _sem, 1, [this, n, c = std::move(c), base_backoff]() mutable {
@@ -28,12 +28,12 @@ ss::future<> connection_cache::emplace(
       });
 }
 ss::future<> connection_cache::remove(model::node_id n) {
-    if (auto s = shard_for(n); s != ss::engine().cpu_id()) {
+    if (auto s = shard_for(n); s != ss::this_shard_id()) {
         throw std::runtime_error(fmt::format(
           "Cannot ::remove, node:{}, belonging to shard:{}, on shard:{}",
           n,
           s,
-          ss::engine().cpu_id()));
+          ss::this_shard_id()));
     }
     return with_semaphore(
       _sem, 1, [this, n = std::move(n)] { _cache.erase(n); });

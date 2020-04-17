@@ -1,5 +1,6 @@
 #include "model/record_utils.h"
 #include "random/generators.h"
+#include "seastarx.h"
 #include "storage/disk_log_appender.h"
 #include "storage/log_replayer.h"
 #include "storage/logger.h"
@@ -9,7 +10,7 @@
 #include "storage/tests/utils/random_batch.h"
 #include "utils/file_sanitizer.h"
 
-#include <seastar/core/fstream.hh>
+#include <seastar/core/reactor.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/testing/thread_test_case.hh>
 

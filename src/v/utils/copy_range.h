@@ -12,7 +12,7 @@ inline ss::future<Container>
 copy_range(Iterator begin, Iterator end, AsyncAction action, Container c) {
     auto i = std::inserter(c, c.end());
     while (begin != end) {
-        auto f = ss::futurize_apply(action, *begin++);
+        auto f = ss::futurize_invoke(action, *begin++);
         if (!f.available()) {
             return f.then([begin = std::move(begin),
                            end = std::move(end),
@@ -59,9 +59,9 @@ copy_range(Iterator begin, Iterator end, AsyncAction action, Container c) {
 /// order).
 template<typename Container, typename Iterator, typename AsyncAction>
 GCC6_CONCEPT(requires requires(AsyncAction aa, Iterator it, Container c) {
-    ss::futurize_apply(aa, *it++);
-    requires ss::is_future<decltype(ss::futurize_apply(aa, *it))>::value;
-    *std::inserter(c, c.end()) = ss::futurize_apply(aa, *it).get0();
+    ss::futurize_invoke(aa, *it++);
+    requires ss::is_future<decltype(ss::futurize_invoke(aa, *it))>::value;
+    *std::inserter(c, c.end()) = ss::futurize_invoke(aa, *it).get0();
 })
 inline ss::future<Container> copy_range(
   Iterator begin, Iterator end, AsyncAction action) {
@@ -88,9 +88,10 @@ inline ss::future<Container> copy_range(
 /// order).
 template<typename Container, typename Range, typename AsyncAction>
 GCC6_CONCEPT(requires requires(AsyncAction aa, Range r, Container c) {
-    ss::futurize_apply(aa, *r.begin());
-    requires ss::is_future<decltype(ss::futurize_apply(aa, *r.begin()))>::value;
-    *std::inserter(c, c.end()) = ss::futurize_apply(aa, *r.begin()).get0();
+    ss::futurize_invoke(aa, *r.begin());
+    requires ss::is_future<decltype(
+      ss::futurize_invoke(aa, *r.begin()))>::value;
+    *std::inserter(c, c.end()) = ss::futurize_invoke(aa, *r.begin()).get0();
 })
 inline ss::future<Container> copy_range(Range& r, AsyncAction action) {
     return copy_range<Container>(std::begin(r), std::end(r), std::move(action));
