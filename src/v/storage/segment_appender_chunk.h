@@ -5,6 +5,8 @@
 
 #include <seastar/core/aligned_buffer.hh>
 
+#include <cstring>
+
 namespace storage {
 class segment_appender_chunk {
 public:
@@ -34,7 +36,11 @@ public:
     size_t flushed_pos() const { return _flushed_pos; }
 
     size_t append(const char* src, size_t len);
-    void reset() { _flushed_pos = _pos = 0; }
+    void reset() {
+        _flushed_pos = _pos = 0;
+        // allow chunk reuse
+        std::memset(_buf.get(), 0, chunk_size);
+    }
     void flush() { _flushed_pos = _pos; }
     char* get_current() { return _buf.get() + _pos; }
     void set_position(size_t p) { _flushed_pos = _pos = p; }
