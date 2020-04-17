@@ -1063,11 +1063,11 @@ ss::future<heartbeat_response> group::handle_heartbeat(heartbeat_request&& r) {
         klog.trace("group is dead");
         return make_heartbeat_error(error_code::coordinator_not_available);
 
-    } else if (!contains_member(r.member_id)) {
+    } else if (!contains_member(r.data.member_id)) {
         klog.trace("member not found");
         return make_heartbeat_error(error_code::unknown_member_id);
 
-    } else if (r.generation_id != generation()) {
+    } else if (r.data.generation_id != generation()) {
         klog.trace("generation does not match group");
         return make_heartbeat_error(error_code::illegal_generation);
     }
@@ -1082,13 +1082,13 @@ ss::future<heartbeat_response> group::handle_heartbeat(heartbeat_request&& r) {
         return make_heartbeat_error(error_code::rebalance_in_progress);
 
     case group_state::preparing_rebalance: {
-        auto member = get_member(r.member_id);
+        auto member = get_member(r.data.member_id);
         schedule_next_heartbeat_expiration(member);
         return make_heartbeat_error(error_code::rebalance_in_progress);
     }
 
     case group_state::stable: {
-        auto member = get_member(r.member_id);
+        auto member = get_member(r.data.member_id);
         schedule_next_heartbeat_expiration(member);
         return make_heartbeat_error(error_code::none);
     }

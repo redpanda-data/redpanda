@@ -93,6 +93,11 @@ path_type_map = {
             "MemberId": ("kafka::member_id", "string"),
         },
     },
+    "HeartbeatRequestData": {
+        "GenerationId": ("kafka::generation_id", "int32"),
+        "MemberId": ("kafka::member_id", "string"),
+        "GroupInstanceId": ("kafka::group_instance_id", "string"),
+    },
 }
 
 # a few kafka field types specify an entity type
