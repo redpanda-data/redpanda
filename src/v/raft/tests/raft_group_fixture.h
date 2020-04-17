@@ -85,7 +85,10 @@ struct raft_node {
         }
     }
 
-    raft_node(raft_node&&) = default;
+    raft_node(const raft_node&) = delete;
+    raft_node& operator=(const raft_node&) = delete;
+    raft_node(raft_node&&) noexcept = delete;
+    raft_node& operator=(raft_node&&) noexcept = delete;
 
     void start() {
         tstlog.info("Starting node {} stack ", id());
