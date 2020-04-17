@@ -119,9 +119,10 @@ ss::future<result<stop_parser>> continuous_batch_parser::consume_header() {
               vlog(
                 stlog.error,
                 "detected header corruption. stopping parser. Expected CRC of "
-                "{}, but got header CRC: {}",
+                "{}, but got header CRC: {} - {}",
                 computed_crc,
-                o.value().header_crc);
+                o.value().header_crc,
+                o.value());
               return ss::make_ready_future<result<stop_parser>>(
                 parser_errc::header_only_crc_missmatch);
           }
