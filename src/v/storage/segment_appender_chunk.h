@@ -34,7 +34,6 @@ public:
     size_t flushed_pos() const { return _flushed_pos; }
 
     size_t append(const char* src, size_t len);
-    void compact();
     void reset() { _flushed_pos = _pos = 0; }
     void flush() { _flushed_pos = _pos; }
     char* get_current() { return _buf.get() + _pos; }
