@@ -112,8 +112,8 @@ static iobuf handle_request(kafka::request_context&& ctx) {
     case kafka::heartbeat_api::key: {
         vlog(rlog.info, "kafka::heartbeat_api::key");
         kafka::heartbeat_request r;
-        r.decode(ctx);
-        r.encode(ctx, writer);
+        r.decode(ctx.reader(), ctx.header().version);
+        r.encode(writer, ctx.header().version);
         break;
     }
 

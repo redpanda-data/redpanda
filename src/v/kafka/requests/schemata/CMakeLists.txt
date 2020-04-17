@@ -10,7 +10,9 @@ set(schemata
   join_group_request.json
   join_group_response.json
   sync_group_request.json
-  sync_group_response.json)
+  sync_group_response.json
+  heartbeat_request.json
+  heartbeat_response.json)
 
 set(srcs)
 foreach(schema ${schemata})
