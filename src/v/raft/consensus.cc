@@ -366,19 +366,22 @@ ss::future<> consensus::start() {
         return details::read_voted_for(voted_for_filename())
           .then([this](voted_for_configuration r) {
               if (r.voted_for < 0) {
-                  _ctxlog.debug(
-                    "Found default voted_for. Skipping term recovery");
+                  _ctxlog.debug("Persistent state file not present");
                   _meta.term = model::term_id(0);
-                  return details::read_bootstrap_state(_log);
+                  return;
               }
               _ctxlog.info(
-                "recovered last voted for: {} for term: {}",
+                "Recovered persistent state: voted for: {}, term: {}",
                 r.voted_for,
                 r.term);
               _voted_for = r.voted_for;
               _meta.term = r.term;
-              return details::read_bootstrap_state(_log);
           })
+          .handle_exception([this](const std::exception_ptr& e) {
+              _ctxlog.warn("Error reading raft persistent state - {}", e);
+              _meta.term = model::term_id(0);
+          })
+          .then([this] { return details::read_bootstrap_state(_log); })
           .then([this](configuration_bootstrap_state st) {
               if (st.config_batches_seen() > 0) {
                   _last_seen_config_offset = st.prev_log_index();
