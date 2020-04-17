@@ -210,38 +210,21 @@ ss::future<> segment_appender::flush() {
     if (_bytes_flush_pending == 0) {
         return ss::make_ready_future<>();
     }
-    if (!_free_chunks.empty()) {
-        if (head().bytes_pending()) {
-            dispatch_background_head_write();
-        }
+    while (!_free_chunks.empty() && head().bytes_pending()) {
+        dispatch_background_head_write();
     }
-    // steal all free fragments while we wait for a full truncation
-    // to prevent concurrent appends in the middle of a truncation and
-    // add them back at the end of a flush _even_ if there is an exception
-    // by putting them on the finally block.
-    auto suspend = std::exchange(_free_chunks, {});
     return ss::with_semaphore(
-      _concurrent_flushes,
-      _opts.number_of_chunks,
-      [this, suspend = std::move(suspend)]() mutable {
-          return _out.flush().finally(
-            [this, suspend = std::move(suspend)]() mutable {
-                // find the first  chunk, and move it to the front;
-                for (auto& c : _free_chunks) {
-                    if (!c.is_empty()) {
-                        // remove from middle
-                        c.hook.unlink();
-                        // put in front half page
-                        _free_chunks.push_front(c);
-                        break;
-                    }
-                }
-                while (!suspend.empty()) {
-                    auto& f = suspend.front();
-                    f.hook.unlink();
-                    _free_chunks.push_back(f);
-                }
-            });
+      _concurrent_flushes, _opts.number_of_chunks, [this]() mutable {
+          return _out.flush().finally([this]() mutable {
+              if (auto it = std::find_if(
+                    _free_chunks.begin(),
+                    _free_chunks.end(),
+                    [](const chunk& c) { return !c.is_empty(); });
+                  it != _free_chunks.end()) {
+                  it->hook.unlink();
+                  _free_chunks.push_front(*it);
+              }
+          });
       });
 }
 
