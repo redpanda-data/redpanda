@@ -896,14 +896,14 @@ group::handle_sync_group(sync_group_request&& r) {
         klog.trace("group is dead");
         return make_sync_error(error_code::coordinator_not_available);
 
-    } else if (!contains_member(r.member_id)) {
+    } else if (!contains_member(r.data.member_id)) {
         klog.trace("member not found");
         return make_sync_error(error_code::unknown_member_id);
 
-    } else if (r.generation_id != generation()) {
+    } else if (r.data.generation_id != generation()) {
         klog.trace(
           "invalid generation request {} != group {}",
-          r.generation_id,
+          r.data.generation_id,
           generation());
         return make_sync_error(error_code::illegal_generation);
     }
@@ -934,7 +934,7 @@ group::handle_sync_group(sync_group_request&& r) {
 
     case group_state::completing_rebalance: {
         klog.trace("completing rebalance");
-        auto member = get_member(r.member_id);
+        auto member = get_member(r.data.member_id);
         return sync_group_completing_rebalance(member, std::move(r));
     }
 
@@ -942,7 +942,7 @@ group::handle_sync_group(sync_group_request&& r) {
         klog.trace("group is stable. returning current assignment");
         // <kafka>if the group is stable, we just return the current
         // assignment</kafka>
-        auto member = get_member(r.member_id);
+        auto member = get_member(r.data.member_id);
         schedule_next_heartbeat_expiration(member);
         return ss::make_ready_future<sync_group_response>(
           sync_group_response(error_code::none, member->assignment()));
@@ -1000,7 +1000,7 @@ ss::future<sync_group_response> group::sync_group_completing_rebalance(
     auto response = member->get_sync_response();
 
     // wait for the leader to show up and fulfill the promise
-    if (!is_leader(r.member_id)) {
+    if (!is_leader(r.data.member_id)) {
         klog.trace("non-leader member waiting for assignment");
         return response;
     }

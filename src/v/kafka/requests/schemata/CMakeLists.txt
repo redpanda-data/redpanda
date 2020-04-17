@@ -8,7 +8,9 @@ set(schemata
   offset_commit_request.json
   offset_commit_response.json
   join_group_request.json
-  join_group_response.json)
+  join_group_response.json
+  sync_group_request.json
+  sync_group_response.json)
 
 set(srcs)
 foreach(schema ${schemata})

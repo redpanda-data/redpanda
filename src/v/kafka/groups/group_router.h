@@ -98,7 +98,7 @@ public:
     }
 
     ss::future<sync_group_response> sync_group(sync_group_request&& request) {
-        auto shard = shard_for(request.group_id);
+        auto shard = shard_for(request.data.group_id);
         if (!shard) {
             return ss::make_ready_future<sync_group_response>(
               sync_group_response(error_code::not_coordinator));

@@ -386,12 +386,13 @@ ss::future<sync_group_response>
 group_manager::sync_group(sync_group_request&& r) {
     klog.trace("sync request {}", r);
 
-    if (r.group_instance_id) {
+    if (r.data.group_instance_id) {
         klog.trace("static group membership is unsupported");
         return make_sync_error(error_code::unsupported_version);
     }
 
-    auto error = validate_group_status(r.ntp, r.group_id, sync_group_api::key);
+    auto error = validate_group_status(
+      r.ntp, r.data.group_id, sync_group_api::key);
     if (error != error_code::none) {
         klog.trace("invalid group status {}", error);
         if (error == error_code::coordinator_load_in_progress) {
@@ -407,7 +408,7 @@ group_manager::sync_group(sync_group_request&& r) {
         return make_sync_error(error);
     }
 
-    auto group = get_group(r.group_id);
+    auto group = get_group(r.data.group_id);
     if (group) {
         return group->handle_sync_group(std::move(r));
     } else {
