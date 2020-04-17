@@ -98,6 +98,19 @@ path_type_map = {
         "MemberId": ("kafka::member_id", "string"),
         "GroupInstanceId": ("kafka::group_instance_id", "string"),
     },
+    "LeaveGroupRequestData": {
+        "MemberId": ("kafka::member_id", "string"),
+        "Members": {
+            "MemberId": ("kafka::member_id", "string"),
+            "GroupInstanceId": ("kafka::group_instance_id", "string"),
+        },
+    },
+    "LeaveGroupResponseData": {
+        "Members": {
+            "MemberId": ("kafka::member_id", "string"),
+            "GroupInstanceId": ("kafka::group_instance_id", "string"),
+        },
+    },
 }
 
 # a few kafka field types specify an entity type
@@ -138,6 +151,8 @@ STRUCT_TYPES = [
     "JoinGroupRequestProtocol",
     "JoinGroupResponseMember",
     "SyncGroupRequestAssignment",
+    "MemberIdentity",
+    "MemberResponse",
 ]
 
 SCALAR_TYPES = list(basic_type_map.keys())
