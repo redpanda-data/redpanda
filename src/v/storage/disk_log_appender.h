@@ -41,6 +41,8 @@ private:
     model::offset _last_offset;
     model::term_id _last_term;
     size_t _byte_size{0};
+
+    friend std::ostream& operator<<(std::ostream&, const disk_log_appender&);
 };
 
 } // namespace storage

@@ -109,4 +109,14 @@ ss::future<append_result> disk_log_appender::end_of_stream() {
     return _log.flush().then([retval] { return retval; });
 }
 
+std::ostream& operator<<(std::ostream& o, const disk_log_appender& a) {
+    return o << "{offset_idx:" << a._idx << ", segment:" << a._cache
+             << ", cache_lock:" << (a._cache_lock ? "yes" : "no")
+             << ", _bytes_left_in_cache_segment:"
+             << a._bytes_left_in_cache_segment
+             << ", _base_offset:" << a._base_offset
+             << ", _last_offset:" << a._last_offset
+             << ", _last_term:" << a._last_term
+             << ", _byte_size:" << a._byte_size << "}";
+}
 } // namespace storage
