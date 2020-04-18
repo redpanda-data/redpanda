@@ -1,4 +1,5 @@
 #include "config/config_store.h"
+#include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "raft/consensus.h"
 #include "raft/consensus_utils.h"
@@ -28,12 +29,16 @@ SEASTAR_THREAD_TEST_CASE(clone_entries_utils) {
       storage::test::make_random_batches());
 
     auto v = raft::details::share_n(std::move(reader), 5).get0();
+    std::vector<ss::circular_buffer<model::record_batch>> data;
+    data.reserve(5);
     for (auto& i : v) {
-        i.load_slice(model::no_timeout).get();
+        data.emplace_back(
+          model::consume_reader_to_memory(std::move(i), model::no_timeout)
+            .get0());
     }
-    for (auto& i : v) {
-        for (auto& j : v) {
-            BOOST_REQUIRE_EQUAL(i.peek_batch(), j.peek_batch());
+    for (const auto& i : data) {
+        for (const auto& j : data) {
+            BOOST_REQUIRE(std::equal(i.begin(), i.end(), j.begin()));
         }
     }
 }

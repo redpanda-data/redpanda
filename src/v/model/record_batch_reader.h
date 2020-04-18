@@ -52,31 +52,6 @@ public:
 
         bool is_slice_empty() const { return _slice.empty(); }
 
-        virtual ss::future<> load_slice(timeout_clock::time_point timeout) {
-            return do_load_slice(timeout).then(
-              [this](storage_t s) { _slice = std::move(s); });
-        }
-
-        ss::future<record_batch_opt>
-        operator()(timeout_clock::time_point timeout) {
-            if (!is_slice_empty()) {
-                return ss::make_ready_future<record_batch_opt>(pop_batch());
-            }
-            if (is_end_of_stream()) {
-                return ss::make_ready_future<record_batch_opt>();
-            }
-            return load_slice(timeout).then(
-              [this, timeout] { return operator()(timeout); });
-        }
-
-        record_batch pop_batch() {
-            record_batch batch = std::move(_slice.front());
-            _slice.pop_front();
-            return batch;
-        }
-
-        const record_batch& peek_batch() const { return _slice.front(); }
-
         template<typename Consumer>
         auto consume(Consumer consumer, timeout_clock::time_point timeout) {
             return ss::do_with(
@@ -86,6 +61,17 @@ public:
         }
 
     private:
+        record_batch pop_batch() {
+            record_batch batch = std::move(_slice.front());
+            _slice.pop_front();
+            return batch;
+        }
+
+        ss::future<> load_slice(timeout_clock::time_point timeout) {
+            return do_load_slice(timeout).then(
+              [this](storage_t s) { _slice = std::move(s); });
+        }
+
         template<typename Consumer>
         auto do_consume(Consumer& consumer, timeout_clock::time_point timeout) {
             return ss::repeat([this, timeout, &consumer] {
@@ -113,26 +99,10 @@ public:
     record_batch_reader(record_batch_reader&&) noexcept = default;
     record_batch_reader& operator=(record_batch_reader&&) noexcept = default;
     ~record_batch_reader() noexcept = default;
-    ss::future<record_batch_opt> operator()(timeout_clock::time_point timeout) {
-        return _impl->operator()(timeout);
-    }
 
-    // Can only be called if !should_load_slice().
-    record_batch pop_batch() { return _impl->pop_batch(); }
-
-    // Can only be called if !should_load_slice().
-    const record_batch& peek_batch() const { return _impl->peek_batch(); }
-
-    ss::future<> load_slice(timeout_clock::time_point timeout) {
-        return _impl->load_slice(timeout);
-    }
 
     bool is_end_of_stream() const {
         return _impl->is_slice_empty() && _impl->is_end_of_stream();
-    }
-
-    bool should_load_slice() const {
-        return _impl->is_slice_empty() && !_impl->is_end_of_stream();
     }
 
     // Stops when consumer returns stop_iteration::yes or end of stream is
