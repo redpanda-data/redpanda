@@ -277,6 +277,7 @@ std::ostream& operator<<(std::ostream& o, const segment_appender& a) {
     // NOTE: intrusivelist.size() == O(N) but often N is very small, ~8
     return o << "{no_of_chunks:" << a._opts.number_of_chunks
              << ", closed:" << a._closed
+             << ", fallocation_offset:" << a._fallocation_offset
              << ", committed_offset:" << a._committed_offset
              << ", bytes_flush_pending:" << a._bytes_flush_pending
              << ", free_chunks:" << a._free_chunks.size() /*O(N)*/
