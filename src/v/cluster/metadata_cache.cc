@@ -129,9 +129,8 @@ metadata_cache::find_topic_metadata(model::topic_namespace_view topic) {
     if (auto it = _cache.find(topic); it != _cache.end()) {
         return it;
     }
-    throw std::runtime_error(fmt::format(
-      "The topic {} is not yet in the metadata cache, data are corrupted",
-      topic));
+    throw std::runtime_error(
+      fmt::format("The topic {} is not yet in the metadata cache", topic));
 }
 
 void metadata_cache::update_partition_assignment(
