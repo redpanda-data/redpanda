@@ -1,7 +1,13 @@
+#include "model/fundamental.h"
+#include "model/record_batch_reader.h"
+#include "model/timeout_clock.h"
+#include "random/generators.h"
+#include "storage/log_manager.h"
 #include "storage/tests/storage_test_fixture.h"
 #include "storage/tests/utils/random_batch.h"
 
 #include <seastar/util/defer.hh>
+#include <seastar/util/log.hh>
 
 #include <boost/test/tools/old/interface.hpp>
 
@@ -237,4 +243,143 @@ FIXTURE_TEST(test_append_batches_from_multiple_terms, storage_test_fixture) {
         expected_term++;
         next = next + c;
     }
+}
+
+ss::logger wlog{"storage-workload"};
+class storage_workload {
+    using command_t = std::function<ss::future<>(storage::log)>;
+    using commands_t = std::vector<command_t>;
+
+public:
+    explicit storage_workload(storage::log l, size_t ops_count)
+      : l(l) {
+        generate_workload(ops_count);
+    }
+
+    ss::future<> execute() {
+        // execute commands in sequence
+        return ss::do_for_each(workload, [this](command_t& c) { return c(l); });
+    }
+
+private:
+    command_t random_cmd() {
+        switch (random_generators::get_int(0, 4)) {
+        case 0:
+            return append;
+        case 1:
+            return truncate;
+        case 2:
+            return read_cmd;
+        case 3:
+            return flush;
+        case 4:
+            return term_roll;
+        }
+        return append;
+    }
+
+    void generate_workload(size_t count) {
+        workload.reserve(count);
+        for (auto i : boost::irange((size_t)0, count)) {
+            workload.push_back(random_cmd());
+        }
+    }
+
+    command_t append = [this](storage::log l) {
+        storage::log_append_config append_cfg{
+          storage::log_append_config::fsync::yes,
+          ss::default_priority_class(),
+          model::no_timeout};
+        auto batches = storage::test::make_random_batches(model::offset(0), 10);
+        for (auto& b : batches) {
+            b.set_term(current_term);
+        }
+        auto reader = model::make_memory_record_batch_reader(
+          std::move(batches));
+
+        return std::move(reader)
+          .consume(l.make_appender(append_cfg), model::no_timeout)
+          .discard_result();
+    };
+
+    ss::future<ss::circular_buffer<model::record_batch>> read(storage::log l) {
+        int64_t dirty_offset = l.dirty_offset()() >= 0 ? l.dirty_offset()() : 0;
+        int64_t begin_offset = random_generators::get_int(
+          (int64_t)0, dirty_offset);
+        int64_t end_offset = random_generators::get_int(
+          (int64_t)begin_offset, dirty_offset);
+
+        storage::log_reader_config cfg(
+          model::offset(begin_offset),
+          model::offset(end_offset),
+          ss::default_priority_class());
+        wlog.info(
+          "[{}] Read [{},{}]", l.config().ntp, begin_offset, end_offset);
+        return l.make_reader(cfg).then([](model::record_batch_reader reader) {
+            return std::move(reader).consume(
+              storage_test_fixture::batch_validating_consumer{},
+              model::no_timeout);
+        });
+    }
+
+    command_t flush = [](storage::log l) {
+        wlog.info("[{}] Flush", l.config().ntp);
+
+        return l.flush();
+    };
+    command_t read_cmd = [this](storage::log l) {
+        return read(l).discard_result();
+    };
+
+    command_t truncate = [this](storage::log l) {
+        return read(l).then(
+          [l](ss::circular_buffer<model::record_batch> b) mutable {
+              auto t_offset = b.empty() ? model::offset(0)
+                                        : b.begin()->base_offset();
+              wlog.info("[{}] Truncate [{}]", l.config().ntp, t_offset);
+              return l.truncate(t_offset);
+          });
+    };
+    command_t term_roll = [this](storage::log l) {
+        ++current_term;
+        wlog.info("[{}] Term roll [{}]", l.config().ntp, current_term);
+        return ss::make_ready_future<>();
+    };
+
+    model::term_id current_term = model::term_id(0);
+    commands_t workload;
+    storage::log l;
+};
+
+FIXTURE_TEST(test_random_workload, storage_test_fixture) {
+    // FIXME: change to disk storage type when we fix data corruption bug
+
+    storage::log_manager mgr = make_log_manager(storage::log_config(
+      storage::log_config::storage_type::memory,
+      std::move(test_dir),
+      200_MiB,
+      storage::log_config::debug_sanitize_files::no,
+      storage::log_config::with_cache::yes));
+
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    // Test parameters
+    size_t ntp_count = 1;
+    size_t ops_per_ntp = 1000;
+
+    std::vector<storage_workload> workloads;
+    workloads.reserve(ntp_count);
+    for (auto i : boost::irange((size_t)0, ntp_count)) {
+        auto ntp = make_ntp("default", "test", i);
+
+        auto log = mgr
+                     .manage(storage::ntp_config(
+                       ntp,
+                       fmt::format("{}/{}", mgr.config().base_dir, ntp.path())))
+                     .get0();
+        workloads.emplace_back(log, ops_per_ntp);
+    }
+    // Execute NTP workloads in parallel
+    ss::parallel_for_each(workloads, [](storage_workload& w) {
+        return w.execute();
+    }).get0();
 }
