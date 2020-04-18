@@ -75,7 +75,7 @@ ss::future<> segment::do_close() {
 ss::future<> segment::release_appender() {
     vassert(_appender, "cannot release a null appender");
     return write_lock().then([this](ss::rwlock::holder h) {
-        return flush()
+        return do_flush()
           .then([this] { return _appender->close(); })
           .then([this] { return _idx.flush(); })
           .then([this] {
@@ -87,6 +87,11 @@ ss::future<> segment::release_appender() {
 }
 
 ss::future<> segment::flush() {
+    return read_lock().then([this](ss::rwlock::holder h) {
+        return do_flush().finally([h = std::move(h)] {});
+    });
+}
+ss::future<> segment::do_flush() {
     check_segment_not_closed("flush()");
     if (!_appender) {
         return ss::make_ready_future<>();
