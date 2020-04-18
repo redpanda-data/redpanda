@@ -100,7 +100,6 @@ public:
     record_batch_reader& operator=(record_batch_reader&&) noexcept = default;
     ~record_batch_reader() noexcept = default;
 
-
     bool is_end_of_stream() const {
         return _impl->is_slice_empty() && _impl->is_end_of_stream();
     }
