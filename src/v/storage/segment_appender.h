@@ -68,6 +68,8 @@ private:
     chunk& head() { return _free_chunks.front(); }
     void dispatch_background_head_write();
     ss::future<> do_next_adaptive_fallocation();
+    ss::future<> hydrate_last_half_page();
+    ss::future<> do_truncation(size_t);
 
     ss::file _out;
     options _opts;
