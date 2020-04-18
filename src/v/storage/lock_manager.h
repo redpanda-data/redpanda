@@ -23,6 +23,8 @@ public:
 
         segment_set range;
         std::vector<ss::rwlock::holder> locks;
+
+        friend std::ostream& operator<<(std::ostream&, const lease&);
     };
 
     ss::future<std::unique_ptr<lease>> range_lock(const timequery_config& cfg);
