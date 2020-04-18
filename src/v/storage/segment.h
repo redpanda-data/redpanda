@@ -100,6 +100,7 @@ private:
     void check_segment_not_closed(const char* msg);
     ss::future<> do_truncate(model::offset prev_last_offset, size_t physical);
     ss::future<> do_close();
+    ss::future<> do_flush();
 
     // last offset of the last batch, i.e.: batch.last_offset()
     model::offset _dirty_offset;
