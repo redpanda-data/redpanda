@@ -286,6 +286,7 @@ private:
     }
 
     command_t append = [this](storage::log l) {
+        wlog.info("Appending to: {}", l);
         storage::log_append_config append_cfg{
           storage::log_append_config::fsync::yes,
           ss::default_priority_class(),
@@ -313,8 +314,7 @@ private:
           model::offset(begin_offset),
           model::offset(end_offset),
           ss::default_priority_class());
-        wlog.info(
-          "[{}] Read [{},{}]", l.config().ntp, begin_offset, end_offset);
+        wlog.info("Read [{},{}] - {}", begin_offset, end_offset, l);
         return l.make_reader(cfg).then([](model::record_batch_reader reader) {
             return std::move(reader).consume(
               storage_test_fixture::batch_validating_consumer{},
@@ -324,7 +324,6 @@ private:
 
     command_t flush = [](storage::log l) {
         wlog.info("[{}] Flush", l.config().ntp);
-
         return l.flush();
     };
     command_t read_cmd = [this](storage::log l) {
@@ -332,17 +331,28 @@ private:
     };
 
     command_t truncate = [this](storage::log l) {
+        wlog.info("Truncating");
         return read(l).then(
-          [l](ss::circular_buffer<model::record_batch> b) mutable {
-              auto t_offset = b.empty() ? model::offset(0)
-                                        : b.begin()->base_offset();
-              wlog.info("[{}] Truncate [{}]", l.config().ntp, t_offset);
-              return l.truncate(t_offset);
+          [l](ss::circular_buffer<model::record_batch> batches) mutable {
+              // randomize offset
+              std::vector<model::offset> potential;
+              potential.reserve(batches.size());
+              for (auto& b : batches) {
+                  potential.push_back(b.base_offset());
+              }
+              auto truncate_offset = model::offset(0);
+              if (!batches.empty()) {
+                  truncate_offset
+                    = potential[random_generators::get_int<size_t>(
+                      0, potential.size() - 1)];
+              }
+              wlog.info("Truncate [{}] - {}", truncate_offset, l);
+              return l.truncate(truncate_offset);
           });
     };
     command_t term_roll = [this](storage::log l) {
         ++current_term;
-        wlog.info("[{}] Term roll [{}]", l.config().ntp, current_term);
+        // noop - wlog.info("Term roll [{}] - {}", current_term, l);
         return ss::make_ready_future<>();
     };
 
@@ -352,10 +362,12 @@ private:
 };
 
 FIXTURE_TEST(test_random_workload, storage_test_fixture) {
+    // BLOCK on logging so that we can make sense of the logs
+    std::cout.setf(std::ios::unitbuf);
     // FIXME: change to disk storage type when we fix data corruption bug
 
     storage::log_manager mgr = make_log_manager(storage::log_config(
-      storage::log_config::storage_type::memory,
+      storage::log_config::storage_type::disk,
       std::move(test_dir),
       200_MiB,
       storage::log_config::debug_sanitize_files::no,
