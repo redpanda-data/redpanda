@@ -53,4 +53,9 @@ lock_manager::range_lock(const log_reader_config& cfg) {
     return range(std::move(tmp));
 }
 
+std::ostream& operator<<(std::ostream& o, const lock_manager::lease& l) {
+    fmt::print(o, "({})", l.range);
+    return o;
+}
+
 } // namespace storage
