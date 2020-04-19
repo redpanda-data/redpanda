@@ -105,6 +105,8 @@ ss::future<> segment_appender::append(const char* buf, const size_t n) {
 
 ss::future<> segment_appender::hydrate_last_half_page() {
     auto& h = head();
+    vassert(
+      h.flushed_pos() == 0, "can only hydrate after a flush:{} - {}", h, *this);
     /**
      * NOTE: This code has some very nuanced corner cases
      * 1. The alignment used must be the write() alignment and not
@@ -119,6 +121,7 @@ ss::future<> segment_appender::hydrate_last_half_page() {
     char* buff = h.get_current();
     std::memset(buff, 0, read_align);
     const size_t bytes_to_read = _committed_offset % read_align;
+    h.set_position(bytes_to_read);
     if (bytes_to_read == 0) {
         return ss::make_ready_future<>();
     }
@@ -127,10 +130,12 @@ ss::future<> segment_appender::hydrate_last_half_page() {
         sz, buff, read_align /*must be full _write_ alignment*/, _opts.priority)
       .then([this, bytes_to_read](size_t actual) {
           vassert(
-            bytes_to_read == actual,
-            "truncate incorrect page bytes: expected:{}, got:{} - {}",
+            bytes_to_read == actual && bytes_to_read == head().flushed_pos(),
+            "Could not hydrate partial page bytes: expected:{}, got:{}. "
+            "chunk:{} - appender:{}",
             bytes_to_read,
             actual,
+            head(),
             *this);
       })
       .handle_exception([this](std::exception_ptr e) {
@@ -272,6 +277,7 @@ std::ostream& operator<<(std::ostream& o, const segment_appender& a) {
     // NOTE: intrusivelist.size() == O(N) but often N is very small, ~8
     return o << "{no_of_chunks:" << a._opts.number_of_chunks
              << ", closed:" << a._closed
+             << ", fallocation_offset:" << a._fallocation_offset
              << ", committed_offset:" << a._committed_offset
              << ", bytes_flush_pending:" << a._bytes_flush_pending
              << ", free_chunks:" << a._free_chunks.size() /*O(N)*/

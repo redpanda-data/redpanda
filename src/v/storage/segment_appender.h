@@ -77,7 +77,7 @@ private:
     size_t _committed_offset{0};
     size_t _fallocation_offset{0};
     size_t _bytes_flush_pending{0};
-    ss::semaphore _concurrent_flushes{1};
+    ss::semaphore _concurrent_flushes;
     underlying_t _free_chunks;
     underlying_t _full_chunks;
 
