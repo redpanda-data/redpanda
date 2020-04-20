@@ -92,7 +92,7 @@ consensus::success_reply consensus::update_follower_index(
           reply.result == append_entries_reply::status::group_unavailable)) {
         // ignore this response since group is not yet bootstrapped at the
         // follower
-        _ctxlog.debug("Consensus not present at node {}", node);
+        _ctxlog.trace("Raft group not yet initialized at node {}", node);
         return success_reply::no;
     }
     if (unlikely(reply.group != _meta.group)) {
