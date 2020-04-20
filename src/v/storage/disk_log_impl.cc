@@ -43,8 +43,11 @@ disk_log_impl::~disk_log_impl() {
 ss::future<> disk_log_impl::close() {
     _closed = true;
     return _lgate.close().then([this] {
-        return ss::parallel_for_each(
-          _segs, [](ss::lw_shared_ptr<segment>& h) { return h->close(); });
+        return ss::parallel_for_each(_segs, [](ss::lw_shared_ptr<segment>& h) {
+            return h->close().handle_exception([h](std::exception_ptr e) {
+                vlog(stlog.error, "Error closing segment:{} - {}", e, h);
+            });
+        });
     });
 }
 
