@@ -31,7 +31,7 @@ steps:
       --build-arg="GITREF=$BRANCH_NAME" \
       --destination="gcr.io/$PROJECT_ID/builder:$_COMPILER-$_BUILD_TYPE-$SHORT_SHA" \
       --cache=true \
-      --cache-ttl=12h
+      --cache-ttl=96h
 
 - id: 'install vtools and run tests'
   name: 'gcr.io/$PROJECT_ID/builder:$_COMPILER-$_BUILD_TYPE-$SHORT_SHA'
