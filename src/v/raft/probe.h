@@ -1,49 +1,39 @@
 #pragma once
+#include "raft/types.h"
+
 #include <cstdint>
 namespace raft {
 class probe {
 public:
-    void vote_requested() { ++_vote_requests; }
+    void vote_request() { ++_vote_requests; }
+    void append_request() { ++_append_requests; }
 
-    void vote_request_term_older() { ++_vote_request_older_term; }
+    void vote_request_sent() { ++_vote_requests_sent; }
 
-    void vote_request_term_newer() { ++_vote_request_newer_term; }
+    void replicate_requests_ack_all() { ++_replicate_requests_ack_all; }
+    void replicate_requests_ack_leader() { ++_replicate_requests_ack_leader; }
+    void replicate_requests_ack_none() { ++_replicate_requests_ack_none; }
+    void replicate_done() { ++_replicate_requests_done; }
 
-    void append_requested() { ++_append_requests; }
+    void log_truncated() { ++_log_truncations; }
+    void log_flushed() { ++_log_flushes; }
 
-    void entries_appended(uint32_t entries) { _appended_entries += entries; }
-
-    void append_request_term_older() { ++_append_request_older_term; }
-
-    void append_request_term_newer() { ++_append_request_newer_term; }
-
-    void append_request_log_commited_index_mismatch() {
-        ++_append_request_log_commited_index_mismatched;
-    }
-
-    void append_request_log_term_older() { ++_append_request_older_log_term; }
-
-    void append_request_log_truncate() { ++_append_request_log_truncated; }
-
-    void leader_commit_index_mismatch() { ++_leader_commit_index_mismatched; }
-
-    void append_request_heartbeat() { ++_append_request_heartbeats; }
-
-    void step_down() { ++_step_downs; }
+    void replicate_batch_flushed() { ++_replicate_batch_flushed; }
+    void recovery_append_request() { ++_recovery_requests; }
+    void configuration_update() { ++_configuration_updates; }
 
 private:
-    uint64_t _append_requests = 0;
-    uint64_t _appended_entries = 0;
-    uint64_t _append_request_heartbeats = 0;
-    uint32_t _append_request_newer_term = 0;
-    uint32_t _append_request_older_term = 0;
-    uint32_t _append_request_log_truncated = 0;
-    uint32_t _append_request_older_log_term = 0;
     uint64_t _vote_requests = 0;
-    uint32_t _vote_request_older_term = 0;
-    uint32_t _vote_request_newer_term = 0;
-    uint32_t _append_request_log_commited_index_mismatched = 0;
-    uint32_t _leader_commit_index_mismatched = 0;
-    uint32_t _step_downs = 0;
+    uint64_t _append_requests = 0;
+    uint64_t _vote_requests_sent = 0;
+    uint64_t _replicate_requests_ack_all = 0;
+    uint64_t _replicate_requests_ack_leader = 0;
+    uint64_t _replicate_requests_ack_none = 0;
+    uint64_t _replicate_requests_done = 0;
+    uint64_t _log_flushes = 0;
+    uint64_t _replicate_batch_flushed = 0;
+    uint32_t _log_truncations = 0;
+    uint64_t _recovery_requests = 0;
+    uint32_t _configuration_updates = 0;
 };
 } // namespace raft

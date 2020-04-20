@@ -129,6 +129,7 @@ clock_type::time_point recovery_stm::append_entries_timeout() {
 
 ss::future<result<append_entries_reply>>
 recovery_stm::dispatch_append_entries(append_entries_request&& r) {
+    _ptr->_probe.recovery_append_request();
     return _ptr->_client_protocol.append_entries(
       _node_id, std::move(r), rpc::client_opts(append_entries_timeout()));
 }
