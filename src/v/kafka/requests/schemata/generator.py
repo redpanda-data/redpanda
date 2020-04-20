@@ -115,6 +115,9 @@ path_type_map = {
             "GroupInstanceId": ("kafka::group_instance_id", "string"),
         },
     },
+    "DeleteTopicsRequestData": {
+        "TimeoutMs": ("std::chrono::milliseconds", "int32"),
+    },
 }
 
 # a few kafka field types specify an entity type
@@ -157,6 +160,7 @@ STRUCT_TYPES = [
     "SyncGroupRequestAssignment",
     "MemberIdentity",
     "MemberResponse",
+    "DeletableTopicResult",
 ]
 
 SCALAR_TYPES = list(basic_type_map.keys())
