@@ -170,7 +170,8 @@ ss::future<> async_adl<raft::append_entries_request>::to(
           for (auto& batch : batches) {
               reflection::serialize(out, std::move(batch));
           }
-          reflection::serialize(out, request.meta, request.node_id);
+          reflection::serialize(
+            out, request.meta, request.node_id, request.flush);
       });
 }
 
@@ -185,7 +186,10 @@ async_adl<raft::append_entries_request>::from(iobuf_parser& in) {
     auto reader = model::make_memory_record_batch_reader(std::move(batches));
     auto meta = reflection::adl<raft::protocol_metadata>{}.from(in);
     auto n = reflection::adl<model::node_id>{}.from(in);
-    raft::append_entries_request ret(n, meta, std::move(reader));
+    auto flush
+      = reflection::adl<raft::append_entries_request::flush_after_append>{}
+          .from(in);
+    raft::append_entries_request ret(n, meta, std::move(reader), flush);
     return ss::make_ready_future<raft::append_entries_request>(std::move(ret));
 }
 
