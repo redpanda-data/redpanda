@@ -10,6 +10,7 @@
 #include "utils/named_type.h"
 
 #include <seastar/net/socket_defs.hh>
+#include <seastar/util/bool_class.hh>
 
 #include <boost/range/irange.hpp>
 
@@ -87,13 +88,17 @@ struct follower_index_metadata {
 };
 
 struct append_entries_request {
+    using flush_after_append = ss::bool_class<struct flush_after_append_tag>;
+
     append_entries_request(
       model::node_id i,
       protocol_metadata m,
-      model::record_batch_reader r) noexcept
+      model::record_batch_reader r,
+      flush_after_append f = flush_after_append::yes) noexcept
       : node_id(i)
       , meta(m)
-      , batches(std::move(r)){};
+      , batches(std::move(r))
+      , flush(f){};
     ~append_entries_request() noexcept = default;
     append_entries_request(const append_entries_request&) = delete;
     append_entries_request& operator=(const append_entries_request&) = delete;
@@ -104,11 +109,13 @@ struct append_entries_request {
     model::node_id node_id;
     protocol_metadata meta;
     model::record_batch_reader batches;
+    flush_after_append flush;
     static append_entries_request make_foreign(append_entries_request&& req) {
         return append_entries_request(
           req.node_id,
           std::move(req.meta),
-          model::make_foreign_record_batch_reader(std::move(req.batches)));
+          model::make_foreign_record_batch_reader(std::move(req.batches)),
+          req.flush);
     }
 };
 

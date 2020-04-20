@@ -122,9 +122,10 @@ consensus::success_reply consensus::update_follower_index(
         _ctxlog.trace(
           "Updated node {} last log idx: {}",
           idx.node_id,
-          reply.last_log_index);
-        idx.last_log_index = model::offset(reply.last_log_index);
-        idx.next_index = details::next_offset(idx.last_log_index);
+          reply.last_committed_log_index);
+        idx.last_dirty_log_index = reply.last_dirty_log_index;
+        idx.last_committed_log_index = reply.last_committed_log_index;
+        idx.next_index = details::next_offset(idx.last_dirty_log_index);
     }
 
     if (reply.result == append_entries_reply::status::success) {
@@ -593,13 +594,22 @@ consensus::do_append_entries(append_entries_request&& r) {
     // success. copy entries for each subsystem
     using offsets_ret = storage::append_result;
     return disk_append(std::move(r.batches))
-      .then([this, m = r.meta](offsets_ret ofs) mutable {
-          return maybe_update_follower_commit_idx(model::offset(m.commit_index))
-            .then([this, ofs = std::move(ofs)]() mutable {
-                // we do not want to include our disk flush latency into the
-                // leader vote timeout
-                _hbeat = clock_type::now();
-                return make_append_entries_reply(std::move(ofs));
+      .then([this, m = r.meta, flush = r.flush](offsets_ret ofs) mutable {
+          auto f = ss::make_ready_future<>();
+          if (flush) {
+              f = f.then([this] { return flush_log(); });
+          }
+
+          return f.then(
+            [this, m = std::move(m), ofs = std::move(ofs)]() mutable {
+                return maybe_update_follower_commit_idx(
+                         model::offset(m.commit_index))
+                  .then([this, ofs = std::move(ofs)]() mutable {
+                      // we do not want to include our disk flush latency into
+                      // the leader vote timeout
+                      _hbeat = clock_type::now();
+                      return make_append_entries_reply(std::move(ofs));
+                  });
             });
       });
 }
@@ -711,12 +721,6 @@ consensus::disk_append(model::record_batch_reader&& reader) {
           // leader never flush just after write
           // for quorum_ack it flush in parallel to dispatching RPCs to
           // followers for other consistency flushes are done separately.
-
-          if (_vstate != vote_state::leader) {
-              return flush_log().then([ret = std::move(ret)] {
-                  return ss::make_ready_future<ret_t>(std::move(ret));
-              });
-          }
           return ss::make_ready_future<ret_t>(std::move(ret));
       });
 }
