@@ -58,23 +58,32 @@ public:
     size_t bytes_left_before_roll() const;
 
 private:
-    friend class disk_log_appender;
-    friend class disk_log_builder;
+    friend class disk_log_appender; // for multi-term appends
+    friend class disk_log_builder;  // for tests
     friend std::ostream& operator<<(std::ostream& o, const disk_log_impl& d);
 
     ss::future<> remove_empty_segments();
-    void dispatch_remove(ss::lw_shared_ptr<segment>, std::string_view msg);
-    ss::future<>
-      new_segment(model::offset, model::term_id, ss::io_priority_class);
+
+    ss::future<> remove_segment_permanently(
+      ss::lw_shared_ptr<segment> segment_to_tombsone,
+      std::string_view logging_context_msg);
+
+    ss::future<> new_segment(
+      model::offset starting_offset,
+      model::term_id term_for_this_segment,
+      ss::io_priority_class prio);
 
     ss::future<> do_truncate(model::offset);
+    ss::future<> remove_full_segments(model::offset o);
+
+    ss::future<> garbage_collect_max_partition_size(size_t max_bytes);
+    ss::future<> garbage_collect_oldest_segments(model::timestamp);
 
 private:
     bool _closed{false};
     log_manager& _manager;
     segment_set _segs;
     lock_manager _lock_mngr;
-    ss::gate _lgate;
     storage::probe _probe;
     failure_probes _failure_probes;
 };

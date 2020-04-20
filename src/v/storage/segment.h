@@ -94,6 +94,7 @@ public:
     }
 
     void tombstone() { _tombstone = true; }
+    bool has_outstanding_locks() const { return _destructive_ops.locked(); }
 
 private:
     void cache_truncate(model::offset offset);
@@ -101,7 +102,7 @@ private:
     ss::future<> do_truncate(model::offset prev_last_offset, size_t physical);
     ss::future<> do_close();
     ss::future<> do_flush();
-
+    ss::future<> remove_thombsones();
     // last offset of the last batch, i.e.: batch.last_offset()
     model::offset _dirty_offset;
     segment_reader _reader;
