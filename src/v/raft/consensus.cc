@@ -52,6 +52,7 @@ consensus::consensus(
 }
 void consensus::do_step_down() {
     _voted_for = {};
+    _hbeat = clock_type::now();
     _vstate = vote_state::follower;
 }
 
@@ -305,11 +306,10 @@ consensus::make_reader(storage::log_reader_config config) {
 void consensus::dispatch_vote() {
     // 5.2.1.4 - prepare next timeout
 
-    auto now = clock_type::now();
-    auto expiration = _hbeat + _jit.base_duration();
+    auto last_election = clock_type::now() - _jit.base_duration();
 
     bool skip_vote = false;
-    skip_vote |= now < expiration;              // nothing to do.
+    skip_vote |= (_hbeat > last_election);      // nothing to do.
     skip_vote |= _vstate == vote_state::leader; // already a leader
     skip_vote |= !_conf.has_voters();           // no voters
 
@@ -432,10 +432,16 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
         return ss::make_ready_future<vote_reply>(std::move(reply));
     }
 
-    // Optimization, see Logcabin Raft protocol implementation
-    auto now = clock_type::now();
-    auto expiration = _hbeat + _jit.base_duration();
-    if (now < expiration) {
+    /// Stable leadership optimization
+    ///
+    /// When current node is a leader (we set _hbeat to max after successfull
+    /// election) or already processed request from active leader  do not grant
+    /// a vote to follower. This will prevent restarted nodes to disturb all
+    /// groups leadership
+    // Check if we updated the heartbeat timepoint in the last election timeout
+    // duration
+    auto prev_election = clock_type::now() - _jit.base_duration();
+    if (_hbeat > prev_election) {
         _ctxlog.trace("We already heard from the leader");
         reply.granted = false;
         return ss::make_ready_future<vote_reply>(std::move(reply));

@@ -181,7 +181,8 @@ ss::future<> vote_stm::process_replies(ss::semaphore_units<> u) {
     // section vote:5.2.2
     _ptr->_vstate = consensus::vote_state::leader;
     _ptr->_leader_id = _ptr->self();
-
+    // Set last heartbeat timestamp to max as we are the leader
+    _ptr->_hbeat = clock_type::time_point::max();
     _ctxlog.info("became the leader term:{}", _ptr->_meta.term);
 
     _ptr->trigger_leadership_notification();
