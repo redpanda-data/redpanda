@@ -285,8 +285,7 @@ SEASTAR_THREAD_TEST_CASE(member_metadata) {
 
     BOOST_TEST(g.protocol() == "p1");
     auto md = g.member_metadata();
-    std::unordered_map<kafka::member_id, join_group_response::member_config>
-      conf;
+    std::unordered_map<kafka::member_id, join_group_response_member> conf;
     for (auto& m : md) {
         conf[m.member_id] = m;
     }
@@ -331,19 +330,19 @@ SEASTAR_THREAD_TEST_CASE(supports_protocols) {
     join_group_request r;
 
     // empty group -> request needs protocol type
-    r.protocol_type = kafka::protocol_type("");
-    r.protocols = std::vector<member_protocol>{
+    r.data.protocol_type = kafka::protocol_type("");
+    r.data.protocols = std::vector<join_group_request_protocol>{
       {kafka::protocol_name(""), bytes()}};
     BOOST_TEST(!g.supports_protocols(r));
 
     // empty group -> request needs protocols
-    r.protocol_type = kafka::protocol_type("p");
-    r.protocols.clear();
+    r.data.protocol_type = kafka::protocol_type("p");
+    r.data.protocols.clear();
     BOOST_TEST(!g.supports_protocols(r));
 
     // group is empty and request can init group state
-    r.protocol_type = kafka::protocol_type("p");
-    r.protocols = std::vector<member_protocol>{
+    r.data.protocol_type = kafka::protocol_type("p");
+    r.data.protocols = std::vector<join_group_request_protocol>{
       {kafka::protocol_name(""), bytes()}};
     BOOST_TEST(g.supports_protocols(r));
 
@@ -361,17 +360,17 @@ SEASTAR_THREAD_TEST_CASE(supports_protocols) {
     g.set_state(group_state::preparing_rebalance);
 
     // protocol type doesn't match the group's protocol type
-    r.protocol_type = kafka::protocol_type("x");
-    r.protocols = std::vector<member_protocol>{
+    r.data.protocol_type = kafka::protocol_type("x");
+    r.data.protocols = std::vector<join_group_request_protocol>{
       {kafka::protocol_name(""), bytes()}};
     BOOST_TEST(!g.supports_protocols(r));
 
     // now it matches, but the protocols don't
-    r.protocol_type = kafka::protocol_type("p");
+    r.data.protocol_type = kafka::protocol_type("p");
     BOOST_TEST(!g.supports_protocols(r));
 
     // now it contains a matching protocol
-    r.protocols = std::vector<member_protocol>{
+    r.data.protocols = std::vector<join_group_request_protocol>{
       {kafka::protocol_name("n0"), bytes()}};
     BOOST_TEST(g.supports_protocols(r));
 
@@ -387,7 +386,7 @@ SEASTAR_THREAD_TEST_CASE(supports_protocols) {
     (void)g.add_member(m2);
 
     // n2 is not supported bc the first member doesn't support it
-    r.protocols = std::vector<member_protocol>{
+    r.data.protocols = std::vector<join_group_request_protocol>{
       {kafka::protocol_name("n2"), bytes()}};
     BOOST_TEST(!g.supports_protocols(r));
 }
@@ -423,14 +422,14 @@ SEASTAR_THREAD_TEST_CASE(generate_member_id) {
     join_group_request r;
 
     r.client_id = ss::sstring("dog");
-    r.group_instance_id = std::nullopt;
+    r.data.group_instance_id = std::nullopt;
     auto m = group::generate_member_id(r);
     auto [id, uuid] = split_member_id(m);
     BOOST_TEST(id == "dog");
     BOOST_TEST(is_uuid(uuid));
 
     r.client_id = ss::sstring("dog");
-    r.group_instance_id = kafka::group_instance_id("cat");
+    r.data.group_instance_id = kafka::group_instance_id("cat");
     m = group::generate_member_id(r);
     std::tie(id, uuid) = split_member_id(m);
     BOOST_TEST(id == "cat");

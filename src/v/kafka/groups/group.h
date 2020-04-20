@@ -248,7 +248,7 @@ public:
      *
      * Caller must ensure that the group's protocol is set.
      */
-    std::vector<join_group_response::member_config> member_metadata() const;
+    std::vector<join_group_response_member> member_metadata() const;
 
     /**
      * \brief Add empty assignments for missing group members.

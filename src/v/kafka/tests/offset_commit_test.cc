@@ -14,8 +14,8 @@ FIXTURE_TEST(
     client.connect().get();
 
     kafka::offset_commit_request req;
-    req.group_instance_id = kafka::group_instance_id("g");
-    req.topics = {{
+    req.data.group_instance_id = kafka::group_instance_id("g");
+    req.data.topics = {{
       .name = model::topic("t"),
       .partitions = {{}},
     }};
@@ -24,6 +24,6 @@ FIXTURE_TEST(
     client.stop().then([&client] { client.shutdown(); }).get();
 
     BOOST_TEST(
-      resp.topics[0].partitions[0].error
+      resp.data.topics[0].partitions[0].error_code
       == kafka::error_code::unsupported_version);
 }

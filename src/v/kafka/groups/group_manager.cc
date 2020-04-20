@@ -340,39 +340,41 @@ ss::future<join_group_response>
 group_manager::join_group(join_group_request&& r) {
     klog.trace("join request {}", r);
 
-    auto error = validate_group_status(r.ntp, r.group_id, join_group_api::key);
+    auto error = validate_group_status(
+      r.ntp, r.data.group_id, join_group_api::key);
     if (error != error_code::none) {
         klog.trace("request validation failed with error={}", error);
-        return make_join_error(r.member_id, error);
+        return make_join_error(r.data.member_id, error);
     }
 
     if (
-      r.session_timeout < _conf.group_min_session_timeout_ms()
-      || r.session_timeout > _conf.group_max_session_timeout_ms()) {
+      r.data.session_timeout_ms < _conf.group_min_session_timeout_ms()
+      || r.data.session_timeout_ms > _conf.group_max_session_timeout_ms()) {
         klog.trace(
           "join group request has invalid session timeout min={}/{}/max={}",
           _conf.group_min_session_timeout_ms(),
-          r.session_timeout,
+          r.data.session_timeout_ms,
           _conf.group_max_session_timeout_ms());
         return make_join_error(
-          r.member_id, error_code::invalid_session_timeout);
+          r.data.member_id, error_code::invalid_session_timeout);
     }
 
     bool is_new_group = false;
-    auto group = get_group(r.group_id);
+    auto group = get_group(r.data.group_id);
     if (!group) {
         // <kafka>only try to create the group if the group is UNKNOWN AND
         // the member id is UNKNOWN, if member is specified but group does
         // not exist we should reject the request.</kafka>
-        if (r.member_id != unknown_member_id) {
+        if (r.data.member_id != unknown_member_id) {
             klog.trace(
               "join request rejected for known member and unknown group");
-            return make_join_error(r.member_id, error_code::unknown_member_id);
+            return make_join_error(
+              r.data.member_id, error_code::unknown_member_id);
         }
         auto p = _partitions.find(r.ntp)->second->partition;
         group = ss::make_lw_shared<kafka::group>(
-          r.group_id, group_state::empty, _conf, p);
-        _groups.emplace(r.group_id, group);
+          r.data.group_id, group_state::empty, _conf, p);
+        _groups.emplace(r.data.group_id, group);
         klog.trace("created new group {}", group);
         is_new_group = true;
     }
@@ -384,12 +386,13 @@ ss::future<sync_group_response>
 group_manager::sync_group(sync_group_request&& r) {
     klog.trace("sync request {}", r);
 
-    if (r.group_instance_id) {
+    if (r.data.group_instance_id) {
         klog.trace("static group membership is unsupported");
         return make_sync_error(error_code::unsupported_version);
     }
 
-    auto error = validate_group_status(r.ntp, r.group_id, sync_group_api::key);
+    auto error = validate_group_status(
+      r.ntp, r.data.group_id, sync_group_api::key);
     if (error != error_code::none) {
         klog.trace("invalid group status {}", error);
         if (error == error_code::coordinator_load_in_progress) {
@@ -405,7 +408,7 @@ group_manager::sync_group(sync_group_request&& r) {
         return make_sync_error(error);
     }
 
-    auto group = get_group(r.group_id);
+    auto group = get_group(r.data.group_id);
     if (group) {
         return group->handle_sync_group(std::move(r));
     } else {
@@ -417,12 +420,13 @@ group_manager::sync_group(sync_group_request&& r) {
 ss::future<heartbeat_response> group_manager::heartbeat(heartbeat_request&& r) {
     klog.trace("heartbeat request {}", r);
 
-    if (r.group_instance_id) {
+    if (r.data.group_instance_id) {
         klog.trace("static group membership is unsupported");
         return make_heartbeat_error(error_code::unsupported_version);
     }
 
-    auto error = validate_group_status(r.ntp, r.group_id, heartbeat_api::key);
+    auto error = validate_group_status(
+      r.ntp, r.data.group_id, heartbeat_api::key);
     if (error != error_code::none) {
         klog.trace("invalid group status {}", error);
         if (error == error_code::coordinator_load_in_progress) {
@@ -433,7 +437,7 @@ ss::future<heartbeat_response> group_manager::heartbeat(heartbeat_request&& r) {
         return make_heartbeat_error(error);
     }
 
-    auto group = get_group(r.group_id);
+    auto group = get_group(r.data.group_id);
     if (group) {
         return group->handle_heartbeat(std::move(r));
     }
@@ -446,13 +450,14 @@ ss::future<leave_group_response>
 group_manager::leave_group(leave_group_request&& r) {
     klog.trace("leave request {}", r);
 
-    auto error = validate_group_status(r.ntp, r.group_id, leave_group_api::key);
+    auto error = validate_group_status(
+      r.ntp, r.data.group_id, leave_group_api::key);
     if (error != error_code::none) {
         klog.trace("invalid group status error={}", error);
         return make_leave_error(error);
     }
 
-    auto group = get_group(r.group_id);
+    auto group = get_group(r.data.group_id);
     if (group) {
         return group->handle_leave_group(std::move(r));
     } else {
@@ -464,21 +469,21 @@ group_manager::leave_group(leave_group_request&& r) {
 ss::future<offset_commit_response>
 group_manager::offset_commit(offset_commit_request&& r) {
     auto error = validate_group_status(
-      r.ntp, r.group_id, offset_commit_api::key);
+      r.ntp, r.data.group_id, offset_commit_api::key);
     if (error != error_code::none) {
         return ss::make_ready_future<offset_commit_response>(
           offset_commit_response(r, error));
     }
 
-    auto group = get_group(r.group_id);
+    auto group = get_group(r.data.group_id);
     if (!group) {
-        if (r.generation_id < 0) {
+        if (r.data.generation_id < 0) {
             // <kafka>the group is not relying on Kafka for group management, so
             // allow the commit</kafka>
             auto p = _partitions.find(r.ntp)->second->partition;
             group = ss::make_lw_shared<kafka::group>(
-              r.group_id, group_state::empty, _conf, p);
-            _groups.emplace(r.group_id, group);
+              r.data.group_id, group_state::empty, _conf, p);
+            _groups.emplace(r.data.group_id, group);
         } else {
             // <kafka>or this is a request coming from an older generation.
             // either way, reject the commit</kafka>

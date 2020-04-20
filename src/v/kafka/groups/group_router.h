@@ -76,11 +76,11 @@ public:
       , _coordinators(coordinators) {}
 
     ss::future<join_group_response> join_group(join_group_request&& request) {
-        auto shard = shard_for(request.group_id);
+        auto shard = shard_for(request.data.group_id);
         if (!shard) {
             return ss::make_ready_future<join_group_response>(
               join_group_response(
-                request.member_id, error_code::not_coordinator));
+                request.data.member_id, error_code::not_coordinator));
         }
         request.ntp = std::move(shard->first);
         return with_scheduling_group(
@@ -98,7 +98,7 @@ public:
     }
 
     ss::future<sync_group_response> sync_group(sync_group_request&& request) {
-        auto shard = shard_for(request.group_id);
+        auto shard = shard_for(request.data.group_id);
         if (!shard) {
             return ss::make_ready_future<sync_group_response>(
               sync_group_response(error_code::not_coordinator));
@@ -119,7 +119,7 @@ public:
     }
 
     ss::future<heartbeat_response> heartbeat(heartbeat_request&& request) {
-        auto shard = shard_for(request.group_id);
+        auto shard = shard_for(request.data.group_id);
         if (!shard) {
             return ss::make_ready_future<heartbeat_response>(
               heartbeat_response(error_code::not_coordinator));
@@ -141,7 +141,7 @@ public:
 
     ss::future<leave_group_response>
     leave_group(leave_group_request&& request) {
-        auto shard = shard_for(request.group_id);
+        auto shard = shard_for(request.data.group_id);
         if (!shard) {
             return ss::make_ready_future<leave_group_response>(
               leave_group_response(error_code::not_coordinator));
@@ -163,7 +163,7 @@ public:
 
     ss::future<offset_commit_response>
     offset_commit(offset_commit_request&& request) {
-        auto shard = shard_for(request.group_id);
+        auto shard = shard_for(request.data.group_id);
         if (!shard) {
             return ss::make_ready_future<offset_commit_response>(
               offset_commit_response(request, error_code::not_coordinator));

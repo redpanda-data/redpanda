@@ -1,6 +1,8 @@
 #pragma once
 #include "kafka/errors.h"
 #include "kafka/requests/fwd.h"
+#include "kafka/requests/schemata/heartbeat_request.h"
+#include "kafka/requests/schemata/heartbeat_response.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "seastarx.h"
@@ -20,32 +22,39 @@ struct heartbeat_api final {
 };
 
 struct heartbeat_request final {
-    kafka::group_id group_id;
-    kafka::generation_id generation_id;
-    kafka::member_id member_id;
-    std::optional<kafka::group_instance_id> group_instance_id; // >= v3
+    heartbeat_request_data data;
 
     // set during request processing after mapping group to ntp
     model::ntp ntp;
 
-    void encode(const request_context& ctx, response_writer& writer);
-    void decode(request_context& ctx);
+    void encode(response_writer& writer, api_version version) {
+        data.encode(writer, version);
+    }
+
+    void decode(request_reader& reader, api_version version) {
+        data.decode(reader, version);
+    }
 };
 
-std::ostream& operator<<(std::ostream&, const heartbeat_request&);
+static inline std::ostream&
+operator<<(std::ostream& os, const heartbeat_request& r) {
+    return os << r.data;
+}
 
 struct heartbeat_response final {
     using api_type = heartbeat_api;
 
-    std::chrono::milliseconds throttle_time = std::chrono::milliseconds(
-      0); // >= v1
-    error_code error;
+    heartbeat_response_data data;
 
     explicit heartbeat_response(error_code error)
-      : throttle_time(0)
-      , error(error) {}
+      : data({
+        .throttle_time_ms = std::chrono::milliseconds(0),
+        .error_code = error,
+      }) {}
 
-    void encode(const request_context& ctx, response& resp);
+    void encode(const request_context& ctx, response& resp) {
+        data.encode(ctx, resp);
+    }
 };
 
 static inline ss::future<heartbeat_response>
@@ -53,6 +62,9 @@ make_heartbeat_error(error_code error) {
     return ss::make_ready_future<heartbeat_response>(error);
 }
 
-std::ostream& operator<<(std::ostream&, const heartbeat_response&);
+static inline std::ostream&
+operator<<(std::ostream& os, const heartbeat_response& r) {
+    return os << r.data;
+}
 
 } // namespace kafka

@@ -1,6 +1,8 @@
 #pragma once
 #include "kafka/errors.h"
 #include "kafka/requests/fwd.h"
+#include "kafka/requests/schemata/leave_group_request.h"
+#include "kafka/requests/schemata/leave_group_response.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "seastarx.h"
@@ -20,28 +22,37 @@ struct leave_group_api final {
 };
 
 struct leave_group_request final {
-    kafka::group_id group_id;
-    kafka::member_id member_id;
+    leave_group_request_data data;
 
     // set during request processing after mapping group to ntp
     model::ntp ntp;
 
-    void encode(const request_context& ctx, response_writer& writer);
-    void decode(request_context& ctx);
+    void encode(response_writer& writer, api_version version) {
+        data.encode(writer, version);
+    }
+
+    void decode(request_reader& reader, api_version version) {
+        data.decode(reader, version);
+    }
 };
 
-std::ostream& operator<<(std::ostream&, const leave_group_request&);
+static inline std::ostream&
+operator<<(std::ostream& os, const leave_group_request& r) {
+    return os << r.data;
+}
 
 struct leave_group_response final {
-    std::chrono::milliseconds throttle_time = std::chrono::milliseconds(
-      0); // >= v1
-    error_code error;
+    leave_group_response_data data;
 
     explicit leave_group_response(error_code error)
-      : throttle_time(0)
-      , error(error) {}
+      : data({
+        .throttle_time_ms = std::chrono::milliseconds(0),
+        .error_code = error,
+      }) {}
 
-    void encode(const request_context& ctx, response& resp);
+    void encode(const request_context& ctx, response& resp) {
+        data.encode(ctx, resp);
+    }
 };
 
 static inline ss::future<leave_group_response>
@@ -49,6 +60,9 @@ make_leave_error(error_code error) {
     return ss::make_ready_future<leave_group_response>(error);
 }
 
-std::ostream& operator<<(std::ostream&, const leave_group_response&);
+static inline std::ostream&
+operator<<(std::ostream& os, const leave_group_response& r) {
+    return os << r.data;
+}
 
 } // namespace kafka
