@@ -51,7 +51,6 @@ consensus::consensus(
     });
 }
 void consensus::do_step_down() {
-    _probe.step_down();
     _voted_for = {};
     _vstate = vote_state::follower;
 }
@@ -211,26 +210,38 @@ consensus::replicate(model::record_batch_reader&& rdr, replicate_options opts) {
 
     _last_replicate_consistency = opts.consistency;
     if (opts.consistency == consistency_level::quorum_ack) {
-        return _batcher.replicate(std::move(rdr));
+        _probe.replicate_requests_ack_all();
+        return _batcher.replicate(std::move(rdr)).finally([this] {
+            _probe.replicate_done();
+        });
     }
 
+    if (opts.consistency == consistency_level::leader_ack) {
+        _probe.replicate_requests_ack_leader();
+    } else {
+        _probe.replicate_requests_ack_none();
+    }
     // For relaxed consistency, append data to leader disk without flush
     // asynchronous replication is provided by Raft protocol recovery mechanism.
     return ss::with_semaphore(
-      _op_sem, 1, [this, rdr = std::move(rdr)]() mutable {
-          if (!is_leader()) {
-              return seastar::make_ready_future<result<replicate_result>>(
-                errc::not_leader);
-          }
+             _op_sem,
+             1,
+             [this, rdr = std::move(rdr)]() mutable {
+                 if (!is_leader()) {
+                     return seastar::make_ready_future<
+                       result<replicate_result>>(errc::not_leader);
+                 }
 
-          return disk_append(model::make_record_batch_reader<
-                               details::term_assigning_reader>(
-                               std::move(rdr), model::term_id(_meta.term)))
-            .then([](storage::append_result res) {
-                return result<replicate_result>(
-                  replicate_result{.last_offset = res.last_offset});
-            });
-      });
+                 return disk_append(
+                          model::make_record_batch_reader<
+                            details::term_assigning_reader>(
+                            std::move(rdr), model::term_id(_meta.term)))
+                   .then([](storage::append_result res) {
+                       return result<replicate_result>(
+                         replicate_result{.last_offset = res.last_offset});
+                   });
+             })
+      .finally([this] { _probe.replicate_done(); });
 }
 
 void consensus::dispatch_flush_with_lock() {
@@ -400,7 +411,7 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
     reply.term = _meta.term;
     auto last_log_index = _meta.prev_log_index;
     auto last_entry_term = _meta.prev_log_term;
-    _probe.vote_requested();
+    _probe.vote_request();
     _ctxlog.trace("Vote requested {}, voted for {}", r, _voted_for);
     /// set to true if the caller's log is as up to date as the recipient's
     /// - extension on raft. see Diego's phd dissertation, section 9.6
@@ -411,7 +422,6 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
 
     // raft.pdf: reply false if term < currentTerm (§5.1)
     if (r.term < _meta.term) {
-        _probe.vote_request_term_older();
         return ss::make_ready_future<vote_reply>(std::move(reply));
     }
 
@@ -431,7 +441,6 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
           r.node_id,
           r.term,
           _meta.term);
-        _probe.vote_request_term_newer();
         _meta.term = r.term;
         reply.term = _meta.term;
         do_step_down();
@@ -468,7 +477,7 @@ consensus::do_append_entries(append_entries_request&& r) {
     reply.term = _meta.term;
     reply.last_log_index = _meta.prev_log_index;
     reply.result = append_entries_reply::status::failure;
-    _probe.append_requested();
+    _probe.append_request();
 
     // no need to trigger timeout
     _hbeat = clock_type::now();
@@ -476,7 +485,6 @@ consensus::do_append_entries(append_entries_request&& r) {
 
     // raft.pdf: Reply false if term < currentTerm (§5.1)
     if (r.meta.term < _meta.term) {
-        _probe.append_request_term_older();
         reply.result = append_entries_reply::status::failure;
         return ss::make_ready_future<append_entries_reply>(std::move(reply));
     }
@@ -486,7 +494,6 @@ consensus::do_append_entries(append_entries_request&& r) {
           "append_entries request::term:{}  > ours: {}. Setting new term",
           r.meta.term,
           _meta.term);
-        _probe.append_request_term_newer();
         _meta.term = r.meta.term;
         return do_append_entries(std::move(r));
     }
@@ -510,7 +517,6 @@ consensus::do_append_entries(append_entries_request&& r) {
         if (!r.batches.is_end_of_stream()) {
             _ctxlog.debug("rejecting append_entries. would leave gap in log");
         }
-        _probe.append_request_log_commited_index_mismatch();
         return ss::make_ready_future<append_entries_reply>(std::move(reply));
     }
 
@@ -531,7 +537,6 @@ consensus::do_append_entries(append_entries_request&& r) {
           "at offset {}",
           last_log_term,
           r.meta.prev_log_index);
-        _probe.append_request_log_term_older();
         reply.result = append_entries_reply::status::failure;
         return ss::make_ready_future<append_entries_reply>(std::move(reply));
     }
@@ -549,9 +554,8 @@ consensus::do_append_entries(append_entries_request&& r) {
         }
         return maybe_update_follower_commit_idx(
                  model::offset(r.meta.commit_index))
-          .then([this, reply = std::move(reply)]() mutable {
+          .then([reply = std::move(reply)]() mutable {
               reply.result = append_entries_reply::status::success;
-              _probe.append_request_heartbeat();
               return ss::make_ready_future<append_entries_reply>(
                 std::move(reply));
           });
@@ -575,7 +579,7 @@ consensus::do_append_entries(append_entries_request&& r) {
           r.meta.prev_log_index,
           _log.dirty_offset(),
           truncate_at);
-        _probe.append_request_log_truncate();
+        _probe.log_truncated();
         return _log.truncate(truncate_at)
           .then([this, r = std::move(r)]() mutable {
               _meta.prev_log_index = r.meta.prev_log_index;
@@ -647,6 +651,7 @@ ss::future<> consensus::process_configurations(
               update_follower_stats(*cfg);
               _conf = std::move(*cfg);
               _ctxlog.info("configuration updated {}", _conf);
+              _probe.configuration_update();
           }
       });
 }
@@ -676,6 +681,7 @@ consensus::make_append_entries_reply(storage::append_result disk_results) {
 }
 
 ss::future<> consensus::flush_log() {
+    _probe.log_flushed();
     return _log.flush().then([this] { _has_pending_flushes = false; });
 }
 
@@ -696,8 +702,6 @@ consensus::disk_append(model::record_batch_reader&& reader) {
           // TODO
           // if we rolled a log segment. write current configuration
           // for speedy recovery in the background
-
-          _probe.entries_appended(1);
           _meta.prev_log_index = ret.last_offset;
           _meta.prev_log_term = ret.last_term;
 

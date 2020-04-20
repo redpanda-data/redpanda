@@ -153,6 +153,7 @@ ss::future<> replicate_batcher::do_flush(
   std::vector<replicate_batcher::item_ptr>&& notifications,
   append_entries_request&& req,
   ss::semaphore_units<> u) {
+    _ptr->_probe.replicate_batch_flushed();
     auto stm = ss::make_lw_shared<replicate_entries_stm>(_ptr, std::move(req));
     return stm->apply(std::move(u))
       .then_wrapped([this, stm, notifications = std::move(notifications)](
