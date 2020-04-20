@@ -42,12 +42,50 @@ disk_log_impl::~disk_log_impl() {
 }
 ss::future<> disk_log_impl::close() {
     _closed = true;
-    return _lgate.close().then([this] {
-        return ss::parallel_for_each(
-          _segs, [](ss::lw_shared_ptr<segment>& h) { return h->close(); });
+    return ss::parallel_for_each(_segs, [](ss::lw_shared_ptr<segment>& h) {
+        return h->close().handle_exception([h](std::exception_ptr e) {
+            vlog(stlog.error, "Error closing segment:{} - {}", e, h);
+        });
     });
 }
 
+ss::future<>
+disk_log_impl::garbage_collect_max_partition_size(size_t max_bytes) {
+    return ss::do_until(
+      [this, max_bytes] {
+          return _segs.empty() || _probe.partition_size() <= max_bytes;
+      },
+      [this] {
+          auto ptr = _segs.front();
+          _segs.pop_front();
+          return remove_segment_permanently(ptr, "gc[size_based_retention]");
+      });
+}
+
+ss::future<>
+disk_log_impl::garbage_collect_oldest_segments(model::timestamp time) {
+    // The following compaction has a Kafka behavior compatibility bug. for
+    // which we defer do nothing at the moment, possibly crashing the machine
+    // and running out of disk. Kafka uses the same logic below as of
+    // March-6th-2020. The problem is that you can construct a case where the
+    // first log segment max_timestamp is infinity and this loop will never
+    // trigger a compaction since the data is coming from the clients.
+    //
+    // A workaround is to have production systems set both, the max
+    // retention.bytes and the max retention.ms setting in the configuration
+    // files so that size-based retention eventually evicts the problematic
+    // segment, preventing a crash.
+    //
+    return ss::do_until(
+      [this, time] {
+          return _segs.empty() || _segs.front()->index().max_timestamp() > time;
+      },
+      [this] {
+          auto ptr = _segs.front();
+          _segs.pop_front();
+          return remove_segment_permanently(ptr, "gc[time_based_retention]");
+      });
+}
 ss::future<> disk_log_impl::gc(
   model::timestamp collection_upper_bound,
   std::optional<size_t> max_partition_retention_size) {
@@ -63,36 +101,11 @@ ss::future<> disk_log_impl::gc(
     }
     if (max_partition_retention_size) {
         size_t max = max_partition_retention_size.value();
-        while (!_segs.empty() && _probe.partition_size() > max) {
-            dispatch_remove(_segs.front(), "gc[size_based_retention]");
-            _segs.pop_front();
+        if (!_segs.empty() && _probe.partition_size() > max) {
+            return garbage_collect_max_partition_size(max);
         }
     }
-    // The following compaction has a Kafka behavior compatibility bug. for
-    // which we defer do nothing at the moment, possibly crashing the machine
-    // and running out of disk. Kafka uses the same logic below as of
-    // March-6th-2020. The problem is that you can construct a case where the
-    // first log segment max_timestamp is infinity and this loop will never
-    // trigger a compaction since the data is coming from the clients.
-    //
-    // A workaround is to have production systems set both, the max
-    // retention.bytes and the max retention.ms setting in the configuration
-    // files so that size-based retention eventually evicts the problematic
-    // segment, preventing a crash.
-    //
-    while (
-      !_segs.empty()
-      && (_segs.front()->index().max_timestamp() <= collection_upper_bound)) {
-        auto f = _segs.front();
-        vlog(
-          stlog.debug,
-          "Detected segment max_timestamp:{} older than eviction time:{}",
-          absl::FromUnixMillis(f->index().max_timestamp().value()),
-          absl::FromUnixMillis(collection_upper_bound.value()));
-        dispatch_remove(f, "gc[time_based_retention]");
-        _segs.pop_front();
-    }
-    return ss::make_ready_future<>();
+    return garbage_collect_oldest_segments(collection_upper_bound);
 }
 
 ss::future<> disk_log_impl::remove_empty_segments() {
@@ -194,21 +207,19 @@ size_t disk_log_impl::bytes_left_before_roll() const {
 ss::future<> disk_log_impl::maybe_roll(
   model::term_id t, model::offset next_offset, ss::io_priority_class iopc) {
     vassert(t >= term(), "Term:{} must be greater than base:{}", t, term());
-    if (
-      t != term() || _segs.empty() || !_segs.back()->has_appender()
-      || _segs.back()->appender().file_byte_offset()
-           > _manager.max_segment_size()) {
-        if (!_segs.empty() && _segs.back()->has_appender()) {
-            auto ptr = _segs.back();
-            // we must wait for all ongoing operations - which
-            // might take a littlebit since we have to acquire a write_lock()
-            (void)ss::with_gate(_lgate, [ptr] {
-                return ptr->release_appender();
-            }).handle_exception([](std::exception_ptr e) {
-                vlog(stlog.info, "Error releasing appender: {}", e);
-            });
-        }
+    if (_segs.empty()) {
         return new_segment(next_offset, t, iopc);
+    }
+    auto ptr = _segs.back();
+    if (!ptr->has_appender()) {
+        return new_segment(next_offset, t, iopc);
+    }
+    if (
+      t != term()
+      || ptr->appender().file_byte_offset() > _manager.max_segment_size()) {
+        return ptr->release_appender().then([this, next_offset, t, iopc] {
+            return new_segment(next_offset, t, iopc);
+        });
     }
     return ss::make_ready_future<>();
 }
@@ -260,43 +271,48 @@ disk_log_impl::timequery(timequery_config cfg) {
       });
 }
 
-void disk_log_impl::dispatch_remove(
+ss::future<> disk_log_impl::remove_segment_permanently(
   ss::lw_shared_ptr<segment> s, std::string_view ctx) {
     vlog(stlog.info, "{} - tombstone & delete segment: {}", ctx, s);
     // stats accounting must happen synchronously
     _probe.delete_segment(*s);
     // background close
     s->tombstone();
-    (void)ss::with_gate(_lgate, [s] {
-        return s->close().finally([s] {});
-    }).handle_exception([](std::exception_ptr e) {
-        vlog(stlog.info, "Ignoring exception on shutdown: {}", e);
-    });
+    if (s->has_outstanding_locks()) {
+        vlog(
+          stlog.info,
+          "Segment has outstanding locks. Might take a while to close:{}",
+          s->reader().filename());
+    }
+    return s->close()
+      .handle_exception([s](std::exception_ptr e) {
+          vlog(stlog.error, "Cannot close segment: {} - {}", e, s);
+      })
+      .finally([s] {});
 }
+
+ss::future<> disk_log_impl::remove_full_segments(model::offset o) {
+    return ss::do_until(
+      [this, o] {
+          return _segs.empty() || _segs.back()->reader().base_offset() < o;
+      },
+      [this] {
+          auto ptr = _segs.back();
+          _segs.pop_back();
+          return remove_segment_permanently(ptr, "remove_full_segments");
+      });
+}
+
 ss::future<> disk_log_impl::do_truncate(model::offset o) {
     if (o > dirty_offset() || o < start_offset()) {
-        vlog(
-          stlog.error,
-          "log::truncate out of range: {}, {}-{}",
-          o,
-          start_offset(),
-          dirty_offset());
         return ss::make_ready_future<>();
     }
     if (_segs.empty()) {
         return ss::make_ready_future<>();
     }
-    for (int i = (int)_segs.size() - 1; i >= 0; --i) {
-        ss::lw_shared_ptr<segment> ptr = _segs[i];
-        if (ptr->reader().base_offset() >= o) {
-            dispatch_remove(ptr, "truncate[back-iterator]");
-            _segs.pop_back();
-        } else {
-            break;
-        }
-    }
-    if (_segs.empty()) {
-        return ss::make_ready_future<>();
+    if (_segs.back()->reader().base_offset() >= o) {
+        return remove_full_segments(o).then(
+          [this, o] { return do_truncate(o); });
     }
     auto& last = *_segs.back();
     if (o > last.dirty_offset()) {
@@ -324,13 +340,24 @@ ss::future<> disk_log_impl::do_truncate(model::offset o) {
           auto [prev_last_offset, file_position] = phs.value();
           auto last = _segs.back();
           if (file_position == 0) {
-              dispatch_remove(last, "truncate[post-translation]");
               _segs.pop_back();
-              return ss::make_ready_future<>();
+              return remove_segment_permanently(
+                last, "truncate[post-translation]");
           }
           _probe.remove_partition_bytes(
             last->reader().file_size() - file_position);
-          return last->truncate(prev_last_offset, file_position);
+          return last->truncate(prev_last_offset, file_position)
+            .handle_exception([last, phs, this](std::exception_ptr e) {
+                vassert(
+                  false,
+                  "Could not truncate:{} logical max:{}, physical offset:{} on "
+                  "segment:{} - log:{}",
+                  e,
+                  phs->first,
+                  phs->second,
+                  last,
+                  *this);
+            });
       });
 } // namespace storage
 

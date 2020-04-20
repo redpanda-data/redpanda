@@ -8,6 +8,7 @@
 #include <seastar/core/future-util.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/reactor.hh>
+#include <seastar/core/seastar.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/smp.hh>
 
@@ -43,24 +44,30 @@ ss::future<> segment::close() {
      * readers and writers to finish before performing a destructive operation
      */
     return write_lock().then([this](ss::rwlock::holder h) {
-        auto fut = do_close().finally([h = std::move(h)] {});
-        if (_tombstone) {
-            std::vector<ss::sstring> rm;
-            rm.push_back(reader().filename());
-            rm.push_back(index().filename());
-            fut = fut.then([rm = std::move(rm)] {
-                return ss::parallel_for_each(rm, [](const ss::sstring& name) {
-                    return ss::remove_file(name).handle_exception(
-                      [](std::exception_ptr e) {
-                          vlog(
-                            stlog.info, "error removing segment files: {}", e);
-                      });
-                });
-            });
-        }
-        return fut;
+        return do_close()
+          .then([this] { return remove_thombsones(); })
+          .finally([h = std::move(h)] {});
     });
 }
+
+ss::future<> segment::remove_thombsones() {
+    if (!_tombstone) {
+        return ss::make_ready_future<>();
+    }
+    std::vector<ss::sstring> rm;
+    rm.push_back(reader().filename());
+    rm.push_back(index().filename());
+    vlog(stlog.info, "removing: {}", rm);
+    return ss::do_with(std::move(rm), [](std::vector<ss::sstring>& to_remove) {
+        return ss::do_for_each(to_remove, [](const ss::sstring& name) {
+            return ss::remove_file(name).handle_exception(
+              [](std::exception_ptr e) {
+                  vlog(stlog.info, "error removing segment files: {}", e);
+              });
+        });
+    });
+}
+
 ss::future<> segment::do_close() {
     auto f = _reader.close();
     if (_appender) {
