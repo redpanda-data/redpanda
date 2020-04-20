@@ -4,7 +4,17 @@ set(schemata
   api_versions_request.json
   api_versions_response.json
   offset_fetch_request.json
-  offset_fetch_response.json)
+  offset_fetch_response.json
+  offset_commit_request.json
+  offset_commit_response.json
+  join_group_request.json
+  join_group_response.json
+  sync_group_request.json
+  sync_group_response.json
+  heartbeat_request.json
+  heartbeat_response.json
+  leave_group_request.json
+  leave_group_response.json)
 
 set(srcs)
 foreach(schema ${schemata})

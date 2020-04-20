@@ -9,68 +9,17 @@
 
 namespace kafka {
 
-void heartbeat_request::decode(request_context& ctx) {
-    auto& reader = ctx.reader();
-    auto version = ctx.header().version;
-
-    group_id = kafka::group_id(reader.read_string());
-    generation_id = kafka::generation_id(reader.read_int32());
-    member_id = kafka::member_id(reader.read_string());
-    if (version >= api_version(3)) {
-        auto id = reader.read_nullable_string();
-        if (id) {
-            group_instance_id = kafka::group_instance_id(std::move(*id));
-        }
-    }
-}
-
-void heartbeat_request::encode(
-  const request_context& ctx, response_writer& writer) {
-    auto version = ctx.header().version;
-
-    writer.write(group_id());
-    writer.write(generation_id);
-    writer.write(member_id());
-    if (version >= api_version(3)) {
-        writer.write(group_instance_id);
-    }
-}
-
-void heartbeat_response::encode(const request_context& ctx, response& resp) {
-    auto& writer = resp.writer();
-    auto version = ctx.header().version;
-
-    if (version >= api_version(1)) {
-        writer.write(int32_t(throttle_time.count()));
-    }
-    writer.write(error);
-}
-
 ss::future<response_ptr> heartbeat_api::process(
   request_context&& ctx, [[maybe_unused]] ss::smp_service_group g) {
     return ss::do_with(std::move(ctx), [](request_context& ctx) {
         heartbeat_request request;
-        request.decode(ctx);
+        request.decode(ctx.reader(), ctx.header().version);
         return ctx.groups()
           .heartbeat(std::move(request))
           .then([&ctx](heartbeat_response&& reply) {
               return ctx.respond(std::move(reply));
           });
     });
-}
-
-std::ostream& operator<<(std::ostream& o, const heartbeat_request& r) {
-    return ss::fmt_print(
-      o,
-      "group={} gen={} member={} group_inst={}",
-      r.group_id,
-      r.generation_id,
-      r.member_id,
-      r.group_instance_id);
-}
-
-std::ostream& operator<<(std::ostream& o, const heartbeat_response& r) {
-    return ss::fmt_print(o, "error={}", r.error);
 }
 
 } // namespace kafka

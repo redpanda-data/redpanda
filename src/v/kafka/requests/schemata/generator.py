@@ -8,6 +8,10 @@
 #     https://github.com/apache/kafka/blob/2.4/clients/src/main/resources/common/message/README.md
 #
 # TODO:
+#   - It has become clear that for the vast majority of cases where are using the
+#   path_type_map to override types, it would be more efficient to specify the
+#   same mapping using the field_name_type_map + a whitelist of request types.
+#
 #   - The current version does not handle flexible versions. It will be some
 #   time before we encounter clients requiring this, but in principle this
 #   generator should be extensible (see type maps below). Note that when the
@@ -18,8 +22,6 @@
 #   - Handle ignorable fields. Currently we handle nullable fields properly. The
 #   ignorable flag on a field doesn't change the wire protocol, but gives
 #   instruction on how things should behave when there is missing data.
-#
-#   - Auto generate output operator
 #
 import io
 import json
@@ -60,6 +62,59 @@ path_type_map = {
             },
         }
     },
+    "OffsetCommitRequestData": {
+        "Topics": {
+            "Partitions": {
+                "PartitionIndex": ("model::partition_id", "int32"),
+                "CommittedOffset": ("model::offset", "int64"),
+            },
+        },
+        "MemberId": ("kafka::member_id", "string"),
+    },
+    "JoinGroupRequestData": {
+        "MemberId": ("kafka::member_id", "string"),
+        "GroupInstanceId": ("kafka::group_instance_id", "string"),
+        "ProtocolType": ("kafka::protocol_type", "string"),
+        "Protocols": {
+            "Name": ("kafka::protocol_name", "string"),
+        },
+    },
+    "JoinGroupResponseData": {
+        "GenerationId": ("kafka::generation_id", "int32"),
+        "ProtocolName": ("kafka::protocol_name", "string"),
+        "Leader": ("kafka::member_id", "string"),
+        "MemberId": ("kafka::member_id", "string"),
+        "Members": {
+            "MemberId": ("kafka::member_id", "string"),
+            "GroupInstanceId": ("kafka::group_instance_id", "string"),
+        },
+    },
+    "SyncGroupRequestData": {
+        "GenerationId": ("kafka::generation_id", "int32"),
+        "MemberId": ("kafka::member_id", "string"),
+        "GroupInstanceId": ("kafka::group_instance_id", "string"),
+        "Assignments": {
+            "MemberId": ("kafka::member_id", "string"),
+        },
+    },
+    "HeartbeatRequestData": {
+        "GenerationId": ("kafka::generation_id", "int32"),
+        "MemberId": ("kafka::member_id", "string"),
+        "GroupInstanceId": ("kafka::group_instance_id", "string"),
+    },
+    "LeaveGroupRequestData": {
+        "MemberId": ("kafka::member_id", "string"),
+        "Members": {
+            "MemberId": ("kafka::member_id", "string"),
+            "GroupInstanceId": ("kafka::group_instance_id", "string"),
+        },
+    },
+    "LeaveGroupResponseData": {
+        "Members": {
+            "MemberId": ("kafka::member_id", "string"),
+            "GroupInstanceId": ("kafka::group_instance_id", "string"),
+        },
+    },
 }
 
 # a few kafka field types specify an entity type
@@ -72,11 +127,14 @@ entity_type_map = dict(
 field_name_type_map = {
     ("int16", "ErrorCode"): "kafka::error_code",
     ("int32", "ThrottleTimeMs"): "std::chrono::milliseconds",
+    ("int32", "SessionTimeoutMs"): "std::chrono::milliseconds",
+    ("int32", "RebalanceTimeoutMs"): "std::chrono::milliseconds",
 }
 
 # primitive types
 basic_type_map = dict(
     string=("ss::sstring", "read_string()", "read_nullable_string()"),
+    bytes=("bytes", "read_bytes()"),
     int8=("int8_t", "read_int8()"),
     int16=("int16_t", "read_int16()"),
     int32=("int32_t", "read_int32()"),
@@ -90,6 +148,15 @@ STRUCT_TYPES = [
     "OffsetFetchRequestTopic",
     "OffsetFetchResponseTopic",
     "OffsetFetchResponsePartition",
+    "OffsetCommitRequestTopic",
+    "OffsetCommitRequestPartition",
+    "OffsetCommitResponseTopic",
+    "OffsetCommitResponsePartition",
+    "JoinGroupRequestProtocol",
+    "JoinGroupResponseMember",
+    "SyncGroupRequestAssignment",
+    "MemberIdentity",
+    "MemberResponse",
 ]
 
 SCALAR_TYPES = list(basic_type_map.keys())
@@ -210,6 +277,11 @@ class StructType(FieldType):
     def is_struct(self):
         return True
 
+    @property
+    def format(self):
+        """Format string for output operator"""
+        return " ".join(map(lambda f: f"{f.name}={{}}", self.fields))
+
     def structs(self):
         """
         Return all struct types reachable from this struct.
@@ -261,7 +333,7 @@ class Field:
         return self._versions
 
     def about(self):
-        return self._field["about"]
+        return self._field.get("about", "<no description>")
 
     def _redpanda_path_type(self):
         """
@@ -406,7 +478,9 @@ class response;
 
 {% for struct in struct.structs() %}
 {{ render_struct(struct) }}
+    friend std::ostream& operator<<(std::ostream&, const {{ struct.name }}&);
 };
+
 {% endfor %}
 
 {{ render_struct(struct) }}
@@ -417,6 +491,8 @@ class response;
     void encode(const request_context& ctx, response& resp);
     void decode(iobuf buf, api_version version);
 {%- endif %}
+
+    friend std::ostream& operator<<(std::ostream&, const {{ struct.name }}&);
 };
 
 }
@@ -549,6 +625,18 @@ void {{ struct.name }}::decode(iobuf buf, api_version version) {
 }
 {%- endif %}
 
+{% set structs = struct.structs() + [struct] %}
+{% for struct in structs %}
+std::ostream& operator<<(std::ostream& o, const {{ struct.name }}& v) {
+    fmt::print(o,
+      "{{'{' + struct.format + '}'}}",
+      {%- for field in struct.fields %}
+      v.{{ field.name }}{% if not loop.last %},{% endif %}
+      {%- endfor %}
+    );
+    return o;
+}
+{% endfor %}
 }
 """
 

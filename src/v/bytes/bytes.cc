@@ -25,6 +25,8 @@ std::ostream& operator<<(std::ostream& os, const bytes_opt& b) {
     return os << "empty";
 }
 
+namespace std {
 std::ostream& operator<<(std::ostream& os, const bytes_view& b) {
     return os << to_hex(b);
 }
+} // namespace std

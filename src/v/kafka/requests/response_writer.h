@@ -92,13 +92,6 @@ public:
         return size;
     }
 
-    uint32_t write(const bytes_opt& bv) {
-        if (!bv) {
-            return serialize_int<int32_t>(-1);
-        }
-        return write(bytes_view(*bv));
-    }
-
     uint32_t write(const model::topic& topic) { return write(topic()); }
 
     uint32_t write(std::optional<iobuf>&& data) {

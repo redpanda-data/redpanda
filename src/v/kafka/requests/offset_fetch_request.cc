@@ -15,37 +15,13 @@
 
 namespace kafka {
 
-static std::ostream&
-operator<<(std::ostream& o, const offset_fetch_request_topic& t) {
-    return ss::fmt_print(
-      o, "topic={} partitions={}", t.name, t.partition_indexes);
-}
-
-std::ostream& operator<<(std::ostream& o, const offset_fetch_request& r) {
-    return ss::fmt_print(
-      o, "group={} topics={}", r.data.group_id, r.data.topics);
-}
-
-static std::ostream&
-operator<<(std::ostream& os, const offset_fetch_response_partition& p) {
-    fmt::print(
-      os,
-      "id {} offset {} metadata {} error {}",
-      p.partition_index,
-      p.committed_offset,
-      p.metadata,
-      p.error_code);
-    return os;
-}
-
-static std::ostream&
-operator<<(std::ostream& os, const offset_fetch_response_topic& t) {
-    fmt::print(os, "name {} partitions {}", t.name, t.partitions);
+std::ostream& operator<<(std::ostream& os, const offset_fetch_request& r) {
+    os << r.data;
     return os;
 }
 
 std::ostream& operator<<(std::ostream& os, const offset_fetch_response& r) {
-    fmt::print(os, "topics {}", r.data.topics);
+    os << r.data;
     return os;
 }
 

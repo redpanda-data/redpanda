@@ -1,6 +1,8 @@
 #pragma once
 #include "kafka/errors.h"
 #include "kafka/requests/fwd.h"
+#include "kafka/requests/schemata/sync_group_request.h"
+#include "kafka/requests/schemata/sync_group_response.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "seastarx.h"
@@ -22,56 +24,55 @@ struct sync_group_api final {
 };
 
 struct sync_group_request final {
-    struct member_assignment {
-        kafka::member_id member;
-        bytes assignment;
-    };
-
-    kafka::group_id group_id;
-    kafka::generation_id generation_id;
-    kafka::member_id member_id;
-    std::optional<kafka::group_instance_id> group_instance_id; // >= v3
-    std::vector<member_assignment> assignments;
+    sync_group_request_data data;
 
     // set during request processing after mapping group to ntp
     model::ntp ntp;
 
-    void encode(const request_context& ctx, response_writer& writer);
-    void decode(request_context& ctx);
+    void encode(response_writer& writer, api_version version) {
+        data.encode(writer, version);
+    }
+
+    void decode(request_reader& reader, api_version version) {
+        data.decode(reader, version);
+    }
 
     assignments_type member_assignments() && {
         assignments_type res;
-        res.reserve(assignments.size());
+        res.reserve(data.assignments.size());
         std::for_each(
-          std::begin(assignments),
-          std::end(assignments),
-          [&res](member_assignment& a) mutable {
-              res.emplace(std::move(a.member), std::move(a.assignment));
+          std::begin(data.assignments),
+          std::end(data.assignments),
+          [&res](sync_group_request_assignment& a) mutable {
+              res.emplace(std::move(a.member_id), std::move(a.assignment));
           });
         return res;
     }
 };
 
-std::ostream& operator<<(std::ostream&, const sync_group_request&);
+static inline std::ostream&
+operator<<(std::ostream& os, const sync_group_request& r) {
+    return os << r.data;
+}
 
 struct sync_group_response final {
     using api_type = sync_group_api;
 
-    std::chrono::milliseconds throttle_time = std::chrono::milliseconds(
-      0); // >= v1
-    error_code error;
-    bytes assignment;
+    sync_group_response_data data;
 
     sync_group_response(error_code error, bytes assignment)
-      : throttle_time(0)
-      , error(error)
-      , assignment(std::move(assignment)) {}
+      : data({
+        .throttle_time_ms = std::chrono::milliseconds(0),
+        .error_code = error,
+        .assignment = std::move(assignment),
+      }) {}
 
     explicit sync_group_response(error_code error)
-      : throttle_time(0)
-      , error(error) {}
+      : sync_group_response(error, bytes()) {}
 
-    void encode(const request_context& ctx, response& resp);
+    void encode(const request_context& ctx, response& resp) {
+        data.encode(ctx, resp);
+    }
 };
 
 static inline ss::future<sync_group_response>
@@ -79,6 +80,9 @@ make_sync_error(error_code error) {
     return ss::make_ready_future<sync_group_response>(error);
 }
 
-std::ostream& operator<<(std::ostream&, const sync_group_response&);
+static inline std::ostream&
+operator<<(std::ostream& os, const sync_group_response& r) {
+    return os << r.data;
+}
 
 } // namespace kafka

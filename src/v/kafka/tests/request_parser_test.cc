@@ -97,31 +97,31 @@ static iobuf handle_request(kafka::request_context&& ctx) {
         vlog(rlog.info, "kafka::join_group_api::key");
         kafka::join_group_request r;
         r.decode(ctx);
-        r.encode(ctx, writer);
+        r.encode(writer, ctx.header().version);
         break;
     }
 
     case kafka::sync_group_api::key: {
         vlog(rlog.info, "kafka::sync_group_api::key");
         kafka::sync_group_request r;
-        r.decode(ctx);
-        r.encode(ctx, writer);
+        r.decode(ctx.reader(), ctx.header().version);
+        r.encode(writer, ctx.header().version);
         break;
     }
 
     case kafka::heartbeat_api::key: {
         vlog(rlog.info, "kafka::heartbeat_api::key");
         kafka::heartbeat_request r;
-        r.decode(ctx);
-        r.encode(ctx, writer);
+        r.decode(ctx.reader(), ctx.header().version);
+        r.encode(writer, ctx.header().version);
         break;
     }
 
     case kafka::leave_group_api::key: {
         vlog(rlog.info, "kafka::leave_group_api::key");
         kafka::leave_group_request r;
-        r.decode(ctx);
-        r.encode(ctx, writer);
+        r.decode(ctx.reader(), ctx.header().version);
+        r.encode(writer, ctx.header().version);
         break;
     }
 
