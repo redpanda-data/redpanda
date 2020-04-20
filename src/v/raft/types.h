@@ -66,12 +66,17 @@ struct group_configuration {
 struct follower_index_metadata {
     explicit follower_index_metadata(model::node_id node)
       : node_id(node) {}
-
     model::node_id node_id;
     // index of last known log for this follower
-    model::offset last_log_index;
+    model::offset last_committed_log_index;
+    // index of last not flushed offset
+    model::offset last_dirty_log_index;
     // index of log for which leader and follower logs matches
     model::offset match_index;
+    // Used to establish index persistently replicated by majority
+    constexpr model::offset match_committed_index() const {
+        return std::min(last_committed_log_index, match_index);
+    }
     // next index to send to this follower
     model::offset next_index;
     // timestamp of last append_entries_rpc call
@@ -117,7 +122,8 @@ struct append_entries_reply {
     /// \brief The recipient's last log index after it applied changes to
     /// the log. This is used to speed up finding the correct value for the
     /// nextIndex with a follower that is far behind a leader
-    model::offset last_log_index;
+    model::offset last_committed_log_index;
+    model::offset last_dirty_log_index;
     /// \brief did the rpc succeed or not
     status result = status::failure;
 };

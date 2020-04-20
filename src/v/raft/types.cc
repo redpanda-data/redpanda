@@ -46,7 +46,9 @@ group_configuration::brokers_t group_configuration::all_brokers() const {
 
 std::ostream& operator<<(std::ostream& o, const append_entries_reply& r) {
     return o << "{node_id: " << r.node_id << ", group: " << r.group
-             << ", term:" << r.term << ", last_log_index:" << r.last_log_index
+             << ", term:" << r.term
+             << ", last_dirty_log_index:" << r.last_dirty_log_index
+             << ", last_committed_log_index:" << r.last_committed_log_index
              << ", result: " << r.result << "}";
 }
 
@@ -57,7 +59,8 @@ std::ostream& operator<<(std::ostream& o, const vote_request& r) {
 }
 std::ostream& operator<<(std::ostream& o, const follower_index_metadata& i) {
     return o << "{node_id: " << i.node_id
-             << ", last_log_idx: " << i.last_log_index
+             << ", last_committed_log_idx: " << i.last_committed_log_index
+             << ", last_dirty_log_idx: " << i.last_dirty_log_index
              << ", match_index: " << i.match_index
              << ", next_index: " << i.next_index
              << ", is_learner: " << i.is_learner
