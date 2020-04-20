@@ -115,6 +115,9 @@ path_type_map = {
             "GroupInstanceId": ("kafka::group_instance_id", "string"),
         },
     },
+    "DeleteTopicsRequestData": {
+        "TimeoutMs": ("std::chrono::milliseconds", "int32"),
+    },
 }
 
 # a few kafka field types specify an entity type
@@ -157,6 +160,7 @@ STRUCT_TYPES = [
     "SyncGroupRequestAssignment",
     "MemberIdentity",
     "MemberResponse",
+    "DeletableTopicResult",
 ]
 
 SCALAR_TYPES = list(basic_type_map.keys())
@@ -629,7 +633,7 @@ void {{ struct.name }}::decode(iobuf buf, api_version version) {
 {% for struct in structs %}
 std::ostream& operator<<(std::ostream& o, const {{ struct.name }}& v) {
     fmt::print(o,
-      "{{'{' + struct.format + '}'}}",
+      "{{'{{' + struct.format + '}}'}}",
       {%- for field in struct.fields %}
       v.{{ field.name }}{% if not loop.last %},{% endif %}
       {%- endfor %}

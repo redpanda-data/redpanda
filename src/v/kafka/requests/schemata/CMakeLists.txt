@@ -14,7 +14,9 @@ set(schemata
   heartbeat_request.json
   heartbeat_response.json
   leave_group_request.json
-  leave_group_response.json)
+  leave_group_response.json
+  delete_topics_request.json
+  delete_topics_response.json)
 
 set(srcs)
 foreach(schema ${schemata})
