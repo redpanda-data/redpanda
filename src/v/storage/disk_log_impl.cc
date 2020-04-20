@@ -333,7 +333,18 @@ ss::future<> disk_log_impl::do_truncate(model::offset o) {
           }
           _probe.remove_partition_bytes(
             last->reader().file_size() - file_position);
-          return last->truncate(prev_last_offset, file_position);
+          return last->truncate(prev_last_offset, file_position)
+            .handle_exception([last, phs, this](std::exception_ptr e) {
+                vassert(
+                  false,
+                  "Could not truncate:{} logical max:{}, physical offset:{} on "
+                  "segment:{} - log:{}",
+                  e,
+                  phs->first,
+                  phs->second,
+                  last,
+                  *this);
+            });
       });
 } // namespace storage
 
