@@ -633,7 +633,7 @@ void {{ struct.name }}::decode(iobuf buf, api_version version) {
 {% for struct in structs %}
 std::ostream& operator<<(std::ostream& o, const {{ struct.name }}& v) {
     fmt::print(o,
-      "{{'{' + struct.format + '}'}}",
+      "{{'{{' + struct.format + '}}'}}",
       {%- for field in struct.fields %}
       v.{{ field.name }}{% if not loop.last %},{% endif %}
       {%- endfor %}
