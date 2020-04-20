@@ -1,6 +1,7 @@
 #include "kafka/requests/api_versions_request.h"
 
 #include "kafka/requests/create_topics_request.h"
+#include "kafka/requests/delete_topics_request.h"
 #include "kafka/requests/describe_configs_request.h"
 #include "kafka/requests/fetch_request.h"
 #include "kafka/requests/find_coordinator_request.h"
@@ -48,7 +49,8 @@ using request_types = make_request_types<
   sync_group_api,
   create_topics_api,
   offset_commit_api,
-  describe_configs_api>;
+  describe_configs_api,
+  delete_topics_api>;
 
 template<typename RequestType>
 static auto make_api() {
