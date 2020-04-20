@@ -3,7 +3,9 @@
 #include "likely.h"
 #include "model/record_utils.h"
 #include "storage/disk_log_impl.h"
+#include "storage/logger.h"
 #include "storage/segment_appender.h"
+#include "vlog.h"
 
 #include <type_traits>
 
@@ -25,11 +27,11 @@ ss::future<> disk_log_appender::initialize() {
     if (_log._segs.empty()) {
         return ss::make_ready_future<>();
     }
-    _cache = _log._segs.back();
-    _cache_lock = std::nullopt;
-    _bytes_left_in_cache_segment = 0;
+    release_lock();
+    auto ptr = _log._segs.back();
     // appending is a non-destructive op. so acquire read lock
-    return _cache->read_lock().then([this](ss::rwlock::holder h) {
+    return ptr->read_lock().then([this, ptr](ss::rwlock::holder h) {
+        _cache = ptr;
         _cache_lock = std::move(h);
         _bytes_left_in_cache_segment = _log.bytes_left_before_roll();
     });
@@ -51,11 +53,21 @@ bool disk_log_appender::needs_to_roll_log(model::term_id batch_term) const {
            || _log._segs.empty() /*see above before removing this condition*/;
 }
 
+void disk_log_appender::release_lock() {
+    _cache = nullptr;
+    _cache_lock = std::nullopt;
+    _bytes_left_in_cache_segment = 0;
+}
+
 ss::future<ss::stop_iteration>
 disk_log_appender::operator()(model::record_batch&& batch) {
     batch.header().base_offset = _idx;
     batch.header().header_crc = model::internal_header_only_crc(batch.header());
     _idx = batch.last_offset() + model::offset(1);
+    if (_last_term != batch.term()) {
+        // release the lock!
+        release_lock();
+    }
     _last_term = batch.term();
     auto next_offset = batch.base_offset();
     auto f = ss::make_ready_future<>();
@@ -92,6 +104,7 @@ disk_log_appender::operator()(model::record_batch&& batch) {
           });
       })
       .handle_exception([this](std::exception_ptr e) {
+          release_lock();
           vlog(stlog.info, "Could not append batch: {} - {}", e, *this);
           _log.get_probe().batch_write_error(e);
           return ss::make_exception_future<ss::stop_iteration>(e);
@@ -107,7 +120,10 @@ ss::future<append_result> disk_log_appender::end_of_stream() {
     if (_config.should_fsync == storage::log_append_config::fsync::no) {
         return ss::make_ready_future<append_result>(retval);
     }
-    return _log.flush().then([retval] { return retval; });
+    return _log.flush().then([this, retval] {
+        release_lock();
+        return retval;
+    });
 }
 
 std::ostream& operator<<(std::ostream& o, const disk_log_appender& a) {

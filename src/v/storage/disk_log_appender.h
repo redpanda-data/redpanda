@@ -26,6 +26,7 @@ public:
 
 private:
     bool needs_to_roll_log(model::term_id) const;
+    void release_lock();
 
     disk_log_impl& _log;
     log_append_config _config;
