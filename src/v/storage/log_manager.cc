@@ -20,9 +20,11 @@
 
 #include <seastar/core/file.hh>
 #include <seastar/core/future-util.hh>
+#include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/print.hh>
 #include <seastar/core/seastar.hh>
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/core/thread.hh>
 
 #include <absl/time/time.h>
@@ -115,13 +117,23 @@ ss::future<ss::lw_shared_ptr<segment>> log_manager::do_make_log_segment(
     const auto flags = ss::open_flags::create | ss::open_flags::rw;
     return ss::open_file_dma(path.string(), flags, std::move(opt))
       .then([pc, this](ss::file writer) {
-          if (_config.sanitize_fileops) {
-              writer = ss::file(
-                ss::make_shared(file_io_sanitizer(std::move(writer))));
+          try {
+              if (_config.sanitize_fileops) {
+                  writer = ss::file(
+                    ss::make_shared(file_io_sanitizer(std::move(writer))));
+              }
+              return ss::make_ready_future<segment_appender_ptr>(
+                std::make_unique<segment_appender>(
+                  writer,
+                  segment_appender::options(
+                    pc, segment_appender::chunks_no_buffer)));
+          } catch (...) {
+              auto e = std::current_exception();
+              vlog(stlog.error, "could not allocate appender: {}", e);
+              return writer.close().then([e = e] {
+                  return ss::make_exception_future<segment_appender_ptr>(e);
+              });
           }
-          return std::make_unique<segment_appender>(
-            writer,
-            segment_appender::options(pc, segment_appender::chunks_no_buffer));
       })
       .then([this, buf_size, path](segment_appender_ptr a) {
           return open_segment(path, buf_size)
