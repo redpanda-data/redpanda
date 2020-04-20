@@ -92,6 +92,7 @@ disk_log_appender::operator()(model::record_batch&& batch) {
           });
       })
       .handle_exception([this](std::exception_ptr e) {
+          vlog(stlog.info, "Could not append batch: {} - {}", e, *this);
           _log.get_probe().batch_write_error(e);
           return ss::make_exception_future<ss::stop_iteration>(e);
       });
