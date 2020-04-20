@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"time"
 	"vectorized/pkg/api"
@@ -10,6 +11,7 @@ import (
 	"vectorized/pkg/system"
 
 	"github.com/Shopify/sarama"
+	"github.com/olekukonko/tablewriter"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
@@ -72,6 +74,9 @@ func executeStatus(
 			" be sent. To enable it, run" +
 			" `rpk config set rpk.enable_usage_stats true`.")
 	}
+	t := ui.NewRpkTable(log.StandardLogger().Out)
+	t.SetColWidth(1000)
+	t.SetAutoWrapText(false)
 	metrics, errs := system.GatherMetrics(fs, timeout, *conf)
 	if len(errs) != 0 {
 		for _, err := range errs {
@@ -90,7 +95,7 @@ func executeStatus(
 	if len(cpuInfo) > 0 {
 		cpuModel = cpuInfo[0].ModelName
 	}
-	printMetrics(metrics, osInfo, cpuModel)
+	printMetrics(t, metrics, osInfo, cpuModel)
 
 	if conf.Rpk.EnableUsageStats && send {
 		if conf.NodeUuid == "" {
@@ -106,12 +111,13 @@ func executeStatus(
 		}
 	}
 
-	jsonConf, err := config.ReadToJson(fs, configFile)
+	props, err := config.ReadFlat(fs, configFile)
 	if err != nil {
 		log.Info("Error reading or parsing configuration: ", err)
 	} else {
-		printConfig(jsonConf)
+		printConfig(t, props)
 	}
+	t.Render()
 	topics, err := topicsDetail(
 		conf.Redpanda.KafkaApi.Address,
 		conf.Redpanda.KafkaApi.Port,
@@ -125,21 +131,26 @@ func executeStatus(
 	return nil
 }
 
-func printMetrics(p *system.Metrics, osInfo, cpuModel string) {
-	t := ui.NewRpkTable(log.StandardLogger().Out)
+func printMetrics(
+	t *tablewriter.Table, p *system.Metrics, osInfo, cpuModel string,
+) {
 	t.SetHeader([]string{"Name", "Value"})
 	t.Append([]string{"OS", osInfo})
 	t.Append([]string{"CPU Model", cpuModel})
 	t.Append([]string{"CPU Usage %", fmt.Sprint(p.CpuPercentage)})
 	t.Append([]string{"Free Memory (MB)", fmt.Sprint(p.FreeMemoryMB)})
 	t.Append([]string{"Free Space  (MB)", fmt.Sprint(p.FreeSpaceMB)})
-	t.Render()
 }
 
-func printConfig(jsonConfig string) {
-	t := ui.NewRpkTable(log.StandardLogger().Out)
-	t.Append([]string{"Current Config", jsonConfig})
-	t.Render()
+func printConfig(t *tablewriter.Table, conf map[string]string) {
+	keys := []string{}
+	for k := range conf {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		t.Append([]string{k, conf[k]})
+	}
 }
 
 func printKafkaInfo(topics []*sarama.TopicMetadata) {
