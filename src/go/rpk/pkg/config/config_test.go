@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -707,6 +708,30 @@ rpk:
 			trimmed = strings.ReplaceAll(trimmed, "\t", "")
 			require.Equal(t, tt.expectedJson, trimmed)
 		})
+	}
+}
+
+func TestReadFlat(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	conf := DefaultConfig()
+	err := WriteConfig(fs, &conf, conf.ConfigFile)
+	require.NoError(t, err)
+	props, err := ReadFlat(fs, conf.ConfigFile)
+	require.NoError(t, err)
+	require.NotEqual(t, 0, len(props))
+
+	bs, err := yaml.Marshal(conf)
+	require.NoError(t, err)
+	buf := bytes.NewBuffer(bs)
+
+	v := viper.New()
+	v.SetConfigType("yaml")
+	err = v.ReadConfig(buf)
+	require.NoError(t, err)
+	keys := v.AllKeys()
+	require.Equal(t, len(keys), len(props))
+	for _, k := range keys {
+		require.Equal(t, v.GetString(k), props[k])
 	}
 }
 
