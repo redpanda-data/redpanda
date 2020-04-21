@@ -1,7 +1,6 @@
 package system
 
 import (
-	"fmt"
 	"strconv"
 	"time"
 	"vectorized/pkg/config"
@@ -47,17 +46,11 @@ func GatherMetrics(
 }
 
 func redpandaCpuPercentage(fs afero.Fs, pidFile string) (float64, error) {
-	lines, err := utils.ReadFileLines(fs, pidFile)
+	pidStr, err := utils.ReadEnsureSingleLine(fs, pidFile)
 	if err != nil {
 		return 0, err
 	}
-	if len(lines) == 0 {
-		return 0, fmt.Errorf("No PID present in %s", pidFile)
-	}
-	if len(lines) > 1 {
-		return 0, fmt.Errorf("PID file corrupt: %s", pidFile)
-	}
-	pid, err := strconv.Atoi(lines[0])
+	pid, err := strconv.Atoi(pidStr)
 	if err != nil {
 		return 0, err
 	}
