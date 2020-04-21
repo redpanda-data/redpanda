@@ -60,7 +60,7 @@ void disk_log_appender::release_lock() {
 }
 
 ss::future<ss::stop_iteration>
-disk_log_appender::operator()(model::record_batch&& batch) {
+disk_log_appender::operator()(model::record_batch& batch) {
     batch.header().base_offset = _idx;
     batch.header().header_crc = model::internal_header_only_crc(batch.header());
     _idx = batch.last_offset() + model::offset(1);
@@ -90,8 +90,8 @@ disk_log_appender::operator()(model::record_batch&& batch) {
           });
     }
     return f
-      .then([this, batch = std::move(batch)]() mutable {
-          return _cache->append(std::move(batch)).then([this](append_result r) {
+      .then([this, &batch]() mutable {
+          return _cache->append(batch).then([this](append_result r) {
               _byte_size += r.byte_size;
               // do not track base_offset, only the last one
               _last_offset = r.last_offset;

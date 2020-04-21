@@ -34,7 +34,7 @@ static inline ss::future<> persist_log_file(
                 auto reader = model::make_memory_record_batch_reader(
                   std::move(b));
                 return std::move(reader)
-                  .consume(log.make_appender(cfg), cfg.timeout)
+                  .for_each_ref(log.make_appender(cfg), cfg.timeout)
                   .then([log](storage::append_result) mutable {
                       return log.flush();
                   })

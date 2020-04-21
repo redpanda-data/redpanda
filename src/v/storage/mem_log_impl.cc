@@ -112,7 +112,7 @@ public:
     ss::future<> initialize() final { return ss::make_ready_future<>(); }
 
     inline ss::future<ss::stop_iteration>
-    operator()(model::record_batch&&) final;
+    operator()(model::record_batch&) final;
 
     inline ss::future<append_result> end_of_stream() final;
 
@@ -258,7 +258,7 @@ struct mem_log_impl final : log::impl {
 };
 
 ss::future<ss::stop_iteration>
-mem_log_appender::operator()(model::record_batch&& batch) {
+mem_log_appender::operator()(model::record_batch& batch) {
     batch.header().base_offset = _cur_offset;
     _byte_size += batch.header().size_bytes;
     stlog.trace(
