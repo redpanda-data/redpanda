@@ -6,13 +6,14 @@
 #include <memory>
 
 namespace model {
+using data_t = record_batch_reader::data_t;
+using foreign_data_t = record_batch_reader::foreign_data_t;
+using storage_t = record_batch_reader::storage_t;
+
 /// \brief wraps a reader into a foreign_ptr<unique_ptr>
 record_batch_reader make_foreign_record_batch_reader(record_batch_reader&& r) {
     class foreign_reader final : public record_batch_reader::impl {
     public:
-        using storage_t = record_batch_reader::storage_t;
-        using remote_recs = ss::foreign_ptr<std::unique_ptr<storage_t>>;
-
         explicit foreign_reader(std::unique_ptr<record_batch_reader::impl> i)
           : _ptr(std::move(i)) {}
         foreign_reader(const foreign_reader&) = delete;
@@ -27,7 +28,11 @@ record_batch_reader make_foreign_record_batch_reader(record_batch_reader&& r) {
         }
 
         void print(std::ostream& os) final {
-            fmt::print(os, "foreign_reader. core:", _ptr.get_owner_shard());
+            fmt::print(
+              os,
+              "foreign_record_batch_reader. remote_core:{} - proxy for:",
+              _ptr.get_owner_shard());
+            _ptr->print(os);
         }
 
         ss::future<storage_t> do_load_slice(timeout_clock::time_point t) final {
@@ -37,21 +42,16 @@ record_batch_reader make_foreign_record_batch_reader(record_batch_reader&& r) {
             }
             // TODO: this function should take an SMP group
             return ss::smp::submit_to(shard, [this, t] {
-                // must convert it to a foreign remote
-                return _ptr->do_load_slice(t)
-                  .then([](storage_t recs) {
-                      auto p = std::make_unique<storage_t>(std::move(recs));
-                      return ss::make_foreign(std::move(p));
-                  })
-                  .then([](remote_recs recs) {
-                      // FIXME: copy them for now
-                      storage_t ret;
-                      ret.reserve(recs->size());
-                      for (auto& b : *recs) {
-                          ret.push_back(b.copy());
-                      }
-                      return ret;
-                  });
+                return _ptr->do_load_slice(t).then([](storage_t recs) {
+                    if (likely(std::holds_alternative<data_t>(recs))) {
+                        auto& d = std::get<data_t>(recs);
+                        auto p = std::make_unique<data_t>(std::move(d));
+                        return storage_t(foreign_data_t{
+                          .buffer = ss::make_foreign(std::move(p)),
+                          .index = 0});
+                    }
+                    return recs;
+                });
             });
         }
 
@@ -62,11 +62,10 @@ record_batch_reader make_foreign_record_batch_reader(record_batch_reader&& r) {
     return record_batch_reader(std::move(frn));
 }
 
-record_batch_reader
-make_memory_record_batch_reader(record_batch_reader::storage_t batches) {
+record_batch_reader make_memory_record_batch_reader(data_t batches) {
     class reader final : public record_batch_reader::impl {
     public:
-        explicit reader(record_batch_reader::storage_t batches)
+        explicit reader(data_t batches)
           : _batches(std::move(batches)) {}
 
         bool is_end_of_stream() const final { return _batches.empty(); }
@@ -83,9 +82,8 @@ make_memory_record_batch_reader(record_batch_reader::storage_t batches) {
         }
 
     private:
-        record_batch_reader::storage_t _batches;
+        data_t _batches;
     };
-
     return make_record_batch_reader<reader>(std::move(batches));
 }
 
@@ -107,14 +105,14 @@ record_batch_reader make_generating_record_batch_reader(
         ss::future<record_batch_reader::storage_t>
         do_load_slice(timeout_clock::time_point) final {
             return _gen().then([this](record_batch_opt batch) {
-                record_batch_reader::storage_t ret;
+                data_t ret;
                 if (!batch) {
                     _end_of_stream = true;
                 } else {
                     ret.reserve(1);
                     ret.push_back(std::move(*batch));
                 }
-                return ret;
+                return storage_t(std::move(ret));
             });
         }
 
@@ -126,7 +124,7 @@ record_batch_reader make_generating_record_batch_reader(
     return make_record_batch_reader<reader>(std::move(gen));
 }
 
-ss::future<record_batch_reader::storage_t> consume_reader_to_memory(
+ss::future<record_batch_reader::data_t> consume_reader_to_memory(
   record_batch_reader reader, timeout_clock::time_point timeout) {
     class memory_batch_consumer {
     public:
@@ -135,12 +133,10 @@ ss::future<record_batch_reader::storage_t> consume_reader_to_memory(
             return ss::make_ready_future<ss::stop_iteration>(
               ss::stop_iteration::no);
         }
-        ss::circular_buffer<model::record_batch> end_of_stream() {
-            return std::move(_result);
-        }
+        data_t end_of_stream() { return std::move(_result); }
 
     private:
-        ss::circular_buffer<model::record_batch> _result;
+        data_t _result;
     };
     return std::move(reader).consume(memory_batch_consumer{}, timeout);
 }

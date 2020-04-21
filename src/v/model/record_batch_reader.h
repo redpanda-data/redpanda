@@ -9,30 +9,38 @@
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/core/do_with.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/sharded.hh>
 #include <seastar/util/noncopyable_function.hh>
 #include <seastar/util/optimized_optional.hh>
 
-#include <gsl/span>
-
 #include <memory>
-#include <vector>
+#include <variant>
 
 namespace model {
 
 // clang-format off
 CONCEPT(template<typename Consumer> concept bool BatchReaderConsumer() {
-    return requires(Consumer c, record_batch b) {
+    return requires(Consumer c, record_batch&& b) {
         { c(std::move(b)) } -> ss::future<ss::stop_iteration>;
+        c.end_of_stream();
+    };
+})
+CONCEPT(template<typename ReferenceConsumer> concept bool ReferenceBatchReaderConsumer() {
+    return requires(ReferenceConsumer c, record_batch& b) {
+        { c(b) } -> ss::future<ss::stop_iteration>;
         c.end_of_stream();
     };
 })
 // clang-format on
 
-// A stream of `model::record_batch`s, consumed one-by-one but preloaded
-// in slices.
 class record_batch_reader final {
 public:
-    using storage_t = ss::circular_buffer<model::record_batch>;
+    using data_t = ss::circular_buffer<model::record_batch>;
+    struct foreign_data_t {
+        ss::foreign_ptr<std::unique_ptr<data_t>> buffer;
+        size_t index{0};
+    };
+    using storage_t = std::variant<data_t, foreign_data_t>;
 
     class impl {
     public:
@@ -50,8 +58,26 @@ public:
 
         virtual void print(std::ostream&) = 0;
 
-        bool is_slice_empty() const { return _slice.empty(); }
+        bool is_slice_empty() const {
+            return ss::visit(
+              _slice,
+              [](const data_t& d) {
+                  // circular buffer is the default
+                  return d.empty();
+              },
+              [](const foreign_data_t& d) {
+                  return d.index >= d.buffer->size();
+              });
+        }
 
+        /// Meant for non-owning iteration of the data. If you need to own the
+        /// batches, please use consume() below
+        template<typename ReferenceConsumer>
+        auto for_each_ref(ReferenceConsumer c, timeout_clock::time_point tm) {
+            return ss::do_with(std::move(c), [this, tm](ReferenceConsumer& c) {
+                return do_for_each_ref(c, tm);
+            });
+        }
         template<typename Consumer>
         auto consume(Consumer consumer, timeout_clock::time_point timeout) {
             return ss::do_with(
@@ -62,21 +88,58 @@ public:
 
     private:
         record_batch pop_batch() {
-            record_batch batch = std::move(_slice.front());
-            _slice.pop_front();
-            return batch;
+            return ss::visit(
+              _slice,
+              [](data_t& d) {
+                  record_batch batch = std::move(d.front());
+                  d.pop_front();
+                  return batch;
+              },
+              [](foreign_data_t& d) {
+                  // cannot have a move-only type from a remote core
+                  // we must make a copy. for iteration use for_each_ref
+                  return (*d.buffer)[d.index++].copy();
+              });
         }
-
         ss::future<> load_slice(timeout_clock::time_point timeout) {
-            return do_load_slice(timeout).then(
-              [this](storage_t s) { _slice = std::move(s); });
+            return do_load_slice(timeout).then([this](storage_t s) {
+                // reassign the local cache
+                _slice = std::move(s);
+            });
         }
-
+        template<typename ReferenceConsumer>
+        auto do_for_each_ref(
+          ReferenceConsumer& refc, timeout_clock::time_point timeout) {
+            return do_action(refc, timeout, [this](ReferenceConsumer& c) {
+                return ss::visit(
+                  _slice,
+                  [&c](data_t& d) {
+                      return c(d.front()).finally([&d] { d.pop_front(); });
+                  },
+                  [&c](foreign_data_t& d) {
+                      // for remote core, next simply means advancing the
+                      // pointer, we need to release the batches wholesale
+                      return c((*d.buffer)[d.index++]);
+                  });
+            });
+        }
         template<typename Consumer>
         auto do_consume(Consumer& consumer, timeout_clock::time_point timeout) {
-            return ss::repeat([this, timeout, &consumer] {
+            return do_action(consumer, timeout, [this](Consumer& c) {
+                return c(pop_batch());
+            });
+        }
+        template<typename ConsumerType, typename ActionFn>
+        auto do_action(
+          ConsumerType& consumer,
+          timeout_clock::time_point timeout,
+          ActionFn&& fn) {
+            return ss::repeat([this,
+                               timeout,
+                               &consumer,
+                               fn = std::forward<ActionFn>(fn)] {
                        if (likely(!is_slice_empty())) {
-                           return consumer(pop_batch());
+                           return fn(consumer);
                        }
                        if (is_end_of_stream()) {
                            return ss::make_ready_future<ss::stop_iteration>(
@@ -87,7 +150,6 @@ public:
                    })
               .then([&consumer] { return consumer.end_of_stream(); });
         }
-
         storage_t _slice;
     };
 
@@ -102,6 +164,30 @@ public:
 
     bool is_end_of_stream() const {
         return _impl->is_slice_empty() && _impl->is_end_of_stream();
+    }
+
+    /// \brief Intended for non-owning iteration of the data
+    /// if you need to own the data, please use consume() below
+    /// Stops when consumer returns stop_iteration::yes or end of stream
+    template<typename ReferenceConsumer>
+    CONCEPT(requires ReferenceBatchReaderConsumer<ReferenceConsumer>())
+    auto for_each_ref(
+      ReferenceConsumer consumer, timeout_clock::time_point timeout) & {
+        return _impl->for_each_ref(std::move(consumer), timeout);
+    }
+    /// \brief Intended for non-owning iteration of the data
+    /// if you need to own the data, please use consume() below
+    /// Stops when consumer returns stop_iteration::yes or end of stream
+    ///
+    /// r-value version so you can do std::move(reader).do_for_each_ref();
+    ///
+    template<typename ReferenceConsumer>
+    CONCEPT(requires ReferenceBatchReaderConsumer<ReferenceConsumer>())
+    auto for_each_ref(
+      ReferenceConsumer consumer, timeout_clock::time_point timeout) && {
+        auto raw = _impl.get();
+        return raw->for_each_ref(std::move(consumer), timeout)
+          .finally([i = std::move(_impl)] {});
     }
 
     // Stops when consumer returns stop_iteration::yes or end of stream is
@@ -168,18 +254,19 @@ record_batch_reader make_record_batch_reader(Args&&... args) {
 }
 
 record_batch_reader
-  make_memory_record_batch_reader(record_batch_reader::storage_t);
+  make_memory_record_batch_reader(record_batch_reader::data_t);
 
 inline record_batch_reader
 make_memory_record_batch_reader(model::record_batch b) {
-    record_batch_reader::storage_t batches;
+    record_batch_reader::data_t batches;
+    batches.reserve(1);
     batches.push_back(std::move(b));
     return make_memory_record_batch_reader(std::move(batches));
 }
 record_batch_reader make_generating_record_batch_reader(
   ss::noncopyable_function<ss::future<record_batch_opt>()>);
 
-ss::future<record_batch_reader::storage_t> consume_reader_to_memory(
+ss::future<record_batch_reader::data_t> consume_reader_to_memory(
   record_batch_reader, timeout_clock::time_point timeout);
 
 /// \brief wraps a reader into a foreign_ptr<unique_ptr>
