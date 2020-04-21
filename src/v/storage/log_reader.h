@@ -114,6 +114,10 @@ private:
 
 class log_reader final : public model::record_batch_reader::impl {
 public:
+    using data_t = model::record_batch_reader::data_t;
+    using foreign_data_t = model::record_batch_reader::foreign_data_t;
+    using storage_t = model::record_batch_reader::storage_t;
+
     log_reader(
       std::unique_ptr<lock_manager::lease>, log_reader_config, probe&) noexcept;
 
@@ -121,11 +125,10 @@ public:
         return _iterator.next_seg == _lease->range.end();
     }
 
-    ss::future<ss::circular_buffer<model::record_batch>>
-      do_load_slice(model::timeout_clock::time_point) final;
+    ss::future<storage_t> do_load_slice(model::timeout_clock::time_point) final;
 
     void print(std::ostream& os) final {
-        fmt::print(os, "disk reader config {}", _config);
+        fmt::print(os, "storage::log_reader. config {}", _config);
     }
 
 private:
