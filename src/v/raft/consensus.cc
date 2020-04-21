@@ -122,9 +122,10 @@ consensus::success_reply consensus::update_follower_index(
         _ctxlog.trace(
           "Updated node {} last log idx: {}",
           idx.node_id,
-          reply.last_log_index);
-        idx.last_log_index = model::offset(reply.last_log_index);
-        idx.next_index = details::next_offset(idx.last_log_index);
+          reply.last_committed_log_index);
+        idx.last_dirty_log_index = reply.last_dirty_log_index;
+        idx.last_committed_log_index = reply.last_committed_log_index;
+        idx.next_index = details::next_offset(idx.last_dirty_log_index);
     }
 
     if (reply.result == append_entries_reply::status::success) {
@@ -159,9 +160,10 @@ void consensus::process_append_entries_reply(
 void consensus::successfull_append_entries_reply(
   follower_index_metadata& idx, append_entries_reply reply) {
     // follower and leader logs matches
-    idx.last_log_index = model::offset(reply.last_log_index);
-    idx.match_index = idx.last_log_index;
-    idx.next_index = details::next_offset(idx.match_index);
+    idx.last_dirty_log_index = reply.last_dirty_log_index;
+    idx.last_committed_log_index = reply.last_committed_log_index;
+    idx.match_index = idx.last_dirty_log_index;
+    idx.next_index = details::next_offset(idx.last_dirty_log_index);
     _ctxlog.trace(
       "Updated node {} match {} and next {} indicies",
       idx.node_id,
@@ -172,7 +174,7 @@ void consensus::successfull_append_entries_reply(
 void consensus::dispatch_recovery(
   follower_index_metadata& idx, append_entries_reply reply) {
     auto log_max_offset = _log.dirty_offset();
-    if (idx.last_log_index >= log_max_offset) {
+    if (idx.last_dirty_log_index >= log_max_offset) {
         // follower is ahead of current leader
         // try to send last batch that leader have
         _ctxlog.trace(
@@ -475,7 +477,8 @@ consensus::do_append_entries(append_entries_request&& r) {
     reply.node_id = _self;
     reply.group = r.meta.group;
     reply.term = _meta.term;
-    reply.last_log_index = _meta.prev_log_index;
+    reply.last_dirty_log_index = _meta.prev_log_index;
+    reply.last_committed_log_index = _log.committed_offset();
     reply.result = append_entries_reply::status::failure;
     _probe.append_request();
 
@@ -591,13 +594,22 @@ consensus::do_append_entries(append_entries_request&& r) {
     // success. copy entries for each subsystem
     using offsets_ret = storage::append_result;
     return disk_append(std::move(r.batches))
-      .then([this, m = r.meta](offsets_ret ofs) mutable {
-          return maybe_update_follower_commit_idx(model::offset(m.commit_index))
-            .then([this, ofs = std::move(ofs)]() mutable {
-                // we do not want to include our disk flush latency into the
-                // leader vote timeout
-                _hbeat = clock_type::now();
-                return make_append_entries_reply(std::move(ofs));
+      .then([this, m = r.meta, flush = r.flush](offsets_ret ofs) mutable {
+          auto f = ss::make_ready_future<>();
+          if (flush) {
+              f = f.then([this] { return flush_log(); });
+          }
+
+          return f.then(
+            [this, m = std::move(m), ofs = std::move(ofs)]() mutable {
+                return maybe_update_follower_commit_idx(
+                         model::offset(m.commit_index))
+                  .then([this, ofs = std::move(ofs)]() mutable {
+                      // we do not want to include our disk flush latency into
+                      // the leader vote timeout
+                      _hbeat = clock_type::now();
+                      return make_append_entries_reply(std::move(ofs));
+                  });
             });
       });
 }
@@ -675,7 +687,8 @@ consensus::make_append_entries_reply(storage::append_result disk_results) {
     reply.node_id = _self;
     reply.group = _meta.group;
     reply.term = _meta.term;
-    reply.last_log_index = disk_results.last_offset;
+    reply.last_dirty_log_index = disk_results.last_offset;
+    reply.last_committed_log_index = _log.committed_offset();
     reply.result = append_entries_reply::status::success;
     return reply;
 }
@@ -708,12 +721,6 @@ consensus::disk_append(model::record_batch_reader&& reader) {
           // leader never flush just after write
           // for quorum_ack it flush in parallel to dispatching RPCs to
           // followers for other consistency flushes are done separately.
-
-          if (_vstate != vote_state::leader) {
-              return flush_log().then([ret = std::move(ret)] {
-                  return ss::make_ready_future<ret_t>(std::move(ret));
-              });
-          }
           return ss::make_ready_future<ret_t>(std::move(ret));
       });
 }
@@ -752,9 +759,9 @@ ss::future<> consensus::do_maybe_update_leader_commit_idx() {
 
     std::vector<model::offset> offsets;
     // self offsets
-    offsets.push_back(_log.dirty_offset());
+    offsets.push_back(_log.committed_offset());
     for (const auto& [_, f_idx] : _fstats) {
-        offsets.push_back(f_idx.match_index);
+        offsets.push_back(f_idx.match_committed_index());
     }
     std::sort(offsets.begin(), offsets.end());
     size_t majority_match_idx = (offsets.size() - 1) / 2;
@@ -782,7 +789,8 @@ consensus::maybe_update_follower_commit_idx(model::offset request_commit_idx) {
     // If leaderCommit > commitIndex, set commitIndex =
     // min(leaderCommit, index of last new entry)
     if (request_commit_idx > _meta.commit_index) {
-        auto new_commit_idx = std::min(request_commit_idx, _log.dirty_offset());
+        auto new_commit_idx = std::min(
+          request_commit_idx, _log.committed_offset());
         if (new_commit_idx != _meta.commit_index) {
             auto previous_commit_idx = _meta.commit_index;
             _meta.commit_index = new_commit_idx;
