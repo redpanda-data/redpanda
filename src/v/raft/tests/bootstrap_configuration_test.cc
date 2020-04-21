@@ -37,10 +37,12 @@ struct bootstrap_fixture : raft::simple_record_fixture {
           ss::default_priority_class(),
           model::no_timeout};
         std::vector<storage::append_result> res;
-        res.push_back(
-          datas(n).consume(get_log().make_appender(cfg), cfg.timeout).get0());
-        res.push_back(
-          configs(n).consume(get_log().make_appender(cfg), cfg.timeout).get0());
+        res.push_back(datas(n)
+                        .for_each_ref(get_log().make_appender(cfg), cfg.timeout)
+                        .get0());
+        res.push_back(configs(n)
+                        .for_each_ref(get_log().make_appender(cfg), cfg.timeout)
+                        .get0());
         get_log().flush().get();
         return res;
     }

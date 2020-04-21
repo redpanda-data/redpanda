@@ -100,7 +100,7 @@ ss::future<> disk_log_builder::write(
   const log_append_config& config) {
     auto reader = model::make_memory_record_batch_reader(std::move(buff));
     return std::move(reader)
-      .consume(_log->make_appender(config), config.timeout)
+      .for_each_ref(_log->make_appender(config), config.timeout)
       .then([this](auto) { return _log->flush(); });
 }
 

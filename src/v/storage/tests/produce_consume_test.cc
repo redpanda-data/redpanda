@@ -29,7 +29,7 @@ SEASTAR_THREAD_TEST_CASE(produce_consume_concurrency) {
               storage::test::make_random_batches(model::offset(0), 1)),
             [app_cfg, &log](model::record_batch_reader& rdr) {
                 return rdr
-                  .consume(log.make_appender(app_cfg), model::no_timeout)
+                  .for_each_ref(log.make_appender(app_cfg), model::no_timeout)
                   .then([&log](auto) { return log.flush(); });
             });
       });

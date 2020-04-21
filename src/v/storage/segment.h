@@ -33,7 +33,10 @@ public:
 
     /// main write interface
     /// auto indexes record_batch
-    ss::future<append_result> append(model::record_batch);
+    /// We recommend using the const-ref method below over the r-value since we
+    /// do not need to take ownership of the batch itself
+    ss::future<append_result> append(model::record_batch&&);
+    ss::future<append_result> append(const model::record_batch&);
 
     /// main read interface
     ss::input_stream<char>

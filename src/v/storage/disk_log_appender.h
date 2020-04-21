@@ -18,9 +18,9 @@ public:
       // expect the *next* valid (inclusive) offset
       model::offset offset) noexcept;
 
-    ss::future<> initialize();
+    ss::future<> initialize() final;
 
-    ss::future<ss::stop_iteration> operator()(model::record_batch&&) final;
+    ss::future<ss::stop_iteration> operator()(model::record_batch&) final;
 
     ss::future<append_result> end_of_stream() final;
 
