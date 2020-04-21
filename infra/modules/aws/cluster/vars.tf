@@ -28,7 +28,7 @@ variable "distro_ami" {
     "fedora-31" = "ami-0e82cc6ce8f393d4b"
 
     # https://cloud-images.ubuntu.com/locator/ec2/
-    "ubuntu-bionic"  = "ami-003634241a8fcdec0"
+    "ubuntu-bionic" = "ami-003634241a8fcdec0"
 
     # https://us-west-2.console.aws.amazon.com/ec2/v2/home?region=us-west-2#LaunchInstanceWizard:
     "rhel-8"         = "ami-087c2c50437d0b80d"
