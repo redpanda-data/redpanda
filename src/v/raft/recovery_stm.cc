@@ -86,7 +86,8 @@ ss::future<> recovery_stm::replicate(model::record_batch_reader&& reader) {
                         .term = _ptr->_meta.term,
                         .prev_log_index = prev_log_idx,
                         .prev_log_term = prev_log_term},
-      std::move(reader));
+      std::move(reader),
+      append_entries_request::flush_after_append::no);
 
     _ptr->update_node_hbeat_timestamp(_node_id);
 
