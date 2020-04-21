@@ -29,6 +29,20 @@ func ReadFileLines(fs afero.Fs, filePath string) ([]string, error) {
 	return lines, nil
 }
 
+func ReadEnsureSingleLine(fs afero.Fs, path string) (string, error) {
+	lines, err := ReadFileLines(fs, path)
+	if err != nil {
+		return "", err
+	}
+	if len(lines) == 0 {
+		return "", fmt.Errorf("%s is empty", path)
+	}
+	if len(lines) > 1 {
+		return "", fmt.Errorf("%s contains multiple lines", path)
+	}
+	return lines[0], nil
+}
+
 func ListFilesInPath(fs afero.Fs, path string) []string {
 	var names []string
 	file, _ := fs.Open(path)
