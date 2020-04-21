@@ -9,8 +9,10 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"vectorized/pkg/utils"
 
 	log "github.com/sirupsen/logrus"
+	"github.com/spf13/afero"
 )
 
 type Proc interface {
@@ -27,14 +29,7 @@ type proc struct{}
 func (proc *proc) RunWithSystemLdPath(
 	timeout time.Duration, command string, args ...string,
 ) ([]string, error) {
-	var env []string
-	ldLibraryPathPattern := regexp.MustCompile("^LD_LIBRARY_PATH=.*$")
-	for _, v := range os.Environ() {
-		if !ldLibraryPathPattern.MatchString(v) {
-			env = append(env, v)
-		}
-	}
-	return run(timeout, command, env, args...)
+	return runWithSystemLdPath(timeout, command, args...)
 }
 
 func (proc *proc) IsRunning(timeout time.Duration, processName string) bool {
@@ -43,6 +38,48 @@ func (proc *proc) IsRunning(timeout time.Duration, processName string) bool {
 		return false
 	}
 	return len(lines) > 0
+}
+
+func IsRunningPID(fs afero.Fs, pid int) (bool, error) {
+	// See http://man7.org/linux/man-pages/man5/proc.5.html
+	// section "/proc/[pid]/stat" for info on the info layout and possible
+	// process states.
+	deadStates := []string{"Z", "X", "x"}
+	l, err := utils.ReadEnsureSingleLine(
+		fs,
+		fmt.Sprintf("/proc/%d/stat", pid),
+	)
+	if err != nil {
+		// If the process info isn't there, it's because it doesn't exist
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	parts := strings.Split(l, " ")
+	if len(parts) < 3 {
+		return false, fmt.Errorf("corrupt info for process %d", pid)
+	}
+	state := parts[2]
+	for _, s := range deadStates {
+		if state == s {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func runWithSystemLdPath(
+	timeout time.Duration, command string, args ...string,
+) ([]string, error) {
+	var env []string
+	ldLibraryPathPattern := regexp.MustCompile("^LD_LIBRARY_PATH=.*$")
+	for _, v := range os.Environ() {
+		if !ldLibraryPathPattern.MatchString(v) {
+			env = append(env, v)
+		}
+	}
+	return run(timeout, command, env, args...)
 }
 
 func run(
