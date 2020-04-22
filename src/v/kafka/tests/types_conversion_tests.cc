@@ -1,3 +1,4 @@
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #define BOOST_TEST_MODULE utils
 #include "cluster/types.h"
@@ -28,9 +29,10 @@ BOOST_AUTO_TEST_CASE(test_all_additional_options) {
       .replication_factor = 5,
       .config = {
         {"compression.type", "snappy"},
-        {"cleanup.policy", "compact"},
-        {"retention.bytes", "1000000"},
+        {"cleanup.policy", "compact,delete"},
+        {"retention.bytes", "-1"},
         {"retention.ms", "86400000"},
+        {"compaction.strategy", "header"},
       }};
 
     auto cluster_tp_config = all_options.to_cluster_type();
@@ -43,9 +45,15 @@ BOOST_AUTO_TEST_CASE(test_all_additional_options) {
     BOOST_REQUIRE_EQUAL(
       cluster_tp_config.compression, model::compression::snappy);
     BOOST_REQUIRE_EQUAL(
-      cluster_tp_config.compaction, model::topic_partition::compaction::yes);
-    BOOST_REQUIRE_EQUAL(cluster_tp_config.retention_bytes, 1000000);
+      cluster_tp_config.compaction_strategy,
+      model::compaction_strategy::header);
+    BOOST_REQUIRE_EQUAL(cluster_tp_config.retention_bytes.is_disabled(), true);
     using namespace std::chrono_literals;
     BOOST_REQUIRE_EQUAL(
-      cluster_tp_config.retention.count(), (86400000ms).count());
+      cluster_tp_config.retention_duration.value().count(),
+      (86400000ms).count());
+    BOOST_REQUIRE_EQUAL(
+      cluster_tp_config.cleanup_policy_bitflags,
+      model::cleanup_policy_bitflags::compaction
+        | model::cleanup_policy_bitflags::deletion);
 }

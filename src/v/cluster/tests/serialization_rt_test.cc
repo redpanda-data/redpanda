@@ -1,29 +1,43 @@
+#include "cluster/tests/utils.h"
 #include "cluster/types.h"
+#include "model/compression.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "test_utils/rpc.h"
+#include "units.h"
 
 #include <seastar/testing/thread_test_case.hh>
+
+using namespace std::chrono_literals; // NOLINT
 
 SEASTAR_THREAD_TEST_CASE(topic_config_rt_test) {
     cluster::topic_configuration cfg(
       model::ns("test"), model::topic{"a_topic"}, 3, 1);
 
-    cfg.compaction = model::topic_partition::compaction::yes;
+    cfg.cleanup_policy_bitflags = model::cleanup_policy_bitflags::deletion
+                                  | model::cleanup_policy_bitflags::compaction;
+    cfg.compaction_strategy = model::compaction_strategy::offset;
     cfg.compression = model::compression::snappy;
-    cfg.retention_bytes = 4;
-    using namespace std::chrono_literals;
-    cfg.retention = 10h;
-    cfg.retention_bytes = (1 >> 30);
+    cfg.segment_size = std::optional<size_t>(1_GiB);
+    cfg.retention_bytes = tristate<size_t>{};
+    cfg.retention_duration = tristate<std::chrono::milliseconds>(10h);
+
     auto d = serialize_roundtrip_rpc(std::move(cfg));
 
     BOOST_REQUIRE_EQUAL(model::ns("test"), d.tp_ns.ns);
     BOOST_REQUIRE_EQUAL(model::topic("a_topic"), d.tp_ns.tp);
     BOOST_REQUIRE_EQUAL(3, d.partition_count);
     BOOST_REQUIRE_EQUAL(1, d.replication_factor);
-    BOOST_REQUIRE_EQUAL(model::topic_partition::compaction::yes, d.compaction);
     BOOST_REQUIRE_EQUAL(model::compression::snappy, d.compression);
-    BOOST_CHECK(10h == d.retention);
-    BOOST_REQUIRE_EQUAL((1 >> 30), d.retention_bytes);
+    BOOST_REQUIRE_EQUAL(
+      model::cleanup_policy_bitflags::deletion
+        | model::cleanup_policy_bitflags::compaction,
+      d.cleanup_policy_bitflags);
+
+    BOOST_REQUIRE_EQUAL(
+      model::compaction_strategy::offset, d.compaction_strategy);
+    BOOST_CHECK(10h == d.retention_duration.value());
+    BOOST_REQUIRE_EQUAL(tristate<size_t>{}, d.retention_bytes);
 }
 
 SEASTAR_THREAD_TEST_CASE(broker_metadata_rt_test) {
@@ -81,7 +95,7 @@ SEASTAR_THREAD_TEST_CASE(create_topics_request) {
       .topics = {cluster::topic_configuration(
                    model::ns("default"), model::topic("tp-1"), 12, 3),
                  cluster::topic_configuration(
-                   model::ns("default"), model::topic("tp-2"), 6, 5),},
+                   model::ns("default"), model::topic("tp-2"), 6, 5)},
       .timeout = std::chrono::seconds(1)};
     auto res = serialize_roundtrip_rpc(std::move(req));
     BOOST_CHECK(res.timeout == std::chrono::seconds(1));

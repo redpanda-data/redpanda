@@ -53,7 +53,7 @@ metadata_cache::get_topic_cfg(model::topic_namespace_view tp) const {
 std::optional<model::timestamp_type>
 metadata_cache::get_topic_timestamp_type(model::topic_namespace_view tp) const {
     if (auto it = _cache.find(tp); it != std::cend(_cache)) {
-        return it->second.configuration.message_timestamp_type;
+        return it->second.configuration.timestamp_type;
     }
 
     return std::nullopt;
