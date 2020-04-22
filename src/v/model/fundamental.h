@@ -60,6 +60,7 @@ enum class compaction_strategy : int8_t {
     header,
 };
 std::ostream& operator<<(std::ostream&, compaction_strategy);
+std::istream& operator>>(std::istream&, compaction_strategy&);
 
 using term_id = named_type<int64_t, struct model_raft_term_id_type>;
 
