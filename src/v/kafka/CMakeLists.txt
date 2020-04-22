@@ -18,7 +18,8 @@ set(request_srcs
   requests/sync_group_request.cc
   requests/create_topics_request.cc
   requests/offset_commit_request.cc
-  requests/delete_topics_request.cc)
+  requests/delete_topics_request.cc
+  requests/topics/types.cc)
 
 set(group_srcs
   groups/member.cc

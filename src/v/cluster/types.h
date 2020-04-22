@@ -7,6 +7,9 @@
 #include "model/timeout_clock.h"
 #include "raft/types.h"
 #include "reflection/adl.h"
+#include "storage/types.h"
+#include "tristate.h"
+#include "utils/to_string.h"
 
 #include <fmt/ostream.h>
 namespace raft {
@@ -52,24 +55,36 @@ struct partition_assignment {
     }
 };
 
+// Structure holding topic configuration, optionals will be replaced by broker
+// defaults
 struct topic_configuration {
-    topic_configuration(model::ns n, model::topic t, int32_t count, int16_t rf)
-      : tp_ns(std::move(n), std::move(t))
-      , partition_count(count)
-      , replication_factor(rf) {}
+    topic_configuration(
+      model::ns ns,
+      model::topic topic,
+      int32_t partition_count,
+      int16_t replication_factor);
+
     model::topic_namespace tp_ns;
     // using signed integer because Kafka protocol defines it as signed int
     int32_t partition_count;
     // using signed integer because Kafka protocol defines it as signed int
     int16_t replication_factor;
-    // topic configuration entries
-    model::compression compression = model::compression::none;
-    model::topic_partition::compaction compaction
-      = model::topic_partition::compaction::no;
-    uint64_t retention_bytes = 0;
-    model::timeout_clock::duration retention = model::max_duration;
-    model::timestamp_type message_timestamp_type{
-      model::timestamp_type::create_time};
+
+    std::optional<model::compression> compression;
+    std::optional<model::cleanup_policy_bitflags> cleanup_policy_bitflags;
+    std::optional<model::compaction_strategy> compaction_strategy;
+    std::optional<model::timestamp_type> timestamp_type;
+    std::optional<size_t> segment_size;
+
+    // Tristate fields
+    // Mapped according to the following policy:
+    //
+    // Kafka topic configuration value: -1 -> tristate disabled
+    // Kafka topic configuration value: preset -> tristate with value
+    // Kafka topic configuration value: not set -> tristate with std::nullopt
+    tristate<size_t> retention_bytes;
+    tristate<std::chrono::milliseconds> retention_duration;
+
     friend std::ostream& operator<<(std::ostream&, const topic_configuration&);
 };
 
