@@ -134,6 +134,7 @@ struct mem_log_impl final : log::impl {
     mem_log_impl(mem_log_impl&&) noexcept = default;
     mem_log_impl& operator=(mem_log_impl&&) noexcept = default;
     ss::future<> close() final { return ss::make_ready_future<>(); }
+    ss::future<> remove() final { return ss::make_ready_future<>(); }
     ss::future<> flush() final { return ss::make_ready_future<>(); }
 
     ss::future<std::optional<timequery_result>>
