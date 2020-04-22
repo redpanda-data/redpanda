@@ -39,6 +39,40 @@ struct append_op final : opfuzz::op {
           .discard_result();
     }
 };
+
+struct append_multi_term_op final : opfuzz::op {
+    ~append_multi_term_op() noexcept override = default;
+    const char* name() const final { return "append_with_multiple_terms"; }
+    ss::future<> invoke(opfuzz::op_context ctx) final {
+        storage::log_append_config append_cfg{
+          storage::log_append_config::fsync::yes,
+          ss::default_priority_class(),
+          model::no_timeout};
+        auto batches = storage::test::make_random_batches(model::offset(0), 10);
+        const size_t mid = batches.size() / 2;
+        vlog(
+          fuzzlogger.info,
+          "Appending multi-term: {} - middle:{} - batches. {}-{}",
+          batches.size(),
+          mid,
+          batches.front().base_offset(),
+          batches.back().last_offset());
+        for (size_t i = 0; i < mid; ++i) {
+            batches[i].set_term(*ctx.term);
+        }
+        (*ctx.term)++;
+        for (size_t i = mid; i < batches.size(); ++i) {
+            batches[i].set_term(*ctx.term);
+        }
+        auto reader = model::make_memory_record_batch_reader(
+          std::move(batches));
+
+        return std::move(reader)
+          .for_each_ref(ctx.log->make_appender(append_cfg), model::no_timeout)
+          .discard_result();
+    }
+};
+
 struct truncate_op final : opfuzz::op {
     struct collect_base_offsets {
         ss::future<ss::stop_iteration> operator()(model::record_batch batch) {
@@ -146,17 +180,21 @@ ss::future<> opfuzz::execute() {
 }
 
 std::unique_ptr<opfuzz::op> opfuzz::random_operation() {
-    switch (random_generators::get_int(0, 4)) {
-    case 0:
+    auto next = op_name(
+      random_generators::get_int((int)op_name::min, (int)op_name::max));
+    switch (next) {
+    case op_name::append:
         return std::make_unique<append_op>();
-    case 1:
+    case op_name::truncate:
         return std::make_unique<truncate_op>();
-    case 2:
+    case op_name::read:
         return std::make_unique<read_op>();
-    case 3:
+    case op_name::flush:
         return std::make_unique<flush_op>();
-    case 4:
+    case op_name::term_roll:
         return std::make_unique<term_roll_op>();
+    case op_name::append_with_multiple_terms:
+        return std::make_unique<append_multi_term_op>();
     }
     vassert(false, "could not generate random operation for log");
 }
