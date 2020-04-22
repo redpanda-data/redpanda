@@ -48,9 +48,6 @@ std::istream& operator>>(std::istream&, cleanup_policy_bitflags&);
 
 // Named after Kafka compaction.strategy topic property
 enum class compaction_strategy : int8_t {
-    /// \brief a regular topic type can be compacted with simple retention
-    /// policies (size base and time base)
-    regular,
     /// \brief offset compaction means the old schoold kafka compacted topics
     /// strategy before KIP 280
     offset,
