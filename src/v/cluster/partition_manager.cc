@@ -71,9 +71,7 @@ ss::future<consensus_ptr> partition_manager::manage(
   raft::group_id group,
   std::vector<model::broker> initial_nodes,
   std::optional<raft::consensus::append_entries_cb_t> ap_entries_cb) {
-    return _mngr
-      .manage(storage::ntp_config(
-        ntp, fmt::format("{}/{}", _mngr.config().base_dir, ntp.path())))
+    return _mngr.manage(storage::ntp_config(ntp, _mngr.config().base_dir))
       .then(
         [this,
          group,

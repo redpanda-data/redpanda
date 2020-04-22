@@ -23,9 +23,7 @@ static inline ss::future<> persist_log_file(
       [file_ntp = std::move(file_ntp),
        batches = std::move(batches)](storage::log_manager& mgr) mutable {
           return mgr
-            .manage(storage::ntp_config(
-              file_ntp,
-              fmt::format("{}/{}", mgr.config().base_dir, file_ntp.path())))
+            .manage(storage::ntp_config(file_ntp, mgr.config().base_dir))
             .then([b = std::move(batches)](storage::log log) mutable {
                 storage::log_append_config cfg{
                   storage::log_append_config::fsync::yes,
@@ -66,9 +64,7 @@ read_log_file(ss::sstring base_dir, model::ntp file_ntp) {
       make_log_mgr(std::move(base_dir)),
       [file_ntp = std::move(file_ntp)](storage::log_manager& mgr) mutable {
           return mgr
-            .manage(storage::ntp_config(
-              file_ntp,
-              fmt::format("{}/{}", mgr.config().base_dir, file_ntp.path())))
+            .manage(storage::ntp_config(file_ntp, mgr.config().base_dir))
             .then([](storage::log log) mutable {
                 return log
                   .make_reader(storage::log_reader_config(

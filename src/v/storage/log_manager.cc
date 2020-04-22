@@ -376,7 +376,7 @@ ss::future<log> log_manager::do_manage(ntp_config cfg) {
         return ss::make_exception_future<log>(std::runtime_error(
           "log_manager:: cannot have empty config.base_dir"));
     }
-    ss::sstring path = cfg.work_directory;
+    ss::sstring path = cfg.work_directory();
     vassert(
       _logs.find(cfg.ntp) == _logs.end(), "cannot double register same ntp");
     if (_config.stype == log_config::storage_type::memory) {
