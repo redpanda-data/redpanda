@@ -14,6 +14,7 @@
 #include <fmt/ostream.h>
 
 #include <iostream>
+#include <type_traits>
 
 namespace model {
 
@@ -228,6 +229,48 @@ std::ostream& operator<<(std::ostream& o, compaction_strategy c) {
         return o << "{compaction_strategy::header}";
     }
     return o << "{unknown model::compaction_strategy}";
+}
+
+std::istream& operator>>(std::istream& i, timestamp_type& ts_type) {
+    ss::sstring s;
+    i >> s;
+    ts_type = string_switch<timestamp_type>(s)
+                .match("LogAppendTime", timestamp_type::append_time)
+                .match("CreateTime", timestamp_type::create_time);
+    return i;
+};
+
+std::ostream& operator<<(std::ostream& o, cleanup_policy_bitflags c) {
+    o << "{";
+    auto has_prev = false;
+    if (std::underlying_type_t<cleanup_policy_bitflags>(
+          c & cleanup_policy_bitflags::deletion)) {
+        o << "cleanup_policy_bitflags::deletion";
+    }
+
+    if (std::underlying_type_t<cleanup_policy_bitflags>(
+          c & cleanup_policy_bitflags::compaction)) {
+        if (has_prev) {
+            o << " | ";
+        }
+        o << "cleanup_policy_bitflags::compaction";
+    }
+
+    return o << "}";
+}
+
+std::istream& operator>>(std::istream& i, cleanup_policy_bitflags& cp) {
+    ss::sstring s;
+    i >> s;
+    cp = string_switch<cleanup_policy_bitflags>(s)
+           .match("delete", cleanup_policy_bitflags::deletion)
+           .match("compact", cleanup_policy_bitflags::compaction)
+           .match_all(
+             "compact,delete",
+             "delete,compact",
+             cleanup_policy_bitflags::deletion
+               | cleanup_policy_bitflags::compaction);
+    return i;
 }
 
 } // namespace model

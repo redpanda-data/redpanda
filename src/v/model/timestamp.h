@@ -14,6 +14,7 @@ namespace model {
 enum class timestamp_type : uint8_t { create_time, append_time };
 
 std::ostream& operator<<(std::ostream&, timestamp_type);
+std::istream& operator>>(std::istream&, timestamp_type&);
 
 class timestamp {
 public:
