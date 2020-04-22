@@ -37,10 +37,10 @@ struct foreign_entry_fixture {
           model::no_timeout};
         std::vector<storage::append_result> res;
         res.push_back(gen_data_record_batch_reader(n)
-                        .consume(get_log().make_appender(cfg), cfg.timeout)
+                        .for_each_ref(get_log().make_appender(cfg), cfg.timeout)
                         .get0());
         res.push_back(gen_config_record_batch_reader(n)
-                        .consume(get_log().make_appender(cfg), cfg.timeout)
+                        .for_each_ref(get_log().make_appender(cfg), cfg.timeout)
                         .get0());
         get_log().flush().get();
         return res;

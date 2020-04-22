@@ -41,6 +41,9 @@ class mem_iter_reader final
   : public model::record_batch_reader::impl
   , public boost::intrusive::list_base_hook<> {
 public:
+    using data_t = model::record_batch_reader::data_t;
+    using foreign_data_t = model::record_batch_reader::foreign_data_t;
+    using storage_t = model::record_batch_reader::storage_t;
     using underlying_t = std::deque<model::record_batch>;
     using iterator = typename underlying_t::iterator;
     mem_iter_reader(
@@ -67,17 +70,16 @@ public:
                || _cur->base_offset() > _endoffset;
     }
 
-    ss::future<ss::circular_buffer<model::record_batch>>
+    ss::future<storage_t>
     do_load_slice(model::timeout_clock::time_point) final {
-        ss::circular_buffer<model::record_batch> ret;
+        data_t ret;
         if (!is_end_of_stream()) {
             ret.push_back(_cur->share());
             _cur = std::next(_cur);
         } else {
             _end_of_stream = true;
         }
-        return ss::make_ready_future<ss::circular_buffer<model::record_batch>>(
-          std::move(ret));
+        return ss::make_ready_future<storage_t>(std::move(ret));
     }
 
     void print(std::ostream& os) final {
@@ -110,7 +112,7 @@ public:
     ss::future<> initialize() final { return ss::make_ready_future<>(); }
 
     inline ss::future<ss::stop_iteration>
-    operator()(model::record_batch&&) final;
+    operator()(model::record_batch&) final;
 
     inline ss::future<append_result> end_of_stream() final;
 
@@ -256,7 +258,7 @@ struct mem_log_impl final : log::impl {
 };
 
 ss::future<ss::stop_iteration>
-mem_log_appender::operator()(model::record_batch&& batch) {
+mem_log_appender::operator()(model::record_batch& batch) {
     batch.header().base_offset = _cur_offset;
     _byte_size += batch.header().size_bytes;
     stlog.trace(

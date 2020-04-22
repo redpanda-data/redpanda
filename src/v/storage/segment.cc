@@ -144,34 +144,36 @@ void segment::cache_truncate(model::offset offset) {
     }
 }
 
-ss::future<append_result> segment::append(model::record_batch b) {
+ss::future<append_result> segment::append(const model::record_batch& b) {
     check_segment_not_closed("append()");
-    return ss::do_with(std::move(b), [this](model::record_batch& b) {
-        const auto start_physical_offset = _appender->file_byte_offset();
-        // proxy serialization to segment_appender_utils
-        return write(*_appender, b).then([this, &b, start_physical_offset] {
-            _dirty_offset = b.last_offset();
-            const auto end_physical_offset = _appender->file_byte_offset();
-            vassert(
-              end_physical_offset
-                == start_physical_offset + b.header().size_bytes,
-              "size must be deterministic: end_offset:{}, expected:{}",
-              end_physical_offset,
-              start_physical_offset + b.header().size_bytes);
-            // index the write
-            _idx.maybe_track(b.header(), start_physical_offset);
-            auto ret = append_result{.base_offset = b.base_offset(),
-                                     .last_offset = b.last_offset(),
-                                     .byte_size = (size_t)b.size_bytes()};
-            vassert(
-              b.header().ctx.owner_shard,
-              "Shard not set when writing to: {} - header: {}",
-              *this,
-              b.header());
-            // cache always copies the batch
-            cache_put(b);
-            return ret;
-        });
+    const auto start_physical_offset = _appender->file_byte_offset();
+    // proxy serialization to segment_appender_utils
+    return write(*_appender, b).then([this, &b, start_physical_offset] {
+        _dirty_offset = b.last_offset();
+        const auto end_physical_offset = _appender->file_byte_offset();
+        vassert(
+          end_physical_offset == start_physical_offset + b.header().size_bytes,
+          "size must be deterministic: end_offset:{}, expected:{}",
+          end_physical_offset,
+          start_physical_offset + b.header().size_bytes);
+        // index the write
+        _idx.maybe_track(b.header(), start_physical_offset);
+        auto ret = append_result{.base_offset = b.base_offset(),
+                                 .last_offset = b.last_offset(),
+                                 .byte_size = (size_t)b.size_bytes()};
+        vassert(
+          b.header().ctx.owner_shard,
+          "Shard not set when writing to: {} - header: {}",
+          *this,
+          b.header());
+        // cache always copies the batch
+        cache_put(b);
+        return ret;
+    });
+}
+ss::future<append_result> segment::append(model::record_batch&& b) {
+    return ss::do_with(std::move(b), [this](model::record_batch& b) mutable {
+        return append(b);
     });
 }
 

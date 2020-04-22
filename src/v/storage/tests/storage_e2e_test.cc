@@ -225,7 +225,8 @@ FIXTURE_TEST(test_append_batches_from_multiple_terms, storage_test_fixture) {
       model::no_timeout};
     auto reader = model::make_memory_record_batch_reader(std::move(batches));
     auto res = std::move(reader)
-                 .consume(log.make_appender(append_cfg), append_cfg.timeout)
+                 .for_each_ref(
+                   log.make_appender(append_cfg), append_cfg.timeout)
                  .get0();
     log.flush().get();
 

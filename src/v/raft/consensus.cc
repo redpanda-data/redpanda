@@ -709,7 +709,7 @@ consensus::disk_append(model::record_batch_reader&& reader) {
       model::timeout_clock::now() + _disk_timeout};
 
     return std::move(reader)
-      .consume(_log.make_appender(cfg), cfg.timeout)
+      .for_each_ref(_log.make_appender(cfg), cfg.timeout)
       .then([this](ret_t ret) {
           _has_pending_flushes = true;
           // TODO

@@ -257,8 +257,10 @@ disk_log_impl::timequery(timequery_config cfg) {
       .then([cfg](model::record_batch_reader reader) {
           return model::consume_reader_to_memory(
                    std::move(reader), model::no_timeout)
-            .then([cfg](model::record_batch_reader::storage_t batches) {
+            .then([cfg](model::record_batch_reader::storage_t st) {
                 using ret_t = std::optional<timequery_result>;
+                auto& batches = std::get<model::record_batch_reader::data_t>(
+                  st);
                 if (
                   !batches.empty()
                   && batches.front().header().first_timestamp >= cfg.time) {

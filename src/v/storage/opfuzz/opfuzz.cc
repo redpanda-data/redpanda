@@ -35,7 +35,7 @@ struct append_op final : opfuzz::op {
           std::move(batches));
 
         return std::move(reader)
-          .consume(ctx.log->make_appender(append_cfg), model::no_timeout)
+          .for_each_ref(ctx.log->make_appender(append_cfg), model::no_timeout)
           .discard_result();
     }
 };
