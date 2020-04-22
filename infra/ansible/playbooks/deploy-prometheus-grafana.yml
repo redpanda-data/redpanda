@@ -4,9 +4,7 @@
   vars:
     prometheus_targets:
       node:
-      - targets:
-        - "{{ groups['redpanda'][0] }}:9644"
-
+      - targets: "{{ groups['redpanda'] | map('extract', hostvars, ['ansible_default_ipv4','address']) | map('regex_replace', '^(.*)$','\\1:9644') | list  }}"
 - hosts: monitor
   roles:
   - role: cloudalchemy.grafana
