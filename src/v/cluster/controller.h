@@ -13,6 +13,7 @@
 #include "model/record.h"
 #include "seastarx.h"
 #include "storage/log_manager.h"
+#include "storage/types.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/condition-variable.hh>
@@ -135,7 +136,7 @@ private:
 
     ss::future<> manage_partition(
       partition_manager&,
-      model::ntp,
+      storage::ntp_config,
       raft::group_id,
       std::vector<model::broker_shard>);
 
@@ -157,8 +158,11 @@ private:
     ss::future<std::vector<topic_result>> process_autocreate_response(
       std::vector<topic_configuration>, result<create_topics_reply>);
 
+    storage::ntp_config make_raft0_ntp_config() const;
+
     model::broker _self;
     std::vector<config::seed_server> _seed_servers;
+    ss::sstring _data_directory;
     ss::sharded<partition_manager>& _pm;
     ss::sharded<shard_table>& _st;
     ss::sharded<metadata_cache>& _md_cache;

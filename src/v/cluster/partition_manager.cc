@@ -67,11 +67,11 @@ void partition_manager::trigger_leadership_notification(
 }
 
 ss::future<consensus_ptr> partition_manager::manage(
-  model::ntp ntp,
+  storage::ntp_config ntp_cfg,
   raft::group_id group,
   std::vector<model::broker> initial_nodes,
   std::optional<raft::consensus::append_entries_cb_t> ap_entries_cb) {
-    return _mngr.manage(storage::ntp_config(ntp, _mngr.config().base_dir))
+    return _mngr.manage(std::move(ntp_cfg))
       .then(
         [this,
          group,
