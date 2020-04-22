@@ -261,14 +261,11 @@ struct raft_group {
         auto ntp = node_ntp(_id, node_id);
         auto log_optional = _log_manager.local().get(ntp);
         if (!log_optional) {
-            log_optional.emplace(_log_manager.local()
-                                   .manage(storage::ntp_config(
-                                     ntp,
-                                     fmt::format(
-                                       "{}/{}",
-                                       _log_manager.local().config().base_dir,
-                                       ntp.path())))
-                                   .get0());
+            log_optional.emplace(
+              _log_manager.local()
+                .manage(storage::ntp_config(
+                  ntp, _log_manager.local().config().base_dir))
+                .get0());
         }
 
         tstlog.info("Enabling node {} in group {}", node_id, _id);
@@ -291,14 +288,11 @@ struct raft_group {
         auto ntp = node_ntp(_id, node_id);
         auto log_optional = _log_manager.local().get(ntp);
         if (!log_optional) {
-            log_optional.emplace(_log_manager.local()
-                                   .manage(storage::ntp_config(
-                                     ntp,
-                                     fmt::format(
-                                       "{}/{}",
-                                       _log_manager.local().config().base_dir,
-                                       ntp.path())))
-                                   .get0());
+            log_optional.emplace(
+              _log_manager.local()
+                .manage(storage::ntp_config(
+                  ntp, _log_manager.local().config().base_dir))
+                .get0());
         }
 
         auto broker = make_broker(node_id);

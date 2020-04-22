@@ -138,34 +138,39 @@ struct log_reader_config {
 };
 
 struct ntp_config {
-    ntp_config(model::ntp n, ss::sstring workdir) noexcept
+    ntp_config(model::ntp n, ss::sstring base_dir) noexcept
       : ntp_config(
-        std::move(n), std::move(workdir), model::compaction_strategy::regular) {
-    }
+        std::move(n),
+        std::move(base_dir),
+        model::compaction_strategy::regular) {}
 
     ntp_config(
-      model::ntp n, ss::sstring workdir, model::compaction_strategy c) noexcept
-      : ntp_config(std::move(n), std::move(workdir), c, std::nullopt) {}
+      model::ntp n, ss::sstring base_dir, model::compaction_strategy c) noexcept
+      : ntp_config(std::move(n), std::move(base_dir), c, std::nullopt) {}
 
     ntp_config(
       model::ntp n,
-      ss::sstring workdir,
+      ss::sstring base_dir,
       model::compaction_strategy c,
       std::optional<size_t> segment_sz) noexcept
       : ntp(std::move(n))
-      , work_directory(std::move(workdir))
+      , base_dir(std::move(base_dir))
       , cstrategy(c)
       , segment_size(segment_sz) {}
 
     model::ntp ntp;
-    /// \brief currently this is the basedir + ntp path. In the future
+    /// \brief currently this is the basedir. In the future
     /// this will be used to load balance on devices so that there is no
     /// implicit hierarchy, simply directories with data
-    ss::sstring work_directory;
+    ss::sstring base_dir;
     /// \brief
     model::compaction_strategy cstrategy;
     // if not set, use the log_manager's configuration
     std::optional<size_t> segment_size;
+
+    ss::sstring work_directory() const {
+        return fmt::format("{}/{}", base_dir, ntp.path());
+    }
 
     friend std::ostream& operator<<(std::ostream&, const ntp_config&);
 };
