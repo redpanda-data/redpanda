@@ -41,7 +41,12 @@ public:
         virtual ss::future<model::record_batch_reader>
           make_reader(log_reader_config) = 0;
         virtual log_appender make_appender(log_append_config) = 0;
+
+        // final operation. Invalid filesystem state after
         virtual ss::future<> close() = 0;
+        // final operation. Invalid state after
+        virtual ss::future<> remove() = 0;
+
         virtual ss::future<> flush() = 0;
 
         virtual ss::future<std::optional<timequery_result>>
@@ -64,6 +69,7 @@ public:
     explicit log(ss::shared_ptr<impl> i)
       : _impl(std::move(i)) {}
     ss::future<> close() { return _impl->close(); }
+    ss::future<> remove() { return _impl->remove(); }
     ss::future<> flush() { return _impl->flush(); }
 
     /**

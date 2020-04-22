@@ -38,9 +38,30 @@ disk_log_impl::disk_log_impl(
     _probe.setup_metrics(this->config().ntp);
 }
 disk_log_impl::~disk_log_impl() {
-    vassert(_closed, "log segment must be closed before deleting");
+    vassert(_closed, "log segment must be closed before deleting:{}", *this);
+}
+
+ss::future<> disk_log_impl::remove() {
+    vassert(!_closed, "Invalid double closing of log - {}", *this);
+    _closed = true;
+    // gets all the futures started in the background
+    std::vector<ss::future<>> permanent_delete;
+    permanent_delete.reserve(_segs.size());
+    while (!_segs.empty()) {
+        auto s = _segs.back();
+        _segs.pop_back();
+        permanent_delete.emplace_back(
+          remove_segment_permanently(s, "disk_log_impl::remove()"));
+    }
+    // wait for all futures
+    return ss::when_all_succeed(
+             permanent_delete.begin(), permanent_delete.end())
+      .then([this]() {
+          vlog(stlog.info, "Finished removing all segments:{}", config());
+      });
 }
 ss::future<> disk_log_impl::close() {
+    vassert(!_closed, "Invalid double closing of log - {}", *this);
     _closed = true;
     return ss::parallel_for_each(_segs, [](ss::lw_shared_ptr<segment>& h) {
         return h->close().handle_exception([h](std::exception_ptr e) {
@@ -89,6 +110,8 @@ disk_log_impl::garbage_collect_oldest_segments(model::timestamp time) {
 ss::future<> disk_log_impl::gc(
   model::timestamp collection_upper_bound,
   std::optional<size_t> max_partition_retention_size) {
+    vassert(!_closed, "gc on closed log - {}", *this);
+
     // TODO: this a workaround until we have raft-snapshotting in the the
     // controller so that we can still evict older data. At the moment we keep
     // the full history.
@@ -171,6 +194,7 @@ ss::future<> disk_log_impl::new_segment(
 
 // config timeout is for the one calling reader consumer
 log_appender disk_log_impl::make_appender(log_append_config cfg) {
+    vassert(!_closed, "make_appender on closed log - {}", *this);
     auto now = log_clock::now();
     model::offset base(0);
     if (auto o = dirty_offset(); o() >= 0) {
@@ -182,6 +206,7 @@ log_appender disk_log_impl::make_appender(log_append_config cfg) {
 }
 
 ss::future<> disk_log_impl::flush() {
+    vassert(!_closed, "flush on closed log - {}", *this);
     if (_segs.empty()) {
         return ss::make_ready_future<>();
     }
@@ -226,6 +251,7 @@ ss::future<> disk_log_impl::maybe_roll(
 
 ss::future<model::record_batch_reader>
 disk_log_impl::make_reader(log_reader_config config) {
+    vassert(!_closed, "make_reader on closed log - {}", *this);
     return _lock_mngr.range_lock(config).then(
       [this, cfg = config](std::unique_ptr<lock_manager::lease> lease) {
           return model::make_record_batch_reader<log_reader>(
@@ -243,6 +269,7 @@ std::optional<model::term_id> disk_log_impl::get_term(model::offset o) const {
 }
 ss::future<std::optional<timequery_result>>
 disk_log_impl::timequery(timequery_config cfg) {
+    vassert(!_closed, "timequery on closed log - {}", *this);
     if (_segs.empty()) {
         return ss::make_ready_future<std::optional<timequery_result>>();
     }
@@ -304,6 +331,11 @@ ss::future<> disk_log_impl::remove_full_segments(model::offset o) {
           return remove_segment_permanently(ptr, "remove_full_segments");
       });
 }
+ss::future<> disk_log_impl::truncate(model::offset offset) {
+    vassert(!_closed, "truncate() on closed log - {}", *this);
+    return _failure_probes.truncate().then(
+      [this, offset]() mutable { return do_truncate(offset); });
+}
 
 ss::future<> disk_log_impl::do_truncate(model::offset o) {
     if (o > dirty_offset() || o < start_offset()) {
@@ -364,7 +396,8 @@ ss::future<> disk_log_impl::do_truncate(model::offset o) {
 } // namespace storage
 
 std::ostream& disk_log_impl::print(std::ostream& o) const {
-    return o << "{term=" << term() << ", logs=" << _segs << "}";
+    return o << "{term:" << term() << ", closed:" << _closed
+             << ", config:" << config() << ", logs:" << _segs << "}";
 }
 
 std::ostream& operator<<(std::ostream& o, const disk_log_impl& d) {
