@@ -231,6 +231,16 @@ std::ostream& operator<<(std::ostream& o, compaction_strategy c) {
     return o << "{unknown model::compaction_strategy}";
 }
 
+std::istream& operator>>(std::istream& i, compaction_strategy& cs) {
+    ss::sstring s;
+    i >> s;
+    cs = string_switch<compaction_strategy>(s)
+           .match("offset", compaction_strategy::offset)
+           .match("header", compaction_strategy::header)
+           .match("timestamp", compaction_strategy::timestamp);
+    return i;
+};
+
 std::istream& operator>>(std::istream& i, timestamp_type& ts_type) {
     ss::sstring s;
     i >> s;
