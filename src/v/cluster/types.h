@@ -64,6 +64,9 @@ struct topic_configuration {
       int32_t partition_count,
       int16_t replication_factor);
 
+    storage::ntp_config
+    make_ntp_config(const ss::sstring&, model::partition_id) const;
+
     model::topic_namespace tp_ns;
     // using signed integer because Kafka protocol defines it as signed int
     int32_t partition_count;
