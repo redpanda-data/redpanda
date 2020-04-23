@@ -1,5 +1,5 @@
 import { calculate } from 'fast-crc32c'
-import { RecordBatchHeader, Record } from '../rpc/types'
+import { RecordBatchHeader, Record, RecordBatch } from '../rpc/types'
 
 //The byte indexes used by crcRecordbatchheaderinternal function
 enum rbhiId {
@@ -182,6 +182,15 @@ function crcRecord(crc: number, record: Record) {
         crc = calculate(h.key, crc);
         crc = crcExtendVint(BigInt(h.valSize), crc);
         crc = calculate(h.value, crc);
+    }
+    return crc;
+}
+
+export function crcRecordBatch(batch: RecordBatch) {
+    let crc: number = 0;
+    crc = crcRecordBatchHeader(crc, batch.header);
+    for (let record of batch.records) {
+        crc = crcRecord(crc, record);
     }
     return crc;
 }
