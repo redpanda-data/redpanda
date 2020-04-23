@@ -80,3 +80,81 @@ export class Netbuf {
     header: RpcHeader;
     buffer: Buffer;
 }
+
+export class RecordBatchHeader {
+    constructor(headerCrc: number,
+        sizeBytes: number,
+        baseOffset: bigint,
+        recordBatchType: number,
+        crc: number,
+        attributes: number,
+        lastOffsetDelta: number,
+        firstTimestamp: bigint,
+        maxTimestamp: bigint,
+        producerId: bigint,
+        producerEpoch: number,
+        baseSequence: number,
+        recordCount: number,
+        termId: bigint) {
+        this.headerCrc = headerCrc;
+        this.sizeBytes = sizeBytes;
+        this.baseOffset = baseOffset;
+        this.recordBatchType = recordBatchType;
+        this.crc = crc;
+        this.attributes = attributes;
+        this.lastOffsetDelta = lastOffsetDelta;
+        this.firstTimestamp = firstTimestamp;
+        this.maxTimestamp = maxTimestamp;
+        this.producerId = producerId;
+        this.producerEpoch = producerEpoch;
+        this.baseSequence = baseSequence;
+        this.recordCount = recordCount;
+        this.termId = termId;
+    }
+    equals(header: RecordBatchHeader) {
+        return this.sizeBytes == header.sizeBytes &&
+            this.baseOffset == header.baseOffset &&
+            this.recordBatchType == header.recordBatchType &&
+            this.crc == header.crc &&
+            this.attributes == header.attributes &&
+            this.lastOffsetDelta == header.lastOffsetDelta &&
+            this.firstTimestamp == header.firstTimestamp &&
+            this.maxTimestamp == header.maxTimestamp &&
+            this.producerEpoch == header.producerEpoch &&
+            this.baseSequence == header.baseSequence &&
+            this.recordCount == header.recordCount &&
+            this.termId == header.termId;
+    }
+
+    size() {
+        return 4 //headerCrc  
+            + 4 // sizeBytes 
+            + 8 //baseOffset 
+            + 1 //recordBatchtype
+            + 4 //crc
+            + 2 //attributes 
+            + 4 //lastoffsetdelta
+            + 8 // firstTimestamp
+            + 8 // maxtimestamp 
+            + 8 //producerid
+            + 2 // producerepoch 
+            + 4 //basesequence
+            + 4 //record count 
+            + 8; //term id    
+    }
+
+    headerCrc: number;
+    sizeBytes: number;
+    baseOffset: bigint;
+    recordBatchType: number;
+    crc: number;
+    attributes: number;
+    lastOffsetDelta: number;
+    firstTimestamp: bigint;
+    maxTimestamp: bigint;
+    producerId: bigint;
+    producerEpoch: number;
+    baseSequence: number;
+    recordCount: number;
+    termId: bigint;
+}
