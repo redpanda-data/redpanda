@@ -10,3 +10,38 @@ export function RpcHeaderCrc32(header: Buffer) {
     return ranges.reduce((value, id) =>
         calculate(header.subarray(id[0], id[1]), value), init);
 }
+
+//precondition buffer.length >= 8
+function toLe64(val: bigint, buff: Buffer, begin: number) {
+    buff.writeBigInt64LE(val, begin);
+}
+
+//precondition buffer.length >= 8
+function toLeU64(val: bigint, buff: Buffer, begin: number) {
+    buff.writeBigUInt64LE(val, begin);
+}
+
+//precondition buffer.length >= 4
+function toLe32(val: number, buff: Buffer, begin: number) {
+    buff.writeInt32LE(val, begin);
+}
+
+//precondition buffer.length >= 4
+function toLeU32(val: number, buff: Buffer, begin: number) {
+    buff.writeUInt32LE(val, begin);
+}
+
+//precondition buffer.length >= 2
+function toLe16(val: number, buff: Buffer, begin: number) {
+    buff.writeInt16LE(val, begin);
+}
+
+//precondition buffer.length >= 2
+function toLeU16(val: number, buff: Buffer, begin: number) {
+    buff.writeUInt16LE(val, begin);
+}
+
+//precondition buffer.length >= 1
+function toLe8(val: number, buff: Buffer, begin: number) {
+    buff.writeInt8(val, begin);
+}
