@@ -202,3 +202,64 @@ export class RecordHeader {
     valSize: number;
     value: Buffer;
 }
+
+export class Record {
+    constructor(sizeBytes: number, recordAttributes: number,
+        timestampDelta: number, offsetDelta: number,
+        keySize: number, key: Buffer, valSize: number,
+        value: Buffer, headers: Array<RecordHeader>) {
+        this.sizeBytes = sizeBytes;
+        this.recordAttributes = recordAttributes;
+        this.timestampDelta = timestampDelta;
+        this.offsetDelta = offsetDelta;
+        this.keySize = keySize;
+        this.key = key;
+        this.valSize = valSize;
+        this.value = value;
+        this.headers = headers;
+    }
+
+    size() {
+        let sz = 4// sizeBytes
+            + 1 // recordAttributes 
+            + 4 // timestampdelta 
+            + 4 // offsetdelta
+            + 4 // keySize
+            + this.key.length //
+            + 4 //valsize 
+            + this.value.length;
+        return this.headers.reduce((val, header) => header.size() + val, sz);
+    }
+
+    equals(record: Record) {
+        if (!(this.sizeBytes == record.sizeBytes &&
+            this.recordAttributes == record.recordAttributes &&
+            this.timestampDelta == record.timestampDelta &&
+            this.offsetDelta == record.offsetDelta &&
+            this.keySize == record.keySize &&
+            this.key.equals(record.key) &&
+            this.valSize == record.valSize &&
+            this.value.equals(record.value) &&
+            this.headers.length == record.headers.length)) {
+            return false;
+        }
+
+
+        for (let i = 0; i < this.headers.length; ++i) {
+            if (!this.headers[i].equals(record.headers[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    sizeBytes: number;
+    recordAttributes: number;
+    timestampDelta: number;
+    offsetDelta: number;
+    keySize: number;
+    key: Buffer;
+    valSize: number;
+    value: Buffer;
+    headers: Array<RecordHeader>;
+}
