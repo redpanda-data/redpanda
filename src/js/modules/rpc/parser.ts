@@ -325,4 +325,15 @@ export class Serializer {
         return result;
     }
 
+    //preconditions
+    //1. materialized.length > 0
+    materializedRecordBatchReader(materialized: Array<Array<RecordBatch>>) {
+        const totalReaders = materialized.length;
+        let buff = this.getBuffFromVal32(totalReaders);
+        for (let batch of materialized) {
+            let result = this.recordBatchReader(batch);
+            buff = Buffer.concat([buff, result]);
+        }
+        return buff;
+    }
 }
