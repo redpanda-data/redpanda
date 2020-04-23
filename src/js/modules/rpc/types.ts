@@ -263,3 +263,31 @@ export class Record {
     value: Buffer;
     headers: Array<RecordHeader>;
 }
+
+export class RecordBatch {
+    constructor(header: RecordBatchHeader,
+        records: Array<Record>) {
+        this.header = header;
+        this.records = records;
+    }
+
+    size() {
+        return this.header.size() + this.records.reduce((val, record) => record.size() + val, 0);
+    }
+
+    equals(batch: RecordBatch) {
+        if (!(this.header.equals(batch.header) &&
+            this.records.length == batch.records.length)) {
+            return false;
+        }
+        for (let i = 0; i < this.records.length; ++i) {
+            if (!this.records[i].equals(batch.records[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    header: RecordBatchHeader;
+    records: Array<Record>;
+}
