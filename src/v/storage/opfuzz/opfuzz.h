@@ -33,6 +33,17 @@ public:
         virtual ss::future<> invoke(op_context ctx) = 0;
     };
 
+    enum class op_name : int {
+        min = 0,
+        append = 0,
+        append_with_multiple_terms,
+        truncate,
+        read,
+        flush,
+        term_roll,
+        max = term_roll,
+    };
+
     opfuzz(storage::log l, size_t ops_count)
       : _log(std::move(l)) {
         generate_workload(ops_count);

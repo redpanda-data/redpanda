@@ -25,16 +25,14 @@ public:
     disk_log_impl& operator=(const disk_log_impl&) = delete;
 
     ss::future<> close() final;
+    ss::future<> remove() final;
     ss::future<> flush() final;
+    ss::future<> truncate(model::offset) final;
 
     ss::future<> gc(
       model::timestamp collection_upper_bound,
       std::optional<size_t> max_partition_retention_size) final;
 
-    ss::future<> truncate(model::offset offset) final {
-        return _failure_probes.truncate().then(
-          [this, offset]() mutable { return do_truncate(offset); });
-    }
     ss::future<model::record_batch_reader> make_reader(log_reader_config) final;
     // External synchronization: only one append can be performed at a time.
     log_appender make_appender(log_append_config cfg) final;

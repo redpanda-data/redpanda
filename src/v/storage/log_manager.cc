@@ -400,6 +400,19 @@ ss::future<log> log_manager::do_manage(ntp_config cfg) {
               });
         });
 }
+ss::future<> log_manager::remove(model::ntp ntp) {
+    vlog(stlog.info, "Asked to remove: {}", ntp);
+    return ss::with_gate(_open_gate, [this, ntp = std::move(ntp)] {
+        auto handle = _logs.extract(ntp);
+        if (handle.empty()) {
+            return ss::make_ready_future<>();
+        }
+        // 'ss::shared_ptr<>' make a copy
+        storage::log lg = handle.mapped();
+        vlog(stlog.info, "Removing: {}", lg);
+        return lg.remove().finally([lg] {});
+    });
+}
 std::ostream& operator<<(std::ostream& o, log_config::storage_type t) {
     switch (t) {
     case log_config::storage_type::memory:

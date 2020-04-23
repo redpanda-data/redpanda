@@ -139,6 +139,7 @@ public:
     explicit log_manager(log_config) noexcept;
 
     ss::future<log> manage(ntp_config);
+    ss::future<> remove(model::ntp);
 
     ss::future<> stop();
 
