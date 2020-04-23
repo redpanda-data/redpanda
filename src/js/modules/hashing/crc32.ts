@@ -81,3 +81,10 @@ export function crcRecordBatchHeaderInternal(header: RecordBatchHeader) {
     toLeU32(header.recordCount, buff, rbhiId.recordCount);
     return calculate(buff, 0);
 }
+
+function encodeZigZag64(n: bigint) {
+    const digits = BigInt.asIntN(64, BigInt('63'));
+    const lsb = BigInt.asUintN(64, BigInt('1'));
+    return BigInt.asUintN(64,
+        (BigInt.asUintN(64, n) << lsb) ^ BigInt.asUintN(64, (n >> digits)));
+}
