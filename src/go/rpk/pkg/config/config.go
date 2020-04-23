@@ -94,15 +94,6 @@ func DefaultConfig() Config {
 	}
 }
 
-func ReadToJson(fs afero.Fs, path string) (string, error) {
-	confMap, err := read(fs, path)
-	if err != nil {
-		return "", err
-	}
-	bs, err := json.MarshalIndent(confMap, "", " ")
-	return string(bs), err
-}
-
 func Set(fs afero.Fs, key, value, format, path string) error {
 	confMap, err := read(fs, path)
 	if err != nil {
@@ -294,6 +285,20 @@ func checkAndWrite(
 	return nil
 }
 
+func ReadFlat(fs afero.Fs, path string) (map[string]string, error) {
+	v, err := readViper(fs, path)
+	if err != nil {
+		return nil, err
+	}
+	keys := v.AllKeys()
+	flatMap := map[string]string{}
+	for _, k := range keys {
+		v := v.GetString(k)
+		flatMap[k] = v
+	}
+	return flatMap, nil
+}
+
 func write(fs afero.Fs, conf map[string]interface{}, path string) error {
 	v := viper.New()
 	v.SetFs(fs)
@@ -318,15 +323,20 @@ func merge(current, new map[string]interface{}) map[string]interface{} {
 }
 
 func read(fs afero.Fs, path string) (map[string]interface{}, error) {
+	v, err := readViper(fs, path)
+	if err != nil {
+		return nil, err
+	}
+	return v.AllSettings(), nil
+}
+
+func readViper(fs afero.Fs, path string) (*viper.Viper, error) {
 	v := viper.New()
 	v.SetFs(fs)
 	v.SetConfigFile(path)
 	v.SetConfigType("yaml")
 	err := v.ReadInConfig()
-	if err != nil {
-		return nil, err
-	}
-	return v.AllSettings(), nil
+	return v, err
 }
 
 func toMap(conf *Config) (map[string]interface{}, error) {
