@@ -19,6 +19,20 @@ enum rbhiId {
     recordCount = 53
 }
 
+//The byte indexes used by crcRecordbatcHeader function
+enum rbhId {
+    //each field in this number is the corresponding type size 
+    totalSize = 2 + 4 + 8 + 8 + 8 + 2 + 4 + 4,
+    attributes = 0,
+    lastOffsetDelta = 2,
+    firstTimestamp = 6,
+    maxTimestamp = 14,
+    producerId = 22,
+    producerEpoch = 30,
+    baseSequence = 32,
+    recordCount = 36
+}
+
 export function RpcHeaderCrc32(header: Buffer) {
     //payload_size 4 bytes
     //meta 4 bytes
@@ -138,4 +152,17 @@ function toBe16(val: number, buff: Buffer, start: number) {
 //precondition buff.length >= 2
 function toBeU16(val: number, buff: Buffer, start: number) {
     buff.writeUInt16BE(val, start);
+}
+
+function crcRecordBatchHeader(crc: number, header: RecordBatchHeader) {
+    let buff = Buffer.allocUnsafe(rbhId.totalSize);
+    toBeU16(header.attributes, buff, rbhId.attributes)
+    toBe32(header.lastOffsetDelta, buff, rbhId.lastOffsetDelta);
+    toBe64(header.firstTimestamp, buff, rbhId.firstTimestamp);
+    toBe64(header.maxTimestamp, buff, rbhId.maxTimestamp);
+    toBe64(header.producerId, buff, rbhId.producerId);
+    toBe16(header.producerEpoch, buff, rbhId.producerEpoch);
+    toBe32(header.baseSequence, buff, rbhId.baseSequence);
+    toBeU32(header.recordCount, buff, rbhId.recordCount);
+    return calculate(buff, crc);
 }
