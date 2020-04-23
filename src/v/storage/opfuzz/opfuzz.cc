@@ -107,7 +107,8 @@ struct truncate_op final : opfuzz::op {
                     0, ofs.size() - 1)];
               }
               vlog(fuzzlogger.info, "Truncating log at offset: {}", to);
-              return ctx.log->truncate(to);
+              return ctx.log->truncate(
+                storage::truncate_config(to, ss::default_priority_class()));
           });
     }
 };

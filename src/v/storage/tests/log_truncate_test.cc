@@ -6,6 +6,7 @@
 #include "storage/tests/utils/disk_log_builder.h"
 #include "test_utils/fixture.h"
 
+#include <seastar/core/file.hh>
 #include <seastar/util/defer.hh>
 
 #include <boost/range/iterator_range_core.hpp>
@@ -40,8 +41,11 @@ FIXTURE_TEST(test_truncate_whole, storage_test_fixture) {
         append_random_batches(log, 1, model::term_id(i));
         log.flush().get();
     }
-
-    log.truncate(model::offset{0}).get0();
+    model::offset truncate_offset{0};
+    log
+      .truncate(
+        storage::truncate_config(truncate_offset, ss::default_priority_class()))
+      .get0();
 
     auto read_batches = read_and_validate_all_batches(log);
     BOOST_REQUIRE_EQUAL(read_batches.size(), 0);
@@ -67,7 +71,10 @@ FIXTURE_TEST(test_truncate_in_the_middle_of_segment, storage_test_fixture) {
 
     // truncate in the middle
     info("Truncating at offset:{}", truncate_offset);
-    log.truncate(truncate_offset).get0();
+    log
+      .truncate(
+        storage::truncate_config(truncate_offset, ss::default_priority_class()))
+      .get0();
     info("reading all batches");
     auto read_batches = read_and_validate_all_batches(log);
 
@@ -124,7 +131,10 @@ FIXTURE_TEST(test_truncate_middle_of_old_segment, storage_test_fixture) {
         all_batches.pop_back();
     }
     // truncate @ offset that belongs to an old segment
-    log.truncate(all_batches.back().base_offset()).get0();
+    log
+      .truncate(storage::truncate_config(
+        all_batches.back().base_offset(), ss::default_priority_class()))
+      .get0();
     all_batches.pop_back(); // we just removed the last one!
     auto final_batches = read_and_validate_all_batches(log);
     BOOST_REQUIRE_EQUAL(all_batches.size(), final_batches.size());
@@ -154,8 +164,15 @@ FIXTURE_TEST(truncate_whole_log_and_then_again, storage_test_fixture) {
         log.flush().get();
     }
 
-    log.truncate(model::offset{0}).get0();
-    log.truncate(model::offset{0}).get0();
+    const auto truncate_offset = model::offset{0};
+    log
+      .truncate(
+        storage::truncate_config(truncate_offset, ss::default_priority_class()))
+      .get0();
+    log
+      .truncate(
+        storage::truncate_config(truncate_offset, ss::default_priority_class()))
+      .get0();
 
     auto read_batches = read_and_validate_all_batches(log);
     BOOST_REQUIRE_EQUAL(read_batches.size(), 0);
@@ -187,7 +204,8 @@ FIXTURE_TEST(truncate_before_read, storage_test_fixture) {
     auto reader_ptr = std::make_unique<model::record_batch_reader>(
       log.make_reader(std::move(cfg)).get0());
     // truncate
-    auto f = log.truncate(model::offset{0});
+    auto f = log.truncate(
+      storage::truncate_config(model::offset(0), ss::default_priority_class()));
     // Memory log works fine
     reader_ptr->consume(batch_validating_consumer{}, model::no_timeout).get0();
     reader_ptr = nullptr;
@@ -217,7 +235,10 @@ FIXTURE_TEST(
 
     // truncate in the middle
     info("Truncating at offset:{}", truncate_offset);
-    log.truncate(truncate_offset).get0();
+    log
+      .truncate(
+        storage::truncate_config(truncate_offset, ss::default_priority_class()))
+      .get0();
     info("reading all batches");
     auto read_batches = read_and_validate_all_batches(log);
 
@@ -259,7 +280,10 @@ FIXTURE_TEST(test_truncate_last_single_record_batch, storage_test_fixture) {
 
     while (log.dirty_offset() > model::offset{}) {
         auto truncate_offset = log.dirty_offset();
-        log.truncate(truncate_offset).get0();
+        log
+          .truncate(storage::truncate_config(
+            truncate_offset, ss::default_priority_class()))
+          .get0();
         auto all_batches = read_and_validate_all_batches(log);
         auto expected = truncate_offset - headers.back().record_count;
         headers.pop_back();
