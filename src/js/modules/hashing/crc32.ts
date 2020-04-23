@@ -1,5 +1,5 @@
 import { calculate } from 'fast-crc32c'
-import { RecordBatchHeader } from '../rpc/types'
+import { RecordBatchHeader, Record } from '../rpc/types'
 
 //The byte indexes used by crcRecordbatchheaderinternal function
 enum rbhiId {
@@ -165,4 +165,23 @@ function crcRecordBatchHeader(crc: number, header: RecordBatchHeader) {
     toBe32(header.baseSequence, buff, rbhId.baseSequence);
     toBeU32(header.recordCount, buff, rbhId.recordCount);
     return calculate(buff, crc);
+}
+
+function crcRecord(crc: number, record: Record) {
+    crc = crcExtendVint(BigInt(record.sizeBytes), crc);
+    crc = crcExtendVint(BigInt(record.recordAttributes), crc);
+    crc = crcExtendVint(BigInt(record.timestampDelta), crc);
+    crc = crcExtendVint(BigInt(record.offsetDelta), crc);
+    crc = crcExtendVint(BigInt(record.keySize), crc);
+    crc = calculate(record.key, crc);
+    crc = crcExtendVint(BigInt(record.valSize), crc);
+    crc = calculate(record.value, crc);
+    crc = crcExtendVint(BigInt(record.headers.length), crc);
+    for (let h of record.headers) {
+        crc = crcExtendVint(BigInt(h.keySize), crc);
+        crc = calculate(h.key, crc);
+        crc = crcExtendVint(BigInt(h.valSize), crc);
+        crc = calculate(h.value, crc);
+    }
+    return crc;
 }
