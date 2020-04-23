@@ -88,3 +88,24 @@ function encodeZigZag64(n: bigint) {
     return BigInt.asUintN(64,
         (BigInt.asUintN(64, n) << lsb) ^ BigInt.asUintN(64, (n >> digits)));
 }
+
+function crcExtendVint(value: bigint, crc: number) {
+    let encode = encodeZigZag64(value);
+    const moreBytes = BigInt.asUintN(64, BigInt(128));
+    const buffSz = 8 //bytes
+        + 1; //last value of encoding
+    let buff = Buffer.allocUnsafe(buffSz);
+    let size = 0;
+    let shift = BigInt.asUintN(64, BigInt(7));
+    let proxyBuff = Buffer.allocUnsafe(8);
+    while (encode >= moreBytes) {
+        proxyBuff.writeBigUInt64LE(encode | moreBytes);
+        proxyBuff.copy(buff, size, 0, 1)
+        encode = encode >> shift;
+        ++size;
+    }
+    proxyBuff.writeBigUInt64LE(encode);
+    proxyBuff.copy(buff, size, 0, 1)
+    crc = calculate(buff.subarray(0, (size + 1)), crc);
+    return crc;
+}
