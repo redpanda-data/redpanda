@@ -109,3 +109,33 @@ function crcExtendVint(value: bigint, crc: number) {
     crc = calculate(buff.subarray(0, (size + 1)), crc);
     return crc;
 }
+
+//precondition buff.length >= 8
+function toBe64(val: bigint, buff: Buffer, start: number) {
+    buff.writeBigInt64BE(val, start);
+}
+
+//precondition buff.length >= 8
+function toBeU64(val: bigint, buff: Buffer, start: number) {
+    buff.writeBigUInt64BE(val, start);
+}
+
+//precondition buff.length >= 4
+function toBe32(val: number, buff: Buffer, start: number) {
+    buff.writeInt32BE(val, start);
+}
+
+//precondition buff.length >= 4
+function toBeU32(val: number, buff: Buffer, start: number) {
+    buff.writeUInt32BE(val, start);
+}
+
+//precondition buff.length >= 2
+function toBe16(val: number, buff: Buffer, start: number) {
+    buff.writeInt16BE(val, start);
+}
+
+//precondition buff.length >= 2
+function toBeU16(val: number, buff: Buffer, start: number) {
+    buff.writeUInt16BE(val, start);
+}
