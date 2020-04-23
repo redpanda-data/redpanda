@@ -63,6 +63,7 @@ struct configuration final : public config_store {
     property<size_t> reclaim_max_size;
     property<std::chrono::milliseconds> reclaim_growth_window;
     property<std::chrono::milliseconds> reclaim_stable_window;
+    property<bool> auto_create_topics_enabled;
 
     configuration();
 
