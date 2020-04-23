@@ -1,4 +1,7 @@
-import { RpcHeader, SimplePod, RecordBatch, RecordBatchHeader } from './types';
+import {
+    RpcHeader, SimplePod, RecordBatch, RecordBatchHeader,
+    BatchHeader
+} from './types';
 import * as bytes from 'buffer';
 import {
     RpcHeaderCrc32, crcRecordBatchHeaderInternal,
@@ -26,7 +29,8 @@ enum rbhId {
     producerEpoch = 51,
     baseSequence = 53,
     recordCount = 57,
-    termId = 61
+    termId = 61,
+    isCompressed = 69
 }
 //Record RecordBatchHeader size
 const rbhSz = 70;
@@ -113,6 +117,12 @@ export class Deserializer {
             maxTimestamp, producerId, producerEpoch, baseSequence,
             recordCount, termId);
     }
+
+    batchHeader(bytes: Buffer) {
+        const header: RecordBatchHeader = this.recordBatchHeader(bytes);
+        const isCompressed: number = bytes.readInt8(rbhId.isCompressed);
+        return new BatchHeader(header, isCompressed);
+    }
 }
 
 export class Serializer {
@@ -173,4 +183,15 @@ export class Serializer {
         buf.writeBigInt64LE(header.termId, rbhId.termId);
         return buf;
     }
+
+    batchHeader(header: RecordBatchHeader) {
+        let buf: Buffer = this.recordBatchHeader(header);
+        const bytes: number = 1;
+        let buf2: Buffer = Buffer.allocUnsafe(bytes);
+        //write bytes to follow
+        let isCompressed = 0;
+        buf2.writeInt8(isCompressed);
+        return Buffer.concat([buf, buf2]);
+    }
+
 }
