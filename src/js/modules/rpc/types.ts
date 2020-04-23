@@ -158,3 +158,19 @@ export class RecordBatchHeader {
     recordCount: number;
     termId: bigint;
 }
+
+export class BatchHeader {
+    constructor(recordBatchHeader: RecordBatchHeader,
+        isCompressed: number) {
+        this.recordBatchHeader = recordBatchHeader;
+        this.isCompressed = isCompressed;
+    }
+
+    size() {
+        return this.recordBatchHeader.size()
+            + 1; //isCompressed
+    }
+
+    recordBatchHeader: RecordBatchHeader;
+    isCompressed: number;
+}
