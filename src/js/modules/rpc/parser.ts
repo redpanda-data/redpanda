@@ -11,6 +11,25 @@ import { strict as assert } from 'assert';
 const hId = [0, 1, 5, 6, 10, 14, 18];
 //The indices of the pod
 const podId = [0, 4, 6, 10];
+//The indices of a RecordBatchHeader
+enum rbhId {
+    headerCrc = 0,
+    sizeBytes = 4,
+    baseOffset = 8,
+    recordBatchType = 16,
+    crc = 17,
+    attrs = 21,
+    lastOffsetDelta = 23,
+    firstTimestamp = 27,
+    maxTimestamp = 35,
+    producerId = 43,
+    producerEpoch = 51,
+    baseSequence = 53,
+    recordCount = 57,
+    termId = 61
+}
+//Record RecordBatchHeader size
+const rbhSz = 70;
 
 export class Deserializer {
     constructor() { }
@@ -73,6 +92,27 @@ export class Deserializer {
         let z: bigint = bytes.readBigInt64LE(podId[3]);
         return new SimplePod(x, y, z);
     }
+
+    recordBatchHeader(bytes: Buffer) {
+        const headerCrc = bytes.readUInt32LE(rbhId.headerCrc);
+        const sizeBytes = bytes.readInt32LE(rbhId.sizeBytes);
+        const baseOffset = bytes.readBigInt64LE(rbhId.baseOffset);
+        const recordBatchType = bytes.readInt8(rbhId.recordBatchType);
+        const crc = bytes.readInt32LE(rbhId.crc);
+        const attrs = bytes.readInt16LE(rbhId.attrs);
+        const lastOffsetDelta = bytes.readInt32LE(rbhId.lastOffsetDelta);
+        const firstTimestamp = bytes.readBigInt64LE(rbhId.firstTimestamp);
+        const maxTimestamp = bytes.readBigInt64LE(rbhId.maxTimestamp);
+        const producerId = bytes.readBigInt64LE(rbhId.producerId);
+        const producerEpoch = bytes.readInt16LE(rbhId.producerEpoch);
+        const baseSequence = bytes.readInt32LE(rbhId.baseSequence);
+        const recordCount = bytes.readUInt32LE(rbhId.recordCount);
+        const termId = bytes.readBigInt64LE(rbhId.termId);
+        return new RecordBatchHeader(headerCrc, sizeBytes, baseOffset, recordBatchType,
+            crc, attrs, lastOffsetDelta, firstTimestamp,
+            maxTimestamp, producerId, producerEpoch, baseSequence,
+            recordCount, termId);
+    }
 }
 
 export class Serializer {
@@ -110,6 +150,27 @@ export class Serializer {
         buf.writeInt16LE(pod.x, podId[1]);
         buf.writeInt32LE(pod.y, podId[2]);
         buf.writeBigInt64LE(pod.z, podId[3]);
+        return buf;
+    }
+
+    recordBatchHeader(header: RecordBatchHeader) {
+        const totalBytes: number = 69;
+        let buf: Buffer = Buffer.allocUnsafe(totalBytes);
+        //to do write the bytes to fllow ;)
+        buf.writeUInt32LE(header.headerCrc, rbhId.headerCrc);
+        buf.writeInt32LE(header.sizeBytes, rbhId.sizeBytes);
+        buf.writeBigInt64LE(header.baseOffset, rbhId.baseOffset);
+        buf.writeInt8(header.recordBatchType, rbhId.recordBatchType);
+        buf.writeInt32LE(header.crc, rbhId.crc);
+        buf.writeInt16LE(header.attributes, rbhId.attrs);
+        buf.writeInt32LE(header.lastOffsetDelta, rbhId.lastOffsetDelta);
+        buf.writeBigInt64LE(header.firstTimestamp, rbhId.firstTimestamp);
+        buf.writeBigInt64LE(header.maxTimestamp, rbhId.maxTimestamp);
+        buf.writeBigInt64LE(header.producerId, rbhId.producerId);
+        buf.writeInt16LE(header.producerEpoch, rbhId.producerEpoch);
+        buf.writeInt32LE(header.baseSequence, rbhId.baseSequence);
+        buf.writeUInt32LE(header.recordCount, rbhId.recordCount);
+        buf.writeBigInt64LE(header.termId, rbhId.termId);
         return buf;
     }
 }
