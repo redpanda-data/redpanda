@@ -1,6 +1,9 @@
-import { RpcHeader, SimplePod } from './types';
+import { RpcHeader, SimplePod, RecordBatch, RecordBatchHeader } from './types';
 import * as bytes from 'buffer';
-import { RpcHeaderCrc32 } from '../hashing/crc32';
+import {
+    RpcHeaderCrc32, crcRecordBatchHeaderInternal,
+    crcRecordBatch
+} from '../hashing/crc32';
 import { RpcXxhash64 } from '../hashing/xxhash';
 import { strict as assert } from 'assert';
 
@@ -45,6 +48,22 @@ export class Deserializer {
         const hashVal = RpcXxhash64(payload);
         //verify that checksum and xxhash are valid
         assert(hashVal == payloadChecksum, "Error xxhash check failed");
+    }
+
+    verifyRecordBatchHeaderInternal(header: RecordBatchHeader) {
+        const crc = crcRecordBatchHeaderInternal(header);
+        const expectedCrc = header.headerCrc;
+        assert(crc == expectedCrc, "Error RecordBatchHeader internal checksum failed");
+    }
+
+    verifyRecordBatch(batch: RecordBatch) {
+        const bytes = 4;
+        let crc = Buffer.allocUnsafe(bytes);
+        let expectedCrc = Buffer.allocUnsafe(bytes);
+        crc.writeUInt32LE(crcRecordBatch(batch));
+        expectedCrc.writeInt32LE(batch.header.crc);
+        assert(crc.equals(expectedCrc), "Error RecordBatch checksum failed");
+        this.verifyRecordBatchHeaderInternal(batch.header);
     }
 
     simplePod(bytes: Buffer) {
