@@ -7,5 +7,6 @@ export function RpcHeaderCrc32(header: Buffer) {
     //payload_checksum 8 bytes
     let ranges: number[][] = [[5, 6], [6, 10], [10, 14], [14, 18], [18, 26]];
     let init: number = 0;
-    return ranges.reduce((value, id) => calculate(header.subarray(id[0], id[1])), init);
+    return ranges.reduce((value, id) =>
+        calculate(header.subarray(id[0], id[1]), value), init);
 }
