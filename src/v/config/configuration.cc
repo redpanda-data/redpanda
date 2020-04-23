@@ -258,6 +258,12 @@ configuration::configuration()
       "Length of time above which growth is reset",
       required::no,
       10'000ms)
+  , auto_create_topics_enabled(
+      *this,
+      "auto_create_topics_enabled",
+      "Allow topic auto creation",
+      required::no,
+      false)
   , _advertised_kafka_api(
       *this,
       "advertised_kafka_api",
