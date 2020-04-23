@@ -38,6 +38,7 @@ public:
         append = 0,
         append_with_multiple_terms,
         truncate,
+        truncate_prefix,
         read,
         flush,
         term_roll,
