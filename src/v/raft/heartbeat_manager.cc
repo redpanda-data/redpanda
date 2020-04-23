@@ -199,17 +199,15 @@ void heartbeat_manager::process_reply(
 }
 
 void heartbeat_manager::dispatch_heartbeats() {
-    (void)with_gate(
-      _bghbeats, [this, old = _hbeat] { return do_dispatch_heartbeats(old); })
-      .handle_exception([](const std::exception_ptr& e) {
-          vlog(hbeatlog.warn, "Error dispatching hearbeats - {}", e);
-      })
-      .then([this] {
-          if (!_bghbeats.is_closed()) {
-              _heartbeat_timer.arm(next_heartbeat_timeout());
-          }
-      });
-
+    (void)with_gate(_bghbeats, [this, old = _hbeat] {
+        return do_dispatch_heartbeats(old).finally([this] {
+            if (!_bghbeats.is_closed()) {
+                _heartbeat_timer.arm(next_heartbeat_timeout());
+            }
+        });
+    }).handle_exception([](const std::exception_ptr& e) {
+        vlog(hbeatlog.warn, "Error dispatching hearbeats - {}", e);
+    });
     // update last
     _hbeat = clock_type::now();
 }
