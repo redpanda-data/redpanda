@@ -178,4 +178,19 @@ describe('RPC',
                         assert(expectedCrc32, resultCrc32);
                     });
             });
+        describe('roundtrip RecordBatch',
+            function() {
+                it('Assert should fail if serializer output differs',
+                    function() {
+                        const batch = makeRecordBatch();
+                        const serializer = new Serializer();
+                        //serialization starts here
+                        let serializedBatch = serializer.recordBatch(batch);
+                        //start deserialization
+                        let deserializer = new Deserializer();
+                        let resultBatch = deserializer.recordBatch(serializedBatch);
+                        //assert the data is the same
+                        assert(batch.equals(resultBatch[0]));
+                    });
+            });
     });
