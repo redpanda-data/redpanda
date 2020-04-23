@@ -174,3 +174,31 @@ export class BatchHeader {
     recordBatchHeader: RecordBatchHeader;
     isCompressed: number;
 }
+
+export class RecordHeader {
+    constructor(keySize: number, key: Buffer, valSize: number, value: Buffer) {
+        this.keySize = keySize;
+        this.key = key;
+        this.valSize = valSize;
+        this.value = value;
+    }
+
+    size() {
+        return 4 //keSize
+            + this.key.length
+            + 4 // value 
+            + this.value.length;
+    }
+    equals(header: RecordHeader) {
+        return this.keySize == header.keySize &&
+            this.key.equals(header.key) &&
+            this.valSize == header.valSize &&
+            this.value.equals(header.value);
+    }
+
+
+    keySize: number;
+    key: Buffer;
+    valSize: number;
+    value: Buffer;
+}
