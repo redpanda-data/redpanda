@@ -1,7 +1,17 @@
 import { strict as assert } from 'assert';
 import { Serializer, Deserializer } from '../../modules/rpc/parser';
-import { RpcHeader, SimplePod } from '../../modules/rpc/types';
-import { RpcHeaderCrc32 } from '../../modules/hashing/crc32';
+import {
+    RpcHeader, SimplePod,
+    RecordBatchHeader
+} from '../../modules/rpc/types';
+import {
+    RecordHeader, Record,
+    RecordBatch
+} from '../../modules/rpc/types';
+import {
+    RpcHeaderCrc32, crcRecordBatch,
+    crcRecordBatchHeaderInternal
+} from '../../modules/hashing/crc32';
 import { RpcXxhash64 } from '../../modules/hashing/xxhash';
 import 'mocha'
 
@@ -23,6 +33,69 @@ function makeSmallBuff() {
     let buf: Buffer = Buffer.allocUnsafe(4);
     buf.writeInt32LE(4);
     return buf;
+}
+
+//to-do make these functions random and move them
+//to a utility file
+function makeBuffer() {
+    return Buffer.allocUnsafe(50).fill('k');
+}
+
+function makeHeaders() {
+    let ret: Array<RecordHeader> = [];
+    let key = makeBuffer();
+    let keySz = key.length;
+    let v = makeBuffer();
+    let vSz = v.length;
+    ret.push(new RecordHeader(keySz, key, vSz, v));
+    return ret;
+}
+
+function makeRecord() {
+    const key = makeBuffer();
+    const keySz = key.length;
+    const v = makeBuffer();
+    const vSz = v.length;
+    const hdrs = makeHeaders();
+    let size = 1 // attrs size  
+        + 4 //timestampe delta
+        + 4 //offset delta
+        + 4 //size of key length 
+        + key.length //size of key 
+        + 4 //size of value 
+        + v.length
+        + 4; //headers size
+    for (let h of hdrs) {
+        size += 4 // key 
+            + h.key.length //key length
+            + 4 // value size  
+            + h.value.length;  // value length
+    }
+    return new Record(size, 0, 1, 1, keySz, key, vSz, v, hdrs);
+}
+
+function makeRecordBatchHeader() {
+    //to-do this should be randomized
+    const numOfRecords = 1;
+    return new RecordBatchHeader(0, 0, BigInt(0), 0, 0, 0,
+        numOfRecords - 1, BigInt(0), BigInt(1),
+        BigInt(0), 0, 0, numOfRecords, BigInt(0));
+}
+
+function makeRecordBatch() {
+    const timestamp = 0;
+    let header = makeRecordBatchHeader();
+    let size = 70 //record batch header size
+    let records: Array<Record> = [];
+    records.push(makeRecord());
+    for (let rcd of records) {
+        size += rcd.size() + 4;
+    }
+    header.sizeBytes = size;
+    let batch = new RecordBatch(header, records);
+    batch.header.crc = crcRecordBatch(batch);
+    batch.header.headerCrc = crcRecordBatchHeaderInternal(batch.header);
+    return batch;
 }
 
 describe('RPC',
