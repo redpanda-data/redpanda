@@ -64,7 +64,7 @@ func executeStop(fs afero.Fs, configFile string, timeout time.Duration) error {
 			" config set pid_file <path>' to set it"
 		return errors.New(msg)
 	}
-	pidStr, err := utils.ReadSingleLine(fs, pidFile)
+	pidStr, err := utils.ReadEnsureSingleLine(fs, pidFile)
 	pid, err := strconv.Atoi(pidStr)
 	if err != nil {
 		return err
