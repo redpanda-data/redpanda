@@ -2,6 +2,7 @@
 
 #include "cluster/metadata_cache.h"
 #include "cluster/types.h"
+#include "config/configuration.h"
 #include "kafka/controller_dispatcher.h"
 #include "kafka/errors.h"
 #include "likely.h"
@@ -345,7 +346,9 @@ get_topic_metadata(request_context& ctx, metadata_request& request) {
             continue;
         }
 
-        if (!request.allow_auto_topic_creation) {
+        if (
+          !config::shard_local_cfg().auto_create_topics_enabled
+          || !request.allow_auto_topic_creation) {
             metadata_response::topic t;
             t.name = std::move(topic);
             t.err_code = error_code::unknown_topic_or_partition;
