@@ -41,19 +41,14 @@ func TestStatus(t *testing.T) {
 	}{
 		{
 			name:        "doesn't print the CPU% if no pid file is found",
-			expectedOut: "No PID present",
+			expectedOut: "/var/lib/redpanda/pid: file does not exist",
 			before: func(fs afero.Fs) error {
-				err := writeConfig(fs, getConfig())
-				if err != nil {
-					return err
-				}
-				_, err = fs.Create(pidFile)
-				return err
+				return writeConfig(fs, getConfig())
 			},
 		},
 		{
 			name:        "fails if the pid file is empty",
-			expectedOut: "No PID present",
+			expectedOut: "/var/lib/redpanda/pid is empty",
 			before: func(fs afero.Fs) error {
 				err := writeConfig(fs, getConfig())
 				if err != nil {
@@ -65,7 +60,7 @@ func TestStatus(t *testing.T) {
 		},
 		{
 			name:        "fails if the pid file contains more than one line",
-			expectedOut: "PID file corrupt",
+			expectedOut: "/var/lib/redpanda/pid contains multiple lines",
 			before: func(fs afero.Fs) error {
 				err := writeConfig(fs, getConfig())
 				if err != nil {

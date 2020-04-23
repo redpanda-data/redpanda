@@ -45,6 +45,7 @@ func Execute() {
 	rootCmd.AddCommand(NewCheckCommand(fs))
 	rootCmd.AddCommand(NewIoTuneCmd(fs))
 	rootCmd.AddCommand(NewStartCommand(fs))
+	rootCmd.AddCommand(NewStopCommand(fs))
 	rootCmd.AddCommand(NewModeCommand(fs))
 	rootCmd.AddCommand(NewConfigCommand(fs))
 	rootCmd.AddCommand(NewStatusCommand(fs))
