@@ -1,6 +1,6 @@
 import {
     RpcHeader, SimplePod, RecordBatch, RecordBatchHeader,
-    BatchHeader
+    BatchHeader, Record, RecordHeader
 } from './types';
 import * as bytes from 'buffer';
 import {
@@ -34,6 +34,16 @@ enum rbhId {
 }
 //Record RecordBatchHeader size
 const rbhSz = 70;
+//The indices of the record
+enum rcId {
+    sizeBytes = 0,
+    attributes = 4,
+    timestampDelta = 5,
+    offsetDelta = 9,
+    keySize = 13,
+    keyBytesToFollow = 17,
+    size = 21
+}
 
 export class Deserializer {
     constructor() { }
@@ -123,6 +133,47 @@ export class Deserializer {
         const isCompressed: number = bytes.readInt8(rbhId.isCompressed);
         return new BatchHeader(header, isCompressed);
     }
+
+    record(bytes: Buffer) {
+        const sizeBytes = bytes.readInt32LE(rcId.sizeBytes);
+        const attributes = bytes.readInt8(rcId.attributes);
+        const timestampDelta = bytes.readInt32LE(rcId.timestampDelta);
+        const offsetDelta = bytes.readInt32LE(rcId.offsetDelta);
+        const keySize = bytes.readInt32LE(rcId.keySize);
+        const keyBytesToFollow = bytes.readInt32LE(rcId.keyBytesToFollow);
+        let begin = rcId.size;
+        let end = begin + keyBytesToFollow;
+        const key = Buffer.from(bytes.subarray(begin, end));
+        const valSize = bytes.readInt32LE(end);
+        const fourBytes = 4;
+        begin = end + fourBytes;
+        const valBytesToFollow = bytes.readInt32LE(begin);
+        begin += fourBytes;
+        end = begin + valBytesToFollow;
+        const val = Buffer.from(bytes.subarray(begin, end));
+        begin = end;
+        const headerSize = bytes.readInt32LE(begin);
+        let headers: Array<RecordHeader> = [];
+        begin += fourBytes;
+        for (let i: number = 0; i < headerSize; ++i) {
+            const keySz = bytes.readInt32LE(begin);
+            begin += fourBytes;
+            const keyLen = bytes.readInt32LE(begin);
+            begin += fourBytes;
+            end = begin + keyLen;
+            let hkey = Buffer.from(bytes.subarray(begin, end));
+            const valSz = bytes.readInt32LE(end);
+            begin = end + fourBytes;
+            const valLen = bytes.readInt32LE(begin);
+            begin += fourBytes;
+            end = begin + valLen;
+            let hvalue = Buffer.from(bytes.subarray(begin, end));
+            begin = end;
+            headers.push(new RecordHeader(keySz, hkey, valSz, hvalue));
+        }
+        return [new Record(sizeBytes, attributes, timestampDelta, offsetDelta,
+            keySize, key, valSize, val, headers), begin]
+    }
 }
 
 export class Serializer {
@@ -192,6 +243,42 @@ export class Serializer {
         let isCompressed = 0;
         buf2.writeInt8(isCompressed);
         return Buffer.concat([buf, buf2]);
+    }
+
+    private getBuffFromVal32(val: number) {
+        let buf: Buffer = Buffer.allocUnsafe(4);
+        buf.writeInt32LE(val);
+        return buf;
+    }
+
+    private getBuffFromVal64(a: number, b: number) {
+        let buf: Buffer = Buffer.allocUnsafe(8);
+        buf.writeInt32LE(a);
+        buf.writeInt32LE(b, 4);
+        return buf;
+    }
+
+    record(header: Record) {
+        let buf1: Buffer = Buffer.allocUnsafe(rcId.size);
+        buf1.writeInt32LE(header.sizeBytes, rcId.sizeBytes);
+        buf1.writeInt8(header.recordAttributes, rcId.attributes);
+        buf1.writeInt32LE(header.timestampDelta, rcId.timestampDelta)
+        buf1.writeInt32LE(header.offsetDelta, rcId.offsetDelta);
+        buf1.writeInt32LE(header.keySize, rcId.keySize);
+        buf1.writeInt32LE(header.key.length, rcId.keyBytesToFollow);
+        let buf2 = Buffer.from(header.key);
+        let buf3 = this.getBuffFromVal64(header.valSize, header.value.length);
+        let buf4 = Buffer.from(header.value);
+        let buf5 = this.getBuffFromVal32(header.headers.length);
+        let headersBuf = Buffer.concat([buf1, buf2, buf3, buf4, buf5]);
+        for (let h of header.headers) {
+            let tmp1 = this.getBuffFromVal64(h.keySize, h.key.length);
+            let tmp2 = Buffer.from(h.key);
+            let tmp3 = this.getBuffFromVal64(h.valSize, h.value.length);
+            let tmp4 = Buffer.from(h.value);
+            headersBuf = Buffer.concat([headersBuf, tmp1, tmp2, tmp3, tmp4]);
+        }
+        return headersBuf;
     }
 
 }
