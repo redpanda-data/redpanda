@@ -187,6 +187,19 @@ export class Deserializer {
         return [new RecordBatch(batchHeader.recordBatchHeader, records), begin];
     }
 
+    recordBatchReader(bytes: Buffer) {
+        const totalBatches = bytes.readInt32LE(0);
+        let recBatches: Array<RecordBatch> = [];
+        let begin: any = 4;
+        for (let i = 0; i < totalBatches; ++i) {
+            let result = this.recordBatch(bytes.subarray(begin));
+            this.verifyRecordBatch(result[0]);
+            recBatches.push(result[0]);
+            begin += result[1];
+        }
+        return recBatches;
+    }
+
 }
 
 export class Serializer {
@@ -299,6 +312,15 @@ export class Serializer {
         for (let record of batch.records) {
             let serializedRecordBuf: Buffer = this.record(record);
             result = Buffer.concat([result, serializedRecordBuf]);
+        }
+        return result;
+    }
+
+    recordBatchReader(reader: Array<RecordBatch>) {
+        let result = this.getBuffFromVal32(reader.length);
+        for (let batch of reader) {
+            let tmp = this.recordBatch(batch);
+            result = Buffer.concat([result, tmp]);
         }
         return result;
     }
