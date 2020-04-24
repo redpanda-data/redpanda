@@ -192,10 +192,12 @@ void heartbeat_manager::process_reply(
 
 void heartbeat_manager::dispatch_heartbeats() {
     (void)with_gate(_bghbeats, [this, old = _hbeat] {
-        return do_dispatch_heartbeats(old).finally([this] {
-            if (!_bghbeats.is_closed()) {
-                _heartbeat_timer.arm(next_heartbeat_timeout());
-            }
+        return ss::with_semaphore(_sem, 1, [this, old] {
+            return do_dispatch_heartbeats(old).finally([this] {
+                if (!_bghbeats.is_closed()) {
+                    _heartbeat_timer.arm(next_heartbeat_timeout());
+                }
+            });
         });
     }).handle_exception([](const std::exception_ptr& e) {
         vlog(hbeatlog.warn, "Error dispatching hearbeats - {}", e);
@@ -203,19 +205,27 @@ void heartbeat_manager::dispatch_heartbeats() {
     // update last
     _hbeat = clock_type::now();
 }
-void heartbeat_manager::deregister_group(group_id g) {
-    auto it = _consensus_groups.find(g);
-    vassert(it != _consensus_groups.end(), "group not found: {}", g);
-    _consensus_groups.erase(it);
+
+ss::future<> heartbeat_manager::deregister_group(group_id g) {
+    return ss::with_semaphore(_sem, 1, [this, g] {
+        auto it = _consensus_groups.find(g);
+        vassert(it != _consensus_groups.end(), "group not found: {}", g);
+        _consensus_groups.erase(it);
+    });
 }
-void heartbeat_manager::register_group(ss::lw_shared_ptr<consensus> ptr) {
-    auto ret = _consensus_groups.insert(ptr);
-    vassert(
-      ret.second,
-      "double registration of group: {}:{}",
-      ptr->ntp(),
-      ptr->meta().group);
+
+ss::future<>
+heartbeat_manager::register_group(ss::lw_shared_ptr<consensus> ptr) {
+    return ss::with_semaphore(_sem, 1, [this, ptr] {
+        auto ret = _consensus_groups.insert(ptr);
+        vassert(
+          ret.second,
+          "double registration of group: {}:{}",
+          ptr->ntp(),
+          ptr->meta().group);
+    });
 }
+
 ss::future<> heartbeat_manager::start() {
     dispatch_heartbeats();
     return ss::make_ready_future<>();

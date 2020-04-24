@@ -108,8 +108,8 @@ public:
                       st.current_leader.value(),
                       st.group);
                 });
-              _hbeats.register_group(_consensus);
-              return _consensus->start();
+              return _consensus->start().then(
+                [this] { return _hbeats.register_group(_consensus); });
           })
           .then([this] { return _hbeats.start(); });
     }
