@@ -34,9 +34,9 @@ FIXTURE_TEST(test_random_workload, storage_test_fixture) {
           "test.default",
           "topic." + random_generators::gen_alphanum_string(3),
           i);
-        auto directory = fmt::format(
-          "{}/{}", mngr.config().base_dir, ntp.path());
-        auto log = mngr.manage(storage::ntp_config(ntp, directory)).get0();
+
+        auto log = mngr.manage(storage::ntp_config(ntp, mngr.config().base_dir))
+                     .get0();
         logs_to_fuzz.emplace_back(
           std::make_unique<storage::opfuzz>(std::move(log), ops_per_ntp));
     }

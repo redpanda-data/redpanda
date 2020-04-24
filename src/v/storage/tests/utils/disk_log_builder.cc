@@ -40,9 +40,7 @@ ss::future<> disk_log_builder::add_random_batches(
 
 // Log managment
 ss::future<> disk_log_builder::start(model::ntp ntp) {
-    return _mgr
-      .manage(ntp_config(
-        ntp, fmt::format("{}/{}", get_log_config().base_dir, ntp.path())))
+    return _mgr.manage(ntp_config(std::move(ntp), get_log_config().base_dir))
       .then([this](log l) { _log = std::move(l); });
 }
 

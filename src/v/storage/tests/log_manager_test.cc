@@ -41,7 +41,7 @@ log_config make_config() {
 }
 
 ntp_config config_from_ntp(const model::ntp& ntp) {
-    return ntp_config(ntp, fmt::format("test.dir/{}", ntp.path()));
+    return ntp_config(ntp, "test.dir");
 }
 
 SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {

@@ -85,9 +85,7 @@ public:
     }
 
     ss::future<> start(raft::group_configuration init_cfg) {
-        return _mngr
-          .manage(storage::ntp_config(
-            _ntp, fmt::format("{}/{}", _mngr.config().base_dir, _ntp.path())))
+        return _mngr.manage(storage::ntp_config(_ntp, _mngr.config().base_dir))
           .then([this, cfg = std::move(init_cfg)](storage::log log) mutable {
               _consensus = ss::make_lw_shared<raft::consensus>(
                 _self,

@@ -14,6 +14,7 @@
 #include <fmt/ostream.h>
 
 #include <iostream>
+#include <type_traits>
 
 namespace model {
 
@@ -218,8 +219,6 @@ std::ostream& operator<<(std::ostream& o, const broker_shard& bs) {
 
 std::ostream& operator<<(std::ostream& o, compaction_strategy c) {
     switch (c) {
-    case compaction_strategy::regular:
-        return o << "{compaction_strategy::regular}";
     case compaction_strategy::offset:
         return o << "{compaction_strategy::offset}";
     case compaction_strategy::timestamp:
@@ -228,6 +227,58 @@ std::ostream& operator<<(std::ostream& o, compaction_strategy c) {
         return o << "{compaction_strategy::header}";
     }
     return o << "{unknown model::compaction_strategy}";
+}
+
+std::istream& operator>>(std::istream& i, compaction_strategy& cs) {
+    ss::sstring s;
+    i >> s;
+    cs = string_switch<compaction_strategy>(s)
+           .match("offset", compaction_strategy::offset)
+           .match("header", compaction_strategy::header)
+           .match("timestamp", compaction_strategy::timestamp);
+    return i;
+};
+
+std::istream& operator>>(std::istream& i, timestamp_type& ts_type) {
+    ss::sstring s;
+    i >> s;
+    ts_type = string_switch<timestamp_type>(s)
+                .match("LogAppendTime", timestamp_type::append_time)
+                .match("CreateTime", timestamp_type::create_time);
+    return i;
+};
+
+std::ostream& operator<<(std::ostream& o, cleanup_policy_bitflags c) {
+    o << "{";
+    auto has_prev = false;
+    if (std::underlying_type_t<cleanup_policy_bitflags>(
+          c & cleanup_policy_bitflags::deletion)) {
+        o << "cleanup_policy_bitflags::deletion";
+    }
+
+    if (std::underlying_type_t<cleanup_policy_bitflags>(
+          c & cleanup_policy_bitflags::compaction)) {
+        if (has_prev) {
+            o << " | ";
+        }
+        o << "cleanup_policy_bitflags::compaction";
+    }
+
+    return o << "}";
+}
+
+std::istream& operator>>(std::istream& i, cleanup_policy_bitflags& cp) {
+    ss::sstring s;
+    i >> s;
+    cp = string_switch<cleanup_policy_bitflags>(s)
+           .match("delete", cleanup_policy_bitflags::deletion)
+           .match("compact", cleanup_policy_bitflags::compaction)
+           .match_all(
+             "compact,delete",
+             "delete,compact",
+             cleanup_policy_bitflags::deletion
+               | cleanup_policy_bitflags::compaction);
+    return i;
 }
 
 } // namespace model

@@ -56,3 +56,10 @@ rp_test(
   SOURCES outcome_utils_test.cc
   LIBRARIES Seastar::seastar_testing
 )
+rp_test(
+  UNIT_TEST
+  BINARY_NAME tristate_test
+  SOURCES tristate_test.cc
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LIBRARIES Boost::unit_test_framework
+)
