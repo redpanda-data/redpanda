@@ -7,6 +7,7 @@
 #include "raft/rpc_client_protocol.h"
 #include "raft/service.h"
 #include "random/generators.h"
+#include "rpc/backoff_policy.h"
 #include "rpc/connection_cache.h"
 #include "rpc/server.h"
 #include "rpc/simple_protocol.h"
@@ -22,6 +23,8 @@
 
 #include <boost/range/iterator_range_core.hpp>
 #include <fmt/core.h>
+
+#include <chrono>
 
 inline static ss::logger tstlog("raft_test");
 
@@ -194,7 +197,9 @@ struct raft_node {
                         broker.id(),
                         {.server_addr = addr,
                          .disable_metrics = rpc::metrics_disabled::yes},
-                        1ms);
+                        rpc::make_exponential_backoff_policy<rpc::clock_type>(
+                          std::chrono::milliseconds(1),
+                          std::chrono::milliseconds(1)));
                   });
             })
           .get0();

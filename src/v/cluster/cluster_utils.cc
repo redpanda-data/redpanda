@@ -4,8 +4,11 @@
 #include "cluster/metadata_cache.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "rpc/backoff_policy.h"
 #include "rpc/types.h"
 #include "vlog.h"
+
+#include <chrono>
 
 namespace cluster {
 brokers_diff calculate_changed_brokers(
@@ -103,7 +106,9 @@ ss::future<> update_broker_client(
                       rpc::transport_configuration{
                         .server_addr = new_addr,
                         .disable_metrics = rpc::metrics_disabled(
-                          config::shard_local_cfg().disable_metrics)});
+                          config::shard_local_cfg().disable_metrics)},
+                      rpc::make_exponential_backoff_policy<rpc::clock_type>(
+                        std::chrono::seconds(1), std::chrono::seconds(60)));
                 });
             });
       });
