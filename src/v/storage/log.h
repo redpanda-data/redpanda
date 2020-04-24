@@ -81,9 +81,7 @@ public:
      * Truncate at offset (31) will result in
      * segment: {[10,10][11,30]}
      */
-    ss::future<> truncate(truncate_config cfg) {
-        return _impl->truncate(cfg);
-    }
+    ss::future<> truncate(truncate_config cfg) { return _impl->truncate(cfg); }
     ss::future<> truncate_prefix(truncate_prefix_config cfg) {
         return _impl->truncate_prefix(cfg);
     }

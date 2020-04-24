@@ -156,7 +156,7 @@ struct mem_log_impl final : log::impl {
     }
     ss::future<> truncate_prefix(truncate_prefix_config cfg) final {
         stlog.debug("PREFIX Truncating {} log at {}", config().ntp, cfg);
-        if(_data.empty()){
+        if (_data.empty()) {
             return ss::make_ready_future<>();
         }
         for (auto& reader : _readers) {
