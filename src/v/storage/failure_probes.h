@@ -18,7 +18,12 @@ public:
         return "storage::log::failure_probes";
     }
 
-    enum class methods : type { append = 1, roll = 2, truncate = 3, truncate_prefix = 4 };
+    enum class methods : type {
+        append = 1,
+        roll = 2,
+        truncate = 3,
+        truncate_prefix = 4
+    };
 
     type method_for_point(std::string_view point) const final {
         return string_switch<type>(point)
@@ -55,7 +60,8 @@ public:
     }
     ss::future<> truncate_prefix() {
         if (is_enabled()) {
-            return inject_method_failure(methods::truncate_prefix, "truncate_prefix");
+            return inject_method_failure(
+              methods::truncate_prefix, "truncate_prefix");
         }
         return ss::make_ready_future<>();
     }
