@@ -139,23 +139,7 @@ ss::future<> disk_log_impl::remove_empty_segments() {
           return _segs.back()->close().then([this] { _segs.pop_back(); });
       });
 }
-model::offset disk_log_impl::start_offset() const {
-    if (_segs.empty()) {
-        return model::offset{};
-    }
-    return _segs.front()->reader().base_offset();
-}
-model::offset disk_log_impl::dirty_offset() const {
-    if (!_segs.empty()) {
-        for (int i = (int)_segs.size() - 1; i >= 0; --i) {
-            auto& seg = _segs[i];
-            if (!seg->empty()) {
-                return seg->dirty_offset();
-            }
-        }
-    }
-    return model::offset{};
-}
+
 model::term_id disk_log_impl::term() const {
     if (_segs.empty()) {
         // does not make sense to return unitinialized term
@@ -166,16 +150,30 @@ model::term_id disk_log_impl::term() const {
     return _segs.back()->term();
 }
 
-model::offset disk_log_impl::committed_offset() const {
-    if (!_segs.empty()) {
-        for (int i = (int)_segs.size() - 1; i >= 0; --i) {
-            auto& seg = _segs[i];
-            if (!seg->empty()) {
-                return seg->committed_offset();
-            }
-        }
+offset_stats disk_log_impl::offsets() const {
+    if (_segs.empty()) {
+        return offset_stats{};
     }
-    return model::offset{};
+    auto it = std::find_if(
+      _segs.rbegin(), _segs.rend(), [](const segment_set::type& s) {
+          return !s->empty();
+      });
+    if (it == _segs.rend()) {
+        return offset_stats{};
+    }
+    // we have valid begin and end
+    auto b = _segs.front();
+    auto e = *it;
+    return storage::offset_stats{
+      .start_offset = b->base_offset(),
+      .start_offset_term = b->term(),
+
+      .committed_offset = e->committed_offset(),
+      .committed_offset_term = e->term(),
+
+      .dirty_offset = e->dirty_offset(),
+      .dirty_offset_term = e->term(),
+    };
 }
 
 ss::future<> disk_log_impl::new_segment(
@@ -197,13 +195,14 @@ ss::future<> disk_log_impl::new_segment(
 log_appender disk_log_impl::make_appender(log_append_config cfg) {
     vassert(!_closed, "make_appender on closed log - {}", *this);
     auto now = log_clock::now();
+    auto ofs = offsets();
     model::offset base(0);
-    if (auto o = dirty_offset(); o() >= 0) {
+    if (auto o = ofs.dirty_offset; o() >= 0) {
         // start at *next* valid and inclusive offset!
         base = o + model::offset(1);
     }
-    return log_appender(
-      std::make_unique<disk_log_appender>(*this, cfg, now, base));
+    return log_appender(std::make_unique<disk_log_appender>(
+      *this, cfg, now, base, ofs.dirty_offset));
 }
 
 ss::future<> disk_log_impl::flush() {
@@ -360,7 +359,8 @@ ss::future<> disk_log_impl::do_truncate_prefix(truncate_prefix_config cfg) {
       "We don't support exact prefix truncation yet. Config: {} - {}",
       cfg,
       *this);
-    if (cfg.max_offset < start_offset()) {
+    auto stats = offsets();
+    if (cfg.max_offset < stats.start_offset) {
         return ss::make_ready_future<>();
     }
     if (_segs.empty()) {
@@ -391,7 +391,10 @@ ss::future<> disk_log_impl::truncate(truncate_config cfg) {
 }
 
 ss::future<> disk_log_impl::do_truncate(truncate_config cfg) {
-    if (cfg.base_offset > dirty_offset() || cfg.base_offset < start_offset()) {
+    auto stats = offsets();
+    if (
+      cfg.base_offset > stats.dirty_offset
+      || cfg.base_offset < stats.start_offset) {
         return ss::make_ready_future<>();
     }
     if (_segs.empty()) {
@@ -450,7 +453,7 @@ ss::future<> disk_log_impl::do_truncate(truncate_config cfg) {
 }
 
 std::ostream& disk_log_impl::print(std::ostream& o) const {
-    return o << "{term:" << term() << ", closed:" << _closed
+    return o << "{offsets:" << offsets() << ", closed:" << _closed
              << ", config:" << config() << ", logs:" << _segs << "}";
 }
 

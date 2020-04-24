@@ -6,6 +6,7 @@
 #include "seastarx.h"
 #include "storage/log.h"
 #include "storage/logger.h"
+#include "storage/types.h"
 
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/core/future-util.hh>
@@ -137,6 +138,10 @@ struct mem_log_impl final : log::impl {
     ss::future<> remove() final { return ss::make_ready_future<>(); }
     ss::future<> flush() final { return ss::make_ready_future<>(); }
 
+    std::ostream& print(std::ostream& o) const final {
+        fmt::print(o, "{{mem_log_impl:{}}}", offsets());
+        return o;
+    }
     ss::future<std::optional<timequery_result>>
     timequery(timequery_config cfg) final {
         using ret_t = std::optional<timequery_result>;
@@ -245,7 +250,7 @@ struct mem_log_impl final : log::impl {
     }
 
     log_appender make_appender(log_append_config) final {
-        auto o = dirty_offset();
+        auto o = offsets().dirty_offset;
         if (o() < 0) {
             o = model::offset(0);
         } else {
@@ -268,23 +273,23 @@ struct mem_log_impl final : log::impl {
 
     size_t segment_count() const final { return 1; }
 
-    model::offset start_offset() const final {
+    storage::offset_stats offsets() const final {
         // default value
         if (_data.empty()) {
-            return model::offset{};
+            return storage::offset_stats{};
         }
-        return _data.begin()->base_offset();
-    }
-    model::offset dirty_offset() const final {
-        // default value
-        if (_data.empty()) {
-            return model::offset{};
-        }
-        auto it = _data.end();
-        return std::prev(it)->last_offset();
+        auto& b = _data.front();
+        auto& e = _data.back();
+        return storage::offset_stats{
+          .start_offset = b.base_offset(),
+          .start_offset_term = b.term(),
+          .committed_offset = e.last_offset(),
+          .committed_offset_term = e.term(),
+          .dirty_offset = e.last_offset(),
+          .dirty_offset_term = e.term(),
+        };
     }
 
-    model::offset committed_offset() const final { return dirty_offset(); }
     boost::intrusive::list<mem_iter_reader> _readers;
     underlying_t _data;
 
@@ -295,7 +300,8 @@ ss::future<ss::stop_iteration>
 mem_log_appender::operator()(model::record_batch& batch) {
     batch.header().base_offset = _cur_offset;
     _byte_size += batch.header().size_bytes;
-    stlog.trace(
+    vlog(
+      stlog.trace,
       "Wrting to {} batch of {} records offsets [{},{}], term {}",
       _log.config().ntp,
       batch.header().size_bytes,

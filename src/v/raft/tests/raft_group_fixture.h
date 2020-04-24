@@ -168,10 +168,10 @@ struct raft_node {
         return log.make_reader(cfg).then(
           [this, max_offset](model::record_batch_reader rdr) {
               tstlog.debug(
-                "Reading logs from {} max offset {}, log max offset {}",
+                "Reading logs from {} max offset {}, log offsets {}",
                 id(),
                 max_offset,
-                log.dirty_offset());
+                log.offsets());
               return std::move(rdr).consume(
                 consume_to_vector{}, model::no_timeout);
           });
@@ -462,7 +462,7 @@ struct raft_test_fixture {
           = gr.get_members().begin()->second.consensus->meta().commit_index;
         for (auto& [id, m] : gr.get_members()) {
             auto current = model::offset(m.consensus->meta().commit_index);
-            auto log_offset = m.log.dirty_offset();
+            auto log_offset = m.log.offsets().dirty_offset;
             tstlog.debug(
               "Node {} commit index {}, log offset {}",
               id,

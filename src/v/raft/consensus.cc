@@ -138,7 +138,8 @@ consensus::success_reply consensus::update_follower_index(
         return success_reply::no;
     }
 
-    if (idx.match_index < _log.dirty_offset()) {
+    auto lstats = _log.offsets();
+    if (idx.match_index < lstats.dirty_offset) {
         // follower match_index is behind, we have to recover it
         dispatch_recovery(idx, std::move(reply));
         return success_reply::no;
@@ -173,7 +174,8 @@ void consensus::successfull_append_entries_reply(
 
 void consensus::dispatch_recovery(
   follower_index_metadata& idx, append_entries_reply reply) {
-    auto log_max_offset = _log.dirty_offset();
+    auto lstats = _log.offsets();
+    auto log_max_offset = lstats.dirty_offset;
     if (idx.last_dirty_log_index >= log_max_offset) {
         // follower is ahead of current leader
         // try to send last batch that leader have
@@ -262,6 +264,7 @@ void consensus::dispatch_flush_with_lock() {
 
 ss::future<model::record_batch_reader>
 consensus::make_reader(storage::log_reader_config config) {
+    auto lstats = _log.offsets();
     // for quroum acks level, limit reads to fully replicated entries. the
     // covered offset range is guranteed to already be flushed and visible so we
     // can build the reader immediately.
@@ -278,8 +281,8 @@ consensus::make_reader(storage::log_reader_config config) {
     // the pending data was flushed before the read made it to that non-flushed
     // region or the reader will enounter the end of log adn the reader will
     // flush and retry, making progress.
-    if (!_has_pending_flushes || config.start_offset <= _log.dirty_offset()) {
-        config.max_offset = std::min(config.max_offset, _log.dirty_offset());
+    if (!_has_pending_flushes || config.start_offset <= lstats.dirty_offset) {
+        config.max_offset = std::min(config.max_offset, lstats.dirty_offset);
         return _log.make_reader(config);
     }
 
@@ -290,8 +293,9 @@ consensus::make_reader(storage::log_reader_config config) {
             f = flush_log();
         }
         return f.then([this, config = config]() mutable {
+            auto lstats = _log.offsets();
             config.max_offset = std::min(
-              config.max_offset, _log.dirty_offset());
+              config.max_offset, lstats.dirty_offset);
             return _log.make_reader(config);
         });
     });
@@ -399,8 +403,9 @@ ss::future<> consensus::start() {
                   _conf = std::move(st.release_config());
                   update_follower_stats(_conf);
               }
-              _meta.prev_log_index = _log.committed_offset();
-              _meta.prev_log_term = get_term(_log.committed_offset());
+              auto lstats = _log.offsets();
+              _meta.prev_log_index = lstats.committed_offset;
+              _meta.prev_log_term = lstats.committed_offset_term;
           })
           .then([this] {
               // Arm leader election timeout.
@@ -473,12 +478,13 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
 
 ss::future<append_entries_reply>
 consensus::do_append_entries(append_entries_request&& r) {
+    auto lstats = _log.offsets();
     append_entries_reply reply;
     reply.node_id = _self;
     reply.group = r.meta.group;
     reply.term = _meta.term;
     reply.last_dirty_log_index = _meta.prev_log_index;
-    reply.last_committed_log_index = _log.committed_offset();
+    reply.last_committed_log_index = lstats.committed_offset;
     reply.result = append_entries_reply::status::failure;
     _probe.append_request();
 
@@ -513,7 +519,7 @@ consensus::do_append_entries(append_entries_request&& r) {
     // prevLogIndex whose term matches prevLogTerm (§5.3)
     // broken into 3 sections
 
-    auto last_log_offset = _log.dirty_offset();
+    auto last_log_offset = lstats.dirty_offset;
     // section 1
     // For an entry to fit into our log, it must not leave a gap.
     if (r.meta.prev_log_index > last_log_offset) {
@@ -580,7 +586,7 @@ consensus::do_append_entries(append_entries_request&& r) {
           "earlier than what we have:{}. Truncating to: {}",
           r.meta.term,
           r.meta.prev_log_index,
-          _log.dirty_offset(),
+          lstats.dirty_offset,
           truncate_at);
         _probe.log_truncated();
         return _log
@@ -684,12 +690,13 @@ ss::future<> consensus::replicate_configuration(
 
 append_entries_reply
 consensus::make_append_entries_reply(storage::append_result disk_results) {
+    auto lstats = _log.offsets();
     append_entries_reply reply;
     reply.node_id = _self;
     reply.group = _meta.group;
     reply.term = _meta.term;
     reply.last_dirty_log_index = disk_results.last_offset;
-    reply.last_committed_log_index = _log.committed_offset();
+    reply.last_committed_log_index = lstats.committed_offset;
     reply.result = append_entries_reply::status::success;
     return reply;
 }
@@ -752,6 +759,7 @@ void consensus::maybe_update_leader_commit_idx() {
 }
 
 ss::future<> consensus::do_maybe_update_leader_commit_idx() {
+    auto lstats = _log.offsets();
     // Raft paper:
     //
     // If there exists an N such that N > commitIndex, a majority
@@ -760,7 +768,7 @@ ss::future<> consensus::do_maybe_update_leader_commit_idx() {
 
     std::vector<model::offset> offsets;
     // self offsets
-    offsets.push_back(_log.committed_offset());
+    offsets.push_back(lstats.committed_offset);
     for (const auto& [_, f_idx] : _fstats) {
         offsets.push_back(f_idx.match_committed_index());
     }
@@ -785,13 +793,14 @@ ss::future<> consensus::do_maybe_update_leader_commit_idx() {
 }
 ss::future<>
 consensus::maybe_update_follower_commit_idx(model::offset request_commit_idx) {
+    auto lstats = _log.offsets();
     // Raft paper:
     //
     // If leaderCommit > commitIndex, set commitIndex =
     // min(leaderCommit, index of last new entry)
     if (request_commit_idx > _meta.commit_index) {
         auto new_commit_idx = std::min(
-          request_commit_idx, _log.committed_offset());
+          request_commit_idx, lstats.committed_offset);
         if (new_commit_idx != _meta.commit_index) {
             auto previous_commit_idx = _meta.commit_index;
             _meta.commit_index = new_commit_idx;

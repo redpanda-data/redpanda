@@ -2,7 +2,7 @@
 
 #include "storage/segment.h"
 
-#include <initializer_list>
+#include <deque>
 
 namespace storage {
 /*
@@ -22,9 +22,11 @@ public:
     // type _must_ offer stable segment addresses
     // for readers and writers taking refs.
     using type = ss::lw_shared_ptr<segment>;
-    using underlying_t = ss::circular_buffer<type>;
+    using underlying_t = std::deque<type>;
     using const_iterator = underlying_t::const_iterator;
     using iterator = underlying_t::iterator;
+    using reverse_iterator = underlying_t::reverse_iterator;
+    using const_reverse_iterator = underlying_t::const_reverse_iterator;
 
     explicit segment_set(underlying_t);
     ~segment_set() noexcept = default;
@@ -61,6 +63,11 @@ public:
     iterator end() { return _handles.end(); }
     const_iterator begin() const { return _handles.begin(); }
     const_iterator end() const { return _handles.end(); }
+    // reverse
+    reverse_iterator rbegin() { return _handles.rbegin(); }
+    reverse_iterator rend() { return _handles.rend(); }
+    const_reverse_iterator rbegin() const { return _handles.rbegin(); }
+    const_reverse_iterator rend() const { return _handles.rend(); }
 
 private:
     underlying_t _handles;

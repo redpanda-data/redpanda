@@ -31,10 +31,10 @@ ss::future<> recovery_stm::do_one_read() {
         _stop_requested = true;
         return ss::make_ready_future<>();
     }
-
+    auto lstats = _ptr->_log.offsets();
     storage::log_reader_config cfg(
       meta.value()->next_index,
-      model::offset(_ptr->_log.dirty_offset()),
+      lstats.dirty_offset,
       1,
       // 32KB is a modest estimate. It has good batching and it also prevents an
       // OOM situation where we have a lot of raft groups recovering at the same
@@ -140,7 +140,8 @@ bool recovery_stm::is_recovery_finished() {
     if (!meta) {
         return true;
     }
-    auto max_offset = _ptr->_log.dirty_offset();
+    auto lstats = _ptr->_log.offsets();
+    auto max_offset = lstats.dirty_offset();
     _ctxlog.trace(
       "Recovery status - node {}, match idx: {}, max offset: {}",
       _node_id,

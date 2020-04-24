@@ -7,7 +7,7 @@
 #include "model/timestamp.h"
 #include "tristate.h"
 
-#include <seastar/core/file.hh>
+#include <seastar/core/file.hh> //io_priority
 #include <seastar/util/bool_class.hh>
 
 #include <optional>
@@ -15,6 +15,20 @@
 
 namespace storage {
 using log_clock = ss::lowres_clock;
+
+/// returns base_offset's from batches. Not max_offsets
+struct offset_stats {
+    model::offset start_offset;
+    model::term_id start_offset_term;
+
+    model::offset committed_offset;
+    model::term_id committed_offset_term;
+
+    model::offset dirty_offset;
+    model::term_id dirty_offset_term;
+
+    friend std::ostream& operator<<(std::ostream&, const offset_stats&);
+};
 
 struct log_append_config {
     using fsync = ss::bool_class<class skip_tag>;

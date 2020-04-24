@@ -75,4 +75,18 @@ std::ostream& operator<<(std::ostream& o, const truncate_prefix_config& cfg) {
       o, "{{max_offset:{}, sloppy_prefix:{}}}", cfg.max_offset, cfg.sloppy);
     return o;
 }
+
+std::ostream& operator<<(std::ostream& o, const offset_stats& s) {
+    fmt::print(
+      o,
+      "{{start_offset:{}, start_offset_term:{}, committed_offset:{}, "
+      "committed_offset_term:{}, dirty_offset:{}, dirty_offset_term:{}}}",
+      s.start_offset,
+      s.start_offset_term,
+      s.committed_offset,
+      s.committed_offset_term,
+      s.dirty_offset,
+      s.dirty_offset_term);
+    return o;
+}
 } // namespace storage
