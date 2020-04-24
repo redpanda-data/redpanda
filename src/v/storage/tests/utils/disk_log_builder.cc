@@ -1,4 +1,6 @@
 #include "storage/tests/utils/disk_log_builder.h"
+
+#include "storage/types.h"
 // util functions to be moved from storage_fixture
 // make_ntp, make_dir etc
 namespace storage {
@@ -45,7 +47,8 @@ ss::future<> disk_log_builder::start(model::ntp ntp) {
 }
 
 ss::future<> disk_log_builder::truncate(model::offset o) {
-    return get_log().truncate(o);
+    return get_log().truncate(
+      storage::truncate_config(o, ss::default_priority_class()));
 }
 
 ss::future<> disk_log_builder::gc(

@@ -37,7 +37,9 @@ public:
           std::optional<size_t> max_partition_retention_size)
           = 0;
 
-        virtual ss::future<> truncate(model::offset) = 0;
+        virtual ss::future<> truncate(truncate_config) = 0;
+        virtual ss::future<> truncate_prefix(truncate_prefix_config) = 0;
+
         virtual ss::future<model::record_batch_reader>
           make_reader(log_reader_config) = 0;
         virtual log_appender make_appender(log_append_config) = 0;
@@ -79,8 +81,11 @@ public:
      * Truncate at offset (31) will result in
      * segment: {[10,10][11,30]}
      */
-    ss::future<> truncate(model::offset offset) {
-        return _impl->truncate(offset);
+    ss::future<> truncate(truncate_config cfg) {
+        return _impl->truncate(cfg);
+    }
+    ss::future<> truncate_prefix(truncate_prefix_config cfg) {
+        return _impl->truncate_prefix(cfg);
     }
 
     ss::future<model::record_batch_reader> make_reader(log_reader_config cfg) {

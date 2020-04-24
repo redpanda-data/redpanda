@@ -8,6 +8,7 @@
 #include "storage/offset_assignment.h"
 #include "storage/offset_to_filepos_consumer.h"
 #include "storage/segment_set.h"
+#include "storage/types.h"
 #include "storage/version.h"
 #include "vassert.h"
 #include "vlog.h"
@@ -331,40 +332,92 @@ ss::future<> disk_log_impl::remove_full_segments(model::offset o) {
           return remove_segment_permanently(ptr, "remove_full_segments");
       });
 }
-ss::future<> disk_log_impl::truncate(model::offset offset) {
-    vassert(!_closed, "truncate() on closed log - {}", *this);
-    return _failure_probes.truncate().then(
-      [this, offset]() mutable { return do_truncate(offset); });
+ss::future<>
+disk_log_impl::remove_prefix_full_segments(truncate_prefix_config cfg) {
+    return ss::do_until(
+      [this, cfg] {
+          return _segs.empty()
+                 || _segs.front()->dirty_offset() < cfg.max_offset;
+      },
+      [this] {
+          auto ptr = _segs.front();
+          _segs.pop_front();
+          return remove_segment_permanently(ptr, "remove_prefix_full_segments");
+      });
 }
 
-ss::future<> disk_log_impl::do_truncate(model::offset o) {
-    if (o > dirty_offset() || o < start_offset()) {
+ss::future<> disk_log_impl::truncate_prefix(truncate_prefix_config cfg) {
+    vassert(!_closed, "truncate_prefix() on closed log - {}", *this);
+    return _failure_probes.truncate_prefix().then([this, cfg]() mutable {
+        // dispatch the actual truncation
+        return do_truncate_prefix(cfg);
+    });
+}
+
+ss::future<> disk_log_impl::do_truncate_prefix(truncate_prefix_config cfg) {
+    vassert(
+      cfg.sloppy == truncate_prefix_config::sloppy_prefix::yes,
+      "We don't support exact prefix truncation yet. Config: {} - {}",
+      cfg,
+      *this);
+    if (cfg.max_offset < start_offset()) {
         return ss::make_ready_future<>();
     }
     if (_segs.empty()) {
         return ss::make_ready_future<>();
     }
-    if (_segs.back()->reader().base_offset() >= o) {
-        return remove_full_segments(o).then(
-          [this, o] { return do_truncate(o); });
+    if (_segs.front()->dirty_offset() >= cfg.max_offset) {
+        return remove_prefix_full_segments(cfg).then([this, cfg] {
+            // recurse
+            return do_truncate_prefix(cfg);
+        });
     }
-    auto& last = *_segs.back();
-    if (o > last.dirty_offset()) {
+    auto begin = _segs.front();
+    if (begin->has_appender()) {
+        // we don't truncate active appenders
         return ss::make_ready_future<>();
     }
-    auto pidx = last.index().find_nearest(o);
+    // NOTE: at the moment we don't support mid segment truncation
+    // since it requires index invalidation
+    return ss::make_ready_future<>();
+}
+
+ss::future<> disk_log_impl::truncate(truncate_config cfg) {
+    vassert(!_closed, "truncate() on closed log - {}", *this);
+    return _failure_probes.truncate().then([this, cfg]() mutable {
+        // dispatch the actual truncation
+        return do_truncate(cfg);
+    });
+}
+
+ss::future<> disk_log_impl::do_truncate(truncate_config cfg) {
+    if (cfg.base_offset > dirty_offset() || cfg.base_offset < start_offset()) {
+        return ss::make_ready_future<>();
+    }
+    if (_segs.empty()) {
+        return ss::make_ready_future<>();
+    }
+    if (_segs.back()->reader().base_offset() >= cfg.base_offset) {
+        return remove_full_segments(cfg.base_offset).then([this, cfg] {
+            // recurse
+            return do_truncate(cfg);
+        });
+    }
+    auto& last = *_segs.back();
+    if (cfg.base_offset > last.dirty_offset()) {
+        return ss::make_ready_future<>();
+    }
+    auto pidx = last.index().find_nearest(cfg.base_offset);
     model::offset start = last.index().base_offset();
     size_t initial_size = 0;
     if (pidx) {
         start = pidx->offset;
         initial_size = pidx->filepos;
     }
-    // TODO: pass a priority for truncate
-    return make_reader(
-             log_reader_config(start, o, ss::default_priority_class()))
-      .then([o, initial_size](model::record_batch_reader reader) {
+    return make_reader(log_reader_config(start, cfg.base_offset, cfg.prio))
+      .then([cfg, initial_size](model::record_batch_reader reader) {
           return std::move(reader).consume(
-            internal::offset_to_filepos_consumer(o, initial_size),
+            internal::offset_to_filepos_consumer(cfg.base_offset, initial_size),
             model::no_timeout);
       })
       .then([this](std::optional<std::pair<model::offset, size_t>> phs) {
@@ -384,7 +437,8 @@ ss::future<> disk_log_impl::do_truncate(model::offset o) {
             .handle_exception([last, phs, this](std::exception_ptr e) {
                 vassert(
                   false,
-                  "Could not truncate:{} logical max:{}, physical offset:{} on "
+                  "Could not truncate:{} logical max:{}, physical "
+                  "offset:{} on "
                   "segment:{} - log:{}",
                   e,
                   phs->first,
@@ -393,7 +447,7 @@ ss::future<> disk_log_impl::do_truncate(model::offset o) {
                   *this);
             });
       });
-} // namespace storage
+}
 
 std::ostream& disk_log_impl::print(std::ostream& o) const {
     return o << "{term:" << term() << ", closed:" << _closed
