@@ -84,8 +84,8 @@ public:
     };
     heartbeat_manager(duration_type interval, consensus_client_protocol);
 
-    void register_group(ss::lw_shared_ptr<consensus>);
-    void deregister_group(raft::group_id);
+    ss::future<> register_group(ss::lw_shared_ptr<consensus>);
+    ss::future<> deregister_group(raft::group_id);
 
     ss::future<> start();
     ss::future<> stop();
@@ -116,6 +116,7 @@ private:
 
     // private members
 
+    ss::semaphore _sem{1};
     clock_type::time_point _hbeat = clock_type::now();
     duration_type _heartbeat_interval;
     timer_type _heartbeat_timer;

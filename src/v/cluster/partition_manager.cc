@@ -90,8 +90,7 @@ ss::future<consensus_ptr> partition_manager::manage(
             return with_gate(_bg, [this, p, c, group] {
                 vlog(clusterlog.debug, "Recovering raft group: {}", group);
                 return p->start().then([this, c]() mutable {
-                    _hbeats.register_group(c);
-                    return c;
+                    return _hbeats.register_group(c).then([c] { return c; });
                 });
             });
         });
