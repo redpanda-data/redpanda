@@ -152,6 +152,8 @@ struct ntp_config {
         // will be disabled if there is no value set the default will be used
         tristate<size_t> retention_bytes{std::nullopt};
         tristate<std::chrono::milliseconds> retention_time{std::nullopt};
+        friend std::ostream&
+        operator<<(std::ostream&, const default_overrides&);
     };
 
     ntp_config(model::ntp n, ss::sstring base_dir) noexcept
@@ -179,7 +181,5 @@ struct ntp_config {
     }
 
     friend std::ostream& operator<<(std::ostream&, const ntp_config&);
-    friend std::ostream&
-    operator<<(std::ostream&, const ntp_config::default_overrides&);
 };
 } // namespace storage

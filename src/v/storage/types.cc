@@ -57,14 +57,13 @@ operator<<(std::ostream& o, const ntp_config::default_overrides& v) {
 }
 
 std::ostream& operator<<(std::ostream& o, const ntp_config& v) {
-    fmt::print(
-      o,
-      "{{ntp: {}, base_directory: {}, overrides: {}}",
-      v.ntp,
-      v.base_dir,
-      v.overrides);
-
-    return o;
+    o << "{ntp:" << v.ntp << ", base_dir:" << v.base_dir << "overrides:";
+    if (v.overrides) {
+        o << *v.overrides;
+    } else {
+        o << "nullptr";
+    }
+    return o << "}";
 }
 
 std::ostream& operator<<(std::ostream& o, const truncate_config& cfg) {

@@ -2,8 +2,6 @@
 
 #include "seastarx.h"
 
-#include <seastar/util/variant_utils.hh>
-
 #include <fmt/ostream.h>
 
 #include <optional>
@@ -33,10 +31,7 @@ public:
     }
 
     constexpr bool has_value() const {
-        return ss::visit(
-          _value,
-          [](const std::monostate&) { return false; },
-          [](const std::optional<T>& v) { return v.has_value(); });
+        return !is_disabled() && get_optional().has_value();
     }
 
     constexpr const T& operator*() const& { return *get_optional(); }
