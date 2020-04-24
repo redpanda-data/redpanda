@@ -99,11 +99,11 @@ function makeRecordBatch() {
 }
 
 describe('RPC',
-    function() {
+    () => {
         describe('roundtrip simple_pod',
-            function() {
+            () => {
                 it('Assert should fail if serializer output differs',
-                    function() {
+                    () => {
                         const header = makeHeader();
                         const simplePod = makeSimplePod();
                         const serializer = new Serializer();
@@ -133,9 +133,9 @@ describe('RPC',
                     });
             });
         describe('try to deserialize Header with less bytes',
-            function() {
+            () => {
                 it('should throw and catch',
-                    function() {
+                    () => {
                         let buf = makeSmallBuff();
                         let deserializer = new Deserializer();
                         try {
@@ -148,9 +148,9 @@ describe('RPC',
                     });
             });
         describe('try to deserialize SimplePod with less bytes',
-            function() {
+            () => {
                 it('should throw and catch',
-                    function() {
+                    () => {
                         let buf = makeSmallBuff();
                         let deserializer = new Deserializer();
                         try {
@@ -163,9 +163,9 @@ describe('RPC',
                     });
             });
         describe('check RpcHeaderCrc32 hasn\'t changed',
-            function() {
+            () => {
                 it('crc32 of makeHeader should be equal to constant value',
-                    function() {
+                    () => {
                         const header = makeHeader();
                         const simplePod = makeSimplePod();
                         const serializer = new Serializer();
@@ -179,9 +179,9 @@ describe('RPC',
                     });
             });
         describe('roundtrip RecordBatch',
-            function() {
+            () => {
                 it('Assert should fail if serializer output differs',
-                    function() {
+                    () => {
                         const batch = makeRecordBatch();
                         const serializer = new Serializer();
                         //serialization starts here
