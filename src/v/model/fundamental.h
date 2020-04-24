@@ -15,10 +15,39 @@
 
 namespace model {
 
+// Named after Kafka cleanup.policy topic property
+enum class cleanup_policy_bitflags : uint8_t {
+    deletion = 1U,
+    compaction = 1U << 1U
+};
+
+inline cleanup_policy_bitflags
+operator|(cleanup_policy_bitflags a, cleanup_policy_bitflags b) {
+    return cleanup_policy_bitflags(
+      std::underlying_type_t<cleanup_policy_bitflags>(a)
+      | std::underlying_type_t<cleanup_policy_bitflags>(b));
+}
+
+inline void operator|=(cleanup_policy_bitflags& a, cleanup_policy_bitflags b) {
+    a = (a | b);
+}
+
+inline cleanup_policy_bitflags
+operator&(cleanup_policy_bitflags a, cleanup_policy_bitflags b) {
+    return cleanup_policy_bitflags(
+      std::underlying_type_t<cleanup_policy_bitflags>(a)
+      & std::underlying_type_t<cleanup_policy_bitflags>(b));
+}
+
+inline void operator&=(cleanup_policy_bitflags& a, cleanup_policy_bitflags b) {
+    a = (a & b);
+}
+
+std::ostream& operator<<(std::ostream&, cleanup_policy_bitflags);
+std::istream& operator>>(std::istream&, cleanup_policy_bitflags&);
+
+// Named after Kafka compaction.strategy topic property
 enum class compaction_strategy : int8_t {
-    /// \brief a regular topic type can be compacted with simple retention
-    /// policies (size base and time base)
-    regular,
     /// \brief offset compaction means the old schoold kafka compacted topics
     /// strategy before KIP 280
     offset,
@@ -28,6 +57,7 @@ enum class compaction_strategy : int8_t {
     header,
 };
 std::ostream& operator<<(std::ostream&, compaction_strategy);
+std::istream& operator>>(std::istream&, compaction_strategy&);
 
 using term_id = named_type<int64_t, struct model_raft_term_id_type>;
 

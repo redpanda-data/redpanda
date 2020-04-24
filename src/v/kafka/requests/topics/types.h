@@ -4,6 +4,7 @@
 #include "kafka/errors.h"
 #include "model/fundamental.h"
 
+#include <absl/container/flat_hash_map.h>
 #include <boost/algorithm/string.hpp>
 #include <boost/lexical_cast.hpp>
 
@@ -43,48 +44,8 @@ struct new_topic_configuration {
     std::vector<partition_assignment> assignments;
     std::vector<config_entry> config;
 
-    std::unordered_map<ss::sstring, ss::sstring> config_map() const {
-        std::unordered_map<ss::sstring, ss::sstring> ret;
-        for (const auto& c : config) {
-            ret.emplace(c.name, c.value);
-        }
-        return ret;
-    }
+    absl::flat_hash_map<ss::sstring, ss::sstring> config_map() const;
 
-    cluster::topic_configuration to_cluster_type() const {
-        cluster::topic_configuration cfg(
-          cluster::kafka_namespace,
-          model::topic{ss::sstring(topic())},
-          partition_count,
-          replication_factor);
-        auto config_entries = config_map();
-        if (auto it = config_entries.find("compression.type");
-            it != config_entries.end()) {
-            cfg.compression = boost::lexical_cast<model::compression>(
-              (*it).second);
-        }
-        if (auto it = config_entries.find("cleanup.policy");
-            it != config_entries.end()) {
-            if ((*it).second == "compact") {
-                cfg.compaction = model::topic_partition::compaction::yes;
-            }
-        }
-        if (auto it = config_entries.find("retention.bytes");
-            it != config_entries.end()) {
-            cfg.retention_bytes = boost::lexical_cast<uint64_t>((*it).second);
-        }
-        if (auto it = config_entries.find("retention.ms");
-            it != config_entries.end()) {
-            cfg.retention = std::chrono::milliseconds(
-              boost::lexical_cast<uint64_t>((*it).second));
-        }
-        if (auto it = config_entries.find("message.timestamp.type");
-            it != config_entries.end()) {
-            if (boost::iequals(it->second, "logappendtime")) {
-                cfg.message_timestamp_type = model::timestamp_type::append_time;
-            }
-        }
-        return cfg;
-    }
+    cluster::topic_configuration to_cluster_type() const;
 };
 } // namespace kafka

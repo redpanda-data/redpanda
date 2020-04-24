@@ -1,6 +1,9 @@
 #include "storage/types.h"
 
+#include "utils/to_string.h"
+
 #include <fmt/core.h>
+#include <fmt/ostream.h>
 
 namespace storage {
 std::ostream& operator<<(std::ostream& o, const log_reader_config& cfg) {
@@ -37,15 +40,31 @@ std::ostream& operator<<(std::ostream& o, const timequery_config& a) {
     return o << "{max_offset:" << a.max_offset << ", time:" << a.time << "}";
 }
 
-std::ostream& operator<<(std::ostream& o, const ntp_config& a) {
-    o << "{ntp:" << a.ntp << ", compaction:" << a.cstrategy
-      << ", segment_size:";
-    if (a.segment_size) {
-        o << *a.segment_size;
-    } else {
-        o << "nullopt";
-    }
-    return o << "}";
+std::ostream&
+operator<<(std::ostream& o, const ntp_config::default_overrides& v) {
+    fmt::print(
+      o,
+      "{{compaction_strategy: {}, cleanup_policy_bitflags: {}, segment_size: "
+      "{}, "
+      "retention_bytes: {}, retention_time_ms: {}}",
+      v.compaction_strategy,
+      v.cleanup_policy_bitflags,
+      v.segment_size,
+      v.retention_bytes,
+      v.retention_time);
+
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const ntp_config& v) {
+    fmt::print(
+      o,
+      "{{ntp: {}, base_directory: {}, overrides: {}}",
+      v.ntp,
+      v.base_dir,
+      v.overrides);
+
+    return o;
 }
 
 std::ostream& operator<<(std::ostream& o, const truncate_config& cfg) {

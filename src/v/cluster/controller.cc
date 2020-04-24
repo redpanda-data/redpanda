@@ -43,6 +43,7 @@ controller::controller(
   ss::sharded<metadata_dissemination_service>& md_dissemination)
   : _self(config::make_self_broker(config::shard_local_cfg()))
   , _seed_servers(config::shard_local_cfg().seed_servers())
+  , _data_directory(config::shard_local_cfg().data_directory().as_sstring())
   , _pm(pm)
   , _st(st)
   , _md_cache(md_cache)
@@ -196,7 +197,7 @@ ss::future<consensus_ptr> controller::start_raft0() {
         brokers.push_back(_self);
     }
     return _pm.local().manage(
-      controller_ntp,
+      make_raft0_ntp_config(),
       controller::group,
       std::move(brokers),
       [this](model::record_batch_reader&& reader) {
@@ -389,27 +390,33 @@ ss::future<> controller::dispatch_manage_partition(
       "Old shard-assignment: {}. Active core-count:{}",
       shard,
       ss::smp::count);
+    auto ntp_config = _md_cache.local()
+                        .get_topic_cfg(model::topic_namespace_view(ntp))
+                        ->make_ntp_config(_data_directory, ntp.tp.partition);
     return _pm.invoke_on(
       shard,
-      [this, raft_group, ntp = std::move(ntp), replicas = std::move(replicas)](
-        partition_manager& pm) mutable {
+      [this,
+       raft_group,
+       ntp_config = std::move(ntp_config),
+       replicas = std::move(replicas)](partition_manager& pm) mutable {
           return manage_partition(
-            pm, std::move(ntp), raft_group, std::move(replicas));
+            pm, std::move(ntp_config), raft_group, std::move(replicas));
       });
 }
 
 ss::future<> controller::manage_partition(
   partition_manager& pm,
-  model::ntp ntp,
+  storage::ntp_config ntp_cfg,
   raft::group_id raft_group,
   std::vector<model::broker_shard> replicas) {
+    auto path = ntp_cfg.ntp.path();
     return pm
       .manage(
-        ntp,
+        std::move(ntp_cfg),
         raft_group,
         get_replica_set_brokers(_md_cache.local(), std::move(replicas)),
         std::nullopt)
-      .then([path = ntp.path(), raft_group](consensus_ptr) {
+      .then([path = std::move(path), raft_group](consensus_ptr) {
           vlog(
             clusterlog.info,
             "recovered: {}, raft group_id: {}",
@@ -995,4 +1002,9 @@ controller::process_join_request(model::broker broker) {
             errc::join_request_dispatch_error);
       });
 }
+
+storage::ntp_config controller::make_raft0_ntp_config() const {
+    return storage::ntp_config(controller_ntp, _data_directory);
+}
+
 } // namespace cluster

@@ -26,10 +26,7 @@ struct bootstrap_fixture : raft::simple_record_fixture {
         storage::log_config::debug_sanitize_files::yes,
         storage::log_config::with_cache::no)) {
         // ignore the get_log()
-        (void)_mngr
-          .manage(
-            storage::ntp_config(_ntp, fmt::format("test.dir/{}", _ntp.path())))
-          .get0();
+        (void)_mngr.manage(storage::ntp_config(_ntp, "test.dir")).get0();
     }
     std::vector<storage::append_result> write_n(const std::size_t n) {
         const auto cfg = storage::log_append_config{

@@ -62,7 +62,7 @@ ss::future<> consensus::stop() {
 }
 
 ss::sstring consensus::voted_for_filename() const {
-    return _log.config().work_directory + "/voted_for";
+    return _log.config().work_directory() + "/voted_for";
 }
 
 consensus::success_reply consensus::update_follower_index(

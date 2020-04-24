@@ -44,7 +44,7 @@ public:
     ss::future<> start();
     ss::future<> stop();
     ss::future<consensus_ptr> manage(
-      model::ntp,
+      storage::ntp_config,
       raft::group_id,
       std::vector<model::broker>,
       std::optional<raft::consensus::append_entries_cb_t>);

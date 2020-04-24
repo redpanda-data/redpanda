@@ -33,11 +33,8 @@ FIXTURE_TEST(
     info("Configuration: {}", mgr.config());
     auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
     auto ntp = make_ntp("default", "test", 0);
-    auto log = mgr
-                 .manage(storage::ntp_config(
-                   ntp,
-                   fmt::format("{}/{}", mgr.config().base_dir, ntp.path())))
-                 .get0();
+    auto log
+      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get0();
     auto headers = append_random_batches(log, 10);
     log.flush().get0();
     auto batches = read_and_validate_all_batches(log);
@@ -53,11 +50,8 @@ FIXTURE_TEST(append_twice_to_same_segment, storage_test_fixture) {
     info("Configuration: {}", mgr.config());
     auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
     auto ntp = make_ntp("default", "test", 0);
-    auto log = mgr
-                 .manage(storage::ntp_config(
-                   ntp,
-                   fmt::format("{}/{}", mgr.config().base_dir, ntp.path())))
-                 .get0();
+    auto log
+      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get0();
     auto headers = append_random_batches(log, 10);
     log.flush().get0();
     auto headers_2 = append_random_batches(log, 10);
@@ -78,11 +72,8 @@ FIXTURE_TEST(test_assigning_offsets_in_multiple_segment, storage_test_fixture) {
     info("Configuration: {}", mgr.config());
     auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
     auto ntp = make_ntp("default", "test", 0);
-    auto log = mgr
-                 .manage(storage::ntp_config(
-                   ntp,
-                   fmt::format("{}/{}", mgr.config().base_dir, ntp.path())))
-                 .get0();
+    auto log
+      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get0();
     auto headers = append_random_batches(log, 10);
     log.flush().get0();
     auto batches = read_and_validate_all_batches(log);
@@ -100,11 +91,8 @@ FIXTURE_TEST(test_single_record_per_segment, storage_test_fixture) {
     info("Configuration: {}", mgr.config());
     auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
     auto ntp = make_ntp("default", "test", 0);
-    auto log = mgr
-                 .manage(storage::ntp_config(
-                   ntp,
-                   fmt::format("{}/{}", mgr.config().base_dir, ntp.path())))
-                 .get0();
+    auto log
+      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get0();
     auto headers = append_random_batches(log, 10, model::term_id(1), []() {
         ss::circular_buffer<model::record_batch> batches;
         batches.push_back(
@@ -124,11 +112,8 @@ FIXTURE_TEST(test_reading_range_from_a_log, storage_test_fixture) {
     storage::log_manager mgr = make_log_manager();
     info("Configuration: {}", mgr.config());
     auto ntp = make_ntp("default", "test", 0);
-    auto log = mgr
-                 .manage(storage::ntp_config(
-                   ntp,
-                   fmt::format("{}/{}", mgr.config().base_dir, ntp.path())))
-                 .get0();
+    auto log
+      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get0();
     auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
     auto headers = append_random_batches(log, 10);
     log.flush().get0();
@@ -168,11 +153,8 @@ FIXTURE_TEST(test_rolling_term, storage_test_fixture) {
     info("Configuration: {}", mgr.config());
     auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
     auto ntp = make_ntp("default", "test", 0);
-    auto log = mgr
-                 .manage(storage::ntp_config(
-                   ntp,
-                   fmt::format("{}/{}", mgr.config().base_dir, ntp.path())))
-                 .get0();
+    auto log
+      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get0();
     std::vector<model::record_batch_header> headers;
     model::offset current_offset = model::offset{0};
     for (auto i = 0; i < 5; i++) {
@@ -198,11 +180,8 @@ FIXTURE_TEST(test_append_batches_from_multiple_terms, storage_test_fixture) {
     info("Testing type: {}", mgr.config());
     auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
     auto ntp = make_ntp("default", "test", 0);
-    auto log = mgr
-                 .manage(storage::ntp_config(
-                   ntp,
-                   fmt::format("{}/{}", mgr.config().base_dir, ntp.path())))
-                 .get0();
+    auto log
+      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get0();
     std::vector<model::record_batch_header> headers;
     model::offset current_offset = model::offset{0};
     ss::circular_buffer<model::record_batch> batches;
