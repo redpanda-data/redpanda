@@ -4,6 +4,7 @@
 #include "model/metadata.h"
 #include "model/record.h"
 #include "reflection/adl.h"
+#include "tristate.h"
 
 #include <seastar/net/inet_address.hh>
 #include <seastar/net/ip.hh>
@@ -100,5 +101,36 @@ template<>
 struct adl<model::topic_metadata> {
     void to(iobuf& out, model::topic_metadata&& md);
     model::topic_metadata from(iobuf_parser& in);
+};
+
+template<typename T>
+struct adl<tristate<T>> {
+    void to(iobuf& out, tristate<T>&& t) {
+        if (t.is_disabled()) {
+            adl<int8_t>{}.to(out, -1);
+            return;
+        }
+        if (!t.has_value()) {
+            adl<int8_t>{}.to(out, 0);
+            return;
+        }
+        adl<int8_t>{}.to(out, 1);
+        adl<T>{}.to(out, std::move(t.value()));
+    }
+
+    tristate<T> from(iobuf b) {
+        return reflection::from_iobuf<tristate<T>>(std::move(b));
+    }
+    tristate<T> from(iobuf_parser& buf) {
+        auto state = adl<int8_t>{}.from(buf);
+        if (state == -1) {
+            return tristate<T>{};
+        }
+        if (state == 0) {
+            return tristate<T>(std::nullopt);
+        }
+
+        return tristate<T>(adl<T>{}.from(buf));
+    }
 };
 } // namespace reflection

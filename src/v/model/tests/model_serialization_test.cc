@@ -7,6 +7,8 @@
 
 #include <boost/test/tools/old/interface.hpp>
 
+#include <optional>
+
 SEASTAR_THREAD_TEST_CASE(topic_metadata_rt_test) {
     model::partition_metadata p_md0(model::partition_id(0));
     p_md0.leader_node = model::node_id(0);
@@ -40,4 +42,19 @@ SEASTAR_THREAD_TEST_CASE(topic_metadata_rt_test) {
         BOOST_REQUIRE_EQUAL(
           r.partitions[1].replicas[i].shard, p_md1.replicas[i].shard);
     }
+}
+
+SEASTAR_THREAD_TEST_CASE(tristate_rt_test) {
+    tristate<size_t> disabled{};
+    tristate<size_t> empty(std::nullopt);
+    tristate<size_t> present(1024);
+
+    auto r_disabled = serialize_roundtrip_rpc(std::move(disabled));
+    auto r_empty = serialize_roundtrip_rpc(std::move(empty));
+    auto r_present = serialize_roundtrip_rpc(std::move(present));
+
+    BOOST_REQUIRE_EQUAL(r_disabled.is_disabled(), true);
+    BOOST_REQUIRE_EQUAL(r_empty.is_disabled(), false);
+    BOOST_REQUIRE_EQUAL(r_empty.has_value(), false);
+    BOOST_REQUIRE_EQUAL(r_present.value(), 1024);
 }
