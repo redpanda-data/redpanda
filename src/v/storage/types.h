@@ -51,6 +51,29 @@ struct timequery_result {
     friend std::ostream& operator<<(std::ostream& o, const timequery_result&);
 };
 
+struct truncate_config {
+    truncate_config(model::offset o, ss::io_priority_class p)
+      : base_offset(o)
+      , prio(p) {}
+    model::offset base_offset;
+    ss::io_priority_class prio;
+    friend std::ostream& operator<<(std::ostream&, const truncate_config&);
+};
+
+struct truncate_prefix_config {
+    using sloppy_prefix = ss::bool_class<struct sloppy_prefix_truncation>;
+
+    truncate_prefix_config(model::offset o, ss::io_priority_class p)
+      : max_offset(o)
+      , prio(p) {}
+    model::offset max_offset;
+    ss::io_priority_class prio;
+    sloppy_prefix sloppy = sloppy_prefix::yes;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const truncate_prefix_config&);
+};
+
 /**
  * Log reader configuration.
  *

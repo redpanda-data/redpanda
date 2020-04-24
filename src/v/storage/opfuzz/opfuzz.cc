@@ -107,7 +107,52 @@ struct truncate_op final : opfuzz::op {
                     0, ofs.size() - 1)];
               }
               vlog(fuzzlogger.info, "Truncating log at offset: {}", to);
-              return ctx.log->truncate(to);
+              return ctx.log->truncate(
+                storage::truncate_config(to, ss::default_priority_class()));
+          });
+    }
+};
+
+struct truncate_prefix_op final : opfuzz::op {
+    struct collect_max_offsets {
+        ss::future<ss::stop_iteration> operator()(model::record_batch batch) {
+            offsets.push_back(batch.last_offset());
+            return ss::make_ready_future<ss::stop_iteration>(
+              ss::stop_iteration::no);
+        }
+        std::vector<model::offset> end_of_stream() {
+            return std::move(offsets);
+        }
+        std::vector<model::offset> offsets;
+    };
+
+    ~truncate_prefix_op() noexcept override = default;
+    const char* name() const final { return "truncate_prefix"; }
+    ss::future<> invoke(opfuzz::op_context ctx) final {
+        storage::log_reader_config cfg(
+          model::offset(0),
+          ctx.log->dirty_offset(),
+          ss::default_priority_class());
+        vlog(
+          fuzzlogger.info,
+          "collect header::max_offsets {} - {}",
+          cfg,
+          *ctx.log);
+        return ctx.log->make_reader(cfg)
+          .then([](model::record_batch_reader reader) {
+              return std::move(reader).consume(
+                collect_max_offsets{}, model::no_timeout);
+          })
+          .then([ctx](std::vector<model::offset> ofs) {
+              vlog(fuzzlogger.info, "max offsets collected: {}", ofs);
+              model::offset to{0};
+              if (!ofs.empty()) {
+                  to = ofs[random_generators::get_int<size_t>(
+                    0, ofs.size() - 1)];
+              }
+              vlog(fuzzlogger.info, "Truncating log at offset: {}", to);
+              return ctx.log->truncate_prefix(storage::truncate_prefix_config(
+                to, ss::default_priority_class()));
           });
     }
 };
@@ -185,16 +230,18 @@ std::unique_ptr<opfuzz::op> opfuzz::random_operation() {
     switch (next) {
     case op_name::append:
         return std::make_unique<append_op>();
+    case op_name::append_with_multiple_terms:
+        return std::make_unique<append_multi_term_op>();
     case op_name::truncate:
         return std::make_unique<truncate_op>();
+    case op_name::truncate_prefix:
+        return std::make_unique<truncate_prefix_op>();
     case op_name::read:
         return std::make_unique<read_op>();
     case op_name::flush:
         return std::make_unique<flush_op>();
     case op_name::term_roll:
         return std::make_unique<term_roll_op>();
-    case op_name::append_with_multiple_terms:
-        return std::make_unique<append_multi_term_op>();
     }
     vassert(false, "could not generate random operation for log");
 }

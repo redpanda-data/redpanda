@@ -583,7 +583,8 @@ consensus::do_append_entries(append_entries_request&& r) {
           _log.dirty_offset(),
           truncate_at);
         _probe.log_truncated();
-        return _log.truncate(truncate_at)
+        return _log
+          .truncate(storage::truncate_config(truncate_at, _io_priority))
           .then([this, r = std::move(r)]() mutable {
               _meta.prev_log_index = r.meta.prev_log_index;
               _meta.prev_log_term = r.meta.prev_log_term;

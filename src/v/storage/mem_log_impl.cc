@@ -154,18 +154,51 @@ struct mem_log_impl final : log::impl {
         }
         return ss::make_ready_future<ret_t>();
     }
-
-    ss::future<> truncate(model::offset offset) final {
-        stlog.debug("Truncating {} log at {}", config().ntp, offset);
-        if (unlikely(offset < model::offset(0))) {
+    ss::future<> truncate_prefix(truncate_prefix_config cfg) final {
+        stlog.debug("PREFIX Truncating {} log at {}", config().ntp, cfg);
+        if(_data.empty()){
+            return ss::make_ready_future<>();
+        }
+        for (auto& reader : _readers) {
+            reader.invalidate();
+        }
+        auto it = std::lower_bound(
+          std::begin(_data),
+          std::end(_data),
+          cfg.max_offset,
+          entries_ordering{});
+        if (it == _data.end()) {
+            return ss::make_ready_future<>();
+        }
+        if (it->last_offset() > cfg.max_offset) {
+            it = std::prev(it);
+        }
+        if (it == _data.end()) {
+            return ss::make_ready_future<>();
+        }
+        _probe.remove_bytes_written(std::accumulate(
+          _data.begin(),
+          it,
+          size_t(0),
+          [](size_t acc, const model::record_batch& b) {
+              return acc += b.size_bytes();
+          }));
+        _data.erase(_data.begin(), it);
+        return ss::make_ready_future<>();
+    }
+    ss::future<> truncate(truncate_config cfg) final {
+        stlog.debug("Truncating {} log at {}", config().ntp, cfg);
+        if (unlikely(cfg.base_offset < model::offset(0))) {
             throw std::invalid_argument("cannot truncate at negative offset");
         }
         for (auto& reader : _readers) {
             reader.invalidate();
         }
-
         auto it = std::lower_bound(
-          std::begin(_data), std::end(_data), offset, entries_ordering{});
+          std::begin(_data),
+          std::end(_data),
+          cfg.base_offset,
+          entries_ordering{});
         if (it != _data.end()) {
             _probe.remove_bytes_written(std::accumulate(
               it,

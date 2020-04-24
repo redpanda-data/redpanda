@@ -27,7 +27,8 @@ public:
     ss::future<> close() final;
     ss::future<> remove() final;
     ss::future<> flush() final;
-    ss::future<> truncate(model::offset) final;
+    ss::future<> truncate(truncate_config) final;
+    ss::future<> truncate_prefix(truncate_prefix_config) final;
 
     ss::future<> gc(
       model::timestamp collection_upper_bound,
@@ -71,8 +72,11 @@ private:
       model::term_id term_for_this_segment,
       ss::io_priority_class prio);
 
-    ss::future<> do_truncate(model::offset);
+    ss::future<> do_truncate(truncate_config);
     ss::future<> remove_full_segments(model::offset o);
+
+    ss::future<> do_truncate_prefix(truncate_prefix_config);
+    ss::future<> remove_prefix_full_segments(truncate_prefix_config);
 
     ss::future<> garbage_collect_max_partition_size(size_t max_bytes);
     ss::future<> garbage_collect_oldest_segments(model::timestamp);

@@ -48,4 +48,13 @@ std::ostream& operator<<(std::ostream& o, const ntp_config& a) {
     return o << "}";
 }
 
+std::ostream& operator<<(std::ostream& o, const truncate_config& cfg) {
+    fmt::print(o, "{{base_offset:{}}}", cfg.base_offset);
+    return o;
+}
+std::ostream& operator<<(std::ostream& o, const truncate_prefix_config& cfg) {
+    fmt::print(
+      o, "{{max_offset:{}, sloppy_prefix:{}}}", cfg.max_offset, cfg.sloppy);
+    return o;
+}
 } // namespace storage

@@ -18,13 +18,14 @@ public:
         return "storage::log::failure_probes";
     }
 
-    enum class methods : type { append = 1, roll = 2, truncate = 3 };
+    enum class methods : type { append = 1, roll = 2, truncate = 3, truncate_prefix = 4 };
 
     type method_for_point(std::string_view point) const final {
         return string_switch<type>(point)
           .match("append", static_cast<type>(methods::append))
           .match("roll", static_cast<type>(methods::roll))
           .match("truncate", static_cast<type>(methods::truncate))
+          .match("truncate_prefix", static_cast<type>(methods::truncate_prefix))
           .default_match(0);
     }
 
@@ -49,6 +50,12 @@ public:
     ss::future<> truncate() {
         if (is_enabled()) {
             return inject_method_failure(methods::truncate, "truncate");
+        }
+        return ss::make_ready_future<>();
+    }
+    ss::future<> truncate_prefix() {
+        if (is_enabled()) {
+            return inject_method_failure(methods::truncate_prefix, "truncate_prefix");
         }
         return ss::make_ready_future<>();
     }
