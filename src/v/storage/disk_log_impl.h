@@ -8,6 +8,7 @@
 #include "storage/probe.h"
 #include "storage/segment_appender.h"
 #include "storage/segment_reader.h"
+#include "storage/types.h"
 
 #include <seastar/core/gate.hh>
 
@@ -41,10 +42,8 @@ public:
     ss::future<std::optional<timequery_result>>
     timequery(timequery_config cfg) final;
     size_t segment_count() const final { return _segs.size(); }
-    model::offset start_offset() const final;
-    model::offset dirty_offset() const final;
+    offset_stats offsets() const final;
     std::optional<model::term_id> get_term(model::offset) const final;
-    model::offset committed_offset() const final;
     std::ostream& print(std::ostream&) const final;
 
     ss::future<> maybe_roll(

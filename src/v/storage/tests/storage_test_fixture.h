@@ -94,9 +94,10 @@ public:
 
     ss::circular_buffer<model::record_batch>
     read_and_validate_all_batches(storage::log log) {
+        auto lstats = log.offsets();
         storage::log_reader_config cfg(
           model::offset(0),
-          log.committed_offset(),
+          lstats.committed_offset,
           ss::default_priority_class());
         auto reader = log.make_reader(std::move(cfg)).get0();
         return reader.consume(batch_validating_consumer{}, model::no_timeout)
@@ -118,12 +119,13 @@ public:
       T batch_generator = T{},
       storage::log_append_config::fsync sync
       = storage::log_append_config::fsync::no) {
+        auto lstats = log.offsets();
         storage::log_append_config append_cfg{
           sync, ss::default_priority_class(), model::no_timeout};
 
-        model::offset base_offset = log.dirty_offset() < model::offset(0)
+        model::offset base_offset = lstats.dirty_offset < model::offset(0)
                                       ? model::offset(0)
-                                      : log.dirty_offset() + model::offset(1);
+                                      : lstats.dirty_offset + model::offset(1);
         int64_t total_records = 0;
         std::vector<model::record_batch_header> headers;
 
@@ -148,8 +150,8 @@ public:
             // Check if after append offset was updated correctly
             auto expected_offset = model::offset(total_records - 1)
                                    + base_offset;
-            BOOST_REQUIRE_EQUAL(log.dirty_offset(), res.last_offset);
-            BOOST_REQUIRE_EQUAL(log.dirty_offset(), expected_offset);
+            BOOST_REQUIRE_EQUAL(log.offsets().dirty_offset, res.last_offset);
+            BOOST_REQUIRE_EQUAL(log.offsets().dirty_offset, expected_offset);
         }
 
         return headers;

@@ -89,10 +89,9 @@ struct truncate_op final : opfuzz::op {
     ~truncate_op() noexcept override = default;
     const char* name() const final { return "truncate"; }
     ss::future<> invoke(opfuzz::op_context ctx) final {
+        auto lstats = ctx.log->offsets();
         storage::log_reader_config cfg(
-          model::offset(0),
-          ctx.log->dirty_offset(),
-          ss::default_priority_class());
+          model::offset(0), lstats.dirty_offset, ss::default_priority_class());
         vlog(fuzzlogger.info, "collect base offsets {} - {}", cfg, *ctx.log);
         return ctx.log->make_reader(cfg)
           .then([](model::record_batch_reader reader) {
@@ -129,10 +128,9 @@ struct truncate_prefix_op final : opfuzz::op {
     ~truncate_prefix_op() noexcept override = default;
     const char* name() const final { return "truncate_prefix"; }
     ss::future<> invoke(opfuzz::op_context ctx) final {
+        auto lstats = ctx.log->offsets();
         storage::log_reader_config cfg(
-          model::offset(0),
-          ctx.log->dirty_offset(),
-          ss::default_priority_class());
+          model::offset(0), lstats.dirty_offset, ss::default_priority_class());
         vlog(
           fuzzlogger.info,
           "collect header::max_offsets {} - {}",
@@ -178,17 +176,17 @@ struct read_op final : opfuzz::op {
     ~read_op() noexcept override = default;
     const char* name() const final { return "read"; }
     ss::future<> invoke(opfuzz::op_context ctx) final {
+        auto lstats = ctx.log->offsets();
         model::offset start{0};
         model::offset end{0};
-        auto dirty_offset = ctx.log->dirty_offset();
-        if (dirty_offset > start) {
+        if (lstats.dirty_offset > start) {
             start = model::offset(
               random_generators::get_int<model::offset::type>(
-                0, dirty_offset()));
+                0, lstats.dirty_offset()));
         }
         if (start > end) {
             end = model::offset(random_generators::get_int<model::offset::type>(
-              start(), dirty_offset()));
+              start(), lstats.dirty_offset));
         }
         storage::log_reader_config cfg(
           start, end, ss::default_priority_class());

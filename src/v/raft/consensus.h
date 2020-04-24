@@ -108,7 +108,7 @@ public:
         return _log.timequery(cfg);
     }
 
-    model::offset start_offset() const { return _log.start_offset(); }
+    model::offset start_offset() const { return _log.offsets().start_offset; }
 
     ss::future<ss::semaphore_units<>> op_lock_unit() {
         return ss::get_units(_op_sem, 1);

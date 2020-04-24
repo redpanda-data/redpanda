@@ -39,7 +39,8 @@ ss::future<result<append_entries_reply>> replicate_entries_stm::do_dispatch_one(
     if (n == _ptr->_self) {
         auto f = _ptr->flush_log()
                    .then([this, units]() {
-                       auto last_idx = _ptr->_log.committed_offset();
+                       auto lstats = _ptr->_log.offsets();
+                       auto last_idx = lstats.committed_offset;
                        append_entries_reply reply;
                        reply.node_id = _ptr->_self;
                        reply.group = _ptr->_meta.group;

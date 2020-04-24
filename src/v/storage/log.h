@@ -57,10 +57,8 @@ public:
         const ntp_config& config() const { return _config; }
 
         virtual size_t segment_count() const = 0;
-        virtual model::offset dirty_offset() const = 0;
-        virtual model::offset start_offset() const = 0;
-        virtual model::offset committed_offset() const = 0;
-        virtual std::ostream& print(std::ostream& o) const { return o; }
+        virtual storage::offset_stats offsets() const = 0;
+        virtual std::ostream& print(std::ostream& o) const = 0;
         virtual std::optional<model::term_id> get_term(model::offset) const = 0;
 
     private:
@@ -98,11 +96,7 @@ public:
 
     size_t segment_count() const { return _impl->segment_count(); }
 
-    model::offset start_offset() const { return _impl->start_offset(); }
-
-    model::offset dirty_offset() const { return _impl->dirty_offset(); }
-
-    model::offset committed_offset() const { return _impl->committed_offset(); }
+    storage::offset_stats offsets() const { return _impl->offsets(); }
 
     std::optional<model::term_id> get_term(model::offset o) const {
         return _impl->get_term(o);
@@ -132,9 +126,7 @@ private:
 };
 
 inline std::ostream& operator<<(std::ostream& o, const storage::log& lg) {
-    o << "{start:" << lg.start_offset() << ", max:" << lg.dirty_offset()
-      << ", committed:" << lg.committed_offset() << ", ";
-    return lg.print(o) << "}";
+    return lg.print(o);
 }
 
 class log_manager;

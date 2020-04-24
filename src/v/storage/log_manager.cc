@@ -424,10 +424,10 @@ std::ostream& operator<<(std::ostream& o, log_config::storage_type t) {
 }
 
 std::ostream& operator<<(std::ostream& o, const log_config& c) {
-    return o << "{type:" << c.stype << ", base_dir:" << c.base_dir
-             << ", max_segment.size:" << c.max_segment_size
-             << ", debug_sanitize_fileops:" << c.sanitize_fileops
-             << ", retention_bytes:";
+    o << "{type:" << c.stype << ", base_dir:" << c.base_dir
+      << ", max_segment.size:" << c.max_segment_size
+      << ", debug_sanitize_fileops:" << c.sanitize_fileops
+      << ", retention_bytes:";
     if (c.retention_bytes) {
         o << *c.retention_bytes;
     } else {
