@@ -106,8 +106,21 @@ struct truncate_op final : opfuzz::op {
                     0, ofs.size() - 1)];
               }
               vlog(fuzzlogger.info, "Truncating log at offset: {}", to);
-              return ctx.log->truncate(
-                storage::truncate_config(to, ss::default_priority_class()));
+              return ctx.log
+                ->truncate(
+                  storage::truncate_config(to, ss::default_priority_class()))
+                .then([to] { return to; });
+          })
+          .then([ctx](model::offset to) {
+              auto loffsets = ctx.log->offsets();
+              auto expected = to == model::offset(0) ? model::offset{}
+                                                     : to - model::offset(1);
+              vassert(
+                loffsets.dirty_offset == expected,
+                "Truncate failed - expected offset {}, "
+                "have offset {}",
+                expected,
+                loffsets);
           });
     }
 };
