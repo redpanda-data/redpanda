@@ -18,7 +18,7 @@ struct append_op final : opfuzz::op {
     const char* name() const final { return "append"; }
     ss::future<> invoke(opfuzz::op_context ctx) final {
         storage::log_append_config append_cfg{
-          storage::log_append_config::fsync::yes,
+          storage::log_append_config::fsync::no,
           ss::default_priority_class(),
           model::no_timeout};
         auto batches = storage::test::make_random_batches(model::offset(0), 10);
@@ -45,7 +45,7 @@ struct append_multi_term_op final : opfuzz::op {
     const char* name() const final { return "append_with_multiple_terms"; }
     ss::future<> invoke(opfuzz::op_context ctx) final {
         storage::log_append_config append_cfg{
-          storage::log_append_config::fsync::yes,
+          storage::log_append_config::fsync::no,
           ss::default_priority_class(),
           model::no_timeout};
         auto batches = storage::test::make_random_batches(model::offset(0), 10);
