@@ -122,7 +122,7 @@ struct raft_node {
           heartbeat_interval, raft::make_rpc_client_protocol(cache));
         hbeats->start().get0();
         consensus->start().get0();
-        hbeats->register_group(consensus);
+        hbeats->register_group(consensus).get();
         started = true;
     }
 
@@ -136,9 +136,9 @@ struct raft_node {
           .then([this] {
               if (hbeats) {
                   tstlog.info("Stopping heartbets manager at {}", broker.id());
-                  hbeats->deregister_group(
-                    raft::group_id(consensus->meta().group));
-                  return hbeats->stop();
+                  return hbeats
+                    ->deregister_group(raft::group_id(consensus->meta().group))
+                    .then([this] { return hbeats->stop(); });
               }
               return ss::make_ready_future<>();
           })
