@@ -25,7 +25,7 @@ FIXTURE_TEST(test_random_workload, storage_test_fixture) {
 
     // Test parameters
     const size_t ntp_count = 1;
-    const size_t ops_per_ntp = 1000;
+    const size_t ops_per_ntp = 2000;
     std::vector<std::unique_ptr<storage::opfuzz>> logs_to_fuzz;
     logs_to_fuzz.reserve(ntp_count);
     info("generating ntp's {}, with {} ops", ntp_count, ops_per_ntp);
