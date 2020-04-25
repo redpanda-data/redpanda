@@ -166,11 +166,7 @@ void heartbeat_manager::process_reply(
           r,
           r.error().message());
         for (auto g : groups) {
-            auto it = std::lower_bound(
-              _consensus_groups.begin(),
-              _consensus_groups.end(),
-              g,
-              details::consensus_ptr_by_group_id{});
+            auto it = _consensus_groups.find(g);
             if (it == _consensus_groups.end()) {
                 vlog(hbeatlog.error, "cannot find consensus group:{}", g);
                 continue;
@@ -183,11 +179,7 @@ void heartbeat_manager::process_reply(
     }
     vlog(hbeatlog.trace, "process_reply {}", r);
     for (auto& m : r.value().meta) {
-        auto it = std::lower_bound(
-          _consensus_groups.begin(),
-          _consensus_groups.end(),
-          raft::group_id(m.group),
-          details::consensus_ptr_by_group_id{});
+        auto it = _consensus_groups.find(m.group);
         if (it == _consensus_groups.end()) {
             vlog(
               hbeatlog.error, "Could not find consensus for group:{}", m.group);
@@ -200,10 +192,12 @@ void heartbeat_manager::process_reply(
 
 void heartbeat_manager::dispatch_heartbeats() {
     (void)with_gate(_bghbeats, [this, old = _hbeat] {
-        return do_dispatch_heartbeats(old).finally([this] {
-            if (!_bghbeats.is_closed()) {
-                _heartbeat_timer.arm(next_heartbeat_timeout());
-            }
+        return ss::with_semaphore(_sem, 1, [this, old] {
+            return do_dispatch_heartbeats(old).finally([this] {
+                if (!_bghbeats.is_closed()) {
+                    _heartbeat_timer.arm(next_heartbeat_timeout());
+                }
+            });
         });
     }).handle_exception([](const std::exception_ptr& e) {
         vlog(hbeatlog.warn, "Error dispatching hearbeats - {}", e);
@@ -211,19 +205,27 @@ void heartbeat_manager::dispatch_heartbeats() {
     // update last
     _hbeat = clock_type::now();
 }
-void heartbeat_manager::deregister_group(group_id g) {
-    auto it = std::lower_bound(
-      _consensus_groups.begin(),
-      _consensus_groups.end(),
-      g,
-      details::consensus_ptr_by_group_id{});
-    if (it != _consensus_groups.end()) {
+
+ss::future<> heartbeat_manager::deregister_group(group_id g) {
+    return ss::with_semaphore(_sem, 1, [this, g] {
+        auto it = _consensus_groups.find(g);
+        vassert(it != _consensus_groups.end(), "group not found: {}", g);
         _consensus_groups.erase(it);
-    }
+    });
 }
-void heartbeat_manager::register_group(ss::lw_shared_ptr<consensus> ptr) {
-    _consensus_groups.insert(ptr);
+
+ss::future<>
+heartbeat_manager::register_group(ss::lw_shared_ptr<consensus> ptr) {
+    return ss::with_semaphore(_sem, 1, [this, ptr] {
+        auto ret = _consensus_groups.insert(ptr);
+        vassert(
+          ret.second,
+          "double registration of group: {}:{}",
+          ptr->ntp(),
+          ptr->meta().group);
+    });
 }
+
 ss::future<> heartbeat_manager::start() {
     dispatch_heartbeats();
     return ss::make_ready_future<>();
