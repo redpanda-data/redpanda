@@ -30,6 +30,37 @@ struct consensus_ptr_by_group_id {
 
 namespace raft {
 extern ss::logger hbeatlog;
+
+/**
+ * The heartbeat manager addresses the scalability challenge of handling
+ * heartbeats for a large number of raft groups by batching many heartbeats into
+ * a fewer set of requests than would othewise be required.
+ *
+ * For example, consider three nodes `node-{a,b,c}`, and two groups, 0 and 1,
+ * where L0, L1 are the group leaders and F0 and F1 denote any follower in these
+ * raft groups.
+ *
+ *    node-a    node-b   node-c
+ *    ======    ======   ======
+ *    L0, L1    F0, F1   F0, F1
+ *
+ * Conceptually raft requires that each leader periodically send heartbeats to
+ * each of its followers. For instance, the following messages are required:
+ *
+ *    heartbeat(L0) -> F0(node-b)
+ *    heartbeat(L0) -> F0(node-c)
+ *    heartbeat(L1) -> F1(node-b)
+ *    heartbeat(L1) -> F1(node-c)
+ *
+ * For a fixed heartbeat frequency this poses a scalability challenge as the
+ * number of groups under management increases. The heartbeat manager addresses
+ * this by batching heartbeats being delivered to a common node. For the above
+ * example it is sufficient for `node-a` to deliver a single message to
+ * `node-b` and `node-c` that itself contains the original two heartbeats:
+ *
+ *    heartbeat({L0, L1}) -> {F0, F1}(node-b)
+ *    heartbeat({L0, L1}) -> {F0, F1}(node-c)
+ */
 class heartbeat_manager {
 public:
     using consensus_ptr = ss::lw_shared_ptr<consensus>;
