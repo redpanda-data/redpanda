@@ -7,6 +7,7 @@
 #include "storage/log.h"
 #include "storage/logger.h"
 #include "storage/types.h"
+#include "vlog.h"
 
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/core/future-util.hh>
