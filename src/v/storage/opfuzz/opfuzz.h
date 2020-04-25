@@ -37,6 +37,7 @@ public:
         min = 0,
         append = 0,
         append_with_multiple_terms,
+        append_op_foreign,
         truncate,
         truncate_prefix,
         read,

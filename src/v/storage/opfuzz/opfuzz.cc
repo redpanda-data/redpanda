@@ -40,6 +40,46 @@ struct append_op final : opfuzz::op {
     }
 };
 
+struct append_op_foreign final : opfuzz::op {
+    ~append_op_foreign() noexcept override = default;
+    const char* name() const final { return "append_op_foreign"; }
+    ss::future<> invoke(opfuzz::op_context ctx) final {
+        auto source_core = random_generators::get_int(ss::smp::count - 1);
+        return ss::smp::submit_to(
+                 source_core,
+                 [term = *ctx.term] {
+                     auto batches = storage::test::make_random_batches(
+                       model::offset(0), 10);
+                     vlog(
+                       fuzzlogger.info,
+                       "Foreign appending: {} batches. {}-{}",
+                       batches.size(),
+                       batches.front().base_offset(),
+                       batches.back().last_offset());
+                     for (auto& b : batches) {
+                         b.set_term(term);
+                     }
+                     auto reader = model::make_memory_record_batch_reader(
+                       std::move(batches));
+                     return model::make_foreign_record_batch_reader(
+                       std::move(reader));
+                 })
+          .then([ctx](model::record_batch_reader rdr) {
+              return ss::smp::submit_to(
+                0, [rdr = std::move(rdr), ctx]() mutable {
+                    storage::log_append_config append_cfg{
+                      storage::log_append_config::fsync::no,
+                      ss::default_priority_class(),
+                      model::no_timeout};
+                    return std::move(rdr)
+                      .for_each_ref(
+                        ctx.log->make_appender(append_cfg), model::no_timeout)
+                      .discard_result();
+                });
+          });
+    }
+};
+
 struct append_multi_term_op final : opfuzz::op {
     ~append_multi_term_op() noexcept override = default;
     const char* name() const final { return "append_with_multiple_terms"; }
@@ -243,6 +283,8 @@ std::unique_ptr<opfuzz::op> opfuzz::random_operation() {
         return std::make_unique<append_op>();
     case op_name::append_with_multiple_terms:
         return std::make_unique<append_multi_term_op>();
+    case op_name::append_op_foreign:
+        return std::make_unique<append_op_foreign>();
     case op_name::truncate:
         return std::make_unique<truncate_op>();
     case op_name::truncate_prefix:
