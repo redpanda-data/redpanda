@@ -157,7 +157,11 @@ static void initialize_connection_cache_in_thread(
               shard,
               n,
               config.server_addr);
-            return cache.local().emplace(n, config);
+            return cache.local().emplace(
+              n,
+              config,
+              rpc::make_exponential_backoff_policy<rpc::clock_type>(
+                std::chrono::seconds(1), std::chrono::seconds(60)));
         }).get();
     }
 }

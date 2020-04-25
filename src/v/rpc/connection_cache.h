@@ -3,6 +3,7 @@
 #include "model/metadata.h"
 #include "outcome.h"
 #include "outcome_future_utils.h"
+#include "rpc/backoff_policy.h"
 #include "rpc/connection.h"
 #include "rpc/errc.h"
 #include "rpc/reconnect_transport.h"
@@ -11,6 +12,7 @@
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 
+#include <chrono>
 #include <unordered_map>
 
 namespace rpc {
@@ -31,10 +33,8 @@ public:
 
     /// \brief needs to be a future, because mutations may come from different
     /// fibers and they need to be synchronized
-    ss::future<> emplace(
-      model::node_id n,
-      rpc::transport_configuration c,
-      clock_type::duration base_backoff = std::chrono::seconds(1));
+    ss::future<>
+    emplace(model::node_id n, rpc::transport_configuration c, backoff_policy);
     ss::future<> remove(model::node_id n);
 
     /// \brief closes all connections

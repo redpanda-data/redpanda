@@ -1,5 +1,7 @@
 #include "rpc/connection_cache.h"
 
+#include "rpc/backoff_policy.h"
+
 #include <fmt/format.h>
 
 #include <chrono>
@@ -11,7 +13,7 @@ namespace rpc {
 ss::future<> connection_cache::emplace(
   model::node_id n,
   rpc::transport_configuration c,
-  clock_type::duration base_backoff) {
+  backoff_policy backoff_policy) {
     if (auto s = shard_for(n); s != ss::this_shard_id()) {
         throw std::runtime_error(fmt::format(
           "Cannot ::emplace, node:{}, belonging to shard:{}, on shard:{}",
@@ -20,11 +22,16 @@ ss::future<> connection_cache::emplace(
           ss::this_shard_id()));
     }
     return with_semaphore(
-      _sem, 1, [this, n, c = std::move(c), base_backoff]() mutable {
+      _sem,
+      1,
+      [this,
+       n,
+       c = std::move(c),
+       backoff_policy = std::move(backoff_policy)]() mutable {
           _cache.emplace(
             std::move(n),
             ss::make_lw_shared<rpc::reconnect_transport>(
-              std::move(c), base_backoff));
+              std::move(c), std::move(backoff_policy)));
       });
 }
 ss::future<> connection_cache::remove(model::node_id n) {
