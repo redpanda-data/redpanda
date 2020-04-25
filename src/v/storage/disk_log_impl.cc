@@ -433,9 +433,14 @@ ss::future<> disk_log_impl::do_truncate(truncate_config cfg) {
                   model::no_timeout);
             });
       })
-      .then([this](std::optional<std::pair<model::offset, size_t>> phs) {
+      .then([this, cfg](std::optional<std::pair<model::offset, size_t>> phs) {
           if (!phs) {
-              return ss::make_ready_future<>();
+              return ss::make_exception_future<>(std::runtime_error(fmt::format(
+                "User asked to truncate at:{}, but "
+                "internal::offset_to_filepos_consumer could not translate "
+                "physical offsets. Log state: {}",
+                cfg,
+                *this)));
           }
           auto [prev_last_offset, file_position] = phs.value();
           auto last = _segs.back();
