@@ -422,11 +422,16 @@ ss::future<> disk_log_impl::do_truncate(truncate_config cfg) {
         start = pidx->offset;
         initial_size = pidx->filepos;
     }
-    return make_reader(log_reader_config(start, cfg.base_offset, cfg.prio))
-      .then([cfg, initial_size](model::record_batch_reader reader) {
-          return std::move(reader).consume(
-            internal::offset_to_filepos_consumer(cfg.base_offset, initial_size),
-            model::no_timeout);
+    return last.flush()
+      .then([this, cfg, start, initial_size] {
+          return make_reader(
+                   log_reader_config(start, cfg.base_offset, cfg.prio))
+            .then([cfg, initial_size](model::record_batch_reader reader) {
+                return std::move(reader).consume(
+                  internal::offset_to_filepos_consumer(
+                    cfg.base_offset, initial_size),
+                  model::no_timeout);
+            });
       })
       .then([this](std::optional<std::pair<model::offset, size_t>> phs) {
           if (!phs) {
@@ -439,14 +444,12 @@ ss::future<> disk_log_impl::do_truncate(truncate_config cfg) {
               return remove_segment_permanently(
                 last, "truncate[post-translation]");
           }
-          _probe.remove_partition_bytes(
-            last->reader().file_size() - file_position);
+          _probe.remove_partition_bytes(last->size_bytes() - file_position);
           return last->truncate(prev_last_offset, file_position)
             .handle_exception([last, phs, this](std::exception_ptr e) {
                 vassert(
                   false,
-                  "Could not truncate:{} logical max:{}, physical "
-                  "offset:{} on "
+                  "Could not truncate:{} logical max:{}, physical offset:{} on "
                   "segment:{} - log:{}",
                   e,
                   phs->first,

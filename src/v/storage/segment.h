@@ -56,9 +56,14 @@ public:
         }
         return committed_offset();
     }
+    size_t size_bytes() const {
+        if (_appender) {
+            return _appender->file_byte_offset();
+        }
+        return _reader.file_size();
+    }
     // low level api's are discouraged and might be deprecated
     // please use higher level API's when possible
-
     segment_reader& reader() { return _reader; }
     const segment_reader& reader() const { return _reader; }
     segment_index& index() { return _idx; }
