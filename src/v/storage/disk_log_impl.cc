@@ -154,25 +154,30 @@ offset_stats disk_log_impl::offsets() const {
     if (_segs.empty()) {
         return offset_stats{};
     }
-    auto it = std::find_if(
-      _segs.rbegin(), _segs.rend(), [](const segment_set::type& s) {
-          return !s->empty();
-      });
-    if (it == _segs.rend()) {
+    // NOTE: we have to do this because ss::circular_buffer<> does not provide
+    // with reverse iterators, so we manually find the iterator
+    segment_set::type end;
+    for (int i = (int)_segs.size() - 1; i >= 0; --i) {
+        auto& seg = _segs[i];
+        if (!seg->empty()) {
+            end = seg;
+            break;
+        }
+    }
+    if (!end) {
         return offset_stats{};
     }
     // we have valid begin and end
     auto b = _segs.front();
-    auto e = *it;
     return storage::offset_stats{
       .start_offset = b->base_offset(),
       .start_offset_term = b->term(),
 
-      .committed_offset = e->committed_offset(),
-      .committed_offset_term = e->term(),
+      .committed_offset = end->committed_offset(),
+      .committed_offset_term = end->term(),
 
-      .dirty_offset = e->dirty_offset(),
-      .dirty_offset_term = e->term(),
+      .dirty_offset = end->dirty_offset(),
+      .dirty_offset_term = end->term(),
     };
 }
 
