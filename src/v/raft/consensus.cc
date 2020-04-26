@@ -67,7 +67,7 @@ ss::sstring consensus::voted_for_filename() const {
 }
 
 consensus::success_reply consensus::update_follower_index(
-  model::node_id node, result<append_entries_reply> r) {
+  model::node_id node, result<append_entries_reply> r, follower_req_seq seq) {
     if (!r) {
         _ctxlog.trace("Error response from {}, {}", node, r.error().message());
         // add stats to group
@@ -101,7 +101,16 @@ consensus::success_reply consensus::update_follower_index(
           "update_follower_index was sent wrong group: {}", reply.group));
     }
     _ctxlog.trace("append entries reply {}", reply);
-
+    if (seq < idx.last_received_seq) {
+        _ctxlog.trace(
+          "ignorring reordered reply from node {} - last: {} current: {} ",
+          reply.node_id,
+          idx.last_received_seq,
+          seq);
+        return success_reply::no;
+    }
+    // only update for in order sequences
+    idx.last_received_seq = seq;
     // check preconditions for processing the reply
     if (!is_leader()) {
         _ctxlog.debug("ignorring append entries reply, not leader");
@@ -152,8 +161,10 @@ consensus::success_reply consensus::update_follower_index(
 }
 
 void consensus::process_append_entries_reply(
-  model::node_id node, result<append_entries_reply> r) {
-    auto is_success = update_follower_index(node, std::move(r));
+  model::node_id node,
+  result<append_entries_reply> r,
+  follower_req_seq seq_id) {
+    auto is_success = update_follower_index(node, std::move(r), seq_id);
     if (is_success) {
         maybe_update_leader_commit_idx();
     }
@@ -689,9 +700,10 @@ ss::future<> consensus::replicate_configuration(
     for (auto& b : batches) {
         b.set_term(model::term_id(_meta.term));
     }
+    auto seqs = next_followers_request_seq();
     append_entries_request req(
       _self, _meta, model::make_memory_record_batch_reader(std::move(batches)));
-    return _batcher.do_flush({}, std::move(req), std::move(u));
+    return _batcher.do_flush({}, std::move(req), std::move(u), std::move(seqs));
 }
 
 append_entries_reply
@@ -752,6 +764,21 @@ clock_type::time_point consensus::last_hbeat_timestamp(model::node_id id) {
 
 void consensus::update_node_hbeat_timestamp(model::node_id id) {
     _fstats.get(id).last_hbeat_timestamp = clock_type::now();
+}
+
+follower_req_seq consensus::next_follower_sequence(model::node_id id) {
+    return _fstats.get(id).last_sent_seq++;
+}
+
+absl::flat_hash_map<model::node_id, follower_req_seq>
+consensus::next_followers_request_seq() {
+    absl::flat_hash_map<model::node_id, follower_req_seq> ret;
+    ret.reserve(_fstats.size());
+    auto range = boost::make_iterator_range(_fstats.begin(), _fstats.end());
+    for (const auto& [node_id, _] : range) {
+        ret.emplace(node_id, next_follower_sequence(node_id));
+    }
+    return ret;
 }
 
 void consensus::maybe_update_leader_commit_idx() {

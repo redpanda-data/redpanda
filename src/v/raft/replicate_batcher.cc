@@ -112,12 +112,16 @@ ss::future<> replicate_batcher::flush() {
                 for (auto& b : data) {
                     b.set_term(term);
                 }
+                auto seqs = _ptr->next_followers_request_seq();
                 append_entries_request req(
                   _ptr->_self,
                   meta,
                   model::make_memory_record_batch_reader(std::move(data)));
                 return do_flush(
-                  std::move(notifications), std::move(req), std::move(u));
+                  std::move(notifications),
+                  std::move(req),
+                  std::move(u),
+                  std::move(seqs));
             });
       });
 }
@@ -152,9 +156,11 @@ static void propagate_current_exception(
 ss::future<> replicate_batcher::do_flush(
   std::vector<replicate_batcher::item_ptr>&& notifications,
   append_entries_request&& req,
-  ss::semaphore_units<> u) {
+  ss::semaphore_units<> u,
+  absl::flat_hash_map<model::node_id, follower_req_seq> seqs) {
     _ptr->_probe.replicate_batch_flushed();
-    auto stm = ss::make_lw_shared<replicate_entries_stm>(_ptr, std::move(req));
+    auto stm = ss::make_lw_shared<replicate_entries_stm>(
+      _ptr, std::move(req), std::move(seqs));
     return stm->apply(std::move(u))
       .then_wrapped([this, stm, notifications = std::move(notifications)](
                       ss::future<result<replicate_result>> fut) mutable {

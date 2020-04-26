@@ -3,6 +3,7 @@
 #include "raft/types.h"
 #include "vassert.h"
 
+#include <absl/container/flat_hash_map.h>
 #include <boost/container/flat_map.hpp>
 
 namespace raft {
@@ -56,6 +57,8 @@ public:
     iterator end() { return _followers.end(); }
     const_iterator begin() const { return _followers.begin(); }
     const_iterator end() const { return _followers.end(); }
+
+    size_t size() const { return _followers.size(); }
 
 private:
     friend std::ostream& operator<<(std::ostream&, const follower_stats&);
