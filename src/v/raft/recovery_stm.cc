@@ -91,7 +91,8 @@ ss::future<> recovery_stm::replicate(model::record_batch_reader&& reader) {
 
     _ptr->update_node_hbeat_timestamp(_node_id);
 
-    return dispatch_append_entries(std::move(r)).then([this](auto r) {
+    auto seq = _ptr->next_follower_sequence(_node_id);
+    return dispatch_append_entries(std::move(r)).then([this, seq](auto r) {
         if (!r) {
             _ctxlog.error(
               "recovery_stm: not replicate entry: {} - {}",
@@ -99,8 +100,13 @@ ss::future<> recovery_stm::replicate(model::record_batch_reader&& reader) {
               r.error().message());
             _stop_requested = true;
         }
-
-        _ptr->process_append_entries_reply(_node_id, r.value());
+        _ptr->process_append_entries_reply(_node_id, r.value(), seq);
+        // If request was reordered we have to stop recovery as follower state
+        // is not known
+        if (seq < _ptr->_fstats.get(_node_id).last_received_seq) {
+            _stop_requested = true;
+            return;
+        }
         // move the follower next index backward if recovery were not
         // successfull
         //

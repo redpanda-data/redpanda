@@ -4,6 +4,7 @@
 #include "outcome.h"
 #include "raft/types.h"
 
+#include <absl/container/flat_hash_map.h>
 namespace raft {
 class consensus;
 
@@ -34,7 +35,10 @@ public:
 
     // it will lock on behalf of caller to append entries to leader log.
     ss::future<> do_flush(
-      std::vector<item_ptr>&&, append_entries_request&&, ss::semaphore_units<>);
+      std::vector<item_ptr>&&,
+      append_entries_request&&,
+      ss::semaphore_units<>,
+      absl::flat_hash_map<model::node_id, follower_req_seq>);
 
 private:
     ss::future<item_ptr> do_cache(model::record_batch_reader&&);
