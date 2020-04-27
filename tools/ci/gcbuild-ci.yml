@@ -55,7 +55,7 @@ steps:
 
 - id: 'test rpk'
   name: 'gcr.io/$PROJECT_ID/builder:clang-release-$SHORT_SHA'
-  args: ['./build/venv/v/bin/vtools', 'test', 'go', '--conf=tools/ci/vtools-gcc-release.yml']
+  args: ['./build/venv/v/bin/vtools', 'test', 'go', '--conf=tools/ci/vtools-clang-release.yml']
 
 - id: 'build redpanda'
   name: 'gcr.io/$PROJECT_ID/builder:$_COMPILER-$_BUILD_TYPE-$SHORT_SHA'
@@ -65,29 +65,7 @@ steps:
   name: 'gcr.io/$PROJECT_ID/builder:$_COMPILER-$_BUILD_TYPE-$SHORT_SHA'
   args: ['./build/venv/v/bin/vtools', 'test', 'cpp', '--conf=tools/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml']
 
-- id: 'create distro packages'
-  name: 'gcr.io/$PROJECT_ID/builder:$_COMPILER-$_BUILD_TYPE-$SHORT_SHA'
-  entrypoint: bash
-  args:
-  - -c
-  - |
-    ./build/venv/v/bin/vtools build go --conf=tools/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml
-    ./build/venv/v/bin/vtools build pkg --conf=tools/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml --format=rpm --format=deb --format=tar
-    ./build/venv/v/bin/vtools publish --conf=tools/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml
-  env:
-  - SHORT_SHA=$SHORT_SHA
-  - TAG_NAME=$TAG_NAME
-  - PACKAGECLOUD_TOKEN=$_PACKAGECLOUD_TOKEN
-
-timeout: 3600s
+timeout: 3600
 
 options:
-  machineType: 'N1_HIGHCPU_32'
-
-artifacts:
-  objects:
-    location: 'gs://vectorizedio/rp/$_BUILD_TYPE/$_COMPILER/$SHORT_SHA/'
-    paths:
-    - 'build/$_BUILD_TYPE/$_COMPILER/dist/debian/*.deb'
-    - 'build/$_BUILD_TYPE/$_COMPILER/dist/rpm/RPMS/x86_64/*.rpm'
-    - 'build/$_BUILD_TYPE/$_COMPILER/dist/tar/*.tar.gz'
+  machine_type: 'N1_HIGHCPU_32'
