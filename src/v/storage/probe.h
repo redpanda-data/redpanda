@@ -16,7 +16,7 @@ public:
         _bytes_written += written;
     }
 
-    void add_bytes_read(uint64_t read) { _bytes_written += read; }
+    void add_bytes_read(uint64_t read) { _bytes_read += read; }
 
     void batch_written() { ++_batches_written; }
 
