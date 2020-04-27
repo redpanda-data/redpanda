@@ -424,6 +424,15 @@ ss::future<> consensus::start() {
           });
     });
 }
+
+ss::future<vote_reply> consensus::vote(vote_request&& r) {
+    return with_gate(_bg, [this, r = std::move(r)]() mutable {
+        return with_semaphore(_op_sem, 1, [this, r = std::move(r)]() mutable {
+            return do_vote(std::move(r));
+        });
+    });
+}
+
 ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
     vote_reply reply;
     reply.term = _meta.term;
@@ -490,6 +499,15 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
 
     return f.then([reply = std::move(reply)] {
         return ss::make_ready_future<vote_reply>(std::move(reply));
+    });
+}
+
+ss::future<append_entries_reply>
+consensus::append_entries(append_entries_request&& r) {
+    return with_gate(_bg, [this, r = std::move(r)]() mutable {
+        return with_semaphore(_op_sem, 1, [this, r = std::move(r)]() mutable {
+            return do_append_entries(std::move(r));
+        });
     });
 }
 
