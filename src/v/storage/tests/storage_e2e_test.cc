@@ -5,6 +5,7 @@
 #include "storage/log_manager.h"
 #include "storage/tests/storage_test_fixture.h"
 #include "storage/tests/utils/random_batch.h"
+#include "storage/types.h"
 
 #include <seastar/util/defer.hh>
 #include <seastar/util/log.hh>
@@ -110,6 +111,55 @@ FIXTURE_TEST(test_single_record_per_segment, storage_test_fixture) {
     BOOST_REQUIRE_EQUAL(lstats.dirty_offset, batches.back().last_offset());
     BOOST_REQUIRE_EQUAL(lstats.committed_offset, batches.back().last_offset());
     validate_offsets(model::offset(0), headers, batches);
+};
+
+FIXTURE_TEST(test_segment_rolling, storage_test_fixture) {
+    auto cfg = default_log_config(test_dir);
+    cfg.max_segment_size = 10 * 1024;
+    storage::log_manager mgr = make_log_manager(std::move(cfg));
+    info("Configuration: {}", mgr.config());
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto ntp = make_ntp("default", "test", 0);
+    auto log
+      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get0();
+    auto headers = append_random_batches(
+      log,
+      10,
+      model::term_id(1),
+      []() {
+          ss::circular_buffer<model::record_batch> batches;
+          batches.push_back(
+            storage::test::make_random_batch(model::offset(0), 1, true));
+          return batches;
+      },
+      storage::log_append_config::fsync::no,
+      false);
+    log.flush().get0();
+    auto batches = read_and_validate_all_batches(log);
+    info("Flushed log: {}", log);
+    BOOST_REQUIRE_EQUAL(headers.size(), batches.size());
+    auto lstats = log.offsets();
+    BOOST_REQUIRE_EQUAL(lstats.dirty_offset, batches.back().last_offset());
+    BOOST_REQUIRE_EQUAL(lstats.committed_offset, batches.back().last_offset());
+    validate_offsets(model::offset(0), headers, batches);
+    /// Do the second append round
+    auto new_headers = append_random_batches(
+      log,
+      10,
+      model::term_id(1),
+      []() {
+          ss::circular_buffer<model::record_batch> batches;
+          batches.push_back(
+            storage::test::make_random_batch(model::offset(0), 1, true));
+          return batches;
+      },
+      storage::log_append_config::fsync::no,
+      false);
+    auto new_lstats = log.offsets();
+    BOOST_REQUIRE_GE(new_lstats.committed_offset, lstats.committed_offset);
+    auto new_batches = read_and_validate_all_batches(log);
+    BOOST_REQUIRE_EQUAL(
+      new_lstats.committed_offset, new_batches.back().last_offset());
 };
 
 FIXTURE_TEST(test_reading_range_from_a_log, storage_test_fixture) {
