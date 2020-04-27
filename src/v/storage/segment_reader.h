@@ -20,9 +20,7 @@ public:
     segment_reader(
       ss::sstring filename,
       ss::file,
-      model::term_id term,
-      model::offset base_offset,
-      uint64_t file_size,
+      size_t file_size,
       size_t buffer_size) noexcept;
     ~segment_reader() noexcept = default;
     segment_reader(segment_reader&&) noexcept = default;
@@ -30,33 +28,14 @@ public:
     segment_reader(const segment_reader&) = delete;
     segment_reader& operator=(const segment_reader&) = delete;
 
-    /// mutating method for keeping track of the last offset from
-    /// the active segment_appender
-    void set_last_written_offset(model::offset o) { _max_offset = o; }
-
     /// max physical byte that this reader is allowed to fetch
-    void set_last_visible_byte_offset(uint64_t o) { _file_size = o; }
+    void set_file_size(size_t o) { _file_size = o; }
+    size_t file_size() const { return _file_size; }
 
     /// file name
     const ss::sstring& filename() const { return _filename; }
 
-    /// current term
-    model::term_id term() const { return _term; }
-
-    // Inclusive lower bound offset.
-    model::offset base_offset() const { return _base_offset; }
-
-    // Inclusive upper bound offset.
-    model::offset dirty_offset() const { return _max_offset; }
-
-    uint64_t file_size() const { return _file_size; }
-
-    bool empty() const {
-        // Note cannot be _dirty_offset() < 0 because
-        // on truncation we set it to one past the base
-        // which needs to invalidate the file
-        return _max_offset() < _base_offset;
-    }
+    bool empty() const { return _file_size == 0; }
 
     /// close the underlying file handle
     ss::future<> close() { return _data_file.close(); }
@@ -73,16 +52,13 @@ public:
     /// create an input stream _sharing_ the underlying file handle
     /// starting at position @pos
     ss::input_stream<char>
-    data_stream(uint64_t pos, const ss::io_priority_class&);
+    data_stream(size_t pos, const ss::io_priority_class&);
 
 private:
     ss::sstring _filename;
     ss::file _data_file;
-    model::offset _base_offset;
-    model::term_id _term;
-    uint64_t _file_size;
-    size_t _buffer_size;
-    model::offset _max_offset;
+    size_t _file_size{0};
+    size_t _buffer_size{0};
     ss::lw_shared_ptr<ss::file_input_stream_history> _history
       = ss::make_lw_shared<ss::file_input_stream_history>();
 

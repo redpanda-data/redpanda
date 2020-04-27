@@ -17,11 +17,13 @@
 namespace storage {
 
 segment::segment(
+  segment::offset_tracker tkr,
   segment_reader r,
   segment_index i,
   std::optional<segment_appender> a,
   std::optional<batch_cache_index> c) noexcept
-  : _reader(std::move(r))
+  : _tracker(tkr)
+  , _reader(std::move(r))
   , _idx(std::move(i))
   , _appender(std::move(a))
   , _cache(std::move(c)) {}
@@ -103,11 +105,11 @@ ss::future<> segment::do_flush() {
     if (!_appender) {
         return ss::make_ready_future<>();
     }
-    auto o = dirty_offset();
-    auto bytes = _appender->file_byte_offset();
-    return _appender->flush().then([this, o, bytes] {
-        _reader.set_last_written_offset(o);
-        _reader.set_last_visible_byte_offset(bytes);
+    auto o = _tracker.dirty_offset;
+    auto fsize = _appender->file_byte_offset();
+    return _appender->flush().then([this, o, fsize] {
+        _tracker.committed_offset = o;
+        _reader.set_file_size(fsize);
     });
 }
 
@@ -123,9 +125,8 @@ segment::truncate(model::offset prev_last_offset, size_t physical) {
 
 ss::future<>
 segment::do_truncate(model::offset prev_last_offset, size_t physical) {
-    _dirty_offset = prev_last_offset;
-    _reader.set_last_written_offset(_dirty_offset);
-    _reader.set_last_visible_byte_offset(physical);
+    _tracker.committed_offset = _tracker.dirty_offset = prev_last_offset;
+    _reader.set_file_size(physical);
     cache_truncate(prev_last_offset + model::offset(1));
     auto f = _idx.truncate(prev_last_offset);
     // physical file only needs *one* truncation call
@@ -149,7 +150,7 @@ ss::future<append_result> segment::append(const model::record_batch& b) {
     const auto start_physical_offset = _appender->file_byte_offset();
     // proxy serialization to segment_appender_utils
     return write(*_appender, b).then([this, &b, start_physical_offset] {
-        _dirty_offset = b.last_offset();
+        _tracker.dirty_offset = b.last_offset();
         const auto end_physical_offset = _appender->file_byte_offset();
         vassert(
           end_physical_offset == start_physical_offset + b.header().size_bytes,
@@ -188,8 +189,19 @@ segment::offset_data_stream(model::offset o, ss::io_priority_class iopc) {
     return _reader.data_stream(position, iopc);
 }
 
+std::ostream& operator<<(std::ostream& o, const segment::offset_tracker& t) {
+    fmt::print(
+      o,
+      "{{term:{}, base_offset:{}, committed_offset:{}, dirty_offset:{}}}",
+      t.term,
+      t.base_offset,
+      t.committed_offset,
+      t.dirty_offset);
+    return o;
+}
+
 std::ostream& operator<<(std::ostream& o, const segment& h) {
-    o << "{reader=" << h._reader << ", dirty_offset:" << h.dirty_offset()
+    o << "{offset_tracker:" << h._tracker << ", reader=" << h._reader
       << ", writer=";
     if (h.has_appender()) {
         o << *h._appender;

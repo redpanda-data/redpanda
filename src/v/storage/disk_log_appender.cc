@@ -15,14 +15,22 @@ disk_log_appender::disk_log_appender(
   disk_log_impl& log,
   log_append_config config,
   log_clock::time_point append_time,
-  model::offset next_offset,
   model::offset dirty_offset) noexcept
   : _log(log)
   , _config(config)
   , _append_time(append_time)
-  , _idx(next_offset)
-  , _base_offset(next_offset)
-  , _last_offset(dirty_offset) {}
+  , _idx(dirty_offset)
+  , _base_offset(dirty_offset)
+  , _last_offset(dirty_offset) {
+    if (_idx() < 0) {
+        // empty log
+        _idx = _base_offset = _base_offset = model::offset{0};
+    } else {
+        // first batch
+        _idx++;
+        _base_offset++;
+    }
+}
 
 ss::future<> disk_log_appender::initialize() {
     if (_log._segs.empty()) {
@@ -64,13 +72,10 @@ ss::future<ss::stop_iteration>
 disk_log_appender::operator()(model::record_batch& batch) {
     batch.header().base_offset = _idx;
     batch.header().header_crc = model::internal_header_only_crc(batch.header());
-    _idx = batch.last_offset() + model::offset(1);
     if (_last_term != batch.term()) {
-        // release the lock!
         release_lock();
     }
     _last_term = batch.term();
-    auto next_offset = batch.base_offset();
     auto f = ss::make_ready_future<>();
     if (unlikely(needs_to_roll_log(batch.term()))) {
         f = ss::do_until(
@@ -84,15 +89,15 @@ disk_log_appender::operator()(model::record_batch& batch) {
                      // somehow closed before the append
                      && _bytes_left_in_cache_segment > 0;
           },
-          [this, next_offset] {
-              return _log
-                .maybe_roll(_last_term, next_offset, _config.io_priority)
+          [this] {
+              return _log.maybe_roll(_last_term, _idx, _config.io_priority)
                 .then([this] { return initialize(); });
           });
     }
     return f
       .then([this, &batch]() mutable {
           return _cache->append(batch).then([this](append_result r) {
+              _idx = r.last_offset + model::offset(1); // next base offset
               _byte_size += r.byte_size;
               // do not track base_offset, only the last one
               _last_offset = r.last_offset;
@@ -128,8 +133,8 @@ ss::future<append_result> disk_log_appender::end_of_stream() {
 }
 
 std::ostream& operator<<(std::ostream& o, const disk_log_appender& a) {
-    return o << "{offset_idx:" << a._idx << ", segment:" << a._cache
-             << ", cache_lock:" << (a._cache_lock ? "yes" : "no")
+    return o << "{offset_idx:" << a._idx
+             << ", active_segment:" << (a._cache_lock ? "yes" : "no")
              << ", _bytes_left_in_cache_segment:"
              << a._bytes_left_in_cache_segment
              << ", _base_offset:" << a._base_offset

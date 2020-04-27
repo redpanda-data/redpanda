@@ -42,11 +42,10 @@ struct context {
         auto reader = segment_reader(
           base_name,
           ss::open_file_dma(base_name, ss::open_flags::ro).get0(),
-          model::term_id(0),
-          base,
           appender.file_byte_offset(),
           128);
         _seg = ss::make_lw_shared<segment>(
+          segment::offset_tracker(model::term_id(0), base),
           std::move(reader),
           std::move(indexer),
           std::move(appender),
@@ -88,8 +87,7 @@ struct context {
         initialize(base);
         w(_seg->appender());
         _seg->flush().get();
-        _seg->reader().set_last_visible_byte_offset(
-          _seg->appender().file_byte_offset());
+        _seg->reader().set_file_size(_seg->appender().file_byte_offset());
     }
 
     log_replayer& replayer() { return *replayer_opt; }

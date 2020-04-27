@@ -14,7 +14,26 @@
 namespace storage {
 class segment {
 public:
+    struct offset_tracker {
+        offset_tracker(model::term_id t, model::offset base)
+          : term(t)
+          , base_offset(base)
+          , committed_offset(base)
+          , dirty_offset(base) {}
+        model::term_id term;
+        model::offset base_offset;
+
+        /// \brief These offsets are the `batch.last_offset()` and not
+        /// `batch.base_offset()` which might be confusing at first,
+        /// but allow us to keep track of the actual last logical offset
+        model::offset committed_offset;
+        model::offset dirty_offset;
+        friend std::ostream& operator<<(std::ostream&, const offset_tracker&);
+    };
+
+public:
     segment(
+      offset_tracker tracker,
       segment_reader,
       segment_index,
       std::optional<segment_appender>,
@@ -42,19 +61,12 @@ public:
     ss::input_stream<char>
       offset_data_stream(model::offset, ss::io_priority_class);
 
+    const offset_tracker& offsets() const { return _tracker; }
     bool empty() const {
         if (_appender) {
-            return _dirty_offset() < 0;
+            return _appender->file_byte_offset() == 0;
         }
         return _reader.empty();
-    }
-    model::offset base_offset() const { return _reader.base_offset(); }
-    model::offset committed_offset() const { return _reader.dirty_offset(); }
-    model::offset dirty_offset() const {
-        if (_appender) {
-            return _dirty_offset;
-        }
-        return committed_offset();
     }
     size_t size_bytes() const {
         if (_appender) {
@@ -71,7 +83,6 @@ public:
     segment_appender& appender() { return *_appender; }
     const segment_appender& appender() const { return *_appender; }
     bool has_appender() const { return _appender != std::nullopt; }
-    model::term_id term() const { return _reader.term(); }
 
     batch_cache_index::read_result cache_get(
       model::offset offset,
@@ -112,8 +123,8 @@ private:
     ss::future<> do_close();
     ss::future<> do_flush();
     ss::future<> remove_thombsones();
-    // last offset of the last batch, i.e.: batch.last_offset()
-    model::offset _dirty_offset;
+
+    offset_tracker _tracker;
     segment_reader _reader;
     segment_index _idx;
     std::optional<segment_appender> _appender;

@@ -13,19 +13,15 @@ namespace storage {
 segment_reader::segment_reader(
   ss::sstring filename,
   ss::file data_file,
-  model::term_id term,
-  model::offset base_offset,
-  uint64_t file_size,
+  size_t file_size,
   size_t buffer_size) noexcept
   : _filename(std::move(filename))
   , _data_file(std::move(data_file))
-  , _base_offset(base_offset)
-  , _term(term)
   , _file_size(file_size)
   , _buffer_size(buffer_size) {}
 
 ss::input_stream<char>
-segment_reader::data_stream(uint64_t pos, const ss::io_priority_class& pc) {
+segment_reader::data_stream(size_t pos, const ss::io_priority_class& pc) {
     vassert(
       pos <= _file_size,
       "cannot read negative bytes. Asked to read at position: '{}' - {}",
@@ -51,12 +47,11 @@ ss::future<> segment_reader::truncate(size_t n) {
 }
 
 std::ostream& operator<<(std::ostream& os, const segment_reader& seg) {
-    return os << "{log_segment:" << seg.filename() << ", " << seg.base_offset()
-              << "-" << seg.dirty_offset() << ", filesize:" << seg.file_size()
-              << "}";
+    return os << "{" << seg.filename() << ", (" << seg.file_size()
+              << " bytes)}";
 }
 
-std::ostream& operator<<(std::ostream& os, segment_reader_ptr seg) {
+std::ostream& operator<<(std::ostream& os, const segment_reader_ptr& seg) {
     if (seg) {
         return os << *seg;
     }
