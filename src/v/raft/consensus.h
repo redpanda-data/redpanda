@@ -168,6 +168,8 @@ private:
 
     absl::flat_hash_map<model::node_id, follower_req_seq>
     next_followers_request_seq();
+
+    bool should_skip_vote();
     // args
     model::node_id _self;
     timeout_jitter _jit;

@@ -6,6 +6,8 @@
 #include "raft/logger.h"
 #include "raft/raftgen_service.h"
 
+#include <seastar/util/bool_class.hh>
+
 namespace raft {
 std::ostream& operator<<(std::ostream& o, const vote_stm::vmeta& m) {
     o << "{node: " << m.node << ", value: ";
@@ -82,10 +84,15 @@ std::pair<uint32_t, uint32_t> vote_stm::partition_count() const {
     return {success, failure};
 }
 ss::future<> vote_stm::vote() {
+    using skip_vote = ss::bool_class<struct skip_vote_tag>;
     return with_semaphore(
              _ptr->_op_sem,
              1,
              [this] {
+                 // check again while under op_sem
+                 if (_ptr->should_skip_vote()) {
+                     return ss::make_ready_future<skip_vote>(skip_vote::yes);
+                 }
                  auto& m = _ptr->_meta;
                  // 5.2.1
                  _ptr->_vstate = consensus::vote_state::candidate;
@@ -106,9 +113,14 @@ ss::future<> vote_stm::vote() {
                  // we have to self vote before dispatching vote request to
                  // other nodes, this vote has to be done under op semaphore as
                  // it changes voted_for state
-                 return self_vote();
+                 return self_vote().then([] { return skip_vote::no; });
              })
-      .then([this] { return do_vote(); });
+      .then([this](skip_vote skip) {
+          if (skip) {
+              return ss::make_ready_future<>();
+          }
+          return do_vote();
+      });
 }
 ss::future<> vote_stm::do_vote() {
     auto& cfg = _ptr->_conf;

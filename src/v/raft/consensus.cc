@@ -313,18 +313,22 @@ consensus::make_reader(storage::log_reader_config config) {
     });
 }
 
-/// performs no raft-state mutation other than resetting the timer
-void consensus::dispatch_vote() {
-    // 5.2.1.4 - prepare next timeout
-
+bool consensus::should_skip_vote() {
     auto last_election = clock_type::now() - _jit.base_duration();
 
     bool skip_vote = false;
+
     skip_vote |= (_hbeat > last_election);      // nothing to do.
     skip_vote |= _vstate == vote_state::leader; // already a leader
     skip_vote |= !_conf.has_voters();           // no voters
 
-    if (skip_vote) {
+    return skip_vote;
+}
+
+/// performs no raft-state mutation other than resetting the timer
+void consensus::dispatch_vote() {
+    // 5.2.1.4 - prepare next timeout
+    if (should_skip_vote()) {
         arm_vote_timeout();
         return;
     }
