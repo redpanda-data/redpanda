@@ -31,7 +31,7 @@ export class RpcHeader {
         payload: number,
         meta: number,
         correlationId: number,
-        payloadChecksum: number) {
+        payloadChecksum: BigInt) {
         this.version = version;
         this.headerChecksum = headerChecksum;
         this.compression = compression;
