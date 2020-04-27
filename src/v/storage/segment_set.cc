@@ -9,10 +9,10 @@ namespace storage {
 struct segment_ordering {
     using type = ss::lw_shared_ptr<segment>;
     bool operator()(const type& seg1, const type& seg2) const {
-        return seg1->reader().base_offset() < seg2->reader().base_offset();
+        return seg1->offsets().base_offset < seg2->offsets().base_offset;
     }
     bool operator()(const type& seg, model::offset value) const {
-        return seg->reader().dirty_offset() < value;
+        return seg->offsets().dirty_offset < value;
     }
     bool operator()(const type& seg, model::timestamp value) const {
         return seg->index().base_timestamp() < value;
@@ -27,8 +27,11 @@ segment_set::segment_set(segment_set::underlying_t segs)
 void segment_set::add(ss::lw_shared_ptr<segment> h) {
     if (!_handles.empty()) {
         vassert(
-          h->reader().base_offset() > _handles.back()->reader().dirty_offset(),
-          "New segments must be monotonically increasing. Got:{} - Current:{}",
+          h->offsets().base_offset > _handles.back()->offsets().dirty_offset,
+          "New segments must be monotonically increasing. Assertion failure: "
+          "({} > {}) Got:{} - Current:{}",
+          h->offsets().base_offset,
+          _handles.back()->offsets().dirty_offset,
           *h,
           *this);
     }
@@ -46,7 +49,7 @@ struct needle_in_range {
             return false;
         }
         // must use max_offset
-        return o <= s.reader().dirty_offset() && o >= s.reader().base_offset();
+        return o <= s.offsets().dirty_offset && o >= s.offsets().base_offset;
     }
 
     bool operator()(Iterator ptr, model::timestamp t) {

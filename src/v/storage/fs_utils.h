@@ -16,7 +16,7 @@ namespace storage {
 struct segment_path {
     struct metadata {
         model::offset base_offset;
-        int64_t term;
+        model::term_id term;
         record_version_type version;
     };
 
@@ -47,7 +47,7 @@ struct segment_path {
         return metadata{
           .base_offset = model::offset(
             boost::lexical_cast<uint64_t>(match[1].str())),
-          .term = boost::lexical_cast<int64_t>(match[2].str()),
+          .term = model::term_id(boost::lexical_cast<int64_t>(match[2].str())),
           .version = from_string(match[3].str()),
         };
     }

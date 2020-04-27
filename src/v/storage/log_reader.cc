@@ -56,7 +56,7 @@ batch_consumer::consume_result skipping_consumer::consume_batch_start(
         _records = std::move(r);
     }
     _header = header;
-    _header.ctx.term = _reader._seg.reader().term();
+    _header.ctx.term = _reader._seg.offsets().term;
     return skip_batch::no;
 }
 
@@ -77,7 +77,7 @@ batch_consumer::stop_parser skipping_consumer::consume_batch_end() {
     _reader.add_one(model::record_batch(_header, std::exchange(_records, {})));
     // We keep the batch in the buffer so that the reader can be cached.
     if (
-      _header.last_offset() >= _reader._seg.committed_offset()
+      _header.last_offset() >= _reader._seg.offsets().committed_offset
       || _header.last_offset() >= _reader._config.max_offset) {
         return stop_parser::yes;
     }
@@ -181,11 +181,14 @@ log_reader::log_reader(
 }
 
 ss::future<> log_reader::next_iterator() {
-    if (_config.start_offset <= (**_iterator.next_seg).committed_offset()) {
+    if (
+      _config.start_offset
+      <= (**_iterator.next_seg).offsets().committed_offset) {
         return ss::make_ready_future<>();
     }
     std::unique_ptr<log_segment_batch_reader> tmp_reader = nullptr;
-    while (_config.start_offset > (**_iterator.next_seg).committed_offset()
+    while (_config.start_offset
+             > (**_iterator.next_seg).offsets().committed_offset
            && !is_end_of_stream()) {
         _iterator.next_seg++;
         if (!tmp_reader) {
@@ -258,7 +261,7 @@ static inline bool is_finished_offset(segment_set& s, model::offset o) {
     for (int i = (int)s.size() - 1; i >= 0; --i) {
         auto& seg = s[i];
         if (!seg->empty()) {
-            return o > seg->committed_offset();
+            return o > seg->offsets().committed_offset;
         }
     }
     return true;

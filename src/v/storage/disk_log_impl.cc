@@ -147,7 +147,7 @@ model::term_id disk_log_impl::term() const {
         // the next append() will truncate if greater
         return model::term_id{0};
     }
-    return _segs.back()->term();
+    return _segs.back()->offsets().term;
 }
 
 offset_stats disk_log_impl::offsets() const {
@@ -168,16 +168,17 @@ offset_stats disk_log_impl::offsets() const {
         return offset_stats{};
     }
     // we have valid begin and end
-    auto b = _segs.front();
+    const auto& bof = _segs.front()->offsets();
+    const auto& eof = end->offsets();
     return storage::offset_stats{
-      .start_offset = b->base_offset(),
-      .start_offset_term = b->term(),
+      .start_offset = bof.base_offset,
+      .start_offset_term = bof.term,
 
-      .committed_offset = end->committed_offset(),
-      .committed_offset_term = end->term(),
+      .committed_offset = eof.committed_offset,
+      .committed_offset_term = eof.term,
 
-      .dirty_offset = end->dirty_offset(),
-      .dirty_offset_term = end->term(),
+      .dirty_offset = eof.dirty_offset,
+      .dirty_offset_term = eof.term,
     };
 }
 
@@ -201,13 +202,8 @@ log_appender disk_log_impl::make_appender(log_append_config cfg) {
     vassert(!_closed, "make_appender on closed log - {}", *this);
     auto now = log_clock::now();
     auto ofs = offsets();
-    model::offset base(0);
-    if (auto o = ofs.dirty_offset; o() >= 0) {
-        // start at *next* valid and inclusive offset!
-        base = o + model::offset(1);
-    }
-    return log_appender(std::make_unique<disk_log_appender>(
-      *this, cfg, now, base, ofs.dirty_offset));
+    return log_appender(
+      std::make_unique<disk_log_appender>(*this, cfg, now, ofs.dirty_offset));
 }
 
 ss::future<> disk_log_impl::flush() {
@@ -267,7 +263,7 @@ disk_log_impl::make_reader(log_reader_config config) {
 std::optional<model::term_id> disk_log_impl::get_term(model::offset o) const {
     auto it = _segs.lower_bound(o);
     if (it != _segs.end()) {
-        return (*it)->term();
+        return (*it)->offsets().term;
     }
 
     return std::nullopt;
@@ -279,7 +275,7 @@ disk_log_impl::timequery(timequery_config cfg) {
         return ss::make_ready_future<std::optional<timequery_result>>();
     }
     return make_reader(log_reader_config(
-                         _segs.front()->reader().base_offset(),
+                         _segs.front()->offsets().base_offset,
                          cfg.max_offset,
                          0,
                          2048, // We just need one record batch
@@ -328,7 +324,7 @@ ss::future<> disk_log_impl::remove_segment_permanently(
 ss::future<> disk_log_impl::remove_full_segments(model::offset o) {
     return ss::do_until(
       [this, o] {
-          return _segs.empty() || _segs.back()->reader().base_offset() < o;
+          return _segs.empty() || _segs.back()->offsets().base_offset < o;
       },
       [this] {
           auto ptr = _segs.back();
@@ -341,7 +337,7 @@ disk_log_impl::remove_prefix_full_segments(truncate_prefix_config cfg) {
     return ss::do_until(
       [this, cfg] {
           return _segs.empty()
-                 || _segs.front()->dirty_offset() < cfg.max_offset;
+                 || _segs.front()->offsets().dirty_offset < cfg.max_offset;
       },
       [this] {
           auto ptr = _segs.front();
@@ -371,7 +367,7 @@ ss::future<> disk_log_impl::do_truncate_prefix(truncate_prefix_config cfg) {
     if (_segs.empty()) {
         return ss::make_ready_future<>();
     }
-    if (_segs.front()->dirty_offset() >= cfg.max_offset) {
+    if (_segs.front()->offsets().dirty_offset >= cfg.max_offset) {
         return remove_prefix_full_segments(cfg).then([this, cfg] {
             // recurse
             return do_truncate_prefix(cfg);
@@ -405,14 +401,16 @@ ss::future<> disk_log_impl::do_truncate(truncate_config cfg) {
     if (_segs.empty()) {
         return ss::make_ready_future<>();
     }
-    if (_segs.back()->reader().base_offset() >= cfg.base_offset) {
+    // Note different from the stats variable above because
+    // we want to delete even empty segments.
+    if (_segs.back()->offsets().base_offset >= cfg.base_offset) {
         return remove_full_segments(cfg.base_offset).then([this, cfg] {
             // recurse
             return do_truncate(cfg);
         });
     }
     auto& last = *_segs.back();
-    if (cfg.base_offset > last.dirty_offset()) {
+    if (cfg.base_offset > last.offsets().dirty_offset) {
         return ss::make_ready_future<>();
     }
     auto pidx = last.index().find_nearest(cfg.base_offset);

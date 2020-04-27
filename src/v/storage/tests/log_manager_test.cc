@@ -25,7 +25,7 @@ void write_garbage(segment_appender& ptr) {
 
 void write_batches(ss::lw_shared_ptr<segment> seg) {
     auto batches = test::make_random_batches(
-      seg->reader().base_offset() + model::offset(1), 1);
+      seg->offsets().base_offset + model::offset(1), 1);
     for (auto& b : batches) {
         b.header().header_crc = model::internal_header_only_crc(b.header());
         (void)seg->append(std::move(b)).get0();

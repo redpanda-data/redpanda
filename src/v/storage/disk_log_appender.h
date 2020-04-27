@@ -15,8 +15,6 @@ public:
       disk_log_impl& log,
       log_append_config config,
       log_clock::time_point append_time,
-      // expect the *next* valid (inclusive) offset
-      model::offset next_offset,
       model::offset dirty_offset) noexcept;
 
     ss::future<> initialize() final;

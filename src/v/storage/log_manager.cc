@@ -107,7 +107,7 @@ ss::future<ss::lw_shared_ptr<segment>> log_manager::do_make_log_segment(
   size_t buf_size) {
     auto path = segment_path::make_segment_path(
       _config.base_dir, ntp, base_offset, term, version);
-    stlog.trace("Creating new segment {}", path.string());
+    vlog(stlog.info, "Creating new segment {}", path.string());
     ss::file_open_options opt{
       /// We fallocate the full file segment
       .extent_allocation_size_hint = 0,
@@ -135,15 +135,20 @@ ss::future<ss::lw_shared_ptr<segment>> log_manager::do_make_log_segment(
               });
           }
       })
-      .then([this, buf_size, path](segment_appender_ptr a) {
+      .then([this, buf_size, path, base_offset](segment_appender_ptr a) {
           return open_segment(path, buf_size)
-            .then_wrapped([this, a = std::move(a)](
+            .then_wrapped([this, a = std::move(a), base_offset](
                             ss::future<ss::lw_shared_ptr<segment>> s) mutable {
                 try {
                     auto seg = s.get0();
-                    seg->reader().set_last_visible_byte_offset(0);
+                    seg->reader().set_file_size(0);
+                    vassert(
+                      base_offset == seg->offsets().base_offset,
+                      "Invalid segment creation:{}",
+                      seg);
                     return ss::make_ready_future<ss::lw_shared_ptr<segment>>(
                       ss::make_lw_shared<segment>(
+                        seg->offsets(),
                         std::move(seg->reader()),
                         std::move(seg->index()),
                         std::move(*a),
@@ -237,21 +242,11 @@ static ss::future<segment_set> do_recover(segment_set&& segments) {
     });
 }
 
-static void set_max_offsets(segment_set& segments) {
-    for (auto it = segments.begin(); it != segments.end(); ++it) {
-        auto next = std::next(it);
-        if (next != segments.end()) {
-            (*it)->reader().set_last_written_offset(
-              (*next)->reader().base_offset() - model::offset(1));
-        }
-    }
-}
-
 ss::future<ss::lw_shared_ptr<segment>>
 log_manager::open_segment(const std::filesystem::path& path, size_t buf_size) {
     auto const meta = segment_path::parse_segment_filename(
       path.filename().string());
-    if (meta->version != record_version_type::v1) {
+    if (!meta || meta->version != record_version_type::v1) {
         return ss::make_exception_future<ss::lw_shared_ptr<segment>>(
           std::runtime_error(fmt::format(
             "Segment has invalid version {} != {} path {}",
@@ -275,25 +270,19 @@ log_manager::open_segment(const std::filesystem::path& path, size_t buf_size) {
               return ss::make_ready_future<uint64_t, ss::file>(s.st_size, f);
           });
       })
-      .then([this, buf_size, path = std::move(path), meta](
-              uint64_t size, ss::file fd) {
+      .then([this, buf_size, path](uint64_t size, ss::file fd) {
           if (_config.sanitize_fileops) {
               fd = ss::file(ss::make_shared(file_io_sanitizer(std::move(fd))));
           }
           return std::make_unique<segment_reader>(
-            path.string(),
-            std::move(fd),
-            model::term_id(meta->term),
-            meta->base_offset,
-            size,
-            buf_size);
+            path.string(), std::move(fd), size, buf_size);
       })
-      .then([this](std::unique_ptr<segment_reader> rdr) {
+      .then([this, meta](std::unique_ptr<segment_reader> rdr) {
           auto ptr = rdr.get();
           auto index_name = ptr->filename() + ".offset_index";
           return ss::open_file_dma(
                    index_name, ss::open_flags::create | ss::open_flags::rw)
-            .then_wrapped([this, ptr, rdr = std::move(rdr), index_name](
+            .then_wrapped([this, ptr, rdr = std::move(rdr), index_name, meta](
                             ss::future<ss::file> f) mutable {
                 ss::file fd;
                 try {
@@ -312,10 +301,11 @@ log_manager::open_segment(const std::filesystem::path& path, size_t buf_size) {
                 auto idx = segment_index(
                   index_name,
                   fd,
-                  rdr->base_offset(),
+                  meta->base_offset,
                   segment_index::default_data_buffer_step);
                 return ss::make_ready_future<ss::lw_shared_ptr<segment>>(
                   ss::make_lw_shared<segment>(
+                    segment::offset_tracker(meta->term, meta->base_offset),
                     std::move(*rdr),
                     std::move(idx),
                     std::nullopt,
@@ -390,7 +380,6 @@ ss::future<log> log_manager::do_manage(ntp_config cfg) {
       .then(
         [this, cfg = std::move(cfg)](segment_set::underlying_t segs) mutable {
             auto segments = segment_set(std::move(segs));
-            set_max_offsets(segments);
             return do_recover(std::move(segments))
               .then([this, cfg = std::move(cfg)](segment_set segments) mutable {
                   auto l = storage::make_disk_backed_log(
