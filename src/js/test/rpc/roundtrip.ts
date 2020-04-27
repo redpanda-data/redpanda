@@ -20,7 +20,7 @@ function makeHeader() {
     //It's crc32 is = 1774429187
     //If you change the values of this header
     //Please change the const value in the crc32 test case below
-    return new RpcHeader(1, 0, 0, 1, 2, 3, 0);
+    return new RpcHeader(1, 0, 0, 1, 2, 3, BigInt(0));
 }
 
 function makeSimplePod() {

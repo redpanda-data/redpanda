@@ -11,9 +11,22 @@ import { RpcXxhash64 } from '../hashing/xxhash';
 import { strict as assert } from 'assert';
 
 //The indices of the header
-const hId = [0, 1, 5, 6, 10, 14, 18];
+enum hId {
+    version = 0,
+    headerChecksum = 1,
+    compression = 5,
+    payloadSize = 6,
+    meta = 10,
+    correlationId = 14,
+    payloadChecksum = 18
+}
 //The indices of the pod
-const podId = [0, 4, 6, 10];
+enum podId {
+    readBytes = 0,
+    x = 4,
+    y = 6,
+    z = 10
+}
 //The indices of a RecordBatchHeader
 enum rbhId {
     headerCrc = 0,
@@ -54,13 +67,13 @@ export class Deserializer {
         //get a subarray to header
         const head = bytes.subarray(0, 26);
         //parse the header
-        const version: number = head.readUInt8(hId[0]);
-        const headerChecksum: number = head.readUInt32LE(hId[1]);
-        const compression: number = head.readUInt8(hId[2]);
-        const payloadSize: number = head.readUInt32LE(hId[3]);
-        const meta: number = head.readUInt32LE(hId[4]);
-        const correlationId: number = head.readUInt32LE(hId[5]);
-        const payloadChecksum: any = head.readBigUInt64LE(hId[6]);
+        const version = head.readUInt8(hId.version);
+        const headerChecksum = head.readUInt32LE(hId.headerChecksum);
+        const compression = head.readUInt8(hId.compression);
+        const payloadSize = head.readUInt32LE(hId.payloadSize);
+        const meta = head.readUInt32LE(hId.meta);
+        const correlationId = head.readUInt32LE(hId.correlationId);
+        const payloadChecksum: BigInt = head.readBigUInt64LE(hId.payloadChecksum);
         //calculate the crc of the header
         const crcVal = RpcHeaderCrc32(head);
         assert(crcVal == headerChecksum, "Error crc32 check failed");
@@ -100,10 +113,10 @@ export class Deserializer {
     }
 
     simplePod(bytes: Buffer) {
-        const readBytes: number = bytes.readInt32LE(podId[0]);
-        let x: number = bytes.readInt16LE(podId[1]);
-        let y: number = bytes.readInt32LE(podId[2]);
-        let z: bigint = bytes.readBigInt64LE(podId[3]);
+        const readBytes = bytes.readInt32LE(podId.readBytes);
+        let x = bytes.readInt16LE(podId.x);
+        let y = bytes.readInt32LE(podId.y);
+        let z = bytes.readBigInt64LE(podId.z);
         return new SimplePod(x, y, z);
     }
 
@@ -219,13 +232,13 @@ export class Serializer {
             4 +  //correlation_id
             8;   //payload_checksum
         let buf: Buffer = Buffer.allocUnsafe(totalBytes);
-        buf.writeUInt8(header.version, hId[0]);
-        buf.writeUInt32LE(header.headerChecksum, hId[1]);
-        buf.writeUInt8(header.compression, hId[2]);
-        buf.writeUInt32LE(header.payload, hId[3]);
-        buf.writeUInt32LE(header.meta, hId[4]);
-        buf.writeUInt32LE(header.correlationId, hId[5]);
-        buf.writeBigUInt64LE(header.payloadChecksum, hId[6]);
+        buf.writeUInt8(header.version, hId.version);
+        buf.writeUInt32LE(header.headerChecksum, hId.headerChecksum);
+        buf.writeUInt8(header.compression, hId.compression);
+        buf.writeUInt32LE(header.payload, hId.payloadSize);
+        buf.writeUInt32LE(header.meta, hId.meta);
+        buf.writeUInt32LE(header.correlationId, hId.correlationId);
+        buf.writeBigUInt64LE(header.payloadChecksum, hId.payloadChecksum);
         return buf;
     }
 
@@ -233,10 +246,10 @@ export class Serializer {
         const payloadSize: number = 2 + 4 + 8;
         const totalBytes: number = 4 + payloadSize;
         let buf: Buffer = Buffer.allocUnsafe(totalBytes);
-        buf.writeInt32LE(payloadSize, podId[0]);
-        buf.writeInt16LE(pod.x, podId[1]);
-        buf.writeInt32LE(pod.y, podId[2]);
-        buf.writeBigInt64LE(pod.z, podId[3]);
+        buf.writeInt32LE(payloadSize, podId.readBytes);
+        buf.writeInt16LE(pod.x, podId.x);
+        buf.writeInt32LE(pod.y, podId.y);
+        buf.writeBigInt64LE(pod.z, podId.z);
         return buf;
     }
 
