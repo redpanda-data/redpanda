@@ -29,12 +29,12 @@ void server_probe::setup_metrics(
           "requests_completed",
           [this] { return _requests_completed; },
           sm::description("Number of successfully served requests")),
-        sm::make_derive(
+        sm::make_total_bytes(
           "received_bytes",
           [this] { return _in_bytes; },
           sm::description(
             "Number of bytes received from the clients in valid requests")),
-        sm::make_derive(
+        sm::make_total_bytes(
           "sent_bytes",
           [this] { return _out_bytes; },
           sm::description("Number of bytes sent to clients")),
@@ -56,7 +56,7 @@ void server_probe::setup_metrics(
           sm::description(
             "Number of requests that have to"
             "wait for processing beacause of insufficient memory")),
-        sm::make_derive(
+        sm::make_gauge(
           "requests_pending",
           [this] { return _requests_received - _requests_completed; },
           sm::description("Number of requests being processed by server")),
@@ -107,7 +107,7 @@ void client_probe::setup_metrics(
           [this] { return _requests; },
           sm::description("Number of requests"),
           labels),
-        sm::make_derive(
+        sm::make_gauge(
           "requests_pending",
           [this] { return _requests_pending; },
           sm::description("Number of requests pending"),
