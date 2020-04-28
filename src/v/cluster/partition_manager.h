@@ -49,6 +49,8 @@ public:
       std::vector<model::broker>,
       std::optional<raft::consensus::append_entries_cb_t>);
 
+    ss::future<> remove(const model::ntp& ntp);
+
     notification_id_type register_leadership_notification(leader_cb_t cb) {
         auto id = _notification_id++;
         _notifications.push_back(std::make_pair(id, std::move(cb)));
