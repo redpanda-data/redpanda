@@ -57,7 +57,7 @@ model::record_batch create_checkpoint_batch() {
       .record_type = log_record_key::type::checkpoint};
 
     storage::record_batch_builder builder(
-      controller::controller_record_batch_type, model::offset(0));
+      controller_record_batch_type, model::offset(0));
     iobuf key_buf;
     reflection::adl<log_record_key>{}.to(key_buf, checkpoint_key);
     builder.add_raw_kv(std::move(key_buf), iobuf{});

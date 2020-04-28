@@ -33,8 +33,6 @@ class controller final : public ss::peering_sharded_service<controller> {
 public:
     static constexpr const ss::shard_id shard = 0;
     static constexpr const raft::group_id group{0};
-    /// \brief used to distinguished log messages
-    static constexpr model::record_batch_type controller_record_batch_type{3};
     // FIXME: make it configurable
     static constexpr auto join_timeout = std::chrono::seconds(5);
 
