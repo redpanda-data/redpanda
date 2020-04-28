@@ -100,10 +100,6 @@ public:
 
     model::offset start_offset() const { return _log.offsets().start_offset; }
 
-    ss::future<ss::semaphore_units<>> op_lock_unit() {
-        return ss::get_units(_op_sem, 1);
-    }
-
 private:
     friend replicate_entries_stm;
     friend vote_stm;
