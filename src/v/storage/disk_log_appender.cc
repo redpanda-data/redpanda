@@ -24,7 +24,7 @@ disk_log_appender::disk_log_appender(
   , _last_offset(dirty_offset) {
     if (_idx() < 0) {
         // empty log
-        _idx = _base_offset = _base_offset = model::offset{0};
+        _idx = _base_offset = model::offset{0};
     } else {
         // first batch
         _idx++;
