@@ -87,7 +87,7 @@ ss::future<> replicate_batcher::flush() {
       [this,
        data = std::move(data),
        notifications = std::move(notifications)]() mutable {
-          return ss::get_units(_ptr->_op_sem, 1)
+          return _ptr->_op_lock.get_units()
             .then([this,
                    data = std::move(data),
                    notifications = std::move(notifications)](
