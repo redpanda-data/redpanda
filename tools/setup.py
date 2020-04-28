@@ -31,8 +31,9 @@ setup(
         'docker-compose',
         'gitpython',
         'google-cloud-build',
-        'jmespath',
+        'grafanalib',
         'Jinja2',
+        'jmespath',
         'paramiko',
         'peewee',
         'pylddwrap',
@@ -40,7 +41,6 @@ setup(
         'requests',
         'selinux',
         'yapf',
-        'peewee',
     ],
     scripts=[],
     entry_points={
