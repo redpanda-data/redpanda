@@ -172,7 +172,7 @@ ss::future<> controller::start() {
             .then([this] {
                 _raft0_cfg_offset = model::offset(
                   _raft0->meta().prev_log_index);
-                return ss::with_semaphore(_sem, 1, [this] {
+                return _lock.with([this] {
                     return apply_raft0_cfg_update(_raft0->config());
                 });
             })
@@ -221,7 +221,7 @@ ss::future<> controller::stop() {
         _leadership_cond.broadcast();
     }
     _as.request_abort();
-    return ss::with_semaphore(_sem, 1, [this] {
+    return _lock.with([this] {
         // we have to stop latch first as there may be some futures waiting
         // inside the gate for notification
         _notification_latch.stop();
@@ -606,7 +606,7 @@ ss::future<std::vector<topic_result>> controller::create_topics(
   model::timeout_clock::time_point timeout) {
     verify_shard();
 
-    auto f = ss::get_units(_sem, 1).then(
+    auto f = _lock.get_units().then(
       [this, topics = std::move(topics), timeout](
         ss::semaphore_units<> u) mutable {
           return do_create_topics(std::move(u), std::move(topics), timeout);
@@ -730,7 +730,7 @@ ss::future<> controller::do_leadership_notification(
     // gate is reentrant making it ok if leadership notification originated
     // on the the controller::shard core.
     return with_gate(_bg, [this, ntp = std::move(ntp), lid, term]() mutable {
-        auto f = ss::get_units(_sem, 1).then(
+        auto f = _lock.get_units().then(
           [this, ntp = std::move(ntp), lid, term](
             ss::semaphore_units<> u) mutable {
               if (ntp == controller_ntp) {
@@ -837,8 +837,8 @@ controller::update_brokers_cache(std::vector<model::broker> nodes) {
 void controller::on_raft0_entries_comitted(
   model::record_batch_reader&& reader) {
     (void)with_gate(_bg, [this, reader = std::move(reader)]() mutable {
-        return with_semaphore(
-          _sem, 1, [this, reader = std::move(reader)]() mutable {
+        return _lock.with(
+          [this, reader = std::move(reader)]() mutable {
               if (_bg.is_closed()) {
                   return ss::make_ready_future<>();
               }
