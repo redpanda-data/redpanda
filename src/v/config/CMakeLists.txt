@@ -5,7 +5,6 @@ v_cc_library(
     base_property.cc
     rjson_serialization.cc
   DEPS
-    Seastar::seastar
-    v::model
+    v::json
 )
 add_subdirectory(tests)

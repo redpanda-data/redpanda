@@ -43,7 +43,7 @@ public:
     // serialization point in config_store::to_json to avoid users from being
     // forced to consume the property as a json object.
     void to_json(rapidjson::Writer<rapidjson::StringBuffer>& w) const override {
-        rjson_serialize(w, _value);
+        json::rjson_serialize(w, _value);
     }
 
     std::optional<validation_error> validate() const override {
