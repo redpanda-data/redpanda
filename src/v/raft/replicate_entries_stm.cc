@@ -88,7 +88,11 @@ ss::future<> replicate_entries_stm::dispatch_one(
              [this, id, units]() mutable {
                  return dispatch_single_retry(id, std::move(units))
                    .then([this, id](result<append_entries_reply> reply) {
-                       _ptr->process_append_entries_reply(id, reply);
+                       auto it = _followers_seq.find(id);
+                       auto seq = it == _followers_seq.end()
+                                    ? follower_req_seq(0)
+                                    : it->second;
+                       _ptr->process_append_entries_reply(id, reply, seq);
                    });
              })
       .handle_exception_type([](const ss::gate_closed_exception&) {});
@@ -195,9 +199,12 @@ result<replicate_result> replicate_entries_stm::process_result(
 ss::future<> replicate_entries_stm::wait() { return _req_bg.close(); }
 
 replicate_entries_stm::replicate_entries_stm(
-  consensus* p, append_entries_request r)
+  consensus* p,
+  append_entries_request r,
+  absl::flat_hash_map<model::node_id, follower_req_seq> seqs)
   : _ptr(p)
   , _req(std::move(r))
+  , _followers_seq(std::move(seqs))
   , _share_sem(1)
   , _ctxlog(_ptr->_self, raft::group_id(_ptr->_meta.group)) {}
 
