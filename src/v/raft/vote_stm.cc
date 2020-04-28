@@ -85,9 +85,7 @@ std::pair<uint32_t, uint32_t> vote_stm::partition_count() const {
 }
 ss::future<> vote_stm::vote() {
     using skip_vote = ss::bool_class<struct skip_vote_tag>;
-    return with_semaphore(
-             _ptr->_op_sem,
-             1,
+    return _ptr->_op_lock.with(
              [this] {
                  // check again while under op_sem
                  if (_ptr->should_skip_vote()) {
@@ -155,7 +153,7 @@ ss::future<> vote_stm::do_vote() {
       })
       // porcess results
       .then([this]() {
-          return ss::get_units(_ptr->_op_sem, 1)
+          return _ptr->_op_lock.get_units()
             .then([this](ss::semaphore_units<> u) {
                 return process_replies(std::move(u));
             });

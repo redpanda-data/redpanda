@@ -239,9 +239,7 @@ consensus::replicate(model::record_batch_reader&& rdr, replicate_options opts) {
     }
     // For relaxed consistency, append data to leader disk without flush
     // asynchronous replication is provided by Raft protocol recovery mechanism.
-    return ss::with_semaphore(
-             _op_sem,
-             1,
+    return _op_lock.with(
              [this, rdr = std::move(rdr)]() mutable {
                  if (!is_leader()) {
                      return seastar::make_ready_future<
@@ -265,7 +263,7 @@ void consensus::dispatch_flush_with_lock() {
         return;
     }
     (void)ss::with_gate(_bg, [this] {
-        return ss::with_semaphore(_op_sem, 1, [this] {
+        return _op_lock.with([this] {
             if (!_has_pending_flushes) {
                 return ss::make_ready_future<>();
             }
@@ -299,7 +297,7 @@ consensus::make_reader(storage::log_reader_config config) {
     }
 
     // otherwise flush the log to make pending writes visible
-    return ss::with_semaphore(_op_sem, 1, [this, config] {
+    return _op_lock.with([this, config] {
         auto f = ss::make_ready_future<>();
         if (_has_pending_flushes) {
             f = flush_log();
@@ -374,7 +372,7 @@ void consensus::arm_vote_timeout() {
     }
 }
 ss::future<> consensus::add_group_member(model::broker node) {
-    return ss::get_units(_op_sem, 1)
+    return _op_lock.get_units()
       .then([this, node = std::move(node)](ss::semaphore_units<> u) mutable {
           auto cfg = _conf;
           // check once again under the lock
@@ -392,7 +390,7 @@ ss::future<> consensus::add_group_member(model::broker node) {
 }
 
 ss::future<> consensus::start() {
-    return with_semaphore(_op_sem, 1, [this] {
+    return _op_lock.with([this] {
         return details::read_voted_for(voted_for_filename())
           .then([this](voted_for_configuration r) {
               if (r.voted_for < 0) {
@@ -431,7 +429,7 @@ ss::future<> consensus::start() {
 
 ss::future<vote_reply> consensus::vote(vote_request&& r) {
     return with_gate(_bg, [this, r = std::move(r)]() mutable {
-        return with_semaphore(_op_sem, 1, [this, r = std::move(r)]() mutable {
+        return _op_lock.with([this, r = std::move(r)]() mutable {
             return do_vote(std::move(r));
         });
     });
@@ -509,7 +507,7 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
 ss::future<append_entries_reply>
 consensus::append_entries(append_entries_request&& r) {
     return with_gate(_bg, [this, r = std::move(r)]() mutable {
-        return with_semaphore(_op_sem, 1, [this, r = std::move(r)]() mutable {
+        return _op_lock.with([this, r = std::move(r)]() mutable {
             return do_append_entries(std::move(r));
         });
     });
@@ -805,7 +803,7 @@ consensus::next_followers_request_seq() {
 
 void consensus::maybe_update_leader_commit_idx() {
     (void)with_gate(_bg, [this] {
-        return seastar::with_semaphore(_op_sem, 1, [this]() mutable {
+        return _op_lock.with([this]() mutable {
             return do_maybe_update_leader_commit_idx();
         });
     }).handle_exception([this](const std::exception_ptr& e) {
