@@ -156,8 +156,7 @@ public:
         // topic with partition replicas on current broker
         auto b1 = std::move(
                     cluster::simple_batch_builder(
-                      cluster::controller::controller_record_batch_type,
-                      model::offset(0))
+                      cluster::controller_record_batch_type, model::offset(0))
                       .add_kv(
                         lrk{lrk::type::topic_configuration},
                         cluster::topic_configuration(
@@ -186,26 +185,25 @@ public:
         ss::circular_buffer<model::record_batch> ret;
 
         // topic with partition replicas on other broker
-        auto b1 = std::move(
-                    cluster::simple_batch_builder(
-                      cluster::controller::controller_record_batch_type, off)
-                      .add_kv(
-                        lrk{lrk::type::topic_configuration},
-                        cluster::topic_configuration(
-                          test_ns, model::topic("topic_2"), 2, 3))
-                      // partition 0
-                      .add_kv(
-                        lrk{lrk::type::partition_assignment},
-                        create_test_assignment(
-                          "topic_2",
-                          0,                        // partition_id
-                          {{2, 0}, {3, 0}, {4, 0}}, // shards_assignment
-                          5))                       // group_id
-                      // partition 1
-                      .add_kv(
-                        lrk{lrk::type::partition_assignment},
-                        create_test_assignment(
-                          "topic_2", 1, {{2, 0}, {3, 0}, {4, 0}}, 6)))
+        auto b1 = std::move(cluster::simple_batch_builder(
+                              cluster::controller_record_batch_type, off)
+                              .add_kv(
+                                lrk{lrk::type::topic_configuration},
+                                cluster::topic_configuration(
+                                  test_ns, model::topic("topic_2"), 2, 3))
+                              // partition 0
+                              .add_kv(
+                                lrk{lrk::type::partition_assignment},
+                                create_test_assignment(
+                                  "topic_2",
+                                  0,                        // partition_id
+                                  {{2, 0}, {3, 0}, {4, 0}}, // shards_assignment
+                                  5))                       // group_id
+                              // partition 1
+                              .add_kv(
+                                lrk{lrk::type::partition_assignment},
+                                create_test_assignment(
+                                  "topic_2", 1, {{2, 0}, {3, 0}, {4, 0}}, 6)))
                     .build();
         ret.push_back(std::move(b1));
 
@@ -235,7 +233,7 @@ public:
             auto partitions = random_generators::get_int(max_partitions);
             auto tp = fmt::format("topic_{}", i);
             cluster::simple_batch_builder builder(
-              cluster::controller::controller_record_batch_type, offset);
+              cluster::controller_record_batch_type, offset);
             builder.add_kv(
               lrk{lrk::type::topic_configuration},
               cluster::topic_configuration(
