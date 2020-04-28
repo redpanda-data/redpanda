@@ -26,6 +26,7 @@ struct log_record_key {
         partition_assignment,
         topic_configuration,
         checkpoint,
+        topic_deletion,
     };
 
     type record_type;
