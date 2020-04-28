@@ -87,11 +87,11 @@ ss::future<> replicate_batcher::flush() {
       [this,
        data = std::move(data),
        notifications = std::move(notifications)]() mutable {
-          return _ptr->_op_lock.get_units()
-            .then([this,
-                   data = std::move(data),
-                   notifications = std::move(notifications)](
-                    ss::semaphore_units<> u) mutable {
+          return _ptr->_op_lock.get_units().then(
+            [this,
+             data = std::move(data),
+             notifications = std::move(notifications)](
+              ss::semaphore_units<> u) mutable {
                 // we have to check if we are the leader
                 // it is critical as term could have been updated already by
                 // vote request and entries from current node could be accepted

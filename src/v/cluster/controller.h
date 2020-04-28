@@ -3,7 +3,6 @@
 #include "cluster/controller_service.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/metadata_dissemination_service.h"
-#include "utils/mutex.h"
 #include "cluster/notification_latch.h"
 #include "cluster/partition_allocator.h"
 #include "cluster/partition_manager.h"
@@ -15,6 +14,7 @@
 #include "seastarx.h"
 #include "storage/log_manager.h"
 #include "storage/types.h"
+#include "utils/mutex.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/condition-variable.hh>
