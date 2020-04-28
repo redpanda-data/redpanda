@@ -16,11 +16,6 @@ namespace {
 
 ss::logger lg("config test"); // NOLINT
 
-struct custom_aggregate {
-    ss::sstring string_value;
-    int int_value;
-};
-
 struct test_config : public config::config_store {
     config::property<int> optional_int;
     config::property<ss::sstring> required_string;
@@ -66,19 +61,6 @@ YAML::Node valid_configuration() {
                       " - one\n"
                       " - two\n"
                       " - three\n");
-}
-
-void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w, const custom_aggregate& v) {
-    w.StartObject();
-
-    w.Key("string_value");
-    w.String(v.string_value);
-
-    w.Key("int_value");
-    w.Int(v.int_value);
-
-    w.EndObject();
 }
 
 } // namespace
@@ -165,7 +147,7 @@ SEASTAR_THREAD_TEST_CASE(validate_invalid_configuration) {
     BOOST_TEST(errors.size() == 0);
 }
 
-SEASTAR_THREAD_TEST_CASE(json_serialization) {
+SEASTAR_THREAD_TEST_CASE(config_json_serialization) {
     auto cfg = test_config();
     cfg.read_yaml(valid_configuration());
     lg.info("Config: {}", cfg);
