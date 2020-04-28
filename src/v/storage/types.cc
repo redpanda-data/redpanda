@@ -45,8 +45,7 @@ operator<<(std::ostream& o, const ntp_config::default_overrides& v) {
     fmt::print(
       o,
       "{{compaction_strategy: {}, cleanup_policy_bitflags: {}, segment_size: "
-      "{}, "
-      "retention_bytes: {}, retention_time_ms: {}}",
+      "{}, retention_bytes: {}, retention_time_ms: {}}}",
       v.compaction_strategy,
       v.cleanup_policy_bitflags,
       v.segment_size,
