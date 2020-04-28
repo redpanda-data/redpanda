@@ -3,6 +3,7 @@
 #include "cluster/controller_service.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/metadata_dissemination_service.h"
+#include "utils/mutex.h"
 #include "cluster/notification_latch.h"
 #include "cluster/partition_allocator.h"
 #include "cluster/partition_manager.h"
@@ -174,9 +175,9 @@ private:
     std::unique_ptr<partition_allocator> _allocator;
     ss::condition_variable _leadership_cond;
     ss::gate _bg;
-    // Semaphore used to make sure that the controller state i.e. topics and
+    // Mutex used to make sure that the controller state i.e. topics and
     // partition metadata are updated atomically
-    ss::semaphore _sem{1};
+    mutex _lock;
     ss::semaphore _recovery_semaphore{0};
     model::offset _raft0_cfg_offset;
     cluster::notification_id_type _leader_notify_handle;
