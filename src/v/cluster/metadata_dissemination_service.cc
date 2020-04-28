@@ -159,10 +159,14 @@ void metadata_dissemination_service::collect_pending_updates() {
     for (auto& ntp_leader : _requests) {
         auto tp_md = _md_cache.local().get_topic_metadata(
           model::topic_namespace_view(ntp_leader.ntp));
+
         if (!tp_md) {
-            // Topic metadata is not there anymore
-            throw std::runtime_error(fmt::format(
-              "Topic {} metadata does not exists", ntp_leader.ntp.tp.topic));
+            // Topic metadata is not there anymore, partition was removed
+            clusterlog.debug(
+              "Ignoring leadership dissemination for {}, metadata does not "
+              "exists",
+              ntp_leader.ntp);
+            continue;
         }
         auto non_overlapping = calculate_non_overlapping_nodes(
           get_partition_members(ntp_leader.ntp.tp.partition, *tp_md), brokers);
