@@ -118,7 +118,8 @@ public:
       model::term_id term = model::term_id(0),
       T batch_generator = T{},
       storage::log_append_config::fsync sync
-      = storage::log_append_config::fsync::no) {
+      = storage::log_append_config::fsync::no,
+      bool flush_after_append = true) {
         auto lstats = log.offsets();
         storage::log_append_config append_cfg{
           sync, ss::default_priority_class(), model::no_timeout};
@@ -146,7 +147,9 @@ public:
                          .for_each_ref(
                            log.make_appender(append_cfg), append_cfg.timeout)
                          .get0();
-            log.flush().get();
+            if (flush_after_append) {
+                log.flush().get();
+            }
             // Check if after append offset was updated correctly
             auto expected_offset = model::offset(total_records - 1)
                                    + base_offset;
