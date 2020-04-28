@@ -314,6 +314,11 @@ controller::dispatch_record_recovery(log_record_key key, iobuf&& v_buf) {
         return recover_topic_configuration(
                  reflection::from_iobuf<topic_configuration>(std::move(v_buf)))
           .then([this] { _recovery_semaphore.signal(); });
+    case log_record_key::type::topic_deletion:
+        return process_topic_deletion(
+                 reflection::from_iobuf<model::topic_namespace>(
+                   std::move(v_buf)))
+          .then([this] { _recovery_semaphore.signal(); });
     case log_record_key::type::checkpoint:
         return ss::make_ready_future<>().then(
           [this] { _recovery_semaphore.signal(); });
@@ -448,6 +453,92 @@ controller::recover_topic_configuration(topic_configuration t_cfg) {
     return _md_cache.invoke_on_all(
       [t_cfg = std::move(t_cfg)](metadata_cache& md_c) mutable {
           md_c.add_topic(std::move(t_cfg));
+      });
+}
+
+model::ntp
+make_ntp(model::topic_namespace_view tp_ns, model::partition_id pid) {
+    return model::ntp{.ns = tp_ns.ns,
+                      .tp = {.topic = tp_ns.tp, .partition = pid}};
+}
+
+ss::future<> controller::process_topic_deletion(model::topic_namespace tp_ns) {
+    auto tp_md = _md_cache.local().get_topic_metadata(tp_ns);
+
+    // first remove topic from metadata cache
+    return _md_cache
+      .invoke_on_all(
+        [tp_ns](metadata_cache& cache) { cache.remove_topic(tp_ns); })
+      .then([this, partitions = std::move(tp_md->partitions), tp_ns]() mutable {
+          // remove all partitions
+          vlog(
+            clusterlog.info,
+            "Removing topic {}, partitions {}",
+            tp_ns,
+            partitions);
+          return ss::parallel_for_each(
+            partitions.begin(),
+            partitions.end(),
+            [this, tp_ns = std::move(tp_ns)](
+              model::partition_metadata& p_md) mutable {
+                return delete_partitition(tp_ns, std::move(p_md));
+            });
+      });
+}
+
+bool is_in_replica_set(
+  const std::vector<model::broker_shard> replicas, model::node_id node_id) {
+    auto it = std::find_if(
+      std::cbegin(replicas),
+      std::cend(replicas),
+      [node_id](const model::broker_shard& bs) {
+          return bs.node_id == node_id;
+      });
+    return it != replicas.end();
+}
+
+ss::future<> controller::delete_partitition(
+  model::topic_namespace tp_ns, model::partition_metadata p_md) {
+    // This partition is not replicated locally
+    if (!is_in_replica_set(p_md.replicas, _self.id())) {
+        return ss::make_ready_future<>();
+    }
+    auto ntp = make_ntp(tp_ns, p_md.id);
+    // find partition shard
+    auto shard = _st.local().shard_for(ntp);
+    if (!shard) {
+        vlog(
+          clusterlog.error, "Unable to remove NTP {} - shard not found", ntp);
+        return ss::make_ready_future<>();
+    }
+
+    return _pm
+      .invoke_on(
+        *shard,
+        [ntp](cluster::partition_manager& pm) {
+            // get group
+            return pm.get(ntp)->group();
+        })
+      .then([this, ntp](raft::group_id group_id) mutable {
+          // update shard table
+          return _st.invoke_on_all(
+            [ntp = std::move(ntp), group_id](shard_table& st) mutable {
+                st.erase(ntp, group_id);
+            });
+      })
+      .then([this, shard, ntp = std::move(ntp)] {
+          return _pm.invoke_on(*shard, [ntp](cluster::partition_manager& pm) {
+              // remove partition
+              return pm.remove(ntp);
+          });
+      })
+      .then([this, replicas = std::move(p_md.replicas)] {
+          if (is_leader() && _allocator) {
+              // update allocator if required
+              for (auto r : replicas) {
+                  _allocator->deallocate(r);
+              }
+          }
       });
 }
 
@@ -613,7 +704,38 @@ ss::future<std::vector<topic_result>> controller::create_topics(
     return ss::with_timeout(timeout, std::move(f));
 }
 
-static ss::future<std::vector<topic_result>> process_create_topics_results(
+///  Topic deletion works analogical to the creation. The deletion request is
+///  replicated via raft-0 and then applied to controller state through raft
+///  apply notifications upcall. When deletion record is processed by the
+///  controller logic it executes the following steps:
+///
+///  1) Removes topic from metedata cache
+///  2) For each topic partition:
+///     a) removes partition via partition_manager API
+///     b) removes partition mappings (NTP & group_id) from shard table
+///     c) if current controller is leader updates partition allocator
+///
+///  After those actions are done it returns vector of results
+
+ss::future<std::vector<topic_result>> controller::delete_topics(
+  std::vector<model::topic_namespace> topics,
+  model::timeout_clock::time_point timeout) {
+    verify_shard();
+
+    auto f = _lock.get_units().then(
+      [this, topics, timeout](ss::semaphore_units<> u) mutable {
+          return do_delete_topics(std::move(u), std::move(topics), timeout);
+      });
+
+    return ss::with_timeout(timeout, std::move(f))
+      .handle_exception_type(
+        [topics = std::move(topics)](const ss::timed_out_error&) {
+            return ss::make_ready_future<std::vector<topic_result>>(
+              create_topic_results(topics, errc::timeout));
+        });
+}
+
+static ss::future<std::vector<topic_result>> process_replicate_topic_op_result(
   std::vector<model::topic_namespace> valid_topics,
   notification_latch& latch,
   model::timeout_clock::time_point timeout,
@@ -631,11 +753,67 @@ static ss::future<std::vector<topic_result>> process_create_topics_results(
         }
     } catch (...) {
         clusterlog.error(
-          "An error occurred while appending create topic entries: {}",
+          "An error occurred while appending topic operation entries: {}",
           std::current_exception());
     }
     return ss::make_ready_future<ret_t>(
       create_topic_results(valid_topics, errc::replication_error));
+}
+
+ss::future<std::vector<topic_result>> controller::do_delete_topics(
+  ss::semaphore_units<> units,
+  std::vector<model::topic_namespace> topics,
+  model::timeout_clock::time_point timeout) {
+    verify_shard();
+    using ret_t = std::vector<topic_result>;
+    clusterlog.trace("Delete topics {}", topics);
+    // Controller is not a leader fail all requests
+    if (!is_leader()) {
+        return ss::make_ready_future<ret_t>(
+          create_topic_results(topics, errc::not_leader_controller));
+    }
+    ret_t errors;
+    errors.reserve(topics.size());
+    auto valid_range_end = std::end(topics);
+    // Check if exists
+    valid_range_end = std::partition(
+      std::begin(topics),
+      valid_range_end,
+      [this](const model::topic_namespace& tp_ns) {
+          return _md_cache.local().get_topic_metadata(tp_ns).has_value();
+      });
+
+    // generate errors
+    std::transform(
+      valid_range_end,
+      std::end(topics),
+      std::back_inserter(errors),
+      [](const model::topic_namespace& tp_ns) {
+          return topic_result(tp_ns, errc::topic_not_exists);
+      });
+
+    topics.erase(valid_range_end, std::cend(topics));
+    // no topics to erase
+    if (topics.empty()) {
+        return ss::make_ready_future<std::vector<topic_result>>(errors);
+    }
+
+    auto rdr = make_deletion_batches(topics);
+    return _raft0
+      ->replicate(
+        std::move(rdr), raft::replicate_options(default_consistency_level))
+      .then_wrapped(
+        [this, units = std::move(units), timeout, topics = std::move(topics)](
+          ss::future<result<raft::replicate_result>> f) mutable {
+            return process_replicate_topic_op_result(
+              topics, _notification_latch, timeout, std::move(f));
+        })
+      .then([errors = std::move(errors)](ret_t results) {
+          // merge results from both sources
+          std::move(
+            std::begin(errors), std::end(errors), std::back_inserter(results));
+          return results;
+      });
 }
 
 ss::future<std::vector<topic_result>> controller::do_create_topics(
@@ -684,7 +862,7 @@ ss::future<std::vector<topic_result>> controller::do_create_topics(
          valid_topics = std::move(valid_topics),
          units = std::move(units),
          timeout](ss::future<result<raft::replicate_result>> f) mutable {
-            return process_create_topics_results(
+            return process_replicate_topic_op_result(
               std::move(valid_topics),
               _notification_latch,
               timeout,
@@ -703,8 +881,7 @@ ss::future<std::vector<topic_result>> controller::do_create_topics(
 std::optional<model::record_batch>
 controller::create_topic_cfg_batch(const topic_configuration& cfg) {
     simple_batch_builder builder(
-      controller::controller_record_batch_type,
-      model::offset(_raft0->meta().commit_index));
+      controller_record_batch_type, model::offset(_raft0->meta().commit_index));
     builder.add_kv(
       log_record_key{.record_type = log_record_key::type::topic_configuration},
       cfg);
