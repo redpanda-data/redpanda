@@ -30,6 +30,7 @@ setup(
         'docker',
         'docker-compose',
         'gitpython',
+        'google-cloud-build',
         'jmespath',
         'Jinja2',
         'paramiko',
