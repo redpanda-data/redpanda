@@ -96,6 +96,28 @@ ss::future<consensus_ptr> partition_manager::manage(
         });
 }
 
+ss::future<> partition_manager::remove(const model::ntp& ntp) {
+    auto partition = get(ntp);
+
+    if (!partition) {
+        return ss::make_exception_future<>(std::invalid_argument(fmt::format(
+          "Can not remove partition. NTP {} is not present in partition "
+          "manager",
+          ntp)));
+    }
+    auto group_id = partition->group();
+
+    // remove partition from ntp & raft tables
+    _ntp_table.erase(ntp);
+    _raft_table.erase(group_id);
+
+    // stop partiton raft & remove log
+    return partition->stop()
+      .then([this, group_id] { return _hbeats.deregister_group(group_id); })
+      .then([this, ntp] { return _mngr.remove(ntp); })
+      .finally([partition] {}); // in the end remove partition
+}
+
 ss::lw_shared_ptr<raft::consensus> partition_manager::make_consensus(
   raft::group_id gr,
   std::vector<model::broker> nodes,
