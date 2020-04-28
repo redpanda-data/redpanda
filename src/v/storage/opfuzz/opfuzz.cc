@@ -13,6 +13,72 @@ namespace storage {
 // NOLINTNEXTLINE
 ss::logger fuzzlogger("opfuzz");
 
+static size_t
+record_count(const ss::circular_buffer<model::record_batch>& batches) {
+    return std::accumulate(
+      batches.begin(),
+      batches.end(),
+      0,
+      [](size_t acc, const model::record_batch& batch) {
+          return acc + batch.record_count();
+      });
+}
+
+struct append_offsets_validator {
+    append_offsets_validator(
+      storage::log* log, size_t record_count, bool is_flushed)
+      : log(log) {
+        auto lstats = log->offsets();
+        auto first = lstats.dirty_offset < model::offset(0)
+                       ? model::offset(-1)
+                       : lstats.dirty_offset;
+        expected_dirty = first + model::offset(record_count);
+        start_seg_count = log->segment_count();
+        if (is_flushed) {
+            expected_committed = expected_dirty;
+        } else {
+            expected_committed = lstats.committed_offset;
+        }
+    }
+
+    void operator()(storage::append_result res) {
+        auto lstats = log->offsets();
+        vassert(
+          res.last_offset == expected_dirty,
+          "Expected append result offset it different than what we have - "
+          "expected: {}, current: {}",
+          expected_dirty,
+          res.last_offset);
+        vassert(
+          lstats.dirty_offset == expected_dirty,
+          "Expected dirty offset is different than what we have - expected: "
+          "{}, current: {}",
+          expected_dirty,
+          lstats.dirty_offset);
+
+        vassert(
+          lstats.committed_offset < expected_dirty,
+          "Committed offset is greater than expected dirty offset - expected: "
+          "{}, current: {}",
+          expected_committed,
+          lstats.committed_offset);
+        // there was no flush
+        if (start_seg_count == log->segment_count()) {
+            vassert(
+              lstats.committed_offset == expected_committed,
+              "Expected committed offset is different than what we have - "
+              "expected: {}, current: {}",
+              expected_committed,
+              lstats.committed_offset);
+        }
+    }
+
+    storage::log* log;
+    model::offset expected_dirty;
+    model::offset expected_committed;
+    size_t start_seg_count;
+};
+
 struct append_op final : opfuzz::op {
     ~append_op() noexcept override = default;
     const char* name() const final { return "append"; }
@@ -31,12 +97,13 @@ struct append_op final : opfuzz::op {
         for (auto& b : batches) {
             b.set_term(*ctx.term);
         }
+        auto validator = append_offsets_validator(
+          ctx.log, record_count(batches), false);
         auto reader = model::make_memory_record_batch_reader(
           std::move(batches));
-
         return std::move(reader)
           .for_each_ref(ctx.log->make_appender(append_cfg), model::no_timeout)
-          .discard_result();
+          .then(validator);
     }
 };
 
@@ -59,22 +126,27 @@ struct append_op_foreign final : opfuzz::op {
                      for (auto& b : batches) {
                          b.set_term(term);
                      }
+                     auto cnt = record_count(batches);
                      auto reader = model::make_memory_record_batch_reader(
                        std::move(batches));
-                     return model::make_foreign_record_batch_reader(
-                       std::move(reader));
+                     return std::pair<model::record_batch_reader, size_t>(
+                       model::make_foreign_record_batch_reader(
+                         std::move(reader)),
+                       cnt);
                  })
-          .then([ctx](model::record_batch_reader rdr) {
+          .then([ctx](std::pair<model::record_batch_reader, size_t> p) {
               return ss::smp::submit_to(
-                0, [rdr = std::move(rdr), ctx]() mutable {
+                0, [rdr = std::move(p.first), cnt = p.second, ctx]() mutable {
                     storage::log_append_config append_cfg{
                       storage::log_append_config::fsync::no,
                       ss::default_priority_class(),
                       model::no_timeout};
+                    auto validator = append_offsets_validator(
+                      ctx.log, cnt, false);
                     return std::move(rdr)
                       .for_each_ref(
                         ctx.log->make_appender(append_cfg), model::no_timeout)
-                      .discard_result();
+                      .then(validator);
                 });
           });
     }
@@ -104,12 +176,13 @@ struct append_multi_term_op final : opfuzz::op {
         for (size_t i = mid; i < batches.size(); ++i) {
             batches[i].set_term(*ctx.term);
         }
+        auto validator = append_offsets_validator(
+          ctx.log, record_count(batches), false);
         auto reader = model::make_memory_record_batch_reader(
           std::move(batches));
-
         return std::move(reader)
           .for_each_ref(ctx.log->make_appender(append_cfg), model::no_timeout)
-          .discard_result();
+          .then(validator);
     }
 };
 
