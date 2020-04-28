@@ -13,7 +13,11 @@ import {
     crcRecordBatchHeaderInternal
 } from '../../modules/hashing/crc32';
 import { RpcXxhash64 } from '../../modules/hashing/xxhash';
-import 'mocha'
+import 'mocha';
+import * as re from 'rewire';
+
+let mod = re("../../modules/hashing/crc32.js");
+let zigzag = mod.__get__('encodeZigZag64');
 
 function makeHeader() {
     //some random values
@@ -192,5 +196,19 @@ describe('RPC',
                         //assert the data is the same
                         assert(batch.equals(resultBatch[0]));
                     });
+            });
+        describe('test zigzag enconding with min/max',
+            () => {
+                it('Assert should fail if enconding fails',
+                    () => {
+                        const max: BigInt = BigInt.asIntN(64, BigInt('9223372036854775807'));
+                        const min: BigInt = BigInt.asIntN(64, BigInt('-9223372036854775808'));
+                        const maxResult = BigInt('18446744073709551614');
+                        const minResult = BigInt('18446744073709551615');
+
+                        assert(maxResult == zigzag(max));
+                        assert(minResult == zigzag(min));
+                    });
+
             });
     });
