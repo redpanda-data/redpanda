@@ -21,18 +21,15 @@ replicate_batcher::replicate_batcher(consensus* ptr, size_t cache_size)
   , _max_batch_size(cache_size) {
     _flush_timer.set_callback([this] {
         // background block further caching too
-        (void)ss::with_semaphore(_batch_sem, 1, [this] { return flush(); });
+        (void)_lock.with([this] { return flush(); });
     });
 }
 
 ss::future<result<replicate_result>>
 replicate_batcher::replicate(model::record_batch_reader&& r) {
-    return ss::with_semaphore(
-             _batch_sem,
-             1,
-             [this, r = std::move(r)]() mutable {
-                 return do_cache(std::move(r));
-             })
+    return _lock
+      .with(
+        [this, r = std::move(r)]() mutable { return do_cache(std::move(r)); })
       .then([this](item_ptr i) {
           if (_pending_bytes < _max_batch_size || !_flush_timer.armed()) {
               _flush_timer.rearm(clock_type::now() + 4ms);
