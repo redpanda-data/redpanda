@@ -17,7 +17,9 @@ enum class errc {
     no_leader_controller,
     join_request_dispatch_error,
     seed_servers_exhausted,
-    auto_create_topics_exception
+    auto_create_topics_exception,
+    timeout,
+    topic_not_exists,
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::errc"; }
@@ -56,6 +58,10 @@ struct errc_category final : public std::error_category {
                    "retry after delay ";
         case errc::auto_create_topics_exception:
             return "An exception was thrown while auto creating topics";
+        case errc::timeout:
+            return "Timeout occurred while processing request";
+        case errc::topic_not_exists:
+            return "Topic does not exists";
         default:
             return "cluster::errc::unknown";
         }
