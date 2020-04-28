@@ -11,6 +11,7 @@
 #include <seastar/core/sharded.hh>
 #include <seastar/util/log.hh>
 
+#include <absl/container/flat_hash_map.h>
 #include <boost/container/flat_set.hpp>
 
 namespace raft::details {
@@ -74,13 +75,22 @@ public:
     using consensus_ptr = ss::lw_shared_ptr<consensus>;
     using consensus_set = boost::container::
       flat_set<consensus_ptr, details::consensus_ptr_by_group_id>;
+
+    // Heartbeats from all groups for single node
     struct node_heartbeat {
-        node_heartbeat(model::node_id t, heartbeat_request req)
+        node_heartbeat(
+          model::node_id t,
+          heartbeat_request req,
+          absl::flat_hash_map<raft::group_id, follower_req_seq> seqs)
           : target(t)
-          , request(std::move(req)) {}
+          , request(std::move(req))
+          , sequence_map(std::move(seqs)) {}
 
         model::node_id target;
         heartbeat_request request;
+        // each raft group has its own follower metadata hence we need map to
+        // track a sequence per group
+        absl::flat_hash_map<raft::group_id, follower_req_seq> sequence_map;
     };
     heartbeat_manager(duration_type interval, consensus_client_protocol);
 
@@ -96,14 +106,12 @@ private:
     clock_type::time_point next_heartbeat_timeout();
 
     /// \brief unprotected, must be used inside the gate & semaphore
-    ss::future<> do_dispatch_heartbeats(clock_type::time_point last_timeout);
+    ss::future<> do_dispatch_heartbeats();
 
-    ss::future<> send_heartbeats(
-      std::vector<ss::semaphore_units<>>, std::vector<node_heartbeat>);
+    ss::future<> send_heartbeats(std::vector<node_heartbeat>);
 
     /// \brief sends a batch to one node
-    ss::future<> do_heartbeat(
-      node_heartbeat&&, ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>>);
+    ss::future<> do_heartbeat(node_heartbeat&&);
 
     /// \brief notifies the consensus groups about append_entries log offsets
     /// \param n the physical node that owns heart beats
@@ -111,7 +119,7 @@ private:
     /// \param result if the node return successful heartbeats
     void process_reply(
       model::node_id n,
-      std::vector<group_id> groups,
+      absl::flat_hash_map<raft::group_id, follower_req_seq> groups,
       result<heartbeat_reply> result);
 
     // private members

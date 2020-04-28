@@ -8,6 +8,8 @@
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/shared_ptr.hh>
 
+#include <absl/container/flat_hash_map.h>
+
 namespace raft {
 
 /// A single-shot class. Utility method with state
@@ -63,7 +65,10 @@ namespace raft {
 
 class replicate_entries_stm {
 public:
-    replicate_entries_stm(consensus*, append_entries_request);
+    replicate_entries_stm(
+      consensus*,
+      append_entries_request,
+      absl::flat_hash_map<model::node_id, follower_req_seq>);
     ~replicate_entries_stm();
 
     /// caller have to pass _op_sem semaphore units, the apply call will do the
@@ -97,6 +102,7 @@ private:
     consensus* _ptr;
     /// we keep a copy around until we finish the retries
     append_entries_request _req;
+    absl::flat_hash_map<model::node_id, follower_req_seq> _followers_seq;
     ss::semaphore _share_sem;
     ss::semaphore _dispatch_sem{0};
     ss::gate _req_bg;

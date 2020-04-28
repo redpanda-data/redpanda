@@ -49,23 +49,8 @@ public:
     /// Stop all communications.
     ss::future<> stop();
 
-    ss::future<vote_reply> vote(vote_request&& r) {
-        return with_gate(_bg, [this, r = std::move(r)]() mutable {
-            return with_semaphore(
-              _op_sem, 1, [this, r = std::move(r)]() mutable {
-                  return do_vote(std::move(r));
-              });
-        });
-    }
-    ss::future<append_entries_reply>
-    append_entries(append_entries_request&& r) {
-        return with_gate(_bg, [this, r = std::move(r)]() mutable {
-            return with_semaphore(
-              _op_sem, 1, [this, r = std::move(r)]() mutable {
-                  return do_append_entries(std::move(r));
-              });
-        });
-    }
+    ss::future<vote_reply> vote(vote_request&& r);
+    ss::future<append_entries_reply> append_entries(append_entries_request&& r);
 
     /// This method adds a member to the group and performs configuration update
     ss::future<> add_group_member(model::broker node);
@@ -80,8 +65,12 @@ public:
 
     clock_type::time_point last_hbeat_timestamp(model::node_id);
 
+    /// Increment and returns next append_entries order tracking sequence for
+    /// follower with given node id
+    follower_req_seq next_follower_sequence(model::node_id);
+
     void process_append_entries_reply(
-      model::node_id, result<append_entries_reply>);
+      model::node_id, result<append_entries_reply>, follower_req_seq);
 
     ss::future<result<replicate_result>>
     replicate(model::record_batch_reader&&, replicate_options);
@@ -140,8 +129,8 @@ private:
 
     using success_reply = ss::bool_class<struct successfull_reply_tag>;
 
-    success_reply
-      update_follower_index(model::node_id, result<append_entries_reply>);
+    success_reply update_follower_index(
+      model::node_id, result<append_entries_reply>, follower_req_seq seq_id);
     void successfull_append_entries_reply(
       follower_index_metadata&, append_entries_reply);
     void dispatch_recovery(follower_index_metadata&, append_entries_reply);
@@ -176,6 +165,11 @@ private:
     /// \brief called by the vote timer, to dispatch a write under
     /// the ops semaphore
     void dispatch_flush_with_lock();
+
+    absl::flat_hash_map<model::node_id, follower_req_seq>
+    next_followers_request_seq();
+
+    bool should_skip_vote();
     // args
     model::node_id _self;
     timeout_jitter _jit;

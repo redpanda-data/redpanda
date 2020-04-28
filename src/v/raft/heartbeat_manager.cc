@@ -1,9 +1,11 @@
 #include "raft/heartbeat_manager.h"
 
+#include "model/timeout_clock.h"
 #include "outcome_future_utils.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/errc.h"
 #include "raft/raftgen_service.h"
+#include "raft/types.h"
 #include "rpc/reconnect_transport.h"
 #include "rpc/types.h"
 #include "vlog.h"
@@ -17,52 +19,33 @@ ss::logger hbeatlog{"r/heartbeat"};
 using consensus_ptr = heartbeat_manager::consensus_ptr;
 using consensus_set = heartbeat_manager::consensus_set;
 
-static ss::future<std::vector<ss::semaphore_units<>>>
-locks_for_range(const consensus_set& c) {
-    using units_t = ss::semaphore_units<>;
-    using opt_t = std::optional<units_t>;
-
-    return ss::map_reduce(
-      std::cbegin(c),
-      std::cend(c),
-      [](consensus_ptr ptr) {
-          if (!ptr->is_leader()) {
-              // we are only interested in leaders
-              return ss::make_ready_future<opt_t>();
-          }
-          return ptr->op_lock_unit().then([ptr](units_t u) {
-              return std::make_optional<units_t>(std::move(u));
-          });
-      },
-      std::vector<units_t>{},
-      [](std::vector<units_t> locks, opt_t u) {
-          if (u) {
-              locks.push_back(std::move(*u));
-          }
-          return locks;
-      });
-}
-
 static std::vector<heartbeat_manager::node_heartbeat> requests_for_range(
-  const consensus_set& c, clock_type::time_point last_heartbeat) {
-    absl::flat_hash_map<model::node_id, std::vector<protocol_metadata>>
+  const consensus_set& c, clock_type::duration heartbeat_interval) {
+    absl::flat_hash_map<
+      model::node_id,
+      std::vector<std::pair<protocol_metadata, follower_req_seq>>>
       pending_beats;
     if (c.empty()) {
         return {};
     }
     auto self = (*c.begin())->self();
+    auto last_heartbeat = clock_type::now() - heartbeat_interval;
     for (auto& ptr : c) {
         if (!ptr->is_leader()) {
             continue;
         }
-        auto& group = ptr->config();
-        for (auto& n : group.nodes) {
+
+        auto maybe_create_follower_request = [ptr,
+                                              last_heartbeat,
+                                              &pending_beats](
+                                               const model::broker& n) mutable {
             // do not send beat to self
             if (n.id() == ptr->self()) {
-                continue;
+                return;
             }
 
             auto last_hbeat_timestamp = ptr->last_hbeat_timestamp(n.id());
+
             if (last_hbeat_timestamp > last_heartbeat) {
                 vlog(
                   hbeatlog.trace,
@@ -73,20 +56,41 @@ static std::vector<heartbeat_manager::node_heartbeat> requests_for_range(
                   last_heartbeat.time_since_epoch().count(),
                   last_hbeat_timestamp.time_since_epoch().count());
                 // we already sent heartbeat, skip it
-                continue;
+                return;
             }
-            pending_beats[n.id()].push_back(ptr->meta());
-        }
-        for (auto& n : group.learners) {
-            pending_beats[n.id()].push_back(ptr->meta());
-        }
+            auto seq_id = ptr->next_follower_sequence(n.id());
+            pending_beats[n.id()].emplace_back(ptr->meta(), seq_id);
+        };
+
+        auto& group = ptr->config();
+        // collect voters
+        std::for_each(
+          std::cbegin(group.nodes),
+          std::cend(group.nodes),
+          maybe_create_follower_request);
+
+        // collect followers
+        std::for_each(
+          std::cbegin(group.learners),
+          std::cend(group.learners),
+          maybe_create_follower_request);
     }
 
     std::vector<heartbeat_manager::node_heartbeat> reqs;
     reqs.reserve(pending_beats.size());
     for (auto& p : pending_beats) {
+        std::vector<protocol_metadata> requests;
+        absl::flat_hash_map<raft::group_id, follower_req_seq> sequence_map;
+        requests.reserve(p.second.size());
+        sequence_map.reserve(p.second.size());
+        for (auto& [meta, seq] : p.second) {
+            sequence_map.emplace(meta.group, seq);
+            requests.push_back(std::move(meta));
+        }
         reqs.emplace_back(
-          p.first, heartbeat_request{self, std::move(p.second)});
+          p.first,
+          heartbeat_request{self, std::move(requests)},
+          std::move(sequence_map));
     }
 
     return reqs;
@@ -99,19 +103,15 @@ heartbeat_manager::heartbeat_manager(
     _heartbeat_timer.set_callback([this] { dispatch_heartbeats(); });
 }
 
-ss::future<> heartbeat_manager::send_heartbeats(
-  std::vector<ss::semaphore_units<>> locks, std::vector<node_heartbeat> reqs) {
+ss::future<>
+heartbeat_manager::send_heartbeats(std::vector<node_heartbeat> reqs) {
     return ss::do_with(
              std::move(reqs),
-             [this,
-              u = std::move(locks)](std::vector<node_heartbeat>& reqs) mutable {
+             [this](std::vector<node_heartbeat>& reqs) mutable {
                  std::vector<ss::future<>> futures;
                  futures.reserve(reqs.size());
-                 auto units
-                   = ss::make_lw_shared<std::vector<ss::semaphore_units<>>>(
-                     std::move(u));
                  for (auto& r : reqs) {
-                     futures.push_back(do_heartbeat(std::move(r), units));
+                     futures.push_back(do_heartbeat(std::move(r)));
                  }
                  return _dispatch_sem.wait(reqs.size())
                    .then([f = std::move(futures)]() mutable {
@@ -125,39 +125,31 @@ ss::future<> heartbeat_manager::send_heartbeats(
       });
 }
 
-ss::future<>
-heartbeat_manager::do_dispatch_heartbeats(clock_type::time_point last_timeout) {
-    return locks_for_range(_consensus_groups)
-      .then([this, last_timeout](std::vector<ss::semaphore_units<>> locks) {
-          auto reqs = requests_for_range(_consensus_groups, last_timeout);
-          return send_heartbeats(std::move(locks), std::move(reqs));
-      });
+ss::future<> heartbeat_manager::do_dispatch_heartbeats() {
+    auto reqs = requests_for_range(_consensus_groups, _heartbeat_interval);
+    return send_heartbeats(std::move(reqs));
 }
 
-ss::future<> heartbeat_manager::do_heartbeat(
-  node_heartbeat&& r,
-  ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>> locks) {
-    std::vector<group_id> groups(r.request.meta.size());
-    for (size_t i = 0; i < groups.size(); ++i) {
-        groups[i] = group_id(r.request.meta[i].group);
-    }
+ss::future<> heartbeat_manager::do_heartbeat(node_heartbeat&& r) {
     auto f = _client_protocol.heartbeat(
       r.target,
       std::move(r.request),
       rpc::client_opts(
         next_heartbeat_timeout(),
-        std::move(locks),
+        ss::make_lw_shared<std::vector<ss::semaphore_units<>>>({}),
         rpc::compression_type::zstd,
         512));
     _dispatch_sem.signal();
-    return f.then([node = r.target, groups = std::move(groups), this](
+    return f.then([node = r.target, groups = std::move(r.sequence_map), this](
                     result<heartbeat_reply> ret) mutable {
         process_reply(node, std::move(groups), std::move(ret));
     });
 }
 
 void heartbeat_manager::process_reply(
-  model::node_id n, std::vector<group_id> groups, result<heartbeat_reply> r) {
+  model::node_id n,
+  absl::flat_hash_map<raft::group_id, follower_req_seq> groups,
+  result<heartbeat_reply> r) {
     if (!r) {
         vlog(
           hbeatlog.trace,
@@ -165,7 +157,7 @@ void heartbeat_manager::process_reply(
           n,
           r,
           r.error().message());
-        for (auto g : groups) {
+        for (auto& [g, seq_id] : groups) {
             auto it = _consensus_groups.find(g);
             if (it == _consensus_groups.end()) {
                 vlog(hbeatlog.error, "cannot find consensus group:{}", g);
@@ -173,7 +165,7 @@ void heartbeat_manager::process_reply(
             }
             // propagate error
             (*it)->process_append_entries_reply(
-              n, result<append_entries_reply>(r.error()));
+              n, result<append_entries_reply>(r.error()), seq_id);
         }
         return;
     }
@@ -186,14 +178,16 @@ void heartbeat_manager::process_reply(
             continue;
         }
         (*it)->process_append_entries_reply(
-          n, result<append_entries_reply>(std::move(m)));
+          n,
+          result<append_entries_reply>(std::move(m)),
+          groups.find(m.group)->second);
     }
 }
 
 void heartbeat_manager::dispatch_heartbeats() {
-    (void)with_gate(_bghbeats, [this, old = _hbeat] {
-        return ss::with_semaphore(_sem, 1, [this, old] {
-            return do_dispatch_heartbeats(old).finally([this] {
+    (void)with_gate(_bghbeats, [this] {
+        return ss::with_semaphore(_sem, 1, [this] {
+            return do_dispatch_heartbeats().finally([this] {
                 if (!_bghbeats.is_closed()) {
                     _heartbeat_timer.arm(next_heartbeat_timeout());
                 }

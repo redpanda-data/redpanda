@@ -64,6 +64,9 @@ struct group_configuration {
     brokers_t learners;
 };
 
+// The sequence used to track the order of follower append entries request
+using follower_req_seq = named_type<uint64_t, struct follower_req_seq_tag>;
+
 struct follower_index_metadata {
     explicit follower_index_metadata(model::node_id node)
       : node_id(node) {}
@@ -83,6 +86,54 @@ struct follower_index_metadata {
     // timestamp of last append_entries_rpc call
     clock_type::time_point last_hbeat_timestamp;
     uint64_t failed_appends{0};
+    // The pair of sequences used to track append entries requests sent and
+    // received by the follower. Every time append entries request is created
+    // the `last_sent_seq` is incremented before accessing raft protocol state
+    // and dispatching an RPC and its value is passed to the response
+    // processing continuation. When follower append entries replies are
+    // received if the sequence bound with reply is greater than or equal to
+    // `last_received_seq` the `last_received_seq` field is updated with
+    // received sequence and reply is treated as valid. If received sequence is
+    // smaller than `last_received_seq` requests were reordered.
+
+    /// Using `follower_req_seq` argument to track the follower replies
+    /// reordering
+    ///
+    ///                                                                    Time
+    ///                                                        Follower     +
+    ///                                                           +         |
+    ///                      +--------------+                     |         |
+    ///                      | Req [seq: 1] +-------------------->+         |
+    ///                      +--------------+                     |         |
+    ///                           +--------------+                |         |
+    ///                           | Req [seq: 2] +--------------->+         |
+    ///                           +--------------+                |         |
+    ///                                +--------------+           |         |
+    ///                                | Req [seq: 3] +---------->+         |
+    ///                                +--------------+           |         |
+    ///                                                           |         |
+    ///                                                           |         |
+    ///                                                           |         |
+    ///                                        Reply [seq: 1]     |         |
+    /// last_received_seq = 1;    <-------------------------------+         |
+    ///                                                           |         |
+    ///                                                           |         |
+    ///                                        Reply [seq: 3]     |         |
+    /// last_received_seq = 3;    <-------------------------------+         |
+    ///                                                           |         |
+    ///                                                           |         |
+    ///                                        Reply [seq: 2]     |         |
+    /// reordered 2 < last_rec    <-------------------------------+         |
+    ///                                                           |         |
+    ///                                                           |         |
+    ///                                                           |         |
+    ///                                                           |         |
+    ///                                                           |         |
+    ///                                                           +         |
+    ///                                                                     v
+
+    follower_req_seq last_sent_seq{0};
+    follower_req_seq last_received_seq{0};
     bool is_learner = false;
     bool is_recovering = false;
 };
