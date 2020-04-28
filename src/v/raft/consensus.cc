@@ -239,22 +239,21 @@ consensus::replicate(model::record_batch_reader&& rdr, replicate_options opts) {
     }
     // For relaxed consistency, append data to leader disk without flush
     // asynchronous replication is provided by Raft protocol recovery mechanism.
-    return _op_lock.with(
-             [this, rdr = std::move(rdr)]() mutable {
-                 if (!is_leader()) {
-                     return seastar::make_ready_future<
-                       result<replicate_result>>(errc::not_leader);
-                 }
+    return _op_lock
+      .with([this, rdr = std::move(rdr)]() mutable {
+          if (!is_leader()) {
+              return seastar::make_ready_future<result<replicate_result>>(
+                errc::not_leader);
+          }
 
-                 return disk_append(
-                          model::make_record_batch_reader<
-                            details::term_assigning_reader>(
-                            std::move(rdr), model::term_id(_meta.term)))
-                   .then([](storage::append_result res) {
-                       return result<replicate_result>(
-                         replicate_result{.last_offset = res.last_offset});
-                   });
-             })
+          return disk_append(model::make_record_batch_reader<
+                               details::term_assigning_reader>(
+                               std::move(rdr), model::term_id(_meta.term)))
+            .then([](storage::append_result res) {
+                return result<replicate_result>(
+                  replicate_result{.last_offset = res.last_offset});
+            });
+      })
       .finally([this] { _probe.replicate_done(); });
 }
 
@@ -372,8 +371,8 @@ void consensus::arm_vote_timeout() {
     }
 }
 ss::future<> consensus::add_group_member(model::broker node) {
-    return _op_lock.get_units()
-      .then([this, node = std::move(node)](ss::semaphore_units<> u) mutable {
+    return _op_lock.get_units().then(
+      [this, node = std::move(node)](ss::semaphore_units<> u) mutable {
           auto cfg = _conf;
           // check once again under the lock
           if (!cfg.contains_broker(node.id())) {
@@ -429,9 +428,8 @@ ss::future<> consensus::start() {
 
 ss::future<vote_reply> consensus::vote(vote_request&& r) {
     return with_gate(_bg, [this, r = std::move(r)]() mutable {
-        return _op_lock.with([this, r = std::move(r)]() mutable {
-            return do_vote(std::move(r));
-        });
+        return _op_lock.with(
+          [this, r = std::move(r)]() mutable { return do_vote(std::move(r)); });
     });
 }
 
@@ -803,9 +801,8 @@ consensus::next_followers_request_seq() {
 
 void consensus::maybe_update_leader_commit_idx() {
     (void)with_gate(_bg, [this] {
-        return _op_lock.with([this]() mutable {
-            return do_maybe_update_leader_commit_idx();
-        });
+        return _op_lock.with(
+          [this]() mutable { return do_maybe_update_leader_commit_idx(); });
     }).handle_exception([this](const std::exception_ptr& e) {
         _ctxlog.warn("Error updating leader commit index", e);
     });

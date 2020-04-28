@@ -85,34 +85,31 @@ std::pair<uint32_t, uint32_t> vote_stm::partition_count() const {
 }
 ss::future<> vote_stm::vote() {
     using skip_vote = ss::bool_class<struct skip_vote_tag>;
-    return _ptr->_op_lock.with(
-             [this] {
-                 // check again while under op_sem
-                 if (_ptr->should_skip_vote()) {
-                     return ss::make_ready_future<skip_vote>(skip_vote::yes);
-                 }
-                 auto& m = _ptr->_meta;
-                 // 5.2.1
-                 _ptr->_vstate = consensus::vote_state::candidate;
-                 _ptr->_leader_id = std::nullopt;
-                 _ptr->trigger_leadership_notification();
-                 // 5.2.1.2
-                 m.term += model::term_id(1);
+    return _ptr->_op_lock
+      .with([this] {
+          // check again while under op_sem
+          if (_ptr->should_skip_vote()) {
+              return ss::make_ready_future<skip_vote>(skip_vote::yes);
+          }
+          auto& m = _ptr->_meta;
+          // 5.2.1
+          _ptr->_vstate = consensus::vote_state::candidate;
+          _ptr->_leader_id = std::nullopt;
+          _ptr->trigger_leadership_notification();
+          // 5.2.1.2
+          m.term += model::term_id(1);
 
-                 // vote is the only method under _op_sem
-                 for (auto& n : _ptr->_conf.nodes) {
-                     _replies.emplace_back(vmeta(n.id()));
-                 }
-                 _req = vote_request{_ptr->_self,
-                                     m.group,
-                                     m.term,
-                                     m.prev_log_index,
-                                     m.prev_log_term};
-                 // we have to self vote before dispatching vote request to
-                 // other nodes, this vote has to be done under op semaphore as
-                 // it changes voted_for state
-                 return self_vote().then([] { return skip_vote::no; });
-             })
+          // vote is the only method under _op_sem
+          for (auto& n : _ptr->_conf.nodes) {
+              _replies.emplace_back(vmeta(n.id()));
+          }
+          _req = vote_request{
+            _ptr->_self, m.group, m.term, m.prev_log_index, m.prev_log_term};
+          // we have to self vote before dispatching vote request to
+          // other nodes, this vote has to be done under op semaphore as
+          // it changes voted_for state
+          return self_vote().then([] { return skip_vote::no; });
+      })
       .then([this](skip_vote skip) {
           if (skip) {
               return ss::make_ready_future<>();
@@ -153,8 +150,8 @@ ss::future<> vote_stm::do_vote() {
       })
       // porcess results
       .then([this]() {
-          return _ptr->_op_lock.get_units()
-            .then([this](ss::semaphore_units<> u) {
+          return _ptr->_op_lock.get_units().then(
+            [this](ss::semaphore_units<> u) {
                 return process_replies(std::move(u));
             });
       });
