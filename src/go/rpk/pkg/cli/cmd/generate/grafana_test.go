@@ -103,7 +103,7 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
      "targets": [
       {
        "refId": "",
-       "expr": "irate(vectorized_memory_allocated_memory{instance=~\"[[node]]\",shard=~\"[[node_shard]]\"}[1m])",
+       "expr": "[[aggregate]] (irate(vectorized_memory_allocated_memory{instance=~\"[[node]]\",shard=~\"[[node_shard]]\"}[1m]))",
        "intervalFactor": 2,
        "step": 10,
        "legendFormat": "node: {{instance}}, shard: {{shard}}",
@@ -186,7 +186,7 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
      "targets": [
       {
        "refId": "",
-       "expr": "vectorized_vectorized_internal_rpc_protocol_consumed_mem{instance=~\"[[node]]\",shard=~\"[[node_shard]]\"}",
+       "expr": "[[aggregate]] (vectorized_vectorized_internal_rpc_protocol_consumed_mem{instance=~\"[[node]]\",shard=~\"[[node_shard]]\"})",
        "intervalFactor": 2,
        "step": 10,
        "legendFormat": "node: {{instance}}, shard: {{shard}}",
@@ -259,7 +259,7 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
      "targets": [
       {
        "refId": "",
-       "expr": "irate(vectorized_vectorized_internal_rpc_protocol_corrupted_headers{instance=~\"[[node]]\",shard=~\"[[node_shard]]\"}[1m])",
+       "expr": "[[aggregate]] (irate(vectorized_vectorized_internal_rpc_protocol_corrupted_headers{instance=~\"[[node]]\",shard=~\"[[node_shard]]\"}[1m]))",
        "intervalFactor": 2,
        "step": 10,
        "legendFormat": "node: {{instance}}, shard: {{shard}}",
@@ -304,10 +304,10 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
     "type": "query",
     "datasource": "prometheus",
     "refresh": 1,
-    "options": [],
-    "includeAll": false,
+    "options": null,
+    "includeAll": true,
     "allFormat": "",
-    "allValue": "",
+    "allValue": ".*",
     "multi": true,
     "multiFormat": "",
     "query": "label_values(instance)",
@@ -325,10 +325,10 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
     "type": "query",
     "datasource": "prometheus",
     "refresh": 1,
-    "options": [],
-    "includeAll": false,
+    "options": null,
+    "includeAll": true,
     "allFormat": "",
-    "allValue": "",
+    "allValue": ".*",
     "multi": true,
     "multiFormat": "",
     "query": "label_values(shard)",
@@ -338,6 +338,43 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
      "value": null
     },
     "label": "shard",
+    "hide": 0,
+    "sort": 1
+   },
+   {
+    "name": "aggregate",
+    "type": "custom",
+    "datasource": "prometheus",
+    "refresh": 1,
+    "options": [
+     {
+      "text": "None",
+      "value": "",
+      "selected": true
+     },
+     {
+      "text": "Instance",
+      "value": "sum by(instance)",
+      "selected": false
+     },
+     {
+      "text": "Cluster",
+      "value": "sum",
+      "selected": false
+     }
+    ],
+    "includeAll": false,
+    "allFormat": "",
+    "allValue": "",
+    "multi": false,
+    "multiFormat": "",
+    "query": "",
+    "regex": "",
+    "current": {
+     "text": "Cluster",
+     "value": "sum"
+    },
+    "label": "Aggregate by",
     "hide": 0,
     "sort": 1
    }
@@ -379,7 +416,8 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
    "30d"
   ]
  }
-}`
+}
+`
 	ts := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
