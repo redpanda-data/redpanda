@@ -6,6 +6,7 @@
 #include "raft/consensus_client_protocol.h"
 #include "raft/types.h"
 #include "rpc/connection_cache.h"
+#include "utils/mutex.h"
 
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/sharded.hh>
@@ -124,7 +125,7 @@ private:
 
     // private members
 
-    ss::semaphore _sem{1};
+    mutex _lock;
     clock_type::time_point _hbeat = clock_type::now();
     duration_type _heartbeat_interval;
     timer_type _heartbeat_timer;

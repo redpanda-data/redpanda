@@ -10,6 +10,7 @@
 #include "rpc/connection_cache.h"
 #include "seastarx.h"
 #include "storage/log.h"
+#include "utils/mutex.h"
 
 #include <seastar/core/sharded.hh>
 #include <seastar/util/bool_class.hh>
@@ -83,7 +84,7 @@ public:
     }
 
     ss::future<> step_down(model::term_id term) {
-        return seastar::with_semaphore(_op_sem, 1, [this, term] {
+        return _op_lock.with([this, term] {
             _meta.term = term;
             do_step_down();
         });
@@ -98,10 +99,6 @@ public:
     }
 
     model::offset start_offset() const { return _log.offsets().start_offset; }
-
-    ss::future<ss::semaphore_units<>> op_lock_unit() {
-        return ss::get_units(_op_sem, 1);
-    }
 
 private:
     friend replicate_entries_stm;
@@ -206,7 +203,7 @@ private:
 
     /// all raft operations must happen exclusively since the common case
     /// is for the operation to touch the disk
-    ss::semaphore _op_sem{1};
+    mutex _op_lock;
     /// used for notifying when commits happened to log
     std::optional<append_entries_cb_t> _append_entries_notification;
     probe _probe;

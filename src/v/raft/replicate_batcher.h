@@ -3,6 +3,7 @@
 #include "model/record_batch_reader.h"
 #include "outcome.h"
 #include "raft/types.h"
+#include "utils/mutex.h"
 
 #include <absl/container/flat_hash_map.h>
 namespace raft {
@@ -50,7 +51,7 @@ private:
 
     std::vector<item_ptr> _item_cache;
     ss::circular_buffer<model::record_batch> _data_cache;
-    ss::semaphore _batch_sem{1};
+    mutex _lock;
 };
 
 } // namespace raft

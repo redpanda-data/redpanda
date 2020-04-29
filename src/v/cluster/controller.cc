@@ -172,9 +172,8 @@ ss::future<> controller::start() {
             .then([this] {
                 _raft0_cfg_offset = model::offset(
                   _raft0->meta().prev_log_index);
-                return ss::with_semaphore(_sem, 1, [this] {
-                    return apply_raft0_cfg_update(_raft0->config());
-                });
+                return _lock.with(
+                  [this] { return apply_raft0_cfg_update(_raft0->config()); });
             })
             .then([this] {
                 if (!is_already_member()) {
@@ -221,7 +220,7 @@ ss::future<> controller::stop() {
         _leadership_cond.broadcast();
     }
     _as.request_abort();
-    return ss::with_semaphore(_sem, 1, [this] {
+    return _lock.with([this] {
         // we have to stop latch first as there may be some futures waiting
         // inside the gate for notification
         _notification_latch.stop();
@@ -606,11 +605,10 @@ ss::future<std::vector<topic_result>> controller::create_topics(
   model::timeout_clock::time_point timeout) {
     verify_shard();
 
-    auto f = ss::get_units(_sem, 1).then(
-      [this, topics = std::move(topics), timeout](
-        ss::semaphore_units<> u) mutable {
-          return do_create_topics(std::move(u), std::move(topics), timeout);
-      });
+    auto f = _lock.get_units().then([this, topics = std::move(topics), timeout](
+                                      ss::semaphore_units<> u) mutable {
+        return do_create_topics(std::move(u), std::move(topics), timeout);
+    });
 
     return ss::with_timeout(timeout, std::move(f));
 }
@@ -730,31 +728,30 @@ ss::future<> controller::do_leadership_notification(
     // gate is reentrant making it ok if leadership notification originated
     // on the the controller::shard core.
     return with_gate(_bg, [this, ntp = std::move(ntp), lid, term]() mutable {
-        auto f = ss::get_units(_sem, 1).then(
-          [this, ntp = std::move(ntp), lid, term](
-            ss::semaphore_units<> u) mutable {
-              if (ntp == controller_ntp) {
-                  return handle_controller_leadership_notification(
-                    std::move(u), term, lid);
-              } else {
-                  auto f = _md_cache.invoke_on_all(
-                    [ntp, lid, term](metadata_cache& md) {
-                        md.update_partition_leader(ntp, term, lid);
+        auto f = _lock.get_units().then([this, ntp = std::move(ntp), lid, term](
+                                          ss::semaphore_units<> u) mutable {
+            if (ntp == controller_ntp) {
+                return handle_controller_leadership_notification(
+                  std::move(u), term, lid);
+            } else {
+                auto f = _md_cache.invoke_on_all(
+                  [ntp, lid, term](metadata_cache& md) {
+                      md.update_partition_leader(ntp, term, lid);
+                  });
+                if (lid == _self.id()) {
+                    // only disseminate from current leader
+                    f = f.then([this,
+                                ntp = std::move(ntp),
+                                term,
+                                lid,
+                                u = std::move(u)]() mutable {
+                        return _md_dissemination_service.local()
+                          .disseminate_leadership(std::move(ntp), term, lid);
                     });
-                  if (lid == _self.id()) {
-                      // only disseminate from current leader
-                      f = f.then([this,
-                                  ntp = std::move(ntp),
-                                  term,
-                                  lid,
-                                  u = std::move(u)]() mutable {
-                          return _md_dissemination_service.local()
-                            .disseminate_leadership(std::move(ntp), term, lid);
-                      });
-                  }
-                  return f;
-              }
-          });
+                }
+                return f;
+            }
+        });
     });
 }
 
@@ -837,14 +834,13 @@ controller::update_brokers_cache(std::vector<model::broker> nodes) {
 void controller::on_raft0_entries_comitted(
   model::record_batch_reader&& reader) {
     (void)with_gate(_bg, [this, reader = std::move(reader)]() mutable {
-        return with_semaphore(
-          _sem, 1, [this, reader = std::move(reader)]() mutable {
-              if (_bg.is_closed()) {
-                  return ss::make_ready_future<>();
-              }
-              return std::move(reader).consume(
-                batch_consumer(this), model::no_timeout);
-          });
+        return _lock.with([this, reader = std::move(reader)]() mutable {
+            if (_bg.is_closed()) {
+                return ss::make_ready_future<>();
+            }
+            return std::move(reader).consume(
+              batch_consumer(this), model::no_timeout);
+        });
     }).handle_exception_type([](const ss::gate_closed_exception&) {
         vlog(
           clusterlog.info,
