@@ -66,4 +66,7 @@ auto with_client(
             id, std::forward<Func>(f));
       });
 }
+
+model::record_batch_reader
+make_deletion_batches(const std::vector<model::topic_namespace>&);
 } // namespace cluster

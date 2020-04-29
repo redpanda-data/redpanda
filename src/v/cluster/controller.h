@@ -10,6 +10,7 @@
 #include "cluster/types.h"
 #include "config/seed_server.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "model/record.h"
 #include "seastarx.h"
 #include "storage/log_manager.h"
@@ -33,8 +34,6 @@ class controller final : public ss::peering_sharded_service<controller> {
 public:
     static constexpr const ss::shard_id shard = 0;
     static constexpr const raft::group_id group{0};
-    /// \brief used to distinguished log messages
-    static constexpr model::record_batch_type controller_record_batch_type{3};
     // FIXME: make it configurable
     static constexpr auto join_timeout = std::chrono::seconds(5);
 
@@ -62,6 +61,10 @@ public:
 
     ss::future<std::vector<topic_result>> create_topics(
       std::vector<topic_configuration> topics,
+      model::timeout_clock::time_point timeout);
+
+    ss::future<std::vector<topic_result>> delete_topics(
+      std::vector<model::topic_namespace> topics,
       model::timeout_clock::time_point timeout);
 
     ss::future<std::vector<topic_result>> autocreate_topics(
@@ -117,6 +120,11 @@ private:
       std::vector<topic_configuration> topics,
       model::timeout_clock::time_point timeout);
 
+    ss::future<std::vector<topic_result>> do_delete_topics(
+      ss::semaphore_units<> units,
+      std::vector<model::topic_namespace> topics,
+      model::timeout_clock::time_point timeout);
+
     void end_of_stream();
     ss::future<> do_leadership_notification(
       model::ntp, model::term_id, std::optional<model::node_id>);
@@ -160,6 +168,9 @@ private:
       std::vector<topic_configuration>, result<create_topics_reply>);
 
     storage::ntp_config make_raft0_ntp_config() const;
+    ss::future<> process_topic_deletion(model::topic_namespace);
+    ss::future<>
+      delete_partitition(model::topic_namespace, model::partition_metadata);
 
     model::broker _self;
     std::vector<config::seed_server> _seed_servers;

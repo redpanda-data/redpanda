@@ -34,6 +34,11 @@ public:
     }
     void insert(raft::group_id g, ss::shard_id i) { _group_idx.insert({g, i}); }
 
+    void erase(const model::ntp& ntp, raft::group_id g) {
+        _ntp_idx.erase(ntp);
+        _group_idx.erase(g);
+    }
+
 private:
     // kafka index
     absl::flat_hash_map<model::ntp, ss::shard_id> _ntp_idx;

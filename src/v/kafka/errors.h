@@ -347,6 +347,10 @@ static constexpr inline error_code map_topic_error_code(
     return error_code::not_controller;
   case cluster::errc::topic_already_exists:
     return error_code::topic_already_exists;
+  case cluster::errc::topic_not_exists:
+    return error_code::unknown_topic_or_partition;
+  case cluster::errc::timeout:
+    return  error_code::request_timed_out;
   default:
     return error_code::unknown_server_error;
   }

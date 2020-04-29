@@ -2,6 +2,7 @@
 
 #include "cluster/logger.h"
 #include "cluster/metadata_cache.h"
+#include "cluster/simple_batch_builder.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "rpc/backoff_policy.h"
@@ -126,6 +127,28 @@ std::vector<topic_result> create_topic_results(
           return topic_result(t, error_code);
       });
     return results;
+}
+
+model::record_batch_reader
+make_deletion_batches(const std::vector<model::topic_namespace>& topics) {
+    ss::circular_buffer<model::record_batch> batches;
+    batches.reserve(topics.size());
+
+    std::transform(
+      std::cbegin(topics),
+      std::cend(topics),
+      std::back_inserter(batches),
+      [](const model::topic_namespace& tp_ns) {
+          auto builder = simple_batch_builder(
+            controller_record_batch_type, model::offset(0));
+
+          builder.add_kv(
+            log_record_key{.record_type = log_record_key::type::topic_deletion},
+            tp_ns);
+          return std::move(builder).build();
+      });
+
+    return model::make_memory_record_batch_reader(std::move(batches));
 }
 
 } // namespace cluster
