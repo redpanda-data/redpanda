@@ -391,7 +391,7 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
 	cmd.SetArgs([]string{"--prometheus-url", ts.URL})
 	err := cmd.Execute()
 	require.NoError(t, err)
-	require.Equal(t, expected, out.String())
+	require.JSONEq(t, expected, out.String())
 }
 
 func TestGrafanaInvalidResponse(t *testing.T) {
