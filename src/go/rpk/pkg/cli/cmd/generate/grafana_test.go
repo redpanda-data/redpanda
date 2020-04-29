@@ -17,11 +17,6 @@ func TestGrafanaHostNoServer(t *testing.T) {
 	cmd := generate.NewGrafanaDashboardCmd()
 	cmd.SetArgs([]string{"--prometheus-url", "localhost:8888/metrics"})
 	err := cmd.Execute()
-	require.EqualError(
-		t,
-		err,
-		"Get http://localhost:8888/metrics: dial tcp [::1]:8888: connect: connection refused",
-	)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "Get http://localhost:8888/metrics: dial tcp")
 	require.Contains(t, err.Error(), "connect: connection refused")
