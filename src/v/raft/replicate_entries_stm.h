@@ -98,7 +98,7 @@ private:
     bool is_follower_recovering(model::node_id);
     clock_type::time_point append_entries_timeout();
     /// This append will happen under the lock
-    ss::future<storage::append_result> append_to_self();
+    ss::future<result<storage::append_result>> append_to_self();
     consensus* _ptr;
     /// we keep a copy around until we finish the retries
     append_entries_request _req;
