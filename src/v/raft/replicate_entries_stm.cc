@@ -113,10 +113,20 @@ replicate_entries_stm::dispatch_single_retry(
       });
 }
 
-ss::future<storage::append_result> replicate_entries_stm::append_to_self() {
+ss::future<result<storage::append_result>> replicate_entries_stm::append_to_self() {
     return share_request().then([this](append_entries_request req) mutable {
         vlog(_ctxlog.trace, "Self append entries - {}", req.meta);
         return _ptr->disk_append(std::move(req.batches));
+    })
+    .then([](storage::append_result res) {
+        return result<storage::append_result>(std::move(res));
+    })
+    .handle_exception([this](const std::exception_ptr& e) {
+        vlog(
+          _ctxlog.warn,
+          "Error replicating entries, leader append failed - {}",
+          e);
+        return result<storage::append_result>(errc::leader_append_failed);
     });
 }
 
@@ -129,7 +139,11 @@ replicate_entries_stm::apply(ss::semaphore_units<> u) {
     // first append lo leader log, no flushing
     return append_to_self()
       .then(
-        [this, u = std::move(u)](storage::append_result append_result) mutable {
+        [this, u = std::move(u)](result<storage::append_result> append_result) mutable {
+            if (!append_result) {
+                return ss::make_ready_future<result<storage::append_result>>(
+                  append_result);
+            }
             // dispatch requests to followers & leader flush
             std::vector<ss::semaphore_units<>> vec;
             vec.push_back(std::move(u));
@@ -153,11 +167,15 @@ replicate_entries_stm::apply(ss::semaphore_units<> u) {
             return _dispatch_sem.wait(requests_count)
               .then([append_result, units]() mutable { return append_result; });
         })
-      .then([this](storage::append_result append_result) {
+      .then([this](result<storage::append_result> append_result) {
+          if (!append_result) {
+              return ss::make_ready_future<result<replicate_result>>(
+                append_result.error());
+          }
           // this is happening outside of _opsem
           // store offset and term of an appended entry
-          auto appended_offset = append_result.last_offset;
-          auto appended_term = append_result.last_term;
+          auto appended_offset = append_result.value().last_offset;
+          auto appended_term = append_result.value().last_term;
 
           auto stop_cond = [this, appended_offset, appended_term] {
               return _ptr->_meta.commit_index >= appended_offset
