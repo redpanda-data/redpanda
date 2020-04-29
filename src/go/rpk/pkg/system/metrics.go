@@ -33,13 +33,13 @@ func GatherMetrics(
 	if err != nil {
 		errs = append(errs, err)
 	} else {
-		metrics.FreeMemoryMB = float64(memInfo.Available) / 1024.0
+		metrics.FreeMemoryMB = float64(memInfo.Available) / 1024.0 / 1024.0
 	}
 	diskInfo, err := disk.Usage(conf.Redpanda.Directory)
 	if err != nil {
 		errs = append(errs, err)
 	} else {
-		metrics.FreeSpaceMB = float64(diskInfo.Free) / 1024.0
+		metrics.FreeSpaceMB = float64(diskInfo.Free) / 1024.0 / 1024.0
 	}
 
 	return metrics, errs
