@@ -2,13 +2,11 @@ package generate_test
 
 import (
 	"bytes"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"vectorized/pkg/cli/cmd/generate"
 
-	"github.com/grafana-tools/sdk"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 )
@@ -44,7 +42,7 @@ vectorized_vectorized_internal_rpc_protocol_dispatch_handler_latency_bucket{le="
 vectorized_memory_allocated_memory{shard="0",type="bytes"} 40837120
 vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
 `
-	expectedJSON := `{
+	expected := `{
  "id": 1,
  "slug": "",
  "title": "Redpanda",
@@ -432,15 +430,7 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
 	err := cmd.Execute()
 	require.NoError(t, err)
 
-	// The JSONs have to be parsed and the sdk.Boards compared, because
-	// comparing the JSONs isn't reliable with require.JSONEq.
-	expected := &sdk.Board{}
-	err = json.Unmarshal([]byte(expectedJSON), expected)
-	require.NoError(t, err)
-	actual := &sdk.Board{}
-	err = json.Unmarshal(out.Bytes(), actual)
-	require.NoError(t, err)
-	require.Exactly(t, expected, actual)
+	require.JSONEq(t, expected, out.String())
 }
 
 func TestGrafanaInvalidResponse(t *testing.T) {
