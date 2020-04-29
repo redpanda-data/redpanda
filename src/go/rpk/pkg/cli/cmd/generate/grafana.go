@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 
@@ -82,6 +83,9 @@ func executeGrafanaDashboard(prometheusURL string) error {
 		return err
 	}
 	log.SetFormatter(&NoopFormatter{})
+	if log.StandardLogger().Out == os.Stderr {
+		log.SetOutput(os.Stdout)
+	}
 	log.Info(string(jsonSpec))
 	return nil
 }
@@ -130,9 +134,38 @@ func buildGrafanaDashboard(
 		rows = append(rows, row)
 	}
 
-	node := newTemplateVar("node", "Node", "label_values(instance)")
-	shard := newTemplateVar("node_shard", "shard", "label_values(shard)")
-	templating := sdk.Templating{List: []sdk.TemplateVar{node, shard}}
+	node := newDefaultTemplateVar("node", "Node", true)
+	node.Type = "query"
+	node.Query = "label_values(instance)"
+	shard := newDefaultTemplateVar("node_shard", "shard", true)
+	shard.Type = "query"
+	shard.Query = "label_values(shard)"
+	noneOpt := sdk.Option{
+		Text:     "None",
+		Value:    "",
+		Selected: true,
+	}
+	aggregateOpts := []sdk.Option{
+		noneOpt,
+		sdk.Option{
+			Text:     "Instance",
+			Value:    "sum by(instance)",
+			Selected: false,
+		},
+
+		sdk.Option{
+			Text:     "Cluster",
+			Value:    "sum",
+			Selected: false,
+		},
+	}
+	aggregate := newDefaultTemplateVar("aggregate", "Aggregate by", false, aggregateOpts...)
+	aggregate.Type = "custom"
+	aggregate.Current = sdk.Current{
+		Text:  noneOpt.Text,
+		Value: noneOpt.Value,
+	}
+	templating := sdk.Templating{List: []sdk.TemplateVar{node, shard, aggregate}}
 
 	dashboard := sdk.NewBoard("Redpanda")
 	dashboard.Templating = templating
@@ -193,7 +226,7 @@ func fetchMetrics(prometheusURL string) (map[string]*dto.MetricFamily, error) {
 
 func newCounterPanel(m *dto.MetricFamily) *sdk.Panel {
 	expr := fmt.Sprintf(
-		`irate(%s{instance=~"[[node]]",shard=~"[[node_shard]]"}[1m])`,
+		`[[aggregate]] (irate(%s{instance=~"[[node]]",shard=~"[[node_shard]]"}[1m]))`,
 		m.GetName(),
 	)
 	format := "ops"
@@ -207,7 +240,7 @@ func newCounterPanel(m *dto.MetricFamily) *sdk.Panel {
 
 func newGaugePanel(m *dto.MetricFamily) *sdk.Panel {
 	expr := fmt.Sprintf(
-		`%s{instance=~"[[node]]",shard=~"[[node_shard]]"}`,
+		`[[aggregate]] (%s{instance=~"[[node]]",shard=~"[[node_shard]]"})`,
 		m.GetName(),
 	)
 	format := "short"
@@ -269,19 +302,19 @@ func newGraphPanel(
 	return panel
 }
 
-func newTemplateVar(name, label, query string) sdk.TemplateVar {
+func newDefaultTemplateVar(
+	name, label string, multi bool, opts ...sdk.Option,
+) sdk.TemplateVar {
 	var refresh int64 = 1
 	return sdk.TemplateVar{
 		Name:       name,
 		Datasource: datasource(),
 		Label:      label,
-		Query:      query,
-		Type:       "query",
 		Current:    sdk.Current{Tags: []*string{}},
-		Multi:      true,
+		Multi:      multi,
 		Refresh:    sdk.BoolInt{Flag: true, Value: &refresh},
 		Sort:       1,
-		Options:    []sdk.Option{},
+		Options:    opts,
 	}
 }
 
