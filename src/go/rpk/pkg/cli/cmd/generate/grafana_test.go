@@ -305,9 +305,9 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
     "datasource": "prometheus",
     "refresh": 1,
     "options": null,
-    "includeAll": false,
+    "includeAll": true,
     "allFormat": "",
-    "allValue": "",
+    "allValue": ".*",
     "multi": true,
     "multiFormat": "",
     "query": "label_values(instance)",
@@ -326,9 +326,9 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
     "datasource": "prometheus",
     "refresh": 1,
     "options": null,
-    "includeAll": false,
+    "includeAll": true,
     "allFormat": "",
-    "allValue": "",
+    "allValue": ".*",
     "multi": true,
     "multiFormat": "",
     "query": "label_values(shard)",
@@ -371,8 +371,8 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
     "query": "",
     "regex": "",
     "current": {
-     "text": "None",
-     "value": ""
+     "text": "Cluster",
+     "value": "sum"
     },
     "label": "Aggregate by",
     "hide": 0,
@@ -416,7 +416,8 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
    "30d"
   ]
  }
-}`
+}
+`
 	ts := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)

@@ -83,6 +83,8 @@ func executeGrafanaDashboard(prometheusURL string) error {
 		return err
 	}
 	log.SetFormatter(&NoopFormatter{})
+	// The logger's default stream is stderr, which prevents piping to files
+	// from working without redirecting them with '2>&1'.
 	if log.StandardLogger().Out == os.Stderr {
 		log.SetOutput(os.Stdout)
 	}
@@ -135,35 +137,38 @@ func buildGrafanaDashboard(
 	}
 
 	node := newDefaultTemplateVar("node", "Node", true)
+	node.IncludeAll = true
+	node.AllValue = ".*"
 	node.Type = "query"
 	node.Query = "label_values(instance)"
 	shard := newDefaultTemplateVar("node_shard", "shard", true)
+	shard.IncludeAll = true
+	shard.AllValue = ".*"
 	shard.Type = "query"
 	shard.Query = "label_values(shard)"
-	noneOpt := sdk.Option{
-		Text:     "None",
-		Value:    "",
-		Selected: true,
+	clusterOpt := sdk.Option{
+		Text:     "Cluster",
+		Value:    "sum",
+		Selected: false,
 	}
 	aggregateOpts := []sdk.Option{
-		noneOpt,
+		sdk.Option{
+			Text:     "None",
+			Value:    "",
+			Selected: true,
+		},
 		sdk.Option{
 			Text:     "Instance",
 			Value:    "sum by(instance)",
 			Selected: false,
 		},
-
-		sdk.Option{
-			Text:     "Cluster",
-			Value:    "sum",
-			Selected: false,
-		},
+		clusterOpt,
 	}
 	aggregate := newDefaultTemplateVar("aggregate", "Aggregate by", false, aggregateOpts...)
 	aggregate.Type = "custom"
 	aggregate.Current = sdk.Current{
-		Text:  noneOpt.Text,
-		Value: noneOpt.Value,
+		Text:  clusterOpt.Text,
+		Value: clusterOpt.Value,
 	}
 	templating := sdk.Templating{List: []sdk.TemplateVar{node, shard, aggregate}}
 
