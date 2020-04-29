@@ -95,6 +95,7 @@ func TestStatus(t *testing.T) {
 			expectedOut: "Usage stats reporting is disabled, so" +
 				" nothing will be sent. To enable it, run" +
 				" `rpk config set rpk.enable_usage_stats true`.",
+			args: []string{"--send"},
 			before: func(fs afero.Fs) error {
 				conf := getConfig()
 				conf.Rpk.EnableUsageStats = false
@@ -111,6 +112,7 @@ func TestStatus(t *testing.T) {
 			}
 			var out bytes.Buffer
 			cmd := cmd.NewStatusCommand(fs)
+			cmd.SetArgs(tt.args)
 			logrus.SetOutput(&out)
 			err := cmd.Execute()
 			if tt.expectedErr != "" {
