@@ -22,6 +22,9 @@ func TestGrafanaHostNoServer(t *testing.T) {
 		err,
 		"Get http://localhost:8888/metrics: dial tcp [::1]:8888: connect: connection refused",
 	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Get http://localhost:8888/metrics: dial tcp")
+	require.Contains(t, err.Error(), "connect: connection refused")
 }
 
 func TestGrafanaParseResponse(t *testing.T) {
