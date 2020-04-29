@@ -124,7 +124,8 @@ func buildGrafanaDashboard(
 		}
 	}
 
-	rows := []*sdk.Row{}
+	rowTitles := []string{}
+	rowsByTitle := map[string]*sdk.Row{}
 	for group, panels := range groupPanels {
 		row := &sdk.Row{
 			Title:     group,
@@ -133,7 +134,15 @@ func buildGrafanaDashboard(
 			Editable:  true,
 			Height:    sdk.Height(panelHeight),
 		}
-		rows = append(rows, row)
+		rowsByTitle[group] = row
+		rowTitles = append(rowTitles, group)
+	}
+
+	sort.Strings(rowTitles)
+
+	rows := []*sdk.Row{}
+	for _, title := range rowTitles {
+		rows = append(rows, rowsByTitle[title])
 	}
 
 	node := newDefaultTemplateVar("node", "Node", true)
