@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 	"vectorized/pkg/api"
 	"vectorized/pkg/cli/ui"
@@ -117,16 +118,27 @@ func executeStatus(
 	} else {
 		printConfig(t, props)
 	}
-	t.Render()
-	topics, err := topicsDetail(
+	client, err := initClient(
 		conf.Redpanda.KafkaApi.Address,
 		conf.Redpanda.KafkaApi.Port,
 	)
 	if err != nil {
+		log.Infof("Error initializing redpanda client: %s", err)
+		return nil
+	}
+	admin, err := sarama.NewClusterAdminFromClient(client)
+	if err != nil {
+		log.Infof("Error initializing redpanda client: %s", err)
+		return nil
+	}
+	defer admin.Close()
+	topics, err := topicsDetail(admin)
+	if err != nil {
 		log.Info("Error fetching the Redpanda topic details: ", err)
 	} else if len(topics) > 0 {
-		printKafkaInfo(topics)
+		printKafkaInfo(t, client.Brokers(), topics)
 	}
+	t.Render()
 
 	return nil
 }
@@ -153,20 +165,88 @@ func printConfig(t *tablewriter.Table, conf map[string]string) {
 	}
 }
 
-func printKafkaInfo(topics []*sarama.TopicMetadata) {
-	t := ui.NewRpkTable(log.StandardLogger().Out)
-	t.SetHeader([]string{"Topic", "Partition", "Leader", "Replicas"})
+func printKafkaInfo(
+	t *tablewriter.Table,
+	brokers []*sarama.Broker,
+	topics []*sarama.TopicMetadata,
+) {
+	t.SetAutoMergeCells(true)
+	type node struct {
+		// map[topic-name][]partitions
+		leaderParts  map[string][]int
+		replicaParts map[string][]int
+	}
+	nodePartitions := map[int]*node{}
 	for _, topic := range topics {
 		for _, p := range topic.Partitions {
-			t.Append([]string{
-				topic.Name,
-				strconv.Itoa(int(p.ID)),
-				strconv.Itoa(int(p.Leader)),
-				fmt.Sprintf("%v", p.Replicas),
-			})
+			leaderID := int(p.Leader)
+			n := nodePartitions[leaderID]
+			if n != nil {
+				topicParts := n.leaderParts[topic.Name]
+				topicParts = append(topicParts, int(p.ID))
+				if n.leaderParts == nil {
+					n.leaderParts = map[string][]int{}
+				}
+				n.leaderParts[topic.Name] = topicParts
+			} else {
+				leaderParts := map[string][]int{}
+				leaderParts[topic.Name] = []int{int(p.ID)}
+				nodePartitions[leaderID] = &node{
+					leaderParts: leaderParts,
+				}
+			}
+
+			for _, r := range p.Replicas {
+				replicaID := int(r)
+				// Don't list leaders as replicas of their partitions
+				if replicaID == leaderID {
+					continue
+				}
+				n := nodePartitions[replicaID]
+				if n != nil {
+					topicParts := n.replicaParts[topic.Name]
+					topicParts = append(topicParts, int(p.ID))
+					if n.replicaParts == nil {
+						n.replicaParts = map[string][]int{}
+					}
+					n.replicaParts[topic.Name] = topicParts
+				} else {
+					replicaParts := map[string][]int{}
+					replicaParts[topic.Name] = []int{int(p.ID)}
+					nodePartitions[replicaID] = &node{
+						replicaParts: replicaParts,
+					}
+				}
+			}
 		}
 	}
-	t.Render()
+	idToBroker := map[int]sarama.Broker{}
+	for _, broker := range brokers {
+		if broker != nil {
+			idToBroker[int(broker.ID())] = *broker
+		}
+	}
+	nodeIDs := []int{}
+	for nodeID, _ := range nodePartitions {
+		nodeIDs = append(nodeIDs, nodeID)
+	}
+	sort.Ints(nodeIDs)
+	t.Append([]string{"", ""})
+	t.Append([]string{"Redpanda Cluster Status", ""})
+	t.Append([]string{"Node ID (IP)", "Partitions"})
+	for _, nodeID := range nodeIDs {
+		node := nodePartitions[nodeID]
+		broker := idToBroker[nodeID]
+		nodeInfo := fmt.Sprintf("%d (%s)", nodeID, broker.Addr())
+		t.Append([]string{
+			nodeInfo,
+			"Leader: " + formatTopicsAndPartitions(node.leaderParts),
+		})
+		t.Append([]string{
+			nodeInfo,
+			"Replica: " + formatTopicsAndPartitions(node.replicaParts),
+		})
+	}
 }
 
 func sendMetrics(
@@ -180,21 +260,16 @@ func sendMetrics(
 	return api.SendMetrics(payload, *conf)
 }
 
-func topicsDetail(ip string, port int) ([]*sarama.TopicMetadata, error) {
+func initClient(ip string, port int) (sarama.Client, error) {
 	saramaConf := sarama.NewConfig()
 	saramaConf.Version = sarama.V2_4_0_0
 	saramaConf.Producer.Return.Successes = true
 	saramaConf.Admin.Timeout = 1 * time.Second
 	selfAddr := fmt.Sprintf("%s:%d", ip, port)
-	client, err := sarama.NewClient([]string{selfAddr}, saramaConf)
-	if err != nil {
-		return nil, err
-	}
-	admin, err := sarama.NewClusterAdminFromClient(client)
-	if err != nil {
-		return nil, err
-	}
-	defer admin.Close()
+	return sarama.NewClient([]string{selfAddr}, saramaConf)
+}
+
+func topicsDetail(admin sarama.ClusterAdmin) ([]*sarama.TopicMetadata, error) {
 	topics, err := admin.ListTopics()
 	if err != nil {
 		return nil, err
@@ -204,4 +279,26 @@ func topicsDetail(ip string, port int) ([]*sarama.TopicMetadata, error) {
 		topicNames = append(topicNames, name)
 	}
 	return admin.DescribeTopics(topicNames)
+}
+
+func formatTopicsAndPartitions(tps map[string][]int) string {
+	topicNames := []string{}
+	for topicName, _ := range tps {
+		topicNames = append(topicNames, topicName)
+	}
+	sort.Strings(topicNames)
+	buf := []string{}
+	for _, topicName := range topicNames {
+		parts := tps[topicName]
+		buf = append(buf, formatTopicPartitions(topicName, parts))
+	}
+	return strings.Join(buf, "; ")
+}
+
+func formatTopicPartitions(name string, partitions []int) string {
+	strParts := []string{}
+	for _, part := range partitions {
+		strParts = append(strParts, strconv.Itoa(part))
+	}
+	return fmt.Sprintf("%s: [%s]", name, strings.Join(strParts, ", "))
 }
