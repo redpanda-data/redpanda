@@ -186,7 +186,7 @@ void heartbeat_manager::process_reply(
 
 void heartbeat_manager::dispatch_heartbeats() {
     (void)with_gate(_bghbeats, [this] {
-        return ss::with_semaphore(_sem, 1, [this] {
+        return _lock.with([this] {
             return do_dispatch_heartbeats().finally([this] {
                 if (!_bghbeats.is_closed()) {
                     _heartbeat_timer.arm(next_heartbeat_timeout());
@@ -201,7 +201,7 @@ void heartbeat_manager::dispatch_heartbeats() {
 }
 
 ss::future<> heartbeat_manager::deregister_group(group_id g) {
-    return ss::with_semaphore(_sem, 1, [this, g] {
+    return _lock.with([this, g] {
         auto it = _consensus_groups.find(g);
         vassert(it != _consensus_groups.end(), "group not found: {}", g);
         _consensus_groups.erase(it);
@@ -210,7 +210,7 @@ ss::future<> heartbeat_manager::deregister_group(group_id g) {
 
 ss::future<>
 heartbeat_manager::register_group(ss::lw_shared_ptr<consensus> ptr) {
-    return ss::with_semaphore(_sem, 1, [this, ptr] {
+    return _lock.with([this, ptr] {
         auto ret = _consensus_groups.insert(ptr);
         vassert(
           ret.second,
