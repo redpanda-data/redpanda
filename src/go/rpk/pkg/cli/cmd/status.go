@@ -70,7 +70,7 @@ func executeStatus(
 	if err != nil {
 		return err
 	}
-	if !conf.Rpk.EnableUsageStats {
+	if !conf.Rpk.EnableUsageStats && send {
 		log.Warn("Usage stats reporting is disabled, so nothing will" +
 			" be sent. To enable it, run" +
 			" `rpk config set rpk.enable_usage_stats true`.")
