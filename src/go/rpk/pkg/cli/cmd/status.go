@@ -150,8 +150,8 @@ func printMetrics(
 	t.Append([]string{"OS", osInfo})
 	t.Append([]string{"CPU Model", cpuModel})
 	t.Append([]string{"CPU Usage %", fmt.Sprint(p.CpuPercentage)})
-	t.Append([]string{"Free Memory (MB)", fmt.Sprint(p.FreeMemoryMB)})
-	t.Append([]string{"Free Space  (MB)", fmt.Sprint(p.FreeSpaceMB)})
+	t.Append([]string{"Free Memory (MB)", fmt.Sprintf("%0.3f", p.FreeMemoryMB)})
+	t.Append([]string{"Free Space  (MB)", fmt.Sprintf("%0.3f", p.FreeSpaceMB)})
 }
 
 func printConfig(t *tablewriter.Table, conf map[string]string) {
