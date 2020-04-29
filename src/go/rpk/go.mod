@@ -17,6 +17,7 @@ require (
 	github.com/gogo/protobuf v1.2.1 // indirect
 	github.com/google/uuid v1.1.1
 	github.com/gorilla/mux v1.7.3 // indirect
+	github.com/grafana-tools/sdk v0.0.0-20200424161218-784ae0c7d6cc
 	github.com/lorenzosaino/go-sysctl v0.1.0
 	github.com/mattn/go-colorable v0.1.1 // indirect
 	github.com/mattn/go-isatty v0.0.7 // indirect
@@ -26,7 +27,8 @@ require (
 	github.com/olekukonko/tablewriter v0.0.1
 	github.com/opencontainers/go-digest v1.0.0-rc1 // indirect
 	github.com/opencontainers/image-spec v1.0.1 // indirect
-	github.com/pkg/errors v0.8.1 // indirect
+	github.com/prometheus/client_model v0.2.0
+	github.com/prometheus/common v0.9.1
 	github.com/safchain/ethtool v0.0.0-20190326074333-42ed695e3de8
 	github.com/shirou/gopsutil v2.19.12+incompatible
 	github.com/sirupsen/logrus v1.4.2

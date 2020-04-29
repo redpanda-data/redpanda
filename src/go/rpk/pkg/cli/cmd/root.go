@@ -49,6 +49,7 @@ func Execute() {
 	rootCmd.AddCommand(NewModeCommand(fs))
 	rootCmd.AddCommand(NewConfigCommand(fs))
 	rootCmd.AddCommand(NewStatusCommand(fs))
+	rootCmd.AddCommand(NewGenerateCommand())
 
 	err := rootCmd.Execute()
 	if len(os.Args) > 1 {
