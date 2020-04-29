@@ -149,7 +149,7 @@ func printMetrics(
 	t.SetHeader([]string{"Name", "Value"})
 	t.Append([]string{"OS", osInfo})
 	t.Append([]string{"CPU Model", cpuModel})
-	t.Append([]string{"CPU Usage %", fmt.Sprint(p.CpuPercentage)})
+	t.Append([]string{"CPU Usage %", fmt.Sprintf("%0.3f", p.CpuPercentage)})
 	t.Append([]string{"Free Memory (MB)", fmt.Sprintf("%0.3f", p.FreeMemoryMB)})
 	t.Append([]string{"Free Space  (MB)", fmt.Sprintf("%0.3f", p.FreeSpaceMB)})
 }
