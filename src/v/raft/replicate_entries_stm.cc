@@ -113,21 +113,23 @@ replicate_entries_stm::dispatch_single_retry(
       });
 }
 
-ss::future<result<storage::append_result>> replicate_entries_stm::append_to_self() {
-    return share_request().then([this](append_entries_request req) mutable {
-        vlog(_ctxlog.trace, "Self append entries - {}", req.meta);
-        return _ptr->disk_append(std::move(req.batches));
-    })
-    .then([](storage::append_result res) {
-        return result<storage::append_result>(std::move(res));
-    })
-    .handle_exception([this](const std::exception_ptr& e) {
-        vlog(
-          _ctxlog.warn,
-          "Error replicating entries, leader append failed - {}",
-          e);
-        return result<storage::append_result>(errc::leader_append_failed);
-    });
+ss::future<result<storage::append_result>>
+replicate_entries_stm::append_to_self() {
+    return share_request()
+      .then([this](append_entries_request req) mutable {
+          vlog(_ctxlog.trace, "Self append entries - {}", req.meta);
+          return _ptr->disk_append(std::move(req.batches));
+      })
+      .then([](storage::append_result res) {
+          return result<storage::append_result>(std::move(res));
+      })
+      .handle_exception([this](const std::exception_ptr& e) {
+          vlog(
+            _ctxlog.warn,
+            "Error replicating entries, leader append failed - {}",
+            e);
+          return result<storage::append_result>(errc::leader_append_failed);
+      });
 }
 
 inline bool replicate_entries_stm::is_follower_recovering(model::node_id id) {
@@ -138,35 +140,35 @@ ss::future<result<replicate_result>>
 replicate_entries_stm::apply(ss::semaphore_units<> u) {
     // first append lo leader log, no flushing
     return append_to_self()
-      .then(
-        [this, u = std::move(u)](result<storage::append_result> append_result) mutable {
-            if (!append_result) {
-                return ss::make_ready_future<result<storage::append_result>>(
-                  append_result);
-            }
-            // dispatch requests to followers & leader flush
-            std::vector<ss::semaphore_units<>> vec;
-            vec.push_back(std::move(u));
-            auto units = ss::make_lw_shared<std::vector<ss::semaphore_units<>>>(
-              std::move(vec));
-            uint16_t requests_count = 0;
-            for (auto& n : _ptr->_conf.nodes) {
-                // We are not dispatching request to followers that are
-                // recovering
-                if (is_follower_recovering(n.id())) {
-                    vlog(
-                      _ctxlog.trace,
-                      "Skipping sending append request to {}, recovering",
-                      n.id());
-                    continue;
-                }
-                ++requests_count;
-                (void)dispatch_one(n.id(), units); // background
-            }
-            // Wait until all RPCs will be dispatched
-            return _dispatch_sem.wait(requests_count)
-              .then([append_result, units]() mutable { return append_result; });
-        })
+      .then([this, u = std::move(u)](
+              result<storage::append_result> append_result) mutable {
+          if (!append_result) {
+              return ss::make_ready_future<result<storage::append_result>>(
+                append_result);
+          }
+          // dispatch requests to followers & leader flush
+          std::vector<ss::semaphore_units<>> vec;
+          vec.push_back(std::move(u));
+          auto units = ss::make_lw_shared<std::vector<ss::semaphore_units<>>>(
+            std::move(vec));
+          uint16_t requests_count = 0;
+          for (auto& n : _ptr->_conf.nodes) {
+              // We are not dispatching request to followers that are
+              // recovering
+              if (is_follower_recovering(n.id())) {
+                  vlog(
+                    _ctxlog.trace,
+                    "Skipping sending append request to {}, recovering",
+                    n.id());
+                  continue;
+              }
+              ++requests_count;
+              (void)dispatch_one(n.id(), units); // background
+          }
+          // Wait until all RPCs will be dispatched
+          return _dispatch_sem.wait(requests_count)
+            .then([append_result, units]() mutable { return append_result; });
+      })
       .then([this](result<storage::append_result> append_result) {
           if (!append_result) {
               return ss::make_ready_future<result<replicate_result>>(

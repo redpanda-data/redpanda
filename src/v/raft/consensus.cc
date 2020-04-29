@@ -505,7 +505,8 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
         _hbeat = clock_type::now();
         vlog(_ctxlog.trace, "Voting for {} in term {}", r.node_id, _meta.term);
         f = f.then([this] {
-            return details::persist_voted_for(voted_for_filename(), {_voted_for, _meta.term})
+            return details::persist_voted_for(
+                     voted_for_filename(), {_voted_for, _meta.term})
               .handle_exception([this](const std::exception_ptr& e) {
                   vlog(
                     _ctxlog.warn,
@@ -693,8 +694,7 @@ consensus::do_append_entries(append_entries_request&& r) {
       .handle_exception([this, reply = std::move(reply)](
                           const std::exception_ptr& e) mutable {
           vlog(
-            _ctxlog.warn,
-            "Error occurred while appending log entries - {}", e);
+            _ctxlog.warn, "Error occurred while appending log entries - {}", e);
           reply.result = append_entries_reply::status::failure;
           return ss::make_ready_future<append_entries_reply>(std::move(reply));
       })
