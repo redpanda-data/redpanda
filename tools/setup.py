@@ -40,7 +40,6 @@ setup(
         'selinux',
         'yapf',
         'peewee',
-        'grafanalib',
     ],
     scripts=[],
     entry_points={
