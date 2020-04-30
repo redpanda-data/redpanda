@@ -41,9 +41,7 @@ batch_consumer::consume_result skipping_consumer::consume_batch_start(
         _reader._config.start_offset = header.last_offset() + model::offset(1);
         return skip_batch::yes;
     }
-    if (
-      _reader._config.first_timestamp
-      && _reader._config.first_timestamp < header.first_timestamp) {
+    if (_reader._config.first_timestamp > header.first_timestamp) {
         // kakfa needs to guarantee that the returned record is >=
         // first_timestamp
         _reader._config.start_offset = header.last_offset() + model::offset(1);
