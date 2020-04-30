@@ -35,7 +35,6 @@ bool group_configuration::contains_broker(model::node_id id) const {
              std::cbegin(learners), std::cend(learners), find_by_id);
 }
 
-
 std::ostream& operator<<(std::ostream& o, const append_entries_reply& r) {
     return o << "{node_id: " << r.node_id << ", group: " << r.group
              << ", term:" << r.term
