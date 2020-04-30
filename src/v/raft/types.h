@@ -13,6 +13,7 @@
 #include <seastar/util/bool_class.hh>
 
 #include <boost/range/irange.hpp>
+#include <boost/range/join.hpp>
 
 #include <cstdint>
 #include <exception>
@@ -57,7 +58,15 @@ struct group_configuration {
     iterator find_in_learners(model::node_id id);
     const_iterator find_in_learners(model::node_id id) const;
     bool contains_broker(model::node_id id) const;
-    brokers_t all_brokers() const;
+
+    template<typename Func>
+    void for_each(Func&& f) const {
+        auto joined_range = boost::join(nodes, learners);
+        std::for_each(
+          std::cbegin(joined_range),
+          std::cend(joined_range),
+          std::forward<Func>(f));
+    }
 
     // data
     brokers_t nodes;

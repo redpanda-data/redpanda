@@ -265,23 +265,21 @@ ss::future<> controller::process_raft0_batch(model::record_batch batch) {
       [this, last_offset] { return _notification_latch.notify(last_offset); });
 }
 
-ss::future<> controller::apply_raft0_cfg_update(raft::group_configuration cfg) {
+ss::future<>
+controller::apply_raft0_cfg_update(const raft::group_configuration& cfg) {
     auto old_list = _md_cache.local().all_brokers();
+
     std::vector<broker_ptr> new_list;
-    auto all_new_nodes = cfg.all_brokers();
+    cfg.for_each([&new_list](const model::broker& br) {
+        new_list.push_back(ss::make_lw_shared<model::broker>(br));
+    });
+
     if (is_leader()) {
-        update_partition_allocator(all_new_nodes);
+        update_partition_allocator(new_list);
     }
-    new_list.reserve(all_new_nodes.size());
-    std::transform(
-      std::begin(all_new_nodes),
-      std::end(all_new_nodes),
-      std::back_inserter(new_list),
-      [](model::broker& broker) {
-          return ss::make_lw_shared<model::broker>(std::move(broker));
-      });
-    return update_clients_cache(std::move(new_list), std::move(old_list))
-      .then([this, nodes = std::move(cfg.nodes)]() mutable {
+
+    return update_clients_cache(new_list, std::move(old_list))
+      .then([this, nodes = cfg.nodes]() mutable {
           return update_brokers_cache(std::move(nodes));
       });
 }
@@ -989,12 +987,12 @@ void controller::create_partition_allocator() {
 }
 
 void controller::update_partition_allocator(
-  const std::vector<model::broker>& brokers) {
-    for (auto& b : brokers) {
+  const std::vector<broker_ptr>& brokers) {
+    for (const auto& b : brokers) {
         // FIXME: handle removing brokers
-        if (!_allocator->contains_node(b.id())) {
+        if (!_allocator->contains_node(b->id())) {
             _allocator->register_node(std::make_unique<allocation_node>(
-              allocation_node(b.id(), b.properties().cores, {})));
+              allocation_node(b->id(), b->properties().cores, {})));
         }
     }
 }

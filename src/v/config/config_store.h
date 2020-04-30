@@ -39,7 +39,7 @@ public:
     }
 
     template<typename Func>
-    void visit_all(Func&& f) const {
+    void for_each(Func&& f) const {
         for (auto const& [_, property] : _properties) {
             f(*property);
         }
@@ -47,7 +47,7 @@ public:
 
     const std::vector<validation_error> validate() {
         std::vector<validation_error> errors;
-        visit_all([&errors](const base_property& p) {
+        for_each([&errors](const base_property& p) {
             if (auto err = p.validate()) {
                 errors.push_back(std::move(*err));
             }
@@ -78,7 +78,7 @@ namespace std {
 template<typename... Types>
 static inline ostream& operator<<(ostream& o, const config::config_store& c) {
     o << "{ ";
-    c.visit_all([&o](const auto& property) { o << property << " "; });
+    c.for_each([&o](const auto& property) { o << property << " "; });
     o << "}";
     return o;
 }
