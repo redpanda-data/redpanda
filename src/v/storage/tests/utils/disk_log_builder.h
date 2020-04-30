@@ -58,6 +58,7 @@ struct garbage_collect_tag {};
 struct start_tag {};
 struct stop_tag {};
 struct add_segment_tag {};
+struct add_batch_tag {};
 
 using maybe_compress_batches
   = ss::bool_class<struct allow_maybe_compress_batches_builder_tag>;
@@ -90,6 +91,12 @@ inline constexpr auto add_random_batches = [](auto&&... args) {
     arg_3_way_assert<sizeof...(args), 1, 3>();
     return std::make_tuple(
       add_random_batches_tag(), std::forward<decltype(args)>(args)...);
+};
+
+inline constexpr auto add_batch = [](auto&&... args) {
+    arg_3_way_assert<sizeof...(args), 1, 3>();
+    return std::make_tuple(
+      add_batch_tag(), std::forward<decltype(args)>(args)...);
 };
 
 inline constexpr auto garbage_collect = [](auto&&... args) {
@@ -170,6 +177,13 @@ public:
                   std::get<4>(args))
                   .get();
             }
+        } else if constexpr (std::is_same_v<type, add_batch_tag>) {
+            if constexpr (size == 2) {
+                add_batch(std::move(std::get<1>(args))).get();
+            } else if constexpr (size == 3) {
+                add_batch(std::move(std::get<1>(args)), std::get<2>(args))
+                  .get();
+            }
         } else if constexpr (std::is_same_v<type, add_random_batches_tag>) {
             if constexpr (size == 2) {
                 add_random_batches(model::offset(std::get<1>(args))).get();
@@ -208,6 +222,8 @@ public:
     ss::future<> gc(
       model::timestamp collection_upper_bound,
       std::optional<size_t> max_partition_retention_size);
+    ss::future<> add_batch(
+      model::record_batch batch, log_append_config config = append_config());
     //  Log managment
     ss::future<> start(model::ntp ntp = log_builder_ntp());
     ss::future<> stop();

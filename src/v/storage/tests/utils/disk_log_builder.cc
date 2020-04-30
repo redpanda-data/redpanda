@@ -38,6 +38,12 @@ ss::future<> disk_log_builder::add_random_batches(
     return write(test::make_random_batches(offset), config);
 }
 
+ss::future<> disk_log_builder::add_batch(
+  model::record_batch batch, log_append_config config) {
+    auto buf = ss::circular_buffer<model::record_batch>();
+    buf.push_back(std::move(batch));
+    return write(std::move(buf), config);
+}
 // Log managment
 ss::future<> disk_log_builder::start(model::ntp ntp) {
     return _mgr.manage(ntp_config(std::move(ntp), get_log_config().base_dir))
