@@ -83,9 +83,9 @@ struct raft_node {
         // init cache
         cache.start().get();
         // create connections to initial nodes
-        for (const auto& broker : consensus->config().all_brokers()) {
+        consensus->config().for_each([this](const model::broker& broker) {
             create_connection_to(broker);
-        }
+        });
     }
 
     raft_node(const raft_node&) = delete;
