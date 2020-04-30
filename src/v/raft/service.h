@@ -8,6 +8,8 @@
 
 #include <seastar/core/sharded.hh>
 
+#include <absl/container/flat_hash_map.h>
+
 namespace raft {
 // clang-format off
 CONCEPT(
@@ -51,7 +53,8 @@ public:
     }
 
     [[gnu::always_inline]] ss::future<heartbeat_reply>
-    heartbeat(heartbeat_request&& r, rpc::streaming_context& ctx) final {
+    heartbeat(heartbeat_request&& r, rpc::streaming_context&) final {
+        using ret_t = std::vector<append_entries_reply>;
         std::vector<append_entries_request> reqs;
         reqs.reserve(r.meta.size());
         for (auto& m : r.meta) {
@@ -61,18 +64,25 @@ public:
               model::make_memory_record_batch_reader(
                 ss::circular_buffer<model::record_batch>{})));
         }
-        return ss::do_with(
-                 std::move(reqs),
-                 [this,
-                  &ctx](std::vector<append_entries_request>& reqs) mutable {
-                     return copy_range<std::vector<append_entries_reply>>(
-                       reqs, [this, &ctx](append_entries_request& r) mutable {
-                           return append_entries(std::move(r), ctx);
-                       });
-                 })
-          .then([](std::vector<append_entries_reply> r) {
-              return ss::make_ready_future<heartbeat_reply>(
-                heartbeat_reply{std::move(r)});
+
+        auto req_size = reqs.size();
+        auto req_per_shard = group_hbeats_by_shard(std::move(reqs));
+
+        std::vector<ss::future<std::vector<append_entries_reply>>> futures;
+        futures.reserve(req_per_shard.size());
+        for (auto& [shard, req] : req_per_shard) {
+            // dispatch to each core in parallel
+            futures.push_back(dispatch_hbeats_to_core(shard, std::move(req)));
+        }
+        return ss::when_all_succeed(futures.begin(), futures.end())
+          .then([req_size](std::vector<ret_t> replies) {
+              ret_t ret;
+              ret.reserve(req_size);
+              // flatten responses
+              for (auto& part : replies) {
+                  std::move(part.begin(), part.end(), std::back_inserter(ret));
+              }
+              return heartbeat_reply{std::move(ret)};
           });
     }
 
@@ -92,6 +102,9 @@ public:
     }
 
 private:
+    using hbeats_t = std::vector<append_entries_request>;
+    using hbeats_ptr = ss::foreign_ptr<std::unique_ptr<hbeats_t>>;
+
     ss::future<vote_reply> make_failed_vote_reply() {
         return ss::make_ready_future<vote_reply>(vote_reply{
           .term = model::term_id{}, .granted = false, .log_ok = false});
@@ -125,6 +138,56 @@ private:
           .result = append_entries_reply::status::group_unavailable});
     }
 
+    ss::future<std::vector<append_entries_reply>>
+    dispatch_hbeats_to_core(ss::shard_id shard, hbeats_ptr requests) {
+        return with_scheduling_group(
+          get_scheduling_group(),
+          [this, shard, r = std::move(requests)]() mutable {
+              return _group_manager.invoke_on(
+                shard,
+                get_smp_service_group(),
+                [this, r = std::move(r)](ConsensusManager& m) mutable {
+                    return dispatch_hbeats_to_groups(m, std::move(r));
+                });
+          });
+    }
+
+    ss::future<std::vector<append_entries_reply>>
+    dispatch_hbeats_to_groups(ConsensusManager& m, hbeats_ptr reqs) {
+        std::vector<ss::future<append_entries_reply>> futures;
+        futures.reserve(reqs->size());
+        // dispatch requests in parallel
+        std::transform(
+          reqs->begin(),
+          reqs->end(),
+          std::back_inserter(futures),
+          [this, &m](append_entries_request& req) mutable {
+              return dispatch_append_entries(m, std::move(req));
+          });
+
+        return ss::when_all_succeed(futures.begin(), futures.end());
+    }
+
+    absl::flat_hash_map<ss::shard_id, hbeats_ptr>
+    group_hbeats_by_shard(hbeats_t reqs) {
+        absl::flat_hash_map<ss::shard_id, hbeats_ptr> ret;
+
+        for (auto& r : reqs) {
+            auto shard = _shard_table.shard_for(r.meta.group);
+
+            if (!ret.contains(shard)) {
+                auto hbeats = ss::make_foreign(
+                  std::make_unique<std::vector<append_entries_request>>());
+                hbeats->push_back(std::move(r));
+                ret.emplace(shard, std::move(hbeats));
+                continue;
+            }
+
+            ret.find(shard)->second->push_back(std::move(r));
+        }
+        return ret;
+    }
+
     ss::future<append_entries_reply>
     do_append_entries(append_entries_request&& r, rpc::streaming_context&) {
         auto group = group_id(r.meta.group);
@@ -141,14 +204,19 @@ private:
                 shard,
                 get_smp_service_group(),
                 [this, r = std::move(r)](ConsensusManager& m) mutable {
-                    auto group = group_id(r.meta.group);
-                    auto c = m.consensus_for(group);
-                    if (unlikely(!c)) {
-                        return make_missing_group_reply(group);
-                    }
-                    return c->append_entries(std::move(r));
+                    return dispatch_append_entries(m, std::move(r));
                 });
           });
+    }
+
+    ss::future<append_entries_reply>
+    dispatch_append_entries(ConsensusManager& m, append_entries_request&& r) {
+        auto group = group_id(r.meta.group);
+        auto c = m.consensus_for(group);
+        if (unlikely(!c)) {
+            return make_missing_group_reply(group);
+        }
+        return c->append_entries(std::move(r));
     }
 
     failure_probes _probe;
