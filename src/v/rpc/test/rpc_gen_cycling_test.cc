@@ -1,5 +1,7 @@
+#include "model/timeout_clock.h"
 #include "random/generators.h"
 #include "rpc/exceptions.h"
+#include "rpc/test/rpc_gen_types.h"
 #include "rpc/test/rpc_integration_fixture.h"
 #include "rpc/types.h"
 #include "test_utils/fixture.h"
@@ -10,6 +12,8 @@
 
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test_log.hpp>
+
+#include <exception>
 
 using namespace std::chrono_literals; // NOLINT
 
@@ -159,5 +163,19 @@ FIXTURE_TEST(rpc_mixed_compression, rpc_integration_fixture) {
     BOOST_REQUIRE_EQUAL(echo_resp.data.str, data);
 
     // close resources
+    client.stop().get();
+}
+
+FIXTURE_TEST(server_exception_test, rpc_integration_fixture) {
+    configure_server();
+    register_services();
+    start_server();
+    rpc::client<echo::echo_client_protocol> client(client_config());
+    client.connect().get();
+    auto f = client.throw_exception(
+      echo::failure_type::exceptional_future,
+      rpc::client_opts(model::no_timeout));
+
+    BOOST_CHECK_THROW(f.get0(), std::exception);
     client.stop().get();
 }
