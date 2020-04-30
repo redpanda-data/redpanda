@@ -89,9 +89,11 @@ public:
       model::offset offset,
       model::offset max_offset,
       std::optional<model::record_batch_type> type_filter,
+      std::optional<model::timestamp> first_ts,
       size_t max_bytes) {
         if (likely(bool(_cache))) {
-            return _cache->read(offset, max_offset, type_filter, max_bytes);
+            return _cache->read(
+              offset, max_offset, type_filter, first_ts, max_bytes);
         }
         return batch_cache_index::read_result{
           .next_batch = offset,

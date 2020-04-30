@@ -334,6 +334,7 @@ public:
       model::offset offset,
       model::offset max_offset,
       std::optional<model::record_batch_type> type_filter,
+      std::optional<model::timestamp> first_ts,
       size_t max_bytes);
 
     /**

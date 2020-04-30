@@ -120,6 +120,7 @@ batch_cache_index::read_result batch_cache_index::read(
   model::offset offset,
   model::offset max_offset,
   std::optional<model::record_batch_type> type_filter,
+  std::optional<model::timestamp> first_ts,
   size_t max_bytes) {
     read_result ret;
     ret.next_batch = offset;
@@ -129,7 +130,10 @@ batch_cache_index::read_result batch_cache_index::read(
     for (auto it = find_first_contains(offset); it != _index.end();) {
         auto& batch = it->second->batch;
 
-        if (!type_filter || type_filter == batch.header().type) {
+        auto take = !type_filter || type_filter == batch.header().type;
+        take &= !first_ts || batch.header().first_timestamp >= *first_ts;
+
+        if (take) {
             batch_cache::entry::lock_guard g(*it->second);
             ret.batches.emplace_back(batch.share());
             ret.memory_usage += batch.memory_usage();
