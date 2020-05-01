@@ -429,6 +429,19 @@ func check(
 }
 
 func writePid(fs afero.Fs, path string) error {
+	pid, err := utils.ReadEnsureSingleLine(fs, path)
+	// It's expected if the PID file doesn't exist. Other errors
+	// should be fatal, however.
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if pid != "" {
+		errMsg := "found an existing PID in '%s'. Please stop the" +
+			" current redpanda instance with 'systemctl stop" +
+			" redpanda' or 'rpk stop'."
+		err := fmt.Errorf(errMsg, path)
+		return err
+	}
 	return utils.WriteFileLines(
 		fs,
 		[]string{strconv.Itoa(os.Getpid())},
