@@ -46,9 +46,9 @@ wait_for_leaders_updates(int id, cluster::metadata_cache& cache) {
 
 FIXTURE_TEST(
   test_metadata_dissemination_from_single_partition, cluster_test_fixture) {
-    auto& cntrl_0 = create_controller(model::node_id{0});
-    auto& cntrl_1 = create_controller(model::node_id{1});
-    auto& cntrl_2 = create_controller(model::node_id{2});
+    auto& cntrl_0 = create_controller(model::node_id{0}).local();
+    auto& cntrl_1 = create_controller(model::node_id{1}).local();
+    auto& cntrl_2 = create_controller(model::node_id{2}).local();
 
     cntrl_0.start().get();
     cntrl_0.wait_for_leadership().get0();
@@ -87,8 +87,8 @@ FIXTURE_TEST(
 }
 
 FIXTURE_TEST(test_metadata_dissemination_joining_node, cluster_test_fixture) {
-    auto& cntrl_0 = create_controller(model::node_id{0});
-    auto& cntrl_1 = create_controller(model::node_id{1});
+    auto& cntrl_0 = create_controller(model::node_id{0}).local();
+    auto& cntrl_1 = create_controller(model::node_id{1}).local();
 
     cntrl_0.start().get();
     cntrl_0.wait_for_leadership().get0();
@@ -112,7 +112,7 @@ FIXTURE_TEST(test_metadata_dissemination_joining_node, cluster_test_fixture) {
     cntrl_0.create_topics(std::move(topics), model::no_timeout).get0();
 
     // Add new now to the cluster
-    auto& cntrl_2 = create_controller(model::node_id{2});
+    auto& cntrl_2 = create_controller(model::node_id{2}).local();
     cntrl_2.start().get0();
     auto& cache_2 = get_local_cache(2);
     // Wait for node to join the cluster

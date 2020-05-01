@@ -186,9 +186,43 @@ private:
     std::unique_ptr<partition_allocator> _allocator;
     ss::condition_variable _leadership_cond;
     ss::gate _bg;
-    // Mutex used to make sure that the controller state i.e. topics and
-    // partition metadata are updated atomically
-    mutex _lock;
+
+    /// Controller locking mechanism
+    ///
+    /// Controller concurrency control is based on two mutexes. The state mutex
+    /// guarantee atomic controller state update and access. (f.e. checking if
+    /// topic exists, updating metadata cache). Controller state is only updated
+    /// when raft0 leadership change or raft0 apply entries to controller via
+    /// append entries notification upcall. The state update requires holding
+    /// the state mutex. Similar situation takes place when processing requests.
+    /// When replicating the state, controller holds a mutex to make sure that
+    /// it register promise for an offset returned from replicate before
+    /// replicate upcall will be fired by raft. This is guranteed as promise and
+    /// upcall use the same 'state mutex'. In order to serialize operations
+    /// executed on the controller, as they are not commutative, controller
+    /// holds operation mutex while operation is being processed (replicate +
+    /// waiting for append_entries upcall) this guarantees that all operations
+    /// will be validated against and will change valid up to date state. (If
+    /// concurrent operations would be allowed it may lead to creation of the
+    /// same topic twice as state would not be updated before validating
+    /// request)
+    ///
+    /// NOTE: This is a temporary solution before we move to after-image based
+    ///       state updates in controller.
+    ///
+    ///
+    ///        operation_mutex
+    ///        +------------------------------------------------------+
+    ///        | state mutex               state mutex                |
+    ///        | +------------------+      +------------------------+ |
+    /// op     | | validate request |      | process notification   | | result
+    /// +----->+ | raft0 replicate  +----->+ update state           | +--->
+    ///        | |                  |      |                        | |
+    ///        | +------------------+      +------------------------+ |
+    ///        +------------------------------------------------------+
+    ///
+    mutex _state_lock;
+    mutex _operation_lock;
     ss::semaphore _recovery_semaphore{0};
     model::offset _raft0_cfg_offset;
     cluster::notification_id_type _leader_notify_handle;

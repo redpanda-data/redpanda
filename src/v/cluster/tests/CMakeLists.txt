@@ -80,3 +80,10 @@ rp_test(
   LIBRARIES Seastar::seastar_testing v::cluster
   DEFINITIONS SEASTAR_TESTING_MAIN
 )
+rp_test(
+  UNIT_TEST
+  BINARY_NAME controller_state_test
+  SOURCES controller_state_test.cc
+  LIBRARIES Seastar::seastar_testing v::application
+  DEFINITIONS SEASTAR_TESTING_MAIN
+)
