@@ -2,6 +2,7 @@
 Description=Redpanda Status Timer
 After=local-fs.target network-online.target
 Requires=local-fs.target network-online.target
+PartOf=redpanda.service
 
 [Timer]
 Unit=redpanda-status.service
