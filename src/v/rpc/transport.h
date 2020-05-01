@@ -41,7 +41,7 @@ public:
 
     virtual ss::future<> connect();
     ss::future<> stop();
-    void shutdown();
+    void shutdown() noexcept;
 
     [[gnu::always_inline]] bool is_valid() const { return _fd && !_in.eof(); }
 
@@ -88,7 +88,7 @@ private:
 
     ss::future<> do_reads();
     ss::future<> dispatch(header);
-    void fail_outstanding_futures() final;
+    void fail_outstanding_futures() noexcept final;
     void setup_metrics(const std::optional<ss::sstring>&);
 
     ss::semaphore _memory;

@@ -39,4 +39,10 @@ struct cnt_resp {
     uint64_t current;
 };
 
+enum class failure_type { throw_exception, exceptional_future, none };
+
+using throw_req = failure_type;
+
+struct throw_resp {};
+
 } // namespace echo

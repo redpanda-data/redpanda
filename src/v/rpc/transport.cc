@@ -95,7 +95,7 @@ ss::future<> base_transport::stop() {
     fail_outstanding_futures();
     return _dispatch_gate.close();
 }
-void transport::fail_outstanding_futures() {
+void transport::fail_outstanding_futures() noexcept {
     // must close the socket
     shutdown();
     for (auto& [_, p] : _correlations) {
@@ -103,7 +103,7 @@ void transport::fail_outstanding_futures() {
     }
     _correlations.clear();
 }
-void base_transport::shutdown() {
+void base_transport::shutdown() noexcept {
     try {
         if (_fd) {
             _fd->shutdown_input();
@@ -125,10 +125,10 @@ ss::future<> transport::connect() {
         (void)ss::with_gate(_dispatch_gate, [this] {
             return do_reads().then_wrapped([this](ss::future<> f) {
                 _probe.connection_closed();
+                fail_outstanding_futures();
                 try {
                     f.get();
                 } catch (...) {
-                    fail_outstanding_futures();
                     _probe.read_dispatch_error(std::current_exception());
                 }
             });

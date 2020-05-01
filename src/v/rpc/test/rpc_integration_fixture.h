@@ -63,6 +63,19 @@ struct echo_impl final : echo::echo_service {
           echo::cnt_resp{.expected = req.expected, .current = cnt++});
     }
 
+    ss::future<echo::throw_resp>
+    throw_exception(echo::throw_req&& req, rpc::streaming_context&) final {
+        switch (req) {
+        case echo::failure_type::exceptional_future:
+            return ss::make_exception_future<echo::throw_resp>(
+              std::runtime_error("gentle crash"));
+        case echo::failure_type::throw_exception:
+            throw std::runtime_error("bad crash");
+        default:
+            return ss::make_ready_future<echo::throw_resp>();
+        }
+    }
+
     uint64_t cnt = 0;
 };
 
