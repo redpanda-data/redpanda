@@ -40,6 +40,8 @@ setup(
         'requests',
         'selinux',
         'yapf',
+        'peewee',
+        'psutil'
     ],
     scripts=[],
     entry_points={
