@@ -85,6 +85,9 @@ func TestStopCommand(t *testing.T) {
 			)
 			require.NoError(t, err)
 			require.False(t, isStillRunning)
+			_, err = utils.ReadEnsureSingleLine(fs, pidFile)
+			// Check that rpk stop removed the PID file
+			require.EqualError(t, err, "open /tmp/redpanda-pid: file does not exist")
 		})
 	}
 }

@@ -69,7 +69,20 @@ func executeStop(fs afero.Fs, configFile string, timeout time.Duration) error {
 	if err != nil {
 		return err
 	}
-	return signalAndWait(fs, pid, timeout)
+	err = signalAndWait(fs, pid, timeout)
+	if err != nil {
+		return err
+	}
+	err = fs.Remove(pidFile)
+	if err != nil {
+		errMsg := "the PID file '%s' couldn't be removed. This will" +
+			" prevent new redpanda instances from starting." +
+			" Please remove it manually and make sure the" +
+			" permissions are OK: %v"
+		log.Errorf(errMsg, pidFile, err)
+		return err
+	}
+	return nil
 }
 
 func signalAndWait(fs afero.Fs, pid int, timeout time.Duration) error {
