@@ -37,4 +37,3 @@ private:
         log_stats stats_;
     };
 };
-
