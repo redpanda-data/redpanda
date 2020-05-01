@@ -56,6 +56,7 @@ public:
     /// do not need to take ownership of the batch itself
     ss::future<append_result> append(model::record_batch&&);
     ss::future<append_result> append(const model::record_batch&);
+    ss::future<bool> materialize_index();
 
     /// main read interface
     ss::input_stream<char>

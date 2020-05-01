@@ -57,10 +57,11 @@ FIXTURE_TEST(index_round_trip, context) {
     info("serializing from bytes into mem");
     iobuf b;
     b.append(std::move(buf));
-    iobuf_parser p(std::move(b));
-    auto raw_idx = reflection::adl<storage::index_state>{}.from(p);
-    info("verifying tracking info");
-    BOOST_REQUIRE_EQUAL(raw_idx.relative_offset_index.size(), 1024);
+    auto raw_idx = storage::index_state::hydrate_from_buffer(std::move(b));
+    BOOST_REQUIRE(raw_idx != std::nullopt);
+    info("verifying tracking info: {}", *raw_idx);
+    BOOST_REQUIRE_EQUAL(raw_idx->max_offset(), 1023);
+    BOOST_REQUIRE_EQUAL(raw_idx->relative_offset_index.size(), 1024);
 }
 
 FIXTURE_TEST(bucket_bug1, context) {
