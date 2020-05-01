@@ -138,6 +138,20 @@ segment::do_truncate(model::offset prev_last_offset, size_t physical) {
     return f;
 }
 
+ss::future<bool> segment::materialize_index() {
+    vassert(
+      _tracker.base_offset == _tracker.dirty_offset,
+      "Materializing the index must happen tracking any data. {}",
+      *this);
+    return _idx.materialize_index().then([this](bool yn) {
+        if (yn) {
+            _tracker.committed_offset = _idx.max_offset();
+            _tracker.dirty_offset = _idx.max_offset();
+        }
+        return yn;
+    });
+}
+
 void segment::cache_truncate(model::offset offset) {
     check_segment_not_closed("cache_truncate()");
     if (likely(bool(_cache))) {

@@ -189,7 +189,9 @@ static ss::future<segment_set> do_recover(segment_set&& segments) {
           good.begin(), good.end(), [](ss::lw_shared_ptr<segment>& ss) {
               auto& s = *ss;
               try {
-                  return s.index().materialize_index().get0();
+                  // use the segment materialize instead of going through
+                  // the index directly to hydrate the max_offset state
+                  return s.materialize_index().get0();
               } catch (...) {
                   vlog(
                     stlog.info,
