@@ -172,7 +172,7 @@ ss::future<> controller::start() {
             .then([this] {
                 _raft0_cfg_offset = model::offset(
                   _raft0->meta().prev_log_index);
-                return _lock.with(
+                return _state_lock.with(
                   [this] { return apply_raft0_cfg_update(_raft0->config()); });
             })
             .then([this] {
@@ -220,7 +220,7 @@ ss::future<> controller::stop() {
         _leadership_cond.broadcast();
     }
     _as.request_abort();
-    return _lock.with([this] {
+    return _state_lock.with([this] {
         // we have to stop latch first as there may be some futures waiting
         // inside the gate for notification
         _notification_latch.stop();
@@ -596,32 +596,38 @@ ss::future<std::vector<topic_result>> controller::autocreate_topics(
           std::move(topics), timeout + model::timeout_clock::now());
     }
 
-    return dispatch_rpc_to_leader(
-             [topics, timeout](controller_client_protocol c) mutable {
-                 vlog(
-                   clusterlog.trace,
-                   "Dispatching autocreate {} request to leader ",
-                   topics);
-                 return c
-                   .create_topics(
-                     create_topics_request{std::move(topics), timeout},
-                     rpc::client_opts(timeout + model::timeout_clock::now()))
-                   .then([](rpc::client_context<create_topics_reply> ctx) {
-                       return std::move(ctx.data);
-                   });
-             })
-      .then([this, topics](result<create_topics_reply> r) mutable {
-          return process_autocreate_response(std::move(topics), std::move(r));
-      })
-      .handle_exception(
-        [topics = std::move(topics)](const std::exception_ptr& e) mutable {
-            // wasn't able to create topics
-            vlog(
-              clusterlog.warn, "Unknown error while autocreating topics {}", e);
-            return ss::make_ready_future<ret_t>(
-              create_topic_results(topics, errc::auto_create_topics_exception));
-        });
-    ;
+    return _operation_lock.with([this,
+                                 topics = std::move(topics),
+                                 timeout]() mutable {
+        return dispatch_rpc_to_leader([topics, timeout](
+                                        controller_client_protocol c) mutable {
+                   vlog(
+                     clusterlog.trace,
+                     "Dispatching autocreate {} request to leader ",
+                     topics);
+                   return c
+                     .create_topics(
+                       create_topics_request{std::move(topics), timeout},
+                       rpc::client_opts(timeout + model::timeout_clock::now()))
+                     .then([](rpc::client_context<create_topics_reply> ctx) {
+                         return std::move(ctx.data);
+                     });
+               })
+          .then([this, topics](result<create_topics_reply> r) mutable {
+              return process_autocreate_response(
+                std::move(topics), std::move(r));
+          })
+          .handle_exception(
+            [topics = std::move(topics)](const std::exception_ptr& e) mutable {
+                // wasn't able to create topics
+                vlog(
+                  clusterlog.warn,
+                  "Unknown error while autocreating topics {}",
+                  e);
+                return ss::make_ready_future<ret_t>(create_topic_results(
+                  topics, errc::auto_create_topics_exception));
+            });
+    });
 }
 
 ss::future<std::vector<topic_result>> controller::process_autocreate_response(
@@ -631,23 +637,27 @@ ss::future<std::vector<topic_result>> controller::process_autocreate_response(
         return ss::make_ready_future<ret_t>(
           create_topic_results(topics, static_cast<errc>(r.error().value())));
     }
-    return _md_cache
-      .invoke_on_all(
-        [cfg = std::move(r.value().configs),
-         md = std::move(r.value().metadata)](metadata_cache& c) mutable {
-            vassert(
-              cfg.size() == md.size(),
-              "Error processing auto create topics response. List of "
-              "configurations have to have the same size as list of metadata. "
-              "Topic configurations: {}, metadata: {}",
-              cfg,
-              md);
-            for (size_t i = 0; i < cfg.size(); ++i) {
-                c.insert_topic(std::move(md[i]), std::move(cfg[i]));
-            }
-        })
-      .then([res = std::move(r.value().results)]() mutable {
-          return std::move(res);
+    return _state_lock.with(
+      [this, topics = std::move(topics), r = std::move(r)]() mutable {
+          return _md_cache
+            .invoke_on_all(
+              [cfg = std::move(r.value().configs),
+               md = std::move(r.value().metadata)](metadata_cache& c) mutable {
+                  vassert(
+                    cfg.size() == md.size(),
+                    "Error processing auto create topics response. List of "
+                    "configurations have to have the same size as list of "
+                    "metadata. "
+                    "Topic configurations: {}, metadata: {}",
+                    cfg,
+                    md);
+                  for (size_t i = 0; i < cfg.size(); ++i) {
+                      c.insert_topic(std::move(md[i]), std::move(cfg[i]));
+                  }
+              })
+            .then([res = std::move(r.value().results)]() mutable {
+                return std::move(res);
+            });
       });
 }
 
@@ -694,12 +704,20 @@ ss::future<std::vector<topic_result>> controller::create_topics(
   model::timeout_clock::time_point timeout) {
     verify_shard();
 
-    auto f = _lock.get_units().then([this, topics = std::move(topics), timeout](
-                                      ss::semaphore_units<> u) mutable {
-        return do_create_topics(std::move(u), std::move(topics), timeout);
+    auto f = _operation_lock.with([this, topics, timeout]() mutable {
+        return _state_lock.get_units().then(
+          [this, topics = std::move(topics), timeout](
+            ss::semaphore_units<> u) mutable {
+              return do_create_topics(std::move(u), std::move(topics), timeout);
+          });
     });
 
-    return ss::with_timeout(timeout, std::move(f));
+    return ss::with_timeout(timeout, std::move(f))
+      .handle_exception_type(
+        [topics = std::move(topics)](const ss::timed_out_error&) {
+            return ss::make_ready_future<std::vector<topic_result>>(
+              create_topic_results(topics, errc::timeout));
+        });
 }
 
 ///  Topic deletion works analogical to the creation. The deletion request is
@@ -720,10 +738,12 @@ ss::future<std::vector<topic_result>> controller::delete_topics(
   model::timeout_clock::time_point timeout) {
     verify_shard();
 
-    auto f = _lock.get_units().then(
-      [this, topics, timeout](ss::semaphore_units<> u) mutable {
-          return do_delete_topics(std::move(u), std::move(topics), timeout);
-      });
+    auto f = _operation_lock.with([this, topics, timeout]() mutable {
+        return _state_lock.get_units().then(
+          [this, topics, timeout](ss::semaphore_units<> u) mutable {
+              return do_delete_topics(std::move(u), std::move(topics), timeout);
+          });
+    });
 
     return ss::with_timeout(timeout, std::move(f))
       .handle_exception_type(
@@ -903,30 +923,31 @@ ss::future<> controller::do_leadership_notification(
     // gate is reentrant making it ok if leadership notification originated
     // on the the controller::shard core.
     return with_gate(_bg, [this, ntp = std::move(ntp), lid, term]() mutable {
-        auto f = _lock.get_units().then([this, ntp = std::move(ntp), lid, term](
-                                          ss::semaphore_units<> u) mutable {
-            if (ntp == controller_ntp) {
-                return handle_controller_leadership_notification(
-                  std::move(u), term, lid);
-            } else {
-                auto f = _md_cache.invoke_on_all(
-                  [ntp, lid, term](metadata_cache& md) {
-                      md.update_partition_leader(ntp, term, lid);
-                  });
-                if (lid == _self.id()) {
-                    // only disseminate from current leader
-                    f = f.then([this,
-                                ntp = std::move(ntp),
-                                term,
-                                lid,
-                                u = std::move(u)]() mutable {
-                        return _md_dissemination_service.local()
-                          .disseminate_leadership(std::move(ntp), term, lid);
+        auto f = _state_lock.get_units().then(
+          [this, ntp = std::move(ntp), lid, term](
+            ss::semaphore_units<> u) mutable {
+              if (ntp == controller_ntp) {
+                  return handle_controller_leadership_notification(
+                    std::move(u), term, lid);
+              } else {
+                  auto f = _md_cache.invoke_on_all(
+                    [ntp, lid, term](metadata_cache& md) {
+                        md.update_partition_leader(ntp, term, lid);
                     });
-                }
-                return f;
-            }
-        });
+                  if (lid == _self.id()) {
+                      // only disseminate from current leader
+                      f = f.then([this,
+                                  ntp = std::move(ntp),
+                                  term,
+                                  lid,
+                                  u = std::move(u)]() mutable {
+                          return _md_dissemination_service.local()
+                            .disseminate_leadership(std::move(ntp), term, lid);
+                      });
+                  }
+                  return f;
+              }
+          });
     });
 }
 
@@ -1009,7 +1030,7 @@ controller::update_brokers_cache(std::vector<model::broker> nodes) {
 void controller::on_raft0_entries_comitted(
   model::record_batch_reader&& reader) {
     (void)with_gate(_bg, [this, reader = std::move(reader)]() mutable {
-        return _lock.with([this, reader = std::move(reader)]() mutable {
+        return _state_lock.with([this, reader = std::move(reader)]() mutable {
             if (_bg.is_closed()) {
                 return ss::make_ready_future<>();
             }

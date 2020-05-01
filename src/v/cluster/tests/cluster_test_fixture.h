@@ -43,7 +43,8 @@ public:
         return _instances[idx]->get_local_cache();
     }
 
-    cluster::controller& create_controller(model::node_id node_id) {
+    ss::sharded<cluster::controller>&
+    create_controller(model::node_id node_id) {
         std::vector<config::seed_server> seeds = {};
         if (node_id != 0) {
             seeds.push_back({.id = model::node_id{0},
@@ -56,7 +57,7 @@ public:
           11000 + node_id(),
           std::move(seeds));
 
-        return get_controller(node_id()).local();
+        return get_controller(node_id());
     }
 
 private:
