@@ -49,16 +49,19 @@ void segment_index::maybe_track(
       _state.base_offset,
       *this);
 
-    if (_state.empty()) {
+    _needs_persistence = true;
+    _acc += hdr.size_bytes;
+    // index_state
+    const bool is_empty = _state.empty();
+    if (is_empty) {
         _state.base_timestamp = hdr.first_timestamp;
     }
-
-    _needs_persistence = true;
-
-    _acc += hdr.size_bytes;
+    // NOTE: we don't need the 'max()' trick below because we controll the
+    // offsets ourselves and it would be a bug otherwise - see assert above
+    _state.max_offset = hdr.last_offset();
     _state.max_timestamp = std::max(hdr.max_timestamp, _state.max_timestamp);
-
-    if (_acc >= _step) {
+    // always saving the first batch simplifies a lot of book keeping
+    if (_acc >= _step || is_empty) {
         _acc = 0;
         // We know that a segment cannot be > 4GB
         _state.add_entry(
@@ -162,8 +165,11 @@ ss::future<bool> segment_index::materialize_index() {
           }
           iobuf b;
           b.append(std::move(buf));
-          iobuf_parser p(std::move(b));
-          _state = reflection::adl<index_state>{}.from(p);
+          auto hydrated = index_state::hydrate_from_buffer(std::move(b));
+          if (!hydrated) {
+              return false;
+          }
+          _state = std::move(hydrated.value());
           return true;
       });
 }
@@ -174,8 +180,7 @@ ss::future<> segment_index::flush() {
     }
     _needs_persistence = false;
     return _out.truncate(0).then([this] {
-        iobuf b;
-        reflection::adl<index_state>{}.to(b, std::move(_state));
+        auto b = _state.checksum_and_serialize();
         auto out = ss::make_file_output_stream(ss::file(_out.dup()));
         return do_with(
           std::move(b),
