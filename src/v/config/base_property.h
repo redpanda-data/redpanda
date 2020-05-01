@@ -1,6 +1,6 @@
 #pragma once
-#include "config/rjson_serialization.h"
 #include "config/validation_error.h"
+#include "json/json.h"
 #include "seastarx.h"
 
 #include <seastar/util/bool_class.hh>
