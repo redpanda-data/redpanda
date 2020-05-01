@@ -49,6 +49,7 @@ public:
     std::optional<entry> find_nearest(model::timestamp);
 
     model::offset base_offset() const { return _state.base_offset; }
+    model::offset max_offset() const { return _state.max_offset; }
     model::timestamp max_timestamp() const { return _state.max_timestamp; }
     model::timestamp base_timestamp() const { return _state.base_timestamp; }
     const ss::sstring& filename() const { return _name; }
