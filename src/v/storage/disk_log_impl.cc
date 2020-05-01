@@ -260,6 +260,24 @@ disk_log_impl::make_reader(log_reader_config config) {
       });
 }
 
+ss::future<model::record_batch_reader>
+disk_log_impl::make_reader(timequery_config config) {
+    vassert(!_closed, "make_reader on closed log - {}", *this);
+    return _lock_mngr.range_lock(config).then(
+      [this, cfg = config](std::unique_ptr<lock_manager::lease> lease) {
+          log_reader_config config(
+            (*lease->range.begin())->offsets().base_offset,
+            cfg.max_offset,
+            0,
+            2048, // We just need one record batch
+            cfg.prio,
+            std::nullopt,
+            cfg.time);
+          return model::make_record_batch_reader<log_reader>(
+            std::move(lease), config, _probe);
+      });
+}
+
 std::optional<model::term_id> disk_log_impl::get_term(model::offset o) const {
     auto it = _segs.lower_bound(o);
     if (it != _segs.end()) {
@@ -274,14 +292,7 @@ disk_log_impl::timequery(timequery_config cfg) {
     if (_segs.empty()) {
         return ss::make_ready_future<std::optional<timequery_result>>();
     }
-    return make_reader(log_reader_config(
-                         _segs.front()->offsets().base_offset,
-                         cfg.max_offset,
-                         0,
-                         2048, // We just need one record batch
-                         cfg.prio,
-                         std::nullopt,
-                         cfg.time))
+    return make_reader(std::move(cfg))
       .then([cfg](model::record_batch_reader reader) {
           return model::consume_reader_to_memory(
                    std::move(reader), model::no_timeout)

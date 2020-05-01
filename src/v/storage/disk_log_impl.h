@@ -36,6 +36,7 @@ public:
       std::optional<size_t> max_partition_retention_size) final;
 
     ss::future<model::record_batch_reader> make_reader(log_reader_config) final;
+    ss::future<model::record_batch_reader> make_reader(timequery_config);
     // External synchronization: only one append can be performed at a time.
     log_appender make_appender(log_append_config cfg) final;
     /// timequery
