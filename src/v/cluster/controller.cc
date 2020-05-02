@@ -36,6 +36,7 @@ static void verify_shard() {
 }
 
 controller::controller(
+  ss::sharded<raft::group_manager>& gm,
   ss::sharded<partition_manager>& pm,
   ss::sharded<shard_table>& st,
   ss::sharded<metadata_cache>& md_cache,
@@ -44,6 +45,7 @@ controller::controller(
   : _self(config::make_self_broker(config::shard_local_cfg()))
   , _seed_servers(config::shard_local_cfg().seed_servers())
   , _data_directory(config::shard_local_cfg().data_directory().as_sstring())
+  , _gm(gm)
   , _pm(pm)
   , _st(st)
   , _md_cache(md_cache)
@@ -139,15 +141,16 @@ ss::future<> controller::start() {
     if (ss::this_shard_id() != controller::shard) {
         return ss::make_ready_future<>();
     }
-    return _pm
-      .invoke_on_all([this](partition_manager& pm) {
-          _leader_notify_handle = pm.register_leadership_notification(
+    return _gm
+      .invoke_on_all([this](raft::group_manager& gm) {
+          _leader_notify_handle = gm.register_leadership_notification(
             [this](
-              ss::lw_shared_ptr<partition> p,
+              raft::group_id group,
               model::term_id term,
               std::optional<model::node_id> leader_id) {
+                auto ntp = _pm.local().consensus_for(group)->ntp();
                 handle_leadership_notification(
-                  p->ntp(), term, std::move(leader_id));
+                  std::move(ntp), term, std::move(leader_id));
             });
       })
       .then([this] {
@@ -206,7 +209,7 @@ ss::future<consensus_ptr> controller::start_raft0() {
 }
 
 ss::future<> controller::stop() {
-    _pm.local().unregister_leadership_notification(_leader_notify_handle);
+    _gm.local().unregister_leadership_notification(_leader_notify_handle);
     if (ss::this_shard_id() == controller::shard && _raft0) {
         _raft0->remove_append_entries_callback();
     }

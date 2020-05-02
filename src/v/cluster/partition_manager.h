@@ -5,6 +5,7 @@
 #include "cluster/shard_table.h"
 #include "model/metadata.h"
 #include "raft/consensus_client_protocol.h"
+#include "raft/group_manager.h"
 #include "raft/heartbeat_manager.h"
 #include "storage/log_manager.h"
 #include "utils/named_type.h"
@@ -14,14 +15,7 @@
 namespace cluster {
 class partition_manager {
 public:
-    partition_manager(
-      model::timeout_clock::duration disk_timeout,
-      ss::sharded<rpc::connection_cache>& clients);
-
-    using leader_cb_t = ss::noncopyable_function<void(
-      ss::lw_shared_ptr<partition>,
-      model::term_id,
-      std::optional<model::node_id>)>;
+    partition_manager(ss::sharded<raft::group_manager>&);
 
     using manage_cb_t
       = ss::noncopyable_function<void(ss::lw_shared_ptr<partition>)>;
@@ -41,7 +35,15 @@ public:
         return nullptr;
     }
 
-    ss::future<> start();
+    inline ss::lw_shared_ptr<partition>
+    partition_for(raft::group_id group) const {
+        if (auto it = _raft_table.find(group); it != _raft_table.end()) {
+            return it->second;
+        }
+        return nullptr;
+    }
+
+    ss::future<> start() { return ss::make_ready_future<>(); }
     ss::future<> stop();
     ss::future<consensus_ptr> manage(
       storage::ntp_config,
@@ -50,24 +52,6 @@ public:
       std::optional<raft::consensus::append_entries_cb_t>);
 
     ss::future<> remove(const model::ntp& ntp);
-
-    notification_id_type register_leadership_notification(leader_cb_t cb) {
-        auto id = _notification_id++;
-        _notifications.push_back(std::make_pair(id, std::move(cb)));
-        return id;
-    }
-
-    void unregister_leadership_notification(notification_id_type id) {
-        auto it = std::find_if(
-          _notifications.begin(),
-          _notifications.end(),
-          [id](const std::pair<notification_id_type, leader_cb_t>& n) {
-              return n.first == id;
-          });
-        if (it != _notifications.end()) {
-            _notifications.erase(it);
-        }
-    }
 
     std::optional<storage::log> log(const model::ntp& ntp) {
         return _mngr.get(ntp);
@@ -106,23 +90,10 @@ public:
     }
 
 private:
-    void trigger_leadership_notification(raft::leadership_status);
-    ss::lw_shared_ptr<raft::consensus> make_consensus(
-      raft::group_id,
-      std::vector<model::broker>,
-      storage::log,
-      std::optional<raft::consensus::append_entries_cb_t>);
-    model::node_id _self;
-    model::timeout_clock::duration _disk_timeout;
-
     storage::log_manager _mngr;
-    raft::consensus_client_protocol _client;
-    raft::heartbeat_manager _hbeats;
     /// used to wait for concurrent recoveries
-    ss::gate _bg;
+    ss::sharded<raft::group_manager>& _raft_manager;
 
-    notification_id_type _notification_id{0};
-    std::vector<std::pair<notification_id_type, leader_cb_t>> _notifications;
     ntp_callbacks<manage_cb_t> _manage_watchers;
     // XXX use intrusive containers here
     absl::flat_hash_map<model::ntp, ss::lw_shared_ptr<partition>> _ntp_table;

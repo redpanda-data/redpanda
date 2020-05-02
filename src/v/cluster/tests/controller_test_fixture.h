@@ -72,6 +72,7 @@ public:
         }
         _metadata_dissemination_service.stop().get0();
         _pm.stop().get0();
+        _gm.stop().get0();
         st.stop().get0();
         _md_cache.stop().get0();
         _cli_cache.stop().get0();
@@ -95,13 +96,21 @@ public:
         set_configuration("disable_metrics", true);
 
         using namespace std::chrono_literals;
-        _pm.start(model::timeout_clock::duration(2s), std::ref(_cli_cache))
+        _gm
+          .start(
+            config::shard_local_cfg().node_id(),
+            model::timeout_clock::duration(2s),
+            config::shard_local_cfg().raft_heartbeat_interval(),
+            std::ref(_cli_cache))
           .get0();
+        _gm.invoke_on_all(&raft::group_manager::start).get();
+        _pm.start(std::ref(_gm)).get0();
         _metadata_dissemination_service
           .start(std::ref(_md_cache), std::ref(_cli_cache))
           .get0();
         _controller
           .start(
+            std::ref(_gm),
             std::ref(_pm),
             std::ref(st),
             std::ref(_md_cache),
@@ -268,6 +277,7 @@ private:
     ss::sharded<rpc::connection_cache> _cli_cache;
     ss::sharded<cluster::metadata_cache> _md_cache;
     ss::sharded<cluster::shard_table> st;
+    ss::sharded<raft::group_manager> _gm;
     ss::sharded<cluster::partition_manager> _pm;
     ss::sharded<rpc::server> _rpc;
     bool _controller_started = false;

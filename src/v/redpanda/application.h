@@ -10,6 +10,7 @@
 #include "kafka/groups/group_manager.h"
 #include "kafka/groups/group_router.h"
 #include "kafka/quota_manager.h"
+#include "raft/group_manager.h"
 #include "redpanda/admin/api-doc/config.json.h"
 #include "resource_mgmt/cpu_scheduling.h"
 #include "resource_mgmt/memory_groups.h"
@@ -46,6 +47,7 @@ public:
     ss::sharded<kafka::controller_dispatcher> cntrl_dispatcher;
     ss::sharded<cluster::shard_table> shard_table;
     ss::sharded<cluster::partition_manager> partition_manager;
+    ss::sharded<raft::group_manager> raft_group_manager;
     ss::sharded<cluster::metadata_dissemination_service>
       md_dissemination_service;
     ss::sharded<cluster::controller> controller;

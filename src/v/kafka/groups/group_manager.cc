@@ -15,11 +15,12 @@ ss::future<> group_manager::start() {
      * leader we recovery. when we become a follower (or the partition is
      * mapped to another node/core) the in-memory cache may be cleared.
      */
-    _leader_notify_handle = _pm.local().register_leadership_notification(
+    _leader_notify_handle = _gm.local().register_leadership_notification(
       [this](
-        ss::lw_shared_ptr<cluster::partition> p,
+        raft::group_id group,
         [[maybe_unused]] model::term_id term,
         std::optional<model::node_id> leader_id) {
+          auto p = _pm.local().partition_for(group);
           handle_leader_change(p, leader_id);
       });
 
@@ -38,7 +39,7 @@ ss::future<> group_manager::start() {
 
 ss::future<> group_manager::stop() {
     _pm.local().unregister_manage_notification(_manage_notify_handle);
-    _pm.local().unregister_leadership_notification(_leader_notify_handle);
+    _gm.local().unregister_leadership_notification(_leader_notify_handle);
 
     for (auto& e : _partitions) {
         e.second->as.request_abort();
