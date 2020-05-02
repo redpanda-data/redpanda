@@ -17,7 +17,6 @@ from .test import commands as test
 from .publish import commands as publish
 from .dbuild import commands as dbuild
 from .storage import commands as storage
-from .grafana import commands as grafana
 from .ci import commands as ci
 
 logging.use_absl_handler()
@@ -50,5 +49,4 @@ main.add_command(test.test)
 main.add_command(publish.publish)
 main.add_command(dbuild.dbuild)
 main.add_command(storage.storage)
-main.add_command(grafana.grafana)
 main.add_command(ci.ci)

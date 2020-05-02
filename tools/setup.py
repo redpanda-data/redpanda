@@ -31,7 +31,6 @@ setup(
         'docker-compose',
         'gitpython',
         'google-cloud-build',
-        'grafanalib',
         'Jinja2',
         'jmespath',
         'paramiko',
