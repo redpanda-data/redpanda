@@ -4,6 +4,7 @@
 #include "cluster/metadata_dissemination_service.h"
 #include "cluster/namespace.h"
 #include "cluster/service.h"
+#include "cluster/simple_batch_builder.h"
 #include "cluster/tests/utils.h"
 #include "config/configuration.h"
 #include "fmt/format.h"
@@ -106,7 +107,11 @@ public:
         _gm.invoke_on_all(&raft::group_manager::start).get();
         _pm.start(std::ref(_gm)).get0();
         _metadata_dissemination_service
-          .start(std::ref(_md_cache), std::ref(_cli_cache))
+          .start(
+            std::ref(_gm),
+            std::ref(_pm),
+            std::ref(_md_cache),
+            std::ref(_cli_cache))
           .get0();
         _controller
           .start(
@@ -114,8 +119,10 @@ public:
             std::ref(_pm),
             std::ref(st),
             std::ref(_md_cache),
-            std::ref(_cli_cache),
-            std::ref(_metadata_dissemination_service))
+            std::ref(_cli_cache))
+          .get();
+        _metadata_dissemination_service
+          .invoke_on_all(&cluster::metadata_dissemination_service::start)
           .get();
         _controller_started = true;
 

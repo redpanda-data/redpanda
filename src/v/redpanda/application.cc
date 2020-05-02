@@ -1,6 +1,7 @@
 #include "redpanda/application.h"
 
 #include "cluster/metadata_dissemination_handler.h"
+#include "cluster/metadata_dissemination_service.h"
 #include "cluster/service.h"
 #include "kafka/protocol.h"
 #include "platform/stop_signal.h"
@@ -187,6 +188,8 @@ void application::wire_up_services() {
     syschecks::systemd_message("Creating metadata dissemination service");
     construct_service(
       md_dissemination_service,
+      std::ref(raft_group_manager),
+      std::ref(partition_manager),
       std::ref(metadata_cache),
       std::ref(_raft_connection_cache))
       .get();
@@ -198,8 +201,7 @@ void application::wire_up_services() {
       std::ref(partition_manager),
       std::ref(shard_table),
       std::ref(metadata_cache),
-      std::ref(_raft_connection_cache),
-      std::ref(md_dissemination_service))
+      std::ref(_raft_connection_cache))
       .get();
 
     // group membership
@@ -265,6 +267,13 @@ void application::start() {
 
     syschecks::systemd_message("Starting controller");
     controller.invoke_on_all(&cluster::controller::start).get();
+
+    // FIXME: in first patch explain why this is started after the controller so
+    // the broker set will be available. Then next patch fix.
+    syschecks::systemd_message("Starting metadata dissination service");
+    md_dissemination_service
+      .invoke_on_all(&cluster::metadata_dissemination_service::start)
+      .get();
 
     syschecks::systemd_message("Starting RPC");
     _rpc

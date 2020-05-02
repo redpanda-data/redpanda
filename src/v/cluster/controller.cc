@@ -4,7 +4,6 @@
 #include "cluster/controller_service.h"
 #include "cluster/errc.h"
 #include "cluster/logger.h"
-#include "cluster/metadata_dissemination_service.h"
 #include "cluster/namespace.h"
 #include "cluster/notification_latch.h"
 #include "cluster/partition_manager.h"
@@ -40,8 +39,7 @@ controller::controller(
   ss::sharded<partition_manager>& pm,
   ss::sharded<shard_table>& st,
   ss::sharded<metadata_cache>& md_cache,
-  ss::sharded<rpc::connection_cache>& connection_cache,
-  ss::sharded<metadata_dissemination_service>& md_dissemination)
+  ss::sharded<rpc::connection_cache>& connection_cache)
   : _self(config::make_self_broker(config::shard_local_cfg()))
   , _seed_servers(config::shard_local_cfg().seed_servers())
   , _data_directory(config::shard_local_cfg().data_directory().as_sstring())
@@ -50,7 +48,6 @@ controller::controller(
   , _st(st)
   , _md_cache(md_cache)
   , _connection_cache(connection_cache)
-  , _md_dissemination_service(md_dissemination)
   , _raft0(nullptr)
   , _highest_group_id(0) {}
 
@@ -183,10 +180,6 @@ ss::future<> controller::start() {
                     return join_raft0();
                 };
             });
-      })
-      .then([this] {
-          // done in background fibre
-          _md_dissemination_service.local().initialize_leadership_metadata();
       });
 }
 
@@ -932,24 +925,8 @@ ss::future<> controller::do_leadership_notification(
               if (ntp == controller_ntp) {
                   return handle_controller_leadership_notification(
                     std::move(u), term, lid);
-              } else {
-                  auto f = _md_cache.invoke_on_all(
-                    [ntp, lid, term](metadata_cache& md) {
-                        md.update_partition_leader(ntp, term, lid);
-                    });
-                  if (lid == _self.id()) {
-                      // only disseminate from current leader
-                      f = f.then([this,
-                                  ntp = std::move(ntp),
-                                  term,
-                                  lid,
-                                  u = std::move(u)]() mutable {
-                          return _md_dissemination_service.local()
-                            .disseminate_leadership(std::move(ntp), term, lid);
-                      });
-                  }
-                  return f;
               }
+              return ss::now();
           });
     });
 }
