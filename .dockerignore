@@ -6,6 +6,9 @@
 
 # vtools configs
 !/tools/ci/vtools*.yml
+
+# vtools relevant codepaths to keep track of when rebuilding images
+!/tools/vtools/vlib/config.py
 !/tools/vtools/install/commands.py
 
 # rpk
