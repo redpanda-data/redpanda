@@ -11,6 +11,7 @@
 #include "kafka/requests/offset_commit_request.h"
 #include "kafka/requests/offset_fetch_request.h"
 #include "kafka/requests/sync_group_request.h"
+#include "raft/group_manager.h"
 #include "seastarx.h"
 
 #include <seastar/core/abort_source.hh>
@@ -96,8 +97,11 @@ struct recovery_batch_consumer;
 class group_manager {
 public:
     group_manager(
-      ss::sharded<cluster::partition_manager>& pm, config::configuration& conf)
-      : _pm(pm)
+      ss::sharded<raft::group_manager>& gm,
+      ss::sharded<cluster::partition_manager>& pm,
+      config::configuration& conf)
+      : _gm(gm)
+      , _pm(pm)
       , _conf(conf)
       , _self(config::make_self_broker(config::shard_local_cfg())) {}
 
@@ -174,6 +178,7 @@ private:
       ss::lw_shared_ptr<cluster::partition> p,
       ss::lowres_clock::time_point timeout);
 
+    ss::sharded<raft::group_manager>& _gm;
     ss::sharded<cluster::partition_manager>& _pm;
     config::configuration& _conf;
     absl::flat_hash_map<group_id, group_ptr> _groups;

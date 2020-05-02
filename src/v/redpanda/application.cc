@@ -168,12 +168,17 @@ void application::wire_up_services() {
     construct_service(_raft_connection_cache).get();
     syschecks::systemd_message("Building shard-lookup tables");
     construct_service(shard_table).get();
-    syschecks::systemd_message("Adding partition manager");
+
     construct_service(
-      partition_manager,
-      std::chrono::seconds(10), // disk timeout
+      raft_group_manager,
+      config::shard_local_cfg().node_id(),
+      std::chrono::seconds(10),
+      config::shard_local_cfg().raft_heartbeat_interval(),
       std::ref(_raft_connection_cache))
       .get();
+
+    syschecks::systemd_message("Adding partition manager");
+    construct_service(partition_manager, std::ref(raft_group_manager)).get();
     vlog(_log.info, "Partition manager started");
 
     // controller
@@ -189,6 +194,7 @@ void application::wire_up_services() {
     syschecks::systemd_message("Creating cluster::controller");
     construct_service(
       controller,
+      std::ref(raft_group_manager),
       std::ref(partition_manager),
       std::ref(shard_table),
       std::ref(metadata_cache),
@@ -200,6 +206,7 @@ void application::wire_up_services() {
     syschecks::systemd_message("Creating partition manager");
     construct_service(
       _group_manager,
+      std::ref(raft_group_manager),
       std::ref(partition_manager),
       std::ref(config::shard_local_cfg()))
       .get();
@@ -250,6 +257,9 @@ void application::wire_up_services() {
 }
 
 void application::start() {
+    syschecks::systemd_message("Starting Raft group manager");
+    raft_group_manager.invoke_on_all(&raft::group_manager::start).get();
+
     syschecks::systemd_message("Starting Kafka group manager");
     _group_manager.invoke_on_all(&kafka::group_manager::start).get();
 

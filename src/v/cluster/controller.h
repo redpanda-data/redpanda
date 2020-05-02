@@ -38,6 +38,7 @@ public:
     static constexpr auto join_timeout = std::chrono::seconds(5);
 
     controller(
+      ss::sharded<raft::group_manager>&,
       ss::sharded<partition_manager>&,
       ss::sharded<shard_table>&,
       ss::sharded<metadata_cache>&,
@@ -175,6 +176,7 @@ private:
     model::broker _self;
     std::vector<config::seed_server> _seed_servers;
     ss::sstring _data_directory;
+    ss::sharded<raft::group_manager>& _gm;
     ss::sharded<partition_manager>& _pm;
     ss::sharded<shard_table>& _st;
     ss::sharded<metadata_cache>& _md_cache;
