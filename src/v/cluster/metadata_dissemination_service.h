@@ -2,10 +2,13 @@
 
 #include "cluster/metadata_cache.h"
 #include "cluster/metadata_dissemination_types.h"
+#include "cluster/partition_manager.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "raft/group_manager.h"
 #include "raft/types.h"
 #include "rpc/connection_cache.h"
+#include "utils/mutex.h"
 #include "utils/retry.h"
 
 #include <seastar/core/abort_source.hh>
@@ -53,16 +56,21 @@ namespace cluster {
 /// +---------+   +---------+  +---------+  +---------+  +---------+
 ///                New leader
 
-class metadata_dissemination_service {
+class metadata_dissemination_service final
+  : public ss::peering_sharded_service<metadata_dissemination_service> {
 public:
     metadata_dissemination_service(
-      ss::sharded<metadata_cache>&, ss::sharded<rpc::connection_cache>&);
+      ss::sharded<raft::group_manager>&,
+      ss::sharded<cluster::partition_manager>&,
+      ss::sharded<metadata_cache>&,
+      ss::sharded<rpc::connection_cache>&);
 
     void disseminate_leadership(
       model::ntp, model::term_id, std::optional<model::node_id>);
 
     void initialize_leadership_metadata();
 
+    ss::future<> start();
     ss::future<> stop();
 
 private:
@@ -87,6 +95,11 @@ private:
     using broker_updates_t
       = absl::flat_hash_map<model::node_id, update_retry_meta>;
 
+    void handle_leadership_notification(
+      model::ntp, model::term_id, std::optional<model::node_id>);
+    ss::future<> apply_leadership_notification(
+      model::ntp, model::term_id, std::optional<model::node_id>);
+
     void collect_pending_updates();
     void cleanup_finished_updates();
     ss::future<> dispatch_disseminate_leadership();
@@ -99,12 +112,15 @@ private:
 
     ss::future<> update_metadata_with_retries(std::vector<model::node_id>);
 
+    ss::sharded<raft::group_manager>& _raft_manager;
+    ss::sharded<cluster::partition_manager>& _partition_manager;
     ss::sharded<metadata_cache>& _md_cache;
     ss::sharded<rpc::connection_cache>& _clients;
     model::node_id _self;
     std::chrono::milliseconds _dissemination_interval;
     std::vector<ntp_leader> _requests;
     broker_updates_t _pending_updates;
+    mutex _lock;
     ss::timer<> _dispatch_timer;
     ss::abort_source _as;
     ss::gate _bg;
