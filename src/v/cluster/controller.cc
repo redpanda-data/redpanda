@@ -151,12 +151,6 @@ ss::future<> controller::start() {
             });
       })
       .then([this] {
-          return _pm.invoke_on_all([](partition_manager& pm) {
-              // start the partition managers first...
-              return pm.start();
-          });
-      })
-      .then([this] {
           // add raft0 to shard table
           return assign_group_to_shard(
             controller_ntp, controller::group, controller::shard);
