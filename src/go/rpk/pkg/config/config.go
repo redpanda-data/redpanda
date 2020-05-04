@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -24,7 +25,6 @@ type Config struct {
 	Organization string          `yaml:"organization,omitempty" json:"organization"`
 	ClusterId    string          `yaml:"cluster_id,omitempty" json:"clusterId"`
 	ConfigFile   string          `yaml:"config_file,omitempty" json:"configFile"`
-	PidFile      string          `yaml:"pid_file" json:"pidFile"`
 	Redpanda     *RedpandaConfig `json:"redpanda"`
 	Rpk          *RpkConfig      `yaml:"rpk,omitempty" json:"rpk"`
 }
@@ -65,10 +65,13 @@ type RpkConfig struct {
 	WellKnownIo          string   `yaml:"well_known_io,omitempty" json:"wellKnownIo"`
 }
 
+func (conf *Config) PIDFile() string {
+	return path.Join(conf.Redpanda.Directory, "pid.lock")
+}
+
 func DefaultConfig() Config {
 	return Config{
 		ConfigFile: "/etc/redpanda/redpanda.yaml",
-		PidFile:    "/var/lib/redpanda/pid",
 		Redpanda: &RedpandaConfig{
 			Directory:   "/var/lib/redpanda/data",
 			RPCServer:   SocketAddress{"0.0.0.0", 33145},

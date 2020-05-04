@@ -58,7 +58,7 @@ func executeStop(fs afero.Fs, configFile string, timeout time.Duration) error {
 	if err != nil {
 		return err
 	}
-	pidFile := conf.PidFile
+	pidFile := conf.PIDFile()
 	if pidFile == "" {
 		msg := "The configuration's pid_file field is empty. Run 'rpk" +
 			" config set pid_file <path>' to set it"

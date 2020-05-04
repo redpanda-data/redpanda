@@ -23,7 +23,7 @@ func GatherMetrics(
 ) (*Metrics, []error) {
 	metrics := &Metrics{}
 	errs := []error{}
-	cpuPercentage, err := redpandaCpuPercentage(fs, conf.PidFile)
+	cpuPercentage, err := redpandaCpuPercentage(fs, conf.PIDFile())
 	if err != nil {
 		errs = append(errs, err)
 	} else {
