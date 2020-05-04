@@ -9,9 +9,9 @@
 namespace raft {
 extern ss::logger raftlog;
 
-class raft_ctx_log {
+class ctx_log {
 public:
-    raft_ctx_log(model::node_id n, raft::group_id gr)
+    ctx_log(model::node_id n, raft::group_id gr)
       : _node_id(n)
       , _group_id(gr) {}
 
@@ -43,7 +43,7 @@ public:
     void log(ss::log_level lvl, const char* format, Args&&... args) {
         if (raftlog.is_enabled(lvl)) {
             auto line_fmt = fmt::format(
-              "[n: {}, gr: {}] {}", _node_id, _group_id, format);
+              "[node_id:{}, group:{}] {}", _node_id, _group_id, format);
 
             raftlog.log(lvl, line_fmt.c_str(), std::forward<Args>(args)...);
         }

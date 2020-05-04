@@ -87,7 +87,7 @@ private:
     // for safety to wait for all bg ops
     ss::gate _vote_bg;
     std::vector<vmeta> _replies;
-    raft_ctx_log _ctxlog;
+    ctx_log _ctxlog;
 };
 
 } // namespace raft
