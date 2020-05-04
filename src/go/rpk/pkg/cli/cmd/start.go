@@ -3,10 +3,8 @@ package cmd
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 	"vectorized/pkg/api"
@@ -19,7 +17,6 @@ import (
 	"vectorized/pkg/tuners/factory"
 	"vectorized/pkg/tuners/hwloc"
 	"vectorized/pkg/tuners/iotune"
-	"vectorized/pkg/utils"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
@@ -113,11 +110,6 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 				if ccmd.Flags().Changed(flag) {
 					rpArgs.SeastarFlags[flag] = fmt.Sprint(val)
 				}
-			}
-			err = writePid(fs, conf.PidFile)
-			if err != nil {
-				sendEnv(env, conf, err)
-				return fmt.Errorf("couldn't write the PID file: %v", err)
 			}
 			sendEnv(env, conf, nil)
 			rpArgs.SeastarFlags = mergeFlags(rpArgs.SeastarFlags, conf.Rpk.AdditionalStartFlags)
@@ -426,27 +418,6 @@ func check(
 		}
 	}
 	return payloads, nil
-}
-
-func writePid(fs afero.Fs, path string) error {
-	pid, err := utils.ReadEnsureSingleLine(fs, path)
-	// It's expected if the PID file doesn't exist. Other errors
-	// should be fatal, however.
-	if err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	if pid != "" {
-		errMsg := "found an existing PID in '%s'. Please stop the" +
-			" current redpanda instance with 'systemctl stop" +
-			" redpanda' or 'rpk stop'."
-		err := fmt.Errorf(errMsg, path)
-		return err
-	}
-	return utils.WriteFileLines(
-		fs,
-		[]string{strconv.Itoa(os.Getpid())},
-		path,
-	)
 }
 
 func sendEnv(env api.EnvironmentPayload, conf *config.Config, err error) {
