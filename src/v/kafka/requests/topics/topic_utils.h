@@ -56,7 +56,7 @@ CONCEPT(
     requires TopicRequestItem<typename Iter::value_type> && 
     TopicResultIterator<ErrIter> &&
     requires (Predicate p, Iter it) {
-        {p(*it)}->bool
+        {p(*it)}->bool;
     }
 )
 // clang-format on

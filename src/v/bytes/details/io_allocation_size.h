@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdint>
 namespace details {
 class io_allocation_size {
 public:

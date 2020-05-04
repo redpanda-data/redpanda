@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <stdexcept>
 #include <string>
 
 // an adaptation of https://llvm.org/doxygen/StringSwitch_8h_source.html
