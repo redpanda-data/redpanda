@@ -30,12 +30,12 @@ vote_stm::vote_stm(consensus* p)
 
 vote_stm::~vote_stm() {
     if (_vote_bg.get_count() > 0 && !_vote_bg.is_closed()) {
-        _ctxlog.error("Must call vote_stm::wait()");
+        vlog(_ctxlog.error, "Must call vote_stm::wait()");
         std::terminate();
     }
 }
 ss::future<result<vote_reply>> vote_stm::do_dispatch_one(model::node_id n) {
-    _ctxlog.trace("Sending vote request to {}", n);
+    vlog(_ctxlog.trace, "Sending vote request to {}", n);
     auto tout = clock_type::now() + _ptr->_jit.base_duration();
 
     auto r = _req;
@@ -63,7 +63,7 @@ ss::future<> vote_stm::dispatch_one(model::node_id n) {
                       voter_reply->set_value(errc::vote_dispatch_error);
                   }
                   if (!voter_reply->value) {
-                      _ctxlog.info("error voting: {}", *voter_reply);
+                      vlog(_ctxlog.info, "error voting: {}", *voter_reply);
                   }
               });
         });
@@ -136,7 +136,8 @@ ss::future<> vote_stm::do_vote() {
           return ss::do_until(
             [this, majority, all] {
                 auto [success, failure] = partition_count();
-                _ctxlog.trace(
+                vlog(
+                  _ctxlog.trace,
                   "Vote results [success:{}, failures:{}, majority: {}]",
                   success,
                   failure,
@@ -162,14 +163,16 @@ ss::future<> vote_stm::process_replies(ss::semaphore_units<> u) {
     const size_t majority = _ptr->_conf.majority();
     auto [success, failure] = partition_count();
     if (_ptr->_vstate != consensus::vote_state::candidate) {
-        _ctxlog.info(
+        vlog(
+          _ctxlog.info,
           "No longer a candidate, ignoring vote replies: {}/{}",
           success,
           _ptr->_conf.nodes.size());
         return ss::make_ready_future<>();
     }
     if (success < majority) {
-        _ctxlog.info(
+        vlog(
+          _ctxlog.info,
           "Majority vote failed. {}/{} votes, need:{}",
           success,
           _ptr->_conf.nodes.size(),
@@ -184,13 +187,14 @@ ss::future<> vote_stm::process_replies(ss::semaphore_units<> u) {
             acks.emplace_back(r.node);
         }
     }
-    _ctxlog.trace("vote acks in term {} from: {}", _ptr->_meta.term, acks);
+    vlog(
+      _ctxlog.trace, "vote acks in term {} from: {}", _ptr->_meta.term, acks);
     // section vote:5.2.2
     _ptr->_vstate = consensus::vote_state::leader;
     _ptr->_leader_id = _ptr->self();
     // Set last heartbeat timestamp to max as we are the leader
     _ptr->_hbeat = clock_type::time_point::max();
-    _ctxlog.info("became the leader term:{}", _ptr->_meta.term);
+    vlog(_ctxlog.info, "became the leader term:{}", _ptr->_meta.term);
 
     _ptr->trigger_leadership_notification();
     replicate_config_as_new_leader(std::move(u));
@@ -209,7 +213,7 @@ ss::future<> vote_stm::self_vote() {
     reply.log_ok = true;
     reply.granted = true;
 
-    _ctxlog.trace("Voting for self in term {}", _req.term);
+    vlog(_ctxlog.trace, "Voting for self in term {}", _req.term);
     _ptr->_voted_for = _ptr->_self;
     return details::persist_voted_for(
              _ptr->voted_for_filename(),
