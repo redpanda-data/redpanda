@@ -259,6 +259,9 @@ void application::wire_up_services() {
 }
 
 void application::start() {
+    syschecks::systemd_message("Starting the partition manager");
+    partition_manager.invoke_on_all(&cluster::partition_manager::start).get();
+
     syschecks::systemd_message("Starting Raft group manager");
     raft_group_manager.invoke_on_all(&raft::group_manager::start).get();
 
