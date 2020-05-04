@@ -147,11 +147,13 @@ void server::setup_metrics() {
       {sm::make_gauge(
          "max_service_mem",
          [this] { return cfg.max_service_memory_per_core; },
-         sm::description("Maximum amount of memory used by service per core")),
+         sm::description("Maximum amount of memory used by service per core"),
+         {sm::type_label("total_bytes")}),
        sm::make_gauge(
          "consumed_mem",
          [this] { return cfg.max_service_memory_per_core - _memory.current(); },
-         sm::description("Amount of memory consumed for requests processing")),
+         sm::description("Amount of memory consumed for requests processing"),
+         {sm::type_label("total_bytes")}),
        sm::make_histogram(
          "dispatch_handler_latency",
          [this] { return _hist.seastar_histogram_logform(); },
