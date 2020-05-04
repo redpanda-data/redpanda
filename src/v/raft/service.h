@@ -16,7 +16,7 @@ CONCEPT(
     template<typename ConsensusManager>
     concept bool RaftGroupManager() {
         return requires(ConsensusManager m, group_id g) {
-            { m.consensus_for(g) } -> ss::lw_shared_ptr<consensus>
+            { m.consensus_for(g) } -> ss::lw_shared_ptr<consensus>;
     };
 })
 CONCEPT(
