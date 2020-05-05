@@ -35,6 +35,7 @@ v_cc_library(
     protocol.cc
     protocol_utils.cc
     logger.cc
+    quota_manager.cc
  DEPS
     Seastar::seastar
     v::bytes
