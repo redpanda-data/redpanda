@@ -12,6 +12,7 @@
 #include <seastar/core/future.hh>
 #include <seastar/testing/thread_test_case.hh>
 
+#include <absl/container/flat_hash_map.h>
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test_log.hpp>
 
@@ -192,5 +193,55 @@ SEASTAR_THREAD_TEST_CASE(heartbeat_request_roundtrip_with_negative) {
         BOOST_REQUIRE_EQUAL(m.term, model::term_id(-1));
         BOOST_REQUIRE_EQUAL(m.prev_log_index, model::offset(-1));
         BOOST_REQUIRE_EQUAL(m.prev_log_term, model::term_id(-1));
+    }
+}
+SEASTAR_THREAD_TEST_CASE(heartbeat_response_roundtrip) {
+    static constexpr int64_t group_count = 10000;
+    raft::heartbeat_reply reply;
+    reply.meta.reserve(group_count);
+
+    for (size_t i = 0; i < group_count; ++i) {
+        auto commited_idx = model::offset(
+          random_generators::get_int(-1, 1000000000));
+        auto dirty_idx = commited_idx
+                         + model::offset(random_generators::get_int(10000));
+
+        reply.meta.push_back(raft::append_entries_reply{
+          .node_id = model::node_id(1),
+          .group = raft::group_id(i),
+          .term = model::term_id(random_generators::get_int(-1, 1000)),
+          .last_committed_log_index = commited_idx,
+          .last_dirty_log_index = dirty_idx,
+          .result = raft::append_entries_reply::status::success});
+    }
+    absl::flat_hash_map<raft::group_id, raft::append_entries_reply> expected;
+    expected.reserve(reply.meta.size());
+    for (const auto& m : reply.meta) {
+        expected.emplace(m.group, m);
+    }
+    iobuf buf;
+    reflection::async_adl<raft::heartbeat_reply>{}
+      .to(buf, std::move(reply))
+      .get();
+    BOOST_TEST_MESSAGE("Pre compression. Buffer size: " << buf);
+    compression::stream_zstd codec;
+    buf = codec.compress(std::move(buf));
+    BOOST_TEST_MESSAGE("Post compression. Buffer size: " << buf);
+    auto parser = iobuf_parser(codec.uncompress(std::move(buf)));
+    auto result
+      = reflection::async_adl<raft::heartbeat_reply>{}.from(parser).get0();
+
+    for (size_t i = 0; i < result.meta.size(); ++i) {
+        auto gr = result.meta[i].group;
+        BOOST_REQUIRE_EQUAL(expected[gr].node_id, result.meta[i].node_id);
+        BOOST_REQUIRE_EQUAL(expected[gr].group, result.meta[i].group);
+        BOOST_REQUIRE_EQUAL(expected[gr].term, result.meta[i].term);
+        BOOST_REQUIRE_EQUAL(
+          expected[gr].last_committed_log_index,
+          result.meta[i].last_committed_log_index);
+        BOOST_REQUIRE_EQUAL(
+          expected[gr].last_dirty_log_index,
+          result.meta[i].last_dirty_log_index);
+        BOOST_REQUIRE_EQUAL(expected[gr].result, result.meta[i].result);
     }
 }
