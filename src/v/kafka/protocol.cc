@@ -59,6 +59,8 @@ ss::future<> protocol::connection_context::process_one_request() {
           return parse_header(_rs.conn->input())
             .then(
               [this, s = sz.value()](std::optional<request_header> h) mutable {
+                  _rs.probe().request_received();
+                  _rs.probe().add_bytes_received(s);
                   if (!h) {
                       vlog(
                         klog.debug,
