@@ -64,6 +64,7 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> reclaim_growth_window;
     property<std::chrono::milliseconds> reclaim_stable_window;
     property<bool> auto_create_topics_enabled;
+    property<bool> enable_pid_file;
 
     configuration();
 
@@ -75,6 +76,11 @@ struct configuration final : public config_store {
 
     unresolved_address advertised_rpc_api() const {
         return _advertised_rpc_api().value_or(rpc_server());
+    }
+
+    // build pidfile path: `<data_directory>/pid.lock`
+    std::filesystem::path pidfile_path() const {
+        return data_directory().path / "pid.lock";
     }
 
 private:

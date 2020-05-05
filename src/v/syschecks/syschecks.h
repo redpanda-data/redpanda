@@ -10,6 +10,7 @@
 
 #include <cpuid.h>
 #include <cstdint>
+#include <filesystem>
 #include <sstream>
 
 namespace syschecks {
@@ -47,5 +48,20 @@ void systemd_message(const char* fmt, Args&&... args) {
       "STATUS={}\n", fmt::format(fmt, std::forward<Args>(args)...));
     systemd_raw_message(s);
 }
+
+/*
+ * write the pid lock file for this process at the given path. if the lock file
+ * cannot be created or locked an exception is thrown.
+ *
+ * an atexit handler is installed to remove the lock file when the process
+ * exits either through `exit()` or returning from `main()`.
+ *
+ * clean-up can also be done for non-normal exit paths such as fatal signal
+ * handlers. for this to work expose pidfile.cc::pidfile_delete and call from
+ * the appropriate signal handler.
+ *
+ * https://app.clubhouse.io/vectorized/story/428/clean-up-pid-file-for-non-normal-exit-paths
+ */
+void pidfile_create(std::filesystem::path path);
 
 } // namespace syschecks
