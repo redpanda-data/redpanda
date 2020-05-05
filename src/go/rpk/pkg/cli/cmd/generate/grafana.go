@@ -245,7 +245,7 @@ func newCounterPanel(m *dto.MetricFamily) *sdk.Panel {
 	)
 	format := "ops"
 	if strings.Contains(subtype(m), "bytes") {
-		format = "bytes"
+		format = "Bps"
 	}
 	panel := newGraphPanel(m, "Rate - "+m.GetHelp(), expr, format)
 	panel.Lines = true

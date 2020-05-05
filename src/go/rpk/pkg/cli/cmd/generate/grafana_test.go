@@ -122,7 +122,7 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
      },
      "yaxes": [
       {
-       "format": "bytes",
+       "format": "Bps",
        "logBase": 1,
        "min": 0,
        "show": true
