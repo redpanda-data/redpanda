@@ -236,6 +236,18 @@ struct hbeat_soa {
     std::vector<model::term_id> prev_log_terms;
 };
 
+struct hbeat_response_array {
+    explicit hbeat_response_array(size_t n)
+      : groups(n)
+      , terms(n)
+      , last_committed_log_index(n)
+      , last_dirty_log_index(n) {}
+
+    std::vector<raft::group_id> groups;
+    std::vector<model::term_id> terms;
+    std::vector<model::offset> last_committed_log_index;
+    std::vector<model::offset> last_dirty_log_index;
+};
 template<typename T>
 void encode_one_vint(iobuf& out, const T& t) {
     std::array<char, vint::max_length> staging{};
@@ -354,4 +366,95 @@ async_adl<raft::heartbeat_request>::from(iobuf_parser& in) {
     return ss::make_ready_future<raft::heartbeat_request>(std::move(req));
 }
 
+ss::future<> async_adl<raft::heartbeat_reply>::to(
+  iobuf& out, raft::heartbeat_reply&& reply) {
+    struct sorter_fn {
+        constexpr bool operator()(
+          const raft::append_entries_reply& lhs,
+          const raft::append_entries_reply& rhs) const {
+            return lhs.last_committed_log_index < rhs.last_committed_log_index;
+        }
+    };
+    adl<uint32_t>{}.to(out, reply.meta.size());
+    // no requests
+    if (reply.meta.empty()) {
+        return ss::make_ready_future<>();
+    }
+
+    // replies are comming from the same node
+    adl<model::node_id>{}.to(out, reply.meta.front().node_id);
+
+    std::sort(reply.meta.begin(), reply.meta.end(), sorter_fn{});
+    internal::hbeat_response_array encodee(reply.meta.size());
+
+    for (size_t i = 0; i < reply.meta.size(); ++i) {
+        encodee.groups[i] = reply.meta[i].group;
+        encodee.terms[i] = std::max(model::term_id(-1), reply.meta[i].term);
+
+        encodee.last_committed_log_index[i] = std::max(
+          model::offset(-1), reply.meta[i].last_committed_log_index);
+        encodee.last_dirty_log_index[i] = std::max(
+          model::offset(-1), reply.meta[i].last_dirty_log_index);
+    }
+    internal::encode_one_delta_array<raft::group_id>(out, encodee.groups);
+    internal::encode_one_delta_array<model::term_id>(out, encodee.terms);
+
+    internal::encode_one_delta_array<model::offset>(
+      out, encodee.last_committed_log_index);
+    internal::encode_one_delta_array<model::offset>(
+      out, encodee.last_dirty_log_index);
+    for (auto& m : reply.meta) {
+        adl<raft::append_entries_reply::status>{}.to(out, m.result);
+    }
+    return ss::make_ready_future<>();
+}
+
+ss::future<raft::heartbeat_reply>
+async_adl<raft::heartbeat_reply>::from(iobuf_parser& in) {
+    raft::heartbeat_reply reply;
+    reply.meta = std::vector<raft::append_entries_reply>(
+      adl<uint32_t>{}.from(in));
+
+    // empty reply
+    if (reply.meta.empty()) {
+        return ss::make_ready_future<raft::heartbeat_reply>(std::move(reply));
+    }
+
+    auto node_id = adl<model::node_id>{}.from(in);
+
+    size_t size = reply.meta.size();
+    reply.meta[0].node_id = node_id;
+    reply.meta[0].group = varlong_reader<raft::group_id>(in);
+    for (size_t i = 1; i < size; ++i) {
+        reply.meta[i].node_id = node_id;
+        reply.meta[i].group = internal::read_one_varint_delta<raft::group_id>(
+          in, reply.meta[i - 1].group);
+    }
+    reply.meta[0].term = varlong_reader<model::term_id>(in);
+    for (size_t i = 1; i < size; ++i) {
+        reply.meta[i].term = internal::read_one_varint_delta<model::term_id>(
+          in, reply.meta[i - 1].term);
+    }
+
+    reply.meta[0].last_committed_log_index = varlong_reader<model::offset>(in);
+    for (size_t i = 1; i < size; ++i) {
+        reply.meta[i].last_committed_log_index
+          = internal::read_one_varint_delta<model::offset>(
+            in, reply.meta[i - 1].last_committed_log_index);
+    }
+
+    reply.meta[0].last_dirty_log_index = varlong_reader<model::offset>(in);
+    for (size_t i = 1; i < size; ++i) {
+        reply.meta[i].last_dirty_log_index
+          = internal::read_one_varint_delta<model::offset>(
+            in, reply.meta[i - 1].last_dirty_log_index);
+    }
+
+    for (size_t i = 0; i < size; ++i) {
+        reply.meta[i].result = adl<raft::append_entries_reply::status>{}.from(
+          in);
+    }
+
+    return ss::make_ready_future<raft::heartbeat_reply>(std::move(reply));
+}
 } // namespace reflection

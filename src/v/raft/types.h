@@ -286,4 +286,10 @@ struct async_adl<raft::heartbeat_request> {
     ss::future<> to(iobuf& out, raft::heartbeat_request&& request);
     ss::future<raft::heartbeat_request> from(iobuf_parser& in);
 };
+
+template<>
+struct async_adl<raft::heartbeat_reply> {
+    ss::future<> to(iobuf& out, raft::heartbeat_reply&& request);
+    ss::future<raft::heartbeat_reply> from(iobuf_parser& in);
+};
 } // namespace reflection
