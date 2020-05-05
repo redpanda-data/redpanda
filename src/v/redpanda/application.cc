@@ -61,6 +61,9 @@ int application::run(int ac, char** av) {
 }
 
 void application::initialize() {
+    if (config::shard_local_cfg().enable_pid_file()) {
+        syschecks::pidfile_create(config::shard_local_cfg().pidfile_path());
+    }
     _scheduling_groups.create_groups().get();
     _deferred.emplace_back(
       [this] { _scheduling_groups.destroy_groups().get(); });

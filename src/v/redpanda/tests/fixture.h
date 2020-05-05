@@ -20,8 +20,8 @@ public:
     static constexpr const char* rack_name = "i-am-rack";
 
     redpanda_thread_fixture() {
-        app.initialize();
         configure();
+        app.initialize();
         app.check_environment();
         app.configure_admin_server();
         app.wire_up_services();
@@ -39,6 +39,7 @@ public:
         data_dir = fmt::format("test.dir_{}", time(0));
         ss::smp::invoke_on_all([this] {
             auto& config = config::shard_local_cfg();
+            config.get("enable_pid_file").set_value(false);
             config.get("developer_mode").set_value(true);
             config.get("enable_admin_api").set_value(false);
             config.get("rack").set_value(std::optional<ss::sstring>(rack_name));
