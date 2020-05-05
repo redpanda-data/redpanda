@@ -26,7 +26,7 @@ private:
     model::offset _base_batch_offset;
     model::offset _last_batch_offset;
     ss::io_priority_class _prio;
-    raft_ctx_log _ctxlog;
+    ctx_log _ctxlog;
     // needed to early exit. (node down)
     bool _stop_requested = false;
 };

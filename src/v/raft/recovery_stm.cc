@@ -53,8 +53,11 @@ ss::future<> recovery_stm::do_one_read() {
       })
       .then([this](ss::circular_buffer<model::record_batch> batches) {
           // wrap in a foreign core destructor
-          _ctxlog.trace(
-            "Read {} batches for {} node recovery", batches.size(), _node_id);
+          vlog(
+            _ctxlog.trace,
+            "Read {} batches for {} node recovery",
+            batches.size(),
+            _node_id);
           if (batches.empty()) {
               _stop_requested = true;
               return ss::make_ready_future<>();
@@ -94,7 +97,8 @@ ss::future<> recovery_stm::replicate(model::record_batch_reader&& reader) {
     auto seq = _ptr->next_follower_sequence(_node_id);
     return dispatch_append_entries(std::move(r)).then([this, seq](auto r) {
         if (!r) {
-            _ctxlog.error(
+            vlog(
+              _ctxlog.error,
               "recovery_stm: not replicate entry: {} - {}",
               r,
               r.error().message());
@@ -122,7 +126,8 @@ ss::future<> recovery_stm::replicate(model::record_batch_reader&& reader) {
             }
             meta.value()->next_index = std::max(
               model::offset(0), details::prev_offset(_base_batch_offset));
-            _ctxlog.trace(
+            vlog(
+              _ctxlog.trace,
               "Move node {} next index {} backward",
               _node_id,
               meta.value()->next_index);
@@ -148,7 +153,8 @@ bool recovery_stm::is_recovery_finished() {
     }
     auto lstats = _ptr->_log.offsets();
     auto max_offset = lstats.dirty_offset();
-    _ctxlog.trace(
+    vlog(
+      _ctxlog.trace,
       "Recovery status - node {}, match idx: {}, max offset: {}",
       _node_id,
       meta.value()->match_index,
@@ -164,7 +170,7 @@ ss::future<> recovery_stm::apply() {
              [this] { return is_recovery_finished(); },
              [this] { return do_one_read(); })
       .finally([this] {
-          _ctxlog.trace("Finished node {} recovery", _node_id);
+          vlog(_ctxlog.trace, "Finished node {} recovery", _node_id);
           auto meta = get_follower_meta();
           if (meta) {
               meta.value()->is_recovering = false;
@@ -175,7 +181,7 @@ ss::future<> recovery_stm::apply() {
 std::optional<follower_index_metadata*> recovery_stm::get_follower_meta() {
     auto it = _ptr->_fstats.find(_node_id);
     if (it == _ptr->_fstats.end()) {
-        _ctxlog.info("Node {} is not longer in followers list", _node_id);
+        vlog(_ctxlog.info, "Node {} is not longer in followers list", _node_id);
         return std::nullopt;
     }
     return &it->second;

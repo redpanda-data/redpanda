@@ -33,6 +33,7 @@ public:
         ss::semaphore& memory() { return _s->_memory; }
         hdr_hist& hist() { return _s->_hist; }
         ss::gate& conn_gate() { return _s->_conn_gate; }
+        ss::abort_source& abort_source() { return _s->_as; }
         bool abort_requested() const { return _s->_as.abort_requested(); }
 
     private:

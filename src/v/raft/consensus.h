@@ -207,7 +207,7 @@ private:
     /// used for notifying when commits happened to log
     std::optional<append_entries_cb_t> _append_entries_notification;
     probe _probe;
-    raft_ctx_log _ctxlog;
+    ctx_log _ctxlog;
     ss::condition_variable _commit_index_updated;
 
     consistency_level _last_replicate_consistency{

@@ -72,7 +72,7 @@ replicate_entries_stm::send_append_entries_request(
   append_entries_request req,
   ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>> units) {
     _ptr->update_node_hbeat_timestamp(n);
-    _ctxlog.trace("Sending append entries request {} to {}", req.meta, n);
+    vlog(_ctxlog.trace, "Sending append entries request {} to {}", req.meta, n);
 
     auto f = _ptr->_client_protocol.append_entries(
       n, std::move(req), rpc::client_opts(append_entries_timeout(), units));
@@ -107,7 +107,7 @@ replicate_entries_stm::dispatch_single_retry(
           return do_dispatch_one(id, std::move(r), units);
       })
       .handle_exception([this](const std::exception_ptr& e) {
-          _ctxlog.warn("Error while replicating entries {}", e);
+          vlog(_ctxlog.warn, "Error while replicating entries {}", e);
           return result<append_entries_reply>(
             errc::append_entries_dispatch_error);
       });
@@ -115,7 +115,7 @@ replicate_entries_stm::dispatch_single_retry(
 
 ss::future<storage::append_result> replicate_entries_stm::append_to_self() {
     return share_request().then([this](append_entries_request req) mutable {
-        _ctxlog.trace("Self append entries - {}", req.meta);
+        vlog(_ctxlog.trace, "Self append entries - {}", req.meta);
         return _ptr->disk_append(std::move(req.batches));
     });
 }
@@ -140,7 +140,8 @@ replicate_entries_stm::apply(ss::semaphore_units<> u) {
                 // We are not dispatching request to followers that are
                 // recovering
                 if (is_follower_recovering(n.id())) {
-                    _ctxlog.trace(
+                    vlog(
+                      _ctxlog.trace,
                       "Skipping sending append request to {}, recovering",
                       n.id());
                     continue;
@@ -172,7 +173,8 @@ replicate_entries_stm::apply(ss::semaphore_units<> u) {
 result<replicate_result> replicate_entries_stm::process_result(
   model::offset appended_offset, model::term_id appended_term) {
     using ret_t = result<replicate_result>;
-    _ctxlog.trace(
+    vlog(
+      _ctxlog.trace,
       "Replication result [offset: {}, term: {}, commit_idx: "
       "{}, "
       "current_term: {}]",
@@ -188,7 +190,8 @@ result<replicate_result> replicate_entries_stm::process_result(
             return ret_t(errc::replicated_entry_truncated);
         }
     }
-    _ctxlog.trace(
+    vlog(
+      _ctxlog.trace,
       "Replication success, last offset: {}, term: {}",
       appended_offset,
       appended_term);
@@ -211,7 +214,8 @@ replicate_entries_stm::replicate_entries_stm(
 replicate_entries_stm::~replicate_entries_stm() {
     auto gate_not_closed = _req_bg.get_count() > 0 && !_req_bg.is_closed();
     if (gate_not_closed) {
-        _ctxlog.error(
+        vlog(
+          _ctxlog.error,
           "Must call replicate_entries_stm::wait(). is_gate_closed:{}",
           _req_bg.is_closed());
         std::terminate();
