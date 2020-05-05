@@ -10,6 +10,7 @@
 #include "rpc/server.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/metrics_registration.hh>
 #include <seastar/core/scattered_message.hh>
 #include <seastar/core/sharded.hh>
@@ -35,6 +36,8 @@ namespace kafka {
 class protocol final : public rpc::server::protocol {
 public:
     using sequence_id = named_type<uint64_t, struct kafka_protocol_sequence>;
+    using session_resources
+      = std::pair<ss::lowres_clock::duration, ss::semaphore_units<>>;
 
     protocol(
       ss::smp_service_group,
@@ -76,6 +79,13 @@ private:
         bool is_finished_parsing() const;
 
     private:
+        /// called by throttle_request
+        ss::future<ss::semaphore_units<>> reserve_request_units(size_t size);
+
+        /// apply correct backpressure sequence
+        ss::future<session_resources>
+        throttle_request(std::optional<std::string_view>, size_t sz);
+
         ss::future<> dispatch_method_once(request_header, size_t sz);
         ss::future<> process_next_response();
         ss::future<> do_process(request_context);

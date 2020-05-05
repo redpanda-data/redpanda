@@ -106,7 +106,7 @@ private:
     ss::semaphore _share_sem;
     ss::semaphore _dispatch_sem{0};
     ss::gate _req_bg;
-    raft_ctx_log _ctxlog;
+    ctx_log _ctxlog;
 };
 
 } // namespace raft

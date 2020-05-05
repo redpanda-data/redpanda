@@ -11,6 +11,7 @@
 #include <seastar/core/future-util.hh>
 #include <seastar/core/metrics.hh>
 #include <seastar/core/scattered_message.hh>
+#include <seastar/core/semaphore.hh>
 #include <seastar/util/log.hh>
 
 #include <fmt/format.h>
@@ -20,6 +21,7 @@
 
 namespace kafka {
 using sequence_id = protocol::sequence_id;
+using session_resources = protocol::session_resources;
 
 protocol::protocol(
   ss::smp_service_group smp,
@@ -73,8 +75,37 @@ ss::future<> protocol::connection_context::process_one_request() {
 bool protocol::connection_context::is_finished_parsing() const {
     return _rs.conn->input().eof() || _rs.abort_requested();
 }
-ss::future<> protocol::connection_context::dispatch_method_once(
-  request_header hdr, size_t size) {
+
+ss::future<session_resources> protocol::connection_context::throttle_request(
+  std::optional<std::string_view> client_id, size_t request_size) {
+    // update the throughput tracker for this client using the
+    // size of the current request and return any computed delay
+    // to apply for quota throttling.
+    //
+    // note that when throttling is first applied the request is
+    // allowed to pass through and subsequent requests and
+    // delayed. this is a similar strategy used by kafka: the
+    // response is important because it allows clients to
+    // distinguish throttling delays from real delays. delays
+    // applied to subsequent messages allow backpressure to take
+    // affect.
+    auto delay = _proto._quota_mgr.local().record_tp_and_throttle(
+      client_id, request_size);
+
+    auto fut = ss::now();
+    if (!delay.first_violation) {
+        fut = ss::sleep_abortable(delay.duration, _rs.abort_source());
+    }
+    return fut
+      .then(
+        [this, request_size] { return reserve_request_units(request_size); })
+      .then([delay](ss::semaphore_units<> units) {
+          return std::make_pair(delay.duration, std::move(units));
+      });
+}
+
+ss::future<ss::semaphore_units<>>
+protocol::connection_context::reserve_request_units(size_t size) {
     // Allow for extra copies and bookkeeping
     auto mem_estimate = size * 2 + 8000;
     if (mem_estimate >= (size_t)std::numeric_limits<int32_t>::max()) {
@@ -88,73 +119,52 @@ ss::future<> protocol::connection_context::dispatch_method_once(
     if (_rs.memory().waiters()) {
         _rs.probe().waiting_for_available_memory();
     }
-    return fut.then([this, header = std::move(hdr), size](
-                      ss::semaphore_units<> units) mutable {
-        if (_rs.abort_requested()) {
-            // protect against shutdown behavior
-            return ss::make_ready_future<>();
-        }
-        // update the throughput tracker for this client using the
-        // size of the current request and return any computed delay
-        // to apply for quota throttling.
-        //
-        // note that when throttling is first applied the request is
-        // allowed to pass through and subsequent requests and
-        // delayed. this is a similar strategy used by kafka: the
-        // response is important because it allows clients to
-        // distinguish throttling delays from real delays. delays
-        // applied to subsequent messages allow backpressure to take
-        // affect.
-        auto delay = _proto._quota_mgr.local().record_tp_and_throttle(
-          header.client_id, size);
+    return fut;
+}
 
-        // apply the throttling delay, if any.
-        auto throttle_delay = delay.first_violation ? ss::make_ready_future<>()
-                                                    : ss::sleep(delay.duration);
-        return throttle_delay.then([this,
-                                    size,
-                                    header = std::move(header),
-                                    units = std::move(units),
-                                    delay = delay]() mutable {
-            auto remaining = size - sizeof(raw_request_header)
-                             - header.client_id_buffer.size();
-            return read_iobuf_exactly(_rs.conn->input(), remaining)
-              .then([this,
-                     header = std::move(header),
-                     units = std::move(units),
-                     delay = delay](iobuf buf) mutable {
-                  if (_rs.abort_requested()) {
-                      // _proto._cntrl etc might not be alive
-                      return;
-                  }
-                  auto rctx = request_context(
-                    _proto._metadata_cache,
-                    _proto._cntrl_dispatcher.local(),
-                    std::move(header),
-                    std::move(buf),
-                    delay.duration,
-                    _proto._group_router.local(),
-                    _proto._shard_table.local(),
-                    _proto._partition_manager,
-                    _proto._coordinator_mapper);
-                  // background process this one full request
-                  auto self = shared_from_this();
-                  (void)ss::with_gate(
-                    _rs.conn_gate(),
-                    [this, rctx = std::move(rctx)]() mutable {
-                        return do_process(std::move(rctx));
-                    })
-                    .handle_exception([self](std::exception_ptr e) {
-                        vlog(
-                          klog.info,
-                          "Detected error processing request: {}",
-                          e);
-                        self->_rs.conn->shutdown_input();
-                    })
-                    .finally([units = std::move(units), self] {});
-              });
-        });
-    });
+ss::future<> protocol::connection_context::dispatch_method_once(
+  request_header hdr, size_t size) {
+    return throttle_request(hdr.client_id, size)
+      .then([this, hdr = std::move(hdr), size](session_resources sres) mutable {
+          if (_rs.abort_requested()) {
+              // protect against shutdown behavior
+              return ss::make_ready_future<>();
+          }
+          auto remaining = size - sizeof(raw_request_header)
+                           - hdr.client_id_buffer.size();
+          return read_iobuf_exactly(_rs.conn->input(), remaining)
+            .then([this, hdr = std::move(hdr), sres = std::move(sres)](
+                    iobuf buf) mutable {
+                if (_rs.abort_requested()) {
+                    // _proto._cntrl etc might not be alive
+                    return;
+                }
+                auto&& [duration, units] = std::move(sres);
+                auto rctx = request_context(
+                  _proto._metadata_cache,
+                  _proto._cntrl_dispatcher.local(),
+                  std::move(hdr),
+                  std::move(buf),
+                  duration,
+                  _proto._group_router.local(),
+                  _proto._shard_table.local(),
+                  _proto._partition_manager,
+                  _proto._coordinator_mapper);
+                // background process this one full request
+                auto self = shared_from_this();
+                (void)ss::with_gate(
+                  _rs.conn_gate(),
+                  [this, rctx = std::move(rctx)]() mutable {
+                      return do_process(std::move(rctx));
+                  })
+                  .handle_exception([self](std::exception_ptr e) {
+                      vlog(
+                        klog.info, "Detected error processing request: {}", e);
+                      self->_rs.conn->shutdown_input();
+                  })
+                  .finally([units = std::move(units), self] {});
+            });
+      });
 }
 
 ss::future<> protocol::connection_context::do_process(request_context ctx) {
