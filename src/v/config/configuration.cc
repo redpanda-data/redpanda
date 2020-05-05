@@ -264,6 +264,12 @@ configuration::configuration()
       "Allow topic auto creation",
       required::no,
       false)
+  , enable_pid_file(
+      *this,
+      "enable_pid_file",
+      "Enable pid file. You probably don't want to change this.",
+      required::no,
+      true)
   , _advertised_kafka_api(
       *this,
       "advertised_kafka_api",

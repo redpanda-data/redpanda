@@ -1,6 +1,7 @@
 #pragma once
 
 #include "likely.h"
+#include "seastarx.h"
 
 #include <seastar/util/backtrace.hh>
 #include <seastar/util/log.hh>
