@@ -65,7 +65,7 @@ steps:
   name: 'gcr.io/$PROJECT_ID/builder:$_COMPILER-$_BUILD_TYPE-$SHORT_SHA'
   args: ['./build/venv/v/bin/vtools', 'test', 'cpp', '--conf=tools/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml']
 
-timeout: 3600
+timeout: 3600s
 
 options:
-  machine_type: 'N1_HIGHCPU_32'
+  machineType: 'N1_HIGHCPU_32'
