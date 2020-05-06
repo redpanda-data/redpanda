@@ -66,22 +66,38 @@ public:
         }
 
         auto req_size = reqs.size();
-        auto req_per_shard = group_hbeats_by_shard(std::move(reqs));
+        auto groupped = group_hbeats_by_shard(std::move(reqs));
 
         std::vector<ss::future<std::vector<append_entries_reply>>> futures;
-        futures.reserve(req_per_shard.size());
-        for (auto& [shard, req] : req_per_shard) {
+        futures.reserve(groupped.shard_requests.size());
+        for (auto& [shard, req] : groupped.shard_requests) {
             // dispatch to each core in parallel
             futures.push_back(dispatch_hbeats_to_core(shard, std::move(req)));
         }
+        // replies for groups that are not yet registered at this node
+        std::vector<append_entries_reply> group_missing_replies;
+        group_missing_replies.reserve(groupped.group_missing_requests.size());
+        std::transform(
+          std::begin(groupped.group_missing_requests),
+          std::end(groupped.group_missing_requests),
+          std::back_inserter(group_missing_replies),
+          [](append_entries_request& r) {
+              return append_entries_reply{
+                .group = r.meta.group,
+                .result = append_entries_reply::status::group_unavailable};
+          });
+
         return ss::when_all_succeed(futures.begin(), futures.end())
-          .then([req_size](std::vector<ret_t> replies) {
+          .then([req_size, missing = std::move(group_missing_replies)](
+                  std::vector<ret_t> replies) mutable {
               ret_t ret;
               ret.reserve(req_size);
               // flatten responses
               for (auto& part : replies) {
                   std::move(part.begin(), part.end(), std::back_inserter(ret));
               }
+              std::move(
+                missing.begin(), missing.end(), std::back_inserter(ret));
               return heartbeat_reply{std::move(ret)};
           });
     }
@@ -104,6 +120,10 @@ public:
 private:
     using hbeats_t = std::vector<append_entries_request>;
     using hbeats_ptr = ss::foreign_ptr<std::unique_ptr<hbeats_t>>;
+    struct shard_groupped_hbeat_requests {
+        absl::flat_hash_map<ss::shard_id, hbeats_ptr> shard_requests;
+        std::vector<append_entries_request> group_missing_requests;
+    };
 
     ss::future<vote_reply> make_failed_vote_reply() {
         return ss::make_ready_future<vote_reply>(vote_reply{
@@ -168,22 +188,25 @@ private:
         return ss::when_all_succeed(futures.begin(), futures.end());
     }
 
-    absl::flat_hash_map<ss::shard_id, hbeats_ptr>
-    group_hbeats_by_shard(hbeats_t reqs) {
-        absl::flat_hash_map<ss::shard_id, hbeats_ptr> ret;
+    shard_groupped_hbeat_requests group_hbeats_by_shard(hbeats_t reqs) {
+        shard_groupped_hbeat_requests ret;
 
         for (auto& r : reqs) {
-            auto shard = _shard_table.shard_for(r.meta.group);
-
-            if (!ret.contains(shard)) {
-                auto hbeats = ss::make_foreign(
-                  std::make_unique<std::vector<append_entries_request>>());
-                hbeats->push_back(std::move(r));
-                ret.emplace(shard, std::move(hbeats));
+            if (unlikely(!_shard_table.contains(r.meta.group))) {
+                ret.group_missing_requests.push_back(std::move(r));
                 continue;
             }
 
-            ret.find(shard)->second->push_back(std::move(r));
+            auto shard = _shard_table.shard_for(r.meta.group);
+            if (!ret.shard_requests.contains(shard)) {
+                auto hbeats = ss::make_foreign(
+                  std::make_unique<std::vector<append_entries_request>>());
+                hbeats->push_back(std::move(r));
+                ret.shard_requests.emplace(shard, std::move(hbeats));
+                continue;
+            }
+
+            ret.shard_requests.find(shard)->second->push_back(std::move(r));
         }
         return ret;
     }
