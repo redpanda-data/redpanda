@@ -48,7 +48,7 @@ ss::future<iobuf> read_iobuf_exactly(ss::input_stream<char>& in, size_t n) {
                            b.append(std::move(buf));
                        });
                  })
-          .then([&b] { return ss::make_ready_future<iobuf>(std::move(b)); });
+          .then([&b] { return std::move(b); });
     });
 }
 
