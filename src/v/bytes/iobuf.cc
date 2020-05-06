@@ -38,9 +38,6 @@ ss::future<iobuf> read_iobuf_exactly(ss::input_stream<char>& in, size_t n) {
         return ss::do_until(
                  [&n] { return n == 0; },
                  [&n, &in, &b] {
-                     if (n == 0) {
-                         return ss::make_ready_future<>();
-                     }
                      return in.read_up_to(n).then(
                        [&n, &b](ss::temporary_buffer<char> buf) {
                            if (buf.empty()) {
