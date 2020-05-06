@@ -40,23 +40,32 @@ int application::run(int ac, char** av) {
         auto& cfg = app.configuration();
         validate_arguments(cfg);
         return ss::async([this, &cfg] {
-            ::stop_signal app_signal;
-            auto deferred = ss::defer([this] {
-                auto deferred = std::move(_deferred);
-                // stop services in reverse order
-                while (!deferred.empty()) {
-                    deferred.pop_back();
-                }
-            });
-            // must initialize configuration before services
-            hydrate_config(cfg);
-            initialize();
-            check_environment();
-            configure_admin_server();
-            wire_up_services();
-            start();
-            app_signal.wait().get();
-            vlog(_log.info, "Stopping...");
+            try {
+                ::stop_signal app_signal;
+                auto deferred = ss::defer([this] {
+                    auto deferred = std::move(_deferred);
+                    // stop services in reverse order
+                    while (!deferred.empty()) {
+                        deferred.pop_back();
+                    }
+                });
+                // must initialize configuration before services
+                hydrate_config(cfg);
+                initialize();
+                check_environment();
+                configure_admin_server();
+                wire_up_services();
+                start();
+                app_signal.wait().get();
+                vlog(_log.info, "Stopping...");
+            } catch (...) {
+                vlog(
+                  _log.info,
+                  "Failure during startup: {}",
+                  std::current_exception());
+                return 1;
+            }
+            return 0;
         });
     });
 }
