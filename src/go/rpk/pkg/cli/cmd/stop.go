@@ -22,8 +22,7 @@ func NewStopCommand(fs afero.Fs) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "stop",
 		Short: "Stop redpanda.",
-		Long: `Stop a local redpanda process identified by the PID
-written to its PID file ('pid_file' field in the configuration file). 'rpk stop'
+		Long: `Stop a local redpanda process. 'rpk stop'
 first sends SIGINT, and waits for the specified timeout. Then, if redpanda
 hasn't stopped, it sends SIGTERM. Lastly, it sends SIGKILL if it's still
 running.`,
@@ -58,31 +57,29 @@ func executeStop(fs afero.Fs, configFile string, timeout time.Duration) error {
 	if err != nil {
 		return err
 	}
-	pidFile := conf.PidFile
-	if pidFile == "" {
-		msg := "The configuration's pid_file field is empty. Run 'rpk" +
-			" config set pid_file <path>' to set it"
-		return errors.New(msg)
+	pidFile := conf.PIDFile()
+	isLocked, err := os.CheckLocked(pidFile)
+	if err != nil {
+		log.Debugf("error checking if the PID file is locked: %v", err)
+	}
+	if !isLocked {
+		// If the file isn't locked or doesn't exist, that means
+		// redpanda isn't running, so there's nothing to do.
+		log.Debugf(
+			"'%s' isn't locked, which means redpanda isn't running. Nothing to do.",
+			pidFile,
+		)
+		return nil
 	}
 	pidStr, err := utils.ReadEnsureSingleLine(fs, pidFile)
+	if err != nil {
+		return err
+	}
 	pid, err := strconv.Atoi(pidStr)
 	if err != nil {
 		return err
 	}
-	err = signalAndWait(fs, pid, timeout)
-	if err != nil {
-		return err
-	}
-	err = fs.Remove(pidFile)
-	if err != nil {
-		errMsg := "the PID file '%s' couldn't be removed. This will" +
-			" prevent new redpanda instances from starting." +
-			" Please remove it manually and make sure the" +
-			" permissions are OK: %v"
-		log.Errorf(errMsg, pidFile, err)
-		return err
-	}
-	return nil
+	return signalAndWait(fs, pid, timeout)
 }
 
 func signalAndWait(fs afero.Fs, pid int, timeout time.Duration) error {

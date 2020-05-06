@@ -12,23 +12,19 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-const (
-	pidFile    = "/var/lib/redpanda/pid"
-	configPath = "/etc/redpanda/redpanda.yaml"
-)
-
-func getConfig() config.Config {
+func getConfig() *config.Config {
 	conf := config.DefaultConfig()
 	conf.Rpk.EnableUsageStats = true
-	return conf
+	conf.ConfigFile = "/etc/redpanda/redpanda.yaml"
+	return &conf
 }
 
-func writeConfig(fs afero.Fs, conf config.Config) error {
+func writeConfig(fs afero.Fs, conf *config.Config) error {
 	bs, err := yaml.Marshal(conf)
 	if err != nil {
 		return err
 	}
-	return afero.WriteFile(fs, configPath, bs, 0644)
+	return afero.WriteFile(fs, conf.ConfigFile, bs, 0644)
 }
 
 func TestStatus(t *testing.T) {
@@ -41,32 +37,34 @@ func TestStatus(t *testing.T) {
 	}{
 		{
 			name:        "doesn't print the CPU% if no pid file is found",
-			expectedOut: "/var/lib/redpanda/pid: file does not exist",
+			expectedOut: "Error gathering metrics: open /var/lib/redpanda/data/pid.lock: file does not exist",
 			before: func(fs afero.Fs) error {
 				return writeConfig(fs, getConfig())
 			},
 		},
 		{
 			name:        "fails if the pid file is empty",
-			expectedOut: "/var/lib/redpanda/pid is empty",
+			expectedOut: "Error gathering metrics: /var/lib/redpanda/data/pid.lock is empty",
 			before: func(fs afero.Fs) error {
-				err := writeConfig(fs, getConfig())
+				conf := getConfig()
+				err := writeConfig(fs, conf)
 				if err != nil {
 					return err
 				}
-				_, err = fs.Create(pidFile)
+				_, err = fs.Create(conf.PIDFile())
 				return err
 			},
 		},
 		{
 			name:        "fails if the pid file contains more than one line",
-			expectedOut: "/var/lib/redpanda/pid contains multiple lines",
+			expectedOut: "Error gathering metrics: /var/lib/redpanda/data/pid.lock contains multiple lines",
 			before: func(fs afero.Fs) error {
-				err := writeConfig(fs, getConfig())
+				conf := getConfig()
+				err := writeConfig(fs, conf)
 				if err != nil {
 					return err
 				}
-				file, err := fs.Create(pidFile)
+				file, err := fs.Create(conf.PIDFile())
 				if err != nil {
 					return err
 				}
@@ -78,11 +76,12 @@ func TestStatus(t *testing.T) {
 			name:        "fails if pid file contents can't be parsed",
 			expectedOut: "invalid syntax",
 			before: func(fs afero.Fs) error {
-				err := writeConfig(fs, getConfig())
+				conf := getConfig()
+				err := writeConfig(fs, conf)
 				if err != nil {
 					return err
 				}
-				file, err := fs.Create(pidFile)
+				file, err := fs.Create(conf.PIDFile())
 				if err != nil {
 					return err
 				}

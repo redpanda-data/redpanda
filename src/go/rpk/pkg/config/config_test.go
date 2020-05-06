@@ -184,7 +184,6 @@ func TestDefaultConfig(t *testing.T) {
 	defaultConfig := DefaultConfig()
 	expected := Config{
 		ConfigFile: "/etc/redpanda/redpanda.yaml",
-		PidFile:    "/var/lib/redpanda/pid",
 		Redpanda: &RedpandaConfig{
 			Directory:   "/var/lib/redpanda/data",
 			RPCServer:   SocketAddress{"0.0.0.0", 33145},
@@ -276,7 +275,6 @@ func TestWriteConfig(t *testing.T) {
 			},
 			wantErr: false,
 			expected: `config_file: /etc/redpanda/redpanda.yaml
-pid_file: /var/lib/redpanda/pid
 redpanda:
   admin:
     address: 0.0.0.0
@@ -321,7 +319,6 @@ redpanda:
 			conf:    getValidConfig,
 			wantErr: false,
 			expected: `config_file: /etc/redpanda/redpanda.yaml
-pid_file: /var/lib/redpanda/pid
 redpanda:
   admin:
     address: 0.0.0.0
@@ -362,7 +359,6 @@ rpk:
 		{
 			name: "shall leave unrecognized fields untouched",
 			existingConf: `config_file: /etc/redpanda/redpanda.yaml
-pid_file: /var/lib/redpanda/pid
 redpanda:
   admin:
     address: 0.0.0.0
@@ -393,7 +389,6 @@ unrecognized_top_field:
 			conf:    getValidConfig,
 			wantErr: false,
 			expected: `config_file: /etc/redpanda/redpanda.yaml
-pid_file: /var/lib/redpanda/pid
 redpanda:
   admin:
     address: 0.0.0.0

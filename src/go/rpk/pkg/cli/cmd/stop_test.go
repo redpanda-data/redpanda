@@ -18,7 +18,6 @@ import (
 
 func TestStopCommand(t *testing.T) {
 	const confPath string = "/etc/redpanda/redpanda.yaml"
-	const pidFile string = "/tmp/redpanda-pid"
 	// simulate the redpanda process with an infinite loop.
 	const baseCommand string = "while :; do sleep 1; done"
 	tests := []struct {
@@ -45,6 +44,7 @@ func TestStopCommand(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fs := afero.NewMemMapFs()
+			conf := config.DefaultConfig()
 			command := baseCommand
 			// trap the signals we want to ignore, to check that the
 			// signal escalation is working.
@@ -61,12 +61,10 @@ func TestStopCommand(t *testing.T) {
 			_, err = utils.WriteBytes(
 				fs,
 				[]byte(strconv.Itoa(pid)),
-				pidFile,
+				conf.PIDFile(),
 			)
 			require.NoError(t, err)
 
-			conf := config.DefaultConfig()
-			conf.PidFile = pidFile
 			err = config.WriteConfig(fs, &conf, confPath)
 			require.NoError(t, err)
 
@@ -85,9 +83,6 @@ func TestStopCommand(t *testing.T) {
 			)
 			require.NoError(t, err)
 			require.False(t, isStillRunning)
-			_, err = utils.ReadEnsureSingleLine(fs, pidFile)
-			// Check that rpk stop removed the PID file
-			require.EqualError(t, err, "open /tmp/redpanda-pid: file does not exist")
 		})
 	}
 }

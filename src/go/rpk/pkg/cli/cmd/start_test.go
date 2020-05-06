@@ -1,13 +1,8 @@
 package cmd
 
 import (
-	"bytes"
 	"testing"
-	"vectorized/pkg/config"
-	"vectorized/pkg/utils"
 
-	"github.com/sirupsen/logrus"
-	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
 )
 
@@ -65,23 +60,4 @@ func TestMergeFlags(t *testing.T) {
 		})
 	}
 
-}
-
-func TestFailExistingPID(t *testing.T) {
-	fs := afero.NewMemMapFs()
-	var out bytes.Buffer
-	conf := config.DefaultConfig()
-	_, err := utils.WriteBytes(fs, []byte("1234"), conf.PidFile)
-	require.NoError(t, err)
-
-	logrus.SetOutput(&out)
-	cmd := NewStartCommand(fs)
-	cmd.SetOutput(&out)
-	cmd.SetArgs([]string{"--install-dir", "/opt/install"})
-	err = cmd.Execute()
-
-	errMsg := "couldn't write the PID file: found an existing PID in" +
-		" '/var/lib/redpanda/pid'. Please stop the current redpanda" +
-		" instance with 'systemctl stop redpanda' or 'rpk stop'."
-	require.EqualError(t, err, errMsg)
 }
