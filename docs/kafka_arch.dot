@@ -1,0 +1,33 @@
+digraph kafka {
+    label = "Kafka Component Architecture";
+    node [shape="box"];
+    concentrate = true;
+    splines = ortho;
+    rankdir = LR;
+    CoordinatorMapper -> KafkaGroupRouter;
+    MetadataCache -> CoordinatorNTPMapper;
+    CoordinatorNTPMapper -> RPCKafkaService;
+    KafkaGroupRouter -> RPCKafkaService;
+    KafkaGroupManager -> KafkaGroupRouter;
+    ShardTable -> KafkaGroupRouter;
+    PartitionManager -> KafkaGroupManager;
+    RaftConnectionCache -> MetadataDisseminationService;
+    MetadataCache -> MetadataDisseminationService;
+    MetadataCache -> RPCMetadataDisseminationService;
+    MetadataCache -> RPCKafkaService;
+    MetadataCache -> RPCClusterService;
+    MetadataCache -> Controller;
+    MetadataDisseminationService -> Controller;
+    Controller -> ControllerDispatcher;
+    Controller -> RPCClusterService;
+    ControllerDispatcher -> RPCKafkaService;
+    PartitionManager -> Controller;
+    PartitionManager -> RPCRaftService;
+    ShardTable -> Controller;
+    ShardTable -> RPCRaftService;
+    ShardTable -> RPCKafkaService;
+    RaftConnectionCache -> Controller;
+    QuotaManager -> RPCKafkaService;
+    RaftConnectionCache -> PartitionManager;
+    PartitionManager -> RPCKafkaService;
+}
