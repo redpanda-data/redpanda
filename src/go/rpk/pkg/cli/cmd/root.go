@@ -12,7 +12,7 @@ import (
 )
 
 const feedbackMsg = `We'd love to hear about your experience with redpanda:
-https://vectorizedio.typeform.com/to/oeLrrn`
+https://vectorized.io/feedback`
 
 func Execute() {
 	verbose := false
