@@ -18,6 +18,7 @@ from .publish import commands as publish
 from .dbuild import commands as dbuild
 from .storage import commands as storage
 from .ci import commands as ci
+from .punisher import commands as punisher
 
 logging.use_absl_handler()
 logging.set_verbosity(logging.INFO)
@@ -50,3 +51,4 @@ main.add_command(publish.publish)
 main.add_command(dbuild.dbuild)
 main.add_command(storage.storage)
 main.add_command(ci.ci)
+main.add_command(punisher.punisher)
