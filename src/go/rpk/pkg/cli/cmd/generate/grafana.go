@@ -9,8 +9,8 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"vectorized/pkg/cli/cmd/generate/graf"
 
-	"github.com/grafana-tools/sdk"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 	log "github.com/sirupsen/logrus"
@@ -23,12 +23,9 @@ func (*NoopFormatter) Format(e *log.Entry) ([]byte, error) {
 	return []byte(e.Message), nil
 }
 
-func datasource() *string {
-	ds := "prometheus"
-	return &ds
-}
+const datasource = "prometheus"
 
-var panelHeight = "250px"
+const panelHeight = "250px"
 
 var metricGroups = []string{
 	"storage",
@@ -94,53 +91,45 @@ func executeGrafanaDashboard(prometheusURL string) error {
 
 func buildGrafanaDashboard(
 	metricFamilies map[string]*dto.MetricFamily,
-) *sdk.Board {
-	groupPanels := map[string][]sdk.Panel{}
-	panelID := uint(0)
+) graf.Dashboard {
+	groupPanels := map[string][]graf.Panel{}
 
 	names := []string{}
 	for k, _ := range metricFamilies {
 		names = append(names, k)
 	}
 	sort.Strings(names)
+	id := uint(0)
 	for _, name := range names {
 		family := metricFamilies[name]
-		var panel *sdk.Panel
+		var panel graf.Panel
 		if family.GetType() == dto.MetricType_COUNTER {
-			panel = newCounterPanel(family)
+			panel = newCounterPanel(family, id)
 		} else if subtype(family) != "histogram" {
-			panel = newGaugePanel(family)
+			panel = newGaugePanel(family, id)
 		}
 		if panel != nil {
-			panel.ID = panelID
-			panelID++
+			id++
 			group := metricGroup(name)
 			panels, ok := groupPanels[group]
 			if ok {
-				groupPanels[group] = append(panels, *panel)
+				groupPanels[group] = append(panels, panel)
 			} else {
-				groupPanels[group] = []sdk.Panel{*panel}
+				groupPanels[group] = []graf.Panel{panel}
 			}
 		}
 	}
 
 	rowTitles := []string{}
-	rowsByTitle := map[string]*sdk.Row{}
+	rowsByTitle := map[string]graf.Row{}
 	for group, panels := range groupPanels {
-		row := &sdk.Row{
-			Title:     group,
-			ShowTitle: true,
-			Panels:    panels,
-			Editable:  true,
-			Height:    sdk.Height(panelHeight),
-		}
-		rowsByTitle[group] = row
+		rowsByTitle[group] = graf.NewRow(group, panels, true)
 		rowTitles = append(rowTitles, group)
 	}
 
 	sort.Strings(rowTitles)
 
-	rows := []*sdk.Row{}
+	rows := []graf.Row{}
 	for _, title := range rowTitles {
 		rows = append(rows, rowsByTitle[title])
 	}
@@ -155,18 +144,18 @@ func buildGrafanaDashboard(
 	shard.AllValue = ".*"
 	shard.Type = "query"
 	shard.Query = "label_values(shard)"
-	clusterOpt := sdk.Option{
+	clusterOpt := graf.Option{
 		Text:     "Cluster",
 		Value:    "sum",
 		Selected: false,
 	}
-	aggregateOpts := []sdk.Option{
-		sdk.Option{
+	aggregateOpts := []graf.Option{
+		graf.Option{
 			Text:     "None",
 			Value:    "",
 			Selected: true,
 		},
-		sdk.Option{
+		graf.Option{
 			Text:     "Instance",
 			Value:    "sum by(instance)",
 			Selected: false,
@@ -175,45 +164,48 @@ func buildGrafanaDashboard(
 	}
 	aggregate := newDefaultTemplateVar("aggregate", "Aggregate by", false, aggregateOpts...)
 	aggregate.Type = "custom"
-	aggregate.Current = sdk.Current{
+	aggregate.Current = graf.Current{
 		Text:  clusterOpt.Text,
 		Value: clusterOpt.Value,
 	}
-	templating := sdk.Templating{List: []sdk.TemplateVar{node, shard, aggregate}}
 
-	dashboard := sdk.NewBoard("Redpanda")
-	dashboard.Templating = templating
-	dashboard.Rows = rows
-	dashboard.Refresh = &sdk.BoolString{Flag: true, Value: "10s"}
-	dashboard.Time = sdk.Time{From: "now-1h", To: "now"}
-	dashboard.Timepicker = sdk.Timepicker{
-		RefreshIntervals: []string{
-			"5s",
-			"10s",
-			"30s",
-			"1m",
-			"5m",
-			"15m",
-			"30m",
-			"1h",
-			"2h",
-			"1d",
+	return graf.Dashboard{
+		Title: "Redpanda",
+		Templating: graf.Templating{
+			List: []graf.TemplateVar{node, shard, aggregate},
 		},
-		TimeOptions: []string{
-			"5m",
-			"15m",
-			"1h",
-			"6h",
-			"12h",
-			"24h",
-			"2d",
-			"7d",
-			"30d",
+		Rows:     rows,
+		Editable: true,
+		Refresh:  "10s",
+		Time:     graf.Time{From: "now-1h", To: "now"},
+		TimePicker: graf.TimePicker{
+			RefreshIntervals: []string{
+				"5s",
+				"10s",
+				"30s",
+				"1m",
+				"5m",
+				"15m",
+				"30m",
+				"1h",
+				"2h",
+				"1d",
+			},
+			TimeOptions: []string{
+				"5m",
+				"15m",
+				"1h",
+				"6h",
+				"12h",
+				"24h",
+				"2d",
+				"7d",
+				"30d",
+			},
 		},
+		Timezone:      "utc",
+		SchemaVersion: 12,
 	}
-	dashboard.SchemaVersion = 12
-	dashboard.Timezone = "utc"
-	return dashboard
 }
 
 func fetchMetrics(prometheusURL string) (map[string]*dto.MetricFamily, error) {
@@ -238,95 +230,76 @@ func fetchMetrics(prometheusURL string) (map[string]*dto.MetricFamily, error) {
 	return parser.TextToMetricFamilies(bytes.NewBuffer(bs))
 }
 
-func newCounterPanel(m *dto.MetricFamily) *sdk.Panel {
+func newCounterPanel(m *dto.MetricFamily, id uint) graf.GraphPanel {
 	expr := fmt.Sprintf(
 		`[[aggregate]] (irate(%s{instance=~"[[node]]",shard=~"[[node_shard]]"}[1m]))`,
 		m.GetName(),
 	)
-	format := "ops"
-	if strings.Contains(subtype(m), "bytes") {
-		format = "Bps"
-	}
-	panel := newGraphPanel(m, "Rate - "+m.GetHelp(), expr, format)
-	panel.Lines = true
-	return panel
-}
-
-func newGaugePanel(m *dto.MetricFamily) *sdk.Panel {
-	expr := fmt.Sprintf(
-		`[[aggregate]] (%s{instance=~"[[node]]",shard=~"[[node_shard]]"})`,
-		m.GetName(),
-	)
-	format := "short"
-	if strings.Contains(subtype(m), "bytes") {
-		format = "bytes"
-	}
-	panel := newGraphPanel(m, m.GetHelp(), expr, format)
-	panel.Bars = true
-	panel.Lines = false
-	return panel
-}
-
-func defaultTarget(family *dto.MetricFamily, expr string) sdk.Target {
-	return sdk.Target{
+	target := graf.Target{
 		Expr:           expr,
-		LegendFormat:   legendFormat(family),
+		LegendFormat:   legendFormat(m),
 		Format:         "time_series",
 		Step:           10,
 		IntervalFactor: 2,
 	}
-}
-
-func newGraphPanel(
-	family *dto.MetricFamily, title,
-	targetExpr,
-	yAxisFormat string,
-) *sdk.Panel {
-	panel := sdk.NewGraph(title)
-	panel.GraphPanel.Targets = []sdk.Target{
-		defaultTarget(family, targetExpr),
+	format := "ops"
+	if strings.Contains(subtype(m), "bytes") {
+		format = "Bps"
 	}
-	panel.Legend = sdk.Legend{Show: true}
-	panel.Datasource = datasource()
-	panel.Fill = 1
-	panel.Linewidth = 2
-	panel.Editable = true
-	panel.Span = 4
-	panel.AliasColors = struct{}{}
-	panel.Tooltip = sdk.Tooltip{
-		MsResolution: true,
-		Shared:       true,
-		Sort:         0,
-		ValueType:    "cumulative",
-	}
-	panel.Xaxis = sdk.Axis{Show: true}
-	yAxis := sdk.Axis{
-		Format:  yAxisFormat,
-		LogBase: 1,
-		Show:    true,
-		Min:     &sdk.FloatString{Value: 0.0, Valid: true},
-	}
-	yAxis1 := sdk.Axis{
-		Format:  "short",
-		LogBase: yAxis.LogBase,
-		Show:    yAxis.Show,
-		Min:     yAxis.Min,
-	}
-	panel.Yaxes = []sdk.Axis{yAxis, yAxis1}
+	panel := newGraphPanel(id, "Rate - "+m.GetHelp(), target, format)
+	panel.Lines = true
 	return panel
 }
 
+func newGaugePanel(m *dto.MetricFamily, id uint) graf.GraphPanel {
+	expr := fmt.Sprintf(
+		`[[aggregate]] (%s{instance=~"[[node]]",shard=~"[[node_shard]]"})`,
+		m.GetName(),
+	)
+	target := graf.Target{
+		Expr:           expr,
+		LegendFormat:   legendFormat(m),
+		Format:         "time_series",
+		Step:           10,
+		IntervalFactor: 2,
+	}
+	format := "short"
+	if strings.Contains(subtype(m), "bytes") {
+		format = "bytes"
+	}
+	panel := newGraphPanel(id, m.GetHelp(), target, format)
+	panel.Bars = true
+	return panel
+}
+
+func newGraphPanel(
+	id uint,
+	title string,
+	target graf.Target,
+	yAxisFormat string,
+) graf.GraphPanel {
+	// yAxisMin := 0.0
+	p := graf.NewGraphPanel(title, yAxisFormat)
+	p.ID = id
+	p.Datasource = datasource
+	p.Targets = []graf.Target{target}
+	p.Tooltip = graf.Tooltip{
+		MsResolution: true,
+		Shared:       true,
+		ValueType:    "cumulative",
+	}
+	return p
+}
+
 func newDefaultTemplateVar(
-	name, label string, multi bool, opts ...sdk.Option,
-) sdk.TemplateVar {
-	var refresh int64 = 1
-	return sdk.TemplateVar{
+	name, label string, multi bool, opts ...graf.Option,
+) graf.TemplateVar {
+	return graf.TemplateVar{
 		Name:       name,
-		Datasource: datasource(),
+		Datasource: datasource,
 		Label:      label,
-		Current:    sdk.Current{Tags: []*string{}},
 		Multi:      multi,
-		Refresh:    sdk.BoolInt{Flag: true, Value: &refresh},
+		Refresh:    1,
 		Sort:       1,
 		Options:    opts,
 	}
