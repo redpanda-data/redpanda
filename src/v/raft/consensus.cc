@@ -506,7 +506,14 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
         vlog(_ctxlog.trace, "Voting for {} in term {}", r.node_id, _meta.term);
         f = f.then([this] {
             return details::persist_voted_for(
-              voted_for_filename(), {_voted_for, model::term_id(_meta.term)});
+                     voted_for_filename(), {_voted_for, _meta.term})
+              .handle_exception([this](const std::exception_ptr& e) {
+                  vlog(
+                    _ctxlog.warn,
+                    "Unable to persist raft group state, vote not granted - {}",
+                    e);
+                  _voted_for = {};
+              });
         });
     }
 
@@ -656,6 +663,13 @@ consensus::do_append_entries(append_entries_request&& r) {
               _meta.prev_log_index = r.meta.prev_log_index;
               _meta.prev_log_term = r.meta.prev_log_term;
               return do_append_entries(std::move(r));
+          })
+          .handle_exception([this, reply = std::move(reply)](
+                              const std::exception_ptr& e) mutable {
+              vlog(_ctxlog.warn, "Error occurred while truncating log - {}", e);
+              reply.result = append_entries_reply::status::failure;
+              return ss::make_ready_future<append_entries_reply>(
+                std::move(reply));
           });
     }
 
@@ -673,12 +687,21 @@ consensus::do_append_entries(append_entries_request&& r) {
                 return maybe_update_follower_commit_idx(
                          model::offset(m.commit_index))
                   .then([this, ofs = std::move(ofs)]() mutable {
-                      // we do not want to include our disk flush latency into
-                      // the leader vote timeout
-                      _hbeat = clock_type::now();
                       return make_append_entries_reply(std::move(ofs));
                   });
             });
+      })
+      .handle_exception([this, reply = std::move(reply)](
+                          const std::exception_ptr& e) mutable {
+          vlog(
+            _ctxlog.warn, "Error occurred while appending log entries - {}", e);
+          reply.result = append_entries_reply::status::failure;
+          return ss::make_ready_future<append_entries_reply>(std::move(reply));
+      })
+      .finally([this] {
+          // we do not want to include our disk flush latency into
+          // the leader vote timeout
+          _hbeat = clock_type::now();
       });
 }
 
