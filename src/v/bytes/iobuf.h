@@ -348,3 +348,5 @@ ss::future<iobuf> read_iobuf_exactly(ss::input_stream<char>& in, size_t n);
 /// and wraps each details::io_fragment as a scattered_message<char>::static()
 /// const char*
 ss::scattered_message<char> iobuf_as_scattered(iobuf b);
+
+ss::future<> write_iobuf_to_output_stream(iobuf, ss::output_stream<char>&);
