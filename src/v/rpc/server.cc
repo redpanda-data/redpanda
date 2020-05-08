@@ -145,12 +145,12 @@ void server::setup_metrics() {
     _metrics.add_group(
       prometheus_sanitize::metrics_name(_proto->name()),
       {sm::make_gauge(
-         "max_service_mem",
+         "max_service_mem_bytes",
          [this] { return cfg.max_service_memory_per_core; },
          sm::description("Maximum amount of memory used by service per core"),
          {sm::type_label("total_bytes")}),
        sm::make_gauge(
-         "consumed_mem",
+         "consumed_mem_bytes",
          [this] { return cfg.max_service_memory_per_core - _memory.current(); },
          sm::description("Amount of memory consumed for requests processing"),
          {sm::type_label("total_bytes")}),

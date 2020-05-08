@@ -24,7 +24,7 @@ void probe::setup_metrics(const model::ntp& ntp) {
       prometheus_sanitize::metrics_name("storage:log"),
       {
         sm::make_total_bytes(
-          "bytes_written",
+          "written_bytes",
           [this] { return _bytes_written; },
           sm::description("Total number of bytes written"),
           labels),
@@ -34,7 +34,7 @@ void probe::setup_metrics(const model::ntp& ntp) {
           sm::description("Total number of batches written"),
           labels),
         sm::make_total_bytes(
-          "bytes_read",
+          "read_bytes",
           [this] { return _bytes_read; },
           sm::description("Total number of bytes read"),
           labels),
