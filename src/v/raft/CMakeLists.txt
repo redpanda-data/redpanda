@@ -22,6 +22,7 @@ v_cc_library(
     replicate_batcher.cc
     rpc_client_protocol.cc
     group_manager.cc
+    snapshot.cc
   DEPS
     v::storage
     raft_rpc
