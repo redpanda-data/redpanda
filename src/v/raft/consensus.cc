@@ -58,6 +58,7 @@ void consensus::do_step_down() {
 }
 
 ss::future<> consensus::stop() {
+    vlog(_ctxlog.info, "Stopping");
     _vote_timeout.cancel();
     _commit_index_updated.broken();
     return _bg.close();
@@ -401,6 +402,7 @@ ss::future<> consensus::add_group_member(model::broker node) {
 }
 
 ss::future<> consensus::start() {
+    vlog(_ctxlog.info, "Starting");
     return _op_lock.with([this] {
         return details::read_voted_for(voted_for_filename())
           .then([this](voted_for_configuration r) {

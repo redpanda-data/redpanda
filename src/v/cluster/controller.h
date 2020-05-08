@@ -2,7 +2,6 @@
 
 #include "cluster/controller_service.h"
 #include "cluster/metadata_cache.h"
-#include "cluster/metadata_dissemination_service.h"
 #include "cluster/notification_latch.h"
 #include "cluster/partition_allocator.h"
 #include "cluster/partition_manager.h"
@@ -38,11 +37,11 @@ public:
     static constexpr auto join_timeout = std::chrono::seconds(5);
 
     controller(
+      ss::sharded<raft::group_manager>&,
       ss::sharded<partition_manager>&,
       ss::sharded<shard_table>&,
       ss::sharded<metadata_cache>&,
-      ss::sharded<rpc::connection_cache>&,
-      ss::sharded<metadata_dissemination_service>&);
+      ss::sharded<rpc::connection_cache>&);
 
     ss::future<> start();
     ss::future<> stop();
@@ -175,11 +174,11 @@ private:
     model::broker _self;
     std::vector<config::seed_server> _seed_servers;
     ss::sstring _data_directory;
+    ss::sharded<raft::group_manager>& _gm;
     ss::sharded<partition_manager>& _pm;
     ss::sharded<shard_table>& _st;
     ss::sharded<metadata_cache>& _md_cache;
     ss::sharded<rpc::connection_cache>& _connection_cache;
-    ss::sharded<metadata_dissemination_service>& _md_dissemination_service;
     raft::consensus* _raft0;
     raft::group_id _highest_group_id;
     bool _is_leader = false;

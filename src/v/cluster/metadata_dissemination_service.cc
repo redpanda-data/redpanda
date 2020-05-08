@@ -6,6 +6,7 @@
 #include "cluster/metadata_dissemination_rpc_service.h"
 #include "cluster/metadata_dissemination_types.h"
 #include "cluster/metadata_dissemination_utils.h"
+#include "cluster/namespace.h"
 #include "config/configuration.h"
 #include "likely.h"
 #include "model/fundamental.h"
@@ -23,10 +24,16 @@
 
 #include <chrono>
 #include <exception>
+
 namespace cluster {
 metadata_dissemination_service::metadata_dissemination_service(
-  ss::sharded<metadata_cache>& mc, ss::sharded<rpc::connection_cache>& clients)
-  : _md_cache(mc)
+  ss::sharded<raft::group_manager>& raft_manager,
+  ss::sharded<cluster::partition_manager>& partition_manager,
+  ss::sharded<metadata_cache>& mc,
+  ss::sharded<rpc::connection_cache>& clients)
+  : _raft_manager(raft_manager)
+  , _partition_manager(partition_manager)
+  , _md_cache(mc)
   , _clients(clients)
   , _self(config::shard_local_cfg().node_id)
   , _dissemination_interval(
@@ -51,11 +58,25 @@ void metadata_dissemination_service::disseminate_leadership(
     _requests.push_back(ntp_leader{std::move(ntp), term, leader_id});
 }
 
-void metadata_dissemination_service::initialize_leadership_metadata() {
+ss::future<> metadata_dissemination_service::start() {
+    _raft_manager.local().register_leadership_notification(
+      [this](
+        raft::group_id group,
+        model::term_id term,
+        std::optional<model::node_id> leader_id) {
+          auto ntp = _partition_manager.local().consensus_for(group)->ntp();
+          handle_leadership_notification(
+            std::move(ntp), term, std::move(leader_id));
+      });
+
+    if (ss::this_shard_id() != 0) {
+        return ss::make_ready_future<>();
+    }
+
     auto ids = _md_cache.local().all_broker_ids();
     // Do nothing, single node case
     if (ids.size() <= 1) {
-        return;
+        return ss::make_ready_future<>();
     }
     (void)ss::with_gate(_bg, [this, ids = std::move(ids)]() mutable {
         // We do not want to send requst to self
@@ -66,6 +87,50 @@ void metadata_dissemination_service::initialize_leadership_metadata() {
 
         return update_metadata_with_retries(std::move(ids));
     });
+
+    return ss::make_ready_future<>();
+}
+
+void metadata_dissemination_service::handle_leadership_notification(
+  model::ntp ntp, model::term_id term, std::optional<model::node_id> lid) {
+    // this is a temporary solution to deal with the fact that we receive
+    // leadership notifications for partitions we do not register with the
+    // metadata cache.
+    //
+    // https://app.clubhouse.io/vectorized/story/435/create-kafka-only-metadata-cache
+    if (ntp == cluster::controller_ntp) {
+        return;
+    }
+    (void)ss::with_gate(_bg, [this, ntp = std::move(ntp), lid, term]() mutable {
+        return container().invoke_on(
+          0,
+          [ntp = std::move(ntp), lid, term](
+            metadata_dissemination_service& s) mutable {
+              return s.apply_leadership_notification(std::move(ntp), term, lid);
+          });
+    });
+}
+
+ss::future<> metadata_dissemination_service::apply_leadership_notification(
+  model::ntp ntp, model::term_id term, std::optional<model::node_id> lid) {
+    // the gate also needs to be taken on the destination core.
+    return ss::with_gate(
+      _bg, [this, ntp = std::move(ntp), lid, term]() mutable {
+          // the lock sequences the updates from raft
+          return _lock.with([this, ntp = std::move(ntp), lid, term]() mutable {
+              auto f = _md_cache.invoke_on_all(
+                [ntp, lid, term](metadata_cache& md) {
+                    md.update_partition_leader(ntp, term, lid);
+                });
+              if (lid == _self) {
+                  // only disseminate from current leader
+                  f = f.then([this, ntp = std::move(ntp), term, lid]() mutable {
+                      return disseminate_leadership(std::move(ntp), term, lid);
+                  });
+              }
+              return f;
+          });
+      });
 }
 
 static inline ss::future<>

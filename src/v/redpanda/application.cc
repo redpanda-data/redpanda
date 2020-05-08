@@ -1,6 +1,7 @@
 #include "redpanda/application.h"
 
 #include "cluster/metadata_dissemination_handler.h"
+#include "cluster/metadata_dissemination_service.h"
 #include "cluster/service.h"
 #include "kafka/protocol.h"
 #include "platform/stop_signal.h"
@@ -168,12 +169,17 @@ void application::wire_up_services() {
     construct_service(_raft_connection_cache).get();
     syschecks::systemd_message("Building shard-lookup tables");
     construct_service(shard_table).get();
-    syschecks::systemd_message("Adding partition manager");
+
     construct_service(
-      partition_manager,
-      std::chrono::seconds(10), // disk timeout
+      raft_group_manager,
+      config::shard_local_cfg().node_id(),
+      std::chrono::seconds(10),
+      config::shard_local_cfg().raft_heartbeat_interval(),
       std::ref(_raft_connection_cache))
       .get();
+
+    syschecks::systemd_message("Adding partition manager");
+    construct_service(partition_manager, std::ref(raft_group_manager)).get();
     vlog(_log.info, "Partition manager started");
 
     // controller
@@ -182,6 +188,8 @@ void application::wire_up_services() {
     syschecks::systemd_message("Creating metadata dissemination service");
     construct_service(
       md_dissemination_service,
+      std::ref(raft_group_manager),
+      std::ref(partition_manager),
       std::ref(metadata_cache),
       std::ref(_raft_connection_cache))
       .get();
@@ -189,17 +197,18 @@ void application::wire_up_services() {
     syschecks::systemd_message("Creating cluster::controller");
     construct_service(
       controller,
+      std::ref(raft_group_manager),
       std::ref(partition_manager),
       std::ref(shard_table),
       std::ref(metadata_cache),
-      std::ref(_raft_connection_cache),
-      std::ref(md_dissemination_service))
+      std::ref(_raft_connection_cache))
       .get();
 
     // group membership
     syschecks::systemd_message("Creating partition manager");
     construct_service(
       _group_manager,
+      std::ref(raft_group_manager),
       std::ref(partition_manager),
       std::ref(config::shard_local_cfg()))
       .get();
@@ -250,11 +259,24 @@ void application::wire_up_services() {
 }
 
 void application::start() {
+    syschecks::systemd_message("Starting the partition manager");
+    partition_manager.invoke_on_all(&cluster::partition_manager::start).get();
+
+    syschecks::systemd_message("Starting Raft group manager");
+    raft_group_manager.invoke_on_all(&raft::group_manager::start).get();
+
     syschecks::systemd_message("Starting Kafka group manager");
     _group_manager.invoke_on_all(&kafka::group_manager::start).get();
 
     syschecks::systemd_message("Starting controller");
     controller.invoke_on_all(&cluster::controller::start).get();
+
+    // FIXME: in first patch explain why this is started after the controller so
+    // the broker set will be available. Then next patch fix.
+    syschecks::systemd_message("Starting metadata dissination service");
+    md_dissemination_service
+      .invoke_on_all(&cluster::metadata_dissemination_service::start)
+      .get();
 
     syschecks::systemd_message("Starting RPC");
     _rpc
