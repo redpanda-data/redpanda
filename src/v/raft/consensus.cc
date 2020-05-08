@@ -9,6 +9,8 @@
 #include "raft/recovery_stm.h"
 #include "raft/rpc_client_protocol.h"
 #include "raft/vote_stm.h"
+#include "utils/state_crc_file.h"
+#include "utils/state_crc_file_errc.h"
 #include "vlog.h"
 
 #include <seastar/core/fstream.hh>
@@ -407,19 +409,27 @@ ss::future<> consensus::start() {
     vlog(_ctxlog.info, "Starting");
     return _op_lock.with([this] {
         return details::read_voted_for(voted_for_filename())
-          .then([this](voted_for_configuration r) {
-              if (r.voted_for < 0) {
-                  vlog(_ctxlog.debug, "Persistent state file not present");
+          .then([this](result<voted_for_configuration> r) {
+              if (!r) {
+                  if (r.error() == utils::state_crc_file_errc::file_not_found) {
+                      vlog(_ctxlog.debug, "Persistent state file not present");
+                  }
+
+                  if (r.error() == utils::state_crc_file_errc::crc_mismatch) {
+                      // FIXME: make sure that we are safe to operate when voted
+                      //        for state is corrupted
+                      vlog(_ctxlog.error, "Persistent state CRC mismatch");
+                  }
                   _term = model::term_id(0);
                   return;
               }
               vlog(
                 _ctxlog.info,
                 "Recovered persistent state: voted for: {}, term: {}",
-                r.voted_for,
-                r.term);
-              _voted_for = r.voted_for;
-              _term = r.term;
+                r.value().voted_for,
+                r.value().term);
+              _voted_for = r.value().voted_for;
+              _term = r.value().term;
           })
           .handle_exception([this](const std::exception_ptr& e) {
               vlog(_ctxlog.warn, "Error reading raft persistent state - {}", e);

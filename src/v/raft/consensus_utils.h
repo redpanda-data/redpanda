@@ -10,20 +10,40 @@
 namespace raft::details {
 
 /// reads all into the tmpbuf to file
+// clang-format off
+[[deprecated("switched to reflection::adl serialized state")]] 
 ss::future<ss::temporary_buffer<char>> readfile(ss::sstring name);
+// clang-format on
 
 /// writes the tmpbuf to file atomically.
 /// first we create a temporary file with <name>.atomic.xxxxxxx where .xxxxxx
 /// are 8 random ascii chars. if the write was successful, we rename the files
 /// and remove the temporary waste.
+// clang-format off
+[[deprecated("switched to reflection::adl serialized state")]] 
 ss::future<> writefile(ss::sstring name, ss::temporary_buffer<char> buf);
+// clang-format on
 
 /// writes a yaml file with voted_for and term of the vote
+// clang-format off
+[[deprecated("switched to reflection::adl serialized state")]] 
+ss::future<> legacy_persist_voted_for(
+  ss::sstring , consensus::voted_for_configuration);
+// clang-format on 
+
+/// writes a file with voted_for and term of the vote
 ss::future<>
 persist_voted_for(ss::sstring filename, consensus::voted_for_configuration);
 
 /// reads the filename and returns voted_for and term of the vote
+// clang-format off
+[[deprecated("switched to reflection::adl serialized state")]] 
 ss::future<consensus::voted_for_configuration>
+legacy_read_voted_for(ss::sstring filename);
+// clang-format on
+
+/// reads the filename and returns voted_for and term of the vote
+ss::future<result<consensus::voted_for_configuration>>
 read_voted_for(ss::sstring filename);
 
 /// copy all record batch readers into N containers using the

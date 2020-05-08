@@ -1,5 +1,6 @@
 #pragma once
 
+#include "hashing/crc32c.h"
 #include "model/fundamental.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/follower_stats.h"
@@ -27,6 +28,13 @@ public:
         model::node_id voted_for;
         // for term it doesn't make sense to use numeric_limits<>::min
         model::term_id term{0};
+
+        uint32_t crc() const {
+            crc32 c;
+            c.extend(voted_for());
+            c.extend(term());
+            return c.value();
+        }
     };
     enum class vote_state { follower, candidate, leader };
     using leader_cb_t = ss::noncopyable_function<void(leadership_status)>;
