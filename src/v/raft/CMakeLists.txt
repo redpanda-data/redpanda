@@ -21,6 +21,7 @@ v_cc_library(
     follower_stats.cc
     replicate_batcher.cc
     rpc_client_protocol.cc
+    group_manager.cc
   DEPS
     v::storage
     raft_rpc
