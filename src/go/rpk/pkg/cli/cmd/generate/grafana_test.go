@@ -69,7 +69,7 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
    {
     "name": "node_shard",
     "datasource": "prometheus",
-    "label": "shard",
+    "label": "Shard",
     "type": "query",
     "refresh": 1,
     "options": null,
@@ -87,25 +87,25 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
     "sort": 1
    },
    {
-    "name": "aggregate",
+    "name": "aggr_criteria",
     "datasource": "prometheus",
     "label": "Aggregate by",
     "type": "custom",
     "refresh": 1,
     "options": [
      {
-      "text": "None",
+      "text": "Cluster",
       "value": "",
-      "selected": true
-     },
-     {
-      "text": "Instance",
-      "value": "sum by(instance)",
       "selected": false
      },
      {
-      "text": "Cluster",
-      "value": "sum",
+      "text": "Instance",
+      "value": "instance,",
+      "selected": false
+     },
+     {
+      "text": "Instance, Shard",
+      "value": "instance,shard,",
       "selected": false
      }
     ],
@@ -117,7 +117,7 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
     "query": "",
     "current": {
      "text": "Cluster",
-     "value": "sum"
+     "value": ""
     },
     "hide": 0,
     "sort": 1
@@ -150,7 +150,7 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
      "targets": [
       {
        "refId": "",
-       "expr": "[[aggregate]] (irate(vectorized_memory_allocated_memory{instance=~\"[[node]]\",shard=~\"[[node_shard]]\"}[1m]))",
+       "expr": "sum(irate(vectorized_memory_allocated_memory{instance=~\"[[node]]\",shard=~\"[[node_shard]]\"}[1m])) by ([[aggr_criteria]])",
        "intervalFactor": 2,
        "interval": "",
        "step": 10,
@@ -229,7 +229,7 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
      "targets": [
       {
        "refId": "",
-       "expr": "[[aggregate]] (vectorized_vectorized_internal_rpc_protocol_consumed_mem{instance=~\"[[node]]\",shard=~\"[[node_shard]]\"})",
+       "expr": "sum(vectorized_vectorized_internal_rpc_protocol_consumed_mem{instance=~\"[[node]]\",shard=~\"[[node_shard]]\"}) by ([[aggr_criteria]])",
        "intervalFactor": 2,
        "interval": "",
        "step": 10,
@@ -299,7 +299,7 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
      "targets": [
       {
        "refId": "",
-       "expr": "[[aggregate]] (irate(vectorized_vectorized_internal_rpc_protocol_corrupted_headers{instance=~\"[[node]]\",shard=~\"[[node_shard]]\"}[1m]))",
+       "expr": "sum(irate(vectorized_vectorized_internal_rpc_protocol_corrupted_headers{instance=~\"[[node]]\",shard=~\"[[node_shard]]\"}[1m])) by ([[aggr_criteria]])",
        "intervalFactor": 2,
        "interval": "",
        "step": 10,
