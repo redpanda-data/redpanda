@@ -139,30 +139,35 @@ func buildGrafanaDashboard(
 	node.AllValue = ".*"
 	node.Type = "query"
 	node.Query = "label_values(instance)"
-	shard := newDefaultTemplateVar("node_shard", "shard", true)
+	shard := newDefaultTemplateVar("node_shard", "Shard", true)
 	shard.IncludeAll = true
 	shard.AllValue = ".*"
 	shard.Type = "query"
 	shard.Query = "label_values(shard)"
 	clusterOpt := graf.Option{
 		Text:     "Cluster",
-		Value:    "sum",
+		Value:    "",
 		Selected: false,
 	}
 	aggregateOpts := []graf.Option{
-		graf.Option{
-			Text:     "None",
-			Value:    "",
-			Selected: true,
-		},
+		clusterOpt,
 		graf.Option{
 			Text:     "Instance",
-			Value:    "sum by(instance)",
+			Value:    "instance,",
 			Selected: false,
 		},
-		clusterOpt,
+		graf.Option{
+			Text:     "Instance, Shard",
+			Value:    "instance,shard,",
+			Selected: false,
+		},
 	}
-	aggregate := newDefaultTemplateVar("aggregate", "Aggregate by", false, aggregateOpts...)
+	aggregate := newDefaultTemplateVar(
+		"aggr_criteria",
+		"Aggregate by",
+		false,
+		aggregateOpts...,
+	)
 	aggregate.Type = "custom"
 	aggregate.Current = graf.Current{
 		Text:  clusterOpt.Text,
@@ -230,9 +235,33 @@ func fetchMetrics(prometheusURL string) (map[string]*dto.MetricFamily, error) {
 	return parser.TextToMetricFamilies(bytes.NewBuffer(bs))
 }
 
+func newPercentilePanel(
+	m *dto.MetricFamily, id uint, percentile float32,
+) graf.GraphPanel {
+	expr := fmt.Sprintf(
+		`histogram_quantile(%.2f, sum(rate(%s_bucket{instance=~"[[node]]",shard=~"[[node_shard]]"}[1m])) by (le, [[aggr_criteria]]))`,
+		percentile,
+		m.GetName(),
+	)
+	target := graf.Target{
+		Expr:           expr,
+		LegendFormat:   legendFormat(m),
+		Format:         "time_series",
+		Step:           10,
+		IntervalFactor: 2,
+		RefID:          "A",
+	}
+	title := fmt.Sprintf("%s (p%.0f)", m.GetHelp(), percentile*100)
+	panel := newGraphPanel(id, title, target, "µs")
+	panel.Lines = true
+	panel.Tooltip.ValueType = "individual"
+	panel.Tooltip.Sort = 0
+	return panel
+}
+
 func newCounterPanel(m *dto.MetricFamily, id uint) graf.GraphPanel {
 	expr := fmt.Sprintf(
-		`[[aggregate]] (irate(%s{instance=~"[[node]]",shard=~"[[node_shard]]"}[1m]))`,
+		`sum(irate(%s{instance=~"[[node]]",shard=~"[[node_shard]]"}[1m])) by ([[aggr_criteria]])`,
 		m.GetName(),
 	)
 	target := graf.Target{
@@ -253,7 +282,7 @@ func newCounterPanel(m *dto.MetricFamily, id uint) graf.GraphPanel {
 
 func newGaugePanel(m *dto.MetricFamily, id uint) graf.GraphPanel {
 	expr := fmt.Sprintf(
-		`[[aggregate]] (%s{instance=~"[[node]]",shard=~"[[node_shard]]"})`,
+		`sum(%s{instance=~"[[node]]",shard=~"[[node_shard]]"}) by ([[aggr_criteria]])`,
 		m.GetName(),
 	)
 	target := graf.Target{
@@ -273,10 +302,7 @@ func newGaugePanel(m *dto.MetricFamily, id uint) graf.GraphPanel {
 }
 
 func newGraphPanel(
-	id uint,
-	title string,
-	target graf.Target,
-	yAxisFormat string,
+	id uint, title string, target graf.Target, yAxisFormat string,
 ) graf.GraphPanel {
 	// yAxisMin := 0.0
 	p := graf.NewGraphPanel(title, yAxisFormat)
