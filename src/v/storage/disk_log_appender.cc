@@ -104,7 +104,9 @@ disk_log_appender::operator()(model::record_batch& batch) {
               auto& p = _log.get_probe();
               p.add_bytes_written(r.byte_size);
               p.batch_written();
-              _bytes_left_in_segment = std::min(
+              // substract the bytes from the append
+              // take the min because _bytes_left_in_segment is optimistic
+              _bytes_left_in_segment -= std::min(
                 _bytes_left_in_segment, r.byte_size);
               return ss::stop_iteration::no;
           });
