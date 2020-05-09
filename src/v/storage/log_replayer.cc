@@ -42,9 +42,7 @@ public:
       size_t physical_base_offset,
       size_t size_on_disk) override {
         _header = header;
-        _current_batch_crc = header.crc;
         _file_pos_to_end_of_batch = size_on_disk + physical_base_offset;
-        _last_offset = header.last_offset();
         _crc = crc32();
         model::crc_record_batch_header(_crc, header);
         return skip_batch::no;
@@ -60,7 +58,7 @@ public:
 
     stop_parser consume_batch_end() override {
         if (is_valid_batch_crc()) {
-            _cfg.last_offset = _last_offset;
+            _cfg.last_offset = _header.last_offset();
             _cfg.truncate_file_pos = _file_pos_to_end_of_batch;
             const auto physical_base_offset = _file_pos_to_end_of_batch
                                               - _header.size_bytes;
@@ -74,16 +72,14 @@ public:
     bool is_valid_batch_crc() const {
         // crc is calculated as a uint32_t but because of kafka we carry around
         // a signed type in the batch structure
-        return (uint32_t)_current_batch_crc == _crc.value();
+        return (uint32_t)_header.crc == _crc.value();
     }
 
 private:
     model::record_batch_header _header;
     segment* _seg;
     log_replayer::checkpoint& _cfg;
-    int32_t _current_batch_crc{0};
     crc32 _crc;
-    model::offset _last_offset;
     size_t _file_pos_to_end_of_batch{0};
 };
 
