@@ -55,11 +55,9 @@ struct simple_record_fixture {
                                          .learners = std::move(learners)};
     }
     model::offset _base_offset{0};
-    model::ntp _ntp{model::ns(
-                      "simple_record_fixture_test_"
-                      + random_generators::gen_alphanum_string(8)),
-                    model::topic_partition{
-                      model::topic(random_generators::gen_alphanum_string(6)),
-                      model::partition_id(random_generators::get_int(0, 24))}};
+    model::ntp _ntp{ss::sstring("simple_record_fixture_test_")
+                      + random_generators::gen_alphanum_string(8),
+                    random_generators::gen_alphanum_string(6),
+                    random_generators::get_int(0, 24)};
 };
 } // namespace raft

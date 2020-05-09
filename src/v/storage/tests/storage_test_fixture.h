@@ -61,17 +61,9 @@ public:
           cache);
     }
 
-    model::ntp
-    make_ntp(ss::sstring ns, ss::sstring topic, size_t partition_id) {
-        return model::ntp{
-          .ns = model::ns(std::move(ns)),
-          .tp = {.topic = model::topic(std::move(topic)),
-                 .partition = model::partition_id(partition_id)}};
-    }
-
     void
-    create_topic_dir(ss::sstring ns, ss::sstring topic, size_t partition_id) {
-        auto ntp = make_ntp(std::move(ns), std::move(topic), partition_id);
+    create_topic_dir(ss::sstring ns, ss::sstring topic, int32_t partition_id) {
+        auto ntp = model::ntp(std::move(ns), std::move(topic), partition_id);
         ss::recursive_touch_directory(
           fmt::format("{}/{}", test_dir, ntp.path()))
           .wait();

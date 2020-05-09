@@ -85,6 +85,10 @@ using offset = named_type<int64_t, struct model_offset_type>;
 struct topic_partition {
     using compaction = ss::bool_class<struct compaction_tag>;
 
+    topic_partition() = default;
+    topic_partition(model::topic t, model::partition_id i)
+      : topic(std::move(t))
+      , partition(i) {}
     model::topic topic;
     model::partition_id partition;
 
@@ -107,6 +111,16 @@ struct topic_partition {
 std::ostream& operator<<(std::ostream&, const topic_partition&);
 
 struct ntp {
+    ntp() = default;
+    ntp(model::ns::type n, model::topic::type t, model::partition_id::type i)
+      : ns(model::ns(std::move(n)))
+      , tp(model::topic(std::move(t)), model::partition_id(i)) {}
+    ntp(model::ns n, model::topic t, model::partition_id i)
+      : ns(std::move(n))
+      , tp(std::move(t), i) {}
+    ntp(model::ns n, topic_partition t)
+      : ns(std::move(n))
+      , tp(std::move(t)) {}
     model::ns ns;
     topic_partition tp;
 

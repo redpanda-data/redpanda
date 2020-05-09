@@ -45,10 +45,7 @@ public:
         inc.update(group);
         auto p = static_cast<model::partition_id::type>(
           jump_consistent_hash(inc.digest(), md->partitions.size()));
-        return model::ntp{
-          .ns = _tp_ns.ns,
-          .tp = model::topic_partition{_tp_ns.tp, model::partition_id{p}},
-        };
+        return model::ntp(_tp_ns.ns, _tp_ns.tp, model::partition_id{p});
     }
 
     const model::ns& ns() const { return _tp_ns.ns; }

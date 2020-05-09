@@ -57,7 +57,7 @@ struct list_offsets_request final {
     absl::btree_set<model::topic_partition> tp_dups;
 
     bool duplicate_tp(const model::topic& t, model::partition_id id) const {
-        model::topic_partition tp{.topic = t, .partition = id};
+        model::topic_partition tp(t, id);
         return tp_dups.find(tp) != tp_dups.end();
     }
 };
