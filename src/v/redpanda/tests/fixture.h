@@ -67,14 +67,8 @@ public:
 
     model::ntp
     make_default_ntp(model::topic topic, model::partition_id partition) {
-        auto ntp = model::ntp{
-          .ns = cluster::kafka_namespace,
-          .tp = model::topic_partition{
-            .topic = topic,
-            .partition = partition,
-          },
-        };
-        return ntp;
+        return model::ntp(
+          cluster::kafka_namespace, std::move(topic), partition);
     }
 
     storage::log_config make_default_config() {
@@ -110,10 +104,10 @@ public:
         auto batches = storage::test::make_random_batches(
           model::offset(0), 20, false);
 
-        auto ntp = model::ntp{
-          .ns = cluster::kafka_namespace,
-          .tp = model::topic_partition{.topic = model::topic(topic_name),
-                                       .partition = model::partition_id(0)}};
+        auto ntp = model::ntp(
+          cluster::kafka_namespace,
+          model::topic(topic_name),
+          model::partition_id(0));
         tests::persist_log_file(
           lconf().data_directory().as_sstring(), ntp, std::move(batches))
           .get();

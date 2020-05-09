@@ -42,7 +42,7 @@ void adl<model::ntp>::to(iobuf& out, model::ntp&& ntp) {
 model::ntp adl<model::ntp>::from(iobuf_parser& in) {
     auto ns = adl<model::ns>{}.from(in);
     auto partition = adl<model::topic_partition>{}.from(in);
-    return model::ntp{std::move(ns), std::move(partition)};
+    return model::ntp(std::move(ns), std::move(partition));
 }
 
 void adl<unresolved_address>::to(

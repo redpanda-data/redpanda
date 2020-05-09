@@ -173,10 +173,7 @@ ss::future<> group_manager::recover_partition(
     offset_map_type empty_group_offsets;
 
     for (auto& e : ctx.loaded_offsets) {
-        model::topic_partition tp{
-          .topic = e.first.topic,
-          .partition = e.first.partition,
-        };
+        model::topic_partition tp(e.first.topic, e.first.partition);
         if (ctx.loaded_groups.contains(e.first.group)) {
             group_offsets[e.first.group][tp] = e.second;
         } else {

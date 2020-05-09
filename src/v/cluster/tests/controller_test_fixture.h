@@ -160,10 +160,8 @@ public:
     }
 
     model::ntp make_ntp(const ss::sstring& topic, int32_t partition_id) {
-        return model::ntp{
-          .ns = test_ns,
-          .tp = {.topic = model::topic(topic),
-                 .partition = model::partition_id(partition_id)}};
+        return model::ntp(
+          test_ns, model::topic(topic), model::partition_id(partition_id));
     }
 
     ss::circular_buffer<model::record_batch> single_topic_current_broker() {

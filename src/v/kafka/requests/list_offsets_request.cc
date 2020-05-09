@@ -53,10 +53,7 @@ void list_offsets_request::decode(request_context& ctx) {
     absl::btree_set<model::topic_partition> seen;
     for (const auto& topic : topics) {
         for (const auto& part : topic.partitions) {
-            model::topic_partition tp{
-              .topic = topic.name,
-              .partition = part.id,
-            };
+            model::topic_partition tp(topic.name, part.id);
             if (!seen.insert(tp).second) {
                 tp_dups.insert(std::move(tp));
             }
@@ -145,13 +142,7 @@ static ss::future<list_offsets_response::partition> list_offsets_partition(
   model::timestamp timestamp,
   list_offsets_request::topic& topic,
   list_offsets_request::partition& part) {
-    auto ntp = model::ntp{
-      .ns = cluster::kafka_namespace,
-      .tp = model::topic_partition{
-        .topic = topic.name,
-        .partition = part.id,
-      },
-    };
+    auto ntp = model::ntp(cluster::kafka_namespace, topic.name, part.id);
 
     auto shard = octx.rctx.shards().shard_for(ntp);
     if (!shard) {
