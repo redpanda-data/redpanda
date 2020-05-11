@@ -888,7 +888,7 @@ ss::future<std::vector<topic_result>> controller::do_create_topics(
 std::optional<model::record_batch>
 controller::create_topic_cfg_batch(const topic_configuration& cfg) {
     simple_batch_builder builder(
-      controller_record_batch_type, model::offset(_raft0->meta().commit_index));
+      controller_record_batch_type, model::offset(0));
     builder.add_kv(
       log_record_key{.record_type = log_record_key::type::topic_configuration},
       cfg);

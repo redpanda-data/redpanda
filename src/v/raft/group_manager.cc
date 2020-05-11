@@ -58,9 +58,8 @@ ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::start_group(
 
 ss::future<> group_manager::stop_group(ss::lw_shared_ptr<raft::consensus> c) {
     return c->stop()
-      .then([this, id = c->meta().group] {
-          return _heartbeats.deregister_group(id);
-      })
+      .then(
+        [this, id = c->group()] { return _heartbeats.deregister_group(id); })
       .finally([this, c] {
           _groups.erase(
             std::remove(_groups.begin(), _groups.end(), c), _groups.end());

@@ -31,6 +31,7 @@ consensus::consensus(
   consensus::leader_cb_t cb,
   std::optional<append_entries_cb_t>&& append_callback)
   : _self(std::move(nid))
+  , _group(group)
   , _jit(std::move(jit))
   , _log(l)
   , _io_priority(io_priority)
@@ -46,7 +47,6 @@ consensus::consensus(
       config::shard_local_cfg().replicate_append_timeout_ms())
   , _recovery_append_timeout(
       config::shard_local_cfg().recovery_append_timeout_ms()) {
-    _meta.group = group;
     update_follower_stats(_conf);
     _vote_timeout.set_callback([this] {
         dispatch_flush_with_lock();
@@ -103,7 +103,7 @@ consensus::success_reply consensus::update_follower_index(
         vlog(_ctxlog.trace, "Raft group not yet initialized at node {}", node);
         return success_reply::no;
     }
-    if (unlikely(reply.group != _meta.group)) {
+    if (unlikely(reply.group != _group)) {
         // logic bug
         throw std::runtime_error(fmt::format(
           "update_follower_index was sent wrong group: {}", reply.group));
@@ -127,8 +127,8 @@ consensus::success_reply consensus::update_follower_index(
     }
     // If RPC request or response contains term T > currentTerm:
     // set currentTerm = T, convert to follower (Raft paper: §5.1)
-    if (reply.term > _meta.term) {
-        _meta.term = reply.term;
+    if (reply.term > _term) {
+        _term = reply.term;
         (void)with_gate(_bg, [this, term = reply.term] {
             return step_down(model::term_id(term));
         });
@@ -262,7 +262,7 @@ consensus::replicate(model::record_batch_reader&& rdr, replicate_options opts) {
 
           return disk_append(model::make_record_batch_reader<
                                details::term_assigning_reader>(
-                               std::move(rdr), model::term_id(_meta.term)))
+                               std::move(rdr), model::term_id(_term)))
             .then([](storage::append_result res) {
                 return result<replicate_result>(
                   replicate_result{.last_offset = res.last_offset});
@@ -293,7 +293,7 @@ consensus::make_reader(storage::log_reader_config config) {
     // can build the reader immediately.
     if (_last_replicate_consistency == consistency_level::quorum_ack) {
         config.max_offset = std::min(
-          config.max_offset, model::offset(_meta.commit_index));
+          config.max_offset, model::offset(_commit_index));
         return _log.make_reader(config);
     }
 
@@ -410,7 +410,7 @@ ss::future<> consensus::start() {
           .then([this](voted_for_configuration r) {
               if (r.voted_for < 0) {
                   vlog(_ctxlog.debug, "Persistent state file not present");
-                  _meta.term = model::term_id(0);
+                  _term = model::term_id(0);
                   return;
               }
               vlog(
@@ -419,11 +419,11 @@ ss::future<> consensus::start() {
                 r.voted_for,
                 r.term);
               _voted_for = r.voted_for;
-              _meta.term = r.term;
+              _term = r.term;
           })
           .handle_exception([this](const std::exception_ptr& e) {
               vlog(_ctxlog.warn, "Error reading raft persistent state - {}", e);
-              _meta.term = model::term_id(0);
+              _term = model::term_id(0);
           })
           .then([this] { return details::read_bootstrap_state(_log); })
           .then([this](configuration_bootstrap_state st) {
@@ -433,13 +433,12 @@ ss::future<> consensus::start() {
                   update_follower_stats(_conf);
               }
               auto lstats = _log.offsets();
-              _meta.prev_log_index = lstats.committed_offset;
-              _meta.prev_log_term = lstats.committed_offset_term;
               vlog(
                 _ctxlog.info,
-                "Log offsets: {}, bootstrap state:{}",
+                "Log offsets: {}, term:{}, commit index: {}",
                 lstats,
-                _meta);
+                _term,
+                _commit_index);
           })
           .then([this] {
               // Arm leader election timeout.
@@ -457,9 +456,10 @@ ss::future<vote_reply> consensus::vote(vote_request&& r) {
 
 ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
     vote_reply reply;
-    reply.term = _meta.term;
-    auto last_log_index = _meta.prev_log_index;
-    auto last_entry_term = _meta.prev_log_term;
+    reply.term = _term;
+    auto lstats = _log.offsets();
+    auto last_log_index = lstats.dirty_offset;
+    auto last_entry_term = lstats.dirty_offset_term;
     _probe.vote_request();
     vlog(_ctxlog.trace, "Vote requested {}, voted for {}", r, _voted_for);
     /// set to true if the caller's log is as up to date as the recipient's
@@ -470,7 +470,7 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
         || (r.prev_log_term == last_entry_term && r.prev_log_index >= last_log_index);
 
     // raft.pdf: reply false if term < currentTerm (§5.1)
-    if (r.term < _meta.term) {
+    if (r.term < _term) {
         return ss::make_ready_future<vote_reply>(std::move(reply));
     }
 
@@ -489,16 +489,16 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
         return ss::make_ready_future<vote_reply>(std::move(reply));
     }
 
-    if (r.term > _meta.term) {
+    if (r.term > _term) {
         vlog(
           _ctxlog.info,
           "received vote response with larger term from node {}, received {}, "
           "current {}",
           r.node_id,
           r.term,
-          _meta.term);
-        _meta.term = r.term;
-        reply.term = _meta.term;
+          _term);
+        _term = r.term;
+        reply.term = _term;
         do_step_down();
     }
 
@@ -507,10 +507,10 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
     if (reply.log_ok && _voted_for() < 0) {
         _voted_for = model::node_id(r.node_id);
         _hbeat = clock_type::now();
-        vlog(_ctxlog.trace, "Voting for {} in term {}", r.node_id, _meta.term);
+        vlog(_ctxlog.trace, "Voting for {} in term {}", r.node_id, _term);
         f = f.then([this] {
             return details::persist_voted_for(
-                     voted_for_filename(), {_voted_for, _meta.term})
+                     voted_for_filename(), {_voted_for, _term})
               .handle_exception([this](const std::exception_ptr& e) {
                   vlog(
                     _ctxlog.warn,
@@ -547,29 +547,37 @@ consensus::do_append_entries(append_entries_request&& r) {
     append_entries_reply reply;
     reply.node_id = _self;
     reply.group = r.meta.group;
-    reply.term = _meta.term;
-    reply.last_dirty_log_index = _meta.prev_log_index;
+    reply.term = _term;
+    reply.last_dirty_log_index = lstats.dirty_offset;
     reply.last_committed_log_index = lstats.committed_offset;
     reply.result = append_entries_reply::status::failure;
     _probe.append_request();
 
     // no need to trigger timeout
     _hbeat = clock_type::now();
-    vlog(_ctxlog.trace, "Append batches, request {}, local {}", r.meta, _meta);
+    vlog(
+      _ctxlog.trace,
+      "Append batches, request {}, term {}, commit_index: {}, prev_log_idx: "
+      "{}, prev_log_term: {}",
+      r.meta,
+      _term,
+      _commit_index,
+      lstats.dirty_offset,
+      lstats.dirty_offset_term);
 
     // raft.pdf: Reply false if term < currentTerm (§5.1)
-    if (r.meta.term < _meta.term) {
+    if (r.meta.term < _term) {
         reply.result = append_entries_reply::status::failure;
         return ss::make_ready_future<append_entries_reply>(std::move(reply));
     }
 
-    if (r.meta.term > _meta.term) {
+    if (r.meta.term > _term) {
         vlog(
           _ctxlog.debug,
           "append_entries request::term:{}  > ours: {}. Setting new term",
           r.meta.term,
-          _meta.term);
-        _meta.term = r.meta.term;
+          _term);
+        _term = r.meta.term;
         return do_append_entries(std::move(r));
     }
 
@@ -603,8 +611,8 @@ consensus::do_append_entries(append_entries_request&& r) {
     // if prev log index from request is the same as current we can use
     // prev_log_term as an optimization
     auto last_log_term
-      = _meta.prev_log_index == r.meta.prev_log_index
-          ? _meta.prev_log_term // use term from meta
+      = lstats.dirty_offset == r.meta.prev_log_index
+          ? lstats.dirty_offset_term // use term from lstats
           : get_term(model::offset(
             r.meta.prev_log_index)); // lookup for request term in log
 
@@ -641,7 +649,7 @@ consensus::do_append_entries(append_entries_request&& r) {
 
     // section 3
     if (r.meta.prev_log_index < last_log_offset) {
-        if (unlikely(r.meta.prev_log_index < _meta.commit_index)) {
+        if (unlikely(r.meta.prev_log_index < _commit_index)) {
             reply.result = append_entries_reply::status::success;
             vlog(
               _ctxlog.info,
@@ -664,8 +672,6 @@ consensus::do_append_entries(append_entries_request&& r) {
         return _log
           .truncate(storage::truncate_config(truncate_at, _io_priority))
           .then([this, r = std::move(r)]() mutable {
-              _meta.prev_log_index = r.meta.prev_log_index;
-              _meta.prev_log_term = r.meta.prev_log_term;
               return do_append_entries(std::move(r));
           })
           .handle_exception([this, reply = std::move(reply)](
@@ -771,11 +777,13 @@ ss::future<> consensus::replicate_configuration(
     vlog(_ctxlog.debug, "Replicating group configuration {}", cfg);
     auto batches = details::serialize_configuration_as_batches(std::move(cfg));
     for (auto& b : batches) {
-        b.set_term(model::term_id(_meta.term));
+        b.set_term(model::term_id(_term));
     }
     auto seqs = next_followers_request_seq();
     append_entries_request req(
-      _self, _meta, model::make_memory_record_batch_reader(std::move(batches)));
+      _self,
+      meta(),
+      model::make_memory_record_batch_reader(std::move(batches)));
     return _batcher.do_flush({}, std::move(req), std::move(u), std::move(seqs));
 }
 
@@ -784,8 +792,8 @@ consensus::make_append_entries_reply(storage::append_result disk_results) {
     auto lstats = _log.offsets();
     append_entries_reply reply;
     reply.node_id = _self;
-    reply.group = _meta.group;
-    reply.term = _meta.term;
+    reply.group = _group;
+    reply.term = _term;
     reply.last_dirty_log_index = disk_results.last_offset;
     reply.last_committed_log_index = lstats.committed_offset;
     reply.result = append_entries_reply::status::success;
@@ -814,8 +822,6 @@ consensus::disk_append(model::record_batch_reader&& reader) {
           // TODO
           // if we rolled a log segment. write current configuration
           // for speedy recovery in the background
-          _meta.prev_log_index = ret.last_offset;
-          _meta.prev_log_term = ret.last_term;
 
           // leader never flush just after write
           // for quorum_ack it flush in parallel to dispatching RPCs to
@@ -881,21 +887,21 @@ ss::future<> consensus::do_maybe_update_leader_commit_idx() {
     size_t majority_match_idx = (offsets.size() - 1) / 2;
     auto majority_match = offsets[majority_match_idx];
     if (
-      majority_match > _meta.commit_index
-      && _log.get_term(majority_match) == _meta.term) {
+      majority_match > _commit_index
+      && _log.get_term(majority_match) == _term) {
         vlog(_ctxlog.trace, "Leader commit index updated {}", majority_match);
-        auto old_commit_idx = _meta.commit_index;
-        _meta.commit_index = majority_match;
+        auto old_commit_idx = _commit_index;
+        _commit_index = majority_match;
         auto range_start = details::next_offset(model::offset(old_commit_idx));
         vlog(
           _ctxlog.trace,
           "Committing entries from {} to {}",
           range_start,
-          _meta.commit_index);
+          _commit_index);
         _commit_index_updated.broadcast();
         return notify_entries_commited(
           details::next_offset(model::offset(old_commit_idx)),
-          model::offset(_meta.commit_index));
+          model::offset(_commit_index));
     }
     return ss::make_ready_future<>();
 }
@@ -906,20 +912,18 @@ consensus::maybe_update_follower_commit_idx(model::offset request_commit_idx) {
     //
     // If leaderCommit > commitIndex, set commitIndex =
     // min(leaderCommit, index of last new entry)
-    if (request_commit_idx > _meta.commit_index) {
+    if (request_commit_idx > _commit_index) {
         auto new_commit_idx = std::min(
           request_commit_idx, lstats.committed_offset);
-        if (new_commit_idx != _meta.commit_index) {
-            auto previous_commit_idx = _meta.commit_index;
-            _meta.commit_index = new_commit_idx;
+        if (new_commit_idx != _commit_index) {
+            auto previous_commit_idx = _commit_index;
+            _commit_index = new_commit_idx;
             vlog(
-              _ctxlog.trace,
-              "Follower commit index updated {}",
-              _meta.commit_index);
+              _ctxlog.trace, "Follower commit index updated {}", _commit_index);
             _commit_index_updated.broadcast();
             return notify_entries_commited(
               details::next_offset(model::offset(previous_commit_idx)),
-              model::offset(_meta.commit_index));
+              model::offset(_commit_index));
         }
     }
     return ss::make_ready_future<>();
@@ -944,14 +948,20 @@ void consensus::update_follower_stats(const group_configuration& cfg) {
 }
 
 void consensus::trigger_leadership_notification() {
-    _leader_notification(leadership_status{.term = model::term_id(_meta.term),
-                                           .group = group_id(_meta.group),
+    _leader_notification(leadership_status{.term = model::term_id(_term),
+                                           .group = group_id(_group),
                                            .current_leader = _leader_id});
 }
 
 std::ostream& operator<<(std::ostream& o, const consensus& c) {
     fmt::print(
-      o, "{{log:{}, meta:{}, voted_for:{}}}", c._log, c._meta, c._voted_for);
+      o,
+      "{{log:{}, group_id:{}, term: {}, commit_index: {}, voted_for:{}}}",
+      c._log,
+      c._group,
+      c._term,
+      c._commit_index,
+      c._voted_for);
     return o;
 }
 

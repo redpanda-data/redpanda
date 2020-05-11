@@ -52,7 +52,7 @@ static std::vector<heartbeat_manager::node_heartbeat> requests_for_range(
                   "Skipping sending beat to {} gr: {} last hb {}, last append "
                   "{}",
                   n.id(),
-                  ptr->meta().group,
+                  ptr->group(),
                   last_heartbeat.time_since_epoch().count(),
                   last_hbeat_timestamp.time_since_epoch().count());
                 // we already sent heartbeat, skip it
@@ -216,7 +216,7 @@ heartbeat_manager::register_group(ss::lw_shared_ptr<consensus> ptr) {
           ret.second,
           "double registration of group: {}:{}",
           ptr->ntp(),
-          ptr->meta().group);
+          ptr->group());
     });
 }
 
