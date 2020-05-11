@@ -90,6 +90,7 @@ disk_log_appender::operator()(model::record_batch& batch) {
                      && _bytes_left_in_segment > 0;
           },
           [this] {
+              release_lock();
               return _log.maybe_roll(_last_term, _idx, _config.io_priority)
                 .then([this] { return initialize(); });
           });
