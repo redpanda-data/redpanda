@@ -40,7 +40,8 @@ controller::controller(
   ss::sharded<shard_table>& st,
   ss::sharded<metadata_cache>& md_cache,
   ss::sharded<rpc::connection_cache>& connection_cache)
-  : _self(make_self_broker(config::shard_local_cfg()))
+  : state_machine(clusterlog, raft_priority())
+  , _self(make_self_broker(config::shard_local_cfg()))
   , _seed_servers(config::shard_local_cfg().seed_servers())
   , _data_directory(config::shard_local_cfg().data_directory().as_sstring())
   , _gm(gm)
@@ -174,7 +175,8 @@ ss::future<> controller::start() {
                     return join_raft0();
                 };
             });
-      });
+      })
+      .then([this] { return state_machine::start(_raft0); });
 }
 
 ss::future<consensus_ptr> controller::start_raft0() {
@@ -189,10 +191,7 @@ ss::future<consensus_ptr> controller::start_raft0() {
       make_raft0_ntp_config(),
       controller::group,
       std::move(brokers),
-      [this](model::record_batch_reader&& reader) {
-          verify_shard();
-          on_raft0_entries_comitted(std::move(reader));
-      });
+      std::nullopt);
 }
 
 ss::future<> controller::stop() {
@@ -210,11 +209,20 @@ ss::future<> controller::stop() {
         _leadership_cond.broadcast();
     }
     _as.request_abort();
-    return _state_lock.with([this] {
-        // we have to stop latch first as there may be some futures waiting
-        // inside the gate for notification
-        _notification_latch.stop();
-        return _bg.close();
+    return state_machine::stop().then([this] {
+        return _state_lock.with([this] {
+            // we have to stop latch first as there may be some futures waiting
+            // inside the gate for notification
+            _notification_latch.stop();
+            return _bg.close();
+        });
+    });
+}
+
+ss::future<> controller::apply(model::record_batch batch) {
+    verify_shard();
+    return _state_lock.with([this, batch = std::move(batch)]() mutable {
+        return process_raft0_batch(std::move(batch));
     });
 }
 
@@ -426,8 +434,6 @@ ss::future<> controller::assign_group_to_shard(
           s.insert(raft_group, shard);
       });
 }
-
-void controller::end_of_stream() {}
 
 ss::future<> controller::update_cache_with_partitions_assignment(
   const partition_assignment& p_as) {
@@ -998,23 +1004,6 @@ controller::update_brokers_cache(std::vector<model::broker> nodes) {
       [nodes = std::move(nodes)](metadata_cache& c) mutable {
           c.update_brokers_cache(std::move(nodes));
       });
-}
-
-void controller::on_raft0_entries_comitted(
-  model::record_batch_reader&& reader) {
-    (void)with_gate(_bg, [this, reader = std::move(reader)]() mutable {
-        return _state_lock.with([this, reader = std::move(reader)]() mutable {
-            if (_bg.is_closed()) {
-                return ss::make_ready_future<>();
-            }
-            return std::move(reader).consume(
-              batch_consumer(this), model::no_timeout);
-        });
-    }).handle_exception_type([](const ss::gate_closed_exception&) {
-        vlog(
-          clusterlog.info,
-          "On shutdown... ignoring append_entries notification");
-    });
 }
 
 ss::future<> controller::update_clients_cache(
