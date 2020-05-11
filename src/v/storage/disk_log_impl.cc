@@ -405,9 +405,7 @@ ss::future<> disk_log_impl::truncate(truncate_config cfg) {
 
 ss::future<> disk_log_impl::do_truncate(truncate_config cfg) {
     auto stats = offsets();
-    if (
-      cfg.base_offset > stats.dirty_offset
-      || cfg.base_offset < stats.start_offset) {
+    if (cfg.base_offset > stats.dirty_offset) {
         return ss::make_ready_future<>();
     }
     if (_segs.empty()) {

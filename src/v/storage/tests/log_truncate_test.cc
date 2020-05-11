@@ -1,5 +1,6 @@
 #include "model/fundamental.h"
 #include "model/record.h"
+#include "model/timestamp.h"
 #include "storage/log.h"
 #include "storage/log_manager.h"
 #include "storage/tests/storage_test_fixture.h"
@@ -276,6 +277,44 @@ FIXTURE_TEST(test_truncate_last_single_record_batch, storage_test_fixture) {
             BOOST_REQUIRE_EQUAL(all_batches.empty(), true);
         }
     }
+}
+
+FIXTURE_TEST(
+  test_truncate_whole_log_when_logs_are_garbadge_collected,
+  storage_test_fixture) {
+    auto cfg = default_log_config(test_dir);
+    cfg.stype = storage::log_config::storage_type::disk;
+    storage::log_manager mgr = make_log_manager(cfg);
+    info("config: {}", mgr.config());
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto ntp = model::ntp("default", "test", 0);
+
+    auto overrides = std::make_unique<storage::ntp_config::default_overrides>();
+
+    overrides->cleanup_policy_bitflags
+      = model::cleanup_policy_bitflags::deletion;
+    overrides->segment_size = 1024;
+
+    auto log = mgr
+                 .manage(storage::ntp_config(
+                   ntp, mgr.config().base_dir, std::move(overrides)))
+                 .get0();
+    append_random_batches(log, 10, model::term_id(0));
+    append_random_batches(log, 10, model::term_id(0));
+    log.flush().get0();
+    auto ts = model::timestamp::now();
+    append_random_batches(log, 10, model::term_id(0));
+    log.flush().get0();
+    // garbadge collect first append series
+    log.gc(ts, std::nullopt).get0();
+    // truncate at 0, offset earlier then the one present in log
+    log
+      .truncate(storage::truncate_config(
+        model::offset(0), ss::default_priority_class()))
+      .get0();
+
+    auto lstats = log.offsets();
+    BOOST_REQUIRE_EQUAL(lstats.dirty_offset, model::offset{});
 }
 
 FIXTURE_TEST(test_truncate, storage_test_fixture) {
