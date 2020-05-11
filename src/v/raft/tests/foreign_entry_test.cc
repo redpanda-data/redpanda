@@ -93,9 +93,8 @@ struct foreign_entry_fixture {
     storage::log_manager _mngr;
     model::ntp _ntp{
       model::ns("test.bootstrap." + random_generators::gen_alphanum_string(8)),
-      model::topic_partition{
-        model::topic(random_generators::gen_alphanum_string(6)),
-        model::partition_id(random_generators::get_int(0, 24))}};
+      model::topic(random_generators::gen_alphanum_string(6)),
+      model::partition_id(random_generators::get_int(0, 24))};
 };
 
 FIXTURE_TEST(sharing_one_reader, foreign_entry_fixture) {

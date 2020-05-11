@@ -161,26 +161,38 @@ void segment::cache_truncate(model::offset offset) {
 
 ss::future<append_result> segment::append(const model::record_batch& b) {
     check_segment_not_closed("append()");
+    vassert(
+      b.base_offset() >= _tracker.base_offset,
+      "Invalid state. Attempted to append a batch with base_offset:{}, but "
+      "would invalidate our initial state base offset of:{}. Actual batch "
+      "header:{}, self:{}",
+      b.base_offset(),
+      _tracker.base_offset,
+      b.header(),
+      *this);
+    vassert(
+      b.header().ctx.owner_shard,
+      "Shard not set when writing to: {} - header: {}",
+      *this,
+      b.header());
+
     const auto start_physical_offset = _appender->file_byte_offset();
     // proxy serialization to segment_appender_utils
     return write(*_appender, b).then([this, &b, start_physical_offset] {
         _tracker.dirty_offset = b.last_offset();
         const auto end_physical_offset = _appender->file_byte_offset();
+        const auto expected_end_physical = start_physical_offset
+                                           + b.header().size_bytes;
         vassert(
-          end_physical_offset == start_physical_offset + b.header().size_bytes,
+          end_physical_offset == expected_end_physical,
           "size must be deterministic: end_offset:{}, expected:{}",
           end_physical_offset,
-          start_physical_offset + b.header().size_bytes);
+          expected_end_physical);
         // index the write
         _idx.maybe_track(b.header(), start_physical_offset);
         auto ret = append_result{.base_offset = b.base_offset(),
                                  .last_offset = b.last_offset(),
                                  .byte_size = (size_t)b.size_bytes()};
-        vassert(
-          b.header().ctx.owner_shard,
-          "Shard not set when writing to: {} - header: {}",
-          *this,
-          b.header());
         // cache always copies the batch
         cache_put(b);
         return ret;

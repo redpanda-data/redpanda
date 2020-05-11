@@ -14,7 +14,11 @@ public:
 
     explicit segment_appender_chunk(size_t alignment)
       : _alignment(alignment)
-      , _buf(ss::allocate_aligned_buffer<char>(chunk_size, alignment)) {}
+      , _buf(ss::allocate_aligned_buffer<char>(chunk_size, alignment)) {
+        // zero-out the buffer in case the alloctor gaves us a recycled buffer
+        // that was from a valid previous segment.
+        reset();
+    }
 
     segment_appender_chunk(const segment_appender_chunk&) = delete;
     segment_appender_chunk& operator=(const segment_appender_chunk&) = delete;

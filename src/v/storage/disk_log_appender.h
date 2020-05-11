@@ -32,9 +32,9 @@ private:
     log_clock::time_point _append_time;
     model::offset _idx;
 
-    ss::lw_shared_ptr<segment> _cache;
-    std::optional<ss::rwlock::holder> _cache_lock;
-    size_t _bytes_left_in_cache_segment{0};
+    ss::lw_shared_ptr<segment> _seg;
+    std::optional<ss::rwlock::holder> _seg_lock;
+    size_t _bytes_left_in_segment{0};
 
     // below are just copied from append
     model::offset _base_offset;

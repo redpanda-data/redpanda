@@ -40,9 +40,9 @@ ss::future<> disk_log_appender::initialize() {
     auto ptr = _log._segs.back();
     // appending is a non-destructive op. so acquire read lock
     return ptr->read_lock().then([this, ptr](ss::rwlock::holder h) {
-        _cache = ptr;
-        _cache_lock = std::move(h);
-        _bytes_left_in_cache_segment = _log.bytes_left_before_roll();
+        _seg = ptr;
+        _seg_lock = std::move(h);
+        _bytes_left_in_segment = _log.bytes_left_before_roll();
     });
 }
 
@@ -55,17 +55,17 @@ bool disk_log_appender::needs_to_roll_log(model::term_id batch_term) const {
      * Checking for term is because we support multiple term appends which
      * always roll
      *
-     * _bytes_left_in_cache_segment is for initial condition
+     * _bytes_left_in_segment is for initial condition
      *
      */
-    return _bytes_left_in_cache_segment == 0 || _log.term() != batch_term
+    return _bytes_left_in_segment == 0 || _log.term() != batch_term
            || _log._segs.empty() /*see above before removing this condition*/;
 }
 
 void disk_log_appender::release_lock() {
-    _cache = nullptr;
-    _cache_lock = std::nullopt;
-    _bytes_left_in_cache_segment = 0;
+    _seg = nullptr;
+    _seg_lock = std::nullopt;
+    _bytes_left_in_segment = 0;
 }
 
 ss::future<ss::stop_iteration>
@@ -87,7 +87,7 @@ disk_log_appender::operator()(model::record_batch& batch) {
                      // situation - say a segment eviction we need to double
                      // check that _after_ we got the lock, the segment wasn't
                      // somehow closed before the append
-                     && _bytes_left_in_cache_segment > 0;
+                     && _bytes_left_in_segment > 0;
           },
           [this] {
               return _log.maybe_roll(_last_term, _idx, _config.io_priority)
@@ -96,7 +96,7 @@ disk_log_appender::operator()(model::record_batch& batch) {
     }
     return f
       .then([this, &batch]() mutable {
-          return _cache->append(batch).then([this](append_result r) {
+          return _seg->append(batch).then([this](append_result r) {
               _idx = r.last_offset + model::offset(1); // next base offset
               _byte_size += r.byte_size;
               // do not track base_offset, only the last one
@@ -104,8 +104,10 @@ disk_log_appender::operator()(model::record_batch& batch) {
               auto& p = _log.get_probe();
               p.add_bytes_written(r.byte_size);
               p.batch_written();
-              _bytes_left_in_cache_segment = std::min(
-                _bytes_left_in_cache_segment, r.byte_size);
+              // substract the bytes from the append
+              // take the min because _bytes_left_in_segment is optimistic
+              _bytes_left_in_segment -= std::min(
+                _bytes_left_in_segment, r.byte_size);
               return ss::stop_iteration::no;
           });
       })
@@ -134,9 +136,8 @@ ss::future<append_result> disk_log_appender::end_of_stream() {
 
 std::ostream& operator<<(std::ostream& o, const disk_log_appender& a) {
     return o << "{offset_idx:" << a._idx
-             << ", active_segment:" << (a._cache_lock ? "yes" : "no")
-             << ", _bytes_left_in_cache_segment:"
-             << a._bytes_left_in_cache_segment
+             << ", active_segment:" << (a._seg_lock ? "yes" : "no")
+             << ", _bytes_left_in_segment:" << a._bytes_left_in_segment
              << ", _base_offset:" << a._base_offset
              << ", _last_offset:" << a._last_offset
              << ", _last_term:" << a._last_term

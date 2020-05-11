@@ -398,13 +398,7 @@ static ss::future<> fetch_topic_partitions(op_context& octx) {
               return ss::make_ready_future<>();
           }
 
-          auto ntp = model::ntp{
-            .ns = cluster::kafka_namespace,
-            .tp = model::topic_partition{
-              .topic = topic.name,
-              .partition = part.id,
-            },
-          };
+          auto ntp = model::ntp(cluster::kafka_namespace, topic.name, part.id);
 
           fetch_config config{
             .start_offset = part.fetch_offset,

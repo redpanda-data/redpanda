@@ -71,11 +71,8 @@ SEASTAR_THREAD_TEST_CASE(broker_metadata_rt_test) {
 }
 
 SEASTAR_THREAD_TEST_CASE(partition_assignment_rt_test) {
-    model::ntp test_ntp{model::ns("test"),
-                        {
-                          .topic = model::topic("topic"),
-                          .partition = model::partition_id(3),
-                        }};
+    model::ntp test_ntp(
+      model::ns("test"), model::topic("topic"), model::partition_id(3));
     cluster::partition_assignment p_as{
       .group = raft::group_id(2),
       .ntp = test_ntp,
