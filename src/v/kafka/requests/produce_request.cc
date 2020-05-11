@@ -256,13 +256,7 @@ static ss::future<produce_response::partition> produce_topic_partition(
   produce_ctx& octx,
   produce_request::topic& topic,
   produce_request::partition& part) {
-    auto ntp = model::ntp{
-      .ns = cluster::kafka_namespace,
-      .tp = model::topic_partition{
-        .topic = topic.name,
-        .partition = part.id,
-      },
-    };
+    auto ntp = model::ntp(cluster::kafka_namespace, topic.name, part.id);
 
     /*
      * A single produce request may contain record batches for many different

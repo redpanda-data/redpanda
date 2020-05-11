@@ -29,10 +29,7 @@ SEASTAR_THREAD_TEST_CASE(partition_iterator) {
                   BOOST_TEST(!res.empty());
                   BOOST_TEST(res.back().topic == v.topic->name);
               }
-              return model::topic_partition{
-                .topic = v.topic->name,
-                .partition = v.partition->id,
-              };
+              return model::topic_partition(v.topic->name, v.partition->id);
           });
         return res;
     };

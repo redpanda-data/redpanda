@@ -16,9 +16,8 @@ cluster::partition_assignment create_test_assignment(uint32_t p, uint16_t rf) {
 
     return cluster::partition_assignment{
       .group = raft::group_id(p),
-      .ntp = model::ntp{.ns = model::ns("test"),
-                        .tp = {model::topic("a_topic"),
-                               model::partition_id(p)}},
+      .ntp = model::ntp(
+        model::ns("test"), model::topic("a_topic"), model::partition_id(p)),
       .replicas = std::move(replicas)};
 }
 
@@ -61,9 +60,8 @@ SEASTAR_THREAD_TEST_CASE(round_trip_test) {
     int32_t current_crc = batch.header().crc;
     ss::sstring base_dir = "test.dir_"
                            + random_generators::gen_alphanum_string(4);
-    model::ntp test_ntp{.ns = model::ns("test_ns"),
-                        .tp = {.topic = model::topic("test_topic"),
-                               .partition = model::partition_id(0)}};
+    model::ntp test_ntp(
+      model::ns("test_ns"), model::topic("test_topic"), model::partition_id(0));
     ss::circular_buffer<model::record_batch> batches;
     batches.push_back(std::move(batch));
 

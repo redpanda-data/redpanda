@@ -217,10 +217,10 @@ struct raft_node {
 };
 
 model::ntp node_ntp(raft::group_id gr_id, model::node_id n_id) {
-    return model::ntp{.ns = model::ns("test"),
-                      .tp = model::topic_partition{
-                        .topic = model::topic(fmt::format("group_{}", gr_id())),
-                        .partition = model::partition_id(n_id())}};
+    return model::ntp(
+      model::ns("test"),
+      model::topic(fmt::format("group_{}", gr_id())),
+      model::partition_id(n_id()));
 }
 
 struct raft_group {

@@ -124,10 +124,9 @@ private:
     raft::consensus_client_protocol _consensus_client_protocol;
     storage::log_manager _mngr;
     raft::heartbeat_manager _hbeats;
-    model::ntp _ntp{
-      model::ns("master_control_program"),
-      model::topic_partition{model::topic("tron"),
-                             model::partition_id(ss::this_shard_id())}};
+    model::ntp _ntp{model::ns("master_control_program"),
+                    model::topic("tron"),
+                    model::partition_id(ss::this_shard_id())};
     ss::lw_shared_ptr<raft::consensus> _consensus;
 };
 

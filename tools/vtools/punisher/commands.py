@@ -49,6 +49,8 @@ def _parse_redpanda_host_line(l):
 class RemoteExecutor:
     def __init__(self, nodes, host_key):
         self.nodes = nodes
+        self.kafka_ips = ",".join(
+            map(lambda x: f"{x[1]['private_ip']}:9092", self.nodes.items()))
         self.clients = {}
         self.host_key = host_key
 
@@ -67,48 +69,86 @@ class RemoteExecutor:
             c.close()
 
     def execute_on_node(self, id, func):
-        return func(self.nodes[id], self.clients[id])
+        return func(self.nodes[id], self.clients[id], self.kafka_ips)
 
     def execute_on_all(self, func):
         results = {}
         for [id, n] in self.nodes.items():
-            results[id] = func(n, self.clients[id])
+            results[id] = func(n, self.clients[id], self.kafka_ips)
         return results
 
 
-def _is_running(node, client):
+def _is_running(node, client, kips):
     private_ip = node['private_ip']
     stdin, stdout, strerr = client.exec_command(
-        f'curl http://{private_ip}:9644/metrics') 
+        f'curl http://{private_ip}:9644/metrics')
 
     return stdout.channel.recv_exit_status() == 0
 
 
 def _remote_execute(client, cmd):
     logging.info(f"Executing {cmd}")
-    stdin, stdout, strerr = client.exec_command(cmd)
+    return client.exec_command(cmd, timeout=3)
 
 
-def _transient_kill(node, client):
+def _kafka_create_topic(node, client, kips):
+    _remote_execute(client, ("/opt/kafka-dev/bin/kafka-topics.sh "
+                             f"--bootstrap-server {kips} "
+                             "--create --topic sfo --partitions 36 "
+                             "--replication-factor 3 "
+                             "| systemd-cat -t punisher -p info "))
+
+
+def _kafka_produce_topic(node, client, kips):
+    _remote_execute(client, ("/opt/kafka-dev/bin/kafka-run-class.sh "
+                             "org.apache.kafka.tools.ProducerPerformance "
+                             "--record-size 1024 "
+                             "--topic sfo "
+                             "--num-records 1024 "
+                             "--throughput 65535 "
+                             "--producer-props acks=1 "
+                             "client.id=vectorized.punisher.producer "
+                             f"bootstrap.servers={kips} "
+                             "batch.size=81960 "
+                             "buffer.memory=1048576 "
+                             "| systemd-cat -t punisher -p info "))
+
+
+def _kafka_consume_topic(node, client, kips):
+    # NOTE: The --timeout option is artificially set to 10ms because
+    # we do not want to block the consumer, we just want to trigger
+    # the lookup api in redpanda. Usually this reads around 2-300 records
+    _remote_execute(client, ("/opt/kafka-dev/bin/kafka-consumer-perf-test.sh "
+                             f"--broker-list={kips} "
+                             "--fetch-size=1048576 "
+                             "--timeout=10 "
+                             "--messages=1024 "
+                             "--group=vectorized.pusher.consumer "
+                             "--topic=sfo "
+                             "--threads 1 "
+                             "| systemd-cat -t punisher -p info "))
+
+
+def _transient_kill(node, client, ips):
     _remote_execute(
         client, 'cat /var/lib/redpanda/data/pid.lock | xargs sudo kill -9')
 
 
-def _perm_kill(node, client):
-    _transient_kill(node, client)
+def _perm_kill(node, client, ips):
+    _transient_kill(node, client, ips)
     _remote_execute(client, 'sudo systemctl stop redpanda')
 
 
-def _stop(node, client):
+def _stop(node, client, ips):
     _remote_execute(client, 'sudo systemctl stop redpanda')
 
 
-def _start(node, client):
+def _start(node, client, ips):
     _remote_execute(client, 'sudo systemctl start redpanda')
 
 
 def _get_logs(lines):
-    def get(node, client):
+    def get(node, client, ips):
         stdin, stdout, strerr = client.exec_command(
             f'journalctl -u redpanda -n {lines}')
         return map(lambda l: l.strip(), stdout)
@@ -148,6 +188,12 @@ class RemoteCluster:
             return self.executor.execute_on_node(id, _perm_kill)
         if command == 'start':
             return self.executor.execute_on_node(id, _start)
+        if command == 'create':
+            return self.executor.execute_on_node(id, _kafka_create_topic)
+        if command == 'produce':
+            return self.executor.execute_on_node(id, _kafka_produce_topic)
+        if command == 'consume':
+            return self.executor.execute_on_node(id, _kafka_consume_topic)
 
     def print_status(self):
         for [id, node] in self.executor.nodes.items():
@@ -195,17 +241,27 @@ def _punisher_loop(cl, allow_minority, sleep_time, failed_log_dir):
     cl.update_state()
     verifier = ClusterStateVerifier(cl.up, cl.down)
     with open(os.path.join(failed_log_dir, 'operations.log'), 'w') as op_log:
+        # first create the kafka topic
+        if len(cl.up) > 0:
+            id = random.choice(list(cl.up))
+            cl.execute('create', id)
         while True:
             logging.info(
                 f'Cluster state - running: {cl.up}, stopped: {cl.down}')
             cl.print_status()
             stop_commands = ['nop', 'transient_kill', 'stop', 'kill']
             start_commands = ['nop', 'start']
+            kafka_commands = ['produce', 'consume']
             count = len(cl.executor.nodes)
             majority = (count / 2) + 1
             cmd = 'nop'
             can_stop = len(cl.up) > majority or (allow_minority
                                                  and len(cl.up) > 0)
+            # always execute kafka command first
+            if len(cl.up) > 0:
+                id = random.choice(list(cl.up))
+                cl.execute(random.choice(kafka_commands), id)
+
             if can_stop:
                 id = random.choice(list(cl.up))
                 cmd = random.choice(stop_commands)

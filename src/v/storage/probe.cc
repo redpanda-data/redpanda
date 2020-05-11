@@ -58,6 +58,11 @@ void probe::setup_metrics(const model::ntp& ntp) {
           [this] { return _batch_write_errors; },
           sm::description("Number of batch write errors"),
           labels),
+        sm::make_derive(
+          "log_maybe_roll",
+          [this] { return _log_maybe_roll; },
+          sm::description("Number of times rolls were attempted"),
+          labels),
       });
 }
 

@@ -30,7 +30,7 @@ FIXTURE_TEST(test_random_workload, storage_test_fixture) {
     logs_to_fuzz.reserve(ntp_count);
     info("generating ntp's {}, with {} ops", ntp_count, ops_per_ntp);
     for (size_t i = 0; i < ntp_count; ++i) {
-        auto ntp = make_ntp(
+        auto ntp = model::ntp(
           "test.default",
           "topic." + random_generators::gen_alphanum_string(3),
           i);
@@ -70,7 +70,7 @@ FIXTURE_TEST(test_random_remove, storage_test_fixture) {
     ntps_to_fuzz.reserve(ntp_count);
 
     for (size_t i = 0; i < ntp_count; ++i) {
-        model::ntp ntp = make_ntp(
+        auto ntp = model::ntp(
           "test.default",
           "topic." + random_generators::gen_alphanum_string(3),
           i);

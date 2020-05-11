@@ -1184,11 +1184,7 @@ group::store_offsets(offset_commit_request&& r) {
             };
             builder.add_kv(std::move(key), std::move(val));
 
-            model::topic_partition tp{
-              .topic = t.name,
-              .partition = p.partition_index,
-            };
-
+            model::topic_partition tp(t.name, p.partition_index);
             offset_metadata md{
               .offset = p.committed_offset,
               .metadata = p.committed_metadata.value_or(""),
@@ -1297,10 +1293,7 @@ group::handle_offset_fetch(offset_fetch_request&& r) {
         offset_fetch_response_topic t;
         t.name = topic.name;
         for (auto id : topic.partition_indexes) {
-            model::topic_partition tp{
-              .topic = topic.name,
-              .partition = id,
-            };
+            model::topic_partition tp(topic.name, id);
             auto res = offset(tp);
             if (res) {
                 offset_fetch_response_partition p = {

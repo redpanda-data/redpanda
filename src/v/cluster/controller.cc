@@ -446,8 +446,7 @@ controller::recover_topic_configuration(topic_configuration t_cfg) {
 
 model::ntp
 make_ntp(model::topic_namespace_view tp_ns, model::partition_id pid) {
-    return model::ntp{.ns = tp_ns.ns,
-                      .tp = {.topic = tp_ns.tp, .partition = pid}};
+    return model::ntp(tp_ns.ns, tp_ns.tp, pid);
 }
 
 ss::future<> controller::process_topic_deletion(model::topic_namespace tp_ns) {
