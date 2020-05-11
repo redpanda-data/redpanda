@@ -128,7 +128,7 @@ FIXTURE_TEST(test_single_node_recovery_multi_terms, raft_test_fixture) {
     }
 
     // roll the term
-    leader_raft->step_down(leader_raft->meta().term + model::term_id(1)).get0();
+    leader_raft->step_down(leader_raft->term() + model::term_id(1)).get0();
     leader_id = wait_for_group_leader(gr);
     leader_raft = gr.get_member(leader_id).consensus;
     // append some entries in next term

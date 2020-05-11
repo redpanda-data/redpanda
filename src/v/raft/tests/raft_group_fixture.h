@@ -139,8 +139,7 @@ struct raft_node {
           .then([this] {
               if (hbeats) {
                   tstlog.info("Stopping heartbets manager at {}", broker.id());
-                  return hbeats
-                    ->deregister_group(raft::group_id(consensus->meta().group))
+                  return hbeats->deregister_group(consensus->group())
                     .then([this] { return hbeats->stop(); });
               }
               return ss::make_ready_future<>();
@@ -165,7 +164,7 @@ struct raft_node {
     bool contains(raft::group_id) { return true; }
 
     ss::future<log_t> read_log() {
-        auto max_offset = model::offset(consensus->meta().commit_index);
+        auto max_offset = model::offset(consensus->committed_offset());
         storage::log_reader_config cfg(
           model::offset(0), max_offset, ss::default_priority_class());
         return log.make_reader(cfg).then(
@@ -340,9 +339,7 @@ struct raft_group {
         raft::group_id::type leader_term = model::term_id(0);
 
         for (auto& [id, m] : _members) {
-            if (
-              m.consensus->is_leader()
-              && m.consensus->meta().term > leader_term) {
+            if (m.consensus->is_leader() && m.consensus->term() > leader_term) {
                 leader_id.emplace(id);
             }
         }
@@ -435,12 +432,12 @@ struct raft_test_fixture {
     void assert_at_most_one_leader(raft_group& gr) {
         std::unordered_map<long, int> leaders_per_term;
         for (auto& [_, m] : gr.get_members()) {
-            auto term = static_cast<long>(m.consensus->meta().term);
+            auto term = static_cast<long>(m.consensus->term());
             if (auto it = leaders_per_term.find(term);
                 it == leaders_per_term.end()) {
                 leaders_per_term.try_emplace(term, 0);
             }
-            auto it = leaders_per_term.find(m.consensus->meta().term);
+            auto it = leaders_per_term.find(m.consensus->term());
             it->second += m.consensus->is_leader();
         }
         for (auto& [term, leaders] : leaders_per_term) {
@@ -464,9 +461,9 @@ struct raft_test_fixture {
 
     bool are_all_commit_indexes_the_same(raft_group& gr) {
         auto c_idx
-          = gr.get_members().begin()->second.consensus->meta().commit_index;
+          = gr.get_members().begin()->second.consensus->committed_offset();
         for (auto& [id, m] : gr.get_members()) {
-            auto current = model::offset(m.consensus->meta().commit_index);
+            auto current = model::offset(m.consensus->committed_offset());
             auto log_offset = m.log.offsets().dirty_offset;
             tstlog.debug(
               "Node {} commit index {}, log offset {}",

@@ -26,7 +26,7 @@ std::ostream& operator<<(std::ostream& o, const vote_stm::vmeta& m) {
 vote_stm::vote_stm(consensus* p)
   : _ptr(p)
   , _sem(_ptr->_conf.nodes.size())
-  , _ctxlog(_ptr->_self, raft::group_id(_ptr->_meta.group)) {}
+  , _ctxlog(_ptr->_self, _ptr->group()) {}
 
 vote_stm::~vote_stm() {
     if (_vote_bg.get_count() > 0 && !_vote_bg.is_closed()) {
@@ -91,20 +91,23 @@ ss::future<> vote_stm::vote() {
           if (_ptr->should_skip_vote()) {
               return ss::make_ready_future<skip_vote>(skip_vote::yes);
           }
-          auto& m = _ptr->_meta;
           // 5.2.1
           _ptr->_vstate = consensus::vote_state::candidate;
           _ptr->_leader_id = std::nullopt;
           _ptr->trigger_leadership_notification();
           // 5.2.1.2
-          m.term += model::term_id(1);
+          _ptr->_term += model::term_id(1);
 
           // vote is the only method under _op_sem
           for (auto& n : _ptr->_conf.nodes) {
               _replies.emplace_back(vmeta(n.id()));
           }
-          _req = vote_request{
-            _ptr->_self, m.group, m.term, m.prev_log_index, m.prev_log_term};
+          auto lstats = _ptr->_log.offsets();
+          _req = vote_request{_ptr->_self,
+                              _ptr->group(),
+                              _ptr->term(),
+                              lstats.dirty_offset,
+                              lstats.dirty_offset_term};
           // we have to self vote before dispatching vote request to
           // other nodes, this vote has to be done under op semaphore as
           // it changes voted_for state
@@ -187,14 +190,13 @@ ss::future<> vote_stm::process_replies(ss::semaphore_units<> u) {
             acks.emplace_back(r.node);
         }
     }
-    vlog(
-      _ctxlog.trace, "vote acks in term {} from: {}", _ptr->_meta.term, acks);
+    vlog(_ctxlog.trace, "vote acks in term {} from: {}", _ptr->term(), acks);
     // section vote:5.2.2
     _ptr->_vstate = consensus::vote_state::leader;
     _ptr->_leader_id = _ptr->self();
     // Set last heartbeat timestamp to max as we are the leader
     _ptr->_hbeat = clock_type::time_point::max();
-    vlog(_ctxlog.info, "became the leader term:{}", _ptr->_meta.term);
+    vlog(_ctxlog.info, "became the leader term:{}", _ptr->term());
 
     _ptr->trigger_leadership_notification();
     replicate_config_as_new_leader(std::move(u));
