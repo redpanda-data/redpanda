@@ -224,6 +224,18 @@ void application::wire_up_services() {
       std::ref(coordinator_ntp_mapper))
       .get();
 
+    // metrics and quota management
+    syschecks::systemd_message("Adding kafka quota manager");
+    construct_service(_quota_mgr).get();
+
+    syschecks::systemd_message("Building kafka controller dispatcher");
+    construct_service(
+      cntrl_dispatcher,
+      std::ref(controller),
+      _smp_groups.kafka_smp_sg(),
+      _scheduling_groups.kafka_sg())
+      .get();
+
     // rpc
     rpc::server_configuration rpc_cfg;
     rpc_cfg.max_service_memory_per_core = memory_groups::rpc_total_memory();
@@ -244,18 +256,6 @@ void application::wire_up_services() {
                               .get0();
     syschecks::systemd_message("Starting kafka RPC {}", kafka_cfg);
     construct_service(_kafka_server, kafka_cfg).get();
-
-    // metrics and quota management
-    syschecks::systemd_message("Adding kafka quota manager");
-    construct_service(_quota_mgr).get();
-
-    syschecks::systemd_message("Building kafka controller dispatcher");
-    construct_service(
-      cntrl_dispatcher,
-      std::ref(controller),
-      _smp_groups.kafka_smp_sg(),
-      _scheduling_groups.kafka_sg())
-      .get();
 }
 
 void application::start() {
