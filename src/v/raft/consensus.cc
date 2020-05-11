@@ -671,7 +671,17 @@ consensus::do_append_entries(append_entries_request&& r) {
         _probe.log_truncated();
         return _log
           .truncate(storage::truncate_config(truncate_at, _io_priority))
-          .then([this, r = std::move(r)]() mutable {
+          .then([this, r = std::move(r), truncate_at]() mutable {
+              auto lstats = _log.offsets();
+              if (unlikely(lstats.dirty_offset != r.meta.prev_log_index)) {
+                  vlog(
+                    _ctxlog.error,
+                    "Log truncation error, expected offset: {}, log offsets: "
+                    "{}, requested truncation at {}",
+                    r.meta.prev_log_index,
+                    lstats,
+                    truncate_at);
+              }
               return do_append_entries(std::move(r));
           })
           .handle_exception([this, reply = std::move(reply)](
