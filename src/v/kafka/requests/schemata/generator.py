@@ -118,12 +118,16 @@ path_type_map = {
     "DeleteTopicsRequestData": {
         "TimeoutMs": ("std::chrono::milliseconds", "int32"),
     },
+    "FindCoordinatorRequestData": {
+        "KeyType": ("kafka::coordinator_type", "int8"),
+    },
 }
 
 # a few kafka field types specify an entity type
 entity_type_map = dict(
     groupId=("kafka::group_id", "string"),
     topicName=("model::topic", "string"),
+    brokerId=("model::node_id", "int32"),
 )
 
 # mapping specified as a combination of native type and field name
@@ -138,6 +142,7 @@ field_name_type_map = {
 basic_type_map = dict(
     string=("ss::sstring", "read_string()", "read_nullable_string()"),
     bytes=("bytes", "read_bytes()"),
+    bool=("bool", "read_bool()"),
     int8=("int8_t", "read_int8()"),
     int16=("int16_t", "read_int16()"),
     int32=("int32_t", "read_int32()"),
@@ -161,6 +166,10 @@ STRUCT_TYPES = [
     "MemberIdentity",
     "MemberResponse",
     "DeletableTopicResult",
+    "DescribeConfigsResult",
+    "DescribeConfigsResource",
+    "DescribeConfigsResourceResult",
+    "DescribeConfigsSynonym",
 ]
 
 SCALAR_TYPES = list(basic_type_map.keys())
@@ -425,6 +434,10 @@ class Field:
                 }
         """
         plain_decoder, named_type = self._redpanda_decoder()
+        if self.is_array:
+            # array fields never contain nullable types. so if this is an array
+            # field then choose the non-nullable decoder for its element type.
+            return plain_decoder[1], named_type
         if self.nullable():
             return plain_decoder[2], named_type
         return plain_decoder[1], named_type
@@ -457,6 +470,7 @@ HEADER_TEMPLATE = """
 #include "kafka/errors.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "seastarx.h"
 
 #include <seastar/core/sstring.hh>
@@ -722,7 +736,15 @@ SCHEMA = {
         },
         "name": {"type": "string"},
         "validVersions": { "$ref": "#/definitions/versions" },
-        "flexibleVersions": { "$ref": "#/definitions/versions" },
+        "flexibleVersions": {
+            "oneOf": [
+                {
+                    "type": "string",
+                    "enum": ["none"],
+                },
+                {"$ref": "#/definitions/versions" },
+            ],
+        },
         "fields": { "$ref": "#/definitions/fields" },
     },
     "required": [

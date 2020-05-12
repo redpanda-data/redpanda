@@ -2,6 +2,9 @@
 
 #include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
+#include "kafka/requests/schemata/find_coordinator_request.h"
+#include "kafka/requests/schemata/find_coordinator_response.h"
+#include "kafka/types.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>
@@ -23,44 +26,46 @@ public:
     process(request_context&&, ss::smp_service_group);
 };
 
-enum class coordinator_type : int8_t {
-    group = 0,
-    transaction = 1,
-};
-
 struct find_coordinator_request final {
     using api_type = find_coordinator_api;
 
-    ss::sstring key;
-    coordinator_type key_type{coordinator_type::group}; // >= v1
+    find_coordinator_request_data data;
 
-    find_coordinator_request(request_context& ctx) { decode(ctx); }
-    find_coordinator_request(ss::sstring key)
-      : key(key)
-      , key_type(coordinator_type::group) {}
+    find_coordinator_request() = default;
 
-    void encode(response_writer& writer, api_version version);
-    void decode(request_context& ctx);
+    find_coordinator_request(
+      ss::sstring key, coordinator_type key_type = coordinator_type::group)
+      : data({
+        .key = std::move(key),
+        .key_type = key_type,
+      }) {}
+
+    void encode(response_writer& writer, api_version version) {
+        data.encode(writer, version);
+    }
+
+    void decode(request_reader& reader, api_version version) {
+        data.decode(reader, version);
+    }
 };
 
 struct find_coordinator_response final {
     using api_type = find_coordinator_api;
 
-    std::chrono::milliseconds throttle{0}; // >= v1
-    error_code error;
-    std::optional<ss::sstring> error_message; // >= v1
-    model::node_id node;
-    ss::sstring host;
-    int32_t port;
+    find_coordinator_response_data data;
 
-    find_coordinator_response() = default;
+    find_coordinator_response()
+      : data({.throttle_time_ms = std::chrono::milliseconds(0)}) {}
 
     find_coordinator_response(
       error_code error, model::node_id node, ss::sstring host, int32_t port)
-      : error(error)
-      , node(node)
-      , host(std::move(host))
-      , port(port) {}
+      : data({
+        .throttle_time_ms = std::chrono::milliseconds(0),
+        .error_code = error,
+        .node_id = node,
+        .host = std::move(host),
+        .port = port,
+      }) {}
 
     find_coordinator_response(
       model::node_id node, ss::sstring host, int32_t port)
@@ -70,10 +75,18 @@ struct find_coordinator_response final {
     explicit find_coordinator_response(error_code error)
       : find_coordinator_response(error, model::node_id(-1), "", -1) {}
 
-    void encode(const request_context& ctx, response& resp);
-    void decode(iobuf buf, api_version version);
+    void encode(const request_context& ctx, response& resp) {
+        data.encode(ctx, resp);
+    }
+
+    void decode(iobuf buf, api_version version) {
+        data.decode(std::move(buf), version);
+    }
 };
 
-std::ostream& operator<<(std::ostream&, const find_coordinator_response&);
+static inline std::ostream&
+operator<<(std::ostream& os, const find_coordinator_response& r) {
+    return os << r.data;
+}
 
 } // namespace kafka

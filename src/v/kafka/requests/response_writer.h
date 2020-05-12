@@ -3,6 +3,7 @@
 #include "bytes/bytes.h"
 #include "bytes/iobuf.h"
 #include "kafka/errors.h"
+#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "seastarx.h"
 #include "utils/concepts-enabled.h"
@@ -58,6 +59,11 @@ public:
     uint32_t write(kafka::error_code v) {
         using underlying = std::underlying_type_t<kafka::error_code>;
         return serialize_int<underlying>(static_cast<underlying>(v));
+    }
+
+    uint32_t write(kafka::coordinator_type t) {
+        using underlying = std::underlying_type_t<kafka::coordinator_type>;
+        return serialize_int<underlying>(static_cast<underlying>(t));
     }
 
     uint32_t write_varint(int32_t v) { return serialize_vint<vint>(v); }

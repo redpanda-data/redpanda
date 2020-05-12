@@ -13,15 +13,15 @@ FIXTURE_TEST(find_coordinator_unsupported_key, redpanda_thread_fixture) {
     client.connect().get();
 
     kafka::find_coordinator_request req("key");
-    req.key_type = kafka::coordinator_type::transaction;
+    req.data.key_type = kafka::coordinator_type::transaction;
 
     auto resp = client.dispatch(req, kafka::api_version(1)).get0();
     client.stop().then([&client] { client.shutdown(); }).get();
 
-    BOOST_TEST(resp.error == kafka::error_code::unsupported_version);
-    BOOST_TEST(resp.node == model::node_id(-1));
-    BOOST_TEST(resp.host == "");
-    BOOST_TEST(resp.port == -1);
+    BOOST_TEST(resp.data.error_code == kafka::error_code::unsupported_version);
+    BOOST_TEST(resp.data.node_id == model::node_id(-1));
+    BOOST_TEST(resp.data.host == "");
+    BOOST_TEST(resp.data.port == -1);
 }
 
 FIXTURE_TEST(find_coordinator, redpanda_thread_fixture) {
@@ -35,8 +35,8 @@ FIXTURE_TEST(find_coordinator, redpanda_thread_fixture) {
     auto resp = client.dispatch(req, kafka::api_version(1)).get0();
     client.stop().then([&client] { client.shutdown(); }).get();
 
-    BOOST_TEST(resp.error == kafka::error_code::none);
-    BOOST_TEST(resp.node == model::node_id(1));
-    BOOST_TEST(resp.host == "127.0.0.1");
-    BOOST_TEST(resp.port == 9092);
+    BOOST_TEST(resp.data.error_code == kafka::error_code::none);
+    BOOST_TEST(resp.data.node_id == model::node_id(1));
+    BOOST_TEST(resp.data.host == "127.0.0.1");
+    BOOST_TEST(resp.data.port == 9092);
 }
