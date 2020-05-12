@@ -74,14 +74,21 @@ def trigger(build_type, clang, conf):
     gcb_conf['substitutions'] = {
         'COMMIT_SHA': sha1,
         'SHORT_SHA': r.git.rev_parse(sha1, short=7),
-        '_COMPILER': 'clang' if vconfig.compiler else 'gcc',
+        '_COMPILER': 'clang' if vconfig.compiler == 'clang' else 'gcc',
         '_BUILD_TYPE': vconfig.build_type,
         '_GITHUB_API_TOKEN': gh_token,
     }
 
     # workaround for lack of automatic conversion in gcb python API
     timeout_secs = gcb_conf.get('timeout', 3600)
-    timeout_duration = cloudbuild_v1.types.Duration(seconds=timeout_secs)
+    timeout_secs = timeout_secs.replace('s', '')
+    timeout_duration = cloudbuild_v1.types.Duration(seconds=int(timeout_secs))
     gcb_conf['timeout'] = timeout_duration
+
+    # workaround for camelCase vs snake_case mismatch in gcb python API
+    machine_type = gcb_conf.get('options', {}).get('machineType', None)
+    if machine_type:
+        gcb_conf['options']['machine_type'] = machine_type
+        gcb_conf['options'].pop('machineType')
 
     client.create_build('redpandaci', gcb_conf)

@@ -70,9 +70,14 @@ def cpp(build_type, conf, skip_external, clang, reconfigure, targets):
     else:
         logging.info(f'Found cmake cache, skipping cmake configuration.')
 
-    # assign jobs so that we have 2.0GB/core
+    # assign jobs so that we have 2.0GB/core (4.0GB/core on CI)
+    if vconfig.environ["CI"] == "1":
+        gb_per_core = 3
+    else:
+        gb_per_core = 2
+
     total_memory = os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES')
-    num_jobs = math.floor(total_memory / (2 * 1024.**3))
+    num_jobs = math.floor(total_memory / (gb_per_core * 1024.**3))
     num_jobs = min(num_jobs, os.sysconf('SC_NPROCESSORS_ONLN'))
     cmd = f'cd {vconfig.build_dir} && ninja -j{num_jobs}'
     if targets != None:
