@@ -425,6 +425,10 @@ class Field:
                 }
         """
         plain_decoder, named_type = self._redpanda_decoder()
+        if self.is_array:
+            # array fields never contain nullable types. so if this is an array
+            # field then choose the non-nullable decoder for its element type.
+            return plain_decoder[1], named_type
         if self.nullable():
             return plain_decoder[2], named_type
         return plain_decoder[1], named_type
