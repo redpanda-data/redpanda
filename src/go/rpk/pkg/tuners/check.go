@@ -12,10 +12,7 @@ import (
 )
 
 func Check(
-	fs afero.Fs,
-	configFile string,
-	conf *config.Config,
-	timeout time.Duration,
+	fs afero.Fs, configFile string, conf *config.Config, timeout time.Duration,
 ) ([]CheckResult, error) {
 	var results []CheckResult
 	ioConfigFile := redpanda.GetIOConfigPath(filepath.Dir(configFile))
