@@ -2,6 +2,8 @@
 #include "bytes/iobuf.h"
 #include "kafka/errors.h"
 #include "kafka/requests/fwd.h"
+#include "kafka/requests/schemata/describe_configs_request.h"
+#include "kafka/requests/schemata/describe_configs_response.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -29,53 +31,42 @@ public:
 struct describe_configs_request final {
     using api_type = describe_configs_api;
 
-    struct resource {
-        int8_t type;
-        ss::sstring name;
-        std::vector<ss::sstring> config_names;
-    };
+    describe_configs_request_data data;
 
-    std::vector<resource> resources;
-    bool include_synonyms{false}; // >= v1
+    void encode(response_writer& writer, api_version version) {
+        data.encode(writer, version);
+    }
 
-    void decode(request_context& ctx);
+    void decode(request_reader& reader, api_version version) {
+        data.decode(reader, version);
+    }
 };
 
-std::ostream& operator<<(std::ostream&, const describe_configs_request&);
+static inline std::ostream&
+operator<<(std::ostream& os, const describe_configs_request& r) {
+    return os << r.data;
+}
 
 struct describe_configs_response final {
     using api_type = describe_configs_api;
 
-    struct config_synonym {
-        ss::sstring name;
-        std::optional<ss::sstring> value;
-        int8_t source;
-    };
+    describe_configs_response_data data;
 
-    struct config {
-        ss::sstring name;
-        std::optional<ss::sstring> value;
-        bool read_only{false};
-        bool is_default{false}; // == v0
-        int8_t source{-1};      // >= v1
-        bool is_sensitive{false};
-        std::vector<config_synonym> synonyms; // >= v1
-    };
+    describe_configs_response()
+      : data({.throttle_time_ms = std::chrono::milliseconds(0)}) {}
 
-    struct resource {
-        error_code error;
-        std::optional<ss::sstring> error_msg;
-        int8_t type;
-        ss::sstring name;
-        std::vector<config> configs;
-    };
+    void encode(const request_context& ctx, response& resp) {
+        data.encode(ctx, resp);
+    }
 
-    std::chrono::milliseconds throttle_time_ms{0};
-    std::vector<resource> results;
-
-    void encode(const request_context& ctx, response& resp);
+    void decode(iobuf buf, api_version version) {
+        data.decode(std::move(buf), version);
+    }
 };
 
-std::ostream& operator<<(std::ostream&, const describe_configs_response&);
+static inline std::ostream&
+operator<<(std::ostream& os, const describe_configs_response& r) {
+    return os << r.data;
+}
 
 } // namespace kafka
