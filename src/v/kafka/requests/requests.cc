@@ -127,4 +127,15 @@ std::ostream& operator<<(std::ostream& os, const request_header& header) {
     return os;
 }
 
+std::ostream& operator<<(std::ostream& os, coordinator_type t) {
+    switch (t) {
+    case coordinator_type::group:
+        return os << "{group}";
+    case coordinator_type::transaction:
+        return os << "{transaction}";
+    default:
+        return os << "{unknown type}";
+    };
+}
+
 } // namespace kafka

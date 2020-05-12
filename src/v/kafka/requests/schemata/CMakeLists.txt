@@ -16,7 +16,11 @@ set(schemata
   leave_group_request.json
   leave_group_response.json
   delete_topics_request.json
-  delete_topics_response.json)
+  delete_topics_response.json
+  describe_configs_request.json
+  describe_configs_response.json
+  find_coordinator_request.json
+  find_coordinator_response.json)
 
 set(srcs)
 foreach(schema ${schemata})
