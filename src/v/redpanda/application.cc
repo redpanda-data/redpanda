@@ -105,6 +105,15 @@ void application::hydrate_config(const po::variables_map& cfg) {
     ss::smp::invoke_on_all([config] {
         config::shard_local_cfg().read_yaml(config);
     }).get0();
+    vlog(
+      _log.info,
+      "Use `rpk config set redpanda.<cfg> <value>` to change values below:");
+    config::shard_local_cfg().for_each(
+      [this](const config::base_property& item) {
+          std::stringstream val;
+          item.print(val);
+          vlog(_log.info, "{}\t- {}", val.str(), item.desc());
+      });
 }
 
 void application::check_environment() {
