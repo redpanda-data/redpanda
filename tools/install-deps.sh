@@ -32,7 +32,8 @@ function debs() {
     libsystemd-dev \
     python3-jinja2 \
     python3-pip \
-    python3-venv
+    python3-venv \
+    python3-dev
   update-alternatives \
     --install /usr/bin/gcc gcc /usr/bin/gcc-9 60 \
     --slave /usr/bin/g++ g++ /usr/bin/g++-9
@@ -88,7 +89,8 @@ function rpms() {
     rpm-build \
     systemd-devel \
     python3-jinja2 \
-    python3-pip
+    python3-pip \
+    python3-devel
 }
 
 source /etc/os-release
