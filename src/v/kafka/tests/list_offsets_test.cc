@@ -22,6 +22,15 @@ FIXTURE_TEST(list_offsets, redpanda_thread_fixture) {
           });
     }).get();
 
+    // print the logs for manager at core
+    app.partition_manager
+      .invoke_on(
+        *shard,
+        [ntp, this](cluster::partition_manager& mgr) {
+            info("Manager:{} - log:{}", mgr, *mgr.get(ntp));
+        })
+      .get();
+
     auto client = make_kafka_client().get0();
     client.connect().get();
 

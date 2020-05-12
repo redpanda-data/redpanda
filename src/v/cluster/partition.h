@@ -60,6 +60,10 @@ private:
 
 private:
     consensus_ptr _raft;
+
+    friend std::ostream& operator<<(std::ostream& o, const partition& x) {
+        return o << x._raft;
+    }
 };
 } // namespace cluster
 namespace std {
@@ -69,7 +73,4 @@ struct hash<cluster::partition> {
         return std::hash<model::ntp>()(x.ntp());
     }
 };
-inline ostream& operator<<(ostream& o, const cluster::partition& x) {
-    return o << "{cluster::partition{" << x.ntp() << "}}";
-}
 } // namespace std

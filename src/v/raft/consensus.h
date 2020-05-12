@@ -214,6 +214,8 @@ private:
       consistency_level::quorum_ack};
     std::chrono::milliseconds _replicate_append_timeout;
     std::chrono::milliseconds _recovery_append_timeout;
+
+    friend std::ostream& operator<<(std::ostream&, const consensus&);
 };
 
 } // namespace raft

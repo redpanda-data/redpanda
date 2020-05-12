@@ -67,7 +67,7 @@ ss::future<response_ptr> do_process(
   request_context&& ctx, ss::smp_service_group g) {
     vlog(
       klog.trace,
-      "Processing request {}({} v{}) for {}",
+      "Processing name:{}, key:{}, verion:{} for {}",
       Request::name,
       ctx.header().key,
       ctx.header().version,
@@ -119,15 +119,11 @@ process_request(request_context&& ctx, ss::smp_service_group g) {
 std::ostream& operator<<(std::ostream& os, const request_header& header) {
     fmt::print(
       os,
-      "{{request_header: {}, {}, {{correlation_id: {}}}, ",
+      "{{key:{}, version:{}, correlation_id:{}, client_id:{}}}",
       header.key,
       header.version,
-      header.correlation);
-    if (header.client_id) {
-        fmt::print(os, "{{client_id: {}}}}}", header.client_id);
-    } else {
-        return os << "{no client_id}}";
-    }
+      header.correlation,
+      header.client_id.value_or(std::string_view("nullopt")));
     return os;
 }
 
