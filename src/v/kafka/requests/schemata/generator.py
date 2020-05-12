@@ -118,12 +118,16 @@ path_type_map = {
     "DeleteTopicsRequestData": {
         "TimeoutMs": ("std::chrono::milliseconds", "int32"),
     },
+    "FindCoordinatorRequestData": {
+        "KeyType": ("kafka::coordinator_type", "int8"),
+    },
 }
 
 # a few kafka field types specify an entity type
 entity_type_map = dict(
     groupId=("kafka::group_id", "string"),
     topicName=("model::topic", "string"),
+    brokerId=("model::node_id", "int32"),
 )
 
 # mapping specified as a combination of native type and field name
@@ -466,6 +470,7 @@ HEADER_TEMPLATE = """
 #include "kafka/errors.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "seastarx.h"
 
 #include <seastar/core/sstring.hh>

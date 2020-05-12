@@ -14,67 +14,6 @@
 
 namespace kafka {
 
-void find_coordinator_request::encode(
-  response_writer& writer, api_version version) {
-    writer.write(key);
-    if (version >= api_version(1)) {
-        writer.write(int8_t(key_type));
-    }
-}
-
-void find_coordinator_request::decode(request_context& ctx) {
-    const auto version = ctx.header().version;
-
-    key = ctx.reader().read_string();
-    if (version >= api_version(1)) {
-        key_type = coordinator_type(ctx.reader().read_int8());
-    }
-}
-
-void find_coordinator_response::encode(
-  const request_context& ctx, response& resp) {
-    auto& writer = resp.writer();
-    const auto version = ctx.header().version;
-
-    if (version >= api_version(1)) {
-        writer.write(int32_t(throttle.count()));
-    }
-    writer.write(error);
-    if (version >= api_version(1)) {
-        writer.write(error_message);
-    }
-    writer.write(int32_t(node()));
-    writer.write(host);
-    writer.write(port);
-}
-
-void find_coordinator_response::decode(iobuf buf, api_version version) {
-    request_reader reader(std::move(buf));
-
-    if (version >= api_version(1)) {
-        throttle = std::chrono::milliseconds(reader.read_int32());
-    }
-    error = error_code(reader.read_int16());
-    if (version >= api_version(1)) {
-        error_message = reader.read_nullable_string();
-    }
-    node = model::node_id(reader.read_int32());
-    host = reader.read_string();
-    port = reader.read_int32();
-}
-
-std::ostream& operator<<(std::ostream& os, const find_coordinator_response& r) {
-    fmt::print(
-      os,
-      "error {} errmsg {} node {} host {} port {}",
-      r.error,
-      r.error_message,
-      r.node,
-      r.host,
-      r.port);
-    return os;
-}
-
 static ss::future<response_ptr>
 handle_leader(request_context& ctx, model::node_id leader) {
     auto broker = ctx.metadata_cache().get_broker(leader);
@@ -147,10 +86,11 @@ create_topic(request_context& ctx, cluster::topic_configuration topic) {
 
 ss::future<response_ptr> find_coordinator_api::process(
   request_context&& ctx, [[maybe_unused]] ss::smp_service_group g) {
-    find_coordinator_request request(ctx);
+    find_coordinator_request request;
+    request.decode(ctx.reader(), ctx.header().version);
 
     // other types include txn coordinators which are unsupported
-    if (request.key_type != coordinator_type::group) {
+    if (request.data.key_type != coordinator_type::group) {
         return ctx.respond(
           find_coordinator_response(error_code::unsupported_version));
     }
@@ -164,7 +104,7 @@ ss::future<response_ptr> find_coordinator_api::process(
            * the topic on-demand.
            */
           if (auto ntp = ctx.coordinator_mapper().local().ntp_for(
-                kafka::group_id(request.key));
+                kafka::group_id(request.data.key));
               ntp) {
               return handle_ntp(ctx, std::move(ntp));
           }
@@ -184,7 +124,7 @@ ss::future<response_ptr> find_coordinator_api::process(
                  */
                 if (error == error_code::none) {
                     auto ntp = ctx.coordinator_mapper().local().ntp_for(
-                      kafka::group_id(request.key));
+                      kafka::group_id(request.data.key));
                     return handle_ntp(ctx, std::move(ntp));
                 }
                 return ctx.respond(find_coordinator_response(error));
