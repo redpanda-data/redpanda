@@ -726,7 +726,15 @@ SCHEMA = {
         },
         "name": {"type": "string"},
         "validVersions": { "$ref": "#/definitions/versions" },
-        "flexibleVersions": { "$ref": "#/definitions/versions" },
+        "flexibleVersions": {
+            "oneOf": [
+                {
+                    "type": "string",
+                    "enum": ["none"],
+                },
+                {"$ref": "#/definitions/versions" },
+            ],
+        },
         "fields": { "$ref": "#/definitions/fields" },
     },
     "required": [
