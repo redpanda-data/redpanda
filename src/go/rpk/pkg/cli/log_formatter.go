@@ -9,6 +9,16 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+type noopFormatter struct{}
+
+func (*noopFormatter) Format(e *logrus.Entry) ([]byte, error) {
+	return []byte(e.Message), nil
+}
+
+func NewNoopFormatter() logrus.Formatter {
+	return &noopFormatter{}
+}
+
 var logLevelColorMap = map[logrus.Level]*color.Color{
 	logrus.WarnLevel:  color.New(color.FgYellow),
 	logrus.ErrorLevel: color.New(color.FgRed),
