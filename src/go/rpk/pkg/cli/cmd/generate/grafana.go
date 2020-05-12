@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"vectorized/pkg/cli/cmd/generate/graf"
+	"vectorized/pkg/utils"
 
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
@@ -93,6 +94,32 @@ func buildGrafanaDashboard(
 	metricFamilies map[string]*dto.MetricFamily,
 ) graf.Dashboard {
 	groupPanels := map[string][]graf.Panel{}
+	kafkaLatencyMetrics := []string{
+		"vectorized_kafka_rpc_protocol_dispatch_handler_latency",
+	}
+	rpcLatencyMetrics := []string{
+		"vectorized_vectorized_internal_rpc_protocol_dispatch_handler_latency",
+	}
+	throughputMetrics := []string{
+		"vectorized_reactor_fstream_read_bytes",
+		"vectorized_io_queue_total_bytes",
+	}
+	httpErrorMetrics := []string{
+		"vectorized_httpd_read_errors",
+		"vectorized_httpd_reply_errors",
+	}
+	storageErrorMetrics := []string{
+		"vectorized_storage_log_batch_parse_errors",
+		"vectorized_storage_log_batch_write_errors",
+	}
+	kafkaLatenciesRow := graf.NewRow("Kafka Latency", []graf.Panel{}, false)
+	rpcLatenciesRow := graf.NewRow("RPC Latency", []graf.Panel{}, false)
+	throughputRow := graf.NewRow("Throughput", []graf.Panel{}, false)
+	httpErrorsRow := graf.NewRow("Http Errors", []graf.Panel{}, false)
+	storageErrorsRow := graf.NewRow("Storage Errors", []graf.Panel{}, false)
+	errorsRow := graf.NewRow("Errors", []graf.Panel{}, false)
+
+	percentiles := []float32{0.5, 0.95, 0.99}
 
 	names := []string{}
 	for k, _ := range metricFamilies {
@@ -101,22 +128,68 @@ func buildGrafanaDashboard(
 	sort.Strings(names)
 	id := uint(0)
 	for _, name := range names {
+		id++
 		family := metricFamilies[name]
 		var panel graf.Panel
 		if family.GetType() == dto.MetricType_COUNTER {
 			panel = newCounterPanel(family, id)
-		} else if subtype(family) != "histogram" {
+		} else if subtype(family) == "histogram" {
+			for _, p := range percentiles {
+				percentilePanel := newPercentilePanel(family, id, p)
+				if utils.StringInSlice(family.GetName(), kafkaLatencyMetrics) {
+					kafkaLatenciesRow.Panels = append(
+						kafkaLatenciesRow.Panels,
+						percentilePanel,
+					)
+				} else if utils.StringInSlice(family.GetName(), rpcLatencyMetrics) {
+					rpcLatenciesRow.Panels = append(
+						rpcLatenciesRow.Panels,
+						percentilePanel,
+					)
+				}
+				id++
+			}
+			continue
+		} else {
 			panel = newGaugePanel(family, id)
 		}
-		if panel != nil {
-			id++
-			group := metricGroup(name)
-			panels, ok := groupPanels[group]
-			if ok {
-				groupPanels[group] = append(panels, panel)
+
+		if panel == nil {
+			continue
+		}
+
+		if strings.Contains(family.GetName(), "error") {
+			if utils.StringInSlice(family.GetName(), httpErrorMetrics) {
+				httpErrorsRow.Panels = append(
+					httpErrorsRow.Panels,
+					panel,
+				)
+			} else if utils.StringInSlice(family.GetName(), storageErrorMetrics) {
+				storageErrorsRow.Panels = append(
+					storageErrorsRow.Panels,
+					panel,
+				)
 			} else {
-				groupPanels[group] = []graf.Panel{panel}
+				errorsRow.Panels = append(
+					errorsRow.Panels,
+					panel,
+				)
 			}
+			continue
+		}
+		if utils.StringInSlice(family.GetName(), throughputMetrics) {
+			throughputRow.Panels = append(
+				throughputRow.Panels,
+				panel,
+			)
+			continue
+		}
+		group := metricGroup(name)
+		panels, ok := groupPanels[group]
+		if ok {
+			groupPanels[group] = append(panels, panel)
+		} else {
+			groupPanels[group] = []graf.Panel{panel}
 		}
 	}
 
@@ -129,7 +202,14 @@ func buildGrafanaDashboard(
 
 	sort.Strings(rowTitles)
 
-	rows := []graf.Row{}
+	rows := []graf.Row{
+		kafkaLatenciesRow,
+		rpcLatenciesRow,
+		throughputRow,
+		httpErrorsRow,
+		storageErrorsRow,
+		errorsRow,
+	}
 	for _, title := range rowTitles {
 		rows = append(rows, rowsByTitle[title])
 	}
