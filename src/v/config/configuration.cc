@@ -53,8 +53,10 @@ configuration::configuration()
       "form a new cluster",
       required::no,
       {})
-  , min_version(*this, "min_version", "TBD", required::no, 0)
-  , max_version(*this, "max_version", "TBD", required::no, 1)
+  , min_version(
+      *this, "min_version", "minimum redpanda compat version", required::no, 0)
+  , max_version(
+      *this, "max_version", "max redpanda compat version", required::no, 1)
   , kafka_api(
       *this,
       "kafka_api",
