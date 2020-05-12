@@ -147,6 +147,10 @@ recovery_stm::dispatch_append_entries(append_entries_request&& r) {
 }
 
 bool recovery_stm::is_recovery_finished() {
+    if (_ptr->_bg.is_closed()) {
+        return true;
+    }
+
     auto meta = get_follower_meta();
     if (!meta) {
         return true;
@@ -166,9 +170,13 @@ bool recovery_stm::is_recovery_finished() {
 }
 
 ss::future<> recovery_stm::apply() {
-    return ss::do_until(
-             [this] { return is_recovery_finished(); },
-             [this] { return do_one_read(); })
+    return ss::with_gate(
+             _ptr->_bg,
+             [this] {
+                 return ss::do_until(
+                   [this] { return is_recovery_finished(); },
+                   [this] { return do_one_read(); });
+             })
       .finally([this] {
           vlog(_ctxlog.trace, "Finished node {} recovery", _node_id);
           auto meta = get_follower_meta();
