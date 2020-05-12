@@ -142,21 +142,27 @@ ss::future<> server::stop() {
 }
 void server::setup_metrics() {
     namespace sm = ss::metrics;
+    if (!_proto) {
+        return;
+    }
     _metrics.add_group(
       prometheus_sanitize::metrics_name(_proto->name()),
       {sm::make_total_bytes(
          "max_service_mem_bytes",
          [this] { return cfg.max_service_memory_per_core; },
-         sm::description("Maximum amount of memory used by service per core"),
+         sm::description(
+           fmt::format("{}: Maximum memory allowed for RPC", _proto->name())),
          {sm::type_label("total_bytes")}),
        sm::make_total_bytes(
          "consumed_mem_bytes",
          [this] { return cfg.max_service_memory_per_core - _memory.current(); },
-         sm::description("Amount of memory consumed for requests processing"),
+         sm::description(fmt::format(
+           "{}: Memory consumed by request processing", _proto->name())),
          {sm::type_label("total_bytes")}),
        sm::make_histogram(
          "dispatch_handler_latency",
          [this] { return _hist.seastar_histogram_logform(); },
-         sm::description("Latency of service handler dispatch"))});
+         sm::description(
+           fmt::format("{}: Latency of method dispatch", _proto->name())))});
 }
 } // namespace rpc

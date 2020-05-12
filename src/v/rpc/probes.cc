@@ -15,51 +15,59 @@ void server_probe::setup_metrics(
         sm::make_gauge(
           "active_connections",
           [this] { return _connections; },
-          sm::description("Currently active connections")),
+          sm::description(
+            fmt::format("{}: Currently active connections", proto))),
         sm::make_derive(
           "connects",
           [this] { return _connects; },
-          sm::description("Number of accepted connections")),
+          sm::description(
+            fmt::format("{}: Number of accepted connections", proto))),
         sm::make_derive(
           "connection_close_errors",
           [this] { return _connection_close_error; },
-          sm::description(
-            "Number of errors when shutting down the connection")),
+          sm::description(fmt::format(
+            "{}: Number of errors when shutting down the connection", proto))),
         sm::make_derive(
           "requests_completed",
           [this] { return _requests_completed; },
-          sm::description("Number of successfully served requests")),
+          sm::description(
+            fmt::format("{}: Number of successfull requests", proto))),
         sm::make_total_bytes(
           "received_bytes",
           [this] { return _in_bytes; },
-          sm::description(
-            "Number of bytes received from the clients in valid requests")),
+          sm::description(fmt::format(
+            "{}: Number of bytes received from the clients in valid requests",
+            proto))),
         sm::make_total_bytes(
           "sent_bytes",
           [this] { return _out_bytes; },
-          sm::description("Number of bytes sent to clients")),
+          sm::description(
+            fmt::format("{}: Number of bytes sent to clients", proto))),
         sm::make_derive(
           "method_not_found_errors",
           [this] { return _method_not_found_errors; },
-          sm::description("Number of requests with not available RPC method")),
+          sm::description(fmt::format(
+            "{}: Number of requests with not available RPC method", proto))),
         sm::make_derive(
           "corrupted_headers",
           [this] { return _corrupted_headers; },
-          sm::description("Number of requests with corrupted headers")),
+          sm::description(fmt::format(
+            "{}: Number of requests with corrupted headers", proto))),
         sm::make_derive(
           "bad_requests",
           [this] { return _bad_requests; },
-          sm::description("Total number of all bad requests")),
+          sm::description(
+            fmt::format("{}: Total number of all bad requests", proto))),
         sm::make_derive(
           "requests_blocked_memory",
           [this] { return _requests_blocked_memory; },
-          sm::description(
-            "Number of requests that have to"
-            "wait for processing beacause of insufficient memory")),
+          sm::description(fmt::format(
+            "{}: Number of requests blocked in memory backpressure", proto))),
         sm::make_gauge(
           "requests_pending",
           [this] { return _requests_received - _requests_completed; },
-          sm::description("Number of requests being processed by server")),
+          sm::description(fmt::format(
+            "{}: Number of requests being processed by server", proto))),
       });
 }
 
