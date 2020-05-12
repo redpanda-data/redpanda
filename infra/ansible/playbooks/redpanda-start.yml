@@ -13,7 +13,6 @@
         content: |
           organization: "vectorized-test"
           cluster_id: "vectorized-cluster"
-          pid_file: "/var/lib/redpanda/pid"
 
           redpanda:
               data_directory: "/var/lib/redpanda/data"
