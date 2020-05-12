@@ -23,7 +23,7 @@ set(LLVM_CCACHE_BUILD ON CACHE BOOL "")
 # Linking LLVM binaries need lots of memory.
 # In order to make it possible on commodity hardware it is critical
 # to limit the number of liniking threads.
-# CMake returns total physical memeory in MiB 1 GB ~ 953.674 MiB
+# CMake returns total physical memory in MiB 1 GB ~ 953.674 MiB
 # Single linking job consumes ~3 GB of RAM (3 GB ~ 2861 MiB)
 cmake_host_system_information(
     RESULT available_memory

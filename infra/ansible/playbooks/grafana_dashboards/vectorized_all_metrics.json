@@ -2700,7 +2700,7 @@
           ],
           "timeFrom": null,
           "timeShift": null,
-          "title": "Rate - Allocated memeory size in bytes",
+          "title": "Rate - Allocated memory size in bytes",
           "tooltip": {
             "msResolution": true,
             "shared": true,
@@ -2892,7 +2892,7 @@
           ],
           "timeFrom": null,
           "timeShift": null,
-          "title": "Rate - Free memeory size in bytes",
+          "title": "Rate - Free memory size in bytes",
           "tooltip": {
             "msResolution": true,
             "shared": true,
@@ -3372,7 +3372,7 @@
           ],
           "timeFrom": null,
           "timeShift": null,
-          "title": "Rate - Total memeory size in bytes",
+          "title": "Rate - Total memory size in bytes",
           "tooltip": {
             "msResolution": true,
             "shared": true,
