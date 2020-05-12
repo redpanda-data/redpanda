@@ -62,7 +62,7 @@ steps:
     fi
 
 - id: 'test rpk'
-  name: 'gcr.io/$PROJECT_ID/builder:clang-release-$SHORT_SHA'
+  name: 'gcr.io/$PROJECT_ID/builder:$_COMPILER-$_BUILD_TYPE-$SHORT_SHA'
   args: ['./build/venv/v/bin/vtools', 'test', 'go', '--conf=tools/ci/vtools-clang-release.yml']
 
 - id: 'build redpanda'
