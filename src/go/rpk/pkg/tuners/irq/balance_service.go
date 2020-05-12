@@ -29,10 +29,7 @@ type BalanceService interface {
 }
 
 func NewBalanceService(
-	fs afero.Fs,
-	proc os.Proc,
-	executor executors.Executor,
-	timeout time.Duration,
+	fs afero.Fs, proc os.Proc, executor executors.Executor, timeout time.Duration,
 ) BalanceService {
 	return &balanceService{
 		fs:       fs,
