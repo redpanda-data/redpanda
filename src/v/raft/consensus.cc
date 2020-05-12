@@ -14,6 +14,8 @@
 #include <seastar/core/fstream.hh>
 #include <seastar/core/future.hh>
 
+#include <fmt/ostream.h>
+
 #include <iterator>
 
 namespace raft {
@@ -945,6 +947,12 @@ void consensus::trigger_leadership_notification() {
     _leader_notification(leadership_status{.term = model::term_id(_meta.term),
                                            .group = group_id(_meta.group),
                                            .current_leader = _leader_id});
+}
+
+std::ostream& operator<<(std::ostream& o, const consensus& c) {
+    fmt::print(
+      o, "{{log:{}, meta:{}, voted_for:{}}}", c._log, c._meta, c._voted_for);
+    return o;
 }
 
 } // namespace raft
