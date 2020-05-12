@@ -16,6 +16,14 @@ steps:
       git reset --hard FETCH_HEAD
     fi
 
+- id: 'show cpu info'
+  name: 'alpine:3.11'
+  entrypoint: sh
+  args:
+  - -c
+  - |
+    cat /proc/cpuinfo | sed -e '/^$/,$d'
+
 - id: 'build builder image'
   name: 'gcr.io/kaniko-project/executor:debug-v0.19.0'
   entrypoint: '/busybox/sh'
