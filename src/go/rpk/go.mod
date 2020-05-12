@@ -6,6 +6,9 @@ require (
 	github.com/Shopify/sarama v1.26.1
 	github.com/StackExchange/wmi v0.0.0-20190523213315-cbe66965904d // indirect
 	github.com/aws/aws-sdk-go v1.25.43
+	github.com/cockroachdb/crlfmt v0.0.0-20200309141329-97b747f03b21 // indirect
+	github.com/cockroachdb/gostdlib v1.13.0 // indirect
+	github.com/cockroachdb/ttycolor v0.0.0-20180709150743-a1d5aaeb377d // indirect
 	github.com/docker/distribution v2.7.1+incompatible // indirect
 	github.com/docker/docker v0.7.3-0.20190629173937-e105a74c5419
 	github.com/docker/go-connections v0.4.0
@@ -34,11 +37,12 @@ require (
 	github.com/spf13/viper v1.3.2
 	github.com/stretchr/testify v1.4.0
 	golang.org/x/crypto v0.0.0-20200204104054-c9f3fb736b72
-	golang.org/x/sys v0.0.0-20191008105621-543471e840be
+	golang.org/x/sys v0.0.0-20200217220822-9197077df867
 	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4 // indirect
 	google.golang.org/grpc v1.22.0 // indirect
 	gopkg.in/yaml.v2 v2.2.8
 	gotest.tools v2.2.0+incompatible // indirect
+	mvdan.cc/sh/v3 v3.1.1 // indirect
 )
 
 go 1.13
