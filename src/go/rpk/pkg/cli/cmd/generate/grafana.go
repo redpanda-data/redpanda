@@ -9,6 +9,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"vectorized/pkg/cli"
 	"vectorized/pkg/cli/cmd/generate/graf"
 	"vectorized/pkg/utils"
 
@@ -17,12 +18,6 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
-
-type NoopFormatter struct{}
-
-func (*NoopFormatter) Format(e *log.Entry) ([]byte, error) {
-	return []byte(e.Message), nil
-}
 
 const datasource = "prometheus"
 
@@ -80,7 +75,7 @@ func executeGrafanaDashboard(prometheusURL string) error {
 	if err != nil {
 		return err
 	}
-	log.SetFormatter(&NoopFormatter{})
+	log.SetFormatter(cli.NewNoopFormatter())
 	// The logger's default stream is stderr, which prevents piping to files
 	// from working without redirecting them with '2>&1'.
 	if log.StandardLogger().Out == os.Stderr {
