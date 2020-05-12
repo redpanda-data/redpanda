@@ -20,7 +20,6 @@
 #include <seastar/core/seastar.hh>
 #include <seastar/core/shared_ptr.hh>
 
-#include <absl/time/time.h>
 #include <fmt/format.h>
 
 #include <iterator>

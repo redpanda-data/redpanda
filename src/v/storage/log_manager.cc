@@ -27,7 +27,6 @@
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/thread.hh>
 
-#include <absl/time/time.h>
 #include <fmt/format.h>
 
 #include <chrono>
@@ -50,7 +49,7 @@ void log_manager::arm_housekeeping() {
         vlog(
           stlog.debug,
           "Arming housekeeping in: {}secs",
-          absl::ToInt64Seconds(absl::FromChrono(time)));
+          std::chrono::duration_cast<std::chrono::seconds>(time).count());
         _compaction_timer.rearm(ss::lowres_clock::now() + time);
     }
 }
