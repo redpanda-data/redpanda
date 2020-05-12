@@ -43,264 +43,14 @@ vectorized_memory_allocated_memory{shard="0",type="bytes"} 40837120
 vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
 `
 	expected := `{
- "id": 1,
- "slug": "",
  "title": "Redpanda",
- "originalTitle": "",
- "tags": null,
- "style": "dark",
- "timezone": "utc",
- "editable": true,
- "hideControls": false,
- "sharedCrosshair": false,
- "panels": null,
- "rows": [
-  {
-   "title": "memory",
-   "showTitle": true,
-   "collapse": false,
-   "editable": true,
-   "height": "250px",
-   "panels": [
-    {
-     "datasource": "prometheus",
-     "editable": true,
-     "error": false,
-     "gridPos": {},
-     "id": 0,
-     "isNew": true,
-     "renderer": "flot",
-     "span": 4,
-     "title": "Rate - Allocated memory size in bytes",
-     "transparent": false,
-     "type": "graph",
-     "aliasColors": {},
-     "bars": false,
-     "fill": 1,
-     "legend": {
-      "alignAsTable": false,
-      "avg": false,
-      "current": false,
-      "hideEmpty": false,
-      "hideZero": false,
-      "max": false,
-      "min": false,
-      "rightSide": false,
-      "show": true,
-      "total": false,
-      "values": false
-     },
-     "lines": true,
-     "linewidth": 2,
-     "nullPointMode": "connected",
-     "percentage": false,
-     "pointradius": 5,
-     "points": false,
-     "stack": false,
-     "steppedLine": false,
-     "targets": [
-      {
-       "refId": "",
-       "expr": "[[aggregate]] (irate(vectorized_memory_allocated_memory{instance=~\"[[node]]\",shard=~\"[[node_shard]]\"}[1m]))",
-       "intervalFactor": 2,
-       "step": 10,
-       "legendFormat": "node: {{instance}}, shard: {{shard}}",
-       "format": "time_series"
-      }
-     ],
-     "tooltip": {
-      "shared": true,
-      "value_type": "cumulative",
-      "msResolution": true
-     },
-     "x-axis": true,
-     "y-axis": true,
-     "xaxis": {
-      "format": "",
-      "logBase": 0,
-      "show": true
-     },
-     "yaxes": [
-      {
-       "format": "Bps",
-       "logBase": 1,
-       "min": 0,
-       "show": true
-      },
-      {
-       "format": "short",
-       "logBase": 1,
-       "min": 0,
-       "show": true
-      }
-     ]
-    }
-   ],
-   "repeat": null
-  },
-  {
-   "title": "vectorized_internal_rpc_protocol",
-   "showTitle": true,
-   "collapse": false,
-   "editable": true,
-   "height": "250px",
-   "panels": [
-    {
-     "datasource": "prometheus",
-     "editable": true,
-     "error": false,
-     "gridPos": {},
-     "id": 1,
-     "isNew": true,
-     "renderer": "flot",
-     "span": 4,
-     "title": "Amount of memory consumed for requests processing",
-     "transparent": false,
-     "type": "graph",
-     "aliasColors": {},
-     "bars": true,
-     "fill": 1,
-     "legend": {
-      "alignAsTable": false,
-      "avg": false,
-      "current": false,
-      "hideEmpty": false,
-      "hideZero": false,
-      "max": false,
-      "min": false,
-      "rightSide": false,
-      "show": true,
-      "total": false,
-      "values": false
-     },
-     "lines": false,
-     "linewidth": 2,
-     "nullPointMode": "connected",
-     "percentage": false,
-     "pointradius": 5,
-     "points": false,
-     "stack": false,
-     "steppedLine": false,
-     "targets": [
-      {
-       "refId": "",
-       "expr": "[[aggregate]] (vectorized_vectorized_internal_rpc_protocol_consumed_mem{instance=~\"[[node]]\",shard=~\"[[node_shard]]\"})",
-       "intervalFactor": 2,
-       "step": 10,
-       "legendFormat": "node: {{instance}}, shard: {{shard}}",
-       "format": "time_series"
-      }
-     ],
-     "tooltip": {
-      "shared": true,
-      "value_type": "cumulative",
-      "msResolution": true
-     },
-     "x-axis": true,
-     "y-axis": true,
-     "xaxis": {
-      "format": "",
-      "logBase": 0,
-      "show": true
-     },
-     "yaxes": [
-      {
-       "format": "short",
-       "logBase": 1,
-       "min": 0,
-       "show": true
-      },
-      {
-       "format": "short",
-       "logBase": 1,
-       "min": 0,
-       "show": true
-      }
-     ]
-    },
-    {
-     "datasource": "prometheus",
-     "editable": true,
-     "error": false,
-     "gridPos": {},
-     "id": 2,
-     "isNew": true,
-     "renderer": "flot",
-     "span": 4,
-     "title": "Rate - Number of requests with corrupted headers",
-     "transparent": false,
-     "type": "graph",
-     "aliasColors": {},
-     "bars": false,
-     "fill": 1,
-     "legend": {
-      "alignAsTable": false,
-      "avg": false,
-      "current": false,
-      "hideEmpty": false,
-      "hideZero": false,
-      "max": false,
-      "min": false,
-      "rightSide": false,
-      "show": true,
-      "total": false,
-      "values": false
-     },
-     "lines": true,
-     "linewidth": 2,
-     "nullPointMode": "connected",
-     "percentage": false,
-     "pointradius": 5,
-     "points": false,
-     "stack": false,
-     "steppedLine": false,
-     "targets": [
-      {
-       "refId": "",
-       "expr": "[[aggregate]] (irate(vectorized_vectorized_internal_rpc_protocol_corrupted_headers{instance=~\"[[node]]\",shard=~\"[[node_shard]]\"}[1m]))",
-       "intervalFactor": 2,
-       "step": 10,
-       "legendFormat": "node: {{instance}}, shard: {{shard}}",
-       "format": "time_series"
-      }
-     ],
-     "tooltip": {
-      "shared": true,
-      "value_type": "cumulative",
-      "msResolution": true
-     },
-     "x-axis": true,
-     "y-axis": true,
-     "xaxis": {
-      "format": "",
-      "logBase": 0,
-      "show": true
-     },
-     "yaxes": [
-      {
-       "format": "ops",
-       "logBase": 1,
-       "min": 0,
-       "show": true
-      },
-      {
-       "format": "short",
-       "logBase": 1,
-       "min": 0,
-       "show": true
-      }
-     ]
-    }
-   ],
-   "repeat": null
-  }
- ],
  "templating": {
   "list": [
    {
     "name": "node",
-    "type": "query",
     "datasource": "prometheus",
+    "label": "Node",
+    "type": "query",
     "refresh": 1,
     "options": null,
     "includeAll": true,
@@ -309,19 +59,18 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
     "multi": true,
     "multiFormat": "",
     "query": "label_values(instance)",
-    "regex": "",
     "current": {
      "text": "",
      "value": null
     },
-    "label": "Node",
     "hide": 0,
     "sort": 1
    },
    {
     "name": "node_shard",
-    "type": "query",
     "datasource": "prometheus",
+    "label": "Shard",
+    "type": "query",
     "refresh": 1,
     "options": null,
     "includeAll": true,
@@ -330,34 +79,33 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
     "multi": true,
     "multiFormat": "",
     "query": "label_values(shard)",
-    "regex": "",
     "current": {
      "text": "",
      "value": null
     },
-    "label": "shard",
     "hide": 0,
     "sort": 1
    },
    {
-    "name": "aggregate",
-    "type": "custom",
+    "name": "aggr_criteria",
     "datasource": "prometheus",
+    "label": "Aggregate by",
+    "type": "custom",
     "refresh": 1,
     "options": [
      {
-      "text": "None",
+      "text": "Cluster",
       "value": "",
-      "selected": true
-     },
-     {
-      "text": "Instance",
-      "value": "sum by(instance)",
       "selected": false
      },
      {
-      "text": "Cluster",
-      "value": "sum",
+      "text": "Instance",
+      "value": "instance,",
+      "selected": false
+     },
+     {
+      "text": "Instance, Shard",
+      "value": "instance,shard,",
       "selected": false
      }
     ],
@@ -367,24 +115,508 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
     "multi": false,
     "multiFormat": "",
     "query": "",
-    "regex": "",
     "current": {
      "text": "Cluster",
-     "value": "sum"
+     "value": ""
     },
-    "label": "Aggregate by",
     "hide": 0,
     "sort": 1
    }
   ]
  },
- "annotations": {
-  "list": null
- },
+ "rows": [
+  {
+   "title": "Kafka Latency",
+   "showTitle": true,
+   "collapse": false,
+   "editable": true,
+   "height": "250px",
+   "panels": []
+  },
+  {
+   "title": "RPC Latency",
+   "showTitle": true,
+   "collapse": false,
+   "editable": true,
+   "height": "250px",
+   "panels": [
+    {
+     "type": "graph",
+     "id": 4,
+     "title": "Latency of service handler dispatch (p50)",
+     "datasource": "prometheus",
+     "editable": true,
+     "gridPos": {
+      "h": 0,
+      "w": 0,
+      "x": 0,
+      "y": 0
+     },
+     "links": null,
+     "renderer": "flot",
+     "span": 4,
+     "targets": [
+      {
+       "refId": "A",
+       "expr": "histogram_quantile(0.50, sum(rate(vectorized_vectorized_internal_rpc_protocol_dispatch_handler_latency_bucket{instance=~\"[[node]]\",shard=~\"[[node_shard]]\"}[1m])) by (le, [[aggr_criteria]]))",
+       "intervalFactor": 2,
+       "interval": "",
+       "step": 10,
+       "legendFormat": "node: {{instance}}, shard: {{shard}}",
+       "format": "time_series"
+      }
+     ],
+     "xaxis": {
+      "format": "",
+      "logBase": 0,
+      "show": true,
+      "mode": "time"
+     },
+     "yaxes": [
+      {
+       "label": null,
+       "show": true,
+       "logBase": 1,
+       "min": 0,
+       "format": "µs"
+      },
+      {
+       "label": null,
+       "show": true,
+       "logBase": 1,
+       "min": 0,
+       "format": "short"
+      }
+     ],
+     "legend": {
+      "show": true,
+      "max": false,
+      "min": false,
+      "values": false,
+      "avg": false,
+      "current": false,
+      "total": false
+     },
+     "fill": 1,
+     "linewidth": 2,
+     "nullPointMode": "null",
+     "thresholds": null,
+     "lines": true,
+     "bars": false,
+     "tooltip": {
+      "shared": true,
+      "value_type": "individual",
+      "msResolution": true
+     },
+     "aliasColors": {}
+    },
+    {
+     "type": "graph",
+     "id": 5,
+     "title": "Latency of service handler dispatch (p95)",
+     "datasource": "prometheus",
+     "editable": true,
+     "gridPos": {
+      "h": 0,
+      "w": 0,
+      "x": 0,
+      "y": 0
+     },
+     "links": null,
+     "renderer": "flot",
+     "span": 4,
+     "targets": [
+      {
+       "refId": "A",
+       "expr": "histogram_quantile(0.95, sum(rate(vectorized_vectorized_internal_rpc_protocol_dispatch_handler_latency_bucket{instance=~\"[[node]]\",shard=~\"[[node_shard]]\"}[1m])) by (le, [[aggr_criteria]]))",
+       "intervalFactor": 2,
+       "interval": "",
+       "step": 10,
+       "legendFormat": "node: {{instance}}, shard: {{shard}}",
+       "format": "time_series"
+      }
+     ],
+     "xaxis": {
+      "format": "",
+      "logBase": 0,
+      "show": true,
+      "mode": "time"
+     },
+     "yaxes": [
+      {
+       "label": null,
+       "show": true,
+       "logBase": 1,
+       "min": 0,
+       "format": "µs"
+      },
+      {
+       "label": null,
+       "show": true,
+       "logBase": 1,
+       "min": 0,
+       "format": "short"
+      }
+     ],
+     "legend": {
+      "show": true,
+      "max": false,
+      "min": false,
+      "values": false,
+      "avg": false,
+      "current": false,
+      "total": false
+     },
+     "fill": 1,
+     "linewidth": 2,
+     "nullPointMode": "null",
+     "thresholds": null,
+     "lines": true,
+     "bars": false,
+     "tooltip": {
+      "shared": true,
+      "value_type": "individual",
+      "msResolution": true
+     },
+     "aliasColors": {}
+    },
+    {
+     "type": "graph",
+     "id": 6,
+     "title": "Latency of service handler dispatch (p99)",
+     "datasource": "prometheus",
+     "editable": true,
+     "gridPos": {
+      "h": 0,
+      "w": 0,
+      "x": 0,
+      "y": 0
+     },
+     "links": null,
+     "renderer": "flot",
+     "span": 4,
+     "targets": [
+      {
+       "refId": "A",
+       "expr": "histogram_quantile(0.99, sum(rate(vectorized_vectorized_internal_rpc_protocol_dispatch_handler_latency_bucket{instance=~\"[[node]]\",shard=~\"[[node_shard]]\"}[1m])) by (le, [[aggr_criteria]]))",
+       "intervalFactor": 2,
+       "interval": "",
+       "step": 10,
+       "legendFormat": "node: {{instance}}, shard: {{shard}}",
+       "format": "time_series"
+      }
+     ],
+     "xaxis": {
+      "format": "",
+      "logBase": 0,
+      "show": true,
+      "mode": "time"
+     },
+     "yaxes": [
+      {
+       "label": null,
+       "show": true,
+       "logBase": 1,
+       "min": 0,
+       "format": "µs"
+      },
+      {
+       "label": null,
+       "show": true,
+       "logBase": 1,
+       "min": 0,
+       "format": "short"
+      }
+     ],
+     "legend": {
+      "show": true,
+      "max": false,
+      "min": false,
+      "values": false,
+      "avg": false,
+      "current": false,
+      "total": false
+     },
+     "fill": 1,
+     "linewidth": 2,
+     "nullPointMode": "null",
+     "thresholds": null,
+     "lines": true,
+     "bars": false,
+     "tooltip": {
+      "shared": true,
+      "value_type": "individual",
+      "msResolution": true
+     },
+     "aliasColors": {}
+    }
+   ]
+  },
+  {
+   "title": "Throughput",
+   "showTitle": true,
+   "collapse": false,
+   "editable": true,
+   "height": "250px",
+   "panels": []
+  },
+  {
+   "title": "Http Errors",
+   "showTitle": true,
+   "collapse": false,
+   "editable": true,
+   "height": "250px",
+   "panels": []
+  },
+  {
+   "title": "Storage Errors",
+   "showTitle": true,
+   "collapse": false,
+   "editable": true,
+   "height": "250px",
+   "panels": []
+  },
+  {
+   "title": "Errors",
+   "showTitle": true,
+   "collapse": false,
+   "editable": true,
+   "height": "250px",
+   "panels": []
+  },
+  {
+   "title": "memory",
+   "showTitle": true,
+   "collapse": true,
+   "editable": true,
+   "height": "250px",
+   "panels": [
+    {
+     "type": "graph",
+     "id": 1,
+     "title": "Rate - Allocated memory size in bytes",
+     "datasource": "prometheus",
+     "editable": true,
+     "gridPos": {
+      "h": 0,
+      "w": 0,
+      "x": 0,
+      "y": 0
+     },
+     "links": null,
+     "renderer": "flot",
+     "span": 4,
+     "targets": [
+      {
+       "refId": "",
+       "expr": "sum(irate(vectorized_memory_allocated_memory{instance=~\"[[node]]\",shard=~\"[[node_shard]]\"}[1m])) by ([[aggr_criteria]])",
+       "intervalFactor": 2,
+       "interval": "",
+       "step": 10,
+       "legendFormat": "node: {{instance}}, shard: {{shard}}",
+       "format": "time_series"
+      }
+     ],
+     "xaxis": {
+      "format": "",
+      "logBase": 0,
+      "show": true,
+      "mode": "time"
+     },
+     "yaxes": [
+      {
+       "label": null,
+       "show": true,
+       "logBase": 1,
+       "min": 0,
+       "format": "Bps"
+      },
+      {
+       "label": null,
+       "show": true,
+       "logBase": 1,
+       "min": 0,
+       "format": "short"
+      }
+     ],
+     "legend": {
+      "show": true,
+      "max": false,
+      "min": false,
+      "values": false,
+      "avg": false,
+      "current": false,
+      "total": false
+     },
+     "fill": 1,
+     "linewidth": 2,
+     "nullPointMode": "null",
+     "thresholds": null,
+     "lines": true,
+     "bars": false,
+     "tooltip": {
+      "shared": true,
+      "value_type": "cumulative",
+      "msResolution": true
+     },
+     "aliasColors": {}
+    }
+   ]
+  },
+  {
+   "title": "vectorized_internal_rpc_protocol",
+   "showTitle": true,
+   "collapse": true,
+   "editable": true,
+   "height": "250px",
+   "panels": [
+    {
+     "type": "graph",
+     "id": 2,
+     "title": "Amount of memory consumed for requests processing",
+     "datasource": "prometheus",
+     "editable": true,
+     "gridPos": {
+      "h": 0,
+      "w": 0,
+      "x": 0,
+      "y": 0
+     },
+     "links": null,
+     "renderer": "flot",
+     "span": 4,
+     "targets": [
+      {
+       "refId": "",
+       "expr": "sum(vectorized_vectorized_internal_rpc_protocol_consumed_mem{instance=~\"[[node]]\",shard=~\"[[node_shard]]\"}) by ([[aggr_criteria]])",
+       "intervalFactor": 2,
+       "interval": "",
+       "step": 10,
+       "legendFormat": "node: {{instance}}, shard: {{shard}}",
+       "format": "time_series"
+      }
+     ],
+     "xaxis": {
+      "format": "",
+      "logBase": 0,
+      "show": true,
+      "mode": "time"
+     },
+     "yaxes": [
+      {
+       "label": null,
+       "show": true,
+       "logBase": 1,
+       "min": 0,
+       "format": "short"
+      },
+      {
+       "label": null,
+       "show": true,
+       "logBase": 1,
+       "min": 0,
+       "format": "short"
+      }
+     ],
+     "legend": {
+      "show": true,
+      "max": false,
+      "min": false,
+      "values": false,
+      "avg": false,
+      "current": false,
+      "total": false
+     },
+     "fill": 1,
+     "linewidth": 2,
+     "nullPointMode": "null",
+     "thresholds": null,
+     "lines": false,
+     "bars": true,
+     "tooltip": {
+      "shared": true,
+      "value_type": "cumulative",
+      "msResolution": true
+     },
+     "aliasColors": {}
+    },
+    {
+     "type": "graph",
+     "id": 3,
+     "title": "Rate - Number of requests with corrupted headers",
+     "datasource": "prometheus",
+     "editable": true,
+     "gridPos": {
+      "h": 0,
+      "w": 0,
+      "x": 0,
+      "y": 0
+     },
+     "links": null,
+     "renderer": "flot",
+     "span": 4,
+     "targets": [
+      {
+       "refId": "",
+       "expr": "sum(irate(vectorized_vectorized_internal_rpc_protocol_corrupted_headers{instance=~\"[[node]]\",shard=~\"[[node_shard]]\"}[1m])) by ([[aggr_criteria]])",
+       "intervalFactor": 2,
+       "interval": "",
+       "step": 10,
+       "legendFormat": "node: {{instance}}, shard: {{shard}}",
+       "format": "time_series"
+      }
+     ],
+     "xaxis": {
+      "format": "",
+      "logBase": 0,
+      "show": true,
+      "mode": "time"
+     },
+     "yaxes": [
+      {
+       "label": null,
+       "show": true,
+       "logBase": 1,
+       "min": 0,
+       "format": "ops"
+      },
+      {
+       "label": null,
+       "show": true,
+       "logBase": 1,
+       "min": 0,
+       "format": "short"
+      }
+     ],
+     "legend": {
+      "show": true,
+      "max": false,
+      "min": false,
+      "values": false,
+      "avg": false,
+      "current": false,
+      "total": false
+     },
+     "fill": 1,
+     "linewidth": 2,
+     "nullPointMode": "null",
+     "thresholds": null,
+     "lines": true,
+     "bars": false,
+     "tooltip": {
+      "shared": true,
+      "value_type": "cumulative",
+      "msResolution": true
+     },
+     "aliasColors": {}
+    }
+   ]
+  }
+ ],
+ "panels": null,
+ "editable": true,
+ "timezone": "utc",
  "refresh": "10s",
- "schemaVersion": 12,
- "version": 0,
- "links": null,
  "time": {
   "from": "now-1h",
   "to": "now"
@@ -413,7 +645,12 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
    "7d",
    "30d"
   ]
- }
+ },
+ "annotations": {
+  "list": null
+ },
+ "links": null,
+ "schemaVersion": 12
 }
 `
 	ts := httptest.NewServer(

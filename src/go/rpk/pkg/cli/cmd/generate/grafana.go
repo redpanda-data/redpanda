@@ -9,8 +9,9 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"vectorized/pkg/cli/cmd/generate/graf"
+	"vectorized/pkg/utils"
 
-	"github.com/grafana-tools/sdk"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 	log "github.com/sirupsen/logrus"
@@ -23,12 +24,9 @@ func (*NoopFormatter) Format(e *log.Entry) ([]byte, error) {
 	return []byte(e.Message), nil
 }
 
-func datasource() *string {
-	ds := "prometheus"
-	return &ds
-}
+const datasource = "prometheus"
 
-var panelHeight = "250px"
+const panelHeight = "250px"
 
 var metricGroups = []string{
 	"storage",
@@ -94,53 +92,124 @@ func executeGrafanaDashboard(prometheusURL string) error {
 
 func buildGrafanaDashboard(
 	metricFamilies map[string]*dto.MetricFamily,
-) *sdk.Board {
-	groupPanels := map[string][]sdk.Panel{}
-	panelID := uint(0)
+) graf.Dashboard {
+	groupPanels := map[string][]graf.Panel{}
+	kafkaLatencyMetrics := []string{
+		"vectorized_kafka_rpc_protocol_dispatch_handler_latency",
+	}
+	rpcLatencyMetrics := []string{
+		"vectorized_vectorized_internal_rpc_protocol_dispatch_handler_latency",
+	}
+	throughputMetrics := []string{
+		"vectorized_reactor_fstream_read_bytes",
+		"vectorized_io_queue_total_bytes",
+	}
+	httpErrorMetrics := []string{
+		"vectorized_httpd_read_errors",
+		"vectorized_httpd_reply_errors",
+	}
+	storageErrorMetrics := []string{
+		"vectorized_storage_log_batch_parse_errors",
+		"vectorized_storage_log_batch_write_errors",
+	}
+	kafkaLatenciesRow := graf.NewRow("Kafka Latency", []graf.Panel{}, false)
+	rpcLatenciesRow := graf.NewRow("RPC Latency", []graf.Panel{}, false)
+	throughputRow := graf.NewRow("Throughput", []graf.Panel{}, false)
+	httpErrorsRow := graf.NewRow("Http Errors", []graf.Panel{}, false)
+	storageErrorsRow := graf.NewRow("Storage Errors", []graf.Panel{}, false)
+	errorsRow := graf.NewRow("Errors", []graf.Panel{}, false)
+
+	percentiles := []float32{0.5, 0.95, 0.99}
 
 	names := []string{}
 	for k, _ := range metricFamilies {
 		names = append(names, k)
 	}
 	sort.Strings(names)
+	id := uint(0)
 	for _, name := range names {
+		id++
 		family := metricFamilies[name]
-		var panel *sdk.Panel
+		var panel graf.Panel
 		if family.GetType() == dto.MetricType_COUNTER {
-			panel = newCounterPanel(family)
-		} else if subtype(family) != "histogram" {
-			panel = newGaugePanel(family)
-		}
-		if panel != nil {
-			panel.ID = panelID
-			panelID++
-			group := metricGroup(name)
-			panels, ok := groupPanels[group]
-			if ok {
-				groupPanels[group] = append(panels, *panel)
-			} else {
-				groupPanels[group] = []sdk.Panel{*panel}
+			panel = newCounterPanel(family, id)
+		} else if subtype(family) == "histogram" {
+			for _, p := range percentiles {
+				percentilePanel := newPercentilePanel(family, id, p)
+				if utils.StringInSlice(family.GetName(), kafkaLatencyMetrics) {
+					kafkaLatenciesRow.Panels = append(
+						kafkaLatenciesRow.Panels,
+						percentilePanel,
+					)
+				} else if utils.StringInSlice(family.GetName(), rpcLatencyMetrics) {
+					rpcLatenciesRow.Panels = append(
+						rpcLatenciesRow.Panels,
+						percentilePanel,
+					)
+				}
+				id++
 			}
+			continue
+		} else {
+			panel = newGaugePanel(family, id)
+		}
+
+		if panel == nil {
+			continue
+		}
+
+		if strings.Contains(family.GetName(), "error") {
+			if utils.StringInSlice(family.GetName(), httpErrorMetrics) {
+				httpErrorsRow.Panels = append(
+					httpErrorsRow.Panels,
+					panel,
+				)
+			} else if utils.StringInSlice(family.GetName(), storageErrorMetrics) {
+				storageErrorsRow.Panels = append(
+					storageErrorsRow.Panels,
+					panel,
+				)
+			} else {
+				errorsRow.Panels = append(
+					errorsRow.Panels,
+					panel,
+				)
+			}
+			continue
+		}
+		if utils.StringInSlice(family.GetName(), throughputMetrics) {
+			throughputRow.Panels = append(
+				throughputRow.Panels,
+				panel,
+			)
+			continue
+		}
+		group := metricGroup(name)
+		panels, ok := groupPanels[group]
+		if ok {
+			groupPanels[group] = append(panels, panel)
+		} else {
+			groupPanels[group] = []graf.Panel{panel}
 		}
 	}
 
 	rowTitles := []string{}
-	rowsByTitle := map[string]*sdk.Row{}
+	rowsByTitle := map[string]graf.Row{}
 	for group, panels := range groupPanels {
-		row := &sdk.Row{
-			Title:     group,
-			ShowTitle: true,
-			Panels:    panels,
-			Editable:  true,
-			Height:    sdk.Height(panelHeight),
-		}
-		rowsByTitle[group] = row
+		rowsByTitle[group] = graf.NewRow(group, panels, true)
 		rowTitles = append(rowTitles, group)
 	}
 
 	sort.Strings(rowTitles)
 
-	rows := []*sdk.Row{}
+	rows := []graf.Row{
+		kafkaLatenciesRow,
+		rpcLatenciesRow,
+		throughputRow,
+		httpErrorsRow,
+		storageErrorsRow,
+		errorsRow,
+	}
 	for _, title := range rowTitles {
 		rows = append(rows, rowsByTitle[title])
 	}
@@ -150,70 +219,78 @@ func buildGrafanaDashboard(
 	node.AllValue = ".*"
 	node.Type = "query"
 	node.Query = "label_values(instance)"
-	shard := newDefaultTemplateVar("node_shard", "shard", true)
+	shard := newDefaultTemplateVar("node_shard", "Shard", true)
 	shard.IncludeAll = true
 	shard.AllValue = ".*"
 	shard.Type = "query"
 	shard.Query = "label_values(shard)"
-	clusterOpt := sdk.Option{
+	clusterOpt := graf.Option{
 		Text:     "Cluster",
-		Value:    "sum",
+		Value:    "",
 		Selected: false,
 	}
-	aggregateOpts := []sdk.Option{
-		sdk.Option{
-			Text:     "None",
-			Value:    "",
-			Selected: true,
-		},
-		sdk.Option{
+	aggregateOpts := []graf.Option{
+		clusterOpt,
+		graf.Option{
 			Text:     "Instance",
-			Value:    "sum by(instance)",
+			Value:    "instance,",
 			Selected: false,
 		},
-		clusterOpt,
+		graf.Option{
+			Text:     "Instance, Shard",
+			Value:    "instance,shard,",
+			Selected: false,
+		},
 	}
-	aggregate := newDefaultTemplateVar("aggregate", "Aggregate by", false, aggregateOpts...)
+	aggregate := newDefaultTemplateVar(
+		"aggr_criteria",
+		"Aggregate by",
+		false,
+		aggregateOpts...,
+	)
 	aggregate.Type = "custom"
-	aggregate.Current = sdk.Current{
+	aggregate.Current = graf.Current{
 		Text:  clusterOpt.Text,
 		Value: clusterOpt.Value,
 	}
-	templating := sdk.Templating{List: []sdk.TemplateVar{node, shard, aggregate}}
 
-	dashboard := sdk.NewBoard("Redpanda")
-	dashboard.Templating = templating
-	dashboard.Rows = rows
-	dashboard.Refresh = &sdk.BoolString{Flag: true, Value: "10s"}
-	dashboard.Time = sdk.Time{From: "now-1h", To: "now"}
-	dashboard.Timepicker = sdk.Timepicker{
-		RefreshIntervals: []string{
-			"5s",
-			"10s",
-			"30s",
-			"1m",
-			"5m",
-			"15m",
-			"30m",
-			"1h",
-			"2h",
-			"1d",
+	return graf.Dashboard{
+		Title: "Redpanda",
+		Templating: graf.Templating{
+			List: []graf.TemplateVar{node, shard, aggregate},
 		},
-		TimeOptions: []string{
-			"5m",
-			"15m",
-			"1h",
-			"6h",
-			"12h",
-			"24h",
-			"2d",
-			"7d",
-			"30d",
+		Rows:     rows,
+		Editable: true,
+		Refresh:  "10s",
+		Time:     graf.Time{From: "now-1h", To: "now"},
+		TimePicker: graf.TimePicker{
+			RefreshIntervals: []string{
+				"5s",
+				"10s",
+				"30s",
+				"1m",
+				"5m",
+				"15m",
+				"30m",
+				"1h",
+				"2h",
+				"1d",
+			},
+			TimeOptions: []string{
+				"5m",
+				"15m",
+				"1h",
+				"6h",
+				"12h",
+				"24h",
+				"2d",
+				"7d",
+				"30d",
+			},
 		},
+		Timezone:      "utc",
+		SchemaVersion: 12,
 	}
-	dashboard.SchemaVersion = 12
-	dashboard.Timezone = "utc"
-	return dashboard
 }
 
 func fetchMetrics(prometheusURL string) (map[string]*dto.MetricFamily, error) {
@@ -238,95 +315,97 @@ func fetchMetrics(prometheusURL string) (map[string]*dto.MetricFamily, error) {
 	return parser.TextToMetricFamilies(bytes.NewBuffer(bs))
 }
 
-func newCounterPanel(m *dto.MetricFamily) *sdk.Panel {
+func newPercentilePanel(
+	m *dto.MetricFamily, id uint, percentile float32,
+) graf.GraphPanel {
 	expr := fmt.Sprintf(
-		`[[aggregate]] (irate(%s{instance=~"[[node]]",shard=~"[[node_shard]]"}[1m]))`,
+		`histogram_quantile(%.2f, sum(rate(%s_bucket{instance=~"[[node]]",shard=~"[[node_shard]]"}[1m])) by (le, [[aggr_criteria]]))`,
+		percentile,
 		m.GetName(),
 	)
-	format := "ops"
-	if strings.Contains(subtype(m), "bytes") {
-		format = "Bps"
-	}
-	panel := newGraphPanel(m, "Rate - "+m.GetHelp(), expr, format)
-	panel.Lines = true
-	return panel
-}
-
-func newGaugePanel(m *dto.MetricFamily) *sdk.Panel {
-	expr := fmt.Sprintf(
-		`[[aggregate]] (%s{instance=~"[[node]]",shard=~"[[node_shard]]"})`,
-		m.GetName(),
-	)
-	format := "short"
-	if strings.Contains(subtype(m), "bytes") {
-		format = "bytes"
-	}
-	panel := newGraphPanel(m, m.GetHelp(), expr, format)
-	panel.Bars = true
-	panel.Lines = false
-	return panel
-}
-
-func defaultTarget(family *dto.MetricFamily, expr string) sdk.Target {
-	return sdk.Target{
+	target := graf.Target{
 		Expr:           expr,
-		LegendFormat:   legendFormat(family),
+		LegendFormat:   legendFormat(m),
+		Format:         "time_series",
+		Step:           10,
+		IntervalFactor: 2,
+		RefID:          "A",
+	}
+	title := fmt.Sprintf("%s (p%.0f)", m.GetHelp(), percentile*100)
+	panel := newGraphPanel(id, title, target, "µs")
+	panel.Lines = true
+	panel.Tooltip.ValueType = "individual"
+	panel.Tooltip.Sort = 0
+	return panel
+}
+
+func newCounterPanel(m *dto.MetricFamily, id uint) graf.GraphPanel {
+	expr := fmt.Sprintf(
+		`sum(irate(%s{instance=~"[[node]]",shard=~"[[node_shard]]"}[1m])) by ([[aggr_criteria]])`,
+		m.GetName(),
+	)
+	target := graf.Target{
+		Expr:           expr,
+		LegendFormat:   legendFormat(m),
 		Format:         "time_series",
 		Step:           10,
 		IntervalFactor: 2,
 	}
-}
-
-func newGraphPanel(
-	family *dto.MetricFamily, title,
-	targetExpr,
-	yAxisFormat string,
-) *sdk.Panel {
-	panel := sdk.NewGraph(title)
-	panel.GraphPanel.Targets = []sdk.Target{
-		defaultTarget(family, targetExpr),
+	format := "ops"
+	if strings.Contains(subtype(m), "bytes") {
+		format = "Bps"
 	}
-	panel.Legend = sdk.Legend{Show: true}
-	panel.Datasource = datasource()
-	panel.Fill = 1
-	panel.Linewidth = 2
-	panel.Editable = true
-	panel.Span = 4
-	panel.AliasColors = struct{}{}
-	panel.Tooltip = sdk.Tooltip{
-		MsResolution: true,
-		Shared:       true,
-		Sort:         0,
-		ValueType:    "cumulative",
-	}
-	panel.Xaxis = sdk.Axis{Show: true}
-	yAxis := sdk.Axis{
-		Format:  yAxisFormat,
-		LogBase: 1,
-		Show:    true,
-		Min:     &sdk.FloatString{Value: 0.0, Valid: true},
-	}
-	yAxis1 := sdk.Axis{
-		Format:  "short",
-		LogBase: yAxis.LogBase,
-		Show:    yAxis.Show,
-		Min:     yAxis.Min,
-	}
-	panel.Yaxes = []sdk.Axis{yAxis, yAxis1}
+	panel := newGraphPanel(id, "Rate - "+m.GetHelp(), target, format)
+	panel.Lines = true
 	return panel
 }
 
+func newGaugePanel(m *dto.MetricFamily, id uint) graf.GraphPanel {
+	expr := fmt.Sprintf(
+		`sum(%s{instance=~"[[node]]",shard=~"[[node_shard]]"}) by ([[aggr_criteria]])`,
+		m.GetName(),
+	)
+	target := graf.Target{
+		Expr:           expr,
+		LegendFormat:   legendFormat(m),
+		Format:         "time_series",
+		Step:           10,
+		IntervalFactor: 2,
+	}
+	format := "short"
+	if strings.Contains(subtype(m), "bytes") {
+		format = "bytes"
+	}
+	panel := newGraphPanel(id, m.GetHelp(), target, format)
+	panel.Bars = true
+	return panel
+}
+
+func newGraphPanel(
+	id uint, title string, target graf.Target, yAxisFormat string,
+) graf.GraphPanel {
+	// yAxisMin := 0.0
+	p := graf.NewGraphPanel(title, yAxisFormat)
+	p.ID = id
+	p.Datasource = datasource
+	p.Targets = []graf.Target{target}
+	p.Tooltip = graf.Tooltip{
+		MsResolution: true,
+		Shared:       true,
+		ValueType:    "cumulative",
+	}
+	return p
+}
+
 func newDefaultTemplateVar(
-	name, label string, multi bool, opts ...sdk.Option,
-) sdk.TemplateVar {
-	var refresh int64 = 1
-	return sdk.TemplateVar{
+	name, label string, multi bool, opts ...graf.Option,
+) graf.TemplateVar {
+	return graf.TemplateVar{
 		Name:       name,
-		Datasource: datasource(),
+		Datasource: datasource,
 		Label:      label,
-		Current:    sdk.Current{Tags: []*string{}},
 		Multi:      multi,
-		Refresh:    sdk.BoolInt{Flag: true, Value: &refresh},
+		Refresh:    1,
 		Sort:       1,
 		Options:    opts,
 	}
