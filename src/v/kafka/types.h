@@ -44,6 +44,13 @@ static inline const member_id unknown_member_id("");
 /// An unknown / missing generation id (Kafka protocol specific)
 static inline const generation_id unknown_generation_id(-1);
 
+enum class coordinator_type : int8_t {
+    group = 0,
+    transaction = 1,
+};
+
+std::ostream& operator<<(std::ostream& os, coordinator_type t);
+
 /// \brief A protocol configuration supported by a group member.
 ///
 /// NOTE: for efficiency this structure is shared between kafka request
