@@ -9,6 +9,6 @@ rp_test(
   UNIT_TEST
   BINARY_NAME zstd_tests
   SOURCES zstd_tests.cc
-  LIBRARIES Seastar::seastar_testing v::compression v::rprandom
+  LIBRARIES v::seastar_testing_main v::compression v::rprandom
   LABELS compression
   )
