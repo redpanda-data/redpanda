@@ -16,6 +16,7 @@
 #include "rpc/simple_protocol.h"
 #include "seastarx.h"
 #include "storage/directories.h"
+#include "storage/log_manager.h"
 #include "test_utils/async.h"
 #include "test_utils/logs.h"
 #include "utils/unresolved_address.h"
@@ -74,6 +75,7 @@ public:
         _metadata_dissemination_service.stop().get0();
         _pm.stop().get0();
         _gm.stop().get0();
+        _lm.stop().get0();
         st.stop().get0();
         _md_cache.stop().get0();
         _cli_cache.stop().get0();
@@ -105,7 +107,14 @@ public:
             std::ref(_cli_cache))
           .get0();
         _gm.invoke_on_all(&raft::group_manager::start).get();
-        _pm.start(std::ref(_gm)).get0();
+        _lm
+          .start(storage::log_config(
+            storage::log_config::storage_type::disk,
+            _base_dir,
+            1024_MiB,
+            storage::log_config::debug_sanitize_files::yes))
+          .get();
+        _pm.start(std::ref(_lm), std::ref(_gm)).get0();
         _metadata_dissemination_service
           .start(
             std::ref(_gm),
@@ -282,6 +291,7 @@ private:
     ss::sharded<rpc::connection_cache> _cli_cache;
     ss::sharded<cluster::metadata_cache> _md_cache;
     ss::sharded<cluster::shard_table> st;
+    ss::sharded<storage::log_manager> _lm;
     ss::sharded<raft::group_manager> _gm;
     ss::sharded<cluster::partition_manager> _pm;
     ss::sharded<rpc::server> _rpc;
