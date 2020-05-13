@@ -28,6 +28,6 @@ rp_test(
   UNIT_TEST
   BINARY_NAME roundtrip_demo_types
   SOURCES type_tests.cc
-  LIBRARIES Seastar::seastar_testing demo_gen v::model
+  LIBRARIES v::seastar_testing_main demo_gen v::model
   ARGS "-- -c 1"
 )

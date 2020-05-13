@@ -15,7 +15,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME log_segment_appender_test
   SOURCES log_segment_appender_test.cc
-  LIBRARIES Seastar::seastar_testing v::storage_test_utils
+  LIBRARIES v::seastar_testing_main v::storage_test_utils
   LABELS storage
   ARGS "-- -c 1"
 )
@@ -24,7 +24,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME parser_test
   SOURCES parser_test.cc
-  LIBRARIES Seastar::seastar_testing v::storage_test_utils
+  LIBRARIES v::seastar_testing_main v::storage_test_utils
   LABELS storage
   ARGS "-- -c 1"
 )
@@ -33,7 +33,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME log_segment_reader_test
   SOURCES log_segment_reader_test.cc
-  LIBRARIES Seastar::seastar_testing v::storage_test_utils
+  LIBRARIES v::seastar_testing_main v::storage_test_utils
   LABELS storage
   ARGS "-- -c 1"
 )
@@ -42,7 +42,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME log_replayer_test
   SOURCES log_replayer_test.cc
-  LIBRARIES Seastar::seastar_testing v::storage_test_utils
+  LIBRARIES v::seastar_testing_main v::storage_test_utils
   LABELS storage
   ARGS "-- -c 1"
 )
@@ -51,7 +51,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME log_manager_test
   SOURCES log_manager_test.cc
-  LIBRARIES Seastar::seastar_testing v::storage_test_utils
+  LIBRARIES v::seastar_testing_main v::storage_test_utils
   LABELS storage
   ARGS "-- -c 1"
 )
@@ -60,7 +60,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME offset_assignment_test
   SOURCES offset_assignment_test.cc
-  LIBRARIES Seastar::seastar_testing v::storage_test_utils
+  LIBRARIES v::seastar_testing_main v::storage_test_utils
   ARGS "-- -c 1"
   LABELS storage
 )
@@ -69,7 +69,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME storage_e2e_test
   SOURCES storage_e2e_test.cc
-  LIBRARIES Seastar::seastar_testing v::storage_test_utils
+  LIBRARIES v::seastar_testing_main v::storage_test_utils
   ARGS "-- -c 1"
   LABELS storage
 )
@@ -78,7 +78,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME log_truncate_test
   SOURCES log_truncate_test.cc
-  LIBRARIES Seastar::seastar_testing v::storage_test_utils
+  LIBRARIES v::seastar_testing_main v::storage_test_utils
   ARGS "-- -c 1"
   LABELS storage
 )
@@ -86,7 +86,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME offset_index_test
   SOURCES offset_index_utils_tests.cc
-  LIBRARIES Seastar::seastar_testing v::storage_test_utils
+  LIBRARIES v::seastar_testing_main v::storage_test_utils
   ARGS "-- -c 1"
   LABELS storage
 )
@@ -94,7 +94,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME appender_chunk_manip
   SOURCES appender_chunk_manipulations.cc
-  LIBRARIES Seastar::seastar_testing v::storage_test_utils
+  LIBRARIES v::seastar_testing_main v::storage_test_utils
   ARGS "-- -c 1"
   LABELS storage
 )
@@ -103,14 +103,14 @@ rp_test(
   UNIT_TEST
   BINARY_NAME batch_cache_test
   SOURCES batch_cache_test.cc
-  LIBRARIES Seastar::seastar_testing v::storage_test_utils
+  LIBRARIES v::seastar_testing_main v::storage_test_utils
   LABELS storage
 )
 rp_test(
   UNIT_TEST
   BINARY_NAME disk_log_builder_test
   SOURCES disk_log_builder_test.cc
-  LIBRARIES Seastar::seastar_testing v::storage_test_utils
+  LIBRARIES v::seastar_testing_main v::storage_test_utils
   ARGS "-- -c 1"
   LABELS storage
 )
@@ -121,7 +121,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME batch_cache_reclaim_test
   SOURCES batch_cache_reclaim_test.cc
-  LIBRARIES Seastar::seastar_testing v::storage_test_utils
+  LIBRARIES v::seastar_testing_main v::storage_test_utils
   ARGS "-- -c1 -m100"
   LABELS storage
   SKIP_BUILD_TYPES "Debug"
@@ -131,7 +131,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME log_retention_test
   SOURCES log_retention_tests.cc
-  LIBRARIES Seastar::seastar_testing v::storage_test_utils
+  LIBRARIES v::seastar_testing_main v::storage_test_utils
   ARGS "-- -c 1"
   LABELS storage
 )
@@ -140,7 +140,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME produce_consume_test
   SOURCES produce_consume_test.cc
-  LIBRARIES Seastar::seastar_testing v::storage_test_utils
+  LIBRARIES v::seastar_testing_main v::storage_test_utils
   ARGS "-- -c 1"
   LABELS storage
 )
@@ -148,7 +148,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME half_page_write_test
   SOURCES half_page_concurrent_dispatch.cc
-  LIBRARIES Seastar::seastar_testing v::storage_test_utils
+  LIBRARIES v::seastar_testing_main v::storage_test_utils
   ARGS "-- -c 1"
   LABELS storage
   )
@@ -157,7 +157,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME timequery_test
   SOURCES timequery_test.cc
-  LIBRARIES Seastar::seastar_testing v::storage_test_utils
+  LIBRARIES v::seastar_testing_main v::storage_test_utils
   ARGS "-- -c 1"
   LABELS storage
   )

@@ -2,7 +2,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME jitter_tests
   SOURCES jitter_tests.cc
-  LIBRARIES Seastar::seastar_testing v::raft
+  LIBRARIES v::seastar_testing_main v::raft
   LABELS raft
   ARGS "-- -c 1"
  )
@@ -10,7 +10,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME voted_for_config_tests
   SOURCES voted_for_config_tests.cc
-  LIBRARIES Seastar::seastar_testing v::raft v::storage_test_utils
+  LIBRARIES v::seastar_testing_main v::raft v::storage_test_utils
   LABELS raft
   ARGS "-- -c 1"
  )
@@ -18,7 +18,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME log_bootstrap_parsing
   SOURCES bootstrap_configuration_test.cc
-  LIBRARIES Seastar::seastar_testing v::raft
+  LIBRARIES v::seastar_testing_main v::raft
   LABELS raft
   ARGS "-- -c 1"
   )
@@ -34,7 +34,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME foreign_entry_sharing
   SOURCES foreign_entry_test.cc
-  LIBRARIES Seastar::seastar_testing v::raft  v::storage_test_utils
+  LIBRARIES v::seastar_testing_main v::raft  v::storage_test_utils
   LABELS raft
 )
 rp_test(
@@ -49,14 +49,14 @@ rp_test(
   UNIT_TEST
   BINARY_NAME configuration_serialization_test
   SOURCES configuration_serialization_test.cc
-  LIBRARIES Seastar::seastar_testing v::raft
+  LIBRARIES v::seastar_testing_main v::raft
   LABELS raft
 )
 rp_test(
   UNIT_TEST
   BINARY_NAME type_serialization_tests
   SOURCES type_serialization_tests.cc
-  LIBRARIES Seastar::seastar_testing v::raft v::storage_test_utils
+  LIBRARIES v::seastar_testing_main v::raft v::storage_test_utils
   LABELS raft
 )
 
@@ -64,7 +64,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME term_assigning_reader_test
   SOURCES term_assigning_reader_test.cc
-  LIBRARIES Seastar::seastar_testing v::raft v::storage_test_utils
+  LIBRARIES v::seastar_testing_main v::raft v::storage_test_utils
   LABELS raft
 )
 
@@ -72,7 +72,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME membership_test
   SOURCES membership_test.cc
-  LIBRARIES Seastar::seastar_testing v::raft v::storage_test_utils
+  LIBRARIES v::seastar_testing_main v::raft v::storage_test_utils
   LABELS raft
 )
 
@@ -80,7 +80,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME leadership_test
   SOURCES leadership_test.cc
-  LIBRARIES Seastar::seastar_testing v::raft v::storage_test_utils
+  LIBRARIES v::seastar_testing_main v::raft v::storage_test_utils
   LABELS raft
 )
 
@@ -88,7 +88,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME append_entries_test
   SOURCES append_entries_test.cc
-  LIBRARIES Seastar::seastar_testing v::raft v::storage_test_utils
+  LIBRARIES v::seastar_testing_main v::raft v::storage_test_utils
   LABELS raft
 )
 
@@ -96,6 +96,6 @@ rp_test(
   UNIT_TEST
   BINARY_NAME snapshot_test
   SOURCES snapshot_test.cc
-  LIBRARIES Seastar::seastar_testing v::raft v::storage_test_utils
+  LIBRARIES v::seastar_testing_main v::raft v::storage_test_utils
   LABELS raft
 )
