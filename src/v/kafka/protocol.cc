@@ -101,8 +101,12 @@ ss::future<session_resources> protocol::connection_context::throttle_request(
     return fut
       .then(
         [this, request_size] { return reserve_request_units(request_size); })
-      .then([delay](ss::semaphore_units<> units) {
-          return std::make_pair(delay.duration, std::move(units));
+      .then([this, delay](ss::semaphore_units<> units) {
+          return session_resources{
+            .backpressure_delay = delay.duration,
+            .memlocks = std::move(units),
+            .method_latency = _rs.hist().auto_measure(),
+          };
       });
 }
 
@@ -141,13 +145,12 @@ ss::future<> protocol::connection_context::dispatch_method_once(
                     // _proto._cntrl etc might not be alive
                     return;
                 }
-                auto&& [duration, units] = std::move(sres);
                 auto rctx = request_context(
                   _proto._metadata_cache,
                   _proto._cntrl_dispatcher.local(),
                   std::move(hdr),
                   std::move(buf),
-                  duration,
+                  sres.backpressure_delay,
                   _proto._group_router.local(),
                   _proto._shard_table.local(),
                   _proto._partition_manager,
@@ -164,7 +167,7 @@ ss::future<> protocol::connection_context::dispatch_method_once(
                         klog.info, "Detected error processing request: {}", e);
                       self->_rs.conn->shutdown_input();
                   })
-                  .finally([units = std::move(units), self] {});
+                  .finally([s = std::move(sres), self] {});
             });
       });
 }

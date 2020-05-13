@@ -8,6 +8,7 @@
 #include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
 #include "rpc/server.h"
+#include "utils/hdr_hist.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>
@@ -36,8 +37,11 @@ namespace kafka {
 class protocol final : public rpc::server::protocol {
 public:
     using sequence_id = named_type<uint64_t, struct kafka_protocol_sequence>;
-    using session_resources
-      = std::pair<ss::lowres_clock::duration, ss::semaphore_units<>>;
+    struct session_resources {
+        ss::lowres_clock::duration backpressure_delay;
+        ss::semaphore_units<> memlocks;
+        std::unique_ptr<hdr_hist::measurement> method_latency;
+    };
 
     protocol(
       ss::smp_service_group,
