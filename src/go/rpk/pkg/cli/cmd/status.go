@@ -9,6 +9,7 @@ import (
 	"vectorized/pkg/api"
 	"vectorized/pkg/cli/ui"
 	"vectorized/pkg/config"
+	"vectorized/pkg/kafka"
 	"vectorized/pkg/system"
 
 	"github.com/Shopify/sarama"
@@ -118,7 +119,7 @@ func executeStatus(
 	} else {
 		printConfig(t, props)
 	}
-	client, err := initClient(
+	client, err := kafka.InitClient(
 		conf.Redpanda.KafkaApi.Address,
 		conf.Redpanda.KafkaApi.Port,
 	)
@@ -258,15 +259,6 @@ func sendMetrics(
 		CpuPercentage: metrics.CpuPercentage,
 	}
 	return api.SendMetrics(payload, *conf)
-}
-
-func initClient(ip string, port int) (sarama.Client, error) {
-	saramaConf := sarama.NewConfig()
-	saramaConf.Version = sarama.V2_4_0_0
-	saramaConf.Producer.Return.Successes = true
-	saramaConf.Admin.Timeout = 1 * time.Second
-	selfAddr := fmt.Sprintf("%s:%d", ip, port)
-	return sarama.NewClient([]string{selfAddr}, saramaConf)
 }
 
 func topicsDetail(admin sarama.ClusterAdmin) ([]*sarama.TopicMetadata, error) {
