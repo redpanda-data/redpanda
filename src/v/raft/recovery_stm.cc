@@ -19,7 +19,7 @@ recovery_stm::recovery_stm(
   : _ptr(p)
   , _node_id(node_id)
   , _prio(prio)
-  , _ctxlog(_ptr->_self, raft::group_id(_ptr->_meta.group)) {}
+  , _ctxlog(_ptr->_self, _ptr->group()) {}
 
 ss::future<> recovery_stm::do_one_read() {
     // We have to send all the records that leader have, event those that are
@@ -80,13 +80,13 @@ ss::future<> recovery_stm::replicate(model::record_batch_reader&& reader) {
     // get term for prev_log_idx batch
     auto prev_log_term = _ptr->get_term(prev_log_idx);
     // calculate commit index for follower to update immediately
-    auto commit_idx = std::min(_last_batch_offset, _ptr->_meta.commit_index);
+    auto commit_idx = std::min(_last_batch_offset, _ptr->committed_offset());
     // build request
     append_entries_request r(
       _ptr->self(),
-      protocol_metadata{.group = _ptr->_meta.group,
+      protocol_metadata{.group = _ptr->group(),
                         .commit_index = commit_idx,
-                        .term = _ptr->_meta.term,
+                        .term = _ptr->term(),
                         .prev_log_index = prev_log_idx,
                         .prev_log_term = prev_log_term},
       std::move(reader),
@@ -133,7 +133,7 @@ ss::future<> recovery_stm::replicate(model::record_batch_reader&& reader) {
               meta.value()->next_index);
         }
     });
-}
+} // namespace raft
 
 clock_type::time_point recovery_stm::append_entries_timeout() {
     return raft::clock_type::now() + _ptr->_replicate_append_timeout;

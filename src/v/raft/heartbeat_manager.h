@@ -22,17 +22,17 @@ struct consensus_ptr_by_group_id {
     bool operator()(
       const ss::lw_shared_ptr<consensus>& l,
       const ss::lw_shared_ptr<consensus>& r) const {
-        return l->meta().group < r->meta().group;
+        return l->group() < r->group();
     }
 
     bool operator()(
       const ss::lw_shared_ptr<consensus>& ptr, raft::group_id value) const {
-        return ptr->meta().group < value;
+        return ptr->group() < value;
     }
 
     bool operator()(
       raft::group_id value, const ss::lw_shared_ptr<consensus>& ptr) const {
-        return value < ptr->meta().group;
+        return value < ptr->group();
     }
 };
 
