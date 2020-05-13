@@ -19,7 +19,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const datasource = "prometheus"
+var datasource string
 
 const panelHeight = "250px"
 
@@ -53,6 +53,13 @@ func NewGrafanaDashboardCmd() *cobra.Command {
 		prometheusURLFlag,
 		"http://localhost:9644/metrics",
 		"The redpanda Prometheus URL from where to get the metrics metadata")
+	datasourceFlag := "datasource"
+	command.Flags().StringVar(
+		&datasource,
+		datasourceFlag,
+		"",
+		"The name of the Prometheus datasource as configured in your grafana instance.")
+	command.MarkFlagRequired(datasourceFlag)
 	return command
 }
 
