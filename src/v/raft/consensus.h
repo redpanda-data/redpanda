@@ -7,6 +7,7 @@
 #include "raft/probe.h"
 #include "raft/replicate_batcher.h"
 #include "raft/timeout_jitter.h"
+#include "raft/types.h"
 #include "rpc/connection_cache.h"
 #include "seastarx.h"
 #include "storage/log.h"
@@ -59,7 +60,16 @@ public:
     bool is_leader() const { return _vstate == vote_state::leader; }
     std::optional<model::node_id> get_leader_id() const { return _leader_id; }
     model::node_id self() const { return _self; }
-    const protocol_metadata& meta() const { return _meta; }
+    protocol_metadata meta() const {
+        auto lstats = _log.offsets();
+        return protocol_metadata{.group = _group,
+                                 .commit_index = _commit_index,
+                                 .term = _term,
+                                 .prev_log_index = lstats.dirty_offset,
+                                 .prev_log_term = lstats.dirty_offset_term};
+    }
+    raft::group_id group() const { return _group; }
+    model::term_id term() const { return _term; }
     const group_configuration& config() const { return _conf; }
     const model::ntp& ntp() const { return _log.config().ntp; }
     clock_type::time_point last_heartbeat() const { return _hbeat; };
@@ -79,13 +89,11 @@ public:
     ss::future<model::record_batch_reader>
     make_reader(storage::log_reader_config config);
 
-    model::offset committed_offset() const {
-        return model::offset(_meta.commit_index);
-    }
+    model::offset committed_offset() const { return _commit_index; }
 
     ss::future<> step_down(model::term_id term) {
         return _op_lock.with([this, term] {
-            _meta.term = term;
+            _term = term;
             do_step_down();
         });
     }
@@ -169,6 +177,7 @@ private:
     bool should_skip_vote();
     // args
     model::node_id _self;
+    raft::group_id _group;
     timeout_jitter _jit;
     storage::log _log;
     ss::io_priority_class _io_priority;
@@ -180,9 +189,12 @@ private:
     // and it is overriden to the last one found the in the last log segment
     group_configuration _conf;
 
+    // consensus state
+    model::offset _commit_index;
+    model::term_id _term;
+
     // read at `ss::future<> start()`
     model::node_id _voted_for;
-    protocol_metadata _meta;
     std::optional<model::node_id> _leader_id;
 
     /// useful for when we are not the leader

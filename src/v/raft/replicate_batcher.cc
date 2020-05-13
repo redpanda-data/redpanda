@@ -104,7 +104,8 @@ ss::future<> replicate_batcher::flush() {
                     }
                     return ss::make_ready_future<>();
                 }
-                const auto& meta = _ptr->_meta;
+
+                auto meta = _ptr->meta();
                 auto const term = model::term_id(meta.term);
                 for (auto& b : data) {
                     b.set_term(term);
@@ -112,7 +113,7 @@ ss::future<> replicate_batcher::flush() {
                 auto seqs = _ptr->next_followers_request_seq();
                 append_entries_request req(
                   _ptr->_self,
-                  meta,
+                  std::move(meta),
                   model::make_memory_record_batch_reader(std::move(data)));
                 return do_flush(
                   std::move(notifications),

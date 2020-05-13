@@ -43,8 +43,8 @@ ss::future<result<append_entries_reply>> replicate_entries_stm::do_dispatch_one(
                        auto last_idx = lstats.committed_offset;
                        append_entries_reply reply;
                        reply.node_id = _ptr->_self;
-                       reply.group = _ptr->_meta.group;
-                       reply.term = _ptr->_meta.term;
+                       reply.group = _ptr->group();
+                       reply.term = _ptr->term();
                        // we just flushed offsets are the same
                        reply.last_dirty_log_index = last_idx;
                        reply.last_committed_log_index = last_idx;
@@ -180,8 +180,8 @@ replicate_entries_stm::apply(ss::semaphore_units<> u) {
           auto appended_term = append_result.value().last_term;
 
           auto stop_cond = [this, appended_offset, appended_term] {
-              return _ptr->_meta.commit_index >= appended_offset
-                     || appended_term != _ptr->_meta.term;
+              return _ptr->committed_offset() >= appended_offset
+                     || appended_term != _ptr->term();
           };
           return _ptr->_commit_index_updated.wait(stop_cond).then(
             [this, appended_offset, appended_term] {
@@ -200,12 +200,12 @@ result<replicate_result> replicate_entries_stm::process_result(
       "current_term: {}]",
       appended_offset,
       appended_term,
-      _ptr->_meta.commit_index,
-      _ptr->_meta.term);
+      _ptr->committed_offset(),
+      _ptr->term());
 
     // if term has changed we have to check if entry was
     // replicated
-    if (appended_term != _ptr->_meta.term) {
+    if (appended_term != _ptr->term()) {
         if (_ptr->_log.get_term(appended_offset) != appended_term) {
             return ret_t(errc::replicated_entry_truncated);
         }
@@ -229,7 +229,7 @@ replicate_entries_stm::replicate_entries_stm(
   , _req(std::move(r))
   , _followers_seq(std::move(seqs))
   , _share_sem(1)
-  , _ctxlog(_ptr->_self, raft::group_id(_ptr->_meta.group)) {}
+  , _ctxlog(_ptr->_self, _ptr->group()) {}
 
 replicate_entries_stm::~replicate_entries_stm() {
     auto gate_not_closed = _req_bg.get_count() > 0 && !_req_bg.is_closed();
