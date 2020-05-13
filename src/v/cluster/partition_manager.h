@@ -15,7 +15,8 @@
 namespace cluster {
 class partition_manager {
 public:
-    partition_manager(ss::sharded<raft::group_manager>&);
+    partition_manager(
+      ss::sharded<storage::log_manager>&, ss::sharded<raft::group_manager>&);
 
     using manage_cb_t
       = ss::noncopyable_function<void(ss::lw_shared_ptr<partition>)>;
@@ -43,8 +44,8 @@ public:
         return nullptr;
     }
 
-    ss::future<> start() { return ss::make_ready_future<>(); }
-    ss::future<> stop();
+    ss::future<> start() { return ss::now(); }
+    ss::future<> stop() { return ss::now(); }
     ss::future<consensus_ptr> manage(
       storage::ntp_config,
       raft::group_id,
@@ -90,7 +91,7 @@ public:
     }
 
 private:
-    storage::log_manager _mngr;
+    storage::log_manager& _mngr;
     /// used to wait for concurrent recoveries
     ss::sharded<raft::group_manager>& _raft_manager;
 

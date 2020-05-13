@@ -15,30 +15,11 @@
 
 namespace cluster {
 
-storage::log_config manager_config_from_global_config() {
-    return storage::log_config(
-      storage::log_config::storage_type::disk,
-      config::shard_local_cfg().data_directory().as_sstring(),
-      config::shard_local_cfg().log_segment_size(),
-      storage::log_config::debug_sanitize_files::no,
-      config::shard_local_cfg().retention_bytes(),
-      config::shard_local_cfg().log_compaction_interval(),
-      config::shard_local_cfg().delete_retention_ms(),
-      storage::log_config::with_cache(
-        config::shard_local_cfg().disable_batch_cache()),
-      storage::batch_cache::reclaim_options{
-        .growth_window = config::shard_local_cfg().reclaim_growth_window(),
-        .stable_window = config::shard_local_cfg().reclaim_stable_window(),
-        .min_size = config::shard_local_cfg().reclaim_min_size(),
-        .max_size = config::shard_local_cfg().reclaim_max_size(),
-      });
-}
-
-partition_manager::partition_manager(ss::sharded<raft::group_manager>& raft)
-  : _mngr(manager_config_from_global_config())
+partition_manager::partition_manager(
+  ss::sharded<storage::log_manager>& log_mngr,
+  ss::sharded<raft::group_manager>& raft)
+  : _mngr(log_mngr.local())
   , _raft_manager(raft) {}
-
-ss::future<> partition_manager::stop() { return _mngr.stop(); }
 
 ss::future<consensus_ptr> partition_manager::manage(
   storage::ntp_config ntp_cfg,
