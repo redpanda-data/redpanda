@@ -9,6 +9,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"vectorized/pkg/cli"
 	"vectorized/pkg/cli/cmd/generate/graf"
 	"vectorized/pkg/utils"
 
@@ -18,13 +19,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type NoopFormatter struct{}
-
-func (*NoopFormatter) Format(e *log.Entry) ([]byte, error) {
-	return []byte(e.Message), nil
-}
-
-const datasource = "prometheus"
+var datasource string
 
 const panelHeight = "250px"
 
@@ -58,6 +53,13 @@ func NewGrafanaDashboardCmd() *cobra.Command {
 		prometheusURLFlag,
 		"http://localhost:9644/metrics",
 		"The redpanda Prometheus URL from where to get the metrics metadata")
+	datasourceFlag := "datasource"
+	command.Flags().StringVar(
+		&datasource,
+		datasourceFlag,
+		"",
+		"The name of the Prometheus datasource as configured in your grafana instance.")
+	command.MarkFlagRequired(datasourceFlag)
 	return command
 }
 
@@ -80,7 +82,7 @@ func executeGrafanaDashboard(prometheusURL string) error {
 	if err != nil {
 		return err
 	}
-	log.SetFormatter(&NoopFormatter{})
+	log.SetFormatter(cli.NewNoopFormatter())
 	// The logger's default stream is stderr, which prevents piping to files
 	// from working without redirecting them with '2>&1'.
 	if log.StandardLogger().Out == os.Stderr {

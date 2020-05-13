@@ -15,7 +15,10 @@ func TestGrafanaHostNoServer(t *testing.T) {
 	var out bytes.Buffer
 	logrus.SetOutput(&out)
 	cmd := generate.NewGrafanaDashboardCmd()
-	cmd.SetArgs([]string{"--prometheus-url", "localhost:8888/metrics"})
+	cmd.SetArgs([]string{
+		"--prometheus-url", "localhost:8888/metrics",
+		"--datasource", "prometheus",
+	})
 	err := cmd.Execute()
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "Get http://localhost:8888/metrics: dial tcp")
@@ -663,7 +666,10 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
 	logrus.SetOutput(&out)
 	cmd := generate.NewGrafanaDashboardCmd()
 	cmd.SetOutput(&out)
-	cmd.SetArgs([]string{"--prometheus-url", ts.URL})
+	cmd.SetArgs([]string{
+		"--prometheus-url", ts.URL,
+		"--datasource", "prometheus",
+	})
 	err := cmd.Execute()
 	require.NoError(t, err)
 
@@ -685,7 +691,10 @@ vectorized_vectorized_in
 	logrus.SetOutput(&out)
 	cmd := generate.NewGrafanaDashboardCmd()
 	cmd.SetOutput(&out)
-	cmd.SetArgs([]string{"--prometheus-url", ts.URL})
+	cmd.SetArgs([]string{
+		"--prometheus-url", ts.URL,
+		"--datasource", "prometheus",
+	})
 	err := cmd.Execute()
 	require.EqualError(t, err, "text format parsing error in line 3: expected float as value, got \"\"")
 }
