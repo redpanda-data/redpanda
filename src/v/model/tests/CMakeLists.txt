@@ -3,7 +3,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME record_batch_reader_test
   SOURCES record_batch_reader_test.cc
-  LIBRARIES Seastar::seastar_testing v::model v::storage_test_utils
+  LIBRARIES v::seastar_testing_main v::model v::storage_test_utils
   LABELS model
   ARGS "-- -c 1"
 )
@@ -27,7 +27,7 @@ rp_test(
   BINARY_NAME record_batch_test
   SOURCES record_batch_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
-  LIBRARIES Seastar::seastar_testing v::model v::model v::storage_test_utils
+  LIBRARIES v::seastar_testing_main v::model v::model v::storage_test_utils
 )
 
 rp_test(
@@ -42,5 +42,5 @@ rp_test(
   UNIT_TEST
   BINARY_NAME model_serialization_test
   SOURCES model_serialization_test.cc
-  LIBRARIES Seastar::seastar_testing v::model
+  LIBRARIES v::seastar_testing_main v::model
 )
