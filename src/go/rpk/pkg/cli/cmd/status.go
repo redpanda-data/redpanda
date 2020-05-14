@@ -288,9 +288,43 @@ func formatTopicsAndPartitions(tps map[string][]int) string {
 }
 
 func formatTopicPartitions(name string, partitions []int) string {
-	strParts := []string{}
-	for _, part := range partitions {
-		strParts = append(strParts, strconv.Itoa(part))
-	}
+	strParts := compress(partitions)
 	return fmt.Sprintf("%s: [%s]", name, strings.Join(strParts, ", "))
+}
+
+func compress(is []int) []string {
+	length := len(is)
+	if length == 0 {
+		return []string{}
+	}
+	sort.Ints(is)
+	ranges := []string{}
+	for i := 0; i < length; i++ {
+		low := is[i]
+		high := low
+		j := i + 1
+		index := j
+		for j := i + 1; j < length && is[j] == high+1; j++ {
+			high = is[j]
+			index = j
+		}
+		switch {
+		case low == high:
+			// If there was no range, just add the number.
+			ranges = append(ranges, strconv.Itoa(low))
+		case high == low+1:
+			// If the range is only n - n+1, it makes no sense to
+			// add a hyphen.
+			ranges = append(
+				ranges,
+				strconv.Itoa(low),
+				strconv.Itoa(high),
+			)
+			i = index
+		default:
+			ranges = append(ranges, fmt.Sprintf("%d-%d", low, high))
+			i = index
+		}
+	}
+	return ranges
 }
