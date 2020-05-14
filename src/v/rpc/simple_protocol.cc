@@ -106,6 +106,7 @@ simple_protocol::dispatch_method_once(header h, server::resources rs) {
                   rpclog.error(
                     "Service handler thrown an exception - {}",
                     std::current_exception());
+                  rs.probe().service_error();
                   reply_buf.set_status(rpc::status::server_error);
               }
               return send_reply(ctx, std::move(reply_buf))

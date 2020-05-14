@@ -31,6 +31,8 @@ public:
 
     void method_not_found() { ++_method_not_found_errors; }
 
+    void service_error() { ++_service_errors; }
+
     void waiting_for_available_memory() { ++_requests_blocked_memory; }
 
     void setup_metrics(ss::metrics::metric_groups& mgs, const char* name);
@@ -41,6 +43,7 @@ private:
     uint64_t _out_bytes = 0;
     uint64_t _connects = 0;
     uint64_t _requests_received = 0;
+    uint64_t _service_errors = 0;
     uint32_t _connections = 0;
     uint32_t _connection_close_error = 0;
     uint32_t _corrupted_headers = 0;
