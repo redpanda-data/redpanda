@@ -54,6 +54,10 @@ void server_probe::setup_metrics(
           sm::description(fmt::format(
             "{}: Number of requests with corrupted headers", proto))),
         sm::make_derive(
+          "service_errors",
+          [this] { return _corrupted_headers; },
+          sm::description(fmt::format("{}: Number of service errors", proto))),
+        sm::make_derive(
           "requests_blocked_memory",
           [this] { return _requests_blocked_memory; },
           sm::description(fmt::format(
