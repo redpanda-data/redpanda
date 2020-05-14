@@ -13,6 +13,7 @@ public:
     /// we re-compute the header-checksum on every call
     ss::scattered_message<char> as_scattered() &&;
 
+    void set_status(rpc::status);
     void set_correlation_id(uint32_t);
     void set_compression(rpc::compression_type c);
     void set_service_method_id(uint32_t);
@@ -32,6 +33,9 @@ inline void netbuf::set_compression(rpc::compression_type c) {
       "invalid compression type: {}",
       int(c));
     _hdr.compression = c;
+}
+inline void netbuf::set_status(rpc::status st) {
+    _hdr.meta = std::underlying_type_t<rpc::status>(st);
 }
 inline void netbuf::set_correlation_id(uint32_t x) { _hdr.correlation_id = x; }
 inline void netbuf::set_service_method_id(uint32_t x) { _hdr.meta = x; }
