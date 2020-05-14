@@ -33,14 +33,20 @@ ss::scattered_message<char> iobuf_as_scattered(iobuf b) {
     return msg;
 }
 
+ss::future<>
+write_iobuf_to_output_stream(iobuf buf, ss::output_stream<char>& output) {
+    return ss::do_with(std::move(buf), [&output](iobuf& buf) {
+        return ss::do_for_each(buf, [&output](iobuf::fragment& f) {
+            return output.write(f.get(), f.size());
+        });
+    });
+}
+
 ss::future<iobuf> read_iobuf_exactly(ss::input_stream<char>& in, size_t n) {
     return ss::do_with(iobuf{}, n, [&in](iobuf& b, size_t& n) {
         return ss::do_until(
                  [&n] { return n == 0; },
                  [&n, &in, &b] {
-                     if (n == 0) {
-                         return ss::make_ready_future<>();
-                     }
                      return in.read_up_to(n).then(
                        [&n, &b](ss::temporary_buffer<char> buf) {
                            if (buf.empty()) {
@@ -51,7 +57,7 @@ ss::future<iobuf> read_iobuf_exactly(ss::input_stream<char>& in, size_t n) {
                            b.append(std::move(buf));
                        });
                  })
-          .then([&b] { return ss::make_ready_future<iobuf>(std::move(b)); });
+          .then([&b] { return std::move(b); });
     });
 }
 
