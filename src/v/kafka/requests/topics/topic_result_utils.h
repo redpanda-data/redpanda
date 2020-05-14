@@ -10,7 +10,7 @@ namespace kafka {
 
 using include_message = ss::bool_class<struct include_message_tag>;
 
-kafka::response_ptr encode_topic_results(
+static inline kafka::response_ptr encode_topic_results(
   const std::vector<topic_op_result>& errors,
   int32_t throttle_time_ms,
   include_message inc_msg = include_message::yes) {

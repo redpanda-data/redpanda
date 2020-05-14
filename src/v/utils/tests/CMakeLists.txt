@@ -3,14 +3,14 @@ rp_test(
   UNIT_TEST
   BINARY_NAME vint_test
   SOURCES vint_test.cc
-  LIBRARIES Seastar::seastar_testing v::bytes
+  LIBRARIES v::seastar_testing_main v::bytes
 )
 
 rp_test(
   UNIT_TEST
   BINARY_NAME remote_test
   SOURCES remote_test.cc
-  LIBRARIES Seastar::seastar_testing
+  LIBRARIES v::seastar_testing_main
 
   ARGS "-- -c 2"
 )
@@ -39,7 +39,7 @@ rp_test(
     UNIT_TEST
     BINARY_NAME retry_test
     SOURCES retry_test.cc
-    LIBRARIES Seastar::seastar_testing
+    LIBRARIES v::seastar_testing_main
     ARGS "-- -c 2"
   )
 
@@ -47,14 +47,14 @@ rp_test(
   UNIT_TEST
   BINARY_NAME directory_walker
   SOURCES directory_walker_test.cc
-  LIBRARIES Seastar::seastar_testing
+  LIBRARIES v::seastar_testing_main
 )
 
 rp_test(
   UNIT_TEST
   BINARY_NAME outcome_utils_test
   SOURCES outcome_utils_test.cc
-  LIBRARIES Seastar::seastar_testing
+  LIBRARIES v::seastar_testing_main
 )
 rp_test(
   UNIT_TEST

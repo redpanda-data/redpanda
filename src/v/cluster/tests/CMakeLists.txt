@@ -3,7 +3,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME partition_allocator
   SOURCES partition_allocator_tests.cc
-  LIBRARIES Seastar::seastar_testing v::cluster
+  LIBRARIES v::seastar_testing_main v::cluster
 
 )
 rp_test(
@@ -16,40 +16,40 @@ rp_test(
   UNIT_TEST
   BINARY_NAME simple_batch_builder_test
   SOURCES simple_batch_builder_test.cc
-  LIBRARIES Seastar::seastar_testing v::cluster
+  LIBRARIES v::seastar_testing_main v::cluster
 )
 rp_test(
   UNIT_TEST
   BINARY_NAME serialization_rt_test
   SOURCES serialization_rt_test.cc
-  LIBRARIES Seastar::seastar_testing v::cluster
+  LIBRARIES v::seastar_testing_main v::cluster
   DEFINITIONS SEASTAR_TESTING_MAIN
 )
 rp_test(
  UNIT_TEST
  BINARY_NAME controller_recovery_test
  SOURCES controller_recovery_test.cc
- LIBRARIES Seastar::seastar_testing v::cluster
+ LIBRARIES v::seastar_testing_main v::cluster
 )
 rp_test(
   UNIT_TEST
   BINARY_NAME metadata_cache_tests
   SOURCES metadata_cache_tests.cc
-  LIBRARIES Seastar::seastar_testing v::cluster
+  LIBRARIES v::seastar_testing_main v::cluster
   DEFINITIONS SEASTAR_TESTING_MAIN
 )
 rp_test(
   UNIT_TEST
   BINARY_NAME cluster_utils_tests
   SOURCES cluster_utils_tests.cc
-  LIBRARIES Seastar::seastar_testing v::cluster
+  LIBRARIES v::seastar_testing_main v::cluster
   DEFINITIONS SEASTAR_TESTING_MAIN
 )
 rp_test(
   UNIT_TEST
   BINARY_NAME cluster_tests
   SOURCES cluster_tests.cc
-  LIBRARIES Seastar::seastar_testing v::application
+  LIBRARIES v::seastar_testing_main v::application
   DEFINITIONS SEASTAR_TESTING_MAIN
 )
 rp_test(
@@ -63,27 +63,27 @@ rp_test(
   UNIT_TEST
   BINARY_NAME metadata_dissemination_test
   SOURCES metadata_dissemination_test.cc
-  LIBRARIES Seastar::seastar_testing v::application
+  LIBRARIES v::seastar_testing_main v::application
   DEFINITIONS SEASTAR_TESTING_MAIN
 )
 rp_test(
   UNIT_TEST
   BINARY_NAME notification_latch_test
   SOURCES notification_latch_test.cc
-  LIBRARIES Seastar::seastar_testing v::cluster
+  LIBRARIES v::seastar_testing_main v::cluster
   DEFINITIONS SEASTAR_TESTING_MAIN
 )
 rp_test(
   UNIT_TEST
   BINARY_NAME autocreate_test
   SOURCES autocreate_test.cc
-  LIBRARIES Seastar::seastar_testing v::cluster
+  LIBRARIES v::seastar_testing_main v::cluster
   DEFINITIONS SEASTAR_TESTING_MAIN
 )
 rp_test(
   UNIT_TEST
   BINARY_NAME controller_state_test
   SOURCES controller_state_test.cc
-  LIBRARIES Seastar::seastar_testing v::application
+  LIBRARIES v::seastar_testing_main v::application
   DEFINITIONS SEASTAR_TESTING_MAIN
 )

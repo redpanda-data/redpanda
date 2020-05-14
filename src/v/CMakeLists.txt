@@ -2,6 +2,7 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
 # libraries
+add_subdirectory(test_utils)
 add_subdirectory(finjector)
 add_subdirectory(hashing)
 add_subdirectory(random)
