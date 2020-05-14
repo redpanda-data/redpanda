@@ -121,6 +121,11 @@ transport::send_typed(Input r, uint32_t method_id, rpc::client_opts opts) {
                 sctx->signal_body_parse();
                 using ctx_t = rpc::client_context<Output>;
                 ctx_t ctx(sctx->get_header());
+                const auto st = static_cast<status>(ctx.hdr.meta);
+                if (st != status::success) {
+                    return ss::make_exception_future<ctx_t>(std::runtime_error(
+                      fmt::format("Server returned an error: {}", st)));
+                }
                 std::swap(ctx.data, o);
                 return ss::make_ready_future<ctx_t>(std::move(ctx));
             });
