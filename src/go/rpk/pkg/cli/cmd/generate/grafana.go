@@ -64,15 +64,6 @@ func NewGrafanaDashboardCmd() *cobra.Command {
 	return command
 }
 
-func metricGroup(metric string) string {
-	for _, group := range metricGroups {
-		if strings.Contains(metric, group) {
-			return group
-		}
-	}
-	return "others"
-}
-
 func executeGrafanaDashboard(prometheusURL string) error {
 	metricFamilies, err := fetchMetrics(prometheusURL)
 	if err != nil {
@@ -96,6 +87,25 @@ func executeGrafanaDashboard(prometheusURL string) error {
 func buildGrafanaDashboard(
 	metricFamilies map[string]*dto.MetricFamily,
 ) graf.Dashboard {
+	intervals := []string{"5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h", "2h", "1d"}
+	timeOptions := []string{"5m", "15m", "1h", "6h", "12h", "24h", "2d", "7d", "30d"}
+	return graf.Dashboard{
+		Title:      "Redpanda",
+		Templating: buildTemplating(),
+		Rows:       processRows(metricFamilies),
+		Editable:   true,
+		Refresh:    "10s",
+		Time:       graf.Time{From: "now-1h", To: "now"},
+		TimePicker: graf.TimePicker{
+			RefreshIntervals: intervals,
+			TimeOptions:      timeOptions,
+		},
+		Timezone:      "utc",
+		SchemaVersion: 12,
+	}
+}
+
+func processRows(metricFamilies map[string]*dto.MetricFamily) []graf.Row {
 	groupPanels := map[string][]graf.Panel{}
 	throughputMetrics := []string{
 		"vectorized_storage_log_read_bytes",
@@ -169,7 +179,10 @@ func buildGrafanaDashboard(
 	for _, title := range rowTitles {
 		rows = append(rows, rowsByTitle[title])
 	}
+	return rows
+}
 
+func buildTemplating() graf.Templating {
 	node := newDefaultTemplateVar("node", "Node", true)
 	node.IncludeAll = true
 	node.AllValue = ".*"
@@ -209,44 +222,18 @@ func buildGrafanaDashboard(
 		Text:  clusterOpt.Text,
 		Value: clusterOpt.Value,
 	}
-
-	return graf.Dashboard{
-		Title: "Redpanda",
-		Templating: graf.Templating{
-			List: []graf.TemplateVar{node, shard, aggregate},
-		},
-		Rows:     rows,
-		Editable: true,
-		Refresh:  "10s",
-		Time:     graf.Time{From: "now-1h", To: "now"},
-		TimePicker: graf.TimePicker{
-			RefreshIntervals: []string{
-				"5s",
-				"10s",
-				"30s",
-				"1m",
-				"5m",
-				"15m",
-				"30m",
-				"1h",
-				"2h",
-				"1d",
-			},
-			TimeOptions: []string{
-				"5m",
-				"15m",
-				"1h",
-				"6h",
-				"12h",
-				"24h",
-				"2d",
-				"7d",
-				"30d",
-			},
-		},
-		Timezone:      "utc",
-		SchemaVersion: 12,
+	return graf.Templating{
+		List: []graf.TemplateVar{node, shard, aggregate},
 	}
+}
+
+func metricGroup(metric string) string {
+	for _, group := range metricGroups {
+		if strings.Contains(metric, group) {
+			return group
+		}
+	}
+	return "others"
 }
 
 func fetchMetrics(prometheusURL string) (map[string]*dto.MetricFamily, error) {
