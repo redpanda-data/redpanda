@@ -23,6 +23,7 @@ v_cc_library(
     rpc_client_protocol.cc
     group_manager.cc
     snapshot.cc
+    probe.cc
   DEPS
     v::storage
     raft_rpc

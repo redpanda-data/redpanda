@@ -1,6 +1,8 @@
 #pragma once
 #include "raft/types.h"
 
+#include <seastar/core/metrics_registration.hh>
+
 #include <cstdint>
 namespace raft {
 class probe {
@@ -22,6 +24,13 @@ public:
     void recovery_append_request() { ++_recovery_requests; }
     void configuration_update() { ++_configuration_updates; }
 
+    void leadership_changed() { ++_leadership_changes; }
+
+    static std::vector<ss::metrics::label_instance>
+    create_metric_labels(const model::ntp& ntp);
+
+    void setup_metrics(const model::ntp& ntp);
+
 private:
     uint64_t _vote_requests = 0;
     uint64_t _append_requests = 0;
@@ -33,7 +42,10 @@ private:
     uint64_t _log_flushes = 0;
     uint64_t _replicate_batch_flushed = 0;
     uint32_t _log_truncations = 0;
-    uint64_t _recovery_requests = 0;
     uint32_t _configuration_updates = 0;
+    uint64_t _recovery_requests = 0;
+    uint64_t _leadership_changes = 0;
+
+    ss::metrics::metric_groups _metrics;
 };
 } // namespace raft

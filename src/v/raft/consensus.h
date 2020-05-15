@@ -183,6 +183,7 @@ private:
     next_followers_request_seq();
 
     bool should_skip_vote();
+    void setup_metrics();
     // args
     model::node_id _self;
     raft::group_id _group;
@@ -234,6 +235,7 @@ private:
       consistency_level::quorum_ack};
     std::chrono::milliseconds _replicate_append_timeout;
     std::chrono::milliseconds _recovery_append_timeout;
+    ss::metrics::metric_groups _metrics;
 
     friend std::ostream& operator<<(std::ostream&, const consensus&);
 };

@@ -2,6 +2,7 @@
 
 #include "config/configuration.h"
 #include "likely.h"
+#include "prometheus/prometheus_sanitize.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
@@ -49,12 +50,32 @@ consensus::consensus(
       config::shard_local_cfg().replicate_append_timeout_ms())
   , _recovery_append_timeout(
       config::shard_local_cfg().recovery_append_timeout_ms()) {
+    setup_metrics();
     update_follower_stats(_conf);
     _vote_timeout.set_callback([this] {
         dispatch_flush_with_lock();
         dispatch_vote();
     });
 }
+
+void consensus::setup_metrics() {
+    if (config::shard_local_cfg().disable_metrics()) {
+        return;
+    }
+
+    _probe.setup_metrics(_log.config().ntp);
+    auto labels = probe::create_metric_labels(_log.config().ntp);
+    namespace sm = ss::metrics;
+
+    _metrics.add_group(
+      prometheus_sanitize::metrics_name("raft"),
+      {sm::make_gauge(
+        "leader_for",
+        [this] { return is_leader(); },
+        sm::description("Number of groups for which node is a leader"),
+        labels)});
+}
+
 void consensus::do_step_down() {
     _voted_for = {};
     _hbeat = clock_type::now();
@@ -968,6 +989,7 @@ void consensus::update_follower_stats(const group_configuration& cfg) {
 }
 
 void consensus::trigger_leadership_notification() {
+    _probe.leadership_changed();
     _leader_notification(leadership_status{.term = model::term_id(_term),
                                            .group = group_id(_group),
                                            .current_leader = _leader_id});
