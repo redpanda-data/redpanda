@@ -16,6 +16,7 @@ type GraphPanel struct {
 	Bars          bool        `json:"bars"`
 	Tooltip       Tooltip     `json:"tooltip"`
 	AliasColors   AliasColors `json:"aliasColors"`
+	SteppedLine   bool        `json:"steppedLine"`
 }
 
 func (GraphPanel) Type() string {

@@ -203,7 +203,8 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
       "value_type": "individual",
       "msResolution": true
      },
-     "aliasColors": {}
+     "aliasColors": {},
+     "steppedLine": false
     }
    ]
   },
@@ -290,7 +291,8 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
       "value_type": "cumulative",
       "msResolution": true
      },
-     "aliasColors": {}
+     "aliasColors": {},
+     "steppedLine": false
     }
    ]
   },
@@ -362,14 +364,15 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
      "linewidth": 2,
      "nullPointMode": "null",
      "thresholds": null,
-     "lines": false,
-     "bars": true,
+     "lines": true,
+     "bars": false,
      "tooltip": {
       "shared": true,
       "value_type": "cumulative",
       "msResolution": true
      },
-     "aliasColors": {}
+     "aliasColors": {},
+     "steppedLine": true
     },
     {
      "type": "graph",
@@ -439,7 +442,8 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
       "value_type": "cumulative",
       "msResolution": true
      },
-     "aliasColors": {}
+     "aliasColors": {},
+     "steppedLine": false
     }
    ]
   }
@@ -499,7 +503,6 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
 	})
 	err := cmd.Execute()
 	require.NoError(t, err)
-
 	require.JSONEq(t, expected, out.String())
 }
 

@@ -332,7 +332,8 @@ func newGaugePanel(m *dto.MetricFamily, id uint) graf.GraphPanel {
 		format = "bytes"
 	}
 	panel := newGraphPanel(id, m.GetHelp(), target, format)
-	panel.Bars = true
+	panel.Lines = true
+	panel.SteppedLine = true
 	return panel
 }
 
