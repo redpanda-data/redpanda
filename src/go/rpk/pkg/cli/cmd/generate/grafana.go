@@ -11,7 +11,6 @@ import (
 	"strings"
 	"vectorized/pkg/cli"
 	"vectorized/pkg/cli/cmd/generate/graf"
-	"vectorized/pkg/utils"
 
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
@@ -21,9 +20,10 @@ import (
 
 var datasource string
 
-const panelHeight = "250px"
+const panelHeight = 6
 
 var metricGroups = []string{
+	"errors",
 	"storage",
 	"reactor",
 	"scheduler",
@@ -38,7 +38,7 @@ var metricGroups = []string{
 func NewGrafanaDashboardCmd() *cobra.Command {
 	var prometheusURL string
 	command := &cobra.Command{
-		Use:   "grafana-dashboard [--src-url]",
+		Use:   "grafana-dashboard",
 		Short: "Generate a Grafana dashboard for redpanda metrics.",
 		RunE: func(ccmd *cobra.Command, args []string) error {
 			if !(strings.HasPrefix(prometheusURL, "http://") ||
@@ -89,13 +89,19 @@ func buildGrafanaDashboard(
 ) graf.Dashboard {
 	intervals := []string{"5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h", "2h", "1d"}
 	timeOptions := []string{"5m", "15m", "1h", "6h", "12h", "24h", "2d", "7d", "30d"}
+	summaryPanels := buildSummary(metricFamilies, "node")
+	lastY := summaryPanels[len(summaryPanels)-1].GetGridPos().Y + panelHeight
+	rows := processRows(metricFamilies, lastY)
 	return graf.Dashboard{
 		Title:      "Redpanda",
 		Templating: buildTemplating(),
-		Panels:     processRows(metricFamilies),
-		Editable:   true,
-		Refresh:    "10s",
-		Time:       graf.Time{From: "now-1h", To: "now"},
+		Panels: append(
+			summaryPanels,
+			rows...,
+		),
+		Editable: true,
+		Refresh:  "10s",
+		Time:     graf.Time{From: "now-1h", To: "now"},
 		TimePicker: graf.TimePicker{
 			RefreshIntervals: intervals,
 			TimeOptions:      timeOptions,
@@ -105,17 +111,11 @@ func buildGrafanaDashboard(
 	}
 }
 
-func processRows(metricFamilies map[string]*dto.MetricFamily) []graf.Panel {
+func processRows(
+	metricFamilies map[string]*dto.MetricFamily, fromY int,
+) []graf.Panel {
 	panelWidth := 8
 	groupPanels := map[string]*graf.RowPanel{}
-	throughputMetrics := []string{
-		"vectorized_storage_log_read_bytes",
-		"vectorized_storage_log_written_bytes",
-	}
-	latencyPanels := []graf.Panel{}
-	throughputPanels := []graf.Panel{}
-	summaryRow := graf.NewRowPanel("Summary")
-	errorsRow := graf.NewRowPanel("Errors")
 
 	names := []string{}
 	for k, _ := range metricFamilies {
@@ -129,11 +129,7 @@ func processRows(metricFamilies map[string]*dto.MetricFamily) []graf.Panel {
 		if family.GetType() == dto.MetricType_COUNTER {
 			panel = newCounterPanel(family)
 		} else if subtype(family) == "histogram" {
-			latencyPanels = append(
-				latencyPanels,
-				newPercentilePanel(family, 0.95),
-			)
-			continue
+			panel = newPercentilePanel(family, 0.95)
 		} else {
 			panel = newGaugePanel(family)
 		}
@@ -141,18 +137,7 @@ func processRows(metricFamilies map[string]*dto.MetricFamily) []graf.Panel {
 		if panel == nil {
 			continue
 		}
-		if utils.StringInSlice(family.GetName(), throughputMetrics) {
-			throughputPanels = append(throughputPanels, panel)
-			continue
-		}
 
-		if strings.Contains(family.GetName(), "error") {
-			errorsRow.Panels = append(
-				errorsRow.Panels,
-				panel,
-			)
-			continue
-		}
 		group := metricGroup(name)
 		row, ok := groupPanels[group]
 		if ok {
@@ -163,16 +148,13 @@ func processRows(metricFamilies map[string]*dto.MetricFamily) []graf.Panel {
 			groupPanels[group] = graf.NewRowPanel(group, panel)
 		}
 	}
-	summaryRow.Panels = append(latencyPanels, throughputPanels...)
 	sort.Strings(rowTitles)
-	rows := []graf.Panel{
-		summaryRow,
-		errorsRow,
-	}
+	rows := []graf.Panel{}
 
-	y := 0
+	y := fromY
 	for _, title := range rowTitles {
 		row := groupPanels[title]
+		row.GetGridPos().Y = y
 		for i, panel := range row.Panels {
 			panel.GetGridPos().Y = y
 			panel.GetGridPos().X = (i * panelWidth) % 24
@@ -226,6 +208,95 @@ func buildTemplating() graf.Templating {
 	return graf.Templating{
 		List: []graf.TemplateVar{node, shard, aggregate},
 	}
+}
+
+func buildSummary(
+	metricFamilies map[string]*dto.MetricFamily, jobName string,
+) []graf.Panel {
+	maxWidth := 24
+	percentiles := []float32{0.5, 0.95, 0.99}
+	percentilesNo := len(percentiles)
+	panels := []graf.Panel{}
+	y := 0
+
+	summaryText := htmlHeader("Redpanda Summary")
+	summaryTitle := graf.NewTextPanel(summaryText, "html")
+	summaryTitle.GridPos = graf.GridPos{H: 2, W: maxWidth, X: 0, Y: y}
+	summaryTitle.Transparent = true
+	panels = append(panels, summaryTitle)
+	y += summaryTitle.GridPos.H
+
+	nodesUp := graf.NewSingleStatPanel("Nodes Up")
+	nodesUp.Datasource = datasource
+	nodesUp.GridPos = graf.GridPos{H: 6, W: 2, X: 0, Y: y}
+	nodesUp.Targets = []graf.Target{graf.Target{
+		Expr:           fmt.Sprintf(`count(up{job="%s"})`, jobName),
+		Step:           40,
+		IntervalFactor: 1,
+		LegendFormat:   "Nodes Up",
+	}}
+	nodesUp.Transparent = true
+	panels = append(panels, nodesUp)
+	y += nodesUp.GridPos.H
+
+	kafkaFamily, kafkaExists := metricFamilies["vectorized_kafka_rpc_protocol_dispatch_handler_latency"]
+	if kafkaExists {
+		width := (maxWidth - nodesUp.GridPos.W) / percentilesNo
+		for i, p := range percentiles {
+			panel := newPercentilePanel(kafkaFamily, p)
+			panel.GridPos = graf.GridPos{
+				H: panelHeight,
+				W: width,
+				X: i*width + nodesUp.GridPos.W,
+				Y: y,
+			}
+			panels = append(panels, panel)
+		}
+		y += panelHeight
+	}
+	rpcFamily, rpcExists := metricFamilies["vectorized_vectorized_internal_rpc_protocol_dispatch_handler_latency"]
+	if rpcExists {
+		width := maxWidth / percentilesNo
+		rpcLatencyText := htmlHeader("Internal RPC Latency")
+		rpcLatencyTitle := graf.NewTextPanel(rpcLatencyText, "html")
+		rpcLatencyTitle.GridPos = graf.GridPos{H: 2, W: maxWidth, X: 0, Y: y}
+		rpcLatencyTitle.Transparent = true
+		y += rpcLatencyTitle.GridPos.H
+		panels = append(panels, rpcLatencyTitle)
+		for i, p := range percentiles {
+			panel := newPercentilePanel(rpcFamily, p)
+			panel.GridPos = graf.GridPos{
+				H: panelHeight,
+				W: width,
+				X: i * width,
+				Y: y,
+			}
+			panels = append(panels, panel)
+		}
+		y += panelHeight
+	}
+
+	throughputText := htmlHeader("Throughput")
+	throughputTitle := graf.NewTextPanel(throughputText, "html")
+	throughputTitle.GridPos = graf.GridPos{H: 2, W: maxWidth, X: 0, Y: y}
+	throughputTitle.Transparent = true
+	panels = append(panels, throughputTitle)
+	y += throughputTitle.GridPos.H
+
+	readBytesFamily, readBytesExist := metricFamilies["vectorized_storage_log_read_bytes"]
+	writtenBytesFamily, writtenBytesExist := metricFamilies["vectorized_storage_log_written_bytes"]
+	if readBytesExist && writtenBytesExist {
+		readPanel := newCounterPanel(readBytesFamily)
+		readPanel.GridPos = graf.GridPos{H: panelHeight, W: maxWidth / 2, X: 0, Y: y}
+		panels = append(panels, readPanel)
+
+		writtenPanel := newCounterPanel(writtenBytesFamily)
+		writtenPanel.GridPos = graf.GridPos{H: panelHeight, W: maxWidth / 2, X: readPanel.GridPos.W, Y: y}
+		panels = append(panels, writtenPanel)
+		y += panelHeight
+	}
+
+	return panels
 }
 
 func metricGroup(metric string) string {
@@ -391,4 +462,11 @@ func subtype(m *dto.MetricFamily) string {
 		}
 	}
 	return "none"
+}
+
+func htmlHeader(str string) string {
+	return fmt.Sprintf(
+		"<h1 style=\"color:#CB3805; border-bottom: 3px solid #CB3805;\">%s</h1>",
+		str,
+	)
 }

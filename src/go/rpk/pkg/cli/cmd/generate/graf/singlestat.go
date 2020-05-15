@@ -60,6 +60,7 @@ func NewSingleStatPanel(title string) *SingleStatPanel {
 			Title:    title,
 			Editable: true,
 			GridPos:  GridPos{W: 8, H: 8},
+			Span:     1,
 		},
 		Format:        "none",
 		MaxDataPoints: 100,
