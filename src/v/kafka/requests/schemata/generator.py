@@ -471,6 +471,7 @@ HEADER_TEMPLATE = """
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/timestamp.h"
 #include "seastarx.h"
 
 #include <seastar/core/sstring.hh>
