@@ -1,8 +1,6 @@
 package graf
 
-import (
-	"encoding/json"
-)
+import "encoding/json"
 
 const panelHeight = "8"
 

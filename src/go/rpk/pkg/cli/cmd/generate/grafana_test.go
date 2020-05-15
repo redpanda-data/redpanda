@@ -129,16 +129,375 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
  },
  "panels": [
   {
+   "type": "text",
+   "id": 1,
+   "title": "",
+   "editable": true,
+   "gridPos": {
+    "h": 2,
+    "w": 24,
+    "x": 0,
+    "y": 0
+   },
+   "transparent": true,
+   "links": null,
+   "span": 1,
+   "error": false,
+   "content": "\u003ch1 style=\"color:#CB3805; border-bottom: 3px solid #CB3805;\"\u003eRedpanda Summary\u003c/h1\u003e",
+   "mode": "html"
+  },
+  {
+   "type": "singlestat",
+   "id": 2,
+   "title": "Nodes Up",
+   "datasource": "prometheus",
+   "editable": true,
+   "gridPos": {
+    "h": 6,
+    "w": 2,
+    "x": 0,
+    "y": 2
+   },
+   "transparent": true,
+   "span": 1,
+   "error": false,
+   "targets": [
+    {
+     "refId": "",
+     "expr": "count(up{job=\"node\"})",
+     "intervalFactor": 1,
+     "step": 40,
+     "legendFormat": "Nodes Up"
+    }
+   ],
+   "format": "none",
+   "prefix": "",
+   "postfix": "",
+   "maxDataPoints": 100,
+   "valueMaps": [
+    {
+     "value": "null",
+     "op": "=",
+     "text": "N/A"
+    }
+   ],
+   "mappingTypes": [
+    {
+     "name": "value to text",
+     "value": 1
+    },
+    {
+     "name": "range to text",
+     "value": 2
+    }
+   ],
+   "rangeMaps": [
+    {
+     "from": "null",
+     "to": "null",
+     "text": "N/A"
+    }
+   ],
+   "mappingType": 1,
+   "nullPointMode": "connected",
+   "valueName": "current",
+   "valueFontSize": "200%",
+   "prefixFontSize": "50%",
+   "postfixFontSize": "50%",
+   "colorBackground": false,
+   "colorValue": true,
+   "colors": [
+    "#299c46",
+    "rgba(237, 129, 40, 0.89)",
+    "#d44a3a"
+   ],
+   "thresholds": "",
+   "sparkline": {
+    "show": false,
+    "full": false,
+    "ymin": null,
+    "ymax": null,
+    "lineColor": "rgb(31, 120, 193)",
+    "fillColor": "rgba(31, 118, 189, 0.18)"
+   },
+   "gauge": {
+    "show": false,
+    "minValue": 0,
+    "maxValue": 100,
+    "thresholdMarkers": true,
+    "thresholdLabels": false
+   },
+   "links": [],
+   "interval": null,
+   "timeFrom": null,
+   "timeShift": null,
+   "nullText": null,
+   "cacheTimeout": null,
+   "tableColumn": ""
+  },
+  {
+   "type": "text",
+   "id": 3,
+   "title": "",
+   "editable": true,
+   "gridPos": {
+    "h": 2,
+    "w": 24,
+    "x": 0,
+    "y": 8
+   },
+   "transparent": true,
+   "links": null,
+   "span": 1,
+   "error": false,
+   "content": "\u003ch1 style=\"color:#CB3805; border-bottom: 3px solid #CB3805;\"\u003eInternal RPC Latency\u003c/h1\u003e",
+   "mode": "html"
+  },
+  {
+   "type": "graph",
+   "id": 4,
+   "title": "Latency of service handler dispatch (p50)",
+   "datasource": "prometheus",
+   "editable": true,
+   "gridPos": {
+    "h": 6,
+    "w": 8,
+    "x": 0,
+    "y": 10
+   },
+   "transparent": false,
+   "links": null,
+   "renderer": "flot",
+   "span": 4,
+   "error": false,
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "histogram_quantile(0.50, sum(rate(vectorized_vectorized_internal_rpc_protocol_dispatch_handler_latency_bucket{instance=~\"[[node]]\",shard=~\"[[node_shard]]\"}[1m])) by (le, [[aggr_criteria]]))",
+     "intervalFactor": 2,
+     "step": 10,
+     "legendFormat": "node: {{instance}}, shard: {{shard}}",
+     "format": "time_series"
+    }
+   ],
+   "xaxis": {
+    "format": "",
+    "logBase": 0,
+    "show": true,
+    "mode": "time"
+   },
+   "yaxes": [
+    {
+     "label": null,
+     "show": true,
+     "logBase": 1,
+     "min": 0,
+     "format": "µs"
+    },
+    {
+     "label": null,
+     "show": true,
+     "logBase": 1,
+     "min": 0,
+     "format": "short"
+    }
+   ],
+   "legend": {
+    "show": true,
+    "max": false,
+    "min": false,
+    "values": false,
+    "avg": false,
+    "current": false,
+    "total": false
+   },
+   "fill": 1,
+   "linewidth": 2,
+   "nullPointMode": "null",
+   "thresholds": null,
+   "lines": true,
+   "bars": false,
+   "tooltip": {
+    "shared": true,
+    "value_type": "individual",
+    "msResolution": true
+   },
+   "aliasColors": {},
+   "steppedLine": false
+  },
+  {
+   "type": "graph",
+   "id": 5,
+   "title": "Latency of service handler dispatch (p95)",
+   "datasource": "prometheus",
+   "editable": true,
+   "gridPos": {
+    "h": 6,
+    "w": 8,
+    "x": 8,
+    "y": 10
+   },
+   "transparent": false,
+   "links": null,
+   "renderer": "flot",
+   "span": 4,
+   "error": false,
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "histogram_quantile(0.95, sum(rate(vectorized_vectorized_internal_rpc_protocol_dispatch_handler_latency_bucket{instance=~\"[[node]]\",shard=~\"[[node_shard]]\"}[1m])) by (le, [[aggr_criteria]]))",
+     "intervalFactor": 2,
+     "step": 10,
+     "legendFormat": "node: {{instance}}, shard: {{shard}}",
+     "format": "time_series"
+    }
+   ],
+   "xaxis": {
+    "format": "",
+    "logBase": 0,
+    "show": true,
+    "mode": "time"
+   },
+   "yaxes": [
+    {
+     "label": null,
+     "show": true,
+     "logBase": 1,
+     "min": 0,
+     "format": "µs"
+    },
+    {
+     "label": null,
+     "show": true,
+     "logBase": 1,
+     "min": 0,
+     "format": "short"
+    }
+   ],
+   "legend": {
+    "show": true,
+    "max": false,
+    "min": false,
+    "values": false,
+    "avg": false,
+    "current": false,
+    "total": false
+   },
+   "fill": 1,
+   "linewidth": 2,
+   "nullPointMode": "null",
+   "thresholds": null,
+   "lines": true,
+   "bars": false,
+   "tooltip": {
+    "shared": true,
+    "value_type": "individual",
+    "msResolution": true
+   },
+   "aliasColors": {},
+   "steppedLine": false
+  },
+  {
+   "type": "graph",
+   "id": 6,
+   "title": "Latency of service handler dispatch (p99)",
+   "datasource": "prometheus",
+   "editable": true,
+   "gridPos": {
+    "h": 6,
+    "w": 8,
+    "x": 16,
+    "y": 10
+   },
+   "transparent": false,
+   "links": null,
+   "renderer": "flot",
+   "span": 4,
+   "error": false,
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "histogram_quantile(0.99, sum(rate(vectorized_vectorized_internal_rpc_protocol_dispatch_handler_latency_bucket{instance=~\"[[node]]\",shard=~\"[[node_shard]]\"}[1m])) by (le, [[aggr_criteria]]))",
+     "intervalFactor": 2,
+     "step": 10,
+     "legendFormat": "node: {{instance}}, shard: {{shard}}",
+     "format": "time_series"
+    }
+   ],
+   "xaxis": {
+    "format": "",
+    "logBase": 0,
+    "show": true,
+    "mode": "time"
+   },
+   "yaxes": [
+    {
+     "label": null,
+     "show": true,
+     "logBase": 1,
+     "min": 0,
+     "format": "µs"
+    },
+    {
+     "label": null,
+     "show": true,
+     "logBase": 1,
+     "min": 0,
+     "format": "short"
+    }
+   ],
+   "legend": {
+    "show": true,
+    "max": false,
+    "min": false,
+    "values": false,
+    "avg": false,
+    "current": false,
+    "total": false
+   },
+   "fill": 1,
+   "linewidth": 2,
+   "nullPointMode": "null",
+   "thresholds": null,
+   "lines": true,
+   "bars": false,
+   "tooltip": {
+    "shared": true,
+    "value_type": "individual",
+    "msResolution": true
+   },
+   "aliasColors": {},
+   "steppedLine": false
+  },
+  {
+   "type": "text",
+   "id": 7,
+   "title": "",
+   "editable": true,
+   "gridPos": {
+    "h": 2,
+    "w": 24,
+    "x": 0,
+    "y": 16
+   },
+   "transparent": true,
+   "links": null,
+   "span": 1,
+   "error": false,
+   "content": "\u003ch1 style=\"color:#CB3805; border-bottom: 3px solid #CB3805;\"\u003eThroughput\u003c/h1\u003e",
+   "mode": "html"
+  },
+  {
    "type": "row",
    "collapsed": true,
-   "id": 1,
-   "title": "Summary",
+   "id": 9,
+   "title": "memory",
    "editable": true,
    "gridPos": {
     "h": 6,
     "w": 24,
     "x": 0,
-    "y": 0
+    "y": 22
    },
    "transparent": false,
    "links": null,
@@ -148,115 +507,6 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
     {
      "type": "graph",
      "id": 8,
-     "title": "Latency of service handler dispatch (p95)",
-     "datasource": "prometheus",
-     "editable": true,
-     "gridPos": {
-      "h": 6,
-      "w": 8,
-      "x": 0,
-      "y": 0
-     },
-     "transparent": false,
-     "links": null,
-     "renderer": "flot",
-     "span": 4,
-     "error": false,
-     "targets": [
-      {
-       "refId": "A",
-       "expr": "histogram_quantile(0.95, sum(rate(vectorized_vectorized_internal_rpc_protocol_dispatch_handler_latency_bucket{instance=~\"[[node]]\",shard=~\"[[node_shard]]\"}[1m])) by (le, [[aggr_criteria]]))",
-       "intervalFactor": 2,
-       "step": 10,
-       "legendFormat": "node: {{instance}}, shard: {{shard}}",
-       "format": "time_series"
-      }
-     ],
-     "xaxis": {
-      "format": "",
-      "logBase": 0,
-      "show": true,
-      "mode": "time"
-     },
-     "yaxes": [
-      {
-       "label": null,
-       "show": true,
-       "logBase": 1,
-       "min": 0,
-       "format": "µs"
-      },
-      {
-       "label": null,
-       "show": true,
-       "logBase": 1,
-       "min": 0,
-       "format": "short"
-      }
-     ],
-     "legend": {
-      "show": true,
-      "max": false,
-      "min": false,
-      "values": false,
-      "avg": false,
-      "current": false,
-      "total": false
-     },
-     "fill": 1,
-     "linewidth": 2,
-     "nullPointMode": "null",
-     "thresholds": null,
-     "lines": true,
-     "bars": false,
-     "tooltip": {
-      "shared": true,
-      "value_type": "individual",
-      "msResolution": true
-     },
-     "aliasColors": {},
-     "steppedLine": false
-    }
-   ]
-  },
-  {
-   "type": "row",
-   "collapsed": false,
-   "id": 2,
-   "title": "Errors",
-   "editable": true,
-   "gridPos": {
-    "h": 6,
-    "w": 24,
-    "x": 0,
-    "y": 0
-   },
-   "transparent": false,
-   "links": null,
-   "span": 0,
-   "error": false,
-   "panels": null
-  },
-  {
-   "type": "row",
-   "collapsed": true,
-   "id": 4,
-   "title": "memory",
-   "editable": true,
-   "gridPos": {
-    "h": 6,
-    "w": 24,
-    "x": 0,
-    "y": 0
-   },
-   "transparent": false,
-   "links": null,
-   "span": 0,
-   "error": false,
-   "panels": [
-    {
-     "type": "graph",
-     "id": 3,
      "title": "Rate - Allocated memory size in bytes",
      "datasource": "prometheus",
      "editable": true,
@@ -264,7 +514,7 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
       "h": 6,
       "w": 8,
       "x": 0,
-      "y": 0
+      "y": 22
      },
      "transparent": false,
      "links": null,
@@ -331,14 +581,14 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
   {
    "type": "row",
    "collapsed": true,
-   "id": 6,
+   "id": 11,
    "title": "vectorized_internal_rpc_protocol",
    "editable": true,
    "gridPos": {
     "h": 6,
     "w": 24,
     "x": 0,
-    "y": 0
+    "y": 23
    },
    "transparent": false,
    "links": null,
@@ -347,7 +597,7 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
    "panels": [
     {
      "type": "graph",
-     "id": 5,
+     "id": 10,
      "title": "Amount of memory consumed for requests processing",
      "datasource": "prometheus",
      "editable": true,
@@ -355,7 +605,7 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
       "h": 6,
       "w": 8,
       "x": 0,
-      "y": 1
+      "y": 23
      },
      "transparent": false,
      "links": null,
@@ -419,7 +669,7 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
     },
     {
      "type": "graph",
-     "id": 7,
+     "id": 12,
      "title": "Rate - Number of requests with corrupted headers",
      "datasource": "prometheus",
      "editable": true,
@@ -427,7 +677,7 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
       "h": 6,
       "w": 8,
       "x": 8,
-      "y": 1
+      "y": 23
      },
      "transparent": false,
      "links": null,
@@ -484,6 +734,78 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
      "tooltip": {
       "shared": true,
       "value_type": "cumulative",
+      "msResolution": true
+     },
+     "aliasColors": {},
+     "steppedLine": false
+    },
+    {
+     "type": "graph",
+     "id": 13,
+     "title": "Latency of service handler dispatch (p95)",
+     "datasource": "prometheus",
+     "editable": true,
+     "gridPos": {
+      "h": 6,
+      "w": 8,
+      "x": 16,
+      "y": 23
+     },
+     "transparent": false,
+     "links": null,
+     "renderer": "flot",
+     "span": 4,
+     "error": false,
+     "targets": [
+      {
+       "refId": "A",
+       "expr": "histogram_quantile(0.95, sum(rate(vectorized_vectorized_internal_rpc_protocol_dispatch_handler_latency_bucket{instance=~\"[[node]]\",shard=~\"[[node_shard]]\"}[1m])) by (le, [[aggr_criteria]]))",
+       "intervalFactor": 2,
+       "step": 10,
+       "legendFormat": "node: {{instance}}, shard: {{shard}}",
+       "format": "time_series"
+      }
+     ],
+     "xaxis": {
+      "format": "",
+      "logBase": 0,
+      "show": true,
+      "mode": "time"
+     },
+     "yaxes": [
+      {
+       "label": null,
+       "show": true,
+       "logBase": 1,
+       "min": 0,
+       "format": "µs"
+      },
+      {
+       "label": null,
+       "show": true,
+       "logBase": 1,
+       "min": 0,
+       "format": "short"
+      }
+     ],
+     "legend": {
+      "show": true,
+      "max": false,
+      "min": false,
+      "values": false,
+      "avg": false,
+      "current": false,
+      "total": false
+     },
+     "fill": 1,
+     "linewidth": 2,
+     "nullPointMode": "null",
+     "thresholds": null,
+     "lines": true,
+     "bars": false,
+     "tooltip": {
+      "shared": true,
+      "value_type": "individual",
       "msResolution": true
      },
      "aliasColors": {},
