@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 )
 
-const panelHeight = "250px"
+const panelHeight = "8"
 
 var id uint = 0
 
@@ -96,22 +96,23 @@ type GridPos struct {
 }
 
 type BasePanel struct {
-	ID         uint    `json:"id"`
-	Title      string  `json:"title"`
-	Datasource string  `json:"datasource,omitempty"`
-	Editable   bool    `json:"editable"`
-	GridPos    GridPos `json:"gridPos"`
-	Height     string  `json:"height,omitempty"`
-	Links      []Link  `json:"links"`
-	Renderer   string  `json:"renderer,omitempty"`
-	Span       float32 `json:"span,omitempty"`
+	ID          uint    `json:"id"`
+	Title       string  `json:"title"`
+	Datasource  string  `json:"datasource,omitempty"`
+	Editable    bool    `json:"editable"`
+	GridPos     GridPos `json:"gridPos"`
+	Transparent bool    `json:"transparent"`
+	Height      string  `json:"height,omitempty"`
+	Links       []Link  `json:"links"`
+	Renderer    string  `json:"renderer,omitempty"`
+	Span        float32 `json:"span"`
+	Error       bool    `json:"error"`
 }
 
 type Target struct {
 	RefID          string `json:"refId"`
 	Expr           string `json:"expr,omitempty"`
 	IntervalFactor int    `json:"intervalFactor,omitempty"`
-	Interval       string `json:"interval"`
 	Step           int    `json:"step,omitempty"`
 	LegendFormat   string `json:"legendFormat"`
 	Instant        bool   `json:"instant,omitempty"`
