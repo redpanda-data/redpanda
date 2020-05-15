@@ -234,9 +234,7 @@ metadata_dissemination_service::dispatch_get_metadata_update(
                 get_leadership_request{},
                 rpc::client_opts(
                   rpc::clock_type::now() + _dissemination_interval))
-              .then([](rpc::client_context<get_leadership_reply> ctx) {
-                  return std::move(ctx.data);
-              });
+              .then(&rpc::get_ctx_data<get_leadership_reply>);
         });
 }
 
@@ -307,9 +305,7 @@ ss::future<> metadata_dissemination_service::dispatch_one_update(
                 update_leadership_request{meta.updates},
                 rpc::client_opts(
                   _dissemination_interval + rpc::clock_type::now()))
-              .then([](rpc::client_context<update_leadership_reply> ctx) {
-                  return std::move(ctx.data);
-              });
+              .then(&rpc::get_ctx_data<update_leadership_reply>);
         })
       .then([target_id, &meta](result<update_leadership_reply> r) {
           if (r) {

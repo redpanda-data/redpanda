@@ -1,4 +1,6 @@
 #pragma once
+#include "outcome.h"
+#include "rpc/errc.h"
 #include "rpc/exceptions.h"
 #include "rpc/types.h"
 #include "utils/concepts-enabled.h"
@@ -9,7 +11,7 @@ namespace rpc {
 namespace internal {
 class response_handler {
 public:
-    using response_ptr = std::unique_ptr<streaming_context>;
+    using response_ptr = result<std::unique_ptr<streaming_context>>;
     using promise_t = ss::promise<response_ptr>;
     using timer_ptr = std::unique_ptr<rpc::timer_type>;
 
@@ -51,10 +53,7 @@ public:
 private:
     template<typename Func>
     void complete_with_timeout(Func&& timeout_action) {
-        // TODO: Replace with error code when RPC layer will
-        //       be integrated with outcome
-        set_exception(
-          request_timeout_exception("Timeout while waiting for response"));
+        _promise.set_value(response_ptr(rpc::errc::client_request_timeout));
         timeout_action();
     }
     void maybe_cancel_timer() {
