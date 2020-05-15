@@ -32,6 +32,7 @@ var metricGroups = []string{
 	"kafka_rpc_protocol",
 	"rpc_client",
 	"memory",
+	"raft",
 }
 
 func NewGrafanaDashboardCmd() *cobra.Command {
