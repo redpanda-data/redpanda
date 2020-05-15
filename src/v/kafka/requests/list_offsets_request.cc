@@ -8,42 +8,7 @@
 
 namespace kafka {
 
-void list_offsets_request::encode(
-  response_writer& writer, api_version version) {
-    writer.write(replica_id);
-    if (version >= api_version(2)) {
-        writer.write(int8_t(isolation_level));
-    }
-    writer.write_array(topics, [](topic& topic, response_writer& writer) {
-        writer.write(topic.name);
-        writer.write_array(
-          topic.partitions, [](partition& partition, response_writer& writer) {
-              writer.write(partition.id);
-              writer.write(partition.timestamp());
-          });
-    });
-}
-
-void list_offsets_request::decode(request_context& ctx) {
-    const auto version = ctx.header().version;
-    auto& reader = ctx.reader();
-
-    replica_id = model::node_id(reader.read_int32());
-    if (version >= api_version(2)) {
-        isolation_level = reader.read_int8();
-    }
-    topics = reader.read_array([](request_reader& reader) {
-        return topic{
-          .name = model::topic(reader.read_string()),
-          .partitions = reader.read_array([](request_reader& reader) {
-              return partition{
-                .id = model::partition_id(reader.read_int32()),
-                .timestamp = model::timestamp(reader.read_int64()),
-              };
-          }),
-        };
-    });
-
+void list_offsets_request::compute_duplicate_topics() {
     /*
      * compute a set of duplicate topic partitions. kafka has special error
      * handling if a client requests list offsets with duplicate topic
@@ -51,75 +16,14 @@ void list_offsets_request::decode(request_context& ctx) {
      * closer look at clients and how this would manifest as an issue.
      */
     absl::btree_set<model::topic_partition> seen;
-    for (const auto& topic : topics) {
+    for (const auto& topic : data.topics) {
         for (const auto& part : topic.partitions) {
-            model::topic_partition tp(topic.name, part.id);
+            model::topic_partition tp(topic.name, part.partition_index);
             if (!seen.insert(tp).second) {
                 tp_dups.insert(std::move(tp));
             }
         }
     }
-}
-
-void list_offsets_response::encode(const request_context& ctx, response& resp) {
-    auto& writer = resp.writer();
-    const auto version = ctx.header().version;
-
-    if (version >= api_version(2)) {
-        writer.write(int32_t(throttle_time_ms.count()));
-    }
-    writer.write_array(topics, [](topic& topic, response_writer& writer) {
-        writer.write(topic.name);
-        writer.write_array(
-          topic.partitions, [](partition& partition, response_writer& writer) {
-              writer.write(partition.id);
-              writer.write(partition.error);
-              writer.write(partition.timestamp());
-              writer.write(partition.offset);
-          });
-    });
-}
-
-void list_offsets_response::decode(iobuf buf, api_version version) {
-    request_reader reader(std::move(buf));
-
-    if (version >= api_version(2)) {
-        throttle_time_ms = std::chrono::milliseconds(reader.read_int32());
-    }
-    topics = reader.read_array([](request_reader& reader) {
-        auto name = model::topic(reader.read_string());
-        auto partitions = reader.read_array([](request_reader& reader) {
-            auto id = model::partition_id(reader.read_int32());
-            auto error = error_code(reader.read_int16());
-            auto time = model::timestamp(reader.read_int64());
-            auto offset = model::offset(reader.read_int64());
-            return partition{id, error, time, offset};
-        });
-        return topic{std::move(name), std::move(partitions)};
-    });
-}
-
-static std::ostream&
-operator<<(std::ostream& os, const list_offsets_response::partition& p) {
-    fmt::print(
-      os,
-      "id {} error {} ts {} offset {}",
-      p.id,
-      p.error,
-      p.timestamp,
-      p.offset);
-    return os;
-}
-
-static std::ostream&
-operator<<(std::ostream& os, const list_offsets_response::topic& t) {
-    fmt::print(os, "name {} partitions {}", t.name, t.partitions);
-    return os;
-}
-
-std::ostream& operator<<(std::ostream& os, const list_offsets_response& r) {
-    fmt::print(os, "topics {}", r.topics);
-    return os;
 }
 
 struct list_offsets_ctx {
@@ -137,17 +41,18 @@ struct list_offsets_ctx {
       , ssg(ssg) {}
 };
 
-static ss::future<list_offsets_response::partition> list_offsets_partition(
+static ss::future<list_offset_partition_response> list_offsets_partition(
   list_offsets_ctx& octx,
   model::timestamp timestamp,
-  list_offsets_request::topic& topic,
-  list_offsets_request::partition& part) {
-    auto ntp = model::ntp(cluster::kafka_namespace, topic.name, part.id);
+  list_offset_topic& topic,
+  list_offset_partition& part) {
+    auto ntp = model::ntp(
+      cluster::kafka_namespace, topic.name, part.partition_index);
 
     auto shard = octx.rctx.shards().shard_for(ntp);
     if (!shard) {
-        return ss::make_ready_future<list_offsets_response::partition>(
-          list_offsets_response::partition(
+        return ss::make_ready_future<list_offset_partition_response>(
+          list_offsets_response::make_partition(
             ntp.tp.partition, error_code::unknown_topic_or_partition));
     }
 
@@ -157,14 +62,14 @@ static ss::future<list_offsets_response::partition> list_offsets_partition(
       [timestamp, ntp = std::move(ntp)](cluster::partition_manager& mgr) {
           auto partition = mgr.get(ntp);
           if (!partition) {
-              return ss::make_ready_future<list_offsets_response::partition>(
-                list_offsets_response::partition(
+              return ss::make_ready_future<list_offset_partition_response>(
+                list_offsets_response::make_partition(
                   ntp.tp.partition, error_code::unknown_topic_or_partition));
           }
 
           if (!partition->is_leader()) {
-              return ss::make_ready_future<list_offsets_response::partition>(
-                list_offsets_response::partition(
+              return ss::make_ready_future<list_offset_partition_response>(
+                list_offsets_response::make_partition(
                   ntp.tp.partition, error_code::not_leader_for_partition));
           }
 
@@ -173,15 +78,15 @@ static ss::future<list_offsets_response::partition> list_offsets_partition(
            * that the actual timestamp be returned. only the offset is required.
            */
           if (timestamp == list_offsets_request::earliest_timestamp) {
-              return ss::make_ready_future<list_offsets_response::partition>(
-                list_offsets_response::partition(
+              return ss::make_ready_future<list_offset_partition_response>(
+                list_offsets_response::make_partition(
                   ntp.tp.partition,
                   model::timestamp(-1),
                   partition->start_offset()));
 
           } else if (timestamp == list_offsets_request::latest_timestamp) {
-              return ss::make_ready_future<list_offsets_response::partition>(
-                list_offsets_response::partition(
+              return ss::make_ready_future<list_offset_partition_response>(
+                list_offsets_response::make_partition(
                   ntp.tp.partition,
                   model::timestamp(-1),
                   partition->committed_offset()));
@@ -192,38 +97,39 @@ static ss::future<list_offsets_response::partition> list_offsets_partition(
                     std::optional<storage::timequery_result> res) {
                 if (res) {
                     return ss::make_ready_future<
-                      list_offsets_response::partition>(
-                      list_offsets_response::partition(
+                      list_offset_partition_response>(
+                      list_offsets_response::make_partition(
                         id, res->time, res->offset));
                 }
-                return ss::make_ready_future<list_offsets_response::partition>(
-                  list_offsets_response::partition(
+                return ss::make_ready_future<list_offset_partition_response>(
+                  list_offsets_response::make_partition(
                     id, model::timestamp(-1), partition->committed_offset()));
             });
       });
 }
 
-static ss::future<list_offsets_response::topic>
-list_offsets_topic(list_offsets_ctx& octx, list_offsets_request::topic& topic) {
-    std::vector<ss::future<list_offsets_response::partition>> partitions;
+static ss::future<list_offset_topic_response>
+list_offsets_topic(list_offsets_ctx& octx, list_offset_topic& topic) {
+    std::vector<ss::future<list_offset_partition_response>> partitions;
     partitions.reserve(topic.partitions.size());
 
     for (auto& part : topic.partitions) {
-        if (octx.request.duplicate_tp(topic.name, part.id)) {
+        if (octx.request.duplicate_tp(topic.name, part.partition_index)) {
             partitions.push_back(
-              ss::make_ready_future<list_offsets_response::partition>(
-                list_offsets_response::partition(
-                  part.id, error_code::invalid_request)));
+              ss::make_ready_future<list_offset_partition_response>(
+                list_offsets_response::make_partition(
+                  part.partition_index, error_code::invalid_request)));
             continue;
         }
 
         if (!octx.rctx.metadata_cache().contains(
               model::topic_namespace_view(cluster::kafka_namespace, topic.name),
-              part.id)) {
+              part.partition_index)) {
             partitions.push_back(
-              ss::make_ready_future<list_offsets_response::partition>(
-                list_offsets_response::partition(
-                  part.id, error_code::unknown_topic_or_partition)));
+              ss::make_ready_future<list_offset_partition_response>(
+                list_offsets_response::make_partition(
+                  part.partition_index,
+                  error_code::unknown_topic_or_partition)));
             continue;
         }
 
@@ -233,20 +139,20 @@ list_offsets_topic(list_offsets_ctx& octx, list_offsets_request::topic& topic) {
 
     return when_all_succeed(partitions.begin(), partitions.end())
       .then([name = std::move(topic.name)](
-              std::vector<list_offsets_response::partition> parts) mutable {
-          return list_offsets_response::topic{
+              std::vector<list_offset_partition_response> parts) mutable {
+          return list_offset_topic_response{
             .name = std::move(name),
             .partitions = std::move(parts),
           };
       });
 }
 
-static std::vector<ss::future<list_offsets_response::topic>>
+static std::vector<ss::future<list_offset_topic_response>>
 list_offsets_topics(list_offsets_ctx& octx) {
-    std::vector<ss::future<list_offsets_response::topic>> topics;
-    topics.reserve(octx.request.topics.size());
+    std::vector<ss::future<list_offset_topic_response>> topics;
+    topics.reserve(octx.request.data.topics.size());
 
-    for (auto& topic : octx.request.topics) {
+    for (auto& topic : octx.request.data.topics) {
         auto tr = list_offsets_topic(octx, topic);
         topics.push_back(std::move(tr));
     }
@@ -256,14 +162,17 @@ list_offsets_topics(list_offsets_ctx& octx) {
 
 ss::future<response_ptr>
 list_offsets_api::process(request_context&& ctx, ss::smp_service_group ssg) {
-    list_offsets_request request(ctx);
+    list_offsets_request request;
+    request.decode(ctx.reader(), ctx.header().version);
+    request.compute_duplicate_topics();
+
     return ss::do_with(
       list_offsets_ctx(std::move(ctx), std::move(request), ssg),
       [](list_offsets_ctx& octx) {
           auto topics = list_offsets_topics(octx);
           return when_all_succeed(topics.begin(), topics.end())
-            .then([&octx](std::vector<list_offsets_response::topic> topics) {
-                octx.response.topics = std::move(topics);
+            .then([&octx](std::vector<list_offset_topic_response> topics) {
+                octx.response.data.topics = std::move(topics);
                 return octx.rctx.respond(std::move(octx.response));
             });
       });
