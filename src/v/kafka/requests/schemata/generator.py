@@ -121,6 +121,23 @@ path_type_map = {
     "FindCoordinatorRequestData": {
         "KeyType": ("kafka::coordinator_type", "int8"),
     },
+    "ListOffsetRequestData": {
+        "Topics": {
+            "Partitions": {
+                "PartitionIndex": ("model::partition_id", "int32"),
+                "Timestamp": ("model::timestamp", "int64"),
+            },
+        },
+    },
+    "ListOffsetResponseData": {
+        "Topics": {
+            "Partitions": {
+                "PartitionIndex": ("model::partition_id", "int32"),
+                "Timestamp": ("model::timestamp", "int64"),
+                "Offset": ("model::offset", "int64"),
+            },
+        },
+    },
 }
 
 # a few kafka field types specify an entity type
@@ -170,6 +187,10 @@ STRUCT_TYPES = [
     "DescribeConfigsResource",
     "DescribeConfigsResourceResult",
     "DescribeConfigsSynonym",
+    "ListOffsetTopic",
+    "ListOffsetTopicResponse",
+    "ListOffsetPartitionResponse",
+    "ListOffsetPartition",
 ]
 
 SCALAR_TYPES = list(basic_type_map.keys())

@@ -2,6 +2,8 @@
 #include "bytes/iobuf.h"
 #include "kafka/errors.h"
 #include "kafka/requests/fwd.h"
+#include "kafka/requests/schemata/list_offset_request.h"
+#include "kafka/requests/schemata/list_offset_response.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -34,27 +36,19 @@ struct list_offsets_request final {
     static constexpr model::timestamp earliest_timestamp{-2};
     static constexpr model::timestamp latest_timestamp{-1};
 
-    struct partition {
-        model::partition_id id;
-        model::timestamp timestamp;
-    };
+    list_offset_request_data data;
 
-    struct topic {
-        model::topic name;
-        std::vector<partition> partitions;
-    };
+    void encode(response_writer& writer, api_version version) {
+        data.encode(writer, version);
+    }
 
-    model::node_id replica_id;
-    int8_t isolation_level; // >= v2
-    std::vector<topic> topics;
-
-    list_offsets_request() = default;
-    list_offsets_request(request_context& ctx) { decode(ctx); }
-
-    void encode(response_writer& writer, api_version version);
-    void decode(request_context& ctx);
+    void decode(request_reader& reader, api_version version) {
+        data.decode(reader, version);
+    }
 
     absl::btree_set<model::topic_partition> tp_dups;
+
+    void compute_duplicate_topics();
 
     bool duplicate_tp(const model::topic& t, model::partition_id id) const {
         model::topic_partition tp(t, id);
@@ -62,50 +56,54 @@ struct list_offsets_request final {
     }
 };
 
+static inline std::ostream&
+operator<<(std::ostream& os, const list_offsets_request& r) {
+    return os << r.data;
+}
+
 struct list_offsets_response final {
     using api_type = list_offsets_api;
 
-    struct partition {
-        model::partition_id id;
-        error_code error;
-        model::timestamp timestamp;
-        model::offset offset;
+    list_offset_response_data data;
 
-        partition(
-          model::partition_id id,
-          error_code error,
-          model::timestamp timestamp,
-          model::offset offset)
-          : id(id)
-          , error(error)
-          , timestamp(timestamp)
-          , offset(offset) {}
+    static list_offset_partition_response make_partition(
+      model::partition_id id,
+      error_code error,
+      model::timestamp timestamp,
+      model::offset offset) {
+        return list_offset_partition_response{
+          .partition_index = id,
+          .error_code = error,
+          .timestamp = timestamp,
+          .offset = offset,
+        };
+    }
 
-        partition(
-          model::partition_id id,
-          model::timestamp timestamp,
-          model::offset offset)
-          : id(id)
-          , error(error_code::none)
-          , timestamp(timestamp)
-          , offset(offset) {}
+    static list_offset_partition_response make_partition(
+      model::partition_id id,
+      model::timestamp timestamp,
+      model::offset offset) {
+        return make_partition(id, error_code::none, timestamp, offset);
+    }
 
-        partition(model::partition_id id, error_code error)
-          : partition(id, error, model::timestamp(-1), model::offset(-1)) {}
-    };
+    static list_offset_partition_response
+    make_partition(model::partition_id id, error_code error) {
+        return make_partition(
+          id, error, model::timestamp(-1), model::offset(-1));
+    }
 
-    struct topic {
-        model::topic name;
-        std::vector<partition> partitions;
-    };
+    void encode(const request_context& ctx, response& resp) {
+        data.encode(ctx, resp);
+    }
 
-    std::chrono::milliseconds throttle_time_ms{0}; // >= v2
-    std::vector<topic> topics;
-
-    void encode(const request_context& ctx, response& resp);
-    void decode(iobuf buf, api_version version);
+    void decode(iobuf buf, api_version version) {
+        data.decode(std::move(buf), version);
+    }
 };
 
-std::ostream& operator<<(std::ostream&, const list_offsets_response&);
+static inline std::ostream&
+operator<<(std::ostream& os, const list_offsets_response& r) {
+    return os << r.data;
+}
 
 } // namespace kafka
