@@ -63,3 +63,10 @@ rp_test(
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES Boost::unit_test_framework
 )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME state_crc_file_test
+  SOURCES state_crc_file_test.cc
+  LIBRARIES v::seastar_testing_main v::utils
+)
