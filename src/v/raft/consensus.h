@@ -3,6 +3,7 @@
 #include "hashing/crc32c.h"
 #include "model/fundamental.h"
 #include "raft/consensus_client_protocol.h"
+#include "raft/event_manager.h"
 #include "raft/follower_stats.h"
 #include "raft/logger.h"
 #include "raft/probe.h"
@@ -116,11 +117,14 @@ public:
 
     model::offset start_offset() const { return _log.offsets().start_offset; }
 
+    event_manager& events() { return _event_manager; }
+
 private:
     friend replicate_entries_stm;
     friend vote_stm;
     friend recovery_stm;
     friend replicate_batcher;
+    friend event_manager;
 
     // all these private functions assume that we are under exclusive operations
     // via the _op_sem
@@ -227,6 +231,7 @@ private:
     mutex _op_lock;
     /// used for notifying when commits happened to log
     std::optional<append_entries_cb_t> _append_entries_notification;
+    event_manager _event_manager;
     probe _probe;
     ctx_log _ctxlog;
     ss::condition_variable _commit_index_updated;

@@ -25,6 +25,7 @@ v_cc_library(
     snapshot.cc
     probe.cc
     offset_monitor.cc
+    event_manager.cc
   DEPS
     v::storage
     raft_rpc
