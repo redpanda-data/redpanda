@@ -9,7 +9,9 @@ enum class errc {
     disconnected_endpoint,
     exponential_backoff,
     missing_node_rpc_client,
-    client_request_timeout
+    client_request_timeout,
+    service_error,
+    method_not_found
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "rpc::errc"; }
