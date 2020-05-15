@@ -35,21 +35,21 @@ FIXTURE_TEST(list_offsets, redpanda_thread_fixture) {
     client.connect().get();
 
     kafka::list_offsets_request req;
-    req.topics = {{
+    req.data.topics = {{
       .name = ntp.tp.topic,
       .partitions = {{
-        ntp.tp.partition,
-        query_ts,
+        .partition_index = ntp.tp.partition,
+        .timestamp = query_ts,
       }},
     }};
 
     auto resp = client.dispatch(req, kafka::api_version(1)).get0();
     client.stop().then([&client] { client.shutdown(); }).get();
 
-    BOOST_REQUIRE_EQUAL(resp.topics.size(), 1);
-    BOOST_REQUIRE_EQUAL(resp.topics[0].partitions.size(), 1);
-    BOOST_CHECK(resp.topics[0].partitions[0].timestamp >= query_ts);
-    BOOST_CHECK(resp.topics[0].partitions[0].offset >= model::offset(0));
+    BOOST_REQUIRE_EQUAL(resp.data.topics.size(), 1);
+    BOOST_REQUIRE_EQUAL(resp.data.topics[0].partitions.size(), 1);
+    BOOST_CHECK(resp.data.topics[0].partitions[0].timestamp >= query_ts);
+    BOOST_CHECK(resp.data.topics[0].partitions[0].offset >= model::offset(0));
 }
 
 FIXTURE_TEST(list_offsets_earliest, redpanda_thread_fixture) {
@@ -67,21 +67,22 @@ FIXTURE_TEST(list_offsets_earliest, redpanda_thread_fixture) {
     client.connect().get();
 
     kafka::list_offsets_request req;
-    req.topics = {{
+    req.data.topics = {{
       .name = ntp.tp.topic,
       .partitions = {{
-        ntp.tp.partition,
-        kafka::list_offsets_request::earliest_timestamp,
+        .partition_index = ntp.tp.partition,
+        .timestamp = kafka::list_offsets_request::earliest_timestamp,
       }},
     }};
 
     auto resp = client.dispatch(req, kafka::api_version(1)).get0();
     client.stop().then([&client] { client.shutdown(); }).get();
 
-    BOOST_REQUIRE_EQUAL(resp.topics.size(), 1);
-    BOOST_REQUIRE_EQUAL(resp.topics[0].partitions.size(), 1);
-    BOOST_CHECK(resp.topics[0].partitions[0].timestamp == model::timestamp(-1));
-    BOOST_CHECK(resp.topics[0].partitions[0].offset == model::offset(0));
+    BOOST_REQUIRE_EQUAL(resp.data.topics.size(), 1);
+    BOOST_REQUIRE_EQUAL(resp.data.topics[0].partitions.size(), 1);
+    BOOST_CHECK(
+      resp.data.topics[0].partitions[0].timestamp == model::timestamp(-1));
+    BOOST_CHECK(resp.data.topics[0].partitions[0].offset == model::offset(0));
 }
 
 FIXTURE_TEST(list_offsets_latest, redpanda_thread_fixture) {
@@ -99,19 +100,20 @@ FIXTURE_TEST(list_offsets_latest, redpanda_thread_fixture) {
     client.connect().get();
 
     kafka::list_offsets_request req;
-    req.topics = {{
+    req.data.topics = {{
       .name = ntp.tp.topic,
       .partitions = {{
-        ntp.tp.partition,
-        kafka::list_offsets_request::latest_timestamp,
+        .partition_index = ntp.tp.partition,
+        .timestamp = kafka::list_offsets_request::latest_timestamp,
       }},
     }};
 
     auto resp = client.dispatch(req, kafka::api_version(1)).get0();
     client.stop().then([&client] { client.shutdown(); }).get();
 
-    BOOST_REQUIRE_EQUAL(resp.topics.size(), 1);
-    BOOST_REQUIRE_EQUAL(resp.topics[0].partitions.size(), 1);
-    BOOST_CHECK(resp.topics[0].partitions[0].timestamp == model::timestamp(-1));
-    BOOST_CHECK(resp.topics[0].partitions[0].offset > model::offset(0));
+    BOOST_REQUIRE_EQUAL(resp.data.topics.size(), 1);
+    BOOST_REQUIRE_EQUAL(resp.data.topics[0].partitions.size(), 1);
+    BOOST_CHECK(
+      resp.data.topics[0].partitions[0].timestamp == model::timestamp(-1));
+    BOOST_CHECK(resp.data.topics[0].partitions[0].offset > model::offset(0));
 }
