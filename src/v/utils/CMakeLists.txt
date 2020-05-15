@@ -4,7 +4,10 @@ v_cc_library(
   SRCS
     hdr_hist.cc
     human.cc
+    state_crc_file.cc
   DEPS
     Seastar::seastar
-    Hdrhistogram::hdr_histogram)
+    Hdrhistogram::hdr_histogram
+    v::rphashing
+    v::bytes)
 add_subdirectory(tests)

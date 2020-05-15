@@ -2,13 +2,16 @@
 
 #include "likely.h"
 #include "model/record.h"
+#include "raft/logger.h"
 #include "random/generators.h"
 #include "resource_mgmt/io_priority.h"
 #include "storage/record_batch_builder.h"
+#include "utils/state_crc_file.h"
 #include "vassert.h"
 
 #include <seastar/core/file-types.hh>
 #include <seastar/core/file.hh>
+#include <seastar/core/future.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/core/thread.hh>
 
@@ -88,8 +91,8 @@ ss::future<> writefile(ss::sstring name, ss::temporary_buffer<char> buf) {
             .finally([f] {});
       });
 }
-ss::future<>
-persist_voted_for(ss::sstring filename, consensus::voted_for_configuration r) {
+ss::future<> legacy_persist_voted_for(
+  ss::sstring filename, consensus::voted_for_configuration r) {
     YAML::Emitter out;
     out << YAML::convert<consensus::voted_for_configuration>::encode(r);
     ss::temporary_buffer<char> buf(out.size());
@@ -98,7 +101,7 @@ persist_voted_for(ss::sstring filename, consensus::voted_for_configuration r) {
 }
 
 ss::future<consensus::voted_for_configuration>
-read_voted_for(ss::sstring filename) {
+legacy_read_voted_for(ss::sstring filename) {
     return readfile(filename).then([](ss::temporary_buffer<char> buf) {
         if (buf.empty()) {
             return consensus::voted_for_configuration{};
@@ -111,6 +114,31 @@ read_voted_for(ss::sstring filename) {
         return node.as<consensus::voted_for_configuration>();
     });
 }
+
+ss::future<>
+persist_voted_for(ss::sstring filename, consensus::voted_for_configuration r) {
+    return utils::state_crc_file(std::move(filename)).persist(std::move(r));
+}
+
+ss::future<result<consensus::voted_for_configuration>>
+read_voted_for(ss::sstring filename) {
+    using ret_t = result<consensus::voted_for_configuration>;
+    return utils::state_crc_file(filename)
+      .read<consensus::voted_for_configuration>()
+      .then([f = std::move(filename)](ret_t r) mutable {
+          if (r) {
+              return ss::make_ready_future<ret_t>(std::move(r));
+          }
+          raftlog.info(
+            "Unable to read raft state. Falling back to old format - {}",
+            r.error().message());
+          return legacy_read_voted_for(std::move(f))
+            .then([](consensus::voted_for_configuration cfg) {
+                return result<consensus::voted_for_configuration>(cfg);
+            });
+      });
+}
+
 [[gnu::cold]] void throw_out_of_range() {
     throw std::out_of_range("consensus_utils copy out of bounds");
 }
