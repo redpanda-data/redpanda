@@ -5,6 +5,7 @@
 #include "kafka/errors.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
+#include "model/timestamp.h"
 #include "seastarx.h"
 #include "utils/concepts-enabled.h"
 #include "utils/vint.h"
@@ -65,6 +66,8 @@ public:
         using underlying = std::underlying_type_t<kafka::coordinator_type>;
         return serialize_int<underlying>(static_cast<underlying>(t));
     }
+
+    uint32_t write(const model::timestamp ts) { return write(ts()); }
 
     uint32_t write_varint(int32_t v) { return serialize_vint<vint>(v); }
 
