@@ -1,5 +1,7 @@
 #include "raft/group_manager.h"
 
+#include "config/configuration.h"
+#include "prometheus/prometheus_sanitize.h"
 #include "resource_mgmt/io_priority.h"
 
 namespace raft {
@@ -12,7 +14,9 @@ group_manager::group_manager(
   : _self(self)
   , _disk_timeout(disk_timeout)
   , _client(make_rpc_client_protocol(clients))
-  , _heartbeats(heartbeat_interval, _client) {}
+  , _heartbeats(heartbeat_interval, _client) {
+    setup_metrics();
+}
 
 ss::future<> group_manager::start() { return _heartbeats.start(); }
 
@@ -71,6 +75,21 @@ void group_manager::trigger_leadership_notification(
     for (auto& cb : _notifications) {
         cb.second(st.group, st.term, st.current_leader);
     }
+}
+
+void group_manager::setup_metrics() {
+    if (config::shard_local_cfg().disable_metrics()) {
+        return;
+    }
+
+    namespace sm = ss::metrics;
+
+    _metrics.add_group(
+      prometheus_sanitize::metrics_name("raft"),
+      {sm::make_gauge(
+        "group_count",
+        [this] { return _groups.size(); },
+        sm::description("Number of raft groups"))});
 }
 
 } // namespace raft

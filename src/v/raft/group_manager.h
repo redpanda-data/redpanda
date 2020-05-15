@@ -6,6 +6,8 @@
 #include "raft/rpc_client_protocol.h"
 #include "raft/types.h"
 
+#include <seastar/core/metrics_registration.hh>
+
 #include <absl/container/flat_hash_map.h>
 
 namespace raft {
@@ -56,6 +58,7 @@ public:
 
 private:
     void trigger_leadership_notification(raft::leadership_status);
+    void setup_metrics();
 
     model::node_id _self;
     model::timeout_clock::duration _disk_timeout;
@@ -66,6 +69,7 @@ private:
     cluster::notification_id_type _notification_id{0};
     std::vector<std::pair<cluster::notification_id_type, leader_cb_t>>
       _notifications;
+    ss::metrics::metric_groups _metrics;
 };
 
 } // namespace raft
