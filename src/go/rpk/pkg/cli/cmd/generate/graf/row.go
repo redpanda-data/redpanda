@@ -26,7 +26,7 @@ func (p RowPanel) MarshalJSON() ([]byte, error) {
 func NewRowPanel(title string, panels ...Panel) RowPanel {
 	return RowPanel{
 		BasePanel: BasePanel{
-			ID:       genID(),
+			ID:       nextID(),
 			Title:    title,
 			Editable: true,
 			GridPos:  GridPos{W: 24, H: 1},

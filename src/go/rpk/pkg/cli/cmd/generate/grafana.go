@@ -121,21 +121,19 @@ func processRows(metricFamilies map[string]*dto.MetricFamily) []graf.Row {
 		names = append(names, k)
 	}
 	sort.Strings(names)
-	id := uint(0)
 	for _, name := range names {
-		id++
 		family := metricFamilies[name]
 		var panel graf.Panel
 		if family.GetType() == dto.MetricType_COUNTER {
-			panel = newCounterPanel(family, id)
+			panel = newCounterPanel(family)
 		} else if subtype(family) == "histogram" {
 			latencyPanels = append(
 				latencyPanels,
-				newPercentilePanel(family, id, 0.95),
+				newPercentilePanel(family, 0.95),
 			)
 			continue
 		} else {
-			panel = newGaugePanel(family, id)
+			panel = newGaugePanel(family)
 		}
 
 		if panel == nil {
@@ -259,7 +257,7 @@ func fetchMetrics(prometheusURL string) (map[string]*dto.MetricFamily, error) {
 }
 
 func newPercentilePanel(
-	m *dto.MetricFamily, id uint, percentile float32,
+	m *dto.MetricFamily, percentile float32,
 ) graf.GraphPanel {
 	expr := fmt.Sprintf(
 		`histogram_quantile(%.2f, sum(rate(%s_bucket{instance=~"[[node]]",shard=~"[[node_shard]]"}[1m])) by (le, [[aggr_criteria]]))`,
@@ -275,14 +273,14 @@ func newPercentilePanel(
 		RefID:          "A",
 	}
 	title := fmt.Sprintf("%s (p%.0f)", m.GetHelp(), percentile*100)
-	panel := newGraphPanel(id, title, target, "µs")
+	panel := newGraphPanel(title, target, "µs")
 	panel.Lines = true
 	panel.Tooltip.ValueType = "individual"
 	panel.Tooltip.Sort = 0
 	return panel
 }
 
-func newCounterPanel(m *dto.MetricFamily, id uint) graf.GraphPanel {
+func newCounterPanel(m *dto.MetricFamily) graf.GraphPanel {
 	expr := fmt.Sprintf(
 		`sum(irate(%s{instance=~"[[node]]",shard=~"[[node_shard]]"}[1m])) by ([[aggr_criteria]])`,
 		m.GetName(),
@@ -298,12 +296,12 @@ func newCounterPanel(m *dto.MetricFamily, id uint) graf.GraphPanel {
 	if strings.Contains(subtype(m), "bytes") {
 		format = "Bps"
 	}
-	panel := newGraphPanel(id, "Rate - "+m.GetHelp(), target, format)
+	panel := newGraphPanel("Rate - "+m.GetHelp(), target, format)
 	panel.Lines = true
 	return panel
 }
 
-func newGaugePanel(m *dto.MetricFamily, id uint) graf.GraphPanel {
+func newGaugePanel(m *dto.MetricFamily) graf.GraphPanel {
 	expr := fmt.Sprintf(
 		`sum(%s{instance=~"[[node]]",shard=~"[[node_shard]]"}) by ([[aggr_criteria]])`,
 		m.GetName(),
@@ -319,18 +317,17 @@ func newGaugePanel(m *dto.MetricFamily, id uint) graf.GraphPanel {
 	if strings.Contains(subtype(m), "bytes") {
 		format = "bytes"
 	}
-	panel := newGraphPanel(id, m.GetHelp(), target, format)
+	panel := newGraphPanel(m.GetHelp(), target, format)
 	panel.Lines = true
 	panel.SteppedLine = true
 	return panel
 }
 
 func newGraphPanel(
-	id uint, title string, target graf.Target, yAxisFormat string,
+	title string, target graf.Target, yAxisFormat string,
 ) graf.GraphPanel {
 	// yAxisMin := 0.0
 	p := graf.NewGraphPanel(title, yAxisFormat)
-	p.ID = id
 	p.Datasource = datasource
 	p.Targets = []graf.Target{target}
 	p.Tooltip = graf.Tooltip{

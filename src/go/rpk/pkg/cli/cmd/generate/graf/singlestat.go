@@ -52,7 +52,7 @@ func (p SingleStatPanel) MarshalJSON() ([]byte, error) {
 func NewSingleStatPanel(title string) SingleStatPanel {
 	return SingleStatPanel{
 		BasePanel: BasePanel{
-			ID:       genID(),
+			ID:       nextID(),
 			Title:    title,
 			Editable: true,
 			GridPos:  GridPos{W: 8, H: 8},

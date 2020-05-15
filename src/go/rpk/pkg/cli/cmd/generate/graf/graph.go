@@ -39,7 +39,7 @@ func NewGraphPanel(title string, unit string) GraphPanel {
 	yAxisMin := 0.0
 	return GraphPanel{
 		BasePanel: BasePanel{
-			ID:       genID(),
+			ID:       nextID(),
 			Title:    title,
 			Editable: true,
 			Span:     4,

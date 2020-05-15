@@ -2,10 +2,11 @@ package graf
 
 import (
 	"encoding/json"
-	"math/rand"
 )
 
 const panelHeight = "250px"
+
+var id uint = 0
 
 func NewRow(title string, panels []Panel, collapse bool) Row {
 	return Row{
@@ -16,6 +17,11 @@ func NewRow(title string, panels []Panel, collapse bool) Row {
 		Height:    panelHeight,
 		Collapse:  collapse,
 	}
+}
+
+func nextID() uint {
+	id++
+	return id
 }
 
 type Dashboard struct {
@@ -203,8 +209,4 @@ type Annotations struct {
 }
 
 type Annotation struct {
-}
-
-func genID() uint {
-	return uint(rand.Uint64())
 }
