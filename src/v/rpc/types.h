@@ -1,5 +1,7 @@
 #pragma once
 
+#include "likely.h"
+#include "outcome.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>
@@ -169,6 +171,14 @@ struct client_context {
     header hdr;
     T data;
 };
+
+template<typename T>
+inline result<T> get_ctx_data(result<client_context<T>>&& ctx) {
+    if (unlikely(!ctx)) {
+        return result<T>(ctx.error());
+    }
+    return result<T>(std::move(ctx.value().data));
+}
 
 using metrics_disabled = ss::bool_class<struct metrics_disabled_tag>;
 

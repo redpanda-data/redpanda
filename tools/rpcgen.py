@@ -24,6 +24,7 @@ RPC_TEMPLATE = """
 #include "finjector/hbadger.h"
 #include "utils/string_switch.h"
 #include "random/fast_prng.h"
+#include "outcome.h"
 #include "seastarx.h"
 
 // extra includes
@@ -111,7 +112,7 @@ public:
       : _transport(t) {
     }
     {%- for method in methods %}
-    virtual inline ss::future<rpc::client_context<{{method.output_type}}>>
+    virtual inline ss::future<result<rpc::client_context<{{method.output_type}}>>>
     {{method.name}}({{method.input_type}}&& r, rpc::client_opts opts) {
        return _transport.send_typed<{{method.input_type}}, {{method.output_type}}>(std::move(r), {{method.id}}, std::move(opts));
     }

@@ -67,19 +67,17 @@ model::record_batch create_checkpoint_batch() {
 template<typename Func>
 auto controller::dispatch_rpc_to_leader(Func&& f) {
     using inner_t = typename std::result_of_t<Func(controller_client_protocol)>;
-    using fut_t = ss::futurize<inner_t>;
-    using ret_t = result<
-      typename std::tuple_element<0, typename fut_t::value_type>::type>;
+    using fut_t = ss::futurize<result_wrap_t<inner_t>>;
 
     std::optional<model::node_id> leader_id = get_leader_id();
     if (!leader_id) {
-        return ss::make_ready_future<ret_t>(errc::no_leader_controller);
+        return fut_t::convert(errc::no_leader_controller);
     }
 
     auto leader = _raft0->config().find_in_nodes(*leader_id);
 
     if (leader == _raft0->config().nodes.end()) {
-        return ss::make_ready_future<ret_t>(errc::no_leader_controller);
+        return fut_t::convert(errc::no_leader_controller);
     }
 
     return with_client<controller_client_protocol, Func>(
@@ -596,9 +594,7 @@ ss::future<std::vector<topic_result>> controller::autocreate_topics(
                      .create_topics(
                        create_topics_request{std::move(topics), timeout},
                        rpc::client_opts(timeout + model::timeout_clock::now()))
-                     .then([](rpc::client_context<create_topics_reply> ctx) {
-                         return std::move(ctx.data);
-                     });
+                     .then(&rpc::get_ctx_data<create_topics_reply>);
                })
           .then([this, topics](result<create_topics_reply> r) mutable {
               return process_autocreate_response(
@@ -1112,9 +1108,7 @@ ss::future<result<join_reply>> controller::dispatch_join_to_remote(
             .join(
               join_request(std::move(joining_node)),
               rpc::client_opts(rpc::clock_type::now() + join_timeout))
-            .then([](rpc::client_context<join_reply> ctx) {
-                return std::move(ctx.data);
-            });
+            .then(&rpc::get_ctx_data<join_reply>);
       });
 }
 
@@ -1199,9 +1193,7 @@ controller::process_join_request(model::broker broker) {
                  .join(
                    join_request(std::move(broker)),
                    rpc::client_opts(rpc::clock_type::now() + join_timeout))
-                 .then([](rpc::client_context<join_reply> reply) {
-                     return reply.data;
-                 });
+                 .then(&rpc::get_ctx_data<join_reply>);
            })
       .handle_exception([](const std::exception_ptr& e) {
           vlog(

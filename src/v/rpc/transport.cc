@@ -136,15 +136,13 @@ ss::future<> transport::connect() {
     });
 }
 
-ss::future<std::unique_ptr<streaming_context>>
+ss::future<result<std::unique_ptr<streaming_context>>>
 transport::send(netbuf b, rpc::client_opts opts) {
+    using ret_t = result<std::unique_ptr<streaming_context>>;
     // hold invariant of always having a valid connection _and_ a working
     // dispatch gate where we can wait for async futures
     if (!is_valid() || _dispatch_gate.is_closed()) {
-        return ss::make_exception_future<std::unique_ptr<streaming_context>>(
-          std::runtime_error(fmt::format(
-            "cannot send payload with invalid connection. remote:{}",
-            server_address())));
+        return ss::make_ready_future<ret_t>(errc::disconnected_endpoint);
     }
     return ss::with_gate(
       _dispatch_gate,
