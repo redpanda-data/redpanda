@@ -45,6 +45,7 @@ consensus::consensus(
   , _fstats({})
   , _batcher(this)
   , _append_entries_notification(std::move(append_callback))
+  , _event_manager(this)
   , _ctxlog(_self, group)
   , _replicate_append_timeout(
       config::shard_local_cfg().replicate_append_timeout_ms())
@@ -86,7 +87,7 @@ ss::future<> consensus::stop() {
     vlog(_ctxlog.info, "Stopping");
     _vote_timeout.cancel();
     _commit_index_updated.broken();
-    return _bg.close();
+    return _event_manager.stop().then([this] { return _bg.close(); });
 }
 
 ss::sstring consensus::voted_for_filename() const {
@@ -474,7 +475,8 @@ ss::future<> consensus::start() {
           .then([this] {
               // Arm leader election timeout.
               arm_vote_timeout();
-          });
+          })
+          .then([this] { return _event_manager.start(); });
     });
 }
 
@@ -940,6 +942,7 @@ ss::future<> consensus::do_maybe_update_leader_commit_idx() {
           range_start,
           _commit_index);
         _commit_index_updated.broadcast();
+        _event_manager.notify_commit_index(_commit_index);
         return notify_entries_commited(
           details::next_offset(model::offset(old_commit_idx)),
           model::offset(_commit_index));
@@ -962,6 +965,7 @@ consensus::maybe_update_follower_commit_idx(model::offset request_commit_idx) {
             vlog(
               _ctxlog.trace, "Follower commit index updated {}", _commit_index);
             _commit_index_updated.broadcast();
+            _event_manager.notify_commit_index(_commit_index);
             return notify_entries_commited(
               details::next_offset(model::offset(previous_commit_idx)),
               model::offset(_commit_index));
