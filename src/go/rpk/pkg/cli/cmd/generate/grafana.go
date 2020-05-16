@@ -92,7 +92,7 @@ func buildGrafanaDashboard(
 	return graf.Dashboard{
 		Title:      "Redpanda",
 		Templating: buildTemplating(),
-		Rows:       processRows(metricFamilies),
+		Panels:     processRows(metricFamilies),
 		Editable:   true,
 		Refresh:    "10s",
 		Time:       graf.Time{From: "now-1h", To: "now"},
@@ -105,22 +105,24 @@ func buildGrafanaDashboard(
 	}
 }
 
-func processRows(metricFamilies map[string]*dto.MetricFamily) []graf.Row {
-	groupPanels := map[string][]graf.Panel{}
+func processRows(metricFamilies map[string]*dto.MetricFamily) []graf.Panel {
+	panelWidth := 8
+	groupPanels := map[string]*graf.RowPanel{}
 	throughputMetrics := []string{
 		"vectorized_storage_log_read_bytes",
 		"vectorized_storage_log_written_bytes",
 	}
 	latencyPanels := []graf.Panel{}
 	throughputPanels := []graf.Panel{}
-	summaryRow := graf.NewRow("Summary", []graf.Panel{}, false)
-	errorsRow := graf.NewRow("Errors", []graf.Panel{}, true)
+	summaryRow := graf.NewRowPanel("Summary")
+	errorsRow := graf.NewRowPanel("Errors")
 
 	names := []string{}
 	for k, _ := range metricFamilies {
 		names = append(names, k)
 	}
 	sort.Strings(names)
+	rowTitles := []string{}
 	for _, name := range names {
 		family := metricFamilies[name]
 		var panel graf.Panel
@@ -152,30 +154,31 @@ func processRows(metricFamilies map[string]*dto.MetricFamily) []graf.Row {
 			continue
 		}
 		group := metricGroup(name)
-		panels, ok := groupPanels[group]
+		row, ok := groupPanels[group]
 		if ok {
-			groupPanels[group] = append(panels, panel)
+			row.Panels = append(row.Panels, panel)
+			groupPanels[group] = row
 		} else {
-			groupPanels[group] = []graf.Panel{panel}
+			rowTitles = append(rowTitles, group)
+			groupPanels[group] = graf.NewRowPanel(group, panel)
 		}
 	}
 	summaryRow.Panels = append(latencyPanels, throughputPanels...)
-
-	rowTitles := []string{}
-	rowsByTitle := map[string]graf.Row{}
-	for group, panels := range groupPanels {
-		rowsByTitle[group] = graf.NewRow(group, panels, true)
-		rowTitles = append(rowTitles, group)
-	}
-
 	sort.Strings(rowTitles)
-
-	rows := []graf.Row{
+	rows := []graf.Panel{
 		summaryRow,
 		errorsRow,
 	}
+
+	y := 0
 	for _, title := range rowTitles {
-		rows = append(rows, rowsByTitle[title])
+		row := groupPanels[title]
+		for i, panel := range row.Panels {
+			panel.GetGridPos().Y = y
+			panel.GetGridPos().X = (i * panelWidth) % 24
+		}
+		rows = append(rows, row)
+		y++
 	}
 	return rows
 }

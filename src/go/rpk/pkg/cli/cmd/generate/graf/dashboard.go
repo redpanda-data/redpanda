@@ -28,7 +28,6 @@ type Dashboard struct {
 	UID           string      `json:"uid,omitempty"`
 	Title         string      `json:"title,omitempty"`
 	Templating    Templating  `json:"templating"`
-	Rows          []Row       `json:"rows"`
 	Panels        []Panel     `json:"panels"`
 	Editable      bool        `json:"editable"`
 	Timezone      string      `json:"timezone"`

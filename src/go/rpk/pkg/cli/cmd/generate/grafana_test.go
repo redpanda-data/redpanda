@@ -127,17 +127,27 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
    }
   ]
  },
- "rows": [
+ "panels": [
   {
+   "type": "row",
+   "collapsed": true,
+   "id": 1,
    "title": "Summary",
-   "showTitle": true,
-   "collapse": false,
    "editable": true,
-   "height": "8",
+   "gridPos": {
+    "h": 6,
+    "w": 24,
+    "x": 0,
+    "y": 0
+   },
+   "transparent": false,
+   "links": null,
+   "span": 0,
+   "error": false,
    "panels": [
     {
      "type": "graph",
-     "id": 4,
+     "id": 8,
      "title": "Latency of service handler dispatch (p95)",
      "datasource": "prometheus",
      "editable": true,
@@ -210,23 +220,43 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
    ]
   },
   {
+   "type": "row",
+   "collapsed": false,
+   "id": 2,
    "title": "Errors",
-   "showTitle": true,
-   "collapse": true,
    "editable": true,
-   "height": "8",
-   "panels": []
+   "gridPos": {
+    "h": 6,
+    "w": 24,
+    "x": 0,
+    "y": 0
+   },
+   "transparent": false,
+   "links": null,
+   "span": 0,
+   "error": false,
+   "panels": null
   },
   {
+   "type": "row",
+   "collapsed": true,
+   "id": 4,
    "title": "memory",
-   "showTitle": true,
-   "collapse": true,
    "editable": true,
-   "height": "8",
+   "gridPos": {
+    "h": 6,
+    "w": 24,
+    "x": 0,
+    "y": 0
+   },
+   "transparent": false,
+   "links": null,
+   "span": 0,
+   "error": false,
    "panels": [
     {
      "type": "graph",
-     "id": 1,
+     "id": 3,
      "title": "Rate - Allocated memory size in bytes",
      "datasource": "prometheus",
      "editable": true,
@@ -299,15 +329,25 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
    ]
   },
   {
+   "type": "row",
+   "collapsed": true,
+   "id": 6,
    "title": "vectorized_internal_rpc_protocol",
-   "showTitle": true,
-   "collapse": true,
    "editable": true,
-   "height": "8",
+   "gridPos": {
+    "h": 6,
+    "w": 24,
+    "x": 0,
+    "y": 0
+   },
+   "transparent": false,
+   "links": null,
+   "span": 0,
+   "error": false,
    "panels": [
     {
      "type": "graph",
-     "id": 2,
+     "id": 5,
      "title": "Amount of memory consumed for requests processing",
      "datasource": "prometheus",
      "editable": true,
@@ -315,7 +355,7 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
       "h": 6,
       "w": 8,
       "x": 0,
-      "y": 0
+      "y": 1
      },
      "transparent": false,
      "links": null,
@@ -379,15 +419,15 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
     },
     {
      "type": "graph",
-     "id": 3,
+     "id": 7,
      "title": "Rate - Number of requests with corrupted headers",
      "datasource": "prometheus",
      "editable": true,
      "gridPos": {
       "h": 6,
       "w": 8,
-      "x": 0,
-      "y": 0
+      "x": 8,
+      "y": 1
      },
      "transparent": false,
      "links": null,
@@ -452,7 +492,6 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
    ]
   }
  ],
- "panels": null,
  "editable": true,
  "timezone": "utc",
  "refresh": "10s",
