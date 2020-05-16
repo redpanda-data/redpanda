@@ -9,11 +9,12 @@ import (
 )
 
 func TestRowPanelType(t *testing.T) {
-	require.Equal(t, "row", graf.RowPanel{}.Type())
+	panel := &graf.RowPanel{}
+	require.Equal(t, "row", panel.Type())
 }
 
 func TestRowPanelMarshalType(t *testing.T) {
-	graphJSON, err := json.Marshal(graf.RowPanel{})
+	graphJSON, err := json.Marshal(&graf.RowPanel{})
 	require.NoError(t, err)
 	require.Contains(t, string(graphJSON), `"type":"row"`)
 }

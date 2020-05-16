@@ -3,7 +3,7 @@ package graf
 import "encoding/json"
 
 type GraphPanel struct {
-	BasePanel
+	*BasePanel
 	Targets       []Target    `json:"targets"`
 	XAxis         XAxis       `json:"xaxis"`
 	YAxes         []YAxis     `json:"yaxes"`
@@ -19,8 +19,12 @@ type GraphPanel struct {
 	SteppedLine   bool        `json:"steppedLine"`
 }
 
-func (GraphPanel) Type() string {
+func (*GraphPanel) Type() string {
 	return "graph"
+}
+
+func (p *GraphPanel) GetGridPos() *GridPos {
+	return &p.BasePanel.GridPos
 }
 
 func (p GraphPanel) MarshalJSON() ([]byte, error) {
@@ -35,15 +39,16 @@ func (p GraphPanel) MarshalJSON() ([]byte, error) {
 	return json.Marshal(typedPanel)
 }
 
-func NewGraphPanel(title string, unit string) GraphPanel {
+func NewGraphPanel(title string, unit string) *GraphPanel {
 	yAxisMin := 0.0
-	return GraphPanel{
-		BasePanel: BasePanel{
+	return &GraphPanel{
+		BasePanel: &BasePanel{
 			ID:       nextID(),
 			Title:    title,
 			Editable: true,
 			Span:     4,
 			Renderer: "flot",
+			GridPos:  GridPos{H: 6, W: 8},
 		},
 		Legend:    Legend{Show: true},
 		Fill:      1,
