@@ -52,6 +52,7 @@ type Row struct {
 type Panel interface {
 	json.Marshaler
 	Type() string
+	GetGridPos() *GridPos
 }
 type Templating struct {
 	List []TemplateVar `json:"list"`
@@ -107,6 +108,11 @@ type BasePanel struct {
 	Renderer    string  `json:"renderer,omitempty"`
 	Span        float32 `json:"span"`
 	Error       bool    `json:"error"`
+}
+
+func (p *BasePanel) GetGridPos() *GridPos {
+	gridPos := p.GridPos
+	return &gridPos
 }
 
 type Target struct {

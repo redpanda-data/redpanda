@@ -13,13 +13,14 @@ func TestNewGraphPanel(t *testing.T) {
 	title := "graph panel"
 	unit := "ops"
 	id := uint(0)
-	expected := graf.GraphPanel{
-		BasePanel: graf.BasePanel{
+	expected := &graf.GraphPanel{
+		BasePanel: &graf.BasePanel{
 			ID:       id,
 			Title:    title,
 			Editable: true,
 			Span:     4,
 			Renderer: "flot",
+			GridPos:  graf.GridPos{H: 6, W: 8},
 		},
 		Legend:    graf.Legend{Show: true},
 		Fill:      1,
@@ -48,7 +49,8 @@ func TestNewGraphPanel(t *testing.T) {
 }
 
 func TestGraphPanelType(t *testing.T) {
-	require.Equal(t, "graph", graf.GraphPanel{}.Type())
+	panel := &graf.GraphPanel{}
+	require.Equal(t, "graph", panel.Type())
 }
 
 func TestGraphPanelMarshalType(t *testing.T) {

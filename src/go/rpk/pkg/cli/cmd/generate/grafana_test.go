@@ -133,7 +133,7 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
    "showTitle": true,
    "collapse": false,
    "editable": true,
-   "height": "250px",
+   "height": "8",
    "panels": [
     {
      "type": "graph",
@@ -142,20 +142,21 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
      "datasource": "prometheus",
      "editable": true,
      "gridPos": {
-      "h": 0,
-      "w": 0,
+      "h": 6,
+      "w": 8,
       "x": 0,
       "y": 0
      },
+     "transparent": false,
      "links": null,
      "renderer": "flot",
      "span": 4,
+     "error": false,
      "targets": [
       {
        "refId": "A",
        "expr": "histogram_quantile(0.95, sum(rate(vectorized_vectorized_internal_rpc_protocol_dispatch_handler_latency_bucket{instance=~\"[[node]]\",shard=~\"[[node_shard]]\"}[1m])) by (le, [[aggr_criteria]]))",
        "intervalFactor": 2,
-       "interval": "",
        "step": 10,
        "legendFormat": "node: {{instance}}, shard: {{shard}}",
        "format": "time_series"
@@ -213,7 +214,7 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
    "showTitle": true,
    "collapse": true,
    "editable": true,
-   "height": "250px",
+   "height": "8",
    "panels": []
   },
   {
@@ -221,7 +222,7 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
    "showTitle": true,
    "collapse": true,
    "editable": true,
-   "height": "250px",
+   "height": "8",
    "panels": [
     {
      "type": "graph",
@@ -230,20 +231,21 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
      "datasource": "prometheus",
      "editable": true,
      "gridPos": {
-      "h": 0,
-      "w": 0,
+      "h": 6,
+      "w": 8,
       "x": 0,
       "y": 0
      },
+     "transparent": false,
      "links": null,
      "renderer": "flot",
      "span": 4,
+     "error": false,
      "targets": [
       {
        "refId": "",
        "expr": "sum(irate(vectorized_memory_allocated_memory{instance=~\"[[node]]\",shard=~\"[[node_shard]]\"}[1m])) by ([[aggr_criteria]])",
        "intervalFactor": 2,
-       "interval": "",
        "step": 10,
        "legendFormat": "node: {{instance}}, shard: {{shard}}",
        "format": "time_series"
@@ -301,7 +303,7 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
    "showTitle": true,
    "collapse": true,
    "editable": true,
-   "height": "250px",
+   "height": "8",
    "panels": [
     {
      "type": "graph",
@@ -310,20 +312,21 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
      "datasource": "prometheus",
      "editable": true,
      "gridPos": {
-      "h": 0,
-      "w": 0,
+      "h": 6,
+      "w": 8,
       "x": 0,
       "y": 0
      },
+     "transparent": false,
      "links": null,
      "renderer": "flot",
      "span": 4,
+     "error": false,
      "targets": [
       {
        "refId": "",
        "expr": "sum(vectorized_vectorized_internal_rpc_protocol_consumed_mem{instance=~\"[[node]]\",shard=~\"[[node_shard]]\"}) by ([[aggr_criteria]])",
        "intervalFactor": 2,
-       "interval": "",
        "step": 10,
        "legendFormat": "node: {{instance}}, shard: {{shard}}",
        "format": "time_series"
@@ -381,20 +384,21 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
      "datasource": "prometheus",
      "editable": true,
      "gridPos": {
-      "h": 0,
-      "w": 0,
+      "h": 6,
+      "w": 8,
       "x": 0,
       "y": 0
      },
+     "transparent": false,
      "links": null,
      "renderer": "flot",
      "span": 4,
+     "error": false,
      "targets": [
       {
        "refId": "",
        "expr": "sum(irate(vectorized_vectorized_internal_rpc_protocol_corrupted_headers{instance=~\"[[node]]\",shard=~\"[[node_shard]]\"}[1m])) by ([[aggr_criteria]])",
        "intervalFactor": 2,
-       "interval": "",
        "step": 10,
        "legendFormat": "node: {{instance}}, shard: {{shard}}",
        "format": "time_series"

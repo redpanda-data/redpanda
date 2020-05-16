@@ -258,7 +258,7 @@ func fetchMetrics(prometheusURL string) (map[string]*dto.MetricFamily, error) {
 
 func newPercentilePanel(
 	m *dto.MetricFamily, percentile float32,
-) graf.GraphPanel {
+) *graf.GraphPanel {
 	expr := fmt.Sprintf(
 		`histogram_quantile(%.2f, sum(rate(%s_bucket{instance=~"[[node]]",shard=~"[[node_shard]]"}[1m])) by (le, [[aggr_criteria]]))`,
 		percentile,
@@ -280,7 +280,7 @@ func newPercentilePanel(
 	return panel
 }
 
-func newCounterPanel(m *dto.MetricFamily) graf.GraphPanel {
+func newCounterPanel(m *dto.MetricFamily) *graf.GraphPanel {
 	expr := fmt.Sprintf(
 		`sum(irate(%s{instance=~"[[node]]",shard=~"[[node_shard]]"}[1m])) by ([[aggr_criteria]])`,
 		m.GetName(),
@@ -301,7 +301,7 @@ func newCounterPanel(m *dto.MetricFamily) graf.GraphPanel {
 	return panel
 }
 
-func newGaugePanel(m *dto.MetricFamily) graf.GraphPanel {
+func newGaugePanel(m *dto.MetricFamily) *graf.GraphPanel {
 	expr := fmt.Sprintf(
 		`sum(%s{instance=~"[[node]]",shard=~"[[node_shard]]"}) by ([[aggr_criteria]])`,
 		m.GetName(),
@@ -325,7 +325,7 @@ func newGaugePanel(m *dto.MetricFamily) graf.GraphPanel {
 
 func newGraphPanel(
 	title string, target graf.Target, yAxisFormat string,
-) graf.GraphPanel {
+) *graf.GraphPanel {
 	// yAxisMin := 0.0
 	p := graf.NewGraphPanel(title, yAxisFormat)
 	p.Datasource = datasource
