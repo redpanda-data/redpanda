@@ -8,17 +8,6 @@ const panelHeight = "8"
 
 var id uint = 0
 
-func NewRow(title string, panels []Panel, collapse bool) Row {
-	return Row{
-		Title:     title,
-		ShowTitle: true,
-		Panels:    panels,
-		Editable:  true,
-		Height:    panelHeight,
-		Collapse:  collapse,
-	}
-}
-
 func nextID() uint {
 	id++
 	return id
@@ -37,15 +26,6 @@ type Dashboard struct {
 	Annotations   Annotations `json:"annotations"`
 	Links         []Link      `json:"links"`
 	SchemaVersion uint        `json:"schemaVersion"`
-}
-
-type Row struct {
-	Title     string  `json:"title"`
-	ShowTitle bool    `json:"showTitle"`
-	Collapse  bool    `json:"collapse"`
-	Editable  bool    `json:"editable"`
-	Height    string  `json:"height"`
-	Panels    []Panel `json:"panels"`
 }
 
 type Panel interface {
