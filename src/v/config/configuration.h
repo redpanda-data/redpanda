@@ -19,7 +19,7 @@ struct configuration final : public config_store {
     // Network
     property<unresolved_address> rpc_server;
     // Raft
-    property<model::node_id> node_id;
+    property<int32_t> node_id;
     property<int32_t> seed_server_meta_topic_partitions;
     property<std::chrono::milliseconds> raft_heartbeat_interval;
     property<std::vector<seed_server>> seed_servers;
