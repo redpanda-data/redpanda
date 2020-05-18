@@ -760,23 +760,23 @@ ss::future<> consensus::notify_entries_commited(
   [[maybe_unused]] model::offset start_offset, model::offset end_offset) {
     auto cfg_reader_start_offset = details::next_offset(
       _last_seen_config_offset);
-        vlog(
-          _ctxlog.trace,
-          "Process configurations range [{},{}]",
-          cfg_reader_start_offset,
-          end_offset);
-        return _log
-          .make_reader(storage::log_reader_config(
-            cfg_reader_start_offset,
-            end_offset,
-            0,
-            std::numeric_limits<size_t>::max(),
-            _io_priority,
-            raft::configuration_batch_type,
-            std::nullopt))
-          .then([this, end_offset](model::record_batch_reader reader) {
-              return process_configurations(std::move(reader), end_offset);
-          });
+    vlog(
+      _ctxlog.trace,
+      "Process configurations range [{},{}]",
+      cfg_reader_start_offset,
+      end_offset);
+    return _log
+      .make_reader(storage::log_reader_config(
+        cfg_reader_start_offset,
+        end_offset,
+        0,
+        std::numeric_limits<size_t>::max(),
+        _io_priority,
+        raft::configuration_batch_type,
+        std::nullopt))
+      .then([this, end_offset](model::record_batch_reader reader) {
+          return process_configurations(std::move(reader), end_offset);
+      });
 }
 
 ss::future<> consensus::process_configurations(

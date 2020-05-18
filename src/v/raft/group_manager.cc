@@ -31,9 +31,7 @@ ss::future<> group_manager::stop() {
 }
 
 ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::start_group(
-  raft::group_id id,
-  std::vector<model::broker> nodes,
-  storage::log log) {
+  raft::group_id id, std::vector<model::broker> nodes, storage::log log) {
     auto raft = ss::make_lw_shared<raft::consensus>(
       _self,
       id,
