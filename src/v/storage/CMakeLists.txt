@@ -22,6 +22,8 @@ v_cc_library(
     index_state.cc
     lock_manager.cc
     types.cc
+    compacted_topic_index.cc
+    spill_key_index.cc
   DEPS
     Seastar::seastar
     v::bytes
