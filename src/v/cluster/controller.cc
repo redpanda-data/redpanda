@@ -5,7 +5,6 @@
 #include "cluster/errc.h"
 #include "cluster/logger.h"
 #include "cluster/namespace.h"
-#include "cluster/notification_latch.h"
 #include "cluster/partition_manager.h"
 #include "cluster/simple_batch_builder.h"
 #include "cluster/types.h"
@@ -209,14 +208,8 @@ ss::future<> controller::stop() {
         _leadership_cond.broadcast();
     }
     _as.request_abort();
-    return state_machine::stop().then([this] {
-        return _state_lock.with([this] {
-            // we have to stop latch first as there may be some futures waiting
-            // inside the gate for notification
-            _notification_latch.stop();
-            return _bg.close();
-        });
-    });
+    return state_machine::stop().then(
+      [this] { return _state_lock.with([this] { return _bg.close(); }); });
 }
 
 ss::future<> controller::apply(model::record_batch batch) {
@@ -237,11 +230,9 @@ ss::future<> controller::process_raft0_batch(model::record_batch batch) {
         return ss::make_exception_future<>(std::runtime_error(
           "We cannot process compressed record_batch'es yet, see #188"));
     }
-    auto last_offset = batch.last_offset();
-    auto f = ss::make_ready_future<>();
     if (batch.header().type == raft::configuration_batch_type) {
         auto base_offset = batch.header().base_offset;
-        f = model::consume_records(
+        return model::consume_records(
           std::move(batch), [this, base_offset](model::record rec) mutable {
               auto rec_offset = model::offset(
                 base_offset() + rec.offset_delta());
@@ -249,18 +240,15 @@ ss::future<> controller::process_raft0_batch(model::record_batch batch) {
           });
     } else {
         auto records_to_recover = batch.record_count();
-        f = model::consume_records(
-              std::move(batch),
-              [this](model::record rec) mutable {
-                  return recover_record(std::move(rec));
-              })
-              .then([this, records_to_recover] {
-                  return _recovery_semaphore.wait(records_to_recover);
-              });
+        return model::consume_records(
+                 std::move(batch),
+                 [this](model::record rec) mutable {
+                     return recover_record(std::move(rec));
+                 })
+          .then([this, records_to_recover] {
+              return _recovery_semaphore.wait(records_to_recover);
+          });
     }
-
-    return f.then(
-      [this, last_offset] { return _notification_latch.notify(last_offset); });
 }
 
 ss::future<>
@@ -748,9 +736,9 @@ ss::future<std::vector<topic_result>> controller::delete_topics(
         });
 }
 
-static ss::future<std::vector<topic_result>> process_replicate_topic_op_result(
+ss::future<std::vector<topic_result>>
+controller::process_replicate_topic_op_result(
   std::vector<model::topic_namespace> valid_topics,
-  notification_latch& latch,
   model::timeout_clock::time_point timeout,
   ss::future<result<raft::replicate_result>> f) {
     using ret_t = std::vector<topic_result>;
@@ -759,9 +747,16 @@ static ss::future<std::vector<topic_result>> process_replicate_topic_op_result(
         if (result.has_value()) {
             // success case
             // wait for notification
-            return latch.wait_for(result.value().last_offset, timeout)
-              .then([valid_topics = std::move(valid_topics)](errc ec) {
-                  return create_topic_results(valid_topics, ec);
+            return wait(result.value().last_offset, timeout)
+              .then_wrapped([valid_topics = std::move(valid_topics)](
+                              ss::future<> f) {
+                  try {
+                      f.get();
+                      return create_topic_results(valid_topics, errc::success);
+                  } catch (const raft::offset_monitor::wait_aborted&) {
+                      return create_topic_results(
+                        valid_topics, errc::shutting_down);
+                  }
               });
         }
     } catch (...) {
@@ -819,7 +814,7 @@ ss::future<std::vector<topic_result>> controller::do_delete_topics(
         [this, units = std::move(units), timeout, topics = std::move(topics)](
           ss::future<result<raft::replicate_result>> f) mutable {
             return process_replicate_topic_op_result(
-              topics, _notification_latch, timeout, std::move(f));
+              topics, timeout, std::move(f));
         })
       .then([errors = std::move(errors)](ret_t results) {
           // merge results from both sources
@@ -876,10 +871,7 @@ ss::future<std::vector<topic_result>> controller::do_create_topics(
          units = std::move(units),
          timeout](ss::future<result<raft::replicate_result>> f) mutable {
             return process_replicate_topic_op_result(
-              std::move(valid_topics),
-              _notification_latch,
-              timeout,
-              std::move(f));
+              std::move(valid_topics), timeout, std::move(f));
         })
       .then([errors = std::move(errors)](ret_t results) {
           // merge results from both sources
@@ -942,18 +934,15 @@ ss::future<> controller::handle_controller_leadership_notification(
         model::make_memory_record_batch_reader({create_checkpoint_batch()}),
         raft::replicate_options(default_consistency_level))
       .then([this, u = std::move(u)](result<raft::replicate_result> res) {
-          return _notification_latch
-            .wait_for(res.value().last_offset, model::no_timeout)
-            .then([this](errc ec) {
-                if (ec != errc::success) {
-                    vlog(
-                      clusterlog.warn, "Unable to replicate data as a leader");
-                    return;
-                }
+          return wait(res.value().last_offset, model::no_timeout)
+            .then([this] {
                 vlog(clusterlog.info, "Local controller became a leader");
                 create_partition_allocator();
                 _is_leader = true;
                 _leadership_cond.broadcast();
+            })
+            .handle_exception_type([](raft::offset_monitor::wait_aborted) {
+                vlog(clusterlog.warn, "Unable to replicate data as a leader");
             });
       });
 }
