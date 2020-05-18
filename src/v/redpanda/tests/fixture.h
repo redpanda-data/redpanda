@@ -47,7 +47,7 @@ public:
             config.get("data_directory")
               .set_value(config::data_directory_path{.path = data_dir});
 
-            config.get("node_id").set_value(model::node_id(1));
+            config.get("node_id").set_value(1);
         }).get0();
     }
 

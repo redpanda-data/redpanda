@@ -211,7 +211,7 @@ void application::wire_up_services() {
 
     construct_service(
       raft_group_manager,
-      config::shard_local_cfg().node_id(),
+      model::node_id(config::shard_local_cfg().node_id()),
       std::chrono::seconds(10),
       config::shard_local_cfg().raft_heartbeat_interval(),
       std::ref(_raft_connection_cache))
