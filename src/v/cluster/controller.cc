@@ -189,15 +189,11 @@ ss::future<consensus_ptr> controller::start_raft0() {
     return _pm.local().manage(
       make_raft0_ntp_config(),
       controller::group,
-      std::move(brokers),
-      std::nullopt);
+      std::move(brokers));
 }
 
 ss::future<> controller::stop() {
     _gm.local().unregister_leadership_notification(_leader_notify_handle);
-    if (ss::this_shard_id() == controller::shard && _raft0) {
-        _raft0->remove_append_entries_callback();
-    }
     if (ss::this_shard_id() == controller::shard) {
         // in a multi-threaded app this would look like a deadlock waiting
         // to happen, but it works in seastar: broadcast here only makes the
@@ -402,8 +398,7 @@ ss::future<> controller::manage_partition(
       .manage(
         std::move(ntp_cfg),
         raft_group,
-        get_replica_set_brokers(_md_cache.local(), std::move(replicas)),
-        std::nullopt)
+        get_replica_set_brokers(_md_cache.local(), std::move(replicas)))
       .then([path = std::move(path), raft_group](consensus_ptr) {
           vlog(
             clusterlog.info,
