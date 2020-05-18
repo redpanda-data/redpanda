@@ -77,8 +77,9 @@ func executeStatus(
 			" `rpk config set rpk.enable_usage_stats true`.")
 	}
 	t := ui.NewRpkTable(log.StandardLogger().Out)
-	t.SetColWidth(1000)
-	t.SetAutoWrapText(false)
+	t.SetColWidth(80)
+	t.SetAutoWrapText(true)
+	t.SetAutoMergeCells(true)
 	metrics, errs := system.GatherMetrics(fs, timeout, *conf)
 	if len(errs) != 0 {
 		for _, err := range errs {
@@ -243,10 +244,12 @@ func printKafkaInfo(
 			nodeInfo,
 			"Leader: " + formatTopicsAndPartitions(node.leaderParts),
 		})
+		t.Append([]string{"", ""})
 		t.Append([]string{
-			nodeInfo,
+			"",
 			"Replica: " + formatTopicsAndPartitions(node.replicaParts),
 		})
+		t.Append([]string{"", ""})
 	}
 }
 
@@ -288,8 +291,21 @@ func formatTopicsAndPartitions(tps map[string][]int) string {
 }
 
 func formatTopicPartitions(name string, partitions []int) string {
-	strParts := compress(partitions)
-	return fmt.Sprintf("%s: [%s]", name, strings.Join(strParts, ", "))
+	limit := 50
+	partitionsNo := len(partitions)
+	if partitionsNo <= limit {
+		// If the number of partitions is small enough, we can display
+		// them all.
+		strParts := compress(partitions)
+		return fmt.Sprintf("%s: [%s]", name, strings.Join(strParts, ", "))
+	}
+	// When the # of partitions is too big, the ouput becomes unreadable,
+	// so it needs to be truncated.
+	return fmt.Sprintf(
+		"%s: (%d partitions)",
+		name,
+		partitionsNo,
+	)
 }
 
 func compress(is []int) []string {
