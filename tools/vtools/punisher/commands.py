@@ -237,6 +237,26 @@ def _store_detailed_logs(cl, id, failed_log_dir, name_prefix):
     logging.info(f"Node {ip} log stored in {path}")
 
 
+def _weighted_choice(command_list):
+    ranges = []
+    prev = 0
+    for cmd in command_list:
+        # cmd,range tuple
+        ranges.append((cmd.name, range(prev, cmd.weight + prev)))
+        prev += cmd.weight
+    v = random.randint(0, prev)
+    # choice from ranges
+    for cmd_name, r in ranges:
+        if v in r:
+            return cmd_name
+
+
+class PunisherCommand():
+    def __init__(self, name, weight):
+        self.name = name
+        self.weight = weight
+
+
 def _punisher_loop(cl, allow_minority, sleep_time, failed_log_dir):
     cl.update_state()
     verifier = ClusterStateVerifier(cl.up, cl.down)
@@ -249,9 +269,21 @@ def _punisher_loop(cl, allow_minority, sleep_time, failed_log_dir):
             logging.info(
                 f'Cluster state - running: {cl.up}, stopped: {cl.down}')
             cl.print_status()
-            stop_commands = ['nop', 'transient_kill', 'stop', 'kill']
-            start_commands = ['nop', 'start']
-            kafka_commands = ['produce', 'consume']
+            stop_commands = [
+                PunisherCommand('nop', 5),
+                PunisherCommand('transient_kill', 75),
+                PunisherCommand('stop', 10),
+                PunisherCommand('kill', 10),
+            ]
+
+            start_commands = [
+                PunisherCommand('nop', 5),
+                PunisherCommand('start', 95)
+            ]
+            kafka_commands = [
+                PunisherCommand('produce', 50),
+                PunisherCommand('consume', 50)
+            ]
             count = len(cl.executor.nodes)
             majority = (count / 2) + 1
             cmd = 'nop'
@@ -260,14 +292,14 @@ def _punisher_loop(cl, allow_minority, sleep_time, failed_log_dir):
             # always execute kafka command first
             if len(cl.up) > 0:
                 id = random.choice(list(cl.up))
-                cl.execute(random.choice(kafka_commands), id)
+                cl.execute(_weighted_choice(kafka_commands), id)
 
             if can_stop:
                 id = random.choice(list(cl.up))
-                cmd = random.choice(stop_commands)
+                cmd = _weighted_choice(stop_commands)
             else:
                 id = random.choice(list(cl.down))
-                cmd = random.choice(start_commands)
+                cmd = _weighted_choice(start_commands)
 
             if cmd != 'nop':
                 logging.info(f"Executing {cmd} on {id}")
