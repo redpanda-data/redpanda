@@ -76,6 +76,7 @@ public:
             _buf.trim(_used_bytes);
         }
     }
+    void trim(size_t len) { _used_bytes = std::min(len, _used_bytes); }
     void trim_front(size_t pos) {
         // required by input_stream<char> converter
         _buf.trim_front(pos);
