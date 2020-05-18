@@ -3,8 +3,8 @@
 ss::sstring to_hex(bytes_view b) {
     static constexpr std::string_view digits{"0123456789abcdef"};
     ss::sstring out = ss::uninitialized_string(b.size() * 2);
-    unsigned end = b.size();
-    for (unsigned i = 0; i != end; ++i) {
+    const auto end = b.size();
+    for (size_t i = 0; i != end; ++i) {
         uint8_t x = b[i];
         out[2 * i] = digits[x >> uint8_t(4)];
         out[2 * i + 1] = digits[x & uint8_t(0xf)];
