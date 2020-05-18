@@ -26,9 +26,7 @@ ss::future<consensus_ptr> partition_manager::manage(
   raft::group_id group,
   std::vector<model::broker> initial_nodes) {
     return _mngr.manage(std::move(ntp_cfg))
-      .then([this,
-             group,
-             nodes = std::move(initial_nodes)](
+      .then([this, group, nodes = std::move(initial_nodes)](
               storage::log&& log) mutable {
           return _raft_manager.local()
             .start_group(group, std::move(nodes), log)

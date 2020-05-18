@@ -187,9 +187,7 @@ ss::future<consensus_ptr> controller::start_raft0() {
         brokers.push_back(_self);
     }
     return _pm.local().manage(
-      make_raft0_ntp_config(),
-      controller::group,
-      std::move(brokers));
+      make_raft0_ntp_config(), controller::group, std::move(brokers));
 }
 
 ss::future<> controller::stop() {
