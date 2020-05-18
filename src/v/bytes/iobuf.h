@@ -130,6 +130,8 @@ public:
     /// used for iostreams
     void pop_front();
     void trim_front(size_t n);
+    void pop_back();
+    void trim_back(size_t n);
     void clear();
     size_t size_bytes() const;
     bool empty() const;
@@ -292,9 +294,7 @@ inline void iobuf::reserve_memory(size_t reservation) {
     }
     if (available_bytes() > 0) {
         if (_frags.back().is_empty()) {
-            _frags.pop_back_and_dispose([](fragment* f) {
-                delete f; // NOLINT
-            });
+            pop_back();
         } else {
             _frags.back().trim();
         }
@@ -321,6 +321,13 @@ inline void iobuf::pop_front() {
         delete f; // NOLINT
     });
 }
+inline void iobuf::pop_back() {
+    oncore_debug_verify(_verify_shard);
+    _size -= _frags.back().size();
+    _frags.pop_back_and_dispose([](fragment* f) {
+        delete f; // NOLINT
+    });
+}
 inline void iobuf::trim_front(size_t n) {
     oncore_debug_verify(_verify_shard);
     while (!_frags.empty()) {
@@ -332,6 +339,19 @@ inline void iobuf::trim_front(size_t n) {
         }
         n -= f.size();
         pop_front();
+    }
+}
+inline void iobuf::trim_back(size_t n) {
+    oncore_debug_verify(_verify_shard);
+    while (!_frags.empty()) {
+        auto& f = _frags.back();
+        if (f.size() > n) {
+            _size -= n;
+            f.trim(n);
+            return;
+        }
+        n -= f.size();
+        pop_back();
     }
 }
 
