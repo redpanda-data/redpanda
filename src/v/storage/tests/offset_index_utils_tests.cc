@@ -1,24 +1,21 @@
+#include "bytes/iobuf_file.h"
 #include "random/generators.h"
 #include "storage/segment_index.h"
 #include "test_utils/fixture.h"
 #include "utils/file_io.h"
 
 #include <seastar/core/seastar.hh>
+#include <seastar/core/shared_ptr.hh>
 
 #include <boost/test/tools/old/interface.hpp>
 
 struct context {
     context(model::offset base = model::offset(0)) {
-        auto name = "test." + random_generators::gen_alphanum_string(20);
-        const auto flags = ss::open_flags::create | ss::open_flags::rw
-                           | ss::open_flags::truncate;
-        auto f = ss::open_file_dma(name, flags).get0();
         _base_offset = base;
-
         // index
         _idx = std::make_unique<storage::segment_index>(
-          name,
-          f,
+          "In memoyr iobuf",
+          ss::file(ss::make_shared(iobuf_file(_data))),
           _base_offset,
           storage::segment_index::default_data_buffer_step);
     }
@@ -41,6 +38,7 @@ struct context {
     model::offset _base_offset;
     model::record_batch_header _base_hdr;
     storage::segment_index_ptr _idx;
+    iobuf _data;
 };
 FIXTURE_TEST(index_round_trip, context) {
     BOOST_CHECK(true);
@@ -52,12 +50,9 @@ FIXTURE_TEST(index_round_trip, context) {
     }
     info("About to flush index");
     _idx->flush().get0();
-    info("re-reading the underlying file again");
-    auto buf = read_fully_tmpbuf(_idx->filename()).get0();
-    info("serializing from bytes into mem");
-    iobuf b;
-    b.append(std::move(buf));
-    auto raw_idx = storage::index_state::hydrate_from_buffer(std::move(b));
+    info("{} - serializing from bytes into mem: buffer{}", _idx, _data);
+    auto raw_idx = storage::index_state::hydrate_from_buffer(
+      _data.share(0, _data.size_bytes()));
     BOOST_REQUIRE(raw_idx != std::nullopt);
     info("verifying tracking info: {}", *raw_idx);
     BOOST_REQUIRE_EQUAL(raw_idx->max_offset(), 1023);
