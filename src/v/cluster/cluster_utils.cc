@@ -150,5 +150,16 @@ make_deletion_batches(const std::vector<model::topic_namespace>& topics) {
 
     return model::make_memory_record_batch_reader(std::move(batches));
 }
+model::broker make_self_broker(const config::configuration& cfg) {
+    auto kafka_addr = cfg.advertised_kafka_api();
+    auto rpc_addr = cfg.advertised_rpc_api();
+    return model::broker(
+      model::node_id(cfg.node_id),
+      kafka_addr,
+      rpc_addr,
+      cfg.rack,
+      // FIXME: Fill broker properties with all the information
+      model::broker_properties{.cores = ss::smp::count});
+}
 
 } // namespace cluster
