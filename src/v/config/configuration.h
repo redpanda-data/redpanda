@@ -11,6 +11,11 @@
 
 namespace config {
 
+/// Redpanda configuration
+///
+/// All application modules depend on configuration. The configuration module
+/// can not depend on any other module to prevent cyclic dependencies.
+
 struct configuration final : public config_store {
     // WAL
     property<data_directory_path> data_directory;
