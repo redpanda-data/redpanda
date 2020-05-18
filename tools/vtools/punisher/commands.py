@@ -56,25 +56,31 @@ class RemoteExecutor:
 
     def __enter__(self):
         for [id, n] in self.nodes.items():
-            client = paramiko.SSHClient()
-            client.load_system_host_keys()
-            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            k = paramiko.RSAKey.from_private_key_file(self.host_key)
-            client.connect(n['ip'], pkey=k, username=n['ansible_user'])
-            self.clients[id] = client
+            self.clients[id] = self._create_node_ssh_client(n)
         return self
 
     def __exit__(self, type, value, traceback):
         for c in self.clients.values():
             c.close()
 
+    def _create_node_ssh_client(self, node):
+        client = paramiko.SSHClient()
+        client.load_system_host_keys()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        k = paramiko.RSAKey.from_private_key_file(self.host_key)
+        client.connect(node['ip'], pkey=k, username=node['ansible_user'])
+        return client
+
     def execute_on_node(self, id, func):
+        client = self.clients[id]
+        if not client.get_transport().is_active():
+            self.clients[id] = self._create_node_ssh_client(self.nodes[id])
         return func(self.nodes[id], self.clients[id], self.kafka_ips)
 
     def execute_on_all(self, func):
         results = {}
         for [id, n] in self.nodes.items():
-            results[id] = func(n, self.clients[id], self.kafka_ips)
+            results[id] = self.execute_on_node(id, func)
         return results
 
 
@@ -147,6 +153,10 @@ def _start(node, client, ips):
     _remote_execute(client, 'sudo systemctl start redpanda')
 
 
+def _reboot(node, client, ips):
+    _remote_execute(client, 'sudo systemctl reboot')
+
+
 def _get_logs(lines):
     def get(node, client, ips):
         stdin, stdout, strerr = client.exec_command(
@@ -194,6 +204,8 @@ class RemoteCluster:
             return self.executor.execute_on_node(id, _kafka_produce_topic)
         if command == 'consume':
             return self.executor.execute_on_node(id, _kafka_consume_topic)
+        if command == 'reboot':
+            return self.executor.execute_on_node(id, _reboot)
 
     def print_status(self):
         for [id, node] in self.executor.nodes.items():
@@ -209,7 +221,7 @@ class ClusterStateVerifier():
         self.down = set(down)
 
     def execute(self, command, id):
-        if command == 'transient_kill':
+        if command == 'transient_kill' or command == 'reboot':
             return
         if command == 'stop' or command == 'kill':
             self.down.add(id)
@@ -270,10 +282,11 @@ def _punisher_loop(cl, allow_minority, sleep_time, failed_log_dir):
                 f'Cluster state - running: {cl.up}, stopped: {cl.down}')
             cl.print_status()
             stop_commands = [
-                PunisherCommand('nop', 5),
+                PunisherCommand('nop', 3),
                 PunisherCommand('transient_kill', 75),
                 PunisherCommand('stop', 10),
                 PunisherCommand('kill', 10),
+                PunisherCommand('reboot', 2),
             ]
 
             start_commands = [
