@@ -179,9 +179,8 @@ replicate_entries_stm::apply(ss::semaphore_units<> u) {
           auto appended_offset = append_result.value().last_offset;
           auto appended_term = append_result.value().last_term;
 
-          auto stop_cond = [this, appended_offset, appended_term] {
-              return _ptr->committed_offset() >= appended_offset
-                     || appended_term != _ptr->term();
+          auto stop_cond = [this, appended_offset] {
+              return _ptr->committed_offset() >= appended_offset;
           };
           return _ptr->_commit_index_updated.wait(stop_cond).then(
             [this, appended_offset, appended_term] {
@@ -205,7 +204,7 @@ result<replicate_result> replicate_entries_stm::process_result(
 
     // if term has changed we have to check if entry was
     // replicated
-    if (appended_term != _ptr->term()) {
+    if (unlikely(appended_term != _ptr->term())) {
         if (_ptr->_log.get_term(appended_offset) != appended_term) {
             return ret_t(errc::replicated_entry_truncated);
         }
