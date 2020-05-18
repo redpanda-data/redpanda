@@ -350,3 +350,18 @@ ss::future<iobuf> read_iobuf_exactly(ss::input_stream<char>& in, size_t n);
 ss::scattered_message<char> iobuf_as_scattered(iobuf b);
 
 ss::future<> write_iobuf_to_output_stream(iobuf, ss::output_stream<char>&);
+
+namespace std {
+template<>
+struct hash<::iobuf> {
+    size_t operator()(const ::iobuf& b) const {
+        size_t h = 0;
+        for (auto& f : b) {
+            boost::hash_combine(
+              h, std::hash<std::string_view>{}({f.get(), f.size()}));
+        }
+        return h;
+    }
+};
+
+} // namespace std
