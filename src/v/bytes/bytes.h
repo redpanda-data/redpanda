@@ -8,7 +8,13 @@
 #include <cstdint>
 #include <iosfwd>
 
-using bytes = ss::basic_sstring<int8_t, uint32_t, 31, false>;
+using bytes = ss::basic_sstring<
+  int8_t,   // Must be different from char to not leak to std::string_view
+  uint32_t, // size type - 4 bytes - 4GB max
+  31,       // short string optimization size
+  false     // not null terminated
+  >;
+
 using bytes_view = std::basic_string_view<int8_t>;
 using bytes_opt = std::optional<bytes>;
 
