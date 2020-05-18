@@ -2,7 +2,6 @@
 
 #include "cluster/controller_service.h"
 #include "cluster/metadata_cache.h"
-#include "cluster/notification_latch.h"
 #include "cluster/partition_allocator.h"
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
@@ -162,6 +161,11 @@ private:
     ss::future<>
       delete_partitition(model::topic_namespace, model::partition_metadata);
 
+    ss::future<std::vector<topic_result>> process_replicate_topic_op_result(
+      std::vector<model::topic_namespace>,
+      model::timeout_clock::time_point,
+      ss::future<result<raft::replicate_result>>);
+
     model::broker _self;
     std::vector<config::seed_server> _seed_servers;
     ss::sstring _data_directory;
@@ -216,7 +220,6 @@ private:
     ss::semaphore _recovery_semaphore{0};
     model::offset _raft0_cfg_offset;
     cluster::notification_id_type _leader_notify_handle;
-    notification_latch _notification_latch;
     ss::abort_source _as;
     static constexpr raft::consistency_level default_consistency_level
       = raft::consistency_level::quorum_ack;
