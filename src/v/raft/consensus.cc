@@ -31,8 +31,7 @@ consensus::consensus(
   ss::io_priority_class io_priority,
   model::timeout_clock::duration disk_timeout,
   consensus_client_protocol client,
-  consensus::leader_cb_t cb,
-  std::optional<append_entries_cb_t>&& append_callback)
+  consensus::leader_cb_t cb)
   : _self(std::move(nid))
   , _group(group)
   , _jit(std::move(jit))
@@ -44,7 +43,6 @@ consensus::consensus(
   , _conf(std::move(initial_cfg))
   , _fstats({})
   , _batcher(this)
-  , _append_entries_notification(std::move(append_callback))
   , _event_manager(this)
   , _ctxlog(_self, group)
   , _replicate_append_timeout(
@@ -759,26 +757,9 @@ consensus::do_append_entries(append_entries_request&& r) {
 }
 
 ss::future<> consensus::notify_entries_commited(
-  model::offset start_offset, model::offset end_offset) {
-    auto fut = ss::make_ready_future<>();
-    if (_append_entries_notification) {
-        vlog(
-          _ctxlog.debug,
-          "Append entries notification range [{},{}]",
-          start_offset,
-          end_offset);
-        fut = fut.then([this, start_offset, end_offset]() {
-            return _log
-              .make_reader(storage::log_reader_config(
-                start_offset, end_offset, _io_priority))
-              .then([this](model::record_batch_reader reader) {
-                  _append_entries_notification.value()(std::move(reader));
-              });
-        });
-    }
+  [[maybe_unused]] model::offset start_offset, model::offset end_offset) {
     auto cfg_reader_start_offset = details::next_offset(
       _last_seen_config_offset);
-    fut = fut.then([this, cfg_reader_start_offset, end_offset] {
         vlog(
           _ctxlog.trace,
           "Process configurations range [{},{}]",
@@ -796,8 +777,6 @@ ss::future<> consensus::notify_entries_commited(
           .then([this, end_offset](model::record_batch_reader reader) {
               return process_configurations(std::move(reader), end_offset);
           });
-    });
-    return fut;
 }
 
 ss::future<> consensus::process_configurations(

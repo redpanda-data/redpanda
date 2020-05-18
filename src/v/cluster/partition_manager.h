@@ -49,8 +49,7 @@ public:
     ss::future<consensus_ptr> manage(
       storage::ntp_config,
       raft::group_id,
-      std::vector<model::broker>,
-      std::optional<raft::consensus::append_entries_cb_t>);
+      std::vector<model::broker>);
 
     ss::future<> remove(const model::ntp& ntp);
 
