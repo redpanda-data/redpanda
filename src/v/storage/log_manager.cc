@@ -400,6 +400,11 @@ ss::future<> log_manager::remove(model::ntp ntp) {
         // 'ss::shared_ptr<>' make a copy
         storage::log lg = handle.mapped();
         vlog(stlog.info, "Removing: {}", lg);
+        // NOTE: it is ok to *not* externally synchronize the log here
+        // because remove, takes a write lock on each individual segments
+        // waiting for all of them to be closed before actually removing the
+        // underlying log. If there is a background operation like compaction
+        // or so, it will block correctly.
         return lg.remove().finally([lg] {});
     });
 }
