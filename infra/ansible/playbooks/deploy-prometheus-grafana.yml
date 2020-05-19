@@ -2,9 +2,12 @@
   roles:
   - cloudalchemy.prometheus
   vars:
-    prometheus_targets:
-      node:
-      - targets: "{{ groups['redpanda'] | map('extract', hostvars, ['ansible_default_ipv4','address']) | map('regex_replace', '^(.*)$','\\1:9644') | list  }}"
+    prometheus_scrape_configs:
+      - job_name: "redpanda"
+        metrics_path: "/metrics"
+        static_configs:
+          - targets: "{{ groups['redpanda'] | map('extract', hostvars, ['ansible_default_ipv4','address']) | map('regex_replace', '^(.*)$','\\1:9644') | list  }}"
+
 - hosts: monitor
   roles:
   - role: cloudalchemy.grafana
