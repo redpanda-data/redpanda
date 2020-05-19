@@ -164,7 +164,7 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
    "targets": [
     {
      "refId": "",
-     "expr": "count(up{job=\"node\"})",
+     "expr": "count(up{job=\"redpanda\"})",
      "intervalFactor": 1,
      "step": 40,
      "legendFormat": "Nodes Up"
