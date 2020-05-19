@@ -1,28 +1,20 @@
 package graf
 
-import (
-	"encoding/json"
-	"math/rand"
-)
+import "encoding/json"
 
-const panelHeight = "250px"
+const panelHeight = "8"
 
-func NewRow(title string, panels []Panel, collapse bool) Row {
-	return Row{
-		Title:     title,
-		ShowTitle: true,
-		Panels:    panels,
-		Editable:  true,
-		Height:    panelHeight,
-		Collapse:  collapse,
-	}
+var id uint = 0
+
+func nextID() uint {
+	id++
+	return id
 }
 
 type Dashboard struct {
 	UID           string      `json:"uid,omitempty"`
 	Title         string      `json:"title,omitempty"`
 	Templating    Templating  `json:"templating"`
-	Rows          []Row       `json:"rows"`
 	Panels        []Panel     `json:"panels"`
 	Editable      bool        `json:"editable"`
 	Timezone      string      `json:"timezone"`
@@ -34,18 +26,10 @@ type Dashboard struct {
 	SchemaVersion uint        `json:"schemaVersion"`
 }
 
-type Row struct {
-	Title     string  `json:"title"`
-	ShowTitle bool    `json:"showTitle"`
-	Collapse  bool    `json:"collapse"`
-	Editable  bool    `json:"editable"`
-	Height    string  `json:"height"`
-	Panels    []Panel `json:"panels"`
-}
-
 type Panel interface {
 	json.Marshaler
 	Type() string
+	GetGridPos() *GridPos
 }
 type Templating struct {
 	List []TemplateVar `json:"list"`
@@ -90,22 +74,28 @@ type GridPos struct {
 }
 
 type BasePanel struct {
-	ID         uint    `json:"id"`
-	Title      string  `json:"title"`
-	Datasource string  `json:"datasource,omitempty"`
-	Editable   bool    `json:"editable"`
-	GridPos    GridPos `json:"gridPos"`
-	Height     string  `json:"height,omitempty"`
-	Links      []Link  `json:"links"`
-	Renderer   string  `json:"renderer,omitempty"`
-	Span       float32 `json:"span,omitempty"`
+	ID          uint    `json:"id"`
+	Title       string  `json:"title"`
+	Datasource  string  `json:"datasource,omitempty"`
+	Editable    bool    `json:"editable"`
+	GridPos     GridPos `json:"gridPos"`
+	Transparent bool    `json:"transparent"`
+	Height      string  `json:"height,omitempty"`
+	Links       []Link  `json:"links"`
+	Renderer    string  `json:"renderer,omitempty"`
+	Span        float32 `json:"span"`
+	Error       bool    `json:"error"`
+}
+
+func (p *BasePanel) GetGridPos() *GridPos {
+	gridPos := p.GridPos
+	return &gridPos
 }
 
 type Target struct {
 	RefID          string `json:"refId"`
 	Expr           string `json:"expr,omitempty"`
 	IntervalFactor int    `json:"intervalFactor,omitempty"`
-	Interval       string `json:"interval"`
 	Step           int    `json:"step,omitempty"`
 	LegendFormat   string `json:"legendFormat"`
 	Instant        bool   `json:"instant,omitempty"`
@@ -203,8 +193,4 @@ type Annotations struct {
 }
 
 type Annotation struct {
-}
-
-func genID() uint {
-	return uint(rand.Uint64())
 }

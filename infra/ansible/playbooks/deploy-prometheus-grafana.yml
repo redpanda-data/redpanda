@@ -9,6 +9,7 @@
   roles:
   - role: cloudalchemy.grafana
   vars:
+    grafana_version: 6.7.3
     grafana_security:
       admin_user: admin
       admin_password: enter_your_secure_password

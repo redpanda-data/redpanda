@@ -3,7 +3,7 @@ package graf
 import "encoding/json"
 
 type SingleStatPanel struct {
-	BasePanel
+	*BasePanel
 	Targets         []Target      `json:"targets"`
 	Format          string        `json:"format"`
 	Prefix          string        `json:"prefix"`
@@ -33,29 +33,34 @@ type SingleStatPanel struct {
 	TableColumn     string        `json:"tableColumn"`
 }
 
-func (SingleStatPanel) Type() string {
+func (*SingleStatPanel) Type() string {
 	return "singlestat"
 }
 
-func (p SingleStatPanel) MarshalJSON() ([]byte, error) {
+func (p *SingleStatPanel) GetGridPos() *GridPos {
+	return &p.BasePanel.GridPos
+}
+
+func (p *SingleStatPanel) MarshalJSON() ([]byte, error) {
 	type PanelAlias SingleStatPanel
 	typedPanel := struct {
 		Type string `json:"type"`
 		PanelAlias
 	}{
 		p.Type(),
-		(PanelAlias)(p),
+		(PanelAlias)(*p),
 	}
 	return json.Marshal(typedPanel)
 }
 
-func NewSingleStatPanel(title string) SingleStatPanel {
-	return SingleStatPanel{
-		BasePanel: BasePanel{
-			ID:       genID(),
+func NewSingleStatPanel(title string) *SingleStatPanel {
+	return &SingleStatPanel{
+		BasePanel: &BasePanel{
+			ID:       nextID(),
 			Title:    title,
 			Editable: true,
 			GridPos:  GridPos{W: 8, H: 8},
+			Span:     1,
 		},
 		Format:        "none",
 		MaxDataPoints: 100,
