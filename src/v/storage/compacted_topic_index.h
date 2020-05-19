@@ -10,10 +10,12 @@
 namespace storage {
 
 /// format on file is:
-/// vint + key_bytes
-/// vint + key_bytes
-/// vint + key_bytes
-//  ...
+/// key_size | key    | offset
+/// -------- | ------ | ------
+/// vint     | []byte | vint
+/// vint     | []byte | vint
+/// vint     | []byte | vint
+/// ...
 /// footer
 class compacted_topic_index {
 public:
