@@ -4,7 +4,6 @@ v_cc_library(
     json.cc
   DEPS
     Seastar::seastar
-    v::model
 )
 
 add_subdirectory(tests)

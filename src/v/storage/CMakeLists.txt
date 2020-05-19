@@ -28,6 +28,7 @@ v_cc_library(
     Seastar::seastar
     v::bytes
     v::config
+    v::model
     v::rphashing
     v::finjector
     v::syschecks

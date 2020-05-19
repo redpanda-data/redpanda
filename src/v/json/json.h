@@ -1,7 +1,8 @@
 #pragma once
 
 #include "likely.h"
-#include "model/metadata.h"
+#include "utils/named_type.h"
+#include "utils/unresolved_address.h"
 
 #include <fmt/core.h>
 

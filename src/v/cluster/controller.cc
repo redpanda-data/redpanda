@@ -40,7 +40,7 @@ controller::controller(
   ss::sharded<shard_table>& st,
   ss::sharded<metadata_cache>& md_cache,
   ss::sharded<rpc::connection_cache>& connection_cache)
-  : _self(config::make_self_broker(config::shard_local_cfg()))
+  : _self(make_self_broker(config::shard_local_cfg()))
   , _seed_servers(config::shard_local_cfg().seed_servers())
   , _data_directory(config::shard_local_cfg().data_directory().as_sstring())
   , _gm(gm)
