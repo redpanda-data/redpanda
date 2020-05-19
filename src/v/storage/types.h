@@ -7,6 +7,7 @@
 #include "model/timestamp.h"
 #include "tristate.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/file.hh> //io_priority
 #include <seastar/util/bool_class.hh>
 
@@ -201,16 +202,20 @@ struct compaction_config {
     explicit compaction_config(
       model::timestamp upper,
       std::optional<size_t> max_bytes_in_log,
-      ss::io_priority_class p)
+      ss::io_priority_class p,
+      ss::abort_source& as)
       : eviction_time(upper)
       , max_bytes(max_bytes_in_log)
-      , iopc(p) {}
+      , iopc(p)
+      , as(as) {}
     // remove everything below eviction time
     model::timestamp eviction_time;
     // remove one segment if log is > max_bytes
     std::optional<size_t> max_bytes;
     // priority for all IO in compaction
     ss::io_priority_class iopc;
+    // abort source for compaction task
+    ss::abort_source& as;
 };
 
 } // namespace storage

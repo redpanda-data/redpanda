@@ -306,9 +306,10 @@ FIXTURE_TEST(
     append_random_batches(log, 10, model::term_id(0));
     log.flush().get0();
     // garbadge collect first append series
+    ss::abort_source as;
     log
       .compact(
-        compaction_config(ts, std::nullopt, ss::default_priority_class()))
+        compaction_config(ts, std::nullopt, ss::default_priority_class(), as))
       .get0();
     // truncate at 0, offset earlier then the one present in log
     log

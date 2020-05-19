@@ -9,6 +9,7 @@
 #include "units.h"
 #include "vassert.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/sstring.hh>
 
 #include <optional>
@@ -286,6 +287,7 @@ private:
     log_manager _mgr;
     std::optional<log> _log;
     std::vector<std::vector<model::record_batch>> _batches;
+    ss::abort_source _abort_source;
 };
 
 } // namespace storage
