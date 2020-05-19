@@ -32,11 +32,7 @@ public:
         impl& operator=(const impl&) = delete;
         virtual ~impl() noexcept = default;
 
-        virtual ss::future<> gc(
-          model::timestamp collection_upper_bound,
-          std::optional<size_t> max_partition_retention_size)
-          = 0;
-
+        virtual ss::future<> compact(compaction_config) = 0;
         virtual ss::future<> truncate(truncate_config) = 0;
         virtual ss::future<> truncate_prefix(truncate_prefix_config) = 0;
 
@@ -106,14 +102,7 @@ public:
         return _impl->timequery(cfg);
     }
 
-    /**
-     * garbage collection method for this ntp
-     */
-    ss::future<> gc(
-      model::timestamp collection_upper_bound,
-      std::optional<size_t> max_partition_retention_size) {
-        return _impl->gc(collection_upper_bound, max_partition_retention_size);
-    }
+    ss::future<> compact(compaction_config cfg) { return _impl->compact(cfg); }
 
     std::ostream& print(std::ostream& o) const { return _impl->print(o); }
 

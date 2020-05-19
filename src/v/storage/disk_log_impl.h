@@ -30,10 +30,7 @@ public:
     ss::future<> flush() final;
     ss::future<> truncate(truncate_config) final;
     ss::future<> truncate_prefix(truncate_prefix_config) final;
-
-    ss::future<> gc(
-      model::timestamp collection_upper_bound,
-      std::optional<size_t> max_partition_retention_size) final;
+    ss::future<> compact(compaction_config) final;
 
     ss::future<model::record_batch_reader> make_reader(log_reader_config) final;
     ss::future<model::record_batch_reader> make_reader(timequery_config);
@@ -60,6 +57,10 @@ private:
     friend class disk_log_appender; // for multi-term appends
     friend class disk_log_builder;  // for tests
     friend std::ostream& operator<<(std::ostream& o, const disk_log_impl& d);
+
+    ss::future<> gc(
+      model::timestamp collection_upper_bound,
+      std::optional<size_t> max_partition_retention_size);
 
     ss::future<> remove_empty_segments();
 

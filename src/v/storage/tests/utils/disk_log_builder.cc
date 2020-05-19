@@ -1,6 +1,8 @@
 #include "storage/tests/utils/disk_log_builder.h"
 
 #include "storage/types.h"
+
+#include <seastar/core/file.hh>
 // util functions to be moved from storage_fixture
 // make_ntp, make_dir etc
 namespace storage {
@@ -58,7 +60,10 @@ ss::future<> disk_log_builder::truncate(model::offset o) {
 ss::future<> disk_log_builder::gc(
   model::timestamp collection_upper_bound,
   std::optional<size_t> max_partition_retention_size) {
-    return get_log().gc(collection_upper_bound, max_partition_retention_size);
+    return get_log().compact(compaction_config(
+      collection_upper_bound,
+      max_partition_retention_size,
+      ss::default_priority_class()));
 }
 
 ss::future<> disk_log_builder::stop() { return _mgr.stop(); }

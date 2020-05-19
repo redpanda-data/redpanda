@@ -5,6 +5,7 @@
 #include "seastarx.h"
 #include "storage/batch_cache.h"
 #include "storage/log.h"
+#include "storage/log_housekeeping_meta.h"
 #include "storage/segment.h"
 #include "storage/version.h"
 #include "units.h"
@@ -160,13 +161,13 @@ public:
     /// Returns the log for the specified ntp.
     std::optional<log> get(const model::ntp& ntp) {
         if (auto it = _logs.find(ntp); it != _logs.end()) {
-            return it->second;
+            return it->second.handle;
         }
         return std::nullopt;
     }
 
 private:
-    using logs_type = absl::flat_hash_map<model::ntp, log>;
+    using logs_type = absl::flat_hash_map<model::ntp, log_housekeeping_meta>;
 
     ss::future<log> do_manage(ntp_config);
     ss::future<ss::lw_shared_ptr<segment>> do_make_log_segment(
