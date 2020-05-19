@@ -18,7 +18,8 @@ spill_key_index::spill_key_index(
   , _max_mem(max_memory) {}
 
 ss::future<> spill_key_index::index(const iobuf& key, model::offset o) {
-    if (_midx.find(key) != _midx.end()) {
+    if (auto it = _midx.find(key); it != _midx.end()) {
+        it->second = std::max(it->second, o);
         return ss::now();
     }
     // not found
