@@ -56,25 +56,31 @@ class RemoteExecutor:
 
     def __enter__(self):
         for [id, n] in self.nodes.items():
-            client = paramiko.SSHClient()
-            client.load_system_host_keys()
-            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            k = paramiko.RSAKey.from_private_key_file(self.host_key)
-            client.connect(n['ip'], pkey=k, username=n['ansible_user'])
-            self.clients[id] = client
+            self.clients[id] = self._create_node_ssh_client(n)
         return self
 
     def __exit__(self, type, value, traceback):
         for c in self.clients.values():
             c.close()
 
+    def _create_node_ssh_client(self, node):
+        client = paramiko.SSHClient()
+        client.load_system_host_keys()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        k = paramiko.RSAKey.from_private_key_file(self.host_key)
+        client.connect(node['ip'], pkey=k, username=node['ansible_user'])
+        return client
+
     def execute_on_node(self, id, func):
+        client = self.clients[id]
+        if not client.get_transport().is_active():
+            self.clients[id] = self._create_node_ssh_client(self.nodes[id])
         return func(self.nodes[id], self.clients[id], self.kafka_ips)
 
     def execute_on_all(self, func):
         results = {}
         for [id, n] in self.nodes.items():
-            results[id] = func(n, self.clients[id], self.kafka_ips)
+            results[id] = self.execute_on_node(id, func)
         return results
 
 
@@ -147,6 +153,10 @@ def _start(node, client, ips):
     _remote_execute(client, 'sudo systemctl start redpanda')
 
 
+def _reboot(node, client, ips):
+    _remote_execute(client, 'sudo systemctl reboot')
+
+
 def _get_logs(lines):
     def get(node, client, ips):
         stdin, stdout, strerr = client.exec_command(
@@ -194,6 +204,8 @@ class RemoteCluster:
             return self.executor.execute_on_node(id, _kafka_produce_topic)
         if command == 'consume':
             return self.executor.execute_on_node(id, _kafka_consume_topic)
+        if command == 'reboot':
+            return self.executor.execute_on_node(id, _reboot)
 
     def print_status(self):
         for [id, node] in self.executor.nodes.items():
@@ -209,7 +221,7 @@ class ClusterStateVerifier():
         self.down = set(down)
 
     def execute(self, command, id):
-        if command == 'transient_kill':
+        if command == 'transient_kill' or command == 'reboot':
             return
         if command == 'stop' or command == 'kill':
             self.down.add(id)
@@ -237,6 +249,26 @@ def _store_detailed_logs(cl, id, failed_log_dir, name_prefix):
     logging.info(f"Node {ip} log stored in {path}")
 
 
+def _weighted_choice(command_list):
+    ranges = []
+    prev = 0
+    for cmd in command_list:
+        # cmd,range tuple
+        ranges.append((cmd.name, range(prev, cmd.weight + prev)))
+        prev += cmd.weight
+    v = random.randint(0, prev)
+    # choice from ranges
+    for cmd_name, r in ranges:
+        if v in r:
+            return cmd_name
+
+
+class PunisherCommand():
+    def __init__(self, name, weight):
+        self.name = name
+        self.weight = weight
+
+
 def _punisher_loop(cl, allow_minority, sleep_time, failed_log_dir):
     cl.update_state()
     verifier = ClusterStateVerifier(cl.up, cl.down)
@@ -249,9 +281,22 @@ def _punisher_loop(cl, allow_minority, sleep_time, failed_log_dir):
             logging.info(
                 f'Cluster state - running: {cl.up}, stopped: {cl.down}')
             cl.print_status()
-            stop_commands = ['nop', 'transient_kill', 'stop', 'kill']
-            start_commands = ['nop', 'start']
-            kafka_commands = ['produce', 'consume']
+            stop_commands = [
+                PunisherCommand('nop', 3),
+                PunisherCommand('transient_kill', 75),
+                PunisherCommand('stop', 10),
+                PunisherCommand('kill', 10),
+                PunisherCommand('reboot', 2),
+            ]
+
+            start_commands = [
+                PunisherCommand('nop', 5),
+                PunisherCommand('start', 95)
+            ]
+            kafka_commands = [
+                PunisherCommand('produce', 50),
+                PunisherCommand('consume', 50)
+            ]
             count = len(cl.executor.nodes)
             majority = (count / 2) + 1
             cmd = 'nop'
@@ -260,14 +305,14 @@ def _punisher_loop(cl, allow_minority, sleep_time, failed_log_dir):
             # always execute kafka command first
             if len(cl.up) > 0:
                 id = random.choice(list(cl.up))
-                cl.execute(random.choice(kafka_commands), id)
+                cl.execute(_weighted_choice(kafka_commands), id)
 
             if can_stop:
                 id = random.choice(list(cl.up))
-                cmd = random.choice(stop_commands)
+                cmd = _weighted_choice(stop_commands)
             else:
                 id = random.choice(list(cl.down))
-                cmd = random.choice(start_commands)
+                cmd = _weighted_choice(start_commands)
 
             if cmd != 'nop':
                 logging.info(f"Executing {cmd} on {id}")
