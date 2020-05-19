@@ -35,6 +35,7 @@ ss::future<> spill_key_index::index(const iobuf& key, model::offset o) {
                    0, _midx.size() - 1);
                  std::advance(mit, n);
                  auto node = _midx.extract(mit);
+                 _mem_usage -= node.key().size();
                  vlog(stlog.trace, "evicting key: {}", node.key());
                  return ss::do_with(
                    std::move(node.key()),
@@ -45,6 +46,7 @@ ss::future<> spill_key_index::index(const iobuf& key, model::offset o) {
              })
       .then([this, &key, o] {
           // convert iobuf to key
+          _mem_usage += key.size_bytes();
           _midx.emplace(iobuf_to_bytes(key), o);
       });
 }
