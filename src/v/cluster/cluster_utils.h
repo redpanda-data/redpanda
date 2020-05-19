@@ -2,6 +2,7 @@
 #include "cluster/controller_service.h"
 #include "cluster/errc.h"
 #include "cluster/types.h"
+#include "config/configuration.h"
 #include "outcome_future_utils.h"
 #include "rpc/connection_cache.h"
 
@@ -69,4 +70,7 @@ auto with_client(
 
 model::record_batch_reader
 make_deletion_batches(const std::vector<model::topic_namespace>&);
+
+/// Creates current broker instance using its configuration.
+model::broker make_self_broker(const config::configuration& cfg);
 } // namespace cluster

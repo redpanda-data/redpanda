@@ -92,7 +92,7 @@ public:
         config::data_directory_path data_dir_path{
           .path = std::filesystem::path(_base_dir)};
         set_configuration("data_directory", data_dir_path);
-        set_configuration("node_id", _current_node.id());
+        set_configuration("node_id", _current_node.id()());
         set_configuration("kafka_api", _current_node.kafka_api_address());
         set_configuration("rpc_server", _current_node.rpc_address());
         set_configuration("seed_servers", _seeds);
@@ -101,7 +101,7 @@ public:
         using namespace std::chrono_literals;
         _gm
           .start(
-            config::shard_local_cfg().node_id(),
+            model::node_id(config::shard_local_cfg().node_id()),
             model::timeout_clock::duration(2s),
             config::shard_local_cfg().raft_heartbeat_interval(),
             std::ref(_cli_cache))

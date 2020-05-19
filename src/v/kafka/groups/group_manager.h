@@ -1,4 +1,5 @@
 #pragma once
+#include "cluster/cluster_utils.h"
 #include "cluster/namespace.h"
 #include "cluster/partition_manager.h"
 #include "config/configuration.h"
@@ -103,7 +104,7 @@ public:
       : _gm(gm)
       , _pm(pm)
       , _conf(conf)
-      , _self(config::make_self_broker(config::shard_local_cfg())) {}
+      , _self(cluster::make_self_broker(config::shard_local_cfg())) {}
 
     ss::future<> start();
     ss::future<> stop();
