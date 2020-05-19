@@ -196,4 +196,21 @@ struct ntp_config {
 
     friend std::ostream& operator<<(std::ostream&, const ntp_config&);
 };
+
+struct compaction_config {
+    explicit compaction_config(
+      model::timestamp upper,
+      std::optional<size_t> max_bytes_in_log,
+      ss::io_priority_class p)
+      : eviction_time(upper)
+      , max_bytes(max_bytes_in_log)
+      , iopc(p) {}
+    // remove everything below eviction time
+    model::timestamp eviction_time;
+    // remove one segment if log is > max_bytes
+    std::optional<size_t> max_bytes;
+    // priority for all IO in compaction
+    ss::io_priority_class iopc;
+};
+
 } // namespace storage

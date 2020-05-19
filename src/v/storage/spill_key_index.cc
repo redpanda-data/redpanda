@@ -18,7 +18,8 @@ spill_key_index::spill_key_index(
   , _max_mem(max_memory) {}
 
 ss::future<> spill_key_index::index(const iobuf& key, model::offset o) {
-    if (_midx.find(key) != _midx.end()) {
+    if (auto it = _midx.find(key); it != _midx.end()) {
+        it->second = std::max(it->second, o);
         return ss::now();
     }
     // not found
@@ -35,6 +36,7 @@ ss::future<> spill_key_index::index(const iobuf& key, model::offset o) {
                    0, _midx.size() - 1);
                  std::advance(mit, n);
                  auto node = _midx.extract(mit);
+                 _mem_usage -= node.key().size();
                  vlog(stlog.trace, "evicting key: {}", node.key());
                  return ss::do_with(
                    std::move(node.key()),
@@ -45,6 +47,7 @@ ss::future<> spill_key_index::index(const iobuf& key, model::offset o) {
              })
       .then([this, &key, o] {
           // convert iobuf to key
+          _mem_usage += key.size_bytes();
           _midx.emplace(iobuf_to_bytes(key), o);
       });
 }
