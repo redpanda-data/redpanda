@@ -9,11 +9,12 @@ import (
 )
 
 func TestSingleStatPanelType(t *testing.T) {
-	require.Equal(t, "singlestat", graf.SingleStatPanel{}.Type())
+	panel := &graf.SingleStatPanel{}
+	require.Equal(t, "singlestat", panel.Type())
 }
 
 func TestSingleStatPanelMarshalType(t *testing.T) {
-	graphJSON, err := json.Marshal(graf.SingleStatPanel{})
+	graphJSON, err := json.Marshal(&graf.SingleStatPanel{})
 	require.NoError(t, err)
 	require.Contains(t, string(graphJSON), `"type":"singlestat"`)
 }
