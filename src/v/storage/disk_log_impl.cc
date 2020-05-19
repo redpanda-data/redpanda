@@ -107,6 +107,11 @@ disk_log_impl::garbage_collect_oldest_segments(model::timestamp time) {
           return remove_segment_permanently(ptr, "gc[time_based_retention]");
       });
 }
+
+ss::future<> disk_log_impl::compact(compaction_config cfg) {
+    return gc(cfg.eviction_time, cfg.max_bytes);
+}
+
 ss::future<> disk_log_impl::gc(
   model::timestamp collection_upper_bound,
   std::optional<size_t> max_partition_retention_size) {

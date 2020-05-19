@@ -138,7 +138,9 @@ struct mem_log_impl final : log::impl {
     ss::future<> close() final { return ss::make_ready_future<>(); }
     ss::future<> remove() final { return ss::make_ready_future<>(); }
     ss::future<> flush() final { return ss::make_ready_future<>(); }
-
+    ss::future<> compact(compaction_config cfg) final {
+        return gc(cfg.eviction_time, cfg.max_bytes);
+    }
     std::ostream& print(std::ostream& o) const final {
         fmt::print(o, "{{mem_log_impl:{}}}", offsets());
         return o;
@@ -219,13 +221,13 @@ struct mem_log_impl final : log::impl {
     }
 
     ss::future<> gc(
-      model::timestamp collection_upper_bound,
-      std::optional<size_t> max_partition_retention_size) final {
+      model::timestamp eviction_time,
+      std::optional<size_t> max_partition_retention_size) {
         const size_t max = max_partition_retention_size.value_or(
           std::numeric_limits<size_t>::max());
         for (const model::record_batch& b : _data) {
             if (
-              b.header().max_timestamp <= collection_upper_bound
+              b.header().max_timestamp <= eviction_time
               || _probe.partition_bytes > max) {
                 _probe.remove_bytes_written(_data.front().size_bytes());
                 _data.pop_front();

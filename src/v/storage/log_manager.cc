@@ -35,55 +35,97 @@
 #include <optional>
 
 namespace storage {
+using logs_type = absl::flat_hash_map<model::ntp, log_housekeeping_meta>;
 
 log_manager::log_manager(log_config config) noexcept
   : _config(std::move(config))
   , _jitter(_config.compaction_interval)
   , _batch_cache(config.reclaim_opts) {
     _compaction_timer.set_callback([this] { trigger_housekeeping(); });
-    arm_housekeeping();
+    _compaction_timer.rearm(_jitter());
 }
-void log_manager::arm_housekeeping() {
-    if (!_open_gate.is_closed()) {
-        auto time = _jitter.next_duration();
-        vlog(
-          stlog.debug,
-          "Arming housekeeping in: {}secs",
-          std::chrono::duration_cast<std::chrono::seconds>(time).count());
-        _compaction_timer.rearm(ss::lowres_clock::now() + time);
-    }
-}
-
 void log_manager::trigger_housekeeping() {
     (void)ss::with_gate(_open_gate, [this] {
-        return housekeeping().finally([this] { arm_housekeeping(); });
+        auto begin_housekeeping = _jitter();
+        return housekeeping().finally([this, begin_housekeeping] {
+            // all of these *MUST* be in the finally
+            if (_open_gate.is_closed()) {
+                return;
+            }
+            const auto next = _jitter();
+            auto duration = std::chrono::milliseconds(0);
+            if (next > begin_housekeeping) {
+                duration = next - begin_housekeeping;
+            }
+            _compaction_timer.rearm(ss::lowres_clock::now() + duration);
+        });
     }).handle_exception([](std::exception_ptr e) {
         vlog(stlog.info, "Error processing housekeeping(): {}", e);
     });
-}
-
-ss::future<> log_manager::housekeeping() {
-    auto collection_threshold = model::timestamp(
-      model::timestamp::now().value() - _config.delete_retention.count());
-    vlog(
-      stlog.debug,
-      "Housekeeping. Evicting segments older than: {}",
-      absl::FromUnixMillis(collection_threshold.value()));
-    return ss::do_for_each(
-      _logs, [this, collection_threshold](logs_type::value_type& l) {
-          return l.second.gc(collection_threshold, _config.retention_bytes);
-      });
 }
 
 ss::future<> log_manager::stop() {
     _compaction_timer.cancel();
     return _open_gate.close().then([this] {
         return ss::parallel_for_each(_logs, [](logs_type::value_type& entry) {
-            return entry.second.close();
+            return entry.second.handle.close();
         });
     });
 }
 
+inline logs_type::iterator find_next_non_compacted_log(logs_type& logs) {
+    using bflags = log_housekeeping_meta::bitflags;
+    return std::find_if(
+      logs.begin(), logs.end(), [](const logs_type::value_type& l) {
+          return bflags::none == (l.second.flags & bflags::compacted);
+      });
+}
+ss::future<> log_manager::housekeeping() {
+    auto collection_threshold = model::timestamp(
+      model::timestamp::now().value() - _config.delete_retention.count());
+    /**
+     * Note that this loop does a double find - which is not fast. This solution
+     * is the tradeoff to *not* lock the segment during log_manager::remove(ntp)
+     * and to *not* use an ordered container.
+     *
+     * The issue with keeping an iterator and effectively doing a iterator++
+     * is that during a concurrent log_manager::remove() we invalidate all the
+     * iterators for the absl::flat_hash_map; - an alternative here would be to
+     * use a lock
+     *
+     * Note that we also do not use an ordered container like an absl::tree-set
+     * because finds are frequent on this datastructure and we want to serve
+     * them as fast as we can since the majority of the time they will be in the
+     * hotpath / (request-response)
+     */
+    using bflags = log_housekeeping_meta::bitflags;
+    return ss::do_until(
+             [this] {
+                 auto it = find_next_non_compacted_log(_logs);
+                 return it == _logs.end();
+             },
+             [this, collection_threshold] {
+                 auto it = find_next_non_compacted_log(_logs);
+                 if (it == _logs.end()) {
+                     // must check again because between the stop condition
+                     // and this continuation we might have removed the log
+                     return ss::now();
+                 }
+                 it->second.flags |= bflags::compacted;
+                 it->second.last_compaction = ss::lowres_clock::now();
+                 return it->second.handle.compact(compaction_config(
+                   collection_threshold,
+                   // TODO: [ch433] - this configuration needs to be updated
+                   _config.retention_bytes,
+                   // TODO: change default priority in application.cc
+                   ss::default_priority_class()));
+             })
+      .finally([this] {
+          for (auto& h : _logs) {
+              h.second.flags &= ~bflags::compacted;
+          }
+      });
+}
 ss::future<ss::lw_shared_ptr<segment>> log_manager::make_log_segment(
   const model::ntp& ntp,
   model::offset base_offset,
@@ -398,7 +440,7 @@ ss::future<> log_manager::remove(model::ntp ntp) {
             return ss::make_ready_future<>();
         }
         // 'ss::shared_ptr<>' make a copy
-        storage::log lg = handle.mapped();
+        storage::log lg = handle.mapped().handle;
         vlog(stlog.info, "Removing: {}", lg);
         // NOTE: it is ok to *not* externally synchronize the log here
         // because remove, takes a write lock on each individual segments
