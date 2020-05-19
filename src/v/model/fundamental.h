@@ -17,6 +17,7 @@ namespace model {
 
 // Named after Kafka cleanup.policy topic property
 enum class cleanup_policy_bitflags : uint8_t {
+    none = 0,
     deletion = 1U,
     compaction = 1U << 1U
 };
