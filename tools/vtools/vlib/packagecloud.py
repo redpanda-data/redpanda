@@ -45,10 +45,10 @@ def revoke_master_token(token, master_token_id):
 def publish_packages(vconfig, access_token):
     supported_distros = {
         "deb": {
-            "debian": ["jessie", "stretch", "buster", "bullseye"],
+            "debian": ["jessie", "stretch", "buster", "bullseye", "bookworm"],
             "ubuntu": [
                 "trusty", "utopic", "vivid", "wily", "xenial", "yakkety",
-                "zesty", "artful", "bionic", "cosmic", "disco", "eoan"
+                "zesty", "artful", "bionic", "cosmic", "disco", "eoan", "focal"
             ]
         },
         "rpm": {
