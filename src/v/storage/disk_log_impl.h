@@ -10,6 +10,7 @@
 #include "storage/segment_reader.h"
 #include "storage/types.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
 
 namespace storage {
@@ -58,9 +59,7 @@ private:
     friend class disk_log_builder;  // for tests
     friend std::ostream& operator<<(std::ostream& o, const disk_log_impl& d);
 
-    ss::future<> gc(
-      model::timestamp collection_upper_bound,
-      std::optional<size_t> max_partition_retention_size);
+    ss::future<> gc(compaction_config);
 
     ss::future<> remove_empty_segments();
 
@@ -79,8 +78,10 @@ private:
     ss::future<> do_truncate_prefix(truncate_prefix_config);
     ss::future<> remove_prefix_full_segments(truncate_prefix_config);
 
-    ss::future<> garbage_collect_max_partition_size(size_t max_bytes);
-    ss::future<> garbage_collect_oldest_segments(model::timestamp);
+    ss::future<>
+    garbage_collect_max_partition_size(size_t max_bytes, ss::abort_source&);
+    ss::future<>
+    garbage_collect_oldest_segments(model::timestamp, ss::abort_source&);
 
 private:
     bool _closed{false};

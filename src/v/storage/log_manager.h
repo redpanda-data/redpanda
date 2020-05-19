@@ -11,6 +11,7 @@
 #include "storage/version.h"
 #include "units.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
@@ -223,6 +224,7 @@ private:
     logs_type _logs;
     batch_cache _batch_cache;
     ss::gate _open_gate;
+    ss::abort_source _abort_source;
 
     friend std::ostream& operator<<(std::ostream&, const log_manager&);
 };
