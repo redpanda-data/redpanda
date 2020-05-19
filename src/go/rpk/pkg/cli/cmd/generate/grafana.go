@@ -250,6 +250,8 @@ func buildSummary(
 				X: i*width + nodesUp.GridPos.W,
 				Y: y,
 			}
+			panel.NullPointMode = "null as zero"
+			panel.SteppedLine = true
 			panels = append(panels, panel)
 		}
 		y += panelHeight
