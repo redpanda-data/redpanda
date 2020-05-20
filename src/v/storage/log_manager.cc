@@ -5,6 +5,7 @@
 #include "model/fundamental.h"
 #include "model/timestamp.h"
 #include "storage/batch_cache.h"
+#include "storage/compacted_topic_index.h"
 #include "storage/fs_utils.h"
 #include "storage/log.h"
 #include "storage/log_replayer.h"
@@ -127,7 +128,7 @@ ss::future<> log_manager::housekeeping() {
       });
 }
 ss::future<ss::lw_shared_ptr<segment>> log_manager::make_log_segment(
-  const model::ntp& ntp,
+  const ntp_config& ntp,
   model::offset base_offset,
   model::term_id term,
   ss::io_priority_class pc,
@@ -139,16 +140,9 @@ ss::future<ss::lw_shared_ptr<segment>> log_manager::make_log_segment(
             ntp, base_offset, term, pc, version, buf_size);
       });
 }
-ss::future<ss::lw_shared_ptr<segment>> log_manager::do_make_log_segment(
-  const model::ntp& ntp,
-  model::offset base_offset,
-  model::term_id term,
-  ss::io_priority_class pc,
-  record_version_type version,
-  size_t buf_size) {
-    auto path = segment_path::make_segment_path(
-      _config.base_dir, ntp, base_offset, term, version);
-    vlog(stlog.info, "Creating new segment {}", path.string());
+
+ss::future<std::optional<ss::file>> make_writer(
+  const std::filesystem::path& path, log_config::debug_sanitize_files debug) {
     ss::file_open_options opt{
       /// We fallocate the full file segment
       .extent_allocation_size_hint = 0,
@@ -156,26 +150,77 @@ ss::future<ss::lw_shared_ptr<segment>> log_manager::do_make_log_segment(
       .sloppy_size = false,
     };
     const auto flags = ss::open_flags::create | ss::open_flags::rw;
-    return ss::open_file_dma(path.string(), flags, std::move(opt))
-      .then([pc, this](ss::file writer) {
+    return ss::open_file_dma(path.string(), flags, opt)
+      .then_wrapped(
+        [debug](ss::future<ss::file> writer_fut) -> std::optional<ss::file> {
+            try {
+                auto writer = writer_fut.get0();
+                if (debug) {
+                    return ss::file(
+                      ss::make_shared(file_io_sanitizer(std::move(writer))));
+                }
+                return writer;
+            } catch (...) {
+                auto e = std::current_exception();
+                vlog(stlog.error, "could not allocate appender: {}", e);
+            }
+            return std::nullopt;
+        });
+}
+
+ss::future<segment_appender_ptr> make_segment_appender(
+  const std::filesystem::path& path,
+  log_config::debug_sanitize_files debug,
+  size_t number_of_chunks,
+  ss::io_priority_class iopc) {
+    return make_writer(path, debug)
+      .then([number_of_chunks, iopc, path](std::optional<ss::file> opf) {
+          if (!opf) {
+              return ss::make_exception_future<segment_appender_ptr>(
+                std::runtime_error(
+                  fmt::format("could not create segment appender:{}", path)));
+          }
           try {
-              if (_config.sanitize_fileops) {
-                  writer = ss::file(
-                    ss::make_shared(file_io_sanitizer(std::move(writer))));
-              }
               return ss::make_ready_future<segment_appender_ptr>(
                 std::make_unique<segment_appender>(
-                  writer,
-                  segment_appender::options(
-                    pc, segment_appender::chunks_no_buffer)));
+                  opf.value(),
+                  segment_appender::options(iopc, number_of_chunks)));
           } catch (...) {
               auto e = std::current_exception();
               vlog(stlog.error, "could not allocate appender: {}", e);
-              return writer.close().then([e = e] {
+              return opf.value().close().then_wrapped([e = e](ss::future<>) {
                   return ss::make_exception_future<segment_appender_ptr>(e);
               });
           }
-      })
+      });
+}
+
+size_t number_of_chunks_from_config(const ntp_config& ntpc) {
+    if (!ntpc.overrides) {
+        return segment_appender::chunks_no_buffer;
+    }
+    auto& o = *ntpc.overrides;
+    if (o.compaction_strategy) {
+        return segment_appender::chunks_no_buffer / 2;
+    }
+    return segment_appender::chunks_no_buffer;
+}
+
+ss::future<ss::lw_shared_ptr<segment>> log_manager::do_make_log_segment(
+  const ntp_config& ntpc,
+  model::offset base_offset,
+  model::term_id term,
+  ss::io_priority_class pc,
+  record_version_type version,
+  size_t buf_size) {
+    auto path = segment_path::make_segment_path(
+      _config.base_dir, ntpc.ntp, base_offset, term, version);
+    vlog(stlog.info, "Creating new segment {}", path.string());
+    return make_segment_appender(
+             path,
+             _config.sanitize_fileops,
+             number_of_chunks_from_config(ntpc),
+             pc)
       .then([this, buf_size, path, base_offset](segment_appender_ptr a) {
           return open_segment(path, buf_size)
             .then_wrapped([this, a = std::move(a), base_offset](
