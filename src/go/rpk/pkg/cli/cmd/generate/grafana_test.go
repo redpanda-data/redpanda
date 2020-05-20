@@ -236,15 +236,102 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
    "tableColumn": ""
   },
   {
-   "type": "text",
+   "type": "singlestat",
    "id": 3,
+   "title": "Partitions",
+   "datasource": "prometheus",
+   "editable": true,
+   "gridPos": {
+    "h": 6,
+    "w": 2,
+    "x": 2,
+    "y": 8
+   },
+   "transparent": true,
+   "span": 1,
+   "error": false,
+   "targets": [
+    {
+     "refId": "",
+     "expr": "sum(vectorized_raft_leader_for)",
+     "legendFormat": "Partition count"
+    }
+   ],
+   "format": "none",
+   "prefix": "",
+   "postfix": "",
+   "maxDataPoints": 100,
+   "valueMaps": [
+    {
+     "value": "null",
+     "op": "=",
+     "text": "N/A"
+    }
+   ],
+   "mappingTypes": [
+    {
+     "name": "value to text",
+     "value": 1
+    },
+    {
+     "name": "range to text",
+     "value": 2
+    }
+   ],
+   "rangeMaps": [
+    {
+     "from": "null",
+     "to": "null",
+     "text": "N/A"
+    }
+   ],
+   "mappingType": 1,
+   "nullPointMode": "connected",
+   "valueName": "current",
+   "valueFontSize": "200%",
+   "prefixFontSize": "50%",
+   "postfixFontSize": "50%",
+   "colorBackground": false,
+   "colorValue": true,
+   "colors": [
+    "#299c46",
+    "rgba(237, 129, 40, 0.89)",
+    "#d44a3a"
+   ],
+   "thresholds": "",
+   "sparkline": {
+    "show": false,
+    "full": false,
+    "ymin": null,
+    "ymax": null,
+    "lineColor": "rgb(31, 120, 193)",
+    "fillColor": "rgba(31, 118, 189, 0.18)"
+   },
+   "gauge": {
+    "show": false,
+    "minValue": 0,
+    "maxValue": 100,
+    "thresholdMarkers": true,
+    "thresholdLabels": false
+   },
+   "links": [],
+   "interval": null,
+   "timeFrom": null,
+   "timeShift": null,
+   "nullText": null,
+   "cacheTimeout": null,
+   "tableColumn": ""
+  },
+  {
+   "type": "text",
+   "id": 4,
    "title": "",
    "editable": true,
    "gridPos": {
     "h": 2,
-    "w": 24,
+    "w": 12,
     "x": 0,
-    "y": 8
+    "y": 14
    },
    "transparent": true,
    "links": null,
@@ -255,87 +342,15 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
   },
   {
    "type": "graph",
-   "id": 4,
-   "title": "Latency of service handler dispatch (p50)",
-   "datasource": "prometheus",
-   "editable": true,
-   "gridPos": {
-    "h": 6,
-    "w": 8,
-    "x": 0,
-    "y": 10
-   },
-   "transparent": false,
-   "links": null,
-   "renderer": "flot",
-   "span": 4,
-   "error": false,
-   "targets": [
-    {
-     "refId": "A",
-     "expr": "histogram_quantile(0.50, sum(rate(vectorized_vectorized_internal_rpc_protocol_dispatch_handler_latency_bucket{instance=~\"[[node]]\",shard=~\"[[node_shard]]\"}[1m])) by (le, [[aggr_criteria]]))",
-     "intervalFactor": 2,
-     "step": 10,
-     "legendFormat": "node: {{instance}}, shard: {{shard}}",
-     "format": "time_series"
-    }
-   ],
-   "xaxis": {
-    "format": "",
-    "logBase": 0,
-    "show": true,
-    "mode": "time"
-   },
-   "yaxes": [
-    {
-     "label": null,
-     "show": true,
-     "logBase": 1,
-     "min": 0,
-     "format": "µs"
-    },
-    {
-     "label": null,
-     "show": true,
-     "logBase": 1,
-     "min": 0,
-     "format": "short"
-    }
-   ],
-   "legend": {
-    "show": true,
-    "max": false,
-    "min": false,
-    "values": false,
-    "avg": false,
-    "current": false,
-    "total": false
-   },
-   "fill": 1,
-   "linewidth": 2,
-   "nullPointMode": "null",
-   "thresholds": null,
-   "lines": true,
-   "bars": false,
-   "tooltip": {
-    "shared": true,
-    "value_type": "individual",
-    "msResolution": true
-   },
-   "aliasColors": {},
-   "steppedLine": false
-  },
-  {
-   "type": "graph",
    "id": 5,
    "title": "Latency of service handler dispatch (p95)",
    "datasource": "prometheus",
    "editable": true,
    "gridPos": {
     "h": 6,
-    "w": 8,
-    "x": 8,
-    "y": 10
+    "w": 6,
+    "x": 0,
+    "y": 16
    },
    "transparent": false,
    "links": null,
@@ -405,9 +420,9 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
    "editable": true,
    "gridPos": {
     "h": 6,
-    "w": 8,
-    "x": 16,
-    "y": 10
+    "w": 6,
+    "x": 6,
+    "y": 16
    },
    "transparent": false,
    "links": null,
@@ -476,9 +491,9 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
    "editable": true,
    "gridPos": {
     "h": 2,
-    "w": 24,
-    "x": 0,
-    "y": 16
+    "w": 12,
+    "x": 12,
+    "y": 14
    },
    "transparent": true,
    "links": null,
@@ -497,7 +512,7 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
     "h": 6,
     "w": 24,
     "x": 0,
-    "y": 22
+    "y": 20
    },
    "transparent": false,
    "links": null,
@@ -514,7 +529,7 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
       "h": 6,
       "w": 8,
       "x": 0,
-      "y": 22
+      "y": 20
      },
      "transparent": false,
      "links": null,
@@ -588,7 +603,7 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
     "h": 6,
     "w": 24,
     "x": 0,
-    "y": 23
+    "y": 21
    },
    "transparent": false,
    "links": null,
@@ -605,7 +620,7 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
       "h": 6,
       "w": 8,
       "x": 0,
-      "y": 23
+      "y": 21
      },
      "transparent": false,
      "links": null,
@@ -677,7 +692,7 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
       "h": 6,
       "w": 8,
       "x": 8,
-      "y": 23
+      "y": 21
      },
      "transparent": false,
      "links": null,
@@ -749,7 +764,7 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
       "h": 6,
       "w": 8,
       "x": 16,
-      "y": 23
+      "y": 21
      },
      "transparent": false,
      "links": null,
