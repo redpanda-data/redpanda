@@ -1,5 +1,6 @@
 #include "storage/segment.h"
 
+#include "storage/compacted_topic_index.h"
 #include "storage/logger.h"
 #include "storage/segment_appender_utils.h"
 #include "vassert.h"
@@ -21,11 +22,13 @@ segment::segment(
   segment_reader r,
   segment_index i,
   std::optional<segment_appender> a,
+  std::optional<compacted_topic_index> ci,
   std::optional<batch_cache_index> c) noexcept
   : _tracker(tkr)
   , _reader(std::move(r))
   , _idx(std::move(i))
   , _appender(std::move(a))
+  , _compaction_index(std::move(ci))
   , _cache(std::move(c)) {}
 
 void segment::check_segment_not_closed(const char* msg) {
