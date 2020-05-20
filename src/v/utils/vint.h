@@ -35,29 +35,37 @@ private:
 public:
     //clang-format off
     template<typename Consumer>
-    CONCEPT(requires requires(Consumer c, int8_t v) { {c(v)}; })
+    CONCEPT(requires requires(Consumer c, uint8_t v) { {c(v)}; })
     //clang-format on
     static constexpr size_type
       do_serialize(value_type value, Consumer f) noexcept {
         auto encode = encode_zigzag(value);
         size_type size = 1;
         while (encode >= more_bytes) {
-            f(static_cast<int8_t>(encode | more_bytes));
+            f(static_cast<uint8_t>(encode | more_bytes));
             encode >>= 7;
             ++size;
         }
-        f(static_cast<int8_t>(encode));
+        f(static_cast<uint8_t>(encode));
         return size;
     }
 
     [[gnu::always_inline]] inline static constexpr size_type
     vint_size(value_type value) {
-        return do_serialize(value, [](int8_t) {});
+        return do_serialize(value, [](uint8_t) {});
     }
 
     [[gnu::always_inline]] inline static constexpr size_type
     serialize(value_type value, bytes::iterator out) noexcept {
-        return do_serialize(value, [&out](int8_t value) { *out++ = value; });
+        return do_serialize(value, [&out](uint8_t value) { *out++ = value; });
+    }
+    [[gnu::always_inline]] inline static bytes
+    to_bytes(value_type value) noexcept {
+        // our bytes uses a short-string optimization of 31 bytes
+        auto out = ss::uninitialized_string<bytes>(vint::max_length);
+        auto sz = serialize(value, out.begin());
+        out.resize(sz);
+        return out;
     }
 
     template<typename Range>
