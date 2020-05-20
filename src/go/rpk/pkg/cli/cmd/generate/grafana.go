@@ -214,7 +214,8 @@ func buildSummary(
 	metricFamilies map[string]*dto.MetricFamily, jobName string,
 ) []graf.Panel {
 	maxWidth := 24
-	percentiles := []float32{0.5, 0.95, 0.99}
+	singleStatW := 2
+	percentiles := []float32{0.95, 0.99}
 	percentilesNo := len(percentiles)
 	panels := []graf.Panel{}
 	y := 0
@@ -228,7 +229,7 @@ func buildSummary(
 
 	nodesUp := graf.NewSingleStatPanel("Nodes Up")
 	nodesUp.Datasource = datasource
-	nodesUp.GridPos = graf.GridPos{H: 6, W: 2, X: 0, Y: y}
+	nodesUp.GridPos = graf.GridPos{H: 6, W: singleStatW, X: 0, Y: y}
 	nodesUp.Targets = []graf.Target{graf.Target{
 		Expr:           fmt.Sprintf(`count(up{job="%s"})`, jobName),
 		Step:           40,
@@ -239,15 +240,31 @@ func buildSummary(
 	panels = append(panels, nodesUp)
 	y += nodesUp.GridPos.H
 
+	partitionCount := graf.NewSingleStatPanel("Partitions")
+	partitionCount.Datasource = datasource
+	partitionCount.GridPos = graf.GridPos{
+		H: 6,
+		W: singleStatW,
+		X: nodesUp.GridPos.W,
+		Y: y,
+	}
+	partitionCount.Targets = []graf.Target{graf.Target{
+		Expr:         `sum(vectorized_raft_leader_for)`,
+		LegendFormat: "Partition count",
+	}}
+	partitionCount.Transparent = true
+	panels = append(panels, partitionCount)
+	y += partitionCount.GridPos.H
+
 	kafkaFamily, kafkaExists := metricFamilies["vectorized_kafka_rpc_protocol_dispatch_handler_latency"]
 	if kafkaExists {
-		width := (maxWidth - nodesUp.GridPos.W) / percentilesNo
+		width := (maxWidth - (singleStatW * 2)) / percentilesNo
 		for i, p := range percentiles {
 			panel := newPercentilePanel(kafkaFamily, p)
 			panel.GridPos = graf.GridPos{
 				H: panelHeight,
 				W: width,
-				X: i*width + nodesUp.GridPos.W,
+				X: i*width + (singleStatW * 2),
 				Y: y,
 			}
 			panel.NullPointMode = "null as zero"
@@ -256,13 +273,13 @@ func buildSummary(
 		}
 		y += panelHeight
 	}
+	width := maxWidth / 4
+	rpcLatencyText := htmlHeader("Internal RPC Latency")
+	rpcLatencyTitle := graf.NewTextPanel(rpcLatencyText, "html")
+	rpcLatencyTitle.GridPos = graf.GridPos{H: 2, W: maxWidth / 2, X: 0, Y: y}
+	rpcLatencyTitle.Transparent = true
 	rpcFamily, rpcExists := metricFamilies["vectorized_vectorized_internal_rpc_protocol_dispatch_handler_latency"]
 	if rpcExists {
-		width := maxWidth / percentilesNo
-		rpcLatencyText := htmlHeader("Internal RPC Latency")
-		rpcLatencyTitle := graf.NewTextPanel(rpcLatencyText, "html")
-		rpcLatencyTitle.GridPos = graf.GridPos{H: 2, W: maxWidth, X: 0, Y: y}
-		rpcLatencyTitle.Transparent = true
 		y += rpcLatencyTitle.GridPos.H
 		panels = append(panels, rpcLatencyTitle)
 		for i, p := range percentiles {
@@ -275,27 +292,39 @@ func buildSummary(
 			}
 			panels = append(panels, panel)
 		}
-		y += panelHeight
 	}
 
 	throughputText := htmlHeader("Throughput")
 	throughputTitle := graf.NewTextPanel(throughputText, "html")
-	throughputTitle.GridPos = graf.GridPos{H: 2, W: maxWidth, X: 0, Y: y}
+	throughputTitle.GridPos = graf.GridPos{
+		H: 2,
+		W: maxWidth / 2,
+		X: rpcLatencyTitle.GridPos.W,
+		Y: rpcLatencyTitle.GridPos.Y,
+	}
 	throughputTitle.Transparent = true
 	panels = append(panels, throughputTitle)
-	y += throughputTitle.GridPos.H
 
 	readBytesFamily, readBytesExist := metricFamilies["vectorized_storage_log_read_bytes"]
 	writtenBytesFamily, writtenBytesExist := metricFamilies["vectorized_storage_log_written_bytes"]
 	if readBytesExist && writtenBytesExist {
 		readPanel := newCounterPanel(readBytesFamily)
-		readPanel.GridPos = graf.GridPos{H: panelHeight, W: maxWidth / 2, X: 0, Y: y}
+		readPanel.GridPos = graf.GridPos{
+			H: panelHeight,
+			W: width,
+			X: maxWidth / 2,
+			Y: y,
+		}
 		panels = append(panels, readPanel)
 
 		writtenPanel := newCounterPanel(writtenBytesFamily)
-		writtenPanel.GridPos = graf.GridPos{H: panelHeight, W: maxWidth / 2, X: readPanel.GridPos.W, Y: y}
+		writtenPanel.GridPos = graf.GridPos{
+			H: panelHeight,
+			W: width,
+			X: readPanel.GridPos.X + readPanel.GridPos.W,
+			Y: y,
+		}
 		panels = append(panels, writtenPanel)
-		y += panelHeight
 	}
 
 	return panels
