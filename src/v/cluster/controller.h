@@ -2,7 +2,6 @@
 
 #include "cluster/controller_service.h"
 #include "cluster/metadata_cache.h"
-#include "cluster/notification_latch.h"
 #include "cluster/partition_allocator.h"
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
@@ -11,6 +10,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
+#include "raft/state_machine.h"
 #include "seastarx.h"
 #include "storage/log_manager.h"
 #include "storage/types.h"
@@ -29,7 +29,9 @@ class connection_cache;
 namespace cluster {
 
 // all ops must belong to shard0
-class controller final : public ss::peering_sharded_service<controller> {
+class controller final
+  : public raft::state_machine
+  , public ss::peering_sharded_service<controller> {
 public:
     static constexpr const ss::shard_id shard = 0;
     static constexpr const raft::group_id group{0};
@@ -86,18 +88,8 @@ public:
 
 private:
     using seed_iterator = std::vector<config::seed_server>::const_iterator;
-    struct batch_consumer {
-        explicit batch_consumer(controller* c)
-          : ptr(c) {}
-        ss::future<ss::stop_iteration> operator()(model::record_batch batch) {
-            return ptr->process_raft0_batch(std::move(batch)).then([] {
-                return ss::stop_iteration::no;
-            });
-        }
-        void end_of_stream() { ptr->end_of_stream(); }
-        controller* ptr;
-    };
-    friend batch_consumer;
+
+    virtual ss::future<> apply(model::record_batch) final;
 
     ss::future<consensus_ptr> start_raft0();
     ss::future<> process_raft0_batch(model::record_batch);
@@ -124,7 +116,6 @@ private:
       std::vector<model::topic_namespace> topics,
       model::timeout_clock::time_point timeout);
 
-    void end_of_stream();
     ss::future<> do_leadership_notification(
       model::ntp, model::term_id, std::optional<model::node_id>);
     ss::future<> handle_controller_leadership_notification(
@@ -137,7 +128,6 @@ private:
     void create_partition_allocator();
     void update_partition_allocator(const std::vector<broker_ptr>&);
     allocation_node local_allocation_node();
-    void on_raft0_entries_comitted(model::record_batch_reader&&);
 
     ss::future<> dispatch_manage_partition(
       model::ntp, raft::group_id, uint32_t, std::vector<model::broker_shard>);
@@ -170,6 +160,11 @@ private:
     ss::future<> process_topic_deletion(model::topic_namespace);
     ss::future<>
       delete_partitition(model::topic_namespace, model::partition_metadata);
+
+    ss::future<std::vector<topic_result>> process_replicate_topic_op_result(
+      std::vector<model::topic_namespace>,
+      model::timeout_clock::time_point,
+      ss::future<result<raft::replicate_result>>);
 
     model::broker _self;
     std::vector<config::seed_server> _seed_servers;
@@ -225,7 +220,6 @@ private:
     ss::semaphore _recovery_semaphore{0};
     model::offset _raft0_cfg_offset;
     cluster::notification_id_type _leader_notify_handle;
-    notification_latch _notification_latch;
     ss::abort_source _as;
     static constexpr raft::consistency_level default_consistency_level
       = raft::consistency_level::quorum_ack;

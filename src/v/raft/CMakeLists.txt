@@ -24,6 +24,9 @@ v_cc_library(
     group_manager.cc
     snapshot.cc
     probe.cc
+    offset_monitor.cc
+    event_manager.cc
+    state_machine.cc
   DEPS
     v::storage
     raft_rpc

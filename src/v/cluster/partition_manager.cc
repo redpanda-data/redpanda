@@ -24,16 +24,12 @@ partition_manager::partition_manager(
 ss::future<consensus_ptr> partition_manager::manage(
   storage::ntp_config ntp_cfg,
   raft::group_id group,
-  std::vector<model::broker> initial_nodes,
-  std::optional<raft::consensus::append_entries_cb_t> ap_entries_cb) {
+  std::vector<model::broker> initial_nodes) {
     return _mngr.manage(std::move(ntp_cfg))
-      .then([this,
-             group,
-             nodes = std::move(initial_nodes),
-             ap_entries_cb = std::move(ap_entries_cb)](
+      .then([this, group, nodes = std::move(initial_nodes)](
               storage::log&& log) mutable {
           return _raft_manager.local()
-            .start_group(group, std::move(nodes), log, std::move(ap_entries_cb))
+            .start_group(group, std::move(nodes), log)
             .then([this, log, group](ss::lw_shared_ptr<raft::consensus> c) {
                 auto p = ss::make_lw_shared<partition>(c);
                 _ntp_table.emplace(log.config().ntp, p);

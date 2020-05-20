@@ -99,3 +99,11 @@ rp_test(
   LIBRARIES v::seastar_testing_main v::raft v::storage_test_utils
   LABELS raft
 )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME offset_monitor_test
+  SOURCES offset_monitor_test.cc
+  LIBRARIES v::seastar_testing_main v::raft v::storage_test_utils
+  LABELS raft
+)

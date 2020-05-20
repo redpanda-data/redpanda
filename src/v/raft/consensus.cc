@@ -31,8 +31,7 @@ consensus::consensus(
   ss::io_priority_class io_priority,
   model::timeout_clock::duration disk_timeout,
   consensus_client_protocol client,
-  consensus::leader_cb_t cb,
-  std::optional<append_entries_cb_t>&& append_callback)
+  consensus::leader_cb_t cb)
   : _self(std::move(nid))
   , _group(group)
   , _jit(std::move(jit))
@@ -44,7 +43,7 @@ consensus::consensus(
   , _conf(std::move(initial_cfg))
   , _fstats({})
   , _batcher(this)
-  , _append_entries_notification(std::move(append_callback))
+  , _event_manager(this)
   , _ctxlog(_self, group)
   , _replicate_append_timeout(
       config::shard_local_cfg().replicate_append_timeout_ms())
@@ -86,7 +85,7 @@ ss::future<> consensus::stop() {
     vlog(_ctxlog.info, "Stopping");
     _vote_timeout.cancel();
     _commit_index_updated.broken();
-    return _bg.close();
+    return _event_manager.stop().then([this] { return _bg.close(); });
 }
 
 ss::sstring consensus::voted_for_filename() const {
@@ -474,7 +473,8 @@ ss::future<> consensus::start() {
           .then([this] {
               // Arm leader election timeout.
               arm_vote_timeout();
-          });
+          })
+          .then([this] { return _event_manager.start(); });
     });
 }
 
@@ -757,45 +757,26 @@ consensus::do_append_entries(append_entries_request&& r) {
 }
 
 ss::future<> consensus::notify_entries_commited(
-  model::offset start_offset, model::offset end_offset) {
-    auto fut = ss::make_ready_future<>();
-    if (_append_entries_notification) {
-        vlog(
-          _ctxlog.debug,
-          "Append entries notification range [{},{}]",
-          start_offset,
-          end_offset);
-        fut = fut.then([this, start_offset, end_offset]() {
-            return _log
-              .make_reader(storage::log_reader_config(
-                start_offset, end_offset, _io_priority))
-              .then([this](model::record_batch_reader reader) {
-                  _append_entries_notification.value()(std::move(reader));
-              });
-        });
-    }
+  [[maybe_unused]] model::offset start_offset, model::offset end_offset) {
     auto cfg_reader_start_offset = details::next_offset(
       _last_seen_config_offset);
-    fut = fut.then([this, cfg_reader_start_offset, end_offset] {
-        vlog(
-          _ctxlog.trace,
-          "Process configurations range [{},{}]",
-          cfg_reader_start_offset,
-          end_offset);
-        return _log
-          .make_reader(storage::log_reader_config(
-            cfg_reader_start_offset,
-            end_offset,
-            0,
-            std::numeric_limits<size_t>::max(),
-            _io_priority,
-            raft::configuration_batch_type,
-            std::nullopt))
-          .then([this, end_offset](model::record_batch_reader reader) {
-              return process_configurations(std::move(reader), end_offset);
-          });
-    });
-    return fut;
+    vlog(
+      _ctxlog.trace,
+      "Process configurations range [{},{}]",
+      cfg_reader_start_offset,
+      end_offset);
+    return _log
+      .make_reader(storage::log_reader_config(
+        cfg_reader_start_offset,
+        end_offset,
+        0,
+        std::numeric_limits<size_t>::max(),
+        _io_priority,
+        raft::configuration_batch_type,
+        std::nullopt))
+      .then([this, end_offset](model::record_batch_reader reader) {
+          return process_configurations(std::move(reader), end_offset);
+      });
 }
 
 ss::future<> consensus::process_configurations(
@@ -940,6 +921,7 @@ ss::future<> consensus::do_maybe_update_leader_commit_idx() {
           range_start,
           _commit_index);
         _commit_index_updated.broadcast();
+        _event_manager.notify_commit_index(_commit_index);
         return notify_entries_commited(
           details::next_offset(model::offset(old_commit_idx)),
           model::offset(_commit_index));
@@ -962,6 +944,7 @@ consensus::maybe_update_follower_commit_idx(model::offset request_commit_idx) {
             vlog(
               _ctxlog.trace, "Follower commit index updated {}", _commit_index);
             _commit_index_updated.broadcast();
+            _event_manager.notify_commit_index(_commit_index);
             return notify_entries_commited(
               details::next_offset(model::offset(previous_commit_idx)),
               model::offset(_commit_index));

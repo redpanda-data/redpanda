@@ -3,6 +3,7 @@
 #include "hashing/crc32c.h"
 #include "model/fundamental.h"
 #include "raft/consensus_client_protocol.h"
+#include "raft/event_manager.h"
 #include "raft/follower_stats.h"
 #include "raft/logger.h"
 #include "raft/probe.h"
@@ -38,8 +39,6 @@ public:
     };
     enum class vote_state { follower, candidate, leader };
     using leader_cb_t = ss::noncopyable_function<void(leadership_status)>;
-    using append_entries_cb_t
-      = ss::noncopyable_function<void(model::record_batch_reader&&)>;
 
     consensus(
       model::node_id,
@@ -50,8 +49,7 @@ public:
       ss::io_priority_class io_priority,
       model::timeout_clock::duration disk_timeout,
       consensus_client_protocol,
-      leader_cb_t,
-      std::optional<append_entries_cb_t>&& = std::nullopt);
+      leader_cb_t);
 
     /// Initial call. Allow for internal state recovery
     ss::future<> start();
@@ -106,9 +104,6 @@ public:
         });
     }
 
-    void remove_append_entries_callback() {
-        _append_entries_notification.reset();
-    }
     ss::future<std::optional<storage::timequery_result>>
     timequery(storage::timequery_config cfg) {
         return _log.timequery(cfg);
@@ -116,11 +111,14 @@ public:
 
     model::offset start_offset() const { return _log.offsets().start_offset; }
 
+    event_manager& events() { return _event_manager; }
+
 private:
     friend replicate_entries_stm;
     friend vote_stm;
     friend recovery_stm;
     friend replicate_batcher;
+    friend event_manager;
 
     // all these private functions assume that we are under exclusive operations
     // via the _op_sem
@@ -226,7 +224,7 @@ private:
     /// is for the operation to touch the disk
     mutex _op_lock;
     /// used for notifying when commits happened to log
-    std::optional<append_entries_cb_t> _append_entries_notification;
+    event_manager _event_manager;
     probe _probe;
     ctx_log _ctxlog;
     ss::condition_variable _commit_index_updated;
