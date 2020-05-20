@@ -77,8 +77,9 @@ func executeStatus(
 			" `rpk config set rpk.enable_usage_stats true`.")
 	}
 	t := ui.NewRpkTable(log.StandardLogger().Out)
-	t.SetColWidth(1000)
-	t.SetAutoWrapText(false)
+	t.SetColWidth(80)
+	t.SetAutoWrapText(true)
+	t.SetAutoMergeCells(true)
 	metrics, errs := system.GatherMetrics(fs, timeout, *conf)
 	if len(errs) != 0 {
 		for _, err := range errs {
@@ -243,10 +244,12 @@ func printKafkaInfo(
 			nodeInfo,
 			"Leader: " + formatTopicsAndPartitions(node.leaderParts),
 		})
+		t.Append([]string{"", ""})
 		t.Append([]string{
-			nodeInfo,
+			"",
 			"Replica: " + formatTopicsAndPartitions(node.replicaParts),
 		})
+		t.Append([]string{"", ""})
 	}
 }
 
@@ -288,9 +291,56 @@ func formatTopicsAndPartitions(tps map[string][]int) string {
 }
 
 func formatTopicPartitions(name string, partitions []int) string {
-	strParts := []string{}
-	for _, part := range partitions {
-		strParts = append(strParts, strconv.Itoa(part))
+	limit := 50
+	partitionsNo := len(partitions)
+	if partitionsNo <= limit {
+		// If the number of partitions is small enough, we can display
+		// them all.
+		strParts := compress(partitions)
+		return fmt.Sprintf("%s: [%s]", name, strings.Join(strParts, ", "))
 	}
-	return fmt.Sprintf("%s: [%s]", name, strings.Join(strParts, ", "))
+	// When the # of partitions is too big, the ouput becomes unreadable,
+	// so it needs to be truncated.
+	return fmt.Sprintf(
+		"%s: (%d partitions)",
+		name,
+		partitionsNo,
+	)
+}
+
+func compress(is []int) []string {
+	length := len(is)
+	if length == 0 {
+		return []string{}
+	}
+	sort.Ints(is)
+	ranges := []string{}
+	for i := 0; i < length; i++ {
+		low := is[i]
+		high := low
+		j := i + 1
+		index := j
+		for j := i + 1; j < length && is[j] == high+1; j++ {
+			high = is[j]
+			index = j
+		}
+		switch {
+		case low == high:
+			// If there was no range, just add the number.
+			ranges = append(ranges, strconv.Itoa(low))
+		case high == low+1:
+			// If the range is only n - n+1, it makes no sense to
+			// add a hyphen.
+			ranges = append(
+				ranges,
+				strconv.Itoa(low),
+				strconv.Itoa(high),
+			)
+			i = index
+		default:
+			ranges = append(ranges, fmt.Sprintf("%d-%d", low, high))
+			i = index
+		}
+	}
+	return ranges
 }
