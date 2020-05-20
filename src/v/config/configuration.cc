@@ -163,9 +163,9 @@ configuration::configuration()
       "delete segments older than this - default 1 week",
       required::no,
       10080min)
-  , log_compaction_interval(
+  , log_compaction_interval_ms(
       *this,
-      "log_compaction_interval",
+      "log_compaction_interval_ms",
       "How often do we trigger background compaction",
       required::no,
       10min)

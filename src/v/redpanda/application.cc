@@ -187,7 +187,7 @@ storage::log_config manager_config_from_global_config() {
       config::shard_local_cfg().log_segment_size(),
       storage::log_config::debug_sanitize_files::no,
       config::shard_local_cfg().retention_bytes(),
-      config::shard_local_cfg().log_compaction_interval(),
+      config::shard_local_cfg().log_compaction_interval_ms(),
       config::shard_local_cfg().delete_retention_ms(),
       storage::log_config::with_cache(
         config::shard_local_cfg().disable_batch_cache()),
