@@ -141,7 +141,7 @@ ss::future<ss::lw_shared_ptr<segment>> log_manager::make_log_segment(
       });
 }
 
-ss::future<std::optional<ss::file>> make_writer(
+ss::future<ss::file> make_writer(
   const std::filesystem::path& path, log_config::debug_sanitize_files debug) {
     ss::file_open_options opt{
       /// We fallocate the full file segment
@@ -149,23 +149,40 @@ ss::future<std::optional<ss::file>> make_writer(
       /// don't allow truncate calls
       .sloppy_size = false,
     };
-    const auto flags = ss::open_flags::create | ss::open_flags::rw;
-    return ss::open_file_dma(path.string(), flags, opt)
-      .then_wrapped(
-        [debug](ss::future<ss::file> writer_fut) -> std::optional<ss::file> {
-            try {
-                auto writer = writer_fut.get0();
-                if (debug) {
-                    return ss::file(
-                      ss::make_shared(file_io_sanitizer(std::move(writer))));
-                }
-                return writer;
-            } catch (...) {
-                auto e = std::current_exception();
-                vlog(stlog.error, "could not allocate appender: {}", e);
-            }
-            return std::nullopt;
-        });
+    return ss::file_exists(path.string()).then([opt, path, debug](bool exists) {
+        const auto flags = exists ? ss::open_flags::rw
+                                  : ss::open_flags::create | ss::open_flags::rw;
+        return ss::open_file_dma(path.string(), flags, opt)
+          .then([debug](ss::file writer) {
+              if (debug) {
+                  return ss::file(
+                    ss::make_shared(file_io_sanitizer(std::move(writer))));
+              }
+              return writer;
+          });
+    });
+}
+
+ss::future<compacted_topic_index> make_compacted_topic_index(
+  const std::filesystem::path& path,
+  log_config::debug_sanitize_files debug,
+  ss::io_priority_class iopc) {
+    return make_writer(path, debug).then([iopc, path](ss::file writer) {
+        try {
+            // NOTE: This try-catch is needed to not uncover the real
+            // exception during an OOM condition, since the appender allocates
+            // 1MB of memory aligned buffers
+            return ss::make_ready_future<compacted_topic_index>(
+              make_file_backed_compacted_index(
+                writer, iopc, segment_appender::write_behind_memory / 2));
+        } catch (...) {
+            auto e = std::current_exception();
+            vlog(stlog.error, "could not allocate compacted-index: {}", e);
+            return writer.close().then_wrapped([writer, e = e](ss::future<>) {
+                return ss::make_exception_future<compacted_topic_index>(e);
+            });
+        }
+    });
 }
 
 ss::future<segment_appender_ptr> make_segment_appender(
@@ -174,21 +191,18 @@ ss::future<segment_appender_ptr> make_segment_appender(
   size_t number_of_chunks,
   ss::io_priority_class iopc) {
     return make_writer(path, debug)
-      .then([number_of_chunks, iopc, path](std::optional<ss::file> opf) {
-          if (!opf) {
-              return ss::make_exception_future<segment_appender_ptr>(
-                std::runtime_error(
-                  fmt::format("could not create segment appender:{}", path)));
-          }
+      .then([number_of_chunks, iopc, path](ss::file writer) {
           try {
+              // NOTE: This try-catch is needed to not uncover the real
+              // exception during an OOM condition, since the appender allocates
+              // 1MB of memory aligned buffers
               return ss::make_ready_future<segment_appender_ptr>(
                 std::make_unique<segment_appender>(
-                  opf.value(),
-                  segment_appender::options(iopc, number_of_chunks)));
+                  writer, segment_appender::options(iopc, number_of_chunks)));
           } catch (...) {
               auto e = std::current_exception();
               vlog(stlog.error, "could not allocate appender: {}", e);
-              return opf.value().close().then_wrapped([e = e](ss::future<>) {
+              return writer.close().then_wrapped([writer, e = e](ss::future<>) {
                   return ss::make_exception_future<segment_appender_ptr>(e);
               });
           }
@@ -206,6 +220,25 @@ size_t number_of_chunks_from_config(const ntp_config& ntpc) {
     return segment_appender::chunks_no_buffer;
 }
 
+template<typename Func>
+auto with_segment(ss::lw_shared_ptr<segment> s, Func&& f) {
+    return f(s).then_wrapped([s](
+                               ss::future<ss::lw_shared_ptr<segment>> new_seg) {
+        try {
+            auto ptr = new_seg.get0();
+            return ss::make_ready_future<ss::lw_shared_ptr<segment>>(ptr);
+        } catch (...) {
+            return s->close()
+              .then_wrapped([e = std::current_exception()](ss::future<>) {
+                  return ss::make_exception_future<ss::lw_shared_ptr<segment>>(
+                    e);
+              })
+              .finally([s] {});
+        }
+    });
+}
+
+// inneficient, but easy and rare
 ss::future<ss::lw_shared_ptr<segment>> log_manager::do_make_log_segment(
   const ntp_config& ntpc,
   model::offset base_offset,
@@ -216,37 +249,51 @@ ss::future<ss::lw_shared_ptr<segment>> log_manager::do_make_log_segment(
     auto path = segment_path::make_segment_path(
       _config.base_dir, ntpc.ntp, base_offset, term, version);
     vlog(stlog.info, "Creating new segment {}", path.string());
-    return make_segment_appender(
-             path,
-             _config.sanitize_fileops,
-             number_of_chunks_from_config(ntpc),
-             pc)
-      .then([this, buf_size, path, base_offset](segment_appender_ptr a) {
-          return open_segment(path, buf_size)
-            .then_wrapped([this, a = std::move(a), base_offset](
-                            ss::future<ss::lw_shared_ptr<segment>> s) mutable {
-                try {
-                    auto seg = s.get0();
-                    seg->reader().set_file_size(0);
-                    vassert(
-                      base_offset == seg->offsets().base_offset,
-                      "Invalid segment creation:{}",
-                      seg);
-                    return ss::make_ready_future<ss::lw_shared_ptr<segment>>(
-                      ss::make_lw_shared<segment>(
-                        seg->offsets(),
-                        std::move(seg->reader()),
-                        std::move(seg->index()),
-                        std::move(*a),
-                        create_cache()));
-                } catch (...) {
-                    auto raw = a.get();
-                    return raw->close().then(
-                      [a = std::move(a), e = std::current_exception()] {
-                          return ss::make_exception_future<
-                            ss::lw_shared_ptr<segment>>(e);
-                      });
-                }
+    return open_segment(path, buf_size)
+      .then([this, path, &ntpc, pc](ss::lw_shared_ptr<segment> seg) {
+          return with_segment(
+            seg, [this, path, &ntpc, pc](ss::lw_shared_ptr<segment> seg) {
+                return make_segment_appender(
+                         path,
+                         _config.sanitize_fileops,
+                         number_of_chunks_from_config(ntpc),
+                         pc)
+                  .then([seg](segment_appender_ptr a) {
+                      return ss::make_ready_future<ss::lw_shared_ptr<segment>>(
+                        ss::make_lw_shared<segment>(
+                          seg->offsets(),
+                          std::move(seg->reader()),
+                          std::move(seg->index()),
+                          std::move(*a),
+                          std::nullopt,
+                          seg->has_cache()
+                            ? std::optional(std::move(seg->cache()))
+                            : std::nullopt));
+                  });
+            });
+      })
+      .then([this, path, &ntpc, pc](ss::lw_shared_ptr<segment> seg) {
+          if (!(ntpc.overrides && ntpc.overrides->compaction_strategy)) {
+              return ss::make_ready_future<ss::lw_shared_ptr<segment>>(seg);
+          }
+          return with_segment(
+            seg, [this, path, pc](ss::lw_shared_ptr<segment> seg) {
+                auto compacted_path = path;
+                compacted_path.replace_extension(".compaction_index");
+                return make_compacted_topic_index(
+                         compacted_path, _config.sanitize_fileops, pc)
+                  .then([seg](compacted_topic_index compact) {
+                      return ss::make_ready_future<ss::lw_shared_ptr<segment>>(
+                        ss::make_lw_shared<segment>(
+                          seg->offsets(),
+                          std::move(seg->reader()),
+                          std::move(seg->index()),
+                          std::move(seg->appender()),
+                          std::move(compact),
+                          seg->has_cache()
+                            ? std::optional(std::move(seg->cache()))
+                            : std::nullopt));
+                  });
             });
       });
 }
@@ -294,7 +341,8 @@ static ss::future<segment_set> do_recover(segment_set&& segments) {
           std::move_iterator(good.end()),
           std::back_inserter(to_recover));
         good.erase(
-          good_end, good.end()); // remove all the ones we copied into recover
+          good_end,
+          good.end()); // remove all the ones we copied into recover
 
         for (auto& s : to_recover) {
             auto stat = s->reader().stat().get0();
@@ -342,17 +390,18 @@ log_manager::open_segment(const std::filesystem::path& path, size_t buf_size) {
             record_version_type::v1,
             path)));
     }
-    // note: this file _must_ be open in `ro` mode only. Seastar uses dma files
-    // with no shared buffer cache around them. When we use a writer w/ dma
-    // at the same time as the reader, we need a way to synchronize filesytem
-    // metadata. In order to prevent expensive synchronization primitives
-    // fsyncing both *reads* and *writes* we open this file in ro mode and if
-    // raft requires truncation, we open yet-another handle w/ rw mode just for
-    // the truncation which gives us all the benefits of preventing x-file
-    // synchronization This is fine, because truncation to sealed segments are
-    // supposed to be very rare events. The hotpath of truncating the appender,
-    // is optimized.
-    return ss::open_file_dma(path.string(), ss::open_flags::ro)
+    // note: this file _must_ be open in `ro` mode only. Seastar uses dma
+    // files with no shared buffer cache around them. When we use a writer
+    // w/ dma at the same time as the reader, we need a way to synchronize
+    // filesytem metadata. In order to prevent expensive synchronization
+    // primitives fsyncing both *reads* and *writes* we open this file in ro
+    // mode and if raft requires truncation, we open yet-another handle w/
+    // rw mode just for the truncation which gives us all the benefits of
+    // preventing x-file synchronization This is fine, because truncation to
+    // sealed segments are supposed to be very rare events. The hotpath of
+    // truncating the appender, is optimized.
+    return ss::open_file_dma(
+             path.string(), ss::open_flags::ro | ss::open_flags::create)
       .then([](ss::file f) {
           return f.stat().then([f](struct stat s) {
               return ss::make_ready_future<uint64_t, ss::file>(s.st_size, f);
@@ -397,6 +446,7 @@ log_manager::open_segment(const std::filesystem::path& path, size_t buf_size) {
                     std::move(*rdr),
                     std::move(idx),
                     std::nullopt,
+                    std::nullopt,
                     create_cache()));
             });
       });
@@ -434,8 +484,9 @@ log_manager::open_segments(ss::sstring dir) {
                   });
             });
           /*
-           * if the directory walker returns an exceptional future then all the
-           * segment readers that were created are cleaned up by ss::do_with.
+           * if the directory walker returns an exceptional future then all
+           * the segment readers that were created are cleaned up by
+           * ss::do_with.
            */
           return f.then([&segs]() mutable {
               return ss::make_ready_future<segs_type>(std::move(segs));
@@ -490,8 +541,8 @@ ss::future<> log_manager::remove(model::ntp ntp) {
         // NOTE: it is ok to *not* externally synchronize the log here
         // because remove, takes a write lock on each individual segments
         // waiting for all of them to be closed before actually removing the
-        // underlying log. If there is a background operation like compaction
-        // or so, it will block correctly.
+        // underlying log. If there is a background operation like
+        // compaction or so, it will block correctly.
         return lg.remove().finally([lg] {});
     });
 }
