@@ -19,6 +19,7 @@ import (
 )
 
 var datasource string
+var jobName string
 
 const panelHeight = 6
 
@@ -60,6 +61,11 @@ func NewGrafanaDashboardCmd() *cobra.Command {
 		datasourceFlag,
 		"",
 		"The name of the Prometheus datasource as configured in your grafana instance.")
+	command.Flags().StringVar(
+		&jobName,
+		"job-name",
+		"redpanda",
+		"The prometheus job name by which to identify the redpanda nodes")
 	command.MarkFlagRequired(datasourceFlag)
 	return command
 }
@@ -89,7 +95,7 @@ func buildGrafanaDashboard(
 ) graf.Dashboard {
 	intervals := []string{"5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h", "2h", "1d"}
 	timeOptions := []string{"5m", "15m", "1h", "6h", "12h", "24h", "2d", "7d", "30d"}
-	summaryPanels := buildSummary(metricFamilies, "node")
+	summaryPanels := buildSummary(metricFamilies, jobName)
 	lastY := summaryPanels[len(summaryPanels)-1].GetGridPos().Y + panelHeight
 	rows := processRows(metricFamilies, lastY)
 	return graf.Dashboard{
