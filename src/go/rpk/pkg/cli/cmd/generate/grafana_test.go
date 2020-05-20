@@ -400,7 +400,7 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
    },
    "fill": 1,
    "linewidth": 2,
-   "nullPointMode": "null",
+   "nullPointMode": "null as zero",
    "thresholds": null,
    "lines": true,
    "bars": false,
@@ -410,7 +410,7 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
     "msResolution": true
    },
    "aliasColors": {},
-   "steppedLine": false
+   "steppedLine": true
   },
   {
    "type": "graph",
@@ -472,7 +472,7 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
    },
    "fill": 1,
    "linewidth": 2,
-   "nullPointMode": "null",
+   "nullPointMode": "null as zero",
    "thresholds": null,
    "lines": true,
    "bars": false,
@@ -482,7 +482,7 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
     "msResolution": true
    },
    "aliasColors": {},
-   "steppedLine": false
+   "steppedLine": true
   },
   {
    "type": "text",
@@ -814,7 +814,7 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
      },
      "fill": 1,
      "linewidth": 2,
-     "nullPointMode": "null",
+     "nullPointMode": "null as zero",
      "thresholds": null,
      "lines": true,
      "bars": false,
@@ -824,7 +824,7 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
       "msResolution": true
      },
      "aliasColors": {},
-     "steppedLine": false
+     "steppedLine": true
     }
    ]
   }
