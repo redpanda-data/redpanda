@@ -162,7 +162,6 @@ void server::setup_metrics() {
        sm::make_histogram(
          "dispatch_handler_latency",
          [this] { return _hist.seastar_histogram_logform(); },
-         sm::description(
-           fmt::format("{}: Latency of method dispatch", _proto->name())))});
+         sm::description(fmt::format("{}: Latency ", _proto->name())))});
 }
 } // namespace rpc
