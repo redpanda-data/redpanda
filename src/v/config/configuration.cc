@@ -151,9 +151,9 @@ configuration::configuration()
       "Timeout for new member joins",
       required::no,
       30'000ms)
-  , metadata_dissemination_interval(
+  , metadata_dissemination_interval_ms(
       *this,
-      "metadata_dissemination_interval",
+      "metadata_dissemination_interval_ms",
       "Interaval for metadata dissemination batching",
       required::no,
       3'000ms)

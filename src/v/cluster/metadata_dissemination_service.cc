@@ -37,7 +37,7 @@ metadata_dissemination_service::metadata_dissemination_service(
   , _clients(clients)
   , _self(config::shard_local_cfg().node_id)
   , _dissemination_interval(
-      config::shard_local_cfg().metadata_dissemination_interval) {
+      config::shard_local_cfg().metadata_dissemination_interval_ms) {
     _dispatch_timer.set_callback([this] {
         (void)ss::with_gate(
           _bg, [this] { return dispatch_disseminate_leadership(); });
