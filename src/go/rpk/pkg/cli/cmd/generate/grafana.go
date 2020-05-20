@@ -273,8 +273,6 @@ func buildSummary(
 				X: i*width + (singleStatW * 2),
 				Y: y,
 			}
-			panel.NullPointMode = "null as zero"
-			panel.SteppedLine = true
 			panels = append(panels, panel)
 		}
 		y += panelHeight
@@ -386,6 +384,8 @@ func newPercentilePanel(
 	title := fmt.Sprintf("%s (p%.0f)", m.GetHelp(), percentile*100)
 	panel := newGraphPanel(title, target, "µs")
 	panel.Lines = true
+	panel.SteppedLine = true
+	panel.NullPointMode = "null as zero"
 	panel.Tooltip.ValueType = "individual"
 	panel.Tooltip.Sort = 0
 	return panel
