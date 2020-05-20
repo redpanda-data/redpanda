@@ -39,9 +39,9 @@ configuration::configuration()
       "Number of partitions in internal raft metadata topic",
       required::no,
       7)
-  , raft_heartbeat_interval(
+  , raft_heartbeat_interval_ms(
       *this,
-      "raft_heartbeat_interval",
+      "raft_heartbeat_interval_ms",
       "Milliseconds for raft leader heartbeats",
       required::no,
       std::chrono::milliseconds(150))
@@ -151,9 +151,9 @@ configuration::configuration()
       "Timeout for new member joins",
       required::no,
       30'000ms)
-  , metadata_dissemination_interval(
+  , metadata_dissemination_interval_ms(
       *this,
-      "metadata_dissemination_interval",
+      "metadata_dissemination_interval_ms",
       "Interaval for metadata dissemination batching",
       required::no,
       3'000ms)
@@ -163,9 +163,9 @@ configuration::configuration()
       "delete segments older than this - default 1 week",
       required::no,
       10080min)
-  , log_compaction_interval(
+  , log_compaction_interval_ms(
       *this,
-      "log_compaction_interval",
+      "log_compaction_interval_ms",
       "How often do we trigger background compaction",
       required::no,
       10min)

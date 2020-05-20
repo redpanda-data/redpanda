@@ -26,7 +26,7 @@ struct configuration final : public config_store {
     // Raft
     property<int32_t> node_id;
     property<int32_t> seed_server_meta_topic_partitions;
-    property<std::chrono::milliseconds> raft_heartbeat_interval;
+    property<std::chrono::milliseconds> raft_heartbeat_interval_ms;
     property<std::vector<seed_server>> seed_servers;
     property<int16_t> min_version;
     property<int16_t> max_version;
@@ -47,10 +47,10 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> group_max_session_timeout_ms;
     property<std::chrono::milliseconds> group_initial_rebalance_delay;
     property<std::chrono::milliseconds> group_new_member_join_timeout;
-    property<std::chrono::milliseconds> metadata_dissemination_interval;
+    property<std::chrono::milliseconds> metadata_dissemination_interval_ms;
     // same as delete.retention.ms in kafka
     property<std::chrono::milliseconds> delete_retention_ms;
-    property<std::chrono::milliseconds> log_compaction_interval;
+    property<std::chrono::milliseconds> log_compaction_interval_ms;
     // same as retention.size in kafka - TODO: size not implemented
     property<std::optional<size_t>> retention_bytes;
     property<int32_t> group_topic_partitions;
