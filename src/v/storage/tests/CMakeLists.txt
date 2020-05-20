@@ -84,8 +84,10 @@ rp_test(
 )
 rp_test(
   UNIT_TEST
-  BINARY_NAME offset_index_test
-  SOURCES offset_index_utils_tests.cc
+  BINARY_NAME index_test
+  SOURCES
+    offset_index_utils_tests.cc
+    compaction_index_format_tests.cc
   LIBRARIES v::seastar_testing_main v::storage_test_utils
   ARGS "-- -c 1"
   LABELS storage

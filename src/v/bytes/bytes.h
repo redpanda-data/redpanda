@@ -8,14 +8,15 @@
 #include <cstdint>
 #include <iosfwd>
 
+// cannot be a `std::byte` because that's not sizeof(char)
 using bytes = ss::basic_sstring<
-  int8_t,   // Must be different from char to not leak to std::string_view
-  uint32_t, // size type - 4 bytes - 4GB max
+  uint8_t,  // Must be different from char to not leak to std::string_view
+  uint32_t, // size type - 4 bytes - 4GB max - don't use a size_t or any 64-bit
   31,       // short string optimization size
   false     // not null terminated
   >;
 
-using bytes_view = std::basic_string_view<int8_t>;
+using bytes_view = std::basic_string_view<uint8_t>;
 using bytes_opt = std::optional<bytes>;
 
 ss::sstring to_hex(bytes_view b);
@@ -28,7 +29,7 @@ inline bytes iobuf_to_bytes(const iobuf& in) {
     auto out = ss::uninitialized_string<bytes>(in.size_bytes());
     {
         iobuf::iterator_consumer it(in.cbegin(), in.cend());
-        it.consume_to(in.size_bytes(), out.begin());
+        it.consume_to(in.size_bytes(), out.data());
     }
     return out;
 }
