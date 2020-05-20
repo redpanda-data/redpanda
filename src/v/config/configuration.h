@@ -50,7 +50,7 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> metadata_dissemination_interval;
     // same as delete.retention.ms in kafka
     property<std::chrono::milliseconds> delete_retention_ms;
-    property<std::chrono::milliseconds> log_compaction_interval;
+    property<std::chrono::milliseconds> log_compaction_interval_ms;
     // same as retention.size in kafka - TODO: size not implemented
     property<std::optional<size_t>> retention_bytes;
     property<int32_t> group_topic_partitions;
