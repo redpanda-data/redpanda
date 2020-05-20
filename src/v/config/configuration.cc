@@ -39,9 +39,9 @@ configuration::configuration()
       "Number of partitions in internal raft metadata topic",
       required::no,
       7)
-  , raft_heartbeat_interval(
+  , raft_heartbeat_interval_ms(
       *this,
-      "raft_heartbeat_interval",
+      "raft_heartbeat_interval_ms",
       "Milliseconds for raft leader heartbeats",
       required::no,
       std::chrono::milliseconds(150))
