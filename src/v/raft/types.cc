@@ -186,18 +186,19 @@ async_adl<raft::append_entries_request>::from(iobuf_parser& in) {
 
 void adl<raft::protocol_metadata>::to(
   iobuf& out, raft::protocol_metadata request) {
-    std::array<char, 5 * vint::max_length> staging{};
-    auto idx = vint::serialize(request.group(), (int8_t*)staging.data());
-    idx += vint::serialize(
-      request.commit_index(), (int8_t*)staging.data() + idx);
-    idx += vint::serialize(request.term(), (int8_t*)staging.data() + idx);
+    std::array<bytes::value_type, 5 * vint::max_length> staging{};
+    auto idx = vint::serialize(request.group(), staging.data());
+    idx += vint::serialize(request.commit_index(), staging.data() + idx);
+    idx += vint::serialize(request.term(), staging.data() + idx);
 
     // varint the delta-encoded value
-    idx += vint::serialize(
-      request.prev_log_index(), (int8_t*)staging.data() + idx);
-    idx += vint::serialize(
-      request.prev_log_term(), (int8_t*)staging.data() + idx);
-    out.append(staging.data(), idx);
+    idx += vint::serialize(request.prev_log_index(), staging.data() + idx);
+    idx += vint::serialize(request.prev_log_term(), staging.data() + idx);
+
+    out.append(
+      // NOLINTNEXTLINE
+      reinterpret_cast<const char*>(staging.data()),
+      idx);
 }
 
 template<typename T>
@@ -250,10 +251,9 @@ struct hbeat_response_array {
 };
 template<typename T>
 void encode_one_vint(iobuf& out, const T& t) {
-    std::array<char, vint::max_length> staging{};
+    auto b = vint::to_bytes(t);
     // NOLINTNEXTLINE
-    auto idx = vint::serialize(t(), (int8_t*)staging.data());
-    out.append(staging.data(), idx);
+    out.append(reinterpret_cast<const char*>(b.data()), b.size());
 }
 
 template<typename T>

@@ -13,10 +13,8 @@ static inline void crc_extend_iobuf(crc32& crc, const iobuf& buf) {
     });
 }
 static inline void crc_extend_vint(crc32& crc, vint::value_type v) {
-    std::array<bytes::value_type, vint::max_length> encoding_buffer{};
-    const auto size = vint::serialize(v, encoding_buffer.begin());
-    // NOLINTNEXTLINE
-    crc.extend(reinterpret_cast<const uint8_t*>(encoding_buffer.data()), size);
+    auto b = vint::to_bytes(v);
+    crc.extend(b.data(), b.size());
 }
 
 template<typename T, typename = std::enable_if_t<std::is_integral_v<T>, T>>
