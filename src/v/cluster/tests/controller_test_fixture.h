@@ -103,7 +103,7 @@ public:
           .start(
             model::node_id(config::shard_local_cfg().node_id()),
             model::timeout_clock::duration(2s),
-            config::shard_local_cfg().raft_heartbeat_interval(),
+            config::shard_local_cfg().raft_heartbeat_interval_ms(),
             std::ref(_cli_cache))
           .get0();
         _gm.invoke_on_all(&raft::group_manager::start).get();

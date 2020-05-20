@@ -26,7 +26,7 @@ struct configuration final : public config_store {
     // Raft
     property<int32_t> node_id;
     property<int32_t> seed_server_meta_topic_partitions;
-    property<std::chrono::milliseconds> raft_heartbeat_interval;
+    property<std::chrono::milliseconds> raft_heartbeat_interval_ms;
     property<std::vector<seed_server>> seed_servers;
     property<int16_t> min_version;
     property<int16_t> max_version;
