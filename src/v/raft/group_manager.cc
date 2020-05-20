@@ -31,10 +31,7 @@ ss::future<> group_manager::stop() {
 }
 
 ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::start_group(
-  raft::group_id id,
-  std::vector<model::broker> nodes,
-  storage::log log,
-  std::optional<raft::consensus::append_entries_cb_t> append_entries_cb) {
+  raft::group_id id, std::vector<model::broker> nodes, storage::log log) {
     auto raft = ss::make_lw_shared<raft::consensus>(
       _self,
       id,
@@ -47,8 +44,7 @@ ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::start_group(
       _client,
       [this](raft::leadership_status st) {
           trigger_leadership_notification(std::move(st));
-      },
-      std::move(append_entries_cb));
+      });
 
     return ss::with_gate(_gate, [this, raft] {
         return raft->start().then([this, raft] {

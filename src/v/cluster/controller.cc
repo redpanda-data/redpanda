@@ -5,7 +5,6 @@
 #include "cluster/errc.h"
 #include "cluster/logger.h"
 #include "cluster/namespace.h"
-#include "cluster/notification_latch.h"
 #include "cluster/partition_manager.h"
 #include "cluster/simple_batch_builder.h"
 #include "cluster/types.h"
@@ -40,7 +39,8 @@ controller::controller(
   ss::sharded<shard_table>& st,
   ss::sharded<metadata_cache>& md_cache,
   ss::sharded<rpc::connection_cache>& connection_cache)
-  : _self(make_self_broker(config::shard_local_cfg()))
+  : state_machine(clusterlog, raft_priority())
+  , _self(make_self_broker(config::shard_local_cfg()))
   , _seed_servers(config::shard_local_cfg().seed_servers())
   , _data_directory(config::shard_local_cfg().data_directory().as_sstring())
   , _gm(gm)
@@ -174,7 +174,8 @@ ss::future<> controller::start() {
                     return join_raft0();
                 };
             });
-      });
+      })
+      .then([this] { return state_machine::start(_raft0); });
 }
 
 ss::future<consensus_ptr> controller::start_raft0() {
@@ -186,20 +187,11 @@ ss::future<consensus_ptr> controller::start_raft0() {
         brokers.push_back(_self);
     }
     return _pm.local().manage(
-      make_raft0_ntp_config(),
-      controller::group,
-      std::move(brokers),
-      [this](model::record_batch_reader&& reader) {
-          verify_shard();
-          on_raft0_entries_comitted(std::move(reader));
-      });
+      make_raft0_ntp_config(), controller::group, std::move(brokers));
 }
 
 ss::future<> controller::stop() {
     _gm.local().unregister_leadership_notification(_leader_notify_handle);
-    if (ss::this_shard_id() == controller::shard && _raft0) {
-        _raft0->remove_append_entries_callback();
-    }
     if (ss::this_shard_id() == controller::shard) {
         // in a multi-threaded app this would look like a deadlock waiting
         // to happen, but it works in seastar: broadcast here only makes the
@@ -210,11 +202,14 @@ ss::future<> controller::stop() {
         _leadership_cond.broadcast();
     }
     _as.request_abort();
-    return _state_lock.with([this] {
-        // we have to stop latch first as there may be some futures waiting
-        // inside the gate for notification
-        _notification_latch.stop();
-        return _bg.close();
+    return state_machine::stop().then(
+      [this] { return _state_lock.with([this] { return _bg.close(); }); });
+}
+
+ss::future<> controller::apply(model::record_batch batch) {
+    verify_shard();
+    return _state_lock.with([this, batch = std::move(batch)]() mutable {
+        return process_raft0_batch(std::move(batch));
     });
 }
 
@@ -229,11 +224,9 @@ ss::future<> controller::process_raft0_batch(model::record_batch batch) {
         return ss::make_exception_future<>(std::runtime_error(
           "We cannot process compressed record_batch'es yet, see #188"));
     }
-    auto last_offset = batch.last_offset();
-    auto f = ss::make_ready_future<>();
     if (batch.header().type == raft::configuration_batch_type) {
         auto base_offset = batch.header().base_offset;
-        f = model::consume_records(
+        return model::consume_records(
           std::move(batch), [this, base_offset](model::record rec) mutable {
               auto rec_offset = model::offset(
                 base_offset() + rec.offset_delta());
@@ -241,18 +234,15 @@ ss::future<> controller::process_raft0_batch(model::record_batch batch) {
           });
     } else {
         auto records_to_recover = batch.record_count();
-        f = model::consume_records(
-              std::move(batch),
-              [this](model::record rec) mutable {
-                  return recover_record(std::move(rec));
-              })
-              .then([this, records_to_recover] {
-                  return _recovery_semaphore.wait(records_to_recover);
-              });
+        return model::consume_records(
+                 std::move(batch),
+                 [this](model::record rec) mutable {
+                     return recover_record(std::move(rec));
+                 })
+          .then([this, records_to_recover] {
+              return _recovery_semaphore.wait(records_to_recover);
+          });
     }
-
-    return f.then(
-      [this, last_offset] { return _notification_latch.notify(last_offset); });
 }
 
 ss::future<>
@@ -406,8 +396,7 @@ ss::future<> controller::manage_partition(
       .manage(
         std::move(ntp_cfg),
         raft_group,
-        get_replica_set_brokers(_md_cache.local(), std::move(replicas)),
-        std::nullopt)
+        get_replica_set_brokers(_md_cache.local(), std::move(replicas)))
       .then([path = std::move(path), raft_group](consensus_ptr) {
           vlog(
             clusterlog.info,
@@ -426,8 +415,6 @@ ss::future<> controller::assign_group_to_shard(
           s.insert(raft_group, shard);
       });
 }
-
-void controller::end_of_stream() {}
 
 ss::future<> controller::update_cache_with_partitions_assignment(
   const partition_assignment& p_as) {
@@ -742,9 +729,9 @@ ss::future<std::vector<topic_result>> controller::delete_topics(
         });
 }
 
-static ss::future<std::vector<topic_result>> process_replicate_topic_op_result(
+ss::future<std::vector<topic_result>>
+controller::process_replicate_topic_op_result(
   std::vector<model::topic_namespace> valid_topics,
-  notification_latch& latch,
   model::timeout_clock::time_point timeout,
   ss::future<result<raft::replicate_result>> f) {
     using ret_t = std::vector<topic_result>;
@@ -753,9 +740,16 @@ static ss::future<std::vector<topic_result>> process_replicate_topic_op_result(
         if (result.has_value()) {
             // success case
             // wait for notification
-            return latch.wait_for(result.value().last_offset, timeout)
-              .then([valid_topics = std::move(valid_topics)](errc ec) {
-                  return create_topic_results(valid_topics, ec);
+            return wait(result.value().last_offset, timeout)
+              .then_wrapped([valid_topics = std::move(valid_topics)](
+                              ss::future<> f) {
+                  try {
+                      f.get();
+                      return create_topic_results(valid_topics, errc::success);
+                  } catch (const raft::offset_monitor::wait_aborted&) {
+                      return create_topic_results(
+                        valid_topics, errc::shutting_down);
+                  }
               });
         }
     } catch (...) {
@@ -813,7 +807,7 @@ ss::future<std::vector<topic_result>> controller::do_delete_topics(
         [this, units = std::move(units), timeout, topics = std::move(topics)](
           ss::future<result<raft::replicate_result>> f) mutable {
             return process_replicate_topic_op_result(
-              topics, _notification_latch, timeout, std::move(f));
+              topics, timeout, std::move(f));
         })
       .then([errors = std::move(errors)](ret_t results) {
           // merge results from both sources
@@ -870,10 +864,7 @@ ss::future<std::vector<topic_result>> controller::do_create_topics(
          units = std::move(units),
          timeout](ss::future<result<raft::replicate_result>> f) mutable {
             return process_replicate_topic_op_result(
-              std::move(valid_topics),
-              _notification_latch,
-              timeout,
-              std::move(f));
+              std::move(valid_topics), timeout, std::move(f));
         })
       .then([errors = std::move(errors)](ret_t results) {
           // merge results from both sources
@@ -936,18 +927,15 @@ ss::future<> controller::handle_controller_leadership_notification(
         model::make_memory_record_batch_reader({create_checkpoint_batch()}),
         raft::replicate_options(default_consistency_level))
       .then([this, u = std::move(u)](result<raft::replicate_result> res) {
-          return _notification_latch
-            .wait_for(res.value().last_offset, model::no_timeout)
-            .then([this](errc ec) {
-                if (ec != errc::success) {
-                    vlog(
-                      clusterlog.warn, "Unable to replicate data as a leader");
-                    return;
-                }
+          return wait(res.value().last_offset, model::no_timeout)
+            .then([this] {
                 vlog(clusterlog.info, "Local controller became a leader");
                 create_partition_allocator();
                 _is_leader = true;
                 _leadership_cond.broadcast();
+            })
+            .handle_exception_type([](raft::offset_monitor::wait_aborted) {
+                vlog(clusterlog.warn, "Unable to replicate data as a leader");
             });
       });
 }
@@ -998,23 +986,6 @@ controller::update_brokers_cache(std::vector<model::broker> nodes) {
       [nodes = std::move(nodes)](metadata_cache& c) mutable {
           c.update_brokers_cache(std::move(nodes));
       });
-}
-
-void controller::on_raft0_entries_comitted(
-  model::record_batch_reader&& reader) {
-    (void)with_gate(_bg, [this, reader = std::move(reader)]() mutable {
-        return _state_lock.with([this, reader = std::move(reader)]() mutable {
-            if (_bg.is_closed()) {
-                return ss::make_ready_future<>();
-            }
-            return std::move(reader).consume(
-              batch_consumer(this), model::no_timeout);
-        });
-    }).handle_exception_type([](const ss::gate_closed_exception&) {
-        vlog(
-          clusterlog.info,
-          "On shutdown... ignoring append_entries notification");
-    });
 }
 
 ss::future<> controller::update_clients_cache(

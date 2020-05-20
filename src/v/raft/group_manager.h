@@ -30,10 +30,7 @@ public:
     ss::future<> stop();
 
     ss::future<ss::lw_shared_ptr<raft::consensus>> start_group(
-      raft::group_id id,
-      std::vector<model::broker> nodes,
-      storage::log log,
-      std::optional<raft::consensus::append_entries_cb_t> append_entries_cb);
+      raft::group_id id, std::vector<model::broker> nodes, storage::log log);
 
     ss::future<> stop_group(ss::lw_shared_ptr<raft::consensus>);
 
