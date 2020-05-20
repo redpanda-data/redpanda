@@ -1,5 +1,7 @@
 #include "storage/compacted_topic_index.h"
 
+#include "hashing/crc32c.h"
+#include "reflection/adl.h"
 #include "storage/segment_appender.h"
 #include "utils/vint.h"
 
@@ -26,27 +28,44 @@ public:
     // vint   size-key
     // []byte key
     // vint   offset
-    ss::future<> write_key(const bytes& b, model::offset o) final {
+    ss::future<> write_key(bytes_view b, model::offset o) final {
+        ++_footer.keys;
         return ss::do_with(
-          std::array<int8_t, vint::max_length>(),
-          [this, &b, o](std::array<int8_t, vint::max_length>& ref) {
+          std::array<uint8_t, vint::max_length>(),
+          [this, b, o](std::array<uint8_t, vint::max_length>& ref) {
               const size_t size = vint::serialize(b.size(), ref.data());
+              _footer.size += size;
+              _crc.extend(ref.data(), ref.size());
               return _appender
                 // NOLINTNEXTLINE
                 .append(reinterpret_cast<const char*>(ref.data()), size)
-                .then([this, &b] { return _appender.append(b); })
+                .then([this, b] {
+                    _footer.size += b.size();
+                    _crc.extend(b.data(), b.size());
+                    return _appender.append(b);
+                })
                 .then([this, o, &ref] {
                     const size_t size = vint::serialize(o, ref.data());
+                    _footer.size += size;
+                    _crc.extend(ref.data(), ref.size());
                     return _appender
                       // NOLINTNEXTLINE
                       .append(reinterpret_cast<const char*>(ref.data()), size);
                 });
           });
     }
-    ss::future<> close() final { return _appender.close(); }
+    ss::future<> close() final {
+        _footer.crc = _crc.value();
+        return ss::do_with(
+                 reflection::to_iobuf(_footer),
+                 [this](iobuf& b) { return _appender.append(b); })
+          .then([this] { return _appender.close(); });
+    }
 
 private:
     segment_appender _appender;
+    compacted_topic_index::footer _footer;
+    crc32 _crc;
 };
 
 compacted_topic_index
