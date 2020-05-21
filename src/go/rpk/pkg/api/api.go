@@ -47,9 +47,9 @@ type metricsBody struct {
 }
 
 type environmentBody struct {
-	EnvironmentPayload
-	SentAt time.Time     `json:"sentAt"`
-	Config config.Config `json:"config"`
+	Payload EnvironmentPayload `json:"payload"`
+	SentAt  time.Time          `json:"sentAt"`
+	Config  string             `json:"config"`
 }
 
 func SendMetrics(p MetricsPayload, conf config.Config) error {
@@ -64,8 +64,8 @@ func SendMetrics(p MetricsPayload, conf config.Config) error {
 	return SendMetricsToUrl(b, defaultUrl)
 }
 
-func SendEnvironment(env EnvironmentPayload, conf config.Config) error {
-	b := environmentBody{env, time.Now(), conf}
+func SendEnvironment(env EnvironmentPayload, confJSON string) error {
+	b := environmentBody{env, time.Now(), confJSON}
 	return SendEnvironmentToUrl(
 		b,
 		fmt.Sprintf("%s%s", defaultUrl, "/env"),

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -77,7 +78,7 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 			env := api.EnvironmentPayload{}
 			installDirectory, err := cli.GetOrFindInstallDir(fs, installDirFlag)
 			if err != nil {
-				sendEnv(env, conf, err)
+				sendEnv(fs, env, conf, err)
 				return err
 			}
 			rpArgs, err := buildRedpandaFlags(
@@ -88,7 +89,7 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 				wellKnownIo,
 			)
 			if err != nil {
-				sendEnv(env, conf, err)
+				sendEnv(fs, env, conf, err)
 				return err
 			}
 			checkPayloads, tunerPayloads, err := prestart(
@@ -102,7 +103,7 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 			env.Checks = checkPayloads
 			env.Tuners = tunerPayloads
 			if err != nil {
-				sendEnv(env, conf, err)
+				sendEnv(fs, env, conf, err)
 				return err
 			}
 			// Override all the defaults when flags are explicitly set
@@ -111,7 +112,7 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 					rpArgs.SeastarFlags[flag] = fmt.Sprint(val)
 				}
 			}
-			sendEnv(env, conf, nil)
+			sendEnv(fs, env, conf, nil)
 			rpArgs.SeastarFlags = mergeFlags(rpArgs.SeastarFlags, conf.Rpk.AdditionalStartFlags)
 			launcher := redpanda.NewLauncher(installDirectory, rpArgs)
 			log.Info(feedbackMsg)
@@ -420,14 +421,37 @@ func check(
 	return payloads, nil
 }
 
-func sendEnv(env api.EnvironmentPayload, conf *config.Config, err error) {
+func sendEnv(
+	fs afero.Fs, env api.EnvironmentPayload, conf *config.Config, err error,
+) {
+	if !conf.Rpk.EnableUsageStats {
+		log.Debug("Sending usage stats is disabled")
+		return
+	}
 	if err != nil {
 		env.ErrorMsg = err.Error()
 	}
-	if conf.Rpk.EnableUsageStats {
-		err := api.SendEnvironment(env, *conf)
+	// The config.Config struct holds only a subset of everything that can
+	// go in the YAML config file, so try to read the file directly to
+	// send everything.
+	confJSON, err := config.ReadAsJSON(fs, conf.ConfigFile)
+	if err != nil {
+		log.Warnf(
+			"Couldn't send latest config at '%s' due to: %s",
+			conf.ConfigFile,
+			err,
+		)
+		confBytes, err := json.Marshal(conf)
 		if err != nil {
-			log.Infof("couldn't send environment data: %v", err)
+			log.Warnf(
+				"Couldn't marshal the loaded config: %s",
+				err,
+			)
 		}
+		confJSON = string(confBytes)
+	}
+	err = api.SendEnvironment(env, confJSON)
+	if err != nil {
+		log.Warnf("couldn't send environment data: %v", err)
 	}
 }
