@@ -69,7 +69,10 @@ func TestSendEnvironment(t *testing.T) {
 			},
 			ErrorMsg: "tuner 2 failed",
 		},
-		SentAt: time.Now(),
+		NodeUuid:     "awe-1231-sdfasd-13-saddasdf-as123sdf",
+		NodeId:       1,
+		Organization: "test.vectorized.io",
+		SentAt:       time.Now(),
 		Config: `{
   "nodeUuid": "abc123-hu234-234kh",
   "clusterId": "cluster 1",
