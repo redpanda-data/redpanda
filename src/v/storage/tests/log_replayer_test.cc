@@ -49,6 +49,7 @@ struct context {
           std::move(reader),
           std::move(indexer),
           std::move(appender),
+          std::nullopt,
           std::nullopt);
         replayer_opt = log_replayer(*_seg);
     }

@@ -47,29 +47,25 @@ ntp_config config_from_ntp(const model::ntp& ntp) {
 SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
     log_manager m(make_config());
     auto stop_manager = ss::defer([&m] { m.stop().get(); });
-
-    auto ntp = model::ntp(
-      model::ns("ns1"), model::topic("tp1"), model::partition_id(11));
-    directories::initialize("test.dir/" + ntp.path()).get();
-    // Empty file
+    std::vector<storage::ntp_config> ntps;
+    ntps.reserve(4);
+    for (size_t i = 0; i < 4; ++i) {
+        ntps.push_back(
+          config_from_ntp(model::ntp(fmt::format("ns{}", i), "topic-1", i)));
+        directories::initialize(ntps[i].work_directory()).get();
+    }
     auto seg = m.make_log_segment(
-                  ntp,
+                  ntps[0],
                   model::offset(10),
                   model::term_id(1),
                   ss::default_priority_class())
                  .get0();
     seg->close().get();
 
-    auto ntp2 = model::ntp(
-      model::ns("ns1"), model::topic("tp1"), model::partition_id(1));
-    directories::initialize("test.dir/" + ntp2.path()).get();
-    // Empty dir
+    // auto ntp2 = empty
 
-    auto ntp3 = model::ntp(
-      model::ns("ns1"), model::topic("tp2"), model::partition_id(33));
-    directories::initialize("test.dir/" + ntp3.path()).get();
     auto seg3 = m.make_log_segment(
-                   ntp3,
+                   ntps[2],
                    model::offset(20),
                    model::term_id(1),
                    ss::default_priority_class())
@@ -77,11 +73,8 @@ SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
     write_batches(seg3);
     seg3->close().get();
 
-    auto ntp4 = model::ntp(
-      model::ns("ns2"), model::topic("tp1"), model::partition_id(50));
-    directories::initialize("test.dir/" + ntp4.path()).get();
     auto seg4 = m.make_log_segment(
-                   ntp4,
+                   ntps[3],
                    model::offset(2),
                    model::term_id(1),
                    ss::default_priority_class())
@@ -89,15 +82,15 @@ SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
     write_garbage(seg4->appender());
     seg4->close().get();
 
-    m.manage(config_from_ntp(ntp)).get();
-    m.manage(config_from_ntp(ntp2)).get();
-    m.manage(config_from_ntp(ntp3)).get();
-    m.manage(config_from_ntp(ntp4)).get();
+    m.manage(config_from_ntp(ntps[0].ntp)).get();
+    m.manage(config_from_ntp(ntps[1].ntp)).get();
+    m.manage(config_from_ntp(ntps[2].ntp)).get();
+    m.manage(config_from_ntp(ntps[3].ntp)).get();
     BOOST_CHECK_EQUAL(4, m.size());
-    BOOST_CHECK_EQUAL(m.get(ntp)->segment_count(), 0);
-    BOOST_CHECK_EQUAL(m.get(ntp2)->segment_count(), 0);
-    BOOST_CHECK_EQUAL(m.get(ntp3)->segment_count(), 1);
-    BOOST_CHECK_EQUAL(m.get(ntp4)->segment_count(), 0);
+    BOOST_CHECK_EQUAL(m.get(ntps[0].ntp)->segment_count(), 0);
+    BOOST_CHECK_EQUAL(m.get(ntps[1].ntp)->segment_count(), 0);
+    BOOST_CHECK_EQUAL(m.get(ntps[2].ntp)->segment_count(), 1);
+    BOOST_CHECK_EQUAL(m.get(ntps[3].ntp)->segment_count(), 0);
     BOOST_CHECK(!file_exists(seg->reader().filename()).get0());
     BOOST_CHECK(file_exists(seg3->reader().filename()).get0());
     BOOST_CHECK(!file_exists(seg4->reader().filename()).get0());
