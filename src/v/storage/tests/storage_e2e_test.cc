@@ -43,6 +43,8 @@ FIXTURE_TEST(
     BOOST_REQUIRE_EQUAL(headers.size(), batches.size());
     auto lstats = log.offsets();
     BOOST_REQUIRE_EQUAL(lstats.dirty_offset, batches.back().last_offset());
+    BOOST_REQUIRE_EQUAL(
+      lstats.last_term_start_offset, batches.front().base_offset());
     BOOST_REQUIRE_EQUAL(lstats.committed_offset, batches.back().last_offset());
     validate_offsets(model::offset(0), headers, batches);
 };
@@ -64,6 +66,8 @@ FIXTURE_TEST(append_twice_to_same_segment, storage_test_fixture) {
 
     BOOST_REQUIRE_EQUAL(headers.size(), batches.size());
     auto lstats = log.offsets();
+    BOOST_REQUIRE_EQUAL(
+      lstats.last_term_start_offset, batches.front().base_offset());
     BOOST_REQUIRE_EQUAL(lstats.dirty_offset, batches.back().last_offset());
     BOOST_REQUIRE_EQUAL(lstats.committed_offset, batches.back().last_offset());
 };
@@ -83,6 +87,8 @@ FIXTURE_TEST(test_assigning_offsets_in_multiple_segment, storage_test_fixture) {
 
     BOOST_REQUIRE_EQUAL(headers.size(), batches.size());
     auto lstats = log.offsets();
+    BOOST_REQUIRE_EQUAL(
+      lstats.last_term_start_offset, batches.front().base_offset());
     BOOST_REQUIRE_EQUAL(lstats.dirty_offset, batches.back().last_offset());
     BOOST_REQUIRE_EQUAL(lstats.committed_offset, batches.back().last_offset());
     validate_offsets(model::offset(0), headers, batches);
@@ -108,6 +114,8 @@ FIXTURE_TEST(test_single_record_per_segment, storage_test_fixture) {
     info("Flushed log: {}", log);
     BOOST_REQUIRE_EQUAL(headers.size(), batches.size());
     auto lstats = log.offsets();
+    BOOST_REQUIRE_EQUAL(
+      lstats.last_term_start_offset, batches.front().base_offset());
     BOOST_REQUIRE_EQUAL(lstats.dirty_offset, batches.back().last_offset());
     BOOST_REQUIRE_EQUAL(lstats.committed_offset, batches.back().last_offset());
     validate_offsets(model::offset(0), headers, batches);
@@ -139,6 +147,8 @@ FIXTURE_TEST(test_segment_rolling, storage_test_fixture) {
     info("Flushed log: {}", log);
     BOOST_REQUIRE_EQUAL(headers.size(), batches.size());
     auto lstats = log.offsets();
+    BOOST_REQUIRE_EQUAL(
+      lstats.last_term_start_offset, batches.front().base_offset());
     BOOST_REQUIRE_EQUAL(lstats.dirty_offset, batches.back().last_offset());
     BOOST_REQUIRE_EQUAL(lstats.committed_offset, batches.back().last_offset());
     validate_offsets(model::offset(0), headers, batches);
@@ -158,6 +168,8 @@ FIXTURE_TEST(test_segment_rolling, storage_test_fixture) {
     auto new_lstats = log.offsets();
     BOOST_REQUIRE_GE(new_lstats.committed_offset, lstats.committed_offset);
     auto new_batches = read_and_validate_all_batches(log);
+    BOOST_REQUIRE_EQUAL(
+      lstats.last_term_start_offset, batches.front().base_offset());
     BOOST_REQUIRE_EQUAL(
       new_lstats.committed_offset, new_batches.back().last_offset());
 };
@@ -212,6 +224,7 @@ FIXTURE_TEST(test_rolling_term, storage_test_fixture) {
     std::vector<model::record_batch_header> headers;
     model::offset current_offset = model::offset{0};
     for (auto i = 0; i < 5; i++) {
+        auto term_start_offset = current_offset;
         auto part = append_random_batches(log, 1, model::term_id(i));
         for (auto h : part) {
             current_offset += h.last_offset_delta + 1;
@@ -220,6 +233,8 @@ FIXTURE_TEST(test_rolling_term, storage_test_fixture) {
         BOOST_REQUIRE_EQUAL(
           model::term_id(i),
           log.get_term(current_offset - model::offset(1)).value());
+        auto lstats = log.offsets();
+        BOOST_REQUIRE_EQUAL(lstats.last_term_start_offset, term_start_offset);
         std::move(part.begin(), part.end(), std::back_inserter(headers));
     }
 
