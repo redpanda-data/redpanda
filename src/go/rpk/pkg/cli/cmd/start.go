@@ -450,7 +450,7 @@ func sendEnv(
 		}
 		confJSON = string(confBytes)
 	}
-	err = api.SendEnvironment(env, confJSON)
+	err = api.SendEnvironment(env, *conf, confJSON)
 	if err != nil {
 		log.Warnf("couldn't send environment data: %v", err)
 	}
