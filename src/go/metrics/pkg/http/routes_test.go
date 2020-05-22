@@ -24,6 +24,13 @@ func (r *mockRepo) SaveMetrics(_ storage.Metrics) error {
 	return nil
 }
 
+func (r *mockRepo) SaveEnvironment(_ storage.Environment) error {
+	if r.fail {
+		return errors.New("repository error")
+	}
+	return nil
+}
+
 func TestMetricsHandler(t *testing.T) {
 	tests := []struct {
 		name             string
