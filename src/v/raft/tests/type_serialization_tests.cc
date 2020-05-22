@@ -189,10 +189,10 @@ SEASTAR_THREAD_TEST_CASE(heartbeat_request_roundtrip_with_negative) {
     auto res
       = reflection::async_adl<raft::heartbeat_request>{}.from(parser).get0();
     for (auto& m : res.meta) {
-        BOOST_REQUIRE_EQUAL(m.commit_index, model::offset(-1));
-        BOOST_REQUIRE_EQUAL(m.term, model::term_id(-1));
-        BOOST_REQUIRE_EQUAL(m.prev_log_index, model::offset(-1));
-        BOOST_REQUIRE_EQUAL(m.prev_log_term, model::term_id(-1));
+        BOOST_REQUIRE_EQUAL(m.commit_index, model::offset{});
+        BOOST_REQUIRE_EQUAL(m.term, model::term_id{-1});
+        BOOST_REQUIRE_EQUAL(m.prev_log_index, model::offset{});
+        BOOST_REQUIRE_EQUAL(m.prev_log_term, model::term_id{});
     }
 }
 SEASTAR_THREAD_TEST_CASE(heartbeat_response_roundtrip) {

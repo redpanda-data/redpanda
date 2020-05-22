@@ -193,6 +193,9 @@ struct append_entries_reply {
     /// nextIndex with a follower that is far behind a leader
     model::offset last_committed_log_index;
     model::offset last_dirty_log_index;
+    // the last entry base offset used for the recovery speed up, the value is
+    // only valid for not successfull append_entries reply
+    model::offset last_term_base_offset;
     /// \brief did the rpc succeed or not
     status result = status::failure;
 };
