@@ -1,7 +1,9 @@
+#include "model/fundamental.h"
 #include "random/generators.h"
 #include "storage/opfuzz/opfuzz.h"
 #include "storage/tests/storage_test_fixture.h"
 #include "storage/tests/utils/random_batch.h"
+#include "storage/types.h"
 #include "test_utils/fixture.h"
 #include "utils/file_sanitizer.h"
 
@@ -24,8 +26,8 @@ FIXTURE_TEST(test_random_workload, storage_test_fixture) {
     auto deferred = ss::defer([&mngr]() mutable { mngr.stop().get0(); });
 
     // Test parameters
-    const size_t ntp_count = 1;
-    const size_t ops_per_ntp = 2000;
+    const size_t ntp_count = 4;
+    const size_t ops_per_ntp = 500;
     std::vector<std::unique_ptr<storage::opfuzz>> logs_to_fuzz;
     logs_to_fuzz.reserve(ntp_count);
     info("generating ntp's {}, with {} ops", ntp_count, ops_per_ntp);
@@ -34,9 +36,18 @@ FIXTURE_TEST(test_random_workload, storage_test_fixture) {
           "test.default",
           "topic." + random_generators::gen_alphanum_string(3),
           i);
-
-        auto log = mngr.manage(storage::ntp_config(ntp, mngr.config().base_dir))
-                     .get0();
+        auto cfg = storage::ntp_config(ntp, mngr.config().base_dir);
+        if (random_generators::get_int(1, 100) < 50) {
+            cfg.overrides
+              = std::make_unique<storage::ntp_config::default_overrides>(
+                storage::ntp_config::default_overrides{
+                  .cleanup_policy_bitflags
+                  = model::cleanup_policy_bitflags::compaction
+                    | model::cleanup_policy_bitflags::deletion,
+                  .compaction_strategy = model::compaction_strategy::offset,
+                });
+        }
+        auto log = mngr.manage(std::move(cfg)).get0();
         logs_to_fuzz.emplace_back(
           std::make_unique<storage::opfuzz>(std::move(log), ops_per_ntp));
     }

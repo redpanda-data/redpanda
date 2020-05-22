@@ -78,6 +78,9 @@ ss::future<> segment::do_close() {
     if (_appender) {
         f = f.then([this] { return _appender->close(); });
     }
+    if (_compaction_index) {
+        f = f.then([this] { return _compaction_index->close(); });
+    }
     // after appender flushes to make sure we make things visible
     // only after appender flush
     f = f.then([this] { return _idx.close(); });
@@ -162,6 +165,21 @@ void segment::cache_truncate(model::offset offset) {
     }
 }
 
+ss::future<> segment::compaction_index_batch(const model::record_batch& b) {
+    if (b.compressed()) {
+        vlog(
+          stlog.error,
+          "Ignoring indexing on compacted topic for compressed batch. "
+          "Currently unsupported. {}",
+          b.header());
+        return ss::now();
+    }
+    auto& w = compaction_index();
+    return ss::do_for_each(
+      b.begin(), b.end(), [o = b.base_offset(), &w](const model::record& r) {
+          return w.index(r.key(), o + model::offset(r.offset_delta()));
+      });
+}
 ss::future<append_result> segment::append(const model::record_batch& b) {
     check_segment_not_closed("append()");
     vassert(
@@ -198,7 +216,10 @@ ss::future<append_result> segment::append(const model::record_batch& b) {
                                  .byte_size = (size_t)b.size_bytes()};
         // cache always copies the batch
         cache_put(b);
-        return ret;
+        if (_compaction_index) {
+            return compaction_index_batch(b).then([ret] { return ret; });
+        }
+        return ss::make_ready_future<append_result>(ret);
     });
 }
 ss::future<append_result> segment::append(model::record_batch&& b) {
