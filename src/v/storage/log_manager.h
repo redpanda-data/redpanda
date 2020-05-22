@@ -168,10 +168,8 @@ public:
         return std::nullopt;
     }
 
-private:
-    using logs_type = absl::flat_hash_map<model::ntp, log_housekeeping_meta>;
+    ss::future<segment_set> recover_segments(std::filesystem::path);
 
-    ss::future<log> do_manage(ntp_config);
     ss::future<ss::lw_shared_ptr<segment>> do_make_log_segment(
       const ntp_config&,
       model::offset,
@@ -179,6 +177,11 @@ private:
       ss::io_priority_class pc,
       record_version_type,
       size_t buffer_size);
+
+private:
+    using logs_type = absl::flat_hash_map<model::ntp, log_housekeeping_meta>;
+
+    ss::future<log> do_manage(ntp_config);
 
     /**
      * \brief Create a segment reader for the specified file.
