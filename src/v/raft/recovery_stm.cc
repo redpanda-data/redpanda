@@ -174,9 +174,11 @@ ss::future<> recovery_stm::apply() {
     return ss::with_gate(
              _ptr->_bg,
              [this] {
-                 return ss::do_until(
-                   [this] { return is_recovery_finished(); },
-                   [this] { return do_one_read(); });
+                 return do_one_read().then([this] {
+                     return ss::do_until(
+                       [this] { return is_recovery_finished(); },
+                       [this] { return do_one_read(); });
+                 });
              })
       .finally([this] {
           vlog(_ctxlog.trace, "Finished node {} recovery", _node_id);

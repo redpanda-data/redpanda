@@ -103,6 +103,47 @@ FIXTURE_TEST(test_single_node_recovery, raft_test_fixture) {
     validate_logs_replication(gr);
 };
 
+FIXTURE_TEST(test_empty_node_recovery, raft_test_fixture) {
+    raft_group gr = raft_group(raft::group_id(0), 3);
+    gr.enable_all();
+    auto leader_id = wait_for_group_leader(gr);
+    auto leader_raft = gr.get_member(leader_id).consensus;
+    // append some entries
+    for (int i = 0; i < 5; ++i) {
+        if (leader_raft->is_leader()) {
+            auto res = leader_raft
+                         ->replicate(
+                           random_batches_entry(5), default_replicate_opts)
+                         .get0();
+        }
+    }
+    validate_logs_replication(gr);
+    model::node_id disabled_id;
+    for (auto& [id, m] : gr.get_members()) {
+        // disable one of the non leader nodes
+        if (leader_id != id) {
+            disabled_id = id;
+            auto log = m.log;
+            gr.disable_node(id);
+            // truncate the node log
+            log
+              .truncate(storage::truncate_config(
+                model::offset(0), ss::default_priority_class()))
+              .get();
+            break;
+        }
+    }
+
+    gr.enable_node(disabled_id);
+
+    validate_logs_replication(gr);
+
+    wait_for(
+      10s,
+      [this, &gr] { return are_all_commit_indexes_the_same(gr); },
+      "After recovery state is consistent");
+};
+
 FIXTURE_TEST(test_single_node_recovery_multi_terms, raft_test_fixture) {
     raft_group gr = raft_group(raft::group_id(0), 3);
     gr.enable_all();

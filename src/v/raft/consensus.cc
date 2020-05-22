@@ -183,7 +183,9 @@ consensus::success_reply consensus::update_follower_index(
     }
 
     auto lstats = _log.offsets();
-    if (idx.match_index < lstats.dirty_offset) {
+    if (
+      idx.match_index < lstats.dirty_offset
+      || idx.match_index > idx.last_dirty_log_index) {
         // follower match_index is behind, we have to recover it
         dispatch_recovery(idx, std::move(reply));
         return success_reply::no;
