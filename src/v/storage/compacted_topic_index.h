@@ -30,14 +30,16 @@ public:
 
     struct impl {
         virtual ~impl() noexcept = default;
-        virtual ss::future<> write_key(bytes_view, model::offset) = 0;
+        virtual ss::future<> index(bytes_view, model::offset) = 0;
+        virtual ss::future<> index(const iobuf& key, model::offset) = 0;
         virtual ss::future<> close() = 0;
     };
 
     explicit compacted_topic_index(std::unique_ptr<impl> i)
       : _impl(std::move(i)) {}
 
-    ss::future<> write_key(bytes_view, model::offset);
+    ss::future<> index(bytes_view, model::offset);
+    ss::future<> index(const iobuf& key, model::offset);
     ss::future<> close();
     std::unique_ptr<impl> release() &&;
 
@@ -49,15 +51,18 @@ inline std::unique_ptr<compacted_topic_index::impl>
 compacted_topic_index::release() && {
     return std::move(_impl);
 }
-
 inline ss::future<>
-compacted_topic_index::write_key(bytes_view b, model::offset o) {
-    return _impl->write_key(b, o);
+compacted_topic_index::index(const iobuf& b, model::offset o) {
+    return _impl->index(b, o);
+}
+inline ss::future<>
+compacted_topic_index::index(bytes_view b, model::offset o) {
+    return _impl->index(b, o);
 }
 
 inline ss::future<> compacted_topic_index::close() { return _impl->close(); }
 
-compacted_topic_index
-make_file_backed_compacted_index(ss::file, ss::io_priority_class p);
+compacted_topic_index make_file_backed_compacted_index(
+  ss::file, ss::io_priority_class p, size_t max_memory);
 
 } // namespace storage

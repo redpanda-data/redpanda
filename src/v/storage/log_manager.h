@@ -7,6 +7,7 @@
 #include "storage/log.h"
 #include "storage/log_housekeeping_meta.h"
 #include "storage/segment.h"
+#include "storage/types.h"
 #include "storage/version.h"
 #include "units.h"
 
@@ -145,7 +146,7 @@ public:
     ss::future<> stop();
 
     ss::future<ss::lw_shared_ptr<segment>> make_log_segment(
-      const model::ntp&,
+      const ntp_config&,
       model::offset,
       model::term_id,
       ss::io_priority_class pc,
@@ -171,7 +172,7 @@ private:
 
     ss::future<log> do_manage(ntp_config);
     ss::future<ss::lw_shared_ptr<segment>> do_make_log_segment(
-      const model::ntp&,
+      const ntp_config&,
       model::offset,
       model::term_id,
       ss::io_priority_class pc,
