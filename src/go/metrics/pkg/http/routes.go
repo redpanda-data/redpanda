@@ -13,6 +13,38 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+type Environment struct {
+	ReceivedAt   time.Time
+	SentAt       time.Time              `json:"sentAt,omitempty"`
+	Organization string                 `json:"organization,omitempty"`
+	ClusterId    string                 `json:"clusterId,omitempty"`
+	NodeId       int                    `json:"nodeId,omitempty"`
+	NodeUuid     string                 `json:"nodeUuid,omitempty"`
+	Payload      map[string]interface{} `json:"payload"`
+	Config       map[string]interface{} `json:"config"`
+}
+
+func (e *Environment) toStorageEnv() (*storage.Environment, error) {
+	payloadJSON, err := json.Marshal(e.Payload)
+	if err != nil {
+		return nil, err
+	}
+	configJSON, err := json.Marshal(e.Config)
+	if err != nil {
+		return nil, err
+	}
+	return &storage.Environment{
+		ReceivedAt:   e.ReceivedAt,
+		SentAt:       e.SentAt,
+		Organization: e.Organization,
+		ClusterId:    e.ClusterId,
+		NodeId:       e.NodeId,
+		NodeUuid:     e.NodeUuid,
+		Payload:      string(payloadJSON),
+		Config:       string(configJSON),
+	}, nil
+}
+
 type Server struct {
 	Port    uint
 	Metrics *MetricsHandler
@@ -83,7 +115,27 @@ func (h *EnvHandler) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 		http.Error(res, "Corrupt body", http.StatusBadRequest)
 		return
 	}
-	log.Info(string(bs))
+	log.Infof("Processing '%s'", string(bs))
+	env := &Environment{}
+	err = json.Unmarshal(bs, env)
+	if err != nil {
+		log.Error(err.Error())
+		http.Error(res, err.Error(), http.StatusBadRequest)
+		return
+	}
+	env.ReceivedAt = time.Now()
+	storageEnv, err := env.toStorageEnv()
+	if err != nil {
+		http.Error(res, "Corrupt body", http.StatusBadRequest)
+		return
+	}
+	err = h.Repo.SaveEnvironment(*storageEnv)
+	if err != nil {
+		log.Error(err.Error())
+		http.Error(res, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	log.Infof("Saved '%s'", string(bs))
 	res.WriteHeader(http.StatusOK)
 }
 
