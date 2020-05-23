@@ -27,8 +27,12 @@ static constexpr const std::array<char, 1> truncate_entry_type{
   (char)compacted_topic_index::entry_type::truncation};
 
 spill_key_index::spill_key_index(
-  ss::file index_file, ss::io_priority_class p, size_t max_memory)
-  : _appender(std::move(index_file), segment_appender::options(p, 1))
+  ss::sstring name,
+  ss::file index_file,
+  ss::io_priority_class p,
+  size_t max_memory)
+  : compacted_topic_index::impl(std::move(name))
+  , _appender(std::move(index_file), segment_appender::options(p, 1))
   , _max_mem(max_memory) {}
 
 ss::future<>
@@ -192,9 +196,9 @@ ss::future<> spill_key_index::close() {
 
 namespace storage {
 compacted_topic_index make_file_backed_compacted_index(
-  ss::file f, ss::io_priority_class p, size_t max_memory) {
-    return compacted_topic_index(
-      std::make_unique<internal::spill_key_index>(std::move(f), p, max_memory));
+  ss::sstring name, ss::file f, ss::io_priority_class p, size_t max_memory) {
+    return compacted_topic_index(std::make_unique<internal::spill_key_index>(
+      std::move(name), std::move(f), p, max_memory));
 }
 
 } // namespace storage

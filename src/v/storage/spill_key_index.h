@@ -35,7 +35,10 @@ public:
       = absl::flat_hash_map<bytes, value_type, key_type_hash, key_type_eq>;
 
     spill_key_index(
-      ss::file index_file, ss::io_priority_class, size_t max_memory);
+      ss::sstring filename,
+      ss::file index_file,
+      ss::io_priority_class,
+      size_t max_memory);
     spill_key_index(const spill_key_index&) = delete;
     spill_key_index& operator=(const spill_key_index&) = delete;
     spill_key_index(spill_key_index&&) noexcept = default;
@@ -52,7 +55,8 @@ public:
 private:
     ss::future<> drain_all_keys();
     ss::future<> add_key(bytes b, value_type);
-    ss::future<> spill(compacted_topic_index::entry_type, bytes_view, value_type);
+    ss::future<>
+      spill(compacted_topic_index::entry_type, bytes_view, value_type);
 
     segment_appender _appender;
     underlying_t _midx;

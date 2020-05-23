@@ -10,6 +10,7 @@ struct compacted_topic_fixture {};
 FIXTURE_TEST(format_verification, compacted_topic_fixture) {
     iobuf index_data;
     auto idx = storage::make_file_backed_compacted_index(
+      "dummy name",
       ss::file(ss::make_shared(iobuf_file(index_data))),
       ss::default_priority_class(),
       1_KiB);

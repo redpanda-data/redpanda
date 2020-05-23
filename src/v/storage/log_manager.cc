@@ -174,7 +174,10 @@ ss::future<compacted_topic_index> make_compacted_topic_index(
             // 1MB of memory aligned buffers
             return ss::make_ready_future<compacted_topic_index>(
               make_file_backed_compacted_index(
-                writer, iopc, segment_appender::write_behind_memory / 2));
+                path.string(),
+                writer,
+                iopc,
+                segment_appender::write_behind_memory / 2));
         } catch (...) {
             auto e = std::current_exception();
             vlog(stlog.error, "could not allocate compacted-index: {}", e);
