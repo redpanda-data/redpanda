@@ -171,3 +171,11 @@ rp_test(
   LIBRARIES v::seastar_testing_main v::storage_test_utils
   LABELS storage
 )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME kvstore_test
+  SOURCES kvstore_test.cc
+  LIBRARIES v::seastar_testing_main v::storage_test_utils
+  ARGS "-- -c 1"
+  LABELS storage)
