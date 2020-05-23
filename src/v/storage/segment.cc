@@ -279,6 +279,12 @@ std::ostream& operator<<(std::ostream& o, const segment& h) {
     } else {
         o << "nullptr";
     }
+    o << ", compaction_index:";
+    if (h._compaction_index) {
+        o << *h._compaction_index;
+    } else {
+        o << "nullopt";
+    }
     return o << ", closed=" << h._closed << ", tombstone=" << h._tombstone
              << ", index=" << h.index() << "}";
 }

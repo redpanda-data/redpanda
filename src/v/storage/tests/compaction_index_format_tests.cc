@@ -17,6 +17,7 @@ FIXTURE_TEST(format_verification, compacted_topic_fixture) {
     const auto key = random_generators::get_bytes(1024);
     idx.index(key, model::offset(42), 66).get();
     idx.close().get();
+    info("{}", idx);
     BOOST_REQUIRE_EQUAL(index_data.size_bytes(), 1047);
     iobuf_parser p(index_data.share(0, index_data.size_bytes()));
     (void)p.read_bool();
