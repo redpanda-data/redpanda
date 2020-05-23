@@ -51,6 +51,7 @@ public:
     ss::future<> index(bytes_view, model::offset, int32_t) final;
     ss::future<> truncate(model::offset) final;
     ss::future<> close() final;
+    void print(std::ostream&) const final;
 
 private:
     ss::future<> drain_all_keys();
@@ -64,6 +65,8 @@ private:
     size_t _mem_usage{0};
     compacted_topic_index::footer _footer;
     crc32 _crc;
+
+    friend std::ostream& operator<<(std::ostream&, const spill_key_index&);
 };
 
 inline bool spill_key_index::key_type_eq::operator()(

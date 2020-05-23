@@ -192,6 +192,22 @@ ss::future<> spill_key_index::close() {
     });
 }
 
+void spill_key_index::print(std::ostream& o) const { o << *this; }
+
+std::ostream& operator<<(std::ostream& o, const spill_key_index& k) {
+    fmt::print(
+      o,
+      "{{name:{}, max_mem:{}, mem_usage:{}, persisted_entries:{}, "
+      "in_memory_entries:{}, file_appender:{}}}",
+      k.filename(),
+      k._max_mem,
+      k._max_mem,
+      k._footer.keys,
+      k._midx.size(),
+      k._appender);
+    return o;
+}
+
 } // namespace storage::internal
 
 namespace storage {

@@ -76,6 +76,9 @@ public:
         virtual ss::future<> truncate(model::offset) = 0;
 
         virtual ss::future<> close() = 0;
+
+        virtual void print(std::ostream&) const = 0;
+
         const ss::sstring& filename() const { return _name; }
 
     private:
@@ -89,13 +92,22 @@ public:
     ss::future<> index(const iobuf& key, model::offset, int32_t);
     ss::future<> truncate(model::offset);
     ss::future<> close();
+    void print(std::ostream&) const;
     const ss::sstring& filename() const;
     std::unique_ptr<impl> release() &&;
 
 private:
     std::unique_ptr<impl> _impl;
 };
+inline std::ostream&
+operator<<(std::ostream& o, const compacted_topic_index& c) {
+    c.print(o);
+    return o;
+}
 
+inline void compacted_topic_index::print(std::ostream& o) const {
+    _impl->print(o);
+}
 inline const ss::sstring& compacted_topic_index::filename() const {
     return _impl->filename();
 }
