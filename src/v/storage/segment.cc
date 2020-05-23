@@ -141,6 +141,11 @@ segment::do_truncate(model::offset prev_last_offset, size_t physical) {
     } else {
         f = f.then([this, physical] { return _reader.truncate(physical); });
     }
+    if (_compaction_index) {
+        f = f.then([this, prev_last_offset] {
+            return _compaction_index->truncate(prev_last_offset);
+        });
+    }
     return f;
 }
 
@@ -177,7 +182,7 @@ ss::future<> segment::compaction_index_batch(const model::record_batch& b) {
     auto& w = compaction_index();
     return ss::do_for_each(
       b.begin(), b.end(), [o = b.base_offset(), &w](const model::record& r) {
-          return w.index(r.key(), o + model::offset(r.offset_delta()));
+          return w.index(r.key(), o, r.offset_delta());
       });
 }
 ss::future<append_result> segment::append(const model::record_batch& b) {

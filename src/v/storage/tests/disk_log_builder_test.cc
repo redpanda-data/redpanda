@@ -57,9 +57,9 @@ FIXTURE_TEST(test_valid_segment_name_with_zeroes_data, log_builder_fixture) {
     // 1. write valid segment names in the namespace with 0 data so crc passes
     recursive_touch_directory(dir).get();
     do_write_zeroes(fmt::format("{}/270-1850-v1.log", dir));
-    do_write_zeroes(fmt::format("{}/270-1850-v1.log.offset_index", dir));
+    do_write_zeroes(fmt::format("{}/270-1850-v1.base_index", dir));
     do_write_garbage(fmt::format("{}/271-1850-v1.log", dir));
-    do_write_garbage(fmt::format("{}/271-1850-v1.log.offset_index", dir));
+    do_write_garbage(fmt::format("{}/271-1850-v1.base_index", dir));
 
     b | start(ntp);
     auto stats = get_stats().get0();

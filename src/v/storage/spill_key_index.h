@@ -27,8 +27,12 @@ public:
         bool operator()(const bytes& lhs, const bytes& rhs) const;
         bool operator()(const bytes& lhs, const iobuf& rhs) const;
     };
+    struct value_type {
+        model::offset base_offset;
+        int32_t delta{0};
+    };
     using underlying_t
-      = absl::flat_hash_map<bytes, model::offset, key_type_hash, key_type_eq>;
+      = absl::flat_hash_map<bytes, value_type, key_type_hash, key_type_eq>;
 
     spill_key_index(
       ss::file index_file, ss::io_priority_class, size_t max_memory);
@@ -40,13 +44,15 @@ public:
 
     // public
 
-    ss::future<> index(const iobuf& key, model::offset) final;
-    ss::future<> index(bytes_view, model::offset) final;
+    ss::future<> index(const iobuf& key, model::offset, int32_t) final;
+    ss::future<> index(bytes_view, model::offset, int32_t) final;
+    ss::future<> truncate(model::offset) final;
     ss::future<> close() final;
 
 private:
-    ss::future<> add_key(bytes b, model::offset);
-    ss::future<> spill(bytes_view, model::offset);
+    ss::future<> drain_all_keys();
+    ss::future<> add_key(bytes b, value_type);
+    ss::future<> spill(compacted_topic_index::entry_type, bytes_view, value_type);
 
     segment_appender _appender;
     underlying_t _midx;
