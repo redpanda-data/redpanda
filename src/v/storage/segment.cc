@@ -97,8 +97,15 @@ ss::future<> segment::release_appender() {
           .then([this] { return _appender->close(); })
           .then([this] { return _idx.flush(); })
           .then([this] {
+              if (_compaction_index) {
+                  return _compaction_index->close();
+              }
+              return ss::now();
+          })
+          .then([this] {
               _appender = std::nullopt;
               _cache = std::nullopt;
+              _compaction_index = std::nullopt;
           })
           .finally([h = std::move(h)] {});
     });
