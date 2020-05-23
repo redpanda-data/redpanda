@@ -62,6 +62,9 @@ ss::future<> segment::remove_thombsones() {
     std::vector<ss::sstring> rm;
     rm.push_back(reader().filename());
     rm.push_back(index().filename());
+    if (_compaction_index) {
+        rm.push_back(_compaction_index->filename());
+    }
     vlog(stlog.info, "removing: {}", rm);
     return ss::do_with(std::move(rm), [](std::vector<ss::sstring>& to_remove) {
         return ss::do_for_each(to_remove, [](const ss::sstring& name) {
