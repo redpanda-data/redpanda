@@ -22,7 +22,7 @@ namespace storage {
  *     default/test/0/1-1-v1.log
  *
  * The name of this index _must_ be then:
- *     default/test/0/1-1-v1.log.offset_index
+ *     default/test/0/1-1-v1.base_index
  */
 class segment_index {
 public:
