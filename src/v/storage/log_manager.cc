@@ -416,7 +416,9 @@ log_manager::open_segment(const std::filesystem::path& path, size_t buf_size) {
       })
       .then([this, meta](std::unique_ptr<segment_reader> rdr) {
           auto ptr = rdr.get();
-          auto index_name = ptr->filename() + ".offset_index";
+          auto index_name = std::filesystem::path(ptr->filename().c_str())
+                              .replace_extension("base_index")
+                              .string();
           return ss::open_file_dma(
                    index_name, ss::open_flags::create | ss::open_flags::rw)
             .then_wrapped([this, ptr, rdr = std::move(rdr), index_name, meta](
