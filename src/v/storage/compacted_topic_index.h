@@ -51,8 +51,15 @@ public:
         // version *must* be the last value
         int8_t version{0};
     };
-    struct impl {
+    class impl {
+    public:
+        explicit impl(ss::sstring filename) noexcept
+          : _name(std::move(filename)) {}
         virtual ~impl() noexcept = default;
+        impl(impl&&) noexcept = default;
+        impl& operator=(impl&&) noexcept = default;
+        impl(const impl&) = delete;
+        impl& operator=(const impl&) = delete;
 
         virtual ss::future<> index(
           bytes_view, // convert from bytes which is the key-type in map
@@ -69,6 +76,10 @@ public:
         virtual ss::future<> truncate(model::offset) = 0;
 
         virtual ss::future<> close() = 0;
+        const ss::sstring& filename() const { return _name; }
+
+    private:
+        ss::sstring _name;
     };
 
     explicit compacted_topic_index(std::unique_ptr<impl> i)
@@ -78,12 +89,16 @@ public:
     ss::future<> index(const iobuf& key, model::offset, int32_t);
     ss::future<> truncate(model::offset);
     ss::future<> close();
+    const ss::sstring& filename() const;
     std::unique_ptr<impl> release() &&;
 
 private:
     std::unique_ptr<impl> _impl;
 };
 
+inline const ss::sstring& compacted_topic_index::filename() const {
+    return _impl->filename();
+}
 inline std::unique_ptr<compacted_topic_index::impl>
 compacted_topic_index::release() && {
     return std::move(_impl);
@@ -143,6 +158,6 @@ operator<<(std::ostream& o, const compacted_topic_index::footer& f) {
 }
 
 compacted_topic_index make_file_backed_compacted_index(
-  ss::file, ss::io_priority_class p, size_t max_memory);
+  ss::sstring filename, ss::file, ss::io_priority_class p, size_t max_memory);
 
 } // namespace storage
