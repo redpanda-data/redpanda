@@ -150,7 +150,9 @@ public:
     /// Check if all members have joined.
     bool all_members_joined() const {
         vassert(
-          _num_members_joining >= 0, "expected non-negative member count");
+          _num_members_joining >= 0,
+          "invalid number of joining members: {}",
+          _num_members_joining);
         return (_members.size() == (size_t)_num_members_joining)
                && _pending_members.empty();
     }
