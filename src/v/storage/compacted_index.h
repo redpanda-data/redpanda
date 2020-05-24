@@ -11,7 +11,8 @@ namespace storage {
 
 struct compacted_index {
     enum class entry_type : uint8_t {
-        key,
+        none, // error detection
+        key,  // most common - just keys
         /// \brief because of raft truncations, we write a truncation, for
         /// the recovery thread to compact up to key-point on the index.
         truncation,
@@ -21,6 +22,8 @@ struct compacted_index {
         none = 0,
         /// needed for truncation events in the same raft-term
         truncation = 1U,
+        /// needed to determine if we should self compact first
+        self_compaction = 1U << 1U,
     };
     struct footer {
         uint32_t size{0};
