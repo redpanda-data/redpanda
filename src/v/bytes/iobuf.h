@@ -356,7 +356,7 @@ inline void iobuf::trim_back(size_t n) {
         auto& f = _frags.back();
         if (f.size() > n) {
             _size -= n;
-            f.trim(n);
+            f.trim(f.size() - n);
             return;
         }
         n -= f.size();
