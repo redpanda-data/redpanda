@@ -2,7 +2,8 @@
 #include "bytes/bytes.h"
 #include "hashing/crc32c.h"
 #include "model/fundamental.h"
-#include "storage/compacted_topic_index.h"
+#include "storage/compacted_index.h"
+#include "storage/compacted_index_writer.h"
 #include "storage/segment_appender.h"
 
 #include <seastar/core/file.hh>
@@ -13,7 +14,7 @@
 
 namespace storage::internal {
 using namespace storage; // NOLINT
-class spill_key_index final : public compacted_topic_index::impl {
+class spill_key_index final : public compacted_index_writer::impl {
 public:
     struct key_type_hash {
         using is_transparent = std::true_type;
@@ -56,14 +57,13 @@ public:
 private:
     ss::future<> drain_all_keys();
     ss::future<> add_key(bytes b, value_type);
-    ss::future<>
-      spill(compacted_topic_index::entry_type, bytes_view, value_type);
+    ss::future<> spill(compacted_index::entry_type, bytes_view, value_type);
 
     segment_appender _appender;
     underlying_t _midx;
     size_t _max_mem;
     size_t _mem_usage{0};
-    compacted_topic_index::footer _footer;
+    compacted_index::footer _footer;
     crc32 _crc;
 
     friend std::ostream& operator<<(std::ostream&, const spill_key_index&);

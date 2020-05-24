@@ -1,7 +1,7 @@
 #pragma once
 
 #include "storage/batch_cache.h"
-#include "storage/compacted_topic_index.h"
+#include "storage/compacted_index_writer.h"
 #include "storage/segment_appender.h"
 #include "storage/segment_index.h"
 #include "storage/segment_reader.h"
@@ -38,7 +38,7 @@ public:
       segment_reader,
       segment_index,
       std::optional<segment_appender>,
-      std::optional<compacted_topic_index>,
+      std::optional<compacted_index_writer>,
       std::optional<batch_cache_index>) noexcept;
     ~segment() noexcept = default;
     segment(segment&&) noexcept = default;
@@ -86,8 +86,8 @@ public:
     segment_appender& appender() { return *_appender; }
     const segment_appender& appender() const { return *_appender; }
     bool has_appender() const { return _appender != std::nullopt; }
-    compacted_topic_index& compaction_index() { return *_compaction_index; }
-    const compacted_topic_index& compaction_index() const {
+    compacted_index_writer& compaction_index() { return *_compaction_index; }
+    const compacted_index_writer& compaction_index() const {
         return *_compaction_index;
     }
     bool has_compacion_index() const {
@@ -144,7 +144,7 @@ private:
     segment_reader _reader;
     segment_index _idx;
     std::optional<segment_appender> _appender;
-    std::optional<compacted_topic_index> _compaction_index;
+    std::optional<compacted_index_writer> _compaction_index;
     std::optional<batch_cache_index> _cache;
     ss::rwlock _destructive_ops;
     bool _tombstone = false;

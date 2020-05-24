@@ -5,7 +5,7 @@
 #include "model/fundamental.h"
 #include "model/timestamp.h"
 #include "storage/batch_cache.h"
-#include "storage/compacted_topic_index.h"
+#include "storage/compacted_index_writer.h"
 #include "storage/fs_utils.h"
 #include "storage/log.h"
 #include "storage/log_replayer.h"
@@ -163,7 +163,7 @@ ss::future<ss::file> make_writer(
     });
 }
 
-ss::future<compacted_topic_index> make_compacted_topic_index(
+ss::future<compacted_index_writer> make_compacted_index_writer(
   const std::filesystem::path& path,
   log_config::debug_sanitize_files debug,
   ss::io_priority_class iopc) {
@@ -172,7 +172,7 @@ ss::future<compacted_topic_index> make_compacted_topic_index(
             // NOTE: This try-catch is needed to not uncover the real
             // exception during an OOM condition, since the appender allocates
             // 1MB of memory aligned buffers
-            return ss::make_ready_future<compacted_topic_index>(
+            return ss::make_ready_future<compacted_index_writer>(
               make_file_backed_compacted_index(
                 path.string(),
                 writer,
@@ -182,7 +182,7 @@ ss::future<compacted_topic_index> make_compacted_topic_index(
             auto e = std::current_exception();
             vlog(stlog.error, "could not allocate compacted-index: {}", e);
             return writer.close().then_wrapped([writer, e = e](ss::future<>) {
-                return ss::make_exception_future<compacted_topic_index>(e);
+                return ss::make_exception_future<compacted_index_writer>(e);
             });
         }
     });
@@ -283,9 +283,9 @@ ss::future<ss::lw_shared_ptr<segment>> log_manager::do_make_log_segment(
             seg, [this, path, pc](ss::lw_shared_ptr<segment> seg) {
                 auto compacted_path = path;
                 compacted_path.replace_extension(".compaction_index");
-                return make_compacted_topic_index(
+                return make_compacted_index_writer(
                          compacted_path, _config.sanitize_fileops, pc)
-                  .then([seg](compacted_topic_index compact) {
+                  .then([seg](compacted_index_writer compact) {
                       return ss::make_ready_future<ss::lw_shared_ptr<segment>>(
                         ss::make_lw_shared<segment>(
                           seg->offsets(),
