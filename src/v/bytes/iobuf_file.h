@@ -109,6 +109,18 @@ struct iobuf_file final : public ss::file_impl {
             _ptr->clear();
         } else if (_ptr->size_bytes() > pos) {
             _ptr->trim_back(_ptr->size_bytes() - pos);
+            const size_t new_pos = std::accumulate(
+              _ptr->begin(),
+              _ptr->end(),
+              size_t(0),
+              [](size_t acc, const iobuf::fragment& f) {
+                  return acc + f.size();
+              });
+            vassert(
+              new_pos == pos,
+              "Could not truncate correctly. expected:{}, got:{}",
+              pos,
+              new_pos);
         }
         return ss::now();
     }
@@ -163,7 +175,8 @@ struct iobuf_file final : public ss::file_impl {
 
     ss::future<ss::temporary_buffer<uint8_t>> dma_read_bulk(
       uint64_t pos, size_t len, const ss::io_priority_class&) final {
-        vlog(logger().info, "dma_read_bulk: POS:{}, LEN:{}", pos, len);
+        vlog(
+          logger().info, "dma_read_bulk: POS:{}, LEN:{} - {}", pos, len, *_ptr);
         auto b = _ptr->share(pos, len);
         ss::temporary_buffer<uint8_t> buf(b.size_bytes());
         iobuf::iterator_consumer it(b.cbegin(), b.cend());
