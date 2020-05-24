@@ -13,18 +13,18 @@
 namespace storage {
 
 /** format on file is:
-    TYPE PAYLOAD
-    TYPE PAYLOAD
-    TYPE PAYLOAD
+    INT16 PAYLOAD
+    INT16 PAYLOAD
+    INT16 PAYLOAD
+    ...
     FOOTER
 
-Details:
+PAYLOAD:
 
-    TYPE::KEY
-    VINT   // byte size of key
-    []BYTE // actual key (in truncate events we use 'truncation')
-    VINT   // batch-base-offset
-    VINT   // record-offset-delta
+    ENTRY_TYPE // 1 byte
+    VINT       // batch-base-offset
+    VINT       // record-offset-delta
+    []BYTE     // actual key (in truncate events we use 'truncation')
 
 
 footer - in little endian
