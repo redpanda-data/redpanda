@@ -117,6 +117,8 @@ public:
 
     /// append src + len into storage
     void append(const char*, size_t);
+    /// append src + len into storage
+    void append(const uint8_t*, size_t);
     /// appends the contents of buffer; might pack values into existing space
     void append(ss::temporary_buffer<char>);
     /// appends the contents of buffer; might pack values into existing space
@@ -256,6 +258,13 @@ inline void iobuf::reserve_memory(size_t reservation) {
         });
     }
 }
+/// append src + len into storage
+[[gnu::always_inline]] void inline iobuf::append(
+  const uint8_t* src, size_t len) {
+    // NOLINTNEXTLINE
+    append(reinterpret_cast<const char*>(src), len);
+}
+
 [[gnu::always_inline]] void inline iobuf::append(const char* ptr, size_t size) {
     if (unlikely(!size)) {
         return;
