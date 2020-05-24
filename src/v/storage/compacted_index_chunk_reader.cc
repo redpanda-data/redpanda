@@ -4,6 +4,7 @@
 #include "reflection/adl.h"
 #include "storage/compacted_index.h"
 #include "storage/compacted_index_reader.h"
+#include "storage/logger.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/core/fstream.hh>
@@ -37,8 +38,11 @@ footer_from_stream(ss::input_stream<char>& in) {
       .then([](ss::temporary_buffer<char> tmp) {
           if (tmp.size() != compacted_index::footer_size) {
               return ss::make_exception_future<compacted_index::footer>(
-                std::runtime_error("could not read enough bytes to parse "
-                                   "footer. Background delete of file?"));
+                std::runtime_error(fmt::format(
+                  "could not read enough bytes to parse "
+                  "footer. read:{}, expected:{}",
+                  tmp.size(),
+                  compacted_index::footer_size)));
           }
           iobuf b;
           b.append(std::move(tmp));
@@ -87,7 +91,8 @@ compacted_index_chunk_reader::load_footer() {
 void compacted_index_chunk_reader::print(std::ostream& o) const { o << *this; }
 
 bool compacted_index_chunk_reader::is_end_of_stream() const {
-    return _end_of_stream || _byte_index == _footer.size;
+    return _end_of_stream || _byte_index == _footer.size
+           || (_cursor && _cursor->eof());
 }
 
 ss::future<ss::circular_buffer<compacted_index::entry>>
@@ -99,8 +104,7 @@ compacted_index_chunk_reader::load_slice(model::timeout_clock::time_point) {
                              "verify file size correctness."));
     }
     if (!_cursor) {
-        _cursor = ss::make_file_input_stream(
-          _handle, 0, _file_size.value() - compacted_index::footer_size);
+        _cursor = ss::make_file_input_stream(_handle, 0, _footer.size);
     }
 
     return ss::do_with(
@@ -114,13 +118,15 @@ compacted_index_chunk_reader::load_slice(model::timeout_clock::time_point) {
                    [&mem_use, &slice, this] {
                        return ::read_iobuf_exactly(*_cursor, sizeof(uint16_t))
                          .then([&mem_use, this](iobuf b) {
+                             _byte_index += b.size_bytes();
                              iobuf_parser p(std::move(b));
                              const size_t entry_size
                                = reflection::adl<uint16_t>{}.from(p);
                              mem_use += entry_size;
                              return ::read_iobuf_exactly(*_cursor, entry_size);
                          })
-                         .then([&slice](iobuf b) {
+                         .then([this, &slice](iobuf b) {
+                             _byte_index += b.size_bytes();
                              iobuf_parser p(std::move(b));
                              auto type = reflection::adl<uint8_t>{}.from(p);
                              auto [offset, _1] = p.read_varlong();
@@ -144,12 +150,28 @@ operator<<(std::ostream& o, const compacted_index_chunk_reader& r) {
     fmt::print(
       o,
       "{{type:compacted_index_chunk_reader, _max_chunk_memory:{}, "
-      "_file_size:{}, _footer:{}, active_cursor:{}}}",
+      "_file_size:{}, _footer:{}, active_cursor:{}, end_of_stream:{}, "
+      "_byte_index:{}}}",
       r._max_chunk_memory,
       r._file_size.value(),
       r._footer,
-      (r._cursor ? "yes" : "no"));
+      (r._cursor ? "yes" : "no"),
+      r.is_end_of_stream(),
+      r._byte_index);
     return o;
 }
 
 } // namespace storage::internal
+
+namespace storage {
+compacted_index_reader make_file_backed_compacted_reader(
+  ss::sstring filename,
+  ss::file f,
+  ss::io_priority_class iopc,
+  size_t step_chunk) {
+    return compacted_index_reader(
+      std::make_unique<internal::compacted_index_chunk_reader>(
+        std::move(filename), std::move(f), iopc, step_chunk));
+}
+
+} // namespace storage
