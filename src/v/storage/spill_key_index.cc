@@ -89,7 +89,6 @@ ss::future<> spill_key_index::index(
 ///
 ss::future<> spill_key_index::spill(
   compacted_index::entry_type type, bytes_view b, value_type v) {
-    constexpr size_t max_entry_size = size_t(std::numeric_limits<uint16_t>::max());
     constexpr size_t size_reservation = sizeof(uint16_t);
     ++_footer.keys;
     iobuf payload;
@@ -110,7 +109,8 @@ ss::future<> spill_key_index::spill(
     // []BYTE
     {
         size_t key_size = b.size();
-        const size_t max = max_entry_size - payload.size_bytes();
+        const size_t max = compacted_index::max_entry_size
+                           - payload.size_bytes();
         if (key_size > max) {
             key_size = max;
         }
@@ -127,7 +127,7 @@ ss::future<> spill_key_index::spill(
         _crc.extend(reinterpret_cast<const uint8_t*>(f.get()), f.size());
     }
     vassert(
-      payload.size_bytes() <= max_entry_size,
+      payload.size_bytes() <= compacted_index::max_entry_size,
       "Entries cannot be bigger than uint16_t::max(): {}",
       payload);
     // Append to the file
@@ -203,7 +203,7 @@ std::ostream& operator<<(std::ostream& o, const spill_key_index& k) {
       k._midx.size(),
       k._appender);
     return o;
-
+}
 
 } // namespace storage::internal
 
@@ -213,5 +213,4 @@ compacted_index_writer make_file_backed_compacted_index(
     return compacted_index_writer(std::make_unique<internal::spill_key_index>(
       std::move(name), std::move(f), p, max_memory));
 }
-
 } // namespace storage
