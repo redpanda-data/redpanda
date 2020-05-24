@@ -125,4 +125,22 @@ private:
     std::unique_ptr<impl> _impl;
 };
 
+compacted_index_reader make_file_backed_compacted_reader(
+  ss::sstring filename, ss::file, ss::io_priority_class, size_t step_chunk);
+
+inline ss::future<ss::circular_buffer<compacted_index::entry>>
+compaction_index_reader_to_memory(compacted_index_reader&& rdr) {
+    struct consumer {
+        ss::future<ss::stop_iteration> operator()(compacted_index::entry b) {
+            data.push_back(std::move(b));
+            return ss::make_ready_future<ss::stop_iteration>(
+              ss::stop_iteration::no);
+        }
+        ss::circular_buffer<compacted_index::entry> end_of_stream() {
+            return std::move(data);
+        };
+        ss::circular_buffer<compacted_index::entry> data;
+    };
+    return std::move(rdr).consume(consumer{}, model::no_timeout);
+}
 } // namespace storage

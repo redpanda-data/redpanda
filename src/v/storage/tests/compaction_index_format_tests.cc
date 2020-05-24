@@ -62,3 +62,30 @@ FIXTURE_TEST(format_verification_max_key, compacted_topic_fixture) {
     BOOST_REQUIRE_EQUAL(
       entry, std::numeric_limits<uint16_t>::max() - sizeof(uint16_t));
 }
+FIXTURE_TEST(format_verification_roundtrip, compacted_topic_fixture) {
+    iobuf index_data;
+    auto idx = storage::make_file_backed_compacted_index(
+      "dummy name",
+      ss::file(ss::make_shared(iobuf_file(index_data))),
+      ss::default_priority_class(),
+      1_MiB);
+    const auto key = random_generators::get_bytes(20);
+    idx.index(key, model::offset(42), 66).get();
+    idx.close().get();
+    info("{}", idx);
+
+    auto rdr = storage::make_file_backed_compacted_reader(
+      "dummy name",
+      ss::file(ss::make_shared(iobuf_file(index_data))),
+      ss::default_priority_class(),
+      32_KiB);
+    auto footer = rdr.load_footer().get0();
+    BOOST_REQUIRE_EQUAL(footer.keys, 1);
+    BOOST_REQUIRE_EQUAL(footer.version, 0);
+    BOOST_REQUIRE(footer.crc != 0);
+    auto vec = compaction_index_reader_to_memory(std::move(rdr)).get0();
+    BOOST_REQUIRE_EQUAL(vec.size(), 1);
+    BOOST_REQUIRE_EQUAL(vec[0].offset, model::offset(42));
+    BOOST_REQUIRE_EQUAL(vec[0].delta, 66);
+    BOOST_REQUIRE_EQUAL(vec[0].key, key);
+}
