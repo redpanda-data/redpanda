@@ -15,17 +15,10 @@
 
 namespace storage::internal {
 using namespace storage; // NOLINT
+
 // use *exactly* 1 write-behind buffer for keys sice it will be an in memory
 // workload for most workloads. No need to waste memory here
-
-using vint_array = std::array<uint8_t, vint::max_length>;
-
-static constexpr const std::array<char, 1> key_entry_type{
-  (char)compacted_index::entry_type::key};
-
-static constexpr const std::array<char, 1> truncate_entry_type{
-  (char)compacted_index::entry_type::truncation};
-
+//
 spill_key_index::spill_key_index(
   ss::sstring name,
   ss::file index_file,
@@ -91,56 +84,42 @@ ss::future<> spill_key_index::index(
     return add_key(iobuf_to_bytes(key), value_type{base_offset, delta});
 }
 
-static inline ss::future<>
-write_one_vint(segment_appender& appender, uint8_t* data, size_t size) {
-    return appender
-      // NOLINTNEXTLINE
-      .append(reinterpret_cast<const char*>(data), size);
-}
-
-// format is:
-// byte   key-type
-// vint   size-key
-// []byte key
-// vint   offset
-// vint   delta
+/// format is:
+/// INT16 BYTE VINT VINT []BYTE
+///
 ss::future<> spill_key_index::spill(
   compacted_index::entry_type type, bytes_view b, value_type v) {
     ++_footer.keys;
-    auto f = ss::now();
-    if (likely(type == compacted_index::entry_type::key)) {
-        f = _appender.append(key_entry_type.data(), key_entry_type.size());
-    } else if (type == compacted_index::entry_type::truncation) {
-        f = _appender.append(
-          truncate_entry_type.data(), truncate_entry_type.size());
+    iobuf payload;
+    // INT16
+    auto ph = payload.reserve(sizeof(uint16_t));
+    // BYTE
+    payload.append(reinterpret_cast<const uint8_t*>(&type), 1);
+    // VINT
+    {
+        auto x = vint::to_bytes(v.base_offset);
+        payload.append(x.data(), x.size());
     }
+    // VINT
+    {
+        auto x = vint::to_bytes(v.delta);
+        payload.append(x.data(), x.size());
+    }
+    // []BYTE
+    payload.append(b.data(), b.size());
+    const uint16_t size = payload.size_bytes() - 2;
+    const uint16_t size_le = ss::cpu_to_le(size);
+    ph.write(reinterpret_cast<const char*>(&size_le), sizeof(size_le));
 
-    return f.then([this, b, v] {
-        return ss::do_with(vint_array(), [this, b, v](vint_array& ref) {
-            const size_t size = vint::serialize(b.size(), ref.data());
-            _footer.size += size;
-            _crc.extend(ref.data(), ref.size());
-            return write_one_vint(_appender, ref.data(), size)
-              .then([this, b] {
-                  _footer.size += b.size();
-                  _crc.extend(b.data(), b.size());
-                  return _appender.append(b);
-              })
-              .then([this, v, &ref] {
-                  const size_t size = vint::serialize(
-                    v.base_offset, ref.data());
-                  _footer.size += size;
-                  _crc.extend(ref.data(), ref.size());
-                  return write_one_vint(_appender, ref.data(), size);
-              })
-              .then([this, v, &ref] {
-                  const size_t size = vint::serialize(v.delta, ref.data());
-                  _footer.size += size;
-                  _crc.extend(ref.data(), ref.size());
-                  return write_one_vint(_appender, ref.data(), size);
-              });
-        });
-    });
+    // update internal state
+    _footer.size += payload.size_bytes();
+    for (auto& f : payload) {
+        // NOLINTNEXTLINE
+        _crc.extend(reinterpret_cast<const uint8_t*>(f.get()), f.size());
+    }
+    // Append to the file
+    return ss::do_with(
+      std::move(payload), [this](iobuf& buf) { return _appender.append(buf); });
 }
 
 ss::future<> spill_key_index::drain_all_keys() {

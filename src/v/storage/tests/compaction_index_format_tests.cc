@@ -22,20 +22,21 @@ FIXTURE_TEST(format_verification, compacted_topic_fixture) {
     info("{}", idx);
     BOOST_REQUIRE_EQUAL(index_data.size_bytes(), 1047);
     iobuf_parser p(index_data.share(0, index_data.size_bytes()));
-    (void)p.read_bool();
-    auto [val, _] = p.read_varlong();
-    const auto key_result = p.read_bytes(val);
-    BOOST_REQUIRE_EQUAL(key, key_result);
+    (void)p.consume_type<uint16_t>(); // SIZE
+    (void)p.consume_type<uint8_t>();  // TYPE
     auto [offset, _1] = p.read_varlong();
     BOOST_REQUIRE_EQUAL(model::offset(offset), model::offset(42));
     auto [delta, _2] = p.read_varlong();
     BOOST_REQUIRE_EQUAL(delta, 66);
+    const auto key_result = p.read_bytes(1024);
+    BOOST_REQUIRE_EQUAL(key, key_result);
     auto footer = reflection::adl<storage::compacted_index::footer>{}.from(p);
     info("{}", footer);
     BOOST_REQUIRE_EQUAL(footer.keys, 1);
     BOOST_REQUIRE_EQUAL(
       footer.size,
-      1 /*type*/ + 1024 /*actual key*/ + 2 /*key size*/ + 1 /*offset*/
-        + 1 /*delta*/);
+      sizeof(uint16_t)
+        + 1 /*type*/ + 1 /*offset*/ + 2 /*delta*/ + 1024 /*key*/);
     BOOST_REQUIRE_EQUAL(footer.version, 0);
+    BOOST_REQUIRE(footer.crc != 0);
 }
