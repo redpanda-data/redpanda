@@ -1,6 +1,5 @@
 #include "storage/segment.h"
 
-#include "storage/compacted_topic_index.h"
 #include "storage/logger.h"
 #include "storage/segment_appender_utils.h"
 #include "vassert.h"
@@ -22,7 +21,7 @@ segment::segment(
   segment_reader r,
   segment_index i,
   std::optional<segment_appender> a,
-  std::optional<compacted_topic_index> ci,
+  std::optional<compacted_index_writer> ci,
   std::optional<batch_cache_index> c) noexcept
   : _tracker(tkr)
   , _reader(std::move(r))

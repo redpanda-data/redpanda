@@ -3,7 +3,7 @@
 #include "bytes/bytes.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
-#include "storage/compacted_topic_index.h"
+#include "storage/compacted_index_writer.h"
 #include "storage/logger.h"
 #include "utils/vint.h"
 #include "vlog.h"
@@ -21,17 +21,17 @@ using namespace storage; // NOLINT
 using vint_array = std::array<uint8_t, vint::max_length>;
 
 static constexpr const std::array<char, 1> key_entry_type{
-  (char)compacted_topic_index::entry_type::key};
+  (char)compacted_index::entry_type::key};
 
 static constexpr const std::array<char, 1> truncate_entry_type{
-  (char)compacted_topic_index::entry_type::truncation};
+  (char)compacted_index::entry_type::truncation};
 
 spill_key_index::spill_key_index(
   ss::sstring name,
   ss::file index_file,
   ss::io_priority_class p,
   size_t max_memory)
-  : compacted_topic_index::impl(std::move(name))
+  : compacted_index_writer::impl(std::move(name))
   , _appender(std::move(index_file), segment_appender::options(p, 1))
   , _max_mem(max_memory) {}
 
@@ -68,8 +68,7 @@ ss::future<> spill_key_index::add_key(bytes b, value_type v) {
                  vlog(stlog.trace, "evicting key: {}", key);
                  return ss::do_with(
                    std::move(key), o, [this](const bytes& k, value_type o) {
-                       return spill(
-                         compacted_topic_index::entry_type::key, k, o);
+                       return spill(compacted_index::entry_type::key, k, o);
                    });
              })
       .then([this, b = std::move(b), v]() mutable {
@@ -106,12 +105,12 @@ write_one_vint(segment_appender& appender, uint8_t* data, size_t size) {
 // vint   offset
 // vint   delta
 ss::future<> spill_key_index::spill(
-  compacted_topic_index::entry_type type, bytes_view b, value_type v) {
+  compacted_index::entry_type type, bytes_view b, value_type v) {
     ++_footer.keys;
     auto f = ss::now();
-    if (likely(type == compacted_topic_index::entry_type::key)) {
+    if (likely(type == compacted_index::entry_type::key)) {
         f = _appender.append(key_entry_type.data(), key_entry_type.size());
-    } else if (type == compacted_topic_index::entry_type::truncation) {
+    } else if (type == compacted_index::entry_type::truncation) {
         f = _appender.append(
           truncate_entry_type.data(), truncate_entry_type.size());
     }
@@ -157,17 +156,17 @@ ss::future<> spill_key_index::drain_all_keys() {
           _mem_usage -= key.size();
           return ss::do_with(
             std::move(key), o, [this](const bytes& k, value_type o) {
-                return spill(compacted_topic_index::entry_type::key, k, o);
+                return spill(compacted_index::entry_type::key, k, o);
             });
       });
 }
 
 ss::future<> spill_key_index::truncate(model::offset o) {
-    _footer.flags |= compacted_topic_index::footer_flags::truncation;
+    _footer.flags |= compacted_index::footer_flags::truncation;
     return drain_all_keys().then([this, o] {
         static constexpr std::string_view compacted_key = "compaction";
         return spill(
-          compacted_topic_index::entry_type::truncation,
+          compacted_index::entry_type::truncation,
           bytes_view(
             // NOLINTNEXTLINE
             reinterpret_cast<const uint8_t*>(compacted_key.data()),
@@ -211,9 +210,9 @@ std::ostream& operator<<(std::ostream& o, const spill_key_index& k) {
 } // namespace storage::internal
 
 namespace storage {
-compacted_topic_index make_file_backed_compacted_index(
+compacted_index_writer make_file_backed_compacted_index(
   ss::sstring name, ss::file f, ss::io_priority_class p, size_t max_memory) {
-    return compacted_topic_index(std::make_unique<internal::spill_key_index>(
+    return compacted_index_writer(std::make_unique<internal::spill_key_index>(
       std::move(name), std::move(f), p, max_memory));
 }
 
