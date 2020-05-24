@@ -1,4 +1,7 @@
 #pragma once
+#include "bytes/bytes.h"
+#include "model/fundamental.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <ostream>
@@ -27,6 +30,20 @@ struct compacted_index {
         uint32_t crc{0}; // crc32
         // version *must* be the last value
         int8_t version{0};
+    };
+
+    // for the readers and friends
+    struct entry {
+        entry(entry_type t, bytes k, model::offset o, int32_t d) noexcept
+          : type(t)
+          , key(std::move(k))
+          , offset(o)
+          , delta(d) {}
+
+        entry_type type;
+        bytes key;
+        model::offset offset;
+        int32_t delta;
     };
 };
 inline compacted_index::footer_flags

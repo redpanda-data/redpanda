@@ -3,9 +3,11 @@
 #include "bytes/iobuf_parser.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
-#include "storage/compacted_topic_index.h"
+#include "storage/compacted_index_reader.h"
+#include "storage/compacted_index_writer.h"
 #include "test_utils/fixture.h"
 #include "units.h"
+
 struct compacted_topic_fixture {};
 FIXTURE_TEST(format_verification, compacted_topic_fixture) {
     iobuf index_data;
@@ -28,8 +30,7 @@ FIXTURE_TEST(format_verification, compacted_topic_fixture) {
     BOOST_REQUIRE_EQUAL(model::offset(offset), model::offset(42));
     auto [delta, _2] = p.read_varlong();
     BOOST_REQUIRE_EQUAL(delta, 66);
-    auto footer
-      = reflection::adl<storage::compacted_topic_index::footer>{}.from(p);
+    auto footer = reflection::adl<storage::compacted_index::footer>{}.from(p);
     info("{}", footer);
     BOOST_REQUIRE_EQUAL(footer.keys, 1);
     BOOST_REQUIRE_EQUAL(
