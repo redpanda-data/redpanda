@@ -54,6 +54,8 @@ group::group(
   config::configuration& conf,
   ss::lw_shared_ptr<cluster::partition> partition)
   : _id(id)
+  , _num_members_joining(0)
+  , _new_member_added(false)
   , _conf(conf)
   , _partition(partition) {
     _state = md.members.empty() ? group_state::empty : group_state::stable;
