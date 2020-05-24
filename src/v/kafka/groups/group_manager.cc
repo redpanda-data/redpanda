@@ -369,7 +369,20 @@ group_manager::join_group(join_group_request&& r) {
             return make_join_error(
               r.data.member_id, error_code::unknown_member_id);
         }
-        auto p = _partitions.find(r.ntp)->second->partition;
+        auto it = _partitions.find(r.ntp);
+        if (it == _partitions.end()) {
+            // the ntp's partition was available because we had to route the
+            // request to the correct core, but when we looked again it was
+            // gone. this is generally not going to be a scenario that can
+            // happen until we have rebalancing / partition deletion feature.
+            klog.error(
+              "Partition not found for ntp {} joining group {}",
+              r.ntp,
+              r.data.group_id);
+            return make_join_error(
+              r.data.member_id, error_code::not_coordinator);
+        }
+        auto p = it->second->partition;
         group = ss::make_lw_shared<kafka::group>(
           r.data.group_id, group_state::empty, _conf, p);
         _groups.emplace(r.data.group_id, group);

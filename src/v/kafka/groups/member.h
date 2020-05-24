@@ -94,8 +94,6 @@ public:
       , _group_id(std::move(group_id))
       , _is_new(false) {}
 
-    ~group_member() noexcept { _expire_timer.cancel(); }
-
     const member_state& state() const { return _state; }
 
     /// Get the member id.
