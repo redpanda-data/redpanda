@@ -10,6 +10,9 @@ namespace storage {
 // simple types shared among readers and writers
 
 struct compacted_index {
+    static constexpr const size_t max_entry_size = size_t(
+      std::numeric_limits<uint16_t>::max());
+
     enum class entry_type : uint8_t {
         none, // error detection
         key,  // most common - just keys
