@@ -6,6 +6,7 @@
 #include <seastar/core/future.hh>
 
 #include <fmt/ostream.h>
+#include <sys/stat.h>
 
 #include <numeric>
 #include <stdexcept>
@@ -92,7 +93,14 @@ struct iobuf_file final : public ss::file_impl {
 
     ss::future<struct stat> stat() final {
         vlog(logger().info, "stat()");
-        throw std::runtime_error("iobuf_file does not support stat syscall");
+        struct stat ret;
+        std::memset(&ret, 0, sizeof(ret));
+        ret.st_dev = (decltype(ret.st_dev))_ptr; // NOLINT
+        ret.st_ino = (decltype(ret.st_ino))_ptr; // NOLINT
+        ret.st_mode = __S_IFREG;
+        ret.st_size = _ptr->size_bytes();
+        ret.st_blocks = _ptr->size_bytes() / 512;
+        return ss::make_ready_future<struct stat>(ret);
     }
 
     ss::future<> truncate(uint64_t pos) final {
