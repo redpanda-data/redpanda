@@ -23,6 +23,7 @@ v_cc_library(
     lock_manager.cc
     types.cc
     spill_key_index.cc
+    compacted_index_chunk_reader.cc
   DEPS
     Seastar::seastar
     v::bytes
