@@ -10,7 +10,6 @@ namespace storage {
 // simple types shared among readers and writers
 
 struct compacted_index {
-    static constexpr size_t footer_size = 13;
     enum class entry_type : uint8_t {
         key,
         /// \brief because of raft truncations, we write a truncation, for
@@ -32,6 +31,11 @@ struct compacted_index {
         int8_t version{0};
     };
 
+    static constexpr size_t footer_size = sizeof(footer::size)
+                                          + sizeof(footer::keys)
+                                          + sizeof(footer::flags)
+                                          + sizeof(footer::crc)
+                                          + sizeof(footer::version);
     // for the readers and friends
     struct entry {
         entry(entry_type t, bytes k, model::offset o, int32_t d) noexcept

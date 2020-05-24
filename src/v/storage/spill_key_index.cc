@@ -89,10 +89,12 @@ ss::future<> spill_key_index::index(
 ///
 ss::future<> spill_key_index::spill(
   compacted_index::entry_type type, bytes_view b, value_type v) {
+    constexpr size_t max_entry_size = size_t(std::numeric_limits<uint16_t>::max());
+    constexpr size_t size_reservation = sizeof(uint16_t);
     ++_footer.keys;
     iobuf payload;
     // INT16
-    auto ph = payload.reserve(sizeof(uint16_t));
+    auto ph = payload.reserve(size_reservation);
     // BYTE
     payload.append(reinterpret_cast<const uint8_t*>(&type), 1);
     // VINT
@@ -106,10 +108,17 @@ ss::future<> spill_key_index::spill(
         payload.append(x.data(), x.size());
     }
     // []BYTE
-    payload.append(b.data(), b.size());
-    const uint16_t size = payload.size_bytes() - 2;
-    const uint16_t size_le = ss::cpu_to_le(size);
-    ph.write(reinterpret_cast<const char*>(&size_le), sizeof(size_le));
+    {
+        size_t key_size = b.size();
+        const size_t max = max_entry_size - payload.size_bytes();
+        if (key_size > max) {
+            key_size = max;
+        }
+        payload.append(b.data(), key_size);
+    }
+    const size_t size = payload.size_bytes() - size_reservation;
+    const size_t size_le = ss::cpu_to_le(size); // downcast
+    ph.write(reinterpret_cast<const char*>(&size_le), size_reservation);
 
     // update internal state
     _footer.size += payload.size_bytes();
@@ -117,6 +126,10 @@ ss::future<> spill_key_index::spill(
         // NOLINTNEXTLINE
         _crc.extend(reinterpret_cast<const uint8_t*>(f.get()), f.size());
     }
+    vassert(
+      payload.size_bytes() <= max_entry_size,
+      "Entries cannot be bigger than uint16_t::max(): {}",
+      payload);
     // Append to the file
     return ss::do_with(
       std::move(payload), [this](iobuf& buf) { return _appender.append(buf); });
@@ -165,7 +178,13 @@ ss::future<> spill_key_index::close() {
         _footer.crc = _crc.value();
         return ss::do_with(
                  reflection::to_iobuf(_footer),
-                 [this](iobuf& b) { return _appender.append(b); })
+                 [this](iobuf& b) {
+                     vassert(
+                       b.size_bytes() == compacted_index::footer_size,
+                       "Footer is bigger than expected: {}",
+                       b);
+                     return _appender.append(b);
+                 })
           .then([this] { return _appender.close(); });
     });
 }
@@ -184,7 +203,7 @@ std::ostream& operator<<(std::ostream& o, const spill_key_index& k) {
       k._midx.size(),
       k._appender);
     return o;
-}
+
 
 } // namespace storage::internal
 
