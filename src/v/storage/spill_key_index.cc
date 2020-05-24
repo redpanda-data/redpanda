@@ -179,7 +179,7 @@ std::ostream& operator<<(std::ostream& o, const spill_key_index& k) {
       "in_memory_entries:{}, file_appender:{}}}",
       k.filename(),
       k._max_mem,
-      k._max_mem,
+      k._mem_usage,
       k._footer.keys,
       k._midx.size(),
       k._appender);
