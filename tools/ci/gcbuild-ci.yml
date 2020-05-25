@@ -47,6 +47,7 @@ steps:
   - |
     python3 -mvenv build/venv/v && \
     source build/venv/v/bin/activate && \
+    pip install icontract==2.3.2 && \
     pip install tools/ && \
     vtools test py && \
     vtools install infra-deps
