@@ -14,6 +14,7 @@ type OutputFormat string
 const (
 	Envfile OutputFormat = "envfile" // Legacy env file
 	Seastar OutputFormat = "seastar" // YAML properties file
+	Bin     string       = "iotune-redpanda"
 )
 
 type IoTuneArgs struct {
@@ -47,8 +48,8 @@ func (ioTune *ioTune) Run(args IoTuneArgs) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	log.Debugf("Running 'iotune' with '%#q'", cmdArgs)
-	return ioTune.proc.RunWithSystemLdPath(ioTune.timeout, "iotune", cmdArgs...)
+	log.Debugf("Running '%s' with '%#q'", Bin, cmdArgs)
+	return ioTune.proc.RunWithSystemLdPath(ioTune.timeout, Bin, cmdArgs...)
 }
 
 func ioTuneCommandLineArgs(args IoTuneArgs) ([]string, error) {

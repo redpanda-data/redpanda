@@ -1,6 +1,7 @@
 package tuners
 
 import (
+	"fmt"
 	"time"
 	"vectorized/pkg/os"
 	"vectorized/pkg/tuners/iotune"
@@ -27,8 +28,8 @@ func NewIoTuneTuner(
 }
 
 func checkIfIoTuneIsSupported(fs afero.Fs) (bool, string) {
-	if exists, _ := afero.Exists(fs, "iotune"); !exists {
-		return false, "Seastar iotune not found in PATH"
+	if exists, _ := afero.Exists(fs, iotune.Bin); !exists {
+		return false, fmt.Sprintf("'%s' not found in PATH", iotune.Bin)
 	}
 	return true, ""
 }
