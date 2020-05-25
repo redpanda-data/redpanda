@@ -64,9 +64,9 @@ install -m644 %{_topdir}/common/sysctl.d/*  -Dt "%{buildroot}%{_prefix}/lib/sysc
 # use cp to preserve the symbolic links
 cp -P libexec/redpanda "%{buildroot}/opt/redpanda/libexec"
 cp -P libexec/rpk "%{buildroot}/opt/redpanda/libexec"
-cp -P libexec/iotune "%{buildroot}/opt/redpanda/libexec"
-cp -P libexec/hwloc-calc "%{buildroot}/opt/redpanda/libexec"
-cp -P libexec/hwloc-distrib "%{buildroot}/opt/redpanda/libexec"
+cp -P libexec/iotune-redpanda "%{buildroot}/opt/redpanda/libexec"
+cp -P libexec/hwloc-calc-redpanda "%{buildroot}/opt/redpanda/libexec"
+cp -P libexec/hwloc-distrib-redpanda "%{buildroot}/opt/redpanda/libexec"
 install -m644 conf/redpanda.yaml -Dt "%{buildroot}/etc/redpanda"
 install -m644 etc/redpanda/admin-api-doc/config.json -Dt "%{buildroot}/etc/redpanda/admin-api-doc"
 install -m644 etc/redpanda/admin-api-doc/header.json -Dt "%{buildroot}/etc/redpanda/admin-api-doc"

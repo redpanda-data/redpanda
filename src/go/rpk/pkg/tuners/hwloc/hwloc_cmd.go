@@ -10,6 +10,11 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+const (
+	CalcBin    = "hwloc-calc-redpanda"
+	DistribBin = "hwloc-distrib-redpanda"
+)
+
 type hwLocCmd struct {
 	HwLoc
 	proc    os.Proc
@@ -93,18 +98,22 @@ func (*hwLocCmd) CheckIfMaskIsEmpty(mask string) bool {
 }
 
 func (*hwLocCmd) IsSupported() bool {
-	log.Debug("Checking if 'hwloc' is present...")
-	_, calcErr := exec.LookPath("hwloc-calc")
-	_, distribErr := exec.LookPath("hwloc-distrib")
-	if calcErr != nil || distribErr != nil {
-		log.Info("Unable to find 'hwloc', install 'hwloc' package")
+	log.Debugf("Checking if '%s' & '%s' are present...", CalcBin, DistribBin)
+	_, calcErr := exec.LookPath(CalcBin)
+	_, distribErr := exec.LookPath(DistribBin)
+	if calcErr != nil {
+		log.Warnf("Unable to find '%s'", CalcBin)
+		return false
+	}
+	if distribErr != nil {
+		log.Warnf("Unable to find '%s'", DistribBin)
 		return false
 	}
 	return true
 }
 
 func (hwLocCmd *hwLocCmd) runCalc(args ...string) (string, error) {
-	outputLines, err := hwLocCmd.proc.RunWithSystemLdPath(hwLocCmd.timeout, "hwloc-calc", args...)
+	outputLines, err := hwLocCmd.proc.RunWithSystemLdPath(hwLocCmd.timeout, CalcBin, args...)
 	if err != nil {
 		return "", err
 	}
@@ -113,7 +122,7 @@ func (hwLocCmd *hwLocCmd) runCalc(args ...string) (string, error) {
 
 func (hwLocCmd *hwLocCmd) runDistrib(args ...string) ([]string, error) {
 	var result []string
-	outputLines, err := hwLocCmd.proc.RunWithSystemLdPath(hwLocCmd.timeout, "hwloc-distrib", args...)
+	outputLines, err := hwLocCmd.proc.RunWithSystemLdPath(hwLocCmd.timeout, DistribBin, args...)
 	if err != nil {
 		return nil, err
 	}
