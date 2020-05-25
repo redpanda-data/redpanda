@@ -886,8 +886,13 @@ controller::create_topic_cfg_batch(const topic_configuration& cfg) {
     }
     log_record_key assignment_key = {
       .record_type = log_record_key::type::partition_assignment};
-    for (auto const p_as : *assignments) {
-        builder.add_kv(assignment_key, p_as);
+    for (auto& p_as : *assignments) {
+        // shuffle partition assignments
+        std::shuffle(
+          p_as.replicas.begin(),
+          p_as.replicas.end(),
+          random_generators::internal::gen);
+        builder.add_kv(assignment_key, std::move(p_as));
     }
     return std::move(builder).build();
 }
