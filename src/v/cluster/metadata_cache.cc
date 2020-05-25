@@ -232,7 +232,9 @@ void metadata_cache::insert_topic(
 }
 
 ss::future<model::node_id> metadata_cache::get_leader(
-  const model::ntp& ntp, ss::lowres_clock::time_point timeout) {
+  const model::ntp& ntp,
+  ss::lowres_clock::time_point timeout,
+  std::optional<std::reference_wrapper<ss::abort_source>> as) {
     if (auto md = get_topic_metadata(model::topic_namespace_view(ntp)); md) {
         if ((size_t)ntp.tp.partition() < md->partitions.size()) {
             auto& p = md->partitions[ntp.tp.partition()];
@@ -244,7 +246,9 @@ ss::future<model::node_id> metadata_cache::get_leader(
 
     auto& promise = _leader_promises[ntp].emplace_back();
     return promise.get_future_with_timeout(
-      timeout, [] { return std::make_exception_ptr(ss::timed_out_error()); });
+      timeout,
+      [] { return std::make_exception_ptr(ss::timed_out_error()); },
+      as);
 }
 
 } // namespace cluster
