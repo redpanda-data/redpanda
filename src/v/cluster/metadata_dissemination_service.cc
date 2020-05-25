@@ -22,6 +22,8 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/sleep.hh>
 
+#include <absl/container/flat_hash_set.h>
+
 #include <chrono>
 #include <exception>
 
@@ -43,6 +45,10 @@ metadata_dissemination_service::metadata_dissemination_service(
           _bg, [this] { return dispatch_disseminate_leadership(); });
     });
     _dispatch_timer.arm_periodic(_dissemination_interval);
+
+    for (auto& seed : config::shard_local_cfg().seed_servers()) {
+        _seed_server_ids.push_back(seed.id);
+    }
 }
 
 void metadata_dissemination_service::disseminate_leadership(
@@ -72,21 +78,35 @@ ss::future<> metadata_dissemination_service::start() {
     if (ss::this_shard_id() != 0) {
         return ss::make_ready_future<>();
     }
-
+    // poll either seed servers or configuration
     auto ids = _md_cache.local().all_broker_ids();
-    // Do nothing, single node case
-    if (ids.size() <= 1) {
+    // use hash set to deduplicate ids
+    absl::flat_hash_set<model::node_id> all_broker_ids;
+    all_broker_ids.reserve(ids.size() + _seed_server_ids.size());
+    // collect ids
+    for (auto& id : ids) {
+        all_broker_ids.emplace(id);
+    }
+    for (auto& id : _seed_server_ids) {
+        all_broker_ids.emplace(id);
+    }
+
+    // We do not want to send requst to self
+    all_broker_ids.erase(_self);
+
+    // Do nothing, single node cluster
+    if (all_broker_ids.empty()) {
         return ss::make_ready_future<>();
     }
-    (void)ss::with_gate(_bg, [this, ids = std::move(ids)]() mutable {
-        // We do not want to send requst to self
-        auto it = std::find(std::cbegin(ids), std::cend(ids), _self);
-        if (it != ids.end()) {
-            ids.erase(it);
-        }
+    std::vector<model::node_id> ids_vector;
+    ids_vector.reserve(all_broker_ids.size());
+    ids_vector.insert(
+      ids_vector.begin(), all_broker_ids.begin(), all_broker_ids.end());
 
-        return update_metadata_with_retries(std::move(ids));
-    });
+    (void)ss::with_gate(
+      _bg, [this, ids_vector = std::move(ids_vector)]() mutable {
+          return update_metadata_with_retries(std::move(ids_vector));
+      });
 
     return ss::make_ready_future<>();
 }
