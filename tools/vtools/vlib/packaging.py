@@ -82,16 +82,17 @@ exec -a "$0" "$ldso" "$realexe" "$@"
 
     ar = tarfile.open(fileobj=gzip_process.stdin, mode='w|')
     all_libs = {}
-    for exe in execs:
-        logging.debug(f"Adding '{exe}' executable to relocable tar")
+    for exe, suffix in execs:
         basename = os.path.basename(exe)
-        ar.add(exe, arcname='libexec/' + basename + '.bin')
-        ti = tarfile.TarInfo(name='bin/' + basename)
+        name = f'{basename}-{suffix}' if suffix else basename
+        logging.debug(f"Adding '{exe}' executable to relocable tar as {name}")
+        ar.add(exe, arcname=f'libexec/{name}.bin')
+        ti = tarfile.TarInfo(name=f'bin/{name}')
         ti.size = len(thunk)
         ti.mode = 0o755
         ti.mtime = os.stat(exe).st_mtime
         ar.addfile(ti, fileobj=io.BytesIO(thunk))
-        ti = tarfile.TarInfo(name='libexec/' + basename)
+        ti = tarfile.TarInfo(name=f'libexec/{name}')
         ti.type = tarfile.SYMTYPE
         ti.linkname = '../lib/ld.so'
         ti.mtime = os.stat(exe).st_mtime
@@ -99,7 +100,7 @@ exec -a "$0" "$ldso" "$realexe" "$@"
         all_libs.update(_get_dependencies(exe, vconfig))
     for lib, location in all_libs.items():
         logging.debug(f"Adding '{location}' lib to relocable tar")
-        ar.add(location, arcname="lib/" + lib)
+        ar.add(location, arcname=f'lib/{lib}')
     for conf in configs:
         ar.add(conf, arcname=f"conf/{os.path.basename(conf)}")
     for swag in admin_api_swag:
@@ -235,12 +236,13 @@ def create_packages(vconfig, formats, build_type):
     else:
         RELEASE = "dev"
 
+    suffix = 'redpanda'
     execs = [
-        f'{vconfig.build_dir}/bin/redpanda',
-        f'{vconfig.go_out_dir}/rpk',
-        f'{vconfig.external_path}/bin/hwloc-calc',
-        f'{vconfig.external_path}/bin/hwloc-distrib',
-        f'{vconfig.external_path}/bin/iotune',
+        (f'{vconfig.build_dir}/bin/redpanda', ''),
+        (f'{vconfig.go_out_dir}/rpk', ''),
+        (f'{vconfig.external_path}/bin/hwloc-calc', suffix),
+        (f'{vconfig.external_path}/bin/hwloc-distrib', suffix),
+        (f'{vconfig.external_path}/bin/iotune', suffix),
     ]
 
     dist_path = os.path.join(vconfig.build_dir, "dist")
