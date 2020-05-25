@@ -97,6 +97,8 @@ public:
         set_configuration("rpc_server", _current_node.rpc_address());
         set_configuration("seed_servers", _seeds);
         set_configuration("disable_metrics", true);
+        set_configuration("election_timeout_ms", 500ms);
+        set_configuration("raft_heartbeat_interval_ms", 75ms);
 
         using namespace std::chrono_literals;
         _gm
