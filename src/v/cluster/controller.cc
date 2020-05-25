@@ -14,6 +14,7 @@
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "raft/types.h"
+#include "random/generators.h"
 #include "resource_mgmt/io_priority.h"
 #include "rpc/connection_cache.h"
 #include "rpc/types.h"
@@ -813,6 +814,62 @@ ss::future<std::vector<topic_result>> controller::do_delete_topics(
       });
 }
 
+ss::future<topic_result> controller::wait_for_topic_leaders(
+  model::topic_namespace tp_ns, model::timeout_clock::time_point tout) {
+    auto md = _md_cache.local().get_topic_metadata(tp_ns);
+    if (!md) {
+        return ss::make_ready_future<topic_result>(
+          topic_result(std::move(tp_ns), errc::topic_not_exists));
+    }
+    std::vector<ss::future<model::node_id>> partition_leader_futures;
+    partition_leader_futures.reserve(md->partitions.size());
+
+    for (auto& p : md->partitions) {
+        partition_leader_futures.push_back(_md_cache.local().get_leader(
+          make_ntp(tp_ns, p.id), tout, std::ref(_as)));
+    }
+    return ss::when_all_succeed(
+             partition_leader_futures.begin(), partition_leader_futures.end())
+      .then_wrapped([tp_ns = std::move(tp_ns)](
+                      ss::future<std::vector<model::node_id>> f) mutable {
+          try {
+              auto leader_id = f.get0();
+              vlog(clusterlog.info, "New leaders {}", leader_id);
+          } catch (const ss::timed_out_error& e) {
+              vlog(
+                clusterlog.warn,
+                "Timeout waiting for topic {} partition leaders",
+                tp_ns);
+              return topic_result(std::move(tp_ns), errc::timeout);
+          } catch (const ss::abort_requested_exception& e) {
+              vlog(
+                clusterlog.warn,
+                "Waiting for topic {} partition leaders aborted",
+                tp_ns);
+              return topic_result(std::move(tp_ns), errc::shutting_down);
+          }
+          return topic_result(std::move(tp_ns), errc::success);
+      });
+}
+
+ss::future<std::vector<topic_result>> controller::wait_for_all_topic_leaders(
+  std::vector<topic_result> results, model::timeout_clock::time_point tout) {
+    std::vector<ss::future<topic_result>> topic_futures;
+    topic_futures.reserve(results.size());
+    for (auto& result : results) {
+        // do not wait for not created topics
+        if (result.ec != errc::success) {
+            topic_futures.push_back(
+              ss::make_ready_future<topic_result>(std::move(result)));
+            continue;
+        }
+        topic_futures.push_back(
+          wait_for_topic_leaders(std::move(result.tp_ns), tout));
+    }
+
+    return ss::when_all_succeed(topic_futures.begin(), topic_futures.end());
+}
+
 ss::future<std::vector<topic_result>> controller::do_create_topics(
   ss::semaphore_units<> units,
   std::vector<topic_configuration> topics,
@@ -862,6 +919,9 @@ ss::future<std::vector<topic_result>> controller::do_create_topics(
             return process_replicate_topic_op_result(
               std::move(valid_topics), timeout, std::move(f));
         })
+      .then([this, timeout](ret_t results) {
+          return wait_for_all_topic_leaders(std::move(results), timeout);
+      })
       .then([errors = std::move(errors)](ret_t results) {
           // merge results from both sources
           std::move(
