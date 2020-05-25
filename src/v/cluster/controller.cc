@@ -307,21 +307,35 @@ controller::dispatch_record_recovery(log_record_key key, iobuf&& v_buf) {
 ss::future<> controller::recover_assignment(partition_assignment as) {
     _highest_group_id = std::max(_highest_group_id, as.group);
     return ss::do_with(std::move(as), [this](partition_assignment& as) {
-        return update_cache_with_partitions_assignment(as).then([this, &as] {
-            auto it = std::find_if(
-              std::cbegin(as.replicas),
-              std::cend(as.replicas),
-              [this](const model::broker_shard& bs) {
-                  return bs.node_id == _self.id();
-              });
+        return update_cache_with_partitions_assignment(as)
+          .then([this, &as] {
+              auto it = std::find_if(
+                std::cbegin(as.replicas),
+                std::cend(as.replicas),
+                [this](const model::broker_shard& bs) {
+                    return bs.node_id == _self.id();
+                });
 
-            if (it == std::cend(as.replicas)) {
-                // This partition in not replicated on current broker
-                return ss::make_ready_future<>();
-            }
-            // Recover replica as it is replicated on current broker
-            return recover_replica(as.ntp, as.group, it->shard, as.replicas);
-        });
+              if (it == std::cend(as.replicas)) {
+                  // This partition in not replicated on current broker
+                  return ss::make_ready_future<>();
+              }
+              // Recover replica as it is replicated on current broker
+              return recover_replica(as.ntp, as.group, it->shard, as.replicas);
+          })
+          .then([this, &as] {
+              // If there is only one node in replicate set we can assume that
+              // it is going to be a leader to speed up topic creation process
+              if (as.replicas.size() == 1) {
+                  return _md_cache.invoke_on_all(
+                    [ntp = as.ntp,
+                     leader = as.replicas.front().node_id](metadata_cache& md) {
+                        md.update_partition_leader(
+                          ntp, model::term_id{}, leader);
+                    });
+              }
+              return ss::now();
+          });
     });
 }
 
