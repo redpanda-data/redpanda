@@ -29,13 +29,13 @@ ss::future<consensus_ptr> partition_manager::manage(
       .then([this, group, nodes = std::move(initial_nodes)](
               storage::log&& log) mutable {
           return _raft_manager.local()
-            .start_group(group, std::move(nodes), log)
+            .create_group(group, std::move(nodes), log)
             .then([this, log, group](ss::lw_shared_ptr<raft::consensus> c) {
                 auto p = ss::make_lw_shared<partition>(c);
                 _ntp_table.emplace(log.config().ntp, p);
                 _raft_table.emplace(group, p);
                 _manage_watchers.notify(p->ntp(), p);
-                return c;
+                return p->start().then([c] { return c; });
             });
       });
 }
