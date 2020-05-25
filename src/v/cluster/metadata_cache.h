@@ -125,8 +125,10 @@ public:
      * ready future. Otherwise, wait up to the specified timeout for a leader to
      * be elected.
      */
-    ss::future<model::node_id>
-    get_leader(const model::ntp& ntp, ss::lowres_clock::time_point timeout);
+    ss::future<model::node_id> get_leader(
+      const model::ntp&,
+      ss::lowres_clock::time_point,
+      std::optional<std::reference_wrapper<ss::abort_source>> = std::nullopt);
 
 private:
     broker_cache_t _brokers_cache;
