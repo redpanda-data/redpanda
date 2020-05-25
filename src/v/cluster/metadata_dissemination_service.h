@@ -119,6 +119,7 @@ private:
     model::node_id _self;
     std::chrono::milliseconds _dissemination_interval;
     std::vector<ntp_leader> _requests;
+    std::vector<model::node_id> _seed_server_ids;
     broker_updates_t _pending_updates;
     mutex _lock;
     ss::timer<> _dispatch_timer;
