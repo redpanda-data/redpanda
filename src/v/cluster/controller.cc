@@ -864,10 +864,9 @@ ss::future<std::vector<topic_result>> controller::do_create_topics(
         })
       .then([errors = std::move(errors)](ret_t results) {
           // merge results from both sources
-          clusterlog.error(
-            "Topic create errors: {}, results: {}", errors, results);
           std::move(
             std::begin(errors), std::end(errors), std::back_inserter(results));
+          vlog(clusterlog.debug, "Topic create results: {}", results);
           return results;
       });
 }
