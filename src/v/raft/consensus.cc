@@ -9,6 +9,7 @@
 #include "raft/logger.h"
 #include "raft/recovery_stm.h"
 #include "raft/rpc_client_protocol.h"
+#include "raft/types.h"
 #include "raft/vote_stm.h"
 #include "utils/state_crc_file.h"
 #include "utils/state_crc_file_errc.h"
@@ -471,8 +472,20 @@ ss::future<> consensus::start() {
                 _commit_index);
           })
           .then([this] {
-              // Arm leader election timeout.
-              arm_vote_timeout();
+              // arm immediate election for first node in the configuration
+              if (!_conf.nodes.empty() && _self == _conf.nodes.begin()->id()) {
+                  if (!_bg.is_closed()) {
+                      // trigger immediate election
+                      _hbeat = clock_type::time_point::min();
+                      _vote_timeout.arm(raft::clock_type::now());
+                  }
+                  return;
+              }
+              // for all other nodes use jitter
+              if (!_bg.is_closed()) {
+                  _vote_timeout.rearm(
+                    clock_type::now() + _jit.next_jitter_duration());
+              }
           })
           .then([this] { return _event_manager.start(); });
     });

@@ -19,9 +19,10 @@ public:
 
     DurationType jitter_duration() const { return _jitter; }
     DurationType base_duration() const { return _base; }
-    DurationType next_duration() {
-        return _base + DurationType(_rand() % _jitter.count());
+    DurationType next_jitter_duration() {
+        return DurationType(_rand() % _jitter.count());
     }
+    DurationType next_duration() { return _base + next_jitter_duration(); }
 
 private:
     DurationType _base;

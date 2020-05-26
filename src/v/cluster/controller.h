@@ -10,6 +10,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
+#include "model/timeout_clock.h"
 #include "raft/state_machine.h"
 #include "seastarx.h"
 #include "storage/log_manager.h"
@@ -165,6 +166,11 @@ private:
       std::vector<model::topic_namespace>,
       model::timeout_clock::time_point,
       ss::future<result<raft::replicate_result>>);
+
+    ss::future<std::vector<topic_result>> wait_for_all_topic_leaders(
+      std::vector<topic_result>, model::timeout_clock::time_point);
+    ss::future<topic_result> wait_for_topic_leaders(
+      model::topic_namespace, model::timeout_clock::time_point);
 
     model::broker _self;
     std::vector<config::seed_server> _seed_servers;

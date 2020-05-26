@@ -30,7 +30,7 @@ ss::future<> group_manager::stop() {
       });
 }
 
-ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::start_group(
+ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
   raft::group_id id, std::vector<model::broker> nodes, storage::log log) {
     auto raft = ss::make_lw_shared<raft::consensus>(
       _self,
@@ -47,11 +47,9 @@ ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::start_group(
       });
 
     return ss::with_gate(_gate, [this, raft] {
-        return raft->start().then([this, raft] {
-            return _heartbeats.register_group(raft).then([this, raft] {
-                _groups.push_back(raft);
-                return raft;
-            });
+        return _heartbeats.register_group(raft).then([this, raft] {
+            _groups.push_back(raft);
+            return raft;
         });
     });
 }

@@ -14,6 +14,7 @@
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "raft/types.h"
+#include "random/generators.h"
 #include "resource_mgmt/io_priority.h"
 #include "rpc/connection_cache.h"
 #include "rpc/types.h"
@@ -135,26 +136,22 @@ auto controller::dispatch_rpc_to_leader(Func&& f) {
  * while the continuation is running.
  */
 ss::future<> controller::start() {
+    _leader_notify_handle = _gm.local().register_leadership_notification(
+      [this](
+        raft::group_id group,
+        model::term_id term,
+        std::optional<model::node_id> leader_id) {
+          auto ntp = _pm.local().consensus_for(group)->ntp();
+          handle_leadership_notification(std::move(ntp), term, leader_id);
+      });
+
     if (ss::this_shard_id() != controller::shard) {
-        return ss::make_ready_future<>();
+        return ss::now();
     }
-    return _gm
-      .invoke_on_all([this](raft::group_manager& gm) {
-          _leader_notify_handle = gm.register_leadership_notification(
-            [this](
-              raft::group_id group,
-              model::term_id term,
-              std::optional<model::node_id> leader_id) {
-                auto ntp = _pm.local().consensus_for(group)->ntp();
-                handle_leadership_notification(
-                  std::move(ntp), term, std::move(leader_id));
-            });
-      })
-      .then([this] {
-          // add raft0 to shard table
-          return assign_group_to_shard(
-            controller_ntp, controller::group, controller::shard);
-      })
+
+    // add raft0 to shard table
+    return assign_group_to_shard(
+             controller_ntp, controller::group, controller::shard)
       .then([this] {
           // add current node to brokers cache
           return update_brokers_cache({_self});
@@ -310,21 +307,35 @@ controller::dispatch_record_recovery(log_record_key key, iobuf&& v_buf) {
 ss::future<> controller::recover_assignment(partition_assignment as) {
     _highest_group_id = std::max(_highest_group_id, as.group);
     return ss::do_with(std::move(as), [this](partition_assignment& as) {
-        return update_cache_with_partitions_assignment(as).then([this, &as] {
-            auto it = std::find_if(
-              std::cbegin(as.replicas),
-              std::cend(as.replicas),
-              [this](const model::broker_shard& bs) {
-                  return bs.node_id == _self.id();
-              });
+        return update_cache_with_partitions_assignment(as)
+          .then([this, &as] {
+              auto it = std::find_if(
+                std::cbegin(as.replicas),
+                std::cend(as.replicas),
+                [this](const model::broker_shard& bs) {
+                    return bs.node_id == _self.id();
+                });
 
-            if (it == std::cend(as.replicas)) {
-                // This partition in not replicated on current broker
-                return ss::make_ready_future<>();
-            }
-            // Recover replica as it is replicated on current broker
-            return recover_replica(as.ntp, as.group, it->shard, as.replicas);
-        });
+              if (it == std::cend(as.replicas)) {
+                  // This partition in not replicated on current broker
+                  return ss::make_ready_future<>();
+              }
+              // Recover replica as it is replicated on current broker
+              return recover_replica(as.ntp, as.group, it->shard, as.replicas);
+          })
+          .then([this, &as] {
+              // If there is only one node in replicate set we can assume that
+              // it is going to be a leader to speed up topic creation process
+              if (as.replicas.size() == 1) {
+                  return _md_cache.invoke_on_all(
+                    [ntp = as.ntp,
+                     leader = as.replicas.front().node_id](metadata_cache& md) {
+                        md.update_partition_leader(
+                          ntp, model::term_id{}, leader);
+                    });
+              }
+              return ss::now();
+          });
     });
 }
 
@@ -817,6 +828,62 @@ ss::future<std::vector<topic_result>> controller::do_delete_topics(
       });
 }
 
+ss::future<topic_result> controller::wait_for_topic_leaders(
+  model::topic_namespace tp_ns, model::timeout_clock::time_point tout) {
+    auto md = _md_cache.local().get_topic_metadata(tp_ns);
+    if (!md) {
+        return ss::make_ready_future<topic_result>(
+          topic_result(std::move(tp_ns), errc::topic_not_exists));
+    }
+    std::vector<ss::future<model::node_id>> partition_leader_futures;
+    partition_leader_futures.reserve(md->partitions.size());
+
+    for (auto& p : md->partitions) {
+        partition_leader_futures.push_back(_md_cache.local().get_leader(
+          make_ntp(tp_ns, p.id), tout, std::ref(_as)));
+    }
+    return ss::when_all_succeed(
+             partition_leader_futures.begin(), partition_leader_futures.end())
+      .then_wrapped([tp_ns = std::move(tp_ns)](
+                      ss::future<std::vector<model::node_id>> f) mutable {
+          try {
+              auto leader_id = f.get0();
+              vlog(clusterlog.info, "New leaders {}", leader_id);
+          } catch (const ss::timed_out_error& e) {
+              vlog(
+                clusterlog.warn,
+                "Timeout waiting for topic {} partition leaders",
+                tp_ns);
+              return topic_result(std::move(tp_ns), errc::timeout);
+          } catch (const ss::abort_requested_exception& e) {
+              vlog(
+                clusterlog.warn,
+                "Waiting for topic {} partition leaders aborted",
+                tp_ns);
+              return topic_result(std::move(tp_ns), errc::shutting_down);
+          }
+          return topic_result(std::move(tp_ns), errc::success);
+      });
+}
+
+ss::future<std::vector<topic_result>> controller::wait_for_all_topic_leaders(
+  std::vector<topic_result> results, model::timeout_clock::time_point tout) {
+    std::vector<ss::future<topic_result>> topic_futures;
+    topic_futures.reserve(results.size());
+    for (auto& result : results) {
+        // do not wait for not created topics
+        if (result.ec != errc::success) {
+            topic_futures.push_back(
+              ss::make_ready_future<topic_result>(std::move(result)));
+            continue;
+        }
+        topic_futures.push_back(
+          wait_for_topic_leaders(std::move(result.tp_ns), tout));
+    }
+
+    return ss::when_all_succeed(topic_futures.begin(), topic_futures.end());
+}
+
 ss::future<std::vector<topic_result>> controller::do_create_topics(
   ss::semaphore_units<> units,
   std::vector<topic_configuration> topics,
@@ -866,12 +933,14 @@ ss::future<std::vector<topic_result>> controller::do_create_topics(
             return process_replicate_topic_op_result(
               std::move(valid_topics), timeout, std::move(f));
         })
+      .then([this, timeout](ret_t results) {
+          return wait_for_all_topic_leaders(std::move(results), timeout);
+      })
       .then([errors = std::move(errors)](ret_t results) {
           // merge results from both sources
-          clusterlog.error(
-            "Topic create errors: {}, results: {}", errors, results);
           std::move(
             std::begin(errors), std::end(errors), std::back_inserter(results));
+          vlog(clusterlog.debug, "Topic create results: {}", results);
           return results;
       });
 }
@@ -891,8 +960,13 @@ controller::create_topic_cfg_batch(const topic_configuration& cfg) {
     }
     log_record_key assignment_key = {
       .record_type = log_record_key::type::partition_assignment};
-    for (auto const p_as : *assignments) {
-        builder.add_kv(assignment_key, p_as);
+    for (auto& p_as : *assignments) {
+        // shuffle partition assignments
+        std::shuffle(
+          p_as.replicas.begin(),
+          p_as.replicas.end(),
+          random_generators::internal::gen);
+        builder.add_kv(assignment_key, std::move(p_as));
     }
     return std::move(builder).build();
 }
@@ -903,7 +977,7 @@ ss::future<> controller::do_leadership_notification(
     // gate is reentrant making it ok if leadership notification originated
     // on the the controller::shard core.
     return with_gate(_bg, [this, ntp = std::move(ntp), lid, term]() mutable {
-        auto f = _state_lock.get_units().then(
+        return _state_lock.get_units().then(
           [this, ntp = std::move(ntp), lid, term](
             ss::semaphore_units<> u) mutable {
               if (ntp == controller_ntp) {
