@@ -899,7 +899,7 @@ ss::future<> controller::do_leadership_notification(
     // gate is reentrant making it ok if leadership notification originated
     // on the the controller::shard core.
     return with_gate(_bg, [this, ntp = std::move(ntp), lid, term]() mutable {
-        auto f = _state_lock.get_units().then(
+        return _state_lock.get_units().then(
           [this, ntp = std::move(ntp), lid, term](
             ss::semaphore_units<> u) mutable {
               if (ntp == controller_ntp) {
