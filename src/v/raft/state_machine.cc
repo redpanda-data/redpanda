@@ -3,6 +3,8 @@
 #include "raft/consensus.h"
 #include "storage/log.h"
 
+#include <seastar/core/gate.hh>
+
 namespace raft {
 
 state_machine::state_machine(ss::logger& log, ss::io_priority_class io_prio)
@@ -28,7 +30,9 @@ ss::future<> state_machine::stop() {
 
 ss::future<> state_machine::wait(
   model::offset offset, model::timeout_clock::time_point timeout) {
-    return _waiters.wait(offset, timeout, std::nullopt);
+    return ss::with_gate(_gate, [this, timeout, offset] {
+        return _waiters.wait(offset, timeout, std::nullopt);
+    });
 }
 
 state_machine::batch_applicator::batch_applicator(state_machine* machine)
