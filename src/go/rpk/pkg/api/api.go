@@ -47,9 +47,13 @@ type metricsBody struct {
 }
 
 type environmentBody struct {
-	EnvironmentPayload
-	SentAt time.Time     `json:"sentAt"`
-	Config config.Config `json:"config"`
+	Payload      EnvironmentPayload `json:"payload"`
+	Config       string             `json:"config"`
+	SentAt       time.Time          `json:"sentAt"`
+	NodeUuid     string             `json:"nodeUuid"`
+	Organization string             `json:"organization"`
+	ClusterId    string             `json:"clusterId"`
+	NodeId       int                `json:"nodeId"`
 }
 
 func SendMetrics(p MetricsPayload, conf config.Config) error {
@@ -64,8 +68,18 @@ func SendMetrics(p MetricsPayload, conf config.Config) error {
 	return SendMetricsToUrl(b, defaultUrl)
 }
 
-func SendEnvironment(env EnvironmentPayload, conf config.Config) error {
-	b := environmentBody{env, time.Now(), conf}
+func SendEnvironment(
+	env EnvironmentPayload, conf config.Config, confJSON string,
+) error {
+	b := environmentBody{
+		Payload:      env,
+		Config:       confJSON,
+		SentAt:       time.Now(),
+		NodeUuid:     conf.NodeUuid,
+		Organization: conf.Organization,
+		ClusterId:    conf.ClusterId,
+		NodeId:       conf.Redpanda.Id,
+	}
 	return SendEnvironmentToUrl(
 		b,
 		fmt.Sprintf("%s%s", defaultUrl, "/env"),
