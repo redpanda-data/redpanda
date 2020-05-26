@@ -135,26 +135,22 @@ auto controller::dispatch_rpc_to_leader(Func&& f) {
  * while the continuation is running.
  */
 ss::future<> controller::start() {
+    _leader_notify_handle = _gm.local().register_leadership_notification(
+      [this](
+        raft::group_id group,
+        model::term_id term,
+        std::optional<model::node_id> leader_id) {
+          auto ntp = _pm.local().consensus_for(group)->ntp();
+          handle_leadership_notification(std::move(ntp), term, leader_id);
+      });
+
     if (ss::this_shard_id() != controller::shard) {
-        return ss::make_ready_future<>();
+        return ss::now();
     }
-    return _gm
-      .invoke_on_all([this](raft::group_manager& gm) {
-          _leader_notify_handle = gm.register_leadership_notification(
-            [this](
-              raft::group_id group,
-              model::term_id term,
-              std::optional<model::node_id> leader_id) {
-                auto ntp = _pm.local().consensus_for(group)->ntp();
-                handle_leadership_notification(
-                  std::move(ntp), term, std::move(leader_id));
-            });
-      })
-      .then([this] {
-          // add raft0 to shard table
-          return assign_group_to_shard(
-            controller_ntp, controller::group, controller::shard);
-      })
+
+    // add raft0 to shard table
+    return assign_group_to_shard(
+             controller_ntp, controller::group, controller::shard)
       .then([this] {
           // add current node to brokers cache
           return update_brokers_cache({_self});
