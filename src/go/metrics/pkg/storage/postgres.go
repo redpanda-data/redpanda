@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	_ "github.com/GoogleCloudPlatform/cloudsql-proxy/proxy/dialers/postgres"
+	"github.com/sirupsen/logrus"
 )
 
 type PostgresRepo struct {
@@ -58,4 +59,34 @@ func (r *PostgresRepo) SaveMetrics(m Metrics) error {
 		return err
 	}
 	return nil
+}
+
+func (r *PostgresRepo) SaveEnvironment(e Environment) error {
+	logrus.Infof("Payload: %s", e.Payload)
+	logrus.Infof("Config: %s", e.Config)
+	query := "INSERT INTO environment(" +
+		" sent_at," +
+		" received_at," +
+		" organization," +
+		" cluster_id," +
+		" node_id," +
+		" node_uuid," +
+		" payload," +
+		" config)" +
+		" VALUES($1, $2, $3, $4, $5, $6, $7, $8);"
+	stmt, err := r.Db.Prepare(query)
+	if err != nil {
+		return err
+	}
+	_, err = stmt.Exec(
+		e.SentAt,
+		e.ReceivedAt,
+		e.Organization,
+		e.ClusterId,
+		e.NodeId,
+		e.NodeUuid,
+		e.Payload,
+		e.Config,
+	)
+	return err
 }

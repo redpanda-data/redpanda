@@ -14,6 +14,18 @@ type Metrics struct {
 	CpuPercentage float64   `json:"cpuPercentage,omitempty"`
 }
 
+type Environment struct {
+	ReceivedAt   time.Time
+	SentAt       time.Time `json:"sentAt,omitempty"`
+	Organization string    `json:"organization,omitempty"`
+	ClusterId    string    `json:"clusterId,omitempty"`
+	NodeId       int       `json:"nodeId,omitempty"`
+	NodeUuid     string    `json:"nodeUuid,omitempty"`
+	Payload      string    `json:"payload"`
+	Config       string    `json:"config"`
+}
+
 type Repository interface {
 	SaveMetrics(m Metrics) error
+	SaveEnvironment(e Environment) error
 }

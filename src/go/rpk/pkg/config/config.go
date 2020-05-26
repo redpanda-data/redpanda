@@ -302,6 +302,18 @@ func ReadFlat(fs afero.Fs, path string) (map[string]string, error) {
 	return flatMap, nil
 }
 
+func ReadAsJSON(fs afero.Fs, path string) (string, error) {
+	confMap, err := read(fs, path)
+	if err != nil {
+		return "", err
+	}
+	confJSON, err := json.Marshal(confMap)
+	if err != nil {
+		return "", err
+	}
+	return string(confJSON), nil
+}
+
 func write(fs afero.Fs, conf map[string]interface{}, path string) error {
 	v := viper.New()
 	v.SetFs(fs)

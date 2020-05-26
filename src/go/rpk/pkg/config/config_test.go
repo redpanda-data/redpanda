@@ -641,6 +641,46 @@ func TestCheckConfig(t *testing.T) {
 	}
 }
 
+func TestReadAsJSON(t *testing.T) {
+	tests := []struct {
+		name           string
+		before         func(fs afero.Fs) error
+		path           string
+		expected       string
+		expectedErrMsg string
+	}{
+		{
+			name: "it should load the config as JSON",
+			before: func(fs afero.Fs) error {
+				conf := DefaultConfig()
+				return WriteConfig(fs, &conf, conf.ConfigFile)
+			},
+			path:     DefaultConfig().ConfigFile,
+			expected: `{"config_file":"/etc/redpanda/redpanda.yaml","redpanda":{"admin":{"address":"0.0.0.0","port":9644},"data_directory":"/var/lib/redpanda/data","kafka_api":{"address":"0.0.0.0","port":9092},"node_id":0,"rpc_server":{"address":"0.0.0.0","port":33145},"seed_servers":[]},"rpk":{"coredump_dir":"/var/lib/redpanda/coredump","enable_memory_locking":false,"enable_usage_stats":true,"tune_aio_events":true,"tune_clocksource":true,"tune_coredump":false,"tune_cpu":true,"tune_disk_irq":true,"tune_disk_nomerges":true,"tune_disk_scheduler":true,"tune_network":true,"tune_swappiness":true}}`,
+		},
+		{
+			name:           "it should fail if the the config isn't found",
+			path:           DefaultConfig().ConfigFile,
+			expectedErrMsg: "open /etc/redpanda/redpanda.yaml: file does not exist",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(st *testing.T) {
+			fs := afero.NewMemMapFs()
+			if tt.before != nil {
+				require.NoError(st, tt.before(fs))
+			}
+			actual, err := ReadAsJSON(fs, tt.path)
+			if tt.expectedErrMsg != "" {
+				require.EqualError(st, err, tt.expectedErrMsg)
+				return
+			}
+			require.NoError(st, err)
+			require.Equal(st, tt.expected, actual)
+		})
+	}
+}
+
 func TestReadFlat(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	conf := DefaultConfig()

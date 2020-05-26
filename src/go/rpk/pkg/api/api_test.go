@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
-	"vectorized/pkg/config"
 
 	"github.com/stretchr/testify/require"
 )
@@ -42,7 +41,7 @@ func TestSendMetrics(t *testing.T) {
 
 func TestSendEnvironment(t *testing.T) {
 	body := environmentBody{
-		EnvironmentPayload: EnvironmentPayload{
+		Payload: EnvironmentPayload{
 			Checks: []CheckPayload{
 				{
 					Name:     "check 1",
@@ -70,15 +69,23 @@ func TestSendEnvironment(t *testing.T) {
 			},
 			ErrorMsg: "tuner 2 failed",
 		},
-		SentAt: time.Now(),
-		Config: config.Config{
-			NodeUuid:  "abc123-hu234-234kh",
-			ClusterId: "cluster 1",
-			Redpanda:  &config.RedpandaConfig{},
-			Rpk: &config.RpkConfig{
-				EnableUsageStats: true,
-			},
-		},
+		NodeUuid:     "awe-1231-sdfasd-13-saddasdf-as123sdf",
+		NodeId:       1,
+		Organization: "test.vectorized.io",
+		SentAt:       time.Now(),
+		Config: `{
+  "nodeUuid": "abc123-hu234-234kh",
+  "clusterId": "cluster 1",
+  "redpanda": {
+    "directory": "/var/lib/redpanda/",
+    "rpcServer": {"0.0.0.0", 33145},
+    "kafkaAPI": {"0.0.0.0", 9092},
+  },
+  rpk: {
+    enableUsageStats: true,
+  },
+}
+`,
 	}
 	bs, err := json.Marshal(body)
 	require.NoError(t, err)
