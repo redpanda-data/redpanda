@@ -271,7 +271,9 @@ disk_log_impl::make_reader(timequery_config config) {
     return _lock_mngr.range_lock(config).then(
       [this, cfg = config](std::unique_ptr<lock_manager::lease> lease) {
           log_reader_config config(
-            (*lease->range.begin())->offsets().base_offset,
+            lease->range.empty()
+              ? model::offset{}
+              : (*lease->range.begin())->offsets().base_offset,
             cfg.max_offset,
             0,
             2048, // We just need one record batch

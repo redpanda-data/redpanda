@@ -181,7 +181,7 @@ FIXTURE_TEST(read_from_ntp_max_bytes, redpanda_thread_fixture) {
         BOOST_REQUIRE(resp.record_set);
         return resp;
     };
-
+    wait_for_controller_leadership().get0();
     auto ntp = make_data();
 
     auto shard = app.shard_table.local().shard_for(ntp);
@@ -206,7 +206,7 @@ FIXTURE_TEST(read_from_ntp_max_bytes, redpanda_thread_fixture) {
 FIXTURE_TEST(fetch_one, redpanda_thread_fixture) {
     // create a topic partition with some data
     model::topic topic("foo");
-    model::partition_id pid(2);
+    model::partition_id pid(0);
     model::offset offset(0);
     auto ntp = make_default_ntp(topic, pid);
     auto log_config = make_default_config();
@@ -217,8 +217,9 @@ FIXTURE_TEST(fetch_one, redpanda_thread_fixture) {
           | add_random_batch(model::offset(0), 10, maybe_compress_batches::yes)
           | stop();
     }
+    wait_for_controller_leadership().get0();
 
-    recover_ntp(ntp).get();
+    add_topic(model::topic_namespace_view(ntp)).get();
     auto shard = app.shard_table.local().shard_for(ntp);
 
     tests::cooperative_spin_wait_with_timeout(10s, [this, shard, ntp] {
