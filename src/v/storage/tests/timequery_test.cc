@@ -95,5 +95,12 @@ FIXTURE_TEST(timequery_single_value, log_builder_fixture) {
     auto empty_res = log.timequery(config).get0();
     BOOST_TEST(!empty_res);
 
+    // ask for 999 it should return first segment
+    config.time = model::timestamp(999);
+
+    auto res = log.timequery(config).get0();
+    BOOST_TEST(res);
+    BOOST_TEST(res->time == model::timestamp(1000));
+    BOOST_TEST(res->offset == model::offset(0));
     b | stop();
 }
