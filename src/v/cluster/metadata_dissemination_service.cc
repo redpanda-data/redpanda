@@ -65,15 +65,16 @@ void metadata_dissemination_service::disseminate_leadership(
 }
 
 ss::future<> metadata_dissemination_service::start() {
-    _raft_manager.local().register_leadership_notification(
-      [this](
-        raft::group_id group,
-        model::term_id term,
-        std::optional<model::node_id> leader_id) {
-          auto ntp = _partition_manager.local().consensus_for(group)->ntp();
-          handle_leadership_notification(
-            std::move(ntp), term, std::move(leader_id));
-      });
+    _notification_handle
+      = _raft_manager.local().register_leadership_notification(
+        [this](
+          raft::group_id group,
+          model::term_id term,
+          std::optional<model::node_id> leader_id) {
+            auto ntp = _partition_manager.local().consensus_for(group)->ntp();
+            handle_leadership_notification(
+              std::move(ntp), term, std::move(leader_id));
+        });
 
     if (ss::this_shard_id() != 0) {
         return ss::make_ready_future<>();
@@ -327,6 +328,8 @@ ss::future<> metadata_dissemination_service::dispatch_one_update(
 }
 
 ss::future<> metadata_dissemination_service::stop() {
+    _raft_manager.local().unregister_leadership_notification(
+      _notification_handle);
     _as.request_abort();
     _dispatch_timer.cancel();
     return _bg.close();
