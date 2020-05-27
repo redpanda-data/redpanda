@@ -2,6 +2,7 @@
 #include "cluster/namespace.h"
 #include "cluster/types.h"
 #include "kafka/client.h"
+#include "model/metadata.h"
 #include "redpanda/application.h"
 #include "storage/directories.h"
 #include "storage/tests/utils/disk_log_builder.h"
@@ -79,23 +80,12 @@ public:
           storage::log_config::debug_sanitize_files::yes);
     }
 
-    ss::future<> recover_ntp(const model::ntp& ntp) {
-        cluster::partition_assignment as{
-          .group = raft::group_id(1),
-          .ntp = ntp,
-          .replicas = {{model::node_id(lconf().node_id()), 0}},
-        };
-        return ss::do_with(
-          std::move(as), [this](cluster::partition_assignment& as) {
-              return app.metadata_cache
-                .invoke_on_all([&as](cluster::metadata_cache& mdc) {
-                    mdc.add_topic(cluster::topic_configuration(
-                      as.ntp.ns, as.ntp.tp.topic, 1, 1));
-                })
-                .then([this, &as] {
-                    return app.controller.local().recover_assignment(as);
-                });
-          });
+    ss::future<> add_topic(model::topic_namespace_view tp_ns) {
+        std::vector<cluster::topic_configuration> cfgs{
+          cluster::topic_configuration(tp_ns.ns, tp_ns.tp, 1, 1)};
+        return app.controller.local()
+          .create_topics(std::move(cfgs), model::no_timeout)
+          .discard_result();
     }
 
     model::ntp make_data() {
@@ -112,7 +102,7 @@ public:
           lconf().data_directory().as_sstring(), ntp, std::move(batches))
           .get();
 
-        recover_ntp(ntp).get();
+        add_topic(model::topic_namespace_view(ntp)).get();
 
         return ntp;
     }
