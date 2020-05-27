@@ -15,7 +15,7 @@ struct segment_ordering {
         return seg->offsets().dirty_offset < value;
     }
     bool operator()(const type& seg, model::timestamp value) const {
-        return seg->index().base_timestamp() < value;
+        return seg->index().max_timestamp() < value;
     }
 };
 
@@ -98,10 +98,18 @@ segment_set::lower_bound(model::offset offset) const {
     return segments_lower_bound(
       std::cbegin(_handles), std::cend(_handles), offset);
 }
-
+// Lower bound for timestamp based indexing
+//
+// From KIP-33:
+//
+// When searching by timestamp, broker will start from the earliest log segment
+// and check the last time index entry. If the timestamp of the last time index
+// entry is greater than the target timestamp, the broker will do binary search
+// on that time index to find the closest index entry and scan the log from
+// there. Otherwise it will move on to the next log segment.
 segment_set::iterator segment_set::lower_bound(model::timestamp needle) {
-    return segments_lower_bound(
-      std::begin(_handles), std::end(_handles), needle);
+    return std::lower_bound(
+      std::begin(_handles), std::end(_handles), needle, segment_ordering{});
 }
 
 segment_set::const_iterator
