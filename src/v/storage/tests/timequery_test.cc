@@ -70,3 +70,30 @@ FIXTURE_TEST(timequery, log_builder_fixture) {
 
     b | stop();
 }
+
+FIXTURE_TEST(timequery_single_value, log_builder_fixture) {
+    using namespace storage; // NOLINT
+
+    b | start();
+
+    // seg0: timestamps [1000...1099], offsets = [0...99]
+    b | add_segment(0);
+    for (auto offset = 0; offset < 100; ++offset) {
+        auto batch = test::make_random_batch(model::offset(offset), 1, false);
+        batch.header().first_timestamp = model::timestamp(offset + 1000);
+        batch.header().max_timestamp = model::timestamp(offset + 1000);
+        b | add_batch(std::move(batch));
+    }
+
+    // ask for time greater than last timestamp f.e 1200
+    auto log = b.get_log();
+    storage::timequery_config config(
+      model::timestamp(1200),
+      log.offsets().dirty_offset,
+      ss::default_priority_class());
+
+    auto empty_res = log.timequery(config).get0();
+    BOOST_TEST(!empty_res);
+
+    b | stop();
+}
