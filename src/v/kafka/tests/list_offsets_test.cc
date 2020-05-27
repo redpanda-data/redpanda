@@ -11,6 +11,7 @@
 using namespace std::chrono_literals;
 
 FIXTURE_TEST(list_offsets, redpanda_thread_fixture) {
+    wait_for_controller_leadership().get0();
     auto query_ts = model::timestamp::now();
     auto ntp = make_data();
     auto shard = app.shard_table.local().shard_for(ntp);
@@ -53,6 +54,7 @@ FIXTURE_TEST(list_offsets, redpanda_thread_fixture) {
 }
 
 FIXTURE_TEST(list_offsets_earliest, redpanda_thread_fixture) {
+    wait_for_controller_leadership().get0();
     auto ntp = make_data();
     auto shard = app.shard_table.local().shard_for(ntp);
     tests::cooperative_spin_wait_with_timeout(10s, [this, shard, ntp = ntp] {
@@ -86,6 +88,7 @@ FIXTURE_TEST(list_offsets_earliest, redpanda_thread_fixture) {
 }
 
 FIXTURE_TEST(list_offsets_latest, redpanda_thread_fixture) {
+    wait_for_controller_leadership().get0();
     auto ntp = make_data();
     auto shard = app.shard_table.local().shard_for(ntp);
     tests::cooperative_spin_wait_with_timeout(10s, [this, shard, ntp = ntp] {
