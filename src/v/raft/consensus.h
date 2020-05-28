@@ -59,6 +59,8 @@ public:
 
     ss::future<vote_reply> vote(vote_request&& r);
     ss::future<append_entries_reply> append_entries(append_entries_request&& r);
+    ss::future<install_snapshot_reply>
+    install_snapshot(install_snapshot_request&& r);
 
     /// This method adds a member to the group and performs configuration update
     ss::future<> add_group_member(model::broker node);
@@ -126,7 +128,8 @@ private:
     ss::future<vote_reply> do_vote(vote_request&&);
     ss::future<append_entries_reply>
     do_append_entries(append_entries_request&&);
-
+    ss::future<install_snapshot_reply>
+    do_install_snapshot(install_snapshot_request&& r);
     append_entries_reply make_append_entries_reply(storage::append_result);
 
     ss::future<> notify_entries_commited(
