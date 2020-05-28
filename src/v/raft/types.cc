@@ -6,6 +6,8 @@
 #include "vassert.h"
 #include "vlog.h"
 
+#include <fmt/ostream.h>
+
 #include <type_traits>
 
 namespace raft {
@@ -126,6 +128,32 @@ operator<<(std::ostream& o, const append_entries_reply::status& r) {
         return o << "uknown append_entries_reply::status";
     }
 }
+
+std::ostream& operator<<(std::ostream& o, const install_snapshot_request& r) {
+    fmt::print(
+      o,
+      "{{term: {}, group: {}, node_id: {}, last_included_index: {}, "
+      "file_offset: {}, chunk_size: {}, done: {}}}",
+      r.term,
+      r.group,
+      r.node_id,
+      r.last_included_index,
+      r.file_offset,
+      r.chunk.size_bytes(),
+      r.done);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const install_snapshot_reply& r) {
+    fmt::print(
+      o,
+      "{{term: {}, bytes_stored: {}, success: {}}}",
+      r.term,
+      r.bytes_stored,
+      r.success);
+    return o;
+}
+
 } // namespace raft
 
 namespace reflection {
