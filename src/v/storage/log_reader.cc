@@ -121,8 +121,10 @@ void log_segment_batch_reader::add_one(model::record_batch&& batch) {
     _state.buffer.emplace_back(std::move(batch));
     const auto& b = _state.buffer.back();
     _config.start_offset = b.header().last_offset() + model::offset(1);
-    _config.bytes_consumed += b.header().size_bytes;
-    _state.buffer_size += b.header().size_bytes;
+    const auto size_bytes = b.header().size_bytes;
+    _config.bytes_consumed += size_bytes;
+    _state.buffer_size += size_bytes;
+    _probe.add_bytes_read(size_bytes);
     _seg.cache_put(b);
 }
 ss::future<result<records_t>>
@@ -159,7 +161,6 @@ log_segment_batch_reader::read_some(model::timeout_clock::time_point timeout) {
           if (!bytes_consumed) {
               return bytes_consumed.error();
           }
-          _probe.add_bytes_read(bytes_consumed.value());
           auto tmp = std::exchange(_state, {});
           return result<records_t>(std::move(tmp.buffer));
       });
