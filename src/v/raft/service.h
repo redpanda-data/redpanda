@@ -128,6 +128,17 @@ public:
         });
     }
 
+    [[gnu::always_inline]] ss::future<install_snapshot_reply> install_snapshot(
+      install_snapshot_request&& r, rpc::streaming_context&) final {
+        return _probe.vote().then([this, r = std::move(r)]() mutable {
+            return dispatch_request(
+              std::move(r),
+              &service::make_failed_install_snapshot_reply,
+              [](install_snapshot_request&& r, consensus_ptr c) {
+                  return c->install_snapshot(std::move(r));
+              });
+        });
+    }
 
 private:
     using consensus_ptr = seastar::lw_shared_ptr<consensus>;
@@ -143,6 +154,12 @@ private:
           .term = model::term_id{}, .granted = false, .log_ok = false});
     }
 
+    static ss::future<install_snapshot_reply>
+    make_failed_install_snapshot_reply() {
+        return ss::make_ready_future<install_snapshot_reply>(
+          install_snapshot_reply{
+            .term = model::term_id{}, .bytes_stored = 0, .success = false});
+    }
 
     static ss::future<append_entries_reply>
     make_missing_group_reply(raft::group_id group) {
