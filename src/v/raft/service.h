@@ -103,21 +103,34 @@ public:
     }
 
     [[gnu::always_inline]] ss::future<vote_reply>
-    vote(vote_request&& r, rpc::streaming_context& ctx) final {
-        return _probe.vote().then([this, r = std::move(r), &ctx]() mutable {
-            return do_vote(std::move(r), ctx);
+    vote(vote_request&& r, rpc::streaming_context&) final {
+        return _probe.vote().then([this, r = std::move(r)]() mutable {
+            return dispatch_request(
+              std::move(r),
+              &service::make_failed_vote_reply,
+              [](vote_request&& r, consensus_ptr c) {
+                  return c->vote(std::move(r));
+              });
         });
     }
 
-    [[gnu::always_inline]] ss::future<append_entries_reply> append_entries(
-      append_entries_request&& r, rpc::streaming_context& ctx) final {
-        return _probe.append_entries().then(
-          [this, r = std::move(r), &ctx]() mutable {
-              return do_append_entries(std::move(r), ctx);
-          });
+    [[gnu::always_inline]] ss::future<append_entries_reply>
+    append_entries(append_entries_request&& r, rpc::streaming_context&) final {
+        return _probe.append_entries().then([this, r = std::move(r)]() mutable {
+            return dispatch_request(
+              std::move(r),
+              [gr = r.target_group()]() {
+                  return make_missing_group_reply(gr);
+              },
+              [](append_entries_request&& r, consensus_ptr c) {
+                  return c->append_entries(std::move(r));
+              });
+        });
     }
 
+
 private:
+    using consensus_ptr = seastar::lw_shared_ptr<consensus>;
     using hbeats_t = std::vector<append_entries_request>;
     using hbeats_ptr = ss::foreign_ptr<std::unique_ptr<hbeats_t>>;
     struct shard_groupped_hbeat_requests {
@@ -125,37 +138,47 @@ private:
         std::vector<append_entries_request> group_missing_requests;
     };
 
-    ss::future<vote_reply> make_failed_vote_reply() {
+    static ss::future<vote_reply> make_failed_vote_reply() {
         return ss::make_ready_future<vote_reply>(vote_reply{
           .term = model::term_id{}, .granted = false, .log_ok = false});
     }
 
-    ss::future<vote_reply> do_vote(vote_request&& r, rpc::streaming_context&) {
-        auto group = group_id(r.group);
-        if (unlikely(!_shard_table.contains(group))) {
-            return make_failed_vote_reply();
-        }
-        auto shard = _shard_table.shard_for(group);
-        return with_scheduling_group(
-          get_scheduling_group(), [this, shard, r = std::move(r)]() mutable {
-              return _group_manager.invoke_on(
-                shard,
-                get_smp_service_group(),
-                [this, r = std::move(r)](ConsensusManager& m) mutable {
-                    auto c = m.consensus_for(group_id(r.group));
-                    if (unlikely(!c)) {
-                        return make_failed_vote_reply();
-                    }
-                    return c->vote(std::move(r));
-                });
-          });
-    }
 
-    ss::future<append_entries_reply>
+    static ss::future<append_entries_reply>
     make_missing_group_reply(raft::group_id group) {
         return ss::make_ready_future<append_entries_reply>(append_entries_reply{
           .group = group,
           .result = append_entries_reply::status::group_unavailable});
+    }
+
+    template<typename Req, typename ErrorFactory, typename Func>
+    auto dispatch_request(Req&& req, ErrorFactory&& ef, Func&& f) {
+        auto group = req.target_group();
+        if (unlikely(!_shard_table.contains(group))) {
+            return ef();
+        }
+        auto shard = _shard_table.shard_for(group);
+        return with_scheduling_group(
+          get_scheduling_group(),
+          [this,
+           shard,
+           r = std::forward<Req>(req),
+           f = std::forward<Func>(f),
+           ef = std::forward<ErrorFactory>(ef)]() mutable {
+              return _group_manager.invoke_on(
+                shard,
+                get_smp_service_group(),
+                [r = std::forward<Req>(r),
+                 f = std::forward<Func>(f),
+                 ef = std::forward<ErrorFactory>(ef)](
+                  ConsensusManager& m) mutable {
+                    auto c = m.consensus_for(r.target_group());
+                    if (unlikely(!c)) {
+                        return ef();
+                    }
+                    return f(std::forward<Req>(r), c);
+                });
+          });
     }
 
     ss::future<std::vector<append_entries_reply>>
@@ -209,27 +232,6 @@ private:
             ret.shard_requests.find(shard)->second->push_back(std::move(r));
         }
         return ret;
-    }
-
-    ss::future<append_entries_reply>
-    do_append_entries(append_entries_request&& r, rpc::streaming_context&) {
-        auto group = group_id(r.meta.group);
-        if (unlikely(!_shard_table.contains(group))) {
-            return make_missing_group_reply(group);
-        }
-        auto shard = _shard_table.shard_for(group);
-        return with_scheduling_group(
-          get_scheduling_group(),
-          [this,
-           shard,
-           r = append_entries_request::make_foreign(std::move(r))]() mutable {
-              return _group_manager.invoke_on(
-                shard,
-                get_smp_service_group(),
-                [this, r = std::move(r)](ConsensusManager& m) mutable {
-                    return dispatch_append_entries(m, std::move(r));
-                });
-          });
     }
 
     ss::future<append_entries_reply>
