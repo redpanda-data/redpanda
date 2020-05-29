@@ -63,6 +63,11 @@ void probe::setup_metrics(const model::ntp& ntp) {
           [this] { return _log_maybe_roll; },
           sm::description("Number of times rolls were attempted"),
           labels),
+        sm::make_total_bytes(
+          "partition_size",
+          [this] { return _partition_bytes; },
+          sm::description("Current size of partition in bytes"),
+          labels),
       });
 }
 
