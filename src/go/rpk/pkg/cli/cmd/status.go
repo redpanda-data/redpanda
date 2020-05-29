@@ -13,7 +13,6 @@ import (
 	"vectorized/pkg/system"
 
 	"github.com/Shopify/sarama"
-	"github.com/olekukonko/tablewriter"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
@@ -80,15 +79,43 @@ func executeStatus(
 	t.SetColWidth(80)
 	t.SetAutoWrapText(true)
 	t.SetAutoMergeCells(true)
-	metrics, errs := system.GatherMetrics(fs, timeout, *conf)
-	if len(errs) != 0 {
-		for _, err := range errs {
-			log.Info("Error gathering metrics: ", err)
-		}
+
+	metricsRowsCh := make(chan [][]string)
+	confRowsCh := make(chan [][]string)
+	kafkaRowsCh := make(chan [][]string)
+
+	go getMetrics(fs, timeout, *conf, send, metricsRowsCh)
+	go getConf(fs, configFile, confRowsCh)
+	go getKafkaInfo(*conf, kafkaRowsCh)
+
+	for _, row := range <-metricsRowsCh {
+		t.Append(row)
 	}
+	for _, row := range <-confRowsCh {
+		t.Append(row)
+	}
+	for _, row := range <-kafkaRowsCh {
+		t.Append(row)
+	}
+
+	t.Render()
+
+	return nil
+}
+
+func getMetrics(
+	fs afero.Fs,
+	timeout time.Duration,
+	conf config.Config,
+	send bool,
+	out chan<- [][]string,
+) {
+	rows := [][]string{}
 	osInfo, err := system.UnameAndDistro(timeout)
 	if err != nil {
 		log.Info("Error querying OS info: ", err)
+	} else {
+		rows = append(rows, []string{"OS", osInfo})
 	}
 	cpuInfo, err := system.CpuInfo()
 	if err != nil {
@@ -97,82 +124,90 @@ func executeStatus(
 	cpuModel := ""
 	if len(cpuInfo) > 0 {
 		cpuModel = cpuInfo[0].ModelName
+		rows = append(rows, []string{"CPU Model", cpuModel})
 	}
-	printMetrics(t, metrics, osInfo, cpuModel)
-
+	m, errs := system.GatherMetrics(fs, timeout, conf)
+	if len(errs) != 0 {
+		for _, err := range errs {
+			log.Info("Error gathering metrics: ", err)
+		}
+	} else {
+		rows = append(
+			rows,
+			[]string{"CPU Usage %", fmt.Sprintf("%0.3f", m.CpuPercentage)},
+			[]string{"Free Memory (MB)", fmt.Sprintf("%0.3f", m.FreeMemoryMB)},
+			[]string{"Free Space  (MB)", fmt.Sprintf("%0.3f", m.FreeSpaceMB)},
+		)
+	}
 	if conf.Rpk.EnableUsageStats && send {
 		if conf.NodeUuid == "" {
-			var err error
-			conf, err = config.GenerateAndWriteNodeUuid(fs, conf)
+			c, err := config.GenerateAndWriteNodeUuid(fs, &conf)
 			if err != nil {
 				log.Info("Error writing the node's UUID: ", err)
 			}
+			conf = *c
 		}
-		err := sendMetrics(fs, conf, metrics)
+		err := sendMetrics(fs, conf, m)
 		if err != nil {
 			log.Info("Error sending metrics: ", err)
 		}
 	}
+	out <- rows
+}
 
+func getConf(fs afero.Fs, configFile string, out chan<- [][]string) {
+	rows := [][]string{}
 	props, err := config.ReadFlat(fs, configFile)
 	if err != nil {
 		log.Info("Error reading or parsing configuration: ", err)
 	} else {
-		printConfig(t, props)
+		keys := []string{}
+		for k := range props {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			rows = append(rows, []string{k, props[k]})
+		}
 	}
+	out <- rows
+}
+
+func getKafkaInfo(conf config.Config, out chan<- [][]string) {
 	client, err := kafka.InitClient(
 		conf.Redpanda.KafkaApi.Address,
 		conf.Redpanda.KafkaApi.Port,
 	)
 	if err != nil {
 		log.Infof("Error initializing redpanda client: %s", err)
-		return nil
+		out <- [][]string{}
+		return
 	}
 	admin, err := sarama.NewClusterAdminFromClient(client)
 	if err != nil {
 		log.Infof("Error initializing redpanda client: %s", err)
-		return nil
+		out <- [][]string{}
+		return
 	}
 	defer admin.Close()
 	topics, err := topicsDetail(admin)
 	if err != nil {
 		log.Info("Error fetching the Redpanda topic details: ", err)
-	} else if len(topics) > 0 {
-		printKafkaInfo(t, client.Brokers(), topics)
+		out <- [][]string{}
+		return
 	}
-	t.Render()
-
-	return nil
+	if len(topics) == 0 {
+		out <- [][]string{}
+		return
+	}
+	out <- getKafkaInfoRows(client.Brokers(), topics)
 }
 
-func printMetrics(
-	t *tablewriter.Table, p *system.Metrics, osInfo, cpuModel string,
-) {
-	t.SetHeader([]string{"Name", "Value"})
-	t.Append([]string{"OS", osInfo})
-	t.Append([]string{"CPU Model", cpuModel})
-	t.Append([]string{"CPU Usage %", fmt.Sprintf("%0.3f", p.CpuPercentage)})
-	t.Append([]string{"Free Memory (MB)", fmt.Sprintf("%0.3f", p.FreeMemoryMB)})
-	t.Append([]string{"Free Space  (MB)", fmt.Sprintf("%0.3f", p.FreeSpaceMB)})
-}
-
-func printConfig(t *tablewriter.Table, conf map[string]string) {
-	keys := []string{}
-	for k := range conf {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		t.Append([]string{k, conf[k]})
-	}
-}
-
-func printKafkaInfo(
-	t *tablewriter.Table,
-	brokers []*sarama.Broker,
-	topics []*sarama.TopicMetadata,
-) {
-	t.SetAutoMergeCells(true)
+func getKafkaInfoRows(
+	brokers []*sarama.Broker, topics []*sarama.TopicMetadata,
+) [][]string {
+	rows := [][]string{}
+	spacingRow := []string{"", ""}
 	type node struct {
 		// map[topic-name][]partitions
 		leaderParts  map[string][]int
@@ -233,35 +268,44 @@ func printKafkaInfo(
 		nodeIDs = append(nodeIDs, nodeID)
 	}
 	sort.Ints(nodeIDs)
-	t.Append([]string{"", ""})
-	t.Append([]string{"Redpanda Cluster Status", ""})
-	t.Append([]string{"Node ID (IP)", "Partitions"})
+	rows = append(
+		rows,
+		[]string{"", ""},
+		[]string{"Redpanda Cluster Status", ""},
+		[]string{"Node ID (IP)", "Partitions"},
+	)
 	for _, nodeID := range nodeIDs {
 		node := nodePartitions[nodeID]
 		broker := idToBroker[nodeID]
 		nodeInfo := fmt.Sprintf("%d (%s)", nodeID, broker.Addr())
-		t.Append([]string{
+		leaderRow := []string{
 			nodeInfo,
 			"Leader: " + formatTopicsAndPartitions(node.leaderParts),
-		})
-		t.Append([]string{"", ""})
-		t.Append([]string{
+		}
+		replicaRow := []string{
 			"",
 			"Replica: " + formatTopicsAndPartitions(node.replicaParts),
-		})
-		t.Append([]string{"", ""})
+		}
+		rows = append(
+			rows,
+			leaderRow,
+			spacingRow,
+			replicaRow,
+			spacingRow,
+		)
 	}
+	return rows
 }
 
 func sendMetrics(
-	fs afero.Fs, conf *config.Config, metrics *system.Metrics,
+	fs afero.Fs, conf config.Config, metrics *system.Metrics,
 ) error {
 	payload := api.MetricsPayload{
 		FreeMemoryMB:  metrics.FreeMemoryMB,
 		FreeSpaceMB:   metrics.FreeSpaceMB,
 		CpuPercentage: metrics.CpuPercentage,
 	}
-	return api.SendMetrics(payload, *conf)
+	return api.SendMetrics(payload, conf)
 }
 
 func topicsDetail(admin sarama.ClusterAdmin) ([]*sarama.TopicMetadata, error) {
