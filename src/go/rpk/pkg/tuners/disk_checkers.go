@@ -163,11 +163,7 @@ func NewDisksIRQAffinityChecker(
 				if err != nil {
 					return false, err
 				}
-				eq, err := irq.MasksEqual(mask, readMask)
-				if err != nil {
-					return false, err
-				}
-				if !eq {
+				if !irq.MasksEqual(mask, readMask) {
 					return false, nil
 				}
 			}
