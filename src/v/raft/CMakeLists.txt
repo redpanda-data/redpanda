@@ -22,7 +22,6 @@ v_cc_library(
     replicate_batcher.cc
     rpc_client_protocol.cc
     group_manager.cc
-    snapshot.cc
     probe.cc
     offset_monitor.cc
     event_manager.cc

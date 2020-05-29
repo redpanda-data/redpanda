@@ -1,4 +1,4 @@
-#include "raft/snapshot.h"
+#include "storage/snapshot.h"
 
 #include "bytes/iobuf_parser.h"
 #include "hashing/crc32c.h"
@@ -8,7 +8,7 @@
 
 #include <regex>
 
-namespace raft {
+namespace storage {
 
 std::ostream& operator<<(std::ostream& os, const snapshot_metadata& meta) {
     fmt::print(
@@ -246,4 +246,4 @@ ss::future<> snapshot_writer::close() {
     return _output.flush().then([this] { return _output.close(); });
 }
 
-} // namespace raft
+} // namespace storage
