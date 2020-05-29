@@ -9,6 +9,7 @@
 #include "utils/state_crc_file.h"
 #include "vassert.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/file-types.hh>
 #include <seastar/core/file.hh>
 #include <seastar/core/future.hh>
@@ -220,12 +221,12 @@ share_n(model::record_batch_reader&& r, std::size_t ncopies) {
 }
 
 ss::future<configuration_bootstrap_state>
-read_bootstrap_state(storage::log log) {
+read_bootstrap_state(storage::log log, ss::abort_source& as) {
     // TODO(agallego, michal) - iterate the log in reverse
     // as an optimization
     auto lstats = log.offsets();
     auto rcfg = storage::log_reader_config(
-      lstats.start_offset, lstats.dirty_offset, raft_priority());
+      lstats.start_offset, lstats.dirty_offset, raft_priority(), as);
     auto cfg_state = std::make_unique<configuration_bootstrap_state>();
     return log.make_reader(rcfg).then(
       [state = std::move(cfg_state)](

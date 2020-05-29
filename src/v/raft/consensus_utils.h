@@ -5,6 +5,7 @@
 #include "raft/configuration_bootstrap_state.h"
 #include "raft/consensus.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/sstring.hh>
 
 namespace raft::details {
@@ -71,7 +72,7 @@ model::record_batch_reader serialize_configuration(group_configuration cfg);
 
 /// returns a fully parsed config state from a given storage log
 ss::future<raft::configuration_bootstrap_state>
-  read_bootstrap_state(storage::log);
+read_bootstrap_state(storage::log, ss::abort_source&);
 
 /// looks up for the broker with request id in a vector of brokers
 template<typename Iterator>

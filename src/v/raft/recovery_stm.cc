@@ -44,7 +44,7 @@ ss::future<> recovery_stm::do_one_read() {
       _prio,
       std::nullopt,
       std::nullopt,
-      std::nullopt);
+      _ptr->_as);
 
     // TODO: add timeout of maybe 1minute?
     return _ptr->_log.make_reader(cfg)

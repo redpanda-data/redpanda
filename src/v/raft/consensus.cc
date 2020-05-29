@@ -85,6 +85,7 @@ void consensus::do_step_down() {
 ss::future<> consensus::stop() {
     vlog(_ctxlog.info, "Stopping");
     _vote_timeout.cancel();
+    _as.abort_requested();
     _commit_index_updated.broken();
     return _event_manager.stop().then([this] { return _bg.close(); });
 }
@@ -456,7 +457,7 @@ ss::future<> consensus::start() {
               vlog(_ctxlog.warn, "Error reading raft persistent state - {}", e);
               _term = model::term_id(0);
           })
-          .then([this] { return details::read_bootstrap_state(_log); })
+          .then([this] { return details::read_bootstrap_state(_log, _as); })
           .then([this](configuration_bootstrap_state st) {
               if (st.config_batches_seen() > 0) {
                   _last_seen_config_offset = st.prev_log_index();
@@ -787,7 +788,7 @@ ss::future<> consensus::notify_entries_commited(
         _io_priority,
         raft::configuration_batch_type,
         std::nullopt,
-        std::nullopt))
+        _as))
       .then([this, end_offset](model::record_batch_reader reader) {
           return process_configurations(std::move(reader), end_offset);
       });
