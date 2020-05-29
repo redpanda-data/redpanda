@@ -786,6 +786,7 @@ ss::future<> consensus::notify_entries_commited(
         std::numeric_limits<size_t>::max(),
         _io_priority,
         raft::configuration_batch_type,
+        std::nullopt,
         std::nullopt))
       .then([this, end_offset](model::record_batch_reader reader) {
           return process_configurations(std::move(reader), end_offset);
