@@ -15,6 +15,7 @@
 #include "storage/log.h"
 #include "utils/mutex.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/util/bool_class.hh>
 
@@ -234,6 +235,7 @@ private:
     std::chrono::milliseconds _replicate_append_timeout;
     std::chrono::milliseconds _recovery_append_timeout;
     ss::metrics::metric_groups _metrics;
+    ss::abort_source _as;
 
     friend std::ostream& operator<<(std::ostream&, const consensus&);
 };

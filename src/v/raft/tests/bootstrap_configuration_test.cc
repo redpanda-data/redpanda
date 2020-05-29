@@ -47,6 +47,7 @@ struct bootstrap_fixture : raft::simple_record_fixture {
 
     ~bootstrap_fixture() { _mngr.stop().get(); }
     storage::log_manager _mngr;
+    ss::abort_source _as;
 };
 
 FIXTURE_TEST(serde_config, bootstrap_fixture) {
@@ -64,7 +65,7 @@ FIXTURE_TEST(write_configs, bootstrap_fixture) {
     for (auto& i : replies) {
         info("base:{}, last:{}", i.base_offset, i.last_offset);
     }
-    auto cfg = raft::details::read_bootstrap_state(get_log()).get0();
+    auto cfg = raft::details::read_bootstrap_state(get_log(), _as).get0();
     info(
       "data batches:{}, config batches: {}, data batches:{}, config batches:{}",
       replies[0],
@@ -83,7 +84,7 @@ FIXTURE_TEST(write_configs, bootstrap_fixture) {
 }
 
 FIXTURE_TEST(empty_log, bootstrap_fixture) {
-    auto cfg = raft::details::read_bootstrap_state(get_log()).get0();
+    auto cfg = raft::details::read_bootstrap_state(get_log(), _as).get0();
 
     BOOST_REQUIRE_EQUAL(cfg.data_batches_seen(), 0);
     BOOST_REQUIRE_EQUAL(cfg.config_batches_seen(), 0);
