@@ -46,15 +46,24 @@ struct append_result {
 
     friend std::ostream& operator<<(std::ostream& o, const append_result&);
 };
+
+using opt_abort_source_t
+  = std::optional<std::reference_wrapper<ss::abort_source>>;
+
 struct timequery_config {
     timequery_config(
-      model::timestamp t, model::offset o, ss::io_priority_class iop) noexcept
+      model::timestamp t,
+      model::offset o,
+      ss::io_priority_class iop,
+      opt_abort_source_t as = std::nullopt) noexcept
       : time(t)
       , max_offset(o)
-      , prio(iop) {}
+      , prio(iop)
+      , abort_source(as) {}
     model::timestamp time;
     model::offset max_offset;
     ss::io_priority_class prio;
+    opt_abort_source_t abort_source;
 
     friend std::ostream& operator<<(std::ostream& o, const timequery_config&);
 };
@@ -116,6 +125,9 @@ struct log_reader_config {
     /// it is the std::lower_bound
     std::optional<model::timestamp> first_timestamp;
 
+    /// abort source for read operations
+    opt_abort_source_t abort_source;
+
     // used by log reader
     size_t bytes_consumed{0};
 
@@ -126,14 +138,16 @@ struct log_reader_config {
       size_t max_bytes,
       ss::io_priority_class prio,
       std::optional<model::record_batch_type> type_filter,
-      std::optional<model::timestamp> time)
+      std::optional<model::timestamp> time,
+      opt_abort_source_t as)
       : start_offset(start_offset)
       , max_offset(max_offset)
       , min_bytes(min_bytes)
       , max_bytes(max_bytes)
       , prio(prio)
       , type_filter(type_filter)
-      , first_timestamp(time) {}
+      , first_timestamp(time)
+      , abort_source(as) {}
 
     /**
      * Read offsets [start, end].
@@ -141,7 +155,8 @@ struct log_reader_config {
     log_reader_config(
       model::offset start_offset,
       model::offset max_offset,
-      ss::io_priority_class prio)
+      ss::io_priority_class prio,
+      opt_abort_source_t as = std::nullopt)
       : log_reader_config(
         start_offset,
         max_offset,
@@ -149,7 +164,8 @@ struct log_reader_config {
         std::numeric_limits<size_t>::max(),
         prio,
         std::nullopt,
-        std::nullopt) {}
+        std::nullopt,
+        as) {}
 
     friend std::ostream& operator<<(std::ostream& o, const log_reader_config&);
 };

@@ -43,6 +43,7 @@ ss::future<> recovery_stm::do_one_read() {
       32 * 1024,
       _prio,
       std::nullopt,
+      std::nullopt,
       std::nullopt);
 
     // TODO: add timeout of maybe 1minute?

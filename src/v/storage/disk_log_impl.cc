@@ -283,7 +283,8 @@ disk_log_impl::make_reader(timequery_config config) {
             2048, // We just need one record batch
             cfg.prio,
             std::nullopt,
-            cfg.time);
+            cfg.time,
+            cfg.abort_source);
           return model::make_record_batch_reader<log_reader>(
             std::move(lease), config, _probe);
       });

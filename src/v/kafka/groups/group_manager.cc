@@ -126,6 +126,7 @@ ss::future<> group_manager::handle_partition_leader_change(
               std::numeric_limits<size_t>::max(),
               kafka_read_priority(),
               raft::data_batch_type,
+              std::nullopt,
               std::nullopt);
 
             return p->partition->make_reader(reader_config)
