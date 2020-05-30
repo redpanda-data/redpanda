@@ -19,6 +19,7 @@
 #include "utils/file_sanitizer.h"
 #include "vlog.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/file.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/future.hh>
@@ -67,6 +68,7 @@ void log_manager::trigger_housekeeping() {
 
 ss::future<> log_manager::stop() {
     _compaction_timer.cancel();
+    _abort_source.request_abort();
     return _open_gate.close().then([this] {
         return ss::parallel_for_each(_logs, [](logs_type::value_type& entry) {
             return entry.second.handle.close();
@@ -119,7 +121,8 @@ ss::future<> log_manager::housekeeping() {
                    // TODO: [ch433] - this configuration needs to be updated
                    _config.retention_bytes,
                    // TODO: change default priority in application.cc
-                   ss::default_priority_class()));
+                   ss::default_priority_class(),
+                   _abort_source));
              })
       .finally([this] {
           for (auto& h : _logs) {
@@ -312,9 +315,10 @@ std::optional<batch_cache_index> log_manager::create_cache() {
 // Recover the last segment. Whenever we close a segment, we will likely
 // open a new one to which we will direct new writes. That new segment
 // might be empty. To optimize log replay, implement #140.
-static ss::future<segment_set> do_recover(segment_set&& segments) {
-    return ss::async([segments = std::move(segments)]() mutable {
-        if (segments.empty()) {
+static ss::future<segment_set>
+do_recover(segment_set&& segments, ss::abort_source& as) {
+    return ss::async([segments = std::move(segments), &as]() mutable {
+        if (segments.empty() || as.abort_requested()) {
             return std::move(segments);
         }
         segment_set::underlying_t good = std::move(segments).release();
@@ -348,6 +352,10 @@ static ss::future<segment_set> do_recover(segment_set&& segments) {
           good.end()); // remove all the ones we copied into recover
 
         for (auto& s : to_recover) {
+            // check for abort
+            if (unlikely(as.abort_requested())) {
+                return segment_set(std::move(good));
+            }
             auto stat = s->reader().stat().get0();
             if (stat.st_size == 0) {
                 vlog(stlog.info, "Removing empty segment: {}", s);
@@ -464,6 +472,10 @@ log_manager::open_segments(ss::sstring dir) {
       segs_type{}, [this, dir = std::move(dir)](segs_type& segs) {
           auto f = directory_walker::walk(
             dir, [this, dir, &segs](ss::directory_entry seg) {
+                // abort if requested
+                if (_abort_source.abort_requested()) {
+                    return ss::now();
+                }
                 /*
                  * Skip non-regular files (including links)
                  */
@@ -524,7 +536,7 @@ ss::future<log> log_manager::do_manage(ntp_config cfg) {
       .then(
         [this, cfg = std::move(cfg)](segment_set::underlying_t segs) mutable {
             auto segments = segment_set(std::move(segs));
-            return do_recover(std::move(segments))
+            return do_recover(std::move(segments), _abort_source)
               .then([this, cfg = std::move(cfg)](segment_set segments) mutable {
                   auto l = storage::make_disk_backed_log(
                     std::move(cfg), *this, std::move(segments));
