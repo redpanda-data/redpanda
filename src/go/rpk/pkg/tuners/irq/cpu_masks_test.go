@@ -31,20 +31,20 @@ func Test_masksEqual(t *testing.T) {
 	}{
 		{
 			name: "masks with the same string should be equal",
-			a:    "0x0000001",
-			b:    "0x0000001",
+			a:    "00000ff",
+			b:    "00000ff",
 			want: true,
 		},
 		{
-			name: "mask with the same numbers are equal",
-			a:    "0x0000001",
-			b:    "01",
-			want: true,
+			name: "should return false if the masks are different",
+			a:    "afaf",
+			b:    "17e",
+			want: false,
 		},
 		{
 			name: "multi part masks are equal",
-			a:    "01,,08",
-			b:    "0000001,,00000008",
+			a:    "01,,07",
+			b:    "01,,07",
 			want: true,
 		},
 		{
@@ -53,11 +53,16 @@ func Test_masksEqual(t *testing.T) {
 			b:    "0000001",
 			want: false,
 		},
+		{
+			name: "shouldn't fail even if the numeric equivalent overflowed uint64",
+			a:    "ffffffffffffffffffffffffffffffffffffffffffffffffff",
+			b:    "ffffffffffffffffffffffffffffffffffffffffffffffffff",
+			want: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := MasksEqual(tt.a, tt.b)
-			require.NoError(t, err)
+			got := MasksEqual(tt.a, tt.b)
 			require.Equal(t, tt.want, got)
 		})
 	}
