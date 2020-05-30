@@ -13,6 +13,7 @@
 #include "vassert.h"
 #include "vlog.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/fair_queue.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/future.hh>
@@ -70,11 +71,12 @@ ss::future<> disk_log_impl::close() {
     });
 }
 
-ss::future<>
-disk_log_impl::garbage_collect_max_partition_size(size_t max_bytes) {
+ss::future<> disk_log_impl::garbage_collect_max_partition_size(
+  size_t max_bytes, ss::abort_source& as) {
     return ss::do_until(
-      [this, max_bytes] {
-          return _segs.empty() || _probe.partition_size() <= max_bytes;
+      [this, max_bytes, &as] {
+          return _segs.empty() || _probe.partition_size() <= max_bytes
+                 || as.abort_requested();
       },
       [this] {
           auto ptr = _segs.front();
@@ -83,8 +85,8 @@ disk_log_impl::garbage_collect_max_partition_size(size_t max_bytes) {
       });
 }
 
-ss::future<>
-disk_log_impl::garbage_collect_oldest_segments(model::timestamp time) {
+ss::future<> disk_log_impl::garbage_collect_oldest_segments(
+  model::timestamp time, ss::abort_source& as) {
     // The following compaction has a Kafka behavior compatibility bug. for
     // which we defer do nothing at the moment, possibly crashing the machine
     // and running out of disk. Kafka uses the same logic below as of
@@ -98,8 +100,9 @@ disk_log_impl::garbage_collect_oldest_segments(model::timestamp time) {
     // segment, preventing a crash.
     //
     return ss::do_until(
-      [this, time] {
-          return _segs.empty() || _segs.front()->index().max_timestamp() > time;
+      [this, time, &as] {
+          return _segs.empty() || _segs.front()->index().max_timestamp() > time
+                 || as.abort_requested();
       },
       [this] {
           auto ptr = _segs.front();
@@ -109,14 +112,15 @@ disk_log_impl::garbage_collect_oldest_segments(model::timestamp time) {
 }
 
 ss::future<> disk_log_impl::compact(compaction_config cfg) {
-    return gc(cfg.eviction_time, cfg.max_bytes);
+    return gc(std::move(cfg));
 }
 
-ss::future<> disk_log_impl::gc(
-  model::timestamp collection_upper_bound,
-  std::optional<size_t> max_partition_retention_size) {
+ss::future<> disk_log_impl::gc(compaction_config cfg) {
     vassert(!_closed, "gc on closed log - {}", *this);
 
+    if (cfg.as.abort_requested()) {
+        return ss::make_ready_future<>();
+    }
     // TODO: this a workaround until we have raft-snapshotting in the the
     // controller so that we can still evict older data. At the moment we keep
     // the full history.
@@ -127,13 +131,13 @@ ss::future<> disk_log_impl::gc(
       || config().ntp.ns() == kafka_ignored_ns) {
         return ss::make_ready_future<>();
     }
-    if (max_partition_retention_size) {
-        size_t max = max_partition_retention_size.value();
+    if (cfg.max_bytes) {
+        size_t max = cfg.max_bytes.value();
         if (!_segs.empty() && _probe.partition_size() > max) {
-            return garbage_collect_max_partition_size(max);
+            return garbage_collect_max_partition_size(max, cfg.as);
         }
     }
-    return garbage_collect_oldest_segments(collection_upper_bound);
+    return garbage_collect_oldest_segments(cfg.eviction_time, cfg.as);
 }
 
 ss::future<> disk_log_impl::remove_empty_segments() {
@@ -279,7 +283,8 @@ disk_log_impl::make_reader(timequery_config config) {
             2048, // We just need one record batch
             cfg.prio,
             std::nullopt,
-            cfg.time);
+            cfg.time,
+            cfg.abort_source);
           return model::make_record_batch_reader<log_reader>(
             std::move(lease), config, _probe);
       });

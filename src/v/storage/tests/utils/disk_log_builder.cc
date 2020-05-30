@@ -63,7 +63,8 @@ ss::future<> disk_log_builder::gc(
     return get_log().compact(compaction_config(
       collection_upper_bound,
       max_partition_retention_size,
-      ss::default_priority_class()));
+      ss::default_priority_class(),
+      _abort_source));
 }
 
 ss::future<> disk_log_builder::stop() { return _mgr.stop(); }

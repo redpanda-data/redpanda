@@ -60,6 +60,7 @@ SEASTAR_THREAD_TEST_CASE(test_can_read_single_batch_same_offset) {
       model::model_limits<model::offset>::max(),
       ss::default_priority_class(),
       std::nullopt,
+      std::nullopt,
       std::nullopt);
     disk_log_builder b;
     b | start() | add_segment(1);
@@ -79,6 +80,7 @@ SEASTAR_THREAD_TEST_CASE(test_can_read_multiple_batches) {
       model::model_limits<model::offset>::max(),
       ss::default_priority_class(),
       std::nullopt,
+      std::nullopt,
       std::nullopt);
     disk_log_builder b;
     b | start() | add_segment(batches.front().base_offset());
@@ -96,6 +98,7 @@ SEASTAR_THREAD_TEST_CASE(test_does_not_read_past_committed_offset_one_segment) {
       0,
       model::model_limits<model::offset>::max(),
       ss::default_priority_class(),
+      std::nullopt,
       std::nullopt,
       std::nullopt);
     disk_log_builder b;
@@ -115,6 +118,7 @@ SEASTAR_THREAD_TEST_CASE(
       0,
       model::model_limits<model::offset>::max(),
       ss::default_priority_class(),
+      std::nullopt,
       std::nullopt,
       std::nullopt);
     disk_log_builder b;
@@ -136,6 +140,7 @@ SEASTAR_THREAD_TEST_CASE(test_does_not_read_past_max_bytes) {
       static_cast<size_t>(batches.begin()->size_bytes()),
       ss::default_priority_class(),
       std::nullopt,
+      std::nullopt,
       std::nullopt);
     disk_log_builder b;
     b | start() | add_segment(batches.front().base_offset());
@@ -156,6 +161,7 @@ SEASTAR_THREAD_TEST_CASE(test_reads_at_least_one_batch) {
       model::model_limits<model::offset>::max(),
       ss::default_priority_class(),
       std::nullopt,
+      std::nullopt,
       std::nullopt);
     disk_log_builder b;
     b | start() | add_segment(batches.front().base_offset());
@@ -175,6 +181,7 @@ SEASTAR_THREAD_TEST_CASE(test_read_batch_range) {
       0,
       model::model_limits<model::offset>::max(),
       ss::default_priority_class(),
+      std::nullopt,
       std::nullopt,
       std::nullopt);
     disk_log_builder b;
@@ -203,6 +210,7 @@ SEASTAR_THREAD_TEST_CASE(test_batch_type_filter) {
       model::model_limits<model::offset>::max(),
       ss::default_priority_class(),
       std::nullopt,
+      std::nullopt,
       std::nullopt);
     disk_log_builder b;
     b | start() | add_segment(batches.front().base_offset());
@@ -223,6 +231,7 @@ SEASTAR_THREAD_TEST_CASE(test_batch_type_filter) {
           std::numeric_limits<size_t>::max(),
           ss::default_priority_class(),
           type_filter,
+          std::nullopt,
           std::nullopt);
 
         auto res = b.consume(config).get0();
@@ -260,6 +269,7 @@ SEASTAR_THREAD_TEST_CASE(test_does_not_read_past_max_offset) {
       0,
       std::numeric_limits<size_t>::max(),
       ss::default_priority_class(),
+      std::nullopt,
       std::nullopt,
       std::nullopt);
     disk_log_builder b;

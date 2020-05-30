@@ -6,6 +6,7 @@
 #include "vassert.h"
 #include "vlog.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/circular_buffer.hh>
 
 #include <fmt/ostream.h>
@@ -174,6 +175,18 @@ log_reader::log_reader(
   , _iterator(_lease->range.begin())
   , _config(config)
   , _probe(probe) {
+    if (config.abort_source) {
+        auto op_sub = config.abort_source.value().get().subscribe(
+          [this] { set_end_of_stream(); });
+
+        if (op_sub) {
+            _as_sub = std::move(*op_sub);
+        } else {
+            // already aborted
+            set_end_of_stream();
+        }
+    }
+
     if (_iterator.next_seg != _lease->range.end()) {
         _iterator.reader = std::make_unique<log_segment_batch_reader>(
           **_iterator.next_seg, _config, _probe);

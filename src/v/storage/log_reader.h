@@ -161,6 +161,7 @@ private:
     log_reader_config _config;
     model::offset _last_base;
     probe& _probe;
+    ss::abort_source::subscription _as_sub;
 };
 
 } // namespace storage
