@@ -769,6 +769,48 @@ consensus::do_append_entries(append_entries_request&& r) {
       });
 }
 
+ss::future<install_snapshot_reply>
+consensus::install_snapshot(install_snapshot_request&& r) {
+    return _op_lock.with([this, r = std::move(r)]() mutable {
+        return do_install_snapshot(std::move(r));
+    });
+}
+
+ss::future<install_snapshot_reply>
+consensus::do_install_snapshot(install_snapshot_request&& r) {
+    vlog(_ctxlog.trace, "Install snapshot request {}", r);
+
+    install_snapshot_reply reply;
+    reply.success = false;
+    reply.bytes_stored = 0;
+    reply.term = _term;
+
+    // Raft paper: Reply immediately if term < currentTerm (§7.1)
+    if (r.term < _term) {
+        return ss::make_ready_future<install_snapshot_reply>(std::move(reply));
+    }
+    // FIXME: Provide an implementation. Missing parts (from raft paper):
+
+    // Create new snapshot file if first chunk (offset is 0) (§7.2)
+
+    // Write data into snapshot file at given offset (§7.3)
+
+    // Reply and wait for more data chunks if done is false (§7.4)
+
+    // Save snapshot file, discard any existing or partial snapshot
+    // with a smaller index (§7.5)
+
+    // If existing log entry has same index and term as snapshot’s
+    // last included entry, retain log entries following it and reply (§7.6)
+
+    // Discard the entire log (§7.7)
+
+    // Reset state machine using snapshot contents (and load
+    // snapshot’s cluster configuration) (§7.8)
+
+    return ss::make_ready_future<install_snapshot_reply>();
+}
+
 ss::future<> consensus::notify_entries_commited(
   [[maybe_unused]] model::offset start_offset, model::offset end_offset) {
     auto cfg_reader_start_offset = details::next_offset(
