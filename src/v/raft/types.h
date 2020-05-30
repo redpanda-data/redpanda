@@ -166,6 +166,8 @@ struct append_entries_request {
     append_entries_request& operator=(append_entries_request&&) noexcept
       = default;
 
+    raft::group_id target_group() const { return meta.group; }
+
     model::node_id node_id;
     protocol_metadata meta;
     model::record_batch_reader batches;
@@ -217,6 +219,7 @@ struct vote_request {
     /// \brief used to compare completeness
     model::offset prev_log_index;
     model::term_id prev_log_term;
+    raft::group_id target_group() const { return group; }
 };
 
 struct vote_reply {
@@ -256,6 +259,46 @@ struct replicate_options {
       : consistency(l) {}
 
     consistency_level consistency;
+};
+
+struct install_snapshot_request {
+    // leader’s term
+    model::term_id term;
+    // target group
+    raft::group_id group;
+    // leader id so follower can redirect clients
+    model::node_id node_id;
+    // the snapshot replaces all entries up through and including this index
+    model::offset last_included_index;
+    // byte offset where chunk is positioned in the snapshot file
+    uint64_t file_offset;
+    // snapshot chunk, raw bytes
+    iobuf chunk;
+    // true if this is the last chunk
+    bool done;
+
+    raft::group_id target_group() const { return group; }
+    friend std::ostream&
+    operator<<(std::ostream&, const install_snapshot_request&);
+};
+
+struct install_snapshot_reply {
+    // current term, for leader to update itself
+    model::term_id term;
+
+    //  The total number of bytes in the snapshot that the follower has
+    //  stored (after applying the request).
+    //  The leader considers the snapshot transfer complete when bytes_stored
+    //  equals the full size of the snapshot. The leader should use bytes_stored
+    //  as the value for byte_offset in the next request (most importantly,
+    //  when a follower reboots, it returns 0 here and the leader starts at
+    //  offset 0 in the next request).
+    uint64_t bytes_stored;
+    // indicates if the request was successfull
+    bool success = false;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const install_snapshot_reply&);
 };
 
 std::ostream& operator<<(std::ostream& o, const consistency_level& l);
