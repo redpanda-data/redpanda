@@ -144,8 +144,8 @@ ss::future<ss::lw_shared_ptr<segment>> log_manager::make_log_segment(
       });
 }
 
-ss::future<ss::file> make_writer(
-  const std::filesystem::path& path, log_config::debug_sanitize_files debug) {
+ss::future<ss::file>
+make_writer(const std::filesystem::path& path, debug_sanitize_files debug) {
     ss::file_open_options opt{
       /// We fallocate the full file segment
       .extent_allocation_size_hint = 0,
@@ -168,7 +168,7 @@ ss::future<ss::file> make_writer(
 
 ss::future<compacted_index_writer> make_compacted_index_writer(
   const std::filesystem::path& path,
-  log_config::debug_sanitize_files debug,
+  debug_sanitize_files debug,
   ss::io_priority_class iopc) {
     return make_writer(path, debug).then([iopc, path](ss::file writer) {
         try {
@@ -193,7 +193,7 @@ ss::future<compacted_index_writer> make_compacted_index_writer(
 
 ss::future<segment_appender_ptr> make_segment_appender(
   const std::filesystem::path& path,
-  log_config::debug_sanitize_files debug,
+  debug_sanitize_files debug,
   size_t number_of_chunks,
   ss::io_priority_class iopc) {
     return make_writer(path, debug)

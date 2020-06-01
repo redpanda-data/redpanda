@@ -200,7 +200,7 @@ void application::configure_kvstore() {
       storage::log_config::storage_type::disk,
       config::shard_local_cfg().data_directory().as_sstring(),
       1_MiB, // ignored in the context of key-value store
-      storage::log_config::debug_sanitize_files::yes,
+      storage::debug_sanitize_files::yes,
       storage::log_config::with_cache::no);
 
     storage::kvstore_config kv_conf{
@@ -216,7 +216,7 @@ storage::log_config manager_config_from_global_config() {
       storage::log_config::storage_type::disk,
       config::shard_local_cfg().data_directory().as_sstring(),
       config::shard_local_cfg().log_segment_size(),
-      storage::log_config::debug_sanitize_files::no,
+      storage::debug_sanitize_files::no,
       config::shard_local_cfg().retention_bytes(),
       config::shard_local_cfg().log_compaction_interval_ms(),
       config::shard_local_cfg().delete_retention_ms(),

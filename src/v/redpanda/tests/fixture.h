@@ -77,7 +77,7 @@ public:
           storage::log_config::storage_type::disk,
           lconf().data_directory().as_sstring(),
           1_GiB,
-          storage::log_config::debug_sanitize_files::yes);
+          storage::debug_sanitize_files::yes);
     }
 
     ss::future<> add_topic(model::topic_namespace_view tp_ns) {

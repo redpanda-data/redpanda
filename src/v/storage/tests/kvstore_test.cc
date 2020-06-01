@@ -20,7 +20,7 @@ SEASTAR_THREAD_TEST_CASE(key_space) {
       storage::log_config::storage_type::disk,
       dir,
       1_MiB,
-      storage::log_config::debug_sanitize_files::yes,
+      storage::debug_sanitize_files::yes,
       storage::log_config::with_cache::no);
 
     storage::kvstore_config kv_conf{
@@ -88,7 +88,7 @@ SEASTAR_THREAD_TEST_CASE(kvstore_empty) {
       storage::log_config::storage_type::disk,
       dir,
       1_MiB,
-      storage::log_config::debug_sanitize_files::yes,
+      storage::debug_sanitize_files::yes,
       storage::log_config::with_cache::no);
 
     storage::kvstore_config kv_conf{
@@ -164,7 +164,7 @@ SEASTAR_THREAD_TEST_CASE(kvstore) {
       storage::log_config::storage_type::disk,
       dir,
       1_MiB,
-      storage::log_config::debug_sanitize_files::yes,
+      storage::debug_sanitize_files::yes,
       storage::log_config::with_cache::no);
 
     storage::kvstore_config kv_conf{

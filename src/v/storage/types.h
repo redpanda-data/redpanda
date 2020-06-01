@@ -17,6 +17,7 @@
 
 namespace storage {
 using log_clock = ss::lowres_clock;
+using debug_sanitize_files = ss::bool_class<struct debug_sanitize_files_tag>;
 
 /// returns base_offset's from batches. Not max_offsets
 struct offset_stats {
