@@ -517,6 +517,17 @@ ss::future<log> log_manager::manage(ntp_config cfg) {
     });
 }
 
+ss::future<segment_set>
+log_manager::recover_segments(std::filesystem::path path) {
+    return ss::recursive_touch_directory(path.string())
+      .then(
+        [this, path = std::move(path)] { return open_segments(path.string()); })
+      .then([this](segment_set::underlying_t segs) {
+          auto segments = segment_set(std::move(segs));
+          return do_recover(std::move(segments), _abort_source);
+      });
+}
+
 ss::future<log> log_manager::do_manage(ntp_config cfg) {
     if (_config.base_dir.empty()) {
         return ss::make_exception_future<log>(std::runtime_error(
@@ -531,20 +542,15 @@ ss::future<log> log_manager::do_manage(ntp_config cfg) {
         // in-memory needs to write vote_for configuration
         return ss::recursive_touch_directory(path).then([l] { return l; });
     }
-    return ss::recursive_touch_directory(path)
-      .then([this, path] { return open_segments(path); })
-      .then(
-        [this, cfg = std::move(cfg)](segment_set::underlying_t segs) mutable {
-            auto segments = segment_set(std::move(segs));
-            return do_recover(std::move(segments), _abort_source)
-              .then([this, cfg = std::move(cfg)](segment_set segments) mutable {
-                  auto l = storage::make_disk_backed_log(
-                    std::move(cfg), *this, std::move(segments));
-                  _logs.emplace(l.config().ntp, l);
-                  return l;
-              });
-        });
+    return recover_segments(std::filesystem::path(path))
+      .then([this, cfg = std::move(cfg)](segment_set segments) mutable {
+          auto l = storage::make_disk_backed_log(
+            std::move(cfg), *this, std::move(segments));
+          _logs.emplace(l.config().ntp, l);
+          return l;
+      });
 }
+
 ss::future<> log_manager::remove(model::ntp ntp) {
     vlog(stlog.info, "Asked to remove: {}", ntp);
     return ss::with_gate(_open_gate, [this, ntp = std::move(ntp)] {

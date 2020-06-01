@@ -10,7 +10,7 @@
 
 #include <filesystem>
 
-namespace raft {
+namespace storage {
 
 class snapshot_reader;
 class snapshot_writer;
@@ -223,4 +223,4 @@ private:
     ss::output_stream<char> _output;
 };
 
-} // namespace raft
+} // namespace storage
