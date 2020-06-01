@@ -5,6 +5,8 @@
 
 #include <seastar/core/sstring.hh>
 
+#include <absl/hash/hash.h>
+
 #include <cstdint>
 #include <iosfwd>
 
@@ -18,6 +20,20 @@ using bytes = ss::basic_sstring<
 
 using bytes_view = std::basic_string_view<uint8_t>;
 using bytes_opt = std::optional<bytes>;
+
+struct bytes_type_hash {
+    using is_transparent = std::true_type;
+    size_t operator()(const iobuf& k) const;
+    size_t operator()(const bytes& k) const;
+    size_t operator()(const bytes_view&) const;
+};
+
+struct bytes_type_eq {
+    using is_transparent = std::true_type;
+    bool operator()(const bytes& lhs, const bytes_view& rhs) const;
+    bool operator()(const bytes& lhs, const bytes& rhs) const;
+    bool operator()(const bytes& lhs, const iobuf& rhs) const;
+};
 
 ss::sstring to_hex(bytes_view b);
 ss::sstring to_hex(const bytes& b);
@@ -55,3 +71,43 @@ struct hash<bytes_view> {
 std::ostream& operator<<(std::ostream& os, const bytes_view& b);
 
 } // namespace std
+
+inline size_t bytes_type_hash::operator()(const bytes_view& k) const {
+    return absl::Hash<bytes_view>{}(k);
+}
+inline size_t bytes_type_hash::operator()(const iobuf& k) const {
+    return absl::Hash<iobuf>{}(k);
+}
+inline size_t bytes_type_hash::operator()(const bytes& k) const {
+    return absl::Hash<bytes>{}(k);
+}
+
+inline bool
+bytes_type_eq::operator()(const bytes& lhs, const bytes& rhs) const {
+    return lhs == rhs;
+}
+inline bool
+bytes_type_eq::operator()(const bytes& lhs, const bytes_view& rhs) const {
+    return bytes_view(lhs) == rhs;
+}
+inline bool
+bytes_type_eq::operator()(const bytes& lhs, const iobuf& rhs) const {
+    if (lhs.size() != rhs.size_bytes()) {
+        return false;
+    }
+    auto iobuf_end = iobuf::byte_iterator(rhs.cend(), rhs.cend());
+    auto iobuf_it = iobuf::byte_iterator(rhs.cbegin(), rhs.cend());
+    size_t bytes_idx = 0;
+    const size_t max = lhs.size();
+    while (iobuf_it != iobuf_end && bytes_idx < max) {
+        const char r_c = *iobuf_it;
+        const char l_c = lhs[bytes_idx];
+        if (l_c != r_c) {
+            return false;
+        }
+        // the equals case
+        ++bytes_idx;
+        ++iobuf_it;
+    }
+    return false;
+}

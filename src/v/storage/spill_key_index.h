@@ -16,24 +16,12 @@ namespace storage::internal {
 using namespace storage; // NOLINT
 class spill_key_index final : public compacted_index_writer::impl {
 public:
-    struct key_type_hash {
-        using is_transparent = std::true_type;
-        size_t operator()(const iobuf& k) const;
-        size_t operator()(const bytes& k) const;
-        size_t operator()(const bytes_view&) const;
-    };
-    struct key_type_eq {
-        using is_transparent = std::true_type;
-        bool operator()(const bytes& lhs, const bytes_view& rhs) const;
-        bool operator()(const bytes& lhs, const bytes& rhs) const;
-        bool operator()(const bytes& lhs, const iobuf& rhs) const;
-    };
     struct value_type {
         model::offset base_offset;
         int32_t delta{0};
     };
     using underlying_t
-      = absl::flat_hash_map<bytes, value_type, key_type_hash, key_type_eq>;
+      = absl::flat_hash_map<bytes, value_type, bytes_type_hash, bytes_type_eq>;
 
     spill_key_index(
       ss::sstring filename,
@@ -68,45 +56,5 @@ private:
 
     friend std::ostream& operator<<(std::ostream&, const spill_key_index&);
 };
-
-inline bool spill_key_index::key_type_eq::operator()(
-  const bytes& lhs, const bytes& rhs) const {
-    return lhs == rhs;
-}
-inline bool spill_key_index::key_type_eq::operator()(
-  const bytes& lhs, const bytes_view& rhs) const {
-    return bytes_view(lhs) == rhs;
-}
-inline bool spill_key_index::key_type_eq::operator()(
-  const bytes& lhs, const iobuf& rhs) const {
-    if (lhs.size() != rhs.size_bytes()) {
-        return false;
-    }
-    auto iobuf_end = iobuf::byte_iterator(rhs.cend(), rhs.cend());
-    auto iobuf_it = iobuf::byte_iterator(rhs.cbegin(), rhs.cend());
-    size_t bytes_idx = 0;
-    const size_t max = lhs.size();
-    while (iobuf_it != iobuf_end && bytes_idx < max) {
-        const char r_c = *iobuf_it;
-        const char l_c = lhs[bytes_idx];
-        if (l_c != r_c) {
-            return false;
-        }
-        // the equals case
-        ++bytes_idx;
-        ++iobuf_it;
-    }
-    return false;
-}
-inline size_t
-spill_key_index::key_type_hash::operator()(const bytes_view& k) const {
-    return absl::Hash<bytes_view>{}(k);
-}
-inline size_t spill_key_index::key_type_hash::operator()(const iobuf& k) const {
-    return absl::Hash<iobuf>{}(k);
-}
-inline size_t spill_key_index::key_type_hash::operator()(const bytes& k) const {
-    return absl::Hash<bytes>{}(k);
-}
 
 } // namespace storage::internal
