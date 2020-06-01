@@ -83,7 +83,7 @@ public:
     raft::group_id group() const { return _group; }
     model::term_id term() const { return _term; }
     const group_configuration& config() const { return _conf; }
-    const model::ntp& ntp() const { return _log.config().ntp; }
+    const model::ntp& ntp() const { return _log.config().ntp(); }
     clock_type::time_point last_heartbeat() const { return _hbeat; };
 
     clock_type::time_point last_hbeat_timestamp(model::node_id);

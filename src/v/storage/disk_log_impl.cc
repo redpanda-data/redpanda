@@ -36,7 +36,7 @@ disk_log_impl::disk_log_impl(
     for (auto& s : segs) {
         _probe.add_initial_segment(*s);
     }
-    _probe.setup_metrics(this->config().ntp);
+    _probe.setup_metrics(this->config().ntp());
 }
 disk_log_impl::~disk_log_impl() {
     vassert(_closed, "log segment must be closed before deleting:{}", *this);
@@ -127,8 +127,8 @@ ss::future<> disk_log_impl::gc(compaction_config cfg) {
     constexpr std::string_view redpanda_ignored_ns = "redpanda";
     constexpr std::string_view kafka_ignored_ns = "kafka_internal";
     if (
-      config().ntp.ns() == redpanda_ignored_ns
-      || config().ntp.ns() == kafka_ignored_ns) {
+      config().ntp().ns() == redpanda_ignored_ns
+      || config().ntp().ns() == kafka_ignored_ns) {
         return ss::make_ready_future<>();
     }
     if (cfg.max_bytes) {

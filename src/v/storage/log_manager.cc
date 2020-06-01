@@ -216,10 +216,10 @@ ss::future<segment_appender_ptr> make_segment_appender(
 }
 
 size_t number_of_chunks_from_config(const ntp_config& ntpc) {
-    if (!ntpc.overrides) {
+    if (!ntpc.has_overrides()) {
         return segment_appender::chunks_no_buffer;
     }
-    auto& o = *ntpc.overrides;
+    auto& o = ntpc.get_overrides();
     if (o.compaction_strategy) {
         return segment_appender::chunks_no_buffer / 2;
     }
@@ -253,7 +253,7 @@ ss::future<ss::lw_shared_ptr<segment>> log_manager::do_make_log_segment(
   record_version_type version,
   size_t buf_size) {
     auto path = segment_path::make_segment_path(
-      _config.base_dir, ntpc.ntp, base_offset, term, version);
+      _config.base_dir, ntpc.ntp(), base_offset, term, version);
     vlog(stlog.info, "Creating new segment {}", path.string());
     return open_segment(path, buf_size)
       .then([this, path, &ntpc, pc](ss::lw_shared_ptr<segment> seg) {
@@ -279,7 +279,8 @@ ss::future<ss::lw_shared_ptr<segment>> log_manager::do_make_log_segment(
             });
       })
       .then([this, path, &ntpc, pc](ss::lw_shared_ptr<segment> seg) {
-          if (!(ntpc.overrides && ntpc.overrides->compaction_strategy)) {
+          if (!(ntpc.has_overrides()
+                && ntpc.get_overrides().compaction_strategy)) {
               return ss::make_ready_future<ss::lw_shared_ptr<segment>>(seg);
           }
           return with_segment(
@@ -535,10 +536,10 @@ ss::future<log> log_manager::do_manage(ntp_config cfg) {
     }
     ss::sstring path = cfg.work_directory();
     vassert(
-      _logs.find(cfg.ntp) == _logs.end(), "cannot double register same ntp");
+      _logs.find(cfg.ntp()) == _logs.end(), "cannot double register same ntp");
     if (_config.stype == log_config::storage_type::memory) {
         auto l = storage::make_memory_backed_log(std::move(cfg));
-        _logs.emplace(l.config().ntp, l);
+        _logs.emplace(l.config().ntp(), l);
         // in-memory needs to write vote_for configuration
         return ss::recursive_touch_directory(path).then([l] { return l; });
     }
@@ -546,7 +547,7 @@ ss::future<log> log_manager::do_manage(ntp_config cfg) {
       .then([this, cfg = std::move(cfg)](segment_set segments) mutable {
           auto l = storage::make_disk_backed_log(
             std::move(cfg), *this, std::move(segments));
-          _logs.emplace(l.config().ntp, l);
+          _logs.emplace(l.config().ntp(), l);
           return l;
       });
 }

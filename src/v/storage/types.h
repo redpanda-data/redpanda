@@ -5,6 +5,7 @@
 #include "model/record.h"
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
+#include "storage/ntp_config.h"
 #include "tristate.h"
 
 #include <seastar/core/abort_source.hh>
@@ -174,50 +175,6 @@ struct log_reader_config {
         as) {}
 
     friend std::ostream& operator<<(std::ostream& o, const log_reader_config&);
-};
-
-struct ntp_config {
-    struct default_overrides {
-        // if not set use the log_manager's configuration
-        std::optional<model::cleanup_policy_bitflags> cleanup_policy_bitflags;
-        // if not set use the log_manager's configuration
-        std::optional<model::compaction_strategy> compaction_strategy;
-        // if not set, use the log_manager's configuration
-        std::optional<size_t> segment_size;
-
-        // partition retention settings. If tristate is disabled the feature
-        // will be disabled if there is no value set the default will be used
-        tristate<size_t> retention_bytes{std::nullopt};
-        tristate<std::chrono::milliseconds> retention_time{std::nullopt};
-        friend std::ostream&
-        operator<<(std::ostream&, const default_overrides&);
-    };
-
-    ntp_config(model::ntp n, ss::sstring base_dir) noexcept
-      : ntp(std::move(n))
-      , base_dir(std::move(base_dir)) {}
-
-    ntp_config(
-      model::ntp n,
-      ss::sstring base_dir,
-      std::unique_ptr<default_overrides> overrides) noexcept
-      : ntp(std::move(n))
-      , base_dir(std::move(base_dir))
-      , overrides(std::move(overrides)) {}
-
-    model::ntp ntp;
-    /// \brief currently this is the basedir. In the future
-    /// this will be used to load balance on devices so that there is no
-    /// implicit hierarchy, simply directories with data
-    ss::sstring base_dir;
-
-    std::unique_ptr<default_overrides> overrides;
-
-    ss::sstring work_directory() const {
-        return fmt::format("{}/{}", base_dir, ntp.path());
-    }
-
-    friend std::ostream& operator<<(std::ostream&, const ntp_config&);
 };
 
 struct compaction_config {
