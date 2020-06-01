@@ -2,13 +2,12 @@ package ui
 
 import (
 	"io"
-	"os"
 
 	"github.com/olekukonko/tablewriter"
 )
 
 func NewRpkTable(writer io.Writer) *tablewriter.Table {
-	table := tablewriter.NewWriter(os.Stdout)
+	table := tablewriter.NewWriter(writer)
 	table.SetBorder(false)
 	table.SetColumnSeparator("")
 	table.SetHeaderLine(false)

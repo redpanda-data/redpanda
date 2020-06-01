@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 	"vectorized/pkg/api"
+	"vectorized/pkg/cli/cmd/version"
 	"vectorized/pkg/cli/ui"
 	"vectorized/pkg/config"
 	"vectorized/pkg/kafka"
@@ -79,6 +80,7 @@ func executeStatus(
 	t.SetColWidth(80)
 	t.SetAutoWrapText(true)
 	t.SetAutoMergeCells(true)
+	t.Append(getVersion())
 
 	metricsRowsCh := make(chan [][]string)
 	confRowsCh := make(chan [][]string)
@@ -101,6 +103,10 @@ func executeStatus(
 	t.Render()
 
 	return nil
+}
+
+func getVersion() []string {
+	return []string{"Version", version.Pretty()}
 }
 
 func getMetrics(
