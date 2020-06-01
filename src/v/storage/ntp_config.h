@@ -38,9 +38,16 @@ public:
       , _overrides(std::move(overrides)) {}
 
     const model::ntp& ntp() const { return _ntp; }
+    model::ntp& ntp() { return _ntp; }
+
     const ss::sstring& base_directory() const { return _base_dir; }
+    ss::sstring& base_directory() { return _base_dir; }
+
     const default_overrides& get_overrides() const { return *_overrides; }
+    default_overrides& get_overrides() { return *_overrides; }
+
     bool has_overrides() const { return _overrides != nullptr; }
+
     ss::sstring work_directory() const {
         return fmt::format("{}/{}", _base_dir, _ntp.path());
     }
