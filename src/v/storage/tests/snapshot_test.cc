@@ -1,17 +1,17 @@
-#include "raft/snapshot.h"
 #include "random/generators.h"
 #include "seastarx.h"
+#include "storage/snapshot.h"
 
 #include <seastar/testing/thread_test_case.hh>
 
 SEASTAR_THREAD_TEST_CASE(missing_snapshot_is_not_error) {
-    raft::snapshot_manager mgr("d/n/e", ss::default_priority_class());
+    storage::snapshot_manager mgr("d/n/e", ss::default_priority_class());
     auto reader = mgr.open_snapshot().get0();
     BOOST_REQUIRE(!reader);
 }
 
 SEASTAR_THREAD_TEST_CASE(reading_from_empty_snapshot_is_error) {
-    raft::snapshot_manager mgr(".", ss::default_priority_class());
+    storage::snapshot_manager mgr(".", ss::default_priority_class());
     try {
         ss::remove_file(mgr.snapshot_path().string()).get();
     } catch (...) {
@@ -37,14 +37,14 @@ SEASTAR_THREAD_TEST_CASE(reading_from_empty_snapshot_is_error) {
 }
 
 SEASTAR_THREAD_TEST_CASE(reader_verifies_header_crc) {
-    raft::snapshot_manager mgr(".", ss::default_priority_class());
+    storage::snapshot_manager mgr(".", ss::default_priority_class());
     try {
         ss::remove_file(mgr.snapshot_path().string()).get();
     } catch (...) {
     }
 
     auto writer = mgr.start_snapshot().get0();
-    writer.write_metadata(raft::snapshot_metadata()).get0();
+    writer.write_metadata(storage::snapshot_metadata()).get0();
     writer.close().get();
     mgr.finish_snapshot(writer).get();
 
@@ -70,14 +70,14 @@ SEASTAR_THREAD_TEST_CASE(reader_verifies_header_crc) {
 }
 
 SEASTAR_THREAD_TEST_CASE(reader_verifies_metadata_crc) {
-    raft::snapshot_manager mgr(".", ss::default_priority_class());
+    storage::snapshot_manager mgr(".", ss::default_priority_class());
     try {
         ss::remove_file(mgr.snapshot_path().string()).get();
     } catch (...) {
     }
 
     auto writer = mgr.start_snapshot().get0();
-    writer.write_metadata(raft::snapshot_metadata()).get0();
+    writer.write_metadata(storage::snapshot_metadata()).get0();
     writer.close().get();
     mgr.finish_snapshot(writer).get();
 
@@ -86,7 +86,7 @@ SEASTAR_THREAD_TEST_CASE(reader_verifies_metadata_crc) {
         // because for a test its too much to deal with i/o alignment, etc..
         int fd = ::open(mgr.snapshot_path().c_str(), O_WRONLY);
         BOOST_REQUIRE(fd > 0);
-        ::lseek(fd, raft::snapshot_header::ondisk_size, SEEK_SET);
+        ::lseek(fd, storage::snapshot_header::ondisk_size, SEEK_SET);
         ::write(fd, &fd, sizeof(fd));
         ::fsync(fd);
         ::close(fd);
@@ -104,13 +104,13 @@ SEASTAR_THREAD_TEST_CASE(reader_verifies_metadata_crc) {
 }
 
 SEASTAR_THREAD_TEST_CASE(read_write) {
-    raft::snapshot_manager mgr(".", ss::default_priority_class());
+    storage::snapshot_manager mgr(".", ss::default_priority_class());
     try {
         ss::remove_file(mgr.snapshot_path().string()).get();
     } catch (...) {
     }
 
-    raft::snapshot_metadata metadata{
+    storage::snapshot_metadata metadata{
       .last_included_index = model::offset(9),
       .last_included_term = model::term_id(33),
     };
@@ -135,7 +135,7 @@ SEASTAR_THREAD_TEST_CASE(read_write) {
 }
 
 SEASTAR_THREAD_TEST_CASE(remove_partial_snapshots) {
-    raft::snapshot_manager mgr(".", ss::default_priority_class());
+    storage::snapshot_manager mgr(".", ss::default_priority_class());
 
     auto mk_partial = [&] {
         auto writer = mgr.start_snapshot().get0();
