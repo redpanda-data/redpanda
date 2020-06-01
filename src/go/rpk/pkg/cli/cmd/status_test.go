@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"bytes"
+	"os"
+	"strconv"
 	"testing"
 	"vectorized/pkg/config"
 
@@ -34,6 +36,24 @@ func TestStatus(t *testing.T) {
 		args        []string
 		before      func(afero.Fs) error
 	}{
+		{
+			name:        "it should contain a version row",
+			expectedOut: "Version",
+			before: func(fs afero.Fs) error {
+				conf := getConfig()
+				err := writeConfig(fs, conf)
+				if err != nil {
+					return err
+				}
+				file, err := fs.Create(conf.PIDFile())
+				if err != nil {
+					return err
+				}
+				ownPid := strconv.Itoa(os.Getpid())
+				_, err = file.Write([]byte(ownPid))
+				return err
+			},
+		},
 		{
 			name:        "doesn't print the CPU% if no pid file is found",
 			expectedOut: "Error gathering metrics: open /var/lib/redpanda/data/pid.lock: file does not exist",
