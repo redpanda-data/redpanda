@@ -76,7 +76,7 @@ public:
           storage::log_config::storage_type::disk,
           std::move(directory),
           1_GiB,
-          storage::log_config::debug_sanitize_files::yes))
+          storage::debug_sanitize_files::yes))
       , _consensus_client_protocol(raft::make_rpc_client_protocol(clients))
       , _hbeats(raft_heartbeat_interval, _consensus_client_protocol, self) {}
 

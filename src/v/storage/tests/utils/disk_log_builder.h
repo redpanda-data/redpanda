@@ -29,7 +29,7 @@ inline static log_config log_builder_config() {
       log_config::storage_type::disk,
       random_dir(),
       100_MiB,
-      log_config::debug_sanitize_files::yes);
+      debug_sanitize_files::yes);
 }
 
 inline static log_reader_config reader_config() {

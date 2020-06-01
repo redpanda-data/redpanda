@@ -106,7 +106,7 @@ public:
           storage::log_config::storage_type::disk,
           data_dir_path.as_sstring(),
           1_MiB,
-          storage::log_config::debug_sanitize_files::yes,
+          storage::debug_sanitize_files::yes,
           storage::log_config::with_cache::no);
 
         storage::kvstore_config kv_conf{
@@ -132,7 +132,7 @@ public:
             storage::log_config::storage_type::disk,
             _base_dir,
             1024_MiB,
-            storage::log_config::debug_sanitize_files::yes))
+            storage::debug_sanitize_files::yes))
           .get();
         _pm.start(std::ref(_lm), std::ref(_gm)).get0();
         _metadata_dissemination_service

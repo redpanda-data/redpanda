@@ -30,8 +30,6 @@ static constexpr size_t default_read_buffer_size = 128 * 1024;
 
 struct log_config {
     enum class storage_type { memory, disk };
-    using debug_sanitize_files
-      = ss::bool_class<struct debug_sanitize_files_tag>;
     using with_cache = ss::bool_class<struct log_cache_tag>;
     log_config(
       storage_type type,
@@ -86,8 +84,7 @@ struct log_config {
     size_t max_segment_size;
 
     // used for testing: keeps a backtrace of operations for debugging
-    debug_sanitize_files sanitize_fileops
-      = log_config::debug_sanitize_files::no;
+    debug_sanitize_files sanitize_fileops = debug_sanitize_files::no;
     // same as retention.bytes in kafka
     std::optional<size_t> retention_bytes = std::nullopt;
     std::chrono::milliseconds compaction_interval = std::chrono::minutes(10);

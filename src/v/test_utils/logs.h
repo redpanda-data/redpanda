@@ -11,7 +11,7 @@ static inline storage::log_manager make_log_mgr(ss::sstring base_dir) {
       storage::log_config::storage_type::disk,
       std::move(base_dir),
       1_GiB,
-      storage::log_config::debug_sanitize_files::yes));
+      storage::debug_sanitize_files::yes));
 }
 
 static inline ss::future<> persist_log_file(

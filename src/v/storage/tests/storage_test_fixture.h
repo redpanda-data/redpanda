@@ -57,7 +57,7 @@ public:
           stype,
           std::move(test_dir),
           200_MiB,
-          storage::log_config::debug_sanitize_files::yes,
+          storage::debug_sanitize_files::yes,
           cache);
     }
 

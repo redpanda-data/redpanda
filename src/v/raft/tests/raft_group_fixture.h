@@ -78,7 +78,7 @@ struct raft_node {
           storage::log_config::storage_type::disk,
           log.config().work_directory(),
           1_MiB,
-          storage::log_config::debug_sanitize_files::yes,
+          storage::debug_sanitize_files::yes,
           storage::log_config::with_cache::no);
 
         storage::kvstore_config kv_conf{
@@ -265,7 +265,7 @@ struct raft_group {
             _storage_type,
             "test.raft." + random_generators::gen_alphanum_string(6),
             100_MiB,
-            storage::log_config::debug_sanitize_files::yes))
+            storage::debug_sanitize_files::yes))
           .get0();
         std::vector<model::broker> brokers;
         for (auto i : boost::irange(0, size)) {

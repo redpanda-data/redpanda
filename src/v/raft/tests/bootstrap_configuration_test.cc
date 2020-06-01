@@ -23,7 +23,7 @@ struct bootstrap_fixture : raft::simple_record_fixture {
         storage::log_config::storage_type::disk,
         "test.dir",
         1_GiB,
-        storage::log_config::debug_sanitize_files::yes,
+        storage::debug_sanitize_files::yes,
         storage::log_config::with_cache::no)) {
         // ignore the get_log()
         (void)_mngr.manage(storage::ntp_config(_ntp, "test.dir")).get0();
