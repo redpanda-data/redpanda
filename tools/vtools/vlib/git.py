@@ -42,3 +42,16 @@ def get_email(path):
     r = git.Repo(path, search_parent_directories=True)
     reader = r.config_reader()
     return read_git_value(reader, "user", "email")
+
+
+def get_latest_tag(path):
+    r = git.Repo(path, search_parent_directories=True)
+    tags = sorted((t for t in r.tags if t.tag),
+                  key=lambda t: t.tag.tagged_date)
+    return tags[-1]
+
+
+def get_head_sha(path):
+    r = git.Repo(path, search_parent_directories=True)
+    sha = r.head.object.hexsha
+    return r.git.rev_parse(sha, short=8)
