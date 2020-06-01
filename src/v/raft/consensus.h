@@ -146,8 +146,7 @@ private:
 
     success_reply update_follower_index(
       model::node_id, result<append_entries_reply>, follower_req_seq seq_id);
-    void successfull_append_entries_reply(
-      follower_index_metadata&, append_entries_reply);
+    void successfull_append_entries_reply(follower_index_metadata&);
     void dispatch_recovery(follower_index_metadata&, append_entries_reply);
     void maybe_update_leader_commit_idx();
     ss::future<> do_maybe_update_leader_commit_idx();
