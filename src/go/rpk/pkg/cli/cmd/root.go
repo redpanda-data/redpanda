@@ -50,6 +50,7 @@ func Execute() {
 	rootCmd.AddCommand(NewConfigCommand(fs))
 	rootCmd.AddCommand(NewStatusCommand(fs))
 	rootCmd.AddCommand(NewGenerateCommand(fs))
+	rootCmd.AddCommand(NewVersionCommand())
 
 	err := rootCmd.Execute()
 	if len(os.Args) > 1 {

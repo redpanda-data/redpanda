@@ -7,6 +7,7 @@ from ..vlib import cmake
 from ..vlib import config
 from ..vlib import packaging
 from ..vlib import shell
+from ..vlib import git
 
 
 @click.group(short_help='build redpanda and rpk binaries as well as packages')
@@ -95,6 +96,7 @@ def cpp(build_type, conf, skip_external, clang, reconfigure, targets):
               help="target to build ('rpk', 'metrics').",
               multiple=True)
 def go(conf, targets):
+    vconfig = config.VConfig(config_file=conf)
     allowed_argets = ['rpk', 'metrics']
     build_flags = '-buildmode=pie -v -a -tags netgo'
     vconfig = config.VConfig(conf)
@@ -106,6 +108,12 @@ def go(conf, targets):
     for t in targets:
         if t not in allowed_argets:
             logging.fatal(f'Unknown target {t}')
+
+        if t == "rpk":
+            tag = git.get_latest_tag(vconfig.src_dir)
+            sha = git.get_head_sha(vconfig.src_dir)
+            pkg = 'vectorized/pkg/cli/cmd/version'
+            build_flags += f' -ldflags "-X {pkg}.version={tag} -X {pkg}.rev={sha}"'
 
         shell.run_subprocess(
             f'cd {vconfig.go_src_dir}/{t} && '
