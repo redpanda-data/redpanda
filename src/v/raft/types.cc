@@ -3,6 +3,7 @@
 #include "model/fundamental.h"
 #include "raft/consensus_utils.h"
 #include "reflection/adl.h"
+#include "utils/to_string.h"
 #include "vassert.h"
 #include "vlog.h"
 
@@ -42,6 +43,7 @@ std::ostream& operator<<(std::ostream& o, const append_entries_reply& r) {
              << ", term:" << r.term
              << ", last_dirty_log_index:" << r.last_dirty_log_index
              << ", last_committed_log_index:" << r.last_committed_log_index
+             << ", last_term_base_offset:" << r.last_term_base_offset
              << ", result: " << r.result << "}";
 }
 
@@ -270,12 +272,14 @@ struct hbeat_response_array {
       : groups(n)
       , terms(n)
       , last_committed_log_index(n)
-      , last_dirty_log_index(n) {}
+      , last_dirty_log_index(n)
+      , last_term_base_offset(n) {}
 
     std::vector<raft::group_id> groups;
     std::vector<model::term_id> terms;
     std::vector<model::offset> last_committed_log_index;
     std::vector<model::offset> last_dirty_log_index;
+    std::vector<model::offset> last_term_base_offset;
 };
 template<typename T>
 void encode_one_vint(iobuf& out, const T& t) {
@@ -354,6 +358,12 @@ ss::future<> async_adl<raft::heartbeat_request>::to(
             out, encodee.prev_log_terms);
       });
 }
+
+template<typename T>
+T decode_signed(T value) {
+    return value < T(0) ? T{} : value;
+}
+
 ss::future<raft::heartbeat_request>
 async_adl<raft::heartbeat_request>::from(iobuf_parser& in) {
     raft::heartbeat_request req;
@@ -391,6 +401,12 @@ async_adl<raft::heartbeat_request>::from(iobuf_parser& in) {
           = internal::read_one_varint_delta<model::term_id>(
             in, req.meta[i - 1].prev_log_term);
     }
+
+    for (auto& m : req.meta) {
+        m.prev_log_index = decode_signed(m.prev_log_index);
+        m.commit_index = decode_signed(m.commit_index);
+        m.prev_log_term = decode_signed(m.prev_log_term);
+    }
     return ss::make_ready_future<raft::heartbeat_request>(std::move(req));
 }
 
@@ -423,6 +439,8 @@ ss::future<> async_adl<raft::heartbeat_reply>::to(
           model::offset(-1), reply.meta[i].last_committed_log_index);
         encodee.last_dirty_log_index[i] = std::max(
           model::offset(-1), reply.meta[i].last_dirty_log_index);
+        encodee.last_term_base_offset[i] = std::max(
+          model::offset(-1), reply.meta[i].last_term_base_offset);
     }
     internal::encode_one_delta_array<raft::group_id>(out, encodee.groups);
     internal::encode_one_delta_array<model::term_id>(out, encodee.terms);
@@ -431,6 +449,8 @@ ss::future<> async_adl<raft::heartbeat_reply>::to(
       out, encodee.last_committed_log_index);
     internal::encode_one_delta_array<model::offset>(
       out, encodee.last_dirty_log_index);
+    internal::encode_one_delta_array<model::offset>(
+      out, encodee.last_term_base_offset);
     for (auto& m : reply.meta) {
         adl<raft::append_entries_reply::status>{}.to(out, m.result);
     }
@@ -478,9 +498,22 @@ async_adl<raft::heartbeat_reply>::from(iobuf_parser& in) {
             in, reply.meta[i - 1].last_dirty_log_index);
     }
 
+    reply.meta[0].last_term_base_offset = varlong_reader<model::offset>(in);
+    for (size_t i = 1; i < size; ++i) {
+        reply.meta[i].last_term_base_offset
+          = internal::read_one_varint_delta<model::offset>(
+            in, reply.meta[i - 1].last_term_base_offset);
+    }
+
     for (size_t i = 0; i < size; ++i) {
         reply.meta[i].result = adl<raft::append_entries_reply::status>{}.from(
           in);
+    }
+
+    for (auto& m : reply.meta) {
+        m.last_committed_log_index = decode_signed(m.last_committed_log_index);
+        m.last_dirty_log_index = decode_signed(m.last_dirty_log_index);
+        m.last_term_base_offset = decode_signed(m.last_term_base_offset);
     }
 
     return ss::make_ready_future<raft::heartbeat_reply>(std::move(reply));

@@ -112,29 +112,8 @@ ss::future<> recovery_stm::replicate(model::record_batch_reader&& reader) {
             _stop_requested = true;
             return;
         }
-        // move the follower next index backward if recovery were not
-        // successfull
-        //
-        // Raft paper:
-        // If AppendEntries fails because of log inconsistency: decrement
-        // nextIndex and retry(§5.3)
-
-        if (r.value().result == append_entries_reply::status::failure) {
-            auto meta = get_follower_meta();
-            if (!meta) {
-                _stop_requested = true;
-                return;
-            }
-            meta.value()->next_index = std::max(
-              model::offset(0), details::prev_offset(_base_batch_offset));
-            vlog(
-              _ctxlog.trace,
-              "Move node {} next index {} backward",
-              _node_id,
-              meta.value()->next_index);
-        }
     });
-} // namespace raft
+}
 
 clock_type::time_point recovery_stm::append_entries_timeout() {
     return raft::clock_type::now() + _ptr->_replicate_append_timeout;
@@ -174,9 +153,11 @@ ss::future<> recovery_stm::apply() {
     return ss::with_gate(
              _ptr->_bg,
              [this] {
-                 return ss::do_until(
-                   [this] { return is_recovery_finished(); },
-                   [this] { return do_one_read(); });
+                 return do_one_read().then([this] {
+                     return ss::do_until(
+                       [this] { return is_recovery_finished(); },
+                       [this] { return do_one_read(); });
+                 });
              })
       .finally([this] {
           vlog(_ctxlog.trace, "Finished node {} recovery", _node_id);

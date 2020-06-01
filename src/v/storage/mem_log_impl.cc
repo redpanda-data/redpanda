@@ -22,6 +22,11 @@ struct entries_ordering {
       const model::record_batch& e1, const model::record_batch& e2) const {
         return e1.base_offset() < e2.base_offset();
     }
+
+    bool operator()(const model::record_batch& e1, model::term_id term) const {
+        return e1.term() < term;
+    }
+
     bool operator()(const model::record_batch& e1, model::offset value) const {
         return e1.header().last_offset() < value;
     }
@@ -283,6 +288,10 @@ struct mem_log_impl final : log::impl {
         }
         auto& b = _data.front();
         auto& e = _data.back();
+        auto it = std::lower_bound(
+          std::cbegin(_data), std::cend(_data), e.term(), entries_ordering{});
+        auto last_term_base_offset = it->base_offset();
+
         return storage::offset_stats{
           .start_offset = b.base_offset(),
           .start_offset_term = b.term(),
@@ -290,7 +299,7 @@ struct mem_log_impl final : log::impl {
           .committed_offset_term = e.term(),
           .dirty_offset = e.last_offset(),
           .dirty_offset_term = e.term(),
-        };
+          .last_term_start_offset = last_term_base_offset};
     }
 
     boost::intrusive::list<mem_iter_reader> _readers;
