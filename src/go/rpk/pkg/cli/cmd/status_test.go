@@ -29,6 +29,20 @@ func writeConfig(fs afero.Fs, conf *config.Config) error {
 }
 
 func TestStatus(t *testing.T) {
+	defaultSetup := func(fs afero.Fs) error {
+		conf := getConfig()
+		err := writeConfig(fs, conf)
+		if err != nil {
+			return err
+		}
+		file, err := fs.Create(conf.PIDFile())
+		if err != nil {
+			return err
+		}
+		ownPid := strconv.Itoa(os.Getpid())
+		_, err = file.Write([]byte(ownPid))
+		return err
+	}
 	tests := []struct {
 		name        string
 		expectedErr string
@@ -38,21 +52,28 @@ func TestStatus(t *testing.T) {
 	}{
 		{
 			name:        "it should contain a version row",
-			expectedOut: "Version",
-			before: func(fs afero.Fs) error {
-				conf := getConfig()
-				err := writeConfig(fs, conf)
-				if err != nil {
-					return err
-				}
-				file, err := fs.Create(conf.PIDFile())
-				if err != nil {
-					return err
-				}
-				ownPid := strconv.Itoa(os.Getpid())
-				_, err = file.Write([]byte(ownPid))
-				return err
-			},
+			expectedOut: `\s\sVersion`,
+			before:      defaultSetup,
+		},
+		{
+			name:        "it should contain an OS info row",
+			expectedOut: `\n\s\sOS[\s]+`,
+			before:      defaultSetup,
+		},
+		{
+			name:        "it should contain a CPU model row",
+			expectedOut: `\n\s\sCPU\sModel[\s]+`,
+			before:      defaultSetup,
+		},
+		{
+			name:        "it should contain a Free Memory row",
+			expectedOut: `\n\s\sFree\sMemory[\s]+`,
+			before:      defaultSetup,
+		},
+		{
+			name:        "it should contain a Free Space row",
+			expectedOut: `\n\s\sFree\sSpace[\s]+`,
+			before:      defaultSetup,
 		},
 		{
 			name:        "doesn't print the CPU% if no pid file is found",
@@ -139,7 +160,7 @@ func TestStatus(t *testing.T) {
 			}
 			require.NoError(t, err)
 			if tt.expectedOut != "" {
-				require.Contains(t, out.String(), tt.expectedOut)
+				require.Regexp(t, tt.expectedOut, out.String())
 			}
 		})
 	}
