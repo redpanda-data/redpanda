@@ -404,7 +404,7 @@ ss::future<> controller::manage_partition(
   storage::ntp_config ntp_cfg,
   raft::group_id raft_group,
   std::vector<model::broker_shard> replicas) {
-    auto path = ntp_cfg.ntp.path();
+    auto path = ntp_cfg.ntp().path();
     return pm
       .manage(
         std::move(ntp_cfg),

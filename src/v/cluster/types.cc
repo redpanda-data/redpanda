@@ -18,8 +18,6 @@ topic_configuration::topic_configuration(
 
 storage::ntp_config topic_configuration::make_ntp_config(
   const ss::sstring& work_dir, model::partition_id p_id) const {
-    auto ret = storage::ntp_config(
-      model::ntp(tp_ns.ns, tp_ns.tp, p_id), work_dir);
     auto has_overrides = cleanup_policy_bitflags || compaction_strategy
                          || segment_size || retention_bytes.has_value()
                          || retention_bytes.is_disabled()
@@ -27,17 +25,18 @@ storage::ntp_config topic_configuration::make_ntp_config(
                          || retention_duration.is_disabled();
 
     if (has_overrides) {
-        ret.overrides
-          = std::make_unique<storage::ntp_config::default_overrides>(
+        return storage::ntp_config(
+          model::ntp(tp_ns.ns, tp_ns.tp, p_id),
+          work_dir,
+          std::make_unique<storage::ntp_config::default_overrides>(
             storage::ntp_config::default_overrides{
               .cleanup_policy_bitflags = cleanup_policy_bitflags,
               .compaction_strategy = compaction_strategy,
               .segment_size = segment_size,
               .retention_bytes = retention_bytes,
-              .retention_time = retention_duration});
+              .retention_time = retention_duration}));
     }
-
-    return ret;
+    return storage::ntp_config(model::ntp(tp_ns.ns, tp_ns.tp, p_id), work_dir);
 }
 
 std::ostream& operator<<(std::ostream& o, const topic_configuration& cfg) {

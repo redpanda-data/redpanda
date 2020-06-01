@@ -168,7 +168,7 @@ struct mem_log_impl final : log::impl {
         return ss::make_ready_future<ret_t>();
     }
     ss::future<> truncate_prefix(truncate_prefix_config cfg) final {
-        stlog.debug("PREFIX Truncating {} log at {}", config().ntp, cfg);
+        stlog.debug("PREFIX Truncating {} log at {}", config().ntp(), cfg);
         if (_data.empty()) {
             return ss::make_ready_future<>();
         }
@@ -200,7 +200,7 @@ struct mem_log_impl final : log::impl {
         return ss::make_ready_future<>();
     }
     ss::future<> truncate(truncate_config cfg) final {
-        stlog.debug("Truncating {} log at {}", config().ntp, cfg);
+        stlog.debug("Truncating {} log at {}", config().ntp(), cfg);
         if (unlikely(cfg.base_offset < model::offset(0))) {
             throw std::invalid_argument("cannot truncate at negative offset");
         }
@@ -315,7 +315,7 @@ mem_log_appender::operator()(model::record_batch& batch) {
     vlog(
       stlog.trace,
       "Wrting to {} batch of {} records offsets [{},{}], term {}",
-      _log.config().ntp,
+      _log.config().ntp(),
       batch.header().size_bytes,
       batch.base_offset(),
       batch.last_offset(),

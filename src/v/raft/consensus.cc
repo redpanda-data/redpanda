@@ -66,8 +66,8 @@ void consensus::setup_metrics() {
         return;
     }
 
-    _probe.setup_metrics(_log.config().ntp);
-    auto labels = probe::create_metric_labels(_log.config().ntp);
+    _probe.setup_metrics(_log.config().ntp());
+    auto labels = probe::create_metric_labels(_log.config().ntp());
     namespace sm = ss::metrics;
 
     _metrics.add_group(

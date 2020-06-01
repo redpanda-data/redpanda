@@ -32,7 +32,7 @@ ss::future<consensus_ptr> partition_manager::manage(
             .create_group(group, std::move(nodes), log)
             .then([this, log, group](ss::lw_shared_ptr<raft::consensus> c) {
                 auto p = ss::make_lw_shared<partition>(c);
-                _ntp_table.emplace(log.config().ntp, p);
+                _ntp_table.emplace(log.config().ntp(), p);
                 _raft_table.emplace(group, p);
                 _manage_watchers.notify(p->ntp(), p);
                 return p->start().then([c] { return c; });

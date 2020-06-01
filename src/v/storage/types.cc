@@ -56,9 +56,10 @@ operator<<(std::ostream& o, const ntp_config::default_overrides& v) {
 }
 
 std::ostream& operator<<(std::ostream& o, const ntp_config& v) {
-    o << "{ntp:" << v.ntp << ", base_dir:" << v.base_dir << ", overrides:";
-    if (v.overrides) {
-        o << *v.overrides;
+    o << "{ntp:" << v.ntp() << ", base_dir:" << v.base_directory()
+      << ", overrides:";
+    if (v.has_overrides()) {
+        o << v.get_overrides();
     } else {
         o << "nullptr";
     }

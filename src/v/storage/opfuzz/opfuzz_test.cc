@@ -36,16 +36,19 @@ FIXTURE_TEST(test_random_workload, storage_test_fixture) {
           "test.default",
           "topic." + random_generators::gen_alphanum_string(3),
           i);
+        auto overrides
+          = std::make_unique<storage::ntp_config::default_overrides>(
+            storage::ntp_config::default_overrides{
+              .cleanup_policy_bitflags
+              = model::cleanup_policy_bitflags::compaction
+                | model::cleanup_policy_bitflags::deletion,
+              .compaction_strategy = model::compaction_strategy::offset,
+            });
+
         auto cfg = storage::ntp_config(ntp, mngr.config().base_dir);
         if (random_generators::get_int(1, 100) < 50) {
-            cfg.overrides
-              = std::make_unique<storage::ntp_config::default_overrides>(
-                storage::ntp_config::default_overrides{
-                  .cleanup_policy_bitflags
-                  = model::cleanup_policy_bitflags::compaction
-                    | model::cleanup_policy_bitflags::deletion,
-                  .compaction_strategy = model::compaction_strategy::offset,
-                });
+            cfg = storage::ntp_config(
+              ntp, mngr.config().base_dir, std::move(overrides));
         }
         auto log = mngr.manage(std::move(cfg)).get0();
         logs_to_fuzz.emplace_back(
