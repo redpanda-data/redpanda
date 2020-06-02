@@ -594,6 +594,8 @@ consensus::do_append_entries(append_entries_request&& r) {
     reply.term = _term;
     reply.last_dirty_log_index = lstats.dirty_offset;
     reply.last_committed_log_index = lstats.committed_offset;
+    reply.last_term_base_offset = std::max(
+      _commit_index, lstats.last_term_start_offset);
     reply.result = append_entries_reply::status::failure;
     _probe.append_request();
 
