@@ -59,6 +59,7 @@ private:
     friend class disk_log_builder;  // for tests
     friend std::ostream& operator<<(std::ostream& o, const disk_log_impl& d);
 
+    ss::future<> do_compact(compaction_config);
     ss::future<> gc(compaction_config);
 
     ss::future<> remove_empty_segments();
@@ -79,9 +80,9 @@ private:
     ss::future<> remove_prefix_full_segments(truncate_prefix_config);
 
     ss::future<>
-    garbage_collect_max_partition_size(size_t max_bytes, ss::abort_source&);
+    garbage_collect_max_partition_size(size_t max_bytes, ss::abort_source*);
     ss::future<>
-    garbage_collect_oldest_segments(model::timestamp, ss::abort_source&);
+    garbage_collect_oldest_segments(model::timestamp, ss::abort_source*);
 
 private:
     bool _closed{false};

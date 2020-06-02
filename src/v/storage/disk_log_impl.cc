@@ -72,11 +72,11 @@ ss::future<> disk_log_impl::close() {
 }
 
 ss::future<> disk_log_impl::garbage_collect_max_partition_size(
-  size_t max_bytes, ss::abort_source& as) {
+  size_t max_bytes, ss::abort_source* as) {
     return ss::do_until(
-      [this, max_bytes, &as] {
+      [this, max_bytes, as] {
           return _segs.empty() || _probe.partition_size() <= max_bytes
-                 || as.abort_requested();
+                 || as->abort_requested();
       },
       [this] {
           auto ptr = _segs.front();
@@ -86,7 +86,7 @@ ss::future<> disk_log_impl::garbage_collect_max_partition_size(
 }
 
 ss::future<> disk_log_impl::garbage_collect_oldest_segments(
-  model::timestamp time, ss::abort_source& as) {
+  model::timestamp time, ss::abort_source* as) {
     // The following compaction has a Kafka behavior compatibility bug. for
     // which we defer do nothing at the moment, possibly crashing the machine
     // and running out of disk. Kafka uses the same logic below as of
@@ -100,9 +100,9 @@ ss::future<> disk_log_impl::garbage_collect_oldest_segments(
     // segment, preventing a crash.
     //
     return ss::do_until(
-      [this, time, &as] {
+      [this, time, as] {
           return _segs.empty() || _segs.front()->index().max_timestamp() > time
-                 || as.abort_requested();
+                 || as->abort_requested();
       },
       [this] {
           auto ptr = _segs.front();
@@ -118,7 +118,7 @@ ss::future<> disk_log_impl::compact(compaction_config cfg) {
 ss::future<> disk_log_impl::gc(compaction_config cfg) {
     vassert(!_closed, "gc on closed log - {}", *this);
 
-    if (cfg.as.abort_requested()) {
+    if (unlikely(cfg.asrc->abort_requested())) {
         return ss::make_ready_future<>();
     }
     // TODO: this a workaround until we have raft-snapshotting in the the
@@ -134,10 +134,10 @@ ss::future<> disk_log_impl::gc(compaction_config cfg) {
     if (cfg.max_bytes) {
         size_t max = cfg.max_bytes.value();
         if (!_segs.empty() && _probe.partition_size() > max) {
-            return garbage_collect_max_partition_size(max, cfg.as);
+            return garbage_collect_max_partition_size(max, cfg.asrc);
         }
     }
-    return garbage_collect_oldest_segments(cfg.eviction_time, cfg.as);
+    return garbage_collect_oldest_segments(cfg.eviction_time, cfg.asrc);
 }
 
 ss::future<> disk_log_impl::remove_empty_segments() {

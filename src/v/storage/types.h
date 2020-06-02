@@ -183,19 +183,24 @@ struct compaction_config {
       model::timestamp upper,
       std::optional<size_t> max_bytes_in_log,
       ss::io_priority_class p,
-      ss::abort_source& as)
+      ss::abort_source& as,
+      debug_sanitize_files should_sanitize = debug_sanitize_files::no)
       : eviction_time(upper)
       , max_bytes(max_bytes_in_log)
       , iopc(p)
-      , as(as) {}
+      , sanitize(should_sanitize)
+      , asrc(&as) {}
+
     // remove everything below eviction time
     model::timestamp eviction_time;
     // remove one segment if log is > max_bytes
     std::optional<size_t> max_bytes;
     // priority for all IO in compaction
     ss::io_priority_class iopc;
+    // use proxy fileops with assertions
+    debug_sanitize_files sanitize;
     // abort source for compaction task
-    ss::abort_source& as;
+    ss::abort_source* asrc;
 };
 
 } // namespace storage
