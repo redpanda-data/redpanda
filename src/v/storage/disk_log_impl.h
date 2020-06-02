@@ -13,12 +13,18 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
 
+#include <absl/container/flat_hash_map.h>
+
 namespace storage {
 
 class disk_log_impl final : public log::impl {
-    using failure_probes = storage::log_failure_probes;
-
 public:
+    using failure_probes = storage::log_failure_probes;
+    enum class segment_bitflags : uint32_t {
+        none = 0,
+        self_compacted = 1U,
+    };
+
     disk_log_impl(ntp_config, log_manager&, segment_set);
     ~disk_log_impl() override;
     disk_log_impl(disk_log_impl&&) noexcept = default;
@@ -88,9 +94,40 @@ private:
     bool _closed{false};
     log_manager& _manager;
     segment_set _segs;
+    absl::flat_hash_map<model::offset, segment_bitflags> _segbits;
     lock_manager _lock_mngr;
     storage::probe _probe;
     failure_probes _failure_probes;
 };
+
+[[gnu::always_inline]] static inline disk_log_impl::segment_bitflags operator|(
+  disk_log_impl::segment_bitflags a, disk_log_impl::segment_bitflags b) {
+    return disk_log_impl::segment_bitflags(
+      std::underlying_type_t<disk_log_impl::segment_bitflags>(a)
+      | std::underlying_type_t<disk_log_impl::segment_bitflags>(b));
+}
+
+[[gnu::always_inline]] static inline void operator|=(
+  disk_log_impl::segment_bitflags& a, disk_log_impl::segment_bitflags b) {
+    a = (a | b);
+}
+
+[[gnu::always_inline]] static inline disk_log_impl::segment_bitflags
+operator~(disk_log_impl::segment_bitflags a) {
+    return disk_log_impl::segment_bitflags(
+      ~std::underlying_type_t<disk_log_impl::segment_bitflags>(a));
+}
+
+[[gnu::always_inline]] static inline disk_log_impl::segment_bitflags operator&(
+  disk_log_impl::segment_bitflags a, disk_log_impl::segment_bitflags b) {
+    return disk_log_impl::segment_bitflags(
+      std::underlying_type_t<disk_log_impl::segment_bitflags>(a)
+      & std::underlying_type_t<disk_log_impl::segment_bitflags>(b));
+}
+
+[[gnu::always_inline]] static inline void operator&=(
+  disk_log_impl::segment_bitflags& a, disk_log_impl::segment_bitflags b) {
+    a = (a & b);
+}
 
 } // namespace storage
