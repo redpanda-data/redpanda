@@ -2,8 +2,6 @@ package cmd
 
 import (
 	"bytes"
-	"os"
-	"strconv"
 	"testing"
 	"vectorized/pkg/config"
 
@@ -30,18 +28,7 @@ func writeConfig(fs afero.Fs, conf *config.Config) error {
 
 func TestStatus(t *testing.T) {
 	defaultSetup := func(fs afero.Fs) error {
-		conf := getConfig()
-		err := writeConfig(fs, conf)
-		if err != nil {
-			return err
-		}
-		file, err := fs.Create(conf.PIDFile())
-		if err != nil {
-			return err
-		}
-		ownPid := strconv.Itoa(os.Getpid())
-		_, err = file.Write([]byte(ownPid))
-		return err
+		return writeConfig(fs, getConfig())
 	}
 	tests := []struct {
 		name        string
@@ -66,21 +53,9 @@ func TestStatus(t *testing.T) {
 			before:      defaultSetup,
 		},
 		{
-			name:        "it should contain a Free Memory row",
-			expectedOut: `\n\s\sFree\sMemory[\s]+`,
-			before:      defaultSetup,
-		},
-		{
-			name:        "it should contain a Free Space row",
-			expectedOut: `\n\s\sFree\sSpace[\s]+`,
-			before:      defaultSetup,
-		},
-		{
 			name:        "doesn't print the CPU% if no pid file is found",
 			expectedOut: "Error gathering metrics: open /var/lib/redpanda/data/pid.lock: file does not exist",
-			before: func(fs afero.Fs) error {
-				return writeConfig(fs, getConfig())
-			},
+			before:      defaultSetup,
 		},
 		{
 			name:        "fails if the pid file is empty",
