@@ -566,7 +566,20 @@ error_code group_manager::validate_group_status(
 
         if (it->second->loading) {
             klog.trace("group is loading {}/{}", group, ntp);
-            return error_code::coordinator_load_in_progress;
+            return error_code::not_coordinator;
+            /*
+             * returning `load in progress` is the correct error code for this
+             * condition, and is what kafka brokers return. it should cause a
+             * client to retry with backoff. however, it seems to be a rare
+             * error condition in kafka (not in redpanda) and the sarama client
+             * does not check for it (java and python both check properly).
+             * sarama checks for `not coordinator` which does a metadata refresh
+             * and a retry. it causes a bit more work in the client, but
+             * achieves the same end result.
+             *
+             * See https://github.com/Shopify/sarama/issues/1715
+             */
+            // return error_code::coordinator_load_in_progress;
         }
 
         return error_code::none;
