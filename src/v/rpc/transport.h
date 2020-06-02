@@ -1,8 +1,10 @@
 #pragma once
 
+#include "outcome.h"
 #include "reflection/async_adl.h"
 #include "rpc/batched_output_stream.h"
 #include "rpc/client_probe.h"
+#include "rpc/errc.h"
 #include "rpc/netbuf.h"
 #include "rpc/parse_utils.h"
 #include "rpc/response_handler.h"
@@ -76,11 +78,11 @@ public:
     transport& operator=(const transport&) = delete;
 
     ss::future<> connect() final;
-    ss::future<std::unique_ptr<streaming_context>>
+    ss::future<result<std::unique_ptr<streaming_context>>>
       send(netbuf, rpc::client_opts);
 
     template<typename Input, typename Output>
-    ss::future<client_context<Output>>
+    ss::future<result<client_context<Output>>>
       send_typed(Input, uint32_t, rpc::client_opts);
 
 private:
@@ -100,9 +102,38 @@ private:
     friend std::ostream& operator<<(std::ostream&, const transport&);
 };
 
+namespace internal {
+template<typename T>
+result<rpc::client_context<T>> map_result(const header& hdr, T data) {
+    using ret_t = result<rpc::client_context<T>>;
+    auto st = static_cast<status>(hdr.meta);
+
+    if (st == status::success) {
+        rpc::client_context<T> ctx(hdr);
+        ctx.data = std::move(data);
+        return ret_t(std::move(ctx));
+    }
+
+    if (st == status::request_timeout) {
+        return ret_t(errc::client_request_timeout);
+    }
+
+    if (st == status::server_error) {
+        return ret_t(errc::service_error);
+    }
+
+    if (st == status::method_not_found) {
+        return ret_t(errc::method_not_found);
+    }
+
+    return ret_t(errc::service_error);
+}
+} // namespace internal
+
 template<typename Input, typename Output>
-inline ss::future<client_context<Output>>
+inline ss::future<result<client_context<Output>>>
 transport::send_typed(Input r, uint32_t method_id, rpc::client_opts opts) {
+    using ret_t = result<client_context<Output>>;
     _probe.request();
 
     auto b = std::make_unique<rpc::netbuf>();
@@ -115,14 +146,15 @@ transport::send_typed(Input r, uint32_t method_id, rpc::client_opts opts) {
       .then([this, b = std::move(b), opts = std::move(opts)]() mutable {
           return send(std::move(*b), std::move(opts));
       })
-      .then([this](std::unique_ptr<streaming_context> sctx) mutable {
-          return parse_type<Output>(_in, sctx->get_header())
+      .then([this](result<std::unique_ptr<streaming_context>> sctx) mutable {
+          if (!sctx) {
+              return ss::make_ready_future<ret_t>(sctx.error());
+          }
+          return parse_type<Output>(_in, sctx.value()->get_header())
             .then([sctx = std::move(sctx)](Output o) {
-                sctx->signal_body_parse();
-                using ctx_t = rpc::client_context<Output>;
-                ctx_t ctx(sctx->get_header());
-                std::swap(ctx.data, o);
-                return ss::make_ready_future<ctx_t>(std::move(ctx));
+                sctx.value()->signal_body_parse();
+                return internal::map_result<Output>(
+                  sctx.value()->get_header(), std::move(o));
             });
       });
 }

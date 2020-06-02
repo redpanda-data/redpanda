@@ -35,7 +35,7 @@ FIXTURE_TEST(rpcgen_integration, rpc_integration_fixture) {
                  .get0();
     info("service stopping");
 
-    BOOST_REQUIRE_EQUAL(ret.data.x, 66);
+    BOOST_REQUIRE_EQUAL(ret.value().data.x, 66);
 }
 
 FIXTURE_TEST(rpcgen_tls_integration, rpc_integration_fixture) {
@@ -61,7 +61,7 @@ FIXTURE_TEST(rpcgen_tls_integration, rpc_integration_fixture) {
                    cycling::san_francisco{66},
                    rpc::client_opts(rpc::no_timeout))
                  .get0();
-    BOOST_REQUIRE_EQUAL(ret.data.x, 66);
+    BOOST_REQUIRE_EQUAL(ret.value().data.x, 66);
 }
 
 FIXTURE_TEST(client_muxing, rpc_integration_fixture) {
@@ -88,7 +88,7 @@ FIXTURE_TEST(client_muxing, rpc_integration_fixture) {
                        .get0();
     client.stop().get();
 
-    BOOST_REQUIRE_EQUAL(echo_resp.data.str, "testing..._suffix");
+    BOOST_REQUIRE_EQUAL(echo_resp.value().data.str, "testing..._suffix");
 }
 
 FIXTURE_TEST(timeout_test, rpc_integration_fixture) {
@@ -102,7 +102,8 @@ FIXTURE_TEST(timeout_test, rpc_integration_fixture) {
     auto echo_resp = client.sleep_1s(
       echo::echo_req{.str = "testing..."},
       rpc::client_opts(rpc::clock_type::now() + 100ms));
-    BOOST_REQUIRE_THROW(echo_resp.get0(), rpc::request_timeout_exception);
+    BOOST_REQUIRE_EQUAL(
+      echo_resp.get0().error(), rpc::errc::client_request_timeout);
     client.stop().get();
 }
 
@@ -124,9 +125,10 @@ FIXTURE_TEST(ordering_test, rpc_integration_fixture) {
           client
             .counter(
               echo::cnt_req{i}, rpc::client_opts(rpc::no_timeout, units_ptr))
-            .then([i](rpc::client_context<echo::cnt_resp> r) {
-                BOOST_REQUIRE_EQUAL(r.data.current, i);
-                BOOST_REQUIRE_EQUAL(r.data.expected, i);
+            .then(&rpc::get_ctx_data<echo::cnt_resp>)
+            .then([i](result<echo::cnt_resp> r) {
+                BOOST_REQUIRE_EQUAL(r.value().current, i);
+                BOOST_REQUIRE_EQUAL(r.value().expected, i);
             }));
     }
     ss::when_all_succeed(futures.begin(), futures.end()).get0();
@@ -149,7 +151,7 @@ FIXTURE_TEST(rpc_mixed_compression, rpc_integration_fixture) {
                          echo::echo_req{.str = data},
                          rpc::client_opts(rpc::no_timeout))
                        .get0();
-    BOOST_REQUIRE_EQUAL(echo_resp.data.str, data);
+    BOOST_REQUIRE_EQUAL(echo_resp.value().data.str, data);
     BOOST_TEST_MESSAGE("Calling echo method *WITH* compression");
     echo_resp = client
                   .echo(
@@ -160,7 +162,7 @@ FIXTURE_TEST(rpc_mixed_compression, rpc_integration_fixture) {
                       rpc::compression_type::zstd,
                       0 /*min bytes compress*/))
                   .get0();
-    BOOST_REQUIRE_EQUAL(echo_resp.data.str, data);
+    BOOST_REQUIRE_EQUAL(echo_resp.value().data.str, data);
 
     // close resources
     client.stop().get();
@@ -172,10 +174,29 @@ FIXTURE_TEST(server_exception_test, rpc_integration_fixture) {
     start_server();
     rpc::client<echo::echo_client_protocol> client(client_config());
     client.connect().get();
-    auto f = client.throw_exception(
-      echo::failure_type::exceptional_future,
-      rpc::client_opts(model::no_timeout));
+    auto ret = client
+                 .throw_exception(
+                   echo::failure_type::exceptional_future,
+                   rpc::client_opts(model::no_timeout))
+                 .get0();
 
-    BOOST_CHECK_THROW(f.get0(), std::exception);
+    BOOST_REQUIRE(ret.has_error());
+    BOOST_REQUIRE_EQUAL(ret.error(), rpc::errc::service_error);
     client.stop().get();
+}
+
+FIXTURE_TEST(missing_method_test, rpc_integration_fixture) {
+    configure_server();
+    register_services();
+    start_server();
+    rpc::transport t(client_config());
+    t.connect().get();
+    auto ret = t.send_typed<echo::failure_type, echo::throw_resp>(
+                  echo::failure_type::exceptional_future,
+                  1234,
+                  rpc::client_opts(model::no_timeout))
+                 .get0();
+    BOOST_REQUIRE(ret.has_error());
+    BOOST_REQUIRE_EQUAL(ret.error(), rpc::errc::method_not_found);
+    t.stop().get();
 }

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "likely.h"
+#include "outcome.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>
@@ -43,6 +45,14 @@ struct negotiation_frame {
     compression_type compression = compression_type::none;
 };
 
+/// Response status, we use well known HTTP response codes for readability
+enum class status : uint32_t {
+    success = 200,
+    method_not_found = 404,
+    request_timeout = 408,
+    server_error = 500,
+};
+
 /// \brief core struct for communications. sent with _each_ payload
 struct header {
     /// \brief version is unused. always 0. can be used for bitflags as well
@@ -53,7 +63,8 @@ struct header {
     compression_type compression{0};
     /// \brief size of the payload
     uint32_t payload_size{0};
-    /// \brief used to find the method id on the server side
+    /// \brief used to find the method id on the server side and propagate error
+    /// to the client
     uint32_t meta{0};
     /// \brief every client/tcp connection will need to match
     /// the ss::future<> that dispatched the method
@@ -161,6 +172,14 @@ struct client_context {
     T data;
 };
 
+template<typename T>
+inline result<T> get_ctx_data(result<client_context<T>>&& ctx) {
+    if (unlikely(!ctx)) {
+        return result<T>(ctx.error());
+    }
+    return result<T>(std::move(ctx.value().data));
+}
+
 using metrics_disabled = ss::bool_class<struct metrics_disabled_tag>;
 
 struct server_configuration {
@@ -183,4 +202,5 @@ struct transport_configuration {
 
 std::ostream& operator<<(std::ostream&, const header&);
 std::ostream& operator<<(std::ostream&, const server_configuration&);
+std::ostream& operator<<(std::ostream&, const status&);
 } // namespace rpc
