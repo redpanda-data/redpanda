@@ -48,6 +48,10 @@ public:
 
     bool has_overrides() const { return _overrides != nullptr; }
 
+    bool is_compacted() const {
+        return _overrides && _overrides->compaction_strategy;
+    }
+
     ss::sstring work_directory() const {
         return fmt::format("{}/{}", _base_dir, _ntp.path());
     }
