@@ -159,35 +159,23 @@ consensus::success_reply consensus::update_follower_index(
         return success_reply::no;
     }
 
-    idx.last_dirty_log_index = reply.last_dirty_log_index;
-    idx.last_committed_log_index = reply.last_committed_log_index;
-    vlog(
-      _ctxlog.trace,
-      "Follower {} last log indicies updated [dirty: {}, committed: {}]",
-      node,
-      idx.last_dirty_log_index,
-      idx.last_committed_log_index);
-
-    // success case
-    if (reply.result == append_entries_reply::status::success) {
-        successfull_append_entries_reply(idx);
-        return success_reply::yes;
+    // If recovery is in progress the recovery STM will handle follower index
+    // updates
+    if (!idx.is_recovering) {
+        vlog(
+          _ctxlog.trace,
+          "Updated node {} last log idx: {}",
+          idx.node_id,
+          reply.last_committed_log_index);
+        idx.last_dirty_log_index = reply.last_dirty_log_index;
+        idx.last_committed_log_index = reply.last_committed_log_index;
+        idx.next_index = details::next_offset(idx.last_dirty_log_index);
     }
 
-    // move the follower next index backward if recovery were not
-    // successfull
-    //
-    // Raft paper:
-    // If AppendEntries fails because of log inconsistency: decrement
-    // nextIndex and retry(§5.3)
-    //
-    // set the next index to follower last term base offset
-    idx.next_index = std::max(model::offset{0}, reply.last_term_base_offset);
-    vlog(
-      _ctxlog.trace,
-      "Moving back follower {} next index to: {}",
-      node,
-      idx.next_index);
+    if (reply.result == append_entries_reply::status::success) {
+        successfull_append_entries_reply(idx, std::move(reply));
+        return success_reply::yes;
+    }
 
     if (idx.is_recovering) {
         // we are already recovering, do nothing
@@ -218,8 +206,11 @@ void consensus::process_append_entries_reply(
     }
 }
 
-void consensus::successfull_append_entries_reply(follower_index_metadata& idx) {
+void consensus::successfull_append_entries_reply(
+  follower_index_metadata& idx, append_entries_reply reply) {
     // follower and leader logs matches
+    idx.last_dirty_log_index = reply.last_dirty_log_index;
+    idx.last_committed_log_index = reply.last_committed_log_index;
     idx.match_index = idx.last_dirty_log_index;
     idx.next_index = details::next_offset(idx.last_dirty_log_index);
     vlog(
@@ -232,6 +223,18 @@ void consensus::successfull_append_entries_reply(follower_index_metadata& idx) {
 
 void consensus::dispatch_recovery(
   follower_index_metadata& idx, append_entries_reply reply) {
+    auto lstats = _log.offsets();
+    auto log_max_offset = lstats.dirty_offset;
+    if (idx.last_dirty_log_index >= log_max_offset) {
+        // follower is ahead of current leader
+        // try to send last batch that leader have
+        vlog(
+          _ctxlog.trace,
+          "Follower {} is ahead of leader setting next offset to {}",
+          idx.next_index,
+          log_max_offset);
+        idx.next_index = log_max_offset;
+    }
     idx.is_recovering = true;
     vlog(
       _ctxlog.trace,
@@ -594,8 +597,6 @@ consensus::do_append_entries(append_entries_request&& r) {
     reply.term = _term;
     reply.last_dirty_log_index = lstats.dirty_offset;
     reply.last_committed_log_index = lstats.committed_offset;
-    reply.last_term_base_offset = std::max(
-      _commit_index, lstats.last_term_start_offset);
     reply.result = append_entries_reply::status::failure;
     _probe.append_request();
 
