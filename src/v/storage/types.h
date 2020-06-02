@@ -201,6 +201,8 @@ struct compaction_config {
     debug_sanitize_files sanitize;
     // abort source for compaction task
     ss::abort_source* asrc;
+
+    friend std::ostream& operator<<(std::ostream&, const compaction_config&);
 };
 
 } // namespace storage
