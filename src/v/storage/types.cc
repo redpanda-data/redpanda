@@ -91,4 +91,15 @@ std::ostream& operator<<(std::ostream& o, const offset_stats& s) {
       s.last_term_start_offset);
     return o;
 }
+
+std::ostream& operator<<(std::ostream& o, const compaction_config& c) {
+    fmt::print(
+      o,
+      "{{evicition_time:{}, max_bytes:{}, should_sanitize:{}}}",
+      c.eviction_time,
+      c.max_bytes.value_or(-1),
+      c.sanitize);
+    return o;
+}
+
 } // namespace storage
