@@ -49,4 +49,19 @@ std::ostream& operator<<(std::ostream& o, const server_configuration& c) {
     return o << "}";
 }
 
+std::ostream& operator<<(std::ostream& o, const status& s) {
+    switch (s) {
+    case status::success:
+        return o << "rpc::status::success";
+    case status::method_not_found:
+        return o << "rpc::status::method_not_found";
+    case status::request_timeout:
+        return o << "rpc::status::request_timeout";
+    case status::server_error:
+        return o << "rpc::status::server_error";
+    default:
+        return o << "rpc::status::unknown";
+    }
+}
+
 } // namespace rpc

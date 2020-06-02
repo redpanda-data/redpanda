@@ -54,10 +54,9 @@ void server_probe::setup_metrics(
           sm::description(fmt::format(
             "{}: Number of requests with corrupted headers", proto))),
         sm::make_derive(
-          "bad_requests",
-          [this] { return _bad_requests; },
-          sm::description(
-            fmt::format("{}: Total number of all bad requests", proto))),
+          "service_errors",
+          [this] { return _corrupted_headers; },
+          sm::description(fmt::format("{}: Number of service errors", proto))),
         sm::make_derive(
           "requests_blocked_memory",
           [this] { return _requests_blocked_memory; },
@@ -79,7 +78,6 @@ std::ostream& operator<<(std::ostream& o, const server_probe& p) {
       << "requests completed: " << p._requests_completed << ", "
       << "received bytes: " << p._in_bytes << ", "
       << "sent bytes: " << p._out_bytes << ", "
-      << "bad requests: " << p._bad_requests << ", "
       << "corrupted headers: " << p._corrupted_headers << ", "
       << "method not found errors: " << p._method_not_found_errors << ", "
       << "requests blocked by memory: " << p._requests_blocked_memory << "}";

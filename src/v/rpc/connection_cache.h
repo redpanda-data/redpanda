@@ -66,14 +66,8 @@ public:
                         // Connection error
                         return ss::futurize<ret_t>::convert(transport.error());
                     }
-                    auto res_f = f(Protocol(*transport.value()));
-                    // FIXME: Remove this as soon as we will introduce result
-                    //        based error handling in RPC layer
-                    return wrap_exception_with_result<
-                      rpc::request_timeout_exception,
-                      std::error_code>(
-                      rpc::make_error_code(errc::client_request_timeout),
-                      std::move(res_f));
+                    return ss::futurize<ret_t>::convert(
+                      f(Protocol(*transport.value())));
                 });
           });
     }

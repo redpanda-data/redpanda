@@ -27,15 +27,11 @@ public:
 
     void request_completed() { ++_requests_completed; }
 
-    void header_corrupted() {
-        ++_bad_requests;
-        ++_corrupted_headers;
-    }
+    void header_corrupted() { ++_corrupted_headers; }
 
-    void method_not_found() {
-        ++_bad_requests;
-        ++_method_not_found_errors;
-    }
+    void method_not_found() { ++_method_not_found_errors; }
+
+    void service_error() { ++_service_errors; }
 
     void waiting_for_available_memory() { ++_requests_blocked_memory; }
 
@@ -47,9 +43,9 @@ private:
     uint64_t _out_bytes = 0;
     uint64_t _connects = 0;
     uint64_t _requests_received = 0;
+    uint64_t _service_errors = 0;
     uint32_t _connections = 0;
     uint32_t _connection_close_error = 0;
-    uint32_t _bad_requests = 0;
     uint32_t _corrupted_headers = 0;
     uint32_t _method_not_found_errors = 0;
     uint32_t _requests_blocked_memory = 0;

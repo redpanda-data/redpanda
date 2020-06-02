@@ -3,6 +3,8 @@
 #include "rpc/logger.h"
 #include "rpc/types.h"
 
+#include <exception>
+
 namespace rpc {
 struct server_context_impl final : streaming_context {
     server_context_impl(server::resources s, header h)
@@ -41,49 +43,74 @@ ss::future<> simple_protocol::apply(server::resources rs) {
 }
 
 ss::future<>
+send_reply(ss::lw_shared_ptr<server_context_impl> ctx, netbuf buf) {
+    buf.set_min_compression_bytes(1024);
+    buf.set_compression(rpc::compression_type::zstd);
+    buf.set_correlation_id(ctx->get_header().correlation_id);
+
+    auto view = std::move(buf).as_scattered();
+    if (ctx->res.conn_gate().is_closed()) {
+        // do not write if gate is closed
+        rpclog.debug(
+          "Skipping write of {} bytes, connection is closed", view.size());
+        return ss::make_ready_future<>();
+    }
+    return ctx->res.conn->write(std::move(view))
+      .handle_exception([ctx](std::exception_ptr e) {
+          vlog(rpclog.info, "Error dispatching method: {}", e);
+          ctx->res.conn->shutdown_input();
+      })
+      .finally([ctx] { ctx->res.probe().request_completed(); });
+}
+
+ss::future<>
 simple_protocol::dispatch_method_once(header h, server::resources rs) {
     const auto method_id = h.meta;
     auto ctx = ss::make_lw_shared<server_context_impl>(rs, h);
-    auto it = std::find_if(
-      _services.begin(),
-      _services.end(),
-      [method_id](std::unique_ptr<service>& srvc) {
-          return srvc->method_from_id(method_id) != nullptr;
-      });
-    if (unlikely(it == _services.end())) {
-        rs.probe().method_not_found();
-        throw std::runtime_error(
-          fmt::format("received invalid rpc request: {}", h));
-    }
-    auto fut = ctx->pr.get_future();
-    method* m = it->get()->method_from_id(method_id);
     rs.probe().add_bytes_received(size_of_rpc_header + h.payload_size);
-    // background!
     if (rs.conn_gate().is_closed()) {
         return ss::make_exception_future<>(ss::gate_closed_exception());
     }
-    (void)with_gate(rs.conn_gate(), [ctx, m]() mutable {
+
+    auto fut = ctx->pr.get_future();
+
+    // background!
+    (void)with_gate(rs.conn_gate(), [this, method_id, rs, ctx]() mutable {
+        auto it = std::find_if(
+          _services.begin(),
+          _services.end(),
+          [method_id](std::unique_ptr<service>& srvc) {
+              return srvc->method_from_id(method_id) != nullptr;
+          });
+        if (unlikely(it == _services.end())) {
+            rs.probe().method_not_found();
+            netbuf reply_buf;
+            reply_buf.set_status(rpc::status::method_not_found);
+            return send_reply(ctx, std::move(reply_buf)).then([ctx]() mutable {
+                ctx->signal_body_parse();
+            });
+        }
+
+        method* m = it->get()->method_from_id(method_id);
+
         return (*m)(ctx->res.conn->input(), *ctx)
-          .then([ctx, m = ctx->res.hist().auto_measure()](netbuf n) mutable {
-              n.set_min_compression_bytes(1024);
-              n.set_compression(rpc::compression_type::zstd);
-              n.set_correlation_id(ctx->get_header().correlation_id);
-              auto view = std::move(n).as_scattered();
-              if (ctx->res.conn_gate().is_closed()) {
-                  // do not write if gate is closed
-                  rpclog.debug(
-                    "Skipping write of {} bytes, connection is closed",
-                    view.size());
-                  return ss::make_ready_future<>();
+          .then_wrapped([ctx, m = ctx->res.hist().auto_measure(), rs](
+                          ss::future<netbuf> fut) mutable {
+              netbuf reply_buf;
+              try {
+                  reply_buf = fut.get0();
+                  reply_buf.set_status(rpc::status::success);
+              } catch (const ss::timed_out_error& e) {
+                  reply_buf.set_status(rpc::status::request_timeout);
+              } catch (...) {
+                  rpclog.error(
+                    "Service handler thrown an exception - {}",
+                    std::current_exception());
+                  rs.probe().service_error();
+                  reply_buf.set_status(rpc::status::server_error);
               }
-              return ctx->res.conn->write(std::move(view))
-                .finally([m = std::move(m), ctx] {
-                    ctx->res.probe().request_completed();
-                });
-          })
-          .handle_exception([ctx](std::exception_ptr e) {
-              vlog(rpclog.info, "Error dispatching method: {}", e);
-              ctx->res.conn->shutdown_input();
+              return send_reply(ctx, std::move(reply_buf))
+                .finally([m = std::move(m)] {});
           });
     });
     return fut;
