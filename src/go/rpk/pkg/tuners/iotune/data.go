@@ -2,7 +2,7 @@ package iotune
 
 import (
 	"fmt"
-	"vectorized/pkg/cloud"
+	"vectorized/pkg/cloud/vendor"
 
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
@@ -18,33 +18,33 @@ type IoProperties struct {
 
 type io = IoProperties
 
-func DataFor(mountPoint, vendor, vm, storage string) (*IoProperties, error) {
+func DataFor(mountPoint, v, vm, storage string) (*IoProperties, error) {
 	data := precompiledData()
-	vms, ok := data[vendor]
+	vms, ok := data[v]
 	if !ok {
-		return nil, fmt.Errorf("no iotune data found for vendor '%s'", vendor)
+		return nil, fmt.Errorf("no iotune data found for vendor '%s'", v)
 	}
 	storages, ok := vms[vm]
 	if !ok {
-		return nil, fmt.Errorf("no iotune data found for VM '%s', of vendor '%s'", vm, vendor)
+		return nil, fmt.Errorf("no iotune data found for VM '%s', of vendor '%s'", vm, v)
 	}
 	settings, ok := storages[storage]
 	if !ok {
-		return nil, fmt.Errorf("no iotune data found for storage '%s' in VM '%s', of vendor '%s'", storage, vm, vendor)
+		return nil, fmt.Errorf("no iotune data found for storage '%s' in VM '%s', of vendor '%s'", storage, vm, v)
 	}
 	settings.MountPoint = mountPoint
 	return &settings, nil
 }
 
 func DataForVendor(
-	mountpoint string, vendor cloud.InitializedVendor,
+	mountpoint string, v vendor.InitializedVendor,
 ) (*IoProperties, error) {
-	vmType, err := vendor.VmType()
+	vmType, err := v.VmType()
 	if err != nil {
-		return nil, fmt.Errorf("Couldn't get the current VM type for vendor '%s'", vendor.Name())
+		return nil, fmt.Errorf("Couldn't get the current VM type for vendor '%s'", v.Name())
 	}
-	log.Infof("Detected vendor '%s' and VM type '%s'", vendor.Name(), vmType)
-	return DataFor(mountpoint, vendor.Name(), vmType, "default")
+	log.Infof("Detected vendor '%s' and VM type '%s'", v.Name(), vmType)
+	return DataFor(mountpoint, v.Name(), vmType, "default")
 }
 
 func ToYaml(props IoProperties) (string, error) {
