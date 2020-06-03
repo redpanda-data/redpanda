@@ -46,9 +46,13 @@ def get_email(path):
 
 def get_latest_tag(path):
     r = git.Repo(path, search_parent_directories=True)
+    # Pull the tags from origin
+    r.remotes.origin.fetch(progress=None, verbose=True, tags=True)
+
     tags = sorted((t for t in r.tags if t.tag),
                   key=lambda t: t.tag.tagged_date)
-    return tags[-1]
+
+    return tags[-1] if tags else ''
 
 
 def get_head_sha(path):
