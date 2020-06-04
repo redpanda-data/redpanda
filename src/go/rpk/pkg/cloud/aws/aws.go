@@ -1,4 +1,4 @@
-package cloud
+package aws
 
 import (
 	"errors"
