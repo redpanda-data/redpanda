@@ -4,6 +4,7 @@ import (
 	"errors"
 	"sync"
 	"vectorized/pkg/cloud/aws"
+	"vectorized/pkg/cloud/gcp"
 	"vectorized/pkg/cloud/vendor"
 
 	log "github.com/sirupsen/logrus"
@@ -13,6 +14,8 @@ func vendors() map[string]vendor.Vendor {
 	vendors := make(map[string]vendor.Vendor)
 	awsVendor := &aws.AwsVendor{}
 	vendors[awsVendor.Name()] = awsVendor
+	gcpVendor := &gcp.GcpVendor{}
+	vendors[gcpVendor.Name()] = gcpVendor
 
 	return vendors
 }
