@@ -170,7 +170,7 @@ compacted_index_reader make_file_backed_compacted_reader(
   ss::io_priority_class iopc,
   size_t step_chunk) {
     return compacted_index_reader(
-      std::make_unique<internal::compacted_index_chunk_reader>(
+      ss::make_shared<internal::compacted_index_chunk_reader>(
         std::move(filename), std::move(f), iopc, step_chunk));
 }
 
