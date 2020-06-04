@@ -26,6 +26,7 @@ v_cc_library(
     compacted_index_chunk_reader.cc
     snapshot.cc
     kvstore.cc
+    segment_utils.cc
   DEPS
     Seastar::seastar
     v::bytes
