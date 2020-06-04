@@ -15,6 +15,7 @@
 #include "storage/segment_index.h"
 #include "storage/segment_reader.h"
 #include "storage/segment_set.h"
+#include "storage/segment_utils.h"
 #include "utils/directory_walker.h"
 #include "utils/file_sanitizer.h"
 #include "vlog.h"
@@ -144,51 +145,30 @@ ss::future<ss::lw_shared_ptr<segment>> log_manager::make_log_segment(
       });
 }
 
-ss::future<ss::file>
-make_writer(const std::filesystem::path& path, debug_sanitize_files debug) {
-    ss::file_open_options opt{
-      /// We fallocate the full file segment
-      .extent_allocation_size_hint = 0,
-      /// don't allow truncate calls
-      .sloppy_size = false,
-    };
-    return ss::file_exists(path.string()).then([opt, path, debug](bool exists) {
-        const auto flags = exists ? ss::open_flags::rw
-                                  : ss::open_flags::create | ss::open_flags::rw;
-        return ss::open_file_dma(path.string(), flags, opt)
-          .then([debug](ss::file writer) {
-              if (debug) {
-                  return ss::file(
-                    ss::make_shared(file_io_sanitizer(std::move(writer))));
-              }
-              return writer;
-          });
-    });
-}
-
 ss::future<compacted_index_writer> make_compacted_index_writer(
   const std::filesystem::path& path,
   debug_sanitize_files debug,
   ss::io_priority_class iopc) {
-    return make_writer(path, debug).then([iopc, path](ss::file writer) {
-        try {
-            // NOTE: This try-catch is needed to not uncover the real
-            // exception during an OOM condition, since the appender allocates
-            // 1MB of memory aligned buffers
-            return ss::make_ready_future<compacted_index_writer>(
-              make_file_backed_compacted_index(
-                path.string(),
-                writer,
-                iopc,
-                segment_appender::write_behind_memory / 2));
-        } catch (...) {
-            auto e = std::current_exception();
-            vlog(stlog.error, "could not allocate compacted-index: {}", e);
-            return writer.close().then_wrapped([writer, e = e](ss::future<>) {
-                return ss::make_exception_future<compacted_index_writer>(e);
-            });
-        }
-    });
+    return internal::make_writer_handle(path, debug)
+      .then([iopc, path](ss::file writer) {
+          try {
+              // NOTE: This try-catch is needed to not uncover the real
+              // exception during an OOM condition, since the appender allocates
+              // 1MB of memory aligned buffers
+              return ss::make_ready_future<compacted_index_writer>(
+                make_file_backed_compacted_index(
+                  path.string(),
+                  writer,
+                  iopc,
+                  segment_appender::write_behind_memory / 2));
+          } catch (...) {
+              auto e = std::current_exception();
+              vlog(stlog.error, "could not allocate compacted-index: {}", e);
+              return writer.close().then_wrapped([writer, e = e](ss::future<>) {
+                  return ss::make_exception_future<compacted_index_writer>(e);
+              });
+          }
+      });
 }
 
 ss::future<segment_appender_ptr> make_segment_appender(
@@ -196,7 +176,7 @@ ss::future<segment_appender_ptr> make_segment_appender(
   debug_sanitize_files debug,
   size_t number_of_chunks,
   ss::io_priority_class iopc) {
-    return make_writer(path, debug)
+    return internal::make_writer_handle(path, debug)
       .then([number_of_chunks, iopc, path](ss::file writer) {
           try {
               // NOTE: This try-catch is needed to not uncover the real
@@ -412,17 +392,13 @@ log_manager::open_segment(const std::filesystem::path& path, size_t buf_size) {
     // preventing x-file synchronization This is fine, because truncation to
     // sealed segments are supposed to be very rare events. The hotpath of
     // truncating the appender, is optimized.
-    return ss::open_file_dma(
-             path.string(), ss::open_flags::ro | ss::open_flags::create)
+    return internal::make_reader_handle(path, _config.sanitize_fileops)
       .then([](ss::file f) {
           return f.stat().then([f](struct stat s) {
               return ss::make_ready_future<uint64_t, ss::file>(s.st_size, f);
           });
       })
-      .then([this, buf_size, path](uint64_t size, ss::file fd) {
-          if (_config.sanitize_fileops) {
-              fd = ss::file(ss::make_shared(file_io_sanitizer(std::move(fd))));
-          }
+      .then([buf_size, path](uint64_t size, ss::file fd) {
           return std::make_unique<segment_reader>(
             path.string(), std::move(fd), size, buf_size);
       })
