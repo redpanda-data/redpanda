@@ -14,28 +14,25 @@ SEASTAR_THREAD_TEST_CASE(kvstore_empty) {
       storage::log_config::debug_sanitize_files::yes,
       storage::log_config::with_cache::no);
 
-    model::ntp ntp(
-      model::ns("kvstore"), model::topic("kvstore"), model::partition_id(0));
-
     storage::kvstore_config kv_conf{
       .max_segment_size = 8192,
       .commit_interval = std::chrono::milliseconds(10),
     };
 
     // empty started then stopped
-    auto kvs = std::make_unique<storage::kvstore>(kv_conf, log_conf, ntp);
+    auto kvs = std::make_unique<storage::kvstore>(kv_conf, log_conf);
     kvs->start().get();
     kvs->stop().get();
 
     // and can restart from empty
-    kvs = std::make_unique<storage::kvstore>(kv_conf, log_conf, ntp);
+    kvs = std::make_unique<storage::kvstore>(kv_conf, log_conf);
     kvs->start().get();
     kvs->stop().get();
 
     std::unordered_map<bytes, iobuf> truth;
 
     // now fill it up with some key value pairs
-    kvs = std::make_unique<storage::kvstore>(kv_conf, log_conf, ntp);
+    kvs = std::make_unique<storage::kvstore>(kv_conf, log_conf);
     kvs->start().get();
 
     std::vector<ss::future<>> batch;
@@ -72,7 +69,7 @@ SEASTAR_THREAD_TEST_CASE(kvstore_empty) {
     kvs->stop().get();
 
     // now restart the db and ensure still empty
-    kvs = std::make_unique<storage::kvstore>(kv_conf, log_conf, ntp);
+    kvs = std::make_unique<storage::kvstore>(kv_conf, log_conf);
     kvs->start().get();
     BOOST_REQUIRE(kvs->empty());
     kvs->stop().get();
@@ -88,9 +85,6 @@ SEASTAR_THREAD_TEST_CASE(kvstore) {
       storage::log_config::debug_sanitize_files::yes,
       storage::log_config::with_cache::no);
 
-    model::ntp ntp(
-      model::ns("kvstore"), model::topic("kvstore"), model::partition_id(0));
-
     storage::kvstore_config kv_conf{
       .max_segment_size = 8192,
       .commit_interval = std::chrono::milliseconds(10),
@@ -98,7 +92,7 @@ SEASTAR_THREAD_TEST_CASE(kvstore) {
 
     std::unordered_map<bytes, iobuf> truth;
 
-    auto kvs = std::make_unique<storage::kvstore>(kv_conf, log_conf, ntp);
+    auto kvs = std::make_unique<storage::kvstore>(kv_conf, log_conf);
     kvs->start().get();
     for (int i = 0; i < 2000; i++) {
         auto key = random_generators::get_bytes(2);
@@ -124,7 +118,7 @@ SEASTAR_THREAD_TEST_CASE(kvstore) {
     kvs.reset(nullptr);
 
     // shutdown, restart, and verify all the original key-value pairs
-    kvs = std::make_unique<storage::kvstore>(kv_conf, log_conf, ntp);
+    kvs = std::make_unique<storage::kvstore>(kv_conf, log_conf);
     kvs->start().get();
     for (auto& e : truth) {
         BOOST_REQUIRE(kvs->get(e.first).value() == e.second);

@@ -1,6 +1,7 @@
 #include "storage/kvstore.h"
 
 #include "bytes/iobuf.h"
+#include "cluster/namespace.h"
 #include "raft/types.h"
 #include "reflection/adl.h"
 #include "storage/record_batch_builder.h"
@@ -15,12 +16,13 @@ static ss::logger lg("kvstore");
 
 namespace storage {
 
-kvstore::kvstore(
-  kvstore_config kv_conf, storage::log_config log_conf, model::ntp ntp)
+kvstore::kvstore(kvstore_config kv_conf, storage::log_config log_conf)
   : _conf(kv_conf)
   , _mgr(log_conf)
-  , _ntpc(ntp, _mgr.config().base_dir)
-  , _snap(_mgr.config().base_dir.c_str(), ss::default_priority_class())
+  , _ntpc(cluster::kvstore_ntp(ss::this_shard_id()), _mgr.config().base_dir)
+  , _snap(
+      std::filesystem::path(_ntpc.work_directory()),
+      ss::default_priority_class())
   , _timer([this] { _sem.signal(); }) {}
 
 ss::future<> kvstore::start() {
