@@ -18,6 +18,7 @@ CONCEPT(template<typename Consumer> concept bool CompactedIndexEntryConsumer() {
 })
 // clang-format on
 
+/// use this like a shared-pointer and pass around a copy
 class compacted_index_reader {
 public:
     class impl {
@@ -89,7 +90,7 @@ public:
         ss::circular_buffer<compacted_index::entry> _slice;
     };
 
-    explicit compacted_index_reader(std::unique_ptr<impl> i) noexcept
+    explicit compacted_index_reader(ss::shared_ptr<impl> i) noexcept
       : _impl(std::move(i)) {}
 
     ss::future<> close();
@@ -116,13 +117,11 @@ public:
     CONCEPT(requires CompactedIndexEntryConsumer<Consumer>())
     auto consume(
       Consumer consumer, model::timeout_clock::time_point timeout) && {
-        auto raw = _impl.get();
-        return raw->consume(std::move(consumer), timeout)
-          .finally([i = std::move(_impl)] {});
+        return _impl->consume(std::move(consumer), timeout).finally([_imp] {});
     }
 
 private:
-    std::unique_ptr<impl> _impl;
+    ss::shared_ptr<impl> _impl;
 };
 
 compacted_index_reader make_file_backed_compacted_reader(
