@@ -65,8 +65,7 @@ struct kvstore_config {
 
 class kvstore {
 public:
-    kvstore(
-      kvstore_config kv_conf, storage::log_config log_conf, model::ntp ntp);
+    kvstore(kvstore_config kv_conf, storage::log_config log_conf);
 
     ss::future<> start();
     ss::future<> stop();
