@@ -1,8 +1,9 @@
-package cloud
+package aws
 
 import (
 	"errors"
 	"time"
+	"vectorized/pkg/cloud/vendor"
 
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -20,7 +21,7 @@ func (v *AwsVendor) Name() string {
 	return name
 }
 
-func (v *AwsVendor) Init() (InitializedVendor, error) {
+func (v *AwsVendor) Init() (vendor.InitializedVendor, error) {
 	s, err := session.NewSession()
 	if err != nil {
 		return nil, err
