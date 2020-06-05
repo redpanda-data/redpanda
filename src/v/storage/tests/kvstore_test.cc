@@ -4,6 +4,72 @@
 
 #include <seastar/testing/thread_test_case.hh>
 
+SEASTAR_THREAD_TEST_CASE(key_space) {
+    auto dir = fmt::format("kvstore_test_{}", random_generators::get_int(4000));
+
+    storage::log_config log_conf(
+      storage::log_config::storage_type::disk,
+      dir,
+      1_MiB,
+      storage::log_config::debug_sanitize_files::yes,
+      storage::log_config::with_cache::no);
+
+    storage::kvstore_config kv_conf{
+      .max_segment_size = 8192,
+      .commit_interval = std::chrono::milliseconds(10),
+    };
+
+    // empty started then stopped
+    auto kvs = std::make_unique<storage::kvstore>(kv_conf, log_conf);
+    kvs->start().get();
+
+    const auto value_a = bytes_to_iobuf(random_generators::get_bytes(100));
+    const auto value_b = bytes_to_iobuf(random_generators::get_bytes(100));
+    const auto value_c = bytes_to_iobuf(random_generators::get_bytes(100));
+    const auto value_d = bytes_to_iobuf(random_generators::get_bytes(100));
+
+    const auto empty_key = bytes();
+    const auto key = random_generators::get_bytes(2);
+
+    kvs->put(storage::kvstore::key_space::testing, key, value_a.copy()).get();
+    kvs->put(storage::kvstore::key_space::consensus, key, value_b.copy()).get();
+
+    kvs->put(storage::kvstore::key_space::testing, empty_key, value_c.copy())
+      .get();
+    kvs->put(storage::kvstore::key_space::consensus, empty_key, value_d.copy())
+      .get();
+
+    BOOST_REQUIRE(
+      kvs->get(storage::kvstore::key_space::testing, key).value() == value_a);
+    BOOST_REQUIRE(
+      kvs->get(storage::kvstore::key_space::consensus, key).value() == value_b);
+    BOOST_REQUIRE(
+      kvs->get(storage::kvstore::key_space::testing, empty_key).value()
+      == value_c);
+    BOOST_REQUIRE(
+      kvs->get(storage::kvstore::key_space::consensus, empty_key).value()
+      == value_d);
+
+    kvs->stop().get();
+
+    // still all true after recovery
+    kvs = std::make_unique<storage::kvstore>(kv_conf, log_conf);
+    kvs->start().get();
+
+    BOOST_REQUIRE(
+      kvs->get(storage::kvstore::key_space::testing, key).value() == value_a);
+    BOOST_REQUIRE(
+      kvs->get(storage::kvstore::key_space::consensus, key).value() == value_b);
+    BOOST_REQUIRE(
+      kvs->get(storage::kvstore::key_space::testing, empty_key).value()
+      == value_c);
+    BOOST_REQUIRE(
+      kvs->get(storage::kvstore::key_space::consensus, empty_key).value()
+      == value_d);
+
+    kvs->stop().get();
+}
+
 SEASTAR_THREAD_TEST_CASE(kvstore_empty) {
     auto dir = fmt::format("kvstore_test_{}", random_generators::get_int(4000));
 
@@ -41,7 +107,8 @@ SEASTAR_THREAD_TEST_CASE(kvstore_empty) {
         auto value = bytes_to_iobuf(random_generators::get_bytes(100));
 
         truth[key] = value.copy();
-        batch.push_back(kvs->put(key, std::move(value)));
+        batch.push_back(kvs->put(
+          storage::kvstore::key_space::testing, key, std::move(value)));
         if (batch.size() > 10) {
             ss::when_all(batch.begin(), batch.end()).get0();
             batch.clear();
@@ -55,12 +122,14 @@ SEASTAR_THREAD_TEST_CASE(kvstore_empty) {
     // equal
     BOOST_REQUIRE(!truth.empty());
     for (auto& e : truth) {
-        BOOST_REQUIRE(kvs->get(e.first).value() == e.second);
+        BOOST_REQUIRE(
+          kvs->get(storage::kvstore::key_space::testing, e.first).value()
+          == e.second);
     }
 
     // now remove all of the keys
     for (auto& e : truth) {
-        kvs->remove(e.first).get();
+        kvs->remove(storage::kvstore::key_space::testing, e.first).get();
     }
     truth.clear();
 
@@ -99,19 +168,24 @@ SEASTAR_THREAD_TEST_CASE(kvstore) {
         auto value = bytes_to_iobuf(random_generators::get_bytes(100));
 
         truth[key] = value.copy();
-        kvs->put(key, std::move(value)).get();
-        BOOST_REQUIRE(kvs->get(key).value() == truth[key]);
+        kvs->put(storage::kvstore::key_space::testing, key, std::move(value))
+          .get();
+        BOOST_REQUIRE(
+          kvs->get(storage::kvstore::key_space::testing, key).value()
+          == truth[key]);
 
         // maybe delete something
         auto coin = random_generators::get_int(1000);
         if (coin < 500) {
             auto key = random_generators::get_bytes(2);
             truth.erase(key);
-            kvs->remove(key).get();
+            kvs->remove(storage::kvstore::key_space::testing, key).get();
         }
 
         for (auto& e : truth) {
-            BOOST_REQUIRE(kvs->get(e.first).value() == e.second);
+            BOOST_REQUIRE(
+              kvs->get(storage::kvstore::key_space::testing, e.first).value()
+              == e.second);
         }
     }
     kvs->stop().get();
@@ -121,7 +195,9 @@ SEASTAR_THREAD_TEST_CASE(kvstore) {
     kvs = std::make_unique<storage::kvstore>(kv_conf, log_conf);
     kvs->start().get();
     for (auto& e : truth) {
-        BOOST_REQUIRE(kvs->get(e.first).value() == e.second);
+        BOOST_REQUIRE(
+          kvs->get(storage::kvstore::key_space::testing, e.first).value()
+          == e.second);
     }
     kvs->stop().get();
 }

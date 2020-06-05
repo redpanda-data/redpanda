@@ -65,14 +65,20 @@ struct kvstore_config {
 
 class kvstore {
 public:
+    enum class key_space : int8_t {
+        testing = 0,
+        consensus = 1,
+        /* your sub-system here */
+    };
+
     kvstore(kvstore_config kv_conf, storage::log_config log_conf);
 
     ss::future<> start();
     ss::future<> stop();
 
-    std::optional<iobuf> get(bytes_view key);
-    ss::future<> put(bytes key, iobuf value);
-    ss::future<> remove(bytes key);
+    std::optional<iobuf> get(key_space ks, bytes_view key);
+    ss::future<> put(key_space ks, bytes key, iobuf value);
+    ss::future<> remove(key_space ks, bytes key);
 
     bool empty() const {
         vassert(_started, "kvstore has not been started");
@@ -113,7 +119,7 @@ private:
     model::offset _next_offset;
     absl::flat_hash_map<bytes, iobuf, bytes_type_hash, bytes_type_eq> _db;
 
-    ss::future<> put(bytes key, std::optional<iobuf> value);
+    ss::future<> put(key_space ks, bytes key, std::optional<iobuf> value);
     void apply_op(bytes key, std::optional<iobuf> value);
     ss::future<> flush_and_apply_ops();
     ss::future<> roll();
