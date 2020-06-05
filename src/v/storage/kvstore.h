@@ -74,7 +74,10 @@ public:
     ss::future<> put(bytes key, iobuf value);
     ss::future<> remove(bytes key);
 
-    bool empty() const { return _db.empty(); }
+    bool empty() const {
+        vassert(_started, "kvstore has not been started");
+        return _db.empty();
+    }
 
 private:
     kvstore_config _conf;
@@ -82,6 +85,7 @@ private:
     ntp_config _ntpc;
     ss::gate _gate;
     snapshot_manager _snap;
+    bool _started{false};
 
     /**
      * Database operation. A std::nullopt value is a deletion.
