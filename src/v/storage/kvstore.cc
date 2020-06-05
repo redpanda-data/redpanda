@@ -79,26 +79,45 @@ ss::future<> kvstore::stop() {
     });
 }
 
-std::optional<iobuf> kvstore::get(bytes_view key) {
+/*
+ * Return a key prefixed by a key-space
+ */
+static inline bytes make_spaced_key(kvstore::key_space ks, bytes_view key) {
+    auto ks_native
+      = static_cast<std::underlying_type<kvstore::key_space>::type>(ks);
+    auto ks_le = ss::cpu_to_le(ks_native);
+    auto spaced_key = ss::uninitialized_string<bytes>(
+      sizeof(ks_le) + key.size());
+    auto out = spaced_key.begin();
+    out = std::copy_n(
+      reinterpret_cast<const char*>(&ks_le), sizeof(ks_le), out);
+    std::copy_n(key.begin(), key.size(), out);
+    return spaced_key;
+}
+
+std::optional<iobuf> kvstore::get(key_space ks, bytes_view key) {
     vassert(_started, "kvstore has not been started");
 
-    if (auto it = _db.find(key); it != _db.end()) {
+    // do not re-assign to string_view -> temporary
+    auto kkey = make_spaced_key(ks, key);
+    if (auto it = _db.find(kkey); it != _db.end()) {
         return it->second.copy();
     }
     return std::nullopt;
 }
 
-ss::future<> kvstore::put(bytes key, iobuf value) {
-    return put(std::move(key), std::make_optional<iobuf>(std::move(value)));
+ss::future<> kvstore::put(key_space ks, bytes key, iobuf value) {
+    return put(ks, std::move(key), std::make_optional<iobuf>(std::move(value)));
 }
 
-ss::future<> kvstore::remove(bytes key) {
-    return put(std::move(key), std::nullopt);
+ss::future<> kvstore::remove(key_space ks, bytes key) {
+    return put(ks, std::move(key), std::nullopt);
 }
 
-ss::future<> kvstore::put(bytes key, std::optional<iobuf> value) {
+ss::future<> kvstore::put(key_space ks, bytes key, std::optional<iobuf> value) {
     vassert(_started, "kvstore has not been started");
 
+    key = make_spaced_key(ks, key);
     return ss::with_gate(
       _gate, [this, key = std::move(key), value = std::move(value)]() mutable {
           auto& w = _ops.emplace_back(std::move(key), std::move(value));
