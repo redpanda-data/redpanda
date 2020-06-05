@@ -119,6 +119,11 @@ public:
     event_manager& events() { return _event_manager; }
 
 private:
+    // key types used to store data in key-value store
+    enum class metadata_key : int8_t {
+        voted_for = 0,
+    };
+
     friend replicate_entries_stm;
     friend vote_stm;
     friend recovery_stm;
@@ -188,6 +193,11 @@ private:
 
     bool should_skip_vote();
     void setup_metrics();
+
+    bytes voted_for_key() const;
+    ss::future<> read_voted_for();
+    ss::future<> write_voted_for(consensus::voted_for_configuration);
+
     // args
     model::node_id _self;
     raft::group_id _group;
