@@ -29,6 +29,8 @@ ss::future<> kvstore::start() {
     vlog(lg.info, "Starting kvstore: dir {}", _ntpc.work_directory());
 
     return recover().then([this] {
+        _started = true;
+
         // below, ss::with_gate enters the gate synchronously, but since its
         // called within the recover().then(...) continuation it's subject to
         // scheduling and does race with stop() + gate::close.
@@ -78,6 +80,8 @@ ss::future<> kvstore::stop() {
 }
 
 std::optional<iobuf> kvstore::get(bytes_view key) {
+    vassert(_started, "kvstore has not been started");
+
     if (auto it = _db.find(key); it != _db.end()) {
         return it->second.copy();
     }
@@ -93,6 +97,8 @@ ss::future<> kvstore::remove(bytes key) {
 }
 
 ss::future<> kvstore::put(bytes key, std::optional<iobuf> value) {
+    vassert(_started, "kvstore has not been started");
+
     return ss::with_gate(
       _gate, [this, key = std::move(key), value = std::move(value)]() mutable {
           auto& w = _ops.emplace_back(std::move(key), std::move(value));
