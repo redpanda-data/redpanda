@@ -9,6 +9,7 @@ import (
 	"vectorized/pkg/api"
 	"vectorized/pkg/cli/cmd/version"
 	"vectorized/pkg/cli/ui"
+	"vectorized/pkg/cloud"
 	"vectorized/pkg/config"
 	"vectorized/pkg/kafka"
 	"vectorized/pkg/system"
@@ -82,14 +83,19 @@ func executeStatus(
 	t.SetAutoMergeCells(true)
 	t.Append(getVersion())
 
+	providerInfoRowsCh := make(chan [][]string)
 	metricsRowsCh := make(chan [][]string)
 	confRowsCh := make(chan [][]string)
 	kafkaRowsCh := make(chan [][]string)
 
+	go getCloudProviderInfo(providerInfoRowsCh)
 	go getMetrics(fs, timeout, *conf, send, metricsRowsCh)
 	go getConf(fs, configFile, confRowsCh)
 	go getKafkaInfo(*conf, kafkaRowsCh)
 
+	for _, row := range <-providerInfoRowsCh {
+		t.Append(row)
+	}
 	for _, row := range <-metricsRowsCh {
 		t.Append(row)
 	}
@@ -107,6 +113,22 @@ func executeStatus(
 
 func getVersion() []string {
 	return []string{"Version", version.Pretty()}
+}
+
+func getCloudProviderInfo(out chan<- [][]string) {
+	v, err := cloud.AvailableVendor()
+	if err != nil {
+		log.Debug("Error initializing: ", err)
+		return
+	}
+	rows := [][]string{{"Cloud Provider", v.Name()}}
+	vmType, err := v.VmType()
+	if err != nil {
+		log.Info("Error getting the VM type: ", err)
+	} else {
+		rows = append(rows, []string{"Machine Type", vmType})
+	}
+	out <- rows
 }
 
 func getMetrics(
