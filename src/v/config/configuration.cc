@@ -1,5 +1,7 @@
 #include "config/configuration.h"
 
+#include "units.h"
+
 namespace config {
 using namespace std::chrono_literals;
 
@@ -21,7 +23,7 @@ configuration::configuration()
       "log_segment_size",
       "How large in bytes should each log segment be (default 1G)",
       required::no,
-      1 << 30)
+      1_GiB)
   , rpc_server(
       *this,
       "rpc_server",
@@ -113,7 +115,7 @@ configuration::configuration()
       "target_quota_byte_rate",
       "Target quota byte rate (bytes per second) - 64MB default",
       required::no,
-      64 << 20)
+      64_MiB)
   , rack(*this, "rack", "Rack identifier", required::no, std::nullopt)
   , disable_metrics(
       *this,
@@ -241,13 +243,13 @@ configuration::configuration()
       "reclaim_min_size",
       "Minimum batch cache reclaim size",
       required::no,
-      128 << 10)
+      128_KiB)
   , reclaim_max_size(
       *this,
       "reclaim_max_size",
       "Maximum batch cache reclaim size",
       required::no,
-      4 << 20)
+      4_MiB)
   , reclaim_growth_window(
       *this,
       "reclaim_growth_window",
@@ -272,6 +274,18 @@ configuration::configuration()
       "Enable pid file. You probably don't want to change this.",
       required::no,
       true)
+  , kvstore_flush_interval(
+      *this,
+      "kvstore_flush_interval",
+      "Key-value store flush interval (ms)",
+      required::no,
+      std::chrono::milliseconds(10))
+  , kvstore_max_segment_size(
+      *this,
+      "kvstore_max_segment_size",
+      "Key-value maximum segment size (bytes)",
+      required::no,
+      16_MiB)
   , _advertised_kafka_api(
       *this,
       "advertised_kafka_api",
