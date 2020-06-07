@@ -17,6 +17,7 @@
 #include "resource_mgmt/smp_groups.h"
 #include "rpc/server.h"
 #include "seastarx.h"
+#include "storage/kvstore.h"
 #include "storage/log_manager.h"
 
 #include <seastar/core/app-template.hh>
@@ -65,6 +66,8 @@ private:
     void validate_arguments(const po::variables_map&);
     void hydrate_config(const po::variables_map&);
 
+    void configure_kvstore();
+
     template<typename Service, typename... Args>
     ss::future<> construct_service(ss::sharded<Service>& s, Args&&... args) {
         auto f = s.start(std::forward<Args>(args)...);
@@ -78,6 +81,7 @@ private:
     ss::logger _log{"redpanda::main"};
 
     // ss::sharded services
+    ss::sharded<storage::kvstore> _kvstore;
     ss::sharded<rpc::connection_cache> _raft_connection_cache;
     ss::sharded<kafka::group_manager> _group_manager;
     ss::sharded<rpc::server> _rpc;

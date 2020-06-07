@@ -87,6 +87,7 @@ public:
     ss::future<> start(raft::group_configuration init_cfg) {
         return _mngr.manage(storage::ntp_config(_ntp, _mngr.config().base_dir))
           .then([this, cfg = std::move(init_cfg)](storage::log log) mutable {
+              ss::sharded<storage::kvstore> kvstore;
               _consensus = ss::make_lw_shared<raft::consensus>(
                 _self,
                 raft::group_id(66),
@@ -107,7 +108,8 @@ public:
                       "New leader {} elected in group {}",
                       st.current_leader.value(),
                       st.group);
-                });
+                },
+                kvstore);
               return _consensus->start().then(
                 [this] { return _hbeats.register_group(_consensus); });
           })
