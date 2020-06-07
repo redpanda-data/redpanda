@@ -69,7 +69,27 @@ struct raft_node {
       leader_clb_t l_clb)
       : broker(std::move(broker))
       , log(log)
-      , consensus(ss::make_lw_shared<raft::consensus>(
+      , leader_callback(std::move(l_clb)) {
+        // init cache
+        cache.start().get();
+
+        // configure and start kvstore
+        storage::log_config kv_log_conf(
+          storage::log_config::storage_type::disk,
+          log.config().work_directory(),
+          1_MiB,
+          storage::log_config::debug_sanitize_files::yes,
+          storage::log_config::with_cache::no);
+
+        storage::kvstore_config kv_conf{
+          .max_segment_size = 8192,
+          .commit_interval = std::chrono::milliseconds(10),
+        };
+
+        kvstore.start(kv_conf, kv_log_conf).get();
+
+        // setup consensus
+        consensus = ss::make_lw_shared<raft::consensus>(
           broker.id(),
           gr_id,
           std::move(cfg),
@@ -78,10 +98,9 @@ struct raft_node {
           seastar::default_priority_class(),
           std::chrono::seconds(10),
           raft::make_rpc_client_protocol(cache),
-          [this](raft::leadership_status st) { leader_callback(st); }))
-      , leader_callback(std::move(l_clb)) {
-        // init cache
-        cache.start().get();
+          [this](raft::leadership_status st) { leader_callback(st); },
+          kvstore);
+
         // create connections to initial nodes
         consensus->config().for_each([this](const model::broker& broker) {
             create_connection_to(broker);
@@ -95,6 +114,7 @@ struct raft_node {
 
     void start() {
         tstlog.info("Starting node {} stack ", id());
+        kvstore.invoke_on_all(&storage::kvstore::start).get();
         // start rpc
         server
           .start(rpc::server_configuration{
@@ -153,6 +173,7 @@ struct raft_node {
               return raft_manager.stop();
           })
           .then([this] { return cache.stop(); })
+          .then([this] { return kvstore.stop(); })
           .then([this] {
               tstlog.info("Node {} stopped", broker.id());
               started = false;
@@ -213,6 +234,7 @@ struct raft_node {
     std::unique_ptr<raft::heartbeat_manager> hbeats;
     consensus_ptr consensus;
     leader_clb_t leader_callback;
+    ss::sharded<storage::kvstore> kvstore;
 };
 
 model::ntp node_ntp(raft::group_id gr_id, model::node_id n_id) {

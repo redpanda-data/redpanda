@@ -180,6 +180,37 @@ void application::configure_admin_server() {
     vlog(_log.info, "Started HTTP admin service listening at {}", conf.admin());
 }
 
+void application::configure_kvstore() {
+    /*
+     * The key-value store is rooted at the configured data directory, and the
+     * internal kvstore topic-namespace results in a storage layout of:
+     *
+     *    /var/lib/redpanda/data/
+     *       - redpanda/kvstore/
+     *           - 0
+     *           - 1
+     *           - ... #cores
+     *
+     * The log manager is used internally to the key-value store because it
+     * contains reusable functionality for operating on segments, bu the log
+     * config here is only used to communicate the directory and storage type.
+     * For instance, the segment size here is ignored.
+     */
+    storage::log_config kv_log_conf(
+      storage::log_config::storage_type::disk,
+      config::shard_local_cfg().data_directory().as_sstring(),
+      1_MiB, // ignored in the context of key-value store
+      storage::log_config::debug_sanitize_files::yes,
+      storage::log_config::with_cache::no);
+
+    storage::kvstore_config kv_conf{
+      .max_segment_size = config::shard_local_cfg().kvstore_max_segment_size(),
+      .commit_interval = config::shard_local_cfg().kvstore_flush_interval(),
+    };
+
+    construct_service(_kvstore, kv_conf, kv_log_conf).get();
+}
+
 storage::log_config manager_config_from_global_config() {
     return storage::log_config(
       storage::log_config::storage_type::disk,
@@ -209,12 +240,15 @@ void application::wire_up_services() {
     syschecks::systemd_message("Intializing log manager");
     construct_service(log_manager, manager_config_from_global_config()).get();
 
+    configure_kvstore();
+
     construct_service(
       raft_group_manager,
       model::node_id(config::shard_local_cfg().node_id()),
       std::chrono::seconds(10),
       config::shard_local_cfg().raft_heartbeat_interval_ms(),
-      std::ref(_raft_connection_cache))
+      std::ref(_raft_connection_cache),
+      std::ref(_kvstore))
       .get();
 
     syschecks::systemd_message("Adding partition manager");
@@ -300,6 +334,9 @@ void application::wire_up_services() {
 }
 
 void application::start() {
+    syschecks::systemd_message("Staring key-value store");
+    _kvstore.invoke_on_all(&storage::kvstore::start).get();
+
     syschecks::systemd_message("Starting the partition manager");
     partition_manager.invoke_on_all(&cluster::partition_manager::start).get();
 

@@ -32,7 +32,8 @@ consensus::consensus(
   ss::io_priority_class io_priority,
   model::timeout_clock::duration disk_timeout,
   consensus_client_protocol client,
-  consensus::leader_cb_t cb)
+  consensus::leader_cb_t cb,
+  ss::sharded<storage::kvstore>& kvstore)
   : _self(std::move(nid))
   , _group(group)
   , _jit(std::move(jit))
@@ -49,7 +50,8 @@ consensus::consensus(
   , _replicate_append_timeout(
       config::shard_local_cfg().replicate_append_timeout_ms())
   , _recovery_append_timeout(
-      config::shard_local_cfg().recovery_append_timeout_ms()) {
+      config::shard_local_cfg().recovery_append_timeout_ms())
+  , _kvstore(kvstore) {
     setup_metrics();
     update_follower_stats(_conf);
     _vote_timeout.set_callback([this] {
