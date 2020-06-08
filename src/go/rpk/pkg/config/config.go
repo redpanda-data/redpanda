@@ -30,7 +30,7 @@ type Config struct {
 }
 
 type RedpandaConfig struct {
-	Directory   string        `yaml:"data_directory" json:"directory"`
+	Directory   string        `yaml:"data_directory" json:"dataDirectory"`
 	RPCServer   SocketAddress `yaml:"rpc_server" json:"rpcServer"`
 	KafkaApi    SocketAddress `yaml:"kafka_api" json:"kafkaApi"`
 	AdminApi    SocketAddress `yaml:"admin" json:"admin"`
