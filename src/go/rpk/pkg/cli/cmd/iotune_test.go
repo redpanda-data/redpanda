@@ -34,29 +34,24 @@ func TestTimeoutDuration(t *testing.T) {
 	configPath := "/etc/redpanda/redpanda.yaml"
 	tests := []struct {
 		name             string
-		timeout          string
-		duration         string
+		args             []string
 		expectedTimeout  time.Duration
 		expectedDuration time.Duration
 	}{
 		{
 			name:             "the total timeout should equal the duration + the timeout",
-			timeout:          "1200ms",
-			duration:         "3600ms",
+			args:             []string{"--timeout", "1200ms", "--duration", "3600ms"},
 			expectedTimeout:  3600*time.Millisecond + 1200*time.Millisecond,
 			expectedDuration: 3600 * time.Millisecond,
 		},
 		{
 			name:             "the total timeout should be 1hr by default",
-			timeout:          "",
-			duration:         "0",
+			args:             []string{"--duration", "0"},
 			expectedTimeout:  1 * time.Hour,
 			expectedDuration: 0,
 		},
 		{
 			name:             "the default duration should be 10m",
-			timeout:          "",
-			duration:         "",
 			expectedTimeout:  10*time.Minute + 1*time.Hour,
 			expectedDuration: 10 * time.Minute,
 		},
@@ -69,12 +64,7 @@ func TestTimeoutDuration(t *testing.T) {
 			require.NoError(t, err)
 			cmd := cmd.NewIoTuneCmd(fs)
 			args := []string{"--config", configPath}
-			if len(tt.duration) > 0 {
-				args = append(args, "--duration", tt.duration)
-			}
-			if len(tt.timeout) > 0 {
-				args = append(args, "--timeout", tt.timeout)
-			}
+			args = append(args, tt.args...)
 			cmd.SetArgs(args)
 			var out bytes.Buffer
 			cmd.SetOut(&out)
