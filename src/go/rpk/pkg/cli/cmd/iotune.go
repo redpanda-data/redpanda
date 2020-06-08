@@ -30,7 +30,7 @@ func NewIoTuneCmd(fs afero.Fs) *cobra.Command {
 				return err
 			}
 			var evalDirectories []string
-			if evalDirectories != nil {
+			if directories != nil && len(directories) != 0 {
 				log.Infof("Overriding evaluation directories with '%v'",
 					directories)
 				evalDirectories = directories
@@ -49,7 +49,7 @@ func NewIoTuneCmd(fs afero.Fs) *cobra.Command {
 			" in the default locations",
 	)
 	command.Flags().StringSliceVar(&directories,
-		"directories", nil, "List of directories to evaluate")
+		"directories", []string{}, "List of directories to evaluate")
 	command.Flags().DurationVar(
 		&duration,
 		"duration",
