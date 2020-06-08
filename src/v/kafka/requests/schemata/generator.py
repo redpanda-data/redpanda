@@ -149,10 +149,10 @@ entity_type_map = dict(
 
 # mapping specified as a combination of native type and field name
 field_name_type_map = {
-    ("int16", "ErrorCode"): "kafka::error_code",
-    ("int32", "ThrottleTimeMs"): "std::chrono::milliseconds",
-    ("int32", "SessionTimeoutMs"): "std::chrono::milliseconds",
-    ("int32", "RebalanceTimeoutMs"): "std::chrono::milliseconds",
+    ("int16", "ErrorCode"): ("kafka::error_code", None),
+    ("int32", "ThrottleTimeMs"): ("std::chrono::milliseconds", 0),
+    ("int32", "SessionTimeoutMs"): ("std::chrono::milliseconds", None),
+    ("int32", "RebalanceTimeoutMs"): ("std::chrono::milliseconds", None),
 }
 
 # primitive types
@@ -390,12 +390,12 @@ class Field:
         # path overrides
         path_type = self._redpanda_path_type()
         if path_type:
-            return path_type[0]
+            return path_type[0], None
 
         # entity type overrides
         et = self._field.get("entityType", None)
         if et in entity_type_map:
-            return entity_type_map[et][0]
+            return entity_type_map[et][0], None
 
         tn = self._type.name
         fn = self._field["name"]
@@ -406,9 +406,9 @@ class Field:
 
         # fundamental type overrides
         if tn in basic_type_map:
-            return basic_type_map[tn][0]
+            return basic_type_map[tn][0], None
 
-        return tn
+        return tn, None
 
     def _redpanda_decoder(self):
         """
@@ -431,7 +431,7 @@ class Field:
 
         # type/name overrides
         if (tn, fn) in field_name_type_map:
-            return basic_type_map[tn], field_name_type_map[(tn, fn)]
+            return basic_type_map[tn], field_name_type_map[(tn, fn)][0]
 
         # fundamental type overrides
         if tn in basic_type_map:
@@ -469,17 +469,19 @@ class Field:
 
     @property
     def type_name(self):
-        name = self._redpanda_type()
+        name, default_value = self._redpanda_type()
         if isinstance(self._type, ArrayType):
+            assert default_value is None  # not supported
             name = f"std::vector<{name}>"
         if self.nullable():
-            return f"std::optional<{name}>"
-        return name
+            assert default_value is None  # not supported
+            return f"std::optional<{name}>", None
+        return name, default_value
 
     @property
     def value_type(self):
         assert self.is_array
-        return self._redpanda_type()
+        return self._redpanda_type()[0]
 
     @property
     def name(self):
@@ -505,7 +507,12 @@ HEADER_TEMPLATE = """
 {{ render_struct_comment(struct) }}
 struct {{ struct.name }} {
 {%- for field in struct.fields %}
-    {{ field.type_name }} {{ field.name }};
+    {%- set info = field.type_name %}
+    {%- if info[1] != None %}
+    {{ info[0] }} {{ field.name }}{{'{'}}{{info[1]}}{{'}'}};
+    {%- else %}
+    {{ info[0] }} {{ field.name }};
+    {%- endif %}
 {%- endfor %}
 {% endmacro %}
 
