@@ -119,6 +119,7 @@ func getCloudProviderInfo(out chan<- [][]string) {
 	v, err := cloud.AvailableVendor()
 	if err != nil {
 		log.Debug("Error initializing: ", err)
+		out <- [][]string{}
 		return
 	}
 	rows := [][]string{{"Cloud Provider", v.Name()}}
