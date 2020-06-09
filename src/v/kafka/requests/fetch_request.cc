@@ -314,8 +314,8 @@ read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config) {
           }
           return read_from_partition(partition, std::move(config))
             .then([partition](fetch_response::partition_response&& resp) {
-                resp.last_stable_offset = partition->committed_offset();
-                resp.high_watermark = partition->committed_offset();
+                resp.last_stable_offset = partition->last_stable_offset();
+                resp.high_watermark = partition->last_stable_offset();
                 return std::move(resp);
             });
       });

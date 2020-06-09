@@ -102,7 +102,7 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
                 list_offsets_response::make_partition(
                   ntp.tp.partition,
                   model::timestamp(-1),
-                  partition->committed_offset()));
+                  partition->last_stable_offset()));
           }
 
           return partition->timequery(timestamp, kafka_read_priority())
@@ -116,7 +116,7 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
                 }
                 return ss::make_ready_future<list_offset_partition_response>(
                   list_offsets_response::make_partition(
-                    id, model::timestamp(-1), partition->committed_offset()));
+                    id, model::timestamp(-1), partition->last_stable_offset()));
             });
       });
 }
@@ -178,6 +178,7 @@ list_offsets_api::process(request_context&& ctx, ss::smp_service_group ssg) {
     list_offsets_request request;
     request.decode(ctx.reader(), ctx.header().version);
     request.compute_duplicate_topics();
+    klog.trace("Handling request {}", request);
 
     return ss::do_with(
       list_offsets_ctx(std::move(ctx), std::move(request), ssg),
