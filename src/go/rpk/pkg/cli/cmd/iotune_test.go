@@ -33,32 +33,38 @@ const validConfig string = `redpanda:
 func TestTimeoutDuration(t *testing.T) {
 	configPath := "/etc/redpanda/redpanda.yaml"
 	tests := []struct {
-		name             string
-		timeout          string
-		duration         string
-		expectedTimeout  time.Duration
-		expectedDuration time.Duration
+		name                string
+		args                []string
+		expectedDirectories []string
+		expectedTimeout     time.Duration
+		expectedDuration    time.Duration
 	}{
 		{
-			name:             "the total timeout should equal the duration + the timeout",
-			timeout:          "1200ms",
-			duration:         "3600ms",
-			expectedTimeout:  3600*time.Millisecond + 1200*time.Millisecond,
-			expectedDuration: 3600 * time.Millisecond,
+			name:                "the total timeout should equal the duration + the timeout",
+			args:                []string{"--timeout", "1200ms", "--duration", "3600ms"},
+			expectedDirectories: []string{},
+			expectedTimeout:     3600*time.Millisecond + 1200*time.Millisecond,
+			expectedDuration:    3600 * time.Millisecond,
 		},
 		{
-			name:             "the total timeout should be 1hr by default",
-			timeout:          "",
-			duration:         "0",
-			expectedTimeout:  1 * time.Hour,
-			expectedDuration: 0,
+			name:                "the total timeout should be 1hr by default",
+			args:                []string{"--duration", "0"},
+			expectedDirectories: []string{},
+			expectedTimeout:     1 * time.Hour,
+			expectedDuration:    0,
 		},
 		{
-			name:             "the default duration should be 10m",
-			timeout:          "",
-			duration:         "",
-			expectedTimeout:  10*time.Minute + 1*time.Hour,
-			expectedDuration: 10 * time.Minute,
+			name:                "the default duration should be 10m",
+			expectedDirectories: []string{},
+			expectedTimeout:     10*time.Minute + 1*time.Hour,
+			expectedDuration:    10 * time.Minute,
+		},
+		{
+			name:                "it should capture the passed directories",
+			args:                []string{"--directories", "/mnt/redpanda/data"},
+			expectedDirectories: []string{"/mnt/redpanda/data"},
+			expectedTimeout:     10*time.Minute + 1*time.Hour,
+			expectedDuration:    10 * time.Minute,
 		},
 	}
 
@@ -69,12 +75,7 @@ func TestTimeoutDuration(t *testing.T) {
 			require.NoError(t, err)
 			cmd := cmd.NewIoTuneCmd(fs)
 			args := []string{"--config", configPath}
-			if len(tt.duration) > 0 {
-				args = append(args, "--duration", tt.duration)
-			}
-			if len(tt.timeout) > 0 {
-				args = append(args, "--timeout", tt.timeout)
-			}
+			args = append(args, tt.args...)
 			cmd.SetArgs(args)
 			var out bytes.Buffer
 			cmd.SetOut(&out)
@@ -83,6 +84,9 @@ func TestTimeoutDuration(t *testing.T) {
 			if err != nil {
 				t.Log(err)
 			}
+			directories, err := cmd.Flags().GetStringSlice("directories")
+			require.NoError(t, err)
+			require.Exactly(t, tt.expectedDirectories, directories)
 			timeout, err := cmd.Flags().GetDuration("timeout")
 			require.NoError(t, err, "got an error retrieving the timeout flag value")
 			require.Exactly(t, tt.expectedTimeout, timeout)
