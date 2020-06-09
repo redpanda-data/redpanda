@@ -43,6 +43,31 @@ public:
      */
     model::offset committed_offset() const { return _raft->committed_offset(); }
 
+    /**
+     * <kafka>The last stable offset (LSO) is defined as the first offset such
+     * that all lower offsets have been "decided." Non-transactional messages
+     * are considered decided immediately, but transactional messages are only
+     * decided when the corresponding COMMIT or ABORT marker is written. This
+     * implies that the last stable offset will be equal to the high watermark
+     * if there are no transactional messages in the log. Note also that the LSO
+     * cannot advance beyond the high watermark.  </kafka>
+     *
+     * There are two important pieces in this comment:
+     *
+     *   1) "non-transaction message are considered decided immediately". Since
+     *   redpanda doesn't have transactional messages, that's what we're
+     *   interested in.
+     *
+     *   2) "first offset such that all lower offsets have been decided". this
+     *   is describing a strictly greater than relationship.
+     *
+     * Since we currently use the commited_offset to report the end of log to
+     * kafka clients, simply report the next offset.
+     */
+    model::offset last_stable_offset() const {
+        return committed_offset() + model::offset(1);
+    }
+
     const model::ntp& ntp() const { return _raft->ntp(); }
 
     ss::future<std::optional<storage::timequery_result>>
