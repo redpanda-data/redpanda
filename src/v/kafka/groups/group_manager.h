@@ -227,6 +227,8 @@ struct group_log_offset_key {
         return group == other.group && topic == other.topic
                && partition == other.partition;
     }
+
+    friend std::ostream& operator<<(std::ostream&, const group_log_offset_key&);
 };
 
 /**
@@ -236,6 +238,9 @@ struct group_log_offset_metadata {
     model::offset offset;
     int32_t leader_epoch;
     std::optional<ss::sstring> metadata;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const group_log_offset_metadata&);
 };
 
 } // namespace kafka
