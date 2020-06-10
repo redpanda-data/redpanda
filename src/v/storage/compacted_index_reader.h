@@ -105,19 +105,8 @@ public:
 
     template<typename Consumer>
     CONCEPT(requires CompactedIndexEntryConsumer<Consumer>())
-    auto consume(
-      Consumer consumer, model::timeout_clock::time_point timeout) & {
+    auto consume(Consumer consumer, model::timeout_clock::time_point timeout) {
         return _impl->consume(std::move(consumer), timeout);
-    }
-
-    /// \brief same as above, except used with r-values:
-    /// return std::move(reader).consume(functor{}, model::no_timeout);
-    ///
-    template<typename Consumer>
-    CONCEPT(requires CompactedIndexEntryConsumer<Consumer>())
-    auto consume(
-      Consumer consumer, model::timeout_clock::time_point timeout) && {
-        return _impl->consume(std::move(consumer), timeout).finally([_imp] {});
     }
 
 private:
