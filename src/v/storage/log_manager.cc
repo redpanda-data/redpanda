@@ -145,67 +145,6 @@ ss::future<ss::lw_shared_ptr<segment>> log_manager::make_log_segment(
       });
 }
 
-ss::future<compacted_index_writer> make_compacted_index_writer(
-  const std::filesystem::path& path,
-  debug_sanitize_files debug,
-  ss::io_priority_class iopc) {
-    return internal::make_writer_handle(path, debug)
-      .then([iopc, path](ss::file writer) {
-          try {
-              // NOTE: This try-catch is needed to not uncover the real
-              // exception during an OOM condition, since the appender allocates
-              // 1MB of memory aligned buffers
-              return ss::make_ready_future<compacted_index_writer>(
-                make_file_backed_compacted_index(
-                  path.string(),
-                  writer,
-                  iopc,
-                  segment_appender::write_behind_memory / 2));
-          } catch (...) {
-              auto e = std::current_exception();
-              vlog(stlog.error, "could not allocate compacted-index: {}", e);
-              return writer.close().then_wrapped([writer, e = e](ss::future<>) {
-                  return ss::make_exception_future<compacted_index_writer>(e);
-              });
-          }
-      });
-}
-
-ss::future<segment_appender_ptr> make_segment_appender(
-  const std::filesystem::path& path,
-  debug_sanitize_files debug,
-  size_t number_of_chunks,
-  ss::io_priority_class iopc) {
-    return internal::make_writer_handle(path, debug)
-      .then([number_of_chunks, iopc, path](ss::file writer) {
-          try {
-              // NOTE: This try-catch is needed to not uncover the real
-              // exception during an OOM condition, since the appender allocates
-              // 1MB of memory aligned buffers
-              return ss::make_ready_future<segment_appender_ptr>(
-                std::make_unique<segment_appender>(
-                  writer, segment_appender::options(iopc, number_of_chunks)));
-          } catch (...) {
-              auto e = std::current_exception();
-              vlog(stlog.error, "could not allocate appender: {}", e);
-              return writer.close().then_wrapped([writer, e = e](ss::future<>) {
-                  return ss::make_exception_future<segment_appender_ptr>(e);
-              });
-          }
-      });
-}
-
-size_t number_of_chunks_from_config(const ntp_config& ntpc) {
-    if (!ntpc.has_overrides()) {
-        return segment_appender::chunks_no_buffer;
-    }
-    auto& o = ntpc.get_overrides();
-    if (o.compaction_strategy) {
-        return segment_appender::chunks_no_buffer / 2;
-    }
-    return segment_appender::chunks_no_buffer;
-}
-
 template<typename Func>
 auto with_segment(ss::lw_shared_ptr<segment> s, Func&& f) {
     return f(s).then_wrapped([s](
@@ -239,10 +178,10 @@ ss::future<ss::lw_shared_ptr<segment>> log_manager::do_make_log_segment(
       .then([this, path, &ntpc, pc](ss::lw_shared_ptr<segment> seg) {
           return with_segment(
             seg, [this, path, &ntpc, pc](ss::lw_shared_ptr<segment> seg) {
-                return make_segment_appender(
+                return internal::make_segment_appender(
                          path,
                          _config.sanitize_fileops,
-                         number_of_chunks_from_config(ntpc),
+                         internal::number_of_chunks_from_config(ntpc),
                          pc)
                   .then([seg](segment_appender_ptr a) {
                       return ss::make_ready_future<ss::lw_shared_ptr<segment>>(
@@ -267,7 +206,7 @@ ss::future<ss::lw_shared_ptr<segment>> log_manager::do_make_log_segment(
             seg, [this, path, pc](ss::lw_shared_ptr<segment> seg) {
                 auto compacted_path = path;
                 compacted_path.replace_extension(".compaction_index");
-                return make_compacted_index_writer(
+                return internal::make_compacted_index_writer(
                          compacted_path, _config.sanitize_fileops, pc)
                   .then([seg](compacted_index_writer compact) {
                       return ss::make_ready_future<ss::lw_shared_ptr<segment>>(
