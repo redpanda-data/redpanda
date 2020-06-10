@@ -93,7 +93,7 @@ public:
     explicit compacted_index_reader(ss::shared_ptr<impl> i) noexcept
       : _impl(std::move(i)) {}
 
-    ss::future<> close();
+    ss::future<> close() { return _impl->close(); }
 
     ss::future<compacted_index::footer> load_footer() {
         return _impl->load_footer();
