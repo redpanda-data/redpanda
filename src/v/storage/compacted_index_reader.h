@@ -35,6 +35,8 @@ public:
 
         virtual ss::future<compacted_index::footer> load_footer() = 0;
 
+        virtual void reset() = 0;
+
         virtual void print(std::ostream&) const = 0;
 
         const ss::sstring& filename() const { return _name; }
@@ -100,6 +102,8 @@ public:
     }
 
     void print(std::ostream& o) const { _impl->print(o); }
+
+    void reset() { _impl->reset(); }
 
     const ss::sstring& filename() const { return _impl->filename(); }
 
