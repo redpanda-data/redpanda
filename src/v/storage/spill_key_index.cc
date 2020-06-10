@@ -153,8 +153,12 @@ ss::future<> spill_key_index::drain_all_keys() {
       });
 }
 
+void spill_key_index::set_flag(compacted_index::footer_flags f) {
+    _footer.flags |= f;
+}
+
 ss::future<> spill_key_index::truncate(model::offset o) {
-    _footer.flags |= compacted_index::footer_flags::truncation;
+    set_flag(compacted_index::footer_flags::truncation);
     return drain_all_keys().then([this, o] {
         static constexpr std::string_view compacted_key = "compaction";
         return spill(

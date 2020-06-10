@@ -41,6 +41,7 @@ public:
     ss::future<> truncate(model::offset) final;
     ss::future<> close() final;
     void print(std::ostream&) const final;
+    void set_flag(compacted_index::footer_flags) final;
 
 private:
     ss::future<> drain_all_keys();
