@@ -240,7 +240,7 @@ log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
     }
     return fut
       .then([this, timeout] { return _iterator.reader->read_some(timeout); })
-      .then([this](result<records_t> recs) -> ss::future<storage_t> {
+      .then([this, timeout](result<records_t> recs) -> ss::future<storage_t> {
           if (!recs) {
               set_end_of_stream();
               vlog(
@@ -251,9 +251,14 @@ log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
                 [] { return ss::make_ready_future<storage_t>(); });
           }
           if (recs.value().empty()) {
-              set_end_of_stream();
-              return _iterator.close().then(
-                [] { return ss::make_ready_future<storage_t>(); });
+              /*
+               * if no records are returned it may be the case that all of the
+               * batches in the segment were skipped (e.g. all control batches).
+               * thus, returning no records does not imply end of stream.
+               * instead, we recurse which will advance the iterator and check
+               * end of stream.
+               */
+              return do_load_slice(timeout);
           }
           _probe.add_batches_read(recs.value().size());
           return ss::make_ready_future<storage_t>(std::move(recs.value()));
