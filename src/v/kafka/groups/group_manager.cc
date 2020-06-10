@@ -303,12 +303,16 @@ recovery_batch_consumer::handle_group_metadata(iobuf key_buf, iobuf val_buf) {
     // doesn't consider yet the former.
     const bool tombstone = false;
 
+    vlog(klog.trace, "Recovering group metadata {}", group_id);
+
     if (tombstone) {
         loaded_groups.erase(group_id);
         removed_groups.emplace(group_id);
     } else {
         removed_groups.erase(group_id);
-        loaded_groups.emplace(group_id, std::move(metadata));
+        // until we switch over to a compacted topic or use raft snapshots,
+        // always take the latest entry in the log.
+        loaded_groups[group_id] = std::move(metadata);
     }
 
     return ss::make_ready_future<>();
@@ -325,11 +329,15 @@ recovery_batch_consumer::handle_offset_metadata(iobuf key_buf, iobuf val_buf) {
     // v2.4.0 that delete offsets shows up as an actual api.
     const bool tombstone = false;
 
+    vlog(klog.trace, "Recovering offset {} with metadata {}", key, metadata);
+
     if (tombstone) {
         loaded_offsets.erase(key);
     } else {
-        loaded_offsets.emplace(
-          key, std::make_pair(batch_base_offset, std::move(metadata)));
+        // until we switch over to a compacted topic or use raft snapshots,
+        // always take the latest entry in the log.
+        loaded_offsets[key] = std::make_pair(
+          batch_base_offset, std::move(metadata));
     }
 
     return ss::make_ready_future<>();
@@ -587,6 +595,22 @@ error_code group_manager::validate_group_status(
 
     klog.trace("group operation misdirected {}/{}", group, ntp);
     return error_code::not_coordinator;
+}
+
+std::ostream& operator<<(std::ostream& os, const group_log_offset_key& key) {
+    fmt::print(
+      os,
+      "group {} topic {} partition {}",
+      key.group(),
+      key.topic(),
+      key.partition());
+    return os;
+}
+
+std::ostream&
+operator<<(std::ostream& os, const group_log_offset_metadata& md) {
+    fmt::print(os, "offset {}", md.offset());
+    return os;
 }
 
 } // namespace kafka
