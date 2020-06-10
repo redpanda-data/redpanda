@@ -1,3 +1,4 @@
+find_package(Roaring REQUIRED)
 v_cc_library(
   NAME storage
   SRCS
@@ -37,6 +38,7 @@ v_cc_library(
     v::syschecks
     absl::flat_hash_map
     absl::btree
+    Roaring::roaring
   PUBLIC
 )
 
