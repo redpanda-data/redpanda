@@ -95,6 +95,14 @@ bool compacted_index_chunk_reader::is_end_of_stream() const {
            || (_cursor && _cursor->eof());
 }
 
+void compacted_index_chunk_reader::reset() {
+    _end_of_stream = false;
+    _byte_index = 0;
+    _file_size = std::nullopt;
+    _footer = compacted_index::footer{};
+    _cursor = std::nullopt;
+}
+
 ss::future<ss::circular_buffer<compacted_index::entry>>
 compacted_index_chunk_reader::load_slice(model::timeout_clock::time_point) {
     using ret_t = ss::circular_buffer<compacted_index::entry>;

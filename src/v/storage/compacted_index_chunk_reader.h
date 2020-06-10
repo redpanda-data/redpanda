@@ -23,6 +23,8 @@ public:
 
     ss::future<compacted_index::footer> load_footer() final;
 
+    void reset() final;
+
     void print(std::ostream&) const final;
 
     bool is_end_of_stream() const final;
