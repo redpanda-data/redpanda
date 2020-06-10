@@ -21,6 +21,7 @@ struct configuration final : public config_store {
     property<data_directory_path> data_directory;
     property<bool> developer_mode;
     property<uint64_t> log_segment_size;
+    property<uint64_t> compacted_log_segment_size;
     // Network
     property<unresolved_address> rpc_server;
     // Raft

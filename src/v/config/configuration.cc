@@ -24,6 +24,13 @@ configuration::configuration()
       "How large in bytes should each log segment be (default 1G)",
       required::no,
       1_GiB)
+  , compacted_log_segment_size(
+      *this,
+      "compacted_log_segment_size",
+      "How large in bytes should each compacted log segment be (default "
+      "256MiB)",
+      required::no,
+      256_MiB)
   , rpc_server(
       *this,
       "rpc_server",
