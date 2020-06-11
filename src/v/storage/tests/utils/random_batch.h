@@ -6,8 +6,11 @@
 
 namespace storage::test {
 
-model::record_batch
-make_random_batch(model::offset o, int num_records, bool allow_compression);
+model::record_batch make_random_batch(
+  model::offset o,
+  int num_records,
+  bool allow_compression,
+  model::record_batch_type bt = model::record_batch_type(1));
 
 model::record_batch
 make_random_batch(model::offset o, bool allow_compression = true);
