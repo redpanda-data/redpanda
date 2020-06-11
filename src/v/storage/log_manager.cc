@@ -462,7 +462,8 @@ ss::future<log> log_manager::do_manage(ntp_config cfg) {
       .then([this, cfg = std::move(cfg)](segment_set segments) mutable {
           auto l = storage::make_disk_backed_log(
             std::move(cfg), *this, std::move(segments));
-          _logs.emplace(l.config().ntp(), l);
+          auto [_, success] = _logs.emplace(l.config().ntp(), l);
+          vassert(success, "Could not keep track of:{} - concurrency issue", l);
           return l;
       });
 }
