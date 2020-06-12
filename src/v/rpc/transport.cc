@@ -99,7 +99,7 @@ void transport::fail_outstanding_futures() noexcept {
     // must close the socket
     shutdown();
     for (auto& [_, p] : _correlations) {
-        p->set_exception(std::runtime_error("failing outstanding futures"));
+        p->set_value(errc::disconnected_endpoint);
     }
     _correlations.clear();
 }
