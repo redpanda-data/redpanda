@@ -1,5 +1,6 @@
 #pragma once
 #include "model/fundamental.h"
+#include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "random/generators.h"
 #include "seastarx.h"
@@ -83,7 +84,7 @@ inline constexpr auto add_segment = [](auto&&... args) {
 };
 
 inline constexpr auto add_random_batch = [](auto&&... args) {
-    arg_3_way_assert<sizeof...(args), 1, 3>();
+    arg_3_way_assert<sizeof...(args), 1, 5>();
     return std::make_tuple(
       add_random_batch_tag(), std::forward<decltype(args)>(args)...);
 };
@@ -159,7 +160,7 @@ public:
             }
         } else if constexpr (std::is_same_v<type, add_random_batch_tag>) {
             if constexpr (size == 2) {
-                add_random_batch(model::offset(std::get<1>(args))).get();
+                add_random_batch(model::offset(std::get<1>(args)), 1).get();
             } else if constexpr (size == 3) {
                 add_random_batch(
                   model::offset(std::get<1>(args)), std::get<2>(args))
@@ -177,7 +178,16 @@ public:
                   std::get<3>(args),
                   std::get<4>(args))
                   .get();
+            } else if constexpr (size == 6) {
+                add_random_batch(
+                  model::offset(std::get<1>(args)),
+                  std::get<2>(args),
+                  std::get<3>(args),
+                  std::get<4>(args),
+                  std::get<5>(args))
+                  .get();
             }
+
         } else if constexpr (std::is_same_v<type, add_batch_tag>) {
             if constexpr (size == 2) {
                 add_batch(std::move(std::get<1>(args))).get();
@@ -206,11 +216,8 @@ public:
     ss::future<> add_random_batch(
       model::offset offset,
       int num_records,
-      maybe_compress_batches comp,
-      log_append_config config = append_config());
-    ss::future<> add_random_batch(
-      model::offset offset,
       maybe_compress_batches comp = maybe_compress_batches::yes,
+      model::record_batch_type bt = model::record_batch_type(1), // data
       log_append_config config = append_config());
     ss::future<> add_random_batches(
       model::offset offset,

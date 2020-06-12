@@ -65,13 +65,16 @@ model::record make_random_record(int index) {
       std::move(headers));
 }
 
-model::record_batch
-make_random_batch(model::offset o, int num_records, bool allow_compression) {
+model::record_batch make_random_batch(
+  model::offset o,
+  int num_records,
+  bool allow_compression,
+  model::record_batch_type bt) {
     auto ts = model::timestamp::now();
     auto header = model::record_batch_header{
       .size_bytes = 0, // computed later
       .base_offset = o,
-      .type = model::record_batch_type(1),
+      .type = bt,
       .crc = 0, // we-reassign later
       .attrs = model::record_batch_attributes(
         get_int<int16_t>(0, allow_compression ? 4 : 0)),
