@@ -179,24 +179,15 @@ transport::send(netbuf b, rpc::client_opts opts) {
           auto view = std::move(b).as_scattered();
           const auto sz = view.size();
           return get_units(_memory, sz)
-            .then([this,
-                   v = std::move(view),
-                   f = std::move(fut),
-                   send_units = std::move(opts.send_units)](
+            .then([this, v = std::move(view), f = std::move(fut)](
                     ss::semaphore_units<> units) mutable {
                 /// background
                 (void)ss::with_gate(
                   _dispatch_gate,
-                  [this,
-                   v = std::move(v),
-                   u = std::move(units),
-                   send_units = std::move(send_units)]() mutable {
+                  [this, v = std::move(v), u = std::move(units)]() mutable {
                       auto msg_size = v.size();
                       return _out.write(std::move(v))
-                        .finally([this,
-                                  msg_size,
-                                  u = std::move(u),
-                                  send_units = std::move(send_units)] {
+                        .finally([this, msg_size, u = std::move(u)] {
                             _probe.add_bytes_sent(msg_size);
                         });
                   })

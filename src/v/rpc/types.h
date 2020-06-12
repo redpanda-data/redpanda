@@ -88,31 +88,16 @@ static_assert(
 uint32_t checksum_header_only(const header& h);
 
 struct client_opts {
-    using container_t = std::vector<ss::semaphore_units<>>;
-    /// \brief used to gurantee that we serialize writes. Holds a lock, until
-    /// we dispatch the write to the batch_output_stream, then releases the
-    /// lock
     client_opts(
       clock_type::time_point client_send_timeout,
-      ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>> send_units,
       compression_type ct,
       size_t compression_bytes) noexcept
       : timeout(client_send_timeout)
       , compression(ct)
-      , send_units(ss::make_foreign(send_units))
       , min_compression_bytes(compression_bytes) {}
 
-    client_opts(
-      clock_type::time_point client_send_timeout,
-      ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>> send_units) noexcept
-      : client_opts(
-        client_send_timeout,
-        std::move(send_units),
-        compression_type::none,
-        1024) {}
-
     explicit client_opts(clock_type::time_point client_send_timeout) noexcept
-      : client_opts(client_send_timeout, ss::make_lw_shared<container_t>({})) {}
+      : client_opts(client_send_timeout, compression_type::none, 1024) {}
 
     client_opts(const client_opts&) = delete;
     client_opts(client_opts&&) = default;
@@ -123,7 +108,6 @@ struct client_opts {
 
     clock_type::time_point timeout;
     compression_type compression;
-    ss::foreign_ptr<ss::lw_shared_ptr<container_t>> send_units;
     size_t min_compression_bytes;
 };
 
