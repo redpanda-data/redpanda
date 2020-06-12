@@ -135,10 +135,7 @@ ss::future<> heartbeat_manager::do_heartbeat(node_heartbeat&& r) {
       r.target,
       std::move(r.request),
       rpc::client_opts(
-        next_heartbeat_timeout(),
-        ss::make_lw_shared<std::vector<ss::semaphore_units<>>>({}),
-        rpc::compression_type::zstd,
-        512));
+        next_heartbeat_timeout(), rpc::compression_type::zstd, 512));
     _dispatch_sem.signal();
     return f.then([node = r.target, groups = std::move(r.sequence_map), this](
                     result<heartbeat_reply> ret) mutable {

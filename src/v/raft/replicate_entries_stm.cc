@@ -75,7 +75,7 @@ replicate_entries_stm::send_append_entries_request(
     vlog(_ctxlog.trace, "Sending append entries request {} to {}", req.meta, n);
 
     auto f = _ptr->_client_protocol.append_entries(
-      n, std::move(req), rpc::client_opts(append_entries_timeout(), units));
+      n, std::move(req), rpc::client_opts(append_entries_timeout()));
     _dispatch_sem.signal();
     return f;
 }

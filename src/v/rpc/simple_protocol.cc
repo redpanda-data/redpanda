@@ -3,6 +3,8 @@
 #include "rpc/logger.h"
 #include "rpc/types.h"
 
+#include <seastar/core/future-util.hh>
+
 #include <exception>
 
 namespace rpc {
@@ -35,7 +37,10 @@ ss::future<> simple_protocol::apply(server::resources rs) {
                     rpclog.debug(
                       "could not parse header from client: {}", rs.conn->addr);
                     rs.probe().header_corrupted();
-                    return ss::make_ready_future<>();
+                    // Have to shutdown the connection as data in receiving
+                    // buffer may be corrupted
+                    rs.conn->shutdown_input();
+                    return ss::now();
                 }
                 return dispatch_method_once(h.value(), rs);
             });
@@ -100,6 +105,14 @@ simple_protocol::dispatch_method_once(header h, server::resources rs) {
               try {
                   reply_buf = fut.get0();
                   reply_buf.set_status(rpc::status::success);
+              } catch (const rpc_internal_body_parsing_exception& e) {
+                  // We have to distinguish between exceptions thrown by the
+                  // service handler and the one caused by the corrupted
+                  // payload. Data corruption on the wire may lead to the
+                  // situation where connection is not longer usable and so it
+                  // have to be terminated.
+                  ctx->pr.set_exception(e);
+                  return ss::now();
               } catch (const ss::timed_out_error& e) {
                   reply_buf.set_status(rpc::status::request_timeout);
               } catch (...) {
