@@ -26,6 +26,18 @@ struct service {
     virtual method* method_from_id(uint32_t) = 0;
 };
 
+class rpc_internal_body_parsing_exception : public std::exception {
+public:
+    explicit rpc_internal_body_parsing_exception(const std::exception_ptr& e)
+      : _what(
+        fmt::format("Unable to parse received RPC request payload - {}", e)) {}
+
+    const char* what() const noexcept final { return _what.c_str(); }
+
+private:
+    seastar::sstring _what;
+};
+
 template<typename Input, typename Output>
 struct service::execution_helper {
     using input = Input;
@@ -40,9 +52,15 @@ struct service::execution_helper {
         return ctx.permanent_memory_reservation(ctx.get_header().payload_size)
           .then([f = std::forward<Func>(f), method_id, &in, &ctx]() mutable {
               return parse_type<Input>(in, ctx.get_header())
-                .then([f = std::forward<Func>(f), &ctx](Input t) mutable {
+                .then_wrapped([f = std::forward<Func>(f),
+                               &ctx](ss::future<Input> input_f) mutable {
+                    if (input_f.failed()) {
+                        throw rpc_internal_body_parsing_exception(
+                          input_f.get_exception());
+                    }
                     ctx.signal_body_parse();
-                    return f(std::move(t), ctx);
+                    auto input = input_f.get0();
+                    return f(std::move(input), ctx);
                 })
                 .then([method_id](Output out) mutable {
                     auto b = std::make_unique<netbuf>();

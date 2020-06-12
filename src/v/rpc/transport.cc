@@ -99,7 +99,7 @@ void transport::fail_outstanding_futures() noexcept {
     // must close the socket
     shutdown();
     for (auto& [_, p] : _correlations) {
-        p->set_exception(std::runtime_error("failing outstanding futures"));
+        p->set_value(errc::disconnected_endpoint);
     }
     _correlations.clear();
 }
@@ -160,7 +160,11 @@ transport::send(netbuf b, rpc::client_opts opts) {
           // the future before we return from this function
           auto fut = it->get_future();
           b.set_correlation_id(idx);
-          _correlations.emplace(idx, std::move(item));
+          auto [_, success] = _correlations.emplace(idx, std::move(item));
+          if (unlikely(!success)) {
+              return ss::make_exception_future<ret_t>(std::logic_error(
+                fmt::format("Tried to reuse correlation id: {}", idx)));
+          }
           it->with_timeout(opts.timeout, [this, idx] {
               auto it = _correlations.find(idx);
               if (likely(it != _correlations.end())) {
@@ -175,24 +179,15 @@ transport::send(netbuf b, rpc::client_opts opts) {
           auto view = std::move(b).as_scattered();
           const auto sz = view.size();
           return get_units(_memory, sz)
-            .then([this,
-                   v = std::move(view),
-                   f = std::move(fut),
-                   send_units = std::move(opts.send_units)](
+            .then([this, v = std::move(view), f = std::move(fut)](
                     ss::semaphore_units<> units) mutable {
                 /// background
                 (void)ss::with_gate(
                   _dispatch_gate,
-                  [this,
-                   v = std::move(v),
-                   u = std::move(units),
-                   send_units = std::move(send_units)]() mutable {
+                  [this, v = std::move(v), u = std::move(units)]() mutable {
                       auto msg_size = v.size();
                       return _out.write(std::move(v))
-                        .finally([this,
-                                  msg_size,
-                                  u = std::move(u),
-                                  send_units = std::move(send_units)] {
+                        .finally([this, msg_size, u = std::move(u)] {
                             _probe.add_bytes_sent(msg_size);
                         });
                   })
@@ -217,6 +212,7 @@ ss::future<> transport::do_reads() {
                     "could not parse header from server: {}",
                     server_address());
                   _probe.header_corrupted();
+                  fail_outstanding_futures();
                   return ss::make_ready_future<>();
               }
               return dispatch(std::move(h.value()));
