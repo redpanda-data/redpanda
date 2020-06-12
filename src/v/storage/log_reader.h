@@ -134,7 +134,7 @@ public:
 private:
     void set_end_of_stream() { _iterator.next_seg = _lease->range.end(); }
     bool is_done();
-    ss::future<> next_iterator();
+    ss::future<> find_next_valid_iterator();
 
     using reader_available = ss::bool_class<struct create_reader_tag>;
     reader_available maybe_create_segment_reader();

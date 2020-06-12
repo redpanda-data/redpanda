@@ -193,7 +193,7 @@ log_reader::log_reader(
     }
 }
 
-ss::future<> log_reader::next_iterator() {
+ss::future<> log_reader::find_next_valid_iterator() {
     if (
       _config.start_offset
       <= (**_iterator.next_seg).offsets().committed_offset) {
@@ -234,7 +234,7 @@ log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
           [] { return ss::make_ready_future<storage_t>(); });
     }
     _last_base = _config.start_offset;
-    ss::future<> fut = next_iterator();
+    ss::future<> fut = find_next_valid_iterator();
     if (is_end_of_stream()) {
         return fut.then([] { return ss::make_ready_future<storage_t>(); });
     }
