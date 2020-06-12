@@ -160,7 +160,11 @@ transport::send(netbuf b, rpc::client_opts opts) {
           // the future before we return from this function
           auto fut = it->get_future();
           b.set_correlation_id(idx);
-          _correlations.emplace(idx, std::move(item));
+          auto [_, success] = _correlations.emplace(idx, std::move(item));
+          if (unlikely(!success)) {
+              return ss::make_exception_future<ret_t>(std::logic_error(
+                fmt::format("Tried to reuse correlation id: {}", idx)));
+          }
           it->with_timeout(opts.timeout, [this, idx] {
               auto it = _correlations.find(idx);
               if (likely(it != _correlations.end())) {
