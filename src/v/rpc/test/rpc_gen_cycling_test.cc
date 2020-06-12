@@ -200,3 +200,89 @@ FIXTURE_TEST(missing_method_test, rpc_integration_fixture) {
     BOOST_REQUIRE_EQUAL(ret.error(), rpc::errc::method_not_found);
     t.stop().get();
 }
+
+FIXTURE_TEST(corrupted_header_at_client_test, rpc_integration_fixture) {
+    configure_server();
+    register_services();
+    start_server();
+    rpc::transport t(client_config());
+    t.connect().get();
+    auto client = echo::echo_client_protocol(t);
+    auto stop_action = ss::defer([&t] { t.stop().get(); });
+    BOOST_TEST_MESSAGE("Request with valid payload");
+    auto echo_resp = client
+                       .echo(
+                         echo::echo_req{.str = "testing..."},
+                         rpc::client_opts(rpc::no_timeout))
+                       .get0();
+    BOOST_REQUIRE_EQUAL(echo_resp.value().data.str, "testing...");
+
+    // Send request but do not consume response
+    BOOST_TEST_MESSAGE("Send request without consuming payload");
+    rpc::netbuf nb;
+    nb.set_compression(rpc::compression_type::none);
+    nb.set_correlation_id(10);
+    nb.set_service_method_id(960598415);
+    reflection::adl<echo::echo_req>{}.to(
+      nb.buffer(), echo::echo_req{.str = "testing..."});
+    // will fail all the futures as server close the connection
+    auto ret = t.send(
+                  std::move(nb), rpc::client_opts(rpc::clock_type::now() + 1s))
+                 .get0();
+    ret.value()->signal_body_parse();
+
+    // reconnect
+    BOOST_TEST_MESSAGE("Another request with valid payload");
+    t.connect().get0();
+    for (int i = 0; i < 10; ++i) {
+        auto echo_resp_new = client
+                               .echo(
+                                 echo::echo_req{.str = "testing..."},
+                                 rpc::client_opts(rpc::clock_type::now() + 1s))
+                               .get0();
+
+        BOOST_REQUIRE_EQUAL(echo_resp_new.value().data.str, "testing...");
+    }
+}
+
+FIXTURE_TEST(corrupted_data_at_server, rpc_integration_fixture) {
+    configure_server();
+    register_services();
+    start_server();
+    rpc::transport t(client_config());
+    t.connect().get();
+    auto client = echo::echo_client_protocol(t);
+    auto stop_action = ss::defer([&t] { t.stop().get(); });
+    BOOST_TEST_MESSAGE("Request with valid payload");
+    auto echo_resp = client
+                       .echo(
+                         echo::echo_req{.str = "testing..."},
+                         rpc::client_opts(rpc::no_timeout))
+                       .get0();
+    BOOST_REQUIRE_EQUAL(echo_resp.value().data.str, "testing...");
+
+    rpc::netbuf nb;
+    nb.set_compression(rpc::compression_type::none);
+    nb.set_correlation_id(10);
+    nb.set_service_method_id(960598415);
+    auto bytes = random_generators::get_bytes();
+    nb.buffer().append(bytes.c_str(), bytes.size());
+
+    BOOST_TEST_MESSAGE("Request with invalid payload");
+    // will fail all the futures as server close the connection
+    auto ret = t.send(
+                  std::move(nb), rpc::client_opts(rpc::clock_type::now() + 2s))
+                 .get0();
+    // reconnect
+    BOOST_TEST_MESSAGE("Another request with valid payload");
+    t.connect().get0();
+    for (int i = 0; i < 10; ++i) {
+        auto echo_resp_new = client
+                               .echo(
+                                 echo::echo_req{.str = "testing..."},
+                                 rpc::client_opts(rpc::clock_type::now() + 2s))
+                               .get0();
+
+        BOOST_REQUIRE_EQUAL(echo_resp_new.value().data.str, "testing...");
+    }
+}
