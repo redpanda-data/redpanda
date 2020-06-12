@@ -3,6 +3,8 @@
 #include "rpc/logger.h"
 #include "rpc/types.h"
 
+#include <seastar/core/future-util.hh>
+
 #include <exception>
 
 namespace rpc {
@@ -35,7 +37,10 @@ ss::future<> simple_protocol::apply(server::resources rs) {
                     rpclog.debug(
                       "could not parse header from client: {}", rs.conn->addr);
                     rs.probe().header_corrupted();
-                    return ss::make_ready_future<>();
+                    // Have to shutdown the connection as data in receiving
+                    // buffer may be corrupted
+                    rs.conn->shutdown_input();
+                    return ss::now();
                 }
                 return dispatch_method_once(h.value(), rs);
             });
