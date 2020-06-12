@@ -1239,10 +1239,6 @@ group::handle_offset_commit(offset_commit_request&& r) {
         // <kafka>The group is only using Kafka to store offsets.</kafka>
         return store_offsets(std::move(r));
 
-    } else if (in_state(group_state::completing_rebalance)) {
-        return ss::make_ready_future<offset_commit_response>(
-          offset_commit_response(r, error_code::rebalance_in_progress));
-
     } else if (!contains_member(r.data.member_id)) {
         return ss::make_ready_future<offset_commit_response>(
           offset_commit_response(r, error_code::unknown_member_id));
@@ -1250,11 +1246,23 @@ group::handle_offset_commit(offset_commit_request&& r) {
     } else if (r.data.generation_id != generation()) {
         return ss::make_ready_future<offset_commit_response>(
           offset_commit_response(r, error_code::illegal_generation));
+    } else if (
+      in_state(group_state::stable)
+      || in_state(group_state::preparing_rebalance)) {
+        // <kafka>During PreparingRebalance phase, we still allow a commit
+        // request since we rely on heartbeat response to eventually notify the
+        // rebalance in progress signal to the consumer</kafka>
+        auto member = get_member(r.data.member_id);
+        schedule_next_heartbeat_expiration(member);
+        return store_offsets(std::move(r));
+    } else if (in_state(group_state::completing_rebalance)) {
+        return ss::make_ready_future<offset_commit_response>(
+          offset_commit_response(r, error_code::rebalance_in_progress));
+    } else {
+        return ss::make_exception_future<offset_commit_response>(
+          std::runtime_error(
+            fmt::format("Unexpected group state {} for {}", _state, *this)));
     }
-
-    auto member = get_member(r.data.member_id);
-    schedule_next_heartbeat_expiration(member);
-    return store_offsets(std::move(r));
 }
 
 ss::future<offset_fetch_response>
