@@ -107,34 +107,6 @@ FIXTURE_TEST(timeout_test, rpc_integration_fixture) {
     client.stop().get();
 }
 
-FIXTURE_TEST(ordering_test, rpc_integration_fixture) {
-    configure_server();
-    register_services();
-    start_server();
-    rpc::client<echo::echo_client_protocol> client(client_config());
-    client.connect().get();
-    std::vector<ss::future<>> futures;
-    futures.reserve(10);
-    ss::semaphore sem{1};
-    for (uint64_t i = 0; i < 10; ++i) {
-        ss::semaphore_units<> u = ss::get_units(sem, 1).get0();
-        std::vector<ss::semaphore_units<>> units;
-        units.push_back(std::move(u));
-        auto units_ptr = ss::make_lw_shared(std::move(units));
-        futures.push_back(
-          client
-            .counter(
-              echo::cnt_req{i}, rpc::client_opts(rpc::no_timeout, units_ptr))
-            .then(&rpc::get_ctx_data<echo::cnt_resp>)
-            .then([i](result<echo::cnt_resp> r) {
-                BOOST_REQUIRE_EQUAL(r.value().current, i);
-                BOOST_REQUIRE_EQUAL(r.value().expected, i);
-            }));
-    }
-    ss::when_all_succeed(futures.begin(), futures.end()).get0();
-    client.stop().get();
-}
-
 FIXTURE_TEST(rpc_mixed_compression, rpc_integration_fixture) {
     const auto data = random_generators::gen_alphanum_string(1024);
     configure_server();
@@ -158,7 +130,6 @@ FIXTURE_TEST(rpc_mixed_compression, rpc_integration_fixture) {
                     echo::echo_req{.str = data},
                     rpc::client_opts(
                       rpc::no_timeout,
-                      {},
                       rpc::compression_type::zstd,
                       0 /*min bytes compress*/))
                   .get0();
