@@ -217,6 +217,7 @@ ss::future<> transport::do_reads() {
                     "could not parse header from server: {}",
                     server_address());
                   _probe.header_corrupted();
+                  fail_outstanding_futures();
                   return ss::make_ready_future<>();
               }
               return dispatch(std::move(h.value()));
