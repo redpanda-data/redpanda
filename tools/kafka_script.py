@@ -30,7 +30,7 @@ def _exec_command(cmd):
 
 def _client_id():
     cid = uuid.uuid4().hex
-    return f"vectorized-${cid}"
+    return "vectorized-%s" % cid
 
 
 def produce(kdir, servers):
