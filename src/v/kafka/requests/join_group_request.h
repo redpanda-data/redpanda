@@ -87,6 +87,9 @@ struct join_group_response final {
     join_group_response(kafka::error_code error)
       : join_group_response(no_member, error) {}
 
+    join_group_response(const join_group_request& r, kafka::error_code error)
+      : join_group_response(r.data.member_id, error) {}
+
     join_group_response(
       kafka::error_code error,
       kafka::generation_id generation_id,
