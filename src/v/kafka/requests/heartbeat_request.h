@@ -52,6 +52,9 @@ struct heartbeat_response final {
         .error_code = error,
       }) {}
 
+    heartbeat_response(const heartbeat_request&, error_code error)
+      : heartbeat_response(error) {}
+
     void encode(const request_context& ctx, response& resp) {
         data.encode(ctx, resp);
     }
