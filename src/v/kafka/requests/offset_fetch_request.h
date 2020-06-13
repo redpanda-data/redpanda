@@ -60,6 +60,9 @@ struct offset_fetch_response final {
 
     offset_fetch_response(error_code error) { data.error_code = error; }
 
+    offset_fetch_response(const offset_fetch_request&, error_code error)
+      : offset_fetch_response(error) {}
+
     offset_fetch_response(
       std::optional<std::vector<offset_fetch_request_topic>>& topics) {
         data.error_code = error_code::none;

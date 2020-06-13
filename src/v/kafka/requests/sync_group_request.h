@@ -70,6 +70,9 @@ struct sync_group_response final {
     explicit sync_group_response(error_code error)
       : sync_group_response(error, bytes()) {}
 
+    sync_group_response(const sync_group_request&, error_code error)
+      : sync_group_response(error) {}
+
     void encode(const request_context& ctx, response& resp) {
         data.encode(ctx, resp);
     }
