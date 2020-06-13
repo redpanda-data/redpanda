@@ -15,6 +15,8 @@
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/sharded.hh>
 
+#include <type_traits>
+
 namespace kafka {
 
 // clang-format off
@@ -75,134 +77,28 @@ public:
       , _shards(shards)
       , _coordinators(coordinators) {}
 
-    ss::future<join_group_response> join_group(join_group_request&& request) {
-        auto shard = shard_for(request.data.group_id);
-        if (!shard) {
-            return ss::make_ready_future<join_group_response>(
-              join_group_response(
-                request.data.member_id, error_code::not_coordinator));
-        }
-        request.ntp = std::move(shard->first);
-        return with_scheduling_group(
-          _sg,
-          [this,
-           shard = shard->second,
-           request = std::move(request)]() mutable {
-              return _group_manager.invoke_on(
-                shard,
-                _ssg,
-                [request = std::move(request)](GroupMgr& m) mutable {
-                    return m.join_group(std::move(request));
-                });
-          });
+    auto join_group(join_group_request&& request) {
+        return route(std::move(request), &GroupMgr::join_group);
     }
 
-    ss::future<sync_group_response> sync_group(sync_group_request&& request) {
-        auto shard = shard_for(request.data.group_id);
-        if (!shard) {
-            return ss::make_ready_future<sync_group_response>(
-              sync_group_response(error_code::not_coordinator));
-        }
-        request.ntp = std::move(shard->first);
-        return with_scheduling_group(
-          _sg,
-          [this,
-           shard = shard->second,
-           request = std::move(request)]() mutable {
-              return _group_manager.invoke_on(
-                shard,
-                _ssg,
-                [request = std::move(request)](GroupMgr& m) mutable {
-                    return m.sync_group(std::move(request));
-                });
-          });
+    auto sync_group(sync_group_request&& request) {
+        return route(std::move(request), &GroupMgr::sync_group);
     }
 
-    ss::future<heartbeat_response> heartbeat(heartbeat_request&& request) {
-        auto shard = shard_for(request.data.group_id);
-        if (!shard) {
-            return ss::make_ready_future<heartbeat_response>(
-              heartbeat_response(error_code::not_coordinator));
-        }
-        request.ntp = std::move(shard->first);
-        return with_scheduling_group(
-          _sg,
-          [this,
-           shard = shard->second,
-           request = std::move(request)]() mutable {
-              return _group_manager.invoke_on(
-                shard,
-                _ssg,
-                [request = std::move(request)](GroupMgr& m) mutable {
-                    return m.heartbeat(std::move(request));
-                });
-          });
+    auto heartbeat(heartbeat_request&& request) {
+        return route(std::move(request), &GroupMgr::heartbeat);
     }
 
-    ss::future<leave_group_response>
-    leave_group(leave_group_request&& request) {
-        auto shard = shard_for(request.data.group_id);
-        if (!shard) {
-            return ss::make_ready_future<leave_group_response>(
-              leave_group_response(error_code::not_coordinator));
-        }
-        request.ntp = std::move(shard->first);
-        return with_scheduling_group(
-          _sg,
-          [this,
-           shard = shard->second,
-           request = std::move(request)]() mutable {
-              return _group_manager.invoke_on(
-                shard,
-                _ssg,
-                [request = std::move(request)](GroupMgr& m) mutable {
-                    return m.leave_group(std::move(request));
-                });
-          });
+    auto leave_group(leave_group_request&& request) {
+        return route(std::move(request), &GroupMgr::leave_group);
     }
 
-    ss::future<offset_commit_response>
-    offset_commit(offset_commit_request&& request) {
-        auto shard = shard_for(request.data.group_id);
-        if (!shard) {
-            return ss::make_ready_future<offset_commit_response>(
-              offset_commit_response(request, error_code::not_coordinator));
-        }
-        request.ntp = std::move(shard->first);
-        return with_scheduling_group(
-          _sg,
-          [this,
-           shard = shard->second,
-           request = std::move(request)]() mutable {
-              return _group_manager.invoke_on(
-                shard,
-                _ssg,
-                [request = std::move(request)](GroupMgr& m) mutable {
-                    return m.offset_commit(std::move(request));
-                });
-          });
+    auto offset_commit(offset_commit_request&& request) {
+        return route(std::move(request), &GroupMgr::offset_commit);
     }
 
-    ss::future<offset_fetch_response>
-    offset_fetch(offset_fetch_request&& request) {
-        auto shard = shard_for(request.data.group_id);
-        if (!shard) {
-            return ss::make_ready_future<offset_fetch_response>(
-              offset_fetch_response(error_code::not_coordinator));
-        }
-        request.ntp = std::move(shard->first);
-        return with_scheduling_group(
-          _sg,
-          [this,
-           shard = shard->second,
-           request = std::move(request)]() mutable {
-              return _group_manager.invoke_on(
-                shard,
-                _ssg,
-                [request = std::move(request)](GroupMgr& m) mutable {
-                    return m.offset_fetch(std::move(request));
-                });
-          });
+    auto offset_fetch(offset_fetch_request&& request) {
+        return route(std::move(request), &GroupMgr::offset_fetch);
     }
 
 private:
@@ -214,6 +110,32 @@ private:
             }
         }
         return std::nullopt;
+    }
+
+    template<typename FwdFunc, typename Request>
+    auto route(Request&& r, FwdFunc func) {
+        // get response type from FwdFunc it has return future<response>.
+        using return_type = std::invoke_result_t<
+          FwdFunc,
+          decltype(std::declval<GroupMgr>()),
+          Request&&>;
+        using tuple_type = typename return_type::value_type;
+        static_assert(std::tuple_size_v<tuple_type> == 1);
+        using resp_type = typename std::tuple_element_t<0, tuple_type>;
+
+        auto m = shard_for(r.data.group_id);
+        if (!m) {
+            return ss::make_ready_future<resp_type>(
+              resp_type(r, error_code::not_coordinator));
+        }
+        r.ntp = std::move(m->first);
+        return with_scheduling_group(
+          _sg, [this, func, shard = m->second, r = std::move(r)]() mutable {
+              return _group_manager.invoke_on(
+                shard, _ssg, [func, r = std::move(r)](GroupMgr& mgr) mutable {
+                    return std::invoke(func, mgr, std::move(r));
+                });
+          });
     }
 
     ss::scheduling_group _sg;
