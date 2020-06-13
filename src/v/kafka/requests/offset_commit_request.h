@@ -21,6 +21,10 @@ struct offset_commit_api final {
 
     static constexpr const char* name = "offset commit";
     static constexpr api_key key = api_key(8);
+
+    // in version 0 kafka stores offsets in zookeeper. if we ever need to
+    // support version 0 then we need to do some code review to see if this has
+    // any implications on semantics.
     static constexpr api_version min_supported = api_version(1);
     static constexpr api_version max_supported = api_version(7);
 
