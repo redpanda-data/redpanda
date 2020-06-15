@@ -117,11 +117,10 @@ public:
     [[gnu::always_inline]] ss::future<append_entries_reply>
     append_entries(append_entries_request&& r, rpc::streaming_context&) final {
         return _probe.append_entries().then([this, r = std::move(r)]() mutable {
+            auto gr = r.target_group();
             return dispatch_request(
-              std::move(r),
-              [gr = r.target_group()]() {
-                  return make_missing_group_reply(gr);
-              },
+              append_entries_request::make_foreign(std::move(r)),
+              [gr]() { return make_missing_group_reply(gr); },
               [](append_entries_request&& r, consensus_ptr c) {
                   return c->append_entries(std::move(r));
               });
