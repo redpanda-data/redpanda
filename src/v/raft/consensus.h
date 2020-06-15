@@ -12,6 +12,7 @@
 #include "raft/types.h"
 #include "rpc/connection_cache.h"
 #include "seastarx.h"
+#include "storage/kvstore.h"
 #include "storage/log.h"
 #include "utils/mutex.h"
 
@@ -50,7 +51,8 @@ public:
       ss::io_priority_class io_priority,
       model::timeout_clock::duration disk_timeout,
       consensus_client_protocol,
-      leader_cb_t);
+      leader_cb_t,
+      ss::sharded<storage::kvstore>& kvstore);
 
     /// Initial call. Allow for internal state recovery
     ss::future<> start();
@@ -117,6 +119,11 @@ public:
     event_manager& events() { return _event_manager; }
 
 private:
+    // key types used to store data in key-value store
+    enum class metadata_key : int8_t {
+        voted_for = 0,
+    };
+
     friend replicate_entries_stm;
     friend vote_stm;
     friend recovery_stm;
@@ -186,6 +193,11 @@ private:
 
     bool should_skip_vote();
     void setup_metrics();
+
+    bytes voted_for_key() const;
+    ss::future<> read_voted_for();
+    ss::future<> write_voted_for(consensus::voted_for_configuration);
+
     // args
     model::node_id _self;
     raft::group_id _group;
@@ -239,6 +251,7 @@ private:
     std::chrono::milliseconds _recovery_append_timeout;
     ss::metrics::metric_groups _metrics;
     ss::abort_source _as;
+    ss::sharded<storage::kvstore>& _kvstore;
 
     friend std::ostream& operator<<(std::ostream&, const consensus&);
 };

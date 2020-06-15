@@ -70,6 +70,8 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> reclaim_stable_window;
     property<bool> auto_create_topics_enabled;
     property<bool> enable_pid_file;
+    property<std::chrono::milliseconds> kvstore_flush_interval;
+    property<size_t> kvstore_max_segment_size;
 
     configuration();
 
