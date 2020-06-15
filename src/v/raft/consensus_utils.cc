@@ -29,12 +29,6 @@
 namespace YAML {
 template<>
 struct convert<::raft::consensus::voted_for_configuration> {
-    static Node encode(const ::raft::consensus::voted_for_configuration& c) {
-        Node node;
-        node["voted_for"] = c.voted_for();
-        node["term"] = c.term();
-        return node;
-    }
     static bool
     decode(const Node& node, ::raft::consensus::voted_for_configuration& c) {
         for (auto ref : {"term", "voted_for"}) {
@@ -66,41 +60,6 @@ ss::future<ss::temporary_buffer<char>> readfile(ss::sstring name) {
       });
 }
 
-ss::future<> writefile(ss::sstring name, ss::temporary_buffer<char> buf) {
-    // open the file in synchronous mode
-    vassert(
-      buf.size() <= 4096,
-      "This utility is inteded to save the voted_for file contents, which is "
-      "usually 16 bytes at most. but asked to save: {}",
-      buf.size());
-    auto flags = ss::open_flags::wo | ss::open_flags::create
-                 | ss::open_flags::truncate;
-    return ss::open_file_dma(std::move(name), flags)
-      .then([b = std::move(buf)](ss::file f) {
-          std::unique_ptr<char[], ss::free_deleter> buf(
-            ss::allocate_aligned_buffer<char>(4096, 4096));
-          std::memset(buf.get(), 0, 4096);
-          // copy the yaml file
-          const size_t yaml_size = b.size();
-          std::copy_n(b.get(), yaml_size, buf.get() /*destination*/);
-          auto ptr = buf.get();
-          return f.dma_write(0, ptr, 4096, ss::default_priority_class())
-            .then(
-              [buf = std::move(buf), f](size_t) mutable { return f.flush(); })
-            .then([f, yaml_size]() mutable { return f.truncate(yaml_size); })
-            .then([f]() mutable { return f.close(); })
-            .finally([f] {});
-      });
-}
-ss::future<> legacy_persist_voted_for(
-  ss::sstring filename, consensus::voted_for_configuration r) {
-    YAML::Emitter out;
-    out << YAML::convert<consensus::voted_for_configuration>::encode(r);
-    ss::temporary_buffer<char> buf(out.size());
-    std::copy_n(out.c_str(), out.size(), buf.get_write());
-    return writefile(filename, std::move(buf));
-}
-
 ss::future<consensus::voted_for_configuration>
 legacy_read_voted_for(ss::sstring filename) {
     return readfile(filename).then([](ss::temporary_buffer<char> buf) {
@@ -114,11 +73,6 @@ legacy_read_voted_for(ss::sstring filename) {
         auto node = YAML::Load(s);
         return node.as<consensus::voted_for_configuration>();
     });
-}
-
-ss::future<>
-persist_voted_for(ss::sstring filename, consensus::voted_for_configuration r) {
-    return utils::state_crc_file(std::move(filename)).persist(std::move(r));
 }
 
 ss::future<result<consensus::voted_for_configuration>>

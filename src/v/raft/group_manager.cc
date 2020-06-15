@@ -10,11 +10,13 @@ group_manager::group_manager(
   model::node_id self,
   model::timeout_clock::duration disk_timeout,
   std::chrono::milliseconds heartbeat_interval,
-  ss::sharded<rpc::connection_cache>& clients)
+  ss::sharded<rpc::connection_cache>& clients,
+  ss::sharded<storage::kvstore>& kvstore)
   : _self(self)
   , _disk_timeout(disk_timeout)
   , _client(make_rpc_client_protocol(clients))
-  , _heartbeats(heartbeat_interval, _client) {
+  , _heartbeats(heartbeat_interval, _client)
+  , _kvstore(kvstore) {
     setup_metrics();
 }
 
@@ -44,7 +46,8 @@ ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
       _client,
       [this](raft::leadership_status st) {
           trigger_leadership_notification(std::move(st));
-      });
+      },
+      _kvstore);
 
     return ss::with_gate(_gate, [this, raft] {
         return _heartbeats.register_group(raft).then([this, raft] {

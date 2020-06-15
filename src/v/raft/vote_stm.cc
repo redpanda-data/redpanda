@@ -217,9 +217,7 @@ ss::future<> vote_stm::self_vote() {
 
     vlog(_ctxlog.trace, "Voting for self in term {}", _req.term);
     _ptr->_voted_for = _ptr->_self;
-    return details::persist_voted_for(
-             _ptr->voted_for_filename(),
-             {_ptr->_self, model::term_id(_req.term)})
+    return _ptr->write_voted_for({_ptr->_self, model::term_id(_req.term)})
       .then([this, reply = std::move(reply)] {
           auto m = std::find_if(
             _replies.begin(), _replies.end(), [this](vmeta& mi) {
