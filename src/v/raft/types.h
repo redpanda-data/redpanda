@@ -285,6 +285,33 @@ struct install_snapshot_request {
     operator<<(std::ostream&, const install_snapshot_request&);
 };
 
+class install_snapshot_request_foreign_wrapper {
+public:
+    using ptr_t = ss::foreign_ptr<std::unique_ptr<install_snapshot_request>>;
+
+    explicit install_snapshot_request_foreign_wrapper(
+      install_snapshot_request&& req)
+      : _ptr(ss::make_foreign(
+        std::make_unique<install_snapshot_request>(std::move(req)))) {}
+
+    install_snapshot_request copy() const {
+        // make copy on target core
+        return install_snapshot_request{
+          .term = _ptr->term,
+          .group = _ptr->group,
+          .node_id = _ptr->node_id,
+          .last_included_index = _ptr->last_included_index,
+          .file_offset = _ptr->file_offset,
+          .chunk = _ptr->chunk.copy(),
+          .done = _ptr->done};
+    }
+
+    raft::group_id target_group() const { return _ptr->target_group(); }
+
+private:
+    ptr_t _ptr;
+};
+
 struct install_snapshot_reply {
     // current term, for leader to update itself
     model::term_id term;
