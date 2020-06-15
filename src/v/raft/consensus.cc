@@ -506,12 +506,21 @@ ss::future<> consensus::read_voted_for() {
           _voted_for,
           _term);
 
-        return ss::remove_file(voted_for_filename())
-          .then([this] {
+        return ss::file_exists(voted_for_filename())
+          .then([this](bool exists) {
+              if (exists) {
+                  return ss::remove_file(voted_for_filename()).then([this] {
+                      vlog(
+                        _ctxlog.debug,
+                        "Removed voted_for file {}: key-value store migration",
+                        voted_for_filename());
+                  });
+              }
               vlog(
-                _ctxlog.debug,
-                "Removing voted_for file {}: key-value store migration",
+                _ctxlog.trace,
+                "Voted for file {} does not exist",
                 voted_for_filename());
+              return ss::now();
           })
           .handle_exception([this](const std::exception_ptr& e) {
               vlog(
