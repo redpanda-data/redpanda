@@ -7,6 +7,7 @@
 #include "utils/copy_range.h"
 
 #include <seastar/core/sharded.hh>
+#include <seastar/core/shared_ptr.hh>
 
 #include <absl/container/flat_hash_map.h>
 
@@ -117,11 +118,10 @@ public:
     [[gnu::always_inline]] ss::future<append_entries_reply>
     append_entries(append_entries_request&& r, rpc::streaming_context&) final {
         return _probe.append_entries().then([this, r = std::move(r)]() mutable {
+            auto gr = r.target_group();
             return dispatch_request(
-              std::move(r),
-              [gr = r.target_group()]() {
-                  return make_missing_group_reply(gr);
-              },
+              append_entries_request::make_foreign(std::move(r)),
+              [gr]() { return make_missing_group_reply(gr); },
               [](append_entries_request&& r, consensus_ptr c) {
                   return c->append_entries(std::move(r));
               });
@@ -130,12 +130,14 @@ public:
 
     [[gnu::always_inline]] ss::future<install_snapshot_reply> install_snapshot(
       install_snapshot_request&& r, rpc::streaming_context&) final {
-        return _probe.vote().then([this, r = std::move(r)]() mutable {
+        return _probe.install_snapshot().then([this,
+                                               r = std::move(r)]() mutable {
             return dispatch_request(
-              std::move(r),
+              std::move(install_snapshot_request_foreign_wrapper(std::move(r))),
               &service::make_failed_install_snapshot_reply,
-              [](install_snapshot_request&& r, consensus_ptr c) {
-                  return c->install_snapshot(std::move(r));
+              [](
+                install_snapshot_request_foreign_wrapper&& r, consensus_ptr c) {
+                  return c->install_snapshot(r.copy());
               });
         });
     }
