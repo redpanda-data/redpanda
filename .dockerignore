@@ -4,12 +4,11 @@
 # base
 !/tools/install-deps.sh
 
+# vtools
+!/tools/
+
 # vtools configs
 !/tools/ci/vtools*.yml
-
-# vtools relevant codepaths to keep track of when rebuilding images
-!/tools/vtools/vlib/config.py
-!/tools/vtools/install/commands.py
 
 # rpk
 !/src/go/rpk/go.mod
@@ -28,5 +27,3 @@
 # rp
 !/CMakeLists.txt
 
-# workaround for kaniko https://github.com/GoogleContainerTools/kaniko/issues/595
-!/vectorized
