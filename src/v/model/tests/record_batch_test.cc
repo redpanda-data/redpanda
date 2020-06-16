@@ -11,11 +11,12 @@
 
 namespace bdata = boost::unit_test::data;
 
-std::array<model::compression, 5> compressions{model::compression::none,
-                                               model::compression::gzip,
-                                               model::compression::snappy,
-                                               model::compression::zstd,
-                                               model::compression::lz4};
+std::array<model::compression, 5> compressions{
+  model::compression::none,
+  model::compression::gzip,
+  model::compression::snappy,
+  model::compression::zstd,
+  model::compression::lz4};
 
 BOOST_DATA_TEST_CASE(
   test_with_append_time,

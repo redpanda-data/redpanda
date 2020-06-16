@@ -47,8 +47,9 @@ public:
     create_controller(model::node_id node_id) {
         std::vector<config::seed_server> seeds = {};
         if (node_id != 0) {
-            seeds.push_back({.id = model::node_id{0},
-                             .addr = unresolved_address("127.0.0.1", 11000)});
+            seeds.push_back(
+              {.id = model::node_id{0},
+               .addr = unresolved_address("127.0.0.1", 11000)});
         }
         add_controller(
           node_id,

@@ -205,9 +205,10 @@ std::vector<member_config> group::member_metadata() const {
       [this](const member_map::value_type& m) {
           auto& group_inst = m.second->group_instance_id();
           auto metadata = m.second->get_protocol_metadata(*_protocol);
-          return member_config{.member_id = m.first,
-                               .group_instance_id = group_inst,
-                               .metadata = std::move(metadata)};
+          return member_config{
+            .member_id = m.first,
+            .group_instance_id = group_inst,
+            .metadata = std::move(metadata)};
       });
     return out;
 }

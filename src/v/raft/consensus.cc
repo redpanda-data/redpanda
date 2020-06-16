@@ -1123,9 +1123,10 @@ void consensus::update_follower_stats(const group_configuration& cfg) {
 
 void consensus::trigger_leadership_notification() {
     _probe.leadership_changed();
-    _leader_notification(leadership_status{.term = model::term_id(_term),
-                                           .group = group_id(_group),
-                                           .current_leader = _leader_id});
+    _leader_notification(leadership_status{
+      .term = model::term_id(_term),
+      .group = group_id(_group),
+      .current_leader = _leader_id});
 }
 
 std::ostream& operator<<(std::ostream& o, const consensus& c) {

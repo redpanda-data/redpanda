@@ -33,9 +33,9 @@ template<typename Aggregate, std::size_t... Indices>
 struct arity_impl<
   Aggregate,
   std::index_sequence<Indices...>,
-  std::void_t<decltype(
-    Aggregate{(static_cast<void>(Indices), std::declval<instance>())...,
-              std::declval<instance>()})>>
+  std::void_t<decltype(Aggregate{
+    (static_cast<void>(Indices), std::declval<instance>())...,
+    std::declval<instance>()})>>
   : arity_impl<Aggregate, std::index_sequence<Indices..., sizeof...(Indices)>> {
 };
 } // namespace detail

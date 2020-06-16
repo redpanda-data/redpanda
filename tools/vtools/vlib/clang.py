@@ -7,8 +7,8 @@ import tarfile
 from absl import logging
 from . import shell
 
-LLVM_GITREF = 'llvmorg-9.0.1'
-LLVM_TARBALL_MD5SUM = '39ef898ce652da712d9a15a7a334f35e'
+LLVM_GITREF = 'llvmorg-10.0.0'
+LLVM_TARBALL_MD5SUM = '70297c97c950f587a0489a4bd20c62fb'
 
 
 def find_or_install_clang(vconfig):

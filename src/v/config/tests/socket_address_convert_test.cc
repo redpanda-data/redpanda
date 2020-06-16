@@ -42,22 +42,23 @@ SEASTAR_THREAD_TEST_CASE(test_decode_ipv4) {
 
     BOOST_TEST(ip6.port() == 7777);
     BOOST_TEST(ip6.addr().is_ipv6());
-    auto expected_ip6 = std::array<uint8_t, 16>{0x20,
-                                                0x01,
-                                                0x0d,
-                                                0xb8,
-                                                0x85,
-                                                0xa3,
-                                                0x00,
-                                                0x00,
-                                                0x00,
-                                                0x00,
-                                                0x8a,
-                                                0x2e,
-                                                0x03,
-                                                0x70,
-                                                0x73,
-                                                0x34};
+    auto expected_ip6 = std::array<uint8_t, 16>{
+      0x20,
+      0x01,
+      0x0d,
+      0xb8,
+      0x85,
+      0xa3,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x8a,
+      0x2e,
+      0x03,
+      0x70,
+      0x73,
+      0x34};
     BOOST_TEST(ip6.addr().as_ipv6_address().ip == expected_ip6);
 
     auto all_interfaces = read_from_yaml(all_interfaces_address_str);

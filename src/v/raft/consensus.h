@@ -73,11 +73,12 @@ public:
     model::node_id self() const { return _self; }
     protocol_metadata meta() const {
         auto lstats = _log.offsets();
-        return protocol_metadata{.group = _group,
-                                 .commit_index = _commit_index,
-                                 .term = _term,
-                                 .prev_log_index = lstats.dirty_offset,
-                                 .prev_log_term = lstats.dirty_offset_term};
+        return protocol_metadata{
+          .group = _group,
+          .commit_index = _commit_index,
+          .term = _term,
+          .prev_log_index = lstats.dirty_offset,
+          .prev_log_term = lstats.dirty_offset_term};
     }
     raft::group_id group() const { return _group; }
     model::term_id term() const { return _term; }

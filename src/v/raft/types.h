@@ -163,8 +163,8 @@ struct append_entries_request {
     append_entries_request(const append_entries_request&) = delete;
     append_entries_request& operator=(const append_entries_request&) = delete;
     append_entries_request(append_entries_request&&) noexcept = default;
-    append_entries_request& operator=(append_entries_request&&) noexcept
-      = default;
+    append_entries_request&
+    operator=(append_entries_request&&) noexcept = default;
 
     raft::group_id target_group() const { return meta.group; }
 

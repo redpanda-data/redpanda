@@ -10,21 +10,23 @@
 #include <boost/test/unit_test.hpp>
 
 BOOST_AUTO_TEST_CASE(test_calculation_non_overlapping_nodes) {
-    std::vector<model::node_id> cluster_nodes{model::node_id{0},
-                                              model::node_id{1},
-                                              model::node_id{2},
-                                              model::node_id{3},
-                                              model::node_id{4}};
+    std::vector<model::node_id> cluster_nodes{
+      model::node_id{0},
+      model::node_id{1},
+      model::node_id{2},
+      model::node_id{3},
+      model::node_id{4}};
     std::vector<model::node_id> single_node{model::node_id{3}};
     std::vector<model::node_id> three_nodes{
       model::node_id{0}, model::node_id{3}, model::node_id{4}};
 
     auto non_overlapping_1 = cluster::calculate_non_overlapping_nodes(
       single_node, cluster_nodes);
-    std::vector<model::node_id> expected_1{model::node_id{0},
-                                           model::node_id{1},
-                                           model::node_id{2},
-                                           model::node_id{4}};
+    std::vector<model::node_id> expected_1{
+      model::node_id{0},
+      model::node_id{1},
+      model::node_id{2},
+      model::node_id{4}};
 
     BOOST_REQUIRE_EQUAL(non_overlapping_1, expected_1);
 

@@ -118,9 +118,10 @@ partition_allocator::allocate(const topic_configuration& cfg) {
             return std::nullopt;
         }
 
-        partition_assignment p_as{.group = partition_group,
-                                  .ntp = std::move(ntp),
-                                  .replicas = std::move(*replicas_assignment)};
+        partition_assignment p_as{
+          .group = partition_group,
+          .ntp = std::move(ntp),
+          .replicas = std::move(*replicas_assignment)};
         ret.push_back(std::move(p_as));
         _highest_group = partition_group;
     }

@@ -327,11 +327,12 @@ mem_log_appender::operator()(model::record_batch& batch) {
 }
 
 ss::future<append_result> mem_log_appender::end_of_stream() {
-    append_result ret{.append_time = ss::lowres_clock::now(),
-                      .base_offset = _min_offset,
-                      .last_offset = _cur_offset - model::offset(1),
-                      .byte_size = _byte_size,
-                      .last_term = _log._data.back().term()};
+    append_result ret{
+      .append_time = ss::lowres_clock::now(),
+      .base_offset = _min_offset,
+      .last_offset = _cur_offset - model::offset(1),
+      .byte_size = _byte_size,
+      .last_term = _log._data.back().term()};
     return ss::make_ready_future<append_result>(ret);
 }
 
