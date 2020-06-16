@@ -12,6 +12,7 @@ namespace raft {
 ss::future<result<vote_reply>> rpc_client_protocol::vote(
   model::node_id n, vote_request&& r, rpc::client_opts opts) {
     return _connection_cache.local().with_node_client<raftgen_client_protocol>(
+      ss::this_shard_id(),
       n,
       [r = std::move(r),
        opts = std::move(opts)](raftgen_client_protocol client) mutable {
@@ -23,6 +24,7 @@ ss::future<result<vote_reply>> rpc_client_protocol::vote(
 ss::future<result<append_entries_reply>> rpc_client_protocol::append_entries(
   model::node_id n, append_entries_request&& r, rpc::client_opts opts) {
     return _connection_cache.local().with_node_client<raftgen_client_protocol>(
+      ss::this_shard_id(),
       n,
       [r = std::move(r),
        opts = std::move(opts)](raftgen_client_protocol client) mutable {
@@ -34,6 +36,7 @@ ss::future<result<append_entries_reply>> rpc_client_protocol::append_entries(
 ss::future<result<heartbeat_reply>> rpc_client_protocol::heartbeat(
   model::node_id n, heartbeat_request&& r, rpc::client_opts opts) {
     return _connection_cache.local().with_node_client<raftgen_client_protocol>(
+      ss::this_shard_id(),
       n,
       [r = std::move(r),
        opts = std::move(opts)](raftgen_client_protocol client) mutable {

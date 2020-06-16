@@ -64,7 +64,7 @@ auto with_client(
     return update_broker_client(cache, id, std::move(addr))
       .then([id, &cache, f = std::forward<Func>(f)]() mutable {
           return cache.local().with_node_client<Proto, Func>(
-            id, std::forward<Func>(f));
+            ss::this_shard_id(), id, std::forward<Func>(f));
       });
 }
 

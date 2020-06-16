@@ -151,20 +151,16 @@ static void initialize_connection_cache_in_thread(
   ss::sharded<rpc::connection_cache>& cache, std::vector<ss::sstring> opts) {
     for (auto& i : opts) {
         auto [node, cfg] = extract_peer(i);
-        auto shard = rpc::connection_cache::shard_for(node);
-        ss::smp::submit_to(shard, [&cache, shard, n = node, config = cfg] {
-            vlog(
-              tronlog.info,
-              "shard: {} owns {}->{}",
-              shard,
-              n,
-              config.server_addr);
-            return cache.local().emplace(
-              n,
-              config,
-              rpc::make_exponential_backoff_policy<rpc::clock_type>(
-                std::chrono::seconds(1), std::chrono::seconds(60)));
-        }).get();
+        for (ss::shard_id i = 0; i < ss::smp::count; ++i) {
+            auto shard = rpc::connection_cache::shard_for(i, node);
+            ss::smp::submit_to(shard, [&cache, shard, n = node, config = cfg] {
+                return cache.local().emplace(
+                  n,
+                  config,
+                  rpc::make_exponential_backoff_policy<rpc::clock_type>(
+                    std::chrono::seconds(1), std::chrono::seconds(60)));
+            }).get();
+        }
     }
 }
 
