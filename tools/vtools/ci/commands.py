@@ -3,7 +3,7 @@ import yaml
 import click
 import git
 
-# from absl import logging
+from absl import logging
 from google.cloud.devtools import cloudbuild_v1
 
 from ..vlib import config
@@ -73,7 +73,6 @@ def trigger(build_type, clang, conf):
 
     gcb_conf['substitutions'] = {
         'COMMIT_SHA': sha1,
-        'SHORT_SHA': r.git.rev_parse(sha1, short=7),
         '_COMPILER': 'clang' if vconfig.compiler == 'clang' else 'gcc',
         '_BUILD_TYPE': vconfig.build_type,
         '_GITHUB_API_TOKEN': gh_token,
@@ -90,5 +89,8 @@ def trigger(build_type, clang, conf):
     if machine_type:
         gcb_conf['options']['machine_type'] = machine_type
         gcb_conf['options'].pop('machineType')
+
+    logging.info(f'Triggering test COMMIT={sha1},COMPILER={vconfig.compiler},'
+                 f'BUILD_TYPE={vconfig.build_type}')
 
     client.create_build('redpandaci', gcb_conf)
