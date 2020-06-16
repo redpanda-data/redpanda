@@ -61,7 +61,7 @@ ss::future<result<T, EC>> result_with_timeout(
     }
     auto pr = std::make_unique<ss::promise<ret_t>>();
     auto result = pr->get_future();
-    ss::timer<Clock> timer([& pr = *pr, error] { pr.set_value(error); });
+    ss::timer<Clock> timer([&pr = *pr, error] { pr.set_value(error); });
     timer.arm(timeout);
     (void)f.then_wrapped(
       [pr = std::move(pr), timer = std::move(timer), error](auto&& f) mutable {

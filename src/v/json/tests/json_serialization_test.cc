@@ -86,9 +86,10 @@ SEASTAR_THREAD_TEST_CASE(json_serialization_test) {
 
     personne_t p1;
     p1.full_name = "foo bar";
-    p1.sons_names = {ss::sstring{"foo_derived bar"},
-                     ss::sstring{"boo_by_far bar"},
-                     ss::sstring{"lolipop bar"}};
+    p1.sons_names = {
+      ss::sstring{"foo_derived bar"},
+      ss::sstring{"boo_by_far bar"},
+      ss::sstring{"lolipop bar"}};
     p1.age = 51;
     p1.nic = ss::sstring{"981615823"};
     p1.height = 1.78;

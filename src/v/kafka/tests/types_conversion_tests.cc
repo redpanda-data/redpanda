@@ -9,9 +9,10 @@
 using namespace kafka; // NOLINT
 
 BOOST_AUTO_TEST_CASE(test_no_additional_options) {
-    new_topic_configuration no_options = {.topic = model::topic_view{"test_tp"},
-                                          .partition_count = 5,
-                                          .replication_factor = 5};
+    new_topic_configuration no_options = {
+      .topic = model::topic_view{"test_tp"},
+      .partition_count = 5,
+      .replication_factor = 5};
 
     auto cluster_tp_config = no_options.to_cluster_type();
     BOOST_REQUIRE_EQUAL(

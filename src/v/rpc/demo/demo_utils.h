@@ -51,6 +51,7 @@ gen_simple_request(size_t data_size, size_t chunk_size) {
 inline interspersed_request
 gen_interspersed_request(size_t data_size, size_t chunk_size) {
     const std::size_t chunks = data_size / chunk_size / 8;
+    // clang-format off
     return interspersed_request{
       .data = interspersed_request::
         payload{._one = i1{.y = rand_iobuf(chunks, chunk_size)},
@@ -62,6 +63,7 @@ gen_interspersed_request(size_t data_size, size_t chunk_size) {
                              .y = rand_iobuf(chunks, chunk_size)}},
       .x = rand_iobuf(chunks, chunk_size),
       .y = rand_iobuf(chunks, chunk_size)};
+    // clang-format on
 }
 
 } // namespace demo

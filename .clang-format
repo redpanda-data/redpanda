@@ -33,7 +33,7 @@ IncludeCategories:
 IndentCaseLabels: false
 IndentWidth: 4
 KeepEmptyLinesAtTheStartOfBlocks: false
-PenaltyBreakAssignment: 100
+PenaltyBreakAssignment: 80
 PenaltyBreakBeforeFirstCallParameter: 10
 PenaltyReturnTypeOnItsOwnLine: 60
 ---

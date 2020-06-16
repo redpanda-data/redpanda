@@ -181,13 +181,14 @@ cfg_from(boost::program_options::variables_map& m, ss::sharded<hdr_hist>* h) {
         client_cfg.credentials = std::move(builder);
     }
     client_cfg.max_queued_bytes = ss::memory::stats().total_memory() * .8;
-    return load_gen_cfg{.data_size = m["data-size"].as<std::size_t>(),
-                        .chunk_size = m["chunk-size"].as<std::size_t>(),
-                        .concurrency = m["concurrency"].as<std::size_t>(),
-                        .parallelism = m["parallelism"].as<std::size_t>(),
-                        .test_case = m["test-case"].as<std::size_t>(),
-                        .client_cfg = std::move(client_cfg),
-                        .hist = h};
+    return load_gen_cfg{
+      .data_size = m["data-size"].as<std::size_t>(),
+      .chunk_size = m["chunk-size"].as<std::size_t>(),
+      .concurrency = m["concurrency"].as<std::size_t>(),
+      .parallelism = m["parallelism"].as<std::size_t>(),
+      .test_case = m["test-case"].as<std::size_t>(),
+      .client_cfg = std::move(client_cfg),
+      .hist = h};
 }
 
 class throughput {

@@ -37,9 +37,10 @@ throttle_delay quota_manager::record_tp_and_throttle(
     // c++20 via Hash::transparent_key_equal.
     auto [it, inserted] = _quotas.try_emplace(
       ss::sstring(cid),
-      quota{now,
-            clock::duration(0),
-            {_default_num_windows, _default_window_width}});
+      quota{
+        now,
+        clock::duration(0),
+        {_default_num_windows, _default_window_width}});
 
     // bump to prevent gc
     if (!inserted) {

@@ -266,11 +266,12 @@ public:
         ss::circular_buffer<model::record_batch> ret;
 
         auto max_partitions = 20;
-        std::array<model::node_id, 5> brokers{model::node_id(0),
-                                              model::node_id(1),
-                                              model::node_id(2),
-                                              model::node_id(3),
-                                              model::node_id(4)};
+        std::array<model::node_id, 5> brokers{
+          model::node_id(0),
+          model::node_id(1),
+          model::node_id(2),
+          model::node_id(3),
+          model::node_id(4)};
         model::offset offset{0};
         for (int i = 0; i < complex_topic_count; i++) {
             auto partitions = random_generators::get_int(max_partitions);

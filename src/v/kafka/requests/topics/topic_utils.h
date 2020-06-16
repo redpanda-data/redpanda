@@ -34,17 +34,18 @@ template<typename T>
 CONCEPT(requires TopicRequestItem<T>)
 topic_op_result
   generate_error(T item, error_code code, const ss::sstring& msg) {
-    return topic_op_result{.topic = model::topic{ss::sstring(item.topic())},
-                           .ec = code,
-                           .err_msg = msg};
+    return topic_op_result{
+      .topic = model::topic{ss::sstring(item.topic())},
+      .ec = code,
+      .err_msg = msg};
 }
 
 /// Generates successfull topic_op_result for single topic request item
 template<typename T>
 CONCEPT(requires TopicRequestItem<T>)
 topic_op_result generate_successfull_result(T item) {
-    return topic_op_result{.topic = model::topic{ss::sstring(item.topic())},
-                           .ec = error_code::none};
+    return topic_op_result{
+      .topic = model::topic{ss::sstring(item.topic())}, .ec = error_code::none};
 }
 
 /// Validates topic requests items in range with predicate,

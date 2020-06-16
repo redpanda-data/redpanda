@@ -46,19 +46,20 @@ model::record_batch_header header_from_iobuf(iobuf b) {
       "Error in header parsing. Must consume:{} bytes, but consumed:{}",
       model::packed_record_batch_header_size,
       parser.bytes_consumed());
-    auto hdr = model::record_batch_header{.header_crc = header_crc,
-                                          .size_bytes = sz,
-                                          .base_offset = off,
-                                          .type = type,
-                                          .crc = crc,
-                                          .attrs = attrs,
-                                          .last_offset_delta = delta,
-                                          .first_timestamp = first,
-                                          .max_timestamp = max,
-                                          .producer_id = producer_id,
-                                          .producer_epoch = producer_epoch,
-                                          .base_sequence = base_sequence,
-                                          .record_count = record_count};
+    auto hdr = model::record_batch_header{
+      .header_crc = header_crc,
+      .size_bytes = sz,
+      .base_offset = off,
+      .type = type,
+      .crc = crc,
+      .attrs = attrs,
+      .last_offset_delta = delta,
+      .first_timestamp = first,
+      .max_timestamp = max,
+      .producer_id = producer_id,
+      .producer_epoch = producer_epoch,
+      .base_sequence = base_sequence,
+      .record_count = record_count};
     hdr.ctx.owner_shard = ss::this_shard_id();
     return hdr;
 }
