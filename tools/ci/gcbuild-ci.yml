@@ -3,7 +3,7 @@ steps:
   name: 'alpine/git:v2.24.1'
   entrypoint: '/bin/sh'
   args:
-  - '-c'
+  - '-ec'
   - |
     if [[ ! -d ".git/" ]]; then
       if [[ "$_GITHUB_API_TOKEN" == "na" ]]; then
@@ -12,6 +12,7 @@ steps:
       fi
       git init
       git remote add origin https://$_GITHUB_API_TOKEN@github.com/vectorizedio/v
+      echo "Checking out COMMIT=${COMMIT_SHA}"
       git fetch --depth=200 origin $COMMIT_SHA
       git reset --hard FETCH_HEAD
 
@@ -26,44 +27,33 @@ steps:
       fi
     fi
 
-- id: 'show cpu info'
-  name: 'alpine:3.11'
-  entrypoint: sh
+- id: 'install vtools'
+  name: 'gcr.io/redpandaci/fedora:31-python37-docker1903'
+  entrypoint: bash
   args:
-  - -c
+  - -ec
   - |
+    # show CPU info
     cat /proc/cpuinfo | sed -e '/^$/,$d'
 
-- id: 'build builder image'
-  name: 'gcr.io/kaniko-project/executor:debug-v0.19.0'
-  entrypoint: '/busybox/sh'
-  args:
-  - '-c'
-  - >-
-    /kaniko/executor \
-      --dockerfile=tools/ci/Dockerfile \
-      --build-arg="COMPILER=$_COMPILER" \
-      --build-arg="BUILD_TYPE=$_BUILD_TYPE" \
-      --build-arg="GITHUB_API_TOKEN=$_GITHUB_API_TOKEN" \
-      --destination="gcr.io/$PROJECT_ID/builder:$_COMPILER-$_BUILD_TYPE-$SHORT_SHA" \
-      --cache=true \
-      --cache-ttl=96h
+    # install vtools
+    python3 -mvenv --system-site-packages build/venv/v
+    source build/venv/v/bin/activate
+    pip install tools/
 
-- id: 'install vtools and test it'
-  name: 'gcr.io/$PROJECT_ID/builder:$_COMPILER-$_BUILD_TYPE-$SHORT_SHA'
-  entrypoint: 'bash'
-  args:
-  - '-c'
-  - |
-    python3 -mvenv build/venv/v && \
-    source build/venv/v/bin/activate && \
-    pip install icontract==2.3.2 && \
-    pip install tools/ && \
-    vtools test py && \
+    # install infra-deps (needed by formatting check of terraform files)
     vtools install infra-deps
 
+- id: 'test vtools'
+  name: 'gcr.io/redpandaci/fedora:31-python37-docker1903'
+  args: ['./build/venv/v/bin/vtools', 'test', 'py']
+
+- id: 'build builder image'
+  name: 'gcr.io/redpandaci/fedora:31-python37-docker1903'
+  args: ['./build/venv/v/bin/vtools', 'dbuild', 'toolchain', '--conf=tools/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml']
+
 - id: 'check source code formatting'
-  name: 'gcr.io/$PROJECT_ID/builder:$_COMPILER-$_BUILD_TYPE-$SHORT_SHA'
+  name: 'gcr.io/redpandaci/builder'
   entrypoint: 'bash'
   args:
   - -c
@@ -73,15 +63,15 @@ steps:
     fi
 
 - id: 'test rpk'
-  name: 'gcr.io/$PROJECT_ID/builder:$_COMPILER-$_BUILD_TYPE-$SHORT_SHA'
-  args: ['./build/venv/v/bin/vtools', 'test', 'go', '--conf=tools/ci/vtools-clang-release.yml']
+  name: 'gcr.io/redpandaci/builder'
+  args: ['./build/venv/v/bin/vtools', 'test', 'go', '--conf=tools/ci/vtools-gcc-release.yml']
 
 - id: 'build redpanda'
-  name: 'gcr.io/$PROJECT_ID/builder:$_COMPILER-$_BUILD_TYPE-$SHORT_SHA'
+  name: 'gcr.io/redpandaci/builder'
   args: ['./build/venv/v/bin/vtools', 'build', 'cpp', '--conf=tools/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml', '--skip-external']
 
 - id: 'test redpanda'
-  name: 'gcr.io/$PROJECT_ID/builder:$_COMPILER-$_BUILD_TYPE-$SHORT_SHA'
+  name: 'gcr.io/redpandaci/builder'
   args: ['./build/venv/v/bin/vtools', 'test', 'cpp', '--conf=tools/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml']
 
 timeout: 3600s
