@@ -30,16 +30,16 @@ set(cmake_build_env
   PKG_CONFIG_PATH=@PKG_CONFIG_PATH@
   LDFLAGS=${ld_flags}
   CFLAGS=${c_flags}
-  CXXFLAGS=-std=gnu++17\ ${cxx_flags}
-  CPPFLAGS=-std=gnu++17\ ${cxx_flags}
+  CXXFLAGS=-std=c++17\ ${cxx_flags}
+  CPPFLAGS=-std=c++17\ ${cxx_flags}
   )
 # seastar needs explicit -g
 set(seastar_build_env
   PKG_CONFIG_PATH=@PKG_CONFIG_PATH@
   LDFLAGS=${ld_flags}
   CFLAGS=${c_flags}
-  CXXFLAGS=-std=gnu++17\ ${cxx_flags}\ -g
-  CPPFLAGS=-std=gnu++17\ ${cxx_flags}\ -g
+  CXXFLAGS=-std=c++17\ ${cxx_flags}\ -g
+  CPPFLAGS=-std=c++17\ ${cxx_flags}\ -g
   )
 # autotools
 set(build_env
