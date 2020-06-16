@@ -256,8 +256,9 @@ struct convert<config::tls_config> {
         }
 
         auto key_cert = node["key_file"] ? std::make_optional<config::key_cert>(
-                          config::key_cert{node["key_file"].as<ss::sstring>(),
-                                           node["cert_file"].as<ss::sstring>()})
+                          config::key_cert{
+                            node["key_file"].as<ss::sstring>(),
+                            node["cert_file"].as<ss::sstring>()})
                                          : std::nullopt;
         rhs = config::tls_config(
           node["enabled"] && node["enabled"].as<bool>(),

@@ -44,8 +44,8 @@ public:
         }
     }
     // OPTIONAL: Allow generic error conditions to be compared to me
-    virtual std::error_condition default_error_condition(int c) const
-      noexcept override final {
+    virtual std::error_condition
+    default_error_condition(int c) const noexcept override final {
         switch (static_cast<conversion_errc>(c)) {
         case conversion_errc::empty_string:
             return make_error_condition(std::errc::invalid_argument);

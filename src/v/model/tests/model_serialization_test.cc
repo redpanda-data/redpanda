@@ -12,14 +12,16 @@
 SEASTAR_THREAD_TEST_CASE(topic_metadata_rt_test) {
     model::partition_metadata p_md0(model::partition_id(0));
     p_md0.leader_node = model::node_id(0);
-    p_md0.replicas = {model::broker_shard{model::node_id(0), 1},
-                      model::broker_shard{model::node_id(1), 2},
-                      model::broker_shard{model::node_id(2), 3}};
+    p_md0.replicas = {
+      model::broker_shard{model::node_id(0), 1},
+      model::broker_shard{model::node_id(1), 2},
+      model::broker_shard{model::node_id(2), 3}};
     model::partition_metadata p_md1(model::partition_id(0));
     p_md1.leader_node = model::node_id(3);
-    p_md1.replicas = {model::broker_shard{model::node_id(3), 4},
-                      model::broker_shard{model::node_id(4), 5},
-                      model::broker_shard{model::node_id(5), 6}};
+    p_md1.replicas = {
+      model::broker_shard{model::node_id(3), 4},
+      model::broker_shard{model::node_id(4), 5},
+      model::broker_shard{model::node_id(5), 6}};
 
     model::topic_metadata t_md(
       model::topic_namespace(model::ns("test-ns"), model::topic("topic_1")));

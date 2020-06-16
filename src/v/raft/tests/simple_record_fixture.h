@@ -51,13 +51,14 @@ struct simple_record_fixture {
             learners.push_back(tests::random_broker(
               active_nodes + 1, active_nodes * active_nodes));
         }
-        return raft::group_configuration{.nodes = std::move(nodes),
-                                         .learners = std::move(learners)};
+        return raft::group_configuration{
+          .nodes = std::move(nodes), .learners = std::move(learners)};
     }
     model::offset _base_offset{0};
-    model::ntp _ntp{ss::sstring("simple_record_fixture_test_")
-                      + random_generators::gen_alphanum_string(8),
-                    random_generators::gen_alphanum_string(6),
-                    random_generators::get_int(0, 24)};
+    model::ntp _ntp{
+      ss::sstring("simple_record_fixture_test_")
+        + random_generators::gen_alphanum_string(8),
+      random_generators::gen_alphanum_string(6),
+      random_generators::get_int(0, 24)};
 };
 } // namespace raft

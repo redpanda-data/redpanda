@@ -76,8 +76,9 @@ SEASTAR_THREAD_TEST_CASE(partition_iterator) {
         kafka::fetch_request req;
         req.topics.push_back(
           {.name = model::topic("t0"),
-           .partitions = {{.id = model::partition_id(100)},
-                          {.id = model::partition_id(101)}}});
+           .partitions = {
+             {.id = model::partition_id(100)},
+             {.id = model::partition_id(101)}}});
         auto parts = transform(req);
         BOOST_TEST(parts.size() == 2);
         BOOST_TEST(parts[0].topic == model::topic("t0"));
@@ -91,8 +92,9 @@ SEASTAR_THREAD_TEST_CASE(partition_iterator) {
         kafka::fetch_request req;
         req.topics.push_back(
           {.name = model::topic("t0"),
-           .partitions = {{.id = model::partition_id(100)},
-                          {.id = model::partition_id(101)}}});
+           .partitions = {
+             {.id = model::partition_id(100)},
+             {.id = model::partition_id(101)}}});
         req.topics.push_back(
           {.name = model::topic("t1"),
            .partitions = {{.id = model::partition_id(102)}}});
@@ -111,14 +113,16 @@ SEASTAR_THREAD_TEST_CASE(partition_iterator) {
         kafka::fetch_request req;
         req.topics.push_back(
           {.name = model::topic("t0"),
-           .partitions = {{.id = model::partition_id(100)},
-                          {.id = model::partition_id(101)}}});
+           .partitions = {
+             {.id = model::partition_id(100)},
+             {.id = model::partition_id(101)}}});
         req.topics.push_back({.name = model::topic("t1")});
         req.topics.push_back({.name = model::topic("t2")});
         req.topics.push_back(
           {.name = model::topic("t3"),
-           .partitions = {{.id = model::partition_id(102)},
-                          {.id = model::partition_id(103)}}});
+           .partitions = {
+             {.id = model::partition_id(102)},
+             {.id = model::partition_id(103)}}});
         auto parts = transform(req);
         BOOST_TEST(parts.size() == 4);
         BOOST_TEST(parts[0].topic == model::topic("t0"));

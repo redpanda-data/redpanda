@@ -88,12 +88,14 @@ SEASTAR_THREAD_TEST_CASE(partition_assignment_rt_test) {
 }
 
 SEASTAR_THREAD_TEST_CASE(create_topics_request) {
+    // clang-format off
     cluster::create_topics_request req{
       .topics = {cluster::topic_configuration(
                    model::ns("default"), model::topic("tp-1"), 12, 3),
                  cluster::topic_configuration(
                    model::ns("default"), model::topic("tp-2"), 6, 5)},
       .timeout = std::chrono::seconds(1)};
+    // clang-format on
     auto res = serialize_roundtrip_rpc(std::move(req));
     BOOST_CHECK(res.timeout == std::chrono::seconds(1));
     BOOST_REQUIRE_EQUAL(res.topics[0].partition_count, 12);
@@ -115,6 +117,7 @@ SEASTAR_THREAD_TEST_CASE(create_topics_reply) {
     pmd1.replicas.push_back(model::broker_shard{model::node_id(12), 1});
     pmd1.replicas.push_back(model::broker_shard{model::node_id(13), 2});
     md1.partitions = {pmd1};
+    // clang-format off
     cluster::create_topics_reply req{
       .results
       = {cluster::topic_result(
@@ -124,7 +127,7 @@ SEASTAR_THREAD_TEST_CASE(create_topics_reply) {
            model::topic_namespace(model::ns("default"), model::topic("tp-2")),
            cluster::errc::notification_wait_timeout)},
       .metadata = {md1}};
-
+    // clang-format on
     auto res = serialize_roundtrip_rpc(std::move(req));
 
     BOOST_REQUIRE_EQUAL(res.results[0].tp_ns.tp, model::topic("tp-1"));
