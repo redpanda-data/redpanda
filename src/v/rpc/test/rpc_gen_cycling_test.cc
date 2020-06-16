@@ -118,11 +118,10 @@ FIXTURE_TEST(rpc_mixed_compression, rpc_integration_fixture) {
     client_t client(client_config());
     client.connect().get();
     BOOST_TEST_MESSAGE("Calling echo method no compression");
-    auto echo_resp = client
-                       .echo(
-                         echo::echo_req{.str = data},
-                         rpc::client_opts(rpc::no_timeout))
-                       .get0();
+    auto echo_resp
+      = client
+          .echo(echo::echo_req{.str = data}, rpc::client_opts(rpc::no_timeout))
+          .get0();
     BOOST_REQUIRE_EQUAL(echo_resp.value().data.str, data);
     BOOST_TEST_MESSAGE("Calling echo method *WITH* compression");
     echo_resp = client

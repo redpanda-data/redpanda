@@ -227,8 +227,8 @@ void metadata_cache::insert_topic(
 
     _cache.emplace(
       std::move(md.tp_ns),
-      topic_metadata{.configuration = std::move(cfg),
-                     .partitions = std::move(partitions)});
+      topic_metadata{
+        .configuration = std::move(cfg), .partitions = std::move(partitions)});
 }
 
 ss::future<model::node_id> metadata_cache::get_leader(

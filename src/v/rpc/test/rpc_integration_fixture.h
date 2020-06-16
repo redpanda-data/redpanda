@@ -90,8 +90,8 @@ public:
     rpc::transport_configuration client_config(
       std::optional<ss::tls::credentials_builder> credentials
       = std::nullopt) const {
-        return rpc::transport_configuration{.server_addr = _listen_address,
-                                            .credentials = credentials};
+        return rpc::transport_configuration{
+          .server_addr = _listen_address, .credentials = credentials};
     }
 
     void register_services() {

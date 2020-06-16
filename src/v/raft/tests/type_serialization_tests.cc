@@ -104,8 +104,8 @@ SEASTAR_THREAD_TEST_CASE(group_configuration) {
         learners.push_back(create_test_broker());
     }
 
-    raft::group_configuration cfg{.nodes = std::move(nodes),
-                                  .learners = std::move(learners)};
+    raft::group_configuration cfg{
+      .nodes = std::move(nodes), .learners = std::move(learners)};
     auto expected = cfg;
 
     auto deser = async_serialize_roundtrip_rpc(std::move(cfg)).get0();
@@ -122,8 +122,8 @@ SEASTAR_THREAD_TEST_CASE(serialize_configuration) {
         learners.push_back(create_test_broker());
     }
 
-    raft::group_configuration cfg{.nodes = std::move(nodes),
-                                  .learners = std::move(learners)};
+    raft::group_configuration cfg{
+      .nodes = std::move(nodes), .learners = std::move(learners)};
     auto expected = cfg;
 
     auto batch_reader = raft::details::serialize_configuration(std::move(cfg));

@@ -58,8 +58,8 @@ public:
     continuous_batch_parser(const continuous_batch_parser&) = delete;
     continuous_batch_parser& operator=(const continuous_batch_parser&) = delete;
     continuous_batch_parser(continuous_batch_parser&&) noexcept = default;
-    continuous_batch_parser& operator=(continuous_batch_parser&&) noexcept
-      = default;
+    continuous_batch_parser&
+    operator=(continuous_batch_parser&&) noexcept = default;
     ~continuous_batch_parser() noexcept = default;
 
     // continues to parse until stop_parser is reached or end of stream

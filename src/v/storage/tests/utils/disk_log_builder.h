@@ -33,9 +33,10 @@ inline static log_config log_builder_config() {
 }
 
 inline static log_reader_config reader_config() {
-    return log_reader_config{model::offset(0),
-                             model::model_limits<model::offset>::max(),
-                             ss::default_priority_class()};
+    return log_reader_config{
+      model::offset(0),
+      model::model_limits<model::offset>::max(),
+      ss::default_priority_class()};
 }
 
 inline static log_append_config append_config() {

@@ -70,9 +70,10 @@ public:
         client.connect().get0();
         std::vector<model::topic> topics;
         topics.push_back(tp);
-        kafka::metadata_request md_req{.topics = topics,
-                                       .allow_auto_topic_creation = false,
-                                       .list_all_topics = false};
+        kafka::metadata_request md_req{
+          .topics = topics,
+          .allow_auto_topic_creation = false,
+          .list_all_topics = false};
         return client.dispatch(md_req).get0();
     }
 

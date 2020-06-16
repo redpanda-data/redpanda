@@ -153,12 +153,13 @@ inline load_gen_cfg cfg_from_opts_in_thread(
         client_cfg.credentials = std::move(builder);
     }
     client_cfg.max_queued_bytes = ss::memory::stats().total_memory() * .8;
-    return load_gen_cfg{.key_size = m["key-size"].as<std::size_t>(),
-                        .value_size = m["value-size"].as<std::size_t>(),
-                        .concurrency = m["concurrency"].as<std::size_t>(),
-                        .parallelism = m["parallelism"].as<std::size_t>(),
-                        .client_cfg = std::move(client_cfg),
-                        .hist = h};
+    return load_gen_cfg{
+      .key_size = m["key-size"].as<std::size_t>(),
+      .value_size = m["value-size"].as<std::size_t>(),
+      .concurrency = m["concurrency"].as<std::size_t>(),
+      .parallelism = m["parallelism"].as<std::size_t>(),
+      .client_cfg = std::move(client_cfg),
+      .hist = h};
 }
 
 inline hdr_hist aggregate_in_thread(ss::sharded<hdr_hist>& h) {

@@ -121,11 +121,12 @@ disk_log_appender::operator()(model::record_batch& batch) {
 }
 
 ss::future<append_result> disk_log_appender::end_of_stream() {
-    auto retval = append_result{.append_time = _append_time,
-                                .base_offset = _base_offset,
-                                .last_offset = _last_offset,
-                                .byte_size = _byte_size,
-                                .last_term = _last_term};
+    auto retval = append_result{
+      .append_time = _append_time,
+      .base_offset = _base_offset,
+      .last_offset = _last_offset,
+      .byte_size = _byte_size,
+      .last_term = _last_term};
     if (_config.should_fsync == storage::log_append_config::fsync::no) {
         return ss::make_ready_future<append_result>(retval);
     }
