@@ -23,7 +23,10 @@ public:
     using underlying = std::unordered_map<model::node_id, transport_ptr>;
     using iterator = typename underlying::iterator;
 
-    static inline ss::shard_id shard_for(const model::node_id&);
+    static inline ss::shard_id shard_for(
+      ss::shard_id src,
+      model::node_id node,
+      ss::shard_id max_shards = ss::smp::count);
 
     connection_cache() = default;
     bool contains(model::node_id n) const {
@@ -40,15 +43,16 @@ public:
     /// \brief closes all connections
     ss::future<> stop();
 
-    // clang-format off
     template<typename Protocol, typename Func>
-    CONCEPT(requires requires(Func&& f, Protocol proto) { 
-        f(proto); 
+    // clang-format off
+    CONCEPT(requires requires(Func&& f, Protocol proto) {
+        f(proto);
     })
-    // clang-format on
-    auto with_node_client(model::node_id node_id, Func&& f) {
+      // clang-format on
+      auto with_node_client(
+        ss::shard_id src_shard, model::node_id node_id, Func&& f) {
         using ret_t = result_wrap_t<std::result_of_t<Func(Protocol)>>;
-        auto shard = rpc::connection_cache::shard_for(node_id);
+        auto shard = rpc::connection_cache::shard_for(src_shard, node_id);
 
         return container().invoke_on(
           shard,
@@ -76,9 +80,17 @@ private:
     ss::semaphore _sem{1}; // to add/remove nodes
     underlying _cache;
 };
-inline ss::shard_id connection_cache::shard_for(const model::node_id& b) {
-    auto h = ::std::hash<model::node_id>()(b);
-    return jump_consistent_hash(h, ss::smp::count);
+inline ss::shard_id connection_cache::shard_for(
+  ss::shard_id src_shard, model::node_id n, ss::shard_id total_shards) {
+    static const constexpr size_t vnodes = 3;
+    /// make deterministic - choose 1 prime to mix node_id with
+    /// https://planetmath.org/goodhashtableprimes
+    static const constexpr std::array<size_t, vnodes> universe{
+      {402653189, 805306457, 1610612741}};
+    // NOLINTNEXTLINE
+    size_t h = universe[jump_consistent_hash(src_shard, vnodes)];
+    boost::hash_combine(h, std::hash<model::node_id>{}(n));
+    return jump_consistent_hash(h, total_shards);
 }
 
 } // namespace rpc

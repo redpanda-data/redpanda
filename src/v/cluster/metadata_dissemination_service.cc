@@ -228,7 +228,9 @@ metadata_dissemination_service::dispatch_get_metadata_update(
     vlog(clusterlog.debug, "Requesting metadata update from node {}", id);
     return _clients.local()
       .with_node_client<metadata_dissemination_rpc_client_protocol>(
-        id, [this](metadata_dissemination_rpc_client_protocol c) {
+        ss::this_shard_id(),
+        id,
+        [this](metadata_dissemination_rpc_client_protocol c) {
             return c
               .get_leadership(
                 get_leadership_request{},
@@ -292,6 +294,7 @@ ss::future<> metadata_dissemination_service::dispatch_one_update(
   model::node_id target_id, update_retry_meta& meta) {
     return _clients.local()
       .with_node_client<metadata_dissemination_rpc_client_protocol>(
+        ss::this_shard_id(),
         target_id,
         [this, &meta, target_id](
           metadata_dissemination_rpc_client_protocol proto) mutable {
