@@ -22,15 +22,16 @@ import (
 
 var (
 	allTuners = map[string]func(*tunersFactory, *TunerParams) tuners.Tunable{
-		"disk_irq":       (*tunersFactory).newDiskIRQTuner,
-		"disk_scheduler": (*tunersFactory).newDiskSchedulerTuner,
-		"disk_nomerges":  (*tunersFactory).newDiskNomergesTuner,
-		"net":            (*tunersFactory).newNetworkTuner,
-		"cpu":            (*tunersFactory).newCpuTuner,
-		"aio_events":     (*tunersFactory).newMaxAIOEventsTuner,
-		"clocksource":    (*tunersFactory).newClockSourceTuner,
-		"swappiness":     (*tunersFactory).newSwappinessTuner,
-		"coredump":       (*tunersFactory).newCoredumpTuner,
+		"disk_irq":              (*tunersFactory).newDiskIRQTuner,
+		"disk_scheduler":        (*tunersFactory).newDiskSchedulerTuner,
+		"disk_nomerges":         (*tunersFactory).newDiskNomergesTuner,
+		"net":                   (*tunersFactory).newNetworkTuner,
+		"cpu":                   (*tunersFactory).newCpuTuner,
+		"aio_events":            (*tunersFactory).newMaxAIOEventsTuner,
+		"clocksource":           (*tunersFactory).newClockSourceTuner,
+		"swappiness":            (*tunersFactory).newSwappinessTuner,
+		"transparent_hugepages": (*tunersFactory).newTHPTuner,
+		"coredump":              (*tunersFactory).newCoredumpTuner,
 	}
 )
 
@@ -133,6 +134,8 @@ func IsTunerEnabled(tuner string, rpkConfig *config.RpkConfig) bool {
 		return rpkConfig.TuneClocksource
 	case "swappiness":
 		return rpkConfig.TuneSwappiness
+	case "transparent_hugepages":
+		return rpkConfig.TuneTransparentHugePages
 	case "coredump":
 		return rpkConfig.TuneCoredump
 	}
@@ -236,6 +239,10 @@ func (factory *tunersFactory) newSwappinessTuner(
 	params *TunerParams,
 ) tuners.Tunable {
 	return tuners.NewSwappinessTuner(factory.fs, factory.executor)
+}
+
+func (factory *tunersFactory) newTHPTuner(_ *TunerParams) tuners.Tunable {
+	return tuners.NewEnableTHPTuner(factory.fs, factory.executor)
 }
 
 func (factory *tunersFactory) newCoredumpTuner(
