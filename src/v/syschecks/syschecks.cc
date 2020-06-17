@@ -1,6 +1,7 @@
 #include "syschecks/syschecks.h"
 
 #include "likely.h"
+#include "version.h"
 
 #include <seastar/core/memory.hh>
 #include <seastar/core/seastar.hh>
@@ -39,7 +40,9 @@ void memory(bool ignore) {
 }
 
 void systemd_notify_ready() {
-    systemd_raw_message("READY=1\nSTATUS=redpanda is ready; let's go!");
+    ss::sstring msg = fmt::format(
+      "READY=1\nSTATUS=redpanda is ready! - {}", redpanda_version());
+    systemd_raw_message(msg);
 }
 
 // TODO:agallego - support non-systemd installations
