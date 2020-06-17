@@ -1,5 +1,6 @@
 ---
 redpanda:
+  auto_create_topics_enabled: true
   data_directory: "~/.redpanda"
   node_id: 1
   rpc_server:
