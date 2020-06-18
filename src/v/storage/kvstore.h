@@ -146,11 +146,11 @@ private:
         explicit replay_consumer(kvstore* store)
           : _store(store) {}
 
-        virtual consume_result consume_batch_start(
+        consume_result consume_batch_start(
           model::record_batch_header header, size_t, size_t) override;
-        virtual consume_result consume_record(model::record r) override;
-        virtual void consume_compressed_records(iobuf&&) override;
-        virtual stop_parser consume_batch_end() override;
+        consume_result consume_record(model::record r) override;
+        void consume_compressed_records(iobuf&&) override;
+        stop_parser consume_batch_end() override;
 
     private:
         kvstore* _store;
