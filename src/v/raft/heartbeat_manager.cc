@@ -197,7 +197,6 @@ void heartbeat_manager::process_reply(
         }
         return;
     }
-    vlog(hbeatlog.trace, "process_reply {}", r);
     for (auto& m : r.value().meta) {
         auto it = _consensus_groups.find(m.group);
         if (it == _consensus_groups.end()) {
