@@ -541,8 +541,8 @@ ExternalProject_Add(rapidjson
 )
 
 ExternalProject_Add(crc32c
-  URL https://storage.googleapis.com/vectorizedio-public/dependencies/crc32c-fd33bcc.tar.gz
-  URL_MD5 21c86fb3143fb748a52d11b9fee874de
+  GIT_REPOSITORY https://github.com/vectorizedio/crc32c.git
+  GIT_TAG 47b40d220949c5b013d49c1179643334196ec5a9
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   DEPENDS ${default_depends}
