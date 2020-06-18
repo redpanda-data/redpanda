@@ -272,3 +272,37 @@ FIXTURE_TEST(test_append_entries_with_relaxed_consistency, raft_test_fixture) {
       [this, &gr] { return are_all_commit_indexes_the_same(gr); },
       "After recovery state is consistent");
 };
+
+FIXTURE_TEST(
+  test_append_entries_with_relaxed_consistency_single_node, raft_test_fixture) {
+    raft_group gr = raft_group(raft::group_id(0), 1);
+    gr.enable_all();
+    auto leader_id = wait_for_group_leader(gr);
+    auto leader_raft = gr.get_member(leader_id).consensus;
+    // append some entries
+    auto opts = default_replicate_opts;
+    opts.consistency = raft::consistency_level::leader_ack;
+    for (int i = 0; i < 30; ++i) {
+        if (leader_raft->is_leader()) {
+            auto res
+              = leader_raft->replicate(random_batches_entry(5), opts).get0();
+        }
+    }
+    validate_logs_replication(gr);
+
+    wait_for(
+      1s,
+      [this, &gr] { return are_all_commit_indexes_the_same(gr); },
+      "After recovery state is consistent");
+
+    wait_for(
+      1s,
+      [this, &gr] {
+          auto& node = gr.get_members().begin()->second;
+          auto lstats = node.log.offsets();
+          return lstats.committed_offset == lstats.dirty_offset
+                 && node.consensus->committed_offset()
+                      == lstats.committed_offset;
+      },
+      "Commit index is advanced ");
+};

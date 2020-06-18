@@ -142,7 +142,9 @@ struct raft_node {
           .get0();
         server.invoke_on_all(&rpc::server::start).get0();
         hbeats = std::make_unique<raft::heartbeat_manager>(
-          heartbeat_interval, raft::make_rpc_client_protocol(cache));
+          heartbeat_interval,
+          raft::make_rpc_client_protocol(cache),
+          broker.id());
         hbeats->start().get0();
         consensus->start().get0();
         hbeats->register_group(consensus).get();
