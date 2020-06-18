@@ -78,7 +78,7 @@ public:
           1_GiB,
           storage::log_config::debug_sanitize_files::yes))
       , _consensus_client_protocol(raft::make_rpc_client_protocol(clients))
-      , _hbeats(raft_heartbeat_interval, _consensus_client_protocol) {}
+      , _hbeats(raft_heartbeat_interval, _consensus_client_protocol, self) {}
 
     ss::lw_shared_ptr<raft::consensus> consensus_for(raft::group_id) {
         return _consensus;

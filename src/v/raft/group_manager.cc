@@ -15,7 +15,7 @@ group_manager::group_manager(
   : _self(self)
   , _disk_timeout(disk_timeout)
   , _client(make_rpc_client_protocol(clients))
-  , _heartbeats(heartbeat_interval, _client)
+  , _heartbeats(heartbeat_interval, _client, _self)
   , _kvstore(kvstore) {
     setup_metrics();
 }

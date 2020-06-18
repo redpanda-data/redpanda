@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config/configuration.h"
+#include "model/metadata.h"
 #include "outcome.h"
 #include "raft/consensus.h"
 #include "raft/consensus_client_protocol.h"
@@ -93,7 +94,8 @@ public:
         // track a sequence per group
         absl::flat_hash_map<raft::group_id, follower_req_seq> sequence_map;
     };
-    heartbeat_manager(duration_type interval, consensus_client_protocol);
+    heartbeat_manager(
+      duration_type interval, consensus_client_protocol, model::node_id);
 
     ss::future<> register_group(ss::lw_shared_ptr<consensus>);
     ss::future<> deregister_group(raft::group_id);
@@ -113,6 +115,8 @@ private:
 
     /// \brief sends a batch to one node
     ss::future<> do_heartbeat(node_heartbeat&&);
+    /// \brief handle heartbeat at local node
+    ss::future<> do_self_heartbeat(node_heartbeat&&);
 
     /// \brief notifies the consensus groups about append_entries log offsets
     /// \param n the physical node that owns heart beats
@@ -136,5 +140,6 @@ private:
     consensus_set _consensus_groups;
     consensus_client_protocol _client_protocol;
     ss::semaphore _dispatch_sem{0};
+    model::node_id _self;
 };
 } // namespace raft

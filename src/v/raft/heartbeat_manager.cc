@@ -1,5 +1,7 @@
 #include "raft/heartbeat_manager.h"
 
+#include "config/configuration.h"
+#include "model/metadata.h"
 #include "model/timeout_clock.h"
 #include "outcome_future_utils.h"
 #include "raft/consensus_client_protocol.h"
@@ -9,6 +11,8 @@
 #include "rpc/reconnect_transport.h"
 #include "rpc/types.h"
 #include "vlog.h"
+
+#include <seastar/core/future-util.hh>
 
 #include <absl/container/flat_hash_map.h>
 #include <bits/stdint-uintn.h>
@@ -39,8 +43,11 @@ static std::vector<heartbeat_manager::node_heartbeat> requests_for_range(
                                               last_heartbeat,
                                               &pending_beats](
                                                const model::broker& n) mutable {
-            // do not send beat to self
+            // special case self beat
+            // self beat is used to make sure that the protocol will make
+            // progress when there is only on node
             if (n.id() == ptr->self()) {
+                pending_beats[n.id()].emplace_back(ptr->meta(), 0);
                 return;
             }
 
@@ -97,9 +104,10 @@ static std::vector<heartbeat_manager::node_heartbeat> requests_for_range(
 }
 
 heartbeat_manager::heartbeat_manager(
-  duration_type interval, consensus_client_protocol proto)
+  duration_type interval, consensus_client_protocol proto, model::node_id self)
   : _heartbeat_interval(interval)
-  , _client_protocol(proto) {
+  , _client_protocol(proto)
+  , _self(self) {
     _heartbeat_timer.set_callback([this] { dispatch_heartbeats(); });
 }
 
@@ -111,6 +119,11 @@ heartbeat_manager::send_heartbeats(std::vector<node_heartbeat> reqs) {
                  std::vector<ss::future<>> futures;
                  futures.reserve(reqs.size());
                  for (auto& r : reqs) {
+                     // self heartbeat
+                     if (r.target == _self) {
+                         futures.push_back(do_self_heartbeat(std::move(r)));
+                         continue;
+                     }
                      futures.push_back(do_heartbeat(std::move(r)));
                  }
                  return _dispatch_sem.wait(reqs.size())
@@ -128,6 +141,24 @@ heartbeat_manager::send_heartbeats(std::vector<node_heartbeat> reqs) {
 ss::future<> heartbeat_manager::do_dispatch_heartbeats() {
     auto reqs = requests_for_range(_consensus_groups, _heartbeat_interval);
     return send_heartbeats(std::move(reqs));
+}
+
+ss::future<> heartbeat_manager::do_self_heartbeat(node_heartbeat&& r) {
+    _dispatch_sem.signal();
+    heartbeat_reply reply;
+    reply.meta.reserve(r.request.meta.size());
+    std::transform(
+      std::begin(r.request.meta),
+      std::end(r.request.meta),
+      std::back_inserter(reply.meta),
+      [nid = r.target](protocol_metadata& meta) {
+          return append_entries_reply{
+            .node_id = nid,
+            .group = meta.group,
+            .result = append_entries_reply::status::success};
+      });
+    process_reply(r.target, std::move(r.sequence_map), std::move(reply));
+    return ss::now();
 }
 
 ss::future<> heartbeat_manager::do_heartbeat(node_heartbeat&& r) {
