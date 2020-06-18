@@ -20,7 +20,7 @@ namespace storage {
 
 kvstore::kvstore(kvstore_config kv_conf, storage::log_config log_conf)
   : _conf(kv_conf)
-  , _mgr(log_conf)
+  , _mgr(std::move(log_conf))
   , _ntpc(cluster::kvstore_ntp(ss::this_shard_id()), _mgr.config().base_dir)
   , _snap(
       std::filesystem::path(_ntpc.work_directory()),
@@ -244,7 +244,9 @@ ss::future<> kvstore::roll() {
             ss::default_priority_class(),
             record_version_type::v1,
             default_read_buffer_size)
-          .then([this](ss::lw_shared_ptr<segment> seg) { _segment = seg; });
+          .then([this](ss::lw_shared_ptr<segment> seg) {
+              _segment = std::move(seg);
+          });
     }
 
     if (_segment->appender().file_byte_offset() > _conf.max_segment_size) {
@@ -281,8 +283,9 @@ ss::future<> kvstore::roll() {
                   ss::default_priority_class(),
                   record_version_type::v1,
                   default_read_buffer_size)
-                .then(
-                  [this](ss::lw_shared_ptr<segment> seg) { _segment = seg; });
+                .then([this](ss::lw_shared_ptr<segment> seg) {
+                    _segment = std::move(seg);
+                });
           });
     }
 
@@ -441,7 +444,7 @@ void kvstore::replay_segments_in_thread(segment_set segs) {
 
     // find segment that starts at _next_offset
     const auto match = std::find_if(
-      segs.begin(), segs.end(), [this](ss::lw_shared_ptr<segment> seg) {
+      segs.begin(), segs.end(), [this](const ss::lw_shared_ptr<segment>& seg) {
           return seg->offsets().base_offset == _next_offset;
       });
 
