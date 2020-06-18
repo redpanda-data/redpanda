@@ -28,32 +28,32 @@ kvstore::kvstore(kvstore_config kv_conf, storage::log_config log_conf)
 ss::future<> kvstore::start() {
     vlog(lg.info, "Starting kvstore: dir {}", _ntpc.work_directory());
 
-    return recover().then([this] {
-        _started = true;
+    return recover()
+      .then([this] {
+          _started = true;
 
-        // below, ss::with_gate enters the gate synchronously, but since its
-        // called within the recover().then(...) continuation it's subject to
-        // scheduling and does race with stop() + gate::close.
-        if (_gate.is_closed()) {
-            return;
-        }
-
-        // Flushing background fiber
-        (void)ss::with_gate(_gate, [this] {
-            return ss::do_until(
-              [this] { return _gate.is_closed(); },
-              [this] {
-                  // semaphore used here instead of condition variable so that
-                  // we don't lose wake-ups if they occur while flushing.
-                  // consume at least one unit to avoid spinning on wait(0).
-                  auto units = std::max(_sem.current(), size_t(1));
-                  return _sem.wait(units).then([this] {
-                      return roll().then(
-                        [this] { return flush_and_apply_ops(); });
-                  });
-              });
-        });
-    });
+          // Flushing background fiber
+          (void)ss::with_gate(_gate, [this] {
+              return ss::do_until(
+                [this] { return _gate.is_closed(); },
+                [this] {
+                    // semaphore used here instead of condition variable so that
+                    // we don't lose wake-ups if they occur while flushing.
+                    // consume at least one unit to avoid spinning on wait(0).
+                    auto units = std::max(_sem.current(), size_t(1));
+                    return _sem.wait(units).then([this] {
+                        if (_gate.is_closed()) {
+                            return ss::now();
+                        }
+                        return roll().then(
+                          [this] { return flush_and_apply_ops(); });
+                    });
+                });
+          });
+      })
+      .handle_exception_type([](const ss::gate_closed_exception&) {
+          lg.trace("Shutdown requested during recovery");
+      });
 }
 
 ss::future<> kvstore::stop() {
@@ -151,11 +151,6 @@ void kvstore::apply_op(bytes key, std::optional<iobuf> value) {
 }
 
 ss::future<> kvstore::flush_and_apply_ops() {
-    if (_gate.is_closed()) {
-        // early out on shutdown
-        return ss::now();
-    }
-
     if (_ops.empty()) {
         return ss::now();
     }
@@ -212,18 +207,22 @@ ss::future<> kvstore::roll() {
           "Rolling segment with base offset {} size {}",
           _segment->offsets().base_offset,
           _segment->appender().file_byte_offset());
-        return _segment->close()
+        // _segment being set is a signal to stop() to flush and close the
+        // segment. we clear _segment here before closing and finishing the roll
+        // process so that if an issue occurs and the flush fiber terminates
+        // that stop() doesn't try to flush and close a closed and partially
+        // cleaned-up segment.
+        auto seg = std::exchange(_segment, nullptr);
+        return seg->close()
           .then([this] { return save_snapshot(); })
-          .then([this] {
+          .then([seg] {
               vlog(
                 lg.debug,
                 "Removing old segment with base offset {}",
-                _segment->offsets().base_offset);
-              return ss::remove_file(_segment->reader().filename())
-                .then([this] {
-                    return ss::remove_file(_segment->index().filename());
-                    _segment = nullptr;
-                });
+                seg->offsets().base_offset);
+              return ss::remove_file(seg->reader().filename()).then([seg] {
+                  return ss::remove_file(seg->index().filename());
+              });
           })
           .then([this] {
               return _mgr
@@ -243,8 +242,6 @@ ss::future<> kvstore::roll() {
 }
 
 ss::future<> kvstore::save_snapshot() {
-    _gate.check(); // early out on shutdown
-
     vassert(
       _next_offset >= model::offset(0),
       "Unexpected next offset {}",
