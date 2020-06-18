@@ -563,6 +563,8 @@ ExternalProject_Add(roaring
   ${common_cmake_args}
   -DENABLE_ROARING_TESTS=OFF
   -DROARING_BUILD_STATIC=ON
+  -DROARING_DISABLE_NEON=ON # we target -march=westmere which doesn't have avx
+  -DROARING_DISABLE_AVX=ON # we target -march=westmere which doesn't have avx
   -DROARING_DISABLE_NATIVE=ON)
 
 ExternalProject_Add(alien_thread
