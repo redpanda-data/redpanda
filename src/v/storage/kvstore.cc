@@ -45,7 +45,9 @@ ss::future<> kvstore::start() {
               [this] {
                   // semaphore used here instead of condition variable so that
                   // we don't lose wake-ups if they occur while flushing.
-                  return _sem.wait(_sem.available_units()).then([this] {
+                  // consume at least one unit to avoid spinning on wait(0).
+                  auto units = std::max(_sem.current(), size_t(1));
+                  return _sem.wait(units).then([this] {
                       return roll().then(
                         [this] { return flush_and_apply_ops(); });
                   });

@@ -102,7 +102,7 @@ SEASTAR_THREAD_TEST_CASE(kvstore_empty) {
     kvs->start().get();
 
     std::vector<ss::future<>> batch;
-    for (int i = 0; i < 2000; i++) {
+    for (int i = 0; i < 500; i++) {
         auto key = random_generators::get_bytes(2);
         auto value = bytes_to_iobuf(random_generators::get_bytes(100));
 
@@ -163,7 +163,7 @@ SEASTAR_THREAD_TEST_CASE(kvstore) {
 
     auto kvs = std::make_unique<storage::kvstore>(kv_conf, log_conf);
     kvs->start().get();
-    for (int i = 0; i < 2000; i++) {
+    for (int i = 0; i < 500; i++) {
         auto key = random_generators::get_bytes(2);
         auto value = bytes_to_iobuf(random_generators::get_bytes(100));
 
