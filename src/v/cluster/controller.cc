@@ -139,7 +139,11 @@ ss::future<> controller::start() {
         raft::group_id group,
         model::term_id term,
         std::optional<model::node_id> leader_id) {
-          auto ntp = _pm.local().consensus_for(group)->ntp();
+          auto c = _pm.local().consensus_for(group);
+          if (!c) {
+              return;
+          }
+          auto ntp = c->ntp();
           handle_leadership_notification(std::move(ntp), term, leader_id);
       });
 
