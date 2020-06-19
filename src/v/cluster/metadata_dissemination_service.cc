@@ -71,7 +71,11 @@ ss::future<> metadata_dissemination_service::start() {
           raft::group_id group,
           model::term_id term,
           std::optional<model::node_id> leader_id) {
-            auto ntp = _partition_manager.local().consensus_for(group)->ntp();
+            auto c = _partition_manager.local().consensus_for(group);
+            if (!c) {
+                return;
+            }
+            auto ntp = c->ntp();
             handle_leadership_notification(
               std::move(ntp), term, std::move(leader_id));
         });

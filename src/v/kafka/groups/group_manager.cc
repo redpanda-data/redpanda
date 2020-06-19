@@ -21,7 +21,9 @@ ss::future<> group_manager::start() {
         [[maybe_unused]] model::term_id term,
         std::optional<model::node_id> leader_id) {
           auto p = _pm.local().partition_for(group);
-          handle_leader_change(p, leader_id);
+          if (p) {
+              handle_leader_change(p, leader_id);
+          }
       });
 
     /*
