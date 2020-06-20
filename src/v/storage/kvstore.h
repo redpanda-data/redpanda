@@ -146,11 +146,11 @@ private:
         explicit replay_consumer(kvstore* store)
           : _store(store) {}
 
-        virtual consume_result consume_batch_start(
+        consume_result consume_batch_start(
           model::record_batch_header header, size_t, size_t) override;
-        virtual consume_result consume_record(model::record r) override;
-        virtual void consume_compressed_records(iobuf&&) override;
-        virtual stop_parser consume_batch_end() override;
+        consume_result consume_record(model::record r) override;
+        void consume_compressed_records(iobuf&&) override;
+        stop_parser consume_batch_end() override;
 
     private:
         kvstore* _store;
@@ -158,6 +158,25 @@ private:
     };
 
     friend replay_consumer;
+
+    struct probe {
+        void roll_segment() { ++segments_rolled; }
+        void entry_fetched() { ++entries_fetched; }
+        void entry_written() { ++entries_written; }
+        void entry_removed() { ++entries_removed; }
+        void add_cached_bytes(size_t count) { cached_bytes += count; }
+        void dec_cached_bytes(size_t count) { cached_bytes -= count; }
+
+        uint64_t segments_rolled{0};
+        uint64_t entries_fetched{0};
+        uint64_t entries_written{0};
+        uint64_t entries_removed{0};
+        size_t cached_bytes{0};
+
+        ss::metrics::metric_groups metrics;
+    };
+
+    probe _probe;
 };
 
 } // namespace storage

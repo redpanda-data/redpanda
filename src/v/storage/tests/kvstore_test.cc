@@ -4,7 +4,16 @@
 
 #include <seastar/testing/thread_test_case.hh>
 
+template<typename T>
+static void set_configuration(ss::sstring p_name, T v) {
+    ss::smp::invoke_on_all([p_name, v = std::move(v)] {
+        config::shard_local_cfg().get(p_name).set_value(v);
+    }).get0();
+}
+
 SEASTAR_THREAD_TEST_CASE(key_space) {
+    set_configuration("disable_metrics", true);
+
     auto dir = fmt::format("kvstore_test_{}", random_generators::get_int(4000));
 
     storage::log_config log_conf(
@@ -71,6 +80,8 @@ SEASTAR_THREAD_TEST_CASE(key_space) {
 }
 
 SEASTAR_THREAD_TEST_CASE(kvstore_empty) {
+    set_configuration("disable_metrics", true);
+
     auto dir = fmt::format("kvstore_test_{}", random_generators::get_int(4000));
 
     storage::log_config log_conf(
@@ -145,6 +156,8 @@ SEASTAR_THREAD_TEST_CASE(kvstore_empty) {
 }
 
 SEASTAR_THREAD_TEST_CASE(kvstore) {
+    set_configuration("disable_metrics", true);
+
     auto dir = fmt::format("kvstore_test_{}", random_generators::get_int(4000));
 
     storage::log_config log_conf(
