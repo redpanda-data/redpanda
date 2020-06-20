@@ -63,30 +63,36 @@ std::vector<model::broker> get_replica_set_brokers(
     return brokers;
 }
 
-ss::future<> remove_broker_client(
-  ss::sharded<rpc::connection_cache>& clients, model::node_id id) {
-    auto shard = rpc::connection_cache::shard_for(id);
-    vlog(
-      clusterlog.debug,
-      "Removing {} broker client from cache at shard {}",
-      id,
-      shard);
-    return clients.invoke_on(
-      shard, [id](rpc::connection_cache& cache) { return cache.remove(id); });
+std::vector<ss::shard_id> virtual_nodes(model::node_id node) {
+    std::set<ss::shard_id> owner_shards;
+    for (ss::shard_id i = 0; i < ss::smp::count; ++i) {
+        auto shard = rpc::connection_cache::shard_for(i, node);
+        owner_shards.insert(shard);
+    }
+    return std::vector<ss::shard_id>(owner_shards.begin(), owner_shards.end());
 }
 
-ss::future<> update_broker_client(
+ss::future<> remove_broker_client(
+  ss::sharded<rpc::connection_cache>& clients, model::node_id id) {
+    auto shards = virtual_nodes(id);
+    vlog(clusterlog.debug, "Removing {} TCP client from shards {}", id, shards);
+    return ss::do_with(
+      std::move(shards), [id, &clients](std::vector<ss::shard_id>& i) {
+          return ss::do_for_each(i, [id, &clients](ss::shard_id i) {
+              return clients.invoke_on(i, [id](rpc::connection_cache& cache) {
+                  return cache.remove(id);
+              });
+          });
+      });
+}
+
+ss::future<> add_one_tcp_client(
+  ss::shard_id owner,
   ss::sharded<rpc::connection_cache>& clients,
   model::node_id node,
   unresolved_address addr) {
-    auto shard = rpc::connection_cache::shard_for(node);
-    vlog(
-      clusterlog.debug,
-      "Updating {} broker client cache at shard {} ",
-      node,
-      shard);
     return clients.invoke_on(
-      shard,
+      owner,
       [node, rpc_address = std::move(addr)](rpc::connection_cache& cache) {
           return rpc_address.resolve().then(
             [node, &cache](ss::socket_address new_addr) {
@@ -111,6 +117,22 @@ ss::future<> update_broker_client(
                       rpc::make_exponential_backoff_policy<rpc::clock_type>(
                         std::chrono::seconds(1), std::chrono::seconds(60)));
                 });
+            });
+      });
+}
+
+ss::future<> update_broker_client(
+  ss::sharded<rpc::connection_cache>& clients,
+  model::node_id node,
+  unresolved_address addr) {
+    auto shards = virtual_nodes(node);
+    vlog(clusterlog.debug, "Adding {} TCP client on shards:{}", node, shards);
+    return ss::do_with(
+      std::move(shards),
+      [&clients, node, addr](std::vector<ss::shard_id>& shards) {
+          return ss::do_for_each(
+            shards, [node, addr, &clients](ss::shard_id shard) {
+                return add_one_tcp_client(shard, clients, node, addr);
             });
       });
 }
