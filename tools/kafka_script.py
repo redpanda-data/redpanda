@@ -49,7 +49,7 @@ def produce(kdir, servers):
         record_size=1024,
         topic=TOPIC,
         record_count=1 << 31,
-        throughput=1024 * 64,
+        throughput=-1,
         acks=1,
         client_id=_client_id(),
         servers=servers,

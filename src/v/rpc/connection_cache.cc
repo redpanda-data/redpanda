@@ -14,13 +14,6 @@ ss::future<> connection_cache::emplace(
   model::node_id n,
   rpc::transport_configuration c,
   backoff_policy backoff_policy) {
-    if (auto s = shard_for(n); s != ss::this_shard_id()) {
-        throw std::runtime_error(fmt::format(
-          "Cannot ::emplace, node:{}, belonging to shard:{}, on shard:{}",
-          n,
-          s,
-          ss::this_shard_id()));
-    }
     return with_semaphore(
       _sem,
       1,
@@ -28,22 +21,17 @@ ss::future<> connection_cache::emplace(
        n,
        c = std::move(c),
        backoff_policy = std::move(backoff_policy)]() mutable {
+          if (_cache.find(n) != _cache.end()) {
+              return;
+          }
           _cache.emplace(
-            std::move(n),
+            n,
             ss::make_lw_shared<rpc::reconnect_transport>(
               std::move(c), std::move(backoff_policy)));
       });
 }
 ss::future<> connection_cache::remove(model::node_id n) {
-    if (auto s = shard_for(n); s != ss::this_shard_id()) {
-        throw std::runtime_error(fmt::format(
-          "Cannot ::remove, node:{}, belonging to shard:{}, on shard:{}",
-          n,
-          s,
-          ss::this_shard_id()));
-    }
-    return with_semaphore(
-      _sem, 1, [this, n = std::move(n)] { _cache.erase(n); });
+    return with_semaphore(_sem, 1, [this, n] { _cache.erase(n); });
 }
 
 /// \brief closes all client connections

@@ -205,26 +205,29 @@ struct raft_node {
     model::node_id id() { return broker.id(); }
 
     void create_connection_to(const model::broker& broker) {
-        auto sh = rpc::connection_cache::shard_for(broker.id());
-        cache
-          .invoke_on(
-            sh,
-            [&broker, this](rpc::connection_cache& c) {
-                if (c.contains(broker.id())) {
-                    return seastar::make_ready_future<>();
-                }
-                return broker.rpc_address().resolve().then(
-                  [this, &broker, &c](ss::socket_address addr) {
-                      return c.emplace(
-                        broker.id(),
-                        {.server_addr = addr,
-                         .disable_metrics = rpc::metrics_disabled::yes},
-                        rpc::make_exponential_backoff_policy<rpc::clock_type>(
-                          std::chrono::milliseconds(1),
-                          std::chrono::milliseconds(1)));
-                  });
-            })
-          .get0();
+        for (ss::shard_id i = 0; i < ss::smp::count; ++i) {
+            auto sh = rpc::connection_cache::shard_for(i, broker.id());
+            cache
+              .invoke_on(
+                sh,
+                [&broker, this](rpc::connection_cache& c) {
+                    if (c.contains(broker.id())) {
+                        return seastar::make_ready_future<>();
+                    }
+                    return broker.rpc_address().resolve().then(
+                      [this, &broker, &c](ss::socket_address addr) {
+                          return c.emplace(
+                            broker.id(),
+                            {.server_addr = addr,
+                             .disable_metrics = rpc::metrics_disabled::yes},
+                            rpc::make_exponential_backoff_policy<
+                              rpc::clock_type>(
+                              std::chrono::milliseconds(1),
+                              std::chrono::milliseconds(1)));
+                      });
+                })
+              .get0();
+        }
     }
 
     bool started = false;
