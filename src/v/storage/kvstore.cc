@@ -2,12 +2,14 @@
 
 #include "bytes/iobuf.h"
 #include "cluster/namespace.h"
+#include "prometheus/prometheus_sanitize.h"
 #include "raft/types.h"
 #include "reflection/adl.h"
 #include "storage/record_batch_builder.h"
 #include "storage/segment_set.h"
 #include "vlog.h"
 
+#include <seastar/core/metrics.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/util/defer.hh>
 #include <seastar/util/log.hh>
@@ -18,12 +20,44 @@ namespace storage {
 
 kvstore::kvstore(kvstore_config kv_conf, storage::log_config log_conf)
   : _conf(kv_conf)
-  , _mgr(log_conf)
+  , _mgr(std::move(log_conf))
   , _ntpc(cluster::kvstore_ntp(ss::this_shard_id()), _mgr.config().base_dir)
   , _snap(
       std::filesystem::path(_ntpc.work_directory()),
       ss::default_priority_class())
-  , _timer([this] { _sem.signal(); }) {}
+  , _timer([this] { _sem.signal(); }) {
+    if (config::shard_local_cfg().disable_metrics()) {
+        return;
+    }
+    _probe.metrics.add_group(
+      prometheus_sanitize::metrics_name("storage:kvstore"),
+      {
+        ss::metrics::make_total_operations(
+          "segments_rolled",
+          [this] { return _probe.segments_rolled; },
+          ss::metrics::description("Number of segments rolled")),
+        ss::metrics::make_total_operations(
+          "entries_fetched",
+          [this] { return _probe.entries_fetched; },
+          ss::metrics::description("Number of entries fetched")),
+        ss::metrics::make_total_operations(
+          "entries_written",
+          [this] { return _probe.entries_written; },
+          ss::metrics::description("Number of entries written")),
+        ss::metrics::make_total_operations(
+          "entries_removed",
+          [this] { return _probe.entries_removed; },
+          ss::metrics::description("Number of entries removaled")),
+        ss::metrics::make_current_bytes(
+          "cached_bytes",
+          [this] { return _probe.cached_bytes; },
+          ss::metrics::description("Size of the database in memory")),
+        ss::metrics::make_derive(
+          "key_count",
+          [this] { return _db.size(); },
+          ss::metrics::description("Number of keys in the database")),
+      });
+}
 
 ss::future<> kvstore::start() {
     vlog(lg.info, "Starting kvstore: dir {}", _ntpc.work_directory());
@@ -98,6 +132,7 @@ static inline bytes make_spaced_key(kvstore::key_space ks, bytes_view key) {
 }
 
 std::optional<iobuf> kvstore::get(key_space ks, bytes_view key) {
+    _probe.entry_fetched();
     vassert(_started, "kvstore has not been started");
 
     // do not re-assign to string_view -> temporary
@@ -109,10 +144,12 @@ std::optional<iobuf> kvstore::get(key_space ks, bytes_view key) {
 }
 
 ss::future<> kvstore::put(key_space ks, bytes key, iobuf value) {
+    _probe.entry_written();
     return put(ks, std::move(key), std::make_optional<iobuf>(std::move(value)));
 }
 
 ss::future<> kvstore::remove(key_space ks, bytes key) {
+    _probe.entry_removed();
     return put(ks, std::move(key), std::nullopt);
 }
 
@@ -131,20 +168,29 @@ ss::future<> kvstore::put(key_space ks, bytes key, std::optional<iobuf> value) {
 }
 
 void kvstore::apply_op(bytes key, std::optional<iobuf> value) {
+    auto it = _db.find(key);
+    bool found = it != _db.end();
     if (value) {
-        auto res = _db.insert_or_assign(std::move(key), std::move(*value));
         vlog(
           lg.trace,
           "Apply op: {}: key={} value={}",
-          (res.second ? "insert" : "update"),
-          res.first->first,
-          res.first->second);
+          (found ? "update" : "insert"),
+          key,
+          value);
+        if (found) {
+            _probe.dec_cached_bytes(it->second.size_bytes());
+            _probe.add_cached_bytes(value->size_bytes());
+            it->second = std::move(*value);
+        } else {
+            _probe.add_cached_bytes(key.size() + value->size_bytes());
+            _db.emplace(std::move(key), std::move(*value));
+        }
     } else {
-        auto it = _db.find(key);
-        if (it == _db.end()) {
+        if (!found) {
             vlog(lg.trace, "Apply op: delete: key={} not found", key);
         } else {
             vlog(lg.trace, "Apply op: delete: key={}", key);
+            _probe.dec_cached_bytes(it->first.size() + it->second.size_bytes());
             _db.erase(it);
         }
     }
@@ -198,10 +244,14 @@ ss::future<> kvstore::roll() {
             ss::default_priority_class(),
             record_version_type::v1,
             default_read_buffer_size)
-          .then([this](ss::lw_shared_ptr<segment> seg) { _segment = seg; });
+          .then([this](ss::lw_shared_ptr<segment> seg) {
+              _segment = std::move(seg);
+          });
     }
 
     if (_segment->appender().file_byte_offset() > _conf.max_segment_size) {
+        _probe.roll_segment();
+
         vlog(
           lg.debug,
           "Rolling segment with base offset {} size {}",
@@ -233,8 +283,9 @@ ss::future<> kvstore::roll() {
                   ss::default_priority_class(),
                   record_version_type::v1,
                   default_read_buffer_size)
-                .then(
-                  [this](ss::lw_shared_ptr<segment> seg) { _segment = seg; });
+                .then([this](ss::lw_shared_ptr<segment> seg) {
+                    _segment = std::move(seg);
+                });
           });
     }
 
@@ -366,6 +417,7 @@ void kvstore::load_snapshot_in_thread() {
 
     for (auto& r : batch) {
         auto key = iobuf_to_bytes(r.release_key());
+        _probe.add_cached_bytes(key.size() + r.value().size_bytes());
         auto res = _db.emplace(std::move(key), r.release_value());
         vassert(
           res.second, "Snapshot contained duplicate key {}", res.first->first);
@@ -392,7 +444,7 @@ void kvstore::replay_segments_in_thread(segment_set segs) {
 
     // find segment that starts at _next_offset
     const auto match = std::find_if(
-      segs.begin(), segs.end(), [this](ss::lw_shared_ptr<segment> seg) {
+      segs.begin(), segs.end(), [this](const ss::lw_shared_ptr<segment>& seg) {
           return seg->offsets().base_offset == _next_offset;
       });
 
