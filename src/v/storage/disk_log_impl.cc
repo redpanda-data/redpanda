@@ -141,7 +141,7 @@ ss::future<> disk_log_impl::do_compact(compaction_config cfg) {
     // use signed type
     auto seg = find_reverse_not_compacted(_segs, _segbits);
     if (seg) {
-        if(!compaction_enabled){
+        if (!compaction_enabled) {
             auto& flags = _segbits[seg->offsets().base_offset];
             flags |= segment_bitflags::self_compacted;
             return ss::now();
