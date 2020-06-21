@@ -296,3 +296,69 @@ FIXTURE_TEST(key_reducer_no_truncate_filter, compacted_topic_fixture) {
     BOOST_REQUIRE(key_bitmap.contains(98));
     BOOST_REQUIRE(key_bitmap.contains(99));
 }
+
+FIXTURE_TEST(key_reducer_max_mem, compacted_topic_fixture) {
+    iobuf index_data;
+    auto idx = storage::make_file_backed_compacted_index(
+      "dummy name",
+      ss::file(ss::make_shared(iobuf_file(index_data))),
+      ss::default_priority_class(),
+      // FORCE eviction with every key basically
+      1_KiB);
+
+    const auto key1 = random_generators::get_bytes(1_KiB);
+    const auto key2 = random_generators::get_bytes(1_KiB);
+    for (auto i = 0; i < 100; ++i) {
+        bytes_view put_key;
+        if (i % 2) {
+            put_key = key1;
+        } else {
+            put_key = key2;
+        }
+        idx.index(put_key, model::offset(i), 0).get();
+    }
+    idx.close().get();
+    info("{}", idx);
+
+    auto rdr = storage::make_file_backed_compacted_reader(
+      "dummy name",
+      ss::file(ss::make_shared(iobuf_file(index_data))),
+      ss::default_priority_class(),
+      32_KiB);
+
+    rdr.reset();
+    rdr.load_footer().get();
+    auto small_mem_bitmap = rdr
+                              .consume(
+                                storage::internal::compaction_key_reducer(
+                                  std::nullopt, 1_KiB),
+                                model::no_timeout)
+                              .get0();
+
+    /*
+      There are 2 keys exactly.
+      Each key is exactly 1KB
+      We need 2KB + 1 byte to ensure it fits in the memory map
+     */
+    rdr.reset();
+    rdr.load_footer().get();
+    auto exact_mem_bitmap = rdr
+                              .consume(
+                                storage::internal::compaction_key_reducer(
+                                  std::nullopt, 2_KiB + 1),
+                                model::no_timeout)
+                              .get0();
+
+    // get all keys
+    rdr.reset();
+    rdr.load_footer().get();
+    auto vec = compaction_index_reader_to_memory(rdr).get0();
+    BOOST_REQUIRE_EQUAL(vec.size(), 100);
+
+    info("small key bitmap: {}", small_mem_bitmap.toString());
+    info("exact key bitmap: {}", exact_mem_bitmap.toString());
+    BOOST_REQUIRE_EQUAL(exact_mem_bitmap.cardinality(), 2);
+    BOOST_REQUIRE_EQUAL(small_mem_bitmap.cardinality(), 100);
+    BOOST_REQUIRE(exact_mem_bitmap.contains(98));
+    BOOST_REQUIRE(exact_mem_bitmap.contains(99));
+}
