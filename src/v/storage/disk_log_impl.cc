@@ -136,9 +136,16 @@ static inline ss::lw_shared_ptr<segment> find_reverse_not_compacted(
     return nullptr;
 }
 ss::future<> disk_log_impl::do_compact(compaction_config cfg) {
+    // Temporary work-around to disable compaction for production
+    static constexpr const bool compaction_enabled = false;
     // use signed type
     auto seg = find_reverse_not_compacted(_segs, _segbits);
     if (seg) {
+        if(!compaction_enabled){
+            auto& flags = _segbits[seg->offsets().base_offset];
+            flags |= segment_bitflags::self_compacted;
+            return ss::now();
+        }
         // compact
         return storage::internal::self_compact_segment(seg, cfg).then(
           [this, seg] {
