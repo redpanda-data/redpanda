@@ -5,8 +5,11 @@
 #include "reflection/adl.h"
 #include "storage/compacted_index_reader.h"
 #include "storage/compacted_index_writer.h"
+#include "storage/compaction_reducers.h"
 #include "test_utils/fixture.h"
 #include "units.h"
+
+#include <boost/test/unit_test_suite.hpp>
 
 struct compacted_topic_fixture {};
 FIXTURE_TEST(format_verification, compacted_topic_fixture) {
@@ -117,4 +120,71 @@ FIXTURE_TEST(
     BOOST_REQUIRE_EQUAL(vec[0].delta, 66);
     BOOST_REQUIRE_EQUAL(vec[0].key.size(), 65529);
     BOOST_REQUIRE_EQUAL(vec[0].key, bytes_view(key.data(), 65529));
+}
+
+FIXTURE_TEST(truncation_reducer_drop_all, compacted_topic_fixture) {
+    iobuf index_data;
+    auto idx = storage::make_file_backed_compacted_index(
+      "dummy name",
+      ss::file(ss::make_shared(iobuf_file(index_data))),
+      ss::default_priority_class(),
+      1_MiB);
+    for (auto i = 0; i < 100; ++i) {
+        const auto key = random_generators::get_bytes(1_KiB);
+        idx.index(key, model::offset(i), 0).get();
+    }
+    idx.truncate(model::offset(0)).get();
+    idx.close().get();
+    info("{}", idx);
+
+    auto rdr = storage::make_file_backed_compacted_reader(
+      "dummy name",
+      ss::file(ss::make_shared(iobuf_file(index_data))),
+      ss::default_priority_class(),
+      32_KiB);
+    auto footer = rdr.load_footer().get0();
+    auto bitmap = rdr
+                    .consume(
+                      storage::internal::truncation_offset_reducer(),
+                      model::no_timeout)
+                    .get0();
+    BOOST_REQUIRE_EQUAL(bitmap.cardinality(), 0);
+}
+FIXTURE_TEST(truncation_reducer_drop_some, compacted_topic_fixture) {
+    iobuf index_data;
+    auto idx = storage::make_file_backed_compacted_index(
+      "dummy name",
+      ss::file(ss::make_shared(iobuf_file(index_data))),
+      ss::default_priority_class(),
+      1_MiB);
+    for (auto i = 0; i < 100; ++i) {
+        const auto key = random_generators::get_bytes(1_KiB);
+        idx.index(key, model::offset(i), 0).get();
+    }
+    idx.truncate(model::offset(50)).get();
+    idx.close().get();
+    info("{}", idx);
+
+    auto rdr = storage::make_file_backed_compacted_reader(
+      "dummy name",
+      ss::file(ss::make_shared(iobuf_file(index_data))),
+      ss::default_priority_class(),
+      32_KiB);
+    auto footer = rdr.load_footer().get0();
+    auto bitmap = rdr
+                    .consume(
+                      storage::internal::truncation_offset_reducer(),
+                      model::no_timeout)
+                    .get0();
+    info("bitmap: {}", bitmap.toString());
+    BOOST_REQUIRE_EQUAL(bitmap.cardinality(), 50);
+
+    rdr.reset();
+    rdr.load_footer().get();
+    auto vec = compaction_index_reader_to_memory(rdr).get0();
+    for (auto bit : bitmap) {
+        const auto& e = vec[bit];
+        const model::offset o = e.offset + model::offset(e.delta);
+        BOOST_REQUIRE_LT(o, model::offset(50));
+    }
 }

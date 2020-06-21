@@ -121,7 +121,7 @@ compacted_index_reader make_file_backed_compacted_reader(
   ss::sstring filename, ss::file, ss::io_priority_class, size_t step_chunk);
 
 inline ss::future<ss::circular_buffer<compacted_index::entry>>
-compaction_index_reader_to_memory(compacted_index_reader&& rdr) {
+compaction_index_reader_to_memory(compacted_index_reader rdr) {
     struct consumer {
         ss::future<ss::stop_iteration> operator()(compacted_index::entry b) {
             data.push_back(std::move(b));
@@ -133,6 +133,6 @@ compaction_index_reader_to_memory(compacted_index_reader&& rdr) {
         };
         ss::circular_buffer<compacted_index::entry> data;
     };
-    return std::move(rdr).consume(consumer{}, model::no_timeout);
+    return rdr.consume(consumer{}, model::no_timeout).finally([rdr] {});
 }
 } // namespace storage

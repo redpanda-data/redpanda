@@ -1,8 +1,11 @@
 #include "storage/compaction_reducers.h"
 
 #include "random/generators.h"
+#include "storage/logger.h"
+#include "vlog.h"
 
 #include <absl/algorithm/container.h>
+#include <absl/container/flat_hash_map.h>
 
 namespace storage::internal {
 ss::future<ss::stop_iteration>
@@ -12,7 +15,7 @@ truncation_offset_reducer::operator()(compacted_index::entry&& e) {
     if (e.type == compacted_index::entry_type::truncation) {
         auto it = _indices.lower_bound(o);
         _indices.erase(it, _indices.end());
-    } else {
+    } else if (e.type == compacted_index::entry_type::key) {
         _indices[o] = _natural_index;
     }
     ++_natural_index; // MOST important
