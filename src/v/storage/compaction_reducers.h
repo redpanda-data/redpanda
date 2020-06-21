@@ -29,7 +29,7 @@ private:
 
 class compaction_key_reducer : public compaction_reducer {
 public:
-    static constexpr const size_t max_memory_usage = 5_MiB;
+    static constexpr const size_t default_max_memory_usage = 5_MiB;
     struct value_type {
         value_type(model::offset o, uint32_t i)
           : offset(o)
@@ -40,11 +40,13 @@ public:
     using underlying_t
       = absl::flat_hash_map<bytes, value_type, bytes_type_hash, bytes_type_eq>;
 
-public:
-    // truncation_reduced are the entries *to keep* if nullopt - keep all
-    // and do key-reduction
-    explicit compaction_key_reducer(std::optional<Roaring> truncation_reduced)
-      : _to_keep(std::move(truncation_reduced)) {}
+    explicit compaction_key_reducer(
+      // truncation_reduced are the entries *to keep* if nullopt - keep all
+      // and do key-reduction
+      std::optional<Roaring> truncation_reduced,
+      size_t max_mem = default_max_memory_usage)
+      : _to_keep(std::move(truncation_reduced))
+      , _max_mem(max_mem) {}
 
     ss::future<ss::stop_iteration> operator()(compacted_index::entry&&);
     Roaring end_of_stream();
@@ -54,6 +56,7 @@ private:
     Roaring _inverted;
     underlying_t _indices;
     size_t _mem_usage{0};
+    size_t _max_mem{0};
     uint32_t _natural_index{0};
 };
 
