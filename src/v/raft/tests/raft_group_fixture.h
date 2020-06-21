@@ -431,7 +431,11 @@ private:
 };
 
 struct raft_test_fixture {
-    raft_test_fixture() {}
+    raft_test_fixture() {
+        ss::smp::invoke_on_all([] {
+            config::shard_local_cfg().get("disable_metrics").set_value(true);
+        }).get();
+    }
 
     model::record_batch_reader random_batches_entry(int max_batches) {
         auto batches = storage::test::make_random_batches(
