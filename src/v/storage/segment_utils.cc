@@ -3,6 +3,7 @@
 #include "model/timeout_clock.h"
 #include "storage/compacted_index.h"
 #include "storage/compacted_index_writer.h"
+#include "storage/compaction_reducers.h"
 #include "storage/logger.h"
 #include "units.h"
 #include "utils/file_sanitizer.h"
@@ -122,58 +123,11 @@ size_t number_of_chunks_from_config(const ntp_config& ntpc) {
     return segment_appender::chunks_no_buffer;
 }
 
-struct compaction_first_pass_functor {
-    struct value_type {
-        value_type(model::offset o, uint32_t i)
-          : offset(o)
-          , natural_index(i) {}
-        model::offset offset;
-        uint32_t natural_index;
-    };
-    ss::future<ss::stop_iteration> operator()(compacted_index::entry&& e) {
-        using stop_t = ss::stop_iteration;
-        const model::offset o = e.offset + model::offset(e.delta);
-        if (e.type == compacted_index::entry_type::truncation) {
-            absl::erase_if(indices, [o](const std::pair<bytes, value_type>& v) {
-                return v.second.offset >= o;
-            });
-        } else {
-            auto it = indices.find(e.key);
-            if (it != indices.end()) {
-                it->second.offset = o;
-                it->second.natural_index = natural_index;
-            } else {
-                // not found - insert
-                auto [_, success] = indices.emplace(
-                  e.key, value_type(o, natural_index));
-                vassert(success, "Invalid internal state of compaction");
-            }
-        }
-        ++natural_index; // MOST important
-        return ss::make_ready_future<stop_t>(stop_t::no);
-    }
-    Roaring end_of_stream() {
-        // TODO: optimization - detect if the index does not need compaction
-        // by linear scan of natural_index from 0-N with no gaps.
-        Roaring inverted;
-        for (auto& e : indices) {
-            inverted.add(e.second.natural_index);
-        }
-        return inverted;
-    }
-
-    // TODO: detect optimization where this index is perfectly compacted already
-    bool sequential = true;
-    uint32_t natural_index = 0;
-    absl::flat_hash_map<bytes, value_type, bytes_type_hash, bytes_type_eq>
-      indices;
-};
-
 ss::future<Roaring> index_of_index_of_entries(compacted_index_reader reader) {
     reader.reset();
     return reader.load_footer().then([reader](compacted_index::footer) mutable {
         return reader.consume(
-          compaction_first_pass_functor{}, model::no_timeout);
+          compaction_key_reducer(std::nullopt), model::no_timeout);
     });
 }
 
@@ -240,7 +194,7 @@ ss::future<> write_clean_compacted_index(
               return ss::now();
           }
           return reader
-            .consume(compaction_first_pass_functor{}, model::no_timeout)
+            .consume(compaction_key_reducer(std::nullopt), model::no_timeout)
             .then([reader, cfg](Roaring bitmap) {
                 const auto tmpname = std::filesystem::path(
                   fmt::format("{}.staging", reader.filename()));
