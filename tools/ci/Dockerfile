@@ -39,7 +39,7 @@ COPY tools/vtools/install/commands.py tools/vtools/vlib/config.py /v/
 COPY src/go/rpk/go.mod src/go/rpk/go.sum /v/src/go/rpk/
 COPY src/go/metrics/go.mod src/go/metrics/go.sum /v/src/go/metrics/
 
-RUN pip install --no-cache-dir "git+https://${GITHUB_API_TOKEN}@github.com/vectorizedio/v@master#egg=vtools&subdirectory=tools/" && \
+RUN pip install --no-cache-dir "git+https://${GITHUB_API_TOKEN}@github.com/vectorizedio/v@dev#egg=vtools&subdirectory=tools/" && \
     cp commands.py /usr/local/lib/python3.7/site-packages/vtools/install/ && \
     cp config.py /usr/local/lib/python3.7/site-packages/vtools/vlib/ && \
     vtools install go-compiler && \
@@ -61,7 +61,7 @@ COPY tools/vtools/vlib/clang.py tools/vtools/vlib/config.py tools/vtools/install
 COPY cmake/caches/llvm.cmake /v/cmake/caches/
 
 # re-install vtools in case the base image wasn't rebuilt
-RUN pip install --no-cache-dir "git+https://${GITHUB_API_TOKEN}@github.com/vectorizedio/v@master#egg=vtools&subdirectory=tools/" && \
+RUN pip install --no-cache-dir "git+https://${GITHUB_API_TOKEN}@github.com/vectorizedio/v@dev#egg=vtools&subdirectory=tools/" && \
     cp commands.py /usr/local/lib/python3.7/site-packages/vtools/install/ && \
     cp config.py clang.py /usr/local/lib/python3.7/site-packages/vtools/vlib/ && \
     vtools install clang && \
@@ -83,7 +83,7 @@ COPY tools/ci/vtools-${COMPILER}-${BUILD_TYPE}.yml /v/.vtools.yml
 
 # note we properly cleanup by removing vtools, since it is only used to build 
 # dependencies and not needed outside the image.
-RUN pip install --no-cache-dir "git+https://${GITHUB_API_TOKEN}@github.com/vectorizedio/v@master#egg=vtools&subdirectory=tools/" && \
+RUN pip install --no-cache-dir "git+https://${GITHUB_API_TOKEN}@github.com/vectorizedio/v@dev#egg=vtools&subdirectory=tools/" && \
     cp commands.py /usr/local/lib/python3.7/site-packages/vtools/install/ && \
     cp config.py cmake.py /usr/local/lib/python3.7/site-packages/vtools/vlib/ && \
     vtools install clang --fetch && \
