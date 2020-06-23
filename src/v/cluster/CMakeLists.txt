@@ -29,6 +29,7 @@ v_cc_library(
     metadata_dissemination_utils.cc
     types.cc
     notification_latch.cc
+    topic_table.cc
   DEPS
     Seastar::seastar
     controller_rpc
