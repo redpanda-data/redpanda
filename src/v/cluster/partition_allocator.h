@@ -104,6 +104,37 @@ private:
 struct partition_allocator_tester;
 class partition_allocator {
 public:
+    struct allocation_units {
+        allocation_units(
+          std::vector<partition_assignment> assignments,
+          partition_allocator* pal)
+          : _assignments(std::move(assignments))
+          , _allocator(pal) {}
+
+        allocation_units& operator=(allocation_units&&) = default;
+        allocation_units& operator=(const allocation_units&) = delete;
+        allocation_units(const allocation_units&) = delete;
+        allocation_units(allocation_units&&) = default;
+
+        ~allocation_units() {
+            for (auto& pas : _assignments) {
+                for (auto& replica : pas.replicas) {
+                    _allocator->deallocate(replica);
+                }
+            }
+        }
+
+        const std::vector<partition_assignment>& get_assignments() {
+            return _assignments;
+        }
+
+    private:
+        std::vector<partition_assignment> _assignments;
+        // keep the pointer to make this type movable
+        partition_allocator* _allocator;
+    };
+
+    static constexpr ss::shard_id shard = 0;
     using value_type = allocation_node;
     using ptr = std::unique_ptr<value_type>;
     using underlying_t = boost::container::flat_map<model::node_id, ptr>;
@@ -128,15 +159,19 @@ public:
     /// kafka/common/protocol/Errors.java does not have a way to
     /// represent failed allocation yet. Up to caller to interpret
     /// how to use a nullopt value
-    std::optional<std::vector<partition_assignment>>
-    allocate(const topic_configuration&);
+    std::optional<allocation_units> allocate(const topic_configuration&);
 
     /// best effort. Does not throw if we cannot find the old partition
     void deallocate(const model::broker_shard&);
 
     /// updates the state of allocation, it is used during recovery and
     /// when processing raft0 committed notifications
-    void update_allocation_state(std::vector<model::topic_metadata>);
+    void update_allocation_state(
+      std::vector<model::topic_metadata>, raft::group_id);
+    void
+      update_allocation_state(std::vector<model::broker_shard>, raft::group_id);
+
+    const underlying_t& allocation_nodes() { return _machines; }
 
     ~partition_allocator() {
         _available_machines.clear();
