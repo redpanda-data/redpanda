@@ -215,7 +215,7 @@ enum class error_code : int16_t {
 
 std::ostream& operator<<(std::ostream&, error_code);
 
-static constexpr inline error_code map_topic_error_code(cluster::errc code) {
+constexpr error_code map_topic_error_code(cluster::errc code) {
     switch (code) {
     case cluster::errc::success:
         return error_code::none;
