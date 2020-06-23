@@ -93,6 +93,18 @@ struct topic_configuration {
     friend std::ostream& operator<<(std::ostream&, const topic_configuration&);
 };
 
+struct topic_configuration_assignment {
+    topic_configuration_assignment(
+      topic_configuration cfg, std::vector<partition_assignment> pas)
+      : cfg(std::move(cfg))
+      , assignments(std::move(pas)) {}
+
+    topic_configuration cfg;
+    std::vector<partition_assignment> assignments;
+
+    model::topic_metadata get_metadata() const;
+};
+
 struct topic_result {
     explicit topic_result(model::topic_namespace t, errc ec = errc::success)
       : tp_ns(std::move(t))
@@ -167,6 +179,11 @@ struct adl<cluster::create_topics_reply> {
     void to(iobuf&, cluster::create_topics_reply&&);
     cluster::create_topics_reply from(iobuf);
     cluster::create_topics_reply from(iobuf_parser&);
+};
+template<>
+struct adl<cluster::topic_configuration_assignment> {
+    void to(iobuf&, cluster::topic_configuration_assignment&&);
+    cluster::topic_configuration_assignment from(iobuf_parser&);
 };
 
 } // namespace reflection
