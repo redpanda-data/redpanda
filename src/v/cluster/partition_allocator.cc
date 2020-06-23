@@ -85,7 +85,7 @@ partition_allocator::allocate_replicas(int16_t replication_factor) {
 }
 
 // FIXME: take into account broker.rack diversity & other constraints
-std::optional<std::vector<partition_assignment>>
+std::optional<partition_allocator::allocation_units>
 partition_allocator::allocate(const topic_configuration& cfg) {
     if (_available_machines.empty()) {
         return std::nullopt;
@@ -125,7 +125,7 @@ partition_allocator::allocate(const topic_configuration& cfg) {
         ret.push_back(std::move(p_as));
         _highest_group = partition_group;
     }
-    return ret;
+    return allocation_units(ret, this);
 }
 
 void partition_allocator::deallocate(const model::broker_shard& bs) {
@@ -143,7 +143,7 @@ void partition_allocator::deallocate(const model::broker_shard& bs) {
 }
 
 void partition_allocator::update_allocation_state(
-  std::vector<model::topic_metadata> metadata) {
+  std::vector<model::topic_metadata> metadata, raft::group_id gid) {
     if (metadata.empty()) {
         return;
     }
@@ -157,9 +157,17 @@ void partition_allocator::update_allocation_state(
               std::back_inserter(shards));
         }
     }
+    update_allocation_state(shards, gid);
+}
 
-    // We can use non stable sort algorithm as we do not need to preserver the
-    // order of shards
+void partition_allocator::update_allocation_state(
+  std::vector<model::broker_shard> shards, raft::group_id group_id) {
+    if (shards.empty()) {
+        return;
+    }
+    _highest_group = std::max(_highest_group, group_id);
+    // We can use non stable sort algorithm as we do not need to preserver
+    // the order of shards
     std::sort(
       shards.begin(),
       shards.end(),

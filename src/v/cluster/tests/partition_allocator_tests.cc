@@ -1,4 +1,6 @@
+#include "cluster/partition_allocator.h"
 #include "cluster/tests/partition_allocator_tester.h"
+#include "raft/types.h"
 #include "test_utils/fixture.h"
 
 using namespace cluster; // NOLINT
@@ -31,12 +33,12 @@ FIXTURE_TEST(max_allocation, partition_allocator_tester) {
                       * allocation_node::max_allocations_per_core)
                      - allocation_node::core0_extra_weight;
     auto cfg = gen_topic_configuration(max, ts::max_nodes);
-    std::vector<partition_assignment> allocs = std::move(
-      pa.allocate(cfg).value());
+    partition_allocator::allocation_units allocs = pa.allocate(cfg).value();
 
     BOOST_REQUIRE_EQUAL(max * ts::max_nodes, 209994);
-    BOOST_REQUIRE_EQUAL(allocs.size() * 3, 209994);
-    BOOST_REQUIRE_EQUAL(allocated_nodes_count(allocs), 209994);
+    BOOST_REQUIRE_EQUAL(allocs.get_assignments().size() * 3, 209994);
+    BOOST_REQUIRE_EQUAL(
+      allocated_nodes_count(allocs.get_assignments()), 209994);
     BOOST_REQUIRE_EQUAL(highest_group()(), max);
 
     // make sure there is no room left after
@@ -70,10 +72,12 @@ FIXTURE_TEST(partial_assignment, partition_allocator_tester) {
 
     // just fill up the cluster partially
     auto cfg1 = gen_topic_configuration(max_correct_partitions, ts::max_nodes);
-    auto allocs1 = pa.allocate(cfg1);
-    BOOST_REQUIRE_EQUAL(allocs1.value().size() * 3, expected_usage_capacity);
+    auto allocs1 = pa.allocate(cfg1).value();
     BOOST_REQUIRE_EQUAL(
-      allocated_nodes_count(allocs1.value()), expected_usage_capacity);
+      allocs1.get_assignments().size() * 3, expected_usage_capacity);
+    BOOST_REQUIRE_EQUAL(
+      allocated_nodes_count(allocs1.get_assignments()),
+      expected_usage_capacity);
 
     // allocate 2 partitions - one should fail, returning null & deallocating
     auto cfg = gen_topic_configuration(2, ts::max_nodes);
@@ -91,12 +95,13 @@ FIXTURE_TEST(max_deallocation, partition_allocator_tester) {
                      - allocation_node::core0_extra_weight;
 
     auto cfg = gen_topic_configuration(max, ts::max_nodes);
-    std::vector<partition_assignment> allocs = std::move(
-      pa.allocate(cfg).value());
+    partition_allocator::allocation_units allocs = pa.allocate(cfg).value();
 
     BOOST_REQUIRE_EQUAL(max * ts::max_nodes, 209994);
-    BOOST_REQUIRE_EQUAL(allocs.size() * ts::max_nodes, 209994);
-    BOOST_REQUIRE_EQUAL(allocated_nodes_count(allocs), 209994);
+    BOOST_REQUIRE_EQUAL(
+      allocs.get_assignments().size() * ts::max_nodes, 209994);
+    BOOST_REQUIRE_EQUAL(
+      allocated_nodes_count(allocs.get_assignments()), 209994);
     BOOST_REQUIRE_EQUAL(highest_group()(), max);
     BOOST_REQUIRE_EQUAL(available_machines().size(), 0);
 
@@ -105,7 +110,7 @@ FIXTURE_TEST(max_deallocation, partition_allocator_tester) {
     BOOST_REQUIRE(std::nullopt == pa.allocate(one_topic_cfg));
 
     // now deallocate them all, and we _must_ not decrease the raft count
-    for (auto& as : allocs) {
+    for (auto& as : allocs.get_assignments()) {
         for (auto& bs : as.replicas) {
             pa.deallocate(bs);
         }
@@ -124,7 +129,7 @@ FIXTURE_TEST(recovery_test, partition_allocator_tester) {
 
     // 100 topics with 12 partitions each replicated on 3 nodes each
     auto md = create_topic_metadata(100, 12);
-    pa.update_allocation_state(md);
+    pa.update_allocation_state(md, raft::group_id(0));
     // each node in the cluster holds one replica for each partition,
     // so it has to have topics * partitions shards allocated
     auto allocated_shards = 100 * 12;
@@ -145,8 +150,8 @@ FIXTURE_TEST(recovery_test, partition_allocator_tester) {
 BOOST_AUTO_TEST_CASE(round_robin_load) {
     partition_allocator_tester test(5, 10);
     auto cfg = test.gen_topic_configuration(100, 3);
-    std::vector<partition_assignment> allocs = std::move(
-      test.pa.allocate(cfg).value());
+    std::vector<partition_assignment> allocs
+      = test.pa.allocate(cfg).value().get_assignments();
     std::map<model::node_id, int> node_assignment;
     for (auto& a : allocs) {
         for (auto& bs : a.replicas) {
@@ -156,4 +161,31 @@ BOOST_AUTO_TEST_CASE(round_robin_load) {
     for (auto& p : node_assignment) {
         BOOST_REQUIRE_EQUAL(p.second, 60);
     }
+}
+
+FIXTURE_TEST(allocation_units_test, partition_allocator_tester) {
+    using ts = partition_allocator_tester;
+    const auto partitions = 128;
+    const auto max = (ts::cpus_per_node
+                      * allocation_node::max_allocations_per_core)
+                     - allocation_node::core0_extra_weight;
+    // just fill up the cluster partially
+    auto cfg1 = gen_topic_configuration(partitions, ts::max_nodes);
+    {
+        auto allocs = pa.allocate(cfg1).value();
+        BOOST_REQUIRE_EQUAL(
+          allocs.get_assignments().size() * 3, ts::max_nodes * partitions);
+        BOOST_REQUIRE_EQUAL(
+          allocated_nodes_count(allocs.get_assignments()),
+          ts::max_nodes * partitions);
+    }
+    // after allocs left the scope we deallocate
+    BOOST_REQUIRE_EQUAL(
+      machines().at(model::node_id(0))->partition_capacity(), max);
+    BOOST_REQUIRE_EQUAL(
+      machines().at(model::node_id(1))->partition_capacity(), max);
+    BOOST_REQUIRE_EQUAL(
+      machines().at(model::node_id(2))->partition_capacity(), max);
+    // we do not decrement the highest raft group
+    BOOST_REQUIRE_EQUAL(highest_group()(), partitions);
 }
