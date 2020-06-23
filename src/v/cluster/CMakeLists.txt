@@ -32,6 +32,7 @@ v_cc_library(
     topic_table.cc
     topic_updates_dispatcher.cc
     members_table.cc
+    members_manager.cc
   DEPS
     Seastar::seastar
     controller_rpc
