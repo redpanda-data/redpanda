@@ -1,7 +1,10 @@
 #pragma once
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "model/record.h"
+#include "outcome.h"
 #include "raft/offset_monitor.h"
+#include "raft/types.h"
 #include "seastarx.h"
 
 #include <seastar/core/abort_source.hh>
@@ -42,6 +45,7 @@ class consensus;
  */
 class state_machine {
 public:
+    static constexpr model::record_batch_type checkpoint_batch_type{5};
     state_machine(ss::logger& log, ss::io_priority_class io_prio);
 
     // start after ready to receive batches through apply upcall.
@@ -58,6 +62,9 @@ public:
      * is returned an error is logged and the same batch will be applied again.
      */
     virtual ss::future<> apply(model::record_batch) = 0;
+
+    ss::future<result<replicate_result>>
+      quorum_write_empty_batch(model::timeout_clock::time_point);
 
 private:
     class batch_applicator {
