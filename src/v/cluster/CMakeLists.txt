@@ -35,6 +35,7 @@ v_cc_library(
     members_manager.cc
     partition_leaders_table.cc
     topics_frontend.cc
+    controller_backend.cc
   DEPS
     Seastar::seastar
     controller_rpc
