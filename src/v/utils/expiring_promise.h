@@ -6,11 +6,7 @@
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/timer.hh>
 
-#include <exception>
-#include <iostream>
-#include <memory>
-#include <type_traits>
-#include <utility>
+#include <system_error>
 
 template<typename T, typename Clock = ss::lowres_clock>
 class expiring_promise {
@@ -38,8 +34,13 @@ public:
         _timer.set_callback(
           [this, ef = std::forward<ErrorFactory>(err_factory)] {
               using err_t = std::result_of_t<ErrorFactory()>;
-              if constexpr (std::is_same_v<err_t, T>) {
-                  // if errors are encoded in values f.e. result<T> or errc
+
+              constexpr bool is_result = std::is_same_v<err_t, T>;
+              constexpr bool is_std_error_code
+                = std::is_convertible_v<err_t, std::error_code>;
+
+              // if errors are encoded in values f.e. result<T> or errc
+              if constexpr (is_result || is_std_error_code) {
                   _promise.set_value(ef());
               } else {
                   _promise.set_exception(ef());
