@@ -53,10 +53,14 @@ footer_from_stream(ss::input_stream<char>& in) {
       });
 }
 
+bool compacted_index_chunk_reader::is_footer_loaded() const {
+    return bool(_footer);
+}
+
 ss::future<compacted_index::footer>
 compacted_index_chunk_reader::load_footer() {
-    if (_footer.crc != 0 && _file_size) {
-        return ss::make_ready_future<compacted_index::footer>(_footer);
+    if (is_footer_loaded()) {
+        return ss::make_ready_future<compacted_index::footer>(_footer.value());
     }
     auto f = ss::now();
     if (!_file_size) {
@@ -84,14 +88,17 @@ compacted_index_chunk_reader::load_footer() {
                  [](ss::input_stream<char>& in) {
                      return footer_from_stream(in);
                  })
-          .then([this](compacted_index::footer f) { return _footer = f; });
+          .then([this](compacted_index::footer f) {
+              _footer = f;
+              return f;
+          });
     });
 }
 
 void compacted_index_chunk_reader::print(std::ostream& o) const { o << *this; }
 
 bool compacted_index_chunk_reader::is_end_of_stream() const {
-    return _end_of_stream || _byte_index == _footer.size
+    return _end_of_stream || _byte_index == _footer->size
            || (_cursor && _cursor->eof());
 }
 
@@ -99,20 +106,19 @@ void compacted_index_chunk_reader::reset() {
     _end_of_stream = false;
     _byte_index = 0;
     _file_size = std::nullopt;
-    _footer = compacted_index::footer{};
+    _footer = std::nullopt;
     _cursor = std::nullopt;
 }
 
 ss::future<ss::circular_buffer<compacted_index::entry>>
-compacted_index_chunk_reader::load_slice(model::timeout_clock::time_point) {
+compacted_index_chunk_reader::load_slice(model::timeout_clock::time_point t) {
     using ret_t = ss::circular_buffer<compacted_index::entry>;
-    if (unlikely(!_file_size)) {
-        return ss::make_exception_future<ret_t>(
-          std::runtime_error("Must call load_footer(), before loading slice to "
-                             "verify file size correctness."));
+    if (unlikely(!is_footer_loaded())) {
+        return load_footer().then(
+          [this, t](compacted_index::footer) { return load_slice(t); });
     }
     if (!_cursor) {
-        _cursor = ss::make_file_input_stream(_handle, 0, _footer.size);
+        _cursor = ss::make_file_input_stream(_handle, 0, _footer->size);
     }
 
     return ss::do_with(
@@ -162,7 +168,7 @@ operator<<(std::ostream& o, const compacted_index_chunk_reader& r) {
       "_byte_index:{}}}",
       r._max_chunk_memory,
       r._file_size.value(),
-      r._footer,
+      r._footer.value(),
       (r._cursor ? "yes" : "no"),
       r.is_end_of_stream(),
       r._byte_index);
