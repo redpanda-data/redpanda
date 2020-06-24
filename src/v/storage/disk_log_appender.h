@@ -17,8 +17,6 @@ public:
       log_clock::time_point append_time,
       model::offset dirty_offset) noexcept;
 
-    ss::future<> initialize() final;
-
     ss::future<ss::stop_iteration> operator()(model::record_batch&) final;
 
     ss::future<append_result> end_of_stream() final;
@@ -26,6 +24,7 @@ public:
 private:
     bool needs_to_roll_log(model::term_id) const;
     void release_lock();
+    ss::future<> initialize();
 
     disk_log_impl& _log;
     log_append_config _config;

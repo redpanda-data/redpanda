@@ -22,8 +22,6 @@ public:
         impl& operator=(impl&&) noexcept = default;
         virtual ~impl() = default;
 
-        virtual ss::future<> initialize() = 0;
-
         /// non-owning reference - do not steal the iobuf
         virtual ss::future<ss::stop_iteration>
         operator()(model::record_batch&) = 0;
@@ -38,8 +36,6 @@ public:
     log_appender& operator=(const log_appender&) = delete;
     log_appender(log_appender&&) noexcept = default;
     log_appender& operator=(log_appender&&) noexcept = default;
-
-    ss::future<> initialize() { return _impl->initialize(); }
 
     [[deprecated("Use 'for_each_ref()' in record_batch_reader and not "
                  "'consume()' since we don't need to take ownership")]]
