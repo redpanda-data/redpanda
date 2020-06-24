@@ -32,6 +32,7 @@ const (
 	NomergesChecker
 	DiskIRQsAffinityStaticChecker
 	DiskIRQsAffinityChecker
+	FstrimChecker
 	NicIRQsAffinitChecker
 	NicIRQsAffinitStaticChecker
 	NicRfsChecker
@@ -213,6 +214,7 @@ func RedpandaCheckers(
 		NomergesChecker:               nomergesCheckers,
 		DiskIRQsAffinityChecker:       []Checker{dirIRQAffinityChecker},
 		DiskIRQsAffinityStaticChecker: []Checker{dirIRQAffinityStaticChecker},
+		FstrimChecker:                 []Checker{NewFstrimChecker()},
 		SynBacklogChecker:             []Checker{netCheckersFactory.NewSynBacklogChecker()},
 		ListenBacklogChecker:          []Checker{netCheckersFactory.NewListenBacklogChecker()},
 		RfsTableEntriesChecker:        []Checker{netCheckersFactory.NewRfsTableSizeChecker()},

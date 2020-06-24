@@ -55,6 +55,7 @@ func TestSet(t *testing.T) {
 				"tune_network":               true,
 				"tune_disk_scheduler":        true,
 				"tune_disk_nomerges":         true,
+				"tune_fstrim":                true,
 				"tune_disk_irq":              false,
 				"tune_cpu":                   true,
 				"tune_aio_events":            true,
