@@ -133,6 +133,9 @@ compaction_index_reader_to_memory(compacted_index_reader rdr) {
         };
         ss::circular_buffer<compacted_index::entry> data;
     };
-    return rdr.consume(consumer{}, model::no_timeout).finally([rdr] {});
+    rdr.reset();
+    return rdr.load_footer().discard_result().then([rdr]() mutable {
+        return rdr.consume(consumer{}, model::no_timeout).finally([rdr] {});
+    });
 }
 } // namespace storage
