@@ -128,38 +128,19 @@ size_t number_of_chunks_from_config(const ntp_config& ntpc) {
 
 ss::future<Roaring> index_of_index_of_entries(compacted_index_reader reader) {
     reader.reset();
-    return reader.load_footer().then([reader](compacted_index::footer) mutable {
-        return reader.consume(
-          compaction_key_reducer(std::nullopt), model::no_timeout);
-    });
+    return reader.load_footer()
+      .then([reader](compacted_index::footer) mutable {
+          return reader.consume(truncation_offset_reducer{}, model::no_timeout);
+      })
+      .then([reader](Roaring to_keep) mutable {
+          reader.reset();
+          return reader.load_footer().then([reader, keep = std::move(to_keep)](
+                                             compacted_index::footer) mutable {
+              return reader.consume(
+                compaction_key_reducer(std::move(keep)), model::no_timeout);
+          });
+      });
 }
-
-class compaction_second_pass_functor {
-public:
-    compaction_second_pass_functor(Roaring b, compacted_index_writer& w)
-      : _bm(std::move(b))
-      , _writer(&w) {}
-
-    ss::future<ss::stop_iteration> operator()(compacted_index::entry&& e) {
-        using stop_t = ss::stop_iteration;
-        const bool should_add = _bm.contains(_i);
-        ++_i;
-        if (should_add) {
-            bytes_view bv = e.key;
-            return _writer->index(bv, e.offset, e.delta)
-              .then([k = std::move(e.key)] {
-                  return ss::make_ready_future<stop_t>(stop_t::no);
-              });
-        }
-        return ss::make_ready_future<stop_t>(stop_t::no);
-    }
-    void end_of_stream() {}
-
-private:
-    uint32_t _i = 0;
-    Roaring _bm;
-    compacted_index_writer* _writer;
-};
 
 ss::future<> copy_filtered_entries(
   compacted_index_reader reader,
@@ -174,7 +155,7 @@ ss::future<> copy_filtered_entries(
             .then([](compacted_index::footer) {})
             .then([reader, bm = std::move(bm), &writer]() mutable {
                 return reader.consume(
-                  compaction_second_pass_functor(std::move(bm), writer),
+                  index_filtered_copy_reducer(std::move(bm), writer),
                   model::no_timeout);
             })
             // must be last
