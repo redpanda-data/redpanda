@@ -1,17 +1,21 @@
 #include "kafka/requests/create_topics_request.h"
 
-#include "kafka/controller_dispatcher.h"
 #include "kafka/errors.h"
+#include "kafka/requests/fwd.h"
 #include "kafka/requests/timeout.h"
 #include "kafka/requests/topics/topic_result_utils.h"
 #include "kafka/requests/topics/topic_utils.h"
+#include "kafka/requests/topics/types.h"
+#include "kafka/types.h"
 #include "model/metadata.h"
 #include "utils/to_string.h"
 
+#include <seastar/core/future.hh>
 #include <seastar/util/log.hh>
 
 #include <fmt/ostream.h>
 
+#include <chrono>
 #include <string_view>
 
 namespace kafka {
@@ -119,65 +123,51 @@ ss::future<response_ptr> create_topics_api::process(
     return ss::do_with(
       std::move(ctx),
       [request = std::move(request)](request_context& ctx) mutable {
-          return ctx.cntrl_dispatcher()
-            .dispatch_to_controller(
-              [](const cluster::controller& c) { return c.is_leader(); })
-            .then([&ctx, request = std::move(request)](bool is_leader) mutable {
-                std::vector<topic_op_result> results;
-                auto begin = request.topics.begin();
+          std::vector<topic_op_result> results;
+          auto begin = request.topics.begin();
+          // Duplicated topic names are not accepted
+          auto valid_range_end = validate_range_duplicates(
+            begin, request.topics.end(), std::back_inserter(results));
 
-                // Only allowed on the raft0 leader
-                if (!is_leader) {
-                    generate_not_controller_errors(
-                      begin, request.topics.end(), std::back_inserter(results));
-                    return ss::make_ready_future<std::vector<topic_op_result>>(
-                      std::move(results));
-                }
+          // Validate with validators
+          valid_range_end = validate_requests_range(
+            begin, valid_range_end, std::back_inserter(results), validators{});
 
-                // Duplicated topic names are not accepted
-                auto valid_range_end = validate_range_duplicates(
-                  begin, request.topics.end(), std::back_inserter(results));
+          if (request.validate_only) {
+              // We do not actually create the topics, only validate the
+              // request
+              // Generate successes for topics that passed the
+              // validation.
+              std::transform(
+                begin,
+                valid_range_end,
+                std::back_inserter(results),
+                [](const new_topic_configuration& t) {
+                    return generate_successfull_result(t);
+                });
+              return ss::make_ready_future<response_ptr>(
+                encode_response(ctx, results));
+          }
 
-                // Validate with validators
-                valid_range_end = validate_requests_range(
-                  begin,
-                  valid_range_end,
-                  std::back_inserter(results),
-                  validators{});
-
-                if (request.validate_only) {
-                    // We do not actually create the topics, only validate the
-                    // request
-                    // Generate successes for topics that passed the validation.
-                    std::transform(
-                      begin,
-                      valid_range_end,
-                      std::back_inserter(results),
-                      [](const new_topic_configuration& t) {
-                          return generate_successfull_result(t);
-                      });
-                    return ss::make_ready_future<std::vector<topic_op_result>>(
-                      std::move(results));
-                }
-
-                // Create the topics with controller on core 0
-                return ctx.cntrl_dispatcher()
-                  .dispatch_to_controller(
-                    [to_create = to_cluster_type(begin, valid_range_end),
-                     timeout = request.timeout](cluster::controller& c) {
-                        return c.create_topics(to_create, to_timeout(timeout));
-                    })
-                  .then([results = std::move(results)](
-                          std::vector<cluster::topic_result> c_res) mutable {
+          // Create the topics with controller on core 0
+          return ctx.topics_frontend()
+            .create_topics(
+              to_cluster_type(begin, valid_range_end),
+              to_timeout(request.timeout))
+            .then([&ctx,
+                   results = std::move(results),
+                   tout = to_timeout(request.timeout)](
+                    std::vector<cluster::topic_result> c_res) mutable {
+                // wait for leaders
+                return wait_for_leaders(ctx.metadata_cache(), c_res, tout)
+                  .then([&ctx,
+                         results = std::move(results),
+                         c_res = std::move(c_res)](
+                          std::vector<model::node_id>) mutable {
                       // Append controller results to validation errors
                       append_cluster_results(c_res, results);
-                      return ss::make_ready_future<
-                        std::vector<topic_op_result>>(std::move(results));
+                      return encode_response(ctx, std::move(results));
                   });
-            })
-            .then([&ctx](std::vector<topic_op_result> errs) {
-                // Encode response bytes
-                return encode_response(ctx, std::move(errs));
             });
       });
 }

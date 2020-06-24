@@ -1,8 +1,11 @@
 #pragma once
+#include "cluster/controller.h"
+#include "cluster/partition_manager.h"
 #include "cluster/tests/controller_test_fixture.h"
 #include "config/seed_server.h"
 
 #include <seastar/core/metrics_api.hh>
+#include <seastar/core/sharded.hh>
 
 // clang-format off
 template<typename Pred>
@@ -35,7 +38,7 @@ public:
           node_id, cores, kafka_port, rpc_port, seeds));
     }
 
-    ss::sharded<cluster::controller>& get_controller(int idx) {
+    cluster::controller* get_controller(int idx) {
         return _instances[idx]->get_controller();
     }
 
@@ -43,8 +46,7 @@ public:
         return _instances[idx]->get_local_cache();
     }
 
-    ss::sharded<cluster::controller>&
-    create_controller(model::node_id node_id) {
+    cluster::controller* create_controller(model::node_id node_id) {
         std::vector<config::seed_server> seeds = {};
         if (node_id != 0) {
             seeds.push_back(

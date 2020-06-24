@@ -17,7 +17,6 @@ rpcgen(
 v_cc_library(
   NAME cluster
   SRCS
-    controller.cc
     metadata_cache.cc
     partition_manager.cc
     partition_allocator.cc
@@ -36,6 +35,7 @@ v_cc_library(
     partition_leaders_table.cc
     topics_frontend.cc
     controller_backend.cc
+    controller.cc
   DEPS
     Seastar::seastar
     controller_rpc

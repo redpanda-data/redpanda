@@ -1,13 +1,17 @@
 #pragma once
+#include "cluster/commands.h"
 #include "cluster/controller.h"
 #include "cluster/metadata_dissemination_handler.h"
 #include "cluster/metadata_dissemination_service.h"
 #include "cluster/namespace.h"
+#include "cluster/partition_leaders_table.h"
 #include "cluster/service.h"
 #include "cluster/simple_batch_builder.h"
 #include "cluster/tests/utils.h"
+#include "cluster/types.h"
 #include "config/configuration.h"
 #include "fmt/format.h"
+#include "model/metadata.h"
 #include "model/record.h"
 #include "raft/service.h"
 #include "random/generators.h"
@@ -23,7 +27,6 @@
 
 #include <seastar/net/socket_defs.hh>
 
-using lrk = cluster::log_record_key;
 using namespace std::chrono_literals;
 
 template<typename T>
@@ -56,7 +59,6 @@ public:
           model::broker_properties{.cores = ss::smp::count})
       , _seeds(std::move(seeds)) {
         _cli_cache.start().get0();
-        _md_cache.start().get0();
         st.start().get0();
         storage::directories::initialize(_base_dir).get0();
     }
@@ -69,10 +71,10 @@ public:
 
     ~controller_tests_fixture() {
         _rpc.stop().get0();
-        if (_controller_started) {
-            _controller.stop().get();
-        }
         _metadata_dissemination_service.stop().get0();
+        if (_controller_started) {
+            _controller->stop().get();
+        }
         _pm.stop().get0();
         _gm.stop().get0();
         _storage.stop().get0();
@@ -88,7 +90,7 @@ public:
           .get0();
     }
 
-    ss::sharded<cluster::controller>& get_controller() {
+    cluster::controller* get_controller() {
         config::data_directory_path data_dir_path{
           .path = std::filesystem::path(_base_dir)};
         set_configuration("data_directory", data_dir_path);
@@ -122,24 +124,28 @@ public:
           .get0();
         _gm.invoke_on_all(&raft::group_manager::start).get();
         _pm.start(std::ref(_storage), std::ref(_gm)).get0();
+        _controller = std::make_unique<cluster::controller>(
+          _cli_cache, _pm, st);
         _metadata_dissemination_service
           .start(
             std::ref(_gm),
             std::ref(_pm),
-            std::ref(_md_cache),
+            std::ref(_controller->get_partition_leaders()),
+            std::ref(_controller->get_members_table()),
+            std::ref(_controller->get_topics_state()),
             std::ref(_cli_cache))
           .get0();
-        _controller
-          .start(
-            std::ref(_gm),
-            std::ref(_pm),
-            std::ref(st),
-            std::ref(_md_cache),
-            std::ref(_cli_cache))
-          .get();
+        _controller->wire_up().get0();
         _metadata_dissemination_service
           .invoke_on_all(&cluster::metadata_dissemination_service::start)
           .get();
+
+        _md_cache
+          .start(
+            std::ref(_controller->get_topics_state()),
+            std::ref(_controller->get_members_table()),
+            std::ref(_controller->get_partition_leaders()))
+          .get0();
         _controller_started = true;
 
         rpc::server_configuration rpc_cfg;
@@ -162,17 +168,18 @@ public:
               proto->register_service<cluster::service>(
                 ss::default_scheduling_group(),
                 ss::default_smp_service_group(),
-                std::ref(_controller),
+                std::ref(_controller->get_topics_frontend()),
+                std::ref(_controller->get_members_manager()),
                 std::ref(_md_cache));
               proto->register_service<cluster::metadata_dissemination_handler>(
                 ss::default_scheduling_group(),
                 ss::default_smp_service_group(),
-                std::ref(_md_cache));
+                std::ref(_controller->get_partition_leaders()));
               s.set_protocol(std::move(proto));
           })
           .get();
         _rpc.invoke_on_all(&rpc::server::start).get();
-        return _controller;
+        return _controller.get();
     }
 
     model::ntp make_ntp(const ss::sstring& topic, int32_t partition_id) {
@@ -180,63 +187,52 @@ public:
           test_ns, model::topic(topic), model::partition_id(partition_id));
     }
 
+    cluster::create_topic_cmd make_create_tp_cmd(
+      const ss::sstring& tp,
+      uint32_t partitions,
+      uint16_t rf,
+      std::vector<cluster::partition_assignment> assignments) {
+        cluster::topic_configuration_assignment cfg(
+          cluster::topic_configuration(
+            test_ns, model::topic(tp), partitions, rf),
+          std::move(assignments));
+
+        return cluster::create_topic_cmd(
+          model::topic_namespace(test_ns, model::topic(tp)), std::move(cfg));
+    }
+
     ss::circular_buffer<model::record_batch> single_topic_current_broker() {
         ss::circular_buffer<model::record_batch> ret;
+        auto cmd = make_create_tp_cmd(
+          "topic_1",
+          2,
+          1,
+          {create_test_assignment(
+             "topic_1",
+             0,                         // partition_id
+             {{_current_node.id(), 0}}, // shards_assignment
+             2),                        // group_id
+           create_test_assignment("topic_1", 1, {{_current_node.id(), 0}}, 3)});
 
-        // topic with partition replicas on current broker
-        auto b1 = std::move(
-                    cluster::simple_batch_builder(
-                      cluster::controller_record_batch_type, model::offset(0))
-                      .add_kv(
-                        lrk{lrk::type::topic_configuration},
-                        cluster::topic_configuration(
-                          test_ns, model::topic("topic_1"), 2, 1))
-                      // partition 0
-                      .add_kv(
-                        lrk{lrk::type::partition_assignment},
-                        create_test_assignment(
-                          "topic_1",
-                          0,                         // partition_id
-                          {{_current_node.id(), 0}}, // shards_assignment
-                          2))                        // group_id
-                      // partition 1
-                      .add_kv(
-                        lrk{lrk::type::partition_assignment},
-                        create_test_assignment(
-                          "topic_1", 1, {{_current_node.id(), 0}}, 3)))
-                    .build();
-        ret.push_back(std::move(b1));
-
+        ret.push_back(cluster::serialize_cmd(std::move(cmd)).get0());
         return ret;
     }
 
     ss::circular_buffer<model::record_batch>
     single_topic_other_broker(model::offset off = model::offset(0)) {
         ss::circular_buffer<model::record_batch> ret;
+        auto cmd = make_create_tp_cmd(
+          "topic_1",
+          2,
+          1,
+          {create_test_assignment(
+             "topic_2",
+             0,                        // partition_id
+             {{2, 0}, {3, 0}, {4, 0}}, // shards_assignment
+             5),                       // group_id
+           create_test_assignment("topic_2", 1, {{2, 0}, {3, 0}, {4, 0}}, 6)});
 
-        // topic with partition replicas on other broker
-        auto b1 = std::move(cluster::simple_batch_builder(
-                              cluster::controller_record_batch_type, off)
-                              .add_kv(
-                                lrk{lrk::type::topic_configuration},
-                                cluster::topic_configuration(
-                                  test_ns, model::topic("topic_2"), 2, 3))
-                              // partition 0
-                              .add_kv(
-                                lrk{lrk::type::partition_assignment},
-                                create_test_assignment(
-                                  "topic_2",
-                                  0,                        // partition_id
-                                  {{2, 0}, {3, 0}, {4, 0}}, // shards_assignment
-                                  5))                       // group_id
-                              // partition 1
-                              .add_kv(
-                                lrk{lrk::type::partition_assignment},
-                                create_test_assignment(
-                                  "topic_2", 1, {{2, 0}, {3, 0}, {4, 0}}, 6)))
-                    .build();
-        ret.push_back(std::move(b1));
-
+        ret.push_back(cluster::serialize_cmd(std::move(cmd)).get0());
         return ret;
     }
 
@@ -263,30 +259,25 @@ public:
         for (int i = 0; i < complex_topic_count; i++) {
             auto partitions = random_generators::get_int(max_partitions);
             auto tp = fmt::format("topic_{}", i);
-            cluster::simple_batch_builder builder(
-              cluster::controller_record_batch_type, offset);
-            builder.add_kv(
-              lrk{lrk::type::topic_configuration},
-              cluster::topic_configuration(
-                test_ns, model::topic(tp), partitions, 1));
-            offset++;
+            auto cmd = make_create_tp_cmd(tp, partitions, 1, {});
 
+            offset++;
             for (int p = 0; p < partitions; p++) {
                 std::vector<std::pair<uint32_t, uint32_t>> replicas;
-                replicas.push_back(
-                  {_current_node.id(),
-                   random_generators::get_int<int16_t>() % ss::smp::count});
-                builder.add_kv(
-                  lrk{lrk::type::partition_assignment},
-                  create_test_assignment(
-                    tp,
-                    p,                              // partition_id
-                    std::move(replicas),            // shards_assignment
-                    complex_partitions_count + 1)); // group_id
+                replicas.emplace_back(
+                  _current_node.id(),
+                  random_generators::get_int<int16_t>() % ss::smp::count);
+
+                cmd.value.assignments.push_back(create_test_assignment(
+                  tp,
+                  p,                              // partition_id
+                  std::move(replicas),            // shards_assignment
+                  complex_partitions_count + 1)); // group_id
+
                 offset++;
                 complex_partitions_count++;
             }
-            ret.push_back(std::move(builder).build());
+            ret.push_back(cluster::serialize_cmd(std::move(cmd)).get0());
         }
         return ret;
     }
@@ -306,12 +297,15 @@ private:
     bool _controller_started = false;
     ss::sharded<cluster::metadata_dissemination_service>
       _metadata_dissemination_service;
-    ss::sharded<cluster::controller> _controller;
+    ss::sharded<storage::kvstore> _kvstore;
+    std::unique_ptr<cluster::controller> _controller;
 };
 // Waits for controller to become a leader it poll every 200ms
-void wait_for_leadership(cluster::controller& cntrl) {
+static void wait_for_leadership(cluster::partition_leaders_table& leaders) {
     using namespace std::chrono_literals;
-    tests::cooperative_spin_wait_with_timeout(10s, [&cntrl] {
-        return cntrl.is_leader();
-    }).get();
+
+    leaders
+      .wait_for_leader(
+        cluster::controller_ntp, ss::lowres_clock::now() + 10s, {})
+      .get0();
 }

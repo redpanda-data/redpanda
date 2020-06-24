@@ -1,5 +1,6 @@
 #include "protocol.h"
 
+#include "cluster/topics_frontend.h"
 #include "kafka/logger.h"
 #include "kafka/protocol_utils.h"
 #include "kafka/requests/request_context.h"
@@ -26,14 +27,14 @@ using session_resources = protocol::session_resources;
 protocol::protocol(
   ss::smp_service_group smp,
   ss::sharded<cluster::metadata_cache>& meta,
-  ss::sharded<controller_dispatcher>& ctrl,
+  ss::sharded<cluster::topics_frontend>& tf,
   ss::sharded<quota_manager>& quota,
   ss::sharded<kafka::group_router_type>& router,
   ss::sharded<cluster::shard_table>& tbl,
   ss::sharded<cluster::partition_manager>& pm,
   ss::sharded<coordinator_ntp_mapper>& coordinator_mapper) noexcept
   : _smp_group(smp)
-  , _cntrl_dispatcher(ctrl)
+  , _topics_frontend(tf)
   , _metadata_cache(meta)
   , _quota_mgr(quota)
   , _group_router(router)
@@ -147,7 +148,7 @@ ss::future<> protocol::connection_context::dispatch_method_once(
                 }
                 auto rctx = request_context(
                   _proto._metadata_cache,
-                  _proto._cntrl_dispatcher.local(),
+                  _proto._topics_frontend.local(),
                   std::move(hdr),
                   std::move(buf),
                   sres.backpressure_delay,
