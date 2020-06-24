@@ -25,6 +25,7 @@ var (
 		"disk_irq":              (*tunersFactory).newDiskIRQTuner,
 		"disk_scheduler":        (*tunersFactory).newDiskSchedulerTuner,
 		"disk_nomerges":         (*tunersFactory).newDiskNomergesTuner,
+		"fstrim":                (*tunersFactory).newFstrimTuner,
 		"net":                   (*tunersFactory).newNetworkTuner,
 		"cpu":                   (*tunersFactory).newCpuTuner,
 		"aio_events":            (*tunersFactory).newMaxAIOEventsTuner,
@@ -124,6 +125,8 @@ func IsTunerEnabled(tuner string, rpkConfig *config.RpkConfig) bool {
 		return rpkConfig.TuneDiskScheduler
 	case "disk_nomerges":
 		return rpkConfig.TuneNomerges
+	case "fstrim":
+		return rpkConfig.TuneFstrim
 	case "net":
 		return rpkConfig.TuneNetwork
 	case "cpu":
@@ -190,6 +193,10 @@ func (factory *tunersFactory) newDiskNomergesTuner(
 		factory.blockDevices,
 		factory.executor,
 	)
+}
+
+func (factory *tunersFactory) newFstrimTuner(_ *TunerParams) tuners.Tunable {
+	return tuners.NewFstrimTuner(factory.fs, factory.executor)
 }
 
 func (factory *tunersFactory) newNetworkTuner(

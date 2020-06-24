@@ -55,6 +55,7 @@ type RpkConfig struct {
 	TuneDiskScheduler        bool     `yaml:"tune_disk_scheduler" json:"tuneDiskScheduler"`
 	TuneNomerges             bool     `yaml:"tune_disk_nomerges" json:"tuneNomerges"`
 	TuneDiskIrq              bool     `yaml:"tune_disk_irq" json:"tuneDiskIrq"`
+	TuneFstrim               bool     `yaml:"tune_fstrim" json:"tuneFstrim"`
 	TuneCpu                  bool     `yaml:"tune_cpu" json:"tuneCpu"`
 	TuneAioEvents            bool     `yaml:"tune_aio_events" json:"tuneAioEvents"`
 	TuneClocksource          bool     `yaml:"tune_clocksource" json:"tuneClocksource"`
@@ -87,6 +88,7 @@ func DefaultConfig() Config {
 			TuneDiskScheduler:        true,
 			TuneNomerges:             true,
 			TuneDiskIrq:              true,
+			TuneFstrim:               true,
 			TuneCpu:                  true,
 			TuneAioEvents:            true,
 			TuneClocksource:          true,

@@ -118,7 +118,7 @@ func tuneFstrim(
 
 func NewFstrimChecker() Checker {
 	return NewEqualityChecker(
-		0,
+		FstrimChecker,
 		"Fstrim systemd service and timer active",
 		Warning,
 		true,
