@@ -21,16 +21,6 @@ namespace cluster {
 static constexpr model::record_batch_type controller_record_batch_type{3};
 using consensus_ptr = ss::lw_shared_ptr<raft::consensus>;
 using broker_ptr = ss::lw_shared_ptr<model::broker>;
-struct log_record_key {
-    enum class type : int8_t {
-        partition_assignment,
-        topic_configuration,
-        checkpoint,
-        topic_deletion,
-    };
-
-    type record_type;
-};
 
 /// Join request sent by node to join raft-0
 struct join_request {
