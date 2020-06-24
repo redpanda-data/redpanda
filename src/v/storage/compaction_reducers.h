@@ -68,19 +68,7 @@ public:
       : _bm(std::move(b))
       , _writer(&w) {}
 
-    ss::future<ss::stop_iteration> operator()(compacted_index::entry&& e) {
-        using stop_t = ss::stop_iteration;
-        const bool should_add = _bm.contains(_i);
-        ++_i;
-        if (should_add) {
-            bytes_view bv = e.key;
-            return _writer->index(bv, e.offset, e.delta)
-              .then([k = std::move(e.key)] {
-                  return ss::make_ready_future<stop_t>(stop_t::no);
-              });
-        }
-        return ss::make_ready_future<stop_t>(stop_t::no);
-    }
+    ss::future<ss::stop_iteration> operator()(compacted_index::entry&&);
     void end_of_stream() {}
 
 private:
