@@ -33,12 +33,14 @@ public:
       load_slice(model::timeout_clock::time_point) final;
 
 private:
+    bool is_footer_loaded() const;
+
     ss::file _handle;
     ss::io_priority_class _iopc;
     size_t _max_chunk_memory{0};
     size_t _byte_index{0};
     std::optional<size_t> _file_size;
-    compacted_index::footer _footer;
+    std::optional<compacted_index::footer> _footer;
     bool _end_of_stream{false};
     std::optional<ss::input_stream<char>> _cursor;
 
