@@ -60,4 +60,21 @@ private:
     uint32_t _natural_index{0};
 };
 
+/// This class copies the input reader into the writer consulting the bitmap of
+/// wether ot keep the entry or not
+class index_filtered_copy_reducer {
+public:
+    index_filtered_copy_reducer(Roaring b, compacted_index_writer& w)
+      : _bm(std::move(b))
+      , _writer(&w) {}
+
+    ss::future<ss::stop_iteration> operator()(compacted_index::entry&&);
+    void end_of_stream() {}
+
+private:
+    uint32_t _i = 0;
+    Roaring _bm;
+    compacted_index_writer* _writer;
+};
+
 } // namespace storage::internal
