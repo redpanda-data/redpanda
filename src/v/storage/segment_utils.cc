@@ -155,7 +155,7 @@ ss::future<> copy_filtered_entries(
             .then([](compacted_index::footer) {})
             .then([reader, bm = std::move(bm), &writer]() mutable {
                 return reader.consume(
-                  compaction_second_pass_functor(std::move(bm), writer),
+                  index_filtered_copy_reducer(std::move(bm), writer),
                   model::no_timeout);
             })
             // must be last

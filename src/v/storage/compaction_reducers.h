@@ -60,9 +60,11 @@ private:
     uint32_t _natural_index{0};
 };
 
-class compaction_second_pass_functor {
+/// This class copies the input reader into the writer consulting the bitmap of
+/// wether ot keep the entry or not
+class index_filtered_copy_reducer {
 public:
-    compaction_second_pass_functor(Roaring b, compacted_index_writer& w)
+    index_filtered_copy_reducer(Roaring b, compacted_index_writer& w)
       : _bm(std::move(b))
       , _writer(&w) {}
 
