@@ -142,33 +142,6 @@ ss::future<Roaring> index_of_index_of_entries(compacted_index_reader reader) {
       });
 }
 
-class compaction_second_pass_functor {
-public:
-    compaction_second_pass_functor(Roaring b, compacted_index_writer& w)
-      : _bm(std::move(b))
-      , _writer(&w) {}
-
-    ss::future<ss::stop_iteration> operator()(compacted_index::entry&& e) {
-        using stop_t = ss::stop_iteration;
-        const bool should_add = _bm.contains(_i);
-        ++_i;
-        if (should_add) {
-            bytes_view bv = e.key;
-            return _writer->index(bv, e.offset, e.delta)
-              .then([k = std::move(e.key)] {
-                  return ss::make_ready_future<stop_t>(stop_t::no);
-              });
-        }
-        return ss::make_ready_future<stop_t>(stop_t::no);
-    }
-    void end_of_stream() {}
-
-private:
-    uint32_t _i = 0;
-    Roaring _bm;
-    compacted_index_writer* _writer;
-};
-
 ss::future<> copy_filtered_entries(
   compacted_index_reader reader,
   Roaring to_copy_index,
