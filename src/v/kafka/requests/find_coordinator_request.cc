@@ -1,7 +1,6 @@
 #include "kafka/requests/find_coordinator_request.h"
 
 #include "config/configuration.h"
-#include "kafka/controller_dispatcher.h"
 #include "kafka/errors.h"
 #include "kafka/groups/coordinator_ntp_mapper.h"
 #include "model/metadata.h"
@@ -59,28 +58,23 @@ handle_ntp(request_context& ctx, std::optional<model::ntp> ntp) {
  */
 static ss::future<error_code>
 create_topic(request_context& ctx, cluster::topic_configuration topic) {
-    // route request through controller home core
-    return ctx.cntrl_dispatcher().dispatch_to_controller(
-      [topic = std::move(topic)](cluster::controller& c) mutable {
-          return c
-            .autocreate_topics(
-              {std::move(topic)},
-              config::shard_local_cfg().create_topic_timeout_ms())
-            .then([](std::vector<cluster::topic_result> res) {
-                /*
-                 * kindly ask client to retry on error
-                 */
-                vassert(res.size() == 1, "expected exactly one result");
-                if (res[0].ec != cluster::errc::success) {
-                    return error_code::coordinator_not_available;
-                }
-                return error_code::none;
-            })
-            .handle_exception([]([[maybe_unused]] std::exception_ptr e) {
-                // various errors may returned such as a timeout, or if the
-                // controller group doesn't have a leader. client will retry.
-                return error_code::coordinator_not_available;
-            });
+    return ctx.topics_frontend()
+      .autocreate_topics(
+        {std::move(topic)}, config::shard_local_cfg().create_topic_timeout_ms())
+      .then([](std::vector<cluster::topic_result> res) {
+          /*
+           * kindly ask client to retry on error
+           */
+          vassert(res.size() == 1, "expected exactly one result");
+          if (res[0].ec != cluster::errc::success) {
+              return error_code::coordinator_not_available;
+          }
+          return error_code::none;
+      })
+      .handle_exception([]([[maybe_unused]] std::exception_ptr e) {
+          // various errors may returned such as a timeout, or if the
+          // controller group doesn't have a leader. client will retry.
+          return error_code::coordinator_not_available;
       });
 }
 

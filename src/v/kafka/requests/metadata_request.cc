@@ -3,8 +3,8 @@
 #include "cluster/metadata_cache.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
-#include "kafka/controller_dispatcher.h"
 #include "kafka/errors.h"
+#include "kafka/requests/topics/topic_utils.h"
 #include "likely.h"
 #include "model/metadata.h"
 #include "utils/to_string.h"
@@ -275,44 +275,46 @@ std::ostream& operator<<(std::ostream& o, const metadata_response& resp) {
 
 static ss::future<metadata_response::topic>
 create_topic(request_context& ctx, model::topic&& topic) {
-    return ctx.cntrl_dispatcher().dispatch_to_controller(
-      [topic = std::move(topic)](cluster::controller& c) mutable {
-          // default topic configuration
-          cluster::topic_configuration cfg{
-            cluster::kafka_namespace,
-            topic,
-            config::shard_local_cfg().default_topic_partitions(),
-            config::shard_local_cfg().default_topic_replication()};
+    // default topic configuration
+    cluster::topic_configuration cfg{
+      cluster::kafka_namespace,
+      topic,
+      config::shard_local_cfg().default_topic_partitions(),
+      config::shard_local_cfg().default_topic_replication()};
 
-          return c
-            .autocreate_topics(
-              {std::move(cfg)},
-              config::shard_local_cfg().create_topic_timeout_ms())
-            .then([](std::vector<cluster::topic_result> res) {
-                vassert(res.size() == 1, "expected single result");
-                metadata_response::topic t;
-                t.name = std::move(res[0].tp_ns.tp);
-                if (
-                  res[0].ec == cluster::errc::success
-                  || res[0].ec == cluster::errc::topic_already_exists) {
-                    /*
-                     * currently kafka instructs the client to retry. we may be
-                     * able to be more optimistic here and return some of the
-                     * metadata immediately after topic creation.
-                     */
-                    t.err_code = error_code::leader_not_available;
-                } else {
-                    t.err_code = map_topic_error_code(res[0].ec);
-                }
-                return t;
-            })
-            .handle_exception([topic = std::move(topic)](
-                                [[maybe_unused]] std::exception_ptr e) mutable {
-                metadata_response::topic t;
-                t.name = std::move(topic);
-                t.err_code = error_code::request_timed_out;
-                return t;
-            });
+    return ctx.topics_frontend()
+      .autocreate_topics(
+        {std::move(cfg)}, config::shard_local_cfg().create_topic_timeout_ms())
+      .then([&md_cache = ctx.metadata_cache()](
+              std::vector<cluster::topic_result> res) {
+          vassert(res.size() == 1, "expected single result");
+          metadata_response::topic t;
+          t.name = std::move(res[0].tp_ns.tp);
+          // error, neither success nor topic exists
+          if (!(res[0].ec == cluster::errc::success
+                || res[0].ec == cluster::errc::topic_already_exists)) {
+              t.err_code = map_topic_error_code(res[0].ec);
+              return ss::make_ready_future<metadata_response::topic>(t);
+          }
+
+          return wait_for_leaders(
+                   md_cache,
+                   res,
+                   model::timeout_clock::now()
+                     + config::shard_local_cfg().create_topic_timeout_ms())
+            .then(
+              [tp_ns = res[0].tp_ns, &md_cache](std::vector<model::node_id>) {
+                  auto tp_md = md_cache.get_topic_metadata(tp_ns);
+                  return metadata_response::topic::make_from_topic_metadata(
+                    std::move(tp_md.value()));
+              });
+      })
+      .handle_exception([topic = std::move(topic)](
+                          [[maybe_unused]] std::exception_ptr e) mutable {
+          metadata_response::topic t;
+          t.name = std::move(topic);
+          t.err_code = error_code::request_timed_out;
+          return t;
       });
 }
 
@@ -389,18 +391,14 @@ ss::future<response_ptr> metadata_api::process(
           // FIXME:  #95 Cluster Id
           reply.cluster_id = std::nullopt;
 
-          return ctx.cntrl_dispatcher()
-            .dispatch_to_controller([&reply](cluster::controller& cntrl) {
-                auto leader_id = cntrl.get_leader_id();
-                reply.controller_id = leader_id.value_or(model::node_id(-1));
-            })
-            .then([&ctx, &reply]() {
-                metadata_request request;
-                request.decode(ctx);
-                return get_topic_metadata(ctx, request)
-                  .then([&reply](std::vector<metadata_response::topic> topics) {
-                      reply.topics = std::move(topics);
-                  });
+          auto leader_id = ctx.metadata_cache().get_controller_leader_id();
+          reply.controller_id = leader_id.value_or(model::node_id(-1));
+
+          metadata_request request;
+          request.decode(ctx);
+          return get_topic_metadata(ctx, request)
+            .then([&reply](std::vector<metadata_response::topic> topics) {
+                reply.topics = std::move(topics);
             })
             .then([&ctx, &reply] { return ctx.respond(std::move(reply)); });
       });

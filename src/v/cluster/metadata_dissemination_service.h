@@ -1,8 +1,11 @@
 #pragma once
 
+#include "cluster/members_table.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/metadata_dissemination_types.h"
+#include "cluster/partition_leaders_table.h"
 #include "cluster/partition_manager.h"
+#include "cluster/topic_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "raft/group_manager.h"
@@ -62,7 +65,9 @@ public:
     metadata_dissemination_service(
       ss::sharded<raft::group_manager>&,
       ss::sharded<cluster::partition_manager>&,
-      ss::sharded<metadata_cache>&,
+      ss::sharded<partition_leaders_table>&,
+      ss::sharded<members_table>&,
+      ss::sharded<topic_table>&,
       ss::sharded<rpc::connection_cache>&);
 
     void disseminate_leadership(
@@ -114,7 +119,9 @@ private:
 
     ss::sharded<raft::group_manager>& _raft_manager;
     ss::sharded<cluster::partition_manager>& _partition_manager;
-    ss::sharded<metadata_cache>& _md_cache;
+    ss::sharded<partition_leaders_table>& _leaders;
+    ss::sharded<members_table>& _members_table;
+    ss::sharded<topic_table>& _topics;
     ss::sharded<rpc::connection_cache>& _clients;
     model::node_id _self;
     std::chrono::milliseconds _dissemination_interval;

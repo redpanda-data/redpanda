@@ -20,9 +20,9 @@ FIXTURE_TEST(
   recover_single_topic_test_at_current_broker, controller_tests_fixture) {
     persist_test_batches(single_topic_current_broker());
 
-    auto& cntrl = get_controller();
-    cntrl.invoke_on_all(&cluster::controller::start).get();
-    wait_for_leadership(cntrl.local());
+    auto cntrl = get_controller();
+    cntrl->start().get0();
+    wait_for_leadership(cntrl->get_partition_leaders().local());
     // Check topics are in cache
     tests::cooperative_spin_wait_with_timeout(10s, [this] {
         auto t_md = get_local_cache().get_topic_metadata(
@@ -42,9 +42,9 @@ FIXTURE_TEST(
   recover_single_topic_test_at_different_node, controller_tests_fixture) {
     persist_test_batches(single_topic_other_broker());
 
-    auto& cntrl = get_controller();
-    cntrl.start().get0();
-    wait_for_leadership(cntrl);
+    auto cntrl = get_controller();
+    cntrl->start().get0();
+    //wait_for_leadership(cntrl);
     auto all_topics = get_local_cache().all_topics();
     BOOST_REQUIRE_EQUAL(all_topics.size(), 1);
     auto tp_md = get_local_cache().get_topic_metadata(topic_ns(model::topic("topic_2")));
@@ -54,9 +54,9 @@ FIXTURE_TEST(
 FIXTURE_TEST(recover_multiple_topics, controller_tests_fixture) {
     persist_test_batches(two_topics());
 
-    auto& cntrl = get_controller();
-    cntrl.start().get0();
-    wait_for_leadership(cntrl);
+    auto cntrl = get_controller();
+    cntrl->start().get0();
+    //wait_for_leadership(cntrl);
     auto all_topics = get_local_cache().all_topics();
     BOOST_REQUIRE_EQUAL(all_topics.size(), 2);
     validate_topic_metadata(get_local_cache(), "topic_1", 2);
@@ -66,9 +66,9 @@ FIXTURE_TEST(recover_multiple_topics, controller_tests_fixture) {
 FIXTURE_TEST(recover_complex, controller_tests_fixture) {
     persist_test_batches(make_complex_topics());
 
-    auto& cntrl = get_controller();
-    cntrl.start().get0();
-    wait_for_leadership(cntrl);
+    auto cntrl = get_controller();
+    cntrl->start().get0();
+    //wait_for_leadership(cntrl);
     auto all_topics = get_local_cache().all_topics();
     BOOST_REQUIRE_EQUAL(all_topics.size(), complex_topic_count);
     BOOST_REQUIRE_EQUAL(

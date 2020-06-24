@@ -1,6 +1,5 @@
 #include "kafka/requests/delete_topics_request.h"
 
-#include "kafka/controller_dispatcher.h"
 #include "kafka/errors.h"
 #include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
@@ -71,13 +70,11 @@ delete_topics_api::process(request_context&& ctx, ss::smp_service_group ssg) {
     return ss::do_with(
       delete_topics_ctx(std::move(ctx), std::move(request), ssg),
       [](delete_topics_ctx& octx) {
-          return octx.rctx.cntrl_dispatcher()
-            .dispatch_to_controller([req = std::move(octx.request.data)](
-                                      cluster::controller& c) mutable {
-                auto tout = req.timeout_ms + model::timeout_clock::now();
-                return c.delete_topics(
-                  create_topic_namespaces(std::move(req.topic_names)), tout);
-            })
+          auto req = std::move(octx.request.data);
+          auto tout = req.timeout_ms + model::timeout_clock::now();
+          return octx.rctx.topics_frontend()
+            .delete_topics(
+              create_topic_namespaces(std::move(req.topic_names)), tout)
             .then([&octx](std::vector<cluster::topic_result> res) {
                 auto resp = create_response(std::move(res));
                 resp.data.throttle_time_ms = std::chrono::milliseconds(

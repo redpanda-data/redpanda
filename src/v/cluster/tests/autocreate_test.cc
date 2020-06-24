@@ -1,6 +1,7 @@
 #include "cluster/metadata_cache.h"
 #include "cluster/simple_batch_builder.h"
 #include "cluster/tests/cluster_test_fixture.h"
+#include "cluster/tests/controller_test_fixture.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/timeout_clock.h"
@@ -38,11 +39,12 @@ void validate_topic_metadata(cluster::metadata_cache& cache) {
 
 FIXTURE_TEST(
   recover_single_topic_test_at_current_broker, controller_tests_fixture) {
-    auto& cntrl = get_controller();
-    cntrl.invoke_on_all(&cluster::controller::start).get();
-    // wait_for_leadership(cntrl.local());
+    auto cntrl = get_controller();
+    cntrl->start().get0();
+    wait_for_leadership(cntrl->get_partition_leaders().local());
 
-    auto results = cntrl.local()
+    auto results = cntrl->get_topics_frontend()
+                     .local()
                      .autocreate_topics(
                        test_topics_configuration(), std::chrono::seconds(10))
                      .get0();
@@ -50,11 +52,10 @@ FIXTURE_TEST(
     BOOST_REQUIRE_EQUAL(results.size(), 3);
 
     for (auto& r : results) {
-        if (r.ec == cluster::errc::success) {
-            auto md = get_local_cache().get_topic_metadata(r.tp_ns);
-            BOOST_REQUIRE_EQUAL(md.has_value(), true);
-            BOOST_REQUIRE_EQUAL(md.value().tp_ns, r.tp_ns);
-        }
+        BOOST_REQUIRE_EQUAL(r.ec, cluster::errc::success);
+        auto md = get_local_cache().get_topic_metadata(r.tp_ns);
+        BOOST_REQUIRE_EQUAL(md.has_value(), true);
+        BOOST_REQUIRE_EQUAL(md.value().tp_ns, r.tp_ns);
     }
 }
 
@@ -70,14 +71,12 @@ FIXTURE_TEST(test_autocreate_on_non_leader, cluster_test_fixture) {
         .addr = unresolved_address("127.0.0.1", 11000)}});
 
     // first controller
-    auto& cntrl_0 = get_controller(0);
-    cntrl_0.invoke_on_all(&cluster::controller::start).get();
-    wait_for_leadership(cntrl_0.local());
+    auto cntrl_0 = get_controller(0);
+    cntrl_0->start().get0();
+    wait_for_leadership(cntrl_0->get_partition_leaders().local());
 
-    auto& cntrl_1 = get_controller(1);
-    cntrl_1.invoke_on_all(&cluster::controller::start).get();
-
-    BOOST_REQUIRE_EQUAL(cntrl_0.local().is_leader(), true);
+    auto cntrl_1 = get_controller(1);
+    cntrl_1->start().get0();
 
     // Wait for cluster to reach stable state
     tests::cooperative_spin_wait_with_timeout(10s, [this] {
@@ -85,10 +84,18 @@ FIXTURE_TEST(test_autocreate_on_non_leader, cluster_test_fixture) {
                && get_local_cache(1).all_brokers().size() == 2;
     }).get();
 
-    cntrl_1.local()
-      .autocreate_topics(test_topics_configuration(), std::chrono::seconds(10))
-      .get0();
+    auto res = cntrl_1->get_topics_frontend()
+                 .local()
+                 .autocreate_topics(
+                   test_topics_configuration(), std::chrono::seconds(10))
+                 .get0();
 
+    for (auto& r : res) {
+        BOOST_REQUIRE_EQUAL(r.ec, cluster::errc::success);
+        auto md = get_local_cache(0).get_topic_metadata(r.tp_ns);
+        BOOST_REQUIRE_EQUAL(md.has_value(), true);
+        BOOST_REQUIRE_EQUAL(md.value().tp_ns, r.tp_ns);
+    }
     // Make sure caches are the same
     validate_topic_metadata(get_local_cache(0));
     validate_topic_metadata(get_local_cache(1));

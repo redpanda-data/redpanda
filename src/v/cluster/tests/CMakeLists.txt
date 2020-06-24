@@ -33,13 +33,6 @@ rp_test(
 )
 rp_test(
   UNIT_TEST
-  BINARY_NAME metadata_cache_tests
-  SOURCES metadata_cache_tests.cc
-  LIBRARIES v::seastar_testing_main v::cluster
-  DEFINITIONS SEASTAR_TESTING_MAIN
-)
-rp_test(
-  UNIT_TEST
   BINARY_NAME cluster_utils_tests
   SOURCES cluster_utils_tests.cc
   LIBRARIES v::seastar_testing_main v::cluster
