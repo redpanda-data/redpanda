@@ -42,27 +42,6 @@ patch<broker_ptr> calculate_changed_brokers(
     return patch;
 }
 
-std::vector<model::broker> get_replica_set_brokers(
-  const metadata_cache& md_cache, std::vector<model::broker_shard> replicas) {
-    std::vector<model::broker> brokers;
-    brokers.reserve(replicas.size());
-    std::transform(
-      std::cbegin(replicas),
-      std::cend(replicas),
-      std::back_inserter(brokers),
-      [&md_cache](model::broker_shard bs) {
-          // executed on target consensus shard
-          // cache.local() is a mirror
-          auto br = md_cache.get_broker(bs.node_id);
-          if (!br) {
-              throw std::runtime_error(
-                fmt::format("Broker {} not found in cache", bs.node_id));
-          }
-          return *(br.value());
-      });
-    return brokers;
-}
-
 std::vector<ss::shard_id> virtual_nodes(model::node_id node) {
     std::set<ss::shard_id> owner_shards;
     for (ss::shard_id i = 0; i < ss::smp::count; ++i) {
@@ -155,27 +134,6 @@ std::vector<topic_result> create_topic_results(
     return results;
 }
 
-model::record_batch_reader
-make_deletion_batches(const std::vector<model::topic_namespace>& topics) {
-    ss::circular_buffer<model::record_batch> batches;
-    batches.reserve(topics.size());
-
-    std::transform(
-      std::cbegin(topics),
-      std::cend(topics),
-      std::back_inserter(batches),
-      [](const model::topic_namespace& tp_ns) {
-          auto builder = simple_batch_builder(
-            controller_record_batch_type, model::offset(0));
-
-          builder.add_kv(
-            log_record_key{.record_type = log_record_key::type::topic_deletion},
-            tp_ns);
-          return std::move(builder).build();
-      });
-
-    return model::make_memory_record_batch_reader(std::move(batches));
-}
 model::broker make_self_broker(const config::configuration& cfg) {
     auto kafka_addr = cfg.advertised_kafka_api();
     auto rpc_addr = cfg.advertised_rpc_api();

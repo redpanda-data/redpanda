@@ -40,9 +40,6 @@ std::vector<topic_result> create_topic_results(
 std::vector<topic_result> create_topic_results(
   const std::vector<model::topic_namespace>& topics, errc error_code);
 
-std::vector<model::broker> get_replica_set_brokers(
-  const metadata_cache& md_cache, std::vector<model::broker_shard> replicas);
-
 ss::future<> update_broker_client(
   ss::sharded<rpc::connection_cache>&,
   model::node_id node,
@@ -67,9 +64,6 @@ auto with_client(
             ss::this_shard_id(), id, std::forward<Func>(f));
       });
 }
-
-model::record_batch_reader
-make_deletion_batches(const std::vector<model::topic_namespace>&);
 
 /// Creates current broker instance using its configuration.
 model::broker make_self_broker(const config::configuration& cfg);
