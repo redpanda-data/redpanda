@@ -128,10 +128,18 @@ size_t number_of_chunks_from_config(const ntp_config& ntpc) {
 
 ss::future<Roaring> index_of_index_of_entries(compacted_index_reader reader) {
     reader.reset();
-    return reader.load_footer().then([reader](compacted_index::footer) mutable {
-        return reader.consume(
-          compaction_key_reducer(std::nullopt), model::no_timeout);
-    });
+    return reader.load_footer()
+      .then([reader](compacted_index::footer) mutable {
+          return reader.consume(truncation_offset_reducer{}, model::no_timeout);
+      })
+      .then([reader](Roaring to_keep) mutable {
+          reader.reset();
+          return reader.load_footer().then([reader, keep = std::move(to_keep)](
+                                             compacted_index::footer) mutable {
+              return reader.consume(
+                compaction_key_reducer(std::move(keep)), model::no_timeout);
+          });
+      });
 }
 
 class compaction_second_pass_functor {
