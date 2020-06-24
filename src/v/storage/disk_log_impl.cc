@@ -166,7 +166,7 @@ ss::future<> disk_log_impl::compact(compaction_config cfg) {
     auto f = gc(cfg);
     if (unlikely(
           config().has_overrides()
-          && config().get_overrides().cleanup_policy_bitflags.value()
+          && config().get_overrides().cleanup_policy_bitflags
                == model::cleanup_policy_bitflags::none)) {
         // prevent *any* collection - used for snapshots
         // all the internal redpanda logs - i.e.: controller, etc should
