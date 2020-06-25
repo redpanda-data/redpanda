@@ -6,6 +6,7 @@
 #include "storage/snapshot.h"
 #include "utils/mutex.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/timer.hh>
@@ -87,9 +88,10 @@ public:
 
 private:
     kvstore_config _conf;
-    log_manager _mgr;
+    log_config _log_conf;
     ntp_config _ntpc;
     ss::gate _gate;
+    ss::abort_source _as;
     snapshot_manager _snap;
     bool _started{false};
 
