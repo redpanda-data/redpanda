@@ -100,32 +100,32 @@ private:
     failure_probes _failure_probes;
 };
 
-[[gnu::always_inline]] static inline disk_log_impl::segment_bitflags operator|(
+[[gnu::always_inline]] inline disk_log_impl::segment_bitflags operator|(
   disk_log_impl::segment_bitflags a, disk_log_impl::segment_bitflags b) {
     return disk_log_impl::segment_bitflags(
       std::underlying_type_t<disk_log_impl::segment_bitflags>(a)
       | std::underlying_type_t<disk_log_impl::segment_bitflags>(b));
 }
 
-[[gnu::always_inline]] static inline void operator|=(
+[[gnu::always_inline]] inline void operator|=(
   disk_log_impl::segment_bitflags& a, disk_log_impl::segment_bitflags b) {
     a = (a | b);
 }
 
-[[gnu::always_inline]] static inline disk_log_impl::segment_bitflags
+[[gnu::always_inline]] inline disk_log_impl::segment_bitflags
 operator~(disk_log_impl::segment_bitflags a) {
     return disk_log_impl::segment_bitflags(
       ~std::underlying_type_t<disk_log_impl::segment_bitflags>(a));
 }
 
-[[gnu::always_inline]] static inline disk_log_impl::segment_bitflags operator&(
+[[gnu::always_inline]] inline disk_log_impl::segment_bitflags operator&(
   disk_log_impl::segment_bitflags a, disk_log_impl::segment_bitflags b) {
     return disk_log_impl::segment_bitflags(
       std::underlying_type_t<disk_log_impl::segment_bitflags>(a)
       & std::underlying_type_t<disk_log_impl::segment_bitflags>(b));
 }
 
-[[gnu::always_inline]] static inline void operator&=(
+[[gnu::always_inline]] inline void operator&=(
   disk_log_impl::segment_bitflags& a, disk_log_impl::segment_bitflags b) {
     a = (a & b);
 }
